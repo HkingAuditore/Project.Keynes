@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 namespace pk {
@@ -86,6 +87,8 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["state_id"] = static_cast<int>(report.state);
     out["requested_simulation_thread_mode"] = runtime_mode_name(report.mode);
     out["simulation_thread_mode"] = runtime_mode_name(report.mode);
+    // native_daily_inline：日屏障由调用线程执行，本 host 没有 worker 线程。
+    out["native_daily_inline"] = report.inline_daily;
     out["graph_coverage_complete"] = report.graph_coverage_complete;
     out["authority_ready"] = report.authority_ready;
     out["required_domain_mask"] = static_cast<int64_t>(report.required_domain_mask);
@@ -463,6 +466,50 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         _climate_writeback_applied_day = -1;
     }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    // native_daily_inline：必须在 start() 之前落到 host 上，start() 读它决定
+    // "起不起 worker 线程"。缺省 false —— 桌面端路径逐字节不变。
+    const bool native_daily_inline = static_cast<bool>(
+        config.get("native_daily_inline", false));
+    _runtime_host->set_inline_daily_mode(native_daily_inline);
+    // 内联日 = 单线程日：把 pk::parallel_for_range 的固定线程池切成串行。
+    //
+    // 不这么做，内联日里的 pk_economy_* 并行分块仍会往 NativeParallelExecutor
+    // 的 worker 派活，而 group barrier 用 `_done_cv.wait` 等它们。浏览器主线程
+    // 既不允许真阻塞（Emscripten 主线程禁 Atomics.wait，"等"只能退化成忙等或
+    // 抛异常），又可能永远等不到（wasm pthread 池已被 Godot 自己的
+    // WorkerThreadPool 占满，起不来的 worker 不会去减 _remaining_tasks）。
+    // 这两种形态都表现为"主线程再也不返回"，即页面完全挂死。
+    // 关掉内联日（桌面默认）时不改任何行为。
+    // 诊断旁路：PK_INLINE_PARALLEL=1 时即使内联日也保留线程池，用来 A/B 量
+    // "内联日 + 固定线程池" 到底多贵（浏览器挂死的现场复现/复测）。
+    static const bool inline_parallel_override = [] {
+        const char *value = std::getenv("PK_INLINE_PARALLEL");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+    // [web-parallel 2026-10-31] 浏览器里 Emscripten 的 pthread 池是**固定 16 槽**
+    // （导出模板编译期决定，Godot 的 WorkerThreadPool / native daily worker / 音频
+    // 已经占掉一部分），而 NativeParallelExecutor 按 `hardware_concurrency()-2`
+    // 去 spawn（浏览器报告 8–32 ⇒ 实测要起 8–14 个）。
+    //
+    // 后果不是"并行慢一点"，而是**负收益**：起不全的 worker 不会去减 `_remaining_tasks`
+    // （见上面内联日那段注释），而每一次 `parallel_for_range` 都要付跨 wasm thread 的
+    // 派活 / 唤醒延迟。真机实测（RTX 4080 + Chrome，新 side module）：
+    //   worker 模式（并行器开着）：单日墙钟 250–370 ms ⇒ 2.70 天/秒
+    //   inline 模式（并行器关着）：单日墙钟 46 ms     ⇒ 9.81 天/秒
+    // 同一份 12 域日图、同一台机器，串行比"并行"快 5–8 倍 —— 所以 web 上**一律串行**，
+    // 与走 inline 还是 worker 无关。桌面（非 wasm）不受影响。
+    // A/B 旁路：PK_WEB_PARALLEL=1 时保留线程池。
+    static const bool web_parallel_override = [] {
+        const char *value = std::getenv("PK_WEB_PARALLEL");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+#if defined(__EMSCRIPTEN__)
+    const bool web_serial_only = !web_parallel_override;
+#else
+    const bool web_serial_only = false;
+#endif
+    set_parallel_serial_only(
+        (native_daily_inline && !inline_parallel_override) || web_serial_only);
     if (_country_runtime != nullptr) {
         static_cast<NativeCountryRuntime *>(_country_runtime)
             ->attach_simulation_host(_runtime_host.get());
@@ -799,7 +846,185 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         static_cast<int64_t>(_runtime_host->authoritative_domain_mask());
     out["lifetime_granted_mask"] =
         static_cast<int64_t>(_runtime_host->lifetime_granted_mask());
+    out["native_daily_inline"] = native_daily_inline;
     out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+    return out;
+}
+
+// ===== native_daily_inline：单线程内联日 =====
+//
+// 背景（web/wasm 实测）：ACTIVE 请求在浏览器里会被降级成 OFF；即便强行起
+// worker，Country 域的日屏障也要等主线程把 CountryPeerIntent 泵进
+// Effect/Economy 再回传 result，而那条泵链在浏览器里不跑，于是 5s 后
+// `day_wait_peer_stall_timeout` → FAULTED，日历停在第 1 天。
+//
+// 这里去掉"两个线程"这个前提：调用线程既执行 12 域日屏障，也当 peer。所以
+// 缺 peer 时不做 CV 等待，而是当场把 Country peer 适配器推一轮再重试同一天。
+Dictionary DCWorldExt::run_native_daily_inline_day() {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_missing";
+        out["reason"] = "runtime_host_missing";
+        return out;
+    }
+    if (!_runtime_host->inline_daily_mode()) {
+        out["ok"] = false;
+        out["code"] = "native_daily_inline_disabled";
+        out["reason"] = "native_daily_inline_disabled";
+        return out;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    // 一天之内最多重试这么多次。Country 的 peer 集合是"每天有限个 intent"，
+    // 一轮泵就完成一批，所以这个上限只防退化，不是性能旋钮。
+    constexpr uint32_t kMaxInlineAttempts = 8u;
+    constexpr int kPeerIntentsPerPump = 256;
+    // 整次调用的墙钟总预算。单次尝试另有 execute_day_plan 里的 stage 间看门狗，
+    // 这一道总闸保证"8 次重试 × 每次接近预算"也不会把主线程钉住 —— 浏览器里
+    // 一次可上报的失败远好过页面再无心跳。
+    const int64_t total_budget_us = NativeSimulationHost::inline_day_budget_us();
+    const auto elapsed_us = [&started]() -> int64_t {
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - started).count();
+    };
+    const auto ms_since = [](std::chrono::steady_clock::time_point mark) -> double {
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - mark).count();
+    };
+    NativeSimulationHost::InlineDayOutcome outcome;
+    uint32_t attempts = 0;
+    uint64_t peer_pumped = 0;
+    // 分域耗时按"尝试"求和：一次内联日可能重试同一天，重试会把 Climate/Country
+    // 再付一次，所以 stage_ms 是真正烧掉的 CPU，attempt_ms 是每次尝试的总账。
+    double stage_ms[RUNTIME_DOMAIN_STAGE_COUNT]{};
+    double pre_stage_ms = 0.0;
+    double climate_ms = 0.0;
+    double plan_build_ms = 0.0;
+    double commit_tail_ms = 0.0;
+    double peer_ms = 0.0;
+    bool budget_exceeded = false;
+    // 区分两种掐断：单日看门狗（execute_day_plan 里按 stage 间检查）与本次
+    // 调用的总预算（8 次重试加起来）。前者 reason 已由 host 写好，后者要在
+    // 这里盖一个自己的原因码，否则浏览器只会看到上一次尝试的 peer 原因。
+    bool attempt_budget_tripped = false;
+    Array attempt_ms;
+    while (attempts < kMaxInlineAttempts) {
+        ++attempts;
+        const auto attempt_started = std::chrono::steady_clock::now();
+        outcome = _runtime_host->run_inline_day();
+        attempt_ms.append(ms_since(attempt_started));
+        for (uint32_t i = 0; i < RUNTIME_DOMAIN_STAGE_COUNT; ++i)
+            stage_ms[i] += outcome.stage_ms[i];
+        pre_stage_ms += outcome.pre_stage_ms;
+        climate_ms += outcome.climate_ms;
+        plan_build_ms += outcome.plan_build_ms;
+        commit_tail_ms += outcome.commit_tail_ms;
+        if (outcome.budget_exceeded) {
+            budget_exceeded = true;
+            break;
+        }
+        if (outcome.committed || !outcome.continuation_pending) break;
+        if (total_budget_us > 0 && elapsed_us() >= total_budget_us) {
+            budget_exceeded = true;
+            attempt_budget_tripped = true;
+            break;
+        }
+        // peer 就在本线程。把 Country peer 适配器推一轮（Effect/Modifier/
+        // Economy 的 intent 服务都由它同一线程完成），再重试同一天。
+        if (_country_runtime == nullptr) break;
+        auto *country = static_cast<NativeCountryRuntime *>(_country_runtime);
+        if (!country->peer_async_mode()) country->set_peer_async_mode(true);
+        NativeCountryRuntime::PeerAdapterServiceReport peer_report;
+        std::string peer_error;
+        const auto peer_started = std::chrono::steady_clock::now();
+        const bool peer_ok = country->service_peer_intents_main_thread(
+            kPeerIntentsPerPump, peer_report, peer_error);
+        peer_ms += ms_since(peer_started);
+        if (!peer_ok) {
+            out["peer_error"] = String(peer_error.empty()
+                ? "country_peer_adapter_service_failed" : peer_error.c_str());
+            break;
+        }
+        peer_pumped += peer_report.inspected;
+        // 一轮泵什么都没看到，说明卡的不是 peer（例如输入帧/经济输入），
+        // 再试同一天只会原样失败。
+        if (peer_report.inspected == 0u) break;
+    }
+    const double elapsed_ms = ms_since(started);
+    const RuntimeThreadReport report = _runtime_host->report();
+    out["ok"] = outcome.committed;
+    out["code"] = outcome.committed ? "ok"
+        : (attempt_budget_tripped ? String("inline_daily_attempt_budget_exceeded")
+                                  : String(outcome.reason));
+    out["reason"] = attempt_budget_tripped && !outcome.committed
+        ? String("inline_daily_attempt_budget_exceeded")
+        : String(outcome.reason);
+    out["attempts"] = static_cast<int>(attempts);
+    out["peer_pumped"] = static_cast<int64_t>(peer_pumped);
+    out["from_day"] = outcome.from_day;
+    out["day"] = outcome.day;
+    out["environment_day"] = outcome.environment_day;
+    out["committed_day"] = report.committed_day;
+    out["completed_domain_mask"] =
+        static_cast<int64_t>(outcome.completed_domain_mask);
+    out["completed_stage_count"] = static_cast<int>(outcome.completed_stage_count);
+    out["stage_count"] = static_cast<int>(outcome.stage_count);
+    out["work_units"] = static_cast<int64_t>(outcome.work_units);
+    out["dirty_families"] = static_cast<int64_t>(outcome.dirty_families);
+    out["preflight_ok"] = outcome.committed;
+    out["continuation_pending"] = outcome.continuation_pending;
+    out["elapsed_ms"] = elapsed_ms;
+    // ===== 分域/分阶段耗时（新键，既有键语义完全不变）=====
+    //
+    // stage_ms：12 域各自累加的毫秒数（键名见 runtime_domain_stage_key）。
+    //   stage_ms["climate"] 是 Climate 内核的真实耗时 —— 内核在 12 域循环之前
+    //   就跑完，所以它同时是 pre_stage_ms 的一部分。
+    // attempt_ms：每次尝试的总毫秒（重试会把同一域再付一次）。
+    // peer_ms：Country peer 泵的总毫秒（重试之间在调用线程上跑）。
+    // plan_build_ms / commit_tail_ms：build_day_plan / 日尾发布各自的毫秒。
+    // budget_exceeded：是否被单日墙钟看门狗掐断（此时 ok=false）。
+    // executor_serial_only：本线程是否已把 pk::parallel_for_range 的固定线程池
+    //   切成串行（内联日必须为 true，否则浏览器主线程会等一组 wasm pthread）。
+    {
+        Dictionary stage_dict;
+        constexpr auto order = runtime_domain_stage_order();
+        for (uint32_t i = 0; i < RUNTIME_DOMAIN_STAGE_COUNT; ++i)
+            stage_dict[runtime_domain_stage_key(order[i])] = stage_ms[i];
+        out["stage_ms"] = stage_dict;
+    }
+    out["attempt_ms"] = attempt_ms;
+    out["pre_stage_ms"] = pre_stage_ms;
+    out["climate_ms"] = climate_ms;
+    out["plan_build_ms"] = plan_build_ms;
+    out["commit_tail_ms"] = commit_tail_ms;
+    out["peer_ms"] = peer_ms;
+    // capture_ms：紧接本次调用之前的 capture_runtime_inputs() 花了多少毫秒。
+    // 调用方那一帧 = capture_ms + elapsed_ms + 其余 GDScript；三者一比就能
+    // 判定浏览器里那 24 秒到底在 C++ 日屏障里还是在捕获/应用侧。
+    out["capture_ms"] = _inline_capture_ms;
+    out["budget_exceeded"] = budget_exceeded;
+    out["budget_ms"] = total_budget_us > 0
+        ? static_cast<double>(total_budget_us) / 1000.0 : 0.0;
+    out["executor_serial_only"] = parallel_serial_only();
+    // 执行器账目：内联日必须"一次真并行 group 都不派"。调用方拿两个累计量的
+    // 差值就能验证 —— dispatch 只涨 serial_dispatch 时，浏览器主线程这一帧
+    // 从头到尾没碰过 wasm pthread，也就不会在 group barrier 上等一个起不来的
+    // worker。
+    {
+        const NativeParallelExecutor::Report executor =
+            NativeParallelExecutor::instance().report();
+        out["executor_workers"] = static_cast<int>(executor.worker_threads);
+        out["executor_dispatch"] =
+            static_cast<int64_t>(executor.dispatch_count);
+        out["executor_serial_dispatch"] =
+            static_cast<int64_t>(executor.serial_dispatch_count);
+        out["executor_tasks"] = static_cast<int64_t>(executor.task_count);
+    }
+    out["inline_daily"] = true;
+    out["simulation_thread_mode"] = runtime_mode_name(report.mode);
+    out["simulation_host_state"] = runtime_state_name(report.state);
+    out["authoritative_domain_mask"] =
+        static_cast<int64_t>(report.authoritative_domain_mask);
     return out;
 }
 
@@ -902,6 +1127,17 @@ void DCWorldExt::sim_trace_main_write(const char *tag) {
 
 Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     SimTraceWriteGuard sim_trace_guard{this, "capture_runtime_inputs"};
+    // 捕获边界计时：调用方（内联日）用它在同一帧里把"捕获 + 12 域 +
+    // 其余 GDScript"拆开。RAII 保证所有 return 分支都记上。
+    const auto capture_started = std::chrono::steady_clock::now();
+    struct CaptureTimer {
+        std::chrono::steady_clock::time_point started;
+        double &slot;
+        ~CaptureTimer() {
+            slot = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started).count();
+        }
+    } capture_timer{capture_started, _inline_capture_ms};
     Dictionary out;
     _climate_physics_capture_ready = false;
     if (!_runtime_host) {
@@ -3316,6 +3552,18 @@ Dictionary DCWorldExt::wait_climate_consumed(
     out["environment_superseded_days"] =
         static_cast<int64_t>(snapshot.environment_superseded_days);
     return out;
+}
+
+// P1：环境帧预发布探测。只读、不加锁、不阻塞。
+bool DCWorldExt::environment_ring_has_capacity() const {
+    if (!_runtime_host) return false;
+    return _runtime_host->environment_ring_has_capacity();
+}
+
+int64_t DCWorldExt::runtime_committed_day() const {
+    if (!_runtime_host) return -1;
+    // 廉价路径：一次原子读。预发布器每帧都调它。
+    return _runtime_host->committed_day_value();
 }
 
 Dictionary DCWorldExt::apply_runtime_climate_writeback(

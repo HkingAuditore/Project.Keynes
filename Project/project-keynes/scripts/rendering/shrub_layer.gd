@@ -251,6 +251,8 @@ func setup(map: MapData, world: WorldData, bounds: Rect2, hex_size: float, visua
 	var probe_start := Time.get_ticks_usec()
 	_ensure_shader_matches_tiles()
 	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
+	# 首次绘制编译成本：此刻同级的 ShrubLayer 都已建好，能拿到真实的"共享层数"。
+	_report_veg_shader_cost()
 	probe_start = Time.get_ticks_usec()
 	if _defer_initial_rebuild and _chunked_multimesh_enabled:
 		clear()
@@ -343,10 +345,22 @@ func _ensure_shader_matches_tiles() -> void:
 	var main_ok := _shader_is_tiled_variant(_material) == want_tiled
 	var shadow_ok := _shadow_material == null \
 		or _shader_is_tiled_variant(_shadow_material) == want_tiled
-	if main_ok and shadow_ok:
+	# _ready() 的早编是"远景保护变体"（见 _web_veg_form_defines()）。它不能只看
+	# tiled 位是否一致：world 不是 tiled 时 tiled 位恰好都是 false，会永久停在
+	# 远景观感，所以这里单独判一次。
+	if main_ok and shadow_ok and not _shader_is_web_far_prototype(_material):
 		_sync_world_material_inputs(true)
 	else:
 		_refresh_shader_variants()
+
+
+# web 近景 form 打开时，_ready() 会先编一份 PK_VEG_FAR_ONLY 的便宜变体，
+# setup() 拿到 world 后必须换成真实档位（即使 tiled 位没变）。
+func _shader_is_web_far_prototype(mat: ShaderMaterial) -> bool:
+	if not (PK_WEB_ENABLE_VEG_NEAR_FORMS and OS.has_feature("web")):
+		return false
+	return mat != null and mat.shader != null \
+		and mat.shader.code.contains("#define PK_VEG_FAR_ONLY")
 
 
 # [cylindrical-earth-daylight] 昼夜光照与地形同源（逐像素经纬度晨昏线）。
@@ -655,6 +669,11 @@ func set_family_batch_suppressed(suppressed: bool) -> void:
 	if _family_batch_suppressed == suppressed:
 		return
 	_family_batch_suppressed = suppressed
+	# 家族批次要真的上屏了：之前为了省一次近景编译而用远景档的家族材质，必须
+	# 换回真实档位（VegetationFamilyLayer.configure() 会在这里之后才 rebuild_all，
+	# 所以换档赶得上第一帧）。
+	if suppressed:
+		_restore_family_material_near_forms()
 	# 两条渲染路径使用不同的 LOD 曲线。切换路径时即使 zoom 没变，也必须
 	# 重新计算实例比例；否则会把上一条路径的断崖式密度继续带到回退路径。
 	_camera_zoom_initialized = false
@@ -747,11 +766,49 @@ func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
 	if _material == null:
 		_ensure_resources()
 	var out := _material.duplicate(true) as ShaderMaterial
-	var shader := _compiled_shader(_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE)
-	out.shader = shader
+	out.shader = _compiled_shader(
+		_family_batch_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
 	out.set_shader_parameter("detail_style_lut", style_lut)
 	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	_track_family_material(out)
 	return out
+
+
+# 家族批次材质的 define 前缀。家族批次没在画时（_family_batch_suppressed=false，
+# 也就是 detail_scatter_family_renderer_enabled=false 的默认配置）这份材质永远
+# 不上屏，web 上先用远景档 —— 否则 VegetationFamilyLayer.configure() 会白编一份
+# 同样大小的近景 shader，把首次编译耗时翻倍。真要画家族批次时由
+# set_family_batch_suppressed(true) 换回真实档位（见 _restore_family_material_near_forms）。
+func _family_batch_define_prefix() -> String:
+	if OS.has_feature("web") and PK_WEB_ENABLE_VEG_NEAR_FORMS and not _family_batch_suppressed:
+		return _shader_quality_define_prefix(true)
+	return _shader_quality_define_prefix()
+
+
+# 家族批次材质引用（只记 web；上限 16 个，超了先丢掉旧的引用，避免多次 configure
+# 累积）。这些对象归 VegetationFamilyLayer 缓存，这里只用于"换档时改 shader"。
+var _family_materials: Array = []
+
+
+func _track_family_material(mat: ShaderMaterial) -> void:
+	if not OS.has_feature("web"):
+		return
+	if _family_materials.size() >= 16:
+		_family_materials.clear()
+	_family_materials.append(mat)
+
+
+func _restore_family_material_near_forms() -> void:
+	if _family_materials.is_empty():
+		return
+	var shader := _compiled_shader(
+		_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
+	for raw_mat in _family_materials:
+		var mat := raw_mat as ShaderMaterial
+		if mat == null or mat.shader == shader:
+			continue
+		mat.shader = shader
+	_family_materials.clear()
 
 
 func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMaterial:
@@ -759,7 +816,9 @@ func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMateria
 		_ensure_resources()
 	var out := _shadow_material.duplicate(true) as ShaderMaterial
 	if style_lut != null:
-		var shader := _compiled_shader(_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE)
+		var shader := _compiled_shader(
+			_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE,
+			"shadow")
 		out.shader = shader
 		out.set_shader_parameter("detail_style_lut", style_lut)
 		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
@@ -1401,7 +1460,7 @@ func _ensure_resources() -> void:
 		_mmi.name = "ShrubMultiMesh"
 		add_child(_mmi)
 	if _material == null:
-		var shader := _compiled_shader(_shader_quality_define_prefix() + _SHADER_CODE)
+		var shader := _compiled_shader(_shader_quality_define_prefix() + _SHADER_CODE, "body")
 		_material = ShaderMaterial.new()
 		_material.shader = shader
 		_material.set_shader_parameter("world_time", 0.0)
@@ -1412,7 +1471,8 @@ func _ensure_resources() -> void:
 		_bind_crown_art(_material)
 		_mmi.material = _material
 	if _shadow_material == null:
-		var shadow_shader := _compiled_shader(_shader_quality_define_prefix() + _SHADOW_SHADER_CODE)
+		var shadow_shader := _compiled_shader(
+			_shader_quality_define_prefix() + _SHADOW_SHADER_CODE, "shadow")
 		_shadow_material = ShaderMaterial.new()
 		_shadow_material.shader = shadow_shader
 		_shadow_material.set_shader_parameter("season_phase", 1.0)
@@ -1442,17 +1502,109 @@ func _ensure_resources() -> void:
 	_sync_world_material_inputs(false)
 
 
-func _shader_quality_define_prefix() -> String:
-	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
-	if not OS.has_feature("mobile"):
-		return prefix
-	match _mobile_quality_tier:
+# ─── web 近景 vegetation form 开关（2026-10-31）──────────────────────────────
+# 背景：整套近景 form（broadleaf/conifer/palm/...）在 web 上首次绘制编译要 45s 级，
+# 当时的止损是把近景整段关掉 —— _shader_quality_define_prefix() 里给 web 加
+# PK_VEG_FAR_ONLY，vegetation_impostor 的 fragment 只剩 vf_far()，vegetation_forms
+# 里那一整套近景函数没人引用，编译器把它们全丢掉。
+#
+# 现在加载链路已经改成"进世界后分帧补 chunk"，唯一的风险回到"首次绘制 vegetation
+# shader 编译"这一项，所以把近景放回来，但默认只编 4 个主力家族（PK_VEG_NEAR_MIN）。
+#
+# 三个档位只改下面两个常量，不用动 shader：
+#   PK_WEB_ENABLE_VEG_NEAR_FORMS = false
+#       → 老行为：PK_VEG_FAR_ONLY，近景 0 个 form（远景软盘），编译最省。
+#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = false（当前默认）
+#       → PK_VEG_NEAR_MIN：阔叶 / 针叶 / 灌木 / 草丛 4 个家族走近景，
+#         其余 13 个 form 直接落到 vf_far。
+#   = true 且 PK_WEB_VEG_NEAR_FULL_FORMS = true
+#       → 桌面同款全 17 个 form，最费编译时间（验证用，不要当默认）。
+# 回退：把 PK_WEB_ENABLE_VEG_NEAR_FORMS 改回 false，重新导出一版 web 即可，
+# shader 源文件不用改；首次编译成本仍然可以从 WebTelemetry 的 veg_shader 事件读。
+const PK_WEB_ENABLE_VEG_NEAR_FORMS := false
+const PK_WEB_VEG_NEAR_FULL_FORMS := false
+
+
+## 受限平台（web / mobile）共用的 compile-time 档位宏（shader_quality.gdshaderinc
+## 按这三个宏展开 PK_QUALITY_* / PK_MOBILE_ANY）。
+## 分支与改动前的 `match _mobile_quality_tier` 逐字一致（不 clamp：0→LOW / 2→HIGH /
+## 其余→MID），保证 mobile 侧的输出与改动前逐字节相同。
+static func quality_tier_defines(tier: int) -> String:
+	match tier:
 		0:
-			return prefix + "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
 		2:
-			return prefix + "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
+			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
 		_:
-			return prefix + "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+
+
+## [web-tier-pin 2026-10-31] web 上编译期档固定 LOW，与
+## `player_game._shader_quality_define_from_setting()` 在 web 上的返回值同源。
+##
+## 为什么要在本层再钉一次：`_mobile_quality_tier` 的初值是 1(MID)，而 `_ready()` 的
+## 早编（`_ensure_resources()`）发生在 hex_renderer 推档之前。于是 web 上第一份
+## body/shadow 源码编成 MID 档，预热的却是 LOW 档 —— LOW/MID 两条宏串**长度相同**
+## （27+27=54 字节：#define <18 字符宏> 两行）、内容不同，于是预热与运行期的 fp 长度一样、hash 不一样，驱动缓存
+## 必然不命中（2026-10-31 实测 veg_body 284:2668251923 vs 预热 284:2751745859）。
+## 钉死之后 shader 源码只取决于"是不是 web"，不再取决于推档时机；画质预算仍然走
+## `_mobile_quality_tier`（`_active_quality_tier()`），预算行为不变。
+const WEB_SHADER_QUALITY_TIER := 0
+
+
+## web 运行期的近景 form 档位宏。`world_known=false` = `_world == null`（`_ready()` 早编）。
+static func web_form_defines(world_known: bool) -> String:
+	if not PK_WEB_ENABLE_VEG_NEAR_FORMS:
+		# 回退档：只走远景 LOD（fragment 只调 vf_far），编译器把 vegetation_forms
+		# 里的近景 form 函数整段丢掉。这就是"挡回 45s 卡死"的那一版行为。
+		return "#define PK_VEG_FAR_ONLY\n"
+	if not world_known:
+		# _ready() 早编：此刻还没有 world，先给几毫秒的远景变体，把近景预算留给
+		# setup()。这份同样是运行期会真编的一份，所以预热必须把它也列进去
+		# （见 web_warmup_shader_codes() 的 world_known=false 那格）。
+		return "#define PK_VEG_FAR_ONLY\n"
+	if PK_WEB_VEG_NEAR_FULL_FORMS:
+		# 全量档：与桌面同款，17 个 form 全编（仅在确认不再卡顿时打开）。
+		return ""
+	# 默认档：PK_VEG_NEAR_MIN，只编译阔叶/针叶/灌木/草丛 4 个主力家族，
+	# 其余 form 在 fragment 里直接落到 vf_far（详见 vegetation_forms.gdshaderinc）。
+	return "#define PK_VEG_NEAR_MIN\n"
+
+
+## **纯函数**：web 运行期会用的 define 前缀。单一事实来源 —— 运行期
+## `_shader_quality_define_prefix()` 与菜单期 `web_warmup_shader_codes()` 都调这一个，
+## "预热源码 == 运行期源码"由构造保证，而不是两处各抄一份宏串再指望它们一样
+## （抄串的后果就是上面那条同长不同 hash 的 MISS）。
+## 参数全部显式传入（不读 OS.has_feature / 成员变量），才能被桌面 headless 探针枚举：
+## `tests/rendering/veg_variant_parity_probe.gd`。
+static func web_define_prefix(tier: int, tiled: bool, world_known: bool,
+		force_far_only: bool = false) -> String:
+	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
+	prefix += quality_tier_defines(tier)
+	# force_far_only：调用方自己保证这份材质暂时不上屏（家族批次材质），先用最省的档。
+	if force_far_only:
+		return prefix + "#define PK_VEG_FAR_ONLY\n"
+	return prefix + web_form_defines(world_known)
+
+
+func _shader_quality_define_prefix(force_far_only: bool = false) -> String:
+	var tiled := _visual_tiles_active()
+	if OS.has_feature("web"):
+		return web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only)
+	# 非 web：桌面只有 tiled 前缀，与改动前逐字节相同；mobile 与 web 同属受限平台，
+	# 但档位来自推送值、form 档在非 web 上恒为空串（也逐字节同改动前）。
+	if not OS.has_feature("mobile"):
+		return "#define MAP_VISUAL_TILED\n" if tiled else ""
+	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
+	prefix += quality_tier_defines(_mobile_quality_tier)
+	return prefix
+
+
+## 实例侧包装：非 web 恒空串。真逻辑在 `web_form_defines()`。
+func _web_veg_form_defines() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	return web_form_defines(_world != null)
 
 
 func _refresh_shader_variants() -> void:
@@ -1460,17 +1612,21 @@ func _refresh_shader_variants() -> void:
 		return
 	var prefix := _shader_quality_define_prefix()
 	if _material != null:
-		var shader := _compiled_shader(prefix + _SHADER_CODE)
+		var shader := _compiled_shader(prefix + _SHADER_CODE, "body")
 		_material.shader = shader
 		if _mmi != null:
 			_mmi.material = _material
 	if _shadow_material != null:
-		var shadow_shader := _compiled_shader(prefix + _SHADOW_SHADER_CODE)
+		var shadow_shader := _compiled_shader(prefix + _SHADOW_SHADER_CODE, "shadow")
 		_shadow_material.shader = shadow_shader
 		if _shadow_mmi != null:
 			_shadow_mmi.material = _shadow_material
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
+	# 运行期换档（tier / tiled）也要能看到编译成本；_map 为空说明还没进世界，
+	# 等 setup() 那次统一上报。
+	if _map != null:
+		_report_veg_shader_cost()
 
 
 func _clear_chunk_nodes() -> void:
@@ -4676,13 +4832,148 @@ func _hash2i(x: int, y: int, salt: int) -> float:
 
 
 static var _compiled_shader_variants: Dictionary = {}
-static func _compiled_shader(code: String) -> Shader:
-	if _compiled_shader_variants.has(code):
-		return _compiled_shader_variants[code]
+# ─── web 首次绘制编译成本探针（2026-10-31）───────────────────────────────────
+# Shader.code 赋值就是 Compatibility(GLES3/WebGL2) 后端同步编译 GLSL 的地方，
+# 所以这一行的耗时≈"首帧那份 vegetation shader 编译"。只做内存聚合（按变体一行），
+# 不写文件、不 dump JSON；真正发事件在 _report_veg_shader_cost()，每个变体最多
+# 一条 WebTelemetry("veg_shader")，web 上整次加载一般只有 2–4 条。
+static var _shader_compile_stats: Dictionary = {}
+static var _shader_compile_reported: Dictionary = {}
+
+
+## Web 预热用：返回运行期在 web 上真正会编译的 shader 源码（body / shadow / family）。
+## 单一事实来源放在这里，避免 web_shader_warmup.gd 自己去拼前缀——拼错一个宏
+## 驱动就不认缓存，预热白做（这个坑已经踩过两次）。
+static func web_warmup_shader_codes() -> Dictionary:
+	# [2026-10-31 修正 1] 这里原来硬编码 `#define MAP_VISUAL_TILED`，注释说"Compatibility
+	# 渲染器在 web 上强制 tiled"——**这是错的**：map_baker 在 web 上直接把 visual_tiles
+	# 置 null（`map_baker.gd` 的 web 分支），运行期 `_visual_tiles_active()` 恒 false。
+	#
+	# [2026-10-31 修正 2 · 同长不同 hash] 前缀以前是**手抄**的档位串：
+	#   "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n" + near
+	# 手抄的是 LOW，而运行期 `_shader_quality_define_prefix()` 读 `_mobile_quality_tier`
+	# ——它在 `_ready()` 早编时还是初值 1(MID)。LOW / MID 两条宏串长度完全相同
+	# （各 27 字节 ×2 = 54 字节，`#define <18 字符宏>` 换行）、内容不同，于是预热与
+	# 运行期 fp 长度一样、hash 不一样，驱动缓存必然不命中
+	# （实测 veg_body 预热 284:2751745859 / 运行期 284:2668251923）。
+	# 现在：web 档位在 `_shader_quality_define_prefix()` 里钉死 LOW
+	# （`WEB_SHADER_QUALITY_TIER`），而这里的源码也由**同一个** `web_define_prefix()`
+	# 生成 —— 两边不再有第二份手抄串可以漂移。
+	#
+	# 要给哪几格：运行期会编 **两份** body/shadow —— `_ready()` 早编那一次
+	# （`_world == null`）和 `setup()` 之后那一次（`_world != null`）。现在
+	# `PK_WEB_ENABLE_VEG_NEAR_FORMS = false`，两格的前缀逐字相同 → 自动去重只留一份；
+	# 一旦打开近景 form，两格会分叉，那时两格都必须预热（label 用 body / body_setup）。
+	#
+	# tiled=false 是 web 上的运行期真值（见修正 1）；若哪天 web 也走 visual_tiles，
+	# 这里必须跟着加一份 tiled 变体。
+	var tiled := false
+	var out := {}
+	for world_known in [false, true]:
+		var prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, world_known)
+		var suffix := "" if not world_known else "_setup"
+		_put_warmup_code(out, "body" + suffix, prefix + _SHADER_CODE)
+		_put_warmup_code(out, "shadow" + suffix, prefix + _SHADOW_SHADER_CODE)
+	# 家族批次材质：前缀来自 `_family_batch_define_prefix()`，再叠 `DETAIL_FAMILY_BATCH`。
+	# web 且近景 form 打开、且家族批次还没上屏时它走 `_shader_quality_define_prefix(true)`
+	# （档位 + FAR_ONLY）；其余情况与运行期前缀相同。configure() 建材质时 `_world`
+	# 已就绪，所以取 world_known=true。
+	# 这是第三份真正会被绘制的变体：以前没预热，它是在"第一次画出家族批次"那一帧
+	# 真编的（`material_variant` 指纹里的 veg_family MISS）。
+	var family_prefix := web_define_prefix(
+		WEB_SHADER_QUALITY_TIER, tiled, true, PK_WEB_ENABLE_VEG_NEAR_FORMS)
+	out["family"] = family_prefix + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
+	return out
+
+
+## 同一份源码只保留一个 label：预热每张都要单独跑两帧绘制，重复编就是白花时间。
+static func _put_warmup_code(out: Dictionary, key: String, code: String) -> void:
+	for existing in out.keys():
+		if String(out[existing]) == code:
+			return
+	out[key] = code
+
+
+static func _compiled_shader(code: String, pass_tag: String = "body") -> Shader:
+	var cached := _compiled_shader_variants.get(code) as Shader
+	if cached != null:
+		return cached
+	var t0_usec := Time.get_ticks_usec()
 	var shader := Shader.new()
 	shader.code = code
+	# 运行期真实要编的那一份的指纹。和菜单期 warmup_shader 的 fp 对账，命中 = 这份
+	# 已经预热过（驱动缓存里有）；MISS = 它会在游戏里编，那就是冻结帧的根因。
+	WebTelemetry.note_variant("veg_" + pass_tag, code)
+	_record_shader_compile(pass_tag, code, float(Time.get_ticks_usec() - t0_usec) / 1000.0)
 	_compiled_shader_variants[code] = shader
 	return shader
+
+
+static func _record_shader_compile(pass_tag: String, code: String, elapsed_ms: float) -> void:
+	var key := "%s|%d|%d" % [pass_tag, code.length(), code.hash()]
+	var record: Dictionary = _shader_compile_stats.get(key, {})
+	record["s"] = pass_tag
+	record["ms"] = float(record.get("ms", 0.0)) + elapsed_ms
+	record["n"] = int(record.get("n", 0)) + 1
+	record["h"] = code.hash()
+	record["l"] = code.length()
+	# 档位/变体从代码本身读，避免上报时 _world / tier 已经变了。
+	record["near"] = "full"
+	if code.contains("#define PK_VEG_FAR_ONLY"):
+		record["near"] = "far"
+	elif code.contains("#define PK_VEG_NEAR_MIN"):
+		record["near"] = "min"
+	record["tiled"] = code.contains("#define MAP_VISUAL_TILED")
+	_shader_compile_stats[key] = record
+
+
+# 每个还没上报过的变体发一条 WebTelemetry。字段：
+#   s      pass：body / shadow / family
+#   ms     该变体在本进程里的累计编译耗时（首次即真正的编译，缓存命中不计数）
+#   n      该变体被编译了几次（1=正常；>1=换档/tiled 切换又编了一遍）
+#   layers 共享这份 shader 的层数（同级 ShrubLayer 数，web 上已被砍半）
+#   near   far / min / full（该变体实际编进去的近景档位，从代码读）
+#   tier   0..2 受限平台画质档
+#   tiled  是否 tiled 变体
+#   h/l    变体标识（代码 hash / 代码长度），用来区分 legacy 与 tiled
+func _report_veg_shader_cost() -> void:
+	if _shader_compile_stats.is_empty():
+		return
+	if not WebTelemetry.enabled():
+		return
+	var share_layers := _shader_share_layer_count()
+	var keys: Array = _shader_compile_stats.keys()
+	keys.sort()
+	for key in keys:
+		if _shader_compile_reported.has(key):
+			continue
+		_shader_compile_reported[key] = true
+		var record: Dictionary = _shader_compile_stats[key]
+		WebTelemetry.emit("veg_shader", {
+			"s": String(record.get("s", "body")),
+			"ms": snappedf(float(record.get("ms", 0.0)), 0.01),
+			"n": int(record.get("n", 0)),
+			"layers": share_layers,
+			"near": String(record.get("near", "full")),
+			"tier": _mobile_quality_tier,
+			"tiled": bool(record.get("tiled", false)),
+			"h": int(record.get("h", 0)),
+			"l": int(record.get("l", 0)),
+		})
+
+
+# 共享同一份 vegetation shader 的层数：同一父节点下的 ShrubLayer 数量。只在首次
+# 编译上报时数一次，不逐帧调用。
+func _shader_share_layer_count() -> int:
+	var parent := get_parent()
+	if parent == null:
+		return 1
+	var count := 0
+	for child in parent.get_children():
+		if child is ShrubLayer:
+			count += 1
+	return maxi(count, 1)
+
 
 # Generated single-tree crown sprites (resource_art/crown_atlas); the body shader
 # falls back to procedural crowns when the art is missing.
@@ -4710,6 +5001,8 @@ func setup_cooperative(map: MapData, world: WorldData, bounds: Rect2, hex_size: 
 	var probe_start := Time.get_ticks_usec()
 	_ensure_shader_matches_tiles()
 	print("[shrub-load] shader %.1fms" % [float(Time.get_ticks_usec()-probe_start)/1000.0])
+	# 首次绘制编译成本（与 setup() 同一个上报口，按变体去重）。
+	_report_veg_shader_cost()
 	probe_start = Time.get_ticks_usec()
 	if _defer_initial_rebuild and _chunked_multimesh_enabled:
 		clear()
@@ -4757,7 +5050,7 @@ func _rebuild_instances_cooperative() -> void:
 	var total_attempts: int = 0
 	var max_per_cell: int = maxi(1, _max_per_cell())
 	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= 4000:
+		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await get_tree().process_frame
 			slice_start = Time.get_ticks_usec()
 		var cell = cells[order]
@@ -4794,7 +5087,7 @@ func _rebuild_instances_cooperative() -> void:
 	_last_scatter_path = "gdscript"
 
 	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= 4000:
+		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await get_tree().process_frame
 			slice_start = Time.get_ticks_usec()
 		var cell = cells[order]
@@ -4890,7 +5183,7 @@ func _rebuild_via_native_cooperative(
 
 	var slice_start := Time.get_ticks_usec()
 	for order in range(cells.size()):
-		if Time.get_ticks_usec()-slice_start >= 4000:
+		if Time.get_ticks_usec()-slice_start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await get_tree().process_frame
 			slice_start = Time.get_ticks_usec()
 		var cell = cells[order]

@@ -80,6 +80,7 @@ int terrain_material_layer(int biome) {
 	return 0;
 }
 
+#ifndef PK_WEB_WORLD_MIN
 vec4 terrain_material_sample(int biome, vec2 wp) {
 	int layer = terrain_material_layer(biome);
 	if (layer < 0) {
@@ -88,18 +89,25 @@ vec4 terrain_material_sample(int biome, vec2 wp) {
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
 }
+#endif // PK_WEB_WORLD_MIN
 
+#ifndef PK_WEB_WORLD_MIN
 vec3 terrain_material_albedo_detail(vec4 material) {
 	return vec3(1.0 + (material.r - 0.5) * 2.0 * terrain_material_albedo_strength);
 }
+#endif // PK_WEB_WORLD_MIN
 
+#ifndef PK_WEB_WORLD_MIN
 vec2 terrain_material_normal_detail(vec4 material) {
 	return (material.gb * 2.0 - 1.0) * terrain_material_normal_strength;
 }
+#endif // PK_WEB_WORLD_MIN
 
+#ifndef PK_WEB_WORLD_MIN
 float terrain_material_roughness(float base_roughness, vec4 material) {
 	return mix(base_roughness, material.a, terrain_material_roughness_strength);
 }
+#endif // PK_WEB_WORLD_MIN
 
 float terrain_bayer2_digit(vec2 bit_xy) {
 	if (bit_xy.y < 0.5) {
@@ -152,6 +160,7 @@ float terrain_land_dither_zoom_strength() {
 #endif
 }
 
+#ifndef PK_WEB_WORLD_MIN
 float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 	float dither_w = (terrain_mobile_dither_uv_threshold(uv, wp) < edge_w) ? 1.0 : 0.0;
 #if defined(PK_MOBILE_ANY)
@@ -163,6 +172,7 @@ float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 #endif
 	return mix(edge_w, dither_w, dither_strength);
 }
+#endif // PK_WEB_WORLD_MIN
 
 // The inner fwidth band removes raster stair-steps. A wider world-space ecotone
 // provides a shared visual anchor for the final land pipeline; cell-owned
@@ -237,6 +247,7 @@ float terrain_biome_micro_strength(int biome) {
 	return 0.40; // organic terrain
 }
 
+#ifndef PK_WEB_WORLD_MIN
 TerrainStaticMaterial compute_terrain_static_material(
 		int primary_biome,
 		float elev,
@@ -308,6 +319,29 @@ TerrainStaticMaterial compute_terrain_static_material(
 			static_w);
 	return out_mat;
 }
+#else
+// [web-world-min] PK_QUALITY_LOW ⇒ terrain_materials_active() 恒 false（材质族三元
+// 恒走 procedural 分支）；VT_USE_EDGE_NEIGHBOR 未定义 ⇒ decode_edge_secondary_index()
+// 恒返回 -1，原函数在 secondary_id < 0 处就返回，次生边/混合权重整段不可达。
+// 因此这里内联那个必然结果——逐值等于原函数的 web 输出，只是不再编译其余分支。
+TerrainStaticMaterial compute_terrain_static_material(
+		int primary_biome,
+		float elev,
+		vec2 wp,
+		vec2 uv,
+		float edge_distance) {
+	TerrainStaticMaterial out_mat;
+	vec3 hyps = hypsometric_tint(elev, false);
+	out_mat.color = biome_hue_modulate(hyps, primary_biome)
+			* procedural_biome_detail(primary_biome, wp, uv);
+	out_mat.roughness = biome_roughness(primary_biome);
+	out_mat.micro_strength = terrain_biome_micro_strength(primary_biome);
+	out_mat.material_normal_xy = vec2(0.0);
+	out_mat.edge_factor = 0.0;
+	out_mat.secondary_biome = -1;
+	return out_mat;
+}
+#endif // PK_WEB_WORLD_MIN
 
 float terrain_micro_zoom_alpha() {
 	float fade_start;

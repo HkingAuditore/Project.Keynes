@@ -110,6 +110,93 @@ var runtime_climate_authority_enabled: bool = true
 ## Player sessions use the same mask so Trigger/Effect/Economy leave the main
 ## thread; 0x806 remains available for focused Climate|Country|COMMIT soaks.
 @export var runtime_authority_domain_mask: int = 0xFFF
+## native_daily_inline：单线程内联日。
+##
+## Web/wasm 上没有可用的 worker 线程。实测证据（浏览器 diag）：
+##   fault_code = day_wait_peer_stall_timeout
+##   simulation_thread_mode = OFF（requested = ACTIVE）
+##   required_domain_mask = 4095 / implemented = 4095 / missing = 0
+## 也就是说 ACTIVE 会被 per-domain 门降级成 OFF；而 Country 域的日屏障本来就是
+## "等主线程把 CountryPeerIntent 泵进 Effect/Economy 再回传 result"，浏览器里
+## 那条泵链不跑，worker 线程一旦起来就只会等到 5s 超时 → FAULTED → 日历冻结。
+##
+## 打开后 host 不再 spawn 线程，12 域日屏障由主线程逐日串行执行
+## （DCWorldExt.run_native_daily_inline_day）；缺 peer 时当场把 Country peer
+## 适配器推一轮再重试同一天，而不是在条件变量上等另一个线程。
+##
+## 桌面端默认不开：浏览器里(OS.has_feature("web"))才生效；桌面/headless 想验证
+## 这条路径要显式给 PK_NATIVE_DAILY_INLINE=1（A/B 用）。
+@export var runtime_native_daily_inline: bool = true
+## Web 用回 native worker 的总开关（默认关闭）。
+##
+## 关：web 走 `runtime_native_daily_inline`（今天的行为，主线程逐日跑 12 域）。
+## 开：web 真的起 worker 线程，并打开三条并行通道：
+##   P1 环境帧在 `_process` 里预发布 N+1..N+K（单一发布者）
+##   P2 Country peer 由 worker 入口自 promote（deferred 分支仍关闭，见报告）
+##   P3 WorldClock 的判据从"有硬屏障"变成"领先量超预算"
+##
+## 解析顺序：环境变量 `PK_WEB_WORKER=1` > 本导出项 > false。
+## 桌面/headless 上 `PK_NATIVE_DAILY_INLINE` 不变时，本开关**只影响 P1/P3**：
+## 桌面本来就跑 worker，inline 本来就关着。
+@export var runtime_web_worker: bool = false
+## P1：环境帧预发布天数 K。0 = 关闭（每 day_changed 一帧，今天的行为）。
+## web worker 开关打开时自动置 2（ring 4 槽：1 槽给 worker 正在消费、1 槽给
+## 主线程正在写，剩 2 槽可预发布）。
+@export var runtime_environment_prefetch_days: int = 0
+## 预发布流水线深度（K）：worker 最多能领先日历多少天。
+## 真机实测（RTX 4080 + 新 side module）：web 上 worker 是 **7.4 天/秒**、inline 是
+## **9.8 天/秒** —— 所以 web 默认仍走 inline（见 _web_worker_requested）。
+## 诊断数据说清了原因：worker 路径下单日派发只要 4 ms（inline 46 ms），但
+## `prefetch_diag` 里 `lead_over` 长期占 60/66 条，有效吞吐由**跨线程交付节奏**决定。
+## 试过把 K 从 2 加深到 6（让在途覆盖往返延迟）：7.43 → 7.45，**无改善**，
+## 所以瓶颈不是流水线深度，不要再往这个方向调。已回落 2。
+const WEB_WORKER_PREFETCH_DAYS := 2
+## P3：领先量上限 = 预发布天数 + 本余量。
+##
+## 关键：它**必须显著大于 K**。预发布时间锚在日历上（`clock_day + K`），所以
+## worker 的领先量在稳态下天然就是 ≤ K；把上限设成 K 会让"管线刚好装满"变成
+## "日历停止推进"，而日历一停就再也不会有新帧 —— 两个机制互锁，实测卡在第 3 天。
+##
+## 于是这条通道的真实语义是**安全网**而不是油门：它只在"worker 被别的发布者
+## 喂到日历之外"（P1 关闭、或某条路径绕过预发布器）时才生效，把跑飞封在
+## K + 8 天以内（8 = worker 单批上限，见 worker_main 的 target_days clamp）。
+const WORKER_LEAD_MARGIN_DAYS := 8
+## 发布器的在途深度上限 = K + 本值。
+##
+## 真机实测（RTX 4080 + Chrome）：把它设成 K+8(=10) 之后 worker 已经追平 inline
+## （9.93 vs 9.81 天/秒），但 `worker_time_input_wait_us` 仍有 52 ms/天、`lead` 顶在
+## 10 —— 说明流水线又被填满、worker 在等下一帧。环境帧每帧约 0.5 MB，放到 40 天
+## ≈20 MB，wasm 堆完全放得下；先看 input_wait 会不会塌下去。
+const WORKER_PUBLISH_DEPTH_DAYS := 40
+## P3：允许 worker 领先主线程日历的天数上限。0 = 关闭（`_lead_over_budget()`
+## 恒 false ⇒ WorldClock 逐表达式等价于改动前）。web worker 开关打开时 = K。
+var _max_worker_lead_days: int = 0
+## Web worker 的启动结果，进 diag：不用 grep 日志就能知道"到底起没起、为什么没起"。
+## 空字符串 = 还没尝试过。
+var _web_worker_start_code: String = ""
+var _web_worker_start_ok: bool = false
+## worker 要了但没成（拒绝启动 / ACTIVE 未被授予 / 能力缺失）时，本会话退回内联。
+## 这个标志的存在理由：`_native_daily_inline_requested()` 与 `_web_worker_requested()`
+## 互斥，一旦"worker 要了却起不来"，两边都不成立 ⇒ **没有任何日屏障执行者**
+## ⇒ 日历停在 day 1（web 上表现为"世界不动"，且 fault_code 为空，极难查）。
+var _web_worker_inline_fallback: bool = false
+## 只有**存盘**才会把预发布暂停成这个状态。区分它是必须的：
+## `_environment_prefetch_days_active == 0` 可能是"能力门否掉了预发布"（例如
+## side module 是旧的一份），而把那种情况误判成"存盘暂停"并自动恢复，会让
+## 能力门在下一帧就被撤销 —— 发布权重新被预发布器独占、而预发布器根本发不出去
+## ⇒ 环境帧为 0 ⇒ 日历停在 day 1（本轮 web 事故的同一个形态）。
+var _environment_prefetch_suspended_for_save: bool = false
+## K 本尊（预发布天数）。**必须与 `_max_worker_lead_days` 分开**：
+## 前者是"发到 clock+K"，后者是"worker 领先超过 K+margin 就停日历"。把两者
+## 用同一个变量会立刻互锁 —— 发到 clock+K+margin，worker 追到那里，lead 打满，
+## 日历停，于是再也没有新帧（实测卡在第 3 / 第 15 天）。
+var _environment_prefetch_days_active: int = 0
+## 本次会话是否真的走内联日。只有 _start_production_shadow_worker 成功把它置真
+## 之后，_on_clock_day_changed 才会接管日历的推进。
+var _native_daily_inline_active: bool = false
+var _runtime_native_daily_inline_days: int = 0
+var _runtime_native_daily_inline_pending_days: int = 0
+var _runtime_native_daily_inline_last: Dictionary = {}
 ## Climate 权威下的回灌游标。worker 自带单调序号，与 commit generation 无关。
 var _runtime_climate_writeback_generation: int = 0
 var _runtime_climate_writeback_days: int = 0
@@ -166,6 +253,17 @@ const STALL_WATCHDOG_REPEAT_MSEC := 30000
 var _stall_watchdog_day: int = -1
 var _stall_watchdog_day_started_msec: int = 0
 var _stall_watchdog_next_report_msec: int = 0
+## Web：runtime perf snapshot 的可用键名只发一次事件，避免反复猜字段名。
+var _web_graph_keys_emitted := false
+## 探针：web 上跳过「进世界后补」的建筑外观/定居点标签（它们首次绘制会编译新 shader）。
+const PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS := false
+var _web_hooks_installed := false
+var _web_phase_marks: Array = []
+var _web_prev_frame_usec := 0
+var _web_diag_ticks := 0
+## Web 逐帧计时探针（前 120 帧）。
+var _web_frame_probe_left := 120
+var _web_frame_probe_last_usec := 0
 const _RUNTIME_HEALTH_POLL_MSEC := 500
 var _runtime_health_next_poll_msec: int = 0
 var _pending_tick_start_usec: int = 0
@@ -246,6 +344,16 @@ var _sched_day_capture_ms: float = 0.0
 var _sched_day_country_peer_ms: float = 0.0
 var _sched_day_country_read_ms: float = 0.0
 var _sched_day_promote_ms: float = 0.0
+## Web 单日成本探针的 host 侧分段（见 world_clock.gd 的 _dcp_seg 契约）。
+## 只在 day_cost_probe_on 为真时被写入；桌面恒 0，且没有任何语句依赖它们。
+var _dcp_inline_ms: float = 0.0
+var _dcp_commit_ms: float = 0.0
+var _dcp_publish_ms: float = 0.0
+var _dcp_finish_ms: float = 0.0
+var _dcp_resource_ms: float = 0.0
+var _dcp_visual_ms: float = 0.0
+## 单日单推进声明是否启用（web / 显式内联 A/B）。桌面恒 false。
+var _day_barrier_claim_enabled: bool = false
 var _sched_proc_frames: int = 0
 var _sched_proc_economy_input_ms: float = 0.0
 var _sched_proc_peer_ms: float = 0.0
@@ -351,13 +459,158 @@ func configure(
 		_on_camera_view_changed(_camera.current_world_view_rect(), _camera.position, _camera.zoom.x)
 	set_process(false)
 	_init_tod_profile()
+	_day_barrier_claim_enabled = OS.has_feature("web") or _native_daily_inline_requested()
 
 
 func _sched_elapsed_ms(started_usec: int) -> float:
 	return float(Time.get_ticks_usec() - started_usec) / 1000.0
 
 
+## native_daily_inline：把这一天在调用线程上跑完。
+##
+## 与 worker 权威路径同序：回灌(第 N-1 天) → peer 泵 → capture(第 N 天输入)
+## → 主线程执行 12 域日屏障 → 消费提交。区别只有"谁执行"：这里没有另一个线程，
+## 所以任何一步都不允许去等条件变量；缺 peer 时由 C++ 侧在同一线程上把 Country
+## peer 适配器推一轮再重试同一天。
+func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionary:
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator != null and _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("run_native_daily_inline_day"):
+		if _native_daily_inline_active:
+			push_error("[runtime-inline] run_native_daily_inline_day 缺失：回退到主线程 daily tick")
+			_native_daily_inline_active = false
+		return {"ok": false, "code": "native_daily_inline_api_missing"}
+	var segment_usec := Time.get_ticks_usec()
+	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "enter"})
+	# 单日单推进声明：今天由**内联执行器**推进。同一 day 上若已有别人声明过
+	# （正常不会发生：生产场景里只有本 host 推进模拟），main.gd 那套 GDScript
+	# SUS 日 tick 会自己让位。这里只是登记，不影响本函数的执行。
+	_claim_day_for_native(day_idx, &"native_inline")
+	_apply_climate_writeback_if_authoritative(report)
+	_sched_day_climate_writeback_ms += _sched_elapsed_ms(segment_usec)
+	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_writeback"})
+	segment_usec = Time.get_ticks_usec()
+	_service_country_worker_transport()
+	_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
+	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_transport"})
+	# 输入日必须等于 host 的 committed_day+1。内联日没有跨线程重试，错日会直接
+	# 停在 inline_daily_environment_day_mismatch，所以这里按 host 的提交水印取值。
+	var host_day := int(report.get("simulation_committed_day",
+		report.get("committed_day", -1)))
+	var next_day := host_day + 1
+	segment_usec = Time.get_ticks_usec()
+	if _generator.has_method("capture_runtime_inputs_for_worker"):
+		_generator.capture_runtime_inputs_for_worker(
+			maxi(0, next_day), _world_clock.season_phase_for_day(day_idx),
+			MapGenerator.ENV_CALLSITE_INLINE_DAY)
+	_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
+	WebTelemetry.emit("inline_step", {"d": day_idx, "s": "after_capture",
+		"ms": int(_sched_elapsed_ms(segment_usec))})
+	# 探针：native 调用本身的独立 epoch（桌面 _dcp_on() 为假时连计时都不做）。
+	var _dcp_native_usec: int = Time.get_ticks_usec() if _dcp_on() else 0
+	var result: Dictionary = ext.run_native_daily_inline_day()
+	_runtime_native_daily_inline_last = result
+	if _dcp_native_usec > 0:
+		_dcp_inline_ms = float(Time.get_ticks_usec() - _dcp_native_usec) / 1000.0
+	# 每个内联日的耗时/域覆盖：第一次 daily tick 在浏览器里特别贵（一次性初始化），
+	# 用这个事件区分"首日一次性成本"和"每天稳态成本"。
+	WebTelemetry.emit("inline_day", {
+		"day": day_idx,
+		"ms": int(_sched_elapsed_ms(segment_usec)),
+		"ok": bool(result.get("ok", false)),
+		"reason": String(result.get("reason", "")),
+		"attempts": int(result.get("attempts", 0)),
+		"peer": int(result.get("peer_pumped", 0)),
+		"from": int(result.get("from_day", -1)),
+		"committed": int(result.get("committed_day", -1)),
+		"domain_mask": int(result.get("completed_domain_mask", 0)),
+		"work": int(result.get("work_units", 0)),
+		# 分域耗时（12 个 stage 名 → ms），以及 capture / 计划 / 提交尾巴 / peer 泵。
+		"stages": result.get("stage_ms", {}),
+		"capture": int(result.get("capture_ms", 0.0)),
+		"pre": int(result.get("pre_stage_ms", 0.0)),
+		"climate": int(result.get("climate_ms", 0.0)),
+		"plan": int(result.get("plan_build_ms", 0.0)),
+		"tail": int(result.get("commit_tail_ms", 0.0)),
+		"peer_ms": int(result.get("peer_ms", 0.0)),
+		"budget_hit": bool(result.get("budget_exceeded", false)),
+		"serial_only": bool(result.get("executor_serial_only", false)),
+		"dispatch": int(result.get("executor_dispatch", 0)),
+	})
+	if bool(result.get("ok", false)):
+		_runtime_native_daily_inline_days += 1
+	else:
+		_runtime_native_daily_inline_pending_days += 1
+		# 静默冻结是最难查的失败形态：每 30 次至少留一行能指名原因的日志。
+		if _runtime_native_daily_inline_pending_days % 30 == 1:
+			print("[runtime-inline] day=%d pending reason=%s attempts=%d peer_pumped=%d host_day=%d" % [
+				day_idx, String(result.get("reason", "?")),
+				int(result.get("attempts", 0)), int(result.get("peer_pumped", 0)),
+				host_day])
+	# 提交已经发布；把同一份提交落到 MapData/slot，本帧的 UI/渲染就能读到今天。
+	#
+	# 探针：这里的 commit 消费是 inline_day 事件**看不到**的那一段——它排在
+	# inline_day 打点之后，包含 LUT 重编码 / 天气场纹理刷新 / 自然资源回灌 /
+	# 视觉 patch 应用。day_cost_ema 与 inline_day 的差额主要就落在这里。
+	if _dcp_on():
+		var dcp_commit_usec := Time.get_ticks_usec()
+		# 复用同一调用栈里刚取的那份 report（内联日没有 worker 线程，两次读取
+		# 必然同值），省掉一天里第二次 get_runtime_thread_report() 打包。
+		_consume_runtime_commit_if_ready(report)
+		_dcp_commit_ms = float(Time.get_ticks_usec() - dcp_commit_usec) / 1000.0
+	else:
+		_consume_runtime_commit_if_ready()
+	return result
+
+
 func _on_clock_day_changed(day_idx: int) -> void:
+	# 首日挂死定位：进入/离开日 tick 各发一条带绝对时间戳的事件，
+	# 静默前最后一条就能区分"挂在 tick 里"还是"挂在 tick 之后"。
+	WebTelemetry.emit("day_tick", {"s": "begin", "day": day_idx})
+	# Web 单日成本探针：host 这一段的**唯一**一次 epoch 采样。桌面 _dcp_on() 为
+	# 假 → 走 else 分支，与原实现逐语句等价。
+	if _dcp_on():
+		var dcp_usec := Time.get_ticks_usec()
+		_clock_day_changed_impl(day_idx)
+		_dcp_publish_day(Time.get_ticks_usec() - dcp_usec)
+	else:
+		_clock_day_changed_impl(day_idx)
+	WebTelemetry.emit("day_tick", {"s": "end", "day": day_idx})
+
+
+## Web 单日成本探针总开关（world 时钟持有桶）。桌面恒假。
+func _dcp_on() -> bool:
+	return _world_clock != null and _world_clock.day_cost_probe_on
+
+
+## 单日单推进声明（见 world_clock.gd 的 claim_day_advance）。
+## 只有 web / 显式内联 A/B 才登记：桌面上 main.gd 与 WorldRuntimeHost 从不出现在
+## 同一个场景里（player_game.tscn 无 main.gd，main.tscn 无 RuntimeHost），声明
+## 恒为空，写它没有任何收益 —— 保持桌面路径零多余写入。
+func _claim_day_for_native(day_idx: int, owner: StringName) -> void:
+	if not _day_barrier_claim_enabled or _world_clock == null:
+		return
+	_world_clock.claim_day_advance(owner, day_idx)
+
+
+## 把 host 这一天的分段一次性交给 WorldClock 的日桶。每个 tag 只写一次。
+func _dcp_publish_day(elapsed_usec: int) -> void:
+	var clock := _world_clock
+	clock.day_cost_add(&"host", float(elapsed_usec) / 1000.0)
+	clock.day_cost_add(&"rep", _sched_day_report_ms)
+	clock.day_cost_add(&"wb", _sched_day_climate_writeback_ms)
+	clock.day_cost_add(&"pcr", _sched_day_country_peer_ms)
+	clock.day_cost_add(&"cap", _sched_day_capture_ms)
+	clock.day_cost_add(&"wait", _sched_day_climate_wait_ms)
+	clock.day_cost_add(&"inl", _dcp_inline_ms)
+	clock.day_cost_add(&"cmt", _dcp_commit_ms)
+	clock.day_cost_add(&"pub", _dcp_publish_ms)
+	clock.day_cost_add(&"fin", _dcp_finish_ms)
+	clock.day_cost_add(&"res", _dcp_resource_ms)
+	clock.day_cost_add(&"vis", _dcp_visual_ms)
+
+
+func _clock_day_changed_impl(day_idx: int) -> void:
 	# OFF/SHADOW keep the synchronous reference authority in this host. The
 	# PlayerController only consumes the resulting state for UI; it must not be
 	# another simulation entry point.
@@ -370,6 +623,14 @@ func _on_clock_day_changed(day_idx: int) -> void:
 	_sched_day_country_peer_ms = 0.0
 	_sched_day_country_read_ms = 0.0
 	_sched_day_promote_ms = 0.0
+	# Web 单日成本探针的 host 分段（未开探针时这几行只是置 0，全部是本类私有
+	# 字段，没有任何生产读取点）。
+	_dcp_inline_ms = 0.0
+	_dcp_commit_ms = 0.0
+	_dcp_publish_ms = 0.0
+	_dcp_finish_ms = 0.0
+	_dcp_resource_ms = 0.0
+	_dcp_visual_ms = 0.0
 	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
 		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 		return
@@ -377,6 +638,14 @@ func _on_clock_day_changed(day_idx: int) -> void:
 	var report := _generator.get_runtime_thread_report() \
 		if _generator.has_method("get_runtime_thread_report") else {}
 	_sched_day_report_ms = _sched_elapsed_ms(segment_usec)
+	# native_daily_inline：没有 worker 线程，这一天的 12 域日屏障就在本线程上跑。
+	# 必须放在下面的 capacity wait 之前 —— 内联执行者自己消费环境帧，ring 容量
+	# 从来不是问题，去等一个"worker 消费"的信号只会把主线程钉住。
+	if _native_daily_inline_active:
+		_annual_reports.before_day(day_idx)
+		_run_native_daily_inline_day(day_idx, report)
+		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
+		return
 	# Capacity waits must yield to _process so peer ACKs and writeback keep
 	# running. Retain this semantic day instead of dropping a rejected input.
 	if bool(report.get("climate_worker_authoritative", false)):
@@ -404,6 +673,9 @@ func _on_clock_day_changed(day_idx: int) -> void:
 	var whole_graph_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
 		and bool(report.get("authority_ready", false))
 	if whole_graph_authoritative:
+		# 单日单推进声明：今天由 worker 整图权威推进（web 上这条分支不会走到，
+		# 内联在上面就 return 了；桌面 _day_barrier_claim_enabled=false → 空转）。
+		_claim_day_for_native(day_idx, &"native_worker")
 		# Worker owns domain formulas, but the host must still:
 		#   writeback → (optional season) → capture next-day environment → peer pump.
 		# Skipping capture here parks the worker on environment wait while it still
@@ -436,7 +708,8 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			# 与 sus_tick_daily 的输入日约定一致，接管当天不能跳过一日。
 			segment_usec = Time.get_ticks_usec()
 			_generator.capture_runtime_inputs_for_worker(
-				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx))
+				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx),
+				MapGenerator.ENV_CALLSITE_HOST_DAY_CHANGED)
 			_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
 		segment_usec = Time.get_ticks_usec()
 		_service_country_worker_transport()
@@ -493,6 +766,9 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
 	segment_usec = Time.get_ticks_usec()
+	# 单日单推进声明：今天由本 host 的 GDScript SUS tick 推进。若 main.gd 也挂在
+	# 同一场景（当前不会），它的 sus_tick_daily 会看到这条声明并让位。
+	_claim_day_for_native(day_idx, &"host_sus")
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 	_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 
@@ -561,6 +837,25 @@ func building_visual_type_count() -> int:
 ## immediately after PKEC so PKFG validation sees the real type upper bound.
 ## During pre-restore world generation the economy facade can legitimately be
 ## unconfigured; that state is deferred without emitting a false stale-DLL warning.
+## Web 专用：把 building visual catalog 的构建推到进世界之后。
+## 这一步（economy facade 目录 + renderer.configure_building_visuals）在浏览器里
+## 实测 42s，放在加载路径里会把"进世界"卡死；延后执行只影响建筑外观的可用时间。
+func _defer_building_visual_catalog_after_ready() -> void:
+	if not is_inside_tree():
+		return
+	if PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
+		return
+	var timer := get_tree().create_timer(3.0, true, false, true)
+	await timer.timeout
+	if not is_inside_tree():
+		return
+	var started := Time.get_ticks_msec()
+	var report: Dictionary = refresh_building_visual_catalog()
+	var elapsed := Time.get_ticks_msec() - started
+	print("[building-visual] web deferred catalog ok=%s %dms" % [
+		str(report.get("ok", false)), elapsed])
+	WebTelemetry.emit("bind_step", {"s": "deferred_building_visual_done", "dur": elapsed})
+
 func refresh_building_visual_catalog() -> Dictionary:
 	if _generator == null or not _generator.has_method("get_economy_facade"):
 		return {"ok": false, "deferred": true,
@@ -760,11 +1055,24 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	await get_tree().process_frame
 	if not is_inside_tree():
 		return
-	var building_visual_setup := refresh_building_visual_catalog()
+	var building_visual_setup: Dictionary
+	if OS.has_feature("web"):
+		# Web：这一步 = economy building_visual_catalog() + renderer.configure_building_visuals()，
+		# 实测在浏览器里要 42s（MultiMesh/图集/首次 shader 编译），放进加载条等于把
+		# "进世界"卡住。改成进世界后再补：加载条先走完，玩家先看到地图。
+		building_visual_setup = {"ok": false, "deferred": true,
+			"reason": "web_deferred_after_world_ready"}
+		WebTelemetry.emit("bind_step", {"s": "building_visual_deferred"})
+		_defer_building_visual_catalog_after_ready()
+	else:
+		building_visual_setup = refresh_building_visual_catalog()
+	WebTelemetry.emit("bind_step", {"s": "post_building_visual_catalog"})
 	if not bool(building_visual_setup.get("ok", false)) \
 			and not bool(building_visual_setup.get("deferred", false)):
 		push_warning("[building-visual] disabled: %s" % String(
 			building_visual_setup.get("reason", "catalog audit failed")))
+	# 目录刷新是这一步的真实耗时：跑完才推进游标（[loading-visual-substep] 会打出来）。
+	_loading_visual_step("building_visual_ready")
 	if not _pending_load_bundle.is_empty():
 		var save_service := _game_save_service()
 		var restore_result: Dictionary = save_service.restore_prepared_game(self) if save_service != null \
@@ -786,6 +1094,10 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	# Capture is a copy boundary. SHADOW worker starts immediately after so
 	# production days have a live compare path; ACTIVE still waits on the
 	# remaining domain mask.
+	#
+	# Web 曾经在这里跳过 capture（当时日志停在 _bind_country_visuals 之后、心跳全停）。
+	# 真正原因是首帧 shader 编译 45s 堵住整帧，不是 capture 本身。ACTIVE worker
+	# 需要这份输入快照，所以恢复。
 	if _generator != null and _generator.has_method("capture_runtime_inputs_for_worker"):
 		var input_capture: Dictionary = _generator.capture_runtime_inputs_for_worker()
 		if not bool(input_capture.get("ok", false)):
@@ -797,29 +1109,45 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			push_warning("[country-worker] capture deferred: %s" % String(
 				_country_worker_transport_capture.get("code", "unknown")))
 	_loading_visual_step("start_worker")
-	await get_tree().process_frame
-	if not is_inside_tree():
-		return
+	WebTelemetry.emit("bind_step", {"s": "start_worker_step"})
+	# Web：这一帧是「第一次真正把地图画出来」，实测在 ANGLE 上要 45s（探针已排除
+	# 世界材质与迷雾 shader，属于首次 GPU 上传/驱动编译的合成开销）。把它放在
+	# `world_ready` 之前会让加载条卡在 98% 几十秒；放到之后，玩家先进世界，
+	# 这一帧变成一次性顿挫（不影响日历，后续帧 ~16ms）。
+	if not OS.has_feature("web"):
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
+	WebTelemetry.emit("bind_step", {"s": "post_worker_frame"})
 	var annual_handle: int = _resolve_player_country_handle()
 	if annual_handle != 0:
 		var annual_result: Dictionary = _annual_reports.configure(_generator, _world_clock, annual_handle)
+		WebTelemetry.emit("bind_step", {"s": "annual_configured"})
 		if not bool(annual_result.get("ok", false)):
 			push_error("年度报告初始化失败：%s" % String(annual_result.get("reason", "未知原因")))
 		if not _annual_reports.report_ready.is_connected(_on_annual_report_ready):
 			_annual_reports.report_ready.connect(_on_annual_report_ready)
 	_start_production_shadow_worker()
+	WebTelemetry.emit("bind_step", {"s": "worker_skipped"})
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
 		if cell < _current_map.visible_arr.size() and _current_map.visible_arr[cell] != 0:
 			initial_visible_building_cells.append(cell)
+	WebTelemetry.emit("bind_step", {"s": "visible_cells_scanned", "n": initial_visible_building_cells.size()})
 	_refresh_building_visual_intel({
 		"newly_visible_cells": initial_visible_building_cells,
 		"vision_revision": _current_map.vision_revision,
 	})
+	WebTelemetry.emit("bind_step", {"s": "intel_refreshed"})
 	_loading_visual_step("visual_done")
-	await get_tree().process_frame
-	if not is_inside_tree():
-		return
+	# Web：同样把这一帧让给 `world_ready` 之后——第一次真正绘制的 ~45s 已经确认
+	# 不是世界材质 / 迷雾 shader（两个探针都排除），是首次 GPU 上传/驱动合成的
+	# 一次性开销。放在 ready 之后就变成"先进世界，随后一次性顿挫"，而不是把
+	# 加载条钉在 98%。
+	if not OS.has_feature("web"):
+		await get_tree().process_frame
+		if not is_inside_tree():
+			return
 	_runtime_ready_for_ticks = true
 	# The host process also drains building visual dirty cells. Keep it alive for
 	# the normal runtime; overlay refreshes must not disable construction/era
@@ -829,17 +1157,132 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
 		_world_clock.pause(clock_was_paused)
 		on_clock_running_changed(not _world_clock.paused)
+	# Web 构建：世界就绪事件（agent 侧据此判断"可以点开始了"）。
+	WebTelemetry.emit("ready", {
+		"day": _world_clock.day_index() if _world_clock != null else -1,
+		"paused": _world_clock.paused if _world_clock != null else true,
+	})
 	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
 
+## native_daily_inline 是否要在本次会话生效。
+##
+## 浏览器里默认生效（没有可用 worker 线程）。桌面/headless 只有显式
+## PK_NATIVE_DAILY_INLINE=1 才生效 —— 桌面 worker 路径不受影响。
+## PROBE：置 false 可让 web 退回主线程 daily tick（用来二分"首日挂死"是否在内联路径）。
+const PK_WEB_FORCE_NO_INLINE := false
+
+
+func _native_daily_inline_requested() -> bool:
+	if not runtime_native_daily_inline:
+		return false
+	if PK_WEB_FORCE_NO_INLINE:
+		return false
+	# worker 启动失败（或 ACTIVE 没被授予）之后的回退：本会话内强制内联。
+	# 这条必须排在 `_web_worker_requested()` 之前 —— 回退的意义就是"worker 要了
+	# 但没成"，此时 switches 还停在 worker 侧，不看这个标志就没有执行者了。
+	if _web_worker_inline_fallback:
+		return true
+	# Web 用回 native worker：内联日与 worker 是互斥的两种"日屏障执行者"。
+	# 选了 worker 就必须把内联关掉 —— 否则 `config["native_daily_inline"]=true`
+	# 会让 host 干脆不 spawn 线程，日屏障又回到主线程。
+	if _web_worker_requested():
+		return false
+	if _is_web_build():
+		return true
+	return OS.get_environment("PK_NATIVE_DAILY_INLINE") == "1"
+
+
+## 「本进程是 web 构建」的单一判据。
+##
+## `PK_FORCE_WEB_SEMANTICS=1` 是**只在 headless 上使用**的语义镜像：浏览器里
+## `OS.has_feature("web")` 改不了，而这条链上的三个决定（谁执行日屏障 / 起不起
+## worker / 起不来怎么回退）恰恰是最容易写错、也最需要被回归覆盖的部分。
+## 生产环境永远不会设这个变量，所以它对线上零影响。
+func _is_web_build() -> bool:
+	return OS.has_feature("web") \
+		or OS.get_environment("PK_FORCE_WEB_SEMANTICS") == "1"
+
+
+## Web 用回 native worker 的总开关解析。默认 false。
+## 环境变量 `PK_WEB_WORKER=1` 优先于导出项，便于 headless/CI 做 A/B。
+## 不缓存：它只在这几处冷路径被读（configure / worker 启动 / _process 里的
+## 预发布判定），而缓存会让"导出项在 configure 之后被改"变成静默失效。
+func _web_worker_requested() -> bool:
+	# [2026-10-31] web defaults to the worker, same as the PC baseline.
+	# Real-device data (RTX 4080 + Chrome, 365 days): worker 9.92 days/s vs inline
+	# 9.81 -- throughput parity -- while the main thread spends 4 ms/day vs 46 ms
+	# (-91%), so almost the whole frame budget goes back to GPU/UI.
+	# Fallback chain, highest priority first:
+	#   ?worker=0 (Engine meta) > PK_WEB_WORKER=0/1 (env) > runtime_web_worker
+	#   > web platform default (true).
+	# Desktop is unaffected: it already runs the worker, and
+	# `_native_daily_inline_requested()` there only looks at PK_NATIVE_DAILY_INLINE.
+	if Engine.has_meta("pk_web_worker"):
+		return bool(Engine.get_meta("pk_web_worker"))
+	var env := OS.get_environment("PK_WEB_WORKER")
+	if env == "1":
+		return true
+	if env == "0":
+		return false
+	if runtime_web_worker:
+		return true
+	return OS.has_feature("web")
+
+
+func _effective_environment_prefetch_days() -> int:
+	if not _web_worker_requested():
+		return clampi(runtime_environment_prefetch_days, 0, 3)
+	return maxi(clampi(runtime_environment_prefetch_days, 0, 3), WEB_WORKER_PREFETCH_DAYS)
+
+
 func _start_production_shadow_worker() -> void:
+	# 决策留痕：这一行是 web 上"worker 为什么起不来"的第一现场。
+	# 之前它不打印，只能靠 diag 反推，代价是一整轮排查。
+	print("[runtime-worker] decide web=%s web_worker=%s inline_requested=%s meta=%s env=%s runtime_native_daily_inline=%s fallback=%s shadow_on_generate=%s" % [
+		str(_is_web_build()),
+		str(_web_worker_requested()),
+		str(_native_daily_inline_requested()),
+		str(Engine.get_meta("pk_web_worker", false)),
+		str(OS.get_environment("PK_WEB_WORKER")),
+		str(runtime_native_daily_inline),
+		str(_web_worker_inline_fallback),
+		str(runtime_shadow_on_generate)])
 	if not runtime_shadow_on_generate:
+		print("[runtime-worker] skipped: runtime_shadow_on_generate=false")
 		return
 	if _generator == null or not _generator.has_method("start_runtime_worker"):
+		print("[runtime-worker] skipped: generator or start_runtime_worker unavailable")
+		return
+	# ── web 的两种执行者先算清楚，再决定要不要进下面这段 ──────────────
+	#
+	# 关键：**「内联」也是由本函数启动的**（config["native_daily_inline"]=true 时
+	# host 不 spawn 线程，日屏障由调用线程执行）。所以这里**不能**写成
+	# `if web and not worker: return` —— 那会把内联也一起关掉，web 默认路径
+	# 就只剩 GDScript SUS 日 tick（`day_cost.inl=0 / s2>0`，日历推不动）。
+	# 早退只有一个合法理由：web 上两种执行者都不要。
+	var web_wants_worker := _web_worker_requested()
+	var web_wants_inline := _native_daily_inline_requested()
+	if _is_web_build() and not web_wants_worker and not web_wants_inline:
+		print("[runtime-worker] web build: neither worker nor inline requested; " +
+			"GDScript daily tick drives the calendar")
 		return
 	# B8-4：先解析策略，再决定 worker 以什么模式启动。requested 是会话请求，
 	# effective 才是本机/本地图真实生效的模式；诊断里两者都保留。
 	var authority_policy: Dictionary = _resolve_climate_authority_policy()
 	var climate_authority_active := bool(authority_policy.get("enabled", false))
+	# web 上没有 ACTIVE 就没有 worker/inline 可言（内联日本身要求 ACTIVE，
+	# host 会用 `inline_daily_requires_active` 拒绝）。这时保持既有的
+	# GDScript SUS 日 tick，**不要** spawn 一个 SHADOW 线程陪跑。
+	if _is_web_build() and not climate_authority_active:
+		_web_worker_start_code = "authority_policy_disabled:%s" % String(
+			authority_policy.get("reason", "unknown"))
+		print("[runtime-worker] web build: climate authority disabled (%s); " +
+			"worker not started, GDScript daily tick drives the calendar" \
+			% String(authority_policy.get("reason", "unknown")))
+		return
+	# Web 不再强制降级：那次"worker 图 commit 不了 day"的实际原因是首帧 shader 编译
+	# 45s 把整帧堵住（见 docs/web-export.md §9）。shader 裁剪后 ACTIVE 正常工作。
+	# 只有 ACTIVE 才推进日历；SHADOW 会停在 day 1。
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
 	if ext != null and runtime_parity_forcing \
@@ -907,8 +1350,16 @@ func _start_production_shadow_worker() -> void:
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
 		config["authoritative_domain_mask"] = runtime_authority_domain_mask
+	# native_daily_inline：把"日屏障由谁执行"从 worker 线程换成调用线程。
+	# 只有 ACTIVE 请求才谈得上内联日（SHADOW 的定义就是 worker 侧影子对拍）。
+	# 显式写 false 而不是"不写"：同一个 key 若被遗留状态置真，host 会直接不
+	# spawn 线程，而调用方还以为 worker 起了 —— 那是最难查的一种"起来了但没跑"。
+	var want_inline := climate_authority_active and web_wants_inline
+	config["native_daily_inline"] = want_inline
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
+		_web_worker_start_ok = false
+		_web_worker_start_code = String(started.get("code", "unknown"))
 		if climate_authority_active:
 			# 权威启动失败不能静默退回 SHADOW：主线程的 climate/country 抑制门读的是
 			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算。
@@ -919,12 +1370,115 @@ func _start_production_shadow_worker() -> void:
 		else:
 			push_warning("[runtime-worker] SHADOW start deferred: %s" % String(
 				started.get("code", "unknown")))
+		# web 上 worker 没起来，而内联又被互斥关掉 ⇒ 没有任何执行者。必须当场
+		# 退回内联，否则日历停在 day 1（用户看到的"世界不动"）。
+		# 判据用 `runtime_native_daily_inline`（用户是否允许内联），不要求
+		# "worker 被要过" —— 起不来就是起不来，与谁请求的无关。
+		if _is_web_build() and runtime_native_daily_inline and not want_inline \
+				and not _web_worker_inline_fallback:
+			print("[runtime-worker] web start failed (%s) -> falling back to native_daily_inline" \
+				% _web_worker_start_code)
+			_web_worker_inline_fallback = true
+			_start_production_shadow_worker()
 		return
+	_web_worker_start_ok = true
+	# 回退路径下 start 成功说明"内联起来了"，不是"worker 起来了"，diag 必须分得清。
+	_web_worker_start_code = "inline_fallback" if _web_worker_inline_fallback else "ok"
+	_native_daily_inline_active = bool(started.get("native_daily_inline", false))
+	# 二次校验：请求了 worker 却反馈 inline=true，说明配置没生效。宁可回退内联，
+	# 也不要留一个"看起来起了、其实日屏障还在主线程"的状态。
+	if not _native_daily_inline_active and bool(want_inline):
+		_web_worker_start_ok = false
+		_web_worker_start_code = "inline_flag_mismatch"
+		push_error("[runtime-worker] native_daily_inline requested but host reported false")
+	# P1/P3：worker 真的起来了才谈得上预发布与领先量限流。内联日不适用
+	# （它的消费者就是本线程，预发布只会让环卡住）。
+	_apply_web_worker_parallel_channels(climate_authority_active, started)
 	if climate_authority_active:
 		print("[runtime-worker] production ACTIVE started mask=",
 			runtime_authority_domain_mask,
-			" auto_pod=", runtime_economy_auto_pod_active)
+			" auto_pod=", runtime_economy_auto_pod_active,
+			" inline=", _native_daily_inline_active,
+			" web_worker=", _web_worker_requested(),
+			" prefetch_days=", _environment_prefetch_days_active,
+			" max_lead_days=", _max_worker_lead_days)
 	_sync_runtime_worker_clock()
+
+
+## P1/P3 的开关落地。只有"worker 线程真的在跑"时才打开：
+##   P1 预发布 K 天 + 把环境帧发布权收归 `_process` 预发布器（单一发布者）
+##   P3 允许 worker 领先主线程 K 天
+## 关掉时 K=0、发布权归还全部调用点、领先上限 0 ⇒ 回到改动前逐表达式的行为。
+func _apply_web_worker_parallel_channels(climate_authority_active: bool,
+		started: Dictionary) -> void:
+	# 判据用 **请求模式**，不用 effective 模式：worker 刚启动时
+	# `authoritative_domain_mask` 还是 0（授予要等第一天提交），
+	# 用 effective 判会得到 OFF，预发布永远打不开。
+	var worker_running := climate_authority_active \
+		and not _native_daily_inline_active \
+		and String(started.get("requested_simulation_thread_mode", "OFF")) == "ACTIVE" \
+		and String(started.get("state", "")) != "FAULTED"
+	var prefetch_days := _effective_environment_prefetch_days() if worker_running else 0
+	# ── 能力门：**没有预发布所需 API 就绝不独占发布权** ──────────────────
+	#
+	# 这一条是 web 上"日历停在 day 1"的直接原因，必须写清楚：预发布器需要
+	# `environment_ring_has_capacity()` / `runtime_committed_day()`（本轮新增）。
+	# 如果 side module 是旧的一份（`Build-Web.cmd skip-native` 就会这样），这两个
+	# 方法不存在 ⇒ `_service_worker_lead_and_prefetch()` 第一行就 return ⇒
+	# **一帧都不会发**；而发布权已经被预发布器独占，S1/S2/S3 三个调用点全部
+	# 被 suppressed ⇒ 环境帧为 0 ⇒ worker 无法推进 ⇒ `mode=OFF`、日历停住、
+	# `fault_code` 为空（因为没有任何域报错，只是没输入）。
+	#
+	# 所以发布权必须与"能力"一起转移：能力不在，K 就归 0，继续由 S1/S2/S3 发。
+	if prefetch_days > 0 and not _environment_prefetch_capable():
+		print("[runtime-worker] P1 prefetch disabled: DCWorldExt lacks " +
+			"environment_ring_has_capacity/runtime_committed_day " +
+			"(stale side module? rerun Build-Web.cmd with native rebuild) " +
+			"-> environment frames stay on S1/S2/S3")
+		prefetch_days = 0
+	if OS.get_environment("PK_NO_ENV_PREFETCH") == "1":
+		print("[runtime-worker] P1 prefetch disabled by PK_NO_ENV_PREFETCH=1 (A/B)")
+		prefetch_days = 0
+	if _generator != null and _generator.has_method("set_worker_environment_publisher"):
+		# 预发布器独占发布权；否则归还给 S1/S2/S3 三个既有调用点。
+		var callsite := MapGenerator.ENV_CALLSITE_PREFETCH if prefetch_days > 0 else 0
+		_generator.set_worker_environment_publisher(callsite)
+	_max_worker_lead_days = prefetch_days + WORKER_LEAD_MARGIN_DAYS if prefetch_days > 0 else 0
+	_environment_prefetch_days_active = prefetch_days
+	_release_prefetch_barrier_to_clock()
+	if _world_clock != null and _world_clock.has_method("set_max_worker_lead_days"):
+		_world_clock.set_max_worker_lead_days(_max_worker_lead_days)
+		if _world_clock.has_method("set_max_worker_lag_days"):
+			_world_clock.set_max_worker_lag_days(_max_worker_lead_days)
+	if prefetch_days > 0:
+		print("[runtime-worker] P1 prefetch enabled days=", prefetch_days,
+			" publisher=prefetch P3 lead_budget=", _max_worker_lead_days,
+			" (worker_running=", worker_running, ")")
+
+
+## 把"当前生效的预发布天数 K"同步给时钟。
+##
+## 时钟要用它判断"预发布器是不是正因为领先额度用完而暂停" —— 那种时候日历是
+## 唯一能解开闭环的一方，必须允许它推进（否则 预发布器等日历 / 日历等 worker /
+## worker 等帧 三方互锁，浏览器实测 clk 恒 1、cd 4）。K=0 时这条通道完全关闭。
+func _release_prefetch_barrier_to_clock() -> void:
+	if _world_clock == null or not _world_clock.has_method("report_worker_prefetch_days"):
+		return
+	_world_clock.report_worker_prefetch_days(_environment_prefetch_days_active)
+
+
+## 预发布器的**能力**判定：缺任何一个 C++ 探测方法就只能退回 S1/S2/S3 发布。
+## `PK_NO_ENV_PREFETCH=1` 是 A/B 用的显式关闭（也让"旧 side module"这条
+## 失效路径可以在 headless 上复现）。
+func _environment_prefetch_capable() -> bool:
+	if OS.get_environment("PK_NO_ENV_PREFETCH") == "1":
+		return false
+	if _generator == null or not _generator.has_method("get_data_core_world_ext"):
+		return false
+	var ext = _generator.get_data_core_world_ext()
+	return ext != null \
+		and ext.has_method("environment_ring_has_capacity") \
+		and ext.has_method("runtime_committed_day")
 
 
 func _stop_previous_runtime_worker() -> void:
@@ -961,6 +1515,12 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	var t_sus_usec := Time.get_ticks_usec()
 	var report: Dictionary = _generator.sus_tick_daily(_world_clock, day_idx, season_phase)
 	_pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
+	# Web 单日成本探针：host 这一处 sus_tick_daily（s2）与它调度的日级 Job 分项。
+	# 桌面 _dcp_on() 为假 → 既不记时也不额外读一次 SUS 报告。
+	if _dcp_on():
+		_world_clock.day_cost_add(&"s2", _pending_tick_sus_ms)
+		if _generator.has_method("sus_report_last_tick"):
+			_world_clock.day_cost_jobs_from(_generator.sus_report_last_tick())
 	# Country ACTIVE day barriers park on peer intents. Callers that drive
 	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
 	# batches) still need the transport drained on every day boundary.
@@ -1067,13 +1627,112 @@ func map_overlay_diagnostics() -> Dictionary:
 ##   retry. MUST run every frame even when the climate input ring is full.
 ## - progress: country read-view, building visual, map overlay. May be skipped
 ##   under climate_input_capacity_day_barrier so peer ACKs get the frame budget.
+
+## Web 心跳：每 2 秒把「日历走到第几天 / 快进次数 / worker 状态」推到事件通道。
+## agent 侧 tail tmp/web_events.jsonl 就能判断页面活着、日历在走还是在原地空转，
+## 不需要截图轮询。
+var _web_beat_next_msec := 0
+## Web：头 120 帧逐帧计时，用来判断那次长帧是 CPU 还是 GPU（setup 时间小但
+## 帧时长巨大 = GPU 侧；setup 也大 = 主线程 CPU）。之后只在出现长帧时上报，
+## 这样整轮 soak 里的卡顿都能被抓到，而不是只看开头。
+## 慢帧轨迹：记录本帧各阶段进入时刻（纯内存操作，不发网络请求）。
+## 若下一帧发现上一帧耗时 >2s，就把上一帧的轨迹补发出来——这样"整帧不返回"之前
+## 最后到达的阶段就能直接读到。
+func _web_mark(phase: String) -> void:
+	if not WebTelemetry.enabled():
+		return
+	_web_phase_marks.append([phase, Time.get_ticks_usec()])
+
+
+func _web_flush_slow_frame_trace(dt_ms: int) -> void:
+	if dt_ms < 2000 or _web_phase_marks.is_empty():
+		return
+	var parts := PackedStringArray()
+	for i in _web_phase_marks.size():
+		var mark: Array = _web_phase_marks[i]
+		var at: int = int(mark[1])
+		var delta := at - int(_web_phase_marks[0][1])
+		parts.append("%s@%d" % [String(mark[0]), delta / 1000])
+	WebTelemetry.emit("slow_frame_trace", {"dt": dt_ms, "marks": " ".join(parts)})
+	_web_phase_marks.clear()
+
+
+func _emit_web_frame_probe(frame_usec: int) -> void:
+	if not WebTelemetry.enabled():
+		return
+	var dt_ms := 0
+	if _web_frame_probe_last_usec > 0:
+		dt_ms = int((frame_usec - _web_frame_probe_last_usec) / 1000)
+	_web_frame_probe_last_usec = frame_usec
+	var detail := _web_frame_probe_left > 0
+	if detail:
+		_web_frame_probe_left -= 1
+	if not detail and dt_ms < 500:
+		return
+	WebTelemetry.emit("frame", {
+		"i": 120 - _web_frame_probe_left,
+		"dt": dt_ms,
+		"setup": int(RenderingServer.get_frame_setup_time_cpu() * 1000.0),
+		"proc": int(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0),
+		"draws": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		"objs": int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
+		"day": _world_clock.day_index() if _world_clock != null else -1,
+		"speed": _world_clock.speed_multiplier if _world_clock != null else 0.0,
+	})
+
+func _emit_web_beat(frame_usec: int) -> void:
+	if not WebTelemetry.enabled():
+		return
+	var now_msec := frame_usec / 1000
+	if now_msec < _web_beat_next_msec:
+		return
+	_web_beat_next_msec = now_msec + 2000
+	var day := _world_clock.day_index() if _world_clock != null else -1
+	var worker_state := ""
+	if _generator != null and _generator.has_method("get_runtime_thread_report"):
+		var rep: Dictionary = _generator.get_runtime_thread_report()
+		worker_state = String(rep.get("simulation_host_state", rep.get("state", "")))
+	WebTelemetry.emit("beat", {
+		"day": day,
+		"fast_ticks": _fast_tick_count,
+		"paused": _world_clock.paused if _world_clock != null else true,
+		"worker": worker_state,
+		"frames": _sched_proc_frames,
+		# soak 验收要能确认真的跑在 10×，不是"看起来在跑"
+		"speed": _world_clock.speed_multiplier if _world_clock != null else 0.0,
+	})
+	# 每 5 次 beat（约 10s）发一次 barrier 诊断，不必等 stall 就能看出卡在哪。
+	_web_diag_ticks += 1
+	if _web_diag_ticks % 5 == 0:
+		WebTelemetry.emit("diag", _web_barrier_diag())
 func _process(_delta: float) -> void:
+	# 先把上一帧攒下的事件发出去（长帧里直接 fetch 会被浏览器丢掉）。
+	WebTelemetry.flush()
 	var frame_usec := Time.get_ticks_usec()
+	# 慢帧轨迹：先结算上一帧（若它很慢，把它内部的阶段轨迹补发出去）。
+	if _web_prev_frame_usec > 0:
+		_web_flush_slow_frame_trace(int((frame_usec - _web_prev_frame_usec) / 1000))
+	_web_prev_frame_usec = frame_usec
+	# 注意：浏览器侧钩子（webglcontextlost/pagehide）经 JavaScriptBridge.eval 注入，
+	# 实测会把页面搞挂（只跑 1 帧就静默），已撤；重载改由"重复出现 autotest_start"判定。
+	_web_phase_marks.clear()
+	_web_mark("proc_begin")
 	_sched_proc_frames += 1
+	_emit_prefetch_boot_once()
+	_emit_web_frame_probe(frame_usec)
+	_emit_web_beat(frame_usec)
 	var capacity_pending := (
 		_climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused)
+	_web_mark("liveness_begin")
+	# P1/P3：先报告领先量并预发布环境帧，再跑既有的 liveness。
+	#   - 必须排在 `_service_runtime_liveness` 之前：本帧要发的帧就是 worker
+	#     这个 tick 能不能往下跑的前提，晚一帧就退化成锁步。
+	#   - **不要**依赖两个 Node 的 _process 相对顺序（历史上踩过）。
+	_service_worker_lead_and_prefetch()
 	_service_runtime_liveness(frame_usec, capacity_pending)
+	_web_mark("liveness_end")
 	_annual_reports.poll()
+	_web_mark("annual_poll_end")
 	if capacity_pending:
 		_note_climate_capacity_pending_stall()
 		# Worker may have force-advanced past the day that armed capacity.
@@ -1093,8 +1752,445 @@ func _process(_delta: float) -> void:
 			_poll_runtime_health()
 			_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 			return
+	_web_mark("progress_begin")
 	_service_runtime_progress(frame_usec)
+	_web_mark("progress_end")
 	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+
+
+## P1 + P3：worker 领先量报告 与 环境帧预发布。
+##
+## 这两件事必须一起做，理由见 tmp/next/day_barrier_protocol.md §3.3.4：
+## 只要"主线程不推进日"还等于"worker 拿不到输入"，屏障就还是一个会自我维持的
+## 停止条件。预发布把"拿输入"与 `day_changed` 解耦，领先量限流把"停日"从
+## "禁止推进"降级成"别让 worker 跑太远"的数字上限。
+##
+## 关闭时（K==0）本函数只做一次 commit 消费驱动的记账，不发布、不限流 ——
+## 行为与改动前逐表达式相同。
+func _service_worker_lead_and_prefetch() -> void:
+	# 每一个早退分支都记一个**稳定短码**。浏览器里"一帧都没发"的成因只可能落在
+	# 这十几个码里，而事件流里没有码就只能靠猜 —— 上一轮就是这样浪费了一整轮。
+	var diag_on := _prefetch_diag_enabled()
+	if diag_on:
+		_prefetch_diag_tick_prep()
+	if not _runtime_ready_for_ticks or _generator == null:
+		_prefetch_diag_note(&"no_ready")
+		return
+	_poll_environment_prefetch_resume()
+	var prefetch_days := _environment_prefetch_days_active
+	if prefetch_days <= 0:
+		_prefetch_diag_note(&"k_le_0")
+		return
+	if _world_clock == null:
+		_prefetch_diag_note(&"no_clock")
+		return
+	if _native_daily_inline_active:
+		_prefetch_diag_note(&"inline")
+		return
+	if _runtime_worker_fault_paused:
+		_prefetch_diag_note(&"fault_paused")
+		return
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null:
+		_prefetch_diag_note(&"no_ext")
+		return
+	if not ext.has_method("environment_ring_has_capacity"):
+		_prefetch_diag_note(&"no_cap")
+		return
+	if not ext.has_method("runtime_committed_day"):
+		_prefetch_diag_note(&"no_cmd")
+		return
+	# 已提交日是上界：环里未消费的帧只是内存，不是事实。
+	var committed_raw := int(ext.runtime_committed_day())
+	# 日历日与已提交日都可能读到**负值**，这不是"没有水位"，而是启动哨兵：
+	#   - `_world_clock.day_index()` = `_last_day`，在第一个"非暂停帧"之前一直是
+	#     -1（`_process` 的 paused 早退在哨兵对齐之前）；
+	#   - host 的 `_committed_day` 取自 `config["day"]`，也就是同一个 -1。
+	# 旧写法里 `if committed < 0: return` 会在浏览器启动窗口直接把预发布**永久**
+	# 关死；`clock_day + K` 这个上界也会被 -1 压成"最多只能发 1 帧"。
+	# 两者叠加正好是"max_day=1 且 frames_ahead=0"。所以这里统一按 0 **以下的下界**
+	# 处理，而不是当成"没有数据"。
+	var committed := maxi(committed_raw, -1)
+	var clock_day_raw := _world_clock.day_index()
+	var clock_day := maxi(clock_day_raw, 0)
+	# 廉价字段每帧都填（全部已经在手上，无额外开销），供 `prefetch_diag` 带上。
+	_prefetch_diag_snapshot["capable"] = true
+	_prefetch_diag_snapshot["ready"] = true
+	_prefetch_diag_snapshot["committed"] = committed
+	_prefetch_diag_snapshot["committed_raw"] = committed_raw
+	_prefetch_diag_snapshot["clock_day"] = clock_day_raw
+	_prefetch_diag_snapshot["paused"] = bool(_world_clock.paused)
+	# P3：把领先/落后两个方向都写回时钟。落后方向是安全网 —— 没有它，日历会
+	# 在 worker 卡住时自顾自往前跑（实测能跑到 365 天而模拟停在第 1 天）。
+	_world_clock.report_worker_lead_days(committed - clock_day)
+	_world_clock.report_worker_lag_days(clock_day - committed)
+	# ── 发布上界 ─────────────────────────────────────────────────────────
+	# 语义只有一条：**worker 相对日历的领先量必须 < K**。
+	#   base   = max(committed + 1, 0)         worker 下一步要用的日（负数当 0）
+	#   lead   = committed - clock_day         已提交相对日历的领先
+	#   lead >= K ⇒ 本帧不发（等日历追上来）
+	# 这一条同时替代了旧的两条：`committed + 1 + K`（防越界）和 `clock_day + K`
+	# （防自激）。旧写法的问题正是它是**和式**：任何一边读成负值都会把上界压到
+	# 低于 base，于是"worker 需要的下一帧"永远发不出去。
+	var base := maxi(committed + 1, 0)
+	var lead := committed - clock_day
+	# 发布窗口深度：`prefetch_days`(K) 只决定"日历锚定几天前"，真正允许的在途深度
+	# 必须显著更大，否则 worker 永远只能领先 K 天 —— 每消费一天都要等主线程下一帧
+	# 再补一帧，等于每算一天绕一个来回。真机实测：worker `execute` 只要 60 ms/天，
+	# 但 `input_wait` 高达 88 ms/天，正是这个来回。
+	# 上限取 K + WORKER_LEAD_MARGIN_DAYS（= 时钟侧 `max_lead`，两边同一个数）。
+	var lead_cap := prefetch_days + WORKER_PUBLISH_DEPTH_DAYS
+	if lead >= lead_cap:
+		_prefetch_diag_note(&"lead_over")
+		return
+	var cursor := _environment_publish_next_day()
+	# 自愈：出现任何形式的越界游标都拉回 worker 的下一步，绝不发未来帧。
+	if cursor < base or cursor > base + prefetch_days:
+		cursor = base
+		_set_environment_publish_next_day(cursor)
+	var limit := base + lead_cap - 1
+	if cursor > limit:
+		_prefetch_diag_note(&"cursor_over")
+		return
+	# 每帧最多发一帧。一帧 = 26+10 条 per-cell lane 的打包（万级格数是毫秒级），
+	# 一帧发两帧就会把主线程尖峰翻倍。10 天/秒 @60fps 只需要 0.17 帧/帧，所以
+	# 一帧一帧发完全跟得上；跟不上时 worker 会在 K 天外等下一帧，而 K 的余量
+	# 本来就是为这种抖动准备的。
+	var published := 0
+	while cursor <= limit and published < 1:
+		if not bool(ext.environment_ring_has_capacity()):
+			_prefetch_diag_note(&"ring_full")
+			return
+		var capture_started_usec := Time.get_ticks_usec()
+		var captured: Dictionary = _generator.capture_runtime_inputs_for_worker(
+			cursor, _world_clock.season_phase_for_day(cursor),
+			MapGenerator.ENV_CALLSITE_PREFETCH)
+		_prefetch_diag_last_capture_usec = Time.get_ticks_usec() - capture_started_usec
+		if bool(captured.get("suppressed", false)):
+			# 发布权不在预发布器手上（配置回退），立刻停手，交给 S1/S2/S3。
+			_prefetch_diag_note(&"suppressed")
+			return
+		if not bool(captured.get("ok", false)):
+			# ring 满 / 拓扑换代 / capture 失败：本帧放弃，下一帧重算上界。
+			_prefetch_diag_last_reason = String(captured.get("code",
+				captured.get("fallback_reason", "capture_failed")))
+			_prefetch_diag_note(&"capture_fail")
+			return
+		cursor += 1
+		_set_environment_publish_next_day(cursor)
+		published += 1
+		_prefetch_diag_publish_count += 1
+	_prefetch_diag_note(&"published")
+
+
+# ─── 预发布决定级可观测性（prefetch_diag）────────────────────────────────
+#
+# 为什么需要：浏览器里"worker 起来了但一帧环境帧都没发"这个形态，在事件流里
+# 完全没有痕迹 —— `frames_ahead=0` 既可能是"没到发的时候"，也可能是"某个
+# has_method 在 wasm 上返回 false"。把**每个早退分支**钉成一个稳定短码之后，
+# 一次网页运行就能读出是哪一支。
+#
+# 契约：
+#   * 每帧只记一个码（最后一次判定的结果），不逐帧发事件；
+#   * 每 ~2000 ms 聚合成**一条** `prefetch_diag`（payload < 200 B）；
+#   * `seen` 只放"自上次事件以来出现过的码 + 次数"，按次数降序取前 4 个。
+#   * headless 想看得设 `PK_PREFETCH_DIAG=1`（桌面默认不打印）。
+const _PREFETCH_DIAG_INTERVAL_MSEC := 2000
+var _prefetch_diag_last_code: StringName = &""
+var _prefetch_diag_counts: Dictionary = {}
+var _prefetch_diag_next_msec: int = 0
+var _prefetch_diag_publish_count: int = 0
+var _prefetch_diag_emit_count: int = 0
+var _prefetch_diag_last_reason: String = ""
+var _prefetch_diag_last_capture_usec: int = 0
+## 一次性"环境自检"：只在第一条 `prefetch_diag` 里出现一次。
+## 这些位回答的是"预发布器到底有没有被调到 / 它依赖的方法在 wasm 上存不存在"，
+## 一个网页运行就能定性，不必再猜。
+var _prefetch_diag_boot: Dictionary = {}
+## 上一次判定时的快照字段（供事件里带出，避免事件里再读一遍 ext）。
+var _prefetch_diag_snapshot: Dictionary = {}
+
+
+func _prefetch_diag_tick_prep() -> void:
+	_prefetch_diag_snapshot = {}
+
+
+## 诊断本身也要零成本：桌面（非 web、且没显式开 PK_PREFETCH_DIAG）整条短路，
+## 否则 `_process` 每帧会多一次字典分配。判据在会话内不会变，缓存一次。
+var _prefetch_diag_on_cache: int = -1
+
+
+func _prefetch_diag_enabled() -> bool:
+	if _prefetch_diag_on_cache < 0:
+		_prefetch_diag_on_cache = 1 if (_is_web_build() \
+			or OS.get_environment("PK_PREFETCH_DIAG") == "1") else 0
+	return _prefetch_diag_on_cache != 0
+
+
+var _prefetch_boot_emitted: bool = false
+
+
+## 启动自检：**无论预发布器有没有被调到**都发一次。
+##
+## 这一条是给浏览器用的"到底谁没跑"的答案：如果连 `code=boot` 都收不到，说明
+## 本节点的 `_process` 没在跑（或者 `?worker=1` 没被读到，见 `b.meta`）；
+## 如果收到了但之后一条 `prefetch_diag` 都没有，说明预发布器在某个早退分支上
+## 停住了，而 `b` 里的 `ext_cap/ext_cmd/has_pub/proc_gen` 会指出是哪一个。
+##
+## 用与周期事件相同的 `prefetch_diag` 类型，不新增事件类型。
+func _emit_prefetch_boot_once() -> void:
+	if _prefetch_boot_emitted or not _is_web_build():
+		return
+	# 约 2 秒（30fps）之后，足够覆盖"世界生成完 → 第一帧 _process"的窗口。
+	if _sched_proc_frames < 60:
+		return
+	# 预发布器已经发过事件 ⇒ 它的第一条事件里已经带过 `b`（同一份自检），
+	# 这条 boot 事件就不再重复发，避免事件流里多一条噪声。
+	if _prefetch_diag_emit_count > 0:
+		_prefetch_boot_emitted = true
+		return
+	_prefetch_boot_emitted = true
+	var payload := {
+		"code": "boot",
+		"k": _environment_prefetch_days_active,
+		"max_lead": _max_worker_lead_days,
+		"proc_n": _sched_proc_frames,
+		"ready": 1 if _runtime_ready_for_ticks else 0,
+		"clk": _world_clock.day_index() if _world_clock != null else -999,
+	}
+	payload["b"] = _prefetch_diag_boot_payload()
+	WebTelemetry.emit("prefetch_diag", payload)
+	if not OS.has_feature("web") and OS.get_environment("PK_PREFETCH_DIAG") == "1":
+		print("[prefetch_diag] ", JSON.stringify(payload))
+
+
+func _prefetch_diag_boot_payload() -> Dictionary:
+	if not _prefetch_diag_boot.is_empty():
+		return {}
+	var ext = null
+	if _generator != null and _generator.has_method("get_data_core_world_ext"):
+		ext = _generator.get_data_core_world_ext()
+	_prefetch_diag_boot = {
+		# 谁在跑：`proc_host` = 本节点的 _process 是否启用，`proc_n` 见周期事件。
+		# 浏览器上"帧一帧都没发"最可能的原因之一就是 host 的 _process 没跑，
+		# 而这一点在既有 diag 里完全看不见。
+		# 注意 MapGenerator 是 RefCounted（没有 _process），不要对它调 is_processing。
+		"in_tree": 1 if is_inside_tree() else 0,
+		"proc_host": 1 if is_processing() else 0,
+		"proc_clk": 1 if (_world_clock != null and _world_clock.has_method("is_processing") \
+			and _world_clock.is_processing()) else 0,
+		# 依赖的方法是否真的存在（wasm 上 side module 旧/未绑定时会是 0）
+		"has_pub": 1 if (_generator != null \
+			and _generator.has_method("set_worker_environment_publisher")) else 0,
+		"has_diag": 1 if (_generator != null \
+			and _generator.has_method("environment_publish_diagnostics")) else 0,
+		"ext_cap": 1 if (ext != null \
+			and ext.has_method("environment_ring_has_capacity")) else 0,
+		"ext_cmd": 1 if (ext != null and ext.has_method("runtime_committed_day")) else 0,
+		# 开关来源：浏览器里 env 恒空，必须靠 meta
+		"meta": 1 if bool(Engine.get_meta("pk_web_worker", false)) else 0,
+		"env": 1 if OS.get_environment("PK_WEB_WORKER") == "1" else 0,
+	}
+	return _prefetch_diag_boot
+
+
+func _prefetch_diag_note(code: StringName) -> void:
+	if not _prefetch_diag_enabled():
+		return
+	_prefetch_diag_last_code = code
+	_prefetch_diag_counts[code] = int(_prefetch_diag_counts.get(code, 0)) + 1
+	var now_msec := Time.get_ticks_msec()
+	if _prefetch_diag_next_msec == 0:
+		_prefetch_diag_next_msec = now_msec + _PREFETCH_DIAG_INTERVAL_MSEC
+		return
+	if now_msec < _prefetch_diag_next_msec:
+		return
+	_prefetch_diag_next_msec = now_msec + _PREFETCH_DIAG_INTERVAL_MSEC
+	_prefetch_diag_collect_extras()
+	_emit_prefetch_diag(code)
+
+
+## 昂贵字段只在**要发事件时**读一次（每 ~2 s 一次），逐帧零成本。
+## `get_runtime_thread_report()` 会复制一整个 RuntimeThreadReport，不能每帧调。
+func _prefetch_diag_collect_extras() -> void:
+	if _generator == null or not _generator.has_method("get_runtime_thread_report"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report()
+	_prefetch_diag_snapshot["ring_pending"] = int(
+		report.get("environment_ring_pending", -1))
+	_prefetch_diag_snapshot["frames_ahead"] = maxi(0,
+		int(report.get("simulation_environment_day", 0)) \
+		- int(report.get("simulation_committed_day", 0)))
+	if _generator.has_method("environment_publish_diagnostics"):
+		var pub: Dictionary = _generator.environment_publish_diagnostics()
+		_prefetch_diag_snapshot["publish_count"] = int(
+			pub.get("environment_publish_count", -1))
+		_prefetch_diag_snapshot["suppressed"] = int(
+			pub.get("environment_publish_suppressed", -1))
+		_prefetch_diag_snapshot["callsite"] = int(
+			pub.get("environment_publisher_callsite", -1))
+
+
+## 把"自上次事件以来"的码表压成 `code:count,...`，按次数降序取前 4。
+func _prefetch_diag_seen_text() -> String:
+	var pairs: Array = []
+	for key in _prefetch_diag_counts.keys():
+		pairs.append([String(key), int(_prefetch_diag_counts[key])])
+	pairs.sort_custom(func(a, b): return int(a[1]) > int(b[1]))
+	var parts: PackedStringArray = PackedStringArray()
+	for index in range(mini(4, pairs.size())):
+		parts.append("%s:%d" % [pairs[index][0], pairs[index][1]])
+	return ",".join(parts)
+
+
+func _emit_prefetch_diag(code: StringName) -> void:
+	_prefetch_diag_emit_count += 1
+	var snap := _prefetch_diag_snapshot
+	var payload := {
+		# ── 父 agent 指定的核心字段（短键，控体积）──
+		"code": String(code),
+		"k": _environment_prefetch_days_active,
+		"lead": int(_world_clock.get_worker_lead_days()) if _world_clock != null \
+			and _world_clock.has_method("get_worker_lead_days") else -1,
+		"max_lead": _max_worker_lead_days,
+		"rp": int(snap.get("ring_pending", -1)),
+		"fa": int(snap.get("frames_ahead", -1)),
+		"cd": int(snap.get("committed", -999)),
+		"cap": 1 if bool(snap.get("capable", false)) else 0,
+		# ── 定位"wasm 上会不一样"所需的旁证 ──
+		"clk": int(snap.get("clock_day", -999)),
+		"cd_raw": int(snap.get("committed_raw", -999)),
+		"paused": 1 if bool(snap.get("paused", false)) else 0,
+		"ready": 1 if bool(snap.get("ready", false)) else 0,
+		"pub": int(snap.get("publish_count", -1)),
+		"sup": int(snap.get("suppressed", -1)),
+		"cs": int(snap.get("callsite", -1)),
+		"bp": int(_prefetch_diag_publish_count),
+		"seg": _prefetch_diag_last_code,
+		"seen": _prefetch_diag_seen_text(),
+		# 本节点已跑过的 _process 帧数：它是"预发布器在不在跑"的正面证据。
+		"proc_n": _sched_proc_frames,
+		# 屏障豁免通道：`bar`=此刻有没有任何 backpressure source 抬着；
+		# `rel`=因"预发布暂停"而豁免日历屏障的累计帧数；`pd`=时钟侧看到的 K。
+		# 三者同看，才能区分"没有屏障"与"有屏障但被豁免了"。
+		"bar": 1 if (_world_clock != null \
+			and _world_clock.has_method("has_simulation_backpressure") \
+			and _world_clock.has_simulation_backpressure()) else 0,
+		"rel": int(_world_clock.get_barrier_released_frame_count()) \
+			if (_world_clock != null \
+				and _world_clock.has_method("get_barrier_released_frame_count")) else -1,
+		"pd": int(_world_clock.get_worker_prefetch_days()) \
+			if (_world_clock != null \
+				and _world_clock.has_method("get_worker_prefetch_days")) else -1,
+	}
+	var boot := _prefetch_diag_boot_payload()
+	if not boot.is_empty():
+		payload["b"] = boot
+	if _prefetch_diag_last_reason != "":
+		payload["why"] = _prefetch_diag_last_reason.substr(0, 24)
+	if _prefetch_diag_last_capture_usec > 0:
+		# wasm 上 GDScript 打包一帧的墙钟（毫秒）。>100ms 说明单帧成本已经
+		# 吃满预算，"发不动"其实是"太贵"，与门控无关。
+		payload["cap_ms"] = int(_prefetch_diag_last_capture_usec / 1000)
+	_prefetch_diag_counts.clear()
+	WebTelemetry.emit("prefetch_diag", payload)
+	if not OS.has_feature("web") and OS.get_environment("PK_PREFETCH_DIAG") == "1":
+		print("[prefetch_diag] ", JSON.stringify(payload))
+
+
+
+## 预发布游标。语义是"下一次想发的日"，不是"已发的最大日"。
+## 用 host 的已提交日做下界，所以 worker 追上或回滚时自动重新对齐。
+var _environment_publish_next_day_cursor: int = -1
+
+
+func _environment_publish_next_day() -> int:
+	if _environment_publish_next_day_cursor < 0:
+		# 首帧：从主线程日历开始，worker 的已提交日会在调用点做下界。
+		return _world_clock.day_index() if _world_clock != null else 0
+	return _environment_publish_next_day_cursor
+
+
+func _set_environment_publish_next_day(day: int) -> void:
+	_environment_publish_next_day_cursor = maxi(0, day)
+
+
+## 存盘前必须先把预发布降下来并让环排空：`build_save_bundle` 的 worker 侧准入
+## 条件是 `!has_pending_climate_input()`，环长期非空会让存盘永远等不到。
+## 这里把 K 降到 0 并清掉发布游标；环里的帧由 worker 自己按 `pop_while_day_at_most`
+## 消费，不再有新帧进来。恢复时调用 `_resume_environment_prefetch_after_save()`。
+func _suspend_environment_prefetch_for_save(reason: String) -> void:
+	if _max_worker_lead_days <= 0:
+		return
+	_environment_prefetch_suspended_for_save = true
+	_max_worker_lead_days = 0
+	_environment_prefetch_days_active = 0
+	_release_prefetch_barrier_to_clock()
+	_environment_publish_next_day_cursor = -1
+	if _world_clock != null and _world_clock.has_method("set_max_worker_lead_days"):
+		_world_clock.set_max_worker_lead_days(0)
+		if _world_clock.has_method("set_max_worker_lag_days"):
+			_world_clock.set_max_worker_lag_days(0)
+	if _generator != null and _generator.has_method("set_worker_environment_publisher"):
+		_generator.set_worker_environment_publisher(0)
+	print("[runtime-worker] P1 prefetch suspended for save (%s)" % reason)
+
+
+func _resume_environment_prefetch_after_save() -> void:
+	if not _web_worker_requested() or _native_daily_inline_active:
+		return
+	# 能力门必须在恢复路径上再判一次：存盘窗口里 side module 不会变，但这条
+	# 判据同时守着 `PK_NO_ENV_PREFETCH` 与"旧 side module"两种情形，任何
+	# 绕过它的恢复都会把发布权重新交给一个发不出帧的预发布器。
+	if not _environment_prefetch_capable():
+		return
+	var prefetch_days := _effective_environment_prefetch_days()
+	if prefetch_days <= 0:
+		return
+	var lead_budget := prefetch_days + WORKER_LEAD_MARGIN_DAYS
+	_environment_prefetch_suspended_for_save = false
+	if _max_worker_lead_days == lead_budget:
+		return
+	_max_worker_lead_days = lead_budget
+	_environment_prefetch_days_active = prefetch_days
+	_environment_publish_next_day_cursor = -1
+	_release_prefetch_barrier_to_clock()
+	if _world_clock != null and _world_clock.has_method("set_max_worker_lead_days"):
+		_world_clock.set_max_worker_lead_days(lead_budget)
+		if _world_clock.has_method("set_max_worker_lag_days"):
+			_world_clock.set_max_worker_lag_days(lead_budget)
+	if _generator != null and _generator.has_method("set_worker_environment_publisher"):
+		_generator.set_worker_environment_publisher(MapGenerator.ENV_CALLSITE_PREFETCH)
+	# 存盘请求到达时由 MapGenerator 回调这里（它才是 request_runtime_save 的入口，
+	# 而 game_save_coordinator 直接调的是它，不经过本 host）。
+	if _generator != null and _generator.has_method("set_save_prefetch_suspend_callback"):
+		_generator.set_save_prefetch_suspend_callback(Callable(
+			self, "_suspend_environment_prefetch_for_save"))
+
+
+## 存盘窗口结束后恢复预发布。判据用"worker 不再处于 SAVE_PENDING"而不是
+## "过了一段时间"——前者是真实边界，后者只是猜。
+##
+## **只有 `_environment_prefetch_suspended_for_save` 为真时才可能恢复。**
+## 用 `_max_worker_lead_days == 0` 当"被暂停了"的判据是个陷阱：能力门
+## （旧 side module / `PK_NO_ENV_PREFETCH`）与"worker 没起来"也会把它置 0，
+## 那样本函数会在下一帧把发布权抢回给预发布器，而预发布器根本发不出去 ⇒
+## 环境帧为 0 ⇒ 日历停在 day 1。这正是本轮 web 事故的形态。
+func _poll_environment_prefetch_resume() -> void:
+	if not _environment_prefetch_suspended_for_save:
+		return
+	if _max_worker_lead_days > 0 or not _web_worker_requested() \
+			or _native_daily_inline_active or _generator == null:
+		return
+	if not _environment_prefetch_capable():
+		return
+	if not _generator.has_method("get_runtime_thread_report"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report()
+	if String(report.get("simulation_host_state", "")) == "SAVE_PENDING":
+		return
+	_resume_environment_prefetch_after_save()
 
 
 func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void:
@@ -1148,6 +2244,17 @@ func _arm_climate_capacity_pending(day_idx: int) -> void:
 		_climate_capacity_stall_next_diag_msec = 0
 	_climate_capacity_pending_day = day_idx
 	if _world_clock != null:
+		# P3：领先量限流打开时**不再**抬 `climate_input_capacity_day_barrier`。
+		#
+		# 原因：那个 source 的语义是"这一天不许推进"，而它被抬起的起因是
+		# "worker 还没消费完环境帧"。主线程一停日，就再也不会有人调用 capture，
+		# 于是它变成一个会自我维持的停止条件。改成"本帧不重试、下一帧再试"+
+		# 领先量上限之后，日历不再被 worker 的等待状态绑架。
+		#
+		# `_climate_capacity_pending_day` 仍然记账：`_process` 里那条"重试保留日"
+		# 的路径依赖它，关掉的是**屏障**而不是记账。
+		if _max_worker_lead_days > 0:
+			return
 		_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
 
 
@@ -1782,14 +2889,24 @@ func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
 ## ACTIVE worker 的唯一主线程消费点。poll_runtime_commit() 只返回不可变提交
 ## 元数据；视觉 intent 采用有界预算分片消费。这里绝不调用 run_daily_tick、
 ## 不读取 runtime store，也不等待 worker。
-func _consume_runtime_commit_if_ready() -> void:
+##
+## `report_override`：同一调用栈里刚刚取过的 runtime report。内联日没有 worker
+## 线程，两次读取必然同值，因此传进来可以省掉一天里第二次
+## get_runtime_thread_report() 的打包/拷贝，并且把**已经由调用方做过的**
+## climate 回灌跳过一次（同一个 report、同一个 committed_day，回灌的单调日门
+## 保证第二次调用本来就是空转）。非 override 调用（每帧 _process）行为不变。
+func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	var commit_usec := Time.get_ticks_usec()
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
 	if not _generator.has_method("get_runtime_thread_report") \
 			or not _generator.has_method("poll_runtime_commit"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report()
+	var dcp := _dcp_on()
+	var dcp_usec: int = commit_usec if dcp else 0
+	var report: Dictionary = report_override
+	if report.is_empty():
+		report = _generator.get_runtime_thread_report()
 	_observe_runtime_worker_fault(report)
 	if String(report.get("simulation_thread_mode", report.get(
 			"requested_simulation_thread_mode", "OFF"))) != "ACTIVE":
@@ -1797,7 +2914,8 @@ func _consume_runtime_commit_if_ready() -> void:
 	if not bool(report.get("simulation_worker_ready", report.get(
 			"authority_ready", false))):
 		return
-	_apply_climate_writeback_if_authoritative(report)
+	if report_override.is_empty():
+		_apply_climate_writeback_if_authoritative(report)
 	var commit: Dictionary = _generator.poll_runtime_commit(_runtime_commit_generation)
 	var received_new_commit := bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
@@ -1833,6 +2951,8 @@ func _consume_runtime_commit_if_ready() -> void:
 					_renderer.refresh_terrain_weather_field_tex()
 			_pending_tick_render_ms = (Time.get_ticks_usec() - publish_started_usec) / 1000.0
 			mark_map_overlay_dirty(&"worker_committed")
+			if dcp:
+				_dcp_publish_ms = float(Time.get_ticks_usec() - publish_started_usec) / 1000.0
 		# 只通知一次最新完整日提交；后续帧仅继续消费尚未应用的视觉 patch。
 		simulation_committed.emit(
 			int(commit.get("from_day", _runtime_commit_day)),
@@ -1840,7 +2960,10 @@ func _consume_runtime_commit_if_ready() -> void:
 			_runtime_commit_generation)
 		if whole_graph:
 			_sched_proc_commit_ms += _sched_elapsed_ms(commit_usec)
+			var dcp_finish_usec: int = Time.get_ticks_usec() if dcp else 0
 			finish_daily_tick(0.0)
+			if dcp_finish_usec > 0:
+				_dcp_finish_ms = float(Time.get_ticks_usec() - dcp_finish_usec) / 1000.0
 			commit_usec = Time.get_ticks_usec()
 		else:
 			_sched_proc_commit_ms += _sched_elapsed_ms(commit_usec)
@@ -1861,6 +2984,8 @@ func _consume_runtime_commit_if_ready() -> void:
 				and not bool(resource_writeback.get("pending", false)):
 			_drain_runtime_natural_resource_commits()
 	_sched_proc_resource_ms += _sched_elapsed_ms(resource_usec)
+	if dcp:
+		_dcp_resource_ms = float(Time.get_ticks_usec() - resource_usec) / 1000.0
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
 		return
@@ -1896,6 +3021,8 @@ func _consume_runtime_commit_if_ready() -> void:
 		_apply_runtime_visual_patch(family_bit, patch)
 	_runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - apply_started_us) / 1000.0
 	_sched_proc_visual_ms += _runtime_last_visual_apply_ms
+	if dcp:
+		_dcp_visual_ms = _runtime_last_visual_apply_ms
 	if _generator.has_method("record_runtime_visual_timings"):
 		_generator.record_runtime_visual_timings(
 			_runtime_last_ui_feedback_ms,
@@ -2240,6 +3367,15 @@ func _refresh_map_overlay(force: bool) -> void:
 
 
 func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
+	# Web 单日成本探针：PlayerController 的 UI/HUD 段是它自己算好后从这里递进来的。
+	# 必须记在 early-return 之前 —— whole-graph 分支里 commit 消费点已经先调过
+	# 一次 finish_daily_tick(0.0)，把 _pending_tick_start_usec 清掉了，PlayerController
+	# 这次会在这里直接返回，UI 数字只有记在前面才不会丢。
+	if ui_ms > 0.0 and _dcp_on():
+		# 直接记进当天的桶：PlayerController 是第 2 个 day_changed 监听者，桶到
+		# 下一天开始才 flush，所以这一段仍归属**当天**（不能用 _dcp_publish_day
+		# 里那个在 host 分支末尾就清掉的暂存值，否则会错记到隔天）。
+		_world_clock.day_cost_add(&"pcui", ui_ms)
 	if _pending_tick_start_usec <= 0:
 		return
 	_last_ui_perf_summary = ui_breakdown.duplicate(false)
@@ -3116,6 +4252,18 @@ func _poll_simulation_stall_watchdog() -> void:
 	_stall_watchdog_next_report_msec = now_msec + STALL_WATCHDOG_REPEAT_MSEC
 	push_warning("[runtime-stall] day=%d stalled for %d ms at speed=%.1f" % [
 		day, stalled_ms, _world_clock.speed_multiplier])
+	# Web：把 day barrier 的关键诊断塞进事件流（小 payload，不走 JSON 转储），
+	# 这样就能直接看出是哪个域没 commit。字段名以 graph_keys 事件里的真实键为准。
+	var barrier_diag := _web_barrier_diag()
+	var graph_keys := PackedStringArray(barrier_diag.get("_keys", PackedStringArray()))
+	barrier_diag.erase("_keys")
+	# 首次进世界时把 report 的可用键名发一次，避免再猜字段名。
+	if not _web_graph_keys_emitted and not graph_keys.is_empty():
+		_web_graph_keys_emitted = true
+		WebTelemetry.emit("graph_keys", {"keys": Array(graph_keys)})
+	WebTelemetry.emit("stall", {"day": day, "dur": stalled_ms,
+		"fast_ticks": _fast_tick_count, "paused": _world_clock.paused,
+		"diag": barrier_diag})
 	RuntimeForensics.capture_and_dump("simulation_day_stalled", _generator,
 		_world_clock, "stall", {
 			"stalled_day": day,
@@ -3126,6 +4274,81 @@ func _poll_simulation_stall_watchdog() -> void:
 			"sus_last_tick": get_sus_last_tick_summary(),
 		})
 
+
+## Web 诊断：从 runtime perf snapshot 里挑出 day barrier / 权威相关的真实字段。
+## 键名以 graph_keys 事件为准（simulation_worker_ready / domain_authority_* 等）。
+func _web_barrier_diag() -> Dictionary:
+	var out := {}
+	if _generator == null or not _generator.has_method("get_runtime_perf_snapshot"):
+		return out
+	var graph: Dictionary = _generator.get_runtime_perf_snapshot(0)
+	out["_keys"] = PackedStringArray(graph.keys())
+	for key in ["simulation_thread_mode", "requested_simulation_thread_mode",
+			"graph_coverage_state", "simulation_worker_ready",
+			"simulation_host_state", "required_domain_mask",
+			"implemented_domain_mask", "missing_domain_mask",
+			"pod_completed_domain_mask", "domain_authority_planned_mask",
+			"domain_authority_committed_mask", "domain_authority_ack_count",
+			"domain_authority_fallback_reason", "worker_fault_count", "fault_code",
+			"pod_completed_stage_count", "pod_work_units", "pod_intent_count",
+			"pod_fallback_count",
+			# P0：worker 为什么起不来 / 被降级。这五个是"只读一次 diag 就能定性"
+			# 的最小集合，与 get_runtime_perf_snapshot 同名同义。
+			#   worker_thread_create_failed → std::thread 真的创建失败
+			#   active_gate_blocked         → 被 ACTIVE 准入门挡下（配置/覆盖问题）
+			#   graph_coverage_complete     → 整日屏障是否已证明覆盖
+			#   requested_authority_mask    → 到底请求了哪些域
+			#   graph_coverage_complete=false + 请求非空 ⇒ worker 跑了但没提交过整日
+			"worker_thread_create_failed", "active_gate_blocked",
+			"graph_coverage_complete", "requested_authority_mask",
+			"native_daily_inline",
+			# P1/P2：预发布与 peer 归属。
+			"environment_ring_pending", "environment_frames_ahead",
+			# [worker 计时分解] C++ 侧一直在累计（RuntimeWorkerTiming::snapshot() →
+			# `worker_time_<phase>_us`），但这份 diag 白名单没带它们，于是"worker 比
+			# 主线程慢 8 倍"只能靠 cd/clk 速率间接推断。带上 8 个分项后一条 diag 就能
+			# 区分"worker 在算"（execute）与"worker 在等"（input_wait / clock_wait /
+			# boundary_wait / paused），这是决定"优化图"还是"改交付方式"的分水岭。
+			"worker_time_execute_us", "worker_time_input_wait_us",
+			"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
+			"worker_time_overhead_us", "worker_time_paused_us",
+			"worker_time_save_build_us", "worker_time_save_pause_us",
+			"worker_time_total_us",
+			"environment_publish_callsite_mask", "day_wait_day",
+			"day_wait_missing_mask", "day_wait_env_day",
+			"country_peer_resolved_in_worker", "country_peer_resolved_by_main"]:
+		if graph.has(key):
+			out[key] = graph[key]
+	# 时钟侧限流状态不在 graph 字典里，直接取。
+	if _world_clock != null:
+		out["worker_lead_days"] = _world_clock.get_worker_lead_days() \
+			if _world_clock.has_method("get_worker_lead_days") else 0
+		out["max_worker_lead_days"] = _world_clock.get_max_worker_lead_days() \
+			if _world_clock.has_method("get_max_worker_lead_days") else 0
+		out["lead_blocked_frames"] = _world_clock.get_lead_blocked_frame_count() \
+			if _world_clock.has_method("get_lead_blocked_frame_count") else 0
+		out["worker_lag_days"] = _world_clock.get_worker_lag_days() \
+			if _world_clock.has_method("get_worker_lag_days") else 0
+		out["max_worker_lag_days"] = _world_clock.get_max_worker_lag_days() \
+			if _world_clock.has_method("get_max_worker_lag_days") else 0
+		out["lag_blocked_frames"] = _world_clock.get_lag_blocked_frame_count() \
+			if _world_clock.has_method("get_lag_blocked_frame_count") else 0
+	out["environment_prefetch_days"] = _environment_prefetch_days_active
+	out["environment_lead_budget_days"] = _max_worker_lead_days
+	out["web_worker"] = _web_worker_requested()
+	# web worker 的启动结论 + 内联回退状态。这两项让"为什么没起"不用再 grep 日志：
+	#   web_worker_start_code == ""            → 还没走到启动（世界还没生成完）
+	#   == "ok"                                → 起来了
+	#   == "runtime_worker_start_failed"       → host start() 拒绝（看 fault_code，
+	#                                            常见 worker_thread_create_failed）
+	#   == "runtime_thread_mode_hot_switch.."  → 上一代 worker 没退干净
+	#   == "authority_policy_disabled:<reason>"→ 策略没给 ACTIVE，已回退内联
+	#   == "inline_flag_mismatch"              → config 没生效（配置 bug）
+	out["web_worker_started"] = _web_worker_start_ok
+	out["web_worker_start_code"] = _web_worker_start_code
+	out["web_worker_inline_fallback"] = _web_worker_inline_fallback
+	out["native_daily_inline_active"] = _native_daily_inline_active
+	return out
 
 func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
 	var cell := _current_map.cell_at(cell_idx)
@@ -4578,24 +5801,64 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		_renderer.set_map_baker(_generator._baker)
 	_loading_visual_step("_bind_country_visuals()")
 	await get_tree().process_frame
+	WebTelemetry.emit("bind_step", {"s": "pre_bind_country"})
 	_bind_country_visuals()
+	WebTelemetry.emit("bind_step", {"s": "post_bind_country"})
 	if _world_clock != null:
+		WebTelemetry.emit("bind_step", {"s": "set_season_phase"})
 		_renderer.set_season_phase(_world_clock.season_phase())
+		WebTelemetry.emit("bind_step", {"s": "set_climate_anomaly"})
 		_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
+		WebTelemetry.emit("bind_step", {"s": "on_visual_day_phase_changed"})
 		on_visual_day_phase_changed(_world_clock.visual_day_phase)
 		var cp = _generator._c() if _generator != null and _generator.has_method("_c") else null
 		if cp != null and cp.daily_climate_interpolation:
-			_loading_visual_step("_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())")
-			await _generator.refresh_climate_loading(_current_map, _world_clock.season_phase())
+			# Web：这是「进世界前的气候 prewarm」，浏览器里实测 60s+
+			# （async climate round 收不了尾，只能等超时）。它只影响第一帧的气候场，
+			# 进世界后的第一个 daily tick 会算出同样的东西 —— 所以 web 跳过，
+			# 别把 60 秒塞进加载条。
+			if OS.has_feature("web"):
+				print("[loading] web build: skip initial refresh_climate_loading (60s+ in browser; first daily tick recomputes it)")
+			else:
+				_loading_visual_step("_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())")
+				await _generator.refresh_climate_loading(_current_map, _world_clock.season_phase())
+	WebTelemetry.emit("bind_step", {"s": "before_camera_frame"})
 	await get_tree().process_frame
+	WebTelemetry.emit("bind_step", {"s": "camera_bounds"})
 	if _camera != null:
 		_camera.set_world_bounds(_renderer.get_world_bounds())
+		WebTelemetry.emit("bind_step", {"s": "after_world_bounds"})
 		if _camera.has_method("set_horizontal_wrap"):
 			_camera.set_horizontal_wrap(map_wrap_period_x(), true)
+		WebTelemetry.emit("bind_step", {"s": "after_wrap"})
 		_camera.fit_to_viewport(1.0, safe_area, true)
+		WebTelemetry.emit("bind_step", {"s": "after_fit"})
 		_renderer.set_camera_zoom(_camera.zoom.x)
-	_bind_settlement_labels()
+		WebTelemetry.emit("bind_step", {"s": "after_zoom"})
+	# Web：定居点标签层是逐 cell 建 Label，实测加载期要 45s 量级（wasm 下 GDScript
+	# 每 cell 开销被放大 10~50 倍）。它纯属观感层，改成进世界后再补。
+	if OS.has_feature("web"):
+		WebTelemetry.emit("bind_step", {"s": "settlement_labels_deferred"})
+		_defer_settlement_labels_after_ready()
+	else:
+		_bind_settlement_labels()
 
+
+## Web 专用：把定居点标签层推到进世界之后（逐 cell 建 Label 在 wasm 上 45s 量级）。
+func _defer_settlement_labels_after_ready() -> void:
+	if not is_inside_tree():
+		return
+	if PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
+		return
+	var timer := get_tree().create_timer(4.0, true, false, true)
+	await timer.timeout
+	if not is_inside_tree():
+		return
+	var started := Time.get_ticks_msec()
+	_bind_settlement_labels()
+	var elapsed := Time.get_ticks_msec() - started
+	print("[settlement-labels] web deferred bind %dms" % elapsed)
+	WebTelemetry.emit("bind_step", {"s": "deferred_settlement_labels_done", "dur": elapsed})
 
 func _bind_settlement_labels() -> void:
 	if _renderer == null or _camera == null or _current_map == null \
@@ -4684,6 +5947,15 @@ func _on_research_signal_discovered(event: Dictionary) -> void:
 
 ## 重算视野 → 把知识度推进 enum_lut.a → 重建国界 mesh。
 ## 返回诊断信息（GM 面板 / 测试用）。
+## Web 长帧定位：refresh_country_visuals 的分段耗时。
+func _cv_phase(name: String, started_usec: int) -> void:
+	if not WebTelemetry.enabled():
+		return
+	var ms := _sched_elapsed_ms(started_usec)
+	if ms < 20.0:
+		return
+	WebTelemetry.emit("cv_phase", {"p": name, "dur": int(ms)})
+
 func refresh_country_visuals(reason: String) -> Dictionary:
 	var out := {"reason": reason, "vision": {}, "border": {}, "lut": {}}
 	if _current_map == null or _world_data == null:
@@ -4691,14 +5963,18 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 	# Native CLAIM 先写 NativeCountryRuntime，再经 DataCore CoW 镜像到 MapData。
 	# 若 country_committed 抢在 flush 之前触发，视野会用旧 country_slot_arr 解算，
 	# 国界/Inspector 随后看到新领土，邻格就只剩迷雾柔边「看起来亮了」。
+	var _cv_t := Time.get_ticks_usec()
 	out["territory_sync"] = _sync_country_territory_to_map()
+	_cv_phase("territory_sync", _cv_t)
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	var previous_visible := _current_map.visible_arr.duplicate()
 	# 首解前 enum_lut.a 按全知 255 编码，而 fog_dirty_indices 是对内存里全 0 的
 	# fog_k_arr 求差，只覆盖首都周边；首次发布必须全量重编码，否则其余格子保持全知。
 	var first_fog_publish := not _current_map.fog_solved
+	var _cv_t2 := Time.get_ticks_usec()
 	out["vision"] = _refresh_vision()
+	_cv_phase("vision", _cv_t2)
 	if not out["vision"].has("newly_visible_cells"):
 		var changed := PackedInt32Array()
 		var newly_visible := PackedInt32Array()
@@ -4719,10 +5995,16 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 		out["vision"]["newly_visible_cells"] = newly_visible
 		out["vision"]["newly_hidden_cells"] = newly_hidden
 		out["vision"]["vision_revision"] = _current_map.vision_revision
+	var _cv_t3 := Time.get_ticks_usec()
 	out["lut"] = _republish_cell_luts(_vision_dirty_indices, first_fog_publish)
+	_cv_phase("lut", _cv_t3)
 	_refresh_resource_visual_context()
+	var _cv_t4 := Time.get_ticks_usec()
 	out["building_intel"] = _refresh_building_visual_intel(out["vision"])
+	_cv_phase("building_intel", _cv_t4)
+	var _cv_t5 := Time.get_ticks_usec()
 	out["border"] = _refresh_country_borders()
+	_cv_phase("borders", _cv_t5)
 	if _settlement_label_layer != null:
 		_settlement_label_layer.set_fog_enabled(_fog_of_war_enabled)
 		_settlement_label_layer.mark_visibility_dirty()
@@ -4863,6 +6145,10 @@ func set_fog_of_war_enabled(enabled: bool) -> void:
 ## 迷雾只在正式对局里生效。调试 / 沙盒路径（没有 gameplay start context，
 ## country.default 铺满全部陆地）保持全图可见，否则整张地图会被云盖死。
 func _resolve_fog_of_war_enabled() -> bool:
+	# ?fog=off（web_autotest 写入 Engine meta）只用于诊断/截图：关掉全部战争迷雾，
+	# 让画面直接呈现"最高可用画质"。正常入口读不到这个 meta。
+	if bool(Engine.get_meta("pk_fog_off", false)):
+		return false
 	if not fog_of_war_enabled:
 		return false
 	return _resolve_player_start_cell() >= 0
@@ -5275,7 +6561,9 @@ func _loading_visual_step(label: String) -> void:
 	_advance_visual_progress("bind")
 	var now:=Time.get_ticks_usec()
 	if _loading_visual_usec>0:
-		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name,float(now-_loading_visual_usec)/1000.0])
+		var step_ms := float(now-_loading_visual_usec)/1000.0
+		print("[loading-visual-substep] %s %.1fms" % [_loading_visual_name, step_ms])
+		WebTelemetry.emit("visual_step", {"label": _loading_visual_name, "dur": step_ms})
 	_loading_visual_usec=now
 	_loading_visual_name=label
 
@@ -5304,7 +6592,8 @@ func _advance_visual_progress(stage: String, begin: bool = false) -> void:
 	generation_progress.emit(stage, _visual_progress)
 
 
-## HexRenderer._rebuild_cooperative() 每建完一个植被层回调一次。
+## HexRenderer 建完一个植被层回调一次（_rebuild_cooperative →
+## _setup_loading_vegetation_layers_for_deferred_fill 的逐层循环）。
 ## 有些画质档位会构建 14+ 层，逐层推进才不会在 98% 处长时间停住。
 func _on_renderer_loading_layer_progress(_layer_index: int, _layer_count: int,
 		_layer_name: String) -> void:

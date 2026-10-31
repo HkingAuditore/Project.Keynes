@@ -24,6 +24,18 @@ extends Node2D
 signal visual_fronts_changed(fronts: Array)
 
 const MAX_WEATHER_FRONTS := 16
+## Web 上是否启用真实的天气 overlay shader（weather_overlay.gdshader）。
+## [web-weather-min 2026-10-31] 已恢复 true：该 shader 现在有 web 裁剪变体
+## （`#define PK_WEB_WEATHER_MIN` → shaders/include/weather_overlay_web_min.gdshaderinc），
+## 把「域扭曲 + 4/3/2 octave 旋转 fbm × 十几处内联实例」换成「无 sin / 无循环的双 octave
+## 值噪声 × 3 处调用点」，同时编译掉体积法线、偏移投影阴影、山雾邻域采样与接缝伙伴采样。
+## 云量覆盖、三层云、逐像素晨昏色、云下直射阴影全部保留，所以 web 上现在能看见云。
+## 仍保留这个开关作为应急：置 false 时 web 退回全透明 stub（不触发任何 shader 编译、不卡加载）。
+## 注：本开关只决定 overlay 是否走 stub；cell curtain shader 一直按正常路径加载（未裁剪）。
+const PK_WEB_ENABLE_WEATHER_SHADERS := true
+## weather_overlay.gdshader 的 web 裁剪变体宏。只在 OS.has_feature("web") 时 prepend，
+## 桌面/移动端不受影响（宏未定义 → 走原来的桌面路径）。
+const WEB_WEATHER_MIN_DEFINE := "#define PK_WEB_WEATHER_MIN\n"
 const OVERLAY_SHADER_PATH := "res://shaders/weather_overlay.gdshader"
 const CURTAIN_SHADER_PATH := "res://shaders/weather_cell_curtain.gdshader"
 const _CELL_CURTAIN_ENABLED := true
@@ -1309,12 +1321,29 @@ func _push_curtain_runtime_state() -> void:
 	_push_fog_mask_uniforms()
 
 func _load_overlay_shader() -> void:
+	# Web 首帧编译预算：桌面版 weather_overlay.gdshader（35KB 全屏 canvas）在 ANGLE 上首绘
+	# 约 45 秒，是"进世界卡在 98%"的唯一原因（探针：跳过天气层之后整条加载链 7.2 秒 ready）。
+	# [web-weather-min] 现在 web 走裁剪变体（见 WEB_WEATHER_MIN_DEFINE 与 shader 头部注释），
+	# 不再默认 stub；下面这个分支只是应急回退开关（PK_WEB_ENABLE_WEATHER_SHADERS=false）。
+	if not PK_WEB_ENABLE_WEATHER_SHADERS and OS.has_feature("web"):
+		var stub := Shader.new()
+		stub.code = "shader_type canvas_item;\nvoid fragment() { COLOR = vec4(0.0); }\n"
+		_overlay_mat = ShaderMaterial.new()
+		_overlay_mat.shader = stub
+		_overlay_quad.material = _overlay_mat
+		print("[weather_layer] web: overlay shader stubbed (web-min variant disabled by flag)")
+		return
 	var shader := ResourceLoader.load(OVERLAY_SHADER_PATH, "Shader",
 		ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
-	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
+	var prefix := ""
+	# 平台裁剪宏必须排在质量档宏之前：web 变体要能压过 MOBILE_QUALITY_* 的分支判断。
+	if OS.has_feature("web"):
+		prefix += WEB_WEATHER_MIN_DEFINE
+	if _visual_tiles_active():
+		prefix += "#define MAP_VISUAL_TILED\n"
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
 	if not prefix.is_empty():

@@ -33,6 +33,17 @@ const DETAIL_PLAN_FINALIZE: int = 7
 		if is_inside_tree():
 			_rebuild()
 
+## 探针开关（已定案，保留 false）：web 上用 3 行 shader 替换 world_map。
+## 结论：换掉后首帧仍然 45s，所以世界材质不是元凶，见 weather_layer 的裁剪变体。
+const PK_WEB_TRIVIAL_WORLD_SHADER_PROBE := false
+## 探针：web 上跳过 deferred 植被填充（图层仍创建），用来判定长帧是否来自填充。
+const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
+## Web 上是否**绘制**天气表现层。实测（2026-10-31，Chrome 性能采样）：
+## weather_overlay 那套（含 SubViewport 云层）在 ANGLE 上把每帧拖到几十秒，
+## 采样里 94% 时间卡在 blitOffscreenFramebuffer 的 getParameter（GPU 排队同步）。
+## 不绘制后：10x 跑满一年、最大帧间隔 2 秒。天气**模拟**不受影响，只是少一层云。
+const PK_WEB_ENABLE_WEATHER_LAYER := false
+
 @export var shader_path: String = "res://shaders/world_map.gdshader"
 @export var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
 	set(value):
@@ -203,6 +214,9 @@ var terrain_materials_enabled: bool = true
 		terrain_surface_debug_view = clampi(value, 0, 17)
 		if _shader_mat != null:
 			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+		# [web-water-pass] 诊断色由 pass 1 整屏输出，水面 pass 必须整体让位。
+		if _water_mat != null:
+			_water_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
 
 # [terrain-material-tiles 2026-08-01e] 材质族四参数提为 @export：编辑器检查器可见，
 # 运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效；_rebuild 全量推送也读这组值。
@@ -487,6 +501,35 @@ var _simulation_speed_multiplier: float = 1.0
 
 var _world_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
+## [web-water-pass] web/Compatibility/LOW 档的**水面第二 pass** 节点与材质
+## （见 shaders/world_water_web.gdshader）。桌面、以及 web 的中/高档恒为 null ——
+## 那些情况下 world_map 自己就把水面画了，再画一遍就是双份水面。
+## 创建/销毁唯一入口是 _sync_water_quad()（由 _apply_uniforms() 末尾驱动）。
+var _water_quad: MeshInstance2D
+var _water_mat: ShaderMaterial
+## 已编进 _water_mat 的变体前缀（"" 或 "#define MAP_VISUAL_TILED\n"）。tiled 布局
+## 切换会换掉 sampler 类型，前缀变了必须重编变体，不能复用旧的材质。
+var _water_variant_prefix: String = ""
+## 第二 pass 的 shader 在 shader 语言层编不过（get_shader_uniform_list 为空）。
+## 记住这一条，避免每次 _apply_uniforms 都重编 + 重复报同一条错。
+var _water_pass_failed: bool = false
+## Web 一次性取证：地表发白/黑屏时到底哪张 LUT/地形纹理是空的。
+var _web_lut_probe_done := false
+var _web_veg_defer_started := false
+## Web 专用：把 9 层植被的 setup 推迟到进世界之后。实测这段在 wasm 里要 4.1 秒，
+## 直接压在加载窗口里；植被只是观感层，晚 2-3 秒出现可以接受。
+## Web 正式策略：天气层保留对象但不绘制（见 PK_WEB_ENABLE_WEATHER_LAYER 注释）。
+## PROBE：隐藏地图 quad 本身（隔离"地图绘制/图集上传"是否造成长帧）。
+const PK_WEB_HIDE_WORLD_QUAD := false
+const PK_WEB_MINIMAL_LAYERS := false
+const PK_WEB_LAYER_FOG := true
+const PK_WEB_LAYER_BORDER := true
+const PK_WEB_LAYER_WEATHER := true
+const PK_WEB_LAYER_BUILDING := false
+const PK_WEB_DEFER_VEG_LAYERS := true
+## 已绑到材质上的 LUT 纹理对象。不依赖 get_shader_parameter() 回读：
+## web/GLES3 上回读不可靠，会让"过期检测"每帧命中、白白重绑并连带重推迷雾 uniform。
+var _lut_bound := {}
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
 var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
 var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
@@ -714,22 +757,37 @@ func _ready() -> void:
 	_building_visual_layer.set_tod(
 		_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 	_spawn_detail_layers()
-	# v9.split：天气表现层
-	_weather_layer = WeatherLayer.new()
+	# v9.split：天气表现层。始终创建；web 侧不再 stub，而是走 weather_layer 内部的
+	# 裁剪变体（`#define PK_WEB_WEATHER_MIN`，见 weather_layer.gd 的 WEB_WEATHER_MIN_DEFINE）。
+	# 历史：完整 weather_overlay.gdshader 首次编译在 ANGLE 上要 45 秒（进世界卡 98%
+	# 的元凶）；裁剪变体把云路径的 fbm/sin/循环全部去掉后编译成本降到可接受。
+	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_WEATHER:
+		_weather_layer = null
+	else:
+		_weather_layer = WeatherLayer.new()
 	_weather_layer.name = "WeatherLayer"
 	_weather_layer.visual_fronts_changed.connect(_on_weather_layer_visual_fronts_changed)
 	add_child(_weather_layer)
 	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
 	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
 	_weather_layer.process_priority = 1000
+	if not PK_WEB_ENABLE_WEATHER_LAYER and OS.has_feature("web"):
+		_weather_layer.visible = false
+		print("[hex_renderer] web: WeatherLayer not drawn (ANGLE blit cost; weather sim unaffected)")
 	if _world != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:供 weather_layer 取 weather_lut_prev_tex
 	# 国界线（z=6，在数据 overlay 之上）与视野迷雾（z=12，盖住天气/高亮/国界）。
 	# 与 WeatherLayer 同套：代码创建 + 世界坐标几何，不进 .tscn。
-	_border_layer = CountryBorderLayer.new()
+	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_BORDER:
+		_border_layer = null
+	else:
+		_border_layer = CountryBorderLayer.new()
 	_border_layer.name = "CountryBorderLayer"
 	add_child(_border_layer)
-	_fog_layer = FogOfWarLayer.new()
+	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_FOG:
+		_fog_layer = null
+	else:
+		_fog_layer = FogOfWarLayer.new()
 	_fog_layer.name = "FogOfWarLayer"
 	add_child(_fog_layer)
 	_load_shader()
@@ -801,6 +859,21 @@ func _sweep_dormant_detail_chunks() -> void:
 		_mark_detail_budget_total_dirty()
 
 func _load_shader() -> void:
+	# PROBE(2026-10-30)：web 上把世界地图材质换成 3 行 shader，用来确认那次
+	# ~45s 首帧到底是不是 world_map.gdshader 的编译开销。
+	# 确认后把 PK_WEB_TRIVIAL_WORLD_SHADER_PROBE 置回 false，并改成裁剪版变体。
+	if PK_WEB_TRIVIAL_WORLD_SHADER_PROBE and OS.has_feature("web"):
+		var probe_shader := Shader.new()
+		probe_shader.code = "shader_type canvas_item;\nvoid fragment() { COLOR = vec4(0.15, 0.25, 0.4, 1.0); }\n"
+		var probe_mat := ShaderMaterial.new()
+		probe_mat.shader = probe_shader
+		_shader_mat = probe_mat
+		_active_material_source_path = "<web-probe>"
+		_active_shader_source_path = "<web-probe>"
+		if _world_quad != null:
+			_world_quad.material = probe_mat
+		print("[probe] web trivial world shader active (45s first-frame isolation)")
+		return
 	var next_mat: ShaderMaterial = null
 	# 新材质从 .tres 重建，lut_dims 回到默认 (1,1)；作废记录让 _sync_cell_lut_dims
 	# 在 _apply_uniforms 万一没跟上时也能补推。
@@ -826,6 +899,7 @@ func _load_shader() -> void:
 			if shader != null:
 				next_mat.shader = shader
 			if next_mat.shader != null:
+				_lut_bound.clear()
 				_shader_mat = next_mat
 				_world_quad.material = _shader_mat
 				_refresh_shader_hot_reload_baseline()
@@ -865,6 +939,203 @@ func _visual_tiles_active() -> bool:
 		and String(_world.visual_tiles.layout.mode) == "tiled"
 
 
+# ─── [web-world-min] world_map 的 web/GLES3 裁剪变体（前缀单一真源）───────────
+# 为什么：浏览器（Intel UHD 770 + ANGLE/D3D11）上逐张计时的实测是 world_map 首次编译
+# **22 613 ms**（旧的 6.7 s 数字已过时），仅次于 resource_impostor 的 27 424 ms。
+# 成本几乎全在 include 展开体上——web-LOW 预处理后 3634 非注释行 / 148.3 KiB，是桌面
+# 体的 81%，LOW 档只靠 PK_MOBILE_ANY 砍掉了 19%。本变体按「编译期已定 + 运行期常量已定
+# ⇒ 不可达」删掉 LOW 档永远不执行的代码：2491 行 / 102.6 KiB，for 循环 17→4，
+# tan/acos/exp/sqrt 归零。
+# 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」生效；中/高档 web 拿到的字节与
+# 改动前完全一致（它们真的会跑 ctx.quality>=1 的水体分支）。
+# 详见 shaders/include/world_map_web_min.gdshaderinc 文件头。
+const PK_WEB_TEXTURE_BUDGET_DEFINE := "#define PK_WEB_TEXTURE_BUDGET\n"
+const QUALITY_PREFIX_LOW := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+const WORLD_MAP_WEB_MIN_DEFINE := "#define PK_WEB_WORLD_MIN\n"
+## [web-world-no-micro] 真机实测（RTX 4080 + Chrome，已钉住 GPU）的 world_map 首次编译：
+##   完整 web 变体                                      20 727 ms
+##   只关 micro                                         2 153 ms
+##   只关 land_base / modif / shade / global_adj 之一    1.25–2.15 s
+##   十段全换常量                                        362 ms
+## 也就是**整条陆地管线卡在阈值上**：任何一块拿掉都塌到 1–2 s，跟那一块本身多大关系不大
+## （与 world_map 水面、resource_impostor 六路来源的"寄存器压力悬崖"同型）。
+## 所以 web 上**永久**关掉 micro（微纹理细节）—— 十块里观感代价最小的一块，在 web 的低分辨率
+## + LOW 档下几乎看不出，而它的结构/uniform 一个不动。
+## 宏名沿用诊断探针名（`PK_PROBE_NO_MICRO`），好处是"测到的组合 = 上线的组合"，
+## 真机回归时可以原样复现上面这张表。
+const WORLD_MAP_WEB_NO_MICRO_DEFINE := "#define PK_PROBE_NO_MICRO\n"
+
+## web-LOW 档 world_map 的**完整**编译前缀。四段共用同一批常量，所以这不是"抄一份
+## 字面量"，而是真源；_apply_shader_variant_prefix() 拼出的字符串与它逐字相同。
+## 菜单期预热（WebShaderWarmup.WORLD_MAP_PREFIX）引用本常量——两处只要差一个字节，
+## 驱动就不认缓存，那 20 多秒等于白预热。
+const WORLD_MAP_WEB_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE \
+	+ WORLD_MAP_WEB_MIN_DEFINE + WORLD_MAP_WEB_NO_MICRO_DEFINE
+
+
+## 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」启用裁剪。
+## 中/高档 web 仍保留 ctx.quality>=1 的水体分支，绝不跟着裁（否则会掉水面细节）；
+## 宏链万一接错，shader 侧 #ifndef PK_QUALITY_LOW 的 #error 会立刻炸出来。
+func _world_map_web_min_active() -> bool:
+	return DCFeatureFlags.uses_shader_quality_tier() \
+		and DCFeatureFlags.is_compatibility_renderer() \
+		and _mobile_quality_tier_define == "MOBILE_QUALITY_LOW"
+
+
+# ─── [web-water-pass] 水面第二 pass（web 专属）─────────────────────────────
+# 为什么（实测）：world_map 的 fragment 里「陆地管线 + 水面管线」两个着色来源同时
+# 存在时，ANGLE/D3D11 上 FXC 的联合编译是 **20 291 ms**；只留陆地 2 473 ms、只留
+# 水面 1 089 ms；而把水面换成只有 25 行的"紧凑版"仍有 **17 264 ms**（无分支 mix 版
+# 18 060 ms）——悬崖与第二个来源的行数无关，是寄存器压力型的非线性。唯一有效做法
+# 是让那个 fragment 只剩一个着色来源：水面整屏 quad 改成第二个 pass。
+# 详细对账见 shaders/world_water_web.gdshader 文件头。
+const WATER_SHADER_PATH := "res://shaders/world_water_web.gdshader"
+## web-LOW 水面 pass 的**完整**编译前缀（运行期与菜单期预热的唯一真源）。
+## 与 WORLD_MAP_WEB_PREFIX 同构但**不含** PK_WEB_WORLD_MIN：那个宏只对 world_map 的
+## 裁剪有意义，水面 pass 本身就是被拆出去的那一半。少一个宏 = 驱动缓存不命中 =
+## 菜单期那 1.1 s 预热白做，所以只能有一份字面量。
+const WATER_PASS_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE
+
+
+## 水面第二 pass 是否应该存在。**必须**与 _world_map_web_min_active() 完全一致：
+## 只有那份 world_map 变体才把水面像素输出成占位常量，其它档位由 world_map 自己画水。
+## 桌面端 OS.has_feature("web") 为 false ⇒ 恒不创建（连 shader 文件都不会 load）。
+func _water_pass_active() -> bool:
+	return OS.has_feature("web") \
+		and DCFeatureFlags.is_compatibility_renderer() \
+		and _world_map_web_min_active()
+
+
+## 建/拆 + 几何 + uniform 全量对齐。调用点只有 _apply_uniforms() 末尾：
+## 材质重建（_load_shader）、画质换档（set_mobile_quality_tier）、set_map(_cooperative)
+## 都会经过 _apply_uniforms，所以这里不需要额外的调用点。稳态下是几次引用比较。
+func _sync_water_quad() -> void:
+	if not _water_pass_active() or _world_quad == null or _world == null \
+			or _water_pass_failed:
+		_drop_water_quad()
+		return
+	_ensure_water_quad()
+
+
+## 无条件保证「节点存在 + 几何/树序/变体正确 + uniform 全量推送」。
+## 与平台判定（_water_pass_active）分开，是因为桌面端永远进不去那条判定，而这条
+## 创建路径恰恰是最需要在 CI 里被驱动一次的东西（见 tests/world/web_water_pass_node_test.gd）。
+func _ensure_water_quad() -> void:
+	# tiled 布局切换会换掉 map_index/height 的 sampler **类型**（sampler2D ↔
+	# sampler2DArray），变体必须跟着重编，否则采样就是错的。这个条件只在新世界
+	# 走 tiled 时成立，属于一次性事件；稳态下是一次字符串比较。
+	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
+	if _water_quad != null and _water_variant_prefix != prefix:
+		_drop_water_quad()
+	if _water_quad == null:
+		_create_water_quad(prefix)
+	if _water_quad == null or not is_instance_valid(_water_quad):
+		return
+	_water_quad.mesh = _world_quad.mesh
+	_water_quad.visible = _world_quad.visible
+	_apply_water_uniforms()
+
+
+## 拆掉第二 pass 的节点与材质。先隐藏再 queue_free：queue_free 到帧末才生效，
+## 不隐藏的话换档那一帧还会按旧变体多画一次水面。
+func _drop_water_quad() -> void:
+	if _water_quad != null:
+		_water_quad.visible = false
+		_water_quad.queue_free()
+		_water_quad = null
+	_water_mat = null
+	_water_variant_prefix = ""
+
+
+func _create_water_quad(prefix: String) -> void:
+	# 刻意用 ResourceLoader.load 而不是 preload 常量：preload 是编译期的，桌面端
+	# 也会把这份 shader 资源拉进依赖图。这里只有 web+Compatibility+LOW 才会执行。
+	var shader := ResourceLoader.load(
+		WATER_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
+	if shader == null:
+		push_warning("HexRenderer: water pass shader missing at %s" % WATER_SHADER_PATH)
+		return
+	var variant := shader.duplicate() as Shader
+	# tiled 与否必须与 world_map 用同一个宏（visual_tile_sampling 据此在
+	# sampler2D / sampler2DArray 之间二选一）。web 运行期不是 tiled，但这里不写死。
+	variant.code = prefix + WATER_PASS_PREFIX + shader.code
+	# 编译自检：shader 语言层编不过时 get_shader_uniform_list() 返回空。此时**不创建**
+	# 第二 pass —— 于是屏幕退化成"水面 = pass 1 的暗海蓝占位色"（可控、可读），
+	# 而不是把一张坏材质盖到整屏上。驱动层失败（FXC）这里抓不到，那种情况同样退回
+	# 占位色，因为失败的材质不会被绘制。
+	if variant.get_shader_uniform_list().is_empty():
+		_water_pass_failed = true
+		push_error("HexRenderer: water pass shader failed to compile (%s, prefix=%s)"
+			% [WATER_SHADER_PATH, prefix.replace("\n", "|")])
+		return
+	_water_variant_prefix = prefix
+	_water_mat = ShaderMaterial.new()
+	_water_mat.shader = variant
+	_water_quad = MeshInstance2D.new()
+	_water_quad.name = "WorldWaterQuad"
+	# z_index 与 _world_quad 同为 0（CanvasItem 先按 z_index、再按树序绘制），树序由
+	# move_child 钉死在 _world_quad 紧后面 ⇒ 水面盖住陆地、又被植被(z=1)/建筑(z=3)盖住。
+	# 必须 move_child 而不是依赖 add_child 顺序：画质从 MID 换回 LOW 时本节点是**后来**
+	# 才创建的，直接 add_child 会排到植被层后面 → 水面盖住整片植被。
+	_water_quad.z_index = 0
+	# FPS 探针（toggle_world_shader_disabled）关闭主 shader 时，两片必须一起关。
+	_water_quad.material = null if _shader_disabled_by_toggle else _water_mat
+	add_child(_water_quad)
+	if is_instance_valid(_world_quad):
+		move_child(_water_quad, mini(_world_quad.get_index() + 1, get_child_count() - 1))
+	# 预热对账：label 必须与 WebShaderWarmup 清单里那份（文件名去扩展名）逐字一致，
+	# 否则 material_variant 事件永远对不上 warmup_shader 的 fp。
+	WebTelemetry.note_variant("world_water_web", variant.code)
+	print("[hex_renderer] web water pass created (pass 2 of 2; world_map draws land only)")
+
+
+## 水面 pass 的 uniform 全量推送。刻意只有 16 个（4 sampler + 12 标量/vec），
+## 与 world_map 的 186 个无关：这是本 pass 的全部输入。
+## 分工：几何/调色板/迷雾在各自已有的推送点补推（_push_fog_uniforms /
+## _push_cell_lut_dims / _sync_cell_lut_textures / setter），这里负责"材质重建后
+## 一次性把全部输入对齐"，与 _apply_uniforms() 的职责一一对应。
+func _apply_water_uniforms() -> void:
+	if _water_mat == null or _world == null:
+		return
+	var sm := _water_mat
+	var tiled := _visual_tiles_active()
+	var bounds := _world.world_bounds
+	if tiled:
+		var visual_tiles = _world.visual_tiles
+		# 布局 uniform 与主地形共用同一个推送函数，避免两处各写一遍 7 个参数。
+		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
+		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
+		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
+	else:
+		sm.set_shader_parameter("height_tex", _world.height_tex)
+		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
+	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
+	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
+	sm.set_shader_parameter("world_origin", bounds.position)
+	sm.set_shader_parameter("world_size", bounds.size)
+	sm.set_shader_parameter("wrap_origin_x", 0.0)
+	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
+	# 羊皮纸：这两项必须与主地形取同一个属性值（_apply_uniforms 也是从这里推的），
+	# 否则拆成两 pass 后水陆会差一层色调。
+	sm.set_shader_parameter("parchment_tint", parchment_tint)
+	sm.set_shader_parameter("parchment_strength", parchment_strength)
+	# 调试视图让位开关（pass 1 整屏输出诊断色时本 pass 必须整体 discard）。
+	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+	_push_water_fog_uniforms()
+
+
+## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，
+## fog_early_out / fog_gray 的开关也必须是同一份（_push_fog_uniforms 里调用）。
+## 刻意不推 fog_unexplored_color —— 未探索像素由 pass 1 上色，本 pass discard。
+func _push_water_fog_uniforms() -> void:
+	if _water_mat == null:
+		return
+	_water_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
+	_water_mat.set_shader_parameter(
+		"fog_early_out_enabled", _effective_fog_early_out())
+
+
 func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
 	if shader == null:
 		return null
@@ -882,14 +1153,19 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	# detail/edge/normal/water_depth/gi_occluder 等）。2026-08-06 起主地形不再
 	# 声明 eco_lut，腾出的槽给 terrain_material_tex；同日 height+flow 合并再省 1 槽。
 	if DCFeatureFlags.is_compatibility_renderer():
-		prefix += "#define PK_WEB_TEXTURE_BUDGET\n"
+		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
+		# [web-world-min] 只有 LOW 档才有裁过的变体。顺序必须与
+		# WORLD_MAP_WEB_PREFIX 完全一致（quality → texture_budget → world_min），
+		# 否则运行期与预热前缀不同 → 驱动缓存不命中。
+		if _world_map_web_min_active():
+			prefix += WORLD_MAP_WEB_MIN_DEFINE
 	if prefix.is_empty():
 		return shader
 	var variant := shader.duplicate() as Shader
 	variant.code = prefix + shader.code
-	print("[hex_renderer/variant] tiled=%s quality=%s web_texture_budget=%s shader=%s" % [
+	print("[hex_renderer/variant] tiled=%s quality=%s web_texture_budget=%s web_world_min=%s shader=%s" % [
 		_visual_tiles_active(), _mobile_quality_tier_define,
-		DCFeatureFlags.is_compatibility_renderer(), source_path])
+		DCFeatureFlags.is_compatibility_renderer(), _world_map_web_min_active(), source_path])
 	return variant
 
 
@@ -941,9 +1217,13 @@ func _mobile_quality_tier_from_define(tier_define: String) -> int:
 
 
 func _shader_quality_define_prefix(tier_define: String) -> String:
+	# 只给「档位」宏，**绝不**在这里重复 #define PK_QUALITY_* / PK_MOBILE_ANY：
+	# shader_quality.gdshaderinc 已经按档位展开出这些别名，再定义一次会让 Godot 的
+	# shader 预处理器报重复定义 → shader type '' → 材质退回默认白纹理。
+	# web 上的表现就是"切到中/高画质地面全白"（低画质因为曾经修过所以正常）。
 	match tier_define:
 		"MOBILE_QUALITY_LOW":
-			return "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+			return QUALITY_PREFIX_LOW
 		"MOBILE_QUALITY_HIGH":
 			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
 		_:
@@ -2434,6 +2714,10 @@ func _push_fog_uniforms() -> void:
 	_shader_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
 	_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
 	_shader_mat.set_shader_parameter("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
+	# [web-water-pass] 水面 pass 共用同一份迷雾开关。放在这里而不是 _apply_uniforms
+	# 里，是因为迷雾状态会在运行期翻转（_apply_fog_early_out / set_fog_enabled），
+	# 而这两个入口都已经汇到本函数。
+	_push_water_fog_uniforms()
 
 
 ## 早退要求迷雾层在未探索处画的是一个常量色 —— 地形被完全盖住，跳过才不可见。
@@ -2448,6 +2732,10 @@ func _effective_fog_early_out() -> bool:
 func _apply_fog_early_out() -> void:
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
+	# [web-water-pass] 这个开关单独翻转的路径（set_mobile_quality_tier / 迷雾层档位
+	# 变化）不走 _push_fog_uniforms，漏推会让水面 pass 在未探索区域继续画水 ——
+	# 那一块本该由 pass 1 的 fog_unexplored_color 独占。
+	_push_water_fog_uniforms()
 
 # Phase 1：让 main.gd 在 WorldClock day_changed 时推进 shader 季节相位
 func set_season_phase(phase: float) -> void:
@@ -3179,8 +3467,14 @@ func toggle_world_shader_disabled() -> bool:
 	_shader_disabled_by_toggle = not _shader_disabled_by_toggle
 	if _shader_disabled_by_toggle:
 		_world_quad.material = null
+		# [web-water-pass] 两片是同一个渲染成本的两半，只关第一片会把"关掉 shader 的
+		# ΔFPS"量小一半（水面 pass 仍在跑），探针结论就错了。
+		if _water_quad != null:
+			_water_quad.material = null
 	else:
 		_world_quad.material = _shader_mat
+		if _water_quad != null:
+			_water_quad.material = _water_mat
 	print("[hex_renderer] world shader disabled=%s — material=%s" % [
 		str(_shader_disabled_by_toggle),
 		str(_world_quad.material)
@@ -3707,18 +4001,22 @@ func _rebuild() -> void:
 	if _world_quad == null:
 		return
 	if _map == null or _world == null or _map.cell_count() == 0:
-		_world_quad.mesh = null
+		_set_world_quad_mesh(null)
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
 		_mark_detail_budget_total_dirty()
 		return
 
-	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds, _wrap_period_x())
+	_set_world_quad_mesh(_build_world_quad_mesh(_world.world_bounds, _wrap_period_x()))
+	if PK_WEB_HIDE_WORLD_QUAD and OS.has_feature("web"):
+		_world_quad.visible = false
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)
+	var _t_veg := Time.get_ticks_usec()
 	_for_each_vegetation_layer(_setup_loading_vegetation_layer)
+	WebTelemetry.emit("rebuild_phase", {"p": "veg_layers", "dur": int(float(Time.get_ticks_usec()-_t_veg)/1000.0)})
 	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
 		if _camera_view_initialized:
@@ -3727,11 +4025,15 @@ func _rebuild() -> void:
 		_queue_missing_prefetch_detail_chunks()
 		_reactivate_deferred_detail_chunks()
 	# 世界重建属于加载边界，可一次性完成预算同步；运行期 succession 则按层切片。
+	var _t_budget := Time.get_ticks_usec()
 	_apply_detail_global_budget(true)
+	WebTelemetry.emit("rebuild_phase", {"p": "detail_budget", "dur": int(float(Time.get_ticks_usec()-_t_budget)/1000.0)})
 	_log_detail_scatter_rebuild_summary("renderer_rebuild")
 	if _shader_mat == null:
 		return
+	var _t_uniform := Time.get_ticks_usec()
 	_apply_uniforms()
+	WebTelemetry.emit("rebuild_phase", {"p": "uniforms", "dur": int(float(Time.get_ticks_usec()-_t_uniform)/1000.0)})
 
 # cell LUT 网格尺寸是间接寻址的比例因子：cell_lut_uv 用它把 cell.index 换算成
 # texel 中心。推成退化值（Vector2i.ZERO 是 WorldData 的初值，(1,1) 是
@@ -3748,6 +4050,10 @@ func _push_cell_lut_dims(sm: ShaderMaterial, dims: Vector2i) -> void:
 			% str(dims) + "cell LUT indirection will collapse onto one texel")
 	sm.set_shader_parameter("lut_dims", Vector2(dims.x, dims.y))
 	_pushed_lut_dims = dims
+	# [web-water-pass] 水面 pass 用同一张 enum/dyn LUT，lut_dims 必须同步成同一份——
+	# 否则它按旧网格换算 texel uv，整片海会按某个错误 cell 的 biome 上色。
+	if _water_mat != null and sm == _shader_mat:
+		_water_mat.set_shader_parameter("lut_dims", Vector2(dims.x, dims.y))
 
 
 # world.lut_dims 由 bake / daily LUT 刷新写入，与 enum/dyn/eco/bounce LUT 纹理的
@@ -3776,10 +4082,15 @@ func _sync_cell_lut_textures() -> void:
 		return
 	for lut_name in ["enum_lut", "dyn_lut", "bounce_lut"]:
 		var world_tex: Texture2D = _world.get(lut_name + "_tex")
-		if world_tex == null or _shader_mat.get_shader_parameter(lut_name) == world_tex:
+		if world_tex == null or _lut_bound.get(lut_name) == world_tex:
 			continue
+		_lut_bound[lut_name] = world_tex
 		print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
 		_shader_mat.set_shader_parameter(lut_name, world_tex)
+		# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
+		# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
+		if _water_mat != null and lut_name != "bounce_lut":
+			_water_mat.set_shader_parameter(lut_name, world_tex)
 		if lut_name == "bounce_lut":
 			_shader_mat.set_shader_parameter("gi_bounce_bound", true)
 		elif lut_name == "enum_lut":
@@ -3795,6 +4106,17 @@ func _wrap_period_x() -> float:
 	if _map == null:
 		return 0.0
 	return HexUtils.wrap_period_x(_map.width, hex_size)
+
+
+## [web-water-pass] 两块全屏 quad（陆地 pass / 水面 pass）共用同一个 ArrayMesh：
+## 几何只算一次、GPU 只上传一次，两块 quad 的 VERTEX 也保证逐顶点相同（水面 pass
+## 的 v_world 必须与陆地 pass 完全一致，否则 LUT 采到的 cell 会错位）。
+## 任何改动 world quad 几何的地方都必须走这里。
+func _set_world_quad_mesh(mesh: Mesh) -> void:
+	if _world_quad != null:
+		_world_quad.mesh = mesh
+	if _water_quad != null and is_instance_valid(_water_quad):
+		_water_quad.mesh = mesh
 
 func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	var p := bounds.position
@@ -3933,11 +4255,30 @@ func _apply_uniforms() -> void:
 	# Cell-index 间接寻址是唯一动态视觉路径。
 	var _indirect_ready: bool = _world.enum_atlas_tex != null and _world.enum_lut_tex != null
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
+	_lut_bound["enum_lut"] = _world.enum_lut_tex
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
+	_lut_bound["dyn_lut"] = _world.dyn_lut_tex
 	# eco_lut 仅绑给植被实例层；主地形已退役该 sampler（槽位给 terrain_material_tex）。
 	_push_cell_lut_dims(sm, _world.lut_dims)
 	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
 	sm.set_shader_parameter("bounce_lut", _world.bounce_lut_tex)
+	_lut_bound["bounce_lut"] = _world.bounce_lut_tex
+	# Web 一次性取证：地表发白时到底哪张 LUT/地形纹理是空的（采样到默认白纹理就会发白）。
+	if not _web_lut_probe_done and OS.has_feature("web"):
+		_web_lut_probe_done = true
+		var _head := ""
+		if sm.shader != null:
+			_head = sm.shader.code.substr(0, 90).replace("\n", " | ")
+		WebTelemetry.emit("lut_probe", {
+			"enum_lut": _world.enum_lut_tex != null,
+			"dyn_lut": _world.dyn_lut_tex != null,
+			"bounce_lut": _world.bounce_lut_tex != null,
+			"terrain": _world.terrain_material_tex != null,
+			"enum_atlas": _world.enum_atlas_tex != null,
+			"lut_dims": str(_world.lut_dims),
+			"indirect": _indirect_ready,
+			"shader_head": _head,
+		})
 	sm.set_shader_parameter("gi_bounce_bound", _world.bounce_lut_tex != null
 		and (visual_tiles.gi_occluder_ready if tiled else _world.gi_occluder_tex != null))
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
@@ -4123,6 +4464,9 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("biome_tint_strength", biome_tint_strength)
 	sm.set_shader_parameter("land_albedo_saturation", land_albedo_saturation)
 	sm.set_shader_parameter("tonemap_hue_preserve", tonemap_hue_preserve)
+	# [web-water-pass] 水面第二 pass 的建/拆/对齐挂在这里：_apply_uniforms() 是
+	# "材质重建后把全部输入对齐"的唯一收口，画质换档与 set_map 都会经过它。
+	_sync_water_quad()
 
 # ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
 # 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的
@@ -4383,18 +4727,24 @@ func _rebuild_cooperative() -> void:
 	if _world_quad == null:
 		return
 	if _map == null or _world == null or _map.cell_count() == 0:
-		_world_quad.mesh = null
+		_set_world_quad_mesh(null)
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
 		_mark_detail_budget_total_dirty()
 		return
 
-	_world_quad.mesh = _build_world_quad_mesh(_world.world_bounds, _wrap_period_x())
+	_set_world_quad_mesh(_build_world_quad_mesh(_world.world_bounds, _wrap_period_x()))
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)
-	var deferred_layers := await _setup_loading_vegetation_layers_for_deferred_fill()
+	var _t_veg2 := Time.get_ticks_usec()
+	var deferred_layers := 0
+	if PK_WEB_DEFER_VEG_LAYERS and OS.has_feature("web"):
+		_defer_vegetation_layers_after_bind()
+	else:
+		deferred_layers = await _setup_loading_vegetation_layers_for_deferred_fill()
+	WebTelemetry.emit("rebuild_phase", {"p": "veg_layers_coop", "dur": int(float(Time.get_ticks_usec()-_t_veg2)/1000.0)})
 	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
 		if _camera_view_initialized:
@@ -4412,8 +4762,10 @@ func _rebuild_cooperative() -> void:
 	# 此刻各层实例数还是 0：这里只把预算统计切到"已知容量"口径并下发一次可见比例
 	# （1.0 不裁剪）。运行期每补完一批 chunk，_drain_detail_refresh_queue() 都会
 	# _mark_detail_budget_total_dirty() + _apply_detail_global_budget() 重新结算。
+	var _t_budget2 := Time.get_ticks_usec()
 	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget(true)
+	WebTelemetry.emit("rebuild_phase", {"p": "detail_budget_coop", "dur": int(float(Time.get_ticks_usec()-_t_budget2)/1000.0)})
 	_log_detail_scatter_rebuild_summary("renderer_rebuild")
 	if deferred_layers > 0:
 		_arm_deferred_detail_fill_watchdog()
@@ -4489,12 +4841,56 @@ func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
 ## _reactivate_deferred_detail_chunks() 按 prefetch 视口筛选，保证进世界第一屏
 ## 只补视野附近的块；视野外的块留在 _detail_deferred_chunks 里，等相机移动时
 ## set_camera_view() 再触发一次放行。
+## Web 专用：进世界之后再补植被层 setup（含 deferred chunk 播种）。
+## 实测这段 4.1 秒（9 层 x wasm），放在加载链里必然超时。
+func _defer_vegetation_layers_after_bind() -> void:
+	if _web_veg_defer_started:
+		return
+	_web_veg_defer_started = true
+	var tree := get_tree()
+	if tree == null:
+		return
+	var timer := tree.create_timer(2.5, true, false, true)
+	await timer.timeout
+	if not is_inside_tree():
+		return
+	var started := Time.get_ticks_usec()
+	var deferred_layers: int = await _setup_loading_vegetation_layers_for_deferred_fill()
+	if deferred_layers > 0:
+		_seed_deferred_detail_chunks_for_deferred_fill()
+		_reactivate_deferred_detail_chunks()
+		for layer in _detail_layers:
+			if layer != null and layer.has_method("set_defer_initial_rebuild"):
+				layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
+	_mark_detail_budget_total_dirty()
+	_apply_detail_global_budget(true)
+	WebTelemetry.emit("veg_deferred_done", {
+		"layers": deferred_layers,
+		"dur": int(float(Time.get_ticks_usec() - started) / 1000.0),
+	})
+
+
 func _seed_deferred_detail_chunks_for_deferred_fill() -> void:
+	# PROBE：web 上整段跳过 deferred 植被填充（图层照常创建），
+	# 用来判定那次 ~24s 长帧是否来自填充 / MultiMesh 上传。
+	if PK_WEB_SKIP_DEFERRED_VEG_SEED and OS.has_feature("web"):
+		print("[probe] web: skip deferred vegetation seed")
+		return
 	var probe = _detail_chunk_probe_layer()
 	if probe == null or _map == null:
 		return
-	var plan: Array = probe.detail_chunk_plan_for_view(
-		_world.world_bounds if _world != null else Rect2())
+	# Web：只登记"玩家脚下一小块"的 chunk，其余等相机移动时按 prefetch 视口补。
+	# 实测单位成本：每 chunk × 每层 ≈ 1 s（wasm 下的原生 scatter）。
+	# 若按整张世界登记 → 12 chunk × 9 层 ≈ 50 s；按整幅相机视野登记 → 仍要 30 s+。
+	# 这里取世界 12% 见方的一块（约 1 个 chunk），把入场成本压到 ~9 s 以内，
+	# 之后的植被随视野流式补齐。
+	var seed_rect: Rect2 = _world.world_bounds if _world != null else Rect2()
+	if OS.has_feature("web"):
+		var base: Rect2 = _world.world_bounds if _world != null else Rect2()
+		var patch := base.size * 0.12
+		var center := _camera_world_center if _camera_view_initialized else base.position + base.size * 0.5
+		seed_rect = Rect2(center - patch * 0.5, patch)
+	var plan: Array = probe.detail_chunk_plan_for_view(seed_rect)
 	if plan.is_empty():
 		return
 	var family_mask := _detail_all_family_mask()

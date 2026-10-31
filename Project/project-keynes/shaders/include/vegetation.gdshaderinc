@@ -24,6 +24,7 @@
 //   夏：深墨绿（浓郁、压暗黄轴）
 //   秋：金黄+橙红（强暖偏移，蓝轴显著下沉）
 //   冬：枯灰偏冷蓝（饱和度大幅压低、整体偏冷）
+#ifndef PK_WEB_WORLD_MIN
 vec3 vegetation_seasonal_tint(float phase) {
 	vec3 spring = vec3(0.96, 1.14, 0.82);  // 鲜嫩绿
 	vec3 summer = vec3(0.66, 1.05, 0.58);  // 深墨绿
@@ -101,6 +102,7 @@ vec3 vegetation_seasonal_tint_lut(int veg, float phase, vec2 wp) {
 	return max(col, vec3(0.0));
 }
 
+#endif // PK_WEB_WORLD_MIN
 // ─── Milestone 2：植被轴色相调制 ────────────────────────────────────────
 // 返回乘性 tint（围绕 1.0 浮动），代表"在 biome 主色基础上的植被偏色"。
 //   - 针叶林 / 北方林         → 偏墨青绿

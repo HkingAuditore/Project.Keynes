@@ -532,12 +532,14 @@ vec3 apply_lake_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float lake_mottle = 0.5;
 	float lake_glass = 0.5;
 	float lake_lines = 0.0;
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 1) {
 		lake_ripple = water_fbm_cyl(ctx.wpw, 0.020, vec2(world_time * 0.012, -19.0), ctx.detail_oct);
 		lake_mottle = water_fbm_cyl(ctx.wpw, 0.008, vec2(-23.0, 11.0), ctx.detail_oct);
 		lake_lines = water_shade_lines(ctx.wpw + vec2(7.0, -5.0), world_time * 0.55, 0.58, 1);
 		lake_glass = water_fbm_cyl(ctx.wpw, 0.0042, vec2(-world_time * 0.006, world_time * 0.004), ctx.detail_oct);
 	}
+#endif // PK_WEB_WORLD_MIN
 	lake_col *= 1.0 + (lake_ripple - 0.5) * 0.050 + (lake_mottle - 0.5) * 0.032 + lake_lines * 0.055;
 	vec3 cool_lift = mix(vec3(0.96, 1.02, 1.04), vec3(1.03, 1.02, 0.96), lake_glass);
 	lake_col *= mix(vec3(1.0), cool_lift, 0.045);
@@ -560,13 +562,17 @@ vec3 apply_reef_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	vec3 reef_base = mix(reef_lagoon, reef_outer, smoothstep(0.12, 0.88, reef_depth));
 	float coral_soft = 0.5;
 	float reef_sheen = 0.5;
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 1) {
 		float coral_spots = voronoi_cell(water_cyl_noise_p(ctx.wpw, 0.24, vec2(0.0)));
 		coral_soft = smoothstep(0.04, 0.74, coral_spots);
 	}
+#endif // PK_WEB_WORLD_MIN
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 2) {
 		reef_sheen = water_fbm_cyl(ctx.wpw, 0.018, vec2(17.0, 29.0), 2);
 	}
+#endif // PK_WEB_WORLD_MIN
 	vec3 coral_tint = mix(vec3(0.34, 0.56, 0.54), vec3(0.24, 0.46, 0.50),
 						   smoothstep(0.30, 0.88, ctx.offshore_depth));
 	vec3 reef_col = mix(reef_base, coral_tint, coral_soft * 0.12);
@@ -593,9 +599,11 @@ vec3 apply_kelp_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float along_k = water_periodic_wave_phase(ctx.wpw, oc_norm, 0.030);
 	float across_k = water_periodic_wave_phase(ctx.wpw, perp_k, 0.095);
 	float kelp_streak = 0.5;
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 1) {
 		kelp_streak = fbm(vec2(along_k + world_time * 0.035, across_k), ctx.detail_oct);
 	}
+#endif // PK_WEB_WORLD_MIN
 	float kelp_patch = 0.5;
 #if !defined(PK_MOBILE_ANY)
 	kelp_patch = water_fbm_cyl(ctx.wpw, 0.018, vec2(5.0, -41.0), ctx.detail_oct);
@@ -626,10 +634,12 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	vec3 ice_base = mix(water_depth_gradient(ctx.offshore_depth * 0.65, ctx.elev),
 						 vec3(0.66, 0.81, 0.95), 0.84);
 	float crack_factor = 0.55;
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 1) {
 		float crack = voronoi_cell(water_cyl_noise_p(ctx.wpw, 0.34, vec2(0.0)));
 		crack_factor = smoothstep(0.02, 0.16, crack);
 	}
+#endif // PK_WEB_WORLD_MIN
 	float ice_noise = 0.5;
 #if !defined(PK_MOBILE_ANY)
 	ice_noise = water_fbm_cyl(ctx.wpw, 0.12, vec2(-9.0, 31.0), ctx.detail_oct);
@@ -648,6 +658,7 @@ vec3 apply_sea_ice_features(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 //   修改水体 albedo（不作为最终覆盖或光照）；coastal+lake+reef 区显露
 //   substrate_col。kelp/ice 抑制此层。
 // ─────────────────────────────────────────────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 vec3 apply_shallow_transparency(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(shallow_transparency_enabled && ctx.quality >= 1)) return col;
 
@@ -670,6 +681,7 @@ vec3 apply_shallow_transparency(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	}
 	return col;
 }
+#endif // PK_WEB_WORLD_MIN
 
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -678,6 +690,7 @@ vec3 apply_shallow_transparency(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 //   方向固定来自 vector_atlas.rg；ocean_current_debug 时彩色化方向并叠加
 //   upwelling 黄/紫高亮。
 // ─────────────────────────────────────────────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	if (!(ocean_current_enabled && ctx.quality >= 1)) return col;
 
@@ -721,6 +734,7 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	}
 	return col;
 }
+#endif // PK_WEB_WORLD_MIN
 
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -739,9 +753,11 @@ vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	float tail_b = river_sdf_water;
 	float plume_src = max(river_sdf_water, max(tail_a * 0.82, tail_b * 0.62));
 	float plume_noise = 0.5;
+#ifndef PK_WEB_WORLD_MIN
 	if (ctx.quality >= 1) {
 		plume_noise = water_fbm_cyl(ctx.wpw, 0.055, plume_dir * world_time * 0.065, ctx.detail_oct);
 	}
+#endif // PK_WEB_WORLD_MIN
 	float plume = smoothstep(river_threshold_low * 0.72, river_threshold_high, plume_src);
 	plume *= mix(0.88, 1.14, plume_noise);
 	plume *= clamp(1.0 - ww.w_ice - ww.w_lake * 0.22, 0.0, 1.0);
@@ -780,7 +796,13 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, i
 #else
 	bool waves_on = water_waves_enabled && wave_amp_scale > 0.001;
 #endif
+#ifdef PK_WEB_WORLD_MIN
+	// PK_QUALITY_LOW ⇒ waves_on 恒 false，sample_water_normal 只会立刻返回 +Z；
+	// web 变体直接把这条调用（以及整份 water.gdshaderinc）编译掉。
+	N_out = vec3(0.0, 0.0, 1.0);
+#else
 	N_out = sample_water_normal(wave_wp, world_time, wave_amp_scale, wave_freq_scale, wave_q, waves_on);
+#endif
 
 	// 近岸法线放大
 	float coast_sdf = abs(ctx.elev - sea_level);
@@ -792,6 +814,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, i
 	}
 
 	// Water Calm Noise（仅作为材质亮度/色相柔噪声，不参与几何法线）
+#ifndef PK_WEB_WORLD_MIN
 	if (water_wave_line_strength > 0.001 && waves_on && ctx.quality >= 1) {
 		// [sea-ice-render-source-unify 阶段 A] 海冰处 calm noise 抑制由 w_ice 连续驱动，
 		// 不再依赖 biome == B_SEA_ICE 硬切换。w_ice ≈ 1 时压到 0（与原 SEA_ICE 等价）；
@@ -814,6 +837,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, i
 		float tint_amp = water_wave_line_strength * water_calm_noise_tint_strength * calm_amp_mul;
 		col *= mix(vec3(1.0), tint, 0.035 * clamp(tint_amp, 0.0, 1.0));
 	}
+#endif // PK_WEB_WORLD_MIN
 	return col;
 }
 
@@ -911,10 +935,14 @@ SurfaceParams compute_water_base_surface(
 	col = apply_sea_ice_features(col, ctx, ww);
 
 	// ── SEA 1.11: 透底/浅水介质 ────────────────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 	col = apply_shallow_transparency(col, ctx, ww);
+#endif
 
 	// ── SEA 1.12–1.13: 洋流条纹 + 河口羽流 ────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 	col = apply_ocean_currents(col, ctx, ww);
+#endif
 	col = apply_estuary_plume(col, ctx, ww);
 
 	// ── SEA 1.14: 法线 + calm noise ───────────────────────────────────

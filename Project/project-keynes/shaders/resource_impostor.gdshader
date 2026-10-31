@@ -93,7 +93,15 @@ uniform vec2 wind_dir = vec2(1.0, 0.18);
 uniform float weather_wind_boost = 0.0;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
+// [web-resource-min] Web/GLES3 精简变体：地形地平线 GI 在 web 上恒为中性值
+// （terrain_horizon_tex_bound 恒 false，见 include 文件头的逐条依据），因此整段
+// 顶替掉，不再编译 4-tap × 8 方向 `gi_horizon_lut[nibbles[d]]` 动态下标循环。
+// 桌面 / 移动端仍走下面这一行原 include，展开结果逐字不变。
+#ifdef PK_WEB_RESOURCE_MIN
+#include "res://shaders/include/resource_impostor_web_min.gdshaderinc"
+#else
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
+#endif
 
 varying flat vec4 v_style;
 varying flat vec4 v_climate;
@@ -111,6 +119,39 @@ varying flat vec3 v_terrain;
 varying flat vec3 v_day;
 varying flat float v_horizon;
 varying vec2 v_world_position;
+#ifdef PK_WEB_RESOURCE_MIN
+// [web-two-pass] 仅 web/GLES3：把「同一 fragment 里 5 条着色来源二选一」拆成两份程序。
+// 实测（ANGLE/D3D11，与浏览器同一条 GLSL→HLSL→FXC 路径，见 tmp/next/resource_cliff_IMPL.md）：
+//   一个 fragment 全塞      5 400–7 200 ms（浏览器 warmup_shader 实测 6 619 ms）
+//   拆成 surface + geology  1 100 + 900 ≈ 2 000 ms
+// 单独把任何一块换成常量都几乎不省（−0 ~ −1 500 ms，且被 ±30% 噪声吞掉）——这与 world_map
+// 的结论一致：成本是「一个 fragment 里共存多条着色来源」的寄存器压力悬崖，不是行数。
+//
+// 两份程序各自只画自己那一族实例（按 batch 分流，见 resource_visual_layer.gd 的
+// _material_for(family)），所以不会重复绘制，也不会出现 alpha 叠加两次的问题。
+// batch 2（矿物 16/17/18）走 geology；batch 0/1/3/4（植物徽章 / 兽群 / 水下 / 地面贴花）走 surface。
+//
+// 下面的 PK_PROBE_NO_* 就是 A/B 探针用的同一组开关：探针测到的组合 = 上线的组合。
+#if defined(PK_RES_WEB_PASS_GEOLOGY) || defined(PK_RES_WEB_PASS_SURFACE)
+#ifdef PK_RES_WEB_PASS_GEOLOGY
+// 只留矿床道具：rt_geology_solid（form 16/17/18）+ lens 徽章。
+// rs_geology（form 19..25）在 web 世界里从不作为 prop 出现（visual_plan() 只给 PLAN_DECAL），
+// 只在徽章图片里用过；geology pass 的徽章图片就是矿床本身，所以整段不编译。
+#define PK_PROBE_NO_DECAL
+#define PK_PROBE_NO_HERD
+#define PK_PROBE_NO_SUBMERGED
+#define PK_PROBE_NO_SUBJ_GROUND
+// 本 pass 只画 family 2（矿物）实例，剪影分支不可达。
+#define PK_PROBE_NO_SILHOUETTE
+#endif
+#ifdef PK_RES_WEB_PASS_SURFACE
+// 只留「非矿床」的四条来源：地面贴花 / 位图兽群 / 水下贴花 / 徽章。
+// rt_resource() 只剩 rt_badge_silhouette()（徽章里那张图），geology 两份语料都不编译。
+#define PK_PROBE_NO_SUBJ_SOLID
+#define PK_PROBE_NO_SUBJ_GROUND
+#endif
+#endif // PK_RES_WEB_PASS_*
+#endif // PK_WEB_RESOURCE_MIN
 // x = instance kind (1 prop, 2 ground decal, 3 submerged, 4 lens-only),
 // y = 1 when this instance carries the resource's lens badge.
 varying flat vec2 v_kind;
@@ -184,9 +225,16 @@ void vertex() {
 		v_direct = daylight.sun_col * tod_exposure;
 		v_day = vec3(daylight.local_day, daylight.sun_high, daylight.moon_strength);
 	}
+#ifdef PK_WEB_RESOURCE_MIN
+	// 与 terrain_horizon_evaluate() 在 LOW 档 / 未绑 horizon 贴图时的返回值逐位相同
+	// （terrain_horizon.gdshaderinc:134-136、273-280）：web 上这条路径恒为中性值。
+	v_horizon = 1.0;
+	v_sky = vec4(0.0, 0.0, 1.0, 1.0);
+#else
 	TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, v_sun);
 	v_horizon = horizon.direct_visibility;
 	v_sky = vec4(horizon.bent_normal, horizon.sky_visibility);
+#endif
 	vec2 terrain_xy = terrain_normal_tex_bound ? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * 0.65 : vec2(0.0);
 	v_terrain = normalize(vec3(terrain_xy, 1.0));
 	v_axis = normalize(MODEL_MATRIX[0].xy);
@@ -219,7 +267,12 @@ void vertex() {
 }
 
 #include "res://shaders/include/resource_forms.gdshaderinc"
+// [web-resource-min] resource_solid_forms 是 rs3_* 语料（42 KB / 793 行），整个工程里
+// 只有本 shader include 它，而 rs3_* 被引用 0 次（rt_resource() 只用 rt_*/rs_geology）：
+// 纯死代码，web 变体直接不编译。桌面仍照原样 include（逐字不变）。
+#ifndef PK_WEB_RESOURCE_MIN
 #include "res://shaders/include/resource_solid_forms.gdshaderinc"
+#endif
 #include "res://shaders/include/resource_topdown_forms.gdshaderinc"
 #include "res://shaders/include/resource_decal_forms.gdshaderinc"
 
@@ -335,6 +388,14 @@ void fragment() {
 	bool art_animal = lens < 0.001 && kind == 1 && family == 1 && art_fauna_bound && v_art.y > 0.5;
 	bool art_fish = lens < 0.001 && kind == 3 && family == 3 && art_fauna_bound && v_art.y > 0.5;
 	if ((kind == 1 && !art_animal) || lens > 0.001) {
+#ifdef PK_PROBE_NO_SUBJECT
+		// [probe] A/B 探针：把整条 subject 管线（rt_resource → geology/ground/badge）
+		// 换成常量。**只在定义了 PK_PROBE_NO_SUBJECT 时生效**，不定义时这段预处理
+		// 输出与改动前逐字节相同（守卫行本身不进编译）。
+		subj_rgb = tint * 0.58;
+		subj_alpha = 0.60;
+		subj_combined = 0.60;
+#else
 		float form_zoom = mix(1.0, 1.02, lens);
 		vec2 pf = p * form_zoom;
 		float px = px_px * form_zoom;
@@ -349,6 +410,13 @@ void fragment() {
 			pf -= local_w * gust * amp * (1.0 - lens * 0.65);
 		}
 		RSurf s = rs_empty();
+#ifdef PK_WEB_RESOURCE_MIN
+		// web 精简变体：family == 3 也交给 rt_resource() → rt_badge_silhouette()。
+		// 水里真的会绘制的鱼群走 rv_herd() 位图兽群（art_fish），下面这段 4 鱼 + 8 鳍
+		// 的绘制只在 lens 徽章里出现，整段不参与编译（含 2×rs_blade 内联）。
+		s = rt_resource(pf, form, family, sub_style, tint, seed, px,
+			family == 1 ? motion * animal_motion : motion, lens < 0.5);
+#else
 		if (family == 3) {
 			// Badge picture of marine & freshwater fish: 4 curved silver-aqua fish in a shoal.
 			vec3 fish_col = sub_style == 0 ? vec3(0.46, 0.80, 0.88) : vec3(0.56, 0.86, 0.74);
@@ -367,13 +435,16 @@ void fragment() {
 		} else {
 			s = rt_resource(pf, form, family, sub_style, tint, seed, px, family == 1 ? motion * animal_motion : motion, lens < 0.5);
 		}
+#endif // PK_WEB_RESOURCE_MIN
 
 		bool free_standing = family == 1 || form == 6 || form == 7 || form == 26 || form == 16 || form == 17 || form == 18;
 		// Outlines are off in the world by default (they read as stickers); badges keep a firm one.
 		float outline_k = mix((free_standing ? 0.55 : 0.28) * outline_strength, free_standing ? 0.55 : 0.28, lens);
 
 		vec3 base = s.albedo;
+#ifndef PK_WEB_RESOURCE_MIN
 		bool detailed_view = visual_quality > 0 && v_rank.y >= detailed_pixels;
+#endif
 
 		if (family == 0 && form != 26) {
 			float dry = clamp((0.35 - v_climate.g) * 1.4 + (1.0 - health) * 0.45 + v_ecology.y * 0.12, 0.0, 1.0);
@@ -439,6 +510,11 @@ void fragment() {
 		// Soft ground contact; the silhouette-derived cast shadow is opt-in (cast_shadow).
 		// Flat areas have no height, so no contact ring either.
 		float shadow = s.floor_a * contact_shadow * (area_form ? lens : 1.0);
+#ifdef PK_WEB_RESOURCE_MIN
+		// web：cast_shadow 在 profile 里就是 0.0（data/visual/resource_default.tres），uniform
+		// 默认值同为 0.0；而且 detailed_view 还要 visual_quality > 0，web auto 档解出 0。
+		// 两重运行期门都是关的 → 这段 silhouette cast shadow（含 dFdx/dFdy）不编译。
+#else
 		if (detailed_view && free_standing && lens < 0.5 && cast_shadow > 0.001) {
 			vec2 grad = vec2(dFdx(s.d), dFdy(s.d));
 			vec2 away = -normalize(v_sun.xy + vec2(0.0001));
@@ -447,6 +523,7 @@ void fragment() {
 			float cast = (1.0 - smoothstep(0.0, reach * facing + 0.01, s.d)) * step(0.0, s.d) * facing;
 			shadow = max(shadow, cast * 0.32 * cast_shadow * smoothstep(-0.06, 0.15, v_sun.z));
 		}
+#endif
 
 		float grey = dot(base, vec3(0.299, 0.587, 0.114));
 		base = mix(vec3(grey) * 0.85, base, mix(0.25, 1.0, live));
@@ -455,12 +532,19 @@ void fragment() {
 		subj_rgb = mix(shadow_tint, base, alpha / max(combined, 0.0001));
 		subj_alpha = alpha;
 		subj_combined = combined;
+#endif // PK_PROBE_NO_SUBJECT
 	}
 
 	// World appearance by instance kind.
 	vec3 world_rgb = subj_rgb;
 	float world_a = subj_combined;
 	if (kind == 2) {
+#ifdef PK_PROBE_NO_DECAL
+		// [probe] 把 rd_ground_decal()（kind == 2 的唯一着色来源）换成常量。
+		vec3 probe_col = tint * flat_light;
+		world_rgb = probe_col;
+		world_a = 0.42;
+#else
 		vec4 g = rd_ground_decal(p, form, sub_style, tint, seed);
 		vec3 col = g.rgb;
 		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
@@ -476,7 +560,13 @@ void fragment() {
 			// 地力以健康草被表达，干旱/低活力转黄、退隐，积雪下不铺绿色地毯。
 			world_a *= smoothstep(vitality_dead_threshold, 0.65, v_climate.a) * (1.0 - snow * 0.80);
 		}
+#endif // PK_PROBE_NO_DECAL
 	} else if (art_animal) {
+#ifdef PK_PROBE_NO_HERD
+		// [probe] 把 rv_herd() 的两处调用（art_animal / art_fish）换成常量。
+		world_rgb = tint * flat_light;
+		world_a = 0.50;
+#else
 		float sh = 0.0;
 		vec4 herd = rv_herd(p, v_art.y - 1.0, v_art.z, seed, v_rank.x, motion, animal_motion * live, animal_length_hex, 1.0, sh);
 		vec3 col = herd.rgb;
@@ -492,18 +582,30 @@ void fragment() {
 		float combined = herd.a + shadow;
 		world_rgb = mix(shadow_tint, col, herd.a / max(combined, 0.0001));
 		world_a = combined;
+#endif // PK_PROBE_NO_HERD
 	} else if (art_fish) {
+#ifdef PK_PROBE_NO_HERD
+		world_rgb = tint * flat_light;
+		world_a = 0.50;
+#else
 		float sh = 0.0;
 		vec4 shoal = rv_herd(p, v_art.y - 1.0, v_art.z, seed, v_rank.x, motion * 1.6, 1.8 * live, fish_length_hex, 0.8, sh);
 		vec3 col = mix(shoal.rgb, vec3(0.16, 0.30, 0.36), 0.40) * flat_light;
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
 		world_rgb = col;
 		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
+#endif // PK_PROBE_NO_HERD
 	} else if (kind == 3) {
+#ifdef PK_PROBE_NO_SUBMERGED
+		// [probe] 把 rd_submerged()（kind == 3 的程序化水下贴花）换成常量。
+		world_rgb = tint * flat_light;
+		world_a = 0.40;
+#else
 		vec4 w = rd_submerged(p, form, family, sub_style, seed, motion);
 		world_rgb = w.rgb * flat_light;
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
 		world_a = w.a * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
+#endif // PK_PROBE_NO_SUBMERGED
 	} else if (kind >= 4) {
 		world_a = 0.0;
 	}
@@ -514,6 +616,7 @@ void fragment() {
 
 	vec3 color = world_rgb;
 	float out_alpha = world_a;
+#ifndef PK_PROBE_NO_BADGE
 	if (lens > 0.001) {
 		// Shape-coded recognition badge: circle = animal, rounded square = plant,
 		// hexagon = mineral. The ring colour repeats the category; the picture inside is
@@ -535,9 +638,14 @@ void fragment() {
 		color = mix(world_rgb, out_rgb, lens);
 		out_alpha = mix(world_a, out_a, lens);
 	}
+#endif // PK_PROBE_NO_BADGE
+#ifndef PK_WEB_RESOURCE_MIN
+	// 调试视图：uniform 默认 0，只有 set_terrain_horizon_debug_view() 会推非 0。
+	// web 变体里 v_horizon 恒为 1，留着它只会把整张图刷白，所以整段不编译。
 	if (lens < 0.001 && terrain_horizon_debug_view > 0) {
 		color = vec3(terrain_horizon_debug_view == 1 ? (1.0 - v_horizon) * v_day.x : v_horizon);
 	}
+#endif
 	if ((family == 0 || kind == 2) && has_height_tex && lens < 1.0) {
 		// 扩大的植被/地力斑必须沿实际河岸裁切，不能只检查群落中心。
 		vec2 ground_uv = (v_world_position - world_origin) / max(world_size, vec2(0.0001));

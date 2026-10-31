@@ -182,7 +182,14 @@ const TECH_EFFECT_LIGHT := Color(1.0, 0.93, 0.71, 1.0)
 const MENU_PREVIEW_DEBOUNCE := 0.18
 const MENU_PARALLAX_MAX := 12.0
 const MENU_PAGE_TRANSITION := 0.30
-const LOADING_MAIN_SLICE_USEC := 4000
+## 生成期协作切片的每帧预算（微秒）。加载链路里所有 `>= LOADING_MAIN_SLICE_USEC`
+## 的点都用它，是"一个旋钮"。
+##
+## [2026-10-31] 4000 → 40000。原来花 4 ms 就让出一整帧，而浏览器里一帧要 31–34 ms
+## （加载期甚至 ~130 ms）：等于把 90% 的墙钟用来等帧。实测 16 处切片点合计
+## 1.0–1.6 秒纯浪费。40 ms 单帧仍然远低于"浏览器判定无响应"的量级，而且这些点
+## 之后都会真的让出一帧，加载条照样能走。
+const LOADING_MAIN_SLICE_USEC := 40000
 
 # 地图活动：开拓的仪式感与日常发展使用不同的密度预算（墙钟秒）。
 const MAP_COLONY_DURATION := 2.8

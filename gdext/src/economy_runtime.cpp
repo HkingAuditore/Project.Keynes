@@ -3410,16 +3410,28 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         _fiscal_escrow_by_country.write_scalar(country_index, escrow + actual, market_mutation_sink());
     else
         _fiscal_escrow_by_country.write_scalar(country_index, escrow - actual, market_mutation_sink());
+    // 无 worker 权威时（web / 主线程权威），这次 peer-applied ack 只是跨域账本
+    // 的握手：commit 已经成功、escrow 也已经更新，握手失败不该把整个经济升级成
+    // fatal（实测 web 上 day 1 就是死在这里）。有 worker 权威时保持原语义。
     const godot::Dictionary applied =
         _country_runtime->acknowledge_economy_asset_peer_applied(
             transaction_id, session_epoch, country_generation, peer_generation,
             true, String());
-    if (!static_cast<bool>(applied.get("ok", false)) ||
-        String(applied.get("status_name", "")) != "completed") {
+    const bool ack_completed =
+        static_cast<bool>(applied.get("ok", false)) &&
+        String(applied.get("status_name", "")) == "completed";
+    committed = actual;
+    if (!ack_completed) {
+        const bool worker_authoritative =
+            _simulation_host != nullptr &&
+            _simulation_host->domain_is_worker_authoritative(
+                RuntimeDomainId::COUNTRY);
+        if (!worker_authoritative) {
+            return true;
+        }
         error = "country_fiscal_peer_apply_ack_failed";
         return false;
     }
-    committed = actual;
     return true;
 }
 

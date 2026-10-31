@@ -711,6 +711,9 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["requested_simulation_thread_mode"] =
             host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
+        // native_daily_inline：主机没有 worker 线程，日屏障由调用线程逐日执行。
+        // 诊断必须显式区分，否则 "ACTIVE 但没有 worker 线程" 看起来自相矛盾。
+        out["native_daily_inline"] = host.inline_daily;
         // Ready-for-commit-consumption, which a partially promoted worker also
         // is. `authority_ready` stays available above for callers that mean the
         // whole-graph gate.
@@ -1351,6 +1354,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["simulation_host_state"] = "STOPPED";
         out["simulation_thread_mode"] = "OFF";
         out["requested_simulation_thread_mode"] = "OFF";
+        out["native_daily_inline"] = false;
         out["simulation_worker_ready"] = false;
         out["graph_coverage_state"] = "partial";
         out["required_domain_mask"] = static_cast<int64_t>(RUNTIME_ALL_DOMAIN_MASK);
@@ -1380,6 +1384,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["configured"] = _runtime_graph_configured;
     out["enabled"] = _runtime_graph_enabled;
     out["simulation_thread_mode"] = String("OFF");
+    // native_daily_inline：键恒定存在，调用方不必猜"缺失=false"。
+    out["native_daily_inline"] = false;
     out["graph_coverage_state"] = String("partial");
     out["simulation_worker_ready"] = false;
     out["pod_domain_abi_version"] = static_cast<int>(RUNTIME_DOMAIN_POD_ABI_VERSION);
@@ -1396,12 +1402,27 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["domain_authority_plan_ms"] = 0.0;
     out["domain_authority_replay_ms"] = 0.0;
     out["domain_authority_fallback_reason"] = String();
+    // P0：这五个键恒定存在。缺键会让调用方把"没有 host"读成"worker 起来了"，
+    // 而这个区别正是 web 上要判的东西。
+    out["graph_coverage_complete"] = false;
+    out["requested_authority_mask"] = 0;
+    out["worker_thread_create_failed"] = false;
+    out["day_wait_day"] = -1;
+    out["day_wait_missing_mask"] = 0;
+    out["day_wait_env_day"] = -1;
+    out["day_wait_ring"] = 0;
+    out["environment_ring_pending"] = 0;
+    out["environment_frames_ahead"] = 0;
+    out["country_peer_resolved_in_worker"] = 0;
+    out["country_peer_resolved_by_main"] = 0;
+    out["country_deferred_peer_count"] = 0;
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();
         out["simulation_thread_mode"] = runtime_effective_mode_name(host);
         out["requested_simulation_thread_mode"] =
             host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
+        out["native_daily_inline"] = host.inline_daily;
         out["graph_coverage_state"] = String(host.graph_coverage_state);
         out["simulation_host_state"] = static_cast<int>(host.state);
         out["worker_fault_count"] = static_cast<int64_t>(host.worker_fault_count);
@@ -1414,6 +1435,35 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(
             host.completion_gate_missing_domain_mask);
         out["active_gate_blocked"] = host.active_gate_blocked;
+        // ── P0：让 web 上能直接看出 worker 为什么起不来 / 被降级 ──────────
+        // 这几项与 get_runtime_thread_report() 同名同义，放进 perf snapshot 是
+        // 为了让"只读一个字典"的诊断（diag 事件、perf CSV、forensics）不必再猜
+        // 该去哪张表里找。`worker_thread_create_failed` 是把 fault_code 里那条
+        // 具体 code 提升成布尔位：std::thread 真的创建失败与"被入门门挡下"是
+        // 两种完全不同的处置，混在同一个空 fault 里看不出来。
+        out["graph_coverage_complete"] = host.graph_coverage_complete;
+        out["requested_authority_mask"] = static_cast<int64_t>(
+            host.requested_authority_mask);
+        out["worker_thread_create_failed"] =
+            String(host.fault_code) == String("worker_thread_create_failed");
+        // 日等待缺口：今天 worker 卡在哪个域、环境帧是哪一天、环里有几帧。
+        out["day_wait_day"] = host.day_wait_day;
+        out["day_wait_missing_mask"] = static_cast<int64_t>(host.day_wait_missing_mask);
+        out["day_wait_env_day"] = host.day_wait_env_day;
+        out["day_wait_ring"] = static_cast<int64_t>(host.day_wait_ring);
+        out["environment_ring_pending"] = static_cast<int64_t>(
+            host.environment_ring_pending);
+        // 预发布领先量：环境帧比已提交日新多少天。K=0（每 day_changed 一帧）时
+        // 稳态为 0..1；P1 打开后应稳定在 1..K。
+        const int64_t frames_ahead = host.environment_day - host.committed_day;
+        out["environment_frames_ahead"] =
+            static_cast<int64_t>(frames_ahead > 0 ? frames_ahead : 0);
+        out["country_peer_resolved_in_worker"] = static_cast<int64_t>(
+            host.country_peer_resolved_in_worker);
+        out["country_peer_resolved_by_main"] = static_cast<int64_t>(
+            host.country_peer_resolved_by_main);
+        out["country_deferred_peer_count"] = static_cast<int64_t>(
+            host.country_deferred_peer_count);
         out["authoritative_domain_mask"] =
             static_cast<int64_t>(host.authoritative_domain_mask);
         out["active_evidence_mask"] =

@@ -9,6 +9,20 @@
 
 namespace pk {
 
+// native_daily_inline：内联日 = 单线程日。
+//
+// 置位后 `run_group` 一律在调用线程上把闭包顺序跑完：不唤醒 worker、不在
+// `_done_cv` 上等。两个理由都是浏览器特有的：
+//   1. 主线程不允许阻塞在 futex/`Atomics.wait` 上，"等一组 worker"在 wasm 里
+//      只能退化成忙等或直接抛异常 —— 主线程一旦不再返回，连 WebTelemetry 的
+//      心跳都发不出去，页面表现为完全挂死；
+//   2. wasm 的 pthread 池可能已被 Godot 自己的 WorkerThreadPool 占满，起不来
+//      的 worker 会让 group barrier 永远等不到 `_remaining_tasks == 0`。
+// 顺序路径与本文件原有的"无 worker" fallback 完全同一条代码，逐字节等价，
+// 因此确定性不变。
+void set_parallel_serial_only(bool enabled) noexcept;
+bool parallel_serial_only() noexcept;
+
 // Process-local fixed worker pool for native simulation kernels. It deliberately
 // has no Godot includes or callbacks, so it remains valid when the caller is the
 // simulation coordinator thread rather than the Godot main thread.
@@ -25,6 +39,7 @@ public:
         uint64_t task_count = 0;
         uint64_t fault_count = 0;
         bool interactive = false;
+        bool serial_only = false;
     };
 
     static NativeParallelExecutor &instance();

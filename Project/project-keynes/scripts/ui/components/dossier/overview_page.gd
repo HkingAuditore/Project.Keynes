@@ -107,7 +107,7 @@ func _toggle_detail() -> void:
 
 func _apply_detail_visibility() -> void:
 	_detail.visible = _detail_open and not _detail_rows.is_empty()
-	_toggle.text = "明细 ▴" if _detail_open else "明细 ▾"
+	_toggle.text = "明细 ▲" if _detail_open else "明细 ▼"
 
 
 # ── 人均 ────────────────────────────────────────────────────────────────

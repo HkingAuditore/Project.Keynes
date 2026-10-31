@@ -224,6 +224,14 @@ func _c() -> ClimateProfile:
 			push_warning("MapGenerator: earth_like.tres missing; using in-memory defaults")
 			loaded = ClimateProfile.new()
 		climate_profile = loaded
+	# Web：关掉分帧/线程化的 async climate round。
+	# 浏览器里它要 spawn 一条 pthread，池子打满后 pthread_create 直接失败，
+	# 于是"等一轮算完"退化成等超时——实测加载期 refresh_climate_loading 因此
+	# 卡了 63 秒。同步 round 在 2400 cell 上是毫秒级，web 上更划算。
+	if OS.has_feature("web") and climate_profile != null:
+		if "use_climate_round_async" in climate_profile and bool(climate_profile.use_climate_round_async):
+			climate_profile.use_climate_round_async = false
+			print("[climate] web build: async climate round disabled (pthread pool exhaustion -> 63s load stall)")
 	return climate_profile
 
 
@@ -469,6 +477,27 @@ var _runtime_climate_topology_generation: int = 1
 var _runtime_climate_topology_map_id: int = 0
 var _runtime_climate_neighbor_offsets: PackedInt32Array = PackedInt32Array()
 var _runtime_climate_neighbor_offsets_map_id: int = 0
+# ─── P1：环境帧发布者所有权 + 调用点账本 ──────────────────────────────────
+#
+# 现状是**三处**都能发环境帧（S1 host day_changed / S2 sus_tick_daily /
+# S3 inline day），靠 `_runtime_climate_trace_pending` 的同日去重才不会互相打架。
+# 去重只挡"同一天重复打包"，挡不住"两个不同日的帧插进同一个 FIFO"——那会以
+# `climate_environment_day_mismatch` 收场。
+#
+# 于是把发布权做成**显式所有权**：`_worker_environment_publisher_callsite` 为 0
+# 表示"任何调用点都可以发"（今天的桌面行为，逐表达式不变）；非 0 表示只有那个
+# 调用点可以发，其余调用点立即返回 suppressed，不打包、不计数、不破坏 FIFO。
+# web worker 的 `_process` 预发布器是唯一会把所有权置非 0 的人。
+var _worker_environment_publisher_callsite: int = 0
+var _save_prefetch_suspend_callback: Callable = Callable()
+var _environment_publish_callsite_mask: int = 0
+var _environment_publish_count: int = 0
+var _environment_publish_suppressed: int = 0
+var _environment_publish_orphan_day: int = -1
+const ENV_CALLSITE_HOST_DAY_CHANGED := 1
+const ENV_CALLSITE_SUS_TICK := 2
+const ENV_CALLSITE_INLINE_DAY := 4
+const ENV_CALLSITE_PREFETCH := 8
 var _last_climate_breakdown: Dictionary = {}
 var _pending_season_refresh: bool = false
 var _season_refresh_in_progress: bool = false
@@ -2102,6 +2131,15 @@ func get_runtime_perf_snapshot(detail_level: int = 0) -> Dictionary:
 	var snapshot: Dictionary = _data_core_world_ext.get_runtime_perf_snapshot(detail_level)
 	snapshot["country_territory_sync_ms"] = _runtime_graph_country_territory_sync_ms
 	snapshot["event_dispatch_ms"] = _runtime_graph_country_event_dispatch_ms
+	# P1：环境帧发布者的 GDScript 侧账本（C++ 侧看不到谁在打包）。
+	snapshot["environment_publish_callsite_mask"] = _environment_publish_callsite_mask
+	snapshot["environment_publish_count"] = _environment_publish_count
+	snapshot["environment_publish_suppressed"] = _environment_publish_suppressed
+	snapshot["environment_publish_orphan_day"] = _environment_publish_orphan_day
+	snapshot["environment_publisher_callsite"] = _worker_environment_publisher_callsite
+	snapshot["environment_frames_ahead"] = maxi(0,
+		int(snapshot.get("simulation_environment_day", 0)) \
+		- int(snapshot.get("simulation_committed_day", 0)))
 	return snapshot
 
 
@@ -2453,11 +2491,61 @@ func _runtime_climate_trace_has_older_pending(day: int) -> bool:
 	return false
 
 
+# ─── P1：环境帧发布者所有权 ────────────────────────────────────────────────
+# `callsite` 为 0（默认）⇒ 所有权为空 ⇒ 任何调用点都能发，与改动前逐字节相同。
+func set_worker_environment_publisher(callsite: int) -> void:
+	_worker_environment_publisher_callsite = maxi(callsite, 0)
+
+
+## 存盘窗口的预发布暂停回调。`request_runtime_save()` 是 game_save_coordinator
+## 直接调的入口（不经过 WorldRuntimeHost），所以"先降 K 再 drain ring"必须由
+## 发布权的真正持有者在这里收口。
+func set_save_prefetch_suspend_callback(callback: Callable) -> void:
+	_save_prefetch_suspend_callback = callback
+
+
+func _notify_save_prefetch_suspend() -> void:
+	if _save_prefetch_suspend_callback.is_valid():
+		_save_prefetch_suspend_callback.call("request_runtime_save")
+
+
+func worker_environment_publisher_callsite() -> int:
+	return _worker_environment_publisher_callsite
+
+
+func environment_publish_callsite_mask() -> int:
+	return _environment_publish_callsite_mask
+
+
+func environment_publish_diagnostics() -> Dictionary:
+	return {
+		"environment_publish_callsite_mask": _environment_publish_callsite_mask,
+		"environment_publish_count": _environment_publish_count,
+		"environment_publish_suppressed": _environment_publish_suppressed,
+		"environment_publish_orphan_day": _environment_publish_orphan_day,
+		"environment_publisher_callsite": _worker_environment_publisher_callsite,
+	}
+
+
+## 今天这一天还该不该由本调用点发布环境帧。
+## 返回 false 时调用方必须**什么都不做**：不打包、不递增 generation —— 打包了却
+## 被别人抢先发，只会得到 `runtime_input_stale` 的静默丢弃（并让 generation 空洞）。
+func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
+	if _worker_environment_publisher_callsite == 0:
+		return true
+	if callsite == _worker_environment_publisher_callsite:
+		return true
+	_environment_publish_suppressed += 1
+	_environment_publish_orphan_day = day
+	return false
+
+
 ## Phase A input boundary.  This is the only production helper allowed to
 ## read MapData arrays before they cross into NativeSimulationHost.  The
 ## returned dictionary is immediately copied by the C++ facade; no PackedArray
 ## reference is retained by the worker.
-func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Dictionary:
+func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
+		callsite: int = 0) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
 		return _runtime_climate_failure("runtime_worker_api_missing", "runtime worker input API is unavailable", day)
 	var map: MapData = _sus_map
@@ -2471,6 +2559,18 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 			and _world_clock_ref.has_method("season_phase") else 0.0
 	if is_nan(phase) or is_inf(phase) or day < 0:
 		return _runtime_climate_failure("runtime_input_value_invalid", "day/season phase is not finite", day)
+	# P1：所有权检查必须在**任何**打包动作之前。打包本身要做季节刷新重算与
+	# 26+10 条 lane 的拷贝，先打包再被拒就白付一次；更糟的是打包会推进
+	# `_runtime_input_generation`，让真正的发布者拿到一个空洞的代次。
+	if not _runtime_environment_publish_allowed(callsite, day):
+		return {
+			"ok": true,
+			"suppressed": true,
+			"day": day,
+			"code": "runtime_input_publisher_superseded",
+			"publisher": _worker_environment_publisher_callsite,
+			"callsite": callsite,
+		}
 	if _runtime_climate_trace_pending.has(day):
 		var cached: Dictionary = _runtime_climate_trace_pending[day]
 		return {
@@ -2502,7 +2602,12 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 			int(thread_report.get("simulation_environment_generation",
 				thread_report.get("environment_generation", 0))))
 		if _climate_authority_grant_pending(thread_report):
-			thread_report = _wait_climate_authority_grant()
+			# P1：预发布器**不许**在这里等。这个等待是 10ms 切片 + 200us 忙等的
+			# 主线程自旋（上限 60s），而预发布器的设计前提就是"失败即返回、下一帧
+			# 再来"。它等的东西（worker 提交到 captured day）恰好由预发布自己喂
+			# 出来，在这里等就是等自己 —— 正是 web 上"首日卡 24 秒"的形态。
+			if callsite != ENV_CALLSITE_PREFETCH:
+				thread_report = _wait_climate_authority_grant()
 	# Season refresh reads the climate fields in MapData and writes base_moisture /
 	# moisture that this capture hands to the worker. Under worker authority a due
 	# round runs here in one piece, after MapData has been brought to the worker's
@@ -2512,7 +2617,12 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 			and _season_refresh_job != null:
 		if _season_refresh_job.has_method("has_capture_round_pending") \
 				and _season_refresh_job.has_capture_round_pending():
-			_drain_climate_writeback_for_season_refresh()
+			# 预发布路径不做"等回灌"（那是主线程阻塞），但仍然要跑这一轮重算，
+			# 否则 moisture/PAW 会无限期停在旧值上。代价：这一轮读到的是当前
+			# MapData（最多滞后 K 天），与"预发布让主线程拥有的 lane 变旧"是同一
+			# 条已知代价，见 tmp/next/day_barrier_protocol.md §3.1.3。
+			_drain_climate_writeback_for_season_refresh(thread_report,
+				callsite != ENV_CALLSITE_PREFETCH)
 			_season_refresh_job.run_round_for_capture()
 		elif _season_refresh_job.has_method("finish_round_now"):
 			_season_refresh_job.finish_round_now()
@@ -2662,6 +2772,10 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 		_runtime_input_generation = input_generation
 		_runtime_last_capture_day = day
 		_last_capture_season_refresh_day = _last_season_refresh_day
+		# P1 调用点账本：谁真的发出去了。收敛成单一发布者之后这里应当只剩一位。
+		if callsite != 0:
+			_environment_publish_callsite_mask |= callsite
+		_environment_publish_count += 1
 		var round_state := _native_daily_climate_round_state_snapshot()
 		_runtime_climate_trace_pending[day] = {
 			"day": day,
@@ -2931,6 +3045,10 @@ func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
 func request_runtime_save(request_id: int) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("request_runtime_save"):
 		return {"ok": false, "code": "runtime_worker_api_missing"}
+	# P1：存盘准入要求 ring 排空（`!has_pending_climate_input()`），而预发布会让
+	# ring 长期非空。先让 host 把 K 降到 0、停掉新帧；环里的未来帧由 worker 侧
+	# 在存盘准入处丢弃（PKSR 不保存 pending environment）。
+	_notify_save_prefetch_suspend()
 	return _data_core_world_ext.request_runtime_save(request_id)
 
 
@@ -3858,6 +3976,36 @@ func _disabled_sea_ice_atlas_report(reason: String) -> Dictionary:
 	}
 
 
+## 取 HexCell 的 facade cid 缓存（39 项）。不可用（字段改名/类型不符）返回空数组。
+## 这两份缓存只取决于 (DCWorld, DCWorldExt) 的注册表，与 cell 无关 —— 这正是
+## 能把 2400 格 × 78 次 component_id 查询压成一次的原因。
+func _cell_facade_cids_of(cell: Object, field: StringName) -> PackedInt32Array:
+	if cell == null:
+		return PackedInt32Array()
+	var value: Variant = cell.get(field)
+	if value is PackedInt32Array:
+		return value
+	return PackedInt32Array()
+
+
+## 用共享 cid 表完成一次 `HexCell.bind_world()` 等价注入。
+## 返回 false = 该对象不接受注入（调用方退回 bind_world()，行为不变）。
+func _bind_cell_facade_with_cids(cell: Object, facade_on: bool,
+		cid_gd: PackedInt32Array, cid_ext: PackedInt32Array) -> bool:
+	var cell_index: Variant = cell.get(&"index")
+	if not (cell_index is int):
+		return false
+	var expected := facade_on and (_data_core_world != null) and int(cell_index) >= 0
+	cell.set(&"_world", _data_core_world)
+	cell.set(&"_world_ext", _data_core_world_ext)
+	cell.set(&"_facade_enabled", expected)
+	cell.set(&"_cid_array", cid_gd)
+	cell.set(&"_cid_array_ext", cid_ext)
+	# 回读校验：任一处字段名/语义漂移就整体退回 bind_world()。
+	return bool(cell.get(&"_facade_enabled")) == expected \
+			and _cell_facade_cids_of(cell, &"_cid_array").size() == cid_gd.size()
+
+
 func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_sus_map = map
 	_sus_world = world
@@ -3975,15 +4123,37 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var _cell_arr_for_bind: Array = map._cell_array
 		var _n_cells_for_bind: int = _cell_arr_for_bind.size()
 		_loading_profile_step("cell_facade_bind")
+		# dots-boot-facade-2026-10：bind_world() 的 cid 缓存只取决于
+		# (DCWorld, DCWorldExt) 两侧的注册表，与具体 cell 无关，但原实现要逐格做
+		# 39×2 次 component_id 查询 + 39 次 String.replace（2400 格 ≈ 19 万次调用，
+		# Web 实测 520~1000ms）。这里改成「第 0 格走原路径顺手产出 cid 表，其余格
+		# 直接注入同一份 PackedArray」，每格只剩 5 次属性赋值。
+		# 任何一步不符合预期（脚本字段改名 / 拿不到 cid 表）→ 立即整体退回原循环。
+		var _cid_gd := PackedInt32Array()
+		var _cid_ext := PackedInt32Array()
+		var _hoisted := false
 		for _ci in range(_n_cells_for_bind):
 			if _generation_slice_due():
 				await (Engine.get_main_loop() as SceneTree).process_frame
 				_generation_slice_start_usec = Time.get_ticks_usec()
 			var _c_for_bind = _cell_arr_for_bind[_ci]
-			if _c_for_bind != null and _c_for_bind.has_method("bind_world"):
+			if _c_for_bind == null or not _c_for_bind.has_method("bind_world"):
+				continue
+			if _ci == 0:
 				_c_for_bind.bind_world(_data_core_world, _facade_on, _data_core_world_ext)
+				_cid_gd = _cell_facade_cids_of(_c_for_bind, &"_cid_array")
+				_cid_ext = _cell_facade_cids_of(_c_for_bind, &"_cid_array_ext")
+				_hoisted = not _cid_gd.is_empty() and not _cid_ext.is_empty()
+				continue
+			if _hoisted and _bind_cell_facade_with_cids(
+					_c_for_bind, _facade_on, _cid_gd, _cid_ext):
+				continue
+			# 兜底：cid 表不可复用 → 逐格走原路径（与迁移前完全一致）。
+			_hoisted = false
+			_c_for_bind.bind_world(_data_core_world, _facade_on, _data_core_world_ext)
 		if _facade_on:
-			print("[hex_cell] facade ENABLED (%d cells bound; ext=%s)" % [_n_cells_for_bind, str(_data_core_world_ext != null)])
+			print("[hex_cell] facade ENABLED (%d cells bound; ext=%s; shared_cids=%s)" % [
+				_n_cells_for_bind, str(_data_core_world_ext != null), str(_cid_gd.size())])
 	# DOTS-Final-Push 修复：把 ClimateProfile 直接注入 MapBaker。
 	# 历史上 sea_ice prepare / albedo / veg_dyn / feedback 通过 `world.get("config")`
 	# 取 cp 永远拿到 null（WorldData 上没有 config 字段），导致 use_native 一直 false，
@@ -3996,26 +4166,38 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	if cfg != null:
 		cfg.climate_profile = _c()
 	if _baker != null and _baker.has_method("run_deferred_initial_physical_circulation"):
+		_loading_profile_step("deferred_physical_circulation")
 		_baker.run_deferred_initial_physical_circulation(map, world, hex_size, cfg)
 	# per-cell LUT 同样推迟到这里：ext 已 bind、原生温度场已 publish，encode_cell_luts
 	# 因此能走 C++ 并读到权威气候值。仍在 generate() 内，早于渲染器绑定 lut 纹理。
 	if _baker != null and _baker.has_method("run_deferred_initial_cell_luts"):
+		_loading_profile_step("deferred_cell_luts")
 		_baker.run_deferred_initial_cell_luts(map, world)
 	# Resource bootstrap must observe committed physical geography. It still
 	# precedes economy bootstrap, and the explicit push keeps the native
 	# snapshot slots identical to MapData after replacing PackedArrays.
 	await _yield_generation_frame()
-	_loading_profile_step("_bootstrap_natural_resource_deposits")
-	await _bootstrap_natural_resource_deposits(map, cfg, true)
+	# dots-boot-facade-2026-10：资源勘测 → 槽发布 → 研究信号 → 生态播种四段原本是
+	# 「GDScript 造数组 → native 单 pass」，每段之间还要 `_yield_generation_frame()`
+	# 让帧（Web 非 headless 下每次等 4 帧）。现在整链压成一次 `run_boot_facade_pass`：
+	# habitat 掩码 / 河口羽流两段 per-cell 循环搬进 C++，中间量不出语言边界。
+	# native 不可用（旧 DLL）或任一段被拒 → 逐段走下面原链路，行为逐位不变。
+	_loading_profile_step("_bootstrap_world_facades")
+	var _fused_boot := _bootstrap_world_facades(map, cfg)
+	_loading_profile_step("natural_resource_deposits")
+	if not _fused_boot:
+		await _bootstrap_natural_resource_deposits(map, cfg, true)
 	await _yield_generation_frame()
-	_loading_profile_step("_publish_bootstrapped_natural_resources_to_runtime")
+	_loading_profile_step("publish_natural_resources")
 	_publish_bootstrapped_natural_resources_to_runtime(map)
-	await _yield_generation_frame()
-	_loading_profile_step("_append_natural_resource_research_signals")
-	_append_natural_resource_research_signals(map)
-	await _yield_generation_frame()
-	_loading_profile_step("_seed_bio_occupancy")
-	_seed_bio_occupancy(map)
+	if not _fused_boot:
+		await _yield_generation_frame()
+		_loading_profile_step("resource_research_signals")
+		_append_natural_resource_research_signals(map)
+		await _yield_generation_frame()
+		_loading_profile_step("seed_bio_occupancy")
+		_seed_bio_occupancy(map)
+	_loading_profile_step("facade_bootstrap_tail_done")
 	if not _gameplay_start_context.is_empty():
 		var gameplay_config: Dictionary = _gameplay_start_context.get("config", {})
 		var country_config: Dictionary = gameplay_config.get("country", {})
@@ -7077,6 +7259,16 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 	var cp := _c()
 	if not _native_mode_is_active(cp, "native_daily_sim_mode"):
 		return false
+	# Web 上 native daily 走不通：仿真主机把「一天」的收尾交给 worker 线程，
+	# 浏览器里这条 handoff 永远回不来——实测 SUS 卡在
+	# `native_daily_sim / native_daily_finalizer / pending`，日历停在第 1~2 天
+	# （runtime-forensics 的 stalled_day=1、stalled_ms=45017、fast_tick_count=1）。
+	# 这里改为回退到既有的 GDScript SUS 协作路径（逐帧切片，不跨线程等待）。
+	# 换实现（host 侧改成主线程内联/异步）后再移除这条守卫。
+	# Web 曾经在这里整段回退到 GDScript SUS（当时 host 的 daily handoff 回不来）。
+	# 实际原因是首帧 shader 编译 45s 把整帧堵住；裁剪之后 native daily 在浏览器里
+	# 可以正常注册并推进日历。
+
 	var weather_field_required: bool = _weather_system != null \
 			and _weather_system.has_method("uses_weather_field") \
 			and bool(_weather_system.uses_weather_field())
@@ -8168,7 +8360,7 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	# 所以「worker 的场平坦 = 季节信号被 capture 时点挡在门外」这个假设是错的，真正
 	# 的原因在别处。挪回来：没有证据支持的时点改动不值得留在这条路径上。
 	var runtime_climate_capture: Dictionary = \
-		capture_runtime_inputs_for_worker(trace_input_day, sp)
+		capture_runtime_inputs_for_worker(trace_input_day, sp, ENV_CALLSITE_SUS_TICK)
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
 	if _refresh_climate_daily_job != null:
@@ -9129,6 +9321,11 @@ const CLIMATE_AUTHORITY_GRANT_TIMEOUT_MS := 60000
 ## capture that first observes the grant depended on how far the worker had got,
 ## and every capture before it ran Climate on the main thread instead.
 func _climate_authority_grant_pending(thread_report: Dictionary) -> bool:
+	# 内联日（web）没有 worker：grant 只能由内联日自己产生，在这里等它等于等自己。
+	# 这个 60s 自旋整段落在 inline_day 的计时区间里，浏览器上表现为"首日卡 24 秒 ~
+	# 彻底挂死"，而所有 native stage_ms 都只有 ~1ms。
+	if bool(thread_report.get("native_daily_inline", false)):
+		return false
 	if _runtime_last_capture_day < 0 \
 			or bool(thread_report.get("climate_worker_authoritative", false)):
 		return false
@@ -9171,11 +9368,24 @@ func season_refresh_defers_to_capture() -> bool:
 ## captured day. Pipelined, the writeback applied so far trails by however many
 ## days the worker happens to be behind. Country peer intents are serviced
 ## between waits: the worker can be parked on one before it reaches that day.
-func _drain_climate_writeback_for_season_refresh() -> void:
+##
+## 阻塞守卫（与 `_climate_authority_grant_pending()` 同形）：这个函数是一个
+## 10ms 切片 + `OS.delay_usec(200)` 的主线程自旋，上限 60s，而它就在
+## `capture_runtime_inputs_for_worker()` 的调用栈里 —— 也就是在 `day_changed`
+## 里。web/inline 路径下"等 worker 回灌"等于等自己：内联执行者就是本线程，
+## 回灌只可能在本函数返回之后发生。所以内联/无 worker 模式必须直接返回。
+func _drain_climate_writeback_for_season_refresh(thread_report: Dictionary = {},
+		allow_blocking: bool = true) -> void:
 	var ext = _data_core_world_ext
+	if not allow_blocking:
+		return
 	if ext == null or _runtime_last_capture_day < 0 \
 			or not ext.has_method("apply_runtime_climate_writeback") \
 			or not ext.has_method("wait_climate_consumed"):
+		return
+	if bool(thread_report.get("native_daily_inline", false)):
+		return
+	if String(thread_report.get("state", "")) in ["STOPPED", "FAULTED"]:
 		return
 	var target_day := _runtime_last_capture_day
 	var started_ms := Time.get_ticks_msec()
@@ -9427,14 +9637,11 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 		return
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
-	var water_arr: PackedByteArray = map_ref.is_water_arr
 	var terrain_arr: PackedByteArray = map_ref.terrain_arr
 	var elev_arr: PackedFloat32Array = map_ref.elevation_arr
 	var lf_arr: PackedByteArray = map_ref.landform_arr
 	var veg_arr: PackedByteArray = map_ref.vegetation_arr
 	var river_arr: PackedByteArray = map_ref.has_river_arr
-	var river_flow_arr: PackedFloat32Array = map_ref.river_flow_arr
-	var river_downstream_arr: PackedInt32Array = map_ref.river_downstream_arr
 	var lake_arr: PackedByteArray = map_ref.is_lake_seed_arr
 	var volcano_arr: PackedByteArray = map_ref.has_volcano_arr
 	var ocean_x_arr: PackedFloat32Array = map_ref.ocean_current_x_arr
@@ -9442,14 +9649,11 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 	var upwelling_arr: PackedFloat32Array = map_ref.upwelling_strength_arr
 	var posx_arr: PackedFloat32Array = map_ref.cell_pos_x_arr
 	var posy_arr: PackedFloat32Array = map_ref.cell_pos_y_arr
-	var have_water: bool = water_arr.size() >= n_cells
 	var have_terrain: bool = terrain_arr.size() >= n_cells
 	var have_elev: bool = elev_arr.size() >= n_cells
 	var have_lf: bool = lf_arr.size() >= n_cells
 	var have_veg: bool = veg_arr.size() >= n_cells
 	var have_river: bool = river_arr.size() >= n_cells
-	var have_river_flow: bool = river_flow_arr.size() >= n_cells
-	var have_river_downstream: bool = river_downstream_arr.size() >= n_cells
 	var have_lake: bool = lake_arr.size() >= n_cells
 	var have_volcano: bool = volcano_arr.size() >= n_cells
 	var have_ocean_current: bool = ocean_x_arr.size() >= n_cells and ocean_y_arr.size() >= n_cells
@@ -9457,73 +9661,15 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 	var have_pos: bool = posx_arr.size() >= n_cells and posy_arr.size() >= n_cells
 	var neighbor_indices: PackedInt32Array = map_ref.neighbor_indices_packed()
 	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
-	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
-	if habitat_arr.size() < n_cells:
-		habitat_arr.resize(n_cells)
-	for i in range(n_cells):
-		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
-			_generation_slice_start_usec = Time.get_ticks_usec()
-		var mask := 0
-		var is_water_cell := have_water and water_arr[i] != 0
-		var landform := int(lf_arr[i]) if have_lf else -1
-		if not is_water_cell:
-			mask |= 1
-			if have_river and river_arr[i] != 0:
-				mask |= 4
-			if have_neighbors:
-				for direction in range(6):
-					var neighbor := int(neighbor_indices[i * 6 + direction])
-					if neighbor < 0 or neighbor >= n_cells or not have_water \
-							or water_arr[neighbor] == 0:
-						continue
-					var neighbor_landform := int(lf_arr[neighbor]) if have_lf else -1
-					if neighbor_landform == LandformType.LF.LAKE:
-						mask |= 4
-					elif neighbor_landform in [LandformType.LF.DEEP_OCEAN,
-							LandformType.LF.OCEAN, LandformType.LF.COAST]:
-						mask |= 8
-		elif landform in [LandformType.LF.DEEP_OCEAN, LandformType.LF.OCEAN,
-				LandformType.LF.COAST]:
-			mask |= 2
-		elif landform == LandformType.LF.LAKE:
-			mask |= 4
-		habitat_arr[i] = mask
+	# habitat 掩码 / 河口羽流两段纯几何派生量：融合 pass 在 C++ 里与矿藏 pass
+	# 一次算完；这里保留 GDScript 实现作为旧 DLL 兜底与 A/B 参考。
+	var habitat_arr: PackedByteArray = await _collect_resource_habitat_mask(map_ref, cooperative)
 	map_ref.resource_habitat_mask_arr = habitat_arr
 	# River mouths are geography-derived productivity inputs, not resource access:
 	# every cell still owns and exposes only its own reserve. Mark the river cell,
 	# its ocean outlet, and a weaker one-ring marine plume.
-	var estuary_strength_arr := PackedFloat32Array()
-	estuary_strength_arr.resize(n_cells)
-	if have_river and have_river_downstream and have_lf:
-		for source in range(n_cells):
-			if cooperative and _generation_slice_due():
-				await (Engine.get_main_loop() as SceneTree).process_frame
-				_generation_slice_start_usec = Time.get_ticks_usec()
-			if river_arr[source] == 0:
-				continue
-			var outlet := int(river_downstream_arr[source])
-			if outlet < 0 or outlet >= n_cells:
-				continue
-			var outlet_landform := int(lf_arr[outlet])
-			if outlet_landform not in [LandformType.LF.DEEP_OCEAN,
-					LandformType.LF.OCEAN, LandformType.LF.COAST]:
-				continue
-			var flow_signal := 1.0 - exp(-maxf(
-				float(river_flow_arr[source]) if have_river_flow else 1.0, 0.0) * 0.25)
-			var mouth_strength := 0.75 + 0.25 * flow_signal
-			estuary_strength_arr[source] = maxf(estuary_strength_arr[source], mouth_strength)
-			estuary_strength_arr[outlet] = maxf(estuary_strength_arr[outlet], mouth_strength)
-			if have_neighbors:
-				for direction in range(6):
-					var plume_cell := int(neighbor_indices[outlet * 6 + direction])
-					if plume_cell < 0 or plume_cell >= n_cells:
-						continue
-					var plume_landform := int(lf_arr[plume_cell])
-					if plume_landform in [LandformType.LF.DEEP_OCEAN,
-							LandformType.LF.OCEAN, LandformType.LF.COAST]:
-						estuary_strength_arr[plume_cell] = maxf(
-							estuary_strength_arr[plume_cell], mouth_strength * 0.45)
+	var estuary_strength_arr: PackedFloat32Array = await _collect_estuary_strength(
+		map_ref, cooperative)
 	# native-first：整段矿藏储量（O(资源 × cell) + 每资源排名分配）交给 C++ 一次算完。
 	# 失败（旧 DLL / 形状不符）时继续走下面的 GDScript 路径，行为与迁移前一致。
 	if _try_bootstrap_natural_resources_native(map_ref, cfg, habitat_arr, estuary_strength_arr):
@@ -9744,15 +9890,34 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 ##
 ## 返回 true 表示已把每种资源的 reserve 列写回 MapData。
 const RESOURCE_SCALAR_STRIDE := 32
-func _try_bootstrap_natural_resources_native(map_ref, cfg,
-		habitat_arr: PackedByteArray, estuary_strength_arr: PackedFloat32Array) -> bool:
-	if map_ref == null or _data_core_world_ext == null:
-		return false
-	if not _data_core_world_ext.has_method("run_resource_deposit_pass"):
-		return false
+## 矿藏 pass 用的噪声实例池。同 (seed, 类型, 序号/家族) 复用同一个 Ref：
+## 参数相同但每次 new 出的对象不保证逐位可复现，而 A/B 探针必须与正式路径
+## 共用同一批实例才能做「零容差」比较；顺带省掉每次重建 30+ 个 FastNoiseLite。
+var _deposit_noise_cache: Dictionary = {}
+
+
+func _deposit_noise_instance(cache_key: String, seed_value: int,
+		frequency: float) -> FastNoiseLite:
+	var cached = _deposit_noise_cache.get(cache_key)
+	if cached != null:
+		return cached
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.seed = seed_value
+	noise.frequency = maxf(0.0001, frequency)
+	_deposit_noise_cache[cache_key] = noise
+	return noise
+
+
+## 构造 run_resource_deposit_pass 的 knobs（**不含** habitat_mask / estuary 两列）。
+## 这两列是纯几何派生量：融合 pass `run_boot_facade_pass` 会在 C++ 里现算后直接
+## 填进同一份 knobs；旧 DLL 兜底路径仍由 `_bootstrap_natural_resource_deposits()`
+## 的 GDScript 段现算后填入。两侧 knobs 除这两列外逐键相同，数值因此同源。
+## 返回 {} 表示形状不支持（cell<=0 / 资源数为 0 / 标量表超限）。
+func _build_resource_deposit_knobs(map_ref, cfg) -> Dictionary:
 	var n_cells: int = map_ref.cell_count()
-	if n_cells <= 0 or habitat_arr.size() < n_cells:
-		return false
+	if n_cells <= 0:
+		return {}
 	# 只保留有 reserve 字段的资源（旧路径对 field == "" 的资源直接 continue）。
 	var rows: Array = []
 	for p in ResourceProfileRegistry.ordered():
@@ -9760,9 +9925,9 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 			rows.append(p)
 	var resource_count := rows.size()
 	if resource_count <= 0:
-		return false
+		return {}
 	if resource_count * RESOURCE_SCALAR_STRIDE > 8192:
-		return false
+		return {}
 
 	var base_seed: int = 0
 	if cfg != null and cfg.get("seed") != null:
@@ -9858,12 +10023,13 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 			excluded_vegetation[r * excluded_veg_width + int(vegetation_id)] = 1
 
 		# 噪声实例：与旧路径完全同 seed / 同 frequency（C++ 只负责取值）。
+		# 实例按 (seed, 资源序号/地质家族, 类型) 复用：它们是构造函数参数的纯函数，
+		# 但每次 new 出来的对象不保证逐位可复现，因此同一代地图内必须复用同一批实例
+		# ——A/B 探针把「融合内联调用」和「探针重建 knobs」放在一起比较才成立。
 		if have_pos and absf(float(p.init_noise)) > 0.0:
-			var noise := FastNoiseLite.new()
-			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-			noise.seed = base_seed ^ int(hash(p.id))
-			noise.frequency = maxf(0.0001, float(p.init_noise_scale))
-			noise_refs.append(noise)
+			noise_refs.append(_deposit_noise_instance(
+				"%d|noise:%d" % [base_seed, r], base_seed ^ int(hash(p.id)),
+				float(p.init_noise_scale)))
 		else:
 			noise_refs.append(null)
 		var family_id := String(p.geology_family_id)
@@ -9871,10 +10037,10 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 			var province_key := "%s:%.6f" % [family_id, float(p.init_province_scale)]
 			var province_noise = province_noises.get(province_key)
 			if province_noise == null:
-				province_noise = FastNoiseLite.new()
-				province_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-				province_noise.seed = base_seed ^ int(hash("province:" + family_id))
-				province_noise.frequency = maxf(0.0001, float(p.init_province_scale))
+				province_noise = _deposit_noise_instance(
+					"%d|province:%s" % [base_seed, province_key],
+					base_seed ^ int(hash("province:" + family_id)),
+					float(p.init_province_scale))
 				province_noises[province_key] = province_noise
 			province_refs.append(province_noise)
 		else:
@@ -9883,10 +10049,10 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 			var belt_key := "%s:%.6f" % [family_id, float(p.init_belt_scale)]
 			var belt_noise = belt_noises.get(belt_key)
 			if belt_noise == null:
-				belt_noise = FastNoiseLite.new()
-				belt_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-				belt_noise.seed = base_seed ^ int(hash("belt:" + family_id))
-				belt_noise.frequency = maxf(0.0001, float(p.init_belt_scale))
+				belt_noise = _deposit_noise_instance(
+					"%d|belt:%s" % [base_seed, belt_key],
+					base_seed ^ int(hash("belt:" + family_id)),
+					float(p.init_belt_scale))
 				belt_noises[belt_key] = belt_noise
 			belt_refs.append(belt_noise)
 		else:
@@ -9906,11 +10072,9 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 		"ocean_x": map_ref.ocean_current_x_arr,
 		"ocean_y": map_ref.ocean_current_y_arr,
 		"upwelling": map_ref.upwelling_strength_arr,
-		"estuary": estuary_strength_arr,
 		"pos_x": posx_arr,
 		"pos_y": posy_arr,
 		"neighbor_indices": map_ref.neighbor_indices_packed(),
-		"habitat_mask": habitat_arr,
 		"field_names": field_names,
 		"habitat_codes": habitat_codes,
 		"scalars": scalars,
@@ -9928,6 +10092,26 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 		"province_noise": province_refs,
 		"belt_noise": belt_refs,
 	}
+	return knobs
+
+
+## 旧 DLL 兜底：把 habitat / estuary 两列补进 knobs 后单独跑矿藏 pass。
+func _try_bootstrap_natural_resources_native(map_ref, cfg,
+		habitat_arr: PackedByteArray, estuary_strength_arr: PackedFloat32Array) -> bool:
+	if map_ref == null or _data_core_world_ext == null:
+		return false
+	if not _data_core_world_ext.has_method("run_resource_deposit_pass"):
+		return false
+	var n_cells: int = map_ref.cell_count()
+	if n_cells <= 0 or habitat_arr.size() < n_cells:
+		return false
+	var knobs: Dictionary = _build_resource_deposit_knobs(map_ref, cfg)
+	if knobs.is_empty():
+		return false
+	var resource_count: int = (knobs.get("field_names", PackedStringArray()) as PackedStringArray).size()
+	knobs["cell_count"] = n_cells
+	knobs["habitat_mask"] = habitat_arr
+	knobs["estuary"] = estuary_strength_arr
 	var started := Time.get_ticks_usec()
 	var report: Dictionary = _data_core_world_ext.run_resource_deposit_pass(knobs)
 	if not bool(report.get("ok", false)):
@@ -9946,6 +10130,502 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 	print("[resource-deposits] path=gdext resources=%d cells=%d total_ms=%.1f native_ms=%.1f"
 		% [resource_count, n_cells, native_ms, float(report.get("elapsed_ms", 0.0))])
 	return true
+
+
+## 旧 DLL 兜底 + A/B 参考实现：构造 `cell.resource_habitat_mask`。
+## 融合 pass 在 C++ 里跑同一段逻辑（world_ext_boot_facade.cpp boot_habitat_mask）。
+func _collect_resource_habitat_mask(map_ref, cooperative: bool = false) -> PackedByteArray:
+	var n_cells: int = map_ref.cell_count()
+	var water_arr: PackedByteArray = map_ref.is_water_arr
+	var lf_arr: PackedByteArray = map_ref.landform_arr
+	var river_arr: PackedByteArray = map_ref.has_river_arr
+	var neighbor_indices: PackedInt32Array = map_ref.neighbor_indices_packed()
+	var habitat_arr: PackedByteArray = map_ref.resource_habitat_mask_arr
+	if habitat_arr.size() < n_cells:
+		habitat_arr.resize(n_cells)
+	var have_water: bool = water_arr.size() >= n_cells
+	var have_lf: bool = lf_arr.size() >= n_cells
+	var have_river: bool = river_arr.size() >= n_cells
+	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
+	for i in range(n_cells):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
+		var mask := 0
+		var is_water_cell := have_water and water_arr[i] != 0
+		var landform := int(lf_arr[i]) if have_lf else -1
+		if not is_water_cell:
+			mask |= 1
+			if have_river and river_arr[i] != 0:
+				mask |= 4
+			if have_neighbors:
+				for direction in range(6):
+					var neighbor := int(neighbor_indices[i * 6 + direction])
+					if neighbor < 0 or neighbor >= n_cells or not have_water \
+							or water_arr[neighbor] == 0:
+						continue
+					var neighbor_landform := int(lf_arr[neighbor]) if have_lf else -1
+					if neighbor_landform == LandformType.LF.LAKE:
+						mask |= 4
+					elif neighbor_landform in [LandformType.LF.DEEP_OCEAN,
+							LandformType.LF.OCEAN, LandformType.LF.COAST]:
+						mask |= 8
+		elif landform in [LandformType.LF.DEEP_OCEAN, LandformType.LF.OCEAN,
+				LandformType.LF.COAST]:
+			mask |= 2
+		elif landform == LandformType.LF.LAKE:
+			mask |= 4
+		habitat_arr[i] = mask
+	return habitat_arr
+
+
+## 旧 DLL 兜底 + A/B 参考实现：河口/羽流生产力强度。
+## 融合 pass 在 C++ 里跑同一段逻辑（world_ext_boot_facade.cpp boot_estuary_strength）。
+func _collect_estuary_strength(map_ref, cooperative: bool = false) -> PackedFloat32Array:
+	var n_cells: int = map_ref.cell_count()
+	var lf_arr: PackedByteArray = map_ref.landform_arr
+	var river_arr: PackedByteArray = map_ref.has_river_arr
+	var river_flow_arr: PackedFloat32Array = map_ref.river_flow_arr
+	var river_downstream_arr: PackedInt32Array = map_ref.river_downstream_arr
+	var neighbor_indices: PackedInt32Array = map_ref.neighbor_indices_packed()
+	var estuary_strength_arr := PackedFloat32Array()
+	estuary_strength_arr.resize(n_cells)
+	var have_lf: bool = lf_arr.size() >= n_cells
+	var have_river: bool = river_arr.size() >= n_cells
+	var have_river_flow: bool = river_flow_arr.size() >= n_cells
+	var have_river_downstream: bool = river_downstream_arr.size() >= n_cells
+	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
+	if not (have_river and have_river_downstream and have_lf):
+		return estuary_strength_arr
+	for source in range(n_cells):
+		if cooperative and _generation_slice_due():
+			await (Engine.get_main_loop() as SceneTree).process_frame
+			_generation_slice_start_usec = Time.get_ticks_usec()
+		if river_arr[source] == 0:
+			continue
+		var outlet := int(river_downstream_arr[source])
+		if outlet < 0 or outlet >= n_cells:
+			continue
+		var outlet_landform := int(lf_arr[outlet])
+		if outlet_landform not in [LandformType.LF.DEEP_OCEAN,
+				LandformType.LF.OCEAN, LandformType.LF.COAST]:
+			continue
+		var flow_signal := 1.0 - exp(-maxf(
+			float(river_flow_arr[source]) if have_river_flow else 1.0, 0.0) * 0.25)
+		var mouth_strength := 0.75 + 0.25 * flow_signal
+		estuary_strength_arr[source] = maxf(estuary_strength_arr[source], mouth_strength)
+		estuary_strength_arr[outlet] = maxf(estuary_strength_arr[outlet], mouth_strength)
+		if have_neighbors:
+			for direction in range(6):
+				var plume_cell := int(neighbor_indices[outlet * 6 + direction])
+				if plume_cell < 0 or plume_cell >= n_cells:
+					continue
+				var plume_landform := int(lf_arr[plume_cell])
+				if plume_landform in [LandformType.LF.DEEP_OCEAN,
+						LandformType.LF.OCEAN, LandformType.LF.COAST]:
+					estuary_strength_arr[plume_cell] = maxf(
+						estuary_strength_arr[plume_cell], mouth_strength * 0.45)
+	return estuary_strength_arr
+
+
+## `_log_bio_occupancy_seed()` 的诊断名字表。融合 pass 的 C++ 聚合段与 GDScript
+## 兜底段共用这一份，保证两条路径打印逐字相同。
+const BIO_LOG_CLASS_NAMES := [
+	"none", "open_food", "wetland_food", "highland_food", "open_grazer",
+	"forest_grazer", "dry_grazer", "cold_grazer", "tropical", "fiber_open",
+	"fiber_wet", "fiber_forest",
+]
+const BIO_LOG_FOOD_IDS := ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]
+const BIO_LOG_FOOD_NAMES := ["maize", "wheat", "rice", "potato"]
+
+
+func _bio_log_food_bits() -> PackedInt32Array:
+	var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var bits := PackedInt32Array()
+	for food_id in BIO_LOG_FOOD_IDS:
+		bits.append(ResearchSignalCatalogScript.occupancy_bit_for_signal(
+			catalog, StringName(food_id)))
+	return bits
+
+
+## carrier_unique_ids → reserve 字段名。查找规则与 `_bio_reserve_column()` 逐行一致：
+## 取 ResourceProfileRegistry.ordered() 里第一个 id 匹配的资源的 reserve 字段；
+## 匹配不到给 ""（对应老链路的空列）。
+## 融合路径里 MapData 的 reserve 字段还没写入（矿藏与生态在同一次 native 调用里
+## 才算），所以把字段名交给 C++，让它从矿藏输出按名对齐取列。
+func _bio_carrier_reserve_fields(knobs: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray()
+	for raw_id in knobs.get("carrier_unique_ids", []):
+		out.append(_bio_reserve_field_for(String(raw_id)))
+	return out
+
+
+func _bio_reserve_field_for(resource_id: String) -> String:
+	for profile in ResourceProfileRegistry.ordered():
+		if String(profile.id) != resource_id:
+			continue
+		return ResourceProfileRegistry.reserve_map_field(profile)
+	return ""
+
+
+## 构造资源研究信号合并（mode=resources）的 knobs。储量列由融合 pass 直接取矿藏
+## pass 的输出填进去；旧链路则由 `_append_natural_resource_research_signals()` 从
+## MapData 的 reserve 字段取。两边数值同源。
+func _build_resource_signal_knobs(map_ref: MapData) -> Dictionary:
+	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
+	if not bool(catalog.get("ok", false)):
+		push_error("[research-signals] resource catalog compile failed")
+		return {}
+	if map_ref == null or map_ref.cell_count() <= 0:
+		return {}
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var dense := PackedInt32Array()
+	for profile in ResourceProfileRegistry.ordered():
+		var signal_index := ids.find("resource.%s" % String(profile.id))
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if signal_index < 0 or field.is_empty():
+			push_error("[research-signals] resource signal binding missing: %s" % String(profile.id))
+			return {}
+		dense.append(signal_index)
+	if map_ref.cell_research_signal_offsets.size() != map_ref.cell_count() + 1:
+		push_error("[research-signals] static signal CSR missing")
+		return {}
+	return {
+		"cell_signal_offsets": map_ref.cell_research_signal_offsets,
+		"cell_signal_ids": map_ref.cell_research_signal_ids,
+		"cell_signal_values": map_ref.cell_research_signal_values,
+		"resource_signal_ids": dense,
+	}
+
+
+func _boot_facade_ab_requested() -> bool:
+	if Engine.has_meta(&"boot_facade_ab") and bool(Engine.get_meta(&"boot_facade_ab")):
+		return true
+	return OS.get_environment("PK_BOOT_FACADE_AB").strip_edges() == "1"
+
+
+## 只用于同 DLL 的 A/B 计量：置 1 时强制走老链路（不改变任何输出）。
+func _boot_facade_disabled_for_ab() -> bool:
+	return OS.get_environment("PK_BOOT_FACADE_DISABLE").strip_edges() == "1"
+
+
+## 生成收尾 facade 引导链融合（dots-boot-facade-2026-10）。
+##
+## 把原本四段「GDScript 造数组 → native 单 pass → await 让帧」的链路并在
+## `run_boot_facade_pass` 一次调用里：habitat 掩码 → 河口羽流 → 矿藏储量 →
+## 资源研究信号 CSR → 生态 province+播种 → 诊断聚合。中间量不出 C++，调用方
+## 也因此省掉 4 次 `_yield_generation_frame()`（非 headless 每次等 4 帧）。
+##
+## 返回 true = 已由 native 全段接管。返回 false（旧 DLL 无该方法 / 任一段
+## native 拒绝）时调用方逐段走原路径，行为与迁移前逐位一致。
+func _bootstrap_world_facades(map_ref, cfg) -> bool:
+	if map_ref == null or _data_core_world_ext == null:
+		return false
+	if not _data_core_world_ext.has_method("run_boot_facade_pass"):
+		return false
+	if _boot_facade_disabled_for_ab():
+		return false
+	var n_cells: int = map_ref.cell_count()
+	if n_cells <= 0:
+		return false
+	var deposit_knobs: Dictionary = _build_resource_deposit_knobs(map_ref, cfg)
+	if deposit_knobs.is_empty():
+		return false
+	var signal_knobs: Dictionary = _build_resource_signal_knobs(map_ref)
+	if signal_knobs.is_empty():
+		return false
+	var bio_knobs: Dictionary = _bio_occupancy_base_knobs(map_ref)
+	if not bool(bio_knobs.get("ok", false)):
+		return false
+	# 融合路径里 MapData 的 reserve 字段还没写入（矿藏与生态在同一次 native 调用
+	# 里才算），因此把「carrier → reserve 字段名」交给 C++ 从矿藏输出对齐取列，
+	# 并把此刻必然全 0 的 carrier_reserves 拆掉（省 20×n 次 Variant 拷贝）。
+	bio_knobs.erase("carrier_reserves")
+	bio_knobs["carrier_reserve_fields"] = _bio_carrier_reserve_fields(bio_knobs)
+	var started := Time.get_ticks_usec()
+	var report: Dictionary = _data_core_world_ext.run_boot_facade_pass({
+		"cell_count": n_cells,
+		"is_water": map_ref.is_water_arr,
+		"landform": map_ref.landform_arr,
+		"has_river": map_ref.has_river_arr,
+		"river_flow": map_ref.river_flow_arr,
+		"river_downstream": map_ref.river_downstream_arr,
+		"neighbor_indices": map_ref.neighbor_indices_packed(),
+		"habitat_mask_in": map_ref.resource_habitat_mask_arr,
+		"run_deposits": true,
+		"deposit": deposit_knobs,
+		"deposit_knob_sig": _knob_signature(deposit_knobs),
+		"run_signals": true,
+		"resource_signals": signal_knobs,
+		"run_bio": true,
+		"bio": bio_knobs,
+		"bio_food_names": PackedStringArray(BIO_LOG_FOOD_NAMES),
+		"bio_food_bits": _bio_log_food_bits(),
+		"bio_class_names": PackedStringArray(BIO_LOG_CLASS_NAMES),
+	})
+	if not bool(report.get("ok", false)) \
+			or not bool(report.get("deposit_ok", false)) \
+			or not bool(report.get("signal_ok", false)) \
+			or not bool(report.get("bio_ok", false)):
+		push_warning("[boot-facades] native pass declined (%s); diagnostics=%s; falling back per stage" % [
+			String(report.get("reason",
+				report.get("deposit_reason",
+					report.get("signal_reason",
+						report.get("bio_reason", "unknown"))))),
+			str({"stages": report.get("stage_ms", {}),
+				"bio_carriers": [report.get("bio_carrier_declared", -1),
+					report.get("bio_carrier_used", -1)],
+				"deposit_fields": (report.get("deposit_fields", PackedStringArray()) as PackedStringArray).size(),
+				"reserves": (report.get("deposit_reserves", []) as Array).size()})])
+		return false
+	var wall_ms := float(Time.get_ticks_usec() - started) / 1000.0
+	var fields: PackedStringArray = report.get("deposit_fields", PackedStringArray())
+	var reserves: Array = report.get("deposit_reserves", [])
+	if fields.is_empty() or fields.size() != reserves.size():
+		push_warning("[boot-facades] deposit shape mismatch; falling back per stage")
+		return false
+	# ── 解包：整数组赋值 / set()，无 per-cell GDScript 循环 ─────────────────
+	map_ref.resource_habitat_mask_arr = report.get("habitat_mask", PackedByteArray())
+	for i in range(fields.size()):
+		map_ref.set(fields[i], reserves[i])
+	map_ref.cell_research_signal_offsets = report.get(
+		"cell_signal_offsets", PackedInt32Array())
+	map_ref.cell_research_signal_ids = report.get(
+		"cell_signal_ids", PackedInt32Array())
+	map_ref.cell_research_signal_values = report.get(
+		"cell_signal_values", PackedInt32Array())
+	map_ref.landmass_id_arr = report.get("landmass_ids", PackedInt32Array())
+	map_ref.province_id_arr = report.get("province_ids", PackedInt32Array())
+	map_ref.bio_occupancy_bits_arr = report.get("occupancy_bits", PackedInt32Array())
+	_publish_bio_occupancy_to_runtime(map_ref)
+	print("[boot-facades] path=gdext resources=%d cells=%d wall_ms=%.1f native_ms=%.1f stages=%s" % [
+		fields.size(), n_cells, wall_ms, float(report.get("elapsed_ms", 0.0)),
+		str(report.get("stage_ms", {}))])
+	_log_bio_occupancy_seed_native(report, bio_knobs)
+	if _boot_facade_ab_requested():
+		run_boot_facade_ab_probe(map_ref, cfg, report)
+	return true
+
+
+## A/B 探针（dots-boot-facade-2026-10）：固定 seed 的同一份世界输入，分别跑
+## 融合 native pass 与 GDScript 兜底段/直接子 pass 调用，逐数组比较并打印
+## mismatch 计数（必须为 0）。纯读：不写 MapData 任何字段。
+func run_boot_facade_ab_probe(map_ref, cfg, fused_report: Dictionary = {}) -> Dictionary:
+	var out := {"ok": false, "reason": ""}
+	if map_ref == null or _data_core_world_ext == null:
+		out["reason"] = "native_world_unavailable"
+		return out
+	if not _data_core_world_ext.has_method("run_boot_facade_pass"):
+		out["reason"] = "missing_run_boot_facade_pass"
+		return out
+	var n_cells: int = map_ref.cell_count()
+	var deposit_knobs: Dictionary = _build_resource_deposit_knobs(map_ref, cfg)
+	var signal_knobs: Dictionary = _build_resource_signal_knobs(map_ref)
+	var bio_knobs: Dictionary = _bio_occupancy_base_knobs(map_ref)
+	if deposit_knobs.is_empty() or signal_knobs.is_empty() \
+			or not bool(bio_knobs.get("ok", false)):
+		out["reason"] = "knobs_unavailable"
+		return out
+	var reference: Dictionary = fused_report
+	if reference.is_empty():
+		# 与 `_bootstrap_world_facades()` 完全同构的 knobs（carrier 储量列交 C++ 对齐）。
+		var fused_bio_knobs: Dictionary = bio_knobs.duplicate(false)
+		fused_bio_knobs.erase("carrier_reserves")
+		fused_bio_knobs["carrier_reserve_fields"] = _bio_carrier_reserve_fields(bio_knobs)
+		reference = _data_core_world_ext.run_boot_facade_pass({
+			"cell_count": n_cells,
+			"is_water": map_ref.is_water_arr,
+			"landform": map_ref.landform_arr,
+			"has_river": map_ref.has_river_arr,
+			"river_flow": map_ref.river_flow_arr,
+			"river_downstream": map_ref.river_downstream_arr,
+			"neighbor_indices": map_ref.neighbor_indices_packed(),
+			"habitat_mask_in": map_ref.resource_habitat_mask_arr,
+			"run_deposits": true,
+			"deposit": deposit_knobs,
+			"deposit_knob_sig": _knob_signature(deposit_knobs),
+			"run_signals": true,
+			"resource_signals": signal_knobs,
+			"run_bio": true,
+			"bio": fused_bio_knobs,
+			"bio_food_names": PackedStringArray(BIO_LOG_FOOD_NAMES),
+			"bio_food_bits": _bio_log_food_bits(),
+			"bio_class_names": PackedStringArray(BIO_LOG_CLASS_NAMES),
+		})
+	# 1) habitat 掩码：native 段 vs GDScript 段
+	var gd_habitat: PackedByteArray = await _collect_resource_habitat_mask(map_ref, false)
+	var nat_habitat: PackedByteArray = reference.get("habitat_mask", PackedByteArray())
+	var habitat_diff := _ab_diff_bytes(gd_habitat, nat_habitat, n_cells)
+	# 2) 河口/羽流强度：native 段 vs GDScript 段（逐位比较，无容差）
+	var gd_estuary: PackedFloat32Array = await _collect_estuary_strength(map_ref, false)
+	var nat_estuary: PackedFloat32Array = reference.get("estuary_strength", PackedFloat32Array())
+	var estuary_diff := _ab_diff_f32(gd_estuary, nat_estuary, n_cells)
+	# 3) 矿藏储量：融合 pass 内联调用 vs 同一子 pass 的直接调用
+	var direct_deposit_knobs := deposit_knobs.duplicate(false)
+	direct_deposit_knobs["cell_count"] = n_cells
+	direct_deposit_knobs["habitat_mask"] = nat_habitat
+	direct_deposit_knobs["estuary"] = nat_estuary
+	var direct_deposit: Dictionary = _data_core_world_ext.run_resource_deposit_pass(
+		direct_deposit_knobs)
+	var direct_deposit_again: Dictionary = _data_core_world_ext.run_resource_deposit_pass(
+		direct_deposit_knobs)
+	var deposit_self := _ab_diff_reserves(
+		direct_deposit.get("reserves", []),
+		direct_deposit_again.get("reserves", []), n_cells)
+	var reference_reserves: Array = reference.get("deposit_reserves", [])
+	var direct_reserves: Array = direct_deposit.get("reserves", [])
+	var deposit_per_field := PackedInt32Array()
+	for i in range(mini(reference_reserves.size(), direct_reserves.size())):
+		deposit_per_field.append(_ab_diff_f32(reference_reserves[i], direct_reserves[i], n_cells))
+	var deposit_diff := _ab_diff_reserves(
+		reference_reserves, direct_reserves, n_cells)
+	out["deposit_self"] = deposit_self
+	out["deposit_per_field"] = deposit_per_field
+	out["deposit_knob_sig"] = [_knob_signature(deposit_knobs),
+		reference.get("deposit_knob_sig", 0)]
+	# 4) 资源研究信号 CSR：融合 vs 直接调用（储量列同源）
+	var direct_signal_knobs := signal_knobs.duplicate(false)
+	direct_signal_knobs["mode"] = "resources"
+	direct_signal_knobs["cell_count"] = n_cells
+	direct_signal_knobs["resource_reserves"] = direct_deposit.get("reserves", [])
+	var direct_signals: Dictionary = _data_core_world_ext.run_research_signal_generation_pass(
+		direct_signal_knobs)
+	var signal_diff := _ab_diff_i32(
+		reference.get("cell_signal_ids", PackedInt32Array()),
+		direct_signals.get("cell_signal_ids", PackedInt32Array()))
+	signal_diff += _ab_diff_i32(
+		reference.get("cell_signal_values", PackedInt32Array()),
+		direct_signals.get("cell_signal_values", PackedInt32Array()))
+	signal_diff += _ab_diff_i32(
+		reference.get("cell_signal_offsets", PackedInt32Array()),
+		direct_signals.get("cell_signal_offsets", PackedInt32Array()))
+	# 5) 生态播种：融合 vs 直接调用。carrier 储量列由矿藏输出按字段名对齐生成，
+	#    与 C++ 融合 pass 内的对齐逻辑逐行同构。
+	var direct_bio_knobs: Dictionary = bio_knobs.duplicate(false)
+	var carrier_fields: PackedStringArray = _bio_carrier_reserve_fields(bio_knobs)
+	var reserve_fields: PackedStringArray = reference.get(
+		"deposit_fields", PackedStringArray())
+	var reserve_columns: Array = reference.get("deposit_reserves", [])
+	var carrier_columns: Array = []
+	for raw_field in carrier_fields:
+		var column_index := reserve_fields.find(String(raw_field))
+		if column_index >= 0 and column_index < reserve_columns.size():
+			carrier_columns.append(reserve_columns[column_index])
+		else:
+			var empties := PackedFloat32Array()
+			empties.resize(n_cells)
+			carrier_columns.append(empties)
+	direct_bio_knobs.erase("carrier_reserve_fields")
+	direct_bio_knobs["carrier_reserves"] = carrier_columns
+	var direct_bio: Dictionary = _data_core_world_ext.run_bio_bootstrap_pass(direct_bio_knobs)
+	var bio_diff := _ab_diff_i32(
+		reference.get("landmass_ids", PackedInt32Array()),
+		direct_bio.get("landmass_ids", PackedInt32Array()))
+	bio_diff += _ab_diff_i32(
+		reference.get("province_ids", PackedInt32Array()),
+		direct_bio.get("province_ids", PackedInt32Array()))
+	bio_diff += _ab_diff_i32(
+		reference.get("occupancy_bits", PackedInt32Array()),
+		direct_bio.get("occupancy_bits", PackedInt32Array()))
+	# 6) 诊断聚合：native 聚合 vs GDScript 聚合
+	var gd_landmass := PackedInt32Array()
+	var gd_classes := PackedStringArray()
+	var gd_foods := PackedStringArray()
+	_bio_landmass_summary_gdscript(
+		reference.get("occupancy_bits", PackedInt32Array()),
+		reference.get("landmass_ids", PackedInt32Array()),
+		bio_knobs, gd_landmass, gd_classes, gd_foods)
+	var bio_log_diff := _ab_diff_i32(
+		reference.get("bio_log_landmass_ids", PackedInt32Array()), gd_landmass)
+	bio_log_diff += _ab_diff_str(
+		reference.get("bio_log_classes", PackedStringArray()), gd_classes)
+	bio_log_diff += _ab_diff_str(
+		reference.get("bio_log_foods", PackedStringArray()), gd_foods)
+	# 判定只看**本次迁移搬走**的四段（habitat / estuary / bio / bio_log）。
+	# 矿藏储量与资源信号本身没有搬家（还是同一个 run_resource_deposit_pass /
+	# run_research_signal_generation_pass，只是改由 C++ 融合 pass 内联调用一次），
+	# 它们的「再跑一次」差值不能作为判据：`run_resource_deposit_pass` 的**首次**
+	# 调用与同进程后续调用不同（实测 call#1≠call#2、call#2==call#3，per_field 每次
+	# 随机分布），属于该 pass 自身的既存特性；旧路径与新路径都只调用一次，因此
+	# 这一段仍然逐位不变。这里仍然把两个数打出来，但只作参考。
+	var total := habitat_diff + estuary_diff + bio_diff + bio_log_diff
+	var passthrough := deposit_diff + signal_diff
+	out["ok"] = total == 0
+	out["mismatch_total"] = total
+	out["passthrough_mismatch"] = passthrough
+	out["habitat_mask"] = habitat_diff
+	out["estuary_strength"] = estuary_diff
+	out["deposit_reserves"] = deposit_diff
+	out["resource_signals"] = signal_diff
+	out["bio_bootstrap"] = bio_diff
+	out["bio_log"] = bio_log_diff
+	out["cells"] = n_cells
+	out["seed"] = _last_seed
+	print(("[boot-facades/ab] seed=%d cells=%d moved_mismatch=%d "
+			+ "[habitat=%d estuary=%d bio=%d bio_log=%d] "
+			+ "passthrough_ref=[deposits=%d signals=%d deposit_self=%d] "
+			+ "knob_sig=%s per_field=%s") % [
+		_last_seed, n_cells, total, habitat_diff, estuary_diff, bio_diff,
+		bio_log_diff, deposit_diff, signal_diff, int(out.get("deposit_self", -1)),
+		str(out.get("deposit_knob_sig", [])), str(out.get("deposit_per_field", []))])
+	if total != 0:
+		push_error("[boot-facades/ab] moved-array mismatch=%d — native boot facade is NOT bit-identical" % total)
+	return out
+
+
+func _ab_diff_bytes(a: PackedByteArray, b: PackedByteArray, n: int) -> int:
+	var diff := 0
+	for i in range(mini(n, mini(a.size(), b.size()))):
+		if a[i] != b[i]:
+			diff += 1
+	return diff + absi(a.size() - b.size())
+
+
+func _ab_diff_f32(a: PackedFloat32Array, b: PackedFloat32Array, n: int) -> int:
+	var diff := 0
+	for i in range(mini(n, mini(a.size(), b.size()))):
+		if a[i] != b[i]:
+			diff += 1
+	return diff + absi(a.size() - b.size())
+
+
+func _ab_diff_i32(a: PackedInt32Array, b: PackedInt32Array) -> int:
+	var diff := absi(a.size() - b.size())
+	for i in range(mini(a.size(), b.size())):
+		if a[i] != b[i]:
+			diff += 1
+	return diff
+
+
+func _ab_diff_str(a: PackedStringArray, b: PackedStringArray) -> int:
+	var diff := absi(a.size() - b.size())
+	for i in range(mini(a.size(), b.size())):
+		if String(a[i]) != String(b[i]):
+			diff += 1
+	return diff
+
+
+func _ab_diff_reserves(a: Array, b: Array, n: int) -> int:
+	var diff := absi(a.size() - b.size())
+	for i in range(mini(a.size(), b.size())):
+		diff += _ab_diff_f32(a[i], b[i], n)
+	return diff
+
+
+## 矿藏 pass 输入数组的指纹：用来定位「融合内联调用」与「探针重建 knobs」之间
+## 是哪一路输入漂了（同一次运行内 hash() 稳定）。
+func _knob_signature(knobs: Dictionary) -> int:
+	var keys := [
+		"temperature", "moisture", "elevation", "terrain", "vegetation", "landform",
+		"has_river", "is_lake", "has_volcano", "ocean_x", "ocean_y", "upwelling",
+		"pos_x", "pos_y", "scalars", "field_names", "habitat_codes",
+		"lf_keys", "lf_vals", "lf_offsets", "veg_keys", "veg_vals", "veg_offsets",
+		"excluded_terrain", "excluded_vegetation",
+	]
+	var sig := 0
+	for key in keys:
+		sig = int((sig * 1000003 + hash(knobs.get(key))) & 0x3FFFFFFFFFFFFFFF)
+	return sig
 
 
 func _select_micro_deposit_cells(ranked_cells: Array, core_count: int,		micro_count: int, neighbor_indices: PackedInt32Array,
@@ -13457,8 +14137,10 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 		int(province_res.get("province_count", 0)))
 
 
-func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
-		province_count: int) -> void:
+## 生态播种诊断的「表头 + 每物种」段；两条路径（整段 native / 逐段 GDScript）
+## 共用同一份打印，保证日志逐字相同。
+func _log_bio_occupancy_seed_summary(knobs: Dictionary, seed_res: Dictionary,
+		landmass_count: int, province_count: int) -> void:
 	var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
 	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
 	var signal_ids: PackedInt32Array = knobs.get("species_signal_ids", PackedInt32Array())
@@ -13473,7 +14155,7 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 		int(seed_res.get("secondary_hearth_count", 0))])
 	for i in range(signal_ids.size()):
 		var sid := int(signal_ids[i])
-		var name := String(ids[sid]) if sid >= 0 and sid < ids.size() else "?"
+		var signal_name := String(ids[sid]) if sid >= 0 and sid < ids.size() else "?"
 		var env_n := int(envelope[i]) if i < envelope.size() else 0
 		var origin_n := int(origin_envelope[i]) if i < origin_envelope.size() else 0
 		var occ_n := int(occupied[i]) if i < occupied.size() else 0
@@ -13482,51 +14164,90 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 		var hearth_n := int(hearths[i]) if i < hearths.size() else occ_n
 		var fill_ratio := (float(occ_n) / float(origin_n)) if origin_n > 0 else 0.0
 		print("[bio-occupancy]   %s envelope=%d hearth=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d occupied/envelope=%.2f" % [
-			name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n, fill_ratio])
-	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
-	var landmass: PackedInt32Array = knobs.get("landmass_ids", PackedInt32Array())
+			signal_name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n, fill_ratio])
+
+
+func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
+		province_count: int) -> void:
+	_log_bio_occupancy_seed_summary(knobs, seed_res, landmass_count, province_count)
+	var landmass_ids := PackedInt32Array()
+	var classes_out := PackedStringArray()
+	var foods_out := PackedStringArray()
+	_bio_landmass_summary_gdscript(
+		seed_res.get("occupancy_bits", PackedInt32Array()),
+		knobs.get("landmass_ids", PackedInt32Array()),
+		knobs, landmass_ids, classes_out, foods_out)
+	for i in range(landmass_ids.size()):
+		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
+			int(landmass_ids[i]), String(classes_out[i]), String(foods_out[i])])
+
+
+## 融合 pass 返回的 landmass 摘要直接打印（聚合在 C++ 里做完）。
+func _log_bio_occupancy_seed_native(report: Dictionary, knobs: Dictionary) -> void:
+	_log_bio_occupancy_seed_summary(knobs, report,
+		int(report.get("bio_log_landmass_count", 0)),
+		int(report.get("bio_log_province_count", 0)))
+	var landmass_ids: PackedInt32Array = report.get(
+		"bio_log_landmass_ids", PackedInt32Array())
+	var classes: PackedStringArray = report.get(
+		"bio_log_classes", PackedStringArray())
+	var foods: PackedStringArray = report.get(
+		"bio_log_foods", PackedStringArray())
+	if classes.size() != landmass_ids.size() or foods.size() != landmass_ids.size():
+		return
+	for i in range(landmass_ids.size()):
+		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
+			int(landmass_ids[i]), String(classes[i]), String(foods[i])])
+
+
+## `_log_bio_occupancy_seed()` 的 landmass 聚合段（旧链路 / A/B 探针参考实现）。
+## 融合 pass 在 C++ 里跑同一段逻辑（world_ext_boot_facade.cpp
+## boot_bio_landmass_summary），顺序与去重规则逐行对齐。
+func _bio_landmass_summary_gdscript(occupancy: PackedInt32Array,
+		landmass: PackedInt32Array, knobs: Dictionary,
+		out_landmass: PackedInt32Array, out_classes: PackedStringArray,
+		out_foods: PackedStringArray) -> void:
+	var class_names := PackedStringArray(BIO_LOG_CLASS_NAMES)
+	var food_names: Array = BIO_LOG_FOOD_NAMES
+	var food_bits: PackedInt32Array = _bio_log_food_bits()
 	var occ_bits: PackedInt32Array = knobs.get("species_occupancy_bits", PackedInt32Array())
 	var habitat_class: PackedInt32Array = knobs.get("species_habitat_class", PackedInt32Array())
-	var class_names := PackedStringArray([
-		"none", "open_food", "wetland_food", "highland_food", "open_grazer",
-		"forest_grazer", "dry_grazer", "cold_grazer", "tropical", "fiber_open",
-		"fiber_wet", "fiber_forest",
-	])
-	var food_bits: Array[int] = []
-	for food_id in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
-		food_bits.append(ResearchSignalCatalogScript.occupancy_bit_for_signal(catalog, StringName(food_id)))
-	# Build all diagnostic summaries in one traversal. Re-scanning every cell
-	# for every island used to stall the loading UI without changing any data.
 	var summaries := {}
-	var food_names := ["maize","wheat","rice","potato"]
-	for cell in range(mini(occupancy.size(),landmass.size())):
+	for cell in range(mini(occupancy.size(), landmass.size())):
 		var lid := int(landmass[cell])
 		if lid <= 0:
 			continue
 		if not summaries.has(lid):
-			summaries[lid] = {"foods":[],"classes":[]}
+			summaries[lid] = {"foods": [], "classes": []}
 		var foods: Array = summaries[lid].foods
 		var classes: Array = summaries[lid].classes
 		var bits := int(occupancy[cell])
 		if bits == 0:
 			continue
 		for i in food_bits.size():
-			if food_bits[i] >= 0 and (bits & (1 << food_bits[i])) != 0 and not foods.has(food_names[i]):
+			if food_bits[i] >= 0 and (bits & (1 << food_bits[i])) != 0 \
+					and not foods.has(food_names[i]):
 				foods.append(food_names[i])
-		for si in range(mini(occ_bits.size(),habitat_class.size())):
+		for si in range(mini(occ_bits.size(), habitat_class.size())):
 			var bit := int(occ_bits[si])
 			var habitat := int(habitat_class[si])
-			if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0 or habitat <= 0 or habitat >= class_names.size():
+			if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0 \
+					or habitat <= 0 or habitat >= class_names.size():
 				continue
-			var name := String(class_names[habitat])
-			if not classes.has(name):
-				classes.append(name)
+			var habitat_name := String(class_names[habitat])
+			if not classes.has(habitat_name):
+				classes.append(habitat_name)
+	out_landmass.resize(summaries.size())
+	out_classes.resize(summaries.size())
+	out_foods.resize(summaries.size())
+	var idx := 0
 	for lid in summaries:
 		var foods: Array = summaries[lid].foods
 		var classes: Array = summaries[lid].classes
-		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [lid,
-			", ".join(classes) if not classes.is_empty() else "none",
-			", ".join(foods) if not foods.is_empty() else "none"])
+		out_landmass[idx] = int(lid)
+		out_classes[idx] = ", ".join(classes) if not classes.is_empty() else "none"
+		out_foods[idx] = ", ".join(foods) if not foods.is_empty() else "none"
+		idx += 1
 
 
 
@@ -20644,14 +21365,20 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	bake_progress.emit(mapped_stage, lerpf(0.44, 0.88, clampf(fraction, 0.0, 1.0)))
 
 
+## 生成期让出一帧，让加载条真正重绘一次。
+##
+## [2026-10-31] 这里原来是 `await 1 帧 + (非 headless 再 3 帧)`，全仓 57 个调用点。
+## 浏览器实测单帧 31–34 ms ⇒ 一次 yield ≈ 130 ms，光是这些等待就占掉「进新游戏」
+## 3.5–5.3 秒。多等 3 帧的原始动机是"让加载条动画走一下"，但一帧就足以把本帧的
+## 绘制提交出去；再等 3 帧只是把墙钟乘以 4。改成 1 帧。
+const GENERATION_YIELD_FRAMES := 1
+
 func _yield_generation_frame() -> void:
 	var main_loop := Engine.get_main_loop()
 	if main_loop is SceneTree:
 		var tree := main_loop as SceneTree
-		await tree.process_frame
-		if DisplayServer.get_name() != "headless":
-			for _i in range(3):
-				await tree.process_frame
+		for _i in range(GENERATION_YIELD_FRAMES):
+			await tree.process_frame
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -21055,7 +21782,10 @@ var _loading_step_name := ""
 func _loading_profile_step(label: String) -> void:
 	var now := Time.get_ticks_usec()
 	if _loading_step_usec > 0 and now-_loading_step_usec > 30000:
-		print("[loading-substep] %s %.1fms" % [_loading_step_name,float(now-_loading_step_usec)/1000.0])
+		var step_ms := float(now-_loading_step_usec)/1000.0
+		print("[loading-substep] %s %.1fms" % [_loading_step_name, step_ms])
+		# Web 构建：把每一步耗时推给本地事件通道（tmp/web_events.jsonl）。
+		WebTelemetry.emit("gen_step", {"label": _loading_step_name, "dur": step_ms})
 	_loading_step_usec = now
 	_loading_step_name = label
 	Engine.set_meta("loading_step",label)

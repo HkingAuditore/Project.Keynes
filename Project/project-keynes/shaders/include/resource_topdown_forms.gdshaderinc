@@ -46,6 +46,17 @@ void rt_boulder(inout RSurf s, vec2 p, vec2 c, vec2 r, vec3 col, float h, float 
 }
 
 // ---------------------------------------------------------------- crops
+// [web-resource-min] 这一整段（crops / trees / reeds / timber / animals，约 13.7 KB）
+// 在 web 精简变体里不编译：这些 form 的对象在**世界里从来不画**——
+//   · family 0（植物）与 form 26（木材）：visual_plan() 判 PLAN_BADGE →
+//     COLOR.a 的整数部分 kind = 4 → fragment 的 `else if (kind >= 4) world_a = 0.0;`
+//     直接丢弃，世界里只有 ResourceGroundCover 的地被；
+//   · family 1（动物）/ family 3（鱼）：art_fauna_bound 为 true 时走位图的
+//     rv_herd()（web 包里 assets/textures/resource_art/fauna_atlas 有导出），
+//     程序化兽群不会被调用；
+// 它们唯一的出口是 lens 徽章（34 px）。web 变体在 rt_resource() 里改用
+// rt_badge_silhouette()（见文件末尾），**这是牺牲不是死代码**：桌面/移动端照常编译。
+#ifndef PK_WEB_RESOURCE_MIN
 
 // Small irregular tufts; only the recognition badge retains the old field picture.
 RSurf rt_cereal(vec2 p, vec3 tint, float seed, float px, float motion, bool scenery) {
@@ -391,6 +402,25 @@ RSurf rt_herd(vec2 p, int form, vec3 tint, float seed, float px, float motion) {
 	s.floor_a = (1.0 - smoothstep(0.30, 0.92, length(p))) * 0.10;
 	return s;
 }
+#endif // PK_WEB_RESOURCE_MIN
+#ifdef PK_WEB_RESOURCE_MIN
+// [probe] A/B 探针用：一个"真的产色但零成本"的 RSurf 替换件。用于把 subject 管线里
+// 的两大来源（rt_geology_solid / rs_geology）分别换成常量，量它们各自的边际成本。
+// 形状/法线/底色都是常量，但 alpha、光照、合成链路仍然跑，所以上层不会被一起 DCE。
+// 未定义 PK_PROBE_NO_SUBJ_SOLID / PK_PROBE_NO_SUBJ_GROUND 时本函数不进编译。
+#if defined(PK_PROBE_NO_SUBJ_SOLID) || defined(PK_PROBE_NO_SUBJ_GROUND) || defined(PK_PROBE_NO_SILHOUETTE) || defined(PK_PROBE_NO_CRYSTALS) || defined(PK_PROBE_NO_COAL)
+RSurf rt_probe_stub(vec2 p, vec3 tint) {
+	RSurf s = rs_empty();
+	s.d = length(p) - 0.55;
+	s.h = 0.20;
+	s.n = vec3(0.0, 0.0, 1.0);
+	s.albedo = tint;
+	s.floor_col = tint * 0.5;
+	s.floor_a = 0.18;
+	return s;
+}
+#endif
+#endif // PK_WEB_RESOURCE_MIN
 
 // ---------------------------------------------------------------- geology
 
@@ -466,15 +496,26 @@ RSurf rt_crystals(vec2 p, int sub, vec3 tint, float seed, float px, bool scenery
 
 RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float px, bool scenery) {
 	if (form == 18) {
+#ifdef PK_PROBE_NO_CRYSTALS
+		return rt_probe_stub(p, tint);
+#else
 		return rt_crystals(p, sub, tint, seed, px, scenery);
+#endif
 	}
 	if (form == 17 && sub == 0) {
+#ifdef PK_PROBE_NO_COAL
+		return rt_probe_stub(p, tint);
+#else
 		return rt_coal(p, tint, seed, px);
+#endif
 	}
 	RSurf s = rs_empty();
 	vec2 q = rs_rot((seed - 0.5) * 3.0) * p;
 	bool ore = form == 17;
 	vec3 host = ore ? mix(vec3(0.50, 0.48, 0.44), tint, 0.10) : tint;
+#ifdef PK_PROBE_NO_OUTCROP
+	rs_part(s, q, vec2(0.0, 0.0), vec2(0.42, 0.34), host, 0.30, px);
+#else
 	if (!ore && sub == 4) { // flint: glassy angular shards
 		for (int i = 0; i < 5; i++) {
 			float fi = float(i);
@@ -485,6 +526,7 @@ RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float p
 	} else {
 		rt_outcrop(s, q, host, seed, px);
 	}
+#endif // PK_PROBE_NO_OUTCROP
 	if (s.d < px) {
 		float n1 = vf_vnoise(q * 7.0 + seed * 3.0);
 		float ridge = 1.0 - abs(2.0 * vf_vnoise(q * 5.5 + seed * 5.0 + 3.0) - 1.0);
@@ -493,6 +535,40 @@ RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float p
 		al *= 1.0 - 0.28 * crack;
 		float spec = 0.14;
 		float metallic = 0.0;
+#ifdef PK_PROBE_NO_SUB_ALBEDO
+		al = mix(al, tint, 0.5);
+#else
+#ifdef PK_WEB_RESOURCE_MIN
+		// [web-resource-min] 12 路 sub-style 微纹理压缩成「一次 grain + 一次 speck + 标量参数」。
+		// 实测（ANGLE/D3D11，与浏览器同一条 GLSL→HLSL→FXC 路径）：这条 12 路分支单独值
+		// ~940 ms（同一份 pass：有它 1 146 ms，换成常量 207 ms）——每条分支都把自己的
+		// vf_vnoise/vf_hash 体整段内联进同一个 fragment，是第二个寄存器压力悬崖。
+		// 30 px 的矿床贴花上，逐 sub 的微纹理（地衣斑点/鲕粒/层理/颗粒/矿脉）已经低于可辨阈值，
+		// 但层理（limestone）与矿脉高光仍然保留。桌面/移动端照常编译原链。
+		float grain = vf_vnoise(q * 14.0 + seed * 6.0);
+		float speck = vf_hash12(floor(q * 22.0 + seed * 3.0));
+		al *= 0.88 + 0.26 * grain;
+		al = mix(al, tint * 1.06, step(0.84, speck) * 0.55);
+		if (!ore) {
+			if (sub == 2) { // limestone: 层理是最显眼的一条，保留
+				float strata = 0.5 + 0.5 * sin((q.y + grain * 0.12) * 30.0);
+				al = mix(al * 0.90, al * 1.08, smoothstep(0.35, 0.65, strata));
+			}
+		} else {
+			al = mix(al, tint, smoothstep(0.55, 0.85, n1) * 0.45);
+			if (sub == 2) {
+				spec = 0.20;
+			} else if (sub == 3) {
+				spec = 0.5;
+				metallic = 0.7;
+			} else if (sub == 4) {
+				spec = 0.6;
+				metallic = 0.6;
+			} else if (sub == 5) {
+				spec = 0.35;
+			}
+		}
+#else
 		if (!ore) {
 			if (sub == 0) { // stone: lichen flecks
 				al = mix(al, vec3(0.34, 0.42, 0.24), smoothstep(0.74, 0.86, vf_vnoise(q * 18.0 + seed * 4.0)) * 0.45);
@@ -535,10 +611,13 @@ RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float p
 			float dend = smoothstep(0.84, 0.92, ridge) + smoothstep(0.88, 0.95, 1.0 - abs(2.0 * vf_vnoise(q * 12.0 + seed * 7.0) - 1.0)) * 0.7;
 			al = mix(al * 1.08, tint * 0.8, clamp(dend, 0.0, 1.0));
 		}
+#endif // PK_WEB_RESOURCE_MIN
+#endif // PK_PROBE_NO_SUB_ALBEDO
 		s.albedo = al;
 		s.spec = max(s.spec, spec);
 		s.metallic = metallic;
 	}
+#ifndef PK_PROBE_NO_ORE_DETAIL
 	if (ore) {
 		if (sub == 3) { // gold nuggets
 			for (int i = 0; i < 6; i++) {
@@ -566,6 +645,7 @@ RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float p
 			s.metallic = 0.7;
 		}
 	}
+#endif // PK_PROBE_NO_ORE_DETAIL
 	s.floor_col = vec3(0.12, 0.11, 0.09);
 	s.floor_a = (1.0 - smoothstep(0.0, 0.16, s.d)) * rt_fade(p) * 0.22;
 	return s;
@@ -573,7 +653,55 @@ RSurf rt_geology_solid(vec2 p, int form, int sub, vec3 tint, float seed, float p
 
 // ---------------------------------------------------------------- dispatcher
 
+#ifdef PK_WEB_RESOURCE_MIN
+// web 徽章剪影：替代被省掉的程序化图像。lens 徽章本身只有 badge_px（默认 34）像素，
+// 里面那张图本来就只剩轮廓；这里按家族给一个一眼可读的形状，保证徽章的识别层级
+// （形状=家族，见 rt_badge_sdf / rt_badge_ring）仍然成立。
+// family 0 = 草丛 / 1 = 兽 / 3 = 鱼 / form 26 = 原木；各自一个主形 + 一根柄/尾/芯。
+// 只留两个图元：每次 rs_part / rs_stroke 调用都会被 Godot 的 shader 编译器内联展开，
+// 而这张图最大只有 badge_px（默认 34）像素。
+RSurf rt_badge_silhouette(vec2 p, int form, int family, vec3 tint, float seed, float px) {
+	RSurf s = rs_empty();
+	vec2 q = rs_rot((seed - 0.5) * 1.1) * p;
+	vec2 extent = family == 1 ? vec2(0.30, 0.38)
+		: (family == 3 ? vec2(0.34, 0.22) : vec2(0.26, 0.34));
+	float cy = family == 1 ? 0.06 : 0.0;
+	rs_part(s, q, vec2(0.0, cy), extent, tint, 0.34, px);
+	vec2 a0 = form == 26 ? vec2(-0.42, -0.16) : vec2(0.0, cy - extent.y - 0.02);
+	vec2 a1 = form == 26 ? vec2(0.42, 0.14) : vec2(0.0, a0.y - 0.20);
+	rs_stroke(s, q, a0, a1, form == 26 ? 0.11 : 0.05, tint * 0.84, 0.16, px);
+	s.spec = 0.18;
+	s.rim = 0.30;
+	return s;
+}
+#endif // PK_WEB_RESOURCE_MIN
+
+#ifdef PK_WEB_RESOURCE_MIN
+#endif // PK_WEB_RESOURCE_MIN
 RSurf rt_resource(vec2 p, int form, int family, int sub, vec3 tint, float seed, float px, float motion, bool scenery) {
+#ifdef PK_WEB_RESOURCE_MIN
+	// 世界里真正会绘制的两族（岩矿 16/17/18、地面 19..25）走原路径；
+	// 只在 lens 徽章里出现的家族（植物 0 / 动物 1 / 鱼 3 / 木材 26）用剪影顶替。
+	if (family == 0 || family == 1 || family == 3 || form == 26) {
+#ifdef PK_PROBE_NO_SILHOUETTE
+		return rt_probe_stub(p, tint);
+#else
+		return rt_badge_silhouette(p, form, family, tint, seed, px);
+#endif
+	}
+	if (form == 16 || form == 17 || form == 18) {
+#ifdef PK_PROBE_NO_SUBJ_SOLID
+		return rt_probe_stub(p, tint);
+#else
+		return rt_geology_solid(p, form, sub, tint, seed, px, scenery);
+#endif
+	}
+#ifdef PK_PROBE_NO_SUBJ_GROUND
+	return rt_probe_stub(p, tint);
+#else
+	return rs_geology(p, form, sub, seed, px, motion);
+#endif
+#else
 	if (family == 1) {
 		return rt_herd(p, form, tint, seed, px, motion);
 	}
@@ -596,6 +724,7 @@ RSurf rt_resource(vec2 p, int form, int family, int sub, vec3 tint, float seed, 
 		return rt_geology_solid(p, form, sub, tint, seed, px, scenery);
 	}
 	return rs_geology(p, form, sub, seed, px, motion);
+#endif
 }
 
 // ---------------------------------------------------------------- lens badges

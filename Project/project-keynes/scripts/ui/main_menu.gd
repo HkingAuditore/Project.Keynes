@@ -6,9 +6,16 @@ const SaveSlotRowScene := preload("res://scenes/ui/save_slot_row.tscn")
 const AdvancedLabelScene := preload("res://scenes/ui/advanced_field_label.tscn")
 const SetupSliderSpinScene := preload("res://scenes/ui/setup_slider_spin.tscn")
 const CountryNamesPack := preload("res://data/country/default_country_names.tres")
+# Web 自动测试入口。用 preload 而不是 class_name：新文件还没进 global_script_class_cache，
+# 裸类名会编译失败。见 scripts/game/web_autotest.gd。
+const WebAutotestScript := preload("res://scripts/game/web_autotest.gd")
 
 const HOME_PANEL_WIDTH := 396.0
 const COMMAND_WIDTH := 280.0
+# Web 专属的预热进度条（只在 web 上实例化，见 _spawn_web_shader_progress）。
+const WebShaderProgressScenePath := "res://scenes/ui/web_shader_progress.tscn"
+const WEB_PROGRESS_MAX_WIDTH := 480.0
+const WEB_PROGRESS_MIN_WIDTH := 280.0
 const USER_MAPS_DIR := "user://maps"
 const MAP_PRESETS := [
 	{"label": "小型 40 × 28", "size": Vector2i(40, 28)},
@@ -58,6 +65,8 @@ var _foreign_syncing := false
 var _pkmap_path := ""
 var _pkmap_pick_syncing := false
 var _current_page_key := "home"
+## Web 预热进度条。**桌面上永远是 null**（不创建任何节点）。
+var _shader_progress: Control = null
 
 
 ## 主菜单背景音乐。GameAudio 是 autoload，bank 可能还没加载完，
@@ -84,18 +93,86 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--editor-tech-tree") or OS.get_cmdline_args().has("--editor-tech-tree"):
 		call_deferred("_open_technology_authoring_editor")
 		return
+	# Web：在玩家还没点「开始游戏」之前，先把所有会在运行期首次绘制的 shader 编译掉
+	# （清单见 web_shader_warmup.gd 的 SHADERS）。这里**不再 await** —— 菜单先变成
+	# 可操作，预热在后台逐张跑（每帧一张，带 warmup_shader 事件上报耗时），
+	# 「开始游戏」和 autotest 再各自等它就绪。否则整块 17–22 秒的编译会把菜单冻住，
+	# 既没有进度也看不出谁最贵。
+	WebShaderWarmup.begin(self)
+	# Web 自动测试：URL 带 autotest=1 时跳过整个菜单直接开局，其余玩家完全不受影响。
+	# 必须等预热结束再开局，否则编译会漏进游戏里（那正是我们要消灭的冻结帧）。
+	if await _start_web_autotest():
+		return
 	_configure_new_game_form()
 	_bind_settings_controls()
 	_connect_static_actions()
 	resized.connect(_apply_responsive_layout)
 	_apply_responsive_layout()
 	_show_home(false)
+	# Web 再加一条左下角常驻细进度：菜单能点，但玩家得知道后台在编 shader、
+	# 还差几张。桌面不走这里（函数内部先判平台，非 web 一个节点都不建）。
+	_spawn_web_shader_progress()
 	call_deferred("_apply_responsive_layout")
 	call_deferred("_start_hall_music")
+	# 目标①的验收口径是「页面加载**进主菜单** ≤20 s」，不是「进世界」——两者差着整个
+	# 世界生成。这里在 UI 接好、首页显示之后打一次点，配合 `warmup` 事件就能把
+	# 「引擎启动 / 菜单可见 / 预热完成」三段分开报（预热是后台跑的，不再挡住菜单）。
+	WebTelemetry.emit("menu_ready", {
+		"warmup_done": WebShaderWarmup.is_finished(),
+		"warmup_done_count": int(WebShaderWarmup.progress().get("done", 0)),
+	})
+	WebTelemetry.flush()
 
 
 func _open_technology_authoring_editor() -> void:
 	get_tree().change_scene_to_file("res://scenes/tools/technology_tree_authoring_editor.tscn")
+
+
+## Web 专属：菜单左下角的 shader 预热进度条。
+##
+## 为什么是常驻细条而不是遮罩：预热在后台逐张跑（首次访问 16–19 s 都花在驱动建
+## shader 磁盘缓存上），菜单必须保持可操作。这里只把 `WebShaderWarmup` 的
+## **真实计数**（已完成张数 / 总张数）显示出来，并在结束时淡出 —— 详见
+## scripts/ui/components/web_shader_progress.gd。
+##
+## 桌面 / 清单还没建好时**不创建任何节点**：没有真实进度可显示就不显示，
+## 不做"假进度条"。
+func _spawn_web_shader_progress() -> void:
+	if is_instance_valid(_shader_progress) or not OS.has_feature("web"):
+		return
+	if not WebShaderWarmup.has_plan():
+		return
+	var packed := load(WebShaderProgressScenePath) as PackedScene
+	if packed == null:
+		return
+	var strip := packed.instantiate() as Control
+	if strip == null:
+		return
+	_shader_progress = strip
+	add_child(strip)
+
+
+## Web 自动测试入口（仅 autotest=1 生效）：不经过任何按钮，直接走
+## GameFlow.begin_new_game —— 与 %StartButton 的回调是同一条代码路径，
+## 区别只是配置来自 URL。
+## 返回 true 表示已成功开局、_ready 应立刻结束；开局失败时返回 false，
+## 让菜单继续按普通流程初始化（页面仍可手动操作，原因已在事件流里）。
+## Web：菜单阶段预编译所有运行期会首次绘制的 shader（详见 web_shader_warmup.gd）。
+## 桌面直接返回，不影响任何行为。
+func _warmup_web_shaders() -> void:
+	if not OS.has_feature("web"):
+		return
+	WebShaderWarmup.begin(self)
+
+
+func _start_web_autotest() -> bool:
+	if not WebAutotestScript.enabled():
+		return false
+	# 预热没跑完就开局 = 把 shader 编译丢进游戏里，所以这里必须等。
+	await WebShaderWarmup.await_ready(self)
+	# 用节点路径而不是 autoload 裸标识符，避免 --check-only --script 下编译不了。
+	var result := WebAutotestScript.start_new_game(get_node_or_null("/root/GameFlow"))
+	return bool(result.get("ok", false))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -268,6 +345,12 @@ func _apply_responsive_layout() -> void:
 
 	var avail_w := maxf(280.0, size.x - float(side_margin * 2))
 	var avail_h := maxf(320.0, size.y - float(top_margin + bottom_margin))
+	if is_instance_valid(_shader_progress):
+		# 左边缘跟页面边距对齐（窄窗口时不会出框）；纵向固定在左下角，
+		# 底边比 StatusLabel 的顶边再高一点（-44 vs -34），两行文字不叠。
+		var strip_w := minf(WEB_PROGRESS_MAX_WIDTH, maxf(WEB_PROGRESS_MIN_WIDTH, avail_w))
+		_shader_progress.offset_left = float(side_margin)
+		_shader_progress.offset_right = float(side_margin) + strip_w
 	var short_h := avail_h < 450.0
 	if _home_tome_shell != null:
 		var shell_w := minf(HOME_PANEL_WIDTH, avail_w)
@@ -905,6 +988,22 @@ func _apply_pkmap_path(path: String) -> void:
 
 
 func _start_new_game() -> void:
+	# Web：预热在后台跑，玩家可能先点了开始。这里等它就绪：按钮换成
+	# 「正在准备着色器 n/N…」并禁用，左下角那条同样的进度继续走。
+	# await 的是 WebShaderWarmup.await_ready()，内部逐帧 await process_frame，
+	# 所以等待期间 UI 照常重绘（不是忙等），进度条也照常按已完成张数推进。
+	# 桌面：is_finished() 恒为 true，整段跳过，行为与改动前完全一致。
+	if not WebShaderWarmup.is_finished():
+		var start_button: Button = %StartButton
+		if is_instance_valid(_shader_progress) and _shader_progress.has_method("bind_pending_button"):
+			_shader_progress.call("bind_pending_button", start_button)
+		elif start_button != null:
+			start_button.disabled = true
+		await WebShaderWarmup.await_ready(self)
+		if is_instance_valid(_shader_progress) and _shader_progress.has_method("release_pending_button"):
+			_shader_progress.call("release_pending_button")
+		elif start_button != null and is_instance_valid(start_button):
+			start_button.disabled = false
 	var config := NewGameConfig.new()
 	config.country.name = _country_edit.text
 	config.country.foreign_count = int(_foreign_count_box.value)

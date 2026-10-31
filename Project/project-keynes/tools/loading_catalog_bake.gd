@@ -209,9 +209,7 @@ static func describe_snapshots() -> String:
 		if not bool(snapshots.get("ok", false)) and not FileAccess.file_exists(path):
 			lines.append("  %-22s MISSING" % filename)
 			continue
-		lines.append("  %-22s %8d bytes  %s" % [
-			filename, _file_size(path), Time.get_datetime_string_from_unix_time(
-				int(FileAccess.get_modified_time(path)), true)])
+		lines.append("  %-22s %8d bytes" % [filename, _file_size(path)])
 	return "\n".join(lines)
 
 static func _reason_of(columns: Dictionary) -> String:

@@ -27,6 +27,7 @@ float hemi_phase(float phase, float lat_signed) {
 // ─── True Insolation-Driven（Phase F）: CPU/GPU 同源公式 ────────────────
 // CPU/C++ 端 DCClimateMath / dc_insolation_* 的 GLSL 镜像。season_phase 只作为
 // 年内轨道相位进入太阳直射点、日照积分与昼长；不作为独立季节温度项。
+#ifndef PK_WEB_WORLD_MIN
 float sunset_hour_angle_shader(float lat_rad, float decl_rad) {
 	if (abs(decl_rad) <= 0.000001) {
 		return 1.5707963;
@@ -91,10 +92,17 @@ float insolation_season_offset_shader(float lat_signed, float phase) {
 	return s;
 }
 
+#endif // PK_WEB_WORLD_MIN
 // 统一入口：无条件走 insolation 派生。true_insolation_enabled 只保留给旧材质
 // 参数兼容，不能再切回独立余弦季节温度项。
 float season_offset_unified(float lat_signed, float phase) {
+#ifdef PK_WEB_WORLD_MIN
+	// web 变体：derived_temp 只被 dyn_valid=0（地图外 padding）消费，而 padding 恒为 B_SEA_ICE
+	// 且被 FogOfWarLayer 整片盖住。省掉 16 次 insolation 积分（每次 tan+acos+sin/cos 各 2）。
+	return 0.0;
+#else
 	return insolation_season_offset_shader(lat_signed, phase);
+#endif
 }
 
 // SAME_SOURCE（Shader 镜像）: DCClimateMath.lat_temp_bell —— 纬度温度钟形的唯一 GLSL 实现。

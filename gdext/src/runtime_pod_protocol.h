@@ -572,6 +572,26 @@ constexpr uint32_t runtime_domain_mask(RuntimeDomainId domain) {
         ? (1u << (value - 1u)) : 0u;
 }
 
+// 12 域 stage 的稳定短名（诊断/遥测用）。与 runtime_domain_stage_order() 同序，
+// 也与 fault-injection 的 tag 同名，这样 stage_ms 字典的键和日志里的点名对得上。
+constexpr const char *runtime_domain_stage_key(RuntimeDomainId domain) {
+    switch (domain) {
+    case RuntimeDomainId::INPUT_CAPTURE: return "input_capture";
+    case RuntimeDomainId::CLIMATE: return "climate";
+    case RuntimeDomainId::COUNTRY: return "country";
+    case RuntimeDomainId::TRIGGER_INPUT: return "trigger_input";
+    case RuntimeDomainId::IDEOLOGY: return "ideology";
+    case RuntimeDomainId::EFFECT: return "effect";
+    case RuntimeDomainId::MODIFIER: return "modifier";
+    case RuntimeDomainId::GAMEPLAY_EFFECT: return "gameplay_effect";
+    case RuntimeDomainId::ECONOMY: return "economy";
+    case RuntimeDomainId::EVENTS: return "events";
+    case RuntimeDomainId::VISUAL: return "visual";
+    case RuntimeDomainId::COMMIT: return "commit";
+    }
+    return "unknown";
+}
+
 static_assert(RUNTIME_DOMAIN_STAGE_COUNT == 12u);
 static_assert(static_cast<uint16_t>(RuntimeDomainId::INPUT_CAPTURE) == 1u);
 static_assert(static_cast<uint16_t>(RuntimeDomainId::CLIMATE) == 2u);
@@ -1401,6 +1421,9 @@ struct RuntimeThreadReport {
     uint32_t pod_domain_abi_version = RUNTIME_DOMAIN_POD_ABI_VERSION;
     RuntimeWorkerState state = RuntimeWorkerState::STOPPED;
     RuntimeSimulationMode mode = RuntimeSimulationMode::OFF;
+    // native_daily_inline：日屏障由调用线程逐日执行，本 host 没有 worker 线程。
+    // 这个位置是结构体尾部之前的最后一个标量块，追加字段不影响任何既有调用点。
+    bool inline_daily = false;
     bool graph_coverage_complete = false;
     // Coverage is a prerequisite, not proof that the worker owns gameplay
     // authority.  This remains false until every daily domain has a native
@@ -1893,6 +1916,15 @@ struct RuntimeThreadReport {
     uint32_t trigger_pod_intent_count = 0;
     uint32_t trigger_pod_ack_count = 0;
     char trigger_pod_fallback_reason[64]{};
+    // ── Web-worker P0/P2 观测字段 ──────────────────────────────────────────
+    // Country peer 结果的解析归属。`in_worker` 由 worker 自己的
+    // resolve_pending_country_effect_peers() 提升（P2 目标形态），`by_main`
+    // 由主线程泵提升（今天的形态）。两者长期同时为 0 而 pending_intents > 0
+    // 就是"peer 谁都没在推进"，必须能看见。
+    uint64_t country_peer_resolved_in_worker = 0;
+    uint64_t country_peer_resolved_by_main = 0;
+    // worker 自己发起、当日仍为 PENDING 的 deferred peer 数（P2）。
+    uint32_t country_deferred_peer_count = 0;
     char fault_code[64]{};
 };
 

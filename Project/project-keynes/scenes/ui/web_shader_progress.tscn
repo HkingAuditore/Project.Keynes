@@ -1,0 +1,69 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/web_shader_progress.gd" id="1_script"]
+[ext_resource type="Theme" path="res://assets/themes/menu_atlas_theme.tres" id="2_theme"]
+
+[node name="WebShaderProgress" type="Control"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 48.0
+offset_top = -96.0
+offset_right = 528.0
+offset_bottom = -44.0
+grow_horizontal = 1
+grow_vertical = 0
+mouse_filter = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Band" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"PKArchiveBand"
+
+[node name="Column" type="VBoxContainer" parent="Band"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 5
+
+[node name="Line" type="HBoxContainer" parent="Band/Column"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="Caption" type="Label" parent="Band/Column/Line"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 16
+text_overrun_behavior = 3
+text = "正在预编译着色器（首次进入较慢，之后会快很多）"
+
+[node name="Count" type="Label" parent="Band/Column/Line"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 0)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 2
+text = "0/0"
+
+[node name="Bar" type="ProgressBar" parent="Band/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+mouse_filter = 2
+max_value = 1.0
+step = 0.0
+value = 0.0
+show_percentage = false

@@ -38,6 +38,10 @@ __pycache__/
 # 本地验证输出、测试工程副本和崩溃快照；已跟踪的验证资料仍保留。
 /tmp/
 /Project/project-keynes/tmp/
+# Web 字体子集化（tools/subset_fonts.py）的缓存：子集 ttf、一次性迷你导入工程、
+# .godot 注入备份和报告。导出期间会临时改写 .godot/imported/*.fontdata（已由
+# **/.godot/ 覆盖），导出结束/下次运行即还原，源字体与 .import 文件不动。
+/tmp/web_font_subset/
 /.pytest_cache/
 /unreal_mcp.log
 

@@ -89,6 +89,9 @@ void rs_stroke(inout RSurf s, vec2 p, vec2 a, vec2 b, float width, vec3 color, f
 	}
 }
 
+// [web-resource-min] rs_blade 只有一个调用者：resource_impostor 里 family == 3（鱼）的
+// 徽章图像。web 精简变体把那段换成 rt_badge_silhouette()，这里就不再编译。
+#ifndef PK_WEB_RESOURCE_MIN
 void rs_blade(inout RSurf s, vec2 p, vec2 a, vec2 b, float width, vec3 color, float height, float px) {
 	vec2 ab = b - a;
 	float len = max(length(ab), 0.0001);
@@ -108,6 +111,7 @@ void rs_blade(inout RSurf s, vec2 p, vec2 a, vec2 b, float width, vec3 color, fl
 		s.ao = 0.94;
 	}
 }
+#endif // PK_WEB_RESOURCE_MIN
 
 // Multi-lobed organic ground patch SDF that never looks like a circular sticker or touches quad borders
 float rs_organic_patch_sdf(vec2 q, float seed) {

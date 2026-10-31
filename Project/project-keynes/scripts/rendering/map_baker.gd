@@ -1251,14 +1251,16 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	return world
 
 
+## 见 map_generator.gd 的同名函数：多等的 3 帧在没有动画需求时只是把墙钟乘以 4。
+## 浏览器单帧 31–34 ms，57 个调用点累计 3.5–5.3 秒纯等待。
+const GENERATION_YIELD_FRAMES := 1
+
 func _yield_generation_frame() -> void:
 	var main_loop := Engine.get_main_loop()
 	if main_loop is SceneTree:
 		var tree := main_loop as SceneTree
-		await tree.process_frame
-		if DisplayServer.get_name() != "headless":
-			for _i in range(3):
-				await tree.process_frame
+		for _i in range(GENERATION_YIELD_FRAMES):
+			await tree.process_frame
 
 
 func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,

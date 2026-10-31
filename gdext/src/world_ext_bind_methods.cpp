@@ -85,6 +85,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_daily_tick);
     ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
                          &DCWorldExt::run_native_daily_slice);
+    // native_daily_inline：调用线程上同步跑完一天的 12 域日屏障（Web 用）。
+    ClassDB::bind_method(D_METHOD("run_native_daily_inline_day"),
+                         &DCWorldExt::run_native_daily_inline_day);
     ClassDB::bind_method(D_METHOD("configure_runtime_graph", "boot_config"),
                          &DCWorldExt::configure_runtime_graph);
     ClassDB::bind_method(D_METHOD("advance_runtime_pulse", "day", "season_phase",
@@ -301,6 +304,11 @@ void DCWorldExt::_bind_methods() {
         &DCWorldExt::wait_climate_consumed, DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("runtime_climate_writeback_self_test"),
                          &DCWorldExt::runtime_climate_writeback_self_test);
+    // P1：环境帧预发布器（主线程 _process 里发 N+1..N+K）需要的两个只读探测。
+    ClassDB::bind_method(D_METHOD("environment_ring_has_capacity"),
+                         &DCWorldExt::environment_ring_has_capacity);
+    ClassDB::bind_method(D_METHOD("runtime_committed_day"),
+                         &DCWorldExt::runtime_committed_day);
     ClassDB::bind_method(D_METHOD("runtime_snapshot_ring_self_test"),
                          &DCWorldExt::runtime_snapshot_ring_self_test);
     ClassDB::bind_method(D_METHOD("runtime_domain_pod_self_test"),
@@ -1076,6 +1084,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_bio_seed_pass);
     ClassDB::bind_method(D_METHOD("run_bio_bootstrap_pass", "knobs"),
                          &DCWorldExt::run_bio_bootstrap_pass);
+    ClassDB::bind_method(D_METHOD("run_boot_facade_pass", "knobs"),
+                         &DCWorldExt::run_boot_facade_pass);
     ClassDB::bind_method(D_METHOD("configure_bio_occupancy", "config"),
                          &DCWorldExt::configure_bio_occupancy);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_pass", "knobs"),

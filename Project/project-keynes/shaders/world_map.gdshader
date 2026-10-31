@@ -110,28 +110,66 @@ render_mode blend_mix, unshaded;
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
+#ifdef PK_WEB_WORLD_MIN
+#include "res://shaders/include/world_map_web_min.gdshaderinc"
+#else
 #include "res://shaders/include/cell_indirect.gdshaderinc"
+#endif
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/common_noise.gdshaderinc"
+#endif
 #include "res://shaders/include/height.gdshaderinc"
 #include "res://shaders/include/climate_season.gdshaderinc"
 #include "res://shaders/include/biome_color.gdshaderinc"
 #include "res://shaders/include/vegetation.gdshaderinc"
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/weather_front.gdshaderinc"
+#endif
 #include "res://shaders/include/snow_cover.gdshaderinc"
 #include "res://shaders/include/biome_detail.gdshaderinc"
 #include "res://shaders/include/hillshade_tod.gdshaderinc"
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/water.gdshaderinc"
+#endif
 #include "res://shaders/include/surface_params.gdshaderinc"
 #include "res://shaders/include/terrain_surface_detail.gdshaderinc"
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/tonemap.gdshaderinc"
+#endif
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/shore_common.gdshaderinc"
+#endif
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
+#endif
 #include "res://shaders/include/brdf.gdshaderinc"
 #include "res://shaders/include/land_pipeline.gdshaderinc"
+#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/water_pipeline.gdshaderinc"
+#endif // PK_WEB_WORLD_MIN
 
 #include "res://shaders/include/global_adjustments.gdshaderinc"
 
+
+#ifdef PK_WEB_WORLD_MIN
+// ⚠ 本注释块整体包在 PK_WEB_WORLD_MIN 里，目的就是让**桌面变体的预处理产物逐字节
+// 不变**（这一点由 tmp/next/_probe 的 expand-diff 守着）。
+//
+// [web-water-pass] 水面已从本 fragment **整段移出**，见
+//   shaders/world_water_web.gdshader（第二 pass）+ hex_renderer._sync_water_quad()。
+// 上一轮在这里留过一个"紧凑水面"函数（biome 底色 + 深度 + 岸线 + 海冰，无 fbm /
+// 无循环）作为缓解手段，实测证明它治不好，反而更容易被误认为"已经优化过了"：
+//   只留陆地（水面=常量）              2 473 ms
+//   只留水面（陆地=常量）              1 089 ms
+//   两者都在                           20 291 ms
+//   水面改紧凑 if/else（≈25 行）       17 264 ms
+//   水面改无分支三元/mix（≈30 行）     18 060 ms
+// 结论：悬崖与第二个着色来源的**行数无关**（25 行 = 1000 行），是 ANGLE/FXC 的寄存器
+// 压力型非线性。唯一有效的做法是让这个 fragment 只剩一个着色来源。所以
+// PK_WEB_WORLD_MIN 下水面像素输出一个常量占位色，由 world_water_web.gdshader 整屏
+// 覆盖重画。占位色刻意选成"暗海蓝"：万一第二 pass 因故没画（档位被裁 / 编译失败），
+// 屏幕上是一片偏平的深蓝，而不是一眼假的品红。
+#endif
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
@@ -350,16 +388,34 @@ void fragment() {
 		COLOR = vec4(fog_unexplored_color, 1.0);
 	} else {
 		if (!is_water) {
+#ifndef PK_PROBE_NO_LAND
 			col = render_land_pipeline(
 				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
 				wind_v, dyn_snow, dyn_valid, dyn_vitality, pixel_noise, shore_frac);
+#else
+			col = vec3(0.2, 0.35, 0.15);   // PROBE: land pipeline removed
+#endif
 		} else {
+#ifndef PK_PROBE_NO_WATER
+#ifdef PK_WEB_WORLD_MIN
+			// [web-water-pass] web-LOW 档：水面由独立的第二 pass
+			// （shaders/world_water_web.gdshader）整屏覆盖重画，这里只出一个常量。
+			// 这是本次结构性修复的**全部内容**：本 fragment 从此只有一个真正的
+			// 着色来源（陆地），FXC 不再踩"两个来源联合优化"的 20.3 s 悬崖。
+			// 常量取值与 PK_PROBE_NO_WATER 探针一致（该探针因此退化为等价路径，
+			// 但按约定保留：它是"水面像素到底由谁画"的开关）。
+			col = vec3(0.1, 0.2, 0.4);
+#else
 			col = render_water_pipeline(
 				biome, cover, water_secondary_biome, water_secondary_cover,
 				water_static_edge_mix, elev, wp, uv, scals,
 				lat_signed, current_temp, ocean_current_v, wind_v,
 				visual_water_ice_fraction, shore_frac, pixel_noise);
+#endif
+#else
+			col = vec3(0.1, 0.2, 0.4);     // PROBE: water pipeline removed
+#endif
 		}
 		int visual_surface_cover = is_water ? cover : visual_land_cover;
 		int visual_surface_veg = is_water ? veg : visual_land_veg;
@@ -427,10 +483,14 @@ void fragment() {
 		} else if (terrain_surface_debug_view > 0) {
 			COLOR = vec4(terrain_surface_debug_color(uv, wp, _cell_id), 1.0);
 		} else {
+#ifdef PK_PROBE_NO_GLOBAL_ADJ
+			COLOR = vec4(col, 1.0);   // [probe] global_adjustments
+#else
 			COLOR = apply_global_adjustments(
 				col, wp, pixel_noise, dyn_snow, current_temp, moist, dyn_vitality, dyn_valid,
 				visual_surface_cover, is_water ? 0.0 : 1.0,
 				visual_surface_veg == V_NONE ? 0.0 : 1.0);
+#endif // PK_PROBE_NO_GLOBAL_ADJ
 		}
 	}
 }

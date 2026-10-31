@@ -501,11 +501,21 @@ void fragment() {
 	// vf_eval(...)` did. Branch instead so the desktop (SPIR-V) and web builds
 	// share one source.
 	VegSurf s = vf_empty();
-	if (far) {
+#ifdef PK_VEG_FAR_ONLY
+	// 回退档（ShrubLayer.PK_WEB_ENABLE_VEG_NEAR_FORMS = false）：只走远景 LOD。
+	// 近景 form 那一整套函数（broadleaf/conifer/palm/...）没人引用，编译器会把它们
+	// 整段丢掉——这就是把 web 首次编译从 50s 级降下来的止损手段。
+	s = vf_far(form, pe, ctx);
+#else
+	// PK_VEG_NEAR_MIN（web 默认档）下，被裁掉的 form 近景函数根本没编进来，
+	// 这里直接落到 vf_far；桌面/全量档下 vf_form_near_available() 恒为 true，
+	// 这个条件被编译器折成原来的 far 判断。
+	if (far || !vf_form_near_available(form)) {
 		s = vf_far(form, pe, ctx);
 	} else {
 		s = vf_eval(form, pe, ctx, false);
 	}
+#endif
 
 	vec3 L = v_h.xyz;
 	vec4 daylight = v_i;

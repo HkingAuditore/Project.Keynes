@@ -121,7 +121,11 @@ vec4 visual_sample_horizon(vec2 uv) { return texture(visual_horizon_tiles, visua
 #endif
 #else
 uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
+// [web-resource-min] resource_impostor 的 web 精简变体不再采样地平线（uniform 声明保留，
+// 运行期仍会 set_shader_parameter），采样点整段省掉。
+#ifndef PK_WEB_RESOURCE_MIN
 vec4 visual_sample_horizon(vec2 uv) { return texture(terrain_horizon_tex, visual_static_wrap_uv(uv)); }
+#endif
 #endif
 #endif
 

@@ -645,7 +645,11 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 		float shade = clamp(0.5 + 1.6 * (dot(Nd, vec3(-0.5, -0.5, 0.70710678)) - 0.70710678), 0.0, 1.0);
 		return vec3(pow(shade, 2.2));
 	}
+#ifdef PK_PROBE_NO_BRDF
+	vec3 lit = surface.base_color * (0.55 + 0.45 * lc.local_day);   // [probe] BRDF
+#else
 	vec3 lit = evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
+#endif // PK_PROBE_NO_BRDF
 
 	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
 	// 明暗，让"太阳南北移动"在地形起伏上清晰可读。仅陆地调用，不污染水面反射；夜侧按昼夜系数淡出。
@@ -653,6 +657,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// 明暗量 = soft(dot(N.xy, Ln) × slope_gain)：坡度 × 朝向余弦，缓坡近线性、陡坡趋饱和。
 	//   不能把 N.xy 归一化成纯坡向——那样 3° 缓坡与陡崖同为满幅，平原被切成黑白色块，
 	//   坡向一转就硬翻转。也不能直接用原始量级（缓坡只有 ~2% 差），slope_gain 负责放大。
+#ifndef PK_PROBE_NO_TOD_RELIEF
 	if (tod_terrain_relief_strength > 0.001) {
 		vec3 N = normalize(surface.macro_normal);
 		vec2 Nh = N.xy;
@@ -678,10 +683,12 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 			lit *= clamp(1.0 + relief, relief_floor, 1.50);
 		}
 	}
+#endif // PK_PROBE_NO_TOD_RELIEF
 	// [terrain-horizon 2026-07-03] BRDF 内只遮蔽 direct lighting，物理上正确但在当前强环境光/
 	// 方向性 relief 叠层下肉眼偏弱；这里给陆地追加一层温和的 cartographic cast-shadow，仍按
 	// lc.direct_shadow 与 local_day 门控，不影响水面和 emission，保证“投影”可读。
 	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
+#ifndef PK_PROBE_NO_CAST_SHADOW
 	if (cast_shadow > 0.001) {
 		float cast_floor = day_night_enabled
 			? terrain_horizon_cast_floor
@@ -696,6 +703,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 		}
 		lit *= mix(1.0, cast_floor, cast_shadow);
 	}
+#endif // PK_PROBE_NO_CAST_SHADOW
 	return lit;
 }
 
@@ -727,9 +735,15 @@ vec3 render_land_pipeline(
 		return compute_terrain_static_material(biome, elev, wp, uv, scals.r).color;
 	}
 	float mixed_micro_strength = terrain_biome_micro_strength(biome);
+#ifdef PK_PROBE_NO_LAND_BASE
+	// [probe] 整段 LAND 1（静态材质采样 + 河流/运河 + 法线/侵蚀 + landform 着色）
+	mixed_micro_strength = 0.5;
+	SurfaceParams surface = 		make_surface_params(vec3(0.34, 0.42, 0.26), vec3(0.0, 0.0, 1.0), 0.90, 0.0, 1.0);
+#else
 	SurfaceParams surface = compute_land_base_surface(
 			biome, geo_biome, landform, elev, wp, uv, scals,
 			mixed_micro_strength);
+#endif // PK_PROBE_NO_LAND_BASE
 
 	LandModInputs mi;
 	mi.biome = biome;
@@ -746,15 +760,23 @@ vec3 render_land_pipeline(
 	mi.wp = wp;
 	float micro_vitality = mix(1.0, dyn_vitality, dyn_valid);
 	float micro_snow = mix(0.0, dyn_snow, dyn_valid);
+#ifndef PK_PROBE_NO_MICRO
 	surface = apply_terrain_micro_surface(
 			surface, biome, mixed_micro_strength, wp, moist, micro_vitality, micro_snow);
+#endif // PK_PROBE_NO_MICRO
+#ifndef PK_PROBE_NO_MODIF
 	surface = apply_land_material_modifiers(surface, mi);
+#endif // PK_PROBE_NO_MODIF
 
+#ifndef PK_PROBE_NO_COLOR_OVL
 	surface = apply_land_color_overlays(
 		surface, biome, veg, cover, elev, moist, wp, uv, scals, current_temp,
 		dyn_snow, dyn_valid, pixel_noise, shore_frac);
+#endif // PK_PROBE_NO_COLOR_OVL
+#ifndef PK_PROBE_NO_MAT_OVL
 	surface = apply_land_material_overlays(
 		surface, biome, cover, current_temp, elev, moist, dyn_snow, dyn_valid, scals.g);
+#endif // PK_PROBE_NO_MAT_OVL
 
 	float albedo_luma = dot(surface.base_color, vec3(0.299, 0.587, 0.114));
 	surface.base_color = max(mix(vec3(albedo_luma), surface.base_color, land_albedo_saturation),
@@ -765,5 +787,9 @@ vec3 render_land_pipeline(
 	if (terrain_surface_debug_view == 12) {
 		return surface.base_color;
 	}
+#ifdef PK_PROBE_NO_SHADE
+	return surface.base_color;   // [probe] 整段 BRDF/hillshade/投影
+#else
 	return shade_land_surface(surface, uv, lat_signed);
+#endif // PK_PROBE_NO_SHADE
 }

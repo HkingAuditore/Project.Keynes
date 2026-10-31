@@ -88,7 +88,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 focus_mode = 2
-text = "收起看图 ▴"
+text = "收起看图 ▲"
 theme_type_variation = &"PKDossierChip"
 
 [node name="Prompt" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Body" index="0"]

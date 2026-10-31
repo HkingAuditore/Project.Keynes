@@ -239,6 +239,26 @@ public:
     // Thread-isolated runtime host. These methods are non-blocking facade calls;
     // the worker is only enabled after the complete POD graph has been proven.
     godot::Dictionary start_runtime_worker(const godot::Dictionary &config);
+    // native_daily_inline：在调用线程上同步跑完一天的 12 域日屏障。
+    //
+    // 只在 `start_runtime_worker({"native_daily_inline": true, ...})` 成功之后
+    // 有效。与 worker 路径的区别只有"谁执行"和"peer 怎么满足"两件事：
+    //   * 不 spawn 线程，build_day_plan/execute_day_plan/publish_day 全在
+    //     主线程串行执行；
+    //   * 日屏障缺 peer 结果时不进 CV 等待、不设 5s 超时，而是当场把 Country
+    //     peer 适配器推一轮（Effect/Modifier/Economy 都在同一线程），再重试
+    //     同一天。泵不动了才返回 ok=false —— 冻结可见，而不是 FAULTED。
+    //
+    // 返回字段：ok / code / reason / attempts / peer_pumped / from_day / day /
+    // committed_day / completed_domain_mask / preflight_ok /
+    // continuation_pending / work_units / dirty_families / elapsed_ms。
+    // 另有分域耗时：stage_ms（12 域 → ms，键名见 runtime_domain_stage_key）/
+    // attempt_ms / pre_stage_ms / climate_ms / plan_build_ms / commit_tail_ms /
+    // peer_ms / capture_ms / budget_exceeded / executor_serial_only。
+    // capture_ms 是紧接在这次调用之前的 capture_runtime_inputs() 的耗时，
+    // 用来把调用方那一帧拆成"capture + 本日 12 域 + 其余 GDScript"。"当前这次
+    // 捕获"与"上一次捕获"共用同一个 slot，所以只在每次 capture 时刷新。
+    godot::Dictionary run_native_daily_inline_day();
     godot::Dictionary set_runtime_clock(bool paused, double speed_days_per_second);
     void profile_runtime_save_window(bool active);
       godot::Dictionary capture_runtime_inputs(const godot::Dictionary &inputs);
@@ -418,6 +438,13 @@ public:
     // main-thread peer transport between slices.
     godot::Dictionary wait_climate_consumed(
         int64_t after_environment_generation, int64_t timeout_ms = -1);
+    // P1：环境帧预发布器用的只读探测（"现在还能不能再塞一帧"）。**不加锁、不阻塞**
+    // —— 内部 ring 的 has_capacity() 临界区只有一次 deque::size()。返回 false 表示
+    // 调用方本帧应当放弃发布，下一帧再试，绝不等待。
+    bool environment_ring_has_capacity() const;
+    // P1：worker 已提交日。预发布器的上界要按"已提交"算，而不是"已发布"——
+    // 环里未消费的帧只是内存，不是事实。
+    int64_t runtime_committed_day() const;
     bool runtime_climate_writeback_self_test() const;
     // B8 P2：把"生产当前可用"的 wind traj 表导出给 capture。判定与 weather
     // field solve 的消费端同一契约：表已建 + knob 允许消费 + 指纹仍然匹配当前
@@ -1219,6 +1246,11 @@ public:
     godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_bio_seed_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_bio_bootstrap_pass(const godot::Dictionary &knobs);
+    // 生成收尾 facade 引导链融合（dots-boot-facade-2026-10）：一次调用完成
+    // habitat 掩码 → 河口羽流 → 矿藏储量 → 资源研究信号 CSR → 生态 province+播种
+    // → 诊断聚合。子 pass 全部复用已验收实现，中间量不出 C++。
+    // 输入/输出契约见 world_ext_boot_facade.cpp 顶部注释。
+    godot::Dictionary run_boot_facade_pass(const godot::Dictionary &knobs);
     godot::Dictionary configure_bio_occupancy(const godot::Dictionary &config);
     godot::Dictionary run_bio_occupancy_pass(const godot::Dictionary &knobs);
     // Deterministic cursor continuation.  The opaque state is transient and
@@ -3416,6 +3448,10 @@ private:
     // the *_prev lanes onto the current values.
     uint64_t _climate_writeback_applied_generation = 0;
     int64_t _climate_writeback_applied_day = -1;
+    // 最近一次 capture_runtime_inputs() 的耗时（毫秒）。内联日把它一起回传，
+    // 调用方就能把一帧拆成"capture + 12 域 + 其余 GDScript"，否则浏览器里
+    // 24 秒的帧根本分不清是 C++ 日屏障还是捕获/GDScript。
+    double _inline_capture_ms = 0.0;
     bool _climate_physics_capture_ready = false;
     // Main-thread cache for the most recently consumed immutable commit.  The
     // visual patch API reads this exact generation instead of polling the ring

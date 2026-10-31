@@ -16,7 +16,21 @@ uint32_t detected_hardware_threads() {
     const uint32_t detected = std::thread::hardware_concurrency();
     return detected == 0 ? 1 : detected;
 }
+
+// native_daily_inline：全局串行开关。进程级而不是实例级，因为内联开关是在
+// 世界生成之后（start_runtime_worker）才落下来的，而执行器可能在更早的
+// configure_runtime_graph 里就已经构造过。置位后即使 worker 已经存在也不再
+// 使用它们。
+std::atomic<bool> g_parallel_serial_only{false};
 } // namespace
+
+void set_parallel_serial_only(bool enabled) noexcept {
+    g_parallel_serial_only.store(enabled, std::memory_order_release);
+}
+
+bool parallel_serial_only() noexcept {
+    return g_parallel_serial_only.load(std::memory_order_acquire);
+}
 
 NativeParallelExecutor &NativeParallelExecutor::instance() {
     static NativeParallelExecutor executor;
@@ -28,6 +42,9 @@ NativeParallelExecutor::NativeParallelExecutor()
     // Normal simulation keeps two logical cores for the main/render threads.
     const uint32_t worker_count = _hardware_threads > 2
         ? std::min<uint32_t>(_hardware_threads - 2, 16) : 0;
+    // 内联日不 spawn 任何 worker：浏览器里每一个 wasm pthread 都是一次真正的
+    // worker 启动（池满时直接失败），而内联日不需要它们。
+    if (parallel_serial_only()) return;
     _workers.reserve(worker_count);
     for (uint32_t index = 0; index < worker_count; ++index)
         _workers.emplace_back([this, index]() { worker_loop(index); });
@@ -41,6 +58,9 @@ NativeParallelExecutor::~NativeParallelExecutor() {
 }
 
 bool NativeParallelExecutor::has_workers() const {
+    // 串行开关优先：调用方（pk::parallel_for_range）看到"没有 worker"就走它
+    // 原本的确定性串行分块路径，连 _done_cv 都不会碰。
+    if (parallel_serial_only()) return false;
     return !_workers.empty();
 }
 
@@ -62,6 +82,7 @@ void NativeParallelExecutor::set_interactive(bool interactive) {
 }
 
 uint32_t NativeParallelExecutor::active_worker_limit() const {
+    if (parallel_serial_only()) return 0;
     if (!_interactive.load(std::memory_order_acquire))
         return static_cast<uint32_t>(_workers.size());
     // Four-core and smaller devices use only the simulation coordinator while
@@ -82,6 +103,7 @@ NativeParallelExecutor::Report NativeParallelExecutor::report() const {
     out.task_count = _task_count.load(std::memory_order_relaxed);
     out.fault_count = _fault_count.load(std::memory_order_relaxed);
     out.interactive = _interactive.load(std::memory_order_acquire);
+    out.serial_only = parallel_serial_only();
     return out;
 }
 
@@ -91,6 +113,13 @@ void NativeParallelExecutor::run_group(uint32_t task_count, TaskFn fn,
     std::lock_guard<std::mutex> dispatch_guard(_dispatch_mutex);
     ++_dispatch_count;
     _task_count.fetch_add(task_count, std::memory_order_relaxed);
+    // 内联日：在调用线程上把整组任务顺序跑完再返回。与下面 participants==0
+    // 的分支同构，但额外挡住"worker 已经存在也不许用"的情形。
+    if (parallel_serial_only()) {
+        ++_serial_dispatch_count;
+        for (uint32_t task = 0; task < task_count; ++task) fn(userdata, task);
+        return;
+    }
     const uint32_t participants = std::min(task_count, active_worker_limit());
     if (participants == 0) {
         ++_serial_dispatch_count;
