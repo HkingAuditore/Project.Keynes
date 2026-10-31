@@ -28,6 +28,91 @@ const GROUND_FORMS := [19, 20, 21, 22, 23, 25]
 # rock, vein, crystal: a bare scar decal plus a small pebble prop.
 const DEPOSIT_FORMS := [16, 17, 18]
 
+# ─── Web / Compatibility 编译期精简变体（2026-10-31）────────────────────────
+# 见 shaders/include/resource_impostor_web_min.gdshaderinc。这张 shader 展开后约
+# 183 KB / 4 400 行 / 48 个 for，是全部 shader 里最重的一张，web 首次编译实测
+# 27 424 ms。变体把「运行期必然走不到 / 只在 lens 徽章里出现」的分支整段裁掉：
+#   展开源码 146 073 → 54 210 code chars，for 循环 48 → 14，uniform 声明 80 → 80。
+#
+# 前缀是**唯一**开关，而且必须是单一事实来源：菜单期 WebShaderWarmup 用
+# warmup_prefix() 取同一串宏，差一个字节驱动就不认缓存、预热白做
+# （植被/世界地图那边都踩过一次，见 ShrubLayer.web_warmup_shader_codes()）。
+#
+# 档位钉死 LOW：min 变体里没有任何代码响应 MOBILE_QUALITY_*（terrain_horizon 整段被
+# 中性值顶替，本 include 链路也不用 PK_MOBILE_ANY），而菜单期预热读不到玩家进游戏后
+# 才会生效的画质设置。若让前缀跟随设置，玩家选「中/高」时运行期就会编出另一份，
+# 缓存必然不命中，27 秒的编译就回到游戏里了。
+const MAP_VISUAL_TILED_DEFINE := "#define MAP_VISUAL_TILED\n"
+const WEB_MIN_QUALITY_DEFINE := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
+const WEB_MIN_DEFINE := "#define PK_WEB_RESOURCE_MIN\n"
+## [web-two-pass] 同一份 .gdshader 编成两份程序：surface / geology。
+## 依据与实测见 shaders/resource_impostor.gdshader 的 [web-two-pass] 段与
+## tmp/next/resource_cliff_IMPL.md。
+const WEB_PASS_SURFACE_DEFINE := "#define PK_RES_WEB_PASS_SURFACE\n"
+const WEB_PASS_GEOLOGY_DEFINE := "#define PK_RES_WEB_PASS_GEOLOGY\n"
+## batch 2 = 矿物道具（form 16/17/18 → rt_geology_solid）。其余 batch 都是 surface。
+const MINERAL_BATCH := 2
+
+## 本图层是否走 web/GLES3 精简变体。web 上 is_compatibility_renderer() 恒 true
+## （feature_flags.gd:464-465），桌面 Forward+/Mobile 恒 false → 桌面路径不变。
+static func web_min_active() -> bool:
+	return DCFeatureFlags.is_compatibility_renderer()
+
+
+## 运行期真正会交给驱动的那份源码前缀（tiled 只可能出现在桌面）。
+## 这是 **surface** pass 的前缀；矿物 batch 用 geology_variant_prefix()。
+static func shader_variant_prefix(tiled: bool) -> String:
+	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
+	if web_min_active():
+		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_SURFACE_DEFINE
+	return prefix
+
+
+## 矿物 batch（batch 2）那份程序的前缀。除 pass 宏外与 surface **逐字相同**：
+## 两份程序共享同一套 uniform，差一个字节驱动就不认缓存。
+static func geology_variant_prefix(tiled: bool) -> String:
+	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
+	if web_min_active():
+		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_GEOLOGY_DEFINE
+	return prefix
+
+
+## 菜单期预热用：与运行期首次绘制时的前缀**同源**。非 web 返回空串（预热本身只在
+## web 上跑，见 WebShaderWarmup.run）。web 上 visual_tiles 恒为 null
+## （map_baker.gd:1276-1279），所以运行期的 tiled 也是 false，两份前缀逐字相同。
+static func warmup_prefix() -> String:
+	return shader_variant_prefix(false) if web_min_active() else ""
+
+
+## 菜单期预热用：geology 那份的前缀（与运行期 geology_variant_prefix(false) 同源）。
+static func geology_warmup_prefix() -> String:
+	return geology_variant_prefix(false) if web_min_active() else ""
+
+
+## 菜单期预热用：返回运行期真正会交给驱动的那份源码。WebShaderWarmup 只负责调它，
+## 不自己拼宏串（差一个字节驱动就不认缓存、预热白做）。
+static func compose_shader_code(source: Shader) -> String:
+	if source == null:
+		return ""
+	return warmup_prefix() + source.code
+
+
+## 菜单期预热：web 上本图层有**两份**程序，必须各编一遍，否则进世界还会再编一次。
+## 返回 {label: code}，与 ShrubLayer.web_warmup_shader_codes() 同构，
+## 让 WebShaderWarmup 只负责遍历、不自己拼宏串。
+static func web_warmup_shader_codes() -> Dictionary:
+	if not web_min_active():
+		return {}
+	var source := RESOURCE_SHADER
+	if source == null:
+		return {}
+	var body := String(source.code)
+	return {
+		"resource_impostor": warmup_prefix() + body,
+		"resource_impostor_geology": geology_warmup_prefix() + body,
+	}
+
+
 @export var profile: Resource = DEFAULT_PROFILE
 var _map: MapData
 var _world: WorldData
@@ -59,7 +144,13 @@ var _scan_cursor := 0
 var _near_cells: Array[int] = []
 var _near_cursor := 0
 var _material: ShaderMaterial
+## 矿物 batch 专用材质（web 上是 geology pass 那份程序；桌面与 _material 指向同一资源）。
+var _material_geo: ShaderMaterial
 var _shader_tiled := false
+## 上一次真正写进 _material.shader 的编译期前缀（见 shader_variant_prefix）。
+var _shader_prefix := ""
+## 同上，geology pass 的前缀。
+var _shader_geo_prefix := ""
 var _mesh: QuadMesh
 var _memory_image: Image
 var _memory_texture: ImageTexture
@@ -85,6 +176,8 @@ func _ready() -> void:
 	z_index = 0
 	_material = ShaderMaterial.new()
 	_material.shader = RESOURCE_SHADER
+	_material_geo = ShaderMaterial.new()
+	_material_geo.shader = RESOURCE_SHADER
 	_mesh = QuadMesh.new()
 	_mesh.size = Vector2(2.0, 2.0)
 	_cover = GroundCover.new()
@@ -122,13 +215,13 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 		dims = _world.lut_dims
 	_memory_image = Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
 	_memory_texture = ImageTexture.create_from_image(_memory_image)
-	_material.set_shader_parameter("memory_lut", _memory_texture)
-	_material.set_shader_parameter("lut_dims", Vector2(dims))
-	_material.set_shader_parameter("hex_size", _hex)
-	_material.set_shader_parameter("world_origin", _world.world_bounds.position if _world != null else Vector2.ZERO)
-	_material.set_shader_parameter("world_size", _world.world_bounds.size if _world != null else Vector2.ONE)
-	_material.set_shader_parameter("wrap_origin_x", _world.world_bounds.position.x if _world != null else 0.0)
-	_material.set_shader_parameter("wrap_period_x", _world.wrap_period_x if _world != null else 0.0)
+	_set_param("memory_lut", _memory_texture)
+	_set_param("lut_dims", Vector2(dims))
+	_set_param("hex_size", _hex)
+	_set_param("world_origin", _world.world_bounds.position if _world != null else Vector2.ZERO)
+	_set_param("world_size", _world.world_bounds.size if _world != null else Vector2.ONE)
+	_set_param("wrap_origin_x", _world.world_bounds.position.x if _world != null else 0.0)
+	_set_param("wrap_period_x", _world.wrap_period_x if _world != null else 0.0)
 	_sync_terrain_textures()
 	_build_style_texture()
 	if _cover != null:
@@ -148,20 +241,56 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 	return audit
 
 func _sync_terrain_textures() -> void:
-	if _material == null or _world == null:
+	if _material == null or _material_geo == null or _world == null:
 		return
 	var tiles = _world.visual_tiles
 	var tiled := tiles != null and bool(tiles.ready) and String(tiles.layout.mode) == "tiled"
-	if tiled != _shader_tiled:
+	var prefix := shader_variant_prefix(tiled)
+	var geo_prefix := geology_variant_prefix(tiled)
+	if tiled != _shader_tiled or prefix != _shader_prefix or geo_prefix != _shader_geo_prefix:
 		_shader_tiled = tiled
-		var shader := Shader.new()
-		shader.code = ("#define MAP_VISUAL_TILED\n" if tiled else "") + RESOURCE_SHADER.code
-		_material.shader = shader
+		_shader_prefix = prefix
+		_shader_geo_prefix = geo_prefix
+		_assign_variant(_material, prefix)
+		_assign_variant(_material_geo, geo_prefix)
 	for material in _materials():
 		_bind_terrain_textures(material, tiles, tiled)
 
+## 桌面（且未 tiled，prefix 为空）：与改动前逐字相同，直接把源文件资源交给材质，
+## 不产生任何新的 Shader 实例 ⇒ 桌面走的就是 preload 的那一份。
+func _assign_variant(target: ShaderMaterial, prefix: String) -> void:
+	if target == null:
+		return
+	if prefix.is_empty():
+		target.shader = RESOURCE_SHADER
+	else:
+		var shader := Shader.new()
+		shader.code = prefix + RESOURCE_SHADER.code
+		target.shader = shader
+
+
+## 每个 uniform 都要推到**两份** impostor 材质上：web 的两份程序共享同一套 uniform，
+## 漏推一份就是"另一份 pass 画错/不画"。
+## 注意不包含 ground cover：那是另一张 shader（resource_ground_cover.gdshader），
+## 它的 uniform 集合不同，由 _bind_terrain_textures / configure 单独推。
+func _set_param(name: String, value) -> void:
+	if _material != null:
+		_material.set_shader_parameter(name, value)
+	if _material_geo != null:
+		_material_geo.set_shader_parameter(name, value)
+
+
+func _material_for(family: int) -> ShaderMaterial:
+	# batch 2 = 矿物道具（rt_geology_solid）；桌面两份材质指向同一资源，等价。
+	return _material_geo if family == MINERAL_BATCH and _material_geo != null else _material
+
+
 func _materials() -> Array[ShaderMaterial]:
-	var out: Array[ShaderMaterial] = [_material]
+	var out: Array[ShaderMaterial] = []
+	if _material != null:
+		out.append(_material)
+	if _material_geo != null:
+		out.append(_material_geo)
 	if _cover != null:
 		out.append(_cover.material())
 	return out
@@ -208,12 +337,12 @@ func _apply_profile() -> void:
 		"palette_saturation", "badge_px", "decal_opacity", "submerged_opacity",
 		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
 		"area_feather", "area_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
-		_material.set_shader_parameter(name, profile.get(name))
+		_set_param(name, profile.get(name))
 	for name in ["herd_size_min", "herd_size_max", "animal_length_hex", "animal_min_pixels"]:
-		_material.set_shader_parameter(name, profile.get(name))
-	_material.set_shader_parameter("herd_radius_hex", herd_radius_hex())
-	_material.set_shader_parameter("visual_quality", quality())
-	_material.set_shader_parameter("filter_style", _filter_style)
+		_set_param(name, profile.get(name))
+	_set_param("herd_radius_hex", herd_radius_hex())
+	_set_param("visual_quality", quality())
+	_set_param("filter_style", _filter_style)
 	if _cover != null:
 		_cover.apply_profile(profile)
 		_cover.set_quality(quality(), _mobile_tier)
@@ -231,7 +360,7 @@ func set_context(fog_enabled: bool, seed_value: int = 0) -> void:
 	if not _styles.is_empty():
 		_allowed = Catalog.presence_mask(_styles)
 	if _material != null:
-		_material.set_shader_parameter("fog_enabled", _fog)
+		_set_param("fog_enabled", _fog)
 	_scan_cursor = 0
 	# Herd traces follow world presence, which depends on the layout seed.
 	_queue_cover_rewrite()
@@ -253,7 +382,7 @@ func _refresh_filter_style() -> void:
 				_filter_style = i
 				break
 	if _material != null:
-		_material.set_shader_parameter("filter_style", _filter_style)
+		_set_param("filter_style", _filter_style)
 
 # 资源透镜：手动开启，或地图叠加层给出资源筛选时自动开启。
 func set_lens(enabled: bool) -> void:
@@ -278,7 +407,7 @@ func _update_lens() -> void:
 		return
 	var was_hidden := _lens_amount <= 0.001
 	_lens_amount = move_toward(_lens_amount, target, delta / maxf(0.01, float(profile.lens_fade_seconds)))
-	_material.set_shader_parameter("lens_amount", _lens_amount)
+	_set_param("lens_amount", _lens_amount)
 	if _cover != null:
 		_cover.set_lens_amount(_lens_amount)
 	if was_hidden != (_lens_amount <= 0.001):
@@ -308,7 +437,7 @@ func set_camera_view(rect: Rect2, center: Vector2, zoom_value: float) -> void:
 	_zoom = clampf(zoom_value, 0.01, 16.0)
 	if _material == null:
 		return
-	_material.set_shader_parameter("camera_zoom", _zoom)
+	_set_param("camera_zoom", _zoom)
 	if _cover != null:
 		_cover.set_zoom(_zoom)
 	if rect.size.x <= 0.0 or _map == null:
@@ -368,17 +497,17 @@ func prepare_frame(time: float, sun: Vector3, state: Dictionary) -> void:
 		_cover.set_enabled(bool(profile.enabled) and bool(profile.ground_cover_enabled) and _configured and _context_ready)
 	if not _configured or _map == null or _intel == null or not profile.enabled or not _context_ready:
 		return
-	_material.set_shader_parameter("world_time", time)
+	_set_param("world_time", time)
 	_update_lens()
-	_material.set_shader_parameter("tod_sun_dir", sun)
+	_set_param("tod_sun_dir", sun)
 	for name in state:
-		_material.set_shader_parameter(name, state[name])
+		_set_param(name, state[name])
 	if _world != null:
-		_material.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-		_material.set_shader_parameter("has_dynamic_lut", _world.dyn_lut_tex != null)
-		_material.set_shader_parameter("eco_lut", _world.eco_lut_tex)
-		_material.set_shader_parameter("has_ecology_lut", _world.eco_lut_tex != null)
-		_material.set_shader_parameter("enum_lut", _world.enum_lut_tex)
+		_set_param("dyn_lut", _world.dyn_lut_tex)
+		_set_param("has_dynamic_lut", _world.dyn_lut_tex != null)
+		_set_param("eco_lut", _world.eco_lut_tex)
+		_set_param("has_ecology_lut", _world.eco_lut_tex != null)
+		_set_param("enum_lut", _world.enum_lut_tex)
 	if _cover != null:
 		var cover_state := state.duplicate()
 		cover_state["tod_sun_dir"] = sun
@@ -765,7 +894,7 @@ func drain_one_upload() -> bool:
 		node = MultiMeshInstance2D.new()
 		node.name = "Resource_%d_%d_%d" % [key.x, key.y, family]
 		node.z_index = RESOURCE_Z
-		node.material = _material
+		node.material = _material_for(family)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_2D
 		mm.use_colors = true
@@ -781,7 +910,7 @@ func drain_one_upload() -> bool:
 			for side in [-1, 1]:
 				var copy := MultiMeshInstance2D.new()
 				copy.z_index = RESOURCE_Z
-				copy.material = _material
+				copy.material = _material_for(family)
 				copy.multimesh = mm
 				copy.position.x = float(side) * _world.wrap_period_x
 				add_child(copy)
@@ -872,14 +1001,14 @@ func _build_style_texture() -> void:
 		var fauna_layer := art.fauna_layer(e.id)
 		image.set_pixel(2, i, Color(0.0, float(fauna_layer + 1),
 			float(art.fauna_count) if fauna_layer >= 0 else 0.0, 0.0))
-	_material.set_shader_parameter("style_lut", ImageTexture.create_from_image(image))
+	_set_param("style_lut", ImageTexture.create_from_image(image))
 	_bind_art()
 
 func _bind_art() -> void:
 	var art := ResourceArtLibrary.shared()
-	_material.set_shader_parameter("art_fauna_bound", art.fauna != null)
+	_set_param("art_fauna_bound", art.fauna != null)
 	if art.fauna != null:
-		_material.set_shader_parameter("art_fauna", art.fauna)
+		_set_param("art_fauna", art.fauna)
 
 func diagnostics() -> Dictionary:
 	var result := _stats.duplicate()

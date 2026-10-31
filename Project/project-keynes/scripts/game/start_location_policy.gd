@@ -896,7 +896,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	if not bool(starter_catalog.get("ok", false)):
 		return starter_catalog
 	for cell_idx in range(map.cell_count()):
-		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
 		if not _is_candidate(map, cell_idx, neighbors):
@@ -921,7 +921,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		return int(a.cell) < int(b.cell))
 	var chosen: Dictionary = {}
 	for candidate in candidates:
-		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
 		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
@@ -942,18 +942,18 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	var foreign_routes: Array[Dictionary] = []
 	var remaining: Array[Dictionary] = []
 	for candidate in candidates:
-		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
 		if int(candidate.cell) != cell_idx:
 			remaining.append(candidate)
 	for _foreign_index in range(foreign_count):
-		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
 		var ordered: Array[Dictionary] = []
 		for candidate in remaining:
-			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 				await tree.process_frame
 				slice_start = Time.get_ticks_usec()
 			var candidate_distance := int(nearest_start[int(candidate.cell)])
@@ -967,7 +967,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		var best: Dictionary = {}
 		var best_distance := -1
 		for candidate in ordered:
-			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 				await tree.process_frame
 				slice_start = Time.get_ticks_usec()
 			if not _close_candidate_route(map, world, neighbors, starter_catalog,
@@ -992,7 +992,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		foreign_selection_distances.append(best_distance)
 		foreign_routes.append((best.starter_route as Dictionary).duplicate(true))
 		for index in range(remaining.size() - 1, -1, -1):
-			if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 				await tree.process_frame
 				slice_start = Time.get_ticks_usec()
 			if int(remaining[index].cell) == selected_cell:
@@ -1027,7 +1027,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	_append_precious_route(player_start, player_precious)
 	country_starts.append(player_start)
 	for foreign_index in range(foreign_count):
-		if tree != null and Time.get_ticks_usec()-slice_start>=4000:
+		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			slice_start = Time.get_ticks_usec()
 		var foreign_cell := int(foreign_cells[foreign_index])

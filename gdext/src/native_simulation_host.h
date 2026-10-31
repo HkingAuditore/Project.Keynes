@@ -91,6 +91,85 @@ public:
     void join_for_destruction();
     void set_clock(bool paused, double speed_days_per_second);
     void set_interactive(bool interactive);
+    // ===== native_daily_inline（单线程内联日） =====
+    //
+    // Web/wasm 上没有可用的 worker 线程：
+    //   * ACTIVE 请求会被 per-domain 门降级成 OFF（报告里 "OFF" 配 requested
+    //     "ACTIVE"），日历不推进；
+    //   * 即使强行起线程，Country 域的日屏障要等主线程把 `CountryPeerIntent`
+    //     泵进 Effect/Economy 再回传 result，浏览器里这条泵链不跑，5s 后
+    //     `day_wait_peer_stall_timeout` → FAULTED。
+    //
+    // 打开这个开关后 `start()` 不再 spawn pthread，`run_inline_day()` 由调用线程
+    // （主线程）逐日把同一个 RuntimeDayPlan 屏障走完：build_day_plan →
+    // execute_day_plan → 日尾 publish_day。peer 就是本线程，所以日屏障里所有
+    // "等人"的分支都不会进入，也不需要 5s 超时兜底。
+    //
+    // 关掉时行为与之前逐字节相同：`start()` 照旧 spawn worker，`run_inline_day()`
+    // 直接拒绝。桌面端默认关闭。
+    void set_inline_daily_mode(bool enabled) noexcept {
+        _inline_daily_mode.store(enabled, std::memory_order_release);
+    }
+    bool inline_daily_mode() const noexcept {
+        return _inline_daily_mode.load(std::memory_order_acquire);
+    }
+    // P2：Country peer 由 worker 自己发起（deferred）。默认 false ⇒ 今天的行为
+    // 逐字节不变：intent 只入 `_country_worker_intent_queue`，由主线程泵执行。
+    //
+    // 打开后：目标域是 worker 权威的 intent 由 **worker 自己**写进对应 POD 的
+    // 入队 API，并在 `_country_worker_results` 里落一条 PENDING；主线程不再需要
+    // 为这些 intent 做"投递"这一步。真正的 promote（PENDING→READY）仍是既有的
+    // `resolve_pending_country_effect_peers()`，它本来就在 worker 线程上跑。
+    void set_country_deferred_peers(bool enabled) noexcept {
+        _country_deferred_peers.store(enabled, std::memory_order_release);
+    }
+    bool country_deferred_peers() const noexcept {
+        return _country_deferred_peers.load(std::memory_order_acquire);
+    }
+    // 一次内联日尝试的结果。只有 committed=true 表示这一天真的提交并发布了；
+    // continuation_pending=true 表示屏障缺 peer 结果（调用方应在同一线程上泵一轮
+    // peer 后重试同一天），false 且未提交表示硬失败，重试无用。
+    struct InlineDayOutcome {
+        bool committed = false;
+        bool continuation_pending = false;
+        int64_t from_day = -1;
+        int64_t day = -1;
+        int64_t environment_day = -1;
+        uint32_t completed_domain_mask = 0;
+        uint32_t completed_stage_count = 0;
+        uint32_t stage_count = 0;
+        uint32_t dirty_families = 0;
+        uint64_t work_units = 0;
+        char reason[64]{};
+        // ===== 分域/分阶段计时（native_daily_inline 诊断）=====
+        //
+        // 只覆盖"一次尝试"（一次 run_inline_day 调用）；重试由调用方按域累加。
+        // 下标与 runtime_domain_stage_order() 同序，键名用
+        // runtime_domain_stage_key()。
+        //
+        // 注意 stage_ms[CLIMATE] 装的是 Climate 内核的真实耗时，而内核在 12 域
+        // 循环之前就跑完了（见 execute_day_plan 的 PRE_SETUP 段），所以它是
+        // pre_stage_ms 的一部分。恒等式近似为：
+        //   elapsed_ms ≈ plan_build_ms + pre_stage_ms
+        //              + (sum(stage_ms) - stage_ms[climate])
+        //              + commit_tail_ms
+        double stage_ms[RUNTIME_DOMAIN_STAGE_COUNT]{};
+        double pre_stage_ms = 0.0;   // stage 循环之前（含 Climate 内核）
+        double climate_ms = 0.0;     // pre_stage_ms 中属于 Climate 内核的部分
+        double plan_build_ms = 0.0;  // build_day_plan
+        double commit_tail_ms = 0.0; // 日尾：Climate writeback + publish + 读视图
+        // 单日墙钟预算看门狗：超预算时不再继续推进 stage，而是带着
+        // budget_exceeded 收工，让调用方看到一次"有界的失败"而不是挂死。
+        bool budget_exceeded = false;
+        // 本线程这次是否真的把并行执行器切成了串行（浏览器内置日必须为 true）。
+        uint32_t executor_serial_only = 0;
+    };
+    // 在调用线程上同步执行一天。不做 CV 等待、不 spawn 线程、不设 peer-stall 超时。
+    InlineDayOutcome run_inline_day();
+    // 内联日单日墙钟预算（微秒，0 = 不设预算）。默认 30000，可用
+    // PK_INLINE_DAY_BUDGET_MS 覆盖。execute_day_plan 用它做 stage 之间的看门狗，
+    // run_native_daily_inline_day 用它给整次重试一个总上限。
+    static int64_t inline_day_budget_us();
     // Measurement mode: on a Climate parity mismatch, adopt the production
     // reference for that day instead of discarding the plan. It never makes the
     // worker authoritative; it only stops the first divergent day from blocking
@@ -118,6 +197,16 @@ public:
     bool has_pending_climate_input() const;
     // 主线程 publish：ring 已满，需 wait 腾空位。
     bool environment_ring_full() const;
+    // P1：主线程**预发布**器用的只读探测。`environment_ring_full()` 的取反，
+    // 但语义上单独命名 —— 预发布器问的是"现在还能不能塞一帧"，而不是"是不是
+    // 满了"。只读，不改变任何状态。
+    bool environment_ring_has_capacity() const;
+    // P1：worker 已提交日的**廉价**读数（一次 acquire load）。预发布器每帧都要
+    // 问它一次，走 report() 会每帧复制一整个 RuntimeThreadReport（上千字段 +
+    // 若干定长 char 数组），在浏览器主线程上就是白白烧掉的帧预算。
+    int64_t committed_day_value() const noexcept {
+        return _committed_day.load(std::memory_order_acquire);
+    }
     size_t environment_ring_pending() const;
     // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
     uint32_t day_stall_reason_mask() const;
@@ -544,10 +633,19 @@ public:
     bool country_economy_asset_protocol_self_test(std::string &error) const;
     bool enqueue_economy_origin_country_asset(
             RuntimeEconomyAssetRequest request, std::string &error);
-    // True only on the simulation worker thread. Callers that can run on
+    // True only on the thread that is currently executing a simulation day:
+    // the worker thread in worker mode, or the calling thread inside
+    // `run_inline_day()` under native_daily_inline. Callers that can run on
     // either thread must check this before taking a worker-only in-thread
-    // path; the main thread has to use the Host peer queue instead.
+    // path; a main-thread caller that is NOT inside an inline day still has to
+    // use the Host peer queue.
     bool on_worker_thread() const noexcept {
+        if (_inline_daily_mode.load(std::memory_order_acquire)) {
+            const std::thread::id executor =
+                _inline_day_thread.load(std::memory_order_acquire);
+            return executor != std::thread::id{} &&
+                executor == std::this_thread::get_id();
+        }
         return std::this_thread::get_id() == _worker.get_id();
     }
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
@@ -1062,6 +1160,12 @@ private:
     // the last instruction of the old worker.
     bool reap_completed_worker_nonblocking();
     void worker_main();
+    // 内联日与 worker 日循环共用同一条命令准入。不同点只有一处：内联模式没有
+    // worker 本地 pending 列表，未来日的命令必须原样回队列，否则会被当成今天执行。
+    void drain_inline_day_commands(int64_t day,
+                                   std::vector<RuntimeCommandPacket> &day_commands,
+                                   std::vector<RuntimeCommandReceipt> &day_receipts,
+                                   uint64_t &admitted_submit_order);
     RuntimeDayPlan build_day_plan(int64_t day, double speed_scale,
                                   const RuntimeEnvironmentSnapshot *environment) const;
     RuntimeDayCommit execute_day_plan(
@@ -1222,6 +1326,21 @@ private:
     std::atomic<uint64_t> _annual_country{0};
     uint64_t _annual_queued_reward = 0;
     std::atomic<RuntimeSimulationMode> _mode{RuntimeSimulationMode::OFF};
+    // native_daily_inline：单线程内联日。见公开区同名注释。
+    std::atomic<bool> _inline_daily_mode{false};
+    // P2：Country peer 由 worker 自己发起。见公开区同名注释。
+    std::atomic<bool> _country_deferred_peers{false};
+    // 内联日执行者线程。内联模式下 `on_worker_thread()` 比对它而不是 `_worker`
+    // （那个 std::thread 在内联模式下从未创建，get_id() 恒不等于任何真实线程）。
+    std::atomic<std::thread::id> _inline_day_thread{};
+    // 内联日分域计时累加器。只在内联模式下写（worker 日恒为 0），执行者恒是
+    // 同一个调用线程，所以不需要原子；run_inline_day() 在每次尝试开始时清零、
+    // 结束时抄进 InlineDayOutcome。
+    std::array<double, RUNTIME_DOMAIN_STAGE_COUNT> _inline_stage_ms{};
+    double _inline_pre_stage_ms = 0.0;
+    double _inline_climate_ms = 0.0;
+    // 本次尝试是否被单日墙钟预算看门狗掐断（见 execute_day_plan 的预算检查）。
+    bool _inline_budget_exceeded = false;
     std::atomic<bool> _stop_requested{false};
     std::atomic<bool> _paused{true};
     std::atomic<bool> _interactive{false};
@@ -1714,6 +1833,11 @@ private:
     std::atomic<uint32_t> _day_wait_missing_mask{0};
     std::atomic<int64_t> _day_wait_env_day{-1};
     std::atomic<uint32_t> _day_wait_ring{0};
+    // P2：Country peer 解析归属与 deferred 计数。谁来推进 peer 是 web 能不能
+    // 并行起来的分水岭，所以必须在报告里是可数的，而不是靠日志猜。
+    std::atomic<uint64_t> _country_peer_resolved_in_worker{0};
+    std::atomic<uint64_t> _country_peer_resolved_by_main{0};
+    std::atomic<uint32_t> _country_deferred_peer_count{0};
     // 为什么某个域的阶段今天没完成。有些 park 分支（Effect 等 Climate、Effect
     // 目录未就绪）只是 `stage.completed = 0; continue;`，既不设 stall 位也不写
     // fallback reason，日志里完全无痕；这一对字段把它们点名。

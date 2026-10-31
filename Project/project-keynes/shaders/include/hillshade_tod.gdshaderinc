@@ -31,6 +31,7 @@
 //                主路径只 1 次采样。本轮不动。
 // ─────────────────────────────────────────────────────────────────────────
 
+#ifndef PK_WEB_WORLD_MIN
 // ─── 双光源 hillshading（key + fill，软阴影） ───────────────────────────
 
 float hillshading_two_lights(vec2 uv) {
@@ -56,6 +57,7 @@ float hillshading_two_lights(vec2 uv) {
 	return key + fill;
 }
 
+#endif // PK_WEB_WORLD_MIN
 // ─── 任务 3：风格化 PBR 昼夜着色辅助 ───────────────────────────────────
 // 关键决策 1：保留 PBR 物理光照流程（方向光 NdotL + 菲涅尔柔边），但色温/饱和度
 //   phase=0.0 日出：太阳从东方地平线升起，天色暖橙
@@ -65,6 +67,7 @@ float hillshading_two_lights(vec2 uv) {
 // 返回"太阳方向向量"（世界坐标空间，XY 是水平，Z 是向上近似法向）。
 // 正午 z 接近 1（正上方），日出/日落 z 接近 0，午夜 z 为负（光从下面来，
 // 在渲染上被解释为"无直接光"，地表由环境冷色补光）。
+#ifndef PK_WEB_WORLD_MIN
 vec3 get_sun_dir(float phase) {
 	// 一天 360° 旋转：phase→angle；0.0 起点设在"日出地平线"
 	float angle = phase * 6.2831853;  // 2π
@@ -123,6 +126,7 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 	return result;
 }
 
+#endif // PK_WEB_WORLD_MIN
 // ─── Pass 2（任务 3）：TOD 驱动的风格化 PBR ────────────────────────────
 // 为 Sobel 3x3（visual_quality>=1）或保留 4-tap（visual_quality==0，需求 3.6）。
 // 关键改动（对应需求 3.1~3.6）：
@@ -135,6 +139,7 @@ vec3 apply_day_night(vec3 albedo, float phase, vec2 slope_xy) {
 //
 // 返回：PBR 染色后的 RGB（caller 负责 clamp）。
 // 从 height_tex 采样得到 tangent-space 法线（Sobel 3x3 或 4-tap 中心差分）
+#ifndef PK_WEB_WORLD_MIN
 // [terrain-normal 分层 2026-06-25] per-biome 细节法线因子：山地/方山满量，丘陵/荒地次之，
 //   森林/草本/沙漠中低，平原/湿地系趋零（"平原真平、不密密麻麻"）。纯 ALU 查表，零额外采样。
 float terrain_detail_factor(int biome) {
@@ -153,6 +158,7 @@ float terrain_detail_factor(int biome) {
 	return 0.18;
 }
 
+#endif // PK_WEB_WORLD_MIN
 // 三层法线合成（需求：① 粗法线给走向、② 细节按地形叠、③ 低端机不上细节）：
 //   1. 粗法线 N_coarse：优先用生成期烘焙的 terrain_normal_tex（1 fetch）拿宏观山脉走向；
 //      未绑定（旧存档/未 rebake）时回退到运行期宽半径(hillshade_coarse_radius) 4-tap。
@@ -239,10 +245,12 @@ vec3 terrain_add_height_detail(vec3 N_coarse, vec2 uv, int quality, int biome) {
 	return normalize(N);
 }
 
+#ifndef PK_WEB_WORLD_MIN
 vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 	return terrain_add_height_detail(terrain_coarse_normal(uv), uv, quality, biome);
 }
 
+#endif // PK_WEB_WORLD_MIN
 #ifdef PK_TERRAIN_STATIC_BAKED
 // 烘焙版地形几何法线：粗法线、近景高度细节、分地形细节（沟谷/台坎/沙丘/起伏/丘状）
 // 都已在 visual tile 烘焙时逐 texel 求好，这里 2 次采样 + 按缩放淡出。
@@ -278,6 +286,7 @@ vec4 terrain_baked_normal(vec2 uv, int quality, float crease) {
 }
 #endif
 
+#ifndef PK_WEB_WORLD_MIN
 // ─── 侵蚀沟谷细节（DEM 晕渲观感）──────────────────────────────────────
 // 高度场只有宏观起伏和无方向的残差噪声，读不出真实地形里顺坡而下的沟谷与山脊。
 // 这里在世界空间叠一组"沿坡度方向拉长"的条纹噪声：每个抖动特征点贡献一段余弦起伏，
@@ -524,6 +533,7 @@ float terrain_detail_lod(float wl) {
 	return smoothstep(3.0, 7.0, wl * camera_zoom);
 }
 
+#endif // PK_WEB_WORLD_MIN
 // N = 要叠加细节的法线；N_coarse = 只含宏观起伏的粗法线，决定沟谷走向与台坎强度。
 // 走向不能取 N：近距的高度细节 / 近岸细节是逐 texel 残差，方向乱跳会把条纹扭成水泡纹。
 // biome / landform 是像素自身的归属，只在相邻格为水或地图外时补位用。
@@ -777,6 +787,7 @@ float biome_roughness(int biome) {
 // include）。地形 brdf、水面 water_pipeline、植被 shrub_layer 全部调用同一份，
 // 避免公式/色板各处复制后漂移。此处不再重复定义。
 
+#ifndef PK_WEB_WORLD_MIN
 // 主入口：TOD 驱动的 PBR。is_water 时让上层直接跳过。
 vec3 apply_tod_pbr(vec3 albedo, vec2 uv, int biome, int quality) {
 	// 1. 法线
@@ -817,3 +828,4 @@ vec3 apply_tod_pbr(vec3 albedo, vec2 uv, int biome, int quality) {
 	lit = lit / (1.0 + lit * 0.35);
 	return lit;
 }
+#endif // PK_WEB_WORLD_MIN

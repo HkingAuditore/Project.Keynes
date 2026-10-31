@@ -13,6 +13,10 @@ var _transition_layer: CanvasLayer
 
 
 func _ready() -> void:
+	# 最早能跑到的应用代码（autoload 先于主场景）。用它把「引擎/wasm 启动」与
+	# 「菜单构建」分开：`boot` → `menu_ready` → `ready`（进世界）。
+	WebTelemetry.emit("boot", {"engine_msec": Time.get_ticks_msec()})
+	WebTelemetry.flush()
 	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
 		"res://tests/game/game_save_roundtrip_test.gd")
 	# 存档回放复现入口。见 tests/headless_save_replay.gd 与

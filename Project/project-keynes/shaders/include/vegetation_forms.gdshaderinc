@@ -14,6 +14,19 @@
 #ifndef PK_VEGETATION_FORMS_INC
 #define PK_VEGETATION_FORMS_INC
 
+// ── 近景 form 编译档位（只由 ShrubLayer 的 web 前缀定义）──────────────────────
+// PK_VEG_FAR_ONLY：近景整段关掉，调用点只调 vf_far（远景软盘）。近景函数没人
+//   引用，编译器/驱动都不会为它们生成代码。这是 web 上挡回 45s 首次编译的老档。
+// PK_VEG_NEAR_MIN：近景保留 subset（阔叶 / 针叶 / 灌木 / 草丛 4 个家族），其余
+//   13 个 form 的函数体被下面的 #ifndef 整段排除，调用点由 vf_form_near_available()
+//   判到 vf_far。web 默认档，见 ShrubLayer.PK_WEB_VEG_NEAR_FORMS 那两个常量。
+// 都不定义：全量 17 个 form（桌面/移动端，以及 web 的 PK_WEB_VEG_NEAR_FULL_FORMS）。
+// 三个 define 都只影响"编多少"，不改变任何一个 form 的外观。
+//
+// 想把某个被裁的家族加回精简集：把它的函数体挪到对应 #ifndef 段落之外，再在
+// vf_form_near_available() 和 vf_eval() 的精简集分支里各加一行即可（每加回一个
+// 家族就多付一段首帧编译时间）。
+
 const int VF_BROADLEAF = 0;
 const int VF_CONIFER = 1;
 const int VF_PALM = 2;
@@ -36,6 +49,11 @@ const int VF_PEAT_TUFT = 17;
 const float VF_TAU = 6.2831853;
 const float VF_PI = 3.1415927;
 
+// [web-resource-min] PK_VF_NOISE_ONLY：只要 vf_hash12 / vf_hash22 / vf_vnoise 三个叶子
+// （resource_impostor 的 web 精简变体用；resource 侧从不用下面任何一个近景 form）。
+// 本宏只由 shaders/include/resource_impostor_web_min.gdshaderinc 定义，
+// 植被链路（vegetation_impostor.gdshaderinc）永远不定义它，所以那边逐字不变。
+#ifndef PK_VF_NOISE_ONLY
 struct VegCtx {
 	float seed;
 	float count;     // elements carried by the instance (1..32)
@@ -77,6 +95,7 @@ VegSurf vf_empty() {
 	s.art = vec4(0.5, 0.5, 0.5, 0.0);
 	return s;
 }
+#endif // PK_VF_NOISE_ONLY
 
 float vf_hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -107,6 +126,9 @@ float vf_vnoise(vec2 p) {
 	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// [web-resource-min] 以下整段（vf_detail … 17 个近景 form … vf_eval）只服务植被链路，
+// resource_impostor 的 web 精简变体不编译它们（PK_VF_NOISE_ONLY，约 44 KB 死代码）。
+#ifndef PK_VF_NOISE_ONLY
 // Fades a pattern of the given frequency (cycles per local unit) once it
 // drops below a few pixels, so distant forms stay calm instead of aliasing.
 float vf_detail(float freq, float px) {
@@ -582,6 +604,12 @@ VegSurf vf_conifer(vec2 p, VegCtx ctx, bool cheap) {
 	return s;
 }
 
+// ── web 精简集裁掉的近景 form（PK_VEG_NEAR_MIN）──────────────────────────────
+// 下面这些函数体在精简集下整段不参与编译：vf_eval 也不再引用它们，调用点直接
+// 落到 vf_far（远景软盘）。这是 web 首帧编译预算让出来的部分；想恢复全量就把
+// ShrubLayer.PK_WEB_VEG_NEAR_FULL_FORMS 改成 true。
+#ifndef PK_VEG_NEAR_MIN
+// 裁掉：棕榈 / 枯木（红树也走 vf_snag）。热带与枯木属点缀冠层，远景软盘可接受。
 VegSurf vf_palm(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	float keep = mix(0.45, 1.0, ctx.vigor);
@@ -679,6 +707,7 @@ VegSurf vf_snag(vec2 p, VegCtx ctx, bool cheap, bool roots) {
 	s.snow_hold = 0.45;
 	return s;
 }
+#endif  // !PK_VEG_NEAR_MIN
 
 // ── Brush and ground ───────────────────────────────────────────────────────
 
@@ -735,6 +764,8 @@ VegSurf vf_shrub(vec2 p, VegCtx ctx, bool cheap) {
 	return s;
 }
 
+// 裁掉：仙人掌 / 芦苇（荒漠、湿地河岸的点缀层）。
+#ifndef PK_VEG_NEAR_MIN
 VegSurf vf_cactus(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	VfElem e = vf_elements(p, ctx, 1.0, 0.0, 0.5, 1.0, VF_CACTUS, false);
@@ -838,6 +869,9 @@ VegSurf vf_reed(vec2 p, VegCtx ctx, bool cheap) {
 	return s;
 }
 
+#endif  // !PK_VEG_NEAR_MIN
+
+// 保留：草丛（地表底色，web 上最常出现在屏幕上的三个家族之一）。
 VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	float keep = mix(0.35, 1.0, ctx.vigor);
@@ -882,6 +916,8 @@ VegSurf vf_grass(vec2 p, VegCtx ctx, bool cheap) {
 	return s;
 }
 
+// 裁掉：地衣 / 花 / 泥炭草（纯点缀层，远景软盘已经读不出差别）。
+#ifndef PK_VEG_NEAR_MIN
 VegSurf vf_lichen(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	vec2 so = vf_seed_offset(ctx.seed);
@@ -971,9 +1007,13 @@ VegSurf vf_peat(vec2 p, VegCtx ctx, bool cheap) {
 	s.snow_hold = 1.0;
 	return s;
 }
+#endif  // !PK_VEG_NEAR_MIN
 
 // ── Hardscape ──────────────────────────────────────────────────────────────
 
+// 裁掉：岩石 / 碎石 / 雪堆 / 倒木（硬质点缀）。岩石是这一段里唯一较重的 3x3
+// Voronoi，也在精简集之外。
+#ifndef PK_VEG_NEAR_MIN
 VegSurf vf_rock(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	vec2 so = vf_seed_offset(ctx.seed);
@@ -1125,9 +1165,12 @@ VegSurf vf_fallen_log(vec2 p, VegCtx ctx, bool cheap) {
 	s.snow_hold = 0.9;
 	return s;
 }
+#endif  // !PK_VEG_NEAR_MIN
 
 // ── Aquatic ────────────────────────────────────────────────────────────────
 
+// 裁掉：海带 / 珊瑚（水下层，web 上本就只在海岸线附近出现）。
+#ifndef PK_VEG_NEAR_MIN
 VegSurf vf_kelp(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	vec2 so = vf_seed_offset(ctx.seed);
@@ -1215,8 +1258,30 @@ VegSurf vf_coral(vec2 p, VegCtx ctx, bool cheap) {
 	s.snow_hold = 0.0;
 	return s;
 }
+#endif  // !PK_VEG_NEAR_MIN
+
+// 该 form 有没有近景函数可调。精简集下只有 4 个主力家族有，其余在调用点
+// （vegetation_impostor 的 fragment）直接走 vf_far —— 这里绝不能引用被 #if
+// 裁掉的函数，否则那 13 段 GLSL 又会回到编译单元里。
+bool vf_form_near_available(int form) {
+#ifdef PK_VEG_NEAR_MIN
+	return form == VF_BROADLEAF || form == VF_CONIFER
+		|| form == VF_SHRUB || form == VF_GRASS;
+#else
+	return true;
+#endif
+}
 
 VegSurf vf_eval(int form, vec2 p, VegCtx ctx, bool cheap) {
+#ifdef PK_VEG_NEAR_MIN
+	// 精简集分派：4 个主力家族；其余落到 vf_shrub 只是兜底（正常不会走到，
+	// 调用点已经用 vf_form_near_available() 把它们导向 vf_far 了）。
+	if (form == VF_BROADLEAF) return vf_broadleaf(p, ctx, cheap, true);
+	if (form == VF_CONIFER) return vf_conifer(p, ctx, cheap);
+	if (form == VF_SHRUB) return vf_shrub(p, ctx, cheap);
+	if (form == VF_GRASS) return vf_grass(p, ctx, cheap);
+	return vf_shrub(p, ctx, cheap);
+#else
 	if (form == VF_BROADLEAF) return vf_broadleaf(p, ctx, cheap, true);
 	if (form == VF_CONIFER) return vf_conifer(p, ctx, cheap);
 	if (form == VF_PALM) return vf_palm(p, ctx, cheap);
@@ -1236,6 +1301,7 @@ VegSurf vf_eval(int form, vec2 p, VegCtx ctx, bool cheap) {
 	if (form == VF_CORAL) return vf_coral(p, ctx, cheap);
 	if (form == VF_PEAT_TUFT) return vf_peat(p, ctx, cheap);
 	return vf_shrub(p, ctx, cheap);
+#endif  // PK_VEG_NEAR_MIN
 }
 
 // Distant fallback: once a whole instance is only a few pixels wide, a soft
@@ -1289,5 +1355,6 @@ VegSurf vf_far(int form, vec2 p, VegCtx ctx) {
 	s.floor_a = exp(-max(d, 0.0) * 14.0) * 0.10;
 	return s;
 }
+#endif // PK_VF_NOISE_ONLY
 
 #endif

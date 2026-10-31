@@ -18,6 +18,11 @@ extends Node2D
 
 const SHADER_PATH: String = "res://shaders/fog_of_war.gdshader"
 
+## Web 上是否编译完整 fog shader（43 KB）。实测：它和 weather_overlay 一起构成
+## "进世界后卡一次"的那几十秒；web 默认用极简纯色版本（雾仍然整片不透明，
+## 只是没有边沿过渡/噪声纹理）。做出裁剪版 web 变体后置回 true。
+const PK_WEB_ENABLE_FOG_FULL_SHADER := true
+
 ## 未探索厚云的基础反照率，必须与 fog_of_war.gdshader 的 unexplored_color 默认值一致。
 ## world_map.gdshader 的早退分支输出同一个颜色；只有 q0（无光照）时两者才真的对得齐，
 ## 见 supports_terrain_early_out()。
@@ -101,6 +106,16 @@ func _ensure_nodes() -> void:
 
 ## 编译期质量档：mobile/web 共用 MOBILE_QUALITY_*；桌面不 prepend。
 func _load_shader() -> Shader:
+	# Web：fog_of_war.gdshader（43 KB，全屏、含多层噪声/边沿混合）的首次编译在
+	# ANGLE 上同样是几十秒级——它和 weather_overlay 一起构成了"进世界后卡一次"。
+	# 这里换成极简版：未探索区域仍然整片不透明（雾的语义在逻辑层由
+	# cell.visible/explored 决定，渲染层用纯色近似），边沿过渡在 web 上暂时没有。
+	# 做出裁剪版 web 变体后把 PK_WEB_ENABLE_FOG_FULL_SHADER 置回 true。
+	if not PK_WEB_ENABLE_FOG_FULL_SHADER and OS.has_feature("web"):
+		var stub := Shader.new()
+		stub.code = "shader_type canvas_item;\nuniform vec4 unexplored_color : source_color = vec4(0.09, 0.08, 0.07, 1.0);\nvoid fragment() { COLOR = unexplored_color; }\n"
+		print("[fog_of_war_layer] web: simplified fog shader (full shader compiles in tens of seconds)")
+		return stub
 	var sh := ResourceLoader.load(SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if sh == null:
 		return null

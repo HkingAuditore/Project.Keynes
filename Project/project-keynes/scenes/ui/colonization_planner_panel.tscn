@@ -136,7 +136,7 @@ theme_type_variation = &"PKDossierChip"
 
 [node name="Arrow1" type="Label" parent="Margin/Root/RouteStepper/Margin/Row"]
 layout_mode = 2
-text = "▸"
+text = "▶"
 theme_type_variation = &"PKDossierMuted"
 
 [node name="FamilyStepIcon" parent="Margin/Root/RouteStepper/Margin/Row" instance=ExtResource("3_icon")]
@@ -157,7 +157,7 @@ theme_type_variation = &"FamilyStrongLabel"
 
 [node name="Arrow2" type="Label" parent="Margin/Root/RouteStepper/Margin/Row"]
 layout_mode = 2
-text = "▸"
+text = "▶"
 theme_type_variation = &"PKDossierMuted"
 
 [node name="TargetStepIcon" parent="Margin/Root/RouteStepper/Margin/Row" instance=ExtResource("3_icon")]

@@ -420,12 +420,12 @@ func build_indices_cooperative() -> void:
 		_cell_index[cell] = i
 		cell.index = i
 		i += 1
-		if tree != null and Time.get_ticks_usec()-start >= 4000:
+		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			start = Time.get_ticks_usec()
 	for begin in range(0,n,16):
 		_build_neighbor_indices(begin,mini(begin+16,n))
-		if tree != null and Time.get_ticks_usec()-start >= 4000:
+		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			start = Time.get_ticks_usec()
 	_indices_built = true
@@ -993,7 +993,7 @@ func init_soa_from_bake_cooperative() -> void:
 	var start := Time.get_ticks_usec()
 	for begin in range(0,n,8):
 		_copy_bake_cells(begin,mini(begin+8,n),seed)
-		if tree != null and Time.get_ticks_usec()-start >= 4000:
+		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
 			await tree.process_frame
 			start = Time.get_ticks_usec()
 	_finish_bake_soa()

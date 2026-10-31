@@ -146,7 +146,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 30)
 size_flags_horizontal = 0
 toggle_mode = true
-text = "▾"
+text = "▼"
 theme_type_variation = &"PKDossierChip"
 
 [node name="Choose" type="Button" parent="Margin/Column/Actions"]

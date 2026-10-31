@@ -84,6 +84,7 @@ var _macro_material: ShaderMaterial
 # Original (unprefixed) shader resources for the passes that sample terrain
 # lighting; the tiled raster variant is a duplicate with MAP_VISUAL_TILED prepended.
 var _body_shader_source: Shader
+var _shadow_shader_source: Shader
 var _decal_shader_source: Shader
 var _macro_shader_source: Shader
 var _shader_tiled := false
@@ -122,10 +123,13 @@ func _ready() -> void:
 	_body_material = _shader_material(BODY_SHADER_PATH)
 	_body_shader_source = _body_material.shader
 	_shadow_material = _shader_material("res://shaders/building_shadow.gdshader")
+	_shadow_shader_source = _shadow_material.shader
 	_decal_material = _shader_material(DECAL_SHADER_PATH)
 	_decal_shader_source = _decal_material.shader
 	_macro_material = _shader_material("res://shaders/building_macro.gdshader")
 	_macro_shader_source = _macro_material.shader
+	# web 受限档：把档位宏补进这 4 张（详见 compose_shader_code 的注释）。
+	_apply_web_variant_prefix()
 	_macro_quad = MeshInstance2D.new()
 	_macro_quad.name = "BuildingMacro"
 	_macro_quad.z_as_relative = false
@@ -931,17 +935,11 @@ func _sync_terrain_textures() -> void:
 ## sampler2DArray + 图块寻址 uniform。形态切换必须换 shader 代码，否则采样器类型与
 ## 绑定不匹配（与 ResourceVisualLayer 同处理）。body / decal / macro 都要换。
 func _apply_terrain_shader_variants() -> void:
-	var prefix := "#define MAP_VISUAL_TILED\n" if _shader_tiled else ""
+	# tiled 宏与 web 档位宏统一由 compose_shader_code 合成，避免两处前缀各写一半。
 	for entry in [[_body_material, _body_shader_source],
 			[_decal_material, _decal_shader_source],
 			[_macro_material, _macro_shader_source]]:
-		var material: ShaderMaterial = entry[0]
-		var source: Shader = entry[1]
-		if material == null or source == null:
-			continue
-		var variant := Shader.new()
-		variant.code = prefix + source.code
-		material.shader = variant
+		_assign_shader_variant(entry[0], entry[1])
 
 
 func _chunk_in_prefetch(chunk_id: int) -> bool:
@@ -994,6 +992,60 @@ func _recount_instances() -> void:
 		total += int(count)
 	_diagnostics.body_instances = total
 	_diagnostics.resident_chunks = _chunk_nodes.size()
+
+
+## 统一合成一份 shader 源码：web 档位宏 + tiled 宏 + 原始源码。
+##
+## Web 受限档（`PK_WEB_BUILDING_MIN`）的存在理由：这 4 张建筑 shader **从来没有**
+## include `shader_quality.gdshaderinc`，所以一直拿不到 `MOBILE_QUALITY_LOW`。
+## 后果不是"画质没降"，而是 `terrain_horizon.gdshaderinc:273` 的 LOW 分支不生效，
+## `gi_horizon_lut[nibbles[d]]` 那个「8 次循环 × 4 个 tap」的动态 uniform 数组查表
+## 不会被 DCE 掉 —— 浏览器首次编译实测 building_compound 3501 ms、
+## building_ground_decal 2283 ms、building_macro 395 ms。
+##
+## web 上 `terrain_horizon_tex` 恒为 null（map_baker 在 web 上不烘 horizon），
+## LOW 分支与"未绑定早退"分支构造的是同一个中性结构体，所以视觉逐位不变。
+##
+## ⚠ 预热器（web_shader_warmup.gd）必须用**逐字相同**的字符串，否则驱动缓存不命中、
+## 预热白做。改这里要同步那里。
+const PK_WEB_BUILDING_MIN_PREFIX := "#define PK_WEB_BUILDING_MIN\n"
+
+static func web_building_min_active() -> bool:
+	if not OS.has_feature("web"):
+		return false
+	if not DCFeatureFlags.is_compatibility_renderer():
+		return false
+	return not DCFeatureFlags.terrain_horizon_gpu_bake_active()
+
+static func compose_shader_code(source: Shader, tiled: bool) -> String:
+	if source == null:
+		return ""
+	var prefix := ""
+	if web_building_min_active():
+		prefix += PK_WEB_BUILDING_MIN_PREFIX
+	if tiled:
+		prefix += "#define MAP_VISUAL_TILED\n"
+	return prefix + source.code
+
+
+func _apply_web_variant_prefix() -> void:
+	if not web_building_min_active():
+		return
+	for entry in [[_body_material, _body_shader_source],
+			[_shadow_material, _shadow_shader_source],
+			[_decal_material, _decal_shader_source],
+			[_macro_material, _macro_shader_source]]:
+		_assign_shader_variant(entry[0], entry[1])
+
+
+func _assign_shader_variant(material: ShaderMaterial, source: Shader) -> void:
+	if material == null or source == null:
+		return
+	var variant := Shader.new()
+	variant.code = compose_shader_code(source, _shader_tiled)
+	material.shader = variant
+	WebTelemetry.note_variant(
+		String(source.resource_path).get_file().get_basename(), variant.code)
 
 
 static func _shader_material(path: String) -> ShaderMaterial:

@@ -72,7 +72,7 @@ func _ready() -> void:
 	add_theme_stylebox_override("panel", _normal_style)
 	_choose.pressed.connect(func() -> void: selected.emit())
 	_details_toggle.pressed.connect(func() -> void: details_requested.emit())
-	_details_toggle.text = "▾"
+	_details_toggle.text = "▼"
 	_details_toggle.add_theme_font_size_override("font_size", 18)
 	_details_toggle.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 	_details_toggle.add_theme_color_override("font_hover_color", UITokens.DOSSIER_OXBLOOD)
@@ -457,7 +457,7 @@ func set_details_expanded(expanded: bool, animate: bool = true) -> void:
 	_details_revision += 1
 	_details_expanded = expanded and not _candidate_empty
 	_details_toggle.set_pressed_no_signal(_details_expanded)
-	_details_toggle.text = "▴" if _details_expanded else "▾"
+	_details_toggle.text = "▲" if _details_expanded else "▼"
 	_details_toggle.tooltip_text = "收起详情" if _details_expanded else "展开详情"
 	_details_toggle.add_theme_color_override("font_focus_color",
 		UITokens.ARCHIVE_PAPER_LIGHT if _details_expanded else UITokens.ARCHIVE_INK)

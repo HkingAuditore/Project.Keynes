@@ -14,6 +14,17 @@ render_mode blend_mix, unshaded;
 // 三层云：cumulus（中层主云）/ cirrus（高层卷云）/ fog（低层山雾）。
 // 降水：按天气类型 profile flag 叠加（闪电已移除）。
 // 唯一的 filter_nearest 采样是 map_index_atlas（biome），仅用于 is_water 与低雾山地权重。
+//
+// [web-weather-min] web / ANGLE 裁剪变体（2026-10-31）：
+//   桌面版首帧编译在 ANGLE 上约 45 秒，卡住 web 加载条（曾在 98%）。原因不是 shader 体积，
+//   而是 cloud_density_soft 被 fragment 内联十几处、每处再展开 4/3/2 octave 的解析 Perlin
+//   fbm（每次 fbm 展开 6 轮循环 × 4 次 cloud_hash22 × 2 个 sin）+ 域扭曲 + 接缝伙伴 ×2。
+//   本变体（weather_layer.gd 在 web 上 prepend `#define PK_WEB_WEATHER_MIN`）用
+//   include/weather_overlay_web_min.gdshaderinc 里的「无 sin / 无循环」双 octave 值噪声替换
+//   整座 fbm 栈，并编译掉：域扭曲、体积法线 4-tap、单向光照梯度、偏移投影阴影、山雾 4 点
+//   邻域、接缝伙伴采样。保留：三层云（中云/卷云/低雾）、coverage 重映射曲线、逐像素晨昏
+//   光照与银边、云下直射阴影、天气 LUT 的连续副格混合、全部 uniform 契约。
+//   桌面路径（未定义该宏）逐字不变。
 // ════════════════════════════════════════════════════════════════════════
 
 // cell-index 间接寻址（cloud-from-field 2026-06-20）：per-cell 天气场 LUT。
@@ -132,7 +143,13 @@ vec2 wx_cloud_seam_partner(vec2 wp) {
 }
 
 int effective_weather_quality() {
-#if defined(MOBILE_QUALITY_LOW)
+#ifdef PK_WEB_WEATHER_MIN
+	// [web-weather-min] web 裁剪变体固定按「桌面 q1」语义编译：三层云（中云/卷云/低雾）
+	// + 逐像素晨昏光照全保留，只把 q2 的体积法线与 q1 的偏移投影阴影编译掉（见下方 #ifdef）。
+	// 刻意不读 weather_overlay_quality：web 上 quality tier 走 mobile 档（auto→LOW=0），
+	// 若沿用那个档位会把整层云关成不可见。
+	return 1;
+#elif defined(MOBILE_QUALITY_LOW)
 	return 0;
 #elif defined(MOBILE_QUALITY_MID)
 	return 0;
@@ -158,6 +175,13 @@ float hash_signed(vec2 p) {
 // include，与 fog_of_war.gdshader 共用同一份实现。
 #include "res://shaders/include/cloud_noise.gdshaderinc"
 
+// [web-weather-min] web / ANGLE 裁剪变体：廉价噪声 + 裁剪版云密度（见 include 文件头）。
+// 只被下方所有 `#ifdef PK_WEB_WEATHER_MIN` 路径调用。定义这个变体后，cloud_fbm /
+// cloud_fbm_evolve 在本 shader 里不再有任何调用点 → 不进驱动编译（它们是编译成本主项）。
+#ifdef PK_WEB_WEATHER_MIN
+#include "res://shaders/include/weather_overlay_web_min.gdshaderinc"
+#endif
+
 // ── 云密度主函数：软轮廓 + 清晰核心 + 时间扰动细节（cumulus / 雾 / front 共用）──
 // p：世界坐标（调用方已做风向 advection）。coverage：该点语义云量 [0,1]。seed：错开不同 front。
 // 低频层负责大团柔和边缘；中高频只在云核逐步增强，让内部纹理清楚但边缘仍羽化。
@@ -165,6 +189,10 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	if (coverage <= 0.001) {
 		return 0.0;
 	}
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：双 octave 值噪声替代 4/3/2 octave 旋转 fbm + 域扭曲；remap 曲线一模一样。
+	return cloud_density_soft_min(p, coverage, seed);
+#else
 	int q = effective_weather_quality();
 	float t = world_time;
 
@@ -211,6 +239,7 @@ float cloud_density_soft(vec2 p, float coverage, float seed) {
 	float texture_cloud = clamp(soft_texture * 0.82 + cloud_core * 0.08, 0.0, 1.0);
 	float opacity = mix(0.38, 0.82, amount);
 	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
+#endif
 #endif
 }
 
@@ -299,6 +328,10 @@ float sample_high_cloud_raw(vec2 wp, vec2 axis, float coverage) {
 	if (coverage <= 0.001) {
 		return 0.0;
 	}
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：单 octave 值噪声拉丝（桌面为 2~3 octave cloud_fbm + 高频 fiber 叠加）。
+	return sample_cirrus_band_min(wp, axis, coverage);
+#else
 	vec2 dir = (length(axis) > 0.001) ? normalize(axis) : vec2(1.0, 0.0);
 	vec2 side = vec2(-dir.y, dir.x);
 	float t = world_time;
@@ -313,16 +346,23 @@ float sample_high_cloud_raw(vec2 wp, vec2 axis, float coverage) {
 		streak *= 0.76 + 0.24 * smoothstep(0.40, 0.80, fiber);
 	}
 	return clamp(streak * coverage, 0.0, 1.0);
+#endif
 }
 
 float sample_high_cloud(vec2 wp, vec2 axis, float coverage) {
 	vec2 primary_wp = wx_wrap_world_pos(wp);
 	float base = sample_high_cloud_raw(primary_wp, axis, coverage);
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：接缝伙伴采样会让整份噪声再内联一遍（编译成本 ×2，只换来东西环绕接缝处
+	// 一条几像素宽的过渡）。web 上直接放弃接缝双采样。
+	return base;
+#else
 	float seam_w = wx_cloud_seam_weight(primary_wp);
 	if (seam_w <= 0.001) {
 		return base;
 	}
 	return mix(base, sample_high_cloud_raw(wx_cloud_seam_partner(primary_wp), axis, coverage), seam_w);
+#endif
 }
 
 
@@ -341,11 +381,16 @@ float sample_low_fog_raw(vec2 wp, vec2 axis, float intensity, float biome_weight
 float sample_low_fog(vec2 wp, vec2 axis, float intensity, float biome_weight) {
 	vec2 primary_wp = wx_wrap_world_pos(wp);
 	float base = sample_low_fog_raw(primary_wp, axis, intensity, biome_weight);
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：同 sample_high_cloud，放弃接缝双采样。
+	return base;
+#else
 	float seam_w = wx_cloud_seam_weight(primary_wp);
 	if (seam_w <= 0.001) {
 		return base;
 	}
 	return mix(base, sample_low_fog_raw(wx_cloud_seam_partner(primary_wp), axis, intensity, biome_weight), seam_w);
+#endif
 }
 
 float sample_cumulus_density(vec2 wp, vec2 axis, float coverage) {
@@ -354,11 +399,16 @@ float sample_cumulus_density(vec2 wp, vec2 axis, float coverage) {
 	}
 	vec2 primary_wp = wx_wrap_world_pos(wp);
 	float base = cloud_density_soft(cumulus_advect(primary_wp, axis), coverage, 13.0);
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：中云是唯一每像素必算的云密度，接缝双采样等于把它整份再编译一次 → 放弃接缝。
+	return base;
+#else
 	float seam_w = wx_cloud_seam_weight(primary_wp);
 	if (seam_w <= 0.001) {
 		return base;
 	}
 	return mix(base, cloud_density_soft(cumulus_advect(wx_cloud_seam_partner(primary_wp), axis), coverage, 13.0), seam_w);
+#endif
 }
 
 // 中云（积云）：视觉主角，跟风漂移、内部持续翻卷。coverage 已是语义云量，单次取密度。
@@ -510,7 +560,9 @@ FrontField sample_field_weather(vec2 wp) {
 	if (cid_c < 0) return best;
 	float edge_w = wx_edge_secondary_weight(uv);
 	int secondary_id = (edge_w > 0.0001) ? wx_decode_edge_secondary(uv) : -1;
-#if defined(PK_MOBILE_ANY)
+	// [web-weather-min] web 变体保留桌面版的「副格连续混合」：每像素只多 1 次 weather_lut
+	// 采样，却能去掉 DitherUV 的硬边；web 的瓶颈是编译期，不是这 1 次采样。
+#if defined(PK_MOBILE_ANY) && !defined(PK_WEB_WEATHER_MIN)
 	if (secondary_id >= 0 && wx_mobile_dither_uv_threshold(uv, wp) < edge_w) {
 		cid_c = secondary_id;
 	}
@@ -603,6 +655,17 @@ void fragment() {
 	// 低雾是 q1+ 才启用的昂贵层；无雾时跳过 4 点山地邻域采样与 hash。
 	float fog_intensity = (q_weather >= 1 && w.cloud > 0.05) ? w.cloud * 0.65 : 0.0;
 	float mountain_w = 0.0;
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：山地权重退化成「中心格 biome」二值近似（桌面版是 4 点 golden-angle 邻域 + hash
+	// 抖动）。省掉 4 次邻域贴图取样、8 次 hash，以及一个可动态索引的 vec2[4] 局部数组 ——
+	// 后者在 ANGLE→HLSL 里会变成真实数组/寄存器溢出，是编译期与运行期的双重成本。
+	if (fog_intensity > 0.001) {
+		// 不能复用上面的 biome：mobile 质量档下它被编译成常量 0，所以这里单独取一次
+		// （filter_nearest，命中同一 texel，代价可忽略）。
+		int fog_biome = int(visual_sample_map_index(wx_wrap_uv(uv)).r * 255.0 + 0.5);
+		mountain_w = (fog_biome == B_MOUNTAIN) ? 1.0 : ((fog_biome == B_HILL) ? 0.55 : 0.0);
+	}
+#else
 	if (fog_intensity > 0.001) {
 		// 山地权重（仅低雾用）：4 点 golden-angle 邻域 + hash 抖动，平滑陆海/海拔过渡，
 		// 偏移按 hex_world_diameter 物理换算，避免六边形直边。
@@ -633,6 +696,7 @@ void fragment() {
 		mountain_w = clamp(mw_sum / max(mw_tot, 0.001)
 				+ hash_signed(floor(wp * 0.085 + vec2(67.0, -31.0))) * 0.18, 0.0, 1.0);
 	}
+#endif
 
 	vec2 cumulus_axis = w.axis;
 	vec2 cirrus_axis = vec2(1.0, 0.15); // 卷云固定纬向（地球大气环流近似）
@@ -675,6 +739,13 @@ void fragment() {
 	// q2: 4-tap 密度差分算法线 + 假厚度；q1: 单向太阳采样；q0: density/edge 近似。
 	float cumulus_light_grad = 0.0;
 	float cumulus_thickness = cumulus_layer.density;
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：整段体积近似编译掉（q2 的 4 次 + q1 的 1 次 = 5 处内联云密度，q1 里还带
+	// normalize/点积），只留 q0 的 density/edge 近似。晨昏方向感仍由 compute_cloud_lighting
+	// 的 sun_facing 与银边项保留；丢掉的是「云核侧向明暗沟」这种厚度细节。
+	cumulus_thickness = clamp(cumulus_layer.density * (0.80 + 0.20 * cumulus_intensity), 0.0, 1.0);
+	cumulus_light_grad = clamp(cumulus_layer.edge * 0.45 + cumulus_layer.density * 0.18 - 0.30, -1.0, 1.0);
+#else
 	if (q_weather >= 2 && cumulus > 0.001) {
 		float step_n = hex_world_diameter * 0.34;
 		float d_l = sample_cumulus_density(wp - vec2(step_n, 0.0), cumulus_axis, cumulus_intensity);
@@ -697,19 +768,29 @@ void fragment() {
 		cumulus_thickness = clamp(cumulus_layer.density * (0.80 + 0.20 * cumulus_intensity), 0.0, 1.0);
 		cumulus_light_grad = clamp(cumulus_layer.edge * 0.45 + cumulus_layer.density * 0.18 - 0.30, -1.0, 1.0);
 	}
+#endif
 
 	// [cloud-float] 偏移投影假阴影：把云沿背光方向投影到地面（offset = sun_axis*距离；距离 ∝ 云高·tan(天顶角)
 	// = cloud_shadow_offset · sun_horiz/sin(h)）。太阳越低影越长偏移越大 → 云悬浮观感。q0 跳过、夜侧无影。
 	float offset_shadow = 0.0;
+	// [web-weather-min] web 变体把这一段整块编译掉（它要再算 1 处内联云密度）。
+	// 正下方直射云影（w.shadow）仍在，所以「云压地」的观感保留，只丢太阳低角时的悬浮偏移。
+#ifndef PK_WEB_WEATHER_MIN
 	if (q_weather >= 1 && ed.local_day > 0.01 && cumulus_intensity > 0.02) {
 		float sd = hex_world_diameter * cloud_shadow_offset * clamp(sun_horiz / max(sun_up, 0.20), 0.0, 3.2);
 		float dsh = sample_cumulus_density(wp + sun_axis * sd, cumulus_axis, cumulus_intensity);
 		offset_shadow = cloud_density_alpha(dsh) * ed.local_day;
 	}
+#endif
 
+#ifdef PK_WEB_WEATHER_MIN
+	// web-min：层间遮挡纯 ALU（fog/cumulus 密度已在手），按桌面 q2 语义保留，不额外取样。
+	float layer_occlusion = clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0);
+#else
 	float layer_occlusion = (q_weather >= 2)
 		? clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0)
 		: 0.0;
+#endif
 
 	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001) || (offset_shadow > 0.003);
 	if (!has_layer) {
@@ -723,10 +804,19 @@ void fragment() {
 		float dense_core = clamp(dense_cell * (0.35 + 0.65 * cloud_core), 0.0, 1.0);
 		vec3 main_base = mix(vec3(0.97, 0.98, 1.00), vec3(0.55, 0.62, 0.72), ed.pixel_night);
 		main_base = mix(main_base, vec3(0.82, 0.86, 0.92), dense_core * 0.28);
+#ifdef PK_WEB_WEATHER_MIN
+		// web-min：银边增益直接取桌面 q2 值（纯 ALU，不额外取样），只是没有体积梯度可乘。
+		float silver = mix(1.08, 0.58, dense_core);
+#else
 		float silver = mix((q_weather >= 2) ? 1.08 : 0.72, 0.58, dense_core);
+#endif
 		vec3 col = compute_cloud_lighting(cumulus_layer, main_base, w.type, cumulus_light_grad, cumulus_thickness, silver, ed.sun_col, ed.amb_col, ed.local_day);
 		// 边缘过亮项(>1)在强云核轻微收敛，避免羽边白点闪烁（但不压成暗块）。
+#ifdef PK_WEB_WEATHER_MIN
+		float bright_mul = mix(1.08 + cloud_edge_soft * 0.06, 0.82, cloud_core * 0.54);
+#else
 		float bright_mul = mix(1.08 + cloud_edge_soft * 0.06, 0.82, cloud_core * ((q_weather >= 2) ? 0.54 : 0.38));
+#endif
 		col *= mix(bright_mul, min(bright_mul, 1.02), dense_core);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));

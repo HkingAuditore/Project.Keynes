@@ -420,6 +420,10 @@ var _overlay_stats: Dictionary = {}
 var _overlay_last_bake_ms: float = 0.0
 var _overlay_last_fast_tick_ms: int = 0
 var _overlay_error_msg: String = ""
+# 单日单推进（tmp\next\day_cost_IMPL.md §4）：web 上才打开"权威已接管当日 →
+# main.gd 的 GDSUS 日 tick 让位"这道门。桌面恒 false → 既有语句逐条不变。
+var _web_day_barrier_guard: bool = false
+var _day_barrier_defer_logged: bool = false
 var _overlay_tex: ImageTexture = null
 var _overlay_buf: PackedByteArray = PackedByteArray()
 var _overlay_dirty: bool = true
@@ -449,6 +453,9 @@ func _ready() -> void:
 	# 也会按 PKLog.enabled 初始化）。
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
+	# Web：权威（inline / worker）可能已经推进过当天，GDScript SUS 日 tick 必须让位。
+	# 桌面恒 false，保持"main.gd 是唯一监听者"的原行为。
+	_web_day_barrier_guard = OS.has_feature("web")
 	_apply_world_setup_base_config()
 	_wire_time_ui()
 	_close_btn.pressed.connect(_clear_selection)
@@ -1443,6 +1450,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 头部（time_label / set_season_phase / vegetation layers）与尾部（overlay /
 	# recorders）。t_label0 → 头部分段。
 	var _ocd_t0: int = Time.get_ticks_usec()
+	var _ocd_overlay_ms: float = 0.0
 	_refresh_time_label()
 	var _ocd_label_ms: float = float(Time.get_ticks_usec() - _ocd_t0) / 1000.0
 	# debug-overlay-perf v1（2026-06-12）：每个游戏日推进时标记 overlay 数据可能
@@ -1497,7 +1505,16 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 等价于此前的 was_skipped_day 行为。
 	var sus_result: Dictionary = {}
 	if _generator != null and _world_clock != null:
-		sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
+		# 单日单推进（tmp\next\day_cost_IMPL.md §4）：权威（inline / worker）已经
+		# 接管当日时，main.gd 这第二套 GDScript 日级 job 让位，一天只跑一次。
+		# 只在 web 生效：桌面上 main.gd 是唯一监听者，声明恒为空、行为逐语句不变。
+		if not _web_day_barrier_guard \
+				or _world_clock.claim_day_advance(&"main_sus", _day_idx):
+			sus_result = _generator.sus_tick_daily(_world_clock, _day_idx, dispatch_season_phase)
+		elif not _day_barrier_defer_logged:
+			_day_barrier_defer_logged = true
+			print("[day-barrier] main.gd SUS 日 tick 让位给 %s（day=%d）：一天只有一个日级执行者" % [
+				String(_world_clock.day_advance_owner()), _day_idx])
 	if _renderer != null and _generator != null \
 			and _generator.has_method("has_pending_detail_scatter_refresh") \
 			and bool(_generator.has_pending_detail_scatter_refresh()) \
@@ -1644,7 +1661,14 @@ func _on_day_changed(_day_idx: int) -> void:
 		var now_ms: int = Time.get_ticks_msec()
 		if float(now_ms - _overlay_last_bake_wall_ms) >= overlay_min_bake_interval_ms:
 			_overlay_last_bake_wall_ms = now_ms
+			# Web 单日成本探针：overlay 重烘焙是 debug overlay 的日级大项，单独记账。
+			# 桌面 _probe_ovl_usec 恒 0（不调 get_ticks_usec），不多做任何事。
+			var _probe_ovl_usec: int = 0
+			if _world_clock != null and _world_clock.day_cost_probe_on:
+				_probe_ovl_usec = Time.get_ticks_usec()
 			_refresh_overlay_data()
+			if _probe_ovl_usec > 0:
+				_ocd_overlay_ms = float(Time.get_ticks_usec() - _probe_ovl_usec) / 1000.0
 
 	# DOTS-Final-Push 任务 10：把当前 tick 的 fast_ms 与 trigger_warn 标记
 	# 推入滚动窗口（PERF_VERDICT_WINDOW=200），供 request_dots_final_push_perf_verdict()
@@ -1698,6 +1722,25 @@ func _on_day_changed(_day_idx: int) -> void:
 				str(recorder_diag.get("tile_reason", "")),
 				fast_ms_after_recorders,
 			])
+
+	# Web 单日成本探针（tmp/next/day_cost_IMPL.md）：main.gd 这一套监听者只在
+	# main.tscn（调试场景）出现；生产玩家场景是 player_game.tscn，那里是
+	# WorldRuntimeHost + PlayerController，本函数整天不会跑。所以 web 生产路径上
+	# 这条 day_cost_main 事件**不出现**、day_cost 里的 s1 恒 0 —— 这本身就是
+	# "主线程 GDScript SUS 日 tick 一次都没被调"的正面证据。
+	# 桌面 day_cost_probe_on 恒假 → 整块跳过，既有语句一条不改。
+	if _world_clock != null and _world_clock.day_cost_probe_on:
+		_world_clock.day_cost_add(&"main", float(Time.get_ticks_usec() - _ocd_t0) / 1000.0)
+		_world_clock.day_cost_add(&"lab", _ocd_label_ms)
+		_world_clock.day_cost_add(&"sph", _ocd_seasonphase_ms)
+		_world_clock.day_cost_add(&"s1", t_sus_ms)
+		_world_clock.day_cost_add(&"ren", t_render_ms)
+		_world_clock.day_cost_add(&"mui", t_ui_ms)
+		_world_clock.day_cost_add(&"ovl", _ocd_overlay_ms)
+		if not recorder_diag.is_empty():
+			_world_clock.day_cost_add(&"rec", float(recorder_diag.get("total_ms", 0.0)))
+		if _generator != null and _generator.has_method("sus_report_last_tick"):
+			_world_clock.day_cost_jobs_from(_generator.sus_report_last_tick())
 
 	# best-effort 诊断（临时）：整个 _on_day_changed 的分段墙钟。和 [clock/step] 的
 	# loop(~40ms) 对比定位那 ~35ms 落在哪段：label / season_phase(含 vegetation 层)

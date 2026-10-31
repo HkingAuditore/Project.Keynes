@@ -606,7 +606,24 @@ func hide_cell_panel() -> void:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
 
+## Web：把检查器日刷的耗时打进事件流（只在 >200ms 时），用来定位"整帧不返回"。
+func _report_inspector_daily_timing(timing: Dictionary, started_usec: int) -> void:
+	if not WebTelemetry.enabled():
+		return
+	var total := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	if total < 200.0:
+		return
+	WebTelemetry.emit("inspector_daily", {
+		"dur": int(total),
+		"ran": bool(timing.get("ran", false)),
+		"tab": String(timing.get("tab", "")),
+		"build_ms": int(float(timing.get("live_patch_build_ms", 0.0))),
+		"apply_ms": int(float(timing.get("live_patch_apply_ms", 0.0))),
+	})
+
+
 func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dictionary:
+	var _t_all := Time.get_ticks_usec()
 	var timing: Dictionary = {
 		"ran": false,
 		"tab": "",
@@ -616,6 +633,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 	if _colonization_panel != null and _colonization_panel.visible:
 		_colonization_panel.refresh_visible()
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
+		_report_inspector_daily_timing(timing, _t_all)
 		return timing
 	# 视野状态变了意味着页签集合变了，打补丁改不动页签栏，必须整块重建。
 	var fog := VisionSolver.fog_state(_map, int(_selected_cell.index))
@@ -625,6 +643,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 			if fog == VisionSolver.FOG_VISIBLE else -1)
 		refresh_selected_panel()
 		timing["ran"] = true
+		_report_inspector_daily_timing(timing, _t_all)
 		return timing
 	var tab_id := _right_panel.current_tab()
 	timing["tab"] = tab_id
@@ -638,6 +657,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		_refresh_object_detail(false)
 		if _right_panel.detail_open():
 			timing["ran"] = true
+		_report_inspector_daily_timing(timing, _t_all)
 		return timing
 	if not population_list:
 		_last_cached_panel_ms = now_ms
@@ -648,6 +668,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		_selection_context = next_selection_context
 		refresh_selected_panel()
 		timing["ran"] = true
+		_report_inspector_daily_timing(timing, _t_all)
 		return timing
 	_selection_context = next_selection_context
 	var build_started_usec := Time.get_ticks_usec()
@@ -683,6 +704,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 	timing["live_patch_apply_ms"] = (
 		Time.get_ticks_usec() - apply_started_usec) / 1000.0
 	timing["ran"] = true
+	_report_inspector_daily_timing(timing, _t_all)
 	return timing
 
 

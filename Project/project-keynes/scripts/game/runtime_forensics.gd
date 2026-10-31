@@ -137,6 +137,12 @@ static func capture(reason: String, generator, clock,
 
 ## 落盘并打印单行标记。返回 tmp 下那份的绝对路径（失败时返回空串）。
 static func dump(payload: Dictionary, tag: String) -> String:
+	# Web：整份 payload（含 economy 快照）JSON.stringify ×2 + duplicate(true) +
+	# 把数 MB 文本打进浏览器控制台，实测单次 45s（主线程整帧卡住）。浏览器里也
+	# 写不了 res:// 那份，落盘价值为零。这里只发一条轻量事件，随后立即返回。
+	if OS.has_feature("web"):
+		WebTelemetry.emit("forensics_skipped", {"tag": tag, "keys": payload.size()})
+		return ""
 	var text := JSON.stringify(payload)
 	var log_payload := payload.duplicate(true)
 	print("[runtime-forensics/%s] %s" % [tag, JSON.stringify(log_payload)])

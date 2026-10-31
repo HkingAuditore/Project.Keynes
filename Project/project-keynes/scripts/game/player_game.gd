@@ -2,6 +2,8 @@ extends Node2D
 class_name PlayerGame
 
 const MAIN_MENU_SCENE_PATH := "res://scenes/main_menu.tscn"
+# Web 自动测试跟车节点（URL autotest=1 才启用）。preload 避免依赖 class_name 缓存。
+const WebAutotestScript = preload("res://scripts/game/web_autotest.gd")
 const DEFAULT_DAY_NIGHT_ENABLED := true
 
 # 桌面玩家场景默认高画质；mobile/web 由 GameSettings.render_quality 驱动
@@ -33,6 +35,8 @@ var _viewport_refit_pending := false
 func _ready() -> void:
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
+	# Web 自动测试：先挂跟车节点再配置运行时，这样连"会话配置失败"也能被超时抓到。
+	_attach_web_autotest()
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -41,6 +45,10 @@ func _ready() -> void:
 		request = {"kind": "new_game", "config": fallback.to_dictionary()}
 	var session_result := _runtime_host.configure_session(request)
 	if not bool(session_result.get("ok", false)):
+		# autotest 会话：会话配置失败要立刻进事件流，而不是等 world_ready 超时。
+		WebAutotestScript.report_failure("session_config_failed",
+			{"message": String(session_result.get("message", "")),
+			"code": String(session_result.get("code", ""))})
 		_ui_manager.show_loading(String(session_result.get("message", "会话初始化失败。")))
 		return
 	_connect_signals()
@@ -54,6 +62,16 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+
+
+## Web 自动测试：见 scripts/game/web_autotest.gd。只在 URL 带 autotest=1 时挂节点，
+## 普通会话零节点、零轮询（严格增量），也不改动任何既有信号连接。
+func _attach_web_autotest() -> void:
+	if not WebAutotestScript.enabled():
+		return
+	var soak := WebAutotestScript.new()
+	soak.configure(_runtime_host, _world_clock)
+	add_child(soak)
 
 
 func _apply_stage_c_debug_metadata() -> void:
@@ -97,6 +115,10 @@ func _configure_runtime() -> void:
 		_runtime_host.runtime_economy_auto_pod_active = bool(Engine.get_meta(&"stage_c_auto_pod_active"))
 		Engine.remove_meta(&"stage_c_auto_pod_active")
 	_runtime_host.runtime_authority_domain_mask = 0xFFF
+	# Web 曾经在这里把权威位退回主线程（当时浏览器里 native worker 图的 day barrier
+	# 收不了尾）。后来查明那次"卡死"的真正原因是首帧着色器编译 45s 把整帧堵住，
+	# shader 裁剪之后 worker 图可以正常 commit day —— 而**只有 ACTIVE 才推进日历**
+	# （SHADOW 只做 parity 对比，日历会停在 day 1）。所以 web 不再降级。
 	# Apply the explicit A/B request after production defaults; otherwise OFF
 	# is silently overwritten and both arms measure ACTIVE.
 	_apply_stage_c_debug_metadata()
@@ -192,6 +214,8 @@ func _on_world_ready(
 	_ui_manager.hide_loading()
 
 func _on_world_generation_failed(reason: String) -> void:
+	# autotest 会话：把生成失败原因码立刻推进事件流（非 autotest 时是 no-op）。
+	WebAutotestScript.report_failure("world_generation_failed", {"message": reason})
 	(_ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay).show_failure(reason)
 
 
@@ -308,6 +332,16 @@ func _mobile_quality_tier_to_define(tier: int) -> String:
 
 
 func _shader_quality_define_from_setting(quality: String) -> String:
+	# [web 编译期档钉死 LOW] Web 上「这一档」是**编译期宏**：换档 = 换 shader 源码 =
+	# 换一个 program。而菜单期的 shader 预热（web_shader_warmup.gd）只能在菜单里按
+	# 一个固定档编一遍 —— 它读不到进游戏后才生效的画质设置。玩家一旦在设置里选
+	# 中/高，运行期前缀就与预热不同 ⇒ 驱动缓存必然不命中 ⇒ 所有 tier-dependent
+	# shader 在游戏里重编一次（实测单张 world_map 就是 20 s 量级）。
+	# 所以 web 的编译期档固定在 LOW；玩家选的档仍然驱动 `visual_quality`
+	# （运行期 uniform，不触发重编），低/中/高的画质差异依旧可见，只是不再有
+	# "换档就冻一次"的代价。桌面不受影响（`uses_shader_quality_tier()` 为 false）。
+	if OS.has_feature("web"):
+		return "MOBILE_QUALITY_LOW"
 	match quality:
 		"medium":
 			return "MOBILE_QUALITY_MID"

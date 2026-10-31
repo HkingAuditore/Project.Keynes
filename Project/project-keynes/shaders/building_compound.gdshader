@@ -1,5 +1,15 @@
 shader_type canvas_item;
 render_mode unshaded;
+#ifdef PK_WEB_BUILDING_MIN
+// Web restricted tier: these building shaders never include
+// shader_quality.gdshaderinc, so they never received MOBILE_QUALITY_LOW.
+// Without it the LOW branch of terrain_horizon.gdshaderinc does not apply and
+// the gi_horizon_lut dynamic-array loop (8 iterations x 4 taps) is not DCE'd,
+// which made the first compile 15-22 s in the browser. On web terrain_horizon_tex
+// is always null, and the LOW branch builds the same neutral struct as the
+// unbound-early-out branch, so the image is bit-identical.
+#define MOBILE_QUALITY_LOW
+#endif
 
 // One instance is one building volume (footprint + eave/ridge heights + roof
 // form + material, see building_form.gdshaderinc). The quad is expanded in the

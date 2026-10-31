@@ -46,12 +46,14 @@ vec4 apply_global_adjustments(
 	// gamma 二次扭曲。day_night_enabled=false 只是把 earth_daylight 退化为永昼；
 	// PBR 输出仍是 linear-HDR，必须继续 tonemap，避免关闭昼夜后整图过曝。
 	// ═══════════════════════════════════════════════════════════════════════
+#ifndef PK_WEB_WORLD_MIN
 	if (USE_LINEAR_LIGHTING && USE_PBR_BRDF) {
 		// apply_tonemap 内部已乘 TONEMAP_EXPOSURE_BIAS；水面保持逐通道曲线。
 		col = mix(apply_tonemap(col), apply_tonemap_luminance(col),
 				tonemap_hue_preserve * land_mask);
 		col = linear_to_srgb(col);
 	}
+#endif // PK_WEB_WORLD_MIN
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// GLOBAL 2：羊皮纸 tint + paper grain（sRGB 域）

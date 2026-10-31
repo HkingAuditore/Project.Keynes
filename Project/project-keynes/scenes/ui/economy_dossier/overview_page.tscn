@@ -35,7 +35,7 @@ unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
 theme_type_variation = &"PKDossierLink"
-text = "明细 ▾"
+text = "明细 ▼"
 
 [node name="CashflowBody" type="BoxContainer" parent="." unique_id=1933794689]
 unique_name_in_owner = true

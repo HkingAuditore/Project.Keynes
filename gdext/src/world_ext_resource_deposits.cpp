@@ -455,6 +455,10 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
 
         PackedFloat32Array arr;
         arr.resize(n);
+        // PackedFloat32Array::resize 不保证零初始化；GDScript 旧路径是复用 SoA 里
+        // 已零初始化的字段、只在入选格写值，因此未入选格必须保持 0。这里显式清零，
+        // 否则尾部是堆上残留值（每次进程/分配次序不同 → 储量逐局漂移）。
+        arr.fill(0.0f);
         float *values = arr.ptrw();
 
         const bool use_ranked_distribution = p.target_coverage > 0.0;

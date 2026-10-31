@@ -156,6 +156,12 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	lc.L = mix(phys_moon, day_light_dir, use_day_key);
 	lc.V = VIEW_DIR_TOP_DOWN;
 
+#ifdef PK_WEB_WORLD_MIN
+	// 同上：USE_LINEAR_LIGHTING=false ⇒ 只保留色板域分支，srgb_to_linear 不再被引用。
+	lc.sun_color_linear = ed.sun_col * (SUN_INTENSITY_GAIN * ed.local_day)
+		+ ed.moon_col * ed.moon_strength;
+	lc.ambient_color_linear = ed.amb_col;
+#else
 	if (USE_LINEAR_LIGHTING) {
 		// 太阳在地平线下时切到月光，避免夜里仍出现太阳向阳面。
 		lc.sun_color_linear = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day)
@@ -166,6 +172,7 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 			+ ed.moon_col * ed.moon_strength;
 		lc.ambient_color_linear = ed.amb_col;
 	}
+#endif
 	lc.exposure = tod_exposure;
 	lc.night_factor = ed.pixel_night;
 	lc.hillshade = hillshade_strength;
@@ -210,7 +217,11 @@ vec3 gi_ambient_normal(LightingContext lc, vec3 N) {
 //   USE_LINEAR_LIGHTING 时与 albedo 同域（线性）；否则直接色板域，与 legacy 路径一致。
 vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
 	vec3 amb = earth_sky_sh(lc.amb_palette, lc.sun_palette, lc.sun_dir_px, lc.local_day, N);
+#ifdef PK_WEB_WORLD_MIN
+	return amb;  // USE_LINEAR_LIGHTING 恒 false（mobile 档）
+#else
 	return USE_LINEAR_LIGHTING ? srgb_to_linear(amb) : amb;
+#endif
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -218,29 +229,37 @@ vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ─── D：GGX / Trowbridge-Reitz Normal Distribution Function ────────────
+#ifndef PK_WEB_WORLD_MIN
 float D_GGX(float NdotH, float roughness) {
 	float a = roughness * roughness;
 	float a2 = a * a;
 	float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
 	return a2 / max(PI * denom * denom, 1e-7);
 }
+#endif // PK_WEB_WORLD_MIN
 
 // ─── G：Smith joint masking-shadowing（Schlick-GGX 简化版） ────────────
+#ifndef PK_WEB_WORLD_MIN
 float G_SchlickGGX(float NdotX, float k) {
 	return NdotX / max(NdotX * (1.0 - k) + k, 1e-7);
 }
+#endif // PK_WEB_WORLD_MIN
 
+#ifndef PK_WEB_WORLD_MIN
 float G_SmithGGX(float NdotL, float NdotV, float roughness) {
 	float r = roughness + 1.0;
 	float k = (r * r) / 8.0;  // 直接光照常用 k
 	return G_SchlickGGX(NdotL, k) * G_SchlickGGX(NdotV, k);
 }
+#endif // PK_WEB_WORLD_MIN
 
 // ─── F：Schlick Fresnel ─────────────────────────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 vec3 F_Schlick(vec3 F0, float VdotH) {
 	float t = pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
 	return F0 + (vec3(1.0) - F0) * t;
 }
+#endif // PK_WEB_WORLD_MIN
 
 // ═══════════════════════════════════════════════════════════════════════
 // 三、Hillshade-Only 旁路（legacy/debug fallback）
@@ -249,6 +268,7 @@ vec3 F_Schlick(vec3 F0, float VdotH) {
 //   注意：day_night_enabled=false 只表示"永昼 / 不跑晨昏线"，不再切到这条
 //   未 tonemap 的 sRGB 旁路，否则高 hillshade_strength 会把雪地/浅色地表打爆。
 // ─────────────────────────────────────────────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 vec3 evaluate_hillshade_only(SurfaceParams s) {
 	vec3 N = normalize(s.normal);
 	vec3 key_dir  = normalize(vec3(hillshade_dir.x,      hillshade_dir.y,      0.65));
@@ -260,6 +280,7 @@ vec3 evaluate_hillshade_only(SurfaceParams s) {
 			 * s.ao;
 	return lit + s.emission;
 }
+#endif // PK_WEB_WORLD_MIN
 
 // ═══════════════════════════════════════════════════════════════════════
 // 四、主 BRDF 入口：根据 USE_PBR_BRDF 分派
@@ -273,6 +294,7 @@ vec3 evaluate_hillshade_only(SurfaceParams s) {
 // ─────────────────────────────────────────────────────────────────────
 
 // ─── 主 PBR 路径：Cook-Torrance + 能量守恒 ──────────────────────────────
+#ifndef PK_WEB_WORLD_MIN
 vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	vec3 N = normalize(s.normal);
 	vec3 V = normalize(lc.V);
@@ -328,6 +350,7 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	lit += s.emission;
 	return lit;
 }
+#endif // PK_WEB_WORLD_MIN
 
 // ─── Legacy Blinn-Phong 路径（与 v9 视觉等价；USE_PBR_BRDF=0 时使用） ───
 //   保留 land 与 water 分别用的 spec_amp 系数；caller 用 spec_max/spec_min 区分。
@@ -369,6 +392,12 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 vec3 evaluate_brdf(
 		SurfaceParams s, LightingContext lc,
 		float spec_max_legacy, float spec_min_legacy) {
+#ifdef PK_WEB_WORLD_MIN
+	// web 变体恒为 MOBILE_QUALITY_* 档 ⇒ material_constants 里 USE_PBR_BRDF=false，
+	// Cook-Torrance 分支在这份二进制里永远是死的，直接编译掉。
+	return evaluate_brdf_blinn_phong_legacy(
+		s, lc, spec_max_legacy, spec_min_legacy, 1.0, HILLSHADE_BASE_LIFT);
+#else
 	if (USE_PBR_BRDF) {
 		return evaluate_brdf_pbr(s, lc);
 	}
@@ -376,4 +405,5 @@ vec3 evaluate_brdf(
 	return evaluate_brdf_blinn_phong_legacy(
 		s, lc, spec_max_legacy, spec_min_legacy,
 		1.0, HILLSHADE_BASE_LIFT);
+#endif
 }

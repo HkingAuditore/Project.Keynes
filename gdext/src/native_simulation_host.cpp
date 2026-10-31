@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <exception>
@@ -1661,6 +1662,40 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _has_pending_restore = false;
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
+    // native_daily_inline：不要 worker 线程。日屏障改由调用线程逐日执行
+    // （run_inline_day）。这里必须先把状态发布成 RUNNING —— 命令准入
+    // （enqueue_batch）、`domain_grant_pending()` 的主线程抑制窗口、报告里的
+    // state 都读它；留在 STOPPED 会让内联模式收不到任何命令、也不抑制主线程。
+    //
+    // 内联只对 ACTIVE 有意义：SHADOW 的定义就是"worker 侧影子对拍"，没有线程
+    // 就没有影子可言。请求 inline+SHADOW 是调用方配置错误，按既有习惯用 fault
+    // code 的可观测停止拒绝，而不是把 SHADOW 悄悄升级成 ACTIVE。
+    if (inline_daily_mode()) {
+        if (mode != RuntimeSimulationMode::ACTIVE) {
+            _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
+            _graph_coverage_complete.store(false, std::memory_order_release);
+            _authority_ready.store(false, std::memory_order_release);
+            _requested_authority_mask.store(0, std::memory_order_release);
+            _authoritative_domain_mask.store(0, std::memory_order_release);
+            const char *fault = "inline_daily_requires_active";
+            size_t fault_size = 0;
+            for (; fault_size + 1 < _fault_code.size() && fault[fault_size] != '\0';
+                 ++fault_size) {
+                _fault_code[fault_size].store(fault[fault_size],
+                                              std::memory_order_relaxed);
+            }
+            for (; fault_size < _fault_code.size(); ++fault_size)
+                _fault_code[fault_size].store('\0', std::memory_order_relaxed);
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        _state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
+        // 与 worker_main 入口对齐：计时区间从这里开始，否则 worker_time_* 恒为 0。
+        _worker_timing.pause(paused);
+        _worker_timing.start();
+        _has_started_once.store(true, std::memory_order_release);
+        return true;
+    }
     try {
         _worker = std::thread(&NativeSimulationHost::worker_main, this);
     } catch (...) {
@@ -2734,6 +2769,10 @@ size_t NativeSimulationHost::environment_ring_pending() const {
     return _environment_ring.size();
 }
 
+bool NativeSimulationHost::environment_ring_has_capacity() const {
+    return _environment_ring.has_capacity();
+}
+
 uint32_t NativeSimulationHost::day_stall_reason_mask() const {
     uint32_t mask = _day_stall_reason_mask.load(std::memory_order_acquire);
     if (!_environment_ring.has_capacity()) {
@@ -2966,6 +3005,14 @@ bool NativeSimulationHost::wait_climate_consumed(
     while (true) {
         consumed_generation =
             _climate_consumed_generation.load(std::memory_order_acquire);
+        // native_daily_inline：内联日里没有任何"别处的线程"会推进消费游标 ——
+        // 消费就发生在本线程的 run_inline_day()，而调用方此刻正卡在这里。等下去
+        // 只能等到超时，而在浏览器主线程上"等 CV"既不能真阻塞又可能永不返回。
+        // 所以显式快速失败，让调用方（map_generator 的 grant/writeback 等待循环）
+        // 立刻拿到一个可读的原因，而不是每个切片烧 10ms。
+        if (inline_daily_mode()) {
+            return finish(false, "climate_wait_inline_no_worker");
+        }
         // after_generation == 0：等 ring 有空位（流水线发布）。
         // after_generation  > 0：等该代次已被 worker 评估（serial_wait / soak）。
         const bool ready = after_generation == 0
@@ -5982,7 +6029,7 @@ bool NativeSimulationHost::prepare_worker_cohort_cash(
     // Contract violations. Wrong thread, Country not worker-authoritative, or
     // an operation outside the M2 cohort-cash pair are caller bugs: no retry
     // can make them valid.
-    if (std::this_thread::get_id() != _worker.get_id() ||
+    if (!on_worker_thread() ||
         !domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
         (request.operation != RuntimeEconomyAssetOperation::CASH_TO_COHORT &&
          request.operation != RuntimeEconomyAssetOperation::CASH_FROM_COHORT)) {
@@ -6025,7 +6072,7 @@ bool NativeSimulationHost::prepare_worker_cohort_cash(
 bool NativeSimulationHost::finish_worker_country_asset(
         uint64_t request_id, RuntimeEconomyAssetResult &result, std::string &error) {
     error.clear();
-    if (std::this_thread::get_id() != _worker.get_id() ||
+    if (!on_worker_thread() ||
         !country_economy_asset_terminal_result(request_id, result)) {
         error = "country_worker_cohort_cash_terminal_missing";
         return false;
@@ -7875,6 +7922,15 @@ uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
         }
         if (promoted > 0u) {
             _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+            // P2：把"谁推进了 peer"变成可数量。worker 内闭环是目标形态；
+            // 只要 by_main 还在涨，说明这条线仍然依赖主线程泵。
+            if (on_worker_thread()) {
+                _country_peer_resolved_in_worker.fetch_add(promoted,
+                                                          std::memory_order_relaxed);
+            } else {
+                _country_peer_resolved_by_main.fetch_add(promoted,
+                                                         std::memory_order_relaxed);
+            }
         }
     }
     if (promoted > 0u) {
@@ -9023,6 +9079,287 @@ RuntimeDayPlan NativeSimulationHost::build_day_plan(
     return plan;
 }
 
+// 内联日的命令准入：与 worker 日循环逐条同规则（payload 校验 → 域/ opcode
+// 准入 → 收据码），唯一差别是内联模式没有 worker 本地 pending 列表，所以
+// 未来日的命令必须原样回队列，否则会被当成今天执行。
+void NativeSimulationHost::drain_inline_day_commands(
+        int64_t day, std::vector<RuntimeCommandPacket> &day_commands,
+        std::vector<RuntimeCommandReceipt> &day_receipts,
+        uint64_t &admitted_submit_order) {
+    day_commands.clear();
+    day_receipts.clear();
+    admitted_submit_order = 0;
+    std::vector<RuntimeCommandPacket> future;
+    future.reserve(16u);
+    RuntimeCommandPacket incoming;
+    while (pop_command(incoming)) {
+        const RuntimeCommandEnvelope &envelope = incoming.envelope;
+        // 未来日的命令不是"拒绝"，是"还没到"：留回队列，不产生收据。
+        if (envelope.effective_day > day) {
+            future.push_back(incoming);
+            continue;
+        }
+        admitted_submit_order = std::max(admitted_submit_order,
+                                         incoming.submit_order);
+        RuntimeCommandReceipt receipt;
+        receipt.request_id = envelope.request_id;
+        receipt.producer_id = envelope.producer_id;
+        receipt.sequence = envelope.sequence;
+        receipt.effective_day = std::max(envelope.effective_day, day);
+        receipt.generation = _generation.load(std::memory_order_relaxed) + 1;
+        const bool domain_valid =
+            envelope.domain >= static_cast<uint16_t>(RuntimeDomainId::INPUT_CAPTURE) &&
+            envelope.domain <= static_cast<uint16_t>(RuntimeDomainId::COMMIT);
+        const bool events_probe = domain_valid &&
+            static_cast<RuntimeDomainId>(envelope.domain) == RuntimeDomainId::EVENTS &&
+            _events_probe_enabled.load(std::memory_order_acquire);
+        // MODIFIER 的 SHADOW 影子解包只属于 SHADOW；内联恒为 ACTIVE。
+        const bool modifier_shadow = false;
+        const bool domain_implemented = domain_valid &&
+            ((implemented_domain_mask() & runtime_domain_mask(
+                static_cast<RuntimeDomainId>(envelope.domain))) != 0u ||
+             events_probe || modifier_shadow);
+        const bool payload_valid =
+            envelope.payload_offset <= RUNTIME_MAX_COMMAND_PAYLOAD &&
+            envelope.payload_size <= RUNTIME_MAX_COMMAND_PAYLOAD &&
+            envelope.payload_offset + envelope.payload_size <=
+                RUNTIME_MAX_COMMAND_PAYLOAD;
+        if (!payload_valid) {
+            receipt.code = RuntimeReceiptCode::INVALID_PAYLOAD;
+        } else if (!domain_implemented || envelope.opcode == 0) {
+            receipt.code = RuntimeReceiptCode::PREFLIGHT_REJECTED;
+        } else {
+            receipt.code = RuntimeReceiptCode::OK;
+        }
+        day_receipts.push_back(receipt);
+        day_commands.push_back(incoming);
+    }
+    if (!future.empty()) {
+        // 回队列失败只会丢命令，不会污染当日语义；能力上限计一次，便于诊断。
+        if (!enqueue_batch(std::move(future))) {
+            _command_queue_capacity_exceeded.fetch_add(1,
+                                                       std::memory_order_relaxed);
+        }
+    }
+}
+
+// 内联日单日墙钟预算（微秒）。默认 30s；PK_INLINE_DAY_BUDGET_MS=0 关闭预算。
+// 返回 0 表示"不设预算"：桌面 headless 的长种子/大图可以用它关掉看门狗。
+// 静态缓存：每天都要读，但环境变量不会在进程内变。
+int64_t NativeSimulationHost::inline_day_budget_us() {
+    static const int64_t budget = []() -> int64_t {
+        const char *value = std::getenv("PK_INLINE_DAY_BUDGET_MS");
+        if (value == nullptr || *value == '\0') return int64_t{30000} * 1000;
+        const long long parsed = std::strtoll(value, nullptr, 10);
+        return parsed <= 0 ? int64_t{0} : static_cast<int64_t>(parsed) * 1000;
+    }();
+    return budget;
+}
+
+NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
+    InlineDayOutcome out;
+    if (!inline_daily_mode()) {
+        runtime_copy_text(out.reason, "inline_daily_disabled");
+        return out;
+    }
+    if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE) {
+        runtime_copy_text(out.reason, "inline_daily_requires_active");
+        return out;
+    }
+    if (_state.load(std::memory_order_acquire) == RuntimeWorkerState::FAULTED) {
+        runtime_copy_text(out.reason, "inline_daily_host_faulted");
+        return out;
+    }
+    if (_stop_requested.load(std::memory_order_acquire)) {
+        runtime_copy_text(out.reason, "inline_daily_stop_requested");
+        return out;
+    }
+    // 与 worker 日事务同一把边界锁。内联模式下执行者就是调用线程，这把锁在
+    // 这里只是"一天一个事务"的互斥，不会再有人跨线程等它。
+    std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);
+    // 登记执行者线程：内联模式下 on_worker_thread() 用它判断"这次调用是否就是
+    // 那一个在跑日事务的线程"。离开作用域（含早退）必须清掉，否则主线程在日
+    // 之外的经济调用会被当成 worker 线程内路径。
+    struct InlineThreadScope {
+        std::atomic<std::thread::id> &slot;
+        ~InlineThreadScope() { slot.store(std::thread::id{}, std::memory_order_release); }
+    } inline_thread_scope{_inline_day_thread};
+    _inline_day_thread.store(std::this_thread::get_id(), std::memory_order_release);
+    const int64_t from_day = _committed_day.load(std::memory_order_acquire);
+    const int64_t day = from_day + 1;
+    out.from_day = from_day;
+    out.day = day;
+    // 环里滞后的帧（典型是世界生成期那一帧：day 落后 committed+1 一天）在这里
+    // 丢掉。内联日没有跨线程重试，"今天等一个正确的帧"只会每天多失败一次。
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> environment;
+    for (uint32_t peek = 0; peek < 4u; ++peek) {
+        environment = environment_input_for_plan();
+        if (environment == nullptr || environment->day >= day) break;
+        const size_t popped = _environment_ring.pop_while_day_at_most(environment->day);
+        if (popped == 0u) break;
+        _climate_wait_cv.notify_all();
+        environment = nullptr;
+    }
+    if (environment == nullptr) {
+        runtime_copy_text(out.reason, "inline_daily_environment_missing");
+        return out;
+    }
+    out.environment_day = environment->day;
+    if (environment->day != day) {
+        // 未来的帧不是滞后，不能丢：内联日必须先由调用方补齐输入。
+        runtime_copy_text(out.reason, "inline_daily_environment_day_mismatch");
+        return out;
+    }
+    std::vector<RuntimeCommandPacket> day_commands;
+    day_commands.reserve(16u);
+    std::vector<RuntimeCommandReceipt> day_receipts;
+    uint64_t admitted_submit_order = 0;
+    drain_inline_day_commands(day, day_commands, day_receipts,
+                              admitted_submit_order);
+    const double speed = _speed_days_per_second.load(std::memory_order_acquire);
+    _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
+    _day_waterfall.begin(day);
+    const auto plan_build_started = std::chrono::steady_clock::now();
+    RuntimeDayPlan day_plan = build_day_plan(day, speed, environment.get());
+    _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
+    out.plan_build_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - plan_build_started).count();
+    const RuntimeDayCommit day_commit = execute_day_plan(
+        day_plan, environment.get(), day_commands, day_receipts,
+        admitted_submit_order);
+    _day_waterfall.mark(RuntimeDayWaterfall::POST_LOOP);
+    // 分域耗时：execute_day_plan 在内联模式下把每一 stage 累加进这个数组。
+    // 无论这次尝试成功还是被预算掐断，都把已有账目抄出来 —— 失败的那次往往
+    // 正是需要看账的那次。
+    for (uint32_t i = 0; i < RUNTIME_DOMAIN_STAGE_COUNT; ++i)
+        out.stage_ms[i] = _inline_stage_ms[i];
+    out.pre_stage_ms = _inline_pre_stage_ms;
+    out.climate_ms = _inline_climate_ms;
+    out.executor_serial_only = parallel_serial_only() ? 1u : 0u;
+    out.completed_domain_mask = day_commit.completed_domain_mask;
+    out.completed_stage_count = day_commit.completed_stage_count;
+    out.stage_count = day_plan.stage_count;
+    out.dirty_families = day_commit.dirty_families;
+    out.work_units = day_commit.work_units;
+    out.continuation_pending = day_commit.continuation_pending != 0;
+    if (_inline_budget_exceeded) {
+        // 看门狗掐断：这一天没有提交，也不该被当成"缺 peer"再重试 —— 重试只
+        // 会再花一次同样的预算。调用方看到的是可上报的一次明确失败。
+        runtime_copy_text(out.reason, "inline_daily_day_budget_exceeded");
+        out.budget_exceeded = true;
+        out.continuation_pending = false;
+        if (!day_commands.empty()) {
+            if (!enqueue_batch(std::move(day_commands))) {
+                _command_queue_capacity_exceeded.fetch_add(1,
+                                                           std::memory_order_relaxed);
+            }
+        }
+        _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RECEIPTS);
+        _day_waterfall.finish(false, day_commit.completed_domain_mask);
+        _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+        return out;
+    }
+    if (day_commit.preflight_ok == 0) {
+        // 没提交：收据与命令都退回，等调用方泵完 peer 再试同一天。
+        if (!day_commands.empty()) {
+            if (!enqueue_batch(std::move(day_commands))) {
+                _command_queue_capacity_exceeded.fetch_add(1,
+                                                           std::memory_order_relaxed);
+            }
+        }
+        // 原因链固定顺序：Country peer → Economy → Climate。这三个覆盖了内联
+        // 日屏障的全部真实阻塞点，其余域在自己的 stage 里 soft-complete。
+        char reason[64]{};
+        const auto read_reason = [](const auto &lane, char (&dst)[64]) {
+            size_t i = 0;
+            for (; i + 1 < sizeof(dst); ++i) {
+                const char value = lane[i].load(std::memory_order_acquire);
+                if (value == '\0') break;
+                dst[i] = value;
+            }
+            dst[i] = '\0';
+        };
+        read_reason(_country_pod_fallback_reason, reason);
+        if (reason[0] == '\0') read_reason(_economy_yield_reason, reason);
+        if (reason[0] == '\0') read_reason(_climate_pod_fallback_reason, reason);
+        if (reason[0] == '\0')
+            runtime_copy_text(reason, "inline_daily_barrier_incomplete");
+        runtime_copy_text(out.reason, reason);
+        _last_day_stage_count.store(day_plan.stage_count,
+                                    std::memory_order_release);
+        _last_day_completed_stages.store(day_commit.completed_stage_count,
+                                         std::memory_order_release);
+        _last_day_work_units.store(day_commit.work_units,
+                                   std::memory_order_release);
+        _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RECEIPTS);
+        _day_waterfall.finish(false, day_commit.completed_domain_mask);
+        _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+        return out;
+    }
+    for (const RuntimeCommandReceipt &receipt : day_receipts)
+        push_receipt(receipt);
+    if (day_commit.completed_stage_count == day_plan.stage_count &&
+        day_plan.stage_count == RUNTIME_DOMAIN_STAGE_COUNT &&
+        day_commit.completed_domain_mask == RUNTIME_ALL_DOMAIN_MASK &&
+        implemented_domain_mask() == RUNTIME_ALL_DOMAIN_MASK) {
+        _graph_coverage_complete.store(true, std::memory_order_release);
+        _authority_ready.store(true, std::memory_order_release);
+    }
+    // 日尾与 worker 完全同序：per-domain grant → Climate writeback →
+    // 提交水印 → publish_day → 读视图。少任何一步都会让主线程的
+    // "worker 权威" 消费端拿到空快照。
+    // 日尾单独计时：首日如果在这里花掉大量时间，问题在发布/快照，不在 12 域。
+    const auto commit_tail_started = std::chrono::steady_clock::now();
+    if (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE) {
+        const uint32_t wanted =
+            _requested_authority_mask.load(std::memory_order_acquire);
+        if (wanted != 0u &&
+            (day_commit.completed_domain_mask & wanted) == wanted) {
+            publish_authority_grant(wanted);
+        }
+        if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u) {
+            const int64_t climate_day = _climate_authority.store().committed_day;
+            uint32_t slot = 0;
+            if (climate_day > _climate_writeback_last_day.load(
+                    std::memory_order_relaxed) &&
+                _climate_writeback.try_begin_write(slot)) {
+                RuntimeClimateSnapshot &writeback =
+                    _climate_writeback.write_buffer(slot);
+                _climate_authority.snapshot_into(writeback, true);
+                writeback.generation = _climate_writeback_sequence.fetch_add(
+                    1, std::memory_order_relaxed) + 1u;
+                writeback.committed_day = climate_day;
+                writeback.dirty_families = day_commit.dirty_families;
+                _climate_writeback.publish(slot);
+                _climate_writeback_last_day.store(climate_day,
+                                                  std::memory_order_relaxed);
+            }
+        }
+    }
+    _day_waterfall.mark(RuntimeDayWaterfall::WORKER_CLIMATE_WRITEBACK);
+    _last_day_stage_count.store(day_plan.stage_count, std::memory_order_release);
+    _last_day_completed_stages.store(day_commit.completed_stage_count,
+                                     std::memory_order_release);
+    _last_day_work_units.store(day_commit.work_units, std::memory_order_release);
+    _committed_day.store(day, std::memory_order_release);
+    _completed_days.fetch_add(1, std::memory_order_relaxed);
+    publish_day(from_day, day, day_commit, day_receipts);
+    if (_economy_production_runtime != nullptr && economy_worker_owns_execution())
+        _economy_production_runtime->serve_read_view();
+    _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);
+    _day_waterfall.finish(true, day_commit.completed_domain_mask);
+    _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+    // 内联模式没有等待者；保留这一行是为了让"提交后唤醒"的语义与 worker 一致，
+    // 将来若有人在 CV 上等一天完成也不会漏唤醒。
+    _control_cv.notify_all();
+    out.committed = true;
+    out.continuation_pending = false;
+    out.commit_tail_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - commit_tail_started).count();
+    runtime_copy_text(out.reason, "");
+    return out;
+}
+
 bool NativeSimulationHost::execute_country_worker_stage(
         int64_t day, uint64_t input_generation,
         const std::vector<RuntimeCommandPacket> &day_commands,
@@ -9030,6 +9367,13 @@ bool NativeSimulationHost::execute_country_worker_stage(
         uint64_t admitted_submit_order) {
     error.clear();
     if (!_country_pod_configured) return true;
+    // P2（设计报告 §3.2.3 第 3 条）：在 COUNTRY stage **入口**就把昨日遗留的
+    // PENDING 提升一次。Effect 的 fire 发生在 EFFECT(6) stage，而 COUNTRY 是
+    // stage 3，所以同一日历日内不可能闭环 —— 一日延迟是结构性下界。入口处的
+    // 这次 promote 让"昨日的 PENDING 在今天的 result 扫描之前就变成 READY"，
+    // 而不是等到扫描失败后才补救（那时已经先把 missing 记进 day_wait 了）。
+    // 它只是把既有函数多调一次，不改变任何分支语义，也不新增等待。
+    (void)resolve_pending_country_effect_peers();
     if (!flush_country_economy_asset_commits(error)) {
         commit.preflight_ok = 0;
         return false;
@@ -11109,6 +11453,21 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         std::vector<RuntimeCommandReceipt> &day_receipts,
         uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
+    // native_daily_inline 分域计时开关。worker 日恒为 false，所以这条 worker 路径
+    // 不为任何探针付账（只有每 stage 一次原子读）。内联日一切都在调用线程上，
+    // 累加器不需要原子。
+    const bool inline_timing = inline_daily_mode();
+    const auto timing_started = std::chrono::steady_clock::now();
+    // 单日墙钟预算：只在 stage 之间检查（不切半截 stage），目的是"浏览器里绝不
+    // 无限挂死"。默认 30s，PK_INLINE_DAY_BUDGET_MS=0 关掉。
+    const int64_t day_budget_us = inline_timing
+        ? inline_day_budget_us() : 0;
+    if (inline_timing) {
+        _inline_stage_ms.fill(0.0);
+        _inline_pre_stage_ms = 0.0;
+        _inline_climate_ms = 0.0;
+        _inline_budget_exceeded = false;
+    }
     if (try_fault_injection("day.plan.before")) {
         commit.preflight_ok = 0;
         return commit;
@@ -12031,6 +12390,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     // Reaching this point requires the per-domain gate to have granted CLIMATE,
     // so this cannot run while the main thread is still computing Climate.
     _day_waterfall.mark(RuntimeDayWaterfall::PRE_SETUP);
+    // 内联日：Climate 内核在 12 域循环之前就算完了。单独计时后并进
+    // stage_ms[CLIMATE]——否则分域表会把这一天最贵的一段记成 0，读表的人会
+    // 以为 Climate 是免费的。
+    const auto climate_kernel_started = std::chrono::steady_clock::now();
     const bool climate_authority_requested =
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
@@ -12210,6 +12573,31 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     }
 
     _day_waterfall.mark(RuntimeDayWaterfall::CLIMATE_COMPUTE);
+    if (inline_timing) {
+        const auto climate_kernel_finished = std::chrono::steady_clock::now();
+        _inline_climate_ms = std::chrono::duration<double, std::milli>(
+            climate_kernel_finished - climate_kernel_started).count();
+        _inline_stage_ms[static_cast<uint32_t>(RuntimeDomainId::CLIMATE) - 1u] +=
+            _inline_climate_ms;
+        _inline_pre_stage_ms = std::chrono::duration<double, std::milli>(
+            climate_kernel_finished - timing_started).count();
+    }
+    // 内联日分域计时器：作用域结束（continue / return 都算）时把这一段的耗时
+    // 记到它自己的域下标上。worker 日 enabled=false，只剩一次布尔判断。
+    struct InlineStageTimer {
+        std::array<double, RUNTIME_DOMAIN_STAGE_COUNT> *slots = nullptr;
+        RuntimeDomainId domain = RuntimeDomainId::INPUT_CAPTURE;
+        std::chrono::steady_clock::time_point started{};
+        bool enabled = false;
+        ~InlineStageTimer() {
+            if (!enabled || slots == nullptr) return;
+            const uint32_t index = static_cast<uint32_t>(domain);
+            if (index < 1u ||
+                index > static_cast<uint32_t>(slots->size())) return;
+            (*slots)[index - 1u] += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started).count();
+        }
+    };
     RuntimeDomainId previous_domain = RuntimeDomainId::INPUT_CAPTURE;
     bool previous_domain_valid = false;
     for (uint32_t i = 0; i < plan.stage_count; ++i) {
@@ -12236,6 +12624,21 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         }
         previous_domain = stage.domain;
         previous_domain_valid = true;
+        // 单日墙钟预算看门狗：只在 stage 之间判断，绝不切开半截 stage。
+        // 超预算就带着 preflight_ok=0 收工 —— 浏览器里一次有界的失败远好过
+        // 主线程被某一域永远钉住（此时页面连 WebTelemetry 心跳都发不出去）。
+        if (inline_timing && day_budget_us > 0 &&
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - timing_started).count() >
+                day_budget_us) {
+            _inline_budget_exceeded = true;
+            commit.preflight_ok = 0;
+            commit.continuation_pending = 0;
+            return commit;
+        }
+        InlineStageTimer stage_timer{&_inline_stage_ms, stage.domain,
+                                     std::chrono::steady_clock::now(),
+                                     inline_timing};
         if (stage.domain == RuntimeDomainId::INPUT_CAPTURE &&
             _mode.load(std::memory_order_acquire) ==
                 RuntimeSimulationMode::ACTIVE &&
@@ -15612,6 +16015,26 @@ void NativeSimulationHost::worker_main() {
 
             const bool retained_day_pending = active_environment != nullptr &&
                 active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
+            // P1：预发布会让环境环长期非空（K 天在飞），而下面的存盘准入要求
+            // `!has_pending_climate_input()`。两者直接冲突：存盘会永远等不到。
+            //
+            // 协议上正确的处置是把**未来帧**丢掉，而不是等 worker 消费它们 ——
+            // PKSR 本来就不保存 pending environment（见下一行注释），预发布出去的
+            // 帧只属于"还没发生的那一天"，不是任何已提交状态的一部分。恢复后由
+            // 主线程重新发布，`restore → first publish` 是这条路径的常规握手。
+            //
+            // 只在存盘请求已到达时做，所以稳态（没有存盘）零影响；非预发布路径
+            // 环里通常只有 0..1 帧，同样无条件判 false 时不进这个分支。
+            if (_save_requested.load(std::memory_order_acquire) &&
+                has_pending_climate_input()) {
+                // 环里剩下的一定是 day > 已提交日 的未来帧（更早的已被消费）。
+                // 用 INT64_MAX 上界一次性清空，不做逐日判断。
+                if (_environment_ring.pop_while_day_at_most(
+                        std::numeric_limits<int64_t>::max()) > 0u) {
+                    _climate_wait_cv.notify_all();
+                    _control_cv.notify_all();
+                }
+            }
             // PKSR 不保存 pending environment；已消费 Climate 输入的同日 ACK 也要排空。
             if (!has_pending_climate_input() && !retained_day_pending &&
                 _save_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -16331,6 +16754,7 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.worker_time_us = _worker_timing.snapshot();
     out.state = _state.load(std::memory_order_acquire);
     out.mode = _mode.load(std::memory_order_acquire);
+    out.inline_daily = _inline_daily_mode.load(std::memory_order_acquire);
     out.graph_coverage_complete = _graph_coverage_complete.load(std::memory_order_acquire);
     out.authority_ready = _authority_ready.load(std::memory_order_acquire);
     out.required_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
@@ -16670,6 +17094,12 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.day_wait_missing_mask = _day_wait_missing_mask.load(std::memory_order_acquire);
     out.day_wait_env_day = _day_wait_env_day.load(std::memory_order_acquire);
     out.day_wait_ring = _day_wait_ring.load(std::memory_order_acquire);
+    out.country_peer_resolved_in_worker =
+        _country_peer_resolved_in_worker.load(std::memory_order_acquire);
+    out.country_peer_resolved_by_main =
+        _country_peer_resolved_by_main.load(std::memory_order_acquire);
+    out.country_deferred_peer_count =
+        _country_deferred_peer_count.load(std::memory_order_acquire);
     out.day_park_domain_mask = _day_park_domain_mask.load(std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.day_park_reason); ++i) {
         out.day_park_reason[i] = _day_park_reason[i].load(std::memory_order_acquire);
