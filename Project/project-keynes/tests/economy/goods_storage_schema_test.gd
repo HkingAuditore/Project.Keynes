@@ -421,7 +421,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v57 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 57)
+	_expect("v58 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 58)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)

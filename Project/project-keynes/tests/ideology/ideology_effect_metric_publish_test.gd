@@ -127,8 +127,8 @@ func _run() -> void:
 	_test_cell_domain_projects_per_cell(catalog)
 	_test_unchanged_publish_is_skipped(catalog)
 	_test_metric_scope_guard()
-	_test_cell_program_table(catalog)
-	_test_column_units(catalog)
+	# The plane table test is gone; see the note above `_test_input_revision_split`.
+	# `_test_column_units` removed with the plane; see the note above it.
 	_test_input_revision_split(catalog)
 	_test_threshold_gate(catalog)
 	_test_operator_boundaries(catalog)
@@ -463,14 +463,24 @@ func _test_ideology_scalar_inputs(catalog: Dictionary) -> void:
 
 	var native := _ideology_catalog_scalar_fixture()
 	var ext: Object = _build_ext(catalog, 1)
-	var configured: Dictionary = ext.configure_ideologies(native)
-	if not _require("scalar: native ideology catalog configures",
-			bool(configured.get("ok", false)), str(configured)):
-		return
+	# CONFIGURE ORDER IS LOAD-BEARING SINCE PLAN §11.5, not cosmetic.
+	# `NativeIdeologyRuntime::configure` STAMPS the execution-contract identity on its
+	# last line (`ideology_runtime.cpp:843-844`) from the six rule versions plus the
+	# three catalog hashes attached AT THAT MOMENT: ideology, Effect, Modifier. `restore`
+	# then compares the payload's stamp against a FRESH `compute_execution_contract_hash()`
+	# (`:6852`) -- so a world that configures Effect AFTER Ideology stamps an
+	# effect-hash of 0 and can never reload its own save, while a world that configures
+	# it BEFORE stamps the real one. `_build_ext` has already configured Modifier; this
+	# block therefore does Effect first and Ideology last, which is also the production
+	# order (PKEF before PKID is the same rule seen from the save side).
 	var effect_ir: Dictionary = ext.configure_effects(
 		_scalar_effect_catalog([observer, control]))
 	if not _require("scalar: effect catalog configures",
 			bool(effect_ir.get("ok", false)), str(effect_ir)):
+		return
+	var configured: Dictionary = ext.configure_ideologies(native)
+	if not _require("scalar: native ideology catalog configures",
+			bool(configured.get("ok", false)), str(configured)):
 		return
 	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
 	if not _require("scalar: fixture resolves the country handle", handle != 0):
@@ -547,12 +557,34 @@ func _test_ideology_scalar_inputs(catalog: Dictionary) -> void:
 				[pkef.size(), pkid.size(), restored_handle]):
 		return
 	var restored_ext: Object = _build_ext(catalog, 1)
-	restored_ext.configure_ideologies(native)
+	# SAME CATALOGS, SAME ORDER as the source world, and that is the whole point of
+	# plan §11.5: the contract identity is a hash of the catalogs this runtime was
+	# configured with, so `restored_ext` has to reproduce them -- Modifier (inside
+	# `_build_ext`), then Effect (a SECOND compilation of the same programs, which also
+	# measures that the compile is deterministic), then Ideology LAST so the Effect hash
+	# is attached when the identity is stamped. Restoring into a differently configured
+	# runtime is supposed to be refused, not tolerated.
 	restored_ext.configure_effects(_scalar_effect_catalog([observer, control]))
+	restored_ext.configure_ideologies(native)
+	# MEASURED BEFORE THE RESTORE, because this number is what the refusal would be
+	# about. If the two ever diverge, the repair is in the catalogs or the order, never
+	# in the assertion below.
+	var source_contract := int(
+		ext.get_ideology_report().get("execution_contract_hash", 0))
+	var restored_contract := int(
+		restored_ext.get_ideology_report().get("execution_contract_hash", 0))
+	print("[metric/scalar] plan 11.5 execution contract: source=%d restored=%d"
+		% [source_contract, restored_contract])
+	_expect("scalar: the restored runtime holds the SAME plan 11.5 execution "
+		+ "contract as the source (ideology + Effect + Modifier catalog hashes agree)",
+		source_contract != 0 and restored_contract == source_contract,
+		"source=%d restored=%d" % [source_contract, restored_contract])
 	_expect("scalar: PKEF restores first",
 		bool(restored_ext.restore_effect_state(pkef).get("ok", false)))
+	var restored_pkid: Dictionary = restored_ext.restore_ideology_state(pkid)
 	_expect("scalar: PKID restores after PKEF",
-		bool(restored_ext.restore_ideology_state(pkid).get("ok", false)))
+		bool(restored_pkid.get("ok", false)),
+		"reason=%s" % String(restored_pkid.get("reason", "")))
 	_force_scalar_refresh(restored_ext, 3)
 	var restored_observer := _scalar_instance_id(
 		restored_ext, restored_handle, 0)
@@ -566,88 +598,85 @@ func _test_ideology_scalar_inputs(catalog: Dictionary) -> void:
 		"saved=%d restored=%d" % [saved_signature,
 			int(restored_ext.compute_idea_activation_signature_for_test(
 				restored_handle, 0))])
+	# ── THE REFUSAL THIS BLOCK USED TO REPORT, kept as evidence ───────────
+	# Before the configure order above was fixed, THIS is what the three assertions in
+	# this block measured: `PKID restores after PKEF` was false and the visible symptoms
+	# were `value_q16=-1` / `restored=0`. The mechanism, MEASURED below rather than
+	# argued: the identity is STAMPED when Ideology is configured and CHECKED against a
+	# fresh computation when a payload is restored (`ideology_runtime.cpp:6852`), so a
+	# world that attaches its Effect catalog after the stamp writes an identity that its
+	# own live hash can never equal -- it cannot reload its own capture -- and its
+	# payload is refused by a correctly configured runtime. That is plan 11.5's "a load
+	# across a different override configuration must be refused", as data.
+	# CHANGED 2026-10-29: the difference must be in CONTENT now, not in configure order.
+	#
+	# The contract used to be stamped at configure time, so attaching the Effect catalog
+	# after the ideology catalog produced a different (and permanently stale) identity.
+	# That was a defect -- such a world could never reload its own save -- and it is fixed:
+	# the contract is computed wherever it is needed, so configure order no longer matters.
+	#
+	# What §11.5 actually requires is refusal across a DIFFERENT CONFIGURATION, so this
+	# world now genuinely differs: one Effect program fewer. Its own capture still reloads
+	# (asserted below), and the source runtime refuses its payload (asserted after).
+	var stale_ext: Object = _build_ext(catalog, 1)
+	stale_ext.configure_ideologies(native)
+	stale_ext.configure_effects(_scalar_effect_catalog([observer]))
+	var stale_contract := int(
+		stale_ext.get_ideology_report().get("execution_contract_hash", 0))
+	_expect("scalar: a runtime with a DIFFERENT catalog computes a DIFFERENT contract "
+		+ "(source=%d stale=%d)" % [source_contract, stale_contract],
+		stale_contract != 0 and stale_contract != source_contract,
+		"source=%d stale=%d" % [source_contract, stale_contract])
+	var stale_pkid: PackedByteArray = stale_ext.capture_ideology_state()
+	var stale_own: Dictionary = stale_ext.restore_ideology_state(stale_pkid)
+	print("[metric/scalar] stale-order self-restore -> ok=%s reason=%s (expected %s)"
+		% [str(stale_own.get("ok", "?")), String(stale_own.get("reason", "")),
+			"cell_program_execution_contract_mismatch"])
+	# FLIPPED 2026-10-29: this used to assert the opposite, and the opposite was a DEFECT.
+	#
+	# `restore` compared the payload's stamp against a LIVE recomputation instead of against
+	# the runtime's own stamp, so a world configured Effect-after-Ideology wrote a stamp
+	# carrying no Effect hash and then could never reload its own capture -- a runtime whose
+	# autosave it cannot read. The check is now stamp-vs-stamp, which makes the rule
+	# symmetric: a runtime always reloads what it wrote, and a payload written under a
+	# DIFFERENT configuration is still refused (asserted separately below).
+	_expect("scalar: ... and that world CAN restore its OWN capture -- a runtime must always "
+		+ "be able to reload what it wrote",
+		bool(stale_own.get("ok", false)),
+		"ok=%s reason=%s" % [str(stale_own.get("ok", "?")),
+			String(stale_own.get("reason", ""))])
+	var cross_ext: Object = _build_ext(catalog, 1)
+	cross_ext.configure_effects(_scalar_effect_catalog([observer, control]))
+	cross_ext.configure_ideologies(native)
+	var cross: Dictionary = cross_ext.restore_ideology_state(stale_pkid)
+	_expect("scalar: ... and a correctly configured runtime REFUSES that payload too "
+		+ "(cross-configuration load refused, not reinterpreted)",
+		not bool(cross.get("ok", true))
+			and String(cross.get("reason", ""))
+				== "cell_program_execution_contract_mismatch",
+		"ok=%s reason=%s contract=%d" % [str(cross.get("ok", "?")),
+			String(cross.get("reason", "")),
+			int(cross_ext.get_ideology_report().get("execution_contract_hash", 0))])
 
+## The old v1 cell-program PLANE is GONE (plan §15.7).
+##
+## It was never populated in production: the only GDScript caller of
+## `publish_ideology_cell_programs` was a test, and the switch that guarded the
+## automatic publish was documented as *not safe to apply* and defaulted off
+## (`world_ext_ideology.cpp` — "double application with the per-cell instances").
+##
+## Its unique coverage moved rather than disappeared:
+##   * ADD vs MULTIPLY folding, and a NEGATIVE additive delta, are pinned at the
+##     kernel level in `gdext/tests/derived_layer_rebuild_test.cpp` (group A and N);
+##   * the per-cell value the plane used to be read through is now observable from
+##     the derived layer via `get_effective_stat_value` (see B7).
+##
+## Leaving the assertions here would have been worse than deleting them: the
+## removed bridges make them throw `Nonexistent function`, and a GDScript error
+## inside a test function ABORTS it while the check counter simply stops --
+## measured: this file still reported "289 checks, 0 failures" with the plane
+## assertions silently skipped.
 
-## P3 step 2: the per-cell coefficient table. A cell card with the default
-## selector has to land on the plane as "every owned cell" (filter_tag == -1) --
-## that is the X1 unlock, because today the runtime resolves kind 0 to the anchor
-## cell alone and the card only ever touches one cell.
-func _test_cell_program_table(catalog: Dictionary) -> void:
-	var program := _metric_program(OP_METRIC_GTE, 0)
-	# The fixture's card has no persistent row this runtime can resolve against a
-	# per-good definition yet (see the pending note in the review doc), so this
-	# asserts the table shape against a definition the fixture does carry.
-	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
-	if not _require("the economy catalog declares goods", good_ids.size() > 0):
-		return
-	# Option 1: the card writes the good's own output factor, so the plane entry
-	# lands on a stat the per-cell read path actually consults.
-	program.commands[0].definition_key = StringName(
-		"economy.city.good.%s.output_factor" % String(good_ids[0]))
-	# 2.0 mul: the fixture's default is 1.0, and an identity leaves the factor
-	# unchanged, which would make "the plane landed" indistinguishable from
-	# "nothing happened".
-	program.commands[0].value_q16 = Q16_ONE * 2
-	var fixture := _fixture(catalog, program)
-	if not _require("cell program fixture builds", not fixture.is_empty()):
-		return
-	var summary: Dictionary = fixture["ext"].get_ideology_cell_program_summary()
-	if not _require("cell program table builds", bool(summary.get("ok", false)),
-			str(summary)):
-		return
-	_expect("the table has a generation", int(summary.get("generation", 0)) > 0)
-	_expect("one card yields one entry", int(summary.get("entry_count", -1)) == 1,
-		str(summary))
-	var entries: Array = summary.get("entries", [])
-	if entries.size() != 1:
-		return
-	_expect("a default-selector cell card covers the whole territory",
-		int(entries[0].get("filter_tag", -2)) == -1, str(entries[0]))
-	# ADD, not MULTIPLY: the command magnitude is the delta (+5% -> 0.05), so the
-	# definition has to be an ADD term or the same number reads as a multiplier.
-	_expect("the entry carries the definition's operation",
-		int(entries[0].get("operation", -1)) == 0, str(entries[0]))
-	_expect("the entry carries the command magnitude verbatim",
-		int(entries[0].get("coef_q16", -1)) == Q16_ONE * 2, str(entries[0]))
-	# And the number the production path reads: the card doubles the good's
-	# output factor on the cell the country owns.
-	# The plane is off by default now (review §2.0), so the automatic publish in
-	# run_ideology_daily no longer happens; this test is about the plane, so it
-	# publishes explicitly.
-	fixture["ext"].publish_ideology_cell_programs()
-	# 1.0 base + the card's 2.0 delta. Doubling as a multiplier would be 2.0; the
-	# sum is what proves the ADD semantics, not just that "something changed".
-	var factor: Dictionary = fixture["ext"].get_city_output_factor_q16(0, 0)
-	_expect("the plane reaches the per-cell output factor as a delta",
-		int(factor.get("factor_q16", -1)) == Q16_ONE * 3, str(factor))
-
-	# A debuff is a SUBTRACT term and its magnitude is always positive, so the
-	# sign can only come from the definition. Getting this wrong turns every
-	# "-8%" card into "+8%" and nothing in the pipeline complains.
-	var cut_program := _metric_program(OP_METRIC_GTE, 0)
-	# The cell family is keyed on the ECONOMY stat names: gdext reads per-cell
-	# output/consumption through its own economy stat ids, so an `ideology.city.*`
-	# key compiled, stored a row and changed nothing, and the generator's
-	# `city_stat_key()` now emits `economy.city.*` (see 09-content-status.md §3.8).
-	cut_program.commands[0].definition_key = StringName(
-		"economy.city.birth_factor.cut")
-	cut_program.commands[0].value_q16 = Q16_ONE / 8
-	var cut_fixture := _fixture(catalog, cut_program)
-	if _require("cut fixture builds", not cut_fixture.is_empty()):
-		var cut_summary: Dictionary = cut_fixture["ext"].get_ideology_cell_program_summary()
-		var cut_entries: Array = cut_summary.get("entries", [])
-		if _require("a cut definition yields an entry", cut_entries.size() == 1):
-			_expect("a cut definition yields a negative delta",
-				int(cut_entries[0].get("coef_q16", 0)) == -(Q16_ONE / 8),
-				str(cut_entries[0]))
-
-
-
-## Review §3: the effect-input revision is split into territory / tag / per-metric,
-## so a card depends only on the inputs it reads. This is the weak but real half of
-## the gate: it proves the split exists and that metrics nobody reads stay at 0.
-## The strong half (a threshold crossing bumps exactly one metric) needs a fixture
-## that can move a single metric by a controlled amount, which this one cannot.
 func _test_input_revision_split(catalog: Dictionary) -> void:
 	var program := _metric_program(OP_METRIC_GTE, 0)
 	var fixture := _fixture(catalog, program)
@@ -890,49 +919,19 @@ func _test_digest_cost(catalog: Dictionary) -> void:
 		_expect("a %d-cell digest pass stays under 5 ms" % cells, per_pass < 5.0,
 			"%.3f ms" % per_pass)
 
+## `_test_column_units` is GONE with the old v1 plane (plan §15.7).
+##
+## It injected plane entries directly through
+## `set_ideology_cell_program_entry_for_test` to check the "constant vs
+## neighbour-count" coefficient columns. Both the injector and the columns belonged
+## to the plane, and the plane is deleted. The equivalent derived-layer question —
+## "does a contribution reach the per-cell value" — is covered by
+## `get_effective_stat_value` in `ideology_b7_wide_territory_test.gd`.
+##
+## Deleted rather than left: the removed bridge makes the body throw
+## `Nonexistent function`, and a GDScript error inside a test function ABORTS it
+## while the check counter stops -- the file would still report 0 failures.
 
-## X2 groundwork: a column entry multiplies its coefficient by a per-cell count
-## instead of adding it once. The 1-cell fixture makes the two behaviours
-## distinguishable without assuming any map geometry: with no neighbours the
-## column contributes nothing, while the constant still adds its full amount.
-func _test_column_units(catalog: Dictionary) -> void:
-	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
-	if not _require("column: the catalog declares goods", good_ids.size() > 0):
-		return
-	var program := _metric_program(OP_METRIC_GTE, 0)
-	program.commands[0].definition_key = StringName(
-		"economy.city.good.%s.output_factor" % String(good_ids[0]))
-	var fixture := _fixture(catalog, program)
-	if not _require("column fixture builds", not fixture.is_empty()):
-		return
-	var ext: Object = fixture["ext"]
-	var resolved: Dictionary = ext.resolve_modifier_definition_terms(
-		"economy.city.good.%s.output_factor" % String(good_ids[0]))
-	var rows: Array = resolved.get("terms", [])
-	if not _require("column: the target stat resolves", rows.size() == 1):
-		return
-	var stat_id := int(rows[0].get("stat_id", -1))
-	var half := Q16_ONE / 2
-	_expect("column: a constant entry injects",
-		bool(ext.set_ideology_cell_program_entry_for_test(
-			stat_id, -1, 0, half, 0, -1, 0)))
-	var constant_factor: Dictionary = ext.get_city_output_factor_q16(0, 0)
-	_expect("a constant entry adds its coefficient once",
-		int(constant_factor.get("factor_q16", -1)) == Q16_ONE + half,
-		str(constant_factor))
-
-	_expect("column: a neighbour-count entry injects",
-		bool(ext.set_ideology_cell_program_entry_for_test(
-			stat_id, -1, 0, half, 1, -1, 0)))
-	var column_factor: Dictionary = ext.get_city_output_factor_q16(0, 0)
-	_expect("a neighbour-count entry adds nothing with zero neighbours",
-		int(column_factor.get("factor_q16", -1)) == Q16_ONE, str(column_factor))
-
-
-## P2-D: metric scope must match program scope. This fixture's condition reads a
-## `cell.*` metric; retargeting the same program at COUNTRY has to fail at compile
-## time, because at runtime it would silently sample the anchor cell and present
-## that one number as the country's.
 func _test_metric_scope_guard() -> void:
 	var program := _metric_program(OP_METRIC_GTE, 0)
 	program.target_domain = 3

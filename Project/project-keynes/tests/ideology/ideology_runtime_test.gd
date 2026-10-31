@@ -128,6 +128,7 @@ func _run() -> void:
 		and not bool(stale_ideology_result.get("ok", true)))
 	_test_stale_pkid_is_rejected_by_version(bytes, stale_restored)
 	_test_world_seed_changes_the_draw_sequence(country_ir)
+	_test_resonance_tiers_activate_at_2_4_5_6(country_ir)
 	_test_effect_link_after_ideology_configuration(country_ir, catalog)
 	_test_native_publish_event_adapter(country_ir)
 
@@ -335,6 +336,195 @@ func _offer_sequence_for_seed(country_ir: Dictionary, world_seed: int) -> Array:
 		]))
 		ext.run_ideology_daily(2 + day)
 	return sequence
+
+
+func _test_resonance_tiers_activate_at_2_4_5_6(
+		country_ir: Dictionary) -> void:
+	var ext := _country_ext(country_ir)
+	var modifier := ModifierFacadeScript.new()
+	_expect("resonance fixture modifier runtime configures", bool(
+		modifier.configure(ext, 1).get("ok", false)))
+	_expect("resonance fixture Effect runtime configures", bool(
+		ext.configure_effects(_effect_catalog().compile_native_catalog()).get(
+			"ok", false)))
+	var catalog := _resonance_test_catalog()
+	_expect("resonance fixture configures", bool(
+		ext.configure_ideologies(catalog).get("ok", false)))
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	# Zero thresholds bypass the class-opinion gate so this fixture tests only
+	# the native min-count transition, not the economy's support snapshot.
+	_expect("resonance fixture discovers six cards", bool(
+		ext.submit_ideology_commands(_commands([
+			{"op": 1, "day": 0, "handle": handle, "idea": 0},
+			{"op": 1, "day": 0, "handle": handle, "idea": 1},
+			{"op": 1, "day": 0, "handle": handle, "idea": 2},
+			{"op": 1, "day": 0, "handle": handle, "idea": 3},
+			{"op": 1, "day": 0, "handle": handle, "idea": 4},
+			{"op": 1, "day": 0, "handle": handle, "idea": 5},
+		])).get("ok", false))
+		and bool(ext.run_ideology_daily(0).get("ok", false)))
+	_expect("resonance fixture equips the first two cards", bool(
+		ext.submit_ideology_commands(_commands([
+			{"op": 5, "day": 1, "handle": handle, "idea": 0},
+			{"op": 5, "day": 1, "handle": handle, "idea": 1},
+		])).get("ok", false))
+		and _drain_resonance_effects(ext, 1))
+	var active := _active_resonance_counts(ext, handle)
+	_expect("2/6 cards activate only the first tier",
+		active == PackedByteArray([1, 0, 0, 0]))
+
+	_expect("resonance fixture raises the school to four cards", bool(
+		ext.submit_ideology_commands(_commands([
+			{"op": 5, "day": 2, "handle": handle, "idea": 2},
+			{"op": 5, "day": 2, "handle": handle, "idea": 3},
+		])).get("ok", false))
+		and bool(ext.run_ideology_daily(2).get("ok", false))
+		and _drain_resonance_effects(ext, 2))
+	active = _active_resonance_counts(ext, handle)
+	_expect("4/6 cards activate exactly two cumulative tiers",
+		active == PackedByteArray([1, 1, 0, 0]))
+
+	_expect("resonance fixture raises the school to five cards", bool(
+		ext.submit_ideology_commands(_commands([
+			{"op": 5, "day": 3, "handle": handle, "idea": 4},
+		])).get("ok", false))
+		and bool(ext.run_ideology_daily(3).get("ok", false))
+		and _drain_resonance_effects(ext, 3))
+	active = _active_resonance_counts(ext, handle)
+	_expect("5/6 cards activate exactly three cumulative tiers",
+		active == PackedByteArray([1, 1, 1, 0]))
+
+	_expect("resonance fixture raises the school to six cards", bool(
+		ext.submit_ideology_commands(_commands([
+			{"op": 5, "day": 4, "handle": handle, "idea": 5},
+		])).get("ok", false))
+		and bool(ext.run_ideology_daily(4).get("ok", false))
+		and _drain_resonance_effects(ext, 4))
+	active = _active_resonance_counts(ext, handle)
+	_expect("6/6 cards activate all four cumulative tiers",
+		active == PackedByteArray([1, 1, 1, 1]))
+
+
+func _resonance_test_catalog() -> Dictionary:
+	var catalog := _catalog()
+	var ids := PackedStringArray()
+	for index in 6:
+		ids.append("idea.resonance_%d" % index)
+	catalog.ideology_ids = ids
+	catalog.acquisition_flags = PackedByteArray([3, 3, 3, 3, 3, 3])
+	catalog.rarity_weights = PackedInt32Array([1, 1, 1, 1, 1, 1])
+	catalog.ideology_slot_costs = PackedInt32Array([1, 1, 1, 1, 1, 1])
+	catalog.spirit_slot_costs = PackedInt32Array([1, 1, 1, 1, 1, 1])
+	catalog.national_spirit_min_levels = PackedInt32Array([0, 0, 0, 0, 0, 0])
+	catalog.level_offsets = PackedInt32Array([0, 3, 6, 9, 12, 15, 18])
+	var thresholds := PackedInt64Array([0, Q16_ONE, 2 * Q16_ONE])
+	var daily_understanding := PackedInt64Array()
+	for index in 5:
+		thresholds.append_array(PackedInt64Array([0, Q16_ONE, 2 * Q16_ONE]))
+	for index in 18:
+		daily_understanding.append(0)
+	catalog.level_thresholds_q16 = thresholds
+	catalog.level_daily_understanding_q16 = daily_understanding
+	catalog.technology_requirement_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0])
+	catalog.signal_requirement_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0])
+	catalog.gate_requirement_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0])
+	catalog.level_persistent_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+	catalog.level_on_enter_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+	catalog.persistent_actions = PackedInt32Array()
+	catalog.persistent_domains = PackedInt32Array()
+	catalog.persistent_opcodes = PackedInt32Array()
+	catalog.persistent_values_q16 = PackedInt64Array()
+	catalog.persistent_duration_days = PackedInt32Array()
+	catalog.persistent_stacks = PackedInt32Array()
+	catalog.persistent_command_keys = PackedStringArray()
+	catalog.persistent_definition_keys = PackedStringArray()
+	catalog.persistent_payload_i0 = PackedInt64Array()
+	catalog.persistent_payload_i1 = PackedInt64Array()
+	catalog.persistent_payload_i2 = PackedInt64Array()
+	catalog.persistent_payload_i3 = PackedInt64Array()
+	catalog.on_enter_actions = PackedInt32Array()
+	catalog.on_enter_domains = PackedInt32Array()
+	catalog.on_enter_opcodes = PackedInt32Array()
+	catalog.on_enter_values_q16 = PackedInt64Array()
+	catalog.on_enter_duration_days = PackedInt32Array()
+	catalog.on_enter_stacks = PackedInt32Array()
+	catalog.on_enter_command_keys = PackedStringArray()
+	catalog.on_enter_definition_keys = PackedStringArray()
+	catalog.on_enter_payload_i0 = PackedInt64Array()
+	catalog.on_enter_payload_i1 = PackedInt64Array()
+	catalog.on_enter_payload_i2 = PackedInt64Array()
+	catalog.on_enter_payload_i3 = PackedInt64Array()
+	catalog.stance_offsets = PackedInt32Array([0, 0, 0, 0, 0, 0, 0])
+	catalog.stance_class_indices = PackedInt32Array()
+	catalog.stance_adopt_q16 = PackedInt32Array()
+	catalog.stance_repeal_q16 = PackedInt32Array()
+	catalog.stance_promote_q16 = PackedInt32Array()
+	catalog.stance_adopt_min_q16 = PackedInt32Array()
+	catalog.stance_repeal_min_q16 = PackedInt32Array()
+	catalog.stance_promote_min_q16 = PackedInt32Array()
+	catalog.adopt_thresholds_q16 = PackedInt32Array([0, 0, 0, 0, 0, 0])
+	catalog.repeal_thresholds_q16 = PackedInt32Array([0, 0, 0, 0, 0, 0])
+	catalog.promote_thresholds_q16 = PackedInt32Array([0, 0, 0, 0, 0, 0])
+	catalog.exclusion_group_ids = PackedInt32Array([-1, -1, -1, -1, -1, -1])
+	catalog.ideology_capacity = 6
+	catalog.national_spirit_capacity = 0
+	catalog.synergy_ids = PackedStringArray([
+		"resonance.test.2", "resonance.test.4",
+		"resonance.test.5", "resonance.test.6",
+	])
+	catalog.synergy_min_counts = PackedInt32Array([2, 4, 5, 6])
+	catalog.synergy_requirement_offsets = PackedInt32Array([0, 6, 12, 18, 24])
+	catalog.synergy_requirement_ideology_ids = PackedInt32Array()
+	catalog.synergy_requirement_min_levels = PackedInt32Array()
+	catalog.synergy_requirement_location_masks = PackedByteArray()
+	for tier in 4:
+		for index in 6:
+			catalog.synergy_requirement_ideology_ids.append(index)
+			catalog.synergy_requirement_min_levels.append(0)
+			catalog.synergy_requirement_location_masks.append(2)
+	# This fixture proves the min-count predicate, not Effect dispatch. Empty
+	# effect spans keep each transition's content to the tier bit itself.
+	catalog.synergy_effect_offsets = PackedInt32Array([0, 0, 0, 0, 0])
+	catalog.synergy_effect_actions = PackedInt32Array()
+	catalog.synergy_effect_domains = PackedInt32Array()
+	catalog.synergy_effect_opcodes = PackedInt32Array()
+	catalog.synergy_effect_values_q16 = PackedInt64Array()
+	catalog.synergy_effect_duration_days = PackedInt32Array()
+	catalog.synergy_effect_stacks = PackedInt32Array()
+	catalog.synergy_effect_command_keys = PackedStringArray()
+	catalog.synergy_effect_definition_keys = PackedStringArray()
+	catalog.synergy_effect_payload_i0 = PackedInt64Array()
+	catalog.synergy_effect_payload_i1 = PackedInt64Array()
+	catalog.synergy_effect_payload_i2 = PackedInt64Array()
+	catalog.synergy_effect_payload_i3 = PackedInt64Array()
+	catalog.ideology_synergy_offsets = PackedInt32Array([
+		0, 4, 8, 12, 16, 20, 24])
+	catalog.ideology_synergy_ids = PackedInt32Array()
+	for index in 6:
+		for tier in 4:
+			catalog.ideology_synergy_ids.append(tier)
+	return catalog
+
+
+func _drain_resonance_effects(ext: Object, day: int) -> bool:
+	for _slice in 128:
+		var report: Dictionary = ext.run_ideology_daily(day)
+		if not bool(report.get("ok", false)):
+			return false
+		if bool(report.get("done", false)) and \
+				int(ext.get_effect_report().get("pending_transactions", 0)) == 0:
+			return true
+	return false
+
+
+func _active_resonance_counts(ext: Object, handle: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	var snapshot: Dictionary = ext.get_ideology_snapshot(handle)
+	var active: PackedInt32Array = snapshot.get(
+		"active_synergy_ids", PackedInt32Array())
+	for tier in 4:
+		out.append(1 if active.has(tier) else 0)
+	return out
 
 
 func _country_ext(country_ir: Dictionary) -> Object:

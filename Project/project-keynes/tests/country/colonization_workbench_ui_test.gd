@@ -173,6 +173,17 @@ func _run() -> void:
 		and stub.quote_calls == 0 and panel._start.disabled)
 	_expect("source branch details are available before choosing a destination",
 		panel._preview_traits.text.contains("采集传统") and panel._preview_metrics.text.contains("当地族人 6"))
+	var compact_row: ColonizationFamilyRow = panel._quote_row_refs[11]
+	var visible_rows_copy := _visible_text(panel)
+	_expect("opening screen omits hover instructions and repeated people labels",
+		not visible_rows_copy.contains("悬停")
+		and not visible_rows_copy.contains("至少留")
+		and not visible_rows_copy.contains("家族所有")
+		and not visible_rows_copy.contains("可派 ")
+		and not visible_rows_copy.contains("威望 ")
+		and not visible_rows_copy.contains("产业 ")
+		and compact_row.get_node("Margin/Line/Population").text == "6"
+		and compact_row.get_node("Margin/Line/PopulationIcon") is IconBadge)
 	_expect("dispatch preference text and badges hide locked buildings",
 		panel._preview_preferences.text.contains("采集营地")
 		and not panel._preview_preferences.text.contains("自动化农场")
@@ -468,3 +479,16 @@ func _run_controller_guard() -> void:
 	_expect("missing family and foreign source cannot be used as dispatch origins",
 		not controller.can_family_colonize_from(99, 3) and not controller.can_family_colonize_from(11, 8))
 	controller.free()
+
+
+func _visible_text(node: Node) -> String:
+	var parts := PackedStringArray()
+	if node is Label:
+		parts.append((node as Label).text)
+	elif node is RichTextLabel:
+		parts.append((node as RichTextLabel).get_parsed_text())
+	for child in node.get_children():
+		if child is CanvasItem and not (child as CanvasItem).visible:
+			continue
+		parts.append(_visible_text(child))
+	return "\n".join(parts)

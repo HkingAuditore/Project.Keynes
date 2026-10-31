@@ -33,6 +33,7 @@ func _run() -> void:
 	var territory := _territory_cells(runtime, handle)
 	_expect("territory is non-empty", not territory.is_empty())
 	_check_summary(runtime, handle, territory)
+	_check_market_metrics(runtime, handle, territory)
 	_check_professions(runtime, handle)
 	_check_buildings(runtime, handle)
 	_check_settlements(runtime, handle, territory)
@@ -86,11 +87,141 @@ func _check_summary(ext: Object, handle: int, territory: PackedInt32Array) -> vo
 	_expect("summary satisfaction is a q16 ratio",
 		int(summary.get("satisfaction_q16", -1)) >= 0 and
 		int(summary.get("satisfaction_q16", 65537)) <= 65536)
+	_expect("summary exposes population-weighted living standard",
+		bool(summary.get("living_standard_level_valid", false)) and
+		int(summary.get("living_standard_level_q16", -1)) >= 0 and
+		int(summary.get("living_standard_level_q16", 0)) <= 6 * 65536)
 	_expect("summary exposes five sectors",
 		(summary.get("sector_units", PackedInt64Array()) as PackedInt64Array).size() == 5)
 	_expect("summary state day range is ordered",
 		int(summary.get("state_day_min", 0)) <= int(summary.get("state_day_max", -1)))
 	_expect("summary does not saturate", int(summary.get("saturation_count", 1)) == 0)
+
+
+func _check_market_metrics(ext: Object, handle: int, territory: PackedInt32Array) -> void:
+	var summary: Dictionary = ext.get_country_economy_overview(handle, "summary")
+	var expected := _expected_market_metrics(ext, territory)
+	for metric in ["consumer_price_index", "producer_price_index",
+			"consumer_shortage", "industrial_shortage"]:
+		_expect("%s matches committed market weighting" % metric,
+			int(summary.get("%s_q16" % metric, -1)) == int(expected["%s_q16" % metric]))
+		_expect("%s validity follows positive weighted data" % metric,
+			bool(summary.get("%s_valid" % metric, not bool(expected["%s_valid" % metric]))) ==
+			bool(expected["%s_valid" % metric]))
+	_expect("consumer and producer indices are nonnegative Q16 values",
+		int(summary.get("consumer_price_index_q16", -1)) >= 0 and
+		int(summary.get("producer_price_index_q16", -1)) >= 0)
+	_expect("shortage aggregates stay within Q16 ratio bounds",
+		int(summary.get("consumer_shortage_q16", -1)) >= 0 and
+		int(summary.get("consumer_shortage_q16", 65537)) <= 65536 and
+		int(summary.get("industrial_shortage_q16", -1)) >= 0 and
+		int(summary.get("industrial_shortage_q16", 65537)) <= 65536)
+
+	var invalid_scope_checked := false
+	for cell in territory:
+		var scope := PackedInt32Array([cell])
+		var scoped_expected := _expected_market_metrics(ext, scope)
+		var has_invalid_metric := false
+		for metric in ["consumer_price_index", "producer_price_index",
+				"consumer_shortage", "industrial_shortage"]:
+			has_invalid_metric = has_invalid_metric or not bool(
+				scoped_expected["%s_valid" % metric])
+		if not has_invalid_metric:
+			continue
+		var scoped: Dictionary = ext.get_country_economy_overview(
+			handle, "summary", cell)
+		var invalid_matches := true
+		for metric in ["consumer_price_index", "producer_price_index",
+				"consumer_shortage", "industrial_shortage"]:
+			invalid_matches = invalid_matches and (
+				int(scoped.get("%s_q16" % metric, -1)) ==
+				int(scoped_expected["%s_q16" % metric]) and
+				bool(scoped.get("%s_valid" % metric, true)) ==
+				bool(scoped_expected["%s_valid" % metric]))
+		_expect("single-cell invalid macro denominators are explicit",
+			invalid_matches)
+		invalid_scope_checked = true
+		break
+	_expect("fixture includes a no-weight macro metric scope", invalid_scope_checked)
+
+
+func _expected_market_metrics(ext: Object, cells: PackedInt32Array) -> Dictionary:
+	var weighted := {
+		"consumer_price_index_q16": 0, "producer_price_index_q16": 0,
+		"consumer_shortage_q16": 0, "industrial_shortage_q16": 0,
+	}
+	var weights := {
+		"consumer_price_index": 0, "producer_price_index": 0,
+		"consumer_shortage": 0, "industrial_shortage": 0,
+	}
+	for cell in cells:
+		var market: Dictionary = ext.get_market_cell_snapshot(cell)
+		if not bool(market.get("ok", false)):
+			continue
+		var good_ids: PackedStringArray = market.get("good_ids", PackedStringArray())
+		var tags: PackedStringArray = market.get(
+			"good_technology_tags", PackedStringArray())
+		var offsets: PackedInt32Array = market.get(
+			"good_technology_tag_offsets", PackedInt32Array())
+		var demand: PackedInt64Array = market.get("demand_ema", PackedInt64Array())
+		var business: PackedInt64Array = market.get(
+			"business_demand_ema", PackedInt64Array())
+		var supply: PackedInt64Array = market.get(
+			"offered_supply_ema", PackedInt64Array())
+		var prices: PackedInt32Array = market.get("price", PackedInt32Array())
+		var anchors: PackedInt32Array = market.get(
+			"cost_anchor_price", PackedInt32Array())
+		var shortages: PackedInt32Array = market.get(
+			"shortage_q16", PackedInt32Array())
+		for good in range(good_ids.size()):
+			var food := _has_industry_tag(offsets, tags, good, "industry.food")
+			var textile := _has_industry_tag(offsets, tags, good, "industry.textile")
+			var consumer := _has_industry_tag(offsets, tags, good, "industry.consumer")
+			var is_industrial := _has_industry_tag(offsets, tags, good, "industry.primary") or \
+				_has_industry_tag(offsets, tags, good, "industry.construction") or \
+				_has_industry_tag(offsets, tags, good, "industry.metals") or \
+				_has_industry_tag(offsets, tags, good, "industry.chemicals") or \
+				_has_industry_tag(offsets, tags, good, "industry.energy") or \
+				_has_industry_tag(offsets, tags, good, "industry.machinery")
+			if good >= demand.size() or good >= business.size() or good >= supply.size() or \
+				good >= prices.size() or good >= anchors.size() or good >= shortages.size():
+				continue
+			var household_demand := maxi(0, demand[good])
+			var business_demand := maxi(0, business[good])
+			var offered_supply := maxi(0, supply[good])
+			var anchor := anchors[good]
+			var ratio_q16 := int(maxi(0, prices[good]) * 65536 / anchor) if anchor > 0 else 0
+			if food or textile or consumer:
+				if household_demand > 0 and anchor > 0:
+					weighted["consumer_price_index_q16"] += ratio_q16 * household_demand
+					weights["consumer_price_index"] += household_demand
+			if offered_supply > 0 and anchor > 0:
+				weighted["producer_price_index_q16"] += ratio_q16 * offered_supply
+				weights["producer_price_index"] += offered_supply
+			if (textile or consumer) and household_demand > 0:
+				weighted["consumer_shortage_q16"] += clampi(shortages[good], 0, 65536) * household_demand
+				weights["consumer_shortage"] += household_demand
+			if is_industrial and business_demand > 0:
+				weighted["industrial_shortage_q16"] += clampi(shortages[good], 0, 65536) * business_demand
+				weights["industrial_shortage"] += business_demand
+	for metric in ["consumer_price_index", "producer_price_index",
+			"consumer_shortage", "industrial_shortage"]:
+		var weight := int(weights[metric])
+		var valid := weight > 0
+		weighted["%s_valid" % metric] = valid
+		weighted["%s_q16" % metric] = int(
+			int(weighted["%s_q16" % metric]) / weight) if valid else 0
+	return weighted
+
+
+func _has_industry_tag(offsets: PackedInt32Array, tags: PackedStringArray,
+		good: int, wanted: String) -> bool:
+	if offsets.size() <= good + 1:
+		return false
+	for index in range(offsets[good], offsets[good + 1]):
+		if String(tags[index]) == wanted:
+			return true
+	return false
 
 
 func _check_professions(ext: Object, handle: int) -> void:

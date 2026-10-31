@@ -11,8 +11,29 @@ class CountryReadStub extends RefCounted:
 		return {"ok": handle == 42, "cash": 1234560000}
 
 class EconomyReadStub extends RefCounted:
+	var summary := {
+		"population": 6789,
+		"satisfaction_q16": 58982,
+		"living_standard_level_q16": 294912,
+		"living_standard_level_valid": true,
+		"survival_satisfaction_q16": 65536,
+		"unemployed": 678,
+		"job_capacity": 1000,
+		"job_openings": 100,
+		"consumer_price_index_q16": 98304,
+		"consumer_price_index_valid": true,
+		"producer_price_index_q16": 81920,
+		"producer_price_index_valid": true,
+		"consumer_shortage_q16": 0,
+		"consumer_shortage_valid": false,
+		"industrial_shortage_q16": 0,
+		"industrial_shortage_valid": false,
+	}
+
 	func country_economy_overview(handle: int, view: String) -> Dictionary:
-		return {"ok": handle == 42 and view == "summary", "population": 6789}
+		var result := summary.duplicate(true)
+		result["ok"] = handle == 42 and view == "summary"
+		return result
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -30,11 +51,47 @@ func _run() -> void:
 	var ledger := EconomyGdpLedger.new()
 	ledger.set("_has_sample", true)
 	ledger.set("_national_ytd", 2345670000.0)
-	var overview := vm.build_overview(CountryReadStub.new(), EconomyReadStub.new(), 42, ledger)
-	_check("overview reads player summary and converts native currency units",
+	ledger.set("_national_population", 6789)
+	var economy_stub := EconomyReadStub.new()
+	var overview := vm.build_overview(CountryReadStub.new(), economy_stub, 42, ledger)
+	_check("overview reads annual GDP, territory and weighted market indices",
 		overview.country_name == "测试王国" and overview.territory == "36"
-		and overview.cash == UITokens.format_compact_number_cn(123456.0, 2)
-		and overview.gdp == UITokens.format_compact_number_cn(234567.0, 2) and overview.population == "6789")
+		and overview.gdp == UITokens.format_compact_number_cn(234567.0, 2)
+		and overview.per_capita_gdp == UITokens.format_compact_number_cn(
+			2345670000.0 / 6789.0 / 10000.0, 2)
+		and overview.cpi == "1.50×" and overview.ppi == "1.25×"
+		and overview.satisfaction == "90.0%"
+		and overview.living_standard.begins_with("4.50级")
+		and overview.alerts.size() == 1
+		and String(overview.alerts[0].key) == "vacancies")
+	economy_stub.summary.unemployed = 679
+	economy_stub.summary.survival_satisfaction_q16 = 49152
+	economy_stub.summary.consumer_shortage_q16 = 16384
+	economy_stub.summary.consumer_shortage_valid = true
+	economy_stub.summary.industrial_shortage_q16 = 16384
+	economy_stub.summary.industrial_shortage_valid = true
+	var all_alerts := VM.build_alerts(economy_stub.summary)
+	_check("all five country concerns trigger at inclusive thresholds",
+		all_alerts.size() == 5
+		and String(all_alerts[0].key) == "unemployment"
+		and String(all_alerts[1].key) == "survival"
+		and String(all_alerts[2].key) == "consumer_shortage"
+		and String(all_alerts[3].key) == "industrial_shortage"
+		and String(all_alerts[4].key) == "vacancies")
+	var below_threshold := economy_stub.summary.duplicate(true)
+	below_threshold.unemployed = 9
+	below_threshold.survival_satisfaction_q16 = 49153
+	below_threshold.consumer_shortage_q16 = 16383
+	below_threshold.industrial_shortage_q16 = 16383
+	below_threshold.job_openings = 9
+	_check("below-threshold concerns remain quiet", VM.build_alerts(below_threshold).is_empty())
+	var zero_denominators := economy_stub.summary.duplicate(true)
+	zero_denominators.population = 0
+	zero_denominators.job_capacity = 0
+	zero_denominators.consumer_shortage_valid = false
+	zero_denominators.industrial_shortage_valid = false
+	_check("zero denominators and invalid shortage data never alert",
+		VM.build_alerts(zero_denominators).is_empty())
 	var snapshot := {"technology_states": states, "technology_progress": progress,
 		"queue_technology_indices": PackedInt32Array()}
 	var model := vm.build(snapshot)
@@ -77,6 +134,21 @@ func _run() -> void:
 	badge.pressed.connect(manager._on_era_indicator_pressed)
 	dialog.dismiss_requested.connect(manager._on_era_popup_dismissed)
 	await process_frame
+	var top_bar := bar as PlayerTopBar
+	top_bar.set_country_status(1234560000.0, true, 6789, true)
+	_check("treasury and population render image-led compact status values",
+		top_bar.get_node("%TreasuryValue").text == "12.35万"
+		and top_bar.get_node("%PopulationValue").text == "6789"
+		and top_bar.get_node("Margin/Row/CountryStatus/TreasuryButton/Row/Icon").texture != null
+		and top_bar.get_node("Margin/Row/CountryStatus/PopulationButton/Row/Icon").texture != null)
+	_check("status pills stay annotation free",
+		String(top_bar.get_node("%TreasuryButton").tooltip_text).is_empty()
+		and String(top_bar.get_node("%PopulationButton").tooltip_text).is_empty())
+	top_bar.set_country_status(0.0, false, 0, false)
+	_check("invalid country status snapshots show em dashes",
+		top_bar.get_node("%TreasuryValue").text == "—"
+		and top_bar.get_node("%PopulationValue").text == "—")
+	top_bar.set_country_status(1234560000.0, true, 6789, true)
 	badge.set_model(model)
 	(bar as PlayerTopBar).set_era_name(String(model.era_name))
 	_check("initial bind never plays promotion", not badge.get("_celebrating"))
@@ -85,8 +157,9 @@ func _run() -> void:
 		root.mode = Window.MODE_WINDOWED
 		root.size = dimensions
 		await create_timer(0.15).timeout
+		var viewport_size := root.get_visible_rect().size
 		_check("badge is top centered at %s" % dimensions,
-			is_equal_approx(badge.global_position.x + 110.0, dimensions.x * 0.5)
+			is_equal_approx(badge.global_position.x + 110.0, viewport_size.x * 0.5)
 			and is_equal_approx(body.global_position.y, -110.0))
 		await _capture("collapsed_%dx%d" % [dimensions.x, dimensions.y])
 	badge.get_node("Hit").emit_signal("mouse_entered")
@@ -95,17 +168,55 @@ func _run() -> void:
 		and is_equal_approx(body.scale.x, UITokens.ERA_BADGE_HOVER_SCALE))
 	_check("badge has no redundant era caption", badge.get_node_or_null("Badge/Status") == null)
 	_check("hover hit region stays at screen edge while badge slides down",
-		(badge.get_node("Hit") as Control).get_global_rect().has_point(Vector2(root.size.x * 0.5, 1.0)))
+		(badge.get_node("Hit") as Control).get_global_rect().has_point(
+			Vector2(root.get_visible_rect().size.x * 0.5, 1.0)))
+	await _capture("topbar_country_status")
 	badge.set_offer_available(true)
 	await _capture("reward_hover")
 	_check("reward reminder updates shader edge", bool((badge.get_node("Badge/Icon").material as ShaderMaterial).get_shader_parameter("reward_available")))
 	badge.get_node("Hit").emit_signal("pressed")
 	dialog.refresh_overview(overview)
 	await create_timer(UITokens.ERA_BADGE_SLIDE_SECONDS + 0.06).timeout
-	_check("click fully reveals badge and opens a four-metric overview",
+	_check("click fully reveals badge and opens a seven-metric overview with an inline concern row",
 		is_equal_approx(body.position.y, 10.0) and dialog.visible and not dialog.is_offer_open()
-		and dialog.get_node("%Metrics").get_child_count() == 4)
+		and dialog.get_node("%Metrics").get_child_count() == 7
+		and dialog.get_node("%Metrics").columns == 3)
+	var gdp_card := dialog.get_node("%GDP") as MetricCard
+	_check("overview uses compact icon-plus-label cards with full hover descriptions",
+		gdp_card.get_node("Margin/Row/IconBadge").visible
+		and gdp_card.get_node("%TitleLabel").visible
+		and dialog.get_node("%PerCapitaGDP/%TitleLabel").visible
+		and dialog.get_node("%LivingStandard/%TitleLabel").visible
+		and dialog.get_node("%CPI/%TitleLabel").visible
+		and dialog.get_node("%PPI/%TitleLabel").visible
+		and gdp_card.tooltip_text.contains("年度 GDP")
+		and dialog.get_node("%CPI").tooltip_text.contains("成本锚"))
+	_check("current alert icon carries the actual ratio tooltip",
+		bool(dialog.get_node("%Vacancies").visible)
+		and String(dialog.get_node("%Vacancies").tooltip_text).contains("10.00%")
+		and String(dialog.get_node("%Vacancies/Text").text) == "岗位空缺严重")
 	await _capture("country_overview")
+	var all_alert_overview := overview.duplicate(true)
+	all_alert_overview.alerts = all_alerts
+	dialog.refresh_overview(all_alert_overview)
+	var visible_alert_count := 0
+	for icon_name in ["Unemployment", "Survival", "ConsumerShortage",
+			"IndustrialShortage", "Vacancies"]:
+		if bool(dialog.get_node("%AlertIcons/" + icon_name).visible):
+			visible_alert_count += 1
+	_check("simultaneous concerns use the five reusable alert icon slots",
+		visible_alert_count == 5 and not dialog.get_node("%Clear").visible)
+	# 新问题逐条淡入，截图要等淡入结束才能看清最终排版。
+	await create_timer(0.5).timeout
+	await _capture("country_overview_all_alerts")
+	var clear_overview := overview.duplicate(true)
+	clear_overview.alerts = []
+	dialog.refresh_overview(clear_overview)
+	_check("empty concern state shows one calm clear chip rather than an icon list",
+		bool(dialog.get_node("%Clear").visible)
+		and not bool(dialog.get_node("%Vacancies").visible)
+		and String(dialog.get_node("%Clear/Text").text) == "暂无突出问题")
+	await _capture("country_overview_clear")
 	manager._on_era_popup_dismissed()
 	badge.get_node("Hit").emit_signal("mouse_exited")
 	await create_timer(0.2).timeout
@@ -135,9 +246,10 @@ func _run() -> void:
 		root.size = dimensions
 		await create_timer(0.3).timeout
 		var popup := dialog.get_node("%Popup") as Control
+		var viewport_size := root.get_visible_rect().size
 		_check("compact overview and reward fit viewport %s" % dimensions,
-			popup.get_global_rect().end.y <= dimensions.y - 8 and popup.size.x <= 600
-			and is_equal_approx(popup.get_global_rect().get_center().x, dimensions.x * 0.5)
+			popup.get_global_rect().end.y <= viewport_size.y - 8 and popup.size.x <= 600
+			and is_equal_approx(popup.get_global_rect().get_center().x, viewport_size.x * 0.5)
 			and dialog.mouse_filter == Control.MOUSE_FILTER_IGNORE and dialog.is_offer_open())
 		await _capture("compact_rewards_%dx%d" % [dimensions.x, dimensions.y])
 	dialog.close_offer()

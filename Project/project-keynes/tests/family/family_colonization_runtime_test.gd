@@ -446,6 +446,28 @@ func _run_worker_local_market_procurement(catalog: Dictionary) -> void:
 	_expect("Country worker purchase completes into expedition cargo",
 		reached_outbound and _market_stock_total(ext, 0) < stock_before
 		and cash_after >= 0 and cash_after < cash_before)
+	# 开拓采购的国库现金必须进非税支出通道：否则国库现金在掉，「国库收支」里
+	# 却查不到这笔钱是为商队货物付的。公布落在下一次 commit_fiscal（采购在空闲
+	# 边界结算，见 tax-fiscal-runtime.md），所以要再推几拍等批次发布。
+	var expedition_outflow := 0
+	for _fiscal_attempt in range(96):
+		var fiscal: Dictionary = ext.get_country_fiscal_snapshot(country_handle)
+		var non_tax_kinds: PackedStringArray = fiscal.get(
+			"non_tax_outflow_kinds", PackedStringArray())
+		var non_tax_values: PackedInt64Array = fiscal.get(
+			"non_tax_outflow", PackedInt64Array())
+		var expedition_slot := non_tax_kinds.find("expedition_procurement")
+		if expedition_slot >= 0 and expedition_slot < non_tax_values.size():
+			expedition_outflow = int(non_tax_values[expedition_slot])
+		if expedition_outflow > 0:
+			break
+		ext.capture_economy_day_inputs(-1)
+		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
+		ext.set_runtime_clock(false, 1000.0)
+		OS.delay_msec(3)
+		ext.set_runtime_clock(true, 1000.0)
+	_expect("expedition cargo purchase is booked as a non-tax treasury outflow",
+		expedition_outflow > 0)
 	_expect("employed expedition departure crosses a worker commit",
 		committed_after_departure)
 	_expect("Country worker local purchase conserves goods and money",
@@ -1252,6 +1274,9 @@ func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 	var escrowed_something := false
 	var stayed_preparing := true
 	var conserved := true
+	# 商队向本地商人买入随行货物用的是国库现金，这笔钱必须出现在非税支出通道里：
+	# 否则国库现金在掉，「国库收支」里却查不到是为开拓付的。
+	var expedition_outflow_seen := false
 	var day := start_day
 	for step in range(5):
 		day += 1
@@ -1263,6 +1288,15 @@ func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 		if bool(report.get("fatal", false)) \
 				or int(report.get("goods_error", -1)) != 0:
 			conserved = false
+		var fiscal: Dictionary = ext.get_country_fiscal_snapshot(country_handle)
+		var non_tax_kinds: PackedStringArray = fiscal.get(
+			"non_tax_outflow_kinds", PackedStringArray())
+		var non_tax_values: PackedInt64Array = fiscal.get(
+			"non_tax_outflow", PackedInt64Array())
+		var expedition_slot := non_tax_kinds.find("expedition_procurement")
+		if expedition_slot >= 0 and expedition_slot < non_tax_values.size() \
+				and int(non_tax_values[expedition_slot]) > 0:
+			expedition_outflow_seen = true
 		var states: PackedInt32Array = ext.get_family_expeditions(
 			country_handle, 0, 64).get("states", PackedInt32Array())
 		if states.size() != 1 or int(states[0]) != 4:
@@ -1274,6 +1308,8 @@ func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 		escrow_before = escrow_now
 	_expect("a preparing party escrows the daily source surplus it can afford",
 		stayed_preparing and conserved and escrowed_something)
+	_expect("preparing expedition cargo is booked as a non-tax treasury outflow",
+		expedition_outflow_seen)
 	var snap: Dictionary = ext.get_family_expedition_snapshot(country_handle,
 		handle)
 	_expect("preparing snapshot reports unclamped bridge demand for progress",

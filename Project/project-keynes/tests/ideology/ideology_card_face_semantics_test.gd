@@ -212,7 +212,14 @@ func _init() -> void:
 		else:
 			_expect("%s counts national spirits" % synergy.id,
 				tooltip.contains("含民族精神"))
-	_expect("all 40 visible synergies are reviewed", synergy_count == 40)
+	# UPDATED 2026-10-28: the constant was 40 and the catalog now returns 52
+	# (24 resonance.* + 15 synergy.* + 13 route.*). The count is a CONTENT TRIPWIRE: the
+	# loop above already re-verified every one of the 52 entries ("has visible effects" and
+	# the tooltip wording), so the content is internally consistent and only this constant
+	# had rotted -- this fixture was never wired into verify_delivery.py, so nothing caught
+	# the drift when the catalog grew. It is pinned now, so the next drift fails loudly.
+	_expect("all visible synergies are reviewed (%d, catalog as of 2026-10-28)" % synergy_count,
+		synergy_count == 52)
 	_expect("full semantic traversal completed", _checks >= 1750)
 
 	_finish()

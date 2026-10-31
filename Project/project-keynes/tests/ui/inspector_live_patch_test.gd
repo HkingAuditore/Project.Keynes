@@ -490,7 +490,7 @@ func _run() -> void:
 	loading.set_progress("terrain", 0.20)
 	if not is_equal_approx(loading._progress.value, 65.0):
 		failures.append("loading progress regressed after an older stage update")
-	if loading._stage_label.text != "正在烘焙地形与水文图层":
+	if loading._stage_label.text != "生成地形和水文":
 		failures.append("loading stage was not localized for players")
 	loading.hide_completed()
 	await create_timer(0.55).timeout
