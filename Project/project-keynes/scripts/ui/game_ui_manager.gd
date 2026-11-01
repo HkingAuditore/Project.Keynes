@@ -23,6 +23,7 @@ signal annual_report_selected(report_id: int)
 signal annual_history_page_requested(offset: int)
 
 const AnnualReportWorkspaceScene = preload("res://scenes/ui/annual_report_workspace.tscn")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 var _annual_report_workspace: Control
 
 const RIGHT_PANEL_WIDTH := 460.0
@@ -1302,6 +1303,67 @@ func map_safe_area() -> Rect2:
 	return safe
 
 
+## 刘海/挖孔/圆角：把整棵 UI（UIRoot 及其下 HUDLayer/PanelLayer/ModalLayer）整体内缩。
+## 安全区来自 DisplayServer.get_display_safe_area()，MobileUIScaling 已换算成设计像素；
+## 桌面/Web 上恒为 0，因此这里对桌面是完全的 no-op。地图（Node2D）不内缩——
+## 让地图继续铺满全屏、只把可点控件避让开，是廉价且不会出现黑边的做法。
+func _apply_ui_safe_area() -> void:
+	var ui_root := get_node_or_null("UIRoot") as Control
+	if ui_root == null:
+		return
+	var insets := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings != null and settings.has_method("ui_scaling"):
+		var scaling = settings.call("ui_scaling")
+		if scaling != null:
+			insets = scaling.call("safe_insets")
+	ui_root.offset_left = float(insets.get("left", 0.0))
+	ui_root.offset_top = float(insets.get("top", 0.0))
+	ui_root.offset_right = -float(insets.get("right", 0.0))
+	ui_root.offset_bottom = -float(insets.get("bottom", 0.0))
+
+
+## 常驻 HUD 栏内按钮的最小高度（设计像素）。按当前移动档位换算：
+## 52 × 0.5dp/单位 ≈ 26dp（440dpi + 总缩放 1.375）。这里刻意不追到 44dp——
+## 两条栏的高度是 anchor+offset 写死的（80 / 86），按钮再高就会溢出栏外；
+## 真要抬到 44dp 必须同时改 PlayerTopBar.BAR_HEIGHT、CountryActionBar.BAR_HEIGHT
+## 和 _base_map_safe_area()，属于 HUD 另一条线的工作。面板类控件统一走 TouchUI。
+const TOUCH_MIN_HEIGHT := 52.0
+
+
+## 手机横屏：顶栏的日期块/资源块原本只有 48 设计像素高（≈40dp），主操作栏 66（≈59dp）已经够。
+## 只抬这两条常驻栏；面板内部密集的按钮在 ScrollContainer 里，改了反而容易撑破卡片。
+func _apply_touch_hud_metrics() -> void:
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null or not settings.has_method("ui_scaling"):
+		return
+	var scaling = settings.call("ui_scaling")
+	if scaling == null or not bool(scaling.call("is_touch_profile")):
+		return
+	for path in ["UIRoot/HUDLayer/PlayerTopBar", "UIRoot/HUDLayer/CountryActionBar"]:
+		var bar := get_node_or_null(path)
+		if bar != null and bar.has_method("apply_touch_metrics"):
+			bar.call("apply_touch_metrics", TOUCH_MIN_HEIGHT)
+	# 面板层：经济卷宗/科技/家族/理念/国家面板/暂停菜单/GM 控制台/殖民规划/年报/store
+	# 全部挂在这三层的下面。这里一次性 watch 三层，靠 child_entered_tree 覆盖
+	# 「之后才实例化/换页/重建列表」的控件——不用在几十个 .tscn 里各写一遍。
+	_watch_touch_panels()
+
+
+## 面板层触摸命中区。桌面档 TouchUI 内部直接 return，等于 no-op。
+## 顶栏 / 主操作栏已经由上面的 apply_touch_metrics(TOUCH_MIN_HEIGHT) 处理：
+## 它们的高度是 anchor+offset 写死的 80 / 86 设计像素，内部按钮若抬到 88 会溢出栏外，
+## 所以用 skip_names 跳过（要抬到 44dp 必须同步改 BAR_HEIGHT 与地图安全区）。
+func _watch_touch_panels() -> void:
+	var options := {"skip_names": ["PlayerTopBar", "CountryActionBar"]}
+	for path in ["UIRoot/HUDLayer", "UIRoot/PanelLayer", "UIRoot/ModalLayer", "UIRoot/DebugLayer"]:
+		var layer := get_node_or_null(path)
+		if layer != null:
+			TouchUI.watch(layer, options)
+	if _right_panel != null:
+		TouchUI.watch(_right_panel)
+
+
 func _base_map_safe_area() -> Rect2:
 	var viewport_size := get_viewport().get_visible_rect().size
 	var top_height := PlayerTopBar.BAR_HEIGHT + 4.0
@@ -1747,6 +1809,10 @@ func _bind_ui() -> void:
 	get_viewport().size_changed.connect(_layout_top_bar)
 	get_viewport().size_changed.connect(_layout_right_panel)
 	get_viewport().size_changed.connect(_layout_family_founding_dialog)
+	get_viewport().size_changed.connect(_apply_ui_safe_area)
+	get_viewport().size_changed.connect(_apply_touch_hud_metrics)
+	_apply_ui_safe_area()
+	_apply_touch_hud_metrics()
 	_layout_overlay_legend()
 	_log_ui_layout_diagnostics("bind_ui")
 

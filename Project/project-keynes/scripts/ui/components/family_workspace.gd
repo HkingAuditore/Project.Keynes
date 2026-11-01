@@ -1,6 +1,8 @@
 extends Control
 class_name FamilyWorkspace
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 const FamilyVBoxScene := preload("res://scenes/ui/family/family_vbox.tscn")
 const FamilyHBoxScene := preload("res://scenes/ui/family/family_hbox.tscn")
 const FamilyGridScene := preload("res://scenes/ui/family/family_grid.tscn")
@@ -1460,7 +1462,9 @@ func _update_nav_state() -> void:
 func _apply_responsive_layout() -> void:
 	if _nav_column == null or _safe_margin == null:
 		return
-	var compact := size.x < COMPACT_WIDTH
+	# 触摸档也走紧凑版：手机的**逻辑宽度有 1942**，纯宽度断点会把竖排书脊导航留在
+	# 屏幕上——那一列按钮只有 19dp 高，而且挤压正文。手机改用横向滚动页签条。
+	var compact := size.x < COMPACT_WIDTH or TouchUI.is_short_viewport()
 	var focus_owner := get_viewport().gui_get_focus_owner()
 	var restore_navigation := compact != _mobile_nav.visible and (
 		_nav_buttons.values().has(focus_owner) or _mobile_buttons.values().has(focus_owner))

@@ -1,6 +1,8 @@
 extends Control
 class_name IdeologyWorkspace
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 # Papercut deck-building view over the native ideology authority. Facade-only:
 # every mutation is a PlayerController command, and rows are rebuilt only when
 # the compact native snapshot signature changes. Animation state never feeds
@@ -810,6 +812,8 @@ func refresh_model(model: Dictionary) -> void:
 
 func set_compact(compact: bool) -> void:
 	_bind_nodes()
+	# 触摸档（手机横屏逻辑 1942×873）走紧凑版：让渡一列给卡面，页签才有 44dp 的位置。
+	compact = compact or TouchUI.is_short_viewport()
 	var changed := compact != _compact
 	_compact = compact
 	# Card glyph sizes are cheap to reapply, so they never wait for a signature

@@ -43,9 +43,11 @@ ShoreSamples sample_shore_neighborhood(vec2 uv, vec2 shore_frac) {
 	s.nearby_ocean_cnt = 0.0;
 	s.total_cnt        = 0.0;
 
-#ifdef PK_TERRAIN_STATIC_BAKED
+#if defined(PK_TERRAIN_STATIC_BAKED) || defined(PK_TERRAIN_STATIC_PACKED)
 	// 8 邻域占比已在烘焙时按 texel 求好，双线性插值后过渡更连续。海占比取水 − 湖
 	// （海冰邻居也算作海，与旧计数只差在极地冰缘的 halo 配色）。
+	// [surface-array-edge 2026-11-02] 非 tiled 打包路径（surface array layer4.BA）同样走这里：
+	// Web 陆地 / HIGH 水面因此从 8 次 map_index fetch 降为 0 次，海岸 halo 也变成连续量。
 	if (terrain_static_baked) {
 		s.nearby_water_cnt = shore_frac.x * 8.0;
 		s.nearby_land_cnt  = 8.0 - s.nearby_water_cnt;

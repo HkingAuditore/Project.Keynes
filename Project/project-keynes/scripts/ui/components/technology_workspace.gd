@@ -1,6 +1,7 @@
 extends Control
 class_name TechnologyWorkspace
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
@@ -347,7 +348,10 @@ func set_compact(compact: bool) -> void:
 
 
 func _update_effective_compact() -> void:
-	var effective := _compact_requested or (size.x > 0.0 and size.x < INTERNAL_COMPACT_WIDTH)
+	# 触摸档：手机的**逻辑宽度有 1942**（2670/1.375），纯宽度断点永远判成「宽屏」，
+	# 于是手机上跑的是三栏桌面版、页签只有 17dp。这里补一条「触摸 + 纵向吃紧」的判据。
+	var effective := _compact_requested or (size.x > 0.0 and size.x < INTERNAL_COMPACT_WIDTH) \
+		or TouchUI.is_short_viewport()
 	if _compact != effective:
 		_compact = effective
 		_policy_open = not effective

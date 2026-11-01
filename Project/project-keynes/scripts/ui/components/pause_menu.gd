@@ -3,6 +3,7 @@ extends Control
 
 const MenuButtonScene := preload("res://scenes/ui/pause_menu_button.tscn")
 const SettingsFormScene := preload("res://scenes/ui/pause_settings_form.tscn")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 
 signal continue_requested()
 signal return_menu_requested()
@@ -13,6 +14,9 @@ var _panel: VBoxContainer
 var _rows: VBoxContainer
 var _title_label: Label
 var _status: Label
+var _frame: PanelContainer
+var _center: CenterContainer
+var _rows_scroll: ScrollContainer
 var _pending_destructive_action: String = ""
 
 
@@ -21,8 +25,57 @@ func _ready() -> void:
 	_title_label = get_node_or_null("Center/Frame/Panel/Title") as Label
 	_rows = get_node_or_null("Center/Frame/Panel/Rows") as VBoxContainer
 	_status = get_node_or_null("Center/Frame/Panel/Status") as Label
+	_frame = get_node_or_null("Center/Frame") as PanelContainer
+	_center = get_node_or_null("Center") as CenterContainer
 	if _panel == null or _title_label == null or _rows == null or _status == null:
 		push_error("PauseMenu 必须通过 pause_menu.tscn 实例化。")
+	if TouchUI.is_touch():
+		call_deferred("_apply_touch_layout")
+
+
+## 触摸档：每个菜单按钮要 44dp（= 88 设计像素），「加载游戏」列出 5 个存档就有 10 个
+## 按钮，纵向必然超过手机的逻辑高度（873）。CenterContainer 会把超出部分上下对称裁掉，
+## 而「返回 / 继续」正好在最下面 —— 于是面板关不掉。这里把 Frame 改成铺满视口、
+## 按钮列塞进 ScrollContainer，把溢出交给滚动条。桌面档不走这条路径，.tscn 未改。
+func _apply_touch_layout() -> void:
+	if _rows_scroll != null or _frame == null or _center == null or _panel == null:
+		return
+	var host := _center.get_parent()
+	if host == null:
+		return
+	_center.remove_child(_frame)
+	host.add_child(_frame)
+	_frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_frame.offset_left = 28.0
+	_frame.offset_right = -28.0
+	_frame.offset_top = 14.0
+	_frame.offset_bottom = -14.0
+	_frame.custom_minimum_size = Vector2(320.0, 240.0)
+	_rows_scroll = ScrollContainer.new()
+	_rows_scroll.name = "RowsScroll"
+	_rows_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_rows_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rows_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_rows.get_parent().remove_child(_rows)
+	_rows_scroll.add_child(_rows)
+	# ScrollContainer 不会把子节点在「非滚动轴」上撑满，只按最小宽度摆（实测按钮塌成 8px）。
+	# 必须显式给 EXPAND_FILL，再在尺寸变化时把列表宽对齐到滚动区宽（减掉加宽后的滚动条）。
+	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_panel.add_child(_rows_scroll)
+	_panel.move_child(_rows_scroll, 2)
+	TouchUI.widen_scrollbars(_rows_scroll)
+	_rows_scroll.resized.connect(_sync_rows_width)
+	_sync_rows_width.call_deferred()
+
+
+func _sync_rows_width() -> void:
+	if _rows_scroll == null or _rows == null:
+		return
+	var bar_width := 0.0
+	var bar := _rows_scroll.get_v_scroll_bar()
+	if bar != null:
+		bar_width = maxf(bar.custom_minimum_size.x, bar.size.x)
+	_rows.custom_minimum_size.x = maxf(0.0, _rows_scroll.size.x - bar_width)
 
 
 func open() -> void:

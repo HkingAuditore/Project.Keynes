@@ -83,6 +83,15 @@ func bar_height() -> float:
 	return BAR_HEIGHT
 
 
+## 触摸端命中区：66 设计像素本来就 ≥44dp，这里只保证不会被更小的主题覆盖回去。
+## 由 GameUIManager 在移动端尺寸变化时调用；桌面/Web 不调用。
+func apply_touch_metrics(min_height: float) -> void:
+	for id in _buttons:
+		var button := _buttons[id] as Button
+		if button != null:
+			button.custom_minimum_size.y = maxf(button.custom_minimum_size.y, min_height)
+
+
 func set_compact(compact: bool) -> void:
 	for id in _buttons:
 		var button := _buttons[id] as Button

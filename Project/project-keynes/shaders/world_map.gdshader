@@ -61,6 +61,12 @@ render_mode blend_mix, unshaded;
 //   程序最终 8 槽 = height/map_index/enum/dyn/material/terrain_surface_tex/
 //   terrain_horizon_tex/noise_tex。touch 触发重编。
 // [p0-insolation-dead 2026-11-01] climate_season.season_offset_unified 无条件 return 0.0（on-map dyn_valid==1 ⇒ current_temp==dyn_temp，积分是死代码；padding 被 Fog 盖住，与 web 变体原行为一致）；touch 触发重编。
+// [surface-array-edge 2026-11-02] 同一个 array 扩到 **6 层**：layer4 = edge_distance
+//   （R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比）、layer5 = edge_neighbor RG
+//   （次生 cell id 16-bit；B = water_depth R，A 预留）。数据本来就在 native tile bundle 里
+//   ⇒ 扩层零新增烘焙；陆地与两个水面程序共用同一 sampler ⇒ 恢复次生生态过渡 / crease /
+//   海岸 halo / 次生水格时**一个材质槽都不新增**（Web 陆地仍 8 槽、HIGH 水面 7→8、
+//   compact 水面 5→6）。touch 触发重编。
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
 //   uniforms / common_noise / height / climate_season / biome_color / vegetation /
@@ -73,8 +79,11 @@ render_mode blend_mix, unshaded;
 //   height_tex (RGBA8 LINEAR)      RG=海拔 (R*256+G)/257；B=river flow（原独立 flow_tex）
 //   terrain_normal_tex (RGBA8)     2D：RG=粗法线 xy；BA=近景高度细节坡度（encode_slope）。
 //                                  仅非 tiled 的**其它层**（植被/建筑/资源/贸易）消费。
-//   terrain_surface_tex (2×RGBA8)  非 tiled 地形程序打包数组：layer0=normal（同上布局），
-//                                  layer1=relief（RG=粗段/BA=细段分地形细节坡度）
+//   terrain_surface_tex (6×RGBA8)  非 tiled 地形 / 水面程序共用的打包数组：
+//                                  layer0=normal（同上布局）、layer1=relief（RG=粗段/BA=细段）、
+//                                  layer2=detail、layer3=occluder ids、
+//                                  layer4=edge_distance（R 距离/G crease/BA 海岸占比）、
+//                                  layer5=edge_neighbor（RG 次生 id；B 水深）
 //   terrain_horizon_tex (RGBA8)    8 方向 horizon angle，high/low nibble packed
 //   noise_tex (RGBA8)              预烘噪声包（R raw value；GBA=fbm 2/3/4 octave 预积分）
 //   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
@@ -121,27 +130,39 @@ render_mode blend_mix, unshaded;
 #include "res://shaders/include/shader_quality.gdshaderinc"
 #include "res://shaders/include/uniforms.gdshaderinc"
 // ─── VT_USE_* 采样预算（决定 visual_tile_sampling 声明哪些 sampler）──────────
-// [baked-surface 2026-11-01 / packed-surface 2026-11-01 / web-high-features 2026-11-01]
-// 法线/细节坡度两端都只来自生成期烘焙纹理，非 tiled 的 normal+relief 打包成 1 个 array：
+// [baked-surface 2026-11-01 / packed-surface 2026-11-01 / web-high-features 2026-11-01 /
+//  surface-array-edge 2026-11-02]
+// 法线/细节坡度/edge 静态场两端都只来自生成期烘焙纹理，非 tiled 的**固定 6 层**
+// sampler2DArray `terrain_surface_tex`（normal/relief/detail/occluder/edge_distance/
+// edge_neighbor）：
 //   桌面 tiled：normal + relief 仍是两个数组（relief 是 relief_scale 倍分辨率，
 //     不能同 array）+ water_depth + terrain_detail + edge_* + horizon + gi_occluder。
-//   桌面 legacy（非 tiled）：normal+relief+detail(+occluder) 打包进 terrain_surface_tex，
-//     保留 water_depth / edge_* / horizon / gi_occluder / micro / bounce_lut。
+//   桌面 legacy（非 tiled）：6 层打包进 terrain_surface_tex，
+//     保留 water_depth / horizon / gi_occluder / micro / bounce_lut。
 //   Web 地形程序（LOW + HIGH land，PK_WEB_WATER_ONLY 之外）恰好 8 个材质槽 ——
 //     height_tex / map_index_atlas / enum_lut / dyn_lut / terrain_material_tex /
 //     terrain_surface_tex / terrain_horizon_tex / noise_tex。
 //     方案 B：detail 读 surface array layer2；micro 读 material array 第 5 层；
 //     GI 弹射读 surface array layer3（不再需要 bounce_lut）。都不新增 sampler。
+//     [2026-11-02] 次生生态过渡（secondary biome 混合 + DitherUV 远景过渡）、沟谷 crease、
+//     海岸 halo 占比改读 layer4/layer5 —— 同样是**已有槽**，8 槽预算不变。
 //   Web/Compatibility 水面（PK_WEB_WATER_ONLY，或桌面 Compatibility 的**非 tiled**
-//     完整主 pass）：water_depth 槽打开（HIGH 水面 7 槽；桌面 Compatibility 主 pass 8 槽）。
+//     完整主 pass）：water_depth 槽打开（HIGH 水面 7→8 槽，新增的 1 槽就是 surface array；
+//     桌面 Compatibility 主 pass 8 槽）。
 //   Web land-only 程序不拿 water_depth（预算留给上面的 8 槽）；桌面 Compatibility tiled
 //     变体保持方案 A 的 8 槽（tiled 的 water_depth/detail 是数组，会超 GLES3 预算）。
-//   Web 水面程序（PK_WEB_WATER_ONLY）仍不开 surface/horizon（水面不需要地形几何法线）。
 //   桌面 Compatibility（只有 PK_WEB_TEXTURE_BUDGET、没有 PK_WEB_HORIZON）：horizon 槽
 //     不开（VT_USE_HORIZON 不定义，由 terrain_horizon 中性叶子兜底）。
 #define VT_USE_HEIGHT
 #define VT_USE_MAP_INDEX
 #define VT_USE_FLOW
+// [surface-array-edge 2026-11-02] 非 tiled 的静态地表打包成 **6 层** sampler2DArray
+// `terrain_surface_tex`（normal/relief/detail/occluder/edge_distance/edge_neighbor）。
+// 陆地程序与两个水面程序声明的是同一个 sampler，VT_USE_* 只决定读哪一层 ⇒
+// 恢复次生生态过渡 / crease / 海岸占比 / 次生水格时**一个材质槽都不新增**。
+#if !defined(MAP_VISUAL_TILED)
+#define VT_USE_TERRAIN_SURFACE_ARRAY
+#endif
 #if defined(PK_WEB_TEXTURE_BUDGET)
 #ifndef PK_WEB_WATER_ONLY
 #define VT_USE_TERRAIN_NORMAL
@@ -155,14 +176,25 @@ render_mode blend_mix, unshaded;
 #if !defined(PK_WEB_LAND_ONLY)
 #define VT_USE_WATER_DEPTH
 #endif
+// [surface-array-edge 2026-11-02] 次生生态过渡（secondary biome 混合 + DitherUV 远景过渡）、
+// 沟谷 crease、海岸 halo 占比全部改读 surface array 的 layer4/layer5。
+// 数据本来就在同一个 native tile bundle 里，所以 8 槽预算不变、烘焙时间不变。
+#define VT_USE_EDGE_NEIGHBOR
+#define VT_USE_EDGE_DISTANCE
 #endif
 #if defined(PK_WEB_HORIZON)
 #define VT_USE_HORIZON
 #endif
 #endif
 // [B] HIGH 水面独立程序（WATER_ONLY，非 tiled）需要烘焙水深；land-only 程序不拿。
+// [surface-array-edge 2026-11-02] 水面也吃同一个 surface array（7→8 槽）：layer4/5 恢复
+// edge_mix / shore_frac / 次生水格，水色方块与浅滩因此变连续。不声明 normal/relief/horizon。
 #if defined(PK_WEB_WATER_ONLY)
 #define VT_USE_WATER_DEPTH
+#if !defined(MAP_VISUAL_TILED)
+#define VT_USE_EDGE_NEIGHBOR
+#define VT_USE_EDGE_DISTANCE
+#endif
 #endif
 #else
 #define VT_USE_TERRAIN_NORMAL

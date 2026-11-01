@@ -181,11 +181,10 @@ float terrain_edge_secondary_weight_d(float distance_to_edge, vec2 wp) {
 #if defined(PK_MOBILE_ANY)
 	float mobile_quality_scale = (visual_quality <= 0) ? 0.58
 			: ((visual_quality == 1) ? 0.82 : 0.94);
-	float mobile_width = clamp(
-			terrain_ecotone_width * mobile_quality_scale,
-			1.0 / 255.0,
-			0.98);
-	return 0.5 * (1.0 - smoothstep(0.0, mobile_width, distance_to_edge));
+	// [surface-array-edge 2026-11-02] 与 Web compact 水面共用同一条无噪声公式
+	// （visual_tile_sampling::terrain_static_edge_weight），避免水陆两侧权重口径漂移。
+	return terrain_static_edge_weight(
+			distance_to_edge, terrain_ecotone_width * mobile_quality_scale);
 #else
 	float one_screen_pixel = max(fwidth(distance_to_edge), 1.0 / 255.0);
 	float aa_band = one_screen_pixel * terrain_edge_screen_width_px();

@@ -78,6 +78,12 @@ static func _raw_query() -> String:
 	var override := OS.get_environment("PK_AUTOTEST_QUERY").strip_edges()
 	if not override.is_empty():
 		return override
+	# 安卓没有环境变量，也没有浏览器地址栏：用启动参数把同一套 soak 带进真机/模拟器。
+	#   command_line/extra_args = "--autotest-query=autotest=1&days=60&size=40x28"
+	# 这样真机跑自动化不需要点按 UI（黑屏/模拟器渲染坏掉时也能拿到仿真日志）。
+	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if arg.begins_with("--autotest-query="):
+			return arg.trim_prefix("--autotest-query=").strip_edges()
 	# 非 web 平台没有浏览器桥，直接当"没有参数"处理。
 	if not OS.has_feature("web"):
 		return ""

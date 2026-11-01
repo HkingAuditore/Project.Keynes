@@ -90,8 +90,13 @@ static func _render_quality_setting() -> String:
 	return "auto"
 
 static func _terrain_material_size() -> int:
+	# [web-loading-material-shrink 2026-11-01] Web 固定 512，不再有 1024 档：
+	# 1024 那套材质（4 x 5.33 MB）已从 Web 包体里排除（export_presets.cfg 的
+	# exclude_filter），请求它会直接拿不到图（prebaked_material_missing）。
+	# 512 那套在 Web 构建期被 tools/web_tex_stub_loading_materials.gd 缩到 256²，
+	# 实际层尺寸由 _build_terrain_material_tex 按读到的图决定，见那里。
 	if OS.has_feature("web"):
-		return TERRAIN_MATERIAL_SIZE_DESKTOP if _render_quality_setting() == "high" else TERRAIN_MATERIAL_SIZE_MOBILE
+		return TERRAIN_MATERIAL_SIZE_MOBILE
 	return TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") else TERRAIN_MATERIAL_SIZE_DESKTOP
 
 static func _hm_max_dim() -> int:
@@ -415,10 +420,17 @@ static func _build_terrain_material_tex(target_size: int) -> Dictionary:
 		if image == null or image.is_empty():
 			return {"texture":null,"reason":"prebaked_material_missing"}
 		images.append(image)
+	# [web-loading-material-shrink 2026-11-01] 层尺寸以**实际读到的图**为准，而不是
+	# 请求的 target_size：Web 构建期会把 prebaked 材质图临时缩到更小（见
+	# tools/web_tex_stub_loading_materials.gd + tools/web_tex_downgrade.py），文件名仍然
+	# 按 target_size 命名。若这里继续按 target_size 去 resize micro 层，
+	# create_from_images 会因为层尺寸不一致整张失败（quality=high 的 web 用户本来就会
+	# 撞上 1024 那套被 stub 过的图）。按实际尺寸走：桌面未动 → 尺寸不变 → 行为不变。
+	var material_layer_size: int = images[0].get_width()
 	# [terrain-web-baked-surface-B 2026-11-01] 第 5 层 micro：512/1024² prebaked 材质层与
 	# micro 源图（256²）的 mipmap 状态必须一致，否则 create_from_images 会拒绝整张 array。
 	# 所以 micro 也 resize 到 target_size 并 generate_mipmaps()。
-	var micro_image := _load_terrain_micro_layer_image(target_size)
+	var micro_image := _load_terrain_micro_layer_image(material_layer_size)
 	if micro_image != null:
 		images.append(micro_image)
 	var texture := Texture2DArray.new()
@@ -1286,11 +1298,13 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	#   ① tiled 桌面：visual_tiles 的 normal/relief/detail/water 数组（tiled 烘焙时已上传）→
 	#      非 tiled 字段（2D normal / surface array）置 null；
 	#   ② Web 全部档位 / 桌面 legacy 回退：整图单 tile native pass 烘 normal+relief，
-	#      上传 2D terrain_normal_tex（其它层用）+ 固定 4 层 terrain_surface_tex（主地形用：
-	#      layer0=normal / layer1=relief / layer2=detail / layer3=occluder ids）；
-	#   ③ 单 tile 也失败：旧 RG8 粗法线兜底 —— 扩成 RGBA8（BA=128=0 坡度）2D + 4 层中性
-	#      array（relief/detail=0x80、occluder=0xFF）：shader 走完整路径但细节为 0，
-	#      等价于原来的"仅粗法线"，绝不回退运行期高度差分。
+	#      上传 2D terrain_normal_tex（其它层用）+ 固定 6 层 terrain_surface_tex（主地形与
+	#      水面程序共用：layer0=normal / 1=relief / 2=detail / 3=occluder ids /
+	#      4=edge_distance / 5=edge_neighbor+water_depth）；layer4/5 直接取自同一 bundle；
+	#   ③ 单 tile 也失败：旧 RG8 粗法线兜底 —— 扩成 RGBA8（BA=128=0 坡度）2D + 6 层中性
+	#      array（relief/detail=0x80、occluder=0xFF、edge 距离=1.0、次生 id=0xFFFF）：
+	#      shader 走完整路径但细节/次生混合为 0，等价于原来的"仅粗法线"，
+	#      绝不回退运行期高度差分。
 	var tiled_ok: bool = await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
 	if tiled_ok:
 		# 数组路径已经带 normal/relief：非 tiled 字段必须为 null（避免白占显存，shader 也不会读）。
@@ -1727,13 +1741,18 @@ func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float
 		push_warning("[terrain-baked-surface] payload size mismatch normal=%d relief=%d expected=%d (%dx%d)"
 			% [normal_data.size(), relief_data.size(), expected, size.x, size.y])
 		return false
-	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 一次建 surface 的 4 个 Image，
+	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 一次建 surface 的 6 个 Image，
 	# 喂两条消费路径：
 	#   ① 2D terrain_normal_tex（植被/建筑/资源/贸易等只开 VT_USE_TERRAIN_NORMAL 的层
 	#      继续用 2D sampler；内容与 array layer0 相同，normal 数据因此存两份）；
-	#   ② 固定 4 层 terrain_surface_tex（主地形 shader）：
+	#   ② 固定 6 层 terrain_surface_tex（主地形 + 水面 shader）：
 	#      layer0=normal、layer1=relief、layer2=detail（R=detail,GBA=0）、
-	#      layer3=occluder（RGBA8 两个 16-bit cell id，0xFFFF=哨兵）。
+	#      layer3=occluder（RGBA8 两个 16-bit cell id，0xFFFF=哨兵）、
+	#      layer4=edge_distance（RGBA8：R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比）、
+	#      layer5=edge_neighbor（RG 次生 cell id 16-bit；B=water_depth R，A 预留）。
+	# [surface-array-edge 2026-11-02] layer4/5 的数据本来就在同一个 native tile bundle 里
+	# （run_bake_visual_tile_layer_pass 的 edge_distance / edge_neighbor），因此扩层
+	# **不增加任何烘焙计算**，只是把已有 payload 多填两层。
 	var normal_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, normal_data)
 	var relief_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, relief_data)
 	var layers_t0 := Time.get_ticks_msec()
@@ -1745,12 +1764,11 @@ func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float
 		world.terrain_normal_tex.update(normal_img)
 	else:
 		world.terrain_normal_tex = ImageTexture.create_from_image(normal_img)
-	world.terrain_surface_tex = _create_surface_array(
-		[normal_img, relief_img, detail_img, occluder_img], SURFACE_ARRAY_LAYERS)
-	var layers_ms := Time.get_ticks_msec() - layers_t0
 	# [C 2026-11-01] 非 tiled 水深升级 RGBA8：native pass 同一个 bundle 里已经有
 	# water_depth（RGBA8：R=水深，G/B/A=湖/礁/海带 3×3 软权重），直接上传成世界纹理。
 	# compact water 用 max(二元权重, 软权重)；GBA=0 时自动退化为旧二元行为。
+	# [surface-array-edge 2026-11-02] 同一份 water_data 的 R 也塞进 layer5.B，
+	# 陆地侧因此能在没有 water_depth sampler 的预算程序里拿到水深覆盖场。
 	var water_depth_state := "off"
 	var water_data: PackedByteArray = bundle.get("water_depth", PackedByteArray())
 	if water_data.size() == expected:
@@ -1761,24 +1779,114 @@ func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float
 		world.water_depth_tex = null
 		push_warning("[terrain-baked-surface] water_depth payload mismatch %d/%d; water depth disabled"
 			% [water_data.size(), expected])
+	var edge_t0 := Time.get_ticks_msec()
+	var edge_layers: Array = await _make_surface_edge_layers(bundle, size, water_data, expected)
+	var edge_ms := Time.get_ticks_msec() - edge_t0
+	world.terrain_surface_tex = _create_surface_array(
+		[normal_img, relief_img, detail_img, occluder_img, edge_layers[0], edge_layers[1]],
+		SURFACE_ARRAY_LAYERS)
+	var layers_ms := Time.get_ticks_msec() - layers_t0
 	print(("[terrain-baked-surface] %s single-tile %dx%d relief_supersample=1 surface_array=%s "
-		+ "layers=%d detail_layer=%d occluder_layer=%d water_depth=%s native_ms=%.1f wall_ms=%d "
-		+ "layers_ms=%d normal_bytes=%d relief_bytes=%d water_bytes=%d") % [
+		+ "layers=%d detail_layer=%d occluder_layer=%d water_depth=%s edge_layers=%s "
+		+ "native_ms=%.1f wall_ms=%d layers_ms=%d edge_ms=%d normal_bytes=%d relief_bytes=%d "
+		+ "water_bytes=%d edge_distance_bytes=%d edge_neighbor_bytes=%d") % [
 		"web" if OS.has_feature("web") else "desktop-legacy",
 		size.x, size.y, "ok" if world.terrain_surface_tex != null else "failed",
 		SURFACE_ARRAY_LAYERS,
 		1 if world.terrain_detail_tex != null else 0,
 		1 if world.gi_occluder_tex != null else 0,
 		water_depth_state,
-		float(bundle.get("elapsed_ms", -1.0)), wall_ms, layers_ms,
-		normal_data.size(), relief_data.size(), water_data.size()])
+		"ok" if int(edge_layers[2]) >= 0 else "neutral",
+		float(bundle.get("elapsed_ms", -1.0)), wall_ms, layers_ms, edge_ms,
+		normal_data.size(), relief_data.size(), water_data.size(),
+		int(edge_layers[2]), int(edge_layers[3])])
 	return true
 
 
-# [terrain-web-baked-surface-B 2026-11-01] 非 tiled surface array 的固定层数：
-#   0 normal / 1 relief / 2 detail / 3 occluder。shader 侧 terrain_surface_layer_count
-# 由运行期按实际 get_layers() 推送，层数不足时 detail/occluder helper 返回中性值。
-const SURFACE_ARRAY_LAYERS := 4
+# [terrain-web-baked-surface-B 2026-11-01 / surface-array-edge 2026-11-02] 非 tiled
+# surface array 的固定层数：0 normal / 1 relief / 2 detail / 3 occluder /
+# 4 edge_distance / 5 edge_neighbor。shader 侧 terrain_surface_layer_count 由运行期按实际
+# get_layers() 推送；层数不足时对应 helper 返回中性值（距离=1 无混合、次生 id=0xFFFF）。
+const SURFACE_ARRAY_LAYERS := 6
+
+
+## [surface-array-edge 2026-11-02] surface array layer4/5（静态 edge 层）。
+## 输入都在同一个 native tile bundle 里（零新增烘焙）：
+##   bundle.edge_distance : RGBA8 W*H*4 —— R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比
+##   bundle.edge_neighbor : RG8   W*H*2 —— 次生 cell id 16-bit（0xFFFF = 无）
+##   bundle.water_depth   : RGBA8 W*H*4 —— 只取 R 存进 layer5.B
+## layer4 原样搬运（shader 用 LINEAR 采样，BA 就是海岸占比）。
+## layer5 = R,G 次生 id + B 水深 + A 预留 0（**必须 NEAREST/texelFetch**：cell id 不能插值）。
+## 任一 payload 尺寸不符 → 该层填中性值（距离=1.0、id=0xFFFF）并 push_warning。
+## 返回 [layer4_img, layer5_img, edge_distance_bytes, edge_neighbor_bytes]；
+## 后两项是实际搬运的字节数（0 = 该层用了中性值，日志 edge_layers=neutral）。
+func _make_surface_edge_layers(bundle: Dictionary, size: Vector2i,
+		water_data: PackedByteArray, water_expected: int) -> Array:
+	var n := size.x * size.y
+	var distance_bytes := int(size.x) * int(size.y) * 4
+	var neighbor_bytes := int(size.x) * int(size.y) * 2
+	var distance_data: PackedByteArray = bundle.get("edge_distance", PackedByteArray())
+	var neighbor_data: PackedByteArray = bundle.get("edge_neighbor", PackedByteArray())
+	var has_distance := distance_data.size() == distance_bytes
+	var has_neighbor := neighbor_data.size() == neighbor_bytes
+	if not has_distance:
+		push_warning("[terrain-baked-surface] edge_distance payload mismatch %d/%d; layer4 neutral"
+			% [distance_data.size(), distance_bytes])
+	if not has_neighbor:
+		push_warning("[terrain-baked-surface] edge_neighbor payload mismatch %d/%d; layer5 neutral"
+			% [neighbor_data.size(), neighbor_bytes])
+	# layer4：逐字节搬运（不做格式转换，避免 8-bit 量化二次误差）。
+	var layer4: Image
+	if has_distance:
+		layer4 = Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, distance_data)
+	else:
+		layer4 = _make_neutral_surface_edge_image(size)
+	# layer5：一次循环把 RG8 的次生 id 与 water_depth.R 交织成 RGBA8。
+	# [surface-array-edge 2026-11-02] 分片写 + 每片 await 一帧：桌面 1024×762 实测
+	# 全量一次跑是 58 ms，wasm 按 3–5× 估会到 200–300 ms —— 那会把加载主线程卡穿
+	# （cooperative_world_generation_test 的 100 ms 心跳断言）。分片后单片 ≈ 8–12 ms。
+	var layer5_data := PackedByteArray()
+	layer5_data.resize(n * 4)
+	var has_depth := water_data.size() == water_expected and water_expected > 0
+	var slice_pixels := 65536
+	for slice_start in range(0, n, slice_pixels):
+		var slice_end: int = mini(slice_start + slice_pixels, n)
+		for i in range(slice_start, slice_end):
+			var o := i * 4
+			if has_neighbor:
+				layer5_data[o] = neighbor_data[i * 2]
+				layer5_data[o + 1] = neighbor_data[i * 2 + 1]
+			else:
+				layer5_data[o] = 255
+				layer5_data[o + 1] = 255
+			layer5_data[o + 2] = water_data[o] if has_depth else 0
+			layer5_data[o + 3] = 0
+		if slice_end < n:
+			await _yield_generation_frame()
+	var layer5 := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, layer5_data)
+	return [layer4, layer5,
+		distance_bytes if has_distance else 0, neighbor_bytes if has_neighbor else 0]
+
+
+## [surface-array-edge 2026-11-02] layer4 中性层：R=255（次生权重 0）、G/B/A=0。
+## **不能**用 `_make_neutral_rgba_image(size, 255)`：那会把 crease 与海岸占比也填成 1.0。
+func _make_neutral_surface_edge_image(size: Vector2i) -> Image:
+	var data := PackedByteArray()
+	data.resize(size.x * size.y * 4)
+	for i in range(size.x * size.y):
+		data[i * 4] = 255
+	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, data)
+
+
+## [surface-array-edge 2026-11-02] layer5 中性层：RG=0xFFFF（次生 id 哨兵 = 无次生格）、
+## B=0（水深 0）、A=0（预留）。
+func _make_neutral_surface_neighbor_image(size: Vector2i) -> Image:
+	var data := PackedByteArray()
+	data.resize(size.x * size.y * 4)
+	for i in range(size.x * size.y):
+		data[i * 4] = 255
+		data[i * 4 + 1] = 255
+	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, data)
 
 
 ## [terrain-web-baked-surface-B 2026-11-01] surface array layer2（detail）：
@@ -1876,6 +1984,8 @@ func _create_surface_array(images: Array, expected_layers: int = 2) -> Texture2D
 ## layer1 填全 128 的中性 relief，layer2 detail=0x80（解码后=1.0），layer3 occluder=0xFF
 ## （cell id 哨兵 65535）。shader 因此仍走完整烘焙法线/relief 路径、detail/occluder 为中性 ——
 ## 等价于旧的"仅粗法线"兜底，而不是退回运行期高度差分。
+## [surface-array-edge 2026-11-02] 同步补 layer4/5 中性层：R=255（距离 1.0 ⇒ 次生权重 0）、
+## G/BA=0；次生 id 全 0xFFFF（65535 哨兵 ⇒ decode 返回 -1，硬主 cell 边界）。
 ## 返回 {"normal_tex": ImageTexture 或 null, "surface_tex": Texture2DArray 或 null}。
 func _upload_legacy_surface_fallback(rg8_data: PackedByteArray, size: Vector2i,
 		existing_normal: ImageTexture) -> Dictionary:
@@ -1903,11 +2013,15 @@ func _upload_legacy_surface_fallback(rg8_data: PackedByteArray, size: Vector2i,
 		out["normal_tex"] = existing_normal
 	else:
 		out["normal_tex"] = ImageTexture.create_from_image(normal_img)
+	# layer4 中性：只有 R=255，其余通道 0（不能用 _make_neutral_rgba_image(size, 255)，
+	# 那会把 G/BA 也填成 1.0 ⇒ 假 crease + 假海岸占比）。
 	out["surface_tex"] = _create_surface_array([
 		normal_img,
 		_make_neutral_rgba_image(size, 128),   # layer1 relief：0 坡度
 		_make_neutral_rgba_image(size, 128),   # layer2 detail：解码后 1.0 恒等
 		_make_neutral_rgba_image(size, 255),   # layer3 occluder：cell id 哨兵
+		_make_neutral_surface_edge_image(size),      # layer4 距离 1.0 / 无 crease
+		_make_neutral_surface_neighbor_image(size),  # layer5 次生 id 0xFFFF
 	], SURFACE_ARRAY_LAYERS)
 	return out
 

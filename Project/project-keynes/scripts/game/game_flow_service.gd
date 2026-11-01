@@ -123,7 +123,11 @@ func _queue_player_scene() -> Error:
 	_transition_id += 1
 	_transition_layer = CanvasLayer.new()
 	_transition_layer.layer = 100
-	get_tree().root.add_child(_transition_layer)
+	# 先把 overlay 挂到（尚未入树的）CanvasLayer 上，再整体 deferred 入树。
+	# 直接 `root.add_child()` 在"调用方正在 _ready 里建子节点"时会报
+	# `Parent node is busy setting up children, add_child() failed`——自动测试/
+	# 命令行开局正是从 main_menu._ready 直接调进来的，会因为这一行整局不启动
+	# （表现为：只打了 autotest_start，之后什么都没有，停在菜单）。
 	var overlay := overlay_scene.instantiate() as WorldLoadingOverlay
 	_transition_layer.add_child(overlay)
 	overlay.show_message("正在创建世界")
@@ -132,6 +136,7 @@ func _queue_player_scene() -> Error:
 	overlay.retry_requested.connect(func() -> void:
 		if is_instance_valid(_transition_layer):_transition_layer.queue_free()
 		_queue_player_scene())
+	get_tree().root.add_child.call_deferred(_transition_layer)
 	call_deferred("_finish_player_scene_transition",_transition_id,overlay)
 	return OK
 

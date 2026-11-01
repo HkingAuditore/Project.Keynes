@@ -690,6 +690,59 @@ func is_player_owned_cell(cell: int) -> bool:
 		_validate_owned_cell(ready.facade, cell).get("ok", false))
 
 
+## ─── 触屏 GM 手势：三指双击 ──────────────────────────────────────────
+## 安卓没有 F1/` 键，GM 面板以前只能在桌面上开。这里用「三指同时按下再松开」当一次
+## tap，两次 tap 间隔 ≤800ms、每次按住 ≤450ms 就切 GM。两指缩放/单指拖动都不会命中。
+## 只在 debug 构建且 GM 可用时生效（release 包 is_gm_available() 为 false）。
+const TOUCH_GM_TAP_MAX_MS := 450
+const TOUCH_GM_DOUBLE_WINDOW_MS := 800
+var _touch_gm_active: Dictionary = {}
+var _touch_gm_armed_ms := 0
+var _touch_gm_tap_times: PackedInt64Array = PackedInt64Array()
+
+
+func _handle_touch_gm_gesture(event: InputEvent) -> bool:
+	var touch := event as InputEventScreenTouch
+	if touch == null:
+		return false
+	if touch.pressed:
+		_touch_gm_active[touch.index] = true
+		if _touch_gm_active.size() == 3 and _touch_gm_armed_ms == 0:
+			_touch_gm_armed_ms = Time.get_ticks_msec()
+		return false
+	_touch_gm_active.erase(touch.index)
+	if not _touch_gm_active.is_empty():
+		return false
+	if _touch_gm_armed_ms == 0:
+		return false
+	var duration := Time.get_ticks_msec() - _touch_gm_armed_ms
+	_touch_gm_armed_ms = 0
+	if duration > TOUCH_GM_TAP_MAX_MS:
+		return false
+	var now := Time.get_ticks_msec()
+	var recent := PackedInt64Array()
+	for stamp in _touch_gm_tap_times:
+		if now - stamp <= TOUCH_GM_DOUBLE_WINDOW_MS:
+			recent.append(stamp)
+	recent.append(now)
+	_touch_gm_tap_times = recent
+	if _touch_gm_tap_times.size() < 2:
+		return false
+	_touch_gm_tap_times.clear()
+	_toggle_gm_from_gesture()
+	return true
+
+
+func _toggle_gm_from_gesture() -> void:
+	if _ui_manager == null:
+		return
+	if not _ui_manager.is_gm_available():
+		print("[input] 三指双击：当前构建 GM 面板不可用（release 包）")
+		return
+	_ui_manager.toggle_gm_panel()
+	print("[input] 三指双击 → GM 面板")
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# GUI 已消费的事件不会到这里。文本框必须继续挡住地图手势；
 	# 普通按钮焦点不得锁死选格/缩放/拖拽，否则左侧 overlay 点完就无法操作地图。

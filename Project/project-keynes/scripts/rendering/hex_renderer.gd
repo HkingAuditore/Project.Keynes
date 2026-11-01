@@ -1492,6 +1492,25 @@ func _apply_water_uniforms() -> void:
 		# visual_sample_water_depth）都在非 tiled 分支消费它。桌面 tiled 走主 pass 的
 		# visual_water_depth_tiles，与本 pass 无关。
 		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+		# [surface-array-edge 2026-11-02] 两个水面程序都与陆地程序共用同一个 6 层
+		# surface array（HIGH water 7→8 槽、compact water 5→6 槽），用来恢复
+		# edge_mix / shore_frac / 次生水格。层数门控与陆地 program 同源：
+		# 不足 6 层时 shader 侧 helper 返回中性值，水色退回 C 回合的硬边行为。
+		var water_surface_layers := 0
+		if _world.terrain_surface_tex != null:
+			water_surface_layers = int(_world.terrain_surface_tex.get_layers())
+		sm.set_shader_parameter("terrain_surface_tex", _world.terrain_surface_tex)
+		sm.set_shader_parameter("terrain_surface_layer_count", water_surface_layers)
+		sm.set_shader_parameter("terrain_edge_layers_bound", water_surface_layers >= 6)
+		# 与 _apply_uniforms 的同名推送同值（世界地图两片必须逐项同值，否则色差）。
+		sm.set_shader_parameter("has_terrain_edge_data",
+			(_world.terrain_edge_neighbor_tex != null
+				and _world.terrain_edge_distance_tex != null)
+			or water_surface_layers >= 6)
+		sm.set_shader_parameter("terrain_static_baked", water_surface_layers >= 6)
+		# [surface-array-edge 2026-11-02] compact 水面自行声明的 ecotone 宽度（与
+		# uniforms.gdshaderinc 同一个 @export 值）；世界地图水面程序会从主材质整表拷贝。
+		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
@@ -4742,10 +4761,12 @@ func _apply_uniforms() -> void:
 		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", _world.height_tex)
-	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 主地形非 tiled 路径用
-	# **固定 4 层 array**（terrain_surface_tex）：layer0=normal（RG 粗法线/BA 近景坡度）、
-	# layer1=relief（RG 粗段/BA 细段坡度）、layer2=detail（R=静态细节噪声）、
-	# layer3=occluder（两个 16-bit cell id，shader 用 texelFetch）。合并后少占材质 sampler；
+	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01 / surface-array-edge 2026-11-02]
+	# 主地形非 tiled 路径用 **固定 6 层 array**（terrain_surface_tex）：layer0=normal
+	# （RG 粗法线/BA 近景坡度）、layer1=relief（RG 粗段/BA 细段坡度）、layer2=detail、
+	# layer3=occluder（两个 16-bit cell id，shader 用 texelFetch）、layer4=edge_distance
+	# （R 距离/G crease/BA 海岸占比）、layer5=edge_neighbor（RG 次生 id + B 水深）。
+	# 陆地与两个水面程序共用这一个 sampler；合并后少占材质 sampler。
 	# 2D terrain_normal_tex 只为植被/建筑/资源/贸易等其它层保留，主地形不再绑它。
 	# tiled 桌面路径改绑 visual_terrain_normal/relief/detail_tiles（见上）与
 	# visual_water_depth_tiles。运行期不再做任何高度差分。
@@ -4758,6 +4779,9 @@ func _apply_uniforms() -> void:
 		sm.set_shader_parameter("terrain_surface_layer_count", surface_layers)
 		sm.set_shader_parameter("terrain_detail_layer_bound", surface_layers >= 3)
 		sm.set_shader_parameter("terrain_occluder_layer_bound", surface_layers >= 4)
+		# [surface-array-edge 2026-11-02] layer4/5（edge_distance / edge_neighbor）是否烘出来了。
+		# shader 据此决定次生生态过渡 / crease / 海岸占比是否可用（不采越界层）。
+		sm.set_shader_parameter("terrain_edge_layers_bound", surface_layers >= 6)
 		# [B] micro 第 5 层：material array 达到 5 层时 shader 用 layer4 采样
 		# （4 = MapBaker.TERRAIN_MATERIAL_MICRO_LAYER），否则 -1 → 退回旧的 2D micro 路径。
 		var material_layers := 0
@@ -4773,11 +4797,14 @@ func _apply_uniforms() -> void:
 	# legacy/Web 用 surface array 是否就绪。shader 只认这个 bool 决定读不读烘焙法线。
 	sm.set_shader_parameter("terrain_baked_normals",
 		visual_tiles.static_ready if tiled else _world.terrain_surface_tex != null)
-	# [static-bake 2026-10-10] 分地形细节法线、海岸邻域、水面软权重只在 tiled 静态烘焙里产出；
-	# Legacy/Web 单张路径没有 edge/water/detail 通道。**不要**再用它判法线是否可用
-	# （旧 RG8 兜底也会把它置 false；法线一律用 terrain_baked_normals）。
+	# [static-bake 2026-10-10 / surface-array-edge 2026-11-02] 分地形细节法线、海岸邻域、
+	# 水面软权重只在 tiled 静态烘焙里产出；非 tiled 打包路径把同一批场塞进 surface array
+	# 的 layer4/5（surface_layers>=6），因此两条路径都算"静态烘焙就绪"。
+	# **不要**再用它判法线是否可用（旧 RG8 兜底也会把它置 false；法线一律用
+	# terrain_baked_normals）。
 	sm.set_shader_parameter("terrain_static_baked",
-		tiled and visual_tiles.static_ready and visual_tiles.terrain_relief != null)
+		(tiled and visual_tiles.static_ready and visual_tiles.terrain_relief != null)
+		or (not tiled and surface_layers >= 6))
 	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
 	# [terrain-gi 2026-07-31] 同一张图还派生天空可见度(AO)/bent normal/弹射；见 _push_gi_uniforms。
 	if not tiled:
@@ -4810,9 +4837,14 @@ func _apply_uniforms() -> void:
 		and _world.terrain_edge_distance_tex != null
 	)
 	if not tiled:
+		# 2D edge 图仍绑给 fog / 边线 / 天气等独立图层；world_map 与非 tiled 水面程序
+		# 改读 surface array 的 layer4/5（[surface-array-edge 2026-11-02]），不再声明
+		# 这两个 2D sampler。两个来源任一就绪都算"有 edge 数据"：中性图层会让权重恒 0，
+		# 不会画出假过渡。
 		sm.set_shader_parameter("terrain_edge_neighbor_tex", _world.terrain_edge_neighbor_tex)
 		sm.set_shader_parameter("terrain_edge_distance_tex", _world.terrain_edge_distance_tex)
-	sm.set_shader_parameter("has_terrain_edge_data", true if tiled else edge_data_ready)
+	sm.set_shader_parameter("has_terrain_edge_data",
+		true if tiled else (edge_data_ready or surface_layers >= 6))
 	sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
 	# [terrain-material-tiles] The array is shared by all maps and is valid for

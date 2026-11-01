@@ -131,6 +131,9 @@ var terrain_detail_tex: ImageTexture
 # 无抖动主 cell 的通用视觉边界辅助纹理。所有合法相邻 cell 都可成为副格；
 # RG8 为索引低/高字节，0xFFFF 表示无邻格；R8 距离场供 terrain/fog/weather 组合
 # fwidth 内层 AA 与视觉 ecotone。地表 Shader 另行拒绝跨水陆材质混合。
+# [surface-array-edge 2026-11-02] 非 tiled 的地形 / 水面 program 已改读
+# terrain_surface_tex 的 layer4/layer5（少 2 个 sampler）；这两张 2D 图仍由
+# terrain_index_baker 产出并绑给 fog / 边线 / 天气等独立图层。
 var terrain_edge_neighbor_tex: ImageTexture
 var terrain_edge_distance_tex: ImageTexture
 # [terrain-normal-bake 2026-06-25 / terrain-web-baked-surface-A 2026-11-01]
@@ -141,18 +144,24 @@ var terrain_edge_distance_tex: ImageTexture
 # 这是让其它层继续用 2D sampler 的显式取舍）。桌面 tiled 用 visual_tiles.terrain_normal
 # 数组，此时本字段为 null。地形静态 → 运行期 shader 不再做任何高度差分。
 var terrain_normal_tex: ImageTexture
-# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 主地形非 tiled 路径
-# （Web 全档位 + 桌面 legacy）的**固定 4 层 Texture2DArray**（RGBA8，各层同尺寸；
-# 合并后 Web 陆地程序少占材质 sampler）：
+# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01 / surface-array-edge 2026-11-02]
+# 主地形非 tiled 路径（Web 全档位 + 桌面 legacy）的**固定 6 层 Texture2DArray**
+# （RGBA8，各层同尺寸；陆地与两个水面程序共用，合并后少占材质 sampler）：
 #   layer0 = normal：RG=粗法线 xy（0.5+n*0.5），BA=近景高度细节坡度（encode_slope）；
 #   layer1 = relief：RG=粗段细节坡度，BA=细段细节坡度（encode_slope）；
 #   layer2 = detail：R=静态细节噪声（0x80=恒等），GBA=0（B 方案迁入，MID/HIGH 用）；
 #   layer3 = occluder：RGBA8 = 两个 16-bit cell.index（主/次遮挡源，0xFFFF=无；B 方案
-#            GI 弹射用，shader texelFetch；不再需要 bounce_lut）。
+#            GI 弹射用，shader texelFetch；不再需要 bounce_lut）；
+#   layer4 = edge_distance：R=到次生格的归一距离、G=沟谷 crease、BA=8 邻域水/湖占比
+#            （海岸 halo 的连续场；LINEAR 采样）；
+#   layer5 = edge_neighbor：RG=次生 cell id 16-bit（0xFFFF=无，shader 必须 texelFetch）、
+#            B=water_depth R（陆地侧覆盖场备用）、A 预留 0。
+# layer4/5 直接取自同一个 native tile bundle（edge_distance / edge_neighbor），
+# **零新增烘焙计算**；层数门控 terrain_edge_layers_bound=(layers>=6)。
 # 与 2D terrain_normal_tex 同尺寸、同 uv；由 _bake_legacy_static_surface 用 native
 # run_bake_visual_tile_layer_pass 整图单 tile 烘一次后上传（detail 来自
 # terrain_detail_tex、occluder 来自 gi_occluder_tex，均在 bake 期已就绪）。
-# 桌面 tiled 用 visual_tiles 的 normal/relief/detail/water 数组，此时本字段为 null。
+# 桌面 tiled 用 visual_tiles 的 normal/relief/detail/water/edge 数组，此时本字段为 null。
 var terrain_surface_tex: Texture2DArray
 # [terrain-horizon 2026-07-03] 生成期烘焙 8 方向 horizon angle（RGBA8，每通道拆 high/low
 # nibble 承载两个方向）。运行期按 TOD 太阳方位插值，只遮蔽 direct lighting；移动端可为空。

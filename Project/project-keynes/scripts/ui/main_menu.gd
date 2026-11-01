@@ -331,20 +331,36 @@ func _on_foreign_box_changed(value: float) -> void:
 
 
 func _apply_responsive_layout() -> void:
+	# 移动端：设计像素经 content_scale 换算成 dp（见 scripts/ui/mobile_ui_scaling.gd），
+	# 所以这里的 size 已经是**设计像素**，断点阈值可以照旧理解成 1600×960 坐标系。
+	# 另外两个只有手机上才会发生的差异要在这里吃掉：
+	#   1) 刘海/挖孔安全区（DisplayServer.get_display_safe_area()）；
+	#   2) 触摸命中区：短画布上**不能**把按钮做小（桌面 short_h 分支是给矮窗口用的），
+	#      移动端反而要把章节按钮抬到 56 设计像素（≈48dp）。
+	var touch_ui := _ui_scaling_node()
+	var touch := touch_ui != null and bool(touch_ui.call("is_touch_profile"))
+	var insets := _safe_area_insets(touch_ui)
+	var safe_left := float(insets.get("left", 0.0))
+	var safe_top := float(insets.get("top", 0.0))
+	var safe_right := float(insets.get("right", 0.0))
+	var safe_bottom := float(insets.get("bottom", 0.0))
 	var narrow := size.x < 760.0
-	var compact_spread := size.x < 980.0
+	# 「矮而宽」（手机横屏：949×462 这种）不能竖排：竖排会把「国家与开局 / 地图预览」
+	# 两张卡片压成一条缝——2220×1080@440dpi 实测左栏只剩 ~40 设计像素高，表单点不到。
+	# 竖排只留给「窄且够高」的桌面小窗，行为与改动前一致。
+	var compact_spread := size.x < 980.0 and size.y >= 600.0
 	var side_margin := 12 if narrow else (24 if compact_spread else 48)
 	var top_margin := 12 if narrow else 28
 	var bottom_margin := 38 if narrow else 34
-	_page_margin.add_theme_constant_override("margin_left", side_margin)
-	_page_margin.add_theme_constant_override("margin_right", side_margin)
-	_page_margin.add_theme_constant_override("margin_top", top_margin)
-	_page_margin.add_theme_constant_override("margin_bottom", bottom_margin)
-	_status_label.offset_left = side_margin
-	_status_label.offset_right = -side_margin
+	_page_margin.add_theme_constant_override("margin_left", side_margin + int(round(safe_left)))
+	_page_margin.add_theme_constant_override("margin_right", side_margin + int(round(safe_right)))
+	_page_margin.add_theme_constant_override("margin_top", top_margin + int(round(safe_top)))
+	_page_margin.add_theme_constant_override("margin_bottom", bottom_margin + int(round(safe_bottom)))
+	_status_label.offset_left = side_margin + safe_left
+	_status_label.offset_right = -(side_margin + safe_right)
 
-	var avail_w := maxf(280.0, size.x - float(side_margin * 2))
-	var avail_h := maxf(320.0, size.y - float(top_margin + bottom_margin))
+	var avail_w := maxf(280.0, size.x - float(side_margin * 2) - safe_left - safe_right)
+	var avail_h := maxf(320.0, size.y - float(top_margin + bottom_margin) - safe_top - safe_bottom)
 	if is_instance_valid(_shader_progress):
 		# 左边缘跟页面边距对齐（窄窗口时不会出框）；纵向固定在左下角，
 		# 底边比 StatusLabel 的顶边再高一点（-44 vs -34），两行文字不叠。
@@ -379,20 +395,31 @@ func _apply_responsive_layout() -> void:
 			grid.columns = 1 if size.x < 920.0 else 2
 	if _layout_cards_row is GridContainer:
 		(_layout_cards_row as GridContainer).columns = 3 if size.x < 1080.0 else 5
-	_map_preview.get_node("Margin/Column/SummaryGrid").visible = not compact_spread
-	_map_preview.get_node("Margin/Column/CanvasFrame").custom_minimum_size.y = 120.0 if compact_spread else 196.0
-	_map_preview.get_node("Margin/Column/CanvasFrame/MapCanvas").custom_minimum_size.y = 120.0 if compact_spread else 182.0
-	_map_preview.size_flags_vertical = Control.SIZE_SHRINK_BEGIN if compact_spread else Control.SIZE_EXPAND_FILL
+	# 手机横屏（逻辑高 ~460）时，地图预览卡片的 min height（画布 196 + 标题 + 摘要）
+	# 会把整页顶出可视区：页面是 anchors 全铺 + grow=BOTH，溢出会**上下对称**地
+	# 顶到屏幕外（实测标题栏被裁掉一半）。这里在「触摸 + 矮」时压缩预览卡片。
+	var phone_cramp := touch and avail_h < 520.0
+	_map_preview.get_node("Margin/Column/SummaryGrid").visible = not compact_spread and not phone_cramp
+	var preview_canvas_h := 110.0 if phone_cramp else (120.0 if compact_spread else 196.0)
+	var preview_map_h := 100.0 if phone_cramp else (120.0 if compact_spread else 182.0)
+	_map_preview.get_node("Margin/Column/CanvasFrame").custom_minimum_size.y = preview_canvas_h
+	_map_preview.get_node("Margin/Column/CanvasFrame/MapCanvas").custom_minimum_size.y = preview_map_h
+	_map_preview.size_flags_vertical = Control.SIZE_SHRINK_BEGIN if (compact_spread or phone_cramp) else Control.SIZE_EXPAND_FILL
 	_right_column.size_flags_vertical = Control.SIZE_SHRINK_BEGIN if compact_spread else Control.SIZE_EXPAND_FILL
 	if _dual_spread != null:
 		_dual_spread.vertical = compact_spread
 	if _right_column != null:
-		_right_column.custom_minimum_size.x = 0.0 if compact_spread else avail_w * 0.48
+		# 手机上把宽度让给左侧表单（地图预览在 20:9 横屏里本来就压得很扁）。
+		var right_ratio := 0.34 if (touch and size.x < 1400.0) else 0.48
+		_right_column.custom_minimum_size.x = 0.0 if compact_spread else avail_w * right_ratio
 	if _settings_spread != null:
 		_settings_spread.vertical = compact_spread
 
 	var slip_widths: Array[float] = [282.0, 270.0, 260.0, 250.0]
 	var slip_heights := PackedFloat32Array([44.0, 42.0, 42.0, 42.0]) if short_h else PackedFloat32Array([52.0, 48.0, 48.0, 48.0])
+	if touch:
+		# 触摸命中区：56 设计像素 × content_scale ≈ 48dp（440dpi 档），桌面短窗口不变。
+		slip_heights = PackedFloat32Array([56.0, 54.0, 54.0, 54.0])
 	var cmd_idx := 0
 	for node in get_tree().get_nodes_in_group("main_menu_commands"):
 		if node is Button:
@@ -405,6 +432,44 @@ func _apply_responsive_layout() -> void:
 			if slip != null and slip.material is ShaderMaterial:
 				(slip.material as ShaderMaterial).set_shader_parameter("button_size", Vector2(target_w, target_h))
 			cmd_idx += 1
+	if touch:
+		# 触摸端其余可点控件（开始/返回/应用、下拉、输入框、滑块、存档行按钮）统一抬高到
+		# 52 设计像素；它们的高度原本由主题 content_margin + 字号决定，只有 29~44。
+		_enforce_touch_targets()
+
+
+## 触摸端最小命中区（设计像素）。52 × 2.39 ≈ 45dp（440dpi 档位）。
+const TOUCH_MIN_HEIGHT := 52.0
+
+
+func _enforce_touch_targets() -> void:
+	for page in get_tree().get_nodes_in_group("main_menu_pages"):
+		var page_control := page as Control
+		if page_control != null:
+			_apply_touch_minimums(page_control)
+
+
+func _apply_touch_minimums(node: Node) -> void:
+	if node is Control:
+		var control := node as Control
+		if control is BaseButton or control is LineEdit or control is Range:
+			control.custom_minimum_size.y = maxf(control.custom_minimum_size.y, TOUCH_MIN_HEIGHT)
+	for child in node.get_children():
+		_apply_touch_minimums(child)
+
+
+## 移动端缩放策略节点（/root/GameSettings/MobileUIScaling）。桌面端也存在，只是倍率 1.0。
+func _ui_scaling_node() -> Node:
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null or not settings.has_method("ui_scaling"):
+		return null
+	return settings.call("ui_scaling")
+
+
+func _safe_area_insets(scaling: Node) -> Dictionary:
+	if scaling == null:
+		return {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	return scaling.call("safe_insets")
 
 
 func _show_page(page: Control, page_key: String = "home", animate: bool = true) -> void:
@@ -508,8 +573,19 @@ func _add_save_slot(slot: Dictionary, save_service) -> void:
 	_load_slots.add_child(row)
 
 
+## 移动端设置页只保留「真正有用」的项：窗口模式/分辨率/垂直同步在安卓上由系统决定，
+## game_settings.apply() 也已经跳过这些调用，UI 上继续显示只会让人以为"改了没生效"。
+func _apply_settings_platform_visibility() -> void:
+	var touch := OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+	for node_name in ["WindowModeLabel", "WindowMode", "ResolutionLabel", "Resolution", "Vsync"]:
+		var node := find_child(node_name, true, false) as Control
+		if node != null:
+			node.visible = not touch
+
+
 func _show_settings() -> void:
 	_show_page(%SettingsPage, "settings", true)
+	_apply_settings_platform_visibility()
 	var current: Dictionary = GameSettings.values()
 	_configure_option(_settings_controls.window_mode,
 		["窗口", "无边框", "全屏"], ["windowed", "borderless", "fullscreen"], current.window_mode)

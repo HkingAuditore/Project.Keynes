@@ -22,10 +22,19 @@ extends EditorPlugin
 const BAKE_SCRIPT := "res://tools/loading_catalog_bake.gd"
 
 class CatalogExport extends EditorExportPlugin:
+	## add_file() 注入过的快照路径。_export_file() 对这些路径调用 skip()，
+	## 否则 all_resources 预设会把同一路径再写一遍 → APK 里出现两个同名 ZIP entry
+	## （assets/data/loading_catalog_v1/*.res），apksigner 直接
+	## ApkFormatException: Multiple ZIP entries with the same name 拒绝签名。
+	var _injected: Dictionary = {}
+
 	func _get_name() -> String:
 		return "LoadingCatalogPrebake"
 
 	func _export_begin(_features: PackedStringArray,_debug: bool,_path: String,_flags: int) -> void:
+		# 同一编辑器会话可能连续导多个平台；上一次的注入清单不能带到这一次，
+		# 否则本次 add_file() 提前 return 时 skip() 会把正常资源也删掉。
+		_injected.clear()
 		var baker = load(BAKE_SCRIPT)
 		if baker == null:
 			push_error("[loading-catalog] 无法加载 %s，导出将没有预烘快照。请检查脚本是否被改名/删除。" % BAKE_SCRIPT)
@@ -55,6 +64,14 @@ class CatalogExport extends EditorExportPlugin:
 		for filename in baker.SNAPSHOT_FILES:
 			var path: String = "res://data/loading_catalog_v1/"+str(filename)
 			add_file(path,FileAccess.get_file_as_bytes(path),false)
+			_injected[path] = true
+
+	## 正常资源导出会把这些快照再选一次；skip() 让 add_file() 成为唯一来源，
+	## 保证每个路径在 APK/PCK 里只出现一次。_injected 只在 add_file() 真正执行后
+	## 才有值，所以快照缺失、_export_begin 提前 return 时不会误删文件。
+	func _export_file(path: String, _type: String, _features: PackedStringArray) -> void:
+		if _injected.has(path):
+			skip()
 
 var _catalog_export: CatalogExport
 

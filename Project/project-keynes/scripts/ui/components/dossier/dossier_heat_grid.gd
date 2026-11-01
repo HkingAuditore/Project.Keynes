@@ -1,6 +1,8 @@
 extends DossierChart
 class_name DossierHeatGrid
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 ## 物资热力网格：按分组排列的方格，底色深浅表示短缺（暗红）或过剩（铜绿），
 ## 右上角刻度表示价格相对成本锚的偏离。整张网格自绘，点击方格发出 cell_selected。
 
@@ -11,17 +13,23 @@ const TILE_HEIGHT := 42.0
 const GAP := 4.0
 const HEADER_HEIGHT := 22.0
 
+## 触摸档下的方格高度。43dp 以上的整块数据网格会把一屏塞满，取 36dp
+## （= 72 设计像素 @440dpi）——比现在 42 像素（21dp）大 1.7 倍，仍然一屏能读。
+const TOUCH_TILE_DP := 36.0
+
 var selected_id := ""
 var _groups: Array = []
 var _cells: Array = []
 var _layout: Array = []
 var _hover := -1
+var _tile_height := TILE_HEIGHT
 
 
 func _init() -> void:
 	super()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_tile_height = maxf(TILE_HEIGHT, TouchUI.units(TOUCH_TILE_DP))
 
 
 ## groups: [{id, name}]；cells: [{id, name, group, heat(-1..1), price_index, tooltip}]
@@ -69,9 +77,9 @@ func _relayout() -> void:
 			var column := k % columns
 			var row := k / columns
 			_layout.append({"index": members[k], "rect": Rect2(
-				Vector2(float(column) * (tile_width + GAP), y + float(row) * (TILE_HEIGHT + GAP)),
-				Vector2(tile_width, TILE_HEIGHT))})
-		y += float(ceili(float(members.size()) / float(columns))) * (TILE_HEIGHT + GAP) + 6.0
+				Vector2(float(column) * (tile_width + GAP), y + float(row) * (_tile_height + GAP)),
+				Vector2(tile_width, _tile_height))})
+		y += float(ceili(float(members.size()) / float(columns))) * (_tile_height + GAP) + 6.0
 	set_meta("headers", headers)
 	if absf(custom_minimum_size.y - y) > 0.5:
 		custom_minimum_size.y = y
@@ -89,9 +97,13 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT and _hover >= 0:
-			cell_selected.emit(String(_cells[_hover].get("id", "")))
-			accept_event()
+		# 触摸档没有 hover 预热：按事件位置命中，而不是按上一次鼠标移动留下的 _hover。
+		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			var cell := _hit(button.position)
+			if cell >= 0:
+				_hover = cell
+				cell_selected.emit(String(_cells[cell].get("id", "")))
+				accept_event()
 
 
 func _hit(point: Vector2) -> int:

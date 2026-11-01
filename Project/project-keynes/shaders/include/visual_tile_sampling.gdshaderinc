@@ -53,22 +53,46 @@ vec4 visual_sample_height(vec2 uv) { return texture(height_tex, visual_static_wr
 #endif
 #endif
 
-// [packed-surface 2026-11-01 / 方案 A] 非 tiled 的 world_map 地形程序把 normal 与 relief
-// 打包成一个 2 层 sampler2DArray（layer0=normal，layer1=relief），比两张 2D 省 1 个采样槽，
-// 腾出的槽在 Web 上恢复 noise_tex。只开 VT_USE_TERRAIN_NORMAL 的其它层（植被 / 建筑 /
-// 资源 / 贸易 / ground cover）继续用单张 2D terrain_normal_tex。tiled 桌面不走这条：
-// normal/relief 是两个不同分辨率（relief 是 relief_scale 倍）的数组，不能同 array。
+// [packed-surface 2026-11-01 / surface-array-edge 2026-11-02] 非 tiled 的 world_map 地形 /
+// 水面程序把整张静态地表打包成一个 sampler2DArray `terrain_surface_tex`，比多张 2D 省采样槽
+// （Web 预算 8 槽的根因就是这些 2D 图）。层契约（固定 6 层，MapBaker.SURFACE_ARRAY_LAYERS）：
+//   layer0 = normal    RG 粗法线 xy（0.5+n*0.5），BA 近景高度细节坡度（encode_slope）
+//   layer1 = relief    RG 粗段 / BA 细段分地形细节坡度（encode_slope）
+//   layer2 = detail    R = baked 细节噪声（BGA=0）
+//   layer3 = occluder  两个 16-bit cell id（必须 texelFetch）
+//   layer4 = edge_distance  R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比（LINEAR）
+//   layer5 = edge_neighbor  RG 次生 cell id（必须 texelFetch）；B = water_depth R；A 预留
+// 使用方在 include 前定义 VT_USE_TERRAIN_SURFACE_ARRAY（陆地与两个水面程序都定义）；
+// 各 VT_USE_* 只决定读哪一层，**不新增 sampler**。tiled 桌面不走这条：normal/relief 是
+// 两个不同分辨率（relief 是 relief_scale 倍）的数组，不能同 array。
+#if !defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_SURFACE_ARRAY)
+uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
+#define TS_LAYER_NORMAL   0.0
+#define TS_LAYER_RELIEF   1.0
+#define TS_LAYER_DETAIL   2.0
+#define TS_LAYER_OCCLUDER 3.0
+#define TS_LAYER_EDGE_DISTANCE 4.0
+#define TS_LAYER_EDGE_NEIGHBOR 5.0
+// 运行期实际层数（2 = 旧的两层图；3 = +detail；4 = +occluder；6 = +edge 两层）。
+uniform int terrain_surface_layer_count = 2;
+uniform bool terrain_detail_layer_bound = false;
+uniform bool terrain_occluder_layer_bound = false;
+// layer4/5 是否真的烘出来了 ⇒ 次生生态过渡 / crease / 海岸占比是否可用。
+// false（旧图 / 单 tile 烘焙失败 / 层数不足）时下面的 edge helper 返回中性值，
+// **绝不采样越界层**（GLES3 对越界 layer 的返回值未定义）。
+uniform bool terrain_edge_layers_bound = false;
+#endif
+
 #ifdef VT_USE_TERRAIN_NORMAL
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_terrain_normal_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_terrain_normal(vec2 uv) { return texture(visual_terrain_normal_tiles, visual_tile_address(uv)); }
 #elif defined(VT_USE_TERRAIN_RELIEF)
-// world_map 非 tiled（Web 全档位 + 桌面 legacy）：normal+relief 打包 array。
-//   layer0 = normal：RG 粗法线 xy（0.5+n*0.5），BA 近景高度细节坡度（encode_slope）
-//   layer1 = relief：RG 粗段 / BA 细段分地形细节坡度（encode_slope）
-uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
+#ifndef VT_USE_TERRAIN_SURFACE_ARRAY
+#error "non-tiled packed normal+relief requires VT_USE_TERRAIN_SURFACE_ARRAY (terrain_surface_tex)"
+#endif
 vec4 visual_sample_terrain_normal(vec2 uv) {
-	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), 0.0));
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_NORMAL));
 }
 #else
 uniform sampler2D terrain_normal_tex : filter_linear, repeat_disable;
@@ -87,7 +111,7 @@ uniform sampler2DArray visual_terrain_relief_tiles : filter_linear, repeat_disab
 vec4 visual_sample_terrain_relief(vec2 uv) { return texture(visual_terrain_relief_tiles, visual_tile_address(uv)); }
 #else
 vec4 visual_sample_terrain_relief(vec2 uv) {
-	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), 1.0));
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_RELIEF));
 }
 #endif
 #endif
@@ -108,30 +132,19 @@ vec4 decode_relief_slope4(vec4 enc) {
 	vec4 e = enc * 2.0 - 1.0;
 	return sign(e) * e * e * TERRAIN_RELIEF_ENCODE_RANGE;
 }
-#ifndef MAP_VISUAL_TILED
-// [web-high-features 2026-11-01 / 方案 B] 非 tiled 的 terrain_surface_tex 固定 4 层：
-//   layer0 = normal，layer1 = relief，layer2 = detail（R8→RGBA8，world UV），
-//   layer3 = occluder ids（RGBA8：两个 16-bit cell id，0xFFFF=无）。
-// terrain_surface_layer_count 是运行期实际层数（2 = 方案 A 的旧两张图；3 = +detail；
-// 4 = +occluder）。所有新增数据都塞进已有 array，**不新增材质 sampler**。
-#define TS_LAYER_NORMAL   0.0
-#define TS_LAYER_RELIEF   1.0
-#define TS_LAYER_DETAIL   2.0
-#define TS_LAYER_OCCLUDER 3.0
-uniform int terrain_surface_layer_count = 2;
-uniform bool terrain_detail_layer_bound = false;
-uniform bool terrain_occluder_layer_bound = false;
-#endif
 #endif
 
-// [static-bake 2026-10-10] 运行期不变的逐像素地表量由 visual tile 烘焙写入：
-//   edge_distance.g = 沟谷深度，terrain_detail.gba = 8 邻域水/湖/海占比，
-//   water_depth.gba = 湖/礁/海带软权重。只有 tiled 静态烘焙产出这些通道，Legacy/Web
-//   贴图仍是旧格式，所以只在 tiled 变体里定义 PK_TERRAIN_STATIC_BAKED；运行期再由
-//   terrain_static_baked 确认本张图确实是新烘焙。它**不再**表示法线是否可用——
-//   法线一律看 terrain_baked_normals（PK_TERRAIN_BAKED_NORMALS）。
+// [static-bake 2026-10-10 / surface-array-edge 2026-11-02] 运行期不变的逐像素地表量由
+// visual tile 烘焙写入：edge_distance.r 格界距离、.g 沟谷 crease、.ba 8 邻域水/湖占比。
+// 两条路径都算"静态烘焙就绪"，各自用 terrain_static_baked 在运行期确认本张图：
+//   tiled 桌面        → PK_TERRAIN_STATIC_BAKED（数组 + water_depth，走 visual_tile_address）
+//   非 tiled 打包数组  → PK_TERRAIN_STATIC_PACKED（edge 层在同一个 surface array 里）
+// 它**不再**表示法线是否可用——法线一律看 terrain_baked_normals（PK_TERRAIN_BAKED_NORMALS）。
 #if defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_RELIEF) && defined(VT_USE_TERRAIN_NORMAL) && defined(VT_USE_TERRAIN_DETAIL) && defined(VT_USE_WATER_DEPTH) && defined(VT_USE_EDGE_DISTANCE)
 #define PK_TERRAIN_STATIC_BAKED
+uniform bool terrain_static_baked = false;
+#elif !defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_SURFACE_ARRAY) && defined(VT_USE_EDGE_DISTANCE) && defined(VT_USE_EDGE_NEIGHBOR)
+#define PK_TERRAIN_STATIC_PACKED
 uniform bool terrain_static_baked = false;
 #endif
 
@@ -264,6 +277,9 @@ vec4 visual_sample_terrain_detail(vec2 uv) { return texture(visual_terrain_detai
 #ifndef PK_TERRAIN_BAKED_NORMALS
 #error "non-tiled VT_USE_TERRAIN_DETAIL requires the packed terrain_surface_tex layers"
 #endif
+#ifndef VT_USE_TERRAIN_SURFACE_ARRAY
+#error "non-tiled VT_USE_TERRAIN_DETAIL requires VT_USE_TERRAIN_SURFACE_ARRAY"
+#endif
 vec4 visual_sample_terrain_detail(vec2 uv) {
 	if (terrain_surface_layer_count < 3) {
 		return vec4(0.5);
@@ -306,6 +322,21 @@ vec4 visual_sample_packed_occluder(vec2 uv) {
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_edge_neighbor_tiles : filter_nearest, repeat_disable;
 vec4 visual_sample_edge_neighbor(vec2 uv) { return texture(visual_edge_neighbor_tiles, visual_tile_address(uv)); }
+#elif defined(VT_USE_TERRAIN_SURFACE_ARRAY)
+// [surface-array-edge 2026-11-02] 次生 cell id 走 terrain_surface_tex layer5 的 RG。
+// **必须 texelFetch**：这张 array 是 filter_linear，对 id 做任何插值都会得到垃圾 cell；
+// 写法与 visual_sample_packed_occluder 一致（GLES3 不接受 ivec3(vec2,int) 构造）。
+// terrain_edge_layers_bound=false（旧图 / 烘失败）→ 0xFFFF 哨兵 ⇒ decode 返回 -1，
+// 次生混合整条关闭、退化为硬主 cell 边界，而不是采样越界层。
+vec4 visual_sample_edge_neighbor(vec2 uv) {
+	if (!terrain_edge_layers_bound) {
+		return vec4(1.0);
+	}
+	ivec2 sz = textureSize(terrain_surface_tex, 0).xy;
+	vec2 wuv = visual_static_wrap_uv(uv);
+	ivec2 tx = ivec2(clamp(wuv * vec2(sz), vec2(0.0), vec2(sz) - 1.0));
+	return texelFetch(terrain_surface_tex, ivec3(tx, int(TS_LAYER_EDGE_NEIGHBOR)), 0);
+}
 #else
 uniform sampler2D terrain_edge_neighbor_tex : filter_nearest, repeat_disable;
 vec4 visual_sample_edge_neighbor(vec2 uv) { return texture(terrain_edge_neighbor_tex, visual_static_wrap_uv(uv)); }
@@ -316,8 +347,26 @@ vec4 visual_sample_edge_neighbor(vec2 uv) { return texture(terrain_edge_neighbor
 #ifdef MAP_VISUAL_TILED
 uniform sampler2DArray visual_edge_distance_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_edge_distance(vec2 uv) { return texture(visual_edge_distance_tiles, visual_tile_address(uv)); }
+#elif defined(VT_USE_TERRAIN_SURFACE_ARRAY)
+// [surface-array-edge 2026-11-02] layer4：R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比。
+// LINEAR 采样（距离与占比都是连续量，双线性正是"方块变连续"的来源）。
+// 中性值 = 距离 1.0（权重 0）、无 crease、无海岸占比 —— 等价于"没有 edge 数据"。
+vec4 visual_sample_edge_distance(vec2 uv) {
+	if (!terrain_edge_layers_bound) {
+		return vec4(1.0, 0.0, 0.0, 0.0);
+	}
+	return texture(terrain_surface_tex, vec3(visual_static_wrap_uv(uv), TS_LAYER_EDGE_DISTANCE));
+}
 #else
 uniform sampler2D terrain_edge_distance_tex : filter_linear, repeat_disable;
 vec4 visual_sample_edge_distance(vec2 uv) { return texture(terrain_edge_distance_tex, visual_static_wrap_uv(uv)); }
 #endif
 #endif
+
+// [surface-array-edge 2026-11-02] 无噪声、无 fwidth 的静态次生权重：只吃 edge_distance.r。
+// 与 terrain_edge_secondary_weight_d 的移动端分支同一公式（那里也改调本函数），
+// 供没有 noise_tex / 没有 terrain_surface_detail 的程序（Web compact 水面）复用。
+float terrain_static_edge_weight(float distance_to_edge, float width) {
+	float w = clamp(width, 1.0 / 255.0, 0.98);
+	return 0.5 * (1.0 - smoothstep(0.0, w, distance_to_edge));
+}

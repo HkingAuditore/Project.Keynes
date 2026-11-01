@@ -6,6 +6,18 @@ signal return_requested
 
 var _failed := false
 
+# ─── 失败诊断 UI（mapgen-diagnostics）────────────────────────────────────
+# 需求（问题 3/3）：安卓上"点创建地图直接失败"只显示 map_generator_failed，
+# 玩家/开发者拿不到细节。这里把失败面板升级成：
+#   摘要（一句中文） + 可滚动/可全选的详细文本 + "复制详情" + 落盘到 user://logs。
+var _failure_detail_edit: TextEdit
+var _failure_detail_box: Control
+var _failure_log_path_label: Label
+var _copy_button: Button
+var _last_failure_summary: String = ""
+var _last_failure_detail: String = ""
+var _last_failure_log_path: String = ""
+
 const STAGE_LABELS := {
 	"preparing": "准备地图数据",
 	"continents": "生成陆地",
@@ -71,6 +83,15 @@ func _ready() -> void:
 	resized.connect(func() -> void: _card.custom_minimum_size.x = minf(640.0, maxf(240.0,size.x-64.0)))
 	get_node("Center/Card/Content/FailureActions/Retry").pressed.connect(func() -> void: retry_requested.emit())
 	get_node("Center/Card/Content/FailureActions/Return").pressed.connect(func() -> void: return_requested.emit())
+	# 失败详情区：可滚动 + 可全选 + 一键复制（安卓无 Ctrl+C，只能靠按钮）。
+	_failure_detail_box = get_node_or_null("Center/Card/Content/FailureDetail")
+	_failure_detail_edit = get_node_or_null("Center/Card/Content/FailureDetail/DetailText") as TextEdit
+	_failure_log_path_label = get_node_or_null("Center/Card/Content/FailureDetail/LogPath") as Label
+	_copy_button = get_node_or_null("Center/Card/Content/FailureActions/CopyDetail") as Button
+	if _copy_button != null:
+		_copy_button.pressed.connect(_on_copy_detail_pressed)
+	if _failure_detail_box != null:
+		_failure_detail_box.hide()
 	visibility_changed.connect(func() -> void: set_process(is_visible_in_tree()))
 	set_process(is_visible_in_tree())
 
@@ -163,6 +184,13 @@ func show_message(message: String) -> void:
 	_kill_tween()
 	_failed = false
 	get_node("Center/Card/Content/FailureActions").hide()
+	if _failure_detail_box != null:
+		_failure_detail_box.hide()
+	if _progress != null:
+		_progress.show()
+	if _percent_label != null:
+		_percent_label.show()
+	_set_failure_card_expanded(false)
 	visible = true
 	set_process(true)
 	modulate = Color.WHITE
@@ -244,12 +272,99 @@ func set_layout_state(state: Dictionary) -> void:
 		_backdrop.call("set_layout_state", state)
 
 func show_failure(reason: String) -> void:
+	show_failure_detailed(reason, "")
+
+
+## 失败面板（详细版）。
+## summary : 一句中文摘要（含阶段/原因/排查建议），显示在标题行
+## detail  : 完整多行详情（stage/reason/native_report/preflight/平台）。空则自动生成。
+## 行为：
+##   1) 详情区显示摘要 + 可滚动/可全选的详细文本；
+##   2) 详情自动落盘 user://logs/map_generation_failure_<时间戳>.txt（安卓无控制台）；
+##   3) 打一行 [mapgen][fatal] 到 stdout/push_error，方便 adb logcat 过滤；
+##   4) "复制详情" 按钮走 DisplayServer.clipboard_set（安卓没有 Ctrl+C）。
+func show_failure_detailed(summary: String, detail: String) -> void:
 	_kill_tween()
 	_failed = true
 	visible = true
 	modulate = Color.WHITE
 	_card.scale = Vector2.ONE
+	if _title_label == null:
+		_ready()
+	_last_failure_summary = summary
+	_last_failure_detail = detail if not detail.is_empty() else summary
 	_title_label.text = "世界准备失败"
-	_stage_label.text = reason
+	_stage_label.text = summary
 	_stage_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# 失败时进度条和百分比都无意义，藏掉以免和"世界准备失败"矛盾。
+	if _progress != null:
+		_progress.hide()
+	if _percent_label != null:
+		_percent_label.hide()
+	if _failure_detail_edit != null:
+		_failure_detail_edit.text = _last_failure_detail
+		# editable=false 才能避免误改；选中/全选由玩家手动或走"复制详情"按钮。
+		_failure_detail_edit.editable = false
+	if _failure_detail_box != null:
+		_failure_detail_box.show()
+	_set_failure_card_expanded(true)
+	# 落盘：安卓上玩家没法看 stdout，这是唯一能事后取证的持久化位置。
+	_last_failure_log_path = _write_failure_log()
+	if _failure_log_path_label != null:
+		_failure_log_path_label.text = ("详情已保存：%s" % _last_failure_log_path) \
+			if not _last_failure_log_path.is_empty() else "详情保存失败（user:// 不可写）"
+	# 单行、带固定前缀：`adb logcat -s godot:* | findstr "[mapgen][fatal]"` 一条命中。
+	var one_line := summary.replace("\n", " ")
+	print("[mapgen][fatal] %s" % one_line)
+	push_error("[mapgen][fatal] %s" % one_line)
+	if not _last_failure_log_path.is_empty():
+		print("[mapgen][fatal] detail_file=%s" % _last_failure_log_path)
 	get_node("Center/Card/Content/FailureActions").show()
+
+
+## 把失败详情写到 user://logs/map_generation_failure_<时间戳>.txt。
+## 返回写入路径（失败返回空串，绝不抛错——失败面板本身必须能显示出来）。
+func _write_failure_log() -> String:
+	var dir := "user://logs"
+	var abs_dir := ProjectSettings.globalize_path(dir)
+	if not DirAccess.dir_exists_absolute(abs_dir):
+		var mk := DirAccess.make_dir_recursive_absolute(abs_dir)
+		if mk != OK:
+			return ""
+	var stamp := Time.get_datetime_string_from_system(false, true)
+	# 文件名里不能有冒号（Windows/部分 Android 文件系统），统一换成 '-'
+	stamp = stamp.replace(":", "-").replace("T", "_").replace(" ", "_")
+	var path := "%s/map_generation_failure_%s.txt" % [dir, stamp]
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return ""
+	f.store_string(_last_failure_detail)
+	if not _last_failure_detail.ends_with("\n"):
+		f.store_string("\n")
+	f.close()
+	return ProjectSettings.globalize_path(path)
+
+
+## 失败面板比分发面板高得多：Center 是贴底的定高 CenterContainer（offset_top=-244），
+## 详情区塞进去会被裁掉，所以在失败时把它向上撑开，恢复进度态时还原。
+func _set_failure_card_expanded(expanded: bool) -> void:
+	var center := get_node_or_null("Center") as Control
+	if center == null:
+		return
+	center.offset_top = -minf(maxf(size.y - 48.0, 240.0), 620.0) if expanded else -244.0
+
+
+func _on_copy_detail_pressed() -> void:
+	var payload := _last_failure_detail
+	if payload.is_empty():
+		payload = _last_failure_summary
+	DisplayServer.clipboard_set(payload)
+	if _copy_button != null:
+		# 轻量反馈：按钮文案闪一下"已复制"，不额外弹窗。
+		_copy_button.text = "已复制 ✓"
+		var timer := get_tree().create_timer(1.2)
+		timer.timeout.connect(func() -> void:
+			if is_instance_valid(_copy_button):
+				_copy_button.text = "复制详情"
+		)
+

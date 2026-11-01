@@ -303,8 +303,14 @@ func _apply_paper_rects() -> void:
 
 	_footer.offset_left = column.position.x + pad
 	_footer.offset_right = column.end.x - pad - viewport.x
-	_footer.offset_top = -AnnualReportTokens.FOOTER_HEIGHT
+	# 页脚高度不能按令牌写死：触摸档把「关闭/复制全文/更早」都抬到了 44dp（88 设计像素），
+	# 仍按 FOOTER_HEIGHT 预留就会让按钮下半截掉到屏幕下方（实测超出 48px，关闭键点不到）。
+	var footer_height: float = maxf(AnnualReportTokens.FOOTER_HEIGHT,
+		_footer.get_combined_minimum_size().y)
+	_footer.offset_top = -footer_height
 	_footer.offset_bottom = 0.0
+	_foot_veil.offset_top = -footer_height
+	_foot_veil.offset_bottom = 0.0
 
 	# 刻度轨浮在长纸右侧的桌面上 —— 它不属于纸，属于你翻纸的手。
 	var desk_space: float = viewport.x - column.end.x
