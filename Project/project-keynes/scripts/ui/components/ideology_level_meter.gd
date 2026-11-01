@@ -39,7 +39,7 @@ func _init() -> void:
 	_seal_text = ArtScript.label("", 13, Color(1.0, 0.91, 0.69),
 		HORIZONTAL_ALIGNMENT_CENTER)
 	_seal_text.add_theme_font_override("font",
-		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+		preload("res://assets/fonts/muyao/display_handwritten.tres"))
 	_seal_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_seal_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_seal.add_child(_seal_text)

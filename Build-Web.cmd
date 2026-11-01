@@ -100,6 +100,8 @@ if defined GODOT_BIN set "GODOT=%GODOT_BIN%"
 call :find_godot "%ROOT%..\..\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64.exe"
 call :find_godot "%ROOT%..\..\Godot_v4.6.2-stable_win64.exe"
 call :find_godot "%ROOT%..\Godot_v4.6.2-stable_win64.exe"
+call :find_godot "%ROOT%..\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64.exe"
+call :find_godot "%ROOT%Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64.exe"
 if not defined GODOT for %%G in (godot.exe godot4.exe) do (
     if not defined GODOT where %%G >nul 2>nul && set "GODOT=%%G"
 )
@@ -370,6 +372,25 @@ if defined FONT_SUBSET_ACTIVE (
         echo === ERROR: the exported pck does not carry the subset fonts ===
         exit /b 1
     )
+)
+
+rem --- 5. web shell watchdog (memory telemetry + 2 GiB OOM flood guard) --------
+rem Godot Web runs in one wasm32 heap capped at 2 GiB by the official templates.
+rem Long 10x sessions can fill it; after that every mouse move re-enters wasm and
+rem the console fills with "Cannot enlarge memory" / "table index is out of bounds"
+rem (one pair per input event) while the page looks half-alive. The injected
+rem page-side script reports pk_heap to /_log every 10 s and replaces that flood
+rem with a single readable overlay. It is plain JS copied next to the page, so it
+rem does not depend on template internals; re-running is idempotent.
+if not defined PY call :find_python
+if defined PY (
+    !PY! "%ROOT%tools\patch_web_shell.py" --web-root "!EXPORT_DIR!"
+    if errorlevel 1 (
+        echo === ERROR: web shell watchdog injection FAILED ===
+        exit /b 1
+    )
+) else (
+    echo === WARNING: Python not found; web shell watchdog not injected ===
 )
 exit /b 0
 

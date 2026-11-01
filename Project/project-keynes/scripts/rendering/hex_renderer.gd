@@ -38,11 +38,19 @@ const DETAIL_PLAN_FINALIZE: int = 7
 const PK_WEB_TRIVIAL_WORLD_SHADER_PROBE := false
 ## 探针：web 上跳过 deferred 植被填充（图层仍创建），用来判定长帧是否来自填充。
 const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
-## Web 上是否**绘制**天气表现层。实测（2026-10-31，Chrome 性能采样）：
-## weather_overlay 那套（含 SubViewport 云层）在 ANGLE 上把每帧拖到几十秒，
-## 采样里 94% 时间卡在 blitOffscreenFramebuffer 的 getParameter（GPU 排队同步）。
-## 不绘制后：10x 跑满一年、最大帧间隔 2 秒。天气**模拟**不受影响，只是少一层云。
-const PK_WEB_ENABLE_WEATHER_LAYER := false
+## Web 天气表现层总闸（2026-11-01 起：**只在高画质下绘制**）。
+## 判定见 `_web_weather_layer_draw_allowed()`：
+##   - 玩家设置「高」→ `visual_quality >= 2` → 绘制；
+##   - QA 的 `?tier=high`（autotest 把 mobile tier 推到 HIGH）→ 也按高画质处理；
+##   - 低 / 中 / auto → 不绘制（对象仍在、所有 set_* 照常、天气**模拟**不受影响）。
+## 实测依据（2026-10-31，Chrome 性能采样）：weather_overlay 那套在 ANGLE 上把每帧
+## 拖到几十秒，94% 采样卡在 blitOffscreenFramebuffer 的 getParameter（GPU 排队同步）。
+## 不绘制后：10x 跑满一年、最大帧间隔 2 秒。
+## 落地注意：**不能**只在 `_ready` 里写一次 `visible = false` ——
+## `WeatherLayer._refresh_visibility()` 在有 LUT/fronts 时会自己把 visible 置 true
+## （setup() 里就会），必须走 `_apply_weather_layer_render_gate()` 把门交给天气层收敛。
+## 置 false 是应急总闸：web 上任何画质都不绘制。
+const PK_WEB_ENABLE_WEATHER_LAYER := true
 
 @export var shader_path: String = "res://shaders/world_map.gdshader"
 @export var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
@@ -130,19 +138,19 @@ const PK_WEB_ENABLE_WEATHER_LAYER := false
 	set(value):
 		biome_tint_strength = clampf(value, 0.0, 1.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("biome_tint_strength", biome_tint_strength)
+			_push_world_uniform("biome_tint_strength", biome_tint_strength)
 ## 所有陆地变色层之后、光照之前的反照率饱和度。
 @export_range(0.0, 1.5, 0.01) var land_albedo_saturation: float = 0.92:
 	set(value):
 		land_albedo_saturation = clampf(value, 0.0, 1.5)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("land_albedo_saturation", land_albedo_saturation)
+			_push_world_uniform("land_albedo_saturation", land_albedo_saturation)
 ## 陆地色调映射中按明度 ACES 的占比；0 = 纯逐通道 ACES（toe 段会放大色度）。
 @export_range(0.0, 1.0, 0.01) var tonemap_hue_preserve: float = 0.3:
 	set(value):
 		tonemap_hue_preserve = clampf(value, 0.0, 1.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("tonemap_hue_preserve", tonemap_hue_preserve)
+			_push_world_uniform("tonemap_hue_preserve", tonemap_hue_preserve)
 
 # ─── 季节 / 气候系统（每帧由 main.gd 通过 set_*_phase 推进） ─────────────
 # 2026-05-19 Plan-C：season_temp_amp 默认 0.20 → 0.32，与 climate_profile.gd
@@ -153,7 +161,7 @@ const PK_WEB_ENABLE_WEATHER_LAYER := false
 	set(value):
 		vegetation_season_strength = clampf(value, 0.0, 1.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("vegetation_season_strength", vegetation_season_strength)
+			_push_world_uniform("vegetation_season_strength", vegetation_season_strength)
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
 # 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
@@ -211,12 +219,39 @@ var _wind_strength: float = 0.15
 var terrain_materials_enabled: bool = true
 @export_range(0, 17, 1) var terrain_surface_debug_view: int = 0:
 	set(value):
+		var was_split := _split_active()
 		terrain_surface_debug_view = clampi(value, 0, 17)
-		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+		_push_world_uniform("terrain_surface_debug_view", terrain_surface_debug_view)
 		# [web-water-pass] 诊断色由 pass 1 整屏输出，水面 pass 必须整体让位。
 		if _water_mat != null:
 			_water_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+		# [land-water-split 2026-11-02] debug 视图必须回退单 program + 整张 quad
+		# （13/14/16/17 等要全屏覆盖；gi_debug_view 只在陆地管线里，水面 program 复现不了）。
+		# 拆分状态翻转时重编变体 + 重铺几何 + 重推全部 uniform。
+		if was_split != _split_active():
+			_refresh_split_configuration()
+
+## [land-water-split 2026-11-02] 全平台陆地 / 水面双 program 总开关（远程 inspector 可 A/B）。
+## 默认全平台启用；`terrain_surface_debug_view != 0` 或（Compatibility 后端 + tiled）时
+## 自动回退单 program（见 _split_active()）。关掉即完全回到今天的单 program + 单 quad。
+@export var split_land_water_passes: bool = true:
+	set(value):
+		if split_land_water_passes == value:
+			return
+		split_land_water_passes = value
+		# 重新允许尝试：上一次编译失败可能只是临时状态（shader 刚被编辑/驱动抖动）。
+		_split_program_failed = false
+		_water_pass_failed = false
+		_refresh_split_configuration()
+
+## [land-water-split 2026-11-02] 拆分时是否使用保守覆盖 mesh（TerrainCoverageMesh 模块）。
+## 关掉 / 模块缺失 / 构建失败 ⇒ 两张 program 共享整张 quad（保底可运行，行为=今天）。
+@export var terrain_coverage_mesh_enabled: bool = true:
+	set(value):
+		if terrain_coverage_mesh_enabled == value:
+			return
+		terrain_coverage_mesh_enabled = value
+		_apply_world_quad_geometry()
 
 # [terrain-material-tiles 2026-08-01e] 材质族四参数提为 @export：编辑器检查器可见，
 # 运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效；_rebuild 全量推送也读这组值。
@@ -224,25 +259,25 @@ var terrain_materials_enabled: bool = true
 	set(value):
 		terrain_material_albedo_strength = clampf(value, 0.0, 1.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_material_albedo_strength", terrain_material_albedo_strength)
+			_push_world_uniform("terrain_material_albedo_strength", terrain_material_albedo_strength)
 
 @export_range(0.0, 0.8, 0.005) var terrain_material_normal_strength: float = 0.24:
 	set(value):
 		terrain_material_normal_strength = clampf(value, 0.0, 0.5)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_material_normal_strength", terrain_material_normal_strength)
+			_push_world_uniform("terrain_material_normal_strength", terrain_material_normal_strength)
 
 @export_range(0.0, 1.0, 0.01) var terrain_material_roughness_strength: float = 0.35:
 	set(value):
 		terrain_material_roughness_strength = clampf(value, 0.0, 1.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_material_roughness_strength", terrain_material_roughness_strength)
+			_push_world_uniform("terrain_material_roughness_strength", terrain_material_roughness_strength)
 
 @export_range(64.0, 1024.0, 1.0) var terrain_material_world_size: float = 384.0:
 	set(value):
 		terrain_material_world_size = clampf(value, 64.0, 1024.0)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_material_world_size", terrain_material_world_size)
+			_push_world_uniform("terrain_material_world_size", terrain_material_world_size)
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.set_lod_debug_view(terrain_surface_debug_view == 6)
 		)
@@ -250,13 +285,13 @@ var terrain_materials_enabled: bool = true
 	set(value):
 		terrain_ecotone_width = clampf(value, 0.0, 0.96)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
+			_push_world_uniform("terrain_ecotone_width", terrain_ecotone_width)
 		_push_overlay_edge_transition_data()
 @export_range(0.0, 0.45, 0.01) var terrain_ecotone_noise: float = 0.22:
 	set(value):
 		terrain_ecotone_noise = clampf(value, 0.0, 0.45)
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
+			_push_world_uniform("terrain_ecotone_noise", terrain_ecotone_noise)
 		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
 @export var water_effect_enabled: bool = true
@@ -434,47 +469,47 @@ var _simulation_speed_multiplier: float = 1.0
 	set(v):
 		water_wave_shade_strength = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_wave_shade_strength", v)
+			_push_world_uniform("water_wave_shade_strength", v)
 @export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
 	set(v):
 		water_wave_patch_strength = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_wave_patch_strength", v)
+			_push_world_uniform("water_wave_patch_strength", v)
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
 	set(v):
 		water_wave_patch_scale = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_wave_patch_scale", v)
+			_push_world_uniform("water_wave_patch_scale", v)
 @export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
 	set(v):
 		water_base_normal_strength = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_base_normal_strength", v)
+			_push_world_uniform("water_base_normal_strength", v)
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_base_normal_scale: float = 0.93:
 	set(v):
 		water_base_normal_scale = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_base_normal_scale", v)
+			_push_world_uniform("water_base_normal_scale", v)
 @export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
 	set(v):
 		water_detail_normal_strength = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_detail_normal_strength", v)
+			_push_world_uniform("water_detail_normal_strength", v)
 @export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
 	set(v):
 		water_detail_normal_scale = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_detail_normal_scale", v)
+			_push_world_uniform("water_detail_normal_scale", v)
 @export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
 	set(v):
 		water_detail_normal_warp = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_detail_normal_warp", v)
+			_push_world_uniform("water_detail_normal_warp", v)
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_sss_strength: float = 0.18:
 	set(v):
 		water_sss_strength = v
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("water_sss_strength", v)
+			_push_world_uniform("water_sss_strength", v)
 
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
 @export_group("Legacy (Unused)")
@@ -513,12 +548,37 @@ var _water_variant_prefix: String = ""
 ## 第二 pass 的 shader 在 shader 语言层编不过（get_shader_uniform_list 为空）。
 ## 记住这一条，避免每次 _apply_uniforms 都重编 + 重复报同一条错。
 var _water_pass_failed: bool = false
+## [land-water-split 2026-11-02] 水面 program 的源码种类：
+##   "web_min" = Web LOW/MID 的紧凑水面程序（world_water_web.gdshader + WATER_PASS_PREFIX）；
+##   "high"    = Web HIGH 的 PC 水面程序（world_map.gdshader + WATER_WEB_HIGH_PREFIX）；
+##   "split"   = 桌面 / 移动的 PC 水面程序（world_map.gdshader + SPLIT_WATER_ONLY_DEFINE）。
+## 决定 uniform 对齐方式（"web_min" 之外都要从主材质整表拷贝）。
+var _water_program_kind: String = ""
+var _water_variant_kind: String = ""
+## 当前水面 program 是否走 world_map.gdshader（= 能整表复用主材质的 uniform）。
+var _water_uses_world_map: bool = false
+## 当前水面 program 声明的 uniform 名集合（StringName → true）。运行期 setter 只把
+## **水面 program 真的声明过**的键镜像过去，避免对紧凑程序刷 "parameter does not exist"。
+var _water_uniform_names := {}
+## [land-water-split 2026-11-02] 水面 program 在 shader 语言层编不过 → 整条拆分回退
+## 单 program（不许只回退一半：陆地程序此时不带水面分支，只回退水会露出空洞）。
+## 只对非 Web 生效：Web 的既有降级是"land-only 程序 + 暗海蓝占位色"，字节契约不动。
+var _split_program_failed: bool = false
+## [land-water-split 2026-11-02] 拆分时水面 / 陆地覆盖 mesh（来自 TerrainCoverageMesh
+## 模块）。任一为 null ⇒ 两张 program 共享整张 quad（保底可运行）。
+var _coverage_water_mesh: Mesh = null
+var _coverage_land_mesh: Mesh = null
+## 最近一次覆盖 mesh 构建的结果（ok / reason / stats），诊断与测试用。
+var _coverage_mesh_result := {}
+var _coverage_mesh_stats := {}
+var _coverage_mesh_script: Script = null
+const TERRAIN_COVERAGE_MESH_PATH := "res://scripts/rendering/terrain_coverage_mesh.gd"
 ## Web 一次性取证：地表发白/黑屏时到底哪张 LUT/地形纹理是空的。
 var _web_lut_probe_done := false
 var _web_veg_defer_started := false
 ## Web 专用：把 9 层植被的 setup 推迟到进世界之后。实测这段在 wasm 里要 4.1 秒，
 ## 直接压在加载窗口里；植被只是观感层，晚 2-3 秒出现可以接受。
-## Web 正式策略：天气层保留对象但不绘制（见 PK_WEB_ENABLE_WEATHER_LAYER 注释）。
+## Web 正式策略：天气层保留对象、只有高画质才绘制（见 PK_WEB_ENABLE_WEATHER_LAYER 注释）。
 ## PROBE：隐藏地图 quad 本身（隔离"地图绘制/图集上传"是否造成长帧）。
 const PK_WEB_HIDE_WORLD_QUAD := false
 const PK_WEB_MINIMAL_LAYERS := false
@@ -771,9 +831,10 @@ func _ready() -> void:
 	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
 	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
 	_weather_layer.process_priority = 1000
-	if not PK_WEB_ENABLE_WEATHER_LAYER and OS.has_feature("web"):
-		_weather_layer.visible = false
-		print("[hex_renderer] web: WeatherLayer not drawn (ANGLE blit cost; weather sim unaffected)")
+	# web：低 / 中 / auto 画质不绘制天气层，只有高画质才画。
+	# 用画质门而不是一次性 visible=false：WeatherLayer._refresh_visibility() 会在
+	# setup()/fronts 更新时把 visible 重新置 true，只有门能挡住那次重开。
+	_apply_weather_layer_render_gate()
 	if _world != null and _weather_layer.has_method("set_world_ref"):
 		_weather_layer.set_world_ref(_world)  # 帧间插值:供 weather_layer 取 weather_lut_prev_tex
 	# 国界线（z=6，在数据 overlay 之上）与视野迷雾（z=12，盖住天气/高亮/国界）。
@@ -795,6 +856,36 @@ func _ready() -> void:
 		_rebuild()
 	set_process(true)
 
+
+## Web 天气层是否允许**绘制**。桌面 / 移动恒 true（不受画质设置影响）。
+## 「高画质」= 玩家设置「高」（visual_quality >= 2），或 QA 的 ?tier=high
+## （autotest 直接把 mobile tier 推到 HIGH，此路径按高画质处理）。
+func _web_weather_layer_draw_allowed() -> bool:
+	if not OS.has_feature("web"):
+		return true
+	if not PK_WEB_ENABLE_WEATHER_LAYER:
+		return false
+	return visual_quality >= 2 or _mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
+
+
+## 上一次推给天气层的门状态（只用于首帧/切档时打一行诊断）。
+var _weather_gate_last_drawn: bool = true
+
+
+## 把「web + 是否高画质」推给 WeatherLayer 的画质门。
+## 门状态在 WeatherLayer 内部与 fronts/LUT 条件取与，所以关着门时它不会被
+## setup()/fronts 更新重新显示。画质设置、shader 档位切换都调这里。
+func _apply_weather_layer_render_gate() -> void:
+	if _weather_layer == null or not _weather_layer.has_method("set_render_gate"):
+		return
+	var allowed: bool = _web_weather_layer_draw_allowed()
+	_weather_layer.set_render_gate(allowed)
+	if OS.has_feature("web") and allowed != _weather_gate_last_drawn:
+		_weather_gate_last_drawn = allowed
+		print("[hex_renderer] web: WeatherLayer drawn=%s (visual_quality=%d tier=%s; web draws only at 高画质)" % [
+			str(allowed), visual_quality, _mobile_quality_tier_define])
+
+
 # 每帧把 world_time 推进给 shader（驱动洋流流纹）
 # 注意：这里只 push 一个 float uniform，几乎零开销
 func _process(delta: float) -> void:
@@ -804,7 +895,9 @@ func _process(delta: float) -> void:
 	_sync_cell_lut_dims()
 	_sync_cell_lut_textures()
 	_world_time += delta
-	_shader_mat.set_shader_parameter("world_time", _world_time)
+	_push_world_uniform("world_time", _world_time)
+	if _water_mat != null:
+		_water_mat.set_shader_parameter("world_time", _world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
@@ -903,6 +996,7 @@ func _load_shader() -> void:
 				_shader_mat = next_mat
 				_world_quad.material = _shader_mat
 				_refresh_shader_hot_reload_baseline()
+				_validate_world_program_variant()
 				return
 		push_warning("HexRenderer: world_material has no shader; falling back to %s" % shader_path)
 
@@ -916,6 +1010,26 @@ func _load_shader() -> void:
 	_world_quad.material = _shader_mat
 	_active_shader_source_path = shader_path
 	_refresh_shader_hot_reload_baseline()
+	_validate_world_program_variant()
+
+
+## [land-water-split 2026-11-02] 陆地 program 自检：拆分激活时主材质是 land-only 变体，
+## 若它在 shader 语言层编不过（get_shader_uniform_list 为空），整条拆分回退单 program，
+## 否则水面会被 discard 成背景空洞。递归深度恒为 1（置位后 _split_active() 为 false）。
+## Web 保持既有行为（LAND_ONLY 前缀是字节契约，不做运行期换变体）。
+func _validate_world_program_variant() -> void:
+	if _shader_mat == null or _shader_mat.shader == null:
+		return
+	if OS.has_feature("web"):
+		return
+	if not _split_active():
+		return
+	if not _shader_mat.shader.get_shader_uniform_list().is_empty():
+		return
+	push_error("HexRenderer: split land program failed to compile; falling back to "
+		+ "the single terrain program")
+	_split_program_failed = true
+	_load_shader()
 
 func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
 	var source_path := shader_path
@@ -965,12 +1079,108 @@ const WORLD_MAP_WEB_MIN_DEFINE := "#define PK_WEB_WORLD_MIN\n"
 ## 真机回归时可以原样复现上面这张表。
 const WORLD_MAP_WEB_NO_MICRO_DEFINE := "#define PK_PROBE_NO_MICRO\n"
 
-## web-LOW 档 world_map 的**完整**编译前缀。四段共用同一批常量，所以这不是"抄一份
-## 字面量"，而是真源；_apply_shader_variant_prefix() 拼出的字符串与它逐字相同。
-## 菜单期预热（WebShaderWarmup.WORLD_MAP_PREFIX）引用本常量——两处只要差一个字节，
-## 驱动就不认缓存，那 20 多秒等于白预热。
+## [terrain-web-baked-surface 2026-11-01 / -A 2026-11-01] Web 陆地程序的两个吸收宏：
+##   PK_WEB_LAND_ONLY — 陆地程序不 include water.gdshaderinc（水面由独立第二 pass 画）；
+##   PK_WEB_HORIZON   — 允许 LOW 档真正执行 horizon 解码（否则 MOBILE_QUALITY_LOW
+##                      会把 terrain_horizon_evaluate() 编译成中性值）。
+## 两者只对 world-min 变体（= Web 全部档位）和 PC-HIGH 陆地 pass 生效：桌面
+## Compatibility 的中/高档没有水面第二 pass，不能被 LAND_ONLY 砍掉水面管线。
+## [方案 A/B] normal+relief 合进 terrain_surface_tex（B 方案固定 4 层：normal/relief/detail/
+## occluder）后腾出的 Web 材质槽给回了
+## noise_tex（全平台统一声明/绑定），所以这里只剩这两个吸收宏。
+const WORLD_MAP_WEB_LAND_ONLY_DEFINE := "#define PK_WEB_LAND_ONLY\n"
+const WORLD_MAP_WEB_HORIZON_DEFINE := "#define PK_WEB_HORIZON\n"
+
+## 共享 Web 陆地程序的 **NO_MICRO（kill-switch / 历史默认）变体**：7 个 define，
+## 与 WORLD_MAP_WEB_PREFIX_MICRO 只差 `#define PK_PROBE_NO_MICRO`。C 收尾后 web 默认走
+## MICRO；本常量仅用于 URL `micro=off|0|false` 回退、非 web（桌面 Compatibility）与
+## 既有测试/回退口径。所有段共用同一批常量，不是"抄一份字面量"。
+## 顺序（terrain_shader_variant_test 用 WATER_PASS_PREFIX + 4 个 define 链式校验）：
+##   quality → texture_budget → world_min → no_micro → land_only → horizon
 const WORLD_MAP_WEB_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE \
-	+ WORLD_MAP_WEB_MIN_DEFINE + WORLD_MAP_WEB_NO_MICRO_DEFINE
+	+ WORLD_MAP_WEB_MIN_DEFINE + WORLD_MAP_WEB_NO_MICRO_DEFINE \
+	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
+
+## [C 2026-11-01] 共享 Web 陆地程序的 **micro 开启变体**（保留 terrain_material_tex
+## layer4 的 micro 采样路径）。A/B 结论（2026-11-01，Edge 156 + ANGLE D3D11 / RTX 3070 Ti，
+## 见 tmp/webbuild_ab/REPORT.md / verdict.json）：
+##   world_map 首次编译：A(裁 micro，即 WORLD_MAP_WEB_PREFIX) 均值 5417ms
+##   （5208–5615）vs B(micro=shared) 4582ms（4347–4880）→ micro 变体**不慢反快 -15%**；
+##   总 warmup 36978ms → 34934ms（-5.5%），boot/menu 噪声内不变；21/21 张编译成功、
+##   无 JS/GL 错误；历史上 20.7s 的寄存器压力悬崖在当前重构后的 shader 上**不复现**
+##   （B 组 plan 指纹 26 字节恰为 NO_MICRO 定义行，证明两组编的是不同前缀）。
+## 因此 web 上**默认启用**本变体；URL `?micro=off|0|false` 是 kill-switch，可回退到
+## WORLD_MAP_WEB_PREFIX（NO_MICRO）。见 web_map_web_prefix_active()。
+const WORLD_MAP_WEB_PREFIX_MICRO := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE \
+	+ WORLD_MAP_WEB_MIN_DEFINE \
+	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
+
+## [C 2026-11-01] micro 开关的 boot 缓存（与 pk_web_pc_high_boot 同模式）：
+## 值为「共享 Web 陆地程序是否含 micro 层」。web 默认 true；URL `micro=off|0|false`
+## 回退 false（kill-switch）；`micro=shared|on` 显式 true（与默认等价）。非 web 恒 false
+## （桌面 Compatibility 维持 NO_MICRO 旧变体，与本次 A/B 无关）。boot 后固定，避免
+## 游戏中途切 URL 触发驱动重编（WebGL 没有 program binary 缓存）。
+const PK_WEB_MICRO_BOOT_META: StringName = &"pk_web_micro_boot"
+
+## URL `micro` 参数 → 是否启用 micro 的纯映射（无 OS 副作用，便于测试）：
+##   off / 0 / false（大小写、空白不敏感）→ false（kill-switch）；
+##   其它（含缺省 / unknown / shared / on）→ true（默认放开 micro，见上方 A/B 结论）。
+static func micro_url_value_enabled(raw: String) -> bool:
+	var value := String(raw).strip_edges().to_lower()
+	if value == "off" or value == "0" or value == "false":
+		return false
+	return true
+
+
+## 共享 Web 陆地程序是否启用 micro。非 web 恒 false；web 默认 true（A/B 结论），
+## URL `micro=off|0|false` 回退。结果缓存在 Engine meta（boot 固定）；测试可用
+## Engine meta 预置来模拟 web 的两种取值。
+static func web_map_micro_url_enabled() -> bool:
+	if Engine.has_meta(PK_WEB_MICRO_BOOT_META):
+		return bool(Engine.get_meta(PK_WEB_MICRO_BOOT_META))
+	if not OS.has_feature("web"):
+		Engine.set_meta(PK_WEB_MICRO_BOOT_META, false)
+		return false
+	var raw := ""
+	if Engine.has_singleton("JavaScriptBridge"):
+		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+		if bridge != null:
+			raw = String(bridge.call("eval",
+				"new URLSearchParams(window.location.search).get('micro') || ''"))
+	var enable := micro_url_value_enabled(raw)
+	Engine.set_meta(PK_WEB_MICRO_BOOT_META, enable)
+	return enable
+
+
+## 运行期与预热共用的「当前 Web 共享陆地程序前缀」：web 默认 = MICRO 变体；
+## kill-switch / 非 web = WORLD_MAP_WEB_PREFIX（NO_MICRO）。两处必须都调这个函数
+## （见 WebShaderWarmup.world_map_prefix_active），保证「预热 = 运行期」逐字节一致。
+static func web_map_web_prefix_active() -> String:
+	return WORLD_MAP_WEB_PREFIX_MICRO if web_map_micro_url_enabled() else WORLD_MAP_WEB_PREFIX
+
+## HIGH uses the PC surface code, with only WebGL sampler limits and split draws.
+## HIGH 陆地 pass 不 include 水面管线（水面整段走 WATER_WEB_HIGH_PREFIX 的独立第二 pass），
+## 启用 horizon 解码；noise_tex 恢复后两片共用同一采样器名额。
+const WORLD_MAP_WEB_HIGH_BASE := PK_WEB_TEXTURE_BUDGET_DEFINE + "#define PK_WEB_PC_HIGH\n"
+const WORLD_MAP_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_SPLIT_WATER\n" \
+	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
+const WATER_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_WATER_ONLY\n"
+
+func _web_pc_high_active() -> bool:
+	if not OS.has_feature("web") or not DCFeatureFlags.is_compatibility_renderer():
+		return false
+	# A runtime settings toggle must stay on the already compiled shared Web
+	# program. Full PC HIGH is selected only when the page requested it before
+	# world creation; compiling a new ANGLE program during play freezes the tab.
+	if not Engine.has_meta("pk_web_pc_high_boot"):
+		var requested := false
+		if Engine.has_singleton("JavaScriptBridge"):
+			var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+			if bridge != null:
+				var raw: Variant = bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")
+				requested = String(raw).to_lower() == "high"
+		Engine.set_meta("pk_web_pc_high_boot", requested)
+	return visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false))
 
 
 ## 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」启用裁剪。
@@ -979,7 +1189,8 @@ const WORLD_MAP_WEB_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE 
 func _world_map_web_min_active() -> bool:
 	return DCFeatureFlags.uses_shader_quality_tier() \
 		and DCFeatureFlags.is_compatibility_renderer() \
-		and _mobile_quality_tier_define == "MOBILE_QUALITY_LOW"
+		and _mobile_quality_tier_define == "MOBILE_QUALITY_LOW" \
+		and not _web_pc_high_active()
 
 
 # ─── [web-water-pass] 水面第二 pass（web 专属）─────────────────────────────
@@ -996,14 +1207,121 @@ const WATER_SHADER_PATH := "res://shaders/world_water_web.gdshader"
 ## 菜单期那 1.1 s 预热白做，所以只能有一份字面量。
 const WATER_PASS_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE
 
+## [land-water-split 2026-11-02] 桌面 / 移动的陆地 / 水面双 program 宏。Web 侧的
+## PK_WEB_LAND_ONLY / PK_WEB_WATER_ONLY 前缀常量**一个字节都不动**，只有新增平台用这两个。
+const SPLIT_LAND_ONLY_DEFINE := "#define PK_LAND_ONLY\n"
+const SPLIT_WATER_ONLY_DEFINE := "#define PK_WATER_ONLY\n"
+const WORLD_MAP_SHADER_PATH := "res://shaders/world_map.gdshader"
 
-## 水面第二 pass 是否应该存在。**必须**与 _world_map_web_min_active() 完全一致：
-## 只有那份 world_map 变体才把水面像素输出成占位常量，其它档位由 world_map 自己画水。
-## 桌面端 OS.has_feature("web") 为 false ⇒ 恒不创建（连 shader 文件都不会 load）。
+## [land-water-split 2026-11-02] 拆分总闸：全平台默认开；debug 视图与
+## （Compatibility + tiled）自动回退单 program。同时被陆地变体（PK_LAND_ONLY）
+## 与水面 pass（_water_pass_active）共同引用 —— 两处必须同源，否则会半边拆分。
+func _split_active() -> bool:
+	if not split_land_water_passes:
+		return false
+	if _split_program_failed:
+		return false
+	if terrain_surface_debug_view != 0:
+		return false
+	# 桌面 GLES3 的 tiled 诊断路径：预算 8 槽装不下两张 program 的完整采样集，
+	# 且该组合只在桌面手工选 Compatibility 时出现，回退单 program。
+	if DCFeatureFlags.is_compatibility_renderer() and _visual_tiles_active():
+		return false
+	return true
+
+
+## 水面第二 pass 是否应该存在。Web 的既有判定原样保留（作为拆分判定的子集）：
+## 只有 world-min（LOW）与 PC-HIGH 这两份 world_map 变体才把水面像素交给第二 pass；
+## Web MID 的 world_map 自己画水（今天的行为，不新增 program）。
+## 桌面 / 移动：拆分激活即始终有水面 pass（陆地 program 只画陆地）。
 func _water_pass_active() -> bool:
-	return OS.has_feature("web") \
-		and DCFeatureFlags.is_compatibility_renderer() \
-		and _world_map_web_min_active()
+	if not _split_active():
+		return false
+	if OS.has_feature("web"):
+		return DCFeatureFlags.is_compatibility_renderer() \
+			and (_world_map_web_min_active() or _web_pc_high_active())
+	return true
+
+
+## 测试 / 诊断用强制水面 program 种类（"" = 按平台判定）。生产路径恒为 ""。
+var _forced_water_program_kind: String = ""
+
+## 当前水面 pass 的源码种类（见 _water_program_kind 注释）。"" = 当前不应存在水面 pass。
+func _resolved_water_program_kind() -> String:
+	if not _forced_water_program_kind.is_empty():
+		return _forced_water_program_kind
+	if _web_pc_high_active():
+		return "high"
+	if _world_map_web_min_active():
+		return "web_min"
+	if not OS.has_feature("web") and _water_pass_active():
+		return "split"
+	return ""
+
+
+## 水面 program 的编译前缀。Web 两类沿用既有常量（字节契约）；桌面 / 移动按
+## [MAP_VISUAL_TILED] + [MOBILE_QUALITY_*] + [PK_WEB_TEXTURE_BUDGET（仅 Compatibility）]
+## + "#define PK_WATER_ONLY\n" 拼装（与陆地变体同一套顺序，便于测试逐段断言）。
+func _water_program_prefix(kind: String) -> String:
+	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
+	if kind == "high":
+		return prefix + WATER_WEB_HIGH_PREFIX
+	if kind == "web_min":
+		# 紧凑水面程序：MAP_VISUAL_TILED 之外只有 WATER_PASS_PREFIX（_create_water_quad 追加）。
+		return prefix
+	if kind != "split":
+		return prefix
+	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
+		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if DCFeatureFlags.is_compatibility_renderer():
+		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
+	prefix += SPLIT_WATER_ONLY_DEFINE
+	return prefix
+
+
+## [land-water-split 2026-11-02] 世界地图材质的统一 uniform 推送口。
+## 陆地材质 _shader_mat 是权威；拆分后水面 program 必须与陆地**逐项同值**，否则两片
+## 之间会有色差。这里把键值同时镜像给水面材质（只在它真的声明过该键时写，紧凑水的
+## uniform 集合与主材质不同）。运行期 94 个 setter 的推送全部经过本函数，
+## 保证 season / TOD / fog / 羊皮纸 / camera zoom / water 调参 / LUT 等不会只到一半。
+func _push_world_uniform(key: Variant, value: Variant) -> void:
+	var key_name := StringName(key)
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter(key_name, value)
+	if _water_mat != null and not _water_uniform_names.is_empty() \
+			and _water_uniform_names.has(key_name):
+		_water_mat.set_shader_parameter(key_name, value)
+
+
+## 拆分状态 / 覆盖 mesh 开关翻转后的统一重建入口：重新选 program 变体 + 重铺几何
+## + 重推全部 uniform（其末尾会按新的拆分状态建/拆水面 pass）。
+func _refresh_split_configuration() -> void:
+	if not is_inside_tree() or _world_quad == null:
+		return
+	if _map == null or _world == null:
+		return
+	_load_shader()
+	_apply_world_quad_geometry()
+	if _shader_mat != null:
+		_apply_uniforms()
+
+
+## 水面 program shader 变体编不过 → 整条拆分回退单 program（推迟到下一帧，避免在
+## _sync_water_quad 的内部重入 _apply_uniforms）。只用于非 Web；Web 保持既有的
+## "land-only + 暗海蓝占位"降级。
+func _apply_split_program_fallback() -> void:
+	if not _split_program_failed:
+		return
+	if _world_quad == null or _shader_mat == null:
+		return
+	push_warning("[hex_renderer/land-water-split] water program failed to compile; "
+		+ "falling back to the single terrain program")
+	_load_shader()
+	if _map == null or _world == null:
+		return
+	_apply_world_quad_geometry()
+	if _shader_mat != null:
+		_apply_uniforms()
 
 
 ## 建/拆 + 几何 + uniform 全量对齐。调用点只有 _apply_uniforms() 末尾：
@@ -1018,22 +1336,30 @@ func _sync_water_quad() -> void:
 
 
 ## 无条件保证「节点存在 + 几何/树序/变体正确 + uniform 全量推送」。
-## 与平台判定（_water_pass_active）分开，是因为桌面端永远进不去那条判定，而这条
-## 创建路径恰恰是最需要在 CI 里被驱动一次的东西（见 tests/world/web_water_pass_node_test.gd）。
+## 与平台判定（_water_pass_active）分开，是为了让测试能直接驱动这条创建路径
+## （见 tests/world/web_water_pass_node_test.gd / land_water_split_node_test.gd）。
 func _ensure_water_quad() -> void:
+	var kind := _resolved_water_program_kind()
 	# tiled 布局切换会换掉 map_index/height 的 sampler **类型**（sampler2D ↔
-	# sampler2DArray），变体必须跟着重编，否则采样就是错的。这个条件只在新世界
-	# 走 tiled 时成立，属于一次性事件；稳态下是一次字符串比较。
-	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
-	if _water_quad != null and _water_variant_prefix != prefix:
+	# sampler2DArray），variant 必须跟着重编；画质换档会换 MOBILE_QUALITY_* 前缀。
+	# 两个维度任一变化都重建，不能复用旧的材质。稳态下是两次字符串比较。
+	var prefix := _water_program_prefix(kind)
+	if _water_quad != null and (_water_variant_prefix != prefix or _water_variant_kind != kind):
 		_drop_water_quad()
 	if _water_quad == null:
-		_create_water_quad(prefix)
+		_create_water_quad(prefix, kind)
 	if _water_quad == null or not is_instance_valid(_water_quad):
 		return
-	_water_quad.mesh = _world_quad.mesh
+	_water_quad.mesh = _water_quad_mesh(_world_quad.mesh)
 	_water_quad.visible = _world_quad.visible
 	_apply_water_uniforms()
+
+
+## 拆分时水面 mesh 用覆盖 mesh；未启用 / 构建失败 ⇒ 与陆地共享整张 quad。
+func _water_quad_mesh(fallback: Mesh) -> Mesh:
+	if _coverage_water_mesh != null:
+		return _coverage_water_mesh
+	return fallback
 
 
 ## 拆掉第二 pass 的节点与材质。先隐藏再 queue_free：queue_free 到帧末才生效，
@@ -1045,30 +1371,46 @@ func _drop_water_quad() -> void:
 		_water_quad = null
 	_water_mat = null
 	_water_variant_prefix = ""
+	_water_variant_kind = ""
+	_water_program_kind = ""
+	_water_uses_world_map = false
+	_water_uniform_names.clear()
 
 
-func _create_water_quad(prefix: String) -> void:
+func _create_water_quad(prefix: String, kind: String) -> void:
 	# 刻意用 ResourceLoader.load 而不是 preload 常量：preload 是编译期的，桌面端
-	# 也会把这份 shader 资源拉进依赖图。这里只有 web+Compatibility+LOW 才会执行。
+	# 也会把这份 shader 资源拉进依赖图。只有水面 pass 真的存在时才执行。
+	var world_map_based := kind != "web_min"
+	var water_path := WORLD_MAP_SHADER_PATH if world_map_based else WATER_SHADER_PATH
 	var shader := ResourceLoader.load(
-		WATER_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
+		water_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if shader == null:
-		push_warning("HexRenderer: water pass shader missing at %s" % WATER_SHADER_PATH)
+		push_warning("HexRenderer: water pass shader missing at %s" % water_path)
 		return
 	var variant := shader.duplicate() as Shader
 	# tiled 与否必须与 world_map 用同一个宏（visual_tile_sampling 据此在
-	# sampler2D / sampler2DArray 之间二选一）。web 运行期不是 tiled，但这里不写死。
-	variant.code = prefix + WATER_PASS_PREFIX + shader.code
-	# 编译自检：shader 语言层编不过时 get_shader_uniform_list() 返回空。此时**不创建**
-	# 第二 pass —— 于是屏幕退化成"水面 = pass 1 的暗海蓝占位色"（可控、可读），
-	# 而不是把一张坏材质盖到整屏上。驱动层失败（FXC）这里抓不到，那种情况同样退回
-	# 占位色，因为失败的材质不会被绘制。
+	# sampler2D / sampler2DArray 之间二选一）；quality / texture-budget / WATER_ONLY
+	# 已在 prefix 里。紧凑水面程序再追加自己的 WATER_PASS_PREFIX（字节契约）。
+	variant.code = prefix + ("" if world_map_based else WATER_PASS_PREFIX) + shader.code
+	# 编译自检：shader 语言层编不过时 get_shader_uniform_list() 返回空。桌面/移动
+	# 此时**整条拆分回退单 program**（不能只回退一半：陆地 program 此时不带水面分支，
+	# 只回退水会露出空洞）。Web 维持既有降级：不建第二 pass，屏幕是 pass 1 的暗海蓝
+	# 占位色（可控、可读）。驱动层失败（FXC）这里抓不到，那种情况同样退回占位色。
 	if variant.get_shader_uniform_list().is_empty():
 		_water_pass_failed = true
-		push_error("HexRenderer: water pass shader failed to compile (%s, prefix=%s)"
-			% [WATER_SHADER_PATH, prefix.replace("\n", "|")])
+		push_error("HexRenderer: water pass shader failed to compile (%s, kind=%s, prefix=%s)"
+			% [water_path, kind, prefix.replace("\n", "|")])
+		if not OS.has_feature("web"):
+			_split_program_failed = true
+			call_deferred("_apply_split_program_fallback")
 		return
 	_water_variant_prefix = prefix
+	_water_variant_kind = kind
+	_water_program_kind = kind
+	_water_uses_world_map = world_map_based
+	_water_uniform_names.clear()
+	for param in variant.get_shader_uniform_list():
+		_water_uniform_names[StringName(param.name)] = true
 	_water_mat = ShaderMaterial.new()
 	_water_mat.shader = variant
 	_water_quad = MeshInstance2D.new()
@@ -1084,13 +1426,22 @@ func _create_water_quad(prefix: String) -> void:
 	if is_instance_valid(_world_quad):
 		move_child(_water_quad, mini(_world_quad.get_index() + 1, get_child_count() - 1))
 	# 预热对账：label 必须与 WebShaderWarmup 清单里那份（文件名去扩展名）逐字一致，
-	# 否则 material_variant 事件永远对不上 warmup_shader 的 fp。
-	WebTelemetry.note_variant("world_water_web", variant.code)
-	print("[hex_renderer] web water pass created (pass 2 of 2; world_map draws land only)")
+	# 否则 material_variant 事件永远对不上 warmup_shader 的 fp。桌面/移动拆分变体
+	# 没有预热条目（不在 web 上编），不打 label。
+	match kind:
+		"high":
+			WebTelemetry.note_variant("world_water_high", variant.code)
+		"web_min":
+			WebTelemetry.note_variant("world_water_web", variant.code)
+	print("[hex_renderer] water pass created (pass 2 of 2; kind=%s)" % kind)
 
 
-## 水面 pass 的 uniform 全量推送。刻意只有 16 个（4 sampler + 12 标量/vec），
-## 与 world_map 的 186 个无关：这是本 pass 的全部输入。
+## 水面 pass 的 uniform 全量推送。web_min（紧凑水面）刻意只有 16 个（4 sampler +
+## 12 标量/vec），与 world_map 的 186 个无关：这是它的全部输入。
+## [land-water-split 2026-11-02] 走 world_map 的水面 program（Web HIGH / 桌面拆分）
+## 复用主材质的整表拷贝（与 Web HIGH 原有逻辑同一份），保证 season/TOD/fog/羊皮纸/
+## 光照/wrap/cell LUT/water_depth/noise 与陆地**逐项同值**；之后运行期的增量变化由
+## _push_world_uniform() 镜像。
 ## 分工：几何/调色板/迷雾在各自已有的推送点补推（_push_fog_uniforms /
 ## _push_cell_lut_dims / _sync_cell_lut_textures / setter），这里负责"材质重建后
 ## 一次性把全部输入对齐"，与 _apply_uniforms() 的职责一一对应。
@@ -1098,6 +1449,20 @@ func _apply_water_uniforms() -> void:
 	if _water_mat == null or _world == null:
 		return
 	var sm := _water_mat
+	if _water_uses_world_map and _shader_mat != null:
+		# Bind the PC water inputs from the terrain material after its full push.
+		# Shared textures update in place; this loop runs on bind/reconfiguration only.
+		for param in _shader_mat.shader.get_shader_uniform_list():
+			var key := StringName(param.name)
+			var value = _shader_mat.get_shader_parameter(key)
+			if value != null:
+				sm.set_shader_parameter(key, value)
+		# 水面程序是独立材质，主材质绑过的采样器不会自动跟过来：噪声包（波浪细节
+		# 法线）与水深在这里显式补绑，避免材质重建后丢采样器。
+		if _world.noise_tex != null:
+			sm.set_shader_parameter("noise_tex", _world.noise_tex)
+		if not _visual_tiles_active() and _world.water_depth_tex != null:
+			sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
 	var tiled := _visual_tiles_active()
 	var bounds := _world.world_bounds
 	if tiled:
@@ -1105,10 +1470,29 @@ func _apply_water_uniforms() -> void:
 		# 布局 uniform 与主地形共用同一个推送函数，避免两处各写一遍 7 个参数。
 		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
 		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
+		# [land-water-split 2026-11-02] 桌面 tiled 的拆分水面 program 与陆地 program
+		# 用同一套采样预算（VT_USE_* 相同），水深/法线等数组也必须绑，否则采到空白。
+		if _water_uses_world_map:
+			sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
+			sm.set_shader_parameter("visual_terrain_relief_tiles", visual_tiles.terrain_relief)
+			sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
+			sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
+			sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
+			sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
+			if visual_tiles.horizon != null:
+				sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
+			if visual_tiles.gi_occluder != null:
+				sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
 		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", _world.height_tex)
 		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
+		# [terrain-web-baked-surface-B 2026-11-01] 水面 depth 纹理：Web 两个水面程序
+		# （HIGH water 走 PC water_pipeline 的 ctx.water_depth_px；compact water 走
+		# visual_sample_water_depth）都在非 tiled 分支消费它。桌面 tiled 走主 pass 的
+		# visual_water_depth_tiles，与本 pass 无关。
+		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
@@ -1122,23 +1506,58 @@ func _apply_water_uniforms() -> void:
 	sm.set_shader_parameter("parchment_strength", parchment_strength)
 	# 调试视图让位开关（pass 1 整屏输出诊断色时本 pass 必须整体 discard）。
 	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
+	_push_water_lighting_uniforms()
 	_push_water_fog_uniforms()
+
+
+func _push_water_lighting_uniforms() -> void:
+	if _water_mat == null:
+		return
+	_water_mat.set_shader_parameter("visual_quality", visual_quality)
+	_water_mat.set_shader_parameter("world_time", _world_time)
+	_water_mat.set_shader_parameter("season_phase", _season_phase)
+	_water_mat.set_shader_parameter("day_phase", _day_phase)
+	_water_mat.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
+	_water_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
+	_water_mat.set_shader_parameter("water_effect_enabled", water_effect_enabled)
+	_water_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
+	_water_mat.set_shader_parameter("tod_exposure", _tod_exposure)
+	_water_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+	_water_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+	_water_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 
 
 ## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，
 ## fog_early_out / fog_gray 的开关也必须是同一份（_push_fog_uniforms 里调用）。
-## 刻意不推 fog_unexplored_color —— 未探索像素由 pass 1 上色，本 pass discard。
+## [land-water-split 2026-11-02] fog_unexplored_color 必须推：拆 mesh 后纯水 block
+## 没有陆地 pass 兜底，水面 program 要自己画同一个迷雾色（Web 紧凑水面程序同样声明
+## 了这个 uniform）。两片画同色是幂等的。
 func _push_water_fog_uniforms() -> void:
 	if _water_mat == null:
 		return
 	_water_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
 	_water_mat.set_shader_parameter(
 		"fog_early_out_enabled", _effective_fog_early_out())
+	_water_mat.set_shader_parameter("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
+
+
+## [land-water-split 2026-11-02] 只给世界地图主材质加拆分宏（world_material 理论上
+## 可以指向别的 shader，那种情况不能被误加 PK_LAND_ONLY）。
+func _is_world_map_shader_path(path: String) -> bool:
+	if path == WORLD_MAP_SHADER_PATH or path == shader_path:
+		return true
+	return not path.is_empty() and path.get_file() == "world_map.gdshader"
 
 
 func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
 	if shader == null:
 		return null
+	if _web_pc_high_active():
+		var high_shader := shader.duplicate() as Shader
+		high_shader.code = ("#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else "") \
+			+ WORLD_MAP_WEB_HIGH_PREFIX + shader.code
+		WebTelemetry.note_variant("world_map_high", high_shader.code)
+		return high_shader
 	var prefix := ""
 	if _visual_tiles_active():
 		prefix += "#define MAP_VISUAL_TILED\n"
@@ -1155,10 +1574,24 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	if DCFeatureFlags.is_compatibility_renderer():
 		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
 		# [web-world-min] 只有 LOW 档才有裁过的变体。顺序必须与
-		# WORLD_MAP_WEB_PREFIX 完全一致（quality → texture_budget → world_min），
-		# 否则运行期与预热前缀不同 → 驱动缓存不命中。
+		# WORLD_MAP_WEB_PREFIX(_MICRO) 完全一致（quality → texture_budget → world_min →
+		# [no_micro] → land_only → horizon），否则运行期与预热前缀不同 → 驱动缓存不命中。
+		# [terrain-web-baked-surface] 两个吸收宏跟着 world-min 变体走：Web 上该变体就是
+		# 全部档位；桌面 Compatibility 的 MID/HIGH 仍走完整水面管线（没有第二 pass）。
+		# [C 2026-11-01] micro 默认**放开**（A/B 实测更快 -15%，见 WORLD_MAP_WEB_PREFIX_MICRO
+		# 注释）；只有 URL kill-switch（micro=off|0|false）或非 web 时才追加
+		# PK_PROBE_NO_MICRO。两条分支分别与 WORLD_MAP_WEB_PREFIX_MICRO / WORLD_MAP_WEB_PREFIX
+		# 逐字节一致，预热用同一函数（WebShaderWarmup.world_map_prefix_active）。
 		if _world_map_web_min_active():
 			prefix += WORLD_MAP_WEB_MIN_DEFINE
+			if not web_map_micro_url_enabled():
+				prefix += WORLD_MAP_WEB_NO_MICRO_DEFINE
+			prefix += WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
+	# [land-water-split 2026-11-02] 桌面 / 移动拆分：主材质只画陆地（水面第二 pass）。
+	# 与 Web 的关系：Web 的 land-only 宏由上面的字节契约常量给出，这里绝不追加
+	# PK_LAND_ONLY，保证 Web 变体前缀逐字不变、预热指纹仍对得上。
+	if not OS.has_feature("web") and _water_pass_active() and _is_world_map_shader_path(source_path):
+		prefix += SPLIT_LAND_ONLY_DEFINE
 	if prefix.is_empty():
 		return shader
 	var variant := shader.duplicate() as Shader
@@ -1195,6 +1628,8 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 	if _mobile_quality_tier_define == tier_define:
 		return
 	_mobile_quality_tier_define = tier_define
+	# web：?tier=high 这类 QA 档也算「高画质」，档位变化后重算天气层画质门。
+	_apply_weather_layer_render_gate()
 	# 重新加载 shader 让 #define 生效（hot toggle 时也走这条）
 	if _shader_mat != null:
 		_load_shader()
@@ -2514,6 +2949,12 @@ func _poll_shader_hot_reload(delta: float) -> void:
 			_material_source_mtime = material_mtime
 		return
 
+	# [land-water-split 2026-11-02] shader 源文件热重载：两片 program 都要从磁盘重新
+	# 取（水面 program 可能是同一份 world_map.gdshader 的另一个变体）。上一次编译失败
+	# 可能只是编辑中的临时状态，这里清掉失败标记重新尝试。
+	_water_pass_failed = false
+	_split_program_failed = false
+	_drop_water_quad()
 	_load_shader()
 	if _map != null and _world != null and _shader_mat != null:
 		_apply_uniforms()
@@ -2711,9 +3152,9 @@ func _push_fog_uniforms() -> void:
 			_fog_enabled, _world.enum_lut_tex if _world != null else null)
 	if _shader_mat == null:
 		return
-	_shader_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
-	_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
-	_shader_mat.set_shader_parameter("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
+	_push_world_uniform("fog_gray_enabled", _fog_enabled)
+	_push_world_uniform("fog_early_out_enabled", _effective_fog_early_out())
+	_push_world_uniform("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
 	# [web-water-pass] 水面 pass 共用同一份迷雾开关。放在这里而不是 _apply_uniforms
 	# 里，是因为迷雾状态会在运行期翻转（_apply_fog_early_out / set_fog_enabled），
 	# 而这两个入口都已经汇到本函数。
@@ -2731,7 +3172,7 @@ func _effective_fog_early_out() -> bool:
 
 func _apply_fog_early_out() -> void:
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("fog_early_out_enabled", _effective_fog_early_out())
+		_push_world_uniform("fog_early_out_enabled", _effective_fog_early_out())
 	# [web-water-pass] 这个开关单独翻转的路径（set_mobile_quality_tier / 迷雾层档位
 	# 变化）不走 _push_fog_uniforms，漏推会让水面 pass 在未探索区域继续画水 ——
 	# 那一块本该由 pass 1 的 fog_unexplored_color 独占。
@@ -2740,8 +3181,9 @@ func _apply_fog_early_out() -> void:
 # Phase 1：让 main.gd 在 WorldClock day_changed 时推进 shader 季节相位
 func set_season_phase(phase: float) -> void:
 	_season_phase = phase
+	_push_water_lighting_uniforms()
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("season_phase", _season_phase)
+		_push_world_uniform("season_phase", _season_phase)
 	if _building_visual_layer != null:
 		_building_visual_layer.set_season_phase(_season_phase)
 	if _weather_layer != null:
@@ -2756,7 +3198,7 @@ func set_season_phase(phase: float) -> void:
 func set_climate_anomaly(v: float) -> void:
 	_climate_anomaly = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("climate_anomaly", _climate_anomaly)
+		_push_world_uniform("climate_anomaly", _climate_anomaly)
 
 # True Insolation-Driven（Phase F）：旧兼容 setter。运行时和 shader 统一保持
 # insolation 分支，bool 只保留给旧材质参数兼容。
@@ -2764,14 +3206,15 @@ func set_true_insolation_enabled(v: bool) -> void:
 	var _unused_v: bool = v
 	true_insolation_enabled = true
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
+		_push_world_uniform("true_insolation_enabled", true_insolation_enabled)
 
 # 任务 2：昼夜相位。由 main.gd 接收 WorldClock.day_phase_changed 信号后转发。
 # 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
 func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
+	_push_water_lighting_uniforms()
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("day_phase", _day_phase)
+		_push_world_uniform("day_phase", _day_phase)
 	if _building_visual_layer != null:
 		_building_visual_layer.set_day_phase(_day_phase)
 	if _weather_layer != null:
@@ -2788,8 +3231,8 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	_tod_debug_sun_position_enabled = enabled
 	_tod_debug_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
-		_shader_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+		_push_world_uniform("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
+		_push_world_uniform("tod_debug_sun_uv", _tod_debug_sun_uv)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_position"):
 		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	if _fog_layer != null:
@@ -2807,7 +3250,7 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		_push_world_uniform("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_height_scale"):
 		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	if _fog_layer != null:
@@ -2824,14 +3267,22 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
 func set_visual_quality(q: int) -> void:
+	var was_pc_high := _web_pc_high_active()
 	visual_quality = clampi(q, 0, 2)
+	if was_pc_high != _web_pc_high_active() and _shader_mat != null:
+		_load_shader()
+		if _world != null and _map != null:
+			_apply_uniforms()
+	_push_water_lighting_uniforms()
 	if _resource_visual_layer != null:
 		_resource_visual_layer.set_quality(visual_quality,
 			_mobile_quality_tier_from_define(_mobile_quality_tier_define) if not _mobile_quality_tier_define.is_empty() else -1)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("visual_quality", visual_quality)
+		_push_world_uniform("visual_quality", visual_quality)
 	if _weather_layer != null:
 		_weather_layer.set_visual_quality(visual_quality)
+	# web：切画质立即应用天气层画质门（低/中 → 不画；高 → 画）。
+	_apply_weather_layer_render_gate()
 	if _fog_layer != null:
 		_fog_layer.set_visual_quality(visual_quality)
 		_apply_fog_early_out()
@@ -2853,7 +3304,7 @@ func set_visual_quality(q: int) -> void:
 func set_terrain_materials_enabled(enabled: bool) -> void:
 	terrain_materials_enabled = enabled
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("terrain_materials_enabled", enabled)
+		_push_world_uniform("terrain_materials_enabled", enabled)
 
 
 func set_camera_zoom(value: float) -> void:
@@ -2864,7 +3315,7 @@ func set_camera_zoom(value: float) -> void:
 	if _resource_visual_layer != null:
 		_resource_visual_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("camera_zoom", _camera_zoom)
+		_push_world_uniform("camera_zoom", _camera_zoom)
 	if _building_visual_layer != null:
 		_building_visual_layer.set_camera_zoom(_camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
@@ -3008,12 +3459,17 @@ func _push_overlay_edge_transition_data() -> void:
 
 func _push_terrain_horizon_uniforms() -> void:
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("terrain_horizon_strength", terrain_horizon_strength)
-		_shader_mat.set_shader_parameter("terrain_horizon_softness", terrain_horizon_softness)
-		_shader_mat.set_shader_parameter("terrain_horizon_max_angle", terrain_horizon_max_angle)
-		_shader_mat.set_shader_parameter("terrain_horizon_cast_floor", terrain_horizon_cast_floor)
-		_shader_mat.set_shader_parameter("terrain_horizon_debug_view", terrain_horizon_debug_view)
+		_push_world_uniform("terrain_horizon_strength", terrain_horizon_strength)
+		_push_world_uniform("terrain_horizon_softness", terrain_horizon_softness)
+		_push_world_uniform("terrain_horizon_max_angle", terrain_horizon_max_angle)
+		_push_world_uniform("terrain_horizon_cast_floor", terrain_horizon_cast_floor)
+		_push_world_uniform("terrain_horizon_debug_view", terrain_horizon_debug_view)
 		_push_gi_strength_uniforms(_shader_mat)
+	# [land-water-split 2026-11-02] 走 world_map 的水面 program 与陆地共用同一套
+	# horizon / GI 参数（海面也有地平线遮蔽与天空可见度）。这条路径是 GM 实时调参，
+	# 不走 _apply_uniforms，漏推会让海面光照停在旧值。
+	if _water_mat != null and _water_uses_world_map:
+		_push_gi_strength_uniforms(_water_mat)
 	# tiled 模式 horizon 在 visual_tiles.horizon（Texture2DArray），不写 world.terrain_horizon_tex。
 	# 若仍按 legacy tex!=null 判断，会在 _apply_uniforms 末尾把植被 bound 盖回 false →
 	# 直射遮蔽/天空 GI 全关，植株看起来「没光照」。
@@ -3419,8 +3875,8 @@ func _on_terrain_horizon_frame_drawn() -> void:
 	# return 1.0（无阴影）。_push_terrain_horizon_uniforms 只推标量 + 植被层，不含主 shader tex。
 	var applied := false
 	if _world == _horizon_bake_world and _shader_mat != null:
-		_shader_mat.set_shader_parameter("terrain_horizon_tex", tex)
-		_shader_mat.set_shader_parameter("terrain_horizon_tex_bound", true)
+		_push_world_uniform("terrain_horizon_tex", tex)
+		_push_world_uniform("terrain_horizon_tex_bound", true)
 		applied = true
 	if _world == _horizon_bake_world:
 		_push_terrain_horizon_uniforms()   # 同步植被层的 horizon 输入
@@ -3488,32 +3944,32 @@ func is_world_shader_disabled() -> bool:
 func set_ecology_visual_quality(q: int) -> void:
 	ecology_visual_quality = clampi(q, 0, 2)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
+		_push_world_uniform("ecology_visual_quality", ecology_visual_quality)
 
 func set_ecology_visual_strength(v: float) -> void:
 	ecology_visual_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
+		_push_world_uniform("ecology_visual_strength", ecology_visual_strength)
 
 func set_temperature_visual_strength(v: float) -> void:
 	temperature_visual_strength = clampf(v, 0.0, 1.5)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("temperature_visual_strength", temperature_visual_strength)
+		_push_world_uniform("temperature_visual_strength", temperature_visual_strength)
 
 func set_moisture_visual_strength(v: float) -> void:
 	moisture_visual_strength = clampf(v, 0.0, 1.5)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("moisture_visual_strength", moisture_visual_strength)
+		_push_world_uniform("moisture_visual_strength", moisture_visual_strength)
 
 func set_vitality_visual_strength(v: float) -> void:
 	vitality_visual_strength = clampf(v, 0.0, 1.5)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("vitality_visual_strength", vitality_visual_strength)
+		_push_world_uniform("vitality_visual_strength", vitality_visual_strength)
 
 func set_snowline_visual_strength(v: float) -> void:
 	snowline_visual_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
+		_push_world_uniform("snowline_visual_strength", snowline_visual_strength)
 
 # 调试入口：toggle 雪盖"纯 dyn_snow（无 fbm 抖动）"渲染模式。
 # 屏幕上的雪量将严格 = info_panel 显示的 cell.snow_cover（±量化误差），用于
@@ -3521,7 +3977,7 @@ func set_snowline_visual_strength(v: float) -> void:
 func set_debug_force_dyn_snow_only(v: bool) -> void:
 	debug_force_dyn_snow_only = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
+		_push_world_uniform("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
 
 # 运行时调整 dynamic_cell / dyn_atlas_smooth / ecology / ice atlas 的上传 stride。
 # 1=每仿真日 2=每 2 仿真日 4=每 4 仿真日。值越大越省 CPU 但视觉变化越"卡"。
@@ -3536,12 +3992,13 @@ func set_dyn_atlas_upload_stride(v: int) -> void:
 func set_foliage_density_strength(v: float) -> void:
 	foliage_density_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("foliage_density_strength", foliage_density_strength)
+		_push_world_uniform("foliage_density_strength", foliage_density_strength)
 
 func set_day_night_enabled(v: bool) -> void:
 	day_night_enabled = v
+	_push_water_lighting_uniforms()
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
+		_push_world_uniform("day_night_enabled", day_night_enabled)
 	if _weather_layer != null:
 		_weather_layer.set_day_night_enabled(day_night_enabled)
 	if _fog_layer != null:
@@ -3556,13 +4013,14 @@ func set_day_night_enabled(v: bool) -> void:
 
 func set_water_effect_enabled(v: bool) -> void:
 	water_effect_enabled = v
+	_push_water_lighting_uniforms()
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("water_effect_enabled", water_effect_enabled)
+		_push_world_uniform("water_effect_enabled", water_effect_enabled)
 
 func set_ocean_current_enabled(v: bool) -> void:
 	ocean_current_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
+		_push_world_uniform("ocean_current_enabled", ocean_current_enabled)
 
 # 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
@@ -3579,7 +4037,7 @@ func set_map_baker(b) -> void:
 func set_ocean_current_debug(v: bool) -> void:
 	_ocean_current_debug = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
+		_push_world_uniform("ocean_current_debug", _ocean_current_debug)
 	# 方案 0：仅当切到 true 且贴图缺失时才 lazy bake upwelling_tex。
 	if _ocean_current_debug and _world != null and _world.upwelling_tex == null \
 			and _map_baker != null and _map_baker.has_method("rebake_upwelling_tex_for_debug"):
@@ -3588,7 +4046,7 @@ func set_ocean_current_debug(v: bool) -> void:
 			print("[VisualOverhaul] ocean_current_debug → lazy baked upwelling_tex in %dms"
 					% (Time.get_ticks_msec() - t0))
 		if _shader_mat != null:
-			_shader_mat.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
+			_push_world_uniform("ocean_upwelling_tex", _world.upwelling_tex)
 
 func get_ocean_current_debug() -> bool:
 	return _ocean_current_debug
@@ -3596,7 +4054,7 @@ func get_ocean_current_debug() -> bool:
 func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
 	extreme_weather_ground_effect_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"extreme_weather_ground_effect_enabled",
 			extreme_weather_ground_effect_enabled
 		)
@@ -3622,17 +4080,17 @@ func apply_tod(profile: TODProfile) -> void:
 	if profile == null:
 		return
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("tod_sun_dir", profile.sun_dir)
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform("tod_sun_dir", profile.sun_dir)
+		_push_world_uniform(
 			"tod_sun_color",
 			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
 		)
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"tod_ambient_color",
 			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
 		)
-		_shader_mat.set_shader_parameter("tod_night_factor", profile.night_factor)
-		_shader_mat.set_shader_parameter("tod_exposure", profile.exposure)
+		_push_world_uniform("tod_night_factor", profile.night_factor)
+		_push_world_uniform("tod_exposure", profile.exposure)
 	if _weather_layer != null and _weather_layer.has_method("apply_tod"):
 		_weather_layer.apply_tod(profile)
 	# 植被/点缀层随昼夜统一着色（修复"树草常亮"）。缓存供新生成层补推。
@@ -3642,6 +4100,7 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_exposure = profile.exposure
 	_tod_sun_dir = profile.sun_dir.normalized()
 	_tod_valid = true
+	_push_water_lighting_uniforms()
 	if _building_visual_layer != null:
 		_building_visual_layer.set_tod(
 			_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
@@ -3656,7 +4115,7 @@ func apply_tod(profile: TODProfile) -> void:
 func set_water_sparkle_enabled(v: bool) -> void:
 	water_sparkle_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("water_sparkle_enabled", water_sparkle_enabled)
+		_push_world_uniform("water_sparkle_enabled", water_sparkle_enabled)
 
 func set_rain_density_boost_enabled(v: bool) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_rain_density_boost_enabled"):
@@ -3665,7 +4124,7 @@ func set_rain_density_boost_enabled(v: bool) -> void:
 func set_cloud_tod_tint_enabled(v: bool) -> void:
 	cloud_tod_tint_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
+		_push_world_uniform("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
 	if _weather_layer != null and _weather_layer.has_method("set_cloud_tod_tint_enabled"):
 		_weather_layer.set_cloud_tod_tint_enabled(v)
 
@@ -3689,27 +4148,27 @@ func set_wind(dir: Vector2, strength: float) -> void:
 func set_water_waves_enabled(v: bool) -> void:
 	water_waves_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("water_waves_enabled", water_waves_enabled)
+		_push_world_uniform("water_waves_enabled", water_waves_enabled)
 
 func set_water_fresnel_enabled(v: bool) -> void:
 	water_fresnel_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("water_fresnel_enabled", water_fresnel_enabled)
+		_push_world_uniform("water_fresnel_enabled", water_fresnel_enabled)
 
 func set_river_flow_enabled(v: bool) -> void:
 	river_flow_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("river_flow_enabled", river_flow_enabled)
+		_push_world_uniform("river_flow_enabled", river_flow_enabled)
 
 func set_caustics_enabled(v: bool) -> void:
 	caustics_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("caustics_enabled", caustics_enabled)
+		_push_world_uniform("caustics_enabled", caustics_enabled)
 
 func set_shallow_transparency_enabled(v: bool) -> void:
 	shallow_transparency_enabled = v
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"shallow_transparency_enabled",
 			shallow_transparency_enabled
 		)
@@ -3717,12 +4176,12 @@ func set_shallow_transparency_enabled(v: bool) -> void:
 func set_water_gloss(v: float) -> void:
 	water_gloss = clampf(v, 4.0, 128.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("water_gloss", water_gloss)
+		_push_world_uniform("water_gloss", water_gloss)
 
 func set_water_reflection_strength(v: float) -> void:
 	water_reflection_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_reflection_strength",
 			water_reflection_strength
 		)
@@ -3730,32 +4189,32 @@ func set_water_reflection_strength(v: float) -> void:
 func set_river_flow_speed(v: float) -> void:
 	river_flow_speed = clampf(v, 0.0, 4.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("river_flow_speed", river_flow_speed)
+		_push_world_uniform("river_flow_speed", river_flow_speed)
 
 func set_river_flow_freq(v: float) -> void:
 	river_flow_freq = clampf(v, 0.02, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("river_flow_freq", river_flow_freq)
+		_push_world_uniform("river_flow_freq", river_flow_freq)
 
 func set_caustics_strength(v: float) -> void:
 	caustics_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("caustics_strength", caustics_strength)
+		_push_world_uniform("caustics_strength", caustics_strength)
 
 func set_deep_ocean_contrast(v: float) -> void:
 	deep_ocean_contrast = clampf(v, 0.5, 3.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("deep_ocean_contrast", deep_ocean_contrast)
+		_push_world_uniform("deep_ocean_contrast", deep_ocean_contrast)
 
 func set_lake_water_color(c: Color) -> void:
 	lake_water_color = c
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter("lake_water_color", lake_water_color)
+		_push_world_uniform("lake_water_color", lake_water_color)
 
 func set_shallow_transparency_factor(v: float) -> void:
 	shallow_transparency_factor = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"shallow_transparency_factor",
 			shallow_transparency_factor
 		)
@@ -3764,7 +4223,7 @@ func set_shallow_transparency_factor(v: float) -> void:
 func set_water_domain_warp_strength(v: float) -> void:
 	water_domain_warp_strength = clampf(v, 0.0, 4.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_domain_warp_strength",
 			water_domain_warp_strength
 		)
@@ -3772,7 +4231,7 @@ func set_water_domain_warp_strength(v: float) -> void:
 func set_water_wave_line_strength(v: float) -> void:
 	water_wave_line_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_wave_line_strength",
 			water_wave_line_strength
 		)
@@ -3780,7 +4239,7 @@ func set_water_wave_line_strength(v: float) -> void:
 func set_water_calm_noise_brightness(v: float) -> void:
 	water_calm_noise_brightness = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_calm_noise_brightness",
 			water_calm_noise_brightness
 		)
@@ -3788,7 +4247,7 @@ func set_water_calm_noise_brightness(v: float) -> void:
 func set_water_calm_noise_tint_strength(v: float) -> void:
 	water_calm_noise_tint_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_calm_noise_tint_strength",
 			water_calm_noise_tint_strength
 		)
@@ -3796,7 +4255,7 @@ func set_water_calm_noise_tint_strength(v: float) -> void:
 func set_water_biome_blend_radius(v: float) -> void:
 	water_biome_blend_radius = clampf(v, 0.0, 4.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_biome_blend_radius",
 			water_biome_blend_radius
 		)
@@ -3804,7 +4263,7 @@ func set_water_biome_blend_radius(v: float) -> void:
 func set_water_cartoon_color_strength(v: float) -> void:
 	water_cartoon_color_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_cartoon_color_strength",
 			water_cartoon_color_strength
 		)
@@ -3812,7 +4271,7 @@ func set_water_cartoon_color_strength(v: float) -> void:
 func set_water_transition_softness(v: float) -> void:
 	water_transition_softness = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"water_transition_softness",
 			water_transition_softness
 		)
@@ -3820,7 +4279,7 @@ func set_water_transition_softness(v: float) -> void:
 func set_estuary_plume_strength(v: float) -> void:
 	estuary_plume_strength = clampf(v, 0.0, 1.0)
 	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(
+		_push_world_uniform(
 			"estuary_plume_strength",
 			estuary_plume_strength
 		)
@@ -3905,11 +4364,11 @@ func _push_weather_fronts_to_shader(fronts: Array) -> void:
 			shapes[i] = Vector4(1.0, 0.0, 1.0, 1.0)
 			visuals[i] = Vector4.ZERO
 			types[i] = -1.0
-	_shader_mat.set_shader_parameter("weather_front_centers", centers)
-	_shader_mat.set_shader_parameter("weather_front_shapes", shapes)
-	_shader_mat.set_shader_parameter("weather_front_visuals", visuals)
-	_shader_mat.set_shader_parameter("weather_front_types", types)
-	_shader_mat.set_shader_parameter("weather_front_count", n)
+	_push_world_uniform("weather_front_centers", centers)
+	_push_world_uniform("weather_front_shapes", shapes)
+	_push_world_uniform("weather_front_visuals", visuals)
+	_push_world_uniform("weather_front_types", types)
+	_push_world_uniform("weather_front_count", n)
 	_update_detail_wind_field(fronts, n)
 
 # 阶段 D：由天气锋面聚合出植被风场。方向 = Σ(主轴·强度) 归一化；附加风强 =
@@ -4008,7 +4467,7 @@ func _rebuild() -> void:
 		_mark_detail_budget_total_dirty()
 		return
 
-	_set_world_quad_mesh(_build_world_quad_mesh(_world.world_bounds, _wrap_period_x()))
+	_apply_world_quad_geometry()
 	if PK_WEB_HIDE_WORLD_QUAD and OS.has_feature("web"):
 		_world_quad.visible = false
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
@@ -4086,13 +4545,13 @@ func _sync_cell_lut_textures() -> void:
 			continue
 		_lut_bound[lut_name] = world_tex
 		print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
-		_shader_mat.set_shader_parameter(lut_name, world_tex)
+		_push_world_uniform(lut_name, world_tex)
 		# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
 		# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
 		if _water_mat != null and lut_name != "bounce_lut":
 			_water_mat.set_shader_parameter(lut_name, world_tex)
 		if lut_name == "bounce_lut":
-			_shader_mat.set_shader_parameter("gi_bounce_bound", true)
+			_push_world_uniform("gi_bounce_bound", true)
 		elif lut_name == "enum_lut":
 			# 迷雾层与天气层各自缓存了同一张 enum_lut（A 通道 = 知识度），
 			# 它们的 setter 同样是"绑一次"语义，漂移时要一起补。
@@ -4108,15 +4567,123 @@ func _wrap_period_x() -> float:
 	return HexUtils.wrap_period_x(_map.width, hex_size)
 
 
-## [web-water-pass] 两块全屏 quad（陆地 pass / 水面 pass）共用同一个 ArrayMesh：
-## 几何只算一次、GPU 只上传一次，两块 quad 的 VERTEX 也保证逐顶点相同（水面 pass
-## 的 v_world 必须与陆地 pass 完全一致，否则 LUT 采到的 cell 会错位）。
-## 任何改动 world quad 几何的地方都必须走这里。
+## 拆分状态的只读诊断（GM / 自动化 / 真机验收用）：一眼看出当前跑的是双 program
+## 还是回退单 program、覆盖 mesh 是模块缺失还是构建成功、水面 program 种类。
+func land_water_split_diagnostics() -> Dictionary:
+	return {
+		"split_flag": split_land_water_passes,
+		"split_active": _split_active(),
+		"water_pass_active": _water_pass_active(),
+		"split_program_failed": _split_program_failed,
+		"water_pass_failed": _water_pass_failed,
+		"coverage_enabled": terrain_coverage_mesh_enabled,
+		"coverage_module_loaded": _coverage_mesh_script != null,
+		"coverage_ok": bool(_coverage_mesh_result.get("ok", false)),
+		"coverage_reason": String(_coverage_mesh_result.get("reason", "")),
+		"coverage_stats": _coverage_mesh_stats.duplicate(),
+		"land_program_land_only": _shader_mat != null and _shader_mat.shader != null \
+			and _shader_mat.shader.code.contains("PK_LAND_ONLY"),
+		"water_program_kind": _water_program_kind,
+		"water_program_uses_world_map": _water_uses_world_map,
+	}
+
+
+## 把"陆地用"的 mesh 同时给两块 quad：水面 quad 若有覆盖 mesh 则用覆盖 mesh，
+## 否则与陆地共享同一份（今天的行为）。null 同时清空覆盖 mesh 缓存。
 func _set_world_quad_mesh(mesh: Mesh) -> void:
+	if mesh == null:
+		_coverage_land_mesh = null
+		_coverage_water_mesh = null
+		_coverage_mesh_result = {}
+		_coverage_mesh_stats = {}
 	if _world_quad != null:
 		_world_quad.mesh = mesh
 	if _water_quad != null and is_instance_valid(_water_quad):
-		_water_quad.mesh = mesh
+		_water_quad.mesh = _water_quad_mesh(mesh)
+
+
+## [web-water-pass][land-water-split 2026-11-02] 世界 quad 几何的唯一真源。
+## 拆分激活时两张 program 可以各用一张保守覆盖 mesh（陆地 mesh / 水面 mesh，
+## 纯区域只光栅化自己那条管线）；未拆分 / 覆盖 mesh 不可用时两片共享整张 quad
+## （几何只算一次、GPU 只上传一次；两块 quad 的 VERTEX 逐顶点相同，水面 pass 的
+## v_world 必须与陆地 pass 完全一致，否则 LUT 采到的 cell 会错位）。
+## 任何改动 world quad 几何的地方都必须走这里。
+func _apply_world_quad_geometry() -> void:
+	if _world_quad == null:
+		return
+	if _world == null or _map == null or _map.cell_count() == 0:
+		_coverage_land_mesh = null
+		_coverage_water_mesh = null
+		_coverage_mesh_stats = {}
+		_set_world_quad_mesh(null)
+		return
+	var bounds := _world.world_bounds
+	var wrap_period_x := _wrap_period_x()
+	var land_mesh: Mesh = null
+	var water_mesh: Mesh = null
+	_coverage_mesh_result = {}
+	_coverage_mesh_stats = {}
+	# 覆盖 mesh 只在"真的有两个 program"时才有意义：单 program（Web MID / 拆分关闭 /
+	# 回退）必须由陆地 quad 铺满整张地图，否则水面像素会露背景。所以这里判定
+	# _water_pass_active() 而不是 _split_active()。
+	if _water_pass_active() and terrain_coverage_mesh_enabled:
+		var result := _build_coverage_meshes(bounds, wrap_period_x)
+		if bool(result.get("ok", false)):
+			land_mesh = result.get("land_mesh", null) as Mesh
+			water_mesh = result.get("water_mesh", null) as Mesh
+			_coverage_mesh_result = {"ok": true, "reason": "",
+				"stats": (result.get("stats", {}) as Dictionary).duplicate()}
+			_coverage_mesh_stats = result.get("stats", {})
+		else:
+			_coverage_mesh_result = {"ok": false,
+				"reason": String(result.get("reason", "unknown"))}
+			print("[hex_renderer/land-water-split] coverage mesh unavailable (%s); "
+				% String(result.get("reason", "unknown"))
+				+ "both programs share the full-map quad")
+	if land_mesh == null or water_mesh == null:
+		# 保底：整张 quad（拆分时两片共享；单 program 时就是今天的行为）。
+		var base := _build_world_quad_mesh(bounds, wrap_period_x)
+		land_mesh = base
+		water_mesh = base
+		if _coverage_mesh_result.is_empty():
+			_coverage_mesh_result = {"ok": false, "reason": "shared_full_quad"}
+	_coverage_land_mesh = land_mesh
+	_coverage_water_mesh = water_mesh
+	_set_world_quad_mesh(land_mesh)
+
+
+## [land-water-split 2026-11-02] 动态调用 TerrainCoverageMesh 模块（契约见
+## docs/plans/terrain-split-implementation-plan.md §2.3）：
+##   static func build(world, world_bounds, wrap_period_x, block_world=...) -> Dictionary
+## 模块尚不存在 / 加载失败 / 返回 ok=false / mesh 缺失 ⇒ 返回 ok=false 由调用方回退整张
+## quad。构建只在 set_map / _rebuild 时发生，运行期不重建。
+func _build_coverage_meshes(bounds: Rect2, wrap_period_x: float) -> Dictionary:
+	if not terrain_coverage_mesh_enabled:
+		return {"ok": false, "reason": "disabled"}
+	if _coverage_mesh_script == null:
+		if not ResourceLoader.exists(TERRAIN_COVERAGE_MESH_PATH):
+			return {"ok": false, "reason": "module_missing"}
+		_coverage_mesh_script = ResourceLoader.load(
+			TERRAIN_COVERAGE_MESH_PATH, "Script", ResourceLoader.CACHE_MODE_IGNORE) as Script
+	if _coverage_mesh_script == null:
+		return {"ok": false, "reason": "module_load_failed"}
+	var started_usec := Time.get_ticks_usec()
+	var result: Variant = _coverage_mesh_script.call(
+		"build", _world, bounds, wrap_period_x)
+	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+	if typeof(result) != TYPE_DICTIONARY:
+		return {"ok": false, "reason": "module_bad_result"}
+	var out: Dictionary = result
+	if not bool(out.get("ok", false)):
+		return {"ok": false, "reason": String(out.get("reason", "module_reported_failure"))}
+	if not (out.get("land_mesh") is Mesh) or not (out.get("water_mesh") is Mesh):
+		return {"ok": false, "reason": "module_missing_meshes"}
+	var stats: Dictionary = out.get("stats", {})
+	stats["apply_ms"] = elapsed_ms
+	out["stats"] = stats
+	print("[hex_renderer/land-water-split] coverage meshes in %.1fms %s" % [elapsed_ms, str(stats)])
+	return out
+
 
 func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	var p := bounds.position
@@ -4175,14 +4742,40 @@ func _apply_uniforms() -> void:
 		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
 	else:
 		sm.set_shader_parameter("height_tex", _world.height_tex)
-	# [terrain-normal-bake 2026-06-25] 总体地形法线贴图（粗法线）。绑定后 shader 用它做宏观山脉
-	# 走向；未绑定时 terrain_normal_tex_bound=false，shader 回退到运行期宽半径 4-tap。
+	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 主地形非 tiled 路径用
+	# **固定 4 层 array**（terrain_surface_tex）：layer0=normal（RG 粗法线/BA 近景坡度）、
+	# layer1=relief（RG 粗段/BA 细段坡度）、layer2=detail（R=静态细节噪声）、
+	# layer3=occluder（两个 16-bit cell id，shader 用 texelFetch）。合并后少占材质 sampler；
+	# 2D terrain_normal_tex 只为植被/建筑/资源/贸易等其它层保留，主地形不再绑它。
+	# tiled 桌面路径改绑 visual_terrain_normal/relief/detail_tiles（见上）与
+	# visual_water_depth_tiles。运行期不再做任何高度差分。
+	var surface_layers := 0
 	if not tiled:
-		sm.set_shader_parameter("terrain_normal_tex", _world.terrain_normal_tex)
+		sm.set_shader_parameter("terrain_surface_tex", _world.terrain_surface_tex)
+		if _world.terrain_surface_tex != null:
+			surface_layers = int(_world.terrain_surface_tex.get_layers())
+		# [B] 层数门控：shader 侧 detail/occluder helper 按实际层数采样或返回中性值。
+		sm.set_shader_parameter("terrain_surface_layer_count", surface_layers)
+		sm.set_shader_parameter("terrain_detail_layer_bound", surface_layers >= 3)
+		sm.set_shader_parameter("terrain_occluder_layer_bound", surface_layers >= 4)
+		# [B] micro 第 5 层：material array 达到 5 层时 shader 用 layer4 采样
+		# （4 = MapBaker.TERRAIN_MATERIAL_MICRO_LAYER），否则 -1 → 退回旧的 2D micro 路径。
+		var material_layers := 0
+		if _world.terrain_material_tex != null:
+			material_layers = int(_world.terrain_material_tex.get_layers())
+		sm.set_shader_parameter("terrain_material_micro_layer",
+			4 if material_layers >= 5 else -1)
 	sm.set_shader_parameter("terrain_normal_tex_bound",
 		visual_tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
+	sm.set_shader_parameter("terrain_relief_tex_bound",
+		visual_tiles.terrain_relief != null if tiled else _world.terrain_surface_tex != null)
+	# 法线可用性开关（与下面的 terrain_static_baked 分离）：tiled 用静态烘焙数组就绪，
+	# legacy/Web 用 surface array 是否就绪。shader 只认这个 bool 决定读不读烘焙法线。
+	sm.set_shader_parameter("terrain_baked_normals",
+		visual_tiles.static_ready if tiled else _world.terrain_surface_tex != null)
 	# [static-bake 2026-10-10] 分地形细节法线、海岸邻域、水面软权重只在 tiled 静态烘焙里产出；
-	# Legacy 贴图仍是单通道旧格式，shader 走运行期回退路径。
+	# Legacy/Web 单张路径没有 edge/water/detail 通道。**不要**再用它判法线是否可用
+	# （旧 RG8 兜底也会把它置 false；法线一律用 terrain_baked_normals）。
 	sm.set_shader_parameter("terrain_static_baked",
 		tiled and visual_tiles.static_ready and visual_tiles.terrain_relief != null)
 	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
@@ -4250,7 +4843,9 @@ func _apply_uniforms() -> void:
 	if _world.upwelling_tex != null:
 		sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
 	# v10.noise-pack：把共享 RGBA 噪声包喂给地形 shader，fbm(p,N) 全局单次采样。
-	sm.set_shader_parameter("noise_tex",    _world.noise_tex)
+	# [terrain-web-baked-surface-A/B 2026-11-01] normal/relief/detail/occluder 合并进
+	# terrain_surface_tex 后，Web 陆地程序腾出的材质槽还给 noise_tex（全部平台统一绑定）。
+	sm.set_shader_parameter("noise_tex", _world.noise_tex)
 
 	# Cell-index 间接寻址是唯一动态视觉路径。
 	var _indirect_ready: bool = _world.enum_atlas_tex != null and _world.enum_lut_tex != null
@@ -4279,8 +4874,16 @@ func _apply_uniforms() -> void:
 			"indirect": _indirect_ready,
 			"shader_head": _head,
 		})
-	sm.set_shader_parameter("gi_bounce_bound", _world.bounce_lut_tex != null
-		and (visual_tiles.gi_occluder_ready if tiled else _world.gi_occluder_tex != null))
+	# [terrain-web-baked-surface-B 2026-11-01] GI 弹射可用性（调试/GM 用）：
+	#   - tiled：bounce_lut 颜色 + gi_occluder 数组都就绪；
+	#   - 非 tiled packed 路径（Web HIGH）：颜色改由 enum_lut 的 biome 近似、遮挡源在
+	#     surface array layer3 → 只需 layer3 就绪（layers>=4），不再需要 bounce_lut。
+	var bounce_ready := false
+	if tiled:
+		bounce_ready = _world.bounce_lut_tex != null and bool(visual_tiles.gi_occluder_ready)
+	elif _world.terrain_surface_tex != null:
+		bounce_ready = int(_world.terrain_surface_tex.get_layers()) >= 4
+	sm.set_shader_parameter("gi_bounce_bound", bounce_ready)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
 	)
@@ -4501,8 +5104,8 @@ func _push_vegetation_season_lut() -> void:
 				lut[veg * 4 + s] = Vector4(1.0, 1.0, 1.0, 1.0)
 		var shift: Color = profile.anomaly_color_shift
 		shifts[veg] = Vector4(shift.r, shift.g, shift.b, shift.a)
-	_shader_mat.set_shader_parameter("vegetation_season_lut", lut)
-	_shader_mat.set_shader_parameter("vegetation_anomaly_shift", shifts)
+	_push_world_uniform("vegetation_season_lut", lut)
+	_push_world_uniform("vegetation_anomaly_shift", shifts)
 
 # ─── Fast-tick perf opt (E)：细粒度纹理重绑接口 ──────────────────────────
 # 背景：原 `set_map` 路径会触发 `_rebuild` → `_build_world_quad_mesh` + `_apply_uniforms`，
@@ -4530,7 +5133,7 @@ func _push_vegetation_season_lut() -> void:
 func set_biome_tex_only(world: WorldData) -> void:
 	if _shader_mat == null or world == null or world.enum_atlas_tex == null:
 		return
-	_shader_mat.set_shader_parameter("map_index_atlas", world.enum_atlas_tex)
+	_push_world_uniform("map_index_atlas", world.enum_atlas_tex)
 
 func set_cover_tex_only(world: WorldData) -> void:
 	# Project.Keynes 把 biome / cover / vegetation / weather 共用一张 enum_atlas，
@@ -4734,7 +5337,7 @@ func _rebuild_cooperative() -> void:
 		_mark_detail_budget_total_dirty()
 		return
 
-	_set_world_quad_mesh(_build_world_quad_mesh(_world.world_bounds, _wrap_period_x()))
+	_apply_world_quad_geometry()
 	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
 	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
 		set_world_ext(_map_baker._world_ext)

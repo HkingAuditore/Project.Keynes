@@ -158,11 +158,13 @@ uniform float night_darkness : hint_range(0.2, 1.0) = 0.60;
 varying vec2 v_world;
 
 int effective_fog_quality() {
-#if defined(MOBILE_QUALITY_LOW)
+#if defined(PK_WEB_FOG_RUNTIME)
+	return min(fog_quality, 2);
+#elif defined(MOBILE_QUALITY_LOW)
 	return 0;
-#elif defined(MOBILE_QUALITY_MID)
+#elif defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_FOG_RUNTIME)
 	return min(fog_quality, 1);
-#elif defined(MOBILE_QUALITY_HIGH)
+#elif defined(MOBILE_QUALITY_HIGH) && !defined(PK_WEB_FOG_RUNTIME)
 	return min(fog_quality, 2);
 #else
 	return clamp(fog_quality, 0, 3);
@@ -248,7 +250,13 @@ float fog_edge_secondary_weight(vec2 uv, int q) {
 	float edge_distance = visual_sample_edge_distance(fog_wrap_uv(uv)).r;
 	float one_screen_pixel = max(fwidth(edge_distance), 1.0 / 255.0);
 	float quality_scale;
-#if defined(MOBILE_QUALITY_LOW)
+// Web 的编译期档被 player_game 钉死在 LOW（换档 = 换 program = 换驱动缓存，见
+// player_game._shader_quality_define_from_setting），但运行时画质由 PK_WEB_FOG_RUNTIME
+// 放开到 q2。所以 web 上必须按**运行时 q**取边宽，而不是按 MOBILE_QUALITY_LOW 的 0.58：
+// 否则高画质的迷雾边界只有中档的 58%，既细又毛糙。
+#if defined(PK_WEB_FOG_RUNTIME)
+	quality_scale = (q <= 0) ? 0.68 : ((q == 1) ? 0.82 : ((q == 2) ? 0.92 : 1.0));
+#elif defined(MOBILE_QUALITY_LOW)
 	quality_scale = 0.58;
 #elif defined(MOBILE_QUALITY_MID)
 	quality_scale = 0.82;
@@ -562,9 +570,12 @@ void fragment() {
 		// cid < 0 是极地外侧的烘焙 padding：不可交互，按未探索处理，顺带把
 		// 人造边界藏进云里。
 		float k = 0.0;
-#if defined(PK_MOBILE_ANY)
+#if defined(PK_MOBILE_ANY) && !defined(PK_WEB_FOG_RUNTIME)
 		// Mobile DitherUV selects one visual cell before the LUT lookup. This keeps
 		// the old distant transition character without paying for two LUT samples.
+		// Web 不走这条路径：web 的编译期档同样是 MOBILE_QUALITY_LOW，但运行时可以到
+		// q2，用 Bayer 选格会在迷雾边缘留下 4–8px 的棋盘 dither（高画质下非常显眼）。
+		// web 直接走下面的平滑双采样 mix，代价只是边缘像素多一次 LUT 采样。
 		int visual_cid = cid;
 		if (visual_cid >= 0) {
 			float edge_w = fog_edge_secondary_weight(uv, q);

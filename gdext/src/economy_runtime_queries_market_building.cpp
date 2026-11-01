@@ -616,6 +616,19 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     out["ok"] = true;
     out["country_handle"] = country_handle;
     out["sample_day"] = _sample_day;
+    // Presentation may carry the previous settlement forward on idle days.
+    // Use committed cell dates, never zero amounts: a completed settlement can
+    // legitimately collect/pay zero. This also survives save restoration.
+    bool has_settlement = false;
+    for (size_t cell = 0; cell < _cell_last_settlement_day.size() &&
+            cell < _epoch_cell_country.size(); ++cell) {
+        if (_epoch_cell_country[cell] == country && _sample_day >= 0 &&
+                _cell_last_settlement_day[cell] == _sample_day) {
+            has_settlement = true;
+            break;
+        }
+    }
+    out["has_settlement"] = has_settlement;
     out["tax_policy_version"] = static_cast<int64_t>(
         _epoch_tax_policy_version);
     out["tax_kinds"] = kinds;

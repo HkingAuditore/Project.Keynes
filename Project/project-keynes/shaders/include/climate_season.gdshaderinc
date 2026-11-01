@@ -93,16 +93,19 @@ float insolation_season_offset_shader(float lat_signed, float phase) {
 }
 
 #endif // PK_WEB_WORLD_MIN
-// 统一入口：无条件走 insolation 派生。true_insolation_enabled 只保留给旧材质
-// 参数兼容，不能再切回独立余弦季节温度项。
+// 统一入口。true_insolation_enabled 只保留给旧材质参数兼容，不能再切回独立余弦季节温度项。
+// [p0-insolation-dead 2026-11-01] 无条件 return 0.0 —— insolation 季节积分在渲染路径上是死代码：
+//   (a) on-map 像素恒有 dyn_valid==1.0（world_map.gdshader 的 _cell_id>=0 ⇒ 1.0），
+//       current_temp = mix(derived_temp, dyn_temp, 1.0) 逐位等于 dyn_temp，
+//       因此 season_offset / derived_temp 只对 padding 像素（_cell_id<0）有影响；
+//   (b) padding 像素恒为 B_SEA_ICE 且被 FogOfWarLayer 整片不透明覆盖，视觉上不可见；
+//   (c) 原 web 变体（PK_WEB_WORLD_MIN）早已 return 0.0，这里把同一行为提升到所有变体，
+//       省掉 desktop / Android / Web HIGH 每像素 16 次 insolation 采样
+//       （每次 tan+acos+sin/cos，约 68 个 transcendental / 像素）；
+//   (d) 下面 #ifndef PK_WEB_WORLD_MIN 里的 insolation_* 函数保留作公式参考
+//       （DCClimateMath / dc_insolation_* 的 GLSL 镜像），当前无调用点，勿删（跨语言同步核对用）。
 float season_offset_unified(float lat_signed, float phase) {
-#ifdef PK_WEB_WORLD_MIN
-	// web 变体：derived_temp 只被 dyn_valid=0（地图外 padding）消费，而 padding 恒为 B_SEA_ICE
-	// 且被 FogOfWarLayer 整片盖住。省掉 16 次 insolation 积分（每次 tan+acos+sin/cos 各 2）。
 	return 0.0;
-#else
-	return insolation_season_offset_shader(lat_signed, phase);
-#endif
 }
 
 // SAME_SOURCE（Shader 镜像）: DCClimateMath.lat_temp_bell —— 纬度温度钟形的唯一 GLSL 实现。

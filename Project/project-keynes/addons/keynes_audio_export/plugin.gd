@@ -20,6 +20,8 @@ class AudioExport extends EditorExportPlugin:
 	func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
 		if path.begins_with("res://assets/audio/banks/") and not features.has("windows"):
 			skip()
+		if path.begins_with("res://assets/audio/native/") and not features.has("web"):
+			skip()
 
 var _audio_export: AudioExport
 func _enter_tree() -> void:

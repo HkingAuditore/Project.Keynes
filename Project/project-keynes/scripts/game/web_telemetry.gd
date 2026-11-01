@@ -80,7 +80,29 @@ static func install_page_hooks() -> void:
 	_bridge.call("eval", js)
 
 
-## wasm 内存（MB）：用来观察一年长跑是否把内存推爆导致上下文丢失。
+## wasm 线性内存（MB），即浏览器给整个 Godot 实例的 2 GiB 上限里已经提交了多少。
+## 这是**判断长跑会不会撞 2 GiB 墙的唯一直接指标**：Performance.MEMORY_STATIC 在
+## web 上不含 wasm 堆，只有 engine.rtenv.HEAPU8.length 才是真实值。
+## 读不到（非 web / 引擎还没 init）返回 -1，调用方必须原样带出去而不是写 0。
+static func wasm_heap_mb() -> int:
+	if not enabled() or _bridge == null:
+		return -1
+	var value: Variant = _bridge.call("eval", """
+		(function () {
+			try {
+				if (typeof engine === 'undefined' || !engine || !engine.rtenv) return -1;
+				var heap = engine.rtenv.HEAPU8;
+				return heap ? Math.round(heap.length / 1048576) : -1;
+			} catch (e) { return -1; }
+		})()
+	""")
+	if value == null:
+		return -1
+	return int(value)
+
+
+## Godot 自己统计的静态内存（MB）。web 上只覆盖引擎 allocator 的一部分，用来和
+## wasm_heap_mb 对账（差值就是 GDScript 资源/JS/线程栈等）。
 static func memory_mb() -> int:
 	if not enabled():
 		return -1

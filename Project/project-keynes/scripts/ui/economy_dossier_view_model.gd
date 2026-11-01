@@ -408,8 +408,11 @@ func per_capita_model() -> Dictionary:
 ## 当日国库收支：堆叠条看结构（谁交的、补给谁），折线看方向（总量怎么变）。
 ## 数据只来自 shell 模型里的财政快照与国库日序列，不额外发起原生查询。
 func cashflow_model() -> Dictionary:
-	var flow := build_cashflow(_model.get("fiscal", {}))
 	var history = _model.get("fiscal_history", null)
+	var fiscal: Dictionary = _model.get("fiscal", {})
+	if history is EconomyFiscalHistory:
+		fiscal = history.display_snapshot(fiscal)
+	var flow := build_cashflow(fiscal)
 	if history is EconomyFiscalHistory:
 		flow["income_series"] = _series_money(history.income_series())
 		flow["expense_series"] = _series_money(history.expense_series())
@@ -495,7 +498,8 @@ static func build_cashflow(fiscal: Dictionary) -> Dictionary:
 		"expense_text": _money_text(expense_total),
 		"net_text": ("+" if net >= 0.0 else "−") + _money_text(absf(net)),
 		"net_positive": net >= 0.0,
-		"day_text": "第 %d 日" % (day + 1) if day >= 0 else "",
+		"day_text": ("第 %d 日 · 上次结算" % (day + 1)
+			if bool(fiscal.get("carried_forward", false)) else "第 %d 日" % (day + 1)) if day >= 0 else "",
 		"detail_rows": rows,
 		"income_segments": _flow_segments(inflow_raw, UITokens.DOSSIER_VERDIGRIS),
 		"expense_segments": _flow_segments(outflow_raw, UITokens.DOSSIER_OXBLOOD),

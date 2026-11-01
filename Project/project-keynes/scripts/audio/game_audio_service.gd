@@ -1,5 +1,8 @@
 extends Node
-## Presentation-only FMOD boundary. Unsupported platforms retain the native audio path.
+## Presentation-only audio boundary: Windows FMOD, Web Godot/Vorbis full mixes.
+
+const NativeBackend := preload("res://scripts/audio/native_audio_backend.gd")
+var _native: NativeBackend
 
 const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
 const BANK_ROOT := "res://assets/audio/banks/Desktop/"
@@ -123,6 +126,13 @@ var _spatial_enabled := false
 
 
 func _ready() -> void:
+	if _uses_native_audio():
+		_native = NativeBackend.new()
+		_native.name = "NativeAudio"
+		add_child(_native)
+		status = "ready"
+		_connect_settings_and_feedback()
+		return
 	if OS.get_name() != "Windows" or OS.get_environment("PK_FMOD_DISABLE") == "1":
 		status = "platform_disabled"
 		return
@@ -153,6 +163,14 @@ func _ready() -> void:
 	status = "ready"
 	for suite_path in [STONE_AGE_SUITE_EVENT, AGRARIAN_AGE_SUITE_EVENT, KINGDOM_AGE_SUITE_EVENT, EMPIRE_AGE_SUITE_EVENT]:
 		_music_description(suite_path)
+	_connect_settings_and_feedback()
+
+
+func _uses_native_audio() -> bool:
+	return OS.has_feature("web")
+
+
+func _connect_settings_and_feedback() -> void:
 	var settings := get_node_or_null("/root/GameSettings")
 	if settings != null:
 		settings.settings_changed.connect(apply_settings)
@@ -164,6 +182,9 @@ func _ready() -> void:
 
 
 func apply_settings(values: Dictionary) -> void:
+	if _native != null:
+		_native.apply_settings(values)
+		return
 	if status != "ready" or _master == 0:
 		return
 	ClassDB.class_call_static("StudioBus", "set_volume", _master,
@@ -172,6 +193,8 @@ func apply_settings(values: Dictionary) -> void:
 
 
 func play_prototype(tension: float = 0.0) -> bool:
+	if _native != null:
+		return _play_native_suite(0, true, 0)
 	if status != "ready":
 		return false
 	if _music == 0:
@@ -196,6 +219,8 @@ func set_tension(value: float) -> bool:
 ## 启用 3D 监听（相机位置驱动）。调用前请确认事件已在 Studio 里加了 Spatialiser，
 ## 可以用哪个事件试：print(ClassDB.class_call_static("StudioEventDescription", "is3D", desc))
 func enable_spatial_listener() -> bool:
+	if _native != null:
+		return false
 	if status != "ready":
 		return false
 	var r := int(ClassDB.class_call_static("StudioSystem", "set_num_listeners", _system, 1))
@@ -234,6 +259,12 @@ func play_event_cue(cue: StringName, world_pos: Vector2 = Vector2.INF) -> bool:
 	var now := Time.get_ticks_msec()
 	if now < int(_event_next_ms.get(cue, 0)):
 		return false
+	if _native != null:
+		if not _native.play_cue("events", cue):
+			return false
+		_event_next_ms[cue] = now + int(EVENT_COOLDOWN_MS.get(cue, 0))
+		event_sound_played.emit(cue)
+		return true
 	var description := int(_event_descriptions.get(cue, 0))
 	if description == 0:
 		description = int(ClassDB.class_call_static("StudioSystem", "get_event", _system, EVENT_CUES[cue]))
@@ -265,6 +296,12 @@ func play_ui(cue: StringName = &"click") -> bool:
 	var now := Time.get_ticks_msec()
 	if now < int(_ui_next_ms.get(cue, 0)):
 		return false
+	if _native != null:
+		if not _native.play_cue("ui", cue):
+			return false
+		_ui_next_ms[cue] = now + int(UI_COOLDOWN_MS[cue])
+		ui_sound_played.emit(cue)
+		return true
 	var description := int(_ui_descriptions.get(cue, 0))
 	if description == 0:
 		description = int(ClassDB.class_call_static("StudioSystem", "get_event", _system,
@@ -285,6 +322,13 @@ func play_ui(cue: StringName = &"click") -> bool:
 
 ## 按 key 切换循环音乐。同一首重复调用不会重启。
 func play_music(key: StringName) -> bool:
+	if _native != null:
+		var ok := _native.play_music(key)
+		if ok:
+			if _music_key != _native.music_key:
+				_era_index = -1
+			_music_key = _native.music_key
+		return ok
 	if status != "ready":
 		return false
 	var event_path := MusicCatalog.path(key)
@@ -309,6 +353,8 @@ func play_music(key: StringName) -> bool:
 ## 参数化探索音乐：单个事件 + 参数 Era 选档。
 ## 与 play_explore 的区别：只有一条事件路径，切换靠参数，音频在 bank 里完全复用。
 func play_explore_parameterized(era_index: int) -> bool:
+	if _native != null:
+		return _play_native_suite(era_index, false, 0)
 	if status != "ready":
 		return false
 	var clamped := clampi(era_index, 0, ERA_MUSIC.size() - 1)
@@ -332,6 +378,8 @@ func play_explore_parameterized(era_index: int) -> bool:
 
 ## 设置参数化事件的 Era 档位（0=黑暗 1=封建 2=城堡 3=帝王）。
 func set_era_parameter(era_index: int) -> bool:
+	if _native != null:
+		return _play_native_suite(era_index, false, 0)
 	if _music == 0 or not _music_parameterized:
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -347,7 +395,7 @@ func set_era(era_index: int) -> bool:
 		return false
 	var clamped := mini(era_index, ERA_MUSIC.size() - 1)
 	var target_key := _era_suite_key(clamped)
-	if _music != 0 and _music_key == target_key:
+	if (_music != 0 or (_native != null and _native.music.playing)) and _music_key == target_key:
 		# 菜单组曲尚未绑定国家时代；接管时只认领时代，避免再次 seek 到引子。
 		_era_index = clamped
 		return true
@@ -470,6 +518,8 @@ func play_stinger(key: StringName) -> bool:
 
 
 func _play_one_shot(event_path: String) -> bool:
+	if _native != null:
+		return _native.play_transition(event_path)
 	if status != "ready" or event_path.is_empty():
 		return false
 	var description := _music_description(event_path)
@@ -521,6 +571,8 @@ func _ensure_suite_timeline_start(instance: int, start_ms: int) -> void:
 ## from_intro=false 时直接从 12.8s 常态循环起点切入。
 func play_stone_age_suite(from_intro: bool = true, population_ratio: float = 0.0,
 		camera_zoom_ratio: float = 0.5, loop_section: int = 0) -> bool:
+	if _native != null:
+		return _play_native_suite(0, from_intro, loop_section)
 	if status != "ready":
 		return false
 	var description := _music_description(STONE_AGE_SUITE_EVENT)
@@ -629,6 +681,8 @@ func jump_stone_age_timeline_ms(timeline_ms: int) -> bool:
 ## from_intro=false 时直接从 12.0s 常态循环起点切入。
 func play_agrarian_age_suite(from_intro: bool = true, population_ratio: float = 0.0,
 		camera_zoom_ratio: float = 0.5, loop_section: int = 0) -> bool:
+	if _native != null:
+		return _play_native_suite(1, from_intro, loop_section)
 	if status != "ready":
 		return false
 	var description := _music_description(AGRARIAN_AGE_SUITE_EVENT)
@@ -753,6 +807,8 @@ func advance_stone_to_agrarian_suite(population_ratio: float = 0.04,
 ## from_intro=false 时直接从 11.2s 常态循环起点切入。
 func play_kingdom_age_suite(from_intro: bool = true, population_ratio: float = 0.0,
 		camera_zoom_ratio: float = 0.5, loop_section: int = 0) -> bool:
+	if _native != null:
+		return _play_native_suite(2, from_intro, loop_section)
 	if status != "ready":
 		return false
 	var description := _music_description(KINGDOM_AGE_SUITE_EVENT)
@@ -865,6 +921,8 @@ func advance_agrarian_to_kingdom_suite(population_ratio: float = 0.04,
 ## from_intro=false 时直接从 15.0s 常态循环起点切入。
 func play_empire_age_suite(from_intro: bool = true, population_ratio: float = 0.0,
 		camera_zoom_ratio: float = 0.5, loop_section: int = 0) -> bool:
+	if _native != null:
+		return _play_native_suite(3, from_intro, loop_section)
 	if status != "ready":
 		return false
 	var description := _music_description(EMPIRE_AGE_SUITE_EVENT)
@@ -972,7 +1030,18 @@ func advance_kingdom_to_empire_suite(population_ratio: float = 0.04,
 	return trans_ok and suite_ok
 
 
+func _play_native_suite(era: int, from_intro: bool, section: int) -> bool:
+	var ok := _native.play_suite(era, from_intro, section)
+	if ok:
+		if _music_key != _native.music_key:
+			_era_index = -1
+		_music_key = _native.music_key
+	return ok
+
+
 func stop_music() -> void:
+	if _native != null:
+		_native.stop_music()
 	_timeline_jump_seq += 1
 	if _music != 0:
 		ClassDB.class_call_static("StudioEventInstance", "stop", _music, 1)
@@ -987,6 +1056,8 @@ func stop_music() -> void:
 
 
 func diagnostics() -> Dictionary:
+	if _native != null:
+		return _native.diagnostics()
 	if status != "ready":
 		return {"status": status}
 	ClassDB.class_call_static("StudioSystem", "flush_commands", _system)

@@ -352,7 +352,29 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 
 func _wait_for_safe_boundary() -> Dictionary:
 	const MAX_WAIT_FRAMES := 1800
+	# 同一个 blocking code 连续出现的帧/墙钟上限。
+	#
+	# 冻结时钟后有些边界不可能在暂停期间推进，最典型的是
+	# save_requires_idle_effect_country：年度结算奖励的 Effect 命令要等下一个
+	# **游戏日** 才会 ACK，而存档已经 pause 了时钟。旧实现会一直等满 1800 帧，
+	# 每帧重跑 advance_save_boundary() 里的整条日系统链（trigger/ideology/
+	# effect/modifier/gameplay_effect + economy inflight）。实测（desktop headless，
+	# 60x40，10x，sync-write 复现 web 路径）这一轮空转把 Godot 静态内存抬高
+	# **约 600 MB，而且永不归还**——每次年度自动存档都会再抬一次，web 的 2 GiB
+	# wasm 堆因此在第 2–4 个游戏年撞墙，随后控制台就是每次鼠标事件一对
+	# "Cannot enlarge memory" + "table index is out of bounds"。
+	# 失败路径本来就会 `_last_autosave_year = year - 1`（下一个年份再试），
+	# 所以早点放弃没有任何功能损失；web 还顺带避免了主线程被堵几十秒。
+	const MAX_STALL_FRAMES := 240
+	const MAX_STALL_FRAMES_WEB := 90
+	const MAX_WAIT_MSEC := 8000
+	const MAX_WAIT_MSEC_WEB := 3000
+	var is_web := OS.has_feature("web")
+	var stall_cap := MAX_STALL_FRAMES_WEB if is_web else MAX_STALL_FRAMES
+	var deadline_msec := Time.get_ticks_msec() + (MAX_WAIT_MSEC_WEB if is_web else MAX_WAIT_MSEC)
 	var last_boundary := {}
+	var last_code := ""
+	var stall_frames := 0
 	for frame in range(MAX_WAIT_FRAMES):
 		var boundary := _can_save()
 		if bool(boundary.get("ok", false)):
@@ -365,13 +387,22 @@ func _wait_for_safe_boundary() -> Dictionary:
 			"save_requires_idle_effect_country", "save_requires_idle_effect_economy", \
 			"save_requires_idle_effect_gameplay"]:
 			return boundary
+		if code == last_code:
+			stall_frames += 1
+		else:
+			last_code = code
+			stall_frames = 0
+		if stall_frames >= stall_cap or Time.get_ticks_msec() >= deadline_msec:
+			break
+		# 空转期间不必每帧重跑日系统链；隔帧推进把内存增速再压一半。
 		var generator := _runtime_host.generator()
-		if generator != null and generator.has_method("advance_save_boundary"):
+		if generator != null and generator.has_method("advance_save_boundary") \
+				and (frame % 2 == 0):
 			generator.advance_save_boundary()
 		await get_tree().process_frame
 	var blocking_code := String(last_boundary.get("code", ""))
-	push_warning("[save] boundary timeout blocking=%s detail=%s" % [
-		blocking_code, JSON.stringify(_boundary_diagnostics())])
+	push_warning("[save] boundary timeout blocking=%s stalled_frames=%d detail=%s" % [
+		blocking_code, stall_frames, JSON.stringify(_boundary_diagnostics())])
 	var timeout := _result(false, "save_boundary_timeout",
 		"等待国家与经济提交边界超时（阻塞：%s）。" % blocking_code)
 	timeout["blocking_code"] = blocking_code

@@ -29,7 +29,9 @@ const MAX_WEATHER_FRONTS := 16
 ## （`#define PK_WEB_WEATHER_MIN` → shaders/include/weather_overlay_web_min.gdshaderinc），
 ## 把「域扭曲 + 4/3/2 octave 旋转 fbm × 十几处内联实例」换成「无 sin / 无循环的双 octave
 ## 值噪声 × 3 处调用点」，同时编译掉体积法线、偏移投影阴影、山雾邻域采样与接缝伙伴采样。
-## 云量覆盖、三层云、逐像素晨昏色、云下直射阴影全部保留，所以 web 上现在能看见云。
+## 云量覆盖、三层云、逐像素晨昏色、云下直射阴影全部保留，所以 web 上高画质
+## 能看见云（低/中画质由 hex_renderer 的画质门 set_render_gate() 关掉绘制，
+## 见 PK_WEB_ENABLE_WEATHER_LAYER 与 _render_gate_open）。
 ## 仍保留这个开关作为应急：置 false 时 web 退回全透明 stub（不触发任何 shader 编译、不卡加载）。
 ## 注：本开关只决定 overlay 是否走 stub；cell curtain shader 一直按正常路径加载（未裁剪）。
 const PK_WEB_ENABLE_WEATHER_SHADERS := true
@@ -230,6 +232,12 @@ func _ready() -> void:
 	set_process(true)
 
 func _process(delta: float) -> void:
+	# 画质门关闭（web 低 / 中 / auto）：不推进、不上传 uniform、不绘制 ——
+	# 低画质连逐帧 blend/粒子/雨幕同步的 CPU 也不付。开门后下一帧按最新
+	# LUT / fronts 继续（set_render_gate 已先重算可见性）。
+	if not _render_gate_open:
+		visible = false
+		return
 	var has_weather: bool = (not _front_target_snapshots.is_empty()) \
 			or (not _front_visual_snapshots.is_empty()) \
 			or (_weather_field_tex != null) \
@@ -454,14 +462,38 @@ func set_weather_field_texture(tex: Texture2D) -> void:
 	_weather_field_tex = tex
 	_refresh_visibility()
 
-# 可见性收敛点。任何一个条件成立就保持 overlay 可见：
+# Web 画质门（2026-11-01）：hex_renderer 在 web 上只有高画质才把门打开；
+# 桌面 / 移动恒开。门关着时无论有没有 fronts / LUT 都不绘制 —— 这是刻意的：
+# 只写一次 visible=false 不够，因为 _refresh_visibility() 会被 setup()/fronts
+# 更新再次调用，于是天气层会自己重新显示（2026-10-31 的 web 性能开关就是
+# 这样被绕过的）。所有 visible 写入都必须经过本门。
+var _render_gate_open: bool = true
+
+
+## 由 HexRenderer 调用：web 低/中/auto 画质传 false，高画质传 true。
+## 关门时立即隐藏；开门时按当前 fronts/LUT 状态重新收敛可见性。
+func set_render_gate(open: bool) -> void:
+	if _render_gate_open == open:
+		return
+	_render_gate_open = open
+	if open:
+		_refresh_visibility()
+	else:
+		visible = false
+
+
+func is_render_gate_open() -> bool:
+	return _render_gate_open
+
+
+# 可见性收敛点（画质门之外的唯一 visible 写入口）。门开着 且 任一条件成立：
 #  1) 有活跃 fronts（粒子/旧摘要）
 #  2) 有 weather_field_tex（旧按 cell 渲染天气场）
 #  3) 有 weather_lut（当前逐格云场真源）
 func _refresh_visibility() -> void:
-	visible = (_active_count > 0) \
+	visible = _render_gate_open and ((_active_count > 0) \
 			or (_weather_field_tex != null) \
-			or _has_weather_lut_source()
+			or _has_weather_lut_source())
 
 func _has_weather_lut_source() -> bool:
 	return _weather_lut_tex != null and _weather_lut_dims.x > 0 and _weather_lut_dims.y > 0

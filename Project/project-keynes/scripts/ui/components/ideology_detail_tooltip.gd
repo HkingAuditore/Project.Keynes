@@ -4,7 +4,8 @@ extends PanelContainer
 const Art = preload("res://scripts/ui/components/ideology_art.gd")
 const Q16 := 65536.0
 const WIDTH := 448.0
-const TITLE_FONT = preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf")
+## 手写体标题字用带随包 fallback 的 display_handwritten（web 无系统字体兜底）。
+const TITLE_FONT = preload("res://assets/fonts/muyao/display_handwritten.tres")
 
 var _column: VBoxContainer
 var _scroll: ScrollContainer

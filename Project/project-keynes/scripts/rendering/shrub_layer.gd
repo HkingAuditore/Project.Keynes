@@ -479,7 +479,10 @@ func set_visual_quality(q: int) -> void:
 	var next_q := clampi(q, 0, 2)
 	if _visual_quality == next_q:
 		return
+	var change_web_program := OS.has_feature("web") and ((_visual_quality >= 2) != (next_q >= 2))
 	_visual_quality = next_q
+	if change_web_program:
+		_refresh_shader_variants()
 	_native_delta_common_knobs = {}
 	if _map != null:
 		_rebuild_or_defer()
@@ -781,7 +784,13 @@ func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
 # set_family_batch_suppressed(true) 换回真实档位（见 _restore_family_material_near_forms）。
 func _family_batch_define_prefix() -> String:
 	if OS.has_feature("web") and PK_WEB_ENABLE_VEG_NEAR_FORMS and not _family_batch_suppressed:
-		return _shader_quality_define_prefix(true)
+		var prefix := _shader_quality_define_prefix(true)
+		# Family batches add the style LUT. On Web HIGH, release the horizon
+		# sampler there; body instances retain horizon lighting and the family
+		# batch still uses PC forms, ground normals and soft shadows.
+		if _visual_quality >= 2:
+			prefix += "#define PK_SKIP_HORIZON_SHADOWS\n"
+		return prefix
 	return _shader_quality_define_prefix()
 
 
@@ -1521,7 +1530,7 @@ func _ensure_resources() -> void:
 #       → 桌面同款全 17 个 form，最费编译时间（验证用，不要当默认）。
 # 回退：把 PK_WEB_ENABLE_VEG_NEAR_FORMS 改回 false，重新导出一版 web 即可，
 # shader 源文件不用改；首次编译成本仍然可以从 WebTelemetry 的 veg_shader 事件读。
-const PK_WEB_ENABLE_VEG_NEAR_FORMS := false
+const PK_WEB_ENABLE_VEG_NEAR_FORMS := true
 const PK_WEB_VEG_NEAR_FULL_FORMS := false
 
 
@@ -1547,8 +1556,8 @@ static func quality_tier_defines(tier: int) -> String:
 ## body/shadow 源码编成 MID 档，预热的却是 LOW 档 —— LOW/MID 两条宏串**长度相同**
 ## （27+27=54 字节：#define <18 字符宏> 两行）、内容不同，于是预热与运行期的 fp 长度一样、hash 不一样，驱动缓存
 ## 必然不命中（2026-10-31 实测 veg_body 284:2668251923 vs 预热 284:2751745859）。
-## 钉死之后 shader 源码只取决于"是不是 web"，不再取决于推档时机；画质预算仍然走
-## `_mobile_quality_tier`（`_active_quality_tier()`），预算行为不变。
+## 钉死之后源码不再取决于推档时机。Web 画质预算和 veg_shade_quality
+## 走 `_visual_quality`，移动端继续走 `_mobile_quality_tier`。
 const WEB_SHADER_QUALITY_TIER := 0
 
 
@@ -1578,9 +1587,12 @@ static func web_form_defines(world_known: bool) -> String:
 ## 参数全部显式传入（不读 OS.has_feature / 成员变量），才能被桌面 headless 探针枚举：
 ## `tests/rendering/veg_variant_parity_probe.gd`。
 static func web_define_prefix(tier: int, tiled: bool, world_known: bool,
-		force_far_only: bool = false) -> String:
+		force_far_only: bool = false, pc_high: bool = false) -> String:
 	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
-	prefix += quality_tier_defines(tier)
+	if pc_high and world_known and not force_far_only:
+		# Full PC forms, 3px near LOD and analytic soft shadows; no mobile cuts.
+		return prefix + "#define PK_WEB_VEGETATION\n#define PK_WEB_PC_HIGH\n"
+	prefix += "#define PK_WEB_VEGETATION\n" + quality_tier_defines(tier)
 	# force_far_only：调用方自己保证这份材质暂时不上屏（家族批次材质），先用最省的档。
 	if force_far_only:
 		return prefix + "#define PK_VEG_FAR_ONLY\n"
@@ -1590,7 +1602,8 @@ static func web_define_prefix(tier: int, tiled: bool, world_known: bool,
 func _shader_quality_define_prefix(force_far_only: bool = false) -> String:
 	var tiled := _visual_tiles_active()
 	if OS.has_feature("web"):
-		return web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only)
+		return web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only,
+			_visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false)))
 	# 非 web：桌面只有 tiled 前缀，与改动前逐字节相同；mobile 与 web 同属受限平台，
 	# 但档位来自推送值、form 档在非 web 上恒为空串（也逐字节同改动前）。
 	if not OS.has_feature("mobile"):
@@ -4452,6 +4465,10 @@ func _quality_size_scale() -> float:
 
 
 func _active_quality_tier() -> int:
+	# Web's compile tier stays LOW for warmup parity. Instance budgets and
+	# shading/form uniforms must follow the user's runtime quality instead.
+	if OS.has_feature("web"):
+		return clampi(_visual_quality, 0, 2)
 	return clampi(
 		_mobile_quality_tier if DCFeatureFlags.uses_shader_quality_tier() else _visual_quality,
 		0, 2)
@@ -4862,13 +4879,16 @@ static func web_warmup_shader_codes() -> Dictionary:
 	#
 	# 要给哪几格：运行期会编 **两份** body/shadow —— `_ready()` 早编那一次
 	# （`_world == null`）和 `setup()` 之后那一次（`_world != null`）。现在
-	# `PK_WEB_ENABLE_VEG_NEAR_FORMS = false`，两格的前缀逐字相同 → 自动去重只留一份；
-	# 一旦打开近景 form，两格会分叉，那时两格都必须预热（label 用 body / body_setup）。
+	# 近景 form 已打开，两格都必须预热（label 用 body / body_setup）。
 	#
 	# tiled=false 是 web 上的运行期真值（见修正 1）；若哪天 web 也走 visual_tiles，
 	# 这里必须跟着加一份 tiled 变体。
 	var tiled := false
 	var out := {}
+	var high_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, false, true, false, true)
+	out["body_high"] = high_prefix + _SHADER_CODE
+	out["shadow_high"] = high_prefix + _SHADOW_SHADER_CODE
+	out["family_high"] = high_prefix + "#define PK_SKIP_HORIZON_SHADOWS\n#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
 	for world_known in [false, true]:
 		var prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, world_known)
 		var suffix := "" if not world_known else "_setup"
@@ -4883,6 +4903,12 @@ static func web_warmup_shader_codes() -> Dictionary:
 	var family_prefix := web_define_prefix(
 		WEB_SHADER_QUALITY_TIER, tiled, true, PK_WEB_ENABLE_VEG_NEAR_FORMS)
 	out["family"] = family_prefix + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE
+	# A family can later become visible and restore its near-form program.
+	# Prewarm that exact program as well as the initially suppressed one.
+	if PK_WEB_ENABLE_VEG_NEAR_FORMS:
+		var near_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, true)
+		_put_warmup_code(out, "family_near",
+			near_prefix + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE)
 	return out
 
 

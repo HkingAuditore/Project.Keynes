@@ -76,23 +76,35 @@ const TerrainGeometryScript = preload("res://scripts/rendering/bakers/terrain_ge
 const PhysCircSolverScript = preload("res://scripts/rendering/physical_circulation_solver.gd")
 
 # ─── 分辨率 ───────────────────────────────────────────────────────────────
-# 桌面 1024×N；移动端 / Web 512×N。hex 网格本身只 60×40，1024 已远超；512
-# 让 derived_size 从 1024×606 (620k px) 降到 512×303 (155k px) — atlas RGBA
-# 从 2.4MB 降到 0.6MB，4 张总 GPU 上传从 9.6MB 降到 2.4MB，Adreno 830 上单
-# tick atlas commit 从 12ms 降到 ~3ms。Web 必须同档：浏览器 nothreads WASM 上
-# 仍用 1024 会把 terrain-index / encode / horizon 的 O(像素) 开销放大 ~4×。
-# 地形细节肉眼可分辨度差异可接受（hex 边界已被 warp noise 模糊）。需要时把
-# _hm_max_dim() 改回 1024 即可强制受限平台走桌面分辨率。
+# 桌面基线 1024；移动端 512。Web 按设置选择 512/1024/2048，
+# 高档优先保留近景海岸与高度精度；静态精度切换在下次创建地图生效。
 const HM_MAX_DIM_DESKTOP := 1024
 const HM_MAX_DIM_MOBILE := 512
+
+static func _render_quality_setting() -> String:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null:
+		var settings := tree.root.get_node_or_null("GameSettings")
+		if settings != null and settings.has_method("values"):
+			return String(settings.values().get("render_quality", "auto"))
+	return "auto"
+
+static func _terrain_material_size() -> int:
+	if OS.has_feature("web"):
+		return TERRAIN_MATERIAL_SIZE_DESKTOP if _render_quality_setting() == "high" else TERRAIN_MATERIAL_SIZE_MOBILE
+	return TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") else TERRAIN_MATERIAL_SIZE_DESKTOP
 
 static func _hm_max_dim() -> int:
 	# F12 调试热键（2026-06-14）：force_atlas_quarter_size meta 临时把移动端
 	# atlas 从 512 进一步降到 256，看 GPU 负载减半 FPS 提升多少。重启失效。
 	if Engine.has_meta(&"force_atlas_quarter_size") and bool(Engine.get_meta(&"force_atlas_quarter_size")):
 		return 256
-	# Web 没有 mobile feature，但 bake 预算与 mobile 同档（nothreads WASM 单线程）。
-	if OS.has_feature("mobile") or OS.has_feature("web"):
+	if OS.has_feature("web"):
+		match _render_quality_setting():
+			"high": return 2048
+			"medium": return 1024
+			_: return HM_MAX_DIM_MOBILE
+	if OS.has_feature("mobile"):
 		return HM_MAX_DIM_MOBILE
 	return HM_MAX_DIM_DESKTOP
 
@@ -100,8 +112,9 @@ static func _hm_max_dim() -> int:
 # 真正决定渲染分辨率的是 _resolve_hm_size() 里调 _hm_max_dim()。
 const HM_MAX_DIM := HM_MAX_DIM_DESKTOP
 
-# [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。mobile/web 默认不烘焙，
-# shader 走现有 normal/TOD 光照；桌面用一张 RGBA8 nibble-packed 纹理，运行期 1 次采样近似地形投影阴影。
+# [terrain-horizon 2026-07-03] 8 方向 horizon 生成期烘焙参数。桌面用一张 RGBA8
+# nibble-packed 纹理，运行期 1 次采样近似地形投影阴影；Web 全部档位也 CPU 烘一张
+# （见 TERRAIN_HORIZON_STEPS_WEB），mobile 仍为 null（shader 走无阴影回退）。
 const TERRAIN_HORIZON_STEPS := 1024
 const TERRAIN_HORIZON_STEP_PX := 2.0
 const TERRAIN_HORIZON_STEP_GROWTH := 0.35  # 近密远疏；0 退回固定步长
@@ -112,6 +125,21 @@ const TERRAIN_HORIZON_MAX_ANGLE := 1.309      # 约 75°，与运行期解码契
 const TERRAIN_HORIZON_BIAS := 0.04
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0   # 归一高程 → world units（×hex_size）
 const TERRAIN_HORIZON_MAX_DISTANCE_HEX := 24.0  # 固定近场遮挡射程，避免大地图引入更远山体
+# [terrain-web-baked-surface 2026-11-01] Web 全部档位的 horizon CPU marching 步数。
+# 桌面 1024 步是给 4K 级 hm 的；Web 是 nothreads WASM，1024 步会秒级卡死。
+# 真机探针（RTX native 多线程，steps=128）：512×298 = 15 ms / 1024×596 = 79 ms /
+# 2048×1192 = 489 ms；max_distance=24 hex 还会自然截断有效步数（实际远小于 128）。
+const TERRAIN_HORIZON_STEPS_WEB := 128
+
+# [terrain-web-baked-surface 2026-11-01] Web 全部档位 + 桌面 legacy 回退的**单张静态地表**
+# （normal RGBA8 + relief RGBA8）整图单 tile 烘焙封顶。复用 native
+# run_bake_visual_tile_layer_pass，把整张地图当一个 tile 烘（relief_supersample=1）。
+# 真机探针（RTX native 多线程）：512×298 = 68 ms；1024×596 = 265 ms；wasm nothreads
+# 预计 3–5×，相对 map 生成总预算仍可接受，因此 Web 不再单独压到 512：封顶与桌面一致
+# 取 1024，实际尺寸再被 world.hm_size 最大边自然钳住
+# （Web LOW hm=512 → 512；Web MID/HIGH hm≥1024 → 1024；桌面 legacy → 1024）。
+const LEGACY_STATIC_SURFACE_MAX_DIM := 1024
+const LEGACY_STATIC_SURFACE_MAX_DIM_WEB := LEGACY_STATIC_SURFACE_MAX_DIM
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -130,14 +158,19 @@ const TERRAIN_DETAIL_BAKE_MAX := 1.30
 # [terrain-material-tiles] The four authored families are independent of map
 # dimensions and are therefore cached once per device target size. Mobile gets
 # one 512² downscale; desktop keeps the authored 1024² images.
+# [terrain-web-baked-surface-B 2026-11-01] 第 5 层 = micro 细节（256² RGBA8 平铺贴图），
+# 缩放到同一 target_size 后进同一 array（shader 用 terrain_material_micro_layer=4 采样），
+# 这样 Web 陆地程序不必额外声明 terrain_micro_tex sampler（保持 8 槽）。
 const TERRAIN_MATERIAL_SIZE_DESKTOP := 1024
 const TERRAIN_MATERIAL_SIZE_MOBILE := 512
+const TERRAIN_MATERIAL_MICRO_LAYER := 4
 const TERRAIN_MATERIAL_TEXTURE_PATHS := [
 	"res://assets/textures/terrain_materials/organic.png",
 	"res://assets/textures/terrain_materials/dry_sand.png",
 	"res://assets/textures/terrain_materials/rock.png",
 	"res://assets/textures/terrain_materials/snow_wet.png",
 ]
+const TERRAIN_MICRO_TEXTURE_PATH := "res://assets/textures/terrain_micro_data.png"
 static var _shared_terrain_material_tex_by_size: Dictionary = {}
 static var _shared_terrain_material_error_by_size: Dictionary = {}
 
@@ -338,7 +371,7 @@ static var _prebaked_images: Dictionary = {}
 
 static func prepare_shared_materials_async() -> void:
 	var paths := [PREBAKED_LOADING_DIR+"noise_rgba.res"]
-	var target := TERRAIN_MATERIAL_SIZE_MOBILE if OS.has_feature("mobile") or OS.has_feature("web") else TERRAIN_MATERIAL_SIZE_DESKTOP
+	var target := _terrain_material_size()
 	for i in TERRAIN_MATERIAL_TEXTURE_PATHS.size():
 		paths.append(PREBAKED_LOADING_DIR+"material_%d_%d.res" % [target,i])
 	for path: String in paths:
@@ -382,11 +415,42 @@ static func _build_terrain_material_tex(target_size: int) -> Dictionary:
 		if image == null or image.is_empty():
 			return {"texture":null,"reason":"prebaked_material_missing"}
 		images.append(image)
+	# [terrain-web-baked-surface-B 2026-11-01] 第 5 层 micro：512/1024² prebaked 材质层与
+	# micro 源图（256²）的 mipmap 状态必须一致，否则 create_from_images 会拒绝整张 array。
+	# 所以 micro 也 resize 到 target_size 并 generate_mipmaps()。
+	var micro_image := _load_terrain_micro_layer_image(target_size)
+	if micro_image != null:
+		images.append(micro_image)
 	var texture := Texture2DArray.new()
 	var create_error := texture.create_from_images(images)
 	if create_error != OK:
 		return {"texture": null, "reason": "array_create_failed:%s" % create_error}
-	return {"texture": texture, "reason": ""}
+	return {"texture": texture, "reason": "" if micro_image != null else "terrain_micro_layer_missing"}
+
+
+## [terrain-web-baked-surface-B 2026-11-01] terrain_material_tex 的第 5 层（micro）源图：
+## terrain_micro_data.png（RGBA8 256² 平铺）→ convert RGBA8（若导入格式不同）→
+## resize(target_size, LANCZOS) → generate_mipmaps()（与 prebaked material 层一致）。
+## 失败返回 null；调用方保留 4 层 array（shader 侧 terrain_material_micro_layer=-1）。
+static func _load_terrain_micro_layer_image(target_size: int) -> Image:
+	if target_size <= 0:
+		return null
+	var tex := load(TERRAIN_MICRO_TEXTURE_PATH) as Texture2D
+	if tex == null:
+		push_warning("[terrain-material-tiles] micro layer source missing: %s" % TERRAIN_MICRO_TEXTURE_PATH)
+		return null
+	var image := tex.get_image()
+	if image == null or image.is_empty():
+		push_warning("[terrain-material-tiles] micro layer image unavailable: %s" % TERRAIN_MICRO_TEXTURE_PATH)
+		return null
+	# 复制一份再改，避免污染资源缓存里的 Image。
+	image = image.duplicate() as Image
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
+	if image.get_width() != target_size or image.get_height() != target_size:
+		image.resize(target_size, target_size, Image.INTERPOLATE_LANCZOS)
+	image.generate_mipmaps()
+	return image
 
 static func _build_noise_tex(size: int, seed_val: int) -> ImageTexture:
 	var rng := RandomNumberGenerator.new()
@@ -549,7 +613,9 @@ var _pending_wind_buf: PackedByteArray = PackedByteArray()
 # 当前用于 _PHYS_STAGE_WIND C++ 化（run_wind_field_pass）；后续可扩展给 ψ / upwelling。
 var _world_ext = null
 var _visual_tile_generation_id: int = 0
-var _visual_tile_base_knobs: Dictionary = {}
+## visual tile 公共 knob 缓存（canal 增量重烘复用）。注意：组装函数叫
+## `_visual_tile_base_knobs(...)`，GDScript 不允许变量与函数同名，所以缓存加 _cache 后缀。
+var _visual_tile_base_knobs_cache: Dictionary = {}
 # 全局基线的刻谷/侵蚀前程序高度（hm_size）。visual tile 用它把 1024 基线丢掉的高频
 # 程序地形按 tile 分辨率补回；为空时 tile 退回纯基线高度。
 var _baseline_procedural_height := PackedFloat32Array()
@@ -1116,33 +1182,38 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.height_buffer, world.flow_buffer, world.hm_size, world.height_tex, _world_ext)
 	# 独立 flow_tex 退役：legacy shader 从 height_tex.B 读 flow。字段保留以兼容旧诊断/存档读。
 	world.flow_tex = null
-	# [terrain-normal-bake 2026-06-25] 烘焙总体地形法线（宽半径梯度 → RG8）。地形静态，运行期
-	# shader 直接 1 次采样拿宏观山脉走向，细节法线运行期按 biome/性能档叠（见 hillshade_tod）。
-	var normal_data: Dictionary = await NativeLoadingTasks.compute(_world_ext,"normal",{
-		"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
-		"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
-		"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
-		"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX})
-	if not bool(normal_data.get("fallback",true)):
-		world.terrain_normal_tex = DCAtlasEncoders._upload_rg8(normal_data.get("data",PackedByteArray()),world.hm_size.x,world.hm_size.y)
-	else:
-		world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(world.height_buffer,world.hm_size,4,8.0,true,_world_ext,world.world_bounds.size,hex_size,TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
+	# [terrain-web-baked-surface 2026-11-01] 旧的 RG8 粗法线烘焙已移到 _bake_visual_tiles 之后：
+	# 单张 normal/relief 由 _bake_legacy_static_surface（整图单 tile native pass）产出；
+	# 只有那条路径失败时才回退这里的老 RG8 编码（无 BA/relief 通道，shader 只用粗法线）。
 	stage_progress.emit("encode", 0.90)
 	await _yield_generation_frame()
-	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条路径：
-	#   1. GPU 离屏（默认，DCFeatureFlags.terrain_horizon_gpu_bake_active）：这里只登记参数，
-	#      实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙（PC/移动端
-	#      同一路径）。生成期不阻塞、不占 CPU marching。
-	#   2. CPU C++（GPU 关时桌面 fallback）：DCAtlasEncoders.encode_horizon_tex（native SoA marching）。
-	#   3. mobile/web 且 GPU 关：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
-	#      Web 绝不能落到路径 2：GPU 默认关后若误走 CPU（steps=1024×8 向），nothreads WASM
-	#      上生成期会卡死数秒～数十秒。
+	# [terrain-web-baked-surface-B 2026-11-01] enum atlas 提前到 horizon 之前烘：
+	# Web 的 horizon bundle 要同时产出 GI 遮挡源 cell id（occluder），而 occluder 需要
+	# map_index bytes 里的 G/B（cell.index 低/高字节）把命中像素反查成 cell。
+	# _encode_enum_atlas 会把 RGBA8 payload 缓存在 _enum_atlas_data，Web 分支直接复用。
+	world.enum_atlas_tex = _encode_enum_atlas(
+		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
+		world.derived_size, null, world, map
+	)
+	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条平台路径：
+	#   1. GPU 离屏（默认仅桌面，DCFeatureFlags.terrain_horizon_gpu_bake_active）：这里只登记
+	#      参数，实际由 HexRenderer.set_map 用 SubViewport + canvas shader 在场景树内延迟烘焙。
+	#      生成期不阻塞、不占 CPU marching。
+	#   2. CPU C++（DCAtlasEncoders.encode_horizon_tex，native SoA marching）：
+	#      - 桌面 GPU 关时；
+	#      - **Web 全部档位**（[terrain-web-baked-surface 2026-11-01]）：LOW/MID/HIGH 都 CPU 烘
+	#        一张，否则 shader 侧 PK_WEB_HORIZON 解不到数据。步数用 TERRAIN_HORIZON_STEPS_WEB
+	#        =128（真机 probe：512×298=15ms / 1024×596=79ms / 2048×1192=489ms native；
+	#        max_distance=24 hex 还会自然截断有效步数），一次性生成期成本换"Web 地形也有
+	#        烘焙法线 + horizon 阴影"。
+	#   3. mobile：null，shader 检测 terrain_horizon_tex_bound=false → 无阴影回退。
+	#      mobile 不放宽成 CPU marching：低端移动 GPU 的收益抵不上生成期卡顿。
 	world.terrain_horizon_gpu_pending = false
 	world.terrain_horizon_gpu_params = {}
 	var horizon_height_scale_hex := maxf(float(ProjectSettings.get_setting(
 		"project_keynes/rendering/map_tiles/horizon_height_scale_hex",
 		TERRAIN_HORIZON_HEIGHT_SCALE_HEX)), 0.01)
-	if DCFeatureFlags.terrain_horizon_gpu_bake_active():
+	if DCFeatureFlags.terrain_horizon_gpu_bake_active() and not OS.has_feature("web"):
 		var wb: Vector2 = world.world_bounds.size
 		var tx: float = (wb.x / float(world.hm_size.x)) if world.hm_size.x > 0 else 1.0
 		var ty: float = (wb.y / float(world.hm_size.y)) if world.hm_size.y > 0 else 1.0
@@ -1163,7 +1234,25 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		}
 		world.terrain_horizon_gpu_pending = true
 		# 不清空 world.terrain_horizon_tex：regenerate 时旧图短暂沿用，GPU 烘完后回填，避免闪烁。
-	elif OS.has_feature("mobile") or OS.has_feature("web"):
+	elif OS.has_feature("web"):
+		# Web 所有档位都 CPU 烘 horizon（steps 用 TERRAIN_HORIZON_STEPS_WEB）。
+		# [terrain-web-baked-surface-B 2026-11-01] 改用 bundle encoder：同一次 marching
+		# 顺带产出 GI 遮挡源 cell id（emit_occluder_cells + map_index_data），
+		# 上传成 world.gi_occluder_tex → 非 tiled surface array 的 layer3（Web HIGH 的 GI 弹射）。
+		# 代价：marching 内多写 4 字节/像素 occluder，horizon 部分逐字节不变。
+		var horizon_bundle: Dictionary = DCAtlasEncoders.encode_horizon_bundle(
+			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
+			_world_ext, TERRAIN_HORIZON_STEPS_WEB, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
+			TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
+			world.sea_level, TERRAIN_HORIZON_STEP_GROWTH, TERRAIN_HORIZON_LOWPASS_RADIUS,
+			hex_size * TERRAIN_HORIZON_MAX_DISTANCE_HEX, _enum_atlas_data)
+		world.terrain_horizon_tex = horizon_bundle.get("horizon_tex", null)
+		world.gi_occluder_tex = horizon_bundle.get("occluder_tex", null)
+		print("[terrain-horizon/web] bundle horizon=%s occluder=%s native_ms=%.1f fallback=%s" % [
+			world.terrain_horizon_tex != null, world.gi_occluder_tex != null,
+			float(horizon_bundle.get("elapsed_ms", -1.0)),
+			bool(horizon_bundle.get("fallback", true))])
+	elif OS.has_feature("mobile"):
 		world.terrain_horizon_tex = null
 	else:
 		world.terrain_horizon_tex = DCAtlasEncoders.encode_horizon_tex(
@@ -1172,20 +1261,16 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
 			world.sea_level, TERRAIN_HORIZON_STEP_GROWTH, TERRAIN_HORIZON_LOWPASS_RADIUS,
 			hex_size * TERRAIN_HORIZON_MAX_DISTANCE_HEX)
-	world.enum_atlas_tex = _encode_enum_atlas(
-		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
-		world.derived_size, null, world, map
-	)
 	prewarm_dynamic_axis_caches(map, world)
 	stage_progress.emit("encode", 0.93)
 	await _yield_generation_frame()
 	world.scalar_atlas_tex = null
 	# flow 已在 encode_height_flow_tex 打进 height_tex.B；此处不再单独 encode_flow_tex。
 	world.sea_ice_tex = null
-	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 → shader 每水像素单次采样，取代旧"海洋 5×5 height
-	# 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算。空 buffer（fused 失败/旧路径）→ null tex，
-	# shader 检测到无纹理（has_water_depth_tex=false）时回退旧深浅算法。
-	world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) if not world.water_depth_buffer.is_empty() else null
+	# [water-depth-tex 2026-06-26 / C 2026-11-01] 海/湖统一水深。
+	# tiled 路径：主地形走 visual_water_depth_tiles，这里保留旧 2D R8 上传（见下方 tiled 分支）。
+	# 非 tiled 路径：水深改由 _bake_legacy_static_surface 从 native bundle 上传 **RGBA8**
+	# （R=水深，GBA=湖/礁/海带软权重），upload 已移到 static surface bake 之后。
 	var detail_payload: Dictionary = await NativeLoadingTasks.compute(_world_ext,"terrain_detail",{
 		"width":world.derived_size.x,"height":world.derived_size.y,"seed":seed_val,
 		"origin_x":world.world_bounds.position.x,"origin_y":world.world_bounds.position.y,
@@ -1196,7 +1281,59 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		world.terrain_detail_tex = DCAtlasEncoders.encode_r8_tex(detail_payload.data,world.derived_size,world.terrain_detail_tex,_world_ext)
 	else:
 		world.terrain_detail_tex = TerrainBakerScript.rebake_terrain_detail_texture(world,hex_size,_detail_noise,_ridge_noise,_world_ext,TERRAIN_DETAIL_BAKE_MIN,TERRAIN_DETAIL_BAKE_MAX)
-	await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
+	# [terrain-web-baked-surface 2026-11-01 / -A 2026-11-01 / -B 2026-11-01] 静态地表
+	# normal/relief/detail/occluder 的最终来源：
+	#   ① tiled 桌面：visual_tiles 的 normal/relief/detail/water 数组（tiled 烘焙时已上传）→
+	#      非 tiled 字段（2D normal / surface array）置 null；
+	#   ② Web 全部档位 / 桌面 legacy 回退：整图单 tile native pass 烘 normal+relief，
+	#      上传 2D terrain_normal_tex（其它层用）+ 固定 4 层 terrain_surface_tex（主地形用：
+	#      layer0=normal / layer1=relief / layer2=detail / layer3=occluder ids）；
+	#   ③ 单 tile 也失败：旧 RG8 粗法线兜底 —— 扩成 RGBA8（BA=128=0 坡度）2D + 4 层中性
+	#      array（relief/detail=0x80、occluder=0xFF）：shader 走完整路径但细节为 0，
+	#      等价于原来的"仅粗法线"，绝不回退运行期高度差分。
+	var tiled_ok: bool = await _bake_visual_tiles(map, world, hex_size, seed_val, visual_generation_id)
+	if tiled_ok:
+		# 数组路径已经带 normal/relief：非 tiled 字段必须为 null（避免白占显存，shader 也不会读）。
+		world.terrain_normal_tex = null
+		world.terrain_surface_tex = null
+		# [C 2026-11-01] tiled 主地形水深走 visual_water_depth_tiles（RGBA8 数组）；
+		# 这里保留旧的 2D R8 上传（与原逻辑一致，非 tiled 路径不再走这条）。
+		world.water_depth_tex = DCAtlasEncoders.encode_r8_tex(
+			world.water_depth_buffer, world.derived_size, world.water_depth_tex, _world_ext) \
+			if not world.water_depth_buffer.is_empty() else null
+	else:
+		stage_progress.emit("encode", 0.95)
+		await _yield_generation_frame()
+		var legacy_surface_ok: bool = await _bake_legacy_static_surface(
+			map, world, hex_size, seed_val, visual_generation_id)
+		if not legacy_surface_ok:
+			# 兜底：旧的 RG8 粗法线包（无 BA/relief 通道）。
+			var normal_data: Dictionary = await NativeLoadingTasks.compute(_world_ext,"normal",{
+				"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
+				"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
+				"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
+				"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX})
+			var rg8_bytes := PackedByteArray()
+			var gd_normal_tex: ImageTexture = null
+			if not bool(normal_data.get("fallback",true)):
+				rg8_bytes = normal_data.get("data", PackedByteArray())
+			else:
+				gd_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(world.height_buffer,world.hm_size,4,8.0,true,_world_ext,world.world_bounds.size,hex_size,TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
+				if gd_normal_tex != null and gd_normal_tex.get_image() != null \
+						and gd_normal_tex.get_image().get_format() == Image.FORMAT_RG8:
+					rg8_bytes = gd_normal_tex.get_image().get_data()
+			var fallback := _upload_legacy_surface_fallback(
+				rg8_bytes, world.hm_size, world.terrain_normal_tex)
+			world.terrain_normal_tex = fallback.get("normal_tex", null)
+			if world.terrain_normal_tex == null:
+				# 无 DLL 环境（GDScript 编码器）拿不到 RG8 字节时，至少保留 2D 法线给其它层。
+				world.terrain_normal_tex = gd_normal_tex
+			world.terrain_surface_tex = fallback.get("surface_tex", null)
+			# [C 2026-11-01] 水深兜底也升级 RGBA8：R=旧 buffer 水深、GBA=0（无软权重）→
+			# compact water 的 max(二元权重, 软权重) 自动退化为旧二元行为。
+			world.water_depth_tex = _upload_legacy_water_depth_fallback(world)
+			print("[terrain-baked-surface] fallback water_depth=RGBA8 tex=%s derived=%s" % [
+				world.water_depth_tex != null, str(world.derived_size)])
 	stage_progress.emit("encode", 0.96)
 	await _yield_generation_frame()
 
@@ -1209,19 +1346,24 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
 	await prepare_shared_materials_async()
 	world.noise_tex = get_or_build_shared_noise_tex()
-	# [terrain-material-tiles] Shared four-layer material array. A missing
-	# import, unsupported array allocation or mipmap failure is non-fatal: the
-	# renderer keeps terrain_material_tex_bound=false and uses the old path.
-	var terrain_material_size := TERRAIN_MATERIAL_SIZE_MOBILE \
-			if (OS.has_feature("mobile") or OS.has_feature("web")) \
-			else TERRAIN_MATERIAL_SIZE_DESKTOP
+	# [terrain-material-tiles] Shared static material array. B 方案起固定 5 层
+	# （0..3 原材质族 + 4=micro，见 _build_terrain_material_tex）。A missing import /
+	# unsupported array allocation / mipmap failure is non-fatal: the renderer keeps
+	# terrain_material_tex_bound=false and uses the old 2D micro path.
+	var terrain_material_size := _terrain_material_size()
 	if _terrain_materials_supported():
 		world.terrain_material_tex = get_or_build_shared_terrain_material_tex(terrain_material_size)
 	else:
 		world.terrain_material_tex = null
 		_shared_terrain_material_error_by_size[terrain_material_size] = "unsupported"
 	world.terrain_material_tex_bound = world.terrain_material_tex != null
-	if not world.terrain_material_tex_bound:
+	if world.terrain_material_tex_bound:
+		# e2e 对账用：material array 层数（B 方案期望 5；micro 源缺失时会退回 4 层）。
+		print("[terrain-material-tiles] layers=%d target=%d micro_layer=%d" % [
+			world.terrain_material_tex.get_layers(),
+			terrain_material_size,
+			TERRAIN_MATERIAL_MICRO_LAYER if world.terrain_material_tex.get_layers() >= 5 else -1])
+	else:
 		print("[terrain-material-tiles] disabled (%s)" %
 			shared_terrain_material_error(terrain_material_size))
 	stage_progress.emit("encode", 0.98)
@@ -1263,44 +1405,19 @@ func _yield_generation_frame() -> void:
 			await tree.process_frame
 
 
-func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
-		seed_val: int, generation_id: int) -> bool:
-	_visual_tile_base_knobs.clear()
-	_visual_tile_refresh_layers.clear()
+## [terrain-web-baked-surface 2026-11-01] 组装 native `visual_tile` pass 的公共 knobs。
+##
+## 从 _bake_visual_tiles 里原样抽出，**行为零变化**：tiled 逐层烘焙与 legacy/Web 整图
+## 单 tile 烘焙共用同一份逐 cell 输入（elevation/moisture/terrain/vegetation/cover/
+## water_depth/landform/邻接/offset 映射）与同一批 bake 旋钮（残差、河流/海岸 SDF、
+## 法线半径与高度夸张）。差异项由调用方 merge：
+##   - tiled：`relief_supersample = layout.relief_scale`；
+##   - legacy/Web 单张：`layer_id/width/height/origin_*/size_*` 覆盖成整图单 tile，
+##     `relief_supersample = 1`（normal/relief 同尺寸）。
+func _visual_tile_base_knobs(map: MapData, world: WorldData, hex_size: float,
+		seed_val: int, visual_generation_id: int) -> Dictionary:
 	if map == null or world == null:
-		return false
-	# Web exports run the whole baker on the browser's single WASM thread. The
-	# Compatibility Texture2DArray path allocates and uploads static field arrays before
-	# yielding, which can make WebGL2 appear hung during map generation. The
-	# already-tested atlas path below is incremental and keeps the map usable.
-	if OS.has_feature("web"):
-		world.visual_tiles = null
-		print("  visual tiles: legacy (web_single_thread_fallback)")
-		return false
-	var quality := _visual_tile_quality_setting()
-	var layout = VisualTileLayoutScript.resolve(
-		world.world_bounds, world.wrap_period_x, quality, OS.has_feature("mobile"),
-		{"generation_id": generation_id, "hex_size": hex_size}
-	)
-	if layout.mode == VisualTileLayoutScript.MODE_LEGACY:
-		world.visual_tiles = null
-		print("  visual tiles: legacy (%s)" % layout.fallback_reason)
-		return false
-	if _world_ext == null or not _world_ext.has_method("run_bake_visual_tile_layer_pass"):
-		layout.mode = VisualTileLayoutScript.MODE_LEGACY
-		layout.fallback_reason = "native_visual_tile_pass_missing"
-		world.visual_tiles = null
-		push_warning("[visual-tiles] native pass unavailable; using legacy textures")
-		return false
-
-	var tiles = VisualTileSetScript.new()
-	if not tiles.initialize_empty(layout):
-		layout.mode = VisualTileLayoutScript.MODE_LEGACY
-		layout.fallback_reason = tiles.fallback_reason
-		world.visual_tiles = tiles
-		push_warning("[visual-tiles] Texture2DArray allocation failed: %s" % tiles.fallback_reason)
-		return false
-
+		return {}
 	var n_cells := map.cell_count()
 	var elev := PackedFloat32Array(); elev.resize(n_cells)
 	var moist := PackedFloat32Array(); moist.resize(n_cells)
@@ -1331,7 +1448,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 			offset_to_index[off.y * map.width + posmod(off.x, map.width)] = ci
 
 	var base_knobs := {
-		"generation_id": generation_id,
+		"generation_id": visual_generation_id,
 		"map_width": map.width,
 		"map_height": map.height,
 		"n_cells": n_cells,
@@ -1378,9 +1495,84 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 		"normal_sample_radius_hex": TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,
 		"normal_height_scale_hex": TERRAIN_NORMAL_HEIGHT_SCALE_HEX,
-		"relief_supersample": layout.relief_scale,
 	}
 	base_knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
+	return base_knobs
+
+
+## [terrain-web-baked-surface 2026-11-01] 单张静态地表烘焙的目标分辨率。
+##
+## 以 world_bounds 的宽高比为准，最长边封顶 cap；边长取偶数（纹理半 texel 中心 +
+## 与 hm_size 的比例对齐都更干净）。world_bounds 非法时退化成 cap×cap。
+## 纯静态，给测试单独覆盖「Web LOW 512 / Web MID/HIGH 1024 / 桌面 legacy 1024」三种上限。
+static func resolve_legacy_static_surface_size(world_bounds_size: Vector2,
+		hm_size: Vector2i, cap: int) -> Vector2i:
+	var limit := maxi(2, cap)
+	var hm_max := maxi(maxi(hm_size.x, hm_size.y), 2)
+	var longest := mini(limit, hm_max)
+	if world_bounds_size.x < 0.01 or world_bounds_size.y < 0.01:
+		return Vector2i(longest, longest)
+	var aspect := world_bounds_size.x / world_bounds_size.y
+	var w: int
+	var h: int
+	if aspect >= 1.0:
+		w = longest
+		h = int(round(float(longest) / aspect))
+	else:
+		h = longest
+		w = int(round(float(longest) * aspect))
+	# 偶数边长：至少 2，奇数减 1（不跨过封顶）。
+	w = maxi(2, w - (w & 1))
+	h = maxi(2, h - (h & 1))
+	return Vector2i(w, h)
+
+
+func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
+		seed_val: int, generation_id: int) -> bool:
+	_visual_tile_base_knobs_cache.clear()
+	_visual_tile_refresh_layers.clear()
+	if map == null or world == null:
+		return false
+	# Web exports run the whole baker on the browser's single WASM thread. The
+	# Compatibility Texture2DArray path allocates and uploads static field arrays before
+	# yielding, which can make WebGL2 appear hung during map generation.
+	# [terrain-web-baked-surface 2026-11-01] Web 改为整图单 tile 静态烘焙 normal/relief
+	# （见 _bake_legacy_static_surface），避免 Texture2DArray 生成期卡顿；tiled 才有的
+	# edge/water/detail 通道在 Web 上不绑（shader 侧对应宏已裁掉）。
+	if OS.has_feature("web"):
+		world.visual_tiles = null
+		print("  visual tiles: legacy (web_single_thread_fallback; whole-map single-tile static bake)")
+		return false
+	var quality := _visual_tile_quality_setting()
+	var layout = VisualTileLayoutScript.resolve(
+		world.world_bounds, world.wrap_period_x, quality, OS.has_feature("mobile"),
+		{"generation_id": generation_id, "hex_size": hex_size}
+	)
+	if layout.mode == VisualTileLayoutScript.MODE_LEGACY:
+		world.visual_tiles = null
+		print("  visual tiles: legacy (%s)" % layout.fallback_reason)
+		return false
+	if _world_ext == null or not _world_ext.has_method("run_bake_visual_tile_layer_pass"):
+		layout.mode = VisualTileLayoutScript.MODE_LEGACY
+		layout.fallback_reason = "native_visual_tile_pass_missing"
+		world.visual_tiles = null
+		push_warning("[visual-tiles] native pass unavailable; using legacy textures")
+		return false
+
+	var tiles = VisualTileSetScript.new()
+	if not tiles.initialize_empty(layout):
+		layout.mode = VisualTileLayoutScript.MODE_LEGACY
+		layout.fallback_reason = tiles.fallback_reason
+		world.visual_tiles = tiles
+		push_warning("[visual-tiles] Texture2DArray allocation failed: %s" % tiles.fallback_reason)
+		return false
+
+	# [terrain-web-baked-surface 2026-11-01] 公共 knob 组装抽成 _visual_tile_base_knobs()：
+	# tiled 逐层烘焙与 legacy/Web 整图单 tile 烘焙必须用**同一份**基线/邻域契约，
+	# 否则两条路径产出的 normal/relief 会不一致。relief_supersample 由调用方覆盖。
+	var base_knobs: Dictionary = _visual_tile_base_knobs(
+		map, world, hex_size, seed_val, generation_id)
+	base_knobs["relief_supersample"] = layout.relief_scale
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
 	var layer_reports: Array[Dictionary] = []
 	var bake_t0 := Time.get_ticks_usec()
@@ -1462,9 +1654,283 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"horizon_path": "neutral_pending",
 	}, true)
 	world.visual_tiles = tiles
-	_visual_tile_base_knobs = base_knobs
+	_visual_tile_base_knobs_cache = base_knobs
 	print("  visual tiles: %s" % JSON.stringify(tiles.bake_report))
 	return true
+
+
+## [terrain-web-baked-surface 2026-11-01 / -A 2026-11-01 / -B 2026-11-01] Web 全部档位 +
+## 桌面 legacy 回退的**单张静态地表**烘焙。
+##
+## 用户硬诉求：桌面与 Web 都不允许再跑"运行期高度差分法线"。tiled 桌面路径已由
+## visual_terrain_normal/relief_tiles 数组提供；这里复用同一个 native pass
+## （run_bake_visual_tile_layer_pass），把整张地图当作**一个 tile** 烘：
+##   - origin/size = world.world_bounds（整图）
+##   - width/height 取封顶尺寸（Lead 真机探针：1024 单张 ~265 ms native，wasm 3–5× 可接受）
+##   - relief_supersample = 1（normal / relief 同尺寸，才能合进同一个 Texture2DArray）
+## native pass 输出（见 world_ext_bake.cpp 布局注释）：
+##   terrain_normal : RG=粗法线 xy（0.5+n*0.5），BA=近景高度细节坡度 encode_slope
+##   terrain_relief : RG=粗段细节坡度，BA=细段细节坡度 encode_slope
+## 一次上传两条消费路径：
+##   ① 2D `terrain_normal_tex`（仅 normal，给植被/建筑/资源/贸易等其它层）；
+##   ② **固定 4 层** `terrain_surface_tex`（主地形 shader，少占材质 sampler）：
+##      layer0=normal、layer1=relief、layer2=detail（来自 world.terrain_detail_tex，
+##      R8→RGBA8 resize LINEAR；null→0x80 中性）、layer3=occluder（来自
+##      world.gi_occluder_tex，RGBA8 resize NEAREST；null→0xFF 哨兵）。
+## 失败时返回 false，调用方走 RG8 粗法线兜底（同样建 4 层 array，detail/occluder 为中性）。
+func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float,
+		seed_val: int, generation_id: int) -> bool:
+	if map == null or world == null:
+		return false
+	if _world_ext == null or not _world_ext.has_method("run_bake_visual_tile_layer_pass"):
+		push_warning("[terrain-baked-surface] native visual tile pass unavailable; using RG8 normal fallback")
+		return false
+	var cap := LEGACY_STATIC_SURFACE_MAX_DIM_WEB if OS.has_feature("web") \
+		else LEGACY_STATIC_SURFACE_MAX_DIM
+	var size := resolve_legacy_static_surface_size(
+		world.world_bounds.size, world.hm_size, cap)
+	if size.x < 2 or size.y < 2:
+		push_warning("[terrain-baked-surface] invalid target size %s" % str(size))
+		return false
+	var knobs: Dictionary = _visual_tile_base_knobs(map, world, hex_size, seed_val, generation_id)
+	if knobs.is_empty():
+		push_warning("[terrain-baked-surface] base knobs unavailable")
+		return false
+	# 整图单 tile：宽高/世界矩形都覆盖基线的 tile 分片参数；halo 仍由 native pass 自己加，
+	# 这样法线/relief 采样在图像四边也有正确的邻域（wrap 由 wrap_period_x 处理）。
+	knobs.merge({
+		"layer_id": 0,
+		"width": size.x,
+		"height": size.y,
+		"origin_x": world.world_bounds.position.x,
+		"origin_y": world.world_bounds.position.y,
+		"size_x": world.world_bounds.size.x,
+		"size_y": world.world_bounds.size.y,
+		"relief_supersample": 1,
+		"algorithm_halo_px": 8,
+	}, true)
+	var t0 := Time.get_ticks_msec()
+	var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext, "visual_tile", knobs)
+	var wall_ms := Time.get_ticks_msec() - t0
+	if bundle == null or bool(bundle.get("fallback", true)):
+		push_warning("[terrain-baked-surface] single-tile bake failed: %s"
+			% String(bundle.get("reason", "invalid_bundle") if bundle != null else "null_bundle"))
+		return false
+	if int(bundle.get("generation_id", generation_id)) != generation_id:
+		push_warning("[terrain-baked-surface] stale generation %s (want %d)"
+			% [str(bundle.get("generation_id", -1)), generation_id])
+		return false
+	var normal_data: PackedByteArray = bundle.get("terrain_normal", PackedByteArray())
+	var relief_data: PackedByteArray = bundle.get("terrain_relief", PackedByteArray())
+	var expected := size.x * size.y * 4
+	if normal_data.size() != expected or relief_data.size() != expected:
+		push_warning("[terrain-baked-surface] payload size mismatch normal=%d relief=%d expected=%d (%dx%d)"
+			% [normal_data.size(), relief_data.size(), expected, size.x, size.y])
+		return false
+	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 一次建 surface 的 4 个 Image，
+	# 喂两条消费路径：
+	#   ① 2D terrain_normal_tex（植被/建筑/资源/贸易等只开 VT_USE_TERRAIN_NORMAL 的层
+	#      继续用 2D sampler；内容与 array layer0 相同，normal 数据因此存两份）；
+	#   ② 固定 4 层 terrain_surface_tex（主地形 shader）：
+	#      layer0=normal、layer1=relief、layer2=detail（R=detail,GBA=0）、
+	#      layer3=occluder（RGBA8 两个 16-bit cell id，0xFFFF=哨兵）。
+	var normal_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, normal_data)
+	var relief_img := Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, relief_data)
+	var layers_t0 := Time.get_ticks_msec()
+	var detail_img := _make_surface_detail_layer(world, size)
+	var occluder_img := _make_surface_occluder_layer(world, size)
+	if world.terrain_normal_tex != null \
+			and world.terrain_normal_tex.get_size() == Vector2(float(size.x), float(size.y)) \
+			and world.terrain_normal_tex.get_format() == Image.FORMAT_RGBA8:
+		world.terrain_normal_tex.update(normal_img)
+	else:
+		world.terrain_normal_tex = ImageTexture.create_from_image(normal_img)
+	world.terrain_surface_tex = _create_surface_array(
+		[normal_img, relief_img, detail_img, occluder_img], SURFACE_ARRAY_LAYERS)
+	var layers_ms := Time.get_ticks_msec() - layers_t0
+	# [C 2026-11-01] 非 tiled 水深升级 RGBA8：native pass 同一个 bundle 里已经有
+	# water_depth（RGBA8：R=水深，G/B/A=湖/礁/海带 3×3 软权重），直接上传成世界纹理。
+	# compact water 用 max(二元权重, 软权重)；GBA=0 时自动退化为旧二元行为。
+	var water_depth_state := "off"
+	var water_data: PackedByteArray = bundle.get("water_depth", PackedByteArray())
+	if water_data.size() == expected:
+		world.water_depth_tex = DCAtlasEncoders._upload_rgba8(
+			water_data, size.x, size.y, world.water_depth_tex)
+		water_depth_state = "RGBA8"
+	else:
+		world.water_depth_tex = null
+		push_warning("[terrain-baked-surface] water_depth payload mismatch %d/%d; water depth disabled"
+			% [water_data.size(), expected])
+	print(("[terrain-baked-surface] %s single-tile %dx%d relief_supersample=1 surface_array=%s "
+		+ "layers=%d detail_layer=%d occluder_layer=%d water_depth=%s native_ms=%.1f wall_ms=%d "
+		+ "layers_ms=%d normal_bytes=%d relief_bytes=%d water_bytes=%d") % [
+		"web" if OS.has_feature("web") else "desktop-legacy",
+		size.x, size.y, "ok" if world.terrain_surface_tex != null else "failed",
+		SURFACE_ARRAY_LAYERS,
+		1 if world.terrain_detail_tex != null else 0,
+		1 if world.gi_occluder_tex != null else 0,
+		water_depth_state,
+		float(bundle.get("elapsed_ms", -1.0)), wall_ms, layers_ms,
+		normal_data.size(), relief_data.size(), water_data.size()])
+	return true
+
+
+# [terrain-web-baked-surface-B 2026-11-01] 非 tiled surface array 的固定层数：
+#   0 normal / 1 relief / 2 detail / 3 occluder。shader 侧 terrain_surface_layer_count
+# 由运行期按实际 get_layers() 推送，层数不足时 detail/occluder helper 返回中性值。
+const SURFACE_ARRAY_LAYERS := 4
+
+
+## [terrain-web-baked-surface-B 2026-11-01] surface array layer2（detail）：
+## world.terrain_detail_tex（R8；Compatibility 下被加宽成 RG8）→ 只取 R 通道 →
+## RGBA8（GBA=0）→ resize 到 surface 尺寸（BILINEAR，连续噪声平滑放大）。
+## null/空图 → 全 0x80（shader 解码后 detail=1.0 恒等）。
+func _make_surface_detail_layer(world: WorldData, size: Vector2i) -> Image:
+	var src: Image = null
+	if world != null and world.terrain_detail_tex != null:
+		src = world.terrain_detail_tex.get_image()
+	if src == null or src.is_empty():
+		return _make_neutral_rgba_image(size, 128)
+	var W := src.get_width()
+	var H := src.get_height()
+	if W <= 0 or H <= 0:
+		return _make_neutral_rgba_image(size, 128)
+	var fmt := src.get_format()
+	var sdata := src.get_data()
+	var rgba := PackedByteArray()
+	rgba.resize(W * H * 4)
+	if fmt == Image.FORMAT_RG8:
+		for i in range(W * H):
+			var o := i * 4
+			rgba[o] = sdata[i * 2]
+		# GBA 保持 0（只 R 通道有语义）。
+	elif fmt == Image.FORMAT_R8 or fmt == Image.FORMAT_L8:
+		for i in range(W * H):
+			rgba[i * 4] = sdata[i]
+	elif fmt == Image.FORMAT_RGBA8:
+		for i in range(W * H):
+			rgba[i * 4] = sdata[i * 4]
+	else:
+		# 未知格式：转 RGBA8 兜底（detail 是低频噪声，格式转换的精度损失可接受）。
+		var tmp := src.duplicate() as Image
+		tmp.convert(Image.FORMAT_RGBA8)
+		W = tmp.get_width()
+		H = tmp.get_height()
+		sdata = tmp.get_data()
+		rgba.resize(W * H * 4)
+		for i in range(W * H):
+			rgba[i * 4] = sdata[i * 4]
+	var img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, rgba)
+	if W != size.x or H != size.y:
+		# detail 是连续噪声，双线性放大即可（Godot 4 枚举名是 BILINEAR，没有 LINEAR）。
+		img.resize(size.x, size.y, Image.INTERPOLATE_BILINEAR)
+	return img
+
+
+## [terrain-web-baked-surface-B 2026-11-01] surface array layer3（GI 遮挡源 cell id）：
+## world.gi_occluder_tex（RGBA8，hm 分辨率；每个 texel = 两个 16-bit cell.index，
+## 0xFFFF=无）→ resize 到 surface 尺寸。**必须 NEAREST**：16-bit id 的两个字节一旦被
+## 线性插值就会变成别的 cell（`Image.resize` 的 NEAREST 对字节无污染，已 headless 验证）。
+## null/空图 → 全 0xFF（哨兵 65535 = 无遮挡源，shader GI bounce 关闭）。
+func _make_surface_occluder_layer(world: WorldData, size: Vector2i) -> Image:
+	var src: Image = null
+	if world != null and world.gi_occluder_tex != null:
+		src = world.gi_occluder_tex.get_image()
+	if src == null or src.is_empty() or src.get_format() != Image.FORMAT_RGBA8:
+		return _make_neutral_rgba_image(size, 255)
+	if src.get_width() != size.x or src.get_height() != size.y:
+		src.resize(size.x, size.y, Image.INTERPOLATE_NEAREST)
+	return src
+
+
+## [terrain-web-baked-surface-B 2026-11-01] 全通道同值的中性 RGBA8 Image（detail=0x80 /
+## occluder=0xFF 兜底层）。**不要**用 Image.create_empty+fill(Color)：Color 是 float，
+## 0xFFFF 这类 byte 精确值走 float 往返有舍入风险，这里直接填字节。
+func _make_neutral_rgba_image(size: Vector2i, value: int) -> Image:
+	var data := PackedByteArray()
+	data.resize(size.x * size.y * 4)
+	data.fill(value)
+	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RGBA8, data)
+
+
+## [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 把同尺寸同格式的 RGBA8 Image
+## 列表建成 Texture2DArray（主地形 non-tiled 路径的 surface array）。B 方案固定 4 层，
+## 所以这里显式校验层数：层数不符说明有 layer 没造出来，push_error 返回 null
+## （调用方据此把 terrain_baked_normals 置 false，shader 用平地法线）。
+func _create_surface_array(images: Array, expected_layers: int = 2) -> Texture2DArray:
+	if images.size() != expected_layers:
+		push_error("[terrain-baked-surface] surface array needs %d layers, got %d"
+			% [expected_layers, images.size()])
+		return null
+	var array := Texture2DArray.new()
+	var err := array.create_from_images(images)
+	if err != OK:
+		push_error("[terrain-baked-surface] terrain_surface_tex create_from_images failed: %s"
+			% error_string(err))
+		return null
+	return array
+
+
+## [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 单 tile 烘焙失败时的 RG8 粗法线兜底。
+## 把 RG8 数据扩成 RGBA8（R,G=原法线；B,A=128=零坡度）作为 2D normal 也作为 array layer0；
+## layer1 填全 128 的中性 relief，layer2 detail=0x80（解码后=1.0），layer3 occluder=0xFF
+## （cell id 哨兵 65535）。shader 因此仍走完整烘焙法线/relief 路径、detail/occluder 为中性 ——
+## 等价于旧的"仅粗法线"兜底，而不是退回运行期高度差分。
+## 返回 {"normal_tex": ImageTexture 或 null, "surface_tex": Texture2DArray 或 null}。
+func _upload_legacy_surface_fallback(rg8_data: PackedByteArray, size: Vector2i,
+		existing_normal: ImageTexture) -> Dictionary:
+	var out := {"normal_tex": null, "surface_tex": null}
+	var W := size.x
+	var H := size.y
+	var expected := W * H * 2
+	if W <= 0 or H <= 0 or rg8_data.size() != expected:
+		push_warning("[terrain-baked-surface] RG8 normal fallback payload invalid: %d bytes (want %d for %dx%d)"
+			% [rg8_data.size(), expected, W, H])
+		return out
+	var n := W * H
+	var rgba := PackedByteArray(); rgba.resize(n * 4)
+	for i in range(n):
+		var o := i * 4
+		rgba[o] = rg8_data[i * 2]
+		rgba[o + 1] = rg8_data[i * 2 + 1]
+		rgba[o + 2] = 128
+		rgba[o + 3] = 128
+	var normal_img := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, rgba)
+	if existing_normal != null \
+			and existing_normal.get_size() == Vector2(float(W), float(H)) \
+			and existing_normal.get_format() == Image.FORMAT_RGBA8:
+		existing_normal.update(normal_img)
+		out["normal_tex"] = existing_normal
+	else:
+		out["normal_tex"] = ImageTexture.create_from_image(normal_img)
+	out["surface_tex"] = _create_surface_array([
+		normal_img,
+		_make_neutral_rgba_image(size, 128),   # layer1 relief：0 坡度
+		_make_neutral_rgba_image(size, 128),   # layer2 detail：解码后 1.0 恒等
+		_make_neutral_rgba_image(size, 255),   # layer3 occluder：cell id 哨兵
+	], SURFACE_ARRAY_LAYERS)
+	return out
+
+
+## [C 2026-11-01] 非 tiled 水深兜底：单 tile 烘焙失败时没有 bundle.water_depth，
+## 用旧 R8 `water_depth_buffer` 扩成 RGBA8（R=水深、GBA=0 无软权重）上传。
+## compact water 的 `max(二元权重, 软权重)` 因此退化为旧的二元行为，画质与 B 回合等价。
+func _upload_legacy_water_depth_fallback(world: WorldData) -> ImageTexture:
+	if world == null or world.water_depth_buffer.is_empty():
+		return null
+	var W := world.derived_size.x
+	var H := world.derived_size.y
+	if W <= 0 or H <= 0 or world.water_depth_buffer.size() < W * H:
+		push_warning("[terrain-baked-surface] water depth fallback buffer invalid (%d bytes for %dx%d)"
+			% [world.water_depth_buffer.size(), W, H])
+		return null
+	var n := W * H
+	var rgba := PackedByteArray()
+	rgba.resize(n * 4)
+	for i in range(n):
+		rgba[i * 4] = world.water_depth_buffer[i]
+		# GBA 保持 0：没有软权重数据。
+	return DCAtlasEncoders._upload_rgba8(rgba, W, H, world.water_depth_tex)
 
 
 func queue_canal_visual_refresh(map: MapData, world: WorldData,
@@ -1472,7 +1938,7 @@ func queue_canal_visual_refresh(map: MapData, world: WorldData,
 	var out := {"ok": false, "queued_layers": 0, "reason": "visual_tiles_unavailable"}
 	if map == null or world == null or dirty_cells.is_empty() \
 			or world.visual_tiles == null or not world.visual_tiles.ready \
-			or _visual_tile_base_knobs.is_empty() or _world_ext == null:
+			or _visual_tile_base_knobs_cache.is_empty() or _world_ext == null:
 		return out
 	var layout = world.visual_tiles.layout
 	if layout == null or layout.generation_id != _visual_tile_generation_id:
@@ -1538,7 +2004,7 @@ func _rebake_canal_visual_layer(map: MapData, world: WorldData, layer_id: int) -
 	var layout = tiles.layout
 	if layer_id < 0 or layer_id >= layout.layer_count:
 		return true
-	var knobs: Dictionary = _visual_tile_base_knobs.duplicate(false)
+	var knobs: Dictionary = _visual_tile_base_knobs_cache.duplicate(false)
 	knobs["cell_canal_edge_mask"] = map.canal_edge_mask_arr
 	knobs["canal_refresh_only"] = true
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
@@ -4137,7 +4603,7 @@ func _rewrite_axis_buffers(map: MapData, hex_size: float, world: WorldData) -> v
 # ─── 内部：分辨率 / 噪声初始化 ──────────────────────────────────────────
 
 func _resolve_hm_size(bounds: Rect2) -> Vector2i:
-	# 移动端 / Web 走 512，桌面走 1024。详见 HM_MAX_DIM_DESKTOP/MOBILE 注释。
+	# 按平台和 Web 画质选择静态场精度，详见 _hm_max_dim()。
 	var dim_max: int = _hm_max_dim()
 	if bounds.size.x < 0.01 or bounds.size.y < 0.01:
 		return Vector2i(dim_max, dim_max)

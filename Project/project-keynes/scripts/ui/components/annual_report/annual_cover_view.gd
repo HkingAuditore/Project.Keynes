@@ -478,7 +478,9 @@ func _plan(art_height: float, title_height: float, country_height: float, seal: 
 
 func _measure_title(size_px: int) -> float:
 	var font: Font = UITokens.annual_font("display")
-	return font.get_height(size_px) * 2.0 - round(float(size_px) * 0.16)
+	# 两行真实排版高度：不能用 Font.get_height()——fallback 链里的宋体行高更高，
+	# 会把报头量虚高、触发降字号，把"国家年度发展报告"压小一档。
+	return UITokens.shaped_line_height(font, size_px) * 2.0 - round(float(size_px) * 0.16)
 
 
 func _apply_title_metrics(size_px: int) -> void:

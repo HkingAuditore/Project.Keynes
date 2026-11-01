@@ -33,6 +33,8 @@ const DETAIL_PANEL_MIN_WIDTH := 860.0
 const DETAIL_PANEL_MAX_WIDTH := 1040.0
 const MAP_REMAINING_MIN_WIDTH := 320.0
 const OVERLAY_LEGEND_WIDTH := 198.0
+# 左侧地图图层工具条与顶栏之间的垂直间距（= .tscn 里 92 - 80 的净空）。
+const OVERLAY_TOOLBAR_TOP_GAP := UITokens.SPACE_MD
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 const INSPECTOR_FULL_PATCH_INTERVAL_MSEC := 750
@@ -1726,6 +1728,7 @@ func _bind_ui() -> void:
 	_map_overlay_toolbar = get_node("UIRoot/HUDLayer/MapOverlayToolbar") as MapOverlayToolbar
 	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
+	_layout_map_overlay_toolbar()
 
 	_country_action_bar = get_node("UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
@@ -2113,6 +2116,32 @@ func _layout_top_bar() -> void:
 	_top_bar.offset_right = 0.0
 	_top_bar.offset_bottom = PlayerTopBar.BAR_HEIGHT
 	UIAnimation.refresh_rest_position(_top_bar)
+	# 顶栏高度一变，左侧图层工具条的安全起点也跟着变，永远不许压到日历纸框。
+	_layout_map_overlay_toolbar()
+
+
+## [web-layout-guard] 左侧地图图层工具条（MapOverlayToolbar）是这套静态布局里
+## 最后一个只靠 .tscn 烘焙 anchor+offset、却没有任何运行期重新结算的 HUD 节点。
+## Web 上已经证明这类节点拿不到声明式布局：PlayerTopBar / RightPanel 之前就是同一
+## 症状，后来靠运行期兜底修好；工具条漏在外面，于是它的 rect 落成默认的 (0,0)，
+## PrimaryPanel 被摆到屏幕左上角，正好盖住顶栏左侧的日历图标和"第N年"纸框
+## （截图里的"图标和日历重合"）。
+##
+## 这里和顶栏/详情面板走完全相同的路径：取实时值 → set_anchors_preset → 写
+## offset。数值与 .tscn 里的声明保持一致（左 16 / 顶 顶栏高度+12 / 右 -16 /
+## 底 -16），所以在桌面端是幂等的；顶栏高度用实时 size 而不是常量，是为了让
+## 后续顶栏变高时工具条自动让位。
+func _layout_map_overlay_toolbar() -> void:
+	if _map_overlay_toolbar == null:
+		return
+	var top_bar_height := PlayerTopBar.BAR_HEIGHT
+	if _top_bar != null and _top_bar.size.y > 0.0:
+		top_bar_height = maxf(_top_bar.size.y, PlayerTopBar.BAR_HEIGHT)
+	_map_overlay_toolbar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_map_overlay_toolbar.offset_left = UITokens.ARCHIVE_EDGE_INSET
+	_map_overlay_toolbar.offset_top = top_bar_height + OVERLAY_TOOLBAR_TOP_GAP
+	_map_overlay_toolbar.offset_right = -UITokens.ARCHIVE_EDGE_INSET
+	_map_overlay_toolbar.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 
 
 func _layout_right_panel() -> void:

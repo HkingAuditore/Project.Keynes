@@ -1,5 +1,62 @@
 # Simulation Computation Pipelines
 
+## Baked terrain surface: packed 4-layer surface array / horizon / Web HIGH features (2026-11-01)
+
+Desktop and Web no longer compute terrain normals from runtime height differences.
+The single normal entry point is `hillshade_tod.gdshaderinc::terrain_baked_normal()`,
+which decodes generation-time baked textures. On the non-tiled path (Web all tiers + desktop
+legacy) the surface is a **fixed 4-layer `sampler2DArray`**:
+`layer0` = RG coarse normal + BA near-detail slope, `layer1` = RG coarse / BA fine
+per-terrain relief slope, `layer2` = baked biome detail (R), `layer3` = two packed 16-bit
+occluder cell ids; `terrain_surface_layer_count` / `terrain_detail_layer_bound` /
+`terrain_occluder_layer_bound` are the runtime gates. Tiled desktop keeps separate
+`visual_terrain_*_tiles` arrays (relief is `relief_scale`× resolution, so it cannot share
+the packed array). Web (all quality tiers) and desktop legacy fall back to **one whole-map
+tile** through the existing `DCWorldExt::run_bake_visual_tile_layer_pass`
+(`MapBaker._bake_legacy_static_surface`, `relief_supersample=1`, longest edge 1024 for both
+Web and desktop legacy; the actual size is clamped by `world.hm_size`, e.g. Web LOW bakes
+512) — no new C++ pass and no runtime height-diff fallback. The material array grows from
+4 to **5 layers** (layer4 = micro surface, `terrain_material_micro_layer=4`); every existing
+layer is reused so the Web land program still stays at **8 samplers**.
+
+Budget shapes after B (v3): **Web land 8** (height / map-index / enum / dyn / material /
+packed surface array / horizon / `noise_tex`); **Web HIGH water 7** (independent program,
++`water_depth_tex`); **Web compact water 5** (height / map_index / enum / dyn /
+`water_depth_tex`); **desktop Compatibility main pass 8** (texture budget + water depth;
+horizon falls back to the neutral leaf, diagnostic path); desktop tiled 17; desktop Vulkan
+legacy 15 (the non-tiled 2D detail sampler is gone). Web bakes horizon on CPU for every
+quality tier (`TERRAIN_HORIZON_STEPS_WEB = 128`), and the same Web CPU bake now also emits
+the packed occluder cell ids (`emit_occluder_cells=true` + map_index bytes) which feed the
+packed GI bounce — no `bounce_lut`/2D `gi_occluder_tex` sampler on Web. LOW
+(`visual_quality=0`) keeps pre-B pixels: detail is identity, micro early-outs and bounce is
+off.
+
+**C 收尾（2026-11-01）**：packed GI bounce 从 HIGH 扩到 **MID（`visual_quality>=1`；MID
+`bounce_mid_scale=0.6`、HIGH 1.0、LOW 恒 0）**；非 tiled `water_depth_tex` 升级为
+**RGBA8**（R=归一深度、G/B/A=湖/礁/海带 3×3 软权重，由 static surface bake 的 native
+bundle 直接上传，日志 `water_depth=RGBA8`；compact 水面对 `w_lake/w_reef/w_kelp` 取
+`max(binary, GBA)`，GBA=0 自动退化为旧二元权重，tiled 路径仍 R8/数组）；micro 共享程序
+（LOW/MID 运行档）经 Edge/ANGLE A/B 实测 SAFE → **默认启用**（`WORLD_MAP_WEB_PREFIX_MICRO`；
+world_map 编译 5417→4582 ms / −15.4%、总 warmup −5.5%，无 10× 悬崖；
+`?micro=off|0|false` 为 kill-switch、`?micro=shared|on` 显式开，非 web 恒关；历史 Intel UHD
+机器未复测）。See [Web export](../web-export.md) §9.24/§9.25.
+
+## Web visual quality restoration (2026-10-31)
+
+Web map baking now selects a 512/1024/2048 longest-edge static atlas for
+low/medium/high quality; material arrays use 512/512/1024. This remains the legacy
+atlas publication path (no native simulation authority or stage-order change).
+The Web world shader restores material-array sampling and static edge blending;
+HIGH bakes and samples the terrain horizon field, while its distance field keeps
+the continuous ecotone within the eight-sampler Compatibility budget. HIGH uses independent land/water draws of the PC
+pipelines without mobile quality macros: full terrain detail, water waves/SSS,
+and all vegetation forms with PC soft shadows. LOW/MID keep the lighter programs.
+Horizon shadows/sky occlusion are available to terrain and ordinary near vegetation;
+GI bounce remains budget-limited, and family batches release the horizon sampler.
+Web vegetation budgets read player quality rather than the fixed compile-time LOW
+prefix. Runtime/prewarm program parity is preserved. Static resolution changes
+require a newly baked map. See [Web export](../web-export.md).
+
 ## Rolling food observations (2026-10-20)
 
 Economy COMMIT retains each cell's last complete production/household food observation when that
@@ -513,7 +570,7 @@ relief（见下 “P0 relief”）。
 
 旋钮全部在 `terrain_index_baker.gd::DEM_DEFAULTS`，可用 ProjectSettings `project_keynes/rendering/dem/<去掉 dem_ 前缀的键>` 覆盖。粗法线半径 `TERRAIN_NORMAL_SAMPLE_RADIUS_HEX` 相应降到 0.35 格，否则谷地会被法线低通抹平；格子尺度以下的细节由 shader 侧分地形细节法线负责（见下）。
 
-**分地形细节法线（2026-10-10，shader，`hillshade_tod.gdshaderinc::terrain_apply_landform_detail`）**：烘焙高度图只到格子尺度，格内的地貌特征由 shader 叠加到 `macro_normal`（参与 hillshade / TOD 起伏 / GI，不是材质贴图法线）。五种形态按地形配比，配置表 `terrain_detail_profile(biome)`：
+**分地形细节法线（2026-10-10 烘焙化；2026-11-01 删除运行期实现）**：烘焙高度图只到格子尺度，格内的地貌特征（顺坡冲沟 / 层状台坎 / 沙丘 / 宽缓起伏 / 丘状凹凸）由**生成期**写进 `terrain_surface_tex` layer1（非 tiled）/ `visual_terrain_relief_tiles`（tiled）的 RG/BA 坡度通道，shader 只解码并按 `camera_zoom` 淡入后叠到 `macro_normal`（参与 hillshade / TOD 起伏 / GI，不是材质贴图法线）。配置表在 C++ `gdext/src/bake_terrain_relief.h`（与旧 shader `terrain_detail_profile(biome)` 逐项对应）；运行期同名 shader helper（`terrain_apply_landform_detail` / `terrain_detail_profile*` / 相量噪声等）已在 2026-11-01 全部删除，**任何变体都不再在运行期做高度差分**。五种形态按地形配比：
 
 | 形态 | 表现 | 主要地形 |
 | --- | --- | --- |
@@ -528,10 +585,10 @@ relief（见下 “P0 relief”）。
 - **沟谷**：Phacelle 式归一化相量噪声（3×3 抖动核，归一化防止干涉相消成大理石纹），走向 = 约 1 格半径的平滑高程梯度 + 低频兜底向量场；细层按粗层导数偏转（封顶 35%）形成分叉。所有地形共用固定波长倍频层（`TERRAIN_GULLY_BASE_WL` 起每层减半），`gully_wl` 只决定能量峰值落在哪一层——波长随空间插值会在过渡带把相位拉成同心圆环。幅度乘 `clamp(slope / TERRAIN_GULLY_FULL_SLOPE, 0.25, 1)`，缓坡上不会读成揉皱的锡纸。
 - **台坎**：在 4 点平滑高程上按 `TERRAIN_STRATA_THICKNESS` 量化，层距下限取 3 个高度 texel / 4 屏幕像素 / `TERRAIN_STRATA_MIN_SPACING_HEX` 格中的最大值，不够时层厚按 2 倍逐级对数合并，超过 4 级淡出。
 - **沙丘**：相量噪声在方向恒定时会生成无限长的平行直线（在戈壁 / 孤立沙漠格上读成刀刻的竖纹），因此风向除 900 单位的低频转动外再叠 `TERRAIN_DUNE_BEND_WL` 摆动让脊线弯曲，并用 `TERRAIN_DUNE_FIELD_WL` 低频场切出沙丘群与丘间平地（保留 `TERRAIN_DUNE_INTERDUNE_FLOOR`）。强度另乘三道门控：宏观坡度 `TERRAIN_DUNE_SLOPE_LO→HI` 消退；层状 / 荒地地貌削减 `TERRAIN_DUNE_ROCKY_CUT`（石质戈壁）；**沙海占比**——本格 + 6 邻格中沙丘地形的占比经 `DUNE_ERG_FRAC_LO→HI` 平滑，孤立的一两格沙漠不起沙丘。沙海占比需要邻格拓扑，只在 C++ 静态烘焙里做（`world_ext_bake.cpp` 的 `dune_erg`），legacy 运行期回退路径没有这道门控。
-- **LOD 与开关**：每层按屏幕像素波长（3→7 px）淡出；`terrain_erosion_strength`（默认 1.0，0 关）是全局倍率，`terrain_erosion_world_size`（默认 72）是全部尺度的参照。MOBILE / LOW 画质整体编译掉。返回值的 w 是沟谷深度，调用方用于凹处遮蔽。
+- **LOD 与开关（生成期固化）**：每层的屏幕像素波长淡出、强度旋钮（`hillshade_coarse_strength`、`hillshade_detail_strength`、`terrain_erosion_strength`、`terrain_erosion_world_size` 等）都在烘焙时写死，运行期再改这些 uniform 不会影响已烘焙数据；移动端/Web 单 tile 路径以 `relief_supersample=1` 烘焙，没有运行期编译期裁剪。`terrain_baked_normal` 返回值的 w（折痕）供调用方做凹处遮蔽。
 - **调试**：`HexRenderer.gi_debug_view = 8` 只显示地形几何法线（固定西北光、无底色 / GI），`7` 显示含材质贴图法线的最终法线。
 
-**静态地形烘焙（2026-10-10，桌面平铺路径）**：上面这套分地形细节、平滑高度细节、海岸邻域、水体软过渡全部不随运行时变化，桌面端已改为在 `DCWorldExt::run_bake_visual_tile_layer_pass` 里逐 tile 烘焙，shader 只做解码与按缩放淡入淡出。C++ 实现在 `gdext/src/bake_terrain_relief.h`（与 shader 逐项对应的配置表、相量噪声、台坎、沙丘、圆丘、草丘）。tile 通道布局：
+**静态地形烘焙（2026-10-10 桌面平铺；2026-11-01 扩展到 legacy / Web 单 tile）**：上面这套分地形细节、平滑高度细节、海岸邻域、水体软过渡全部不随运行时变化，两端都在生成期烘焙，shader 只做解码与按缩放淡入淡出。桌面 tiled 在 `DCWorldExt::run_bake_visual_tile_layer_pass` 里逐 tile 烘焙；**legacy 与 Web 用同一个 native pass 以「整图单 tile」烘焙**（见本节末尾）。C++ 实现在 `gdext/src/bake_terrain_relief.h`（与 shader 逐项对应的配置表、相量噪声、台坎、沙丘、圆丘、草丘）。tile 通道布局：
 
 | 字段 | 格式 | 内容 |
 | --- | --- | --- |
@@ -545,7 +602,7 @@ relief（见下 “P0 relief”）。
 - 坡度编码 `pk_relief::encode_slope = sign(v)·sqrt(|v|/3)`，shader `decode_relief_slope` 解 `sign(e)·e²·3`。粗/细波段分别按 `smoothstep(3,7,48·scale·zoom)` / `smoothstep(3,7,14·scale·zoom)` 淡入；高度细节保留原来的近景门控 `smoothstep(1.35,2.10,zoom)`。入口是 `hillshade_tod.gdshaderinc::terrain_baked_normal`。
 - `relief_scale` 由 `VisualTileLayout.resolve` 决定（桌面 2、移动 1，`options.relief_scale` 可覆盖），经 `MapBaker` 的 knob `relief_supersample` 传给 C++。2 倍时每物理 texel 36 B，比 1 倍多约 21 MB；1 倍在 z1.6 近景会糊并出现方块走样。
 - 烘焙用的强度旋钮（`hillshade_coarse_strength`、`hillshade_detail_strength`×画质、`shore_detail_strength`、`terrain_erosion_world_size`、`terrain_erosion_strength`、`water_biome_radius_px`）在烘焙时固化，运行时再改这些 uniform 不会影响烘焙路径。
-- 运行时开关 `terrain_static_baked`（`HexRenderer._apply_uniforms` 在 tile 静态层就绪且 `terrain_relief` 存在时置 true）；Web 预算和 legacy 单纹理路径不定义 `PK_TERRAIN_STATIC_BAKED`，继续走旧的运行时计算。运河刷新只重算 normal / detail / water / edge，不重烘 relief。
+- 运行时开关：`terrain_static_baked`（`HexRenderer._apply_uniforms` 在 tile 静态层就绪且 `terrain_relief` 存在时置 true）只表示 **tiled 的 edge / water / shore 静态通道可用**；`PK_TERRAIN_STATIC_BAKED` 已收窄为 tiled 专属，legacy / Web 不定义它。法线可用性改由 `PK_TERRAIN_BAKED_NORMALS` / `terrain_baked_normals` 判断（tiled 看数组就绪；非 tiled 看单张 normal + relief 都上传成功）。运河刷新只重算 normal / detail / water / edge，不重烘 relief。
 - 静态贴图每像素只读一次：fragment setup 读一次 `edge_distance`，R 存进 `scals.r`（格界距离）、G 存进 `scals.a`（折痕）、BA 作为 `shore_frac` 传给陆地 / 水面管线的 `sample_shore_neighborhood`；生态过渡、材质边缘、烘焙法线、海岸 halo 都从这里取（`terrain_edge_secondary_weight_d`）。`map_index` 一次采样同时给 cell id 与 landform，`dyn_lut` 直接按该 id 取；水体在 `WaterStageCtx.water_depth_px` 里只读一次 `water_depth`。
 - 不靠 `if` 省采样：GPU 上同组像素只要有一个走进分支整组都会执行，带隐式导数的 `texture()` 也常被编译器提到分支外。所以剩下的削减都是结构性的：
   - horizon 2×2：`visual_tile_sampling.gdshaderinc::visual_gather_horizon` 用两次 `textureGather`（R、G 两个 16 bit 分量）取齐 4 个 texel，tile 2 px gutter 保证足迹不跨层；解码后的字节布局与 RGBA8 完全相同，下游公式不变。`CURRENT_RENDERER == RENDERER_COMPATIBILITY` 时没有 gather，保留 4 次采样，`VisualTileSet._field_texture_format` 同步按渲染器选 RGBA8。
@@ -553,6 +610,7 @@ relief（见下 “P0 relief”）。
   - 雪边缘 ±10% 抖动与海冰边缘破碎改用入口已采的 `pixel_noise`（`WaterStageCtx.pixel_noise`）。
 - 高画质近景每像素纹理采样：陆地约 15 次（setup 6、材质 / 微表面 2、法线 / 细节坡度 2、horizon 2、GI 3），深海约 27 次（setup 6、水深 1、horizon 2，其余 18 次是随时间变化的水面噪声）；改造前为 44 / 57。
 - 收益（RTX 4080，1366×768，高画质 GPU 帧时中位数）：近景 1.41→0.81 ms，中景 1.69→0.87 ms，全图 1.57→0.94 ms（纯色 shader 基线约 0.53–0.67 ms）。全图烘焙总时长约 1.06→1.96 s。
+- **单 tile 路径（legacy / Web，2026-11-01；v3 打包 4 层 array）**：`MapBaker._bake_legacy_static_surface()` 以 `layer_id=0`、`origin/size = world_bounds`、`relief_supersample=1`、`algorithm_halo_px=8` 调用 `run_bake_visual_tile_layer_pass`，长边封顶 `LEGACY_STATIC_SURFACE_MAX_DIM_WEB=1024`（与桌面 `LEGACY_STATIC_SURFACE_MAX_DIM=1024` 一致；实际尺寸再被 `world.hm_size` 最大边钳住，Web LOW 的 hm=512 → 512、Web MID/HIGH → 1024），按 `world_bounds` 宽高比取偶数 w/h。返回的 `terrain_normal` / `terrain_relief` 两个 RGBA8 payload 在上传时打包成 **4 层 `WorldData.terrain_surface_tex`**：normal 同时作为 2D `WorldData.terrain_normal_tex`（供只读法线的其它图层）与 layer0、relief 作为 layer1；layer2 由 `world.terrain_detail_tex`（R8）resize/转 RGBA8 得到，layer3 由 `world.gi_occluder_tex`（RGBA8 两个 16-bit cell id，NEAREST resize）得到，缺失时分别填中性 0x80 / 0xFF 哨兵（日志 `surface_array=ok layers=4`）。**内存增量（B 方案）**：surface 2→4 层 Web LOW 512×~300 约 +1.2 MB、MID/HIGH 1024×~600 约 +6 MB；material 4→5 层（layer4=micro）mobile 512² 约 +1 MB、high 1024² 约 +4 MB。尺寸 / hash 校验失败才退回旧 RG8 `encode_bake_terrain_normal_tex_data`（扩成 RGBA8 后 array 照建、layer1 填中性 128 → 细节为 0 的"仅粗法线"等价兜底）。烘焙日志 `[terrain-baked-surface] ... native_ms/wall_ms` 供真机对账（桌面 legacy 小图 1024×762 冻结后实测 native 363.5 ms / wall 372 ms、`layers_ms=23`、`detail_layer=1 occluder_layer=0`、`water_depth=RGBA8`；normal/relief/water 各 3 121 152 B）。tiled 成功时 `terrain_normal_tex` / `terrain_surface_tex` 都置 null（避免白占显存）。**没有新增 C++ pass，也没有运行期高度差分兜底。**
 
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
@@ -564,7 +622,7 @@ relief（见下 “P0 relief”）。
 - **可调旋钮**：控制点 `PK_HYPSO_XS/YS`（分段点/各段斜率，改后需重新生成；C++ 改动需 rebuild DLL）、`PK_HYPSO_LAYER_A_MIX`（bake 残差强度，0=关）。曲线纯逐格/逐像素 ALU、无空间采样 → 天然 seam-safe、热循环开销可忽略。
 
 **岸线法线 + 海洋深度（2026-06-25，治"海岸/河岸/护岸无法线 + 海洋全是近海"）**：起因——预烘焙 `terrain_normal_tex` 纯从 `height_buffer` 宽差分梯度算，全图一视同仁；河流是独立 SDF overlay（`flow_buffer`，从不进高度场）→ 河岸无几何落差、法线为 0；海岸落差被"平原去噪"(细节门控 + 宽差分摊平 + P1 近岸压平)抹掉；海洋 raw 起伏项全乘 `dist_field`、离岸趋 0，唯一向下力量是极地 `edge_falloff` → 只有极地有深海。三项修复：
-- **#1 海岸滩坡法线（shader + bake 双管）**：① shader `compute_terrain_normal` 近岸窄带 boost（`shore_detail_strength`/`shore_band_height` uniform）补运行期细节法线；② **因 P1 后内陆平原也贴 sea_level、`elev-sea` 无法区分海岸/内陆**，海岸的真实法线改由 **bake 海滩 carve** 提供（`run_bake_terrain_index_pass` step6.6 + GDScript `DCTerrainBaker.bake_height_biome_moisture` 镜像）：用 **barycentric 水邻居权重**（`pk_is_water_terrain` 的 nb 权重和）作亚格距水近度，对近岸陆地按 `smoothstep(water_w)` 下压成海滩坡（`PK_COAST_BEACH/COAST_BEACH=0.05`，止于水线不越过）→ 写进 `height_buffer` → `terrain_normal_tex` 拿到 crisp 海岸法线，与河岸 #2a 同法。`B_COAST` 是水体不入陆地法线，故用水邻居权重而非 biome。
+- **#1 海岸滩坡法线（bake 化）**：① 近岸窄带 boost 随运行期法线入口一起烘焙化——`shore_detail_strength` / `shore_band_height` 的等效强度在生成期固化进 `terrain_normal.ba`（运行期不再有 `compute_terrain_normal`）；② **因 P1 后内陆平原也贴 sea_level、`elev-sea` 无法区分海岸/内陆**，海岸的真实法线改由 **bake 海滩 carve** 提供（`run_bake_terrain_index_pass` step6.6 + GDScript `DCTerrainBaker.bake_height_biome_moisture` 镜像）：用 **barycentric 水邻居权重**（`pk_is_water_terrain` 的 nb 权重和）作亚格距水近度，对近岸陆地按 `smoothstep(water_w)` 下压成海滩坡（`PK_COAST_BEACH/COAST_BEACH=0.05`，止于水线不越过）→ 写进 `height_buffer` → `terrain_normal_tex` 拿到 crisp 海岸法线，与河岸 #2a 同法。`B_COAST` 是水体不入陆地法线，故用水邻居权重而非 biome。
 - **#2 河流切进高度场（方案 C 两层）**：① **#2b 仿真高程 E（cell 级，C++ 唯一路径）**：`run_native_world_generate_post_base_pass` 在河网最终化 + lake-snap 之后、河岸生态/floodplain 分类之前，沿河道按 `RFLOW` 下切 E（`PK_RIVER_INCISE=0.018`，河道保持 `>= sea_level+0.004` 不反转成海）+ 两侧非河陆地邻居抬升成堤（`PK_RIVER_BANK=0.008`）；下切后 `land_h` 降低 → 下游 floodplain/canyon/delta 分类自洽在河谷成形。② **#2a bake height_buffer（per-pixel，crisp 河岸）**：`run_bake_geometry_fields_pass` 在 river SDF(`flow_buffer`)算完后、bundle 前，按 `flow`（河心=1→远=0）以 `notch=smoothstep(flow)` 对 `height_final` 逐像素刻 V 形河谷（`PK_BAKE_RIVER_INCISE=0.045`），SDF 衰减天然形成河岸坡 → `terrain_normal_tex`/`height_tex`/relief 都读得到 crisp 河岸；仅陆地段（`height>sea_level`）。GDScript legacy(fused 失败)路径镜像 `_carve_river_into_height`（`BAKE_RIVER_INCISE` 同值；height=hm_size、flow=derived_size 不同分辨率时按归一化坐标取 flow）。fused 成功即 C++ 内 carve 并跳过 legacy → 无双重施加。
 - **#2c 水域波蚀（coast-erosion，2026-06-26，cell 级，C++ 唯一路径）**：让水体（海/湖）也"介入侵蚀"——`run_native_world_generate_post_base_pass` 在 #2b 河流下切之后，对每个邻接水体的陆地 cell 按"波浪能量"下蚀 E，向海蚀台地收敛（`E -= coast_wave_erosion·wave·(E-sea_level)` → 高于水线越多蚀得越快、渐近水线成平台）。波能 = 邻接水体的 `深度代理(1-E_nb/sea，深海=大风区=强浪)·类型权重(湖×0.35)` 平均 × 岸线包围度（`0.45+0.55·water_neighbors/6`）。**与河流下切并列**：河流沿河道切，水域沿岸线切。只下蚀、clamp 在 `sea_level+0.004` 之上（不把陆地翻成海、不引发海岸级联）；仅读邻居水体 E（本 pass 不改水格）→ 顺序无关；下蚀后 `land_h` 降低 → 下游 floodplain/beach 分类自洽。计数 `stage_counts["coast_wave_erosion"]`。一键回退：profile `coast_wave_erosion=0`（默认 0.30）。注：base pass §2.4/2.5 的 SPL/液滴/热力侵蚀在分类前跑、地形无关；#2c 是分类后、水体驱动的专门海岸侵蚀，二者互补。
 - **#3 海洋深度自然化（仿真高程 E，C++ 唯一路径）**：`run_native_world_generate_base_pass` 在 normalize 之后、侵蚀/分类之前，对 below-sea 段（`E<sea_level`）按"距岸 hex 距离"重塑海底——多源 BFS（陆地为源，`index_for_qr` 东西环绕邻接）求每个海洋格距岸距离 → 大陆架（`PK_OCEAN_SHELF_CELLS=2` 内浅）经 smoothstep ramp 到深渊（`PK_OCEAN_DEEP_CELLS=11`、最深 `sea*PK_OCEAN_ABYSS_FRAC(0.96)`），叠低频盆地噪声（`PK_OCEAN_BASIN_AMP=0.30`，仅深水生效，造海沟/海岭）。`DEEP_CELLS` 越小 → 离岸更快到深渊 → **深海面积越大**（2026-06-25b 迭代：20→11、ABYSS 0.92→0.96 扩大并加深深海）。锚定 sea_level：陆地完全不动。下游 `DEEP_OCEAN/OCEAN/COAST` 分类（`pk_decide_terrain_ex`：`sea-0.06`/`sea*0.55`/`sea*0.92` 门槛）、距海气候、水面深浅色全部看到自然海底（远海变深蓝、近岸大陆架）。原极地 `edge_falloff` 保留（仍产极地低地→冰盖/海），但其"唯一深海来源"的角色被本重塑取代。**base pass 已 100% C++（生成 fallback 已删）→ #2b/#3 无 GDScript 镜像**。
@@ -622,11 +680,11 @@ relief（见下 “P0 relief”）。
 
 **bake 分辨率平台档（2026-08-06）**：`MapBaker._hm_max_dim()` 决定 `hm_size`/`derived_size` 长边。桌面 1024；**mobile 与 web 同档 512**（~155k px，约为桌面 620k 的 1/4）。Web 此前只认 `mobile` feature、浏览器会静默落到 1024，在 nothreads WASM 上把 terrain-index/encode/horizon 的 O(像素) 成本放大约 4×；现用 `OS.has_feature("web")` 与 mobile 共用 `HM_MAX_DIM_MOBILE`。日志 `MapBaker v6: hm=` 在 web 上应约为 `(512, 300)` 量级（随地图宽高比变化）。
 
-**terrain horizon 平台分流（2026-08-06）**：GPU horizon 在 web/mobile 默认关（`DCFeatureFlags.terrain_horizon_gpu_bake_active`）。`bake_world` encode 段此前只把 `mobile` 映射到「跳过 → `terrain_horizon_tex=null`」，web 会落到桌面 CPU `encode_horizon_tex`（`steps=1024`×8 向），nothreads WASM 上可拖垮生成。现 **mobile 与 web 同走 skip**；仅桌面在 GPU 关时保留 CPU C++ fallback。shader 侧 `terrain_horizon_tex_bound=false` → 无投射阴影回退。
+**terrain horizon 平台分流（2026-08-06 初版；2026-11-01 Web 全档位 CPU 烘焙 + occluder bundle）**：桌面 tiled 走 `VisualTileHorizonBaker` 的 GPU 金字塔（见"高分视觉 Tile 静态链路"）；桌面 GPU 烘焙关闭时保留 CPU C++ fallback。**Web 自 2026-11-01 起所有画质档位都 CPU 烘 horizon**（旧行为只有 HIGH 烘、LOW/MID 完全无地平线）：`bake_world` 使用 `TERRAIN_HORIZON_STEPS_WEB = 128`（LOW/MID/HIGH 一致；`max_distance` 会自然截断有效步数），其余参数与桌面一致。B 方案起这次 Web CPU bake 复用新 bundle encoder（§2.2）：`ext.encode_bake_horizon_tex_data(emit_occluder_cells=true, map_index_data=…)` 一次返回 horizon + occluder RGBA8（两个 16-bit cell id），分别上传为 `terrain_horizon_tex` / `gi_occluder_tex`；后者随 `_bake_legacy_static_surface` resize 后进 surface array layer3，供 packed GI 弹射（不再需要 `bounce_lut`）。地图生成顺序因此把 `_encode_enum_atlas` 提前到 horizon bake 之前（occluder 需要 map_index bytes）。移动端仍默认跳过（`terrain_horizon_tex=null` → shader 回退无投射阴影）。Web 生成成本与地图尺寸 / `max_distance` 相关，属于一次性生成期开销。shader 侧定义 `PK_WEB_HORIZON` 让 LOW/MID 也真正解码（不再被 `MOBILE_QUALITY_LOW/MID` 编译成中性值）。
 
 **主地形退役 eco_lut、Web 启用材质贴图（2026-08-06）**：`world_map` 不再声明/采样 `eco_lut`（叶量/胁迫/物候与 `dyn_lut.A` vitality 高度重叠；mobile 本就编译期跳过）。腾出的 Compatibility 预算槽接入 `terrain_material_tex`。植被实例层（`shrub_layer`）仍可独立绑 `eco_lut`。
 
-**height+flow 合并（2026-08-06）**：Legacy `height_tex` 与 Tiled `visual_height_tiles` 均为 RGBA8（RG=16-bit height，B=flow，A=0）；独立 `flow_tex` / `visual_flow_tiles` 退役。CPU 仍保留分离 buffer。旧 DLL 若仍返回 `height=N*2`+`flow=N`，`VisualTileSet.normalize_height_flow_bundle` 会在上传前拼包。`BYTES_PER_PHYSICAL_TEXEL`=23。`PK_WEB_TEXTURE_BUDGET` 下现为 height/horizon/map_index/noise/enum/dyn/**material** = **7**（留 1 裕量）。
+**height+flow 合并（2026-08-06）**：Legacy `height_tex` 与 Tiled `visual_height_tiles` 均为 RGBA8（RG=16-bit height，B=flow，A=0）；独立 `flow_tex` / `visual_flow_tiles` 退役。CPU 仍保留分离 buffer。旧 DLL 若仍返回 `height=N*2`+`flow=N`，`VisualTileSet.normalize_height_flow_bundle` 会在上传前拼包。`BYTES_PER_PHYSICAL_TEXEL`=23。当时 `PK_WEB_TEXTURE_BUDGET` 下为 height/horizon/map_index/noise/enum/dyn/**material** = **7**（留 1 裕量）；2026-11-01 v2 地形程序改为 8 槽（packed surface array + 恢复 `noise_tex`），详见上文 “Baked terrain surface” 段。
 
 **Web shader 质量档（2026-08-06）**：与 mobile 共用 `MOBILE_QUALITY_LOW/MID/HIGH` 编译期 define + 运行期 `visual_quality`。`DCFeatureFlags.uses_shader_quality_tier()` = mobile|web；设置 `render_quality=auto` 在 web 上默认 LOW（不再误用桌面 HIGH）。高档仍叠加 `PK_WEB_TEXTURE_BUDGET`（纹理单元硬裁剪与分档正交）。日志 `[hex_renderer/variant] quality=MOBILE_QUALITY_* web_texture_budget=true`。
 

@@ -54,7 +54,7 @@ vec2 terrain_periodic_world_uv(vec2 wp, float tile_world_size) {
 // failure can fall back without selecting a different shader resource.
 // visual_quality：0=LOW 程序化；>=1（默认 MID）即可采材质贴图。
 bool terrain_materials_active() {
-#if defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)
+#if (defined(PK_QUALITY_LOW) || defined(PK_QUALITY_MID)) && !defined(PK_WEB_WORLD_MIN)
 	return false;
 #else
 	return terrain_materials_enabled && terrain_material_tex_bound && visual_quality >= 1;
@@ -80,7 +80,6 @@ int terrain_material_layer(int biome) {
 	return 0;
 }
 
-#ifndef PK_WEB_WORLD_MIN
 vec4 terrain_material_sample(int biome, vec2 wp) {
 	int layer = terrain_material_layer(biome);
 	if (layer < 0) {
@@ -89,25 +88,19 @@ vec4 terrain_material_sample(int biome, vec2 wp) {
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
 }
-#endif // PK_WEB_WORLD_MIN
 
-#ifndef PK_WEB_WORLD_MIN
 vec3 terrain_material_albedo_detail(vec4 material) {
 	return vec3(1.0 + (material.r - 0.5) * 2.0 * terrain_material_albedo_strength);
 }
-#endif // PK_WEB_WORLD_MIN
 
-#ifndef PK_WEB_WORLD_MIN
 vec2 terrain_material_normal_detail(vec4 material) {
-	return (material.gb * 2.0 - 1.0) * terrain_material_normal_strength;
+	float gain = terrain_material_normal_strength;
+	return (material.gb * 2.0 - 1.0) * gain;
 }
-#endif // PK_WEB_WORLD_MIN
 
-#ifndef PK_WEB_WORLD_MIN
 float terrain_material_roughness(float base_roughness, vec4 material) {
 	return mix(base_roughness, material.a, terrain_material_roughness_strength);
 }
-#endif // PK_WEB_WORLD_MIN
 
 float terrain_bayer2_digit(vec2 bit_xy) {
 	if (bit_xy.y < 0.5) {
@@ -160,7 +153,6 @@ float terrain_land_dither_zoom_strength() {
 #endif
 }
 
-#ifndef PK_WEB_WORLD_MIN
 float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 	float dither_w = (terrain_mobile_dither_uv_threshold(uv, wp) < edge_w) ? 1.0 : 0.0;
 #if defined(PK_MOBILE_ANY)
@@ -172,7 +164,6 @@ float terrain_hybrid_static_weight(float edge_w, vec2 uv, vec2 wp) {
 #endif
 	return mix(edge_w, dither_w, dither_strength);
 }
-#endif // PK_WEB_WORLD_MIN
 
 // The inner fwidth band removes raster stair-steps. A wider world-space ecotone
 // provides a shared visual anchor for the final land pipeline; cell-owned
@@ -247,7 +238,6 @@ float terrain_biome_micro_strength(int biome) {
 	return 0.40; // organic terrain
 }
 
-#ifndef PK_WEB_WORLD_MIN
 TerrainStaticMaterial compute_terrain_static_material(
 		int primary_biome,
 		float elev,
@@ -263,6 +253,15 @@ TerrainStaticMaterial compute_terrain_static_material(
 	vec3 detail = use_material_tiles
 			? terrain_material_albedo_detail(primary_material)
 			: procedural_biome_detail(primary_biome, wp, uv);
+	// [web-high-features 2026-11-01 / 方案 B] 预算后端（Web/Compatibility）在材质族激活时
+	// 也把烘焙 detail（terrain_surface_tex layer2）乘进 albedo：否则该层只在"材质未绑"的
+	// 回退路径可见，MID/HIGH 真实产品路径看不到 baked detail。LOW(vq=0) 材质不激活、
+	// 且 procedural_biome_detail 自身 vq<=0 早退，行为不变。
+#if defined(PK_WEB_TEXTURE_BUDGET) && defined(VT_USE_TERRAIN_DETAIL)
+	if (use_material_tiles && visual_quality >= 1 && terrain_detail_available()) {
+		detail *= baked_biome_detail(primary_biome, uv);
+	}
+#endif
 	out_mat.color = biome_hue_modulate(hyps, primary_biome) * detail;
 	out_mat.roughness = use_material_tiles
 			? terrain_material_roughness(biome_roughness(primary_biome), primary_material)
@@ -302,6 +301,11 @@ TerrainStaticMaterial compute_terrain_static_material(
 	vec3 secondary_detail = use_material_tiles
 			? terrain_material_albedo_detail(secondary_material)
 			: procedural_biome_detail(secondary_biome, wp, uv);
+#if defined(PK_WEB_TEXTURE_BUDGET) && defined(VT_USE_TERRAIN_DETAIL)
+	if (use_material_tiles && visual_quality >= 1 && terrain_detail_available()) {
+		secondary_detail *= baked_biome_detail(secondary_biome, uv);
+	}
+#endif
 	vec3 secondary_color = biome_hue_modulate(hyps, secondary_biome) * secondary_detail;
 	out_mat.color = mix(out_mat.color, secondary_color, static_w);
 	float secondary_roughness = use_material_tiles
@@ -319,29 +323,6 @@ TerrainStaticMaterial compute_terrain_static_material(
 			static_w);
 	return out_mat;
 }
-#else
-// [web-world-min] PK_QUALITY_LOW ⇒ terrain_materials_active() 恒 false（材质族三元
-// 恒走 procedural 分支）；VT_USE_EDGE_NEIGHBOR 未定义 ⇒ decode_edge_secondary_index()
-// 恒返回 -1，原函数在 secondary_id < 0 处就返回，次生边/混合权重整段不可达。
-// 因此这里内联那个必然结果——逐值等于原函数的 web 输出，只是不再编译其余分支。
-TerrainStaticMaterial compute_terrain_static_material(
-		int primary_biome,
-		float elev,
-		vec2 wp,
-		vec2 uv,
-		float edge_distance) {
-	TerrainStaticMaterial out_mat;
-	vec3 hyps = hypsometric_tint(elev, false);
-	out_mat.color = biome_hue_modulate(hyps, primary_biome)
-			* procedural_biome_detail(primary_biome, wp, uv);
-	out_mat.roughness = biome_roughness(primary_biome);
-	out_mat.micro_strength = terrain_biome_micro_strength(primary_biome);
-	out_mat.material_normal_xy = vec2(0.0);
-	out_mat.edge_factor = 0.0;
-	out_mat.secondary_biome = -1;
-	return out_mat;
-}
-#endif // PK_WEB_WORLD_MIN
 
 float terrain_micro_zoom_alpha() {
 	float fade_start;
@@ -400,19 +381,33 @@ SurfaceParams apply_terrain_micro_surface(
 		float snow_amount) {
 	// Tiled materials provide the broad albedo/normal layer. Keep the separate
 	// micro map as a restrained second scale for readable close-ground relief.
-#ifdef PK_WEB_TEXTURE_BUDGET
-	// web 预算下 terrain_micro_tex 声明已被整体裁剪（纹理单元撞车防护，见 uniforms）。
+	// [web-high-features 2026-11-01 / 方案 B] 预算后端（PK_TERRAIN_MICRO_ARRAY）的 micro
+	// 是共享 terrain_material_tex 的第 5 层（index=terrain_material_micro_layer=4），
+	// 不再用被裁掉的独立 terrain_micro_tex 采样器。visual_quality<=0（Web LOW）与
+	// layer<0（旧图/绑定失败）在采样前返回，LOW 行为与 B 之前逐像素一致。
+	// 单次 micro 采样（三个编译分支共用后续算式；预算后端无 micro 槽时提前 return，
+	// 因此 micro 的默认值不会真正参与着色）。
+	vec4 micro = vec4(0.5);
+#ifdef PK_TERRAIN_MICRO_ARRAY
+	if (visual_quality <= 0 || terrain_material_micro_layer < 0) {
+		return surface;
+	}
+	micro = texture(terrain_material_tex,
+			vec3(terrain_micro_uv(wp), float(terrain_material_micro_layer)));
+#elif defined(PK_WEB_TEXTURE_BUDGET)
+	// 预算后端但没拿到 micro array 的变体（桌面 Compatibility tiled / HIGH 水面程序）
+	// 没有 2D terrain_micro_tex 采样器，保持 B 之前的行为：不叠 micro。
 	return surface;
 #else
 	if (!has_terrain_micro_tex) {
 		return surface;
 	}
+	micro = texture(terrain_micro_tex, terrain_micro_uv(wp));
+#endif
 	float zoom_alpha = terrain_micro_zoom_alpha();
 	if (zoom_alpha <= 0.0001) {
 		return surface;
 	}
-
-	vec4 micro = texture(terrain_micro_tex, terrain_micro_uv(wp));
 	vec2 micro_xy = micro.rg * 2.0 - 1.0;
 	float organic = (biome == B_GRASSLAND || biome == B_FOREST || biome == B_PLAIN
 			|| biome == B_JUNGLE || biome == B_TAIGA || biome == B_SAVANNA
@@ -440,7 +435,6 @@ SurfaceParams apply_terrain_micro_surface(
 	float grain = (micro.a * 2.0 - 1.0) * 0.028 * strength * snow_flatten;
 	surface.base_color *= 1.0 + grain;
 	return surface;
-#endif
 }
 
 vec3 terrain_index_debug_color(int cid) {

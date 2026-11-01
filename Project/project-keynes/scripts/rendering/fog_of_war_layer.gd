@@ -122,6 +122,10 @@ func _load_shader() -> Shader:
 	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	if OS.has_feature("web"):
+		# Keep the full fog shader's q1/q2 branches available to runtime settings;
+		# the Web page still uses the same two edge samplers and no new textures.
+		prefix += "#define PK_WEB_FOG_RUNTIME\n"
 	if not prefix.is_empty():
 		sh = sh.duplicate() as Shader
 		sh.code = prefix + sh.code
@@ -318,9 +322,19 @@ func set_visual_quality(quality: int) -> void:
 
 
 ## 当前实际生效的档位 = min(编译期 tier 上限, 运行时档)。
+##
+## 必须与 shader 的 effective_fog_quality() 逐档一致：
+##   · Web：_load_shader() 追加 PK_WEB_FOG_RUNTIME，shader 忽略编译期 tier、按运行时
+##     fog_quality 夹到 2。而 web 的编译期档被钉死在 MOBILE_QUALITY_LOW，若这里仍按
+##     tier cap=0 计算，就会得出 effective_quality()==0，supports_terrain_early_out()
+##     随之放行 —— 但 shader 实际画的是 q2 云海，主地形的早退常量色会在半透明云缘
+##     下露成死斑（见 fog_of_war.gdshader / docs vision-fog-and-borders「主地形早退」）。
+##   · mobile：无该宏，仍按编译期 tier 夹。
 func effective_quality() -> int:
 	var cap := 3
-	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
+	if OS.has_feature("web"):
+		cap = 2
+	elif _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		match _mobile_quality_tier_define:
 			"MOBILE_QUALITY_LOW":
 				cap = 0

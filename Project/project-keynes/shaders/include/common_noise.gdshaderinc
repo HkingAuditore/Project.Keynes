@@ -1,15 +1,19 @@
 // common_noise.gdshaderinc
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared procedural-noise utilities used across world_map.gdshader (and future
-// minimap / river / particle shaders). Stateless, uniform-free except for a
-// dependency on the caller-side declared sampler `noise_tex` and constant
-// `NOISE_TEX_SCALE`. Caller MUST declare both before #including this file:
+// minimap / river / particle shaders). Stateless; depends on the caller-side
+// declared sampler `noise_tex` and constant `NOISE_TEX_SCALE` (both declared in
+// uniforms.gdshaderinc):
 //
 //   uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 //   const float NOISE_TEX_SCALE = 256.0;
 //
 // v10.noise-pack: `noise_tex` is RGBA8. R stores raw value noise; G/B/A store
 // pre-integrated 2/3/4-octave fBM, so fbm() is globally one texture fetch.
+//
+// [packed-surface 2026-11-01 / 方案 A] Web 地形程序把 normal+relief 合并进一个 2 层
+// Texture2DArray，腾出的材质槽重新绑定 noise_tex；上一轮为省槽引入的程序化 fallback
+// 已整体删除，本文件在所有变体回到同一份 noise_tex 快路径。
 // ─────────────────────────────────────────────────────────────────────────────
 
 // hash21 仅 voronoi_cell 还在用（Worley 暂不烘）；value_noise / fbm 已经走 noise_tex 路径。

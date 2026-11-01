@@ -87,7 +87,8 @@ func _build_header() -> void:
 	title_width = maxf(190.0, _measure - emblem_size - 12.0)
 	var kicker_height: float = 18.0
 	var title_top: float = kicker_height + 6.0
-	var title_height: float = display.get_height(title_size) * 1.14
+	# 章首标题行高按真实排版量：Font.get_height() 会把 fallback 链上更高的宋体行高算进来。
+	var title_height: float = UITokens.shaped_line_height(display, title_size) * 1.14
 	# 章首那行现在只交代「这是什么数据」，恒为一行。高度按字体实测行数给，
 	# 不再恒留三行——恒留会在每章开头压出近百像素的纯白空洞。空串则整块不建。
 	var lead_text: String = String(_chapter.get("lead", ""))

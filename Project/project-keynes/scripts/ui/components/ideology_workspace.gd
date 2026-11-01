@@ -271,7 +271,7 @@ func _build_promotion_overlay() -> void:
 	_promotion_title = ArtScript.label("晋升民族精神", 25, ArtScript.INK,
 		HORIZONTAL_ALIGNMENT_CENTER)
 	_promotion_title.add_theme_font_override("font",
-		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+		preload("res://assets/fonts/muyao/display_handwritten.tres"))
 	column.add_child(_promotion_title)
 	var rule := HSeparator.new()
 	rule.modulate = ArtScript.GOLD_LEAF
@@ -403,7 +403,7 @@ func _build_archive_chrome() -> void:
 		_top_title = ArtScript.label("国家理念", 24, ArtScript.INK,
 			HORIZONTAL_ALIGNMENT_LEFT)
 		_top_title.add_theme_font_override("font",
-			preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+			preload("res://assets/fonts/muyao/display_handwritten.tres"))
 		identity.add_child(_top_title)
 	if _deck_table != null:
 		_deck_table.add_theme_stylebox_override("panel", ArtScript.paper_style(8.0,
@@ -457,7 +457,7 @@ func _build_deck_heading() -> void:
 	var title := ArtScript.label("已推行国策", 21, ArtScript.INK,
 		HORIZONTAL_ALIGNMENT_LEFT)
 	title.add_theme_font_override("font",
-		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+		preload("res://assets/fonts/muyao/display_handwritten.tres"))
 	identity.add_child(title)
 	_build_slot_sections(deck_column)
 
@@ -561,7 +561,7 @@ func _make_slot_section_header(kind: int) -> PanelContainer:
 		HORIZONTAL_ALIGNMENT_LEFT)
 	title.name = "SectionTitle"
 	title.add_theme_font_override("font",
-		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+		preload("res://assets/fonts/muyao/display_handwritten.tres"))
 	title.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	var tab_margin := MarginContainer.new()
 	tab_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -612,7 +612,7 @@ func _build_collection_heading() -> void:
 	_collection_title.theme_type_variation = &"Label"
 	_collection_title.add_theme_color_override("font_color", ArtScript.INK)
 	_collection_title.add_theme_font_override("font",
-		preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+		preload("res://assets/fonts/muyao/display_handwritten.tres"))
 	_collection_tabs_scroll = _collection_heading.get_node("TabsScroll")
 	_collection_heading.add_theme_constant_override("separation", 6)
 
@@ -2805,7 +2805,7 @@ class CollectionEntry:
 		holder.add_child(preview)
 		var label := ArtScript.label(_name.text, 16, ArtScript.INK)
 		label.add_theme_font_override("font",
-			preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf"))
+			preload("res://assets/fonts/muyao/display_handwritten.tres"))
 		label.position = -preview.size * 0.5 + Vector2(18, 18)
 		label.size = Vector2(preview.size.x - 24, 24)
 		holder.add_child(label)

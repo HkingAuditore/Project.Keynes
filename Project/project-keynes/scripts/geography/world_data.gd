@@ -115,23 +115,45 @@ var vector_atlas_tex: ImageTexture
 # Legacy 主地图不再单独上传 flow：flow_buffer 打进 height_tex.B。本字段保留为 null
 #（兼容旧诊断/读档路径）；Tiled 亦已打进 visual_height_tiles.B。
 var flow_tex: ImageTexture
-# [water-depth-tex 2026-06-26] 海/湖统一水深 R8 纹理（derived_size，与 height/biome 同 uv）。
+# [water-depth-tex 2026-06-26 / terrain-web-baked-surface-B 2026-11-01]
+# 海/湖统一水深 R8 纹理（derived_size，与 height/biome 同 uv）。
 # 主水体 shader 按它做深浅着色（深海蓝 / 浅滩青 / 湖心暗），单次采样取代旧海洋邻域 + 湖泊多半径。
-# bake_world 烘焙一次，之后不变；null 时 shader 回退旧逐邻域估算。
+# Web（B 方案）：HIGH water / compact water 两个水面程序直接在非 tiled 分支绑这张 2D 纹理
+# （HexRenderer._apply_water_uniforms），不再需要额外 sampler。bake 一次，之后不变。
 var water_depth_tex: ImageTexture
 # 跨 biome 连续的静态宏观细节信号（L8, derived_size）。
 # MID/HIGH 在 shader 中按材质类别调整振幅；LOW 跳过采样。纹理本身不编码硬 biome，
 # 避免 LINEAR 采样仍显露 cell/图集块状边界。
+# [terrain-web-baked-surface-B 2026-11-01] 非 tiled 主地形改读 terrain_surface_tex.layer2
+# （本字段仍在 bake 期保留：tiled 用 visual_terrain_detail_tiles，非 tiled 时作为
+#  layer2 的源数据，同时兼容旧诊断）。
 var terrain_detail_tex: ImageTexture
 # 无抖动主 cell 的通用视觉边界辅助纹理。所有合法相邻 cell 都可成为副格；
 # RG8 为索引低/高字节，0xFFFF 表示无邻格；R8 距离场供 terrain/fog/weather 组合
 # fwidth 内层 AA 与视觉 ecotone。地表 Shader 另行拒绝跨水陆材质混合。
 var terrain_edge_neighbor_tex: ImageTexture
 var terrain_edge_distance_tex: ImageTexture
-# [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny，hm_size）。
-# 地形静态 → 运行期 shader 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap；细节法线运行期按
-# biome/性能档叠。bake_world 烘焙一次，之后不变；与 height_tex 共用 uv。
+# [terrain-normal-bake 2026-06-25 / terrain-web-baked-surface-A 2026-11-01]
+# 生成期烘焙的"总体地形法线"**2D 版本**（RGBA8，仅非 tiled 路径）：
+#   RG = 粗法线 xy（0.5+n*0.5）；BA = 近景高度细节坡度（pk_relief::encode_slope）。
+# 只供只开 `VT_USE_TERRAIN_NORMAL` 的其它层采样（植被/建筑/资源/贸易/ground cover）；
+# 主地形 shader 用下面 terrain_surface_tex 的 layer0（内容相同，因此 normal 数据存两份：
+# 这是让其它层继续用 2D sampler 的显式取舍）。桌面 tiled 用 visual_tiles.terrain_normal
+# 数组，此时本字段为 null。地形静态 → 运行期 shader 不再做任何高度差分。
 var terrain_normal_tex: ImageTexture
+# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01] 主地形非 tiled 路径
+# （Web 全档位 + 桌面 legacy）的**固定 4 层 Texture2DArray**（RGBA8，各层同尺寸；
+# 合并后 Web 陆地程序少占材质 sampler）：
+#   layer0 = normal：RG=粗法线 xy（0.5+n*0.5），BA=近景高度细节坡度（encode_slope）；
+#   layer1 = relief：RG=粗段细节坡度，BA=细段细节坡度（encode_slope）；
+#   layer2 = detail：R=静态细节噪声（0x80=恒等），GBA=0（B 方案迁入，MID/HIGH 用）；
+#   layer3 = occluder：RGBA8 = 两个 16-bit cell.index（主/次遮挡源，0xFFFF=无；B 方案
+#            GI 弹射用，shader texelFetch；不再需要 bounce_lut）。
+# 与 2D terrain_normal_tex 同尺寸、同 uv；由 _bake_legacy_static_surface 用 native
+# run_bake_visual_tile_layer_pass 整图单 tile 烘一次后上传（detail 来自
+# terrain_detail_tex、occluder 来自 gi_occluder_tex，均在 bake 期已就绪）。
+# 桌面 tiled 用 visual_tiles 的 normal/relief/detail/water 数组，此时本字段为 null。
+var terrain_surface_tex: Texture2DArray
 # [terrain-horizon 2026-07-03] 生成期烘焙 8 方向 horizon angle（RGBA8，每通道拆 high/low
 # nibble 承载两个方向）。运行期按 TOD 太阳方位插值，只遮蔽 direct lighting；移动端可为空。
 var terrain_horizon_tex: ImageTexture
@@ -196,9 +218,13 @@ var eco_lut_tex: ImageTexture
 #   反映到弹射色上，不需要重烘任何几何。刻意是近似量而非 fragment albedo 的精确镜像——
 #   弹射项乘了 (1-V_sky) 与 ≤0.3 的增益，能量占比极低，不值得再维护一份 CPU/GPU 双实现。
 var bounce_lut_tex: ImageTexture
-# [terrain-gi 2026-07-31] legacy 全局遮挡源图（RGBA8 NEAREST，hm_size）：
-#   RG=主导遮挡源 cell id 低/高字节，BA=次遮挡源，0xFFFF=无有效遮挡源。
-#   tiled 路径用 VisualTileSet.gi_occluder；这张只服务 legacy 与 compute 失败回退。
+# [terrain-gi 2026-07-31 / terrain-web-baked-surface-B 2026-11-01] 全局遮挡源图
+# （RGBA8，hm_size）：RG=主导遮挡源 cell id 低/高字节，BA=次遮挡源，0xFFFF=无有效遮挡源。
+#   - tiled 桌面：visual_tiles.gi_occluder（compute 产出）；
+#   - Web 全档位（B 方案）：由 horizon CPU bundle 同一次 marching 顺带产出（emit_occluder_cells），
+#     再 resize NEAREST 进非 tiled surface array 的 layer3，shader 用 texelFetch 读取，
+#     GI 弹射颜色改由 enum_lut 的 biome 近似（不再需要 bounce_lut）；
+#   - 桌面 legacy 非 tiled：GPU horizon 路径不产出 → 该层为 0xFFFF 中性（无弹射）。
 var gi_occluder_tex: ImageTexture
 # weather_lut（cloud-from-field 2026-06-20）：per-cell 天气场 LUT，RGBA8 NEAREST，lut_dims。
 #   R=weather_type，G=intensity，B=cloud，A=vapor。由 encode_cell_luts 与 enum/dyn/eco 同批

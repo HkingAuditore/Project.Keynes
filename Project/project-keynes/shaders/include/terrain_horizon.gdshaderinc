@@ -26,7 +26,39 @@
 // 由 HexRenderer 按 terrain_horizon_max_angle 预计算推送（见 _push_gi_horizon_lut）。
 // gi_lut_bound=false 时全部 GI 派生量退化为中性（V_sky=1、bent=几何法线），
 // 视觉与接入 GI 之前完全一致，因此旧材质/未更新的 renderer 不会变黑。
+//
+// [baked-surface 2026-11-01] 本 include 现在被 world_map 的**所有**变体引用（含 Web LOW）。
+// 没有 horizon 采样槽的变体（Web HIGH 水面独立程序 PK_WEB_WATER_ONLY 只开 height/map_index/
+// flow，8 个材质槽不再包含 horizon）走下面的中性叶子，调用点无需额外条件编译。
 // ─────────────────────────────────────────────────────────────────────────
+#ifndef VT_USE_HORIZON
+struct TerrainHorizonSample {
+	float direct_visibility;
+	float sky_visibility;
+	vec3 bent_normal;
+	vec4 nearest_packed;
+	bool has_data;
+};
+
+TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
+	TerrainHorizonSample neutral;
+	neutral.direct_visibility = 1.0;
+	neutral.sky_visibility = 1.0;
+	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
+	neutral.nearest_packed = vec4(0.0);
+	neutral.has_data = false;
+	return neutral;
+}
+
+float terrain_horizon_apply_normal(float sky_visibility, vec3 geometric_normal,
+		vec3 bent_normal) {
+	if (gi_normal_floor >= 1.0) {
+		return clamp(sky_visibility, 0.0, 1.0);
+	}
+	float align = clamp(dot(normalize(geometric_normal), normalize(bent_normal)), 0.0, 1.0);
+	return clamp(sky_visibility * mix(gi_normal_floor, 1.0, align), 0.0, 1.0);
+}
+#else // VT_USE_HORIZON
 
 const float TERRAIN_HORIZON_TAU = 6.2831853;
 const float TERRAIN_HORIZON_OCTANT = 0.78539816;
@@ -256,7 +288,7 @@ TerrainHorizonSample sample_terrain_horizon(vec2 uv, vec3 light_dir) {
 // 只需要直射遮蔽的 caller（water debug view 等）继续用这个；主 BRDF 路径应改用
 // sample_terrain_horizon 一次拿全三个量，避免同一 uv 采两遍 horizon。
 float terrain_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
-#if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)
+#if (defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID)) && !defined(PK_WEB_HORIZON)
 	return 1.0;
 #else
 	if (!terrain_horizon_tex_bound || visual_quality < 1 || terrain_horizon_strength <= 0.0) {
@@ -269,8 +301,11 @@ float terrain_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
 // 档位门控后的完整入口。直射遮蔽在移动端 LOW/MID 与 visual_quality<1 时关闭（与旧行为一致），
 // 但 AO 比直射遮蔽便宜——它不需要按太阳方位插值，也不参与 cast shadow 叠层——所以移动端 MID
 // 仍然保留 AO 与 bent normal，只有 LOW 档整体退化为中性。
+// [baked-surface 2026-11-01] PK_WEB_HORIZON 覆盖上述档位早退：Web 全部档位都在生成期把
+// horizon 烘焙进 terrain_horizon_tex（LOW 也付一次 CPU 烘焙成本），运行期必须真正解码，
+// 否则 Web LOW 的地形既没有烘焙法线的遮影也没有 AO，与桌面观感差一档。
 TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
-#if defined(MOBILE_QUALITY_LOW)
+#if defined(MOBILE_QUALITY_LOW) && !defined(PK_WEB_HORIZON)
 	TerrainHorizonSample neutral;
 	neutral.direct_visibility = 1.0;
 	neutral.sky_visibility = 1.0;
@@ -280,7 +315,7 @@ TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
 	return neutral;
 #else
 	TerrainHorizonSample s = sample_terrain_horizon(uv, light_dir);
-	#if defined(MOBILE_QUALITY_MID)
+	#if defined(MOBILE_QUALITY_MID) && !defined(PK_WEB_HORIZON)
 	s.direct_visibility = 1.0;
 	#else
 	if (visual_quality < 1 || terrain_horizon_strength <= 0.0) {
@@ -306,3 +341,5 @@ float terrain_horizon_apply_normal(float sky_visibility, vec3 geometric_normal, 
 	float align = clamp(dot(normalize(geometric_normal), normalize(bent_normal)), 0.0, 1.0);
 	return clamp(sky_visibility * mix(gi_normal_floor, 1.0, align), 0.0, 1.0);
 }
+
+#endif // VT_USE_HORIZON
