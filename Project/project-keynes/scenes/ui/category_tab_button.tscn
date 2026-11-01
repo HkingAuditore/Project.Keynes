@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/touch_hit_button.gd" id="2_touch"]
 
 [node name="CategoryTabButton" type="Button"]
 metadata/ui_sound = &"page"
@@ -10,6 +11,7 @@ toggle_mode = true
 focus_mode = 2
 mouse_default_cursor_shape = 2
 theme_type_variation = &"PKChapterTab"
+script = ExtResource("2_touch")
 
 [node name="IconCenter" type="CenterContainer" parent="."]
 layout_mode = 1

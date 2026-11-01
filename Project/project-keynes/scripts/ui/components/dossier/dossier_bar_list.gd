@@ -1,6 +1,8 @@
 extends DossierChart
 class_name DossierBarList
 
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
+
 ## 带标签的横条列表：部门产值、满足率分档、受阻原因、需求压力、城市分布等。
 ## 每行：[图标] 标签 | 横条（可带刻度标记） | 数值。整列自绘，可点击。
 ## diverging = true 时 value 取 -1..1，以中线为零点向两侧生长。
@@ -29,6 +31,10 @@ func _init() -> void:
 func set_rows(rows: Array) -> void:
 	_from = _blend_arrays(_from, _values, _blend)
 	_rows = rows
+	# 只有可点选的横条行才需要长到触摸目标；纯读数的图表保持原行高，
+	# 免得把一屏能看完的十行数据撑成需要滚三屏（真机反馈「太大更难用」）。
+	if selectable:
+		row_height = maxf(row_height, TouchUI.min_units())
 	_values = PackedFloat32Array()
 	for row in rows:
 		var value := float((row as Dictionary).get("value", 0.0))
@@ -55,9 +61,19 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventMouseButton and selectable:
 		var button := event as InputEventMouseButton
-		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT and _hover >= 0:
-			row_selected.emit(_rows[_hover].get("id"))
-			accept_event()
+		# 触摸档没有 hover：手指落下时不会先来一条 InputEventMouseMotion，
+		# 靠 _hover 判定会把整排可点行变成「点不动」。改成按事件位置直接判。
+		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			var index := _row_at(button.position)
+			if index >= 0:
+				_hover = index
+				row_selected.emit(_rows[index].get("id"))
+				accept_event()
+
+
+func _row_at(point: Vector2) -> int:
+	var index := int(floor(point.y / maxf(row_height, 1.0)))
+	return index if index >= 0 and index < _rows.size() else -1
 
 
 func _notification(what: int) -> void:

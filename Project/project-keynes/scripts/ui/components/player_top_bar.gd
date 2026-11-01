@@ -480,6 +480,20 @@ func bar_height() -> float:
 	return BAR_HEIGHT
 
 
+## 触摸端命中区：把栏内所有按钮抬到不小于 min_height（设计像素）。
+## 移动端由 GameUIManager 在尺寸变化时调用；桌面/Web 不调用，锁定 1600×960 外观不变。
+func apply_touch_metrics(min_height: float) -> void:
+	_raise_touch_targets(self, min_height)
+
+
+func _raise_touch_targets(node: Node, min_height: float) -> void:
+	if node is BaseButton:
+		var button := node as BaseButton
+		button.custom_minimum_size.y = maxf(button.custom_minimum_size.y, min_height)
+	for child in node.get_children():
+		_raise_touch_targets(child, min_height)
+
+
 func set_day_night_enabled(enabled: bool) -> void:
 	if _day_night_button == null:
 		_ready()

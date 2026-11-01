@@ -215,8 +215,21 @@ func _on_world_ready(
 
 func _on_world_generation_failed(reason: String) -> void:
 	# autotest 会话：把生成失败原因码立刻推进事件流（非 autotest 时是 no-op）。
-	WebAutotestScript.report_failure("world_generation_failed", {"message": reason})
-	(_ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay).show_failure(reason)
+	# 结构化的 stage/reason 由 host 挂在 last_world_generation_error 上，一并上报。
+	var host_error: Dictionary = _runtime_host.last_world_generation_error \
+		if _runtime_host != null else {}
+	WebAutotestScript.report_failure("world_generation_failed", {
+		"message": reason,
+		"stage": String(host_error.get("stage", "")),
+		"reason": String(host_error.get("reason", "")),
+	})
+	# 失败面板升级：摘要（一行中文）+ 可滚动/可全选的完整详情 + "复制详情" + 落盘。
+	var overlay := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
+	if overlay == null:
+		return
+	var detail := _runtime_host.last_world_generation_error_text() \
+		if _runtime_host != null else ""
+	overlay.show_failure_detailed(reason, detail)
 
 
 func _on_fit_requested() -> void:
@@ -363,3 +376,108 @@ func _game_save() -> Node:
 
 func _game_settings() -> Node:
 	return get_node_or_null("/root/GameSettings")
+
+
+## ─── 运行时哨兵（安卓"卡死"取证）──────────────────────────────────────
+## 玩家只看到"卡死"，日志里却什么都没有。这两行用最小成本把三种情况分开：
+##   [heartbeat] 正常刷新 → 主线程活着，看 day 是否前进判断仿真是否在跑；
+##   [stall]     单帧 ≥2s → 主线程被阻塞（渲染/原生调用），frame_ms 就是阻塞时长；
+##   两者都没有        → 主线程被彻底卡死（死循环/死锁），最后一条日志就是现场。
+const SENTINEL_HEARTBEAT_MS := 5000
+const SENTINEL_STALL_MS := 2000
+var _sentinel_started_ms := 0
+var _sentinel_last_ms := 0
+var _sentinel_frames := 0
+var _sentinel_stall_count := 0
+## 调试截图：`PK_SCREENSHOT_AFTER_MS=15000` 时在进入世界 15 秒后存一张 PNG 到 user://，
+## 用于在没有真机/远控的环境里核对"游戏内 HUD 在手机尺寸下长什么样"。正式包不受影响。
+var _sentinel_shot_times: Array[int] = []
+var _sentinel_shot_done := false
+
+
+func _process(delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	if _sentinel_started_ms == 0:
+		_sentinel_started_ms = now
+		_sentinel_last_ms = now
+		# 支持逗号列表：PK_SCREENSHOT_AFTER_MS="12000,45000" 会在两个时间点各存一张。
+		var shot_env := OS.get_environment("PK_SCREENSHOT_AFTER_MS").strip_edges()
+		if not shot_env.is_empty():
+			for part in shot_env.split(","):
+				var ms := int(part.strip_edges().to_int())
+				if ms > 0:
+					_sentinel_shot_times.append(ms)
+			_sentinel_shot_times.sort()
+	while not _sentinel_shot_times.is_empty() \
+			and now - _sentinel_started_ms >= _sentinel_shot_times[0]:
+		var shot_ms: int = _sentinel_shot_times.pop_front()
+		_capture_debug_screenshot(shot_ms)
+	_sentinel_frames += 1
+	var frame_ms := int(round(delta * 1000.0))
+	if frame_ms >= SENTINEL_STALL_MS:
+		_sentinel_stall_count += 1
+		print("[stall] frame_ms=%d day=%s speed=%.2f stalls=%d" % [
+			frame_ms, str(_current_day()), _current_speed(), _sentinel_stall_count])
+	var elapsed := now - _sentinel_last_ms
+	if elapsed < SENTINEL_HEARTBEAT_MS:
+		return
+	var fps := float(_sentinel_frames) * 1000.0 / maxf(float(elapsed), 1.0)
+	var eco := _economy_probe()
+	print("[heartbeat] day=%s speed=%.2f fps=%.1f stalls=%d scale=%.3f eco_day=%s graph=%s window=%dx%d" % [
+		str(_current_day()), _current_speed(), fps, _sentinel_stall_count,
+		_ui_scale(), str(eco["eco_day"]), str(eco["graph"]),
+		DisplayServer.window_get_size().x, DisplayServer.window_get_size().y])
+	# 主线程在跑、日期在涨、经济日结却停住 → 这是"经济不动"的唯一可判定信号。
+	# 连续 3 天不推进就打一行，日志里一眼能看到卡在哪一侧。
+	var day := int(_current_day())
+	if day > 3 and int(eco["eco_day"]) >= 0 and day - int(eco["eco_day"]) > 3:
+		print("[economy-stall] day=%d eco_day=%d graph=%s paused=%s speed=%.2f" % [
+			day, int(eco["eco_day"]), str(eco["graph"]),
+			str(_world_clock.paused if _world_clock != null else true), _current_speed()])
+	_sentinel_last_ms = now
+	_sentinel_frames = 0
+
+
+## 经济日结水位 + 原生图是否在跑。失败时返回 -1 / false，绝不抛错（哨兵不能拖垮主循环）。
+func _economy_probe() -> Dictionary:
+	var out := {"eco_day": -1, "graph": false}
+	if _runtime_host == null or not _runtime_host.has_method("get_generator"):
+		return out
+	var generator = _runtime_host.get_generator()
+	if generator == null:
+		return out
+	if generator.has_method("runtime_graph_active"):
+		out["graph"] = bool(generator.runtime_graph_active())
+	if generator.has_method("get_economy_facade"):
+		var facade = generator.get_economy_facade()
+		if facade != null and facade.has_method("report"):
+			var report: Dictionary = facade.report()
+			out["eco_day"] = int(report.get("newest_state_day", -1))
+	return out
+
+
+func _capture_debug_screenshot(shot_ms: int = 0) -> void:
+	var image := get_viewport().get_texture().get_image()
+	if image == null:
+		print("[screenshot] capture failed")
+		return
+	var path := "user://debug_shot_%d_at%dms.png" % [Time.get_ticks_msec(), shot_ms]
+	var err := image.save_png(path)
+	print("[screenshot] %s err=%d size=%dx%d" % [path, err, image.get_width(), image.get_height()])
+
+
+func _current_day() -> int:
+	return _world_clock.day_index() if _world_clock != null else -1
+
+
+func _current_speed() -> float:
+	return _world_clock.speed_multiplier if _world_clock != null else 0.0
+
+
+func _ui_scale() -> float:
+	var settings := _game_settings()
+	if settings != null and settings.has_method("ui_scaling"):
+		var scaling = settings.call("ui_scaling")
+		if scaling != null and scaling.has_method("total_scale"):
+			return float(scaling.call("total_scale"))
+	return 1.0

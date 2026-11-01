@@ -11,8 +11,11 @@ signal weights_committed(weights_bp: PackedInt32Array)
 
 const DOMAIN_COUNT := 4
 const TOTAL_BP := 10000
-const ROW_HEIGHT := 50.0
-const FOOTER_HEIGHT := 36.0
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+## 行高/页脚高度在触摸档下会被抬到密集档（36dp），所以是 var 而不是 const。
+## 拖动这个控件是「按行抓住再拖」，25dp 的行高手指必然抓错行。
+var ROW_HEIGHT := 50.0
+var FOOTER_HEIGHT := 36.0
 const NAME_WIDTH := 98.0
 const VALUE_WIDTH := 48.0
 const BAR_HEIGHT := 12.0
@@ -33,6 +36,9 @@ var _reset_hover := false
 func _init() -> void:
 	super()
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	var dense := TouchUI.dense_units()
+	ROW_HEIGHT = maxf(ROW_HEIGHT, dense)
+	FOOTER_HEIGHT = maxf(FOOTER_HEIGHT, dense)
 	custom_minimum_size = Vector2(0.0, ROW_HEIGHT * DOMAIN_COUNT + FOOTER_HEIGHT)
 
 

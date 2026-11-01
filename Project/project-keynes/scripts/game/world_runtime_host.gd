@@ -904,6 +904,136 @@ func last_seed() -> int:
 	return _last_seed
 
 
+# ─── 地图生成失败诊断（mapgen-diagnostics）───────────────────────────────
+# generate_world 失败时把 MapGenerator.last_generation_error 整块留在 host 上，
+# 由 player_game 交给 WorldLoadingOverlay 展示/复制/落盘。
+var last_world_generation_error: Dictionary = {}
+
+
+## 完整失败详情纯文本（多行）。UI "复制详情" 与日志文件共用同一段文本。
+func last_world_generation_error_text() -> String:
+	if last_world_generation_error.is_empty():
+		return ""
+	var detail := String(last_world_generation_error.get("detail_text", ""))
+	if not detail.is_empty():
+		return detail
+	# 兜底：没有 detail_text 时用 JSON，但必须先剔除原始 native report——
+	# 它带 10+ 个 n_cells 级 PackedArray，直接 stringify 会产出几 MB 文本。
+	var safe := last_world_generation_error.duplicate()
+	safe.erase("native_report_raw")
+	return JSON.stringify(safe, "  ", true)
+
+
+## 生成失败归因：把 MapGenerator 的结构化错误压成"一句中文 + 阶段 + 原因 + 排查建议"。
+## 传 preflight_override 时表示失败发生在 generate() 之前（自检拦下）。
+func _report_world_generation_failure(preflight_override: Dictionary = {}) -> void:
+	var err: Dictionary = {}
+	if _generator != null:
+		# 浅拷贝：只复制顶层键，native_report_raw 仍指向同一份原始字典（不重复分配）。
+		err = _generator.last_generation_error.duplicate()
+	if err.is_empty() and not preflight_override.is_empty():
+		var first_issue := ""
+		var issues: Array = preflight_override.get("issues", [])
+		if not issues.is_empty() and issues[0] is Dictionary:
+			first_issue = String((issues[0] as Dictionary).get("message", ""))
+		err = {
+			"stage": "preflight",
+			"reason": "preflight_failed",
+			"summary": "生成前自检未通过：%s" % first_issue,
+			"hint": "按下面 preflight 里点名的缺失项处理；安卓一般是原生库缺失/过旧。",
+			"preflight": preflight_override,
+			"env": preflight_override.get("env", {}),
+			"native_report": {},
+			"superseded": false,
+		}
+	if err.is_empty():
+		err = {
+			"stage": "unknown",
+			"reason": "map_generator_failed",
+			"summary": "地图生成器返回空结果，且未留下任何诊断信息。",
+			"hint": "这是 MapGenerator 之外的调用层问题；请附完整 logcat/godot.log。",
+			"preflight": {},
+			"env": {},
+			"native_report": {},
+			"superseded": false,
+		}
+	# 被新一轮 generate 取代：不弹失败面板，否则会盖住新一轮的进度条。
+	if bool(err.get("superseded", false)):
+		print("[mapgen] generation superseded at stage=%s (no failure UI)"
+			% String(err.get("stage", "?")))
+		return
+	if _generator != null:
+		err["detail_text"] = _generator.last_generation_error_text()
+	last_world_generation_error = err
+	var summary := _world_generation_failure_summary(err)
+	# 同一行同时 print + push_error：print 给 adb logcat，push_error 给编辑器/错误面板。
+	print("[mapgen][fatal] %s" % summary)
+	push_error("[mapgen][fatal] %s" % summary)
+	world_generation_failed.emit(summary)
+
+
+## 非 MapGenerator 来源的失败（开局初始化 / 存档恢复）：自建诊断记录后统一上报。
+## 走同一条 print+push_error+signal 通道，保证 UI/日志/文件三处看到的是同一段文本。
+func _emit_world_generation_failure(stage: String, reason: String, summary: String, hint: String) -> void:
+	last_world_generation_error = {
+		"stage": stage,
+		"reason": reason,
+		"summary": summary,
+		"hint": hint,
+		"preflight": {},
+		"env": {},
+		"native_report": {},
+		"superseded": false,
+		"detail_text": _format_world_generation_detail(stage, reason, summary, hint),
+	}
+	var line := _world_generation_failure_summary(last_world_generation_error)
+	print("[mapgen][fatal] %s" % line)
+	push_error("[mapgen][fatal] %s" % line)
+	world_generation_failed.emit(line)
+
+
+## 非 MapGenerator 来源失败的多行详情（结构与 MapGenerator 的保持同构，便于统一复制）。
+func _format_world_generation_detail(stage: String, reason: String, summary: String, hint: String) -> String:
+	var lines: PackedStringArray = PackedStringArray()
+	lines.append("=== 世界准备失败 / mapgen fatal ===")
+	lines.append("时间 timestamp : %s" % Time.get_datetime_string_from_system(true))
+	lines.append("阶段 stage     : %s" % stage)
+	lines.append("原因 reason    : %s" % reason)
+	lines.append("摘要 summary   : %s" % summary)
+	if not hint.is_empty():
+		lines.append("排查 hint      : %s" % hint)
+	lines.append("说明           : 该失败发生在 MapGenerator 之外（地图本身可能已生成成功）。")
+	return "\n".join(lines)
+
+
+## 一句话摘要：含 stage + reason + 一句排查建议（玩家能看懂、开发者能定位）。
+func _world_generation_failure_summary(err: Dictionary) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	parts.append(String(err.get("summary", "地图生成失败。")))
+	parts.append("阶段=%s" % String(err.get("stage", "?")))
+	var reason := String(err.get("reason", ""))
+	if not reason.is_empty():
+		parts.append("原因=%s" % reason)
+	var hint := String(err.get("hint", ""))
+	if not hint.is_empty():
+		parts.append(hint)
+	return " ".join(parts)
+
+
+## --mapgen-selfcheck：把自检 JSON 打到 stdout（安卓：adb logcat -s godot:*）。
+## 桌面/headless 走 tests/world/mapgen_selfcheck.tscn；这里覆盖"已经进了游戏场景"的场景。
+func _maybe_run_mapgen_selfcheck_cli() -> void:
+	if not MapGenerator.mapgen_selfcheck_requested():
+		return
+	var probe := MapGenerator.new()
+	var report: Dictionary = probe.run_mapgen_selfcheck(true)
+	print("[mapgen][selfcheck][summary] ok=%s" % str(report.get("ok", false)))
+
+
+func _ready() -> void:
+	_maybe_run_mapgen_selfcheck_cli()
+
+
 func session_config() -> Dictionary:
 	return _new_game_config.duplicate(true)
 
@@ -1011,6 +1141,26 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	if _generator.has_signal("bake_progress") and not _generator.bake_progress.is_connected(_on_baker_stage_progress):
 		_generator.bake_progress.connect(_on_baker_stage_progress)
 
+	# ── 生成前自检（mapgen preflight）────────────────────────────────────
+	# dots-total-cpp 之后地图生成 100% 在 C++、GDScript 无回退：扩展没加载 /
+	# native_generation_mode 没开 / 原生方法缺失 这三种情况是"必然失败"，
+	# 以前要等玩家盯着进度条几十秒才拿到一个 "map_generator_failed" 码。
+	# 现在几毫秒内点名，并直接产出可复制的失败详情（含该缺什么）。
+	var preflight: Dictionary = _generator.generation_preflight()
+	if not bool(preflight.get("ok", true)):
+		print("[mapgen][preflight] BLOCKED %s" % JSON.stringify(preflight, "", true))
+		_current_map = null
+		_world_data = null
+		_view_adapter = null
+		_report_world_generation_failure(preflight)
+		return
+	print("[mapgen][preflight] ok platform=%s/%s extension_loaded=%s native_mode=%d bound=%s"
+		% [
+			String(preflight["env"].get("platform", "?")), String(preflight["env"].get("arch", "?")),
+			str(preflight.get("extension_loaded", false)), int(preflight.get("native_mode", -1)),
+			str(preflight.get("world_ext_bound", false)),
+		])
+
 	var result: Dictionary = await _generator.generate(cfg, hex_size)
 	if not is_inside_tree():
 		return
@@ -1018,7 +1168,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		_current_map = null
 		_world_data = null
 		_view_adapter = null
-		world_generation_failed.emit("map_generator_failed")
+		_report_world_generation_failure()
 		return
 	if not _new_game_config.is_empty():
 		var start_report: Dictionary = _generator.gameplay_start_report()
@@ -1026,7 +1176,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			_current_map = null
 			_world_data = null
 			_view_adapter = null
-			world_generation_failed.emit(String(start_report.get("message", "开局初始化失败。")))
+			# 这条失败不来自 MapGenerator（地图已经生成好了），必须自建诊断记录，
+			# 否则会落到"地图生成器返回空结果"的兜底文案上，误导排查方向。
+			_emit_world_generation_failure("gameplay_bind", "gameplay_start_failed",
+				String(start_report.get("message", "开局初始化失败。")),
+				"开局初始化是玩法层：检查 NewGameConfig / 起始聚落 bootstrap 报告（gameplay_start_report）。")
 			return
 
 	_current_map = result["map"] as MapData
@@ -1082,7 +1236,9 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 				String(restore_result.get("code", "unknown")),
 				String(restore_result.get("message", "存档恢复失败。")),
 			])
-			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
+			_emit_world_generation_failure("save_restore", "save_restore_failed",
+				String(restore_result.get("message", "存档恢复失败。")),
+				"存档可能损坏或与当前版本不兼容；code=%s" % String(restore_result.get("code", "unknown")))
 			return
 		# 运行中保存的时钟会恢复为 unpaused；随后仍有数个加载 await。
 		# 在输入捕获/worker 启动完成前推进日历会漏掉环境输入并卡住日屏障。

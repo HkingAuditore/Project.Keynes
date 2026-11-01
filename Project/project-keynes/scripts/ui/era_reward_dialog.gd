@@ -266,6 +266,9 @@ func _layout_popup() -> void:
 		if _status.visible:
 			reward_height += _status.get_combined_minimum_size().y + 6.0
 		height = minf(available, overview_height + 12.0 + reward_height)
+	# 无论有没有奖励卡，弹窗都不许越过视口下沿：触摸档按钮抬到 88 后，概览页也比
+	# 桌面高出一截，手机上「稍后」若被推出屏幕就等于关不掉。
+	height = clampf(height, 120.0, available)
 	_popup.position = Vector2((viewport_size.x - width) * 0.5, top)
 	_popup.size = Vector2(width, height)
 

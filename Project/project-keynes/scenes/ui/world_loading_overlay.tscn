@@ -87,10 +87,36 @@ custom_minimum_size = Vector2(240, 8)
 layout_mode = 2
 show_percentage = false
 
+[node name="FailureDetail" type="VBoxContainer" parent="Center/Card/Content"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="DetailText" type="TextEdit" parent="Center/Card/Content/FailureDetail"]
+custom_minimum_size = Vector2(560, 200)
+layout_mode = 2
+theme_override_colors/font_readonly_color = Color(0.16, 0.12, 0.08, 1)
+theme_override_font_sizes/font_size = 12
+editable = false
+context_menu_enabled = true
+wrap_mode = 1
+scroll_fit_content_height = false
+
+[node name="LogPath" type="Label" parent="Center/Card/Content/FailureDetail"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+theme_override_font_sizes/font_size = 11
+text = ""
+autowrap_mode = 3
+
 [node name="FailureActions" type="HBoxContainer" parent="Center/Card/Content"]
 visible = false
 layout_mode = 2
 alignment = 2
+
+[node name="CopyDetail" type="Button" parent="Center/Card/Content/FailureActions"]
+layout_mode = 2
+text = "复制详情"
 
 [node name="Retry" type="Button" parent="Center/Card/Content/FailureActions"]
 layout_mode = 2

@@ -1,6 +1,8 @@
 extends VBoxContainer
 class_name EconomyDossier
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 ## 国民经济卷宗：国家事务外壳里的一页。章节索引 + 范围选择 + KPI 条 + 章节视口。
 ## 每日刷新只把新数据推给当前可见章节；章节节点、滚动位置和选中项在刷新间保留。
 ## 税收与国库章复用 EconomyWorkspace，外壳负责一级导航。
@@ -77,6 +79,8 @@ func _ready() -> void:
 	if _workspace.has_method("set_embedded"):
 		_workspace.set_embedded(true)
 	_apply_chapter_visibility()
+	if TouchUI.is_short_viewport():
+		set_compact(true)
 
 
 func _notification(what: int) -> void:
@@ -109,6 +113,8 @@ func refresh_model(model: Dictionary) -> void:
 
 
 func set_compact(compact: bool) -> void:
+	# 触摸档（手机横屏逻辑 1942×873）恒走紧凑版：章节签与 KPI 条要给 44dp 让位。
+	compact = compact or TouchUI.is_short_viewport()
 	_compact = compact
 	if _workspace != null and _workspace.has_method("set_compact"):
 		_workspace.set_compact(compact)

@@ -1172,6 +1172,10 @@ var _ideology_facade = null
 var _ideology_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
+# 存档边界的 country 排空上限（见 advance_save_boundary）。每个切片 ~0.8ms，
+# 而 _wait_for_safe_boundary 在 web 上只给 90 帧 / 3s，8 片足够把当天的
+# 待办命令/科技激活排空，又不会把暂停期间的主线程预算吃掉。
+const SAVE_BOUNDARY_COUNTRY_MAX_SLICES := 8
 # A native stage is non-preemptible once started. Keep enough room for the next
 # observed desktop p95 slice instead of launching it at the very end of 8ms.
 const NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS := 3.0
@@ -1280,6 +1284,26 @@ var _native_daily_round_slice_count: int = 0
 var _native_daily_static_bundle_cache_token: String = ""
 var _native_daily_static_bundle_cache: Dictionary = {}
 var _native_generation_base_report: Dictionary = {}
+# ─── 生成失败结构化诊断（mapgen-diagnostics）─────────────────────────────
+# 背景（问题 3/3）：dots-total-cpp 之后地图生成 100% 在 C++，GDScript fallback 已删除。
+# 一旦 native 返回空，generate() 只 return {}，上层只能拿到一个 "map_generator_failed"
+# 字符串——安卓上玩家/开发者拿不到任何可复制的细节（logcat 里也只有一行 push_error）。
+# 这里把"失败在哪一步 + 为什么 + 原生原始 report + 平台自检"固化成字典，由
+# world_runtime_host / WorldLoadingOverlay 展示、复制、落盘。
+# 失败分支一律走 _fail_generation()，成功则保持空字典。
+var last_generation_error: Dictionary = {}
+# 生成入口的时间戳（usec），给 last_generation_error.elapsed_ms 用。
+var _mapgen_started_usec: int = 0
+# generate() 当前所处阶段。被新一轮 generate() 取代时（_loading_epoch 变化），
+# 失败记录要说明"中止在哪一步"，否则只能看到一句无信息的 abort。
+var _mapgen_stage: String = "preparing"
+# 生成必需的原生方法：缺任意一个都必然失败，preflight 会点名。
+const MAPGEN_REQUIRED_NATIVE_METHODS := [
+	"run_native_world_generate_full_pass",
+	"run_native_world_generate_base_pass",
+	"run_native_world_generate_post_base_pass",
+	"run_bake_geometry_fields_pass",
+]
 var _native_daily_shadow_probe_logged: bool = false
 # Phase A.2 unified fast tick：once-log + fallback once-warn。
 var _unified_fast_tick_first_log_done: bool = false
@@ -1356,15 +1380,21 @@ var _loading_epoch := 0
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_epoch += 1
 	var epoch := _loading_epoch
+	# ── 诊断上下文：任何一次 generate() 失败都要能回答"失败在哪一步/为什么" ──
+	last_generation_error = {}
+	_mapgen_stage = "preparing"
+	_mapgen_started_usec = Time.get_ticks_usec()
+	_last_cfg = cfg
 	cfg.validate()
 	_abort_all_climate_passes("generate_restart")
 	bake_progress.emit("preparing", 0.03)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
+	_mapgen_stage = "loading_catalog"
 	await LoadingCatalogCache.prepare(_ensure_generation_world_ext())
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 
 	var effective_seed: int = cfg.seed if cfg.seed != 0 else randi()
 	_rng = RandomNumberGenerator.new()
@@ -1422,14 +1452,30 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# parity PASS）。GDScript 生成 fallback（_generate_cells / 后处理）已删除——native
 	# 失败即硬中止，绝不静默降级。失败的常见原因：DLL 未 rebuild / DCWorldExt 未注册 /
 	# native_generation_mode != ACTIVE。
+	_mapgen_stage = "native_base"
 	var map: MapData = await _generate_cells_native_base(cfg, effective_seed)
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	if map == null:
-		push_error("[generate] native C++ 生成失败且 GDScript fallback 已移除（dots-total-cpp）。"
-			+ "请检查：GDExtension DLL 是否已 rebuild、DCWorldExt 是否注册、"
-			+ "ClimateProfile.native_generation_mode 是否为 ACTIVE(2)。中止本次生成。")
-		return {}
+		# 这里以前只 push_error 一段通用中文再 return {}，上层只能拿到
+		# "map_generator_failed"——安卓上完全无法定位。现在把 _generate_cells_native_base
+		# 已经写好的 _native_generation_base_report（含 rc/path/fallback_reason 等）
+		# 连同 preflight 一起固化成结构化失败记录，并给出可读摘要。
+		var native_reason := String(_native_generation_base_report.get(
+			"fallback_reason", _native_generation_base_report.get("reason", "")))
+		var native_path := String(_native_generation_base_report.get("path", ""))
+		var stage := "native_base" if native_path != "pkmap" else "pkmap"
+		if _native_generation_base_report.has("post_base"):
+			stage = "native_post_base"
+		var summary := "C++ 地图生成失败"
+		if not native_reason.is_empty():
+			summary += "（%s）" % native_reason
+		summary += "。地图生成已无 GDScript 回退，本次中止。"
+		var hint := "安卓：原生库可能缺失或过旧——用 gdext\\build_android.bat 重建 arm64 后重新导出 APK；" \
+			+ "Windows：重建 dots_ext DLL 并重启编辑器。自查：adb logcat 过滤 [mapgen]。"
+		push_error("[generate] %s reason=%s path=%s" % [summary, native_reason, native_path])
+		return _fail_generation(stage, native_reason if not native_reason.is_empty() \
+			else "native_generation_returned_null", summary, hint)
 	print("MapGenerator v7: per-cell %dms (%d cells, path=%s)" % [
 		Time.get_ticks_msec() - t_total,
 		map.cell_count(),
@@ -1438,7 +1484,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	bake_progress.emit("continents", 0.28)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 
 	# Milestone 1：landform / vegetation / cover 三轴在 native post_base 结果里已就绪
 	# （DCTerrainGenerator.assemble_native_result 装配时写入），无需再 _sync_axes_for_map。
@@ -1454,7 +1500,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	bake_progress.emit("climate", 0.40)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
@@ -1482,13 +1528,13 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 物理环流 defer 分支(MapBaker._bake_initial_physical_circulation)行为不变。
 	_loading_profile_step("await map.build_indices_cooperative()")
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	await map.build_indices_cooperative()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	# [snow-dyn-valid-fix 2026-06-16] 温度 Bootstrap 必须在 bake_world 之前执行。
 	# 原因：bake_world 内部 rebake_dynamic_cell_atlas_only / bake_cell_luts 会把
 	# cell.temperature 烘进动态 atlas/LUT 的 R 通道。若此刻温度仍是默认 0.0，首帧
@@ -1530,9 +1576,17 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		cell._temp_365d_mean_backing = _boot_temp
 		cell._temp_dev_from_annual_backing = 0.0
 		cell._ema_initialized = true
+	_mapgen_stage = "bake"
 	var world: WorldData = await _baker.bake_world(map, cfg, hex_size, effective_seed)
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
+	if world == null:
+		# bake_world 返回空后续全部会空引用崩溃（world.world_bounds 等）；
+		# 在这里显式中止并给出可读原因，避免"闪退式"失败无法取证。
+		return _fail_generation("bake", "bake_world_returned_null",
+			"地表烘焙（bake_world）返回空世界，本次生成中止。",
+			"检查 bake 原生 pass（run_bake_geometry_fields_pass / run_physical_solve_pass）日志里的 fallback reason。")
+	_mapgen_stage = "soa"
 	if _baker.has_method("prewarm_dynamic_axis_caches"):
 		_baker.prewarm_dynamic_axis_caches(map, world)
 	_last_world = world
@@ -1540,7 +1594,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	bake_progress.emit("ecology", 0.90)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 
 	# 任务 7：在 bake 后新增一个轻量级 pass，把 MapBaker 烤好的 per-pixel 洋流场
 	# 折返为 per-cell HexCell.ocean_current。这是逻辑层的洋流字段——渲染层从这里
@@ -1625,7 +1679,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	if not map.has_indices():
 		await map.build_indices_cooperative()
 		if epoch != _loading_epoch:
-			return {}
+			return _generation_superseded(_mapgen_stage)
 
 	# ─── Climate-Weather 2ms Budget 阶段 A.1：构建 SoA 镜像 ─────────────
 	# 一次性把 25 个热字段从 HexCell 同步到 SoA 数组。后续 climate / weather
@@ -1638,18 +1692,18 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# 任务 3（dots-completion）：改用语义化别名 init_soa_from_bake()，明确"仅 bake 时调用"。
 	_loading_profile_step("await map.init_soa_from_bake_cooperative()")
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	await map.init_soa_from_bake_cooperative()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	_loading_profile_step("_generate_static_research_signals(map)")
 	_generate_static_research_signals(map)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	# Natural resources are bootstrapped in _setup_sus after the deferred
 	# physical circulation solve has published per-cell currents/upwelling.
 	# This keeps fisheries from silently sampling zero-valued ocean drivers.
@@ -1660,7 +1714,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	ensure_environment_runtime(map, env_pixel_size)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	# B1-A：SoA 就位后立即 bake 每 cell 的常量 LUT（归一化纬度 + 年均温度）。
 	# Pass A 运行期内层仅需数组索引，不再调用 _cube_row_norm / pow / cos。
 	_loading_profile_step("map.bake_lat_temp_year_lut(self)")
@@ -1675,11 +1729,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 		_loading_profile_step("_ensure_season_knob_geometry_cache(map, map.cell_count())")
 		await _prepare_season_geometry_cooperative(map, map.cell_count())
 		if epoch != _loading_epoch:
-			return {}
+			return _generation_superseded(_mapgen_stage)
 	bake_progress.emit("simulation", 0.96)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	# ─── SUS 注册（任务 4：接入点 ① + ③）─────────────────────────────────
 	# 此时 baker.bake_world 已经一次性烘完了 ocean currents + upwelling 完整版，
 	# per-cell 也已经被 _compute_ocean_currents 回填。SUS 从这里开始接管"逐日
@@ -1687,13 +1741,14 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# ocean_currents_slice_count 个切片完成，commit 时再一次性原子替换 4 件
 	# 产物（ocean_current_buffer / ocean_upwelling_buffer / vector_atlas_tex /
 	# upwelling_tex）并回填 per-cell。
+	_mapgen_stage = "sus"
 	await _setup_sus(map, world, cfg, hex_size)
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 	bake_progress.emit("done", 1.0)
 	await _yield_generation_frame()
 	if epoch != _loading_epoch:
-		return {}
+		return _generation_superseded(_mapgen_stage)
 
 	return {"map": map, "world_data": world, "seed": effective_seed}
 
@@ -4638,6 +4693,28 @@ func advance_save_boundary() -> void:
 	var ctx := SusTickContext.make(day, day, _world_clock_ref.speed_multiplier,
 		1.0, &"save_boundary")
 	_drain_native_effect_ack_chain(ctx)
+	# country 是存档边界里唯一没有"推进者"的域：时钟已 pause，而
+	# _continue_economy_inflight() 的 runtime-graph 分支被
+	# needs_continuation_pulse() 挡住（暂停期间没人举 barrier），于是
+	# country_should_run(day) 只能一直为真，_wait_for_safe_boundary() 空转到
+	# 停顿上限失败（web 90 帧 → "保存不了"）。这里按 country 当前的 owner 补推：
+	#   * runtime graph 拥有 country -> 直接 pulse 一次（与正常帧同一条链路）；
+	#   * GDScript country_daily 拥有 country -> continue_system 切片。
+	# 两者都幂等：country 已经空闲时循环一次都不会进。
+	if _runtime_graph_active and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("advance_runtime_pulse"):
+		if not native_daily_round_active() and not bio_occupancy_round_active():
+			_advance_runtime_graph_pulse(day)
+	elif _country_daily_job != null and _country_facade != null \
+			and bool(_country_facade.world_ext().country_should_run(day)):
+		var country_slices := 0
+		while country_slices < SAVE_BOUNDARY_COUNTRY_MAX_SLICES \
+				and bool(_country_facade.world_ext().country_should_run(day)):
+			_sus.continue_system(&"country_daily", ctx)
+			country_slices += 1
+			# Country 会注册新的 Effect 命令；不接着排 ACK 链的话
+			# country_should_run 会因为"等 ACK"保持为真。
+			_drain_native_effect_ack_chain(ctx)
 	_continue_economy_inflight(day)
 
 
@@ -12754,6 +12831,282 @@ func _native_generation_profile_dict() -> Dictionary:
 	return out
 
 
+# ─── 生成诊断：自检 / 失败记录 / 文本渲染 / 自检 CLI ──────────────────────
+# 这一节只做诊断，不参与生成计算；失败时永远不抛异常，最坏情况返回兜底字典。
+
+## 平台/引擎环境（写进失败报告，安卓取证时一眼看出 ABI 与版本）。
+func _mapgen_env() -> Dictionary:
+	var ver: Dictionary = Engine.get_version_info()
+	var platform := "desktop"
+	if OS.has_feature("android"):
+		platform = "android"
+	elif OS.has_feature("web"):
+		platform = "web"
+	elif OS.has_feature("ios"):
+		platform = "ios"
+	return {
+		"os": OS.get_name(),
+		"arch": Engine.get_architecture_name(),
+		"platform": platform,
+		"engine": String(ver.get("string", "unknown")),
+		"editor": OS.has_feature("editor"),
+		"debug_build": OS.is_debug_build(),
+	}
+
+
+## 把 native 返回字典里的大 PackedArray 折叠成 "<type len=n>"。
+## 必须做：_native_generation_base_report 里带 10+ 个 n_cells 数组，
+## 直接 JSON.stringify 会产出几 MB 文本，安卓上会卡死加载页。
+func _mapgen_sanitize_report(src: Dictionary, depth: int = 2) -> Dictionary:
+	var out: Dictionary = {}
+	for key in src.keys():
+		var value = src[key]
+		if value is PackedInt32Array or value is PackedInt64Array \
+				or value is PackedFloat32Array or value is PackedFloat64Array \
+				or value is PackedByteArray or value is PackedStringArray \
+				or value is PackedVector2Array or value is PackedVector3Array:
+			out[key] = "<%s len=%d>" % [type_string(typeof(value)), value.size()]
+		elif value is Array:
+			out[key] = "<Array len=%d>" % value.size()
+		elif value is Dictionary:
+			out[key] = _mapgen_sanitize_report(value, depth - 1) if depth > 0 \
+				else "<Dictionary keys=%d>" % value.size()
+		elif value is Object:
+			out[key] = "<%s>" % ("null" if value == null else value.get_class())
+		else:
+			out[key] = value
+	return out
+
+
+## 生成前自检：GDExtension 是否加载、native_generation_mode 是否 ACTIVE、
+## DCWorldExt 是否可实例化、生成必需的原生方法是否齐全。
+## 返回 {ok, issues[{code,message}], extension_loaded, world_ext_available,
+##       world_ext_bound, native_mode, native_mode_active, missing_methods, env}
+## 纯只读、无副作用，可随时随地调用（含 --mapgen-selfcheck）。
+func generation_preflight() -> Dictionary:
+	var issues: Array = []
+	var env := _mapgen_env()
+	var cp := _c()
+	var native_mode := -1
+	if cp != null and cp.get("native_generation_mode") != null:
+		native_mode = int(cp.get("native_generation_mode"))
+	var ext_loaded := ClassDB.class_exists("DCWorldExt")
+	var ext: RefCounted = null
+	var missing: PackedStringArray = PackedStringArray()
+	if not ext_loaded:
+		issues.append({
+			"code": "extension_not_loaded",
+			"message": "GDExtension 未加载：ClassDB 里找不到 DCWorldExt。地图生成 100% 在 C++ 且无 GDScript 回退，"
+				+ "原生库缺失 / 版本过旧 / ABI 不匹配都会导致创建地图直接失败。"
+				+ ("安卓：请重建 gdext Android arm64（gdext\\build_android.bat）后重新导出 APK。" if env["platform"] == "android" else "")
+		})
+	else:
+		ext = _ensure_generation_world_ext()
+		if ext == null:
+			issues.append({
+				"code": "world_ext_uninstantiable",
+				"message": "DCWorldExt 已注册但无法实例化（ClassDB.instantiate 返回空或类型不符）。",
+			})
+	if native_mode != 2:
+		issues.append({
+			"code": "native_generation_mode_inactive",
+			"message": "ClimateProfile.native_generation_mode=%d，不是 ACTIVE(2)；地图生成只保留 C++ 单路径。" % native_mode,
+		})
+	if ext != null:
+		for method_name in MAPGEN_REQUIRED_NATIVE_METHODS:
+			if not ext.has_method(method_name):
+				missing.append(method_name)
+		if not missing.is_empty():
+			issues.append({
+				"code": "missing_native_methods",
+				"message": "DCWorldExt 缺少 %d 个生成必需方法：%s。原生库比 GDScript 旧，需重建该平台库。"
+					% [missing.size(), ", ".join(missing)],
+			})
+	var bound := false
+	if ext != null and ext.has_method("is_bound"):
+		bound = bool(ext.is_bound())
+	return {
+		"ok": issues.is_empty(),
+		"issues": issues,
+		"extension_loaded": ext_loaded,
+		"world_ext_available": ext != null,
+		"world_ext_bound": bound,
+		"native_mode": native_mode,
+		"native_mode_active": native_mode == 2,
+		"required_methods": MAPGEN_REQUIRED_NATIVE_METHODS.duplicate(),
+		"missing_methods": missing,
+		"env": env,
+	}
+
+
+## 记录一次生成失败，返回空字典（失败分支统一 `return _fail_generation(...)`）。
+## stage   : preparing / loading_catalog / native_base / native_post_base / assemble /
+##           bake / soa / sus / superseded ...
+## reason  : 机器可读原因码（日志/测试断言用）
+## summary : 一句中文，直接给玩家看
+## hint    : 一句"怎么排查"，给玩家/开发者看的动作建议
+func _fail_generation(stage: String, reason: String, summary: String, hint: String = "") -> Dictionary:
+	var cfg := _last_cfg
+	var map_size := "?"
+	if cfg != null:
+		map_size = "%dx%d" % [int(cfg.width), int(cfg.height)]
+	var elapsed_ms := 0.0
+	if _mapgen_started_usec > 0:
+		elapsed_ms = float(Time.get_ticks_usec() - _mapgen_started_usec) / 1000.0
+	last_generation_error = {
+		"stage": stage,
+		"reason": reason,
+		"summary": summary,
+		"hint": hint,
+		# 原始字典保留引用（不复制，避免 n_cells 级数组二次分配）；
+		# native_report 是它的"去大数组"版本，专供展示/落盘/JSON。
+		"native_report_raw": _native_generation_base_report,
+		"native_report": _mapgen_sanitize_report(_native_generation_base_report),
+		"preflight": generation_preflight(),
+		"env": _mapgen_env(),
+		"map_size": map_size,
+		"seed": _last_seed,
+		"elapsed_ms": elapsed_ms,
+		"timestamp": Time.get_datetime_string_from_system(true),
+		"superseded": reason == "generation_superseded",
+	}
+	# 单行摘要：安卓上用 `adb logcat -s godot:* | findstr "[mapgen][fatal]"` 一条过滤到。
+	print("[mapgen][fatal] stage=%s reason=%s platform=%s/%s map=%s seed=%d elapsed=%.0fms extensions=%s native_mode=%d"
+		% [
+			stage, reason, String(last_generation_error["env"]["platform"]),
+			String(last_generation_error["env"]["arch"]), map_size, _last_seed, elapsed_ms,
+			str(last_generation_error["preflight"].get("extension_loaded", false)),
+			int(last_generation_error["preflight"].get("native_mode", -1)),
+		])
+	return {}
+
+
+## 生成被新的 generate() 取代（_loading_epoch 变化）：不是真失败，
+## 但要留痕，且让上层不要弹"生成失败"面板去盖住新一轮进度。
+func _generation_superseded(stage: String) -> Dictionary:
+	last_generation_error = {
+		"stage": stage,
+		"reason": "generation_superseded",
+		"summary": "本次生成已被新的生成请求取代，已安全中止（不是错误）。",
+		"hint": "",
+		"native_report_raw": _native_generation_base_report,
+		"native_report": _mapgen_sanitize_report(_native_generation_base_report),
+		"preflight": {"ok": true, "issues": []},
+		"env": _mapgen_env(),
+		"map_size": "%dx%d" % [int(_last_cfg.width), int(_last_cfg.height)] if _last_cfg != null else "?",
+		"seed": _last_seed,
+		"elapsed_ms": 0.0,
+		"timestamp": Time.get_datetime_string_from_system(true),
+		"superseded": true,
+	}
+	return {}
+
+
+## 失败详情纯文本（多行）。UI 的"复制详情"、日志文件、测试断言都用这一段。
+func last_generation_error_text() -> String:
+	if last_generation_error.is_empty():
+		return ""
+	var e := last_generation_error
+	var lines: PackedStringArray = PackedStringArray()
+	lines.append("=== 地图生成失败 / mapgen fatal ===")
+	lines.append("时间 timestamp : %s" % String(e.get("timestamp", "")))
+	lines.append("阶段 stage     : %s" % String(e.get("stage", "?")))
+	lines.append("原因 reason    : %s" % String(e.get("reason", "?")))
+	lines.append("摘要 summary   : %s" % String(e.get("summary", "")))
+	var hint := String(e.get("hint", ""))
+	if not hint.is_empty():
+		lines.append("排查 hint      : %s" % hint)
+	lines.append("地图/种子      : %s  seed=%d  耗时=%.0fms" % [
+		String(e.get("map_size", "?")), int(e.get("seed", 0)), float(e.get("elapsed_ms", 0.0)),
+	])
+	var env: Dictionary = e.get("env", {})
+	lines.append("平台/架构      : os=%s arch=%s platform=%s engine=%s debug=%s" % [
+		String(env.get("os", "?")), String(env.get("arch", "?")), String(env.get("platform", "?")),
+		String(env.get("engine", "?")), str(env.get("debug_build", false)),
+	])
+	var pf: Dictionary = e.get("preflight", {})
+	lines.append("自检 preflight : ok=%s extension_loaded=%s world_ext=%s bound=%s native_mode=%d" % [
+		str(pf.get("ok", false)), str(pf.get("extension_loaded", false)),
+		str(pf.get("world_ext_available", false)), str(pf.get("world_ext_bound", false)),
+		int(pf.get("native_mode", -1)),
+	])
+	for item in (pf.get("issues", []) as Array):
+		if item is Dictionary:
+			lines.append("  ! [%s] %s" % [String(item.get("code", "")), String(item.get("message", ""))])
+	var miss: PackedStringArray = pf.get("missing_methods", PackedStringArray())
+	if not miss.is_empty():
+		lines.append("  缺失原生方法: %s" % ", ".join(miss))
+	lines.append("")
+	lines.append("--- native_generation_base_report (大数组已折叠) ---")
+	lines.append(JSON.stringify(e.get("native_report", {}), "  ", true))
+	return "\n".join(lines)
+
+
+## 原始 native report（未折叠）。测试/诊断面板需要真数组时用这个。
+func native_generation_base_report() -> Dictionary:
+	return _native_generation_base_report
+
+
+## 原生冒烟：用 16x12 小图直接调 base pass，验证内核在本机/本 ABI 上真的能跑。
+## 自检 CLI 的核心证据——比"方法存在"强得多。
+func _mapgen_native_smoke(w: int = 16, h: int = 12) -> Dictionary:
+	var ext := _ensure_generation_world_ext()
+	if ext == null or not ext.has_method("run_native_world_generate_base_pass"):
+		return {"ok": false, "reason": "world_ext_or_method_unavailable"}
+	var cfg := MapConfig.make(w, h)
+	cfg.seed = 12345
+	var cfg_dict := _native_generation_cfg_dict(cfg)
+	var profile_dict := _native_generation_profile_dict()
+	var t0 := Time.get_ticks_usec()
+	var res: Dictionary = ext.run_native_world_generate_base_pass(cfg.seed, cfg_dict, profile_dict)
+	var ms := float(Time.get_ticks_usec() - t0) / 1000.0
+	var n := int(res.get("n_cells", 0))
+	var ok := int(res.get("rc", -1)) == 0 and not bool(res.get("fallback", true)) and n == w * h
+	var out := {
+		"ok": ok,
+		"grid": "%dx%d" % [w, h],
+		"elapsed_ms": ms,
+		"n_cells": n,
+		"expected_cells": w * h,
+		"rc": int(res.get("rc", -1)),
+		"fallback": bool(res.get("fallback", true)),
+		"reason": String(res.get("fallback_reason", res.get("reason", ""))),
+		"native_algorithm": String(res.get("native_algorithm", "")),
+	}
+	if not ok:
+		out["report"] = _mapgen_sanitize_report(res)
+	return out
+
+
+## --mapgen-selfcheck / PK_MAPGEN_SELFCHECK=1 是否被请求。
+static func mapgen_selfcheck_requested() -> bool:
+	if OS.get_environment("PK_MAPGEN_SELFCHECK") == "1":
+		return true
+	for arg in OS.get_cmdline_user_args():
+		if String(arg) == "--mapgen-selfcheck":
+			return true
+	for arg in OS.get_cmdline_args():
+		if String(arg) == "--mapgen-selfcheck":
+			return true
+	return false
+
+
+## 跑一次完整自检并把 JSON 打到 stdout（安卓：adb logcat 里看）。
+## 返回同一份结果字典，方便测试直接断言。
+func run_mapgen_selfcheck(include_native_smoke: bool = true) -> Dictionary:
+	var out := generation_preflight()
+	out["check"] = "mapgen_selfcheck"
+	out["timestamp"] = Time.get_datetime_string_from_system(true)
+	# 关键：preflight 只能证明"方法存在"，native_smoke 才能证明"内核真能跑"。
+	out["native_smoke"] = _mapgen_native_smoke() if include_native_smoke \
+		else {"ok": false, "reason": "skipped"}
+	out["preflight_ok"] = bool(out.get("ok", false))
+	var smoke_ok := bool(out["native_smoke"].get("ok", false)) if include_native_smoke else true
+	out["ok"] = out["preflight_ok"] and smoke_ok
+	print("[mapgen][selfcheck] %s" % JSON.stringify(out, "", true))
+	return out
+
+
 func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 	var path := String(cfg.pkmap_path).strip_edges()
 	if path.is_empty():
@@ -12846,6 +13199,22 @@ func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 # native generation ACTIVE 路径：C++ 负责 base SoA + post-base 湖泊/河流/
 # 生态/地标后处理；GDScript 只发送请求、校验 PackedArray 并装配 HexCell。
 func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
+	if OS.get_environment("PK_FORCE_MAPGEN_FAIL") == "1":
+		# 测试钩子（问题 3/3 验证用）：强制原生返回 null，走与真实失败完全相同的
+		# 诊断链路（_native_generation_base_report → _fail_generation → UI/日志）。
+		# 只在显式设置环境变量时生效，正常玩家环境恒为空字符串。
+		_native_generation_base_report = {
+			"rc": -7,
+			"path": "forced",
+			"fallback": true,
+			"fallback_reason": "forced_by_env_PK_FORCE_MAPGEN_FAIL",
+			"stage": "native_base",
+			"detail": "PK_FORCE_MAPGEN_FAIL=1 injected a synthetic native failure",
+			"seed": seed,
+			"grid": "%dx%d" % [int(cfg.width), int(cfg.height)] if cfg != null else "?",
+		}
+		push_warning("[native_generation] PK_FORCE_MAPGEN_FAIL=1 → 注入合成原生失败（测试钩子）")
+		return null
 	if cfg != null and String(cfg.map_source) == "pkmap":
 		return await _generate_cells_from_pkmap(cfg, seed)
 	var cp := _c()

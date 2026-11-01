@@ -423,8 +423,19 @@ func _boundary_diagnostics() -> Dictionary:
 			"last_committed_day": report.get("last_committed_day", null)}
 	var country = generator.get_country_facade()
 	var country_ext = country.world_ext() if country != null else null
+	# 存档边界最常卡的就是 country：把「谁在拥有 country」和「country_should_run
+	# 为什么还是 true」一起记下来，否则只有一句 save_requires_idle_country
+	# 根本定位不了（web 的 pause 期间没有任何日推进者）。
+	if country != null:
+		var country_report: Dictionary = country.report()
+		out["country_busy"] = bool(country_report.get("busy", false))
+		out["country_stage"] = String(country_report.get("stage", ""))
+	if generator.has_method("runtime_graph_active"):
+		out["runtime_graph_active"] = bool(generator.runtime_graph_active())
 	if country_ext != null and country_ext.has_method("get_country_peer_protocol_status"):
 		out["country_peer"] = country_ext.get_country_peer_protocol_status()
+	if country_ext != null and country_ext.has_method("country_should_run"):
+		out["country_should_run"] = bool(country_ext.country_should_run(int(out["day"])))
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
 		for key in ["simulation_host_state", "simulation_committed_day", "environment_ring_pending",

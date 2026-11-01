@@ -2,18 +2,36 @@ extends HBoxContainer
 class_name CategoryTabs
 
 const TabButtonScene := preload("res://scenes/ui/category_tab_button.tscn")
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 
 signal tab_selected(tab_id: String)
+
+## 触摸档下纸签**本体**的目标高度（dp）。命中区目标（44dp）减去这些再靠
+## touch_hit_button 的上下扩展补齐：视觉只从 34 长到 56 设计像素，
+## 可点区域却有 88（= 44dp @440dpi）。
+const TOUCH_TAB_VISUAL_DP := 28.0
+## 触摸档下页签之间的缝（dp），避免手指同时压住两个页签。
+const TOUCH_TAB_GAP_DP := 4.0
+## 触摸档下页签图标的边长（dp）。原设计 20 设计像素 = 10dp，放大后仍偏小。
+const TOUCH_TAB_ICON_DP := 14.0
 
 var _current_tab: String = ""
 var _buttons: Dictionary = {}
 var _tab_accents: Dictionary = {}
 
 
+func _ready() -> void:
+	_apply_touch_layout()
+
+
 func set_tabs(tabs: Array, current_tab: String = "", show_labels: bool = false) -> void:
 	clear_tabs()
 	if tabs.is_empty():
 		return
+	_apply_touch_layout()
+	var band := TouchUI.min_units()
+	var visual := maxf(34.0, TouchUI.units(TOUCH_TAB_VISUAL_DP))
+	var icon_size := maxf(20.0, TouchUI.units(TOUCH_TAB_ICON_DP))
 	_current_tab = current_tab if current_tab != "" else String(tabs[0].get("id", ""))
 	for tab in tabs:
 		var data: Dictionary = tab
@@ -38,6 +56,18 @@ func set_tabs(tabs: Array, current_tab: String = "", show_labels: bool = false) 
 			icon_center.anchor_right = 0.0
 			icon_center.offset_left = 6.0
 			icon_center.offset_right = 30.0
+		if band > 0.0:
+			# 触摸档：本体保持较矮的纸签，整条页签栏给足 44dp 的命中带，
+			# 靠 _has_point 把纸签上下各扩 (band - visual) / 2。
+			btn.custom_minimum_size.y = visual
+			btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			if btn.has_method("set_touch_padding"):
+				btn.call("set_touch_padding",
+					Vector2(0.0, maxf(0.0, (band - visual) * 0.5)))
+			icon.custom_minimum_size = Vector2(icon_size, icon_size)
+			if show_labels:
+				icon_center.offset_left = 8.0
+				icon_center.offset_right = 8.0 + icon_size
 		icon.set_semantic(StringName(icon_key), accent)
 		btn.set_pressed_no_signal(id == _current_tab)
 		btn.pressed.connect(_on_tab_pressed.bind(id))
@@ -74,7 +104,19 @@ func clear_tabs() -> void:
 
 func _get_minimum_size() -> Vector2:
 	# 页签只占用父级给的宽度，不要用子按钮合计最小宽去撑开档案面板。
-	return Vector2(0.0, maxf(custom_minimum_size.y, 36.0))
+	var floor_height := maxf(custom_minimum_size.y, TouchUI.min_units())
+	return Vector2(0.0, maxf(floor_height, 36.0))
+
+
+## 触摸档：整条栏抬到命中区高度，页签之间留出缝；桌面档这两项都不动。
+func _apply_touch_layout() -> void:
+	var band := TouchUI.min_units()
+	if band <= 0.0:
+		return
+	custom_minimum_size.y = maxf(custom_minimum_size.y, band)
+	add_theme_constant_override("separation",
+		maxi(get_theme_constant("separation"),
+			int(ceilf(TouchUI.units(TOUCH_TAB_GAP_DP)))))
 
 
 func _refresh_tab_accents() -> void:

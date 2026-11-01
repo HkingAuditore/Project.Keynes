@@ -12,9 +12,16 @@
 > `terrain_surface_tex`**（layer0 normal、layer1 relief、layer2 detail、layer3 occluder）之后，
 > Web 陆地程序**仍恰 8 槽**：detail/micro/occluder 全部塞进已绑 array（surface layer2/3、
 > material layer4），不再声明 2D `terrain_detail_tex`/`terrain_micro_tex`/`gi_occluder_tex`/
-> `bounce_lut`。`water_depth_tex` 只进水面程序：HIGH water 7 槽、compact water 5 槽、
+> `bounce_lut`。`water_depth_tex` 只进水面程序：HIGH water 8 槽、compact water 6 槽、
 > 桌面 Compatibility 主 pass 8 槽。LOW(`visual_quality=0`) 的 detail/micro/bounce 全部运行时
 > 门控为恒等，像素与 B 之前一致。详见 `docs/web-export.md` §9.24/§9.25 与 §4 纹理通道表。
+>
+> **2026-11-02 6 层打包（edge 层）**：同一个 array 扩到 **6 层**，layer4 = `edge_distance`
+> （R 距离 / G crease / BA 海岸占比）、layer5 = `edge_neighbor` RG（次生 cell id）+ `water_depth` R。
+> 数据本来就在 native tile bundle 里 ⇒ **零新增烘焙**；陆地与两个水面程序读同一个 sampler ⇒
+> Web 恢复次生生态过渡 / DitherUV 远景过渡 / 沟谷 crease / 海岸 halo / 次生水格时
+> **一个材质槽都不新增**（陆地仍 8；HIGH water 7→8、compact water 5→6 只加这 1 张）。
+> 详见 `docs/web-export.md` §9.27。
 >
 > **2026-11-01 C 收尾**：packed GI bounce 从 HIGH 扩到 **MID（vq>=1；MID 强度 0.6、HIGH 1.0、
 > LOW 恒 0）**；`water_depth_tex` 升级 **RGBA8**（R=归一深度、G/B/A=湖/礁/海带 3×3 软权重；
@@ -175,7 +182,7 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 | `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
 | `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |
 | `terrain_material_tex` | Texture2DArray（**5 层**） | 四方连续材质族（Compatibility 亦启用）。layer0..3：R=albedo 细节，GB=切线法线 xy，A=roughness；**layer4 = micro 平铺纹理**（v3，MID/HIGH 近景门控） |
-| `terrain_surface_tex` | `Texture2DArray`（**4 层 RGBA8**，同尺寸；仅非 tiled 的 world_map） | **layer0 = 粗法线 `0.5+n·0.5` + BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**；**layer2 = baked detail（R）**；**layer3 = 两个 16-bit occluder cell id**。`terrain_surface_layer_count` 运行期告知实际层数；tiled 用 `visual_terrain_*_tiles` 各数组（relief 是 `relief_scale` 倍分辨率，不能同 array） |
+| `terrain_surface_tex` | `Texture2DArray`（**6 层 RGBA8**，同尺寸；非 tiled 的地形与两个水面程序共用） | **layer0 = 粗法线 `0.5+n·0.5` + BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**；**layer2 = baked detail（R）**；**layer3 = 两个 16-bit occluder cell id**；**layer4 = edge_distance（R 格界距离 / G crease / BA 8 邻域水·湖占比）**；**layer5 = edge_neighbor（RG 次生 cell id；B = water_depth R；A 预留，texelFetch）**。`terrain_surface_layer_count` 运行期告知实际层数，`terrain_edge_layers_bound=(layers>=6)` 门控 edge 两层；tiled 用 `visual_terrain_*_tiles` 各数组（relief 是 `relief_scale` 倍分辨率，不能同 array） |
 | `terrain_normal_tex` | RGBA8 2D（仅其它只读法线的图层） | RG=粗法线、BA=近景细节坡度。world_map 非 tiled 已改读 `terrain_surface_tex` layer0；本 2D 只给植被/建筑/资源/贸易/ground cover 等只开 `VT_USE_TERRAIN_NORMAL` 的 shader，内容与 layer0 相同（显式内存取舍） |
 | `water_depth_tex` | **RGBA8** NEAREST（C 轮升级） | **R=归一水深**（0=岸、1=最深）；**G/B/A=湖/礁/海带 3×3 软权重**。**仅水面程序**：Web HIGH water / compact water / 桌面 Compatibility 完整主 pass（`VT_USE_WATER_DEPTH`）；湖泊深度读烘焙 R、海面仍用连续 elev；GBA=0 时自动退化为旧二元权重 |
 
@@ -187,38 +194,48 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 - **非 tiled（Web 全部档位 + 桌面 legacy fallback）**：`MapBaker._bake_legacy_static_surface()`
   复用同一个 native pass 以**整图单 tile**烘焙（`origin/size = world_bounds`、
   `relief_supersample = 1`；长边封顶 Web `1024`（实际再被 `world.hm_size` 钳住，Web LOW 即 512）、
-  桌面 `1024`），返回两份 RGBA8 payload 后打包成 **4 层** `terrain_surface_tex`：
+  桌面 `1024`），返回的 payload 打包成 **6 层** `terrain_surface_tex`：
   normal 同时作为 2D `terrain_normal_tex` 与 layer0、relief 作为 layer1；layer2 由
   `world.terrain_detail_tex`（R8）resize/转 RGBA8 得到，layer3 由 `world.gi_occluder_tex`
-  （RGBA8 两个 16-bit cell id，NEAREST resize）得到，缺失时分别填中性 0x80 / 0xFF 哨兵。
-  **内存增量（B 方案）**：surface 2→4 层 Web LOW 512×~300 约 +1.2 MB、MID/HIGH 1024×~600
-  约 +6 MB；material 4→5 层 mobile 512² 约 +1 MB、high 1024² 约 +4 MB。pass 失败时才退回旧
-  RG8 `encode_bake_terrain_normal_tex_data`（扩成 RGBA8 后 array 照建、layer1 中性 128），
-  再失败则平地法线。
+  （RGBA8 两个 16-bit cell id，NEAREST resize）得到，缺失时分别填中性 0x80 / 0xFF 哨兵；
+  **layer4 = `bundle.edge_distance`**（R 距离 / G crease / BA 海岸占比）、
+  **layer5 = `bundle.edge_neighbor` RG + `bundle.water_depth` R**（次生 cell id；B 水深）。
+  layer4/5 直接来自同一个 native bundle ⇒ **零新增烘焙成本**（只多一层 GDScript 交织，
+  日志单列 `edge_ms`）；缺失时填中性（layer4 `R=255`/`G=BA=0`，layer5 `RG=0xFFFF`/`B=A=0`），
+  运行期 `terrain_edge_layers_bound=(layers>=6)` 门控，**不采越界层**。
+  **内存增量**：surface 2→4 层 Web LOW 512×~300 约 +1.2 MB、MID/HIGH 1024×~600
+  约 +6 MB；4→6 层再 +约 1.2 MB / +6 MB；material 4→5 层 mobile 512² 约 +1 MB、
+  high 1024² 约 +4 MB。pass 失败时才退回旧 RG8 `encode_bake_terrain_normal_tex_data`
+  （扩成 RGBA8 后 array 照建、layer1 中性 128、layer4/5 中性），再失败则平地法线。
 - **任何变体都禁止再用 `height_tex` 邻域中心差分求法线**。旧的运行期高度差分族函数
   （宽半径粗法线差分、叠加高度细节、唯一法线入口、分地貌细节及其全部 helper：分地形
   沟谷/台坎/沙丘/圆丘等）已整体删除，禁止以任何名义加回；同一套配置表只存在于生成期
   C++（`gdext/src/bake_terrain_relief.h`）。
-- **8 槽预算的三种形态**（unit 1..8，`PK_WEB_TEXTURE_BUDGET`）：
+- **8 槽预算的四种形态**（unit 1..8，`PK_WEB_TEXTURE_BUDGET`）：
   - **Web 陆地 / 桌面 Compatibility LOW**（带 `PK_WEB_HORIZON`）：`height_tex`、`map_index_atlas`、
-    `enum_lut`、`dyn_lut`、`terrain_material_tex`、**`terrain_surface_tex`（4 层）**、
+    `enum_lut`、`dyn_lut`、`terrain_material_tex`、**`terrain_surface_tex`（6 层）**、
     `terrain_horizon_tex`、**`noise_tex`**。陆地程序**不得**声明 2D `terrain_normal_tex` /
     `terrain_detail_tex` / `terrain_micro_tex` / `gi_occluder_tex` / 旧 2D relief sampler /
     `bounce_lut` / `terrain_edge_neighbor_tex` / `terrain_edge_distance_tex`——它们都已被
-    打包进 surface/material array 或删除。
+    打包进 surface/material array 或删除（2026-11-02 起 edge 两层也在这个 array 里，
+    所以恢复次生生态过渡 / crease / 海岸占比**不占新槽**）。
   - **桌面 Compatibility MID/HIGH**（只有 texture budget、没有 `PK_WEB_HORIZON`）：**8 槽** =
     height / map_index / surface array / noise / enum / dyn / material + **`water_depth_tex`**
     （v3：完整主 pass 自己画水，water depth 需要槽）；`VT_USE_HORIZON` 不开，horizon 走
     `terrain_horizon.gdshaderinc` 的中性叶子——**没有地平线遮蔽**，但法线/relief 仍是烘焙纹理。
     属于诊断/回退渲染路径，不是 Web 产品路径。
-  - **Web HIGH 水面**（`PK_WEB_WATER_ONLY`）：独立程序与独立预算，**7 槽** =
-    height / map_index / `noise_tex` / enum / dyn / material + **`water_depth_tex`**，
-    不声明 surface array / horizon；`hex_renderer._apply_water_uniforms()` 会为这个 pass
-    显式补绑 `noise_tex` 与 `water_depth_tex`（独立程序不经过陆地程序的 uniform 推送）。
-  - **Web compact 水面**（`world_water_web.gdshader`）：**5 槽** = height / map_index / enum /
-    dyn + **`water_depth_tex`**（自行声明 `has_water_depth_tex`）。
-  - 桌面 tiled 仍 **17 槽**；桌面 Vulkan legacy **15 槽**（surface array 4 层但 normal/relief
-    合并、且非 tiled detail 不再单独声明 2D sampler 后比 v1 省 2 槽）；tiled 的 normal/relief
+  - **Web HIGH 水面**（`PK_WEB_WATER_ONLY`）：独立程序与独立预算，**8 槽** =
+    height / map_index / `noise_tex` / enum / dyn / material + **`water_depth_tex`** +
+    **surface array**（2026-11-02：只读 layer4/5 恢复 edge_mix / shore_frac / 次生水格，
+    不声明 normal/relief/horizon）；`hex_renderer._apply_water_uniforms()` 会为这个 pass
+    显式补绑 surface array / `noise_tex` / `water_depth_tex` 与层数门控（独立程序不经过陆地
+    程序的 uniform 推送）。
+  - **Web compact 水面**（`world_water_web.gdshader`）：**6 槽** = height / map_index / enum /
+    dyn + **`water_depth_tex`**（自行声明 `has_water_depth_tex`）+ **surface array**
+    （2026-11-02；只读 layer4/5，次生水格查表放在 fragment 前导段，着色函数仍零分支）。
+  - 桌面 tiled 仍 **17 槽**；桌面 Vulkan legacy **13 槽**（surface array 6 层但 normal/relief/
+    detail/occluder/edge 全部合并，非 tiled 不再声明任何 2D edge/detail sampler）；
+    tiled 的 normal/relief
     是两个数组：relief 为 `relief_scale` 倍分辨率，不能同 array 合并。桌面 Compatibility 的
     tiled 预算变体仍 8 槽（不打开 water_depth/detail，诊断路径）。
 
@@ -494,10 +511,13 @@ vec4 terrain_baked_normal(vec2 uv, int quality, float crease);
   VT_USE_TERRAIN_RELIEF`；非 tiled = `VT_USE_TERRAIN_NORMAL && VT_USE_TERRAIN_RELIEF`。
   它作用域内声明 `uniform bool terrain_baked_normals` 与
   `decode_relief_slope()` / `decode_relief_slope4()`（tiled / 非 tiled 共用）。
-- 非 tiled 的 `terrain_surface_tex` 固定 **4 层**（0 normal / 1 relief / 2 detail / 3 occluder）；
-  法线路径只用 layer0/1。`uniform int terrain_surface_layer_count` 运行期告知实际层数
-  （2=tiled 旧图形态 / 3=+detail / 4=+occluder），`terrain_detail_layer_bound` /
-  `terrain_occluder_layer_bound` 是两个既成事实 bool 门控。
+- 非 tiled 的 `terrain_surface_tex` 固定 **6 层**（0 normal / 1 relief / 2 detail / 3 occluder /
+  4 edge_distance / 5 edge_neighbor+water_depth）；法线路径只用 layer0/1，edge 层由
+  `VT_USE_EDGE_DISTANCE` / `VT_USE_EDGE_NEIGHBOR` 决定是否读取。`uniform int
+  terrain_surface_layer_count` 运行期告知实际层数（2=旧图形态 / 3=+detail / 4=+occluder /
+  6=+edge），`terrain_detail_layer_bound` / `terrain_occluder_layer_bound` /
+  `terrain_edge_layers_bound` 是三个既成事实 bool 门控（false 时 helper 返回中性值，
+  **绝不采样越界层**）。
 - 粗法线：非 tiled 读 `terrain_surface_tex` **layer0** 的 RG（只开 `VT_USE_TERRAIN_NORMAL` 的
   其它 shader 读 2D `terrain_normal_tex`）；tiled 读 `visual_terrain_normal_tiles`。
   `(rg*2-1) * hillshade_coarse_strength`，nz 由归一化重建。

@@ -7,8 +7,17 @@ render_mode blend_mix, unshaded;
 
 // Compact water pass for Web LOW/MID. HIGH uses world_map's PC water pipeline
 // in a separate draw, with PK_WEB_WATER_ONLY. Both share Earth daylight and GGX.
-// Four material samplers; LOW keeps flat water, MID enables PBR and wave normals.
+// Five material samplers; LOW keeps flat water, MID enables PBR and wave normals.
 // Cell indexing, height packing and fog conventions match the terrain pass.
+//
+// [surface-array-edge 2026-11-02] 采样器 5→6：新增的 1 张是与陆地程序**同一个**
+// sampler2DArray `terrain_surface_tex`（非 tiled 6 层静态地表打包，见 visual_tile_sampling）。
+// 只读 layer4（edge_distance：R 格界距离 / BA 8 邻域水·湖占比）与 layer5（次生 cell id），
+// 用来恢复 world_map 水面分支在 Web 预算下被裁掉的两段：
+//   ① edge_mix —— 次生水格（海/湖/礁/海带交界）的连续混合权重；
+//   ② shore_frac —— 岸线浅滩比例（烘焙 8 邻域占比，双线性过滤后是连续场）。
+// 数据本来就在同一个 native tile bundle 里，所以这是**零新增烘焙**的画质回收，
+// 也是"水色方块 + 硬边浅滩"变成连续过渡的全部原因。
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
@@ -45,6 +54,21 @@ uniform vec2 lut_dims = vec2(1.0, 1.0);
 // compact 水面程序因此 4→5 个材质 sampler（仍在 Web 预算内）。
 // ═══════════════════════════════════════════════════════════════════════════
 uniform bool has_water_depth_tex = false;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 【静态 edge 场】[surface-array-edge 2026-11-02] 与陆地程序共用 surface array 的
+// layer4/layer5（见 visual_tile_sampling）。本文件不 include uniforms.gdshaderinc，
+// 所以这两个 bool 与 ecotone 宽度在这里自行声明；采样器本身由 include 按 VT_USE_* 声明。
+//   has_terrain_edge_data     ：layer4/5 是否烘出来了（运行期按 get_layers()>=6 推）
+//   terrain_ecotone_width     ：与 uniforms.gdshaderinc 同默认值/同 hint
+//   WATER_EDGE_LOW_SCALE      ：LOW 档的过渡带收缩系数，逐值对齐
+//                               terrain_surface_detail.gdshaderinc 的 mobile_quality_scale
+//                               （visual_quality<=0 ⇒ 0.58）。水面不读 visual_quality 分支，
+//                               这样 LOW/MID 共用同一份编译产物、不会多一个变体。
+// ═══════════════════════════════════════════════════════════════════════════
+uniform bool has_terrain_edge_data = false;
+uniform float terrain_ecotone_width = 0.84;
+const float WATER_EDGE_LOW_SCALE = 0.58;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 【迷雾】口径与 uniforms.gdshaderinc:158-166 + renderer _push_fog_uniforms() 一致。
@@ -142,6 +166,11 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 #define VT_USE_HEIGHT
 #define VT_USE_MAP_INDEX
 #define VT_USE_WATER_DEPTH
+// [surface-array-edge 2026-11-02] 5→6 槽：与陆地程序共用同一个 surface array；
+// 只读 layer4/layer5（edge_distance / 次生 cell id），不声明 normal/relief/horizon。
+#define VT_USE_TERRAIN_SURFACE_ARRAY
+#define VT_USE_EDGE_DISTANCE
+#define VT_USE_EDGE_NEIGHBOR
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 
 // cell_lut_uv()（唯一对外成员）+ decode_cell_index()/dyn_lut_nearest()（本文件不用，
@@ -161,6 +190,25 @@ const int B_REEF    = 19;
 const int B_SEA_ICE = 20;
 const int B_KELP    = 21;
 const int CV_SEA_ICE = 3;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 【次生水格】[surface-array-edge 2026-11-02] world_map 里这两件事分别由
+// terrain_surface_detail.decode_edge_secondary_index() 与 terrain_static_biome_is_water()
+// 完成；本 pass 没有 include 那个文件（它会拖进材质族/细节噪声一整条依赖），
+// 所以在这里给等价的 6 行实现，语义逐字对齐：
+//   - 次生 id 是 16-bit little-endian，0xFFFF = 无；
+//   - "水的域"判定与陆地/水面 program 的 is_water 谓词同一组 biome。
+// ═══════════════════════════════════════════════════════════════════════════
+int water_edge_secondary_index(vec2 uv) {
+	vec2 rg = visual_sample_edge_neighbor(uv).rg;
+	int cid = int(rg.r * 255.0 + 0.5) + int(rg.g * 255.0 + 0.5) * 256;
+	return (cid >= 65535) ? -1 : cid;
+}
+
+bool water_edge_is_water(int biome) {
+	return biome == B_OCEAN || biome == B_COAST || biome == B_LAKE
+			|| biome == B_REEF || biome == B_KELP || biome == B_SEA_ICE;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 【wrap helper】逐字复制 uniforms.gdshaderinc:185-203（wrap_world_x / wrap_map_uv）。
@@ -198,6 +246,9 @@ vec2 wrap_map_uv(vec2 uv) {
 // 一旦出现在第二个大着色来源里，FXC 的优化时间就从"秒"跳到"十几秒"。本 pass 现在
 // 是独立的 fragment，理论上没那么敏感，但仍保持全直线写法（编译器可降成 select），
 // 免得将来有人把本 pass 合回主 shader 时重新踩同一个坑。
+// [surface-array-edge 2026-11-02] 次生水格查表放在 fragment 的前导段（fragment()
+// 里那段 `if (has_terrain_edge_data ...)`），本函数签名里只收它的结果（secondary_* /
+// edge_mix / shore_frac），着色本体仍是零分支。
 // ═══════════════════════════════════════════════════════════════════════════
 vec3 render_water_pipeline_web_min(
 		int biome,
@@ -277,8 +328,9 @@ void fragment() {
 	float fog_k;
 	float dyn_ice_frac;
 	// world_map 在 PK_QUALITY_LOW 下把"次生水体查表"整段裁掉
-	// （world_map:338-354 的 `#if !defined(PK_QUALITY_LOW)`），secondary 恒等于
-	// primary、edge_mix 恒为 0，这里直接按该结论赋值。
+	// （world_map 的 `#if !defined(PK_QUALITY_LOW)` 块）。本 pass 是独立 fragment、
+	// 只有水面一个着色来源，不存在那次 20 s 联合编译悬崖，所以 [surface-array-edge
+	// 2026-11-02] 起在水面像素上**恢复**该查表（见下方 edge 块），默认仍是主 cell。
 	int secondary_biome;
 	int secondary_cover;
 	float static_edge_mix = 0.0;
@@ -318,9 +370,33 @@ void fragment() {
 		float elev = (height_px.r * 256.0 + height_px.g) / 257.0;
 		// [收尾 C] water_depth 升级 RGBA8 后一次采样同时给出 R=深度与 G/B/A 软权重。
 		vec4 water_depth_px = visual_sample_water_depth(uv);
-		// web budget 变体不定义 VT_USE_EDGE_DISTANCE ⇒ shore_frac 恒为 0
-		// （world_map:222-231）。保留变量是为了让算式与 pass 1 逐字对得上。
+		// [surface-array-edge 2026-11-02] 岸线占比 + 次生水格（world_map 水面分支被预算裁掉的
+		// 那两段，算式逐项对齐 world_map.gdshader 的 `water_secondary_*` / `shore_frac`）：
+		//   ① 权重用**连续**距离场，不转 DitherUV ⇒ 水色方块变成连续过渡；
+		//   ② 次生格只在"同样在水域"时接管 ⇒ 海/湖交界不会被陆地色污染；
+		//   ③ shore_frac 是烘焙的 8 邻域水·湖占比，双线性过滤后是连续场 ⇒ 浅滩不再硬边。
+		// has_terrain_edge_data=false（旧图 / 烘失败 / 层数不足）时整段跳过，行为退回
+		// C 回合：edge_mix=0、shore_frac=0。layer4/5 的采样在 helper 内部另有
+		// terrain_edge_layers_bound 门控，绝不采样越界层。
 		vec2 shore_frac = vec2(0.0);
+		if (has_terrain_edge_data && cell_id >= 0) {
+			vec4 edge_px = visual_sample_edge_distance(uv);
+			shore_frac = edge_px.ba;
+			float edge_w = terrain_static_edge_weight(
+					edge_px.r, terrain_ecotone_width * WATER_EDGE_LOW_SCALE);
+			if (edge_w > 0.0001) {
+				int secondary_id = water_edge_secondary_index(uv);
+				if (secondary_id >= 0) {
+					vec4 secondary_enum = texture(enum_lut, cell_lut_uv(secondary_id));
+					int candidate_biome = int(secondary_enum.r * 255.0 + 0.5);
+					if (water_edge_is_water(candidate_biome)) {
+						secondary_biome = candidate_biome;
+						secondary_cover = int(secondary_enum.b * 255.0 + 0.5);
+						static_edge_mix = edge_w;
+					}
+				}
+			}
+		}
 
 		vec3 col = render_water_pipeline_web_min(
 			biome, cover, secondary_biome, secondary_cover,

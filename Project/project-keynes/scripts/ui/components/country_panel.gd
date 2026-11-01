@@ -1,6 +1,8 @@
 extends Control
 class_name CountryPanel
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 # Each country affair is a standalone full-bleed screen. The shell owns nothing
 # but framing, so no screen inherits another domain's dossier chrome or tabs.
 signal close_requested()
@@ -370,7 +372,9 @@ func _update_responsive_layout() -> void:
 	else:
 		_center.offset_left = 16.0
 	# 字号缩放后的逻辑高度不足时折叠书脊，避免其最小高度把窗口顶进 HUD。
-	_compact = shell_width < 900.0 or available_height < 520.0
+	# 触摸档同样折叠：手机的**逻辑宽度有 1942**（2670/1.375），纯宽度断点会判成宽屏，
+	# 于是留下一列 19dp 高的竖排书脊导航 —— 手指根本按不准。
+	_compact = shell_width < 900.0 or available_height < 520.0 or TouchUI.is_short_viewport()
 	_dialog.custom_minimum_size = Vector2.ZERO
 	_nav_rail.visible = not _compact
 	_mobile_nav.visible = _compact

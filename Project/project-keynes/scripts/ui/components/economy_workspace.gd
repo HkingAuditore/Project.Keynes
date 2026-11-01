@@ -1,6 +1,7 @@
 extends Control
 class_name EconomyWorkspace
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
@@ -153,6 +154,12 @@ func _ready() -> void:
 	_draft_timer.process_mode = Node.PROCESS_MODE_ALWAYS
 	_draft_timer.timeout.connect(_on_draft_commit_timeout)
 	add_child(_draft_timer)
+	# 触摸档：把页签、关闭、搜索框、税率行、滚动条一次性抬到 44dp（桌面档 no-op）。
+	# 之后动态生成的税卡/贸易行由 child_entered_tree 继续兜住。
+	TouchUI.watch(self)
+	# 手机纵向只有 873 设计像素：默认就收掉摘要卡与洞察条，把高度让给可滚动的账本。
+	if TouchUI.is_short_viewport():
+		set_compact(true)
 	_select_page("treasury")
 
 
@@ -200,7 +207,9 @@ func select_embedded_chapter(chapter_id: String) -> void:
 
 
 func set_compact(compact: bool) -> void:
-	_compact = compact
+	# 触摸档：手机横屏逻辑高只有 873，摘要卡 + 洞察条 + 88 像素的页签栏会挤掉国库列表，
+	# 所以恒走紧凑版（只留页签与可滚动的账本）。
+	_compact = compact or TouchUI.is_short_viewport()
 	if _summary_heading != null:
 		_summary_heading.visible = not compact
 	if _summary_cards != null:

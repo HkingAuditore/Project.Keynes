@@ -12,20 +12,40 @@ signal locate_cell_requested(cell_index: int)
 signal collapsed_changed(collapsed: bool)
 signal inspector_close_requested()
 
-@onready var _collapsed_entry: Button = %CollapsedEntry
-@onready var _grid: GridContainer = %CardGrid
-@onready var _cards_scroll: ScrollContainer = %CardsScroll
-@onready var _status: Label = %Status
+## 导出包（.scn 二进制场景）里，落在 editable_children 实例（ArchiveSurface）
+## 内部的 unique_name_in_owner 节点可能查不到 `%Name`，导出后这些 @onready 会
+## 变成 null；release 模板下调 null 的 get_children() 会直接打崩引擎
+## （0xC0000005，读 [NULL+0x130]）。这里先走 `%`，失败再退回确切节点路径，
+## 让源码运行与导出包行为一致。
+func _resolve_ui(unique_name: String, fallback_path: String) -> Node:
+	var node := get_node_or_null(NodePath("%" + unique_name))
+	if node != null:
+		return node
+	node = get_node_or_null(NodePath(fallback_path))
+	if node == null:
+		push_warning("[FamilyFoundingDialog] missing UI node '%s' (fallback '%s')" % [unique_name, fallback_path])
+	else:
+		print("[FamilyFoundingDialog] unique name '%%%s' unresolved; using path '%s'" % [unique_name, fallback_path])
+	return node
+
+const _PATH_COLUMN := "ArchiveSurface/Frame/Margin/Column"
+const _PATH_BODY := _PATH_COLUMN + "/Body"
+const _PATH_HEADER_ACTIONS := _PATH_COLUMN + "/HeaderActions"
+
+@onready var _collapsed_entry: Button = _resolve_ui("CollapsedEntry", "CollapsedEntry") as Button
+@onready var _grid: GridContainer = _resolve_ui("CardGrid", _PATH_BODY + "/CardsScroll/CardGrid") as GridContainer
+@onready var _cards_scroll: ScrollContainer = _resolve_ui("CardsScroll", _PATH_BODY + "/CardsScroll") as ScrollContainer
+@onready var _status: Label = _resolve_ui("Status", _PATH_BODY + "/Status") as Label
 @onready var _archive_surface: ArchivalSurface = get_node_or_null("ArchiveSurface") as ArchivalSurface
 @onready var _frame: PanelContainer = get_node_or_null("ArchiveSurface/Frame") as PanelContainer
 @onready var _rule: CanvasItem = get_node_or_null("ArchiveSurface/Frame/Margin/Column/Rule") as CanvasItem
 @onready var _body: Control = get_node_or_null("ArchiveSurface/Frame/Margin/Column/Body") as Control
 @onready var _prompt: Label = get_node_or_null(
 		"ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin/Text") as Label
-@onready var _queue_badge: PanelContainer = get_node_or_null("%QueueBadge") as PanelContainer
-@onready var _queue_label: Label = get_node_or_null("%QueueLabel") as Label
-@onready var _locate_button: Button = get_node_or_null("%LocateButton") as Button
-@onready var _collapse_button: Button = get_node_or_null("%CollapseButton") as Button
+@onready var _queue_badge: PanelContainer = _resolve_ui("QueueBadge", _PATH_HEADER_ACTIONS + "/QueueBadge") as PanelContainer
+@onready var _queue_label: Label = _resolve_ui("QueueLabel", _PATH_HEADER_ACTIONS + "/QueueBadge/QueueLabel") as Label
+@onready var _locate_button: Button = _resolve_ui("LocateButton", _PATH_HEADER_ACTIONS + "/LocateButton") as Button
+@onready var _collapse_button: Button = _resolve_ui("CollapseButton", _PATH_HEADER_ACTIONS + "/CollapseButton") as Button
 
 var _offer_id := 0
 var _generation := 0
@@ -51,9 +71,10 @@ func _ready() -> void:
 	_apply_floating_frame_style()
 	if _archive_surface != null:
 		_archive_surface.configure_header("望族兴起", "择一扶持", &"family.house")
-	for child in _grid.get_children():
-		if child is FamilyFoundingCard:
-			_cards.append(child as FamilyFoundingCard)
+	if _grid != null:
+		for child in _grid.get_children():
+			if child is FamilyFoundingCard:
+				_cards.append(child as FamilyFoundingCard)
 	for index in _cards.size():
 		_cards[index].selected.connect(_on_card_pressed.bind(index))
 		_cards[index].details_requested.connect(_on_details_requested.bind(index))
@@ -62,6 +83,8 @@ func _ready() -> void:
 		_locate_button.pressed.connect(_on_locate_pressed)
 	if _collapse_button != null:
 		_collapse_button.pressed.connect(toggle_collapsed)
+	if _collapsed_entry == null:
+		return
 	_collapsed_entry.add_theme_color_override("font_focus_color", UITokens.ARCHIVE_INK)
 	_collapsed_entry.pressed.connect(func() -> void:
 		_manual_collapsed = false
