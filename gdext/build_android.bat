@@ -70,8 +70,18 @@ goto finish
 
 :build
 echo.
-echo === %SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% ===
-%SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% -j8
+echo === %SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% disable_exceptions=no ===
+rem disable_exceptions=no is REQUIRED (same reason as Build-Web.cmd):
+rem   godot-cpp forces -fno-exceptions on every non-MSVC platform by default,
+rem   but this native runtime uses C++ exceptions on purpose --
+rem   src/economy_change_registry.h throws std::logic_error/std::out_of_range
+rem   on economy-invariant violations, and the Windows build already runs with
+rem   /EHsc (see SConstruct). Without this flag the Android arms of
+rem   country_runtime.cpp / annual_development_host.cpp (both transitively
+rem   include economy_tracked_column.h -> economy_change_registry.h) fail with
+rem   "cannot use 'throw' with exceptions disabled" and NO arm64 .so can be
+rem   produced at all, which is what left the shipped .so stale.
+%SCONS_CMD% platform=android target=%~1 arch=arm64 ndk_version=%NDK_VER% disable_exceptions=no -j8
 exit /b %ERRORLEVEL%
 
 :finish
