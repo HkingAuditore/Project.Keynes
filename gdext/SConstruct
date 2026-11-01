@@ -118,5 +118,15 @@ elif platform == "web":
 else:
     raise ValueError("Unsupported platform for dots_ext: " + platform)
 
+if platform == "android":
+    # NDK r30 的 libc++ ABI 比 Godot 4.6.2 Android 模板自带的 libc++_shared.so 新：
+    # 默认动态链接会让 .so 引用 __hash_memory 等新符号，真机/模拟器 dlopen 直接失败：
+    #   cannot locate symbol "_ZNSt6__ndk113__hash_memoryEPKvm"
+    #   -> GDExtension entry point 'dots_ext_init' not found
+    # 静态链 libc++ 让这些符号在库内解析（已验证 undefined libc++ 符号 = 0）。
+    # --exclude-libs,ALL 防止把静态 libc++ 的符号导出到动态符号表，避免和引擎那份
+    # libc++_shared.so 互相插桩。
+    env.Append(LINKFLAGS=["-static-libstdc++", "-Wl,--exclude-libs,ALL"])
+
 library = env.SharedLibrary(output_path, source=sources)
 Default(library)

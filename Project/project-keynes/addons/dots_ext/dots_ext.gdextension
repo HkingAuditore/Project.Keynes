@@ -16,6 +16,8 @@ macos.debug.x86_64      = "res://addons/dots_ext/bin/macos/libdots_ext.macos.tem
 macos.release.x86_64    = "res://addons/dots_ext/bin/macos/libdots_ext.macos.template_release.x86_64.dylib"
 android.debug.arm64     = "res://addons/dots_ext/bin/android/libdots_ext.android.template_debug.arm64.so"
 android.release.arm64   = "res://addons/dots_ext/bin/android/libdots_ext.android.template_release.arm64.so"
+; 模拟器(x86_64)联调：scons platform=android target=template_debug arch=x86_64 disable_exceptions=no -j8
+android.debug.x86_64    = "res://addons/dots_ext/bin/android/libdots_ext.android.template_debug.x86_64.so"
 
 ; Web 侧模块有两套产物，必须与导出预设的 variant/thread_support 一致，否则
 ; pthread ABI 不匹配，side module 在浏览器里加载失败：
