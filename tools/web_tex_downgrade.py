@@ -87,6 +87,13 @@ RULES: list[tuple[str, dict[str, str], int]] = [
     ("res://assets/textures/resource_art/**",
      {"compress/mode": "1", "compress/lossy_quality": "0.82"}, 0),
 
+    # 法线：跟着 albedo 一起降分辨率，但质量档不能低于 0.90（强损会在受光上出
+    # 带状脏影，得不偿失）。这两条必须排在 resource_art/** 之后才生效。
+    ("res://assets/textures/resource_art/cover_normal.png",
+     {"compress/mode": "1", "compress/lossy_quality": "0.90"}, 0),
+    ("res://assets/textures/resource_art/crown_normal.png",
+     {"compress/mode": "1", "compress/lossy_quality": "0.92"}, 0),
+
     # 天气层小图（雨滴/雪花，只有 alpha 信息）：动 mode 省不了几 KB 还可能糊边
     ("res://assets/textures/weather/**", {}, 0),
     ("res://textures/weather/**", {}, 0),
@@ -110,9 +117,52 @@ KEEP: list[tuple[str, str]] = [
 MIN_BYTES = 128 * 1024
 
 # ---- 预烘焙材质 .res（不进 .import 流程，靠重烘焙脚本临时缩小）------------
-# Web 高档使用原始 1024 材质，禁止再用 256 占位资源替换。
-RES_STUB_TARGETS = []
+# [web-loading-material-shrink 2026-11-01] 只 stub **512** 那套，不再动 1024：
+#   * Web 运行时由 MapBaker._terrain_material_size() 决定档位，现在 Web 固定 512
+#     （1024 档在 Web 上被显式排除，见 export_presets.cfg 的 exclude_filter 与
+#     map_baker.gd 的注释），所以 1024 那套不进 Web 包，也不该在构建期被改写——
+#     否则同一份磁盘文件会连带影响桌面导出。
+#   * 512 -> 256：每张 1.334 MB -> 0.334 MB（RGBA8 + mipmap 链 = 4/3*w*h*4），
+#     4 张共 5.33 MB -> 1.33 MB，这是首屏关键路径（加载屏自己就要显示地面材质）。
+#   * 层尺寸由 map_baker._build_terrain_material_tex 按**实际读到的图**决定，
+#     所以文件名仍叫 material_512_*、内容是 256² 也是自洽的。
+RES_STUB_TARGETS = [
+    f"assets/textures/loading_prebaked_v1/material_512_{i}.res" for i in range(4)
+]
+RES_STUB_SIZES = "512"
 RES_STUB_SCRIPT = "res://tools/web_tex_stub_loading_materials.gd"
+
+# ---- 源图分辨率上限（web-only，仅"单张整图"）--------------------------------
+# 只允许**单张整图**：图集（AtlasTexture）缩小后 .tres 里的 region 会整体错位。
+# `assets/icons/paper/*.png` 是 1254^2 图集，region 实测约 197x178（已经小于 256），
+# 所以那里的图集一律**不缩**，只降 lossy 质量（规则见 RULES 的 assets/icons/**）。
+# `assets/icons/era/era_*.png` 是 1254^2 单张整图，`scripts/ui/components/era_indicator.gd`
+# 直接 load()，显示面 UITokens.ERA_BADGE_SIZE = 220 px，缩到 256 完全够。
+MAX_DIM_RULES: list[tuple[str, int]] = [
+    ("assets/icons/era/era_*.png", 256),
+]
+
+# ---- 按倍率缩放（web-only，单张整图）---------------------------------------
+# resource_art 的 5 张是"地表覆盖层 / 树冠 / 动物"，用户已授权 web 端降分辨率
+# （它们是地形视觉本身，桌面保持原样）。倍率由环境变量控制，`=1` 即回退：
+#   PK_WEB_RESOURCE_ART_SCALE=1    不缩
+#   PK_WEB_RESOURCE_ART_SCALE=0.5  各边减半（默认）
+# 注意：这些源图的层数是 vertical strip（512x8192 = 16 层），等比缩放不会破坏帧布局。
+SCALE_RULES: list[tuple[str, str, float]] = [
+    ("assets/textures/resource_art/cover_albedo.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    ("assets/textures/resource_art/cover_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    ("assets/textures/resource_art/crown_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    ("assets/textures/resource_art/crown_normal.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    ("assets/textures/resource_art/fauna_atlas.png", "PK_WEB_RESOURCE_ART_SCALE", 0.5),
+    # 法线跟着 albedo 同倍率缩放，但质量档见 RULES 里的 *_normal 规则（>=0.90）
+]
+
+# 平铺采样的贴图：缩小时必须用环绕卷积，否则左右/上下边不再连续（tiling seam 翻倍，
+# 肉眼就是地图上的格线）。cover_* 是 16 层无缝地表覆盖层；crown/fauna 是精灵图集，
+# 不按 tile 采样，用普通 resize。
+TILED_PATTERNS: list[str] = [
+    "assets/textures/resource_art/cover_*.png",
+]
 
 # 只处理这些 importer 的 .import（其余 font_data/script 一律不碰）
 TARGET_IMPORTERS = {"texture", "2d_array_texture"}
@@ -383,10 +433,135 @@ def _restore_res_stubs(entries: list[dict[str, Any]]) -> None:
                 raise RuntimeError(f"还原后 sha256 不匹配: {e['path']}")
 
 
+def _collect_resize_targets(project: str) -> list[dict[str, Any]]:
+    """MAX_DIM_RULES / SCALE_RULES 命中的源图（相对工程根的路径 + 目标尺寸策略）。"""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    wanted: list[tuple[str, int | None, float | None]] = []
+    for pattern, max_dim in MAX_DIM_RULES:
+        wanted.append((pattern, max_dim, None))
+    for pattern, env_name, default_scale in SCALE_RULES:
+        try:
+            scale = float(os.environ.get(env_name, "") or default_scale)
+        except ValueError:
+            print(f"[tex] !! {env_name} 不是数字，按 {default_scale} 处理", file=sys.stderr)
+            scale = default_scale
+        if scale <= 0.0 or scale >= 1.0:
+            print(f"[tex] {env_name}={scale:g} -> 跳过 {pattern}")
+            continue
+        wanted.append((pattern, None, scale))
+
+    for root, _dirs, files in os.walk(project):
+        for name in files:
+            abspath = os.path.join(root, name)
+            rel = os.path.relpath(abspath, project).replace("\\", "/")
+            if rel in seen:
+                continue
+            if os.path.splitext(rel)[1].lower() not in (".png", ".webp", ".jpg", ".jpeg"):
+                continue
+            for pattern, max_dim, scale in wanted:
+                if fnmatch.fnmatch(rel, pattern):
+                    seen.add(rel)
+                    out.append({"res_path": "res://" + rel, "rel": rel, "abspath": abspath,
+                                "max_dim": max_dim, "scale": scale})
+                    break
+    return sorted(out, key=lambda e: e["res_path"])
+
+
+def _resize_source(img, target: tuple[int, int], tiled: bool):
+    """缩小源图。平铺贴图用 BOX（area average），其余用 LANCZOS。
+
+    为什么平铺的不能用 LANCZOS：`cover_albedo` 是 16 层无缝地表覆盖层，按 tile 采样。
+    实测同一层 512² -> 256² 时：
+        原图 seam 9.38 | LANCZOS 18.92 | BICUBIC 17.27 | BILINEAR 15.30 | BOX 14.93
+    （seam = 左右边列的平均差，0 表示完美拼接）。LANCZOS 的负瓣会在边缘 ringing，
+    seam 翻倍到肉眼可能看到格线；BOX 是 2x2 区域平均，seam 最接近原图且不会有振铃。
+    精灵图集（crown/fauna）不按 tile 采样，LANCZOS 的锐度更划算。
+    """
+    from PIL import Image  # noqa: PLC0415 - 只有构建机需要
+
+    return img.resize(target, Image.BOX if tiled else Image.LANCZOS)
+
+
+def _backup_and_resize_sources(project: str, backup_root: str) -> list[dict[str, Any]]:
+    """把命中上限的源图临时缩到 max_dim（备份 + sha 校验），供 begin 阶段的重导入使用。
+
+    桌面 import 状态由 cmd_end 还原（`_restore_resized_sources` + 重导入），
+    所以这里不需要、也不允许改任何 .import 之外的东西。
+    """
+    targets = _collect_resize_targets(project)
+    if not targets:
+        return []
+    try:
+        from PIL import Image  # noqa: PLC0415 - 构建机才需要 Pillow
+    except ImportError:
+        print("[tex] !! Pillow 未安装，跳过源图缩放（pip install pillow）；"
+              "或设 PK_WEB_SKIP_SOURCE_RESIZE=1 消除本提示", file=sys.stderr)
+        return []
+    if os.environ.get("PK_WEB_SKIP_SOURCE_RESIZE") == "1":
+        print("[tex] PK_WEB_SKIP_SOURCE_RESIZE=1 -> 跳过源图缩放")
+        return []
+
+    entries: list[dict[str, Any]] = []
+    total_before = total_after = 0
+    for t in targets:
+        src = t["abspath"]
+        dst = os.path.join(backup_root, "src__" + t["rel"].replace("/", "__"))
+        shutil.copy2(src, dst)
+        sha = sha256_file(src)
+        if sha256_file(dst) != sha:
+            raise RuntimeError(f"源图备份校验失败: {src}")
+        entry = {"res_path": t["res_path"], "abspath": src, "backup": dst,
+                 "sha_before": sha, "size_before": os.path.getsize(src),
+                 "max_dim": t.get("max_dim"), "scale": t.get("scale"), "resized": False}
+        with Image.open(src) as img:
+            before = img.size
+            entry["dims_before"] = list(before)
+            if t.get("scale"):
+                factor = float(t["scale"])
+                target = (max(1, int(round(before[0] * factor))),
+                          max(1, int(round(before[1] * factor))))
+            else:
+                longest = max(before)
+                if longest <= int(t["max_dim"]):
+                    print(f"[tex] 源图已够小，跳过: {t['rel']} {before}")
+                    entries.append(entry)
+                    continue
+                factor = float(t["max_dim"]) / float(longest)
+                target = (max(1, int(round(before[0] * factor))),
+                          max(1, int(round(before[1] * factor))))
+            work = img.convert("RGBA") if img.mode not in ("RGBA", "RGB") else img.copy()
+        tiled = any(fnmatch.fnmatch(t["rel"], pat) for pat in TILED_PATTERNS)
+        work = _resize_source(work, target, tiled)
+        work.save(src, format="PNG", optimize=True)
+        entry.update({"resized": True, "dims_after": list(target),
+                      "size_after": os.path.getsize(src)})
+        total_before += entry["size_before"]
+        total_after += entry["size_after"]
+        print(f"[tex] 源图缩小 {t['rel']} {before} -> {target} "
+              f"({human(entry['size_before'])} -> {human(entry['size_after'])})")
+        entries.append(entry)
+    if any(e["resized"] for e in entries):
+        print(f"[tex] 源图缩放完成：{sum(1 for e in entries if e['resized'])} 张，"
+              f"{human(total_before)} -> {human(total_after)}（pck 体积由重导入后的 ctex 决定）")
+    return entries
+
+
+def _restore_resized_sources(entries: list[dict[str, Any]]) -> None:
+    for e in entries:
+        if not e.get("resized"):
+            continue
+        shutil.copy2(e["backup"], e["abspath"])
+        if sha256_file(e["abspath"]) != e["sha_before"]:
+            raise RuntimeError(f"源图还原后 sha256 不匹配: {e['abspath']}")
+
+
 def run_res_stub(godot: str, project: str, log_path: str) -> None:
     """跑 Godot 侧的重烘焙脚本（有 PK_WEB_DG_STUB=1 守卫，误跑不会动手）。"""
     env = dict(os.environ)
     env["PK_WEB_DG_STUB"] = "1"
+    env["PK_WEB_DG_STUB_SIZES"] = RES_STUB_SIZES
+    env.setdefault("PK_WEB_DG_STUB_SIZE", "256")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     t0 = time.time()
     with open(log_path, "wb") as log:
@@ -507,6 +682,7 @@ def cmd_begin(args: Any, state: str) -> int:
             raise RuntimeError(f"备份校验失败: {src}")
 
     res_entries = _backup_res_stubs(project, backup_root)
+    resized_sources = _backup_and_resize_sources(project, backup_root)
 
     def save_manifest(totals: dict[str, int] | None = None) -> None:
         payload: dict[str, Any] = {
@@ -515,6 +691,7 @@ def cmd_begin(args: Any, state: str) -> int:
             "project": project,
             "entries": entries,
             "res_entries": res_entries,
+            "resized_sources": resized_sources,
             "import_log": os.path.join(state, "import_begin.log"),
         }
         if totals:
@@ -662,8 +839,12 @@ def cmd_end(args: Any, state: str) -> int:
         _restore_res_stubs(res_entries)
         if res_entries:
             print(f"[tex] 已还原 {len(res_entries)} 个 prebaked .res")
+        resized_sources = manifest.get("resized_sources", [])
+        _restore_resized_sources(resized_sources)
+        if any(e.get("resized") for e in resized_sources):
+            print(f"[tex] 已还原 {sum(1 for e in resized_sources if e.get('resized'))} 张被缩小的源图")
     except RuntimeError as exc:
-        print(f"[tex] !! prebaked .res 还原失败：{exc}", file=sys.stderr)
+        print(f"[tex] !! prebaked .res / 源图还原失败：{exc}", file=sys.stderr)
         return 1
 
     # 2) 把本机导入缓存也恢复成桌面规格

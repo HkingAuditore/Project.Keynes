@@ -236,6 +236,28 @@ if defined PK_WEB_SKIP_FONT_SUBSET (
     set "FONT_SUBSET_ACTIVE=1"
 )
 
+rem --- 3.9 music split gate (web only) -----------------------------------------
+rem `assets/audio/native/music/` is ~17.7 MB of ogg and a session only needs the
+rem current era. With the gate ON (default) the Web preset excludes those files and
+rem step 6 emits `music_<era>.pck` / `music_trans.pck`, which the game fetches after
+rem entering the world (scripts/audio/web_music_stream.gd).
+rem PK_WEB_DEFER_MUSIC=0 -> music goes back into the boot pck (old behaviour).
+if defined PY (
+    if "%PK_WEB_DEFER_MUSIC%"=="0" (
+        echo [music] PK_WEB_DEFER_MUSIC=0 -^> music stays in the boot pck
+        !PY! "%ROOT%tools\web_music_pack.py" gate --disable
+    ) else (
+        echo [music] deferring music into per-era packs
+        !PY! "%ROOT%tools\web_music_pack.py" gate --enable
+    )
+    if errorlevel 1 (
+        echo === ERROR: music export gate FAILED ===
+        goto :fail
+    )
+) else (
+    echo === WARNING: Python not found; music gate left as-is in export_presets.cfg ===
+)
+
 rem --- 4. Godot Web export ----------------------------------------------------
 if /i "%MODE%"=="debug" (
     call :export_web debug
@@ -351,7 +373,7 @@ rem Drop the previous artifacts first: Godot only writes the files the current
 rem preset references, so a stale side module from an earlier run (e.g. the
 rem template_debug wasm after a release export) would otherwise linger in the
 rem served folder.
-for %%X in (html js pck wasm png) do del /q "%EXPORT_DIR%\*.%%X" 2>nul
+for %%X in (html js pck wasm png br gz) do del /q "%EXPORT_DIR%\*.%%X" 2>nul
 del /q "%EXPORT_DIR%\*.worklet.js" 2>nul
 echo [export] Godot %EXPORT_FUNC% Web preset ^(%EXPORT_MODE%^) ...
 "%GODOT%" --headless --path "%ROOT%Project\project-keynes" %EXPORT_FUNC% "Web" ^
@@ -391,6 +413,65 @@ if defined PY (
     )
 ) else (
     echo === WARNING: Python not found; web shell watchdog not injected ===
+)
+
+rem --- 5.5 per-era music packs --------------------------------------------------
+rem Emitted next to the boot pck; the game fetches `music_<era>.pck` (and
+rem `music_trans.pck` for era fanfares) after entering the world and mounts them with
+rem engine.rtenv.copyToFS + ProjectSettings.load_resource_pack. Skipped when the
+rem gate above was turned off (music is inside the boot pck then).
+rem Skip with: set PK_WEB_SKIP_MUSIC_SPLIT=1
+if defined PY (
+    if /i not "%PK_WEB_DEFER_MUSIC%"=="0" (
+        if not defined PK_WEB_SKIP_MUSIC_SPLIT (
+            echo [music] emitting per-era music packs ...
+            !PY! "%ROOT%tools\web_music_pack.py" build --project "%ROOT%Project\project-keynes" --out "!EXPORT_DIR!"
+            if errorlevel 1 (
+                echo === ERROR: music pack split FAILED ===
+                exit /b 1
+            )
+        ) else (
+            echo [music] split skipped ^(PK_WEB_SKIP_MUSIC_SPLIT=1^): no music will play on web
+        )
+    )
+)
+
+rem --- 6. wire size: pre-compressed sidecars + payload manifest -----------------
+rem The release payload is ~146 MB raw. tools/serve_web.py negotiates br/gzip and
+rem revalidates with ETags, but a plain static host (nginx/S3/itch.io) only gets
+rem compression for free when a `<file>.br` / `<file>.gz` sidecar sits next to it.
+rem Generating them here means both paths are fast, and the sidecars are deleted
+rem at the top of :export_web so a rebuild can never leave a stale one behind.
+rem Skip with: set PK_WEB_SKIP_PRECOMPRESS=1
+if defined PY (
+    if not defined PK_WEB_SKIP_PRECOMPRESS (
+        echo [payload] generating .br/.gz sidecars ...
+        !PY! "%ROOT%tools\serve_web.py" --precompress --root "!EXPORT_DIR!" ^
+            --precompress-quality 9 --precompress-gzip-quality 9
+        if errorlevel 1 (
+            echo === WARNING: sidecar precompression failed; the export itself is fine ===
+        )
+    ) else (
+        echo [payload] sidecar precompression skipped ^(PK_WEB_SKIP_PRECOMPRESS=1^)
+    )
+    echo [payload] writing manifest.json ...
+    !PY! "%ROOT%tools\web_manifest.py" write --root "!EXPORT_DIR!"
+    if errorlevel 1 (
+        echo === ERROR: manifest.json generation FAILED ===
+        exit /b 1
+    )
+    set "BUILD_ID="
+    for /f "usebackq delims=" %%i in (`!PY! "%ROOT%tools\web_manifest.py" id --root "!EXPORT_DIR!"`) do set "BUILD_ID=%%i"
+    if defined BUILD_ID (
+        echo.
+        echo [deploy] content build id: !BUILD_ID!
+        echo [deploy] for a versioned deploy, copy !EXPORT_DIR! to /builds/!BUILD_ID!/ on the
+        echo [deploy] host and serve it with: python tools\serve_web.py --root ^<dir^> --immutable
+        echo [deploy] ^(that sends "public, max-age=31536000, immutable"; without it the server
+        echo [deploy] sends "no-cache" + ETag, so a rebuild is picked up on the next refresh^)
+    )
+) else (
+    echo === WARNING: Python not found; sidecars + manifest.json not generated ===
 )
 exit /b 0
 
