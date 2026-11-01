@@ -18,9 +18,18 @@ class AudioExport extends EditorExportPlugin:
 			if name.ends_with(".dll"):
 				add_shared_object(binaries + name, PackedStringArray(["windows", "x86_64"]), "addons/FmodGodot/bin/windows/x86_64")
 	func _export_file(path: String, _type: String, features: PackedStringArray) -> void:
+		# FMOD Desktop banks are Windows-only. Web/Android use the portable Vorbis
+		# full mixes in assets/audio/native, so those must ship on every host whose
+		# GameAudio selects the native backend (web, Android).
 		if path.begins_with("res://assets/audio/banks/") and not features.has("windows"):
 			skip()
-		if path.begins_with("res://assets/audio/native/") and not features.has("web"):
+			return
+		if path.begins_with("res://assets/audio/native/"):
+			# Keep this list in sync with GameAudio._native_backend_reason_for():
+			# only Web and Android actually instantiate the portable backend.
+			for feature in ["web", "android"]:
+				if features.has(feature):
+					return
 			skip()
 
 var _audio_export: AudioExport

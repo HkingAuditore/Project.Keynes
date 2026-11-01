@@ -1,8 +1,13 @@
 extends Node
-## Presentation-only audio boundary: Windows FMOD, Web Godot/Vorbis full mixes.
+## Presentation-only audio boundary: Windows FMOD, Web/Android Godot/Vorbis full mixes.
 
 const NativeBackend := preload("res://scripts/audio/native_audio_backend.gd")
 var _native: NativeBackend
+
+## Dev/test escape hatch: force the portable full-mix backend on any host so the
+## Android code path can be smoke-tested on a Windows editor build.
+const FORCE_NATIVE_ENV := "PK_AUDIO_FORCE_NATIVE"
+const FORCE_NATIVE_ARG := "--audio-native"
 
 const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
 const BANK_ROOT := "res://assets/audio/banks/Desktop/"
@@ -97,6 +102,8 @@ signal ui_sound_played(cue: StringName)
 signal event_sound_played(cue: StringName)
 
 var status := "not_initialized"
+## "native" | "fmod" | "disabled"; set once in _ready() and surfaced to tests/logs.
+var backend := "not_initialized"
 var _system := 0
 var _master := 0
 var _music := 0
@@ -126,19 +133,21 @@ var _spatial_enabled := false
 
 
 func _ready() -> void:
-	if _uses_native_audio():
-		_native = NativeBackend.new()
-		_native.name = "NativeAudio"
-		add_child(_native)
-		status = "ready"
-		_connect_settings_and_feedback()
+	var native_reason := _native_backend_reason()
+	if not native_reason.is_empty():
+		_start_native_backend(native_reason)
 		return
 	if OS.get_name() != "Windows" or OS.get_environment("PK_FMOD_DISABLE") == "1":
+		backend = "disabled"
 		status = "platform_disabled"
+		print("[audio] backend=none platform=%s status=%s" % [OS.get_name(), status])
 		return
 	if DisplayServer.get_name() == "headless" and OS.get_environment("PK_FMOD_TEST") != "1":
+		backend = "disabled"
 		status = "headless_disabled"
+		print("[audio] backend=none platform=%s status=%s" % [OS.get_name(), status])
 		return
+	backend = "fmod"
 	print_verbose("[audio] Loading Windows FMOD extension")
 	var loaded := GDExtensionManager.load_extension(EXTENSION)
 	print_verbose("[audio] Extension load status: ", loaded)
@@ -163,11 +172,63 @@ func _ready() -> void:
 	status = "ready"
 	for suite_path in [STONE_AGE_SUITE_EVENT, AGRARIAN_AGE_SUITE_EVENT, KINGDOM_AGE_SUITE_EVENT, EMPIRE_AGE_SUITE_EVENT]:
 		_music_description(suite_path)
+	print("[audio] backend=fmod platform=%s banks=%d status=ready" % [OS.get_name(), _banks.size()])
+	_connect_settings_and_feedback()
+
+
+func _start_native_backend(reason: String) -> void:
+	_native = NativeBackend.new()
+	_native.name = "NativeAudio"
+	add_child(_native)
+	backend = "native"
+	status = "ready"
+	# Android users see this line in `adb logcat | grep '\[audio\]'`; the same line
+	# proves the forced branch on Windows.
+	print("[audio] backend=native platform=%s reason=%s mix=full_mix" % [OS.get_name(), reason])
 	_connect_settings_and_feedback()
 
 
 func _uses_native_audio() -> bool:
-	return OS.has_feature("web")
+	return not _native_backend_reason().is_empty()
+
+
+## Pure platform decision, split out so tests can prove the Android branch without
+## an Android device. `platform` is OS.get_name(); web/android features cover hosts
+## whose display name differs.
+static func native_backend_reason_for(platform: String, is_web: bool, is_android: bool,
+		forced: bool) -> String:
+	if forced:
+		return "forced"
+	if is_web:
+		return "web"
+	if is_android or platform == "Android":
+		return "android"
+	return ""
+
+
+func _native_backend_reason() -> String:
+	return native_backend_reason_for(OS.get_name(), OS.has_feature("web"),
+		OS.has_feature("android"), _force_native_requested())
+
+
+func _force_native_requested() -> bool:
+	if _truthy(OS.get_environment(FORCE_NATIVE_ENV)):
+		return true
+	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		var text := String(arg).strip_edges()
+		if text == FORCE_NATIVE_ARG:
+			return true
+		if text.begins_with(FORCE_NATIVE_ARG + "=") and _truthy(text.get_slice("=", 1)):
+			return true
+	return false
+
+
+static func _truthy(value: String) -> bool:
+	return value.strip_edges().to_lower() in ["1", "true", "yes", "on"]
+
+
+func is_native_backend() -> bool:
+	return _native != null
 
 
 func _connect_settings_and_feedback() -> void:
@@ -210,6 +271,9 @@ func play_prototype(tension: float = 0.0) -> bool:
 
 
 func set_tension(value: float) -> bool:
+	if _native != null:
+		# The portable full mixes are pre-authored per era (no FMOD Tension parameter).
+		return false
 	if _music == 0:
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name", _music,
@@ -448,6 +512,10 @@ func _era_transition_key(era_index: int) -> StringName:
 ## 根据玩家国家当前总人口更新当前激活时代组曲的 Population 参数（带各时代专属双阈值滞回防抖）。
 func update_active_suite_population_count(pop_count: int) -> float:
 	_last_population_count = maxi(0, pop_count)
+	if _native != null:
+		# Population variants only exist inside the FMOD suites; the portable full
+		# mix is a single authored layer. Never fall through to FMOD on Android.
+		return 0.0
 	match _music_key:
 		&"stone_age_suite":
 			return update_stone_age_population_count(_last_population_count)
@@ -463,6 +531,8 @@ func update_active_suite_population_count(pop_count: int) -> float:
 ## 设置当前激活时代组曲的「拉近/拉远地图变体」连续参数 CameraZoom (0.0=拉近聚落近景 .. 0.5=标准中景 .. 1.0=拉远大陆苍穹)。
 func set_active_suite_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = false) -> bool:
 	_last_camera_zoom_ratio = clampf(zoom_out_ratio, 0.0, 1.0)
+	if _native != null:
+		return false
 	match _music_key:
 		&"stone_age_suite":
 			return set_stone_age_camera_zoom(_last_camera_zoom_ratio, ignore_seek_speed)
@@ -479,6 +549,8 @@ func set_active_suite_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool
 ## Stone/Agrarian 目前只使用 Tension；War/Ceremony 保持为 0，等待对应玩法。
 func set_active_suite_emotion(tension: float, war: float, ceremony: float,
 		ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key not in [&"stone_age_suite", &"agrarian_age_suite",
 			&"kingdom_age_suite", &"empire_age_suite"]:
 		return false
@@ -605,6 +677,8 @@ func play_stone_age_suite(from_intro: bool = true, population_ratio: float = 0.0
 ##   0.32 ~ 0.50: 聚落初成（部落兽皮帧鼓、木柷、果壳摇铃、猎弓低音律动渐入）
 ##   0.68 ~ 1.00: 氏族繁盛（氏族多声部呼麦/人声吟唱 + 高音双骨笛华彩对位渐入）
 func set_stone_age_population(ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"stone_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -649,6 +723,8 @@ func update_stone_age_population_count(pop_count: int) -> float:
 ##   0.50 (标准中景): 均衡室内乐混音
 ##   1.00 (拉远地图): 高空旷野苍穹风声 + 远古泛音云层 + 大陆地平线低音 + 远景柔化滤波
 func set_stone_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"stone_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -657,6 +733,8 @@ func set_stone_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = 
 
 ## 设置石器时代常态循环段落 LoopSection (0=三段自动轮转 A→B→C, 1=锁定循环A, 2=锁定循环B, 3=锁定循环C)。
 func set_stone_age_loop_section(section: int, jump_immediately: bool = true) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"stone_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
@@ -670,6 +748,8 @@ func set_stone_age_loop_section(section: int, jump_immediately: bool = true) -> 
 ## 跳转当前音乐事件的时间轴毫秒位置（用于试听台直接切入 Intro 或各段循环）。
 func jump_stone_age_timeline_ms(timeline_ms: int) -> bool:
 	_timeline_jump_seq += 1
+	if _native != null:
+		return false
 	if _music == 0:
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_timeline_position",
@@ -715,6 +795,8 @@ func play_agrarian_age_suite(from_intro: bool = true, population_ratio: float = 
 ##   0.32 ~ 0.50: 灌溉村落（春耕社祭土鼓、竹梆春杵、谷物沙锤、低音拨弦律动渐入）
 ##   0.68 ~ 1.00: 宗族城邑（丰收社祭人声合唱 + 青铜编铃华彩 + 高音双笛芦笙渐入）
 func set_agrarian_age_population(ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"agrarian_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -759,6 +841,8 @@ func update_agrarian_age_population_count(pop_count: int) -> float:
 ##   0.50 (标准中景): 丝竹田园室内乐均衡混音
 ##   1.00 (拉远地图): 沃野季风麦浪 + 天文历法星穹泛音 + 黄土地脉共鸣 + 远景柔化滤波
 func set_agrarian_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"agrarian_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -767,6 +851,8 @@ func set_agrarian_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool
 
 ## 设置农耕时代常态循环段落 LoopSection (0=三段自动轮转 A→B→C, 1=锁定循环A, 2=锁定循环B, 3=锁定循环C)。
 func set_agrarian_age_loop_section(section: int, jump_immediately: bool = true) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"agrarian_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
@@ -838,6 +924,8 @@ func play_kingdom_age_suite(from_intro: bool = true, population_ratio: float = 0
 
 ## 设置王国时代「人口阈值变体」连续参数 Population (0.0 .. 1.0)。
 func set_kingdom_age_population(ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"kingdom_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -879,6 +967,8 @@ func update_kingdom_age_population_count(pop_count: int) -> float:
 
 ## 设置王国时代「拉近/拉远地图变体」连续参数 CameraZoom (0.0 .. 1.0)。
 func set_kingdom_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"kingdom_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -887,6 +977,8 @@ func set_kingdom_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool 
 
 ## 设置王国时代常态循环段落 LoopSection (0=三段自动轮转, 1..3=锁定对应 50 秒循环块)。
 func set_kingdom_age_loop_section(section: int, jump_immediately: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"kingdom_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
@@ -952,6 +1044,8 @@ func play_empire_age_suite(from_intro: bool = true, population_ratio: float = 0.
 
 ## 设置帝国时代「人口阈值变体」连续参数 Population (0.0 .. 1.0)。
 func set_empire_age_population(ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"empire_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -993,6 +1087,8 @@ func update_empire_age_population_count(pop_count: int) -> float:
 
 ## 设置帝国时代「拉近/拉远地图变体」连续参数 CameraZoom (0.0 .. 1.0)。
 func set_empire_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"empire_age_suite":
 		return false
 	return int(ClassDB.class_call_static("StudioEventInstance", "set_parameter_by_name",
@@ -1001,6 +1097,8 @@ func set_empire_age_camera_zoom(zoom_out_ratio: float, ignore_seek_speed: bool =
 
 ## 设置帝国时代常态循环段落 LoopSection (0=三段自动轮转, 1..3=锁定对应 50 秒循环块)。
 func set_empire_age_loop_section(section: int, jump_immediately: bool = false) -> bool:
+	if _native != null:
+		return false
 	if _music == 0 or _music_key != &"empire_age_suite":
 		return false
 	var clamped := clampi(section, 0, 3)
@@ -1059,7 +1157,7 @@ func diagnostics() -> Dictionary:
 	if _native != null:
 		return _native.diagnostics()
 	if status != "ready":
-		return {"status": status}
+		return {"status": status, "backend": backend}
 	ClassDB.class_call_static("StudioSystem", "flush_commands", _system)
 	var ui_voices := 0
 	for description in _ui_descriptions.values():
@@ -1072,7 +1170,7 @@ func diagnostics() -> Dictionary:
 			active_pop_tier = _kingdom_age_pop_tier
 		&"empire_age_suite":
 			active_pop_tier = _empire_age_pop_tier
-	return {"status": status, "banks": _banks.size(), "music_playing": _music != 0,
+	return {"status": status, "backend": backend, "banks": _banks.size(), "music_playing": _music != 0,
 		"music_key": _music_key,
 		"ui_voices": ui_voices,
 		"spatial": _spatial_enabled,
