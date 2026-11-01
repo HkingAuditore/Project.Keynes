@@ -1394,7 +1394,7 @@ normal+relief 合并成**一个 2 层 `sampler2DArray`**，另有一张 2D `terr
 | 3 | `enum_lut` | `uniforms` 无条件 | per-cell biome/veg/cover/迷雾知识度 |
 | 4 | `dyn_lut` | `uniforms` 无条件 | per-cell 温度/湿度/雪/海冰 |
 | 5 | `terrain_material_tex` (array) | `uniforms` 无条件 | 材质族 |
-| 6 | `terrain_surface_tex`（`sampler2DArray`，2 层 RGBA8） | `VT_USE_TERRAIN_NORMAL && VT_USE_TERRAIN_RELIEF` | **layer0 = 粗法线（0.5+n·0.5）+ BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**（均 `encode_slope`） |
+| 6 | `terrain_surface_tex`（`sampler2DArray`，**6 层 RGBA8**） | `VT_USE_TERRAIN_SURFACE_ARRAY`（+ `NORMAL`/`RELIEF`/`DETAIL`） | **layer0 = 粗法线（0.5+n·0.5）+ BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**（均 `encode_slope`）；layer2 = detail；layer3 = occluder ids；**layer4 = edge_distance（R 距离/G crease/BA 海岸占比）；layer5 = edge_neighbor（RG 次生 id；B 水深）** |
 | 7 | `terrain_horizon_tex` | `VT_USE_HORIZON` | 8 方向 4-bit nibble 地平线 |
 | 8 | `noise_tex`（恢复） | `uniforms` 无条件 | 预烘 4 通道 noise pack；`fbm()` 回到 1 次采样 |
 
@@ -1403,8 +1403,9 @@ normal+relief 合并成**一个 2 层 `sampler2DArray`**，另有一张 2D `terr
 程序只会是死槽；`noise_tex` 则是陆地程序自己消费的（`pixel_noise` / `fbm` / 雪 / 植被 /
 全局调整）。恢复它让 `fbm()` 从"每像素多 octave hash 程序化"回到 1 次纹理采样，Web 的
 ALU 压力更小，且与桌面同一套谱形。**零画质损失**：array 的 layer0/layer1 就是原来的两张图，
-通道布局与语义完全不变。放弃的两个旧槽是 `terrain_edge_neighbor_tex` 与
-`terrain_edge_distance_tex`（Web 次生生态过渡退化为硬主 cell 边界、海岸 halo 用邻域代理）。
+通道布局与语义完全不变。当时放弃的两个旧槽是 `terrain_edge_neighbor_tex` 与
+`terrain_edge_distance_tex`（Web 次生生态过渡退化为硬主 cell 边界、海岸 halo 用邻域代理）；
+**2026-11-02 起它们以同一个 array 的 layer4/layer5 形式回来**（见 §9.26），槽数不变。
 
 **第三种预算：桌面 Compatibility 的 MID/HIGH。** 它同样只带 `PK_WEB_TEXTURE_BUDGET`、
 不带 `PK_WEB_HORIZON`（纯诊断/回退渲染路径，不是 Web 产品路径）：**7 槽** =
@@ -1412,16 +1413,17 @@ height / map_index / terrain_surface_tex / noise / enum / dyn / material；`VT_U
 不开，horizon 由 `terrain_horizon.gdshaderinc` 的中性叶子兜底——**没有地平线遮蔽，但
 法线/relief 仍是烘焙纹理**。
 
-**sampler 统计（v3，实测于 `terrain_shader_variant_test`）**：Web 陆地 **8**、
+**sampler 统计（v4，实测于 `terrain_shader_variant_test`）**：Web 陆地 **8**、
 桌面 Compatibility 纯预算（非 tiled）**8**、桌面 Compatibility tiled 预算 **8**（不打开
-water_depth/detail，诊断路径）、Web HIGH 水面 **7**、Web compact 水面 **5**、
-桌面 tiled **17**、桌面 Vulkan legacy **15**（v3 非 tiled detail 不再单独声明 2D sampler；
+water_depth/detail，诊断路径）、Web HIGH 水面 **8**、Web compact 水面 **6**、
+桌面 tiled **17**、桌面 Vulkan legacy **13**（v4 非 tiled 的 normal/relief/detail/occluder/
+edge 全部收进一个 array，2D `terrain_edge_*_tex` 不再进地形程序；
 tiled 的 normal/relief 仍是两个数组：relief 是 `relief_scale` 倍分辨率，不能与 normal 同
 array）。Web HIGH 的水面程序（`WATER_WEB_HIGH_PREFIX` + `PK_WEB_WATER_ONLY`）是**独立
-程序、独立预算**：7 槽含 `noise_tex` + `water_depth_tex`，VT 只开 height + map index +
-flow + water depth，不声明 surface array/horizon；`hex_renderer._apply_water_uniforms()`
-会为这个 pass **显式补绑** `noise_tex` 与 `water_depth_tex`（独立程序不经过陆地程序的
-uniform 推送）。
+程序、独立预算**：8 槽 = height / map_index / noise / water_depth + enum / dyn / material
++ **surface array**（v4 新增的那 1 槽，用来恢复 edge_mix / shore_frac / 次生水格）；
+`hex_renderer._apply_water_uniforms()` 会为这个 pass **显式补绑** surface array /
+`noise_tex` / `water_depth_tex` 与层数门控（独立程序不经过陆地程序的 uniform 推送）。
 
 #### 烘焙来源：复用现有 native pass，整图单 tile
 
@@ -1466,7 +1468,7 @@ tiled 成功时 `terrain_normal_tex` / `terrain_surface_tex` 都置 null（避�
 | 桌面 legacy | 整图单 tile：2D normal + 2 层 surface array（cap 1024） | **不再**运行期高度差分 |
 | 桌面 Compatibility MID/HIGH | 7 槽预算程序（surface array + noise，无 horizon） | 法线/relief 烘焙，无 horizon 遮蔽（诊断路径） |
 | Web LOW/MID/HIGH 陆地 | 整图单 tile：2D normal + 2 层 surface array（长边 ≤1024，Web LOW 实际 512）+ CPU horizon（8 槽） | 起伏/细节坡度/地平线遮蔽 + 恢复预烘噪声 |
-| Web HIGH 水面 | 独立水面程序，6 槽含 `noise_tex` | PC 水面管线不变 |
+| Web HIGH 水面 | 独立水面程序，8 槽（含 `noise_tex` / `water_depth_tex` / surface array） | PC 水面管线不变；v4 起恢复 edge_mix / shore_frac / 次生水格 |
 
 `hillshade_tod.gdshaderinc` 的唯一法线入口是 `terrain_baked_normal()`：粗法线取
 `terrain_surface_tex` layer0 的 RG，近景高度细节取 layer0 的 BA
@@ -1553,25 +1555,27 @@ v2 另加：v1 为省 sampler 而引入的"Web 程序化噪声"宏已整体删�
 | `water_depth_tex`（**RGBA8**，C 轮升级） | 两个**水面程序**的独立槽：HIGH water 6→7、compact water 4→5；桌面 Compatibility 主 pass 7→8 | +1（仅水面程序） | Web 全档位水面：**R=归一深度**（湖泊用烘焙值、海面用连续 elev），**G/B/A=湖/礁/海带 3×3 软权重**（compact 水面消费） |
 | `gi_occluder_tex`（RGBA8，两个 16-bit cell id） | 非 tiled `terrain_surface_tex` **layer3**，shader 用 `texelFetch` 读取 | 无；**不再需要 `bounce_lut`** | **Web MID/HIGH（vq>=1；MID 强度 0.6，LOW 关）**（C 轮从 HIGH 扩到 MID） |
 
-非 tiled `terrain_surface_tex` 固定 **4 层**（layer0 normal、1 relief、2 detail、3 occluder），
-`terrain_surface_layer_count` 运行期告诉 shader 实际层数；`terrain_detail_layer_bound` /
-`terrain_occluder_layer_bound` 是运行时门控 bool（旧图/兜底时 detail 返回恒等、occluder
-返回 0xFFFF 哨兵）。tiled 桌面不走这套：detail/water/edge 仍用原 tile 数组。
+非 tiled `terrain_surface_tex` 固定 **6 层**（layer0 normal、1 relief、2 detail、3 occluder、
+4 edge_distance、5 edge_neighbor），`terrain_surface_layer_count` 运行期告诉 shader 实际层数；
+`terrain_detail_layer_bound` / `terrain_occluder_layer_bound` / `terrain_edge_layers_bound` 是
+运行时门控 bool（旧图/兜底时 detail 返回恒等、occluder 返回 0xFFFF 哨兵、edge 距离返回 1.0
+且次生 id 返回 0xFFFF ⇒ 次生混合整条关闭）。tiled 桌面不走这套：detail/water/edge 仍用原
+tile 数组。
 
-#### 预算（v3）
+#### 预算（v4）
 
 | 程序 | 槽数 | 组成 |
 | --- | ---: | --- |
-| **Web 陆地（LOW / MID / HIGH land）** | **8** | height / map_index / enum / dyn / material(5 层) / terrain_surface_tex(4 层) / terrain_horizon / **noise_tex** |
-| Web HIGH 水面（`PK_WEB_WATER_ONLY`） | **7** | 上述 6 槽 + **water_depth_tex**（含 noise_tex） |
-| Web compact 水面（`world_water_web.gdshader`） | **5** | height / map_index / enum / dyn / **water_depth_tex** |
+| **Web 陆地（LOW / MID / HIGH land）** | **8** | height / map_index / enum / dyn / material(5 层) / terrain_surface_tex(**6 层**) / terrain_horizon / **noise_tex** |
+| Web HIGH 水面（`PK_WEB_WATER_ONLY`） | **8** | 上述 6 槽 + **water_depth_tex**（含 noise_tex）+ **surface array**（v4：edge_mix/shore_frac） |
+| Web compact 水面（`world_water_web.gdshader`） | **6** | height / map_index / enum / dyn / **water_depth_tex** / **surface array**（v4） |
 | 桌面 Compatibility 完整主 pass（非 tiled） | **8** | 预算内完整 path + **water_depth_tex**（没有第二 pass） |
 | 桌面 Compatibility tiled 预算变体 | **8** | 方案 A 的 8 槽（不打开 water_depth/detail，诊断路径） |
 | 桌面 tiled（Vulkan） | 17 | 不变（detail/water/edge 仍走原数组） |
-| 桌面 Vulkan legacy | 15 | v3 非 tiled detail 不再单独声明 2D sampler |
+| 桌面 Vulkan legacy | 13 | v4 非 tiled 的 detail/occluder/edge 全部收进 surface array |
 
-实测汇总（C 轮 `terrain_shader_variant_test`，含共享 micro 变体）：
-`desktop(legacy)=15 | desktop(tiled)=17 | web_low=8 web_mid=8 web_high_land=8 web_micro_shared=8 web_high_water=7 compact_water=5 | plain_budget=8 tiled_budget=8`。
+实测汇总（v4 `terrain_shader_variant_test`，含共享 micro 变体）：
+`desktop(legacy)=13 | desktop(tiled)=17 | web_low=8 web_mid=8 web_high_land=8 web_micro_shared=8 web_high_water=8 compact_water=6 | plain_budget=8 tiled_budget=8`。
 
 Web 陆地**不得**再声明 2D `terrain_detail_tex` / `terrain_micro_tex` / `gi_occluder_tex` /
 `bounce_lut`——它们是 B 方案打包进 array 后应消失的旧采样器（测试按 8 槽名单 + 负向断言守）。
@@ -1754,14 +1758,15 @@ A/B 实测 world_map 编译 5417→4582 ms（−15.4%）、总 warmup −5.5%，
 
 | 平台 / 变体 | 陆地 program | 水面 program |
 |---|---|---|
-| 桌面 legacy（含 mobile 三档） | 15 | 15 |
+| 桌面 legacy（含 mobile 三档） | 13 | 13 |
 | 桌面 tiled（含 mobile 三档） | 17 | 17 |
 | 桌面 Compatibility（非 tiled，8 槽预算） | 8 | 8 |
-| Web LOW/MID 陆地 + compact 水面 | 8 / — | — / 5 |
-| Web HIGH 陆地 + HIGH 水面 | 8 | 7 |
+| Web LOW/MID 陆地 + compact 水面 | 8 / — | — / 6 |
+| Web HIGH 陆地 + HIGH 水面 | 8 | 8 |
 
 桌面拆分变体的采样集/ uniform 集与今天完整主 pass **逐一相同**（`terrain_shader_variant_test`
-逐名断言，`split legacy:land=15,water=15,full=15 tiled:land=17,water=17,full=17`）。
+逐名断言）。v4 起桌面 legacy 的两个 2D edge sampler 收进 surface array（15→13）；
+Web compact 水面与 HIGH 水面各 +1（surface array），见 §9.27。
 
 #### 验证入口
 
@@ -1803,3 +1808,107 @@ A/B 实测 world_map 编译 5417→4582 ms（−15.4%）、总 warmup −5.5%，
   但真机仍需确认 Fog 层与水面 pass 的绘制顺序/裁剪组合没有意外差异。
 - 桌面 tiled 拆分水面 program 与陆地共享完整 VT 预算（17 sampler）；桌面/移动 Vulkan/Mobile
   32+ 无压力，但若将来把 tiled 开到 GLES3（当前已回退单 program）需重新核算 8 槽。
+
+### 9.27 per-world surface array 扩到 6 层：Web 恢复次生生态过渡 / crease / 海岸占比 / 次生水格（2026-11-02）
+
+> **一句话**：把 `terrain_surface_tex` 从 4 层扩到 6 层（layer4 = `edge_distance` RGBA、
+> layer5 = `edge_neighbor` RG + `water_depth` R），陆地与两个水面程序读同一个 array，
+> 于是 Web 上"次生 biome 混合 / DitherUV 远景过渡 / 沟谷 crease / 海岸 halo / 次生水格"
+> 全部回来，而**材质 sampler 数量一个都没涨**（陆地仍 8；compact 水面 5→6、HIGH 水面 7→8）。
+
+#### 数据从哪来（零新增烘焙）
+
+`run_bake_visual_tile_layer_pass` 的返回 bundle 本来就有 `edge_distance`（RGBA8）与
+`edge_neighbor`（RG8）——tiled 桌面一直用它。单 tile 路径只是原来没打包，现在多填两层：
+
+| 层 | 内容 | 过滤 | 消费方 |
+| --- | --- | --- | --- |
+| layer4 | `bundle.edge_distance`：R 格界距离 / G 沟谷 crease / BA 8 邻域水·湖占比 | LINEAR | 陆地（secondary blend + DitherUV + crease + `shore_frac`）、两个水面程序（`shore_frac` + edge 权重） |
+| layer5 | RG = `bundle.edge_neighbor` 16-bit 次生 cell id；B = `bundle.water_depth` R；A 预留 | **texelFetch** | 陆地 / 水面：`decode_edge_secondary_index()` 等价实现 |
+
+中性层（单 tile 失败 / 旧图）：layer4 = `R=255`（权重 0）/ `G=BA=0`，layer5 = `RG=0xFFFF`
+（无次生格）/ `B=A=0`。**绝不能**用整通道 255 的中性图——那会画出假 crease 与假海岸占比。
+运行期门控 `terrain_edge_layers_bound = (layers>=6)`，helper 在 false 时直接返回中性值，
+**绝不采样越界层**（GLES3 对越界 array layer 的返回值未定义）。
+
+#### 陆地程序恢复的四项
+
+- **secondary biome 混合 + DitherUV 远景过渡**：`VT_USE_EDGE_DISTANCE` / `VT_USE_EDGE_NEIGHBOR`
+  在 Web 预算变体里重新定义，`terrain_edge_secondary_weight_d()` / `terrain_hybrid_static_weight()`
+  与桌面走**同一份**代码（移动端分支的权重公式抽到
+  `visual_tile_sampling::terrain_static_edge_weight()`，水面共用）。
+- **crease**：`scals.a = edge_distance.g` 直接进 `terrain_baked_normal(uv, quality, scals.a)`。
+- **coast_smooth / 海岸 halo**：`shore_frac = edge_distance.ba` 进 `sample_shore_neighborhood()`；
+  因为 `PK_TERRAIN_STATIC_PACKED` 让非 tiled 也命中"已烘焙"快路径，海岸邻域从 **8 次
+  `map_index` fetch 降为 0 次**（Web 陆地与 HIGH 水面同时受益）。`coast_smooth` 的 band 用的
+  `shore_w` 因此也从硬计数变成双线性连续场。
+- **不新增 sampler**：以上全部读已绑的 `terrain_surface_tex`。
+
+#### 水面程序恢复的三项
+
+- **compact 水面（`world_water_web.gdshader`，5→6）**：新增
+  `VT_USE_TERRAIN_SURFACE_ARRAY + VT_USE_EDGE_DISTANCE + VT_USE_EDGE_NEIGHBOR`，在
+  `fragment()` 前导段（**不是**着色函数里，着色本体仍零分支）查一次次生格：
+  `secondary_biome/cover` + `static_edge_mix`（连续距离权重，不转 DitherUV）+
+  `shore_frac`。海/湖/礁/海带交界因此不再是一个个方块，浅滩也变成连续带。
+  权重宽度 = `terrain_ecotone_width * WATER_EDGE_LOW_SCALE(0.58)`，与 LOW 陆地同一档缩放。
+- **HIGH 水面（`PK_WEB_WATER_ONLY`，7→8）**：world_map 的 `#if !defined(PK_QUALITY_LOW)`
+  次生水格块本来就在，只缺 sampler；补上 surface array 后 `render_water_pipeline()` 直接吃到
+  `water_secondary_biome` / `water_static_edge_mix` / `shore_frac`，PC 水面管线一行没改。
+- **推送**：`_apply_water_uniforms()` 的非 tiled 分支显式补 `terrain_surface_tex` /
+  `terrain_surface_layer_count` / `terrain_edge_layers_bound` / `has_terrain_edge_data` /
+  `terrain_static_baked` / `terrain_ecotone_width`（独立程序不经过陆地材质的推送；
+  world_map 水面程序还会整表拷贝一次，两处同值）。
+
+#### 代价与验收
+
+- 显存：surface 4→6 层 Web LOW（512×~300）约 **+1.2 MB**、MID/HIGH（1024×~600）约 **+6 MB**；
+  生成时间：**不变**（edge payload 本来就在 bundle 里，只多一次 GDScript 交织循环，
+  日志里单列为 `edge_ms`）。
+- 日志：`[terrain-baked-surface] ... layers=6 edge_layers=ok|neutral edge_ms=..`。
+- 测试：`terrain_shader_variant_test` 里非 tiled 的 edge 断言从"2D sampler 存在"翻成
+  "surface array + `terrain_edge_layers_bound` 存在、2D edge sampler 不存在"，
+  Web 陆地仍 `<= 8` 槽，compact 水面 = 6 槽。
+- **待真机量（用户复核项）**：Web LOW 是否再 include `shore_common`（海岸 halo）。
+  它只增加共享程序的编译体、不增加采样槽；用现成的 Edge/ANGLE A/B 手段
+  （`WebShaderWarmup.PROBE_WORLD_LAND_SPLIT` + `?micro=off` 对照、真机 `warmup_shader`
+  逐张耗时）先量 `world_map` 编译增量再决定，默认**不开**。
+
+### 9.28 Web 存档失败定案：「边界空转」没有 country 推进者（2026-11-01）
+
+**症状**：浏览器里点保存，界面报超时，控制台只有一条
+
+```text
+WARNING: [save] boundary timeout blocking=save_requires_idle_country stalled_frames=90 detail={"day":6, ...}
+```
+
+`GameSaveCoordinator._wait_for_safe_boundary()` 在时钟已经 `pause(true)` 的状态下
+每帧调 `MapGenerator.advance_save_boundary()`，而它只排 Effect ACK 链 + economy
+inflight，**没有推进 country**。暂停期间能推进 country 的两条路都断了：
+
+- `_continue_economy_inflight()` 的 runtime-graph 分支要先过
+  `needs_continuation_pulse()`；暂停时没人举 barrier，恒为假 → 直接 return；
+- `CountryDailySystem.should_run()` 在 runtime graph / worker 拥有 country 时直接
+  返回 false，`_sus` 也不会给它切片。
+
+于是 `country_should_run(day)` 保持为真，web 的 90 帧 / 3 s 停顿上限一到就
+`save_boundary_timeout`（这个上限是 §9.23 故意压短的，本次不动）。
+
+**修复**（`scripts/geography/map_generator.gd`，纯 GDScript，随 pck 生效）：
+`advance_save_boundary()` 按 country 当前 owner 补推一次 ——
+
+- runtime graph 拥有 country：直接 `_advance_runtime_graph_pulse(day)`（与正常帧同一条链路）；
+- GDScript `country_daily` 拥有 country：`continue_system(&"country_daily")` 切片，
+  单次调用上限 `SAVE_BOUNDARY_COUNTRY_MAX_SLICES = 8`，每片后继续排 Effect ACK 链，
+  避免「country 等 ACK → `should_run` 仍为真」再死一次。
+
+country 已经空闲时不进循环，两个分支都幂等。
+
+**配套诊断**（`game_save_coordinator.gd::_boundary_diagnostics`）：超时告警现在额外带
+`country_should_run` / `country_busy` / `country_stage` / `runtime_graph_active`，
+下次卡住可以直接判断是哪个 owner 没排空。
+
+> 未覆盖：若 WorldClock 的 `day_index()` 与 `simulation_committed_day` 本身就不一致
+> （例如加载存档后 native 侧领先很多天），`country_should_run(day)` 会在一个
+> 「已经过去的日子」上被反复问真。那属于载入/时钟一致性问题，不在本节修复范围；
+> 上面的诊断字段可以先把这类情况识别出来。
