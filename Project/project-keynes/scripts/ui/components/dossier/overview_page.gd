@@ -83,6 +83,7 @@ func _refresh_cashflow(cashflow: Dictionary) -> void:
 		_detail.visible = false
 		return
 	_day.text = String(cashflow.get("day_text", ""))
+	_body.tooltip_text = "显示最近一次结算的收支；未结算日沿用上次数据，不代表当天重复入账。"
 	_income_bar.set_segments("收入", cashflow.get("income_segments", []),
 		String(cashflow.get("income_text", "")), true)
 	_expense_bar.set_segments("支出", cashflow.get("expense_segments", []),

@@ -14,7 +14,9 @@ signal locate_requested(ideology_id: int)
 signal drag_started(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
-const TITLE_FONT: FontFile = preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf")
+## 手写体标题字用带随包 fallback 的 display_handwritten：Muyao 只收 6890 字形，
+## 缺 "·" 等字符时 web 导出没有系统字体兜底，会渲染成方块。
+const TITLE_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
 const BODY_FONT: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
 const UI_FONT: FontFile = preload("res://assets/fonts/source_han/SourceHanSansCN-VF.woff2")
 

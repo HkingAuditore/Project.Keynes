@@ -14,8 +14,9 @@ signal locate_requested(ideology_id: int)
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
 const LevelMeterScript = preload(
 	"res://scripts/ui/components/ideology_level_meter.gd")
-const TITLE_FONT: FontFile = preload(
-	"res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf")
+## 手写体标题字用带随包 fallback 的 display_handwritten（web 无系统字体兜底）。
+const TITLE_FONT: Font = preload(
+	"res://assets/fonts/muyao/display_handwritten.tres")
 const BODY_FONT: FontFile = preload(
 	"res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
 

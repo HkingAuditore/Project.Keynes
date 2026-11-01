@@ -5,10 +5,14 @@
 // 唯一外部开关：world_map.gdshader 里的 `#ifdef PK_WEB_WORLD_MIN`
 // （由 hex_renderer._apply_shader_variant_prefix() 在 Compatibility + LOW 档 prepend）。
 //
-// 为什么需要（Why）：本变体把 world_map 展开链路里 6 个 include 整段裁掉
-// （common_noise / cell_indirect / tonemap / shore_common / weather_front /
-// terrain_horizon），但主文件与存活 include 仍引用其中极少数叶子 helper。本文件
-// 只补这些叶子，**不重复声明任何 uniform**（uniform 集合必须与桌面逐项一致）。
+// 为什么需要（Why）：本变体把 world_map 展开链路里 4 个 include 整段裁掉
+// （cell_indirect / shore_common / weather_front / water），但主文件与存活 include
+// 仍引用其中极少数叶子 helper。本文件只补这些叶子，**不重复声明任何 uniform**
+// （uniform 集合必须与桌面逐项一致）。
+//
+// [baked-surface 2026-11-01] horizon 不再走中性叶子：Web 全部档位都会在生成期烘焙
+// terrain_horizon_tex，并由 PK_WEB_HORIZON 覆盖 MOBILE_QUALITY_LOW 的早退，
+// 所以 terrain_horizon.gdshaderinc 由 world_map 统一 include（本文件不再提供替代）。
 // ─────────────────────────────────────────────────────────────────────────
 #ifndef PK_WEB_WORLD_MIN_INC
 #define PK_WEB_WORLD_MIN_INC
@@ -27,38 +31,6 @@ vec2 cell_lut_uv(int cid) {
 	int cx = cid % lw;
 	int cy = cid / lw;
 	return (vec2(float(cx), float(cy)) + 0.5) / max(lut_dims, vec2(1.0));
-}
-
-// ── 8 方向 horizon 解码器（原 terrain_horizon.gdshaderinc）──────────────
-// web 上 horizon 烘焙被平台开关关掉：main.gd 强制 DCFeatureFlags.
-// set_terrain_horizon_gpu_bake(false)，map_baker 因此把 terrain_horizon_tex 置 null
-// （web 也禁止落 CPU marching）。再加上 MOBILE_QUALITY_LOW 本来就让
-// terrain_horizon_evaluate() 直接返回中性值，所以这里只保留中性值 + 同一份
-// apply_normal 公式——对屏幕输出逐值等价于现状，只是不再编译解码器。
-struct TerrainHorizonSample {
-	float direct_visibility;
-	float sky_visibility;
-	vec3 bent_normal;
-	vec4 nearest_packed;
-	bool has_data;
-};
-
-TerrainHorizonSample terrain_horizon_evaluate(vec2 uv, vec3 light_dir) {
-	TerrainHorizonSample neutral;
-	neutral.direct_visibility = 1.0;
-	neutral.sky_visibility = 1.0;
-	neutral.bent_normal = vec3(0.0, 0.0, 1.0);
-	neutral.nearest_packed = vec4(0.0);
-	neutral.has_data = false;
-	return neutral;
-}
-
-float terrain_horizon_apply_normal(float sky_visibility, vec3 geometric_normal, vec3 bent_normal) {
-	if (gi_normal_floor >= 1.0) {
-		return clamp(sky_visibility, 0.0, 1.0);
-	}
-	float align = clamp(dot(normalize(geometric_normal), normalize(bent_normal)), 0.0, 1.0);
-	return clamp(sky_visibility * mix(gi_normal_floor, 1.0, align), 0.0, 1.0);
 }
 
 // ── 周期波相位（原 water.gdshaderinc，kelp 条纹仍在用）──────────────────
@@ -85,9 +57,7 @@ float water_periodic_wave_phase(vec2 wp, vec2 dir, float k) {
 	return phase_x + dir.y * wp.y * k;
 }
 
-// ── legacy Reinhard（原 tonemap.gdshaderinc，Blinn-Phong legacy 路径在用）──
-vec3 tonemap_reinhard_legacy(vec3 x) {
-	return x / (1.0 + x * REINHARD_K_LEGACY);
-}
+// Tonemap/color-space helpers now come from the shared tonemap include so
+// Web MID/HIGH can use PBR without changing shader programs on quality switches.
 
 #endif // PK_WEB_WORLD_MIN_INC

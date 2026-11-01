@@ -101,27 +101,22 @@ SurfaceParams compute_land_base_surface(
 			&& river_flow_enabled
 			&& river_flow_speed > 0.001
 			&& visual_quality >= 1) {
-		vec2 texel = 1.0 / hm_resolution;
-		vec2 grad;
-#ifdef PK_TERRAIN_STATIC_BAKED
-		if (terrain_static_baked) {
-			// 烘焙粗法线 → 2-texel 高程差（与下方差分同量纲）。
+		// [baked-surface 2026-11-01] 顺坡梯度只读烘焙粗法线：两端都不再用 height 邻域
+		// 差分。未绑定烘焙法线（旧存档/单 tile 失败）时整段跳过，不做差分回退。
+		vec2 grad = vec2(0.0, 0.0);
+		bool grad_ready = false;
+#ifdef PK_TERRAIN_BAKED_NORMALS
+		if (terrain_baked_normals) {
 			vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
 			float nz = sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
 			float texel_world = world_size.x / max(hm_resolution.x, 1.0);
 			grad = -nxy / nz * (2.0 * texel_world
 					/ max(terrain_normal_height_scale_hex * max(hex_size, 1e-4), 1e-4));
-		} else
-#endif
-		{
-			float hl = decode_height_rg8(uv - vec2(texel.x, 0.0));
-			float hr = decode_height_rg8(uv + vec2(texel.x, 0.0));
-			float hu = decode_height_rg8(uv - vec2(0.0, texel.y));
-			float hd = decode_height_rg8(uv + vec2(0.0, texel.y));
-			grad = vec2(hr - hl, hd - hu);
+			grad_ready = true;
 		}
+#endif
 		float slope_mag = length(grad);
-		if (slope_mag > 0.002) {
+		if (grad_ready && slope_mag > 0.002) {
 			vec2 fbm_smooth = vec2(
 				fbm(wp * 0.045, 1) - 0.5,
 				fbm(wp * 0.045 + vec2(21.0, -13.0), 1) - 0.5
@@ -147,21 +142,11 @@ SurfaceParams compute_land_base_surface(
 		col = mix(col, contour_color, contour_t * contour_strength);
 	}
 	// LAND 1.5：Normal / roughness / AO / metallic
-	// macro_normal = 高度场法线 + 分地形细节（都是地形几何）；材质贴图法线只进 BRDF 的 normal。
+	// macro_normal = 烘焙几何法线（粗法线 + 近景细节 + 分地形 relief），不再有运行期
+	// 高度差分分支；材质贴图法线只进 BRDF 的 normal。
 	// 几何细节按格子的主 biome 走：biome 是 DitherUV 逐像素抽选的视觉 biome，
 	// 直接用会让过渡带里的起伏强度逐像素跳变。
-	vec4 erosion;
-#ifdef PK_TERRAIN_STATIC_BAKED
-	if (terrain_static_baked) {
-		erosion = terrain_baked_normal(uv, visual_quality, scals.a);
-	} else
-#endif
-	{
-		vec3 coarse_normal = terrain_coarse_normal(uv);
-		erosion = terrain_apply_landform_detail(
-				terrain_add_height_detail(coarse_normal, uv, visual_quality, geo_biome),
-				coarse_normal, uv, wp, elev, visual_quality, geo_biome, landform);
-	}
+	vec4 erosion = terrain_baked_normal(uv, visual_quality, scals.a);
 	vec3 macro_normal = erosion.xyz;
 	vec3 normal = macro_normal;
 	if (terrain_materials_active()) {
@@ -191,7 +176,9 @@ SurfaceParams compute_land_base_surface(
 		float river_normal_w = smoothstep(
 				RIVER_NORMAL_BLEND_START, RIVER_NORMAL_BLEND_END, river_t_raw)
 				* river_enabled_w;
-#if defined(PK_MOBILE_ANY)
+		// [baked-surface 2026-11-01] Web 陆地程序（PK_WEB_LAND_ONLY）不 include
+		// water.gdshaderinc，河道水波法线退化为水平面，不新增采样。
+#if defined(PK_MOBILE_ANY) || defined(PK_WEB_LAND_ONLY)
 		vec3 river_surface_normal = vec3(0.0, 0.0, 1.0);
 #else
 		vec3 river_surface_normal = vec3(0.0, 0.0, 1.0);

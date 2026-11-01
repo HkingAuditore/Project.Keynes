@@ -337,9 +337,9 @@ func _shader_quality_define_from_setting(quality: String) -> String:
 	# 一个固定档编一遍 —— 它读不到进游戏后才生效的画质设置。玩家一旦在设置里选
 	# 中/高，运行期前缀就与预热不同 ⇒ 驱动缓存必然不命中 ⇒ 所有 tier-dependent
 	# shader 在游戏里重编一次（实测单张 world_map 就是 20 s 量级）。
-	# 所以 web 的编译期档固定在 LOW；玩家选的档仍然驱动 `visual_quality`
-	# （运行期 uniform，不触发重编），低/中/高的画质差异依旧可见，只是不再有
-	# "换档就冻一次"的代价。桌面不受影响（`uses_shader_quality_tier()` 为 false）。
+	# Web 的编译期档仍固定 LOW，但它不再代表最终画质：visual_quality>=1
+	# 在同一预热程序中启用地形 PBR/线性光照/ACES；植被同样按运行期档
+	# 启用四类近景形态与法线着色。切档只改 uniform/实例预算，不换程序。
 	if OS.has_feature("web"):
 		return "MOBILE_QUALITY_LOW"
 	match quality:

@@ -27,7 +27,13 @@
 //   USE_FILMIC_TONEMAP：1 = ACES Approx 替代旧的 x/(1+0.35x)
 //                       0 = 走 tonemap_reinhard_legacy
 // ─────────────────────────────────────────────────────────────────────
-#if defined(PK_MOBILE_ANY)
+#if defined(PK_WEB_WORLD_MIN) || defined(PK_WEB_WATER_PBR)
+// Web keeps one prewarmed program: LOW retains legacy lighting; MID/HIGH
+// select the real GGX/Smith/Schlick + linear/ACES path at runtime.
+#define USE_PBR_BRDF (visual_quality >= 1)
+#define USE_LINEAR_LIGHTING (visual_quality >= 1)
+#define USE_FILMIC_TONEMAP (visual_quality >= 1)
+#elif defined(PK_MOBILE_ANY)
 // 移动端全档位需要优先稳帧：保留 stylized 光照，但跳过手机 GPU 上发热明显的
 // Cook-Torrance + linear/filmic 路径。
 const bool USE_PBR_BRDF        = false;

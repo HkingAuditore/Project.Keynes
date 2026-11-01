@@ -1,5 +1,43 @@
 # Project.Keynes 地形 Shader 开发文档
 
+> 2026-10-31 Web 更新：高档 `PK_WEB_PC_HIGH` 复用 PC 地形/水面/植被代码，
+> 不定义移动端质量宏；水陆通过 `PK_WEB_SPLIT_WATER` / `PK_WEB_WATER_ONLY` 分 pass。
+> 低/中档保持 LOW 编译前缀，运行期启用基本 PBR 和四类近景植被。
+> 所有实际程序由 owner 提供一致的预热源码。高档陆地程序保持 8 sampler、高档水面程序 7 sampler，
+> 高档地图生成时烘焙 horizon；地形与普通近景植被读取真实 horizon，家族批次释放该槽位；
+> GI 弹射改用 packed occluder（不再需要 bounce_lut）。详见 `docs/web-export.md` 首节与 §9.25。
+> Web 运行中切换高档会在共享程序内恢复地形侵蚀细节和迷雾 q1/q2，不在当前帧编译完整 PC 变体。
+>
+> **2026-11-01 烘焙地表（v3 方案 B）**：在 v2 把 normal+relief 打包进 **4 层
+> `terrain_surface_tex`**（layer0 normal、layer1 relief、layer2 detail、layer3 occluder）之后，
+> Web 陆地程序**仍恰 8 槽**：detail/micro/occluder 全部塞进已绑 array（surface layer2/3、
+> material layer4），不再声明 2D `terrain_detail_tex`/`terrain_micro_tex`/`gi_occluder_tex`/
+> `bounce_lut`。`water_depth_tex` 只进水面程序：HIGH water 7 槽、compact water 5 槽、
+> 桌面 Compatibility 主 pass 8 槽。LOW(`visual_quality=0`) 的 detail/micro/bounce 全部运行时
+> 门控为恒等，像素与 B 之前一致。详见 `docs/web-export.md` §9.24/§9.25 与 §4 纹理通道表。
+>
+> **2026-11-01 C 收尾**：packed GI bounce 从 HIGH 扩到 **MID（vq>=1；MID 强度 0.6、HIGH 1.0、
+> LOW 恒 0）**；`water_depth_tex` 升级 **RGBA8**（R=归一深度、G/B/A=湖/礁/海带 3×3 软权重；
+> compact 水面 `w = max(binary, GBA)`，GBA=0 自动退化为旧二元行为）；micro 共享程序
+> （LOW/MID 运行档）经 Edge/ANGLE A/B 实测 **SAFE → 默认启用**（`WORLD_MAP_WEB_PREFIX_MICRO`；
+> `?micro=off|0|false` 可退回裁 micro 的旧前缀，`?micro=shared|on` 可显式开，非 web 恒关）：
+> world_map 编译 5417→4582 ms（−15.4%）、总 warmup −5.5%，无 10× 悬崖。
+>
+> **2026-11-02 全平台陆地/水面双 program 拆分**：桌面 / 移动（Vulkan / GLES3 / Mobile）的
+> 主地形也拆成两个 fragment program —— **陆地 program**（`PK_LAND_ONLY`：不 include
+> `water_pipeline.gdshaderinc`，但**必须保留** `water.gdshaderinc` 供河面法线
+> `sample_water_normal`）与 **水面 program**（`PK_WATER_ONLY`：不 include
+> `land_pipeline.gdshaderinc`）。Web 既有的 `PK_WEB_LAND_ONLY` / `PK_WEB_WATER_ONLY`
+> 前缀**字节契约不变**，shader 顶部只做「Web 宏 → 通用宏」的别名归一。运行时开关
+> `hex_renderer.split_land_water_passes` 默认全平台开启；`terrain_surface_debug_view != 0`
+> 或（Compatibility + tiled）自动回退单 program；水面材质任一变体 shader 语言层编不过
+> （`get_shader_uniform_list().is_empty()`）→ **整条**拆分回退单 program（不许只回退一半）。
+> 覆盖几何由 `scripts/rendering/terrain_coverage_mesh.gd`（`TerrainCoverageMesh.build`）
+> 产出的两张保守 mesh 负责：纯陆/纯水 block 只光栅化自己那条管线，混合 block 两侧都画、
+> shader 内逐像素互补 discard；模块缺失/构建失败/开关关闭 → 两片共享整张 quad。
+> 未探索像素改由各 program 自己画同值 `fog_unexplored_color`（含 Web compact 水面程序），
+> 不再依赖 pass 1 兜底 —— 分 mesh 后纯水 block 没有陆地 pass。
+
 > 版本：v10.semi-pbr（2026-07-05 性能变体分档）
 > 主入口：`shaders/world_map.gdshader`
 > 适用范围：本文档覆盖 `world_map.gdshader` + `shaders/include/*.gdshaderinc` 共 1 主 + 19 支模块。
@@ -111,14 +149,14 @@ void fragment() {
 | 9 | `weather_front.gdshaderinc` | common_noise + uniforms.WT_* | 叶子，极端天气掩码 |
 | 10 | `snow_cover.gdshaderinc` | common_noise + height + weather_front | 雪盖判定与色化 |
 | 11 | `biome_detail.gdshaderinc` | common_noise + B_* | biome 内部纹理变化 |
-| 12 | `hillshade_tod.gdshaderinc` | uniforms + height | 山影 + 时间昼夜 |
-| 13 | `water.gdshaderinc` | common_noise + uniforms.B_* | 水共享细节（波纹/平静面） |
+| 12 | `hillshade_tod.gdshaderinc` | uniforms + height + visual_tile_sampling | 烘焙法线唯一入口 `terrain_baked_normal` + 昼夜 |
+| 13 | `water.gdshaderinc` | common_noise + uniforms.B_* | 水共享细节（波纹/平静面）。**拆分后陆地 program 仍 include**（河面法线）；Web land-only 变体不 include |
 | 14 | `surface_params.gdshaderinc` | material_constants | 半 PBR 容器 |
 | 15 | `tonemap.gdshaderinc` | material_constants | sRGB↔Linear / ACES |
 | 16 | `shore_common.gdshaderinc` | uniforms + material_constants | 海岸 3×3 邻域 + halo |
 | 17 | `brdf.gdshaderinc` | surface_params + tonemap + material_constants + uniforms.tod_* | 光照核心 |
-| 18 | `land_pipeline.gdshaderinc` | 全部上游 | 陆地总调度 |
-| 19 | `water_pipeline.gdshaderinc` | 全部上游 | 水面总调度 |
+| 18 | `land_pipeline.gdshaderinc` | 全部上游 | 陆地总调度（`PK_WATER_ONLY` 时整段不 include） |
+| 19 | `water_pipeline.gdshaderinc` | 全部上游 | 水面总调度（`PK_LAND_ONLY` / `PK_WEB_WORLD_MIN` 时整段不 include） |
 | 20 | `global_adjustments.gdshaderinc` | tonemap + uniforms | 末端调整（羊皮纸/季节过渡/tonemap/sRGB） |
 
 > **新增 inc 时**：只能放在自己依赖的最后一个 inc 之后；如果新模块给多个下游用，应同时更新本表。
@@ -136,7 +174,53 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 | `map_index_atlas` | RGBA8 NEAREST | R=biome, G/B=`cell.index` low/high, A=landform |
 | `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
 | `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |
-| `terrain_material_tex` | Texture2DArray | 四方连续材质族（Compatibility 亦启用；主地形已不绑 `eco_lut`）。R=albedo 细节，GB=切线法线 xy，A=roughness |
+| `terrain_material_tex` | Texture2DArray（**5 层**） | 四方连续材质族（Compatibility 亦启用）。layer0..3：R=albedo 细节，GB=切线法线 xy，A=roughness；**layer4 = micro 平铺纹理**（v3，MID/HIGH 近景门控） |
+| `terrain_surface_tex` | `Texture2DArray`（**4 层 RGBA8**，同尺寸；仅非 tiled 的 world_map） | **layer0 = 粗法线 `0.5+n·0.5` + BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**；**layer2 = baked detail（R）**；**layer3 = 两个 16-bit occluder cell id**。`terrain_surface_layer_count` 运行期告知实际层数；tiled 用 `visual_terrain_*_tiles` 各数组（relief 是 `relief_scale` 倍分辨率，不能同 array） |
+| `terrain_normal_tex` | RGBA8 2D（仅其它只读法线的图层） | RG=粗法线、BA=近景细节坡度。world_map 非 tiled 已改读 `terrain_surface_tex` layer0；本 2D 只给植被/建筑/资源/贸易/ground cover 等只开 `VT_USE_TERRAIN_NORMAL` 的 shader，内容与 layer0 相同（显式内存取舍） |
+| `water_depth_tex` | **RGBA8** NEAREST（C 轮升级） | **R=归一水深**（0=岸、1=最深）；**G/B/A=湖/礁/海带 3×3 软权重**。**仅水面程序**：Web HIGH water / compact water / 桌面 Compatibility 完整主 pass（`VT_USE_WATER_DEPTH`）；湖泊深度读烘焙 R、海面仍用连续 elev；GBA=0 时自动退化为旧二元权重 |
+
+**烘焙法线 / relief 的唯一来源（2026-11-01）**：
+
+- **tiled 桌面**：`visual_terrain_normal_tiles` / `visual_terrain_relief_tiles` 由
+  `run_bake_visual_tile_layer_pass` 逐 tile 烘焙；运行时由 `terrain_baked_normals`
+  （= `visual_tiles.static_ready` 且两张数组都在）确认本张图可用。
+- **非 tiled（Web 全部档位 + 桌面 legacy fallback）**：`MapBaker._bake_legacy_static_surface()`
+  复用同一个 native pass 以**整图单 tile**烘焙（`origin/size = world_bounds`、
+  `relief_supersample = 1`；长边封顶 Web `1024`（实际再被 `world.hm_size` 钳住，Web LOW 即 512）、
+  桌面 `1024`），返回两份 RGBA8 payload 后打包成 **4 层** `terrain_surface_tex`：
+  normal 同时作为 2D `terrain_normal_tex` 与 layer0、relief 作为 layer1；layer2 由
+  `world.terrain_detail_tex`（R8）resize/转 RGBA8 得到，layer3 由 `world.gi_occluder_tex`
+  （RGBA8 两个 16-bit cell id，NEAREST resize）得到，缺失时分别填中性 0x80 / 0xFF 哨兵。
+  **内存增量（B 方案）**：surface 2→4 层 Web LOW 512×~300 约 +1.2 MB、MID/HIGH 1024×~600
+  约 +6 MB；material 4→5 层 mobile 512² 约 +1 MB、high 1024² 约 +4 MB。pass 失败时才退回旧
+  RG8 `encode_bake_terrain_normal_tex_data`（扩成 RGBA8 后 array 照建、layer1 中性 128），
+  再失败则平地法线。
+- **任何变体都禁止再用 `height_tex` 邻域中心差分求法线**。旧的运行期高度差分族函数
+  （宽半径粗法线差分、叠加高度细节、唯一法线入口、分地貌细节及其全部 helper：分地形
+  沟谷/台坎/沙丘/圆丘等）已整体删除，禁止以任何名义加回；同一套配置表只存在于生成期
+  C++（`gdext/src/bake_terrain_relief.h`）。
+- **8 槽预算的三种形态**（unit 1..8，`PK_WEB_TEXTURE_BUDGET`）：
+  - **Web 陆地 / 桌面 Compatibility LOW**（带 `PK_WEB_HORIZON`）：`height_tex`、`map_index_atlas`、
+    `enum_lut`、`dyn_lut`、`terrain_material_tex`、**`terrain_surface_tex`（4 层）**、
+    `terrain_horizon_tex`、**`noise_tex`**。陆地程序**不得**声明 2D `terrain_normal_tex` /
+    `terrain_detail_tex` / `terrain_micro_tex` / `gi_occluder_tex` / 旧 2D relief sampler /
+    `bounce_lut` / `terrain_edge_neighbor_tex` / `terrain_edge_distance_tex`——它们都已被
+    打包进 surface/material array 或删除。
+  - **桌面 Compatibility MID/HIGH**（只有 texture budget、没有 `PK_WEB_HORIZON`）：**8 槽** =
+    height / map_index / surface array / noise / enum / dyn / material + **`water_depth_tex`**
+    （v3：完整主 pass 自己画水，water depth 需要槽）；`VT_USE_HORIZON` 不开，horizon 走
+    `terrain_horizon.gdshaderinc` 的中性叶子——**没有地平线遮蔽**，但法线/relief 仍是烘焙纹理。
+    属于诊断/回退渲染路径，不是 Web 产品路径。
+  - **Web HIGH 水面**（`PK_WEB_WATER_ONLY`）：独立程序与独立预算，**7 槽** =
+    height / map_index / `noise_tex` / enum / dyn / material + **`water_depth_tex`**，
+    不声明 surface array / horizon；`hex_renderer._apply_water_uniforms()` 会为这个 pass
+    显式补绑 `noise_tex` 与 `water_depth_tex`（独立程序不经过陆地程序的 uniform 推送）。
+  - **Web compact 水面**（`world_water_web.gdshader`）：**5 槽** = height / map_index / enum /
+    dyn + **`water_depth_tex`**（自行声明 `has_water_depth_tex`）。
+  - 桌面 tiled 仍 **17 槽**；桌面 Vulkan legacy **15 槽**（surface array 4 层但 normal/relief
+    合并、且非 tiled detail 不再单独声明 2D sampler 后比 v1 省 2 槽）；tiled 的 normal/relief
+    是两个数组：relief 为 `relief_scale` 倍分辨率，不能同 array 合并。桌面 Compatibility 的
+    tiled 预算变体仍 8 槽（不打开 water_depth/detail，诊断路径）。
 
 **材质族缩放分层（2026-10-09）**：贴图本身是近景尺度（石块 / 裂纹 / 草团），在大陆视角下直接铺会变成密集斑点。
 
@@ -175,7 +259,7 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 
 ```
 SETUP（world_map.gdshader::fragment）
-  ├── 采样核心 atlas + noise_tex（1 次 pixel_noise）+ 可选 terrain_material_tex
+  ├── 采样核心 atlas + noise_tex（1 次 pixel_noise，全平台统一走预烘 pack）+ 可选 terrain_material_tex
   ├── 解码 elev / biome / veg / cover / moist / lat_norm
   ├── 解码 dyn_temp / dyn_wet / dyn_snow / dyn_vitality
   ├── 计算 lat_signed / season_offset / current_temp
@@ -353,7 +437,7 @@ vec3 render_land_pipeline(
 | 1.2 河流 | base_color, ao | 沿 flow_accum 描线，ao 微降 |
 | 1.3 顺坡明暗 | base_color | 旧 hillshade 微调（保持 v9 风味） |
 | 1.4 等高线 | base_color | 等高线条 |
-| 1.5 N/R/AO/metallic | normal/macro_normal/roughness/ao/metallic | `compute_terrain_normal` → `macro_normal`；`normal` = macro + 随缩放淡入的材质法线；地表粗糙度按 biome 派生 |
+| 1.5 N/R/AO/metallic | normal/macro_normal/roughness/ao/metallic | `terrain_baked_normal()` → `macro_normal`（法线全部来自生成期烘焙纹理，见 §4）；`normal` = macro + 随缩放淡入的材质法线；地表粗糙度按 biome 派生 |
 
 `shade_land_surface` 的 TOD 坡向明暗会把 `N.xy` 归一化成坡向，任何非零细节法线都会被放大成满幅明暗，所以它、`apply_relief_tint` 和 `landform_visual` 必须读 `macro_normal`。河流、冻河和积雪压平要同时作用于两个法线。
 
@@ -396,6 +480,39 @@ LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND);
 return evaluate_brdf(surface, lc, SPEC_MAX_LAND_LEGACY, SPEC_MIN_LAND_LEGACY);
 ```
 
+### 8.6 烘焙法线入口 `terrain_baked_normal`（2026-11-01）
+
+`hillshade_tod.gdshaderinc` 里唯一的法线入口，`land_pipeline` 永远调用它
+（不再有 `PK_TERRAIN_STATIC_BAKED` 二选一）：
+
+```glsl
+vec4 terrain_baked_normal(vec2 uv, int quality, float crease);
+//   .xyz = 归一化法线；.w = 折痕（crease * fade_coarse），供凹处遮蔽
+```
+
+- 编译期宏 `PK_TERRAIN_BAKED_NORMALS`：tiled = `MAP_VISUAL_TILED && VT_USE_TERRAIN_NORMAL &&
+  VT_USE_TERRAIN_RELIEF`；非 tiled = `VT_USE_TERRAIN_NORMAL && VT_USE_TERRAIN_RELIEF`。
+  它作用域内声明 `uniform bool terrain_baked_normals` 与
+  `decode_relief_slope()` / `decode_relief_slope4()`（tiled / 非 tiled 共用）。
+- 非 tiled 的 `terrain_surface_tex` 固定 **4 层**（0 normal / 1 relief / 2 detail / 3 occluder）；
+  法线路径只用 layer0/1。`uniform int terrain_surface_layer_count` 运行期告知实际层数
+  （2=tiled 旧图形态 / 3=+detail / 4=+occluder），`terrain_detail_layer_bound` /
+  `terrain_occluder_layer_bound` 是两个既成事实 bool 门控。
+- 粗法线：非 tiled 读 `terrain_surface_tex` **layer0** 的 RG（只开 `VT_USE_TERRAIN_NORMAL` 的
+  其它 shader 读 2D `terrain_normal_tex`）；tiled 读 `visual_terrain_normal_tiles`。
+  `(rg*2-1) * hillshade_coarse_strength`，nz 由归一化重建。
+- 近景高度细节：`decode_relief_slope(layer0.ba)`（tiled：`visual_terrain_normal_tiles` 的 BA），
+  乘 `smoothstep(1.35, 2.10, camera_zoom)` 与 `hillshade_detail_strength`，`quality>=1` 决定 qf。
+- 分地形粗/细段：非 tiled 读 `terrain_surface_tex` **layer1** 的 RG / BA
+  （tiled：`visual_terrain_relief_tiles`），分别乘
+  `smoothstep(3, 7, 48*scale*camera_zoom)` / `smoothstep(3, 7, 14*scale*camera_zoom)`，
+  `scale = terrain_erosion_world_size/72`，强度乘 `terrain_erosion_strength`。
+- **没有**"移动端/LOW 直接只返回粗法线"的早退；Web LOW 靠 `PK_WEB_HORIZON` 得以编译细节
+  路径（用户本轮核心诉求），代价只是已绑定的 1–2 次采样。
+- 兜底顺序：`terrain_baked_normals=false` → 只读 layer0 的 RG（粗法线）→ array 不可用 → 平地法线。
+  `terrain_static_baked` 只表示 tiled 的 edge/water/shore 静态通道可用（`PK_TERRAIN_STATIC_BAKED`
+  收窄为 tiled 专属），**不再用来判断法线是否可用**。
+
 ---
 
 ## 9. 水面管线（Water Pipeline）
@@ -420,6 +537,18 @@ vec3 render_water_pipeline(
 
 `secondary_*` 与 `edge_mix` 只是距离场驱动的静态视觉输入。水陆分支、交互、温度、
 海冰浓度、洋流与风仍由主格权威所有；水面管线不会计算两遍。
+
+**water depth（B 方案 v3 + C 收尾 RGBA8，2026-11-01）**：`VT_USE_WATER_DEPTH` 只在**水面程序**
+打开（Web HIGH water `PK_WEB_WATER_ONLY`、Web compact `world_water_web.gdshader`、桌面
+Compatibility 完整主 pass）。非 tiled 的 `water_depth_tex` 是 **RGBA8**：R=归一深度、G/B/A=
+湖/礁/海带 3×3 软权重（由 static surface bake 的 native bundle 直接上传，日志
+`water_depth=RGBA8`）。`has_water_depth_tex=true` 时 `compute_offshore_depth` 用烘焙 R 深度
+替代湖泊多 tap 邻域估算（湖心烘焙值、海面仍走连续 elev）；compact 水面的渲染函数追加
+`vec4 water_depth_px`，`w_lake/w_reef/w_kelp = max(binary, wd.g/b/a)`（无 if/else 直线写法）。
+static bake 失败兜底：R=旧 `water_depth_buffer`、GBA=0 → 自动退化为旧二元权重。
+陆地 program（桌面 `PK_LAND_ONLY` / Web `PK_WEB_LAND_ONLY`）不声明 `water_depth_tex`
+（它没有水面像素）；桌面 tiled 拆分水面 program 与陆地 program 共享同一套 VT 预算，
+所以 `visual_water_depth_tiles` 也照绑。
 
 ### 9.2 SEA 1.x — `compute_water_base_surface`
 
@@ -496,13 +625,21 @@ vec4 apply_global_adjustments(vec3 col, vec2 wp, vec4 pixel_noise, float dyn_sno
 
 **位置**：`common_noise.gdshaderinc`
 
+**全平台统一 `noise_tex` 快路径（v2 方案 A 恢复）**：Web 地形程序把 normal+relief 合并成
+2 层 `terrain_surface_tex` 后腾出 1 槽，`noise_tex` 因此重新进入 8 槽预算
+（`pixel_noise` / `fbm` / 雪 / 植被 / 全局调整都在消费它）。`uniforms.gdshaderinc` 无条件
+声明该采样器，`common_noise.gdshaderinc` 只有一份实现（预烘包无效时按旧路径临时退化为
+多采样）；v1 的 Web 程序化 ALU 噪声分支已整体删除。`pixel_noise` =
+`texture(noise_tex, (wp*0.071 + vec2(19.0,-23.0)) / NOISE_TEX_SCALE)`，包无效时回落
+`derive_independent_noise4(...)`。
+
 | 函数 | 用途 | 性能 |
 |---|---|---|
 | `value_noise(p)` | 基础值噪声 | 1 fetch |
-| `fbm(p, oct)` | 多倍频噪声 | oct fetches |
+| `fbm(p, oct)` | 多倍频噪声 | 1 fetch（G/B/A 预积分；包无效时回退为 oct 次采样） |
 | `voronoi_cell(p)` | 蜂窝噪声 | ~9 hash21 |
 | `derive_independent_noise4(seed)` | 4 个相互独立的随机数 | 4 sin + 4 dot ≈ 8 ALU |
-| `noise_tex 采样` | 主路径，预烘焙 4 通道 noise pack | 1 fetch |
+| `noise_tex 采样` | 主路径，预烘焙 4 通道 noise pack（全平台） | 1 fetch |
 
 **`pixel_noise` 4 通道语义约定**（v10 半 PBR 后约定）：
 
@@ -698,7 +835,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 
 | 档位 | 编译宏 | 目标 |
 |---|---|---|
-| Low | `PK_SHADER_TIER_LOW` / `MOBILE_QUALITY_LOW` → `PK_QUALITY_LOW` | 移动端保帧优先；取消大部分贴图采样、噪声、细节法线、植被阴影和天气细节 |
+| Low | `PK_SHADER_TIER_LOW` / `MOBILE_QUALITY_LOW` → `PK_QUALITY_LOW` | 移动端保帧优先；取消大部分贴图采样、噪声、植被阴影和天气细节。地形细节坡度来自烘焙 relief（不是运行期高度差分），Web LOW 定义 `PK_WEB_HORIZON` 时照常解码 |
 | Mid | `PK_SHADER_TIER_MID` / `MOBILE_QUALITY_MID` → `PK_QUALITY_MID` | 移动端平衡档；保留主色、主要形态和少量动态，跳过高频细节 |
 | High | `PK_SHADER_TIER_HIGH` / `MOBILE_QUALITY_HIGH` → `PK_QUALITY_HIGH` | 移动端高档；尽量接近桌面，但仍使用独立 variant |
 | Desktop | 无移动宏 → `PK_QUALITY_DESKTOP` | 桌面默认完整路径，继续允许 `visual_quality` 做用户可调细节 |
@@ -710,7 +847,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | 模块 | Low | Mid |
 |---|---|---|
 | `world_map.gdshader` | 跳过 `flow_tex`；像素级细节噪声由下游宏裁剪 | 保留主 atlas，跳过部分高频路径 |
-| `biome_detail.gdshaderinc` | 不采样，不跑内部纹理 | 读 `terrain_detail_tex` 单次采样，替代每像素 `fbm/voronoi` |
+| `biome_detail.gdshaderinc` | 不采样，不跑内部纹理 | 读 surface array layer2 单次采样，替代每像素 `fbm/voronoi` |
 | `snow_cover.gdshaderinc` | 跳过 cosmetic fbm 与暴雪新雪增强 | 保留 |
 | `terrain_surface_detail.gdshaderinc` | 材质族编译裁掉；跳过大尺度明暗斑块（`terrain_apply_macro_variation`） | 材质族编译裁掉；保留大尺度斑块（8 次 hash，无采样） |
 | `land_pipeline.gdshaderinc` | 跳过河流 pulse、顺坡流动、cover fbm、水面法线细节 | 同 Low 的水/河流高频裁剪 |
@@ -722,12 +859,60 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | `shrub_layer.gd` 内联 shader | 跳过生态 LUT、地形法线/高度贴图 shading、horizon shadow，阴影 pass 输出透明 | 跳过 horizon shadow 与细节 shading |
 | `hex_terrain.gdshader` / `hex_edge_overlay.gdshader` | 跳过 erosion warp、边缘噪声、地/水内部细节 | 保留旧行为 |
 
-### 14.3 优化原则
+**B/C 方案（v3 收尾）Web 运行时增量**（全部按档位门控，LOW 恒为 0 采样）：
+
+| 特性 | 实现 | 成本 | 生效档位 |
+| --- | --- | --- | --- |
+| baked detail | `terrain_surface_tex` layer2 单次采样 | 1 fetch | MID/HIGH（vq>=1；LOW 恒等 1.0） |
+| micro surface | `terrain_material_tex` layer4 单次采样 | 1 fetch | **MID/HIGH 默认开**（共享程序默认 `WORLD_MAP_WEB_PREFIX_MICRO`，HIGH 独立程序同样有；`?micro=off` 可关；LOW 早退） |
+| packed GI bounce | `texelFetch` surface layer3 + `enum_lut` 查 biome | 1 texelFetch + 1 LUT fetch | **MID/HIGH（vq>=1；MID ×0.6、HIGH ×1.0；LOW 恒 0）** |
+| water depth + 软权重 | 水面程序 `water_depth_tex`（RGBA8）单次采样 | 1 fetch | Web 全档水面 / 桌面 Compatibility 主 pass（GBA=0 退化为旧二元权重） |
+
+LOW(`visual_quality=0`) 的门控是硬契约：`procedural_biome_detail` vq<=0 早退、micro
+`visual_quality<=0` 早退、bounce `visual_quality<1` 早退（C 轮起）、detail 读取位于 vq 门控
+之后不可达——所以 LOW 改这些 array 层内容必须像素不变（`web_quality_render_test` 有专项断言）。
+
+实现边界（冻结时实测）：micro 在 **MID/HIGH 默认开**——共享 `WORLD_MAP_WEB_PREFIX_MICRO`
+（去 `PK_PROBE_NO_MICRO`，sampler 仍 8）+ HIGH 独立程序；C 轮 Edge/ANGLE A/B 实测 SAFE
+（world_map 编译 5417→4582 ms / −15.4%，总 warmup −5.5%，无 10× 悬崖），保留
+`?micro=off|0|false` kill-switch 与 `?micro=shared|on` 显式开，非 web 恒关；历史 Intel UHD
+机器未复测。baked detail layer2 双路径消费：材质未绑/回退路径走 `procedural_biome_detail`；
+预算程序（Web/Compatibility）在材质族激活时也会把 layer2 乘进材质 albedo（vq>=1 且
+`terrain_detail_available()`），因此 MID/HIGH 产品路径能看到 baked detail。
+
+### 14.3 陆地/水面双 program 的采样预算（2026-11-02 全平台）
+
+拆分只改**几何覆盖 + program 划分**，不改任何采样/算式：桌面每个变体的材质 sampler
+数量与今天完整主 pass **逐一相同**（`terrain_shader_variant_test` 逐名断言）。
+
+| 平台 / 变体 | 陆地 program | 水面 program | 备注 |
+|---|---|---|---|
+| 桌面 legacy（非 tiled，含 mobile 三档） | 15 | 15 | 与今天完整主 pass 相同；水面程序 `PK_WATER_ONLY` |
+| 桌面 tiled（含 mobile 三档） | 17 | 17 | 必须保留 `VT_USE_WATER_DEPTH`（否则 `PK_TERRAIN_STATIC_BAKED` 失效） |
+| 桌面 Compatibility（`PK_WEB_TEXTURE_BUDGET`，非 tiled） | 8 | 8 | 与今天纯预算主 pass 同名单；tiled + Compatibility 回退单 program |
+| Web LOW/MID 陆地 + compact 水面 | 8 / — | — / 5 | **不变**；紧凑水面程序不参与桌面拆分 |
+| Web HIGH 陆地 + HIGH 水面 | 8 | 7 | **不变**；HIGH 水面现在是 `PK_WATER_ONLY`（不再 include 陆地管线） |
+
+覆盖 mesh 约束（`TerrainCoverageMesh.build`）：
+
+- 几何规则必须与 `HexRenderer._build_world_quad_mesh()` **完全一致**（wrap P>0 时
+  x∈[0,P) 并在 −P/0/+P 各复制一份进同一个 ArrayMesh；顶点是世界坐标）。
+- 分类源必须与 shader 的 `is_water` 同源（CPU 逐像素水掩码 = `pixel_to_cell_lookup`
+  → `cell.terrain` → `MapData.is_water_render_lut()`；`null` padding 归 water）。
+- 保守超集：block 内只要出现该类像素就进该类 mesh，随后两张 mesh 各自外扩
+  `MARGIN_BLOCKS=1`；边界 quad 裁剪到世界矩形内。不允许出现漏画（露背景）或重复上色
+  （靠 fragment 内 `is_water` 互补 discard）。
+- 一次性构建（60×40 / derived 1024×606 / P≈2286 / block 16 实测 `build_ms≈100–119`），
+  运行期不重建；构建失败 → `ok=false` + reason → 渲染器回退整张 quad + 单 program。
+- **只有"真的有两个 program"时才用覆盖 mesh**（`_water_pass_active()`）：单 program 状态
+  （Web MID、拆分关闭、编译失败回退）必须由陆地 quad 铺满整张地图，否则另一类像素露背景。
+
+### 14.4 优化原则
 
 1. 性能分档优先使用编译期宏：`#ifdef PK_QUALITY_LOW`、`#ifndef PK_SKIP_*`，让低档源码不包含昂贵采样和噪声。
 2. 运行期 uniform 分支只用于同档内开关、强度或 debug，不作为移动端低画质的主要性能手段。
 3. 禁止在 fragment 内写循环变长边界；所有 `for (int i = 0; i < CONST; i++)` 必须用编译期常量。
-4. 新增 fragment 贴图采样、`fbm`、`value_noise`、`voronoi_cell`、多 tap 高度/法线计算时，必须同步给 Low/Mid 写裁剪路径，并更新本节表格。
+4. 新增 fragment 贴图采样、`fbm`、`value_noise`、`voronoi_cell` 时必须同步给 Low/Mid 写裁剪路径，并更新本节表格。**禁止新增任何多 tap 高度/法线差分**：地形法线必须来自生成期烘焙纹理（`terrain_baked_normal`），要加新形态请改生成期 bake pass（见 §4 / §8.6）。
 5. 需要法线的程序化云优先用**解析导数**，不要用 4-tap 有限差分。迷雾必须把法线拆成低频、低强度的宽缓宏观坡向与高频、小振幅的锐利细节；不能让所有 octave 等权进入同一法线，也不能把窄层级阈值的导数叠成等高线尖脊。
 6. 可缩放地图上的程序化噪声必须按屏幕足迹做 **LOD 截断**（把 `fwidth(world) × 域缩放` 喂给 `cloud_cumulus_fbm*` 的 `lod_px`）。跨不过一个像素的 octave 若照采，缩小时整层会走样成沙砾状闪烁噪点。
 7. **地图东西向无限滚动，全屏程序化噪声必须可平铺。** 采样点被折回一个环绕周期后，普通噪声在周期两端对不上，接缝处就是一条肉眼可见的竖线。用 `cloud_grad_noise_tiled*` / `cloud_cumulus_fbm*`，并先用 `fog_tileable_scale` 那套办法把域缩放微调到「周期 = 4 的整数倍个噪声格」。域扭曲的子频率只能取 2 的负幂，否则子频率下周期不再是整数格。
@@ -788,6 +973,17 @@ Godot 监视器 → Visual → "FPS in Game" 与 "Frame Time"。1920×1080 60FPS
 | 新加 magic number 散在 pipeline 里 | 调参要全文件搜 | 必须先在 `material_constants.gdshaderinc` 声明 const |
 | 新 inc 放错位置 | 编译报"未定义符号" | 严格按 §3 拓扑表加入 |
 | `SurfaceTextureSet.has_*=false` 时还做 mix | 性能浪费 | helper 顶部已有 early return，禁止挪走 |
+| 用 `height_tex` 邻域差分求法线 | 运行期多 4–8 次采样；移动端/LOW 还会被裁成只有粗法线，Web 永远读不出起伏 | 法线只能来自生成期烘焙（`terrain_surface_tex` layer0/layer1 或 tiled 数组），唯一入口 `terrain_baked_normal`；新增形态请改生成期 bake |
+| 给 Web 地形再加一个 sampler | 第 9 张起落在 unit 9，被内建高光/灯光图集默认白纹覆盖（2026-08「全河/全白」事故根因） | Web 地形 8 槽是硬预算；新效果先复用现有槽（如加 array layer）或走纯 ALU/生成期烘焙，不得加 sampler |
+| 在 world_map 里重新声明 2D `terrain_normal_tex` | 非 tiled 走打包 array 后，多声明 2D normal 会与 array 抢槽、且出现两套法线来源 | 非 tiled 的 world_map 只读 `terrain_surface_tex`；2D normal 仅给只开 `VT_USE_TERRAIN_NORMAL` 的其它 shader |
+| 在 world_map 里重新声明 2D `terrain_detail_tex` / `terrain_micro_tex` / `gi_occluder_tex` / `bounce_lut` | v3 已把它们塞进 surface/material array；多声明会破坏 8 槽预算或出现两套来源 | 非 tiled world_map 只读 array layer（detail=layer2、occluder=layer3、micro=material layer4）；旧 2D sampler 不再声明 |
+| 把 detail/micro/bounce 的新采样加在 LOW 档 | LOW 是"B 前后像素一致"的性能契约，改层内容会出画面差异 | 全部经 `visual_quality` 门控早退（LOW 不采样），并由 `web_quality_render_test` 的 LOW 断言守住 |
+| 把 `PK_LAND_ONLY` 加进 `land_pipeline.gdshaderinc` 的河面法线压平条件 | 桌面陆地河心水波法线被错误压平（视觉退化） | 该 `#if` 只认 `PK_MOBILE_ANY` / `PK_WEB_LAND_ONLY`：Web land-only 不 include `water.gdshaderinc` 才需要压平；桌面 land-only **保留** `water.gdshaderinc`，必须采样 `sample_water_normal` |
+| tiled 桌面拆分后陆地 program 丢掉 `VT_USE_WATER_DEPTH` | 水面/海岸看起来"变糊"、`PK_TERRAIN_STATIC_BAKED` 静默失效、海岸软权重退回 8-fetch 邻域 | 桌面非预算变体的 VT 预算块对所有 program 无条件打开；`terrain_shader_variant_test` 有 `terrain_static_baked` + `visual_water_depth_tiles` 断言 |
+| 拆分只回退一半（只拆水面程序 / 只回退水面） | 水面像素被 land-only program discard 成背景空洞，或两片重复上色 | 编译失败必须**整条**回退单 program（`_split_program_failed` → 重编无 `PK_LAND_ONLY` 的陆地变体 + 整张 quad）；F9 toggle 也两片一起关 |
+| 水面 program 对未探索像素 `discard` 让 pass 1 兜底 | 分 mesh 后纯水 block 没有陆地 pass → 迷雾出空洞（Web 上 Fog 层还可能被裁掉） | 各 program 自己画同值 `fog_unexplored_color`（含 compact web 水面程序），两片同色幂等 |
+| 覆盖 mesh 顶点/世界矩形/wrap 与 `HexRenderer._build_world_quad_mesh()` 不一致 | LUT 采错 cell、wrap 接缝漏画/双重影 | 契约见 §14.3：同一套 world_bounds/wrap 规则（±P 三份、世界坐标顶点）；覆盖只是保守超集，逐像素分类仍由 fragment `is_water` 决定 |
+| 把覆盖 mesh 的空 ArrayMesh 当失败 | 全水/全陆地图每帧回退整张 quad（白白多画） | 模块成功即 `ok=true`，`land_mesh`/`water_mesh` 可能是 0-surface 的合法空 ArrayMesh（`is Mesh` 即有效）；只有 `ok=false` 才回退 |
 
 ---
 
@@ -810,13 +1006,15 @@ Godot 监视器 → Visual → "FPS in Game" 与 "Frame Time"。1920×1080 60FPS
 | `vegetation.gdshaderinc` | `apply_vegetation_*` | 植被季节色 |
 | `weather_front.gdshaderinc` | `compute_extreme_weather_mask` | 极端天气 |
 | `snow_cover.gdshaderinc` | `apply_snow_cover` | 雪盖 |
-| `hillshade_tod.gdshaderinc` | `apply_hillshade_*` | 山影/昼夜 |
+| `hillshade_tod.gdshaderinc` | `terrain_baked_normal`, `biome_roughness` | 烘焙法线唯一入口 / 昼夜 |
 | `water.gdshaderinc` | `apply_water_*` | 水共享细节 |
-| `land_pipeline.gdshaderinc` | `render_land_pipeline` | 陆地总调度 |
-| `water_pipeline.gdshaderinc` | `render_water_pipeline`, `apply_water_specials` | 水面总调度 |
+| `land_pipeline.gdshaderinc` | `render_land_pipeline` | 陆地总调度（`PK_WATER_ONLY` 时不 include） |
+| `water_pipeline.gdshaderinc` | `render_water_pipeline`, `apply_water_specials` | 水面总调度（`PK_LAND_ONLY` 时不 include） |
+| `world_water_web.gdshader` | `render_water_pipeline_web_min`, `shade_water_web` | Web LOW/MID 紧凑水面第二 pass（5 槽；自己画迷雾色） |
 | `global_adjustments.gdshaderinc` | `apply_global_adjustments` | 末端调整 + tonemap |
+| `scripts/rendering/terrain_coverage_mesh.gd` | `TerrainCoverageMesh.build` | 陆地/水面保守覆盖 ArrayMesh（拆分几何） |
 
 ---
 
 > 文档维护：每次改动主结构（新加 inc / 改 BRDF 接口 / 改 SurfaceParams 字段）需同步更新本文件。
-> 最后更新：2026-07-05（shader 性能变体分档）
+> 最后更新：2026-11-02（全平台陆地/水面双 program 拆分 + TerrainCoverageMesh 覆盖几何 + 水面 program 自画迷雾色）

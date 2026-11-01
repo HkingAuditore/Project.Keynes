@@ -81,21 +81,21 @@ vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 #if defined(PK_MOBILE_ANY)
 	// 移动端始终走烘焙 L8（或跳过），不算完整程序配方。
 #ifdef VT_USE_TERRAIN_DETAIL
-	if (has_terrain_detail_tex) {
+	if (terrain_detail_available()) {
 		return baked_biome_detail(biome, uv);
 	}
 #endif
 	return vec3(1.0);
 #else
 	// [albedo-visibility 2026-07-31] 桌面高画质必须跑完整 per-biome 程序纹理。
-	// 旧逻辑：只要绑了 terrain_detail_tex（tiled 模式永远绑）就早退到单通道 L8，
+	// 旧逻辑：只要绑了 terrain_detail（tiled 模式永远绑）就早退到单通道 L8，
 	// 导致 visual_quality=2 时下方整段森林/沙丘/岩纹配方变成死代码——这就是
 	// "高画质也看不出纹理"的根因。中画质继续用烘焙 L8 保性能。
-	// [pk-web-texture-budget] terrain_detail tile 已裁掉时，直接跳过此早退，落到
-	// 下方 visual_quality==1 的廉价 fbm 公式 / >=2 的完整 per-biome 程序纹理——
-	// 后者本就是高画质档在纹理绑定时也会用到的路径，非临时代码。
+	// [web-high-features 2026-11-01 / 方案 B] 非 tiled（含 Web/Compatibility）的
+	// detail 已迁到 terrain_surface_tex layer2，`terrain_detail_available()` 对
+	// tiled(2D 绑定)/非 tiled(layer_count>=3) 都成立；LOW(vq<=0) 在上方已早退。
 #ifdef VT_USE_TERRAIN_DETAIL
-	if (visual_quality < 2 && has_terrain_detail_tex) {
+	if (visual_quality < 2 && terrain_detail_available()) {
 		return baked_biome_detail(biome, uv);
 	}
 #endif

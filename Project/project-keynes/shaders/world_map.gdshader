@@ -7,6 +7,21 @@ shader_type canvas_item;
 // 这里补齐。
 render_mode blend_mix, unshaded;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// [land-water-split 2026-11-02] 陆地 / 水面双 program 的宏归一（**只做别名，不动前缀**）。
+// Web 的两套既有前缀 `PK_WEB_LAND_ONLY` / `PK_WEB_WATER_ONLY` 是字节契约
+// （HexRenderer.WORLD_MAP_WEB_PREFIX* / WATER_WEB_HIGH_PREFIX / terrain_shader_variant_test
+// 逐字节守着），绝不能改；桌面 / 移动（Vulkan / GLES3 / Mobile）新增
+// `PK_LAND_ONLY` / `PK_WATER_ONLY`。这里把 Web 宏在 shader 内部归一到通用名，
+// 让下方分支只认一种写法：Web 变体的**行为**逐字不变，只是统一了判定条件。
+// ═══════════════════════════════════════════════════════════════════════════
+#if defined(PK_WEB_LAND_ONLY) && !defined(PK_LAND_ONLY)
+#define PK_LAND_ONLY
+#endif
+#if defined(PK_WEB_WATER_ONLY) && !defined(PK_WATER_ONLY)
+#define PK_WATER_ONLY
+#endif
+
 // world_map.gdshader v9.atlas — 高分辨率地理仿真渲染（结构重构版 2026-05-19）
 // [sky-sh-ambient 2026-06-29] 引入 L1 球谐天光（earth_daylight.earth_sky_sh）；本注释用于
 // 触发顶层 shader 重编译，避免编辑 .gdshaderinc 后 Godot 残留旧编译缓存导致 "earth_sky_sh 未找到"。
@@ -37,6 +52,15 @@ render_mode blend_mix, unshaded;
 // [eco-lut-retire 2026-08-06] 主地形移除 eco_lut，Compatibility 预算槽让给 terrain_material_tex；touch。
 // [water-edge-continuous 2026-08-02] 水体静态类别/水深改用距离场连续混合；LOW 编译期旁路。
 // [river-normal-separation 2026-08-03] 河心改用水平面基准的独立水波法线，河岸才与地形法线过渡；touch。
+// [baked-surface 2026-11-01] 两端删除"运行期高度差分法线"：hillshade_tod 只剩唯一入口
+//   terrain_baked_normal（法线/细节坡度全部来自生成期烘焙纹理）。Web LOW 由
+//   PK_WEB_HORIZON 真正执行 horizon 解码；上一轮的 Web 运行期细节法线开关整体删除。
+// [packed-surface 2026-11-01 / 方案 A] 非 tiled 的 normal+relief 合并成 1 个 2 层
+//   sampler2DArray `terrain_surface_tex`（layer0=normal、layer1=relief），Web 地形程序
+//   腾出 1 槽恢复 noise_tex（common_noise 回到 1 次纹理采样的预烘包快路径）。Web 陆地
+//   程序最终 8 槽 = height/map_index/enum/dyn/material/terrain_surface_tex/
+//   terrain_horizon_tex/noise_tex。touch 触发重编。
+// [p0-insolation-dead 2026-11-01] climate_season.season_offset_unified 无条件 return 0.0（on-map dyn_valid==1 ⇒ current_temp==dyn_temp，积分是死代码；padding 被 Fog 盖住，与 web 变体原行为一致）；touch 触发重编。
 // ═══════════════════════════════════════════════════════════════════════════
 // 本文件 2026-05-19 由 2299 行单文件拆分为 1 个主 shader + 多个 .gdshaderinc：
 //   uniforms / common_noise / height / climate_season / biome_color / vegetation /
@@ -47,15 +71,24 @@ render_mode blend_mix, unshaded;
 // fragment()（SETUP 解码 → LAND/SEA 分支调度 → GLOBAL 输出）。具体算法均下沉到 include。
 // 通道语义快速参考（详细请见 uniforms.gdshaderinc）：
 //   height_tex (RGBA8 LINEAR)      RG=海拔 (R*256+G)/257；B=river flow（原独立 flow_tex）
+//   terrain_normal_tex (RGBA8)     2D：RG=粗法线 xy；BA=近景高度细节坡度（encode_slope）。
+//                                  仅非 tiled 的**其它层**（植被/建筑/资源/贸易）消费。
+//   terrain_surface_tex (2×RGBA8)  非 tiled 地形程序打包数组：layer0=normal（同上布局），
+//                                  layer1=relief（RG=粗段/BA=细段分地形细节坡度）
 //   terrain_horizon_tex (RGBA8)    8 方向 horizon angle，high/low nibble packed
+//   noise_tex (RGBA8)              预烘噪声包（R raw value；GBA=fbm 2/3/4 octave 预积分）
 //   map_index_atlas (RGBA8 NEAREST) R=biome  GB=cell.index
 //   enum/dyn LUT:                  per-cell enum / dynamic visual state（eco_lut 已退役）
+//   terrain_material_tex           四层材质族 Texture2DArray（albedo/rough/normal 打包）
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Include 拓扑顺序（不可随意调整） ─────────────────────────────────────
 //   uniforms       叶子，零依赖，必须最先。
 //   material_constants 叶子（仅依赖 uniforms 中的 visual_quality 等）；集中常量、F0、特性开关。
-//   common_noise   叶子，依赖 uniforms.noise_tex / NOISE_TEX_SCALE。
+//   visual_tile_sampling 依赖 VT_USE_* 采样预算；声明 height/map_index/normal/relief/
+//                  horizon/edge/water_depth/detail/gi 的 sampler 与解码 helper。
+//   common_noise   全部变体 include；统一走 noise_tex 预烘包快路径（1 次纹理采样）。
+//                  [packed-surface 2026-11-01] Web 地形程序恢复绑定 noise_tex。
 //   height         叶子，依赖 uniforms.height_tex / hm_resolution。
 //   climate_season 叶子，依赖 uniforms.axial_tilt_rad / season_temp_amp / insolation 组。
 //   biome_color    叶子，依赖 uniforms.color_* / deep_ocean_* / B_* / ocean_current_enabled。
@@ -67,46 +100,92 @@ render_mode blend_mix, unshaded;
 //   earth_daylight 叶子，仅依赖 uniforms.season_phase/day_phase/axial_tilt_rad。
 //   植被气候物候权重内联于 land_pipeline，避免 include 热重载缓存版本错配：
 //                  地球式昼夜（晨昏线）单一真源，被 hillshade_tod/brdf/water 统一调用。
-//   hillshade_tod  依赖 uniforms.height_tex / hillshade_* / tod_* / B_* + height.decode_height_rg8 + earth_daylight。
+//   hillshade_tod  依赖 visual_tile_sampling（烘焙 normal/relief）+ uniforms.hillshade_* /
+//                  terrain_erosion_* / camera_zoom；唯一法线入口 terrain_baked_normal。
 //   water          依赖 common_noise.* + uniforms.map_index_atlas / B_LAKE/B_REEF/B_KELP/B_SEA_ICE。
 //   surface_params 半 PBR Stylized 参数结构（base_color/normal/roughness/metallic/ao/emission/alpha）。
 //   tonemap        依赖 material_constants：srgb↔linear、ACES filmic、Reinhard legacy。
 //   shore_common   依赖 uniforms + material_constants：sample_shore_neighborhood / compute_shore_halo。
-//   terrain_horizon 依赖 uniforms.wrap_map_uv + visual_tile_sampling：解码 8 方向 horizon angle，
-//                  一次 4-tap 采样同时给出 direct shadow、天空可见度(AO) 与 bent normal。
+//   terrain_horizon 所有变体统一 include；有 VT_USE_HORIZON 时解码 8 方向 horizon angle
+//                  （一次 4-tap 采样同时给出 direct shadow、天空可见度(AO) 与 bent normal），
+//                  没有采样槽的程序（Web 水面）内部退化为中性叶子。
 //   brdf           依赖 surface_params + material_constants + tonemap + terrain_horizon
 //                  + cell_indirect（弹射项要按遮挡源 cell id 查 bounce_lut）：
 //                  Cook-Torrance / Blinn-Phong fallback。
 //   land/water/global pipelines  最后 include，封装 fragment 的陆地/水面/全局调度算法。
+//                  拆分 program 时两边互补：陆地 program 不 include water_pipeline，
+//                  水面 program 不 include land_pipeline（PK_WEB_LAND_ONLY /
+//                  PK_WEB_WATER_ONLY 与桌面 PK_LAND_ONLY / PK_WATER_ONLY 同义）。
 
 // ─────────────────────────────────────────────────────────────────────────
 #include "res://shaders/include/shader_quality.gdshaderinc"
 #include "res://shaders/include/uniforms.gdshaderinc"
+// ─── VT_USE_* 采样预算（决定 visual_tile_sampling 声明哪些 sampler）──────────
+// [baked-surface 2026-11-01 / packed-surface 2026-11-01 / web-high-features 2026-11-01]
+// 法线/细节坡度两端都只来自生成期烘焙纹理，非 tiled 的 normal+relief 打包成 1 个 array：
+//   桌面 tiled：normal + relief 仍是两个数组（relief 是 relief_scale 倍分辨率，
+//     不能同 array）+ water_depth + terrain_detail + edge_* + horizon + gi_occluder。
+//   桌面 legacy（非 tiled）：normal+relief+detail(+occluder) 打包进 terrain_surface_tex，
+//     保留 water_depth / edge_* / horizon / gi_occluder / micro / bounce_lut。
+//   Web 地形程序（LOW + HIGH land，PK_WEB_WATER_ONLY 之外）恰好 8 个材质槽 ——
+//     height_tex / map_index_atlas / enum_lut / dyn_lut / terrain_material_tex /
+//     terrain_surface_tex / terrain_horizon_tex / noise_tex。
+//     方案 B：detail 读 surface array layer2；micro 读 material array 第 5 层；
+//     GI 弹射读 surface array layer3（不再需要 bounce_lut）。都不新增 sampler。
+//   Web/Compatibility 水面（PK_WEB_WATER_ONLY，或桌面 Compatibility 的**非 tiled**
+//     完整主 pass）：water_depth 槽打开（HIGH 水面 7 槽；桌面 Compatibility 主 pass 8 槽）。
+//   Web land-only 程序不拿 water_depth（预算留给上面的 8 槽）；桌面 Compatibility tiled
+//     变体保持方案 A 的 8 槽（tiled 的 water_depth/detail 是数组，会超 GLES3 预算）。
+//   Web 水面程序（PK_WEB_WATER_ONLY）仍不开 surface/horizon（水面不需要地形几何法线）。
+//   桌面 Compatibility（只有 PK_WEB_TEXTURE_BUDGET、没有 PK_WEB_HORIZON）：horizon 槽
+//     不开（VT_USE_HORIZON 不定义，由 terrain_horizon 中性叶子兜底）。
 #define VT_USE_HEIGHT
-// [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 16 纹理单元预算下，本文件
-// 已逼近上限；以下 5 个 tile 全部裁掉，调用方均已改为回退到已验证过的运行期
-// 估算路径（旧存档/未 rebake 时本就走这些路径，非新增代码）：
-//   - TERRAIN_NORMAL：粗法线回退到 hillshade_tod 的宽半径高度差分。
-//   - WATER_DEPTH   ：水深回退到 water_pipeline 的邻域 height 估算。
-//   - TERRAIN_DETAIL：biome 细节回退到 procedural_biome_detail 的程序噪声配方。
-//   - EDGE_NEIGHBOR / EDGE_DISTANCE：次生生态过渡带关闭，退化为硬主 cell 边界。
-#ifndef PK_WEB_TEXTURE_BUDGET
+#define VT_USE_MAP_INDEX
+#define VT_USE_FLOW
+#if defined(PK_WEB_TEXTURE_BUDGET)
+#ifndef PK_WEB_WATER_ONLY
+#define VT_USE_TERRAIN_NORMAL
+#define VT_USE_TERRAIN_RELIEF
+// [B] 非 tiled detail 走 terrain_surface_tex layer2；tiled budget（桌面 Compatibility
+// tiled 诊断路径）保持方案 A 的 8 槽，不新增 detail/water_depth 数组采样器。
+// water_depth 只给"同程序里真的画水"的变体：桌面 Compatibility 完整主 pass（无 LAND_ONLY）；
+// Web land-only 程序不拿（保持 8 槽）。
+#if !defined(MAP_VISUAL_TILED)
+#define VT_USE_TERRAIN_DETAIL
+#if !defined(PK_WEB_LAND_ONLY)
+#define VT_USE_WATER_DEPTH
+#endif
+#endif
+#if defined(PK_WEB_HORIZON)
+#define VT_USE_HORIZON
+#endif
+#endif
+// [B] HIGH 水面独立程序（WATER_ONLY，非 tiled）需要烘焙水深；land-only 程序不拿。
+#if defined(PK_WEB_WATER_ONLY)
+#define VT_USE_WATER_DEPTH
+#endif
+#else
 #define VT_USE_TERRAIN_NORMAL
 #define VT_USE_TERRAIN_RELIEF
 #define VT_USE_WATER_DEPTH
 #define VT_USE_TERRAIN_DETAIL
 #define VT_USE_EDGE_NEIGHBOR
 #define VT_USE_EDGE_DISTANCE
-#endif
 #define VT_USE_HORIZON
-// [pk-web-texture-budget] GI 单次弹射（gi_occluder tile + bounce_lut，共 2 个
-// 纹理单元）在 Compatibility(GLES3/WebGL2) 后端下裁掉——sky visibility/direct
-// shadow 等其余 horizon 派生量不受影响，只丢弹射色溢出这一项纯装饰性增强。
-#ifndef PK_WEB_TEXTURE_BUDGET
+// [pk-web-texture-budget] GI 单次弹射（gi_occluder tile + bounce_lut）只在桌面
+// 启用；Compatibility 下裁掉——sky visibility/direct shadow 等其余 horizon 派生量
+// 不受影响，只丢弹射色溢出这一项纯装饰性增强。
 #define VT_USE_GI_OCCLUDER
 #endif
-#define VT_USE_MAP_INDEX
-#define VT_USE_FLOW
+// [web-high-features 2026-11-01 / 方案 B] 非 tiled Web/Compatibility 的 HIGH 地表特性包：
+// 全部复用已有 sampler，不增加材质槽：
+//   PK_TERRAIN_MICRO_ARRAY   — micro 走共享 terrain_material_tex 第 5 层（index 4）；
+//   PK_TERRAIN_PACKED_BOUNCE — GI 弹射 occluder ids 走 terrain_surface_tex 第 4 层
+//                              （index 3），不再采样 bounce_lut（该变体也没声明它）。
+#if defined(PK_WEB_TEXTURE_BUDGET) && !defined(PK_WEB_WATER_ONLY) && !defined(MAP_VISUAL_TILED)
+#define PK_TERRAIN_MICRO_ARRAY
+#define PK_TERRAIN_PACKED_BOUNCE
+#endif
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/material_constants.gdshaderinc"
@@ -115,9 +194,10 @@ render_mode blend_mix, unshaded;
 #else
 #include "res://shaders/include/cell_indirect.gdshaderinc"
 #endif
-#ifndef PK_WEB_WORLD_MIN
+// [baked-surface 2026-11-01] common_noise 所有变体都 include：统一走 noise_tex 预烘包。
+// [packed-surface 2026-11-01] 非 tiled 的 normal+relief 合并进 1 个 array 后腾出采样槽，
+// noise_tex 在 Web 地形程序恢复绑定，上一轮的程序化噪声 fallback 已整体删除。
 #include "res://shaders/include/common_noise.gdshaderinc"
-#endif
 #include "res://shaders/include/height.gdshaderinc"
 #include "res://shaders/include/climate_season.gdshaderinc"
 #include "res://shaders/include/biome_color.gdshaderinc"
@@ -128,25 +208,30 @@ render_mode blend_mix, unshaded;
 #include "res://shaders/include/snow_cover.gdshaderinc"
 #include "res://shaders/include/biome_detail.gdshaderinc"
 #include "res://shaders/include/hillshade_tod.gdshaderinc"
-#ifndef PK_WEB_WORLD_MIN
+#if !defined(PK_WEB_WORLD_MIN) && !defined(PK_WEB_LAND_ONLY)
 #include "res://shaders/include/water.gdshaderinc"
 #endif
 #include "res://shaders/include/surface_params.gdshaderinc"
 #include "res://shaders/include/terrain_surface_detail.gdshaderinc"
-#ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/tonemap.gdshaderinc"
-#endif
 #ifndef PK_WEB_WORLD_MIN
 #include "res://shaders/include/shore_common.gdshaderinc"
 #endif
-#ifndef PK_WEB_WORLD_MIN
+// [baked-surface 2026-11-01] horizon 所有变体统一 include：Web 全档位生成期烘焙，
+// PK_WEB_HORIZON 覆盖 MOBILE_QUALITY_LOW 的早退；没有 horizon 采样槽的程序
+// （Web 水面）由 include 内部的中性叶子兜底。terrain_horizon_neutral 不再使用。
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
-#endif
 #include "res://shaders/include/brdf.gdshaderinc"
+// [land-water-split 2026-11-02] 水面 program 不 include 陆地管线（与陆地 program
+// 不 include 水面管线对称）。Web HIGH 水面程序（PK_WEB_WATER_ONLY）经上面的别名也是
+// PK_WATER_ONLY，因此同样只编自己那条着色来源；fragment 里陆地分支退化为占位常量，
+// 不会再引用 render_land_pipeline。
+#if !defined(PK_WATER_ONLY)
 #include "res://shaders/include/land_pipeline.gdshaderinc"
-#ifndef PK_WEB_WORLD_MIN
+#endif
+#if !defined(PK_WEB_WORLD_MIN) && !defined(PK_WEB_LAND_ONLY) && !defined(PK_LAND_ONLY)
 #include "res://shaders/include/water_pipeline.gdshaderinc"
-#endif // PK_WEB_WORLD_MIN
+#endif
 
 #include "res://shaders/include/global_adjustments.gdshaderinc"
 
@@ -196,6 +281,9 @@ void fragment() {
 	// 这 4 个分量在 v10.noise-pack 中是 raw value + fbm-2/3/4-octave 的预积分，
 	// 谱形不同但仍是同坐标采样，对"独立 RV"的要求是软约束。下游若需严格独立
 	// 随机数，应另调 derive_independent_noise4(wp + offset)。
+	// [packed-surface 2026-11-01] 非 tiled 的 normal+relief 合并成 1 个 2 层 array 后，
+	// Web 地形程序恢复 noise_tex 绑定：pixel_noise 重新走预烘噪声包（1 次纹理采样），
+	// MOBILE_QUALITY_LOW 仍按 PK_SKIP_PIXEL_NOISE 退化成中性灰（移动端省采样）。
 	// 60 FPS 优化（2026-06-18）：scalar/vector 和 per-pixel dynamic atlas 已退役。
 #ifdef PK_SKIP_PIXEL_NOISE
 	vec4 pixel_noise = vec4(0.5);  // 中性灰值，不调 fbm 也不影响
@@ -304,6 +392,15 @@ void fragment() {
 	// flow + river_edge_warp 仅在陆地的 river 分支才用，这里推迟到 _if (!is_water)_ 计算，
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+	// [land-water-split 2026-11-02] 水面 program（Web HIGH 与桌面/移动 PK_WATER_ONLY）：
+	// 只画水。陆地像素 discard —— 陆地像素由陆地 program 负责（含混合 block 的陆地像素）；
+	// 未探索的**水**像素不 discard，落到下面的 fog 出口画 fog_unexplored_color（与陆地
+	// program 同一 uniform 值），保证纯水 block 在分 mesh 后仍有迷雾色。
+	// debug 视图由 renderer 回退单 program，这里保留 discard 作为防御。
+#ifdef PK_WATER_ONLY
+	// Reuse the PC water pipeline without compiling a second land shading source.
+	if (!is_water || terrain_surface_debug_view != 0) { discard; }
+#endif
 	// The static base color already uses continuous edge blending, but later
 	// climate/vegetation/cover stages are biome-gated. Feed those stages a
 	// DitherUV-selected visual biome as well, otherwise they redraw the hard
@@ -388,7 +485,7 @@ void fragment() {
 		COLOR = vec4(fog_unexplored_color, 1.0);
 	} else {
 		if (!is_water) {
-#ifndef PK_PROBE_NO_LAND
+#if !defined(PK_PROBE_NO_LAND) && !defined(PK_WATER_ONLY)
 			col = render_land_pipeline(
 				visual_land_biome, biome, visual_land_veg, visual_land_cover, landform,
 				elev, moist, wp, uv, scals, lat_signed, current_temp,
@@ -398,7 +495,7 @@ void fragment() {
 #endif
 		} else {
 #ifndef PK_PROBE_NO_WATER
-#ifdef PK_WEB_WORLD_MIN
+#if defined(PK_WEB_WORLD_MIN) || defined(PK_WEB_SPLIT_WATER)
 			// [web-water-pass] web-LOW 档：水面由独立的第二 pass
 			// （shaders/world_water_web.gdshader）整屏覆盖重画，这里只出一个常量。
 			// 这是本次结构性修复的**全部内容**：本 fragment 从此只有一个真正的
@@ -406,6 +503,11 @@ void fragment() {
 			// 常量取值与 PK_PROBE_NO_WATER 探针一致（该探针因此退化为等价路径，
 			// 但按约定保留：它是"水面像素到底由谁画"的开关）。
 			col = vec3(0.1, 0.2, 0.4);
+#elif defined(PK_LAND_ONLY)
+			// [land-water-split 2026-11-02] 桌面 / 移动陆地 program：水面像素由独立的
+			// 水面 program 绘制（混合 block 两张覆盖 mesh 都覆盖，这里 discard 才不会
+			// 盖掉水；未探索像素已在上面走 fog 出口，与水面 program 同色）。
+			discard;
 #else
 			col = render_water_pipeline(
 				biome, cover, water_secondary_biome, water_secondary_cover,

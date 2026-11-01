@@ -412,6 +412,90 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 	return null
 
 
+# [terrain-web-baked-surface-B 2026-11-01] Web horizon + GI 遮挡源 bundle：
+# 同一次 native marching 同时产出 horizon 纹理（8 方向 nibble pack）与 occluder 纹理
+# （RGBA8，每个 texel = 两个 16-bit cell.index：RG=主遮挡源、BA=次遮挡源，0xFFFF=无）。
+# 依据是 horizon 的 top-2 方向命中像素；occluder 需要 map_index bytes（G/B = cell.index
+# 低/高字节）才能把命中像素反查成 cell id，所以调用方**必须**先把 enum atlas 烘好。
+# 桌面 GPU 离屏 horizon 路径不用本函数（那边由 HexRenderer 的 GPU 模块产出 horizon，
+# occluder 走 tiled compute）；本函数只服务 Web 全档位的 CPU horizon 分支。
+#
+# 返回 {"horizon_tex": ImageTexture|null, "occluder_tex": ImageTexture|null,
+#        "elapsed_ms": float, "fallback": bool, "reason": String}
+#   - fallback=true：native 不可用/入参不合法 → 两张都 null，调用方按"无 horizon/无遮挡"回退；
+#   - occluder_tex 只有 native 明确返回 occluder_ready 且尺寸匹配时才上传。
+static func encode_horizon_bundle(buf: PackedFloat32Array, size: Vector2i,
+		world_size: Vector2, hex_size: float, existing_horizon: ImageTexture,
+		native_ext: Object, steps: int, step_px: float,
+		max_horizon_angle: float, bias: float, height_world_scale: float,
+		wrap_period_x: float, sea_level: float, step_growth: float,
+		lowpass_radius: int, max_distance_world: float,
+		map_index_data: PackedByteArray) -> Dictionary:
+	var W: int = size.x
+	var H: int = size.y
+	var expected: int = W * H * 4
+	var out := {
+		"horizon_tex": null,
+		"occluder_tex": null,
+		"elapsed_ms": -1.0,
+		"fallback": true,
+		"reason": "",
+	}
+	if W <= 0 or H <= 0 or expected <= 0:
+		out["reason"] = "invalid_size"
+		return out
+	if map_index_data.size() < expected:
+		# native 侧会直接 fail；提前判可以给出可读原因（调用方应先 encode enum atlas）。
+		out["reason"] = "map_index_data_missing"
+		push_warning("[terrain_horizon/bundle] map_index_data too small (%d < %d); skip horizon+occluder"
+			% [map_index_data.size(), expected])
+		return out
+	var hscale: float = height_world_scale if height_world_scale > 0.0 else maxf(hex_size * 8.0, 1.0)
+	var ret: Dictionary = _native_data(native_ext, &"encode_bake_horizon_tex_data", {
+		"height_buffer": buf,
+		"width": W,
+		"height": H,
+		"world_size_x": world_size.x,
+		"world_size_y": world_size.y,
+		"wrap_x": true,
+		# 真正经度周期（world units）：柱状地图 marching 须按此折叠而非整图宽（含 padding）。
+		"wrap_period_x": wrap_period_x,
+		"steps": steps,
+		"step_px": step_px,
+		"step_growth": step_growth,
+		"lowpass_radius": lowpass_radius,
+		"max_horizon_angle": max_horizon_angle,
+		"bias": bias,
+		"height_world_scale": hscale,
+		"max_distance_world": max_distance_world,
+		"sea_level": sea_level,
+		# [terrain-gi 2026-07-31] 打开遮挡源 cell id 输出（默认关闭，其它调用点逐字节不变）。
+		"emit_occluder_cells": true,
+		"map_index_data": map_index_data,
+	})
+	out["elapsed_ms"] = float(ret.get("elapsed_ms", -1.0))
+	if bool(ret.get("fallback", true)):
+		out["reason"] = String(ret.get("reason", "native_fallback"))
+		push_warning(("[terrain_horizon/bundle] encode_bake_horizon_tex_data unavailable/fallback "
+			+ "(reason=%s). Rebuild the GDExtension DLL to enable Web horizon cast shadows.") % out["reason"])
+		return out
+	var data: PackedByteArray = ret.get("data", PackedByteArray())
+	if data.size() != expected:
+		out["reason"] = "horizon_payload_size_mismatch:%d/%d" % [data.size(), expected]
+		push_warning("[terrain_horizon/bundle] " + String(out["reason"]))
+		return out
+	out["horizon_tex"] = _upload_rgba8(data, W, H, existing_horizon)
+	var occ: PackedByteArray = ret.get("occluder_data", PackedByteArray())
+	if bool(ret.get("occluder_ready", false)) and occ.size() == expected:
+		out["occluder_tex"] = _upload_rgba8(occ, W, H, null)
+	elif bool(ret.get("occluder_ready", false)):
+		push_warning("[terrain_horizon/bundle] occluder payload size mismatch %d/%d; GI bounce disabled"
+			% [occ.size(), expected])
+	out["fallback"] = false
+	out["reason"] = ""
+	return out
+
+
 static func encode_enum_atlas_payload(biome_buf: PackedByteArray, _veg_buf: PackedByteArray,
 		_cover_buf: PackedByteArray, size: Vector2i,
 		existing: ImageTexture = null, world: Object = null, native_ext: Object = null,

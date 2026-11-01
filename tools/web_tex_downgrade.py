@@ -110,13 +110,8 @@ KEEP: list[tuple[str, str]] = [
 MIN_BYTES = 128 * 1024
 
 # ---- 预烘焙材质 .res（不进 .import 流程，靠重烘焙脚本临时缩小）------------
-# 实测 4 × 5.33 MB = 21.3 MB，而 Web 运行时按 TERRAIN_MATERIAL_SIZE_MOBILE(512) 读，
-# 1024 那套在 web 上永远不会被 load（见 map_baker.gd:341 / 1215）。
-# 处理方式：导出期把文件内容换成 256²（保留文件本身，避免导出器 missing），
-# 导出后连字节一起还原。
-RES_STUB_TARGETS = [
-    "assets/textures/loading_prebaked_v1/material_1024_%d.res" % i for i in range(4)
-]
+# Web 高档使用原始 1024 材质，禁止再用 256 占位资源替换。
+RES_STUB_TARGETS = []
 RES_STUB_SCRIPT = "res://tools/web_tex_stub_loading_materials.gd"
 
 # 只处理这些 importer 的 .import（其余 font_data/script 一律不碰）

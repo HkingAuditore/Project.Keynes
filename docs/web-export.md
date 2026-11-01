@@ -1,5 +1,41 @@
 # Web 导出（Project.Keynes → 浏览器）
 
+## 2026-10-31：Web 运行期画质恢复
+
+Web 高档现在有独立的 PC 画质变体；低、中档保留较轻的预热程序。
+
+| 档位 | 地形 atlas 最长边 / 材质 | 光照与植被 |
+| --- | --- | --- |
+| 自动 / 低 | 512 / 程序底色 | 既有 Blinn-Phong、远景简化植被 |
+| 中 | 1024 / 512 材质数组 | 地形与紧凑水面 PBR、四类近景植被与法线着色 |
+| 高 | 2048 / 1024 材质数组 | PC 陆地与完整水面管线、完整植被形态与软阴影 |
+
+运行中从设置切到高档会继续使用 Web 共享程序，恢复地形高度细节、侵蚀沟谷、
+坡面层次、材质采样和迷雾 q1/q2 分层；不会临时编译完整 PC 程序。页面启动时使用
+`?quality=high` 才会选择完整 PC 变体。完整高档 `PK_WEB_PC_HIGH` 不定义 `MOBILE_QUALITY_*`，直接复用 PC 的地形细节法线、
+沟谷/沙丘/岩层、河流法线与动态水纹、GGX/Smith/Schlick、线性光与 ACES。
+水面复用 `water_pipeline.gdshaderinc`，保留完整波浪、Fresnel 天空反射、SSS 与岸线特效。
+陆地使用 `PK_WEB_SPLIT_WATER`，水面使用 `PK_WEB_WATER_ONLY`：两片调用同一份 PC
+管线，避免在一个 fragment 中联合编译水陆。高档植被也不走移动端宏，使用全部近景
+形态、PC 的 3px LOD 阈值及解析软阴影。低档、中档、高档实际程序全部进入菜单预热。
+
+两张高档地表程序各保持独立 sampler 预算（陆地 8、水面 6）。Web 高档会在地图生成时烘焙 horizon，
+地形和普通近景植被读取真实投影遮蔽、天空可见度与 bent normal；为腾出这一槽位，
+高档地形保留距离场连续过渡，省略次级邻格索引。家族植被批次释放 horizon 槽，
+仍使用完整形态、地面法线和软阴影。GI 弹射仍受预算限制。
+独立天气层仍使用 Web 简化云体（云量、晨昏色与云影保留）。这些差距不能靠高档标签消除。
+
+atlas 与材质数组尺寸在生成时选择；要获得对应静态精度，需要以所选画质重新生成地图。
+导出不再把 `material_1024_*.res` 替换成 256 占位，因为 Web 高档已实际使用这组资源。
+低/中档共享程序，通过 uniform 切换 PBR 与四类近景；跨入/退出高档则选择预热过的 PC
+变体并重新绑定材质输入，实例预算变化仍可能触发分帧重建。第一次预热开销相应增加。
+
+验证入口：`tests/rendering/web_quality_render_test.gd` 用 Compatibility 真 GPU
+检查实际低/中/高像素和四类植被；`terrain_shader_variant_test.gd` 检查变体，
+`web_water_pass_node_test.gd` 检查水面节点。Web 自动测试新增
+`?autotest=1&quality=high`（也接受 `low/medium`），通过正式 GameSettings 更新且不保存；
+原 `tier=` 是编译档诊断探针，不代表玩家画质。
+
 本文记录 Web 导出的完整链路、两个必须对齐的编译约束，以及当前验证到什么程度。
 一键脚本是仓库根目录的 `Build-Web.cmd`，产物落在 `WebBuild/`。
 
@@ -208,7 +244,7 @@ python tools\subset_fonts.py restore      :: 手动还原
 | 渲染 | Compatibility/WebGL2，shader 走 mobile 质量档 | `feature_flags.uses_shader_quality_tier()` |
 | 地形烘焙 | 跳过 GPU horizon bake，降纹理尺寸 | `scripts/rendering/map_baker.gd` |
 | 建筑/植被细节 | 降低常驻实例上限、关影子 | `building_visual_layer.gd`、`trade_activity_layer.gd` |
-| FMOD 音频 | 不加载（extension 只声明了 windows/linux/android/mac 库），回落原生音频 | `scripts/audio/game_audio_service.gd` |
+| 音频 | Web 使用 Godot/Vorbis 完整混音：菜单、四时代组曲、三首升级过渡、UI 与游戏事件音效；Windows 继续使用 FMOD | `scripts/audio/native_audio_backend.gd` |
 | 存档后台写 | 关掉后台线程写 | `scripts/game/game_save_coordinator.gd` |
 | 仿真线程 | nothreads 变体全在主线程；threads 变体才有 worker | 见 §6 |
 
@@ -273,6 +309,28 @@ ERROR: 0:2563: '?:' : ternary operator is not allowed for structures in ESSL 1.0
 
 已改成 `if/else` 分支（桌面 SPIR-V 行为不变）。修之前这行会让整片植被 shader
 绑定失败并往控制台 dump 近 3000 行 GLSL。
+
+### 6.5 已修：左侧地图图层工具条压住顶栏日历（2026-11-01）
+
+现象（Web 截图）：左上角 4 个图层按钮（地理/气候/资源/生物）竖排纸条第 1 个
+盖住顶栏的日历图标，"第1年" 左半边被切掉。桌面端同尺寸（1556x761）复现不出来。
+
+定位：`HUDLayer/MapOverlayToolbar` 是 HUD 里最后一个**只靠 `.tscn` 静态
+anchor+offset 摆位、运行期从不重新结算**的节点。`PlayerTopBar` / `RightPanel`
+早前是同一类症状（`[web-layout-guard]`，见 `game_ui_manager.gd` 里的注释），
+已经改成运行期兜底；工具条漏在外面，于是 Web 上它的 rect 退化成默认的 `(0,0)`，
+`PrimaryPanel` 被摆到屏幕左上角（80x272），正好盖住顶栏左侧 `DateBlock`
+（16,22,294x48）里的日历图标与日期文字。
+
+修复：`GameUIManager._layout_map_overlay_toolbar()` 走与顶栏/详情面板完全相同的
+运行期路径 —— `set_anchors_preset(PRESET_FULL_RECT)` + 写回
+左 16 / 顶（顶栏实时高度 + 12）/ 右 -16 / 底 -16。绑定工具条时执行一次，
+之后每次 `_layout_top_bar()`（含视口 `size_changed`）都会级联重算，数值与
+`map_overlay_toolbar.tscn` 声明一致，桌面端幂等。
+
+回归测试：`tests/ui/hud_topleft_layout_test.gd`（headless）。六个视口尺寸下断言
+纸面板与日期纸框/日历图标零相交、四条内边距与 `.tscn` 一致，并显式模拟
+"声明式布局丢失 → rect 退化到 (0,0)" 的 Web 症状，验证运行期兜底能恢复。
 
 ## 7. 验证方法
 
@@ -633,6 +691,8 @@ fault_code = ""  / mode = OFF / planned = 0 / committed = 0
   octave 值噪声）与 `#define PK_WEB_WEATHER_MIN`；
 - `weather_layer.gd`：`PK_WEB_ENABLE_WEATHER_SHADERS := true`（stub 降级为应急开关），
   新增 `WEB_WEATHER_MIN_DEFINE`，web 上 prepend，且排在质量档宏之前；
+  **注（2026-11-01）**：web 上是否真的绘制由 `WeatherLayer.set_render_gate()` 的画质门决定
+  —— 只有高画质才画，低/中/auto 关门（见 9.21 的修正段）；
 - 保留：三层云（cumulus / cirrus / 低雾）、覆盖度→密度→不透明度的逐字 remap、昼夜光照
   （`eval_earth_daylight` + `compute_cloud_lighting`）、直接云影、降水 alpha、逐帧 LUT 插值、
   迷雾 gate、完整 uniform 契约；
@@ -889,10 +949,23 @@ WebGL 上下文丢失 → Godot 自动 reload（这就是"跑满一年后页面�
 | 全层（含天气） | 30–50 秒整帧，偶发 reload |
 | **只关天气层**（迷雾+国界+植被+建筑全开） | **day 365 / 28,042 帧 / 最大帧间隔 2,049 ms** |
 
-**修复**：`hex_renderer.gd` 新增 `PK_WEB_ENABLE_WEATHER_LAYER := false`——web 上天气层
-**仍然创建、所有 set_* 调用照常**，但 `visible = false`（不绘制）。天气**模拟**完全不受影响，
-只是少一层云。验证：连续多次 `?autotest=1&days=365&speed=10` 跑到 day 365、
-`autotest_start` 只出现 1 次（**没有 reload**）、beat 间隔稳定 2 秒。
+**修复（2026-10-31）**：`hex_renderer.gd` 新增 `PK_WEB_ENABLE_WEATHER_LAYER`——web 上天气层
+**仍然创建、所有 set_* 调用照常**，只是不绘制。天气**模拟**完全不受影响，只是少一层云。
+验证：连续多次 `?autotest=1&days=365&speed=10` 跑到 day 365、`autotest_start` 只出现 1 次
+（**没有 reload**）、beat 间隔稳定 2 秒。
+
+**修正（2026-11-01）：当时的 `visible = false` 并不生效，现已改成画质门。**
+`WeatherLayer._refresh_visibility()` 会在 `setup()`（`_apply_uniforms()` 每次都会调，而初始
+cell-LUT bake 在渲染器绑定前就已发布 weather LUT）和 fronts 更新时把 `visible` 重新置 true
+—— 也就是说上面那次"不绘制"实际只覆盖 `_ready` 到首次 `set_map` 之间的一小段。
+
+现落地：`WeatherLayer.set_render_gate()` 把画质门与 fronts/LUT 条件取与
+（`_refresh_visibility()` 里唯一的 AND 项）；`hex_renderer._apply_weather_layer_render_gate()`
+在 web 上只有**高画质**（`visual_quality >= 2`，或 QA 的 `?tier=high`）才开门，
+低 / 中 / auto 关门。关门时天气层连 `_process` 都直接返回（不付逐帧 uniform/粒子/雨幕同步的
+CPU）。桌面 / 移动门恒开，行为不变；天气层对象仍创建、模拟与 LUT 刷新照常。
+切画质（`set_visual_quality`）与切档（`set_mobile_quality_tier`）都会即时重算，
+首个状态变化打一行 `[hex_renderer] web: WeatherLayer drawn=...`。
 
 **遗留**：进世界仍是 13–16 秒（目标 ≤10s），最大头是 `_bind_country_visuals` 与
 `build_indices_cooperative` / bake；下一步按 9.19 的清单继续压。
@@ -992,7 +1065,11 @@ python tools\pk_web_reload_probe.py --wait 45 --profile tmp\chrome_profile_pk  #
 >
 > 两条都 `pass=true` / `fault=''` / `web_worker_inline_fallback=false`。
 > 开关优先级（高到低）：`?worker=0|1`（Engine meta）> `PK_WEB_WORKER=0|1`（环境变量）
-> > `runtime_web_worker` 导出项 > web 平台默认 `true`。worker 启动失败会自动回退 inline
+> > `runtime_web_worker` 导出项 > web 平台默认 `true`。worker 启动失败会自动回退 inline；
+> 如果 side module 缺少 `environment_ring_has_capacity()` 或
+> `runtime_committed_day()`，启动边界也会强制回退 inline，避免旧 Web 包把 worker
+> 停在 `PAUSED` 等不到环境帧并卡住第 1 天。重新执行 `Build-Web.cmd`（不要使用
+> `skip-native`）可恢复 worker 路径。
 > （`web_worker_start_code=inline_fallback`），所以默认开启不是单点风险。
 > 桌面不受影响：桌面本来就跑 worker，`native_daily_inline` 在桌面只看
 > `PK_NATIVE_DAILY_INLINE`。
@@ -1123,3 +1200,606 @@ web 默认可以切到 worker 的依据（见 §9.20.1 结论）。
    不再是加载指标的前提，但能让 10× 更省 CPU。
 3. `veg_shadow` 在 web 上不上屏却仍被编译；`building_shadow` 同理。是几毫秒级的浪费。
 
+### 9.22 「海量报错」定案：2 GiB wasm 堆耗尽 + 每次输入重入（2026-10-31）
+
+**症状**（玩家控制台原文）
+
+```
+ProjectKeynes.js:467 Cannot enlarge memory, requested 2147487744 bytes, but the limit is 2147483648 bytes!
+ProjectKeynes.js:467 ERROR: Parameter "mem" is null.
+ProjectKeynes.js:467    at: alloc_static (core/os/memory.cpp:114)
+099dddfe:0x20970be Uncaught RuntimeError: table index is out of bounds
+    at move_cb (ProjectKeynes.js:1:713785)      ← 每次鼠标移动/滚轮/点击各来一对
+```
+
+同一份控制台里还有 `chrome-extension://…/scripts/content.js` 的
+`Permissions policy violation: unload …`、`Unchecked runtime.lastError`、
+`Cannot read properties of undefined (reading 'rotate')`。**那些是浏览器扩展自己的
+报错，与本项目无关**：干净 profile（`--user-data-dir` 指向空目录）下它们一条都不会
+出现；排查 Web 问题时先关掉扩展，否则会把扩展噪音当成引擎问题。
+
+**根因链（按发生顺序）**
+
+1. Godot Web 跑在**单个 wasm32 线性内存**里，官方 4.6 模板写死
+   `MAXIMUM_MEMORY = 2 GiB`；Emscripten 日志里的 `limit is 2147483648` 就是这个值。
+   `requested 2147487744 = 2 GiB + 4 KiB` 说明堆顶已经顶到墙上（只差一页），
+   **不是某一次超大分配，而是堆被填满了**。
+2. 堆满后 `Memory::alloc_static` 返回 null，引擎没有就此停住，继续跑 `move_cb`
+   （Emscripten 挂在 canvas 上的输入回调）。每次输入都重新进 wasm → 重新 malloc
+   失败 → 再打印一轮 `Cannot enlarge memory` + `mem is null`。
+3. 内存耗尽后函数表索引损坏，于是同一批回调抛
+   `RuntimeError: table index is out of bounds`。这就是"控制台看起来在无限刷报错"：
+   **一条错误 × 每一次鼠标事件**，而不是引擎在循环打印。
+4. 现场事件流（`tmp/web_events.jsonl`）里这次会话是 10× 从 day 0 连续跑到
+   **day 1460（第 4 年）** 才暂停/崩，说明是**长跑累积**，不是启动即崩。
+
+**结论**：这是 Web 平台 2 GiB 上限 + 长跑内存增长共同导致的硬上限，不是资源损坏、
+不是 WebGL 上下文丢失，也不是扩展把游戏搞崩（扩展只是噪音）。
+
+**已落地：页面侧 watchdog（`tools/web/pk_web_watchdog.js`）**
+
+`Build-Web.cmd` 在每次导出成功后调用 `tools/patch_web_shell.py`，把
+`pk_web_watchdog.js` 拷到导出目录并往 `ProjectKeynes.html` 里注入一行
+`<script src="pk_web_watchdog.js"></script>`（幂等，带 `<!-- pk-web-watchdog -->` 标记）。
+它只做页面侧的事，不依赖引擎内部：
+
+| 行为 | 说明 |
+| --- | --- |
+| `pk_heap` 事件 | 每 10 s 把 `engine.rtenv.HEAPU8.length`（MB）POST 到 `/_log`，长跑得到 **堆大小 vs 天数** 曲线 |
+| `pk_heap_start` / `pk_heap_high` / `pk_heap_critical` | 启动值、1900 MB 警告、2000 MB 临界 |
+| 1900 MB 顶部提示条 | 不挡画布，提示保存后刷新 |
+| `pk_heap_fatal` + 全屏遮罩 | 首次检测到 `Cannot enlarge memory` / `mem is null` / `table index is out of bounds` 时：显示一块可读的中文提示（含刷新按钮）、`engine.requestQuit()`、**替换 canvas 节点**（Emscripten 的输入监听器随节点一起消失）、并抑制后续重复错误（只放行前 6 条） |
+
+这样即使再次撞墙，控制台也只会看到**一条**真正的错误 + 一个明确提示，而不是几千条
+输入回调刷屏；同时事件流里留下完整的堆增长曲线，下一轮就能定位是哪个子系统在涨。
+页面侧脚本的逻辑有独立单测（不需要浏览器/引擎）：`node tools/web/test_pk_web_watchdog.js`。
+
+**已落地：GDScript 侧内存遥测**
+
+- `scripts/game/web_telemetry.gd` 新增 `wasm_heap_mb()`：通过 `JavaScriptBridge`
+  读 `engine.rtenv.HEAPU8.length`；`memory_mb()`（Godot 静态内存）保留作对账。
+- `world_runtime_host._web_barrier_diag()` 把 `wasm_heap_mb` / `memory_static_mb`
+  写进 `diag` 事件（每 ~10 s 一条）。
+- 浏览器侧钩子（`webglcontextlost` / `pagehide` / `js_error`）放在页面侧
+  `pk_web_watchdog.js` 里。`WebTelemetry.install_page_hooks()` 仍保留但**不要**
+  从 GDScript 调用：早先试过 `JavaScriptBridge.eval` 注入，实测页面只跑一帧就静默
+  （见 `world_runtime_host.gd` 里那条“已撤”注释）。页面侧脚本是普通 `<script>`，
+  不经过 eval，行为可控。
+
+> 注意：GDScript 部分在 pck 里，必须重新导出才生效；`pk_web_watchdog.js` 是
+> Build-Web 每次导出自动注入的，不需要改导出预设。
+
+**判读方法**
+
+崩了一次之后，按下面三步读：
+
+```powershell
+# 1) 堆曲线（MB）。斜率 ≈ 每游戏日涨多少 MB
+Select-String tmp\web_events.jsonl -Pattern '"e": "pk_heap"' | Select-Object -Last 20
+# 2) 崩溃时刻（有 pk_heap_fatal 就说明走的是 watchdog 路径）
+Select-String tmp\web_events.jsonl -Pattern 'pk_heap_(fatal|high|critical)'
+# 3) 域级状态 + 堆大小（diag 事件，键名 wasm_heap_mb）
+Select-String tmp\web_events.jsonl -Pattern '"e": "diag"' | Select-Object -Last 2
+```
+
+如果 `wasm_heap_mb` 随天数线性上涨（而不是阶跃），下一步就用
+`?autotest=1&days=…&speed=…` 配合关层/关 UI 的 A/B 找增长源（同 §9.20 的做法），
+不要再去调 `threads/*_pool_size`——那和 2 GiB 上限无关。
+
+### 9.23 2 GiB 的真正大头：年度自动存档的「边界空转」每年抬 ~600 MB（2026-10-31）
+
+§9.22 的曲线只是症状。用**桌面 headless 复现同一条生产路径**就能把增长拆开：
+
+复现命令（headless 也能跑 autotest；`PK_SAVE_SYNC_WRITE=1` 强制走 web 的同步写存档路径）：
+
+```bat
+set PK_AUTOTEST_QUERY=autotest=1&days=800&speed=10&seed=20260101&size=60x40
+set PK_SAVE_SYNC_WRITE=1
+"%GODOT%" --headless --path Project\project-keynes --log-file tmp\soak.log
+```
+
+每 30 个游戏日从 `[autotest] autotest_progress` 读 `mem_static_mb` / `nodes` / `objects`
+（这三个字段就是为这次排查加进进度事件的）。实测（60×40，10×，干净 user://）：
+
+| 天数 | mem_static | nodes | 事件 |
+| ---: | ---: | ---: | --- |
+| 360 | 686 MB | 2203 | 年报打开前 |
+| 390 | **1308 MB** | 2526 | 年报跨年后：**+622 MB** |
+| 690 | 1378 MB | 2526 | 一年后仍不归还 |
+| 750 | **1953 MB** | 2521 | 第 2 个跨年后：**再 +569 MB** |
+
+对照实验（决定性）：
+
+| 配置 | 跨年那一跳 |
+| --- | ---: |
+| 自动存档开（默认） | **+570 ~ +620 MB** |
+| `autosave_enabled=false` | **+50 MB**（只是年报 UI 的常驻节点） |
+| 自动存档开 + `PK_SAVE_SYNC_WRITE=1`（web 路径） | **+622 MB**（同样复现） |
+
+所以大头不是 wasm 上限、不是年报 UI，而是**年度自动存档失败前的边界等待**：
+`GameSaveCoordinator._wait_for_safe_boundary()` 在时钟已 `pause(true)` 的状态下最多等
+1800 帧，每帧调 `advance_save_boundary()`，而后者会把 trigger/ideology/effect/
+modifier/gameplay_effect 整条日系统链 + economy inflight 重跑一遍。跨年时阻塞码是
+`save_requires_idle_effect_country`——年度奖励的 Effect 要等**下一个游戏日**才 ACK，
+暂停期间永远等不到；于是 1800 帧 × 重跑日系统 = **Godot 静态内存 +600 MB 且不归还**。
+每个游戏年重复一次，web 的 2 GiB 堆在第 2–4 年必爆；同时这 1800 帧还是 30 秒主线程
+卡死（web 上就是"页面无响应"）。
+
+**修复**（`game_save_coordinator.gd` `_wait_for_safe_boundary`，纯 GDScript，随 pck 生效）：
+
+1. **同一个 blocking code 连续出现就认输**：web 90 帧 / 桌面 240 帧；
+2. 墙钟上限：web 3 s / 桌面 8 s；
+3. 空转期间 `advance_save_boundary()` 改成**隔帧**调用，内存/CPU 增速再减半；
+4. 失败仍然走原来的 `_last_autosave_year = year - 1`（下一个年份再试），功能语义不变。
+
+**修复后实测**（同一 soak 流程，`PK_SAVE_SYNC_WRITE=1`）：
+
+| 检查点 | 修复前 | 修复后 |
+| --- | ---: | ---: |
+| 380 天进程 WS | 2068 MB | **1357 MB** |
+| 第 1 个跨年跳（360→420 天） | +622 MB | **~+90 MB** |
+| 第 2 个跨年跳（720→750 天） | +569 MB | **+83 MB** |
+| 800 天 `mem_static` | 1961 MB | **977 MB** |
+
+```text
+day 360 mem_static=684 MB
+WARNING: [save] boundary timeout blocking=save_requires_idle_effect_country stalled_frames=240
+day 390 mem_static=...            （修复后第 1 跳只有年报 UI 的 ~50 MB + 少量空转残留）
+day 800 autotest_pass  mem_static=977 MB
+```
+
+即跨年残留从 ~600 MB 降到几十 MB 量级（web 上等待上限更短，残留更小），等待也从
+30 s 降到 ~4 s（web 上 ~3 s）。如果以后想彻底消掉这一次年度存档失败，应当让年度
+奖励 Effect 在暂停前先 ACK（native/日图时序问题），而不是继续加长等待——**不要再
+把 `MAX_WAIT_FRAMES` 调回 1800，那等于每年主动吃掉 600 MB**。
+
+> 剩余 ~0.2 MB/天 的稳态增长（mem_static 629→686 MB / 120→360 天，objects/
+> resources 基本不变）还没定位，属于既有数据结构的缓慢膨胀；有了 `wasm_heap_mb`
+> 遥测和上面的复现命令，下一步可以按关层 A/B 继续缩小范围。
+
+### 9.24 地形 Shader：烘焙法线/起伏/地平线取代运行期高度差分（2026-11-01）
+
+> **历史快照（A 方案完成时）**：本节表格里的 2 层 surface array、桌面 Compatibility 7 槽、
+> HIGH 水面 6 槽、桌面 legacy 16 槽等数字是 A 方案状态。B 方案（**§9.25**）在此基础上把
+> surface array 扩为 **4 层**、material array 扩为 **5 层**、HIGH water **6→7**、compact water
+> **4→5**、桌面 Compatibility 纯预算 **7→8**、桌面 legacy **16→15**。**当前契约以 §9.25 为准。**
+
+**结论先行：桌面端与 Web 端都不再有"运行期高度差分法线"。** 地形法线全部来自生成期
+烘焙纹理（tiled 桌面走两个 `Texture2DArray`；Web 与桌面 legacy 走整图单 tile，其中
+normal+relief 合并成**一个 2 层 `sampler2DArray`**，另有一张 2D `terrain_normal_tex` 供
+只读法线的其它层使用），运行期只做解码、按 `camera_zoom` 淡入和裁剪。这条不变量由
+§9.24 末尾的 grep + 测试守住。
+
+> **v2（方案 A，2026-11-01）**：normal+relief 合并成 2 层 `terrain_surface_tex` 后，
+> Web 陆地程序从"normal+relief 各占一槽、noise 无槽可放"的 9 槽形态压缩回 **8 槽**，
+> 腾出的槽**恢复 `noise_tex`**（`pixel_noise` / `fbm` / 雪 / 植被 / 全局调整都在消费它）。
+> v1 曾短暂用程序化噪声填补该槽，v2 已整体删除，`common_noise.gdshaderinc` 恢复单一的
+> `noise_tex` 快路径。
+
+#### 为什么改
+
+旧的 Web-LOW/legacy 路径在 `hillshade_tod.gdshaderinc` 里用 `height_tex` 邻域中心差分
+现算 `compute_terrain_normal`，再叠一大套分地形细节法线（沟谷/台坎/沙丘/圆丘）与
+`terrain_apply_landform_detail`。Web 端为了压采样数，长期只给粗法线和 `noise_tex`，
+细节法线在 `MOBILE_QUALITY_*` 下被整个编译掉——所以 Web 的地形永远读不出起伏。上一轮
+用 `PK_WEB_TERRAIN_DETAIL` 局部恢复它的代价是运行期重新引入高度差分采样，与本轮诉求
+（法线一律烘焙、离线成本换运行期成本）冲突，删除该宏。
+
+#### Web 地形程序的 8 槽预算（GLES3/WebGL2 材质 sampler unit 1..8）
+
+| # | sampler | 来源 | 备注 |
+| --- | --- | --- | --- |
+| 1 | `height_tex` | `VT_USE_HEIGHT` | RG=16-bit 高程，B=flow |
+| 2 | `map_index_atlas` | `VT_USE_MAP_INDEX` | biome / cell id / landform |
+| 3 | `enum_lut` | `uniforms` 无条件 | per-cell biome/veg/cover/迷雾知识度 |
+| 4 | `dyn_lut` | `uniforms` 无条件 | per-cell 温度/湿度/雪/海冰 |
+| 5 | `terrain_material_tex` (array) | `uniforms` 无条件 | 材质族 |
+| 6 | `terrain_surface_tex`（`sampler2DArray`，2 层 RGBA8） | `VT_USE_TERRAIN_NORMAL && VT_USE_TERRAIN_RELIEF` | **layer0 = 粗法线（0.5+n·0.5）+ BA 近景高度细节坡度；layer1 = relief 粗段/细段坡度**（均 `encode_slope`） |
+| 7 | `terrain_horizon_tex` | `VT_USE_HORIZON` | 8 方向 4-bit nibble 地平线 |
+| 8 | `noise_tex`（恢复） | `uniforms` 无条件 | 预烘 4 通道 noise pack；`fbm()` 回到 1 次采样 |
+
+**为什么是 `noise_tex` 而不是 `water_depth_tex`**：Web 把水陆拆成两个程序（陆地 pass +
+`world_water_web.gdshader` 第二 pass），`water_depth_tex` 只被水面 pass 消费，放进陆地
+程序只会是死槽；`noise_tex` 则是陆地程序自己消费的（`pixel_noise` / `fbm` / 雪 / 植被 /
+全局调整）。恢复它让 `fbm()` 从"每像素多 octave hash 程序化"回到 1 次纹理采样，Web 的
+ALU 压力更小，且与桌面同一套谱形。**零画质损失**：array 的 layer0/layer1 就是原来的两张图，
+通道布局与语义完全不变。放弃的两个旧槽是 `terrain_edge_neighbor_tex` 与
+`terrain_edge_distance_tex`（Web 次生生态过渡退化为硬主 cell 边界、海岸 halo 用邻域代理）。
+
+**第三种预算：桌面 Compatibility 的 MID/HIGH。** 它同样只带 `PK_WEB_TEXTURE_BUDGET`、
+不带 `PK_WEB_HORIZON`（纯诊断/回退渲染路径，不是 Web 产品路径）：**7 槽** =
+height / map_index / terrain_surface_tex / noise / enum / dyn / material；`VT_USE_HORIZON`
+不开，horizon 由 `terrain_horizon.gdshaderinc` 的中性叶子兜底——**没有地平线遮蔽，但
+法线/relief 仍是烘焙纹理**。
+
+**sampler 统计（v3，实测于 `terrain_shader_variant_test`）**：Web 陆地 **8**、
+桌面 Compatibility 纯预算（非 tiled）**8**、桌面 Compatibility tiled 预算 **8**（不打开
+water_depth/detail，诊断路径）、Web HIGH 水面 **7**、Web compact 水面 **5**、
+桌面 tiled **17**、桌面 Vulkan legacy **15**（v3 非 tiled detail 不再单独声明 2D sampler；
+tiled 的 normal/relief 仍是两个数组：relief 是 `relief_scale` 倍分辨率，不能与 normal 同
+array）。Web HIGH 的水面程序（`WATER_WEB_HIGH_PREFIX` + `PK_WEB_WATER_ONLY`）是**独立
+程序、独立预算**：7 槽含 `noise_tex` + `water_depth_tex`，VT 只开 height + map index +
+flow + water depth，不声明 surface array/horizon；`hex_renderer._apply_water_uniforms()`
+会为这个 pass **显式补绑** `noise_tex` 与 `water_depth_tex`（独立程序不经过陆地程序的
+uniform 推送）。
+
+#### 烘焙来源：复用现有 native pass，整图单 tile
+
+没有新增 C++ pass——`MapBaker._bake_legacy_static_surface()` 直接复用已有的
+`run_bake_visual_tile_layer_pass`，以"整图一个 tile"参数调用：
+
+- `origin/size = world_bounds`、`relief_supersample = 1`；
+- 长边封顶：`LEGACY_STATIC_SURFACE_MAX_DIM_WEB = 1024`，与桌面 legacy
+  `LEGACY_STATIC_SURFACE_MAX_DIM = 1024` 一致，实际尺寸再被 `world.hm_size` 最大边钳住
+  （Web LOW 的 hm=512 → 512；Web MID/HIGH hm≥1024 → 1024），按 world_bounds 宽高比取偶数 w/h；
+- 返回 `terrain_normal` / `terrain_relief` 两个 RGBA8 payload：normal 同时上传为
+  `WorldData.terrain_normal_tex`（2D，供植被/建筑/资源/贸易/ground cover 等只读法线的层）
+  和 `WorldData.terrain_surface_tex` 的 **layer0**；relief 上传为 **layer1**。
+  `terrain_surface_tex` 是 2 层同尺寸 `Texture2DArray`
+  （`Texture2DArray.create_from_images([normal_img, relief_img])`，校验返回 OK；
+  失败则 `push_error` + 置 null）。
+- **内存取舍（如实记录）**：normal 数据在 2D 与 array layer0 各存一份——这是为了让其它
+  图层继续用 2D sampler 的显式选择。Web LOW（512×~300）约 **+0.6 MB**，桌面 legacy
+  （1024×762）约 **+3 MB**；烘焙本身的耗时与 payload 字节数不变。
+- 失败（`fallback=true` 或尺寸不符）→ `push_warning`，退回旧的 RG8
+  `encode_bake_terrain_normal_tex_data` 单张粗法线：把 RG8 扩成 RGBA8（BA=128=0 坡度）
+  作为 2D normal 与 layer0，layer1 填中性 128，array 照建 → shader 走完整路径但细节为 0，
+  等价于原来的"仅粗法线"兜底。**旧 RG8 只是兜底，不是主路径。**
+
+桌面 tiled 路径不变：`visual_terrain_normal_tiles` / `visual_terrain_relief_tiles`
+（`relief_scale` 倍分辨率）继续由 `run_bake_visual_tile_layer_pass` 逐 tile 烘焙。
+tiled 成功时 `terrain_normal_tex` / `terrain_surface_tex` 都置 null（避免白占显存）。
+
+#### Web horizon：全档位 CPU 烘焙
+
+旧行为只有 Web **HIGH** 才付 horizon 的一次性 CPU 烘焙成本，LOW/MID 完全无地平线。
+现在 Web 所有档位都 CPU 烘 horizon（`TERRAIN_HORIZON_STEPS_WEB = 128`，其余参数不变；
+`max_distance` 会自然截断有效步数），并用 `PK_WEB_HORIZON` 让 `terrain_horizon_evaluate`
+在 `MOBILE_QUALITY_LOW/MID` 下也真正解码，而不是被编译成中性值。桌面 tiled 仍走
+`VisualTileHorizonBaker` 的 GPU 金字塔路径；只有桌面 GPU 烘焙关闭时才落 CPU fallback。
+
+#### 画质影响
+
+| 档位 | 法线/起伏来源 | 结果 |
+| --- | --- | --- |
+| 桌面 tiled | tile 数组（normal + relief 2×，17 槽） | 与上一轮一致，不回归 |
+| 桌面 legacy | 整图单 tile：2D normal + 2 层 surface array（cap 1024） | **不再**运行期高度差分 |
+| 桌面 Compatibility MID/HIGH | 7 槽预算程序（surface array + noise，无 horizon） | 法线/relief 烘焙，无 horizon 遮蔽（诊断路径） |
+| Web LOW/MID/HIGH 陆地 | 整图单 tile：2D normal + 2 层 surface array（长边 ≤1024，Web LOW 实际 512）+ CPU horizon（8 槽） | 起伏/细节坡度/地平线遮蔽 + 恢复预烘噪声 |
+| Web HIGH 水面 | 独立水面程序，6 槽含 `noise_tex` | PC 水面管线不变 |
+
+`hillshade_tod.gdshaderinc` 的唯一法线入口是 `terrain_baked_normal()`：粗法线取
+`terrain_surface_tex` layer0 的 RG，近景高度细节取 layer0 的 BA
+（`smoothstep(1.35,2.10,camera_zoom)` 门控），分地形粗/细段取 layer1 的 RGBA
+（`smoothstep(3,7,48·scale·zoom)` / `(3,7,14·scale·zoom)`）；tiled 走同名 helper
+（内部寻址到 `visual_terrain_normal_tiles` / `visual_terrain_relief_tiles` 的 layer 0/1）。
+`PK_WEB_HORIZON` 让 Web LOW 也编译这条细节路径（代价只是已绑定的 1–2 次采样）。
+原来的 `#if defined(PK_MOBILE_ANY) || defined(PK_QUALITY_LOW) return 仅粗法线` 早退已删除。
+
+#### 生成期成本
+
+数字来自 `map_baker.gd` 常量注释里的 native 探针（RTX、native 多线程，非 wasm）。wasm
+nothreads 未单独实测，按经验预计 3–5×，相对地图生成总预算仍可接受；真机耗时以
+`[terrain-baked-surface] ... elapsed_ms` 日志为准。
+
+| 项 | 像素尺寸 | native 探针 |
+| --- | --- | ---: |
+| 单 tile normal+relief（`relief_supersample=1`） | 512×298 | 68 ms |
+|  | 1024×596 | 265 ms |
+|  | 1024×762（真实 legacy 小图） | 端到端实测 native 372.6 ms / wall 388 ms（另一次 v2 实测 383.3/388）；其他探针 506–571 ms（均含 halo/terrain-index） |
+| Web horizon（`TERRAIN_HORIZON_STEPS_WEB=128`） | 512×298 | 15 ms |
+|  | 1024×596 | 79 ms |
+|  | 2048×1192 | 489 ms |
+
+horizon 的 `max_distance = 24 hex` 会自然截断有效 marching 步数，所以实际步数常远小于
+128。v2 的 array 上传只是多一次 `Texture2DArray.create_from_images()`（可忽略），
+烘焙 payload 字节数与上表耗时不变。两者都只发生在地图生成期，运行期零额外采样
+（除已绑定的 surface array 2 层 + horizon 各 1–2 次）。
+
+#### 不变量与验证入口
+
+源码 grep（`Project/project-keynes/{shaders,scripts,tests,docs}` 应 0 命中）：
+
+```
+PK_WEB_TERRAIN_DETAIL
+terrain_add_height_detail
+terrain_coarse_normal
+terrain_apply_landform_detail
+compute_terrain_normal
+```
+
+v2 另加：v1 为省 sampler 而引入的"Web 程序化噪声"宏已整体删除；旧的 2D relief
+字段/sampler 也已删除（只保留 relief 对应的 bound bool，按契约 §1.6 由 HexRenderer 推送）。
+
+测试入口：
+
+- `tests/world/terrain_shader_variant_test.gd`：变体编译、Web 8 槽名单（surface array +
+  `noise_tex` + horizon、无 2D normal/relief）、桌面 Compatibility 纯预算 7 槽、
+  HIGH 水面 6 槽、桌面 tiled 17 槽、前缀链逐字节一致；
+- `tests/world/web_static_surface_bake_test.gd`：整图单 tile normal/relief 尺寸/hash/
+  非平坦性 + 2 层 array 可创建；
+- `tests/world/terrain_gi_test.gd`：GI/horizon 解码与变体 uniform（非 tiled 断言
+  `terrain_surface_tex` + bound flags）；
+- `tests/rendering/web_quality_render_test.gd`（Compatibility 真 GPU）：合成 2 层
+  `Texture2DArray`（layer0 normal、layer1 relief），断言 land 程序恰 8 槽名单、
+  改 layer0/layer1 内容都会改变最终像素（证明两层都被采样）、HIGH water 仍 6 槽；
+- **端到端 legacy 单 tile 生成**（桌面，强制 legacy 视觉模式）：
+
+  ```powershell
+  $env:PK_LOADING_SIZE='8x6'
+  & $godot --headless --path Project\project-keynes ^
+      --script res://tests/world/cooperative_world_generation_test.gd -- --map-visual-mode=legacy
+  ```
+
+  日志应出现 `visual tiles: legacy ()` 与
+  `[terrain-baked-surface] desktop-legacy single-tile 1024x762 relief_supersample=1 ... surface_array=ok layers=4 detail_layer=1 occluder_layer=0`；
+  B 冻结后实测 native 359.1 ms / wall 361 ms（`layers_ms=22`，normal/relief payload 各
+  3121152 B；另一探针 506.9/508）。A 方案 2 层时期为 372.6/388。B 方案起 surface array 为
+  4 层、material array 为 5 层（见 §9.25）。
+
+### 9.25 Web 中/高画质地表特性包（B）：detail/micro/occluder 入 array + 水面 depth（2026-11-01）
+
+**结论：Web 陆地程序仍然恰 8 个材质 sampler。** 用户要求 Web HIGH（并尽量迁到 medium）
+支持 `terrain_detail_tex`、`terrain_micro_tex`、`gi_occluder_tex`、`water_depth_tex`；实现
+沿用方案 A 的手段——**把数据塞进已绑定的 array/已有 sampler，而不是要新槽**；低画质
+（`visual_quality=0`）的像素行为与 B 之前完全一致，性能由运行时门控保证。
+
+#### 4 个资源的新位置
+
+| 旧资源 | B 方案位置 | 新增 sampler | 生效档位 |
+| --- | --- | --- | --- |
+| `terrain_detail_tex`（R8 derived，烘焙 biome 细节） | 非 tiled `terrain_surface_tex` **layer2**（R=detail，world UV） | 无 | MID/HIGH（vq>=1；LOW 恒等 1.0 不变） |
+| `terrain_micro_tex`（RGBA8 256² 平铺微表面） | 共享 `terrain_material_tex` **layer4**（第 5 层，平铺 UV） | 无 | **MID/HIGH 默认生效**（C 轮 A/B 安全后，共享程序默认用带 micro 的 `WORLD_MAP_WEB_PREFIX_MICRO`；HIGH 独立程序必然有；`?micro=off` 可一键关闭） |
+| `water_depth_tex`（**RGBA8**，C 轮升级） | 两个**水面程序**的独立槽：HIGH water 6→7、compact water 4→5；桌面 Compatibility 主 pass 7→8 | +1（仅水面程序） | Web 全档位水面：**R=归一深度**（湖泊用烘焙值、海面用连续 elev），**G/B/A=湖/礁/海带 3×3 软权重**（compact 水面消费） |
+| `gi_occluder_tex`（RGBA8，两个 16-bit cell id） | 非 tiled `terrain_surface_tex` **layer3**，shader 用 `texelFetch` 读取 | 无；**不再需要 `bounce_lut`** | **Web MID/HIGH（vq>=1；MID 强度 0.6，LOW 关）**（C 轮从 HIGH 扩到 MID） |
+
+非 tiled `terrain_surface_tex` 固定 **4 层**（layer0 normal、1 relief、2 detail、3 occluder），
+`terrain_surface_layer_count` 运行期告诉 shader 实际层数；`terrain_detail_layer_bound` /
+`terrain_occluder_layer_bound` 是运行时门控 bool（旧图/兜底时 detail 返回恒等、occluder
+返回 0xFFFF 哨兵）。tiled 桌面不走这套：detail/water/edge 仍用原 tile 数组。
+
+#### 预算（v3）
+
+| 程序 | 槽数 | 组成 |
+| --- | ---: | --- |
+| **Web 陆地（LOW / MID / HIGH land）** | **8** | height / map_index / enum / dyn / material(5 层) / terrain_surface_tex(4 层) / terrain_horizon / **noise_tex** |
+| Web HIGH 水面（`PK_WEB_WATER_ONLY`） | **7** | 上述 6 槽 + **water_depth_tex**（含 noise_tex） |
+| Web compact 水面（`world_water_web.gdshader`） | **5** | height / map_index / enum / dyn / **water_depth_tex** |
+| 桌面 Compatibility 完整主 pass（非 tiled） | **8** | 预算内完整 path + **water_depth_tex**（没有第二 pass） |
+| 桌面 Compatibility tiled 预算变体 | **8** | 方案 A 的 8 槽（不打开 water_depth/detail，诊断路径） |
+| 桌面 tiled（Vulkan） | 17 | 不变（detail/water/edge 仍走原数组） |
+| 桌面 Vulkan legacy | 15 | v3 非 tiled detail 不再单独声明 2D sampler |
+
+实测汇总（C 轮 `terrain_shader_variant_test`，含共享 micro 变体）：
+`desktop(legacy)=15 | desktop(tiled)=17 | web_low=8 web_mid=8 web_high_land=8 web_micro_shared=8 web_high_water=7 compact_water=5 | plain_budget=8 tiled_budget=8`。
+
+Web 陆地**不得**再声明 2D `terrain_detail_tex` / `terrain_micro_tex` / `gi_occluder_tex` /
+`bounce_lut`——它们是 B 方案打包进 array 后应消失的旧采样器（测试按 8 槽名单 + 负向断言守）。
+packed GI 弹射的颜色不再采样 `bounce_lut`，而是用已绑的 `enum_lut` 查遮挡 cell 的 biome，
+经 `hypsometric_tint()` + `biome_hue_modulate()` 近似弹射代表色（视觉等价，省一个 sampler）。
+
+#### LOW（vq=0）不变的门控
+
+运行时门控保证 B 前后 LOW 像素一致（测试里是硬断言 `pixel delta < 0.001`）：
+
+- detail：`visual_quality <= 0` → `procedural_biome_detail` 返回 1.0，layer2 不参与；
+- micro：`visual_quality <= 0` 或 `terrain_material_micro_layer < 0` → 直接返回 surface；
+- bounce：**C 轮门控改为 `visual_quality < 1`**（MID/HIGH 开、LOW=0）；
+- 水面 depth/软权重属于 CPU 烘焙数据，不改变水面程序在 LOW 的既有公式（只多 1 次已绑采样），
+  LOW 水面也消费软权重（水面 pass 是独立程序，不影响 land 8 槽）。
+
+#### 内存增量与性能取舍
+
+- surface array 2→4 层：Web LOW（hm=512，512×~300）约 **+1.2 MB**；
+  Web MID/HIGH（1024×~600）约 **+6 MB**。
+- material array 4→5 层：mobile/512² 约 **+1 MB**，high/1024² 约 **+4 MB**（micro 图
+  resize 到目标尺寸 + mipmaps，RGBA8）。
+- detail：从 v1 时代的 4-tap 高度差分/无采样 → **1 次 array 采样**；
+  材质族激活时（Web MID/HIGH 的正常路径）再叠 1 次 layer2 采样 + ALU 乘法，
+  让 baked detail 也参与材质 albedo（LOW 不受影响）；
+- micro：**1 次 array 采样**（原 Web 预算下该功能被裁掉，0 成本 0 效果）；
+- bounce：**1 次 texelFetch + 1 次 enum_lut 采样**，替代旧桌面路径的 bounce_lut 采样；
+  C 轮扩到 MID 后 MID 走同一路径并乘 0.6（无额外采样）；
+  occluder 随 Web horizon 的 CPU marching 顺带产出（native 探针增量：512×298 horizon
+  11.98 ms → **+0.17 ms**；1024×596 49.16 ms → **+0.62 ms**，几乎免费）；
+- water depth：**1 次采样**替代湖泊多 tap/多半径邻域估算（Web 水面从"湖心湖岸同色"
+  恢复出深度层次）。C 轮升级 RGBA8 后仍是 1 次采样：R 深度 + GBA 软权重一次读齐
+  （compact 水面 w_lake/w_reef/w_kelp = max(binary, GBA)）；内存每像素 +3 B——
+  Web LOW（derived 512×~381）约 **+0.45 MB**、Web MID/HIGH（1024×~762）约 **+2.3 MB**；
+  GBA=0（旧 R8/兜底）自动退化为旧二元权重。
+
+#### 实现边界与 C 收尾（2026-11-01，如实记录）
+
+- **micro 的共享程序 A/B（C 轮实测，默认已放开）**：环境 **Edge 156 / WebGL2
+  `MAX_TEXTURE_IMAGE_UNITS=16` / ANGLE(NVIDIA RTX 3070 Ti) → D3D11 → FXC**，
+  `--headless=new`、每样本全新 profile（冷 shader 缓存）。方法：同一份 Web 导出，
+  A=默认前缀（保留 `PK_PROBE_NO_MICRO`）、B=`?micro=shared`；每组 3 个冷样本，顺序
+  A1,A2,B1,B2,B3,A3 抵消漂移；plan 指纹差 26 B = `#define PK_PROBE_NO_MICRO\n` 长度，
+  证明两组编的是不同前缀。
+
+  | 指标（均值） | A（默认裁 micro） | B（`?micro=shared`） | B−A | 阈值 |
+  | --- | ---: | ---: | ---: | --- |
+  | `world_map` 单张编译 | **5417 ms**（5208–5615） | **4582 ms**（4347–4880） | **−835 ms（−15.4%）** | ≤ +3000 ms ✅ |
+  | 总 `sum_shader_ms` | 36978 ms | 34934 ms | −2045 ms（−5.5%） | ≤ +20% ✅ |
+
+  boot/menu 差值在噪声内（+281/+279 ms）；21/21 张全部编译、无 JS/GL 错误；
+  `probe_trivial_first` 一次性首编译 ~12–17 s 两组相同。**判定 SAFE → 共享 Web 程序默认
+  启用 micro（MID/HIGH 设置档都有 micro），HIGH 独立程序同样有；保留
+  `?micro=off|0|false` kill-switch 退回旧行为，`?micro=shared|on` 可显式开，非 web 恒关。**
+  历史 Intel UHD + Chrome 的 20.7 s 悬崖在当前重构后的 shader 上未复现（normal/relief
+  烘焙 array、水面拆 pass、`PK_WEB_LAND_ONLY`、horizon 烘焙等已移走联合编译/寄存器压力
+  来源）；风险：本机 GPU 与历史悬崖机器不同（Intel UHD 未复测），故保留逃生开关；
+  冷启动首访 ~45–50 s 与 micro 无关。完整数据与复现：`tmp/webbuild_ab/REPORT.md`、
+  `samples.csv`、`verdict.json`。测试侧仍然用"去掉 `#define PK_PROBE_NO_MICRO\n` 的
+  共享前缀"构造程序验证 vq=1/2 生效、vq=0 不变（不依赖默认值）。
+- **baked detail（layer2）双路径消费**：材质族未绑/回退时走 `procedural_biome_detail`；
+  Web/Compatibility 预算程序在材质族激活时也会把 layer2 乘进材质 albedo
+  （`#if defined(PK_WEB_TEXTURE_BUDGET) && defined(VT_USE_TERRAIN_DETAIL)`，vq>=1 且
+  `terrain_detail_available()`）。MID/HIGH 的真实产品路径能看到 baked detail；
+  `web_quality_render_test` 两条路径都验证（材质关闭 delta 0.0284；材质激活另有专项断言），
+  LOW 档另验证门控不变。
+- **baked detail / bounce 生效档位（C 轮更新）**：packed GI bounce 门控从 `vq>=2` 放宽到
+  **`vq>=1`**：MID 乘 0.6、HIGH 乘 1.0、LOW 恒 0；颜色近似与 HIGH 相同（enum_lut biome +
+  `hypsometric_tint()`/`biome_hue_modulate()`，不再采样 `bounce_lut`）。surface layer3
+  （occluder）在桌面 legacy 的 GPU horizon 路径不产出 → 全 0xFF（无弹射）；Web 由 CPU
+  horizon bundle 产出（e2e 日志 `occluder_layer=0/1` 表示层是否填充）。
+- **water_depth RGBA8（C 轮升级）**：非 tiled 的 `water_depth_tex` 由 static surface bake
+  的 native bundle 直接上传 RGBA8（R=深度、G/B/A=湖/礁/海带 3×3 软权重，日志
+  `water_depth=RGBA8`）；compact 水面在 render 函数里追加 `vec4 water_depth_px`，
+  `w_lake/w_reef/w_kelp = max(binary, wd.g/b/a)`（保持无 if/else 直线写法）；R 深度语义不变
+  （湖心用烘焙值、海面用连续 elev）。static bake 失败兜底：R=旧 `water_depth_buffer`、GBA=0，
+  自动退化为旧二元权重。tiled 路径仍走原 R8/数组逻辑。
+
+#### 风险（记录，不阻塞）
+
+Web 共享程序（LOW/MID 运行档，C 轮起默认带 micro）编译体因 detail/micro/bounce 分支增大：
+A/B 实测 world_map 编译 5417→4582 ms（−15.4%）、总 warmup −5.5%，无 10× 悬崖；历史悬崖
+机器（Intel UHD 770 + Chrome）未复测，故保留 `?micro=off` kill-switch。Compatibility 真 GPU
+已覆盖编译通过；冷启动首访 ~45–50 s 主要是浏览器/wasm 与一次性首编译，与 micro 无关。
+
+#### 验证入口
+
+- `tests/rendering/web_quality_render_test.gd`（Compatibility 真 GPU，**v4，冻结后 116 checks / 0 failures**）：
+  - 4 层 surface array + 5 层 material array 合成；land 仍 8 槽名单；
+  - MID(vq=1)/HIGH(vq=2) 改 layer2 detail / layer4 micro（`camera_zoom=2`）→ 像素变化
+    （实测 delta：detail 0.028431；材质族激活路径 baked detail 0.011765；
+    HIGH 程序 micro 0.009804/0.012745）；
+  - **C 轮：HIGH 与 MID(vq=1，0.6 强度) 改 layer3 occluder → GI 弹射像素变化
+    （HIGH 0.002941 / MID 0.001961）**；
+  - **C 轮：共享 micro 程序（`WORLD_MAP_WEB_PREFIX_MICRO`，并断言与"去 NO_MICRO
+    字符串"逐字节等价）vq=1/2 改 material layer4 → 像素变化（0.001961 / 0.008824），
+    vq=0 不变（0.000000）**；A/B 默认值钩子（Engine meta 模拟 web boot）：true →
+    MICRO 前缀、false → NO_MICRO 前缀、真实非 web → NO_MICRO；HIGH 独立程序 micro 断言保留；
+  - **LOW(vq=0) 改 detail/micro/occluder → 像素不变（严格 <0.001，实测 0.000000）**；
+  - HIGH 水面 7 槽、compact 水面 5 槽，均含 `water_depth_tex`；改 depth 内容 → 水面像素变化
+    （HIGH 0.021969 / compact 0.079067）；**C 轮：compact 水面 RGBA8 软权重——
+    OCEAN 格改 G/B/A → 0.072227，LAKE 格二元权重 1 饱和软 G → 0.000000（等价旧二元行为）**；
+  - `_apply_water_uniforms()` 显式补绑 noise_tex 的源码断言保留。
+- `tests/world/terrain_shader_variant_test.gd`：LOW/land 8、纯预算 8（桌面 compat）、
+  HIGH water 7、compact 5、tiled 17；非 tiled 有 4 个 v3 门控 uniform、无 2D detail sampler；
+  另含"去掉 NO_MICRO 的共享前缀仍编译 / sampler 8"用例（冻结后 **533 checks / 0 failures**，
+  sampler 行 `web_micro_shared=8`）；
+- `tests/world/web_static_surface_bake_test.gd`：4 层 surface array / 5 层 material array /
+  horizon bundle 返回 occluder / `water_depth=RGBA8` 契约 / A/B 默认值（冻结后 **127/0**）；
+- `tests/world/web_water_pass_node_test.gd`（22/0）、`terrain_gi_test.gd`（PASS，含 C 轮
+  bounce MID 门控源码断言）；
+- e2e legacy 生成：日志确认
+  `[terrain-baked-surface] ... surface_array=ok layers=4 detail_layer=1 occluder_layer=0 water_depth=RGBA8`
+  （`water_bytes=3121152`）与 `[terrain-material-tiles] layers=5 target=1024 micro_layer=4`
+  （冻结后实测 native 363.5 / wall 372 ms、`layers_ms=23`）。
+
+### 9.26 陆地/水面双 program 全平台拆分 + 保守覆盖 mesh（2026-11-02）
+
+> 桌面（Forward+/GLES3）与移动（Vulkan/Mobile）也把主地形拆成两个 fragment program，
+> 配合 `TerrainCoverageMesh` 产出的两张保守覆盖 mesh：纯区域只光栅化自己那条管线，
+> 海岸混合 block 两侧都画、shader 内逐像素 `is_water` 互补 discard。Web 既有路径
+> （LOW/MID 共享 land 程序 + compact 水面 / HIGH 独立两片）**行为与字节前缀均不变**。
+
+#### 宏与前缀契约
+
+- 新宏：`PK_LAND_ONLY`（陆地 program）/ `PK_WATER_ONLY`（水面 program）。
+  陆地 program 不 include `water_pipeline.gdshaderinc`（保留 `water.gdshaderinc` 供
+  河面法线 `sample_water_normal`）；水面 program 不 include `land_pipeline.gdshaderinc`。
+- Web 的 `PK_WEB_LAND_ONLY` / `PK_WEB_WATER_ONLY` 前缀常量（`WORLD_MAP_WEB_PREFIX(_MICRO)` /
+  `WORLD_MAP_WEB_HIGH_PREFIX` / `WATER_WEB_HIGH_PREFIX` / `WATER_PASS_PREFIX`）**一个字节都没改**；
+  shader 顶部只做「Web 宏 → 通用宏」的别名归一。
+- 桌面前缀常量（`HexRenderer`，测试逐字节断言）：
+  - 陆地：`[MAP_VISUAL_TILED] + [MOBILE_QUALITY_*] + [PK_WEB_TEXTURE_BUDGET（仅 Compatibility）] + "#define PK_LAND_ONLY\n"`
+  - 水面：同顺序，末段换成 `#define PK_WATER_ONLY\n`（`SPLIT_LAND_ONLY_DEFINE` / `SPLIT_WATER_ONLY_DEFINE`）。
+
+#### 运行时开关与回退
+
+- `@export var split_land_water_passes = true`（全平台默认开）、
+  `@export var terrain_coverage_mesh_enabled = true`（覆盖 mesh 可用性 A/B）。
+- `_split_active()`：开关 && `terrain_surface_debug_view == 0` && 非（Compatibility + tiled）。
+  debug 视图（13/14/16/17 等）必须回退单 program + 整张 quad（诊断画面不能有洞）。
+- `_water_pass_active()`：拆分激活 + Web 维持既有子条件（只有 world-min/PC-HIGH 才有第二 pass；
+  Web MID 的 world_map 自己画水）。
+- 安全回退：水面材质 `get_shader_uniform_list().is_empty()` → 置 `_split_program_failed`，
+  下一帧重编**不带** `PK_LAND_ONLY` 的陆地变体 + 整张 quad（**整条**回退，不许只回退一半）。
+  Web 保持既有降级（land-only + 暗海蓝占位色，字节契约不动）。
+- F9 `toggle_world_shader_disabled()` 两片一起关；shader 热重载两片都从磁盘重取并清失败标记；
+  `set_mobile_quality_tier` / `set_map` / `set_map_cooperative` 都经 `_apply_uniforms()` →
+  `_sync_water_quad()` 统一重建。
+
+#### 覆盖几何（`scripts/rendering/terrain_coverage_mesh.gd`）
+
+- 契约：`TerrainCoverageMesh.build(world, world_bounds, wrap_period_x, block_world=16.0)` →
+  `{ok, reason, land_mesh, water_mesh, stats}`；失败返回 `ok=false` + reason，不抛异常。
+- 分类源与 shader 同源：`world.pixel_to_cell_lookup` → `cell.terrain` → `MapData.is_water_render_lut()`；
+  `null`（地图外 padding）归 water（shader 里是 `B_SEA_ICE` 水面管线）。
+- 保守超集：block 内含该类像素即入选，随后两张 mesh 各自外扩 1 block；边界 quad 裁剪到
+  世界矩形内；wrap P>0 时 −P/0/+P 三份整份几何进同一个 ArrayMesh（与
+  `HexRenderer._build_world_quad_mesh()` 逐位一致）。
+- 成功时 land/water mesh 一定是 ArrayMesh（可能是 0-surface 的合法空 mesh：全水/全陆地图）；
+  渲染器只按 `ok` 判断成功，不用"空 mesh"当失败。
+- 生产规模（60×40 / derived 1024×606 / P=2286.31 / block16）headless `build_ms≈100–119`，
+  `blocks 143×89`、`land_tris 54876 / water_tris 30342`（含 wrap 3×）；只在 `set_map` /
+  `_rebuild` / 开关切换时构建，运行期不重建；模块缺失/构建失败/开关关闭 → 两片共享整张 quad。
+- **只有真的会画两个 program 时才用覆盖 mesh**（`_water_pass_active()`）：单 program 状态
+  （Web MID、拆分关闭、编译失败回退）必须让陆地 quad 铺满整张地图，否则水面像素露背景。
+
+#### 水面 program 的 uniform 对齐与迷雾
+
+- 走 `world_map.gdshader` 的水面 program（Web HIGH / 桌面拆分）在材质创建后从主材质
+  **整表拷贝** uniform，并显式补绑 `noise_tex` / `water_depth_tex` / tiled `visual_*_tiles`；
+  运行期所有世界 uniform 推送经 `_push_world_uniform()` 镜像到水面材质（只写它声明过的键），
+  保证 season/TOD/fog/羊皮纸/光照/wrap/cell LUT/camera zoom 等与陆地**逐项同值**。
+- 未探索像素：拆分后纯水 block 没有陆地 pass 兜底（Web 上 Fog 层还可能被裁掉），
+  所以**每个 program 自己画同值 `fog_unexplored_color`**：桌面水面 program 沿用 world_map 的
+  fog 出口；Web compact 水面程序新增 `uniform vec3 fog_unexplored_color` 并在
+  `fog_early_out` 命中时直接输出该色（不再 discard），两片同色幂等。
+
+#### 采样预算（不变）
+
+| 平台 / 变体 | 陆地 program | 水面 program |
+|---|---|---|
+| 桌面 legacy（含 mobile 三档） | 15 | 15 |
+| 桌面 tiled（含 mobile 三档） | 17 | 17 |
+| 桌面 Compatibility（非 tiled，8 槽预算） | 8 | 8 |
+| Web LOW/MID 陆地 + compact 水面 | 8 / — | — / 5 |
+| Web HIGH 陆地 + HIGH 水面 | 8 | 7 |
+
+桌面拆分变体的采样集/ uniform 集与今天完整主 pass **逐一相同**（`terrain_shader_variant_test`
+逐名断言，`split legacy:land=15,water=15,full=15 tiled:land=17,water=17,full=17`）。
+
+#### 验证入口
+
+- `tests/world/terrain_shader_variant_test.gd`：**615 checks / 0 failures**。新增桌面拆分断言
+  （legacy/tiled × 4 质量档两个 program 都编译、采样集相同、tiled 保留
+  `VT_USE_WATER_DEPTH`/`terrain_static_baked`、compat 预算 8、`PK_LAND_ONLY` 不进河面法线压平条件、
+  覆盖 mesh 动态接线/失败回退源码断言）；原 533 条 Web 断言全部保留，Web sampler dump 不变。
+- `tests/world/land_water_split_node_test.gd`（新增）：**57 checks / 0 failures**。含真实
+  `TerrainCoverageMesh` 集成（合成 4×4 texel 世界 → 两张 mesh 分别上两块 quad）、模块缺失/
+  数据缺失优雅失败回退整 quad、拆分闸门（debug/关闭/编译失败）、uniform 镜像、tiled 重编、
+  编译失败整条回退单 program。
+- `tests/world/web_water_pass_node_test.gd`：**25 checks / 0 failures**（用
+  `_forced_water_program_kind="web_min"` 继续守 Web 紧凑水面字节契约 + fog 色推送断言）。
+- 诊断：`HexRenderer.land_water_split_diagnostics()` 返回 `split_active` / `water_pass_active` /
+  `split_program_failed` / `water_pass_failed` / `coverage_ok` / `coverage_reason` /
+  `coverage_stats` / `land_program_land_only` / `water_program_kind`。
+
+#### 真机验收清单（需要用户/Lead 在真实 GPU 上做，headless 覆盖不到）
+
+1. PC Vulkan（legacy 与 tiled 两套 world）：与拆分前同机位/同种子截图逐像素对比海岸线、湖泊、
+   河流、雾边界；OSD 确认 `land_water_split_diagnostics().split_active == true` 且
+   `coverage_ok == true`。
+2. GPU-time A/B：F9 关闭地形 shader 的 ΔFPS 探针、`split_land_water_passes=false` 对照；
+   重点看海岸密集视角与全海洋视角（模型 B 下预期接近中性，模型 F 下应有明显下降）。
+3. 移动端（Vulkan；GLES3 Compatibility 走单 program 回退）：q0/q1/q2 三档各跑一段，
+   确认画面一致、无空洞/接缝、无 shader 编译失败日志。
+4. Web 回归：LOW/MID/HIGH 三档各进一次世界，确认水面/迷雾与 2026-11-01 版本一致
+   （warmup 指纹对账仍应通过；compact 水面的 fog 色只在未探索纯水区域可见）。
+5. 交互边界：GM 面板切换 debug 视图（13/14/16/17）→ 自动回退单 program 且有画面；
+   切回 0 恢复拆分；F9 两片一起关；画质档切换后水面仍正确重编。
+
+#### 残余风险
+
+- 桌面拆分后的**帧时间收益未在真机测量**（本任务是架构落地）；若目标设备分支是真分支
+  （模型 B），收益可能接近中性甚至略负（多一个 draw + 覆盖 mesh 重叠块）。
+- 覆盖 mesh 构建 ~100ms 落在加载边界；`set_map` 若在加载链里被连续触发两次会重复构建
+  （当前未见；如出现可按 (world/bounds/wrap/开关) 加缓存）。
+- Web compact 水面把未探索像素从 discard 改为画 fog 色：视觉应完全一致（同色幂等），
+  但真机仍需确认 Fog 层与水面 pass 的绘制顺序/裁剪组合没有意外差异。
+- 桌面 tiled 拆分水面 program 与陆地共享完整 VT 预算（17 sampler）；桌面/移动 Vulkan/Mobile
+  32+ 无压力，但若将来把 tiled 开到 GLES3（当前已回退单 program）需重新核算 8 槽。

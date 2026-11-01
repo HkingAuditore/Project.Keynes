@@ -17,11 +17,11 @@
 // 性能（PERF）：抖动复用 pixel_noise（0 次新增采样）；坡度卸雪按需 1 次（烘焙法线）/ 4 次（旧路径）。
 // ─────────────────────────────────────────────────────────────────────────
 
-// 卸雪 / 新雪用的地表坡度：1-texel 高程差分 × hillshade_slope_gain。
+// 卸雪 / 新雪用的地表坡度：烘焙粗法线换算（桌面/Web 统一）；未绑定时才回退 4-tap 高程差分。
 float snow_terrain_slope_mag(vec2 uv) {
-#ifdef PK_TERRAIN_STATIC_BAKED
+#ifdef PK_TERRAIN_BAKED_NORMALS
 	// 由烘焙粗法线换算成同一量纲（坡度 = |∇h|·2·texel·gain），省掉 4 次高度采样。
-	if (terrain_static_baked) {
+	if (terrain_baked_normals) {
 		vec2 nxy = visual_sample_terrain_normal(uv).rg * 2.0 - 1.0;
 		float slope = length(nxy) / sqrt(max(1e-4, 1.0 - clamp(dot(nxy, nxy), 0.0, 0.998)));
 		float texel_world = world_size.x / max(hm_resolution.x, 1.0);

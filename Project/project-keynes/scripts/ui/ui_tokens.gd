@@ -99,6 +99,9 @@ static func annual_font(kind: String) -> Font:
 			body.base_font = ANNUAL_PENCIL_BODY
 			body.variation_embolden = 0.06
 			font = body
+	# 手写体字库只收了少量字形（Muyao 6890、仿宋 3718），缺字在 web 上会变 tofu：
+	# 浏览器没有系统字体兜底，这里统一挂随包 fallback 链（只在缺字时生效）。
+	font.fallbacks = [UI_FONT, CHRONICLE_SERIF]
 	_annual_fonts[kind] = font
 	return font
 
@@ -431,10 +434,24 @@ static func _trim_number(value: float, decimals: int) -> String:
 	return text
 
 
+## 加粗/常规 UI 字重的统一入口。
+## Swei Bold 比 Regular 少 390 个字形（含 "·" U+00B7、①-⑩、•、西里尔等）：
+## 桌面版靠 Windows 系统字体 fallback 兜住，web 导出没有系统字体，会直接渲染成 tofu。
+## 因此这里显式挂随包 fallback 链——只在缺字时生效，已有字形仍走 Swei。
 static func font_with_weight(weight: int) -> FontVariation:
 	var font := FontVariation.new()
 	font.base_font = UI_FONT_BOLD if weight >= 600 else UI_FONT
+	font.fallbacks = [UI_FONT, CHRONICLE_SERIF] if weight >= 600 else [CHRONICLE_SERIF]
 	return font
+
+
+## 真实排版行高：Font.get_height() 会把 fallback 链上最高的行高也算进来（宋体行高比手写体
+## 高 40%+），版式直接拿它量行高会被虚高值误导。这里用实际字形（“国”）的排版高度，
+## 与标签真正画出来的单行高度一致；缺字换字体也不影响这个值。
+static func shaped_line_height(font: Font, size_px: int) -> float:
+	if font == null:
+		return 0.0
+	return font.get_multiline_string_size("国", HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px).y
 
 
 ## 缓存字面：sans/sans_strong/numeral = Swei，serif 为兼容旧调用的 Muyao 标题别名。

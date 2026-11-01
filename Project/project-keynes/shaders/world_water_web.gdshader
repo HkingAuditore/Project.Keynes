@@ -5,82 +5,14 @@ shader_type canvas_item;
 // hex_edge_overlay / world_map）都已带 unshaded，这里保持一致。
 render_mode blend_mix, unshaded;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// world_water_web.gdshader — [web-water-pass] web/GLES3 的水面「第二 pass」
-// ───────────────────────────────────────────────────────────────────────────
-// 为什么存在（Why）：ANGLE/D3D11 + FXC 在「同一个 fragment 里按像素二选一的
-// 两个真正着色来源」上会踩寄存器压力悬崖。world_map 的逐条实测（同一份源码、
-// 同一个编译前缀，只替换水面分支）：
-//
-//   变体                              首次编译
-//   ├ 只留陆地（水面=常量）            2 473 ms
-//   ├ 只留水面（陆地=常量）            1 089 ms
-//   ├ 两者都在（拆分前的现状）        20 291 ms
-//   ├ 水面改"紧凑 if/else"（≈25 行）  17 264 ms
-//   └ 水面改"无分支三元/mix"（≈30 行）18 060 ms
-//
-// 即：与那第二个分支有多少行几乎无关（25 行 = 1000 行），删代码治不好。唯一有效的
-// 修法是把水面**移出这个 fragment**。本文件就是被移出去的那一半：
-//   pass 1 = world_map.gdshader 的 PK_WEB_WORLD_MIN 变体，只画陆地（水面像素输出
-//            常量，等着被本 pass 覆盖）；
-//   pass 2 = 本文件，整屏 quad，只画水格（非水格 `discard`）。
-// 两片合计 ≈ 2.5 s + 1.1 s ≈ 3.6 s，替换掉 20.3 s。
-//
-// 谁创建（Who）：HexRenderer._sync_water_quad()。**仅**当
-//   OS.has_feature("web") ∧ DCFeatureFlags.is_compatibility_renderer() ∧
-//   HexRenderer._world_map_web_min_active()
-// 才创建 MeshInstance2D（z_index=0，紧跟在 _world_quad 之后、植被/建筑层之下）。
-// 桌面、以及 web 的中/高档（world_map 会自己画水面）**完全不创建**本节点，也不
-// load 本文件；桌面 world_map 的预处理结果与改动前逐字节相同。
-//
-// ── 解码约定（必须与 world_map 的 SETUP 同源，禁止发明第二套）──────────────
-//   行号以 2026-10-31 拆分后的 world_map.gdshader 为准。
-//   * map_index_atlas（tiled 时是 visual_map_index_tiles 数组）：
-//       G/B = cell.index 低/高字节，0xFFFF = map 外哨兵   → world_map.gdshader:236-237
-//   * enum_lut : R=biome  G=veg  B=cover  A=迷雾知识度 k → world_map.gdshader:255-261
-//   * dyn_lut  : A = 水格海冰占比 / 陆格植被活力          → world_map.gdshader:241,337
-//   * height_tex : RG = 16-bit 归一高程 (R*256+G)/257      → world_map.gdshader:208-209
-//   * 坐标 : uv = wrap_map_uv((v_world - world_origin) / world_size)
-//                                                          → world_map.gdshader:184
-//   * cell.index → LUT texel uv：**直接 #include cell_indirect.gdshaderinc**，用它的
-//     cell_lut_uv()，不复制一份网格换算（复制会漂）。
-//
-// ── 为什么本 pass 覆盖后与"拆分前逐像素等价"（逐条对账）────────────────────
-//   ① 水格判定：biome 取自同一张 enum_lut 的同一个字节，is_water 表达式逐字复制
-//      world_map.gdshader:303-304。
-//   ② 次生水体（water_secondary_biome / water_static_edge_mix）：web 纹理预算变体
-//      **不定义 VT_USE_EDGE_DISTANCE**（world_map.gdshader:93-100），于是
-//      terrain_edge_secondary_weight_d() 恒返回 0.0（terrain_surface_detail:181-186），
-//      decode_edge_secondary_index() 恒返回 -1（terrain_surface_detail:14-26）⇒
-//      world_map 里 secondary==primary 且 edge_mix==0。shore_frac 同理恒为 vec2(0)
-//      （world_map.gdshader:222-231）。本 pass 直接取这些**编译期常量**，因此不需要
-//      edge_distance sampler，也不需要 has_terrain_edge_data。
-//   ③ 海冰：visual_water_ice_fraction = (cid<0) ? 1.0 : dyn_lut.a（world_map:337）。
-//   ④ 迷雾：fog_k 来自 enum_lut.a；fog_early_out 命中时 pass 1 已经输出
-//      fog_unexplored_color（world_map:384-387），本 pass 只要 `discard` 就等价；
-//      灰化公式与 world_map:423-427 逐字一致（fog_gray_strength / fog_early_out_k
-//      在 renderer 侧从不推送，两侧都用同一份默认值）。
-//   ⑤ 收口：pass 1 的 apply_global_adjustments 在 PK_WEB_WORLD_MIN 下跳过 tonemap
-//      （global_adjustments:49-56），只剩羊皮纸 tint + paper grain
-//      （global_adjustments:64-66）。而 web 上 paper grain 的 grain 恒为 0.5
-//      （PK_SKIP_PIXEL_NOISE ⇒ pixel_noise=vec4(0.5)，world_map:198-205），
-//      mix(1-s, 1+s, 0.5) ≡ 1.0（至多 1 ulp），所以本 pass 只需补羊皮纸那一次 mix。
-//      → 本 pass **不需要 noise_tex**（省 1 个 sampler + 1 次 fetch）。
-//
-// ── uniform 预算 ───────────────────────────────────────────────────────────
-// 本文件只声明 4 个 sampler + 12 个标量/向量 uniform（world_map 是 186 个）。
-// 已实测：uniform 数量不是编译成本（只声明同样 186 个 uniform 的常量函数体只要
-// 66 ms，见 web_shader_warmup.PROBE_UNIFORM_SPLIT），所以少声明换不来编译时间；
-// 收益在**纹理单元预算**（Compatibility 只有 16 个，材质 sampler 必须 ≤8）、绑定
-// 状态与后续维护成本。少声明的另一面是"没人会误以为本 pass 也在消费某个参数"。
-// ═══════════════════════════════════════════════════════════════════════════
+// Compact water pass for Web LOW/MID. HIGH uses world_map's PC water pipeline
+// in a separate draw, with PK_WEB_WATER_ONLY. Both share Earth daylight and GGX.
+// Four material samplers; LOW keeps flat water, MID enables PBR and wave normals.
+// Cell indexing, height packing and fog conventions match the terrain pass.
 
 #include "res://shaders/include/shader_quality.gdshaderinc"
 
-// 宏链守卫：本 pass 的等价性建立在"web-LOW 档"这个前提上（②的 VT_USE_EDGE_DISTANCE
-// 裁掉、⑤的 PK_SKIP_PIXEL_NOISE 恒等式都只在 LOW/受限平台档成立）。宏链万一接错，
-// 宁可编不出来，也不要静默产出一份"看起来能用但和 pass 1 不一致"的变体。
-// 与 world_map_web_min.gdshaderinc 的 PK_QUALITY_LOW 守卫同款。
+// This compact program is prewarmed with the LOW compile tier.
 #ifndef PK_QUALITY_LOW
 #error "world_water_web.gdshader requires MOBILE_QUALITY_LOW / PK_SHADER_TIER_LOW"
 #endif
@@ -107,13 +39,28 @@ uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform vec2 lut_dims = vec2(1.0, 1.0);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 【烘焙水深】[web-high-features 2026-11-01 / 方案 B] R8 derived 的 water_depth：
+// R=水深 [0,1]，0=岸/陆、1=最深。本文件不 include uniforms.gdshaderinc，所以自行
+// 声明这个 bool；采样器 water_depth_tex 由 visual_tile_sampling 在 VT_USE_WATER_DEPTH 下声明。
+// compact 水面程序因此 4→5 个材质 sampler（仍在 Web 预算内）。
+// ═══════════════════════════════════════════════════════════════════════════
+uniform bool has_water_depth_tex = false;
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 【迷雾】口径与 uniforms.gdshaderinc:158-166 + renderer _push_fog_uniforms() 一致。
-// 刻意**不声明** fog_unexplored_color：未探索像素由 pass 1 上色，本 pass discard。
+// [land-water-split 2026-11-02] 未探索像素改为**本 pass 自己画 fog_unexplored_color**，
+// 不再 discard 让位。原因：陆 / 水拆成两张覆盖 mesh 之后，纯水 block 不由陆地 mesh
+// 覆盖（Web 上迷雾层也可能被裁掉），如果这里让位，纯水区域的迷雾就会露出空洞。
+// 颜色与陆地 program 同源（同一 uniform、同一值，由 _apply_water_uniforms 推送）：
+// 两片画同色是幂等的，Web 现状视觉不变。
 // ═══════════════════════════════════════════════════════════════════════════
 uniform bool fog_gray_enabled = true;
 uniform float fog_gray_strength : hint_range(0.0, 1.0) = 0.75;
 uniform bool fog_early_out_enabled = false;
 uniform float fog_early_out_k : hint_range(0.0, 0.5) = 0.02;
+// 必须与 uniforms.gdshaderinc 的声明逐字一致（source_color hint / 默认值），否则
+// 同色会差一个色彩空间转换。
+uniform vec3 fog_unexplored_color : source_color = vec3(0.263, 0.290, 0.353);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 【羊皮纸】apply_global_adjustments 的最后一步；world_map 侧同名同 hint 同默认值，
@@ -132,11 +79,69 @@ uniform float parchment_strength : hint_range(0.0, 0.4) = 0.10;
 // ═══════════════════════════════════════════════════════════════════════════
 uniform int terrain_surface_debug_view = 0;
 
+// All Web settings share this program. LOW retains the original flat water;
+// MID/HIGH restore physical lighting and a small, wrap-safe wave normal.
+uniform int visual_quality = 0;
+uniform float world_time = 0.0;
+uniform float season_phase = 1.0;
+uniform float day_phase = 0.25;
+uniform float axial_tilt_rad = 0.4091;
+uniform bool day_night_enabled = true;
+uniform bool water_effect_enabled = true;
+uniform bool tod_debug_sun_position_enabled = false;
+uniform vec2 tod_debug_sun_uv = vec2(0.5);
+uniform float tod_debug_sun_height_scale = 1.0;
+uniform vec3 tod_sun_dir = vec3(0.6, -0.4, 0.7);
+uniform float tod_exposure = 1.0;
+
+#define PK_WEB_WATER_PBR
+#include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/material_constants.gdshaderinc"
+#include "res://shaders/include/tonemap.gdshaderinc"
+#include "res://shaders/include/pbr_microfacet.gdshaderinc"
+
+vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
+	EarthDaylight ed = eval_earth_daylight(uv, uv.y * 2.0 - 1.0, day_night_enabled);
+	float longitude = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU;
+	float phase_a = longitude * 96.0 + v_world.y * 0.18 + world_time * 0.75;
+	float phase_b = longitude * 173.0 - v_world.y * 0.26 - world_time * 0.53;
+	float footprint = max(fwidth(phase_a), fwidth(phase_b));
+	float wave = water_effect_enabled ? (1.0 - ice) * (1.0 - smoothstep(0.5, 2.5, footprint)) : 0.0;
+	// Integer longitude frequencies preserve continuity across the world seam.
+	phase_a += sin(longitude * 43.0 - v_world.y * 0.065 - world_time * 0.1325) * 1.7
+		+ sin(longitude * 19.0) * 1.2;
+	phase_b += sin(longitude * 31.0 + v_world.y * 0.04) * 2.1;
+	vec3 N = normalize(vec3((cos(phase_a) + cos(phase_b) * 0.35) * 0.08 * wave,
+		(cos(phase_b) + cos(phase_a) * 0.25) * 0.07 * wave, 1.0));
+	vec3 V = vec3(0.0, 0.0, 1.0);
+	vec3 L = ed.local_day >= ed.moon_strength ? ed.sun_dir : ed.moon_dir;
+	vec3 H = normalize(L + V);
+	float nl = max(dot(N, L), NDOTL_BIAS);
+	float nv = max(N.z, NDOTL_BIAS);
+	float roughness = mix(0.30, 0.72, ice);
+	vec3 F = F_Schlick(F0_WATER, max(dot(V, H), 0.0));
+	vec3 spec = D_GGX(max(dot(N, H), 0.0), roughness)
+		* G_SmithGGX(nl, nv, roughness) * F / max(4.0 * nl * nv, 0.0001);
+	vec3 sun = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day)
+		+ srgb_to_linear(ed.moon_col) * ed.moon_strength;
+	vec3 albedo = srgb_to_linear(albedo_srgb);
+	vec3 diffuse = (vec3(1.0) - F) * albedo * INV_PI;
+	vec3 ambient = srgb_to_linear(earth_sky_sh(ed.amb_col, ed.sun_col, L, ed.local_day, N));
+	vec3 reflected_sky = mix(vec3(0.20, 0.37, 0.52), ed.amb_col, clamp(N.z, 0.0, 1.0));
+	vec3 lit = (diffuse + spec) * nl * sun + albedo * ambient
+		+ srgb_to_linear(reflected_sky) * F * (1.0 - ice) * 1.8;
+	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, ed.pixel_night) * tod_exposure;
+	return linear_to_srgb(apply_tonemap(lit));
+}
+
 // ── 只为解码服务的地表静态贴图：height（RG=高程）与 map_index（GB=cell id）──
 // 这两个 VT_USE_* 必须定义在 include 之前；tiled/legacy 的二选一由 include 内部的
 // MAP_VISUAL_TILED 决定（与 world_map.gdshader:85-110 完全同一套约定）。
+// [web-high-features 2026-11-01 / 方案 B] WATER_DEPTH：湖泊深度改用烘焙水深渲染，
+// 海面仍用连续 elev（见 render_water_pipeline_web_min）。
 #define VT_USE_HEIGHT
 #define VT_USE_MAP_INDEX
+#define VT_USE_WATER_DEPTH
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 
 // cell_lut_uv()（唯一对外成员）+ decode_cell_index()/dyn_lut_nearest()（本文件不用，
@@ -202,16 +207,33 @@ vec3 render_water_pipeline_web_min(
 		float edge_mix,
 		float elev,
 		float dyn_ice_frac,
-		vec2 shore_frac) {
+		vec2 shore_frac,
+		vec2 uv,
+		vec4 water_depth_px) {
 	// 深度：elev 是 [0,1] 的归一化高程，海面普遍很低，越浅越亮。
-	float depth_t = clamp(elev * 3.5, 0.0, 1.0);
+	// [web-high-features 2026-11-01 / 方案 B] 湖泊改用烘焙 water_depth（湖岸→湖心碗形，
+	// 避免整片湖水同色）；海面仍用连续 elev 深度。全部 select/mix 直线写法，不引入
+	// if/else —— 本 pass 的历史教训：第二个着色来源里的分歧分支会把 FXC 编译时间从
+	// 秒级推到十几秒。
+	// [finish-four 2026-11-01 / 收尾 C] 非 tiled 的 water_depth_tex 升级 RGBA8：
+	// R=水深，G/B/A=湖/礁/海带 3×3 软权重。软权重只提升 w_lake/w_reef/w_kelp，不改
+	// 几何/海冰/岸线逻辑；未绑定（引擎默认白纹理）时 soft_w 归零，GBA=0 的旧 R8 回退
+	// 因此精确等价原来的二元 biome 权重。
+	float wd_raw = water_depth_px.r;
+	float wd = has_water_depth_tex ? wd_raw : -1.0;
+	float lake_w = max((biome == B_LAKE) ? 1.0 : 0.0,
+			(secondary_biome == B_LAKE) ? 1.0 : 0.0);
+	float ocean_depth_t = clamp(elev * 3.5, 0.0, 1.0);
+	float baked_depth_t = clamp(wd, 0.0, 1.0);
+	float depth_t = mix(ocean_depth_t, baked_depth_t, lake_w * step(0.0, wd));
 	vec3 col = mix(vec3(0.045, 0.115, 0.235), vec3(0.185, 0.400, 0.470), depth_t);
 	// 次生水体（湖泊/内海交界）向主 biome 混合，保留边缘过渡。
 	col = mix(col, col * 0.92 + vec3(0.02, 0.03, 0.02), clamp(edge_mix, 0.0, 0.5));
+	vec4 soft_w = has_water_depth_tex ? water_depth_px : vec4(0.0);
 	float w_coast = (biome == B_COAST) ? 1.0 : 0.0;
-	float w_lake = (biome == B_LAKE) ? 1.0 : 0.0;
-	float w_reef = (biome == B_REEF) ? 1.0 : 0.0;
-	float w_kelp = (biome == B_KELP) ? 1.0 : 0.0;
+	float w_lake = max((biome == B_LAKE) ? 1.0 : 0.0, soft_w.g);
+	float w_reef = max((biome == B_REEF) ? 1.0 : 0.0, soft_w.b);
+	float w_kelp = max((biome == B_KELP) ? 1.0 : 0.0, soft_w.a);
 	vec3 biome_tint =
 		vec3(0.235, 0.470, 0.500) * w_coast +
 		vec3(0.145, 0.320, 0.390) * w_lake +
@@ -284,30 +306,38 @@ void fragment() {
 	if (!is_water) {
 		discard;
 	}
-	// 未探索像素：pass 1 已经输出 fog_unexplored_color，这里让位即可（同色）。
+	// [land-water-split 2026-11-02] 未探索像素改由本 pass 画 fog_unexplored_color
+	// （与陆地 program 同一 uniform 值），不再 discard —— 纯水 block 在分 mesh 后
+	// 没有陆地 pass 兜底，让位会露出迷雾空洞。早期退出仍然保留：直接跳过整条水面
+	// 着色，只写一个常量色。
 	if (fog_early_out_enabled && (fog_k <= fog_early_out_k)) {
-		discard;
+		COLOR = vec4(fog_unexplored_color, 1.0);
+	} else {
+		// 水深 → 归一高程（height.RG = 16-bit，解码同 world_map:208-209）。
+		vec4 height_px = visual_sample_height(uv);
+		float elev = (height_px.r * 256.0 + height_px.g) / 257.0;
+		// [收尾 C] water_depth 升级 RGBA8 后一次采样同时给出 R=深度与 G/B/A 软权重。
+		vec4 water_depth_px = visual_sample_water_depth(uv);
+		// web budget 变体不定义 VT_USE_EDGE_DISTANCE ⇒ shore_frac 恒为 0
+		// （world_map:222-231）。保留变量是为了让算式与 pass 1 逐字对得上。
+		vec2 shore_frac = vec2(0.0);
+
+		vec3 col = render_water_pipeline_web_min(
+			biome, cover, secondary_biome, secondary_cover,
+			static_edge_mix, elev, dyn_ice_frac, shore_frac, uv, water_depth_px);
+		if (visual_quality >= 1) {
+			col = shade_water_web(col, uv, clamp(dyn_ice_frac, 0.0, 1.0));
+		}
+
+		// 已探索但当前不可见 → 去饱和 + 压暗。逐字复制 world_map:423-427。
+		if (fog_gray_enabled) {
+			float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
+			col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))) * 0.82, gray_amt);
+		}
+
+		// apply_global_adjustments 的 web-min 收口：只有羊皮纸 tint 一项真正生效
+		// （tonemap 在 PK_WEB_WORLD_MIN 下被裁掉；paper grain 的 grain 恒 0.5 ⇒ 乘子 ≡1）。
+		col = mix(col, col * parchment_tint, parchment_strength);
+		COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0);
 	}
-
-	// 水深 → 归一高程（height.RG = 16-bit，解码同 world_map:208-209）。
-	vec4 height_px = visual_sample_height(uv);
-	float elev = (height_px.r * 256.0 + height_px.g) / 257.0;
-	// web budget 变体不定义 VT_USE_EDGE_DISTANCE ⇒ shore_frac 恒为 0
-	// （world_map:222-231）。保留变量是为了让算式与 pass 1 逐字对得上。
-	vec2 shore_frac = vec2(0.0);
-
-	vec3 col = render_water_pipeline_web_min(
-		biome, cover, secondary_biome, secondary_cover,
-		static_edge_mix, elev, dyn_ice_frac, shore_frac);
-
-	// 已探索但当前不可见 → 去饱和 + 压暗。逐字复制 world_map:423-427。
-	if (fog_gray_enabled) {
-		float gray_amt = (1.0 - smoothstep(0.5, 1.0, fog_k)) * fog_gray_strength;
-		col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))) * 0.82, gray_amt);
-	}
-
-	// apply_global_adjustments 的 web-min 收口：只有羊皮纸 tint 一项真正生效
-	// （tonemap 在 PK_WEB_WORLD_MIN 下被裁掉；paper grain 的 grain 恒 0.5 ⇒ 乘子 ≡1）。
-	col = mix(col, col * parchment_tint, parchment_strength);
-	COLOR = vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0);
 }

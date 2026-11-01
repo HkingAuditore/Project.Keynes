@@ -4,8 +4,8 @@ class_name EconomyFiscalHistory
 ## 国库收支的会话内趋势。只在已提交日采样一次，不写存档，
 ## 与 EconomyGdpLedger 共用同一套「每个已提交日一个点」的契约。
 ##
-## 只读财政快照里的两个合计（五类税种实收 / 五类税种实付补贴），
-## 不做逐格聚合：这是给折线看方向的，明细由当批快照负责。
+## 展示最近一次结算：未结算日沿用前值，真实零结算照常更新。
+## 此序列仅用于展示，不能作为累计财政流水求和。
 
 const CAPACITY := 60
 
@@ -13,6 +13,7 @@ var _country_handle := 0
 var _days := PackedInt32Array()
 var _income := PackedFloat32Array()
 var _expense := PackedFloat32Array()
+var _last_settlement: Dictionary = {}
 
 
 func reset(country_handle: int = 0) -> void:
@@ -20,6 +21,7 @@ func reset(country_handle: int = 0) -> void:
 	_days = PackedInt32Array()
 	_income = PackedFloat32Array()
 	_expense = PackedFloat32Array()
+	_last_settlement = {}
 
 
 func country_handle() -> int:
@@ -44,17 +46,41 @@ func sample(country_handle_value: int, fiscal: Dictionary) -> bool:
 	var day := int(fiscal.get("sample_day", -1))
 	if day < 0 or day <= latest_day():
 		return false
+	# 非税采购和跨格税款也可能发生在本国地块未结算的日子。
+	# 有真实现金事件时必须展示，不能被沿用值盖掉。
+	if bool(fiscal.get("has_settlement", true)) or _has_cashflow(fiscal):
+		_last_settlement = fiscal.duplicate(true)
+	var display := display_snapshot(fiscal)
 	_days.append(day)
-	_income.append(_total(fiscal.get("collected", PackedInt64Array())))
+	_income.append(_total(display.get("collected", PackedInt64Array())))
 	# 支出一侧 = 五类税种补贴实付 + 全部非税国库支出（科研采购、开拓采购、
-	# 工程与运河的缺料付款）。同口径才能让折线与堆叠条、与国库现金的实际变化对齐。
-	_expense.append(_total(fiscal.get("subsidy_paid", PackedInt64Array()))
-		+ _total(fiscal.get("non_tax_outflow", PackedInt64Array())))
+	# 工程与运河的缺料付款）。趋势与堆叠条同用最近结算口径。
+	_expense.append(_total(display.get("subsidy_paid", PackedInt64Array()))
+		+ _total(display.get("non_tax_outflow", PackedInt64Array())))
 	while _days.size() > CAPACITY:
 		_days.remove_at(0)
 		_income.remove_at(0)
 		_expense.remove_at(0)
 	return true
+
+
+## 保留原结算日期，让玩家知道当前展示的是哪次结算。
+func display_snapshot(fiscal: Dictionary) -> Dictionary:
+	if int(fiscal.get("country_handle", _country_handle)) != _country_handle:
+		return fiscal
+	if not _last_settlement.is_empty() and (
+			not bool(fiscal.get("ok", false)) or (
+			not bool(fiscal.get("has_settlement", true)) and not _has_cashflow(fiscal))):
+		var held := _last_settlement.duplicate(true)
+		held["carried_forward"] = true
+		return held
+	return fiscal
+
+
+static func _has_cashflow(fiscal: Dictionary) -> bool:
+	return _total(fiscal.get("collected", PackedInt64Array())) != 0.0 \
+		or _total(fiscal.get("subsidy_paid", PackedInt64Array())) != 0.0 \
+		or _total(fiscal.get("non_tax_outflow", PackedInt64Array())) != 0.0
 
 
 func days() -> PackedInt32Array:

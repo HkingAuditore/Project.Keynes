@@ -16,7 +16,7 @@ uniform sampler2D dyn_lut : filter_nearest, repeat_disable;
 uniform sampler2D eco_lut : filter_nearest, repeat_disable;
 
 // 移动高档也执行法线着色；只恢复植被这条路径，不改变 horizon 或其他移动特效开关。
-#if !defined(PK_SKIP_VEGETATION_SHADING) || defined(PK_QUALITY_HIGH)
+#if !defined(PK_SKIP_VEGETATION_SHADING) || defined(PK_QUALITY_HIGH) || defined(PK_VEG_NEAR_MIN)
 #define VEG_TERRAIN_SHADING
 #endif
 
@@ -28,7 +28,9 @@ uniform float wrap_period_x = 0.0;
 #define VT_USE_MAP_INDEX
 #define VT_USE_HEIGHT
 #define VT_USE_TERRAIN_NORMAL
+#if (!defined(PK_WEB_VEGETATION) || defined(PK_WEB_PC_HIGH)) && !defined(PK_SKIP_HORIZON_SHADOWS)
 #define VT_USE_HORIZON
+#endif
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 
 uniform float world_time = 0.0;
@@ -179,6 +181,9 @@ float shrub_horizon_angle_from_packed(vec4 packed, float sector) {
 }
 
 float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
+#ifdef PK_WEB_VEGETATION
+	return 0.0;
+#else
 	float angle = atan(sun_xy.y, sun_xy.x);
 	if (angle < 0.0) angle += 6.2831853;
 	float sector = angle / 0.78539816;
@@ -196,6 +201,7 @@ float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
 	float h01 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv01), sector);
 	float h11 = shrub_horizon_angle_from_packed(visual_sample_horizon(uv11), sector);
 	return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+#endif
 }
 
 float shrub_horizon_direct_visibility(vec2 uv, vec3 light_dir) {
@@ -444,6 +450,9 @@ void vertex() {
 #ifdef PK_SKIP_VEGETATION_SHADING
 	terrain_shading = pixel_terrain;
 #endif
+#ifdef PK_VEG_NEAR_MIN
+	terrain_shading = veg_shade_quality >= 1;
+#endif
 	if (terrain_shading && terrain_normal_tex_bound && !pixel_terrain) {
 		terrain_n = (visual_sample_terrain_normal(uv).rg * 2.0 - 1.0) * terrain_normal_influence;
 	}
@@ -495,6 +504,11 @@ void fragment() {
 	bool far = elem_px < 6.0;
 #else
 	bool far = elem_px < 3.0;
+#endif
+#ifdef PK_VEG_NEAR_MIN
+	// One prewarmed Web program; LOW keeps the old distant forms, while
+	// MID/HIGH reveal the four supported near families when large enough.
+	far = far || veg_shade_quality < 1;
 #endif
 	// GLSL ES 3.0 (the Compatibility/WebGL2 backend) rejects `?:` when the
 	// operands are structs, which the old one-liner `far ? vf_far(...) :
@@ -591,6 +605,8 @@ void fragment() {
 	bool use_shading = shading_enabled > 0.5;
 #ifndef VEG_TERRAIN_SHADING
 	use_shading = false;
+#elif defined(PK_VEG_NEAR_MIN)
+	use_shading = use_shading && veg_shade_quality >= 1;
 #elif defined(PK_SKIP_VEGETATION_SHADING)
 	use_shading = use_shading && veg_shade_quality >= 2 && veg_form_follows_ground(form);
 #endif

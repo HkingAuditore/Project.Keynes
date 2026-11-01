@@ -32,10 +32,16 @@
 //                     A = landform id
 // scalar/vector 与旧 dynamic/smooth/ecology per-pixel atlas 已退役：
 // moisture/temp/snow/ice/eco 改由 per-cell LUT 提供，flow/风场视觉退化为中性值。
-// [terrain-normal-bake 2026-06-25] 生成期烘焙的"总体地形法线"（RG8: nx,ny ∈ [0,1] 映射 [-1,1]，
-// nz 在 shader 重建）。地形静态 → 运行期 1 次采样拿宏观山脉走向，替代每帧宽半径 4-tap。
-// terrain_normal_tex_bound=false（未烘焙/旧存档）时 compute_terrain_normal 回退到运行期宽半径差分。
+// [terrain-normal-bake 2026-06-25 / packed-surface 2026-11-01] 生成期烘焙的地形静态表面。
+// 非 tiled 的 world_map 地形程序把两张 RGBA8 打包进 visual_tile_sampling 声明的
+// 2 层 sampler2DArray `terrain_surface_tex`（layer0=normal，layer1=relief），省 1 个采样槽：
+//   2D terrain_normal_tex (RGBA8)：RG = 粗法线 xy（0.5+n*0.5），BA = 近景高度细节坡度，
+//     仅供只开 VT_USE_TERRAIN_NORMAL 的其它层（植被/建筑/资源/贸易）使用；
+//   array layer0 = normal（同上布局），layer1 = relief（RG 粗段 / BA 细段分地形细节坡度）。
+// 纹理静态 → 运行期每像素 1-2 次采样拿全部法线/细节，两端都不再做 height 邻域差分。
+// bound=false（旧存档/未 rebake/单 tile pass 失败）时退化为"只有粗法线"或平地法线。
 uniform bool terrain_normal_tex_bound = false;
+uniform bool terrain_relief_tex_bound = false;
 // [terrain-horizon 2026-07-03] RGBA8 nibble-packed 8-direction horizon angle：
 // R=E/NE, G=N/NW, B=W/SW, A=S/SE（high/low nibble）。只用于遮蔽直射光。
 uniform bool terrain_horizon_tex_bound = false;
@@ -86,8 +92,9 @@ uniform bool gi_bounce_bound = false;
 // 扇出。water_pipeline 用它做深浅着色，单次采样取代旧"海洋 5×5 height 邻域 + 湖泊 16× biome 多半径"。
 // has_water_depth_tex=false（未烘焙/旧存档/fused 失败）时回退旧逐邻域估算。
 uniform bool has_water_depth_tex = false;
-// [terrain-detail-bake 2026-07-05] 静态 biome 内部细节调制图（L8）。
-// 移动端中/高档与桌面中档用它替代每像素 fbm/voronoi；LOW 档不采样。
+// [terrain-detail-bake 2026-07-05 / web-high-features 2026-11-01] 静态 biome 内部细节调制。
+// tiled 桌面用 visual_terrain_detail_tiles 数组；非 tiled（含 Web）改读共享
+// terrain_surface_tex 的 layer2（见 visual_tile_sampling），本 bool 只服务 tiled 路径。
 uniform bool has_terrain_detail_tex = false;
 uniform bool has_terrain_edge_data = false;
 // 归一化到 bake 的 0.90 hex 中心距差范围；只混合视觉量，不改变权威状态。
@@ -106,11 +113,16 @@ uniform float terrain_material_world_size = 384.0;
 uniform float terrain_material_albedo_strength = 0.6;
 uniform float terrain_material_normal_strength = 0.24;
 uniform float terrain_material_roughness_strength = 0.35;
+// [web-high-features 2026-11-01 / 方案 B] 共享材质 array 的第 5 层（index 4）= micro。
+// 4 层原材质族之后追加 terrain_micro_data 的平铺 micro；=4 时有效，<0 表示未绑定
+// （旧图/创建失败）。非 tiled 预算程序用它替代被裁掉的 terrain_micro_tex，不新增 sampler。
+uniform int terrain_material_micro_layer = -1;
 // [pk-web-texture-budget] GLES3 canvas 把顶部单元预留给内建纹理（MAX-7 高光 / MAX-6 法线
 // / MAX-5 SDF / MAX-4 屏幕 / MAX-2 灯光图集），材质 sampler 从 unit 1 顺序分配——WebGL2
 // 16 单元下材质最多 8 张（unit 1..8），第 9 张起每帧被内建默认白纹覆盖。2026-08-05 web
 // flow 恒 1 全河/全白的真根因即第 9 张 sampler（flow）落在 unit 9 被高光槽顶替，与格式无关。
-// 微纹理是纯装饰（材质贴图激活时本就跳过），预算后端整体裁剪，把材质数压回 8。
+// [web-high-features 2026-11-01] 预算后端的 micro 改走 terrain_material_tex 第 5 层
+// （PK_TERRAIN_MICRO_ARRAY），所以下面这张独立 2D micro 采样器只在非预算平台声明。
 #ifndef PK_WEB_TEXTURE_BUDGET
 uniform sampler2D terrain_micro_tex : filter_linear_mipmap, repeat_enable;
 #endif
@@ -127,6 +139,9 @@ uniform int terrain_surface_debug_view = 0;
 //               weather_field_ocean_strength （已删除）。
 // v10.noise-pack：共享 noise 贴图（256×256 RGBA8 tileable，由 MapBaker 烘焙）。
 // R=raw value_noise，G/B/A=2/3/4 octave fBM 预积分；fbm(p,N) 全局降为 1 次采样。
+// [packed-surface 2026-11-01 / 方案 A] Web 地形程序的 normal+relief 合并成 1 个 2 层
+// array 后腾出 1 个材质槽，本采样器恢复**无条件**声明与绑定（陆地程序、HIGH 水面
+// 独立程序、桌面全部档位都消费它）；上一轮为省槽的程序化噪声 fallback 已删除。
 uniform sampler2D noise_tex    : filter_linear_mipmap, repeat_enable;
 const float NOISE_TEX_SCALE = 256.0;
 
@@ -477,19 +492,23 @@ uniform vec3 color_snow         : source_color = vec3(0.96, 0.96, 0.96);
 
 
 // =========================================================================
-// 【Hillshading 组】
+// 【Hillshading / 烘焙地形法线组】
 // =========================================================================
 // ─── 极端天气地表反馈（仅保留 BLIZZARD 雪/薄冰；裂地与热浪/干旱调色已删除）────
-// ─── 双光源 hillshading ──────────────────────────────────────────────────
+// [baked-surface 2026-11-01] 本组参数现在只服务"烘焙法线 → 光照"：
+//   hillshade_dir/fill_dir/strength 由 brdf 的双向 stylized 项消费（不再有差分 hillshade），
+//   coarse_strength/detail_strength 由 hillshade_tod.terrain_baked_normal 消费，
+//   slope_gain 由 snow_cover 的坡度兜底消费。
 
 uniform float hillshade_strength : hint_range(0.0, 1.0) = 0.90;
 uniform float hillshade_slope_gain : hint_range(0.5, 24.0) = 8.0;
 uniform vec2  hillshade_dir      = vec2(-0.55, -0.55);
 uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
-// [terrain-normal 分层 2026-06-25] 粗法线（烘焙/宽半径）+ 细节法线（运行期，按 biome/性能档）分层控制。
-//   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
-//   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
-uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
+// [terrain-normal 分层 2026-06-25 / baked-surface 2026-11-01] 法线全部来自烘焙纹理：
+//   粗法线（terrain_normal.rg）给山脉总体走向，normal.ba/relief 给近景与分地形细节。
+//   运行期没有任何 height 邻域差分回退，因此下面三个"差分半径/高程比例"参数语义收窄为
+//   材质兼容保留项（land_pipeline 的河流顺坡梯度仍用 height_scale 换量纲）。
+uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 保留：旧材质/存档兼容
 uniform float terrain_normal_sample_radius_hex = 1.35;
 uniform float terrain_normal_height_scale_hex = 2.10;
 // [normal-soften 2026-07-31] 1.6→1.25：先压低 residual 中频引起的过硬阴阳面。
@@ -497,19 +516,19 @@ uniform float terrain_normal_height_scale_hex = 2.10;
 uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.65;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
 uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
 // [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
-// 高画质不再等于"更碎"：见 hillshade_tod.compute_terrain_normal。
+// [baked-surface 2026-11-01] 细节来源改为烘焙 normal.ba / relief，不走运行期差分。
 uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.16;
-// [terrain-erosion 2026-10-10] 分地形细节法线（沟谷 / 台坎 / 沙丘 / 起伏 / 丘状凹凸），
-//   各地形的形态与强度见 hillshade_tod.terrain_detail_profile。
+// [terrain-erosion 2026-10-10 / packed-surface 2026-11-01] 分地形细节法线（沟谷 / 台坎 /
+//   沙丘 / 起伏 / 丘状凹凸）由生成期烘焙进 terrain_surface_tex 的 layer1（RG/BA 两段；
+//   tiled 走 visual_terrain_relief_tiles）。
 //   strength = 全局倍率（0 关）；world_size = 全部细节尺度的参照（72 = 表内原值）。
 //   每层按屏幕像素波长淡出，远景不产生闪烁。格子尺度以上的谷地由烘焙期汇流刻谷负责。
 uniform float terrain_erosion_strength   : hint_range(0.0, 2.0) = 1.0;
 uniform float terrain_erosion_world_size : hint_range(8.0, 256.0) = 72.0;
-// [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
-//   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。
-//   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。
-uniform float shore_detail_strength : hint_range(0.0, 1.0) = 0.45;       // 近岸滩坡细节强度(0=关)
-uniform float shore_band_height     : hint_range(0.001, 0.2) = 0.06;     // 近岸带高度(land_h 厚度，越小越贴岸)
+// [shore-normal 2026-06-25] 保留声明：近岸滩坡细节法线已随运行期高度差分一起删除，
+//   烘焙 normal.ba 在近景分担了这层起伏。材质兼容保留，避免旧 .tres 参数名漂移。
+uniform float shore_detail_strength : hint_range(0.0, 1.0) = 0.45;       // 已废弃（保留材质兼容）
+uniform float shore_band_height     : hint_range(0.001, 0.2) = 0.06;     // 已废弃（保留材质兼容）
 // [coast-smooth 2026-06-26] 平滑海岸线：水陆边界是 per-cell 六边形枚举硬边(阶梯)，河流是连续 SDF。
 // 这里在海岸一圈把陆/水颜色统一混向"水色与陆色的中间色"(mix(color_coast_water,color_lowland))做柔和
 // 过渡带，掩盖六边形硬边。定位/粗细由 shore_w(邻域水/陆接触度,已 smoothstep)×width 控制——对称、内陆

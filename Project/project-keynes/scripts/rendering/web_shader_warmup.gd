@@ -20,8 +20,16 @@ extends RefCounted
 ##   - 植被的家族批次变体（FAR_ONLY + DETAIL_FAMILY_BATCH）根本没进过清单。
 ##
 ## 前缀的真源在各自的 owner 里，本文件只引用，不自己拼宏串：
-##   - world_map：`HexRenderer.WORLD_MAP_WEB_PREFIX`（quality + texture_budget + world_min）
-##   - world_water_web（水面第二 pass）：`HexRenderer.WATER_PASS_PREFIX`
+##   - world_map（Web LOW 陆地程序）：`HexRenderer.WORLD_MAP_WEB_PREFIX`
+##     （quality + texture_budget + world_min + no_micro + land_only + horizon；
+##      [terrain-web-baked-surface-A 2026-11-01] normal+relief 合并进 terrain_surface_tex
+##      （B 方案固定 4 层：normal/relief/detail/occluder）后腾出的材质槽还给 noise_tex，
+##      前缀里不再有"无噪声"宏；
+##      [B 2026-11-01] surface array 扩到 4 层（detail/occluder）+ material array 第 5 层
+##      micro + GI packed bounce 全部走**已有 sampler**，所以前缀不变、仍 8 槽；
+##      水面 depth 的 VT 宏在 shader 源码里定义，水面 pass 前缀也不变）
+##   - PC-HIGH world_map 陆地 / 水面：`WORLD_MAP_WEB_HIGH_PREFIX` / `WATER_WEB_HIGH_PREFIX`
+##   - world_water_web（Web LOW 水面第二 pass）：`HexRenderer.WATER_PASS_PREFIX`
 ##     （quality + texture_budget）
 ##   - 建筑 3 张：`BuildingVisualLayer.compose_shader_code()`
 ##   - resource_impostor：`ResourceVisualLayer.compose_shader_code()`
@@ -67,18 +75,32 @@ const PK_WEB_WARM_VEGETATION := true
 
 ## `await_ready()` 的兜底上限。一张 shader 编译异常不应该把「开始游戏」永久锁死；
 ## 超时就带着不完整的预热继续（会多付一次游戏内编译，但会话能继续）。
-const AWAIT_READY_TIMEOUT_MSEC := 120000
+## Full PC-quality programs can exceed the former two-minute deadline on ANGLE.
+## Do not tear down the warmup host while its driver compilation is in flight.
+const AWAIT_READY_TIMEOUT_MSEC := 600000
 
 ## 迷雾 / 国界这类层使用的前缀：只有质量档，没有纹理预算宏。
 const FOG_PREFIX := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
 
 const TIER_PREFIX := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n#define PK_WEB_TEXTURE_BUDGET\n"
 
-## world_map 专用前缀（= 运行期 web-LOW 的 PK_WEB_WORLD_MIN 裁剪变体）。真源在
-## HexRenderer；这里引用常量而不是抄字面量，差一个字节驱动就不认缓存、预热白做。
+## world_map 专用前缀的**历史默认/kill-switch**常量（= micro 被裁的 NO_MICRO 变体）。
+## 真源在 HexRenderer；这里引用常量而不是抄字面量，差一个字节驱动就不认缓存、预热白做。
 ## 注意：千万不要把 PK_WEB_WORLD_MIN 塞进 TIER_PREFIX —— 天气那条复用 TIER_PREFIX，
 ## 会跟着漂移。
+## [C 2026-11-01] A/B 结论（Edge 156 + ANGLE D3D11，tmp/webbuild_ab/REPORT.md）支持
+## 默认放开 micro：world_map 编译 5417→4582ms（-15%）、总 warmup -5.5%。因此 web 实际
+## 预热前缀必须走 `world_map_prefix_active()`（转发 HexRenderer.web_map_web_prefix_active()）：
+## 默认 = MICRO 变体（= 本常量去掉 PK_PROBE_NO_MICRO）；URL `micro=off|0|false` 时才是
+## 本常量（kill-switch）。保留本常量给默认值回退/旧断言。
 const WORLD_MAP_PREFIX := HexRenderer.WORLD_MAP_WEB_PREFIX
+
+
+## 当前要预热的共享 Web 陆地程序前缀（与运行期 _apply_shader_variant_prefix 同源）。
+## 两处都调 HexRenderer 的 active 函数，保证「预热 = 运行期」逐字节一致（含 micro 开关：
+## web 默认 MICRO，URL micro=off 回退到 WORLD_MAP_PREFIX）。
+static func world_map_prefix_active() -> String:
+	return HexRenderer.web_map_web_prefix_active()
 
 ## 全量预热清单。
 const SHADERS := [
@@ -90,7 +112,8 @@ const SHADERS := [
 		"prefix": HexRenderer.WATER_PASS_PREFIX},
 	# 迷雾层的前缀与 hex_renderer 不同：它不带 PK_WEB_TEXTURE_BUDGET
 	# （那个宏只由 hex_renderer._apply_shader_variant_prefix 追加）。
-	{"path": "res://shaders/fog_of_war.gdshader", "prefix": FOG_PREFIX},
+	{"path": "res://shaders/fog_of_war.gdshader",
+		"prefix": FOG_PREFIX + "#define PK_WEB_FOG_RUNTIME\n"},
 	{"path": "res://shaders/weather_overlay.gdshader",
 		"prefix": "#define PK_WEB_WEATHER_MIN\n" + TIER_PREFIX},
 	{"path": "res://shaders/country_border.gdshader", "prefix": ""},
@@ -188,6 +211,22 @@ static func begin(host: Node) -> void:
 	run(host)
 
 
+## The default Web page starts in Auto/LOW. Compile the expensive PC HIGH
+## programs only when the URL explicitly requests them; ANGLE compiles on the
+## browser main thread, so an unconditional 30-second shader looks like a dead tab.
+static func requested_quality() -> int:
+	if not OS.has_feature("web") or not Engine.has_singleton("JavaScriptBridge"):
+		return 0
+	var bridge: Object = Engine.get_singleton("JavaScriptBridge")
+	if bridge == null:
+		return 0
+	var raw: Variant = bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")
+	match String(raw).to_lower():
+		"high": return 2
+		"medium": return 1
+		_: return 0
+
+
 ## 等预热结束。非 web / 已经结束 / 从未启动都立即返回。
 static func await_ready(host: Node) -> void:
 	if is_finished() or host == null:
@@ -237,6 +276,8 @@ static func run(host: Node) -> void:
 		var label := String(entry.get("label", "?"))
 		var code := String(entry.get("code", ""))
 		var fp := WebTelemetry.code_fingerprint(code)
+		WebTelemetry.emit("warmup_shader_begin", {"label": label, "fp": fp, "idx": _done_count + 1})
+		WebTelemetry.flush()
 		_warmed_fp[label] = fp
 		var began := Time.get_ticks_msec()
 		var variant := Shader.new()
@@ -286,6 +327,10 @@ static func run(host: Node) -> void:
 ## 收集要编译的源码。前缀一律向 owner 取，不在这里自己拼。
 static func _collect_codes() -> Array:
 	var out: Array = []
+	# [C 2026-11-01] world_map 共享程序的前缀要跟着 micro URL 诊断开关走；运行期
+	# _apply_shader_variant_prefix 用同一个 HexRenderer.web_map_web_prefix_active()，
+	# 两边逐字节一致，A/B 时预热才不会白编。
+	var shared_map_prefix := world_map_prefix_active()
 	if PROBE_TRIVIAL_FIRST:
 		# 最简 canvas_item：只为吃掉"本进程第一次编译"的一次性成本。
 		out.append({"label": "probe_trivial_first", "code":
@@ -296,11 +341,18 @@ static func _collect_codes() -> Array:
 			ResourceLoader.CACHE_MODE_IGNORE) as Shader
 		if shader == null:
 			continue
-		var code := String(entry.get("prefix", "")) + shader.code
+		var entry_prefix := String(entry.get("prefix", ""))
+		if path == "res://shaders/world_map.gdshader":
+			# 共享陆地程序：web 默认 MICRO 变体（A/B 结论），URL micro=off|0|false 回退。
+			entry_prefix = shared_map_prefix
+		var code := entry_prefix + shader.code
 		if String(entry.get("compose", "")) == "building":
 			code = BuildingVisualLayer.compose_shader_code(shader, false)
 		out.append({"label": path.get_file().get_basename(), "code": code})
 	# resource_impostor 的 web 两份程序（surface / geology）：owner 自己给出源码。
+	var pc_world := FileAccess.get_file_as_string("res://shaders/world_map.gdshader")
+	out.append({"label": "world_map_high", "code": HexRenderer.WORLD_MAP_WEB_HIGH_PREFIX + pc_world})
+	out.append({"label": "world_water_high", "code": HexRenderer.WATER_WEB_HIGH_PREFIX + pc_world})
 	var res_codes := ResourceVisualLayer.web_warmup_shader_codes()
 	for key in res_codes.keys():
 		out.append({"label": String(key), "code": String(res_codes[key])})
@@ -317,10 +369,10 @@ static func _collect_codes() -> Array:
 			for tag in PROBE_LAND_BLOCKS:
 				out.append({
 					"label": "wm_no_%s" % String(tag).to_lower(),
-					"code": WORLD_MAP_PREFIX + "#define PK_PROBE_NO_%s\n" % String(tag) + wland.code,
+					"code": shared_map_prefix + "#define PK_PROBE_NO_%s\n" % String(tag) + wland.code,
 				})
 			# floor：十段全换常量。若它仍是 16 s ⇒ 病根不在陆地管线，而在 SETUP 段/整体规模。
-			var floor_prefix := WORLD_MAP_PREFIX
+			var floor_prefix := shared_map_prefix
 			for tag in ["LAND_BASE", "MICRO", "MODIF", "COLOR_OVL", "MAT_OVL", "SHADE",
 					"BRDF", "TOD_RELIEF", "CAST_SHADOW", "GLOBAL_ADJ"]:
 				floor_prefix += "#define PK_PROBE_NO_%s\n" % String(tag)
@@ -332,9 +384,15 @@ static func _collect_codes() -> Array:
 			ResourceLoader.CACHE_MODE_IGNORE) as Shader
 		if wm != null:
 			out.append({"label": "wm_no_land",
-				"code": WORLD_MAP_PREFIX + "#define PK_PROBE_NO_LAND\n" + wm.code})
+				"code": shared_map_prefix + "#define PK_PROBE_NO_LAND\n" + wm.code})
 			out.append({"label": "wm_no_water",
-				"code": WORLD_MAP_PREFIX + "#define PK_PROBE_NO_WATER\n" + wm.code})
+				"code": shared_map_prefix + "#define PK_PROBE_NO_WATER\n" + wm.code})
+	if requested_quality() < 2:
+		var light: Array = []
+		for entry in out:
+			if not String(entry.get("label", "")).ends_with("_high"):
+				light.append(entry)
+		out = light
 	return out
 
 

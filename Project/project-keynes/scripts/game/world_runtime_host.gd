@@ -1285,6 +1285,17 @@ func _start_production_shadow_worker() -> void:
 	# 只有 ACTIVE 才推进日历；SHADOW 会停在 day 1。
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
+	# Web worker 依赖主线程预发布器的两个只读探测 API。旧 side module
+	# （例如使用 `skip-native` 导出，或浏览器缓存了旧包）可能仍能加载并报告
+	# `requested=ACTIVE`，但没有这两个方法；继续走 worker 会让它停在 PAUSED
+	# 等环境帧，而发布权又无法安全交给预发布器，最终把第 1 天钉死。
+	# 在启动边界直接切到同一 host 的 inline 日屏障，避免进入这个半启动状态。
+	if _is_web_build() and web_wants_worker and not _environment_prefetch_capable():
+		print("[runtime-worker] web side module lacks environment prefetch API; " +
+			"forcing native_daily_inline (rebuild Web native module to re-enable worker)")
+		_web_worker_inline_fallback = true
+		web_wants_worker = false
+		web_wants_inline = true
 	if ext != null and runtime_parity_forcing \
 			and ext.has_method("set_runtime_climate_parity_forcing"):
 		ext.set_runtime_climate_parity_forcing(true)
@@ -4348,6 +4359,11 @@ func _web_barrier_diag() -> Dictionary:
 	out["web_worker_start_code"] = _web_worker_start_code
 	out["web_worker_inline_fallback"] = _web_worker_inline_fallback
 	out["native_daily_inline_active"] = _native_daily_inline_active
+	# 长跑内存曲线：web 的 wasm32 堆是 2 GiB 硬上限，超了就是
+	# "Cannot enlarge memory" + 每次鼠标事件一条 "table index is out of bounds"。
+	# 把真实堆大小和引擎自报的静态内存一起打进 diag，就能在崩之前看到斜率。
+	out["wasm_heap_mb"] = WebTelemetry.wasm_heap_mb()
+	out["memory_static_mb"] = WebTelemetry.memory_mb()
 	return out
 
 func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
