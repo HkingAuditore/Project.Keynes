@@ -2797,6 +2797,18 @@ Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer
     out["garrison"] = core->present_for_cell(c);
     int64_t quota = 0, pending = 0, fort_tier = -1, college_tier = -1;
     bool paused = false, disrepair = false;
+    // Per-tier barracks counts and running state builds, so the tile dossier can
+    // show "how many of which tier" and target a demolish at the exact catalog
+    // row instead of guessing from `post_count`.
+    PackedInt32Array barracks_tiers;
+    barracks_tiers.resize(MILITARY_STATE_BARRACKS_TIERS);
+    barracks_tiers.fill(0);
+    PackedInt32Array construction_buildings;
+    construction_buildings.resize(MILITARY_STATE_BUILD_SLOTS);
+    construction_buildings.fill(-1);
+    PackedInt32Array construction_done_days;
+    construction_done_days.resize(MILITARY_STATE_BUILD_SLOTS);
+    construction_done_days.fill(-1);
     for (const MilitaryCellState &state : core->cell_states()) {
         if (state.cell != c) continue;
         quota = state.quota;
@@ -2805,6 +2817,14 @@ Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer
         college_tier = state.college_tier;
         paused = state.paused != 0;
         disrepair = state.disrepair != 0;
+        for (int32_t tier = 0; tier < MILITARY_STATE_BARRACKS_TIERS; ++tier)
+            barracks_tiers[tier] = state.barracks_count[tier];
+        for (int32_t k = 0; k < MILITARY_STATE_BUILD_SLOTS; ++k) {
+            construction_buildings[k] = state.construction_building[k];
+            construction_done_days[k] = static_cast<int32_t>(std::clamp<int64_t>(
+                state.construction_done_day[k], -1,
+                std::numeric_limits<int32_t>::max()));
+        }
         break;
     }
     out["quota"] = quota;
@@ -2813,6 +2833,9 @@ Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer
     out["college_tier"] = college_tier;
     out["paused"] = paused;
     out["disrepair"] = disrepair;
+    out["barracks_tiers"] = barracks_tiers;
+    out["construction_buildings"] = construction_buildings;
+    out["construction_done_days"] = construction_done_days;
     // Garrison composition (lots located in this cell).
     Array garrison;
     const MilitaryLotStore &lots = core->lots();

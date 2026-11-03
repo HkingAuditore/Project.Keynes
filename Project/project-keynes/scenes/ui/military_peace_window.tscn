@@ -1,0 +1,373 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_peace_window.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_frame_panel.gd" id="2_frame"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/money_icon.tscn" id="4_money"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_toggle_list.tscn" id="5_toggle"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="6_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="7_bars"]
+
+[node name="MilitaryPeaceWindow" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+offset_left = 16.0
+offset_top = 84.0
+offset_right = 536.0
+offset_bottom = 618.0
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Frame" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("2_frame")
+edge = "cinnabar"
+frame_scale = 0.5
+
+[node name="Box" type="VBoxContainer" parent="Frame"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Frame/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeaceIcon" parent="Frame/Box/Header" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="PeaceTitle" type="Label" parent="Frame/Box/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierHeading"
+text = "议和"
+text_overrun_behavior = 3
+
+[node name="CloseButton" type="Button" parent="Frame/Box/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="Subtitle" type="Label" parent="Frame/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
+
+[node name="Status" type="Label" parent="Frame/Box"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Frame/Box"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="Frame/Box/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="SituationNote" type="PanelContainer" parent="Frame/Box/Scroll/Body"]
+layout_mode = 2
+theme_type_variation = &"PKPaperNote"
+
+[node name="SituationBox" type="VBoxContainer" parent="Frame/Box/Scroll/Body/SituationNote"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SituationHeader" type="HBoxContainer" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SituationKicker" type="Label" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/SituationHeader"]
+layout_mode = 2
+theme_type_variation = &"PKPaperTag"
+text = "战况"
+
+[node name="Losses" type="Label" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/SituationHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+autowrap_mode = 3
+
+[node name="KpiGrid" type="GridContainer" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 2
+
+[node name="Kpi0" type="Control" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/KpiGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_kpi")
+
+[node name="Kpi1" type="Control" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/KpiGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_kpi")
+
+[node name="Kpi2" type="Control" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/KpiGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_kpi")
+
+[node name="Kpi3" type="Control" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/KpiGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_kpi")
+
+[node name="PartsList" type="Control" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 88)
+layout_mode = 2
+script = ExtResource("7_bars")
+
+[node name="LogBox" type="VBoxContainer" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Log0" type="Label" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/LogBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="Log1" type="Label" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/LogBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="Log2" type="Label" parent="Frame/Box/Scroll/Body/SituationNote/SituationBox/LogBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="TermsNote" type="PanelContainer" parent="Frame/Box/Scroll/Body"]
+layout_mode = 2
+theme_type_variation = &"PKPaperNote"
+
+[node name="TermsBox" type="VBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TermsHeader" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TermsKicker" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/TermsHeader"]
+layout_mode = 2
+theme_type_variation = &"PKPaperTag"
+text = "议和条款"
+
+[node name="TermsPrice" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/TermsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+
+[node name="PeaceWhite" type="CheckBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "白和平：双方维持现状"
+
+[node name="CedeRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CedeKicker" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/CedeRow"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "割地"
+
+[node name="CedeCount" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/CedeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+
+[node name="CedeScroll" type="ScrollContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 108)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="CedingList" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/CedeScroll" instance=ExtResource("5_toggle")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CedeCaption" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="LumpRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PeaceLump" type="CheckBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/LumpRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "一次性赔款"
+
+[node name="LumpIcon" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/LumpRow" instance=ExtResource("4_money")]
+layout_mode = 2
+
+[node name="LumpAmount" type="SpinBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/LumpRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 30)
+layout_mode = 2
+max_value = 100000000.0
+step = 100.0
+
+[node name="InstallRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PeaceInstall" type="CheckBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "分期赔款"
+
+[node name="InstallIcon" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallRow" instance=ExtResource("4_money")]
+layout_mode = 2
+
+[node name="InstallAmount" type="SpinBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 30)
+layout_mode = 2
+max_value = 100000000.0
+step = 100.0
+
+[node name="InstallCountRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InstallCaption" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallCountRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = "期数（2–12）"
+
+[node name="InstallCount" type="SpinBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallCountRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(74, 30)
+layout_mode = 2
+min_value = 2.0
+max_value = 12.0
+value = 4.0
+
+[node name="InstallTotal" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallCountRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 0)
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+
+[node name="AnnexRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeaceAnnex" type="CheckBox" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/AnnexRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "吞并：割让其全部剩余领土"
+
+[node name="AnnexHint" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/AnnexRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+autowrap_mode = 3
+
+[node name="Hint" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = "未勾选的占领格会随和约自动交还；割地只写进和约的格才会易主。"
+
+[node name="Footer" type="HBoxContainer" parent="Frame/Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="FooterReadout" type="Label" parent="Frame/Box/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="FooterBand" type="Label" parent="Frame/Box/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "—"
+
+[node name="Submit" type="Button" parent="Frame/Box/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(128, 34)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKSealPrimaryButton"
+text = "用印递交"

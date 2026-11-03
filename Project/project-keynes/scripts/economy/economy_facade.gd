@@ -454,46 +454,78 @@ func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	return snapshot
 
 
-func construction_catalog(search: String = "", offset: int = 0,
-		limit: int = 32,
-		technology_available: PackedByteArray = PackedByteArray()) -> Dictionary:
+## Dense catalog columns the construction workspace needs beyond the cell
+## snapshot: sector, base build time, and production maturity (the authored
+## "how advanced is this process" rank used by the 「最新」 ordering).
+## All are catalog-wide columns, so they are read once instead of per cell.
+func construction_type_columns() -> Dictionary:
+	return {
+		"building_type_ids": _catalog.get("building_type_ids", PackedStringArray()),
+		"building_economic_sectors": _catalog.get(
+			"building_economic_sectors", PackedInt32Array()),
+		"building_construction_days": _catalog.get(
+			"building_construction_days", PackedInt32Array()),
+		"building_maturity_ranks": _catalog.get(
+			"building_maturity_ranks", PackedInt32Array()),
+		"building_maturity_display_names": _catalog.get(
+			"building_maturity_display_names", PackedStringArray()),
+	}
+
+
+## Sector ids in compiled column order (index == `building_economic_sectors`).
+func construction_sector_ids() -> PackedStringArray:
+	return PackedStringArray(EconomyCatalogScript.BUILDING_SECTOR_IDS)
+
+
+## Every catalog entry that matches the technology gate, the sector and the
+## search needle — unpaged. The construction workspace sorts the whole set
+## before slicing a page, so the ordering is global instead of per-page.
+func construction_candidates(search: String = "",
+		technology_available: PackedByteArray = PackedByteArray(),
+		sector: int = -1) -> PackedInt32Array:
 	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
 	var enforce_technology := technology_available.size() == ids.size()
+	var sectors: PackedInt32Array = _catalog.get(
+		"building_economic_sectors", PackedInt32Array())
+	var enforce_sector := sector >= 0 and sectors.size() == ids.size()
 	var matches := PackedInt32Array()
 	var needle := search.strip_edges().to_lower()
 	for type_id in range(ids.size()):
 		if enforce_technology and technology_available[type_id] == 0:
+			continue
+		if enforce_sector and int(sectors[type_id]) != sector:
 			continue
 		var stable_id := String(ids[type_id])
 		var display_name := String(_building_display_names.get(stable_id, stable_id))
 		if needle.is_empty() or stable_id.to_lower().contains(needle) \
 				or display_name.to_lower().contains(needle):
 			matches.append(type_id)
+	return matches
+
+
+func construction_catalog(search: String = "", offset: int = 0,
+		limit: int = 32,
+		technology_available: PackedByteArray = PackedByteArray(),
+		sector: int = -1) -> Dictionary:
+	var matches := construction_candidates(search, technology_available, sector)
 	var begin := clampi(offset, 0, matches.size())
 	var end := mini(matches.size(), begin + clampi(limit, 1, 32))
 	return {"ok": true, "total": matches.size(), "offset": begin,
 		"limit": clampi(limit, 1, 32), "type_ids": matches.slice(begin, end)}
 
 
-func treasury_construction_options(country_handle: int, cell_idx: int,
-		search: String = "", offset: int = 0, limit: int = 32) -> Dictionary:
+## Quotes an explicit type list. The caller owns filtering and paging, so the
+## workspace never has to re-derive the catalog page it just displayed.
+func construction_quotes(country_handle: int, cell_idx: int,
+		type_ids: PackedInt32Array) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
 		return {"ok": false, "reason": "construction_quote_api_unavailable"}
-	var building_snapshot: Dictionary = building_cell_snapshot(cell_idx)
-	var stable_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
-	var technology_available: PackedByteArray = building_snapshot.get(
-		"building_technology_available", PackedByteArray())
-	if not bool(building_snapshot.get("ok", false)) \
-			or technology_available.size() != stable_ids.size():
-		return {"ok": false, "reason": "construction_technology_snapshot_unavailable"}
-	var page := construction_catalog(
-		search, offset, limit, technology_available)
-	var type_ids: PackedInt32Array = page.get("type_ids", PackedInt32Array())
 	var quotes: Dictionary = _world_ext.get_treasury_construction_quotes(
 		country_handle, cell_idx, type_ids)
 	if not bool(quotes.get("ok", false)):
 		return quotes
+	var stable_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
 	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
 	var eligible: PackedByteArray = quotes.get("eligible", PackedByteArray())
 	var reasons: PackedStringArray = quotes.get("reason_codes", PackedStringArray())
@@ -512,6 +544,10 @@ func treasury_construction_options(country_handle: int, cell_idx: int,
 		"material_treasury", PackedInt64Array())
 	var material_market: PackedInt64Array = quotes.get(
 		"material_market", PackedInt64Array())
+	# The quote's own prices, not a second market-snapshot read: the displayed
+	# subtotals must add up to the quoted cash even if a tick happens between.
+	var material_prices: PackedInt32Array = quotes.get(
+		"material_prices", PackedInt32Array())
 	var items := []
 	for i in range(type_ids.size()):
 		var type_id := int(type_ids[i])
@@ -529,7 +565,9 @@ func treasury_construction_options(country_handle: int, cell_idx: int,
 				"name": String(_good_display_names.get(good_id, good_id)),
 				"required": int(material_required[edge]),
 				"treasury": int(material_treasury[edge]),
-				"market": int(material_market[edge])})
+				"market": int(material_market[edge]),
+				"unit_price": int(material_prices[edge]) \
+					if edge < material_prices.size() else 0})
 		items.append({"type_id": type_id, "building_id": stable_id,
 			"name": String(_building_display_names.get(stable_id, stable_id)),
 			"eligible": i < eligible.size() and eligible[i] != 0,
@@ -538,7 +576,31 @@ func treasury_construction_options(country_handle: int, cell_idx: int,
 			"treasury_goods_used": int(treasury_totals[i]) if i < treasury_totals.size() else 0,
 			"market_goods_used": int(market_totals[i]) if i < market_totals.size() else 0,
 			"materials": materials})
-	return {"ok": true, "items": items, "total": int(page.get("total", 0)),
+	return {"ok": true, "items": items,
+		"snapshot_day": int(quotes.get("snapshot_day", -1)), "nonbinding": true}
+
+
+func treasury_construction_options(country_handle: int, cell_idx: int,
+		search: String = "", offset: int = 0, limit: int = 32,
+		sector: int = -1) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
+		return {"ok": false, "reason": "construction_quote_api_unavailable"}
+	var building_snapshot: Dictionary = building_cell_snapshot(cell_idx)
+	var stable_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var technology_available: PackedByteArray = building_snapshot.get(
+		"building_technology_available", PackedByteArray())
+	if not bool(building_snapshot.get("ok", false)) \
+			or technology_available.size() != stable_ids.size():
+		return {"ok": false, "reason": "construction_technology_snapshot_unavailable"}
+	var page := construction_catalog(
+		search, offset, limit, technology_available, sector)
+	var type_ids: PackedInt32Array = page.get("type_ids", PackedInt32Array())
+	var quotes := construction_quotes(country_handle, cell_idx, type_ids)
+	if not bool(quotes.get("ok", false)):
+		return quotes
+	return {"ok": true, "items": quotes.get("items", []),
+		"total": int(page.get("total", 0)),
 		"offset": int(page.get("offset", 0)), "limit": int(page.get("limit", 32)),
 		"snapshot_day": int(quotes.get("snapshot_day", -1)), "nonbinding": true}
 

@@ -16,6 +16,7 @@ const CollapsibleSectionScene := preload("res://scenes/ui/inspector_collapsible_
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
+const MilitaryCellLedgerScene := preload("res://scenes/ui/military_cell_ledger.tscn")
 
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
@@ -33,13 +34,18 @@ signal tab_data_requested(tab_id: String)
 signal object_details_requested(request: Dictionary)
 signal detail_visibility_changed(open: bool)
 signal family_colonization_requested(family_handle: int, source_cell: int)
-signal construction_page_requested(search: String, offset: int)
+signal construction_page_requested(sector: String, search: String, sort: String, offset: int)
 signal construction_requested(request: Dictionary)
 signal colonization_requested(request: Dictionary)
 signal trade_orders_page_requested(offset: int)
 signal trade_order_locate_requested(cell_idx: int)
-## 军事页签的官营建筑请求：{cell, role, op}。接收方（GameUIManager）翻成正式命令。
+## 军事页签的官营建筑请求：{cell, role, op, building}。接收方（GameUIManager）翻成正式命令。
 signal military_state_building_requested(request: Dictionary)
+## 军事页签里点了一支部队：接收方按 handle 打开军务档案。
+signal military_army_selected(handle: int)
+## 军务档案（部队 / 战线页）的动作与换页请求。接收方是 GameUIManager。
+signal military_dossier_action_requested(action: StringName, payload: Dictionary)
+signal military_dossier_army_selected(handle: int)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -61,8 +67,13 @@ var _inspector_root: VBoxContainer
 var _detail_shell: PanelContainer
 var _object_detail_dialog: ObjectDetailDialog
 var _family_workspace: FamilyWorkspace
-var _construction_pane: VBoxContainer
-var _construction_picker: ConstructionPicker
+var _military_dossier: MilitaryDossier
+## 没有选中地块时（只开着军务档案），目录列必须收起，否则会露出空档案。
+var _directory_available := true
+var _construction_workspace: BuildingWorkspace
+var _construction_entry_hint: Label
+var _construction_feedback := ""
+var _construction_ok := true
 var _reset_tax_button: Button
 var _tax_reset_request: Dictionary = {}
 var _clear_tax_confirmation: ConfirmationDialog
@@ -76,6 +87,8 @@ var _list_caption_controls: Dictionary = {}
 var _section_refs: Dictionary = {}
 var _chart_controls: Dictionary = {}
 var _badge_row: BadgeRow
+## 军事页的撕纸台账（一张纸承载驻军/部队/训练/三行官营建筑）。
+var _military_ledger
 var _resource_list: ResourceList
 var _cohort_list
 var _building_list
@@ -121,8 +134,8 @@ func _ready() -> void:
 	_detail_shell = get_node_or_null("%DetailShell") as PanelContainer
 	_object_detail_dialog = get_node_or_null("%ObjectDetail") as ObjectDetailDialog
 	_family_workspace = get_node_or_null("%FamilyWorkspace") as FamilyWorkspace
-	_construction_pane = get_node_or_null("%ConstructionPane") as VBoxContainer
-	_construction_picker = get_node_or_null("%ConstructionPicker") as ConstructionPicker
+	_military_dossier = get_node_or_null("%MilitaryDossier") as MilitaryDossier
+	_construction_workspace = get_node_or_null("%BuildingWorkspace") as BuildingWorkspace
 	_clear_tax_confirmation = get_node_or_null("%ClearTaxConfirmation") as ConfirmationDialog
 	_colonization_button = get_node_or_null("%ColonizationButton") as Button
 	var close_button := get_node_or_null("%CloseButton") as Button
@@ -130,7 +143,7 @@ func _ready() -> void:
 			or _kpi_cards.size() != 4 or _chapter_nav == null or _scroll == null \
 			or _content_box == null or close_button == null or _detail_shell == null \
 			or _object_detail_dialog == null or _family_workspace == null \
-			or _construction_picker == null:
+			or _construction_workspace == null:
 		push_error("InspectorPanel 必须通过 inspector_panel.tscn 实例化。")
 		return
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
@@ -162,14 +175,18 @@ func _ready() -> void:
 	_family_workspace.colonization_requested.connect(
 		func(family_handle: int, source_cell: int) -> void:
 			family_colonization_requested.emit(family_handle, source_cell))
-	var construction_back := get_node(
-		"Margin/Split/DetailShell/ConstructionPane/Header/BackButton") as Button
-	IconButton.apply(construction_back, &"action.back", IconButton.SMALL, "返回")
-	construction_back.pressed.connect(close_detail)
-	_construction_picker.page_requested.connect(
-		func(search: String, offset: int) -> void:
-			construction_page_requested.emit(search, offset))
-	_construction_picker.build_requested.connect(
+	if _military_dossier != null:
+		_military_dossier.closed.connect(_on_detail_closed)
+		_military_dossier.action_requested.connect(
+			func(action: StringName, payload: Dictionary) -> void:
+				military_dossier_action_requested.emit(action, payload))
+		_military_dossier.army_selected.connect(
+			func(handle: int) -> void: military_dossier_army_selected.emit(handle))
+	_construction_workspace.closed.connect(func() -> void: close_detail())
+	_construction_workspace.page_requested.connect(
+		func(sector: String, search: String, sort: String, offset: int) -> void:
+			construction_page_requested.emit(sector, search, sort, offset))
+	_construction_workspace.build_requested.connect(
 		func(request: Dictionary) -> void: construction_requested.emit(request))
 	(_kpi_cards[_kpi_cards.size() - 1] as DossierKpiCard).show_divider = false
 	_chapter_nav.custom_minimum_size = Vector2(0.0, DossierChapterNav.HEIGHT)
@@ -205,6 +222,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 		_section_collapsed.clear()
 		_kpi_values.clear()
 		close_detail(false)
+		_construction_model = {}
 		_cell_index = new_cell_index
 		if _scroll != null:
 			_scroll.scroll_vertical = 0
@@ -286,6 +304,9 @@ func reset_for_world() -> void:
 	_pending_tax.clear()
 	_draft_tax.clear()
 	close_detail(false)
+	if _military_dossier != null:
+		_military_dossier.clear()
+	_directory_available = true
 	_tabs_signature_cache = ""
 	_section_collapsed.clear()
 	_kpi_values.clear()
@@ -388,6 +409,7 @@ func _clear_block_controls() -> void:
 	_section_refs.clear()
 	_chart_controls.clear()
 	_badge_row = null
+	_military_ledger = null
 	_resource_list = null
 	_cohort_list = null
 	_building_list = null
@@ -511,60 +533,32 @@ func _build_category_block(host: Control, data: Dictionary) -> void:
 		row.set_badges(badges)
 		_badge_row = row
 
-	if data.has("building_rows") and data.has("construction"):
-		_construction_model = data.get("construction", {})
-		_construction_picker.set_model(_construction_model)
-		var entry := ConstructionEntryScene.instantiate() as PanelContainer
-		(entry.get_node("Row/Icon") as IconBadge).set_semantic(
-			&"economy.building", UITokens.CLIMATE)
-		(entry.get_node("Row/OpenButton") as Button).pressed.connect(
-			_open_construction)
-		host.add_child(entry)
+	if data.has("building_rows") and data.has("construction_entry"):
+		_build_construction_entry(host, data.get("construction_entry", {}))
 
-	# 军事页签的官营建筑入口：兵营 / 城防 / 军校只能由玩家或 AI 建造与拆除，
-	# 所以它们不跟私营建筑混在建造面板里，而是在这里给出三个明确动作。
-	if data.has("military_context"):
-		_build_military_actions(host, data.get("military_context", {}))
+	# 军事页签：一整张撕纸台账。驻军条 / 部队 / 训练 / 三行官营建筑都由它自绘，
+	# 页面上不再有并排的大按钮，也没有解释性批注。
+	if data.has("military_cell"):
+		_build_military_ledger(host, data.get("military_cell", {}))
 
 	for row_key in ROW_LIST_KEYS:
 		if data.has(row_key):
 			_build_row_list(host, data, String(row_key), block_id)
 
 
-## 军事页签底部：官营建筑的建造/拆除入口。命令走军事面板同一套正式命令，
-## 这里只发出结构化请求（由 GameUIManager → PlayerController 提交）。
-func _build_military_actions(host: Control, context: Dictionary) -> void:
-	if not bool(context.get("can_build_state_building", false)):
+## 军事页台账：节点树只在这里建一次（三个建筑行由组件自己在 _ready 建好），
+## 之后的每日补丁只调 set_model 写值。
+func _build_military_ledger(host: Control, model: Dictionary) -> void:
+	if MilitaryCellLedgerScene == null:
 		return
-	var caption := Label.new()
-	caption.text = "官营建筑"
-	caption.theme_type_variation = &"PKSectionTitle"
-	host.add_child(caption)
-	var role_labels := {
-		"barracks": "兵营",
-		"fortification": "城防",
-		"war_college": "军校",
-	}
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	host.add_child(row)
-	var has_role: Dictionary = context.get("has_role", {})
-	for role in ["barracks", "fortification", "war_college"]:
-		# One button per role: build when absent, demolish when present.
-		for verb in ["demolish" if bool(has_role.get(role, false)) else "build"]:
-			var button := ActionButtonScene.instantiate() as Button
-			button.text = "%s%s" % ["建造" if verb == "build" else "拆除", String(role_labels[role])]
-			button.tooltip_text = "%s%s" % ["建造" if verb == "build" else "拆除",
-				String(role_labels[role])]
-			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			button.focus_mode = Control.FOCUS_NONE
-			button.pressed.connect(func() -> void:
-				military_state_building_requested.emit({
-					"cell": int(context.get("cell", -1)),
-					"role": role,
-					"op": "state.build" if verb == "build" else "state.demolish",
-				}))
-			row.add_child(button)
+	var ledger := MilitaryCellLedgerScene.instantiate()
+	host.add_child(ledger)
+	ledger.action_requested.connect(func(request: Dictionary) -> void:
+		military_state_building_requested.emit(request))
+	ledger.army_selected.connect(func(handle: int) -> void:
+		military_army_selected.emit(handle))
+	ledger.set_model(model)
+	_military_ledger = ledger
 
 
 func _build_row_list(host: Control, data: Dictionary, row_key: String,
@@ -963,6 +957,8 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_apply_section_texts(refs, data)
 	if _badge_row != null and data.has("badges"):
 		_badge_row.update_badges(data.get("badges", []))
+	if _military_ledger != null and data.has("military_cell"):
+		_military_ledger.set_model(data.get("military_cell", {}))
 	if _cohort_list != null and data.has("cohort_rows"):
 		_cohort_list.update_rows(data.get("cohort_rows", []))
 	if _family_list != null and data.has("family_rows"):
@@ -971,9 +967,12 @@ func _apply_category_block_patch(data: Dictionary) -> void:
 		_resource_list.update_rows(data.get("resource_rows", []))
 	if _building_list != null and data.has("building_rows"):
 		_building_list.update_rows(data.get("building_rows", []))
-	if _construction_picker != null and data.has("construction"):
-		_construction_model = data.get("construction", {})
-		_construction_picker.set_model(_construction_model)
+	if _construction_workspace != null and data.has("construction_entry"):
+		var entry_data: Dictionary = data.get("construction_entry", {})
+		if is_instance_valid(_construction_entry_hint):
+			var hint := String(entry_data.get("hint", ""))
+			_construction_entry_hint.text = hint
+			_construction_entry_hint.visible = not hint.is_empty()
 	if _market_list != null and data.has("market_rows"):
 		_market_list.update_rows(data.get("market_rows", []))
 	for raw in data.get("charts", []):
@@ -1071,20 +1070,77 @@ func _animate_content_in() -> void:
 
 func set_construction_model(model: Dictionary) -> void:
 	_construction_model = model
-	if _construction_picker != null:
-		_construction_picker.set_model(_construction_model)
+	if _construction_workspace != null:
+		_construction_workspace.set_model(_construction_model)
 
 
 func set_construction_feedback(message: String, ok: bool) -> void:
-	if _construction_picker != null:
-		_construction_picker.set_feedback(message, ok)
+	_construction_feedback = message
+	_construction_ok = ok
+	if _construction_workspace != null:
+		_construction_workspace.set_feedback(message, ok)
+
+
+func building_workspace_open() -> bool:
+	return _construction_workspace != null and _construction_workspace.visible
+
+
+## 官营建筑命令被拒时解锁军事页的动作键（成功的命令保持禁用，等模型画出「在建」）。
+func release_military_ledger_busy() -> void:
+	if _military_ledger != null:
+		_military_ledger.release_busy()
+
+
+## 次日结算 / 打开窗口后重发同一张目录页的请求（查询身份由窗口自己记住）。
+func request_construction_refresh() -> void:
+	if _construction_workspace != null and _construction_workspace.visible:
+		_construction_workspace.request_refresh()
+
+
+## ── 军务档案（部队 / 战线页）──────────────────────────────────────────
+## 与对象详情同级：占用 DetailShell，让右栏变宽，并按宽度决定是否保留地块目录列。
+
+func show_military_dossier(payload: Dictionary) -> void:
+	if payload.is_empty() or _military_dossier == null:
+		return
+	_set_family_chrome(false)
+	_object_detail_dialog.visible = false
+	_family_workspace.hide_immediately()
+	_construction_workspace.visible = false
+	_military_dossier.visible = true
+	_military_dossier.set_model(payload)
+	_show_detail_shell()
+
+
+func refresh_military_dossier(payload: Dictionary) -> void:
+	if payload.is_empty() or _military_dossier == null or not _military_dossier.visible:
+		return
+	_military_dossier.set_model(payload)
+
+
+func military_dossier_open() -> bool:
+	return _military_dossier != null and _military_dossier.visible
+
+
+func military_dossier_identity() -> String:
+	return _military_dossier.identity() if _military_dossier != null else ""
+
+
+## 没有地块档案可看时收起目录列：军务档案独占面板。
+func set_directory_available(available: bool) -> void:
+	if available == _directory_available:
+		return
+	_directory_available = available
+	_sync_split_layout()
 
 
 func show_object_detail(payload: Dictionary) -> void:
 	if payload.is_empty() or _object_detail_dialog == null:
 		return
 	_set_family_chrome(false)
-	_construction_pane.visible = false
+	if _military_dossier != null:
+		_military_dossier.visible = false
+	_construction_workspace.visible = false
 	_family_workspace.hide_immediately()
 	_deferred_object_detail_payload.clear()
 	_object_detail_dialog.visible = true
@@ -1100,7 +1156,9 @@ func show_family_workspace(payload: Dictionary, animate: bool = true) -> void:
 	_set_family_chrome(true)
 	_deferred_object_detail_payload.clear()
 	_object_detail_dialog.visible = false
-	_construction_pane.visible = false
+	if _military_dossier != null:
+		_military_dossier.visible = false
+	_construction_workspace.visible = false
 	_family_workspace.show_family(payload, animate)
 	if not was_open:
 		_show_detail_shell()
@@ -1185,14 +1243,46 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
-func _open_construction() -> void:
+## 建筑页签里的「营造新建筑」纸笺。页签每日重建时只刷新这句话，报价留给
+## 真正打开营造窗口的那一次请求。
+func _build_construction_entry(host: Control, entry_data: Dictionary) -> void:
+	var entry := ConstructionEntryScene.instantiate() as PanelContainer
+	(entry.get_node("Row/Icon") as IconBadge).set_semantic(
+		&"economy.building", UITokens.DOSSIER_BRASS)
+	var title := entry.get_node("Row/Text/Title") as Label
+	title.text = String(entry_data.get("title", "营造新建筑"))
+	var hint := entry.get_node_or_null("Row/Text/Hint") as Label
+	if hint != null:
+		var hint_text := String(entry_data.get("hint", ""))
+		hint.text = hint_text
+		hint.visible = not hint_text.is_empty()
+		_construction_entry_hint = hint
+	var open_button := entry.get_node("Row/OpenButton") as Button
+	var available := bool(entry_data.get("available", false))
+	open_button.disabled = not available
+	open_button.tooltip_text = "" if available \
+		else String(entry_data.get("message", "只能在玩家领土内营造。"))
+	open_button.pressed.connect(_open_building_workspace)
+	host.add_child(entry)
+
+
+func _open_building_workspace() -> void:
 	_set_family_chrome(false)
 	_object_detail_dialog.visible = false
 	_family_workspace.hide_immediately()
-	_construction_pane.visible = true
-	_construction_picker.set_model(_construction_model)
+	if _military_dossier != null:
+		_military_dossier.visible = false
+	if int(_construction_model.get("cell", -1)) != _cell_index:
+		_construction_model = {}
+	_construction_workspace.visible = true
+	_construction_workspace.set_model(_construction_model)
 	_rebuild_tax_editor_registry()
 	_show_detail_shell()
+	# 打开时就按上一次的查询身份取数（首次打开由 VM 选默认部门）。
+	var query: Dictionary = _construction_model.get("query", {})
+	construction_page_requested.emit(String(query.get("sector", "")),
+		String(query.get("search", "")), String(query.get("sort", "recommended")),
+		int(query.get("offset", 0)))
 
 
 func _show_detail_shell() -> void:
@@ -1208,7 +1298,9 @@ func _on_detail_closed() -> void:
 	var restore_family_focus := _family_chrome_active and _detail_change_notify
 	_object_detail_dialog.visible = false
 	_family_workspace.hide_immediately()
-	_construction_pane.visible = false
+	if _military_dossier != null:
+		_military_dossier.visible = false
+	_construction_workspace.visible = false
 	_detail_shell.visible = false
 	_set_family_chrome(false)
 	_sync_split_layout()
@@ -1249,7 +1341,7 @@ func _sync_split_layout() -> void:
 	var family_open := _family_workspace != null and _family_workspace.visible
 	var can_split := family_open or (not _compact_detail \
 		and size.x >= SPLIT_DETAIL_MIN_WIDTH)
-	var show_dossier := not inspecting or can_split
+	var show_dossier := (not inspecting or can_split) and _directory_available
 	_inspector_root.visible = show_dossier
 	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \
 		else Control.SIZE_EXPAND_FILL
@@ -1284,7 +1376,8 @@ func _request_tab_data_if_missing(tab_id: String) -> void:
 
 func _category_structure(data: Dictionary) -> String:
 	var parts := PackedStringArray()
-	for key in ["insights", "metrics", "gauges", "construction"] + ROW_LIST_KEYS:
+	for key in ["insights", "metrics", "gauges", "construction_entry", "military_cell"] \
+			+ ROW_LIST_KEYS:
 		if data.has(key):
 			parts.append(String(key))
 	if not (data.get("badges", []) as Array).is_empty():

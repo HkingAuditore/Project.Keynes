@@ -1,0 +1,64 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/money_icon.tscn" id="2_money"]
+[ext_resource type="Script" path="res://scripts/ui/components/building/building_option_row.gd" id="3_script"]
+
+[node name="BuildingOptionRow" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 52)
+size_flags_horizontal = 3
+theme_type_variation = &"PKPaperCard"
+script = ExtResource("3_script")
+
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Row" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Info" type="VBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 1
+mouse_filter = 2
+
+[node name="Name" type="Label" parent="Row/Info"]
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierRowText"
+
+[node name="Meta" type="Label" parent="Row/Info"]
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierMuted"
+
+[node name="CashRow" type="HBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="CashIcon" parent="Row/CashRow" instance=ExtResource("2_money")]
+layout_mode = 2
+
+[node name="Cash" type="Label" parent="Row/CashRow"]
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"PKDossierBody"
+
+[node name="BuildButton" type="Button" parent="Row"]
+custom_minimum_size = Vector2(78, 34)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 2
+mouse_default_cursor_shape = 2
+text = "营造"
+theme_type_variation = &"PKPrimaryButton"

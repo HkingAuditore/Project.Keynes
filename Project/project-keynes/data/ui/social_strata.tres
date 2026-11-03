@@ -47,6 +47,12 @@ strata = Array[Dictionary]([{
 "name": "依附劳动",
 "professions": PackedStringArray("serf", "sharecropper", "tenant_farmer", "agricultural_worker", "corvee_worker", "indentured_laborer", "enslaved_laborer")
 }, {
+"color": Color(0.38, 0.4, 0.46, 1),
+"icon": "profession.soldier",
+"id": "military",
+"name": "军役",
+"professions": PackedStringArray("soldier")
+}, {
 "color": Color(0.5, 0.46, 0.4, 1),
 "icon": "population.profession.unemployed",
 "id": "unemployed",

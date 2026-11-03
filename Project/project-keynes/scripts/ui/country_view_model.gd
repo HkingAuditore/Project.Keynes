@@ -654,6 +654,18 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 	# 目录显示名（military_catalog.json）与原生 dense 目录合并：原生给 dense id
 	# 与数值，GDScript 目录给玩家读的名字。
 	var merged_catalog := _merge_military_catalog(catalog, view)
+	# 兵种解锁闸门：原生目录每行有 unlock_bit，国家快照有已研究科技稳定 id。
+	# snapshot 不可用时 gate 标记为未知，面板据此不过滤（宁可见全目录也不误藏）。
+	var researched := PackedStringArray()
+	var gate_known := false
+	var country_facade = model.get("country_facade", null)
+	if country_facade != null and country_facade.has_method("snapshot"):
+		var country_snapshot = country_facade.call("snapshot", country_handle)
+		if country_snapshot is Dictionary and bool((country_snapshot as Dictionary).get("ok", false)):
+			var ids = (country_snapshot as Dictionary).get("technology_ids", null)
+			if ids is PackedStringArray:
+				researched = ids
+				gate_known = true
 	section = {
 		"available": true,
 		"facade": facade,
@@ -661,18 +673,37 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		"snapshot": snapshot,
 		"armies": armies,
 		"catalog": merged_catalog,
+		"researched_tech_ids": researched,
+		"tech_gate_known": gate_known,
 		"query_ms": (Time.get_ticks_usec() - started_usec) / 1000.0,
 	}
 	model["military"] = section
 	return section
 
 
-## 目录合并：dense 数值取原生（真值），显示名/描述取 GDScript 目录。
+## 军务档案（右栏部队/战线页）的模型上下文：只装 MilitaryViewModel 需要的那几项，
+## 不走地块档案那条查询链。打开档案与每日刷新各调用一次，O(armies)，不进热循环。
+func military_dossier_context(country_handle: int) -> Dictionary:
+	var model := {"good_ids": _good_stable_ids()}
+	build_military_model(country_handle, model)
+	return {
+		"military": model.get("military", {}),
+		"country_handle": country_handle,
+		"good_ids": model.get("good_ids", PackedStringArray()),
+		"generator": _generator,
+	}
+
+
+## 目录合并：dense 数值取原生（真值），显示名/描述/所需科技取编译目录。
 ## 原生行的 `id` 是稳定 id（String），所以合并是「按 id 对齐」而不是按位置。
 func _merge_military_catalog(native_catalog: Dictionary, view: Dictionary) -> Dictionary:
 	var display_names := {}
 	var descriptions := {}
 	var category_names := {}
+	var unit_tech := {}
+	# 编译目录（MilitaryCatalogCompiler.compile 的产物）已经带上作者写的中文名，
+	# 所以这里按 id 对齐即可；原先读的是 `equipment_categories`，而编译器输出的是
+	# `categories`，键名不一致正是类别名一直回退成英文 id 的原因。
 	var authored: Array = native_catalog.get("units", []) if native_catalog.get(
 		"units", null) is Array else []
 	for raw in authored:
@@ -682,16 +713,20 @@ func _merge_military_catalog(native_catalog: Dictionary, view: Dictionary) -> Di
 		var unit_id := String(row.get("id", ""))
 		if unit_id.is_empty():
 			continue
-		display_names[unit_id] = String(row.get("name", unit_id))
+		var display_name := String(row.get("name", "")).strip_edges()
+		display_names[unit_id] = display_name if not display_name.is_empty() else unit_id
 		descriptions[unit_id] = String(row.get("description", ""))
-	var authored_categories: Array = native_catalog.get("equipment_categories", []) \
-		if native_catalog.get("equipment_categories", null) is Array else []
+		unit_tech[unit_id] = String(row.get("tech", ""))
+	var authored_categories: Array = native_catalog.get("categories", []) \
+		if native_catalog.get("categories", null) is Array else []
 	for raw in authored_categories:
 		if not raw is Dictionary:
 			continue
 		var row: Dictionary = raw
-		category_names[String(row.get("id", ""))] = String(row.get(
-			"name", row.get("id", "")))
+		var category_id := String(row.get("id", ""))
+		var display_name := String(row.get("name", "")).strip_edges()
+		category_names[category_id] = display_name if not display_name.is_empty() \
+			else category_id
 	# 原生目录没有的项（旧存档、目录 hash 不一致）用原生 id 兜底显示。
 	for raw in view.get("units", []) if view.get("units", null) is Array else []:
 		if raw is Dictionary:
@@ -707,6 +742,7 @@ func _merge_military_catalog(native_catalog: Dictionary, view: Dictionary) -> Di
 	merged["display_names"] = display_names
 	merged["descriptions"] = descriptions
 	merged["category_names"] = category_names
+	merged["unit_tech"] = unit_tech
 	merged["units"] = view.get("units", [])
 	merged["categories"] = view.get("categories", [])
 	merged["state_buildings"] = view.get("state_buildings", [])
