@@ -61,7 +61,12 @@ git submodule update --init --recursive
 
 ---
 
-## 3. 原生扩展 `dots_ext`（必须先编，否则游戏会回落到 GDScript 慢路径）
+## 3. 原生扩展 `dots_ext`（更新后先重新编译）
+
+仓库自带的各平台二进制不一定与当前源码同步。例如旧 macOS 库缺少
+`start_runtime_worker`，会让当前模拟和运行检查失败。更新源码后先重建
+debug/release 两份库，再完全重启 Godot。`SConstruct` 默认启用
+`disable_exceptions=no`，因为当前原生模拟需要捕获 C++ 异常；关闭会编译失败。
 
 ### 3.1 Windows
 
@@ -116,7 +121,8 @@ scons platform=linux target=template_release dev_build=no -j"$(nproc)"
 | Web | `addons/dots_ext/bin/web/libdots_ext.web.template_*.wasm32[.threads].wasm` |
 | Android | `addons/dots_ext/bin/android/libdots_ext.android.template_*.arm64.so` |
 
-命名规则：Windows 默认 basename 是 `dots_ext_annual_v1`，其它平台是 `dots_ext`，
+命名规则：Windows 默认 basename 从 `dots_ext.gdextension` 对应映射读取
+（当前为 `dots_ext_army_v13`），其它平台是 `dots_ext`，
 可用环境变量 `DOTS_EXT_OUTPUT_BASENAME` 覆盖。
 
 **改过 basename 就必须同时改 `addons/dots_ext/dots_ext.gdextension` 的 `[libraries]` 段**，

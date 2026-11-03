@@ -17,7 +17,8 @@ class GeneratorProbe extends MapGenerator:
 	func get_runtime_thread_report() -> Dictionary:
 		return {"climate_worker_authoritative": true, "authority_ready": whole_graph,
 			"simulation_thread_mode": "ACTIVE"}
-	func capture_runtime_inputs_for_worker(day: int = -1, _phase: float = -1.0) -> Dictionary:
+	func capture_runtime_inputs_for_worker(day: int = -1, _phase: float = -1.0,
+			_callsite: int = 0) -> Dictionary:
 		captured_days.append(day)
 		return {"ok": true}
 

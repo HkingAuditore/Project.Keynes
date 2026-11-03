@@ -43,7 +43,7 @@ for ($index = 0; $index -lt $sequence.Count; $index++) {
     $log = Join-Path $dir 'godot.log'
     $authority = if ($mode -eq 'ACTIVE') { 'on' } else { 'off' }
     $arguments = @(
-        '--headless', '--path', $projectPath, '--script', 'res://tests/headless_perf_record.gd', '--',
+        '--headless', '--path', $projectPath, '--script', 'res://tests/game/headless_perf_record.gd', '--',
         "label=$name", "output_dir=$dir", "climate_authority=$authority", "days=$Days",
         "seed=$Seed", "width=$Width", "height=$Height", "foreign_count=$ForeignCount", "speed=$Speed"
     )

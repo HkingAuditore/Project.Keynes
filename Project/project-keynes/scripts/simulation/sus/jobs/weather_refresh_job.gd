@@ -1063,8 +1063,8 @@ func _soak_dump_weather_phase(ctx: SusTickContext, fronts_count: int) -> void:
 	if map == null:
 		return
 	var sim_day: int = 0
-	if generator != null and "_daily_climate_call_count" in generator:
-		sim_day = int(generator._daily_climate_call_count)
+	if generator != null and generator.has_method("climate_diagnostic_call_count"):
+		sim_day = int(generator.climate_diagnostic_call_count())
 	var sphase: float = ctx.season_phase
 	soak_dump.record_tick("weather", sim_day, sphase, map, {"fronts_count": fronts_count})
 

@@ -2864,8 +2864,12 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 			# 否则 moisture/PAW 会无限期停在旧值上。代价：这一轮读到的是当前
 			# MapData（最多滞后 K 天），与"预发布让主线程拥有的 lane 变旧"是同一
 			# 条已知代价，见 tmp/next/day_barrier_protocol.md §3.1.3。
-			_drain_climate_writeback_for_season_refresh(thread_report,
-				callsite != ENV_CALLSITE_PREFETCH)
+			# This function runs inside the day-boundary capture. Waiting here for
+			# the worker to publish the captured day can deadlock: the worker may be
+			# waiting for the main thread to service its next continuation, while
+			# the main thread is inside this call. Use the latest committed climate
+			# writeback and let the normal frame boundary apply the next one.
+			_drain_climate_writeback_for_season_refresh(thread_report, false)
 			_season_refresh_job.run_round_for_capture()
 		elif _season_refresh_job.has_method("finish_round_now"):
 			_season_refresh_job.finish_round_now()
@@ -8833,6 +8837,14 @@ func get_current_fast_tick_idx() -> int:
 # 供 main.gd fast tick WARN / 详细日志路径定位 6 段子耗时。
 func sus_climate_breakdown() -> Dictionary:
 	return _diagnostics_bus.get_climate_breakdown()
+
+
+func increment_climate_diagnostic_call_count() -> int:
+	return _diagnostics_bus.increment_climate_call_count()
+
+
+func climate_diagnostic_call_count() -> int:
+	return _diagnostics_bus.get_climate_call_count()
 
 
 func sus_ocean_currents_breakdown() -> Dictionary:
