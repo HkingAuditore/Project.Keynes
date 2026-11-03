@@ -33,13 +33,6 @@ window/size/viewport_width=1600
 window/size/viewport_height=960
 window/size/mode=2
 window/stretch/aspect="expand"
-; 手持方向：0=Landscape 1=Portrait 2=Reverse Landscape 3=Reverse Portrait
-; 4=Sensor Landscape 5=Sensor Portrait 6=Sensor（枚举见 ProjectSettings hint）。
-; Project.Keynes 是横屏大地图策略游戏：默认 0 会把方向锁死在「正握横屏」，
-; 玩家反握时画面倒置且不会跟随。4 允许两个横屏方向互相切换（仍是横屏，不会转竖屏），
-; 刘海/挖孔靠 DisplayServer.get_display_safe_area() + scripts/ui/mobile_ui_scaling.gd 避让。
-; 实际像素缩放（content_scale_mode/factor）由 MobileUIScaling 在运行期按 dpi 设置，
-; 这里刻意不写 window/stretch/mode：桌面端保持原生像素语义，避免非 1600×960 窗口回归。
 window/handheld/orientation=4
 
 [editor]

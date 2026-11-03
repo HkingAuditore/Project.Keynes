@@ -43,8 +43,14 @@ int64_t NativeEconomyRuntime::epoch_colonization_demand_daily(
 int64_t NativeEconomyRuntime::epoch_procurement_demand_daily(
         int32_t cell, int32_t good) const {
     int64_t sat = 0;
-    return saturating_add(epoch_research_demand_daily(cell, good),
-        epoch_colonization_demand_daily(cell, good), sat);
+    int64_t era_daily = 0;
+    const int64_t era = procurement_quantity(_epoch_era_demand_by_cell, cell, good);
+    if (era > 0) {
+        const int64_t days = std::max(1, _epoch_days.get());
+        era_daily = era / days + (era % days != 0);
+    }
+    return saturating_add(saturating_add(epoch_research_demand_daily(cell, good),
+        epoch_colonization_demand_daily(cell, good), sat), era_daily, sat);
 }
 
 int64_t NativeEconomyRuntime::epoch_procurement_demand_daily_for_market(
@@ -58,6 +64,11 @@ int64_t NativeEconomyRuntime::epoch_procurement_demand_daily_for_market(
         const int64_t days = std::max<int64_t>(std::max(1, _epoch_days.get()),
             (static_cast<int64_t>(_good_target_inventory_days_q16[good]) + Q16_ONE - 1) / Q16_ONE);
         daily = quantity / days + (quantity % days != 0);
+    }
+    const int64_t era = procurement_quantity(_epoch_era_demand_by_market, market, good);
+    if (era > 0) {
+        const int64_t days = std::max(1, _epoch_days.get());
+        daily = saturating_add(daily, era / days + (era % days != 0), sat);
     }
     return saturating_add(epoch_research_demand_daily_for_market(market, good), daily, sat);
 }
@@ -83,11 +94,19 @@ void NativeEconomyRuntime::refresh_epoch_colonization_demand() {
         const int64_t cash = std::max<int64_t>(0, _country_runtime->cash_for_slot(country));
         bool enabled = false;
         int64_t daily = 0, remaining = 0;
-        _country_runtime->research_procurement_policy(country, enabled, daily, remaining);
+        research_procurement_policy_for(country, enabled, daily, remaining);
         const int64_t research_budget = enabled && remaining > 0
             ? std::min(cash, saturating_mul(std::max<int64_t>(0, daily),
                 std::max(1, _epoch_days.get()), _saturation_count)) : 0;
         budgets[country] = cash - research_budget;
+        // National procurement policy: colonization reserve is capped by its
+        // share of the national budget for this epoch.
+        if (const CountryProcurementState *policy = procurement_state_for_slot(country);
+            policy != nullptr && policy->policy_enabled) {
+            budgets[country] = std::min(budgets[country], saturating_mul(
+                std::max<int64_t>(0, policy->colonization_daily),
+                std::max(1, _epoch_days.get()), _saturation_count));
+        }
     }
     const auto &pending_purchase = _family_expedition_procurement_continuation;
     if (pending_purchase.active && pending_purchase.phase == 1 &&
@@ -1107,6 +1126,17 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                 purchased = advance_family_expedition_procurement(
                     continuation, error);
             } else {
+                // National procurement policy caps the daily colonization
+                // reserve spend (allowance refills per day, max one epoch).
+                const uint64_t payer = static_cast<uint64_t>(
+                    family_expeditions_store().country_handle[expedition]);
+                const int64_t allowance =
+                    colonization_procurement_allowance(payer, day);
+                if (allowance >= 0 && cash > allowance) {
+                    error = "colonization_procurement_budget_exhausted";
+                    return false;
+                }
+                consume_colonization_procurement_allowance(payer, cash);
                 purchased = start_family_expedition_procurement(
                     continuation, expedition, source_cell, market, good,
                     cargo_flags, quantity, cash, error);
@@ -1578,6 +1608,7 @@ bool NativeEconomyRuntime::credit_family_expedition_procurement_merchants(
             }
         }
         note_non_tax_outflow(payer, NON_TAX_EXPEDITION_PROCUREMENT, c.cash);
+        note_procurement_cash(payer, 2, c.cash);
         c.cash_booked = true;
     }
     return true;

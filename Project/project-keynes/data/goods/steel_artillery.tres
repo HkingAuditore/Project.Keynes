@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"steel_artillery"
+display_name = "钢炮"
+semantic_tags = PackedStringArray()
+category_id = &"ordnance"
+substitution_category_ids = PackedStringArray("ordnance")
+technology_tags = PackedStringArray("tech.military.rifled_weapons")
+production_quality_level = 3
+default_price = 232000
+reference_max_price = 11600000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 39322

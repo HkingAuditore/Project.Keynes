@@ -610,6 +610,7 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
         std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
         _worker_command_inbox->commands.clear();
     }
+    clear_procurement_runtime_state(true);
     _birth_residual_q32.assign(
         static_cast<size_t>(_cell_count.get()) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count.get());
@@ -641,6 +642,9 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _pending_commands.clear();
     _epoch_commands.clear();
     _structural_commands.clear();
+    // BEGIN army personnel lane: a restore rebuilds lanes from its own section.
+    _army_personnel.clear();
+    // END army personnel lane
     clear_building_groups();
     _building_handle_index_clean = false;
     _building_group_order_scratch.clear();

@@ -652,7 +652,7 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     // treasury the player actually owns.
     PackedStringArray non_tax_kinds;
     for (const char *kind : {"research_purchase", "expedition_procurement",
-                             "construction", "canal"})
+                             "construction", "canal", "era_procurement"})
         non_tax_kinds.push_back(kind);
     PackedInt64Array non_tax_outflow;
     non_tax_outflow.resize(NativeEconomyRuntime::NON_TAX_KIND_COUNT);

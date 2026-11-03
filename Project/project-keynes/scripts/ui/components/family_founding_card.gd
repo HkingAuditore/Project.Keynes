@@ -4,6 +4,7 @@ class_name FamilyFoundingCard
 const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const TextRowScene = preload("res://scenes/ui/family/family_founding_text_row.tscn")
 const IconScene = preload("res://scenes/ui/icon_badge.tscn")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const DOSSIER_WIDTH := 388.0
 const DOSSIER_MAX_HEIGHT := 560.0
 const DOSSIER_BODY_WIDTH := 344.0
@@ -456,6 +457,8 @@ func _add_copy(container: Container, text: String, variation: StringName = &"PKD
 func set_details_expanded(expanded: bool, animate: bool = true) -> void:
 	_details_revision += 1
 	_details_expanded = expanded and not _candidate_empty
+	if _details_expanded:
+		hide_dossier_popup()
 	_details_toggle.set_pressed_no_signal(_details_expanded)
 	_details_toggle.text = "▲" if _details_expanded else "▼"
 	_details_toggle.tooltip_text = "收起详情" if _details_expanded else "展开详情"
@@ -526,6 +529,8 @@ func is_details_expanded() -> bool:
 
 func _show_dossier_popup() -> void:
 	if _candidate_empty or not is_inside_tree():
+		return
+	if TouchUI.is_touch() or _details_expanded:
 		return
 	_cancel_dossier_hide()
 	_hide_dossier_popup()

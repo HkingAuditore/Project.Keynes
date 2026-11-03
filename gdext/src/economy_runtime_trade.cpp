@@ -2985,6 +2985,9 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             capacity, arrival, trace_trade_detail ? &trade_legs : nullptr,
             trade_event_flags);
         ++_trade_orders_dispatched;
+        // Transient per-country counter for era advancement (country as
+        // source or destination; one count per dispatched order).
+        note_trade_order_countries(first.source, first.destination);
         trade_orders_store().arrival_buckets_dirty = true;
     }
     if (trade_orders_store().arrival_buckets_dirty) rebuild_trade_arrival_buckets();

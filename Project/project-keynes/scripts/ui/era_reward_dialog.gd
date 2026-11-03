@@ -1,6 +1,8 @@
 extends Control
 class_name EraRewardDialog
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 signal choice_requested(offer_generation: int, choice_index: int)
 signal dismiss_requested()
 
@@ -258,14 +260,18 @@ func _layout_popup() -> void:
 		chip.custom_minimum_size.x = cell_width
 	(%Clear as Control).custom_minimum_size.x = cell_width
 	var top := UITokens.ERA_BADGE_OPEN_Y + UITokens.ERA_BADGE_SIZE + UITokens.ERA_POPUP_GAP
-	var available := maxf(150.0, viewport_size.y - top - 16.0)
 	var overview_height := (_popup.get_node("Overview") as Control).get_combined_minimum_size().y
-	var height := overview_height
+	var desired_height := overview_height
 	if _offer_open:
 		var reward_height := _grid.get_combined_minimum_size().y + 44.0
 		if _status.visible:
 			reward_height += _status.get_combined_minimum_size().y + 6.0
-		height = minf(available, overview_height + 12.0 + reward_height)
+		desired_height = overview_height + 12.0 + reward_height
+	if TouchUI.is_touch() or viewport_size.y < 820.0:
+		if top + desired_height > viewport_size.y - 16.0:
+			top = clampf(viewport_size.y - desired_height - 16.0, 16.0, top)
+	var available := maxf(150.0, viewport_size.y - top - 16.0)
+	var height := minf(available, desired_height) if _offer_open else overview_height
 	# 无论有没有奖励卡，弹窗都不许越过视口下沿：触摸档按钮抬到 88 后，概览页也比
 	# 桌面高出一截，手机上「稍后」若被推出屏幕就等于关不掉。
 	height = clampf(height, 120.0, available)

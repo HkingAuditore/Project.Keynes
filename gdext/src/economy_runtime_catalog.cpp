@@ -765,6 +765,66 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _profession_entry_savings_days.assign(_profession_ids.size(), 0);
     for (int32_t &days : _profession_entry_savings_days)
         days = std::clamp<int32_t>(days, 0, 36500);
+    // Military v1 (design §5.1). Both columns are optional so every legacy
+    // catalog keeps compiling with "no state service, no ration needs".
+    const std::vector<int32_t> state_service_only = packed_i32(
+        catalog, "profession_state_service_only");
+    _profession_state_service_only.assign(_profession_ids.size(), uint8_t{0});
+    if (!state_service_only.empty()) {
+        if (state_service_only.size() != _profession_ids.size()) {
+            error = "profession_state_service_only_size_mismatch";
+            return false;
+        }
+        for (size_t p = 0; p < state_service_only.size(); ++p)
+            _profession_state_service_only[p] = state_service_only[p] != 0 ? 1 : 0;
+    }
+    // Military v1 state-supplied needs are indices into the global need list, so
+    // the need ids must be parsed before this block validates them and sizes the
+    // mask by their count. Parsed here (and assigned to `_need_ids` below) instead
+    // of after this block: doing it later left `_need_ids` empty on a fresh
+    // configure and rejected every supplied index as out of range.
+    const std::vector<std::string> catalog_need_ids = packed_strings(catalog, "need_ids");
+    _state_supplied_need_columns = 0;
+    _profession_state_supplied_need_mask.clear();
+    const std::vector<int32_t> state_supplied_offsets = packed_i32(
+        catalog, "profession_state_supplied_need_offsets");
+    const std::vector<int32_t> state_supplied_needs = packed_i32(
+        catalog, "profession_state_supplied_need_ids");
+    if (!state_supplied_offsets.empty() || !state_supplied_needs.empty()) {
+        if (state_supplied_offsets.size() != _profession_ids.size() + 1 ||
+            state_supplied_offsets.front() != 0 ||
+            !std::is_sorted(state_supplied_offsets.begin(),
+                            state_supplied_offsets.end()) ||
+            state_supplied_offsets.back() !=
+                static_cast<int32_t>(state_supplied_needs.size())) {
+            error = "profession_state_supplied_need_columns_invalid";
+            return false;
+        }
+        for (size_t p = 0; p < _profession_ids.size(); ++p) {
+            if (state_supplied_offsets[p] != state_supplied_offsets[p + 1] &&
+                _profession_state_service_only[p] == 0) {
+                error = "profession_state_supplied_need_without_state_service:" +
+                    _profession_ids[p];
+                return false;
+            }
+        }
+        _profession_state_supplied_need_mask.assign(
+            _profession_ids.size() * catalog_need_ids.size(), uint8_t{0});
+        for (size_t p = 0; p < _profession_ids.size(); ++p) {
+            for (int32_t k = state_supplied_offsets[p];
+                 k < state_supplied_offsets[p + 1]; ++k) {
+                const int32_t need = state_supplied_needs[static_cast<size_t>(k)];
+                if (need < 0 || need >= static_cast<int32_t>(catalog_need_ids.size())) {
+                    error = "profession_state_supplied_need_out_of_range:" +
+                        _profession_ids[p];
+                    return false;
+                }
+                _profession_state_supplied_need_mask[
+                    p * catalog_need_ids.size() + static_cast<size_t>(need)] = 1;
+                ++_state_supplied_need_columns;
+            }
+        }
+    }
 
     _good_default_price = packed_i32(catalog, "good_default_price");
     _good_default_stock = packed_i64(catalog, "good_initial_stock");
@@ -939,7 +999,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
 		}
 	}
 
-    _need_ids = packed_strings(catalog, "need_ids");
+    _need_ids = catalog_need_ids;
     const std::vector<std::string> curve_ids = packed_strings(catalog, "environment_curve_ids");
     const std::vector<int32_t> curve_signals = packed_i32(catalog, "environment_curve_signal_ids");
     const std::vector<int32_t> curve_values = packed_i32(catalog, "environment_curve_values_q16");
@@ -1389,10 +1449,30 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     _ethnicity_need_factor_q16 = packed_i32(catalog, "ethnicity_need_factor_q16");
     if (_ethnicity_need_factor_q16.empty()) {
         _ethnicity_need_factor_q16.assign(_ethnicity_ids.size() * _need_ids.size(), Q16_ONE);
-    }
-    if (_ethnicity_need_factor_q16.size() != _ethnicity_ids.size() * _need_ids.size()) {
+    }    if (_ethnicity_need_factor_q16.size() != _ethnicity_ids.size() * _need_ids.size()) {
         error = "ethnicity_need_factor_size_mismatch";
         return false;
+    }
+    // Military v1: state buildings are owned by the reserved STATE_OWNER
+    // signature. It resolves to the catalog's state-service signature of the
+    // first ethnicity so the group key stays a real (profession, ethnicity)
+    // pair that no live cohort occupies: state-service professions never enter
+    // the unemployed pool, so no plan-driven cohort is ever born there, and the
+    // payroll fill pass distributes owner seats over live population only.
+    // Catalogs without a state-service profession leave it at -1 so state
+    // buildings can never be built.
+    _state_owner_signature = -1;
+    for (size_t p = 0; p < _profession_state_service_only.size() &&
+         _state_owner_signature < 0; ++p) {
+        if (_profession_state_service_only[p] == 0) continue;
+        for (size_t eth = 0; eth < _ethnicity_ids.size(); ++eth) {
+            const int32_t signature = signature_for_profession_ethnicity(
+                static_cast<int32_t>(p), static_cast<int32_t>(eth));
+            if (signature >= 0) {
+                _state_owner_signature = signature;
+                break;
+            }
+        }
     }
     if (!compile_building_catalog(catalog, error)) return false;
     if (!compile_technology_tags(_building_technology_tag_offsets,
@@ -2251,6 +2331,12 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     const std::vector<int32_t> supply_elasticities =
         packed_i32(catalog, "building_supply_price_elasticity_q16");
 	_building_kinds = packed_i32(catalog, "building_kinds");
+    // Military v1: kind 3 == state-owned. `building_state_roles` carries the
+    // authored role and is optional (legacy catalogs have no state buildings).
+    std::vector<int32_t> building_state_roles = packed_i32(
+        catalog, "building_state_roles");
+    if (building_state_roles.empty())
+        building_state_roles.assign(types, 0);
     _building_economic_sectors = packed_i32(catalog, "building_economic_sectors");
 	_building_technology_tag_offsets = packed_i32(catalog, "building_technology_tag_offsets");
 	_building_technology_tags = packed_strings(catalog, "building_technology_tags");
@@ -2293,6 +2379,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         construction_days.size() != types || behavior_ids.size() != types ||
 		behavior_versions.size() != types || target_margins.size() != types ||
         supply_elasticities.size() != types || _building_kinds.size() != types ||
+        building_state_roles.size() != types ||
         _building_economic_sectors.size() != types || climate_profile_indices.size() != types ||
 		_building_upgrade_family_indices.size() != types ||
 		_building_upgrade_tiers.size() != types ||
@@ -2612,12 +2699,48 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         }
         if (family >= 0) upgrade_pairs.emplace_back(family, tier);
         // Route B: building_kind 2 == service (merchant post): no output, no
-        // resource, behavior_id must be none(0). Kinds 0 (collector) and 1
-        // (industrial) keep their original output/resource/behavior coupling.
-        const bool kind_is_service = _building_kinds[i] == 2;
+        // resource, behavior_id must be none(0). Kind 3 == state-owned: exactly
+        // the same no-output/no-resource/behavior-none shape (its effect comes
+        // from the Military side reading the lot), an authored state_role, and
+        // no state role anywhere else. Kinds 0 (collector) and 1 (industrial)
+        // keep their original output/resource/behavior coupling.
+        const bool kind_is_service = _building_kinds[i] == 2 ||
+            _building_kinds[i] == 3;
+        const bool kind_is_state = _building_kinds[i] == 3;
+        const int32_t state_role = building_state_roles[i];
+        if (kind_is_state) {
+            if (state_role < STATE_ROLE_BARRACKS ||
+                state_role > STATE_ROLE_WAR_COLLEGE) {
+                error = "state_building_role_invalid";
+                return false;
+            }
+        } else if (state_role != STATE_ROLE_NONE) {
+            error = "state_building_role_on_non_state_type";
+            return false;
+        }
+        // State buildings are payroll posts: at least one employee role, and
+        // only state-service professions may be staffed into them.
+        if (kind_is_state) {
+            if (employee_offsets[i + 1] <= employee_offsets[i]) {
+                error = "state_building_without_employee_role";
+                return false;
+            }
+            for (int32_t role = employee_offsets[i];
+                 role < employee_offsets[i + 1]; ++role) {
+                const int32_t profession = employee_prof[static_cast<size_t>(role)];
+                if (profession < 0 ||
+                    static_cast<size_t>(profession) >=
+                        _profession_state_service_only.size() ||
+                    _profession_state_service_only[
+                        static_cast<size_t>(profession)] == 0) {
+                    error = "state_building_role_requires_state_service_profession";
+                    return false;
+                }
+            }
+        }
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
             owner_slots[i] <= 0 || construction_days[i] < 0 ||
-            _building_kinds[i] < 0 || _building_kinds[i] > 2 ||
+            _building_kinds[i] < 0 || _building_kinds[i] > 3 ||
             _building_economic_sectors[i] < 0 ||
             _building_economic_sectors[i] >= 5 ||
 			climate_profile_indices[i] < -1 ||
@@ -2628,7 +2751,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 			(_building_kinds[i] == 0 && resource_offsets[i] == resource_offsets[i + 1]) ||
 			(_building_kinds[i] != 0 && resource_offsets[i] != resource_offsets[i + 1]) ||
 			(_building_kinds[i] == 0 && behavior_ids[i] == 0) ||
-			(_building_kinds[i] == 1 && behavior_ids[i] != 0) ||
+            (_building_kinds[i] == 1 && behavior_ids[i] != 0) ||
 			(kind_is_service && behavior_ids[i] != 0) ||
             target_margins[i] < 0 || target_margins[i] > Q16_ONE * 4 ||
             supply_elasticities[i] < 0 || supply_elasticities[i] > Q16_ONE * 4 ||
@@ -2678,7 +2801,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_types[i] = {
-			_building_kinds[i], _building_economic_sectors[i], climate_profile_indices[i], family, tier,
+			_building_kinds[i], state_role, _building_economic_sectors[i],
+            climate_profile_indices[i], family, tier,
             owner_prof[i], owner_slots[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],

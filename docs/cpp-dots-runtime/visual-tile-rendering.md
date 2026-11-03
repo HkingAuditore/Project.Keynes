@@ -45,8 +45,13 @@ flowchart LR
 
 | 平台 | Low | Medium | High | Auto |
 | --- | ---: | ---: | ---: | ---: |
-| Mobile | 6 texels/hex | 8 texels/hex | 10 texels/hex | 6 texels/hex |
+| Mobile | 8 texels/hex | 10 texels/hex | 12 texels/hex | 10 texels/hex |
 | Desktop | 8 texels/hex | 12 texels/hex | 16 texels/hex | 14 texels/hex |
+
+[mobile-density 2026-11-03] 移动端档位由 6/8/10/6 提到 8/10/12/10：手机
+`content_scale_mode=CANVAS_ITEMS`（`scripts/ui/mobile_ui_scaling.gd`）让 1 world unit 占
+`camera_zoom × total_scale` 个物理像素，6 texels/hex 放到底时一个 texel 被拉到约 30 物理像素，
+就是玩家反馈的「放大后颗粒明显」。桌面档位未变。
 
 这里的 `hex` 是一个 `hex_size`（六边格半径）的世界长度。例如 Desktop Auto 的目标单层
 边长为 `512 / 14 = 36.57 hex`；High 为 `32 hex`。地图扩大时每层世界覆盖基本不变，层数
@@ -77,11 +82,27 @@ logical = grid * interior
 3.46 MP；High 解析为约 `2784x1632`、24 layers、4.54 MP。它们是地图面积和密度的结果，
 不是固定目标值。
 
-默认内存硬上限：Mobile 64/96 MB，Desktop 512/768 MB（稳态/峰值）。稳态按每物理
+默认内存硬上限：Mobile 96/128 MB（2026-11-03 由 64/96 放宽，见下表），Desktop 512/768 MB（稳态/峰值）。稳态按每物理
 texel 35 bytes 加 relief 超采样额外的 `4×(relief_scale²−1)` bytes 估算；compute 临时工作集
 额外按 16 bytes 估算。Desktop 上限 2026-10-12 由 192/256 MB、64 layers 放宽：200x150 在旧上限下
 只能拿到 6.75 texels/hex（100x64 及以下为满额 14），放宽后 150x100 恢复满额 14（稳态约
 352 MB），200x150 为 11.5（稳态约 469 MB），300x200 为 8.3。可通过以下设置或命令行覆盖：
+
+[mobile-density 2026-11-03] 移动端为什么必须同时放宽上限：resolver 的密度是内存反推的，
+`effective_texels_per_hex ≈ sqrt(cap / (bytes_per_texel × 地图面积))`，**只改请求值对大地图
+无效**。实测（`hex_size=22`、4096/64 层、high 档请求 12，GDScript resolver 直跑）：
+
+| 地图 | 64/96 MB | 96/128 MB | 128/160 MB |
+| --- | ---: | ---: | ---: |
+| 100x64 | 9.83（稳态限制） | **12.09**（86.6 MB，15 层） | 12.09 |
+| 150x100 | 6.41 | 7.90 | 8.81 |
+| 200x150 | 4.71 | 5.20 | 5.79 |
+
+同一张表在 low(8)/medium(10)/auto(10) 请求下同样成立——大地图三档会收敛到同一个内存上限点，
+所以「大地图必须靠后续的可见区分块/流式高精度，不在本轮范围」；200x150 在 96/128 MB 下拿不到
+8 texels/hex 是整图全驻留的结构性上限，不是档位配置问题。移动端 `relief_scale` 仍为 1：
+`terrain_relief` 在移动端确实被 shader 采样（`terrain_erosion_strength=1.0`），但 ×2 超采样要
+多付 12 bytes/texel（35→47，等效密度 −13.6%），本轮优先保 texel 密度。
 
 - `project_keynes/rendering/map_tiles/mode`
 - `project_keynes/rendering/map_tiles/texels_per_hex`
@@ -245,6 +266,69 @@ Weather overlay、DataOverlay 和 Shrub/vegetation。Fog/Weather 的 `map_index 
 稳定期仍保留低分 CPU 基线、全局 height/horizon 和 legacy GPU 纹理，以支持 Compatibility、
 probe 与失败回退。删除重复全局 GPU atlas 必须等 tiled 跨平台 soak 后单独评估，不能在当前
 fallback 尚有验证缺口时提前删除。
+
+## 像素尺度契约与近景细节（2026-11-03）
+
+地图地表的所有细节都是"世界固定尺度"，所以放大的画质上限由**一个物理像素覆盖多少
+世界单位**决定，而不是由 `camera_zoom` 决定。移动端 `content_scale_mode=CANVAS_ITEMS`
+让 1 world unit = `camera_zoom × canvas_scale` 物理像素（440dpi、2220×1080 实测
+`canvas_scale ≈ 1.375`），只用 `camera_zoom` 会把"一个纹素占几屏幕像素"低估 37%——
+所有 zoom 门控（dither 淡出、micro 淡入）都会提前触发，近景细节还没出来就被关掉。
+
+- `uniforms.gdshaderinc` 暴露 `uniform float pixel_world_size`（world units / physical
+  px），由 `HexRenderer._refresh_pixel_world_size()` 从
+  `get_global_transform_with_canvas().get_scale()` 推导，随 `set_camera_zoom` /
+  `set_camera_view` / `_apply_uniforms` 推送。水面 pass 是同一 shader 的
+  `PK_WATER_ONLY` 变体，**必须走 `_push_world_uniform` 镜像**，只写 `_shader_mat` 会让
+  两片 program 的像素尺度门控不同步。
+- shader 内要逐像素精确值时用 `fwidth(wp)`（自动含 warp 与全部变换）；uniform 只用于
+  需要整帧稳定值的门控，以及导数退化为 0 时的兜底。
+- `HexRenderer.pixel_scale_report()` 返回 `tile_mode` / `camera_zoom` /
+  `px_per_world_unit` / `hex_px` / `texels_per_hex` / `px_per_texel`。它用来区分两种
+  "糊"：`px_per_texel > 10` 说明数据密度不足（要抬 `texels_per_hex` 或上可见区分块
+  高精度），`px_per_texel` 正常但画面仍平，说明缺屏幕空间高频细节层。
+
+### 分级细节层（`shaders/include/pixel_scale.gdshaderinc`）
+
+`pixel_scale.gdshaderinc` 是所有"细节该不该出现"的唯一换算入口，纯 ALU、无采样、无
+uniform，靠 `#ifndef PK_PIXEL_SCALE_INC` 支持多处 include：
+
+- `pk_px_per_world_unit()` = `1/pixel_world_size`（整帧稳定值）
+- `pk_world_per_px_at(wp)` = `max(|dFdx(wp.x)|, |dFdy(wp.y)|)`，夹在
+  `[pixel_world_size, 4×]`。**不要改成 `length(vec2(dFdx, dFdy))`**：轴对齐缩放下它恒为
+  `√2 × (1/px_per_world)`，会把门控系统性低估 29%，正好抵消 content_scale 修正的一半。
+- `pk_hex_px()` = `hex_size × pk_px_per_world_unit()`（"一个 hex 占多少屏幕像素"，
+  跨平台可比，是世界尺度门控的推荐口径）
+- `pk_near_detail_blend(wp, texel_world)` = `smoothstep(2.5, 6.0, texel_world × px_per_world)`
+
+已迁移到该口径的门控（旧值都是 `camera_zoom`）：`terrain_dither_subpixel_fade`、
+`terrain_land_dither_zoom_strength`（26.4 / 45.1 hex_px）、`terrain_micro_zoom_alpha`
+（vq2 28.6/42.9、vq1 33.0/47.3、vq0 45.1/60.5）、`hillshade_tod` 的近景高度细节
+（29.7/46.2 hex_px）与分地形 relief 粗/细段（改成 `pk_px_per_world_unit()`——它们本来就
+是"屏幕波长 px"口径）。桌面换算后逐值等价；移动端此前被低估 1.375 倍。
+
+分级细节的采样预算（每像素）：
+
+| 场景 | 新增采样 |
+|---|---|
+| `visual_quality = 0` | +0（程序细节恒等早退、micro 在 alpha 前 return） |
+| vq≥1 远景（hex_px < 27.5） | +0，且**净省 1 次**（micro 的 `zoom_alpha` 已提到采样前） |
+| vq≥1 中景 | +1（`noise_tex` 近景颗粒，仅程序/baked 路径；桌面 HIGH 材质路径 +0） |
+| vq≥1 近景 | +1（micro 二级，复用同一 sampler；t≈0 时分支跳过） |
+
+两个已知事实，避免后续误判：
+
+1. **micro 二级在当前参数下几乎不启用**。一级纹素只有 `110/256 ≈ 0.43 world`，要到
+   `2.5 px/纹素` 需 `px_per_world ≈ 5.8` —— 桌面玩家缩放被夹到 ≤4.0、手机又因
+   content_scale 补偿把上限收紧到 `6/1.375 ≈ 4.36`，两端在各自上限处都只有 ≈2.6 px/纹素
+   （t≈0.02）。保留它的原因是机制被 biome 近景高频复用，且 t≈0 时零成本。
+2. **真正在手机上生效的是 `biome_detail.gdshaderinc` 的 `pk_apply_near_detail()`**
+   （参照纹素 2.0 world，移动端 `camera_zoom` 0.91 起、2.18 满）。它补的是与烘焙数据场
+   同量级的那一层，而不是 micro 的亚纹素层。
+
+同口径但尚未迁移（follow-up，按本次范围没动）：`resource_ground_cover.gdshader:188`
+的 `hex_px = hex_size * camera_zoom`。它是独立 shader（不含 world_map 的 include 链），
+迁移时需要单独引入 uniform。
 
 ## 诊断与验收
 

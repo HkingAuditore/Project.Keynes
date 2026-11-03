@@ -430,7 +430,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
             if (!is_merchant_slot(slot) && profession != _unemployed_profession_id) {
                 const int64_t idle = std::max<int64_t>(0,
                     population - owner - employee);
-                if (idle > 0) {
+                // Military v1: soldiers never reflux into the unemployed pool.
+                if (idle > 0 && !profession_is_state_service_only(profession)) {
                     const int32_t ethnicity = _signatures[sig].ethnicity_id;
                     const int32_t unemployed_signature =
                         unemployed_signature_for_ethnicity(ethnicity);
@@ -519,6 +520,12 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             auto group = building_view(static_cast<size_t>(g));
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
+            // Military v1: a state-owned lot runs the "state_payroll" policy.
+            // Its wage is the country military pay paid by the treasury
+            // directly to the soldier cohort, so the lot posts no contract
+            // wage of its own. Leaving the lane at zero keeps the labour quote
+            // out of it without pretending the role pays "nothing".
+            if (type.kind == 3) continue;
             // Only this profession's employee roles consume the quote below.
             // Previously every labor signal evaluated every producer's inputs,
             // outputs and workforce, even when the final role loop was empty.
@@ -1729,7 +1736,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         auto profession_cohort_distressed = [&](int32_t profession) -> bool {
             if (profession < 0 ||
                 profession == _unemployed_profession_id ||
-                profession == _merchant_profession_id) {
+                profession == _merchant_profession_id ||
+                profession_is_state_service_only(profession)) {
                 return false;
             }
             bool any = false;
@@ -2078,6 +2086,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 return;
             }
             const bool merchant_here = is_merchant_slot(slot);
+            // Military v1 (design §5.4): state-service professions are never
+            // laid off for over-capacity. A soldier cohort keeps its identity
+            // and headcount; the building simply stops hiring.
+            const bool state_service_here =
+                profession_is_state_service_only(p);
             // owner 鍦ㄦ湰 slot 鐨勪唤棰濓紙鍚?signature 澶?slot 鏃剁ǔ瀹氬簭鎽婃淳锛夈€?
             const bool sig_active = sig_owner_stamp[sig] == sig_owner_generation;
             const int64_t retained_here = sig_active ? sig_owner_retained[sig] : 0;
@@ -2113,7 +2126,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             population_store().owner_employed.write_scalar(slot, owner_here, market_mutation_sink());
             population_store().employee_employed.write_scalar(slot, std::min(emp_here,
                 std::max<int64_t>(0, pop - owner_here)), market_mutation_sink());
-            const int64_t surplus = std::max<int64_t>(0, pop - retained);
+            const int64_t surplus = state_service_here
+                ? int64_t{0}
+                : std::max<int64_t>(0, pop - retained);
             if (surplus > 0 && eth >= 0 && eth < n_eth) {
                 shed_source_slots.push_back(slot);
                 shed_dest_eth.push_back(eth);
@@ -2930,7 +2945,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const EmployeeRoleOpportunity opportunity{
                         group_index, fill_index, role.profession_id,
                         saturating_sub(net, living, _saturation_count), 0};
-                    if (_building_employee_filled[fill_index] > 0) {
+                    // Military v1: soldiers never transfer OUT voluntarily.
+                    const bool role_is_state_service =
+                        profession_is_state_service_only(role.profession_id);
+                    if (!role_is_state_service &&
+                        _building_employee_filled[fill_index] > 0) {
                         EmployeeRoleOpportunity source = opportunity;
                         source.mobile = mul_div_sat(
                             _building_employee_filled[fill_index],
@@ -3152,6 +3171,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 if (protected_restart_source) {
                     // Preserve the owner, but still collect employee sources
                     // below; only the owner mobility lane is protected.
+                } else if (profession_is_state_service_only(
+                        _signatures[group.owner_signature_id].profession_id)) {
+                    // Military v1: state-service owners never move (state
+                    // buildings are owned by the reserved sentinel).
                 } else {
                     const int32_t source_slot = owner_slot_for_profession(
                         _signatures[group.owner_signature_id].profession_id);
@@ -3169,6 +3192,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int32_t fill_index = group.employee_fill_begin + r;
                 if (_building_employee_filled[fill_index] <= 0) continue;
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                // Military v1: soldiers never transfer OUT voluntarily.
+                if (profession_is_state_service_only(role.profession_id))
+                    continue;
                 const int64_t gross_income = expected_employee_gross(
                     role, fill_index);
                 employee_owner_sources.push_back({g, r, fill_index,
@@ -3564,6 +3590,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 // the first eligible slot is deterministic and no ethnicity
                 // equality with the building profile is required.
                 for (int32_t source_eth = 0; source_eth < n_eth; ++source_eth) {
+                    // Military v1: a soldier never leaves the service for an
+                    // owner seat, so a state-service profession is not a source.
+                    if (profession_is_state_service_only(candidate.profession))
+                        break;
                     const int32_t candidate_source_signature =
                         signature_for_profession_ethnicity(candidate.profession,
                             source_eth);
@@ -3680,6 +3710,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             employment_identity_valid = false;
             return;
         }
+        // State-service cohorts (soldier) are emplaced by the state, not by a
+        // local job seat: a barracks is a Military building, so these cohorts
+        // never appear in the owner/employee employment lanes. They are audited
+        // by Military (posts vs present), not by the local labour identity.
+        if (profession_is_state_service_only(_signatures[signature].profession_id)) return;
         if (_signatures[signature].profession_id == _unemployed_profession_id) return;
         const int64_t employed = saturating_add(
             std::max<int64_t>(0, population_store().owner_employed[slot]),

@@ -2233,3 +2233,110 @@ input edge 缓存。ACTIVE 组的 epoch 经营计划只按基础配方产量报�
 所有建筑的 owner 自用产出都属于 owner 的实物收入，并与现金收入共同参与经营可行性
 判断；已有结算值优先复用，只有没有结算值的新组才做一次机会报价。硬投入、资源、气候
 和实际资金约束仍保持原有执行限制。
+
+## 军事 v1：士兵职业、官营建筑与军供需求（2026-11-02）
+
+设计依据 `docs/plans/military-system-design.md` §5.1–§5.4，接口冻结于
+`docs/plans/military-implementation-contract.md`。本段只描述 Economy 侧新增的
+通用能力；兵员编制、口粮采购、军饷发放全部属于 Military。
+
+### 目录列（catalog，全部可选，缺省即旧行为）
+
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| `profession_state_service_only` | i32 × P | 1 = 该职业只能作为官营建筑雇员岗（士兵） |
+| `profession_state_supplied_need_offsets` | i32 × (P+1) | 军供需求 CSR，按 profession 分片 |
+| `profession_state_supplied_need_ids` | i32 × N | 全局 need stable id（`staple_food`、`protein`） |
+| `building_state_roles` | i32 × T | 0=none,1=barracks,2=fortification,3=war_college |
+
+`ProfessionProfile.state_service_only` / `state_supplied_need_ids`、
+`BuildingProfile.building_kind = "state"` / `state_role` 由
+`EconomyCatalog.compile_native_catalog()` 编译。校验规则：
+
+- 声明了军供需求却没有 `state_service_only` 直接编译失败；
+- 军供需求的 need id 必须存在且不重复；
+- 官营类型必须带非零 `state_role`，非官营类型必须为 `none`；
+- 官营类型形状等同 `service`：无产出、无自然资源、`behavior_id = none`；
+- 官营类型必须至少一个雇员角色，且每个角色都必须是 `state_service_only` 职业、
+  工资政策为 `state_payroll`；
+- 反过来，`state_service_only` 职业不得出现在非官营建筑的任何雇员角色里。
+
+`building_state_roles` 与三个 `profession_state_service_only*` 列都会从全部历史
+compat hash（v6/v7/v8/v13）的输入里剔除，所以未改动的旧目录哈希不变、旧存档仍可读取。
+
+### 官营建筑哨兵业主
+
+`building_kind = 3` 的业主签名是 `STATE_OWNER_SIGNATURE`，它在
+`compile_catalog()` 里解析为「第一个 `state_service_only` 职业 × 第一个
+ethnicity」的 signature id（`_state_owner_signature`）。这样 group 键仍然是真实
+的 `(profession, ethnicity)` 对，但**不会有活 cohort 占用它**：state-service 职业
+从不进入失业池，`move_cohort_population()` 也不会把任何职业转成它。没有
+state-service 职业的目录里该值为 -1，官营建筑因此无法建造。
+
+### 军供需求：跳过市场购买，满足率来自 Military
+
+`process_market_cell()` 的 cohort/need 循环在最前面判一次
+`profession_need_is_state_supplied()`：
+
+- 命中时**不生成**任何 `BundleOrder`，`desired_units = 0`，因此清算、预算裁剪、
+  fallback 替换都不会看见它，也不会产生支出或消费税；
+- 但仍压入一条 `NeedState{desired_units=0, living_target_units=…}`，保留福利权重；
+- 清算结束后、`satisfaction` 归约之前，把这些 state 的 `filled_units` 直接写为
+  `living_target_units × military_ration_satisfaction_q16(cell) / Q16`。
+
+所以口粮断供照样落进生存维度（进而影响士气与饥饿死亡），只是不经市场。
+`_state_supplied_need_columns == 0` 时整段跳过，热循环零额外开销。
+
+### `set_military_ration_satisfaction`
+
+```cpp
+int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
+    const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+```
+
+稀疏 `(cell, q16)` 写入 `_military_ration_sat_q16`；**未出现的格保持上次值，初值
+Q16_ONE**，所以没有士兵的世界与军事版本前逐位一致。该列是派生瞬态，不进 PKEC、
+不进权威状态哈希，`reset()` 清空、`configure()` 按 `cell_count` 初值化为 1.0。
+DCWorldExt 侧是本文件所属的 `world_ext_economy_military.cpp` 与 `world_ext.h`
+的 `// ---- Economy military hooks` 块，绑定名 `set_military_ration_satisfaction`。
+
+### 士兵不向外转职、超编不裁员
+
+`soldier` 是 `state_service_only`，所以下列**向外**通道全部按
+`profession_is_state_service_only()` 放行前拦截：
+
+- 雇员↔雇员重分配：state-service 角色不进 `employee_sources`；
+- 雇员→业主、业主→雇员、业主→业主：state-service 的 owner / employee 都不进
+  来源集合，也不会成为来源候选；
+- 超编析出（surplus → `unemployed|eth`）：`surplus` 直接置 0，只停止招人；
+- 对账后的 idle 回流（`reconcile_building_employment_cells_range`）：同样跳过；
+- 亏损职业退出（`profession_cohort_distressed`）：直接返回 false；
+- 家族开拓抽人（`extract_family_expedition_payload`）：state-service cohort 不入选。
+
+### 官营建筑的经济侧排除
+
+| 通道 | 处理 |
+| --- | --- |
+| 私人生成经济计划/恢复/亏损停业 | `kind == 3` 在输出/资源判定前 `continue`，固定 `operating_state = 0`、`planned_utilization_q16 = planned_capacity = Q16_ONE`、私人成本清零 |
+| special reset（`kind == 2`） | 扩展到 `kind == 3`，保证官营永不悬挂 |
+| 恢复期清算（`review_recovery_building_group`） | `kind == 3` 直接 return |
+| 内生投资评审 | `INVESTMENT_REJECTION_STATE_OWNED = 19`，包括就业追补与恢复通道 |
+| 商人借贷 | `requested_credit` 归零，且不再自动生成 probe 授信 |
+| `state_payroll` 工资政策 | 官营组 `_building_role_base_wage_due = 0`，且 `prepare_cell_wages` 不为官营组报合约工资；工资由国库经 Military 直接发给士兵 cohort，建筑现金不提款、不产生欠薪 |
+
+### `COMMAND_CHANGE_SIGNATURE` 入伍/征召/退伍
+
+命令本身未改动（`i32_0` = 目标 signature，`i64_0` = 人数）。入伍 =
+`(unemployed|eth) → (soldier|eth)`，退伍 = 反向；因为士兵 signature 是目录里
+profession × ethnicity 笛卡尔积的一行，`compile_catalog()` 建好
+`_signature_by_profession_ethnicity` 后它一定存在，不需要动态 interning。
+`COMMAND_ADD_POPULATION` 负数按既有路径处理伤亡。
+
+### 验证
+
+- `economy_runtime*.cpp` 与本功能新增的 `world_ext_economy_military.cpp` 用
+  `cl /std:c++17 /W3` 单独编译通过（无新增 warning）。
+- `profession_profile.gd`、`building_profile.gd`、`economy_catalog.gd` 通过
+  `--headless --check-only` 解析。
+- 完整目录编译当前被内容侧的未完成改动阻塞（新增军工建筑/物资的 progression
+  元数据与 `good_technology_producer_missing`），与本次改动无关。

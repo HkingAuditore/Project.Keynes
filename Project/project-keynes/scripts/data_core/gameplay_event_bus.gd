@@ -19,9 +19,29 @@ const EVENT_TECHNOLOGY_ADOPTED: int = 13
 const EVENT_TECHNOLOGY_PRACTICE: int = 14
 const EVENT_TARIFF_SUBSIDY_INTENT: int = 15
 
+## Military facts (design §19.1). Published by the Military daily stage through
+## `poll_military_events`, never by GDScript gameplay code directly.
+const EVENT_MILITARY_WAR_DECLARED: int = 40
+const EVENT_MILITARY_WAR_ENDED: int = 41
+const EVENT_MILITARY_BATTLE_RESOLVED: int = 42
+const EVENT_MILITARY_CELL_CONTROL_CHANGED: int = 43
+const EVENT_MILITARY_ARMY_DESTROYED: int = 44
+const EVENT_MILITARY_COUNTRY_ANNEXED: int = 45
+const EVENT_MILITARY_CONVOY_INTERCEPTED: int = 46
+const EVENT_MILITARY_LEVY_APPLIED: int = 47
+const MILITARY_EVENT_TYPE_MIN: int = 40
+const MILITARY_EVENT_TYPE_MAX: int = 47
+
 const SOURCE_NATIVE: int = 1
 const SOURCE_GDSCRIPT: int = 2
 const SOURCE_DEBUG: int = 3
+## 4 is the native PK_EVENT_SOURCE_EFFECT (EffectRuntime PUBLISH_EVENT rows).
+const SOURCE_EFFECT: int = 4
+## Military facts forwarded by MilitaryDailySystem. The bus and TriggerRuntime
+## carry the source id verbatim (TriggerRuntime keeps a cursor per source,
+## source_count 64), so military rules match on this dedicated id instead of
+## sharing SOURCE_NATIVE's cursor or colliding with SOURCE_DEBUG.
+const SOURCE_MILITARY: int = 5
 
 const PAYLOAD_NONE: int = 0
 const PAYLOAD_SUCCESSION_V1: int = 1
@@ -40,6 +60,61 @@ const PAYLOAD_ECONOMY_TRADE_V2: int = 8
 ## i0=天气规则，i1=合格领土地块数，i2=第一证据地块，i3=观测协议版本；
 ## value=最大强度 Q16，entity_handle=国家句柄。
 const PAYLOAD_WEATHER_OBSERVED_V1: int = 9
+## 军事 payload（20–25）。字段布局与 `military_bridge.h` 的 MilitaryEvent 一致
+## （cell/i0..i3/value 原样转发；以 military_core*.cpp 的 push_event 为准）。
+## WAR_V1：
+##   40 WAR_DECLARED：cell=-1，i0=攻方 slot，i1=守方 slot，i2=war_id。
+##   41 WAR_ENDED：cell=-1，i0=结果（1=和约，2=吞并），i1=割地格数，i2=war_id，
+##      value=赔款总额（MONEY_SCALE）。
+const PAYLOAD_MILITARY_WAR_V1: int = 20
+## BATTLE_V1：
+##   42 BATTLE_RESOLVED：cell=交战边中点格，i0=胜方 slot，i1=负方 slot，
+##      i2=交战进度 progress_q16，i3=0；value=负方损失人数。
+##   44 ARMY_DESTROYED：cell=被歼部队所在格，i0=胜方 slot，i1=被歼方 slot；value=人数。
+const PAYLOAD_MILITARY_BATTLE_V1: int = 21
+## CONTROL_V1：cell=格，i0=新 controller slot，i1=旧 controller slot（-1 记为 0），
+## i2=owner slot，i3=聚落等级。
+const PAYLOAD_MILITARY_CONTROL_V1: int = 22
+## ANNEX_V1：cell=-1，i0=受害国**句柄**，i1=吞并国**句柄**，i2=格数。
+const PAYLOAD_MILITARY_ANNEX_V1: int = 23
+## CONVOY_V1：cell=截获格，i0=截获方 slot，i1=被截方 slot，i2=shipment id；value=货值。
+const PAYLOAD_MILITARY_CONVOY_V1: int = 24
+## LEVY_V1：cell=征召格，i0=国家 slot，i1=国家句柄；value=人数。原生事件不填
+## payload_schema（=0），由 military_payload_schema() 回填为 25。
+const PAYLOAD_MILITARY_LEVY_V1: int = 25
+
+## Returns the payload schema a military event type always carries, or 0 when
+## the type is not military. Used by Trigger selection and by the forwarder as
+## the fallback when a native event omits `payload_schema`.
+static func military_payload_schema(event_type: int) -> int:
+	match event_type:
+		EVENT_MILITARY_WAR_DECLARED, EVENT_MILITARY_WAR_ENDED:
+			return PAYLOAD_MILITARY_WAR_V1
+		EVENT_MILITARY_BATTLE_RESOLVED, EVENT_MILITARY_ARMY_DESTROYED:
+			return PAYLOAD_MILITARY_BATTLE_V1
+		EVENT_MILITARY_CELL_CONTROL_CHANGED:
+			return PAYLOAD_MILITARY_CONTROL_V1
+		EVENT_MILITARY_COUNTRY_ANNEXED:
+			return PAYLOAD_MILITARY_ANNEX_V1
+		EVENT_MILITARY_CONVOY_INTERCEPTED:
+			return PAYLOAD_MILITARY_CONVOY_V1
+		EVENT_MILITARY_LEVY_APPLIED:
+			return PAYLOAD_MILITARY_LEVY_V1
+	return 0
+
+
+## Human-readable wire name for diagnostics/journal tooling.
+static func military_event_name(event_type: int) -> StringName:
+	match event_type:
+		EVENT_MILITARY_WAR_DECLARED: return &"military.war_declared"
+		EVENT_MILITARY_WAR_ENDED: return &"military.war_ended"
+		EVENT_MILITARY_BATTLE_RESOLVED: return &"military.battle_resolved"
+		EVENT_MILITARY_CELL_CONTROL_CHANGED: return &"military.cell_control_changed"
+		EVENT_MILITARY_ARMY_DESTROYED: return &"military.army_destroyed"
+		EVENT_MILITARY_COUNTRY_ANNEXED: return &"military.country_annexed"
+		EVENT_MILITARY_CONVOY_INTERCEPTED: return &"military.convoy_intercepted"
+		EVENT_MILITARY_LEVY_APPLIED: return &"military.levy_applied"
+	return &""
 
 var _world_ext = null
 var _schema: Dictionary = {}

@@ -444,6 +444,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();
+    _country_treasury_goods_consumed_total.clear();
     _country_research_progress_total.clear();
     _country_research_completed_total.clear();
     _country_tax_defaults.clear();
@@ -792,6 +793,7 @@ void NativeCountryRuntime::initialize_country_research(int32_t slot) {
     _country_research_deferred_points.resize(countries, 0);
     _country_research_purchased_total.resize(countries, 0);
     _country_research_consumed_total.resize(countries, 0);
+    _country_treasury_goods_consumed_total.resize(countries, 0);
     _country_research_progress_total.resize(countries, 0);
     _country_research_completed_total.resize(countries, 0);
     _country_research_signals.resize(countries * _research_signal_words, 0);
@@ -1084,6 +1086,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();
+    _country_treasury_goods_consumed_total.clear();
     _country_research_progress_total.clear();
     _country_research_completed_total.clear();
     _country_tax_defaults.clear();
@@ -1358,9 +1361,36 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
 bool NativeCountryRuntime::validate_admission_command(
         const Command &command, std::string &error) const {
     if (command.opcode < COMMAND_CREATE_COUNTRY ||
-        command.opcode > COMMAND_CLAIM_UNOWNED_TERRITORY) {
+        command.opcode > COMMAND_OPCODE_MAX) {
         error = "country_command_opcode_invalid";
         return false;
+    }
+    if (command_opcode_reserved(command.opcode)) {
+        error = "country_command_opcode_unsupported";
+        return false;
+    }
+    if (command.opcode == COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES ||
+        command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES ||
+        command.opcode == COMMAND_ANNEX_COUNTRY) {
+        const uint64_t receiver =
+            receiver_handle_from_payload(command.cell, command.aux);
+        if (command.target_handle == 0 || command.cell < 0 ||
+            command.aux <= 0 || receiver == command.target_handle) {
+            error = command.opcode == COMMAND_ANNEX_COUNTRY
+                ? "country_annex_command_invalid"
+                : "country_transfer_between_command_invalid";
+            return false;
+        }
+        if (command.opcode != COMMAND_ANNEX_COUNTRY && command.value <= 0) {
+            error = "country_transfer_between_command_invalid";
+            return false;
+        }
+        if (command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES &&
+            (command.domain < 0 ||
+             command.domain >= static_cast<int32_t>(_good_ids.size()))) {
+            error = "country_transfer_between_command_invalid";
+            return false;
+        }
     }
     if (command.effective_day < 0 || command.sequence < 0) {
         error = "country_command_order_invalid";
@@ -1425,6 +1455,13 @@ bool NativeCountryRuntime::validate_admission_command(
         (command.cell < 0 || command.cell >= _cell_count ||
          _is_water[static_cast<size_t>(command.cell)] != 0)) {
         error = "country_claim_target_invalid";
+        return false;
+    }
+    if (command.opcode == COMMAND_CONSUME_TREASURY_GOODS &&
+        (command.aux < 0 ||
+         command.aux >= static_cast<int32_t>(_good_ids.size()) ||
+         command.value <= 0)) {
+        error = "country_treasury_goods_command_invalid";
         return false;
     }
     return true;
@@ -1650,6 +1687,18 @@ bool NativeCountryRuntime::protocol_contract_self_test(std::string &error) {
         error = "country_protocol_test_country_missing";
         return false;
     }
+    {
+        // Military opcodes run on a detached copy so the live authority,
+        // peers and Host are never touched by the annex probe.
+        NativeCountryRuntime scratch(*this);
+        scratch._simulation_host = nullptr;
+        scratch._effect_runtime = nullptr;
+        scratch._effect_forwarder = nullptr;
+        scratch._effect_runtime_enabled = false;
+        scratch._modifier_runtime = nullptr;
+        scratch._economy_runtime = nullptr;
+        if (!scratch.military_opcode_self_test(error)) return false;
+    }
     int32_t owned_cell = -1;
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         if (_cell_country_slot[static_cast<size_t>(cell)] == slot) {
@@ -1807,6 +1856,248 @@ bool NativeCountryRuntime::protocol_contract_self_test(std::string &error) {
         _typed_request_state.size() != decoded.request_states.size() ||
         _next_boundary_id != decoded.next_boundary_id) {
         if (error.empty()) error = "country_protocol_test_checkpoint_restore";
+        return false;
+    }
+    return true;
+}
+
+bool NativeCountryRuntime::military_opcode_self_test(std::string &error) {
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF ||
+        _command_batch.active || _boundary_seal_active ||
+        !_pending_commands.empty()) {
+        error = "country_military_test_requires_idle_runtime";
+        return false;
+    }
+    int32_t a = -1;
+    for (int32_t s = 0; s < static_cast<int32_t>(_countries.active.size()); ++s)
+        if (_countries.active[static_cast<size_t>(s)] != 0 &&
+            _countries.territory_count[static_cast<size_t>(s)] > 0) { a = s; break; }
+    if (a < 0) { error = "country_military_test_country_missing"; return false; }
+    // Second country: a neutral land cell, else a spare cell of A.
+    int32_t spawn_cell = -1;
+    for (int32_t cell = 0; cell < _cell_count && spawn_cell < 0; ++cell)
+        if (_is_water[static_cast<size_t>(cell)] == 0 &&
+            _cell_country_slot[static_cast<size_t>(cell)] == NEUTRAL_SLOT)
+            spawn_cell = cell;
+    if (spawn_cell < 0 && _countries.territory_count[static_cast<size_t>(a)] >= 2)
+        spawn_cell = _country_cells[static_cast<size_t>(
+            _country_cell_offsets[static_cast<size_t>(a) + 1u] - 1)];
+    if (spawn_cell < 0) return true; // map cannot host a second country
+    CountryCommandReceipt discarded;
+    while (poll_typed_receipt(discarded)) {}
+    int64_t day = std::max<int64_t>(0, _last_committed_day + 1);
+    uint64_t next_request = 0x4d494c0000000000ULL ^ (_generation << 8U);
+    std::vector<CountryCommandReceipt> receipts;
+    const auto run_batch = [&](std::vector<CountryTypedCommand> commands,
+                               CountryCoreStepResult &step) -> bool {
+        for (CountryTypedCommand &command : commands) {
+            command.request_id = ++next_request;
+            command.producer_id = 77;
+            command.sequence = static_cast<uint64_t>(next_request & 0xffffU) + 1u;
+            command.effective_day = day;
+        }
+        if (!submit_typed_commands(commands.data(), commands.size(), receipts, error))
+            return false;
+        step = run_slice_core(day++);
+        while (poll_typed_receipt(discarded)) {}
+        return true;
+    };
+    CountryCoreStepResult step;
+    CountryTypedCommand create;
+    create.opcode = COMMAND_CREATE_COUNTRY;
+    create.stable_id = "military.selftest.victim";
+    create.display_name = "Military Selftest";
+    create.cell = spawn_cell;
+    if (!run_batch({create}, step)) return false;
+    if (step.status != CountryCoreStepStatus::BOUNDARY_COMMITTED) {
+        error = "country_military_test_create_failed:" + step.reason;
+        return false;
+    }
+    const int32_t b = static_cast<int32_t>(_countries.active.size()) - 1;
+    const uint64_t handle_a = make_handle(a);
+    const uint64_t handle_b = make_handle(b);
+    const size_t goods = _good_ids.size();
+    // Seed the detached copy's treasuries directly.
+    _countries.cash[static_cast<size_t>(a)] = 1000;
+    _countries.cash[static_cast<size_t>(b)] = 50;
+    if (goods > 0) {
+        _country_goods[static_cast<size_t>(a) * goods] = 7;
+        _country_goods[static_cast<size_t>(b) * goods] = 3;
+    }
+    _economy_asset_reserved_cash.assign(_countries.active.size(), 0);
+    _economy_asset_reserved_goods.assign(_countries.active.size() * goods, 0);
+    _state_hash_cache_valid = false;
+    const auto receiver_fields = [](CountryTypedCommand &command, uint64_t receiver) {
+        command.cell = static_cast<int32_t>(receiver & 0xffffffffULL);
+        command.aux = static_cast<int32_t>(receiver >> 32U);
+    };
+    const int64_t cash_total_before = total_cash();
+    const int64_t good_total_before = goods > 0 ? total_good(0) : 0;
+    {
+        std::vector<CountryTypedCommand> batch(goods > 0 ? 3 : 2);
+        batch[0].opcode = COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES;
+        batch[0].target_handle = handle_a;
+        batch[0].value = 400;
+        receiver_fields(batch[0], handle_b);
+        batch[1].opcode = COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES;
+        batch[1].target_handle = handle_b;
+        batch[1].value = 999; // only 450 available -> min(balance, value)
+        receiver_fields(batch[1], handle_a);
+        if (goods > 0) {
+            batch[2].opcode = COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES;
+            batch[2].target_handle = handle_a;
+            batch[2].domain = 0;
+            batch[2].value = 10; // only 7 available
+            receiver_fields(batch[2], handle_b);
+        }
+        if (!run_batch(batch, step)) return false;
+    }
+    if (step.status != CountryCoreStepStatus::BOUNDARY_COMMITTED ||
+        _countries.cash[static_cast<size_t>(a)] != 1050 ||
+        _countries.cash[static_cast<size_t>(b)] != 0 ||
+        total_cash() != cash_total_before ||
+        (goods > 0 && (_country_goods[static_cast<size_t>(a) * goods] != 0 ||
+                       _country_goods[static_cast<size_t>(b) * goods] != 10 ||
+                       total_good(0) != good_total_before))) {
+        error = "country_military_test_transfer_failed:" + step.reason;
+        return false;
+    }
+    {
+        // Reserved opcodes are rejected at admission.
+        CountryTypedCommand reserved;
+        reserved.request_id = ++next_request;
+        reserved.opcode = COMMAND_RESERVED_22;
+        reserved.target_handle = handle_a;
+        reserved.effective_day = day;
+        std::string reserved_error;
+        if (submit_typed_commands(&reserved, 1, receipts, reserved_error) ||
+            reserved_error != "country_command_opcode_unsupported") {
+            error = "country_military_test_reserved_opcode_accepted";
+            return false;
+        }
+    }
+    // Annex followed by a stale-handle command in the same batch rejects it.
+    const uint64_t generation_before_reject = _generation;
+    CountryTypedCommand annex;
+    annex.opcode = COMMAND_ANNEX_COUNTRY;
+    annex.target_handle = handle_b;
+    receiver_fields(annex, handle_a);
+    CountryTypedCommand stale_rename;
+    stale_rename.opcode = COMMAND_RENAME_COUNTRY;
+    stale_rename.target_handle = handle_b;
+    stale_rename.display_name = "stale";
+    if (!run_batch({annex, stale_rename}, step)) return false;
+    if (step.status != CountryCoreStepStatus::REJECTED ||
+        step.reason != "country_handle_invalid" ||
+        _generation != generation_before_reject ||
+        _countries.active[static_cast<size_t>(b)] == 0) {
+        error = "country_military_test_stale_in_batch_not_rejected";
+        return false;
+    }
+    // Worker kernel parity input: committed state immediately before annex.
+    RuntimeCountryPodSnapshot worker;
+    RuntimeCountryPodCatalog worker_catalog;
+    if (!export_pod_snapshot(worker, error) ||
+        !export_pod_catalog(worker_catalog, error)) return false;
+    const int32_t territory_a = _countries.territory_count[static_cast<size_t>(a)];
+    const int32_t territory_b = _countries.territory_count[static_cast<size_t>(b)];
+    const uint32_t generation_b = _countries.generation[static_cast<size_t>(b)];
+    // Victim's last cell leaves first in the same batch: the zero-territory
+    // check must exempt a victim that is deactivated by the same batch.
+    CountryTypedCommand cede;
+    cede.opcode = COMMAND_TRANSFER_TERRITORY;
+    cede.target_handle = handle_a;
+    cede.cell = spawn_cell;
+    if (!run_batch({cede, annex}, step)) return false;
+    if (step.status != CountryCoreStepStatus::BOUNDARY_COMMITTED ||
+        _countries.active[static_cast<size_t>(b)] != 0 ||
+        _countries.generation[static_cast<size_t>(b)] != generation_b + 1u ||
+        _countries.territory_count[static_cast<size_t>(b)] != 0 ||
+        _countries.territory_count[static_cast<size_t>(a)] != territory_a + territory_b ||
+        _countries.cash[static_cast<size_t>(b)] != 0 ||
+        _countries.cash[static_cast<size_t>(a)] != 1050 ||
+        total_cash() != cash_total_before ||
+        (goods > 0 && (_country_goods[static_cast<size_t>(b) * goods] != 0 ||
+                       total_good(0) != good_total_before)) ||
+        _cell_country_slot[static_cast<size_t>(spawn_cell)] != a ||
+        _cell_tax_policy_ids[static_cast<size_t>(spawn_cell)] != 0 ||
+        valid_handle(static_cast<int64_t>(handle_b))) {
+        error = "country_military_test_annex_failed:" + step.reason;
+        return false;
+    }
+    // Same two commands through the worker kernel.
+    RuntimeCountryPodPlan plan;
+    RuntimeCountryCommand worker_cede;
+    worker_cede.request_id = 1; worker_cede.sequence = 1;
+    worker_cede.opcode = COMMAND_TRANSFER_TERRITORY;
+    worker_cede.target_handle = handle_a;
+    worker_cede.cell = spawn_cell;
+    RuntimeCountryCommand worker_annex;
+    worker_annex.request_id = 2; worker_annex.sequence = 2;
+    worker_annex.opcode = COMMAND_ANNEX_COUNTRY;
+    worker_annex.target_handle = handle_b;
+    worker_annex.cell = annex.cell;
+    worker_annex.aux = annex.aux;
+    if (!country_core_apply_command(worker, worker_catalog, worker_cede, plan, error) ||
+        !country_core_apply_command(worker, worker_catalog, worker_annex, plan, error))
+        return false;
+    if ((plan.header.dirty_families & RUNTIME_DIRTY_COUNTRY_TERRITORY) == 0) {
+        error = "country_military_test_worker_dirty_missing";
+        return false;
+    }
+    country_core_rebuild_territory_csr(worker);
+    RuntimeCountryPodSnapshot sync_after;
+    if (!export_pod_snapshot(sync_after, error)) return false;
+    // Research advances in the sync day after commands; align only the
+    // research family so the parity hash compares the command effects.
+    worker.last_research_day = sync_after.last_research_day;
+    worker.country_technologies = sync_after.country_technologies;
+    worker.country_discovered = sync_after.country_discovered;
+    worker.research_progress = sync_after.research_progress;
+    worker.research_purchased_total = sync_after.research_purchased_total;
+    worker.research_consumed_total = sync_after.research_consumed_total;
+    worker.research_progress_total = sync_after.research_progress_total;
+    worker.research_completed_total = sync_after.research_completed_total;
+    worker.research_deferred_points = sync_after.research_deferred_points;
+    worker.cell_tax_policies = sync_after.cell_tax_policies;
+    if (worker.cell_country_slot != sync_after.cell_country_slot ||
+        worker.country_cash != sync_after.country_cash ||
+        worker.country_goods != sync_after.country_goods ||
+        worker.country_active != sync_after.country_active ||
+        worker.country_generation != sync_after.country_generation ||
+        worker.territory_count != sync_after.territory_count ||
+        worker.cell_tax_policy_ids != sync_after.cell_tax_policy_ids ||
+        country_core_hash_business_state(worker) !=
+            country_core_hash_business_state(sync_after)) {
+        error = "country_military_test_worker_parity_mismatch";
+        return false;
+    }
+    // Worker kernel also rejects the stale handle.
+    RuntimeCountryCommand worker_stale = worker_annex;
+    std::string worker_error;
+    if (country_core_apply_command(worker, worker_catalog, worker_stale, plan,
+                                   worker_error) ||
+        worker_error != "country_handle_invalid") {
+        error = "country_military_test_worker_stale_accepted";
+        return false;
+    }
+    // Later batches holding the stale handle reject country_handle_invalid.
+    if (!run_batch({stale_rename}, step)) return false;
+    if (step.status != CountryCoreStepStatus::REJECTED ||
+        step.reason != "country_handle_invalid") {
+        error = "country_military_test_stale_handle_accepted";
+        return false;
+    }
+    // PKCN v14 round-trip with an inactive country record.
+    std::vector<uint8_t> saved;
+    if (!encode_save(saved, error)) return false;
+    const uint64_t expected_hash = compute_state_hash();
+    NativeCountryRuntime restored(*this);
+    if (!restored.decode_save(saved, error) ||
+        restored.compute_state_hash() != expected_hash ||
+        restored._countries.active[static_cast<size_t>(b)] != 0) {
+        if (error.empty()) error = "country_military_test_save_roundtrip";
         return false;
     }
     return true;
@@ -2381,6 +2672,8 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.research_auto_purchase = _country_research_auto_purchase;
     out.research_purchased_total = _country_research_purchased_total;
     out.research_consumed_total = _country_research_consumed_total;
+    out.treasury_goods_consumed_total = _country_treasury_goods_consumed_total;
+    out.treasury_goods_consumed_total.resize(_countries.active.size(), 0);
     out.country_tax_defaults = _country_tax_defaults;
     out.country_tax_default_modes = _country_tax_default_modes;
     out.country_income_tax_overrides = _country_income_tax_overrides;
@@ -2795,6 +3088,14 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             } else if (command.opcode == COMMAND_GRANT_TECHNOLOGY) {
                 _command_batch.stage_technologies = true;
                 _command_batch.stage_research = true;
+            } else if (command.opcode == COMMAND_CONSUME_TREASURY_GOODS ||
+                       command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES) {
+                _command_batch.stage_goods = true;
+            } else if (command.opcode == COMMAND_ANNEX_COUNTRY) {
+                _command_batch.stage_goods = true;
+                _command_batch.stage_research = true;
+                _command_batch.stage_technologies = true;
+                _command_batch.stage_cell_tax = true;
             } else if (command.opcode >= COMMAND_SET_RESEARCH_WEIGHTS &&
                        command.opcode <= COMMAND_REVEAL_ALL_TECHNOLOGIES) {
                 _command_batch.stage_research = true;
@@ -2870,8 +3171,21 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             _command_batch.cell_tax_updates.reserve(
                 std::min(_command_batch.commands.size(),
                          static_cast<size_t>(_cell_count)));
-        if (!_command_batch.direct_unique_territory)
-            _command_batch.cell_delta.reserve(_command_batch.commands.size());
+        if (!_command_batch.direct_unique_territory) {
+            // ANNEX can move every cell of a (possibly chained) victim, so an
+            // annex batch reserves for the full map: distinct delta keys are
+            // bounded by cell_count, keeping the open-addressing table sparse.
+            const bool has_annex = std::any_of(
+                _command_batch.commands.begin(), _command_batch.commands.end(),
+                [](const Command &command) {
+                    return command.opcode == COMMAND_ANNEX_COUNTRY;
+                });
+            _command_batch.cell_delta.reserve(has_annex
+                ? std::min(_command_batch.commands.size() +
+                               static_cast<size_t>(std::max(_cell_count, 0)),
+                           static_cast<size_t>(std::max(_cell_count, 1)))
+                : _command_batch.commands.size());
+        }
         _command_batch.cell_delta_order.reserve(_command_batch.commands.size());
         if (_command_batch.direct_unique_territory)
             _command_batch.direct_cell_owners.reserve(_command_batch.commands.size());
@@ -3226,6 +3540,207 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             }
             event_country_handle = command.target_handle;
             event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_CONSUME_TREASURY_GOODS) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
+            if (command.aux < 0 || command.aux >= static_cast<int32_t>(_good_ids.size()) ||
+                command.value <= 0) {
+                error = "country_treasury_goods_command_invalid"; break;
+            }
+            const size_t goods_index = static_cast<size_t>(slot) * _good_ids.size() +
+                static_cast<size_t>(command.aux);
+            if (goods_index >= batch.goods.size()) {
+                error = "country_treasury_goods_insufficient"; break;
+            }
+            // Goods currently reserved by an in-flight Economy asset
+            // transaction are not spendable by the era sink.
+            int64_t reserved = 0;
+            if (goods_index < _economy_asset_reserved_goods.size())
+                reserved = std::max<int64_t>(0, _economy_asset_reserved_goods[goods_index]);
+            if (batch.goods[goods_index] - reserved < command.value) {
+                error = "country_treasury_goods_insufficient"; break;
+            }
+            batch.goods[goods_index] -= command.value;
+            batch.treasury_consumed.emplace_back(slot, command.value);
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES ||
+                   command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES) {
+            int32_t payer = -1;
+            int32_t receiver = -1;
+            if (!staged_handle(command.target_handle, payer) ||
+                !staged_handle(receiver_handle_from_payload(command.cell, command.aux),
+                               receiver)) {
+                error = "country_handle_invalid"; break;
+            }
+            if (payer == receiver || command.value <= 0) {
+                error = "country_transfer_between_command_invalid"; break;
+            }
+            int64_t moved = 0;
+            if (command.opcode == COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES) {
+                int64_t reserved = 0;
+                if (static_cast<size_t>(payer) < _economy_asset_reserved_cash.size())
+                    reserved = std::max<int64_t>(
+                        0, _economy_asset_reserved_cash[static_cast<size_t>(payer)]);
+                int64_t &from = batch.countries.cash[static_cast<size_t>(payer)];
+                int64_t &to = batch.countries.cash[static_cast<size_t>(receiver)];
+                moved = std::min(command.value, std::max<int64_t>(0, from - reserved));
+                if (moved > std::numeric_limits<int64_t>::max() - to) {
+                    error = "country_treasury_overflow"; break;
+                }
+                from -= moved;
+                to += moved;
+            } else {
+                if (command.domain < 0 ||
+                    command.domain >= static_cast<int32_t>(_good_ids.size())) {
+                    error = "country_transfer_between_command_invalid"; break;
+                }
+                const size_t good_count = _good_ids.size();
+                const size_t from_index = static_cast<size_t>(payer) * good_count +
+                    static_cast<size_t>(command.domain);
+                const size_t to_index = static_cast<size_t>(receiver) * good_count +
+                    static_cast<size_t>(command.domain);
+                if (from_index >= batch.goods.size() || to_index >= batch.goods.size()) {
+                    error = "country_transfer_between_command_invalid"; break;
+                }
+                int64_t reserved = 0;
+                if (from_index < _economy_asset_reserved_goods.size())
+                    reserved = std::max<int64_t>(0, _economy_asset_reserved_goods[from_index]);
+                moved = std::min(command.value,
+                                 std::max<int64_t>(0, batch.goods[from_index] - reserved));
+                if (moved > std::numeric_limits<int64_t>::max() - batch.goods[to_index]) {
+                    error = "country_treasury_overflow"; break;
+                }
+                batch.goods[from_index] -= moved;
+                batch.goods[to_index] += moved;
+            }
+            ++batch.countries.state_version[static_cast<size_t>(payer)];
+            ++batch.countries.state_version[static_cast<size_t>(receiver)];
+            mark_country(payer);
+            mark_country(receiver);
+            if (batch.events.size() < 2048) {
+                Event event;
+                event.day = day;
+                event.opcode = command.opcode;
+                event.country_handle = command.target_handle;
+                event.cell = -1;
+                event.old_country_slot = payer;
+                event.new_country_slot = receiver;
+                event.technology_id =
+                    command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES
+                        ? command.domain : -1;
+                event.value = moved;
+                batch.events.push_back(std::move(event));
+            }
+            continue;
+        } else if (command.opcode == COMMAND_ANNEX_COUNTRY) {
+            int32_t victim = -1;
+            int32_t annexer = -1;
+            const uint64_t annexer_handle =
+                receiver_handle_from_payload(command.cell, command.aux);
+            if (!staged_handle(command.target_handle, victim) ||
+                !staged_handle(annexer_handle, annexer)) {
+                error = "country_handle_invalid"; break;
+            }
+            if (victim == annexer) { error = "country_annex_command_invalid"; break; }
+            if ((static_cast<size_t>(victim) < _economy_asset_reserved_cash.size() &&
+                 _economy_asset_reserved_cash[static_cast<size_t>(victim)] > 0)) {
+                error = "country_annex_assets_reserved"; break;
+            }
+            const size_t good_count = _good_ids.size();
+            const size_t victim_goods = static_cast<size_t>(victim) * good_count;
+            const size_t annexer_goods = static_cast<size_t>(annexer) * good_count;
+            bool goods_ok = victim_goods + good_count <= batch.goods.size() &&
+                annexer_goods + good_count <= batch.goods.size();
+            for (size_t good = 0; goods_ok && good < good_count; ++good) {
+                const size_t index = victim_goods + good;
+                if (index < _economy_asset_reserved_goods.size() &&
+                    _economy_asset_reserved_goods[index] > 0) goods_ok = false;
+                else if (batch.goods[index] >
+                         std::numeric_limits<int64_t>::max() -
+                             batch.goods[annexer_goods + good]) goods_ok = false;
+            }
+            int64_t &victim_cash = batch.countries.cash[static_cast<size_t>(victim)];
+            int64_t &annexer_cash = batch.countries.cash[static_cast<size_t>(annexer)];
+            if (!goods_ok ||
+                victim_cash > std::numeric_limits<int64_t>::max() - annexer_cash) {
+                error = "country_annex_assets_invalid"; break;
+            }
+            // Collect the victim's staged territory: committed CSR cells still
+            // owned by it plus cells staged to it earlier in this batch.
+            std::vector<int32_t> victim_cells;
+            if (static_cast<size_t>(victim) + 1u < _country_cell_offsets.size()) {
+                for (int32_t cursor = _country_cell_offsets[static_cast<size_t>(victim)];
+                     cursor < _country_cell_offsets[static_cast<size_t>(victim) + 1u];
+                     ++cursor) {
+                    const int32_t cell = _country_cells[static_cast<size_t>(cursor)];
+                    if (owner_of(cell) == victim) victim_cells.push_back(cell);
+                }
+            }
+            for (const int32_t cell : batch.cell_delta_order) {
+                if (_cell_country_slot[static_cast<size_t>(cell)] != victim &&
+                    owner_of(cell) == victim)
+                    victim_cells.push_back(cell);
+            }
+            std::sort(victim_cells.begin(), victim_cells.end());
+            for (const int32_t cell : victim_cells) {
+                if (batch.cell_delta.set(cell, annexer))
+                    batch.cell_delta_order.push_back(cell);
+                staged_cell_policy(cell) = CellTaxPolicy{};
+            }
+            const int32_t moved_cells = static_cast<int32_t>(victim_cells.size());
+            batch.countries.territory_count[static_cast<size_t>(annexer)] += moved_cells;
+            batch.countries.territory_count[static_cast<size_t>(victim)] = 0;
+            annexer_cash += victim_cash;
+            victim_cash = 0;
+            for (size_t good = 0; good < good_count; ++good) {
+                batch.goods[annexer_goods + good] += batch.goods[victim_goods + good];
+                batch.goods[victim_goods + good] = 0;
+            }
+            // Research queues and pending activations retire with the state.
+            for (int32_t word = 0; word < _technology_words; ++word)
+                batch.pending[static_cast<size_t>(victim) * _technology_words +
+                              static_cast<size_t>(word)] = 0;
+            for (size_t i = 0; i < 32U; ++i)
+                batch.research_queues[static_cast<size_t>(victim) * 32U + i] = -1;
+            for (size_t i = 0; i < 4U; ++i)
+                batch.research_queue_lengths[static_cast<size_t>(victim) * 4U + i] = 0;
+            batch.research_deferred_points[static_cast<size_t>(victim)] = 0;
+            batch.countries.active[static_cast<size_t>(victim)] = 0;
+            ++batch.countries.generation[static_cast<size_t>(victim)];
+            ++batch.countries.state_version[static_cast<size_t>(victim)];
+            ++batch.countries.state_version[static_cast<size_t>(annexer)];
+            mark_country(victim);
+            mark_country(annexer);
+            // Territory evidence: one event per moved cell (deterministic
+            // tail kept within the public ring), then a summary record.
+            const size_t first_cell_event =
+                victim_cells.size() > 2047 ? victim_cells.size() - 2047 : 0;
+            for (size_t i = first_cell_event; i < victim_cells.size(); ++i) {
+                Event event;
+                event.day = day;
+                event.opcode = COMMAND_ANNEX_COUNTRY;
+                event.country_handle = annexer_handle;
+                event.cell = victim_cells[i];
+                event.old_country_slot = victim;
+                event.new_country_slot = annexer;
+                batch.events.push_back(std::move(event));
+            }
+            Event summary;
+            summary.day = day;
+            summary.opcode = COMMAND_ANNEX_COUNTRY;
+            summary.country_handle = annexer_handle;
+            summary.cell = -1;
+            summary.old_country_slot = victim;
+            summary.new_country_slot = annexer;
+            summary.value = moved_cells;
+            summary.stable_id = batch.countries.stable_id[static_cast<size_t>(victim)];
+            summary.display_name =
+                batch.countries.display_name[static_cast<size_t>(victim)];
+            batch.events.push_back(std::move(summary));
+            continue;
         } else if (command.opcode == COMMAND_SET_RESEARCH_WEIGHTS) {
             int32_t slot = -1;
             if (!staged_handle(command.target_handle, slot)) { error = "country_handle_invalid"; break; }
@@ -3703,6 +4218,7 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
     std::vector<int32_t> staged_export_tax_modes =
         std::move(batch.export_tax_mode_overrides);
     auto staged_cell_tax_updates = std::move(batch.cell_tax_updates);
+    auto staged_treasury_consumed = std::move(batch.treasury_consumed);
     const bool stage_technologies = batch.stage_technologies;
     const bool stage_goods = batch.stage_goods;
     const bool stage_research = batch.stage_research;
@@ -3744,6 +4260,18 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
     _countries = std::move(staged_countries);
     if (stage_technologies) _country_technologies = std::move(staged_technologies);
     if (stage_goods) _country_goods = std::move(staged_goods);
+    if (!staged_treasury_consumed.empty()) {
+        _country_treasury_goods_consumed_total.resize(_countries.active.size(), 0);
+        for (const auto &entry : staged_treasury_consumed) {
+            if (entry.first < 0 || static_cast<size_t>(entry.first) >=
+                    _country_treasury_goods_consumed_total.size()) continue;
+            int64_t &total = _country_treasury_goods_consumed_total[
+                static_cast<size_t>(entry.first)];
+            total = entry.second > std::numeric_limits<int64_t>::max() - total
+                ? std::numeric_limits<int64_t>::max() : total + entry.second;
+        }
+        _state_hash_cache_valid = false;
+    }
     if (stage_research) {
         _country_discovered = std::move(staged_discovered);
         _country_pending_technologies = std::move(staged_pending);
@@ -3758,6 +4286,7 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
         const size_t country_count = _countries.active.size();
         _country_research_purchased_total.resize(country_count, 0);
         _country_research_consumed_total.resize(country_count, 0);
+        _country_treasury_goods_consumed_total.resize(country_count, 0);
         _country_research_progress_total.resize(country_count, 0);
         _country_research_completed_total.resize(country_count, 0);
         _research_modifier_cache.resize(country_count);
@@ -4613,6 +5142,7 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_research_deferred_points.clear();
     _country_research_purchased_total.clear();
     _country_research_consumed_total.clear();
+    _country_treasury_goods_consumed_total.clear();
     _country_research_progress_total.clear();
     _country_research_completed_total.clear();
     _country_tax_defaults.clear();
@@ -4851,6 +5381,8 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _country_research_auto_purchase = repaired.research_auto_purchase;
     _country_research_purchased_total = repaired.research_purchased_total;
     _country_research_consumed_total = repaired.research_consumed_total;
+    _country_treasury_goods_consumed_total = repaired.treasury_goods_consumed_total;
+    _country_treasury_goods_consumed_total.resize(country_count, 0);
     _country_tax_defaults = repaired.country_tax_defaults;
     _country_tax_default_modes = repaired.country_tax_default_modes;
     _country_income_tax_overrides = repaired.country_income_tax_overrides;
@@ -7303,8 +7835,23 @@ void NativeCountryRuntime::sample_economy_goods_audit(
     const auto &consumed = worker != nullptr
         ? worker->research_consumed_total
         : _country_research_consumed_total;
+    // Era advancement treasury sink is a goods sink of the same kind: it is
+    // folded into the returned research_consumed_total so Economy VERIFY sees
+    // one monotone "Country consumed goods" counter.
+    const auto &treasury_consumed = worker != nullptr
+        ? worker->treasury_goods_consumed_total
+        : _country_treasury_goods_consumed_total;
     for (size_t slot = 0; slot < country_count; ++slot) {
         if (slot >= active.size() || active[slot] == 0) continue;
+        if (slot < treasury_consumed.size()) {
+            const int64_t value = treasury_consumed[slot];
+            if (value > 0 &&
+                research_consumed_total >
+                    std::numeric_limits<int64_t>::max() - value)
+                research_consumed_total = std::numeric_limits<int64_t>::max();
+            else if (value > 0)
+                research_consumed_total += value;
+        }
         if (slot < cash.size()) {
             const int64_t value = cash[slot];
             if (value > 0 &&
@@ -7351,7 +7898,48 @@ int64_t NativeCountryRuntime::research_consumed_total() const {
             return std::numeric_limits<int64_t>::max();
         total += value;
     }
+    // Include the transient era-advancement sink (see sample_economy_goods_audit).
+    const int64_t treasury = treasury_goods_consumed_total();
+    if (treasury > 0 && total > std::numeric_limits<int64_t>::max() - treasury)
+        return std::numeric_limits<int64_t>::max();
+    return total + std::max<int64_t>(0, treasury);
+}
+
+int64_t NativeCountryRuntime::treasury_goods_consumed_total() const {
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_economy_audit_snapshot() : nullptr;
+    const auto &values = worker ? worker->treasury_goods_consumed_total
+                                : _country_treasury_goods_consumed_total;
+    const auto &active = worker ? worker->country_active : _countries.active;
+    int64_t total = 0;
+    for (size_t slot = 0; slot < values.size() && slot < active.size(); ++slot) {
+        if (active[slot] == 0) continue;
+        const int64_t value = values[slot];
+        if (value <= 0) continue;
+        if (total > std::numeric_limits<int64_t>::max() - value)
+            return std::numeric_limits<int64_t>::max();
+        total += value;
+    }
     return total;
+}
+
+int64_t NativeCountryRuntime::good_for_slot(int32_t country_slot,
+                                            int32_t good_id) const {
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_economy_audit_snapshot() : nullptr;
+    const auto &active = worker ? worker->country_active : _countries.active;
+    const auto &goods = worker ? worker->country_goods : _country_goods;
+    const size_t good_count = worker ? static_cast<size_t>(worker->good_count)
+                                     : _good_ids.size();
+    if (country_slot < 0 || good_id < 0 ||
+        static_cast<size_t>(country_slot) >= active.size() ||
+        active[static_cast<size_t>(country_slot)] == 0 ||
+        static_cast<size_t>(good_id) >= good_count) return 0;
+    const size_t index = static_cast<size_t>(country_slot) * good_count +
+        static_cast<size_t>(good_id);
+    return index < goods.size() ? goods[index] : 0;
 }
 
 bool NativeCountryRuntime::capture_peer_context(
@@ -8179,9 +8767,19 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
 
     if (intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
         intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT) {
+        // Route onto the Effect POD both once the worker owns EFFECT and in
+        // the ACTIVE grant-pending window before its first committed day.
+        // In that window the sync EffectRuntime is no longer driven (the
+        // worker Effect stage is), while resolve_pending_country_effect_peers
+        // only promotes PENDING results from the POD snapshot. Registering on
+        // the sync facade there left the instance unfired and the Country
+        // plan waiting on the peer forever (day_wait_peer_stall_timeout),
+        // e.g. for a GRANT_TECHNOLOGY submitted on the first game day.
         const bool effect_worker_authoritative = _simulation_host != nullptr &&
-            _simulation_host->domain_is_worker_authoritative(
-                RuntimeDomainId::EFFECT);
+            _simulation_host->effect_pod_transport_ready() &&
+            (_simulation_host->domain_is_worker_authoritative(
+                 RuntimeDomainId::EFFECT) ||
+             _simulation_host->domain_grant_pending(RuntimeDomainId::EFFECT));
         {
             // Unconditional entry probe: tells us the adapter actually ran and
             // which branch it picked. Rate limited.
@@ -9584,7 +10182,7 @@ void NativeCountryRuntime::push_event(Event event) {
 
 Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t limit) const {
     limit = std::clamp(limit, 1, 512);
-    PackedInt64Array event_ids, days, handles;
+    PackedInt64Array event_ids, days, handles, values;
     PackedInt32Array opcodes, cells, old_slots, new_slots, technologies, signals,
         signal_sources, evidence_deltas;
     PackedStringArray stable_ids, display_names;
@@ -9593,6 +10191,7 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
         event_ids.push_back(event.event_id);
         days.push_back(event.day);
         handles.push_back(static_cast<int64_t>(event.country_handle));
+        values.push_back(event.value);
         opcodes.push_back(event.opcode);
         cells.push_back(event.cell);
         old_slots.push_back(event.old_country_slot);
@@ -9617,6 +10216,7 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
     out["signal_ids"] = signals;
     out["signal_source_kinds"] = signal_sources;
     out["evidence_deltas"] = evidence_deltas;
+    out["values"] = values;
     out["stable_ids"] = stable_ids;
     out["display_names"] = display_names;
     out["generation"] = static_cast<int64_t>(_generation);
@@ -9814,7 +10414,7 @@ bool NativeCountryRuntime::decode_save_in_place(
     int32_t tech_count = 0, tech_words = 0, signal_count = 0, signal_words = 0;
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
-    if (version != SCHEMA_VERSION && version != 12 && version != 11) {
+    if (version != SCHEMA_VERSION && version != 13 && version != 12 && version != 11) {
         error = "catalog_hash_mismatch";
         return false;
     }
@@ -9887,8 +10487,16 @@ bool NativeCountryRuntime::decode_save_in_place(
             !read_string(bytes, cursor, countries.stable_id[slot]) || !read_string(bytes, cursor, countries.display_name[slot]) ||
             !read_le(bytes, cursor, countries.territory_count[slot]) || !read_le(bytes, cursor, countries.cash[slot]) ||
             !read_le(bytes, cursor, countries.state_version[slot])) { error = "country_save_country_record_truncated"; return false; }
-        if (countries.active[slot] == 0 || countries.generation[slot] == 0 || countries.stable_id[slot].empty() ||
-            countries.display_name[slot].empty() || countries.territory_count[slot] <= 0 || countries.cash[slot] < 0 ||
+        // v14 admits annexed (inactive) records: they keep their identity and
+        // bumped generation, own no territory and hold no treasury.
+        const bool inactive_record = countries.active[slot] == 0;
+        if ((inactive_record && (version < 14 || countries.territory_count[slot] != 0 ||
+                                 countries.cash[slot] != 0)) ||
+            countries.active[slot] > 1 ||
+            countries.generation[slot] == 0 || countries.stable_id[slot].empty() ||
+            countries.display_name[slot].empty() ||
+            (!inactive_record && countries.territory_count[slot] <= 0) ||
+            countries.cash[slot] < 0 ||
             !stable_ids.insert(countries.stable_id[slot]).second) { error = "country_save_country_record_invalid"; return false; }
     }
     std::vector<int32_t> owners;
@@ -10059,6 +10667,15 @@ bool NativeCountryRuntime::decode_save_in_place(
     }
     if (territory_counts != countries.territory_count) { error = "country_save_territory_count_mismatch"; return false; }
     for (int64_t quantity : goods) if (quantity < 0) { error = "country_save_treasury_negative"; return false; }
+    for (int32_t slot = 0; slot < country_count; ++slot) {
+        if (countries.active[static_cast<size_t>(slot)] != 0) continue;
+        for (size_t good = 0; good < _good_ids.size(); ++good) {
+            if (goods[static_cast<size_t>(slot) * _good_ids.size() + good] != 0) {
+                error = "country_save_inactive_country_treasury";
+                return false;
+            }
+        }
+    }
     std::vector<int32_t> tax_defaults(
         static_cast<size_t>(country_count) * TAX_KIND_COUNT, 0);
     std::vector<int32_t> income_tax(
@@ -10429,8 +11046,12 @@ bool NativeCountryRuntime::decode_save_in_place(
     auto saved_handle_valid = [&](uint64_t handle) {
         const int32_t slot = static_cast<int32_t>(handle & 0xffffffffULL);
         const uint32_t handle_generation = static_cast<uint32_t>(handle >> 32U);
-        return slot >= 0 && slot < country_count && countries.active[slot] != 0 &&
-            countries.generation[slot] == handle_generation;
+        if (slot < 0 || slot >= country_count || handle_generation == 0) return false;
+        // A command admitted before an annexation keeps its (now stale)
+        // handle; execution rejects it as country_handle_invalid.
+        if (countries.active[slot] == 0)
+            return handle_generation < countries.generation[slot];
+        return countries.generation[slot] == handle_generation;
     };
     for (uint64_t i = 0; i < command_count; ++i) {
         Command command;
@@ -10467,7 +11088,8 @@ bool NativeCountryRuntime::decode_save_in_place(
             !read_le(bytes, cursor, command.effect_request_id) ||
             !read_le(bytes, cursor, command.effect_idempotency_key)) { error = "country_save_command_truncated"; return false; }
         if (command.opcode < COMMAND_CREATE_COUNTRY ||
-            command.opcode > COMMAND_CLAIM_UNOWNED_TERRITORY ||
+            command.opcode > COMMAND_OPCODE_MAX ||
+            command_opcode_reserved(command.opcode) ||
             command.effective_day < 0 ||
             command.sequence < 0 || command.submit_order == 0 ||
             !command_submit_orders.insert(command.submit_order).second) {
@@ -10490,6 +11112,26 @@ bool NativeCountryRuntime::decode_save_in_place(
                 _is_water[static_cast<size_t>(command.cell)] != 0 ||
                 (command.target_handle != 0 && !saved_handle_valid(command.target_handle))) {
                 error = "country_save_transfer_command_invalid"; return false;
+            }
+        } else if (command.opcode == COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES ||
+                   command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES ||
+                   command.opcode == COMMAND_ANNEX_COUNTRY) {
+            // Pending handles may legitimately go stale before execution
+            // (e.g. annexed earlier); only the shape is validated here and the
+            // execution path rejects stale handles as country_handle_invalid.
+            const uint64_t receiver =
+                receiver_handle_from_payload(command.cell, command.aux);
+            const int32_t payer_slot =
+                static_cast<int32_t>(command.target_handle & 0xffffffffULL);
+            if (command.target_handle == 0 || command.cell < 0 ||
+                command.cell >= country_count || command.aux <= 0 ||
+                payer_slot < 0 || payer_slot >= country_count ||
+                receiver == command.target_handle ||
+                (command.opcode != COMMAND_ANNEX_COUNTRY && command.value <= 0) ||
+                (command.opcode == COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES &&
+                 (command.domain < 0 ||
+                  command.domain >= static_cast<int32_t>(_good_ids.size())))) {
+                error = "country_save_transfer_between_command_invalid"; return false;
             }
         } else if (!saved_handle_valid(command.target_handle) ||
                    ((command.opcode == COMMAND_GRANT_TECHNOLOGY ||

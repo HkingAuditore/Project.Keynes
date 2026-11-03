@@ -20,6 +20,8 @@ var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
 var _ideology_catalog_cache: Dictionary = {}
 var _ideology_catalog_facade = null
+var _military_catalog_cache: Dictionary = {}
+var _military_catalog_facade = null
 var _economy_history := EconomyHistoryBuffer.new()
 ## 国库收支的逐日趋势。与产值账本一样按已提交日采样，面板关闭时也继续走。
 var _fiscal_history := EconomyFiscalHistory.new()
@@ -33,6 +35,8 @@ func set_context(generator) -> void:
 	_section_cache_revisions.clear()
 	_ideology_catalog_cache.clear()
 	_ideology_catalog_facade = null
+	_military_catalog_cache.clear()
+	_military_catalog_facade = null
 	_economy_history.reset()
 	_fiscal_history.reset()
 
@@ -97,6 +101,9 @@ func invalidate_cache(domains: int = -1) -> void:
 	if (domains & 4) != 0:
 		_section_cache.erase("ideology")
 		_section_cache_revisions.erase("ideology")
+	if (domains & 8) != 0:
+		_section_cache.erase("military")
+		_section_cache_revisions.erase("military")
 
 
 func cached_section(section_id: String) -> Dictionary:
@@ -283,7 +290,7 @@ func player_research_states() -> PackedInt32Array:
 
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology"] else "technology"
+		"technology", "economy", "ideology", "military"] else "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	# Keep the pre-snapshot path intentionally verbose for debug/A-B comparison.
@@ -355,6 +362,7 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 		"research": research,
 		"development": development,
 		"ideology": ideology,
+		"procurement": procurement_model(economy_facade, country_handle),
 	}
 	if normalized_section == "technology":
 		model.merge(build_static_catalog(), true)
@@ -390,7 +398,10 @@ func _country_context() -> Dictionary:
 
 
 func _section_mask(section_id: String) -> int:
-	return int({"technology": 1, "economy": 2, "ideology": 4}.get(section_id, 1))
+	# 军事没有原生 country_ui_snapshot 分片（它走自己的 facade），给 0 表示
+	# 「不需要国家快照」，国家壳数据仍由 summary 提供。
+	return int({"technology": 1, "economy": 2, "ideology": 4, "military": 0}.get(
+		section_id, 1))
 
 
 func build_summary_snapshot(country_handle: int, summary: Dictionary,
@@ -508,12 +519,18 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 
 func build(section_id: String = "technology") -> Dictionary:
 	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology"] else "technology"
+		"technology", "economy", "ideology", "military"] else "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	var context := _country_context()
 	if not bool(context.get("ok", false)):
-		return _unavailable_model(String(context.get("reason", "国家数据暂不可用")))
+		var unavailable := _unavailable_model(String(context.get("reason", "国家数据暂不可用")))
+		# 军事面板有自己的一条数据通路（军事 facade + 它自己的国家槽），
+		# 国家壳没就绪时也不能整段消失：面板要能说清「军事机构尚未接通」。
+		if normalized_section == "military":
+			unavailable["military"] = _unavailable_military_section(0,
+				String(context.get("reason", "国家数据暂不可用")))
+		return unavailable
 	var facade = context.facade
 	var country_handle := int(context.country_handle)
 	var ui_snapshot: Dictionary = facade.ui_snapshot(country_handle,
@@ -531,6 +548,11 @@ func build(section_id: String = "technology") -> Dictionary:
 				economy_facade, ui_snapshot, int(context.start_cell))
 		"ideology":
 			section_snapshot = build_ideology_snapshot(country_handle, ui_snapshot)
+		"military":
+			# 军事自成一个模型源：CountryViewModel 只负责装配，军事自己的展示
+			# 逻辑在 MilitaryViewModel 里。这里先把模型占位放好，装配在
+			# merge 之后（需要 model 本身带 good_ids/country_handle 才能查名字）。
+			section_snapshot = {}
 	var treasury: Dictionary = section_snapshot.get("treasury", {})
 	var treasury_available := bool(treasury.get("available", false))
 	var cash := int(treasury.get("cash", 0)) if treasury_available \
@@ -547,15 +569,158 @@ func build(section_id: String = "technology") -> Dictionary:
 		model["gdp_ledger"] = _gdp_ledger
 		model["strata_table"] = strata_table()
 	model.merge(section_snapshot, true)
+	if normalized_section in ["technology", "economy"]:
+		model["procurement"] = procurement_model(economy_facade, country_handle)
 	if normalized_section == "technology":
 		var research: Dictionary = model.get("research", {})
 		research["country_cash"] = cash
 		model["research"] = research
 		model.merge(build_static_catalog(), true)
+	if normalized_section == "military":
+		# 军事面板需要 dense good id → 稳定 id 的对照表来给装备类别起名。
+		model["good_ids"] = _good_stable_ids()
+		build_military_model(country_handle, model)
 	_section_cache[normalized_section] = model
 	_section_cache_revisions[normalized_section] = model.get(
 		"revision_components", {}).duplicate(false)
 	return model
+
+
+## 「军事一起不可用」的兜底段：国家壳都没就绪时也要给军事面板一个可读原因。
+func _unavailable_military_section(country_handle: int, reason: String) -> Dictionary:
+	return {
+		"available": false,
+		"reason": "军事数据暂不可用（%s）" % reason if not reason.is_empty()
+			else "军事数据暂不可用",
+		"facade": null,
+		"country_handle": country_handle,
+	}
+
+
+## 军事章节的模型。军事面板有自己的视图模型（MilitaryViewModel），这里只负责
+## 把「国家上下文 + 军事 facade + 目录 + 快照」装成它认识的那一份，并在
+## 会话没有军事绑定时给出可恢复的原因，而不是让面板读空。
+##
+## 查询都发生在打开/每日刷新那一刻（走 GameUIManager 的 200ms 合并窗口），
+## 不进任何热循环；`query_ms` 只用于诊断打印。
+func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
+	var started_usec := Time.get_ticks_usec()
+	var facade = null
+	if _generator != null and _generator.has_method("get_military_facade"):
+		facade = _generator.get_military_facade()
+	var section := {
+		"available": false,
+		"reason": "军事机构尚未接通：本局没有可用的军事运行时。",
+		"facade": facade,
+		"country_handle": country_handle,
+	}
+	if facade == null:
+		model["military"] = section
+		return section
+	if facade.has_method("is_configured") and not bool(facade.call("is_configured")):
+		var missing := String(facade.call("missing_api_reason")) \
+			if facade.has_method("missing_api_reason") else ""
+		section["reason"] = "军事机构尚未就绪" if missing.is_empty() \
+			else "军事机构尚未就绪（%s）" % missing
+		model["military"] = section
+		return section
+	if facade.has_method("catalog") and _military_catalog_facade != facade:
+		_military_catalog_facade = facade
+		_military_catalog_cache = {}
+	var catalog: Dictionary = _military_catalog_cache
+	if catalog.is_empty() and facade.has_method("catalog"):
+		catalog = facade.call("catalog")
+		if catalog is Dictionary and bool(catalog.get("ok", false)):
+			_military_catalog_cache = catalog
+	var snapshot: Dictionary = {}
+	if facade.has_method("country_snapshot"):
+		snapshot = facade.call("country_snapshot", country_handle)
+		if not snapshot is Dictionary:
+			snapshot = {}
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		var raw_reason := String(snapshot.get("reason", "")) if snapshot is Dictionary else ""
+		section["reason"] = "军事数据暂不可用" if raw_reason.is_empty() \
+			else "军事数据暂不可用（%s）" % raw_reason
+		model["military"] = section
+		return section
+	var armies: Array = []
+	if facade.has_method("armies"):
+		var fetched = facade.call("armies", country_handle)
+		armies = fetched if fetched is Array else []
+	var view: Dictionary = {}
+	if facade.has_method("catalog_view"):
+		var fetched_view = facade.call("catalog_view")
+		view = fetched_view if fetched_view is Dictionary else {}
+	# 目录显示名（military_catalog.json）与原生 dense 目录合并：原生给 dense id
+	# 与数值，GDScript 目录给玩家读的名字。
+	var merged_catalog := _merge_military_catalog(catalog, view)
+	section = {
+		"available": true,
+		"facade": facade,
+		"country_handle": country_handle,
+		"snapshot": snapshot,
+		"armies": armies,
+		"catalog": merged_catalog,
+		"query_ms": (Time.get_ticks_usec() - started_usec) / 1000.0,
+	}
+	model["military"] = section
+	return section
+
+
+## 目录合并：dense 数值取原生（真值），显示名/描述取 GDScript 目录。
+## 原生行的 `id` 是稳定 id（String），所以合并是「按 id 对齐」而不是按位置。
+func _merge_military_catalog(native_catalog: Dictionary, view: Dictionary) -> Dictionary:
+	var display_names := {}
+	var descriptions := {}
+	var category_names := {}
+	var authored: Array = native_catalog.get("units", []) if native_catalog.get(
+		"units", null) is Array else []
+	for raw in authored:
+		if not raw is Dictionary:
+			continue
+		var row: Dictionary = raw
+		var unit_id := String(row.get("id", ""))
+		if unit_id.is_empty():
+			continue
+		display_names[unit_id] = String(row.get("name", unit_id))
+		descriptions[unit_id] = String(row.get("description", ""))
+	var authored_categories: Array = native_catalog.get("equipment_categories", []) \
+		if native_catalog.get("equipment_categories", null) is Array else []
+	for raw in authored_categories:
+		if not raw is Dictionary:
+			continue
+		var row: Dictionary = raw
+		category_names[String(row.get("id", ""))] = String(row.get(
+			"name", row.get("id", "")))
+	# 原生目录没有的项（旧存档、目录 hash 不一致）用原生 id 兜底显示。
+	for raw in view.get("units", []) if view.get("units", null) is Array else []:
+		if raw is Dictionary:
+			var unit_id := String((raw as Dictionary).get("id", ""))
+			if not unit_id.is_empty() and not display_names.has(unit_id):
+				display_names[unit_id] = unit_id
+	for raw in view.get("categories", []) if view.get("categories", null) is Array else []:
+		if raw is Dictionary:
+			var category_id := String((raw as Dictionary).get("id", ""))
+			if not category_id.is_empty() and not category_names.has(category_id):
+				category_names[category_id] = category_id
+	var merged := view.duplicate(true)
+	merged["display_names"] = display_names
+	merged["descriptions"] = descriptions
+	merged["category_names"] = category_names
+	merged["units"] = view.get("units", [])
+	merged["categories"] = view.get("categories", [])
+	merged["state_buildings"] = view.get("state_buildings", [])
+	if not bool(merged.get("ok", false)):
+		merged["ok"] = true
+	return merged
+
+
+## dense good id → 稳定 id。GoodProfileRegistry 的 good_ids 就是 EconomyCatalog 的
+## dense 顺序，军事目录里的装备类别用的是同一套 dense id。
+static func _good_stable_ids() -> PackedStringArray:
+	var columns: Dictionary = GoodProfileRegistryScript.compile_native_columns()
+	var ids = columns.get("good_ids", PackedStringArray())
+	return ids if ids is PackedStringArray else PackedStringArray()
 
 
 func _tax_availability(economy_facade, cell: int) -> Dictionary:
@@ -921,6 +1086,32 @@ static func ideology_player_reason(reason: String) -> String:
 			return "载入中…"
 		_:
 			return reason if not reason.is_empty() else "理念事务暂不可用。"
+
+
+## 国家购买预算快照（EconomyFacade.country_procurement_snapshot）。原生接口缺席或
+## 查询失败时返回 {available: false}，UI 退回按国库现金估算，不显示实付分项。
+static func procurement_model(economy_facade, country_handle: int) -> Dictionary:
+	if economy_facade == null or country_handle == 0 \
+			or not economy_facade.has_method("country_procurement_snapshot"):
+		return {"available": false}
+	var snapshot = economy_facade.country_procurement_snapshot(country_handle)
+	return present_procurement(snapshot if snapshot is Dictionary else {})
+
+
+static func present_procurement(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or (snapshot.has("ok") and not bool(snapshot.get("ok", false))):
+		return {"available": false,
+			"reason": String(snapshot.get("reason", "国家购买快照暂不可用"))}
+	var out := {"available": true}
+	for key in ["policy_enabled", "era_active"]:
+		out[key] = bool(snapshot.get(key, false))
+	for key in ["treasury_share_bp", "research_share_bp", "national_daily_budget",
+			"research_daily_budget", "other_daily_budget", "era_daily_budget",
+			"colonization_daily_budget", "era_cash_spent_total", "era_last_epoch_cash",
+			"research_cash_spent_last_epoch", "colonization_cash_spent_last_epoch",
+			"trade_orders_total"]:
+		out[key] = int(snapshot.get(key, 0))
+	return out
 
 
 func _treasury_model(facade, country_handle: int) -> Dictionary:

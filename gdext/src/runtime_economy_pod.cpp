@@ -1097,6 +1097,48 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
         }
         return true;
     }
+    case NativeEconomyRuntime::COMMAND_MILITARY_CONVERT_COHORT: {
+        // B: state-directed conversion inside one cell. payload0 = heads,
+        // target_country = destination signature, payload1 = source signature,
+        // target_cell = the cell. Both cohorts are resolved in THIS store, so
+        // no slot id crosses an execution boundary and the move is conserved
+        // inside the same cell.
+        const int32_t conv_cell = command.target_cell;
+        const int32_t dest_signature = static_cast<int32_t>(command.target_country);
+        const int32_t source_signature = static_cast<int32_t>(command.payload1);
+        if (conv_cell < 0 || dest_signature < 0 || source_signature < 0) {
+            error = "military_convert_target_invalid";
+            return false;
+        }
+        int32_t src = population.find_signature(conv_cell,
+            static_cast<uint32_t>(source_signature));
+        if (src < 0 || population.active[static_cast<size_t>(src)] == 0) {
+            error = "military_convert_source_missing";
+            return false;
+        }
+        const int64_t want = std::max<int64_t>(0, command.payload0);
+        const int64_t available = std::max<int64_t>(0, population.population[static_cast<size_t>(src)]);
+        const int64_t moved = std::min(want, available);
+        if (moved <= 0) {
+            error = "military_convert_source_empty";
+            return false;
+        }
+        int32_t dst = population.find_signature(conv_cell,
+            static_cast<uint32_t>(dest_signature));
+        if (dst < 0) {
+            dst = population.allocate_slot(conv_cell, static_cast<uint32_t>(dest_signature));
+            if (dst < 0) {
+                error = "military_convert_allocation_failed";
+                return false;
+            }
+        }
+        population.population.write_scalar(static_cast<size_t>(src),
+            available - moved);
+        population.population.write_scalar(static_cast<size_t>(dst),
+            std::max<int64_t>(0, population.population[static_cast<size_t>(dst)]) + moved);
+        settled_out = moved;
+        return true;
+    }
     case NativeEconomyRuntime::COMMAND_MOVE_POPULATION:
     case NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE: {
         int32_t slot = -1;
@@ -1121,11 +1163,24 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             command.opcode == NativeEconomyRuntime::COMMAND_MOVE_POPULATION
                 ? command.target_cell
                 : population.page_cell[static_cast<size_t>(page)];
-        structural.signature =
-            command.opcode == NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE
-                ? static_cast<int32_t>(command.target_country)
-                : static_cast<int32_t>(
-                      population.signature_id[static_cast<size_t>(slot)]);
+        // CHANGE_SIGNATURE's destination signature rides payload1. The
+        // project-wide target_country / target_cell lanes already carry the
+        // market id, good id and destination cell, so putting a signature there
+        // turned the cell into a signature and failed commit validation.
+        int32_t destination_signature =
+            static_cast<int32_t>(population.signature_id[static_cast<size_t>(slot)]);
+        if (command.opcode == NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE) {
+            destination_signature = command.payload1 > 0
+                ? static_cast<int32_t>(command.payload1)
+                : static_cast<int32_t>(command.target_country);
+        }
+        structural.signature = destination_signature;
+        // The POD mirror and the live runtime do not share cohort slot ids, so
+        // the source is re-resolved at commit time from (cell, source signature).
+        // The funds lane is unused for a signature move and carries that id.
+        structural.funds = command.opcode == NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE
+            ? static_cast<int64_t>(population.signature_id[static_cast<size_t>(slot)])
+            : 0;
         structural.population = requested;
         structural.sequence = static_cast<int64_t>(command.submit_order);
         _state.structural_commands.push_back(structural);
@@ -1622,8 +1677,19 @@ bool RuntimeEconomyPodAuthority::queue_command(
         _terminal_receipts.push_back(rejected);
         return true;
     };
-    // Phase 4: admit only legacy opcodes 1..23.
-    if (command.opcode < 1 || command.opcode > 23) {
+    // Phase 4: admit the legacy opcodes 1..23 plus the military cohort-convert
+    // opcode (24), which carries no cohort slot id and is applied inside this
+    // store by the plan stage. The army personnel lane (contract §1.2) admits
+    // 30/31/32 on the same terms: they name the army by Military handle and the
+    // cohort by (cell, signature), never by a slot id.
+    const bool military_convert =
+        command.opcode == NativeEconomyRuntime::COMMAND_MILITARY_CONVERT_COHORT;
+    const bool army_personnel_lane =
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_EMBARK ||
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_DISEMBARK ||
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_MERGE_LANES;
+    if (!military_convert && !army_personnel_lane &&
+        (command.opcode < 1 || command.opcode > 23)) {
         return reject_admission("economy_command_opcode_out_of_range");
     }
     if (command.session_epoch != 0 && _input.session_epoch != 0 &&

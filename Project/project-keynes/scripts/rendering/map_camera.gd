@@ -28,6 +28,9 @@ signal view_changed(world_rect: Rect2, center: Vector2, zoom_value: float)
 
 @export var zoom_min: float = 0.25
 @export var zoom_max: float = 6.0
+## [mobile-zoom-compensate 2026-11-03] 允许 set_view_scale_compensation() 收紧有效上限。
+## 关掉它 = 回到「zoom_max 就是物理上限」的旧行为（QA / 排查用）。
+@export var zoom_max_compensated: bool = true
 @export var zoom_step: float = 1.15
 @export var pan_button: MouseButton = MOUSE_BUTTON_RIGHT
 # 缩放平滑速度（越大越快到位）。滚轮/键盘缩放走平滑插值，捏合走即时跟手。
@@ -51,6 +54,10 @@ var _world_bounds: Rect2 = Rect2()
 var _fit_floor_zoom: float = 0.0
 var _horizontal_wrap_enabled: bool = false
 var _horizontal_wrap_period_x: float = 0.0
+# [mobile-zoom-compensate 2026-11-03] 1 world unit 被视口放大成多少个物理像素。
+# 移动端 content_scale_mode=CANVAS_ITEMS（scripts/ui/mobile_ui_scaling.gd）之后实际是
+# zoom × total_scale；桌面/Web 恒 1.0（除以 1.0 逐位不变，桌面行为保持原样）。
+var _view_scale_compensation: float = 1.0
 
 # ── 平滑缩放状态 ──
 var _target_zoom: Vector2 = Vector2.ONE
@@ -60,13 +67,16 @@ var _last_emitted_view_center: Vector2 = Vector2(INF, INF)
 var _last_emitted_view_size: Vector2 = Vector2.ZERO
 var _last_emitted_view_zoom: float = -1.0
 
+## [camera-zoom-qa] 截图用的强制倍率（pk_debug.cfg [camera] zoom），及保持到期的时刻。
+var _qa_zoom: float = 0.0
+var _qa_zoom_until_ms: int = 0
+
 # ── 鼠标/单指平移与点按状态 ──
 var _pan_active: bool = false          # 是否正在用鼠标按键拖拽平移
 var _press_active: bool = false        # 左键/单指是否按下（用于 tap 判定）
 var _press_screen: Vector2 = Vector2.ZERO
 var _press_time_ms: int = 0
 var _press_moved: float = 0.0          # 按下后累计移动像素
-
 # ── 惯性 ──
 var _pan_velocity: Vector2 = Vector2.ZERO   # 世界单位/秒
 var _prev_position: Vector2 = Vector2.ZERO
@@ -97,6 +107,15 @@ func _ready() -> void:
 	if not get_viewport().size_changed.is_connected(_on_viewport_size_changed):
 		get_viewport().size_changed.connect(_on_viewport_size_changed)
 	_emit_view_changed_if_needed(true)
+	# [camera-zoom-qa 2026-11-03] 截图/复现用：pk_debug.cfg 写 [camera] zoom=3.0 可让
+	# 相机开局就停在指定倍率（桌面跑一次就能看到高倍率下的 dither/徽章细节）。
+	var zoom_cfg := ConfigFile.new()
+	if zoom_cfg.load("user://pk_debug.cfg") == OK:
+		var z := float(zoom_cfg.get_value("camera", "zoom", 0.0))
+		if z > 0.0:
+			_qa_zoom = clampf(z, _minimum_zoom(), zoom_max)
+			_qa_zoom_until_ms = Time.get_ticks_msec() + 8000
+			print("[camera-zoom-qa] zoom=%.2f (held for 8s)" % _qa_zoom)
 
 func set_world_bounds(bounds: Rect2) -> void:
 	_world_bounds = bounds
@@ -129,7 +148,7 @@ func fit_to_viewport(
 	var sx := area.size.x / (_world_bounds.size.x * margin)
 	var sy := area.size.y / (_world_bounds.size.y * margin)
 	var requested_zoom := maxf(sx, sy) if fill_safe_area else minf(sx, sy)
-	var s := clampf(requested_zoom, zoom_min, zoom_max)
+	var s := clampf(requested_zoom, zoom_min, _maximum_zoom())
 	_fit_floor_zoom = s if fill_safe_area else 0.0
 	zoom = Vector2(s, s)
 	_target_zoom = zoom
@@ -165,6 +184,13 @@ func ensure_point_visible(world_pos: Vector2, safe_area: Rect2) -> void:
 # ───────────────────────────── 每帧平滑 ─────────────────────────────
 
 func _process(delta: float) -> void:
+	# [camera-zoom-qa] 相机在地图装配后会被 fit_to_viewport 重新拉回整图，所以 QA
+	# 倍率要在开局 8 秒内每帧重新压住，截图才有意义。
+	if _qa_zoom > 0.0 and Time.get_ticks_msec() < _qa_zoom_until_ms:
+		zoom = Vector2.ONE * _qa_zoom
+		_target_zoom = zoom
+	elif _qa_zoom > 0.0:
+		_qa_zoom = 0.0
 	_update_zoom(delta)
 	_update_pan_anim(delta)
 	_update_inertia(delta)
@@ -293,7 +319,7 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> void:
 					_end_pan()
 
 func _handle_mouse_motion(mm: InputEventMouseMotion) -> void:
-	if _pinching:
+	if _pinching or _multitouch_guard:
 		return
 	if not _pan_active:
 		return
@@ -313,12 +339,16 @@ func _handle_screen_touch(t: InputEventScreenTouch) -> void:
 	if count >= 2:
 		_pinching = true
 		_multitouch_guard = true
+		_end_pan()
+		_press_active = false
 		_stop_inertia()
 		_pan_anim_active = false
 		_pinch_last_dist = _touch_distance()
 		_pinch_last_mid = _touch_midpoint()
 	else:
 		_pinching = false
+		_prev_position = position
+		_pan_velocity = Vector2.ZERO
 	# 注意：_multitouch_guard 不在这里随 count==0 复位。
 	# 因为松手时模拟鼠标的 release 与 ScreenTouch release 在同一输入批次，
 	# 顺序不定；若此处提前清零，捏合结束后可能误触发一次 tap。
@@ -333,7 +363,9 @@ func _handle_screen_drag(d: InputEventScreenDrag) -> void:
 	var mid := _touch_midpoint()
 	if _pinch_last_dist > 1.0:
 		var factor := dist / _pinch_last_dist
-		var target := clampf(zoom.x * factor, _minimum_zoom(), zoom_max)
+		# [mobile-zoom-compensate 2026-11-03] 捏合是移动端最容易越过上限的路径（即时跟手、
+		# 不经过 _set_target_zoom），必须同样用补偿后的上限。
+		var target := clampf(zoom.x * factor, _minimum_zoom(), _maximum_zoom())
 		# 捏合即时跟手（不走平滑），并锚定双指中心
 		_apply_zoom_anchored(target, mid)
 		_target_zoom = zoom
@@ -376,13 +408,14 @@ func _end_press(screen_pos: Vector2) -> void:
 	# 多指手势期间松手不算点按
 	if _multitouch_guard:
 		return
+	var max_move := tap_max_move_px * 1.8 if (_touches.size() > 0 or OS.has_feature("mobile")) else tap_max_move_px
 	# 拖拽（移动过大或耗时过长）不算点按
-	if moved > tap_max_move_px or dt_ms > int(tap_max_time * 1000.0):
+	if moved > max_move or dt_ms > int(tap_max_time * 1000.0):
 		return
 	# 双击 / 双指轻点 → 放大；否则发出点按选格
 	var now := Time.get_ticks_msec()
 	if now - _last_tap_time_ms <= int(double_tap_time * 1000.0) \
-			and screen_pos.distance_to(_last_tap_screen) <= tap_max_move_px * 2.0:
+			and screen_pos.distance_to(_last_tap_screen) <= max_move * 2.0:
 		_set_target_zoom(_target_zoom.x * double_tap_zoom_factor, screen_pos)
 		_last_tap_time_ms = 0  # 消费掉，避免三击连放
 		return
@@ -393,7 +426,7 @@ func _end_press(screen_pos: Vector2) -> void:
 # ───────────────────────────── 缩放数学 ─────────────────────────────
 
 func _set_target_zoom(target_scalar: float, screen_anchor: Vector2) -> void:
-	var t := clampf(target_scalar, _minimum_zoom(), zoom_max)
+	var t := clampf(target_scalar, _minimum_zoom(), _maximum_zoom())
 	if is_equal_approx(t, _target_zoom.x):
 		return
 	_target_zoom = Vector2(t, t)
@@ -402,6 +435,32 @@ func _set_target_zoom(target_scalar: float, screen_anchor: Vector2) -> void:
 
 func _minimum_zoom() -> float:
 	return maxf(zoom_min, _fit_floor_zoom)
+
+
+## [mobile-zoom-compensate 2026-11-03] 有效缩放上限 = zoom_max / 视口补偿系数。
+## 所有上限判定（fit_to_viewport / 捏合 / _set_target_zoom / restore_view_state /
+## _apply_zoom_anchored）都必须走这里，只堵一处的话其它路径仍然能突破。
+func _maximum_zoom() -> float:
+	if not zoom_max_compensated:
+		return zoom_max
+	if _view_scale_compensation <= 0.01:
+		return zoom_max
+	return zoom_max / _view_scale_compensation
+
+
+## [mobile-zoom-compensate 2026-11-03] 由会话装配方（PlayerController.configure）注入：
+## 移动端传 mobile_ui_scaling.total_scale()，桌面/Web 不调用（保持 1.0 = 原行为）。
+## 变小后当前 zoom 可能已越界，这里立即收敛，避免"已经看得比允许的更近"，
+## 也避免下一次捏合从越界值继续往上抬。
+func set_view_scale_compensation(scale_value: float) -> void:
+	_view_scale_compensation = scale_value
+	var limit := _maximum_zoom()
+	if zoom.x <= limit:
+		return
+	zoom = Vector2(limit, limit)
+	_target_zoom = zoom
+	_clamp_position()
+	_emit_zoom_changed_if_needed()
 
 
 ## Applies a persisted player view without leaving the smoothing target at its
@@ -417,7 +476,7 @@ func restore_view_state(world_position: Vector2, saved_zoom) -> void:
 		scalar = float(saved_zoom)
 	if not is_finite(scalar):
 		scalar = 1.0
-	scalar = clampf(scalar, _minimum_zoom(), zoom_max)
+	scalar = clampf(scalar, _minimum_zoom(), _maximum_zoom())
 	zoom = Vector2(scalar, scalar)
 	_target_zoom = zoom
 	_zoom_anchor_screen = get_viewport_rect().size * 0.5
@@ -427,6 +486,10 @@ func restore_view_state(world_position: Vector2, saved_zoom) -> void:
 
 
 func _apply_zoom_anchored(new_scalar: float, screen_anchor: Vector2) -> void:
+	# [mobile-zoom-compensate 2026-11-03] 这里是所有缩放写入的最后一道闸：四个调用点
+	# 已经各自 clamp 过，再在这里兜一次上限，任何将来新增的调用方都无法越过有效天花板
+	# （桌面 _maximum_zoom() 恒等于 zoom_max，此句为逐位无变化的 no-op）。
+	new_scalar = minf(new_scalar, _maximum_zoom())
 	var old := zoom.x
 	if is_equal_approx(new_scalar, old):
 		return
@@ -527,9 +590,15 @@ func _stop_motion() -> void:
 func _clamped_position(p: Vector2) -> Vector2:
 	if _world_bounds.size == Vector2.ZERO:
 		return p
-	var half_view := get_viewport_rect().size * 0.5 / zoom
-	var min_p := _world_bounds.position + half_view
-	var max_p := _world_bounds.position + _world_bounds.size - half_view
+	var view_size := get_viewport_rect().size / zoom
+	var half_view := view_size * 0.5
+	# [pan-slack 2026-11-03] 旧逻辑把"视口完全落在世界内"作为约束：当缩放到整图
+	# （真机实测 zoom≈0.94，视口≈整张地图）时 min_p≈max_p，相机被钉死 → 玩家反馈
+	# "地图拖不动"。现在改成"至少保留 20% 视口能看到地图"：允许把地图推到边缘外，
+	# 但不会推出屏幕，低倍率下也能正常拖动。
+	var slack := half_view * 0.6
+	var min_p := _world_bounds.position - slack
+	var max_p := _world_bounds.position + _world_bounds.size + slack
 	var out := p
 	if _horizontal_wrap_enabled:
 		out.x = _wrap_camera_x(p.x)

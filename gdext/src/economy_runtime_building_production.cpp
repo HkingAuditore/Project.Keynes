@@ -153,10 +153,19 @@ int64_t NativeEconomyRuntime::production_climate_capacity_q16(
         environment.temperature_30d_q16 < climate.temperature_opt_q16 &&
         cell >= 0 && cell < static_cast<int32_t>(
             _epoch_cell_cold_capacity_factor_q16.size())) {
-        capacity = mul_div_sat(capacity,
-            _epoch_cell_cold_capacity_factor_q16[static_cast<size_t>(cell)],
-            Q16_ONE, saturation_count);
-        capacity = std::clamp<int64_t>(capacity, 0, Q16_ONE);
+        const int32_t cold_factor_q16 =
+            _epoch_cell_cold_capacity_factor_q16[static_cast<size_t>(cell)];
+        if (cold_factor_q16 > Q16_ONE) {
+            const int64_t reduction = cold_factor_q16 - Q16_ONE;
+            const int64_t reduced_loss = mul_div_sat(adapted_loss,
+                std::max<int64_t>(0, Q16_ONE - reduction), Q16_ONE,
+                saturation_count);
+            capacity = std::clamp<int64_t>(Q16_ONE - reduced_loss, 0, Q16_ONE);
+        } else {
+            capacity = mul_div_sat(capacity, cold_factor_q16, Q16_ONE,
+                saturation_count);
+            capacity = std::clamp<int64_t>(capacity, 0, Q16_ONE);
+        }
     }
     return capacity;
 }
@@ -606,9 +615,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 group.last_input_selection_begin + input] = -1;
         }
         if (!building_available(cell, group.type_id, true)) continue;
+        // Military v1: a state-owned lot pays nothing from building cash. Its
+        // payroll role is the "state_payroll" policy — the wage is the country
+        // military pay, transferred by Military through
+        // COMMAND_TRANSFER_TO_COHORT directly into the soldier cohort. Keeping
+        // due == paid == 0 here leaves no arrear, no wage suspension and no
+        // owner-cash draw for the state lot.
+        const bool state_payroll_group = type.kind == 3;
         for (int32_t r = 0; r < type.employee_count; ++r) {
             const int32_t role_index = group.employee_fill_begin + r;
-            const int64_t wage_due = saturating_mul(
+            const int64_t wage_due = state_payroll_group ? 0 : saturating_mul(
                 saturating_mul(_building_employee_filled[role_index],
                                _building_role_contract_wage[role_index],
                                _saturation_count),
@@ -1615,6 +1631,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t requested_credit = g < static_cast<int32_t>(
                 _building_merchant_credit_limit.size())
                 ? std::max<int64_t>(0, _building_merchant_credit_limit[g]) : 0;
+            // Military v1: an explicitly state-owned building is financed by
+            // the treasury and never borrows merchant operating credit.
+            const bool state_owned_group = type.kind == 3;
+            if (state_owned_group) requested_credit = 0;
             bool survival_output = false;
             bool cycle_flow_output = false;
             for (int32_t oi = 0; oi < type.output_count; ++oi) {
@@ -1637,7 +1657,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 : std::clamp<int64_t>(
                     std::min<int64_t>(intent_scale_q16, industrial_probe_floor),
                     0, Q16_ONE);
-            if (requested_credit <= 0 && _merchant_credit_runtime_mode.get() == 2 &&
+            if (requested_credit <= 0 && !state_owned_group &&
+                _merchant_credit_runtime_mode.get() == 2 &&
                 credit_floor_scale > 0) {
                 // Hunter/collector livelihood and bounded industrial probe
                 // floors may auto-request merchant-backed input credit.

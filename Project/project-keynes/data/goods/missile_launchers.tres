@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"missile_launchers"
+display_name = "导弹发射系统"
+semantic_tags = PackedStringArray()
+category_id = &"ordnance"
+substitution_category_ids = PackedStringArray("ordnance")
+technology_tags = PackedStringArray("tech.military.precision_guidance")
+production_quality_level = 5
+default_price = 640000
+reference_max_price = 32000000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 39322

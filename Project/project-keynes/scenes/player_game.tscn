@@ -150,9 +150,6 @@ anchors_preset = 0
 unique_name_in_owner = true
 layout_mode = 1
 
-[node name="EraTransitionFlight" parent="UI/UIRoot/HUDLayer" instance=ExtResource("34_era_flight")]
-layout_mode = 1
-
 [node name="PanelLayer" type="Control" parent="UI/UIRoot" unique_id=1843493714]
 layout_mode = 1
 anchors_preset = 15
@@ -169,6 +166,18 @@ anchors_preset = 0
 
 [node name="CountryPanel" parent="UI/UIRoot/PanelLayer" unique_id=894348401 instance=ExtResource("20_country_panel")]
 unique_name_in_owner = true
+layout_mode = 1
+
+[node name="EraOverlayLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="EraTransitionFlight" parent="UI/UIRoot/EraOverlayLayer" instance=ExtResource("34_era_flight")]
 layout_mode = 1
 
 [node name="ModalLayer" type="Control" parent="UI/UIRoot" unique_id=1165939887]

@@ -16,21 +16,6 @@ uniform float vehicle_size = 24.0;
 uniform float layer_alpha = 1.0;
 uniform float travel_speed = 11.0;
 uniform float stale_fade_seconds = 2.0;
-// Daylight and terrain use exactly the map/building addressing and decode.
-uniform vec2 world_origin = vec2(0.0);
-uniform vec2 world_size = vec2(1.0);
-uniform float wrap_origin_x = 0.0;
-uniform float wrap_period_x = 0.0;
-uniform float season_phase = 1.0;
-uniform float day_phase = 0.25;
-uniform float axial_tilt_rad = 0.4101523;
-uniform bool day_night_enabled = true;
-uniform bool tod_debug_sun_position_enabled = false;
-uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
-uniform float tod_debug_sun_height_scale = 1.0;
-uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
-uniform float tod_exposure = 1.0;
-uniform int visual_quality = 2;
 uniform bool shadow_pass = false;
 uniform float shadow_strength = 0.32;
 uniform float shadow_height_ratio = 0.12;
@@ -40,25 +25,7 @@ uniform float shadow_max_length_ratio = 0.60;
 uniform vec2 shadow_footprint = vec2(0.95, 0.90);
 uniform float shadow_edge_softness = 0.35;
 uniform vec4 shadow_color : source_color = vec4(0.11, 0.13, 0.17, 1.0);
-#define VT_USE_HORIZON
-#define VT_USE_TERRAIN_NORMAL
-#include "res://shaders/include/visual_tile_sampling.gdshaderinc"
-uniform bool terrain_normal_tex_bound = false;
-uniform bool terrain_horizon_tex_bound = false;
-uniform float terrain_horizon_max_angle = 1.309;
-uniform float terrain_horizon_softness = 0.30;
-uniform float terrain_horizon_strength = 0.90;
-uniform float terrain_normal_influence = 0.65;
-uniform bool gi_lut_bound = false;
-uniform vec3 gi_horizon_lut[16];
-uniform float gi_ao_strength = 0.90;
-uniform float gi_ao_floor = 0.38;
-uniform float gi_ao_smoothing = 0.75;
-uniform float gi_bent_strength = 0.35;
-uniform float gi_normal_floor = 0.85;
-#include "res://shaders/include/earth_daylight.gdshaderinc"
-vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
-#include "res://shaders/include/terrain_horizon.gdshaderinc"
+#include "res://shaders/include/terrain_instance_lighting.gdshaderinc"
 
 varying flat float sprite_row;
 varying flat float vehicle_alpha;
@@ -115,30 +82,8 @@ void vertex() {
 	vehicle_alpha = visible * stale * layer_alpha;
 	// Every vertex evaluates the SAME caravan center; no per-pixel terrain/TOD
 	// fetches. Both passes share the immutable path and visibility textures.
-	vec2 map_uv = (center - world_origin) / max(world_size, vec2(0.0001));
-	EarthDaylight ed = eval_earth_daylight(map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
-	vec3 n = vec3(0.0, 0.0, 1.0);
-	TerrainHorizonSample hs;
-	hs.direct_visibility = 1.0;
-	hs.sky_visibility = 1.0;
-	hs.bent_normal = n;
-	hs.nearest_packed = vec4(0.0);
-	hs.has_data = false;
-	if (visual_quality >= 2) {
-		if (terrain_normal_tex_bound) {
-			n = normalize(vec3((visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * terrain_normal_influence, 1.0));
-		}
-		if (terrain_horizon_tex_bound && terrain_horizon_strength > 0.0) {
-			hs = terrain_horizon_evaluate(map_uv, ed.sun_dir);
-		}
-	}
-	vec3 amb_n = hs.has_data ? normalize(mix(n, hs.bent_normal, gi_bent_strength)) : n;
-	float sky = hs.has_data ? terrain_horizon_apply_normal(hs.sky_visibility, n, hs.bent_normal) : 1.0;
-	vec3 amb = earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, amb_n);
-	float ndl = max(dot(n, ed.sun_dir), 0.0) * ed.local_day * hs.direct_visibility;
-	float mdl = max(dot(n, -ed.sun_dir), 0.0) * ed.moon_strength;
-	vehicle_light = (amb * mix(1.0, 0.62, ed.local_day) * sky + ed.sun_col * ndl * 0.78
-		+ EARTH_MOONLIGHT * mdl * 0.40) * tod_exposure;
+	TerrainInstanceLight lighting = eval_terrain_instance_lighting(center);
+	vehicle_light = lighting.color;
 	vec2 scale = vec2(vehicle_size, vehicle_size * 0.5);
 	vec2 expanded = vec2(1.0);
 	vec2 shift = vec2(0.0);
@@ -151,14 +96,16 @@ void vertex() {
 		scale *= max(shape.zw * shadow_footprint, vec2(0.01));
 		float relative_height = shadow_heights[style];
 		float height = vehicle_size * shadow_height_ratio * relative_height;
-		shift = -ed.sun_dir.xy / max(ed.sun_dir.z, 0.15) * height;
+		shift = -lighting.sun_dir.xy / max(lighting.sun_dir.z, 0.15) * height;
 		float max_shift = vehicle_size * shadow_max_length_ratio * relative_height;
 		shift *= min(1.0, max_shift / max(length(shift), 0.001));
 		// Low sun still lengthens the ellipse, starting from the fitted footprint.
 		vec2 offset_local = vec2(dot(shift, direction), dot(shift, across)) / scale;
 		expanded += abs(offset_local);
-		vehicle_alpha *= shadow_strength * ed.local_day * hs.direct_visibility
-			* smoothstep(0.0, 0.15, ed.sun_dir.z) * (visual_quality >= 2 ? 1.0 : 0.0);
+		vehicle_alpha *= shadow_strength * lighting.local_day
+			* lighting.direct_visibility
+			* smoothstep(0.0, 0.15, lighting.sun_dir.z)
+			* (visual_quality >= 2 ? 1.0 : 0.0);
 	}
 	// QuadMesh UV.y is inverted; vertex local XY already has image-down Y.
 	sprite_uv = VERTEX + vec2(0.5);

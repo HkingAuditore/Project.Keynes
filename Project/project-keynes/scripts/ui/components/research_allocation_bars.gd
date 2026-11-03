@@ -27,6 +27,7 @@ var _queue_counts := PackedInt32Array([0, 0, 0, 0])
 var _queue_capacity := 8
 var _dragging := -1
 var _drag_origin_x := 0.0
+var _drag_origin_y := 0.0
 var _drag_start := PackedFloat32Array()
 var _drag_moved := false
 var _hover := -1
@@ -35,7 +36,7 @@ var _reset_hover := false
 
 func _init() -> void:
 	super()
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	var dense := TouchUI.dense_units()
 	ROW_HEIGHT = maxf(ROW_HEIGHT, dense)
 	FOOTER_HEIGHT = maxf(FOOTER_HEIGHT, dense)
@@ -81,7 +82,7 @@ func bar_rect(domain: int) -> Rect2:
 
 
 func reset_rect() -> Rect2:
-	var label_width := 36.0
+	var label_width := maxf(36.0, TouchUI.dense_units()) if TouchUI.is_touch() else 36.0
 	return Rect2(size.x - label_width, ROW_HEIGHT * DOMAIN_COUNT + 2.0, label_width,
 		FOOTER_HEIGHT - 4.0)
 
@@ -134,26 +135,41 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			_dragging = row
 			_drag_origin_x = button.position.x
+			_drag_origin_y = button.position.y
 			_drag_start = _shares.duplicate()
 			_drag_moved = false
-			accept_event()
+			if not TouchUI.is_touch():
+				accept_event()
 			queue_redraw()
 			return
 		if _dragging >= 0:
 			var moved := _drag_moved
 			_dragging = -1
 			_drag_moved = false
+			if TouchUI.is_touch():
+				_hover = -1
+				_reset_hover = false
 			queue_redraw()
 			accept_event()
 			if moved:
 				weights_committed.emit(weights_bp())
+		elif TouchUI.is_touch() and (_hover >= 0 or _reset_hover):
+			_hover = -1
+			_reset_hover = false
+			queue_redraw()
 		return
 	if event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
 		if _dragging >= 0:
 			var dx := motion.position.x - _drag_origin_x
-			if not _drag_moved and absf(dx) < DRAG_THRESHOLD:
-				return
+			var dy := motion.position.y - _drag_origin_y
+			if not _drag_moved:
+				if absf(dy) > DRAG_THRESHOLD and absf(dy) > absf(dx) * 1.5:
+					_dragging = -1
+					queue_redraw()
+					return
+				if absf(dx) < DRAG_THRESHOLD:
+					return
 			_drag_moved = true
 			_apply_drag(dx)
 			accept_event()

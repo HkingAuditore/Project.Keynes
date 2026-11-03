@@ -167,6 +167,12 @@ var _wx_commit_interval_usec: float = 500000.0  # 自适应 commit 间隔(默认
 var _weather_lut_dims: Vector2i = Vector2i.ZERO
 var _wx_lut_diag_count: int = 0
 var _wx_lut_diag_last_msec: int = -1000000
+# [uniform-churn 2026-11-02] 上一次真正推给材质的 weather_lut / prev / lerp。
+# 以前这三项每帧无条件 set_shader_parameter，稳态下是无意义的采样器重绑；
+# 真机渲染线程崩溃排查时一并压掉（值变了才推）。
+var _wx_pushed_weather_lut: Texture2D = null
+var _wx_pushed_weather_prev: Texture2D = null
+var _wx_pushed_lerp: float = -1.0
 
 # Phase 1：vector_atlas（RGBA8）的 BA 通道是 wind_field（[-1,1] mapped to [0,1]）。
 
@@ -257,15 +263,23 @@ func _process(delta: float) -> void:
 	if has_weather:
 		_update_weather_front_blend(delta)
 		if _overlay_mat != null and _world_ref != null:
-			if _world_ref.weather_lut_tex != null:
-				_weather_lut_tex = _world_ref.weather_lut_tex
+			# [uniform-churn 2026-11-02] 这两个纹理 + weather_lerp 以前**每帧**无条件
+			# 推送：真机 Vulkan/GL 上等于每帧给 overlay + 全部 curtain 材质重绑采样器，
+			# 渲染线程持续处理网格面/描符集变更。现在按"值变了才推"（纹理对象同一性 +
+			# lerp 变化超过 1/512），把稳态开销压到接近 0。
+			if _world_ref.weather_lut_tex != null \
+					and _wx_pushed_weather_lut != _world_ref.weather_lut_tex:
+				_wx_pushed_weather_lut = _world_ref.weather_lut_tex
+				_weather_lut_tex = _wx_pushed_weather_lut
 				_overlay_mat.set_shader_parameter("weather_lut", _weather_lut_tex)
 				for mat in _curtain_mats:
 					mat.set_shader_parameter("weather_lut", _weather_lut_tex)
-			if _world_ref.weather_lut_prev_tex != null:
-				_overlay_mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+			if _world_ref.weather_lut_prev_tex != null \
+					and _wx_pushed_weather_prev != _world_ref.weather_lut_prev_tex:
+				_wx_pushed_weather_prev = _world_ref.weather_lut_prev_tex
+				_overlay_mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
 				for mat in _curtain_mats:
-					mat.set_shader_parameter("weather_lut_prev", _world_ref.weather_lut_prev_tex)
+					mat.set_shader_parameter("weather_lut_prev", _wx_pushed_weather_prev)
 			# 时间平滑:weather_lerp 按 LUT 的【实际更新节奏】推进 0→1,与 prev/curr 严格对齐(不再复用 front blend)。
 			var _now_us: int = Time.get_ticks_usec()
 			var _upd: int = int(_world_ref.weather_lut_update_usec)
@@ -279,9 +293,12 @@ func _process(delta: float) -> void:
 			var _wlerp: float = 1.0
 			if _wx_commit_interval_usec > 1.0:
 				_wlerp = clampf(float(_now_us - _wx_lut_t0_usec) / _wx_commit_interval_usec, 0.0, 1.0)
-			_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
-			for mat in _curtain_mats:
-				mat.set_shader_parameter("weather_lerp", _wlerp)
+			# 只在变化超过 1/512 时推，稳态下每帧的 uniform 写回到 0。
+			if absf(_wlerp - _wx_pushed_lerp) > 0.002 or _wx_pushed_lerp < 0.0:
+				_wx_pushed_lerp = _wlerp
+				_overlay_mat.set_shader_parameter("weather_lerp", _wlerp)
+				for mat in _curtain_mats:
+					mat.set_shader_parameter("weather_lerp", _wlerp)
 			if _upd != 0 and (_wx_lut_diag_count < 12 or _now_us / 1000 - _wx_lut_diag_last_msec >= 2000):
 				_wx_lut_diag_count += 1
 				_wx_lut_diag_last_msec = _now_us / 1000

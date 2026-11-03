@@ -1,0 +1,345 @@
+{
+  "generator": "built-in image_gen; see SOURCE_PROMPT_SUMMARY in build script",
+  "style": "Dedicated Project.Keynes military icon atlases generated with the built-in image_gen workflow. Style: thick rough black graphite contours, colored-pencil hatching and wax-crayon grain, flat ochre/brick-red/muted-blue/steel/leaf-green fills, every object on a close-cut irregular off-white paper sticker with scissor-cut edges, transparent alpha, generous cell gutters, no text or grid.",
+  "sheets": [
+    {
+      "name": "military_units_source_v1",
+      "file": "source/military_units_source_v1.png",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "military.unit.line",
+        "military.unit.line.bows",
+        "military.unit.mobile",
+        "military.unit.artillery",
+        "military.unit.armored",
+        "military.unit.air",
+        "military.unit.militia",
+        null
+      ],
+      "cells": {
+        "military.unit.line": [
+          0,
+          0,
+          325,
+          667
+        ],
+        "military.unit.line.bows": [
+          325,
+          0,
+          301,
+          667
+        ],
+        "military.unit.mobile": [
+          626,
+          0,
+          319,
+          667
+        ],
+        "military.unit.artillery": [
+          945,
+          0,
+          309,
+          667
+        ],
+        "military.unit.armored": [
+          0,
+          667,
+          315,
+          587
+        ],
+        "military.unit.air": [
+          315,
+          667,
+          315,
+          587
+        ],
+        "military.unit.militia": [
+          630,
+          667,
+          310,
+          587
+        ]
+      }
+    },
+    {
+      "name": "military_goods_source_v1",
+      "file": "source/military_goods_source_v1.png",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "military.good.bows",
+        "military.good.firearms",
+        "military.good.ordnance",
+        "military.good.ammunition",
+        "military.good.propellant",
+        "military.good.armor",
+        "military.good.fuel",
+        "military.good.electronics"
+      ],
+      "cells": {
+        "military.good.bows": [
+          0,
+          0,
+          317,
+          643
+        ],
+        "military.good.firearms": [
+          317,
+          0,
+          305,
+          643
+        ],
+        "military.good.ordnance": [
+          622,
+          0,
+          311,
+          643
+        ],
+        "military.good.ammunition": [
+          933,
+          0,
+          321,
+          643
+        ],
+        "military.good.propellant": [
+          0,
+          643,
+          311,
+          611
+        ],
+        "military.good.armor": [
+          311,
+          643,
+          325,
+          611
+        ],
+        "military.good.fuel": [
+          636,
+          643,
+          304,
+          611
+        ],
+        "military.good.electronics": [
+          940,
+          643,
+          314,
+          611
+        ]
+      }
+    },
+    {
+      "name": "military_buildings_supply_source_v1",
+      "file": "source/military_buildings_supply_source_v1.png",
+      "columns": 4,
+      "rows": 2,
+      "semantics": [
+        "military.building.barracks",
+        "military.building.fortification",
+        "military.building.war_college",
+        "military.building.storage",
+        "military.supply.ration",
+        "military.supply.fodder",
+        "military.supply.equipment",
+        null
+      ],
+      "cells": {
+        "military.building.barracks": [
+          0,
+          0,
+          322,
+          644
+        ],
+        "military.building.fortification": [
+          322,
+          0,
+          304,
+          644
+        ],
+        "military.building.war_college": [
+          626,
+          0,
+          307,
+          644
+        ],
+        "military.building.storage": [
+          933,
+          0,
+          321,
+          644
+        ],
+        "military.supply.ration": [
+          0,
+          644,
+          315,
+          610
+        ],
+        "military.supply.fodder": [
+          315,
+          644,
+          315,
+          610
+        ],
+        "military.supply.equipment": [
+          630,
+          644,
+          320,
+          610
+        ]
+      }
+    },
+    {
+      "name": "military_status_ledger_source_v1",
+      "file": "source/military_status_ledger_source_v1.png",
+      "columns": 3,
+      "rows": 3,
+      "semantics": [
+        "military.army.morale",
+        "military.army.organization",
+        "military.army.supply",
+        "military.army.pay",
+        "military.army.attack",
+        "military.army.defense",
+        "military.ledger.income",
+        "military.ledger.wage",
+        "military.ledger.convoy"
+      ],
+      "cells": {
+        "military.army.morale": [
+          0,
+          0,
+          424,
+          427
+        ],
+        "military.army.organization": [
+          424,
+          0,
+          412,
+          427
+        ],
+        "military.army.supply": [
+          836,
+          0,
+          418,
+          427
+        ],
+        "military.army.pay": [
+          0,
+          427,
+          418,
+          406
+        ],
+        "military.army.attack": [
+          418,
+          427,
+          418,
+          406
+        ],
+        "military.army.defense": [
+          836,
+          427,
+          418,
+          406
+        ],
+        "military.ledger.income": [
+          0,
+          833,
+          418,
+          421
+        ],
+        "military.ledger.wage": [
+          418,
+          833,
+          418,
+          421
+        ],
+        "military.ledger.convoy": [
+          836,
+          833,
+          418,
+          421
+        ]
+      }
+    },
+    {
+      "name": "military_war_plan_source_v1",
+      "file": "source/military_war_plan_source_v1.png",
+      "columns": 5,
+      "rows": 2,
+      "semantics": [
+        "military.war.front",
+        "military.war.battle",
+        "military.war.score",
+        "military.war.peace",
+        "military.war.truce",
+        "military.plan.target",
+        "military.plan.share",
+        "military.plan.quality",
+        "military.plan.barracks",
+        "military.plan.training"
+      ],
+      "cells": {
+        "military.war.front": [
+          0,
+          0,
+          254,
+          649
+        ],
+        "military.war.battle": [
+          254,
+          0,
+          253,
+          649
+        ],
+        "military.war.score": [
+          507,
+          0,
+          246,
+          649
+        ],
+        "military.war.peace": [
+          753,
+          0,
+          249,
+          649
+        ],
+        "military.war.truce": [
+          1002,
+          0,
+          252,
+          649
+        ],
+        "military.plan.target": [
+          0,
+          649,
+          251,
+          605
+        ],
+        "military.plan.share": [
+          251,
+          649,
+          252,
+          605
+        ],
+        "military.plan.quality": [
+          503,
+          649,
+          251,
+          605
+        ],
+        "military.plan.barracks": [
+          754,
+          649,
+          243,
+          605
+        ],
+        "military.plan.training": [
+          997,
+          649,
+          257,
+          605
+        ]
+      }
+    }
+  ]
+}

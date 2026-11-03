@@ -272,7 +272,7 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
+PKCM, clock, PKCN, PKMI, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
 session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
 cross-domain transaction against authoritative Effect state. `PKID v4` follows
 `PKEF v11`: every active ideology must match its
@@ -336,6 +336,19 @@ handles and the Economy inbox already exist, and rejects a different AI catalog
 with `catalog_hash_mismatch`. Until `pkai` (or the player handles) are restored,
 the AI is unarmed and never plans. See
 [Country AI 运行时](./country-ai-runtime.md).
+
+`pkmi` (Military, provider schema 1) is registered after `pkcn` and before
+`pkef`/`ecp2`. Its section is the bridge `MILB` wrapper around the core `PKMI v1`
+blob plus the intent sequence cursor, last stepped day, receipt cursor and
+pending intent rows. It is listed both as required and as optional-compatible:
+a save without it restores an empty military store (`pkmi_absent_migration`), a
+runtime without the military API writes an empty section and refuses a non-empty
+one (`pkmi_runtime_unavailable`), and only schema 1 is accepted. Restore is
+transactional, rejects a different military catalog (`pkmi_catalog_mismatch`)
+or map shape, and re-arms the military AI afterwards. Military itself is
+configured (and its terrain pushed) by `MapGenerator` during save-restore
+finalize, before the provider loop applies PKMI. See
+[military-runtime.md](./military-runtime.md).
 
 `pkfg` writes `PKFogOfWar v4`: monotonic `cell_explored` progress, cell
 count, v3 last-seen building/social intelligence and independent resource

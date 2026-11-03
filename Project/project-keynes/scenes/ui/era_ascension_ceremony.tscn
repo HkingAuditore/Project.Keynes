@@ -1,0 +1,412 @@
+[gd_scene load_steps=20 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/era_ascension_ceremony.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/ui/era_ceremony_backdrop.gdshader" id="2_backdrop"]
+[ext_resource type="Shader" path="res://shaders/ui/era_emblem_dissolve.gdshader" id="3_dissolve"]
+[ext_resource type="Shader" path="res://shaders/ui/era_brush_reveal.gdshader" id="4_brush"]
+
+[sub_resource type="ShaderMaterial" id="BackdropMaterial"]
+resource_local_to_scene = true
+shader = ExtResource("2_backdrop")
+shader_parameter/fade = 0.0
+shader_parameter/dim = 0.72
+shader_parameter/desaturate = 0.85
+shader_parameter/center = Vector2(0.5, 0.34)
+shader_parameter/aspect = 1.6667
+shader_parameter/pillar = 0.0
+shader_parameter/burst = 0.0
+shader_parameter/ring_radius = 0.0
+shader_parameter/ring_alpha = 0.0
+shader_parameter/flash = 0.0
+shader_parameter/rays_angle = 0.0
+shader_parameter/gold = Color(1, 0.79, 0.3, 1)
+
+[sub_resource type="ShaderMaterial" id="OldMaterial"]
+resource_local_to_scene = true
+shader = ExtResource("3_dissolve")
+shader_parameter/dissolve = 0.0
+shader_parameter/edge_width = 0.09
+shader_parameter/edge_color = Color(1, 0.5, 0.12, 1)
+shader_parameter/edge_hot = Color(1, 0.95, 0.74, 1)
+shader_parameter/crack = 0.0
+shader_parameter/glow = 0.0
+shader_parameter/glow_color = Color(1, 0.62, 0.22, 1)
+shader_parameter/flash = 0.0
+shader_parameter/seed = 3.7
+
+[sub_resource type="ShaderMaterial" id="NewMaterial"]
+resource_local_to_scene = true
+shader = ExtResource("3_dissolve")
+shader_parameter/dissolve = 1.0
+shader_parameter/edge_width = 0.12
+shader_parameter/edge_color = Color(1, 0.82, 0.42, 1)
+shader_parameter/edge_hot = Color(1, 0.98, 0.88, 1)
+shader_parameter/crack = 0.0
+shader_parameter/glow = 0.0
+shader_parameter/glow_color = Color(1, 0.79, 0.3, 1)
+shader_parameter/flash = 0.0
+shader_parameter/seed = 11.3
+
+[sub_resource type="ShaderMaterial" id="TitleMaterial"]
+resource_local_to_scene = true
+shader = ExtResource("4_brush")
+shader_parameter/progress = 0.0
+shader_parameter/x_min = -400.0
+shader_parameter/x_max = 400.0
+shader_parameter/softness = 46.0
+shader_parameter/lead_color = Color(1, 0.86, 0.52, 1)
+
+[sub_resource type="CanvasItemMaterial" id="Additive"]
+blend_mode = 1
+
+[sub_resource type="Gradient" id="SoftDot"]
+offsets = PackedFloat32Array(0, 0.35, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0.55, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="SoftDotTexture"]
+gradient = SubResource("SoftDot")
+width = 32
+height = 32
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="Gradient" id="EmberRamp"]
+offsets = PackedFloat32Array(0, 0.25, 0.7, 1)
+colors = PackedColorArray(1, 0.95, 0.75, 1, 1, 0.62, 0.18, 1, 0.8, 0.25, 0.06, 0.8, 0.3, 0.08, 0.02, 0)
+
+[sub_resource type="Gradient" id="GoldRamp"]
+offsets = PackedFloat32Array(0, 0.2, 0.75, 1)
+colors = PackedColorArray(1, 1, 0.92, 1, 1, 0.86, 0.45, 1, 1, 0.7, 0.25, 0.75, 1, 0.6, 0.2, 0)
+
+[sub_resource type="Gradient" id="MoteRamp"]
+offsets = PackedFloat32Array(0, 0.2, 0.8, 1)
+colors = PackedColorArray(1, 0.9, 0.6, 0, 1, 0.9, 0.6, 0.9, 1, 0.82, 0.45, 0.7, 1, 0.8, 0.4, 0)
+
+[sub_resource type="Curve" id="ShrinkCurve"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.15), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[node name="EraAscensionCeremony" type="Control"]
+process_mode = 3
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+material = SubResource("BackdropMaterial")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Halo" type="Control" parent="."]
+material = SubResource("Additive")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Motes" type="CPUParticles2D" parent="."]
+material = SubResource("Additive")
+emitting = false
+amount = 70
+lifetime = 2.4
+texture = SubResource("SoftDotTexture")
+emission_shape = 3
+emission_rect_extents = Vector2(46, 220)
+direction = Vector2(0, -1)
+spread = 12.0
+gravity = Vector2(0, -40)
+initial_velocity_min = 30.0
+initial_velocity_max = 90.0
+scale_amount_min = 0.12
+scale_amount_max = 0.36
+color_ramp = SubResource("MoteRamp")
+
+[node name="OldEmblem" type="TextureRect" parent="."]
+material = SubResource("OldMaterial")
+layout_mode = 0
+offset_right = 260.0
+offset_bottom = 260.0
+pivot_offset = Vector2(130, 130)
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Embers" type="CPUParticles2D" parent="."]
+material = SubResource("Additive")
+emitting = false
+amount = 90
+lifetime = 1.3
+texture = SubResource("SoftDotTexture")
+emission_shape = 1
+emission_sphere_radius = 100.0
+direction = Vector2(0, -1)
+spread = 70.0
+gravity = Vector2(0, -160)
+initial_velocity_min = 40.0
+initial_velocity_max = 150.0
+damping_min = 10.0
+damping_max = 30.0
+scale_amount_min = 0.15
+scale_amount_max = 0.45
+scale_amount_curve = SubResource("ShrinkCurve")
+color_ramp = SubResource("EmberRamp")
+
+[node name="NewEmblem" type="TextureRect" parent="."]
+material = SubResource("NewMaterial")
+layout_mode = 0
+offset_right = 260.0
+offset_bottom = 260.0
+pivot_offset = Vector2(130, 130)
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Burst" type="CPUParticles2D" parent="."]
+material = SubResource("Additive")
+emitting = false
+amount = 160
+lifetime = 1.6
+one_shot = true
+explosiveness = 0.92
+texture = SubResource("SoftDotTexture")
+emission_shape = 1
+emission_sphere_radius = 24.0
+direction = Vector2(0, -1)
+spread = 180.0
+gravity = Vector2(0, 300)
+initial_velocity_min = 260.0
+initial_velocity_max = 640.0
+damping_min = 120.0
+damping_max = 260.0
+scale_amount_min = 0.18
+scale_amount_max = 0.6
+scale_amount_curve = SubResource("ShrinkCurve")
+color_ramp = SubResource("GoldRamp")
+
+[node name="Sparks" type="CPUParticles2D" parent="."]
+material = SubResource("Additive")
+emitting = false
+amount = 60
+lifetime = 1.1
+one_shot = true
+explosiveness = 0.85
+texture = SubResource("SoftDotTexture")
+emission_shape = 2
+emission_sphere_radius = 110.0
+direction = Vector2(0, -1)
+spread = 180.0
+gravity = Vector2(0, 120)
+initial_velocity_min = 140.0
+initial_velocity_max = 380.0
+damping_min = 160.0
+damping_max = 260.0
+scale_amount_min = 0.1
+scale_amount_max = 0.3
+color_ramp = SubResource("GoldRamp")
+
+[node name="Front" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Text" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_top = 500.0
+offset_right = 1600.0
+offset_bottom = 900.0
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="Kicker" type="Label" parent="Text"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "时代晋升"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Text"]
+unique_name_in_owner = true
+material = SubResource("TitleMaterial")
+layout_mode = 2
+text = "进入 农耕时代"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Text"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "禾黍盈仓，定居成邦"
+horizontal_alignment = 1
+
+[node name="Gap" type="Control" parent="Text"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="BuffHeading" type="HBoxContainer" parent="Text"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="RuleLeft" type="ColorRect" parent="Text/BuffHeading"]
+custom_minimum_size = Vector2(72, 1)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+color = Color(0.95, 0.76, 0.4, 0.55)
+
+[node name="BuffHeadingLabel" type="Label" parent="Text/BuffHeading"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "时代加成"
+
+[node name="RuleRight" type="ColorRect" parent="Text/BuffHeading"]
+custom_minimum_size = Vector2(72, 1)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+color = Color(0.95, 0.76, 0.4, 0.55)
+
+[node name="BuffRows" type="VBoxContainer" parent="Text"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Buff0" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff0"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff0"]
+layout_mode = 2
+
+[node name="Buff1" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff1"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff1"]
+layout_mode = 2
+
+[node name="Buff2" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff2"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff2"]
+layout_mode = 2
+
+[node name="Buff3" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff3"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff3"]
+layout_mode = 2
+
+[node name="Buff4" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff4"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff4"]
+layout_mode = 2
+
+[node name="Buff5" type="HBoxContainer" parent="Text/BuffRows"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="TextureRect" parent="Text/BuffRows/Buff5"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Text" type="Label" parent="Text/BuffRows/Buff5"]
+layout_mode = 2
+
+[node name="SkipHint" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -48.0
+offset_right = 200.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "点击或按 Esc 跳过"
+horizontal_alignment = 1

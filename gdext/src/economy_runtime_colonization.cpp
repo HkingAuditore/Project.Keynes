@@ -1695,6 +1695,9 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             population_store().page_cell[slot / COHORT_PAGE_SIZE] != source_cell) continue;
         const int32_t signature = static_cast<int32_t>(
             population_store().signature_id[slot]);
+        // Military v1: soldiers are never drawn into a colonization party.
+        if (profession_is_state_service_only(
+                _signatures[signature].profession_id)) continue;
         candidates.push_back({edge_index, slot, edge.people,
             _signatures[signature].profession_id == _unemployed_profession_id,
             edge.cohort_handle, 0});

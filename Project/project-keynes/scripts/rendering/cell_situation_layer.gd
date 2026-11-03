@@ -16,6 +16,9 @@ var _host
 var _economy
 var _adapter: DCViewAdapter
 var _hex_size := 22.0
+## [situation-anchor] QA：每格中心画十字准星，用于核对图标锚点
+## （pk_debug.cfg 里写 [render] situation_anchor=true）。
+var _debug_anchor := false
 var _wrap := 0.0
 var _near := false
 var _dirty := true
@@ -74,6 +77,9 @@ func configure(map: MapData, camera: Camera2D, host, economy,
     _adapter = adapter
     _hex_size = float(host.hex_size)
     _wrap = float(host.map_wrap_period_x())
+    var anchor_cfg := ConfigFile.new()
+    if anchor_cfg.load("user://pk_debug.cfg") == OK:
+        _debug_anchor = bool(anchor_cfg.get_value("render", "situation_anchor", false))
     _rows.clear()
     _hits.clear()
     _candidates.clear()
@@ -114,6 +120,16 @@ func _on_worker_commit(_from: int, _to: int, _generation: int) -> void:
 func _input(event: InputEvent) -> void:
     if event is InputEventMouseMotion:
         _mouse_position = event.position
+    elif event is InputEventScreenTouch:
+        var touch := event as InputEventScreenTouch
+        if touch.pressed:
+            _mouse_position = touch.position
+            _update_tooltip()
+    elif event is InputEventMouseButton:
+        var button := event as InputEventMouseButton
+        if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+            _mouse_position = button.position
+            _update_tooltip()
 
 
 func _process(delta: float) -> void:
@@ -320,13 +336,30 @@ func _screen_center(cell: int) -> Vector2:
     var hex := _map.cell_at(cell)
     var world := HexUtils.cube_to_world(hex.q, hex.r, _hex_size)
     world = HexUtils.nearest_display_world(world, _camera.global_position.x, _wrap)
-    return get_viewport().get_canvas_transform() * world
+    var screen := get_viewport().get_canvas_transform() * world
+    # [control-space 2026-11-03] 本层是 UI CanvasLayer 下的 Control，draw_* 用的是
+    # **本控件的本地空间**（= CanvasLayer 变换 ∘ 控件变换），而不是裸屏幕像素。
+    # 之前直接把 world→screen 的结果当本地坐标用，只要 CanvasLayer/控件带一点平移
+    # （安全区、content_scale、UI 根节点偏移）整个图标阵列就整体漂移 —— 真机反馈
+    # "定位十字本身是错位的"就是这样。这里用控件自己的 canvas 变换做逆变换，
+    # 把屏幕点换算回本地空间，绘制和命中测试都用同一套坐标。
+    return get_global_transform_with_canvas().affine_inverse() * screen
 
 
 func _draw() -> void:
     _hits.clear()
     if not _near or _map == null or _icons.size() != 8:
         return
+    # [situation-icon-space 2026-11-03] 本层是 UI/CanvasLayer 下的 Control —— 绘制空间
+    # 本来就是**屏幕空间**，_screen_center() 也已经乘过 canvas_transform，所以这里不能
+    # 再去抵消 canvas 变换（那会把图标整体推飞）。上一版加的 draw_set_transform 已撤销。
+    # 若需要定位锚点，用 [render] situation_anchor=true 打开十字准星。
+    if _debug_anchor:
+        for cell in _rows:
+            var anchor := _screen_center(int(cell))
+            draw_circle(anchor, 4.0, Color(1.0, 0.0, 1.0, 0.9))
+            draw_line(anchor - Vector2(14, 0), anchor + Vector2(14, 0), Color(1, 0, 1, 0.9), 1.5)
+            draw_line(anchor - Vector2(0, 14), anchor + Vector2(0, 14), Color(1, 0, 1, 0.9), 1.5)
     var side := UITokens.MAP_SITUATION_ICON_SIZE
     for cell in _rows:
         if not _can_show(int(cell)):
@@ -343,13 +376,20 @@ func _draw() -> void:
             continue
         var columns := mini(3, kinds.size())
         var row_count := ceili(kinds.size() / 3.0)
+        # [situation-icon-offset 2026-11-03] 抬升量必须用**屏幕**半高：世界半径 _hex_size
+        # 换算到屏幕要乘 canvas 变换的缩放（相机 zoom × content_scale，移动端
+        # CANVAS_ITEMS ≈1.375）。旧写法只乘 camera.zoom，在手机上少算 37%，
+        # 图标会压到格子上沿而不是浮在格子上方。
+        var canvas_scale := get_viewport().get_canvas_transform().get_scale().x
+        var hex_screen_r := _hex_size * maxf(canvas_scale, 0.0001)
         var top := center + Vector2(-columns * side * 0.5,
-            -_hex_size * _camera.zoom.x * 0.5 - row_count * side)
+            -hex_screen_r * 0.5 - row_count * side)
         for index in range(kinds.size()):
             var kind := kinds[index]
             var rect := Rect2(top + Vector2(index % 3, index / 3) * side, Vector2.ONE * side)
             draw_texture_rect(_icons[kind], rect, false)
             _hits.append({"rect": rect, "cell": cell, "kind": kind})
+    draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _update_tooltip() -> void:

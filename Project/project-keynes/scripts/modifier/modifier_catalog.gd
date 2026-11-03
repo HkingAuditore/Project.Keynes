@@ -70,6 +70,59 @@ const TECHNOLOGY_STATS := [
 	# absent, which is why they are ranged from 0 rather than from 1.
 	["country.ideology.era_decay_floor_bp", 0.0, 10000.0],
 	["country.ideology.offer_choice_bonus", 0.0, 2.0],
+	# Military (docs/plans/military-system-design.md §16.1). Appended last on
+	# purpose: every dense stat id already shipped in the loading snapshots and
+	# in saves must keep its position.
+	["country.military.attack_factor", 0.0, 4.0],
+	["country.military.defense_factor", 0.0, 4.0],
+	["country.military.speed_factor", 0.0, 4.0],
+	["country.military.logistics_move_factor", 0.0, 4.0],
+	["country.military.supply_transport_factor", 0.0, 8.0],
+	["country.military.supply_consumption_factor", 0.0, 4.0],
+	["country.military.barracks_capacity_factor", 0.0, 4.0],
+	["country.military.levy_rate", 0.0, 4.0],
+	["country.military.wage_factor", 0.0, 4.0],
+	["country.military.training_time_factor", 0.1, 4.0],
+	["country.military.desertion_factor", 0.0, 4.0],
+	["country.military.casualty_factor", 0.0, 4.0],
+	["country.military.attrition_factor", 0.0, 4.0],
+	["country.military.organization_recovery_factor", 0.0, 4.0],
+	["country.military.morale_add", -1.0, 1.0],
+	["country.military.fortification_factor", 0.0, 4.0],
+	["country.military.frontage_factor", 0.0, 4.0],
+	["country.military.militia_factor", 0.5, 4.0],
+	["country.military.occupation_tax_efficiency", 0.0, 4.0],
+	["country.military.naval_transport_factor", 0.0, 8.0],
+	["country.military.vision_add", -64.0, 64.0],
+	["country.military.convoy_escort_factor", 0.25, 8.0],
+	# Rule parameters (§17.2 channel B). ADD-only; 0 means the rule is inactive.
+	["country.military.rule.mutual_support", 0.0, 4.0],
+	["country.military.rule.last_stand", 0.0, 4.0],
+	["country.military.rule.blitz", 0.0, 4.0],
+	["country.military.rule.hold_the_line", 0.0, 4.0],
+	["country.military.rule.encirclement", 0.0, 4.0],
+	["country.military.rule.home_ground", 0.0, 4.0],
+]
+
+## Cell-level military stats (design §16.1 DerivedCellFront, `group_handle = cell`).
+##
+## These are ECONOMY-domain stats so a card writes them through the SAME derived
+## cell layer the land cards use: the program's target selector picks cells and
+## the Modifier row lands on `(stat, cell)`. Military reads them back per cell
+## (`get_military_cell_stat_q16`), rather than each consumer growing its own
+## table.
+##
+## Range note: these are FACTORS, and the channel-A cards author "+X%" on them,
+## so the ceiling is the same 4.0 the country-level factors use rather than 0..1
+## -- a 0..1 clamp would silently swallow any card above +100%, which is exactly
+## the "validates and then does nothing" failure the modifier skill forbids.
+const MILITARY_CELL_STATS := [
+	["military.cell.attack_factor", 0.0, 4.0],
+	["military.cell.defense_factor", 0.0, 4.0],
+	["military.cell.organization_recovery_factor", 0.0, 4.0],
+	["military.cell.supply_consumption_factor", 0.0, 4.0],
+	["military.cell.barracks_capacity_factor", 0.0, 4.0],
+	["military.cell.training_speed_factor", 0.0, 4.0],
 ]
 const Q16_ONE := 65536
 const STAT_DISPLAY_NAMES := {
@@ -110,29 +163,66 @@ const STAT_DISPLAY_NAMES := {
 	"country.ideology.school_strength_factor.harmony": "调和理念强度",
 	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
+	"country.military.supply_consumption_factor": "补给消耗",
+	"country.military.organization_recovery_factor": "组织度恢复",
+	"country.military.occupation_tax_efficiency": "占领税效率",
+	"country.military.attack_factor": "全国部队攻击",
+	"country.military.defense_factor": "全国部队防御",
+	"country.military.speed_factor": "部队速度",
+	"country.military.logistics_move_factor": "本土行军",
+	"country.military.supply_transport_factor": "车队速度",
+	"country.military.barracks_capacity_factor": "兵额",
+	"country.military.levy_rate": "单格征召上限",
+	"country.military.wage_factor": "军饷系数",
+	"country.military.training_time_factor": "训练时长",
+	"country.military.desertion_factor": "逃兵比例",
+	"country.military.casualty_factor": "伤亡",
+	"country.military.attrition_factor": "恶劣环境减员",
+	"country.military.morale_add": "全国部队士气",
+	"country.military.fortification_factor": "本国工事强度",
+	"country.military.frontage_factor": "战斗宽度",
+	"country.military.militia_factor": "民兵战力",
+	"country.military.naval_transport_factor": "海运运力",
+	"country.military.vision_add": "部队视野",
+	"country.military.convoy_escort_factor": "车队护卫",
+	"country.military.rule.mutual_support": "犄角之势参数",
+	"country.military.rule.last_stand": "背水一战参数",
+	"country.military.rule.blitz": "闪击参数",
+	"country.military.rule.hold_the_line": "寸土不让参数",
+	"country.military.rule.encirclement": "合围参数",
+	"country.military.rule.home_ground": "本土作战参数",
+	# Cell-level (channel A). The wording names the CELL, not the country: a card
+	# face that said "全国部队攻击" for a stat that only moves one cell's garrison
+	# would promise something the runtime does not do.
+	"military.cell.attack_factor": "当地驻军攻击",
+	"military.cell.defense_factor": "当地驻军防御",
+	"military.cell.organization_recovery_factor": "当地驻军组织度恢复",
+	"military.cell.supply_consumption_factor": "当地驻军补给消耗",
+	"military.cell.barracks_capacity_factor": "当地兵营兵额",
+	"military.cell.training_speed_factor": "当地训练速度",
 }
 ## Ideology cards have their own audience-facing wording. Keep this map separate
 ## from the shared stat labels so other panels keep their established terms.
 const IDEOLOGY_PLAIN_STAT_NAMES := {
-	"country.output.agriculture_factor": "农业产出",
-	"country.output.extractive_factor": "采掘产出",
-	"country.output.manufacturing_factor": "制造业产出",
-	"country.output.energy_factor": "能源产出",
-	"country.output.knowledge_factor": "知识产出",
-	"country.research.agriculture_efficiency": "农业研究速度",
-	"country.research.engineering_efficiency": "工程研究速度",
-	"country.research.science_efficiency": "科学研究速度",
-	"country.research.society_efficiency": "社会研究速度",
+	"country.output.agriculture_factor": "农业部门产出",
+	"country.output.extractive_factor": "采掘部门产出",
+	"country.output.manufacturing_factor": "制造部门产出",
+	"country.output.energy_factor": "能源部门产出",
+	"country.output.knowledge_factor": "知识部门产出",
+	"country.research.agriculture_efficiency": "农业领域研究效率",
+	"country.research.engineering_efficiency": "工程领域研究效率",
+	"country.research.science_efficiency": "科学领域研究效率",
+	"country.research.society_efficiency": "社会领域研究效率",
 	"country.research.institution_output_factor": "研究机构产出",
-	"country.production.input_factor": "生产原料需求量",
-	"country.climate.cold_stress_factor": "寒冷造成的生产损失",
-	"country.climate.heat_stress_factor": "热害造成的生产损失",
-	"country.climate.drought_loss_factor": "旱灾造成的生产损失",
-	"country.climate.flood_loss_factor": "洪灾造成的生产损失",
-	"country.household.consumption_factor": "家庭消费需求",
-	"country.resource.use_factor": "自然资源消耗",
-	"country.trade.capacity_factor": "每次贸易可成交的货物量",
-	"country.trade.speed_factor": "贸易运输速度",
+	"country.production.input_factor": "全社会生产投入",
+	"country.climate.cold_stress_factor": "寒冷损失",
+	"country.climate.heat_stress_factor": "热害损失",
+	"country.climate.drought_loss_factor": "旱灾损失",
+	"country.climate.flood_loss_factor": "洪灾损失",
+	"country.household.consumption_factor": "全社会家庭消费",
+	"country.resource.use_factor": "全社会自然资源耗用",
+	"country.trade.capacity_factor": "国内贸易容量",
+	"country.trade.speed_factor": "贸易速度",
 	"country.resource.fertile_soil.managed_generation_factor": "肥沃土壤自然恢复速度",
 	"country.resource.freshwater_fish.managed_generation_factor": "淡水鱼群自然恢复速度",
 	"country.resource.timber.managed_generation_factor": "木材自然恢复速度",
@@ -222,10 +312,33 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_persistable.append(1 if stat.persistable else 0)
 		stat_domains_by_id.append(stat.domain)
 		stat_allowed_operations_by_id.append(stat.allowed_operations)
+	for row in MILITARY_CELL_STATS:
+		var cell_key := StringName(row[0])
+		if stat_ids.has(cell_key):
+			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+		stat_ids[cell_key] = out.stat_keys.size()
+		out.stat_keys.append(String(cell_key))
+		# Domain 2 is ECONOMY, which is where every per-cell Modifier lives:
+		# `effective_value` keys the derived cell layer on
+		# `(domain == ECONOMY, group_handle == cell)`, so a cell stat declared in
+		# any other domain could never be merged with a card's per-cell row.
+		out.stat_domains.append(2)
+		out.stat_min_values.append(float(row[1]))
+		out.stat_max_values.append(float(row[2]))
+		out.stat_persistable.append(1)
+		stat_domains_by_id.append(2)
+		stat_allowed_operations_by_id.append(15)
 	for row in TECHNOLOGY_STATS:
 		var key := StringName(row[0])
 		if stat_ids.has(key):
-			return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			# [dup-stat-skip 2026-11-02] 军事 v1 的 stat 同时在
+			# data/modifiers/default_modifier_catalog.tres（资源目录）和
+			# TECHNOLOGY_STATS 里登记了。资源目录先编译，这里再遇到同名 key
+			# 以前直接 `modifier_stat_key_invalid_or_duplicate` → 整个修改器目录
+			# 编译失败 → country 配置被跳过 → 经济日结被拒（真机 eco_day 恒 -1）。
+			# 资源目录是权威定义，重复行按跳过处理并打一行提示。
+			print("[modifier] skip duplicate tech stat (resource catalog wins): %s" % String(key))
+			continue
 		stat_ids[key] = out.stat_keys.size()
 		out.stat_keys.append(String(key))
 		out.stat_domains.append(1)
@@ -454,7 +567,7 @@ func compile_native_catalog() -> Dictionary:
 				if scope_key.begins_with("city.") \
 						or scope_key.begins_with("economy.city."):
 					return {"ok": false,
-						"reason": "modifier_city_stat_requires_sum:" + scope_key}
+						"reason": "modifier_stat_key_invalid_or_duplicate" + scope_key}
 			out.stat_aggregate_policies.append(policy)
 			out.stat_source_caps.append(cap)
 	var definition_keys := {}
@@ -474,7 +587,10 @@ func compile_native_catalog() -> Dictionary:
 		out.definition_default_duration.append(definition.default_duration_days)
 		for term in definition.terms:
 			if term == null or not stat_ids.has(term.stat_key) or not is_finite(term.value):
-				return {"ok": false, "reason": "modifier_term_invalid"}
+				return {"ok": false, "reason": "modifier_term_invalid: key=%s known=%s value=%s" % [
+					String(term.stat_key) if term != null else "<null>",
+					str(stat_ids.has(term.stat_key)) if term != null else "n/a",
+					str(term.value) if term != null else "n/a"]}
 			var term_stat_id := int(stat_ids[term.stat_key])
 			if stat_domains_by_id[term_stat_id] != definition.domain \
 					or (stat_allowed_operations_by_id[term_stat_id] \
@@ -583,7 +699,7 @@ func compile_native_catalog() -> Dictionary:
 		for term_index in range(technology_term_offsets[i], technology_term_offsets[i + 1]):
 			var stat_key := StringName(technology_term_keys[term_index])
 			if not stat_ids.has(stat_key):
-				return {"ok": false, "reason": "modifier_term_invalid"}
+				return {"ok": false, "reason": "modifier_term_invalid: tech_term key=%s" % String(stat_key)}
 			out.term_stat_ids.append(int(stat_ids[stat_key]))
 			out.term_operations.append(int(technology_term_operations[term_index]))
 			out.term_values.append(float(technology_term_values[term_index]))
@@ -611,7 +727,8 @@ func compile_native_catalog() -> Dictionary:
 					era_index, theme_index):
 				var reward_stat_key := StringName(term.stat)
 				if not stat_ids.has(reward_stat_key):
-					return {"ok": false, "reason": "modifier_term_invalid"}
+					return {"ok": false, "reason": "modifier_term_invalid: era_reward key=%s option=%s" % [
+						String(reward_stat_key), String(option_id)]}
 				out.term_stat_ids.append(int(stat_ids[reward_stat_key]))
 				out.term_operations.append(int(term.operation))
 				out.term_values.append(float(term.value))
@@ -701,7 +818,7 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 					return {"label": "%s 全国产出" % display_name_of(&"good", tail),
 						"unit": UNIT_FACTOR}
 				"family":
-					return {"label": "%s 建筑系产出" % display_name_of(&"family", tail),
+					return {"label": "%s 建筑系产" % display_name_of(&"family", tail),
 						"unit": UNIT_FACTOR}
 			return {}
 		# country.input|consumption.good.<stable_id>_factor
@@ -722,13 +839,13 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 			var profession_name := _profession_display_name(parts[2])
 			match parts[3]:
 				"tax_tolerance_factor":
-					return {"label": "%s 税负容忍度" % profession_name,
+					return {"label": "%s 税负容忍" % profession_name,
 						"unit": UNIT_FACTOR, "profession_id": parts[2],
 						"profession_metric": "tax_tolerance"}
 				"satisfaction_bp":
 					return {"label": profession_name,
 						"unit": UNIT_POINTS, "profession_id": parts[2],
-						"profession_metric": "satisfaction"}
+						"profession_metric": "tax_tolerance"}
 			return {}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
 		if parts[0] == "country" and parts[1] == "resource":
@@ -769,10 +886,10 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 			match parts[2]:
 				"income":
 					target_name = _profession_display_name(target)
-					return {"label": "%s 所得税率" % target_name, "unit": UNIT_RATE_BP}
+					return {"label": "%s 所得税" % target_name, "unit": UNIT_RATE_BP}
 				"consumption":
 					target_name = display_name_of(&"good", target)
-					return {"label": "%s 消费税" % target_name, "unit": UNIT_RATE_BP}
+					return {"label": "%s 消费" % target_name, "unit": UNIT_RATE_BP}
 				"business":
 					target_name = display_name_of(&"building", target)
 					return {"label": "%s 营业税率" % target_name, "unit": UNIT_RATE_BP}
@@ -801,7 +918,7 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 								"unit": UNIT_FACTOR}
 				"need":
 					if parts[4] == "consumption_factor":
-						return {"label": "%s 需求消费" % display_name_of(&"need", city_id),
+						return {"label": "%s 需求消" % display_name_of(&"need", city_id),
 							"unit": UNIT_FACTOR}
 				"resource":
 					if parts[4] == "regen_factor":
@@ -854,13 +971,13 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 	if not profession_id.is_empty():
 		label = _profession_display_name(profession_id)
 		if is_satisfaction and plain_language:
-			label += "满意度"
+			label += "满意"
 		elif is_satisfaction:
 			pass
 		elif plain_language and is_tolerance:
 			pass
 		elif is_tolerance:
-			label += " 税负容忍度"
+			label += " 税负容忍"
 	if unit == UNIT_RATE_BP and (operation == 0 or operation == 1):
 		# Rate stats are authored in basis points, so additive terms never fit the
 		# whole-percent formatting below (a 15 bp change would render as +0%).
@@ -868,8 +985,8 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			return ""
 		var rate_points := delta * 0.01
 		if plain_language:
-			var plain_label := label.replace(" 所得税率", "所得税率") \
-				.replace(" 消费税", "消费税").replace(" 营业税率", "营业税率") \
+			var plain_label := label.replace(" 所得税", "所得税") \
+				.replace(" 消费", "消费").replace(" 营业税率", "营业税率") \
 				.replace(" 进口税率", "进口税率").replace(" 出口税率", "出口税率")
 			return "%s%s %s 个百分点" % [plain_label,
 				"提高" if rate_points > 0.0 else "降低",
@@ -880,10 +997,10 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			return ""
 		var satisfaction_points := delta * 0.01
 		if plain_language:
-			return "%s%s %s 点" % [label,
+			return "%s%s %s " % [label,
 				"提高" if delta > 0.0 else "降低",
 				_format_decimal(absf(satisfaction_points))]
-		return "%s %+.2f 点" % [label, satisfaction_points]
+		return "%s %+.2f " % [label, satisfaction_points]
 	var percent := int(round(delta * 100.0))
 	if percent == 0:
 		return ""
@@ -897,7 +1014,7 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 		return "%s对税负的承受能力%s %d%%" % [label,
 			"提高" if percent > 0 else "降低", absi(percent)]
 	if plain_language and is_satisfaction:
-		return "%s%s %d 点" % [label,
+		return "%s%s %d " % [label,
 			"提高" if delta > 0.0 else "降低", absi(percent)]
 	return "%s %+d%%" % [label, percent]
 
@@ -1028,18 +1145,18 @@ func present_definition_for_ideology(definition_key: StringName,
 			if sample_label.is_empty():
 				continue
 			if int(profession_terms[group_key]) >= _known_profession_count():
-				var split := sample_label.find("对税负")
+				var split := sample_label.find("对税")
 				if split >= 0:
-					lines.append("全国各职业%s" % sample_label.substr(split))
+					lines.append("全国各职位%s" % sample_label.substr(split))
 				else:
-					var satisfaction := sample_label.rfind("满意度")
-					lines.append("全国各职业%s" % sample_label.substr(
+					var satisfaction := sample_label.rfind("满意")
+					lines.append("全国各职位%s" % sample_label.substr(
 						satisfaction if satisfaction >= 0 else 0))
 			else:
-				var split := sample_label.find("对税负")
+				var split := sample_label.find("对税")
 				if split < 0:
-					split = sample_label.rfind("满意度")
-				lines.append("%s%s" % ["、".join(names),
+					split = sample_label.rfind("满意")
+				lines.append("%s%s" % ["銆".join(names),
 					sample_label.substr(split if split >= 0 else 0)])
 		break
 	return lines

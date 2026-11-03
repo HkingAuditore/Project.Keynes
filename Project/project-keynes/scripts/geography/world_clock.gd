@@ -89,6 +89,14 @@ signal simulation_backpressure_pulse(day_idx: int)
 ## 上限 60 ms：再高就会让单帧超过 100 ms，浏览器开始接近"无响应"的观感。
 func sim_budget_ms() -> float:
 	if not OS.has_feature("web"):
+		# [mobile-sim-budget 2026-11-02] 移动端也按倍速放大预算。
+		# 安卓单日成本实测 50~70ms（2400 格、内联日），而这里固定 8ms 会让
+		# 吞吐上限 = 8/60 ≈ 0.13 天/帧，×10 倍速实际只有 ~5 天/秒
+		# （真机 [heartbeat] 实测 5.4 天/秒）。放大后 ×10 才有机会跑满 10 天/秒，
+		# 代价是快进时单帧变长、帧率下降——这正是玩家按下倍速时想要的取舍。
+		if OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios"):
+			return clampf(sim_frame_budget_ms * maxf(1.0, speed_multiplier * 0.5),
+				sim_frame_budget_ms, 60.0)
 		return sim_frame_budget_ms
 	return clampf(sim_frame_budget_ms * maxf(1.0, speed_multiplier * 0.5),
 		sim_frame_budget_ms, 60.0)
@@ -578,6 +586,11 @@ func _process(delta: float) -> void:
 		_rate_next_msec = Time.get_ticks_msec() + 2000
 	elif Time.get_ticks_msec() >= _rate_next_msec:
 		var span_s := maxf(0.001, float(_rate_frames) * (_rate_delta_sum / float(maxi(1, _rate_frames))))
+		# [clock/rate] 每 2 秒一行实测吞吐：天数/秒、日成本、节流上限、平均帧率。
+		# 排查"×10 到底有没有 10 天/秒"直接看这一行，不用再心算 heartbeat 差值。
+		print("[clock/rate] dps=%.2f speed=%.0fx cap=%.2fd/f cost=%.0fms fps=%.1f blocked=%d budget_break=%d"
+			% [float(_rate_days) / span_s, speed_multiplier, _last_throughput_cap,
+				_day_cost_ms_ema, float(_rate_frames) / span_s, _rate_blocked, _rate_budget_break])
 		WebTelemetry.emit("clock_rate", {
 			"frames": _rate_frames,
 			"days": _rate_days,

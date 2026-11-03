@@ -1,0 +1,20 @@
+Use case: image-to-image production game sprite action sheet.
+Reference role: reference image A locks the unit identity, material treatment, hand-painted scissor-cut paper miniature finish and strict top-down camera. Do NOT copy its near-static poses.
+
+Create a genuinely transparent-background RGBA action sheet with EXACTLY 4 equal columns by 2 equal rows, eight sequential frames read left-to-right across the top row, then left-to-right across the bottom row.
+
+Camera: strict 90-degree vertical orthographic overhead/zenith map camera looking straight down. North is up. EAST IS RIGHT. No perspective, no side view, no three-quarter view, no horizon. All bodies, weapons and effects remain flat in the horizontal map plane.
+
+Animation contract: pose-to-pose animation at 8 fps, not subtle micro-motion. Keep one FIXED FRAME REGISTRATION and one stable overall unit scale. The body, chassis, weapons and effects may visibly travel, compress, stretch, yaw, recoil, separate and reform inside a centered 80 percent safe area. Do not recenter or rescale individual frames. At 48-64 px, neighboring frames must be distinguishable by silhouette alone. Use three strong beats: preparation, action peak, and recovery.
+
+Framing: leave a large fully transparent gutter around every cell and around the complete sheet. No body, weapon, dust, flash or effect may touch or cross a cell boundary. The union of all eight frames must stay within about 1.30x the neutral silhouette envelope. Keep enough transparent perimeter for fixed-cell cropping.
+
+Readability: make the pose delta roughly 2-3 times the reference. Use large changes in whole-body spacing, stance, facing details, weapon projection, wheels, recoil, dust and smoke. Do not count a tiny breathing shift or a changed highlight as a new frame.
+
+Background: genuine RGBA transparency, no floor, no ground plane, no scenery, no baked cast shadow.
+
+Avoid: copied or near-identical frames, subtle idle-like motion, perspective, side view, three-quarter view, visible faces, vertical jump, oblique cast shadow, SVG/vector-flat icon style, pixel art, low-poly 3D, glossy plastic, letters, numbers, borders, grid lines, watermark, checkerboard.
+
+Subject: the compact three-soldier ancient infantry squad with round shields and spears, bronze/deep-teal/warm-parchment materials. Show only helmet crowns, shoulder tops, round shield tops, spear shafts and hand tips. No visible faces.
+
+MOVE beat sequence: 1 contact with the lead shield thrust east; 2 low compression and tight shield overlap; 3 rear rank swings outward and dust trails southwest; 4 lead rank surges east with a wide spear-point wedge; 5 opposite contact with the front spear fully extended; 6 the squad springs apart and shields separate; 7 rear rank closes while dust curls west; 8 half-step pre-contact offset from frame 1.

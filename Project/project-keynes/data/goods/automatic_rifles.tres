@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"automatic_rifles"
+display_name = "自动步枪"
+semantic_tags = PackedStringArray()
+category_id = &"firearms"
+substitution_category_ids = PackedStringArray("firearms")
+technology_tags = PackedStringArray("tech.military.machine_guns")
+production_quality_level = 4
+default_price = 138000
+reference_max_price = 6900000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 39322

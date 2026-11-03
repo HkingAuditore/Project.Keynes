@@ -39,6 +39,18 @@ enum Opcode {
 	CLEAR_CELL_TAX_OVERRIDE = 18,
 	CLEAR_CELL_TAX_POLICY = 19,
 	CLAIM_UNOWNED_TERRITORY = 20,
+	## 时代晋升：technology(aux) = good 索引，value = 数量（GOODS_SCALE）。
+	## 国库不足时整批拒绝 country_treasury_goods_insufficient。
+	CONSUME_TREASURY_GOODS = 21,
+	## 22/25/26 保留不用（controller 在 Military），提交即拒绝。
+	## 收款/吞并国句柄编码：cell = slot，technology(aux) = generation。
+	## value = 金额（MONEY_SCALE），余额不足按余额转移；事件 values 为实转额。
+	TRANSFER_CASH_BETWEEN_COUNTRIES = 23,
+	## domain = dense good，value = 数量（GOODS_SCALE），不足按余额。
+	TRANSFER_GOODS_BETWEEN_COUNTRIES = 24,
+	## target_handle = 受害国。同批次原子：领土/现金/物资全部归吞并国，
+	## 受害国失效且 generation+1；持旧句柄的后续命令 country_handle_invalid。
+	ANNEX_COUNTRY = 27,
 }
 
 enum TaxKind {
@@ -259,10 +271,70 @@ func set_research_budget(handle: int, enabled: bool, daily_cash_limit: int,
 		"technology": 1 if enabled else 0, "value": maxi(0, daily_cash_limit),
 		"effective_day": effective_day, "sequence": sequence}])
 
+## 时代晋升：一次 submit 原子提交 n 条 CONSUME_TREASURY_GOODS + 1 条 GRANT_TECHNOLOGY。
+## 任一物资不足则整批（包括时代令牌授予）被拒绝。
+## 见 docs/cpp-dots-runtime/era-advancement-runtime.md §2.1。
+func advance_era(handle: int, milestone_technology_id: StringName,
+		good_indices: PackedInt32Array, quantities: PackedInt64Array,
+		effective_day: int, sequence: int) -> Dictionary:
+	if good_indices.size() != quantities.size():
+		return {"ok": false, "reason": "era_advance_goods_shape_invalid"}
+	var technology := _technology_index(milestone_technology_id)
+	if technology < 0:
+		return {"ok": false,
+			"reason": "unknown technology id: %s" % String(milestone_technology_id)}
+	var commands: Array[Dictionary] = []
+	for i in range(good_indices.size()):
+		var quantity := int(quantities[i])
+		if quantity <= 0:
+			continue
+		commands.append({"opcode": Opcode.CONSUME_TREASURY_GOODS,
+			"target_handle": handle, "technology": int(good_indices[i]),
+			"value": quantity, "effective_day": effective_day, "sequence": sequence})
+	# The grant shares effective_day/sequence and is appended last; native
+	# ordering is (effective_day, sequence, submit_order), so it runs after
+	# every consume in the same atomic batch.
+	commands.append({"opcode": Opcode.GRANT_TECHNOLOGY, "target_handle": handle,
+		"technology": technology, "effective_day": effective_day, "sequence": sequence})
+	return submit(commands)
+
 func reveal_all_technologies(handle: int, effective_day: int,
 		sequence: int) -> Dictionary:
 	return submit([{"opcode": Opcode.REVEAL_ALL_TECHNOLOGIES,
 		"target_handle": handle, "effective_day": effective_day, "sequence": sequence}])
+
+## 把国家句柄拆成 (slot, generation) 编入 cell/aux 两个 32 位通道。
+static func _receiver_payload(command: Dictionary, receiver_handle: int) -> Dictionary:
+	command["cell"] = receiver_handle & 0xffffffff
+	command["technology"] = (receiver_handle >> 32) & 0xffffffff
+	return command
+
+func transfer_cash_between(from_handle: int, to_handle: int, amount: int,
+		effective_day: int = 0, sequence: int = 0) -> Dictionary:
+	if amount <= 0 or from_handle == 0 or to_handle == 0 or from_handle == to_handle:
+		return {"ok": false, "reason": "country_transfer_between_command_invalid"}
+	return submit([_receiver_payload({
+		"opcode": Opcode.TRANSFER_CASH_BETWEEN_COUNTRIES,
+		"target_handle": from_handle, "value": amount,
+		"effective_day": effective_day, "sequence": sequence}, to_handle)])
+
+func transfer_goods_between(from_handle: int, to_handle: int, good: int,
+		quantity: int, effective_day: int = 0, sequence: int = 0) -> Dictionary:
+	if quantity <= 0 or good < 0 or from_handle == 0 or to_handle == 0 \
+			or from_handle == to_handle:
+		return {"ok": false, "reason": "country_transfer_between_command_invalid"}
+	return submit([_receiver_payload({
+		"opcode": Opcode.TRANSFER_GOODS_BETWEEN_COUNTRIES,
+		"target_handle": from_handle, "domain": good, "value": quantity,
+		"effective_day": effective_day, "sequence": sequence}, to_handle)])
+
+func annex_country(victim_handle: int, annexer_handle: int,
+		effective_day: int = 0, sequence: int = 0) -> Dictionary:
+	if victim_handle == 0 or annexer_handle == 0 or victim_handle == annexer_handle:
+		return {"ok": false, "reason": "country_annex_command_invalid"}
+	return submit([_receiver_payload({
+		"opcode": Opcode.ANNEX_COUNTRY, "target_handle": victim_handle,
+		"effective_day": effective_day, "sequence": sequence}, annexer_handle)])
 
 func discover_research_signal(handle: int, signal_id: StringName, cell: int,
 		source_kind: int, effective_day: int, sequence: int) -> Dictionary:
@@ -601,7 +673,8 @@ func dispatch_committed_events(result: Dictionary) -> void:
 		var opcode := int(opcodes[i])
 		if opcode == Opcode.CREATE_COUNTRY \
 				or opcode == Opcode.TRANSFER_TERRITORY \
-				or opcode == Opcode.CLAIM_UNOWNED_TERRITORY:
+				or opcode == Opcode.CLAIM_UNOWNED_TERRITORY \
+				or opcode == Opcode.ANNEX_COUNTRY:
 			var territory_cell := int(cells[i]) if i < cells.size() else -1
 			if territory_cell >= 0:
 				territory_cells[territory_cell] = true

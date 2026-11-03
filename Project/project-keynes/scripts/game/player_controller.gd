@@ -6,8 +6,14 @@ class_name PlayerController
 
 const AnnualReportFlowScript = preload("res://scripts/annual/annual_report_flow.gd")
 const MusicSituationAggregatorScript = preload("res://scripts/audio/music_situation_aggregator.gd")
+const NarrativeEventServiceScript = preload("res://scripts/narrative/narrative_event_service.gd")
+const NarrativeEventFlowScript = preload("res://scripts/narrative/narrative_event_flow.gd")
+const NarrativeAiClientScript = preload("res://scripts/narrative/ai/narrative_ai_client.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
 var _music_situation = MusicSituationAggregatorScript.new()
+var _narrative_service = NarrativeEventServiceScript.new()
+var _narrative_flow = NarrativeEventFlowScript.new()
+var _narrative_ai_client: Node = null
 
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
@@ -16,11 +22,20 @@ signal regeneration_requested()
 signal country_committed(report: Dictionary)
 signal era_reward_offer_changed(offer: Dictionary)
 signal family_founding_offer_changed(offer: Dictionary)
+signal narrative_event_offer_changed(offer: Dictionary)
+signal narrative_event_resolved(record: Dictionary)
 ## Emitted once the native authority published a fresh three-card offer; the
 ## clock is already paused when this fires.
 signal ideology_offer_ready(snapshot: Dictionary)
 ## phase is "", "offer", "choose" or "reroll"; "" means the flow released.
 signal ideology_draw_state_changed(phase: String, detail: Dictionary)
+## Era Advancement (docs/cpp-dots-runtime/era-advancement-runtime.md §5).
+signal era_advancement_changed(snapshot: Dictionary)
+signal era_advanced(old_index: int, new_index: int, buffs: PackedStringArray)
+
+const EraAdvancementServiceScript = preload("res://scripts/era/era_advancement_service.gd")
+const TechnologyCatalogForPlayerScript = preload("res://scripts/economy/technology_catalog.gd")
+var _era_advancement = EraAdvancementServiceScript.new()
 
 const COMMAND_RESEARCH_SET_WEIGHTS := &"research.set_weights"
 const COMMAND_RESEARCH_SET_BUDGET := &"research.set_budget"
@@ -46,6 +61,35 @@ const COMMAND_IDEOLOGY_EQUIP := &"ideology.equip"
 const COMMAND_IDEOLOGY_UNEQUIP := &"ideology.unequip"
 const COMMAND_IDEOLOGY_PROMOTE := &"ideology.promote"
 const COMMAND_IDEOLOGY_REROLL := &"ideology.reroll"
+const COMMAND_ERA_ADVANCE_START := &"era.advance.start"
+const COMMAND_ERA_ADVANCE_PAUSE := &"era.advance.pause"
+const COMMAND_ERA_ADVANCE_RESUME := &"era.advance.resume"
+const COMMAND_PROCUREMENT_SET_POLICY := &"procurement.set_policy"
+const COMMAND_NARRATIVE_CHOOSE := &"narrative.choose"
+## 军事（Military v1）。与契约 §2 的 op 字符串一一对应：面板只发语义命令，
+## 控制器把它们翻译成军事 facade 的一行 batch 提交，生效日 D+1。
+const COMMAND_MILITARY_FORCE_TARGET := &"military.force.set_target"
+const COMMAND_MILITARY_CONFIG_SHARES := &"military.config.set"
+const COMMAND_MILITARY_QUALITY_POLICY := &"military.config.set_quality_policy"
+const COMMAND_MILITARY_AUTO_RETRAIN := &"military.config.auto_retrain"
+const COMMAND_MILITARY_LEVY := &"military.force.set_levy"
+const COMMAND_MILITARY_AUTO_DISCHARGE := &"military.force.set_auto_discharge"
+const COMMAND_MILITARY_BARRACKS := &"military.barracks.pause"
+const COMMAND_MILITARY_TRAIN := &"military.train"
+const COMMAND_MILITARY_STATE_BUILD := &"military.state.build"
+const COMMAND_MILITARY_STATE_DEMOLISH := &"military.state.demolish"
+const COMMAND_MILITARY_WAGE := &"military.policy.set_wage"
+const COMMAND_MILITARY_PROCUREMENT := &"military.policy.set_procurement"
+const COMMAND_MILITARY_ARMY_CREATE := &"military.army.create"
+const COMMAND_MILITARY_ARMY_STATION := &"military.army.station"
+const COMMAND_MILITARY_ARMY_MOVE := &"military.army.move"
+const COMMAND_MILITARY_AREA_CONTROL := &"military.army.area_control"
+const COMMAND_MILITARY_ARMY_STOP := &"military.army.stop"
+const COMMAND_MILITARY_ARMY_STANCE := &"military.army.stance"
+const COMMAND_MILITARY_ARMY_DISBAND := &"military.army.disband"
+const COMMAND_MILITARY_WAR_DECLARE := &"military.war.declare"
+const COMMAND_MILITARY_PEACE_PROPOSE := &"military.peace.propose"
+const COMMAND_MILITARY_PEACE_RESPOND := &"military.peace.respond"
 ## A draw/choose/reroll that has not settled after this many simulated days
 ## releases the lock and restores the clock.
 const IDEOLOGY_DRAW_TIMEOUT_DAYS := 3
@@ -75,6 +119,33 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_IDEOLOGY_UNEQUIP: true,
 	COMMAND_IDEOLOGY_PROMOTE: true,
 	COMMAND_IDEOLOGY_REROLL: true,
+	COMMAND_ERA_ADVANCE_START: true,
+	COMMAND_ERA_ADVANCE_PAUSE: true,
+	COMMAND_ERA_ADVANCE_RESUME: true,
+	COMMAND_PROCUREMENT_SET_POLICY: true,
+	COMMAND_NARRATIVE_CHOOSE: true,
+	COMMAND_MILITARY_FORCE_TARGET: true,
+	COMMAND_MILITARY_CONFIG_SHARES: true,
+	COMMAND_MILITARY_QUALITY_POLICY: true,
+	COMMAND_MILITARY_AUTO_RETRAIN: true,
+	COMMAND_MILITARY_LEVY: true,
+	COMMAND_MILITARY_AUTO_DISCHARGE: true,
+	COMMAND_MILITARY_BARRACKS: true,
+	COMMAND_MILITARY_TRAIN: true,
+	COMMAND_MILITARY_STATE_BUILD: true,
+	COMMAND_MILITARY_STATE_DEMOLISH: true,
+	COMMAND_MILITARY_WAGE: true,
+	COMMAND_MILITARY_PROCUREMENT: true,
+	COMMAND_MILITARY_ARMY_CREATE: true,
+	COMMAND_MILITARY_ARMY_STATION: true,
+	COMMAND_MILITARY_ARMY_MOVE: true,
+	COMMAND_MILITARY_AREA_CONTROL: true,
+	COMMAND_MILITARY_ARMY_STOP: true,
+	COMMAND_MILITARY_ARMY_STANCE: true,
+	COMMAND_MILITARY_ARMY_DISBAND: true,
+	COMMAND_MILITARY_WAR_DECLARE: true,
+	COMMAND_MILITARY_PEACE_PROPOSE: true,
+	COMMAND_MILITARY_PEACE_RESPOND: true,
 }
 
 var _camera = null
@@ -123,11 +194,40 @@ func configure(
 	_runtime_host = runtime_host
 	_world_clock = world_clock
 	_ui_manager = ui_manager
+	_apply_camera_view_scale_compensation()
 	_connect_runtime()
 	_connect_ui()
 	_annual_report_flow.configure(self, _runtime_host, _world_clock, _ui_manager)
+	_configure_narrative_runtime()
 	set_process(true)
 	sync_ui()
+
+
+## [mobile-zoom-compensate 2026-11-03] 把移动端的「等效放大倍数」拉回桌面口径。
+##
+## 移动端 content_scale_mode = CANVAS_ITEMS（scripts/ui/mobile_ui_scaling.gd）之后，
+## 1 world unit 在屏幕上占 zoom × total_scale 个物理像素；桌面只占 zoom。于是同一个
+## zoom_max=6.0 在手机上等效桌面 6 × total_scale（440dpi 真机 ≈ 8.25），玩家能捏合到比
+## 桌面更近，把每 hex 的 texel 拉到极限——这就是"放大后颗粒明显"的放大端根因。
+## 这里把 MapCamera 的有效上限改成 zoom_max / total_scale，等效倍数回到桌面口径。
+##
+## 只在原生移动平台调用；桌面/Web 连 setter 都不碰，MapCamera 的补偿系数保持 1.0
+## （见 MapCamera._maximum_zoom 的 `zoom_max / 1.0`，逐位等于原值）。
+func _apply_camera_view_scale_compensation() -> void:
+	if _camera == null or not _camera.has_method("set_view_scale_compensation"):
+		return
+	if not (OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")):
+		return
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null or not settings.has_method("ui_scaling"):
+		return
+	var scaling = settings.call("ui_scaling")
+	if scaling == null or not scaling.has_method("total_scale"):
+		return
+	var total_scale := float(scaling.call("total_scale"))
+	if total_scale <= 0.01:
+		return
+	_camera.set_view_scale_compensation(total_scale)
 
 
 func _process(delta: float) -> void:
@@ -199,6 +299,11 @@ func ensure_selected_visible() -> void:
 
 
 func select_cell(cell) -> void:
+	# A pending army order (移动 / 军事控制) takes the next map click instead of
+	# opening the cell panel; the order itself decides what the click means.
+	if not _military_order_mode.is_empty() and cell != null \
+			and military_arm_order_click(int(cell.index)):
+		return
 	# Picking a hex ends whatever card-level question the player was asking:
 	# leaving a card's hit set on screen while a different hex is selected reads
 	# as "this hex is one of them" and there is no way to tell otherwise.
@@ -232,6 +337,7 @@ func sync_ui() -> void:
 	_sync_clock_visual_state()
 	_sync_time_ui()
 	_annual_report_flow.try_present()
+	_narrative_flow.try_present()
 
 
 func refresh_country_binding() -> void:
@@ -294,6 +400,8 @@ func refresh_country_binding() -> void:
 		_sync_era_reward_offer()
 		_sync_era_music(true)
 	_sync_family_founding_offer()
+	_bind_era_advancement()
+	_configure_narrative_runtime()
 
 
 func _configure_music_situation() -> void:
@@ -328,11 +436,14 @@ func capture_view_state() -> Dictionary:
 		"ideology_draw_baseline_generation": _ideology_draw_baseline_generation,
 		"ideology_draw_start_day": _ideology_draw_start_day,
 		"ideology_draw_sequence": _ideology_draw_sequence,
+		"era_advancement": _era_advancement.to_save(),
+		"narrative_event_view": _narrative_flow.capture(),
 	}
 
 
 func restore_view_state(map, state: Dictionary) -> void:
 	_annual_report_flow.restore(state.get("annual_report_view", {}))
+	_narrative_flow.restore(state.get("narrative_event_view", {}))
 	_command_sequence = maxi(1, int(state.get("next_command_sequence", 1)))
 	_era_reward_resume_running = bool(state.get("era_reward_resume_running", false))
 	_era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
@@ -387,7 +498,9 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_sync_family_founding_offer()
 	_sync_ideology_draw()
 	_sync_era_music(true)
+	_restore_era_advancement(state.get("era_advancement", {}))
 	_annual_report_flow.try_present()
+	_narrative_flow.try_present()
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
@@ -403,6 +516,11 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			and id != COMMAND_ERA_REWARD_CHOOSE:
 		return _complete_command(id, _result(false,
 			"family_founding_choice_required", "必须先选择要扶持的家族。"))
+	if _narrative_flow.is_locked() and id != COMMAND_NARRATIVE_CHOOSE \
+			and id != COMMAND_ERA_REWARD_CHOOSE \
+			and id != COMMAND_FAMILY_FOUNDING_CHOOSE:
+		return _complete_command(id, _result(false,
+			"narrative_choice_required", "请先处理当前事件。"))
 	if not SUPPORTED_COMMANDS.has(id):
 		return _complete_command(id, _result(false, "unsupported_command", "该正式玩家命令尚未开放。"))
 	var ready := _resolve_player_country()
@@ -526,8 +644,28 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_IDEOLOGY_PROMOTE:
 			result = _ideology_facade.promote(_player_country_handle,
 				int(args.get("ideology_id", -1)), effective_day, sequence)
+		COMMAND_ERA_ADVANCE_START:
+			result = _era_advancement.start(effective_day, sequence)
+		COMMAND_ERA_ADVANCE_PAUSE:
+			result = _era_advancement.pause(effective_day, sequence)
+		COMMAND_ERA_ADVANCE_RESUME:
+			result = _era_advancement.resume(effective_day, sequence)
+		COMMAND_PROCUREMENT_SET_POLICY:
+			result = _era_advancement.set_policy(int(args.get("treasury_share_bp", -1)),
+				int(args.get("research_share_bp", -1)), effective_day, sequence)
+		COMMAND_NARRATIVE_CHOOSE:
+			result = _narrative_service.choose_option(
+				int(args.get("offer_id", -1)),
+				int(args.get("offer_generation", -1)),
+				int(args.get("option_index", -1)),
+				effective_day,
+				Callable(self, "_allocate_command_sequence")
+			)
 		_:
-			result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
+			if MILITARY_COMMANDS.has(id):
+				result = _submit_military_command(id, args, effective_day, sequence)
+			else:
+				result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
 	if not result.has("ok"):
 		result["ok"] = false
 	if not result.has("code"):
@@ -743,10 +881,23 @@ func _toggle_gm_from_gesture() -> void:
 	print("[input] 三指双击 → GM 面板")
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if _annual_report_flow.is_open():
+			if _ui_manager != null:
+				_ui_manager.dismiss_overlay_menu()
+			return
+		if _ui_manager != null and not _ui_manager.dismiss_overlay_menu():
+			_ui_manager.toggle_pause_menu()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# GUI 已消费的事件不会到这里。文本框必须继续挡住地图手势；
 	# 普通按钮焦点不得锁死选格/缩放/拖拽，否则左侧 overlay 点完就无法操作地图。
 	if _is_text_editing():
+		return
+	if _handle_touch_gm_gesture(event):
+		get_viewport().set_input_as_handled()
 		return
 	if _is_world_pointer_event(event):
 		_release_ordinary_ui_focus()
@@ -863,7 +1014,10 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
+	_refresh_era_advancement()
+	_step_narrative_daily(to_day)
 	_annual_report_flow.try_present()
+	_narrative_flow.try_present()
 
 
 func _on_country_peer_serviced(report: Dictionary) -> void:
@@ -931,6 +1085,8 @@ func _on_country_committed(report: Dictionary) -> void:
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 	_sync_era_music()
+	# Country ACK of advance_era raises current_era_index here.
+	_refresh_era_advancement(true)
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:
@@ -1130,6 +1286,8 @@ func _on_day_changed(day_idx: int) -> void:
 	_sync_ideology_draw()
 	_sync_era_music()
 	_sync_event_audio()
+	_refresh_era_advancement()
+	_step_narrative_daily(day_idx)
 	if _music_situation != null:
 		_music_situation.refresh_global_from_commit()
 	if _economy_facade != null and _player_country_handle != 0 and \
@@ -1197,6 +1355,9 @@ func _on_pause_toggled(paused: bool) -> void:
 		sync_ui()
 		return
 	if _family_founding_locked and not paused:
+		sync_ui()
+		return
+	if _narrative_flow.is_locked() and not paused:
 		sync_ui()
 		return
 	if ideology_draw_locked():
@@ -1346,6 +1507,11 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			var technology_id := StringName(args.get("technology_id", &""))
 			if technology_id.is_empty():
 				return _result(false, "invalid_args", "缺少科技标识。")
+			# Era milestones are internal era tokens granted by Era Advancement;
+			# removing a stale queue entry stays allowed.
+			if id != COMMAND_RESEARCH_REMOVE and is_milestone_technology(technology_id):
+				return _result(false, "technology_milestone_retired",
+					"时代里程碑不再通过研究获得，请在时代晋升面板中晋升时代。")
 			if id == COMMAND_RESEARCH_ENQUEUE:
 				var domain := int(args.get("domain", -1))
 				if domain < 0 or domain >= 4:
@@ -1467,6 +1633,113 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
 			if int(args.get("ideology_id", -1)) < 0:
 				return _result(false, "invalid_args", "理念标识无效。")
+		COMMAND_ERA_ADVANCE_START:
+			var preview: Dictionary = _era_advancement_preview()
+			match String(preview.get("status", "")):
+				"ready":
+					pass
+				"max":
+					return _result(false, "era_advance_max", "已到达最高时代。")
+				"purchasing", "paused", "completing":
+					return _result(false, "era_advance_in_progress", "时代晋升已在进行中。")
+				_:
+					return _result(false, "era_advance_conditions_unmet",
+						"至少需要满足 2 项晋升条件。")
+		COMMAND_ERA_ADVANCE_PAUSE:
+			if String(_era_advancement_preview().get("status", "")) != "purchasing":
+				return _result(false, "era_advance_not_purchasing", "当前没有进行中的收购。")
+		COMMAND_ERA_ADVANCE_RESUME:
+			if String(_era_advancement_preview().get("status", "")) != "paused":
+				return _result(false, "era_advance_not_paused", "时代收购没有处于暂停状态。")
+		COMMAND_PROCUREMENT_SET_POLICY:
+			if not args.has("treasury_share_bp") or not args.has("research_share_bp"):
+				return _result(false, "invalid_args", "国家购买预算参数不完整。")
+			var policy_check: Dictionary = EraAdvancementServiceScript.validate_policy(
+				int(args.get("treasury_share_bp", -1)), int(args.get("research_share_bp", -1)))
+			if not bool(policy_check.get("ok", false)):
+				return policy_check
+		COMMAND_NARRATIVE_CHOOSE:
+			if int(args.get("offer_id", 0)) <= 0 \
+					or int(args.get("offer_generation", 0)) <= 0 \
+					or int(args.get("option_index", -1)) < 0:
+				return _result(false, "invalid_args", "事件选项参数无效。")
+		COMMAND_MILITARY_FORCE_TARGET:
+			var target_mode := int(args.get("mode", -1))
+			if target_mode < 0 or target_mode > 1:
+				return _result(false, "invalid_args", "目标兵力模式无效。")
+			if int(args.get("value", -1)) < 0:
+				return _result(false, "invalid_args", "目标兵力不能为负。")
+		COMMAND_MILITARY_CONFIG_SHARES:
+			if String(args.get("unit", "")).is_empty():
+				return _result(false, "invalid_args", "缺少兵种标识。")
+			var share_bp := int(args.get("bp", -1))
+			if share_bp < 0 or share_bp > 10000:
+				return _result(false, "invalid_args", "兵种份额必须在 0–100% 之间。")
+		COMMAND_MILITARY_QUALITY_POLICY:
+			var quality_policy := int(args.get("policy", -1))
+			if quality_policy < 0 or quality_policy > 1:
+				return _result(false, "invalid_args", "品质策略无效。")
+		COMMAND_MILITARY_AUTO_RETRAIN, COMMAND_MILITARY_LEVY, \
+				COMMAND_MILITARY_AUTO_DISCHARGE:
+			if not args.has("enabled"):
+				return _result(false, "invalid_args", "军事开关缺少开关值。")
+		COMMAND_MILITARY_BARRACKS:
+			if int(args.get("cell", -1)) < 0 or not args.has("paused"):
+				return _result(false, "invalid_args", "兵营命令缺少地块或状态。")
+		COMMAND_MILITARY_TRAIN:
+			if int(args.get("cell", -1)) < 0 or String(args.get("to", "")).is_empty() \
+					or int(args.get("count", 0)) <= 0:
+				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
+		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
+			if int(args.get("cell", -1)) < 0 or String(args.get("building", "")).is_empty():
+				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
+		COMMAND_MILITARY_WAGE:
+			var wage_mode := int(args.get("mode", -1))
+			if wage_mode < 0 or wage_mode > 1:
+				return _result(false, "invalid_args", "军饷模式无效。")
+			if int(args.get("value", 0)) < 0:
+				return _result(false, "invalid_args", "军饷不能为负。")
+		COMMAND_MILITARY_PROCUREMENT:
+			var procurement_bp := int(args.get("bp", -1))
+			if procurement_bp < 0 or procurement_bp > 10000:
+				return _result(false, "invalid_args", "军需采购份额必须在 0–100% 之间。")
+		COMMAND_MILITARY_ARMY_CREATE:
+			if int(args.get("cell", -1)) < 0:
+				return _result(false, "invalid_args", "编成部队需要所在格。")
+		COMMAND_MILITARY_ARMY_STATION, COMMAND_MILITARY_ARMY_STOP, \
+				COMMAND_MILITARY_ARMY_DISBAND:
+			if int(args.get("army", 0)) <= 0:
+				return _result(false, "invalid_args", "部队句柄无效。")
+		COMMAND_MILITARY_ARMY_MOVE:
+			if int(args.get("army", 0)) <= 0 or int(args.get("cell", -1)) < 0:
+				return _result(false, "invalid_args", "移动命令缺少部队或目标格。")
+		COMMAND_MILITARY_AREA_CONTROL:
+			if int(args.get("army", 0)) <= 0:
+				return _result(false, "invalid_args", "军事控制缺少部队句柄。")
+			var area_cells = args.get("cells", PackedInt32Array())
+			var radius := int(args.get("radius", 0))
+			if (not area_cells is PackedInt32Array or (area_cells as PackedInt32Array).is_empty()) \
+					and radius <= 0:
+				return _result(false, "invalid_args", "军事控制需要框选或中心格半径。")
+			if radius > 6:
+				return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
+			if area_cells is PackedInt32Array and (area_cells as PackedInt32Array).size() > 256:
+				return _result(false, "invalid_args", "军事控制区域上限为 256 格。")
+		COMMAND_MILITARY_ARMY_STANCE:
+			var stance := int(args.get("stance", -1))
+			if stance < 0 or stance > 4:
+				return _result(false, "invalid_args", "部队姿态无效。")
+		COMMAND_MILITARY_WAR_DECLARE:
+			if int(args.get("target", 0)) == 0:
+				return _result(false, "invalid_args", "宣战需要目标国家句柄。")
+		COMMAND_MILITARY_PEACE_PROPOSE:
+			if int(args.get("war_id", 0)) <= 0:
+				return _result(false, "invalid_args", "和议需要战争标识。")
+			if not args.get("terms", null) is Array:
+				return _result(false, "invalid_args", "和议条款格式无效。")
+		COMMAND_MILITARY_PEACE_RESPOND:
+			if int(args.get("war_id", 0)) <= 0 or not args.has("accept"):
+				return _result(false, "invalid_args", "和议答复缺少战争标识或结果。")
 	return _result(true, "ok", "")
 
 
@@ -1540,6 +1813,12 @@ func _sync_era_reward_offer() -> void:
 	if status in ["OPEN", "ERROR"] and not _era_reward_locked:
 		_era_reward_generation = int(offer.get("offer_generation", 0))
 		era_reward_offer_changed.emit(offer)
+		# 晋升一成，三选一直接推到玩家面前，不要让人再去找按钮点一次。
+		# 大典还在播时先让位，下一轮同步会重试。
+		var ceremony: bool = _ui_manager != null and _ui_manager.has_method("is_era_ceremony_playing") \
+			and _ui_manager.is_era_ceremony_playing()
+		if not ceremony:
+			open_era_reward_offer()
 		return
 	if status == "OPEN" or status == "SELECTED_PENDING" or status == "ERROR":
 		if not _era_reward_locked:
@@ -1585,6 +1864,93 @@ func _sync_era_reward_offer() -> void:
 
 func era_reward_locked() -> bool:
 	return _era_reward_locked
+
+
+# ─── Era Advancement (docs/cpp-dots-runtime/era-advancement-runtime.md) ─────
+
+static var _milestone_technology_ids: Dictionary = {}
+var _era_advancement_snapshot_hash := 0
+
+
+## UI model of §5. Always the exact documented shape.
+func get_era_advancement_snapshot() -> Dictionary:
+	_bind_era_advancement()
+	return _era_advancement.snapshot()
+
+
+func get_procurement_policy() -> Dictionary:
+	return _era_advancement.policy()
+
+
+## Why a fully stocked purchase is still waiting ("" when not blocked).
+func get_era_advancement_blocked_reason() -> String:
+	return _era_advancement.blocked_reason()
+
+
+static func is_milestone_technology(technology_id: StringName) -> bool:
+	if _milestone_technology_ids.is_empty():
+		var catalog: Dictionary = TechnologyCatalogForPlayerScript.compile_native_catalog()
+		var ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
+		for index in catalog.get("technology_era_milestone_indices", PackedInt32Array()):
+			if int(index) >= 0 and int(index) < ids.size():
+				_milestone_technology_ids[StringName(ids[int(index)])] = true
+	return _milestone_technology_ids.has(technology_id)
+
+
+func _era_advancement_preview() -> Dictionary:
+	# Read-only: validation must not submit anything or consume sequences.
+	_bind_era_advancement()
+	return _era_advancement.preview()
+
+
+func _bind_era_advancement() -> void:
+	if _era_advancement == null:
+		return
+	if not _era_advancement.changed.is_connected(_on_era_advancement_changed):
+		_era_advancement.changed.connect(_on_era_advancement_changed)
+	if not _era_advancement.era_advanced.is_connected(_on_era_advancement_advanced):
+		_era_advancement.era_advanced.connect(_on_era_advancement_advanced)
+	if _country_facade == null or _player_country_handle == 0:
+		return
+	var newly_bound: bool = _era_advancement.bind(_country_facade, _economy_facade,
+		_player_country_handle, Callable(self, "_allocate_command_sequence"))
+	if newly_bound:
+		# Policy and era target are transient on the native side.
+		_era_advancement.push_runtime_state(_next_effective_day())
+		_refresh_era_advancement(true)
+
+
+func _restore_era_advancement(state) -> void:
+	_bind_era_advancement()
+	_era_advancement.restore(state if state is Dictionary else {})
+	if _era_advancement.is_bound():
+		_era_advancement.push_runtime_state(_next_effective_day())
+	_refresh_era_advancement(true)
+
+
+func _refresh_era_advancement(force: bool = false) -> void:
+	if _era_advancement == null or not _era_advancement.is_bound() or _world_clock == null:
+		return
+	_era_advancement.refresh(_world_clock.day_index(), force)
+
+
+func _allocate_command_sequence() -> int:
+	var sequence := _command_sequence
+	_command_sequence += 1
+	return sequence
+
+
+func _on_era_advancement_changed(snapshot: Dictionary) -> void:
+	var digest := snapshot.hash()
+	if digest == _era_advancement_snapshot_hash:
+		return
+	_era_advancement_snapshot_hash = digest
+	era_advancement_changed.emit(snapshot)
+
+
+func _on_era_advancement_advanced(old_index: int, new_index: int,
+		buffs: PackedStringArray) -> void:
+	era_advanced.emit(old_index, new_index, buffs)
 
 
 ## True while a submitted draw/choose/reroll waits for its one-day settlement.
@@ -1834,6 +2200,358 @@ func _next_effective_day() -> int:
 	return maxi(0, _world_clock.day_index() + 1) if _world_clock != null else 0
 
 
+# ─── Military (design §14.3 / contract §2) ──────────────────────────────────
+
+## 玩家军事命令 → 军事 facade 的 op 字符串。见 docs/plans/military-implementation-contract.md §2。
+## 只登记面板真正会用到的子集；契约里其余 op（army.transfer/merge/split/rename 等）
+## 属于地图交互或后续版本，未登记前一律 unsupported_command，不伪造成功。
+const MILITARY_COMMANDS := {
+	COMMAND_MILITARY_FORCE_TARGET: "force.set_target",
+	COMMAND_MILITARY_CONFIG_SHARES: "config.set",
+	COMMAND_MILITARY_QUALITY_POLICY: "config.set_quality_policy",
+	COMMAND_MILITARY_AUTO_RETRAIN: "config.auto_retrain",
+	COMMAND_MILITARY_LEVY: "force.set_levy",
+	COMMAND_MILITARY_AUTO_DISCHARGE: "force.set_auto_discharge",
+	COMMAND_MILITARY_BARRACKS: "barracks.pause",
+	COMMAND_MILITARY_TRAIN: "train",
+	COMMAND_MILITARY_STATE_BUILD: "state.build",
+	COMMAND_MILITARY_STATE_DEMOLISH: "state.demolish",
+	COMMAND_MILITARY_WAGE: "policy.set_wage",
+	COMMAND_MILITARY_PROCUREMENT: "policy.set_procurement",
+	COMMAND_MILITARY_ARMY_CREATE: "army.create",
+	COMMAND_MILITARY_ARMY_STATION: "army.station",
+	COMMAND_MILITARY_ARMY_MOVE: "army.move",
+	COMMAND_MILITARY_AREA_CONTROL: "army.area_control",
+	COMMAND_MILITARY_ARMY_STOP: "army.stop",
+	COMMAND_MILITARY_ARMY_STANCE: "army.stance",
+	COMMAND_MILITARY_ARMY_DISBAND: "army.disband",
+	COMMAND_MILITARY_WAR_DECLARE: "war.declare",
+	COMMAND_MILITARY_PEACE_PROPOSE: "peace.propose",
+	COMMAND_MILITARY_PEACE_RESPOND: "peace.respond",
+}
+## `military_facade.gd`（E 维护）的提交入口：契约 §2 的批量命令数组。
+## 只认这一个方法名——facade 有 `submit(batch)` 的明确签名，用别的名字猜会
+## 静默打空。缺它就回落成 runtime_unavailable，绝不伪造成功。
+const MILITARY_FACADE_SUBMIT_METHOD := "submit"
+
+
+## 军事 facade 由 MapGenerator（E 负责接线）持有；会话没有它就返回 null，
+## 军事面板据此给出「军事机构尚未接通」，不会伪造成功。
+func _military_facade():
+	var host = _runtime_host
+	if host == null:
+		return null
+	if host.has_method("get_military_facade"):
+		return host.get_military_facade()
+	return null
+
+
+func has_military_runtime() -> bool:
+	var facade = _military_facade()
+	return facade != null
+
+
+## 把面板参数翻译成契约 §2 的命令项。缺省字段留空，由 facade/原生侧给默认。
+static func _military_command_entry(id: StringName, args: Dictionary) -> Dictionary:
+	var entry := {"op": String(MILITARY_COMMANDS[id]), "country": 0}
+	match id:
+		COMMAND_MILITARY_FORCE_TARGET:
+			entry["count"] = int(args.get("mode", 0))
+			entry["value"] = int(args.get("value", 0))
+		COMMAND_MILITARY_CONFIG_SHARES:
+			var shares := {}
+			shares[String(args.get("unit", ""))] = int(args.get("bp", 0))
+			entry["shares"] = shares
+		COMMAND_MILITARY_QUALITY_POLICY:
+			entry["policy"] = int(args.get("policy", 0))
+		COMMAND_MILITARY_AUTO_RETRAIN, COMMAND_MILITARY_LEVY, \
+				COMMAND_MILITARY_AUTO_DISCHARGE:
+			entry["count"] = 1 if bool(args.get("enabled", false)) else 0
+		COMMAND_MILITARY_BARRACKS:
+			entry["cell"] = int(args.get("cell", -1))
+			entry["count"] = 1 if bool(args.get("paused", false)) else 0
+		COMMAND_MILITARY_TRAIN:
+			entry["cell"] = int(args.get("cell", -1))
+			entry["unit_from"] = String(args.get("from", "militia"))
+			entry["unit_to"] = String(args.get("to", ""))
+			entry["count"] = int(args.get("count", 0))
+		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
+			entry["cell"] = int(args.get("cell", -1))
+			entry["unit_to"] = String(args.get("building", ""))
+		COMMAND_MILITARY_WAGE:
+			entry["count"] = int(args.get("mode", 0))
+			entry["value"] = int(args.get("value", 0))
+		COMMAND_MILITARY_PROCUREMENT:
+			entry["value"] = int(args.get("bp", 0))
+		COMMAND_MILITARY_ARMY_CREATE:
+			entry["cell"] = int(args.get("cell", -1))
+			entry["units"] = args.get("units", {})
+		COMMAND_MILITARY_ARMY_STATION, COMMAND_MILITARY_ARMY_STOP, \
+				COMMAND_MILITARY_ARMY_DISBAND:
+			entry["army"] = int(args.get("army", 0))
+		COMMAND_MILITARY_ARMY_MOVE:
+			entry["army"] = int(args.get("army", 0))
+			entry["cell"] = int(args.get("cell", -1))
+		COMMAND_MILITARY_AREA_CONTROL:
+			entry["army"] = int(args.get("army", 0))
+			entry["cells"] = args.get("cells", PackedInt32Array())
+			entry["radius"] = int(args.get("radius", 0))
+		COMMAND_MILITARY_ARMY_STANCE:
+			entry["army"] = int(args.get("army", 0))
+			entry["count"] = int(args.get("stance", 0))
+		COMMAND_MILITARY_WAR_DECLARE:
+			entry["other"] = int(args.get("target", 0))
+		COMMAND_MILITARY_PEACE_PROPOSE, COMMAND_MILITARY_PEACE_RESPOND:
+			entry["other"] = int(args.get("war_id", 0))
+			entry["terms"] = args.get("terms", [])
+			if id == COMMAND_MILITARY_PEACE_RESPOND:
+				entry["count"] = 1 if bool(args.get("accept", false)) else 0
+	return entry
+
+
+func _submit_military_command(id: StringName, args: Dictionary,
+		effective_day: int, sequence: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+	var entry := _military_command_entry(id, args)
+	entry["country"] = _player_country_handle
+	if not facade.has_method(MILITARY_FACADE_SUBMIT_METHOD):
+		return _result(false, "runtime_unavailable",
+			"军事机构尚未接通：缺少军事命令入口。")
+	# 命令在下一游戏日生效由军事运行时自己排期；控制器只负责把玩家意图
+	# 交出去、保留自己的 sequence 以便回执对齐，并把拒绝理由翻成玩家话。
+	var raw = facade.call(MILITARY_FACADE_SUBMIT_METHOD, [entry])
+	var result: Dictionary
+	if raw is Dictionary:
+		result = raw
+	else:
+		result = _result(false, "command_rejected", "军事命令未返回结果。")
+	if bool(result.get("ok", false)):
+		result["code"] = String(result.get("code", "queued"))
+		if not result.has("message"):
+			result["message"] = "军事命令已排队，将在下一游戏日生效。"
+		_military_last_sequence = sequence
+	return result
+
+
+var _military_last_sequence := -1
+# Army order awaiting a map click (design §14.2). "move" previews the path on the
+# first click and confirms on the second; "area" takes the first click as centre.
+var _military_order_army := 0
+var _military_order_mode := ""
+var _military_order_radius := 0
+var _military_order_target := -1
+
+
+func military_last_sequence() -> int:
+	return _military_last_sequence
+
+
+# ─── Military army orders on the map (design §14.2) ────────────────────────
+# The workspace only asks for the mode; the targeting loop lives here because
+# this is where a map click becomes a cell. 移动 is a two-click order (preview,
+# then confirm), 军事控制 is centre + radius.
+
+## `mode` is "move" or "area". Returns the same result shape as request_command.
+func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+	if not facade.has_method("preview_path"):
+		return _result(false, "runtime_unavailable", "军事机构尚未接通：缺少路径预览入口。")
+	if army <= 0:
+		return _result(false, "invalid_args", "先选一支自己的部队。")
+	if mode != "move" and mode != "area":
+		return _result(false, "invalid_args", "未知的部队指令。")
+	if mode == "area" and (radius < 1 or radius > 6):
+		return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
+	_military_order_army = army
+	_military_order_mode = mode
+	_military_order_radius = radius
+	_military_order_target = -1
+	_apply_military_render_selection(army)
+	_clear_military_path_preview()
+	var armed := _result(true, "ok", "在地图上点目标格。")
+	armed["mode"] = mode
+	armed["radius"] = radius
+	return armed
+
+
+func cancel_military_arm_order() -> void:
+	_military_order_army = 0
+	_military_order_mode = ""
+	_military_order_radius = 0
+	_military_order_target = -1
+	_clear_military_path_preview()
+
+
+func military_arm_order() -> Dictionary:
+	return {"army": _military_order_army, "mode": _military_order_mode,
+		"radius": _military_order_radius, "target": _military_order_target}
+
+
+## Map click while an order is pending. Returns true when the click belonged to
+## the order (the caller must then not open the cell panel for it).
+func military_arm_order_click(cell: int) -> bool:
+	if _military_order_mode.is_empty() or cell < 0:
+		return false
+	var army := _military_order_army
+	if _military_order_mode == "area":
+		var cells := _military_area_cells(cell, _military_order_radius)
+		var sent := request_command(COMMAND_MILITARY_AREA_CONTROL,
+			{"army": army, "cells": cells, "radius": _military_order_radius})
+		if bool(sent.get("ok", false)) and cells.size() > 0:
+			highlight_cells(cells)
+		cancel_military_arm_order()
+		return true
+	var facade = _military_facade()
+	var preview: Dictionary = facade.preview_path(army, cell) \
+		if facade != null and facade.has_method("preview_path") else {}
+	if not bool(preview.get("ok", false)):
+		# Never send a move the pathfinder already refused to draw.
+		_preview_failed(preview, cell)
+		return true
+	if _military_order_target != cell:
+		if not _show_military_path_preview(preview, cell):
+			return true
+		_military_order_target = cell
+		return true
+	request_command(COMMAND_MILITARY_ARMY_MOVE, {"army": army, "cell": cell})
+	cancel_military_arm_order()
+	return true
+
+
+func _preview_failed(preview: Dictionary, cell: int) -> void:
+	var reason := String(preview.get("reason", ""))
+	var text := "这段路走不通：目标格不可达。"
+	if reason == "military_path_unreachable":
+		text = "这段路走不通：与部队之间没有可通行的路线。"
+	if _ui_manager != null and _ui_manager.has_method("show_transient_message"):
+		_ui_manager.call("show_transient_message", text)
+	else:
+		push_warning("military arm order: %s (cell %d)" % [reason, cell])
+
+
+func _show_military_path_preview(preview: Dictionary, cell: int) -> bool:
+	var layers = _military_layers()
+	if layers == null or not layers.has_method("show_path_preview"):
+		push_warning("military arm order: no map layers for the path preview")
+		return false
+	var cells = preview.get("cells", PackedInt32Array())
+	var route := PackedInt32Array()
+	for value in cells:
+		route.append(int(value))
+	var days := int(preview.get("days", 0))
+	layers.call("show_path_preview", route, PackedInt32Array(), days)
+	return true
+
+
+func _clear_military_path_preview() -> void:
+	var layers = _military_layers()
+	if layers != null and layers.has_method("clear_route"):
+		layers.call("clear_route")
+
+
+## Centre + radius as cell indices (the same hex radius the core uses for
+## army.area_control). Bounded to the command's 256-cell cap.
+func _military_area_cells(centre: int, radius: int) -> PackedInt32Array:
+	var cells := PackedInt32Array()
+	var map = _runtime_host.current_map() if _runtime_host != null \
+		and _runtime_host.has_method("current_map") else null
+	if map == null or centre < 0:
+		return cells
+	var neighbours: PackedInt32Array = map.neighbor_indices_packed()
+	var frontier := PackedInt32Array([centre])
+	var seen := {}
+	seen[centre] = true
+	cells.append(centre)
+	for _step in range(maxi(0, radius)):
+		var next := PackedInt32Array()
+		for cell in frontier:
+			var base := int(cell) * 6
+			if base + 6 > neighbours.size():
+				continue
+			for direction in range(6):
+				var neighbour := int(neighbours[base + direction])
+				if neighbour < 0 or seen.has(neighbour):
+					continue
+				seen[neighbour] = true
+				next.append(neighbour)
+				if cells.size() < 256:
+					cells.append(neighbour)
+		frontier = next
+	return cells
+
+
+func _apply_military_render_selection(army: int) -> void:
+	var facade = _military_facade()
+	if facade != null and facade.has_method("set_render_selection"):
+		facade.call("set_render_selection", army)
+
+
+func _military_layers():
+	if _runtime_host != null and "military_map_layers" in _runtime_host:
+		return _runtime_host.get("military_map_layers")
+	return null
+
+
+## Workspace selection: ask the native snapshot to expose this army's area and
+## remaining path so the area/route layers follow the selection.
+func set_military_render_selection(army_handle: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null or not facade.has_method("set_render_selection"):
+		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+	var result: Dictionary = facade.call("set_render_selection", int(army_handle))
+	return result if result is Dictionary else _result(false, "command_rejected", "")
+
+
+## Same preview the second map click uses, for callers outside the controller.
+func preview_military_path(army_handle: int, cell: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null or not facade.has_method("preview_path"):
+		return {"ok": false, "reason": "runtime_unavailable"}
+	var result = facade.call("preview_path", int(army_handle), int(cell))
+	return result if result is Dictionary else {"ok": false, "reason": "command_rejected"}
+
+
+## Front-edge probe for the war chapter: the render snapshot carries the per-edge
+## progress byte but not the keys (they only feed MilitaryFrontLayer).
+func military_front_probe() -> Dictionary:
+	var facade = _military_facade()
+	if facade == null or not facade.has_method("render_snapshot"):
+		return {"ok": false, "keys": PackedInt32Array(), "progress": PackedByteArray()}
+	var snapshot = facade.call("render_snapshot", 0)
+	if not (snapshot is Dictionary):
+		return {"ok": false, "keys": PackedInt32Array(), "progress": PackedByteArray()}
+	return {"ok": true,
+		"keys": (snapshot as Dictionary).get("front_edges", PackedInt32Array()),
+		"progress": (snapshot as Dictionary).get("front_progress", PackedByteArray())}
+
+
+## Latest military events for the battle log (same ring as the daily system's
+## cursor; this read never advances it).
+func military_events_probe(limit: int = 512) -> Array:
+	var facade = _military_facade()
+	if facade == null or not facade.has_method("poll_events"):
+		return []
+	var batch = facade.call("poll_events", 0, limit)
+	return batch if batch is Array else []
+
+
+## MilitaryBattleLogRow (the core's last 64 battles) has no bridge accessor yet,
+## so there is nothing truthful to report here; the battle log falls back to the
+## event ring. Report unavailable rather than invent a row.
+func battle_log_probe() -> Dictionary:
+	return {"available": false, "reason": "military_battle_log_api_missing"}
+
+
+## Truce end day with a country slot, -1 when none. The bridge has no truce
+## query; the war chapter shows "正在交战" without this and must not guess a date.
+func military_truce_until(_slot: int) -> int:
+	return -1
+
+
 static func _colonization_command_message(code: String) -> String:
 	return {
 		"economy_busy_retry": "经济正在结算。可先排队，提交完成后会自动派遣。",
@@ -1911,3 +2629,116 @@ func _release_ordinary_ui_focus() -> void:
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:
 	return {"ok": ok, "code": code, "message": message}
+
+
+# ─── Narrative Event System Integration ─────────────────────────────────────
+
+var _last_narrative_step_day: int = -1
+
+
+func narrative_service():
+	return _narrative_service
+
+
+func narrative_flow():
+	return _narrative_flow
+
+
+func narrative_ai_client():
+	return _narrative_ai_client
+
+
+func narrative_event_locked() -> bool:
+	return _narrative_flow != null and _narrative_flow.is_locked()
+
+
+func export_narrative_state() -> Dictionary:
+	return _narrative_service.export_state() if _narrative_service != null else {}
+
+
+func restore_narrative_state(state: Dictionary) -> Dictionary:
+	if _narrative_service == null:
+		return {"ok": true}
+	var res := _narrative_service.restore_state(state)
+	_last_narrative_step_day = -1
+	return res
+
+
+func open_narrative_chronicle(filter_cell: int = -1) -> void:
+	if _ui_manager == null or _narrative_service == null:
+		return
+	if _ui_manager.has_method("show_narrative_chronicle"):
+		_ui_manager.show_narrative_chronicle(
+			_narrative_service.get_chronicle(0, 128, filter_cell)
+		)
+
+
+func _configure_narrative_runtime() -> void:
+	if _narrative_service == null or _narrative_flow == null:
+		return
+	if _narrative_ai_client == null:
+		_narrative_ai_client = NarrativeAiClientScript.new()
+		_narrative_ai_client.name = "NarrativeAiClient"
+		add_child(_narrative_ai_client)
+	var generator = _runtime_host.generator() if _runtime_host != null and _runtime_host.has_method("generator") else null
+	var map = _runtime_host.current_map() if _runtime_host != null and _runtime_host.has_method("current_map") else null
+	var view_adapter = _runtime_host.view_adapter() if _runtime_host != null and _runtime_host.has_method("view_adapter") else null
+	var seed_val := int(_runtime_host.last_seed()) if _runtime_host != null and _runtime_host.has_method("last_seed") else 1
+	_narrative_service.configure(
+		generator, map, view_adapter, _world_clock,
+		_player_country_handle, maxi(1, seed_val)
+	)
+	_narrative_flow.configure(
+		self, _runtime_host, _world_clock, _ui_manager,
+		_narrative_service, _narrative_ai_client
+	)
+	if not _narrative_flow.offer_changed.is_connected(_on_narrative_offer_changed):
+		_narrative_flow.offer_changed.connect(_on_narrative_offer_changed)
+	if not _narrative_flow.event_resolved.is_connected(_on_narrative_event_resolved):
+		_narrative_flow.event_resolved.connect(_on_narrative_event_resolved)
+	if not _narrative_service.ai_generation_requested.is_connected(_on_narrative_ai_generation_requested):
+		_narrative_service.ai_generation_requested.connect(_on_narrative_ai_generation_requested)
+	if _ui_manager != null and _ui_manager.has_signal("narrative_chronicle_requested"):
+		var cb_chron := Callable(self, "open_narrative_chronicle")
+		if not _ui_manager.narrative_chronicle_requested.is_connected(cb_chron):
+			_ui_manager.narrative_chronicle_requested.connect(cb_chron)
+
+
+func _step_narrative_daily(day_idx: int) -> void:
+	if _narrative_service == null or _player_country_handle <= 0:
+		return
+	if day_idx <= _last_narrative_step_day:
+		return
+	_last_narrative_step_day = day_idx
+	_narrative_service.set_player_country_handle(_player_country_handle)
+	var ai_enabled := false
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings != null and settings.has_method("values"):
+		ai_enabled = bool(settings.values().get("ai_narrative_enabled", false))
+	_narrative_service.on_day_committed(day_idx, ai_enabled)
+	_narrative_flow.try_present()
+
+
+func _on_narrative_offer_changed(offer: Dictionary) -> void:
+	narrative_event_offer_changed.emit(offer)
+
+
+func _on_narrative_event_resolved(record: Dictionary) -> void:
+	narrative_event_resolved.emit(record)
+
+
+func _on_narrative_ai_generation_requested(request_spec: Dictionary) -> void:
+	if _narrative_ai_client == null or _narrative_service == null:
+		return
+	_narrative_ai_client.request_event_generation(request_spec, func(res: Dictionary) -> void:
+		if not bool(res.get("ok", false)):
+			return
+		var def = res.get("definition", null)
+		if def == null:
+			return
+		var cell_idx := int(res.get("cell_idx", -1))
+		var chain_id := StringName(res.get("chain_id", ""))
+		var day: int = int(_world_clock.day_index()) if _world_clock != null else int(request_spec.get("day", 1))
+		_narrative_service.enqueue_event_offer(def, cell_idx, day, chain_id)
+		_narrative_flow.try_present()
+	)

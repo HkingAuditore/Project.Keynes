@@ -22,6 +22,9 @@ __pycache__/
 # 嵌入式 godot-cpp 备份/临时仓库，不纳入版本管理
 /gdext/godot-cpp.bak-20260830/
 /gdext/godot-cpp.tmpfix/
+# Private x86_64 godot-cpp copy (GODOT_CPP_DIR=godot-cpp-win64); keeps Windows
+# bindings away from a concurrent wasm32 regeneration of godot-cpp/gen.
+/gdext/godot-cpp-win64/
 
 # 回归/soak 的临时日志（下划线前缀是这些一次性抓取的约定）
 /tmp/_*.txt

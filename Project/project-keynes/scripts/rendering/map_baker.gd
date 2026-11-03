@@ -1562,6 +1562,15 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		world.world_bounds, world.wrap_period_x, quality, OS.has_feature("mobile"),
 		{"generation_id": generation_id, "hex_size": hex_size}
 	)
+	# [mobile-density 2026-11-03] 真机验收日志：layout 一解析完就打印，**先于** native pass。
+	# 这样即使后面回退 legacy（末行的 bake_report 只在成功时打印），也能在 adb logcat 里
+	# 直接看到手机实际拿到的档位 / 请求密度 / 生效密度 / 层数与稳态显存。
+	print("  visual tile layout: profile=%s requested=%.2f effective=%.2f hex_grid=%s layers=%d resident=%.2fMB peak=%.2fMB degrade=%s"
+		% [layout.profile, layout.requested_texels_per_hex, layout.effective_texels_per_hex,
+			str(layout.grid_size), layout.layer_count,
+			float(layout.estimated_resident_bytes) / 1048576.0,
+			float(layout.estimated_peak_bytes) / 1048576.0,
+			layout.degradation_reason if not layout.degradation_reason.is_empty() else "none"])
 	if layout.mode == VisualTileLayoutScript.MODE_LEGACY:
 		world.visual_tiles = null
 		print("  visual tiles: legacy (%s)" % layout.fallback_reason)
@@ -5207,6 +5216,25 @@ const _BOUNCE_WATER_TERRAINS: Array = [0, 1, 18, 19, 21]
 # 从已编码的 enum/dyn LUT 字节直接派生弹射色，因此 C++ 与 GDScript 两条 LUT 路径
 # 自动共用同一份公式，也不需要为此 rebuild GDExtension。O(n_cells) 纯字节循环，
 # 6400 cell 下相对 enum/dyn/eco 的编码开销可忽略。
+# [qa-skip-lut-publish 2026-11-02] 二分"渲染线程崩溃是否与每日 LUT 纹理上传有关"。
+# 只有在 user://pk_debug.cfg 里写 `[render] skip_lut_publish=true` 才生效；正常玩家
+# 没有这个文件 ⇒ 恒为 false，行为与改动前一致。
+static var _qa_skip_lut_publish_cache := -1
+
+
+static func _qa_skip_lut_publish() -> bool:
+	if _qa_skip_lut_publish_cache >= 0:
+		return _qa_skip_lut_publish_cache == 1
+	var cfg := ConfigFile.new()
+	var enabled := false
+	if cfg.load("user://pk_debug.cfg") == OK:
+		enabled = bool(cfg.get_value("render", "skip_lut_publish", false))
+	_qa_skip_lut_publish_cache = 1 if enabled else 0
+	if enabled:
+		print("[map_baker] QA: skip_lut_publish=true (daily LUT texture uploads disabled)")
+	return enabled
+
+
 func _publish_bounce_lut(enum_data: PackedByteArray, dyn_data: PackedByteArray,
 		world: WorldData, lw: int, lh: int,
 		dirty_indices: PackedInt32Array = PackedInt32Array(),
@@ -5475,6 +5503,13 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
 				var eco_changed: bool = world.eco_lut_tex == null \
 						or _cell_eco_lut_bytes_cache.size() != c.size() \
 						or _cell_eco_lut_bytes_cache != c
+				# [qa-skip-lut-publish 2026-11-02] 二分"渲染线程崩溃是否来自每日
+				# LUT 纹理上传"：pk_debug.cfg 里 `[render] skip_lut_publish=true`
+				# 时只跳过 GPU 上传，模拟与报告照常（正常玩家没有该文件）。
+				if _qa_skip_lut_publish():
+					enum_changed = false
+					dyn_changed = false
+					eco_changed = false
 				report["enum_lut_changed"] = enum_changed
 				report["dyn_lut_changed"] = dyn_changed
 				report["eco_lut_changed"] = eco_changed
@@ -5492,13 +5527,16 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
 					report["enum_lut_upload_ms"] = 0.0
 				if dyn_changed:
 					var dyn_upload_t0_us := Time.get_ticks_usec()
-					# 动态 LUT 由主地图 shader 高频采样。写入非当前采样纹理后
-					# 再交换引用，避免 update 与当前渲染帧竞争；双缓冲固定复用，
-					# 防止长期运行不断分配 GPU 纹理。
-					var dyn_front := world.dyn_lut_tex
+					# [dyn-lut-inplace 2026-11-02] 这里原来是"写后台纹理再交换引用"的
+					# 双缓冲。后果是**每天换一个 Texture 对象**，hex_renderer 的
+					# `_sync_cell_lut_textures()` 于是每天命中一次 stale-rebind 分支，
+					# 在同一帧里给两张 world_map 材质换 sampler —— 真机渲染线程
+					# 10~60 秒后 SIGSEGV 的主嫌疑点。`dyn_lut_tex_back` 全项目没有任何
+					# 读者，双缓冲没换来收益；改成与 enum/eco 一致的原地 update()
+					# （Godot 的 ImageTexture.update() 由 RenderingServer 排队，
+					# 采样中的纹理更新是它的正常用法）。
 					world.dyn_lut_tex = _lut_tex_from_data(
-						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex_back)
-					world.dyn_lut_tex_back = dyn_front
+						d, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 					report["dyn_lut_upload_ms"] = float(Time.get_ticks_usec() - dyn_upload_t0_us) / 1000.0
 					_cell_dyn_lut_bytes_cache = d
 				else:
@@ -5579,10 +5617,17 @@ func _bake_cell_luts_gd(map: MapData, world: WorldData, lw: int, lh: int,
 		weather_data[w4 + 2] = _q01_byte(float(cell.weather_cloud))
 		weather_data[w4 + 3] = _q01_byte(float(cell.weather_vapor))
 	world.enum_lut_tex = _lut_tex_from_data(enum_data, lw, lh, Image.FORMAT_RGBA8, world.enum_lut_tex)
-	var dyn_front := world.dyn_lut_tex
+	# [dyn-lut-inplace 2026-11-02] 以前这里对 dyn_lut 做前后台双缓冲交换：
+	#   var dyn_front := world.dyn_lut_tex
+	#   world.dyn_lut_tex = _lut_tex_from_data(..., world.dyn_lut_tex_back)
+	#   world.dyn_lut_tex_back = dyn_front
+	# 后果是**每天换一个 Texture 对象**（两个对象往复），hex_renderer 的
+	# `_sync_cell_lut_textures()` 就会每天命中一次"stale LUT rebind"分支，在同一个
+	# 帧里给两张 world_map 材质换 sampler（真机渲染线程 10~60s 后 SIGSEGV 的嫌疑点）。
+	# dyn_lut_tex_back 全项目没有任何读者，双缓冲没有换来任何收益，改成和
+	# enum/eco LUT 一样的原地 update()。
 	world.dyn_lut_tex = _lut_tex_from_data(
-		dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex_back)
-	world.dyn_lut_tex_back = dyn_front
+		dyn_data, lw, lh, Image.FORMAT_RGBA8, world.dyn_lut_tex)
 	world.eco_lut_tex = _lut_tex_from_data(eco_data, lw, lh, Image.FORMAT_RGBA8, world.eco_lut_tex)
 	_publish_bounce_lut(enum_data, dyn_data, world, lw, lh)
 	if publish_weather_lut:

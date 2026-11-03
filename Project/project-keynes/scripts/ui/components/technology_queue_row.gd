@@ -5,6 +5,7 @@ class_name TechnologyQueueRow
 ## 行只在队列组成变化时创建；每日进度经 update_dynamic()/set_eta() 只重绘。
 
 const DragPreviewScene := preload("res://scenes/ui/technology_drag_preview.tscn")
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const ROW_HEIGHT := 62.0
 const REMOVE_SIZE := 28.0
 
@@ -23,11 +24,12 @@ var _fraction := 0.0
 var _eta := ""
 var _hover := false
 var _remove_hover := false
+var _retired := false
 
 
 func _init() -> void:
 	super()
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	custom_minimum_size = Vector2(0.0, ROW_HEIGHT)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -43,6 +45,22 @@ func setup(technology: int, domain: int, position: int, title: String,
 	queue_redraw()
 
 
+## Retired era tokens (old saves) stay visible but can only be removed:
+## no drag-reorder and a fixed explanatory caption instead of an ETA.
+func set_retired(retired: bool) -> void:
+	if retired == _retired:
+		return
+	_retired = retired
+	if retired:
+		_eta = "已停用 · 请移出队列"
+		tooltip_text = "%s\n时代晋升已改由顶栏时代徽记办理；此项只能移出" % display_name
+	queue_redraw()
+
+
+func is_retired() -> bool:
+	return _retired
+
+
 func update_dynamic(state: int, fraction: float) -> void:
 	var clamped := clampf(fraction, 0.0, 1.0)
 	if state == _state and is_equal_approx(clamped, _fraction):
@@ -53,7 +71,7 @@ func update_dynamic(state: int, fraction: float) -> void:
 
 
 func set_eta(text: String) -> void:
-	if text == _eta:
+	if _retired or text == _eta:
 		return
 	_eta = text
 	queue_redraw()
@@ -68,10 +86,14 @@ func _remove_rect() -> Rect2:
 		REMOVE_SIZE, REMOVE_SIZE)
 
 
+func _remove_hit_rect() -> Rect2:
+	return _remove_rect().grow(8.0) if TouchUI.is_touch() else _remove_rect()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var position := (event as InputEventMouseMotion).position
-		var remove_hover := _remove_rect().has_point(position)
+		var remove_hover := _remove_hit_rect().has_point(position)
 		if not _hover or remove_hover != _remove_hover:
 			_hover = true
 			_remove_hover = remove_hover
@@ -79,9 +101,15 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		if button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
-		if _remove_rect().has_point(button.position):
+		if not button.pressed:
+			if TouchUI.is_touch() and (_hover or _remove_hover):
+				_hover = false
+				_remove_hover = false
+				queue_redraw()
+			return
+		if _remove_hit_rect().has_point(button.position):
 			remove_requested.emit(technology_index)
 		else:
 			selected_requested.emit(technology_index)
@@ -95,7 +123,7 @@ func _notification(what: int) -> void:
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
-	if technology_index < 0:
+	if technology_index < 0 or _retired:
 		return null
 	var preview := DragPreviewScene.instantiate() as Label
 	preview.text = display_name
@@ -107,7 +135,7 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 
 
 func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-	return data is Dictionary and String(data.get("type", "")) == "technology_queue_item"
+	return not _retired and data is Dictionary and String(data.get("type", "")) == "technology_queue_item"
 
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:

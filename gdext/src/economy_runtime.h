@@ -31,6 +31,9 @@
 #include "economy_keyed_variable_records.h"
 #include "economy_owned_record_value.h"
 #include "runtime_economy_population_store.h"
+// BEGIN army personnel lane (contract §1) — Economy side of the army personnel lane.
+#include "runtime_economy_army_personnel.h"
+// END army personnel lane
 #include "runtime_pod_protocol.h"
 #include "country_ai_core.h"
 #include "natural_resource_kernel.h"
@@ -223,7 +226,7 @@ public:
     // 58: the fiscal section also stores the non-tax research procurement cash
     //     outflow per country, so 国库支出 survives save/restore instead of
     //     reading zero for the batch it was paid in.
-    static constexpr int32_t SCHEMA_VERSION = 58;
+    static constexpr int32_t SCHEMA_VERSION = 59;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -328,6 +331,11 @@ public:
         COMMAND_ADD_POPULATION = 6,
         COMMAND_MOVE_POPULATION = 7,
         COMMAND_CHANGE_SIGNATURE = 8,
+        // B: state-directed cohort conversion inside one cell. The caller names
+        // (cell, source signature, destination signature) so no cohort slot id
+        // ever crosses an execution boundary; Economy resolves the cohort in
+        // whichever store owns the day and moves the people there.
+        COMMAND_MILITARY_CONVERT_COHORT = 24,
         COMMAND_TRANSFER_FROM_COHORT = 9,
         COMMAND_BUILD = 10,
         COMMAND_DEMOLISH = 11,
@@ -346,6 +354,16 @@ public:
         COMMAND_FAMILY_ABSORB_ANONYMOUS = 21,
         COMMAND_FAMILY_PURCHASE_DISCOUNT = 22,
         COMMAND_FAMILY_SET_SPLIT_POLICY = 23,
+        // BEGIN army personnel lane (contract §1.2). Same wire shape as opcode
+        // 24: the army is named by its Military handle (never a slot id), the
+        // cohort by (target_cell, signature) and the head count by payload0.
+        //   target_cohort = army handle, target_cell = cell,
+        //   target_country = signature, payload0 = heads,
+        //   payload1 = destination army handle (merge only).
+        COMMAND_ARMY_EMBARK = 30,
+        COMMAND_ARMY_DISEMBARK = 31,
+        COMMAND_ARMY_MERGE_LANES = 32,
+        // END army personnel lane
     };
 
     static constexpr uint16_t FAMILY_FLAG_SPLIT_RETAIN_ONLY = 1u;
@@ -1072,6 +1090,20 @@ public:
         int64_t country_handle, int64_t expedition_handle,
         int64_t effective_day, int64_t sequence,
         bool queue_for_worker = false);
+    // National procurement budget + era procurement target (era advancement,
+    // docs/cpp-dots-runtime/era-advancement-runtime.md §2.2-2.4). Both are
+    // transient (not PKEC, not state hash). Setters may be called from the
+    // main thread at any time: they only append to a mutex-guarded pending
+    // table that the Economy owner thread applies at the next epoch begin.
+    godot::Dictionary set_country_procurement_policy(
+        int64_t country_handle, bool enabled, int32_t treasury_share_bp,
+        int32_t research_share_bp, int64_t effective_day, int64_t sequence);
+    godot::Dictionary set_era_procurement_target(
+        int64_t country_handle, bool active,
+        const godot::PackedInt32Array &good_indices,
+        const godot::PackedInt64Array &required_quantities,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary country_procurement_snapshot(int64_t country_handle) const;
     godot::Dictionary family_expeditions(int64_t country_handle,
                                          int32_t offset,
                                          int32_t limit) const;
@@ -1577,6 +1609,7 @@ public:
         COUNTRY_CLASS_OPINION_SNAPSHOT,
         COUNTRY_ECONOMY_OVERVIEW,
         SITUATION_VISUAL_SNAPSHOT,
+        COUNTRY_PROCUREMENT_SNAPSHOT,
     };
     struct ReadKey {
         ReadQuery query = ReadQuery::NONE;
@@ -1655,6 +1688,18 @@ private:
     enum StructuralOpcode : int32_t {
         STRUCTURAL_BIRTH = -1,
         STRUCTURAL_REMOVE_EMPTY = 0,
+        // BEGIN army personnel lane (contract §1.2). These two records are the
+        // only path by which a lane transfer touches the population store, so
+        // the cohort side runs on the structural commit stage exactly like a
+        // cohort migration (§ military-recruitment-pipeline rule 5).
+        //   cell      = cohort cell (source for embark, destination for disembark)
+        //   signature = cohort signature
+        //   population= heads to move
+        //   funds     = army handle (never a slot id)
+        //   sequence  = originating command sequence (idempotency)
+        STRUCTURAL_ARMY_EMBARK = 1,
+        STRUCTURAL_ARMY_DISEMBARK = 2,
+        // END army personnel lane
     };
     enum class Stage : int32_t {
         IDLE = 0,
@@ -2101,7 +2146,11 @@ private:
     };
 
     struct BuildingType {
-		int32_t kind = 1; // 0=collector, 1=industrial.
+		int32_t kind = 1; // 0=collector, 1=industrial, 2=service, 3=state.
+        // State-owned buildings (kind 3) carry an authored role. 0=none and
+        // only meaningful for kind 3; barred from investment review, recovery,
+        // liquidation, loss closure, family ownership and merchant credit.
+        int32_t state_role = 0;
         int32_t economic_sector = 2; // agriculture, extractive, manufacturing, energy, knowledge.
         int32_t production_climate_profile_id = -1;
         int32_t upgrade_family_id = -1;
@@ -2973,6 +3022,8 @@ private:
         INVESTMENT_REJECTION_GROWTH_LIMIT = 16,
         INVESTMENT_REJECTION_UNSUPPORTED_KIND = 17,
         INVESTMENT_REJECTION_NO_COST_ADVANTAGE = 18,
+        // State-owned building types are never reviewed by private capital.
+        INVESTMENT_REJECTION_STATE_OWNED = 19,
     };
 
     // One quote type is shared by employment, investment and diagnostics.
@@ -3967,6 +4018,12 @@ private:
         int64_t escrow_cash = 0;
         int64_t expedition_funds = 0;
         int64_t expedition_goods = 0;
+        // BEGIN army personnel lane (contract §1.2): embarked people/funds.
+        // Reported separately for diagnostics; already folded into
+        // transit_population / escrow_cash so no conservation formula changes.
+        int64_t army_lane_population = 0;
+        int64_t army_lane_funds = 0;
+        // END army personnel lane
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
@@ -4831,6 +4888,9 @@ private:
         int32_t resource_cursor = 0;
         int32_t cadence_cursor = 0;
         int32_t family_founding_cursor = 0;
+        // BEGIN army personnel lane (contract §1.5): PKEC section 36 cursor.
+        int32_t army_personnel_cursor = 0;
+        // END army personnel lane
         std::vector<int32_t> family_founding_cells;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
@@ -4844,6 +4904,9 @@ private:
         // rejects chunks while this is false so begin_restore alone cannot
         // wipe or partially overwrite a committed snapshot.
         bool scratch_prepared = false;
+        // BEGIN army personnel lane (contract §1.5): section 36 scratch guard.
+        bool army_personnel_seen = false;
+        // END army personnel lane
         bool header_seen = false;
         bool end_seen = false;
         bool ceilings_seen = false;
@@ -5244,6 +5307,9 @@ private:
     bool _closing_audit_runtime_disabled = false;
     bool _closing_audit_force_full = true;
     bool _closing_audit_incremental_this_epoch = false;
+    // A full audit forced by army-lane drift cannot be compared against the
+    // incremental shadow: the shadow re-reads lanes live and would always differ.
+    bool _closing_audit_lane_full = false;
     // Accuracy policy: 0=EXACT, 1=BALANCED, 2=FAST, 3=CUSTOM.
     // Runtime mode: 0=OFF, 1=PROBE (exact authority), 2=ACTIVE.
     int32_t _accuracy_preset = 1;
@@ -5492,6 +5558,132 @@ private:
         _family_expedition_procurement_orphans;
     std::unordered_map<int32_t, FamilyExpeditionProcurementRejection>
         _family_expedition_procurement_rejections;
+    // ── National procurement budget + era procurement (transient) ──────────
+    // docs/cpp-dots-runtime/era-advancement-runtime.md §2.2-2.4. Nothing here
+    // enters PKEC, the state hash or the read-view authority: the player
+    // session re-pushes policy/targets after load.
+    struct EraProcurementLine {
+        int32_t good = -1;
+        int64_t required = 0;
+        int64_t purchased_total = 0;
+    };
+    struct CountryProcurementState {
+        uint64_t country_handle = 0;
+        bool policy_enabled = false;
+        int32_t treasury_share_bp = 0;
+        int32_t research_share_bp = 0;
+        bool era_active = false;
+        std::vector<EraProcurementLine> era_goods;
+        // Frozen at epoch begin (MONEY_SCALE per day).
+        int64_t national_daily = 0;
+        int64_t research_daily = 0;
+        int64_t other_daily = 0;
+        int64_t era_daily = 0;
+        int64_t colonization_daily = 0;
+        // Colonization allowance refilled per day, capped at one epoch.
+        int64_t colonization_allowance = 0;
+        int64_t colonization_allowance_day = -1;
+        int64_t era_cash_spent_total = 0;
+        int64_t era_cash_epoch = 0;
+        int64_t era_last_epoch_cash = 0;
+        int64_t research_cash_epoch = 0;
+        int64_t research_cash_last_epoch = 0;
+        int64_t colonization_cash_epoch = 0;
+        int64_t colonization_cash_last_epoch = 0;
+    };
+    struct PendingProcurementUpdate {
+        int32_t kind = 0; // 1=policy, 2=era target
+        uint64_t country_handle = 0;
+        bool flag = false;
+        int32_t treasury_share_bp = 0;
+        int32_t research_share_bp = 0;
+        std::vector<int32_t> goods;
+        std::vector<int64_t> quantities;
+        int64_t effective_day = 0;
+        int64_t sequence = 0;
+        uint64_t order = 0;
+    };
+    struct ProcurementInbox {
+        std::mutex mutex;
+        std::vector<PendingProcurementUpdate> updates;
+        uint64_t next_order = 1;
+        // Latest requested configuration per handle, visible immediately to
+        // snapshot readers even before the next epoch applies it.
+        std::map<uint64_t, PendingProcurementUpdate> requested_policy;
+        std::map<uint64_t, PendingProcurementUpdate> requested_era;
+    };
+    std::unique_ptr<ProcurementInbox> _procurement_inbox =
+        std::make_unique<ProcurementInbox>();
+    // Owner-thread state keyed by generation-safe country handle.
+    std::map<uint64_t, CountryProcurementState> _country_procurement;
+    // Transient monotone trade-order counters indexed by country slot and
+    // stamped with the handle that owns the slot.
+    std::vector<std::pair<uint64_t, int64_t>> _country_trade_orders_by_slot;
+    struct EraProcurementCandidate {
+        int32_t country = -1;
+        int32_t line = -1;
+        int32_t good = -1;
+        int32_t market = -1;
+        int64_t price = 0;
+    };
+    struct EraProcurementContinuation {
+        bool active = false;
+        int32_t phase = 0; // 1=country leg, 4=market/merchant apply
+        int32_t country = -1;
+        int32_t line = -1;
+        int32_t market = -1;
+        int32_t good = -1;
+        int64_t quantity = 0;
+        int64_t cash = 0;
+        uint64_t transaction_id = 0;
+        uint64_t session_epoch = 0;
+        uint64_t country_generation = 0;
+        uint64_t peer_generation = 0;
+        uint64_t pending_request_id = 0;
+        bool host_peer = false;
+        bool market_applied = false;
+        int64_t merchant_population = 0;
+        std::vector<int32_t> living_merchants;
+        std::vector<int64_t> merchant_weights;
+        std::string last_error;
+    };
+    std::vector<EraProcurementCandidate> _era_procurement_candidates;
+    std::vector<int64_t> _era_procurement_budgets;     // per epoch country
+    std::vector<int64_t> _era_procurement_remaining;   // per (country,line) flattened
+    std::vector<int32_t> _era_procurement_line_offsets; // per epoch country +1
+    std::vector<uint64_t> _era_procurement_handles;    // per epoch country
+    size_t _era_procurement_cursor = 0;
+    bool _era_procurement_initialized = false;
+    bool _era_procurement_done = false;
+    int64_t _era_procurement_orders = 0;
+    int64_t _era_procurement_rejections = 0;
+    EraProcurementContinuation _era_procurement_continuation;
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_era_demand_by_cell;
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_era_demand_by_market;
+    void apply_pending_procurement_updates(int64_t day_index);
+    void freeze_epoch_procurement_budgets();
+    void refresh_epoch_era_demand();
+    void reset_era_procurement_epoch();
+    void clear_procurement_runtime_state(bool clear_pending);
+    CountryProcurementState *procurement_state_for_slot(int32_t country);
+    const CountryProcurementState *procurement_state_for_slot(int32_t country) const;
+    // Country research_procurement_policy with the national budget override.
+    bool research_procurement_policy_for(int32_t country, bool &enabled,
+                                         int64_t &daily_budget,
+                                         int64_t &remaining_points) const;
+    // -1 = no national policy (legacy behaviour); otherwise remaining cash
+    // allowance for colonization procurement today.
+    int64_t colonization_procurement_allowance(uint64_t country_handle, int64_t day);
+    void consume_colonization_procurement_allowance(uint64_t country_handle,
+                                                    int64_t cash);
+    void note_procurement_cash(uint64_t country_handle, int32_t kind, int64_t cash);
+    void note_trade_order_countries(int32_t source_cell, int32_t destination_cell);
+    bool run_government_era_procurement(std::string &error);
+    bool advance_era_procurement(EraProcurementContinuation &c, std::string &error);
+    bool era_procurement_parked() const {
+        return _era_procurement_continuation.active &&
+            _era_procurement_continuation.pending_request_id != 0;
+    }
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -6445,6 +6637,34 @@ private:
     // Days of the cell's per-capita living cost a cohort must hold per person
     // before members may move into this profession from a lower-entry one.
     std::vector<int32_t> _profession_entry_savings_days;
+    // Military v1 (design §5.1). `state_service_only` professions (the soldier)
+    // may only be filled as employee roles of state buildings and never transfer
+    // OUT of their own signature along any recruitment/reflux/migration lane.
+    // `_profession_state_supplied_need_mask` is laid out as
+    // [profession * _need_ids.size() + stable_need]; a need flagged here is a
+    // military ration need whose satisfaction comes from
+    // `set_military_ration_satisfaction` instead of a market purchase.
+    std::vector<uint8_t> _profession_state_service_only;
+    std::vector<uint8_t> _profession_state_supplied_need_mask;
+    // Any nonzero entry means some profession has state-supplied needs, so the
+    // household and employment hot loops can keep their fast path.
+    int32_t _state_supplied_need_columns = 0;
+    // Reserved owner sentinel for state buildings. The signature id is resolved
+    // from the reserved flag so no real cohort can ever collide with it.
+    int32_t _state_owner_signature = -1;
+    // Per-cell military ration satisfaction (Q16, 1.0 = fully supplied).
+    // Deterministic scratch cache owned by Military via
+    // set_military_ration_satisfaction; absent cells read Q16_ONE so a world
+    // without soldiers is bit-identical to the pre-military behaviour.
+    std::vector<int32_t> _military_ration_sat_q16;
+    std::vector<uint8_t> _military_ration_sat_present;
+
+    enum StateBuildingRole : int32_t {
+        STATE_ROLE_NONE = 0,
+        STATE_ROLE_BARRACKS = 1,
+        STATE_ROLE_FORTIFICATION = 2,
+        STATE_ROLE_WAR_COLLEGE = 3,
+    };
     std::vector<std::string> _carrying_class_ids;
     std::vector<int32_t> _profession_political_class_index;
     std::vector<std::string> _political_class_ids;
@@ -6734,6 +6954,12 @@ private:
     std::vector<uint32_t> _staging_cell_generation;
     uint32_t _staging_current_generation = 0;
     std::vector<int32_t> _structural_touched_cells;
+    // BEGIN army personnel lane state (contract §1.1).
+    // One row per army that currently holds embarked people. Authoritative,
+    // persisted in PKEC schema 59 (SAVE_SECTION_ARMY_PERSONNEL); the handle ->
+    // row index inside the store is derived and never saved.
+    ArmyPersonnelStore _army_personnel;
+    // END army personnel lane state
     std::vector<int32_t> _population_changed_cells;
     // Number of _structural_touched_cells entries already covered by this
     // epoch's structural_commit employment reconcile. building_commit.finalize
@@ -7171,7 +7397,12 @@ private:
         NON_TAX_EXPEDITION_PROCUREMENT = 1,
         NON_TAX_CONSTRUCTION = 2,
         NON_TAX_CANAL = 3,
-        NON_TAX_KIND_COUNT = 4,
+        // Era advancement procurement (market -> treasury). Transient lane:
+        // PKEC schema 58 persists only the first NON_TAX_PERSISTED_KIND_COUNT
+        // kinds, so this slot restores as zero.
+        NON_TAX_ERA_PROCUREMENT = 4,
+        NON_TAX_KIND_COUNT = 5,
+        NON_TAX_PERSISTED_KIND_COUNT = 4,
     };
     EconomyOwnedColumn<int64_t> _fiscal_last_non_tax_outflow{{{16, 60}, "persisted_columns.fiscal_last_non_tax_outflow", EconomyFieldEncoding::I64, 8}};
     // Outflows booked since the last published batch, keyed by generation-safe
@@ -7180,7 +7411,7 @@ private:
     // already have changed. commit_fiscal drains this buffer into the batch.
     struct PendingNonTaxOutflow {
         uint64_t country_handle = 0;
-        int64_t cash[NON_TAX_KIND_COUNT] = {0, 0, 0, 0};
+        int64_t cash[NON_TAX_KIND_COUNT] = {0, 0, 0, 0, 0};
     };
     std::vector<PendingNonTaxOutflow> _pending_non_tax_outflow;
     FiscalReservationContinuation _fiscal_reservation_continuation;
@@ -7601,6 +7832,7 @@ private:
         int32_t cell = -1;
         uint16_t flags = 0;
         int32_t building_type_id = -1;
+        int32_t building_count = 1;
         int64_t population = 0;
     };
     std::vector<PendingFamilySplitGift> _pending_family_split_gifts;
@@ -7758,6 +7990,16 @@ private:
                                        std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
+    // BEGIN army personnel lane (contract §1.2/§1.3).
+    bool apply_army_lane_command(const Command &cmd, std::string &error,
+                                 int64_t &settled);
+    bool commit_structural_army_lane(const StructuralCommand &cmd,
+                                     std::string &error);
+    int64_t army_lane_country_handle(int32_t cell) const;
+    void run_army_personnel_consumption(int32_t market);
+    void sum_army_personnel_holdings(int64_t &population, int64_t &funds,
+                                     int64_t &saturation_count) const;
+    // END army personnel lane
     // Core cohort migration primitive extracted from commit_structural. Moves up
     // to `requested_pop` people from `source` into the (dest_cell, dest_signature)
     // cohort, carrying a proportional share of funds/income/expense/ema/residual,
@@ -7989,6 +8231,18 @@ private:
     inline int32_t unemployed_signature_for_ethnicity(int32_t ethnicity_id) const {
         return signature_for_profession_ethnicity(_unemployed_profession_id, ethnicity_id);
     }
+    // Military v1: a state-service (soldier) signature is locked to its own
+    // profession. Every outward transfer lane (employee<->employee, owner moves,
+    // unemployed reflux, family colonization draw, migration) asks this first.
+    inline bool signature_is_state_service_only(int32_t signature_id) const {
+        return signature_id >= 0 &&
+            static_cast<size_t>(signature_id) < _signatures.size() &&
+            profession_is_state_service_only(
+                _signatures[static_cast<size_t>(signature_id)].profession_id);
+    }
+    // Allocation-free per-cell scan used by the outward-transfer guard: true when
+    // `cell` still holds at least `people` members of any state-service cohort.
+    bool cell_has_state_service_population(int32_t cell) const;
     void configure_satisfaction_profile(const godot::Dictionary &profile);
     bool satisfaction_need_available(const Need &need, int32_t cell) const;
     uint8_t satisfaction_applicable_mask(int32_t slot) const;
@@ -8910,7 +9164,9 @@ private:
     bool family_trait_context_allows(int32_t trait_id, int32_t family_index) const;
     void collect_family_effect_target_cells(
         int32_t source_cell, int32_t selector_kind,
-        std::vector<int32_t> &out_cells) const;
+        std::vector<int32_t> &out_cells,
+        const std::string &definition_key = std::string(),
+        int32_t prestige_level = 1) const;
 public:
     // Declared here (not with the other family-effect helpers, which are
     // private) because NativeIdeologyRuntime resolves cell-scoped ideology
@@ -8932,6 +9188,60 @@ public:
     // section. Diagnostics and tests need to read the composed factor; the
     // production hot path keeps using the private one directly.
     int32_t city_output_factor_for_test(int32_t cell, int32_t good_id) const;
+    // ─── Military voucher: state service professions / state buildings ───────
+    // Publishes the per-cell military ration satisfaction Military owns. Needs
+    // listed in a profession's `state_supplied_need_ids` never enter market
+    // purchase; their satisfaction is set from these Q16 values. Cells absent
+    // from `cells` fall back to the previous value (initially 1.0), so a world
+    // without soldiers is unchanged. Returns the number of cells written.
+    int32_t set_military_ration_satisfaction(
+        const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+    // Convenience read used by the ration path and by diagnostics.
+    int32_t military_ration_satisfaction_q16(int32_t cell) const {
+        return cell >= 0 &&
+            static_cast<size_t>(cell) < _military_ration_sat_q16.size()
+            ? _military_ration_sat_q16[static_cast<size_t>(cell)] : Q16_ONE;
+    }
+    // BEGIN army personnel lane public API (contract §1.4).
+    // Military publishes the army's in-kind ration fill ratio once per day; the
+    // cell overload also moves the lane to the army's current cell, which is
+    // what guest consumption and the household-market kernel read. The two
+    // argument form keeps the previous cell (embark cell) so a caller that only
+    // has a ration cannot accidentally teleport the lane.
+    void set_military_army_ration(uint64_t army_handle, int32_t ration_q16);
+    void set_military_army_ration(uint64_t army_handle, int32_t ration_q16,
+                                  int32_t cell);
+    // Reconciliation read-out for the bridge: 0 when the army has no lane.
+    int64_t military_army_population(uint64_t army_handle) const;
+    int64_t military_army_funds(uint64_t army_handle) const;
+    int32_t military_army_cell(uint64_t army_handle) const;
+    int32_t military_army_satisfaction_q16(uint64_t army_handle) const;
+    int64_t military_army_lane_population() const;
+    // END army personnel lane public API
+    bool profession_is_state_service_only(int32_t profession_id) const {
+        return profession_id >= 0 &&
+            static_cast<size_t>(profession_id) <
+                _profession_state_service_only.size() &&
+            _profession_state_service_only[static_cast<size_t>(profession_id)] != 0;
+    }
+    bool profession_need_is_state_supplied(int32_t profession_id,
+                                           int32_t stable_need) const {
+        if (_state_supplied_need_columns == 0 || profession_id < 0 ||
+            stable_need < 0) return false;
+        const size_t index = static_cast<size_t>(profession_id) *
+            _need_ids.size() + static_cast<size_t>(stable_need);
+        return index < _profession_state_supplied_need_mask.size() &&
+            _profession_state_supplied_need_mask[index] != 0;
+    }
+    // True for state-owned building types (kind 3). Excluded from investment
+    // review, recovery/liquidation, loss closure, family ownership and merchant
+    // lending; construction and demolition go through the state commands.
+    bool building_type_is_state(int32_t type_id) const {
+        return type_id >= 0 &&
+            static_cast<size_t>(type_id) < _building_types.size() &&
+            _building_types[static_cast<size_t>(type_id)].kind == 3;
+    }
+    int32_t state_owner_signature() const { return _state_owner_signature; }
     // How many of `cell`'s hex neighbours satisfy the tag (-1 = count every
     // neighbour). Reuses the selector BFS so there is exactly one definition of
     // "adjacent" in the codebase; a second adjacency walk would drift from it.
@@ -9117,7 +9427,89 @@ public:
     // one. A no-op when no managed card reads economy input.
     void refresh_effect_input_digest();
     void refresh_neighbor_distinct_goods_metrics();
+
+    // ---- NativeEconomyRuntime military read view
+    // Narrow, allocation-free reads the Military bridge uses to build
+    // MilitaryWorldDigest (world_ext_military.cpp). Owned by the military
+    // bridge owner; the implementation lives in
+    // economy_runtime_military_view.cpp. Nothing here mutates economy state.
+    //
+    // Per-cell committed view, filled from the bound population SoA without
+    // building any Godot value. Every lane is resized to `cell_count()`.
+    struct MilitaryCellView {
+        std::vector<int64_t> population;
+        std::vector<int64_t> unemployed;    // unemployed-profession heads
+        std::vector<int64_t> soldiers;      // soldier-profession heads
+        std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
+    };
+    void military_read_cell_view(MilitaryCellView &out, int32_t good_count = 0) const;
+    // Market sellable stock and retail price for one good across every live
+    // market, sparse. `sellable` (GOODS_SCALE) already excludes the merchant
+    // operating floor; `price` is MONEY_SCALE per 1.0 good.
+    void military_read_market(int32_t good, std::vector<int32_t> &out_cells,
+                              std::vector<int64_t> &out_sellable,
+                              std::vector<int64_t> &out_price) const;
+    // Dense soldier / unemployed profession ids (resolved from the profession
+    // catalog; -1 when the catalog predates the military content).
+    int32_t military_soldier_profession();
+    int32_t military_unemployed_profession() const { return _unemployed_profession_id; }
+    int32_t military_merchant_profession() const { return _merchant_profession_id; }
+    // Per-head daily living cost of the soldier plan in MONEY_SCALE, excluding
+    // the two ration needs Military supplies in kind (design §9.6).
+    int64_t military_soldier_living_cost(int32_t country_slot) const;
+    // Cohort handle for (cell, signature) / (cell, profession, any ethnicity);
+    // 0 when no live cohort matches. Used to route CHANGE_SIGNATURE and
+    // ADD_POPULATION intents.
+    uint64_t military_cohort_handle(int32_t cell, int32_t signature) const;
+    uint64_t military_cohort_handle_any_ethnicity(int32_t cell,
+                                                  int32_t profession_id) const;
+    // Dense profession rows of the province catalog. The levy path enumerates
+    // them to decide which cohorts may be drafted (design §5.4).
+    int32_t profession_count() const {
+        return static_cast<int32_t>(_profession_ids.size());
+    }
+    // First live cohort in `cell` whose profession is one of `professions`
+    // (ascending profession order, then lowest ethnicity). 0 when none.
+    uint64_t military_cohort_handle_from_professions(int32_t cell,
+                                                     const int32_t *professions,
+                                                     int32_t count) const;
+    // Total population still alive in the cell's soldier cohorts (0 = none).
+    int64_t military_soldier_heads(int32_t cell) const;
+    // Ethnicity of the signature a cohort handle names (-1 when stale). A
+    // cohort transition must keep it so (profession, ethnicity) stays paired.
+    // Signature id a cohort handle names (-1 when stale); the B opcode names
+    // cohorts by signature so no slot id crosses an execution boundary.
+    int32_t military_cohort_signature(uint64_t handle) const;
+    int32_t military_cohort_ethnicity(uint64_t handle) const;
+    // Destination signature for a cohort transition, resolved by THIS runtime's
+    // own signature table: the ethnicity of the cell's cohort of `profession`,
+    // else the ethnicity of any live cohort in the cell, else ethnicity 0.
+    // Callers must never invent the id from a profession index.
+    int32_t military_signature_for_cell_ethnicity(int32_t cell, int32_t profession) const;    // Diagnostics: how many (profession, ethnicity) signatures this catalog interns.
+    int32_t military_signature_count() const { return static_cast<int32_t>(_signatures.size()); }
+    // Signature id for (profession, ethnicity); -1 when the pair has no plan.
+    int32_t military_signature_for(int32_t profession_id, int32_t ethnicity_id) const {
+        return signature_for_profession_ethnicity(profession_id, ethnicity_id);
+    }
+    // Conserved Military -> treasury cash spend: reserve then collect through
+    // the country fiscal escrow so the amount lands in the non-tax expenditure
+    // slots. Returns the amount actually collected.
+    int64_t military_collect_cash(int64_t country_handle, int64_t amount);
+    // True while Economy can queue near-cash commands (no open epoch, not
+    // saving/restoring, not faulted).
+    bool military_command_window_open() const;
+    // Queued economy commands with `effective_day <= day`. Lets the bridge tell
+    // "not executed yet" apart from "rejected at execution".
+    int32_t military_queued_commands_through(int64_t day) const;
 private:
+    // ---- NativeEconomyRuntime military read view (state)
+    // Resolved lazily from the profession catalog (contract §3): a catalog
+    // that predates the military content simply reports zero soldiers.
+    int32_t _soldier_profession_id = -1;
+    // Signature -> profession lane, rebuilt on every military_read_cell_view
+    // call. Transient: never saved, never hashed.
+    mutable std::vector<int32_t> _military_signature_profession;
+    mutable bool _military_cell_view_published = false;
     void fire_family_event_once_effect(int32_t family_index,
                                        const std::string &program_key);
     void apply_pending_family_split_gifts();

@@ -198,6 +198,8 @@ const EffectRuntimeSystemScript = preload("res://scripts/simulation/systems/effe
 const GameplayEffectSystemScript = preload("res://scripts/simulation/systems/gameplay_effect_system.gd")
 const IdeologyFacadeScript = preload("res://scripts/ideology/ideology_facade.gd")
 const IdeologyRuntimeSystemScript = preload("res://scripts/simulation/systems/ideology_runtime_system.gd")
+const MilitaryFacadeScript = preload("res://scripts/military/military_facade.gd")
+const MilitaryDailySystemScript = preload("res://scripts/simulation/systems/military_daily_system.gd")
 
 # Phase 1.4 — DCSusSystemsBootstrap 接口骨架（main.gd 拆分前的 forward 层）。
 # 在 _setup_sus 末尾被构造 + attach_post_setup；main.gd 通过 generator.get_sus_bootstrap()
@@ -1170,6 +1172,14 @@ var _effect_daily_job = null
 var _gameplay_effect_job = null
 var _ideology_facade = null
 var _ideology_daily_job = null
+## Military 是主线程同步 runtime（contract §0.1）。facade 在 _setup_economy_runtime
+## 尾部 configure（catalog 需要 economy/technology 的 dense id），daily job 在
+## native/legacy 分叉之前注册，作为与 natural_resource / bio_occupancy 同级的
+## "保留边界 job"——否则 native_daily ACTIVE 时会被 early-return 跳过。
+var _military_facade = null
+var _military_daily_job = null
+var _military_registered_graph_active: bool = false
+var _military_registered_graph_mode: int = 0
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
 # 存档边界的 country 排空上限（见 advance_save_boundary）。每个切片 ~0.8ms，
@@ -1229,6 +1239,16 @@ var _native_daily_sim_job = null
 var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
 var _runtime_graph_active: bool = false
+## [capture-trace] 临时诊断：安卓上 worker 一直拿不到环境输入（ring=0）。这里把
+## capture 的入口/callsite/结果打前若干条，直接看出是哪一步被抑制或失败。
+var _capture_trace_left: int = 24
+
+
+func _capture_trace(message: String) -> void:
+	if _capture_trace_left <= 0:
+		return
+	_capture_trace_left -= 1
+	print("[capture] " + message)
 ## Runtime-graph 路径不走 CountryDailySystem，必须自己把 country commit
 ## 转成 country_committed，否则国界/视野不会跟着 CLAIM 刷新。
 ## -1 = 尚未对齐过 watermark（首次只采纳，不重放 bootstrap）。
@@ -1943,6 +1963,13 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] scheduler registration failed: %s" % String(
 			registered.get("reason", "unknown")))
 		return
+	# Military consumes Country territory/treasury + Economy good/profession
+	# dense ids, so it configures only after both bootstraps succeeded. An older
+	# DLL without the military API is reported once and skipped silently.
+	var military_configured: Dictionary = _configure_military_runtime(
+		map, cfg, seed_value)
+	if bool(military_configured.get("ok", false)):
+		_arm_military_ai(_gameplay_player_country_handles())
 	var economy_report: Dictionary = _economy_facade.report()
 	print(("[economy] %s native graph cells=%d goods=%d cohorts=%d epoch_days=%d "
 			+ "trade=%s topology_ready=%s topology_generation=%d "
@@ -2087,8 +2114,166 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 	return {"ok": true}
 
 
+## Military catalog compile + configure + terrain + AI arming.
+##
+## Order matters: it must run after Country and Economy are configured and
+## bootstrapped (dense good/profession/technology ids and the territory mirror),
+## and before the daily system registration so the first simulation day already
+## has a usable terrain layer.
+##
+## Every native call is `has_method` guarded: an older DLL has no military API,
+## in which case this returns `ok=false, reason=military_api_unavailable` and the
+## rest of the world keeps running unchanged.
+func _configure_military_runtime(map: MapData, cfg: MapConfig, seed_value: int) -> Dictionary:
+	_military_facade = null
+	_military_daily_job = null
+	if map == null or _data_core_world_ext == null:
+		return {"ok": false, "reason": "military_world_unavailable"}
+	if _country_facade == null or _economy_facade == null:
+		return {"ok": false, "reason": "military_requires_country_and_economy"}
+	if not _data_core_world_ext.has_method("configure_military"):
+		print("[military] DCWorldExt military API unavailable; military runtime disabled")
+		return {"ok": false, "reason": "military_api_unavailable"}
+	var technology_catalog: Dictionary = {}
+	if _country_facade != null and _country_facade.has_method("native_catalog"):
+		technology_catalog = _country_facade.native_catalog()
+	if technology_catalog.is_empty():
+		technology_catalog = TechnologyCatalogScript.compile_native_catalog()
+	if technology_catalog.is_empty():
+		return {"ok": false, "reason": "military_technology_catalog_unavailable"}
+	var facade := MilitaryFacadeScript.new()
+	var configured: Dictionary = facade.configure(_data_core_world_ext,
+		_economy_facade.native_catalog(), technology_catalog, seed_value)
+	if not bool(configured.get("ok", false)):
+		push_error("[military] configure failed: %s" % String(
+			configured.get("reason", "unknown")))
+		return configured
+	var terrain: Dictionary = facade.set_terrain(map, -1, true,
+		_military_settlement_tiers(map))
+	if not bool(terrain.get("ok", false)):
+		push_error("[military] terrain rejected: %s" % String(
+			terrain.get("reason", "unknown")))
+		_military_facade = null
+		return terrain
+	_military_facade = facade
+	print("[military] configured units=%d categories=%d unlock=%d goods=%d barracks=%d catalog_hash=%d" % [
+		(configured.get("unit_count", 0) as int),
+		(facade.catalog().get("categories", []) as Array).size(),
+		(configured.get("unlock_count", 0) as int),
+		int(facade.catalog().get("economy_good_count", 0)),
+		_military_barracks_count(facade.catalog()),
+		facade.catalog_hash()])
+	return configured
+
+
+## Barracks capacity needs the building catalog; kept as a tiny helper so the
+## boot log stays one line even when D's catalog ships partial roles.
+static func _military_barracks_count(catalog: Dictionary) -> int:
+	var count := 0
+	for building_value in catalog.get("state_buildings", []):
+		if int((building_value as Dictionary).get("role", -1)) == 0:
+			count += 1
+	return count
+
+
+## Settlement tier band (0 none .. 4 capital) used by the military terrain layer.
+## Read from Economy's named settlements so the military and the renderer agree
+## on what counts as a city, with a MapData fallback when Economy is unavailable.
+func _military_settlement_tiers(map: MapData) -> PackedByteArray:
+	var count := map.cell_count()
+	var tiers := PackedByteArray()
+	tiers.resize(count)
+	if _economy_facade == null or not _economy_facade.has_method(
+			"named_settlement_snapshot"):
+		return tiers
+	var snapshot: Dictionary = _economy_facade.named_settlement_snapshot()
+	if not bool(snapshot.get("ok", false)):
+		return tiers
+	var cells: PackedInt32Array = snapshot.get("cell_indices", PackedInt32Array())
+	var prosperity: PackedByteArray = snapshot.get("prosperity_tiers", PackedByteArray())
+	for index in range(mini(cells.size(), prosperity.size())):
+		var cell := int(cells[index])
+		if cell < 0 or cell >= count:
+			continue
+		# prosperity 0..3 = named village / town / city / capital in Economy;
+		# clamp into the military 1..4 band (any named settlement is >= 1).
+		tiers[cell] = clampi(int(prosperity[index]) + 1, 1, 4)
+	return tiers
+
+
+## Re-push terrain after a season refresh changed cover (snow / flood / glacier
+## move the passability and attrition tables). Cheap: the facade skips the call
+## when the cover signature is unchanged.
+func refresh_military_terrain(day: int = -1) -> Dictionary:
+	if _military_facade == null or not _military_facade.is_configured():
+		return {"ok": false, "reason": "military_not_configured"}
+	if _sus_map == null:
+		return {"ok": false, "reason": "military_map_unavailable"}
+	var result: Dictionary = _military_facade.set_terrain(
+		_sus_map, day, false, _military_settlement_tiers(_sus_map))
+	return result
+
+
+## AI 军事议程：玩家国以外的所有国家。player_handles 为空时按
+## gameplay start 的 is_player 标记解析；读档后由 PKAI/PKMI 恢复路径再调一次。
+func _arm_military_ai(player_handles: PackedInt64Array) -> Dictionary:
+	if _military_facade == null or not _military_facade.is_configured():
+		return {"ok": false, "reason": "military_not_configured"}
+	var handles := player_handles
+	if handles.is_empty():
+		handles = _gameplay_player_country_handles()
+	return _military_facade.arm_ai(handles)
+
+
+## [economy-facade-accessor 2026-11-02] 这个访问器在军事运行时落地时被误删，
+## 但 player_game / game_save_coordinator / player_controller / 心跳诊断都在调它，
+## 结果每帧报 `Nonexistent function 'get_economy_facade'`，经济水位读到 -1、
+## 存档链路拿不到 facade。补回来（就是取 _economy_facade 这一个字段）。
 func get_economy_facade():
 	return _economy_facade
+
+
+func get_military_facade():
+	return _military_facade
+
+
+func get_military_daily_job():
+	return _military_daily_job
+
+
+func get_military_report() -> Dictionary:
+	return _military_facade.report() if _military_facade != null else {"configured": false}
+
+
+## Registers `military_daily` when the runtime graph mode changes. The job is
+## skipped (should_run=false) in whole-graph ACTIVE, so registering it up front
+## keeps a later DOWNGRADE (ACTIVE → SHADOW/legacy) from silently running with no
+## military system at all.
+func _maybe_register_military_system() -> void:
+	if _sus == null or _military_facade == null or not _military_facade.is_configured():
+		return
+	var cp := _c()
+	var graph_mode := 0
+	if cp != null and cp.get("native_runtime_graph_mode") != null:
+		graph_mode = int(cp.native_runtime_graph_mode)
+	if _military_daily_job != null:
+		if graph_mode == _military_registered_graph_mode:
+			return
+		var registered_active := _military_registered_graph_active
+		if registered_active == _runtime_graph_active:
+			_military_registered_graph_mode = graph_mode
+			return
+		_military_registered_graph_mode = graph_mode
+		return
+	_military_registered_graph_active = _runtime_graph_active
+	_military_registered_graph_mode = graph_mode
+	_military_daily_job = MilitaryDailySystemScript.new(
+		_military_facade, _world_clock_ref, self, _gameplay_event_bus)
+	_sus.configure_job_from_profile(_military_daily_job, cp, false,
+		MilitaryFacadeScript.SYSTEM_ID, 1)
+	_runtime_register_system(_military_daily_job)
+	print("[military] registered military_daily (graph_active=%s)" % str(
+		_runtime_graph_active))
 
 
 func get_country_facade():
@@ -2618,6 +2803,8 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	# 26+10 条 lane 的拷贝，先打包再被拒就白付一次；更糟的是打包会推进
 	# `_runtime_input_generation`，让真正的发布者拿到一个空洞的代次。
 	if not _runtime_environment_publish_allowed(callsite, day):
+		_capture_trace("suppressed day=%d callsite=%d publisher=%d" % [
+			day, callsite, _worker_environment_publisher_callsite])
 		return {
 			"ok": true,
 			"suppressed": true,
@@ -2628,6 +2815,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		}
 	if _runtime_climate_trace_pending.has(day):
 		var cached: Dictionary = _runtime_climate_trace_pending[day]
+		_capture_trace("cached day=%d callsite=%d" % [day, callsite])
 		return {
 			"ok": true,
 			"already_captured": true,
@@ -2708,6 +2896,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		return _runtime_climate_failure("runtime_input_lut_shape_mismatch",
 			"trade LUTs must both be empty or both contain 256 entries", day)
 	var input_generation := next_generation
+	_capture_trace("publish day=%d gen=%d callsite=%d" % [day, input_generation, callsite])
 	var result: Dictionary = _data_core_world_ext.capture_runtime_inputs({
 		"generation": input_generation,
 		"climate_catalog_abi_version": 3,
@@ -2823,6 +3012,8 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		"climate_worker_authoritative": bool(
 			thread_report.get("climate_worker_authoritative", false)),
 	})
+	_capture_trace("result day=%d ok=%s code=%s" % [
+		day, str(result.get("ok", false)), String(result.get("code", ""))])
 	if bool(result.get("ok", false)):
 		_runtime_input_generation = input_generation
 		_runtime_last_capture_day = day
@@ -3188,6 +3379,14 @@ func finalize_save_restore_runtime() -> Dictionary:
 	var registered: Dictionary = _register_country_economy_systems(_c())
 	if not bool(registered.get("ok", false)):
 		return registered
+	# Military configure must follow the restored Country/Economy catalogs. The
+	# PKMI payload itself is applied afterwards by GameSaveCoordinator's provider
+	# loop (pkmi restore), preceded by the generation-time terrain push here.
+	var military_configured: Dictionary = _configure_military_runtime(
+		_sus_map, null, _save_restore_seed)
+	if bool(military_configured.get("ok", false)):
+		_arm_military_ai(_gameplay_player_country_handles())
+	_maybe_register_military_system()
 	if not _runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}
 	_save_restore_preparation_enabled = false
@@ -3484,7 +3683,26 @@ func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
 			_continuation_perf_pending["continuation_blocked_by_stage"] = last_stage
 
 
+## [continuation-reentry-guard 2026-11-03] 带符号引擎的 backtrace 显示真机崩溃是
+## 一次约 500 帧的 GDScript 递归，三帧循环是
+##   GDScriptFunction::call → GDScript::callp → Variant::callp
+## 也就是"脚本函数里再调用脚本函数"的无限自调用。最可疑的环就在这条链上：
+## WorldClock 发 `simulation_backpressure_pulse` → 本回调推进 native graph pulse →
+## 同一调用链里若再次发 pulse，就会无限重入。
+## 这里用重入闩把环切断：正常路径不会重入，一旦重入就打印并返回。
+var _continuation_reentry_guard := false
+
+
 func _continue_economy_inflight(day_index: int) -> void:
+	if _continuation_reentry_guard:
+		print("[continuation] re-entry blocked (recursion guard) day=%d" % day_index)
+		return
+	_continuation_reentry_guard = true
+	_continue_economy_inflight_impl(day_index)
+	_continuation_reentry_guard = false
+
+
+func _continue_economy_inflight_impl(day_index: int) -> void:
 	# Defense in depth: climate capacity is not an economy/country continuation
 	# target. WorldClock should already skip this pulse, but older callers or
 	# mixed barriers can still land here — never burn the frame on graph capture.
@@ -4389,6 +4607,11 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_bio_occupancy_daily_job = BioOccupancyDailySystemScript.new(self, map, 8)
 	_sus.configure_job_from_profile(_bio_occupancy_daily_job, cp, false, &"bio_occupancy_daily", 1)
 	_runtime_register_system(_bio_occupancy_daily_job)
+	# military_daily 同样必须注册在 native/legacy 分叉之前（contract §0.1）。整图
+	# ACTIVE 时它的 should_run 恒 false，由 WorldRuntimeHost 在已提交日之后补跑；
+	# 但注册本身要在分叉前完成，否则 ACTIVE→SHADOW/legacy 降级后没有任何 Military
+	# 日阶段。未配置（旧 DLL / 目录缺失）时 _military_daily_job 保持 null。
+	_maybe_register_military_system()
 	await _yield_generation_frame()
 	_loading_profile_step("if _try_register_native_daily_sim_job")
 	if _try_register_native_daily_sim_job(map, world):
@@ -9380,6 +9603,13 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	_season_round_slots_fresh = false
 	_season_round_slots_skip_count = 0
 	_season_round_slots_refresh_count = 0
+	# 季节刷新会改 cover（雪线 / 洪水 / 冰川），而 Military 的地形成本表按 cover
+	# 分类。facade 用 cover 签名去重，cover 未变时这里只做一次 hash，不过桥。
+	if _military_facade != null and _military_facade.is_configured():
+		var day := int(_world_clock_ref.day_index()) if _world_clock_ref != null else -1
+		var terrain: Dictionary = refresh_military_terrain(day)
+		_last_season_refresh_breakdown["military_terrain"] = String(
+			terrain.get("reason", "ok" if bool(terrain.get("ok", false)) else "failed"))
 
 
 # capture 侧的 season refresh 边沿检测。见 _last_capture_season_refresh_day。

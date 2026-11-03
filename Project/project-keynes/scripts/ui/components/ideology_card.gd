@@ -11,9 +11,12 @@ extends Control
 
 signal activated(ideology_id: int)
 signal locate_requested(ideology_id: int)
+signal detail_requested(ideology_id: int)
 signal drag_started(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const TouchHitButtonScript = preload("res://scripts/ui/components/touch_hit_button.gd")
 ## 手写体标题字用带随包 fallback 的 display_handwritten：Muyao 只收 6890 字形，
 ## 缺 "·" 等字符时 web 导出没有系统字体兜底，会渲染成方块。
 const TITLE_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
@@ -56,6 +59,7 @@ var _face: MarginContainer
 var _column: VBoxContainer
 var _top_row: HBoxContainer
 var _rarity_gems: RarityGems
+var _detail_button: Button
 var _edition: Label
 var _edge: Panel
 var _emblem: TextureRect
@@ -88,7 +92,7 @@ func _init() -> void:
 
 func _build() -> void:
 	_pivot = Control.new()
-	_pivot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pivot.mouse_filter = Control.MOUSE_FILTER_PASS
 	_pivot.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_pivot.clip_contents = false
 	add_child(_pivot)
@@ -124,19 +128,35 @@ func _build() -> void:
 	_pivot.add_child(_ornament)
 
 	_face = MarginContainer.new()
-	_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_face.mouse_filter = Control.MOUSE_FILTER_PASS
 	_face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_pivot.add_child(_face)
 	_column = VBoxContainer.new()
 	_column.add_theme_constant_override("separation", 2)
-	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_column.mouse_filter = Control.MOUSE_FILTER_PASS
 	_face.add_child(_column)
 
 	_top_row = HBoxContainer.new()
 	_top_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_top_row.add_theme_constant_override("separation", 4)
-	_top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_top_row.mouse_filter = Control.MOUSE_FILTER_PASS
 	_column.add_child(_top_row)
+	_detail_button = TouchHitButtonScript.new()
+	_detail_button.name = "DetailButton"
+	_detail_button.text = "详情"
+	_detail_button.tooltip_text = "查看下一境效果与关联条件"
+	_detail_button.theme_type_variation = &"PKDossierRowButton"
+	_detail_button.custom_minimum_size = Vector2(46, 22)
+	_detail_button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	_detail_button.add_theme_font_size_override("font_size", 13)
+	_detail_button.focus_mode = Control.FOCUS_NONE
+	_detail_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_detail_button.call("set_touch_padding", Vector2(8.0, 12.0))
+	_detail_button.visible = false
+	_detail_button.pressed.connect(func() -> void:
+		if ideology_id >= 0:
+			detail_requested.emit(ideology_id))
+	_top_row.add_child(_detail_button)
 	_rarity_gems = RarityGems.new()
 	_rarity_gems.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rarity_gems.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -144,6 +164,7 @@ func _build() -> void:
 	_top_row.add_child(_rarity_gems)
 	_rarity_gems.visible = false
 	_edition = ArtScript.label("", 14, ArtScript.INK_MUTED, HORIZONTAL_ALIGNMENT_RIGHT)
+	_edition.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_top_row.add_child(_edition)
 
 	_emblem = TextureRect.new()
@@ -338,6 +359,9 @@ func _apply_metrics() -> void:
 	_effects_more.clip_text = false
 	_effects_more.size_flags_vertical = Control.SIZE_FILL
 	_effect_scroll.custom_minimum_size.y = 32
+	TouchUI.widen_scrollbars(_effect_scroll)
+	if _detail_button != null:
+		_detail_button.visible = _stage and _face_up
 	_level_label.add_theme_font_size_override("font_size", 15)
 	_footer.custom_minimum_size.y = 22
 	_rarity_gems.custom_minimum_size = Vector2(40, 22)
@@ -441,6 +465,12 @@ func set_face_up(face_up: bool) -> void:
 	_edge.visible = face_up and _rarity >= 2
 	_ornament.visible = false
 	_stamp_root.visible = face_up and not _stamp.text.is_empty()
+	if _detail_button != null:
+		_detail_button.visible = face_up and _stage
+
+
+func detail_button() -> Button:
+	return _detail_button
 
 
 func is_face_up() -> bool:
@@ -631,7 +661,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
-	if not draggable or ideology_id < 0 or bool(_data.get("pending", false)):
+	if not draggable or TouchUI.is_touch() or ideology_id < 0 or bool(_data.get("pending", false)):
 		return null
 	var holder := Control.new()
 	var preview_size := size * 0.76

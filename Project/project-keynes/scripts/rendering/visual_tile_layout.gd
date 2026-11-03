@@ -40,7 +40,16 @@ var grid_size: Vector2i = Vector2i.ONE
 var layer_count: int = 1
 var interior_size: Vector2i = Vector2i.ZERO
 var gutter_px: int = DEFAULT_GUTTER_PX
-# 分地形细节坡度（terrain_relief）相对基础 tile 的分辨率倍数。移动端 shader 不读这一层。
+# 分地形细节坡度（terrain_relief）相对基础 tile 的分辨率倍数。
+# [mobile-density 2026-11-03] 旧注释「移动端 shader 不读这一层」与代码不符，已纠正：
+#   tiled 下 hex_renderer 无条件绑 visual_terrain_relief_tiles，hillshade_tod 的
+#   terrain_baked_normal() 在 terrain_relief_tex_bound && terrain_erosion_strength>0
+#   时确实采样它，而 world_map_material.tres 把 terrain_erosion_strength 固定为 1.0、
+#   移动端也没有任何把它清零的分支 ⇒ 移动端**读** relief 层。
+#   移动端仍保持 1 是刻意的取舍：×2 超采样要多付 4×(2²−1)=12 bytes/texel（35→47，
+#   同样内存下等效 texel 密度 −13.6%，96/128 MB 上限内会把 100x64 high 从 12.09 压到
+#   ~9.8）。本轮玩家反馈的根因是 texel 稀疏而不是 relief 分辨率，故不为它挤占密度预算；
+#   要开就在调用方 options 里显式传 relief_scale=2。
 var relief_scale: int = 1
 var layer_size: Vector2i = Vector2i.ZERO
 var logical_size: Vector2i = Vector2i.ZERO
@@ -112,9 +121,9 @@ static func resolve(
 		float(tile_edge) * layout.requested_world_units_per_texel)
 
 	var resident_cap_mb := float(options.get("resident_cap_mb",
-		_configured_cap_mb("resident_cap_mb", 64.0 if mobile else 512.0)))
+		_configured_cap_mb("resident_cap_mb", _default_resident_cap_mb(mobile))))
 	var peak_cap_mb := float(options.get("peak_cap_mb",
-		_configured_cap_mb("peak_cap_mb", 96.0 if mobile else 768.0)))
+		_configured_cap_mb("peak_cap_mb", _default_peak_cap_mb(mobile))))
 	var resident_cap := maxi(1, int(round(resident_cap_mb * 1024.0 * 1024.0)))
 	var peak_cap := maxi(1, int(round(peak_cap_mb * 1024.0 * 1024.0)))
 
@@ -279,6 +288,29 @@ static func _configured_mode() -> String:
 	return value
 
 
+## [mobile-density 2026-11-03] 移动端默认内存上限 64/96 → 96/128 MB。
+##
+## 为什么必须同时抬上限：本 resolver 的密度是**内存反推**的
+##   effective_texels_per_hex ≈ sqrt(cap / (bytes_per_texel × 地图面积))
+## 所以「只把档位请求值从 6/8/10 改高」在大地图上完全无效——安全网会把它压回同一点，
+## 甚至因为 0.90 逐级降级的落点不同而更低。实测（hex_size=22、64 层/4096 上限、
+## 手机默认档位，见 docs/cpp-dots-runtime/visual-tile-rendering.md 的对照表）：
+##   100x64   high 档：64/96 → 9.83（比改前的 10.10 还低）；96/128 → 满额 12.09
+##   150x100  high 档：64/96 → 6.41；96/128 → 7.90
+##   200x150  high 档：64/96 → 4.71；96/128 → 5.20
+## 继续抬到 128/160 还能让 150x100 拿到 8.8、200x150 到 5.9，但中低端机的显存峰值
+## 风险大于收益，本轮不采用。
+## 结构性上限：200x150 级地图在 96/128 下仍拿不到 8 texels/hex——这是「整图全驻留、
+## 不许流式」的必然结果（1 px 稳态 35 B、峰值 51 B）。要再提只能做可见区分块/流式高精度，
+## 不在本轮范围。
+static func _default_resident_cap_mb(mobile: bool) -> float:
+	return 96.0 if mobile else 512.0
+
+
+static func _default_peak_cap_mb(mobile: bool) -> float:
+	return 128.0 if mobile else 768.0
+
+
 static func _configured_texels_per_hex(quality: String, mobile: bool) -> float:
 	var override := float(ProjectSettings.get_setting(
 		"project_keynes/rendering/map_tiles/texels_per_hex", -1.0
@@ -289,15 +321,24 @@ static func _configured_texels_per_hex(quality: String, mobile: bool) -> float:
 	if override > 0.0:
 		return override
 	if mobile:
+		# [mobile-density 2026-11-03] 6/8/10/6 → 8/10/12/10 → **12/16/20/16**。
+		# 手机每 hex 只有 6 texels，而 content_scale_mode=CANVAS_ITEMS 让 1 world unit
+		# 占 zoom × 1.375 个物理像素（scripts/ui/mobile_ui_scaling.gd），放大到底时一个
+		# texel 被拉到 ~30 物理像素——玩家反馈的"放大后颗粒明显"。
+		# 第二轮反馈仍是"地块里全是方块"：颜色采样本来就是 filter_linear，线性过滤只能
+		# 把方块磨圆，**放大时的块大小由纹素密度决定**，所以这轮直接把密度再抬一档
+		# （12/16/20）。显存按密度²增长，靠 resolve() 的移动端上限 96/128 MB 兜底
+		# （见 _default_resident_cap_mb），超了会自动降到 effective 可承受的值。
+		# 自动档取 medium：默认手机走 auto，改它才真正改善默认体验。
 		match quality:
 			"low":
-				return 6.0
+				return 12.0
 			"medium":
-				return 8.0
+				return 16.0
 			"high":
-				return 10.0
+				return 20.0
 			_:
-				return 6.0
+				return 16.0
 	match quality:
 		"low":
 			return 8.0

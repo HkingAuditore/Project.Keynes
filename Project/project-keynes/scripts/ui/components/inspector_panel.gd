@@ -38,6 +38,8 @@ signal construction_requested(request: Dictionary)
 signal colonization_requested(request: Dictionary)
 signal trade_orders_page_requested(offset: int)
 signal trade_order_locate_requested(cell_idx: int)
+## 军事页签的官营建筑请求：{cell, role, op}。接收方（GameUIManager）翻成正式命令。
+signal military_state_building_requested(request: Dictionary)
 
 var _model: Dictionary = {}
 var _current_tab := "geography"
@@ -519,9 +521,50 @@ func _build_category_block(host: Control, data: Dictionary) -> void:
 			_open_construction)
 		host.add_child(entry)
 
+	# 军事页签的官营建筑入口：兵营 / 城防 / 军校只能由玩家或 AI 建造与拆除，
+	# 所以它们不跟私营建筑混在建造面板里，而是在这里给出三个明确动作。
+	if data.has("military_context"):
+		_build_military_actions(host, data.get("military_context", {}))
+
 	for row_key in ROW_LIST_KEYS:
 		if data.has(row_key):
 			_build_row_list(host, data, String(row_key), block_id)
+
+
+## 军事页签底部：官营建筑的建造/拆除入口。命令走军事面板同一套正式命令，
+## 这里只发出结构化请求（由 GameUIManager → PlayerController 提交）。
+func _build_military_actions(host: Control, context: Dictionary) -> void:
+	if not bool(context.get("can_build_state_building", false)):
+		return
+	var caption := Label.new()
+	caption.text = "官营建筑"
+	caption.theme_type_variation = &"PKSectionTitle"
+	host.add_child(caption)
+	var role_labels := {
+		"barracks": "兵营",
+		"fortification": "城防",
+		"war_college": "军校",
+	}
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	host.add_child(row)
+	var has_role: Dictionary = context.get("has_role", {})
+	for role in ["barracks", "fortification", "war_college"]:
+		# One button per role: build when absent, demolish when present.
+		for verb in ["demolish" if bool(has_role.get(role, false)) else "build"]:
+			var button := ActionButtonScene.instantiate() as Button
+			button.text = "%s%s" % ["建造" if verb == "build" else "拆除", String(role_labels[role])]
+			button.tooltip_text = "%s%s" % ["建造" if verb == "build" else "拆除",
+				String(role_labels[role])]
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.focus_mode = Control.FOCUS_NONE
+			button.pressed.connect(func() -> void:
+				military_state_building_requested.emit({
+					"cell": int(context.get("cell", -1)),
+					"role": role,
+					"op": "state.build" if verb == "build" else "state.demolish",
+				}))
+			row.add_child(button)
 
 
 func _build_row_list(host: Control, data: Dictionary, row_key: String,

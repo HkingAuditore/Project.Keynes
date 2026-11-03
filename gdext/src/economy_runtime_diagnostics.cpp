@@ -187,6 +187,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_support_ema_q16);
     cap(_cell_carrying_k_geo); cap(_cell_carrying_k_eff);
     cap(_cell_carrying_surplus_q16); cap(_cell_carrying_sat_q16);
+    cap(_military_ration_sat_q16); cap(_military_ration_sat_present);
     cap(_food_equivalent_goods);
     cap(_cell_carrying_family_surplus_q16); cap(_cell_carrying_family_bindable);
     cap(_cell_food_output_eq_period); cap(_cell_food_input_eq_period);

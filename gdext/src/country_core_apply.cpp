@@ -428,6 +428,8 @@ bool country_core_apply_command(
         state.research_auto_purchase.push_back(1);
         state.research_purchased_total.push_back(0);
         state.research_consumed_total.push_back(0);
+        if (!state.treasury_goods_consumed_total.empty())
+            state.treasury_goods_consumed_total.push_back(0);
         state.research_peer_flags.insert(state.research_peer_flags.end(), state.technology_count, 0);
         state.research_signal_cell_offsets.push_back(
             state.research_signal_cell_offsets.back());
@@ -835,6 +837,159 @@ bool country_core_apply_command(
         }
         ++state.country_state_version[static_cast<size_t>(slot)];
         plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+        return true;
+    }
+    case 21: { // consume treasury goods (era advancement sink)
+        if (!country_core_validate_target(state, command, slot, error)) return false;
+        if (command.aux < 0 || command.aux >= static_cast<int32_t>(state.good_count) ||
+            command.value <= 0) {
+            error = "country_treasury_goods_command_invalid";
+            return false;
+        }
+        const size_t index = static_cast<size_t>(slot) * state.good_count +
+            static_cast<size_t>(command.aux);
+        if (index >= state.country_goods.size() ||
+            state.country_goods[index] < command.value) {
+            error = "country_treasury_goods_insufficient";
+            return false;
+        }
+        state.country_goods[index] -= command.value;
+        if (state.treasury_goods_consumed_total.size() < state.country_count)
+            state.treasury_goods_consumed_total.resize(state.country_count, 0);
+        int64_t &total = state.treasury_goods_consumed_total[static_cast<size_t>(slot)];
+        total = command.value > std::numeric_limits<int64_t>::max() - total
+            ? std::numeric_limits<int64_t>::max() : total + command.value;
+        ++state.country_state_version[static_cast<size_t>(slot)];
+        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+        return true;
+    }
+    case 23: // transfer cash between countries
+    case 24: { // transfer goods between countries
+        if (!country_core_validate_target(state, command, slot, error)) return false;
+        RuntimeCountryCommand receiver_command = command;
+        receiver_command.target_handle =
+            (static_cast<uint64_t>(static_cast<uint32_t>(command.aux)) << 32u) |
+            static_cast<uint64_t>(static_cast<uint32_t>(command.cell));
+        int32_t receiver = -1;
+        if (!country_core_validate_target(state, receiver_command, receiver, error))
+            return false;
+        if (receiver == slot || command.value <= 0) {
+            error = "country_transfer_between_command_invalid";
+            return false;
+        }
+        if (command.opcode == 23) {
+            int64_t &from = state.country_cash[static_cast<size_t>(slot)];
+            int64_t &to = state.country_cash[static_cast<size_t>(receiver)];
+            const int64_t moved = std::min(command.value, std::max<int64_t>(0, from));
+            if (moved > std::numeric_limits<int64_t>::max() - to) {
+                error = "country_treasury_overflow";
+                return false;
+            }
+            from -= moved;
+            to += moved;
+        } else {
+            if (command.domain < 0 || command.domain >= static_cast<int32_t>(state.good_count)) {
+                error = "country_transfer_between_command_invalid";
+                return false;
+            }
+            const size_t from_index = static_cast<size_t>(slot) * state.good_count +
+                static_cast<size_t>(command.domain);
+            const size_t to_index = static_cast<size_t>(receiver) * state.good_count +
+                static_cast<size_t>(command.domain);
+            if (from_index >= state.country_goods.size() ||
+                to_index >= state.country_goods.size()) {
+                error = "country_transfer_between_command_invalid";
+                return false;
+            }
+            const int64_t moved = std::min(
+                command.value, std::max<int64_t>(0, state.country_goods[from_index]));
+            if (moved > std::numeric_limits<int64_t>::max() - state.country_goods[to_index]) {
+                error = "country_treasury_overflow";
+                return false;
+            }
+            state.country_goods[from_index] -= moved;
+            state.country_goods[to_index] += moved;
+        }
+        ++state.country_state_version[static_cast<size_t>(slot)];
+        ++state.country_state_version[static_cast<size_t>(receiver)];
+        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+        return true;
+    }
+    case 27: { // annex country: victim = target_handle, annexer = cell/aux
+        int32_t victim = -1;
+        if (!country_core_validate_target(state, command, victim, error)) return false;
+        RuntimeCountryCommand annexer_command = command;
+        annexer_command.target_handle =
+            (static_cast<uint64_t>(static_cast<uint32_t>(command.aux)) << 32u) |
+            static_cast<uint64_t>(static_cast<uint32_t>(command.cell));
+        int32_t annexer = -1;
+        if (!country_core_validate_target(state, annexer_command, annexer, error))
+            return false;
+        if (annexer == victim) {
+            error = "country_annex_command_invalid";
+            return false;
+        }
+        const size_t v = static_cast<size_t>(victim);
+        const size_t a = static_cast<size_t>(annexer);
+        const size_t goods = state.good_count;
+        if ((v + 1u) * goods > state.country_goods.size() ||
+            (a + 1u) * goods > state.country_goods.size() ||
+            state.country_cash[v] > std::numeric_limits<int64_t>::max() - state.country_cash[a]) {
+            error = "country_annex_assets_invalid";
+            return false;
+        }
+        for (size_t good = 0; good < goods; ++good) {
+            if (state.country_goods[v * goods + good] >
+                std::numeric_limits<int64_t>::max() - state.country_goods[a * goods + good]) {
+                error = "country_annex_assets_invalid";
+                return false;
+            }
+        }
+        int32_t moved_cells = 0;
+        for (size_t cell = 0; cell < state.cell_country_slot.size(); ++cell) {
+            if (state.cell_country_slot[cell] != victim) continue;
+            state.cell_country_slot[cell] = annexer;
+            if (cell < state.cell_tax_policy_ids.size())
+                state.cell_tax_policy_ids[cell] = 0;
+            ++moved_cells;
+        }
+        state.territory_count[a] += moved_cells;
+        state.territory_count[v] = 0;
+        state.country_cash[a] += state.country_cash[v];
+        state.country_cash[v] = 0;
+        for (size_t good = 0; good < goods; ++good) {
+            state.country_goods[a * goods + good] += state.country_goods[v * goods + good];
+            state.country_goods[v * goods + good] = 0;
+        }
+        for (uint32_t word = 0; word < state.technology_words; ++word) {
+            const size_t index = v * state.technology_words + word;
+            if (index < state.country_pending_technologies.size())
+                state.country_pending_technologies[index] = 0;
+        }
+        for (size_t i = 0; i < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT * COUNTRY_QUEUE_SLOTS; ++i) {
+            const size_t index = v * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT * COUNTRY_QUEUE_SLOTS + i;
+            if (index < state.research_queues.size()) state.research_queues[index] = -1;
+        }
+        for (size_t i = 0; i < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT; ++i) {
+            const size_t index = v * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT + i;
+            if (index < state.research_queue_lengths.size())
+                state.research_queue_lengths[index] = 0;
+        }
+        if (v < state.research_deferred_points.size())
+            state.research_deferred_points[v] = 0;
+        if (v < state.research_peer_flags.size() / std::max<uint32_t>(state.technology_count, 1u)) {
+            for (uint32_t technology = 0; technology < state.technology_count; ++technology)
+                state.research_peer_flags[v * state.technology_count + technology] = 0;
+        }
+        auto &active_slots = state.research_active_country_slots;
+        active_slots.erase(std::remove(active_slots.begin(), active_slots.end(), victim),
+                           active_slots.end());
+        state.country_active[v] = 0;
+        ++state.country_generation[v];
+        ++state.country_state_version[v];
+        ++state.country_state_version[a];
+        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY |
+                                      RUNTIME_DIRTY_COUNTRY_STATE;
         return true;
     }
     default:

@@ -427,10 +427,28 @@ NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) cons
     totals.expedition_funds = expedition_funds;
     totals.goods_stock += expedition_goods - totals.expedition_goods;
     totals.expedition_goods = expedition_goods;
+    // BEGIN army personnel lane: lane holdings are re-read live, exactly like the
+    // expedition payload, so the incremental closing audit never has to track
+    // them by touch.
+    int64_t army_lane_population = 0;
+    int64_t army_lane_funds = 0;
+    sum_army_personnel_holdings(army_lane_population, army_lane_funds,
+                                ignored_saturation);
+    totals.population += army_lane_population - totals.army_lane_population;
+    totals.transit_population = saturating_add(
+        totals.transit_population,
+        army_lane_population - totals.army_lane_population, ignored_saturation);
+    totals.army_lane_population = army_lane_population;
+    totals.army_lane_funds = army_lane_funds;
+    // END army personnel lane
     const int64_t escrow = trade_escrow_cash();
     totals.escrow_cash = saturating_add(
         saturating_add(escrow, fiscal_escrow_total(), ignored_saturation),
         expedition_funds, ignored_saturation);
+    // BEGIN army personnel lane: lane cash is escrow cash too.
+    totals.escrow_cash = saturating_add(totals.escrow_cash, army_lane_funds,
+                                        ignored_saturation);
+    // END army personnel lane
     int64_t country_goods = 0;
     if (_country_runtime != nullptr) {
         for (int32_t good = 0; good < market_store().good_count.get(); ++good)
@@ -3976,7 +3994,7 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
             bool policy_enabled = false;
             int64_t daily_budget = 0;
             int64_t demand = 0;
-            if (!_country_runtime->research_procurement_policy(
+            if (!research_procurement_policy_for(
                     country, policy_enabled, daily_budget, demand) ||
                 !policy_enabled || daily_budget <= 0 || demand <= 0) {
                 _country_research_procurement_enabled[index] = 0;
@@ -4084,6 +4102,8 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
             if (country < _epoch_country_handles.size()) {
                 note_non_tax_outflow(_epoch_country_handles[country],
                     NON_TAX_RESEARCH_PURCHASE, continuation.cash);
+                note_procurement_cash(_epoch_country_handles[country], 0,
+                    continuation.cash);
             }
             _government_research_procured_points = saturating_add(
                 _government_research_procured_points.get(), continuation.quantity,
@@ -6350,7 +6370,7 @@ void NativeEconomyRuntime::refresh_epoch_research_demand() {
         bool enabled = false;
         int64_t daily_budget = 0;
         int64_t remaining_points = 0;
-        if (!_country_runtime->research_procurement_policy(
+        if (!research_procurement_policy_for(
                 country, enabled, daily_budget, remaining_points) ||
             !enabled || daily_budget <= 0 || remaining_points <= 0) continue;
         const int64_t cash = std::max<int64_t>(
@@ -6689,6 +6709,47 @@ int64_t NativeEconomyRuntime::epoch_research_demand_daily_for_market(
     if (quantity <= 0) return 0;
     const int64_t days = std::max<int64_t>(1, _epoch_days.get());
     return quantity / days + (quantity % days != 0 ? 1 : 0);
+}
+
+int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
+        const std::vector<int32_t> &cells, const std::vector<int32_t> &q16) {
+    const size_t count = std::min(cells.size(), q16.size());
+    if (count == 0) return 0;
+    // The lane is owned by Military and only meaningful for configured worlds.
+    // Size it lazily so an unconfigured runtime is a no-op.
+    if (_cell_count.get() > 0 &&
+        _military_ration_sat_q16.size() != static_cast<size_t>(_cell_count.get())) {
+        _military_ration_sat_q16.assign(static_cast<size_t>(_cell_count.get()),
+                                        static_cast<int32_t>(Q16_ONE));
+        _military_ration_sat_present.assign(static_cast<size_t>(_cell_count.get()), 0);
+    }
+    int32_t written = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const int32_t cell = cells[i];
+        if (cell < 0 || cell >= _cell_count.get() ||
+            static_cast<size_t>(cell) >= _military_ration_sat_q16.size())
+            continue;
+        _military_ration_sat_q16[static_cast<size_t>(cell)] = std::clamp<int32_t>(
+            q16[i], 0, static_cast<int32_t>(Q16_ONE));
+        _military_ration_sat_present[static_cast<size_t>(cell)] = 1;
+        ++written;
+    }
+    return written;
+}
+
+bool NativeEconomyRuntime::cell_has_state_service_population(int32_t cell) const {
+    if (_state_supplied_need_columns == 0 || cell < 0 || cell >= _cell_count.get())
+        return false;
+    bool found = false;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        if (found || population_store().population[slot] <= 0) return;
+        const uint32_t signature = population_store().signature_id[slot];
+        if (signature < _signatures.size() &&
+            profession_is_state_service_only(
+                _signatures[signature].profession_id))
+            found = true;
+    });
+    return found;
 }
 
 bool NativeEconomyRuntime::satisfaction_need_available(const Need &need, int32_t cell) const {
@@ -9467,6 +9528,25 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             group.recovery_cooldown_cycles = 0;
             invalidate_cell_monetary_units(group.cell);
         }
+        if (type.kind == 3) {
+            // Military v1: state-owned buildings are financed by the treasury.
+            // Private loss closure, recovery review and liquidation never apply;
+            // keep the lot ACTIVE with full planned utilization and zero
+            // private operating cost so the payroll and rail paths behave.
+            group.operating_state = 0;
+            group.severe_loss_cycles = 0;
+            group.recovery_cycles = 0;
+            group.recovery_failed_reviews = 0;
+            group.pending_operating_state = 255;
+            group.recovery_cooldown_cycles = 0;
+            group.merchant_debt_principal = 0;
+            group.merchant_debt_premium = 0;
+            group.sample_unit_input_cost = 0;
+            group.sample_unit_maintenance_cost = 0;
+            group.planned_utilization_q16 = Q16_ONE;
+            group.purchase_intent_capacity_q16 = Q16_ONE;
+            invalidate_cell_monetary_units(group.cell);
+        }
         bool produces_cycle_flow = false;
         bool produces_survival_food = false;
         for (int32_t i = 0; i < type.output_count; ++i) {
@@ -9474,6 +9554,26 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             produces_cycle_flow = produces_cycle_flow || _good_storage_modes[good] == 1;
             produces_survival_food = produces_survival_food ||
                 _survival_food_good_mask[good] != 0;
+        }
+        if (type.kind == 3) {
+            // Military v1: a state-owned lot has no private production
+            // economics (no output, no inputs, no owner livelihood). It is
+            // always ACTIVE at full planned capacity so its payroll roles can
+            // be staffed and the treasury pays the wages; everything else in
+            // this private plan/recovery/revenue pipeline is skipped.
+            const int32_t capacity_index = static_cast<int32_t>(group.index);
+            if (capacity_index >= 0 && capacity_index < static_cast<int32_t>(
+                    _building_planned_capacity_before_climate_q16.size())) {
+                _building_planned_capacity_before_climate_q16[capacity_index] =
+                    Q16_ONE;
+            }
+            group.last_expected_revenue = 0;
+            group.last_quoted_market_receipt = 0;
+            group.last_quoted_operating_cost = 0;
+            group.last_maintenance_due = 0;
+            group.last_margin_gap_q16 = 0;
+            group.sample_unit_input_cost = 0;
+            continue;
         }
         if (!building_available(group.cell, group.type_id, true)) {
             group.sample_unit_input_cost = 0;
@@ -11253,7 +11353,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 group.cell, group.type_id, group.owner_signature_id);
             const double building_factor =
                 _modifier_runtime->economy_building_output_factor(
-                    group.modifier_handle, static_cast<uint64_t>(group.cell), sector);
+                    writable_group.modifier_handle, static_cast<uint64_t>(group.cell), sector);
             const double exact_building_factor = exact_building_stat_id >= 0
                 ? _modifier_runtime->effective_value(
                     ModifierRuntime::ECONOMY, exact_building_stat_id, 0,
@@ -14130,6 +14230,69 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             }
             break;
         }
+        case COMMAND_MILITARY_CONVERT_COHORT: {
+            // B (design 5.4): state-directed cohort conversion inside one cell,
+            // named by signature so no slot id crosses an execution boundary.
+            // It goes through the ORDINARY structural path instead of writing
+            // population directly: a direct write bypassed the economy ledger's
+            // slot/page bookkeeping and eventually failed
+            // validate_shape_and_values() (economy_pod_ledger_shape_invalid).
+            //
+            // The same command can reach this switch more than once (POD plan plus
+            // the epoch drain), so the sequence is deduplicated: applying it twice
+            // silently converts twice as many people as Military asked for
+            // (observed economy 15 vs military 12).
+            static thread_local int64_t recent_seq[64] = {};
+            static thread_local size_t recent_at = 0;
+            const int64_t conv_sequence = cmd.sequence;
+            if (conv_sequence != 0) {
+                for (int64_t seen : recent_seq) {
+                    if (seen == conv_sequence) {
+                        settled_value = 0;
+                        return true;
+                    }
+                }
+                recent_seq[recent_at % 64] = conv_sequence;
+                ++recent_at;
+            }
+            const int32_t conv_cell = cmd.i32_0;
+            const int32_t dst_signature = cmd.i32_1;
+            const int32_t src_signature = static_cast<int32_t>(cmd.i64_1);
+            if (conv_cell < 0 || conv_cell >= _cell_count.get() ||
+                src_signature < 0 || dst_signature < 0) {
+                error = "military_convert_target_invalid";
+                return false;
+            }
+            const int32_t conv_src = population_store().find_signature(
+                conv_cell, static_cast<uint32_t>(src_signature));
+            if (conv_src < 0 || population_store().active[conv_src] == 0) {
+                error = "military_convert_source_missing";
+                return false;
+            }
+            const int64_t conv_requested = std::max<int64_t>(0, cmd.i64_0);
+            const int64_t conv_available =
+                std::max<int64_t>(0, population_store().population[conv_src]);
+            const int64_t conv_moved = std::min(conv_requested, conv_available);
+            if (conv_moved <= 0) {
+                error = "military_convert_source_empty";
+                return false;
+            }
+            _structural_commands.push_back({
+                COMMAND_CHANGE_SIGNATURE, conv_src, conv_cell, dst_signature,
+                conv_moved, 0, cmd.sequence});
+            settled_value = conv_moved;
+            break;
+        }
+        // BEGIN army personnel lane (contract §1.2).
+        case COMMAND_ARMY_EMBARK:
+        case COMMAND_ARMY_DISEMBARK:
+        case COMMAND_ARMY_MERGE_LANES: {
+            int64_t lane_settled = 0;
+            if (!apply_army_lane_command(cmd, error, lane_settled)) return false;
+            settled_value = lane_settled;
+            break;
+        }
+        // END army personnel lane
         case COMMAND_MOVE_POPULATION:
         case COMMAND_CHANGE_SIGNATURE: {
             if (!population_store().valid_handle(cmd.target_handle, slot)) {
@@ -14228,6 +14391,12 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
 
 bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
                                              std::string &error) {
+    // BEGIN army personnel lane (contract §1.2): lane transfers own their
+    // cohort-side bookkeeping but run on this same structural stage.
+    if (cmd.opcode == STRUCTURAL_ARMY_EMBARK ||
+        cmd.opcode == STRUCTURAL_ARMY_DISEMBARK)
+        return commit_structural_army_lane(cmd, error);
+    // END army personnel lane
     if (cmd.opcode == STRUCTURAL_BIRTH) {
         if (cmd.cell < 0 || cmd.cell >= _cell_count.get() || cmd.signature < 0 ||
             cmd.signature >= static_cast<int32_t>(_signatures.size()) ||
@@ -14261,6 +14430,22 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
                      cmd.signature, cmd.cell, cmd.population, 0, cmd.cell, cmd.cell,
                      legs.empty() ? nullptr : &legs);
         return true;
+    }
+    // A producer from another execution context (the POD queue) cannot know this
+    // runtime's cohort slot ids. Re-resolve the source from the cell plus the
+    // source signature it recorded in the funds lane before giving up.
+    if ((cmd.source_slot < 0 ||
+         cmd.source_slot >= static_cast<int32_t>(population_store().active.size()) ||
+         population_store().active[cmd.source_slot] == 0) &&
+        cmd.signature >= 0 && cmd.funds > 0 && cmd.funds <= 0x7fffffffLL &&
+        cmd.cell >= 0 && cmd.cell < _cell_count.get()) {
+        const int32_t resolved = population_store().find_signature(
+            cmd.cell, static_cast<uint32_t>(cmd.funds));
+        if (resolved >= 0 && population_store().active[resolved] != 0) {
+            StructuralCommand repaired = cmd;
+            repaired.source_slot = resolved;
+            return commit_structural(repaired, error);
+        }
     }
     if (cmd.source_slot < 0 || cmd.source_slot >= static_cast<int32_t>(population_store().active.size()) ||
         population_store().active[cmd.source_slot] == 0) {
@@ -14330,10 +14515,17 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
     }
     if (cmd.cell < 0 || cmd.cell >= _cell_count.get() || cmd.signature < 0 ||
         cmd.signature >= static_cast<int32_t>(_signatures.size())) {
-        error = "structural_target_invalid";
-        return false;
+        ++_rejected_commands;   // unknown destination signature: drop this move, keep the day alive
+        return true;
     }
-    if (!profession_available(cmd.cell, _signatures[cmd.signature].profession_id, true)) {
+    // State-service professions (soldier) are emplaced by the state, not by the
+    // local job market: a barracks is a Military state building and never shows
+    // up as an Economy employment seat, so requiring local availability would
+    // reject every enlistment. The design (5.4) makes these posts ordinary
+    // state payroll seats; the caller owns the post validation.
+    const int32_t destination_profession = _signatures[cmd.signature].profession_id;
+    if (!profession_is_state_service_only(destination_profession) &&
+        !profession_available(cmd.cell, destination_profession, true)) {
         ++_rejected_commands;
         return true;
     }
@@ -14636,12 +14828,30 @@ NativeEconomyRuntime::AuditTotals NativeEconomyRuntime::audit_totals() const {
     int64_t expedition_goods = 0;
     sum_family_expedition_holdings(totals.transit_population, expedition_funds,
                                    expedition_goods, valuation_sat);
+    // BEGIN army personnel lane (contract §1.2): embarked people and their cash
+    // have left the cohort table but are still owned by Economy, so they count
+    // as transit population and escrow cash exactly like an expedition payload.
+    int64_t army_lane_population = 0;
+    int64_t army_lane_funds = 0;
+    sum_army_personnel_holdings(army_lane_population, army_lane_funds,
+                                valuation_sat);
+    totals.transit_population = saturating_add(totals.transit_population,
+                                               army_lane_population, valuation_sat);
+    totals.army_lane_population = army_lane_population;
+    totals.army_lane_funds = army_lane_funds;
+    // END army personnel lane
     totals.expedition_funds = expedition_funds;
     totals.expedition_goods = expedition_goods;
     totals.population += totals.transit_population;
     totals.escrow_cash = saturating_add(saturating_add(
         trade_escrow_cash(), fiscal_escrow_total(), valuation_sat),
         expedition_funds, valuation_sat);
+    // BEGIN army personnel lane: lane cash joins escrow cash but stays out of
+    // expedition_funds, which the epoch compares against the family expedition
+    // store only.
+    totals.escrow_cash = saturating_add(totals.escrow_cash, army_lane_funds,
+                                        valuation_sat);
+    // END army personnel lane
     totals.goods_stock += totals.transit_goods;
     totals.goods_stock += expedition_goods;
     if (_country_runtime != nullptr) {
@@ -14952,6 +15162,8 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
             view.cell < 0 || view.cell >= _cell_count.get() ||
             view.type_id < 0 ||
             view.type_id >= static_cast<int32_t>(_building_types.size())) return;
+        // Military v1: state-owned lots are never reviewed for liquidation.
+        if (_building_types[static_cast<size_t>(view.type_id)].kind == 3) return;
     }
     const bool liquidation_eligible = g < static_cast<int32_t>(
             _building_recovery_liquidation_eligible.size()) &&
@@ -15924,6 +16136,23 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 if (finish_chunk_and_should_yield()) break;
                 continue;
             }
+            // Era advancement procurement runs after research procurement in
+            // the same stage (docs/cpp-dots-runtime/era-advancement-runtime.md).
+            if (!_era_procurement_done) {
+                _executed_substage = "era_procurement";
+                if (!run_government_era_procurement(error)) {
+                    fail(error.empty() ? "government_era_procurement_failed" : error);
+                    break;
+                }
+                if (era_procurement_parked()) {
+                    yield_reason = "country_research_peer_results";
+                    break;
+                }
+                if (!_era_procurement_done) {
+                    if (finish_chunk_and_should_yield()) break;
+                    continue;
+                }
+            }
             commit_price_ceilings();
             publish_shadow_graph_stage_reference(
                 RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT);
@@ -16132,7 +16361,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
          (std::strcmp(yield_reason, "fiscal_reserve_peer_results") == 0 &&
           _fiscal_reservation_continuation.pending_request_id != 0) ||
          (std::strcmp(yield_reason, "country_research_peer_results") == 0 &&
-          _country_research_procurement_continuation.pending_request_id != 0))) {
+          (_country_research_procurement_continuation.pending_request_id != 0 ||
+           era_procurement_parked())))) {
         out["pending_input"] = true;
     }
     // A ledger/structural command parked on the Country plan window. Nothing is
@@ -16430,14 +16660,22 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
         return parsed != 0 ? std::abs(parsed) : 1;
     }();
     const int64_t family_cache_day = _current_day.get();
+    const bool structural_trait_or_effect_dirty =
+        (_family_behavior_cache_dirty_reasons &
+         (FAMILY_BEHAVIOR_DIRTY_INITIAL | FAMILY_BEHAVIOR_DIRTY_TRAITS |
+          FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS |
+          FAMILY_BEHAVIOR_DIRTY_INFLUENCES | FAMILY_BEHAVIOR_DIRTY_HOME_CELL)) != 0;
     const int32_t family_cache_phase =
         static_cast<int32_t>(((family_cache_day - track_b_family_cache_offset) %
             track_b_family_cache_cadence + track_b_family_cache_cadence) %
             track_b_family_cache_cadence);
-    if (track_b_enabled && track_b_family_cache_cadence > 1 &&
+    if (!structural_trait_or_effect_dirty &&
+        track_b_enabled && track_b_family_cache_cadence > 1 &&
         _track_b_family_cache_last_day !=
             std::numeric_limits<int64_t>::min() &&
-        family_cache_phase != 0) {
+        family_cache_phase != 0 &&
+        family_cache_day - _track_b_family_cache_last_day <
+            track_b_family_cache_cadence) {
         ++_family_behavior_cache_skips;
         EconomyCostProbe::record("family.track_b_cache_skip",
                                  _current_day.get(), 0.0, 1u);
@@ -16608,8 +16846,25 @@ bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
             }
         }
         if (_family_knowledge_class_index < 0) continue;
-        const int32_t factor = static_cast<int32_t>(std::clamp<int64_t>(
-            binding.strength_q16, 0, 4 * Q16_ONE));
+        const int32_t prestige = std::clamp<int32_t>(
+            family_influences().prestige_level[branch], 0, 5);
+        static constexpr int64_t kLearningPopStep[6] = {
+            100, 100, 80, 60, 40, 20
+        };
+        const int64_t family_pop = family_population(
+            family_influences().family_handle[branch]);
+        int64_t steps = family_pop / kLearningPopStep[prestige];
+        if (steps <= 0) {
+            if (binding.strength_q16 <= Q16_ONE) continue;
+            steps = 1;
+        }
+        const int32_t factor = binding.strength_q16 <= Q16_ONE
+            ? static_cast<int32_t>(std::clamp<int64_t>(
+                static_cast<int64_t>(Q16_ONE) +
+                    steps * static_cast<int64_t>(binding.strength_q16),
+                0, 4 * Q16_ONE))
+            : static_cast<int32_t>(std::clamp<int64_t>(
+                binding.strength_q16, 0, 4 * Q16_ONE));
         FamilyBehaviorFactorRow row;
         row.cell = -1;
         row.score_term = FAMILY_SCORE_CANDIDATE_WEIGHT;
@@ -18246,6 +18501,50 @@ int32_t NativeEconomyRuntime::family_free_building_type_id(
     if (from_payload >= 0 &&
         from_payload < static_cast<int32_t>(_building_types.size()))
         return from_payload;
+    int32_t branch = -1;
+    int32_t family = -1;
+    if (family_influences().valid_handle(cmd.target_handle, branch) &&
+        families_store().valid_handle(family_influences().family_handle[branch], family)) {
+        const int32_t cell = family_influences().cell[branch];
+        const int64_t count = std::max<int64_t>(1, cmd.i64_0);
+        if (family < static_cast<int32_t>(_family_owned_offsets.size()) - 1) {
+            const uint64_t family_handle = families_store().handle_for_index(family);
+            const auto &by_handle = building_handle_index();
+            for (int32_t cursor = _family_owned_offsets[static_cast<size_t>(family)];
+                 cursor < _family_owned_offsets[static_cast<size_t>(family) + 1];
+                 ++cursor) {
+                const int32_t edge_index = _family_owned_edge_indices[
+                    static_cast<size_t>(cursor)];
+                if (edge_index < 0 || edge_index >= static_cast<int32_t>(
+                        family_ownerships().size()))
+                    continue;
+                const FamilyBuildingOwnership &edge = family_ownerships().read_at(
+                    static_cast<size_t>(edge_index), __FILE__, __LINE__);
+                if (edge.family_handle != family_handle || edge.owned_count <= 0)
+                    continue;
+                const auto found = by_handle.find(edge.building_handle);
+                if (found == by_handle.end()) continue;
+                const auto group = building_view(static_cast<size_t>(found->second));
+                if (group.cell != cell || group.count <= 0) continue;
+                const int32_t type_id = group.type_id;
+                if (type_id >= 0 && type_id < static_cast<int32_t>(_building_types.size()) &&
+                    building_available(cell, type_id, true) &&
+                    building_constructible(cell, type_id, true) &&
+                    evaluate_building_conditions(type_id, cell) &&
+                    family_free_building_resources_legal(cell, type_id, count)) {
+                    return type_id;
+                }
+            }
+        }
+        for (int32_t type_id = 0; type_id < static_cast<int32_t>(_building_types.size()); ++type_id) {
+            if (_building_types[type_id].owner_slots_per_building > 0 &&
+                building_available(cell, type_id, true) &&
+                building_constructible(cell, type_id, true) &&
+                evaluate_building_conditions(type_id, cell) &&
+                family_free_building_resources_legal(cell, type_id, count))
+                return type_id;
+        }
+    }
     return -1;
 }
 
@@ -19064,6 +19363,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         const std::vector<int64_t> existing_instance_ids = branch_bindings ==
                 _family_effect_instances_by_branch.end()
             ? std::vector<int64_t>() : branch_bindings->second;
+        std::vector<std::string> desired_non_trait;
         for (const int64_t existing_instance_id : existing_instance_ids) {
             const auto indexed = _family_effect_binding_by_instance.find(
                 existing_instance_id);
@@ -19077,6 +19377,10 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             const bool trait_source = _effect_runtime->family_effect_metadata_pod(
                     definition_key, metadata) && metadata.source_kind == 0;
             if (!trait_source) {
+                if (definition_key == "family.effect.knowledge_spread" &&
+                    submit_changes) {
+                    desired_non_trait.push_back(definition_key);
+                }
                 int32_t magnitude = metadata.magnitude_by_prestige_q16[
                     std::clamp(level, 0, 5)];
                 const int32_t effect_id = family_effect_id_for_key(definition_key);
@@ -19084,9 +19388,34 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     magnitude = family_effect_prestige_magnitude_q16(effect_id, level);
                 magnitude = std::clamp(magnitude, 0,
                     static_cast<int32_t>(4 * Q16_ONE));
+                if (definition_key == "family.effect.knowledge_spread" &&
+                    submit_changes) {
+                    std::vector<int32_t> allowed_cells;
+                    collect_family_effect_target_cells(
+                        family_influences().cell[branch],
+                        metadata.target_selector_kind, allowed_cells,
+                        definition_key, level);
+                    const int32_t bound_cell = static_cast<int32_t>(
+                        binding.target_handle);
+                    if (std::find(allowed_cells.begin(), allowed_cells.end(),
+                                  bound_cell) == allowed_cells.end()) {
+                        std::string error;
+                        if (effect_pod_retire(_effect_runtime, _effect_forwarder,
+                                binding.instance_id, binding.generation,
+                                _current_day.get(), error)) {
+                            return true;
+                        }
+                    }
+                }
                 if (submit_changes && magnitude != binding.strength_q16) {
                     std::string error;
-                    if (effect_pod_metric(_effect_runtime, _effect_forwarder,
+                    if (effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                            binding.instance_id, binding.definition_key,
+                            binding.generation, 0x46414d50,
+                            static_cast<int64_t>(branch_stable_id), branch_handle,
+                            binding.target_handle, binding.target_generation, level,
+                            _current_day.get(), -1, true, error) &&
+                        effect_pod_metric(_effect_runtime, _effect_forwarder,
                             binding.instance_id, binding.generation, 0,
                             family_effect_metric_revision(1), magnitude, error)) {
                         binding.strength_q16 = magnitude;
@@ -19150,7 +19479,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             const bool event_once = metadata.lifecycle == 2;
             std::vector<int32_t> target_cells;
             collect_family_effect_target_cells(family_influences().cell[branch],
-                metadata.target_selector_kind, target_cells);
+                metadata.target_selector_kind, target_cells, item.first, level);
             if (target_cells.empty())
                 target_cells.push_back(family_influences().cell[branch]);
             for (int32_t target_cell : target_cells) {
@@ -19220,6 +19549,60 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                         MetricMask::all_declared(FAMILY_METRIC_COUNT));
             }
         }
+        if (!desired_non_trait.empty()) {
+            std::sort(desired_non_trait.begin(), desired_non_trait.end());
+            desired_non_trait.erase(std::unique(desired_non_trait.begin(),
+                desired_non_trait.end()), desired_non_trait.end());
+            for (const std::string &key : desired_non_trait) {
+                const int32_t effect_id = family_effect_id_for_key(key);
+                const int32_t magnitude = family_effect_prestige_magnitude_q16(
+                    effect_id, level);
+                uint64_t base_target_handle = 0;
+                uint32_t base_target_generation = 0;
+                EffectRuntime::FamilyEffectMetadataPod metadata;
+                if (!resolve_effect_target(key, base_target_handle,
+                        base_target_generation, metadata))
+                    continue;
+                std::vector<int32_t> target_cells;
+                collect_family_effect_target_cells(family_influences().cell[branch],
+                    metadata.target_selector_kind, target_cells, key, level);
+                if (target_cells.empty())
+                    target_cells.push_back(family_influences().cell[branch]);
+                for (int32_t target_cell : target_cells) {
+                    const int64_t instance_id = shaped_effect_instance_id(key, target_cell);
+                    if (_family_effect_binding_by_instance.find(instance_id) !=
+                        _family_effect_binding_by_instance.end())
+                        continue;
+                    uint64_t target_handle = base_target_handle;
+                    uint32_t target_generation = base_target_generation;
+                    if (metadata.target_selector_kind >=
+                        EffectRuntime::SELECTOR_NEIGHBORS_R1) {
+                        if (target_cell < 0 || target_cell >= _cell_count.get()) continue;
+                        target_handle = static_cast<uint64_t>(target_cell);
+                        target_generation = 1;
+                    }
+                    std::string error;
+                    if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                            instance_id, key, branch_generation, 0x46414d50,
+                            static_cast<int64_t>(branch_stable_id), branch_handle,
+                            target_handle, target_generation, level,
+                            _current_day.get(), -1, true, error) ||
+                        !effect_pod_metric(_effect_runtime, _effect_forwarder,
+                            instance_id, branch_generation, 0,
+                            family_effect_metric_revision(1), magnitude, error))
+                        continue;
+                    add_family_effect_binding({branch_handle, key, magnitude,
+                        instance_id, branch_generation, metadata.target_domain,
+                        target_handle, target_generation, metadata.metric_mask});
+                    const auto indexed = _family_effect_binding_by_instance.find(instance_id);
+                    if (indexed != _family_effect_binding_by_instance.end())
+                        publish_family_effect_metrics(
+                            _family_effect_bindings[indexed->second],
+                            family_effect_metric_revision(1),
+                            MetricMask::all_declared(FAMILY_METRIC_COUNT));
+                }
+            }
+        }
         std::vector<std::string> sibling_independent;
         for (const FamilyEffectBinding &binding : _family_effect_bindings) {
             if (binding.branch_handle == branch_handle) continue;
@@ -19253,53 +19636,79 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         sibling_independent.erase(std::unique(sibling_independent.begin(),
             sibling_independent.end()), sibling_independent.end());
         for (const std::string &key : sibling_independent) {
-            const int64_t instance_id = stable_effect_instance_id(key);
-            uint64_t target_handle = 0;
-            uint32_t target_generation = 0;
+            uint64_t base_target_handle = 0;
+            uint32_t base_target_generation = 0;
             EffectRuntime::FamilyEffectMetadataPod metadata;
-            if (!resolve_effect_target(key, target_handle, target_generation,
-                    metadata))
+            if (!resolve_effect_target(key, base_target_handle,
+                    base_target_generation, metadata))
                 continue;
             const int32_t magnitude = family_effect_prestige_magnitude_q16(
                 family_effect_id_for_key(key), level);
-            if (!submit_changes) {
-                // A sibling's instance may have been created by the founding
-                // random-pool grant, which mixes the target cell into the
-                // identity. Probe both shapes and bind the one that is alive.
-                int64_t alive_id = 0;
-                if (instance_alive(instance_id)) {
-                    alive_id = instance_id;
-                } else {
-                    const int64_t shaped = shaped_effect_instance_id(
-                        key, family_influences().cell[branch]);
-                    if (instance_alive(shaped)) alive_id = shaped;
+            const bool event_once = metadata.lifecycle == 2;
+            const int32_t source_cell = family_influences().cell[branch];
+            std::vector<int32_t> target_cells;
+            collect_family_effect_target_cells(source_cell,
+                metadata.target_selector_kind, target_cells, key, level);
+            if (target_cells.empty()) target_cells.push_back(source_cell);
+            for (int32_t target_cell : target_cells) {
+                uint64_t target_handle = base_target_handle;
+                uint32_t target_generation = base_target_generation;
+                if (metadata.target_selector_kind >=
+                    EffectRuntime::SELECTOR_NEIGHBORS_R1) {
+                    if (target_cell < 0 || target_cell >= _cell_count.get()) continue;
+                    target_handle = static_cast<uint64_t>(target_cell);
+                    target_generation = 1;
                 }
-                if (alive_id != 0) {
+                const int64_t instance_id =
+                    metadata.target_selector_kind >=
+                        EffectRuntime::SELECTOR_NEIGHBORS_R1
+                    ? shaped_effect_instance_id(key, target_cell)
+                    : stable_effect_instance_id(key);
+                if (!submit_changes) {
+                    // A sibling's instance may have been created by the founding
+                    // random-pool grant, which mixes the target cell into the
+                    // identity. Probe both shapes and bind the one that is alive.
+                    int64_t alive_id = 0;
+                    if (instance_alive(instance_id)) {
+                        alive_id = instance_id;
+                    } else {
+                        const int64_t shaped = shaped_effect_instance_id(
+                            key, target_cell);
+                        if (instance_alive(shaped)) alive_id = shaped;
+                    }
+                    if (alive_id != 0) {
+                        add_family_effect_binding({branch_handle, key, magnitude,
+                            alive_id, branch_generation, metadata.target_domain,
+                            target_handle, target_generation, metadata.metric_mask});
+                    }
+                    continue;
+                }
+                if (event_once) {
                     add_family_effect_binding({branch_handle, key, magnitude,
-                        alive_id, branch_generation, metadata.target_domain,
+                        instance_id, branch_generation, metadata.target_domain,
                         target_handle, target_generation, metadata.metric_mask});
+                    continue;
                 }
-                continue;
+                std::string error;
+                if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
+                        instance_id, key, branch_generation, 0x46414d54,
+                        static_cast<int64_t>(branch_stable_id), branch_handle,
+                        target_handle, target_generation, level, _current_day.get(),
+                        -1, true, error) ||
+                    !effect_pod_metric(_effect_runtime, _effect_forwarder,
+                        instance_id, branch_generation, 0,
+                        family_effect_metric_revision(1), magnitude, error))
+                    continue;
+                add_family_effect_binding({branch_handle, key, magnitude, instance_id,
+                    branch_generation, metadata.target_domain, target_handle,
+                    target_generation, metadata.metric_mask});
+                const auto indexed = _family_effect_binding_by_instance.find(instance_id);
+                if (indexed != _family_effect_binding_by_instance.end())
+                    publish_family_effect_metrics(
+                        _family_effect_bindings[indexed->second],
+                        family_effect_metric_revision(1),
+                        MetricMask::all_declared(FAMILY_METRIC_COUNT));
             }
-            std::string error;
-            if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
-                    instance_id, key, branch_generation, 0x46414d54,
-                    static_cast<int64_t>(branch_stable_id), branch_handle,
-                    target_handle, target_generation, level, _current_day.get(),
-                    -1, true, error) ||
-                !effect_pod_metric(_effect_runtime, _effect_forwarder,
-                    instance_id, branch_generation, 0,
-                    family_effect_metric_revision(1), magnitude, error))
-                continue;
-            add_family_effect_binding({branch_handle, key, magnitude, instance_id,
-                branch_generation, metadata.target_domain, target_handle,
-                target_generation, metadata.metric_mask});
-            const auto indexed = _family_effect_binding_by_instance.find(instance_id);
-            if (indexed != _family_effect_binding_by_instance.end())
-                publish_family_effect_metrics(
-                    _family_effect_bindings[indexed->second],
-                    family_effect_metric_revision(1),
-                    MetricMask::all_declared(FAMILY_METRIC_COUNT));
         }
         grant_random_pool_family_effect(family, submit_changes);
         if (!submit_changes) {
@@ -19318,7 +19727,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     family_effect_id_for_key(key), level);
                 std::vector<int32_t> target_cells;
                 collect_family_effect_target_cells(source_cell,
-                    metadata.target_selector_kind, target_cells);
+                    metadata.target_selector_kind, target_cells, key, level);
                 if (target_cells.empty()) target_cells.push_back(source_cell);
                 for (int32_t target_cell : target_cells) {
                     // The founding random-pool grant owns one instance per target
@@ -20469,6 +20878,28 @@ bool NativeEconomyRuntime::build_family_split_offer(
             ? std::max<int32_t>(128, static_cast<int32_t>(
                 split_flags >> FAMILY_FLAG_SPLIT_WEIGHT_SHIFT))
             : 128;
+        int32_t parent_prestige = 0;
+        int32_t parent_effect_id = -1;
+        for (int32_t b = 0; b < static_cast<int32_t>(
+                family_influences().active.size()); ++b) {
+            if (family_influences().active[b] == 0 ||
+                family_influences().family_handle[b] != parent_handle)
+                continue;
+            parent_prestige = std::max(parent_prestige,
+                static_cast<int32_t>(family_influences().prestige_level[b]));
+        }
+        for (const FamilyEffectBinding &binding : _family_effect_bindings) {
+            int32_t b = -1;
+            if (!family_influences().valid_handle(binding.branch_handle, b) ||
+                family_influences().family_handle[b] != parent_handle)
+                continue;
+            const int32_t eid = family_effect_id_for_key(binding.definition_key);
+            if (eid >= 0 && eid < static_cast<int32_t>(_family_effect_source_kinds.size()) &&
+                _family_effect_source_kinds[static_cast<size_t>(eid)] == 1) {
+                parent_effect_id = eid;
+                break;
+            }
+        }
         std::vector<FamilyTraitRoll> parent_traits;
         for (const FamilyTraitRoll &roll : family_trait_rolls())
             if (roll.family_handle == parent_handle) parent_traits.push_back(roll);
@@ -20492,11 +20923,63 @@ bool NativeEconomyRuntime::build_family_split_offer(
             }
             if (!required) removable_indices.push_back(candidate);
         }
-        const int32_t removed_index = retain_only || replace_all ||
-            removable_indices.empty() ? -1 :
-            removable_indices[static_cast<size_t>(trace_hash_mix(identity,
-                0x52454d4f5645ULL) % removable_indices.size())];
-        if (!replace_all) {
+        const int32_t tier = std::clamp(parent_prestige, 0, 5);
+        if (retain_only) {
+            static constexpr int32_t kRetainKeepPercent[6] = {
+                60, 60, 70, 80, 90, 100
+            };
+            const int32_t keep_pct = kRetainKeepPercent[tier];
+            const int32_t total = static_cast<int32_t>(parent_traits.size());
+            const int32_t target_keep = keep_pct >= 100 ? total
+                : std::max(0, (total * keep_pct + 50) / 100);
+            int32_t to_remove = std::max(0, total - target_keep);
+            std::vector<uint8_t> removed_mask(static_cast<size_t>(total), 0);
+            std::vector<int32_t> pool = removable_indices;
+            for (int32_t r = 0; r < to_remove && !pool.empty(); ++r) {
+                const size_t pick = static_cast<size_t>(trace_hash_mix(
+                    identity, 0x52454d4f5645ULL + static_cast<uint64_t>(r)) %
+                    pool.size());
+                removed_mask[static_cast<size_t>(pool[pick])] = 1;
+                pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(pick));
+            }
+            for (int32_t i = 0; i < total; ++i) {
+                if (removed_mask[static_cast<size_t>(i)] != 0) continue;
+                const FamilyTraitRoll &roll = parent_traits[static_cast<size_t>(i)];
+                child_traits.push_back({uint64_t{0}, roll.trait_id,
+                    roll.strength_q16, roll.core});
+            }
+        } else if (bonus_weight) {
+            for (const FamilyTraitRoll &roll : parent_traits) {
+                child_traits.push_back({uint64_t{0}, roll.trait_id,
+                    roll.strength_q16, roll.core});
+            }
+        } else if (replace_all) {
+            static constexpr int32_t kBreakReplacePercent[6] = {
+                50, 50, 40, 30, 20, 10
+            };
+            const int32_t replace_pct = kBreakReplacePercent[tier];
+            const int32_t total = static_cast<int32_t>(parent_traits.size());
+            int32_t to_replace = (total * replace_pct + 50) / 100;
+            if (total > 0 && replace_pct > 0 && to_replace == 0) to_replace = 1;
+            std::vector<uint8_t> removed_mask(static_cast<size_t>(total), 0);
+            std::vector<int32_t> pool = removable_indices;
+            for (int32_t r = 0; r < to_replace && !pool.empty(); ++r) {
+                const size_t pick = static_cast<size_t>(trace_hash_mix(
+                    identity, 0x52454d4f5645ULL + static_cast<uint64_t>(r)) %
+                    pool.size());
+                removed_mask[static_cast<size_t>(pool[pick])] = 1;
+                pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(pick));
+            }
+            for (int32_t i = 0; i < total; ++i) {
+                if (removed_mask[static_cast<size_t>(i)] != 0) continue;
+                const FamilyTraitRoll &roll = parent_traits[static_cast<size_t>(i)];
+                child_traits.push_back({uint64_t{0}, roll.trait_id,
+                    roll.strength_q16, roll.core});
+            }
+        } else {
+            const int32_t removed_index = removable_indices.empty() ? -1 :
+                removable_indices[static_cast<size_t>(trace_hash_mix(identity,
+                    0x52454d4f5645ULL) % removable_indices.size())];
             for (int32_t i = 0; i < static_cast<int32_t>(parent_traits.size()); ++i) {
                 if (i == removed_index) continue;
                 const FamilyTraitRoll &roll = parent_traits[i];
@@ -20528,8 +21011,26 @@ bool NativeEconomyRuntime::build_family_split_offer(
             return (family_trait_technology_unlocked(trait_id, cell) &&
                 family_trait_origin_gates_allow(trait_id, cell));
         };
-        const int32_t additions = retain_only ? 0 : 1 + static_cast<int32_t>(
-            trace_hash_mix(identity, 0x414444434f554e54ULL) % 2ULL);
+        int32_t additions = 0;
+        if (retain_only) {
+            additions = 0;
+        } else if (bonus_weight) {
+            static constexpr int32_t kAbsorbExtraTraits[6] = {
+                1, 1, 1, 2, 3, 4
+            };
+            additions = kAbsorbExtraTraits[tier];
+        } else if (replace_all) {
+            static constexpr int32_t kBreakExtraTraits[6] = {
+                0, 0, 1, 1, 2, 3
+            };
+            const int32_t replaced_count = std::max(0,
+                static_cast<int32_t>(parent_traits.size()) -
+                static_cast<int32_t>(child_traits.size()));
+            additions = std::max(1, replaced_count + kBreakExtraTraits[tier]);
+        } else {
+            additions = 1 + static_cast<int32_t>(
+                trace_hash_mix(identity, 0x414444434f554e54ULL) % 2ULL);
+        }
         for (int32_t add = 0; add < additions; ++add) {
             std::vector<int32_t> candidates;
             int64_t total_weight = 0;
@@ -20575,8 +21076,23 @@ bool NativeEconomyRuntime::build_family_split_offer(
             candidate.trait_strength_q16.push_back(roll.strength_q16);
         }
         // Freeze a complete proposal; the UI never rolls traits or effects.
-        candidate.effect_id = roll_random_pool_family_effect(
-            static_cast<uint64_t>(child_stable), cell, {}, used_effects);
+        if (retain_only) {
+            static constexpr uint64_t kRetainKeepPercent[6] = {
+                60, 60, 70, 80, 90, 100
+            };
+            if (parent_effect_id >= 0 &&
+                trace_hash_mix(identity, 0x4b454550454646ULL) % 100ULL <
+                    kRetainKeepPercent[tier]) {
+                candidate.effect_id = parent_effect_id;
+            } else {
+                candidate.effect_id = -1;
+            }
+        } else if (bonus_weight && parent_effect_id >= 0 && tier < 2) {
+            candidate.effect_id = parent_effect_id;
+        } else {
+            candidate.effect_id = roll_random_pool_family_effect(
+                static_cast<uint64_t>(child_stable), cell, {}, used_effects);
+        }
         if (candidate.effect_id >= 0) used_effects.push_back(candidate.effect_id);
         for (int32_t p = _family_owned_offsets[parent]; p < _family_owned_offsets[parent + 1]; ++p) {
             const auto &ownership = family_ownerships()[_family_owned_edge_indices[p]];
@@ -20688,16 +21204,68 @@ bool NativeEconomyRuntime::resolve_family_split_offer(
     const uint16_t split_flags = families_store().flags[parent];
     if ((split_flags & (FAMILY_FLAG_SPLIT_GIFT_BUILDING |
             FAMILY_FLAG_SPLIT_GIFT_POPULATION)) != 0) {
+        int32_t parent_prestige = 0;
+        for (int32_t b = 0; b < static_cast<int32_t>(
+                family_influences().active.size()); ++b) {
+            if (family_influences().active[b] == 0 ||
+                family_influences().family_handle[b] != parent_handle)
+                continue;
+            parent_prestige = std::max(parent_prestige,
+                static_cast<int32_t>(family_influences().prestige_level[b]));
+        }
+        const int32_t tier = std::clamp(parent_prestige, 0, 5);
+        static constexpr int32_t kSplitDowryBuildings[6] = {
+            1, 1, 1, 2, 2, 3
+        };
+        static constexpr int64_t kSplitDowryPopulation[6] = {
+            0, 0, 10, 0, 20, 30
+        };
         int32_t gift_type = -1;
+        int64_t sector_counts[5] = {0, 0, 0, 0, 0};
         for (const FamilyBuildingOwnership &ownership : family_ownerships()) {
-            if (ownership.family_handle != child_handle ||
+            if ((ownership.family_handle != parent_handle &&
+                 ownership.family_handle != child_handle) ||
                 ownership.owned_count <= 0) continue;
             const int32_t group = building_index_for_handle(
                 ownership.building_handle);
-            if (group >= 0 && group < static_cast<int32_t>(building_count()) &&
+            if (group < 0 || group >= static_cast<int32_t>(building_count())) continue;
+            const int32_t type_id = buildings_store().type_id[static_cast<size_t>(group)];
+            if (type_id >= 0 && type_id < static_cast<int32_t>(_building_economic_sectors.size())) {
+                const int32_t sector = _building_economic_sectors[static_cast<size_t>(type_id)];
+                if (sector >= 0 && sector < 5)
+                    sector_counts[sector] += ownership.owned_count;
+            }
+            if (gift_type < 0 && ownership.family_handle == child_handle &&
                 buildings_store().cell[static_cast<size_t>(group)] == offer.cell) {
-                gift_type = buildings_store().type_id[static_cast<size_t>(group)];
-                break;
+                gift_type = type_id;
+            }
+        }
+        int32_t dominant_sector = -1;
+        int64_t dominant_count = 0;
+        for (int32_t s = 0; s < 5; ++s) {
+            if (sector_counts[s] > dominant_count) {
+                dominant_count = sector_counts[s];
+                dominant_sector = s;
+            }
+        }
+        if (dominant_sector >= 0) {
+            std::vector<int32_t> legal_types;
+            for (int32_t type_id = 0; type_id < static_cast<int32_t>(_building_types.size()); ++type_id) {
+                if (type_id < static_cast<int32_t>(_building_economic_sectors.size()) &&
+                    _building_economic_sectors[static_cast<size_t>(type_id)] == dominant_sector &&
+                    building_available(offer.cell, type_id, true) &&
+                    building_constructible(offer.cell, type_id, true) &&
+                    evaluate_building_conditions(type_id, offer.cell) &&
+                    family_free_building_resources_legal(
+                        offer.cell, type_id, kSplitDowryBuildings[tier])) {
+                    legal_types.push_back(type_id);
+                }
+            }
+            if (!legal_types.empty()) {
+                const uint64_t pick_hash = trace_hash_mix(
+                    static_cast<uint64_t>(candidate.stable_id), 0x444f575259ULL);
+                gift_type = legal_types[static_cast<size_t>(
+                    pick_hash % legal_types.size())];
             }
         }
         PendingFamilySplitGift gift;
@@ -20706,7 +21274,8 @@ bool NativeEconomyRuntime::resolve_family_split_offer(
         gift.flags = static_cast<uint16_t>(split_flags &
             (FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION));
         gift.building_type_id = gift_type;
-        gift.population = 8;
+        gift.building_count = kSplitDowryBuildings[tier];
+        gift.population = kSplitDowryPopulation[tier];
         _pending_family_split_gifts.push_back(gift);
     }
     family_trait_rolls().sort([](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
@@ -23273,6 +23842,34 @@ bool NativeEconomyRuntime::run_government_research_drain(int64_t &work_done,
         fail(error);
         return false;
     }
+    // Era advancement procurement (same stage, after research procurement).
+    for (int guard = 0; guard < kMaxChunks && !_fatal && !_era_procurement_done;
+         ++guard) {
+        if (_era_procurement_continuation.active &&
+            !service_country_economy_asset_peer(64, error)) {
+            if (runtime_country_asset_pending_reason(error)) {
+                error = "country_research_peer_results";
+                _executed_substage = "era_asset_peer_pending";
+                return false;
+            }
+            fail(error.empty() ? "country_economy_era_peer_failed" : error);
+            return false;
+        }
+        if (!run_government_era_procurement(error)) {
+            fail(error.empty() ? "government_era_procurement_failed" : error);
+            return false;
+        }
+        ++work_done;
+        if (era_procurement_parked()) {
+            error = "country_research_peer_results";
+            _executed_substage = "era_asset_peer_pending";
+            return false;
+        }
+    }
+    if (_fatal) {
+        error = error.empty() ? "government_era_procurement_fatal" : error;
+        return false;
+    }
     commit_price_ceilings();
     publish_shadow_graph_stage_reference(
         RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT);
@@ -25632,6 +26229,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_carrying_k_eff.clear();
     _cell_carrying_surplus_q16.clear();
     _cell_carrying_sat_q16.clear();
+    _military_ration_sat_q16.clear();
+    _military_ration_sat_present.clear();
     _cell_carrying_family_surplus_q16.clear();
     _cell_carrying_family_bindable.clear();
     _cell_food_output_eq_period.clear();
@@ -25788,6 +26387,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _effect_idempotency_requests.clear();
     _next_effect_request_id = 1;
     _structural_commands.clear();
+    // BEGIN army personnel lane: reset/configure drops every lane.
+    _army_personnel.clear();
+    // END army personnel lane
     _committed_cells.clear();
     _staging_cells.clear();
     _structural_touched_cells.clear();

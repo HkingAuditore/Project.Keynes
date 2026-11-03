@@ -234,6 +234,9 @@ static func compile_native_catalog(
 	var profession_ids := PackedStringArray()
 	var profession_class_ids := PackedStringArray()
 	var profession_entry_savings_days := PackedInt32Array()
+	var profession_state_service_only := PackedInt32Array()
+	var profession_state_supplied_need_offsets := PackedInt32Array([0])
+	var profession_state_supplied_need_ids := PackedInt32Array()
 	var profession_technology_tag_offsets := PackedInt32Array([0])
 	var profession_technology_tags := PackedStringArray()
 	var profession_semantic_tag_offsets := PackedInt32Array([0])
@@ -249,6 +252,23 @@ static func compile_native_catalog(
 		if int(professions[i].entry_savings_days) < 0:
 			return {"ok": false, "reason": "invalid profession entry savings: %s" % stable_id}
 		profession_entry_savings_days.append(int(professions[i].entry_savings_days))
+		# Military v1: state-service professions may only fill state-building
+		# roles, and their listed needs are supplied in kind by Military.
+		var state_service_only := bool(professions[i].state_service_only)
+		profession_state_service_only.append(1 if state_service_only else 0)
+		var supplied_seen := {}
+		for need_id in professions[i].state_supplied_need_ids:
+			var supplied_need := String(need_id).strip_edges()
+			if not state_service_only:
+				return {"ok": false, "reason":
+					"state_supplied_need_without_state_service: %s" % stable_id}
+			if not need_index.has(supplied_need) or supplied_seen.has(supplied_need):
+				return {"ok": false, "reason":
+					"invalid state supplied need: %s / %s" % [stable_id, supplied_need]}
+			supplied_seen[supplied_need] = true
+			profession_state_supplied_need_ids.append(int(need_index[supplied_need]))
+		profession_state_supplied_need_offsets.append(
+			profession_state_supplied_need_ids.size())
 		profession_index[stable_id] = i
 		for tag in professions[i].technology_tags:
 			var normalized := String(tag).strip_edges()
@@ -329,6 +349,10 @@ static func compile_native_catalog(
 		"profession_ids": profession_ids,
 		"profession_class_ids": profession_class_ids,
 		"profession_entry_savings_days": profession_entry_savings_days,
+		"profession_state_service_only": profession_state_service_only,
+		"profession_state_supplied_need_offsets":
+			profession_state_supplied_need_offsets,
+		"profession_state_supplied_need_ids": profession_state_supplied_need_ids,
 		"profession_technology_tag_offsets": profession_technology_tag_offsets,
 		"profession_technology_tags": profession_technology_tags,
 		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,
@@ -386,6 +410,14 @@ static func compile_native_catalog(
 	}
 	for key in good_columns:
 		catalog[key] = good_columns[key]
+	# Military v1 columns are newer than every compat hash. Strip them from all
+	# of the historical hash inputs so an unchanged pre-military catalog keeps
+	# its old compat hashes and existing economy saves stay loadable.
+	const MILITARY_V1_COLUMNS := [
+		"profession_state_service_only",
+		"profession_state_supplied_need_offsets",
+		"profession_state_supplied_need_ids",
+	]
 	var market_v10_columns := catalog.duplicate(true)
 	market_v10_columns.erase("good_trade_enabled")
 	market_v10_columns.erase("good_transport_load_per_unit_q16")
@@ -413,6 +445,11 @@ static func compile_native_catalog(
 		"good_supply_ema_alpha_q16", "good_cost_ema_alpha_q16",
 	]:
 		market_v6_columns.erase(key)
+	for compat_columns in [market_v10_columns, market_v10_v8_columns,
+			market_v10_v7_columns, market_v10_v6_columns, market_v8_columns,
+			market_v7_columns, market_v6_columns]:
+		for key in MILITARY_V1_COLUMNS:
+			compat_columns.erase(key)
 	var market_compat_hash_v6 := _catalog_hash(market_v6_columns)
 	catalog["market_catalog_hash"] = _catalog_hash(catalog)
 	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
@@ -422,7 +459,8 @@ static func compile_native_catalog(
 		good_columns.good_substitution_category_offsets,
 		good_columns.good_substitution_category_ids,
 		good_columns.good_production_quality_levels,
-		good_columns.good_production_efficiency_q16)
+		good_columns.good_production_efficiency_q16,
+		profession_state_service_only)
 	if not bool(building_columns.get("ok", false)):
 		return building_columns
 	building_columns.erase("ok")
@@ -666,6 +704,8 @@ static func compile_native_catalog(
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets",
 		"building_input_candidate_good_ids", "building_input_candidate_efficiency_q16",
+		# Military v1 addition, newer than every compat hash below.
+		"building_state_roles",
 	]:
 		building_v7_columns.erase(key)
 	building_v7_columns.erase("building_employee_wage_policies")
@@ -684,6 +724,10 @@ static func compile_native_catalog(
 		catalog[key] = carrying_columns[key]
 	var building_v13_columns := building_columns.duplicate(true)
 	for key in [
+		# Military v1 additions are newer than every compat hash, so the older
+		# hash inputs must not see them or an unchanged catalog would hash
+		# differently and invalidate existing saves.
+		"building_state_roles",
 		"building_industry_chain_ids", "building_progression_steps",
 		"building_maturity_ranks", "building_maturity_display_names",
 		"building_progression_roles", "building_progression_predecessor_offsets",
@@ -1158,7 +1202,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		good_substitution_category_offsets: PackedInt32Array,
 		good_substitution_category_ids: PackedStringArray,
 		good_quality_levels: PackedInt32Array,
-		good_efficiencies_q16: PackedInt32Array) -> Dictionary:
+		good_efficiencies_q16: PackedInt32Array,
+		profession_state_service_only: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
 	var progression_columns := validate_building_progression_profiles(profiles)
 	if not bool(progression_columns.get("ok", false)):
@@ -1312,6 +1357,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var target_operating_margins := PackedInt32Array()
 	var supply_price_elasticities := PackedInt32Array()
 	var building_kinds := PackedInt32Array()
+	var building_state_roles := PackedInt32Array()
 	var building_economic_sectors := PackedInt32Array()
 	var building_climate_profile_indices := PackedInt32Array()
 	var technology_tag_offsets := PackedInt32Array([0])
@@ -1382,10 +1428,22 @@ static func _compile_building_columns(profession_index: Dictionary,
 				or int(profile.owner_slots_per_building) <= 0 or int(profile.construction_days) < 0:
 			return {"ok": false, "reason": "invalid building type: %s" % stable_id}
 		var building_kind := String(profile.building_kind)
-		if building_kind not in ["collector", "industrial", "service"]:
+		if building_kind not in ["collector", "industrial", "service", "state"]:
 			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
 		building_kinds.append(0 if building_kind == "collector" \
-			else (2 if building_kind == "service" else 1))
+			else (2 if building_kind == "service" else (3 if building_kind == "state" else 1)))
+		# Military v1 (design §5.2/§5.3): a state-owned lot carries an authored
+		# role; every other kind must leave it at `none`.
+		var state_role_id := String(profile.state_role).strip_edges()
+		if state_role_id not in ["none", "barracks", "fortification", "war_college"]:
+			return {"ok": false, "reason": "invalid building state role: %s" % stable_id}
+		var state_role := ["none", "barracks", "fortification", "war_college"].find(
+			state_role_id)
+		if building_kind == "state" and state_role <= 0:
+			return {"ok": false, "reason": "state building requires a state role: %s" % stable_id}
+		if building_kind != "state" and state_role != 0:
+			return {"ok": false, "reason": "state role on non-state building: %s" % stable_id}
+		building_state_roles.append(state_role)
 		var sector_ids := ["agriculture", "extractive", "manufacturing", "energy", "knowledge"]
 		var sector_id := String(profile.economic_sector_id).strip_edges()
 		var sector := sector_ids.find(sector_id)
@@ -1472,13 +1530,29 @@ static func _compile_building_columns(profession_index: Dictionary,
 			var role_policy := String(role_wage_policies[i]) if not role_wage_policies.is_empty() else wage_policy
 			if not profession_index.has(profession_id) or int(role_slots[i]) <= 0 \
 					or profession_id == UNEMPLOYED_PROFESSION_ID \
-					or role_policy not in ["none", "fixed", "adaptive"]:
+					or role_policy not in ["none", "fixed", "adaptive", "state_payroll"]:
 				return {"ok": false, "reason": "invalid building employee role: %s" % stable_id}
+			# Military v1: a state-owned lot is staffed only by state-service
+			# professions, and every one of those roles runs "state_payroll".
+			var role_state_service: bool = profession_state_service_only[
+				int(profession_index[profession_id])] != 0
+			if building_kind == "state":
+				if not role_state_service:
+					return {"ok": false, "reason":
+						"state building role requires state-service profession: %s" % stable_id}
+				if role_policy != "state_payroll" and not role_wage_policies.is_empty():
+					return {"ok": false, "reason":
+						"state building role must use state_payroll: %s" % stable_id}
+			elif role_state_service:
+				return {"ok": false, "reason":
+					"state-service profession only fills state buildings: %s" % stable_id}
 			employee_professions.append(int(profession_index[profession_id]))
 			employee_slot_counts.append(int(role_slots[i]))
 			# Employee wages are always discovered from the live labour market.
 			# Keep accepting legacy "fixed" content for load compatibility, but
-			# never compile it into a fixed native wage policy.
+			# never compile it into a fixed native wage policy. `state_payroll`
+			# is not a wage amount: the treasury pays the military wage, so the
+			# role posts no building contract wage either.
 			employee_wage_policies.append(2)
 		employee_offsets.append(employee_professions.size())
 
@@ -1610,9 +1684,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 			if share_total != Q16_ONE:
 				return {"ok": false, "reason": "building output cost shares must sum to Q16: %s" % stable_id}
 		output_cost_share_offsets.append(output_cost_shares.size())
-		if building_kind == "service":
+		if building_kind == "service" or building_kind == "state":
 			if not profile.output_good_ids.is_empty():
-				return {"ok": false, "reason": "service building must have no output: %s" % stable_id}
+				return {"ok": false, "reason": "service/state building must have no output: %s" % stable_id}
 		elif profile.output_good_ids.is_empty():
 			return {"ok": false, "reason": "building has no output: %s" % stable_id}
 		var produces_cycle_flow := false
@@ -1674,6 +1748,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 			return {"ok": false, "reason": "industrial building cannot use resource behavior: %s" % stable_id}
 		if building_kind == "service" and behavior_id != "none":
 			return {"ok": false, "reason": "service building cannot use resource behavior: %s" % stable_id}
+		if building_kind == "state" and behavior_id != "none":
+			return {"ok": false, "reason": "state building cannot use resource behavior: %s" % stable_id}
+		if building_kind == "state" and role_ids.is_empty():
+			return {"ok": false, "reason": "state building requires an employee role: %s" % stable_id}
 		var generation_ids: PackedStringArray = profile.resource_generation_ids
 		var generation_qty: PackedInt64Array = profile.resource_generation_quantities_per_day
 		if generation_ids.size() != generation_qty.size():
@@ -1729,6 +1807,7 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"ok": true,
 		"building_type_ids": type_ids,
 		"building_kinds": building_kinds,
+		"building_state_roles": building_state_roles,
 		"building_economic_sectors": building_economic_sectors,
 		"building_production_climate_profile_indices": building_climate_profile_indices,
 		"production_climate_profile_ids": climate_profile_ids,
@@ -2098,7 +2177,7 @@ static func allows_zero_cost_construction(profile: Resource) -> bool:
 			or not profile.construction_good_ids.is_empty():
 		return false
 	var kind := String(profile.building_kind)
-	if kind == "service":
+	if kind == "service" or kind == "state":
 		return true
 	if kind != "collector" or not _daily_inputs_are_all_soft(profile):
 		return false

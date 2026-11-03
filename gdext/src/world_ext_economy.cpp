@@ -2197,6 +2197,37 @@ Dictionary DCWorldExt::get_family_expeditions(
         [&] { return runtime->family_expeditions(country_handle, offset, limit); });
 }
 
+// Era advancement / national procurement budget. The setters only append to
+// a mutex-guarded inbox inside NativeEconomyRuntime; the Economy owner thread
+// (sync path or worker) applies it at the next epoch begin. This is safe in
+// ACTIVE worker mode without taking the economy boundary.
+Dictionary DCWorldExt::set_country_procurement_policy(
+        int64_t country_handle, bool enabled, int treasury_share_bp,
+        int research_share_bp, int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->set_country_procurement_policy(
+        country_handle, enabled, treasury_share_bp, research_share_bp,
+        effective_day, sequence);
+}
+
+Dictionary DCWorldExt::set_era_procurement_target(
+        int64_t country_handle, bool active, const PackedInt32Array &good_indices,
+        const PackedInt64Array &required_quantities, int64_t effective_day,
+        int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->set_era_procurement_target(
+        country_handle, active, good_indices, required_quantities,
+        effective_day, sequence);
+}
+
+Dictionary DCWorldExt::country_procurement_snapshot(int64_t country_handle) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    return committed_read(_runtime_host.get(), runtime,
+        read_key(ReadQuery::COUNTRY_PROCUREMENT_SNAPSHOT, {country_handle}),
+        [&] { return runtime->country_procurement_snapshot(country_handle); });
+}
+
 Dictionary DCWorldExt::get_family_expedition_snapshot(
         int64_t country_handle, int64_t expedition_handle) const {
     if (_economy_runtime == nullptr) return unavailable();
@@ -2736,8 +2767,32 @@ Dictionary DCWorldExt::set_economy_inspector_trace_cell(int cell_idx) {
 }
 
 Dictionary DCWorldExt::poll_economy_events(const Dictionary &opts) const {
-    return _economy_runtime == nullptr ? unavailable()
-        : runtime_from(_economy_runtime)->poll_events(opts);
+    if (_economy_runtime == nullptr) return unavailable();
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    // The committed event-batch deque is pushed/evicted by the economy owner
+    // thread at every epoch publish. When the worker owns economy execution,
+    // walking it from the main thread without the authority boundary is a data
+    // race (intermittent access violation in poll_events). Read it only while
+    // holding the boundary between epochs; otherwise report an empty, busy
+    // page — consumers keep their cursor and retry next frame.
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        std::unique_lock<std::mutex> boundary;
+        if (!economy_live_readable(_runtime_host.get(), runtime, boundary)) {
+            Dictionary out;
+            out["ok"] = true;
+            out["busy"] = true;
+            out["count"] = 0;
+            out["event_id"] = PackedInt64Array();
+            out["kind"] = PackedInt32Array();
+            out["last_event_id"] = static_cast<int64_t>(
+                opts.get("after_event_id", 0));
+            out["consumer_id"] = opts.get("consumer_id", StringName("default"));
+            out["gap"] = false;
+            return out;
+        }
+        return runtime->poll_events(opts);
+    }
+    return runtime->poll_events(opts);
 }
 
 Dictionary DCWorldExt::ack_economy_events(StringName consumer_id,

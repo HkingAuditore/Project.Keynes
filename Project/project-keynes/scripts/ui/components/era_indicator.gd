@@ -1,6 +1,8 @@
 extends Control
 class_name EraIndicator
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 signal pressed()
 signal era_advanced(model: Dictionary)
 @onready var _badge: Control = %Badge
@@ -41,6 +43,8 @@ func reset_for_world() -> void:
 	if _ceremony != null and _ceremony.is_valid():
 		_ceremony.kill()
 	_model.clear()
+	_pending_era_id = ""
+	set_advancement("", 0.0)
 	_celebrating = false
 	_pinned = false
 	_hovered = false
@@ -56,24 +60,72 @@ func reset_for_world() -> void:
 	set_offer_available(false)
 	_update_reveal()
 
+## 由 GameUIManager 打开：会话内晋升交给全屏大典演出，纸徽先保留旧图标，
+## 等新徽记飞回顶栏时（reveal_pending_era）才换图并闪光。未接管时沿用纸徽自身的小礼花。
+var defer_celebration := false
+var _pending_era_id := ""
+var _advancement_status := ""
+var _advancement_progress := 0.0
+
+
 func set_model(model: Dictionary) -> void:
 	if model.is_empty():
 		return
 	var advanced := not _model.is_empty() and int(model.era_index) > int(_model.era_index)
 	var era_id := String(model.era_id)
-	if _model.get("era_id", "") != era_id:
-		if not _textures.has(era_id):
-			_textures[era_id] = load("res://assets/icons/era/era_%s.png" % era_id)
-		_icon.texture = _textures[era_id]
-		_shadow.texture = _icon.texture
+	if advanced and defer_celebration:
+		_pending_era_id = era_id
+	elif _pending_era_id.is_empty() and _model.get("era_id", "") != era_id:
+		_apply_era_texture(era_id)
 	_model = model
-	var mat := _icon.material as ShaderMaterial
-	mat.set_shader_parameter("progress", float(model.progress))
-	mat.set_shader_parameter("researching", bool(model.researching))
 	_update_tooltip()
 	if advanced:
-		play_era_advance_fx()
+		if not defer_celebration:
+			play_era_advance_fx()
 		era_advanced.emit(model)
+
+
+static func era_texture(era_id: String) -> Texture2D:
+	var path := "res://assets/icons/era/era_%s.png" % era_id
+	return load(path) as Texture2D if not era_id.is_empty() and ResourceLoader.exists(path) else null
+
+
+func _apply_era_texture(era_id: String) -> void:
+	if not _textures.has(era_id):
+		_textures[era_id] = era_texture(era_id)
+	_icon.texture = _textures[era_id]
+	_shadow.texture = _icon.texture
+
+
+## 大典的新徽记落到纸徽上：换成新时代图标并播放纸徽自身的金环礼花。
+## 以大典流程为准的同时，始终把图标对齐到当前模型，避免大典被跳过、被打断、
+## 或 landed 信号因索引不匹配没走到时，纸徽永远停在旧时代图标上。
+func reveal_pending_era(play_fx: bool = true) -> void:
+	var target := _pending_era_id
+	_pending_era_id = ""
+	if target.is_empty():
+		target = String(_model.get("era_id", ""))
+	if not target.is_empty():
+		_apply_era_texture(target)
+	if play_fx:
+		play_era_advance_fx()
+
+
+func has_pending_era() -> bool:
+	return not _pending_era_id.is_empty()
+
+
+## 时代晋升收购状态：收购中金色自上而下漫过徽记（progress = 快照 progress），
+## 暂停时淡金静止，条件达成未开始时外缘呼吸。研究里程碑不再驱动这层进度。
+func set_advancement(status: String, progress: float) -> void:
+	_advancement_status = status
+	_advancement_progress = clampf(progress, 0.0, 1.0)
+	var mat := _icon.material as ShaderMaterial
+	mat.set_shader_parameter("progress", _advancement_progress)
+	mat.set_shader_parameter("purchasing", status == "purchasing" or status == "completing")
+	mat.set_shader_parameter("paused", status == "paused")
+	mat.set_shader_parameter("advance_ready", status == "ready")
+	_update_tooltip()
 
 
 func icon_origin() -> Control:
@@ -88,12 +140,22 @@ func set_expanded(expanded: bool) -> void:
 	_pinned = expanded
 	if not expanded:
 		_hit.release_focus()
+		if TouchUI.is_touch() or not _hit.get_global_rect().has_point(get_viewport().get_mouse_position()):
+			_hovered = false
 	_update_reveal()
 
 func _update_tooltip() -> void:
-	_hit.tooltip_text = "国家概况"
-	if bool(_model.get("researching", false)):
-		_hit.tooltip_text += "\n%s · %d%%" % [String(_model.research_name), roundi(float(_model.progress) * 100.0)]
+	var lines := PackedStringArray([String(_model.get("era_name", "时代")), "点击打开时代晋升"])
+	match _advancement_status:
+		"ready":
+			lines.append("前提条件已满足，可以开始晋升")
+		"purchasing", "completing":
+			lines.append("收购物资中 · %d%%" % int(floor(_advancement_progress * 100.0)))
+		"paused":
+			lines.append("收购已暂停 · %d%%" % int(floor(_advancement_progress * 100.0)))
+	if _offer_available:
+		lines.append("时代奖励待领取")
+	_hit.tooltip_text = "\n".join(lines)
 
 func _update_reveal() -> void:
 	var hovering := _hovered or _hit.has_focus()

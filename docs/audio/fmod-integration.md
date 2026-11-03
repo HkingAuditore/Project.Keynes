@@ -168,11 +168,80 @@ Godot FileAccess 回调读取 PCK 内资源。未采用经验证有波形加载�
 
 ## 第四步：平台边界
 
+### 当前矩阵（2026-11-01 起 Android 改走 FMOD）
+
+| 平台 | 后端 | 资产 |
+|---|---|---|
+| Windows | FMOD | `assets/audio/banks/Desktop/*.bank`（4 个 bank，`Music.bank` 95 MB） |
+| Android | FMOD（见下方 JNI 待办） | 同 4 个 bank + `lib/<abi>/` 里的扩展与 FMOD 运行库；FMOD 起不来时自动退到 portable 混音 |
+| Web | 原生 portable 混音 | `assets/audio/native/**`（29 个 OGG，≈19 MB）+ 按时代拆的 `music_<era>.pck` |
+
+- 平台判定在 `GameAudio.fmod_platform_supported()` / `_native_backend_reason_for()`，
+  只有一个纯函数入口，`tests/audio/native_audio_smoke_test.gd` 直接断言矩阵。
+- 导出侧 `addons/keynes_audio_export/plugin.gd` 按同一矩阵打包：Windows 打 DLL，
+  Android 打 `lib/<abi>/{libFmodGodot,libfmod*,libfmodstudio*}.so`（ABI 取自预设，
+  debug 用 `L` 版），bank 对两个平台都放行。`tools/verify_audio_packaging.py`
+  用 `fmod_fallback` 档守卫 APK 内容（bank + 三件套 .so + portable OGG 都在）。
+
+### Android：JNI 引导已落地，只差 FMOD 的 Java 类
+
+设备实测（`emulator-5554`，x86_64，debug APK）确认了以下链路是通的：
+`.so` 进 `lib/x86_64/`、`GDExtensionManager.load_extension` 成功、
+`FmodAudioServer` 单例注册成功、`get_studio()` 拿得到句柄。
+
+没有 JNI 初始化时 FMOD 的报错是：
+
+```
+ERROR: JNI_OnLoad has not run, should have occurred during System.LoadLibrary,
+       or during FMOD_Android_JNI_Init if using NativeActivity.
+   at: FMOD_JNI_GetEnv (core_api/platforms/android/src/fmod_jni.cpp:199)
+ERROR: Result: An error occured in the FMOD system. ... Failed to create studio system.
+```
+
+于是新增了 `addons/fmod_android_bootstrap/`（源码 `gdext/fmod_bootstrap/`）：一个
+~400 KB 的 Android-only GDExtension，不依赖 FMOD 头文件，运行时用 `dlsym` 取出
+`JNI_OnLoad` / `FMOD_Android_JNI_Init` 自己调用。**它试出来真正的卡点**：
+
+```
+Abort message: 'JNI DETECTED ERROR IN APPLICATION: JNI FindClass called with pending
+exception java.lang.ClassNotFoundException: Didn't find class "org.fmod.FMOD" ...'
+```
+
+FMOD 的 `JNI_OnLoad` 第一件事是 `FindClass("org/fmod/FMOD")`——这个 Java 类来自
+FMOD Android SDK 的 `fmod.jar`，APK 里没有；缺类时它带着挂起异常再 `FindClass`，
+CheckJNI 直接 abort 进程。所以 `prime()` 现在先探测这个类：缺类返回 `-8`，**不调用
+`JNI_OnLoad`**，logcat 打
+
+```
+[audio] fmod jni prime(libfmodL.so)=-8 missing org.fmod.FMOD (needs fmod.jar from FMOD Android SDK)
+```
+
+`GameAudio._fmod_init_failed()` 随即回退 portable 混音
+（`backend=native reason=fmod_failed:jni_prime_failed`），进程不崩、游戏有声。
+把 `fmod.jar` 放进 APK 之后，同一个分支无需改代码就会变成真 FMOD。
+
+（曾经从 GDScript 走 `JavaClassWrapper.wrap("java.lang.System").loadLibrary(...)`
+绕过，会让主线程卡死，已撤掉；不要再走那条路。）
+
+### 还缺的输入
+
+Android 收尾与 Web 接入都需要 **FMOD Engine SDK 2.03.15**：
+
+- `fmodstudioapi20315android.tar.gz` —— 关键就是其中的 **`fmod.jar`**（`org.fmod.FMOD`）；
+  顺带提供 `api/core/inc`、`api/studio/inc`（自己编扩展时用）
+- `fmodstudioapi20315html5.zip` —— `api/studio/lib/w32/fmodstudio_wasm.a` 等
+
+两者都要登录 fmod.com 后从 FMOD Engine 下载页取得（Studio 安装包不含 Engine API）。
+Web 侧的关键结论：该 HTML5 包提供 **WASM 静态库**，可以直接链进 Godot 的 web
+side module（上游 PR 用的是 `env.Append(LINKFLAGS=[...fmodstudio_wasm.a])`），
+而本项目 Web 预设已经是 `variant/extensions_support=true` +
+`variant/thread_support=true`，与 FMOD wasm 的 pthreads 前提一致。
+
+### 旧结论（保留）
+
 - Windows 已完成音频模块的 Bank/播放/参数/混音/循环和隔离 Release 验收。
-- 此插件 README 将 Android 标为未测试；现有 Android 配置需后续核对实际插件要求。
-- 此发行包没有 Web 平台 library 映射，不能直接启用到现有 Web 发布链路。
-  当前导出插件只对 Windows 打包 FMOD；其他平台不加载扩展，保留原生音频路径。
-  尚未进行 Android/Web 上的音频功能验收，不能据此宣称已支持 FMOD。
+- 上游 README 把 Android 标为未测试；本次实测证明"能加载、不能初始化"，
+  原因就是缺 `org.fmod.FMOD`，不是打包问题。
 - 不把其他 FMOD Godot 插件的类名、设置路径或 Android 构建步骤混用到此插件。
 
 ## 首轮交付标准

@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/national_procurement_slider.gd" id="1_script"]
+
+[node name="NationalProcurementSlider" type="Control"]
+custom_minimum_size = Vector2(0, 146)
+layout_mode = 2
+mouse_filter = 1
+script = ExtResource("1_script")

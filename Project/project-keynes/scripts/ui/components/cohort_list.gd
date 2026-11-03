@@ -53,7 +53,7 @@ func _create_row(row_id: String, data: Dictionary) -> Dictionary:
 			"profession_id": String((_row_data.get(row_id, {}) as Dictionary) \
 				.get("profession_id", ""))}))
 	var living_icon := panel.get_node("Body/Button/Header/LivingIcon") as IconBadge
-	living_icon.mouse_filter = Control.MOUSE_FILTER_STOP
+	living_icon.mouse_filter = Control.MOUSE_FILTER_PASS
 	var refs := {"panel": panel, "button": button,
 		"icon": panel.get_node("Body/Button/Header/Icon"),
 		"living_icon": living_icon, "name": panel.get_node("Body/Button/Header/Identity/Name"),

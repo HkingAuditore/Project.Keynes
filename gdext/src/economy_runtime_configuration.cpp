@@ -315,6 +315,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
         _worker_command_inbox->commands.clear();
     }
+    clear_procurement_runtime_state(true);
     _next_colonization_receipt_id = 1;
     import_country_ai_pending({}, {}, 0);
     _next_family_expedition_stable_id = 1;
@@ -418,6 +419,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     mark_labor_signal_full_rebuild("configure");
     mark_input_reserve_full_rebuild("configure");
     clear_building_groups();
+    _building_factor_cache.clear();
     _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
     _building_group_order_scratch.clear();
@@ -519,6 +521,10 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         _cell_carrying_k_eff.assign(cell_count, 0);
     _cell_carrying_surplus_q16.assign(cell_count, Q16_ONE);
     _cell_carrying_sat_q16.assign(cell_count, Q16_ONE);
+    // Military v1: default ration satisfaction is 1.0 so a world without
+    // soldiers keeps the pre-military result bit-for-bit.
+    _military_ration_sat_q16.assign(cell_count, static_cast<int32_t>(Q16_ONE));
+    _military_ration_sat_present.assign(cell_count, 0);
     _cell_carrying_family_surplus_q16.assign(
         static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
         _cell_carrying_family_bindable.assign(
@@ -674,7 +680,11 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _pending_commands.clear();
     _epoch_commands.clear();
     _structural_commands.clear();
+    // BEGIN army personnel lane: a reconfiguration drops every lane.
+    _army_personnel.clear();
+    // END army personnel lane
     clear_building_groups();
+    _building_factor_cache.clear();
     _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
     _building_group_order_scratch.clear();
@@ -972,11 +982,11 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         }
     }
     rebuild_building_role_storage();
+    refresh_building_modifier_factors();
 
     int32_t founder_family_count = 0;
     int32_t founder_person_count = 0;
     if (!founder_cells.empty()) {
-        refresh_building_modifier_factors();
         std::vector<size_t> founder_order(founder_cells.size());
         std::iota(founder_order.begin(), founder_order.end(), size_t{0});
         std::stable_sort(founder_order.begin(), founder_order.end(),

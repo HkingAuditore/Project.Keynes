@@ -62,6 +62,7 @@
 #include "world_ext_internal.h"
 #include "native_simulation_host.h"
 #include "country_ai_runtime.h"
+#include "military_core.h"  // dtor: delete the opaque pk::MilitaryCore handle
 
 namespace pk {
 
@@ -83,6 +84,12 @@ DCWorldExt::~DCWorldExt() {
     if (_country_ai_runtime != nullptr) {
         delete static_cast<CountryAiRuntime *>(_country_ai_runtime);
         _country_ai_runtime = nullptr;
+    }
+    if (_military_runtime != nullptr) {
+        // Main-thread synchronous runtime: the worker was joined above, so no
+        // thread can still be reading Military state.
+        delete static_cast<MilitaryCore *>(_military_runtime);
+        _military_runtime = nullptr;
     }
     if (_ideology_runtime != nullptr) {
         delete static_cast<NativeIdeologyRuntime *>(_ideology_runtime);

@@ -9,6 +9,10 @@
 
 - [建筑视觉运行时](./building-visual-runtime.md)：科技时代驱动的 2.5D 建筑复合体；产业视觉族、人口骨架与贫富分区；迷雾情报、天气、阴影、植被协调和性能闸门。
 
+- [军事运行时](./military-runtime.md)：主线程同步 `MilitaryCore`（兵员 lot、部队、交战、战争、controller、
+  军需库存/车队），读 D 日已提交 Country/Economy、发 D+1 命令；`military_daily` 调度与整图 ACTIVE 补跑、
+  PKMI v1、渲染快照与 z5–11 图层、事件 40–47、已知缺口。配套 Skill `project-keynes-military-runtime`。
+
 - [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、
   贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v41；PlayerController 尚未注册。
 

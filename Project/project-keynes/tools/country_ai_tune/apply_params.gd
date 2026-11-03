@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 
 ## Writes a CountryAiCatalog candidate for offline tuning.
 ##

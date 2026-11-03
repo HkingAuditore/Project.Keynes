@@ -25,14 +25,24 @@ const MAX_NODE_WIDTH := 252.0
 const MAX_FOCUS_CANVAS_WIDTH := 1600.0
 
 
+# Era milestone nodes are retired from player research: they stay in the catalog
+# as internal era tokens granted by era advancement, but never take part in the
+# player-facing graph. With `retire_milestones` every edge to or from them is
+# dropped and they occupy no row, so callers can treat them as absent. The
+# authoring editor keeps the default (false) and still lays them out.
+static func is_retired(definition: Dictionary) -> bool:
+	return bool(definition.get("is_milestone", false))
+
+
 # Parents/children only — enough for fog, detail relations, and focus geometry.
 # Full node/edge baking stays in build() and is deferred until layout_report needs it.
-static func build_topology(definitions: Array, visual_edges: Array = []) -> Dictionary:
+static func build_topology(definitions: Array, visual_edges: Array = [],
+		retire_milestones: bool = false) -> Dictionary:
 	var count := definitions.size()
 	if count == 0:
 		return {"ok": false, "parents": [], "children": [], "index_by_id": {},
 			"nodes": [], "edges": [], "bands": [], "content_rect": Rect2()}
-	var graph := _dependency_graph(definitions, visual_edges)
+	var graph := _dependency_graph(definitions, visual_edges, retire_milestones)
 	return {
 		"ok": true,
 		"parents": graph.parents,
@@ -62,11 +72,16 @@ static func index_soft_edges(visual_edges: Array, index_by_id: Dictionary) -> Ar
 	return soft
 
 
-static func _dependency_graph(definitions: Array, visual_edges: Array) -> Dictionary:
+static func _dependency_graph(definitions: Array, visual_edges: Array,
+		retire_milestones: bool = false) -> Dictionary:
 	var count := definitions.size()
 	var index_by_id := {}
+	var retired := PackedByteArray()
+	retired.resize(count)
 	for i in range(count):
-		index_by_id[String((definitions[i] as Dictionary).get("id", ""))] = i
+		var definition: Dictionary = definitions[i]
+		index_by_id[String(definition.get("id", ""))] = i
+		retired[i] = 1 if retire_milestones and is_retired(definition) else 0
 	var parents: Array[PackedInt32Array] = []
 	var children: Array[PackedInt32Array] = []
 	for i in range(count):
@@ -83,8 +98,10 @@ static func _dependency_graph(definitions: Array, visual_edges: Array) -> Dictio
 			var child := int(index_by_id.get(String(edge.get("to", "")), -1))
 			var kind := String(edge.get("kind", ""))
 			if parent < 0 or child < 0 or parent == child \
+					or retired[parent] != 0 or retired[child] != 0 \
 					or kind not in ["hard", "alternative", "application", "branch",
-						"milestone_candidate"]:
+						"milestone_candidate"] \
+					or (retire_milestones and kind == "milestone_candidate"):
 				continue
 			edge_pairs.append({"from": parent, "to": child, "kind": kind})
 			if kind != "hard":
@@ -101,9 +118,12 @@ static func _dependency_graph(definitions: Array, visual_edges: Array) -> Dictio
 		for child in range(count):
 			var definition: Dictionary = definitions[child]
 			var child_parents := PackedInt32Array()
+			if retired[child] != 0:
+				continue
 			for source_id in definition.get("prerequisite_ids", PackedStringArray()):
 				var parent := int(index_by_id.get(String(source_id), -1))
-				if parent < 0 or parent == child or parent in child_parents:
+				if parent < 0 or parent == child or parent in child_parents \
+						or retired[parent] != 0:
 					continue
 				child_parents.append(parent)
 				var parent_children: PackedInt32Array = children[parent]
@@ -116,22 +136,24 @@ static func _dependency_graph(definitions: Array, visual_edges: Array) -> Dictio
 		"parents": parents,
 		"children": children,
 		"edge_pairs": edge_pairs,
+		"retired": retired,
 	}
 
 
 static func build(definitions: Array, eras: Array, domains: Array = [],
-		visual_edges: Array = []) -> Dictionary:
+		visual_edges: Array = [], retire_milestones: bool = false) -> Dictionary:
 	var count := definitions.size()
 	if count == 0:
 		return {"ok": false, "nodes": [], "edges": [], "bands": [],
 			"parents": [], "children": [], "content_rect": Rect2()}
 	var domain_indices := _domain_indices(definitions, domains)
 	var lane_indices := _lane_indices(definitions, domain_indices)
-	var graph := _dependency_graph(definitions, visual_edges)
+	var graph := _dependency_graph(definitions, visual_edges, retire_milestones)
 	var index_by_id: Dictionary = graph.index_by_id
 	var parents: Array = graph.parents
 	var children: Array = graph.children
 	var edge_pairs: Array = graph.edge_pairs
+	var retired: PackedByteArray = graph.retired
 
 	var era_order := _era_order(definitions, eras)
 	var era_slot := {}
@@ -140,9 +162,15 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 	var members: Array[PackedInt32Array] = []
 	for i in range(era_order.size()):
 		members.append(PackedInt32Array())
+	var band_indices := PackedInt32Array()
+	band_indices.resize(count)
 	for i in range(count):
 		var era_id := String((definitions[i] as Dictionary).get("era_id", ""))
 		var owner_slot := int(era_slot.get(era_id, 0))
+		band_indices[i] = owner_slot
+		# Retired era tokens keep their index slot but never occupy a row.
+		if retired[i] != 0:
+			continue
 		var owner_members: PackedInt32Array = members[owner_slot]
 		owner_members.append(i)
 		members[owner_slot] = owner_members
@@ -153,11 +181,13 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 	sizes.resize(count)
 	var layers := PackedInt32Array()
 	layers.resize(count)
-	var band_indices := PackedInt32Array()
-	band_indices.resize(count)
+	layers.fill(-1)
 	for i in range(count):
-		sizes[i] = MILESTONE_SIZE if bool((definitions[i] as Dictionary).get(
-			"is_milestone", false)) else NODE_SIZE
+		if retired[i] != 0:
+			sizes[i] = Vector2.ZERO
+		else:
+			sizes[i] = MILESTONE_SIZE if bool((definitions[i] as Dictionary).get(
+				"is_milestone", false)) else NODE_SIZE
 
 	var bands: Array[Dictionary] = []
 	var band_top := 0.0
@@ -173,7 +203,6 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 				row_height = maxf(row_height, sizes[node].y)
 			for node in row:
 				layers[node] = row_index
-				band_indices[node] = slot
 				positions[node] = Vector2(0.0, row_top + (row_height - sizes[node].y) * 0.5)
 			row_top += row_height + ROW_GAP
 		var band_bottom := row_top - (ROW_GAP if not rows.is_empty() else 0.0) + ERA_PADDING
@@ -190,21 +219,30 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 
 	_assign_columns(bands, positions, sizes, parents, children, lane_indices)
 
+	# `nodes` stays index-aligned with the catalog; retired era tokens carry an
+	# empty rect and `retired = true` and never widen the content bounds.
 	var nodes: Array[Dictionary] = []
 	var content_rect := Rect2()
+	var has_bounds := false
 	for i in range(count):
 		var rect := Rect2(positions[i], sizes[i])
+		var is_retired_node := retired[i] != 0
 		nodes.append({
 			"index": i,
 			"rect": rect,
 			"domain": domain_indices[i],
 			"lane": lane_indices[i],
-			"is_milestone": bool((definitions[i] as Dictionary).get("is_milestone", false)),
+			"retired": is_retired_node,
+			"is_milestone": not is_retired_node \
+				and bool((definitions[i] as Dictionary).get("is_milestone", false)),
 			"is_era_key": bool((definitions[i] as Dictionary).get("is_era_key", false)),
 			"era_index": band_indices[i],
 			"layer": layers[i],
 		})
-		content_rect = rect if i == 0 else content_rect.merge(rect)
+		if is_retired_node:
+			continue
+		content_rect = rect if not has_bounds else content_rect.merge(rect)
+		has_bounds = true
 
 	var edges: Array[Dictionary] = []
 	for pair in edge_pairs:
@@ -250,7 +288,7 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		canvas_size: Vector2 = Vector2.ZERO,
 		soft_edges: Array = []) -> Dictionary:
 	var full := base_layout if not base_layout.is_empty() \
-		else build_topology(definitions, visual_edges)
+		else build_topology(definitions, visual_edges, true)
 	if not bool(full.get("ok", false)) or definitions.is_empty():
 		return {"ok": false, "nodes": [], "edges": [], "portals": [],
 			"bands": [], "lanes": [], "content_rect": Rect2()}
@@ -276,7 +314,7 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 	for index in range(definitions.size()):
 		var definition: Dictionary = definitions[index]
 		index_by_id[String(definition.get("id", ""))] = index
-		if bool(definition.get("is_milestone", false)):
+		if is_retired(definition):
 			continue
 		var era_index := int(era_by_id.get(String(definition.get("era_id", "")), -1))
 		if era_index < first_era or era_index > last_era:
@@ -305,10 +343,7 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		var members := members_by_era[era_index]
 		if members.is_empty():
 			continue
-		var milestone := _era_milestone_index(era_order[era_index], index_by_id)
-		if milestone >= 0 and not local_lookup.has(milestone):
-			members.append(milestone)
-			local_lookup[milestone] = true
+		# No per-era milestone gate: era advancement lives in the era panel.
 		var band_top := cursor_y
 		var header_h := ERA_HEADER_HEIGHT + LANE_HEADER_HEIGHT
 		var body_y := band_top + header_h + 8.0
@@ -317,23 +352,6 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		for row_index in range(rows.size()):
 			var ordered := _ordered_focus_row(rows[row_index], definitions)
 			if ordered.is_empty():
-				continue
-			var milestone_row := ordered.size() == 1 \
-				and bool((definitions[int(ordered[0])] as Dictionary).get(
-					"is_milestone", false))
-			if milestone_row:
-				var technology := int(ordered[0])
-				var milestone_w := clampf(float(metrics.inner) * 0.38, 120.0,
-					minf(MILESTONE_SIZE.x, float(metrics.inner) - 16.0))
-				var placed := _place_focus_node(technology, -milestone_w * 0.5,
-					body_y, Vector2(milestone_w, MILESTONE_SIZE.y),
-					definitions[technology] as Dictionary, domains,
-					era_index, clamped_era, row_index, visual_layer, true)
-				rect_by_index[technology] = placed.rect
-				nodes.append(placed)
-				found = true
-				body_y += MILESTONE_SIZE.y + FOCUS_ROW_GAP
-				visual_layer += 1
 				continue
 			var buckets: Array = []
 			for _domain in range(domain_count):
@@ -382,7 +400,6 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 			"top": band_top,
 			"bottom": band_bottom,
 			"is_focus": era_index == clamped_era,
-			"milestone_index": milestone,
 			"lanes": lanes,
 		})
 		cursor_y = band_bottom + ERA_GAP
@@ -510,10 +527,6 @@ static func _era_outside_window(definition: Dictionary, era_by_id: Dictionary,
 	return era_index < first_era or era_index > last_era
 
 
-static func _era_milestone_index(era: Dictionary, index_by_id: Dictionary) -> int:
-	return int(index_by_id.get(String(era.get("milestone_id", "")), -1))
-
-
 static func _ordered_focus_row(row: PackedInt32Array, definitions: Array) -> Array:
 	var ordered: Array = []
 	for node in row:
@@ -611,8 +624,9 @@ static func _era_order(definitions: Array, eras: Array) -> Array[Dictionary]:
 	return order
 
 
-# Rows are the local dependency depth inside one era. The era milestone always
-# terminates its band so the next era reads as a gated continuation.
+# Rows are the local dependency depth inside one era. When milestones are laid
+# out (authoring editor) the era milestone terminates its band; in the player
+# view retired milestones are filtered out by callers before this point.
 static func _band_rows(band_members: PackedInt32Array,
 		parents: Array, definitions: Array) -> Array[PackedInt32Array]:
 	var rows: Array[PackedInt32Array] = []
@@ -652,7 +666,7 @@ static func _band_rows(band_members: PackedInt32Array,
 			break
 	var max_depth := 0
 	for node in band_members:
-		if bool((definitions[node] as Dictionary).get("is_milestone", false)):
+		if is_retired(definitions[node] as Dictionary):
 			milestone = node
 			continue
 		max_depth = maxi(max_depth, int(depth[node]))

@@ -156,6 +156,14 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 
 迷雾必须在最上层：未探索区要连天气云、国界线和选中框一起盖住。
 
+军事图层（`MilitaryMapLayers`，`z_as_relative=false`）插在其间，全部低于迷雾 z12：
+5 `MilitaryOccupationLayer`（占领斜纹，与 `DataOverlayLayer` 同 z）、6 `MilitaryAreaLayer`（与国界同 z）、
+8 `MilitaryFrontLayer`、9 `MilitaryBattleLayer` / `MilitaryConvoyLayer`、10 `MilitaryArmyTokenLayer`（与
+`CellHighlight` 同 z）、11 `MilitaryRouteLayer`。迷雾门控在 `MilitaryRenderFeed.apply_fog()` 与各层：迷雾开启
+（`is_fog_of_war_enabled()` 且 `visible_arr` 非空）时外国部队、交战标记、车队只在 `visible` 格显示，己方部队
+总显示；占领斜纹与战线不按迷雾过滤。军事图层只消费 `get_military_render_snapshot`，不写视野数组；
+部队目前不是视野源。详见 [military-runtime.md](./military-runtime.md) §9。
+
 ## 迷雾云的着色模型
 
 ### 为什么不做 raymarch

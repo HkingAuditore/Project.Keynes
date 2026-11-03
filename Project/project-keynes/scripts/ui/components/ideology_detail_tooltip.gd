@@ -2,6 +2,7 @@ extends PanelContainer
 
 ## Read-only presentation of catalog effects and committed native support facts.
 const Art = preload("res://scripts/ui/components/ideology_art.gd")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const Q16 := 65536.0
 const WIDTH := 448.0
 ## 手写体标题字用带随包 fallback 的 display_handwritten（web 无系统字体兜底）。
@@ -62,7 +63,22 @@ func setup(data: Dictionary) -> void:
 
 
 func scroll_by(pixels: int) -> void:
-	_scroll.scroll_vertical += pixels
+	if _scroll != null:
+		_scroll.scroll_vertical += pixels
+
+
+func enable_interactive(max_height := 0.0) -> void:
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	if _scroll != null:
+		_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+		TouchUI.widen_scrollbars(_scroll)
+		if max_height > 0.0:
+			_scroll.custom_minimum_size.y = minf(
+				_scroll.custom_minimum_size.y, maxf(160.0, max_height))
+
+
+func detail_scroll() -> ScrollContainer:
+	return _scroll
 
 
 func _estimate_height(data: Dictionary) -> float:

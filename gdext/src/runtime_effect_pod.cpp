@@ -593,8 +593,12 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     // pair that restore() would reject.
     const int32_t keep_applied_stack_count =
         carry_lifecycle ? instance.applied_stack_count : 0;
-    const uint8_t keep_needs_resync = managed_replacement
+    const bool level_changed = same_identity && instance.level != input.level;
+    const uint8_t keep_needs_resync = (managed_replacement ||
+        (level_changed && definition.managed != 0 && instance.effect_applied != 0))
         ? 1 : (same_identity ? instance.needs_resync : 0);
+    const int64_t keep_evaluated_revision =
+        same_identity && !level_changed ? instance.last_evaluated_input_revision : 0;
     // A re-ENSURE can race an explicit remove. Keep the retire request when it
     // belongs to an instance that has already applied (or has an in-flight
     // APPLY); the trailing ENSURE must not erase the only record that the row
@@ -625,6 +629,7 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.latched = keep_latched;
     instance.metric_base = metric_base;
     instance.input_revision = keep_revision;
+    instance.last_evaluated_input_revision = keep_evaluated_revision;
     instance.next_due_day = input.next_due_day;
     instance.expires_day = input.expires_day;
     instance.cadence_days = definition.cadence_days;
@@ -996,6 +1001,22 @@ bool RuntimeEffectPodAuthority::compile_command(
     out.value = definition.value_mode == RuntimeEffectPodValueMode::CONSTANT
         ? definition.value : value;
     out.duration_days = definition.duration_days;
+    if (instance.program_id >= 0 &&
+        instance.program_id < static_cast<int32_t>(_catalog.definitions.size())) {
+        const uint64_t program_hash =
+            _catalog.definitions[static_cast<size_t>(instance.program_id)].key_hash;
+        if (program_hash == hash_text("family.effect.ancestral_precept")) {
+            static constexpr int32_t kAncestralDurations[6] = {
+                180, 180, 240, 300, 365, 540
+            };
+            out.duration_days = kAncestralDurations[std::clamp(instance.level, 0, 5)];
+        } else if (program_hash == hash_text("family.effect.shared_water")) {
+            static constexpr int32_t kSharedWaterDurations[6] = {
+                1, 1, 1, 2, 2, 3
+            };
+            out.duration_days = kSharedWaterDurations[std::clamp(instance.level, 0, 5)];
+        }
+    }
     // Depth multiplies the command exactly like the main thread. instance
     // .max_stacks is seeded from the program definition at :555, so it is the
     // same ceiling the main thread uses.
@@ -1394,9 +1415,12 @@ bool RuntimeEffectPodAuthority::schedule_application(
     instance.pending_idempotency_key = commands.front().idempotency_key;
     instance.last_evaluated_input_revision = instance.input_revision;
     instance.next_due_day = day + definition.cadence_days;
+    int32_t applied_duration = definition.duration_days;
+    if (!commands.empty() && commands.front().duration_days > 0)
+        applied_duration = commands.front().duration_days;
     instance.expires_day =
         definition.lifecycle == RuntimeEffectPodLifecycle::DURATION
-            ? day + definition.duration_days
+            ? day + applied_duration
             : -1;
     return true;
 }

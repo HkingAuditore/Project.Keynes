@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"ballistic_armor"
+display_name = "防弹护具"
+semantic_tags = PackedStringArray()
+category_id = &"body_armor"
+substitution_category_ids = PackedStringArray("body_armor")
+technology_tags = PackedStringArray("tech.synthetic_fiber_engineering")
+production_quality_level = 4
+default_price = 96000
+reference_max_price = 4800000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 39322

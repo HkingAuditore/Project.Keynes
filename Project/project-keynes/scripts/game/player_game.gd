@@ -174,9 +174,20 @@ func _on_world_ready(
 	_trade_activity.configure(map, _camera, _runtime_host, _player_controller,
 		generator.get_economy_facade(), _world_clock)
 	_trade_activity.set_quality(visual_quality)
+	# ---- Military layers
+	# Manager lives on RuntimeHost (created at renderer bind); it needs the
+	# world/map/camera/clock, which are all valid only here.
+	if _runtime_host.military_map_layers != null:
+		_runtime_host.military_map_layers.configure(map, _world_data, _camera,
+			_world_clock, _runtime_host)
+	# ---- Military layers
 	_cell_situations.configure(map, _camera, _runtime_host,
 		generator.get_economy_facade(), view_adapter)
 	_renderer.configure_trade_visuals(_trade_activity)
+	if _runtime_host.military_map_layers != null \
+			and _runtime_host.military_map_layers.token_layer != null:
+		_renderer.configure_military_visuals(
+			_runtime_host.military_map_layers.token_layer)
 	_ui_manager.set_world_context(
 		map,
 		generator,
@@ -295,6 +306,12 @@ func _request_exit_game() -> void:
 func _push_visual_toggles() -> void:
 	if _renderer == null:
 		return
+	# [mobile-msaa 2026-11-03] 真机反馈"六边形边缘/海陆边界在移动时闪烁"：静态截图逐字节
+	# 相同（不是重建/动画），移动时闪 ⇒ 几何边缘的走样。触摸档开 2x MSAA 直接抗掉这类
+	# 细线/边缘抖动；桌面保持默认（不开），避免影响既有截图与性能基线。
+	var viewport := get_viewport()
+	if viewport != null:
+		viewport.msaa_2d = Viewport.MSAA_2X if _touch_profile() else Viewport.MSAA_DISABLED
 	var settings: Node = _game_settings()
 	var quality_values: Dictionary = settings.values() if settings != null else {}
 	var quality_setting := String(quality_values.get("render_quality", "auto"))
@@ -310,6 +327,66 @@ func _push_visual_toggles() -> void:
 		_renderer.set_perf_sampler_enabled(perf_sampler_enabled)
 	_runtime_host.set_day_night_enabled(day_night_enabled)
 	_ui_manager.set_day_night_enabled(day_night_enabled)
+	_apply_render_debug_overrides()
+
+
+## [render-qa 2026-11-02] 画质特性二分的临时开关（QA 专用，只在 user://pk_debug.cfg
+## 存在时生效，正常玩家没有这个文件 ⇒ 完全 no-op）。
+##
+##   [render]
+##   visual_quality = 0|1|2   # 覆盖 PBR/线性光照/ACES 这些运行期档位
+##   hide = "vegetation,maximpostor,fog,weather"   # 按节点名子串隐藏渲染层
+##
+## 用途：不重新导出就能在真机上逐项关掉渲染层量 fps，定位 LOW→MID 的台阶在哪。
+func _apply_render_debug_overrides() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://pk_debug.cfg") != OK:
+		return
+	if cfg.has_section_key("render", "tier_override"):
+		# 把编译期档位强制成 LOW/MID/HIGH，用来分离"编译期 #define 开销"和
+		# "运行期 uniform 开销"：设置仍按玩家档位，只有 shader 前缀被改写。
+		var tier_name := String(cfg.get_value("render", "tier_override")).strip_edges()
+		if tier_name != "" and _renderer.has_method("set_mobile_quality_tier"):
+			_renderer.set_mobile_quality_tier(tier_name)
+	if cfg.has_section_key("render", "visual_quality"):
+		var forced := int(cfg.get_value("render", "visual_quality"))
+		if forced >= 0 and forced <= 2 and forced != visual_quality:
+			visual_quality = forced
+			if _renderer.has_method("set_visual_quality"):
+				_renderer.set_visual_quality(forced)
+			if _trade_activity != null:
+				_trade_activity.set_quality(forced)
+	var hide := String(cfg.get_value("render", "hide", "")).strip_edges()
+	if hide == "":
+		return
+	var needles := PackedStringArray()
+	for token in hide.split(","):
+		var needle := token.strip_edges().to_lower()
+		if needle != "":
+			needles.append(needle)
+	_set_layers_hidden(_renderer, needles)
+
+
+func _set_layers_hidden(root: Node, needles: PackedStringArray) -> void:
+	if root == null:
+		return
+	for child in root.get_children():
+		var node_name := String(child.name).to_lower()
+		var matched := false
+		for needle in needles:
+			if node_name.contains(needle):
+				matched = true
+				break
+		if matched:
+			var item := child as CanvasItem
+			if item != null:
+				item.visible = false
+			# 只设 visible=false 不会停掉 _process：层的实例更新（每帧重算
+			# MultiMesh 变换/预算）照跑。二分"CPU 侧层开销"时必须一起停。
+			child.set_process(false)
+			child.set_physics_process(false)
+			continue
+		_set_layers_hidden(child, needles)
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 	if weather_layer != null and weather_layer.has_method("set_visual_quality"):
 		weather_layer.set_visual_quality(visual_quality)
@@ -355,6 +432,27 @@ func _shader_quality_define_from_setting(quality: String) -> String:
 	# 启用四类近景形态与法线着色。切档只改 uniform/实例预算，不换程序。
 	if OS.has_feature("web"):
 		return "MOBILE_QUALITY_LOW"
+	# [mobile-pin-low 2026-11-02] 安卓真机实测（小米 15 / 2670x1200 / 2400 格，同图同视角）：
+	#   MOBILE_QUALITY_MID  → 31~33 fps，单日成本 28~36ms
+	#   MOBILE_QUALITY_HIGH → 26.5 fps
+	#   MOBILE_QUALITY_LOW + visual_quality=2（运行期 PBR/线性光照/ACES 全开）
+	#                        → 56~61 fps，单日成本 7~9ms
+	# 也就是说「中/高编译期档」在移动 GPU 上多出来的那些每像素分支
+	# （water_pipeline / world_map / country_border / hex_edge_overlay 的
+	# `#if !defined(PK_QUALITY_LOW)` 段）几乎吃掉一半帧率，而运行期画质档
+	# （PBR/光照/ACES）几乎免费。Web 早就是这么做的（上面的注释），移动端现在对齐：
+	# 编译期固定 LOW，画质由 visual_quality 决定。
+	#
+	# 逃生口：pk_debug.cfg 里 `[render] mobile_shader_tier="MOBILE_QUALITY_MID|HIGH"`
+	# 或环境变量 PK_MOBILE_SHADER_TIER，可回退到旧行为做对比测试。
+	var tier_override := OS.get_environment("PK_MOBILE_SHADER_TIER").strip_edges()
+	if tier_override == "":
+		var debug_cfg := ConfigFile.new()
+		if debug_cfg.load("user://pk_debug.cfg") == OK:
+			tier_override = String(debug_cfg.get_value("render", "mobile_shader_tier", "")).strip_edges()
+	if tier_override != "":
+		return tier_override
+	return "MOBILE_QUALITY_LOW"
 	match quality:
 		"medium":
 			return "MOBILE_QUALITY_MID"
@@ -393,6 +491,10 @@ var _sentinel_stall_count := 0
 ## 用于在没有真机/远控的环境里核对"游戏内 HUD 在手机尺寸下长什么样"。正式包不受影响。
 var _sentinel_shot_times: Array[int] = []
 var _sentinel_shot_done := false
+## PK_UI_SHOT_PANEL 的一次性状态（见 _process 里的 ui-shot-panel 段）。
+var _ui_shot_panel_done := false
+var _ui_shot_panel_opened := false
+var _ui_shot_panel_ms := 0
 
 
 func _process(delta: float) -> void:
@@ -412,6 +514,32 @@ func _process(delta: float) -> void:
 			and now - _sentinel_started_ms >= _sentinel_shot_times[0]:
 		var shot_ms: int = _sentinel_shot_times.pop_front()
 		_capture_debug_screenshot(shot_ms)
+	# [ui-shot-panel 2026-11-02] 无真机也能核对"某个面板在手机尺寸下长什么样"：
+	#   PK_UI_SHOT_PANEL=gm | country | country:economy
+	#   PK_UI_SHOT_DELAY_MS=18000   （进入世界后多久打开面板并截图，默认 18 秒）
+	# 打开面板后等一帧再截，避免截到布局还没结算的中间态。正式包不设这些变量 ⇒ 不生效。
+	if not _ui_shot_panel_done:
+		var panel_spec := OS.get_environment("PK_UI_SHOT_PANEL").strip_edges()
+		if not panel_spec.is_empty():
+			var delay_ms := int(OS.get_environment("PK_UI_SHOT_DELAY_MS").strip_edges().to_int())
+			if delay_ms <= 0:
+				delay_ms = 18000
+			if _ui_shot_panel_opened:
+				if now - _ui_shot_panel_ms >= 250:
+					_capture_debug_screenshot(-1, "panel_%s" % panel_spec.replace(":", "_"))
+					_ui_shot_panel_done = true
+			elif now - _sentinel_started_ms >= delay_ms and _ui_manager != null:
+				_ui_shot_panel_opened = true
+				_ui_shot_panel_ms = now
+				if panel_spec == "gm":
+					_ui_manager.toggle_gm_panel()
+				elif panel_spec.begins_with("country"):
+					var chapter := panel_spec.get_slice(":", 1) if panel_spec.contains(":") else ""
+					_ui_manager.open_country_section("economy", chapter)
+				else:
+					# 其它国家事务页签：PK_UI_SHOT_PANEL=technology | military | economy …
+					_ui_manager.open_country_section(panel_spec, "")
+				print("[ui-shot] opened panel=%s" % panel_spec)
 	_sentinel_frames += 1
 	var frame_ms := int(round(delta * 1000.0))
 	if frame_ms >= SENTINEL_STALL_MS:
@@ -456,12 +584,13 @@ func _economy_probe() -> Dictionary:
 	return out
 
 
-func _capture_debug_screenshot(shot_ms: int = 0) -> void:
+func _capture_debug_screenshot(shot_ms: int = 0, tag: String = "") -> void:
 	var image := get_viewport().get_texture().get_image()
 	if image == null:
 		print("[screenshot] capture failed")
 		return
-	var path := "user://debug_shot_%d_at%dms.png" % [Time.get_ticks_msec(), shot_ms]
+	var suffix := "" if tag.is_empty() else "_" + tag
+	var path := "user://debug_shot_%d_at%dms%s.png" % [Time.get_ticks_msec(), shot_ms, suffix]
 	var err := image.save_png(path)
 	print("[screenshot] %s err=%d size=%dx%d" % [path, err, image.get_width(), image.get_height()])
 
@@ -481,3 +610,13 @@ func _ui_scale() -> float:
 		if scaling != null and scaling.has_method("total_scale"):
 			return float(scaling.call("total_scale"))
 	return 1.0
+
+
+## 当前是否是触摸档（手机/平板）。桌面恒 false，用于把移动端专用的渲染开关隔离开。
+func _touch_profile() -> bool:
+	var settings := _game_settings()
+	if settings != null and settings.has_method("ui_scaling"):
+		var scaling = settings.call("ui_scaling")
+		if scaling != null and scaling.has_method("is_touch_profile"):
+			return bool(scaling.call("is_touch_profile"))
+	return false

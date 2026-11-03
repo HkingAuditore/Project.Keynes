@@ -12,7 +12,7 @@ const SECTIONS := [
 	{"id": "technology", "label": "科技", "icon": &"hud.country.technology", "available": true},
 	{"id": "ideology", "label": "理念", "icon": &"hud.country.ideology", "available": true},
 	{"id": "economy", "label": "经济", "icon": &"hud.country.economy", "available": true},
-	{"id": "military", "label": "军事", "icon": &"hud.country.military", "available": false},
+	{"id": "military", "label": "军事", "icon": &"hud.country.military", "available": true},
 	{"id": "diplomacy", "label": "外交", "icon": &"hud.country.diplomacy", "available": false},
 ]
 

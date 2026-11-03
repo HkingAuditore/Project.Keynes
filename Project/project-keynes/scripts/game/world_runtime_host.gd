@@ -27,6 +27,12 @@ const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 const RUNTIME_ECONOMY_DOMAIN_MASK: int = 1 << 8
 const RUNTIME_NATURAL_RESOURCE_CATCHUP_DAYS_PER_FRAME: int = 8
+## Military is a synchronous main-thread runtime (contract §0.1). In whole-graph
+## ACTIVE the worker owns the day, so the host replays the military catch-up for
+## every committed day it observes — same pattern as the natural-resource drain,
+## but with its own 4-day budget because the native military day is the most
+## expensive of the two.
+const RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME: int = 4
 const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 # overlay 重烘焙是主线程 UI 工作，但「脏」标记由每个模拟日打出，高速下等于永久脏，
 # 于是固定 100ms 节流会让它按实测成本无上限地吃墙钟（观测到单模拟日 102ms，是当日
@@ -233,6 +239,15 @@ var _world_data: WorldData = null
 var _generator: MapGenerator = null
 var _view_adapter: DCViewAdapter = null
 var _selected_cell: HexCell = null
+# ---- Military layers
+# F owns the military_* map layers. The host only creates the manager node and
+# forwards one per-frame poll (see military_map_layers.gd). Nothing else here.
+var military_map_layers: Node = null
+# Optional test/tool seam. Null means the manager keeps its native render feed;
+# a test can inject a read-only feed without changing MilitaryCore or save state.
+var military_render_feed = null
+var military_map_polled_by_host: bool = true
+# ---- Military layers
 var _tod_profile: TODProfile = null
 var day_night_enabled: bool = true
 var _last_seed: int = 0
@@ -329,6 +344,16 @@ var _runtime_last_commit: Dictionary = {}
 var _runtime_natural_resource_last_commit_day: int = 0
 var _runtime_natural_resource_pending_target_day: int = -1
 var _runtime_natural_resource_last_result: Dictionary = {}
+## Military committed-day cursor for whole-graph ACTIVE. The military day reads
+## committed Country/Economy state, so it can only run after the commit that
+## exposes day D; `target` stays queued until that boundary is visible.
+var _runtime_military_last_commit_day: int = -1
+var _runtime_military_pending_target_day: int = -1
+var _runtime_military_last_result: Dictionary = {}
+var _runtime_military_ms: float = 0.0
+## Season index whose cover the military terrain layer currently holds; -1 until
+## the first observed day.
+var _military_terrain_season_index: int = -1
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
@@ -351,11 +376,14 @@ var _dcp_commit_ms: float = 0.0
 var _dcp_publish_ms: float = 0.0
 var _dcp_finish_ms: float = 0.0
 var _dcp_resource_ms: float = 0.0
+var _dcp_military_ms: float = 0.0
 var _dcp_visual_ms: float = 0.0
 ## 单日单推进声明是否启用（web / 显式内联 A/B）。桌面恒 false。
 var _day_barrier_claim_enabled: bool = false
 var _sched_proc_frames: int = 0
 var _sched_proc_economy_input_ms: float = 0.0
+## day_changed 里容量检查/输入抓取被拒绝的次数（只在前 8 次打日志，避免刷屏）。
+var _day_capture_blocked_logs: int = 0
 var _sched_proc_peer_ms: float = 0.0
 var _sched_proc_snapshots_ms: float = 0.0
 var _sched_proc_country_read_ms: float = 0.0
@@ -607,6 +635,7 @@ func _dcp_publish_day(elapsed_usec: int) -> void:
 	clock.day_cost_add(&"pub", _dcp_publish_ms)
 	clock.day_cost_add(&"fin", _dcp_finish_ms)
 	clock.day_cost_add(&"res", _dcp_resource_ms)
+	clock.day_cost_add(&"mil", _dcp_military_ms)
 	clock.day_cost_add(&"vis", _dcp_visual_ms)
 
 
@@ -630,6 +659,7 @@ func _clock_day_changed_impl(day_idx: int) -> void:
 	_dcp_publish_ms = 0.0
 	_dcp_finish_ms = 0.0
 	_dcp_resource_ms = 0.0
+	_dcp_military_ms = 0.0
 	_dcp_visual_ms = 0.0
 	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
 		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
@@ -698,6 +728,17 @@ func _clock_day_changed_impl(day_idx: int) -> void:
 			var capacity_result := wait_for_climate_consumed(0)
 			_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 			if not bool(capacity_result.get("ok", false)):
+				# [android-day1-deadlock 2026-11-01] 这里以前静默 return：一旦 worker
+				# 因为没输入而不再消费环境环，day_changed 每次都在这里掉头，capture
+				# 永不执行 → ring 恒 0 → worker 永远等输入。安卓上正是这个死循环，
+				# 所以把"谁拒绝了这次容量检查"打出来。
+				if _day_capture_blocked_logs < 8:
+					_day_capture_blocked_logs += 1
+					print("[day-capture] blocked day=%d code=%s state=%s consumed=%s ring=%s" % [
+						day_idx, String(capacity_result.get("code", "?")),
+						str(capacity_result.get("worker_state", -1)),
+						str(capacity_result.get("consumed_generation", -1)),
+						str(capacity_result.get("ring_pending", -1))])
 				segment_usec = Time.get_ticks_usec()
 				_service_country_worker_transport()
 				_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
@@ -707,9 +748,15 @@ func _clock_day_changed_impl(day_idx: int) -> void:
 		if _generator.has_method("capture_runtime_inputs_for_worker"):
 			# 与 sus_tick_daily 的输入日约定一致，接管当天不能跳过一日。
 			segment_usec = Time.get_ticks_usec()
-			_generator.capture_runtime_inputs_for_worker(
+			var capture_result: Dictionary = _generator.capture_runtime_inputs_for_worker(
 				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx),
 				MapGenerator.ENV_CALLSITE_HOST_DAY_CHANGED)
+			if not bool(capture_result.get("ok", true)) and _day_capture_blocked_logs < 8:
+				_day_capture_blocked_logs += 1
+				print("[day-capture] failed day=%d code=%s reason=%s" % [
+					maxi(0, day_idx - 1), String(capture_result.get("code", "?")),
+					String(capture_result.get("fallback_reason",
+						capture_result.get("reason", "")))])
 			_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
 		segment_usec = Time.get_ticks_usec()
 		_service_country_worker_transport()
@@ -1085,6 +1132,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_runtime_natural_resource_last_commit_day = 0
 	_runtime_natural_resource_pending_target_day = -1
 	_runtime_natural_resource_last_result.clear()
+	_runtime_military_last_commit_day = -1
+	_runtime_military_pending_target_day = -1
+	_runtime_military_last_result.clear()
+	_runtime_military_ms = 0.0
+	_military_terrain_season_index = -1
 	_country_worker_read_generation = 0
 	_country_worker_read_last_day = -1
 	_country_worker_read_last_result.clear()
@@ -1178,9 +1230,20 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			_view_adapter = null
 			# 这条失败不来自 MapGenerator（地图已经生成好了），必须自建诊断记录，
 			# 否则会落到"地图生成器返回空结果"的兜底文案上，误导排查方向。
+			# [start-report 2026-11-02] 只给一句"开局初始化失败"没法排查：把
+			# gameplay_start_report 的关键字段（code/reason/cell/seed/地图尺寸 + 其余
+			# 标量键）塞进 hint，失败面板和落盘文件里直接能看到。
+			var report_bits: PackedStringArray = PackedStringArray()
+			for key in start_report.keys():
+				var value = start_report[key]
+				var text := str(value)
+				if text.length() > 120:
+					text = text.substr(0, 120) + "…"
+				report_bits.append("%s=%s" % [String(key), text])
 			_emit_world_generation_failure("gameplay_bind", "gameplay_start_failed",
 				String(start_report.get("message", "开局初始化失败。")),
-				"开局初始化是玩法层：检查 NewGameConfig / 起始聚落 bootstrap 报告（gameplay_start_report）。")
+				"开局初始化是玩法层失败（地图本身已生成）。gameplay_start_report：%s"
+					% " ".join(report_bits))
 			return
 
 	_current_map = result["map"] as MapData
@@ -1344,6 +1407,14 @@ func _native_daily_inline_requested() -> bool:
 	if _web_worker_requested():
 		return false
 	if _is_web_build():
+		return true
+	# [android-inline 2026-11-01] 移动端默认内联（与 web 同一执行者）。安卓上
+	# worker 线程路径会停在 day 1：worker state=PAUSED / attempt_slices=0 /
+	# environment ring=0，而主线程又在等它提交（真机与模拟器均可复现）。
+	# 内联日由主线程直接跑 12 域，不依赖 worker 线程与 env 环，web 上已验证多年。
+	# 想恢复实验性 worker：PK_MOBILE_NATIVE_WORKER=1。
+	if (OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")) \
+			and OS.get_environment("PK_MOBILE_NATIVE_WORKER") != "1":
 		return true
 	return OS.get_environment("PK_NATIVE_DAILY_INLINE") == "1"
 
@@ -1682,6 +1753,7 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	var t_sus_usec := Time.get_ticks_usec()
 	var report: Dictionary = _generator.sus_tick_daily(_world_clock, day_idx, season_phase)
 	_pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
+	_refresh_military_terrain_on_season_edge(day_idx)
 	# Web 单日成本探针：host 这一处 sus_tick_daily（s2）与它调度的日级 Job 分项。
 	# 桌面 _dcp_on() 为假 → 既不记时也不额外读一次 SUS 报告。
 	if _dcp_on():
@@ -1897,6 +1969,7 @@ func _process(_delta: float) -> void:
 	#   - **不要**依赖两个 Node 的 _process 相对顺序（历史上踩过）。
 	_service_worker_lead_and_prefetch()
 	_service_runtime_liveness(frame_usec, capacity_pending)
+	_service_worker_unstick()
 	_web_mark("liveness_end")
 	_annual_reports.poll()
 	_web_mark("annual_poll_end")
@@ -1917,12 +1990,20 @@ func _process(_delta: float) -> void:
 			_consume_runtime_commit_if_ready()
 			_observe_runtime_worker_fault()
 			_poll_runtime_health()
+			# ---- Military layers
+			if military_map_layers != null and military_map_layers.has_method("poll_snapshot"):
+				military_map_layers.poll_snapshot()
+			# ---- Military layers
 			_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 			return
 	_web_mark("progress_begin")
 	_service_runtime_progress(frame_usec)
 	_web_mark("progress_end")
 	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+	# ---- Military layers
+	if military_map_layers != null and military_map_layers.has_method("poll_snapshot"):
+		military_map_layers.poll_snapshot()
+	# ---- Military layers
 
 
 ## P1 + P3：worker 领先量报告 与 环境帧预发布。
@@ -3098,6 +3179,10 @@ func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 		_runtime_last_commit = commit.duplicate(false)
 		if economy_worker_authoritative:
 			_queue_runtime_natural_resource_commit(_runtime_commit_day)
+		# Military reads the Country/Economy view committed for this day. It is
+		# a synchronous main-thread runtime (never a worker domain), so the host
+		# is the only thing that can advance it while the graph is ACTIVE.
+		_queue_runtime_military_commit(_runtime_commit_day)
 		_runtime_commit_family_cursors.clear()
 		_runtime_commit_family_done.clear()
 		_runtime_pending_visual_generation = generation
@@ -3153,6 +3238,14 @@ func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_sched_proc_resource_ms += _sched_elapsed_ms(resource_usec)
 	if dcp:
 		_dcp_resource_ms = float(Time.get_ticks_usec() - resource_usec) / 1000.0
+	# Military catch-up. It consumes only the committed Country/Economy view, so
+	# it is safe to run as soon as a commit is visible — no writeback or
+	# boundary lock is involved. Same-frame budget as the resource drain.
+	var military_usec := Time.get_ticks_usec()
+	_drain_runtime_military_commits()
+	_runtime_military_ms = float(Time.get_ticks_usec() - military_usec) / 1000.0
+	if dcp:
+		_dcp_military_ms = _runtime_military_ms
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
 		return
@@ -3232,6 +3325,96 @@ func _drain_runtime_natural_resource_commits() -> void:
 		processed += 1
 	if _runtime_natural_resource_last_commit_day >= target_day:
 		_runtime_natural_resource_pending_target_day = -1
+
+
+func _queue_runtime_military_commit(day: int) -> void:
+	if day < 0:
+		return
+	_runtime_military_pending_target_day = maxi(
+			_runtime_military_pending_target_day, day)
+
+
+## Military is a main-thread synchronous runtime that reads the committed
+## Country/Economy view of day D and emits D+1 intents. In whole-graph ACTIVE the
+## worker never runs it (it is not a worker domain), so the host replays every
+## observed committed day here, bounded per frame. When the API is missing (older
+## DLL) or the facade is unconfigured this is a single null check.
+func _drain_runtime_military_commits() -> void:
+	if _runtime_military_pending_target_day < 0 or _generator == null:
+		return
+	if not _generator.has_method("get_military_facade"):
+		_runtime_military_pending_target_day = -1
+		return
+	var facade = _generator.get_military_facade()
+	if facade == null or not facade.is_configured():
+		# No military authority in this world (old DLL / catalog missing). Drop
+		# the queue so every frame does not re-probe the facade.
+		_runtime_military_pending_target_day = -1
+		return
+	var target_day := _runtime_military_pending_target_day
+	var processed := 0
+	var first_day := _runtime_military_last_commit_day + 1
+	if _runtime_military_last_commit_day < 0:
+		# First observation: start at the oldest day we must cover, not at 0.
+		first_day = mini(target_day, maxi(0, target_day - RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME))
+	var day := first_day
+	while day <= target_day and processed < RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME:
+		var result: Dictionary
+		if facade.should_run(day):
+			result = facade.run_daily(day)
+		else:
+			# Peace with no movement: the native side owns the skip decision and
+			# reports zero work, but the committed-day cursor still advances so a
+			# later war does not replay a hundred idle days.
+			result = {"ok": true, "path": "native_military_skip", "day_index": day}
+		_runtime_military_last_commit_day = day
+		_runtime_military_last_result = result.duplicate(false)
+		# Forward the day's facts on the same boundary as every other bus batch.
+		var job = _generator.get_military_daily_job() \
+			if _generator.has_method("get_military_daily_job") else null
+		if job != null and job.has_method("forward_military_events"):
+			job.forward_military_events()
+		processed += 1
+		day += 1
+	if _runtime_military_last_commit_day >= target_day:
+		_runtime_military_pending_target_day = -1
+
+
+## Season refresh changes cover (snowline / flood / glacier), which feeds the
+## military terrain cost tables. Push the new layer once per refreshed season.
+func _refresh_military_terrain_after_season() -> void:
+	if _generator == null or not _generator.has_method("refresh_military_terrain"):
+		return
+	var result: Dictionary = _generator.refresh_military_terrain(
+		int(_world_clock.day_index()) if _world_clock != null else -1)
+	if not bool(result.get("ok", false)) and not bool(result.get("skipped", false)):
+		var reason := String(result.get("reason", ""))
+		if not reason.is_empty() and reason != "military_not_configured":
+			print("[military] terrain refresh rejected: %s" % reason)
+
+
+## Whole-graph ACTIVE bypasses `MapGenerator.finish_season_refresh`'s daily path,
+## so the season edge is detected here. The facade's cover signature makes this
+## a no-op on every day whose cover did not actually change.
+func _refresh_military_terrain_on_season_edge(day_idx: int) -> void:
+	if _military_terrain_season_index < 0:
+		_military_terrain_season_index = _world_clock.season_index_for_day(day_idx)
+		return
+	var season := _world_clock.season_index_for_day(day_idx)
+	if season == _military_terrain_season_index:
+		return
+	_military_terrain_season_index = season
+	_refresh_military_terrain_after_season()
+
+
+func military_report() -> Dictionary:
+	if _generator == null or not _generator.has_method("get_military_report"):
+		return {"configured": false}
+	var report: Dictionary = _generator.get_military_report()
+	report["host_last_commit_day"] = _runtime_military_last_commit_day
+	report["host_pending_target_day"] = _runtime_military_pending_target_day
+	report["host_last_ms"] = _runtime_military_ms
+	return report
 
 
 ## Climate 权威在 worker 时，把它提交的那一天刷进 MapData。
@@ -5673,6 +5856,47 @@ func on_clock_running_changed(running: bool) -> void:
 		fog_layer.set_clock_running(running)
 
 
+## [worker-unstick 2026-11-01] 安卓上复现过一种启动竞态：worker 已经起来、环境帧也
+## 发布成功，但 host 仍停在 state=PAUSED / attempt_slices=0，日历永远停在 day 1
+## （同一份 APK 重装后有时能跑，属于竞态）。根因是启动时那一次
+## `set_runtime_clock_threaded(paused=false, speed)` 落在 worker 还没就绪的窗口里，
+## 之后没有任何人补发，于是"暂停"这个初值一直留着。
+## 这里做一次兜底：时钟在跑、日期超过 2.5 秒没动、worker 又没有 in-flight 的一天时，
+## 重发一次时钟状态（幂等）。只在该卡死形态下触发，正常运行时不会打日志。
+var _worker_unstick_last_day: int = -1
+var _worker_unstick_since_ms: int = 0
+var _worker_unstick_count: int = 0
+
+
+func _service_worker_unstick() -> void:
+	if _generator == null or _world_clock == null or _runtime_worker_fault_paused:
+		return
+	if _world_clock.paused:
+		return
+	if not _generator.has_method("get_runtime_thread_report"):
+		return
+	var day := int(_world_clock.day_index())
+	var now := Time.get_ticks_msec()
+	if day != _worker_unstick_last_day:
+		_worker_unstick_last_day = day
+		_worker_unstick_since_ms = now
+		return
+	if now - _worker_unstick_since_ms < 2500:
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report()
+	if report.is_empty():
+		return
+	if String(report.get("state", "")) != "PAUSED":
+		return
+	if int(report.get("worker_day_inflight", 0)) != 0:
+		return
+	_worker_unstick_since_ms = now
+	_worker_unstick_count += 1
+	print("[runtime-worker] unstick#%d day=%d 日历 2.5s 未推进且 worker=PAUSED，重发 clock(paused=false, speed=%.2f)"
+		% [_worker_unstick_count, day, _world_clock.speed_multiplier])
+	_sync_runtime_worker_clock()
+
+
 func _sync_runtime_worker_clock() -> void:
 	if _generator == null or _world_clock == null \
 			or not _generator.has_method("set_runtime_clock_threaded"):
@@ -5976,6 +6200,17 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	WebTelemetry.emit("bind_step", {"s": "pre_bind_country"})
 	_bind_country_visuals()
 	WebTelemetry.emit("bind_step", {"s": "post_bind_country"})
+	# ---- Military layers
+	# Created after the world/renderer bind, configured by PlayerGame on
+	# world_ready (map/camera/clock are all valid there).
+	if military_map_layers == null and not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
+		var military_script := load("res://scripts/rendering/military_map_layers.gd") as Script
+		if military_script != null:
+			military_map_layers = Node2D.new()
+			military_map_layers.name = "MilitaryMapLayers"
+			military_map_layers.set_script(military_script)
+			add_child(military_map_layers)
+	# ---- Military layers
 	if _world_clock != null:
 		WebTelemetry.emit("bind_step", {"s": "set_season_phase"})
 		_renderer.set_season_phase(_world_clock.season_phase())
@@ -6320,6 +6555,14 @@ func _resolve_fog_of_war_enabled() -> bool:
 	# ?fog=off（web_autotest 写入 Engine meta）只用于诊断/截图：关掉全部战争迷雾，
 	# 让画面直接呈现"最高可用画质"。正常入口读不到这个 meta。
 	if bool(Engine.get_meta("pk_fog_off", false)):
+		return false
+	# [fog-off-qa 2026-11-03] 真机反馈"去掉战争迷雾就闪烁"，需要能在安卓上复现
+	# 关雾后的画面做 A/B（安卓读不到 web 的 Engine meta）。仅 QA 用，正常包无该文件。
+	if OS.get_environment("PK_FOG_OFF") == "1":
+		return false
+	var fog_cfg := ConfigFile.new()
+	if fog_cfg.load("user://pk_debug.cfg") == OK \
+			and bool(fog_cfg.get_value("render", "fog_off", false)):
 		return false
 	if not fog_of_war_enabled:
 		return false

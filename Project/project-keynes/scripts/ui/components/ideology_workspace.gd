@@ -151,10 +151,20 @@ var _promotion_copy: Label
 var _promotion_confirm: Button
 var _promotion_cancel: Button
 var _ledger_popup: PopupPanel
+var _modal_canvas: CanvasLayer
+var _detail_layer: Control
+var _detail_sheet: VBoxContainer
+var _detail_body_host: VBoxContainer
+var _detail_close: Button
+var _detail_ideology_id := -1
+var _detail_is_offer := false
 
 
 func _ready() -> void:
 	_bind_nodes()
+	TouchUI.watch(_offer_layer)
+	TouchUI.watch(_detail_layer)
+	TouchUI.watch(self)
 	if _empty_icon != null:
 		_empty_icon.set_semantic(&"country.politics", UITokens.ACCENT)
 	call_deferred("_play_workspace_intro")
@@ -185,17 +195,17 @@ func _bind_nodes() -> void:
 	var modal_canvas := CanvasLayer.new()
 	modal_canvas.name = "CandidateModal"
 	modal_canvas.layer = 30
+	_modal_canvas = modal_canvas
 	add_child(modal_canvas)
 	visibility_changed.connect(func() -> void:
 		modal_canvas.visible = is_visible_in_tree()
-		if is_visible_in_tree():
+		if not is_visible_in_tree():
+			_close_detail_modal()
+		else:
 			call_deferred("_focus_initial_action"))
 	_offer_layer.reparent(modal_canvas)
 	_offer_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_offer_layer.offset_left = 24
-	_offer_layer.offset_top = 48
-	_offer_layer.offset_right = -24
-	_offer_layer.offset_bottom = -48
+	_apply_offer_layer_insets()
 	_offer = %Offer
 	_offer_title = %OfferTitle
 	_choice_0 = %Choice0
@@ -223,6 +233,7 @@ func _bind_nodes() -> void:
 	_promotion_dialog = %PromotionDialog
 	_ledger_popup = %LedgerPopup
 	_build_promotion_overlay()
+	_build_detail_overlay()
 	_build_dynamic_parts()
 
 
@@ -324,6 +335,146 @@ func _close_promotion_overlay() -> void:
 		_focus_initial_action()
 
 
+## Touch and click-accessible detail overlay using IdeologyDetailTooltip so
+## players on Android/touchscreens can inspect next-level effects, understanding
+## progress, class support gauges, and restrictions without hover tooltips.
+func _build_detail_overlay() -> void:
+	if _detail_layer != null:
+		return
+	_detail_layer = Control.new()
+	_detail_layer.name = "DetailOverlay"
+	_detail_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_detail_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	_detail_layer.visible = false
+	_detail_layer.theme = preload("res://assets/themes/player_session_theme.tres")
+	var host: Node = _modal_canvas if _modal_canvas != null else self
+	host.add_child(_detail_layer)
+	var veil := ColorRect.new()
+	veil.name = "DetailVeil"
+	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	veil.color = Color(0.07, 0.045, 0.025, 0.46)
+	veil.mouse_filter = Control.MOUSE_FILTER_STOP
+	veil.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton:
+			var mouse := event as InputEventMouseButton
+			if mouse.button_index == MOUSE_BUTTON_LEFT and mouse.pressed:
+				_close_detail_modal()
+				veil.accept_event())
+	_detail_layer.add_child(veil)
+	var center := CenterContainer.new()
+	center.name = "DetailCenter"
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_detail_layer.add_child(center)
+	_detail_sheet = VBoxContainer.new()
+	_detail_sheet.name = "DetailSheet"
+	_detail_sheet.alignment = BoxContainer.ALIGNMENT_CENTER
+	_detail_sheet.add_theme_constant_override("separation", 8)
+	_detail_sheet.mouse_filter = Control.MOUSE_FILTER_STOP
+	center.add_child(_detail_sheet)
+	_detail_body_host = VBoxContainer.new()
+	_detail_body_host.name = "DetailBodyHost"
+	_detail_body_host.mouse_filter = Control.MOUSE_FILTER_STOP
+	_detail_sheet.add_child(_detail_body_host)
+	var actions := HBoxContainer.new()
+	actions.name = "DetailActions"
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	actions.mouse_filter = Control.MOUSE_FILTER_STOP
+	_detail_sheet.add_child(actions)
+	_detail_close = Button.new()
+	_detail_close.name = "DetailCloseButton"
+	_detail_close.text = "关闭"
+	_detail_close.custom_minimum_size = Vector2(132, maxf(38.0, TouchUI.min_units()))
+	_detail_close.theme_type_variation = &"PKSealPrimaryButton"
+	_detail_close.focus_mode = Control.FOCUS_ALL
+	_detail_close.pressed.connect(_close_detail_modal)
+	actions.add_child(_detail_close)
+	_apply_offer_layer_insets()
+
+
+func _open_detail_modal(ideology_id: int, is_offer: bool = false) -> void:
+	if ideology_id < 0 or _detail_layer == null:
+		return
+	_detail_ideology_id = ideology_id
+	_detail_is_offer = is_offer
+	_present_detail_dictionary(_detail_data(ideology_id, is_offer))
+
+
+func _open_resonance_detail(school_id: String) -> void:
+	if school_id.is_empty() or _detail_layer == null:
+		return
+	_detail_ideology_id = -1
+	_detail_is_offer = false
+	var active_ids: PackedInt32Array = _snapshot.get("active_synergy_ids", PackedInt32Array())
+	var active_set := {}
+	for value in active_ids:
+		active_set[int(value)] = true
+	var counts := _school_counts(-1)
+	var count := int(counts.get(school_id, 0))
+	var active_lines := PackedStringArray()
+	var next_lines := PackedStringArray()
+	for row_value in _catalog.get("synergies", []) as Array:
+		var row := row_value as Dictionary
+		if String(row.get("school_id", "")) != school_id:
+			continue
+		var dense_id := int(row.get("dense_id", -1))
+		var tip := String(row.get("tooltip", "")).strip_edges()
+		if tip.is_empty():
+			continue
+		if active_set.has(dense_id):
+			active_lines.append(tip)
+		else:
+			next_lines.append("需推行 %d 项 · %s" % [int(row.get("min_count", 0)), tip])
+	if active_lines.is_empty():
+		active_lines.append("当前已推行本流派 %d 项，尚未触发共鸣" % count)
+	_present_detail_dictionary({
+		"name": "%s流派共鸣" % ArtScript.school_name(school_id),
+		"school_id": school_id,
+		"rarity": 2,
+		"status": "已推行 %d 项" % count,
+		"progress": {},
+		"effects": active_lines,
+		"next_effects": next_lines,
+		"next_level_label": "更高阶共鸣",
+		"notes": PackedStringArray(["推行同流派国策或晋升民族精神可累积流派共鸣点数。"]),
+		"supports": [],
+	})
+
+
+func _present_detail_dictionary(data: Dictionary) -> void:
+	if _detail_layer == null or _detail_body_host == null or data.is_empty():
+		return
+	for child in _detail_body_host.get_children():
+		_detail_body_host.remove_child(child)
+		child.queue_free()
+	_apply_offer_layer_insets()
+	var view_h := get_viewport_rect().size.y if is_inside_tree() else 720.0
+	var insets := _safe_insets()
+	var safe_v := float(insets.get("top", 0.0)) + float(insets.get("bottom", 0.0))
+	var close_h := maxf(38.0, TouchUI.min_units())
+	if _detail_close != null:
+		_detail_close.custom_minimum_size.y = close_h
+	var max_scroll_h := maxf(160.0, view_h - safe_v - close_h - 110.0)
+	var tooltip := ArtScript.interactive_detail_tooltip(data, max_scroll_h)
+	_detail_body_host.add_child(tooltip)
+	_detail_layer.visible = true
+	if _detail_close != null and is_visible_in_tree():
+		_detail_close.grab_focus()
+
+
+func _close_detail_modal() -> void:
+	_detail_ideology_id = -1
+	_detail_is_offer = false
+	if _detail_layer != null:
+		_detail_layer.visible = false
+	if is_visible_in_tree() and not (_offer_layer != null and _offer_layer.visible):
+		_focus_initial_action()
+
+
+func is_detail_modal_open() -> bool:
+	return _detail_layer != null and _detail_layer.visible
+
+
 func _focus_initial_action() -> void:
 	if not is_visible_in_tree() or _offer_layer.visible:
 		return
@@ -348,6 +499,8 @@ func _build_dynamic_parts() -> void:
 		card.set("activate_on_single_click", true)
 		card.call("set_stage", true)
 		card.connect("activated", _on_choice_activated.bind(index))
+		if card.has_signal("detail_requested"):
+			card.connect("detail_requested", _on_choice_detail_requested)
 		card.gui_input.connect(_on_choice_input.bind(index))
 	_build_stage_header()
 	# The waiting stage shows a shuffled deck instead of three blank card backs,
@@ -365,8 +518,15 @@ func _build_dynamic_parts() -> void:
 	_build_stage_footer()
 	_apply_stage_metrics()
 	resized.connect(_on_workspace_resized)
-	if _point_scroll != null and _point_scroll.has_signal("ledger_requested"):
-		_point_scroll.connect("ledger_requested", _open_ledger)
+	if _point_scroll != null:
+		if _point_scroll.has_signal("ledger_requested"):
+			_point_scroll.connect("ledger_requested", _open_ledger)
+		_point_scroll.gui_input.connect(func(event: InputEvent) -> void:
+			if event is InputEventMouseButton:
+				var mouse := event as InputEventMouseButton
+				if mouse.button_index == MOUSE_BUTTON_LEFT and not mouse.pressed:
+					_open_ledger()
+					_point_scroll.accept_event())
 	# Everything below is optional chrome: a missing node must never abort the
 	# builder and leave the tabs, sort menu or resonance row unbuilt.
 	if _tabs != null:
@@ -385,6 +545,7 @@ func _build_dynamic_parts() -> void:
 		for school_id in ArtScript.SCHOOL_ORDER:
 			var view := ResonanceEmblem.new()
 			view.configure(String(school_id))
+			view.activated.connect(_open_resonance_detail)
 			_resonance_bar.add_child(view)
 			_resonance_views[String(school_id)] = view
 
@@ -651,13 +812,17 @@ func _tab_style(state: String) -> StyleBox:
 
 func _apply_archive_metrics() -> void:
 	if _slot_column != null:
-		_slot_column.custom_minimum_size.x = SLOT_COLUMN_MIN_WIDTH_COMPACT \
-			if _compact else SLOT_COLUMN_MIN_WIDTH
+		var slot_min_w := SLOT_COLUMN_MIN_WIDTH_COMPACT if _compact else SLOT_COLUMN_MIN_WIDTH
+		if _compact and size.x > 0.0 and size.x < 720.0:
+			slot_min_w = minf(slot_min_w, maxf(230.0, floorf(size.x * 0.40)))
+		_slot_column.custom_minimum_size.x = slot_min_w
 		_slot_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_slot_column.size_flags_stretch_ratio = 0.72
 	if _collection_column != null:
-		_collection_column.custom_minimum_size.x = COLLECTION_COLUMN_MIN_WIDTH_COMPACT \
-			if _compact else COLLECTION_COLUMN_MIN_WIDTH
+		var col_min_w := COLLECTION_COLUMN_MIN_WIDTH_COMPACT if _compact else COLLECTION_COLUMN_MIN_WIDTH
+		if _compact and size.x > 0.0 and size.x < 720.0:
+			col_min_w = minf(col_min_w, maxf(280.0, floorf(size.x * 0.56)))
+		_collection_column.custom_minimum_size.x = col_min_w
 		_collection_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_collection_column.size_flags_stretch_ratio = 1.4
 	if _top_bar != null:
@@ -689,12 +854,15 @@ func _apply_archive_metrics() -> void:
 		_spirit_inset.add_theme_constant_override(
 			"margin_bottom", 3 if _compact else 7)
 	if _resonance_panel != null:
-		_resonance_panel.custom_minimum_size.y = 38 if _compact else 54
+		_resonance_panel.custom_minimum_size.y = 34 if _compact else 54
 	if _deck_scroll != null:
 		# 短窗允许滚动阅读，不用整组内容的最小高度撑开工作区。
 		_deck_scroll.custom_minimum_size.y = 80 if _compact else 260
+		TouchUI.widen_scrollbars(_deck_scroll)
+	if _scroll != null:
+		TouchUI.widen_scrollbars(_scroll)
 	if _resonance_panel != null:
-		_resonance_panel.visible = not _compact
+		_resonance_panel.visible = true
 	if _collection_heading != null:
 		_collection_heading.custom_minimum_size.y = 0
 	if _collection_heading_surface != null:
@@ -835,6 +1003,38 @@ func set_compact(compact: bool) -> void:
 			_snapshot.get("known_ids", PackedInt32Array()))
 
 
+func _safe_insets() -> Dictionary:
+	var insets := {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return insets
+	var settings := tree.root.get_node_or_null("/root/GameSettings")
+	if settings != null and settings.has_method("ui_scaling"):
+		var scaling = settings.call("ui_scaling")
+		if scaling != null and scaling.has_method("safe_insets"):
+			insets = scaling.call("safe_insets")
+	return insets
+
+
+func _apply_offer_layer_insets() -> void:
+	var insets := _safe_insets()
+	var safe_left := float(insets.get("left", 0.0))
+	var safe_top := float(insets.get("top", 0.0))
+	var safe_right := float(insets.get("right", 0.0))
+	var safe_bottom := float(insets.get("bottom", 0.0))
+	var v_margin := 24.0 if _compact else 48.0
+	if _offer_layer != null:
+		_offer_layer.offset_left = 24.0 + safe_left
+		_offer_layer.offset_top = v_margin + safe_top
+		_offer_layer.offset_right = -24.0 - safe_right
+		_offer_layer.offset_bottom = -v_margin - safe_bottom
+	if _detail_layer != null:
+		_detail_layer.offset_left = safe_left
+		_detail_layer.offset_top = safe_top
+		_detail_layer.offset_right = -safe_right
+		_detail_layer.offset_bottom = -safe_bottom
+
+
 func _stage_card_size() -> Vector2:
 	# The tray is modal over the workspace, not the whole game viewport. Measuring
 	# the workspace height here was what pushed the action row below 720p.
@@ -842,7 +1042,12 @@ func _stage_card_size() -> Vector2:
 		and _offer_layer.size.y > 0.0 else size.y if size.y > 0.0 else 576.0
 	var view_width := _offer_layer.size.x if _offer_layer != null \
 		and _offer_layer.size.x > 0.0 else 1024.0
-	var chrome_height := STAGE_CHROME_HEIGHT_COMPACT if _compact else STAGE_CHROME_HEIGHT
+	var base_chrome := STAGE_CHROME_HEIGHT_COMPACT if _compact else STAGE_CHROME_HEIGHT
+	var action_min_y := maxf(32.0, TouchUI.min_units())
+	if _offer_actions != null:
+		action_min_y = maxf(action_min_y, _offer_actions.get_combined_minimum_size().y)
+	var extra_actions_height := maxf(0.0, action_min_y - 32.0)
+	var chrome_height := base_chrome + extra_actions_height
 	_stage_available_height = maxf(0.0,
 		view_height - STAGE_OUTER_INSET * 2.0 - chrome_height)
 	var height := clampf(_stage_available_height, STAGE_CARD_MIN_HEIGHT,
@@ -855,6 +1060,7 @@ func _stage_card_size() -> Vector2:
 
 
 func _apply_stage_metrics() -> void:
+	_apply_offer_layer_insets()
 	var cards: HBoxContainer = null
 	if _choice_0 != null:
 		cards = _choice_0.get_parent() as HBoxContainer
@@ -889,20 +1095,23 @@ func _apply_stage_metrics() -> void:
 	if _offer_hint != null:
 		_offer_hint.add_theme_font_size_override("font_size", 14)
 		_offer_hint.visible = true
+	var button_min_y := maxf(30.0 if _compact else 32.0, TouchUI.min_units())
+	if _offer_actions != null:
+		_offer_actions.add_theme_constant_override("separation", 8 if _compact else 12)
+		for button in _offer_actions.get_children():
+			if button is Button:
+				(button as Button).custom_minimum_size.y = maxf(
+					(button as Button).custom_minimum_size.y, button_min_y)
+		button_min_y = maxf(button_min_y, _offer_actions.get_combined_minimum_size().y)
 	if _offer_footer != null:
 		_offer_footer.add_theme_constant_override("separation", 0 if _compact else 2)
-		_offer_footer.custom_minimum_size.y = 48 if _compact else 52
+		_offer_footer.custom_minimum_size.y = maxf(48.0 if _compact else 52.0, button_min_y + 20.0)
 	if _offer_body != null:
 		var inset := 10 if _compact else 16
 		_offer_body.add_theme_constant_override("margin_left", inset)
 		_offer_body.add_theme_constant_override("margin_right", inset)
 		_offer_body.add_theme_constant_override("margin_top", 6 if _compact else 10)
 		_offer_body.add_theme_constant_override("margin_bottom", 6 if _compact else 10)
-	if _offer_actions != null:
-		_offer_actions.add_theme_constant_override("separation", 8 if _compact else 12)
-		for button in _offer_actions.get_children():
-			if button is Button:
-				(button as Button).custom_minimum_size.y = 30 if _compact else 32
 	for index in 3:
 		var card := _choice(index)
 		if card == null:
@@ -921,6 +1130,9 @@ func _apply_stage_metrics() -> void:
 func _on_workspace_resized() -> void:
 	if _choice_0 == null:
 		return
+	_apply_offer_layer_insets()
+	if _compact:
+		_apply_archive_metrics()
 	var target := _stage_card_size()
 	if absf(target.y - _stage_card_applied.y) < 4.0 \
 			and absf(target.x - _stage_card_applied.x) < 4.0:
@@ -993,7 +1205,7 @@ func _apply_model(model: Dictionary) -> void:
 	if _effect_report_context != effect_context:
 		_effect_report_context = effect_context
 		_effect_report_day = -1
-	if _effect_report_day != _current_day:
+	if _effect_report_day != _current_day or _effect_summary.is_empty():
 		_effect_report_day = _current_day
 		effect_changed_ids = _refresh_effect_report()
 	var signature := _board_signature(known)
@@ -1251,6 +1463,8 @@ func _fill_slots(host: VBoxContainer, kind: int, hosted: Array[int], capacity: i
 		# Same handler as the card grid: "where does this act" does not depend on
 		# whether the caller was a 196x260 card or a 60px row.
 		row.locate_requested.connect(_on_card_locate_requested)
+		if row.has_signal("detail_requested"):
+			row.detail_requested.connect(_open_detail_modal.bind(false))
 		host.add_child(row)
 	var empty_count := maxi(0, capacity - hosted.size())
 	if empty_count > 0:
@@ -1272,8 +1486,12 @@ func _slot_row_data(ideology_id: int, kind: int) -> Dictionary:
 	var level := maxi(0, int(state.get("level", 0)))
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
-	var view := CountryViewModel.present_ideology_card(meta, level,
-		IdeologyEffectReportScript.card_row(_effect_summary, ideology_id))
+	var effect_row := IdeologyEffectReportScript.card_row(_effect_summary, ideology_id)
+	var target_cells: PackedInt32Array = effect_row.get("cells", PackedInt32Array())
+	var has_target_cells := not target_cells.is_empty()
+	var locate_tooltip := "在地图上定位 %d 处生效地块" % target_cells.size() \
+		if has_target_cells else "在地图上定位生效地块"
+	var view := CountryViewModel.present_ideology_card(meta, level, effect_row)
 	var level_progress: Dictionary = LevelProgressScript.build(meta, state,
 		String(view.get("level_label", "")))
 	var tooltip := PackedStringArray([_display_name(meta, ideology_id),
@@ -1304,6 +1522,8 @@ func _slot_row_data(ideology_id: int, kind: int) -> Dictionary:
 		"level_progress": level_progress,
 		"effects": view.get("effect_lines", PackedStringArray()),
 		"pending": pending,
+		"has_target_cells": has_target_cells,
+		"locate_tooltip": locate_tooltip,
 		"can_unequip": bool(live.get("unequip_allowed", true)),
 		"can_promote": can_promote,
 		"unequip_tooltip": "%s\n%s" % ["撤回这条道路", _support_summary(live, 1)],
@@ -1416,9 +1636,12 @@ func _make_collection_entry(ideology_id: int) -> Control:
 	var meta: Dictionary = _metadata.get(ideology_id, {})
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
+	var effect_row := IdeologyEffectReportScript.card_row(_effect_summary, ideology_id)
+	var target_cells: PackedInt32Array = effect_row.get("cells", PackedInt32Array())
+	var has_target_cells := not target_cells.is_empty()
 	var view := CountryViewModel.present_ideology_card(meta,
 		maxi(0, int(state.get("level", 0))),
-		IdeologyEffectReportScript.card_row(_effect_summary, ideology_id))
+		effect_row)
 	var level_progress: Dictionary = LevelProgressScript.build(meta, state,
 		String(view.get("level_label", "")))
 	var entry := CollectionEntry.new()
@@ -1440,6 +1663,8 @@ func _make_collection_entry(ideology_id: int) -> Control:
 		"draggable": location != 2,
 		"payload": {"ideology_card": ideology_id, "location": location},
 		"activated": Callable(self, "_on_card_activated").bind(ideology_id),
+		"detail_requested": Callable(self, "_open_detail_modal").bind(ideology_id, false),
+		"locate_requested": Callable(self, "_on_card_locate_requested").bind(ideology_id),
 		"compact": _compact,
 	})
 	entry.custom_minimum_size = Vector2(0, 180.0 if _compact else 220.0)
@@ -1453,6 +1678,15 @@ func _make_collection_entry(ideology_id: int) -> Control:
 	entry.mouse_filter = Control.MOUSE_FILTER_PASS
 	actions.mouse_filter = Control.MOUSE_FILTER_STOP
 	actions.visible = true
+	actions.add_child(_secondary_action_button("详情",
+		_open_detail_modal.bind(ideology_id, false),
+		"查看理念详情、下一境效果与阶层支持", _compact))
+	var locate_btn := _secondary_action_button("定位",
+		_on_card_locate_requested.bind(ideology_id),
+		"在地图上定位 %d 处生效地块" % target_cells.size() if has_target_cells else "在地图上定位生效地块",
+		_compact)
+	locate_btn.visible = has_target_cells
+	actions.add_child(locate_btn)
 	match location:
 		0:
 			actions.add_child(_action_button("推行", pending
@@ -1479,10 +1713,25 @@ func _action_button(text: String, disabled: bool, callback: Callable,
 	var button := Button.new()
 	button.text = text
 	button.disabled = disabled
-	button.custom_minimum_size = Vector2(80, 36)
+	button.custom_minimum_size = Vector2(72 if _compact_value else 80, 36)
 	button.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
 	button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	button.theme_type_variation = &"PKSealPrimaryButton"
+	button.focus_mode = Control.FOCUS_ALL
+	button.tooltip_text = tooltip
+	button.set_meta("ideology_action", text)
+	button.pressed.connect(callback)
+	return button
+
+
+func _secondary_action_button(text: String, callback: Callable,
+		tooltip: String, compact_value := false) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(56 if compact_value else 66, 36)
+	button.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
+	button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
+	button.theme_type_variation = &"PKDossierRowButton"
 	button.focus_mode = Control.FOCUS_ALL
 	button.tooltip_text = tooltip
 	button.set_meta("ideology_action", text)
@@ -1498,6 +1747,8 @@ func _action_button(text: String, disabled: bool, callback: Callable,
 ## show, and silently clearing the previous card's highlight would look like a
 ## dropped click.
 func _on_card_locate_requested(ideology_id: int) -> void:
+	if _effect_summary.is_empty() and _facade != null and _country_handle > 0:
+		_refresh_effect_report()
 	var row: Dictionary = IdeologyEffectReportScript.card_row(_effect_summary, ideology_id)
 	if row.is_empty():
 		return
@@ -1625,12 +1876,22 @@ func _refresh_board_values(support_changed: bool,
 			entry.call("refresh_status", bool(state.get("pending", false)), location)
 		if support_changed:
 			entry.call("refresh_support_details", _support_details(live, location))
-		if support_changed or pending_set.has(idea_id) or level_set.has(idea_id):
+		if support_changed or pending_set.has(idea_id) or level_set.has(idea_id) or effect_set.has(idea_id):
 			var footer := entry.call("footer") as HBoxContainer
+			var effect_row := IdeologyEffectReportScript.card_row(_effect_summary, idea_id)
+			var target_cells: PackedInt32Array = effect_row.get("cells", PackedInt32Array())
+			var has_target_cells := not target_cells.is_empty()
 			for button in footer.get_children():
 				if not button is Button:
 					continue
 				var action := String(button.get_meta("ideology_action", ""))
+				if action == "详情":
+					continue
+				if action == "定位":
+					button.visible = has_target_cells
+					button.tooltip_text = "在地图上定位 %d 处生效地块" % target_cells.size() \
+						if has_target_cells else "在地图上定位生效地块"
+					continue
 				var direction := 0 if action == "推行" else 1 if action == "撤回" else 2
 				var key: String = ["equip_allowed", "unequip_allowed", "promote_allowed"][direction]
 				button.disabled = bool(state.get("pending", false)) \
@@ -1644,6 +1905,8 @@ func _refresh_board_values(support_changed: bool,
 			entry.call("refresh_card_data", _card_data(idea_id, true))
 		elif progress_set.has(idea_id):
 			entry.call("refresh_progress", _progress_data(idea_id))
+	if is_detail_modal_open() and _detail_ideology_id >= 0:
+		_present_detail_dictionary(_detail_data(_detail_ideology_id, _detail_is_offer))
 
 
 func _id_set(ids: PackedInt32Array) -> Dictionary:
@@ -1771,6 +2034,11 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _detail_layer != null and _detail_layer.visible \
+			and event.is_action_pressed(&"ui_cancel"):
+		_close_detail_modal()
+		get_viewport().set_input_as_handled()
+		return
 	if _promotion_layer != null and _promotion_layer.visible \
 			and event.is_action_pressed(&"ui_cancel"):
 		_close_promotion_overlay()
@@ -2137,6 +2405,10 @@ func _on_choice_activated(_ideology_id: int, index: int) -> void:
 	_choose_offer(index)
 
 
+func _on_choice_detail_requested(ideology_id: int) -> void:
+	_open_detail_modal(ideology_id, true)
+
+
 func _choose_offer(choice_index: int) -> void:
 	if _player_controller == null or _offer_anim_busy:
 		return
@@ -2501,13 +2773,18 @@ class SlotSectionChrome:
 
 class ResonanceEmblem:
 	extends VBoxContainer
+	signal activated(school_id: String)
 	var school_id := ""
 	var _icon: TextureRect
 	var _count: Label
 	var _pips: HBoxContainer
+	var _pressing := false
+	var _press_pos := Vector2.ZERO
 
 	func configure(school: String) -> void:
 		school_id = school
+		mouse_filter = Control.MOUSE_FILTER_PASS
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		alignment = BoxContainer.ALIGNMENT_CENTER
 		add_theme_constant_override("separation", 1)
 		custom_minimum_size = Vector2(52, 0)
@@ -2528,9 +2805,22 @@ class ResonanceEmblem:
 		_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_pips)
 
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton:
+			var mouse := event as InputEventMouseButton
+			if mouse.button_index == MOUSE_BUTTON_LEFT:
+				if mouse.pressed:
+					_pressing = true
+					_press_pos = mouse.position
+				elif _pressing:
+					_pressing = false
+					if mouse.position.distance_to(_press_pos) <= 12.0:
+						activated.emit(school_id)
+						accept_event()
+
 	func set_compact(compact: bool) -> void:
-		_icon.custom_minimum_size = Vector2(20, 20) if compact else Vector2(22, 22)
-		custom_minimum_size.x = 40 if compact else 52
+		_icon.custom_minimum_size = Vector2(18, 18) if compact else Vector2(22, 22)
+		custom_minimum_size.x = 38 if compact else 52
 		_count.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		_pips.visible = false
 
@@ -2593,11 +2883,16 @@ class CollectionEntry:
 	var _action_well: MarginContainer
 	var _head: HBoxContainer
 	var _compact := false
+	var _pressing := false
+	var _press_pos := Vector2.ZERO
+	var _press_moved := false
 
 	func setup(data: Dictionary) -> void:
 		_detail_model = data.get("detail_model", {})
 		_payload = data.get("payload", {}).duplicate()
 		_payload["activated"] = data.get("activated", Callable())
+		_payload["detail_requested"] = data.get("detail_requested", Callable())
+		_payload["locate_requested"] = data.get("locate_requested", Callable())
 		_draggable = bool(data.get("draggable", true))
 		_compact = bool(data.get("compact", false))
 		var compact := _compact
@@ -2786,15 +3081,39 @@ class CollectionEntry:
 		if event.is_action_pressed(&"ui_accept"):
 			_payload.get("activated", Callable()).call()
 			accept_event()
-		elif event is InputEventMouseButton:
+			return
+		if event is InputEventMouseMotion:
+			if _pressing and (event as InputEventMouseMotion).position.distance_to(_press_pos) > 10.0:
+				_press_moved = true
+			return
+		if event is InputEventMouseButton:
 			var mouse := event as InputEventMouseButton
-			if mouse.button_index == MOUSE_BUTTON_LEFT \
-					and not mouse.pressed and mouse.double_click:
-				_payload.get("activated", Callable()).call()
-				accept_event()
+			if mouse.button_index == MOUSE_BUTTON_RIGHT:
+				if mouse.pressed:
+					var locate_cb: Callable = _payload.get("locate_requested", Callable())
+					if locate_cb.is_valid():
+						locate_cb.call()
+						accept_event()
+				return
+			if mouse.button_index == MOUSE_BUTTON_LEFT:
+				if mouse.pressed:
+					_pressing = true
+					_press_pos = mouse.position
+					_press_moved = false
+				else:
+					var was_tap := _pressing and not _press_moved
+					_pressing = false
+					if mouse.double_click:
+						_payload.get("activated", Callable()).call()
+						accept_event()
+					elif was_tap:
+						var detail_cb: Callable = _payload.get("detail_requested", Callable())
+						if detail_cb.is_valid():
+							detail_cb.call()
+							accept_event()
 
 	func _get_drag_data(_at_position: Vector2) -> Variant:
-		if not _draggable:
+		if not _draggable or TouchUI.is_touch():
 			return null
 		var holder := Control.new()
 		var preview := NinePatchRect.new()

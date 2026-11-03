@@ -1,0 +1,20 @@
+Use case: image-to-image production game animation sheet edit.
+Reference A is the AUTHORITATIVE identity-and-registration board. It contains exactly eight copies of the same unit in a 4-column by 2-row grid. Preserve every unit's species, member count, equipment, materials, scale and strict 90-degree vertical orthographic overhead camera. North is up. EAST IS RIGHT.
+
+Do not redesign the unit. Do not create a different camera. Do not rotate the whole unit to another facing. All shield faces, horse heads, lances, gun barrels and vehicle noses remain east/right. Small action yaw is allowed only where the requested beat explicitly says so, and must never exceed 8 degrees. The first and second rows must use the same cell-relative anchor, scale and facing; no row offset.
+
+Produce one transparent-background RGBA action sheet with EXACTLY 4 equal columns by 2 equal rows, read left-to-right across the top row, then left-to-right across the bottom row. Each cell is an isolated stage. Keep a large fully transparent dead band around every cell and around the whole sheet. Long weapons, wheels, tracks, smoke, dust, sparks and flashes must remain inside their own cell and must never touch or cross a cell line.
+
+Animation is pose-to-pose at 8 fps. This is not micro-motion. Keep the same unit centered on the same fixed cell origin, but visibly change stance, compression, extension, recoil, weapon projection, horse leg spacing, wheel rotation, track pitch or formation width. At 48-64 px the eight silhouette poses must be distinguishable without relying on smoke or muzzle flash. Do not translate the complete unit across the cell, do not recenter individual frames by their alpha bounds, and do not rescale individual frames.
+
+Use three strong beats: preparation, action peak, recovery. The final frame must return to a neutral guard that is safe to blend back to idle. Do not mirror the unit, do not turn it 90 or 180 degrees, and do not invent a second unit type.
+
+Background: genuine RGBA transparency, no checkerboard, no floor, no scenery, no baked cast shadow, no grid lines.
+
+Avoid: random orientation changes, mirrored horses or vehicles, side view, three-quarter view, perspective, detached body parts outside the safe area, duplicate frames, tiny breathing-only changes, effects crossing cell boundaries, letters, numbers, borders, watermark.
+
+Subject: the compact two-tank armored token with riveted hulls, turrets, long gun barrels and top-facing tracks, gunmetal/soot/slate-blue materials. Show only hull roofs, turret roofs, engine decks, top-facing tracks, hatch discs, antennas and gun-barrel tops. Never show side walls, track side profiles or an isometric silhouette.
+
+Facing contract: The formation coils west, strikes or fires east, reaches a strong action peak, recoils, and returns to a neutral east-facing guard. No unit may spin away from east. Keep all effects inside the cell. Frame 8 is near-neutral.
+
+ATTACK beat sequence: 1 braced with guns laid east; 2 turrets and hulls coil slightly west; 3 first cannon fires with a bright east flash and visible recoil; 4 second cannon joins with both barrels recoiled; 5 maximum east smoke cloud and hull shock; 6 residual smoke with turrets rebounding; 7 barrels return east; 8 near-neutral ready pose.

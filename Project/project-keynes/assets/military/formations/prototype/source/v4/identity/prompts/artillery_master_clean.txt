@@ -1,0 +1,15 @@
+Use case: production game-unit master regeneration from an image reference.
+
+Reference A is the existing paired artillery token. Preserve only its two antique field-cannon carriages, their circular wheels, timber construction, dark-iron and bronze hardware, ochre and warm-parchment palette, compact paired silhouette, and production paper-painted material treatment.
+
+Critical correction: remove every human figure, gunner, soldier, head, helmet, hat, plume, shoulder, hand, limb, and red-white mascot-like blob from the whole token. No sentient figure may stand in front of, beside, over, or directly behind either cannon muzzle. The entire east/right side of each barrel must be clear except for the barrel and its muzzle opening. Do not put a crew member at the muzzle. This unit is a paired-cannon token, not a cannon plus infantry.
+
+Show exactly two compact antique field cannons stacked north-south. Both barrels point east/right. Use a strict 90-degree vertical orthographic overhead view, north up and east right. The camera must see only roofs and tops: barrel tops, timber carriage tops, wheel rings, axles, breech hardware, and ropes. No visible carriage side walls, wheel side profiles, faces, horizon, perspective, or three-quarter view. Small yaw is forbidden.
+
+Composition: one isolated unit centered inside a generous transparent safe area. Keep the full pair, wheels, barrels, and loose ropes inside the image. Do not crop any wheel or barrel. Do not duplicate the unit. Do not draw a 4x2 grid.
+
+Background: genuine transparent RGBA alpha, no checkerboard, no floor, no scenery, no baked shadow, no grid, no border, no labels, letters, numbers, or watermark.
+
+Style: high-detail painted game asset with the same warm paper-print texture and crisp illustrated edges as Reference A. Keep both cannons visually complete and readable at 48-64 pixels.
+
+Avoid: crew, gunner, soldier, person, human, red-white circular figure, plume, floating hat, mascot, third cannon, mirrored barrels, west-facing barrels, side view, isometric view, perspective, geometric vector icon, SVG, plastic toy, low-poly render, text, frame, grid.

@@ -236,6 +236,17 @@ static func build(family_effect_catalog_override: Resource = null,
 		# The allocation reserves 102-107 for X7-b but names only five
 		# mechanics; keep the final slot explicit rather than shifting a count.
 		"reserved.x7b_107",
+		# NOTE (military §17.1): the `cell.barracks` / `cell.fortified` /
+		# `cell.military_industry` / `cell.garrisoned` / `cell.occupied_by_*`
+		# tags do NOT add metric ids here. Economy's sampler caps its row count
+		# at `FAMILY_METRIC_COUNT` (a constant owned by economy_runtime.h), so an
+		# id past 107 would compile in this catalog and then read as 0 forever --
+		# a tag that validates and never matches. Military publishes those tags
+		# through Economy's `CellTagOverrideSet` instead
+		# (gdext/src/world_ext_military_cell_stats.cpp), which forces the bit
+		# after predicate evaluation. Their dictionary rows therefore point at a
+		# metric that is true for every cell, and the override is what narrows
+		# the set.
 	])
 	# --- Ideology-local scalars -------------------------------------------
 	# These are not Economy metrics and are never sampled by

@@ -1,0 +1,6381 @@
+{
+  "schema": 3,
+  "pipeline": "built-in image generation -> isolated 4x2 action sheets -> shared-anchor cell crop -> transparent-frame padding -> RGBA atlas packing",
+  "art_source": "model-generated raster action sheets",
+  "projection": "strict vertical orthographic overhead",
+  "facing": "east",
+  "source_contract": {
+    "sheet_columns": 4,
+    "sheet_rows": 2,
+    "frames_per_sheet": 8,
+    "frame_order": "left-to-right, then top-to-bottom",
+    "alpha_cleanup_threshold": 8,
+    "transparent_cell_perimeter_required": true,
+    "per_frame_recentering": false,
+    "shared_crop_per_action": true
+  },
+  "actions": [
+    "idle",
+    "move",
+    "attack",
+    "hit"
+  ],
+  "prototypes": [
+    "foot",
+    "mounted",
+    "artillery",
+    "armored"
+  ],
+  "output_frame": {
+    "width": 128,
+    "height": 128,
+    "transparent_padding_px": 12
+  },
+  "atlas": {
+    "path": "Project/project-keynes/assets/military/formations/prototype/military_formation_prototype_v3.png",
+    "width": 1024,
+    "height": 2048,
+    "mode": "RGBA",
+    "sha256": "3f9b683fbcff944a03e63accc802f9f372f0001bfeed9e6bd155ef22a01863eb"
+  },
+  "sources": {
+    "foot/idle": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_idle.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "2ab14c56c1a6478f51b3097773c8813b42e06b52da2f86d40e35e7ce3042175e"
+    },
+    "foot/move": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_move.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "da8530cd6518fe9a4a7dc2fc2540987cd3e6c0a270c2b5b89eb1b23f5a7467a7"
+    },
+    "foot/attack": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_attack.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "6f29d310f4ff3fa9daf4bd7a3fd5d1f3ffa6855b4fcf779355a62a1cc6adfd69"
+    },
+    "foot/hit": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_hit.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "aaf63a00cfb0f091cc9ce42e645a7c7da43af265a6a65eda7e00e5819e498893"
+    },
+    "mounted/idle": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_idle.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "701b83821eda19d45602c63e5d715fe58bf81c50d32854cd277413553eda459e"
+    },
+    "mounted/move": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_move.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "f10a299165a9621910f17096f02f5e035d7a09522d2b91967533637b8391c936"
+    },
+    "mounted/attack": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_attack.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "df384c6e8955276d1c78b6dfa3df9c6866bc90dc405da784ba6cc7590aa7a3d2"
+    },
+    "mounted/hit": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_hit.png",
+      "width": 1776,
+      "height": 888,
+      "mode": "RGBA",
+      "sha256": "71ddd144149ffabf48e5c6cea38384e0ab0cd3b1370747c6d2e9f95f5bf23e6c"
+    },
+    "artillery/idle": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_idle.png",
+      "width": 1772,
+      "height": 886,
+      "mode": "RGBA",
+      "sha256": "c43055c09087687cbd81bfb2e55297691e440e6aa981f9925de8f450d8c85ca2"
+    },
+    "artillery/move": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_move.png",
+      "width": 1772,
+      "height": 886,
+      "mode": "RGBA",
+      "sha256": "12e2e91b53d0ea8f55f7090f3ad0e51d5cb68531d150e5e348b5f5bebc1d05f5"
+    },
+    "artillery/attack": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_attack.png",
+      "width": 1772,
+      "height": 886,
+      "mode": "RGBA",
+      "sha256": "40b6b31c0dfe6cdbe6f02665873f5fe0d802d779d35f7b67264b64d8e92d0d9e"
+    },
+    "artillery/hit": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_hit.png",
+      "width": 1772,
+      "height": 886,
+      "mode": "RGBA",
+      "sha256": "f75f2d6c545d48438bd2b91c55821e25a169c8f82e0f60de530df0450c3ed046"
+    },
+    "armored/idle": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_idle.png",
+      "width": 2416,
+      "height": 1208,
+      "mode": "RGBA",
+      "sha256": "0f4ebb151cd58712a4cee22bd86b1c518ebf3efeef75b44dc7c4e1b5d6322699"
+    },
+    "armored/move": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_move.png",
+      "width": 2416,
+      "height": 1208,
+      "mode": "RGBA",
+      "sha256": "b7d8485d3b9f0597f7a9ea333d3d9c26d8ebd875ccfe14fed7921aea35b7c425"
+    },
+    "armored/attack": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_attack.png",
+      "width": 2416,
+      "height": 1208,
+      "mode": "RGBA",
+      "sha256": "dde605a5a6fa3803501a6944e365577f24ba6cb58d736311877853506e1de966"
+    },
+    "armored/hit": {
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_hit.png",
+      "width": 2416,
+      "height": 1208,
+      "mode": "RGBA",
+      "sha256": "8f1607be9d94550b85ae9736840850b6b82579c391e45ca04b1c2bb78b94a937"
+    }
+  },
+  "action_reports": [
+    {
+      "prototype": "foot",
+      "action": "idle",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 251,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            138,
+            124,
+            329,
+            330
+          ],
+          "edge_margin": {
+            "left": 138,
+            "top": 124,
+            "right": 115,
+            "bottom": 114
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            119,
+            330,
+            331
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 119,
+            "right": 114,
+            "bottom": 113
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            118,
+            332,
+            331
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 118,
+            "right": 112,
+            "bottom": 113
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            123,
+            330,
+            332
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 123,
+            "right": 114,
+            "bottom": 112
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            139,
+            122,
+            330,
+            330
+          ],
+          "edge_margin": {
+            "left": 139,
+            "top": 122,
+            "right": 114,
+            "bottom": 114
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            125,
+            331,
+            330
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 125,
+            "right": 113,
+            "bottom": 114
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            138,
+            123,
+            331,
+            330
+          ],
+          "edge_margin": {
+            "left": 138,
+            "top": 123,
+            "right": 113,
+            "bottom": 114
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            126,
+            331,
+            330
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 126,
+            "right": 113,
+            "bottom": 114
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            96,
+            96,
+            347,
+            347
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_idle.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "2ab14c56c1a6478f51b3097773c8813b42e06b52da2f86d40e35e7ce3042175e"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            29,
+            23,
+            109,
+            109
+          ],
+          "sha256": "3d4ddce4dac3a47201604e2463a643bab3247bbaa2975fd91855ad1a054dc133"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            29,
+            21,
+            109,
+            110
+          ],
+          "sha256": "85e2e6f1ef44f2dd9c06c4db14694f4e7571e90cee51a662df389176c7499fae"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            29,
+            21,
+            110,
+            110
+          ],
+          "sha256": "e857ec58227b0d0eeace80226ee756f0fa4582b78d161b25ab70ecc3558adc89"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            29,
+            23,
+            109,
+            110
+          ],
+          "sha256": "348e2674e4a83d73f4f51d37a4d15e36df1db8e2294d088f06b02cfc70e22dcf"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            29,
+            23,
+            109,
+            109
+          ],
+          "sha256": "5cfa976a7dcf576cfdd625be1c555604ce3d02a937494c1e8a02a2a63f928f8b"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            29,
+            24,
+            110,
+            109
+          ],
+          "sha256": "c0f368cd492ea9c51bdd75e6f9b96385ce521884b769606259d06e88e1c0cacb"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            29,
+            23,
+            109,
+            109
+          ],
+          "sha256": "4080014da37214af11a5609203e047b4f990425ab568dc12eece2f0fe84cc1ec"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            29,
+            24,
+            109,
+            109
+          ],
+          "sha256": "1e0496f28646173244cf7e2897458a6d3b49ea8c7521c8b9d7aa011028581dc7"
+        }
+      ]
+    },
+    {
+      "prototype": "foot",
+      "action": "move",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 279,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            133,
+            116,
+            342,
+            338
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 116,
+            "right": 102,
+            "bottom": 106
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            134,
+            113,
+            346,
+            340
+          ],
+          "edge_margin": {
+            "left": 134,
+            "top": 113,
+            "right": 98,
+            "bottom": 104
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            134,
+            114,
+            345,
+            342
+          ],
+          "edge_margin": {
+            "left": 134,
+            "top": 114,
+            "right": 99,
+            "bottom": 102
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            133,
+            114,
+            345,
+            341
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 114,
+            "right": 99,
+            "bottom": 103
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            132,
+            113,
+            342,
+            338
+          ],
+          "edge_margin": {
+            "left": 132,
+            "top": 113,
+            "right": 102,
+            "bottom": 106
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            132,
+            114,
+            340,
+            338
+          ],
+          "edge_margin": {
+            "left": 132,
+            "top": 114,
+            "right": 104,
+            "bottom": 106
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            115,
+            341,
+            338
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 115,
+            "right": 103,
+            "bottom": 106
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            115,
+            340,
+            338
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 115,
+            "right": 104,
+            "bottom": 106
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            82,
+            82,
+            361,
+            361
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_move.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "da8530cd6518fe9a4a7dc2fc2540987cd3e6c0a270c2b5b89eb1b23f5a7467a7"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            31,
+            24,
+            109,
+            108
+          ],
+          "sha256": "068e2c72a349827f9fdca82ed7d40cd810deb4c3e6ac6e559e189fd9961f0789"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            31,
+            23,
+            110,
+            108
+          ],
+          "sha256": "9965bef704c176b8ca6ea8bcb3bfb75716607135dfced22befb7a8ab228704c2"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            31,
+            24,
+            110,
+            109
+          ],
+          "sha256": "635d49c43c96f6f376b2e6d3d26eac8b678c08bb1a45b6ff3fd46f0f1d59646f"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            31,
+            24,
+            110,
+            109
+          ],
+          "sha256": "86be6a21a91ebfb46fa17385d3d9211b39fcbe0a0243c41c6bdce720d7f84bab"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            30,
+            23,
+            109,
+            108
+          ],
+          "sha256": "cbdecc05c756d0d86722cc3ab28630acadb16a6a87ed638317548dad2786c632"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            31,
+            24,
+            108,
+            108
+          ],
+          "sha256": "97dd9e2ea647974280126a6e60d0f3e35c7801384035ce38c303f58e00914356"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            30,
+            24,
+            109,
+            108
+          ],
+          "sha256": "f1f91ad2e15e2cb422cd44fd46b3e3b8bb57bf8c649cfa02c73f6e3b15184d1a"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            30,
+            24,
+            108,
+            108
+          ],
+          "sha256": "3394986fa657aafb8e7e34044ad906be77cc5e3875981b584d333f66f0bd72d3"
+        }
+      ]
+    },
+    {
+      "prototype": "foot",
+      "action": "attack",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 271,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            135,
+            122,
+            330,
+            336
+          ],
+          "edge_margin": {
+            "left": 135,
+            "top": 122,
+            "right": 114,
+            "bottom": 108
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            138,
+            125,
+            308,
+            334
+          ],
+          "edge_margin": {
+            "left": 138,
+            "top": 125,
+            "right": 136,
+            "bottom": 110
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            134,
+            124,
+            299,
+            334
+          ],
+          "edge_margin": {
+            "left": 134,
+            "top": 124,
+            "right": 145,
+            "bottom": 110
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            124,
+            324,
+            335
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 124,
+            "right": 120,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            134,
+            123,
+            342,
+            335
+          ],
+          "edge_margin": {
+            "left": 134,
+            "top": 123,
+            "right": 102,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            132,
+            123,
+            338,
+            335
+          ],
+          "edge_margin": {
+            "left": 132,
+            "top": 123,
+            "right": 106,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            133,
+            124,
+            325,
+            335
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 124,
+            "right": 119,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            132,
+            123,
+            325,
+            335
+          ],
+          "edge_margin": {
+            "left": 132,
+            "top": 123,
+            "right": 119,
+            "bottom": 109
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            357,
+            357
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_attack.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "6f29d310f4ff3fa9daf4bd7a3fd5d1f3ffa6855b4fcf779355a62a1cc6adfd69"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            30,
+            26,
+            106,
+            108
+          ],
+          "sha256": "89a20cd5caacb3c884fabc126d2981e9ce9a8dd4db54f2786411f54b17854a42"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            32,
+            27,
+            98,
+            107
+          ],
+          "sha256": "d6186477b8c201df4968abf45c3696daac8a4fc3f9af8683ff6f74a4f95ce91d"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            30,
+            27,
+            94,
+            108
+          ],
+          "sha256": "5f064d269bf6961905d0c95f586e4e70750c4c240fa465fa45032d47383f8967"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            29,
+            26,
+            104,
+            108
+          ],
+          "sha256": "204cd6d1902cfddef44155005ba5c02ea37c236d8f7ac381c034e26d3a40de59"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            30,
+            26,
+            110,
+            108
+          ],
+          "sha256": "35e2d21f951e146fa8e5e1fc12cc9935eb48e158b6872629923928b01adfb62d"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            30,
+            26,
+            109,
+            108
+          ],
+          "sha256": "38a7d59435235343b0cf06f3c9af85d598c9d813bb65b8a3cf6ed40c6f8f9248"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            30,
+            26,
+            104,
+            108
+          ],
+          "sha256": "47e0cf21771788ace5de8fb504ca0ac09ce4d0d0321b8b6d68f91e088fb9cac9"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            29,
+            26,
+            104,
+            108
+          ],
+          "sha256": "94806bd11d47695d17a0efa0749c62730fd74afe42af75cffa8ffe0a19a936b7"
+        }
+      ]
+    },
+    {
+      "prototype": "foot",
+      "action": "hit",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 263,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            137,
+            121,
+            334,
+            335
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 121,
+            "right": 110,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            133,
+            123,
+            330,
+            335
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 123,
+            "right": 114,
+            "bottom": 109
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            121,
+            325,
+            337
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 121,
+            "right": 119,
+            "bottom": 107
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            121,
+            321,
+            336
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 121,
+            "right": 123,
+            "bottom": 108
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            127,
+            121,
+            324,
+            338
+          ],
+          "edge_margin": {
+            "left": 127,
+            "top": 121,
+            "right": 120,
+            "bottom": 106
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            129,
+            125,
+            324,
+            334
+          ],
+          "edge_margin": {
+            "left": 129,
+            "top": 125,
+            "right": 120,
+            "bottom": 110
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            131,
+            122,
+            326,
+            336
+          ],
+          "edge_margin": {
+            "left": 131,
+            "top": 122,
+            "right": 118,
+            "bottom": 108
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            135,
+            123,
+            330,
+            335
+          ],
+          "edge_margin": {
+            "left": 135,
+            "top": 123,
+            "right": 114,
+            "bottom": 109
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            353,
+            353
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/foot_hit.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "aaf63a00cfb0f091cc9ce42e645a7c7da43af265a6a65eda7e00e5819e498893"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            30,
+            24,
+            109,
+            109
+          ],
+          "sha256": "5cf2e0c02454cdb55b83307daff2034c8771af4ba8e0175ea875514a24f880ab"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            29,
+            25,
+            107,
+            109
+          ],
+          "sha256": "21ad429fdac3d1588d21e56fed0a3c97e27392ec950c03e6967d1536fe80b8fd"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            28,
+            24,
+            105,
+            110
+          ],
+          "sha256": "b88593f6a7509556183716cffdbc1ebaa076d8d5378bea96975085b3886f1cdd"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            28,
+            24,
+            103,
+            109
+          ],
+          "sha256": "d7bb2bff7ff4e5550260d20d2d23e26f1a39f9bb6ffc870015c69d3e5f8078b0"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            26,
+            24,
+            105,
+            110
+          ],
+          "sha256": "fb9c3937c90f3327568659de06ccf94263f8aa05cefb802a8d4a68e51d6f9410"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            27,
+            25,
+            105,
+            109
+          ],
+          "sha256": "eef80e0dfedfe81f72396507c0e47f0644203ec27053479310d4feb5b52a60e0"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            28,
+            25,
+            106,
+            110
+          ],
+          "sha256": "676dce3bf8a5e88e9b00281a4626d73f8c34c895b2082b4ad196488ebc84b04f"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            29,
+            25,
+            107,
+            109
+          ],
+          "sha256": "7644a7690181b93ce74ebe5c2978bd22083c44ca817892959ced27854477478a"
+        }
+      ]
+    },
+    {
+      "prototype": "mounted",
+      "action": "idle",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 293,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            94,
+            149,
+            328,
+            295
+          ],
+          "edge_margin": {
+            "left": 94,
+            "top": 149,
+            "right": 116,
+            "bottom": 149
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            149,
+            328,
+            295
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 149,
+            "right": 116,
+            "bottom": 149
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            92,
+            145,
+            329,
+            297
+          ],
+          "edge_margin": {
+            "left": 92,
+            "top": 145,
+            "right": 115,
+            "bottom": 147
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            92,
+            145,
+            329,
+            299
+          ],
+          "edge_margin": {
+            "left": 92,
+            "top": 145,
+            "right": 115,
+            "bottom": 145
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            91,
+            146,
+            327,
+            298
+          ],
+          "edge_margin": {
+            "left": 91,
+            "top": 146,
+            "right": 117,
+            "bottom": 146
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            149,
+            328,
+            295
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 149,
+            "right": 116,
+            "bottom": 149
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            94,
+            151,
+            328,
+            294
+          ],
+          "edge_margin": {
+            "left": 94,
+            "top": 151,
+            "right": 116,
+            "bottom": 150
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            151,
+            328,
+            293
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 151,
+            "right": 116,
+            "bottom": 151
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_idle.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "701b83821eda19d45602c63e5d715fe58bf81c50d32854cd277413553eda459e"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            18,
+            38,
+            102,
+            90
+          ],
+          "sha256": "7117c4d484c23dfbb7137fa3ec9a50cfb84a2adf94d2a6a601f7398153bb0147"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            18,
+            38,
+            101,
+            90
+          ],
+          "sha256": "206fae03a557d2e0c502fdbd1efa3c7ad8f7df6d715e1c69b60831149b669720"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            18,
+            36,
+            102,
+            91
+          ],
+          "sha256": "cc021d941edf3a2d50daf19337251efd8c167434d2454a40c1f89f9e57ef421d"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            18,
+            36,
+            102,
+            91
+          ],
+          "sha256": "cb1d86e9cc6b35aaa5395f4220c105e04c272fe914731889fe077a806d3e4d4c"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            17,
+            37,
+            101,
+            91
+          ],
+          "sha256": "20cb14acbe24e0b16d4106d6a4bb9c66ccda96a13745980cd87bc41947b832ff"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            18,
+            38,
+            102,
+            90
+          ],
+          "sha256": "4a1d49f1c624a0f0311acc9461d8aa7b1f953d7840ba7ec72e204b5a49810be9"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            18,
+            38,
+            102,
+            90
+          ],
+          "sha256": "07c3b905cbdfa2509410c64f75ee296126725f2ffa0d8505658aba4ffcca43ae"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            18,
+            38,
+            101,
+            89
+          ],
+          "sha256": "9b7dee3d1be2e99cf17d9904a1856f77988da0e93069f8b22b1e18b3c34a1ff2"
+        }
+      ]
+    },
+    {
+      "prototype": "mounted",
+      "action": "move",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 291,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            150,
+            320,
+            292
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 150,
+            "right": 124,
+            "bottom": 152
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            151,
+            321,
+            293
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 151,
+            "right": 123,
+            "bottom": 151
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            92,
+            152,
+            319,
+            291
+          ],
+          "edge_margin": {
+            "left": 92,
+            "top": 152,
+            "right": 125,
+            "bottom": 153
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            92,
+            152,
+            321,
+            291
+          ],
+          "edge_margin": {
+            "left": 92,
+            "top": 152,
+            "right": 123,
+            "bottom": 153
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            94,
+            148,
+            318,
+            292
+          ],
+          "edge_margin": {
+            "left": 94,
+            "top": 148,
+            "right": 126,
+            "bottom": 152
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            94,
+            151,
+            320,
+            294
+          ],
+          "edge_margin": {
+            "left": 94,
+            "top": 151,
+            "right": 124,
+            "bottom": 150
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            151,
+            320,
+            293
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 151,
+            "right": 124,
+            "bottom": 151
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            151,
+            321,
+            293
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 151,
+            "right": 123,
+            "bottom": 151
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            76,
+            76,
+            367,
+            367
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_move.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "f10a299165a9621910f17096f02f5e035d7a09522d2b91967533637b8391c936"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            18,
+            39,
+            99,
+            89
+          ],
+          "sha256": "3aea8b035690c863f8efc7f971313f92c721b155a4be81c9eeaa9f99a9c9609e"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            18,
+            39,
+            100,
+            90
+          ],
+          "sha256": "7cf939117664c6ca1b8ee07fdf0305a1b84bd6e43aaf2ddd5c7087aaeb7e9ed8"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            18,
+            39,
+            99,
+            89
+          ],
+          "sha256": "fd56b4989fb07fa9243ac67bd0b3faf2be0bfca72c5d83f9358aec718f0a89d7"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            18,
+            39,
+            100,
+            89
+          ],
+          "sha256": "35acfb0e0dde14379bf10520468d9417bbd2c4f7316d261e9b7380d04df3369e"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            19,
+            38,
+            99,
+            89
+          ],
+          "sha256": "ba9ea1ee7a286d6cfdc2970e682764feef1e399404c9538935e7f3038f142c10"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            18,
+            39,
+            99,
+            89
+          ],
+          "sha256": "547fc790495fa213820ef2097ab6b5a106634e8246ec78ae0b8f9045b1a655ff"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            18,
+            39,
+            99,
+            90
+          ],
+          "sha256": "f7f56060d04b7fe1b1e188c2b84a65a8686a0f7764a13f1c2dfcfaa2a00c0d99"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            18,
+            39,
+            99,
+            90
+          ],
+          "sha256": "168c9b9ce8872ea91c306694f6c986f840784854b90454debbc945698f214971"
+        }
+      ]
+    },
+    {
+      "prototype": "mounted",
+      "action": "attack",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 313,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            99,
+            149,
+            318,
+            293
+          ],
+          "edge_margin": {
+            "left": 99,
+            "top": 149,
+            "right": 126,
+            "bottom": 151
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            96,
+            147,
+            320,
+            296
+          ],
+          "edge_margin": {
+            "left": 96,
+            "top": 147,
+            "right": 124,
+            "bottom": 148
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            89,
+            147,
+            327,
+            295
+          ],
+          "edge_margin": {
+            "left": 89,
+            "top": 147,
+            "right": 117,
+            "bottom": 149
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            83,
+            149,
+            352,
+            296
+          ],
+          "edge_margin": {
+            "left": 83,
+            "top": 149,
+            "right": 92,
+            "bottom": 148
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            82,
+            149,
+            363,
+            295
+          ],
+          "edge_margin": {
+            "left": 82,
+            "top": 149,
+            "right": 81,
+            "bottom": 149
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            84,
+            149,
+            337,
+            294
+          ],
+          "edge_margin": {
+            "left": 84,
+            "top": 149,
+            "right": 107,
+            "bottom": 150
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            96,
+            148,
+            318,
+            293
+          ],
+          "edge_margin": {
+            "left": 96,
+            "top": 148,
+            "right": 126,
+            "bottom": 151
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            98,
+            149,
+            317,
+            293
+          ],
+          "edge_margin": {
+            "left": 98,
+            "top": 149,
+            "right": 127,
+            "bottom": 151
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            66,
+            66,
+            379,
+            379
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_attack.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "df384c6e8955276d1c78b6dfa3df9c6866bc90dc405da784ba6cc7590aa7a3d2"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            23,
+            39,
+            96,
+            88
+          ],
+          "sha256": "021e3f7ef8a0f32253f1fd11c825661e7bb417baf632c636e2beaf9af0a679f2"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            22,
+            39,
+            97,
+            89
+          ],
+          "sha256": "8fb67607703ee404d41c16671c0f9619f0f6fb84f95c94f6b3bada2ae981bf8d"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            20,
+            39,
+            99,
+            88
+          ],
+          "sha256": "065494c36265979d4ba2d4ed66cfbb52b816ff2375847f8b16f6b815b69d266e"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            18,
+            40,
+            107,
+            88
+          ],
+          "sha256": "dc42f192ea61dbe51c5df56feaf15f744f8669467e008f5e847024885c52ba08"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            17,
+            40,
+            111,
+            88
+          ],
+          "sha256": "4f0ba6dc605c2f7126270dc501d3997af637d152f74f04e908ab11c3151f0aa6"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            18,
+            39,
+            102,
+            88
+          ],
+          "sha256": "ec1ef48a66d0667cf097b94112dcac8c98d5ba170427f76e327839d2c5599170"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            22,
+            39,
+            96,
+            87
+          ],
+          "sha256": "ff0c06441402b9193815b88d879a63d90dd838c9bfe507b7a2999645feb54217"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            23,
+            39,
+            96,
+            87
+          ],
+          "sha256": "8b78141a7822d4f6eee7e3d6206d82c6618bcdbde9c0db50beebce579ed981c9"
+        }
+      ]
+    },
+    {
+      "prototype": "mounted",
+      "action": "hit",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 295,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              444,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            94,
+            142,
+            323,
+            301
+          ],
+          "edge_margin": {
+            "left": 94,
+            "top": 142,
+            "right": 121,
+            "bottom": 143
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              444,
+              0,
+              888,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            95,
+            139,
+            324,
+            304
+          ],
+          "edge_margin": {
+            "left": 95,
+            "top": 139,
+            "right": 120,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              888,
+              0,
+              1332,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            96,
+            136,
+            326,
+            307
+          ],
+          "edge_margin": {
+            "left": 96,
+            "top": 136,
+            "right": 118,
+            "bottom": 137
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1332,
+              0,
+              1776,
+              444
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            97,
+            139,
+            326,
+            306
+          ],
+          "edge_margin": {
+            "left": 97,
+            "top": 139,
+            "right": 118,
+            "bottom": 138
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              444,
+              444,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            97,
+            140,
+            323,
+            305
+          ],
+          "edge_margin": {
+            "left": 97,
+            "top": 140,
+            "right": 121,
+            "bottom": 139
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              444,
+              444,
+              888,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            93,
+            141,
+            324,
+            303
+          ],
+          "edge_margin": {
+            "left": 93,
+            "top": 141,
+            "right": 120,
+            "bottom": 141
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              888,
+              444,
+              1332,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            91,
+            141,
+            325,
+            302
+          ],
+          "edge_margin": {
+            "left": 91,
+            "top": 141,
+            "right": 119,
+            "bottom": 142
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1332,
+              444,
+              1776,
+              888
+            ],
+            "width": 444,
+            "height": 444
+          },
+          "alpha_bounds": [
+            90,
+            142,
+            327,
+            302
+          ],
+          "edge_margin": {
+            "left": 90,
+            "top": 142,
+            "right": 117,
+            "bottom": 142
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            369,
+            369
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/mounted_hit.png",
+        "width": 1776,
+        "height": 888,
+        "mode": "RGBA",
+        "sha256": "71ddd144149ffabf48e5c6cea38384e0ab0cd3b1370747c6d2e9f95f5bf23e6c"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            19,
+            36,
+            100,
+            92
+          ],
+          "sha256": "96e775b31ffbed02ab229ba4033a55ab02042d5cc06337a496e9992c74aebf43"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            19,
+            35,
+            100,
+            93
+          ],
+          "sha256": "be810e69ab3320b1f80c74bcbc1c65ab97124a9a0ebc707095631347732b97d6"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            20,
+            34,
+            101,
+            94
+          ],
+          "sha256": "91cce9a21596182c61b59eea95f26b116a769c1ca5ddc1fe30d927624882e59b"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            20,
+            35,
+            101,
+            94
+          ],
+          "sha256": "461a754ad3abbae784277157c90f889852eb927e6d846a731cedc3cc933b8db9"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            20,
+            35,
+            100,
+            94
+          ],
+          "sha256": "91dd03a464948a46ab1740bde03b8c457b49d69d6a101d660ccf94af6af6a77e"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            19,
+            35,
+            100,
+            93
+          ],
+          "sha256": "7cc188af8c61424f4a93f826d1cf38ab39ae00c202ae288aa9e65c7ad312bd3a"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            18,
+            35,
+            100,
+            93
+          ],
+          "sha256": "05ee2ae5c6c7f0b1a0cb2a310b745f33cc097d236fdcfe89c46e8cbfb30f7c17"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            18,
+            36,
+            102,
+            93
+          ],
+          "sha256": "fd491ab49eda94ee915770d2d1df0f2f9cd75e2587195eef0f2c346a42310950"
+        }
+      ]
+    },
+    {
+      "prototype": "artillery",
+      "action": "idle",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 262,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              443,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            140,
+            335,
+            303
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 140,
+            "right": 108,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              443,
+              0,
+              886,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            140,
+            336,
+            303
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 140,
+            "right": 107,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              886,
+              0,
+              1329,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            124,
+            135,
+            337,
+            303
+          ],
+          "edge_margin": {
+            "left": 124,
+            "top": 135,
+            "right": 106,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1329,
+              0,
+              1772,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            123,
+            135,
+            337,
+            303
+          ],
+          "edge_margin": {
+            "left": 123,
+            "top": 135,
+            "right": 106,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              443,
+              443,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            139,
+            336,
+            303
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 139,
+            "right": 107,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              443,
+              443,
+              886,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            140,
+            336,
+            304
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 140,
+            "right": 107,
+            "bottom": 139
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              886,
+              443,
+              1329,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            123,
+            139,
+            337,
+            304
+          ],
+          "edge_margin": {
+            "left": 123,
+            "top": 139,
+            "right": 106,
+            "bottom": 139
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1329,
+              443,
+              1772,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            123,
+            141,
+            337,
+            303
+          ],
+          "edge_margin": {
+            "left": 123,
+            "top": 141,
+            "right": 106,
+            "bottom": 140
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            352,
+            352
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_idle.png",
+        "width": 1772,
+        "height": 886,
+        "mode": "RGBA",
+        "sha256": "c43055c09087687cbd81bfb2e55297691e440e6aa981f9925de8f450d8c85ca2"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            25,
+            32,
+            110,
+            97
+          ],
+          "sha256": "a6b02413de68d8939ba364d17299a5151b69670f6faf9bda1ff91baecfef6081"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            25,
+            32,
+            110,
+            97
+          ],
+          "sha256": "e4142e3676758f303e6aefaf4d0efd2c846edef926d727dae1631162fa255627"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            25,
+            30,
+            110,
+            97
+          ],
+          "sha256": "e17a3db16c73a7baae1601fa54f8d28012a89ec86d79fdb97ea60db03e874028"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            25,
+            30,
+            110,
+            97
+          ],
+          "sha256": "99de719b8276d5ef1781f7e4cbabf5fd273a9535fdb6c48f70e803af808528d6"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            24,
+            31,
+            110,
+            97
+          ],
+          "sha256": "413e65f615688bf4f0afc9a9f49ff6fcb31d0547eb0175e6164f51898b7bfd43"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            25,
+            31,
+            110,
+            97
+          ],
+          "sha256": "a0d13924da347996446f3455ecc0b09517a5cfde33f3e89d62d266276845e825"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            25,
+            31,
+            110,
+            97
+          ],
+          "sha256": "07b1128fbc079bdc3fbd19c860a9dcc8df22b0cdbefb9354e926a20e14af6387"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            25,
+            32,
+            110,
+            97
+          ],
+          "sha256": "4ce3991b2e8725647aaa8718e08ab91da6938a117a6d1acf1a9926998702fd09"
+        }
+      ]
+    },
+    {
+      "prototype": "artillery",
+      "action": "move",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 270,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              443,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            117,
+            135,
+            338,
+            307
+          ],
+          "edge_margin": {
+            "left": 117,
+            "top": 135,
+            "right": 105,
+            "bottom": 136
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              443,
+              0,
+              886,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            117,
+            134,
+            339,
+            307
+          ],
+          "edge_margin": {
+            "left": 117,
+            "top": 134,
+            "right": 104,
+            "bottom": 136
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              886,
+              0,
+              1329,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            117,
+            130,
+            340,
+            305
+          ],
+          "edge_margin": {
+            "left": 117,
+            "top": 130,
+            "right": 103,
+            "bottom": 138
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1329,
+              0,
+              1772,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            118,
+            130,
+            341,
+            307
+          ],
+          "edge_margin": {
+            "left": 118,
+            "top": 130,
+            "right": 102,
+            "bottom": 136
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              443,
+              443,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            116,
+            135,
+            339,
+            308
+          ],
+          "edge_margin": {
+            "left": 116,
+            "top": 135,
+            "right": 104,
+            "bottom": 135
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              443,
+              443,
+              886,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            116,
+            136,
+            339,
+            308
+          ],
+          "edge_margin": {
+            "left": 116,
+            "top": 136,
+            "right": 104,
+            "bottom": 135
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              886,
+              443,
+              1329,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            117,
+            136,
+            339,
+            307
+          ],
+          "edge_margin": {
+            "left": 117,
+            "top": 136,
+            "right": 104,
+            "bottom": 136
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1329,
+              443,
+              1772,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            118,
+            136,
+            340,
+            308
+          ],
+          "edge_margin": {
+            "left": 118,
+            "top": 136,
+            "right": 103,
+            "bottom": 135
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            86,
+            86,
+            356,
+            356
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_move.png",
+        "width": 1772,
+        "height": 886,
+        "mode": "RGBA",
+        "sha256": "12e2e91b53d0ea8f55f7090f3ad0e51d5cb68531d150e5e348b5f5bebc1d05f5"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            24,
+            31,
+            110,
+            97
+          ],
+          "sha256": "893efe93432caab0bb84cf0b614fe29e0096e2c53d4d792f4b15e5fdbd9e95f6"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            24,
+            30,
+            110,
+            97
+          ],
+          "sha256": "0da1660ffd06ddb5f5bbdb6cabee4a59b31c409b8efd58dcb616ccb8e4f08242"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            24,
+            28,
+            110,
+            97
+          ],
+          "sha256": "a3e7390ffb1d21a34bf2258d45c5b514e09520c69b17629b5698a77f84a23134"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            24,
+            29,
+            110,
+            98
+          ],
+          "sha256": "cab1dae5e0facb848e291d19f32ad308c4c8487f0e8a0fd9e5c550c5349fc9fc"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            24,
+            31,
+            110,
+            98
+          ],
+          "sha256": "9d139b43b455f5df78e0b31649c290a6b78aaab98a2cca636539ed34b7011c16"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            23,
+            31,
+            110,
+            98
+          ],
+          "sha256": "fa1c0c3fd6c6e8cb1c2ddc988c011fc729226727a12a2634f076101ffdc8391b"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            24,
+            31,
+            110,
+            98
+          ],
+          "sha256": "8689ca7abc574932b097d80f89d77abb1dbe7a21a316c56e613ee30651c97ea6"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            24,
+            31,
+            110,
+            98
+          ],
+          "sha256": "5343861184c9b39da650a590878b0722957773f40ba969f085942a87f9b207b3"
+        }
+      ]
+    },
+    {
+      "prototype": "artillery",
+      "action": "attack",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 294,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              443,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            137,
+            150,
+            307,
+            287
+          ],
+          "edge_margin": {
+            "left": 137,
+            "top": 150,
+            "right": 136,
+            "bottom": 156
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              443,
+              0,
+              886,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            138,
+            151,
+            309,
+            287
+          ],
+          "edge_margin": {
+            "left": 138,
+            "top": 151,
+            "right": 134,
+            "bottom": 156
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              886,
+              0,
+              1329,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            133,
+            152,
+            339,
+            288
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 152,
+            "right": 104,
+            "bottom": 155
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1329,
+              0,
+              1772,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            127,
+            151,
+            353,
+            288
+          ],
+          "edge_margin": {
+            "left": 127,
+            "top": 151,
+            "right": 90,
+            "bottom": 155
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              443,
+              443,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            126,
+            153,
+            352,
+            288
+          ],
+          "edge_margin": {
+            "left": 126,
+            "top": 153,
+            "right": 91,
+            "bottom": 155
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              443,
+              443,
+              886,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            130,
+            154,
+            327,
+            288
+          ],
+          "edge_margin": {
+            "left": 130,
+            "top": 154,
+            "right": 116,
+            "bottom": 155
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              886,
+              443,
+              1329,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            133,
+            154,
+            325,
+            288
+          ],
+          "edge_margin": {
+            "left": 133,
+            "top": 154,
+            "right": 118,
+            "bottom": 155
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1329,
+              443,
+              1772,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            139,
+            153,
+            308,
+            288
+          ],
+          "edge_margin": {
+            "left": 139,
+            "top": 153,
+            "right": 135,
+            "bottom": 155
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            74,
+            74,
+            368,
+            368
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_attack.png",
+        "width": 1772,
+        "height": 886,
+        "mode": "RGBA",
+        "sha256": "40b6b31c0dfe6cdbe6f02665873f5fe0d802d779d35f7b67264b64d8e92d0d9e"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            34,
+            39,
+            95,
+            88
+          ],
+          "sha256": "f45761b9eff2c95982c0197a597ff695ccbe09bcd30a8bbe991a74612d5f54b1"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            34,
+            39,
+            95,
+            88
+          ],
+          "sha256": "ae703584b5d5dfab3cc949c7f9b5b675106e049daffd431fb250bbc52e13efaf"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            33,
+            39,
+            106,
+            88
+          ],
+          "sha256": "3842fe20a76ebc5142d0dedd4c0e6af312d5004360d6a1114e328522773c268d"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            30,
+            39,
+            111,
+            88
+          ],
+          "sha256": "4191f70a89f4daa728375a8dd7adc6686ed22c8abae546d721ff923ab0750dc4"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            30,
+            40,
+            110,
+            88
+          ],
+          "sha256": "b2eaff5ba41e8cb917661223a2b73cd8c077612c25bbfc47aed1768fff8428b7"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            32,
+            40,
+            102,
+            88
+          ],
+          "sha256": "99fd8bd6af71a25f6888ef292f734920f64d7d2c76faea91382922cb58be4eb6"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            33,
+            40,
+            101,
+            88
+          ],
+          "sha256": "7c5ca0061b87a7b371336396694075eb7f30876e9762bc9b437eab4d45f4fc8a"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            35,
+            40,
+            95,
+            88
+          ],
+          "sha256": "93a5e113971acf5d1eb3a99511643361782cefca04571ad5fdda44c085742b91"
+        }
+      ]
+    },
+    {
+      "prototype": "artillery",
+      "action": "hit",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 302,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              443,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            121,
+            139,
+            336,
+            302
+          ],
+          "edge_margin": {
+            "left": 121,
+            "top": 139,
+            "right": 107,
+            "bottom": 141
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              443,
+              0,
+              886,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            117,
+            142,
+            351,
+            302
+          ],
+          "edge_margin": {
+            "left": 117,
+            "top": 142,
+            "right": 92,
+            "bottom": 141
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              886,
+              0,
+              1329,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            115,
+            151,
+            353,
+            313
+          ],
+          "edge_margin": {
+            "left": 115,
+            "top": 151,
+            "right": 90,
+            "bottom": 130
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1329,
+              0,
+              1772,
+              443
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            112,
+            150,
+            348,
+            301
+          ],
+          "edge_margin": {
+            "left": 112,
+            "top": 150,
+            "right": 95,
+            "bottom": 142
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              443,
+              443,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            121,
+            140,
+            357,
+            307
+          ],
+          "edge_margin": {
+            "left": 121,
+            "top": 140,
+            "right": 86,
+            "bottom": 136
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              443,
+              443,
+              886,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            139,
+            344,
+            303
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 139,
+            "right": 99,
+            "bottom": 140
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              886,
+              443,
+              1329,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            123,
+            138,
+            337,
+            302
+          ],
+          "edge_margin": {
+            "left": 123,
+            "top": 138,
+            "right": 106,
+            "bottom": 141
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1329,
+              443,
+              1772,
+              886
+            ],
+            "width": 443,
+            "height": 443
+          },
+          "alpha_bounds": [
+            122,
+            138,
+            337,
+            302
+          ],
+          "edge_margin": {
+            "left": 122,
+            "top": 138,
+            "right": 106,
+            "bottom": 141
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            70,
+            70,
+            372,
+            372
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/artillery_hit.png",
+        "width": 1772,
+        "height": 886,
+        "mode": "RGBA",
+        "sha256": "f75f2d6c545d48438bd2b91c55821e25a169c8f82e0f60de530df0450c3ed046"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            29,
+            36,
+            104,
+            92
+          ],
+          "sha256": "f1bc895052189172d95f42a61c76c41a150866fcc4b047d81ab2f027491fdcea"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            28,
+            37,
+            109,
+            92
+          ],
+          "sha256": "89070fc6e04f1ac966ba8caf3284530e60522dd99076ab71abbadcf337013a8c"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            27,
+            40,
+            110,
+            96
+          ],
+          "sha256": "d0e8215862142bc7bf72b45ac758249c22c91c78c94518a2d1de9b1b2f03db11"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            26,
+            40,
+            108,
+            92
+          ],
+          "sha256": "25b5660d7d13f5e81d31fdd375d5a86cffb69a5a50f45ed6c1390a27cb9b406b"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            29,
+            36,
+            111,
+            94
+          ],
+          "sha256": "2fd116062e367fade3cfa4d3dd1f4332fbfd4c47eb058772930f095b37d36f02"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            30,
+            35,
+            106,
+            92
+          ],
+          "sha256": "3a6e1e07dbfb6b437f092f6ab9806d43f92a063dfc4a0c2d4005ebf4fd1eac95"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            30,
+            35,
+            104,
+            92
+          ],
+          "sha256": "d60680e6845af64e0b219dc6ba1a06b5516ec97a166fabf6e2fb67a71e14b7c2"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            30,
+            35,
+            104,
+            92
+          ],
+          "sha256": "9c6d36c65bb1e23ccdf8d4a92387631106a7d7ffa8929662d8db7a6a22c03487"
+        }
+      ]
+    },
+    {
+      "prototype": "armored",
+      "action": "idle",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 362,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              604,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            173,
+            173,
+            459,
+            416
+          ],
+          "edge_margin": {
+            "left": 173,
+            "top": 173,
+            "right": 145,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              604,
+              0,
+              1208,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            156,
+            172,
+            458,
+            416
+          ],
+          "edge_margin": {
+            "left": 156,
+            "top": 172,
+            "right": 146,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              1208,
+              0,
+              1812,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            148,
+            173,
+            458,
+            416
+          ],
+          "edge_margin": {
+            "left": 148,
+            "top": 173,
+            "right": 146,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1812,
+              0,
+              2416,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            151,
+            173,
+            462,
+            416
+          ],
+          "edge_margin": {
+            "left": 151,
+            "top": 173,
+            "right": 142,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              604,
+              604,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            151,
+            173,
+            458,
+            415
+          ],
+          "edge_margin": {
+            "left": 151,
+            "top": 173,
+            "right": 146,
+            "bottom": 189
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              604,
+              604,
+              1208,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            157,
+            172,
+            458,
+            415
+          ],
+          "edge_margin": {
+            "left": 157,
+            "top": 172,
+            "right": 146,
+            "bottom": 189
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              1208,
+              604,
+              1812,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            161,
+            172,
+            460,
+            415
+          ],
+          "edge_margin": {
+            "left": 161,
+            "top": 172,
+            "right": 144,
+            "bottom": 189
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1812,
+              604,
+              2416,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            172,
+            172,
+            462,
+            415
+          ],
+          "edge_margin": {
+            "left": 172,
+            "top": 172,
+            "right": 142,
+            "bottom": 189
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            121,
+            121,
+            483,
+            483
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_idle.png",
+        "width": 2416,
+        "height": 1208,
+        "mode": "RGBA",
+        "sha256": "0f4ebb151cd58712a4cee22bd86b1c518ebf3efeef75b44dc7c4e1b5d6322699"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            27,
+            27,
+            109,
+            97
+          ],
+          "sha256": "79d972efed0bc3710b518a8f86dfae73e090829636a50607e3d99d0d8f0d48ec"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            22,
+            27,
+            109,
+            97
+          ],
+          "sha256": "9d8fc1a1d31ad650f8091d70a1a2303e9afd3a39c5c1b86cbecffe7b2078bb37"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            20,
+            27,
+            109,
+            97
+          ],
+          "sha256": "fdbaf277468b26cb0553f795286c92240847a42f6feefc58484ae0cbf62a0757"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            21,
+            27,
+            110,
+            97
+          ],
+          "sha256": "6141da2b5f75158ea3cc7814c2e4e55b1a9b2e54c5572cdc950b175075256783"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            21,
+            27,
+            109,
+            97
+          ],
+          "sha256": "657c60504cc1414fb996308448832e4922f45ae72dbf80fd3ff99214ea143118"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            23,
+            27,
+            109,
+            97
+          ],
+          "sha256": "616d74a49151aac28efee373eb24a9afdb10c5c17e508e2c218a2f5b1bb0021f"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            24,
+            27,
+            110,
+            97
+          ],
+          "sha256": "1cbfc18866fce0f4370a062c32be2fb238177f80e1b164040e273d4ef4cfa67c"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            27,
+            27,
+            110,
+            97
+          ],
+          "sha256": "d95ad453a2f6c4579780609f95305e8ef89a845671a095d0c2c51e01427f39cc"
+        }
+      ]
+    },
+    {
+      "prototype": "armored",
+      "action": "move",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 398,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              604,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            179,
+            180,
+            445,
+            410
+          ],
+          "edge_margin": {
+            "left": 179,
+            "top": 180,
+            "right": 159,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              604,
+              0,
+              1208,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            159,
+            180,
+            444,
+            410
+          ],
+          "edge_margin": {
+            "left": 159,
+            "top": 180,
+            "right": 160,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              1208,
+              0,
+              1812,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            144,
+            180,
+            445,
+            410
+          ],
+          "edge_margin": {
+            "left": 144,
+            "top": 180,
+            "right": 159,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1812,
+              0,
+              2416,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            127,
+            181,
+            445,
+            410
+          ],
+          "edge_margin": {
+            "left": 127,
+            "top": 181,
+            "right": 159,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              604,
+              604,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            124,
+            178,
+            446,
+            410
+          ],
+          "edge_margin": {
+            "left": 124,
+            "top": 178,
+            "right": 158,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              604,
+              604,
+              1208,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            125,
+            180,
+            444,
+            410
+          ],
+          "edge_margin": {
+            "left": 125,
+            "top": 180,
+            "right": 160,
+            "bottom": 194
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              1208,
+              604,
+              1812,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            140,
+            180,
+            445,
+            411
+          ],
+          "edge_margin": {
+            "left": 140,
+            "top": 180,
+            "right": 159,
+            "bottom": 193
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1812,
+              604,
+              2416,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            156,
+            179,
+            445,
+            411
+          ],
+          "edge_margin": {
+            "left": 156,
+            "top": 179,
+            "right": 159,
+            "bottom": 193
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            103,
+            103,
+            501,
+            501
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_move.png",
+        "width": 2416,
+        "height": 1208,
+        "mode": "RGBA",
+        "sha256": "b7d8485d3b9f0597f7a9ea333d3d9c26d8ebd875ccfe14fed7921aea35b7c425"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            32,
+            32,
+            102,
+            93
+          ],
+          "sha256": "a590df8f18ce6a6eddd0f48fa63327c825a3084dd49fb59329ecdd7a4f814e1f"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            27,
+            32,
+            101,
+            93
+          ],
+          "sha256": "41ca4f9a692cae5b8b3d07270c8cd353fda94c854f67ada0f0fdb71479b4ad89"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            23,
+            32,
+            102,
+            93
+          ],
+          "sha256": "28d99982801b5e60e2a975ef1e963bb4ca93721ccc811ec4ad546a8d2c3bc579"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            19,
+            32,
+            102,
+            92
+          ],
+          "sha256": "f16d3cb3bb6f72613494f60136becabdf15a3d9c3aa0a3fec3476469ba63fe68"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            18,
+            32,
+            102,
+            92
+          ],
+          "sha256": "40c91f34658886b09ee92483aa1715063cf56bfb95e7e83e4044d920c57b2dba"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            18,
+            32,
+            101,
+            92
+          ],
+          "sha256": "f32c1c8ee8cc767cbede64d2c92a80f70507956493b6977563d9d3e394e7ebef"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            22,
+            32,
+            102,
+            93
+          ],
+          "sha256": "f4a7c45662498e6c8e5279aebe79c1cbf1d9c5acd2c2b310c83e4f4d6728131c"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            26,
+            32,
+            102,
+            92
+          ],
+          "sha256": "cd887fe29f930e780ecbf6ff4f1345c7edb30a73e9b633a4e6e5a49e44711462"
+        }
+      ]
+    },
+    {
+      "prototype": "armored",
+      "action": "attack",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 424,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              604,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            172,
+            455,
+            418
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 172,
+            "right": 149,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              604,
+              0,
+              1208,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            171,
+            454,
+            418
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 171,
+            "right": 150,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              1208,
+              0,
+              1812,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            169,
+            480,
+            416
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 169,
+            "right": 124,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1812,
+              0,
+              2416,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            170,
+            172,
+            493,
+            419
+          ],
+          "edge_margin": {
+            "left": 170,
+            "top": 172,
+            "right": 111,
+            "bottom": 185
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              604,
+              604,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            173,
+            489,
+            418
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 173,
+            "right": 115,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              604,
+              604,
+              1208,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            172,
+            485,
+            417
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 172,
+            "right": 119,
+            "bottom": 187
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              1208,
+              604,
+              1812,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            168,
+            172,
+            474,
+            418
+          ],
+          "edge_margin": {
+            "left": 168,
+            "top": 172,
+            "right": 130,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1812,
+              604,
+              2416,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            167,
+            172,
+            455,
+            418
+          ],
+          "edge_margin": {
+            "left": 167,
+            "top": 172,
+            "right": 149,
+            "bottom": 186
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            90,
+            90,
+            514,
+            514
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_attack.png",
+        "width": 2416,
+        "height": 1208,
+        "mode": "RGBA",
+        "sha256": "dde605a5a6fa3803501a6944e365577f24ba6cb58d736311877853506e1de966"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            31,
+            32,
+            102,
+            93
+          ],
+          "sha256": "edda2904fcf2fe9af04fd24d8d8b2b96b56841fe0f0b81b9a8eb84d3e7a55c21"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            31,
+            32,
+            102,
+            93
+          ],
+          "sha256": "0d3f5587226dbbd57255f40dfeb76b6b4b7fa36d7b23a1b7ff5114f5b8333601"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            31,
+            31,
+            108,
+            92
+          ],
+          "sha256": "9930ab1ceb877ba2d6b23ee7e141aade74abf049158883e7eceb257409390260"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            32,
+            32,
+            111,
+            93
+          ],
+          "sha256": "caf2d49827e944faead04941fea618c51bac63dc971fb2a37a227268a281a8b5"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            31,
+            32,
+            110,
+            93
+          ],
+          "sha256": "9bdee0b09dee445c7382b564badd6c2e40a7ad48c607032b0833ea8b4aaa9aca"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            31,
+            32,
+            109,
+            93
+          ],
+          "sha256": "49132176341070686b36baaa3015f3155724f47c0253349b8db358d7c9aa00ea"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            31,
+            32,
+            106,
+            93
+          ],
+          "sha256": "bc13c3bf30514f7f1b38e0cb67bcdaf93f3f69ce40785827763672e9d4dbc9d1"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            31,
+            32,
+            102,
+            93
+          ],
+          "sha256": "f0b9c3e6726ec8f55dbf928d401609d2b2777f5cd2919435aeee06942e32a356"
+        }
+      ]
+    },
+    {
+      "prototype": "armored",
+      "action": "hit",
+      "source_columns": 4,
+      "source_rows": 2,
+      "frame_count": 8,
+      "shared_crop_side_px": 358,
+      "cells": [
+        {
+          "index": 0,
+          "source_cell": {
+            "column": 0,
+            "row": 0,
+            "box": [
+              0,
+              0,
+              604,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            171,
+            171,
+            459,
+            418
+          ],
+          "edge_margin": {
+            "left": 171,
+            "top": 171,
+            "right": 145,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 1,
+          "source_cell": {
+            "column": 1,
+            "row": 0,
+            "box": [
+              604,
+              0,
+              1208,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            168,
+            171,
+            458,
+            418
+          ],
+          "edge_margin": {
+            "left": 168,
+            "top": 171,
+            "right": 146,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 2,
+          "source_cell": {
+            "column": 2,
+            "row": 0,
+            "box": [
+              1208,
+              0,
+              1812,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            157,
+            459,
+            418
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 157,
+            "right": 145,
+            "bottom": 186
+          }
+        },
+        {
+          "index": 3,
+          "source_cell": {
+            "column": 3,
+            "row": 0,
+            "box": [
+              1812,
+              0,
+              2416,
+              604
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            146,
+            460,
+            417
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 146,
+            "right": 144,
+            "bottom": 187
+          }
+        },
+        {
+          "index": 4,
+          "source_cell": {
+            "column": 0,
+            "row": 1,
+            "box": [
+              0,
+              604,
+              604,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            170,
+            155,
+            459,
+            416
+          ],
+          "edge_margin": {
+            "left": 170,
+            "top": 155,
+            "right": 145,
+            "bottom": 188
+          }
+        },
+        {
+          "index": 5,
+          "source_cell": {
+            "column": 1,
+            "row": 1,
+            "box": [
+              604,
+              604,
+              1208,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            168,
+            153,
+            458,
+            417
+          ],
+          "edge_margin": {
+            "left": 168,
+            "top": 153,
+            "right": 146,
+            "bottom": 187
+          }
+        },
+        {
+          "index": 6,
+          "source_cell": {
+            "column": 2,
+            "row": 1,
+            "box": [
+              1208,
+              604,
+              1812,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            169,
+            160,
+            459,
+            417
+          ],
+          "edge_margin": {
+            "left": 169,
+            "top": 160,
+            "right": 145,
+            "bottom": 187
+          }
+        },
+        {
+          "index": 7,
+          "source_cell": {
+            "column": 3,
+            "row": 1,
+            "box": [
+              1812,
+              604,
+              2416,
+              1208
+            ],
+            "width": 604,
+            "height": 604
+          },
+          "alpha_bounds": [
+            170,
+            171,
+            460,
+            417
+          ],
+          "edge_margin": {
+            "left": 170,
+            "top": 171,
+            "right": 144,
+            "bottom": 187
+          }
+        }
+      ],
+      "crops": [
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        },
+        {
+          "crop_box": [
+            123,
+            123,
+            481,
+            481
+          ],
+          "atlas_padding_px": 12
+        }
+      ],
+      "source": {
+        "path": "Project/project-keynes/assets/military/formations/prototype/source/v3/armored_hit.png",
+        "width": 2416,
+        "height": 1208,
+        "mode": "RGBA",
+        "sha256": "8f1607be9d94550b85ae9736840850b6b82579c391e45ca04b1c2bb78b94a937"
+      },
+      "atlas_frames": [
+        {
+          "index": 0,
+          "alpha_bounds": [
+            26,
+            26,
+            110,
+            98
+          ],
+          "sha256": "2acf6bd3744471af0a9833ed0e3cb6a8fb66e6f111d9af4cedeaec3ed4e4e37b"
+        },
+        {
+          "index": 1,
+          "alpha_bounds": [
+            25,
+            26,
+            110,
+            98
+          ],
+          "sha256": "46b92b265eba6b9eaa9b54c4936384618c190c6a43df6598d0f747fd9706491c"
+        },
+        {
+          "index": 2,
+          "alpha_bounds": [
+            25,
+            22,
+            110,
+            98
+          ],
+          "sha256": "1158e1dc0c0743ea521e906615797eae93015ed41c4ed5e8eb7feb268e8a509d"
+        },
+        {
+          "index": 3,
+          "alpha_bounds": [
+            25,
+            19,
+            110,
+            98
+          ],
+          "sha256": "b0f27d02a462675ec04e6d9590843997e73d9de4e797a684a49ad23ba8e88128"
+        },
+        {
+          "index": 4,
+          "alpha_bounds": [
+            25,
+            21,
+            110,
+            97
+          ],
+          "sha256": "13c55bc0522c9a9238d19bb96d5b47d72ef1fb7a280e29ebcf334925876b5c07"
+        },
+        {
+          "index": 5,
+          "alpha_bounds": [
+            25,
+            21,
+            110,
+            98
+          ],
+          "sha256": "9fdde37802a5b090de40da7daf666af6e2b86390df79f94820a0529d9e4d9270"
+        },
+        {
+          "index": 6,
+          "alpha_bounds": [
+            25,
+            23,
+            110,
+            98
+          ],
+          "sha256": "de3f7c14bc3d3bab2e1f57898ca83c99a10cfd3d1bf2940060f393d841db5e55"
+        },
+        {
+          "index": 7,
+          "alpha_bounds": [
+            25,
+            26,
+            110,
+            98
+          ],
+          "sha256": "13fd50656e79f23c150d72b43a368ee2d96470fdea9285795e6ab2c3d68eede8"
+        }
+      ]
+    }
+  ]
+}

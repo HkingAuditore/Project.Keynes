@@ -1,6 +1,22 @@
 // terrain_surface_detail.gdshaderinc
 // Static terrain-edge antialiasing and one-sample world-space micro surface.
 // Dynamic cell state always remains owned by map_index_atlas's hard primary cell.
+//
+// [pixel-scale-detail 2026-11-03] 世界尺度 ↔ 像素尺度的换算（pk_* helper）统一放在
+// pixel_scale.gdshaderinc，并在本文件顶部引入；biome_detail.gdshaderinc 从同一份取用。
+// 之所以 helper 不直接写在本文件顶部：include 顺序上 biome_detail 在前
+// （本文件的 compute_terrain_static_material 要调它的 procedural_biome_detail），
+// GLSL 没有函数前向声明，写在后面的文件里 biome_detail 看不见。
+#include "res://shaders/include/pixel_scale.gdshaderinc"
+
+// [pixel-scale-detail 2026-11-03] micro 平铺的**世界尺度是常量**（一级 110 world
+// units/张，二级 24.2 world units/张 ≈ 4.5× 频率），分级只靠权重交叉淡入。
+// 任何"随 zoom 改 UV 尺度"的写法都会让纹理在缩放时游动，禁止。
+// terrain_micro_data.png 是 256² 平铺 ⇒ 一级纹素 110/256 ≈ 0.4297 world units，
+// 这个纹素尺寸是"一级 micro 从几像素开始发糊"的唯一判据（见 apply_terrain_micro_surface）。
+const float PK_MICRO_TILE_WORLD = 110.0;
+const float PK_MICRO_DETAIL_TILE_SCALE = 0.22;
+const float PK_MICRO_TEXEL_WORLD = 110.0 / 256.0;
 
 struct TerrainStaticMaterial {
 	vec3 color;
@@ -143,13 +159,43 @@ float terrain_mobile_dither_uv_threshold(vec2 uv, vec2 wp) {
 // the broad ecotone probability, while DitherUV converts it into stable map-
 // anchored coverage. Land Dither is strictly a distant-view aid and fades to
 // zero before close zoom, where enlarged 8x8 atlas texels become visible.
-float terrain_land_dither_zoom_strength() {
+// [dither-subpixel-guard 2026-11-03] 真机反馈"边缘闪烁与地图缩放有关"：8x8 Bayer 的
+// 取样格子锚在 atlas 纹素上（terrain_mobile_dither_uv_threshold 用 floor(uv*dims)），
+// 当缩放让**一个 dither 纹素小于约 1 个屏幕像素**时，亚像素移动就会让相邻像素在
+// 主/副材质之间来回翻转 → 走动或改变缩放时出现明显闪烁。
+// 这里按"一个 dither 纹素占几个屏幕像素"淡出：<0.85px 完全关掉（退回平滑 edge_w
+// 过渡），>2.2px 才完整启用。只在移动端生效，桌面按原样保留。
+// [pixel-scale-detail 2026-11-03] 口径修正：旧写法 camera_zoom * texel_world 漏了
+// content_scale（移动端 CANVAS_ITEMS ≈1.375），把"一个 dither 纹素占几个屏幕像素"
+// 低估 37% ⇒ 淡出窗口整体推迟，闪烁其实比设计值更久。改用 pk_px_per_world_unit()
+// （已含 content_scale）。阈值 0.85 / 2.2 px 不变：它们是按**物理像素**标的，
+// 本来就不该随平台改。
+float terrain_dither_subpixel_fade() {
 #if defined(PK_MOBILE_ANY)
-	// Keep the inexpensive mobile treatment for longer, but never carry its
-	// atlas-sized blocks into the closest camera range.
-	return 1.0 - smoothstep(1.65, 2.45, camera_zoom);
+	vec2 dims = max(visual_reference_resolution, vec2(1.0));
+	float atexel_world = world_size.x / max(dims.x, 1.0);
+	float px_per_texel = atexel_world * pk_px_per_world_unit();
+	return smoothstep(0.85, 2.2, px_per_texel);
 #else
-	return 1.0 - smoothstep(1.20, 2.05, camera_zoom);
+	return 1.0;
+#endif
+}
+
+// [pixel-scale-detail 2026-11-03] 门槛从 camera_zoom 口径改成 hex_px 口径
+// （= 一个 hex 占多少**物理**像素，见 pk_hex_px）。数值来源见
+// terrain_micro_zoom_alpha() 的注释（同一张换算表：桌面 camera_zoom × hex_size 22）。
+// 移动端 dither 旧阈值（1.65 / 2.45）在物理像素口径下是 49.9 / 74.1 hex_px，
+// 比桌面晚 1.9×；本轮统一到桌面刻度，避免"同一缩放档在两端口径不同"。
+float terrain_land_dither_zoom_strength() {
+	float hex_px = pk_hex_px();
+#if defined(PK_MOBILE_ANY)
+	// [dither-restored 2026-11-03] 之前把移动端 dither 直接关成 0，是**误判**：玩家说的
+	// "边缘闪烁"就是地块边缘被放大成方块（纹素密度不足），dither 的噪声本来在把硬边
+	// 打碎、关掉之后方块边缘反而更扎眼。现在恢复原公式，真正的解法是提高纹素密度
+	// （visual_tile_layout.gd 的 12/16/20）。
+	return (1.0 - smoothstep(26.4, 45.1, hex_px)) * terrain_dither_subpixel_fade();
+#else
+	return 1.0 - smoothstep(26.4, 45.1, hex_px);
 #endif
 }
 
@@ -323,35 +369,39 @@ TerrainStaticMaterial compute_terrain_static_material(
 	return out_mat;
 }
 
+// [pixel-scale-detail 2026-11-03] micro 淡入口径：camera_zoom → hex_px
+//   hex_px = hex_size × pk_px_per_world_unit()（一个 hex 占多少物理像素，
+//   content_scale 已含在 pk_px_per_world_unit 里，阈值不再手写 1.375）。
+//
+// 阈值换算表（桌面 content_scale = 1 ⇒ hex_px = 原阈值 × hex_size 22）：
+//   vq>=2 : 1.30 / 1.95  → 28.6 / 42.9 hex_px
+//   vq>=1 : 1.50 / 2.15  → 33.0 / 47.3 hex_px
+//   vq=0  : 2.05 / 2.75  → 45.1 / 60.5 hex_px
+// 旧移动端阈值（1.55/2.20 · 1.80/2.50 · 2.35/2.95 camera_zoom）在物理像素口径下
+// 是 46.9/66.6 · 54.5/75.6 · 71.1/89.2 hex_px，比桌面晚约 1.6× —— 其中 1.375× 是
+// content_scale 漏算（bug），剩下 1.19× 是历史补偿。本轮统一到桌面刻度：两端在
+// **同一个纹素放大倍数**上看到微表面，才谈得上"观感一致"；移动端仍靠
+// visual_quality 分档（HIGH/MID/LOW）与 terrain_micro_normal_quality() 控强度。
+//
+// micro-soften 意图保留（见下）：中距鸟瞰（hex_px < 28.6 ≈ 桌面 zoom 1.3）完全不叠
+// 微表面，只让宏观坡向说话；这段"推迟"原样留在阈值里。
 float terrain_micro_zoom_alpha() {
+	float hex_px = pk_hex_px();
 	float fade_start;
 	float fade_end;
 	// [micro-soften 2026-07-31] 整体推迟约 0.25 zoom：中距鸟瞰只看宏观坡向，
 	// 微表面留给真正近距。否则中距就开始叠砂砾法线，全图发碎。
-#if defined(PK_MOBILE_ANY)
 	if (visual_quality >= 2) {
-		fade_start = 1.55;
-		fade_end = 2.20;
+		fade_start = 28.6;
+		fade_end = 42.9;
 	} else if (visual_quality >= 1) {
-		fade_start = 1.80;
-		fade_end = 2.50;
+		fade_start = 33.0;
+		fade_end = 47.3;
 	} else {
-		fade_start = 2.35;
-		fade_end = 2.95;
+		fade_start = 45.1;
+		fade_end = 60.5;
 	}
-#else
-	if (visual_quality >= 2) {
-		fade_start = 1.30;
-		fade_end = 1.95;
-	} else if (visual_quality >= 1) {
-		fade_start = 1.50;
-		fade_end = 2.15;
-	} else {
-		fade_start = 2.05;
-		fade_end = 2.75;
-	}
-#endif
-	return smoothstep(fade_start, fade_end, camera_zoom);
+	return smoothstep(fade_start, fade_end, hex_px);
 }
 
 float terrain_micro_normal_quality() {
@@ -367,10 +417,37 @@ float terrain_micro_normal_quality() {
 
 vec2 terrain_micro_uv(vec2 wp) {
 	// 64→110：同一张微纹理铺得更稀，凹凸特征从"砂砾点"变成更可读的地面起伏。
-	return terrain_periodic_world_uv(wp, 110.0);
+	return terrain_periodic_world_uv(wp, PK_MICRO_TILE_WORLD);
 }
 
-SurfaceParams apply_terrain_micro_surface(
+// [pixel-scale-detail 2026-11-03] 二级 micro：**同一张**纹理、常量世界尺度
+// 24.2 world units/张（≈4.5× 频率），给一级在近景被放大到 2.5px/纹素之后接管。
+// 世界尺度是常量 ⇒ 缩放时纹理不游动；两级之间只做权重交叉淡入。
+vec2 terrain_micro_detail_uv(vec2 wp) {
+	return terrain_periodic_world_uv(wp, PK_MICRO_TILE_WORLD * PK_MICRO_DETAIL_TILE_SCALE);
+}
+
+// 单层 micro 采样（两级共用同一个采样器/同一层，不新增 sampler）。
+// 只在真的能采到 micro 的变体里定义：预算后端若没拿到 micro array 层，
+// uniforms 里根本不声明 terrain_micro_tex，这个函数体不能存在。
+#if defined(PK_TERRAIN_MICRO_ARRAY) || !defined(PK_WEB_TEXTURE_BUDGET)
+vec4 terrain_micro_fetch(vec2 micro_uv) {
+#ifdef PK_TERRAIN_MICRO_ARRAY
+	return texture(terrain_material_tex, vec3(micro_uv, float(terrain_material_micro_layer)));
+#else
+	return texture(terrain_micro_tex, micro_uv);
+#endif
+}
+#endif
+
+// [pixel-scale-detail 2026-11-03] micro 的实现在两个变体里必须**编译期存在/不存在**：
+// 预算后端没拿到 micro array 层时（桌面 Compatibility tiled / HIGH 水面程序）
+// uniforms 里既不声明 terrain_micro_tex 也没有 micro 层，任何对采样器的引用
+// （哪怕是 runtime 不可达的 return 之后的死代码）都会在语义分析阶段报
+// "No matching function found"。所以整段实现挂在下面这个编译开关里，
+// 由 apply_terrain_micro_surface() 在开关之外做分发。
+#if defined(PK_TERRAIN_MICRO_ARRAY) || !defined(PK_WEB_TEXTURE_BUDGET)
+SurfaceParams apply_terrain_micro_surface_impl(
 		SurfaceParams surface,
 		int biome,
 		float mixed_micro_strength,
@@ -384,28 +461,45 @@ SurfaceParams apply_terrain_micro_surface(
 	// 是共享 terrain_material_tex 的第 5 层（index=terrain_material_micro_layer=4），
 	// 不再用被裁掉的独立 terrain_micro_tex 采样器。visual_quality<=0（Web LOW）与
 	// layer<0（旧图/绑定失败）在采样前返回，LOW 行为与 B 之前逐像素一致。
-	// 单次 micro 采样（三个编译分支共用后续算式；预算后端无 micro 槽时提前 return，
-	// 因此 micro 的默认值不会真正参与着色）。
-	vec4 micro = vec4(0.5);
+	// [pixel-scale-detail 2026-11-03] zoom_alpha 提前到采样**之前**：远景（hex_px 未到
+	// 门槛）整段返回，micro 的 1~2 次采样一次都不发生 —— 远景不付任何采样钱。
+	// 近景多一级 micro（二级 = 同一张纹理的 4.5× 频率），两级线性交叉淡入。
+	float zoom_alpha = terrain_micro_zoom_alpha();
+	if (zoom_alpha <= 0.0001) {
+		return surface;
+	}
 #ifdef PK_TERRAIN_MICRO_ARRAY
 	if (visual_quality <= 0 || terrain_material_micro_layer < 0) {
 		return surface;
 	}
-	micro = texture(terrain_material_tex,
-			vec3(terrain_micro_uv(wp), float(terrain_material_micro_layer)));
-#elif defined(PK_WEB_TEXTURE_BUDGET)
-	// 预算后端但没拿到 micro array 的变体（桌面 Compatibility tiled / HIGH 水面程序）
-	// 没有 2D terrain_micro_tex 采样器，保持 B 之前的行为：不叠 micro。
-	return surface;
 #else
 	if (!has_terrain_micro_tex) {
 		return surface;
 	}
-	micro = texture(terrain_micro_tex, terrain_micro_uv(wp));
 #endif
-	float zoom_alpha = terrain_micro_zoom_alpha();
-	if (zoom_alpha <= 0.0001) {
-		return surface;
+	vec4 micro = terrain_micro_fetch(terrain_micro_uv(wp));
+	// 二级 micro：一级纹素投影 ≥2.5px 时开始淡入、6px 满（pk_near_detail_blend）。
+	// 一级纹素只有 110/256 ≈ 0.43 world，投影到 6px 需要 px_per_world ≈ 14（桌面
+	// camera_zoom 13.96 / 移动 10.15）—— 远超两端实际上限：桌面玩家缩放被
+	// player_controller 夹到 ≤4.0，手机又因 content_scale 补偿把上限收紧到 6/1.375≈4.36。
+	// 两端在各自上限处都只有 ≈2.6px/纹素、t≈0.02，**当前参数下二级几乎不启用**。
+	// 保留它是因为机制本身（PK_DETAIL_PX_START/FULL + 同 sampler 二次采样）被
+	// biome 近景高频（pk_apply_near_detail，移动端 0.91~2.18 就满权重）复用；
+	// 若将来放宽 zoom 上限，或把 PK_MICRO_DETAIL_TILE_SCALE 调大（更粗的二级），
+	// 这一段会立刻生效。t≈0 时下面的采样分支整段跳过，不产生任何成本。
+	// vq=0 的门是"零额外采样"契约：上面 zoom_alpha 与 visual_quality 早退已经保证
+	// 走不到这里（mobile LOW 在 `visual_quality <= 0` 就返回了），所以这里只做 vq 判档。
+	// 不在编译期按 PK_QUALITY_LOW 裁：Web 全档位都编译 LOW 变体（QUALITY_PREFIX_LOW），
+	// 裁掉会让 Web MID/HIGH（vq>=1）在浏览器里同样拿不到近景细节。
+	if (visual_quality >= 1) {
+		float micro_detail_t = pk_near_detail_blend(wp, PK_MICRO_TEXEL_WORLD);
+		if (micro_detail_t > 0.001) {
+			vec4 micro_detail = terrain_micro_fetch(terrain_micro_detail_uv(wp));
+			// 法线 / 粗糙 / 颗粒按同一权重线性插值：两级权重和恒为 1 ⇒ 能量守恒，
+			// 近景不会因为叠加而对比度爆炸（代价是 t=0.5 处两级不相关时 RMS 略降，
+			// 这是标准 crossfade 行为，比"两级相加"安全）。
+			micro = mix(micro, micro_detail, micro_detail_t);
+		}
 	}
 	vec2 micro_xy = micro.rg * 2.0 - 1.0;
 	float organic = (biome == B_GRASSLAND || biome == B_FOREST || biome == B_PLAIN
@@ -434,6 +528,26 @@ SurfaceParams apply_terrain_micro_surface(
 	float grain = (micro.a * 2.0 - 1.0) * 0.028 * strength * snow_flatten;
 	surface.base_color *= 1.0 + grain;
 	return surface;
+}
+#endif
+
+// 对外入口（land_pipeline 唯一调用点）。预算后端但没拿到 micro array 的变体
+// （桌面 Compatibility tiled / HIGH 水面程序）没有 micro 采样器，保持 B 之前的行为：
+// 不叠 micro，直接返回原 surface。
+SurfaceParams apply_terrain_micro_surface(
+		SurfaceParams surface,
+		int biome,
+		float mixed_micro_strength,
+		vec2 wp,
+		float moist,
+		float vitality,
+		float snow_amount) {
+#if defined(PK_TERRAIN_MICRO_ARRAY) || !defined(PK_WEB_TEXTURE_BUDGET)
+	return apply_terrain_micro_surface_impl(
+			surface, biome, mixed_micro_strength, wp, moist, vitality, snow_amount);
+#else
+	return surface;
+#endif
 }
 
 vec3 terrain_index_debug_color(int cid) {

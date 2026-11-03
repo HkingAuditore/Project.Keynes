@@ -1,0 +1,1119 @@
+[gd_scene load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/military_workspace.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="2_nav"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="3_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="4_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="5_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="6_ledger"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_frame_panel.gd" id="7_frame"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_codex_grid.gd" id="8_codex"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_war_card.tscn" id="9_war"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="10_insights"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="11_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/money_icon.tscn" id="12_money"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_toggle_list.tscn" id="13_toggle"]
+
+[node name="MilitaryWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 6
+
+[node name="HeaderPlate" type="PanelContainer" parent="Root"]
+layout_mode = 2
+theme_type_variation = &"PKArchivePage"
+
+[node name="ChapterNav" type="Control" parent="Root/HeaderPlate"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(392, 38)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 0
+script = ExtResource("2_nav")
+
+[node name="StatusLabel" type="Label" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="PageViewport" type="ScrollContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PageColumn" type="VBoxContainer" parent="Root/PageViewport"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="KpiStrip" type="PanelContainer" parent="Root/PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierBand"
+
+[node name="KpiRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/KpiStrip"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="PageStack" type="MarginContainer" parent="Root/PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 16
+
+[node name="OverviewPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OverviewGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="BarsCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="BarsColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/BarsCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="CompositionBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/BarsCard/BarsColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_stacked")
+
+[node name="DeploymentBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/BarsCard/BarsColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_stacked")
+
+[node name="SpendBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/BarsCard/BarsColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_stacked")
+
+[node name="InsightNote" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_type_variation = &"PKDossierNote"
+
+[node name="InsightBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/InsightNote"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InsightKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/InsightNote/InsightBox"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "军队总览"
+
+[node name="OverviewInsights" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/InsightNote/InsightBox" instance=ExtResource("10_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="WarHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WarKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "进行中的战争"
+
+[node name="WarLink" type="Button" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/WarHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKDossierLink"
+text = "战争详情 ›"
+
+[node name="OverviewWarGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="OverviewWar0" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewWarGrid" instance=ExtResource("9_war")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="OverviewWar1" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewWarGrid" instance=ExtResource("9_war")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="OverviewWarEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text = "军务要点"
+
+[node name="ForcesPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="TargetCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage"]
+layout_mode = 2
+script = ExtResource("7_frame")
+
+[node name="TargetBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TargetHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TargetKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierKicker"
+text = "招募目标"
+
+[node name="ModeHeadcount" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetHeader"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "按人数"
+
+[node name="ModeBudget" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetHeader"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "按预算"
+
+[node name="TargetRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TargetSlider" type="HSlider" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+max_value = 20000.0
+step = 100.0
+
+[node name="Readout" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow"]
+custom_minimum_size = Vector2(170, 0)
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="ValueRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TargetValueIcon" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout/ValueRow" instance=ExtResource("12_money")]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="TargetValue" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout/ValueRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+text = "0 人"
+
+[node name="CostRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="CostCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout/CostRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierCaption"
+text = "预计日军费"
+
+[node name="CostIcon" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout/CostRow" instance=ExtResource("12_money")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CostValue" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/TargetRow/Readout/CostRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PolicyRule" type="HSeparator" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox"]
+layout_mode = 2
+
+[node name="PolicyRow" type="HFlowContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+
+[node name="QualityCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierCaption"
+text = "装备采购"
+
+[node name="QualityBest" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "择优"
+tooltip_text = "优先采购高品质装备"
+
+[node name="QualityCheap" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "廉价"
+tooltip_text = "优先采购价格最低的合格装备"
+
+[node name="PolicyGap" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+custom_minimum_size = Vector2(12, 0)
+layout_mode = 2
+
+[node name="ToggleAutoRetrain" type="CheckButton" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "自动换装"
+tooltip_text = "装备过时的兵员自动改训为当前配置兵种"
+
+[node name="ToggleLevy" type="CheckButton" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "缺员征召"
+tooltip_text = "兵营空额无人应募时强制征召"
+
+[node name="ToggleAutoDischarge" type="CheckButton" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/TargetCard/TargetBox/PolicyRow"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "超编退伍"
+tooltip_text = "兵力超过目标时自动退伍"
+
+[node name="ShareCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage"]
+layout_mode = 2
+script = ExtResource("7_frame")
+
+[node name="ShareBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ShareCard"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ShareBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ShareCard/ShareBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("4_stacked")
+
+[node name="UnitShareTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ShareCard/ShareBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="ForcesGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="BarracksCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="BarracksColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/BarracksCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="BarracksHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/BarracksCard/BarracksColumn"]
+layout_mode = 2
+
+[node name="BarracksKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/BarracksCard/BarracksColumn/BarracksHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "兵营"
+
+[node name="BarracksCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/BarracksCard/BarracksColumn/BarracksHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="BarracksTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/BarracksCard/BarracksColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="TrainingCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="TrainingColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/TrainingCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="TrainingHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/TrainingCard/TrainingColumn"]
+layout_mode = 2
+
+[node name="TrainingKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/TrainingCard/TrainingColumn/TrainingHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "训练队列"
+
+[node name="TrainingCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/TrainingCard/TrainingColumn/TrainingHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="TrainingTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/ForcesGrid/TrainingCard/TrainingColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="CodexCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage"]
+layout_mode = 2
+script = ExtResource("7_frame")
+
+[node name="CodexBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/CodexCard"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CodexHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/CodexCard/CodexBox"]
+layout_mode = 2
+
+[node name="CodexKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/CodexCard/CodexBox/CodexHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "兵种图鉴"
+
+[node name="CodexToggle" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/CodexCard/CodexBox/CodexHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKDossierLink"
+toggle_mode = true
+text = "展开"
+
+[node name="CodexGrid" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ForcesPage/CodexCard/CodexBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+script = ExtResource("8_codex")
+
+[node name="ArmiesPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="ArmyGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 20
+theme_override_constants/v_separation = 14
+columns = 2
+
+[node name="ArmyListCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="ArmyListColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyListCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ArmyHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyListCard/ArmyListColumn"]
+layout_mode = 2
+
+[node name="ArmyKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyListCard/ArmyListColumn/ArmyHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "野战部队"
+
+[node name="ArmyCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyListCard/ArmyListColumn/ArmyHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ArmyTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyListCard/ArmyListColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="ArmyDetail" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="DetailBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DetailHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ArmyIcon" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/DetailHeader" instance=ExtResource("11_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="DetailTitles" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/DetailHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="ArmyTitle" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/DetailHeader/DetailTitles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierHeading"
+
+[node name="ArmyMeta" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/DetailHeader/DetailTitles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3
+
+[node name="ArmyWarning" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/DetailHeader"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+
+[node name="LotKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "编成"
+
+[node name="LotList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="SupplyKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "补给可支撑"
+
+[node name="SupplyList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="CommanderRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+modulate = Color(1, 1, 1, 0.55)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CommanderIcon" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/CommanderRow" instance=ExtResource("11_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="CommanderLabel" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/CommanderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = "统帅（待开放）"
+
+[node name="ArmyActions" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 2
+
+[node name="ArmyLocate" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+text = "定位"
+tooltip_text = "在地图上定位该部队"
+
+[node name="ArmyMove" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "移动"
+tooltip_text = "点地图选目标格预览路线，再点一次确认行军"
+
+[node name="ArmyArea" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+toggle_mode = true
+text = "军事控制"
+tooltip_text = "以点选的中心格与半径设为军事控制区"
+
+[node name="AreaRadius" type="HSlider" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+size_flags_vertical = 4
+min_value = 1.0
+max_value = 6.0
+step = 1.0
+value = 1.0
+
+[node name="RadiusMinus" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+text = "−"
+tooltip_text = "缩小控制半径"
+
+[node name="RadiusPlus" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(22, 22)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+text = "+"
+tooltip_text = "扩大控制半径（上限 6 格）"
+
+[node name="ArmyStop" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+text = "停止"
+tooltip_text = "取消当前任务，原地休整"
+
+[node name="ArmyDisband" type="Button" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyGrid/ArmyDetail/DetailBox/ArmyActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+text = "解散"
+tooltip_text = "解散部队，兵员回到所在格驻防"
+
+[node name="ArmyEmpty" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="ArmyEmptyLabel" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/ArmyEmpty"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = "尚无野战部队。在有驻军的兵营格上，从地块面板编成部队。"
+
+[node name="LogisticsGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 14
+columns = 1
+
+[node name="ConvoyCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="ConvoyColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ConvoyHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard/ConvoyColumn"]
+layout_mode = 2
+
+[node name="ConvoyKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard/ConvoyColumn/ConvoyHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "在途军需车队"
+
+[node name="ConvoyCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard/ConvoyColumn/ConvoyHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ConvoyTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard/ConvoyColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="ProcurementLabel" type="Label" parent="Root/PageViewport/PageColumn/PageStack/ArmiesPage/LogisticsGrid/ConvoyCard/ConvoyColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="WarPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="WarGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 20
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="WarList" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="WarCard0" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/WarList" instance=ExtResource("9_war")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="WarCard1" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/WarList" instance=ExtResource("9_war")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="WarCard2" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/WarList" instance=ExtResource("9_war")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="PeaceEditor" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+edge = "cinnabar"
+
+[node name="PeaceBox" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeaceHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeaceIcon" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceHeader" instance=ExtResource("11_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="PeaceTitle" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierHeading"
+text = "和议条款"
+
+[node name="PeaceWhite" type="CheckBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "白和平：双方维持现状"
+
+[node name="LumpRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PeaceLump" type="CheckBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/LumpRow"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+size_flags_horizontal = 3
+focus_mode = 0
+text = "一次性赔款"
+
+[node name="LumpIcon" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/LumpRow" instance=ExtResource("12_money")]
+layout_mode = 2
+
+[node name="LumpAmount" type="SpinBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/LumpRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(118, 30)
+layout_mode = 2
+max_value = 100000000.0
+step = 100.0
+value = 5000.0
+
+[node name="InstallRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PeaceInstall" type="CheckBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallRow"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+size_flags_horizontal = 3
+focus_mode = 0
+text = "分期赔款"
+
+[node name="InstallIcon" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallRow" instance=ExtResource("12_money")]
+layout_mode = 2
+
+[node name="InstallAmount" type="SpinBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(108, 30)
+layout_mode = 2
+max_value = 100000000.0
+step = 100.0
+value = 1000.0
+
+[node name="InstallTimes" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallRow"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text = "×"
+
+[node name="InstallCount" type="SpinBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 30)
+layout_mode = 2
+min_value = 2.0
+max_value = 12.0
+value = 4.0
+suffix = "期"
+
+[node name="InstallTotalRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 3
+alignment = 2
+
+[node name="InstallTotalCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallTotalRow"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text = "分期合计"
+
+[node name="InstallTotalIcon" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallTotalRow" instance=ExtResource("12_money")]
+layout_mode = 2
+
+[node name="InstallTotal" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/InstallTotalRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PeaceAnnex" type="CheckBox" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+unique_name_in_owner = true
+layout_mode = 2
+flat = true
+theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
+theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
+theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
+focus_mode = 0
+text = "吞并对方全部领土"
+
+[node name="CessionRule" type="HSeparator" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CedingHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CedingKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/CedingHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierKicker"
+text = "我占领的敌方领土"
+
+[node name="CedingCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/CedingHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierCaption"
+
+[node name="CedingList" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox" instance=ExtResource("13_toggle")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PeaceReturn" type="Button" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 0
+focus_mode = 0
+theme_type_variation = &"PKChapterTab"
+text = "在地图上标出所选"
+tooltip_text = "把这些占领格画到地图上，便于核对待交还的领土"
+
+[node name="PeaceRule" type="HSeparator" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+
+[node name="PeaceFooter" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PeaceTotals" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceFooter"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="PeacePrice" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceFooter/PeaceTotals"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+text = "条款总价 0 分"
+
+[node name="PeaceScore" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceFooter/PeaceTotals"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="PeaceBand" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceFooter"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "接受倾向 —"
+
+[node name="PeaceSubmit" type="Button" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/PeaceEditor/PeaceBox/PeaceFooter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 34)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"PKSealPrimaryButton"
+text = "提交和议"
+
+[node name="WarEmpty" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="WarEmptyLabel" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarEmpty"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = "当前没有战争。战争结束后的停战期内无法再次宣战。"
+
+[node name="WarLowerGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 20
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="DeclareCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="DeclareColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="DeclareHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard/DeclareColumn"]
+layout_mode = 2
+
+[node name="DeclareKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard/DeclareColumn/DeclareHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "宣战"
+
+[node name="DeclareCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard/DeclareColumn/DeclareHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="DeclareTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard/DeclareColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_ledger")
+
+[node name="DeclareEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/DeclareCard/DeclareColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="LogCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("7_frame")
+
+[node name="LogColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="LogHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+layout_mode = 2
+
+[node name="LogKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn/LogHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "战报"
+
+[node name="BattleLogList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="BattleLogEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="FrontHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+layout_mode = 2
+
+[node name="FrontKicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn/FrontHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierKicker"
+text = "战线"
+
+[node name="FrontList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="FrontEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarPage/WarLowerGrid/LogCard/LogColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3

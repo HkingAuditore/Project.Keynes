@@ -1,130 +1,18 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=893 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_definition.gd" id="3_definition"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_term.gd" id="4_term"]
 
-[sub_resource type="Resource" id="StatClimate"]
-script = ExtResource("2_stat")
-key = &"climate.cell.radiative_target"
-domain = 0
-min_value = 0.0
-max_value = 1.0
-
-[sub_resource type="Resource" id="StatCountry"]
-script = ExtResource("2_stat")
-key = &"country.economy_output_factor"
-domain = 1
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatBuilding"]
-script = ExtResource("2_stat")
-key = &"economy.building.output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatGameplay"]
-script = ExtResource("2_stat")
-key = &"gameplay.generic.value"
-domain = 3
-min_value = -1000000000.0
-max_value = 1000000000.0
-
-[sub_resource type="Resource" id="StatCityOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityAgricultureOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.building.agriculture_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityExtractiveOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.building.extractive_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityManufacturingOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.building.manufacturing_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityEnergyOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.building.energy_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityKnowledgeOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.building.knowledge_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 16.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityBirth"]
-script = ExtResource("2_stat")
-key = &"economy.city.birth_factor"
-domain = 2
-min_value = 0.0
-max_value = 4.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityTradeOutput"]
-script = ExtResource("2_stat")
-key = &"economy.city.trade_output_factor"
-domain = 2
-min_value = 0.0
-max_value = 8.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityConsumption"]
-script = ExtResource("2_stat")
-key = &"economy.city.consumption_factor"
-domain = 2
-min_value = 0.0
-max_value = 4.0
-value_conversion = 1
-
-[sub_resource type="Resource" id="StatCityResourceRegen"]
-script = ExtResource("2_stat")
-key = &"economy.city.resource.regen_factor"
-domain = 2
-min_value = 0.0
-max_value = 4.0
-value_conversion = 1
-
 [sub_resource type="Resource" id="TermClimate"]
 script = ExtResource("4_term")
 stat_key = &"climate.cell.radiative_target"
-operation = 0
 value = 0.05
 
 [sub_resource type="Resource" id="DefClimate"]
 script = ExtResource("3_definition")
 key = &"climate.radiative_warming"
-domain = 0
 stack_policy = 2
 max_stacks = 8
 default_duration_days = 30
@@ -141,7 +29,6 @@ script = ExtResource("3_definition")
 key = &"country.economic_mobilization"
 domain = 1
 stack_policy = 1
-max_stacks = 1
 default_duration_days = 90
 terms = Array[Resource]([SubResource("TermCountry")])
 
@@ -163,16 +50,13 @@ terms = Array[Resource]([SubResource("TermBuilding")])
 [sub_resource type="Resource" id="TermGameplay"]
 script = ExtResource("4_term")
 stat_key = &"gameplay.generic.value"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefGameplay"]
 script = ExtResource("3_definition")
 key = &"gameplay.generic.bonus"
 domain = 3
-stack_policy = 0
 max_stacks = 100
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermGameplay")])
 
 [sub_resource type="Resource" id="TermFamilyCityOutput"]
@@ -687,7 +571,6 @@ display_name = "狩猎传统"
 description = "在主产野味且就业职业集中的地块提高野味产出，代价是野生动物资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHuntingTradition0")])
 
 [sub_resource type="Resource" id="TermIdeologyFlintKnapping0"]
@@ -703,7 +586,6 @@ display_name = "打制石器"
 description = "主产燧石的地块为周边地块提供产出加成，代价是燧石资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFlintKnapping0")])
 
 [sub_resource type="Resource" id="TermIdeologyFireKeeping0"]
@@ -725,7 +607,6 @@ display_name = "火种守护"
 description = "减轻寒冷造成的生产损失，并提高冻原地块的出生率；代价是林木资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFireKeeping0"), SubResource("TermIdeologyFireKeeping1")])
 
 [sub_resource type="Resource" id="TermIdeologyAnimistRitual0"]
@@ -753,7 +634,6 @@ display_name = "万物有灵"
 description = "社会研究与理念点获取提高，代价是科学研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAnimistRitual0"), SubResource("TermIdeologyAnimistRitual1"), SubResource("TermIdeologyAnimistRitual2")])
 
 [sub_resource type="Resource" id="TermIdeologyGiftExchange0"]
@@ -781,7 +661,6 @@ display_name = "馈赠交换"
 description = "提高国内贸易成交容量与运输速度，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGiftExchange0"), SubResource("TermIdeologyGiftExchange1"), SubResource("TermIdeologyGiftExchange2")])
 
 [sub_resource type="Resource" id="TermIdeologyCommunalFeast0"]
@@ -797,7 +676,6 @@ display_name = "共食"
 description = "主产野味的地块为周边提供出生率加成，代价是野生动物资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCommunalFeast0")])
 
 [sub_resource type="Resource" id="TermIdeologyCollectiveStewardship0"]
@@ -813,7 +691,6 @@ display_name = "共同体治理"
 description = "农业产出占比较高的地块为周边提供产出加成，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCollectiveStewardship0")])
 
 [sub_resource type="Resource" id="TermIdeologyPaddyCultivation0"]
@@ -847,7 +724,6 @@ display_name = "稻作"
 description = "提高稻米产出及沼泽、三角洲的农业产出，代价是小麦产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPaddyCultivation0"), SubResource("TermIdeologyPaddyCultivation1"), SubResource("TermIdeologyPaddyCultivation2"), SubResource("TermIdeologyPaddyCultivation3")])
 
 [sub_resource type="Resource" id="TermIdeologyThreeFieldRotation0"]
@@ -863,7 +739,6 @@ display_name = "三圃轮作"
 description = "农业产出占比较高的地块加快肥沃土壤恢复，代价是草地农业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyThreeFieldRotation0")])
 
 [sub_resource type="Resource" id="TermIdeologyFreeExchange0"]
@@ -879,7 +754,6 @@ display_name = "自由交换"
 description = "在有多个经济部门产出的地块提高产出，代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFreeExchange0")])
 
 [sub_resource type="Resource" id="TermIdeologyScholarOffice0"]
@@ -895,7 +769,6 @@ display_name = "学识官署"
 description = "知识业产出占比较高的地块提高知识产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyScholarOffice0")])
 
 [sub_resource type="Resource" id="TermIdeologyStandardization0"]
@@ -911,7 +784,6 @@ display_name = "标准化"
 description = "已建成完整建筑升级链的地块提高制造业产出，代价是贸易运输速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyStandardization0")])
 
 [sub_resource type="Resource" id="TermIdeologyHouseholdWeaving0"]
@@ -927,7 +799,6 @@ display_name = "家内纺织"
 description = "主产韧皮纤维且就业职业多样的地块提高布产出，代价是平原农业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHouseholdWeaving0")])
 
 [sub_resource type="Resource" id="TermIdeologyBronzeCasting0"]
@@ -943,7 +814,6 @@ display_name = "青铜铸造"
 description = "主产铜矿石或锡矿石的地块为周边制造业提供加成，代价是铜矿资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyBronzeCasting0")])
 
 [sub_resource type="Resource" id="TermIdeologyEverNormalGranary0"]
@@ -959,7 +829,6 @@ display_name = "常平仓"
 description = "必需品短缺较重的地块降低主食消费需求，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyEverNormalGranary0")])
 
 [sub_resource type="Resource" id="TermIdeologySettleAndFarm0"]
@@ -975,7 +844,6 @@ display_name = "屯垦"
 description = "在人口较少且农业产出占比较高的地块提高农业产出与出生率，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySettleAndFarm0")])
 
 [sub_resource type="Resource" id="TermIdeologyOpenPorts0"]
@@ -991,7 +859,6 @@ display_name = "市舶开港"
 description = "提高海岸地块的产出，代价是林木资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyOpenPorts0")])
 
 [sub_resource type="Resource" id="TermIdeologyGuildCharters0"]
@@ -1007,7 +874,6 @@ display_name = "行会特许"
 description = "制造业产出占比较高且就业职业集中的地块提高制造业产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGuildCharters0")])
 
 [sub_resource type="Resource" id="TermIdeologyDoubleEntry0"]
@@ -1035,7 +901,6 @@ display_name = "复式簿记"
 description = "降低生产原料需求并提高国内贸易成交容量，代价是理念点获取下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDoubleEntry0"), SubResource("TermIdeologyDoubleEntry1"), SubResource("TermIdeologyDoubleEntry2")])
 
 [sub_resource type="Resource" id="TermIdeologyAcademyLectures0"]
@@ -1069,7 +934,6 @@ display_name = "书院讲学"
 description = "提高社会研究、知识产出与理念点获取，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAcademyLectures0"), SubResource("TermIdeologyAcademyLectures1"), SubResource("TermIdeologyAcademyLectures2"), SubResource("TermIdeologyAcademyLectures3")])
 
 [sub_resource type="Resource" id="TermIdeologyCivilExamination0"]
@@ -1097,7 +961,6 @@ display_name = "科举取士"
 description = "降低研究成本并提高社会研究速度，代价是平原制造业产出下降；首次化育还可获得一次免费抽取。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCivilExamination0"), SubResource("TermIdeologyCivilExamination1"), SubResource("TermIdeologyCivilExamination2")])
 
 [sub_resource type="Resource" id="TermIdeologyIronSmelting0"]
@@ -1113,7 +976,6 @@ display_name = "冶铁"
 description = "主产铁矿石的地块为周边制造业提供加成，代价是铁矿资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyIronSmelting0")])
 
 [sub_resource type="Resource" id="TermIdeologyPostalHorse0"]
@@ -1129,7 +991,6 @@ display_name = "驿传"
 description = "主产马匹的地块为周边提供产出加成，代价是全国小麦产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPostalHorse0")])
 
 [sub_resource type="Resource" id="TermIdeologyMonsoonFarming0"]
@@ -1157,7 +1018,6 @@ display_name = "汛期农法"
 description = "减轻水田作物的洪灾生产损失并提高三角洲农业产出，代价是沙漠农业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyMonsoonFarming0"), SubResource("TermIdeologyMonsoonFarming1"), SubResource("TermIdeologyMonsoonFarming2")])
 
 [sub_resource type="Resource" id="TermIdeologyRiverTransport0"]
@@ -1191,7 +1051,6 @@ display_name = "漕运"
 description = "提高国内贸易成交容量、运输速度和泛滥平原制造业产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRiverTransport0"), SubResource("TermIdeologyRiverTransport1"), SubResource("TermIdeologyRiverTransport2"), SubResource("TermIdeologyRiverTransport3")])
 
 [sub_resource type="Resource" id="TermIdeologyVillageCompact0"]
@@ -1207,7 +1066,6 @@ display_name = "乡约自治"
 description = "在周边人口较多且农业产出占比较高的地块提高农业产出，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyVillageCompact0")])
 
 [sub_resource type="Resource" id="TermIdeologyLandReclamation0"]
@@ -1223,7 +1081,6 @@ display_name = "垦荒令"
 description = "在周边人口较少且农业产出占比较高的低人口地块提高农业产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLandReclamation0")])
 
 [sub_resource type="Resource" id="TermIdeologyGranaryRoad0"]
@@ -1257,7 +1114,6 @@ display_name = "漕运仓法"
 description = "提高国内贸易成交容量与运输速度并降低自然死亡率，代价是林木资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGranaryRoad0"), SubResource("TermIdeologyGranaryRoad1"), SubResource("TermIdeologyGranaryRoad2"), SubResource("TermIdeologyGranaryRoad3")])
 
 [sub_resource type="Resource" id="TermIdeologyImperialAcademy0"]
@@ -1285,7 +1141,6 @@ display_name = "太学"
 description = "提高研究机构产出并降低研究成本，代价是理念点获取下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyImperialAcademy0"), SubResource("TermIdeologyImperialAcademy1"), SubResource("TermIdeologyImperialAcademy2")])
 
 [sub_resource type="Resource" id="TermIdeologyPublicHygiene0"]
@@ -1301,7 +1156,6 @@ display_name = "公共卫生"
 description = "聚落提高出生率并降低居住维护消费需求，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPublicHygiene0")])
 
 [sub_resource type="Resource" id="TermIdeologyHeavenHuman0"]
@@ -1317,7 +1171,6 @@ display_name = "天人相参"
 description = "降水较充足时，农业产出占比较高的地块提高农业产出，代价是科学研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHeavenHuman0")])
 
 [sub_resource type="Resource" id="TermIdeologySaltMonopoly0"]
@@ -1339,7 +1192,6 @@ display_name = "盐铁专营"
 description = "全国采掘业地块越多，目标地块的采掘产出加成越高；代价是盐资源耗用增加、国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySaltMonopoly0"), SubResource("TermIdeologySaltMonopoly1")])
 
 [sub_resource type="Resource" id="TermIdeologySericulture0"]
@@ -1355,7 +1207,6 @@ display_name = "蚕桑"
 description = "主产布的地块为周边的精致服装产出提供加成，代价是平原农业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySericulture0")])
 
 [sub_resource type="Resource" id="TermIdeologyOceanCompany0"]
@@ -1371,7 +1222,6 @@ display_name = "远洋公司"
 description = "提高海岸贸易活跃地块的产出，代价是林木资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyOceanCompany0")])
 
 [sub_resource type="Resource" id="TermIdeologyCharteredRoute0"]
@@ -1387,7 +1237,6 @@ display_name = "特许航路"
 description = "全国专精地块的主产货物种类越多，贸易活跃地块的产出加成越高；代价是全国食盐产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCharteredRoute0")])
 
 [sub_resource type="Resource" id="TermIdeologyCartography0"]
@@ -1415,7 +1264,6 @@ display_name = "舆图测绘"
 description = "提高科学研究与贸易运输速度，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCartography0"), SubResource("TermIdeologyCartography1"), SubResource("TermIdeologyCartography2")])
 
 [sub_resource type="Resource" id="TermIdeologyColonialPlantation0"]
@@ -1437,7 +1285,6 @@ display_name = "殖民种植园"
 description = "在农业占比高且单一货物高度集中的地块提高农业产出，代价是肥沃土壤耗用增加、恢复减慢。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyColonialPlantation0"), SubResource("TermIdeologyColonialPlantation1")])
 
 [sub_resource type="Resource" id="TermIdeologySilverFlow0"]
@@ -1453,7 +1300,6 @@ display_name = "白银流入"
 description = "全国主产白银的地块越多，这些地块的产出加成越高；代价是银矿资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySilverFlow0")])
 
 [sub_resource type="Resource" id="TermIdeologyNaturalHistory0"]
@@ -1481,7 +1327,6 @@ display_name = "博物志"
 description = "提高科学与农业研究速度，代价是知识产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyNaturalHistory0"), SubResource("TermIdeologyNaturalHistory1"), SubResource("TermIdeologyNaturalHistory2")])
 
 [sub_resource type="Resource" id="TermIdeologyManufactoryRegulation0"]
@@ -1497,7 +1342,6 @@ display_name = "工场规程"
 description = "制造业产出占比较高的地块按当地制造业建筑数量获得加成，代价是贸易运输速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyManufactoryRegulation0")])
 
 [sub_resource type="Resource" id="TermIdeologyMaritimeInsurance0"]
@@ -1513,7 +1357,6 @@ display_name = "海事保险"
 description = "海岸地块获得可刷新的限时产出加成，代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyMaritimeInsurance0")])
 
 [sub_resource type="Resource" id="TermIdeologyExperimentalMethod0"]
@@ -1529,7 +1372,6 @@ display_name = "实验之法"
 description = "知识业产出占比较高的地块为周边制造业提供加成，代价是社会研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyExperimentalMethod0")])
 
 [sub_resource type="Resource" id="TermIdeologyEncyclopedia0"]
@@ -1563,7 +1405,6 @@ display_name = "百科全书"
 description = "提高研究机构产出、知识产出与理念点获取，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyEncyclopedia0"), SubResource("TermIdeologyEncyclopedia1"), SubResource("TermIdeologyEncyclopedia2"), SubResource("TermIdeologyEncyclopedia3")])
 
 [sub_resource type="Resource" id="TermIdeologyNationalEducation0"]
@@ -1597,7 +1438,6 @@ display_name = "国民教育"
 description = "提高社会与工程研究速度及理念点获取，代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyNationalEducation0"), SubResource("TermIdeologyNationalEducation1"), SubResource("TermIdeologyNationalEducation2"), SubResource("TermIdeologyNationalEducation3")])
 
 [sub_resource type="Resource" id="TermIdeologyAgrarianReform0"]
@@ -1613,7 +1453,6 @@ display_name = "农政改革"
 description = "在主产粮食且产出集中的地块提高农业产出，代价是社会研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAgrarianReform0")])
 
 [sub_resource type="Resource" id="TermIdeologyCoalBasin0"]
@@ -1629,7 +1468,6 @@ display_name = "煤田开发"
 description = "提高采掘业产出占比较高地块的采掘产出，代价是煤炭资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCoalBasin0")])
 
 [sub_resource type="Resource" id="TermIdeologyCottonGin0"]
@@ -1645,7 +1483,6 @@ display_name = "轧棉"
 description = "主产棉纤维的地块为周边布产出提供加成，代价是平原农业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCottonGin0")])
 
 [sub_resource type="Resource" id="TermIdeologyEnclosure0"]
@@ -1667,7 +1504,6 @@ display_name = "圈地"
 description = "主产畜产的地块为周边牧草资源恢复提供加成，代价是平原农业产出与社会研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyEnclosure0"), SubResource("TermIdeologyEnclosure1")])
 
 [sub_resource type="Resource" id="TermIdeologyLearnedSociety0"]
@@ -1695,7 +1531,6 @@ display_name = "学会"
 description = "提高研究机构产出与理念点获取，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLearnedSociety0"), SubResource("TermIdeologyLearnedSociety1"), SubResource("TermIdeologyLearnedSociety2")])
 
 [sub_resource type="Resource" id="TermIdeologySteamPower0"]
@@ -1723,7 +1558,6 @@ display_name = "蒸汽动力"
 description = "提高能源与制造业产出，代价是煤炭资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySteamPower0"), SubResource("TermIdeologySteamPower1"), SubResource("TermIdeologySteamPower2")])
 
 [sub_resource type="Resource" id="TermIdeologyRailwayNetwork0"]
@@ -1757,7 +1591,6 @@ display_name = "铁路网"
 description = "提高国内贸易成交容量、运输速度和平原制造业产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRailwayNetwork0"), SubResource("TermIdeologyRailwayNetwork1"), SubResource("TermIdeologyRailwayNetwork2"), SubResource("TermIdeologyRailwayNetwork3")])
 
 [sub_resource type="Resource" id="TermIdeologyUrbanSanitation0"]
@@ -1773,7 +1606,6 @@ display_name = "城市卫生"
 description = "提高人口较多地块的产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyUrbanSanitation0")])
 
 [sub_resource type="Resource" id="TermIdeologySteamShipping0"]
@@ -1801,7 +1633,6 @@ display_name = "汽船航运"
 description = "提高国内贸易成交容量与运输速度，代价是煤炭资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySteamShipping0"), SubResource("TermIdeologySteamShipping1"), SubResource("TermIdeologySteamShipping2")])
 
 [sub_resource type="Resource" id="TermIdeologyFreeTrade0"]
@@ -1817,7 +1648,6 @@ display_name = "自由贸易"
 description = "按地块的经济部门多样性调整产出，代价还包括平原制造业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFreeTrade0")])
 
 [sub_resource type="Resource" id="TermIdeologyAgriculturalChemistry0"]
@@ -1833,7 +1663,6 @@ display_name = "农业化学"
 description = "主产肥料的地块为周边农业提供加成，代价是磷矿石资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAgriculturalChemistry0")])
 
 [sub_resource type="Resource" id="TermIdeologyTelegraph0"]
@@ -1849,7 +1678,6 @@ display_name = "电报"
 description = "知识业产出占比较高的地块为周边知识产出提供加成，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTelegraph0")])
 
 [sub_resource type="Resource" id="TermIdeologyTradeUnions0"]
@@ -1865,7 +1693,6 @@ display_name = "工会"
 description = "工业职业占比达到条件的地块获得制造业加成，全国工人阶层满意度较高时加成更大；代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTradeUnions0")])
 
 [sub_resource type="Resource" id="TermIdeologyAssemblyLine0"]
@@ -1881,7 +1708,6 @@ display_name = "流水线"
 description = "已建成完整建筑升级链的地块提高制造业产出，代价是自然资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAssemblyLine0")])
 
 [sub_resource type="Resource" id="TermIdeologyElectrification0"]
@@ -1897,7 +1723,6 @@ display_name = "电气化"
 description = "能源业产出占比较高的地块为周边制造业提供加成，代价是煤炭资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyElectrification0")])
 
 [sub_resource type="Resource" id="TermIdeologyEcologicalBalance0"]
@@ -1913,7 +1738,6 @@ display_name = "生态均衡"
 description = "自然资源平均剩余比例较高的地块增加产出，货物短缺较重的地块减少产出；化育后取消后者，保留全国制造业产出代价。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyEcologicalBalance0")])
 
 [sub_resource type="Resource" id="TermIdeologyMassMedia0"]
@@ -1941,7 +1765,6 @@ display_name = "大众传媒"
 description = "提高社会研究速度与理念点获取，代价是知识产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyMassMedia0"), SubResource("TermIdeologyMassMedia1"), SubResource("TermIdeologyMassMedia2")])
 
 [sub_resource type="Resource" id="TermIdeologyChemicalIndustry0"]
@@ -1957,7 +1780,6 @@ display_name = "化学工业"
 description = "主产食盐的地块为周边肥料产出提供加成，代价是盐资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyChemicalIndustry0")])
 
 [sub_resource type="Resource" id="TermIdeologyAntitrust0"]
@@ -1973,7 +1795,6 @@ display_name = "反垄断"
 description = "有多个经济部门产出的地块获得加成，高度专精地块受到减产；另有全国制造业产出下降的代价。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAntitrust0")])
 
 [sub_resource type="Resource" id="TermIdeologyOffshoreDrilling0"]
@@ -1989,7 +1810,6 @@ display_name = "海上钻井"
 description = "提高海岸地块的原油与天然气产出，代价是石油资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyOffshoreDrilling0")])
 
 [sub_resource type="Resource" id="TermIdeologySupermarket0"]
@@ -2005,7 +1825,6 @@ display_name = "超市"
 description = "聚落为周边农业提供加成，代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySupermarket0")])
 
 [sub_resource type="Resource" id="TermIdeologyNuclearPower0"]
@@ -2021,7 +1840,6 @@ display_name = "核电计划"
 description = "能源业产出占比较高的地块提高全部产出，代价是稀土资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyNuclearPower0")])
 
 [sub_resource type="Resource" id="TermIdeologyAntibiotics0"]
@@ -2043,7 +1861,6 @@ display_name = "抗生素"
 description = "降低人口自然死亡率，代价是生产原料需求增加；另将部分理念原有的大邑筛选条件改为聚落条件。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAntibiotics0"), SubResource("TermIdeologyAntibiotics1")])
 
 [sub_resource type="Resource" id="TermIdeologyMotorization0"]
@@ -2059,7 +1876,6 @@ display_name = "汽车社会"
 description = "贸易活跃地块为周边提供产出加成，代价是石油资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyMotorization0")])
 
 [sub_resource type="Resource" id="TermIdeologyGreenRevolution0"]
@@ -2093,7 +1909,6 @@ display_name = "绿色革命"
 description = "提高平原农业与肥料产出，代价是天然气和磷矿石资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGreenRevolution0"), SubResource("TermIdeologyGreenRevolution1"), SubResource("TermIdeologyGreenRevolution2"), SubResource("TermIdeologyGreenRevolution3")])
 
 [sub_resource type="Resource" id="TermIdeologyPetrochemical0"]
@@ -2109,7 +1924,6 @@ display_name = "石化"
 description = "主产原油的地块为周边塑料与合成纤维产出提供加成，代价是石油资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPetrochemical0")])
 
 [sub_resource type="Resource" id="TermIdeologyContainerPort0"]
@@ -2125,7 +1939,6 @@ display_name = "集装箱港"
 description = "海岸地块为周边制造业提供加成，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyContainerPort0")])
 
 [sub_resource type="Resource" id="TermIdeologyWelfareState0"]
@@ -2141,7 +1954,6 @@ display_name = "福利国家"
 description = "在必需品短缺很少的聚落提高产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyWelfareState0")])
 
 [sub_resource type="Resource" id="TermIdeologyComputingNetworks0"]
@@ -2157,7 +1969,6 @@ display_name = "计算网络"
 description = "知识业产出占比较高的地块提高知识产出，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyComputingNetworks0")])
 
 [sub_resource type="Resource" id="TermIdeologySemiconductor0"]
@@ -2173,7 +1984,6 @@ display_name = "半导体"
 description = "全国已建成完整建筑升级链的地块越多，这些地块的半导体产出加成越高；代价是硅砂资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySemiconductor0")])
 
 [sub_resource type="Resource" id="TermIdeologyPrecisionAgriculture0"]
@@ -2201,7 +2011,6 @@ display_name = "精准农业"
 description = "提高平原与高原农业产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPrecisionAgriculture0"), SubResource("TermIdeologyPrecisionAgriculture1"), SubResource("TermIdeologyPrecisionAgriculture2")])
 
 [sub_resource type="Resource" id="TermIdeologyFinancialization0"]
@@ -2217,7 +2026,6 @@ display_name = "金融化"
 description = "提高贸易活跃地块的产出，代价是全国制造业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFinancialization0")])
 
 [sub_resource type="Resource" id="TermIdeologyAutomationLine0"]
@@ -2233,7 +2041,6 @@ display_name = "自动化产线"
 description = "制造业产出占比较高的地块按失业率获得制造业加成，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAutomationLine0")])
 
 [sub_resource type="Resource" id="TermIdeologyArcology0"]
@@ -2249,7 +2056,6 @@ display_name = "生态城"
 description = "在人口较多且自然资源平均剩余比例较高的地块提高产出与资源恢复速度，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyArcology0")])
 
 [sub_resource type="Resource" id="TermIdeologyBasicIncome0"]
@@ -2265,7 +2071,6 @@ display_name = "基本收入"
 description = "失业率达到条件的地块按失业率获得知识产出加成，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyBasicIncome0")])
 
 [sub_resource type="Resource" id="TermIdeologyCircularEconomy0"]
@@ -2281,7 +2086,6 @@ display_name = "循环经济"
 description = "已建成完整建筑升级链的地块加快自然资源恢复，代价是全国制造业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCircularEconomy0")])
 
 [sub_resource type="Resource" id="TermIdeologyAlgorithmicGovernance0"]
@@ -2309,7 +2113,6 @@ display_name = "算法治理"
 description = "提高社会研究速度与理念点获取，并复制左邻槽位理念的持续效果；代价是科学研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAlgorithmicGovernance0"), SubResource("TermIdeologyAlgorithmicGovernance1"), SubResource("TermIdeologyAlgorithmicGovernance2")])
 
 [sub_resource type="Resource" id="TermIdeologyAutonomousLogistics0"]
@@ -2325,7 +2128,6 @@ display_name = "无人运输"
 description = "贸易活跃地块为周边提供产出加成，并扩大部分通衢理念效果的范围；代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyAutonomousLogistics0")])
 
 [sub_resource type="Resource" id="TermIdeologyCarbonMarket0"]
@@ -2341,7 +2143,6 @@ display_name = "碳市场"
 description = "有多个经济部门产出的地块获得产出加成，代价是全国制造业产出下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCarbonMarket0")])
 
 [sub_resource type="Resource" id="TermIdeologyGeneEditing0"]
@@ -2357,7 +2158,6 @@ display_name = "基因编辑"
 description = "在主产粮食且产出集中的地块提高农业产出，代价是社会研究速度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGeneEditing0")])
 
 [sub_resource type="Resource" id="TermIdeologySpaceMining0"]
@@ -2373,7 +2173,6 @@ display_name = "太空采矿"
 description = "将部分理念的铁矿石主产条件扩大到多种金属矿石，并提高目标地块采掘产出；代价是稀土资源耗用增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySpaceMining0")])
 
 [sub_resource type="Resource" id="TermIdeologyDesalination0"]
@@ -2401,7 +2200,6 @@ display_name = "海水淡化"
 description = "提高海岸农业产出与淡水鱼群恢复速度，并扩大部分理念的地块筛选范围；代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDesalination0"), SubResource("TermIdeologyDesalination1"), SubResource("TermIdeologyDesalination2")])
 
 [sub_resource type="Resource" id="TermIdeologyFamilyOfficeL10"]
@@ -2417,7 +2215,6 @@ display_name = "家族办公室（初识）"
 description = "拥有多个分支的家族越多，全国研究成本越低；化育后另提高目标家族名下建筑产出，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFamilyOfficeL10")])
 
 [sub_resource type="Resource" id="TermIdeologyFamilyOfficeL20"]
@@ -2433,7 +2230,6 @@ display_name = "家族办公室（通晓）"
 description = "拥有多个分支的家族越多，全国研究成本越低；化育后另提高目标家族名下建筑产出，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFamilyOfficeL20")])
 
 [sub_resource type="Resource" id="TermIdeologyFamilyOfficeL30"]
@@ -2449,7 +2245,6 @@ display_name = "家族办公室（化育）"
 description = "拥有多个分支的家族越多，全国研究成本越低；化育后另提高目标家族名下建筑产出，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyFamilyOfficeL30")])
 
 [sub_resource type="Resource" id="TermIdeologyRefrigerationL10"]
@@ -2465,7 +2260,6 @@ display_name = "冷链（初识）"
 description = "减轻热害生产损失，提高炎热地区的鱼、肉类与乳品产出，代价是当地家用能源需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRefrigerationL10")])
 
 [sub_resource type="Resource" id="TermIdeologyRefrigerationL20"]
@@ -2481,7 +2275,6 @@ display_name = "冷链（通晓）"
 description = "减轻热害生产损失，提高炎热地区的鱼、肉类与乳品产出，代价是当地家用能源需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRefrigerationL20")])
 
 [sub_resource type="Resource" id="TermIdeologyRefrigerationL30"]
@@ -2497,7 +2290,6 @@ display_name = "冷链（化育）"
 description = "减轻热害生产损失，提高炎热地区的鱼、肉类与乳品产出，代价是当地家用能源需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRefrigerationL30")])
 
 [sub_resource type="Resource" id="TermIdeologyDroughtReliefL10"]
@@ -2513,7 +2305,6 @@ display_name = "赈旱（初识）"
 description = "在当日仅发生旱灾的地块降低主食消费需求，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDroughtReliefL10")])
 
 [sub_resource type="Resource" id="TermIdeologyDroughtReliefL20"]
@@ -2529,7 +2320,6 @@ display_name = "赈旱（通晓）"
 description = "在当日仅发生旱灾的地块降低主食消费需求，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDroughtReliefL20")])
 
 [sub_resource type="Resource" id="TermIdeologyDroughtReliefL30"]
@@ -2545,7 +2335,6 @@ display_name = "赈旱（化育）"
 description = "在当日仅发生旱灾的地块降低主食消费需求，代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyDroughtReliefL30")])
 
 [sub_resource type="Resource" id="TermIdeologyTerraceFarmingL10"]
@@ -2579,7 +2368,6 @@ display_name = "梯田（初识）"
 description = "提高丘陵与山地的农业产出，代价是当地采掘产出下降；化育后还可从周边农业地块获得加成。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTerraceFarmingL10"), SubResource("TermIdeologyTerraceFarmingL11"), SubResource("TermIdeologyTerraceFarmingL12"), SubResource("TermIdeologyTerraceFarmingL13")])
 
 [sub_resource type="Resource" id="TermIdeologyTerraceFarmingL20"]
@@ -2613,7 +2401,6 @@ display_name = "梯田（通晓）"
 description = "提高丘陵与山地的农业产出，代价是当地采掘产出下降；化育后还可从周边农业地块获得加成。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTerraceFarmingL20"), SubResource("TermIdeologyTerraceFarmingL21"), SubResource("TermIdeologyTerraceFarmingL22"), SubResource("TermIdeologyTerraceFarmingL23")])
 
 [sub_resource type="Resource" id="TermIdeologyTerraceFarmingL30"]
@@ -2647,7 +2434,6 @@ display_name = "梯田（化育）"
 description = "提高丘陵与山地的农业产出，代价是当地采掘产出下降；化育后还可从周边农业地块获得加成。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTerraceFarmingL30"), SubResource("TermIdeologyTerraceFarmingL31"), SubResource("TermIdeologyTerraceFarmingL32"), SubResource("TermIdeologyTerraceFarmingL33")])
 
 [sub_resource type="Resource" id="TermIdeologyWaterWorksL10"]
@@ -2681,7 +2467,6 @@ display_name = "治水营田（初识）"
 description = "提高泛滥平原与三角洲的农业产出并减轻洪灾生产损失，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyWaterWorksL10"), SubResource("TermIdeologyWaterWorksL11"), SubResource("TermIdeologyWaterWorksL12"), SubResource("TermIdeologyWaterWorksL13")])
 
 [sub_resource type="Resource" id="TermIdeologyWaterWorksL20"]
@@ -2715,7 +2500,6 @@ display_name = "治水营田（通晓）"
 description = "提高泛滥平原与三角洲的农业产出并减轻洪灾生产损失，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyWaterWorksL20"), SubResource("TermIdeologyWaterWorksL21"), SubResource("TermIdeologyWaterWorksL22"), SubResource("TermIdeologyWaterWorksL23")])
 
 [sub_resource type="Resource" id="TermIdeologyWaterWorksL30"]
@@ -2749,7 +2533,6 @@ display_name = "治水营田（化育）"
 description = "提高泛滥平原与三角洲的农业产出并减轻洪灾生产损失，代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyWaterWorksL30"), SubResource("TermIdeologyWaterWorksL31"), SubResource("TermIdeologyWaterWorksL32"), SubResource("TermIdeologyWaterWorksL33")])
 
 [sub_resource type="Resource" id="TermIdeologyForagerBandL10"]
@@ -2777,7 +2560,6 @@ display_name = "采集游群（初识）"
 description = "温带森林与热带雨林的农业产出提高，野生动物资源耗用随之增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyForagerBandL10"), SubResource("TermIdeologyForagerBandL11"), SubResource("TermIdeologyForagerBandL12")])
 
 [sub_resource type="Resource" id="TermIdeologyForagerBandL20"]
@@ -2805,7 +2587,6 @@ display_name = "采集游群（通晓）"
 description = "温带森林与热带雨林的农业产出提高，野生动物资源耗用随之增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyForagerBandL20"), SubResource("TermIdeologyForagerBandL21"), SubResource("TermIdeologyForagerBandL22")])
 
 [sub_resource type="Resource" id="TermIdeologyForagerBandL30"]
@@ -2833,7 +2614,6 @@ display_name = "采集游群（化育）"
 description = "温带森林与热带雨林的农业产出提高，野生动物资源耗用随之增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyForagerBandL30"), SubResource("TermIdeologyForagerBandL31"), SubResource("TermIdeologyForagerBandL32")])
 
 [sub_resource type="Resource" id="TermIdeologyRiversideCampL10"]
@@ -2861,7 +2641,6 @@ display_name = "逐水而居（初识）"
 description = "提高三角洲和泛滥平原的农业产出，化育后另为三角洲周边提供农业加成；代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRiversideCampL10"), SubResource("TermIdeologyRiversideCampL11"), SubResource("TermIdeologyRiversideCampL12")])
 
 [sub_resource type="Resource" id="TermIdeologyRiversideCampL20"]
@@ -2889,7 +2668,6 @@ display_name = "逐水而居（通晓）"
 description = "提高三角洲和泛滥平原的农业产出，化育后另为三角洲周边提供农业加成；代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRiversideCampL20"), SubResource("TermIdeologyRiversideCampL21"), SubResource("TermIdeologyRiversideCampL22")])
 
 [sub_resource type="Resource" id="TermIdeologyRiversideCampL30"]
@@ -2917,7 +2695,6 @@ display_name = "逐水而居（化育）"
 description = "提高三角洲和泛滥平原的农业产出，化育后另为三角洲周边提供农业加成；代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRiversideCampL30"), SubResource("TermIdeologyRiversideCampL31"), SubResource("TermIdeologyRiversideCampL32")])
 
 [sub_resource type="Resource" id="TermIdeologySeasonalCalendarL10"]
@@ -2951,7 +2728,6 @@ display_name = "寒暑历法（初识）"
 description = "减轻寒冷、热害及旱作作物的旱灾生产损失，代价是理念点获取下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySeasonalCalendarL10"), SubResource("TermIdeologySeasonalCalendarL11"), SubResource("TermIdeologySeasonalCalendarL12"), SubResource("TermIdeologySeasonalCalendarL13")])
 
 [sub_resource type="Resource" id="TermIdeologySeasonalCalendarL20"]
@@ -2985,7 +2761,6 @@ display_name = "寒暑历法（通晓）"
 description = "减轻寒冷、热害及旱作作物的旱灾生产损失，代价是理念点获取下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySeasonalCalendarL20"), SubResource("TermIdeologySeasonalCalendarL21"), SubResource("TermIdeologySeasonalCalendarL22"), SubResource("TermIdeologySeasonalCalendarL23")])
 
 [sub_resource type="Resource" id="TermIdeologySeasonalCalendarL30"]
@@ -3019,7 +2794,6 @@ display_name = "寒暑历法（化育）"
 description = "减轻寒冷、热害及旱作作物的旱灾生产损失，代价是理念点获取下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySeasonalCalendarL30"), SubResource("TermIdeologySeasonalCalendarL31"), SubResource("TermIdeologySeasonalCalendarL32"), SubResource("TermIdeologySeasonalCalendarL33")])
 
 [sub_resource type="Resource" id="TermIdeologyPitDwellingL10"]
@@ -3047,7 +2821,6 @@ display_name = "穴居聚落（初识）"
 description = "降低寒冷生产损失与全国建设成本，代价是丘陵农业产出下降；化育后为聚落增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPitDwellingL10"), SubResource("TermIdeologyPitDwellingL11"), SubResource("TermIdeologyPitDwellingL12")])
 
 [sub_resource type="Resource" id="TermIdeologyPitDwellingL20"]
@@ -3075,7 +2848,6 @@ display_name = "穴居聚落（通晓）"
 description = "降低寒冷生产损失与全国建设成本，代价是丘陵农业产出下降；化育后为聚落增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPitDwellingL20"), SubResource("TermIdeologyPitDwellingL21"), SubResource("TermIdeologyPitDwellingL22")])
 
 [sub_resource type="Resource" id="TermIdeologyPitDwellingL30"]
@@ -3103,7 +2875,6 @@ display_name = "穴居聚落（化育）"
 description = "降低寒冷生产损失与全国建设成本，代价是丘陵农业产出下降；化育后为聚落增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyPitDwellingL30"), SubResource("TermIdeologyPitDwellingL31"), SubResource("TermIdeologyPitDwellingL32")])
 
 [sub_resource type="Resource" id="TermIdeologyHydroelectricL10"]
@@ -3137,7 +2908,6 @@ display_name = "水电（初识）"
 description = "提高泛滥平原、裂谷和峡谷的能源产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHydroelectricL10"), SubResource("TermIdeologyHydroelectricL11"), SubResource("TermIdeologyHydroelectricL12"), SubResource("TermIdeologyHydroelectricL13")])
 
 [sub_resource type="Resource" id="TermIdeologyHydroelectricL20"]
@@ -3171,7 +2941,6 @@ display_name = "水电（通晓）"
 description = "提高泛滥平原、裂谷和峡谷的能源产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHydroelectricL20"), SubResource("TermIdeologyHydroelectricL21"), SubResource("TermIdeologyHydroelectricL22"), SubResource("TermIdeologyHydroelectricL23")])
 
 [sub_resource type="Resource" id="TermIdeologyHydroelectricL30"]
@@ -3205,7 +2974,6 @@ display_name = "水电（化育）"
 description = "提高泛滥平原、裂谷和峡谷的能源产出，代价是生产原料需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyHydroelectricL30"), SubResource("TermIdeologyHydroelectricL31"), SubResource("TermIdeologyHydroelectricL32"), SubResource("TermIdeologyHydroelectricL33")])
 
 [sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL10"]
@@ -3214,15 +2982,26 @@ stat_key = &"country.trade.speed_factor"
 operation = 2
 value = 0.98
 
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL1Mil1"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL1Mil2"]
+script = ExtResource("4_term")
+stat_key = &"country.military.fortification_factor"
+operation = 2
+value = 1.1
+
 [sub_resource type="Resource" id="DefIdeologyFrontierGarrisonL1"]
 script = ExtResource("3_definition")
 key = &"ideology.frontier_garrison.l1"
 display_name = "戍边（初识）"
-description = "提高边境地块的农业产出与出生率，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
+description = "提高边境地块的农业产出与出生率，并提高兵额与本国工事强度，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL10")])
+terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL10"), SubResource("TermIdeologyFrontierGarrisonL1Mil1"), SubResource("TermIdeologyFrontierGarrisonL1Mil2")])
 
 [sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL20"]
 script = ExtResource("4_term")
@@ -3230,15 +3009,26 @@ stat_key = &"country.trade.speed_factor"
 operation = 2
 value = 0.98
 
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL2Mil1"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.32
+
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL2Mil2"]
+script = ExtResource("4_term")
+stat_key = &"country.military.fortification_factor"
+operation = 2
+value = 1.16
+
 [sub_resource type="Resource" id="DefIdeologyFrontierGarrisonL2"]
 script = ExtResource("3_definition")
 key = &"ideology.frontier_garrison.l2"
 display_name = "戍边（通晓）"
-description = "提高边境地块的农业产出与出生率，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
+description = "提高边境地块的农业产出与出生率，并提高兵额与本国工事强度，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL20")])
+terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL20"), SubResource("TermIdeologyFrontierGarrisonL2Mil1"), SubResource("TermIdeologyFrontierGarrisonL2Mil2")])
 
 [sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL30"]
 script = ExtResource("4_term")
@@ -3246,15 +3036,26 @@ stat_key = &"country.trade.speed_factor"
 operation = 2
 value = 0.98
 
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL3Mil1"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.4400000000000002
+
+[sub_resource type="Resource" id="TermIdeologyFrontierGarrisonL3Mil2"]
+script = ExtResource("4_term")
+stat_key = &"country.military.fortification_factor"
+operation = 2
+value = 1.22
+
 [sub_resource type="Resource" id="DefIdeologyFrontierGarrisonL3"]
 script = ExtResource("3_definition")
 key = &"ideology.frontier_garrison.l3"
 display_name = "戍边（化育）"
-description = "提高边境地块的农业产出与出生率，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
+description = "提高边境地块的农业产出与出生率，并提高兵额与本国工事强度，代价是贸易运输速度下降；化育后还扩大相关理念的筛选范围。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL30")])
+terms = Array[Resource]([SubResource("TermIdeologyFrontierGarrisonL30"), SubResource("TermIdeologyFrontierGarrisonL3Mil1"), SubResource("TermIdeologyFrontierGarrisonL3Mil2")])
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL10"]
 script = ExtResource("4_term")
@@ -3295,7 +3096,6 @@ value = 1.3
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL16"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.landlord.satisfaction_bp"
-operation = 0
 value = -800.0
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL17"]
@@ -3311,7 +3111,6 @@ display_name = "摊丁入亩（初识）"
 description = "提高农业相关职业的税负承受能力，降低地主满意度与社会研究速度；化育后为轻税农业地块增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLandTaxReformL10"), SubResource("TermIdeologyLandTaxReformL11"), SubResource("TermIdeologyLandTaxReformL12"), SubResource("TermIdeologyLandTaxReformL13"), SubResource("TermIdeologyLandTaxReformL14"), SubResource("TermIdeologyLandTaxReformL15"), SubResource("TermIdeologyLandTaxReformL16"), SubResource("TermIdeologyLandTaxReformL17")])
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL20"]
@@ -3353,7 +3152,6 @@ value = 1.45
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL26"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.landlord.satisfaction_bp"
-operation = 0
 value = -1000.0
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL27"]
@@ -3369,7 +3167,6 @@ display_name = "摊丁入亩（通晓）"
 description = "提高农业相关职业的税负承受能力，降低地主满意度与社会研究速度；化育后为轻税农业地块增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLandTaxReformL20"), SubResource("TermIdeologyLandTaxReformL21"), SubResource("TermIdeologyLandTaxReformL22"), SubResource("TermIdeologyLandTaxReformL23"), SubResource("TermIdeologyLandTaxReformL24"), SubResource("TermIdeologyLandTaxReformL25"), SubResource("TermIdeologyLandTaxReformL26"), SubResource("TermIdeologyLandTaxReformL27")])
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL30"]
@@ -3411,7 +3208,6 @@ value = 1.45
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL36"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.landlord.satisfaction_bp"
-operation = 0
 value = -1000.0
 
 [sub_resource type="Resource" id="TermIdeologyLandTaxReformL37"]
@@ -3427,7 +3223,6 @@ display_name = "摊丁入亩（化育）"
 description = "提高农业相关职业的税负承受能力，降低地主满意度与社会研究速度；化育后为轻税农业地块增加出生率。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLandTaxReformL30"), SubResource("TermIdeologyLandTaxReformL31"), SubResource("TermIdeologyLandTaxReformL32"), SubResource("TermIdeologyLandTaxReformL33"), SubResource("TermIdeologyLandTaxReformL34"), SubResource("TermIdeologyLandTaxReformL35"), SubResource("TermIdeologyLandTaxReformL36"), SubResource("TermIdeologyLandTaxReformL37")])
 
 [sub_resource type="Resource" id="TermIdeologyExciseL10"]
@@ -3725,7 +3520,6 @@ display_name = "消费税制（初识）"
 description = "提高各职业的税负承受能力，代价是珠宝、华服与酒饮产出下降；化育后还可按国库储备率降低建设成本。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyExciseL10"), SubResource("TermIdeologyExciseL11"), SubResource("TermIdeologyExciseL12"), SubResource("TermIdeologyExciseL13"), SubResource("TermIdeologyExciseL14"), SubResource("TermIdeologyExciseL15"), SubResource("TermIdeologyExciseL16"), SubResource("TermIdeologyExciseL17"), SubResource("TermIdeologyExciseL18"), SubResource("TermIdeologyExciseL19"), SubResource("TermIdeologyExciseL110"), SubResource("TermIdeologyExciseL111"), SubResource("TermIdeologyExciseL112"), SubResource("TermIdeologyExciseL113"), SubResource("TermIdeologyExciseL114"), SubResource("TermIdeologyExciseL115"), SubResource("TermIdeologyExciseL116"), SubResource("TermIdeologyExciseL117"), SubResource("TermIdeologyExciseL118"), SubResource("TermIdeologyExciseL119"), SubResource("TermIdeologyExciseL120"), SubResource("TermIdeologyExciseL121"), SubResource("TermIdeologyExciseL122"), SubResource("TermIdeologyExciseL123"), SubResource("TermIdeologyExciseL124"), SubResource("TermIdeologyExciseL125"), SubResource("TermIdeologyExciseL126"), SubResource("TermIdeologyExciseL127"), SubResource("TermIdeologyExciseL128"), SubResource("TermIdeologyExciseL129"), SubResource("TermIdeologyExciseL130"), SubResource("TermIdeologyExciseL131"), SubResource("TermIdeologyExciseL132"), SubResource("TermIdeologyExciseL133"), SubResource("TermIdeologyExciseL134"), SubResource("TermIdeologyExciseL135"), SubResource("TermIdeologyExciseL136"), SubResource("TermIdeologyExciseL137"), SubResource("TermIdeologyExciseL138"), SubResource("TermIdeologyExciseL139"), SubResource("TermIdeologyExciseL140"), SubResource("TermIdeologyExciseL141"), SubResource("TermIdeologyExciseL142"), SubResource("TermIdeologyExciseL143"), SubResource("TermIdeologyExciseL144"), SubResource("TermIdeologyExciseL145"), SubResource("TermIdeologyExciseL146"), SubResource("TermIdeologyExciseL147")])
 
 [sub_resource type="Resource" id="TermIdeologyExciseL20"]
@@ -4023,7 +3817,6 @@ display_name = "消费税制（通晓）"
 description = "提高各职业的税负承受能力，代价是珠宝、华服与酒饮产出下降；化育后还可按国库储备率降低建设成本。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyExciseL20"), SubResource("TermIdeologyExciseL21"), SubResource("TermIdeologyExciseL22"), SubResource("TermIdeologyExciseL23"), SubResource("TermIdeologyExciseL24"), SubResource("TermIdeologyExciseL25"), SubResource("TermIdeologyExciseL26"), SubResource("TermIdeologyExciseL27"), SubResource("TermIdeologyExciseL28"), SubResource("TermIdeologyExciseL29"), SubResource("TermIdeologyExciseL210"), SubResource("TermIdeologyExciseL211"), SubResource("TermIdeologyExciseL212"), SubResource("TermIdeologyExciseL213"), SubResource("TermIdeologyExciseL214"), SubResource("TermIdeologyExciseL215"), SubResource("TermIdeologyExciseL216"), SubResource("TermIdeologyExciseL217"), SubResource("TermIdeologyExciseL218"), SubResource("TermIdeologyExciseL219"), SubResource("TermIdeologyExciseL220"), SubResource("TermIdeologyExciseL221"), SubResource("TermIdeologyExciseL222"), SubResource("TermIdeologyExciseL223"), SubResource("TermIdeologyExciseL224"), SubResource("TermIdeologyExciseL225"), SubResource("TermIdeologyExciseL226"), SubResource("TermIdeologyExciseL227"), SubResource("TermIdeologyExciseL228"), SubResource("TermIdeologyExciseL229"), SubResource("TermIdeologyExciseL230"), SubResource("TermIdeologyExciseL231"), SubResource("TermIdeologyExciseL232"), SubResource("TermIdeologyExciseL233"), SubResource("TermIdeologyExciseL234"), SubResource("TermIdeologyExciseL235"), SubResource("TermIdeologyExciseL236"), SubResource("TermIdeologyExciseL237"), SubResource("TermIdeologyExciseL238"), SubResource("TermIdeologyExciseL239"), SubResource("TermIdeologyExciseL240"), SubResource("TermIdeologyExciseL241"), SubResource("TermIdeologyExciseL242"), SubResource("TermIdeologyExciseL243"), SubResource("TermIdeologyExciseL244"), SubResource("TermIdeologyExciseL245"), SubResource("TermIdeologyExciseL246"), SubResource("TermIdeologyExciseL247")])
 
 [sub_resource type="Resource" id="TermIdeologyExciseL30"]
@@ -4321,7 +4114,6 @@ display_name = "消费税制（化育）"
 description = "提高各职业的税负承受能力，代价是珠宝、华服与酒饮产出下降；化育后还可按国库储备率降低建设成本。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyExciseL30"), SubResource("TermIdeologyExciseL31"), SubResource("TermIdeologyExciseL32"), SubResource("TermIdeologyExciseL33"), SubResource("TermIdeologyExciseL34"), SubResource("TermIdeologyExciseL35"), SubResource("TermIdeologyExciseL36"), SubResource("TermIdeologyExciseL37"), SubResource("TermIdeologyExciseL38"), SubResource("TermIdeologyExciseL39"), SubResource("TermIdeologyExciseL310"), SubResource("TermIdeologyExciseL311"), SubResource("TermIdeologyExciseL312"), SubResource("TermIdeologyExciseL313"), SubResource("TermIdeologyExciseL314"), SubResource("TermIdeologyExciseL315"), SubResource("TermIdeologyExciseL316"), SubResource("TermIdeologyExciseL317"), SubResource("TermIdeologyExciseL318"), SubResource("TermIdeologyExciseL319"), SubResource("TermIdeologyExciseL320"), SubResource("TermIdeologyExciseL321"), SubResource("TermIdeologyExciseL322"), SubResource("TermIdeologyExciseL323"), SubResource("TermIdeologyExciseL324"), SubResource("TermIdeologyExciseL325"), SubResource("TermIdeologyExciseL326"), SubResource("TermIdeologyExciseL327"), SubResource("TermIdeologyExciseL328"), SubResource("TermIdeologyExciseL329"), SubResource("TermIdeologyExciseL330"), SubResource("TermIdeologyExciseL331"), SubResource("TermIdeologyExciseL332"), SubResource("TermIdeologyExciseL333"), SubResource("TermIdeologyExciseL334"), SubResource("TermIdeologyExciseL335"), SubResource("TermIdeologyExciseL336"), SubResource("TermIdeologyExciseL337"), SubResource("TermIdeologyExciseL338"), SubResource("TermIdeologyExciseL339"), SubResource("TermIdeologyExciseL340"), SubResource("TermIdeologyExciseL341"), SubResource("TermIdeologyExciseL342"), SubResource("TermIdeologyExciseL343"), SubResource("TermIdeologyExciseL344"), SubResource("TermIdeologyExciseL345"), SubResource("TermIdeologyExciseL346"), SubResource("TermIdeologyExciseL347")])
 
 [sub_resource type="Resource" id="TermIdeologyLabourLegislationL10"]
@@ -4343,7 +4135,6 @@ display_name = "劳动立法（初识）"
 description = "降低家庭消费需求，同时增加生产原料需求；化育后还提高产业工人与矿工满意度。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLabourLegislationL10"), SubResource("TermIdeologyLabourLegislationL11")])
 
 [sub_resource type="Resource" id="TermIdeologyLabourLegislationL20"]
@@ -4365,7 +4156,6 @@ display_name = "劳动立法（通晓）"
 description = "降低家庭消费需求，同时增加生产原料需求；化育后还提高产业工人与矿工满意度。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLabourLegislationL20"), SubResource("TermIdeologyLabourLegislationL21")])
 
 [sub_resource type="Resource" id="TermIdeologyLabourLegislationL30"]
@@ -4383,13 +4173,11 @@ value = 1.02
 [sub_resource type="Resource" id="TermIdeologyLabourLegislationL32"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.industrial_worker.satisfaction_bp"
-operation = 0
 value = 400.0
 
 [sub_resource type="Resource" id="TermIdeologyLabourLegislationL33"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.miner.satisfaction_bp"
-operation = 0
 value = 400.0
 
 [sub_resource type="Resource" id="DefIdeologyLabourLegislationL3"]
@@ -4399,7 +4187,6 @@ display_name = "劳动立法（化育）"
 description = "降低家庭消费需求，同时增加生产原料需求；化育后还提高产业工人与矿工满意度。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyLabourLegislationL30"), SubResource("TermIdeologyLabourLegislationL31"), SubResource("TermIdeologyLabourLegislationL32"), SubResource("TermIdeologyLabourLegislationL33")])
 
 [sub_resource type="Resource" id="TermIdeologyTreasuryReserveL10"]
@@ -4415,7 +4202,6 @@ display_name = "太仓（初识）"
 description = "国库现金相对全国人口年收入越充裕，自然死亡率与建设成本越低；代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTreasuryReserveL10")])
 
 [sub_resource type="Resource" id="TermIdeologyTreasuryReserveL20"]
@@ -4431,7 +4217,6 @@ display_name = "太仓（通晓）"
 description = "国库现金相对全国人口年收入越充裕，自然死亡率与建设成本越低；代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTreasuryReserveL20")])
 
 [sub_resource type="Resource" id="TermIdeologyTreasuryReserveL30"]
@@ -4447,7 +4232,6 @@ display_name = "太仓（化育）"
 description = "国库现金相对全国人口年收入越充裕，自然死亡率与建设成本越低；代价是国内贸易成交容量下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyTreasuryReserveL30")])
 
 [sub_resource type="Resource" id="TermIdeologySilverStandardL10"]
@@ -4463,7 +4247,6 @@ display_name = "银本位（初识）"
 description = "国库储备率越高，国内贸易成交容量越大；代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySilverStandardL10")])
 
 [sub_resource type="Resource" id="TermIdeologySilverStandardL20"]
@@ -4479,7 +4262,6 @@ display_name = "银本位（通晓）"
 description = "国库储备率越高，国内贸易成交容量越大；代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySilverStandardL20")])
 
 [sub_resource type="Resource" id="TermIdeologySilverStandardL30"]
@@ -4495,7 +4277,6 @@ display_name = "银本位（化育）"
 description = "国库储备率越高，国内贸易成交容量越大；代价是家庭消费需求增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySilverStandardL30")])
 
 [sub_resource type="Resource" id="TermIdeologySubsidyStateL10"]
@@ -4511,7 +4292,6 @@ display_name = "补贴国家（初识）"
 description = "实际净税负较低的地块获得各部门产出加成；代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySubsidyStateL10")])
 
 [sub_resource type="Resource" id="TermIdeologySubsidyStateL20"]
@@ -4527,7 +4307,6 @@ display_name = "补贴国家（通晓）"
 description = "实际净税负较低的地块获得各部门产出加成；代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySubsidyStateL20")])
 
 [sub_resource type="Resource" id="TermIdeologySubsidyStateL30"]
@@ -4543,7 +4322,6 @@ display_name = "补贴国家（化育）"
 description = "实际净税负较低的地块获得各部门产出加成；代价是全国建设成本增加。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySubsidyStateL30")])
 
 [sub_resource type="Resource" id="TermIdeologySocialMediaL10"]
@@ -4555,7 +4333,6 @@ value = 1.4
 [sub_resource type="Resource" id="TermIdeologySocialMediaL11"]
 script = ExtResource("4_term")
 stat_key = &"country.ideology.opinion_factor_floor"
-operation = 0
 value = -0.1
 
 [sub_resource type="Resource" id="DefIdeologySocialMediaL1"]
@@ -4565,7 +4342,6 @@ display_name = "社交媒体（初识）"
 description = "放大人口增长带来的理念点，化育后另放大贸易理念点；代价是民意加成下限下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySocialMediaL10"), SubResource("TermIdeologySocialMediaL11")])
 
 [sub_resource type="Resource" id="TermIdeologySocialMediaL20"]
@@ -4577,7 +4353,6 @@ value = 1.6
 [sub_resource type="Resource" id="TermIdeologySocialMediaL21"]
 script = ExtResource("4_term")
 stat_key = &"country.ideology.opinion_factor_floor"
-operation = 0
 value = -0.1
 
 [sub_resource type="Resource" id="DefIdeologySocialMediaL2"]
@@ -4587,7 +4362,6 @@ display_name = "社交媒体（通晓）"
 description = "放大人口增长带来的理念点，化育后另放大贸易理念点；代价是民意加成下限下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySocialMediaL20"), SubResource("TermIdeologySocialMediaL21")])
 
 [sub_resource type="Resource" id="TermIdeologySocialMediaL30"]
@@ -4605,7 +4379,6 @@ value = 1.2
 [sub_resource type="Resource" id="TermIdeologySocialMediaL32"]
 script = ExtResource("4_term")
 stat_key = &"country.ideology.opinion_factor_floor"
-operation = 0
 value = -0.1
 
 [sub_resource type="Resource" id="DefIdeologySocialMediaL3"]
@@ -4615,25 +4388,21 @@ display_name = "社交媒体（化育）"
 description = "放大人口增长带来的理念点，化育后另放大贸易理念点；代价是民意加成下限下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySocialMediaL30"), SubResource("TermIdeologySocialMediaL31"), SubResource("TermIdeologySocialMediaL32")])
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL10"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.tenant_farmer.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL11"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.sharecropper.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL12"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.serf.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="DefIdeologyGentryPatronageL1"]
@@ -4643,25 +4412,21 @@ display_name = "乡绅（初识）"
 description = "高威望家族分支所在地提高知识产出并降低教育文化需求，代价是佃农、分成佃农与农奴满意度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGentryPatronageL10"), SubResource("TermIdeologyGentryPatronageL11"), SubResource("TermIdeologyGentryPatronageL12")])
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL20"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.tenant_farmer.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL21"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.sharecropper.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL22"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.serf.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="DefIdeologyGentryPatronageL2"]
@@ -4671,25 +4436,21 @@ display_name = "乡绅（通晓）"
 description = "高威望家族分支所在地提高知识产出并降低教育文化需求，代价是佃农、分成佃农与农奴满意度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGentryPatronageL20"), SubResource("TermIdeologyGentryPatronageL21"), SubResource("TermIdeologyGentryPatronageL22")])
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL30"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.tenant_farmer.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL31"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.sharecropper.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="TermIdeologyGentryPatronageL32"]
 script = ExtResource("4_term")
 stat_key = &"economy.profession.serf.satisfaction_bp"
-operation = 0
 value = -200.0
 
 [sub_resource type="Resource" id="DefIdeologyGentryPatronageL3"]
@@ -4699,7 +4460,6 @@ display_name = "乡绅（化育）"
 description = "高威望家族分支所在地提高知识产出并降低教育文化需求，代价是佃农、分成佃农与农奴满意度下降。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyGentryPatronageL30"), SubResource("TermIdeologyGentryPatronageL31"), SubResource("TermIdeologyGentryPatronageL32")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteGranary10"]
@@ -4715,7 +4475,6 @@ display_name = "仓廪·一"
 description = "仓廪体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteGranary10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteGranary20"]
@@ -4737,7 +4496,6 @@ display_name = "仓廪·二"
 description = "仓廪体系联动修正（4 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteGranary20"), SubResource("TermIdeologyRouteGranary21")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteCropland10"]
@@ -4753,7 +4511,6 @@ display_name = "田垄·一"
 description = "田垄体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteCropland10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteCropland20"]
@@ -4775,7 +4532,6 @@ display_name = "田垄·二"
 description = "田垄体系联动修正（4 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteCropland20"), SubResource("TermIdeologyRouteCropland21")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteMining10"]
@@ -4791,7 +4547,6 @@ display_name = "矿冶·一"
 description = "矿冶体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteMining10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteMining20"]
@@ -4813,7 +4568,6 @@ display_name = "矿冶·二"
 description = "矿冶体系联动修正（4 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteMining20"), SubResource("TermIdeologyRouteMining21")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteWorkshop10"]
@@ -4829,7 +4583,6 @@ display_name = "工坊·一"
 description = "工坊体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteWorkshop10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteWorkshop20"]
@@ -4851,7 +4604,6 @@ display_name = "工坊·二"
 description = "工坊体系联动修正（4 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteWorkshop20"), SubResource("TermIdeologyRouteWorkshop21")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteLivelihood10"]
@@ -4867,7 +4619,6 @@ display_name = "生灵·一"
 description = "生灵体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteLivelihood10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteLivelihood20"]
@@ -4889,7 +4640,6 @@ display_name = "生灵·二"
 description = "生灵体系联动修正（4 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteLivelihood20"), SubResource("TermIdeologyRouteLivelihood21")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteMarket10"]
@@ -4905,7 +4655,6 @@ display_name = "市易·一"
 description = "市易体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteMarket10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteLearning10"]
@@ -4921,7 +4670,6 @@ display_name = "学识·一"
 description = "学识体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteLearning10")])
 
 [sub_resource type="Resource" id="TermIdeologyRouteThoroughfare10"]
@@ -4937,7 +4685,6 @@ display_name = "通衢·一"
 description = "通衢体系联动修正（2 张）。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyRouteThoroughfare10")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyGranaryRecords0"]
@@ -4959,7 +4706,6 @@ display_name = "仓廪簿籍"
 description = "仓廪簿籍联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyGranaryRecords0"), SubResource("TermIdeologySynergyGranaryRecords1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyPolderFarming0"]
@@ -4981,7 +4727,6 @@ display_name = "圩田"
 description = "圩田联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyPolderFarming0"), SubResource("TermIdeologySynergyPolderFarming1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyMixedHusbandry0"]
@@ -5003,7 +4748,6 @@ display_name = "农牧轮转"
 description = "农牧轮转联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyMixedHusbandry0"), SubResource("TermIdeologySynergyMixedHusbandry1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyCoalIronComplex0"]
@@ -5025,7 +4769,6 @@ display_name = "煤铁复合体"
 description = "煤铁复合体联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyCoalIronComplex0"), SubResource("TermIdeologySynergyCoalIronComplex1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyPostalCanalGrid0"]
@@ -5047,7 +4790,6 @@ display_name = "驿漕并网"
 description = "驿漕并网联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyPostalCanalGrid0"), SubResource("TermIdeologySynergyPostalCanalGrid1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyJointStockAccounting0"]
@@ -5069,7 +4811,6 @@ display_name = "股份会计"
 description = "股份会计联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyJointStockAccounting0"), SubResource("TermIdeologySynergyJointStockAccounting1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergySteamRailComplex0"]
@@ -5091,7 +4832,6 @@ display_name = "铁汽联动"
 description = "铁汽联动联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergySteamRailComplex0"), SubResource("TermIdeologySynergySteamRailComplex1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyChemicalAgriculture0"]
@@ -5113,7 +4853,6 @@ display_name = "化肥农业"
 description = "化肥农业联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyChemicalAgriculture0"), SubResource("TermIdeologySynergyChemicalAgriculture1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyElectricAssembly0"]
@@ -5135,7 +4874,6 @@ display_name = "电气流水线"
 description = "电气流水线联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyElectricAssembly0"), SubResource("TermIdeologySynergyElectricAssembly1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyDigitalAutomation0"]
@@ -5157,7 +4895,6 @@ display_name = "数字自动化"
 description = "数字自动化联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyDigitalAutomation0"), SubResource("TermIdeologySynergyDigitalAutomation1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyDoubleConstraint0"]
@@ -5179,7 +4916,6 @@ display_name = "双重约束"
 description = "双重约束联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyDoubleConstraint0"), SubResource("TermIdeologySynergyDoubleConstraint1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyEpidemicDefence0"]
@@ -5201,7 +4937,6 @@ display_name = "防疫体系"
 description = "防疫体系联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyEpidemicDefence0"), SubResource("TermIdeologySynergyEpidemicDefence1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyOceanicFinance0"]
@@ -5223,7 +4958,6 @@ display_name = "远洋金融"
 description = "远洋金融联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyOceanicFinance0"), SubResource("TermIdeologySynergyOceanicFinance1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergySilkWeavingChain0"]
@@ -5245,7 +4979,6 @@ display_name = "丝织体系"
 description = "丝织体系联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergySilkWeavingChain0"), SubResource("TermIdeologySynergySilkWeavingChain1")])
 
 [sub_resource type="Resource" id="TermIdeologySynergyExperimentalNaturalHistory0"]
@@ -5267,7 +5000,6 @@ display_name = "实验博物"
 description = "实验博物联动修正。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologySynergyExperimentalNaturalHistory0"), SubResource("TermIdeologySynergyExperimentalNaturalHistory1")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian20"]
@@ -5283,7 +5015,6 @@ display_name = "农本共鸣2"
 description = "装备或晋升2张农本理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian20")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian40"]
@@ -5305,7 +5036,6 @@ display_name = "农本共鸣4"
 description = "装备或晋升4张农本理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian40"), SubResource("TermIdeologyResonanceAgrarian41")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian50"]
@@ -5327,7 +5057,6 @@ display_name = "农本共鸣5"
 description = "装备或晋升5张农本理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian50"), SubResource("TermIdeologyResonanceAgrarian51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceAgrarian60"]
@@ -5349,7 +5078,6 @@ display_name = "农本共鸣6"
 description = "装备或晋升6张农本理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceAgrarian60"), SubResource("TermIdeologyResonanceAgrarian61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce20"]
@@ -5365,7 +5093,6 @@ display_name = "商贸共鸣2"
 description = "装备或晋升2张商贸理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce20")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce40"]
@@ -5387,7 +5114,6 @@ display_name = "商贸共鸣4"
 description = "装备或晋升4张商贸理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce40"), SubResource("TermIdeologyResonanceCommerce41")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce50"]
@@ -5409,7 +5135,6 @@ display_name = "商贸共鸣5"
 description = "装备或晋升5张商贸理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce50"), SubResource("TermIdeologyResonanceCommerce51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceCommerce60"]
@@ -5431,7 +5156,6 @@ display_name = "商贸共鸣6"
 description = "装备或晋升6张商贸理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceCommerce60"), SubResource("TermIdeologyResonanceCommerce61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceLearning20"]
@@ -5453,7 +5177,6 @@ display_name = "学识共鸣2"
 description = "装备或晋升2张学识理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning20"), SubResource("TermIdeologyResonanceLearning21")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceLearning40"]
@@ -5475,7 +5198,6 @@ display_name = "学识共鸣4"
 description = "装备或晋升4张学识理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning40"), SubResource("TermIdeologyResonanceLearning41")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceLearning50"]
@@ -5497,7 +5219,6 @@ display_name = "学识共鸣5"
 description = "装备或晋升5张学识理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning50"), SubResource("TermIdeologyResonanceLearning51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceLearning60"]
@@ -5519,7 +5240,6 @@ display_name = "学识共鸣6"
 description = "装备或晋升6张学识理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceLearning60"), SubResource("TermIdeologyResonanceLearning61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization20"]
@@ -5528,6 +5248,11 @@ stat_key = &"country.construction.cost_factor"
 operation = 2
 value = 0.97
 
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization2Mil1"]
+script = ExtResource("4_term")
+stat_key = &"country.military.morale_add"
+value = 0.03
+
 [sub_resource type="Resource" id="DefIdeologyResonanceMobilization2"]
 script = ExtResource("3_definition")
 key = &"ideology.resonance.mobilization.2"
@@ -5535,8 +5260,7 @@ display_name = "动员共鸣2"
 description = "装备或晋升2张动员理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization20")])
+terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization20"), SubResource("TermIdeologyResonanceMobilization2Mil1")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization40"]
 script = ExtResource("4_term")
@@ -5550,6 +5274,12 @@ stat_key = &"country.research.society_efficiency"
 operation = 2
 value = 1.03
 
+[sub_resource type="Resource" id="TermIdeologyResonanceMobilization4Mil2"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.1
+
 [sub_resource type="Resource" id="DefIdeologyResonanceMobilization4"]
 script = ExtResource("3_definition")
 key = &"ideology.resonance.mobilization.4"
@@ -5557,8 +5287,7 @@ display_name = "动员共鸣4"
 description = "装备或晋升4张动员理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
-terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization40"), SubResource("TermIdeologyResonanceMobilization41")])
+terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization40"), SubResource("TermIdeologyResonanceMobilization41"), SubResource("TermIdeologyResonanceMobilization4Mil2")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization50"]
 script = ExtResource("4_term")
@@ -5579,7 +5308,6 @@ display_name = "动员共鸣5"
 description = "装备或晋升5张动员理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization50"), SubResource("TermIdeologyResonanceMobilization51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceMobilization60"]
@@ -5601,7 +5329,6 @@ display_name = "动员共鸣6"
 description = "装备或晋升6张动员理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceMobilization60"), SubResource("TermIdeologyResonanceMobilization61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceIndustry20"]
@@ -5617,7 +5344,6 @@ display_name = "工造共鸣2"
 description = "装备或晋升2张工造理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry20")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceIndustry40"]
@@ -5639,7 +5365,6 @@ display_name = "工造共鸣4"
 description = "装备或晋升4张工造理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry40"), SubResource("TermIdeologyResonanceIndustry41")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceIndustry50"]
@@ -5661,7 +5386,6 @@ display_name = "工造共鸣5"
 description = "装备或晋升5张工造理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry50"), SubResource("TermIdeologyResonanceIndustry51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceIndustry60"]
@@ -5683,7 +5407,6 @@ display_name = "工造共鸣6"
 description = "装备或晋升6张工造理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceIndustry60"), SubResource("TermIdeologyResonanceIndustry61")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceHarmony20"]
@@ -5699,7 +5422,6 @@ display_name = "调和共鸣2"
 description = "装备或晋升2张调和理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony20")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceHarmony40"]
@@ -5733,7 +5455,6 @@ display_name = "调和共鸣4"
 description = "装备或晋升4张调和理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony40"), SubResource("TermIdeologyResonanceHarmony41"), SubResource("TermIdeologyResonanceHarmony42"), SubResource("TermIdeologyResonanceHarmony43")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceHarmony50"]
@@ -5755,7 +5476,6 @@ display_name = "调和共鸣5"
 description = "装备或晋升5张调和理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony50"), SubResource("TermIdeologyResonanceHarmony51")])
 
 [sub_resource type="Resource" id="TermIdeologyResonanceHarmony60"]
@@ -5789,13 +5509,11 @@ display_name = "调和共鸣6"
 description = "装备或晋升6张调和理念。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyResonanceHarmony60"), SubResource("TermIdeologyResonanceHarmony61"), SubResource("TermIdeologyResonanceHarmony62"), SubResource("TermIdeologyResonanceHarmony63")])
 
 [sub_resource type="Resource" id="TermIdeologyCityOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityOutputFactor"]
@@ -5805,7 +5523,6 @@ display_name = "地块全部产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityOutputFactorCut"]
@@ -5821,13 +5538,11 @@ display_name = "地块全部产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingAgricultureOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.building.agriculture_output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityBuildingAgricultureOutputFactor"]
@@ -5837,7 +5552,6 @@ display_name = "地块农业产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingAgricultureOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingAgricultureOutputFactorCut"]
@@ -5853,13 +5567,11 @@ display_name = "地块农业产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingAgricultureOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingExtractiveOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.building.extractive_output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityBuildingExtractiveOutputFactor"]
@@ -5869,7 +5581,6 @@ display_name = "地块采掘产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingExtractiveOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingExtractiveOutputFactorCut"]
@@ -5885,13 +5596,11 @@ display_name = "地块采掘产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingExtractiveOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingManufacturingOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.building.manufacturing_output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityBuildingManufacturingOutputFactor"]
@@ -5901,7 +5610,6 @@ display_name = "地块制造产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingManufacturingOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingManufacturingOutputFactorCut"]
@@ -5917,13 +5625,11 @@ display_name = "地块制造产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingManufacturingOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingEnergyOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.building.energy_output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityBuildingEnergyOutputFactor"]
@@ -5933,7 +5639,6 @@ display_name = "地块能源产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingEnergyOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingEnergyOutputFactorCut"]
@@ -5949,13 +5654,11 @@ display_name = "地块能源产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingEnergyOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingKnowledgeOutputFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.building.knowledge_output_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityBuildingKnowledgeOutputFactor"]
@@ -5965,7 +5668,6 @@ display_name = "地块知识产出增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingKnowledgeOutputFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityBuildingKnowledgeOutputFactorCut"]
@@ -5981,13 +5683,11 @@ display_name = "地块知识产出减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityBuildingKnowledgeOutputFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourceRegenFactor"]
@@ -5997,7 +5697,6 @@ display_name = "resource.regen_factor增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceRegenFactorCut"]
@@ -6013,13 +5712,11 @@ display_name = "resource.regen_factor减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceTimberRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.timber.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourceTimberRegenFactor"]
@@ -6029,7 +5726,6 @@ display_name = "地块木材再生增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceTimberRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceTimberRegenFactorCut"]
@@ -6045,13 +5741,11 @@ display_name = "地块木材再生减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceTimberRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourcePastureRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.pasture.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourcePastureRegenFactor"]
@@ -6061,7 +5755,6 @@ display_name = "地块牧草再生增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourcePastureRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourcePastureRegenFactorCut"]
@@ -6077,13 +5770,11 @@ display_name = "地块牧草再生减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourcePastureRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceFertileSoilRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.fertile_soil.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourceFertileSoilRegenFactor"]
@@ -6093,7 +5784,6 @@ display_name = "地块肥沃土壤再生增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceFertileSoilRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceFertileSoilRegenFactorCut"]
@@ -6109,13 +5799,11 @@ display_name = "地块肥沃土壤再生减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceFertileSoilRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceWildGameRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.wild_game.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourceWildGameRegenFactor"]
@@ -6125,7 +5813,6 @@ display_name = "地块野味再生增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceWildGameRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceWildGameRegenFactorCut"]
@@ -6141,13 +5828,11 @@ display_name = "地块野味再生减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceWildGameRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceFreshwaterFishRegenFactor"]
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.freshwater_fish.regen_factor"
-operation = 0
 value = 1.0
 
 [sub_resource type="Resource" id="DefIdeologyCityResourceFreshwaterFishRegenFactor"]
@@ -6157,7 +5842,6 @@ display_name = "地块淡水鱼再生增益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceFreshwaterFishRegenFactor")])
 
 [sub_resource type="Resource" id="TermIdeologyCityResourceFreshwaterFishRegenFactorCut"]
@@ -6173,14 +5857,12 @@ display_name = "地块淡水鱼再生减益模板"
 description = "地块级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 2
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCityResourceFreshwaterFishRegenFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryPopulationDeathFactorCut"]
 script = ExtResource("4_term")
 stat_key = &"country.population.death_factor"
 operation = 2
-value = 0.0
 
 [sub_resource type="Resource" id="DefIdeologyCountryPopulationDeathFactorCut"]
 script = ExtResource("3_definition")
@@ -6189,14 +5871,12 @@ display_name = "人口死亡率减益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryPopulationDeathFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryConstructionCostFactorCut"]
 script = ExtResource("4_term")
 stat_key = &"country.construction.cost_factor"
 operation = 2
-value = 0.0
 
 [sub_resource type="Resource" id="DefIdeologyCountryConstructionCostFactorCut"]
 script = ExtResource("3_definition")
@@ -6205,14 +5885,12 @@ display_name = "建设成本减益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryConstructionCostFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryResearchCostFactorCut"]
 script = ExtResource("4_term")
 stat_key = &"country.research.cost_factor"
 operation = 2
-value = 0.0
 
 [sub_resource type="Resource" id="DefIdeologyCountryResearchCostFactorCut"]
 script = ExtResource("3_definition")
@@ -6221,7 +5899,6 @@ display_name = "research.cost_factor减益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryResearchCostFactorCut")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryTradeCapacityFactorGain"]
@@ -6237,7 +5914,6 @@ display_name = "国内贸易容量增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryTradeCapacityFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryOutputAgricultureFactorGain"]
@@ -6253,7 +5929,6 @@ display_name = "农业部门产出增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryOutputAgricultureFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryOutputExtractiveFactorGain"]
@@ -6269,7 +5944,6 @@ display_name = "采掘部门产出增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryOutputExtractiveFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryOutputManufacturingFactorGain"]
@@ -6285,7 +5959,6 @@ display_name = "制造部门产出增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryOutputManufacturingFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryOutputEnergyFactorGain"]
@@ -6301,7 +5974,6 @@ display_name = "能源部门产出增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryOutputEnergyFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryOutputKnowledgeFactorGain"]
@@ -6317,7 +5989,6 @@ display_name = "知识部门产出增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryOutputKnowledgeFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryIdeologyPointGainFactorGain"]
@@ -6333,7 +6004,6 @@ display_name = "理念点获取增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologyPointGainFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryIdeologyPointPopulationFactorGain"]
@@ -6349,7 +6019,6 @@ display_name = "人口增长理念点增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologyPointPopulationFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryIdeologyPointBuildingFactorGain"]
@@ -6365,7 +6034,6 @@ display_name = "建筑增长理念点增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologyPointBuildingFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryIdeologyPointTradeFactorGain"]
@@ -6381,7 +6049,6 @@ display_name = "贸易理念点增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologyPointTradeFactorGain")])
 
 [sub_resource type="Resource" id="TermIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain"]
@@ -6397,10 +6064,1900 @@ display_name = "调和理念强度增益模板"
 description = "国家级理念模板：真实幅度由效果指令给出，不在此处写死。"
 domain = 1
 stack_policy = 1
-default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.militia_factor"
+operation = 2
+value = 1.3
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL11"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMilitiaTraditionL1"]
+script = ExtResource("3_definition")
+key = &"ideology.militia_tradition.l1"
+display_name = "兵民一体（初识）"
+description = "民兵攻防提高；代价是全国制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitiaTraditionL10"), SubResource("TermIdeologyMilitiaTraditionL11")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.militia_factor"
+operation = 2
+value = 1.48
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL21"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMilitiaTraditionL2"]
+script = ExtResource("3_definition")
+key = &"ideology.militia_tradition.l2"
+display_name = "兵民一体（通晓）"
+description = "民兵攻防提高；代价是全国制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitiaTraditionL20"), SubResource("TermIdeologyMilitiaTraditionL21")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.militia_factor"
+operation = 2
+value = 1.66
+
+[sub_resource type="Resource" id="TermIdeologyMilitiaTraditionL31"]
+script = ExtResource("4_term")
+stat_key = &"country.output.manufacturing_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMilitiaTraditionL3"]
+script = ExtResource("3_definition")
+key = &"ideology.militia_tradition.l3"
+display_name = "兵民一体（化育）"
+description = "民兵攻防提高；代价是全国制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitiaTraditionL30"), SubResource("TermIdeologyMilitiaTraditionL31")])
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 0.8500000000000001
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL12"]
+script = ExtResource("4_term")
+stat_key = &"country.military.levy_rate"
+value = 0.01
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL13"]
+script = ExtResource("4_term")
+stat_key = &"country.military.morale_add"
+value = -0.05
+
+[sub_resource type="Resource" id="DefIdeologyLevySystemL1"]
+script = ExtResource("3_definition")
+key = &"ideology.levy_system.l1"
+display_name = "府兵制（初识）"
+description = "兵额提高、军饷降低；代价是单格征召上限提高、部队士气下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLevySystemL10"), SubResource("TermIdeologyLevySystemL11"), SubResource("TermIdeologyLevySystemL12"), SubResource("TermIdeologyLevySystemL13")])
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.32
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 0.76
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL22"]
+script = ExtResource("4_term")
+stat_key = &"country.military.levy_rate"
+value = 0.01
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL23"]
+script = ExtResource("4_term")
+stat_key = &"country.military.morale_add"
+value = -0.05
+
+[sub_resource type="Resource" id="DefIdeologyLevySystemL2"]
+script = ExtResource("3_definition")
+key = &"ideology.levy_system.l2"
+display_name = "府兵制（通晓）"
+description = "兵额提高、军饷降低；代价是单格征召上限提高、部队士气下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLevySystemL20"), SubResource("TermIdeologyLevySystemL21"), SubResource("TermIdeologyLevySystemL22"), SubResource("TermIdeologyLevySystemL23")])
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.4400000000000002
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 0.67
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL32"]
+script = ExtResource("4_term")
+stat_key = &"country.military.levy_rate"
+value = 0.01
+
+[sub_resource type="Resource" id="TermIdeologyLevySystemL33"]
+script = ExtResource("4_term")
+stat_key = &"country.military.morale_add"
+value = -0.05
+
+[sub_resource type="Resource" id="DefIdeologyLevySystemL3"]
+script = ExtResource("3_definition")
+key = &"ideology.levy_system.l3"
+display_name = "府兵制（化育）"
+description = "兵额提高、军饷降低；代价是单格征召上限提高、部队士气下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLevySystemL30"), SubResource("TermIdeologyLevySystemL31"), SubResource("TermIdeologyLevySystemL32"), SubResource("TermIdeologyLevySystemL33")])
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.training_time_factor"
+operation = 2
+value = 0.8
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="DefIdeologyVolunteerArmyL1"]
+script = ExtResource("3_definition")
+key = &"ideology.volunteer_army.l1"
+display_name = "募兵制（初识）"
+description = "训练时间缩短；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyVolunteerArmyL10"), SubResource("TermIdeologyVolunteerArmyL11")])
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.training_time_factor"
+operation = 2
+value = 0.68
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="DefIdeologyVolunteerArmyL2"]
+script = ExtResource("3_definition")
+key = &"ideology.volunteer_army.l2"
+display_name = "募兵制（通晓）"
+description = "训练时间缩短；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyVolunteerArmyL20"), SubResource("TermIdeologyVolunteerArmyL21")])
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.training_time_factor"
+operation = 2
+value = 0.56
+
+[sub_resource type="Resource" id="TermIdeologyVolunteerArmyL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="DefIdeologyVolunteerArmyL3"]
+script = ExtResource("3_definition")
+key = &"ideology.volunteer_army.l3"
+display_name = "募兵制（化育）"
+description = "训练时间缩短；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyVolunteerArmyL30"), SubResource("TermIdeologyVolunteerArmyL31")])
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL12"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 1.25
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL13"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 0.8
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL14"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.25
+
+[sub_resource type="Resource" id="DefIdeologyProfessionalArmyL1"]
+script = ExtResource("3_definition")
+key = &"ideology.professional_army.l1"
+display_name = "职业常备军（初识）"
+description = "部队攻防与组织度恢复提高；代价是兵额减少、军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyProfessionalArmyL10"), SubResource("TermIdeologyProfessionalArmyL11"), SubResource("TermIdeologyProfessionalArmyL12"), SubResource("TermIdeologyProfessionalArmyL13"), SubResource("TermIdeologyProfessionalArmyL14")])
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.16
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.16
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL22"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 1.4
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL23"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 0.8
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL24"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.25
+
+[sub_resource type="Resource" id="DefIdeologyProfessionalArmyL2"]
+script = ExtResource("3_definition")
+key = &"ideology.professional_army.l2"
+display_name = "职业常备军（通晓）"
+description = "部队攻防与组织度恢复提高；代价是兵额减少、军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyProfessionalArmyL20"), SubResource("TermIdeologyProfessionalArmyL21"), SubResource("TermIdeologyProfessionalArmyL22"), SubResource("TermIdeologyProfessionalArmyL23"), SubResource("TermIdeologyProfessionalArmyL24")])
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.22
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.22
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL32"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 1.55
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL33"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 0.8
+
+[sub_resource type="Resource" id="TermIdeologyProfessionalArmyL34"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.25
+
+[sub_resource type="Resource" id="DefIdeologyProfessionalArmyL3"]
+script = ExtResource("3_definition")
+key = &"ideology.professional_army.l3"
+display_name = "职业常备军（化育）"
+description = "部队攻防与组织度恢复提高；代价是兵额减少、军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyProfessionalArmyL30"), SubResource("TermIdeologyProfessionalArmyL31"), SubResource("TermIdeologyProfessionalArmyL32"), SubResource("TermIdeologyProfessionalArmyL33"), SubResource("TermIdeologyProfessionalArmyL34")])
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.mutual_support"
+value = 0.03
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMutualSupportL1"]
+script = ExtResource("3_definition")
+key = &"ideology.mutual_support.l1"
+display_name = "犄角之势（初识）"
+description = "周围 2 格内每有一支其他本国部队（最多 3 支），防御提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMutualSupportL10"), SubResource("TermIdeologyMutualSupportL11")])
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.mutual_support"
+value = 0.048
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMutualSupportL2"]
+script = ExtResource("3_definition")
+key = &"ideology.mutual_support.l2"
+display_name = "犄角之势（通晓）"
+description = "周围 2 格内每有一支其他本国部队（最多 3 支），防御提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMutualSupportL20"), SubResource("TermIdeologyMutualSupportL21")])
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.mutual_support"
+value = 0.066
+
+[sub_resource type="Resource" id="TermIdeologyMutualSupportL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMutualSupportL3"]
+script = ExtResource("3_definition")
+key = &"ideology.mutual_support.l3"
+display_name = "犄角之势（化育）"
+description = "周围 2 格内每有一支其他本国部队（最多 3 支），防御提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMutualSupportL30"), SubResource("TermIdeologyMutualSupportL31")])
+
+[sub_resource type="Resource" id="TermIdeologyFortressCityL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyFortressCityL1"]
+script = ExtResource("3_definition")
+key = &"ideology.fortress_city.l1"
+display_name = "坚城（初识）"
+description = "城镇及以上聚落格的本国部队防御提高，其邻格也有较小提高；代价是全国建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyFortressCityL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyFortressCityL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyFortressCityL2"]
+script = ExtResource("3_definition")
+key = &"ideology.fortress_city.l2"
+display_name = "坚城（通晓）"
+description = "城镇及以上聚落格的本国部队防御提高，其邻格也有较小提高；代价是全国建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyFortressCityL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyFortressCityL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyFortressCityL3"]
+script = ExtResource("3_definition")
+key = &"ideology.fortress_city.l3"
+display_name = "坚城（化育）"
+description = "城镇及以上聚落格的本国部队防御提高，其邻格也有较小提高；代价是全国建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyFortressCityL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWrathOfTheFallenL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyWrathOfTheFallenL1"]
+script = ExtResource("3_definition")
+key = &"ideology.wrath_of_the_fallen.l1"
+display_name = "哀兵必胜（初识）"
+description = "每输掉一场会战，全国部队攻击提高，持续 60 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWrathOfTheFallenL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWrathOfTheFallenL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyWrathOfTheFallenL2"]
+script = ExtResource("3_definition")
+key = &"ideology.wrath_of_the_fallen.l2"
+display_name = "哀兵必胜（通晓）"
+description = "每输掉一场会战，全国部队攻击提高，持续 60 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWrathOfTheFallenL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWrathOfTheFallenL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyWrathOfTheFallenL3"]
+script = ExtResource("3_definition")
+key = &"ideology.wrath_of_the_fallen.l3"
+display_name = "哀兵必胜（化育）"
+description = "每输掉一场会战，全国部队攻击提高，持续 60 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWrathOfTheFallenL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyPursuitL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyPursuitL1"]
+script = ExtResource("3_definition")
+key = &"ideology.pursuit.l1"
+display_name = "乘胜追击（初识）"
+description = "每赢得一场会战，全国部队速度与攻击提高，持续 20 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyPursuitL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyPursuitL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyPursuitL2"]
+script = ExtResource("3_definition")
+key = &"ideology.pursuit.l2"
+display_name = "乘胜追击（通晓）"
+description = "每赢得一场会战，全国部队速度与攻击提高，持续 20 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyPursuitL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyPursuitL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyPursuitL3"]
+script = ExtResource("3_definition")
+key = &"ideology.pursuit.l3"
+display_name = "乘胜追击（化育）"
+description = "每赢得一场会战，全国部队速度与攻击提高，持续 20 日，可叠加；代价是组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyPursuitL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWarFeedsWarL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyWarFeedsWarL1"]
+script = ExtResource("3_definition")
+key = &"ideology.war_feeds_war.l1"
+display_name = "以战养战（初识）"
+description = "每占领一格，占领税效率提高，持续 90 日，可叠加；代价是被征发格的消费惩罚加倍。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWarFeedsWarL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWarFeedsWarL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyWarFeedsWarL2"]
+script = ExtResource("3_definition")
+key = &"ideology.war_feeds_war.l2"
+display_name = "以战养战（通晓）"
+description = "每占领一格，占领税效率提高，持续 90 日，可叠加；代价是被征发格的消费惩罚加倍。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWarFeedsWarL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyWarFeedsWarL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyWarFeedsWarL3"]
+script = ExtResource("3_definition")
+key = &"ideology.war_feeds_war.l3"
+display_name = "以战养战（化育）"
+description = "每占领一格，占领税效率提高，持续 90 日，可叠加；代价是被征发格的消费惩罚加倍。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyWarFeedsWarL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMeritRanksL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMeritRanksL1"]
+script = ExtResource("3_definition")
+key = &"ideology.merit_ranks.l1"
+display_name = "军功爵制（初识）"
+description = "每赢得一场会战，士兵职业满意度提高，持续 90 日，可叠加；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMeritRanksL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMeritRanksL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMeritRanksL2"]
+script = ExtResource("3_definition")
+key = &"ideology.merit_ranks.l2"
+display_name = "军功爵制（通晓）"
+description = "每赢得一场会战，士兵职业满意度提高，持续 90 日，可叠加；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMeritRanksL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMeritRanksL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologyMeritRanksL3"]
+script = ExtResource("3_definition")
+key = &"ideology.merit_ranks.l3"
+display_name = "军功爵制（化育）"
+description = "每赢得一场会战，士兵职业满意度提高，持续 90 日，可叠加；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMeritRanksL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFarmsL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_transport_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFarmsL1"]
+script = ExtResource("3_definition")
+key = &"ideology.military_farms.l1"
+display_name = "屯田（初识）"
+description = "有兵营的格及其邻格农业产出提高、驻防补给消耗降低；代价是这些格的制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFarmsL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFarmsL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_transport_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFarmsL2"]
+script = ExtResource("3_definition")
+key = &"ideology.military_farms.l2"
+display_name = "屯田（通晓）"
+description = "有兵营的格及其邻格农业产出提高、驻防补给消耗降低；代价是这些格的制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFarmsL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFarmsL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_transport_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFarmsL3"]
+script = ExtResource("3_definition")
+key = &"ideology.military_farms.l3"
+display_name = "屯田（化育）"
+description = "有兵营的格及其邻格农业产出提高、驻防补给消耗降低；代价是这些格的制造业产出略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFarmsL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.melee_arms_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL1R1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.missile_arms_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL1R2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL1R3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL1R4"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyArsenalCityL1"]
+script = ExtResource("3_definition")
+key = &"ideology.arsenal_city.l1"
+display_name = "武库（初识）"
+description = "兵器作坊产出提高；有军工建筑的格及其邻格兵营兵额提高；代价是全国家庭消费需求增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyArsenalCityL1R0"), SubResource("TermIdeologyArsenalCityL1R1"), SubResource("TermIdeologyArsenalCityL1R2"), SubResource("TermIdeologyArsenalCityL1R3"), SubResource("TermIdeologyArsenalCityL1R4")])
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.melee_arms_factor"
+operation = 2
+value = 1.064
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL2R1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.missile_arms_factor"
+operation = 2
+value = 1.064
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL2R2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.064
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL2R3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.064
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL2R4"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyArsenalCityL2"]
+script = ExtResource("3_definition")
+key = &"ideology.arsenal_city.l2"
+display_name = "武库（通晓）"
+description = "兵器作坊产出提高；有军工建筑的格及其邻格兵营兵额提高；代价是全国家庭消费需求增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyArsenalCityL2R0"), SubResource("TermIdeologyArsenalCityL2R1"), SubResource("TermIdeologyArsenalCityL2R2"), SubResource("TermIdeologyArsenalCityL2R3"), SubResource("TermIdeologyArsenalCityL2R4")])
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.melee_arms_factor"
+operation = 2
+value = 1.088
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL3R1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.missile_arms_factor"
+operation = 2
+value = 1.088
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL3R2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.088
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL3R3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.088
+
+[sub_resource type="Resource" id="TermIdeologyArsenalCityL3R4"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 1.01
+
+[sub_resource type="Resource" id="DefIdeologyArsenalCityL3"]
+script = ExtResource("3_definition")
+key = &"ideology.arsenal_city.l3"
+display_name = "武库（化育）"
+description = "兵器作坊产出提高；有军工建筑的格及其邻格兵营兵额提高；代价是全国家庭消费需求增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyArsenalCityL3R0"), SubResource("TermIdeologyArsenalCityL3R1"), SubResource("TermIdeologyArsenalCityL3R2"), SubResource("TermIdeologyArsenalCityL3R3"), SubResource("TermIdeologyArsenalCityL3R4")])
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.last_stand"
+value = 0.25
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyLastStandL1"]
+script = ExtResource("3_definition")
+key = &"ideology.last_stand.l1"
+display_name = "背水一战（初识）"
+description = "被包围的部队攻防大幅提高；代价是部队组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLastStandL10"), SubResource("TermIdeologyLastStandL11")])
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.last_stand"
+value = 0.4
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyLastStandL2"]
+script = ExtResource("3_definition")
+key = &"ideology.last_stand.l2"
+display_name = "背水一战（通晓）"
+description = "被包围的部队攻防大幅提高；代价是部队组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLastStandL20"), SubResource("TermIdeologyLastStandL21")])
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.last_stand"
+value = 0.55
+
+[sub_resource type="Resource" id="TermIdeologyLastStandL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.organization_recovery_factor"
+operation = 2
+value = 0.95
+
+[sub_resource type="Resource" id="DefIdeologyLastStandL3"]
+script = ExtResource("3_definition")
+key = &"ideology.last_stand.l3"
+display_name = "背水一战（化育）"
+description = "被包围的部队攻防大幅提高；代价是部队组织度恢复变慢。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyLastStandL30"), SubResource("TermIdeologyLastStandL31")])
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.hold_the_line"
+value = 0.1
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyHoldTheLineL1"]
+script = ExtResource("3_definition")
+key = &"ideology.hold_the_line.l1"
+display_name = "寸土不让（初识）"
+description = "固守且正受攻击的部队防御提高；代价是部队速度略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyHoldTheLineL10"), SubResource("TermIdeologyHoldTheLineL11")])
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.hold_the_line"
+value = 0.16
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyHoldTheLineL2"]
+script = ExtResource("3_definition")
+key = &"ideology.hold_the_line.l2"
+display_name = "寸土不让（通晓）"
+description = "固守且正受攻击的部队防御提高；代价是部队速度略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyHoldTheLineL20"), SubResource("TermIdeologyHoldTheLineL21")])
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.hold_the_line"
+value = 0.22
+
+[sub_resource type="Resource" id="TermIdeologyHoldTheLineL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyHoldTheLineL3"]
+script = ExtResource("3_definition")
+key = &"ideology.hold_the_line.l3"
+display_name = "寸土不让（化育）"
+description = "固守且正受攻击的部队防御提高；代价是部队速度略降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyHoldTheLineL30"), SubResource("TermIdeologyHoldTheLineL31")])
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.encirclement"
+value = 0.15
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.frontage_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefIdeologyEncirclementDoctrineL1"]
+script = ExtResource("3_definition")
+key = &"ideology.encirclement_doctrine.l1"
+display_name = "合围（初识）"
+description = "攻击被我方包围的敌军时攻击提高；代价是战斗宽度缩小。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyEncirclementDoctrineL10"), SubResource("TermIdeologyEncirclementDoctrineL11")])
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.encirclement"
+value = 0.24
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.frontage_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefIdeologyEncirclementDoctrineL2"]
+script = ExtResource("3_definition")
+key = &"ideology.encirclement_doctrine.l2"
+display_name = "合围（通晓）"
+description = "攻击被我方包围的敌军时攻击提高；代价是战斗宽度缩小。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyEncirclementDoctrineL20"), SubResource("TermIdeologyEncirclementDoctrineL21")])
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.encirclement"
+value = 0.33
+
+[sub_resource type="Resource" id="TermIdeologyEncirclementDoctrineL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.frontage_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefIdeologyEncirclementDoctrineL3"]
+script = ExtResource("3_definition")
+key = &"ideology.encirclement_doctrine.l3"
+display_name = "合围（化育）"
+description = "攻击被我方包围的敌军时攻击提高；代价是战斗宽度缩小。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyEncirclementDoctrineL30"), SubResource("TermIdeologyEncirclementDoctrineL31")])
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.blitz"
+value = 0.2
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefIdeologyBlitzkriegL1"]
+script = ExtResource("3_definition")
+key = &"ideology.blitzkrieg.l1"
+display_name = "闪击（初识）"
+description = "速度快的部队在交战初期攻击提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyBlitzkriegL10"), SubResource("TermIdeologyBlitzkriegL11")])
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.blitz"
+value = 0.32
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefIdeologyBlitzkriegL2"]
+script = ExtResource("3_definition")
+key = &"ideology.blitzkrieg.l2"
+display_name = "闪击（通晓）"
+description = "速度快的部队在交战初期攻击提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyBlitzkriegL20"), SubResource("TermIdeologyBlitzkriegL21")])
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.blitz"
+value = 0.44
+
+[sub_resource type="Resource" id="TermIdeologyBlitzkriegL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefIdeologyBlitzkriegL3"]
+script = ExtResource("3_definition")
+key = &"ideology.blitzkrieg.l3"
+display_name = "闪击（化育）"
+description = "速度快的部队在交战初期攻击提高；代价是补给消耗增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyBlitzkriegL30"), SubResource("TermIdeologyBlitzkriegL31")])
+
+[sub_resource type="Resource" id="TermIdeologyScorchedEarthL1R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyScorchedEarthL1"]
+script = ExtResource("3_definition")
+key = &"ideology.scorched_earth.l1"
+display_name = "焦土（初识）"
+description = "每失去一格，本土作战的部队攻防提高，持续 60 日；代价是建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyScorchedEarthL1R0")])
+
+[sub_resource type="Resource" id="TermIdeologyScorchedEarthL2R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyScorchedEarthL2"]
+script = ExtResource("3_definition")
+key = &"ideology.scorched_earth.l2"
+display_name = "焦土（通晓）"
+description = "每失去一格，本土作战的部队攻防提高，持续 60 日；代价是建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyScorchedEarthL2R0")])
+
+[sub_resource type="Resource" id="TermIdeologyScorchedEarthL3R0"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyScorchedEarthL3"]
+script = ExtResource("3_definition")
+key = &"ideology.scorched_earth.l3"
+display_name = "焦土（化育）"
+description = "每失去一格，本土作战的部队攻防提高，持续 60 日；代价是建设成本增加。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyScorchedEarthL3R0")])
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL10"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL11"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL12"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ammunition_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL13"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.armored_vehicles_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL14"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL15"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyTotalWarL1"]
+script = ExtResource("3_definition")
+key = &"ideology.total_war.l1"
+display_name = "总体战（初识）"
+description = "战时军工产出与兵额提高；代价是战时家庭消费与出生率下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyTotalWarL10"), SubResource("TermIdeologyTotalWarL11"), SubResource("TermIdeologyTotalWarL12"), SubResource("TermIdeologyTotalWarL13"), SubResource("TermIdeologyTotalWarL14"), SubResource("TermIdeologyTotalWarL15")])
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL20"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.096
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL21"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.096
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL22"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ammunition_factor"
+operation = 2
+value = 1.096
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL23"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.armored_vehicles_factor"
+operation = 2
+value = 1.096
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL24"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.16
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL25"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyTotalWarL2"]
+script = ExtResource("3_definition")
+key = &"ideology.total_war.l2"
+display_name = "总体战（通晓）"
+description = "战时军工产出与兵额提高；代价是战时家庭消费与出生率下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyTotalWarL20"), SubResource("TermIdeologyTotalWarL21"), SubResource("TermIdeologyTotalWarL22"), SubResource("TermIdeologyTotalWarL23"), SubResource("TermIdeologyTotalWarL24"), SubResource("TermIdeologyTotalWarL25")])
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL30"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.132
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL31"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.132
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL32"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ammunition_factor"
+operation = 2
+value = 1.132
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL33"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.armored_vehicles_factor"
+operation = 2
+value = 1.132
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL34"]
+script = ExtResource("4_term")
+stat_key = &"country.military.barracks_capacity_factor"
+operation = 2
+value = 1.22
+
+[sub_resource type="Resource" id="TermIdeologyTotalWarL35"]
+script = ExtResource("4_term")
+stat_key = &"country.household.consumption_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefIdeologyTotalWarL3"]
+script = ExtResource("3_definition")
+key = &"ideology.total_war.l3"
+display_name = "总体战（化育）"
+description = "战时军工产出与兵额提高；代价是战时家庭消费与出生率下降。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyTotalWarL30"), SubResource("TermIdeologyTotalWarL31"), SubResource("TermIdeologyTotalWarL32"), SubResource("TermIdeologyTotalWarL33"), SubResource("TermIdeologyTotalWarL34"), SubResource("TermIdeologyTotalWarL35")])
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyDeterrenceL1"]
+script = ExtResource("3_definition")
+key = &"ideology.deterrence.l1"
+display_name = "威慑（初识）"
+description = "全国部队防御提高；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyDeterrenceL10"), SubResource("TermIdeologyDeterrenceL11")])
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.128
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyDeterrenceL2"]
+script = ExtResource("3_definition")
+key = &"ideology.deterrence.l2"
+display_name = "威慑（通晓）"
+description = "全国部队防御提高；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyDeterrenceL20"), SubResource("TermIdeologyDeterrenceL21")])
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.defense_factor"
+operation = 2
+value = 1.1760000000000002
+
+[sub_resource type="Resource" id="TermIdeologyDeterrenceL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.wage_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyDeterrenceL3"]
+script = ExtResource("3_definition")
+key = &"ideology.deterrence.l3"
+display_name = "威慑（化育）"
+description = "全国部队防御提高；代价是军饷提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyDeterrenceL30"), SubResource("TermIdeologyDeterrenceL31")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyTuntianGarrison0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.supply_consumption_factor"
+operation = 2
+value = 0.8
+
+[sub_resource type="Resource" id="DefIdeologySynergyTuntianGarrison"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.tuntian_garrison"
+display_name = "屯戍一体"
+description = "屯田与戍边同时生效：补给消耗再降低。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologySynergyTuntianGarrison0")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyMilitaryIndustrialComplex0"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.firearms_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyMilitaryIndustrialComplex1"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ordnance_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyMilitaryIndustrialComplex2"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.ammunition_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyMilitaryIndustrialComplex3"]
+script = ExtResource("4_term")
+stat_key = &"country.output.family.armored_vehicles_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefIdeologySynergyMilitaryIndustrialComplex"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.military_industrial_complex"
+display_name = "兵工复合体"
+description = "武库与总体战同时生效：军工产出再提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologySynergyMilitaryIndustrialComplex0"), SubResource("TermIdeologySynergyMilitaryIndustrialComplex1"), SubResource("TermIdeologySynergyMilitaryIndustrialComplex2"), SubResource("TermIdeologySynergyMilitaryIndustrialComplex3")])
+
+[sub_resource type="Resource" id="TermIdeologySynergyDeathGround0"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.last_stand"
+value = 0.05
+
+[sub_resource type="Resource" id="TermIdeologySynergyDeathGround1"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologySynergyDeathGround"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.death_ground"
+display_name = "置之死地"
+description = "哀兵必胜与背水一战同时生效：被包围部队与全军攻击再提高。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologySynergyDeathGround0"), SubResource("TermIdeologySynergyDeathGround1")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFortressCitySelf00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.defense_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFortressCitySelf0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.fortress_city_self.0"
+display_name = "ideology.military.fortress_city_self.0"
+description = "military.cell.defense_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFortressCitySelf00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFortressCityRing00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.defense_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFortressCityRing0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.fortress_city_ring.0"
+display_name = "ideology.military.fortress_city_ring.0"
+description = "military.cell.defense_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFortressCityRing00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsSelf00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.supply_consumption_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsSelf0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_self.0"
+display_name = "ideology.military.military_farms_self.0"
+description = "military.cell.supply_consumption_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsSelf00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsSelf10"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.agriculture_output_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsSelf1"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_self.1"
+display_name = "ideology.military.military_farms_self.1"
+description = "economy.city.building.agriculture_output_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsSelf10")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsSelf20"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.manufacturing_output_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsSelf2"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_self.2"
+display_name = "ideology.military.military_farms_self.2"
+description = "economy.city.building.manufacturing_output_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsSelf20")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsRing00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.supply_consumption_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsRing0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_ring.0"
+display_name = "ideology.military.military_farms_ring.0"
+description = "military.cell.supply_consumption_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsRing00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsRing10"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.agriculture_output_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsRing1"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_ring.1"
+display_name = "ideology.military.military_farms_ring.1"
+description = "economy.city.building.agriculture_output_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsRing10")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryMilitaryFarmsRing20"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.manufacturing_output_factor"
+operation = 2
+value = 0.98
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryMilitaryFarmsRing2"]
+script = ExtResource("3_definition")
+key = &"ideology.military.military_farms_ring.2"
+display_name = "ideology.military.military_farms_ring.2"
+description = "economy.city.building.manufacturing_output_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryMilitaryFarmsRing20")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryArsenalCitySelf00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.barracks_capacity_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryArsenalCitySelf0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.arsenal_city_self.0"
+display_name = "ideology.military.arsenal_city_self.0"
+description = "military.cell.barracks_capacity_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryArsenalCitySelf00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryArsenalCityRing00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.barracks_capacity_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryArsenalCityRing0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.arsenal_city_ring.0"
+display_name = "ideology.military.arsenal_city_ring.0"
+description = "military.cell.barracks_capacity_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryArsenalCityRing00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFrontierGarrisonBorder00"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.barracks_capacity_factor"
+operation = 2
+value = 1.2
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFrontierGarrisonBorder0"]
+script = ExtResource("3_definition")
+key = &"ideology.military.frontier_garrison_border.0"
+display_name = "ideology.military.frontier_garrison_border.0"
+description = "military.cell.barracks_capacity_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFrontierGarrisonBorder00")])
+
+[sub_resource type="Resource" id="TermIdeologyMilitaryFrontierGarrisonBorder10"]
+script = ExtResource("4_term")
+stat_key = &"military.cell.defense_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefIdeologyMilitaryFrontierGarrisonBorder1"]
+script = ExtResource("3_definition")
+key = &"ideology.military.frontier_garrison_border.1"
+display_name = "ideology.military.frontier_garrison_border.1"
+description = "military.cell.defense_factor"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermIdeologyMilitaryFrontierGarrisonBorder10")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWrathOfTheFallenL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyStackWrathOfTheFallenL1"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.wrath_of_the_fallen.l1"
+display_name = "wrath_of_the_fallen（叠层）"
+description = "每输掉一场会战：全国部队攻击 +4%，持续 60 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackWrathOfTheFallenL10")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWrathOfTheFallenL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.064
+
+[sub_resource type="Resource" id="DefIdeologyStackWrathOfTheFallenL2"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.wrath_of_the_fallen.l2"
+display_name = "wrath_of_the_fallen（叠层）"
+description = "每输掉一场会战：全国部队攻击 +4%，持续 60 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackWrathOfTheFallenL20")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWrathOfTheFallenL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.088
+
+[sub_resource type="Resource" id="DefIdeologyStackWrathOfTheFallenL3"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.wrath_of_the_fallen.l3"
+display_name = "wrath_of_the_fallen（叠层）"
+description = "每输掉一场会战：全国部队攻击 +4%，持续 60 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackWrathOfTheFallenL30")])
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL11"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyStackPursuitL1"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.pursuit.l1"
+display_name = "pursuit（叠层）"
+description = "每赢得一场会战：全国部队速度 +5%、攻击 +2%，持续 20 日，最多 3 层"
+domain = 1
+stack_policy = 2
+max_stacks = 3
+default_duration_days = 20
+terms = Array[Resource]([SubResource("TermIdeologyStackPursuitL10"), SubResource("TermIdeologyStackPursuitL11")])
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL21"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.032
+
+[sub_resource type="Resource" id="DefIdeologyStackPursuitL2"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.pursuit.l2"
+display_name = "pursuit（叠层）"
+description = "每赢得一场会战：全国部队速度 +5%、攻击 +2%，持续 20 日，最多 3 层"
+domain = 1
+stack_policy = 2
+max_stacks = 3
+default_duration_days = 20
+terms = Array[Resource]([SubResource("TermIdeologyStackPursuitL20"), SubResource("TermIdeologyStackPursuitL21")])
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.speed_factor"
+operation = 2
+value = 1.11
+
+[sub_resource type="Resource" id="TermIdeologyStackPursuitL31"]
+script = ExtResource("4_term")
+stat_key = &"country.military.attack_factor"
+operation = 2
+value = 1.044
+
+[sub_resource type="Resource" id="DefIdeologyStackPursuitL3"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.pursuit.l3"
+display_name = "pursuit（叠层）"
+description = "每赢得一场会战：全国部队速度 +5%、攻击 +2%，持续 20 日，最多 3 层"
+domain = 1
+stack_policy = 2
+max_stacks = 3
+default_duration_days = 20
+terms = Array[Resource]([SubResource("TermIdeologyStackPursuitL30"), SubResource("TermIdeologyStackPursuitL31")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWarFeedsWarL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.occupation_tax_efficiency"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyStackWarFeedsWarL1"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.war_feeds_war.l1"
+display_name = "war_feeds_war（叠层）"
+description = "每占领一格：占领税效率 +3%，持续 90 日，最多 10 层"
+domain = 1
+stack_policy = 2
+max_stacks = 10
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackWarFeedsWarL10")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWarFeedsWarL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.occupation_tax_efficiency"
+operation = 2
+value = 1.048
+
+[sub_resource type="Resource" id="DefIdeologyStackWarFeedsWarL2"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.war_feeds_war.l2"
+display_name = "war_feeds_war（叠层）"
+description = "每占领一格：占领税效率 +3%，持续 90 日，最多 10 层"
+domain = 1
+stack_policy = 2
+max_stacks = 10
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackWarFeedsWarL20")])
+
+[sub_resource type="Resource" id="TermIdeologyStackWarFeedsWarL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.occupation_tax_efficiency"
+operation = 2
+value = 1.066
+
+[sub_resource type="Resource" id="DefIdeologyStackWarFeedsWarL3"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.war_feeds_war.l3"
+display_name = "war_feeds_war（叠层）"
+description = "每占领一格：占领税效率 +3%，持续 90 日，最多 10 层"
+domain = 1
+stack_policy = 2
+max_stacks = 10
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackWarFeedsWarL30")])
+
+[sub_resource type="Resource" id="TermIdeologyStackMeritRanksL10"]
+script = ExtResource("4_term")
+stat_key = &"economy.profession.soldier.satisfaction_bp"
+value = 200.0
+
+[sub_resource type="Resource" id="DefIdeologyStackMeritRanksL1"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.merit_ranks.l1"
+display_name = "merit_ranks（叠层）"
+description = "每赢得一场会战：士兵职业满意度 +2%，持续 90 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackMeritRanksL10")])
+
+[sub_resource type="Resource" id="TermIdeologyStackMeritRanksL20"]
+script = ExtResource("4_term")
+stat_key = &"economy.profession.soldier.satisfaction_bp"
+value = 320.0
+
+[sub_resource type="Resource" id="DefIdeologyStackMeritRanksL2"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.merit_ranks.l2"
+display_name = "merit_ranks（叠层）"
+description = "每赢得一场会战：士兵职业满意度 +2%，持续 90 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackMeritRanksL20")])
+
+[sub_resource type="Resource" id="TermIdeologyStackMeritRanksL30"]
+script = ExtResource("4_term")
+stat_key = &"economy.profession.soldier.satisfaction_bp"
+value = 440.0
+
+[sub_resource type="Resource" id="DefIdeologyStackMeritRanksL3"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.merit_ranks.l3"
+display_name = "merit_ranks（叠层）"
+description = "每赢得一场会战：士兵职业满意度 +2%，持续 90 日，最多 5 层"
+domain = 1
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermIdeologyStackMeritRanksL30")])
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL10"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.home_ground"
+value = 0.05
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL11"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyStackScorchedEarthL1"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.scorched_earth.l1"
+display_name = "scorched_earth（叠层）"
+description = "每失去一格：本土作战部队攻防 +5%，持续 60 日"
+domain = 1
+stack_policy = 2
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackScorchedEarthL10"), SubResource("TermIdeologyStackScorchedEarthL11")])
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL20"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.home_ground"
+value = 0.08
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL21"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyStackScorchedEarthL2"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.scorched_earth.l2"
+display_name = "scorched_earth（叠层）"
+description = "每失去一格：本土作战部队攻防 +5%，持续 60 日"
+domain = 1
+stack_policy = 2
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackScorchedEarthL20"), SubResource("TermIdeologyStackScorchedEarthL21")])
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL30"]
+script = ExtResource("4_term")
+stat_key = &"country.military.rule.home_ground"
+value = 0.11
+
+[sub_resource type="Resource" id="TermIdeologyStackScorchedEarthL31"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.cost_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefIdeologyStackScorchedEarthL3"]
+script = ExtResource("3_definition")
+key = &"ideology.stack.scorched_earth.l3"
+display_name = "scorched_earth（叠层）"
+description = "每失去一格：本土作战部队攻防 +5%，持续 60 日"
+domain = 1
+stack_policy = 2
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermIdeologyStackScorchedEarthL30"), SubResource("TermIdeologyStackScorchedEarthL31")])
+
+[sub_resource type="Resource" id="StatClimate"]
+script = ExtResource("2_stat")
+key = &"climate.cell.radiative_target"
+
+[sub_resource type="Resource" id="StatCountry"]
+script = ExtResource("2_stat")
+key = &"country.economy_output_factor"
+domain = 1
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatBuilding"]
+script = ExtResource("2_stat")
+key = &"economy.building.output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatGameplay"]
+script = ExtResource("2_stat")
+key = &"gameplay.generic.value"
+domain = 3
+min_value = -1000000000.0
+max_value = 1000000000.0
+
+[sub_resource type="Resource" id="StatCityOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityAgricultureOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.agriculture_output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityExtractiveOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.extractive_output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityManufacturingOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.manufacturing_output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityEnergyOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.energy_output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityKnowledgeOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.knowledge_output_factor"
+domain = 2
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityBirth"]
+script = ExtResource("2_stat")
+key = &"economy.city.birth_factor"
+domain = 2
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityTradeOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.trade_output_factor"
+domain = 2
+max_value = 8.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityConsumption"]
+script = ExtResource("2_stat")
+key = &"economy.city.consumption_factor"
+domain = 2
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityResourceRegen"]
+script = ExtResource("2_stat")
+key = &"economy.city.resource.regen_factor"
+domain = 2
+max_value = 4.0
+value_conversion = 1
 
 [resource]
 script = ExtResource("1_catalog")
 stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyHuntingTradition"), SubResource("DefIdeologyFlintKnapping"), SubResource("DefIdeologyFireKeeping"), SubResource("DefIdeologyAnimistRitual"), SubResource("DefIdeologyGiftExchange"), SubResource("DefIdeologyCommunalFeast"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyPaddyCultivation"), SubResource("DefIdeologyThreeFieldRotation"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyHouseholdWeaving"), SubResource("DefIdeologyBronzeCasting"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologySettleAndFarm"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyIronSmelting"), SubResource("DefIdeologyPostalHorse"), SubResource("DefIdeologyMonsoonFarming"), SubResource("DefIdeologyRiverTransport"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyLandReclamation"), SubResource("DefIdeologyGranaryRoad"), SubResource("DefIdeologyImperialAcademy"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologySaltMonopoly"), SubResource("DefIdeologySericulture"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyCharteredRoute"), SubResource("DefIdeologyCartography"), SubResource("DefIdeologyColonialPlantation"), SubResource("DefIdeologySilverFlow"), SubResource("DefIdeologyNaturalHistory"), SubResource("DefIdeologyManufactoryRegulation"), SubResource("DefIdeologyMaritimeInsurance"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyAgrarianReform"), SubResource("DefIdeologyCoalBasin"), SubResource("DefIdeologyCottonGin"), SubResource("DefIdeologyEnclosure"), SubResource("DefIdeologyLearnedSociety"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyRailwayNetwork"), SubResource("DefIdeologyUrbanSanitation"), SubResource("DefIdeologySteamShipping"), SubResource("DefIdeologyFreeTrade"), SubResource("DefIdeologyAgriculturalChemistry"), SubResource("DefIdeologyTelegraph"), SubResource("DefIdeologyTradeUnions"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyElectrification"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologyMassMedia"), SubResource("DefIdeologyChemicalIndustry"), SubResource("DefIdeologyAntitrust"), SubResource("DefIdeologyOffshoreDrilling"), SubResource("DefIdeologySupermarket"), SubResource("DefIdeologyNuclearPower"), SubResource("DefIdeologyAntibiotics"), SubResource("DefIdeologyMotorization"), SubResource("DefIdeologyGreenRevolution"), SubResource("DefIdeologyPetrochemical"), SubResource("DefIdeologyContainerPort"), SubResource("DefIdeologyWelfareState"), SubResource("DefIdeologyComputingNetworks"), SubResource("DefIdeologySemiconductor"), SubResource("DefIdeologyPrecisionAgriculture"), SubResource("DefIdeologyFinancialization"), SubResource("DefIdeologyAutomationLine"), SubResource("DefIdeologyArcology"), SubResource("DefIdeologyBasicIncome"), SubResource("DefIdeologyCircularEconomy"), SubResource("DefIdeologyAlgorithmicGovernance"), SubResource("DefIdeologyAutonomousLogistics"), SubResource("DefIdeologyCarbonMarket"), SubResource("DefIdeologyGeneEditing"), SubResource("DefIdeologySpaceMining"), SubResource("DefIdeologyDesalination"), SubResource("DefIdeologyFamilyOfficeL1"), SubResource("DefIdeologyFamilyOfficeL2"), SubResource("DefIdeologyFamilyOfficeL3"), SubResource("DefIdeologyRefrigerationL1"), SubResource("DefIdeologyRefrigerationL2"), SubResource("DefIdeologyRefrigerationL3"), SubResource("DefIdeologyDroughtReliefL1"), SubResource("DefIdeologyDroughtReliefL2"), SubResource("DefIdeologyDroughtReliefL3"), SubResource("DefIdeologyTerraceFarmingL1"), SubResource("DefIdeologyTerraceFarmingL2"), SubResource("DefIdeologyTerraceFarmingL3"), SubResource("DefIdeologyWaterWorksL1"), SubResource("DefIdeologyWaterWorksL2"), SubResource("DefIdeologyWaterWorksL3"), SubResource("DefIdeologyForagerBandL1"), SubResource("DefIdeologyForagerBandL2"), SubResource("DefIdeologyForagerBandL3"), SubResource("DefIdeologyRiversideCampL1"), SubResource("DefIdeologyRiversideCampL2"), SubResource("DefIdeologyRiversideCampL3"), SubResource("DefIdeologySeasonalCalendarL1"), SubResource("DefIdeologySeasonalCalendarL2"), SubResource("DefIdeologySeasonalCalendarL3"), SubResource("DefIdeologyPitDwellingL1"), SubResource("DefIdeologyPitDwellingL2"), SubResource("DefIdeologyPitDwellingL3"), SubResource("DefIdeologyHydroelectricL1"), SubResource("DefIdeologyHydroelectricL2"), SubResource("DefIdeologyHydroelectricL3"), SubResource("DefIdeologyFrontierGarrisonL1"), SubResource("DefIdeologyFrontierGarrisonL2"), SubResource("DefIdeologyFrontierGarrisonL3"), SubResource("DefIdeologyLandTaxReformL1"), SubResource("DefIdeologyLandTaxReformL2"), SubResource("DefIdeologyLandTaxReformL3"), SubResource("DefIdeologyExciseL1"), SubResource("DefIdeologyExciseL2"), SubResource("DefIdeologyExciseL3"), SubResource("DefIdeologyLabourLegislationL1"), SubResource("DefIdeologyLabourLegislationL2"), SubResource("DefIdeologyLabourLegislationL3"), SubResource("DefIdeologyTreasuryReserveL1"), SubResource("DefIdeologyTreasuryReserveL2"), SubResource("DefIdeologyTreasuryReserveL3"), SubResource("DefIdeologySilverStandardL1"), SubResource("DefIdeologySilverStandardL2"), SubResource("DefIdeologySilverStandardL3"), SubResource("DefIdeologySubsidyStateL1"), SubResource("DefIdeologySubsidyStateL2"), SubResource("DefIdeologySubsidyStateL3"), SubResource("DefIdeologySocialMediaL1"), SubResource("DefIdeologySocialMediaL2"), SubResource("DefIdeologySocialMediaL3"), SubResource("DefIdeologyGentryPatronageL1"), SubResource("DefIdeologyGentryPatronageL2"), SubResource("DefIdeologyGentryPatronageL3"), SubResource("DefIdeologyRouteGranary1"), SubResource("DefIdeologyRouteGranary2"), SubResource("DefIdeologyRouteCropland1"), SubResource("DefIdeologyRouteCropland2"), SubResource("DefIdeologyRouteMining1"), SubResource("DefIdeologyRouteMining2"), SubResource("DefIdeologyRouteWorkshop1"), SubResource("DefIdeologyRouteWorkshop2"), SubResource("DefIdeologyRouteLivelihood1"), SubResource("DefIdeologyRouteLivelihood2"), SubResource("DefIdeologyRouteMarket1"), SubResource("DefIdeologyRouteLearning1"), SubResource("DefIdeologyRouteThoroughfare1"), SubResource("DefIdeologySynergyGranaryRecords"), SubResource("DefIdeologySynergyPolderFarming"), SubResource("DefIdeologySynergyMixedHusbandry"), SubResource("DefIdeologySynergyCoalIronComplex"), SubResource("DefIdeologySynergyPostalCanalGrid"), SubResource("DefIdeologySynergyJointStockAccounting"), SubResource("DefIdeologySynergySteamRailComplex"), SubResource("DefIdeologySynergyChemicalAgriculture"), SubResource("DefIdeologySynergyElectricAssembly"), SubResource("DefIdeologySynergyDigitalAutomation"), SubResource("DefIdeologySynergyDoubleConstraint"), SubResource("DefIdeologySynergyEpidemicDefence"), SubResource("DefIdeologySynergyOceanicFinance"), SubResource("DefIdeologySynergySilkWeavingChain"), SubResource("DefIdeologySynergyExperimentalNaturalHistory"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceAgrarian5"), SubResource("DefIdeologyResonanceAgrarian6"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceCommerce5"), SubResource("DefIdeologyResonanceCommerce6"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceLearning5"), SubResource("DefIdeologyResonanceLearning6"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceMobilization5"), SubResource("DefIdeologyResonanceMobilization6"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceIndustry5"), SubResource("DefIdeologyResonanceIndustry6"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4"), SubResource("DefIdeologyResonanceHarmony5"), SubResource("DefIdeologyResonanceHarmony6"), SubResource("DefIdeologyCityOutputFactor"), SubResource("DefIdeologyCityOutputFactorCut"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactor"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactorCut"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactor"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactorCut"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactor"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactorCut"), SubResource("DefIdeologyCityBuildingEnergyOutputFactor"), SubResource("DefIdeologyCityBuildingEnergyOutputFactorCut"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactor"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactorCut"), SubResource("DefIdeologyCityResourceRegenFactor"), SubResource("DefIdeologyCityResourceRegenFactorCut"), SubResource("DefIdeologyCityResourceTimberRegenFactor"), SubResource("DefIdeologyCityResourceTimberRegenFactorCut"), SubResource("DefIdeologyCityResourcePastureRegenFactor"), SubResource("DefIdeologyCityResourcePastureRegenFactorCut"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactor"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactorCut"), SubResource("DefIdeologyCityResourceWildGameRegenFactor"), SubResource("DefIdeologyCityResourceWildGameRegenFactorCut"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactor"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactorCut"), SubResource("DefIdeologyCountryPopulationDeathFactorCut"), SubResource("DefIdeologyCountryConstructionCostFactorCut"), SubResource("DefIdeologyCountryResearchCostFactorCut"), SubResource("DefIdeologyCountryTradeCapacityFactorGain"), SubResource("DefIdeologyCountryOutputAgricultureFactorGain"), SubResource("DefIdeologyCountryOutputExtractiveFactorGain"), SubResource("DefIdeologyCountryOutputManufacturingFactorGain"), SubResource("DefIdeologyCountryOutputEnergyFactorGain"), SubResource("DefIdeologyCountryOutputKnowledgeFactorGain"), SubResource("DefIdeologyCountryIdeologyPointGainFactorGain"), SubResource("DefIdeologyCountryIdeologyPointPopulationFactorGain"), SubResource("DefIdeologyCountryIdeologyPointBuildingFactorGain"), SubResource("DefIdeologyCountryIdeologyPointTradeFactorGain"), SubResource("DefIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefIdeologyHuntingTradition"), SubResource("DefIdeologyFlintKnapping"), SubResource("DefIdeologyFireKeeping"), SubResource("DefIdeologyAnimistRitual"), SubResource("DefIdeologyGiftExchange"), SubResource("DefIdeologyCommunalFeast"), SubResource("DefIdeologyCollectiveStewardship"), SubResource("DefIdeologyPaddyCultivation"), SubResource("DefIdeologyThreeFieldRotation"), SubResource("DefIdeologyFreeExchange"), SubResource("DefIdeologyScholarOffice"), SubResource("DefIdeologyStandardization"), SubResource("DefIdeologyHouseholdWeaving"), SubResource("DefIdeologyBronzeCasting"), SubResource("DefIdeologyEverNormalGranary"), SubResource("DefIdeologySettleAndFarm"), SubResource("DefIdeologyOpenPorts"), SubResource("DefIdeologyGuildCharters"), SubResource("DefIdeologyDoubleEntry"), SubResource("DefIdeologyAcademyLectures"), SubResource("DefIdeologyCivilExamination"), SubResource("DefIdeologyIronSmelting"), SubResource("DefIdeologyPostalHorse"), SubResource("DefIdeologyMonsoonFarming"), SubResource("DefIdeologyRiverTransport"), SubResource("DefIdeologyVillageCompact"), SubResource("DefIdeologyLandReclamation"), SubResource("DefIdeologyGranaryRoad"), SubResource("DefIdeologyImperialAcademy"), SubResource("DefIdeologyPublicHygiene"), SubResource("DefIdeologyHeavenHuman"), SubResource("DefIdeologySaltMonopoly"), SubResource("DefIdeologySericulture"), SubResource("DefIdeologyOceanCompany"), SubResource("DefIdeologyCharteredRoute"), SubResource("DefIdeologyCartography"), SubResource("DefIdeologyColonialPlantation"), SubResource("DefIdeologySilverFlow"), SubResource("DefIdeologyNaturalHistory"), SubResource("DefIdeologyManufactoryRegulation"), SubResource("DefIdeologyMaritimeInsurance"), SubResource("DefIdeologyExperimentalMethod"), SubResource("DefIdeologyEncyclopedia"), SubResource("DefIdeologyNationalEducation"), SubResource("DefIdeologyAgrarianReform"), SubResource("DefIdeologyCoalBasin"), SubResource("DefIdeologyCottonGin"), SubResource("DefIdeologyEnclosure"), SubResource("DefIdeologyLearnedSociety"), SubResource("DefIdeologySteamPower"), SubResource("DefIdeologyRailwayNetwork"), SubResource("DefIdeologyUrbanSanitation"), SubResource("DefIdeologySteamShipping"), SubResource("DefIdeologyFreeTrade"), SubResource("DefIdeologyAgriculturalChemistry"), SubResource("DefIdeologyTelegraph"), SubResource("DefIdeologyTradeUnions"), SubResource("DefIdeologyAssemblyLine"), SubResource("DefIdeologyElectrification"), SubResource("DefIdeologyEcologicalBalance"), SubResource("DefIdeologyMassMedia"), SubResource("DefIdeologyChemicalIndustry"), SubResource("DefIdeologyAntitrust"), SubResource("DefIdeologyOffshoreDrilling"), SubResource("DefIdeologySupermarket"), SubResource("DefIdeologyNuclearPower"), SubResource("DefIdeologyAntibiotics"), SubResource("DefIdeologyMotorization"), SubResource("DefIdeologyGreenRevolution"), SubResource("DefIdeologyPetrochemical"), SubResource("DefIdeologyContainerPort"), SubResource("DefIdeologyWelfareState"), SubResource("DefIdeologyComputingNetworks"), SubResource("DefIdeologySemiconductor"), SubResource("DefIdeologyPrecisionAgriculture"), SubResource("DefIdeologyFinancialization"), SubResource("DefIdeologyAutomationLine"), SubResource("DefIdeologyArcology"), SubResource("DefIdeologyBasicIncome"), SubResource("DefIdeologyCircularEconomy"), SubResource("DefIdeologyAlgorithmicGovernance"), SubResource("DefIdeologyAutonomousLogistics"), SubResource("DefIdeologyCarbonMarket"), SubResource("DefIdeologyGeneEditing"), SubResource("DefIdeologySpaceMining"), SubResource("DefIdeologyDesalination"), SubResource("DefIdeologyFamilyOfficeL1"), SubResource("DefIdeologyFamilyOfficeL2"), SubResource("DefIdeologyFamilyOfficeL3"), SubResource("DefIdeologyRefrigerationL1"), SubResource("DefIdeologyRefrigerationL2"), SubResource("DefIdeologyRefrigerationL3"), SubResource("DefIdeologyDroughtReliefL1"), SubResource("DefIdeologyDroughtReliefL2"), SubResource("DefIdeologyDroughtReliefL3"), SubResource("DefIdeologyTerraceFarmingL1"), SubResource("DefIdeologyTerraceFarmingL2"), SubResource("DefIdeologyTerraceFarmingL3"), SubResource("DefIdeologyWaterWorksL1"), SubResource("DefIdeologyWaterWorksL2"), SubResource("DefIdeologyWaterWorksL3"), SubResource("DefIdeologyForagerBandL1"), SubResource("DefIdeologyForagerBandL2"), SubResource("DefIdeologyForagerBandL3"), SubResource("DefIdeologyRiversideCampL1"), SubResource("DefIdeologyRiversideCampL2"), SubResource("DefIdeologyRiversideCampL3"), SubResource("DefIdeologySeasonalCalendarL1"), SubResource("DefIdeologySeasonalCalendarL2"), SubResource("DefIdeologySeasonalCalendarL3"), SubResource("DefIdeologyPitDwellingL1"), SubResource("DefIdeologyPitDwellingL2"), SubResource("DefIdeologyPitDwellingL3"), SubResource("DefIdeologyHydroelectricL1"), SubResource("DefIdeologyHydroelectricL2"), SubResource("DefIdeologyHydroelectricL3"), SubResource("DefIdeologyFrontierGarrisonL1"), SubResource("DefIdeologyFrontierGarrisonL2"), SubResource("DefIdeologyFrontierGarrisonL3"), SubResource("DefIdeologyLandTaxReformL1"), SubResource("DefIdeologyLandTaxReformL2"), SubResource("DefIdeologyLandTaxReformL3"), SubResource("DefIdeologyExciseL1"), SubResource("DefIdeologyExciseL2"), SubResource("DefIdeologyExciseL3"), SubResource("DefIdeologyLabourLegislationL1"), SubResource("DefIdeologyLabourLegislationL2"), SubResource("DefIdeologyLabourLegislationL3"), SubResource("DefIdeologyTreasuryReserveL1"), SubResource("DefIdeologyTreasuryReserveL2"), SubResource("DefIdeologyTreasuryReserveL3"), SubResource("DefIdeologySilverStandardL1"), SubResource("DefIdeologySilverStandardL2"), SubResource("DefIdeologySilverStandardL3"), SubResource("DefIdeologySubsidyStateL1"), SubResource("DefIdeologySubsidyStateL2"), SubResource("DefIdeologySubsidyStateL3"), SubResource("DefIdeologySocialMediaL1"), SubResource("DefIdeologySocialMediaL2"), SubResource("DefIdeologySocialMediaL3"), SubResource("DefIdeologyGentryPatronageL1"), SubResource("DefIdeologyGentryPatronageL2"), SubResource("DefIdeologyGentryPatronageL3"), SubResource("DefIdeologyRouteGranary1"), SubResource("DefIdeologyRouteGranary2"), SubResource("DefIdeologyRouteCropland1"), SubResource("DefIdeologyRouteCropland2"), SubResource("DefIdeologyRouteMining1"), SubResource("DefIdeologyRouteMining2"), SubResource("DefIdeologyRouteWorkshop1"), SubResource("DefIdeologyRouteWorkshop2"), SubResource("DefIdeologyRouteLivelihood1"), SubResource("DefIdeologyRouteLivelihood2"), SubResource("DefIdeologyRouteMarket1"), SubResource("DefIdeologyRouteLearning1"), SubResource("DefIdeologyRouteThoroughfare1"), SubResource("DefIdeologySynergyGranaryRecords"), SubResource("DefIdeologySynergyPolderFarming"), SubResource("DefIdeologySynergyMixedHusbandry"), SubResource("DefIdeologySynergyCoalIronComplex"), SubResource("DefIdeologySynergyPostalCanalGrid"), SubResource("DefIdeologySynergyJointStockAccounting"), SubResource("DefIdeologySynergySteamRailComplex"), SubResource("DefIdeologySynergyChemicalAgriculture"), SubResource("DefIdeologySynergyElectricAssembly"), SubResource("DefIdeologySynergyDigitalAutomation"), SubResource("DefIdeologySynergyDoubleConstraint"), SubResource("DefIdeologySynergyEpidemicDefence"), SubResource("DefIdeologySynergyOceanicFinance"), SubResource("DefIdeologySynergySilkWeavingChain"), SubResource("DefIdeologySynergyExperimentalNaturalHistory"), SubResource("DefIdeologyResonanceAgrarian2"), SubResource("DefIdeologyResonanceAgrarian4"), SubResource("DefIdeologyResonanceAgrarian5"), SubResource("DefIdeologyResonanceAgrarian6"), SubResource("DefIdeologyResonanceCommerce2"), SubResource("DefIdeologyResonanceCommerce4"), SubResource("DefIdeologyResonanceCommerce5"), SubResource("DefIdeologyResonanceCommerce6"), SubResource("DefIdeologyResonanceLearning2"), SubResource("DefIdeologyResonanceLearning4"), SubResource("DefIdeologyResonanceLearning5"), SubResource("DefIdeologyResonanceLearning6"), SubResource("DefIdeologyResonanceMobilization2"), SubResource("DefIdeologyResonanceMobilization4"), SubResource("DefIdeologyResonanceMobilization5"), SubResource("DefIdeologyResonanceMobilization6"), SubResource("DefIdeologyResonanceIndustry2"), SubResource("DefIdeologyResonanceIndustry4"), SubResource("DefIdeologyResonanceIndustry5"), SubResource("DefIdeologyResonanceIndustry6"), SubResource("DefIdeologyResonanceHarmony2"), SubResource("DefIdeologyResonanceHarmony4"), SubResource("DefIdeologyResonanceHarmony5"), SubResource("DefIdeologyResonanceHarmony6"), SubResource("DefIdeologyCityOutputFactor"), SubResource("DefIdeologyCityOutputFactorCut"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactor"), SubResource("DefIdeologyCityBuildingAgricultureOutputFactorCut"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactor"), SubResource("DefIdeologyCityBuildingExtractiveOutputFactorCut"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactor"), SubResource("DefIdeologyCityBuildingManufacturingOutputFactorCut"), SubResource("DefIdeologyCityBuildingEnergyOutputFactor"), SubResource("DefIdeologyCityBuildingEnergyOutputFactorCut"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactor"), SubResource("DefIdeologyCityBuildingKnowledgeOutputFactorCut"), SubResource("DefIdeologyCityResourceRegenFactor"), SubResource("DefIdeologyCityResourceRegenFactorCut"), SubResource("DefIdeologyCityResourceTimberRegenFactor"), SubResource("DefIdeologyCityResourceTimberRegenFactorCut"), SubResource("DefIdeologyCityResourcePastureRegenFactor"), SubResource("DefIdeologyCityResourcePastureRegenFactorCut"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactor"), SubResource("DefIdeologyCityResourceFertileSoilRegenFactorCut"), SubResource("DefIdeologyCityResourceWildGameRegenFactor"), SubResource("DefIdeologyCityResourceWildGameRegenFactorCut"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactor"), SubResource("DefIdeologyCityResourceFreshwaterFishRegenFactorCut"), SubResource("DefIdeologyCountryPopulationDeathFactorCut"), SubResource("DefIdeologyCountryConstructionCostFactorCut"), SubResource("DefIdeologyCountryResearchCostFactorCut"), SubResource("DefIdeologyCountryTradeCapacityFactorGain"), SubResource("DefIdeologyCountryOutputAgricultureFactorGain"), SubResource("DefIdeologyCountryOutputExtractiveFactorGain"), SubResource("DefIdeologyCountryOutputManufacturingFactorGain"), SubResource("DefIdeologyCountryOutputEnergyFactorGain"), SubResource("DefIdeologyCountryOutputKnowledgeFactorGain"), SubResource("DefIdeologyCountryIdeologyPointGainFactorGain"), SubResource("DefIdeologyCountryIdeologyPointPopulationFactorGain"), SubResource("DefIdeologyCountryIdeologyPointBuildingFactorGain"), SubResource("DefIdeologyCountryIdeologyPointTradeFactorGain"), SubResource("DefIdeologyCountryIdeologySchoolStrengthFactorHarmonyGain"), SubResource("DefIdeologyMilitiaTraditionL1"), SubResource("DefIdeologyMilitiaTraditionL2"), SubResource("DefIdeologyMilitiaTraditionL3"), SubResource("DefIdeologyLevySystemL1"), SubResource("DefIdeologyLevySystemL2"), SubResource("DefIdeologyLevySystemL3"), SubResource("DefIdeologyVolunteerArmyL1"), SubResource("DefIdeologyVolunteerArmyL2"), SubResource("DefIdeologyVolunteerArmyL3"), SubResource("DefIdeologyProfessionalArmyL1"), SubResource("DefIdeologyProfessionalArmyL2"), SubResource("DefIdeologyProfessionalArmyL3"), SubResource("DefIdeologyMutualSupportL1"), SubResource("DefIdeologyMutualSupportL2"), SubResource("DefIdeologyMutualSupportL3"), SubResource("DefIdeologyFortressCityL1"), SubResource("DefIdeologyFortressCityL2"), SubResource("DefIdeologyFortressCityL3"), SubResource("DefIdeologyWrathOfTheFallenL1"), SubResource("DefIdeologyWrathOfTheFallenL2"), SubResource("DefIdeologyWrathOfTheFallenL3"), SubResource("DefIdeologyPursuitL1"), SubResource("DefIdeologyPursuitL2"), SubResource("DefIdeologyPursuitL3"), SubResource("DefIdeologyWarFeedsWarL1"), SubResource("DefIdeologyWarFeedsWarL2"), SubResource("DefIdeologyWarFeedsWarL3"), SubResource("DefIdeologyMeritRanksL1"), SubResource("DefIdeologyMeritRanksL2"), SubResource("DefIdeologyMeritRanksL3"), SubResource("DefIdeologyMilitaryFarmsL1"), SubResource("DefIdeologyMilitaryFarmsL2"), SubResource("DefIdeologyMilitaryFarmsL3"), SubResource("DefIdeologyArsenalCityL1"), SubResource("DefIdeologyArsenalCityL2"), SubResource("DefIdeologyArsenalCityL3"), SubResource("DefIdeologyLastStandL1"), SubResource("DefIdeologyLastStandL2"), SubResource("DefIdeologyLastStandL3"), SubResource("DefIdeologyHoldTheLineL1"), SubResource("DefIdeologyHoldTheLineL2"), SubResource("DefIdeologyHoldTheLineL3"), SubResource("DefIdeologyEncirclementDoctrineL1"), SubResource("DefIdeologyEncirclementDoctrineL2"), SubResource("DefIdeologyEncirclementDoctrineL3"), SubResource("DefIdeologyBlitzkriegL1"), SubResource("DefIdeologyBlitzkriegL2"), SubResource("DefIdeologyBlitzkriegL3"), SubResource("DefIdeologyScorchedEarthL1"), SubResource("DefIdeologyScorchedEarthL2"), SubResource("DefIdeologyScorchedEarthL3"), SubResource("DefIdeologyTotalWarL1"), SubResource("DefIdeologyTotalWarL2"), SubResource("DefIdeologyTotalWarL3"), SubResource("DefIdeologyDeterrenceL1"), SubResource("DefIdeologyDeterrenceL2"), SubResource("DefIdeologyDeterrenceL3"), SubResource("DefIdeologySynergyTuntianGarrison"), SubResource("DefIdeologySynergyMilitaryIndustrialComplex"), SubResource("DefIdeologySynergyDeathGround"), SubResource("DefIdeologyMilitaryFortressCitySelf0"), SubResource("DefIdeologyMilitaryFortressCityRing0"), SubResource("DefIdeologyMilitaryMilitaryFarmsSelf0"), SubResource("DefIdeologyMilitaryMilitaryFarmsSelf1"), SubResource("DefIdeologyMilitaryMilitaryFarmsSelf2"), SubResource("DefIdeologyMilitaryMilitaryFarmsRing0"), SubResource("DefIdeologyMilitaryMilitaryFarmsRing1"), SubResource("DefIdeologyMilitaryMilitaryFarmsRing2"), SubResource("DefIdeologyMilitaryArsenalCitySelf0"), SubResource("DefIdeologyMilitaryArsenalCityRing0"), SubResource("DefIdeologyMilitaryFrontierGarrisonBorder0"), SubResource("DefIdeologyMilitaryFrontierGarrisonBorder1"), SubResource("DefIdeologyStackWrathOfTheFallenL1"), SubResource("DefIdeologyStackWrathOfTheFallenL2"), SubResource("DefIdeologyStackWrathOfTheFallenL3"), SubResource("DefIdeologyStackPursuitL1"), SubResource("DefIdeologyStackPursuitL2"), SubResource("DefIdeologyStackPursuitL3"), SubResource("DefIdeologyStackWarFeedsWarL1"), SubResource("DefIdeologyStackWarFeedsWarL2"), SubResource("DefIdeologyStackWarFeedsWarL3"), SubResource("DefIdeologyStackMeritRanksL1"), SubResource("DefIdeologyStackMeritRanksL2"), SubResource("DefIdeologyStackMeritRanksL3"), SubResource("DefIdeologyStackScorchedEarthL1"), SubResource("DefIdeologyStackScorchedEarthL2"), SubResource("DefIdeologyStackScorchedEarthL3")])

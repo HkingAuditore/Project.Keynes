@@ -1,4 +1,4 @@
-﻿class_name IdeologyEffectDefinition
+class_name IdeologyEffectDefinition
 extends Resource
 
 ## Authoring-only ideology effect program. Compiled into a shared

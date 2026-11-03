@@ -1,6 +1,8 @@
 extends ColorRect
 class_name WorldLoadingOverlay
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 signal retry_requested
 signal return_requested
 
@@ -92,6 +94,7 @@ func _ready() -> void:
 		_copy_button.pressed.connect(_on_copy_detail_pressed)
 	if _failure_detail_box != null:
 		_failure_detail_box.hide()
+	TouchUI.watch(self)
 	visibility_changed.connect(func() -> void: set_process(is_visible_in_tree()))
 	set_process(is_visible_in_tree())
 

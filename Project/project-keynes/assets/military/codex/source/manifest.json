@@ -1,0 +1,93 @@
+{
+  "generated_on": "2026-11-02",
+  "style_reference": [
+    "E:/下载/TE/ToyEmpires-main/Assets/Resources/Sprites/Units/示例/001_2001_0.png",
+    "E:/下载/TE/ToyEmpires-main/Assets/Resources/Sprites/Units/示例/000_5002_0.png"
+  ],
+  "source_sheets": {
+    "units_sheet_v1.png": {
+      "audience": "兵种",
+      "columns": 4,
+      "rows": 4,
+      "semantics": [
+        "military.unit.militia",
+        "military.unit.tribal",
+        "military.unit.spearmen",
+        "military.unit.legionary",
+        "military.unit.archer",
+        "military.unit.cavalry",
+        "military.unit.chariot",
+        "military.unit.musketeer",
+        "military.unit.line_infantry",
+        "military.unit.rifleman",
+        "military.unit.machine_gunner",
+        "military.unit.field_artillery",
+        "military.unit.siege_train",
+        "military.unit.early_tank",
+        "military.unit.tank",
+        "military.unit.drone"
+      ]
+    },
+    "goods_sheet_v1.png": {
+      "audience": "军需物资与装备",
+      "columns": 4,
+      "rows": 4,
+      "semantics": [
+        "military.good.melee_arms",
+        "military.good.missile_arms",
+        "military.good.firearms",
+        "military.good.ordnance",
+        "military.good.body_armor",
+        "military.good.mounts",
+        "military.good.armored_vehicles",
+        "military.good.drones",
+        "military.good.ammunition",
+        "military.good.propellant",
+        "military.good.fuel",
+        "military.good.electronics",
+        "military.supply.ration",
+        "military.supply.fodder",
+        "military.supply.equipment",
+        "military.ledger.convoy"
+      ]
+    },
+    "buildings_sheet_v1.png": {
+      "audience": "军事建筑",
+      "columns": 4,
+      "rows": 3,
+      "semantics": [
+        "military.building.tribal_lodge",
+        "military.building.palisade_barracks",
+        "military.building.legion_fort",
+        "military.building.modern_base",
+        "military.building.rampart",
+        "military.building.stone_wall",
+        "military.building.star_fort",
+        "military.building.bunker",
+        "military.building.academy",
+        "military.building.simulation_center",
+        "military.building.depot",
+        "military.building.training_ground"
+      ]
+    },
+    "status_sheet_v1.png": {
+      "audience": "军队状态与战争外交",
+      "columns": 4,
+      "rows": 3,
+      "semantics": [
+        "military.army.morale",
+        "military.army.organization",
+        "military.army.pay",
+        "military.army.supply",
+        "military.army.attack",
+        "military.army.defense",
+        "military.war.front",
+        "military.war.battle",
+        "military.war.score",
+        "military.war.peace",
+        "military.war.truce",
+        "military.ledger.secure_convoy"
+      ]
+    }
+  }
+}

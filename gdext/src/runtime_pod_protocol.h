@@ -1203,6 +1203,11 @@ struct RuntimeCountryPodSnapshot {
     std::vector<uint8_t> research_auto_purchase;
     std::vector<int64_t> research_purchased_total;
     std::vector<int64_t> research_consumed_total;
+    // Transient era-advancement treasury sink (CONSUME_TREASURY_GOODS).
+    // Excluded from the business hash, PKCN and worker checkpoint payloads;
+    // the economy goods audit samples it like research_consumed_total.
+    // Empty is accepted (older fixtures) and treated as all-zero.
+    std::vector<int64_t> treasury_goods_consumed_total;
     static constexpr uint32_t TAX_KIND_COUNT = 5u;
     std::vector<int32_t> country_tax_defaults;
     std::vector<int32_t> country_tax_default_modes;

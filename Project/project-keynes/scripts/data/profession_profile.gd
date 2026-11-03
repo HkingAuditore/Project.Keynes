@@ -19,6 +19,19 @@ extends Resource
 ## Executable availability requirements. Only `tech.*` tags are interpreted by
 ## the economy runtime; other namespaces remain descriptive metadata.
 @export var technology_tags: PackedStringArray = PackedStringArray()
+## Military v1 (design §5.1): a state-service profession (the soldier) may only
+## be filled as an employee role of a state-owned building, and its cohorts
+## never transfer OUT along any recruitment, owner-mobility, unemployment-reflux,
+## family-colonization or migration lane. Compiled into the native catalog and
+## validated against `BuildingProfile.building_kind == "state"`.
+@export var state_service_only: bool = false
+## Global need stable ids furnished in kind by Military instead of purchased on
+## the market (soldier rations: staple_food, protein). Their satisfaction is
+## taken from the per-cell military ration satisfaction supplied through
+## `DCWorldExt.set_military_ration_satisfaction`, so a ration shortfall lands in
+## the survival dimension and therefore in morale and starvation deaths.
+## Non-empty only meaningful together with `state_service_only`.
+@export var state_supplied_need_ids: PackedStringArray = PackedStringArray()
 
 ## Per-person, per-day Q32 demographic rates.
 ## 20.0% births and 7.5% pre-technology natural deaths per 365-day year. The

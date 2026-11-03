@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "pipeline": "built-in image generation -> equal-grid slicing -> RGBA atlas packing",
+  "art_source": "model-generated raster sheets",
+  "source_grid": {
+    "columns": 8,
+    "rows": 4,
+    "actions": [
+      "idle",
+      "move",
+      "attack",
+      "hit"
+    ]
+  },
+  "output_frame": {
+    "width": 128,
+    "height": 128
+  },
+  "sheets": [
+    {
+      "prototype": "foot",
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/foot_sheet_v1.png",
+      "width": 1774,
+      "height": 887,
+      "mode": "RGBA",
+      "sha256": "90ebfb4ed1af82362c68393d5e2faed5bd0403a8c39f050f396334a54aea4457"
+    },
+    {
+      "prototype": "mounted",
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/mounted_sheet_v1.png",
+      "width": 1774,
+      "height": 887,
+      "mode": "RGBA",
+      "sha256": "097e3ca6e41c804e5450203ddde6fb3d6d1eddf7a91ba1ade3223624fe7be5b4"
+    },
+    {
+      "prototype": "artillery",
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/artillery_sheet_v1.png",
+      "width": 1774,
+      "height": 887,
+      "mode": "RGBA",
+      "sha256": "7942829d31fea965d1aa89063de9d77d2a9024831d58b5230a1f3d9acacd2c5e"
+    },
+    {
+      "prototype": "armored",
+      "path": "Project/project-keynes/assets/military/formations/prototype/source/armored_sheet_v1.png",
+      "width": 1774,
+      "height": 887,
+      "mode": "RGBA",
+      "sha256": "21453c80a0c9e92a21cfeeaa2e927c2593c7397e40e57cec8046a052b1e0344e"
+    }
+  ]
+}

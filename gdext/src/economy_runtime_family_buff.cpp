@@ -24,10 +24,13 @@ namespace pk {
 namespace {
 
 constexpr int32_t kManufacturingSector = 2;
-constexpr int32_t kDominantShareFloorQ16 = NativeEconomyRuntime::Q16_ONE * 2 / 3;
+constexpr int32_t kDominantShareFloorQ16 = NativeEconomyRuntime::Q16_ONE * 70 / 100;
 constexpr int32_t kMonopolyShareFloorQ16 = NativeEconomyRuntime::Q16_ONE * 60 / 100;
 constexpr int32_t kSpecializedDominantBonusQ16 = 3932; // +6%
 constexpr int32_t kSpecializedOtherPenaltyQ16 = 1966; // -3%
+constexpr int32_t kVersatileCraftsBonusQ16 = NativeEconomyRuntime::Q16_ONE;
+constexpr int32_t kCompleteChainBonusQ16 = NativeEconomyRuntime::Q16_ONE;
+constexpr int32_t kMonopolyBonusQ16 = NativeEconomyRuntime::Q16_ONE;
 
 const char *kEffectSpecialized = "family.effect.specialized_industry";
 const char *kEffectVersatile = "family.effect.versatile_crafts";
@@ -383,6 +386,8 @@ void NativeEconomyRuntime::rebuild_family_owned_output_csr() {
             !families_store().valid_handle(family_influences().family_handle[branch], family))
             continue;
         const int32_t cell = family_influences().cell[branch];
+        const int32_t prestige = std::clamp<int32_t>(
+            family_influences().prestige_level[branch], 0, 5);
         const FamilyIndustryStats *stats = family_industry_stats_for(family, cell);
         if (stats == nullptr) continue;
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
@@ -391,26 +396,54 @@ void NativeEconomyRuntime::rebuild_family_owned_output_csr() {
                     stats->dominant_sector_share_q16 >= kDominantShareFloorQ16) ||
                 stats->dominant_sector_id < 0)
                 continue;
+            static constexpr int32_t kSpecMainBonusQ16[6] = {
+                3277, 3277, 5898, 8520, 11141, 14418
+            };
+            static constexpr int32_t kSpecOtherPenaltyQ16[6] = {
+                1311, 1311, 1966, 2621, 3277, 3932
+            };
             for (int32_t sector = 0; sector < 5; ++sector) {
-                const int32_t bonus = sector == stats->dominant_sector_id
-                    ? kSpecializedDominantBonusQ16 : -kSpecializedOtherPenaltyQ16;
-                append_row(family, cell, 1, sector,
-                    bonus_factor_q16(magnitude, bonus));
+                if (magnitude != Q16_ONE && magnitude != kSpecMainBonusQ16[prestige]) {
+                    const int32_t bonus = sector == stats->dominant_sector_id
+                        ? kSpecializedDominantBonusQ16 : -kSpecializedOtherPenaltyQ16;
+                    append_row(family, cell, 1, sector,
+                        bonus_factor_q16(magnitude, bonus));
+                } else {
+                    const int32_t delta = sector == stats->dominant_sector_id
+                        ? kSpecMainBonusQ16[prestige]
+                        : -kSpecOtherPenaltyQ16[prestige];
+                    append_row(family, cell, 1, sector,
+                        clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + delta));
+                }
             }
         } else if (binding.definition_key == kEffectVersatile) {
             if (stats->distinct_sector_count < 3) continue;
-            append_row(family, cell, 0, 0, clamp_factor_q16(
-                static_cast<int64_t>(Q16_ONE) + magnitude));
+            const int32_t factor = magnitude < Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : (magnitude == Q16_ONE
+                    ? bonus_factor_q16(magnitude, kVersatileCraftsBonusQ16)
+                    : magnitude);
+            append_row(family, cell, 0, 0, factor);
         } else if (binding.definition_key == kEffectCompleteChain) {
             if (stats->complete_chain_count < 1 ||
                 stats->max_chain_upgrade_family_id < 0) continue;
+            const int32_t factor = magnitude < Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : (magnitude == Q16_ONE
+                    ? bonus_factor_q16(magnitude, kCompleteChainBonusQ16)
+                    : magnitude);
             append_row(family, cell, 2, stats->max_chain_upgrade_family_id,
-                clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude));
+                factor);
         } else if (binding.definition_key == kEffectMonopoly) {
             if (stats->max_local_chain_share_q16 < kMonopolyShareFloorQ16 ||
                 stats->max_chain_upgrade_family_id < 0) continue;
+            const int32_t factor = magnitude < Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : (magnitude == Q16_ONE
+                    ? bonus_factor_q16(magnitude, kMonopolyBonusQ16)
+                    : magnitude);
             append_row(family, cell, 2, stats->max_chain_upgrade_family_id,
-                clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude));
+                factor);
         }
     }
     std::sort(expanded.begin(), expanded.end(),
@@ -638,9 +671,10 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
         EffectRuntime::FamilyEffectMetadataPod metadata;
         if (!_effect_runtime->family_effect_metadata_pod(key, metadata)) continue;
         const int32_t source_cell = family_influences().cell[branch];
+        const int32_t branch_prestige = family_influences().prestige_level[branch];
         std::vector<int32_t> target_cells;
         collect_family_effect_target_cells(source_cell, metadata.target_selector_kind,
-            target_cells);
+            target_cells, key, branch_prestige);
         if (target_cells.empty() && (metadata.target_domain == 2 ||
                 metadata.target_domain == 4 || metadata.target_domain == 5))
             continue;
@@ -769,10 +803,15 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
             // instance whose trigger never fires would live forever. Both
             // authorities now read the same absolute day out of the metadata the
             // caller already resolved.
+            static constexpr int32_t kAncestralDurations[6] = {
+                180, 180, 240, 300, 365, 540
+            };
+            const int32_t ancestral_duration =
+                kAncestralDurations[std::clamp(prestige, 0, 5)];
             const int64_t expires_day =
                 metadata.lifecycle == 1 && metadata.stack_policy == 1
                     ? std::max<int64_t>(0, _current_day.get()) +
-                        static_cast<int64_t>(metadata.duration_days)
+                        static_cast<int64_t>(ancestral_duration)
                     : -1;
             if (!effect_pod_upsert(_effect_runtime, _effect_forwarder,
                     instance_id, kEffectAncestral,
@@ -805,9 +844,28 @@ void NativeEconomyRuntime::notify_era_milestone_activated(uint64_t country_handl
 
 void NativeEconomyRuntime::collect_family_effect_target_cells(
         int32_t source_cell, int32_t selector_kind,
-        std::vector<int32_t> &out_cells) const {
+        std::vector<int32_t> &out_cells,
+        const std::string &definition_key,
+        int32_t prestige_level) const {
+    int32_t effective_kind = selector_kind;
+    if (definition_key == "family.effect.knowledge_spread") {
+        const int32_t level = std::clamp(prestige_level, 0, 5);
+        if (level <= 1) {
+            effective_kind = EffectRuntime::SELECTOR_SOURCE_CELL;
+        } else if (level <= 3) {
+            effective_kind = kSelectorNeighborsR1;
+        } else {
+            effective_kind = kSelectorNeighborsR2;
+        }
+    }
     // Family rows never carried selector params, so 0 means "runtime default".
-    collect_effect_target_cells(source_cell, selector_kind, 0, 0, out_cells);
+    collect_effect_target_cells(source_cell, effective_kind, 0, 0, out_cells);
+    if (effective_kind >= kSelectorNeighborsR1 &&
+        source_cell >= 0 && source_cell < _cell_count.get() &&
+        std::find(out_cells.begin(), out_cells.end(), source_cell) == out_cells.end()) {
+        out_cells.push_back(source_cell);
+        std::sort(out_cells.begin(), out_cells.end());
+    }
 }
 
 int32_t NativeEconomyRuntime::dominant_resource_at(int32_t cell) const {
@@ -2818,7 +2876,7 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
         const uint64_t branch_handle = family_influences().handle_for_index(branch);
         std::string error;
         if ((gift.flags & FAMILY_FLAG_SPLIT_GIFT_BUILDING) != 0 &&
-            gift.building_type_id >= 0) {
+            gift.building_type_id >= 0 && gift.building_count > 0) {
             Command cmd;
             cmd.opcode = COMMAND_FAMILY_FREE_BUILDING;
             cmd.effective_day = _current_day.get();
@@ -2826,7 +2884,7 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
             cmd.target_handle = branch_handle;
             cmd.i32_0 = 0;
             cmd.i32_1 = gift.building_type_id;
-            cmd.i64_0 = 1;
+            cmd.i64_0 = gift.building_count;
             apply_family_free_building_reward(cmd, error);
         }
         if ((gift.flags & FAMILY_FLAG_SPLIT_GIFT_POPULATION) != 0 &&
@@ -2900,6 +2958,8 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
             !families_store().valid_handle(family_influences().family_handle[branch], family))
             continue;
         const int32_t cell = family_influences().cell[branch];
+        const int32_t prestige = std::clamp<int32_t>(
+            family_influences().prestige_level[branch], 0, 5);
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
         // Direct policies consume only these five signals. Most bindings have
         // no metric condition and need no population/building/resource scans.
@@ -2917,36 +2977,73 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
         fill_family_behavior_metrics(family, branch, cell, metrics.data(),
             FAMILY_METRIC_COUNT, mask);
         if (binding.definition_key == kEffectWorkRelief) {
-            if (metrics[FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16] >= Q16_ONE * 15 / 100)
+            if (metrics[FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16] >= Q16_ONE * 15 / 100) {
+                const int32_t factor = magnitude <= Q16_ONE
+                    ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                    : magnitude;
                 mix_family_factor(_family_investment_factor_q16[
-                    static_cast<size_t>(family)], magnitude);
+                    static_cast<size_t>(family)], factor);
+            }
         } else if (binding.definition_key == kEffectRemoteKin) {
-            if (metrics[FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT] > 0)
+            static constexpr int64_t kRemoteMinBranches[6] = {
+                5, 5, 4, 4, 3, 2
+            };
+            const int64_t remote_branches =
+                (metrics[FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT] + Q16_ONE / 2) /
+                Q16_ONE;
+            if (remote_branches >= kRemoteMinBranches[prestige] ||
+                (magnitude > Q16_ONE && remote_branches > 0)) {
+                const int32_t factor = magnitude <= Q16_ONE
+                    ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                    : magnitude;
                 mix_family_factor(_family_investment_factor_q16[
-                    static_cast<size_t>(family)], magnitude);
+                    static_cast<size_t>(family)], factor);
+            }
         } else if (binding.definition_key == kEffectWealthyFew) {
-            if (metrics[FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16] > Q16_ONE) {
+            if (metrics[FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16] > 2 * Q16_ONE ||
+                (magnitude > Q16_ONE &&
+                 metrics[FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16] > Q16_ONE)) {
+                static constexpr int32_t kWealthyInvestFactorQ16[6] = {
+                    68813, 68813, 72090, 75366, 78643, 85197
+                };
+                static constexpr int32_t kWealthyBirthFactorQ16[6] = {
+                    63570, 63570, 62259, 60948, 59638, 57672
+                };
+                const int32_t invest_factor = magnitude <= Q16_ONE
+                    ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                    : kWealthyInvestFactorQ16[prestige];
                 mix_family_factor(_family_investment_factor_q16[
-                    static_cast<size_t>(family)], magnitude);
-                const int32_t birth_cut = clamp_factor_q16(
-                    static_cast<int64_t>(Q16_ONE) * Q16_ONE /
-                    std::max(1, magnitude));
+                    static_cast<size_t>(family)], invest_factor);
                 mix_family_factor(_family_birth_factor_q16[
-                    static_cast<size_t>(family)], birth_cut);
+                    static_cast<size_t>(family)], kWealthyBirthFactorQ16[prestige]);
             }
         } else if (binding.definition_key == kEffectBranching) {
+            const int32_t factor = magnitude <= Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : magnitude;
             mix_family_factor(_family_birth_factor_q16[
-                static_cast<size_t>(family)], magnitude);
+                static_cast<size_t>(family)], factor);
         } else if (binding.definition_key == kEffectMarketBully) {
-            const int32_t pay = clamp_factor_q16(
-                static_cast<int64_t>(Q16_ONE) * Q16_ONE / std::max(1, magnitude));
+            static constexpr int32_t kBullyPayFactorQ16[6] = {
+                58982, 58982, 52429, 45875, 39322, 32768
+            };
+            static constexpr int32_t kBullyInvestFactorQ16[6] = {
+                78643, 78643, 91750, 104858, 117965, 131072
+            };
             mix_family_factor(_family_purchase_factor_q16[
-                static_cast<size_t>(family)],
-                std::min(pay, static_cast<int32_t>(Q16_ONE)));
+                static_cast<size_t>(family)], kBullyPayFactorQ16[prestige]);
+            const int32_t invest_factor = magnitude <= Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : kBullyInvestFactorQ16[prestige];
             mix_family_factor(_family_investment_factor_q16[
-                static_cast<size_t>(family)], magnitude);
+                static_cast<size_t>(family)], invest_factor);
         } else if (binding.definition_key == kEffectExpansionism) {
-            const int32_t amount = std::max(1, magnitude / static_cast<int32_t>(Q16_ONE / 8));
+            static constexpr int32_t kExpansionReward[6] = {
+                20, 20, 30, 40, 60, 80
+            };
+            const int32_t amount = magnitude <= 256
+                ? std::max(1, magnitude)
+                : kExpansionReward[prestige];
             if (family < static_cast<int32_t>(
                     _family_colonization_population_reward.size()))
                 _family_colonization_population_reward[
@@ -2956,9 +3053,13 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
         } else if (binding.definition_key == kEffectRainPrayer && cell >= 0 &&
                    static_cast<size_t>(cell) <
                        _epoch_cell_rain_event_threshold_q16.size()) {
-            const int32_t lowered = std::max(1,
-                static_cast<int32_t>(static_cast<int64_t>(kDefaultRainThresholdQ16) *
-                    Q16_ONE / std::max(1, magnitude)));
+            const int32_t lowered = magnitude <= Q16_ONE
+                ? std::max<int32_t>(1, static_cast<int32_t>(
+                    static_cast<int64_t>(kDefaultRainThresholdQ16) *
+                    std::max<int64_t>(0, Q16_ONE - magnitude) / Q16_ONE))
+                : std::max<int32_t>(1, static_cast<int32_t>(
+                    static_cast<int64_t>(kDefaultRainThresholdQ16) *
+                    Q16_ONE / std::max<int32_t>(1, magnitude)));
             _epoch_cell_rain_event_threshold_q16[static_cast<size_t>(cell)] =
                 std::min(_epoch_cell_rain_event_threshold_q16[
                     static_cast<size_t>(cell)], lowered);
@@ -2966,8 +3067,11 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
         } else if (binding.definition_key == kEffectColdResist && cell >= 0 &&
                    static_cast<size_t>(cell) <
                        _epoch_cell_cold_capacity_factor_q16.size()) {
+            const int32_t factor = magnitude <= Q16_ONE
+                ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                : magnitude;
             mix_family_factor(_epoch_cell_cold_capacity_factor_q16[
-                static_cast<size_t>(cell)], magnitude);
+                static_cast<size_t>(cell)], factor);
             stamp_cell(cell);
         } else if (binding.definition_key == kEffectOneIndustry && cell >= 0) {
             const int32_t share = static_cast<int32_t>(
@@ -2977,10 +3081,21 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
                 static_cast<int32_t>(sector_metric / Q16_ONE);
             if (share >= kOneIndustryShareFloorQ16 && sector >= 0 && sector < 5 &&
                 _epoch_cell_sector_output_factor_q16.size() == sector_span) {
-                const size_t index = static_cast<size_t>(cell) * 5U +
-                    static_cast<size_t>(sector);
-                mix_family_factor(_epoch_cell_sector_output_factor_q16[index],
-                    magnitude);
+                static constexpr int32_t kOneIndustryOtherPenaltyQ16[6] = {
+                    1311, 1311, 1966, 2621, 3277, 3932
+                };
+                const int32_t dom_factor = magnitude <= Q16_ONE
+                    ? clamp_factor_q16(static_cast<int64_t>(Q16_ONE) + magnitude)
+                    : magnitude;
+                const int32_t other_factor = clamp_factor_q16(
+                    static_cast<int64_t>(Q16_ONE) -
+                    kOneIndustryOtherPenaltyQ16[prestige]);
+                for (int32_t s = 0; s < 5; ++s) {
+                    const size_t idx = static_cast<size_t>(cell) * 5U +
+                        static_cast<size_t>(s);
+                    mix_family_factor(_epoch_cell_sector_output_factor_q16[idx],
+                        s == sector ? dom_factor : other_factor);
+                }
                 stamp_cell(cell);
             }
         } else if (binding.definition_key == kEffectRetain) {

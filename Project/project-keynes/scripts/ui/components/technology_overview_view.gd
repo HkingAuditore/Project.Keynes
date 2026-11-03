@@ -7,6 +7,7 @@ class_name TechnologyOverviewView
 signal cell_activated(domain_id: String, era_index: int, technology_index: int)
 
 const Art = preload("res://scripts/ui/components/technology_tree_art.gd")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const HEADER_HEIGHT := 36.0
 const MIN_ROW_HEIGHT := 44.0
 const MAX_ROW_HEIGHT := 64.0
@@ -31,7 +32,7 @@ var _cell_style: StyleBoxFlat
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	focus_mode = Control.FOCUS_CLICK
 	clip_contents = true
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -111,6 +112,9 @@ func _rebuild_cells() -> void:
 		if not TechnologyTreeView.presents_state(_state_of(technology)):
 			continue
 		var definition: Dictionary = _definitions[technology]
+		# Retired era milestones are internal tokens; they never count as research.
+		if TechnologyTreeView.is_retired_definition(definition):
+			continue
 		var era_index := int(era_lookup.get(String(definition.get("era_id", "")), -1))
 		if era_index < 0:
 			continue
@@ -203,7 +207,12 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		if button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if not button.pressed:
+			if TouchUI.is_touch() and _hovered >= 0:
+				_hovered = -1
+				queue_redraw()
 			return
 		var hit := _cell_at(button.position)
 		if hit < 0:

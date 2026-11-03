@@ -257,7 +257,8 @@ struct CountryPendingCommandProtocol {
 };
 
 constexpr uint32_t COUNTRY_CHECKPOINT_ABI_VERSION = 2u;
-constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_VERSION = 13u;
+constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_VERSION = 14u;
+constexpr uint32_t COUNTRY_CHECKPOINT_SCHEMA_MIN_VERSION = 11u;
 
 // CPD2 wraps the exact canonical PKCN payload captured at the save boundary.
 // The protocol tail preserves command/receipt identity without changing PKCN

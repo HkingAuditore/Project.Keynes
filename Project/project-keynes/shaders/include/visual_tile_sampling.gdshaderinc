@@ -66,7 +66,7 @@ vec4 visual_sample_height(vec2 uv) { return texture(height_tex, visual_static_wr
 // 各 VT_USE_* 只决定读哪一层，**不新增 sampler**。tiled 桌面不走这条：normal/relief 是
 // 两个不同分辨率（relief 是 relief_scale 倍）的数组，不能同 array。
 #if !defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_SURFACE_ARRAY)
-uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
+uniform sampler2DArray terrain_surface_tex : filter_linear_mipmap, repeat_disable;
 #define TS_LAYER_NORMAL   0.0
 #define TS_LAYER_RELIEF   1.0
 #define TS_LAYER_DETAIL   2.0
@@ -85,7 +85,7 @@ uniform bool terrain_edge_layers_bound = false;
 
 #ifdef VT_USE_TERRAIN_NORMAL
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_normal_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_terrain_normal_tiles : filter_linear_mipmap, repeat_disable;
 vec4 visual_sample_terrain_normal(vec2 uv) { return texture(visual_terrain_normal_tiles, visual_tile_address(uv)); }
 #elif defined(VT_USE_TERRAIN_RELIEF)
 #ifndef VT_USE_TERRAIN_SURFACE_ARRAY
@@ -107,7 +107,7 @@ vec4 visual_sample_terrain_normal(vec2 uv) { return texture(terrain_normal_tex, 
 #error "VT_USE_TERRAIN_RELIEF requires VT_USE_TERRAIN_NORMAL (packed terrain_surface_tex layer contract)"
 #endif
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_relief_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_terrain_relief_tiles : filter_linear_mipmap, repeat_disable;
 vec4 visual_sample_terrain_relief(vec2 uv) { return texture(visual_terrain_relief_tiles, visual_tile_address(uv)); }
 #else
 vec4 visual_sample_terrain_relief(vec2 uv) {
@@ -183,11 +183,13 @@ vec4 visual_sample_horizon(vec2 uv) { return texture(visual_horizon_tiles, visua
 #endif
 #else
 uniform sampler2D terrain_horizon_tex : filter_nearest, repeat_disable;
-// [web-resource-min] resource_impostor 的 web 精简变体不再采样地平线（uniform 声明保留，
-// 运行期仍会 set_shader_parameter），采样点整段省掉。
-#ifndef PK_WEB_RESOURCE_MIN
+// [horizon-undefined-fix 2026-11-01] 这里以前在 PK_WEB_RESOURCE_MIN 下不定义函数，
+// 但 vegetation_impostor.gdshaderinc 的采样点没有同样的 guard —— 手机档
+// （MOBILE_QUALITY_* + PK_WEB_RESOURCE_MIN，见 resource_impostor_web_min.gdshaderinc）
+// 因此报 "No matching function found: 'visual_sample_horizon'"，整个 impostor/地表
+// 着色器编译失败。函数本身只做一次 texture()，定义出来不会额外采样；省开销交给
+// 调用点的 PK_WEB_RESOURCE_MIN guard。
 vec4 visual_sample_horizon(vec2 uv) { return texture(terrain_horizon_tex, visual_static_wrap_uv(uv)); }
-#endif
 #endif
 #endif
 
@@ -257,7 +259,7 @@ float visual_flow_texel(vec2 uv) {
 
 #ifdef VT_USE_WATER_DEPTH
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_water_depth_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_water_depth_tiles : filter_linear_mipmap, repeat_disable;
 vec4 visual_sample_water_depth(vec2 uv) { return texture(visual_water_depth_tiles, visual_tile_address(uv)); }
 #else
 uniform sampler2D water_depth_tex : filter_linear, repeat_disable;
@@ -267,7 +269,7 @@ vec4 visual_sample_water_depth(vec2 uv) { return texture(water_depth_tex, visual
 
 #ifdef VT_USE_TERRAIN_DETAIL
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_detail_tiles : filter_linear, repeat_disable;
+uniform sampler2DArray visual_terrain_detail_tiles : filter_linear_mipmap, repeat_disable;
 vec4 visual_sample_terrain_detail(vec2 uv) { return texture(visual_terrain_detail_tiles, visual_tile_address(uv)); }
 #else
 // [web-high-features 2026-11-01 / 方案 B] 非 tiled 的 detail 改读 terrain_surface_tex
@@ -370,3 +372,14 @@ float terrain_static_edge_weight(float distance_to_edge, float width) {
 	float w = clamp(width, 1.0 / 255.0, 0.98);
 	return 0.5 * (1.0 - smoothstep(0.0, w, distance_to_edge));
 }
+
+#ifndef VT_USE_HORIZON
+// [horizon-undefined-fix 2026-11-01] 没有 horizon 采样槽的变体（水面独立程序、手机精简档）
+// 仍会 include vegetation_impostor，它的灌木遮蔽采样直接调用 visual_sample_horizon(uv)；
+// terrain_horizon 的"中性叶子"只覆盖 terrain_horizon_evaluate，覆盖不到这个直接调用，
+// 于是整份着色器报 "No matching function found: 'visual_sample_horizon'" 编译失败（安卓实测）。
+// 这里补中性实现，调用点无需条件编译，语义等于"没有遮蔽数据"。
+vec4 visual_sample_horizon(vec2 uv) {
+	return vec4(0.0);
+}
+#endif

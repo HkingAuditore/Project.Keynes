@@ -20,12 +20,15 @@ var _rows: Array = []
 var _values := PackedFloat32Array()
 var _from := PackedFloat32Array()
 var _hover := -1
+var _touch_press_active := false
+var _touch_press_pos := Vector2.ZERO
+var _touch_dragged := false
 
 
 func _init() -> void:
 	super()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 
 
 func set_rows(rows: Array) -> void:
@@ -50,8 +53,15 @@ func row_count() -> int:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var is_touch_event := TouchUI.is_touch() or event.device == -1
 	if event is InputEventMouseMotion:
-		var index := int(floor((event as InputEventMouseMotion).position.y / row_height))
+		var motion := event as InputEventMouseMotion
+		if _touch_press_active and motion.position.distance_to(_touch_press_pos) > 10.0:
+			_touch_dragged = true
+			_hover = -1
+			queue_redraw()
+			return
+		var index := int(floor(motion.position.y / row_height))
 		index = index if index >= 0 and index < _rows.size() else -1
 		if index != _hover:
 			_hover = index
@@ -61,9 +71,28 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventMouseButton and selectable:
 		var button := event as InputEventMouseButton
-		# 触摸档没有 hover：手指落下时不会先来一条 InputEventMouseMotion，
-		# 靠 _hover 判定会把整排可点行变成「点不动」。改成按事件位置直接判。
-		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if is_touch_event:
+			if button.pressed:
+				_touch_press_active = true
+				_touch_press_pos = button.position
+				_touch_dragged = false
+				_hover = _row_at(button.position)
+				queue_redraw()
+				return
+			if not _touch_press_active:
+				return
+			var dragged := _touch_dragged or button.position.distance_to(_touch_press_pos) > 10.0
+			_touch_press_active = false
+			_touch_dragged = false
+			var index := _row_at(button.position)
+			_hover = -1
+			queue_redraw()
+			if not dragged and index >= 0:
+				row_selected.emit(_rows[index].get("id"))
+			return
+		if button.pressed:
 			var index := _row_at(button.position)
 			if index >= 0:
 				_hover = index

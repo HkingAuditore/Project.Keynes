@@ -183,6 +183,9 @@ float shrub_horizon_angle_from_packed(vec4 packed, float sector) {
 float shrub_sample_horizon_angle(vec2 uv, vec2 sun_xy) {
 #ifdef PK_WEB_VEGETATION
 	return 0.0;
+#elif defined(PK_WEB_RESOURCE_MIN)
+	// 手机/web 精简档明确不采样地平线（与 visual_tile_sampling 的 web-min 语义一致）。
+	return 0.0;
 #else
 	float angle = atan(sun_xy.y, sun_xy.x);
 	if (angle < 0.0) angle += 6.2831853;
@@ -243,7 +246,8 @@ ShrubSkySample shrub_sample_sky(vec2 uv) {
 	ShrubSkySample s;
 	s.visibility = 1.0;
 	s.bent_normal = vec3(0.0, 0.0, 1.0);
-#ifdef PK_SKIP_HORIZON_SHADOWS
+#if defined(PK_SKIP_HORIZON_SHADOWS) || defined(PK_WEB_RESOURCE_MIN)
+	// 精简档不采样地平线：既省一次 texture()，也避免依赖 horizon 纹理是否绑定。
 	return s;
 #else
 	if (!terrain_horizon_tex_bound || !gi_lut_bound || veg_shade_quality < 1) return s;

@@ -58,7 +58,10 @@ inline constexpr uint16_t SAVE_SECTION_CADENCE_STATE = 33;
 inline constexpr uint16_t SAVE_SECTION_D7_PEER_EXT = 34;
 // Schema 55: milestone family founding state (required).
 inline constexpr uint16_t SAVE_SECTION_FAMILY_FOUNDING = 35;
-inline constexpr uint16_t SAVE_SECTION_LAST_EXTENSION = SAVE_SECTION_FAMILY_FOUNDING;
+// Schema 59: army personnel lanes (contract §1.5). Optional: a pre-59 stream
+// has no embarked people, and an absent section simply restores zero lanes.
+inline constexpr uint16_t SAVE_SECTION_ARMY_PERSONNEL = 36;
+inline constexpr uint16_t SAVE_SECTION_LAST_EXTENSION = SAVE_SECTION_ARMY_PERSONNEL;
 inline constexpr uint16_t SAVE_SECTION_END_V33 = 27;
 inline constexpr uint16_t SAVE_SECTION_END_V26 = 18;
 inline constexpr uint16_t SAVE_SECTION_END_V24_TO_V25 = 15;
