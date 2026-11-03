@@ -122,7 +122,7 @@ scons platform=linux target=template_release dev_build=no -j"$(nproc)"
 | Android | `addons/dots_ext/bin/android/libdots_ext.android.template_*.arm64.so` |
 
 命名规则：Windows 默认 basename 从 `dots_ext.gdextension` 对应映射读取
-（当前为 `dots_ext_army_v13`），其它平台是 `dots_ext`，
+（当前为 `dots_ext_state_snap_v1`），其它平台是 `dots_ext`，
 可用环境变量 `DOTS_EXT_OUTPUT_BASENAME` 覆盖。
 
 **改过 basename 就必须同时改 `addons/dots_ext/dots_ext.gdextension` 的 `[libraries]` 段**，
