@@ -125,14 +125,11 @@ func upload_layer_bundle(layer_id: int, bundle: Dictionary) -> bool:
 				var v: int = data[i] if data.size() > i else 0
 				expanded[i * 2] = v
 				expanded[i * 2 + 1] = v
-			image = Image.create_from_data(size.x, size.y, true, tex_format, expanded)
+			image = Image.create_from_data(size.x, size.y, false, tex_format, expanded)
 		else:
-			image = Image.create_from_data(size.x, size.y, true, format, data)
+			image = Image.create_from_data(size.x, size.y, false, format, data)
 			if tex_format != format:
 				image.convert(tex_format)
-		# 数组是按 mipmap 创建的（见 _create_empty_array），上传的图必须同样带 mip 链，
-		# 否则 update_layer 会因 mip 数不匹配被拒。
-		image.generate_mipmaps()
 		var texture: Texture2DArray = get(field_name)
 		texture.update_layer(image, layer_id)
 	return true
@@ -181,14 +178,12 @@ func _create_empty_array(format: int, size: Vector2i) -> Texture2DArray:
 	var images: Array[Image] = []
 	images.resize(layout.layer_count)
 	for layer_id in range(layout.layer_count):
-		# [tile-mipmaps 2026-11-03] 拉远时地块边缘"又闪又碎"：tiled 图集此前没有 mipmap，
-		# 缩小时 filter_linear 只取 2×2 纹素，等于对高频地形做无滤波点采样 → 相机一动
-		# 就闪烁。这里给所有层生成 mipmap，配合 visual_tile_sampling 里把**颜色类**
-		# 采样器改成 filter_linear_mipmap。数据类（map_index / edge_neighbor / horizon /
-		# occluder）仍用非 mip 采样，语义不变。代价：显存 +33%。
-		var image := Image.create_empty(size.x, size.y, true, format)
+		# [tile-mipmaps 2026-11-03 最终回滚] 给 tiled 图集加 mip 链后，真机反馈拉远时
+		# "问题比之前更严重"：mip 把高度/细节层一起模糊，着色在远处反而更脏更闪。
+		# 结论：在这套按格取样的地形上，mip 不是解（会牺牲数据层的语义）。已回滚，
+		# 拉远闪烁改由提高纹素密度处理（visual_tile_layout.gd 16/20/24）。
+		var image := Image.create_empty(size.x, size.y, false, format)
 		image.fill(Color(0.0, 0.0, 0.0, 0.0))
-		image.generate_mipmaps()
 		images[layer_id] = image
 	var texture := Texture2DArray.new()
 	if texture.create_from_images(images) != OK:

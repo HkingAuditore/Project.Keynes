@@ -422,7 +422,15 @@ NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) cons
     int64_t ignored_saturation = 0;
     sum_family_expedition_holdings(expedition_population, expedition_funds,
                                    expedition_goods, ignored_saturation);
-    totals.population += expedition_population - totals.transit_population;
+    // `transit_population` of any snapshot is expedition + army lane (that is how
+    // audit_totals() and the opening fast path build it), so recover the
+    // expedition-only baseline before either block rewrites it. Using the raw
+    // field here subtracted the lane once and never gave it back, which made the
+    // incremental population short by the whole lane and tripped the
+    // incremental_audit_mismatch cross-check on any epoch with a lane.
+    const int64_t baseline_expedition_population =
+        totals.transit_population - totals.army_lane_population;
+    totals.population += expedition_population - baseline_expedition_population;
     totals.transit_population = expedition_population;
     totals.expedition_funds = expedition_funds;
     totals.goods_stock += expedition_goods - totals.expedition_goods;
@@ -436,8 +444,7 @@ NativeEconomyRuntime::audit_totals_from_shadow(const AuditTotals &baseline) cons
                                 ignored_saturation);
     totals.population += army_lane_population - totals.army_lane_population;
     totals.transit_population = saturating_add(
-        totals.transit_population,
-        army_lane_population - totals.army_lane_population, ignored_saturation);
+        totals.transit_population, army_lane_population, ignored_saturation);
     totals.army_lane_population = army_lane_population;
     totals.army_lane_funds = army_lane_funds;
     // END army personnel lane
@@ -627,6 +634,8 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
                                                       std::string &error) {
     int32_t source = -1;
     int64_t source_population = -1;
+    int32_t civilian_source = -1;
+    int64_t civilian_population = -1;
     int64_t total_population = 0;
     bool has_living_merchant = false;
     int32_t zombie_merchant = -1;
@@ -644,11 +653,38 @@ bool NativeEconomyRuntime::ensure_merchant_invariant(int32_t cell, int64_t &repa
             source = slot;
             source_population = population_store().population[slot];
         }
+        // State-service heads (the soldier) belong to another domain: Military
+        // books a formation 1:1 against this cohort, so turning one of them into
+        // a merchant here silently breaks that alignment (military 12 vs economy
+        // 11 soldiers). Prefer a civilian source; see the solo-garrison rule
+        // below for the case where the cell has none.
+        if (!signature_is_state_service_only(
+                static_cast<int32_t>(population_store().signature_id[slot])) &&
+            (population_store().population[slot] > civilian_population ||
+             (population_store().population[slot] == civilian_population &&
+              slot < civilian_source))) {
+            civilian_source = slot;
+            civilian_population = population_store().population[slot];
+        }
     });
     if (total_population <= 0 || has_living_merchant) return true;
     if (source < 0 || source_population <= 0) {
         error = "merchant_invariant_source_missing";
         return false;
+    }
+    if (civilian_source < 0 || civilian_population <= 0) {
+        // The cell holds nothing but state-service people (a formation that
+        // disbanded in the field). One of them still has to become the market
+        // maker: with no living merchant the household revenue of this cell has
+        // no owner and the next settlement is a
+        // market_revenue_has_no_merchant_owner fatal, which is exactly what
+        // happened when this repair was skipped. Keep `source` (the largest
+        // state-service cohort) and let the repair convert one head; Military's
+        // roster reconcile reads the soldier cohort back and trims its lots to
+        // it, so the two books stay equal.
+    } else {
+        source = civilian_source;
+        source_population = civilian_population;
     }
     const int32_t source_signature_id = static_cast<int32_t>(population_store().signature_id[source]);
     const Signature &source_signature = _signatures[source_signature_id];
@@ -1854,9 +1890,38 @@ bool NativeEconomyRuntime::apply_peer_asset_side_effects(
         return true;
     }
     case RuntimeEconomyAssetOperation::RESEARCH_PURCHASE:
-    case RuntimeEconomyAssetOperation::TREASURY_SPEND:
         // Country already transferred treasury value; no Economy-local store.
         return true;
+    case RuntimeEconomyAssetOperation::TREASURY_SPEND: {
+        // Country already debited the treasury. An ordinary spend (upkeep, building
+        // materials) has no Economy-local counterpart, so there is nothing to do.
+        //
+        // Army pay (opcode 34) is the one treasury spend that must land in an
+        // Economy-owned store: the formation's personnel lane. It arrives with the
+        // formation handle in `target_handle` (ordinary spends leave it 0), so the
+        // lane is credited exactly what Country committed. This is the same
+        // conserved treasury -> lane movement the synchronous path performs, just
+        // driven from the peer so it works while Country is worker-authoritative.
+        if (request.target_handle == 0) return true;
+        const int32_t row = _army_personnel.find(request.target_handle);
+        if (row == ArmyPersonnelStore::NO_ROW) {
+            // The formation was disbanded (or its lane released) between the debit
+            // and the credit. Reject: the money left the treasury for a lane that
+            // no longer exists, and pretending otherwise would hide a conservation
+            // break.
+            error = "army_lane_pay_lane_missing";
+            return false;
+        }
+        if (amount <= 0) return true;
+        const size_t lane_row = static_cast<size_t>(row);
+        _army_personnel.funds[lane_row] = saturating_add(
+            _army_personnel.funds[lane_row], amount, _saturation_count);
+        _army_personnel.epoch_income[lane_row] = saturating_add(
+            _army_personnel.epoch_income[lane_row], amount, _saturation_count);
+        trace_record_cashflow(_army_personnel.cell[lane_row],
+                              request.target_handle, CASHFLOW_TRANSFER, 0, amount);
+        return true;
+    }
     case RuntimeEconomyAssetOperation::FISCAL_RESERVE:
     case RuntimeEconomyAssetOperation::FISCAL_RETURN:
     case RuntimeEconomyAssetOperation::FISCAL_COLLECT:
@@ -14286,7 +14351,11 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
         // BEGIN army personnel lane (contract §1.2).
         case COMMAND_ARMY_EMBARK:
         case COMMAND_ARMY_DISEMBARK:
-        case COMMAND_ARMY_MERGE_LANES: {
+        case COMMAND_ARMY_MERGE_LANES:
+        case COMMAND_ARMY_SPLIT_LANES:
+        // 34 (army-pay contract §1): treasury -> lane wages, lane named by army
+        // handle. Same dispatch, no cohort and no structural command.
+        case COMMAND_ARMY_LANE_PAY: {
             int64_t lane_settled = 0;
             if (!apply_army_lane_command(cmd, error, lane_settled)) return false;
             settled_value = lane_settled;

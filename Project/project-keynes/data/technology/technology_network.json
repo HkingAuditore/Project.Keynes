@@ -64690,6 +64690,117 @@
 			}
 		},
 		{
+			"id": "tech.military.coastal_transport",
+			"display_name": "近海运兵",
+			"era_id": "kingdom",
+			"domain_id": "engineering",
+			"cost_points": 16000.0,
+			"layout_order": 0.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "military",
+			"secondary_route_tags": [
+				"route.institution.ocean"
+			],
+			"hard_prerequisite_ids": [
+				"tech.fishing_boats"
+			],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [],
+			"modifier_terms": [],
+			"expected_bindings": [],
+			"content_effects": [],
+			"effect_summary": "",
+			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
+			"application_target_ids": [],
+			"terminal_reason": "本节点不开放建筑与数值修正，它把沿海运兵能力交给军事运行时的水格门控（连续水格 ≤ 3）。",
+			"branch_family_id": "branch.maritime_logistics",
+			"era_entry_milestone_id": "",
+			"reveal_category": "practice_diffusion",
+			"reveal_summary": "近海运兵由渔舟的沿海航行与一次次沿岸调兵实践揭示",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [
+				"近海运兵沿用渔舟的沿海航行与靠泊经验。"
+			],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [
+				{
+					"id": "research_route.coastal_transport.institution",
+					"display_name": "近海运兵知识整合",
+					"route_type": "professional_knowledge",
+					"description": "整合「记事制度」的专业知识并以国家能力验证近海运兵",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.record_keeping",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.trade.goods_2",
+								"value": 1.0
+							}
+						]
+					}
+				},
+				{
+					"id": "research_route.coastal_transport.construction",
+					"display_name": "近海运兵经营实践",
+					"route_type": "industrial_practice",
+					"description": "以「河运」的持续经营形成近海运兵的可行方案",
+					"condition": {
+						"operator": 1.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.river_transport",
+								"value": 1.0
+							},
+							{
+								"kind": 1.0,
+								"id": "development.population.12500_360d",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "军事节点“近海运兵”保留其专属战术或工程观察对象",
+			"topology_review": {
+				"role": "branch",
+				"rationale": "该节点在既有产业与制度路线上分出一条军事支路，由可见硬前置保证知识来源。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "support_only",
+				"rationale": "本科技不直接呈现新建筑，它开放沿海运兵的水格通行能力。"
+			},
+			"knowledge_basis": {
+				"required_ids": [
+					"tech.fishing_boats"
+				],
+				"alternative_groups": [],
+				"exemption_reason": ""
+			}
+		},
+		{
 			"id": "tech.military.legion_logistics",
 			"display_name": "军需体系",
 			"era_id": "empire",
@@ -65342,7 +65453,8 @@
 				"route.institution.ocean"
 			],
 			"hard_prerequisite_ids": [
-				"tech.oceanic_navigation"
+				"tech.oceanic_navigation",
+				"tech.military.coastal_transport"
 			],
 			"reveal_condition": {
 
@@ -65378,7 +65490,8 @@
 			"reveal_summary": "远洋运兵由远洋航行与跨海殖民的实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"远洋运兵依赖跨洋航行的导航与船队。"
+				"远洋运兵依赖跨洋航行的导航与船队。",
+				"远洋投送以近海运兵的靠泊与装卸组织为起点。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -65445,7 +65558,8 @@
 			},
 			"knowledge_basis": {
 				"required_ids": [
-					"tech.oceanic_navigation"
+					"tech.oceanic_navigation",
+					"tech.military.coastal_transport"
 				],
 				"alternative_groups": [],
 				"exemption_reason": ""
@@ -70105,6 +70219,11 @@
 			"kind": "hard"
 		},
 		{
+			"from": "tech.fishing_boats",
+			"to": "tech.military.coastal_transport",
+			"kind": "hard"
+		},
+				{
 			"from": "tech.natural_copper_identification",
 			"to": "tech.natural_copper_working",
 			"kind": "hard"
@@ -70354,6 +70473,12 @@
 			"route_id": "research_route.military_roads.institution"
 		},
 		{
+			"from": "tech.record_keeping",
+			"to": "tech.military.coastal_transport",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_transport.institution"
+		},
+				{
 			"from": "tech.record_keeping",
 			"to": "tech.military.legion_logistics",
 			"kind": "alternative",
@@ -71325,6 +71450,12 @@
 			"route_id": "research_route.oceanic_navigation.knowledge_integration"
 		},
 		{
+			"from": "tech.river_transport",
+			"to": "tech.military.coastal_transport",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_transport.construction"
+		},
+				{
 			"from": "tech.crop_rotation",
 			"to": "tech.urban_sanitation",
 			"kind": "alternative",
@@ -76782,6 +76913,11 @@
 			"kind": "milestone_candidate"
 		},
 		{
+			"from": "tech.military.coastal_transport",
+			"to": "tech.military.naval_transport",
+			"kind": "hard"
+		},
+				{
 			"from": "tech.military.corned_powder",
 			"to": "tech.military.powder_milling",
 			"kind": "hard"

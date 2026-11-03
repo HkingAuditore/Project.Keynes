@@ -6032,7 +6032,11 @@ bool NativeSimulationHost::prepare_worker_cohort_cash(
     if (!on_worker_thread() ||
         !domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
         (request.operation != RuntimeEconomyAssetOperation::CASH_TO_COHORT &&
-         request.operation != RuntimeEconomyAssetOperation::CASH_FROM_COHORT)) {
+         request.operation != RuntimeEconomyAssetOperation::CASH_FROM_COHORT &&
+         // Army pay (opcode 34) uses the same synchronous peer cycle for its
+         // treasury debit: prepare -> Economy side effect -> finish, all inside
+         // one epoch so the debit and the lane credit share an audit window.
+         request.operation != RuntimeEconomyAssetOperation::TREASURY_SPEND)) {
         error = "country_worker_cohort_cash_boundary_invalid";
         return false;
     }

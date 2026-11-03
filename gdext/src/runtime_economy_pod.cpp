@@ -1679,15 +1679,19 @@ bool RuntimeEconomyPodAuthority::queue_command(
     };
     // Phase 4: admit the legacy opcodes 1..23 plus the military cohort-convert
     // opcode (24), which carries no cohort slot id and is applied inside this
-    // store by the plan stage. The army personnel lane (contract §1.2) admits
-    // 30/31/32 on the same terms: they name the army by Military handle and the
-    // cohort by (cell, signature), never by a slot id.
+    // store by the plan stage. The army personnel lane (contract §1.2 and
+    // contract 2 §1.1) admits 30/31/32/33 on the same terms: they name the army
+    // by Military handle and the cohort by (cell, signature), never by a slot id.
+    // Army pay (34, army-pay contract §1.3) rides the same lane: it names the
+    // army by handle and moves treasury cash only, so it is admitted here too.
     const bool military_convert =
         command.opcode == NativeEconomyRuntime::COMMAND_MILITARY_CONVERT_COHORT;
     const bool army_personnel_lane =
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_EMBARK ||
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_DISEMBARK ||
-        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_MERGE_LANES;
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_MERGE_LANES ||
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_SPLIT_LANES ||
+        command.opcode == NativeEconomyRuntime::COMMAND_ARMY_LANE_PAY;
     if (!military_convert && !army_personnel_lane &&
         (command.opcode < 1 || command.opcode > 23)) {
         return reject_admission("economy_command_opcode_out_of_range");

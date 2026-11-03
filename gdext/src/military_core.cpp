@@ -274,7 +274,7 @@ uint64_t catalog_hash(const MilitaryCatalog &c) {
             h = mix_scalar<int64_t>(h, u.combat_per_100_day[k]);
         }
     }
-    h = mix_scalar<uint64_t>(h, (uint64_t)c.categories.size());
+    // Naval transport gates participate in the catalog identity: a catalog that`r`n    // grants (or stops granting) sea passage is a different catalog.`r`n    h = mix_scalar<int32_t>(h, c.coastal_transport_bit);`r`n    h = mix_scalar<int32_t>(h, c.ocean_transport_bit);`r`n    h = mix_scalar<uint64_t>(h, (uint64_t)c.categories.size());
     for (const MilitaryEquipCategory &cat : c.categories) {
         h = mix_string(h, cat.id);
         h = mix_scalar<uint64_t>(h, (uint64_t)cat.good_ids.size());
@@ -918,6 +918,15 @@ int32_t MilitaryCore::create_army(int32_t country_slot, int32_t cell) {
 void MilitaryCore::destroy_army(int32_t army_slot) {
     if (!army_alive(_armies, army_slot)) return;
     const size_t s = (size_t)army_slot;
+    // Any lot still pointing at this formation would be a dangling army
+    // reference in PKMI (pkmi_lot_army_missing on the next restore).
+    for (size_t i = 0; i < _lots.active.size(); ++i) {
+        if (!_lots.active[i]) continue;
+        if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_ARMY) continue;
+        if (_lots.location[i] != army_slot) continue;
+        _lots.active[i] = 0;
+        _lots.free_list.push_back((int32_t)i);
+    }
     if (s < _army_lane_pending.size()) _army_lane_pending[s] = 0;
     index_remove(army_slot);
     _armies.active[s] = 0;
@@ -1369,7 +1378,7 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
 // Army-personnel contract §2.1. Military books the heads the moment the intent
 // is emitted (same pre-apply rule as ENLIST/DISCHARGE) and never writes Economy;
 // the lane row itself is Economy's, keyed by army handle. The bridge translates
-// these rows into opcodes 30/31/32 and reads `military_army_population(handle)`
+// these rows into opcodes 30/31/32/33 and reads `military_army_population(handle)`
 // back the next day to trim lots Economy no longer holds people for.
 
 void MilitaryCore::emit_army_lane_intent(uint16_t kind, int32_t army_slot, int32_t cell,
@@ -1382,14 +1391,20 @@ void MilitaryCore::emit_army_lane_intent(uint16_t kind, int32_t army_slot, int32
     in.kind = kind;
     in.cell = cell;
     in.count = count;
+    // `source_id` is the receipt's key and always names the formation whose book
+    // is short: the formation being (re)filled here. For a lane -> lane move that
+    // is the DESTINATION — its lots already carry the heads, its lane only catches
+    // up when the command lands, so its in-flight ceiling stays raised until the
+    // receipt. The bridge translates 32/33 from country_a/country_b, never from
+    // source_id, so the receipt key is free to be the destination.
+    in.source_id = army_handle(army_slot);
     if (peer_handle != 0) {
-        // MERGE_LANES: country_a = source (absorbed) lane, country_b = survivor.
+        // MERGE_LANES / SPLIT_LANES: country_a = source lane, country_b = the
+        // formation whose lane grows.
         in.country_a = peer_handle;
         in.country_b = army_handle(army_slot);
-        in.source_id = peer_handle;
     } else {
         in.country_a = country_handle_for_slot(_armies.owner_slot[(size_t)army_slot]);
-        in.source_id = army_handle(army_slot);
     }
     _lane_intents.push_back(in);
     // Only an inbound move leaves heads in Economy's future: a DISEMBARK removes
@@ -1483,18 +1498,30 @@ void MilitaryCore::reconcile_receipts(const std::vector<MilitaryIntentReceipt> &
         // Army personnel lane rows (contract §2.1). A row is bookkeeping only:
         // the heads were booked by Military when the intent was emitted and
         // Economy owns the lane. Whatever the outcome, the formation no longer has
-        // an embarkation in flight, so a lane reconcile may trim it again from
-        // the next day on. A merged-away source no longer resolves and needs
-        // nothing (destroy_army already cleared it).
+        // a lane move in flight, so a lane reconcile may trim it again from the
+        // next day on. `source_id` names the formation whose in-flight ceiling has
+        // to be released — the one whose lane grew (the destination for
+        // MERGE_LANES / SPLIT_LANES), which is who `emit_army_lane_intent` stamps
+        // on the row; a merged-away formation never resolves and needs nothing
+        // (destroy_army already cleared its bookkeeping).
         if (r.kind == MILITARY_INTENT_ARMY_EMBARK ||
             r.kind == MILITARY_INTENT_ARMY_DISEMBARK ||
-            r.kind == MILITARY_INTENT_ARMY_MERGE_LANES) {
+            r.kind == MILITARY_INTENT_ARMY_MERGE_LANES ||
+            r.kind == MILITARY_INTENT_ARMY_SPLIT_LANES) {
             int32_t lane_army = -1;
             if (resolve_army(r.source_id, lane_army) &&
                 (size_t)lane_army < _army_lane_pending.size())
                 _army_lane_pending[(size_t)lane_army] = 0;
             continue;
         }
+        // Army pay (army-pay contract §2, opcode 34). The heads and the lane cash
+        // are Economy's, and the lot book already holds them, so there is nothing
+        // to reconcile a second time: the receipt only tells Military how much of
+        // the payroll the treasury could actually fund. A failed row means the
+        // lane was not credited at all, which is the pay-ratio statistic's
+        // business (already booked from `planned` when the intent was emitted),
+        // not a head-count correction.
+        if (r.kind == MILITARY_INTENT_ARMY_PAY) continue;
 
         // DISCHARGE pre-applies to the garrison lots when the intent is emitted
         // (run_recruitment / attrition); the receipt never removes heads a second
@@ -2176,39 +2203,74 @@ void MilitaryCore::update_morale_org(const MilitaryWorldDigest &digest) {
 
 // ============================================================== wages / upkeep
 
+int64_t MilitaryCore::soldier_living_cost(int32_t country_slot) const {
+    if (country_slot < 0) return 0;
+    if ((size_t)country_slot >= _last_digest.country_soldier_living_cost.size()) return 0;
+    return _last_digest.country_soldier_living_cost[(size_t)country_slot];
+}
+
+int64_t MilitaryCore::soldier_daily_wage(int32_t country_slot) const {
+    if (country_slot < 0 || (size_t)country_slot >= _policies.size()) return 0;
+    const MilitaryCountryPolicy &p = _policies[(size_t)country_slot];
+    // ABSOLUTE pays the policy value outright; AUTO scales the soldier living
+    // cost by the country's MSTAT_WAGE stat (army-pay contract §2.2). Both pay
+    // paths call this, so the garrison and the lane can never disagree.
+    if (p.wage_mode == 1) return std::max<int64_t>(0, p.wage_absolute);
+    return std::max<int64_t>(0, mul_div(soldier_living_cost(country_slot),
+                                       stat_q16(_last_digest, country_slot, MSTAT_WAGE),
+                                       MILITARY_Q16));
+}
+
 void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
                                         std::vector<MilitaryIntent> &out) {
     const bool upkeep_day = (_last_day % kUpkeepPeriod) == 0;
     static thread_local std::vector<int64_t> per_cell;
+    // Army holders collect into their own lane (army-pay contract §2.1), so they
+    // are accumulated per formation slot instead of per cell. Sized once per call
+    // like `per_cell`; slot order keeps the emitted batch deterministic.
+    static thread_local std::vector<int64_t> per_army;
     for (size_t slot = 0; slot < _policies.size(); ++slot) {
         MilitaryCountryPolicy &p = _policies[slot];
         const int32_t s = (int32_t)slot;
         const uint64_t handle = _policy_handle[slot];
         if (handle == 0) continue;
         const int64_t cash = slot < digest.country_cash.size() ? digest.country_cash[slot] : 0;
-        const int64_t living = slot < digest.country_soldier_living_cost.size()
-                                   ? digest.country_soldier_living_cost[slot]
-                                   : 0;
-        const int64_t wage = p.wage_mode == 1
-                                 ? p.wage_absolute
-                                 : mul_div(living, stat_q16(digest, s, MSTAT_WAGE), MILITARY_Q16);
+        // One wage for both paths (contract §2.2): garrison and army pay use the
+        // same per-head daily value, so this is the only place it is computed.
+        const int64_t wage = soldier_daily_wage(s);
         per_cell.assign((size_t)_terrain.cell_count, 0);
+        per_army.assign(_armies.active.size(), 0);
         int64_t demanded = 0;
         for (size_t i = 0; i < _lots.active.size(); ++i) {
             if (!_lots.active[i] || _lots.count[i] <= 0) continue;
             if (_lots.country_slot[i] != s) continue;
-            int32_t pay_cell = -1;
-            if (_lots.location_kind[i] == (uint8_t)MILITARY_LOT_GARRISON) {
-                pay_cell = _lots.location[i];
-            } else if (army_alive(_armies, _lots.location[i])) {
-                pay_cell = _armies.cell[(size_t)_lots.location[i]];
-            }
-            if (pay_cell < 0 || pay_cell >= _terrain.cell_count) continue;
             const int64_t amount = (int64_t)wage * _lots.count[i];
             if (amount <= 0) continue;
+            if (_lots.location_kind[i] == (uint8_t)MILITARY_LOT_ARMY) {
+                // The heads are in the formation's lane, so the wages follow them
+                // there (army-pay contract §2.1). The lane is named by ARMY
+                // HANDLE, never by cell: a formation that has marched away must
+                // not keep paying the home cohort it left behind.
+                const int32_t army = _lots.location[i];
+                if (!army_alive(_armies, army)) continue;
+                const size_t a = (size_t)army;
+                if (a >= per_army.size()) continue;
+                per_army[a] += amount;
+                demanded += amount;
+                continue;
+            }
+            // Garrison path unchanged: wages go to the cell the lots stand on.
+            const int32_t pay_cell = _lots.location[i];
+            if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
+            if (pay_cell < 0 || pay_cell >= _terrain.cell_count) continue;
             per_cell[(size_t)pay_cell] += amount;
             demanded += amount;
         }
+        // One treasury, two kinds of holder: both draws share the same cash
+        // ceiling. The garrison rows are planned first (cell order) exactly as
+        // before, the army rows then take what is left; the combined `planned`
+        // feeds the same pay-ratio statistics (contract §2.3: army and garrison
+        // each count into the same ratio).
         int64_t budget = std::max<int64_t>(0, cash);
         int64_t planned = 0;
         for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
@@ -2218,12 +2280,30 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
             if (pay <= 0) continue;
             budget -= pay;
             planned += pay;
+            _report.payroll_garrison += pay;
             MilitaryIntent in;
             in.kind = MILITARY_INTENT_PAY_WAGES;
             in.cell = cell;
             in.country_a = handle;
             in.amount = pay;
             in.source_id = (uint64_t)cell;
+            out.push_back(in);
+        }
+        for (size_t a = 0; a < per_army.size(); ++a) {
+            const int64_t amount = per_army[a];
+            if (amount <= 0) continue;
+            const int64_t pay = std::min(amount, budget);
+            if (pay <= 0) continue;
+            budget -= pay;
+            planned += pay;
+            _report.payroll_army += pay;
+            MilitaryIntent in;
+            in.kind = MILITARY_INTENT_ARMY_PAY;
+            in.cell = _armies.cell[a];
+            in.country_a = handle;
+            in.amount = pay;
+            in.count = _armies.cached_headcount[a];
+            in.source_id = army_handle((int32_t)a);
             out.push_back(in);
         }
         p.pay_ratio_30_q16 = demanded > 0
@@ -2308,6 +2388,13 @@ int64_t transfer_army_to_army(MilitaryCore &core, int32_t from, int32_t to, int3
             break;
         }
         core._lots.count[(size_t)dest] += take;
+        // A source lot that gave everything away must stop pointing at the army:
+        // a zero-count row with a live location encodes an army reference that
+        // PKMI validates and rejects (pkmi_lot_army_missing after merges).
+        if (core._lots.count[i] <= 0) {
+            core._lots.active[i] = 0;
+            core._lots.free_list.push_back((int32_t)i);
+        }
         left -= take;
     }
     return count - left;
@@ -2363,6 +2450,13 @@ int32_t military_embark_army(MilitaryCore &core, int32_t owner, int32_t cell, in
             break;
         }
         core._lots.count[(size_t)dest] += take;
+        // A source lot that gave everything away must stop pointing at the army:
+        // a zero-count row with a live location encodes an army reference that
+        // PKMI validates and rejects (pkmi_lot_army_missing after merges).
+        if (core._lots.count[i] <= 0) {
+            core._lots.active[i] = 0;
+            core._lots.free_list.push_back((int32_t)i);
+        }
         left -= take;
     }
     core.refresh_army_cache(army);
@@ -2912,11 +3006,39 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                 return;
             }
             // transfer: (unit, count) pairs, -1 unit means "any".
+            // Personnel lane (contract §1.2): the people move with the lots. The
+            // head count is what `transfer_army_to_army` actually moved (it clamps
+            // to the source's lots), never the template the player asked for.
+            int64_t moved = 0;
             for (size_t i = 0; i + 1 < cmd.ints.size(); i += 2) {
                 const int32_t unit = cmd.ints[i];
                 const int64_t count = cmd.ints[i + 1];
                 if (count <= 0) continue;
-                transfer_army_to_army(*this, other, army_slot, unit < 0 ? -1 : unit, count);
+                moved += transfer_army_to_army(*this, other, army_slot,
+                                               unit < 0 ? -1 : unit, count);
+            }
+            if (moved > 0) {
+                // Whole formation transferred -> fold the source lane into the
+                // receiver (opcode 32, the army.merge semantics). A partial
+                // transfer only moves the heads that left (opcode 33), so the
+                // rest of the source formation keeps its own people.
+                int64_t remaining = 0;
+                for (size_t i = 0; i < _lots.active.size(); ++i) {
+                    if (!_lots.active[i] || _lots.count[i] <= 0) continue;
+                    if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_ARMY) continue;
+                    if (_lots.location[i] != other) continue;
+                    remaining += _lots.count[i];
+                }
+                emit_army_lane_intent(
+                    remaining <= 0 ? MILITARY_INTENT_ARMY_MERGE_LANES
+                                   : MILITARY_INTENT_ARMY_SPLIT_LANES,
+                    army_slot, _armies.cell[(size_t)army_slot], moved,
+                    army_handle(other));
+                // `moved` raises this formation's in-flight ceiling on purpose:
+                // its lane is still short of those heads until the command lands,
+                // and the lane reconcile at the end of this same day would
+                // otherwise trim them straight off the lots. The receipt releases
+                // the ceiling once the lane has caught up.
             }
             refresh_army_cache(army_slot);
             refresh_army_cache(other);
@@ -2938,6 +3060,19 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                 const int64_t count = cmd.ints[i + 1];
                 if (count <= 0) continue;
                 moved += transfer_army_to_army(*this, army_slot, created, unit, count);
+            }
+            // Personnel lane (contract §1.2 opcode 33): the detached formation gets
+            // its own people, not a copy of the template. `moved` is the sum of the
+            // lot counts that actually left the source formation; the source lane
+            // loses exactly those heads and the new formation's lane gains them.
+            if (moved > 0) {
+                emit_army_lane_intent(MILITARY_INTENT_ARMY_SPLIT_LANES, created, cell, moved,
+                                      army_handle(army_slot));
+                // Same rule as the transfer above: the new formation's lots run
+                // ahead of its lane until the split command lands, so the heads
+                // stay in flight (the reconcile at the end of this day must not
+                // trim them). `emit_army_lane_intent` puts the receipt on this
+                // formation, so the ceiling is released when the lane catches up.
             }
             refresh_army_cache(army_slot);
             refresh_army_cache(created);

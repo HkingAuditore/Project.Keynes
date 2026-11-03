@@ -79,6 +79,8 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace pk {
@@ -550,6 +552,10 @@ bool parse_catalog(const Dictionary &catalog, MilitaryCatalog &out, std::string 
     out.economy_good_count = std::max(0, dict_i32(catalog, "economy_good_count", 0));
     out.ration_need_per_head_q16 = std::max<int32_t>(
         1, q16_from_float(dict_f64(catalog, "ration_need_per_head", 1.0)));
+    // Naval transport gates (contract-2 §2.2): resolved by MilitaryCatalogCompiler
+    // from the two transport technologies. -1 means the catalog has no such bit.
+    out.coastal_transport_bit = dict_i32(catalog, "coastal_transport_bit", -1);
+    out.ocean_transport_bit = dict_i32(catalog, "ocean_transport_bit", -1);
     return true;
 }
 
@@ -986,10 +992,64 @@ constexpr int32_t MECONOMY_MARKET_GOOD_TO_COUNTRY = 13;
 constexpr int32_t MECONOMY_ARMY_EMBARK = 30;
 constexpr int32_t MECONOMY_ARMY_DISEMBARK = 31;
 constexpr int32_t MECONOMY_ARMY_MERGE_LANES = 32;
+// Split / partial transfer (army-personnel contract-2 §1.1). Lane -> lane like
+// 32, so no cohort is named and no structural command is needed: payload0 =
+// heads actually moved, payload1 = destination army handle, target_cohort =
+// source army handle. payload0 <= 0 means "the whole lane" on the Economy side;
+// Military emits 32 for that case instead (contract §1.2).
+constexpr int32_t MECONOMY_ARMY_SPLIT_LANES = 33;
+// Army pay (army-pay contract §3, Economy opcode 34): payload0 = MONEY_SCALE
+// amount, payload1 = country handle, target_cohort = army handle. Treasury cash
+// only — no cohort and no structural command — so it rides the same POD lane as
+// 24/30-33 and is deduplicated by `sequence` there.
+constexpr int32_t MECONOMY_ARMY_LANE_PAY = 34;
 
 bool is_army_lane_opcode(int32_t opcode) {
     return opcode == MECONOMY_ARMY_EMBARK || opcode == MECONOMY_ARMY_DISEMBARK ||
-           opcode == MECONOMY_ARMY_MERGE_LANES;
+           opcode == MECONOMY_ARMY_MERGE_LANES || opcode == MECONOMY_ARMY_SPLIT_LANES ||
+           opcode == MECONOMY_ARMY_LANE_PAY;
+}
+
+// Feature detection for the split lanes (army-personnel contract-2 §1.1): the
+// Economy runtime reports whether this build implements opcode 33. Probed at
+// compile time the same way world_ext_economy_military.cpp probes
+// military_army_population(), so an Economy build that predates the split lanes
+// still links and runs: the bridge then degrades to a no-op plus a failed
+// pending row instead of submitting an opcode nobody knows.
+template <typename T, typename = void>
+struct HasArmyLaneSplitProbe : std::false_type {};
+template <typename T>
+struct HasArmyLaneSplitProbe<T, std::void_t<decltype(
+        std::declval<const T &>().military_army_lane_split_supported())>>
+    : std::true_type {};
+
+template <typename T>
+bool army_lane_split_supported(const T *runtime) {
+    if (runtime == nullptr) return false;
+    if constexpr (HasArmyLaneSplitProbe<T>::value)
+        return runtime->military_army_lane_split_supported();
+    return false;
+}
+
+// Feature detection for army pay (army-pay contract §3.3). Same compile-time
+// probe contract as the split lanes: an Economy build that predates opcode 34
+// must not be handed the command at all, because admission would reject the row
+// and (on the legacy ingress) could take the whole batch down with it. When the
+// probe is absent or false, MILITARY_INTENT_ARMY_PAY degrades to a no-op plus a
+// failed receipt and Military stays on the pre-army-pay accounting.
+template <typename T, typename = void>
+struct HasArmyLanePayProbe : std::false_type {};
+template <typename T>
+struct HasArmyLanePayProbe<T, std::void_t<decltype(
+        std::declval<const T &>().military_army_lane_pay_supported())>>
+    : std::true_type {};
+
+template <typename T>
+bool army_lane_pay_supported(const T *runtime) {
+    if (runtime == nullptr) return false;
+    if constexpr (HasArmyLanePayProbe<T>::value)
+        return runtime->military_army_lane_pay_supported();
+    return false;
 }
 
 } // namespace
@@ -999,6 +1059,7 @@ bool is_army_lane_opcode(int32_t opcode) {
 // them answers false / -1 instead of trapping, so the bridge keeps working.
 bool economy_army_lane_supported(const void *economy);
 int64_t economy_army_lane_population(void *economy, uint64_t army_handle);
+int64_t economy_army_lane_funds(void *economy, uint64_t army_handle);
 bool economy_set_army_ration(void *economy, uint64_t army_handle, int32_t q16);
 
 namespace {
@@ -1164,6 +1225,10 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     out["vision_patch_cells"] = static_cast<int64_t>(report.vision_patch_cells);
     out["event_coalesced"] = static_cast<int64_t>(report.event_coalesced);
     out["reconcile_delta"] = report.reconcile_delta;
+    // The day's payroll split by holder (army-pay contract §2.3). A test (or a
+    // panel) can tell "who got paid today" apart from the 30-day EWMA.
+    out["payroll_garrison"] = report.payroll_garrison;
+    out["payroll_army"] = report.payroll_army;
     out["intents_emitted"] = static_cast<int64_t>(report.intents_emitted);
     out["intents_submitted"] = static_cast<int64_t>(pending.size());
     out["receipts_folded"] = static_cast<int64_t>(receipts.size());
@@ -1179,6 +1244,26 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     out["army_lane_ops"] = army_lane_ops;
     out["army_lane_supported"] = _economy_runtime != nullptr &&
         economy_army_lane_supported(_economy_runtime);
+    // Split / partial-transfer lane support (contract-2 §1.1, opcode 33): the
+    // smoke test gates its split/transfer conservation assertions on this, so an
+    // economy DLL that predates 33 skips them instead of failing them.
+    out["army_split_lane_supported"] = army_lane_split_supported(
+        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
+    // Army pay support (army-pay contract §3.3, opcode 34): same gate contract as
+    // the split lanes above, so a DLL without 34 skips the pay assertions instead
+    // of failing them.
+    out["army_pay_supported"] = army_lane_pay_supported(
+        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
+    int64_t army_pay_ops = 0;
+    for (const MilitaryEconomyCommand &command : economy_commands) {
+        if (command.opcode == MECONOMY_ARMY_LANE_PAY) ++army_pay_ops;
+    }
+    out["army_pay_ops"] = army_pay_ops;
+    // Diagnostic for the army-pay gate: paying needs a synchronous treasury debit,
+    // which is only available while Country accepts sync store writes.
+    out["army_pay_sync_cash_available"] = _country_runtime != nullptr &&
+        !static_cast<NativeCountryRuntime *>(_country_runtime)
+             ->sync_store_writes_forbidden();
     out["army_lane_trimmed"] = army_lane_trimmed;
     out["economy_ready"] = economy_ready;
     out["effective_day"] = effective_day;
@@ -1484,6 +1569,21 @@ bool DCWorldExt::submit_military_economy_commands(
                 case MECONOMY_ARMY_MERGE_LANES:
                     p0.push_back(c.i64_0);        // heads folded (informational)
                     p1.push_back(c.i64_1);        // destination army handle
+                    p2.push_back(-1);
+                    cells.push_back(c.i32_0);
+                    break;
+                case MECONOMY_ARMY_SPLIT_LANES:
+                    p0.push_back(c.i64_0);        // heads actually moved
+                    p1.push_back(c.i64_1);        // destination army handle
+                    p2.push_back(-1);
+                    cells.push_back(c.i32_0);
+                    break;
+                case MECONOMY_ARMY_LANE_PAY:
+                    // Army pay (contract §3): payload0 = amount, payload1 =
+                    // country handle (the payer), target_cohort = army handle,
+                    // target_country unused. Treasury cash only, no cohort.
+                    p0.push_back(c.i64_0);        // MONEY_SCALE amount
+                    p1.push_back(c.i64_1);        // country handle
                     p2.push_back(-1);
                     cells.push_back(c.i32_0);
                     break;
@@ -1998,6 +2098,111 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         economy.push_back(command);
         return;
     }
+    case MILITARY_INTENT_ARMY_SPLIT_LANES: {
+        // Opcode 33 (contract-2 §1.1/§1.2): move the heads a split / partial
+        // transfer actually moved from the source formation's lane into the
+        // destination formation's lane. payload0 = heads, payload1 = destination
+        // army handle, target_cohort = source army handle — the same key layout
+        // as 32, and lane -> lane names no cohort, so no signature is needed.
+        if (intent.country_a == 0 || intent.country_b == 0 ||
+            intent.country_a == intent.country_b)
+            return;
+        const int64_t heads = std::max<int64_t>(0, intent.count);
+        if (heads == 0) return;
+        if (economy_runtime == nullptr) return;
+        if (!army_lane_split_supported(economy_runtime)) {
+            // Feature detection (contract-2 §1.1): this Economy build does not
+            // implement opcode 33. Emitting the row anyway would be rejected as an
+            // unknown opcode and could take the whole batch down. Report it as a
+            // failed receipt instead — a no-op command plus one pending row
+            // failure, never a crash — and Military stays on the pre-split-lane
+            // model (the lots have already moved, so only the lane bookkeeping is
+            // skipped).
+            row.authority = 2;
+            row.receipt_pending = 0;
+            row.opcode = MECONOMY_ARMY_SPLIT_LANES;
+            row.target_handle = static_cast<int64_t>(intent.country_a);
+            pending.push_back(row);
+            return;
+        }
+        MilitaryEconomyCommand command;
+        command.opcode = MECONOMY_ARMY_SPLIT_LANES;
+        command.effective_day = effective_day;
+        command.sequence = next_sequence();
+        command.target_handle = static_cast<int64_t>(intent.country_a);   // source lane
+        command.i64_0 = heads;                                            // heads moved
+        command.i64_1 = static_cast<int64_t>(intent.country_b);           // destination
+        command.i32_0 = intent.cell;
+        // Unused by opcode 33 (lane -> lane), but 0 rather than -1 so the legacy
+        // settlement fold (`expected_i1 == 0` for this opcode) can match the row
+        // and settle it instead of letting it time out.
+        command.i32_1 = 0;
+        row.authority = 2;
+        row.sequence = command.sequence;
+        row.receipt_pending = 1;
+        row.opcode = command.opcode;
+        row.target_handle = command.target_handle;
+        pending.push_back(row);
+        economy.push_back(command);
+        return;
+    }
+    case MILITARY_INTENT_ARMY_PAY: {
+        // Opcode 34 (army-pay contract §3): the wages of the heads that march
+        // with the formation, paid into its lane from the treasury.
+        //   payload0 = amount (MONEY_SCALE), payload1 = country handle,
+        //   target_cohort = army handle (the lane key 30-33 already use).
+        // No cohort is named and no structural command is involved, so the row
+        // rides the same POD lane as 24/30-33 and is deduplicated there by
+        // `sequence`.
+        //
+        // The receipt needs the PRE-PAYMENT lane balance, because the only
+        // truth Economy can report afterwards is the new balance and a lane also
+        // spends cash on guest consumption the same day. `row.count` carries
+        // that base value: the fold reads military_army_funds(handle) and books
+        // max(0, now - prev) clamped to the amount requested.
+        if (intent.source_id == 0 || intent.country_a == 0 || intent.amount <= 0)
+            return;
+        if (economy_runtime == nullptr) return;
+        if (!army_lane_pay_supported(economy_runtime)) {
+            // Feature detection (contract §3.3): this Economy build has no
+            // opcode 34. Emitting the row anyway would be an unknown opcode at
+            // admission; report a failed receipt instead — a no-op command plus
+            // one failed pending row, never a crash — and Military keeps the
+            // pre-army-pay model (the formation's people are simply not paid
+            // through the lane this day).
+            row.authority = 2;
+            row.receipt_pending = 0;
+            row.opcode = MECONOMY_ARMY_LANE_PAY;
+            row.target_handle = static_cast<int64_t>(intent.source_id);
+            pending.push_back(row);
+            return;
+        }
+        MilitaryEconomyCommand command;
+        command.opcode = MECONOMY_ARMY_LANE_PAY;
+        command.effective_day = effective_day;
+        command.sequence = next_sequence();
+        command.target_handle = static_cast<int64_t>(intent.source_id);  // army handle
+        command.i64_0 = intent.amount;                                   // MONEY_SCALE
+        command.i64_1 = static_cast<int64_t>(intent.country_a);           // payer
+        // Unused by opcode 34 (the lane knows its own cell), but 0 rather than
+        // -1 so the settlement fold can match the row and settle it.
+        command.i32_0 = intent.cell;
+        command.i32_1 = 0;
+        row.authority = 2;
+        row.sequence = command.sequence;
+        row.receipt_pending = 1;
+        row.opcode = command.opcode;
+        row.target_handle = command.target_handle;
+        // Base value for the receipt: the lane's cash before this payment.
+        // Economy answers 0 for a lane that does not exist yet, which is also
+        // the correct base (a new lane starts empty), so the read is unconditional.
+        row.count = economy_runtime->military_army_funds(
+            static_cast<uint64_t>(intent.source_id));
+        row.amount = intent.amount;
+        pending.push_back(row);
+        economy.push_back(command);
+        return;
+    }
     case MILITARY_INTENT_TRANSFER_TERRITORY: {
         if (intent.cell < 0 || intent.country_b == 0) return;
         MilitaryCountryCommand command;
@@ -2318,6 +2523,12 @@ Dictionary DCWorldExt::get_military_country_snapshot(int64_t country) const {
         out["spend_procurement_30"] = policy.spend_procurement_30;
         out["spend_upkeep_30"] = policy.spend_upkeep_30;
         out["per_soldier_cost"] = policy.per_soldier_cost;
+        // The per-head DAILY WAGE both pay paths use (army-pay contract §2.2):
+        // ABSOLUTE takes the policy value, AUTO is living cost x the MSTAT_WAGE
+        // stat. `country_soldier_living_cost` is the input the AUTO branch reads,
+        // published so a test can recompute the same number instead of guessing.
+        out["daily_wage"] = core->soldier_daily_wage(slot);
+        out["soldier_living_cost"] = core->soldier_living_cost(slot);
         PackedInt32Array shares;
         shares.resize(static_cast<int64_t>(policy.config_share_bp.size()));
         for (int64_t i = 0; i < shares.size(); ++i)
@@ -2486,6 +2697,17 @@ Dictionary DCWorldExt::get_military_army(int64_t army) {
     }
     out["lane_supported"] = lane_supported;
     out["lane_population"] = lane_population;
+    // Lane cash: what the formation's people actually hold in Economy. Army pay
+    // (contract §3) lands here, so the smoke test asserts on this instead of the
+    // Military-side `funds` mirror, which only the pre-lane bookkeeping touched.
+    int64_t lane_funds = -1;
+    if (lane_supported) {
+        lane_funds = economy_army_lane_funds(_economy_runtime,
+            core->army_handle(slot));
+    }
+    out["lane_funds"] = lane_funds;
+    out["lane_pay_supported"] = army_lane_pay_supported(
+        static_cast<const NativeEconomyRuntime *>(_economy_runtime));
     out["personnel"] = lane_population >= 0 ? lane_population : armies.cached_headcount[s];
     out["personnel_pending"] = core->army_lane_pending(slot);
     // Ration still in the formation's store (need units of the ration class).
