@@ -10,6 +10,7 @@ signal drag_hovered(ideology_id: int, kind: int, entered: bool)
 signal command_requested(op: String, ideology_id: int)
 signal promote_requested(ideology_id: int)
 signal locate_requested(ideology_id: int)
+signal detail_requested(ideology_id: int)
 
 const ArtScript = preload("res://scripts/ui/components/ideology_art.gd")
 const LevelMeterScript = preload(
@@ -28,6 +29,9 @@ var _data: Dictionary = {}
 var _drop_hover := false
 var _empty_count := 0
 var _hover_tween: Tween
+var _pressing := false
+var _press_pos := Vector2.ZERO
+var _press_moved := false
 
 var _backdrop: SlotBackdrop
 var _rail: SlotRail
@@ -42,6 +46,8 @@ var _name: Label
 var _badge: Label
 var _effects: Label
 var _actions: HBoxContainer
+var _detail: Button
+var _locate: Button
 var _unequip: Button
 var _promote: Button
 var _level_meter: Control
@@ -134,7 +140,21 @@ func _init() -> void:
 	_actions.add_theme_constant_override("separation", 8)
 	_actions.alignment = BoxContainer.ALIGNMENT_END
 	_actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_actions.mouse_filter = Control.MOUSE_FILTER_PASS
 	_info.add_child(_actions)
+	_detail = _action_button("详情")
+	_detail.tooltip_text = "查看理念详情、下一境效果与阶层支持"
+	_detail.pressed.connect(func() -> void:
+		if not empty and occupied_id >= 0:
+			detail_requested.emit(occupied_id))
+	_actions.add_child(_detail)
+	_locate = _action_button("定位")
+	_locate.tooltip_text = "在地图上定位生效地块"
+	_locate.visible = false
+	_locate.pressed.connect(func() -> void:
+		if not empty and occupied_id >= 0:
+			locate_requested.emit(occupied_id))
+	_actions.add_child(_locate)
 	_unequip = _action_button("撤回")
 	_unequip.pressed.connect(func() -> void:
 		command_requested.emit("unequip", occupied_id))
@@ -196,13 +216,29 @@ func _gui_input(event: InputEvent) -> void:
 	if ArtScript.scroll_detail(event):
 		accept_event()
 		return
+	if event is InputEventMouseMotion:
+		if _pressing and (event as InputEventMouseMotion).position.distance_to(_press_pos) > 10.0:
+			_press_moved = true
+		return
 	var mouse := event as InputEventMouseButton
-	if mouse == null or mouse.button_index != MOUSE_BUTTON_RIGHT or not mouse.pressed:
+	if mouse == null:
 		return
-	if empty or occupied_id < 0:
+	if mouse.button_index == MOUSE_BUTTON_RIGHT:
+		if mouse.pressed and not empty and occupied_id >= 0:
+			locate_requested.emit(occupied_id)
+			accept_event()
 		return
-	locate_requested.emit(occupied_id)
-	accept_event()
+	if mouse.button_index == MOUSE_BUTTON_LEFT:
+		if mouse.pressed:
+			_pressing = true
+			_press_pos = mouse.position
+			_press_moved = false
+		else:
+			var was_tap := _pressing and not _press_moved
+			_pressing = false
+			if was_tap and not empty and occupied_id >= 0:
+				detail_requested.emit(occupied_id)
+				accept_event()
 
 
 func configure(niche_kind: int, is_empty: bool, compact: bool) -> void:
@@ -258,9 +294,15 @@ func set_row(data: Dictionary) -> void:
 	# Keep the badge for temporary command state only, never as a repeated class.
 	_badge.visible = pending
 	_badge.text = "待生效"
-	_actions.visible = not spirit
+	_actions.visible = true
+	_detail.visible = true
+	var has_cells := bool(data.get("has_target_cells", false))
+	_locate.visible = has_cells
+	_locate.tooltip_text = String(data.get("locate_tooltip", "在地图上定位生效地块"))
+	_unequip.visible = not spirit
 	_unequip.disabled = not bool(data.get("can_unequip", false)) or pending
 	_unequip.tooltip_text = String(data.get("unequip_tooltip", "撤回这条道路"))
+	_promote.visible = not spirit
 	_promote.disabled = not bool(data.get("can_promote", false)) or pending
 	_promote.tooltip_text = String(data.get("promote_tooltip", "晋升为民族精神"))
 	var meter_data: Dictionary = data.get("level_progress", {})
@@ -302,12 +344,16 @@ func level_meter() -> Control:
 	return _level_meter
 
 
+func actions() -> HBoxContainer:
+	return _actions
+
+
 func _action_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.text = "晋升" if text == "晋" else text
 	button.theme_type_variation = &"PKDossierRowButton"
-	button.custom_minimum_size = Vector2(76, 34)
+	button.custom_minimum_size = Vector2(62, 34)
 	button.add_theme_font_override("font", UITokens.dossier_font("sans_strong"))
 	button.add_theme_font_size_override("font_size", 17)
 	button.focus_mode = Control.FOCUS_ALL
@@ -329,6 +375,12 @@ func _apply_metrics() -> void:
 		_content.add_theme_constant_override("margin_right", 6)
 		_content.add_theme_constant_override("margin_bottom", 3)
 	_row.add_theme_constant_override("separation", 7 if _compact else 10)
+	if _actions != null:
+		_actions.add_theme_constant_override("separation", 5 if _compact else 8)
+		var btn_w := 50.0 if _compact else 62.0
+		for btn in [_detail, _locate, _unequip, _promote]:
+			if btn != null:
+				btn.custom_minimum_size.x = btn_w
 	_emblem_stack.custom_minimum_size = Vector2(40, 40) if _compact \
 		else Vector2(50, 50)
 	_empty_stack.custom_minimum_size = Vector2(46, 54) if _compact \
@@ -364,7 +416,15 @@ func _apply_visibility() -> void:
 	_empty_stack.visible = empty
 	_empty_label.visible = empty
 	_empty_hint.visible = empty
-	_actions.visible = not empty and kind != 2
+	_actions.visible = not empty
+	if _detail != null:
+		_detail.visible = not empty
+	if _locate != null:
+		_locate.visible = not empty and bool(_data.get("has_target_cells", false))
+	if _unequip != null:
+		_unequip.visible = not empty and kind != 2
+	if _promote != null:
+		_promote.visible = not empty and kind != 2
 	_rail.empty = empty
 	_rail.queue_redraw()
 	_backdrop.empty = empty

@@ -10,6 +10,8 @@ const FORCE_NATIVE_ENV := "PK_AUDIO_FORCE_NATIVE"
 const FORCE_NATIVE_ARG := "--audio-native"
 
 const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
+## Android 专用：在加载 FmodGodot 之前把 FMOD 的 JNI_OnLoad 跑起来。
+const BOOTSTRAP_EXTENSION := "res://addons/0_fmod_bootstrap/fmod_bootstrap.gdextension"
 const BANK_ROOT := "res://assets/audio/banks/Desktop/"
 const MUSIC_EVENT := "event:/Music/Prototype"
 const CLICK_EVENT := "event:/UI/Click"
@@ -133,39 +135,58 @@ var _spatial_enabled := false
 
 
 func _ready() -> void:
+	# [android-fmod 2026-11-01] Android 走 FMOD，但带"能补 JNI 才走"的硬门禁：
+	#   * 设备实测已确认：扩展能在 Android 上加载、prime() 能返回 0；
+	#   * 之前的 abort 是 FMOD 的 JNI_OnLoad 在 FindClass("org/fmod/FMOD") 失败后
+	#     继续调 JNI 导致的（不是 load_extension 卡死），现在用 stub 类 + 探测挡住了；
+	#   * prime 不成功就不加载扩展，直接回退 portable（下面 _prime_fmod_jni 那段），
+	#     所以不会再出现"改了后端反而变哑巴"。
+	# 想强制用 portable：PK_AUDIO_FORCE_NATIVE=1 或 --audio-native。
 	var native_reason := _native_backend_reason()
 	if not native_reason.is_empty():
 		_start_native_backend(native_reason)
 		return
-	if OS.get_name() != "Windows" or OS.get_environment("PK_FMOD_DISABLE") == "1":
+	if OS.get_environment("PK_FMOD_DISABLE") == "1" \
+			or not fmod_platform_supported(OS.get_name(), OS.has_feature("web")):
 		backend = "disabled"
 		status = "platform_disabled"
 		print("[audio] backend=none platform=%s status=%s" % [OS.get_name(), status])
 		return
-	if DisplayServer.get_name() == "headless" and OS.get_environment("PK_FMOD_TEST") != "1":
+	# Headless 门禁本来是给桌面 CI 仿真用的：批量跑天数时不该拉起音频。Android
+	# 的自动化构建恰好也带 `--headless`（export_presets.cfg 的 command_line/
+	# extra_args），但 FMOD 并不依赖窗口，手机上没有"无头跑"这回事，所以移动端
+	# 不参与这条门禁，否则安卓包会静音。
+	if DisplayServer.get_name() == "headless" and OS.get_environment("PK_FMOD_TEST") != "1" \
+			and not OS.has_feature("android"):
 		backend = "disabled"
 		status = "headless_disabled"
 		print("[audio] backend=none platform=%s status=%s" % [OS.get_name(), status])
 		return
 	backend = "fmod"
-	print_verbose("[audio] Loading Windows FMOD extension")
+	print("[audio] Loading FMOD extension (%s)" % OS.get_name())
+	if OS.has_feature("android"):
+		# Android 必须先补 FMOD 的 JNI 初始化；补不上就不要加载扩展（否则
+		# FMOD_Studio_System_Create 会把进程 abort 掉），直接回退 portable。
+		var prime := _prime_fmod_jni()
+		if prime != 0:
+			_fmod_init_failed("jni_prime_failed")
+			return
 	var loaded := GDExtensionManager.load_extension(EXTENSION)
 	print_verbose("[audio] Extension load status: ", loaded)
 	if loaded not in [GDExtensionManager.LOAD_STATUS_OK, GDExtensionManager.LOAD_STATUS_ALREADY_LOADED]:
-		status = "extension_load_failed"
+		_fmod_init_failed("extension_load_failed")
 		push_warning("[audio] FMOD extension load failed: %s" % loaded)
 		return
 	if not Engine.has_singleton("FmodAudioServer"):
-		status = "server_missing"
+		_fmod_init_failed("server_missing")
 		return
 	_system = int(Engine.get_singleton("FmodAudioServer").call("get_studio"))
 	for name in ["Master.strings", "Master", "Music", "UI"]:
 		var bank := int(ClassDB.class_call_static("StudioSystem", "load_bank_file", _system,
 			BANK_ROOT + name + ".bank", 0))
 		if bank == 0:
-			status = "bank_load_failed:" + name
-			push_warning("[audio] " + status)
 			_release_banks()
+			_fmod_init_failed("bank_load_failed:" + name)
 			return
 		_banks.append(bank)
 	_master = int(ClassDB.class_call_static("StudioSystem", "get_bus", _system, "bus:/"))
@@ -174,6 +195,57 @@ func _ready() -> void:
 		_music_description(suite_path)
 	print("[audio] backend=fmod platform=%s banks=%d status=ready" % [OS.get_name(), _banks.size()])
 	_connect_settings_and_feedback()
+
+
+## FMOD 的 Android 运行库把 JavaVM 缓存在 `JNI_OnLoad` 里，而只有 Java 的
+## `System.loadLibrary()` 会触发它；Godot 用 dlopen 加载 GDExtension 依赖，所以
+## `FMOD_Studio_System_Create` 会直接失败（设备日志：
+##   "JNI_OnLoad has not run, should have occurred during System.LoadLibrary"）。
+## `addons/0_fmod_bootstrap` 是一个只有几百 KB 的原生扩展，用 dlsym 从
+## libfmod 里取出 `JNI_OnLoad` / `FMOD_Android_JNI_Init` 自己调用，
+## 把这一步补上。它必须在加载 FmodGodot 之前跑完。
+## 返回码：0=成功；负数=失败步骤（-1 没有 JavaVM，-2 打不开库，-3 没有 JNI_OnLoad，
+## -8 缺 `org.fmod.FMOD` Java 类 —— 也就是缺 FMOD Android SDK 的 fmod.jar）。
+const JNI_PRIME_REASONS := {
+	0: "ok",
+	-1: "no JavaVM",
+	-2: "libfmod not found in APK",
+	-3: "JNI_OnLoad symbol missing",
+	-4: "JNI_OnLoad failed",
+	-5: "cannot attach JNI env",
+	-6: "no Activity",
+	-7: "FMOD_Android_JNI_Init failed",
+	-8: "missing org.fmod.FMOD (needs fmod.jar from FMOD Android SDK)",
+	-100: "bootstrap extension not loaded",
+}
+
+
+func _prime_fmod_jni() -> int:
+	if not OS.has_feature("android"):
+		return 0
+	var loaded := GDExtensionManager.load_extension(BOOTSTRAP_EXTENSION)
+	if loaded not in [GDExtensionManager.LOAD_STATUS_OK, GDExtensionManager.LOAD_STATUS_ALREADY_LOADED]:
+		push_warning("[audio] FMOD JNI bootstrap extension failed to load: %s" % loaded)
+		return -100
+	var library := "libfmodL.so" if OS.is_debug_build() else "libfmod.so"
+	var code := int(ClassDB.class_call_static("FmodJniBootstrap", "prime", library))
+	print("[audio] fmod jni prime(%s)=%d %s" % [library, code, JNI_PRIME_REASONS.get(code, "")])
+	return code
+
+
+## FMOD 初始化失败的统一落点。
+##
+## Android 的 FMOD 运行库如果没有先跑过 `JNI_OnLoad`（见 `_prime_fmod_jni`），
+## `FMOD_Studio_System_Create` 会直接返回错误。真出现这种情况时不要静默：
+## 退到 portable 混音保证有声音，同时把原因写进 status / logcat。
+func _fmod_init_failed(reason: String) -> void:
+	status = reason
+	if OS.has_feature("android"):
+		_start_native_backend("fmod_failed:" + reason)
+		push_warning("[audio] FMOD unavailable on Android (%s); fell back to portable mixes" % reason)
+		print("[audio] backend=native platform=%s reason=fmod_failed:%s" % [OS.get_name(), reason])
+		return
+	push_warning("[audio] " + reason)
 
 
 func _start_native_backend(reason: String) -> void:
@@ -195,15 +267,36 @@ func _uses_native_audio() -> bool:
 ## Pure platform decision, split out so tests can prove the Android branch without
 ## an Android device. `platform` is OS.get_name(); web/android features cover hosts
 ## whose display name differs.
-static func native_backend_reason_for(platform: String, is_web: bool, is_android: bool,
+##
+## 三个平台都走 FMOD：Windows（桌面 bank）、Android（lib/<abi>/ 运行库 + JNI 引导）、
+## Web（HTML5 side module）。只有显式强制开关才用 portable 混音。
+static func native_backend_reason_for(platform: String, _is_web: bool, is_android: bool,
 		forced: bool) -> String:
 	if forced:
 		return "forced"
-	if is_web:
-		return "web"
+	# Android 走 FMOD。设备实测（emulator-5554）证明扩展能在 Android 上加载，
+	# 卡点是 FMOD 的 JNI：`JNI_OnLoad` 会 FindClass("org.fmod.FMOD")，缺这个 Java 类
+	# 时 JNI 直接 abort 整个进程（"JNI DETECTED ERROR ... ClassNotFoundException:
+	# org.fmod.FMOD"）。现在由三件事兜住：
+	#   - addons/0_fmod_bootstrap 在加载扩展前执行 JNI_OnLoad /
+	#     FMOD_Android_JNI_Init；
+	#   - org.fmod.* 由 tools/fmod_java_stub 提供（secondary dex 注入 APK）；
+	#   - prime() 先探测类、失败返回非 0，_ready() 见到非 0 就直接回退 portable。
+	# 想强制 portable：PK_AUDIO_FORCE_NATIVE=1 / --audio-native。
 	if is_android or platform == "Android":
-		return "android"
+		return ""
 	return ""
+
+
+## FMOD 后端可用的平台。Web 暂不在此列：FmodGodot 上游 v1.1.3 没有 html5 目标，
+## HTML5 运行库接入完成后再打开（见 docs/audio/fmod-integration.md 平台边界一节）。
+static func fmod_platform_supported(platform: String, is_web: bool) -> bool:
+	# Web 用 FMOD HTML5 side module（gdext/fmod_godot 从 SDK 源码编译）。
+	if is_web:
+		return true
+	if platform == "Android" or OS.has_feature("android"):
+		return true
+	return platform == "Windows"
 
 
 func _native_backend_reason() -> String:

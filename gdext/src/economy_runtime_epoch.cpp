@@ -302,6 +302,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _country_research_procurement_transactions = 0;
     _country_research_procurement_rejections = 0;
     _country_research_procurement_continuation = {};
+    reset_era_procurement_epoch();
     auto reset_cell_metric = [&](std::vector<int64_t> &metric) {
         if (metric.size() != static_cast<size_t>(_cell_count.get())) {
             metric.assign(static_cast<size_t>(_cell_count.get()), 0);
@@ -1068,6 +1069,11 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     refresh_cell_activity_tiers(day_index);
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
+    // National procurement policy / era targets become visible only at this
+    // epoch boundary (after the country capture and epoch_days are frozen,
+    // before fiscal reservation reads the research floor).
+    apply_pending_procurement_updates(day_index);
+    freeze_epoch_procurement_budgets();
     const auto fiscal_started = Clock::now();
     if (!prepare_fiscal_budgets(day_index, error)) return false;
     _epoch_begin_fiscal_ms += elapsed_ms(fiscal_started);
@@ -1231,6 +1237,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_nonhousehold_withdrawals.assign(_market_signals.good_ids.size(), 0);
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     refresh_epoch_colonization_demand();
+    refresh_epoch_era_demand();
     refresh_derived_business_demand();
     _epoch_substitute_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
@@ -1250,12 +1257,21 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         live_expedition_population != _closing_totals.transit_population ||
         live_expedition_funds != _closing_totals.expedition_funds ||
         live_expedition_goods != _closing_totals.expedition_goods;
+    // BEGIN army personnel lane (contract §1.2): the same drift rule applies to
+    // embarked people and their cash — the closing snapshot of the previous
+    // epoch already folded them in (`army_lane_population`/`army_lane_funds`).
+    int64_t live_army_lane_population = _army_personnel.total_population();
+    int64_t live_army_lane_funds = _army_personnel.total_funds();
+    const bool army_lane_holdings_changed =
+        live_army_lane_population != _closing_totals.army_lane_population ||
+        live_army_lane_funds != _closing_totals.army_lane_funds;
+    // END army personnel lane
     const bool continuous_audit = audit_shadow_reuse_enabled() &&
         _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
         _audit_mutation_generation != 0;
     const bool full_audit_verify = _opening_audit_force_full ||
         (_last_closing_audit_was_incremental && !continuous_audit) ||
-        expedition_holdings_changed ||
+        expedition_holdings_changed || army_lane_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
     // The new epoch invalidates last epoch's close until AGGREGATE_PUBLISH
     // recomputes it. A fatal before that point must report the conservation
@@ -1276,6 +1292,18 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             saturating_add(trade_escrow_cash(), fiscal_escrow_total(),
                            opening_escrow_saturation),
             live_expedition_funds, opening_escrow_saturation);
+        // BEGIN army personnel lane: embarked people and their cash sit outside
+        // the cohort table, so the fast path must fold the live lane holdings in
+        // the same way it folds the expedition escrow.
+        _opening_totals.army_lane_population = live_army_lane_population;
+        _opening_totals.army_lane_funds = live_army_lane_funds;
+        _opening_totals.transit_population = saturating_add(
+            _opening_totals.transit_population, live_army_lane_population,
+            opening_escrow_saturation);
+        _opening_totals.escrow_cash = saturating_add(
+            _opening_totals.escrow_cash, live_army_lane_funds,
+            opening_escrow_saturation);
+        // END army personnel lane
         _saturation_count += opening_escrow_saturation;
         ++_opening_audit_fast_paths;
     }

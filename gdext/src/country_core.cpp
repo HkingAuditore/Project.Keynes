@@ -325,7 +325,10 @@ bool validate_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
         error = "country_checkpoint_abi_incompatible";
         return false;
     }
-    if (checkpoint.country_schema_version != COUNTRY_CHECKPOINT_SCHEMA_VERSION) {
+    // v14 adds annexed (inactive) country records; v11..v13 PKCN payloads
+    // remain decodable by NativeCountryRuntime::decode_save.
+    if (checkpoint.country_schema_version < COUNTRY_CHECKPOINT_SCHEMA_MIN_VERSION ||
+        checkpoint.country_schema_version > COUNTRY_CHECKPOINT_SCHEMA_VERSION) {
         error = "country_checkpoint_schema_incompatible";
         return false;
     }

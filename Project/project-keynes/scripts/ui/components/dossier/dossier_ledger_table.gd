@@ -12,8 +12,10 @@ class_name DossierLedgerTable
 signal row_selected(row_id: Variant)
 signal row_action(row_id: Variant, action_id: String)
 
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const HEADER_HEIGHT := 28.0
 const ACTION_SIZE := 22.0
+const TOUCH_DRAG_THRESHOLD := 10.0
 
 var row_height := 30.0
 var selected_id: Variant = null
@@ -30,13 +32,25 @@ var _hover_header := -1
 var _hover_action := ""
 var _scroll: ScrollContainer
 var _sort_keys: Array = []
+var _touch_press_active := false
+var _touch_press_pos := Vector2.ZERO
+var _touch_dragged := false
 
 
 func _init() -> void:
 	super()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	clip_contents = false
+	row_height = maxf(row_height, TouchUI.dense_units())
+
+
+func _header_height() -> float:
+	return maxf(HEADER_HEIGHT, TouchUI.dense_units())
+
+
+func _action_size() -> float:
+	return maxf(ACTION_SIZE, TouchUI.dense_units() * 0.85)
 
 
 func set_columns(columns: Array, default_sort: String = "", descending: bool = true) -> void:
@@ -49,8 +63,9 @@ func set_columns(columns: Array, default_sort: String = "", descending: bool = t
 
 func set_rows(rows: Array) -> void:
 	_rows = rows
+	row_height = maxf(row_height, TouchUI.dense_units())
 	_sort()
-	custom_minimum_size.y = HEADER_HEIGHT + row_height * float(maxi(1, rows.size())) + 4.0
+	custom_minimum_size.y = _header_height() + row_height * float(maxi(1, rows.size())) + 4.0
 	if _hover_row >= rows.size():
 		_hover_row = -1
 	_start_animation()
@@ -184,55 +199,93 @@ func _visible_range() -> Vector2:
 
 
 func _header_y() -> float:
-	return clampf(_visible_range().x, 0.0, maxf(0.0, size.y - HEADER_HEIGHT - row_height))
+	var hh := _header_height()
+	return clampf(_visible_range().x, 0.0, maxf(0.0, size.y - hh - row_height))
 
 
 func _gui_input(event: InputEvent) -> void:
+	var is_touch_event := TouchUI.is_touch() or event.device == -1
 	if event is InputEventMouseMotion:
-		_update_hover((event as InputEventMouseMotion).position)
+		var motion := event as InputEventMouseMotion
+		if _touch_press_active and motion.position.distance_to(_touch_press_pos) > TOUCH_DRAG_THRESHOLD:
+			_touch_dragged = true
+			_hover_row = -1
+			_hover_header = -1
+			_hover_action = ""
+			queue_redraw()
+			return
+		_update_hover(motion.position)
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		if not button.pressed or button.button_index != MOUSE_BUTTON_LEFT:
+		if button.button_index != MOUSE_BUTTON_LEFT:
 			return
-		_update_hover(button.position)
-		if _hover_header >= 0:
-			var column: Dictionary = _visible_columns[_hover_header].column
-			if bool(column.get("sortable", true)) and String(column.get("kind", "text")) != "actions":
-				var column_id := String(column.id)
-				if sort_column == column_id:
-					sort_descending = not sort_descending
-				else:
-					sort_column = column_id
-					sort_descending = String(column.get("kind", "text")) != "text"
-				_sort()
-				queue_redraw()
-			accept_event()
+		if is_touch_event:
+			if button.pressed:
+				_touch_press_active = true
+				_touch_press_pos = button.position
+				_touch_dragged = false
+				_update_hover(button.position)
+				return
+			if not _touch_press_active:
+				return
+			var dragged := _touch_dragged or button.position.distance_to(_touch_press_pos) > TOUCH_DRAG_THRESHOLD
+			_touch_press_active = false
+			_touch_dragged = false
+			if not dragged:
+				_activate_at(button.position, false)
+			_hover_row = -1
+			_hover_header = -1
+			_hover_action = ""
+			queue_redraw()
 			return
-		if _hover_row >= 0:
-			var row: Dictionary = _rows[_order[_hover_row]]
-			if not _hover_action.is_empty():
-				row_action.emit(row.get("id"), _hover_action)
+		if not button.pressed:
+			return
+		_activate_at(button.position, true)
+
+
+func _activate_at(point: Vector2, consume: bool) -> void:
+	_update_hover(point)
+	if _hover_header >= 0:
+		var column: Dictionary = _visible_columns[_hover_header].column
+		if bool(column.get("sortable", true)) and String(column.get("kind", "text")) != "actions":
+			var column_id := String(column.id)
+			if sort_column == column_id:
+				sort_descending = not sort_descending
 			else:
-				row_selected.emit(row.get("id"))
+				sort_column = column_id
+				sort_descending = String(column.get("kind", "text")) != "text"
+			_sort()
+			queue_redraw()
+		if consume:
+			accept_event()
+		return
+	if _hover_row >= 0:
+		var row: Dictionary = _rows[_order[_hover_row]]
+		if not _hover_action.is_empty():
+			row_action.emit(row.get("id"), _hover_action)
+		else:
+			row_selected.emit(row.get("id"))
+		if consume:
 			accept_event()
 
 
 func _update_hover(point: Vector2) -> void:
+	var hh := _header_height()
 	var header_y := _header_y()
 	var header := -1
 	var row_index := -1
 	var action := ""
-	if point.y >= header_y and point.y < header_y + HEADER_HEIGHT:
+	if point.y >= header_y and point.y < header_y + hh:
 		for i in range(_visible_columns.size()):
 			var entry: Dictionary = _visible_columns[i]
 			if point.x >= float(entry.x) and point.x < float(entry.x) + float(entry.width):
 				header = i
 				break
 	else:
-		var index := int(floor((point.y - HEADER_HEIGHT) / row_height))
-		if index >= 0 and index < _order.size() and point.y >= HEADER_HEIGHT:
+		var index := int(floor((point.y - hh) / row_height))
+		if index >= 0 and index < _order.size() and point.y >= hh:
 			row_index = index
-			action = _action_at(_rows[_order[index]], point, HEADER_HEIGHT + row_height * float(index))
+			action = _action_at(_rows[_order[index]], point, hh + row_height * float(index))
 	if header != _hover_header or row_index != _hover_row or action != _hover_action:
 		_hover_header = header
 		_hover_row = row_index
@@ -253,15 +306,16 @@ func _update_hover(point: Vector2) -> void:
 
 func _action_rects(row: Dictionary, top: float) -> Array:
 	var rects: Array = []
+	var act_size := _action_size()
 	for entry in _visible_columns:
 		if String(entry.column.get("kind", "")) != "actions":
 			continue
 		var actions: Array = row.get("actions", [])
 		var x := float(entry.x) + float(entry.width) - 6.0
 		for i in range(actions.size() - 1, -1, -1):
-			x -= ACTION_SIZE
+			x -= act_size
 			rects.append({"id": String(actions[i].id), "rect": Rect2(Vector2(x,
-				top + (row_height - ACTION_SIZE) * 0.5), Vector2(ACTION_SIZE, ACTION_SIZE)),
+				top + (row_height - act_size) * 0.5), Vector2(act_size, act_size)),
 				"icon": StringName(actions[i].icon), "tooltip": String(actions[i].get("tooltip", ""))})
 			x -= 4.0
 	return rects
@@ -283,15 +337,16 @@ func _action_tooltip(row: Dictionary, action_id: String) -> String:
 
 func _draw() -> void:
 	var w := size.x
+	var hh := _header_height()
 	var visible := _visible_range()
 	if _rows.is_empty():
-		_text(Vector2(0.0, HEADER_HEIGHT + 20.0), empty_text, 13, UITokens.DOSSIER_INK_MUTED,
+		_text(Vector2(0.0, hh + 20.0), empty_text, 13, UITokens.DOSSIER_INK_MUTED,
 			"sans", HORIZONTAL_ALIGNMENT_CENTER, w)
-	var first := maxi(0, int(floor((visible.x - HEADER_HEIGHT) / row_height)))
-	var last := mini(_order.size(), int(ceil((visible.y - HEADER_HEIGHT) / row_height)) + 1)
+	var first := maxi(0, int(floor((visible.x - hh) / row_height)))
+	var last := mini(_order.size(), int(ceil((visible.y - hh) / row_height)) + 1)
 	for position_index in range(first, last):
 		var row: Dictionary = _rows[_order[position_index]]
-		var top := HEADER_HEIGHT + row_height * float(position_index)
+		var top := hh + row_height * float(position_index)
 		if position_index % 2 == 1:
 			draw_rect(Rect2(Vector2(0.0, top), Vector2(w, row_height)), UITokens.DOSSIER_PAPER_SHADE)
 		var is_selected: bool = selected_id != null and row.get("id") == selected_id
@@ -311,27 +366,30 @@ func _draw() -> void:
 
 
 func _draw_header(y: float, w: float) -> void:
-	draw_rect(Rect2(Vector2(0.0, y), Vector2(w, HEADER_HEIGHT)), UITokens.DOSSIER_PAPER)
-	draw_line(Vector2(0.0, y + HEADER_HEIGHT - 1.0), Vector2(w, y + HEADER_HEIGHT - 1.0),
+	var hh := _header_height()
+	draw_rect(Rect2(Vector2(0.0, y), Vector2(w, hh)), UITokens.DOSSIER_PAPER)
+	draw_line(Vector2(0.0, y + hh - 1.0), Vector2(w, y + hh - 1.0),
 		UITokens.DOSSIER_RULE_STRONG, 1.5)
+	var text_y := y + hh * 0.5 + 4.0
+	var tri_y := y + hh * 0.5 - 1.0
 	for i in range(_visible_columns.size()):
 		var entry: Dictionary = _visible_columns[i]
 		var column: Dictionary = entry.column
 		var x := float(entry.x)
 		var width := float(entry.width)
 		if i == _hover_header:
-			draw_rect(Rect2(Vector2(x, y), Vector2(width, HEADER_HEIGHT - 2.0)), UITokens.DOSSIER_HOVER)
+			draw_rect(Rect2(Vector2(x, y), Vector2(width, hh - 2.0)), UITokens.DOSSIER_HOVER)
 		var label := String(column.get("label", ""))
 		var active := String(column.id) == sort_column
 		var align := _align(column)
 		var color := UITokens.DOSSIER_OXBLOOD if active else UITokens.DOSSIER_INK_SOFT
 		var text_width := width - 16.0
-		_text(Vector2(x + 8.0, y + 18.0), _fit_text(label, 12, text_width - 10.0, "sans_strong"),
+		_text(Vector2(x + 8.0, text_y), _fit_text(label, 12, text_width - 10.0, "sans_strong"),
 			12, color, "sans_strong", align, text_width - (10.0 if active and align == HORIZONTAL_ALIGNMENT_RIGHT else 0.0))
 		if active:
 			var ax := x + width - 10.0 if align == HORIZONTAL_ALIGNMENT_RIGHT \
 				else x + 12.0 + _text_width(label, 12, "sans_strong")
-			var ay := y + 13.0
+			var ay := tri_y
 			var tri := PackedVector2Array([Vector2(ax - 4.0, ay - 2.0), Vector2(ax + 4.0, ay - 2.0),
 				Vector2(ax, ay + 3.0)]) if sort_descending else PackedVector2Array([
 				Vector2(ax - 4.0, ay + 3.0), Vector2(ax + 4.0, ay + 3.0), Vector2(ax, ay - 2.0)])

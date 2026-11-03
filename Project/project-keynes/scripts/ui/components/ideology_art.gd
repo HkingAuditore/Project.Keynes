@@ -201,6 +201,15 @@ static func detail_tooltip(text: String, details: Dictionary = {}) -> Control:
 	return panel
 
 
+static func interactive_detail_tooltip(details: Dictionary, max_height := 0.0) -> Control:
+	var tooltip := (load("res://scripts/ui/components/ideology_detail_tooltip.gd") as GDScript).new() as Control
+	tooltip.call("setup", details)
+	if tooltip.has_method("enable_interactive"):
+		tooltip.call("enable_interactive", max_height)
+	_active_detail = weakref(tooltip)
+	return tooltip
+
+
 static func scroll_detail(event: InputEvent) -> bool:
 	if not event is InputEventMouseButton or not event.pressed or _active_detail == null:
 		return false

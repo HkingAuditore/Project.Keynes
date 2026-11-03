@@ -84,6 +84,8 @@ const NON_TAX_OUTFLOW_KINDS: Array[Dictionary] = [
 		"note": "工程缺料由国库按市价从本地市场补足。"},
 	{"id": "canal", "label": "运河支出", "icon": "metric.territory",
 		"note": "运河缺料由国库按市价从本地市场补足。"},
+	{"id": "era_procurement", "label": "时代晋升收购", "icon": "technology.milestone",
+		"note": "时代晋升期间国库按市价向本地商人收购所需物资。"},
 ]
 ## 原生新增项在旧 UI 上的兜底标签：宁可显示「其他支出」，也不要静默吞掉这笔钱。
 const NON_TAX_OUTFLOW_FALLBACK_LABEL := "其他支出"

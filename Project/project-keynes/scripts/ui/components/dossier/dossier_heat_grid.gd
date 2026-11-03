@@ -23,12 +23,15 @@ var _cells: Array = []
 var _layout: Array = []
 var _hover := -1
 var _tile_height := TILE_HEIGHT
+var _touch_press_active := false
+var _touch_press_pos := Vector2.ZERO
+var _touch_dragged := false
 
 
 func _init() -> void:
 	super()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	_tile_height = maxf(TILE_HEIGHT, TouchUI.units(TOUCH_TILE_DP))
 
 
@@ -55,6 +58,7 @@ func _notification(what: int) -> void:
 
 
 func _relayout() -> void:
+	_tile_height = maxf(TILE_HEIGHT, TouchUI.units(TOUCH_TILE_DP))
 	_layout.clear()
 	var width := maxf(TILE_MIN_WIDTH, size.x)
 	var columns := maxi(1, int(floor((width + GAP) / (TILE_MIN_WIDTH + GAP))))
@@ -87,8 +91,15 @@ func _relayout() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	var is_touch_event := TouchUI.is_touch() or event.device == -1
 	if event is InputEventMouseMotion:
-		var hit := _hit((event as InputEventMouseMotion).position)
+		var motion := event as InputEventMouseMotion
+		if _touch_press_active and motion.position.distance_to(_touch_press_pos) > 10.0:
+			_touch_dragged = true
+			_hover = -1
+			queue_redraw()
+			return
+		var hit := _hit(motion.position)
 		if hit != _hover:
 			_hover = hit
 			tooltip_text = String(_cells[hit].get("tooltip", "")) if hit >= 0 else ""
@@ -97,8 +108,28 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 	elif event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
-		# 触摸档没有 hover 预热：按事件位置命中，而不是按上一次鼠标移动留下的 _hover。
-		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if is_touch_event:
+			if button.pressed:
+				_touch_press_active = true
+				_touch_press_pos = button.position
+				_touch_dragged = false
+				_hover = _hit(button.position)
+				queue_redraw()
+				return
+			if not _touch_press_active:
+				return
+			var dragged := _touch_dragged or button.position.distance_to(_touch_press_pos) > 10.0
+			_touch_press_active = false
+			_touch_dragged = false
+			var cell := _hit(button.position)
+			_hover = -1
+			queue_redraw()
+			if not dragged and cell >= 0:
+				cell_selected.emit(String(_cells[cell].get("id", "")))
+			return
+		if button.pressed:
 			var cell := _hit(button.position)
 			if cell >= 0:
 				_hover = cell

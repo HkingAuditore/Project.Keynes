@@ -37,7 +37,16 @@
 //   B_OASIS    : voronoi(0.40) + fbm(0.50, 3)                 — 绿洲核心 + 周围沙渐变
 //   B_SALT_FLAT: voronoi(1.10) + voronoi(0.30)                — 晶体 + 大块裂纹
 //   B_BADLANDS : sin(y + fbm(0.12,2)) + fbm(0.40, 3)          — 横向沉积层
+//
+// [pixel-scale-detail 2026-11-03] 近景高频（手机主路径）：上面所有配方都是**固定世界
+// 尺度**（k=0.12~1.20 ⇒ 纹素 5.5~0.83 world units），相机放大时被等比拉大；移动端更
+// 彻底——它走 baked L8（单通道烘焙细节，纹素 ≈2 world units），近景完全没有高频。
+// 现在对外入口 procedural_biome_detail() = 原配方 + 一层常量世界尺度的高频颗粒，
+// 只按「参照图层的纹素投影到几个屏幕像素」交叉淡入（pk_near_detail_blend）。
+// 低频项频率一律不动 ⇒ 缩放时 biome 大斑块不跳变；高频层世界尺度常量 ⇒ 纹理不游动。
 // ─────────────────────────────────────────────────────────────────────────
+
+#include "res://shaders/include/pixel_scale.gdshaderinc"
 
 // ─── 锐利程序化贴图（不依赖 hex，世界坐标连续） ─────────────────────────
 
@@ -65,6 +74,33 @@ float terrain_macro_amplitude(int biome) {
 	return 0.11;
 }
 
+// ─── [pixel-scale-detail 2026-11-03] 近景高频颗粒（乘性，围绕 1.0）─────────────
+// 为什么不逐 biome 复制一份 3.5× 尺度变体：fbm(wp*k*3.5) 与 fbm(wp*k) 在给定点上
+// 互不相干（同一张预积分噪声包的不同采样点），所以"3.5× 变体"与"另起一个高频场"
+// 在视觉上是同一类东西；而这里只花**一次** fetch、只在一个地方调参，并且能同时
+// 覆盖三条路径（baked L8 / vq==1 廉价 / vq>=2 全套配方）—— 逐分支复制会在每条
+// 分支里各加一次 fetch，反而更贵、更容易在某个 biome 漏掉。
+// 频率取 1.55（纹素 ≈0.645 world units）：比所有现有高频项（finest = JUNGLE 的
+// 1/1.20 = 0.83）更细约 1.3×，在桌面 zoom 3 / 移动端 zoom 2.2 时是 1.9 / 1.4 px/纹素。
+const float PK_NEAR_DETAIL_FREQ = 1.55;
+const vec2 PK_NEAR_DETAIL_OFFSET = vec2(31.7, -17.3);
+// 参照纹素的典型世界尺寸：烘焙 L8 detail（world≈2200 units / derived 1024 ≈2.1）与
+// 程序 micro fbm（1/0.45 ≈2.22）量级一致，取 2.0 让两条路径共用同一套门控刻度。
+const float PK_NEAR_DETAIL_REF_TEXEL_WORLD = 2.0;
+
+// 返回乘性 detail（≈1.0）。t=0（远景/中景）时直接返回入参 ⇒ 连一次噪声采样都不付。
+vec3 pk_apply_near_detail(vec3 detail, int biome, vec2 wp) {
+	float t = pk_near_detail_blend(wp, PK_NEAR_DETAIL_REF_TEXEL_WORLD);
+	if (t <= 0.001) {
+		return detail;
+	}
+	// 幅度 0.19~0.23（规范建议 0.15~0.30 的中段）：岩/丘陵最碎，雪/冰最平
+	// —— 近景白色噪点最刺眼，所以让 terrain_macro_amplitude 把雪地再压一档。
+	float amp = 0.20 * (0.9 + 1.6 * terrain_macro_amplitude(biome));
+	float grain = fbm(wp * PK_NEAR_DETAIL_FREQ + PK_NEAR_DETAIL_OFFSET, 2) - 0.5;
+	return detail * (1.0 + grain * (t * amp));
+}
+
 #ifdef VT_USE_TERRAIN_DETAIL
 vec3 baked_biome_detail(int biome, vec2 uv) {
 	float d = visual_sample_terrain_detail(uv).r;
@@ -74,7 +110,9 @@ vec3 baked_biome_detail(int biome, vec2 uv) {
 }
 #endif
 
-vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
+// 原样保留的低频配方（含 vq<=0 早退）。对外只通过下面的 procedural_biome_detail()
+// 调用，本函数不再直接被片段着色器引用。
+vec3 procedural_biome_detail_base(int biome, vec2 wp, vec2 uv) {
 	if (visual_quality <= 0) {
 		return vec3(1.0);
 	}
@@ -298,6 +336,19 @@ vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
 	}
 	return vec3(1.0);
 #endif
+}
+
+// ─── [pixel-scale-detail 2026-11-03] 对外入口：低频配方 + 近景高频颗粒 ─────────
+// 低频（决定 biome 大斑块）完全来自 procedural_biome_detail_base()，频率一个字没动；
+// 高频颗粒只在近景（纹素投影 ≥2.5px，见 pk_near_detail_blend）叠加，成本 1 次噪声
+// 采样，远景/中景 t=0 时一次都不采。
+// vq<=0 由 base 早退成 vec3(1.0)，这里显式保持像素级恒等（LOW 契约：不许出现新噪声）。
+vec3 procedural_biome_detail(int biome, vec2 wp, vec2 uv) {
+	vec3 detail = procedural_biome_detail_base(biome, wp, uv);
+	if (visual_quality <= 0) {
+		return detail;
+	}
+	return pk_apply_near_detail(detail, biome, wp);
 }
 
 // ─── [landform 轴可视化 2026-06-25] 地貌专属着色配方 ─────────────────────────

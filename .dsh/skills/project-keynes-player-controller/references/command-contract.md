@@ -23,6 +23,12 @@
 | `country.tax.cell.set_override/clear_override` | `cell`, `kind`, `item_id`, optional rate | cell override facade | stable item、所有权、范围先验证 |
 | `country.tax.cell.clear_all` | `cell` | `clear_cell_tax_policy` | 恢复完整全国继承 |
 | `construction.build` | `cell_idx`, `building_id`, `ownership_policy` | `treasury_sponsored_build` | 仅玩家领土；首版只接受 `treasury_sponsored_private` 且固定一栋 |
+| `era.advance.start` | — | `EraAdvancementService.start` → `EconomyFacade.set_era_procurement_target` | 状态须为 `ready`（4 选 2）；冻结地块数与物资需求 |
+| `era.advance.pause` / `era.advance.resume` | — | 推送 active=false / 重推目标 | 仅 `purchasing` / `paused` |
+| `procurement.set_policy` | `treasury_share_bp`, `research_share_bp` | `EconomyFacade.set_country_procurement_policy` | 均 0..10000；持久于 `player_view.era_advancement` |
+
+`research.enqueue/move` 对时代里程碑返回 `technology_milestone_retired`（见
+`docs/cpp-dots-runtime/era-advancement-runtime.md`）。
 
 其余 `country.*`、`economy.*` 可以作为协议命名空间，但未逐项登记前必须返回
 `unsupported_command`。GM、作弊、诊断和调试开关不属于这张表。

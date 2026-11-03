@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "date": "2026-11-03",
+  "model": "gpt-image-2.5-sunburst / built-in image edit fallback",
+  "notes": [
+    "All visible unit pixels are model-generated raster art.",
+    "Artillery has no visible crew and both muzzles remain clear.",
+    "Artillery idle uses a locked paired registration with no firing effects."
+  ],
+  "entries": [
+    {
+      "asset": "foot_idle.png",
+      "source_candidate": "foot_idle_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "c6ad0012270537088eef252a749b230d92c27ce1c39f3edc81f0a4198088b95f"
+    },
+    {
+      "asset": "foot_move.png",
+      "source_candidate": "foot_move_identity_v2_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "03da3bf7d1520926546be757839b22821ba7eff93ae3ccfbfb1ece9c21213ad7"
+    },
+    {
+      "asset": "foot_attack.png",
+      "source_candidate": "foot_attack_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "e7adfae2c6c2ed62ae70eed11717b6dd2eeae82f3553866a5ae6076b986bff82"
+    },
+    {
+      "asset": "foot_hit.png",
+      "source_candidate": "foot_hit_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "d24cfe17cbb57c4b3354c20bfd9eeb6e59dbef7a0c30d9393a72582662bb6054"
+    },
+    {
+      "asset": "mounted_idle.png",
+      "source_candidate": "mounted_idle_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "bdfc97243eacb850409c3ec64aa6c4b1448c2bdd4e3341b36dea24b8daacc659"
+    },
+    {
+      "asset": "mounted_move.png",
+      "source_candidate": "mounted_move_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "49cc1482d82f49f8a1c86306731fcb7b65f6ef783db59aec421f899ef372d035"
+    },
+    {
+      "asset": "mounted_attack.png",
+      "source_candidate": "mounted_attack_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "046b39c4fc1a597dfa34e41c50b3c2d5e7e0f09f5511b31482e2af755009214e"
+    },
+    {
+      "asset": "mounted_hit.png",
+      "source_candidate": "mounted_hit_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "102f1ba17b7e4009d431dcd8644da4a2e0a28823084e4c693d3ce7f07f1fe203"
+    },
+    {
+      "asset": "artillery_idle.png",
+      "source_candidate": "artillery_idle_identity_lock_norm_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "a4cc9890ee0637e20a1a0d98ef26b01db2c259261418df9727b2d4c53d9b62d9"
+    },
+    {
+      "asset": "artillery_move.png",
+      "source_candidate": "artillery_move_identity_clean_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "2d562562a81cc19fee3103d05c77ab3269ac9d6f50e6855c2925aa18048ed0f9"
+    },
+    {
+      "asset": "artillery_attack.png",
+      "source_candidate": "artillery_attack_identity_clean_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "f7e985d4d4d991a5bfcfc74deb06c134ec72cb30a210f9ab82f2e699d6acc033"
+    },
+    {
+      "asset": "artillery_hit.png",
+      "source_candidate": "artillery_hit_identity_clean_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "8b4e2d2f444113668486fdfebc5dddef21a4b0af12d19edaff16cf1d8f4ff469"
+    },
+    {
+      "asset": "armored_idle.png",
+      "source_candidate": "armored_idle_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "fe63cdf6845c07337191cf9574101244038293418171b5c850120c136b721b51"
+    },
+    {
+      "asset": "armored_move.png",
+      "source_candidate": "armored_move_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "418e535478c1555a68fa490204c41db5368ffcd1e69ce1ddd5b9c2532a3b8ecc"
+    },
+    {
+      "asset": "armored_attack.png",
+      "source_candidate": "armored_attack_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "7c47446643ac3cc72ac35f6eb70e84fc14a55343628dbf42f2bcb2d600b96d28"
+    },
+    {
+      "asset": "armored_hit.png",
+      "source_candidate": "armored_hit_identity_00.png",
+      "width": 1792,
+      "height": 896,
+      "mode": "RGBA",
+      "sha256": "03195962630d8dfe9926da650d9d909a75d00ee8a887e954feafe8ef3d527c10"
+    }
+  ]
+}

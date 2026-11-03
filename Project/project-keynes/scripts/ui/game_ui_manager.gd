@@ -21,10 +21,17 @@ signal annual_history_requested()
 signal annual_report_closed(report_id: int)
 signal annual_report_selected(report_id: int)
 signal annual_history_page_requested(offset: int)
+signal narrative_event_option_selected(offer_id: int, offer_generation: int, option_index: int)
+signal narrative_event_outcome_acknowledged()
+signal narrative_chronicle_requested()
 
 const AnnualReportWorkspaceScene = preload("res://scenes/ui/annual_report_workspace.tscn")
+const NarrativeEventDialogScript = preload("res://scripts/ui/components/narrative_event_dialog.gd")
+const NarrativeChroniclePanelScript = preload("res://scripts/ui/components/narrative_chronicle_panel.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 var _annual_report_workspace: Control
+var _narrative_event_dialog: Control
+var _narrative_chronicle_panel: Control
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT + UITokens.ARCHIVE_EDGE_INSET * 2.0
@@ -113,6 +120,17 @@ var _era_offer: Dictionary = {}
 var _era_refresh_queued := false
 var _era_flight: Control
 var _era_transfer_name := ""
+## 时代晋升面板（纸徽点击打开）与晋升大典。纸徽本身只是 HUD：它和日期栏同级、挂在 HUDLayer 末位，
+## 任何面板/卷宗/模态窗都能压住它。纸笺与晋升光带挂 EraOverlayLayer（面板层之上、模态层之下），
+## 大典挂 ModalLayer 且排在暂停菜单之前：压住卷宗/奖励弹窗，但暂停菜单仍在最上。
+var _era_panel: EraAdvancementPanel
+var _era_ceremony: EraAscensionCeremony
+var _era_ceremony_parent: Control
+var _era_ceremony_index := -1
+var _era_ceremony_landed_name := ""
+var _era_celebrated_index := -1
+var _era_ceremony_resume_clock := false
+var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
 var _debug_layer: Control
@@ -132,15 +150,22 @@ var _country_ui_perf_pending: Dictionary = {}
 const COUNTRY_DIRTY_TECHNOLOGY := 1
 const COUNTRY_DIRTY_ECONOMY := 2
 const COUNTRY_DIRTY_IDEOLOGY := 4
-const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY | COUNTRY_DIRTY_IDEOLOGY
+## 军事：自己的 facade，不参与国家 ui_snapshot 分段，但仍然共用同一个脏位管道。
+const COUNTRY_DIRTY_MILITARY := 8
+const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY \
+	| COUNTRY_DIRTY_IDEOLOGY | COUNTRY_DIRTY_MILITARY
 # Native RUNTIME_DIRTY_COUNTRY_* bits from runtime_pod_protocol.h.
 const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
 const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
 const NATIVE_DIRTY_COUNTRY_VISUAL_ERA := 1 << 3
 
 const ResearchToastScene = preload("res://scenes/ui/research_toast.tscn")
+const EraAdvancementPanelScene = preload("res://scenes/ui/era_advancement_panel.tscn")
+const EraAscensionCeremonyScene = preload("res://scenes/ui/era_ascension_ceremony.tscn")
 const CellHoverCardScene = preload("res://scenes/ui/cell_hover_card.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+## 军事官营建筑入口要发正式命令，命令 id 只从 PlayerController 取，不在这里抄字符串。
+const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 
 var _research_toast: ResearchToast
 var _cell_hover_card: CellHoverCard
@@ -157,6 +182,17 @@ var _discovery_tech_ids_ready := false
 
 func _ready() -> void:
 	layer = 20
+	# [qa-ui-hide 2026-11-02] 二分"渲染线程崩溃是否由 UI 绘制引起"：
+	# PK_UI_HIDE_ALL=1（桌面）或 pk_debug.cfg 的 `[ui] hide_all=true`（安卓）时
+	# 整层 UI 隐藏（世界照常渲染）。正式包不设这些开关。
+	var hide_all := OS.get_environment("PK_UI_HIDE_ALL") == "1"
+	if not hide_all:
+		var qa_cfg := ConfigFile.new()
+		if qa_cfg.load("user://pk_debug.cfg") == OK:
+			hide_all = bool(qa_cfg.get_value("ui", "hide_all", false))
+	if hide_all:
+		visible = false
+		print("[ui] QA: HUD hidden")
 	_country_ui_event_refresh_enabled = bool(Engine.get_meta(
 		&"country_ui_event_refresh_enabled", true))
 	_gm_available = gm_available_for_build(OS.is_debug_build(), Engine.is_editor_hint())
@@ -214,6 +250,12 @@ func set_world_context(
 	if _era_flight != null:
 		_era_flight.cancel()
 	_era_transfer_name = ""
+	# 新世界/读档：撤掉进行中的大典（不补发落地，不恢复旧世界的时钟），只建立显示基线。
+	_abort_era_ceremony()
+	_era_celebrated_index = -1
+	_era_advancement_snapshot = {}
+	if _era_panel != null:
+		_era_panel.close(true)
 	_refresh_era_indicator()
 	_refresh_player_discovery_context()
 	if _right_panel != null:
@@ -318,6 +360,11 @@ func notify_committed_day() -> void:
 	elif _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "ideology":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_day")
+	# 军事快照每日变化（兵力、士气、补给天数、战争分），打开时同样每个已提交日
+	# 推进一次；节流仍由 _flush_country_panel_refresh 的墙钟窗口负责。
+	elif _country_panel != null and _country_panel.is_panel_open() \
+			and _country_panel.current_section() == "military":
+		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_day")
 	elif _country_view_model != null:
 		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
 
@@ -326,12 +373,38 @@ func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 	_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_commit")
 
 
+## 军事命令的下一个游戏日才生效，所以只在日推进时刷新；这里额外在玩家刚下达
+## 命令后请求一次，让「已排队」的反馈和面板数值同步。
+func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
+	_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_commit")
+
+
+## Inspector 军事页签的官营建筑入口：翻成正式命令交给 PlayerController。
+## Inspector 只报「这一格该建/拆什么」，角色名 → 目录里的 dense 建筑序由
+## 军事目录决定，所以这里只把角色名透传，由 facade 侧解析。
+func _on_military_state_building_requested(request: Dictionary) -> void:
+	if _player_controller == null:
+		return
+	var op := String(request.get("op", "state.build"))
+	var command_id: StringName = PlayerControllerScript.COMMAND_MILITARY_STATE_BUILD \
+		if op == "state.build" else PlayerControllerScript.COMMAND_MILITARY_STATE_DEMOLISH
+	var result: Dictionary = _player_controller.request_command(command_id, {
+		"cell": int(request.get("cell", -1)),
+		"building": String(request.get("role", "")),
+	})
+	if _right_panel != null and _right_panel.has_method("set_construction_feedback"):
+		_right_panel.set_construction_feedback(String(result.get("message", "")),
+			bool(result.get("ok", false)))
+
+
 func _country_section_mask(section_id: String) -> int:
 	match section_id:
 		"economy":
 			return COUNTRY_DIRTY_ECONOMY
 		"ideology":
 			return COUNTRY_DIRTY_IDEOLOGY
+		"military":
+			return COUNTRY_DIRTY_MILITARY
 		_:
 			return COUNTRY_DIRTY_TECHNOLOGY
 
@@ -586,6 +659,11 @@ func show_cell_panel(cell: HexCell) -> void:
 	_set_inspector_trace_cell(int(cell.index) \
 		if _selected_fog_state == VisionSolver.FOG_VISIBLE else -1)
 	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
+	# [relayout-on-open 2026-11-02] 面板宽度是按 detail_open() 算的，但以前只在
+	# viewport 尺寸变化时重算；地块档案/家族页打开后内容变宽，宽度还停在关闭档
+	# （460），于是页签与 KPI 行被屏幕右缘切掉（真机 2670x1200 实测）。
+	# 这里在模型换好之后补一次布局。
+	call_deferred("_layout_right_panel")
 	_selection_context = _revision_selection_context(
 		_inspector_view_model.live_patch_revision(cell, _right_panel.current_tab()))
 	if _country_panel != null and _country_panel.is_panel_open():
@@ -605,6 +683,7 @@ func hide_cell_panel() -> void:
 	_set_inspector_trace_cell(-1)
 	if _right_panel != null:
 		_right_panel.close_detail(false)
+		call_deferred("_layout_right_panel")
 	if _right_panel != null:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
@@ -792,6 +871,9 @@ func open_country_section(section_id: String, economy_chapter: String = "") -> v
 		close_country_panel()
 		annual_history_requested.emit()
 		return
+	# 卷宗一打开就收起时代纸笺：纸笺在面板层之上，留着会浮在压暗的国家卷宗上。
+	if _era_panel != null and _era_panel.is_open():
+		_close_era_panel()
 	if _country_panel == null or _country_view_model == null:
 		return
 	# 打开国家面板时纸签悬浮卡必须退场：它盖在面板边缘，也没必要再读旧值。
@@ -1202,6 +1284,7 @@ func _on_object_details_requested(request: Dictionary) -> void:
 		_right_panel.show_family_workspace(payload)
 	else:
 		_right_panel.show_object_detail(payload)
+	call_deferred("_layout_right_panel")
 
 
 func _close_object_detail_dialog() -> void:
@@ -1209,6 +1292,7 @@ func _close_object_detail_dialog() -> void:
 	_object_detail_context = {}
 	if _right_panel != null:
 		_right_panel.close_detail(false)
+		call_deferred("_layout_right_panel")
 
 
 func _refresh_object_detail(force: bool = false) -> void:
@@ -1386,11 +1470,22 @@ func _base_map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
+	if _status_card != null and _status_card.is_open():
+		_status_card_generation += 1
+		_status_card_kind = ""
+		_status_card.hide_card(true)
+		return true
+	if is_era_ceremony_playing():
+		_era_ceremony.skip()
+		return true
 	if is_annual_report_open():
 		_annual_report_workspace.call("_close")
 		return true
 	if _era_reward_dialog != null and _era_reward_dialog.visible:
 		_on_era_popup_dismissed()
+		return true
+	if _era_panel != null and _era_panel.is_open():
+		_close_era_panel()
 		return true
 	if is_family_founding_modal_open():
 		if _right_panel != null and _right_panel.detail_open():
@@ -1431,6 +1526,8 @@ func toggle_pause_menu() -> void:
 
 func show_era_reward_offer(offer: Dictionary) -> void:
 	if _era_reward_dialog != null:
+		if _era_panel != null and _era_panel.visible:
+			_era_panel.close(true)
 		if not _era_reward_dialog.visible:
 			_era_reward_dialog.open_overview(_build_era_overview())
 		_era_reward_dialog.present_offer(offer)
@@ -1448,19 +1545,95 @@ func _build_era_overview() -> Dictionary:
 		int(_player_controller.get_player_country_handle()), _gdp_ledger)
 
 
+## 纸徽点击：打开「国家概况 + 时代晋升」合并速览（一张纸笺、无页签、无滚动）。
+## 待领时代奖励时，速览左栏出现「领取时代奖励」按钮；三张奖励纸片仍走 EraRewardDialog 原流程。
+## 奖励弹窗已展开时，点击维持原有的开关语义。
 func _on_era_indicator_pressed() -> void:
-	if _era_reward_dialog == null or is_annual_report_open() or is_family_founding_modal_open():
+	if is_annual_report_open() or is_family_founding_modal_open() or is_era_ceremony_playing():
 		return
-	if _era_reward_dialog.visible:
-		if not _era_reward_dialog.is_offer_open() and String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:
-			era_reward_open_requested.emit()
-			return
+	if _era_reward_dialog != null and _era_reward_dialog.visible:
 		_on_era_popup_dismissed()
 		return
-	_era_reward_dialog.open_overview(_build_era_overview())
-	_era_indicator.set_expanded(true)
-	if String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"]:
-		era_reward_open_requested.emit()
+	_ensure_era_panel()
+	if _era_panel == null:
+		return
+	if _era_panel.is_open():
+		_close_era_panel()
+		return
+	_era_panel.set_reward_available(String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
+	_era_panel.open(_era_advancement_model(), _build_era_overview())
+	if _era_indicator != null:
+		_era_indicator.set_expanded(_era_panel.wants_expanded_badge())
+
+
+func _ensure_era_panel() -> void:
+	if _era_panel != null and is_instance_valid(_era_panel):
+		return
+	var host := get_node_or_null("UIRoot/EraOverlayLayer") as Control
+	if host == null:
+		return
+	_era_panel = EraAdvancementPanelScene.instantiate() as EraAdvancementPanel
+	_era_panel.name = "EraAdvancementPanel"
+	host.add_child(_era_panel)
+	# 纸笺垫底、晋升光带压在上面。纸徽已归 HUDLayer（面板之下），这里不再需要把它排在纸徽之前。
+	host.move_child(_era_panel, 0)
+	_bind_era_panel()
+
+
+func _bind_era_panel() -> void:
+	_era_panel.close_requested.connect(_close_era_panel)
+	_era_panel.command_requested.connect(_on_era_panel_command)
+	_era_panel.treasury_requested.connect(func() -> void:
+		_close_era_panel()
+		open_country_section("economy", "overview"))
+	_era_panel.reward_requested.connect(func() -> void:
+		era_reward_open_requested.emit())
+
+
+func _close_era_panel() -> void:
+	if _era_panel != null:
+		_era_panel.close()
+	if _era_indicator != null and (_era_reward_dialog == null or not _era_reward_dialog.visible):
+		_era_indicator.set_expanded(false)
+
+
+func is_era_panel_open() -> bool:
+	return _era_panel != null and _era_panel.is_open()
+
+
+func _on_era_panel_command(command: StringName) -> void:
+	var result: Dictionary = {"ok": false, "code": "controller_unavailable",
+		"message": "玩家会话尚未就绪"}
+	if _player_controller != null and _player_controller.has_method("request_command"):
+		result = _player_controller.request_command(command, {})
+	if _era_panel != null:
+		_era_panel.show_command_result(result)
+	_apply_era_advancement(_era_advancement_model(true))
+
+
+## 快照只来自 PlayerController（§5）；控制器尚未提供时返回 ok=false，面板显示不可用。
+func _era_advancement_model(fresh: bool = false) -> Dictionary:
+	if (fresh or _era_advancement_snapshot.is_empty()) and _player_controller != null \
+			and _player_controller.has_method("get_era_advancement_snapshot"):
+		var snapshot = _player_controller.get_era_advancement_snapshot()
+		if snapshot is Dictionary:
+			_era_advancement_snapshot = snapshot
+	return _era_advancement_snapshot
+
+
+func _on_era_advancement_changed(snapshot: Dictionary) -> void:
+	_era_advancement_snapshot = snapshot
+	_apply_era_advancement(snapshot)
+
+
+func _apply_era_advancement(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+	if _era_indicator != null:
+		_era_indicator.set_advancement(String(snapshot.get("status", "")) \
+			if bool(snapshot.get("ok", false)) else "", float(snapshot.get("progress", 0.0)))
+	if _era_panel != null and _era_panel.visible:
+		_era_panel.set_snapshot(snapshot)
 
 
 func _on_era_popup_dismissed() -> void:
@@ -1479,6 +1652,8 @@ func notify_era_reward_offer(offer: Dictionary) -> void:
 	_era_offer = offer
 	if _era_indicator != null:
 		_era_indicator.set_offer_available(String(offer.get("status", "NONE")) in ["OPEN", "ERROR"])
+	if _era_panel != null:
+		_era_panel.set_reward_available(String(offer.get("status", "NONE")) in ["OPEN", "ERROR"])
 	_queue_era_indicator_refresh()
 
 
@@ -1504,9 +1679,16 @@ func _refresh_era_indicator() -> void:
 	if _era_indicator_view_model == null:
 		_era_indicator_view_model = EraIndicatorViewModel.new()
 	var model := _era_indicator_view_model.build(facade.research_snapshot(handle))
+	if not model.is_empty() and _era_celebrated_index < 0:
+		# 读档/新世界后的第一份模型只建立基线，任何时候都不重播旧的晋升。
+		_era_celebrated_index = int(model.era_index)
 	_era_indicator.set_model(model)
-	if not model.is_empty() and _era_transfer_name.is_empty() and _top_bar != null:
+	if not model.is_empty() and _era_transfer_name.is_empty() and _top_bar != null \
+			and not _era_indicator.has_pending_era():
 		_top_bar.set_era_name(String(model.era_name))
+	_apply_era_advancement(_era_advancement_model(true))
+	if _era_panel != null and _era_panel.visible:
+		_era_panel.set_overview(_build_era_overview())
 	if _era_reward_dialog != null and _era_reward_dialog.visible:
 		_era_reward_dialog.refresh_overview(_build_era_overview())
 
@@ -1533,6 +1715,8 @@ func _refresh_player_country_status(country_facade, economy_facade, handle: int)
 func _on_top_bar_status_hovered(kind: String, entered: bool) -> void:
 	if _status_card == null or not is_inside_tree() or _top_bar == null:
 		return
+	if TouchUI.is_touch():
+		return
 	_status_card_generation += 1
 	var generation := _status_card_generation
 	if not entered:
@@ -1553,6 +1737,15 @@ func _on_top_bar_status_hovered(kind: String, entered: bool) -> void:
 
 
 func _on_top_bar_status_pressed(kind: String) -> void:
+	if TouchUI.is_touch() and _status_card != null and _top_bar != null:
+		if not _status_card.is_open() or _status_card_kind != kind:
+			var model := _build_status_card_model(kind)
+			if not model.is_empty():
+				_status_card_generation += 1
+				_status_card_kind = kind
+				_status_card_next_refresh_ms = Time.get_ticks_msec() + STATUS_CARD_REFRESH_MSEC
+				_status_card.show_card(model, _top_bar.status_anchor(kind))
+				return
 	_status_card_generation += 1
 	_status_card_kind = ""
 	if _status_card != null:
@@ -1595,10 +1788,174 @@ func _build_status_card_model(kind: String) -> Dictionary:
 	return HudStatusViewModel.build_population(professions, summary)
 
 
+## 纸徽检测到会话内时代上升（已提交快照，读档首帧只建立基线不会走到这里）。
+## 由大典接管：纸徽保留旧图标，大典的新徽记飞回后才换图、闪光并把光点送到日历。
 func _on_era_indicator_advanced(model: Dictionary) -> void:
-	_era_transfer_name = String(model.era_name)
-	if _era_flight != null and _top_bar != null:
+	var new_index := int(model.get("era_index", -1))
+	if new_index > _era_celebrated_index:
+		var old_index := _era_celebrated_index if _era_celebrated_index >= 0 else new_index - 1
+		_start_era_ceremony(old_index, new_index, _ceremony_buffs_from_snapshot(new_index))
+		return
+	# 大典已由 PlayerController.era_advanced 先行开播：等它落地再换图；已经落地则只补换图。
+	if not is_era_ceremony_playing() and _era_indicator != null:
+		_era_indicator.reveal_pending_era(false)
+
+
+## PlayerController.era_advanced（玩家晋升服务观察到时代 ACK）：携带权威加成文案。
+func _on_player_era_advanced(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
+	if new_index <= _era_celebrated_index:
+		if is_era_ceremony_playing() and _era_ceremony_index == new_index and not buffs.is_empty():
+			_era_ceremony.set_buffs(buffs)
+		return
+	if _era_celebrated_index < 0:
+		# 尚未建立基线（会话刚绑定）：视为恢复，不演出。
+		_era_celebrated_index = new_index
+		return
+	_start_era_ceremony(maxi(old_index, _era_celebrated_index), new_index, buffs)
+
+
+func _ceremony_buffs_from_snapshot(new_index: int) -> PackedStringArray:
+	# 晋升前最后一份快照的 buffs_preview 正是这次获得的加成。
+	var snapshot := _era_advancement_snapshot
+	if int(snapshot.get("next_era_index", -2)) == new_index:
+		return PackedStringArray(snapshot.get("buffs_preview", PackedStringArray()))
+	return PackedStringArray()
+
+
+func is_era_ceremony_playing() -> bool:
+	return _era_ceremony != null and is_instance_valid(_era_ceremony) and _era_ceremony.is_playing()
+
+
+func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
+	if is_era_ceremony_playing():
+		_era_ceremony.finish_now()
+	_era_celebrated_index = new_index
+	_era_ceremony_index = new_index
+	if _era_indicator_view_model == null:
+		_era_indicator_view_model = EraIndicatorViewModel.new()
+	var new_id := _era_indicator_view_model.era_id_for(new_index)
+	var new_name := _era_indicator_view_model.era_name_for(new_index)
+	_era_ceremony_landed_name = new_name
+	# 日历时代名在徽记飞回之前保持旧字。
+	_era_transfer_name = new_name
+	if _era_panel != null and _era_panel.visible:
+		_era_panel.close(true)
+	if _era_reward_dialog != null and _era_reward_dialog.visible \
+			and not _era_reward_dialog.is_offer_open():
+		_era_reward_dialog.close_overview(true)
+	if _era_indicator != null:
+		_era_indicator.set_expanded(false)
+	if _cell_hover_card != null:
+		_cell_hover_card.dismiss(true)
+	var host := get_node_or_null("UIRoot/ModalLayer") as Control
+	if host == null:
+		_land_era_on_badge(new_name)
+		return
+	_era_ceremony = EraAscensionCeremonyScene.instantiate() as EraAscensionCeremony
+	_era_ceremony.name = "EraAscensionCeremony"
+	host.add_child(_era_ceremony)
+	# 压住卷宗、奖励弹窗与加载层，但暂停菜单始终在最上。
+	if _pause_menu != null and _pause_menu.get_parent() == host:
+		host.move_child(_era_ceremony, _pause_menu.get_index())
+	_era_ceremony.emblem_landed.connect(_on_era_ceremony_landed.bind(new_index))
+	_era_ceremony.finished.connect(_on_era_ceremony_finished)
+	_pause_clock_for_ceremony()
+	_era_ceremony.play({
+		"old_era_id": _era_indicator_view_model.era_id_for(old_index),
+		"new_era_id": new_id, "new_era_name": new_name,
+		"subtitle": EraIndicatorViewModel.era_flavor(new_id),
+		"buffs": buffs,
+		"target": _era_indicator.icon_origin() if _era_indicator != null else null,
+	})
+
+
+func _on_era_ceremony_landed(new_index: int) -> void:
+	if new_index != _era_ceremony_index:
+		return
+	_land_era_on_badge(_era_ceremony_landed_name)
+
+
+## 新徽记落到纸徽：换图 + 金环礼花，光点飞向日历换字，并补一条晋升纸贴。
+func _land_era_on_badge(era_name: String) -> void:
+	if _era_indicator != null:
+		# 纸徽未被大典接管（无 defer）时它已自行放过礼花，这里不再重放。
+		_era_indicator.reveal_pending_era(_era_indicator.has_pending_era() \
+			or _era_indicator.defer_celebration)
+	if not era_name.is_empty():
+		_era_transfer_name = era_name
+	if _era_flight != null and _top_bar != null and _era_indicator != null:
 		_era_flight.play(_era_indicator.icon_origin(), _top_bar.era_name_target())
+	elif _top_bar != null and not _era_transfer_name.is_empty():
+		_on_era_flight_landed()
+	if _era_indicator_view_model == null:
+		_era_indicator_view_model = EraIndicatorViewModel.new()
+	_notify_era_promoted({"era_id": _era_indicator_view_model.era_id_for(_era_celebrated_index),
+		"era_name": era_name})
+
+
+func _on_era_ceremony_finished() -> void:
+	# 兜底：跳过 / 中断 / landed 索引不匹配时，也要把纸徽对齐到当前时代。
+	if _era_indicator != null:
+		_era_indicator.reveal_pending_era(false)
+	_era_ceremony = null
+	_era_ceremony_index = -1
+	_restore_clock_after_ceremony()
+
+
+func _abort_era_ceremony() -> void:
+	if _era_ceremony != null and is_instance_valid(_era_ceremony):
+		_era_ceremony.abort()
+	_era_ceremony = null
+	_era_ceremony_index = -1
+	# 世界已切换：不恢复旧世界的时钟状态。
+	_era_ceremony_resume_clock = false
+
+
+## 大典期间暂停时钟（同时代奖励/家族创立的做法），只在由大典暂停时才恢复。
+func _pause_clock_for_ceremony() -> void:
+	if _world_clock == null or _era_ceremony_resume_clock:
+		return
+	if _world_clock.paused:
+		return
+	_era_ceremony_resume_clock = true
+	_world_clock.pause(true)
+	if _player_controller != null and _player_controller.has_method("sync_ui"):
+		_player_controller.sync_ui()
+
+
+func _restore_clock_after_ceremony() -> void:
+	if not _era_ceremony_resume_clock:
+		return
+	_era_ceremony_resume_clock = false
+	if _world_clock == null or not _world_clock.paused:
+		return
+	# 演出期间若有其他流程接管时钟（时代奖励选择、暂停菜单），交还给它们。
+	if _pause_menu != null and _pause_menu.visible:
+		return
+	if is_era_reward_modal_open() or is_family_founding_modal_open() or is_annual_report_open():
+		return
+	if _player_controller != null and _player_controller.has_method("era_reward_locked") \
+			and bool(_player_controller.era_reward_locked()):
+		return
+	if _player_controller != null and _player_controller.has_method("ideology_draw_locked") \
+			and bool(_player_controller.ideology_draw_locked()):
+		return
+	_world_clock.pause(false)
+	if _player_controller != null and _player_controller.has_method("sync_ui"):
+		_player_controller.sync_ui()
+
+
+## 时代晋升是必须被看见的一刻：徽记特效、顶栏日历换字和纸贴提醒三件事同时发生。
+## 玩家通常正泡在科技面板里等里程碑完成，所以纸贴和徽记都走面板遮罩之上。
+func _notify_era_promoted(model: Dictionary) -> void:
+	var era_id := String(model.get("era_id", ""))
+	if era_id.is_empty():
+		return
+	_ensure_research_toast()
+	if _research_toast == null:
+		return
+	_research_toast.show_era_promoted(era_id, String(model.get("era_name", "")),
+		String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
 
 
 func _on_era_flight_landed() -> void:
@@ -1694,7 +2051,9 @@ func set_player_controller(controller) -> void:
 		var old_settled := Callable(self, "_on_player_command_settled")
 		if _player_controller.command_settled.is_connected(old_settled):
 			_player_controller.command_settled.disconnect(old_settled)
+	_disconnect_era_advancement_signals()
 	_player_controller = controller
+	_connect_era_advancement_signals()
 	if _player_controller != null and _player_controller.has_signal("command_completed"):
 		var audio_callback := Callable(self, "_on_player_command_completed_audio")
 		if not _player_controller.command_completed.is_connected(audio_callback):
@@ -1713,6 +2072,32 @@ func set_player_controller(controller) -> void:
 		var settled := Callable(self, "_on_player_command_settled")
 		if not _player_controller.command_settled.is_connected(settled):
 			_player_controller.command_settled.connect(settled)
+
+
+func _connect_era_advancement_signals() -> void:
+	if _player_controller == null:
+		return
+	if _player_controller.has_signal("era_advancement_changed"):
+		var changed := Callable(self, "_on_era_advancement_changed")
+		if not _player_controller.era_advancement_changed.is_connected(changed):
+			_player_controller.era_advancement_changed.connect(changed)
+	if _player_controller.has_signal("era_advanced"):
+		var advanced := Callable(self, "_on_player_era_advanced")
+		if not _player_controller.era_advanced.is_connected(advanced):
+			_player_controller.era_advanced.connect(advanced)
+
+
+func _disconnect_era_advancement_signals() -> void:
+	if _player_controller == null:
+		return
+	if _player_controller.has_signal("era_advancement_changed"):
+		var changed := Callable(self, "_on_era_advancement_changed")
+		if _player_controller.era_advancement_changed.is_connected(changed):
+			_player_controller.era_advancement_changed.disconnect(changed)
+	if _player_controller.has_signal("era_advanced"):
+		var advanced := Callable(self, "_on_player_era_advanced")
+		if _player_controller.era_advanced.is_connected(advanced):
+			_player_controller.era_advanced.disconnect(advanced)
 
 
 func _bind_ui() -> void:
@@ -1748,6 +2133,8 @@ func _bind_ui() -> void:
 		_on_trade_orders_page_requested)
 	_right_panel.trade_order_locate_requested.connect(
 		_on_trade_order_locate_requested)
+	_right_panel.military_state_building_requested.connect(
+		_on_military_state_building_requested)
 	_layout_right_panel()
 
 	_colonization_panel = get_node(
@@ -1847,11 +2234,19 @@ func _bind_ui() -> void:
 		func(generation: int, index: int) -> void:
 			era_reward_choice_requested.emit(generation, index))
 	_era_reward_dialog.dismiss_requested.connect(_on_era_popup_dismissed)
+	# 时代徽记只是 HUD：挂在 HUDLayer 末位，画在日期栏之上、所有面板之下——
+	# 国家卷宗的压暗遮罩、右侧检视面板与全部模态窗都能照常盖住它。
+	# 晋升光带与纸笺仍在 EraOverlayLayer（PanelLayer 之上、ModalLayer 之下），
+	# 让「徽记飞回日历」这类一次性演出在打开的卷宗之上仍然看得见。
 	_era_indicator = get_node("UIRoot/HUDLayer/EraIndicator") as EraIndicator
-	_era_flight = get_node("UIRoot/HUDLayer/EraTransitionFlight") as Control
+	_era_flight = get_node("UIRoot/EraOverlayLayer/EraTransitionFlight") as Control
 	_era_indicator.era_advanced.connect(_on_era_indicator_advanced)
+	# defer 只在大典播放期间为真：大典结束后纸徽必须自己跟上模型，
+	# 否则一旦接管的 landed 路径没走到，图标会永远停在旧时代。
+	_era_indicator.defer_celebration = false
 	_era_flight.landed.connect(_on_era_flight_landed)
 	_era_indicator.pressed.connect(_on_era_indicator_pressed)
+	_ensure_era_panel()
 	_family_founding_dialog = get_node_or_null(
 		"UIRoot/ModalLayer/FamilyFoundingDialog") as FamilyFoundingDialog
 	if _family_founding_dialog != null:
@@ -1866,6 +2261,43 @@ func _bind_ui() -> void:
 		_family_founding_dialog.collapsed_changed.connect(_on_founding_collapsed_changed)
 		_layout_family_founding_dialog()
 	_ensure_cell_hover_card()
+	_ensure_narrative_ui()
+
+
+func _ensure_narrative_ui() -> void:
+	var modal_layer := get_node_or_null("UIRoot/ModalLayer") as Control
+	if modal_layer == null:
+		return
+	if _narrative_event_dialog == null:
+		_narrative_event_dialog = NarrativeEventDialogScript.new()
+		_narrative_event_dialog.name = "NarrativeEventDialog"
+		modal_layer.add_child(_narrative_event_dialog)
+		_narrative_event_dialog.option_selected.connect(
+			func(offer_id: int, generation: int, idx: int) -> void:
+				narrative_event_option_selected.emit(offer_id, generation, idx)
+		)
+		_narrative_event_dialog.outcome_acknowledged.connect(
+			func() -> void:
+				narrative_event_outcome_acknowledged.emit()
+		)
+		_narrative_event_dialog.locate_cell_requested.connect(
+			_locate_cell_from_family_founding
+		)
+		_narrative_event_dialog.chronicle_requested.connect(
+			func() -> void:
+				narrative_chronicle_requested.emit()
+		)
+	if _narrative_chronicle_panel == null:
+		_narrative_chronicle_panel = NarrativeChroniclePanelScript.new()
+		_narrative_chronicle_panel.name = "NarrativeChroniclePanel"
+		modal_layer.add_child(_narrative_chronicle_panel)
+		_narrative_chronicle_panel.locate_cell_requested.connect(
+			func(cell_idx: int) -> void:
+				_narrative_chronicle_panel.close_panel()
+				_locate_cell_from_family_founding(cell_idx)
+		)
+	if _pause_menu != null and _pause_menu.get_parent() == modal_layer:
+		modal_layer.move_child(_pause_menu, modal_layer.get_child_count() - 1)
 
 
 func _ensure_cell_hover_card() -> void:
@@ -1899,7 +2331,9 @@ func _hover_blocked() -> bool:
 		return true
 	if _pause_menu != null and _pause_menu.visible:
 		return true
-	if is_era_reward_modal_open() or is_family_founding_modal_open():
+	if is_era_reward_modal_open() or is_family_founding_modal_open() or is_narrative_event_modal_open():
+		return true
+	if is_era_panel_open() or is_era_ceremony_playing():
 		return true
 	if _colonization_panel != null and _colonization_panel.visible:
 		return true
@@ -1961,6 +2395,11 @@ func _on_colonization_planning_context(context: Dictionary) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _status_card != null and _status_card.is_open() and TouchUI.is_touch():
+		if (event is InputEventMouseButton and event.pressed) or (event is InputEventScreenTouch and event.pressed):
+			_status_card_generation += 1
+			_status_card_kind = ""
+			_status_card.hide_card(true)
 	if _colonization_panel == null or not (_colonization_panel.is_source_picking() \
 			or _colonization_panel.is_target_picking()):
 		return
@@ -2058,7 +2497,9 @@ func _layout_country_action_bar() -> void:
 	if _country_action_bar == null:
 		return
 	_country_action_bar.visible = true
-	var viewport_width := get_viewport().get_visible_rect().size.x
+	var ui_root := get_node_or_null("UIRoot") as Control
+	var viewport_width := ui_root.size.x if ui_root != null and ui_root.size.x > 0.0 \
+		else get_viewport().get_visible_rect().size.x
 	var safe := _base_map_safe_area()
 	var bar_width := 412.0
 	_country_action_bar.visible = not (_right_panel != null \
@@ -2074,7 +2515,7 @@ func _layout_country_action_bar() -> void:
 	_country_action_bar.offset_top = -CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET
 	_country_action_bar.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 	var window_width := get_window().size.x if get_window() != null else int(viewport_width)
-	_country_action_bar.set_compact(window_width < 720)
+	_country_action_bar.set_compact(window_width < 720 or TouchUI.is_short_viewport())
 	_layout_research_toast()
 
 
@@ -2210,6 +2651,35 @@ func _layout_map_overlay_toolbar() -> void:
 	_map_overlay_toolbar.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 
 
+var _panel_diag_printed: bool = false
+var _panel_right_limit: float = 0.0
+
+
+## 当前是否触摸档（手机/平板）。桌面返回 false，所有触摸专用版面改动都是 no-op。
+func touch_layout_enabled() -> bool:
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null or not settings.has_method("ui_scaling"):
+		return false
+	var scaling = settings.call("ui_scaling")
+	return scaling != null and bool(scaling.call("is_touch_profile"))
+
+
+## 递归打印子控件 rect（只在 panel-diag 触发一次）。
+func _dump_panel_children(node: Node, depth: int) -> void:
+	if depth > 5:
+		return
+	for child in node.get_children():
+		var control := child as Control
+		if control == null:
+			continue
+		var right_edge := control.global_position.x + control.size.x
+		print("[panel-diag/%d] %s(%s) pos=%s size=%s min=%s right_edge=%.1f%s" % [
+			depth, String(control.name), control.get_class(), str(control.global_position),
+			str(control.size), str(control.get_combined_minimum_size()), right_edge,
+			"  <-- OVERFLOW" if right_edge > _panel_right_limit + 0.5 else ""])
+		_dump_panel_children(control, depth + 1)
+
+
 func _layout_right_panel() -> void:
 	if _right_panel == null:
 		return
@@ -2223,6 +2693,22 @@ func _layout_right_panel() -> void:
 	var compact := bool(layout.get("compact", false))
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
+	# [panel-fit 2026-11-02] 触摸档把页签抬到 44dp 之后，面板内容的最小宽度会超过
+	# RIGHT_PANEL_WIDTH（真机 2670x1200@520dpi 实测：右侧详情面板的页签行被挤出屏幕，
+	# 关闭按钮直接看不见）。这里让面板按"内容最小宽度"兜底，并限制在视口 55% 以内，
+	# 保证永远贴右且完整可见。
+	var content_min_width := 0.0
+	var min_size := _right_panel.get_combined_minimum_size()
+	if min_size != null:
+		content_min_width = float(min_size.x)
+	if content_min_width > panel_width:
+		panel_width = minf(content_min_width, maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH))
+	# [panel-width-touch 2026-11-02] 触摸档的页签/KPI 行比桌面宽（页签 44dp 起），
+	# 460 装不下：真机 2670x1200@520dpi 上右侧面板的"市场"页签与"就业率"读数会被
+	# 屏幕右缘切掉。这里在触摸档给面板加宽 72 设计像素（视口 2053 宽，完全放得下）。
+	if touch_layout_enabled():
+		panel_width = maxf(panel_width, RIGHT_PANEL_WIDTH + 72.0)
+		panel_width = minf(panel_width, maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH + 72.0))
 	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
 	_right_panel.offset_left = -panel_width - UITokens.ARCHIVE_EDGE_INSET
 	var top_bar_height := _top_bar.size.y if _top_bar != null and _top_bar.size.y > 0.0 \
@@ -2232,7 +2718,28 @@ func _layout_right_panel() -> void:
 	_right_panel.offset_bottom = -UITokens.ARCHIVE_EDGE_INSET
 	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_right_panel.grow_vertical = Control.GROW_DIRECTION_END
-	_right_panel.custom_minimum_size.x = panel_width if detail_open else RIGHT_PANEL_WIDTH
+	_right_panel.custom_minimum_size.x = panel_width
+	# [panel-diag 2026-11-02] 真机上右侧面板内容被屏幕右缘切掉。这一行把
+	# 视口/根节点/父层/面板的坐标系一次性打出来，直接判断是"锚点算错"还是
+	# "父层尺寸是物理像素而面板是逻辑像素"。
+	if detail_open and not _panel_diag_printed:
+		_panel_diag_printed = true
+		var root := get_tree().root
+		var ui_root := get_node_or_null("UIRoot") as Control
+		var panel_layer := _right_panel.get_parent() as Control
+		print("[panel-diag] viewport=%s root=%s ui_root=%s layer=%s panel_pos=%s panel_size=%s panel_min=%s panel_width=%.1f inset=%.1f"
+			% [
+				str(get_viewport().get_visible_rect().size),
+				str(root.size if root != null else Vector2.ZERO),
+				str(ui_root.size if ui_root != null else Vector2.ZERO),
+				str(panel_layer.size if panel_layer != null else Vector2.ZERO),
+				str(_right_panel.global_position), str(_right_panel.size),
+				str(_right_panel.get_combined_minimum_size()), panel_width,
+				UITokens.ARCHIVE_EDGE_INSET])
+		# 面板自身尺寸是对的（右缘 = viewport - inset），所以溢出的必然是某个子控件。
+		# 把两层子节点的 rect 打出来，直接定位谁比面板宽。
+		_panel_right_limit = _right_panel.global_position.x + _right_panel.size.x
+		_dump_panel_children(_right_panel, 0)
 	# 关键一步：UIAnimation.fade_slide_in/out 会把"第一次调用时的 control.position"
 	# 永久缓存成 rest position。如果不在这里主动刷新，等玩家第一次点开地块面板时，
 	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
@@ -2255,7 +2762,7 @@ static func inspector_layout_for_width(viewport_width: float,
 			"detail_width": family_width,
 			"map_width": maxf(available_width - panel_width, 0.0),
 		}
-	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT
+	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT or TouchUI.is_short_viewport()
 	var panel_width := RIGHT_PANEL_WIDTH
 	if detail_open:
 		if compact:
@@ -2343,4 +2850,56 @@ func is_annual_report_open() -> bool:
 
 func annual_other_modal_open() -> bool:
 	return is_era_reward_modal_open() or is_family_founding_modal_open() \
+		or is_narrative_event_modal_open() \
 		or (_pause_menu != null and _pause_menu.visible)
+
+
+func show_narrative_event_offer(offer: Dictionary) -> void:
+	_ensure_narrative_ui()
+	if _country_panel != null and _country_panel.is_panel_open():
+		close_country_panel()
+	if _colonization_panel != null and _colonization_panel.visible:
+		_colonization_panel.close_panel()
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("present_offer"):
+		_narrative_event_dialog.present_offer(offer)
+
+
+func show_narrative_event_outcome(resolution: Dictionary) -> void:
+	_ensure_narrative_ui()
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("show_outcome"):
+		_narrative_event_dialog.show_outcome(resolution)
+
+
+func show_narrative_event_error(message: String) -> void:
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("show_error"):
+		_narrative_event_dialog.show_error(message)
+
+
+func set_narrative_event_illustration(tex: Texture2D) -> void:
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("set_illustration_texture"):
+		_narrative_event_dialog.set_illustration_texture(tex)
+
+
+func close_narrative_event_offer() -> void:
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("close_offer"):
+		_narrative_event_dialog.close_offer()
+
+
+func is_narrative_event_modal_open() -> bool:
+	return _narrative_event_dialog != null and _narrative_event_dialog.has_method("is_offer_open") \
+		and bool(_narrative_event_dialog.is_offer_open())
+
+
+func show_narrative_chronicle(records: Array) -> void:
+	_ensure_narrative_ui()
+	if _narrative_chronicle_panel != null and _narrative_chronicle_panel.has_method("open_panel"):
+		_narrative_chronicle_panel.open_panel(records)
+
+
+func close_narrative_chronicle() -> void:
+	if _narrative_chronicle_panel != null and _narrative_chronicle_panel.has_method("close_panel"):
+		_narrative_chronicle_panel.close_panel()
+
+
+func is_narrative_chronicle_open() -> bool:
+	return _narrative_chronicle_panel != null and _narrative_chronicle_panel.visible

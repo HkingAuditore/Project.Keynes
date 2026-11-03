@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=112 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=118 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -711,9 +711,9 @@ terms = Array[Resource]([SubResource("TermFamilyBirthCut")])
 
 [sub_resource type="Resource" id="TermFamilyHedonismConsumption"]
 script = ExtResource("4_term")
-stat_key = &"economy.city.need.luxury.consumption_factor"
+stat_key = &"economy.city.consumption_factor"
 operation = 2
-value = 1.08
+value = 1.06
 
 [sub_resource type="Resource" id="TermFamilyHedonismOutput"]
 script = ExtResource("4_term")
@@ -725,7 +725,7 @@ value = 0.97
 script = ExtResource("3_definition")
 key = &"family.city.hedonism"
 display_name = "享乐主义"
-description = "提高本城奢侈消费并略降产出。"
+description = "提高本城消费并略降产出。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyHedonismConsumption"), SubResource("TermFamilyHedonismOutput")])
@@ -744,6 +744,21 @@ description = "提高本城玉米产出系数。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyCornOutput")])
+
+[sub_resource type="Resource" id="TermFamilyFishOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.good.fish.output_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefFamilyFishOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.good.fish.output"
+display_name = "鱼类产出加成"
+description = "提高本城鱼类产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyFishOutput")])
 
 [sub_resource type="Resource" id="TermFamilyStapleConsumptionCut"]
 script = ExtResource("4_term")
@@ -764,7 +779,7 @@ terms = Array[Resource]([SubResource("TermFamilyStapleConsumptionCut")])
 script = ExtResource("4_term")
 stat_key = &"economy.city.resource.regen_factor"
 operation = 2
-value = 0.9
+value = 0.9625
 
 [sub_resource type="Resource" id="DefFamilyResourceRegenCut"]
 script = ExtResource("3_definition")
@@ -806,7 +821,37 @@ domain = 1
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyCountryTradeCapacity")])
 
+[sub_resource type="Resource" id="TermFamilyHeatBirth"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.birth_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyHeatBirth"]
+script = ExtResource("3_definition")
+key = &"family.city.heat_birth_boost"
+display_name = "燥热生育加成"
+description = "炎热天气下提高本城人口出生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHeatBirth")])
+
+[sub_resource type="Resource" id="TermFamilyChainOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyChainOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.chain_output_boost"
+display_name = "协作产出加成"
+description = "提高本城总产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyChainOutput")])
+
 [resource]
 script = ExtResource("1_catalog")
 stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefIdeologyCollective"), SubResource("DefIdeologyExchange"), SubResource("DefIdeologyScholar"), SubResource("DefIdeologyCivic"), SubResource("DefIdeologyGranaries"), SubResource("DefIdeologyCharter"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefIdeologyCollective"), SubResource("DefIdeologyExchange"), SubResource("DefIdeologyScholar"), SubResource("DefIdeologyCivic"), SubResource("DefIdeologyGranaries"), SubResource("DefIdeologyCharter"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyFishOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity"), SubResource("DefFamilyHeatBirth"), SubResource("DefFamilyChainOutput")])

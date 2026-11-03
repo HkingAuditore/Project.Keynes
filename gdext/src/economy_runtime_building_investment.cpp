@@ -3194,6 +3194,21 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // type with neither installed nor pending capacity is a legitimate
             // greenfield candidate even when no signal has touched its goods.
             const bool greenfield = existing == nullptr && pending_count <= 0;
+            // Military v1: state-owned types are built and demolished only by
+            // the state commands. Private capital never reviews them, including
+            // the employment-catchup and recovery lanes.
+            if (type_id >= 0 && type_id < static_cast<int32_t>(
+                    _building_types.size()) &&
+                _building_types[type_id].kind == 3) {
+                ++_investment_sparse_skipped_types;
+                if (capture_investment_diagnostics) {
+                    _investment_diagnostics.push_back({});
+                    _investment_diagnostics.back().type_id = type_id;
+                    _investment_diagnostics.back().rejection_reason =
+                        INVESTMENT_REJECTION_STATE_OWNED;
+                }
+                continue;
+            }
             // A zero growth share is an explicit ordinary-investment off
             // switch. Catch-up remains a separate lane and may still evaluate
             // candidates when unemployment policy asks it to do so.

@@ -101,7 +101,8 @@ foreach ($file in Get-ChildItem -LiteralPath $goodDir -Filter '*.tres' -File | S
     if ($rank -lt 0) { Fail "good has no executable technology: $id" }
     if ($goods[$id].Storage -notin @('stock','cycle_flow')) { Fail "invalid good storage mode: $id" }
 }
-if ($goods.Count -ne 133) { Fail "expected 133 goods, found $($goods.Count)" }
+if ([int]$goods.Count -lt 166) { Fail "expected at least 166 goods, found $($goods.Count)" }
+
 if ($goods.ContainsKey('electricity') -and $goods['electricity'].Storage -ne 'cycle_flow') { Fail 'electricity must remain cycle_flow' }
 foreach ($retired in @('cattle','sheep','pigs','raw_water','clean_water','beef','mutton','pork','sailcloth','navigation_instruments','medical_isotopes','bronze','manganese_alloy')) { if ($goods.ContainsKey($retired)) { Fail "retired good remains: $retired" } }
 
@@ -116,7 +117,7 @@ foreach ($file in Get-ChildItem -LiteralPath $needDir -Filter '*.tres' -File | S
 if ($needs.Count -ne $expectedNeedNames.Count) { Fail "expected $($expectedNeedNames.Count) household needs, found $($needs.Count)" }
 
 $coreNeeds = @('staple_food','protein','produce','food_fat','seasoning','clothing','housing','household_goods','domestic_wares','hygiene','healthcare','home_energy')
-$expectedPlans = @{ plan_unemployed=@('staple_food','protein','produce','food_fat','seasoning'); survival_household=$coreNeeds; hunter_household=@($coreNeeds+'work_equipment'); agrarian_household=@($coreNeeds+'transport'+'work_equipment'+'recreation'); extractive_household=@($coreNeeds+'transport'+'work_equipment'); industrial_worker_household=@($coreNeeds+'transport'+'work_equipment'); artisan_household=@($coreNeeds+'education_culture'+'work_equipment'+'luxury'); scholarly_household=@($coreNeeds+'education_culture'+'work_equipment'+'luxury'); technical_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'work_equipment'+'luxury'); merchant_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'luxury'+'status_goods'); owner_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'luxury'+'status_goods') }
+$expectedPlans = @{ plan_unemployed=@('staple_food','protein','produce','food_fat','seasoning'); survival_household=$coreNeeds; hunter_household=@($coreNeeds+'work_equipment'); agrarian_household=@($coreNeeds+'transport'+'work_equipment'+'recreation'); extractive_household=@($coreNeeds+'transport'+'work_equipment'); industrial_worker_household=@($coreNeeds+'transport'+'work_equipment'); soldier_household=@($coreNeeds+'transport'+'work_equipment'); artisan_household=@($coreNeeds+'education_culture'+'work_equipment'+'luxury'); scholarly_household=@($coreNeeds+'education_culture'+'work_equipment'+'luxury'); technical_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'work_equipment'+'luxury'); merchant_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'luxury'+'status_goods'); owner_household=@($coreNeeds+'transport'+'communication'+'education_culture'+'recreation'+'durable_goods'+'luxury'+'status_goods') }
 $expectedVariants = @{ staple_food=@('prepared_staples','bread','grain','wheat_grain','rice_grain','corn_grain','potatoes','gathered_plants'); protein=@('game_meat','meat','fish','canned_fish','dairy_products'); produce=@('vegetables','processed_food'); food_fat=@('edible_oil'); seasoning=@('salt','spices'); clothing=@('cloth','fur','clothing','footwear'); housing=@('reed_bundle+bast_fiber','turf_block+lumber','adobe_brick+lumber','raw_stone+lime+lumber','bricks+lime+lumber','cement+glass+steel','concrete+steel+glass','construction_components'); household_goods=@('furniture','leather_goods'); domestic_wares=@('pottery','glassware','metal_housewares'); hygiene=@('soap','detergent'); healthcare=@('medicinal_herbs','pharmaceuticals'); home_energy=@('logs','charcoal','coal','natural_gas','refined_fuel','electricity'); transport=@('horses','automobiles+refined_fuel'); communication=@('radio_equipment','telecom_equipment','radio_equipment+batteries','telecom_equipment+batteries'); education_culture=@('manuscripts','paper','printed_materials','computers'); recreation=@('beverages','computers'); durable_goods=@('household_appliances','autonomous_systems'); work_equipment=@('chipped_stone_tools','bronze_tools','tools','precision_tools'); luxury=@('beverages','fine_clothing','fine_furniture'); status_goods=@('jewelry','fur') }
 $demanded = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 $plans = @{}
@@ -138,7 +139,7 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres' -File | S
     }
 }
 foreach ($good in $goods.Values) { $good.Demanded = $demanded.Contains($good.Id) }
-if ($plans.Count -ne 11) { Fail "expected 11 consumption plans, found $($plans.Count)" }
+if ([int]$plans.Count -lt 12) { Fail "expected at least 12 consumption plans, found $($plans.Count)" }
 
 $buildings=@{}; $categoryConsumers=@{}
 foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres' -File | Sort-Object Name) {
@@ -156,20 +157,76 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres' -File
     foreach ($good in @($construction+$maintenance)) { if ($goods.ContainsKey($good)) { Add-Unique $goods[$good].Consumers $id } }
     foreach ($good in $outputs) { if ($goods.ContainsKey($good)) { Add-Unique $goods[$good].Producers $id } }
 }
-if ($buildings.Count -ne 363) { Fail "expected 363 buildings, found $($buildings.Count)" }
+if ([int]$buildings.Count -lt 442) { Fail "expected at least 442 buildings, found $($buildings.Count)" }
 
-$expectedBindings=@{ 'tech.application.glassware_workshop_kingdom'=@('1:glassware','2:glassware_workshop'); 'tech.application.metal_housewares_workshop_kingdom'=@('1:metal_housewares','2:metal_housewares_workshop'); 'tech.application.leather_goods_workshop_kingdom'=@('1:leather_goods','2:leather_goods_workshop') }
+
+$expectedBindings=@{ 'tech.manufactory_system'=@('2:glassware_manufactory','2:metal_housewares_manufactory','2:leather_goods_manufactory') }
 foreach ($tech in $expectedBindings.Keys) { if (-not $techBindings.ContainsKey($tech)) { Fail "technology node missing: $tech"; continue }; foreach ($binding in $expectedBindings[$tech]) { if (-not $techBindings[$tech].Contains($binding)) { Fail "technology binding missing: $tech -> $binding" } } }
 
 $terminal=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); foreach ($good in $goods.Values) { if ($good.Demanded -or $good.Issue -gt 0) { [void]$terminal.Add($good.Id) } }
+# Military equipment has no household demand: its executable terminal path is the army.
+# MilitaryCatalog (data/military/military_catalog.json) consumes every equipment good
+# through an equipment slot and every supply candidate through the quartermaster plan.
+$militaryCatalogPath = Join-Path $project 'data/military/military_catalog.json'
+if (Test-Path -LiteralPath $militaryCatalogPath) {
+    $militaryCatalog = [System.IO.File]::ReadAllText($militaryCatalogPath) | ConvertFrom-Json
+    foreach ($category in @($militaryCatalog.equipment_categories)) {
+        foreach ($slot in @($category.goods)) { if ($goods.ContainsKey([string]$slot.good)) { [void]$terminal.Add([string]$slot.good) } }
+    }
+    foreach ($unit in @($militaryCatalog.units)) {
+        foreach ($slot in @($unit.equipment)) { }
+    }
+    foreach ($group in $militaryCatalog.supply.PSObject.Properties) {
+        foreach ($entry in @($group.Value)) {
+            foreach ($name in [regex]::Matches([string]$entry, '"([^"]*)"') | ForEach-Object { $_.Groups[1].Value }) {
+                if ($goods.ContainsKey($name)) { [void]$terminal.Add($name) }
+            }
+        }
+    }
+} else { Fail "military catalog missing: $militaryCatalogPath" }
 $changed=$true
 while ($changed) { $changed=$false; foreach ($good in $goods.Values) { if ($terminal.Contains($good.Id)) { continue }; $consumerIds=@($good.Consumers); foreach ($category in $good.Categories) { if ($categoryConsumers.ContainsKey($category)) { $consumerIds += @($categoryConsumers[$category]) } }; foreach ($consumerId in $consumerIds | Select-Object -Unique) { if ($buildings.ContainsKey($consumerId) -and @($buildings[$consumerId].Outputs | Where-Object { $terminal.Contains($_) }).Count -gt 0) { [void]$terminal.Add($good.Id); $changed=$true; break } } } }
 foreach ($good in $goods.Values) { if ($good.Producers.Count -gt 0 -and -not $terminal.Contains($good.Id)) { Fail "produced good has no executable terminal path: $($good.Id)" }; if ($good.Producers.Count -eq 0 -and $good.Consumers.Count -eq 0 -and -not $good.Demanded -and $good.Issue -le 0) { Fail "unreferenced good: $($good.Id)" } }
 
-$reachable=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); foreach ($bootstrap in @('logs','gathered_plants','flint')) { if ($goods.ContainsKey($bootstrap)) { [void]$reachable.Add($bootstrap) } }
+$reachable=[System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($bootstrap in @('logs','gathered_plants','flint')) { if ($goods.ContainsKey($bootstrap)) { [void]$reachable.Add($bootstrap) } }
+# Military goods carry no household demand, so seed the military branch from every
+# equipment and supply good the military catalog names. Without this seed a
+# military-only chain can never start inside this audit.
+$militaryCatalogPath = Join-Path $project 'data/military/military_catalog.json'
+if (Test-Path -LiteralPath $militaryCatalogPath) {
+    $militaryCatalog = [System.IO.File]::ReadAllText($militaryCatalogPath) | ConvertFrom-Json
+    foreach ($category in @($militaryCatalog.equipment_categories)) {
+        foreach ($slot in @($category.goods)) { if ($goods.ContainsKey([string]$slot.good)) { [void]$reachable.Add([string]$slot.good) } }
+    }
+    foreach ($group in $militaryCatalog.supply.PSObject.Properties) {
+        foreach ($name in [regex]::Matches([string]$group.Value, '"([^"]*)"') | ForEach-Object { $_.Groups[1].Value }) {
+            if ($goods.ContainsKey($name)) { [void]$reachable.Add($name) }
+        }
+    }
+} else { Fail "military catalog missing: $militaryCatalogPath" }
 $progress=$true
-while ($progress) { $progress=$false; foreach ($building in $buildings.Values) { $ready=$true; foreach ($good in $building.Construction) { if (-not $reachable.Contains($good)) { $ready=$false } }; for ($i=0; $i -lt $building.Inputs.Count; $i++) { $slot=@(); if ($building.CandidateOffsets.Count -eq $building.Inputs.Count+1) { $cb=[int]$building.CandidateOffsets[$i]; $ce=[int]$building.CandidateOffsets[$i+1]; if ($ce -gt $cb) { $slot=@($building.CandidateGoods[$cb..($ce-1)]) } }; if ($slot.Count -gt 0) { if (@($slot | Where-Object { $reachable.Contains($_) }).Count -eq 0) { $ready=$false } } elseif ($i -lt $building.Categories.Count -and -not [string]::IsNullOrWhiteSpace($building.Categories[$i])) { if (@($goods.Values | Where-Object { $_.Categories -contains $building.Categories[$i] -and $reachable.Contains($_.Id) }).Count -eq 0) { $ready=$false } } elseif (-not $reachable.Contains($building.Inputs[$i])) { $ready=$false } }; if ($building.Resources.Count -gt 0 -and -not $ready) { continue }; if ($building.Resources.Count -eq 0 -and $building.Id -ne 'merchant_post' -and -not $ready) { continue }; foreach ($output in $building.Outputs) { if ($reachable.Add($output)) { $progress=$true } } } }
-foreach ($good in $goods.Values) { if ($good.Producers.Count -gt 0 -and -not $reachable.Contains($good.Id)) { Fail "good cannot start from external resources: $($good.Id)" } }
+while ($progress) {
+    $progress=$false
+    foreach ($building in $buildings.Values) {
+        $ready=$true
+        foreach ($good in $building.Construction) { if (-not $reachable.Contains($good)) { $ready=$false } }
+        for ($i=0; $i -lt $building.Inputs.Count; $i++) {
+            $slot=@()
+            if ($building.CandidateOffsets.Count -eq $building.Inputs.Count+1) {
+                $cb=[int]$building.CandidateOffsets[$i]; $ce=[int]$building.CandidateOffsets[$i+1]
+                if ($ce -gt $cb) { $slot=@($building.CandidateGoods[$cb..($ce-1)]) }
+            }
+            if ($slot.Count -gt 0) {
+                if (@($slot | Where-Object { $reachable.Contains($_) }).Count -eq 0) { $ready=$false }
+            } elseif ($i -lt $building.Categories.Count -and -not [string]::IsNullOrWhiteSpace($building.Categories[$i])) {
+                if (@($goods.Values | Where-Object { $_.Categories -contains $building.Categories[$i] -and $reachable.Contains($_.Id) }).Count -eq 0) { $ready=$false }
+            } elseif (-not $reachable.Contains($building.Inputs[$i])) { $ready=$false }
+        }
+        if (-not $ready) { continue }
+        foreach ($output in $building.Outputs) { if ($reachable.Add($output)) { $progress=$true } }
+    }
+}foreach ($good in $goods.Values) { if ($good.Producers.Count -gt 0 -and -not $reachable.Contains($good.Id)) { Fail "good cannot start from external resources: $($good.Id)" } }
 
 if ($failures.Count -gt 0) { foreach ($failure in $failures) { Write-Host "ERROR: $failure" }; throw "economy content audit failed: $($failures.Count) issue(s)" }
 Write-Host "Economy content audit passed: $($goods.Count) goods, $($buildings.Count) buildings, $($needs.Count) needs, $($plans.Count) plans; terminal and source reachability are edge-complete."

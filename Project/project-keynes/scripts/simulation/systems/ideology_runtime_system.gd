@@ -4,6 +4,8 @@ class_name IdeologyRuntimeSystem
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 var facade = null
 var world_clock: WorldClock = null
+## 未完成 tick 的日志配额（只打前 8 次，避免刷屏）。
+var _stall_logs: int = 0
 
 func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	id = &"ideology_runtime"
@@ -31,6 +33,11 @@ func tick(ctx) -> Dictionary:
 	if facade.world_ext().has_method("get_runtime_thread_report"):
 		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
 		if bool(report.get("ideology_worker_authoritative", false)):
+			# [barrier-latch 2026-11-01] 一旦某天 tick 返回未完成把 ideology_day_barrier
+			# 置真，之后即使权威切给 worker（本分支直接返回 done），也没有任何人把它
+			# 清掉 —— 日历会永久停在当天（安卓 day 1 复现：barrier=ideology_day_barrier）。
+			if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
+				world_clock.request_simulation_backpressure(&"ideology_day_barrier", false)
 			return {
 				"done": true,
 				"work_done": 0,
@@ -43,6 +50,14 @@ func tick(ctx) -> Dictionary:
 	if facade.has_method("drain_receipts"):
 		facade.drain_receipts()
 	var done := bool(result.get("done", true))
+	if not done and _stall_logs < 8:
+		# 日历被 ideology_day_barrier 钉住时，这行直接说明"这一天的意识形态跑到哪了"。
+		_stall_logs += 1
+		print("[ideology] not done day=%d stage=%s progress=%.3f cursor=%d..%d path=%s active=%d pending=%d" % [
+			int(ctx.day_index) if ctx != null else -1, String(result.get("stage", "?")),
+			float(result.get("progress_ratio", 0.0)), int(result.get("cursor_start", -1)),
+			int(result.get("cursor_end", -1)), String(result.get("path", "?")),
+			int(result.get("active_visits", -1)), int(result.get("pending_transition_visits", -1))])
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"ideology_day_barrier", not done)
 	return {"done": done, "work_done": int(result.get("commands_applied", 0)) + int(result.get("active_visits", 0)) + int(result.get("pending_transition_visits", 0)),

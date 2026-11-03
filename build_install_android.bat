@@ -91,6 +91,21 @@ if errorlevel 1 (
     goto fail
 )
 
+rem --- [audio-guard 2026-11-01] Android must be able to play music ----------
+rem Android plays the portable vorbis in assets/audio/native/** through
+rem native_audio_backend, so the FMOD .bank files must stay excluded. Somebody
+rem once removed assets/audio/banks/* from the Android preset as "redundant"
+rem and nearly shipped a silent build. Abort instead of shipping one again.
+python "%~dp0toolserify_audio_packaging.py" --presets-skip --apk "%APK_PATH%" >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    echo.
+    echo [ERROR] audio packaging guard FAILED for "%APK_PATH%"
+    echo Expected: 4 era tracks + 3 transitions + 0 .bank + 31 native .ogg.import
+    echo See log: "%LOG_FILE%"
+    goto fail
+)
+echo [audio-guard] Android audio packaging OK ^(4 era + 3 transitions, 0 .bank^)
+
 if not exist "%APK_PATH%" (
     echo.
     echo [ERROR] Godot finished, but APK was not created:

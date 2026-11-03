@@ -6,7 +6,9 @@ signal technology_activated(index: int)
 signal portal_requested(index: int)
 
 const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const VIEW_PADDING := 34.0
+const DRAG_THRESHOLD := 8.0
 const NAME_FONT_SIZE := 20
 const NAME_FONT_MIN_SIZE := 17
 const NARROW_CARD_WIDTH := 150.0
@@ -35,6 +37,12 @@ static func presents_state(state: int) -> bool:
 	return state >= PRESENTED_MIN_STATE
 
 
+## Era milestones are internal era tokens now (granted by era advancement),
+## never player-facing research nodes.
+static func is_retired_definition(definition: Dictionary) -> bool:
+	return bool(definition.get("is_milestone", false))
+
+
 var _accents: Array[Color] = []
 var _definitions: Array = []
 var _eras: Array = []
@@ -51,6 +59,7 @@ var _states := PackedInt32Array()
 var _progress := PackedInt64Array()
 var _visible_nodes := PackedByteArray()
 var _known_nodes := PackedByteArray()
+var _retired_nodes := PackedByteArray()
 var _selected := -1
 var _hovered := -1
 var _hovered_portal := -1
@@ -60,6 +69,9 @@ var _domain_id := ""
 var _focus_era := 0
 var _offset := Vector2.ZERO
 var _panning := false
+var _press_active := false
+var _press_pos := Vector2.ZERO
+var _press_dragged := false
 var _card_styles: Dictionary = {}
 var _name_font: Font = UITokens.font_with_weight(640)
 var _visibility_signature := 0
@@ -97,7 +109,7 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 		_id_to_index[String((definitions[index] as Dictionary).get("id", ""))] = index
 	# Topology is enough for fog and focus geometry; full bezier bake waits until
 	# layout_report() so opening the available-research desk stays cheap.
-	_layout = LayoutScript.build_topology(definitions, visual_edges)
+	_layout = LayoutScript.build_topology(definitions, visual_edges, true)
 	_layout_baked = false
 	_soft_edges = LayoutScript.index_soft_edges(visual_edges,
 		_layout.get("index_by_id", _id_to_index))
@@ -105,6 +117,10 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 	_children = _layout.get("children", [])
 	_visible_nodes.resize(definitions.size())
 	_known_nodes.resize(definitions.size())
+	_retired_nodes.resize(definitions.size())
+	for index in range(definitions.size()):
+		_retired_nodes[index] = 1 if is_retired_definition(
+			definitions[index] as Dictionary) else 0
 	if not definitions.is_empty():
 		_domain_id = String((definitions[0] as Dictionary).get("domain_id", ""))
 
@@ -112,7 +128,7 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 func ensure_full_layout() -> void:
 	if _layout_baked or _definitions.is_empty():
 		return
-	_layout = LayoutScript.build(_definitions, _eras, _domains, _visual_edges)
+	_layout = LayoutScript.build(_definitions, _eras, _domains, _visual_edges, true)
 	_layout_baked = bool(_layout.get("ok", false))
 	_parents = _layout.get("parents", [])
 	_children = _layout.get("children", [])
@@ -258,6 +274,11 @@ func _progress_dirty_for_draw(old_progress: PackedInt64Array,
 func _recompute_visibility() -> int:
 	var signature := 17
 	for index in range(_definitions.size()):
+		if _retired_nodes[index] != 0:
+			_known_nodes[index] = 0
+			_visible_nodes[index] = 0
+			signature = int((signature * 31) & 0x7fffffff)
+			continue
 		var presented := presents_state(_state_of(index))
 		_known_nodes[index] = 1 if presented else 0
 		var reachable := presented
@@ -358,6 +379,10 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
+		if _press_active and not _panning \
+				and motion.position.distance_to(_press_pos) >= DRAG_THRESHOLD:
+			_panning = true
+			_press_dragged = true
 		if _panning:
 			_offset += motion.relative
 			_clamp_offset()
@@ -375,7 +400,13 @@ func _handle_button(event: InputEventMouseButton) -> void:
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	if not event.pressed:
+		_press_active = false
 		_panning = false
+		_press_dragged = false
+		if TouchUI.is_touch() and (_hovered >= 0 or _hovered_portal >= 0):
+			_hovered = -1
+			_hovered_portal = -1
+			queue_redraw()
 		return
 	var portal := _portal_at(event.position)
 	if portal >= 0:
@@ -383,8 +414,11 @@ func _handle_button(event: InputEventMouseButton) -> void:
 		accept_event()
 		return
 	var hit := _node_at(event.position)
+	_press_active = true
+	_press_pos = event.position
+	_press_dragged = false
+	_panning = hit < 0
 	if hit < 0:
-		_panning = true
 		accept_event()
 		return
 	if event.double_click and _is_known(hit):
@@ -414,8 +448,6 @@ func _tooltip_for(index: int) -> String:
 	if index < 0:
 		return ""
 	var definition: Dictionary = _definitions[index]
-	if bool(definition.get("is_milestone", false)) and not _is_known(index):
-		return "时代里程碑\n完成本时代候选后开启下一时代"
 	if not _is_known(index):
 		return "未知科技\n可研究后才会显示名称与效果"
 	return "%s · %s" % [String(definition.get("display_name", "")),
@@ -458,10 +490,11 @@ func _portal_rect(portal: Dictionary, cursor: int = -1) -> Rect2:
 func _portal_at(position: Vector2) -> int:
 	var content := position - _offset
 	var portals: Array = _focus_layout.get("portals", [])
+	var pad := 8.0 if TouchUI.is_touch() else 4.0
 	for cursor in range(portals.size() - 1, -1, -1):
 		if not _portal_relevant(portals[cursor] as Dictionary):
 			continue
-		if _portal_rect(portals[cursor], cursor).has_point(content):
+		if _portal_rect(portals[cursor], cursor).grow(pad).has_point(content):
 			return cursor
 	return -1
 
@@ -493,9 +526,12 @@ func _notification(what: int) -> void:
 			return
 		var key := Vector2i(int(size.x), int(size.y))
 		if key != _canvas_key and size.x >= 1.0 and size.y >= 1.0:
-			_rebuild_focus()
-		else:
+			_rebuild_focus(not _panning and not _press_active)
+		elif not _panning and not _press_active:
 			_center_content()
+			queue_redraw()
+		else:
+			_clamp_offset()
 			queue_redraw()
 	elif what == NOTIFICATION_MOUSE_EXIT:
 		_hovered = -1
@@ -520,7 +556,6 @@ func _draw() -> void:
 			_draw_portal(cursor)
 	for node_value in _focus_layout.get("nodes", []) as Array:
 		_draw_node(node_value as Dictionary)
-	_draw_milestone_progress()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -678,35 +713,6 @@ func _draw_dashed_polyline(points: PackedVector2Array, colour: Color, width: flo
 			drawing = not drawing
 
 
-func _draw_milestone_progress() -> void:
-	for node_value in _focus_layout.get("nodes", []) as Array:
-		var node: Dictionary = node_value
-		if not bool(node.get("is_milestone", false)):
-			continue
-		var index := int(node.index)
-		if index < 0 or index >= _definitions.size():
-			continue
-		var definition: Dictionary = _definitions[index]
-		var candidates: PackedStringArray = definition.get(
-			"milestone_candidate_ids", PackedStringArray())
-		var completed := 0
-		for id in candidates:
-			var candidate_index := int(_id_to_index.get(String(id), -1))
-			if candidate_index >= 0 and _state_of(candidate_index) >= 5:
-				completed += 1
-		var required := maxi(1, int(definition.get("milestone_required_count", 5)))
-		var node_rect: Rect2 = node.rect
-		var rect := Rect2(node_rect.position + Vector2(12.0, node_rect.size.y - 9.0),
-			Vector2(node_rect.size.x - 24.0, 4.0))
-		draw_rect(rect, Color(UITokens.ARCHIVE_INK, 0.18), true)
-		draw_rect(Rect2(rect.position, Vector2(rect.size.x * clampf(
-			float(completed) / float(required), 0.0, 1.0), rect.size.y)),
-			Color(UITokens.ARCHIVE_BRASS, 0.90 if bool(node.get("is_focus_era", false)) \
-				else 0.52), true)
-		draw_rect(rect, UITokens.ARCHIVE_BRASS if bool(node.get("is_focus_era", false)) \
-			else UITokens.ARCHIVE_RULE, false, 1.0)
-
-
 func _draw_portal(cursor: int) -> void:
 	var portals: Array = _focus_layout.get("portals", [])
 	var portal: Dictionary = portals[cursor]
@@ -727,28 +733,19 @@ func _draw_node(node: Dictionary) -> void:
 	var index := int(node.index)
 	var rect: Rect2 = node.rect
 	var definition: Dictionary = _definitions[index]
+	# Retired era milestones never reach the focus layout; guard anyway so a
+	# stale layout cannot draw an internal era token as a research card.
+	if is_retired_definition(definition):
+		return
 	var state := _state_of(index)
 	var known := _is_known(index)
 	var domain := int(node.domain)
-	var is_milestone := bool(node.get("is_milestone", false)) \
-		or bool(definition.get("is_milestone", false))
 	var is_application := _is_application_definition(definition)
-	var accent := UITokens.ARCHIVE_BRASS if is_milestone else _accent_for(domain)
+	var accent := _accent_for(domain)
 	var emphasis := _emphasis_for(index)
 	var text_colour := _node_text_colour(emphasis)
 	var muted_text_colour := _node_text_colour(emphasis, true)
-	_draw_card_plate(rect, domain, state, known, emphasis, is_milestone)
-	if is_milestone and not known:
-		_draw_glyph(&"technology.milestone", rect.position + Vector2(16.0, 28.0), 14,
-			text_colour if emphasis == 2 else Color(accent.r, accent.g, accent.b, 0.92))
-		draw_string(_name_font, rect.position + Vector2(40.0, 28.0), "时代里程碑",
-			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 52.0, NAME_FONT_SIZE,
-			text_colour)
-		var era_name := _era_name(int(node.get("era_index", 0)))
-		draw_string(get_theme_default_font(), rect.position + Vector2(40.0, 49.0),
-			era_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 52.0, 12,
-			muted_text_colour)
-		return
+	_draw_card_plate(rect, domain, state, known, emphasis, false)
 	if not known:
 		if not Art.draw_icon(self, Art.state_seal(state, false),
 				rect.position + Vector2(22.0, rect.size.y * 0.5), SEAL_DIAMETER,
@@ -761,43 +758,36 @@ func _draw_node(node: Dictionary) -> void:
 		return
 	# Narrow lanes already carry the domain glyph in their header; dropping it on
 	# the card keeps four-character names readable instead of ellipsized.
-	var narrow := rect.size.x < NARROW_CARD_WIDTH and not is_milestone and not is_application
+	var narrow := rect.size.x < NARROW_CARD_WIDTH and not is_application
 	var text_x := 14.0 if narrow else 40.0
 	if not narrow:
-		var emblem: Texture2D = null if is_milestone or is_application \
+		var emblem: Texture2D = null if is_application \
 			else Art.domain_emblem(String(definition.get("domain_id", "")))
 		if not Art.draw_icon(self, emblem, rect.position + Vector2(22.0, 30.0),
 				EMBLEM_DIAMETER, Color(1.0, 1.0, 1.0, 0.62 if emphasis == 0 else 1.0)):
-			_draw_glyph(&"technology.milestone" if is_milestone \
-				else (&"economy.building" if is_application \
-				else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", "")))),
-				rect.position + Vector2(14.0, 28.0 if is_milestone else 36.0), 13,
+			_draw_glyph(&"economy.building" if is_application \
+				else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", ""))),
+				rect.position + Vector2(14.0, 36.0), 13,
 				text_colour if emphasis == 2 else accent)
 	var label := String(definition.get("display_name", ""))
 	# Leave the right edge to the state glyph drawn at size.x - 24.
-	var label_width := rect.size.x - text_x - (22.0 if is_milestone or is_application else 30.0)
+	var label_width := rect.size.x - text_x - (22.0 if is_application else 30.0)
 	var label_font_size := _fitted_name_size(label, label_width)
-	draw_string(_name_font, rect.position + Vector2(text_x, 28.0 if is_milestone else 35.0),
+	draw_string(_name_font, rect.position + Vector2(text_x, 35.0),
 		_ellipsize(label, label_width, label_font_size), HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 		label_font_size, text_colour)
-	if is_milestone:
-		draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 49.0),
-			"时代里程碑", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, 12,
-			muted_text_colour)
+	if is_application:
+		draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 54.0),
+			"已启用" if state >= 5 else "应用条件未齐",
+			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 50.0, 11, muted_text_colour)
 	else:
-		if is_application:
-			draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 54.0),
-				"已启用" if state >= 5 else "应用条件未齐",
-				HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 50.0, 11, muted_text_colour)
-		else:
-			if not Art.draw_icon(self, Art.state_seal(state),
-					rect.position + Vector2(rect.size.x - 18.0, 30.0), SEAL_DIAMETER,
-					Color(1.0, 1.0, 1.0, 0.6 if emphasis == 0 else 1.0)):
-				_draw_glyph(IconCatalog.technology_state_semantic(state),
-					rect.position + Vector2(rect.size.x - 24.0, 35.0), 12,
-					text_colour if emphasis == 2 else _state_colour(state))
-			_draw_progress(index, rect, accent, emphasis == 0)
-
+		if not Art.draw_icon(self, Art.state_seal(state),
+				rect.position + Vector2(rect.size.x - 18.0, 30.0), SEAL_DIAMETER,
+				Color(1.0, 1.0, 1.0, 0.6 if emphasis == 0 else 1.0)):
+			_draw_glyph(IconCatalog.technology_state_semantic(state),
+				rect.position + Vector2(rect.size.x - 24.0, 35.0), 12,
+				text_colour if emphasis == 2 else _state_colour(state))
+		_draw_progress(index, rect, accent, emphasis == 0)
 
 # Bitmap card plate with a thin domain-colour tab; StyleBoxFlat remains the
 # fallback when the textures are unavailable (tests, stripped exports).

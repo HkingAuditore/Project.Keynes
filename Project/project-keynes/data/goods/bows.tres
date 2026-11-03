@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bows"
+display_name = "弓箭"
+semantic_tags = PackedStringArray()
+category_id = &"missile_arms"
+substitution_category_ids = PackedStringArray("missile_arms")
+technology_tags = PackedStringArray("tech.composite_tools", "tech.military.legion_logistics", "tech.military.standing_army")
+production_quality_level = 1
+default_price = 15000
+reference_max_price = 750000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 39322

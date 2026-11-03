@@ -1,6 +1,8 @@
 extends Control
 class_name AnnualProgressRail
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+
 ## 右侧章节刻度轨。
 ##
 ## 旧版是一列 166px 宽、10 项 14px 的按钮，选中项只有 3px 红线——看起来像草稿目录。
@@ -67,16 +69,19 @@ func _draw() -> void:
 	var span: float = _tick_bottom - _tick_top
 	draw_line(Vector2(line_x, _tick_top), Vector2(line_x, _tick_bottom), _ink(0.38 if _on_desk else 0.30), 2.4, true)
 	var font := UITokens.annual_font("label")
+	var touch := TouchUI.is_touch()
+	var slot_h := span / float(maxi(1, count - 1))
 	for i in count:
 		var y: float = _tick_top + span * float(i) / float(count - 1)
 		var active: bool = i == _current
-		var hovered: bool = i == _hover
+		var hovered: bool = (i == _hover) and not touch
+		var show_label: bool = active or hovered or (touch and slot_h >= 20.0)
 		var length: float = 18.0 if active else (13.0 if hovered else 8.0)
 		var color: Color = _accent(0.95) if active else _ink(0.42 if not hovered else 0.72)
 		draw_line(Vector2(line_x, y), Vector2(line_x + length, y), color, 3.2 if active else 1.7, true)
-		if active or hovered:
+		if show_label:
 			var text := "%02d  %s" % [i + 1, _titles[i]]
-			var alpha: float = 1.0 if active else 0.7
+			var alpha: float = 1.0 if active else (0.7 if hovered else 0.56)
 			draw_string(font, Vector2(line_x + length + 8.0, y + 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13,
 				_accent(alpha) if active else _soft(alpha))
 
@@ -98,7 +103,7 @@ func _notification(what: int) -> void:
 
 
 func _process(_delta: float) -> void:
-	if not visible or _titles.size() < 2:
+	if not visible or _titles.size() < 2 or TouchUI.is_touch():
 		return
 	var local := get_local_mouse_position()
 	var inside: bool = Rect2(Vector2.ZERO, size).has_point(local)

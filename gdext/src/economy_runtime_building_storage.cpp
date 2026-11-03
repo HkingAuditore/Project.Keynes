@@ -578,7 +578,11 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
-        if (_building_types[group.type_id].kind == 2) {
+        // Kind 2 (service) and kind 3 (state) share the no-output shape and are
+        // reset to ACTIVE by the "special" lane below. State lots must never be
+        // left suspended, because the treasury, not a private owner, pays them.
+        const int32_t kind = _building_types[group.type_id].kind;
+        if (kind == 2 || kind == 3) {
             _building_special_reset_group_indices.push_back(group_index);
             continue;
         }

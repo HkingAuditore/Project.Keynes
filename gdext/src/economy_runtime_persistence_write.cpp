@@ -662,7 +662,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
             4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8 +
-            NON_TAX_KIND_COUNT * 8;
+            NON_TAX_PERSISTED_KIND_COUNT * 8;
         const int32_t country_count = _save.fiscal_country_count;
         const int32_t max_records = std::max(
             1, (budget - 16) / record_bytes);
@@ -701,7 +701,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             // Schema 58: the batch's non-tax treasury outflows (research
             // procurement, expedition cargo, construction, canal), one slot per
             // kind in NonTaxOutflow order.
-            for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+            for (int32_t kind = 0; kind < NON_TAX_PERSISTED_KIND_COUNT; ++kind) {
                 const size_t lane = static_cast<size_t>(country) *
                     static_cast<size_t>(NON_TAX_KIND_COUNT) +
                     static_cast<size_t>(kind);
@@ -1466,8 +1466,66 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const bool done = write_family_founding_save_records(budget, payload);
         const uint32_t records =
             static_cast<uint32_t>(_save.family_founding_cursor) - begin;
-        if (done) _save.section = SAVE_SECTION_END;
+        if (done) {
+            _save.section = SAVE_SECTION_ARMY_PERSONNEL;
+            // BEGIN army personnel lane (contract §1.5).
+            _save.army_personnel_cursor = 0;
+            // END army personnel lane
+        }
         return make_save_chunk(SAVE_SECTION_FAMILY_FOUNDING, records, payload);
+    }
+    if (_save.section == SAVE_SECTION_ARMY_PERSONNEL) {
+        // Contract §1.5: one record per lane, in row order.
+        const int32_t begin = _save.army_personnel_cursor;
+        while (_save.army_personnel_cursor < _army_personnel.size()) {
+            const int32_t row = _save.army_personnel_cursor;
+            const size_t r = static_cast<size_t>(row);
+            if (_army_personnel.active[r] != 0) {
+                std::vector<uint8_t> record;
+                append_le<int32_t>(record, row);
+                append_le<uint64_t>(record, _army_personnel.handle[r]);
+                append_le<uint64_t>(record, _army_personnel.country_handle[r]);
+                append_le<int32_t>(record, _army_personnel.cell[r]);
+                append_le<int32_t>(record, _army_personnel.profession_id[r]);
+                append_le<int32_t>(record, _army_personnel.plan_id[r]);
+                append_le<int32_t>(record, _army_personnel.signature_id[r]);
+                append_le<int64_t>(record, _army_personnel.population[r]);
+                append_le<int64_t>(record, _army_personnel.funds[r]);
+                append_le<int64_t>(record, _army_personnel.epoch_income[r]);
+                append_le<int64_t>(record, _army_personnel.epoch_expense[r]);
+                append_le<int32_t>(record, _army_personnel.satisfaction_q16[r]);
+                append_le<int32_t>(record, _army_personnel.survival_q16[r]);
+                append_le<int32_t>(record, _army_personnel.ration_q16[r]);
+                const int32_t family_begin = _army_personnel.family_offset[r];
+                const int32_t family_count = _army_personnel.family_len[r];
+                append_le<uint32_t>(record, static_cast<uint32_t>(
+                    std::max<int32_t>(0, family_count)));
+                for (int32_t k = 0; k < family_count; ++k) {
+                    const size_t at = static_cast<size_t>(family_begin + k);
+                    if (at >= _army_personnel.family_handles.size()) break;
+                    append_le<uint64_t>(record, _army_personnel.family_handles[at]);
+                    append_le<int64_t>(record, _army_personnel.family_people[at]);
+                    append_le<int64_t>(record, _army_personnel.family_funds[at]);
+                }
+                const int32_t person_begin = _army_personnel.person_offset[r];
+                const int32_t person_count = _army_personnel.person_len[r];
+                append_le<uint32_t>(record, static_cast<uint32_t>(
+                    std::max<int32_t>(0, person_count)));
+                for (int32_t k = 0; k < person_count; ++k) {
+                    const size_t at = static_cast<size_t>(person_begin + k);
+                    if (at >= _army_personnel.person_handles.size()) break;
+                    append_le<uint64_t>(record, _army_personnel.person_handles[at]);
+                }
+                if (!payload.empty() && payload.size() + record.size() + 16U >
+                        static_cast<size_t>(budget)) break;
+                payload.insert(payload.end(), record.begin(), record.end());
+            }
+            ++_save.army_personnel_cursor;
+        }
+        if (_save.army_personnel_cursor >= _army_personnel.size())
+            _save.section = SAVE_SECTION_END;
+        return make_save_chunk(SAVE_SECTION_ARMY_PERSONNEL,
+            static_cast<uint32_t>(_save.army_personnel_cursor - begin), payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

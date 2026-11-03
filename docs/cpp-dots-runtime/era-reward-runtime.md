@@ -41,6 +41,16 @@ ACK 后才关闭弹窗，并按打开前状态恢复运行或继续暂停。`pla
 石器时代。跨时代普通科技可按既有研究条件先行掌握，但不推进这个标签；待生效里程碑
 同样不推进标签，避免把科技所属时代误显示为已经晋升。
 
+晋升那一刻有三件事同时发生：徽记礼花与换图标、光带飞向顶栏日历换字、以及一条
+「时代晋升」纸贴（未领奖励时补「时代奖励待领取」）。纸徽 `EraIndicator` 只是 HUD：
+它和日期栏同级挂在 `HUDLayer` 末位，画在顶栏之上，但国家卷宗/检视面板/暂停菜单/奖励弹窗
+的遮罩都能把它盖住——时代不是常驻最高层。晋升光带 `EraTransitionFlight` 与纸笺留在
+`UIRoot/EraOverlayLayer`（`PanelLayer` 之上、`ModalLayer` 之下）：玩家通常正是在科技卷宗里
+看着里程碑完成，光带若被卷宗遮罩压暗，晋升在玩家眼里就完全没有发生。纸贴复用
+`ResearchToast` 的高 z 叠层。回归入口：`tests/ui/era_indicator_ui_test.gd`、
+`tests/ui/ui_scene_structure_test.gd`（层序断言），以及可视化探针
+`tests/probes/_probe_era_panel.gd`。
+
 ## Worker 权威（ACTIVE）路径
 
 - **Offer 打开**：Country worker 提交里程碑激活后，Host 在提交点排队

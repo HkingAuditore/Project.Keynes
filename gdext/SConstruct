@@ -21,7 +21,13 @@ import os
 
 # Inherit the godot-cpp environment (it sets up compiler flags, include paths,
 # and exposes env["platform"], env["suffix"], env["SHLIBSUFFIX"], etc.).
-env = SConscript("godot-cpp/SConstruct")
+#
+# GODOT_CPP_DIR lets one build use a private godot-cpp checkout. The generated
+# bindings in godot-cpp/gen are architecture-specific (32-bit wasm32 vs 64-bit
+# x86_64 builtin sizes), so a concurrent web build regenerating the shared gen/
+# silently produces Windows DLLs that crash Godot at startup. Default unchanged.
+_godot_cpp_dir = os.environ.get("GODOT_CPP_DIR", "godot-cpp")
+env = SConscript(os.path.join(_godot_cpp_dir, "SConstruct"))
 
 # ---------------------------------------------------------------------------
 # Source layout

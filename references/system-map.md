@@ -249,6 +249,7 @@ WorldClock.day_changed(day_idx)
 - `enum_atlas_upload`：terrain/biome/cover/vegetation 视觉 enum atlas 增量上传。
 - `dynamic_visual_atlas_upload`：dynamic/ecology/smooth/ice LUT 或 atlas 刷新。
 - `native_daily_sim`：native daily graph/probe/active 路径，仍受 gate 控制，不能默认视为所有系统的权威。
+- `military_daily`：主线程同步军事日（priority 270，Country/Economy 之后），读 D 日已提交视图、发 D+1 命令；整图 ACTIVE 时由 `WorldRuntimeHost` 在已提交日后补跑。见下方「Military runtime module map」。
 
 调度字段要稳定：
 
@@ -671,6 +672,29 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
 页，概览不显示编辑器。各栏目「此地税率」折叠区提供「重置本栏税收设置」，
 按完整政策快照中的本地覆盖提交既有 clear_default / clear_override 命令；
 仅清除该栏目税种，次日生效，含当前列表未展示项目。页头更多菜单已移除。
+
+# Military runtime module map
+
+主说明：`docs/cpp-dots-runtime/military-runtime.md`；Skill：`.dsh/skills/project-keynes-military-runtime/`。
+
+- C++ 核心（无 Godot 类型）：`gdext/src/military_bridge.h`（冻结 POD）、`military_core.h`、
+  `military_core_internal.h`、`military_core.cpp`（命令/招募/训练/军饷/`step_day`）、`military_core_path.cpp`、
+  `military_core_logistics.cpp`、`military_core_war.cpp`、`military_core_ai.cpp`、`military_core_save.cpp`（PKMI v1）、
+  `military_core_selftest.cpp`。
+- 桥：`world_ext_military.cpp`（digest 采集、意图→Country/Economy D+1 命令、回执、查询、渲染快照、MILB 包装）、
+  `world_ext_economy_military.cpp`（口粮满足率）。
+- GDScript：`scripts/military/military_facade.gd`、`military_catalog_compiler.gd`（`data/military/military_catalog.json`）、
+  `scripts/simulation/systems/military_daily_system.gd`；接线在 `map_generator.gd`（配置/注册/季节地形）、
+  `world_runtime_host.gd`（整图补跑、图层节点）、`game_save_coordinator.gd`（`pkmi`）、`player_controller.gd`（`military.*` 命令）。
+- 视觉：`scripts/rendering/military_render_feed.gd`、`military_map_layers.gd` 与 z5–11 的 `military_*_layer.gd`，
+  `shaders/military_*.gdshader`；全部低于迷雾 z12。`military_army_token_layer.gd` 内含纸片/formation
+  双 backend，`military_formation_catalog.gd` 只做 dense unit→生图动作原型的冷路径映射；
+  `tests/military/military_formation_visual_harness.tscn` 是四动作隔离预览，
+  `military_formation_token_harness.tscn` 直接驱动生产 token backend。
+  UI：`scripts/ui/military_view_model.gd`、`components/military_workspace.gd`。
+- 测试：`tests/military/military_native_binding_test.gd`（`runtime_military_self_test`、`run_military_bench`）、
+  `military_formation_render_feed_test.gd`（旧 DLL/CSR/签名）与 `military_formation_token_layer_test.gd`
+  （1–5 成员、三档 LOD、玩家灰度、迷雾、移动、cue 增量）。
 
 # Adaptive music presentation boundary
 

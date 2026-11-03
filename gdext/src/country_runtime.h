@@ -34,7 +34,8 @@ class NativeSimulationHost;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 13;
+    // v14: inactive (annexed) country records with zero territory.
+    static constexpr int32_t SCHEMA_VERSION = 14;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -91,7 +92,39 @@ public:
         // Unlike TRANSFER_TERRITORY this is compare-and-set: the command is
         // rejected unless the committed/staged owner is still neutral.
         COMMAND_CLAIM_UNOWNED_TERRITORY = 20,
+        // Era advancement: aux = good dense id, value = GOODS_SCALE quantity.
+        // Validated against the staged treasury (earlier commands in the same
+        // batch included); insufficient stock rejects the whole batch. The
+        // consumed quantity feeds a transient per-country sink counter that
+        // Economy treats like research consumption in the goods audit.
+        COMMAND_CONSUME_TREASURY_GOODS = 21,
+        // 22/25/26 are reserved (cell controller lives in Military) and are
+        // rejected at admission as country_command_opcode_unsupported.
+        COMMAND_RESERVED_22 = 22,
+        // Military v1 peace/annex commands. Receiver/annexer handle is packed
+        // as cell = receiver slot, aux = receiver generation, i.e.
+        // ((uint64)aux << 32) | (uint32)cell. Transfers move
+        // min(available balance, value) and conserve totals exactly.
+        COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES = 23,   // value = MONEY_SCALE
+        COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES = 24,  // domain = good, value = GOODS_SCALE
+        COMMAND_RESERVED_25 = 25,
+        COMMAND_RESERVED_26 = 26,
+        // target_handle = victim. Atomic within the batch: all territory,
+        // cash and goods move to the annexer; the victim becomes inactive
+        // with generation + 1, so later commands holding the old handle are
+        // rejected as country_handle_invalid.
+        COMMAND_ANNEX_COUNTRY = 27,
+        COMMAND_OPCODE_MAX = COMMAND_ANNEX_COUNTRY,
     };
+    static constexpr bool command_opcode_reserved(int32_t opcode) {
+        return opcode == COMMAND_RESERVED_22 || opcode == COMMAND_RESERVED_25 ||
+               opcode == COMMAND_RESERVED_26;
+    }
+    static constexpr uint64_t receiver_handle_from_payload(int32_t cell,
+                                                           int32_t aux) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(aux)) << 32U) |
+               static_cast<uint64_t>(static_cast<uint32_t>(cell));
+    }
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
 
@@ -211,6 +244,10 @@ public:
     // Destructive contract probe for a dedicated test runtime. Exercises the
     // typed receipt lifecycle and seal watermark without a second algorithm.
     bool protocol_contract_self_test(std::string &error);
+    // Destructive probe for opcodes 23/24/27 on the synchronous path plus
+    // worker-kernel (country_core_apply_command) parity. Callers run it on a
+    // detached copy; protocol_contract_self_test does so automatically.
+    bool military_opcode_self_test(std::string &error);
     godot::Dictionary submit_observation_batch(
         int64_t handle, const godot::PackedInt32Array &cells,
         const godot::PackedInt32Array &signals, int64_t effective_day);
@@ -396,7 +433,13 @@ public:
     // economy uses the value at an epoch boundary to account for research
     // that runs while the market cycle is frozen.
     int64_t research_consumed_total() const;
+    // Transient era-advancement sink (CONSUME_TREASURY_GOODS). Not saved, not
+    // hashed; included in the goods sink sampled above.
+    int64_t treasury_goods_consumed_total() const;
     int64_t good_for_handle(int64_t country_handle, int32_t good_id) const;
+    // Worker-aware treasury good read (committed Country asset snapshot when
+    // Country is worker authoritative).
+    int64_t good_for_slot(int32_t country_slot, int32_t good_id) const;
 
     // K2-B typed Economy asset bridge.  The current production scheduler uses
     // the compatibility wrappers below, which execute prepare/commit/complete
@@ -651,6 +694,8 @@ private:
         int32_t signal_id = -1;
         int32_t signal_source_kind = 0;
         int32_t evidence_delta = 0;
+        // Actual moved amount for opcode 23/24 (cash / goods quantity).
+        int64_t value = 0;
         std::string stable_id;
         std::string display_name;
     };
@@ -756,6 +801,8 @@ private:
         std::vector<Event> events;
         std::vector<Command> commands;
         std::vector<uint8_t> changed_countries;
+        // (slot, quantity) consumed by CONSUME_TREASURY_GOODS in this batch.
+        std::vector<std::pair<int32_t, int64_t>> treasury_consumed;
     };
 
     bool validate_handle(uint64_t handle, int32_t &slot) const;
@@ -1105,6 +1152,8 @@ private:
     std::vector<int64_t> _country_research_deferred_points;
     std::vector<int64_t> _country_research_purchased_total;
     std::vector<int64_t> _country_research_consumed_total;
+    // Transient (not PKCN, not state hash): era-advancement treasury sink.
+    std::vector<int64_t> _country_treasury_goods_consumed_total;
     std::vector<int64_t> _country_research_progress_total;
     std::vector<int64_t> _country_research_completed_total;
     // K2-A protocol diagnostics. These are not authority state and do not

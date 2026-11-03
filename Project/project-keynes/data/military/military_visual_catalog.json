@@ -1,0 +1,280 @@
+{
+  "schema": 1,
+  "id": "military_formation_prototype_v4_1",
+  "status": "prototype_art",
+  "description": "Read-only v4.1 military map formation visual prototype. Four action rigs, five headcount bands and three LOD levels. This catalog does not alter MilitaryCore or PKMI.",
+  "atlas": {
+    "path": "res://assets/military/formations/prototype/military_formation_prototype_v4.png",
+    "columns": 8,
+    "rows": 16,
+    "prototype_rows": 4,
+    "action_rows": 4,
+    "frame_width": 128,
+    "frame_height": 128,
+    "width": 1024,
+    "height": 2048,
+    "format": "RGBA8",
+    "frame_padding_px": 12,
+    "frame_order": "left-to-right, then top-to-bottom per action",
+    "pivot": [64, 64],
+    "sampling": "linear_no_mipmap",
+    "projection": "strict_vertical_orthographic_overhead",
+    "orientation": "east"
+  },
+  "actions": [
+    {
+      "id": "idle",
+      "name": "待命",
+      "row": 0,
+      "frames": 8,
+      "fps": 8.0,
+      "loop": true,
+      "representative_frame": 0
+    },
+    {
+      "id": "move",
+      "name": "行军",
+      "row": 1,
+      "frames": 8,
+      "fps": 8.0,
+      "loop": true,
+      "representative_frame": 2
+    },
+    {
+      "id": "attack",
+      "name": "攻击",
+      "row": 2,
+      "frames": 8,
+      "fps": 8.0,
+      "loop": false,
+      "representative_frame": 4
+    },
+    {
+      "id": "hit",
+      "name": "受击",
+      "row": 3,
+      "frames": 8,
+      "fps": 8.0,
+      "loop": false,
+      "representative_frame": 3
+    }
+  ],
+  "lod": [
+    {
+      "id": "aggregate",
+      "name": "聚合",
+      "zoom_max": 0.35,
+      "member_count": 1
+    },
+    {
+      "id": "representative",
+      "name": "代表",
+      "zoom_max": 0.7,
+      "member_count": 1
+    },
+    {
+      "id": "formation",
+      "name": "编队",
+      "zoom_max": 999.0,
+      "member_count": 0
+    }
+  ],
+  "headcount_bands": [
+    {
+      "members": 1,
+      "min": 1,
+      "max": 299,
+      "label": "1–299"
+    },
+    {
+      "members": 2,
+      "min": 300,
+      "max": 999,
+      "label": "300–999"
+    },
+    {
+      "members": 3,
+      "min": 1000,
+      "max": 2999,
+      "label": "1,000–2,999"
+    },
+    {
+      "members": 4,
+      "min": 3000,
+      "max": 7999,
+      "label": "3,000–7,999"
+    },
+    {
+      "members": 5,
+      "min": 8000,
+      "max": 2147483647,
+      "label": "8,000+"
+    }
+  ],
+  "prototypes": [
+    {
+      "id": "foot",
+      "name": "步兵",
+      "short_name": "步兵",
+      "caption": "FOOT",
+      "atlas_row": 0,
+      "sprite_scale": 1.0,
+      "accent": "#2f6b61",
+      "composition_units": [
+        {
+          "id": "bronze_spearmen",
+          "short_name": "矛兵",
+          "weight": 50
+        },
+        {
+          "id": "legionaries",
+          "short_name": "军团",
+          "weight": 30
+        },
+        {
+          "id": "militia",
+          "short_name": "民兵",
+          "weight": 20
+        }
+      ],
+      "available_units": [
+        "bronze_spearmen",
+        "iron_infantry",
+        "legionaries",
+        "militia",
+        "tribal_warriors",
+        "musketeers",
+        "line_infantry",
+        "riflemen",
+        "machine_gunners",
+        "mechanized_infantry",
+        "combined_arms",
+        "exo_infantry"
+      ],
+      "layouts": [
+        [[0.0, 0.0]],
+        [[-0.28, 0.10], [0.28, -0.10]],
+        [[-0.44, 0.16], [0.0, 0.0], [0.44, -0.16]],
+        [[-0.56, -0.14], [-0.18, 0.18], [0.18, -0.18], [0.56, 0.14]],
+        [[-0.62, 0.0], [-0.32, 0.22], [0.0, 0.0], [0.32, -0.22], [0.62, 0.0]]
+      ]
+    },
+    {
+      "id": "mounted",
+      "name": "骑乘",
+      "short_name": "骑乘",
+      "caption": "MOUNTED",
+      "atlas_row": 1,
+      "sprite_scale": 1.04,
+      "accent": "#9a4828",
+      "composition_units": [
+        {
+          "id": "cavalry",
+          "short_name": "骑兵",
+          "weight": 55
+        },
+        {
+          "id": "heavy_cavalry",
+          "short_name": "甲骑",
+          "weight": 25
+        },
+        {
+          "id": "dragoons",
+          "short_name": "龙骑",
+          "weight": 20
+        }
+      ],
+      "available_units": [
+        "chariot_troops",
+        "cavalry",
+        "heavy_cavalry",
+        "dragoons"
+      ],
+      "layouts": [
+        [[0.0, 0.0]],
+        [[-0.38, 0.0], [0.38, 0.0]],
+        [[-0.62, 0.0], [0.0, 0.0], [0.62, 0.0]],
+        [[-0.72, -0.24], [-0.36, 0.24], [0.36, -0.24], [0.72, 0.24]],
+        [[-0.92, -0.22], [-0.46, 0.22], [0.0, -0.22], [0.46, 0.22], [0.92, -0.22]]
+      ]
+    },
+    {
+      "id": "artillery",
+      "name": "炮兵",
+      "short_name": "炮兵",
+      "caption": "ARTILLERY",
+      "atlas_row": 2,
+      "sprite_scale": 1.0,
+      "accent": "#a97823",
+      "composition_units": [
+        {
+          "id": "field_artillery",
+          "short_name": "野炮",
+          "weight": 55
+        },
+        {
+          "id": "heavy_artillery",
+          "short_name": "重炮",
+          "weight": 25
+        },
+        {
+          "id": "siege_train",
+          "short_name": "攻城",
+          "weight": 20
+        }
+      ],
+      "available_units": [
+        "siege_train",
+        "field_artillery",
+        "heavy_artillery",
+        "sp_artillery",
+        "missile_artillery"
+      ],
+      "layouts": [
+        [[0.0, 0.0]],
+        [[0.0, -0.30], [0.0, 0.30]],
+        [[-0.34, -0.32], [-0.34, 0.32], [0.38, 0.0]],
+        [[-0.48, -0.30], [-0.48, 0.30], [0.30, -0.30], [0.30, 0.30]],
+        [[-0.66, -0.34], [-0.66, 0.0], [-0.66, 0.34], [0.38, -0.30], [0.38, 0.30]]
+      ]
+    },
+    {
+      "id": "armored",
+      "name": "装甲/机械",
+      "short_name": "装甲",
+      "caption": "ARMORED",
+      "atlas_row": 3,
+      "sprite_scale": 1.05,
+      "accent": "#475157",
+      "composition_units": [
+        {
+          "id": "tank_corps",
+          "short_name": "坦克",
+          "weight": 55
+        },
+        {
+          "id": "early_armor",
+          "short_name": "装甲",
+          "weight": 30
+        },
+        {
+          "id": "drone_swarm",
+          "short_name": "集群",
+          "weight": 15
+        }
+      ],
+      "available_units": [
+        "early_armor",
+        "tank_corps",
+        "drone_swarm"
+      ],
+      "layouts": [
+        [[0.0, 0.0]],
+        [[-0.30, -0.26], [0.30, 0.26]],
+        [[-0.60, -0.32], [0.0, 0.0], [0.60, 0.32]],
+        [[-0.74, -0.34], [-0.28, -0.10], [0.28, 0.10], [0.74, 0.34]],
+        [[-0.86, -0.38], [-0.42, -0.16], [0.0, 0.0], [0.42, 0.16], [0.86, 0.38]]
+      ]
+    }
+  ]
+}

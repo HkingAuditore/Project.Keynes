@@ -1,0 +1,14 @@
+[remap]
+
+importer="godot.fmod.bank"
+type="FmodBank"
+uid="uid://derxmglxy0rel"
+path="res://.godot/imported/UI.bank-0c99f05c25132cfc092c1d17adb01f71.bank"
+
+[deps]
+
+source_file="res://assets/audio/banks/Desktop/UI.bank"
+dest_files=["res://.godot/imported/UI.bank-0c99f05c25132cfc092c1d17adb01f71.bank"]
+
+[params]
+

@@ -128,6 +128,14 @@ uniform sampler2D terrain_micro_tex : filter_linear_mipmap, repeat_enable;
 #endif
 uniform bool has_terrain_micro_tex = false;
 uniform float camera_zoom = 1.0;
+// [pixel-scale-detail 2026-11-03] 一个**物理**像素覆盖多少世界单位（world units / px）。
+// = 1 / (camera_zoom × canvas_scale)。移动端 content_scale_mode=CANVAS_ITEMS 时
+// canvas_scale ≈ 1.375（440dpi、2220×1080 实测），只用 camera_zoom 会把"一个纹素占
+// 几个屏幕像素"低估 37% —— 所有 zoom 门控（dither 淡出、micro 淡入）都会提前触发，
+// 近景细节还没出来就被关掉，正是"手机上放大发糊"的一半原因。
+// shader 内要逐像素精确值时用 fwidth(wp)（自动含 warp 与全部变换）；本 uniform 留给
+// 需要"整帧稳定值"的门控、以及 fwidth 退化（导数为 0）时的兜底。
+uniform float pixel_world_size = 1.0;
 // 表面调试视图：0 关 / 1 主导下标 / 2 次级下标 / 3 边缘距离 / 4 次级权重 / 5 微样本UVα /
 // 6 保留给植被层 LOD 调试（renderer 侧消费）/ 7 材质贴图门禁
 //   （绿=active 蓝=tex未绑定 品红=enabled=false 橙=quality<2或编译裁剪）。

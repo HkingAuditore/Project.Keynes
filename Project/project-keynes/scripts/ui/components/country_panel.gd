@@ -14,10 +14,10 @@ signal locate_cell_requested(cell: int)
 signal target_cells_requested(cells: PackedInt32Array)
 
 const SECTION_DEFINITIONS := [
-	{"id": "technology", "label": "科技研究", "subtitle": "", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
-	{"id": "ideology", "label": "国家理念", "subtitle": "", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
-	{"id": "economy", "label": "国民经济", "subtitle": "", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
-	{"id": "military", "label": "军事", "subtitle": "尚未开放", "icon": &"country.military", "hud_icon": &"hud.country.military", "accent": UITokens.RISK, "available": false},
+	{"id": "technology", "label": "科技", "title": "科技研究", "subtitle": "", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
+	{"id": "ideology", "label": "理念", "title": "国家理念", "subtitle": "", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
+	{"id": "economy", "label": "经济", "title": "国民经济", "subtitle": "", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
+	{"id": "military", "label": "军事", "subtitle": "", "icon": &"country.military", "hud_icon": &"hud.country.military", "accent": UITokens.RISK, "available": true},
 	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": false},
 ]
 const HEADER_HEIGHT := 30.0
@@ -49,6 +49,7 @@ var _economy_dossier: EconomyDossier
 var _economy_workspace: Control
 var _hinges: Control
 var _ideology_workspace: Control
+var _military_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
@@ -78,6 +79,7 @@ func _ready() -> void:
 	_economy_dossier = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyDossier") as EconomyDossier
 	_economy_workspace = _economy_dossier.economy_workspace() if _economy_dossier != null else null
 	_ideology_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/IdeologyWorkspace") as Control
+	_military_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/MilitaryWorkspace") as Control
 	_hinges = get_node_or_null("Center/Dialog/Hinges") as Control
 	var close_button := get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CloseButton") as Button
 	if _center == null or _dialog == null or _section_host == null \
@@ -87,7 +89,8 @@ func _ready() -> void:
 			or _section_subtitle == null or _country_title == null \
 			or _country_subtitle == null or _country_mark == null or _header_panel == null \
 			or _technology_workspace == null or _economy_dossier == null or _economy_workspace == null \
-			or _ideology_workspace == null or _hinges == null or close_button == null:
+			or _ideology_workspace == null or _military_workspace == null or _hinges == null \
+			or close_button == null:
 		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
 		return
 	_country_mark.texture = IconCatalog.texture_for_key(&"family.workspace.crest")
@@ -103,6 +106,14 @@ func _ready() -> void:
 	if _ideology_workspace.has_signal("target_cells_requested"):
 		_ideology_workspace.target_cells_requested.connect(
 			func(cells: PackedInt32Array): target_cells_requested.emit(cells))
+	# 军事面板与家族/理念同一条「作用在这些格」语义：地图侧只认信号，不认面板。
+	if _military_workspace != null:
+		if _military_workspace.has_signal("target_cells_requested"):
+			_military_workspace.connect("target_cells_requested",
+				func(cells: PackedInt32Array): target_cells_requested.emit(cells))
+		if _military_workspace.has_signal("locate_cell_requested"):
+			_military_workspace.connect("locate_cell_requested",
+				func(cell: int): locate_cell_requested.emit(cell))
 	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
 
@@ -147,6 +158,8 @@ func set_player_controller(controller) -> void:
 		_economy_dossier.set_player_controller(controller)
 	if _ideology_workspace != null and _ideology_workspace.has_method("set_player_controller"):
 		_ideology_workspace.set_player_controller(controller)
+	if _military_workspace != null and _military_workspace.has_method("set_player_controller"):
+		_military_workspace.set_player_controller(controller)
 
 
 func current_section() -> String:
@@ -211,6 +224,9 @@ func refresh_summary(model: Dictionary) -> void:
 	if _section_id == "ideology" and _ideology_workspace != null:
 		_ideology_workspace.refresh_model(model)
 		return
+	if _section_id == "military" and _military_workspace != null:
+		_military_workspace.refresh_model(model)
+		return
 	_apply_section()
 
 
@@ -238,7 +254,9 @@ func _apply_section() -> void:
 	var definition := _definition_for(_section_id)
 	var accent: Color = definition.get("accent", UITokens.ACCENT)
 	_section_icon.set_semantic(definition.get("icon", &"country.affairs"), accent)
-	_section_title.text = String(definition.get("label", "国家"))
+	# `label` is the two-character rail caption, so all five tabs share one text
+	# width; `title` keeps the longer page heading. Both fall back to `label`.
+	_section_title.text = String(definition.get("title", definition.get("label", "国家")))
 	_section_subtitle.text = String(definition.get("subtitle", ""))
 	_section_title.add_theme_color_override("font_color", accent.lerp(UITokens.ARCHIVE_INK, 0.55))
 	_country_title.text = String(_model.get("country_name", "国家事务"))
@@ -247,27 +265,41 @@ func _apply_section() -> void:
 	var technology_open := _section_id == "technology"
 	var economy_open := _section_id == "economy"
 	var ideology_open := _section_id == "ideology"
+	var military_open := _section_id == "military"
 	_technology_workspace.visible = technology_open
 	_economy_dossier.visible = economy_open
 	_ideology_workspace.visible = ideology_open
+	_military_workspace.visible = military_open
 	if technology_open:
 		if _technology_workspace.has_method("set_player_controller"):
 			_technology_workspace.set_player_controller(_player_controller)
 		_technology_workspace.set_model(_model)
-		_technology_workspace.set_compact(_compact)
+		# [touch-compact] 子面板类型可能换过（经济卷宗/科技工作区各自有自己的 compact
+		# 实现），这里统一按能力调用，避免 "Nonexistent function 'set_compact'" 刷屏。
+		if _technology_workspace.has_method("set_compact"):
+			_technology_workspace.set_compact(_compact)
 		if _technology_workspace.has_method("reset_navigation"):
 			_technology_workspace.reset_navigation()
 		return
 	if economy_open:
 		_economy_dossier.set_player_controller(_player_controller)
-		_economy_dossier.set_compact(_compact)
+		if _economy_dossier.has_method("set_compact"):
+			_economy_dossier.set_compact(_compact)
 		_economy_dossier.set_model(_model)
 		return
 	if ideology_open:
 		if _ideology_workspace.has_method("set_player_controller"):
 			_ideology_workspace.set_player_controller(_player_controller)
 		_ideology_workspace.set_model(_model)
-		_ideology_workspace.set_compact(_compact)
+		if _ideology_workspace.has_method("set_compact"):
+			_ideology_workspace.set_compact(_compact)
+		return
+	if military_open:
+		if _military_workspace.has_method("set_player_controller"):
+			_military_workspace.set_player_controller(_player_controller)
+		_military_workspace.set_model(_model)
+		if _military_workspace.has_method("set_compact"):
+			_military_workspace.set_compact(_compact)
 		return
 
 
@@ -391,6 +423,8 @@ func _update_responsive_layout() -> void:
 		_economy_dossier.set_compact(_compact)
 	if _ideology_workspace != null:
 		_ideology_workspace.set_compact(_compact)
+	if _military_workspace != null and _military_workspace.has_method("set_compact"):
+		_military_workspace.set_compact(_compact)
 	_place_hinges()
 
 

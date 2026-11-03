@@ -139,6 +139,8 @@ Dictionary NativeEconomyRuntime::evaluate_read_query(const ReadKey &key) {
                                         i32(a[3]), i32(a[4]));
     case ReadQuery::SITUATION_VISUAL_SNAPSHOT:
         return cell_situation_snapshot(key.ints);
+    case ReadQuery::COUNTRY_PROCUREMENT_SNAPSHOT:
+        return country_procurement_snapshot(a[0]);
     case ReadQuery::NONE:
         break;
     }

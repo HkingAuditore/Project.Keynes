@@ -1986,6 +1986,7 @@ bool TriggerRuntime::adopt_pod_state(const RuntimeTriggerSnapshot &snapshot,
     const int64_t acked_effect_id = _acked_effect_id;
     const int64_t next_effect_id = _next_effect_id;
     reset_runtime_state();
+    _branch_bindings.clear();
     _current_day = day_index;
     _next_effect_id = std::max(next_effect_id, snapshot.next_effect_id);
     _acked_effect_id = std::max(acked_effect_id, snapshot.acked_effect_id);

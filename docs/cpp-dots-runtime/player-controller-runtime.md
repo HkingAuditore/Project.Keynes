@@ -106,7 +106,8 @@ SpinBox 的草稿与次日 pending 不得被日常 live patch 回写成继承默
 提交后关闭与时钟控件均受事务锁门控。ACK 移除奖励纸片，保留国家概况并恢复原时钟。
 显示层 `is_era_reward_modal_open()` 保留兼容方法名，仅表示奖励选择流程打开，不代表全屏遮挡。
 
-顶部中央 `EraIndicator` 和日历旁时代名读取玩家国家的已提交研究快照。只有时代里程碑
+顶部中央 `EraIndicator` 和日历旁时代名读取玩家国家的已提交研究快照。纸徽挂在 `HUDLayer`，
+与日期栏同级：打开国家卷宗、检视面板或暂停菜单时会被遮罩盖住。只有时代里程碑
 进入完成状态 5 才晋升；状态 4 等待 ACK 时仍停留旧时代，研究遮罩可显示 100%。
 `GameUIManager` 合并每日提交、国家提交和奖励通知，最多每 100ms 刷新一次，不逐帧轮询。
 新世界与读档建立显示基线；只有会话内真实晋升才播放纸徽庆祝，并让光点飞向日历旁，
@@ -166,3 +167,22 @@ godot --headless --path Project/project-keynes
 Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector／工具栏可见状态。
 回归入口：`colonization_workbench_ui_test.gd`、`colonization_planner_context_test.gd`、
 `player_controller_contract_test.gd`。原生领域权威、资金归属与 PKSV 保存顺序不变。
+
+## 玩家国家叙事事件系统（Narrative Event System）
+
+`PlayerController` 挂载 `NarrativeEventService`、`NarrativeEventFlow` 与异步 `NarrativeAiClient`：
+- 正式命令白名单包含 `narrative.choose`，校验 `(offer_id, offer_generation, option_index)` 后，通过确定性 Q16 权重掷骰决出命中的 `NarrativeOutcome`，并由 `NarrativeEffectAdapter` 在下一安全边界提交 `ModifierFacade`（单城/全国属性修正）或 `EconomyFacade`/`CountryFacade` 守恒命令。
+- 弹窗开启时复用 `AnnualReportFlow` 同款时钟锁（保存原速度与暂停态并同步 Worker 暂停），与 `EraReward`、`FamilyFounding`、`AnnualReport` 互斥排队。
+- 持久化通过 `GameSaveCoordinator` 的可选兼容 provider `pknr`（`PKNarrativeRuntime v1`）与 `player_view.narrative_event_view` 完成存读档恢复。
+
+### 事件文案规范（2026-11）
+
+事件 UI 只放可决策的信息，不写场景描写与修辞：
+
+- 标题 `地点·事件`；题头 `第 N 日 · 地貌 · 气温`，标题已含地名时不再重复。
+- 正文 ≤ 2 短句，只写触发条件与影响。
+- 选项 = 动作（4-12 字）；`tooltip_hint` 留空，界面不显示重复说明。
+- 结果只有标题 + 效果行；`outcome_narrative` 不再渲染，AI 也不再生成。
+- 效果行统一「对象 + 幅度 + 时长」，如 `本地农业产出 +15%，90 日`；`NarrativeEffectSpec.describe()` 是唯一兜底。
+- 只有映射到 `TAG_CN_LABELS` 的标签才显示（最多 3 个），内部 id 不进 UI。
+- `NarrativeAiPromptBuilder` 要求模型按同一规范输出，`NarrativeAiValidator` 对正文做 160 字截断兜底。

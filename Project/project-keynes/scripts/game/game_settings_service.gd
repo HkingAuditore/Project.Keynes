@@ -17,6 +17,12 @@ const DEFAULTS := {
 	"master_volume": 0.8,
 	"master_muted": false,
 	"autosave_enabled": true,
+	"ai_narrative_enabled": false,
+	"ai_llm_base_url": "https://api.deepseek.com/v1/chat/completions",
+	"ai_llm_model": "deepseek-chat",
+	"ai_image_enabled": false,
+	"ai_image_base_url": "https://api.openai.com/v1/images/generations",
+	"ai_image_model": "dall-e-3",
 }
 
 var _settings: Dictionary = DEFAULTS.duplicate(true)
@@ -123,3 +129,13 @@ func _validate() -> void:
 	_settings.master_volume = clampf(float(_settings.master_volume), 0.0, 1.0)
 	_settings.autosave_enabled = bool(_settings.autosave_enabled)
 	_settings.reduce_motion = bool(_settings.reduce_motion)
+	_settings.ai_narrative_enabled = bool(_settings.get("ai_narrative_enabled", DEFAULTS.ai_narrative_enabled))
+	var llm_url := String(_settings.get("ai_llm_base_url", DEFAULTS.ai_llm_base_url)).strip_edges()
+	_settings.ai_llm_base_url = llm_url if not llm_url.is_empty() else String(DEFAULTS.ai_llm_base_url)
+	var llm_model := String(_settings.get("ai_llm_model", DEFAULTS.ai_llm_model)).strip_edges()
+	_settings.ai_llm_model = llm_model if not llm_model.is_empty() else String(DEFAULTS.ai_llm_model)
+	_settings.ai_image_enabled = bool(_settings.get("ai_image_enabled", DEFAULTS.ai_image_enabled))
+	var img_url := String(_settings.get("ai_image_base_url", DEFAULTS.ai_image_base_url)).strip_edges()
+	_settings.ai_image_base_url = img_url if not img_url.is_empty() else String(DEFAULTS.ai_image_base_url)
+	var img_model := String(_settings.get("ai_image_model", DEFAULTS.ai_image_model)).strip_edges()
+	_settings.ai_image_model = img_model if not img_model.is_empty() else String(DEFAULTS.ai_image_model)

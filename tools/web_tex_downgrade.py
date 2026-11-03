@@ -139,7 +139,9 @@ RES_STUB_SCRIPT = "res://tools/web_tex_stub_loading_materials.gd"
 # `assets/icons/era/era_*.png` 是 1254^2 单张整图，`scripts/ui/components/era_indicator.gd`
 # 直接 load()，显示面 UITokens.ERA_BADGE_SIZE = 220 px，缩到 256 完全够。
 MAX_DIM_RULES: list[tuple[str, int]] = [
-    ("assets/icons/era/era_*.png", 256),
+    # [2026-11-01 定案] era 徽章（1254² -> 256²）已由用户认可，作为**永久降采样**留在
+    # 仓库里（源 PNG 就是 256² 了），不再进 web-only 的构建期缩放/还原流程。
+    # 这里留空表 + 机制，将来要临时缩别的"整图"资源时再填。
 ]
 
 # ---- 按倍率缩放（web-only，单张整图）---------------------------------------
@@ -770,43 +772,38 @@ def cmd_begin(args: Any, state: str) -> int:
 
 
 def _restore_files(entries: list[dict[str, Any]]) -> None:
-    """把 .import 还原成 begin 之前的样子。
+    """把 .import **整文件**还原成 begin 之前的样子，并用整文件 sha256 校验。
 
-    两条路：
-      1) 当前内容 == begin 写下的那份（正常情况）：直接复制回备份字节，保证逐字节一致。
-      2) 期间有人改过这个文件（多 agent/多构建并发）：**只把我们改过的那几个键还原**，
-         别人的改动保留，并告警——绝不整文件覆盖掉别人的编辑。
+    2026-11-01 事故（必须记住）：早期版本在"构建窗口内有人改过同一个文件"时会退化成
+    "只把我们改过的键还原、别人的改动保留"。那不是安全策略，而是**制造混合态**：
+    当时 77 个 .import 被并行工具改成了 web 变体，end 只回滚了我们那几个键，于是
+    paper 图集留下 `vram_texture: true` + `path.bptc/astc` —— 下一次构建每个 UI 图集
+    都会多带一份 s3tc/astc 变体（+5~10 MB），桌面导入设置也被悄悄改掉。
+
+    整文件还原才是唯一正确解：begin 前备份的是原件，end 把原件字节写回，
+    "桌面/编辑器字节级不变"就自动成立，不需要读懂别人改了什么。校验用备份的整文件
+    sha256；不一致就抛错中止 —— 宁可不还原，也不要带着脏状态继续导出。
     """
-    exact = surgical = 0
+    restored = 0
     for e in entries:
         backup = e.get("backup", "")
         path = e["import_abspath"]
+        expected = e.get("import_sha_before", "")
         if not backup or not os.path.exists(backup):
-            continue
-        cur = sha256_file(path)
-        if e.get("import_sha_after") and cur == e["import_sha_after"]:
-            shutil.copy2(backup, path)
-            if sha256_file(path) != e.get("import_sha_before", sha256_file(path)):
-                raise RuntimeError(f"还原后 sha256 不匹配: {path}")
-            exact += 1
-            continue
-        # 并发修改：按 key 还原
-        try:
-            imp = ImportFile.load(e["res_path"], path)
-            before_params = e.get("params_before", {})
-            changes = {k: before_params[k] for k in e["params_changed"] if k in before_params}
-            removals = tuple(k for k in e["params_changed"] if k not in before_params)
-            with open(path, "wb") as fh:
-                fh.write(imp.patched(changes, removals))
-            surgical += 1
-        except Exception as exc:  # noqa: BLE001 —— 还原失败必须让人看见
-            raise RuntimeError(f"并发修改后按 key 还原失败({path}): {exc}") from exc
-    if exact or surgical:
-        msg = f"[tex] 已还原 {exact + surgical} 个 .import"
-        if surgical:
-            msg += (f"（其中 {surgical} 个在构建窗口内被别的改动动过，"
-                    f"只还原了我们改的键，其余内容保留）")
-        print(msg)
+            raise RuntimeError(f"缺少 .import 备份，拒绝继续（状态未知）: {path}")
+        if not expected or sha256_file(backup) != expected:
+            raise RuntimeError(f"备份文件自身不完整/已损坏，拒绝写回: {backup}")
+        shutil.copy2(backup, path)
+        got = sha256_file(path)
+        if got != expected:
+            raise RuntimeError(
+                "整文件还原后 sha256 不匹配，已中止（导入缓存可能处于混合态）:\n"
+                f"  file     = {path}\n  expected = {expected}\n  got      = {got}\n"
+                "  处理：python tools\\web_tex_downgrade.py restore，"
+                "或对该文件 git checkout -- 恢复 HEAD 版本")
+        restored += 1
+    if restored:
+        print(f"[tex] 已整文件还原 {restored} 个 .import（每个都用 sha256 校验过）")
 
 
 def _drop_manifest(manifest_path: str) -> None:
@@ -833,9 +830,10 @@ def cmd_end(args: Any, state: str) -> int:
     project = manifest.get("project", args.project)
     godot = manifest.get("godot") or find_godot(args.repo, args.godot)
 
-    # 1) 先还原文件（.res 直接复制回去；.import 直接复制 + sha 校验）
-    _restore_files(entries)
+    # 1) 先还原文件（.import 整文件写回 + 整文件 sha 校验；.res 直接复制回去）
+    #    还原失败必须大声中止：带着混合态的 .import 去导出，等于把脏状态写进包体。
     try:
+        _restore_files(entries)
         _restore_res_stubs(res_entries)
         if res_entries:
             print(f"[tex] 已还原 {len(res_entries)} 个 prebaked .res")

@@ -51,6 +51,38 @@ class NativeSimulationHost;
 class EffectInstanceForwarder;
 class NativeCountryRuntime;
 struct RuntimeClimateStore;
+// Military bridge (world_ext_military.cpp). Forward-declared so this header
+// stays independent of military_core.h / military_bridge.h.
+struct MilitaryCatalog;
+struct MilitaryWorldDigest;
+struct MilitaryIntent;
+struct MilitaryIntentReceipt;
+class MilitaryCore;
+
+// Military -> Country/Economy command rows, built by
+// world_ext_military.cpp and submitted through the existing batches with
+// effective day D+1. Declared here so the private helpers below can name them.
+struct MilitaryCountryCommand {
+    int32_t opcode = 0;
+    int64_t effective_day = 0;
+    int64_t sequence = 0;
+    int64_t target_handle = 0;
+    int32_t cell = -1;
+    int32_t aux = -1;
+    int32_t domain = -1;
+    int64_t value = 0;
+};
+
+struct MilitaryEconomyCommand {
+    int32_t opcode = 0;
+    int64_t effective_day = 0;
+    int64_t sequence = 0;
+    int64_t target_handle = 0;
+    int32_t i32_0 = 0;
+    int32_t i32_1 = 0;
+    int64_t i64_0 = 0;
+    int64_t i64_1 = 0;
+};
 
 // Adds climate_stage_ms / climate_stage_work / climate_stage_names to a report
 // dictionary. Both the thread report and the runtime graph perf snapshot expose
@@ -589,6 +621,70 @@ public:
     godot::Dictionary restore_country_ai_state(const godot::PackedByteArray &bytes);
     bool runtime_country_ai_self_test() const;
 
+    // ---- Military
+    // Main-thread synchronous military runtime (contract §0.1). DCWorldExt owns
+    // a pk::MilitaryCore; the Godot-facing surface is exactly contract §2. All
+    // Country/Economy mutations go through their existing command batch entry
+    // points with effective day D+1, so Military only ever writes its own store.
+    godot::Dictionary configure_military(const godot::Dictionary &catalog, int64_t seed);
+    // Monotonic request id for the Economy POD queue (whole-graph ACTIVE).
+    uint64_t _military_pod_request = 1;
+    godot::Dictionary set_military_terrain(const godot::Dictionary &terrain);
+    godot::Dictionary submit_military_commands(const godot::Array &batch);
+    bool military_should_run(int64_t day) const;
+    godot::Dictionary run_military_daily(const godot::Dictionary &ctx);
+    godot::Dictionary run_military_catch_up(const godot::Dictionary &ctx);
+    godot::Dictionary get_military_report();
+    godot::Dictionary get_military_country_snapshot(int64_t country) const;
+    godot::Array get_military_armies(int64_t country) const;
+    godot::Dictionary get_military_army(int64_t army);
+    godot::Dictionary get_military_cell_snapshot(int64_t cell, int64_t observer) const;
+    godot::Dictionary get_military_render_snapshot(int64_t after_revision);
+    // Render selection: the snapshot returns this army's area / path cells.
+    godot::Dictionary set_military_render_selection(int64_t army);
+    godot::Dictionary get_military_control_snapshot() const;
+    godot::Array poll_military_events(int64_t after_id, int64_t limit = 256) const;
+    godot::Dictionary preview_military_path(int64_t army, int64_t cell);
+    godot::Dictionary evaluate_military_peace(int64_t war_id, int64_t proposer,
+                                              const godot::Array &terms) const;
+    godot::Dictionary get_military_catalog_view() const;
+    godot::PackedByteArray encode_military_state() const;
+    godot::Dictionary restore_military_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary runtime_military_self_test();
+    godot::Dictionary run_military_bench(const godot::Dictionary &cfg);
+    // AI arming: every country whose handle is not in `player_handles` runs the
+    // military agenda. Contract §2 does not list it; the facade probes for it
+    // and falls back to per-slot arming.
+    godot::Dictionary set_military_ai_player_handles(const godot::PackedInt64Array &handles);
+    godot::Dictionary set_military_ai_country(int64_t slot, int64_t ai);
+    // ---- end Military
+
+    // ---- Military cell stats
+    // Feed for the ideology channel A/C cards (design §17.1). Military owns the
+    // facts; these entry points PUBLISH them so the existing tag dictionary and
+    // derived cell layer can read them. They never write another domain:
+    //   * country metrics feed trigger conditions (`country.at_war`),
+    //   * cell tags feed OWN_TERRITORY / TAG_SOURCE_COUNT selectors,
+    //   * the q16 reader reports what a `military.cell.*` stat resolved to.
+    // Implementation: gdext/src/world_ext_military_cell_stats.cpp.
+    //
+    // `rows` = [{handle:int, slot:int, at_war:int, soldier_share_q16:int}].
+    godot::Dictionary set_military_country_metrics(const godot::Array &rows);
+    // `tags` = [{name:String, bit:int, cells:PackedInt32Array, country:int,
+    //            owner:PackedInt32Array}] (owner only for the occupation bits).
+    godot::Dictionary set_military_cell_tags(const godot::Array &tags);
+    godot::Dictionary get_military_cell_tag_cells(int64_t tag) const;
+    godot::Dictionary get_military_country_metrics(int64_t handle) const;
+    godot::Dictionary get_military_cell_stats_report() const;
+    godot::Dictionary clear_military_cell_stats();
+    // `cell_key` is a `military.cell.*` Modifier stat key; `cell` is the
+    // ECONOMY group handle (every per-cell reader passes the cell there).
+    godot::Dictionary get_military_cell_stat_q16(const godot::String &cell_key,
+                                                 int64_t cell,
+                                                 int64_t entity_handle,
+                                                 int64_t base_value_q16) const;
+    // ---- end Military cell stats
+
     // Shared data-oriented Modifier runtime. Four domain stores are isolated;
     // this facade is the only GDScript mutation boundary.
     godot::Dictionary configure_modifiers(const godot::Dictionary &catalog,
@@ -1002,6 +1098,18 @@ public:
     bool economy_should_run(int64_t day_index) const;
     bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
+    // ---- Economy military hooks ----
+    // Military v1 (design §5.1). Publishes the per-cell ration satisfaction
+    // Military owns. Needs listed in a profession's state_supplied_need_ids are
+    // never purchased on the market; their satisfaction is read from here, so a
+    // ration shortfall hits the survival dimension (and thus morale and
+    // starvation deaths). Cells absent from `cells` keep their previous value;
+    // the initial value is 1.0, so a world without soldiers is unchanged.
+    // Returns {ok, written, reason?}.
+    godot::Dictionary set_military_ration_satisfaction(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &q16);
+    // ---- end Economy military hooks ----
     godot::Dictionary get_economy_report() const;
     // Review §3: the effect-input digest buckets each metric by this quantum, so
     // sub-quantum drift stops re-signing every card. 0 keeps the old exact
@@ -1127,6 +1235,16 @@ public:
     godot::Dictionary cancel_family_colonization(
         int64_t country_handle, int64_t expedition_handle,
         int64_t effective_day, int64_t sequence);
+    // Era advancement / national procurement budget (transient economy).
+    godot::Dictionary set_country_procurement_policy(
+        int64_t country_handle, bool enabled, int treasury_share_bp,
+        int research_share_bp, int64_t effective_day, int64_t sequence);
+    godot::Dictionary set_era_procurement_target(
+        int64_t country_handle, bool active,
+        const godot::PackedInt32Array &good_indices,
+        const godot::PackedInt64Array &required_quantities,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary country_procurement_snapshot(int64_t country_handle) const;
     godot::Dictionary get_family_expeditions(
         int64_t country_handle, int offset = 0, int limit = 64) const;
     godot::Dictionary get_family_expedition_snapshot(
@@ -3551,6 +3669,149 @@ private:
     std::vector<std::string>                  _country_ai_personality_ids;
     int64_t                                   _country_ai_sync_day = -1;
     std::shared_ptr<RuntimeCountryPodCatalog> _country_ai_catalog_cache;
+
+    // ---- Military
+    // ---------------- Military-bridge types (see world_ext_military.cpp) ----
+    // One submitted intent plus the identity needed to match its receipt on the
+    // next military day.
+    struct MilitaryPendingIntent {
+        uint16_t kind = 0;
+        // 0 none, 1 country, 2 economy, 3 bridge-deferred treasury cash spend
+        // (SPEND_CASH, applied at the start of military day D+1).
+        uint8_t authority = 0;
+        // 0 dropped, 1 awaiting authority receipt, 2 resolved ok (emit next
+        // fold), 3 resolved failed (emit next fold).
+        uint8_t receipt_pending = 0;
+        int32_t cell = -1;
+        int32_t good = -1;
+        uint64_t source_id = 0;
+        uint64_t country_handle = 0;
+        int64_t count = 0;
+        int64_t amount = 0;
+        int64_t sequence = 0;       // country/economy command sequence
+        int64_t request_id = 0;     // country command request id (0 = none)
+        int64_t effective_day = 0;
+        // Economy matching identity: target cohort handle (0 for market ops)
+        // and, for CHANGE_SIGNATURE, the destination signature id.
+        int64_t target_handle = 0;
+        int32_t target_signature = -1;
+        int32_t opcode = 0;         // economy/country opcode submitted
+        // Economy settlement fold state (not saved): epoch id of the
+        // COMMAND_SETTLED event (0 = not settled yet) and the applied quantity
+        // accumulated from the settlement / structural events.
+        int64_t settled_epoch = 0;
+        int64_t settled_value = 0;
+    };
+    // Economy trace cursor for EVENT_COMMAND_SETTLED / EVENT_STRUCTURAL_CHANGE
+    // folding (world_ext_economy_military.cpp). Transient; on restore it
+    // restarts from the current newest event id.
+    int64_t _military_economy_event_cursor = -1;
+    // Highest Economy epoch sample_day whose EPOCH_COMMITTED event was folded;
+    // a pending Economy row due on or before it that never settled failed.
+    int64_t _military_economy_seen_day = -1;
+    // Selected army handle for the render snapshot (0 = none).
+    int64_t _military_render_selected_army = 0;
+    // Earliest effective day of a command accepted by submit_military_commands
+    // that has not been stepped yet; military_should_run is forced true for it
+    // so queued commands always apply (-1 = none).
+    int64_t _military_forced_run_day = -1;
+    // Country command receipt cursor state (pimpl keeps country_core.h out of
+    // this header).
+    struct MilitaryReceiptCursor {
+        int64_t after_request_id = 0;
+        godot::Array rows;
+    };
+    // Digest scratch reused across days: sized once per terrain change so the
+    // per-day capture does not allocate. Field layout mirrors the dense/sparse
+    // lanes of pk::MilitaryWorldDigest.
+    struct MilitaryDigestScratch {
+        std::vector<int64_t> cell_population;
+        std::vector<int64_t> cell_unemployed;
+        std::vector<int64_t> cell_soldiers;
+        std::vector<uint8_t> cell_has_merchant;
+        std::vector<int32_t> market_cell;
+        std::vector<int32_t> market_good;
+        std::vector<int64_t> market_sellable;
+        std::vector<int64_t> market_price;
+        std::vector<int64_t> country_cash;
+        std::vector<int64_t> country_annual_revenue;
+        std::vector<uint64_t> country_unlock_bits;
+        std::vector<int32_t> country_stat_q16;
+    };
+    // pk::MilitaryCore (military_core.h), lazy-allocated by configure_military
+    // and deleted by the destructor next to _country_ai_runtime.
+    void                                     *_military_runtime        = nullptr;
+    // Next military day the bridge is allowed to step. The daily system and the
+    // whole-graph catch-up both funnel through it so one day is never stepped
+    // (and its D+1 intents never submitted) twice.
+    int64_t                                   _military_last_step_day  = -1;
+    // Bumped whenever a military day changes anything a renderer can observe.
+    int64_t                                   _military_render_revision = 0;
+    int64_t                                   _military_render_control_revision = -1;
+    int64_t                                   _military_render_front_revision = -1;
+    // Monotone Country/Economy command sequences for military intents. Unique
+    // per (day, kind) so both authorities can order them deterministically.
+    int64_t                                   _military_sequence       = 0;
+    // Country command receipts already folded into MilitaryIntentReceipt rows.
+    std::unique_ptr<MilitaryReceiptCursor>    _military_receipts;
+    // Military intent rows awaiting their receipt (effective day D+1).
+    std::vector<MilitaryPendingIntent>        _military_pending_intents;
+    // Scratch reused across days; sized once per terrain.
+    MilitaryDigestScratch                     _military_digest_scratch;
+    // Dense technology id each catalog unlock bit stands for, captured at
+    // configure so the daily digest costs one has_technology() probe per bit.
+    std::vector<int32_t>                      _military_unlock_tech_ids;
+    void capture_military_digest(MilitaryWorldDigest &digest,
+                                 MilitaryDigestScratch &scratch,
+                                 const MilitaryCatalog &catalog,
+                                 bool *economy_ready);
+    // Opens a MilitaryCore country slot for every active Country handle (slot
+    // order). Returns the number of active countries seen.
+    int32_t ensure_military_country_slots();
+    bool submit_military_country_commands(
+        const std::vector<MilitaryCountryCommand> &commands,
+        std::vector<MilitaryPendingIntent> &pending, std::string &error);
+    bool submit_military_economy_commands(
+        const std::vector<MilitaryEconomyCommand> &commands,
+        std::vector<MilitaryPendingIntent> &pending, std::string &error);
+    int64_t runtime_host_last_receipt_cursor() const;
+    void collect_military_receipts(int64_t day, std::vector<MilitaryIntentReceipt> &out);
+    // Folds Economy command settlements (trace events) into receipts for the
+    // authority-2 pending rows (world_ext_economy_military.cpp).
+    void collect_military_economy_receipts(int64_t day,
+                                           std::vector<MilitaryIntentReceipt> &out);
+    // Applies bridge-deferred SPEND_CASH rows (authority 3) due on `day`.
+    void apply_military_deferred_cash(int64_t day);
+    void publish_military_ration_satisfaction(const MilitaryCore &core,
+                                              const MilitaryWorldDigest &digest,
+                                              const std::vector<MilitaryIntent> &intents);
+    void translate_military_intent(const MilitaryIntent &intent, int64_t effective_day,
+                                   const MilitaryWorldDigest &digest,
+                                   std::vector<MilitaryCountryCommand> &country,
+                                   std::vector<MilitaryEconomyCommand> &economy,
+                                   std::vector<MilitaryPendingIntent> &pending,
+                                   int32_t &unsequenced);
+    static MilitaryIntentReceipt military_receipt_from(const MilitaryPendingIntent &row,
+                                                       bool ok, int64_t committed_count,
+                                                       int64_t committed_amount);
+    // ---- Military cell stats
+    // Published per-country metrics (design §17.1 `country.at_war` /
+    // `country.soldier_share_q16`), keyed by country handle and rebuilt from
+    // scratch on every publish. Derived and never saved: after a restore the
+    // caller republishes from the restored Military state, and an absent row
+    // legitimately means "peace, no army".
+    struct MilitaryCountryMetricRow {
+        int32_t slot = -1;
+        int32_t at_war = 0;
+        int32_t soldier_share_q16 = 0;
+    };
+    std::unordered_map<int64_t, MilitaryCountryMetricRow> _military_country_metrics;
+    // Per-cell tag bitset, dense over `terrain().cell_count`, bit order given by
+    // `MilitaryCellTagBit` in world_ext_military_cell_stats.cpp. Rebuilt by
+    // set_military_cell_tags; sized once per terrain.
+    std::vector<uint8_t> _military_cell_tag_bits;
+    // --- end Military cell stats
+    // --- end Military
     bool country_ai_sync_due(int64_t day) const;
     void country_ai_sync_plan(int64_t day);
     void country_ai_sync_finish(int64_t day, bool ok, godot::Dictionary &out);

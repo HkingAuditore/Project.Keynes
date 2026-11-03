@@ -250,6 +250,29 @@ static func build(economy_catalog: Dictionary) -> Dictionary:
 	_append(tags, by_name, _atom("cell.eminent_clan", [_row(
 		"cell.max_branch_prestige_q16", OP_GTE, 32768)]))
 
+	# ── Military tags (design §17.1) ─────────────────────────────────
+	# These six tags have no Economy metric behind them: barracks, fortification,
+	# garrison and cell controllers live in Military's own store, and Economy's
+	# sampler cannot grow a metric id for them (`FAMILY_METRIC_COUNT` is an
+	# Economy-owned constant, so an id past it would validate and then read 0
+	# forever). Military publishes the bit through Economy's `CellTagOverrideSet`
+	# instead (gdext/src/world_ext_military_cell_stats.cpp), which forces it true
+	# or false AFTER predicate evaluation.
+	#
+	# The predicate row below is therefore a placeholder that must be true for
+	# EVERY cell, so the override alone decides membership: `cell.population >= 0`
+	# holds everywhere, and the native table rejects a tag with no rows at all.
+	# Reading it as "the metric means something" would be wrong -- the tag's real
+	# source is `set_military_cell_tags`.
+	#
+	# Appended at the true end for the same reason the X12/X13a/X9a atoms are:
+	# tag ids are 1-based array indices, so inserting earlier silently retargets
+	# every later card.
+	for military_tag in ["cell.barracks", "cell.fortified", "cell.military_industry",
+			"cell.garrisoned", "cell.occupied_by_us", "cell.occupied_by_enemy"]:
+		_append(tags, by_name, _atom(military_tag, [_row(
+			"cell.population", OP_GTE, 0)]))
+
 	# 重名会让同名标签在原生侧只保留先出现的偏移，卡面引用到哪个全凭顺序。
 	# 用一个集合大小对账代替 assert —— assert 在 release 导出里是空的，
 	# 而这份内容是编译期固化的，出错必须当场硬失败。

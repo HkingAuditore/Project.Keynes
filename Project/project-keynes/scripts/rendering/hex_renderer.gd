@@ -652,6 +652,8 @@ var _drain_credit_ms: float = 0.0
 var _drain_last_progress_frame: int = 0
 var _drain_cfg_logged: bool = false
 var _last_detail_budget_report: Dictionary = {}
+## [viewport-budget 2026-11-03] 最近一次视口加权下发回执（近处保留率等），供诊断报告合并。
+var _last_detail_budget_weighted_report: Dictionary = {}
 # 全局实例预算同步状态。21 层分块 MultiMesh 不能在每个 succession chunk 后全量
 # 下发 visible_instance_count；那会把名义 2.5ms 的 drain 放大到几十毫秒。
 # target 由当前总实例数计算，apply_fraction 是本轮渐进下发所用的稳定快照；
@@ -659,6 +661,12 @@ var _last_detail_budget_report: Dictionary = {}
 const DETAIL_BUDGET_FRACTION_EPSILON: float = 0.0025
 var _detail_budget_target_fraction: float = 1.0
 var _detail_budget_applied_fraction: float = -1.0
+## [viewport-budget 2026-11-03] 视口优先分配依赖相机视野：fraction 没变但相机动了
+## （平移/缩放）也要重算，否则玩家放大到某片区域时近处仍是按旧视野分的那份预算。
+var _detail_budget_applied_view_center: Vector2 = Vector2(INF, INF)
+var _detail_budget_applied_view_zoom: float = -1.0
+const DETAIL_BUDGET_VIEW_EPSILON: float = 24.0   # world units
+const DETAIL_BUDGET_ZOOM_EPSILON: float = 0.02   # 相对缩放 2%
 var _detail_budget_apply_fraction: float = 1.0
 var _detail_budget_apply_cursor: int = 0
 var _detail_budget_apply_active: bool = false
@@ -677,6 +685,8 @@ var _world: WorldData = null
 var _visual_tile_horizon_baker = null
 var _visual_tile_horizon_world: WorldData = null
 var _camera_zoom: float = 1.0
+## [pixel-scale-detail 2026-11-03] 一个**物理**像素覆盖的世界单位数。见 pixel_world_size()。
+var _pixel_world_size: float = 1.0
 
 # Phase 1：季节状态（每帧/每天由 WorldClock 推送）
 var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
@@ -779,6 +789,7 @@ var _last_detail_cache_update_ms: float = 0.0
 var _last_detail_assemble_ms: float = 0.0
 var _last_detail_upload_ms: float = 0.0
 var _trade_visual_layer: TradeActivityLayer = null
+var _military_visual_layer: MilitaryArmyTokenLayer = null
 var _building_visual_layer: BuildingVisualLayer = null
 
 
@@ -1698,20 +1709,50 @@ func configure_trade_visuals(layer: TradeActivityLayer) -> void:
 		_sync_trade_daylight()
 
 
-func _sync_trade_daylight() -> void:
-	if not is_instance_valid(_trade_visual_layer):
-		return
-	_trade_visual_layer.set_daylight_parameters({
-		"season_phase": _season_phase, "day_phase": _day_phase,
-		"axial_tilt_rad": deg_to_rad(axial_tilt_deg), "day_night_enabled": day_night_enabled,
+## Military formations are also a read-only map visual. Register them through
+## the renderer so they consume the same daylight/horizon state as terrain and
+## trade convoys instead of maintaining a second lighting authority.
+func configure_military_visuals(layer: MilitaryArmyTokenLayer) -> void:
+	_military_visual_layer = layer
+	if is_instance_valid(layer):
+		layer.set_visual_quality(visual_quality)
+		layer.set_terrain_lighting(_world, _shader_mat)
+		_sync_military_daylight()
+
+
+func _instance_daylight_parameters() -> Dictionary:
+	return {
+		"season_phase": _season_phase,
+		"day_phase": _day_phase,
+		"axial_tilt_rad": deg_to_rad(axial_tilt_deg),
+		"day_night_enabled": day_night_enabled,
 		"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
 		"tod_debug_sun_uv": _tod_debug_sun_uv,
 		"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
-		"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure})
+		"tod_sun_dir": _tod_sun_dir,
+		"tod_exposure": _tod_exposure,
+	}
+
+
+func _sync_trade_daylight() -> void:
+	if not is_instance_valid(_trade_visual_layer):
+		return
+	_trade_visual_layer.set_daylight_parameters(
+		_instance_daylight_parameters())
+
+
+func _sync_military_daylight() -> void:
+	if not is_instance_valid(_military_visual_layer):
+		return
+	_military_visual_layer.set_daylight_parameters(
+		_instance_daylight_parameters())
 
 
 func _sync_detail_and_activity_materials() -> void:
 	_sync_trade_daylight()
+	_sync_military_daylight()
+	if is_instance_valid(_military_visual_layer):
+		_military_visual_layer.set_visual_quality(visual_quality)
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
 		_detail_family_layer.sync_dynamic_materials()
@@ -2508,17 +2549,56 @@ func _begin_detail_budget_apply(fraction: float) -> void:
 	_detail_budget_apply_active = not _detail_layers.is_empty()
 
 
+## [viewport-budget 2026-11-03] 记下"这次预算是按哪个视野分的"。视口加权只看
+## 相机视野内的 chunk，所以视野变了就必须重分，否则近处拿到的还是旧视野那份。
+func _note_detail_budget_applied_view() -> void:
+	_detail_budget_applied_view_center = _camera_world_center
+	_detail_budget_applied_view_zoom = _camera_zoom
+
+
+## 视野是否已经偏离"上次分预算时的视野"超过阈值。首帧（zoom<0）恒 true。
+func _detail_budget_view_moved() -> bool:
+	if _detail_budget_applied_view_zoom < 0.0:
+		return true
+	if absf(_camera_zoom - _detail_budget_applied_view_zoom) \
+			> DETAIL_BUDGET_ZOOM_EPSILON * maxf(_detail_budget_applied_view_zoom, 0.01):
+		return true
+	var d := _camera_world_center - _detail_budget_applied_view_center
+	return absf(d.x) > DETAIL_BUDGET_VIEW_EPSILON or absf(d.y) > DETAIL_BUDGET_VIEW_EPSILON
+
+
+## [viewport-budget 2026-11-03] 单层预算下发。层若实现视口加权（视口内/近处保住
+## 接近 100%、把裁剪压力转到视口外与远处），优先用它；否则退回原来的均匀抽稀。
+## 加权不改变总预算上限，只是把有限的实例预算按"玩家正在看哪里"重新分配。
+## 返回 true 表示这一层确实被下发过（用于沿用原来的分层进度统计）。
+func _apply_detail_budget_to_layer(layer, fraction: float) -> bool:
+	if layer == null or not is_instance_valid(layer):
+		return false
+	if layer.has_method("apply_visible_instance_fraction_weighted"):
+		var weighted = layer.apply_visible_instance_fraction_weighted(
+			fraction, _camera_world_rect, _camera_zoom, _pixel_world_size,
+			detail_scatter_rebuild_log_enabled)
+		if weighted is Dictionary and not (weighted as Dictionary).is_empty():
+			_last_detail_budget_weighted_report = weighted
+		return true
+	if layer.has_method("apply_visible_instance_fraction"):
+		layer.apply_visible_instance_fraction(fraction)
+		return true
+	return false
+
+
 func _drain_detail_budget_apply(force_complete: bool) -> void:
 	if not _detail_budget_apply_active:
 		return
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
 		var family_t0 := Time.get_ticks_usec()
-		_detail_family_layer.apply_visible_instance_fraction(_detail_budget_apply_fraction)
+		_apply_detail_budget_to_layer(_detail_family_layer, _detail_budget_apply_fraction)
 		_detail_budget_last_apply_ms = float(Time.get_ticks_usec() - family_t0) / 1000.0
 		_detail_budget_apply_ms_total += _detail_budget_last_apply_ms
 		_detail_budget_apply_count += 1
 		_detail_budget_applied_fraction = _detail_budget_apply_fraction
+		_note_detail_budget_applied_view()
 		_detail_budget_apply_active = false
 		_detail_budget_apply_cursor = 0
 		return
@@ -2529,17 +2609,15 @@ func _drain_detail_budget_apply(force_complete: bool) -> void:
 	while _detail_budget_apply_cursor < _detail_layers.size() and applied_layers < layer_budget:
 		var layer = _detail_layers[_detail_budget_apply_cursor]
 		_detail_budget_apply_cursor += 1
-		if layer == null or not is_instance_valid(layer) \
-				or not layer.has_method("apply_visible_instance_fraction"):
-			continue
-		layer.apply_visible_instance_fraction(_detail_budget_apply_fraction)
-		applied_layers += 1
+		if _apply_detail_budget_to_layer(layer, _detail_budget_apply_fraction):
+			applied_layers += 1
 	var apply_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
 	_detail_budget_last_apply_ms = apply_ms
 	_detail_budget_apply_ms_total += apply_ms
 	_detail_budget_apply_count += applied_layers
 	if _detail_budget_apply_cursor >= _detail_layers.size():
 		_detail_budget_applied_fraction = _detail_budget_apply_fraction
+		_note_detail_budget_applied_view()
 		_detail_budget_apply_active = false
 		_detail_budget_apply_cursor = 0
 
@@ -2583,13 +2661,14 @@ func _apply_detail_global_budget(force_complete: bool = false, allow_apply: bool
 	if force_complete:
 		_begin_detail_budget_apply(fraction)
 		_drain_detail_budget_apply(true)
-	elif not _detail_budget_apply_active and _detail_budget_fraction_needs_apply(fraction):
+	elif not _detail_budget_apply_active \
+			and (_detail_budget_fraction_needs_apply(fraction) or _detail_budget_view_moved()):
 		_begin_detail_budget_apply(fraction)
 	elif not _detail_budget_apply_active:
 		_detail_budget_apply_skip_count += 1
 	if allow_apply and _detail_budget_apply_active:
 		_drain_detail_budget_apply(false)
-	_last_detail_budget_report = {
+	var report := {
 		"total_instances": total,
 		"budget": budget,
 		"visible_fraction": fraction,
@@ -2605,7 +2684,24 @@ func _apply_detail_global_budget(force_complete: bool = false, allow_apply: bool
 		"budget_total_scan_ms": _detail_budget_last_scan_ms,
 		"budget_total_dirty": _detail_budget_total_dirty,
 		"layer_count": _detail_layers.size(),
+		"weighted": _last_detail_budget_weighted_report.duplicate(true),
 	}
+	# [viewport-budget 2026-11-03] 把层的视口加权回执并进预算报告（viewport_ 前缀）：
+	# 真机上能直接看到"预算削在哪、近处保了多少、有没有触发重新平衡"。
+	for layer in _detail_layers:
+		if layer == null or not is_instance_valid(layer):
+			continue
+		var vp_report: Dictionary = {}
+		if layer.has_method("viewport_budget_report"):
+			vp_report = layer.viewport_budget_report()
+		elif not _last_detail_budget_weighted_report.is_empty():
+			vp_report = _last_detail_budget_weighted_report
+		if vp_report.is_empty():
+			continue
+		for key in vp_report.keys():
+			report["viewport_%s" % str(key)] = vp_report[key]
+		break
+	_last_detail_budget_report = report
 	if detail_scatter_rebuild_log_enabled and PKLog.enabled and budget > 0 and total > budget:
 		print("[detail_scatter/BUDGET_CLAMP] total_inst=%d budget=%d visible_fraction=%.3f layers=%d" % [
 			total,
@@ -3326,15 +3422,70 @@ func set_terrain_materials_enabled(enabled: bool) -> void:
 		_push_world_uniform("terrain_materials_enabled", enabled)
 
 
+## [pixel-scale-detail 2026-11-03] 一个物理像素覆盖的世界单位数（含 content_scale）。
+## 与 shader 里 `fwidth(wp)` 同量纲：1/pixel_world_size = 世界单位在屏幕上的像素数。
+## 移动端 content_scale_mode=CANVAS_ITEMS 时 canvas_scale ≈1.375，只拿 camera_zoom 会
+## 把"纹素占几像素"低估 37%，近景细节门控全部提前关闭。
+func pixel_world_size() -> float:
+	return _pixel_world_size
+
+
+## [pixel-scale-detail 2026-11-03] 验收探针：当前一个 hex / 一个数据 texel 在屏幕上
+## 各占多少**物理**像素。放大到底时用它区分两种"糊"：
+##   - px_per_texel 很大（>10）→ 数据密度不够，要加 texels_per_hex 或分块高精度；
+##   - px_per_texel 正常但画面仍平 → shader 缺屏幕空间高频细节层。
+## 真机上把这条打进日志即可判断，不需要猜。
+func pixel_scale_report() -> Dictionary:
+	var px_per_world := 1.0 / maxf(_pixel_world_size, 0.000001)
+	var texels_per_hex := 0.0
+	var texel_world := 0.0
+	var tile_mode := "none"
+	if _world != null:
+		var tiles = _world.visual_tiles
+		if tiles != null and tiles.layout != null:
+			tile_mode = String(tiles.layout.mode)
+			texels_per_hex = float(tiles.layout.effective_texels_per_hex)
+			texel_world = float(tiles.layout.effective_world_units_per_texel.x)
+		elif _world.hm_size.x > 0 and _world.world_bounds.size.x > 0.0001:
+			tile_mode = "legacy"
+			texel_world = _world.world_bounds.size.x / float(_world.hm_size.x)
+			texels_per_hex = hex_size / maxf(texel_world, 0.000001)
+	return {
+		"tile_mode": tile_mode,
+		"camera_zoom": _camera_zoom,
+		"pixel_world_size": _pixel_world_size,
+		"px_per_world_unit": px_per_world,
+		"hex_px": hex_size * px_per_world,
+		"texels_per_hex": texels_per_hex,
+		"texel_world_size": texel_world,
+		"px_per_texel": texel_world * px_per_world,
+	}
+
+
+func _refresh_pixel_world_size() -> float:
+	# get_global_transform_with_canvas 同时含本节点局部缩放与 Camera2D/content_scale；
+	# 场景里 _world_quad 是单位变换，所以它等于 canvas 缩放。树外的调用（构建期、
+	# 材质预热）拿不到 canvas，退回 camera_zoom，避免把 1.0 写进 uniform。
+	var scale_x := maxf(_camera_zoom, 0.0001)
+	if is_inside_tree():
+		var canvas_scale := get_global_transform_with_canvas().get_scale().x
+		if is_finite(canvas_scale) and canvas_scale > 0.000001:
+			scale_x = canvas_scale
+	_pixel_world_size = clampf(1.0 / scale_x, 0.00001, 1024.0)
+	return _pixel_world_size
+
+
 func set_camera_zoom(value: float) -> void:
 	var next_zoom := clampf(value, 0.01, 16.0)
 	if absf(next_zoom - _camera_zoom) < 0.001:
 		return
 	_camera_zoom = next_zoom
+	_refresh_pixel_world_size()
 	if _resource_visual_layer != null:
 		_resource_visual_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
 	if _shader_mat != null:
 		_push_world_uniform("camera_zoom", _camera_zoom)
+		_push_world_uniform("pixel_world_size", _pixel_world_size)
 	if _building_visual_layer != null:
 		_building_visual_layer.set_camera_zoom(_camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
@@ -3349,6 +3500,10 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 	_camera_world_center = center
 	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
 	_camera_zoom = clampf(zoom_value, 0.01, 16.0)
+	if _shader_mat != null:
+		_push_world_uniform("pixel_world_size", _refresh_pixel_world_size())
+	else:
+		_refresh_pixel_world_size()
 	if _resource_visual_layer != null:
 		_resource_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
 	if _building_visual_layer != null:
@@ -3515,6 +3670,8 @@ func _push_terrain_horizon_uniforms() -> void:
 		_building_visual_layer.set_terrain_lighting(_shader_mat)
 	if is_instance_valid(_trade_visual_layer):
 		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
+	if is_instance_valid(_military_visual_layer):
+		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
 
 
 # [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
@@ -4555,30 +4712,90 @@ func _sync_cell_lut_dims() -> void:
 # 但只要走了 create_from_image 分支（首次创建、尺寸变更、或纹理被置空后重建），
 # world 侧换成新对象而材质仍指着旧的，之后所有日刷内容都写进一张没人采样的纹理，
 # 材质就永远停在旧快照上。稳态下这里是四次引用比较，不相等才写 uniform。
+#
+# [lut-rebind 2026-11-02 真机栈溢出排查] 这条路径**不是**稳态空转：
+# bake_cell_luts() 的收尾（map_baker.gd:5582-5585）对 dyn_lut 做了双缓冲 ——
+#     var dyn_front := world.dyn_lut_tex
+#     world.dyn_lut_tex = _lut_tex_from_data(..., world.dyn_lut_tex_back)
+#     world.dyn_lut_tex_back = dyn_front
+# 而 `world.dyn_lut_tex_back` 在全工程**没有读者**（只有 world_data 的声明和这两处
+# 写入）。于是 world.dyn_lut_tex 的对象**每个游戏日换一次**（A→B→A→B…），本函数
+# 的"漂移才补绑"分支因此每天必命中一次并打印 "dyn_lut rebind" —— 崩溃窗口
+# （进世界 10~60 s）正好是开局头 1~3 个日边界，日志最后一行就是它。
+# 要彻底消掉这条每日重绑，把 map_baker 那两行改回单缓冲即可（本文件无权修改）。
+var _qa_skip_lut_sync: bool = false
+var _qa_skip_lut_checked: bool = false
+## 重入闸（帧戳，不是 bool）：下面每次重绑会在一帧内改 2~4 个 ShaderMaterial 的
+## 纹理参数，并顺带调 _push_fog_uniforms()（天气层 set_fog_mask）与
+## _fog_layer.set_enum_lut_texture()（内部写 visible）。这些 setter 都是"绑一次"
+## 语义；只要其中任何一条（现在或将来，或引擎侧的参数变更通知）再回到本函数，
+## 就构成 set_shader_parameter → setter → set_shader_parameter 的递归 —— 真机
+## VkThread 那个 3 帧循环栈溢出正是这个形状。用帧戳把本函数钉死为**每帧最多
+## 一层**：同帧重入直接丢弃，下一帧的引用比较是幂等的，会自然补上。
+## 用帧戳而不是 bool，是因为脚本运行期错误会中断函数、留下永久置位的 bool，
+## 那会让整条 LUT 同步静默失效；帧戳下一帧自动失效。
+var _lut_sync_frame: int = -1
+var _lut_sync_reentry_count: int = 0
+
+
 func _sync_cell_lut_textures() -> void:
 	if _world == null or _shader_mat == null:
 		return
+	# [qa-skip-lut 2026-11-02] 真机 VkThread 里栈溢出（backtrace 是 3 帧循环），
+	# 排查"是不是每日 LUT 纹理重绑/重传触发的"。pk_debug.cfg 里
+	# `[render] skip_lut_sync=true` 可跳过这条路径做对照，正常玩家没有该文件。
+	if not _qa_skip_lut_checked:
+		_qa_skip_lut_checked = true
+		var qa_cfg := ConfigFile.new()
+		if qa_cfg.load("user://pk_debug.cfg") == OK:
+			_qa_skip_lut_sync = bool(qa_cfg.get_value("render", "skip_lut_sync", false))
+	if _qa_skip_lut_sync:
+		return
+	var frame := Engine.get_process_frames()
+	if _lut_sync_frame == frame:
+		_lut_sync_reentry_count += 1
+		# 只打第一条：真机上每帧一条警告会自己把 logcat 冲爆，反而掩盖现场。
+		if _lut_sync_reentry_count == 1:
+			push_warning("[hex_renderer] _sync_cell_lut_textures re-entered within one "
+				+ "frame; rebind dropped by the re-entrancy guard. A material setter "
+				+ "is calling back into the renderer — that is the shape of the "
+				+ "VkThread stack-overflow crash; report this line if it appears.")
+		return
+	_lut_sync_frame = frame
+	# 收集 → 应用两段式：收集阶段只读，应用阶段才碰材质。这样即使某个 setter
+	# 同步回调进来，它看到的也是"本帧已开始同步"的状态，而不是半更新的材质。
+	var pending: Array[String] = []
 	for lut_name in ["enum_lut", "dyn_lut", "bounce_lut"]:
-		var world_tex: Texture2D = _world.get(lut_name + "_tex")
-		if world_tex == null or _lut_bound.get(lut_name) == world_tex:
+		var pending_tex: Texture2D = _world.get(lut_name + "_tex")
+		if pending_tex == null or _lut_bound.get(lut_name) == pending_tex:
 			continue
-		_lut_bound[lut_name] = world_tex
-		print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
-		_push_world_uniform(lut_name, world_tex)
-		# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
-		# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
-		if _water_mat != null and lut_name != "bounce_lut":
-			_water_mat.set_shader_parameter(lut_name, world_tex)
-		if lut_name == "bounce_lut":
-			_push_world_uniform("gi_bounce_bound", true)
-		elif lut_name == "enum_lut":
-			# 迷雾层与天气层各自缓存了同一张 enum_lut（A 通道 = 知识度），
-			# 它们的 setter 同样是"绑一次"语义，漂移时要一起补。
-			if _fog_layer != null:
-				_fog_layer.set_enum_lut_texture(world_tex)
-			_push_fog_uniforms()
+		pending.append(lut_name)
+	for lut_name in pending:
+		_apply_cell_lut_rebind(lut_name, _world.get(lut_name + "_tex"))
 	# eco_lut 不在主材质；植被层在 set_world_material_inputs / set_map 路径绑定，
 	# 日刷走 ImageTexture.update 保对象稳定，无需在此同步。
+
+
+## 单张 LUT 的重绑（由 _sync_cell_lut_textures 收集后调用）。_lut_bound 先写后推：
+## 万一某条推送抛错，下一帧不会重复打同一行日志（保持不变旧行为）。
+func _apply_cell_lut_rebind(lut_name: String, world_tex: Texture2D) -> void:
+	if world_tex == null or _shader_mat == null:
+		return
+	_lut_bound[lut_name] = world_tex
+	print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
+	_push_world_uniform(lut_name, world_tex)
+	# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
+	# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
+	if _water_mat != null and lut_name != "bounce_lut":
+		_water_mat.set_shader_parameter(lut_name, world_tex)
+	if lut_name == "bounce_lut":
+		_push_world_uniform("gi_bounce_bound", true)
+	elif lut_name == "enum_lut":
+		# 迷雾层与天气层各自缓存了同一张 enum_lut（A 通道 = 知识度），
+		# 它们的 setter 同样是"绑一次"语义，漂移时要一起补。
+		if _fog_layer != null:
+			_fog_layer.set_enum_lut_texture(world_tex)
+		_push_fog_uniforms()
 
 func _wrap_period_x() -> float:
 	if _map == null:
@@ -4862,7 +5079,10 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("terrain_material_roughness_strength", terrain_material_roughness_strength)
 	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
 	sm.set_shader_parameter("has_terrain_micro_tex", TERRAIN_MICRO_TEXTURE != null)
-	sm.set_shader_parameter("camera_zoom", _camera_zoom)
+	# 走统一推送口：水面 pass 是 world_map 的 WATER_ONLY 变体，同样声明了这两项，
+	# 只写 _shader_mat 会让两片 program 的像素尺度门控不同步。
+	_push_world_uniform("camera_zoom", _camera_zoom)
+	_push_world_uniform("pixel_world_size", _refresh_pixel_world_size())
 	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
 	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
 	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。

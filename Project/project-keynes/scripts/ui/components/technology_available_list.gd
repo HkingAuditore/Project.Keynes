@@ -12,10 +12,12 @@ signal enqueue_requested(index: int)
 signal remove_requested(index: int)
 
 const POINT_SCALE := 1000.0
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 const Art := preload("res://scripts/ui/components/technology_tree_art.gd")
 const EffectsLayer := preload("res://scripts/ui/components/technology_effects_layer.gd")
 const TechnologyEffectTextScript := preload(
 	"res://scripts/ui/components/technology_effect_text.gd")
+const DRAG_THRESHOLD := 8.0
 const CARD_HEIGHT := 84.0
 const CARD_GAP := 8.0
 const MIN_CARD_WIDTH := 340.0
@@ -46,6 +48,9 @@ var _layout_width := -1.0
 var _content_height := 0.0
 var _hover_item := -1
 var _hover_part := ""
+var _press_active := false
+var _press_pos := Vector2.ZERO
+var _press_dragged := false
 var _card_style := StyleBoxFlat.new()
 var _button_style := StyleBoxFlat.new()
 var _effects: Control
@@ -59,7 +64,7 @@ func _ready() -> void:
 
 func _init() -> void:
 	super()
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_card_style.set_corner_radius_all(3)
 	_card_style.set_border_width_all(1)
@@ -236,15 +241,18 @@ func _notification(what: int) -> void:
 
 
 func _hit(point: Vector2) -> Array:
+	var pad := 6.0 if TouchUI.is_touch() else 2.0
 	for item_index in range(_items.size()):
 		var rect: Rect2 = (_items[item_index] as Dictionary).rect
 		if not rect.has_point(point):
 			continue
 		var technology := int((_items[item_index] as Dictionary).index)
 		var state := int(_states[technology]) if technology < _states.size() else 0
-		if state in [2, 3] and action_rect(rect).grow(2.0).has_point(point):
+		if state in [2, 3] and action_rect(rect).grow_individual(
+				pad, pad, minf(pad, 4.0), pad).has_point(point):
 			return [item_index, "action"]
-		if tree_rect(rect).grow(2.0).has_point(point):
+		if tree_rect(rect).grow_individual(
+				minf(pad, 4.0), pad, pad, pad).has_point(point):
 			return [item_index, "tree"]
 		return [item_index, "card"]
 	return [-1, ""]
@@ -252,7 +260,10 @@ func _hit(point: Vector2) -> Array:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		var hit := _hit((event as InputEventMouseMotion).position)
+		var motion := event as InputEventMouseMotion
+		if _press_active and motion.position.distance_to(_press_pos) >= DRAG_THRESHOLD:
+			_press_dragged = true
+		var hit := _hit(motion.position)
 		if int(hit[0]) != _hover_item or String(hit[1]) != _hover_part:
 			_hover_item = int(hit[0])
 			_hover_part = String(hit[1])
@@ -264,8 +275,19 @@ func _gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton:
 		return
 	var button := event as InputEventMouseButton
-	if button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+	if button.button_index != MOUSE_BUTTON_LEFT:
 		return
+	if not button.pressed:
+		_press_active = false
+		_press_dragged = false
+		if TouchUI.is_touch() and _hover_item >= 0:
+			_hover_item = -1
+			_hover_part = ""
+			queue_redraw()
+		return
+	_press_active = true
+	_press_pos = button.position
+	_press_dragged = false
 	var hit := _hit(button.position)
 	var item_index := int(hit[0])
 	if item_index < 0:
@@ -286,7 +308,8 @@ func _gui_input(event: InputEvent) -> void:
 			else:
 				select_technology(technology)
 				technology_selected.emit(technology)
-	accept_event()
+	if not TouchUI.is_touch():
+		accept_event()
 
 
 func _tooltip_for(item_index: int, part: String) -> String:
@@ -480,6 +503,7 @@ func _meta_text(technology: int, definition: Dictionary, state: int, fraction: f
 	var cost_scaled := maxf(1.0, float(definition.get("cost_points_scaled",
 		int(definition.get("cost_points", 1)) * POINT_SCALE)))
 	var cost_text := UITokens.format_compact_number_cn(cost_scaled / POINT_SCALE, 1)
+	var summary := TechnologyEffectTextScript.summary_text(definition)
 	match state:
 		3:
 			var position := int(_queue_order.get(technology, -1))
@@ -489,9 +513,12 @@ func _meta_text(technology: int, definition: Dictionary, state: int, fraction: f
 			var parts := PackedStringArray([head, "%d%%" % int(floor(fraction * 100.0))])
 			if not eta.is_empty():
 				parts.append(eta)
+			if not summary.is_empty():
+				parts.append(summary)
 			return " · ".join(parts)
 		4:
-			return "研究完成 · 次日生效"
+			return "研究完成 · 次日生效 · %s" % summary if not summary.is_empty() \
+				else "研究完成 · 次日生效"
 	var era := String(_era_names.get(String(definition.get("era_id", "")),
 		String(definition.get("era_id", ""))))
 	var routes: PackedStringArray = definition.get("route_display_names", PackedStringArray())
@@ -500,6 +527,8 @@ func _meta_text(technology: int, definition: Dictionary, state: int, fraction: f
 		parts.append("已投入 %d%%" % int(floor(fraction * 100.0)))
 	if not routes.is_empty():
 		parts.append(String(routes[0]))
+	if not summary.is_empty():
+		parts.append(summary)
 	return " · ".join(parts)
 
 

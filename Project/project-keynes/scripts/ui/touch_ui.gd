@@ -28,14 +28,21 @@ extends Node
 ## （同 mobile_ui_scaling.gd 的注释），统一 preload。
 
 ## 命中区目标（dp）。Material Design 最小触摸目标 44~48dp。
-const TOUCH_MIN_DP := 44.0
+## [touch-size-rebalance 2026-11-02] 把 44dp 套到**所有**按钮上，在 2670×1200@520dpi
+## 的真机上等于每个按钮 12% 屏高，整个界面被撑成平板 —— 玩家反馈「按钮异常地大」。
+## 命中区不必靠视觉尺寸撑：touch_hit_button.gd 的 _has_point 已经把点击带扩到 44dp。
+## 所以视觉下限回到 34dp，只有主菜单/暂停菜单这类主操作显式传 {"min_dp": 44}。
+const TOUCH_MIN_DP := 34.0
 ## 密集数据区（热力网格方格、政策滑条行）用的次级目标（dp）。
-## 44dp 会把「一屏能读完」的数据网格撑成三屏，36dp 是可用与不臃肿的折中。
-const TOUCH_DENSE_DP := 36.0
+## [touch-size-rebalance 2026-11-02] 28dp：这些行原本只有 30~34 设计像素高，
+## 36dp 会把「一屏 30 行」压成 8 行。
+const TOUCH_DENSE_DP := 28.0
 ## 相邻可点控件之间至少留多少 dp 的空隙，避免「想点 A 点到 B」。
 const TOUCH_GAP_DP := 2.0
 ## 滚动条宽度目标（dp）。原来的纸片滚动条约 6 设计像素（3dp），手指根本捏不住。
-const SCROLLBAR_MIN_DP := 32.0
+## [touch-size-rebalance 2026-11-02] 32dp 在真机上是一条 42px 宽的棕色厚带
+## （玩家反馈「很诡异的滚动条」）。改成 12dp：仍够手指按住，且不再抢视觉。
+const SCROLLBAR_MIN_DP := 12.0
 ## 记在节点上的元数据键：已经挂过 child_entered_tree 监听。
 const META_WATCH := &"pk_touch_watch"
 ## 记在控件上的元数据键：原始 custom_minimum_size（before/after 报告用）。
@@ -94,6 +101,12 @@ static func gap_units(options: Dictionary = {}) -> float:
 static func is_short_viewport(height: float = -1.0) -> bool:
 	if not is_touch():
 		return false
+	# [force-compact-qa 2026-11-02] 桌面模拟手机档时，总缩放上限 2.0 让逻辑高
+	# 压不到手机的 923，于是永远进不了 compact 版面。这个 QA 开关只用于截图核对：
+	#   PK_UI_FORCE_COMPACT=1  ⇒ 一律按"纵向吃紧"处理（等价真机 compact）。
+	# 正式包不设该变量 ⇒ 行为不变。
+	if OS.get_environment("PK_UI_FORCE_COMPACT") == "1":
+		return true
 	var h := height
 	if h < 0.0:
 		var tree := Engine.get_main_loop() as SceneTree
@@ -217,11 +230,18 @@ static func widen_scrollbars(scroll: ScrollContainer, options: Dictionary = {}) 
 	if width <= 0.0:
 		return
 	var v_bar := scroll.get_v_scroll_bar()
-	if v_bar != null and v_bar.custom_minimum_size.x < width:
-		v_bar.custom_minimum_size.x = width
+	if v_bar != null:
+		if v_bar.custom_minimum_size.x < width:
+			v_bar.custom_minimum_size.x = width
+		# [scrollbar-track-off 2026-11-02] 主题给 ScrollBar 铺的纸纹"轨道"会被拉伸成
+		# 一条贯穿面板的浅棕色宽带（真机反馈"很诡异的滚动条"）。触摸档只保留滑块，
+		# 轨道置空；滚动仍然可用（拖动滑块 + 内容区拖动）。
+		v_bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
 	var h_bar := scroll.get_h_scroll_bar()
-	if h_bar != null and h_bar.custom_minimum_size.y < width:
-		h_bar.custom_minimum_size.y = width
+	if h_bar != null:
+		if h_bar.custom_minimum_size.y < width:
+			h_bar.custom_minimum_size.y = width
+		h_bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
 	# 触摸拖动：ScrollContainer 只有在 deadzone 为 0 时才把第一下拖动判成滚动，
 	# 否则会先等「是不是点击」。手指没有 hover，等不起。
 	if scroll.scroll_deadzone > 4.0:

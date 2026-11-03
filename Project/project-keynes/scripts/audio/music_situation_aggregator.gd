@@ -19,6 +19,23 @@ const ECONOMY_EVENT_CONSTRUCTION_COMPLETED := 5
 const ECONOMY_EVENT_TRADE_ARRIVED := 13
 const ECONOMY_EVENT_POPULATION_CHANGED := 16
 
+## Military tension coupling (design §19.2). Military facts live on the gameplay
+## event bus (types 40..47), so music reads them through the same consumer as the
+## social-pressure facts. Values are additive tension impulses that decay at
+## CRISIS_IMPULSE_SECONDS, not levels: a battle spike should pass, a war should
+## linger through its duration.
+const MILITARY_WAR_DECLARED_TENSION := 0.45
+const MILITARY_BATTLE_TENSION := 0.30
+const MILITARY_BATTLE_WIN_TENSION := 0.10
+const MILITARY_CONTROL_CHANGED_TENSION := 0.20
+const MILITARY_ARMY_DESTROYED_TENSION := 0.40
+const MILITARY_ANNEXED_TENSION := 1.0
+const MILITARY_CONVOY_TENSION := 0.15
+const MILITARY_LEVY_TENSION := 0.20
+const MILITARY_WAR_ENDED_RELEASE := 0.35
+## Cap so a long campaign cannot pin tension at 1.0 forever.
+const MILITARY_WAR_TENSION_CAP := 0.35
+
 const SITUATION_STRIDE := 8
 const SITUATION_FOOD := 0
 const SITUATION_INDUSTRY := 1
@@ -48,6 +65,7 @@ var _fog_enabled := false
 var _social_pressure := 0.5
 var _weather_pressure := 0.0
 var _local_pressure := 0.0
+var _military_pressure := 0.0
 var _activity := 0.0
 var _crisis_impulse := 0.0
 var _tension_target := 0.275
@@ -73,6 +91,7 @@ var _diagnostics := {
 	"social_pressure": 0.5,
 	"weather_pressure": 0.0,
 	"local_pressure": 0.0,
+	"military_pressure": 0.0,
 	"near_weight": 0.0,
 	"sampled_cells": 0,
 	"candidate_cells": 0,
@@ -103,6 +122,7 @@ func configure(runtime_host, generator, player_controller) -> void:
 	_social_pressure = 0.5
 	_weather_pressure = 0.0
 	_local_pressure = 0.0
+	_military_pressure = 0.0
 	_activity = 0.0
 	_crisis_impulse = 0.0
 	_tension_target = 0.275
@@ -121,6 +141,7 @@ func configure(runtime_host, generator, player_controller) -> void:
 	_diagnostics["social_pressure"] = _social_pressure
 	_diagnostics["weather_pressure"] = 0.0
 	_diagnostics["local_pressure"] = 0.0
+	_diagnostics["military_pressure"] = 0.0
 	_diagnostics["near_weight"] = 0.0
 	_diagnostics["sampled_cells"] = 0
 	_diagnostics["candidate_cells"] = 0
@@ -227,6 +248,9 @@ func process_audio_update(delta: float) -> Dictionary:
 	var step := maxf(delta, 0.0)
 	_crisis_impulse = maxf(0.0, _crisis_impulse - step / CRISIS_IMPULSE_SECONDS)
 	_activity = maxf(0.0, _activity - step / CRISIS_IMPULSE_SECONDS)
+	# Military pressure is a slow burn: it releases on the tension release curve
+	# so a war does not vanish from the score between battles.
+	_military_pressure = maxf(0.0, _military_pressure - step / TENSION_RELEASE_SECONDS)
 	_recompute_tension_target()
 	if _camera != null and _camera.has_method("current_world_view_rect"):
 		var camera_zoom_ratio := 0.5
@@ -313,11 +337,59 @@ func _consume_gameplay_events() -> void:
 				_crisis_impulse = maxf(_crisis_impulse, 0.75)
 		elif event_type == GameplayEventBus.EVENT_WEATHER_OBSERVED:
 			_crisis_impulse = maxf(_crisis_impulse, 0.35)
+		elif event_type >= GameplayEventBus.MILITARY_EVENT_TYPE_MIN \
+				and event_type <= GameplayEventBus.MILITARY_EVENT_TYPE_MAX:
+			_consume_military_event(event_type, payload_i0, payload_i3, index)
 		elif event_type in [GameplayEventBus.EVENT_ECONOMY_CONSTRUCTION_COMPLETED,
 				GameplayEventBus.EVENT_ECONOMY_TRADE_ARRIVED,
 				GameplayEventBus.EVENT_TECHNOLOGY_ADOPTED,
 				GameplayEventBus.EVENT_TERRAIN_FLIP]:
 			_activity = maxf(_activity, 0.75)
+
+
+## Military facts raise the score's tension (war declared / battle / annihilation)
+## or let it settle (war ended). Everything is table-driven off the event type so
+## there is no per-event dictionary work in the audio update path.
+func _consume_military_event(event_type: int,
+		payload_i0: PackedInt32Array, payload_i3: PackedInt32Array,
+		index: int) -> void:
+	var matches_player := _military_event_matches_player(payload_i0, index)
+	match event_type:
+		GameplayEventBus.EVENT_MILITARY_WAR_DECLARED:
+			_crisis_impulse = maxf(_crisis_impulse,
+				MILITARY_WAR_DECLARED_TENSION if matches_player else 0.15)
+			_military_pressure = minf(MILITARY_WAR_TENSION_CAP,
+				_military_pressure + 0.15)
+		GameplayEventBus.EVENT_MILITARY_WAR_ENDED:
+			_military_pressure = maxf(0.0, _military_pressure - MILITARY_WAR_ENDED_RELEASE)
+			_crisis_impulse = maxf(_crisis_impulse, 0.08)
+		GameplayEventBus.EVENT_MILITARY_BATTLE_RESOLVED:
+			_crisis_impulse = maxf(_crisis_impulse,
+				MILITARY_BATTLE_WIN_TENSION if matches_player else MILITARY_BATTLE_TENSION)
+			_activity = maxf(_activity, 0.75)
+		GameplayEventBus.EVENT_MILITARY_ARMY_DESTROYED:
+			_crisis_impulse = maxf(_crisis_impulse, MILITARY_ARMY_DESTROYED_TENSION)
+		GameplayEventBus.EVENT_MILITARY_CELL_CONTROL_CHANGED:
+			# Only settlement-scale flips are worth a spike; empty wilderness
+			# control changes happen constantly on a long front.
+			var tier := int(payload_i3[index]) if index < payload_i3.size() else 0
+			if tier >= 1:
+				_crisis_impulse = maxf(_crisis_impulse, MILITARY_CONTROL_CHANGED_TENSION)
+		GameplayEventBus.EVENT_MILITARY_COUNTRY_ANNEXED:
+			_crisis_impulse = maxf(_crisis_impulse, MILITARY_ANNEXED_TENSION)
+		GameplayEventBus.EVENT_MILITARY_CONVOY_INTERCEPTED:
+			_crisis_impulse = maxf(_crisis_impulse, MILITARY_CONVOY_TENSION)
+		GameplayEventBus.EVENT_MILITARY_LEVY_APPLIED:
+			_crisis_impulse = maxf(_crisis_impulse, MILITARY_LEVY_TENSION)
+
+
+## Military payloads name countries by dense slot in i0, while the player is
+## tracked as a handle. Slots cannot be compared to handles; the runtime host's
+## player slot is the only comparable identity here.
+func _military_event_matches_player(payload_i0: PackedInt32Array, index: int) -> bool:
+	if _player_country_slot < 0 or index >= payload_i0.size():
+		return false
+	return int(payload_i0[index]) == _player_country_slot
 
 
 func _consume_economy_events() -> void:
@@ -354,12 +426,17 @@ func _recompute_tension_target() -> void:
 	var global_tension := clampf(
 		0.55 * _social_pressure + 0.25 * _weather_pressure + 0.20 * _crisis_impulse,
 		0.0, 1.0)
+	# War is a standing condition, not an impulse: blend it after the impulse
+	# term so an ongoing campaign keeps the score elevated between battles.
+	global_tension = clampf(maxf(global_tension, global_tension * 0.55 \
+		+ _military_pressure), 0.0, 1.0)
 	var near_weight := float(_diagnostics.get("near_weight", 0.0))
 	_tension_target = lerpf(global_tension,
 		clampf(0.75 * global_tension + 0.25 * _local_pressure, 0.0, 1.0),
 		near_weight)
 	_diagnostics["social_pressure"] = _social_pressure
 	_diagnostics["weather_pressure"] = _weather_pressure
+	_diagnostics["military_pressure"] = _military_pressure
 	_diagnostics["tension_target"] = _tension_target
 
 

@@ -82,6 +82,26 @@ func configure(map: MapData, camera: Camera2D, host, player, economy,
 	_player.command_settled.connect(_on_command_settled)
 	set_process(true)
 	queue_redraw()
+	# [badge-probe 2026-11-03] QA：在指定格上挂一个永久徽章，用于核对"提示标志是否
+	# 对齐到地块中心"。badge_probe_cell 支持数字格号，或 "center"（取相机当前所在格，
+	# 保证在屏幕内且不在迷雾里）。正常玩家没有 pk_debug.cfg ⇒ 不生效。
+	var probe_cfg := ConfigFile.new()
+	if probe_cfg.load("user://pk_debug.cfg") == OK:
+		var raw_probe = probe_cfg.get_value("render", "badge_probe_cell", -1)
+		var probe_cell := -1
+		if String(raw_probe).strip_edges().to_lower() == "center":
+			var cube: Vector3i = HexUtils.world_to_cube(_camera.global_position, _hex_size)
+			var offset := HexUtils.cube_to_offset(cube.x, cube.y)
+			if _map != null:
+				probe_cell = int(offset.y) * int(_map.width) + int(offset.x)
+		else:
+			probe_cell = int(raw_probe)
+		if probe_cell >= 0 and probe_cell < _map.cell_count():
+			_effects.append({"cell": probe_cell, "kind": &"colony", "caption": "PROBE",
+				"major": true, "age": 0.0, "duration": 99999.0, "reduced": false})
+			print("[activity-probe] badge at cell=%d world=%s" % [
+				probe_cell, str(_position_for(probe_cell))])
+			queue_redraw()
 
 
 func _disconnect_context() -> void:

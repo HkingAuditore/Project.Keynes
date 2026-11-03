@@ -34,8 +34,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         return false;
     }
     // v55/v56 migrate to v57 by starting the X13a counters at zero; v57
-    // migrates to v58 by starting the research procurement outflow at zero.
-    if (schema != SCHEMA_VERSION && schema != 57 && schema != 56 && schema != 55) {
+    // migrates to v58 by starting the research procurement outflow at zero;
+    // v58 migrates to v59 by starting with no army personnel lanes (the
+    // section is optional, so a pre-59 stream restores zero lanes).
+    if (schema != SCHEMA_VERSION && schema != 58 && schema != 57 && schema != 56) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
@@ -549,7 +551,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         const bool country_schema_compatible =
-            country_schema == NativeCountryRuntime::SCHEMA_VERSION ||
+            // PKCN 14 (military Country opcodes) added no Economy-visible
+            // fields, so PKEC written against PKCN 13 stays loadable.
+            (country_schema >= 13 && country_schema <= NativeCountryRuntime::SCHEMA_VERSION) ||
             (schema == 22 && country_schema == 3) ||
             (schema <= 19 && country_schema == 1);
         const uint64_t expected_country_hash =
@@ -877,6 +881,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
             _worker_command_inbox->commands.clear();
         }
+        clear_procurement_runtime_state(true);
         family_influences().clear();
         persons_store().clear();
         family_memberships().clear();
@@ -1687,9 +1692,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             // construction and canal, one slot per kind. Older saves migrate to
             // zero, which is exactly what they displayed before the field
             // existed.
-            int64_t non_tax_outflow[NON_TAX_KIND_COUNT] = {0, 0, 0, 0};
+            int64_t non_tax_outflow[NON_TAX_KIND_COUNT] = {};
             if (_restore.schema_version >= 58) {
-                for (int32_t kind = 0; kind < NON_TAX_KIND_COUNT; ++kind) {
+                for (int32_t kind = 0; kind < NON_TAX_PERSISTED_KIND_COUNT; ++kind) {
                     if (!read_le(bytes, cursor, non_tax_outflow[kind]) ||
                         non_tax_outflow[kind] < 0) {
                         error = "save_fiscal_record_invalid";
@@ -2974,6 +2979,101 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_d7_peer_ext;
         }
         _restore.d7_peer_ext_seen = true;
+    } else if (section == SAVE_SECTION_ARMY_PERSONNEL) {
+        // BEGIN army personnel lane (contract §1.5). The section is written in
+        // row order and may span several chunks; the first chunk clears the
+        // scratch built by prepare_restore_candidate_scratch().
+        if (!_restore.army_personnel_seen) {
+            _army_personnel.clear();
+            _restore.army_personnel_seen = true;
+        }
+        for (uint32_t record = 0; record < records; ++record) {
+            int32_t row = 0;
+            uint64_t handle = 0;
+            uint64_t country_handle = 0;
+            int32_t cell = -1;
+            int32_t profession_id = -1;
+            int32_t plan_id = -1;
+            int32_t signature_id = -1;
+            int64_t population = 0, funds = 0, epoch_income = 0, epoch_expense = 0;
+            int32_t satisfaction_q16 = Q16_ONE - 1;
+            int32_t survival_q16 = Q16_ONE - 1;
+            int32_t ration_q16 = Q16_ONE;
+            uint32_t family_count = 0;
+            uint32_t person_count = 0;
+            if (!read_le(bytes, cursor, row) || !read_le(bytes, cursor, handle) ||
+                !read_le(bytes, cursor, country_handle) ||
+                !read_le(bytes, cursor, cell) ||
+                !read_le(bytes, cursor, profession_id) ||
+                !read_le(bytes, cursor, plan_id) ||
+                !read_le(bytes, cursor, signature_id) ||
+                !read_le(bytes, cursor, population) ||
+                !read_le(bytes, cursor, funds) ||
+                !read_le(bytes, cursor, epoch_income) ||
+                !read_le(bytes, cursor, epoch_expense) ||
+                !read_le(bytes, cursor, satisfaction_q16) ||
+                !read_le(bytes, cursor, survival_q16) ||
+                !read_le(bytes, cursor, ration_q16) ||
+                !read_le(bytes, cursor, family_count)) {
+                error = "save_army_personnel_record_truncated";
+                return false;
+            }
+            const int32_t at = _army_personnel.ensure(handle);
+            if (at == ArmyPersonnelStore::NO_ROW) {
+                error = "save_army_personnel_row_invalid";
+                return false;
+            }
+            const size_t r = static_cast<size_t>(at);
+            _army_personnel.country_handle[r] = country_handle;
+            _army_personnel.cell[r] = cell;
+            _army_personnel.profession_id[r] = profession_id;
+            _army_personnel.plan_id[r] = plan_id;
+            _army_personnel.signature_id[r] = signature_id;
+            _army_personnel.population[r] = std::max<int64_t>(0, population);
+            _army_personnel.funds[r] = funds;
+            _army_personnel.epoch_income[r] = epoch_income;
+            _army_personnel.epoch_expense[r] = epoch_expense;
+            _army_personnel.satisfaction_q16[r] = std::clamp<int32_t>(
+                satisfaction_q16, 0, Q16_ONE - 1);
+            _army_personnel.survival_q16[r] = std::clamp<int32_t>(
+                survival_q16, 0, Q16_ONE - 1);
+            _army_personnel.ration_q16[r] = std::clamp<int32_t>(
+                ration_q16, 0, Q16_ONE);
+            _army_personnel.family_offset[r] =
+                static_cast<int32_t>(_army_personnel.family_handles.size());
+            _army_personnel.family_len[r] = 0;
+            for (uint32_t k = 0; k < family_count; ++k) {
+                uint64_t family_handle = 0;
+                int64_t people = 0, family_funds = 0;
+                if (!read_le(bytes, cursor, family_handle) ||
+                    !read_le(bytes, cursor, people) ||
+                    !read_le(bytes, cursor, family_funds)) {
+                    error = "save_army_personnel_family_truncated";
+                    return false;
+                }
+                _army_personnel.family_handles.push_back(family_handle);
+                _army_personnel.family_people.push_back(people);
+                _army_personnel.family_funds.push_back(family_funds);
+                ++_army_personnel.family_len[r];
+            }
+            if (!read_le(bytes, cursor, person_count)) {
+                error = "save_army_personnel_record_truncated";
+                return false;
+            }
+            _army_personnel.person_offset[r] =
+                static_cast<int32_t>(_army_personnel.person_handles.size());
+            _army_personnel.person_len[r] = 0;
+            for (uint32_t k = 0; k < person_count; ++k) {
+                uint64_t person_handle = 0;
+                if (!read_le(bytes, cursor, person_handle)) {
+                    error = "save_army_personnel_person_truncated";
+                    return false;
+                }
+                _army_personnel.person_handles.push_back(person_handle);
+                ++_army_personnel.person_len[r];
+            }
+        }
+        // END army personnel lane
     } else if (section == SAVE_SECTION_FAMILY_FOUNDING) {
         if (!read_family_founding_save_records(bytes, cursor, records, error))
             return false;

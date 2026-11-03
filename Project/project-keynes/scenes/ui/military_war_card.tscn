@@ -1,0 +1,86 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_war_card.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="3_bars"]
+
+[node name="MilitaryWarCard" type="PanelContainer"]
+size_flags_horizontal = 3
+script = ExtResource("1_script")
+edge = "cinnabar"
+
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Box/Header" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Title" type="Label" parent="Box/Header"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierHeading"
+text = "对敌国"
+
+[node name="Role" type="Label" parent="Box/Header"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "进攻方"
+
+[node name="Spacer" type="Control" parent="Box/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Days" type="Label" parent="Box/Header"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ScoreRow" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ScoreCaption" type="Label" parent="Box/ScoreRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierKicker"
+text = "战争分"
+
+[node name="ScoreValue" type="Label" parent="Box/ScoreRow"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 24
+text = "+0"
+
+[node name="Losses" type="Label" parent="Box/ScoreRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+theme_type_variation = &"PKDossierCaption"
+horizontal_alignment = 2
+text_overrun_behavior = 3
+
+[node name="Parts" type="Control" parent="Box"]
+layout_mode = 2
+script = ExtResource("3_bars")
+
+[node name="Footer" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+
+[node name="FooterSpacer" type="Control" parent="Box/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Action" type="Button" parent="Box/Footer"]
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKDossierLink"
+text = "议和条款 ›"

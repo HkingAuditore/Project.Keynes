@@ -59,6 +59,12 @@ float biome_roughness(int biome) {
 	return 0.55;
 }
 
+// [pixel-scale-detail 2026-11-03] 近景细节门控改走物理像素口径（pk_hex_px /
+// pk_px_per_world_unit）。旧的 camera_zoom 比较在移动端漏了 content_scale（≈1.375），
+// 把"近景法线细节该出现"的时机系统性推迟 —— 地形法线是"近景可读性"的另一半，
+// 只修 micro/材质层而不修这里，移动端放大后仍会显得平。
+#include "res://shaders/include/pixel_scale.gdshaderinc"
+
 // ─── 唯一法线入口（桌面 + Web 共用）─────────────────────────────────────
 // 返回 (几何法线, 沟谷折痕)；crease 由调用方从已采样的 edge_distance.g 传入。
 // 细节坡度分粗段（波长 >= 32·scale）与细段两组，各自只在屏幕上够宽时淡入，
@@ -75,7 +81,9 @@ vec4 terrain_baked_normal(vec2 uv, int quality, float crease) {
 		// 近景高度细节：normal.ba（烘焙的 encode_slope）。
 		if (hillshade_detail_enabled && hillshade_detail_strength > 0.0) {
 			float qf = (quality >= 2) ? 0.55 : 0.35;
-			float near = smoothstep(1.35, 2.10, camera_zoom);
+			// 旧：smoothstep(1.35, 2.10, camera_zoom)。换算到 hex_px（hex_size 22）
+			// 即 29.7 / 46.2，平台无关；移动端 1.375 的 content_scale 由 uniform 承载。
+			float near = smoothstep(29.7, 46.2, pk_hex_px());
 			s += decode_relief_slope(n.ba) * hillshade_detail_strength * qf * near;
 		}
 		// 分地形 relief 粗/细段：非 tiled 为 terrain_surface_tex.layer1（RG/BA），tiled 为数组。
@@ -83,8 +91,11 @@ vec4 terrain_baked_normal(vec2 uv, int quality, float crease) {
 		if (terrain_relief_tex_bound && terrain_erosion_strength > 0.0001) {
 			float scale = max(terrain_erosion_world_size, 1.0) / 72.0;
 			vec4 r = decode_relief_slope4(visual_sample_terrain_relief(uv));
-			float fade_coarse = smoothstep(3.0, 7.0, 48.0 * scale * camera_zoom);
-			float fade_fine = smoothstep(3.0, 7.0, 14.0 * scale * camera_zoom);
+			// 这两行本来就是"屏幕波长（px）"口径：48/14 world 的波纹投影到多少像素。
+			// 旧写法用 camera_zoom 当 px/world，移动端低估 1.375 倍 ⇒ 细段迟迟不出现。
+			float px_per_world = pk_px_per_world_unit();
+			float fade_coarse = smoothstep(3.0, 7.0, 48.0 * scale * px_per_world);
+			float fade_fine = smoothstep(3.0, 7.0, 14.0 * scale * px_per_world);
 			s += (r.xy * fade_coarse + r.zw * fade_fine) * terrain_erosion_strength;
 			k_relief = fade_coarse;
 		}

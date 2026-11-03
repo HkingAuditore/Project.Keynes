@@ -211,6 +211,9 @@ func build(cell: HexCell) -> Dictionary:
 			{"id": "market", "label": "市场", "icon": "resource"},
 			{"id": "buildings", "label": "建筑", "icon": "building"},
 		])
+		# 军事页签只在有军事绑定、且这是陆地格时出现：水域永远不会归属任何国家。
+		if not LandformType.is_water(_landform(cell, idx)) and _military_facade() != null:
+			tabs.append({"id": "military", "label": "军事", "icon": "country.military"})
 	var geography_category := _geography_information_category(cell, idx, terrain_v,
 		landform_v, vegetation_v, cover_v, elev, temp, moist, base_moist,
 		wf, snow, vitality, passable_land, is_water)
@@ -434,6 +437,8 @@ func _build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 			return _resources_category(_resource_state(
 				idx, LandformType.is_water(_landform(cell, idx)), visibility),
 				visibility)
+		"military":
+			return _military_category(idx)
 		"geography":
 			var terrain_v := _terrain(cell, idx)
 			var landform_v := _landform(cell, idx)
@@ -2052,6 +2057,114 @@ func _colonization_action(cell_idx: int, intel_visible: bool, passable_land: boo
 		"target_cell": cell_idx,
 		"reason": "" if available else "目标必须是当前可见、可通行的无主或本国陆地。",
 	}
+
+
+## 军事绑定来自 MapGenerator（E 接线）。没有它就整个页签不出现，见 build()。
+func _military_facade():
+	if _generator == null or not _generator.has_method("get_military_facade"):
+		return null
+	var facade = _generator.get_military_facade()
+	if facade == null or not facade.has_method("cell_snapshot"):
+		return null
+	return facade
+
+
+## Inspector「军事」页签（design §14.2）：
+##   兵额 / 在驻（本地驻防、外地部队）/ 空额 / 本期配额 / 征召 / 训练队列 / 城防 / 控制者。
+## 玩家领土格额外给出「建造 / 拆除 兵营、城防、军校」的可用性说明（命令由
+## 军事面板发起，Inspector 只负责把这块地的状态说清楚）。
+func _military_category(cell_idx: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return {"insights": [{"id": "military_unavailable", "text": "军事机构尚未建立。",
+			"icon": "status.warning", "accent": UITokens.ARCHIVE_INK_MUTED}]}
+	var snapshot: Dictionary = facade.cell_snapshot(cell_idx, _player_country_handle())
+	if not bool(snapshot.get("ok", false)):
+		var reason := String(snapshot.get("reason", ""))
+		return {"insights": [{"id": "military_pending",
+			"text": "军事数据暂不可用" if reason.is_empty() else "军事数据暂不可用（%s）" % reason,
+			"icon": "status.warning", "accent": UITokens.ARCHIVE_INK_MUTED}]}
+	var posts := int(snapshot.get("post_count", 0))
+	var present := int(snapshot.get("present", 0))
+	var quota := int(snapshot.get("quota", 0))
+	var pending := int(snapshot.get("pending_enlist", 0))
+	var fort_tier := int(snapshot.get("fort_tier", -1))
+	var college_tier := int(snapshot.get("college_tier", -1))
+	var paused := bool(snapshot.get("paused", false))
+	var disrepair := bool(snapshot.get("disrepair", false))
+	var owner_slot := int(snapshot.get("owner_slot", -1))
+	var controller_slot := int(snapshot.get("controller_slot", -1))
+	var armies_here: Array = snapshot.get("armies", []) if snapshot.get(
+		"armies", null) is Array else []
+	var army_heads := 0
+	for raw in armies_here:
+		if raw is Dictionary:
+			army_heads += int((raw as Dictionary).get("headcount", 0))
+	var garrison_lots: Array = snapshot.get("garrison_lots", []) if snapshot.get(
+		"garrison_lots", null) is Array else []
+	var training: Array = snapshot.get("training", []) if snapshot.get(
+		"training", null) is Array else []
+	var fort_icon := IconCatalog.military_building_semantic(
+		"", "fortification", maxi(0, fort_tier))
+	var college_icon := IconCatalog.military_building_semantic(
+		"", "war_college", maxi(0, college_tier))
+	var metrics := [
+		{"label": "兵额", "value": _count_text(posts), "icon": "country.military"},
+		{"label": "在驻", "value": _count_text(present), "icon": "profession.unemployed"},
+		{"label": "外地部队", "value": _count_text(army_heads), "icon": "map.expedition"},
+		{"label": "空额", "value": _count_text(maxi(0, int(snapshot.get("open", 0)))),
+			"icon": "military.plan.share"},
+		{"label": "本期配额", "value": _count_text(quota), "icon": "military.plan.barracks"},
+		{"label": "征召中", "value": _count_text(pending), "icon": "action.add"},
+		{"label": "城防", "value": "无" if fort_tier < 0 else "第 %d 级" % (fort_tier + 1),
+			"icon": String(fort_icon)},
+		{"label": "军校", "value": "无" if college_tier < 0 else "第 %d 级" % (college_tier + 1),
+			"icon": String(college_icon)},
+	]
+	var insights: Array = []
+	if owner_slot >= 0 and controller_slot >= 0 and owner_slot != controller_slot:
+		insights.append({"id": "occupied", "text": "此地被占领：兵营不能招兵或训练。",
+			"icon": "status.warning", "accent": UITokens.DOSSIER_OXBLOOD})
+	if paused:
+		insights.append({"id": "paused", "text": "兵营已暂停招募。",
+			"icon": "action.pause", "accent": UITokens.DOSSIER_BRASS})
+	if disrepair:
+		insights.append({"id": "disrepair", "text": "兵营失修：不能招兵或训练。",
+			"icon": "status.warning", "accent": UITokens.DOSSIER_OXBLOOD})
+	if posts <= 0:
+		insights.append({"id": "no_barracks", "text": "此地没有兵营：领土格可建造兵营、城防或军校。",
+			"icon": "military.building.barracks", "accent": UITokens.ARCHIVE_INK_MUTED})
+	elif army_heads > 0:
+		insights.append({"id": "foreign_army",
+			"text": "有部队驻扎：在外地部队撤离前，本地招兵配额会被压缩。",
+			"icon": "map.expedition", "accent": UITokens.DOSSIER_BRASS})
+	if training.size() > 0:
+		insights.append({"id": "training", "text": "%d 笔训练订单在训。" % training.size(),
+			"icon": "military.plan.training", "accent": UITokens.DOSSIER_VERDIGRIS})
+	return {
+		"kicker": "驻军与兵营",
+		"insights": insights,
+		"metrics": metrics,
+		"gauges": ([{"label": "驻军填充", "value": clampf(float(present) / float(posts), 0.0, 1.0),
+			"accent": UITokens.DOSSIER_VERDIGRIS,
+			"value_text": "%d / %d" % [present, posts]}] if posts > 0 else []),
+		"military_context": {
+			"cell": cell_idx,
+			"posts": posts,
+			"present": present,
+			"garrison_lot_count": garrison_lots.size(),
+			"training_count": training.size(),
+			"can_build_state_building": owner_slot >= 0 and controller_slot == owner_slot,
+			"has_role": {"barracks": posts > 0, "fortification": fort_tier >= 0,
+				"war_college": college_tier >= 0},
+			"paused": paused,
+			"disrepair": disrepair,
+		},
+	}
+
+
+static func _count_text(value: int) -> String:
+	return UITokens.format_compact_number_cn(float(value), 1)
 
 
 func _player_country_handle() -> int:

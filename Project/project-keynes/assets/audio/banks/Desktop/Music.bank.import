@@ -1,0 +1,14 @@
+[remap]
+
+importer="godot.fmod.bank"
+type="FmodBank"
+uid="uid://cx6tm2f5ndtww"
+path="res://.godot/imported/Music.bank-41efd3d1ab8027f68036d9e92f6b3d24.bank"
+
+[deps]
+
+source_file="res://assets/audio/banks/Desktop/Music.bank"
+dest_files=["res://.godot/imported/Music.bank-41efd3d1ab8027f68036d9e92f6b3d24.bank"]
+
+[params]
+

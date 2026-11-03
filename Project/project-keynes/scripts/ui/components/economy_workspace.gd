@@ -2,6 +2,7 @@ extends Control
 class_name EconomyWorkspace
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const NationalProcurementSliderScript = preload("res://scripts/ui/components/national_procurement_slider.gd")
 const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
@@ -89,6 +90,10 @@ var _last_render_msec := 0
 var _compact := false
 var _embedded := false
 var _last_tax_page := "income"
+## 国库页的「国家购买预算」滑条（NationalProcurementSlider）。
+var _procurement_slider: Control
+## 提交成功但会话/快照尚未反映的政策，避免下一次刷新把滑块弹回旧值。
+var _procurement_local_policy: Dictionary = {}
 
 
 func _ready() -> void:
@@ -121,6 +126,7 @@ func _ready() -> void:
 	_ledger_subtitle = get_node_or_null(ledger_root + "/LedgerHeading/Subtitle") as Label
 	_summary_heading = get_node_or_null("Column/SummaryHeading") as Control
 	_summary_cards = get_node_or_null("Column/Cards") as Control
+	_procurement_slider = get_node_or_null(ledger_root + "/Procurement") as Control
 	var section_badge := get_node_or_null("Column/Header/SectionIcon") as IconBadge
 	if _cash_card == null or _tax_card == null or _subsidy_card == null \
 			or _fulfillment_card == null or _country_label == null \
@@ -148,6 +154,8 @@ func _ready() -> void:
 		IconButton.apply(_trade_prev, &"action.back", IconButton.MEDIUM, "上一页")
 	if _trade_next != null:
 		IconButton.apply(_trade_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
+	if _procurement_slider != null:
+		_procurement_slider.policy_committed.connect(_on_procurement_committed)
 	_draft_timer = Timer.new()
 	_draft_timer.one_shot = true
 	_draft_timer.wait_time = DRAFT_COMMIT_DELAY_SEC
@@ -288,6 +296,52 @@ func _apply_model(now_msec: int) -> void:
 	if _page == "trade":
 		_apply_trade_summary_cards()
 	_refresh_treasury_insights()
+	_refresh_procurement()
+
+
+# 国家购买预算只属于国库页；数据缺席（旧原生 / 外国）时按国库现金估算。
+func _refresh_procurement() -> void:
+	if _procurement_slider == null:
+		return
+	_procurement_slider.visible = _page == "treasury" \
+		and bool(_model.get("available", false))
+	if not _procurement_slider.visible:
+		return
+	var procurement: Dictionary = _model.get("procurement", {})
+	var policy: Dictionary = NationalProcurementSliderScript.resolve_policy(_player_controller, procurement,
+		_procurement_local_policy)
+	# 会话或原生快照已反映本地提交后，丢弃本地覆盖值。
+	if not _procurement_local_policy.is_empty() and String(policy.get("source", "")) != "local":
+		_procurement_local_policy.clear()
+	var treasury: Dictionary = _model.get("treasury", {})
+	var cash := int(treasury.get("cash", _model.get("cash", 0)))
+	_procurement_slider.set_state(int(policy.treasury_share_bp),
+		int(policy.research_share_bp), cash, procurement)
+
+
+func _on_procurement_committed(treasury_share_bp: int) -> void:
+	if _procurement_slider == null:
+		return
+	var research_share := int(_procurement_slider.research_share_bp())
+	var result: Dictionary = NationalProcurementSliderScript.submit_policy(_player_controller,
+		treasury_share_bp, research_share)
+	if bool(result.get("ok", false)):
+		_procurement_local_policy = {
+			"treasury_share_bp": treasury_share_bp,
+			"research_share_bp": research_share,
+		}
+		_set_status("国家购买预算已提交 · 次日生效")
+	else:
+		var message := String(result.get("message", result.get("reason", ""))).strip_edges()
+		if NationalProcurementSliderScript.is_unsupported(result):
+			message = "国家购买预算尚未开放"
+		_set_status(message if not message.is_empty() else "国家购买预算提交失败", true)
+	_refresh_procurement()
+
+
+## 测试入口：国库页滑条（未实例化时为 null）。
+func procurement_slider() -> Control:
+	return _procurement_slider
 
 
 func _refresh_tabs() -> void:
@@ -376,6 +430,7 @@ func _select_page(page: String) -> void:
 		_ledger_subtitle.visible = not _ledger_subtitle.text.is_empty()
 	_refresh_page()
 	_refresh_treasury_insights()
+	_refresh_procurement()
 	_animate_cards_in()
 
 
@@ -846,7 +901,7 @@ func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
 	if mode == TAX_MODE_ABSOLUTE:
 		spin.min_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
 		spin.max_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
-		spin.step = 0.01
+		spin.step = 1.0 if TouchUI.is_touch() else 0.01
 		# 单位不写字：定额模式下这一行的行尾亮起一枚金币（MoneyIcon 节点），
 		# 输入框里只剩数字，和顶栏国库纸签的读法一致。
 		spin.suffix = ""
@@ -855,7 +910,7 @@ func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
 	else:
 		spin.min_value = -1000.0
 		spin.max_value = 100.0
-		spin.step = 0.01
+		spin.step = 1.0 if TouchUI.is_touch() else 0.01
 		spin.suffix = "%"
 		spin.tooltip_text = "按百分比计"
 		_set_lane_money_icon(spin, false)
@@ -1173,15 +1228,17 @@ func _on_rate_text_changed(text: String, key: String, kind: String) -> void:
 	if card.is_empty() or not (card.spins as Dictionary).has(kind):
 		return
 	var mode := _card_mode(card, kind)
-	if mode != TAX_MODE_ABSOLUTE or text.strip_edges().is_empty():
+	if mode != TAX_MODE_ABSOLUTE or text.strip_edges() in ["", "-", "+", ".", "-.", "+."]:
 		return
 	var spin := (card.spins as Dictionary)[kind] as SpinBox
+	var line := spin.get_line_edit()
+	if line != null and line.has_focus():
+		return
 	var fallback := int((card.rates as Dictionary).get(kind,
 		TaxLaneEditor.currency_to_absolute_amount(float(spin.value))))
 	var rate := TaxLaneEditor.parse_value_text(text, fallback, mode)
 	if rate == fallback:
 		return
-	var line := spin.get_line_edit()
 	var shown := TaxLaneEditor._format_value(rate, mode, false)
 	if line.text == shown:
 		return

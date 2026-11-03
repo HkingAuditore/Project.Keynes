@@ -121,7 +121,9 @@ Dictionary enqueue_country_host_command_batch(
     request_ids.resize(count);
     for (int64_t index = 0; index < count; ++index) {
         const uint16_t opcode = static_cast<uint16_t>(opcodes[index]);
-        if (opcode < 1 || opcode > 20) {
+        if (opcode < 1 ||
+            opcode > NativeCountryRuntime::COMMAND_OPCODE_MAX ||
+            NativeCountryRuntime::command_opcode_reserved(opcode)) {
             out["ok"] = false;
             out["code"] = "country_worker_command_opcode_invalid";
             out["opcode"] = static_cast<int64_t>(opcode);
@@ -1573,6 +1575,16 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         (host_report.mode != RuntimeSimulationMode::ACTIVE ||
          (host_report.requested_authority_mask &
           runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u)) {
+        static int s_not_auth_left = 12;
+        const NativeSimulationHost::CountryWorkerProtocolStatus diag_status =
+            _runtime_host->country_worker_protocol_status();
+        if (diag_status.queued_intents > 0 && s_not_auth_left-- > 0) {
+            UtilityFunctions::print(vformat(
+                "[tech-ack-diag/pump] REFUSED not_authoritative mode=%d mask=0x%x queued=%d",
+                static_cast<int64_t>(host_report.mode),
+                static_cast<int64_t>(host_report.requested_authority_mask),
+                static_cast<int64_t>(diag_status.queued_intents)));
+        }
         // A real peer write is legal only for a worker that was explicitly
         // admitted in ACTIVE Country mode. In particular, SHADOW callers
         // must never accidentally mutate the legacy peer stores.
@@ -1659,6 +1671,15 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
             result.committed_peer_generation = intent.peer_generation;
         std::string error;
         if (!_runtime_host->submit_country_worker_result(result, error)) {
+            static int s_submit_fail_left = 12;
+            if (s_submit_fail_left-- > 0) {
+                UtilityFunctions::print(vformat(
+                    "[tech-ack-diag/pump] submit FAILED request=%d code=%d tech=%d err=%s",
+                    static_cast<int64_t>(result.request_id),
+                    static_cast<int64_t>(result.code),
+                    static_cast<int64_t>(result.technology),
+                    String(error.c_str())));
+            }
             out["ok"] = false;
             out["code"] = error.empty()
                 ? "country_worker_peer_replay_submit_failed" : error.c_str();

@@ -393,7 +393,192 @@ const PAPER_TEXTURES := {
 	&"control.toggle_on": preload("res://assets/icons/paper/control_toggle_on.tres"),
 	&"control.scroll_grip": preload("res://assets/icons/paper/control_scroll_grip.tres"),
 }
+
+# 军事纸贴：assets/military/codex 由 tools/ui/build_military_codex_icons.py
+# 从四张专用手绘母图切出。每个兵种/装备类别/军需/建筑/战势都有独立纸贴；
+# 旧语义键保留为别名，避免 UI 与测试层被迫跟随素材重构。
+const MILITARY_PAPER_TEXTURES := {
+	&"military.army.attack": preload("res://assets/military/codex/military_army_attack.tres"),
+	&"military.army.defense": preload("res://assets/military/codex/military_army_defense.tres"),
+	&"military.army.morale": preload("res://assets/military/codex/military_army_morale.tres"),
+	&"military.army.organization": preload("res://assets/military/codex/military_army_organization.tres"),
+	&"military.army.pay": preload("res://assets/military/codex/military_army_pay.tres"),
+	&"military.army.supply": preload("res://assets/military/codex/military_army_supply.tres"),
+	&"military.building.academy": preload("res://assets/military/codex/military_building_academy.tres"),
+	&"military.building.bunker": preload("res://assets/military/codex/military_building_bunker.tres"),
+	&"military.building.depot": preload("res://assets/military/codex/military_building_depot.tres"),
+	&"military.building.legion_fort": preload("res://assets/military/codex/military_building_legion_fort.tres"),
+	&"military.building.modern_base": preload("res://assets/military/codex/military_building_modern_base.tres"),
+	&"military.building.palisade_barracks": preload("res://assets/military/codex/military_building_palisade_barracks.tres"),
+	&"military.building.rampart": preload("res://assets/military/codex/military_building_rampart.tres"),
+	&"military.building.simulation_center": preload("res://assets/military/codex/military_building_simulation_center.tres"),
+	&"military.building.star_fort": preload("res://assets/military/codex/military_building_star_fort.tres"),
+	&"military.building.stone_wall": preload("res://assets/military/codex/military_building_stone_wall.tres"),
+	&"military.building.training_ground": preload("res://assets/military/codex/military_building_training_ground.tres"),
+	&"military.building.tribal_lodge": preload("res://assets/military/codex/military_building_tribal_lodge.tres"),
+	&"military.good.ammunition": preload("res://assets/military/codex/military_good_ammunition.tres"),
+	&"military.good.armored_vehicles": preload("res://assets/military/codex/military_good_armored_vehicles.tres"),
+	&"military.good.body_armor": preload("res://assets/military/codex/military_good_body_armor.tres"),
+	&"military.good.drones": preload("res://assets/military/codex/military_good_drones.tres"),
+	&"military.good.electronics": preload("res://assets/military/codex/military_good_electronics.tres"),
+	&"military.good.firearms": preload("res://assets/military/codex/military_good_firearms.tres"),
+	&"military.good.fuel": preload("res://assets/military/codex/military_good_fuel.tres"),
+	&"military.good.melee_arms": preload("res://assets/military/codex/military_good_melee_arms.tres"),
+	&"military.good.missile_arms": preload("res://assets/military/codex/military_good_missile_arms.tres"),
+	&"military.good.mounts": preload("res://assets/military/codex/military_good_mounts.tres"),
+	&"military.good.ordnance": preload("res://assets/military/codex/military_good_ordnance.tres"),
+	&"military.good.propellant": preload("res://assets/military/codex/military_good_propellant.tres"),
+	&"military.ledger.convoy": preload("res://assets/military/codex/military_ledger_convoy.tres"),
+	&"military.ledger.secure_convoy": preload("res://assets/military/codex/military_ledger_secure_convoy.tres"),
+	&"military.supply.equipment": preload("res://assets/military/codex/military_supply_equipment.tres"),
+	&"military.supply.fodder": preload("res://assets/military/codex/military_supply_fodder.tres"),
+	&"military.supply.ration": preload("res://assets/military/codex/military_supply_ration.tres"),
+	&"profession.soldier": preload("res://assets/military/codex/military_unit_line_infantry.tres"),
+	&"military.unit.archer": preload("res://assets/military/codex/military_unit_archer.tres"),
+	&"military.unit.cavalry": preload("res://assets/military/codex/military_unit_cavalry.tres"),
+	&"military.unit.chariot": preload("res://assets/military/codex/military_unit_chariot.tres"),
+	&"military.unit.drone": preload("res://assets/military/codex/military_unit_drone.tres"),
+	&"military.unit.early_tank": preload("res://assets/military/codex/military_unit_early_tank.tres"),
+	&"military.unit.field_artillery": preload("res://assets/military/codex/military_unit_field_artillery.tres"),
+	&"military.unit.legionary": preload("res://assets/military/codex/military_unit_legionary.tres"),
+	&"military.unit.line_infantry": preload("res://assets/military/codex/military_unit_line_infantry.tres"),
+	&"military.unit.machine_gunner": preload("res://assets/military/codex/military_unit_machine_gunner.tres"),
+	&"military.unit.militia": preload("res://assets/military/codex/military_unit_militia.tres"),
+	&"military.unit.musketeer": preload("res://assets/military/codex/military_unit_musketeer.tres"),
+	&"military.unit.rifleman": preload("res://assets/military/codex/military_unit_rifleman.tres"),
+	&"military.unit.siege_train": preload("res://assets/military/codex/military_unit_siege_train.tres"),
+	&"military.unit.spearmen": preload("res://assets/military/codex/military_unit_spearmen.tres"),
+	&"military.unit.tank": preload("res://assets/military/codex/military_unit_tank.tres"),
+	&"military.unit.tribal": preload("res://assets/military/codex/military_unit_tribal.tres"),
+	&"military.war.battle": preload("res://assets/military/codex/military_war_battle.tres"),
+	&"military.war.front": preload("res://assets/military/codex/military_war_front.tres"),
+	&"military.war.peace": preload("res://assets/military/codex/military_war_peace.tres"),
+	&"military.war.score": preload("res://assets/military/codex/military_war_score.tres"),
+	&"military.war.truce": preload("res://assets/military/codex/military_war_truce.tres"),
+	# 兼容旧 UI 调用的类别别名。
+	&"military.unit.line": preload("res://assets/military/codex/military_unit_spearmen.tres"),
+	&"military.unit.line.bows": preload("res://assets/military/codex/military_unit_archer.tres"),
+	&"military.unit.mobile": preload("res://assets/military/codex/military_unit_cavalry.tres"),
+	&"military.unit.artillery": preload("res://assets/military/codex/military_unit_field_artillery.tres"),
+	&"military.unit.armored": preload("res://assets/military/codex/military_unit_tank.tres"),
+	&"military.unit.air": preload("res://assets/military/codex/military_unit_drone.tres"),
+	&"military.banner": preload("res://assets/military/codex/military_army_morale.tres"),
+	&"military.good.armor": preload("res://assets/military/codex/military_good_body_armor.tres"),
+	&"military.good.bows": preload("res://assets/military/codex/military_good_missile_arms.tres"),
+	&"military.good.military_electronics": preload("res://assets/military/codex/military_good_electronics.tres"),
+	&"military.building.barracks": preload("res://assets/military/codex/military_building_palisade_barracks.tres"),
+	&"military.building.fortification": preload("res://assets/military/codex/military_building_stone_wall.tres"),
+	&"military.building.war_college": preload("res://assets/military/codex/military_building_academy.tres"),
+	&"military.building.storage": preload("res://assets/military/codex/military_building_depot.tres"),
+	# 计划/账本仍使用既有纸贴；它们不是本轮兵种与军需的主体缺口。
+	&"military.plan.target": preload("res://assets/military/plan_target.tres"),
+	&"military.plan.share": preload("res://assets/military/plan_share.tres"),
+	&"military.plan.quality": preload("res://assets/military/plan_quality.tres"),
+	&"military.plan.barracks": preload("res://assets/military/plan_barracks.tres"),
+	&"military.plan.training": preload("res://assets/military/plan_training.tres"),
+	&"military.ledger.income": preload("res://assets/military/ledger_income.tres"),
+	&"military.ledger.wage": preload("res://assets/military/ledger_wage.tres"),
+}
 # END GENERATED PAPER ICONS
+
+
+## Stable military unit id -> dedicated codex sticker. Class keys remain the
+## fallback for units added later; the era-specific art must not leak into
+## battle/runtime data, only the presentation lookup.
+const MILITARY_UNIT_ICONS := {
+	&"militia": &"military.unit.militia",
+	&"tribal_warriors": &"military.unit.tribal",
+	&"bronze_spearmen": &"military.unit.spearmen",
+	&"iron_infantry": &"military.unit.legionary",
+	&"legionaries": &"military.unit.legionary",
+	&"cavalry": &"military.unit.cavalry",
+	&"heavy_cavalry": &"military.unit.cavalry",
+	&"dragoons": &"military.unit.cavalry",
+	&"chariot_troops": &"military.unit.chariot",
+	&"musketeers": &"military.unit.musketeer",
+	&"line_infantry": &"military.unit.line_infantry",
+	&"riflemen": &"military.unit.rifleman",
+	&"machine_gunners": &"military.unit.machine_gunner",
+	&"field_artillery": &"military.unit.field_artillery",
+	&"heavy_artillery": &"military.unit.field_artillery",
+	&"siege_train": &"military.unit.siege_train",
+	&"early_armor": &"military.unit.early_tank",
+	&"tank_corps": &"military.unit.tank",
+	&"mechanized_infantry": &"military.unit.tank",
+	&"combined_arms": &"military.unit.tank",
+	&"sp_artillery": &"military.unit.field_artillery",
+	&"missile_artillery": &"military.unit.field_artillery",
+	&"exo_infantry": &"military.unit.line_infantry",
+	&"drone_swarm": &"military.unit.drone",
+}
+
+## Military goods keep one silhouette per equipment family. Quality tiers stay
+## readable through Q1-Q5 text and the distinct icon identity, avoiding 30+
+## nearly identical rifle/spear variants at 24 px.
+const MILITARY_GOOD_ICONS := {
+	&"armor_plate": &"military.good.body_armor",
+	&"stone_spears": &"military.good.melee_arms",
+	&"bronze_weapons": &"military.good.melee_arms",
+	&"iron_weapons": &"military.good.melee_arms",
+	&"steel_blades": &"military.good.melee_arms",
+	&"bows": &"military.good.missile_arms",
+	&"matchlocks": &"military.good.firearms",
+	&"flintlocks": &"military.good.firearms",
+	&"rifles": &"military.good.firearms",
+	&"automatic_rifles": &"military.good.firearms",
+	&"smart_rifles": &"military.good.firearms",
+	&"siege_engines": &"military.good.ordnance",
+	&"bronze_cannon": &"military.good.ordnance",
+	&"steel_artillery": &"military.good.ordnance",
+	&"howitzers": &"military.good.ordnance",
+	&"missile_launchers": &"military.good.ordnance",
+	&"hide_armor": &"military.good.body_armor",
+	&"iron_armor": &"military.good.body_armor",
+	&"plate_armor": &"military.good.body_armor",
+	&"ballistic_armor": &"military.good.body_armor",
+	&"horses": &"military.good.mounts",
+	&"war_chariots": &"military.good.mounts",
+	&"early_tanks": &"military.good.armored_vehicles",
+	&"modern_tanks": &"military.good.armored_vehicles",
+	&"combat_drones": &"military.good.drones",
+	&"powder_shot": &"military.good.ammunition",
+	&"cartridges": &"military.good.ammunition",
+	&"modern_munitions": &"military.good.ammunition",
+	&"guided_munitions": &"military.good.ammunition",
+	&"black_powder": &"military.good.propellant",
+	&"smokeless_powder": &"military.good.propellant",
+	&"modern_propellant": &"military.good.propellant",
+	&"nitric_acid": &"military.good.propellant",
+	&"refined_fuel": &"military.good.fuel",
+	&"military_electronics": &"military.good.electronics",
+}
+
+const MILITARY_BUILDING_ICONS := {
+	&"warrior_lodge": &"military.building.tribal_lodge",
+	&"palisade_barracks": &"military.building.palisade_barracks",
+	&"garrison_barracks": &"military.building.palisade_barracks",
+	&"legion_fort": &"military.building.legion_fort",
+	&"drill_depot": &"military.building.training_ground",
+	&"army_depot": &"military.building.depot",
+	&"military_base": &"military.building.modern_base",
+	&"training_complex": &"military.building.modern_base",
+	&"earthen_rampart": &"military.building.rampart",
+	&"stone_walls": &"military.building.stone_wall",
+	&"citadel": &"military.building.star_fort",
+	&"star_fort": &"military.building.star_fort",
+	&"bunker_line": &"military.building.bunker",
+	&"hardened_defense_network": &"military.building.bunker",
+	&"martial_academy": &"military.building.academy",
+	&"military_academy": &"military.building.academy",
+	&"war_simulation_center": &"military.building.simulation_center",
+}
+
+const MILITARY_BUILDING_ROLE_ICONS := {
+	&"barracks": &"military.building.palisade_barracks",
+	&"fortification": &"military.building.stone_wall",
+	&"war_college": &"military.building.academy",
+	&"storage": &"military.building.depot",
+}
 
 
 const GOOD_IDS := {
@@ -401,17 +586,25 @@ const GOOD_IDS := {
 	&"advanced_chips": true,
 	&"agricultural_machinery": true,
 	&"aluminum": true,
+	&"armor_plate": true,
 	&"automobiles": true,
+	&"automatic_rifles": true,
 	&"autonomous_systems": true,
+	&"ballistic_armor": true,
 	&"bast_fiber": true,
 	&"batteries": true,
 	&"bauxite": true,
 	&"beverages": true,
+	&"black_powder": true,
+	&"bows": true,
 	&"bread": true,
 	&"bricks": true,
 	&"brine": true,
+	&"bronze_cannon": true,
 	&"bronze_tools": true,
+	&"bronze_weapons": true,
 	&"canned_fish": true,
+	&"cartridges": true,
 	&"cement": true,
 	&"charcoal": true,
 	&"chipped_stone_tools": true,
@@ -420,6 +613,7 @@ const GOOD_IDS := {
 	&"clothing": true,
 	&"coal": true,
 	&"coke": true,
+	&"combat_drones": true,
 	&"computers": true,
 	&"concrete": true,
 	&"construction_components": true,
@@ -431,6 +625,7 @@ const GOOD_IDS := {
 	&"crude_oil": true,
 	&"dairy_products": true,
 	&"detergent": true,
+	&"early_tanks": true,
 	&"edible_oil": true,
 	&"electric_motor": true,
 	&"electrical_equipment": true,
@@ -444,6 +639,7 @@ const GOOD_IDS := {
 	&"fish": true,
 	&"flax_fiber": true,
 	&"flint": true,
+	&"flintlocks": true,
 	&"footwear": true,
 	&"fur": true,
 	&"furniture": true,
@@ -453,12 +649,17 @@ const GOOD_IDS := {
 	&"glassware": true,
 	&"gold": true,
 	&"grain": true,
+	&"guided_munitions": true,
+	&"hide_armor": true,
 	&"horses": true,
 	&"household_appliances": true,
+	&"howitzers": true,
 	&"industrial_chemicals": true,
 	&"industrial_machinery": true,
 	&"insulated_cable": true,
+	&"iron_armor": true,
 	&"iron_ore": true,
+	&"iron_weapons": true,
 	&"jewelry": true,
 	&"latex": true,
 	&"lead": true,
@@ -474,11 +675,18 @@ const GOOD_IDS := {
 	&"machine_parts": true,
 	&"manganese_ore": true,
 	&"manuscripts": true,
+	&"matchlocks": true,
 	&"meat": true,
 	&"medicinal_herbs": true,
 	&"metal_housewares": true,
+	&"military_electronics": true,
+	&"missile_launchers": true,
+	&"modern_munitions": true,
+	&"modern_propellant": true,
+	&"modern_tanks": true,
 	&"natural_gas": true,
 	&"natural_rubber": true,
+	&"nitric_acid": true,
 	&"nuclear_fuel": true,
 	&"oceanic_vessels": true,
 	&"packaging": true,
@@ -487,8 +695,10 @@ const GOOD_IDS := {
 	&"pharmaceuticals": true,
 	&"phosphate_rock": true,
 	&"plastics": true,
+	&"plate_armor": true,
 	&"potatoes": true,
 	&"pottery": true,
+	&"powder_shot": true,
 	&"precision_tools": true,
 	&"prepared_staples": true,
 	&"printed_materials": true,
@@ -503,18 +713,25 @@ const GOOD_IDS := {
 	&"reed_bundle": true,
 	&"refined_fuel": true,
 	&"rice_grain": true,
+	&"rifles": true,
 	&"salt": true,
 	&"saltpeter": true,
 	&"scientific_instruments": true,
 	&"seed_cotton": true,
 	&"semiconductors": true,
+	&"siege_engines": true,
 	&"silica_sand": true,
 	&"silver": true,
+	&"smart_rifles": true,
+	&"smokeless_powder": true,
 	&"soap": true,
 	&"spices": true,
 	&"stainless_steel": true,
 	&"steam_engines": true,
 	&"steel": true,
+	&"steel_artillery": true,
+	&"steel_blades": true,
+	&"stone_spears": true,
 	&"sulfur": true,
 	&"synthetic_fiber": true,
 	&"synthetic_rubber": true,
@@ -525,6 +742,7 @@ const GOOD_IDS := {
 	&"tools": true,
 	&"turf_block": true,
 	&"vegetables": true,
+	&"war_chariots": true,
 	&"wheat_grain": true,
 	&"wire": true,
 	&"wool": true,
@@ -573,6 +791,7 @@ const PROFESSION_IDS := {
 	&"scribe": true,
 	&"serf": true,
 	&"sharecropper": true,
+	&"soldier": true,
 	&"subsistence_farmer": true,
 	&"technician": true,
 	&"tenant_farmer": true,
@@ -763,6 +982,49 @@ const SPECS := {
 	&"trend.down": true,
 	&"trend.flat": true,
 	&"trend.up": true,
+	# 军事专用纸贴（见 MILITARY_PAPER_TEXTURES）。
+	&"military.army.attack": true,
+	&"military.army.defense": true,
+	&"military.army.morale": true,
+	&"military.army.organization": true,
+	&"military.army.pay": true,
+	&"military.army.supply": true,
+	&"military.banner": true,
+	&"military.building.barracks": true,
+	&"military.building.fortification": true,
+	&"military.building.storage": true,
+	&"military.building.war_college": true,
+	&"military.good.ammunition": true,
+	&"military.good.armor": true,
+	&"military.good.bows": true,
+	&"military.good.electronics": true,
+	&"military.good.firearms": true,
+	&"military.good.fuel": true,
+	&"military.good.ordnance": true,
+	&"military.good.propellant": true,
+	&"military.ledger.convoy": true,
+	&"military.ledger.income": true,
+	&"military.ledger.wage": true,
+	&"military.plan.barracks": true,
+	&"military.plan.quality": true,
+	&"military.plan.share": true,
+	&"military.plan.target": true,
+	&"military.plan.training": true,
+	&"military.supply.equipment": true,
+	&"military.supply.fodder": true,
+	&"military.supply.ration": true,
+	&"military.unit.air": true,
+	&"military.unit.armored": true,
+	&"military.unit.artillery": true,
+	&"military.unit.line": true,
+	&"military.unit.line.bows": true,
+	&"military.unit.militia": true,
+	&"military.unit.mobile": true,
+	&"military.war.battle": true,
+	&"military.war.front": true,
+	&"military.war.peace": true,
+	&"military.war.score": true,
+	&"military.war.truce": true,
 }
 
 # Legacy identifiers exist only at this boundary and should not be added to.
@@ -840,12 +1102,13 @@ const ALLOWED_SHARED_IMPLEMENTATIONS := {}
 static func resolve_semantic(key: StringName) -> StringName:
 	if key == &"" or String(key) == "\u2014":
 		return &""
-	if SPECS.has(key) or PAPER_TEXTURES.has(key):
+	if SPECS.has(key) or PAPER_TEXTURES.has(key) or MILITARY_PAPER_TEXTURES.has(key):
 		return key
 	var raw := String(key)
 	if raw.begins_with("building.") and _building_product_id(raw) != &"":
 		return key
-	if raw.begins_with("good.") and GOOD_IDS.has(StringName(raw.trim_prefix("good."))):
+	if raw.begins_with("good.") and (GOOD_IDS.has(StringName(raw.trim_prefix("good."))) \
+			or MILITARY_PAPER_TEXTURES.has(StringName("military.%s" % raw))):
 		return key
 	if raw.begins_with("profession.") \
 			and PROFESSION_IDS.has(StringName(raw.trim_prefix("profession."))):
@@ -862,9 +1125,27 @@ static func spec_for(key: StringName) -> Dictionary:
 	var raw := String(semantic)
 	if semantic == &"":
 		return {}
+	if raw.begins_with("good."):
+		var good_id := StringName(raw.trim_prefix("good."))
+		var military_good_key: StringName = MILITARY_GOOD_ICONS.get(good_id, &"")
+		if MILITARY_PAPER_TEXTURES.has(military_good_key):
+			# 同一装备家族的 Q1-Q5 仍保留独立语义身份；品质由文字承载，
+			# 避免 24px 表格里堆出几十张几乎相同的枪炮小图。
+			return {"family": FAMILY_PAPER,
+				"texture": MILITARY_PAPER_TEXTURES[military_good_key],
+				"identity": "military_good:%s" % good_id}
+	if raw.begins_with("good.") and MILITARY_PAPER_TEXTURES.has(
+			StringName("military.%s" % raw)):
+		# 军需物资走军事图集：与居民物资同名的物件要看得出「这是军用品」。
+		var military_key := StringName("military.%s" % raw)
+		return {"family": FAMILY_PAPER, "texture": MILITARY_PAPER_TEXTURES[military_key],
+			"identity": String(military_key)}
 	var paper_key: StringName = PAPER_ALIASES.get(semantic, semantic)
 	if PAPER_TEXTURES.has(paper_key):
 		return {"family": FAMILY_PAPER, "texture": PAPER_TEXTURES[paper_key]}
+	if MILITARY_PAPER_TEXTURES.has(paper_key):
+		return {"family": FAMILY_PAPER, "texture": MILITARY_PAPER_TEXTURES[paper_key],
+			"identity": String(paper_key)}
 	if raw.begins_with("building."):
 		var product_id := _building_product_id(raw)
 		var kind := raw.trim_prefix("building.").get_slice(".", 0)
@@ -969,8 +1250,81 @@ static func registered_keys() -> Array[StringName]:
 	for key in PAPER_TEXTURES:
 		if not keys.has(key):
 			keys.append(key)
+	for key in MILITARY_PAPER_TEXTURES:
+		if not keys.has(key):
+			keys.append(key)
 	keys.sort()
 	return keys
+
+
+## 旧类别键仍为新增兵种兜底；目录内已有稳定 id 的兵种优先走
+## military_unit_semantic_for_id()，避免整个时代都显示同一张剪影。
+static func military_unit_semantic(unit_class: String, has_bow_slot: bool = false) -> StringName:
+	match unit_class:
+		"mobile":
+			return &"military.unit.mobile"
+		"artillery":
+			return &"military.unit.artillery"
+		"armored":
+			return &"military.unit.armored"
+		"air":
+			return &"military.unit.air"
+		_:
+			return &"military.unit.line.bows" if has_bow_slot else &"military.unit.line"
+
+
+static func military_unit_semantic_for_id(unit_id: String, unit_class: String,
+		has_bow_slot: bool = false) -> StringName:
+	var key: StringName = MILITARY_UNIT_ICONS.get(StringName(unit_id), &"")
+	if MILITARY_PAPER_TEXTURES.has(key):
+		return key
+	return military_unit_semantic(unit_class, has_bow_slot)
+
+
+static func military_good_icon(stable_id: String) -> StringName:
+	var key: StringName = MILITARY_GOOD_ICONS.get(StringName(stable_id), &"")
+	if MILITARY_PAPER_TEXTURES.has(key):
+		return key
+	return good_semantic(stable_id)
+
+
+static func military_building_semantic(building_id: String, role_id: String = "",
+		tier: int = -1) -> StringName:
+	var key: StringName = MILITARY_BUILDING_ICONS.get(StringName(building_id), &"")
+	if MILITARY_PAPER_TEXTURES.has(key):
+		return key
+	if role_id == "barracks":
+		if tier < 0:
+			return &"military.building.palisade_barracks"
+		if tier <= 0:
+			return &"military.building.tribal_lodge"
+		if tier <= 2:
+			return &"military.building.palisade_barracks"
+		if tier <= 4:
+			return &"military.building.legion_fort"
+		return &"military.building.modern_base"
+	if role_id == "fortification":
+		if tier < 0:
+			return &"military.building.stone_wall"
+		if tier <= 0:
+			return &"military.building.rampart"
+		if tier <= 2:
+			return &"military.building.stone_wall"
+		if tier <= 4:
+			return &"military.building.star_fort"
+		return &"military.building.bunker"
+	if role_id == "war_college":
+		return &"military.building.simulation_center" if tier >= 2 \
+			else &"military.building.academy"
+	var role_key: StringName = MILITARY_BUILDING_ROLE_ICONS.get(
+		StringName(role_id), &"military.building.palisade_barracks")
+	return role_key if MILITARY_PAPER_TEXTURES.has(role_key) \
+		else &"military.building.palisade_barracks"
+
+
+static func military_semantic(stable_id: String) -> StringName:
+	var key := StringName("military.%s" % stable_id)
+	return key if MILITARY_PAPER_TEXTURES.has(key) else &"country.military"
 
 
 static func good_semantic(stable_id: String) -> StringName:

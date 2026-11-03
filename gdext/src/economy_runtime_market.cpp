@@ -1306,6 +1306,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         return value && std::strcmp(value, "1") == 0;
     }();
     thread_local std::vector<int32_t> household_family_good_factors;
+    // Military v1 (design §5.1): needs listed in a profession's
+    // state_supplied_need_ids are furnished in kind by Military. They never
+    // enter market purchase; their satisfaction is written from the per-cell
+    // ration satisfaction right after clearing, so a ration shortfall still
+    // hits the survival dimension (and thus morale and starvation deaths).
+    const bool has_state_supplied_needs = _state_supplied_need_columns != 0;
+    thread_local std::vector<int64_t> cohort_ration_filled;
+    thread_local std::vector<uint8_t> cohort_has_ration_needs;
+    if (has_state_supplied_needs) {
+        cohort_ration_filled.assign(cohort_count, 0);
+        cohort_has_ration_needs.assign(cohort_count, 0);
+    }
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
         const uint32_t signature_id = population_store().signature_id[slot];
@@ -1317,12 +1329,47 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const Plan &plan = _plans[signature.plan_id];
         const int64_t population = std::max<int64_t>(0, population_store().population[slot]);
         if (population <= 0) continue;
+        const bool ration_cohort = has_state_supplied_needs &&
+            profession_is_state_service_only(signature.profession_id);
         // 订单准备不修改家族/人口，缓存只覆盖当前 cohort，换 cohort 即清空。
         if (!family_good_cache_disabled)
             household_family_good_factors.assign(_good_ids.size(), -1);
         for (int32_t n = 0; n < plan.need_count; ++n) {
             const int32_t need_index = plan.need_begin + n;
             const Need &need = _needs[need_index];
+            // Military v1 (design §5.1): a ration need is supplied in kind.
+            // Skip its purchase order entirely, but keep its welfare target so
+            // the satisfaction ratio still carries the ration shortfall into
+            // the survival dimension. Its filled units come from the per-cell
+            // ration satisfaction written after clearing.
+            if (ration_cohort && profession_need_is_state_supplied(
+                    signature.profession_id, need.stable_id)) {
+                int8_t &ration_available = satisfaction_need_available_cache[need_index];
+                if (ration_available < 0)
+                    ration_available = satisfaction_need_available(need, market) ? 1 : 0;
+                int64_t ration_target = 0;
+                if (ration_available != 0) {
+                    const int64_t ethnicity_factor = _ethnicity_need_factor_q16[
+                        static_cast<size_t>(signature.ethnicity_id) *
+                            _need_ids.size() + need.stable_id];
+                    if (ethnicity_factor > 0) {
+                        ration_target = saturating_mul(saturating_mul(
+                            population, need.base_qty_per_person, sat),
+                            std::max(1, _epoch_days.get()), sat);
+                        ration_target = mul_div_sat(ration_target,
+                            std::max<int64_t>(1, need_environment_cache[need_index]),
+                            Q16_ONE, sat);
+                        ration_target = std::max<int64_t>(1, mul_div_sat(
+                            ration_target, ethnicity_factor, Q16_ONE, sat));
+                    }
+                }
+                // Welfare target only. `desired_units` stays 0 so clearing,
+                // budgeting and fallback never see this need.
+                need_states.push_back({local, need_index, 0, 0, 0, ration_target});
+                if (ration_target > 0)
+                    cohort_has_ration_needs[static_cast<size_t>(local)] = 1;
+                continue;
+            }
             // Frozen-sample approximation: calculate the whole market cycle
             // from the cohort/price/environment state captured at sample_day.
             const int64_t survival_required = survival_required_units(
@@ -2188,6 +2235,28 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 population_store().handle_for_slot(slots[local]);
         }
     }
+    // Military v1: stamp the ration-need states with the per-cell military
+    // ration satisfaction before any need is reduced, so the survival /
+    // basic dimension ratios, the food-required ledger and the notable-person
+    // attribution all read the same supplied quantity.
+    if (has_state_supplied_needs) {
+        for (NeedState &state : need_states) {
+            const int32_t local = state.local_cohort;
+            if (state.filled_units > 0 ||
+                cohort_has_ration_needs[static_cast<size_t>(local)] == 0)
+                continue;
+            const int32_t stable_need = _needs[state.need_index].stable_id;
+            if (!profession_need_is_state_supplied(
+                    _signatures[population_store().signature_id[
+                        slots[local]]].profession_id, stable_need)) continue;
+            const int32_t cell = population_store().page_cell[
+                slots[local] / COHORT_PAGE_SIZE];
+            const int64_t ration_q16 = std::clamp<int64_t>(
+                military_ration_satisfaction_q16(cell), 0, Q16_ONE);
+            state.filled_units = std::max<int64_t>(0, mul_div_sat(
+                state.living_target_units, ration_q16, Q16_ONE, sat));
+        }
+    }
     for (const NeedState &state : need_states) {
         const int32_t local = state.local_cohort;
         cohort_filled[local] = saturating_add(cohort_filled[local], state.filled_units, sat);
@@ -2824,6 +2893,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                                           static_cast<uint64_t>(result.changed_prices));
     result.mutation_hash = trace_hash_mix(result.mutation_hash,
                                           static_cast<uint64_t>(result.price_cap_hits));
+    // BEGIN army personnel lane (contract §1.3): guest consumption.
+    // Runs after the resident clearing (so the merchant revenue, prices and
+    // cohort satisfaction of this market are final) and inside the same market
+    // settlement, using the soldier plan's non-state-supplied needs only.
+    // Every lane belongs to exactly one cell and therefore to exactly one
+    // market, so no two market tasks ever touch the same lane.
+    run_army_personnel_consumption(market);
+    // END army personnel lane
     if (trace_detail) {
         // 价格更新已结束；旧价格向量与当前市场价在整个归因范围内都不再修改。
         // 资金变化仍由各 actor 单独计算，两个价格基础分别只计算一次。

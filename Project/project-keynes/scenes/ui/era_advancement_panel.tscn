@@ -1,0 +1,91 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/era_advancement_panel.gd" id="1_script"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="2_theme"]
+[ext_resource type="StyleBox" path="res://assets/ui/era/era_note_style.tres" id="3_paper"]
+[ext_resource type="Script" path="res://scripts/ui/components/region_tooltip_canvas.gd" id="5_canvas"]
+
+[node name="EraAdvancementPanel" type="Control"]
+process_mode = 3
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Sheet" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 340.0
+offset_top = 238.0
+offset_right = 1260.0
+offset_bottom = 690.0
+mouse_filter = 0
+
+[node name="Paper" type="Panel" parent="Sheet"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme_override_styles/panel = ExtResource("3_paper")
+
+[node name="Canvas" type="Control" parent="Sheet"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+script = ExtResource("5_canvas")
+
+[node name="Close" type="Button" parent="Sheet"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 836.0
+offset_top = 16.0
+offset_right = 894.0
+offset_bottom = 46.0
+theme_type_variation = &"PKDossierLink"
+theme_override_font_sizes/font_size = 16
+text = "收起"
+
+[node name="RewardLink" type="Button" parent="Sheet"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 26.0
+offset_top = 344.0
+offset_right = 246.0
+offset_bottom = 380.0
+theme_type_variation = &"PKSealPrimaryButton"
+theme_override_font_sizes/font_size = 17
+text = "领取时代奖励"
+
+[node name="TreasuryLink" type="Button" parent="Sheet"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 802.0
+offset_top = 344.0
+offset_right = 894.0
+offset_bottom = 370.0
+theme_type_variation = &"PKDossierLink"
+theme_override_font_sizes/font_size = 13
+text = "尚未分配预算 · 前往国库设置 ›"
+
+[node name="Action" type="Button" parent="Sheet"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 722.0
+offset_top = 400.0
+offset_right = 894.0
+offset_bottom = 438.0
+theme_type_variation = &"PKDossierLink"
+theme_override_font_sizes/font_size = 14
+text = "开始晋升"

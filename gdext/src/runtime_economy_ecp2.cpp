@@ -13,6 +13,7 @@ namespace {
 
 using persistence_codec::SAVE_MAGIC;
 using persistence_codec::SAVE_SECTION_AUDIT;
+using persistence_codec::SAVE_SECTION_ARMY_PERSONNEL;
 using persistence_codec::SAVE_SECTION_BUILDINGS;
 using persistence_codec::SAVE_SECTION_CANAL_PROJECTS;
 using persistence_codec::SAVE_SECTION_CANAL_QUOTES;
@@ -341,6 +342,9 @@ uint32_t ecp2_domain_for_pkec_section(uint16_t section) noexcept {
     case SAVE_SECTION_FAMILY_TRAIT_COMMANDS:
     case SAVE_SECTION_FAMILY_EXPEDITIONS:
     case SAVE_SECTION_FAMILY_FOUNDING:
+    // Schema 59: embarked army personnel are Economy population that is simply
+    // not on a cell, so they travel in the population domain.
+    case SAVE_SECTION_ARMY_PERSONNEL:
         return ECP2_DOMAIN_FAMILY;
     case SAVE_SECTION_TRADE_FLOWS:
     case SAVE_SECTION_TARIFF_HISTORY:

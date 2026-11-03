@@ -119,17 +119,22 @@ func show_unknown(condition_items: Array = [], state: int = 0) -> void:
 	_action.visible = false
 
 
-func show_milestone_locked(era_name: String, completed: int, required: int,
-		condition_items: Array = []) -> void:
-	show_unknown(condition_items)
-	_header_icon.set_semantic(&"technology.milestone", UITokens.DOSSIER_BRASS)
-	_name.text = "时代里程碑"
-	_state_label.text = era_name
-	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_BRASS)
+## A retired era token that an older save still carries in a research queue.
+## It is no longer researchable, so the only offered action is removal.
+func show_retired_queued(index: int, definition: Dictionary) -> void:
+	show_unknown([])
+	_index = index
+	_state = 3
+	_header_icon.set_semantic(&"technology.state.locked", UITokens.DOSSIER_INK_MUTED)
+	_name.text = String(definition.get("display_name", "已停用的研究项"))
+	_state_label.text = "已停用"
+	_state_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	_placeholder.visible = true
-	_placeholder.text = "完成本时代 %d / %d 项后可研究" \
-		% [completed, maxi(1, required)]
-	_action.visible = false
+	_placeholder.text = "该项已不再通过研究获得，时代晋升请点击顶栏时代徽记。请将其移出队列。"
+	_detail_block.visible = false
+	_action.visible = true
+	_action.disabled = false
+	_action.text = "移出研究队列"
 
 
 func show_technology(index: int, definition: Dictionary, state: int, fraction: float,
@@ -180,12 +185,9 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	_effect_title.visible = not effect_items.is_empty()
 	_effects.visible = not effect_items.is_empty()
 	_effects.set_items(effect_items)
-	var required := int(definition.get("milestone_required_count", 0))
 	var prerequisites: Array = relations.get("prerequisites", [])
 	if is_application:
 		_prerequisite_title.text = "应用所需科技"
-	elif required > 0:
-		_prerequisite_title.text = "里程碑候选（任选 %d 项）" % required
 	else:
 		_prerequisite_title.text = "需要先完成"
 	_prerequisite_title.visible = not prerequisites.is_empty()
@@ -269,9 +271,7 @@ func _facts_for(definition: Dictionary, era_name: String, domain_name: String,
 			facts.append({"key": "定位", "value": "、".join(traits)})
 	else:
 		facts.append({"key": "研究成本", "value": "%s 科技值" % _cost_text(definition)})
-	if bool(definition.get("is_milestone", false)):
-		facts.append({"key": "类型", "value": "时代里程碑", "accent": UITokens.DOSSIER_OXBLOOD})
-	elif bool(definition.get("is_era_key", false)):
+	if bool(definition.get("is_era_key", false)):
 		facts.append({"key": "类型", "value": "时代关键科技", "accent": UITokens.DOSSIER_OXBLOOD})
 	var route_tags: PackedStringArray = definition.get("route_tags", PackedStringArray())
 	var route_names: PackedStringArray = definition.get(

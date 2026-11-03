@@ -2580,7 +2580,9 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
     }
     Instance &instance = _instances[static_cast<size_t>(index)];
     const int32_t previous_program_id = instance.program_id;
+    const int32_t previous_level = instance.level;
     const bool generation_changed = instance.generation != generation;
+    const bool level_changed = !created && previous_level != level;
     instance.generation = generation;
     instance.program_id = program_id;
     instance.source_type = source_type;
@@ -2611,6 +2613,8 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
         instance.applied_input_revision = 0;
         instance.last_acked_fire_sequence = 0;
         instance.activation_sequence = _next_activation_sequence++;
+    } else if (level_changed) {
+        instance.last_evaluated_input_revision = 0;
     }
     // Upsert is structural reconciliation, not an activation event. Repeating
     // the same authoritative row must therefore be idempotent for every stack
@@ -3279,8 +3283,24 @@ bool EffectRuntime::resolve_family_effect_group(
         int32_t remaining = group_cap;
         for (const int32_t member_index : _family_effect_candidate_scratch) {
             Instance &member = _instances[static_cast<size_t>(member_index)];
-            const int32_t allocated = std::min(
-                remaining, std::max(1, member.stack_count));
+            int32_t member_cap = std::max(1, member.stack_count);
+            if (member.program_id >= 0 &&
+                member.program_id < static_cast<int32_t>(_definitions.size()) &&
+                _definitions[static_cast<size_t>(member.program_id)].key ==
+                    "family.effect.century_shop") {
+                static constexpr int32_t kCenturyShopMaxStacks[6] = {
+                    2, 2, 3, 4, 5, 6
+                };
+                const int32_t tier_cap =
+                    kCenturyShopMaxStacks[std::clamp(member.level, 0, 5)];
+                const int32_t elapsed_decades = _current_day > 0
+                    ? std::max<int32_t>(1,
+                        static_cast<int32_t>(_current_day / 3650))
+                    : std::max(1, member.stack_count);
+                member_cap = std::min(tier_cap,
+                    std::max(member.stack_count, elapsed_decades));
+            }
+            const int32_t allocated = std::min(remaining, member_cap);
             member.desired_stack_count = allocated;
             remaining -= allocated;
             if (remaining <= 0) break;
@@ -3426,7 +3446,8 @@ bool EffectRuntime::enqueue_external_effect_pod(
             (candidate.opcode == opcode || (modifier_remove &&
                 candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
             candidate.target_resolver == TARGET_INSTANCE &&
-            candidate.duration_days == duration_days &&
+            (candidate.duration_days == duration_days ||
+             action == MODIFIER_COMMAND) &&
             candidate.stacks == stacks &&
             (candidate.payload == payload || dynamic_country_signal_payload)) ||
             dynamic_family_economy) {
@@ -3603,7 +3624,8 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
                      (modifier_remove &&
                       candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
                     candidate.target_resolver == TARGET_INSTANCE &&
-                    candidate.duration_days == source.duration_days &&
+                    (candidate.duration_days == source.duration_days ||
+                     source.action == MODIFIER_COMMAND) &&
                     candidate.stacks == source.stacks &&
                     (candidate.payload == source.payload ||
                      dynamic_country_signal_payload)) {
@@ -4836,6 +4858,23 @@ bool EffectRuntime::execute_program(const Definition &definition, Instance &inst
                     definition.command_begin + row.arg0;
                 command.command_definition_id = command_definition_id;
                 command.command_key_id = command_definition_id;
+                if (definition.key == "family.effect.ancestral_precept") {
+                    static constexpr int32_t kAncestralDurations[6] = {
+                        180, 180, 240, 300, 365, 540
+                    };
+                    const int32_t tier = std::clamp(instance.level, 0, 5);
+                    command.duration_days = kAncestralDurations[tier];
+                    instance.duration_days = command.duration_days;
+                    instance.expires_day = day + command.duration_days;
+                } else if (definition.key == "family.effect.shared_water") {
+                    static constexpr int32_t kSharedWaterDurations[6] = {
+                        1, 1, 1, 2, 2, 3
+                    };
+                    const int32_t tier = std::clamp(instance.level, 0, 5);
+                    command.duration_days = kSharedWaterDurations[tier];
+                    instance.duration_days = command.duration_days;
+                    instance.expires_day = day + command.duration_days;
+                }
                 if (definition_command.target_resolver == TARGET_STATIC)
                     command.target_handle = definition_command.static_target;
                 else if (definition_command.target_resolver == TARGET_SOURCE) {

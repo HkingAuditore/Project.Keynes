@@ -93,6 +93,9 @@ func _notification(what: int) -> void:
 
 
 func _relayout() -> void:
+	_height = maxf(HEIGHT, TouchUI.min_units())
+	if absf(custom_minimum_size.y - _height) > 0.5:
+		custom_minimum_size.y = _height
 	_rects.clear()
 	if chapters.is_empty():
 		return

@@ -8,7 +8,17 @@ const REQUIRED_SECTIONS := [
 	"simulation_runtime",
 	"pkcm", "pkcn", "ecp2", "pkgp", "pkfg", "journal",
 	"player_context", "player_view", "preview", "pktr", "pkef", "pkid", "pkai",
+	"pkmi",
 ]
+## Providers that an older save may legitimately lack. They restore from an
+## empty section (a fresh runtime) instead of refusing the load.
+const OPTIONAL_PROVIDER_SECTIONS := [
+	"pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai", "pknr", "pkmi",
+]
+## PKMI v1 — Military runtime state (design §22). Registered after pkcn and
+## before pkef/ecp2 so Military's own store is back before any provider that
+## could read it, and so Country territory it depends on already exists.
+const PKMI_SCHEMA := 1
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
 const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd")
@@ -163,7 +173,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 			String(contract.get("message", "")))
 	for required in REQUIRED_SECTIONS:
 		if not bytes_by_id.has(required):
-			if required in ["pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai"]:
+			if required in OPTIONAL_PROVIDER_SECTIONS:
 				bytes_by_id[required] = PackedByteArray()
 				continue
 			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
@@ -194,7 +204,16 @@ func prepare_load(slot_id: String) -> Dictionary:
 	decoded["pkef"] = bytes_by_id.pkef
 	decoded["pkid"] = bytes_by_id.pkid
 	decoded["pkar"] = bytes_by_id.get("pkar", PackedByteArray())
+	var raw_pknr: PackedByteArray = bytes_by_id.get("pknr", PackedByteArray())
+	if raw_pknr.is_empty():
+		decoded["pknr"] = {}
+	else:
+		var pknr_val = bytes_to_var(raw_pknr)
+		if not (pknr_val is Dictionary):
+			return _result(false, "save_section_decode_failed", "无法解析存档 section：pknr")
+		decoded["pknr"] = pknr_val
 	decoded["pkai"] = bytes_by_id.pkai
+	decoded["pkmi"] = bytes_by_id.get("pkmi", PackedByteArray())
 	decoded["preview"] = bytes_by_id.preview
 	_pending_load = {
 		"slot_id": slot_id,
@@ -610,6 +629,11 @@ func _register_providers() -> void:
 			"_restore_simulation_runtime_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
+		# Military restores right after Country (its digest reads territory) and
+		# before Effect/Economy (design §22: PKMI between PKCN and PKEF/ECP2).
+		_make_provider(&"pkmi", PKMI_SCHEMA, PackedStringArray(["pkmi"]),
+			"_can_military_provider", "_write_military_provider",
+			"_restore_military_provider"),
 		# Effect restores before Economy so ECP2 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
 		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
@@ -655,6 +679,8 @@ func _register_providers() -> void:
 			"_restore_ideology_provider", &"_ideology_manifest_identity"),
 		_make_provider(&"pkar", 1, PackedStringArray(["pkar"]),
 			"_can_annual_provider", "_write_annual_provider", "_restore_annual_provider"),
+		_make_provider(&"pknr", 1, PackedStringArray(["pknr"]),
+			"_can_narrative_provider", "_write_narrative_provider", "_restore_narrative_provider"),
 		_make_provider(&"player_session", 1,
 			PackedStringArray(["player_context", "player_view", "preview"]),
 			"_can_player_provider", "_write_player_provider", "_restore_player_provider"),
@@ -698,7 +724,7 @@ func _manifest_compatible(raw_manifest) -> bool:
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
-			if provider_id in ["pkcm", "pkgp", "pkef", "pkid", "pkai", "pkar"]:
+			if provider_id in OPTIONAL_PROVIDER_SECTIONS or provider_id == "pkar":
 				continue
 			return false
 		var entry: Dictionary = by_id[provider_id]
@@ -708,6 +734,10 @@ func _manifest_compatible(raw_manifest) -> bool:
 			schema_compatible = saved_schema in [1, 2, 3, 4]
 		if provider_id == "environment":
 			schema_compatible = saved_schema in [1, 2]
+		elif provider_id == "pkmi":
+			# Military v1 only. A newer PKMI cannot be read by this runtime, and an
+			# unchanged one is restored byte-for-byte; nothing older exists yet.
+			schema_compatible = saved_schema == PKMI_SCHEMA
 		elif provider_id == "pkcn":
 			# PKCN v11 carries the authoritative era-reward plan reference. Its native reader is
 			# exact-version only, so advertising an older schema would defer failure
@@ -1073,6 +1103,18 @@ func _can_country_provider(context: Dictionary) -> Dictionary:
 		"" if facade != null and facade.is_configured() else "PKCN provider 不可用。")
 
 
+## Military state is optional: a world without the military runtime (older DLL or
+## a catalog that failed to compile) still writes a well-formed empty section so
+## a later runtime can tell "no military" from "PKMI missing".
+func _can_military_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_military_facade() \
+		if generator != null and generator.has_method("get_military_facade") else null
+	var available: bool = facade != null and facade.is_configured()
+	return _result(true, "ok" if available else "save_military_unavailable",
+		"" if available else "Military runtime 未配置，写入空 PKMI。")
+
+
 func _can_economy_provider(context: Dictionary) -> Dictionary:
 	var generator = context.get("generator")
 	var facade = generator.get_economy_facade() if generator != null else null
@@ -1245,6 +1287,20 @@ func _write_trigger_provider(context: Dictionary) -> Dictionary:
 	if bytes.is_empty():
 		return _result(false, "pktr_save_failed", "Trigger state serialization failed")
 	return {"ok": true, "sections": {"pktr": bytes}}
+
+
+func _write_military_provider(context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_military_facade() \
+		if generator != null and generator.has_method("get_military_facade") else null
+	if facade == null or not facade.is_configured():
+		return {"ok": true, "sections": {"pkmi": PackedByteArray()}}
+	var bytes: PackedByteArray = facade.encode_state()
+	if bytes.is_empty():
+		# A configured facade that cannot encode is a real failure: writing an
+		# empty section would silently reset every army on the next load.
+		return _result(false, "pkmi_save_failed", "Military state serialization failed")
+	return {"ok": true, "sections": {"pkmi": bytes}}
 
 
 func _write_effect_provider(context: Dictionary) -> Dictionary:
@@ -1425,6 +1481,46 @@ func _restore_trigger_provider(sections: Dictionary, context: Dictionary) -> Dic
 	var result: Dictionary = ext.clear_trigger_state() if bytes.is_empty() else ext.restore_trigger_state(bytes)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pktr_restore_failed", String(result.get("reason", "Trigger state restore failed")))
+
+
+func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var generator = context.get("generator")
+	var facade = generator.get_military_facade() \
+		if generator != null and generator.has_method("get_military_facade") else null
+	if facade == null or not facade.is_configured():
+		# The save carries military state but this runtime has none (DLL without
+		# the military API, or the catalog failed to compile). Refusing is the
+		# only honest answer: silently dropping armies and wars would corrupt the
+		# session state the player is reloading.
+		var bytes := PackedByteArray(sections.get("pkmi", PackedByteArray()))
+		if bytes.is_empty():
+			return {"ok": true}
+		return _result(false, "pkmi_runtime_unavailable",
+			"存档含军事状态，但当前运行时没有 Military API。")
+	var bytes := PackedByteArray(sections.get("pkmi", PackedByteArray()))
+	if bytes.is_empty():
+		# Save written before the military runtime: start from an empty military
+		# store rather than refusing the load.
+		return {"ok": true, "restored": false, "reason": "pkmi_absent_migration"}
+	var result: Dictionary = facade.restore_state(bytes)
+	if not bool(result.get("ok", false)):
+		return _result(false, "pkmi_restore_failed",
+			String(result.get("reason", "Military PKMI restore failed")))
+	# AI arming is part of the military store's meaning: after a restore, every
+	# non-player country must be AI again or the armed forces stop planning.
+	var player_handles: PackedInt64Array = facade.ai_player_handles()
+	if player_handles.is_empty():
+		var player_context = sections.get("player_context", {})
+		var start_cell := int(player_context.get("start_cell", -1)) \
+			if player_context is Dictionary else -1
+		var country = generator.get_country_facade() \
+			if generator.has_method("get_country_facade") else null
+		var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
+			if country != null and start_cell >= 0 else 0
+		if handle != 0:
+			player_handles = PackedInt64Array([handle])
+	facade.arm_ai(player_handles)
+	return result
 
 
 func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
@@ -1620,3 +1716,22 @@ func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dict
 		return {"ok": true}
 	var ext = context.generator.get_data_core_world_ext()
 	return ext.restore_annual_report_state(bytes)
+
+
+func _can_narrative_provider(_context: Dictionary) -> Dictionary:
+	return _result(true, "ok", "")
+
+
+func _write_narrative_provider(_context: Dictionary) -> Dictionary:
+	var state: Dictionary = _player_controller.export_narrative_state() \
+		if _player_controller != null and _player_controller.has_method("export_narrative_state") \
+		else {}
+	return {"ok": true, "sections": {"pknr": state}}
+
+
+func _restore_narrative_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
+	var raw_state = sections.get("pknr", {})
+	var state: Dictionary = raw_state if raw_state is Dictionary else {}
+	if _player_controller != null and _player_controller.has_method("restore_narrative_state"):
+		return _player_controller.restore_narrative_state(state)
+	return _result(true, "ok", "")

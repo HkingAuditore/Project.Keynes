@@ -7911,6 +7911,37 @@ uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
             if (!effect_pod_instance_fire_acked(
                     static_cast<int64_t>(intent.effect_instance_id),
                     intent.effect_generation)) {
+                static std::atomic<int> s_unacked_left{24};
+                if (s_unacked_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                    const auto &snap = _effect_pod_authority.snapshot();
+                    int64_t fire_seq = -1, acked_seq = -1, next_due = -1;
+                    for (const auto &inst : snap.instances) {
+                        if (inst.instance_id == static_cast<int64_t>(
+                                intent.effect_instance_id)) {
+                            fire_seq = static_cast<int64_t>(inst.fire_sequence);
+                            acked_seq = static_cast<int64_t>(
+                                inst.last_acked_fire_sequence);
+                            next_due = inst.next_due_day;
+                        }
+                    }
+                    std::string tx;
+                    for (const auto &t : snap.transactions) {
+                        if (t.source_instance_id !=
+                            static_cast<int64_t>(intent.effect_instance_id))
+                            continue;
+                        char buf[96];
+                        std::snprintf(buf, sizeof(buf), " tx%lld:st=%d req=0x%x got=0x%x",
+                            static_cast<long long>(t.transaction_id),
+                            static_cast<int>(t.status), t.required_ack_mask,
+                            t.received_ack_mask);
+                        tx += buf;
+                    }
+                    pk::log_info("[tech-ack-diag/unacked] tech=%d fire_seq=%d "
+                                 "acked_seq=%d next_due=%d pod_day=%d%s",
+                                 static_cast<int64_t>(intent.technology),
+                                 fire_seq, acked_seq, next_due,
+                                 snap.committed_day, tx.c_str());
+                }
                 continue;
             }
             result.code = CountryPeerResultCode::READY;
@@ -9608,12 +9639,47 @@ bool NativeSimulationHost::execute_country_worker_stage(
         // An open plan is parked on peers. Fold newly arrived Country packets
         // into plan.next_state so research enqueue is visible via preview
         // publish and lands in the eventual commit — not stranded until day+1.
+        //
+        // Late-fold applies packets one at a time, so it cannot honour the
+        // atomic CONSUME_TREASURY_GOODS(21) + GRANT_TECHNOLOGY(4) era batch:
+        // a rejected consume would still let the grant through. Leave those
+        // producers' 21/4 packets unfolded; the retain path replays them into
+        // the next plan_day, which validates the whole batch atomically.
+        std::vector<uint32_t> era_batch_producers;
+        // Peace/annex batches (opcodes 23/24/27 with their TRANSFER_TERRITORY
+        // clauses) are atomic as well; never late-fold any packet of such a
+        // producer so the next plan_day validates the batch as a whole.
+        std::vector<uint32_t> peace_batch_producers;
+        for (const RuntimeCommandPacket &packet : day_commands) {
+            if (packet.envelope.domain ==
+                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY) &&
+                (packet.envelope.opcode == 23 || packet.envelope.opcode == 24 ||
+                 packet.envelope.opcode == 27) &&
+                std::find(peace_batch_producers.begin(), peace_batch_producers.end(),
+                          packet.envelope.producer_id) == peace_batch_producers.end())
+                peace_batch_producers.push_back(packet.envelope.producer_id);
+        }
+        for (const RuntimeCommandPacket &packet : day_commands) {
+            if (packet.envelope.domain ==
+                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY) &&
+                packet.envelope.opcode == 21 &&
+                std::find(era_batch_producers.begin(), era_batch_producers.end(),
+                          packet.envelope.producer_id) == era_batch_producers.end())
+                era_batch_producers.push_back(packet.envelope.producer_id);
+        }
         for (const RuntimeCommandPacket &packet : day_commands) {
             if (packet.envelope.domain !=
                     static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
                 continue;
             }
             if (packet.envelope.request_id == 0) continue;
+            if ((packet.envelope.opcode == 21 || packet.envelope.opcode == 4) &&
+                std::find(era_batch_producers.begin(), era_batch_producers.end(),
+                          packet.envelope.producer_id) != era_batch_producers.end())
+                continue;
+            if (std::find(peace_batch_producers.begin(), peace_batch_producers.end(),
+                          packet.envelope.producer_id) != peace_batch_producers.end())
+                continue;
             if (packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID &&
                 country_ai_for_worker() != nullptr)
                 continue;
@@ -9822,6 +9888,38 @@ bool NativeSimulationHost::execute_country_worker_stage(
                              std::numeric_limits<uint32_t>::max()));
     }
     if (waiting) {
+        {
+            static std::atomic<int> s_wait_diag_left{12};
+            if (s_wait_diag_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                std::lock_guard<std::mutex> lock(_country_transport_mutex);
+                std::string detail;
+                for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                    const uint64_t request_id = intent.request_id != 0
+                        ? intent.request_id : intent.source_id;
+                    const auto r = _country_worker_results.find(request_id);
+                    const auto i = _country_worker_intents.find(request_id);
+                    char buf[200];
+                    std::snprintf(buf, sizeof(buf),
+                        " [op=%u tech=%lld req=%llx result=%d intent=%d inst=%llx gen=%u]",
+                        static_cast<unsigned>(intent.opcode),
+                        static_cast<long long>(intent.payload[0]),
+                        static_cast<unsigned long long>(request_id),
+                        r == _country_worker_results.end() ? -1
+                            : static_cast<int>(r->second.code),
+                        i == _country_worker_intents.end() ? 0 : 1,
+                        static_cast<unsigned long long>(
+                            i == _country_worker_intents.end() ? 0
+                                : i->second.effect_instance_id),
+                        i == _country_worker_intents.end() ? 0u
+                            : i->second.effect_generation);
+                    detail += buf;
+                }
+                pk::log_info("[tech-ack-diag/wait] day=%lld intents=%zu queued=%zu%s",
+                             static_cast<long long>(day),
+                             _country_pod_plan.intents.size(),
+                             _country_worker_intent_queue.size(), detail.c_str());
+            }
+        }
         // Effect may have catchup-fired after the Host pump left PENDING
         // (PENDING is not re-queued). Promote same-day before parking.
         if (resolve_pending_country_effect_peers() > 0u) {

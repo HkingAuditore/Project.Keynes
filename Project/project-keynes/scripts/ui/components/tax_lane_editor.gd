@@ -5,6 +5,7 @@ signal override_requested(scope: String, kind: String, item_id: String, rate: in
 signal reset_requested(scope: String, kind: String, item_id: String)
 signal editing_finished()
 
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const COMMIT_DELAY_SEC := 0.18
 const TAX_RATE_MIN_BP := -100000
 const TAX_RATE_MAX_BP := 10000
@@ -209,7 +210,7 @@ func _configure_spin_for_mode(mode: int) -> void:
 		# currency. Keep the conversion at this UI boundary only.
 		_spin.min_value = absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
 		_spin.max_value = absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
-		_spin.step = 0.01
+		_spin.step = 1.0 if TouchUI.is_touch() else 0.01
 		# 单位不写字：定额模式下 SpinBox 左边亮起一枚金币（MoneyIcon），
 		# 对话框里剩下的「货币」字样全部收进这枚图标。
 		_spin.suffix = ""
@@ -218,7 +219,7 @@ func _configure_spin_for_mode(mode: int) -> void:
 		return
 	_spin.min_value = -1000.0
 	_spin.max_value = 100.0
-	_spin.step = 0.01
+	_spin.step = 1.0 if TouchUI.is_touch() else 0.01
 	_spin.suffix = "%"
 	_spin.tooltip_text = "按百分比计"
 	_set_money_icon_visible(false)
@@ -310,7 +311,11 @@ func _on_text_changed(text: String) -> void:
 		return
 	var mode := _current_mode()
 	var fallback := _current_value()
-	if text.strip_edges().is_empty():
+	var stripped := text.strip_edges()
+	if stripped in ["", "-", "+", ".", "-.", "+."]:
+		_dirty = true
+		_reset.visible = false
+		_stop_commit_timer()
 		return
 	var rate := parse_value_text(text, fallback, mode)
 	if rate == fallback:
@@ -321,9 +326,9 @@ func _on_text_changed(text: String) -> void:
 	else:
 		_spin.set_value_no_signal(basis_points_to_percent(rate))
 	var line := _spin.get_line_edit()
-	if line != null:
+	if line != null and not line.has_focus():
 		# Godot formats a 0.01-step SpinBox as "-800.0" after text input.
-		# Restore the player-facing canonical form while the edit is active.
+		# Restore the player-facing canonical form when focus is not actively editing.
 		line.text = _format_value(rate, mode, false)
 	_applying = false
 	_on_value_changed(_spin.value)
@@ -441,8 +446,12 @@ func _on_value_changed(_value: float) -> void:
 		return
 	_dirty = true
 	_reset.visible = false
-	_spin.get_line_edit().add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	var line := _spin.get_line_edit()
+	line.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
 	_refresh_note()
+	if line.has_focus():
+		_stop_commit_timer()
+		return
 	_start_commit_timer()
 
 

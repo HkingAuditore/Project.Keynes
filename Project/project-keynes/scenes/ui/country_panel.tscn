@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier.tscn" id="4_economy"]
 [ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="5_ideology"]
 [ext_resource type="Texture2D" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_workspace.tscn" id="7_military"]
 
 [node name="CountryPanel" type="Control"]
 visible = false
@@ -100,7 +101,7 @@ stretch_mode = 5
 [node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Technology/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "科技研究"
+text = "科技"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -130,7 +131,7 @@ stretch_mode = 5
 [node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "国家理念"
+text = "理念"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -160,7 +161,7 @@ stretch_mode = 5
 [node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Economy/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "财政经济"
+text = "经济"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -190,7 +191,7 @@ stretch_mode = 5
 [node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Military/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "军事统筹"
+text = "军事"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -220,7 +221,7 @@ stretch_mode = 5
 [node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Diplomacy/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "外交往来"
+text = "外交"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -369,6 +370,10 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 [node name="IdeologyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("5_ideology")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+[node name="MilitaryWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("7_military")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

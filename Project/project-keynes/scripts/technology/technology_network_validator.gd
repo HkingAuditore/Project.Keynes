@@ -149,6 +149,10 @@ static func effect_summary(node: Dictionary) -> String:
 	if parts.is_empty():
 		return "完成时代里程碑并开放下一时代" if bool(node.get(
 			"is_milestone", false)) else ""
+	# Era milestones are no longer researched; their Modifier terms are the
+	# buff granted by Era Advancement (docs/cpp-dots-runtime/era-advancement-runtime.md).
+	if bool(node.get("is_milestone", false)):
+		return "时代晋升效果：" + "；".join(parts)
 	return "；".join(parts)
 
 

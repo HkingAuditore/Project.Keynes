@@ -697,7 +697,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
     int64_t research_daily_budget = 0;
     int64_t research_demand = 0;
     if (_country_runtime != nullptr &&
-        _country_runtime->research_procurement_policy(
+        research_procurement_policy_for(
             country, research_enabled, research_daily_budget, research_demand) &&
         research_enabled && research_daily_budget > 0) {
         research_floor = saturating_mul(

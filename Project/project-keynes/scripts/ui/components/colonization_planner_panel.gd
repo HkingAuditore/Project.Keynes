@@ -4,6 +4,7 @@ class_name ColonizationPlannerPanel
 const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
 const TraitMeterScene := preload("res://scenes/ui/inspector_meter_list.tscn")
 const EffectNoteScene := preload("res://scenes/ui/inspector_note_list.tscn")
+const TouchUI := preload("res://scripts/ui/touch_ui.gd")
 
 # 路线失败时玩家看到的说明。原生只回 `colonization_route_*` 错误码（或把它塞进
 # message），不解释原因；水面在拓扑里是 `passable=0` 的走廊而不是可走地块，
@@ -243,7 +244,11 @@ func _layout_left_panel() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	position = Vector2(UITokens.ARCHIVE_EDGE_INSET, PlayerTopBar.BAR_HEIGHT + 4.0)
-	size = Vector2(roundf(viewport_size.x * 0.45), maxf(0.0,
+	var ratio := 0.56 if TouchUI.is_touch() else 0.45
+	var target_w := roundf(viewport_size.x * ratio)
+	if TouchUI.is_touch():
+		target_w = clampf(target_w, 560.0, maxf(320.0, viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0))
+	size = Vector2(target_w, maxf(0.0,
 		viewport_size.y - position.y - CountryActionBar.BAR_HEIGHT - UITokens.ARCHIVE_EDGE_INSET))
 	var body := get_node("%Body") as BoxContainer
 	var narrow := size.x < 560.0
@@ -1685,11 +1690,15 @@ func _apply_list_filter_sort() -> void:
 
 
 func _on_row_preview_entered(row: Button) -> void:
+	if TouchUI.is_touch():
+		return
 	_hover_family = int(row.get_meta("quote", {}).get("family_handle", 0))
 	_hover_timer.start()
 
 
 func _on_row_preview_exited(row: Button) -> void:
+	if TouchUI.is_touch():
+		return
 	if _hover_family == int(row.get_meta("quote", {}).get("family_handle", 0)):
 		_hover_family = 0
 		_hover_timer.stop()
@@ -1697,6 +1706,8 @@ func _on_row_preview_exited(row: Button) -> void:
 
 
 func _show_hover_preview() -> void:
+	if TouchUI.is_touch():
+		return
 	var row := _quote_row_refs.get(_hover_family) as Button
 	if visible and _current_tab == "quotes" and row != null and row.visible:
 		_show_family_preview(row.get_meta("quote", {}), true)

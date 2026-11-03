@@ -5,7 +5,15 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
-@export_enum("collector", "industrial", "service") var building_kind: String = "industrial"
+@export_enum("collector", "industrial", "service", "state") var building_kind: String = "industrial"
+## Military v1 (design §5.2): state-owned buildings are built and demolished
+## only by the state build/demolish commands, are financed by the treasury
+## instead of a private owner, and are excluded from investment review, recovery
+## liquidation, loss closure, family ownership and merchant lending. Their
+## employee roles must be `state_service_only` professions and use the
+## "state_payroll" wage policy: the wage is the country military pay, paid by the
+## treasury, never from building cash. Only meaningful for `building_kind == "state"`.
+@export_enum("none", "barracks", "fortification", "war_college") var state_role: String = "none"
 ## Explicit technology-output sector. Authoring must not infer farms from the
 ## generic collector kind because collectors also cover mines and fisheries.
 @export_enum("agriculture", "extractive", "manufacturing", "energy", "knowledge") \
@@ -71,6 +79,9 @@ var economic_sector_id: String = ""
 @export var employee_profession_ids: PackedStringArray = PackedStringArray()
 @export var employee_slots_per_building: PackedInt64Array = PackedInt64Array()
 ## Parallel role-level wage policy columns. Wage amounts are not content data.
+## `state_payroll` is the Military v1 policy: the role's wage is the country
+## military pay, transferred by the treasury straight into the employee cohort,
+## so the building itself never owes or pays it.
 @export var employee_wage_policy_ids: PackedStringArray = PackedStringArray()
 ## Legacy load-only field. Catalog compilation ignores it.
 @export var employee_reference_wages_per_day: PackedInt64Array = PackedInt64Array()
@@ -137,5 +148,5 @@ var economic_sector_id: String = ""
 @export var condition_values: PackedInt64Array = PackedInt64Array()
 
 ## Legacy load-only wage fields. Native economy ignores all authored amounts.
-@export_enum("none", "fixed", "adaptive") var wage_policy_id: String = "none"
+@export_enum("none", "fixed", "adaptive", "state_payroll") var wage_policy_id: String = "none"
 @export_range(0, 1000000000000, 1) var wage_per_employee_per_day: int = 0

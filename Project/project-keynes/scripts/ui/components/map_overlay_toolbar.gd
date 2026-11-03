@@ -3,6 +3,7 @@ class_name MapOverlayToolbar
 
 const OverlayButtonScene := preload("res://scenes/ui/map_overlay_icon_button.tscn")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 
 signal overlay_requested(request: Dictionary)
 signal overlay_cleared()
@@ -93,7 +94,8 @@ func dismiss_submenu() -> bool:
 
 
 func primary_safe_width() -> float:
-	return COLUMN_WIDTH + UITokens.ARCHIVE_EDGE_INSET + UITokens.SPACE_MD
+	var col_w := _primary_panel.size.x if _primary_panel != null and _primary_panel.size.x > 0.0 else COLUMN_WIDTH
+	return maxf(COLUMN_WIDTH, col_w) + UITokens.ARCHIVE_EDGE_INSET + UITokens.SPACE_MD
 
 
 func _configure_category_button(category: int, button: Button,
@@ -163,13 +165,19 @@ func _apply_secondary_geometry() -> void:
 	if _secondary_panel == null or _resource_scroll == null:
 		return
 	var count := _mode_buttons.size()
-	var list_height := float(count) * BUTTON_SIZE.y + \
+	var btn_size := BUTTON_SIZE
+	if not _mode_buttons.is_empty() and is_instance_valid(_mode_buttons[0]):
+		var min_s := _mode_buttons[0].get_combined_minimum_size()
+		btn_size = Vector2(maxf(BUTTON_SIZE.x, min_s.x), maxf(BUTTON_SIZE.y, min_s.y))
+	var close_h := maxf(BUTTON_SIZE.y, _close_button.get_combined_minimum_size().y) \
+		if _close_button != null else BUTTON_SIZE.y
+	var list_height := float(count) * btn_size.y + \
 		float(maxi(count - 1, 0)) * UITokens.SPACE_XS
 	var fixed_height := PANEL_THEME_MARGIN_TOTAL + PANEL_MARGIN_TOTAL \
-		+ BUTTON_SIZE.y + UITokens.SPACE_XS
+		+ close_h + UITokens.SPACE_XS
 	var desired_height := fixed_height + list_height
 	var available_height := maxf(
-		BUTTON_SIZE.y * 2.0 + fixed_height,
+		btn_size.y * 2.0 + fixed_height,
 		size.y
 	)
 	var panel_height := desired_height
@@ -178,12 +186,19 @@ func _apply_secondary_geometry() -> void:
 			desired_height,
 			minf(MAX_RESOURCE_PANEL_HEIGHT, available_height)
 		)
-	_secondary_panel.custom_minimum_size = Vector2(SECONDARY_WIDTH, panel_height)
-	_secondary_panel.size = Vector2(SECONDARY_WIDTH, panel_height)
+	var bar_extra := TouchUI.units(20.0) if TouchUI.is_touch() else 0.0
+	var sec_width := maxf(SECONDARY_WIDTH, btn_size.x + PANEL_MARGIN_TOTAL + PANEL_THEME_MARGIN_TOTAL + bar_extra)
+	if _primary_panel != null and TouchUI.is_touch():
+		var pri_w := maxf(COLUMN_WIDTH, btn_size.x + PANEL_MARGIN_TOTAL + PANEL_THEME_MARGIN_TOTAL)
+		_primary_panel.custom_minimum_size.x = pri_w
+		_secondary_panel.offset_left = pri_w + 8.0
+		_secondary_panel.offset_right = pri_w + 8.0 + sec_width
+	_secondary_panel.custom_minimum_size = Vector2(sec_width, panel_height)
+	_secondary_panel.size = Vector2(sec_width, panel_height)
 	_secondary_panel.offset_bottom = panel_height
 	_resource_scroll.custom_minimum_size = Vector2(
-		BUTTON_SIZE.x,
-		maxf(BUTTON_SIZE.y, panel_height - fixed_height)
+		btn_size.x + bar_extra,
+		maxf(btn_size.y, panel_height - fixed_height)
 	)
 
 
@@ -191,7 +206,10 @@ func _configure_scrollbar() -> void:
 	if not is_instance_valid(_resource_scroll):
 		return
 	var bar := _resource_scroll.get_v_scroll_bar()
-	bar.custom_minimum_size.x = 5.0
+	if TouchUI.is_touch():
+		TouchUI.widen_scrollbars(_resource_scroll, {"scrollbar_dp": 20.0})
+	else:
+		bar.custom_minimum_size.x = 5.0
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 
 

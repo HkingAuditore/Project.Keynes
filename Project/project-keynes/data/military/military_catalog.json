@@ -1,0 +1,1588 @@
+{
+  "schema": 1,
+  "units": [
+    {
+      "id": "bronze_spearmen",
+      "name": "青铜矛兵",
+      "description": "青铜兵器与皮甲让步兵第一次拥有稳定的攻防配比。",
+      "class": "line",
+      "era": 1,
+      "tech": "tech.bronze_casting",
+      "militia": false,
+      "attack": 104858,
+      "defense": 144179,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 30,
+      "equipment": [
+        {
+          "category": "melee_arms",
+          "min_quality": 2,
+          "per_100": 786432,
+          "weight": 39322
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 16384
+        },
+        {
+          "category": "missile_arms",
+          "min_quality": 1,
+          "per_100": 262144,
+          "weight": 9830
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 9830
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "cavalry",
+      "name": "骑兵",
+      "description": "马匹与铁兵器结合的机动部队。",
+      "class": "mobile",
+      "era": 2,
+      "tech": "tech.military.mounted_warfare",
+      "militia": false,
+      "attack": 222822,
+      "defense": 117965,
+      "speed": 131072,
+      "fortification_ignore": 0,
+      "training_days": 40,
+      "equipment": [
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 1638400,
+          "weight": 32768
+        },
+        {
+          "category": "melee_arms",
+          "min_quality": 3,
+          "per_100": 524288,
+          "weight": 22938
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 1,
+          "per_100": 262144,
+          "weight": 9830
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 131072,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 196608,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 13107
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "chariot_troops",
+      "name": "战车兵",
+      "description": "战车带来冲击与机动，但需要大量草料与马匹。",
+      "class": "mobile",
+      "era": 1,
+      "tech": "tech.military.chariot_warfare",
+      "militia": false,
+      "attack": 170394,
+      "defense": 78643,
+      "speed": 104858,
+      "fortification_ignore": 0,
+      "training_days": 40,
+      "equipment": [
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 1835008,
+          "weight": 39322
+        },
+        {
+          "category": "melee_arms",
+          "min_quality": 2,
+          "per_100": 393216,
+          "weight": 26214
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 131072,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 196608,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 13107
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "combined_arms",
+      "name": "合成部队",
+      "description": "装甲、火器与电子设备整合的合成营。",
+      "class": "line",
+      "era": 9,
+      "tech": "tech.military.network_centric",
+      "militia": false,
+      "attack": 2949120,
+      "defense": 2949120,
+      "speed": 163840,
+      "fortification_ignore": 0,
+      "training_days": 70,
+      "equipment": [
+        {
+          "category": "armored_vehicles",
+          "min_quality": 2,
+          "per_100": 262144,
+          "weight": 26214
+        },
+        {
+          "category": "firearms",
+          "min_quality": 4,
+          "per_100": 524288,
+          "weight": 26214
+        },
+        {
+          "category": "ammunition",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 32768,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 131072,
+        "fuel": 98304,
+        "upkeep": 16384
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "dragoons",
+      "name": "龙骑兵",
+      "description": "骑马机动、下马射击的混合兵种。",
+      "class": "mobile",
+      "era": 5,
+      "tech": "tech.military.drill_regulations",
+      "militia": false,
+      "attack": 557056,
+      "defense": 327680,
+      "speed": 131072,
+      "fortification_ignore": 0,
+      "training_days": 45,
+      "equipment": [
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 1638400,
+          "weight": 26214
+        },
+        {
+          "category": "firearms",
+          "min_quality": 2,
+          "per_100": 524288,
+          "weight": 39322
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 131072,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 1966
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 196608,
+        "ammunition": 65536,
+        "fuel": 0,
+        "upkeep": 11796
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "drone_swarm",
+      "name": "无人作战集群",
+      "description": "以作战无人机为主力的自主集群。",
+      "class": "mobile",
+      "era": 10,
+      "tech": "tech.military.autonomous_warfare",
+      "militia": false,
+      "attack": 5242880,
+      "defense": 3276800,
+      "speed": 196608,
+      "fortification_ignore": 0,
+      "training_days": 80,
+      "equipment": [
+        {
+          "category": "drones",
+          "min_quality": 1,
+          "per_100": 655360,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 65536,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 32768,
+        "fuel": 163840,
+        "upkeep": 16384
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "early_armor",
+      "name": "早期装甲",
+      "description": "第一代坦克，突破与机动的结合。",
+      "class": "mobile",
+      "era": 7,
+      "tech": "tech.military.armored_warfare",
+      "militia": false,
+      "attack": 1703936,
+      "defense": 1179648,
+      "speed": 85197,
+      "fortification_ignore": 0,
+      "training_days": 60,
+      "equipment": [
+        {
+          "category": "armored_vehicles",
+          "min_quality": 1,
+          "per_100": 262144,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 65536,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 98304,
+        "fuel": 196608,
+        "upkeep": 16384
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "exo_infantry",
+      "name": "外骨骼步兵",
+      "description": "外骨骼与智能单兵武器让步兵重回主导。",
+      "class": "line",
+      "era": 10,
+      "tech": "tech.military.autonomous_warfare",
+      "militia": false,
+      "attack": 3932160,
+      "defense": 4587520,
+      "speed": 98304,
+      "fortification_ignore": 0,
+      "training_days": 80,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 5,
+          "per_100": 655360,
+          "weight": 32768
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 4,
+          "per_100": 655360,
+          "weight": 19661
+        },
+        {
+          "category": "ammunition",
+          "min_quality": 1,
+          "per_100": 262144,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 98304,
+        "fuel": 0,
+        "upkeep": 16384
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "field_artillery",
+      "name": "野战炮兵",
+      "description": "马拉火炮随军机动，无视 50% 工事。",
+      "class": "artillery",
+      "era": 4,
+      "tech": "tech.military.field_artillery",
+      "militia": false,
+      "attack": 557056,
+      "defense": 131072,
+      "speed": 45875,
+      "fortification_ignore": 32768,
+      "training_days": 50,
+      "equipment": [
+        {
+          "category": "ordnance",
+          "min_quality": 2,
+          "per_100": 393216,
+          "weight": 52429
+        },
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 655360,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 32768,
+        "ammunition": 6554,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 49152,
+        "ammunition": 229376,
+        "fuel": 0,
+        "upkeep": 16384
+      },
+      "icon": "unit.artillery"
+    },
+    {
+      "id": "heavy_artillery",
+      "name": "重炮兵",
+      "description": "线膛钢炮，无视 70% 工事。",
+      "class": "artillery",
+      "era": 6,
+      "tech": "tech.military.rifled_weapons",
+      "militia": false,
+      "attack": 1179648,
+      "defense": 196608,
+      "speed": 45875,
+      "fortification_ignore": 45875,
+      "training_days": 55,
+      "equipment": [
+        {
+          "category": "ordnance",
+          "min_quality": 3,
+          "per_100": 786432,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 6554,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 262144,
+        "fuel": 0,
+        "upkeep": 16384
+      },
+      "icon": "unit.artillery"
+    },
+    {
+      "id": "heavy_cavalry",
+      "name": "甲骑具装",
+      "description": "人马俱甲的冲击骑兵，机动性略降而攻防大幅提高。",
+      "class": "mobile",
+      "era": 3,
+      "tech": "tech.military.heavy_cavalry",
+      "militia": false,
+      "attack": 327680,
+      "defense": 235930,
+      "speed": 104858,
+      "fortification_ignore": 0,
+      "training_days": 45,
+      "equipment": [
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 1966080,
+          "weight": 32768
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 3,
+          "per_100": 983040,
+          "weight": 19661
+        },
+        {
+          "category": "melee_arms",
+          "min_quality": 3,
+          "per_100": 524288,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 131072,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 196608,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 13107
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "iron_infantry",
+      "name": "铁甲步兵",
+      "description": "锻造铁兵器与铁甲构成常备军的主力。",
+      "class": "line",
+      "era": 2,
+      "tech": "tech.military.standing_army",
+      "militia": false,
+      "attack": 157286,
+      "defense": 209715,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 30,
+      "equipment": [
+        {
+          "category": "melee_arms",
+          "min_quality": 3,
+          "per_100": 786432,
+          "weight": 32768
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 2,
+          "per_100": 524288,
+          "weight": 22938
+        },
+        {
+          "category": "missile_arms",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 9830
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 9830
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "legionaries",
+      "name": "军团步兵",
+      "description": "军需体系支撑的重装步兵，攻防俱佳。",
+      "class": "line",
+      "era": 3,
+      "tech": "tech.military.legion_logistics",
+      "militia": false,
+      "attack": 235930,
+      "defense": 301466,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 30,
+      "equipment": [
+        {
+          "category": "melee_arms",
+          "min_quality": 3,
+          "per_100": 786432,
+          "weight": 29491
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 3,
+          "per_100": 786432,
+          "weight": 26214
+        },
+        {
+          "category": "missile_arms",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 9830
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 9830
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "line_infantry",
+      "name": "线列步兵",
+      "description": "操典与燧发枪组成整齐的线列。",
+      "class": "line",
+      "era": 5,
+      "tech": "tech.military.drill_regulations",
+      "militia": false,
+      "attack": 524288,
+      "defense": 425984,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 35,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 2,
+          "per_100": 786432,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 1966
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 65536,
+        "fuel": 0,
+        "upkeep": 8520
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "machine_gunners",
+      "name": "机枪步兵",
+      "description": "自动武器把火力密度推到新的量级。",
+      "class": "line",
+      "era": 7,
+      "tech": "tech.military.machine_guns",
+      "militia": false,
+      "attack": 1048576,
+      "defense": 1048576,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 45,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 4,
+          "per_100": 917504,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 1966
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 91750,
+        "fuel": 0,
+        "upkeep": 8520
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "mechanized_infantry",
+      "name": "机械化步兵",
+      "description": "车载步兵，机动性接近坦克。",
+      "class": "line",
+      "era": 8,
+      "tech": "tech.military.mechanization",
+      "militia": false,
+      "attack": 1572864,
+      "defense": 1572864,
+      "speed": 163840,
+      "fortification_ignore": 0,
+      "training_days": 55,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 4,
+          "per_100": 655360,
+          "weight": 36045
+        },
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 16384
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 4,
+          "per_100": 393216,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 65536,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 98304,
+        "fuel": 196608,
+        "upkeep": 16384
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "militia",
+      "name": "民兵",
+      "description": "入伍即编成的默认兵种，不需要装备，攻防偏低；攻防另乘时代系数。",
+      "class": "line",
+      "era": 0,
+      "tech": "",
+      "militia": true,
+      "attack": 32768,
+      "defense": 39322,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 0,
+      "equipment": [],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 9830
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "missile_artillery",
+      "name": "导弹炮兵",
+      "description": "以导弹发射系统为主装备，无视 80% 工事。",
+      "class": "artillery",
+      "era": 9,
+      "tech": "tech.military.precision_guidance",
+      "militia": false,
+      "attack": 3932160,
+      "defense": 983040,
+      "speed": 163840,
+      "fortification_ignore": 52429,
+      "training_days": 75,
+      "equipment": [
+        {
+          "category": "ordnance",
+          "min_quality": 5,
+          "per_100": 262144,
+          "weight": 45875
+        },
+        {
+          "category": "ammunition",
+          "min_quality": 4,
+          "per_100": 262144,
+          "weight": 19661
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 6554,
+        "fuel": 32768,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 262144,
+        "fuel": 65536,
+        "upkeep": 16384
+      },
+      "icon": "unit.artillery"
+    },
+    {
+      "id": "musketeers",
+      "name": "火枪兵",
+      "description": "火绳枪让密集射击成为可能。",
+      "class": "line",
+      "era": 4,
+      "tech": "tech.gunpowder_weapons",
+      "militia": false,
+      "attack": 393216,
+      "defense": 262144,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 35,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 1,
+          "per_100": 655360,
+          "weight": 49152
+        },
+        {
+          "category": "melee_arms",
+          "min_quality": 3,
+          "per_100": 262144,
+          "weight": 16384
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 1966
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 52429,
+        "fuel": 0,
+        "upkeep": 8520
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "riflemen",
+      "name": "步枪兵",
+      "description": "线膛步枪让散兵成为主力。",
+      "class": "line",
+      "era": 6,
+      "tech": "tech.military.rifled_weapons",
+      "militia": false,
+      "attack": 786432,
+      "defense": 655360,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 40,
+      "equipment": [
+        {
+          "category": "firearms",
+          "min_quality": 3,
+          "per_100": 655360,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 3277,
+        "fuel": 0,
+        "upkeep": 1966
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 78643,
+        "fuel": 0,
+        "upkeep": 8520
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "siege_train",
+      "name": "攻城营",
+      "description": "操纵攻城器械的工兵与炮兵混合部队，无视 60% 工事。",
+      "class": "artillery",
+      "era": 3,
+      "tech": "tech.military.siegecraft",
+      "militia": false,
+      "attack": 262144,
+      "defense": 65536,
+      "speed": 39322,
+      "fortification_ignore": 39322,
+      "training_days": 45,
+      "equipment": [
+        {
+          "category": "ordnance",
+          "min_quality": 1,
+          "per_100": 1310720,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 6554,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 196608,
+        "fuel": 0,
+        "upkeep": 16384
+      },
+      "icon": "unit.artillery"
+    },
+    {
+      "id": "sp_artillery",
+      "name": "自行火炮",
+      "description": "伴随装甲部队推进的火炮，无视 75% 工事。",
+      "class": "artillery",
+      "era": 8,
+      "tech": "tech.military.mechanization",
+      "militia": false,
+      "attack": 2949120,
+      "defense": 786432,
+      "speed": 131072,
+      "fortification_ignore": 49152,
+      "training_days": 65,
+      "equipment": [
+        {
+          "category": "ordnance",
+          "min_quality": 4,
+          "per_100": 524288,
+          "weight": 52429
+        },
+        {
+          "category": "mounts",
+          "min_quality": 1,
+          "per_100": 262144,
+          "weight": 13107
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 6554,
+        "fuel": 65536,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 294912,
+        "fuel": 131072,
+        "upkeep": 16384
+      },
+      "icon": "unit.artillery"
+    },
+    {
+      "id": "tank_corps",
+      "name": "坦克部队",
+      "description": "现代主战坦克编成的突击集群。",
+      "class": "mobile",
+      "era": 8,
+      "tech": "tech.military.main_battle_tanks",
+      "militia": false,
+      "attack": 2621440,
+      "defense": 2097152,
+      "speed": 144179,
+      "fortification_ignore": 0,
+      "training_days": 65,
+      "equipment": [
+        {
+          "category": "armored_vehicles",
+          "min_quality": 2,
+          "per_100": 524288,
+          "weight": 65536
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 65536,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 98304,
+        "fuel": 196608,
+        "upkeep": 16384
+      },
+      "icon": "unit.mobile"
+    },
+    {
+      "id": "tribal_warriors",
+      "name": "部落战士",
+      "description": "以石矛与弓箭武装的部落战士，是最早的有组织步兵。",
+      "class": "line",
+      "era": 0,
+      "tech": "",
+      "militia": false,
+      "attack": 65536,
+      "defense": 65536,
+      "speed": 65536,
+      "fortification_ignore": 0,
+      "training_days": 20,
+      "equipment": [
+        {
+          "category": "melee_arms",
+          "min_quality": 1,
+          "per_100": 655360,
+          "weight": 45875
+        },
+        {
+          "category": "missile_arms",
+          "min_quality": 1,
+          "per_100": 393216,
+          "weight": 19661
+        }
+      ],
+      "supply_idle": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 3277
+      },
+      "supply_combat": {
+        "ration": 0,
+        "fodder": 0,
+        "ammunition": 0,
+        "fuel": 0,
+        "upkeep": 9830
+      },
+      "icon": "unit.line"
+    }
+  ],
+  "equipment_categories": [
+    {
+      "id": "ammunition",
+      "name": "弹药",
+      "goods": [
+        {
+          "good": "powder_shot",
+          "quality": 1
+        },
+        {
+          "good": "cartridges",
+          "quality": 2
+        },
+        {
+          "good": "modern_munitions",
+          "quality": 3
+        },
+        {
+          "good": "guided_munitions",
+          "quality": 4
+        }
+      ]
+    },
+    {
+      "id": "armored_vehicles",
+      "name": "装甲车辆",
+      "goods": [
+        {
+          "good": "early_tanks",
+          "quality": 1
+        },
+        {
+          "good": "modern_tanks",
+          "quality": 2
+        }
+      ]
+    },
+    {
+      "id": "body_armor",
+      "name": "护具",
+      "goods": [
+        {
+          "good": "hide_armor",
+          "quality": 1
+        },
+        {
+          "good": "iron_armor",
+          "quality": 2
+        },
+        {
+          "good": "plate_armor",
+          "quality": 3
+        },
+        {
+          "good": "ballistic_armor",
+          "quality": 4
+        }
+      ]
+    },
+    {
+      "id": "drones",
+      "name": "作战无人机",
+      "goods": [
+        {
+          "good": "combat_drones",
+          "quality": 1
+        }
+      ]
+    },
+    {
+      "id": "firearms",
+      "name": "火器",
+      "goods": [
+        {
+          "good": "matchlocks",
+          "quality": 1
+        },
+        {
+          "good": "flintlocks",
+          "quality": 2
+        },
+        {
+          "good": "rifles",
+          "quality": 3
+        },
+        {
+          "good": "automatic_rifles",
+          "quality": 4
+        },
+        {
+          "good": "smart_rifles",
+          "quality": 5
+        }
+      ]
+    },
+    {
+      "id": "melee_arms",
+      "name": "兵器",
+      "goods": [
+        {
+          "good": "stone_spears",
+          "quality": 1
+        },
+        {
+          "good": "bronze_weapons",
+          "quality": 2
+        },
+        {
+          "good": "iron_weapons",
+          "quality": 3
+        },
+        {
+          "good": "steel_blades",
+          "quality": 4
+        }
+      ]
+    },
+    {
+      "id": "missile_arms",
+      "name": "弓箭",
+      "goods": [
+        {
+          "good": "bows",
+          "quality": 1
+        }
+      ]
+    },
+    {
+      "id": "mounts",
+      "name": "坐骑与战车",
+      "goods": [
+        {
+          "good": "horses",
+          "quality": 1
+        },
+        {
+          "good": "war_chariots",
+          "quality": 2
+        }
+      ]
+    },
+    {
+      "id": "ordnance",
+      "name": "火炮",
+      "goods": [
+        {
+          "good": "siege_engines",
+          "quality": 1
+        },
+        {
+          "good": "bronze_cannon",
+          "quality": 2
+        },
+        {
+          "good": "steel_artillery",
+          "quality": 3
+        },
+        {
+          "good": "howitzers",
+          "quality": 4
+        },
+        {
+          "good": "missile_launchers",
+          "quality": 5
+        }
+      ]
+    }
+  ],
+  "state_buildings": [
+    {
+      "id": "warrior_lodge",
+      "name": "战士营地",
+      "role": "barracks",
+      "tier": 1,
+      "tech": "",
+      "capacity": 4,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 200,
+      "build_days": 10,
+      "materials": {
+        "logs": 20000,
+        "turf_block": 10000
+      }
+    },
+    {
+      "id": "palisade_barracks",
+      "name": "木栅兵营",
+      "role": "barracks",
+      "tier": 2,
+      "tech": "tech.military.earthen_ramparts",
+      "capacity": 10,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 500,
+      "build_days": 20,
+      "materials": {
+        "lumber": 30000,
+        "adobe_brick": 20000
+      }
+    },
+    {
+      "id": "garrison_barracks",
+      "name": "戍卫营",
+      "role": "barracks",
+      "tier": 3,
+      "tech": "tech.military.standing_army",
+      "capacity": 25,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 1500,
+      "build_days": 30,
+      "materials": {
+        "bricks": 40000,
+        "lumber": 30000,
+        "wrought_iron": 5000
+      }
+    },
+    {
+      "id": "legion_fort",
+      "name": "军团营寨",
+      "role": "barracks",
+      "tier": 4,
+      "tech": "tech.military.legion_logistics",
+      "capacity": 50,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 4000,
+      "build_days": 45,
+      "materials": {
+        "bricks": 80000,
+        "raw_stone": 60000
+      }
+    },
+    {
+      "id": "drill_depot",
+      "name": "操练营",
+      "role": "barracks",
+      "tier": 5,
+      "tech": "tech.military.drill_regulations",
+      "capacity": 100,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 10000,
+      "build_days": 45,
+      "materials": {
+        "bricks": 120000,
+        "glass": 20000
+      }
+    },
+    {
+      "id": "army_depot",
+      "name": "兵站",
+      "role": "barracks",
+      "tier": 6,
+      "tech": "tech.military.general_staff",
+      "capacity": 200,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 25000,
+      "build_days": 60,
+      "materials": {
+        "steel": 40000,
+        "cement": 60000
+      }
+    },
+    {
+      "id": "military_base",
+      "name": "军事基地",
+      "role": "barracks",
+      "tier": 7,
+      "tech": "tech.military.mechanization",
+      "capacity": 400,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 60000,
+      "build_days": 75,
+      "materials": {
+        "concrete": 100000,
+        "steel": 60000,
+        "electrical_equipment": 10000
+      }
+    },
+    {
+      "id": "training_complex",
+      "name": "联合训练中心",
+      "role": "barracks",
+      "tier": 8,
+      "tech": "tech.military.network_centric",
+      "capacity": 800,
+      "fort_bonus": 0,
+      "training_speed": 65536,
+      "upkeep": 150000,
+      "build_days": 90,
+      "materials": {
+        "concrete": 150000,
+        "computers": 10000,
+        "telecom_equipment": 10000
+      }
+    },
+    {
+      "id": "earthen_rampart",
+      "name": "夯土城垣",
+      "role": "fortification",
+      "tier": 1,
+      "tech": "tech.military.earthen_ramparts",
+      "capacity": 0,
+      "fort_bonus": 19661,
+      "training_speed": 65536,
+      "upkeep": 500,
+      "build_days": 20,
+      "materials": {
+        "turf_block": 40000,
+        "logs": 30000
+      }
+    },
+    {
+      "id": "stone_walls",
+      "name": "石砌城墙",
+      "role": "fortification",
+      "tier": 2,
+      "tech": "tech.masonry",
+      "capacity": 0,
+      "fort_bonus": 39322,
+      "training_speed": 65536,
+      "upkeep": 1500,
+      "build_days": 30,
+      "materials": {
+        "raw_stone": 120000,
+        "bricks": 60000
+      }
+    },
+    {
+      "id": "citadel",
+      "name": "城堡要塞",
+      "role": "fortification",
+      "tier": 3,
+      "tech": "tech.military.siegecraft",
+      "capacity": 0,
+      "fort_bonus": 65536,
+      "training_speed": 65536,
+      "upkeep": 3000,
+      "build_days": 45,
+      "materials": {
+        "raw_stone": 200000,
+        "bricks": 120000
+      }
+    },
+    {
+      "id": "star_fort",
+      "name": "棱堡",
+      "role": "fortification",
+      "tier": 4,
+      "tech": "tech.military.star_forts",
+      "capacity": 0,
+      "fort_bonus": 91750,
+      "training_speed": 65536,
+      "upkeep": 5000,
+      "build_days": 55,
+      "materials": {
+        "bricks": 250000,
+        "raw_stone": 150000,
+        "bronze_cannon": 4000
+      }
+    },
+    {
+      "id": "bunker_line",
+      "name": "碉堡防线",
+      "role": "fortification",
+      "tier": 5,
+      "tech": "tech.military.machine_guns",
+      "capacity": 0,
+      "fort_bonus": 117965,
+      "training_speed": 65536,
+      "upkeep": 10000,
+      "build_days": 70,
+      "materials": {
+        "concrete": 200000,
+        "steel": 60000
+      }
+    },
+    {
+      "id": "hardened_defense_network",
+      "name": "加固防御网",
+      "role": "fortification",
+      "tier": 6,
+      "tech": "tech.military.ai_defense_grid",
+      "capacity": 0,
+      "fort_bonus": 157286,
+      "training_speed": 65536,
+      "upkeep": 30000,
+      "build_days": 90,
+      "materials": {
+        "concrete": 300000,
+        "military_electronics": 20000
+      }
+    },
+    {
+      "id": "martial_academy",
+      "name": "武学馆",
+      "role": "war_college",
+      "tier": 1,
+      "tech": "tech.military.standing_army",
+      "capacity": 0,
+      "fort_bonus": 0,
+      "training_speed": 98304,
+      "upkeep": 2000,
+      "build_days": 40,
+      "materials": {
+        "bricks": 60000,
+        "lumber": 40000
+      },
+      "national": {
+        "stat": "country.military.organization_recovery_factor",
+        "per_building": 0.05,
+        "cap": 0.25
+      }
+    },
+    {
+      "id": "military_academy",
+      "name": "军事学院",
+      "role": "war_college",
+      "tier": 2,
+      "tech": "tech.military.drill_regulations",
+      "capacity": 0,
+      "fort_bonus": 0,
+      "training_speed": 131072,
+      "upkeep": 5000,
+      "build_days": 50,
+      "materials": {
+        "bricks": 100000,
+        "glass": 20000
+      },
+      "national": {
+        "stat": "country.military.organization_recovery_factor",
+        "per_building": 0.08,
+        "cap": 0.25
+      },
+      "national_extra": {
+        "stat": "country.military.attack_factor",
+        "per_building": 0.02,
+        "cap": 0.1
+      }
+    },
+    {
+      "id": "war_simulation_center",
+      "name": "兵棋推演中心",
+      "role": "war_college",
+      "tier": 3,
+      "tech": "tech.military.network_centric",
+      "capacity": 0,
+      "fort_bonus": 0,
+      "training_speed": 196608,
+      "upkeep": 80000,
+      "build_days": 90,
+      "materials": {
+        "concrete": 120000,
+        "computers": 8000
+      },
+      "national": {
+        "stat": "country.military.attack_factor",
+        "per_building": 0.03,
+        "cap": 0.12
+      },
+      "national_extra": {
+        "stat": "country.military.defense_factor",
+        "per_building": 0.03,
+        "cap": 0.12
+      }
+    }
+  ],
+  "supply": {
+    "ration": {
+      "needs": [
+        "staple_food",
+        "protein"
+      ],
+      "combat_ratio_q16": 81920
+    },
+    "fodder": [
+      "grain",
+      "wheat_grain",
+      "corn_grain",
+      "gathered_plants"
+    ],
+    "ammunition": {
+      "category": "ammunition",
+      "min_quality": 1,
+      "efficiency_q16": {
+        "powder_shot": 65536,
+        "cartridges": 85197,
+        "modern_munitions": 104858,
+        "guided_munitions": 131072
+      }
+    },
+    "fuel": [
+      "refined_fuel"
+    ],
+    "fuel_autonomous": [
+      "batteries"
+    ],
+    "upkeep": "primary_equipment_slot",
+    "equipment": {
+      "category_order": [
+        "firearms",
+        "ordnance",
+        "melee_arms",
+        "armored_vehicles",
+        "drones",
+        "mounts",
+        "missile_arms"
+      ],
+      "min_quality": 1
+    },
+    "propellant": {
+      "category": "propellant",
+      "efficiency_q16": {
+        "black_powder": 65536,
+        "smokeless_powder": 131072,
+        "modern_propellant": 170394
+      }
+    },
+    "quality_multiplier_q16": [
+      65536,
+      78643,
+      95027,
+      114688,
+      137626
+    ],
+    "condition": {
+      "daily_wear_q16": 328,
+      "daily_recover_q16": 655,
+      "min_condition_q16": 32768
+    },
+    "era_militia_attack_factor_q16": 88474
+  },
+  "defaults": {
+    "training_kind_factor_q16": {
+      "militia_to_unit": 65536,
+      "same_class": 26214,
+      "cross_class": 52429,
+      "same_unit_requip": 16384
+    },
+    "levy_rate_bp": 300,
+    "wage_factor_q16": 85197,
+    "escort_base_q16": [
+      6554,
+      13107,
+      22938
+    ],
+    "convoy_intercept_max_q16": 32768,
+    "discharge_order": [
+      "militia",
+      "rear_garrison",
+      "obsolete_unit"
+    ],
+    "desertion_rate_q16": 328,
+    "morale_weights_q16": {
+      "pay_ratio": 19661,
+      "supply_ratio": 19661,
+      "recent_battle": 13107,
+      "rest_garrison": 13107
+    }
+  }
+}

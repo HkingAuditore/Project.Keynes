@@ -37,6 +37,7 @@ const PAYLOAD_COUNTRY_DEVELOPMENT_V1 := 10
 const SOURCE_NATIVE := 1
 const SOURCE_GDSCRIPT := 2
 const SCOPE_ENTITY := 2
+const VALUE_ONE := 0
 const VALUE_I64 := 1
 const PAYLOAD_I0 := 2
 const PAYLOAD_I1 := 3
@@ -49,7 +50,7 @@ const SOURCE_KIND_TRIGGER_OUTPUT := 4
 const EVENT_CONSTRUCTION_COMPLETED := 6
 const EVENT_TRADE_ARRIVED := 7
 const PAYLOAD_CONSTRUCTION_COMPLETED_V1 := 3
-const PAYLOAD_TRADE_ARRIVED_V1 := 8
+const PAYLOAD_TRADE_ARRIVED_V1 := 4
 
 ## Economy publishes only already-qualified practice facts. TriggerRuntime owns
 ## their durable accumulation; EffectRuntime owns the Country command/ACK.
@@ -431,30 +432,35 @@ static func _family_buff_definitions() -> Array[Resource]:
 	var out: Array[Resource] = []
 	out.append_array(_tiered_family_buff_triggers(
 		"family.buff.trade_population", "商路招佃",
-		"累计跨格贸易到达后，为家族分支奖励人口。威望越高，累计次数门槛越高。",
+		"累计跨格贸易到达后，为家族分支奖励人口。威望越高，所需累计贸易次数越低。",
 		SOURCE_NATIVE, EVENT_TRADE_ARRIVED, PAYLOAD_TRADE_ARRIVED_V1,
-		AGG_COUNT, 0, PackedInt32Array([8, 12, 16, 24, 32, 40]),
-		ACTION_ECONOMY_COMMAND, 2, &"family.population_reward", &"", -1, 0))
+		AGG_COUNT, 0, PackedInt32Array([5, 5, 4, 3, 2, 1]),
+		ACTION_ECONOMY_COMMAND, 2, &"family.population_reward", &"", -1, 0,
+		-1, 0, VALUE_ONE, 0, 1))
 	out.append_array(_tiered_family_buff_triggers(
 		"family.buff.market_window", "市集窗口",
-		"三十日内贸易到达次数达标后，刷新本城贸易产出加成。威望越高，窗口内次数门槛越高。",
+		"三十日内完成二十次跨地区贸易后，按威望刷新本城贸易产出加成与持续时间。",
 		SOURCE_NATIVE, EVENT_TRADE_ARRIVED, PAYLOAD_TRADE_ARRIVED_V1,
-		AGG_WINDOW_COUNT, 30, PackedInt32Array([3, 4, 6, 8, 10, 12]),
+		AGG_WINDOW_COUNT, 30, PackedInt32Array([20, 20, 20, 20, 20, 20]),
 		ACTION_MODIFIER_APPLY, 2, &"family.city.trade_output_boost",
-		&"family.city.trade_output_boost", 30, 1))
+		&"family.city.trade_output_boost", 30, 1, -1, 0, VALUE_ONE, 0, 0,
+		PackedInt32Array([39322, 39322, 65536, 91750, 117965, 157286]),
+		PackedInt32Array([30, 30, 45, 60, 90, 120])))
 	out.append_array(_tiered_family_buff_triggers(
 		"family.buff.construction_gift", "营造馈赠",
-		"累计建设完工后，为家族分支免费建成一座建筑。威望越高，累计次数门槛越高。",
+		"累计建设完工后，为家族分支免费建成一座建筑。威望越高，所需累计建设次数越低。",
 		SOURCE_NATIVE, EVENT_CONSTRUCTION_COMPLETED, PAYLOAD_CONSTRUCTION_COMPLETED_V1,
-		AGG_COUNT, 0, PackedInt32Array([2, 3, 4, 5, 6, 8]),
-		ACTION_ECONOMY_COMMAND, 2, &"family.free_building", &"", -1, 0))
+		AGG_SUM, 0, PackedInt32Array([10, 10, 8, 6, 3, 1]),
+		ACTION_ECONOMY_COMMAND, 2, &"family.free_building", &"", -1, 0,
+		-1, 0, VALUE_I64, 0, 1))
 	out.append_array(_tiered_family_buff_triggers(
 		"family.buff.drought_store", "旱年储备",
 		"连续干旱达到天数门槛后，降低本城主食消费。威望越高，连续天数门槛越高。",
 		SOURCE_GDSCRIPT, EVENT_WEATHER_OBSERVED, PAYLOAD_WEATHER_OBSERVED_V1,
 		AGG_CONSECUTIVE_DURATION, 0, PackedInt32Array([30, 45, 60, 90, 120, 180]),
 		ACTION_MODIFIER_APPLY, 2, &"family.city.staple_consumption_cut",
-		&"family.city.staple_consumption_cut", 30, 1, PAYLOAD_I0, 2))
+		&"family.city.staple_consumption_cut", 30, 1, PAYLOAD_I0, 2, VALUE_I64, 0, 0,
+		PackedInt32Array([32768, 32768, 65536, 98304, 131072, 163840])))
 	return out
 
 
@@ -463,7 +469,10 @@ static func _tiered_family_buff_triggers(prefix: String, display_name: String,
 		aggregator: int, window_days: int, thresholds: PackedInt32Array,
 		action: int, domain: int, command_key: StringName, definition_key: StringName,
 		duration_days: int, opcode: int, selector_field: int = -1,
-		selector_value: int = 0) -> Array[Resource]:
+		selector_value: int = 0, value_field: int = VALUE_I64,
+		effect_value_mode: int = 1, effect_value: int = 0,
+		effect_values: PackedInt32Array = PackedInt32Array(),
+		durations: PackedInt32Array = PackedInt32Array()) -> Array[Resource]:
 	var out: Array[Resource] = []
 	for tier in range(mini(6, thresholds.size())):
 		var definition := TriggerDefinitionScript.new()
@@ -475,7 +484,7 @@ static func _tiered_family_buff_triggers(prefix: String, display_name: String,
 		definition.event_type = event_type
 		definition.payload_schema = payload_schema
 		definition.aggregator = aggregator
-		definition.value_field = VALUE_I64
+		definition.value_field = value_field
 		definition.scope = SCOPE_ENTITY
 		definition.target_resolver = TARGET_SOURCE_ENTITY
 		definition.threshold = int(thresholds[tier])
@@ -493,11 +502,18 @@ static func _tiered_family_buff_triggers(prefix: String, display_name: String,
 		effect.source_priority = 100
 		effect.domain = domain
 		effect.opcode = opcode
-		effect.value_mode = 1
-		effect.duration_days = duration_days
+		effect.value_mode = effect_value_mode
+		if tier < effect_values.size():
+			effect.value = int(effect_values[tier])
+		else:
+			effect.value = effect_value
+		if tier < durations.size():
+			effect.duration_days = int(durations[tier])
+		else:
+			effect.duration_days = duration_days
 		effect.command_key = command_key
 		effect.definition_key = definition_key
-		definition.effects = [effect]
+		definition.effects.append(effect)
 		out.append(definition)
 	return out
 

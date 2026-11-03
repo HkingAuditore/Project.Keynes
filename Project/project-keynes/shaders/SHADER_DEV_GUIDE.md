@@ -147,6 +147,7 @@ void fragment() {
 |---|---|---|---|
 | 1 | `shader_quality.gdshaderinc` | – | 编译期性能变体宏：`PK_QUALITY_*` / `PK_SKIP_*` |
 | 2 | `uniforms.gdshaderinc` | – | 叶子，所有 sampler / 常量 / 枚举 ID 入口 |
+| 2b | `pixel_scale.gdshaderinc` | uniforms（`pixel_world_size` / `hex_size`） | 叶子，世界尺度 ↔ 屏幕像素尺度换算（`pk_px_per_world_unit` / `pk_px_per_world_at` / `pk_hex_px` / `pk_near_detail_blend`）。被 `biome_detail` 与 `terrain_surface_detail` 各自 include（有 include guard），因此 include 顺序由这两者决定，不会被 `world_map.gdshader` 直接引用 |
 | 3 | `material_constants.gdshaderinc` | uniforms | 叶子，magic number / F0 / 特性开关 |
 | 4 | `common_noise.gdshaderinc` | uniforms | 叶子，`fbm` / `voronoi_cell` / `derive_independent_noise4` |
 | 5 | `height.gdshaderinc` | uniforms | 叶子，`decode_height_rg8` |
@@ -155,7 +156,7 @@ void fragment() {
 | 8 | `vegetation.gdshaderinc` | common_noise + uniforms.V_* | 叶子，植被季节色 |
 | 9 | `weather_front.gdshaderinc` | common_noise + uniforms.WT_* | 叶子，极端天气掩码 |
 | 10 | `snow_cover.gdshaderinc` | common_noise + height + weather_front | 雪盖判定与色化 |
-| 11 | `biome_detail.gdshaderinc` | common_noise + B_* | biome 内部纹理变化 |
+| 11 | `biome_detail.gdshaderinc` | common_noise + B_* + pixel_scale | biome 内部纹理变化 + 近景高频颗粒 |
 | 12 | `hillshade_tod.gdshaderinc` | uniforms + height + visual_tile_sampling | 烘焙法线唯一入口 `terrain_baked_normal` + 昼夜 |
 | 13 | `water.gdshaderinc` | common_noise + uniforms.B_* | 水共享细节（波纹/平静面）。**拆分后陆地 program 仍 include**（河面法线）；Web land-only 变体不 include |
 | 14 | `surface_params.gdshaderinc` | material_constants | 半 PBR 容器 |
@@ -948,7 +949,42 @@ LOW(`visual_quality=0`) 的门控是硬契约：`procedural_biome_detail` vq<=0 
 17. **任何吃 TOD 的图层都必须消费 `EarthDaylight` 的月光三件套**（`moon_dir`/`moon_col`/`moon_strength`）。日月方向近乎相反，不能直接向量插值；实体表面可选主光硬切，透明/云层则应分别计算日光与月光后连续相加，并在方向轴切换附近削弱方向性阴影。高空云的昼夜过渡应比地表更宽，可加入暮光金橙散射。月光不能简单复用太阳的法线、直射与质量阴影增益：深夜应由低方向性的冷灰天空光和多重散射主导，局部法线只保留微弱月光层次。
 18. **动态云层必须消费表现时钟倍率。** 程序化噪声的各频段要用不同相位随时间演化，不能只做整场刚性平移；天气云与迷雾云都通过 `set_clock_speed_multiplier()` 同步游戏倍速，避免 x20 时模拟飞奔而云形仍按真实时间慢放。
 19. 与时间无关、只随地图/biome 变化的视觉细节优先烘进 atlas；当前 `terrain_detail_tex` 由 `MapBaker` 初次 bake 和 biome 轴重烘维护。
-20. **近景尺度的贴图细节不能直接进入大陆视角的光照。** 地形材质法线必须随 `camera_zoom` 淡入，并且不能进入 `macro_normal`；远景纹理密度靠放大平铺的远层和低频斑块提供，不能靠压低单层平铺尺寸。
+20. **近景尺度的贴图细节不能直接进入大陆视角的光照。** 地形材质法线必须随放大倍数淡入（口径见 §14.5：`pk_hex_px()`，**不是** `camera_zoom`），并且不能进入 `macro_normal`；远景纹理密度靠放大平铺的远层和低频斑块提供，不能靠压低单层平铺尺寸。
+
+### 14.5 像素尺度细节（pixel-scale detail，2026-11-03）
+
+地表所有细节层（材质平铺 / micro / 程序化 biome 噪声）都是**固定世界尺度**，相机放大时被等比拉大；放大到近景后没有任何一层提供"屏幕像素级"的高频，观感就是放大的像素颗粒。修法不是改频率（会让纹理随缩放游动），而是**补更细的一级常量世界尺度细节 + 按纹素投影交叉淡入**。
+
+**唯一换算入口**：`pixel_scale.gdshaderinc`。权威输入是 `uniform float pixel_world_size`（= 1 / (camera_zoom × content_scale)，一个**物理**像素覆盖多少世界单位，`hex_renderer` 逐帧推送）。
+
+| helper | 语义 | 典型用途 |
+|---|---|---|
+| `pk_px_per_world_unit()` | 1 world unit = 几屏幕像素（含 content_scale） | 整帧稳定门控（dither 亚像素淡出） |
+| `pk_world_per_px_at(wp)` | 1 屏幕像素 = 几 world units，逐像素取 `dFdx/dFdy` 并夹在 `[uniform, 4×]` | 逐像素细节权重 |
+| `pk_px_per_world_at(wp)` | 上式的倒数 | 纹素投影换算 |
+| `pk_hex_px()` | `hex_size × px_per_world` = 一个 hex 占几物理像素 | 缩放档位门控（micro 淡入 / land dither 淡出） |
+| `pk_near_detail_blend(wp, texel_world)` | 纹素投影 2.5px 起、6px 满的 `smoothstep` | 所有"更细一级"的交叉淡入 |
+
+**换算口径（为什么要 hex_px）**：content_scale 被 `pixel_world_size` 吃掉，所以阈值只写一套：
+`hex_px` 相同 ⇔ 纹素放大倍数相同 ⇔ 两端观感一致。桌面 `camera_zoom` 阈值 × 默认 `hex_size` 22 就是下表；移动端同一个 hex_px 对应 `camera_zoom / 1.375`。
+
+| 门控 | 旧口径（camera_zoom） | 新口径（hex_px） | 备注 |
+|---|---|---|---|
+| `terrain_micro_zoom_alpha` vq>=2 | 桌面 1.30 / 1.95；移动 1.55 / 2.20 | 28.6 / 42.9 | 微表面淡入 |
+| `terrain_micro_zoom_alpha` vq>=1 | 桌面 1.50 / 2.15；移动 1.80 / 2.50 | 33.0 / 47.3 | |
+| `terrain_micro_zoom_alpha` vq=0 | 桌面 2.05 / 2.75；移动 2.35 / 2.95 | 45.1 / 60.5 | |
+| `terrain_land_dither_zoom_strength` | 桌面 1.20 / 2.05；移动 1.65 / 2.45 | 26.4 / 45.1 | 桌面/移动统一；移动仍叠亚像素淡出 |
+| `terrain_dither_subpixel_fade` | `camera_zoom × texel_world` | `texel_world × pk_px_per_world_unit()` | 阈值 0.85 / 2.2 **物理像素**不变 |
+
+**新增层级与预算**（每像素最多 +2 次采样，远景 0 次）：
+
+| 层级 | 世界尺度 | 出现条件 | 成本 |
+|---|---|---|---|
+| micro 一级 | 110 world / 张（纹素 110/256） | `hex_px >= 28.6`（vq2） | 既有 1 sample |
+| micro 二级 | 24.2 world / 张（4.5× 频率，**同一张纹理**） | 一级纹素 ≥2.5px（桌面 zoom 5.8 / 移动 4.2）且 vq>=1 | +1 sample，权重 `mix` 交叉淡入（能量守恒） |
+| biome 近景高频 | 纹素 ≈0.645 world（`k=1.55`） | 参照纹素（2.0 world）≥2.5px 且 vq>=1 | +1 sample（`noise_tex`），`t=0` 时不采 |
+
+`vq=0` 是硬契约：`procedural_biome_detail` 早退、micro 在 `zoom_alpha<=0` / `visual_quality<=0` 处早退，两级新增细节都不可达 ⇒ LOW 像素不变（`web_quality_render_test` 守着）。
 
 ---
 

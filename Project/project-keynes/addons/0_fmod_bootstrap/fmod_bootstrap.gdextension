@@ -1,0 +1,27 @@
+; Project.Keynes FMOD Android JNI bootstrap.
+;
+; 这个扩展只做一件事：在 FmodGodot 初始化之前，把 FMOD Android 运行库的
+; JNI_OnLoad / FMOD_Android_JNI_Init 跑起来（否则 FMOD_Studio_System_Create
+; 会直接失败并 abort 进程）。
+;
+; 2026-11-01 22:27 设备实测（AOSP ATD android-33 x86_64，探针工程
+; tmp/fmod_android_probe）已经全链路通过：
+;   [probe] prime(libfmodL.so)=0
+;   FmodStub: AudioDevice.init(2, 48000, 1024, 4) / AudioTrack started
+;   [probe] studio=2096927
+;   [probe] bank Master.strings -> 2097152  (Master / UI 同样非 0)
+;   [probe] event desc=2097920 instance=2098176 start=0
+; 所以这里不能注释掉——注释掉就等于关掉 Android 上的 FMOD 后端。
+; 背景、证据与复现步骤见 Build/PK_AUDIO_FMOD_ANDROID_REPORT.md。
+
+[configuration]
+
+entry_symbol = "fmod_bootstrap_init"
+compatibility_minimum = "4.4"
+
+[libraries]
+
+android.debug.arm64 = "res://addons/0_fmod_bootstrap/bin/android/libFmodBootstrap.android.template_debug.arm64.so"
+android.release.arm64 = "res://addons/0_fmod_bootstrap/bin/android/libFmodBootstrap.android.template_release.arm64.so"
+android.debug.x86_64 = "res://addons/0_fmod_bootstrap/bin/android/libFmodBootstrap.android.template_debug.x86_64.so"
+android.release.x86_64 = "res://addons/0_fmod_bootstrap/bin/android/libFmodBootstrap.android.template_release.x86_64.so"

@@ -128,6 +128,22 @@ COMMIT 要求请求掩码中的每一位都完成，否则保留旧 generation�
 `time_debt_days`（直接 host 查询别名）；两者均受 100 天上限约束。`main_wait_on_sim_us`
 固定为 0，任何非零值都视为主线程隔离回归。
 
+## Peer-stall 看门狗（`day_wait_peer_stall_timeout`）
+
+worker 在日屏障释放 `boundary_lock` 之后按**墙钟**统计 peer 空转：`Country
+pending_intents` 非零，或 Effect/Country/Fiscal 等 peer 位被 `note_day_stall()` 置位时，
+`_day_stall_peer_since_us` 开始计时；超过 `RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS`
+（默认 5000ms，可用 `PK_PEER_STALL_TIMEOUT_MS` 抬高，专供满载 headless 套件）就
+`set_fault("day_wait_peer_stall_timeout")`。worker 进入 `FAULTED` 后，主线程
+`world_runtime_host._observe_runtime_worker_fault()` 会 latch `world_clock.pause(true)`：
+日历冻结、所有国家指令返回 `runtime_worker_faulted`，只有换世界或读档才恢复。
+
+判据只看"peer 链 5s 没有动静"，不区分**peer 链死锁**与**唯一泵 peer 的主线程没被调度**。
+曾被误判为时代晋升回归的形状（普通跑日、超过 5000ms 的暂停、里程碑授予后多出的
+Effect/Modifier ACK 链）由 `tests/runtime/runtime_day_barrier_era_test.gd` 覆盖；
+`tests/probes/_probe_runtime_stall.gd` 在窗口/headless 两种模式下打印逐日时间线，
+`tests/probes/_probe_runtime_block.gd` 记录主线程被阻塞 7s 后仍能恢复的边界。
+
 ## 保存边界
 
 `SAVE_REQUEST` 在完整日边界抓取 immutable `PKSR v2` bundle，包含时钟、generation/hash、

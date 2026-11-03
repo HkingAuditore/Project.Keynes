@@ -26,6 +26,10 @@ linux.release.x86_64 = "bin/linux/x86_64/libFmodGodot.template_release.so"
 ;macos.debug  = "bin/macos/libFmodGodot.template_debug.framework"
 ;macos.release  = "bin/macos/libFmodGodot.template_release.framework"
 
+; Android 段已恢复启用：2026-11-01 22:27 设备实测（AOSP ATD android-33 x86_64 +
+; tmp/fmod_android_probe）已跑通 prime -> system -> bank -> event，全部返回 OK。
+; JNI_OnLoad 引导由 addons/fmod_android_bootstrap 提供，缺它才会出现那串 ERROR。
+; 证据见 Build/PK_AUDIO_FMOD_ANDROID_REPORT.md。
 android.editor.x86_64 = "bin/android/x86_64/libFmodGodot.editor.so"
 android.debug.x86_64 = "bin/android/x86_64/libFmodGodot.template_debug.so"
 android.release.x86_64 = "bin/android/x86_64/libFmodGodot.template_release.so"
@@ -34,6 +38,11 @@ android.release.x86_64 = "bin/android/x86_64/libFmodGodot.template_release.so"
 android.editor.arm64 = "bin/android/arm64/libFmodGodot.editor.so"
 android.debug.arm64 = "bin/android/arm64/libFmodGodot.template_debug.so"
 android.release.arm64 = "bin/android/arm64/libFmodGodot.template_release.so"
+
+; Web：用 gdext/fmod_godot 从 FMOD HTML5 SDK 源码编出来的 side module
+; （pthreads 版，对应 Web 预设的 variant/thread_support=true）。
+; 由 addons/keynes_audio_export/plugin.gd 在导出时打包。
+web.release.threads.wasm32 = "res://addons/FmodGodot/bin/web/libFmodGodot.web.template_release.threads.wasm32.wasm"
 
 ;ios.debug  = "bin/ios/libFmodGodot.template_debug.xcframework"
 ;ios.editor  = "bin/ios/libFmodGodot.template_debug.xcframework"
@@ -79,27 +88,31 @@ linux.release.x86_64 = {
     "bin/linux/x86_64/libfmodstudio.so.14": "",
 }
 
-android.editor.x86_64  = {
-    "bin/android/x86_64/libfmodL.so.14": "",
-    "bin/android/x86_64/libfmodstudioL.so.14": "",
+; Android 的 FMOD 运行库与 Windows/Linux 不同：上游 v1.1.3 发布包里附带的文件名**没有**
+; `.14` 版本后缀（`llvm-readelf -d` 显示 libFmodGodot 的 NEEDED 就是 `libfmodL.so` /
+; `libfmodstudioL.so`，SONAME 同样无后缀）。此处必须与实际文件名逐字一致，否则 Android
+; 链接器在 APK 的 lib/<abi>/ 里找不到依赖，扩展加载失败。不要照抄上面 Linux 段的 `.so.14`。
+android.editor.x86_64 = {
+    "bin/android/x86_64/libfmodL.so": "",
+    "bin/android/x86_64/libfmodstudioL.so": "",
 }
-android.debug.x86_64  = {
-    "bin/android/x86_64/libfmodL.so.14": "",
-    "bin/android/x86_64/libfmodstudioL.so.14": "",
+android.debug.x86_64 = {
+    "bin/android/x86_64/libfmodL.so": "",
+    "bin/android/x86_64/libfmodstudioL.so": "",
 }
 android.release.x86_64 = {
-    "bin/android/x86_64/libfmod.so.14": "",
-    "bin/android/x86_64/libfmodstudio.so.14": "",
+    "bin/android/x86_64/libfmod.so": "",
+    "bin/android/x86_64/libfmodstudio.so": "",
 }
-android.editor.arm64  = {
-    "bin/android/arm64/libfmodL.so.14": "",
-    "bin/android/arm64/libfmodstudioL.so.14": "",
+android.editor.arm64 = {
+    "bin/android/arm64/libfmodL.so": "",
+    "bin/android/arm64/libfmodstudioL.so": "",
 }
-android.debug.arm64  = {
-    "bin/android/arm64/libfmodL.so.14": "",
-    "bin/android/arm64/libfmodstudioL.so.14": "",
+android.debug.arm64 = {
+    "bin/android/arm64/libfmodL.so": "",
+    "bin/android/arm64/libfmodstudioL.so": "",
 }
 android.release.arm64 = {
-    "bin/android/arm64/libfmod.so.14": "",
-    "bin/android/arm64/libfmodstudio.so.14": "",
+    "bin/android/arm64/libfmod.so": "",
+    "bin/android/arm64/libfmodstudio.so": "",
 }

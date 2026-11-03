@@ -258,6 +258,22 @@ if defined PY (
     echo === WARNING: Python not found; music gate left as-is in export_presets.cfg ===
 )
 
+rem [audio-guard 2026-11-01] preset-level assertion: the three platforms must not
+rem pollute each other's audio filter (Android excludes the FMOD banks, Windows must
+rem not, Web depends on whether music is split). Last time the gate edited the wrong
+rem preset and only a human `git diff` caught it - now the machine catches it.
+if defined PY (
+    set "AUDIO_GUARD_FLAG="
+    if "%PK_WEB_DEFER_MUSIC%"=="0" set "AUDIO_GUARD_FLAG=--web-inline"
+    !PY! "%ROOT%tools\verify_audio_packaging.py" --presets-only !AUDIO_GUARD_FLAG!
+    if errorlevel 1 (
+        echo === ERROR: audio packaging preset guard FAILED ^(see message above^) ===
+        goto :fail
+    )
+) else (
+    echo === WARNING: Python not found; audio packaging preset guard not run ===
+)
+
 rem --- 4. Godot Web export ----------------------------------------------------
 if /i "%MODE%"=="debug" (
     call :export_web debug

@@ -175,6 +175,11 @@ func _start_web_autotest() -> bool:
 	return bool(result.get("ok", false))
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST and _current_page_key != "home":
+		_show_home()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and _current_page_key != "home":
 		_show_home()

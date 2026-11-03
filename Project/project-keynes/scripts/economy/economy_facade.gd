@@ -689,6 +689,36 @@ func cancel_family_colonization(country_handle: int, expedition_handle: int,
 		expedition_handle, effective_day, sequence)
 
 
+## 国家购买预算（时代晋升 §2.2）。transient：读档后由玩家会话重推。
+## 原生侧只把请求放进收件箱，在下一个经济周期开始时生效。
+func set_country_procurement_policy(country_handle: int, enabled: bool,
+		treasury_share_bp: int, research_share_bp: int,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("set_country_procurement_policy"):
+		return {"ok": false, "code": "procurement_policy_unavailable"}
+	return _world_ext.set_country_procurement_policy(country_handle, enabled,
+		clampi(treasury_share_bp, 0, 10000), clampi(research_share_bp, 0, 10000),
+		effective_day, sequence)
+
+
+## 时代收购目标（§2.3）。active=false 清空目标（暂停）；已买入国库的物资不退回。
+## required_quantities 以 GOODS_SCALE 计。
+func set_era_procurement_target(country_handle: int, active: bool,
+		good_indices: PackedInt32Array, required_quantities: PackedInt64Array,
+		effective_day: int, sequence: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("set_era_procurement_target"):
+		return {"ok": false, "code": "era_procurement_unavailable"}
+	return _world_ext.set_era_procurement_target(country_handle, active,
+		good_indices, required_quantities, effective_day, sequence)
+
+
+## §2.4 快照：policy/预算分配/时代收购进度/trade_orders_total。
+func country_procurement_snapshot(country_handle: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("country_procurement_snapshot"):
+		return {"ok": false, "code": "procurement_snapshot_unavailable"}
+	return _world_ext.country_procurement_snapshot(country_handle)
+
+
 func family_expeditions(country_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_expeditions"):
