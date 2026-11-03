@@ -22,6 +22,12 @@ const PKMI_SCHEMA := 1
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
 const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd")
+## 存档边界超时自己的现场。暂停期间 stall watchdog 不工作
+## (WorldRuntimeHost._poll_simulation_stall_watchdog 在 paused 时直接 return)，
+## 所以以前"暂停中存档失败"只有一行 warning，没有任何可比对的落盘产物。
+const RuntimeForensicsScript = preload("res://scripts/game/runtime_forensics.gd")
+## 边界等待期间每隔多少帧留一行活体探针。见 _wait_for_safe_boundary()。
+const SAVE_BOUNDARY_PROBE_FRAMES := 30
 const TECHNOLOGY_INDUSTRY_PROVIDER_ID := "technology_industry"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
 ## Plan 11.5, the WHOLE-PACKAGE half. The ideology execution-contract identity
@@ -276,8 +282,19 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	var visual_finalized: Dictionary = host.finalize_save_restore_visuals()
 	var vision: Dictionary = visual_finalized.get("vision", {})
 	if not bool(vision.get("ok", false)):
-		return _result(false, "load_visual_finalize_failed",
+		# The visual finalize knows WHY it refused (e.g. `start_cell_drift`: the
+		# regenerated world is not the saved world). Propagate that code and the
+		# numeric detail so the load-failure report says what is actually wrong
+		# instead of the generic "player country could not be bound".
+		var vision_code := String(vision.get("code", ""))
+		if vision_code.is_empty():
+			vision_code = "load_visual_finalize_failed"
+		var vision_failure := _result(false, vision_code,
 			String(vision.get("reason", "读档后视野重建失败。")))
+		var vision_detail := String(vision.get("detail", ""))
+		if not vision_detail.is_empty():
+			vision_failure["detail"] = vision_detail
+		return vision_failure
 	var slot_id := String(_pending_load.slot_id)
 	_pending_load.clear()
 	var result := _result(true, "ok", "")
@@ -413,6 +430,21 @@ func _wait_for_safe_boundary() -> Dictionary:
 			stall_frames = 0
 		if stall_frames >= stall_cap or Time.get_ticks_msec() >= deadline_msec:
 			break
+		# 暂停期间这个项目里没有别的活体探针：WorldClock._process 在 paused 时首行
+		# 就 return（[clock/rate] / [clock/step] 全静音），
+		# WorldRuntimeHost._poll_simulation_stall_watchdog 也直接 return，于是
+		# "到底卡在哪一条边界"以前只有超时之后那一行 warning 才看得到。
+		# 等待过程中按固定间隔留痕，超时之前就能判断方向。
+		if frame % SAVE_BOUNDARY_PROBE_FRAMES == 0:
+			# frame 0 只留一行短的：正常的存档经常就在这里等一两帧，不该每次都
+			# 刷一坨 JSON。真正的现场按间隔展开，只有卡住时才会出现。
+			if frame == 0:
+				print("[save] boundary wait begin code=%s condition=%s" % [
+					code, String(boundary.get("blocking_condition", ""))])
+			else:
+				print("[save] boundary wait frame=%d code=%s condition=%s detail=%s" % [
+					frame, code, String(boundary.get("blocking_condition", "")),
+					JSON.stringify(_boundary_diagnostics())])
 		# 空转期间不必每帧重跑日系统链；隔帧推进把内存增速再压一半。
 		var generator := _runtime_host.generator()
 		if generator != null and generator.has_method("advance_save_boundary") \
@@ -420,11 +452,28 @@ func _wait_for_safe_boundary() -> Dictionary:
 			generator.advance_save_boundary()
 		await get_tree().process_frame
 	var blocking_code := String(last_boundary.get("code", ""))
-	push_warning("[save] boundary timeout blocking=%s stalled_frames=%d detail=%s" % [
-		blocking_code, stall_frames, JSON.stringify(_boundary_diagnostics())])
+	var blocking_condition := String(last_boundary.get("blocking_condition", ""))
+	var diagnostics := _boundary_diagnostics()
+	push_warning("[save] boundary timeout blocking=%s condition=%s stalled_frames=%d detail=%s" % [
+		blocking_code, blocking_condition, stall_frames, JSON.stringify(diagnostics)])
+	# 把这次失败的现场落盘，和 economy_fatal / stall 走同一条取证通道。
+	# 只写文件、不改状态：恢复时钟与 _busy 复位仍由 _save() 的失败分支负责。
+	RuntimeForensicsScript.capture_and_dump("save_boundary_timeout",
+		_runtime_host.generator() if _runtime_host != null else null,
+		_world_clock, "save_boundary_timeout", {
+			"blocking_code": blocking_code,
+			"blocking_condition": blocking_condition,
+			"stalled_frames": stall_frames,
+			"is_web": is_web,
+			"boundary_detail": diagnostics,
+		})
+	# 让玩家贴出来的那一行截图自带方向：code 之外再带 condition。
+	var blocking_text := blocking_code if blocking_condition.is_empty() \
+		else "%s / %s" % [blocking_code, blocking_condition]
 	var timeout := _result(false, "save_boundary_timeout",
-		"等待国家与经济提交边界超时（阻塞：%s）。" % blocking_code)
+		"等待国家与经济提交边界超时（阻塞：%s）。" % blocking_text)
 	timeout["blocking_code"] = blocking_code
+	timeout["blocking_condition"] = blocking_condition
 	return timeout
 
 
@@ -477,13 +526,15 @@ func _can_save() -> Dictionary:
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
 		if String(thread.get("simulation_host_state", "")) == "FAULTED":
-			return _result(false, "worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
-				String(thread.get("fault_code", "unknown")))
-		if String(thread.get("simulation_host_state", "STOPPED")) in ["STARTING", "RUNNING", "SAVE_PENDING"] \
-				or (String(thread.get("simulation_host_state", "STOPPED")) != "STOPPED" \
-					and int(thread.get("environment_ring_pending", 0)) > 0) \
-				or int(thread.get("worker_day_inflight", 0)) > 0:
-			return _result(false, "save_requires_idle_worker", "等待后台 worker 排空已接收的模拟输入。")
+			return _blocked_result("worker_faulted", "后台模拟线程发生故障（%s），无法保存。" %
+				String(thread.get("fault_code", "unknown")), "worker_faulted")
+		# 这三条子条件以前共用一个 code，在日志里完全分不开：state 还停在
+		# RUNNING（暂停没送到 worker）、环里还有未来帧没人消费、和"一天正飞"
+		# 都会表现为同一个 save_requires_idle_worker。condition 把它们分开。
+		var idle_blocker := _worker_idle_blocker(thread)
+		if not idle_blocker.is_empty():
+			return _blocked_result("save_requires_idle_worker",
+				"等待后台 worker 排空已接收的模拟输入。", idle_blocker)
 	var country = generator.get_country_facade()
 	var economy = generator.get_economy_facade()
 	if country == null or economy == null:
@@ -498,22 +549,25 @@ func _can_save() -> Dictionary:
 	if effect_ext != null and effect_ext.has_method("get_effect_native_adapter_report"):
 		var adapters: Dictionary = effect_ext.get_effect_native_adapter_report()
 		if bool(adapters.get("country_pending", false)):
-			return _result(false, "save_requires_idle_effect_country",
-				"等待理念/Effect Country 命令提交")
+			return _blocked_result("save_requires_idle_effect_country",
+				"等待理念/Effect Country 命令提交", "effect_country_pending")
 		if bool(adapters.get("economy_pending", false)):
-			return _result(false, "save_requires_idle_effect_economy",
-				"等待理念/Effect Economy 命令提交")
+			return _blocked_result("save_requires_idle_effect_economy",
+				"等待理念/Effect Economy 命令提交", "effect_economy_pending")
 		if bool(adapters.get("gameplay_pending", false)):
-			return _result(false, "save_requires_idle_effect_gameplay",
-				"等待理念/Effect Gameplay 事件写入 journal")
+			return _blocked_result("save_requires_idle_effect_gameplay",
+				"等待理念/Effect Gameplay 事件写入 journal", "effect_gameplay_pending")
 	# 已提交账本契约（写档和读档都一样）要求经济至少结算过一次；开局到首次结算
 	# 之间没有可恢复的状态。这里不进重试列表：时钟为存档暂停，等下去也不会到。
 	if int(economy_report.get("last_committed_day", 0)) < 0:
 		return _result(false, "save_requires_first_settlement",
 			"经济尚未完成第一次结算，暂时无法存档。请让游戏运行几天后再保存。")
-	if bool(economy_report.get("busy", economy_report.get("epoch_active", false))) \
-			or not bool(economy_report.get("committed", true)):
-		return _result(false, "save_requires_committed_boundary", "经济尚未到达联合提交边界。")
+	var economy_busy := bool(economy_report.get("busy",
+		economy_report.get("epoch_active", false)))
+	if economy_busy or not bool(economy_report.get("committed", true)):
+		return _blocked_result("save_requires_committed_boundary",
+			"经济尚未到达联合提交边界。",
+			"economy_busy" if economy_busy else "economy_not_committed")
 	var country_busy := bool(country_report.get("busy", false))
 	var country_ext = country.world_ext()
 	if country_ext != null and country_ext.has_method("get_country_peer_protocol_status"):
@@ -521,25 +575,53 @@ func _can_save() -> Dictionary:
 		if int(peer_status.get("pending_intents", 0)) > 0 \
 			or int(peer_status.get("queued_intents", 0)) > 0 \
 			or int(peer_status.get("rejected_intents", 0)) > 0:
-			return _result(false, "save_requires_idle_country_peer",
-				"Country peer continuation 尚未到达可保存边界。")
+			return _blocked_result("save_requires_idle_country_peer",
+				"Country peer continuation 尚未到达可保存边界。", "country_peer_intents")
 	if country_ext != null and country_ext.has_method("country_should_run"):
 		country_busy = country_busy or bool(country_ext.country_should_run(_world_clock.day_index()))
 	else:
 		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
-		return _result(false, "save_requires_idle_country", "国家命令图尚未空闲。")
+		# 三个来源：report.busy / country_should_run(day) / 无扩展时的
+		# command_preflight。日志里必须能分开，否则又是一句"国家没空闲"。
+		var country_condition := "country_busy"
+		if not bool(country_report.get("busy", false)):
+			if country_ext != null and country_ext.has_method("country_should_run"):
+				country_condition = "country_should_run"
+			else:
+				country_condition = "country_command_preflight"
+		return _blocked_result("save_requires_idle_country", "国家命令图尚未空闲。",
+			country_condition)
 	if effect_ext != null and effect_ext.has_method("effect_should_run") \
 			and bool(effect_ext.effect_should_run(_world_clock.day_index())):
-		return _result(false, "save_requires_idle_effect",
-			"Effect transaction has not reached a safe commit boundary")
+		return _blocked_result("save_requires_idle_effect",
+			"Effect transaction has not reached a safe commit boundary",
+			"effect_should_run")
 	var ideology = generator.get_ideology_facade() if generator.has_method("get_ideology_facade") else null
 	var ideology_ext = ideology.world_ext() if ideology != null and ideology.has_method("world_ext") else null
 	if ideology_ext != null and ideology_ext.has_method("ideology_should_run") \
 			and bool(ideology_ext.ideology_should_run(_world_clock.day_index())):
-		return _result(false, "save_requires_idle_ideology",
-			"Ideology commands have not reached their safe boundary")
+		return _blocked_result("save_requires_idle_ideology",
+			"Ideology commands have not reached their safe boundary",
+			"ideology_should_run")
 	return _result(true, "ok", "")
+
+
+## `_can_save()` 里三段 worker 空闲判定的唯一实现：返回导致"不空闲"的那一条，
+## 空串表示空闲（可存档）。抽成函数是为了让判定顺序只存在一份，同时给每个分支
+## 一个可 grep 的短码 —— 三条以前都只报 save_requires_idle_worker。
+##
+## 判定顺序与原内联写法逐条等价：先在 STARTING/RUNNING/SAVE_PENDING 时短路，
+## 再判"已经停稳之外还留着待消费的环境帧"，最后判"一天正飞"。
+func _worker_idle_blocker(thread: Dictionary) -> String:
+	var host_state := String(thread.get("simulation_host_state", "STOPPED"))
+	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
+		return "state_%s" % host_state.to_lower()
+	if host_state != "STOPPED" and int(thread.get("environment_ring_pending", 0)) > 0:
+		return "environment_ring_pending"
+	if int(thread.get("worker_day_inflight", 0)) > 0:
+		return "worker_day_inflight"
+	return ""
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
@@ -1693,6 +1775,15 @@ func _autosave_year(year: int) -> void:
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:
 	return {"ok": ok, "code": code, "message": message}
+
+
+## `_result(false, ...)` 的可诊断版本：把"卡在哪一条子条件"作为
+## `blocking_condition` 一起带出去。结果字典只多一个键，读取方仍然只看
+## ok / code / message，所以对既有调用方零影响。
+static func _blocked_result(code: String, message: String, condition: String) -> Dictionary:
+	var blocked := _result(false, code, message)
+	blocked["blocking_condition"] = condition
+	return blocked
 
 
 func _can_annual_provider(context: Dictionary) -> Dictionary:

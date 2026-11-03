@@ -594,8 +594,12 @@ ribbon 的内边界截断。
 - 写档（`_write_vision_provider`）：迷雾开启且玩家已有领土时 `explored` 必然非空
   （首都及其邻格一定被揭开）。全 0 只可能是本局视野从未解算成功，此时先重解一次，
   仍为空就以 `pkfg_vision_unsolved` 拒绝落盘，把上一份存档的进度留在磁盘上。
-- 读档收尾（`finalize_save_restore_visuals`）：迷雾开启却绑不到玩家国家 slot 时
-  直接失败，而不是交出一张「全部未探索」的地图继续跑。
+- 读档收尾（`finalize_save_restore_visuals`）：先按**存档的**
+  `player_context.start_cell` 绑定玩家国家（读档重建世界重跑的新开局选点只作兜底），
+  并把 native 领土重新 sync 进 `MapData.country_slot_arr` 再判定；两者不一致说明
+  重建世界 ≠ 存档世界，以 `start_cell_drift` 失败。迷雾开启却绑不到玩家国家 slot 时
+  直接失败，而不是交出一张「全部未探索」的地图继续跑；失败详情带
+  `start_cell / mirror_slot / saved_start_cell / native`，用于区分世界漂移与镜像同步失败。
 
 ## 关闭路径
 

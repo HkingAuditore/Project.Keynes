@@ -951,6 +951,24 @@ func last_seed() -> int:
 	return _last_seed
 
 
+## 把本次生成真正使用的 seed 写回会话 config（`base.initial_seed`）。
+## 0 表示「随机」（map_generator.gd generate(): `cfg.seed != 0 else randi()`），
+## 所以任何生成路径都可能产出一个配置文件里没有的 seed；不写回的话，之后存档
+## 记录的是旧 seed，读档重建出的是另一张世界，起始格/领土/地形互相矛盾。
+func _adopt_generated_seed(generated_seed: int) -> void:
+	if generated_seed <= 0 or _new_game_config.is_empty():
+		return
+	var base = _new_game_config.get("base", {})
+	if not base is Dictionary:
+		return
+	var recorded := int((base as Dictionary).get("initial_seed", 0))
+	if recorded == generated_seed:
+		return
+	(base as Dictionary)["initial_seed"] = generated_seed
+	push_warning("[session] generated world seed %d adopted (session config requested %d); saves now reproduce this world" % [
+		generated_seed, recorded])
+
+
 # ─── 地图生成失败诊断（mapgen-diagnostics）───────────────────────────────
 # generate_world 失败时把 MapGenerator.last_generation_error 整块留在 host 上，
 # 由 player_game 交给 WorldLoadingOverlay 展示/复制/落盘。
@@ -1252,6 +1270,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_building_visual_diag_logged = false
 	_world_data = result["world_data"] as WorldData
 	_last_seed = int(result.get("seed", cfg.seed))
+	# 生成出的世界只能用它实际使用的 seed 复现。`generate_world(0)`（失败重试 /
+	# 调试重生成）会把 0 解析成随机 seed，若会话配置仍记录旧 seed，之后写出的
+	# 存档就是「旧 seed + 另一张世界的 PKCN/领土」，下次读档会在
+	# `_player_start_cell_drift()` 处必然失败。这里把生效 seed 回写进会话配置。
+	_adopt_generated_seed(_last_seed)
 	_fast_tick_count = 0
 	_last_fast_tick_ms = 0
 	_last_tick_timing.clear()
@@ -1295,13 +1318,19 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		var restore_result: Dictionary = save_service.restore_prepared_game(self) if save_service != null \
 			else {"ok": false, "message": "存档服务不可用。"}
 		if not bool(restore_result.get("ok", false)):
-			push_error("[save/restore] load failed code=%s message=%s" % [
-				String(restore_result.get("code", "unknown")),
+			var restore_code := String(restore_result.get("code", "unknown"))
+			var restore_detail := String(restore_result.get("detail", ""))
+			push_error("[save/restore] load failed code=%s message=%s detail=%s" % [
+				restore_code,
 				String(restore_result.get("message", "存档恢复失败。")),
+				restore_detail,
 			])
+			# 失败 hint 落到新档/自动存档的诊断文件里：只给 code 不足以远程定位，
+			# 起始格/镜像/native 摘要由 finalize_save_restore_visuals 通过 detail 带出。
 			_emit_world_generation_failure("save_restore", "save_restore_failed",
 				String(restore_result.get("message", "存档恢复失败。")),
-				"存档可能损坏或与当前版本不兼容；code=%s" % String(restore_result.get("code", "unknown")))
+				"存档可能损坏或与当前版本不兼容；code=%s%s" % [restore_code,
+					"" if restore_detail.is_empty() else "；" + restore_detail])
 			return
 		# 运行中保存的时钟会恢复为 unpaused；随后仍有数个加载 await。
 		# 在输入捕获/worker 启动完成前推进日历会漏掉环境输入并卡住日屏障。
@@ -6509,27 +6538,114 @@ func player_country_slot() -> int:
 ## player identity only after all providers (including player_session) have
 ## restored, then solve and publish fog exactly once from the restored explored
 ## array and PKCN territory.
+##
+## Two invariants are enforced here, both learned from a real same-build load
+## failure ("读档后无法绑定玩家国家，视野不可解算"), where the save itself and the
+## PKCN country plane were perfectly valid:
+##   * The regenerated world must be the world the save was taken on. The load
+##     path re-runs the new-game start solver, so `gameplay_start_report().cell`
+##     is only a fallback; the restored `player_context.start_cell` is the
+##     authority. If the two disagree the loaded terrain/resources are not the
+##     ones the PKCN territory was recorded against, and binding the player to
+##     the re-selected cell of a different world is what made the gate fire.
+##     Fail with the explicit `start_cell_drift` code instead.
+##   * The MapData country mirror can be stale: PKCN's own publish flush is
+##     silent (`write_i32_range` no-ops on a size mismatch while still reporting
+##     `published_to_slot=true`). Sync once before reading the mirror so a
+##     recoverable desync is not escalated into a load failure.
 func finalize_save_restore_visuals() -> Dictionary:
 	_fog_of_war_enabled = _resolve_fog_of_war_enabled()
+	var territory_sync: Dictionary = _sync_country_territory_to_map()
 	_player_country_slot = _resolve_player_country_slot()
 	_player_country_handle = _resolve_player_country_handle()
 	if _renderer != null and _renderer.has_method("set_fog_of_war_enabled"):
 		_renderer.set_fog_of_war_enabled(
 			_fog_of_war_enabled, fog_early_out_enabled)
+	var drift := _player_start_cell_drift()
+	if not drift.is_empty():
+		push_warning("[save/restore] %s" % String(drift.get("detail", "")))
+		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
+			"vision": {"ok": false, "code": "start_cell_drift",
+				"reason": String(drift.get("message", "读档重建出的世界与存档世界不一致。")),
+				"detail": String(drift.get("detail", ""))}}
 	# 迷雾开着却绑不到玩家国家，说明 PKCN 领土或 player_context 没恢复成功。
 	# 这种状态解算出来的视野是全黑的，继续跑还会被下一次自动存档写死，
 	# 所以直接让读档失败，而不是交出一张「全部未探索」的地图。
 	if _fog_of_war_enabled and _player_country_slot < 0:
 		var start_cell := _resolve_player_start_cell()
-		push_warning("[save/restore] player country unbound start_cell=%d mirror_slot=%d native=%s" % [
-			start_cell,
-			int(_current_map.country_slot_arr[start_cell]) if _current_map != null \
-				and start_cell >= 0 and start_cell < _current_map.country_slot_arr.size() else -2,
-			JSON.stringify(_generator.get_country_facade().cell_summary(start_cell)) \
-				if _generator != null and start_cell >= 0 else "{}"])
+		var mirror_slot := -2
+		if _current_map != null and start_cell >= 0 \
+				and start_cell < _current_map.country_slot_arr.size():
+			mirror_slot = int(_current_map.country_slot_arr[start_cell])
+		var native_summary := "{}"
+		if _generator != null and start_cell >= 0 \
+				and _generator.has_method("get_country_facade") \
+				and _generator.get_country_facade() != null:
+			native_summary = JSON.stringify(
+				_generator.get_country_facade().cell_summary(start_cell))
+		var unbound_detail := "start_cell=%d mirror_slot=%d saved_start_cell=%d territory_sync=%s native=%s" % [
+			start_cell, mirror_slot, _saved_player_start_cell(),
+			JSON.stringify(territory_sync), native_summary]
+		push_warning("[save/restore] player country unbound %s" % unbound_detail)
 		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
-			"vision": {"ok": false, "reason": "读档后无法绑定玩家国家，视野不可解算。"}}
+			"vision": {"ok": false, "reason": "读档后无法绑定玩家国家，视野不可解算。",
+				"detail": unbound_detail}}
 	return refresh_country_visuals("save_restore_finalized")
+
+
+## 存档里的玩家起始格。读档期间 `_pending_load_bundle.sections.player_context`
+## 是解码后的权威来源（成功返回后才清空），`GameFlow.session()` 作为兜底。
+func _saved_player_start_cell() -> int:
+	var sections = _pending_load_bundle.get("sections", {})
+	if sections is Dictionary:
+		var pending_context = (sections as Dictionary).get("player_context", {})
+		if pending_context is Dictionary:
+			var pending_cell := int((pending_context as Dictionary).get("start_cell", -1))
+			if pending_cell >= 0:
+				return pending_cell
+	# 测试/无头工具里 host 可能还没入树，此时没有 GameFlow 可查。
+	if not is_inside_tree():
+		return -1
+	var flow := _game_flow_service()
+	if flow != null and flow.has_method("session"):
+		var session: Dictionary = flow.session()
+		return int(session.get("start_cell", -1))
+	return -1
+
+
+## 读档时由「重建世界 + 新开局选点」重新算出的起始格（只是派生值，不是权威）。
+func _report_player_start_cell() -> int:
+	if _generator == null or not _generator.has_method("gameplay_start_report"):
+		return -1
+	var report: Dictionary = _generator.gameplay_start_report()
+	if not bool(report.get("ok", false)):
+		return -1
+	return int(report.get("cell", -1))
+
+
+## 读档重建出来的世界是否就是存档所在的世界。
+## 起始格是地图地形/资源/气候的派生结果，所以「重算起始格 ≠ 存档起始格」就是
+## 「重建世界 ≠ 存档世界」的直接证据；继续读下去只会得到领土/地形互相矛盾的
+## 世界，下一次自动存档还会把它写死。返回 {} 表示一致或无法判定。
+func _player_start_cell_drift() -> Dictionary:
+	if _pending_load_bundle.is_empty():
+		return {}
+	var saved_cell := _saved_player_start_cell()
+	var computed_cell := _report_player_start_cell()
+	if saved_cell < 0 or computed_cell < 0 or saved_cell == computed_cell:
+		return {}
+	var config_seed := -1
+	var base = _new_game_config.get("base", {})
+	if base is Dictionary:
+		config_seed = int((base as Dictionary).get("initial_seed", -1))
+	return {
+		"message": "读档重建出的世界与存档世界不一致，无法恢复。",
+		"detail": "saved_start_cell=%d computed_start_cell=%d map=%dx%d generated_seed=%d config_seed=%d" % [
+			saved_cell, computed_cell,
+			_current_map.width if _current_map != null else -1,
+			_current_map.height if _current_map != null else -1,
+			_last_seed, config_seed],
+	}
 
 
 func is_fog_of_war_enabled() -> bool:
@@ -6588,22 +6704,18 @@ func _resolve_player_country_handle() -> int:
 	return int(facade.cell_summary(start_cell).get("country_handle", 0))
 
 
-## During load, renderer binding precedes provider restore, so
-## gameplay_start_report has no restored cell yet. The decoded player_context
-## in the pending bundle is the authoritative pre-restore source.
+## 读档期优先用存档里的 `player_context.start_cell`：读档会用存档 config 重新
+## 生成世界并重跑新开局选点，`gameplay_start_report().cell` 只是「重建世界上的
+## 选点结果」——一旦世界与存档不一致，它指向另一张图的格（通常无主），视野门禁
+## 就会误判成「无法绑定玩家国家」。读档成功（pending bundle 清空）后才回落到它。
 func _resolve_player_start_cell() -> int:
-	if _generator != null and _generator.has_method("gameplay_start_report"):
-		var report: Dictionary = _generator.gameplay_start_report()
-		var report_cell := int(report.get("cell", -1))
-		if bool(report.get("ok", false)) and report_cell >= 0:
-			return report_cell
-	var sections = _pending_load_bundle.get("sections", {})
-	if sections is Dictionary:
-		var pending_context = sections.get("player_context", {})
-		if pending_context is Dictionary:
-			var pending_cell := int(pending_context.get("start_cell", -1))
-			if pending_cell >= 0:
-				return pending_cell
+	if not _pending_load_bundle.is_empty():
+		var saved_cell := _saved_player_start_cell()
+		if saved_cell >= 0:
+			return saved_cell
+	var report_cell := _report_player_start_cell()
+	if report_cell >= 0:
+		return report_cell
 	var flow := _game_flow_service()
 	if flow != null and flow.has_method("session"):
 		var session: Dictionary = flow.session()
@@ -6883,7 +6995,13 @@ func _apply_pkmap_override(cfg: MapConfig) -> void:
 		path = String((base as Dictionary).get("pkmap_path", "")).strip_edges()
 	var cmdline := _cmdline_pkmap_path()
 	if not cmdline.is_empty():
-		path = cmdline
+		# `pkmap=` 是开新局的开发入口。读档时地图来源必须以存档 config 为准：
+		# 用命令行换一张图会让重建世界与存档世界不一致（起始格/领土/地形互相
+		# 矛盾），最终在视野收尾被判为失败。这里直接忽略并留一条 warning。
+		if not _pending_load_bundle.is_empty():
+			push_warning("[pkmap] ignoring pkmap= cmdline override during load (saved source: %s)" % path)
+		else:
+			path = cmdline
 	if path.is_empty():
 		return
 	cfg.map_source = "pkmap"
