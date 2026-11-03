@@ -34,6 +34,9 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _player_controller = $PlayerController
 
 var _viewport_refit_pending := false
+## 本次场景的会话请求（new_game 或 load_game），供失败面板「重试」原样重放。
+## 重试必须重建**同一个**会话：换成随机世界会把存档的 PKCN/领土恢复进另一张图。
+var _session_request: Dictionary = {}
 
 
 func _ready() -> void:
@@ -47,6 +50,7 @@ func _ready() -> void:
 	if request.is_empty():
 		var fallback := NewGameConfig.create_default()
 		request = {"kind": "new_game", "config": fallback.to_dictionary()}
+	_session_request = request.duplicate(true)
 	var session_result := _runtime_host.configure_session(request)
 	if not bool(session_result.get("ok", false)):
 		# autotest 会话：会话配置失败要立刻进事件流，而不是等 world_ready 超时。
@@ -61,7 +65,7 @@ func _ready() -> void:
 	_ui_manager.show_loading("正在生成世界...")
 	var loading := _ui_manager.get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 	loading.set_layout_state(_runtime_host.session_config().get("base", {}))
-	loading.retry_requested.connect(_regenerate_world)
+	loading.retry_requested.connect(_retry_session)
 	loading.return_requested.connect(func() -> void: get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH))
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -256,13 +260,56 @@ func _on_regenerate_requested() -> void:
 	_regenerate_world()
 
 
+## 失败面板「重试」：**原样重放本场景的会话请求**，绝不另生成一张世界。
+##
+## 旧实现直接 `generate_world(0)`，那条路径把 0 解析成随机 seed（map_generator.gd
+## generate()），却不重新 `configure_session`、也不清 `_pending_load_bundle`：
+## 读档失败后点重试 = 把存档的 PKCN/领土恢复进一张随机世界，视野收尾必然报
+## 「读档后无法绑定玩家国家，视野不可解算」（同版本、稳定复现）。
+func _retry_session() -> void:
+	_player_controller.clear_selection()
+	_ui_manager.show_loading("正在重试...")
+	await get_tree().process_frame
+	var retry_request: Dictionary = _session_request.duplicate(true)
+	if retry_request.is_empty():
+		retry_request = {"kind": "new_game",
+			"config": NewGameConfig.create_default().to_dictionary()}
+	var prepared: Dictionary = _runtime_host.configure_session(retry_request)
+	if not bool(prepared.get("ok", false)):
+		_ui_manager.show_loading(String(prepared.get("message", "会话初始化失败。")))
+		return
+	_ui_manager.show_loading("正在生成世界...")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+
+
+## 调试入口：重掷一张新世界（失败面板的重试不走这里）。
+##
+## 必须先把新 seed 写进会话 config 再生成，否则「存档记录的 seed」无法复现
+## 「实际生成的世界」，下次读档会在 start_cell_drift 处必然失败。
 func _regenerate_world() -> void:
 	# 重生成期间保留全局音乐，世界就绪后由 PlayerController 同步时代。
 	_player_controller.clear_selection()
 	_ui_manager.show_loading("正在重生成世界...")
 	await get_tree().process_frame
+	var config: Dictionary = _runtime_host.session_config().duplicate(true)
+	if config.is_empty():
+		config = NewGameConfig.create_default().to_dictionary()
+	var base = config.get("base", {})
+	if base is Dictionary:
+		# 显式掷一个新的非零 seed 并写进 config。不能用 0：NewGameConfig.validate()
+		# 要求 1..MAX_SEED，生成期的「0=随机」（cfg.seed != 0 else randi()）只适用
+		# 于绕过 validate 的开发生成路径。
+		(base as Dictionary)["initial_seed"] = NewGameConfig.random_seed()
+	var rerolled_request := {"kind": "new_game", "config": config}
+	var prepared: Dictionary = _runtime_host.configure_session(rerolled_request)
+	if not bool(prepared.get("ok", false)):
+		_ui_manager.show_loading(String(prepared.get("message", "会话初始化失败。")))
+		return
+	_session_request = rerolled_request.duplicate(true)
 	await get_tree().process_frame
-	await _runtime_host.generate_world(0, _ui_manager.map_safe_area())
+	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
 
 
 func _on_day_night_toggled(enabled: bool) -> void:
