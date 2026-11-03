@@ -87,6 +87,75 @@ Non-obvious rules that cost real debugging time:
   core looks idle, the day never steps, and the row can only be settled by that day — a deadlock
   (`last_step_day` frozen while `pending_intents` stays > 0).
 
+## Army personnel lane (soldiers move with the army)
+
+Section 3 of `docs/cpp-dots-runtime/military-recruitment-pipeline.md` is the reference. Four Economy
+opcodes travel on the same POD lane as 24, and all of them name cohorts by **signature** (never a slot id):
+
+| opcode | name | payload0 | payload1 | target_cohort | target_cell | target_country |
+| --- | --- | --- | --- | --- | --- | --- |
+| 30 | `ARMY_EMBARK` | heads | — | army handle | source cell | source signature |
+| 31 | `ARMY_DISEMBARK` | heads | — | army handle | dest cell | dest signature |
+| 32 | `ARMY_MERGE_LANES` | — | dst army | src army | — | — |
+| 33 | `ARMY_SPLIT_LANES` | heads (≤0 = whole) | dst army | src army | — | — |
+
+- `army.split` sends 33 with the head count the lots actually moved (never the template); `army.transfer`
+  sends 33 when the source keeps lots and 32 when the whole formation left. Lane→lane never touches a
+  cohort, so no structural command is involved.
+- **Release lots when an army dies**: `destroy_army` must deactivate every lot pointing at it, and
+  `transfer_army_to_army` must deactivate a source lot it emptied, otherwise PKMI restore rejects the save
+  with `pkmi_lot_army_missing` (the seasonal terrain refresh walks this path).
+- `army.transfer` requires both formations in one cell (`command_armies_not_colocated`).
+
+Naval transport (design §7.4): water is impassable until the country unlocks
+`tech.military.coastal_transport` (runs of ≤3 consecutive water cells, land embark/disembark) or
+`tech.military.naval_transport` (no run limit). The gates read `MilitaryCatalog.coastal_transport_bit` /
+`ocean_transport_bit` (resolved from the catalog JSON, default -1) against the digest's unlock bits and
+participate in the catalog hash. Sea steps cost 1.5x, an army at sea is forced to
+`MILITARY_STANCE_EMBARKED` and reverts on landing, takes 0.2%/day sea attrition, and never engages on
+water. `preview_path` applies the same gate; without the tech it must still refuse water.
+
+Get these right or the economy faults hours later:
+
+- **Guest consumption must book into `MarketResult`** (`consumed_goods`, `revenue`).
+  `audit_touch_market_lane()` only makes the incremental audit *see* the stock change; the goods
+  expectation is `opening - _consumed_goods`, so a bare touch fails with `goods_conservation_failed` on the
+  first embarkation.
+- **A POD structural command queued at the day boundary commits one epoch late** (the queue drains after
+  publish). `queue_or_commit_army_lane()` commits inline outside the epoch so D+1 embarkation is visible on
+  D+1; inside an epoch it still goes through STRUCTURAL_COMMIT.
+- **`transit_population` is expedition + lane**: the shadow audit must subtract the expedition delta only
+  (minus `army_lane_population`) and add the lane delta once, or every full-audit epoch reports
+  `incremental_audit_mismatch`.
+- **Lane readback 0 does not mean "nobody moved"** — keep the receipt pending; only settle on lane > 0.
+- **Merchant repair must be able to convert a soldier** when a disbanded army leaves a garrison-only cell,
+  otherwise the cell's revenue has no owner (`market_revenue_has_no_merchant_owner`).
+
+### Army pay (opcode 34, `MILITARY_INTENT_ARMY_PAY`)
+
+`run_wages_and_upkeep` splits one payroll by holder: garrison lots -> `PAY_WAGES` (treasury -> the cell's
+soldier cohort, unchanged), army lots -> `ARMY_PAY` (treasury -> the formation's lane). Both use the single
+`MilitaryCore::soldier_daily_wage` value (ABSOLUTE = policy, AUTO = living cost x `MSTAT_WAGE`), share the
+same treasury cash ceiling (garrison rows planned first), and feed the same `pay_ratio_30_q16`. The daily
+report carries `payroll_garrison` / `payroll_army` (transient, not saved/hashed).
+
+The receipt stores the lane's cash BEFORE the payment in the POD row's `count`, then books
+`applied = clamp(now - prev, 0, requested)`. Requested != applied: the treasury may fund only part of it, and
+the lane spends on guest consumption the same day, so only the growth is real.
+
+**The treasury debit must be synchronous inside one epoch.** `military_collect_cash` (reserve + collect)
+works while Country accepts sync writes; under whole-graph ACTIVE it refuses with
+`country_worker_unique_writer`, so the worker path drives the cohort-cash peer cyclically instead
+(`prepare_worker_cohort_cash` -> `service_country_economy_asset_peer` -> `finish_worker_country_asset`) and
+the peer's `TREASURY_SPEND` side effect credits the lane (`target_handle` = army handle). Never route this
+through `block_or_enqueue_country_worker_asset`: it enqueues work the peer settles on its own cadence, which
+splits the debit and the credit across audit windows and closes every epoch with
+`money_conservation_failed`.
+
+Known gaps: `MSTAT_NAVAL_TRANSPORT` consumption scaling is not wired (only the gate and the 1.5x sea cost
+are); family sub-accounts and notable-person handles are stored/merged but never produced; no
+naval units/blockade — sea movement is only "more expensive land movement".
+
 ## Invariants
 
 - Read the **committed day-D** Country/Economy digest; mutate only Military stores; every Country/Economy

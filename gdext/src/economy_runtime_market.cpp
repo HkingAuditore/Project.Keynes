@@ -2899,7 +2899,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     // settlement, using the soldier plan's non-state-supplied needs only.
     // Every lane belongs to exactly one cell and therefore to exactly one
     // market, so no two market tasks ever touch the same lane.
-    run_army_personnel_consumption(market);
+    run_army_personnel_consumption(market, result);
     // END army personnel lane
     if (trace_detail) {
         // 价格更新已结束；旧价格向量与当前市场价在整个归因范围内都不再修改。

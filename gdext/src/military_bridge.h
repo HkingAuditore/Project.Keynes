@@ -86,7 +86,7 @@ enum MilitaryIntentKind : uint16_t {
     MILITARY_INTENT_REQUISITION = 8,     // cell, good, qty: market stock seized (no pay)
     MILITARY_INTENT_SPEND_CASH = 9,      // country, amount: upkeep/build cash spend
     // Army personnel lane (army-personnel contract §2.1; Economy opcodes
-    // 30/31/32 in the same POD lane as 24). The army handle rides in
+    // 30/31/32/33 in the same POD lane as 24). The army handle rides in
     // `source_id` so the receipt can name the formation, and it is the lane key
     // on the Economy side (contract §1.2: target_cohort = army handle). The
     // soldier signature is resolved by the ECONOMY runtime for the named cell;
@@ -94,6 +94,20 @@ enum MilitaryIntentKind : uint16_t {
     MILITARY_INTENT_ARMY_EMBARK = 10,      // army, cell, count: cell soldier cohort -> lane
     MILITARY_INTENT_ARMY_DISEMBARK = 11,   // army, cell, count: lane -> cell soldier cohort
     MILITARY_INTENT_ARMY_MERGE_LANES = 12, // country_a = src army, country_b = dst army
+    // Split / partial transfer (contract §1.2, Economy opcode 33): `count` heads
+    // leave the source formation's lane and join the destination formation's
+    // lane. `count` is the head count of the lots that actually moved (never the
+    // template), so the two lanes keep summing to the formations' lots.
+    // country_a = src army handle (target_cohort), country_b = dst army handle.
+    MILITARY_INTENT_ARMY_SPLIT_LANES = 13,
+    // Army pay (army-pay contract §2.1, Economy opcode 34): the wages of the
+    // people who actually march with the formation are paid into its lane
+    // instead of the garrison cell they left behind. `source_id` = army handle
+    // (the lane key on the Economy side), `count` = heads on the formation's
+    // lots, `amount` = heads x the daily per-head wage (the SAME value the
+    // garrison path uses), `country_a` = the paying country. Appended after 13
+    // so no existing kind is renumbered.
+    MILITARY_INTENT_ARMY_PAY = 14,
     // Country
     MILITARY_INTENT_TRANSFER_TERRITORY = 20, // cell, to_country (treaty cession)
     MILITARY_INTENT_TRANSFER_CASH = 21,      // from, to, amount (reparations)

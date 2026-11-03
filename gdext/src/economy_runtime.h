@@ -359,10 +359,23 @@ public:
         // cohort by (target_cell, signature) and the head count by payload0.
         //   target_cohort = army handle, target_cell = cell,
         //   target_country = signature, payload0 = heads,
-        //   payload1 = destination army handle (merge only).
+        //   payload1 = destination army handle (merge / split).
         COMMAND_ARMY_EMBARK = 30,
         COMMAND_ARMY_DISEMBARK = 31,
         COMMAND_ARMY_MERGE_LANES = 32,
+        // 33: heads (payload0) move from the src lane (target_cohort) into the
+        // dst lane (payload1), money proportional, destination created on
+        // demand. payload0 <= 0 means "move the whole lane" (opcode 32's
+        // semantics, without releasing a destination). Lane -> lane only: the
+        // cohorts are not touched, so no structural command is needed.
+        COMMAND_ARMY_SPLIT_LANES = 33,
+        // 34: army pay (army-pay contract §1). payload0 = MONEY_SCALE amount,
+        // payload1 = country handle, target_cohort = army handle. The treasury
+        // cash is collected through the existing conserved non-tax expenditure
+        // path (military_collect_cash) and credited to the lane: exactly what
+        // the treasury lost. No cohort is touched and nothing is minted, so no
+        // structural command is needed; deduplicated by `sequence` like 24/30-33.
+        COMMAND_ARMY_LANE_PAY = 34,
         // END army personnel lane
     };
 
@@ -7993,10 +8006,31 @@ private:
     // BEGIN army personnel lane (contract §1.2/§1.3).
     bool apply_army_lane_command(const Command &cmd, std::string &error,
                                  int64_t &settled);
+    // Army pay's treasury debit when Country is worker-authoritative (army-pay
+    // contract §1.1). The synchronous fiscal escrow (`military_collect_cash`) is
+    // refused there, so this drives the same Country economy-asset peer the cohort
+    // cash lane uses — prepare, service, finish — synchronously on the worker
+    // thread inside one epoch. That is what keeps the treasury debit and the lane
+    // credit in the SAME audit window; deferring to the enqueue-only route instead
+    // splits them and closes the epoch with money_conservation_failed.
+    // `moved` is what Country actually committed (<= requested).
+    bool pay_army_lane_from_worker_country(uint64_t army_handle, int64_t country_handle,
+                                           int64_t requested, int64_t &moved,
+                                           std::string &error);
+    // Cohort side of 30/31. Inside an epoch the record joins the structural
+    // stage that still runs later in this same epoch; between epochs (the POD
+    // drain at a committed day boundary) that day's structural stage has already
+    // run, so the same record is committed through the same structural path
+    // immediately — queueing there would delay a D+1 batch by a whole epoch and
+    // the lane would not be visible to the D+1 read.
+    bool queue_or_commit_army_lane(const StructuralCommand &record,
+                                   std::string &error, int64_t &moved);
+    // `moved_out` reports the heads that actually crossed (a no-op reports 0).
     bool commit_structural_army_lane(const StructuralCommand &cmd,
-                                     std::string &error);
+                                     std::string &error,
+                                     int64_t *moved_out = nullptr);
     int64_t army_lane_country_handle(int32_t cell) const;
-    void run_army_personnel_consumption(int32_t market);
+    void run_army_personnel_consumption(int32_t market, MarketResult &result);
     void sum_army_personnel_holdings(int64_t &population, int64_t &funds,
                                      int64_t &saturation_count) const;
     // END army personnel lane
@@ -9217,6 +9251,18 @@ public:
     int32_t military_army_cell(uint64_t army_handle) const;
     int32_t military_army_satisfaction_q16(uint64_t army_handle) const;
     int64_t military_army_lane_population() const;
+    // Feature detection for the Military bridge (army-personnel contract 2
+    // §1.1/§1.2): true when this build implements opcode 33
+    // (COMMAND_ARMY_SPLIT_LANES). The bridge probes it the same way it probes
+    // military_army_population() so an army.split / army.transfer translation can
+    // choose "the heads move" over the old "the lane stays put" behaviour.
+    bool military_army_lane_split_supported() const;
+    // Feature detection for opcode 34 (COMMAND_ARMY_LANE_PAY, army-pay contract
+    // §3.3): true when this build pays an army lane from the treasury. The
+    // Military bridge probes it before emitting ARMY_PAY so an Economy that
+    // predates 34 degrades to a no-op plus a failed receipt instead of an
+    // admission rejection that could take the whole POD batch down.
+    bool military_army_lane_pay_supported() const;
     // END army personnel lane public API
     bool profession_is_state_service_only(int32_t profession_id) const {
         return profession_id >= 0 &&

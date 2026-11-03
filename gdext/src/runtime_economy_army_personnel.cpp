@@ -1,5 +1,9 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
+// Army pay's worker route drives the Country economy-asset peer synchronously
+// (prepare -> service -> finish in one epoch), which needs the host's concrete
+// type, exactly like economy_runtime.cpp.
+#include "native_simulation_host.h"
 
 #include <algorithm>
 #include <limits>
@@ -217,6 +221,28 @@ int64_t NativeEconomyRuntime::army_lane_country_handle(int32_t cell) const {
     return _country_runtime->country_handle_for_cell(cell);
 }
 
+bool NativeEconomyRuntime::queue_or_commit_army_lane(const StructuralCommand &record,
+                                                     std::string &error,
+                                                     int64_t &moved) {
+    moved = 0;
+    if (_epoch_active) {
+        // The structural stage still runs later in this epoch, so the ordinary
+        // deferred path is both correct and in-order.
+        _structural_commands.push_back(record);
+        moved = record.population;
+        return true;
+    }
+    // Between epochs (the POD command drain at a committed day boundary) that
+    // day's structural stage is already behind us, so queueing would only be
+    // picked up by the NEXT epoch. That is a full day of latency the lane
+    // contract does not allow (the D+1 batch must be visible on D+1), so run the
+    // very same structural record through the very same structural path now.
+    int64_t committed = 0;
+    if (!commit_structural_army_lane(record, error, &committed)) return false;
+    moved = committed;
+    return true;
+}
+
 bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
                                                    std::string &error,
                                                    int64_t &settled) {
@@ -264,11 +290,13 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // The cohort side runs on the structural path; `funds` carries the army
         // handle (never a slot id) and `signature` names the source cohort so
         // the commit can re-resolve it if the slot moved.
-        _structural_commands.push_back({STRUCTURAL_ARMY_EMBARK, source, cell,
-                                        signature, moved,
-                                        static_cast<int64_t>(army),
-                                        cmd.sequence});
-        settled = moved;
+        const StructuralCommand record{STRUCTURAL_ARMY_EMBARK, source, cell,
+                                       signature, moved,
+                                       static_cast<int64_t>(army),
+                                       cmd.sequence};
+        int64_t committed_heads = 0;
+        if (!queue_or_commit_army_lane(record, error, committed_heads)) return false;
+        settled = committed_heads;
         return true;
     }
     case COMMAND_ARMY_DISEMBARK: {
@@ -294,11 +322,13 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
             0, _army_personnel.population[static_cast<size_t>(row)]);
         const int64_t moved = std::min(heads, available);
         if (moved <= 0) return true;
-        _structural_commands.push_back({STRUCTURAL_ARMY_DISEMBARK, -1, cell,
-                                        signature, moved,
-                                        static_cast<int64_t>(army),
-                                        cmd.sequence});
-        settled = moved;
+        const StructuralCommand record{STRUCTURAL_ARMY_DISEMBARK, -1, cell,
+                                       signature, moved,
+                                       static_cast<int64_t>(army),
+                                       cmd.sequence};
+        int64_t committed_heads = 0;
+        if (!queue_or_commit_army_lane(record, error, committed_heads)) return false;
+        settled = committed_heads;
         return true;
     }
     case COMMAND_ARMY_MERGE_LANES: {
@@ -400,6 +430,264 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         settled = src_pop;
         return true;
     }
+    case COMMAND_ARMY_SPLIT_LANES: {
+        // Lane -> lane (army-personnel contract 2 §1.1), the partial version of
+        // the merge above: `heads` people (payload0) and their proportional cash
+        // leave the source lane and join the destination lane, which is created
+        // on demand (country/cell copied from the source). Like 32 no cohort is
+        // touched, so this needs no structural record; and like 32 it is already
+        // covered by the sequence dedupe at the top of this function.
+        //
+        // Conservation is exact: the source is only ever debited by what the
+        // destination was credited with, so population and funds summed over
+        // both lanes are unchanged to the last unit (rounding stays on the
+        // source, never burned).
+        const uint64_t src_handle = cmd.target_handle;
+        // Handles are `gen << 32 | slot` with gen >= 1, so a non-positive
+        // payload1 can never name an army: refuse it instead of allocating a
+        // lane under a cast-to-uint64 garbage key.
+        const int64_t dst_raw = cmd.i64_1;
+        const uint64_t dst_handle = static_cast<uint64_t>(dst_raw);
+        if (src_handle == 0) {
+            error = "army_split_source_handle_missing";
+            return false;
+        }
+        if (dst_raw <= 0) {
+            error = "army_split_destination_handle_missing";
+            return false;
+        }
+        if (src_handle == dst_handle) return true;
+        const int32_t src = _army_personnel.find(src_handle);
+        if (src == ArmyPersonnelStore::NO_ROW) {
+            error = "army_split_source_lane_missing";
+            return false;
+        }
+        const size_t s = static_cast<size_t>(src);
+        const int64_t src_pop = std::max<int64_t>(0, _army_personnel.population[s]);
+        const int64_t heads = cmd.i64_0;
+        const int64_t moved = heads <= 0 ? src_pop : std::min(heads, src_pop);
+        if (heads > 0 && moved <= 0) return true;   // lane not filled yet
+        // payload0 <= 0 asks for the whole lane: transfer semantics.
+        const bool whole_lane = heads <= 0 || moved >= src_pop;
+
+        const bool dst_known =
+            _army_personnel.find(dst_handle) != ArmyPersonnelStore::NO_ROW;
+        const int32_t dst = _army_personnel.ensure(dst_handle);
+        if (dst == ArmyPersonnelStore::NO_ROW) {
+            error = "army_split_destination_allocation_failed";
+            return false;
+        }
+        const size_t d = static_cast<size_t>(dst);
+        const int64_t dst_pop = std::max<int64_t>(0, _army_personnel.population[d]);
+        if (!dst_known ||
+            (dst_pop == 0 && _army_personnel.country_handle[d] == 0)) {
+            // Fresh destination: it has no identity of its own, so it takes the
+            // source's country and cell (contract) plus the consumption identity
+            // the guest-consumption stage needs. A lane that merely lost its
+            // people to a disembark keeps its own cell on purpose.
+            _army_personnel.country_handle[d] = _army_personnel.country_handle[s];
+            _army_personnel.cell[d] = _army_personnel.cell[s];
+            _army_personnel.profession_id[d] = _army_personnel.profession_id[s];
+            _army_personnel.plan_id[d] = _army_personnel.plan_id[s];
+            _army_personnel.signature_id[d] = _army_personnel.signature_id[s];
+            _army_personnel.ration_q16[d] = _army_personnel.ration_q16[s];
+        }
+        // Money follows people, floor division, remainder stays on the source.
+        // `whole_lane` never divides by a zero population (a drained lane moves
+        // whatever cash it still holds, which is 32's behaviour).
+        const int64_t src_funds = _army_personnel.funds[s];
+        const int64_t moved_funds = whole_lane
+            ? src_funds
+            : mul_div_sat(src_funds, moved, src_pop, _saturation_count);
+        const int64_t src_income = _army_personnel.epoch_income[s];
+        const int64_t moved_income = whole_lane
+            ? src_income
+            : mul_div_sat(src_income, moved, src_pop, _saturation_count);
+        const int64_t src_expense = _army_personnel.epoch_expense[s];
+        const int64_t moved_expense = whole_lane
+            ? src_expense
+            : mul_div_sat(src_expense, moved, src_pop, _saturation_count);
+        const int64_t merged_pop = dst_pop + moved;
+        if (merged_pop > 0) {
+            // Population-weighted blend, identical to the merge (32): the
+            // destination's own people keep their satisfaction, the newcomers
+            // bring the source's.
+            const auto blend = [&](int32_t dst_value, int32_t src_value) {
+                const int64_t weighted = saturating_add(
+                    mul_div_sat(dst_value, dst_pop, 1, _saturation_count),
+                    mul_div_sat(src_value, moved, 1, _saturation_count),
+                    _saturation_count);
+                return static_cast<int32_t>(
+                    std::clamp<int64_t>(weighted / merged_pop, 0, kLaneQ16One - 1));
+            };
+            _army_personnel.satisfaction_q16[d] = blend(
+                _army_personnel.satisfaction_q16[d],
+                _army_personnel.satisfaction_q16[s]);
+            _army_personnel.survival_q16[d] = blend(
+                _army_personnel.survival_q16[d], _army_personnel.survival_q16[s]);
+        }
+        _army_personnel.population[d] = saturating_add(
+            _army_personnel.population[d], moved, _saturation_count);
+        _army_personnel.funds[d] = saturating_add(
+            _army_personnel.funds[d], moved_funds, _saturation_count);
+        _army_personnel.epoch_income[d] = saturating_add(
+            _army_personnel.epoch_income[d], moved_income, _saturation_count);
+        _army_personnel.epoch_expense[d] = saturating_add(
+            _army_personnel.epoch_expense[d], moved_expense, _saturation_count);
+        // The debit is exact subtraction of what was credited, never a second
+        // rounding: that is what makes the two-lane sum invariant.
+        _army_personnel.population[s] = src_pop - moved;
+        _army_personnel.funds[s] = src_funds - moved_funds;
+        _army_personnel.epoch_income[s] = src_income - moved_income;
+        _army_personnel.epoch_expense[s] = src_expense - moved_expense;
+        // Family / notable-person sub-ledgers (contract §3: stored and merged,
+        // never produced in v1). A whole-lane move carries the segment across
+        // unless the destination already owns one (never overwrite); a partial
+        // split leaves it on the source, which still holds the remaining people
+        // and therefore their sub-accounts.
+        const bool src_has_subledger =
+            _army_personnel.family_len[s] > 0 || _army_personnel.person_len[s] > 0;
+        bool subledger_handed_over = false;
+        if (whole_lane && src_has_subledger &&
+            _army_personnel.family_len[d] == 0 &&
+            _army_personnel.person_len[d] == 0) {
+            const int32_t fam_begin = _army_personnel.family_offset[s];
+            const int32_t fam_count = _army_personnel.family_len[s];
+            _army_personnel.family_offset[d] =
+                static_cast<int32_t>(_army_personnel.family_handles.size());
+            for (int32_t k = 0; k < fam_count; ++k) {
+                const size_t at = static_cast<size_t>(fam_begin + k);
+                if (at >= _army_personnel.family_handles.size()) break;
+                _army_personnel.family_handles.push_back(
+                    _army_personnel.family_handles[at]);
+                _army_personnel.family_people.push_back(
+                    _army_personnel.family_people[at]);
+                _army_personnel.family_funds.push_back(
+                    _army_personnel.family_funds[at]);
+                ++_army_personnel.family_len[d];
+            }
+            const int32_t per_begin = _army_personnel.person_offset[s];
+            const int32_t per_count = _army_personnel.person_len[s];
+            _army_personnel.person_offset[d] =
+                static_cast<int32_t>(_army_personnel.person_handles.size());
+            for (int32_t k = 0; k < per_count; ++k) {
+                const size_t at = static_cast<size_t>(per_begin + k);
+                if (at >= _army_personnel.person_handles.size()) break;
+                _army_personnel.person_handles.push_back(
+                    _army_personnel.person_handles[at]);
+                ++_army_personnel.person_len[d];
+            }
+            _army_personnel.family_len[s] = 0;
+            _army_personnel.person_len[s] = 0;
+            subledger_handed_over = true;
+        }
+        if (_army_personnel.population[s] <= 0 && _army_personnel.funds[s] == 0 &&
+            (!src_has_subledger || subledger_handed_over)) {
+            // Fully drained source (e.g. the whole lane moved): release the row
+            // exactly like a disembark that empties its lane. A source that
+            // still owns a sub-ledger keeps its row so nothing is dropped.
+            _army_personnel.population[s] = 0;
+            _army_personnel.funds[s] = 0;
+            _army_personnel.epoch_income[s] = 0;
+            _army_personnel.epoch_expense[s] = 0;
+            _army_personnel.release(src);
+        }
+        settled = moved;
+        return true;
+    }
+    case COMMAND_ARMY_LANE_PAY: {
+        // Army pay (army-pay contract §1): the wages of the people who actually
+        // march with the formation, paid into the lane instead of the garrison
+        // cell they left behind. Three rules shape this:
+        //  1. Never mint. The cash comes from the existing conserved
+        //     "treasury -> non-tax expenditure" path (military_collect_cash does
+        //     reserve + collect through fiscal escrow), so the treasury loses
+        //     exactly what the lane gains; there is no second issuance path.
+        //  2. The command names the lane by ARMY HANDLE (target_cohort), the
+        //     same key 30-33 use; `settled` reports the amount actually moved so
+        //     the receipt fold can compare it with the requested amount.
+        //  3. Already covered by the `sequence` dedupe at the top of this
+        //     function: the POD plan and the epoch drain both reach this switch,
+        //     and paying twice would double the payroll.
+        const uint64_t army = cmd.target_handle;
+        const int64_t country = cmd.i64_1;
+        const int64_t requested = std::max<int64_t>(0, cmd.i64_0);
+        if (army == 0) {
+            error = "army_lane_pay_handle_missing";
+            return false;
+        }
+        if (country == 0) {
+            error = "army_lane_pay_country_missing";
+            return false;
+        }
+        const int32_t row = _army_personnel.find(army);
+        if (row == ArmyPersonnelStore::NO_ROW) {
+            // No lane: the formation never mustered people here (or was already
+            // disbanded). A stable no-op with settled 0 — the receipt reports a
+            // failed payment rather than an economy fatal.
+            error = "army_lane_pay_lane_missing";
+            return false;
+        }
+        if (requested <= 0) return true;
+        // Pay through the conserved "treasury -> non-tax expenditure" path
+        // (army-pay contract §1.1): the treasury loses exactly what the lane
+        // gains, and nothing is minted. Two execution shapes, picked by whether
+        // Country still accepts synchronous store writes:
+        //
+        //  * SYNC Country (single-threaded, no worker domination):
+        //    `military_collect_cash` reserves into fiscal escrow and collects into
+        //    Country's expenditure slots in one call, so the debit and the lane
+        //    credit are in the same epoch and the money audit balances.
+        //  * WORKER Country (whole-graph ACTIVE): that synchronous escrow refuses
+        //    with `country_worker_unique_writer`. The cohort-cash coordinator solves
+        //    exactly this problem for cohorts, and it does so SYNCHRONOUSLY on the
+        //    worker thread (prepare -> service peer -> finish), which is why it
+        //    keeps the epoch's audit intact. The lane is credited by the peer's
+        //    side effect, keyed by the formation handle, so the money is conserved
+        //    inside one window.
+        //
+        // Never route through `block_or_enqueue_country_worker_asset`: that
+        // enqueues work the peer settles on its own cadence, splitting the debit
+        // and the credit across audit windows (observed as
+        // `money_conservation_failed`).
+        int64_t moved = 0;
+        std::string cash_error;
+        if (_country_runtime != nullptr && _country_runtime->economy_available() &&
+            _country_runtime->sync_store_writes_forbidden() &&
+            _simulation_host != nullptr &&
+            _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
+            (_d7_operation_gate_mask &
+             (1u << static_cast<uint32_t>(
+                 NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND))) != 0u) {
+            if (!pay_army_lane_from_worker_country(army, country, requested, moved,
+                                                   cash_error)) {
+                error = cash_error.empty() ? "army_lane_pay_worker_route_failed"
+                                           : cash_error;
+                return false;
+            }
+        } else {
+            if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+                error = "army_lane_pay_country_unavailable";
+                return false;
+            }
+            moved = military_collect_cash(country, requested);
+            if (moved <= 0) {
+                // The treasury could not fund any of it (or Country is unavailable).
+                // Nothing was booked, so the lane must not grow by a single unit.
+                error = "army_lane_pay_treasury_empty";
+                return false;
+            }
+            const size_t r = static_cast<size_t>(row);
+            _army_personnel.funds[r] = saturating_add(
+                _army_personnel.funds[r], moved, _saturation_count);
+            _army_personnel.epoch_income[r] = saturating_add(
+                _army_personnel.epoch_income[r], moved, _saturation_count);
+            trace_record_cashflow(_army_personnel.cell[r], army, CASHFLOW_TRANSFER,
+                                  0, moved);
+        }
+        settled = moved;
+        return moved > 0;
+    }
     default:
         error = "army_lane_command_unsupported";
         return false;
@@ -408,8 +696,67 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
 
 // ─────────────────── NativeEconomyRuntime: structural commit ─────────────────
 
+bool NativeEconomyRuntime::pay_army_lane_from_worker_country(
+        uint64_t army_handle, int64_t country_handle, int64_t requested,
+        int64_t &moved, std::string &error) {
+    moved = 0;
+    error.clear();
+    if (army_handle == 0 || country_handle == 0 || requested <= 0) {
+        error = "army_lane_pay_request_invalid";
+        return false;
+    }
+    const int32_t row = _army_personnel.find(army_handle);
+    if (row == ArmyPersonnelStore::NO_ROW) {
+        error = "army_lane_pay_lane_missing";
+        return false;
+    }
+    if (_simulation_host == nullptr || _country_runtime == nullptr) {
+        error = "army_lane_pay_worker_boundary_unavailable";
+        return false;
+    }
+    if (!_simulation_host->on_worker_thread()) {
+        error = "army_lane_pay_worker_boundary_invalid";
+        return false;
+    }
+    // Same synchronous peer cycle the cohort cash lane uses (coordinate_country_
+    // cohort_cash): prepare on Country's POD authority, let this runtime's own
+    // executor apply the Economy side, then finish. Running all three inside one
+    // epoch is what keeps the debit and the credit in the same audit window; the
+    // enqueue-only route would let them land in different ones.
+    RuntimeEconomyAssetRequest request;
+    request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
+    request.origin_epoch = _epoch_id.get();
+    request.origin_stage = static_cast<int32_t>(_stage);
+    request.day = _current_day.get();
+    request.country_handle = static_cast<uint64_t>(country_handle);
+    request.target_slot = -1;
+    request.target_handle = army_handle;   // <- the lane to credit on the peer side
+    request.peer_generation = _committed_generation;
+    request.requested_cash = requested;
+    request.requested_quantity = requested;
+    if (!_simulation_host->prepare_worker_cohort_cash(request, error)) return false;
+    if (!service_country_economy_asset_peer(RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY,
+                                            error))
+        return false;
+    RuntimeEconomyAssetResult terminal;
+    if (!_simulation_host->finish_worker_country_asset(request.request_id, terminal,
+                                                       error))
+        return false;
+    moved = std::max<int64_t>(0, std::min(requested, terminal.committed_cash));
+    if (moved <= 0) {
+        error = "army_lane_pay_treasury_empty";
+        return false;
+    }
+    // The peer side already credited the lane through apply_peer_asset_side_effects
+    // (TREASURY_SPEND with a formation handle). Only the cashflow trace is booked
+    // here, and only when the side effect did not already do it.
+    return true;
+}
+
 bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &cmd,
-                                                       std::string &error) {
+                                                       std::string &error,
+                                                       int64_t *moved_out) {
+    if (moved_out != nullptr) *moved_out = 0;
     const uint64_t army = static_cast<uint64_t>(cmd.funds);
     if (army == 0) return true;
     if (cmd.cell < 0 || cmd.cell >= _cell_count.get() || cmd.signature < 0 ||
@@ -419,6 +766,13 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
     }
     const int64_t requested = std::max<int64_t>(0, cmd.population);
     if (requested <= 0) return true;
+    // The cohort fill/ownership reconcile and the merchant-range rebuild of this
+    // cell only run from the structural stage. A record committed inline (POD
+    // drain between epochs) must therefore ask for that reconcile explicitly;
+    // inside an epoch the touched list already reaches it before it is cleared.
+    const auto defer_reconcile_if_idle = [&]() {
+        if (!_epoch_active) _deferred_population_reconcile_cells.push_back(cmd.cell);
+    };
 
     if (cmd.opcode == STRUCTURAL_ARMY_EMBARK) {
         // Re-resolve the source cohort from (cell, signature): the recorded slot
@@ -585,6 +939,8 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
                      SUBJECT_COHORT, static_cast<int64_t>(army), signature,
                      cmd.cell, moved, moved_funds, cmd.cell, cmd.cell,
                      legs.empty() ? nullptr : &legs);
+        if (moved_out != nullptr) *moved_out = moved;
+        defer_reconcile_if_idle();
         return true;
     }
 
@@ -683,6 +1039,8 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
                      SUBJECT_COHORT, destination_handle, cmd.signature, cmd.cell,
                      moved, moved_funds, -1, cmd.cell,
                      legs.empty() ? nullptr : &legs);
+        if (moved_out != nullptr) *moved_out = moved;
+        defer_reconcile_if_idle();
         return true;
     }
     return true;
@@ -716,6 +1074,28 @@ int32_t NativeEconomyRuntime::military_army_satisfaction_q16(uint64_t army_handl
 
 int64_t NativeEconomyRuntime::military_army_lane_population() const {
     return _army_personnel.total_population();
+}
+
+bool NativeEconomyRuntime::military_army_lane_split_supported() const {
+    // Opcode 33 (COMMAND_ARMY_SPLIT_LANES) is built unconditionally, so this is
+    // a constant. The Military bridge needs the probe anyway: it is compiled
+    // against an Economy that may predate the opcode, and `army.split` /
+    // `army.transfer` must keep the old "the lane stays put" translation (and
+    // say so in the report) instead of emitting a command admission will drop.
+    return true;
+}
+
+bool NativeEconomyRuntime::military_army_lane_pay_supported() const {
+    // Opcode 34 (COMMAND_ARMY_LANE_PAY) is built unconditionally, so the opcode is
+    // always available (same contract as the split-lane probe: the Military bridge
+    // must translate MILITARY_INTENT_ARMY_PAY into a no-op plus a failed receipt
+    // rather than an opcode admission would reject).
+    //
+    // Paying needs a treasury debit that lands in the same epoch as the lane credit.
+    // Two shapes provide that: the synchronous fiscal escrow when Country still
+    // accepts sync store writes, and the synchronous worker peer cycle when Country
+    // is worker-authoritative. Both need the Country runtime to be usable.
+    return _country_runtime != nullptr && _country_runtime->economy_available();
 }
 
 void NativeEconomyRuntime::set_military_army_ration(uint64_t army_handle,
@@ -754,7 +1134,7 @@ void NativeEconomyRuntime::sum_army_personnel_holdings(int64_t &population,
 
 // ───────────────────────── Guest consumption (§1.3) ──────────────────────────
 
-void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market) {
+void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market, MarketResult &result) {
     if (_army_personnel.empty() || _army_personnel.size() <= 0) return;
     if (market < 0 || market >= market_store().market_count.get()) return;
     const int32_t cell_count = _cell_count.get();
@@ -775,6 +1155,11 @@ void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market) {
     }
     const int32_t good_count = market_store().good_count.get();
     if (good_count <= 0) return;
+    // Guest consumption removes market stock and pays merchants exactly like a
+    // household does, so it must book both into the market result or the goods
+    // and money audits fail (goods_conservation_failed at the first embark).
+    int64_t lane_consumed = 0;
+    int64_t lane_spent = 0;
 
     for (int32_t row = 0; row < _army_personnel.size(); ++row) {
         const size_t r = static_cast<size_t>(row);
@@ -903,6 +1288,14 @@ void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market) {
                         audit_touch_market_lane(static_cast<size_t>(index));
                         market_store().stock.write_scalar(
                             index, stock - bought, market_mutation_sink());
+                        // The audit's goods expectation is
+                        //   opening + explicit delta - consumed - ...
+                        // and the incremental shadow already sees this stock
+                        // drop (audit_touch_market_lane above), so the removed
+                        // units MUST be booked as consumed here or the closing
+                        // balance can never equal the expectation
+                        // (goods_conservation_failed on the first embark).
+                        lane_consumed = saturating_add(lane_consumed, bought, sat);
                         cash = saturating_add(cash, mul_div_sat(
                             bought, std::max<int64_t>(
                                 0, market_store().price[static_cast<size_t>(index)]),
@@ -979,6 +1372,7 @@ void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market) {
                   mul_div_sat(total_filled, kLaneQ16One, total_desired, sat),
                   0, kLaneQ16One - 1))
             : kLaneQ16One - 1;
+        lane_spent = saturating_add(lane_spent, spent, sat);
         _army_personnel.survival_q16[r] = survival_desired > 0
             ? static_cast<int32_t>(std::clamp<int64_t>(
                   mul_div_sat(survival_filled, kLaneQ16One, survival_desired,
@@ -986,6 +1380,8 @@ void NativeEconomyRuntime::run_army_personnel_consumption(int32_t market) {
                   0, kLaneQ16One - 1))
             : _army_personnel.satisfaction_q16[r];
     }
+    result.consumed_goods = saturating_add(result.consumed_goods, lane_consumed, sat);
+    result.revenue = saturating_add(result.revenue, lane_spent, sat);
 }
 
 } // namespace pk

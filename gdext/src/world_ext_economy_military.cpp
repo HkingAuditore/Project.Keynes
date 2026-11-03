@@ -34,6 +34,7 @@ constexpr int32_t kEconomyOpMarketGoodToCountry = 13;
 constexpr int32_t kEconomyOpArmyEmbark = 30;      // cell cohort -> army lane
 constexpr int32_t kEconomyOpArmyDisembark = 31;   // army lane -> cell cohort
 constexpr int32_t kEconomyOpArmyMergeLanes = 32;  // src lane -> dst lane
+constexpr int32_t kEconomyOpArmyLanePay = 34;     // treasury -> army lane wages
 
 // ---- Army personnel lane probe (army-personnel contract §1.4) -------------
 // The lane bindings live on NativeEconomyRuntime, which is owned by the Economy
@@ -55,6 +56,28 @@ template <typename T>
 struct HasArmyLaneRation<T,
     std::void_t<decltype(std::declval<T &>().set_military_army_ration(
         std::declval<uint64_t>(), std::declval<int32_t>()))>> : std::true_type {};
+
+// Army pay receipt base (army-pay contract §3.2): the lane's cash balance.
+// Probed at compile time like the population read, so an Economy build without
+// it answers -1 and the pay rows settle on the requested amount instead of
+// trapping.
+template <typename T, typename = void>
+struct HasArmyLaneFunds : std::false_type {};
+template <typename T>
+struct HasArmyLaneFunds<T, std::void_t<decltype(
+        std::declval<const T &>().military_army_funds(std::declval<uint64_t>()))>>
+    : std::true_type {};
+
+template <typename T>
+int64_t lane_funds_of(T *runtime, uint64_t army_handle) {
+    if constexpr (HasArmyLaneFunds<T>::value) {
+        return static_cast<int64_t>(runtime->military_army_funds(army_handle));
+    } else {
+        (void)runtime;
+        (void)army_handle;
+        return -1;
+    }
+}
 
 template <typename T>
 int64_t lane_population_of(T *runtime, uint64_t army_handle) {
@@ -134,6 +157,11 @@ bool economy_army_lane_supported(const void *economy) {
 int64_t economy_army_lane_population(void *economy, uint64_t army_handle) {
     if (economy == nullptr) return -1;
     return lane_population_of(economy_runtime_from(economy), army_handle);
+}
+
+int64_t economy_army_lane_funds(void *economy, uint64_t army_handle) {
+    if (economy == nullptr) return -1;
+    return lane_funds_of(economy_runtime_from(economy), army_handle);
 }
 
 bool economy_set_army_ration(void *economy, uint64_t army_handle, int32_t q16) {
@@ -256,6 +284,16 @@ void DCWorldExt::collect_military_economy_receipts(
                 // Military stays on the pre-lane accounting.
                 const int64_t lane = economy_army_lane_population(
                     economy, static_cast<uint64_t>(row.target_handle));
+                if (lane >= 0 && lane == 0) {
+                    // A zero lane is not evidence that nothing moved. The row is
+                    // drained at a committed day boundary, but its structural
+                    // move can still be a day out (and the queue is drained after
+                    // the epoch's publish), so settling here would book a real
+                    // embarkation as failed and report personnel = 0 for a
+                    // formation that is already carrying the heads. Keep the row
+                    // open; the receipt timeout fails it if no lane ever appears.
+                    continue;
+                }
                 applied = lane >= 0 ? lane : row.count;
             } else if (row.opcode == kEconomyOpArmyDisembark ||
                        row.opcode == kEconomyOpArmyMergeLanes) {
@@ -263,6 +301,39 @@ void DCWorldExt::collect_military_economy_receipts(
                 // nothing about how many actually moved; the batch applied
                 // atomically, so the requested count is what landed.
                 applied = row.count;
+            } else if (row.opcode == kEconomyOpArmyLanePay) {
+                // Army pay (army-pay contract §3.2): `row.count` carries the
+                // lane's cash BEFORE the payment, so the amount that actually
+                // landed is the growth since then, clamped to what was asked
+                // for. The treasury can only fund part of a payroll (opcode 34
+                // collects what the country actually has), and the lane also
+                // spends on guest consumption in the same epoch, so a naive
+                // requested == applied would over-report: a lane that started
+                // at 100, was paid 500 and spent 300 back to 300 must book 200.
+                // The read is final: the POD row is applied atomically inside
+                // the epoch that drains it, and this loop only runs once that
+                // epoch's committed day has been reached, so the balance here is
+                // the post-payment one. Settling now also keeps `row.count` from
+                // being reinterpreted as a base by a later poll.
+                const int64_t funds = economy_army_lane_funds(
+                    economy, static_cast<uint64_t>(row.target_handle));
+                const int64_t requested = std::max<int64_t>(0, row.amount);
+                if (funds < 0) {
+                    // Economy has no funds readout at all: no payment path
+                    // exists, so the row is a failure rather than a guess.
+                    row.count = 0;
+                    row.settled_value = 0;
+                    row.receipt_pending = 3;
+                    continue;
+                }
+                const int64_t base = std::max<int64_t>(0, row.count);
+                applied = std::clamp<int64_t>(std::max<int64_t>(0, funds - base), 0,
+                                              requested);
+                row.count = applied;
+                row.amount = applied;
+                row.settled_value = applied;
+                row.receipt_pending = applied > 0 ? 2 : 3;
+                continue;
             } else if (row.count > 0) {
                 applied = row.count;
             }

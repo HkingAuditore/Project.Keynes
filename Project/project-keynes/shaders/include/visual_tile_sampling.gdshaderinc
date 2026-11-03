@@ -66,7 +66,7 @@ vec4 visual_sample_height(vec2 uv) { return texture(height_tex, visual_static_wr
 // 各 VT_USE_* 只决定读哪一层，**不新增 sampler**。tiled 桌面不走这条：normal/relief 是
 // 两个不同分辨率（relief 是 relief_scale 倍）的数组，不能同 array。
 #if !defined(MAP_VISUAL_TILED) && defined(VT_USE_TERRAIN_SURFACE_ARRAY)
-uniform sampler2DArray terrain_surface_tex : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray terrain_surface_tex : filter_linear, repeat_disable;
 #define TS_LAYER_NORMAL   0.0
 #define TS_LAYER_RELIEF   1.0
 #define TS_LAYER_DETAIL   2.0
@@ -85,7 +85,7 @@ uniform bool terrain_edge_layers_bound = false;
 
 #ifdef VT_USE_TERRAIN_NORMAL
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_normal_tiles : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray visual_terrain_normal_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_terrain_normal(vec2 uv) { return texture(visual_terrain_normal_tiles, visual_tile_address(uv)); }
 #elif defined(VT_USE_TERRAIN_RELIEF)
 #ifndef VT_USE_TERRAIN_SURFACE_ARRAY
@@ -107,7 +107,7 @@ vec4 visual_sample_terrain_normal(vec2 uv) { return texture(terrain_normal_tex, 
 #error "VT_USE_TERRAIN_RELIEF requires VT_USE_TERRAIN_NORMAL (packed terrain_surface_tex layer contract)"
 #endif
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_relief_tiles : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray visual_terrain_relief_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_terrain_relief(vec2 uv) { return texture(visual_terrain_relief_tiles, visual_tile_address(uv)); }
 #else
 vec4 visual_sample_terrain_relief(vec2 uv) {
@@ -259,7 +259,7 @@ float visual_flow_texel(vec2 uv) {
 
 #ifdef VT_USE_WATER_DEPTH
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_water_depth_tiles : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray visual_water_depth_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_water_depth(vec2 uv) { return texture(visual_water_depth_tiles, visual_tile_address(uv)); }
 #else
 uniform sampler2D water_depth_tex : filter_linear, repeat_disable;
@@ -269,7 +269,7 @@ vec4 visual_sample_water_depth(vec2 uv) { return texture(water_depth_tex, visual
 
 #ifdef VT_USE_TERRAIN_DETAIL
 #ifdef MAP_VISUAL_TILED
-uniform sampler2DArray visual_terrain_detail_tiles : filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray visual_terrain_detail_tiles : filter_linear, repeat_disable;
 vec4 visual_sample_terrain_detail(vec2 uv) { return texture(visual_terrain_detail_tiles, visual_tile_address(uv)); }
 #else
 // [web-high-features 2026-11-01 / 方案 B] 非 tiled 的 detail 改读 terrain_surface_tex

@@ -24,8 +24,17 @@ extends RefCounted
 ##   supply_goods: Array (6) of PackedInt32Array   (dense good ids)
 ##   supply_yield_q16: Array (6) of PackedInt32Array (q16 per good, 65536 = 1:1)
 ##   unlock_tech_ids: PackedInt32Array   (dense technology ids, index == unlock_bit)
+##   coastal_transport_bit / ocean_transport_bit: int  (see "naval transport" below;
+##                               -1 = the catalog does not grant sea movement)
 ##   economy_good_count, soldier_profession_id, unemployed_profession_id,
 ##   ration_need_per_head
+##
+## Naval transport (army-personnel contract 2 §2.2): the top-level
+## `unlock_tech_ids` array names the `tech.military.coastal_transport` /
+## `tech.military.naval_transport` ids in that order. Their bits are appended
+## AFTER every unit/building reference, so no existing unlock bit is renumbered;
+## the native core only uses them to gate water movement (coastal = runs of at
+## most 3 consecutive water cells, ocean = no run limit).
 ##
 ## Supply classes (index order, ABI): 0 ration, 1 fodder, 2 ammunition,
 ## 3 fuel, 4 upkeep, 5 equipment.
@@ -126,6 +135,17 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 		return building_result
 	var state_buildings: Array = building_result.get("state_buildings", [])
 	unlock_tech_ids = building_result.get("unlock_tech_ids", unlock_tech_ids)
+
+	# ---- naval transport gates (army-personnel contract 2 §2.2) ------------
+	# Resolved last so every unit/building bit keeps its index. Both slots are
+	# optional: a catalog without them simply never opens the sea.
+	var naval_result := _compile_naval_unlocks(data.get("unlock_tech_ids", []),
+		tech_index, unlock_tech_ids, unlock_bits)
+	if not bool(naval_result.get("ok", false)):
+		return naval_result
+	unlock_tech_ids = naval_result.get("unlock_tech_ids", unlock_tech_ids)
+	var coastal_transport_bit := int(naval_result.get("coastal_transport_bit", -1))
+	var ocean_transport_bit := int(naval_result.get("ocean_transport_bit", -1))
 	var ration := _compile_ration(good_index, economy_catalog)
 	if not bool(ration.get("ok", false)):
 		return ration
@@ -155,6 +175,8 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 		"supply_goods": supply.get("supply_goods", []),
 		"supply_yield_q16": supply.get("supply_yield_q16", []),
 		"unlock_tech_ids": unlock_tech_ids,
+		"coastal_transport_bit": coastal_transport_bit,
+		"ocean_transport_bit": ocean_transport_bit,
 		"economy_good_count": good_ids.size(),
 		"soldier_profession_id": soldier_profession,
 		"unemployed_profession_id": unemployed_profession,
@@ -192,6 +214,11 @@ static func validate(catalog: Dictionary, economy_catalog: Dictionary,
 			barracks += 1
 	if barracks == 0:
 		problems.append("no barracks state building declared")
+	# Naval transport (contract 2 §2.2): both gates must resolve, or the sea can
+	# never open and an army ordered across water would silently do nothing.
+	if int(compiled.get("coastal_transport_bit", -1)) < 0 \
+			or int(compiled.get("ocean_transport_bit", -1)) < 0:
+		problems.append("unlock_tech_ids must name the coastal and ocean transport technologies")
 	if problems.is_empty():
 		return compiled
 	var failed := compiled.duplicate()
@@ -418,6 +445,36 @@ static func _resolve_unlock(tech_id: String, tech_index: Dictionary,
 		"bit": int(unlock_bits[tech_id]),
 		"unlock_tech_ids": unlock_tech_ids,
 		"unlock_bits": unlock_bits,
+	}
+
+
+## Resolves the two naval transport bits from the catalog's `unlock_tech_ids`
+## array: slot 0 = coastal (`tech.military.coastal_transport`, runs of at most 3
+## consecutive water cells) and slot 1 = ocean (`tech.military.naval_transport`,
+## no run limit). Must run after every unit/building reference so no existing
+## unlock bit moves. A missing or empty entry leaves that gate closed (-1).
+static func _compile_naval_unlocks(raw_ids, tech_index: Dictionary,
+		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary) -> Dictionary:
+	var ordered_tech := unlock_tech_ids
+	var ordered_bits := unlock_bits
+	var bits := PackedInt32Array([-1, -1])
+	var rows: Array = raw_ids if raw_ids is Array else []
+	for index in range(mini(rows.size(), bits.size())):
+		var tech_id := String(rows[index]).strip_edges()
+		if tech_id.is_empty():
+			continue
+		var bit_result := _resolve_unlock(tech_id, tech_index, ordered_tech, ordered_bits)
+		if not bool(bit_result.get("ok", false)):
+			return bit_result
+		ordered_tech = bit_result.get("unlock_tech_ids", ordered_tech)
+		ordered_bits = bit_result.get("unlock_bits", ordered_bits)
+		bits[index] = int(bit_result.get("bit", -1))
+	return {
+		"ok": true,
+		"unlock_tech_ids": ordered_tech,
+		"unlock_bits": ordered_bits,
+		"coastal_transport_bit": int(bits[0]),
+		"ocean_transport_bit": int(bits[1]),
 	}
 
 

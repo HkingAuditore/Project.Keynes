@@ -1557,6 +1557,10 @@
     },
     "era_militia_attack_factor_q16": 88474
   },
+  "unlock_tech_ids": [
+    "tech.military.coastal_transport",
+    "tech.military.naval_transport"
+  ],
   "defaults": {
     "training_kind_factor_q16": {
       "militia_to_unit": 65536,

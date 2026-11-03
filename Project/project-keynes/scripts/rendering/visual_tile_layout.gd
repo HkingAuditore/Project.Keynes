@@ -330,6 +330,10 @@ static func _configured_texels_per_hex(quality: String, mobile: bool) -> float:
 		# （12/16/20）。显存按密度²增长，靠 resolve() 的移动端上限 96/128 MB 兜底
 		# （见 _default_resident_cap_mb），超了会自动降到 effective 可承受的值。
 		# 自动档取 medium：默认手机走 auto，改它才真正改善默认体验。
+		# [best-known 2026-11-03] 玩家实测：**12/16/20** 这一档是观感最好的一版
+		# （拉近没有方块边，拉远略有闪烁）。再往上抬到 16/20/24 反而更差——因为没有
+		# mip 链时，纹素越密、缩采样时参与混叠的高频越多，远处更容易闪。
+		# 结论：在补齐"仅颜色层 mip"之前，密度就停在这里，不要再往上抬。
 		match quality:
 			"low":
 				return 12.0

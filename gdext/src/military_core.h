@@ -178,6 +178,13 @@ struct MilitaryCatalog {
     std::vector<int16_t> vegetation_rough, vegetation_def_q8, vegetation_supply_q8,
         vegetation_attrition_bp100;
     std::vector<int16_t> cover_flat, cover_supply_q8, cover_attrition_bp100;
+    // Naval transport gates (army-personnel contract 2 §2.2, design §7.4):
+    // indices into digest.country_unlock_bits, resolved by
+    // MilitaryCatalogCompiler from `tech.military.coastal_transport` /
+    // `tech.military.naval_transport`. -1 (or any unconfigured catalog) means
+    // "never granted", so water stays impassable exactly as before.
+    int32_t coastal_transport_bit = -1;   // runs of <= 3 consecutive water cells
+    int32_t ocean_transport_bit = -1;     // no run limit
 };
 
 // ---------------------------------------------------------------- stores
@@ -410,6 +417,15 @@ struct MilitaryReport {
     int32_t procure_markets_used = 0;
     // Supply connectivity: disconnection probes answered (0 = no probe).
     int32_t supply_probes = 0;
+    // The day's payroll as actually planned, split by holder (army-pay contract
+    // §2.3). `payroll_garrison` is what the cell rows sent to the garrison
+    // cohorts and `payroll_army` what the MILITARY_INTENT_ARMY_PAY rows sent to
+    // the formations' lanes; together they are the day's `planned` and the
+    // denominator both feeds the same pay_ratio_30 statistic. Transient (reset
+    // every step, never saved or hashed) — the reporting surface a test or a
+    // panel needs to tell "who got paid today" apart from the 30-day EWMA.
+    int64_t payroll_garrison = 0;
+    int64_t payroll_army = 0;
 };
 
 
@@ -606,6 +622,17 @@ public:
     void run_reinforcement(const MilitaryWorldDigest &digest);
     void update_morale_org(const MilitaryWorldDigest &digest);
     void run_wages_and_upkeep(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
+    // The per-head DAILY WAGE (MONEY_SCALE) every pay path uses: garrison
+    // (MILITARY_INTENT_PAY_WAGES -> the soldier cohort's cell) and army
+    // (MILITARY_INTENT_ARMY_PAY -> the formation's lane). Contract §2.2 requires
+    // both sides to pay the SAME value, so the formula lives in one place and
+    // both call it. AUTO = living cost x MSTAT_WAGE, ABSOLUTE = the policy value.
+    // Returns 0 when the country slot has no policy.
+    int64_t soldier_daily_wage(int32_t country_slot) const;
+    // The living cost input the AUTO branch of soldier_daily_wage scales, from
+    // the last committed digest (0 before the first day). Published so a test
+    // can recompute the wage instead of hard-coding the formula.
+    int64_t soldier_living_cost(int32_t country_slot) const;
     void refresh_army_cache(int32_t army_slot);
     // Country era index from the last committed digest (militia scaling).
     int32_t militia_era(int32_t country_slot) const;

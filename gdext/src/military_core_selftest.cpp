@@ -649,6 +649,142 @@ bool test_partial_discharge(const MilitaryTerrainInput &t, std::string &report) 
     return true;
 }
 
+// --- 9b. Army pay (army-pay contract §2 / §4.3): wages follow the people.
+//
+// Two holders, one treasury: a garrison lot at A and an army lot that marched
+// off it. run_wages_and_upkeep must emit exactly one PAY_WAGES row for the
+// garrison (headed for A) and one ARMY_PAY row for the formation (headed for its
+// lane), the two amounts must sum to the total payroll demand (conservation), and
+// the army row must carry the army share -- not the garrison's -- so a campaign
+// never drains the lane while the home cohort keeps collecting.
+bool test_army_pay(const MilitaryTerrainInput &t, std::string &report) {
+    Sim sim;
+    ST_CHECK(sim.init(t, 60601), "army pay sim init");
+    const int32_t A = cell_at(5, 5);
+    const int32_t B = cell_at(9, 5);
+    // A fixed per-head wage keeps the arithmetic exact: wage_mode 1 (ABSOLUTE)
+    // ignores the living cost and the MSTAT_WAGE stat, so both paths use
+    // `wage_absolute` -- which is the contract's "the SAME per-head daily wage"
+    // requirement, checked below by comparing the two emitted rows.
+    constexpr int64_t kWage = 25000;   // MONEY_SCALE per head per day
+    int64_t garrison_heads = 0;
+    int64_t army_heads = 0;
+    {
+        MilitaryCommand c;
+        c.cell = A;
+        c.unit_to = 0;
+        ST_CHECK(sim.submit(MCMD_STATE_BUILD, 0, c), "army pay: barracks at A");
+        MilitaryCommand target;
+        target.count = 0;
+        target.value = 50;
+        ST_CHECK(sim.submit(MCMD_FORCE_SET_TARGET, 0, target), "army pay: target 50");
+        MilitaryCommand wage;
+        wage.count = 1;          // wage_mode = ABSOLUTE
+        wage.value = kWage;
+        ST_CHECK(sim.submit(MCMD_POLICY_SET_WAGE, 0, wage), "army pay: absolute wage policy");
+    }
+    ST_STEP(sim, 41);
+    const int64_t recruited = garrison_at(sim.core, A);
+    ST_CHECK(recruited == 50, "army pay: 50 soldiers recruited at A");
+    // Take most of the garrison into a formation and march it away, so the home
+    // cell and the formation are different places to pay.
+    {
+        MilitaryCommand c;
+        c.cell = A;
+        c.ints = {0, 40};
+        ST_CHECK(sim.submit(MCMD_ARMY_CREATE, 0, c), "army pay: army.create 40 at A");
+    }
+    ST_STEP(sim, sim.day + 1);
+    const int32_t army = sim.army_of(0);
+    ST_CHECK(army >= 0, "army pay: formation exists");
+    {
+        MilitaryCommand c;
+        c.army = sim.core.army_handle(army);
+        c.cell = B;
+        ST_CHECK(sim.submit(MCMD_ARMY_MOVE, 0, c), "army pay: army.move to B");
+    }
+    for (int32_t k = 0; k < 8; ++k) ST_STEP(sim, sim.day + 1);
+    ST_CHECK(sim.core.armies().cell[(size_t)army] == B, "army pay: formation arrived at B");
+    garrison_heads = garrison_at(sim.core, A);
+    army_heads = sim.core.armies().cached_headcount[(size_t)army];
+    ST_CHECK(garrison_heads == 10 && army_heads == 40,
+             "army pay: 10 garrisoned at A, 40 with the formation");
+
+    // One wages day, collected instead of auto-receipted: the harness only
+    // answers ENLIST/LEVY/DISCHARGE, so the pay rows stay in `last` for us.
+    sim.last.clear();
+    sim.receipts.clear();
+    sim.dg.day = sim.day;
+    ST_CHECK(sim.core.step_day(sim.day, sim.dg, sim.receipts, sim.last, sim.error),
+             "army pay: step_day");
+    int64_t garrison_pay = 0, army_pay = 0;
+    int64_t garrison_rows = 0, army_rows = 0;
+    uint64_t army_source = 0;
+    int32_t army_cell = -1;
+    for (const MilitaryIntent &in : sim.last) {
+        if (in.kind == MILITARY_INTENT_PAY_WAGES) {
+            if (in.cell == A) {
+                garrison_pay += in.amount;
+                ++garrison_rows;
+            }
+        } else if (in.kind == MILITARY_INTENT_ARMY_PAY) {
+            army_pay += in.amount;
+            ++army_rows;
+            army_source = in.source_id;
+            army_cell = in.cell;
+        }
+    }
+    ST_CHECK(garrison_rows == 1, "army pay: exactly one garrison payroll row");
+    ST_CHECK(army_rows == 1, "army pay: exactly one army payroll row");
+    ST_CHECK(garrison_pay == garrison_heads * kWage,
+             "army pay: garrison row is garrison heads x the shared daily wage");
+    ST_CHECK(army_pay == army_heads * kWage,
+             "army pay: army row is formation heads x the SAME daily wage");
+    // Conservation: the two rows together are the whole payroll demand, no head
+    // is paid twice and none is dropped.
+    ST_CHECK(garrison_pay + army_pay == (garrison_heads + army_heads) * kWage,
+             "army pay: garrison + army pay equals heads x wage (conserved)");
+    ST_CHECK(army_pay == 40 * kWage && garrison_pay == 10 * kWage,
+             "army pay: the army lane receives the army share, not the garrison's");
+    // The row names the formation by HANDLE (the lane key) and sits at the
+    // formation's cell, never at the home cell it left behind.
+    ST_CHECK(army_source == sim.core.army_handle(army),
+             "army pay: army row carries the formation handle");
+    ST_CHECK(army_cell == B, "army pay: army row is anchored at the formation's cell");
+    // ...and the garrison row really is the garrison's: the home cell keeps
+    // paying its own 10 and no longer carries the embarked 40.
+    ST_CHECK(garrison_pay != (garrison_heads + army_heads) * kWage,
+             "army pay: the home cell no longer covers the embarked heads");
+    // Receipts: army pay is bookkeeping only (the lane cash is Economy's), so a
+    // success or a failure must not change the roster or the lot counts.
+    std::vector<MilitaryIntentReceipt> receipts;
+    for (const MilitaryIntent &in : sim.last) {
+        if (in.kind != MILITARY_INTENT_ARMY_PAY && in.kind != MILITARY_INTENT_PAY_WAGES)
+            continue;
+        MilitaryIntentReceipt r;
+        r.kind = in.kind;
+        r.ok = 1;
+        r.cell = in.cell;
+        r.source_id = in.source_id;
+        r.committed_count = in.count;
+        r.committed_amount = in.amount;
+        receipts.push_back(r);
+    }
+    const int64_t roster_before = sim.core.country_soldiers(0);
+    ST_CHECK(!receipts.empty(), "army pay: pay rows produced receipts");
+    ++sim.day;
+    sim.dg.day = sim.day;
+    std::vector<MilitaryIntent> next;
+    ST_CHECK(sim.core.step_day(sim.day, sim.dg, receipts, next, sim.error),
+             "army pay: receipt day");
+    ++sim.day;
+    ST_CHECK(sim.core.country_soldiers(0) == roster_before,
+             "army pay: a pay receipt never moves heads");
+    ST_CHECK(garrison_at(sim.core, A) == garrison_heads,
+             "army pay: a pay receipt leaves the garrison lot untouched");
+    return true;
+}
+
 // --- 10. AI agenda soak
 bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out, std::string &stats) {
     Sim sim;
@@ -755,6 +891,197 @@ bool test_procurement(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(far_held == 0, "procurement: nothing supplied outside the 3-cell ring (no fallback scan)");
     return true;
 }
+
+// --- 12. Naval transport (army-personnel contract 2 §2.1 / design §7.4).
+//
+// The synthetic map only wraps east-west, so a full-width water band cuts it in
+// two and every land route between the shores has to cross exactly `band`
+// consecutive water cells. Those are the shapes the transport gate has to
+// classify: <= 3 water cells with the coastal technology, any width with the
+// ocean technology, nothing without either.
+MilitaryTerrainInput make_hex_terrain_with_water_band(int32_t first_row, int32_t band) {
+    MilitaryTerrainInput t = make_hex_terrain(kW, kH);
+    for (int32_t c = 0; c < t.cell_count; ++c) {
+        const int32_t row = c / kW;
+        if (row < first_row || row >= first_row + band) continue;
+        // Water cells keep the PLAIN terrain entry: whether they can be entered
+        // is the transport gate's decision, not the landform table's.
+        t.is_water[(size_t)c] = 1;
+        t.has_river[(size_t)c] = 0;
+    }
+    return t;
+}
+
+// Unlock bits: 0 = cannon (existing fixture), 1 = coastal transport,
+// 2 = ocean transport (army-personnel contract 2 §2.2 catalog slots).
+constexpr int32_t kCoastalTransportBit = 1;
+constexpr int32_t kOceanTransportBit = 2;
+constexpr uint64_t kCoastalUnlock = 1ull << kCoastalTransportBit;
+constexpr uint64_t kOceanUnlock = 1ull << kOceanTransportBit;
+
+MilitaryCatalog make_naval_catalog() {
+    MilitaryCatalog c = make_catalog();
+    c.unlock_count = 3;
+    c.coastal_transport_bit = kCoastalTransportBit;
+    c.ocean_transport_bit = kOceanTransportBit;
+    return c;
+}
+
+// Digest over a water-band map: water is unowned (crossing it must not open an
+// engagement) and country 0 carries exactly `unlock_bits`.
+MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t unlock_bits) {
+    MilitaryWorldDigest d = make_digest(t);
+    for (int32_t c = 0; c < t.cell_count; ++c) {
+        if (t.is_water[(size_t)c]) d.cell_owner_slot[(size_t)c] = -1;
+    }
+    d.country_unlock_bits.assign((size_t)d.country_capacity, 0ull);
+    d.country_unlock_bits[0] = unlock_bits;
+    return d;
+}
+
+bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
+    constexpr int32_t kBandRow = 10;                 // water rows 10..(10+band-1)
+    constexpr int32_t kNorthShore = kBandRow - 1;    // land row just above the band
+    const int32_t shore_north = cell_at(5, kNorthShore);
+    const int32_t shore_3 = cell_at(5, kBandRow + 3);   // land past a 3-water strait
+    const int32_t shore_4 = cell_at(5, kBandRow + 4);   // land past a 4-water strait
+    std::string error;
+
+    // ---- 1. no transport technology: water is refused exactly as before
+    {
+        const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
+        MilitaryCore core;
+        ST_CHECK(core.configure(make_naval_catalog(), 4242, error) && core.set_terrain(t3, error),
+                 "naval: configure + 3-water strait terrain");
+        ST_CHECK(core.ensure_country_slot(handle_for(0)) == 0, "naval: country slot");
+        const int32_t army = core.create_army(0, shore_north);
+        ST_CHECK(army >= 0, "naval: army created on the north shore");
+        const MilitaryWorldDigest locked = make_naval_digest(t3, 0ull);
+        std::vector<int32_t> path;
+        ST_CHECK(!core.find_path(army, shore_3, locked, path),
+                 "naval: no transport technology -> find_path refuses the strait");
+        ST_CHECK(core.find_path(army, cell_at(9, kNorthShore), locked, path),
+                 "naval: no transport technology -> land routes are unaffected");
+        std::vector<int32_t> cells;
+        int32_t days = 0;
+        core._last_digest = locked;
+        ST_CHECK(!core.preview_path(core.army_handle(army), shore_3, cells, days),
+                 "naval: no transport technology -> preview_path reports unreachable");
+    }
+
+    // ---- 2. coastal transport: runs of <= 3 consecutive water cells
+    {
+        const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
+        MilitaryCore core;
+        ST_CHECK(core.configure(make_naval_catalog(), 4243, error) && core.set_terrain(t3, error),
+                 "naval: coastal configure + terrain");
+        ST_CHECK(core.ensure_country_slot(handle_for(0)) == 0, "naval: coastal country slot");
+        const int32_t army = core.create_army(0, shore_north);
+        const MilitaryWorldDigest coastal = make_naval_digest(t3, kCoastalUnlock);
+        std::vector<int32_t> path;
+        ST_CHECK(core.find_path(army, shore_3, coastal, path),
+                 "naval: coastal transport allows a 3-water strait");
+        ST_CHECK((int32_t)path.size() == 4, "naval: the 3-water crossing is 3 sea steps + 1 landing");
+        // Same topology, one row wider: the fourth consecutive water cell is
+        // past the coastal limit.
+        const MilitaryTerrainInput t4 = make_hex_terrain_with_water_band(kBandRow, 4);
+        ST_CHECK(core.set_terrain(t4, error), "naval: 4-water strait terrain");
+        const MilitaryWorldDigest coastal4 = make_naval_digest(t4, kCoastalUnlock);
+        path.clear();
+        ST_CHECK(!core.find_path(army, shore_4, coastal4, path),
+                 "naval: coastal transport refuses 4 consecutive water cells");
+    }
+
+    // ---- 3. ocean transport: the run limit is gone
+    {
+        const MilitaryTerrainInput t4 = make_hex_terrain_with_water_band(kBandRow, 4);
+        MilitaryCore core;
+        ST_CHECK(core.configure(make_naval_catalog(), 4245, error) && core.set_terrain(t4, error),
+                 "naval: ocean configure + terrain");
+        ST_CHECK(core.ensure_country_slot(handle_for(0)) == 0, "naval: ocean country slot");
+        const int32_t army = core.create_army(0, shore_north);
+        const MilitaryWorldDigest ocean = make_naval_digest(t4, kOceanUnlock);
+        std::vector<int32_t> path;
+        ST_CHECK(core.find_path(army, shore_4, ocean, path),
+                 "naval: ocean transport allows the 4-water strait");
+        ST_CHECK((int32_t)path.size() == 5, "naval: the 4-water crossing is 4 sea steps + 1 landing");
+        // The ocean bit must also keep working for a narrow (coastal-sized) run.
+        ST_CHECK(core.find_path(army, cell_at(3, kBandRow + 4), ocean, path),
+                 "naval: ocean transport keeps ordinary crossings working");
+    }
+
+    // ---- 4. preview_path days include the sea cost (contract §2.2)
+    {
+        const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
+        MilitaryCore core;
+        ST_CHECK(core.configure(make_naval_catalog(), 4246, error) && core.set_terrain(t3, error),
+                 "naval: preview configure + terrain");
+        ST_CHECK(core.ensure_country_slot(handle_for(0)) == 0, "naval: preview country slot");
+        const int32_t army = core.create_army(0, shore_north);
+        core._last_digest = make_naval_digest(t3, kCoastalUnlock);
+        std::vector<int32_t> sea_cells;
+        int32_t sea_days = 0;
+        ST_CHECK(core.preview_path(core.army_handle(army), shore_3, sea_cells, sea_days),
+                 "naval: preview_path reaches the far shore with coastal transport");
+        ST_CHECK((int32_t)sea_cells.size() == 4 && sea_days == 6,
+                 "naval: 3 sea cells + 1 landing preview as 3*1.5+1 = 6 days");
+        std::vector<int32_t> land_cells;
+        int32_t land_days = 0;
+        ST_CHECK(core.preview_path(core.army_handle(army), cell_at(8, kNorthShore), land_cells, land_days),
+                 "naval: preview_path plans a same-shore land route");
+        ST_CHECK(land_days == (int32_t)land_cells.size() && land_days > 0,
+                 "naval: land steps still preview as one day each");
+        ST_CHECK(sea_days > land_days, "naval: a sea move costs more days than the land equivalent");
+    }
+
+    // ---- 5. crossing: forced EMBARKED, stance restored on landing, sea
+    //         attrition at kSeaAttritionBp (0.2%/day) instead of land loss
+    {
+        const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
+        MilitaryCore core;
+        ST_CHECK(core.configure(make_naval_catalog(), 4247, error) && core.set_terrain(t3, error),
+                 "naval: movement configure + terrain");
+        ST_CHECK(core.ensure_country_slot(handle_for(0)) == 0, "naval: movement country slot");
+        MilitaryWorldDigest d = make_naval_digest(t3, kCoastalUnlock);
+        core._last_digest = d;
+        const int32_t army = core.create_army(0, shore_north);
+        const int32_t lot = core.lot_find_or_create(MILITARY_LOT_ARMY, army, 0, 0, 256);
+        core._lots.count[(size_t)lot] = 5000;
+        core.refresh_army_cache(army);
+        core._armies.stance[(size_t)army] = (uint8_t)MILITARY_STANCE_ADVANCE;
+        std::vector<int32_t> path;
+        ST_CHECK(core.find_path(army, shore_3, d, path), "naval: movement plans the crossing");
+        core.assign_path(army, path);
+        const int64_t heads_before = core._armies.cached_headcount[(size_t)army];
+        int32_t sea_days = 0;
+        int64_t expected_losses = 0;
+        for (int32_t day = 0;
+             day < 40 && core._armies.path_cursor[(size_t)army] < core._armies.path_len[(size_t)army];
+             ++day) {
+            const int64_t heads_day_before = core._armies.cached_headcount[(size_t)army];
+            core._last_day = day;
+            core.run_movement(d);
+            const int32_t cell = core._armies.cell[(size_t)army];
+            if (cell < 0 || (size_t)cell >= t3.is_water.size() || !t3.is_water[(size_t)cell]) continue;
+            ++sea_days;
+            ST_CHECK(core._armies.stance[(size_t)army] == (uint8_t)MILITARY_STANCE_EMBARKED,
+                     "naval: an army standing on water is EMBARKED");
+            // 20bp of the formation per day at sea = 2000 bp100 units of 1e-6.
+            expected_losses += mul_div(heads_day_before * (int64_t)20 * 100, 1, 1000000);
+        }
+        ST_CHECK(sea_days >= 2, "naval: the crossing spent at least two days at sea");
+        ST_CHECK(core._armies.cell[(size_t)army] == shore_3, "naval: the army landed on the far shore");
+        ST_CHECK(core._armies.stance[(size_t)army] == (uint8_t)MILITARY_STANCE_ADVANCE,
+                 "naval: landing restores the pre-embarkation stance");
+        // 0.2%/day while the formation is on water, and the PLAIN land cell it
+        // started from has no environment attrition, so the whole difference is
+        // the sea loss.
+        const int64_t heads_after = core._armies.cached_headcount[(size_t)army];
+        ST_CHECK(expected_losses > 0 && heads_before - heads_after == expected_losses,
+                 "naval: sea attrition is 0.2% of the formation per day at sea");
+    }
+    return true;
+}
 } // namespace
 
 bool MilitaryCore::self_test(std::string &report) {
@@ -776,6 +1103,8 @@ bool MilitaryCore::self_test(std::string &report) {
     if (!test_war_peace_save(t, report, w1)) return false;
     if (!test_partial_discharge(t, report)) return false;
     if (!test_procurement(t, report)) return false;
+    if (!test_army_pay(t, report)) return false;
+    if (!test_naval_transport(t, report)) return false;
     if (!test_ai(t, report, a1, stats)) return false;
     report += stats;
     std::string ignored;
