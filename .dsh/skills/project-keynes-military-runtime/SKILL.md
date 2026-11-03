@@ -152,10 +152,11 @@ through `block_or_enqueue_country_worker_asset`: it enqueues work the peer settl
 splits the debit and the credit across audit windows and closes every epoch with
 `money_conservation_failed`.
 
-Known gaps: `MSTAT_NAVAL_TRANSPORT` consumption scaling is not wired (only the gate and the 1.5x sea cost
-are); family sub-accounts and notable-person handles are stored/merged but never produced; no
-naval units/blockade — sea movement is only "more expensive land movement".
+Known gaps: family sub-accounts and notable-person handles are stored/merged but never produced by
+embark/disembark; no naval units or blockade; the 100k-cell bench is still over budget.
 
+Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("海运运力", clamped to
+[1/8, 8], never cheaper than a land step), and `preview_path` scales its day count the same way.
 ## Invariants
 
 - Read the **committed day-D** Country/Economy digest; mutate only Military stores; every Country/Economy

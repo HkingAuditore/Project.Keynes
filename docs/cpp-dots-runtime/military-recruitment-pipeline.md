@@ -128,7 +128,8 @@ ECONOMY_ASSET_TREASURY_SPEND, …, target_handle=army)`，由 peer 结算后在
 - `find_path` 搜索 `(cell, 已过连续水格数)` 状态；`preview_path` 同样门控，天数按陆 1.0 / 水 1.5。
 - 在海格上姿态强制 `EMBARKED`，登陆恢复；海上每日 0.2% 损耗，不计陆地恶劣环境减员，不参与陆战。
 - 未解锁时 `find_path` 与 `preview_path` 必须拒绝水域（不得静默放行）。
-- `MSTAT_NAVAL_TRANSPORT` 只影响海运消耗，不参与门控。
+- **`MSTAT_NAVAL_TRANSPORT`（海运运力）缩放海格移动力与预览天数**：`sea = 1.5 × land ÷ transport`，运力夹在 `[1/8, 8]`，且永远不会比陆地便宜（下限 1.0× land）。
+  `preview_days` 用 q16 半日单位累加后向上取整：3 海格 + 1 登陆 = 6 天，运力翻倍则变短。
 
 ## 4. 车道踩过的坑（按发现顺序，全部真实发生过）
 
@@ -200,7 +201,6 @@ ECONOMY_ASSET_TREASURY_SPEND, …, target_handle=army)`，由 peer 结算后在
   worker 侧走同步 peer（prepare → service → finish 同一 epoch），**不要**改成
   `block_or_enqueue_country_worker_asset`：那条路把国库扣款与 lane 入账分到两个审计窗口，
   每个 epoch 收盘都会 `money_conservation_failed`。
-- `MSTAT_NAVAL_TRANSPORT` 的消耗缩放尚未接入（只做了门控与 1.5 倍海运消耗）。
 - 家族子账与重要人物句柄只做到"能存能并"，编成/拆编目前不生成它们，也没有家族效果联动。
 - 没有海军单位、海战与封锁；海运只是"更贵的陆地移动力"，没有运兵船与航渡时间。
 - 100k 格压测 p95 ≈ 18 ms（目标 2 ms），瓶颈是市场索引冷启动与消耗聚合。
