@@ -44,7 +44,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $RepoRoot).Path
 $project = Join-Path $root 'Project\project-keynes'
-$runner = Join-Path $project 'tests\headless_perf_record.gd'
+$runner = Join-Path $project 'tests\game\headless_perf_record.gd'
 $tmp = Join-Path $root 'tmp'
 
 if (-not (Test-Path -LiteralPath $GodotExe)) {
@@ -62,7 +62,7 @@ $logPath = Join-Path $tmp "headless_perf_${stamp}_${safeLabel}.log"
 $godotArgs = @(
     '--headless',
     '--path', $project,
-    '--script', 'res://tests/headless_perf_record.gd',
+    '--script', 'res://tests/game/headless_perf_record.gd',
     '--',
     "days=$Days",
     "speed=$Speed",

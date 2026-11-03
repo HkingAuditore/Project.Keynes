@@ -36,6 +36,24 @@ scons platform=windows target=template_release
 First build will compile godot-cpp itself (~10–20 minutes). Subsequent
 builds are incremental.
 
+## Building (macOS)
+
+Close Godot, then run `cd gdext && ./rebuild.sh` to rebuild both debug and
+release libraries from the current source. The tracked macOS libraries may be
+older than the scripts and lack the worker interfaces; rebuilding is required
+before running or testing a newly updated checkout.
+
+`SConstruct` defaults `disable_exceptions=no` because the native runtime throws
+invariant errors and catches them at the worker boundary. Disabling exceptions
+does not support the current source and fails compilation.
+
+The build creates object nodes explicitly before linking so a changed source or
+compiler setting also relinks the dylib in the same SCons run.
+
+The default Windows output basename is read from the matching library entry in
+`addons/dots_ext/dots_ext.gdextension` (currently `dots_ext_army_v13`). An explicit
+`DOTS_EXT_OUTPUT_BASENAME` override must also be reflected in that manifest.
+
 ## Setup after fresh clone
 
 ```

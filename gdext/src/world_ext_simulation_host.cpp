@@ -2988,7 +2988,9 @@ Dictionary DCWorldExt::request_runtime_stop() {
         return out;
     }
     const RuntimeWorkerState before = _runtime_host->state();
-    _runtime_host->attach_economy_production_runtime(nullptr);
+    // Stop is asynchronous: the worker may still be executing an Economy
+    // stage or its command executor. Keep both attached until it has exited;
+    // DCWorldExt joins the host before destroying the owned runtimes.
     _runtime_host->request_stop();
     out["ok"] = true;
     const RuntimeWorkerState state = _runtime_host->state();

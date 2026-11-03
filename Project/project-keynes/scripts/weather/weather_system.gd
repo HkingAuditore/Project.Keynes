@@ -1250,7 +1250,11 @@ func build_field_knobs_for_worker(map: MapData, world: WorldData,
 		_clear_weather_field_slice_state()
 		_current_map_for_tick = null
 		return {}
-	var knobs: Dictionary = _field_solver._field_slice_native_knobs \
+	# The resident/native path stores this Dictionary on the slice state.  Make
+	# a shallow copy before clearing that state below; otherwise
+	# `_clear_weather_field_slice_state()` empties the very Dictionary returned
+	# to the worker, leaving stage_weather silently unconfigured every day.
+	var knobs: Dictionary = _field_solver._field_slice_native_knobs.duplicate(false) \
 		if not _field_solver._field_slice_native_knobs.is_empty() \
 		else _build_weather_field_knobs(map, world, n_cells)
 	_clear_weather_field_slice_state()
