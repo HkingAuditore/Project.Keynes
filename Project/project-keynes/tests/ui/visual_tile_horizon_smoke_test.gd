@@ -48,9 +48,16 @@ func _run() -> void:
 				data[offset + 1] = encoded & 0xFF
 				data[offset + 2] = 0  # flow channel unused in this smoke
 				data[offset + 3] = 0
-		var image := Image.create_from_data(layout.layer_size.x, layout.layer_size.y,
-			false, Image.FORMAT_RGBA8, data)
-		tiles.height.update_layer(image, layer_id)
+		if not tiles.upload_layer_bundle(layer_id, {"height": data}):
+			push_error("visual_tile_horizon_smoke_test: height upload failed")
+			quit(1)
+			return
+		var uploaded: Image = tiles.height.get_layer_data(layer_id)
+		if uploaded == null or uploaded.is_empty() or uploaded.get_size() != layout.layer_size \
+				or uploaded.get_pixel(0, 0).r <= 0.0:
+			push_error("visual_tile_horizon_smoke_test: base level was not uploaded")
+			quit(1)
+			return
 
 	_baker = VisualTileHorizonBaker.new()
 	_baker.start(tiles, layout.generation_id, {
@@ -102,5 +109,22 @@ func _run() -> void:
 			% [nonzero, mismatches.size(), "\n  ".join(PackedStringArray(mismatches))])
 		quit(1)
 		return
+	# CPU-computed layers also arrive as base-level bytes. Re-upload a changed
+	# value through each production entry point so a rejected update cannot
+	# pass by leaving the old GPU data in place.
+	first.clear_mipmaps()
+	var cpu_bytes := first.get_data()
+	cpu_bytes[0] = cpu_bytes[0] ^ 0x7F
+	for field_name in ["horizon", "gi_occluder"]:
+		var ok: bool = tiles.upload_horizon_layer(0, cpu_bytes) if field_name == "horizon" \
+			else tiles.upload_gi_occluder_layer(0, cpu_bytes)
+		var texture: Texture2DArray = tiles.get(field_name)
+		var uploaded: Image = texture.get_layer_data(0)
+		if uploaded != null:
+			uploaded.clear_mipmaps()
+		if not ok or uploaded == null or uploaded.get_data() != cpu_bytes:
+			push_error("visual_tile_horizon_smoke_test: CPU %s upload failed" % field_name)
+			quit(1)
+			return
 	print("visual_tile_horizon_smoke_test: PASS %s" % JSON.stringify(report))
 	quit(0)

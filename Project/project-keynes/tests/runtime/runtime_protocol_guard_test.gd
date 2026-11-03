@@ -19,7 +19,7 @@ func _init() -> void:
 		if ext.has_method("runtime_domain_pod_self_test"):
 			_expect("legacy POD contract still passes",
 				bool(ext.runtime_domain_pod_self_test()))
-		var start := ext.start_runtime_worker({
+		var start: Dictionary = ext.start_runtime_worker({
 			"simulation_thread_mode": "SHADOW",
 			"graph_coverage_complete": false,
 			"day": 0,

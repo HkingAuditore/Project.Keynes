@@ -174,6 +174,12 @@ func _run() -> int:
 		host.runtime_economy_auto_pod_active = _argument_enabled(
 			args.get("economy_auto_pod", "false"))
 	get_root().add_child(host)
+	# SceneTree script `_init()` runs before newly added children receive their
+	# tree-enter notification.  WorldRuntimeHost.generate_world() deliberately
+	# refuses to run outside the tree, so yield one frame before configuring or
+	# generating; otherwise every headless performance run exits as a false
+	# "world generation failed".
+	await process_frame
 	host.configure(null, null, clock)
 	if not synthetic_test_economy:
 		var session_result := _configure_formal_start(
@@ -357,7 +363,14 @@ func _run() -> int:
 	var harness_capacity_wait_count := 0
 	var country_perf_samples: Array[Dictionary] = []
 	var last_country_perf_day := -1
-	var last_authoritative_committed_day := int(runtime_report_start.get("committed_day", -1))
+	# The first worker input is semantic day zero.  It is a bootstrap/seed
+	# commit, not one of the requested measured days, and the recorder is already
+	# configured to ignore it.  Keep the accounting watermark aligned with that
+	# filter or the harness reports one extra measured day and one missing CSV
+	# row.
+	var sampling_after_day := 0 if host.runtime_climate_authority_enabled else -1
+	var last_authoritative_committed_day := maxi(
+		int(runtime_report_start.get("committed_day", -1)), sampling_after_day)
 	var authoritative_observed := 0
 	var authoritative_measured := 0
 	var auth_measure_start_us := 0
@@ -367,7 +380,7 @@ func _run() -> int:
 	# sus_tick_daily captures driver_day - 1. With a pipeline one observation
 	# can cover several commits, so the loop ends on measured observations and
 	# this bound only stops a run whose worker no longer commits.
-	var total_driver_days := warmup_days + days + 1 if pipeline_depth == 0 \
+	var total_driver_days := warmup_days + days + 2 if pipeline_depth == 0 \
 		else 2 * (warmup_days + days + pipeline_depth) + 16
 	var watch_cells := PackedInt32Array()
 	for token in OS.get_environment("PK_HEADLESS_WATCH_CELLS").split(",", false):
@@ -545,16 +558,20 @@ func _run() -> int:
 			])
 			break
 
-		# Authoritative day accounting prefers worker commit timestamps so
-		# harness process_frame waits do not inflate production throughput.
+		# Count real committed days. The elapsed window below uses main-thread
+		# observations consistently, so it includes the harness frame waits.
 		var day_report := _runtime_report_snapshot(generator)
 		# ACTIVE reports use the explicit simulation_* namespace.  Keep the
 		# unprefixed fallback for older extensions, but do not silently turn a
 		# valid worker commit into "no observed days".
 		var committed_day := int(day_report.get("simulation_committed_day",
 			day_report.get("committed_day", -1)))
-		var produced_us := int(day_report.get("last_commit_produced_at_us", 0))
 		if committed_day > last_authoritative_committed_day:
+			# The native report timestamp uses the worker's std::chrono clock,
+			# while Time.get_ticks_usec() uses Godot's process-relative clock.  They
+			# have different zero points, so only use a local observation timestamp
+			# for this elapsed-time calculation.
+			var observed_commit_us := Time.get_ticks_usec()
 			# Under a pipeline one observation can cover several commits; warmup
 			# counts committed days so the measured window starts at warmup_days.
 			var warmed_before := authoritative_observed
@@ -566,14 +583,14 @@ func _run() -> int:
 				if authoritative_observed >= warmup_days:
 					# Clear warmup rows; the next commit starts the measured window.
 					recorder.start(detail_mode, 1)
-					auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+					auth_measure_start_us = observed_commit_us
 					auth_measure_start_day = committed_day
 				continue
 			authoritative_measured += 1
 			if auth_measure_start_us == 0:
-				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+				auth_measure_start_us = observed_commit_us
 				auth_measure_start_day = committed_day - 1
-			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			auth_measure_end_us = observed_commit_us
 			auth_measure_end_day = committed_day
 			# Commit consumption can precede its recorder callback by one frame.
 			host._consume_runtime_commit_if_ready()
@@ -585,6 +602,17 @@ func _run() -> int:
 		if pipeline_depth > 0 and authoritative_observed > warmup_days \
 				and int(recorder.call("row_count")) >= days:
 			break
+
+	# A worker commit can become visible just after the last synchronous
+	# finish_daily_tick() callback.  Give the SceneTree one frame to publish it,
+	# then run the same recorder boundary once more.  The recorder's
+	# authoritative-day gate makes this a no-op when the final row already
+	# exists, and prevents the old one-row-short false failure.
+	if host.runtime_climate_authority_enabled:
+		await process_frame
+		host._consume_runtime_commit_if_ready()
+		if host.has_method("_publish_fast_tick_perf_sample"):
+			host._publish_fast_tick_perf_sample(0.0, 0.0, 0.0, 0.0, false)
 
 	var recorded_rows := int(recorder.call("row_count"))
 	var measured_samples := recorded_rows if pipeline_depth > 0 else authoritative_measured
@@ -741,8 +769,15 @@ func _run() -> int:
 		})
 	host.set_perf_recorder(null)
 	recorder.call("bind_main", null)
+	# Stop producing inputs, then use the production lifecycle wait before
+	# releasing the scene. The native stop request preserves Economy and its
+	# command executor until the current worker slice has finished.
+	host.set_process(false)
+	clock.set_process(false)
+	await host._stop_previous_runtime_worker()
 	host.free()
 	clock.free()
+	generator = null
 	if climate_profile_res != null:
 		for k in ns_prev_values:
 			climate_profile_res.set(k, ns_prev_values[k])

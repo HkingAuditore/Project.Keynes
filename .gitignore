@@ -78,3 +78,4 @@ __pycache__/
 # 构建方法见 docs/build-from-source.md。
 /WebBuild/
 /Build/
+worklog/.index/

@@ -5,7 +5,7 @@ description: Run and validate Project.Keynes production-path performance recordi
 
 # Project.Keynes Headless Performance Recording
 
-Use the repository test entry `Project/project-keynes/tests/headless_perf_record.gd`. It reuses
+Use the repository test entry `Project/project-keynes/tests/game/headless_perf_record.gd`. It reuses
 `WorldRuntimeHost` and `PerfRecorder`; do not substitute `economy_runtime_bench.gd` or
 `tmp_economy_two_year_50x_probe.gd` when the requested artifact is `perf_record_*.csv`.
 

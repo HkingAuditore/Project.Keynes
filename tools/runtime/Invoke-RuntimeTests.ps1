@@ -38,6 +38,7 @@ $tests = @(
     'tests/runtime/runtime_climate_authority_test.gd',
     'tests/runtime/runtime_climate_parity_test.gd',
     'tests/runtime/runtime_climate_stage_order_contract_test.gd',
+    'tests/world/weather_worker_input_lifetime_test.gd',
     'tests/runtime/runtime_climate_save_roundtrip_test.gd',
     'tests/runtime/runtime_country_pod_test.gd',
     'tests/runtime/runtime_country_peer_bridge_test.gd',
@@ -51,6 +52,7 @@ $tests = @(
     'tests/runtime/runtime_save_domain_section_test.gd',
     'tests/runtime/runtime_worker_source_scan_test.gd',
     'tests/runtime/runtime_thread_isolation_test.gd',
+    'tests/runtime/runtime_worker_stop_lifetime_test.gd',
     'tests/runtime/runtime_graph_country_committed_test.gd',
     'tests/runtime/runtime_generation_tick_gate_test.gd',
     'tests/runtime/runtime_trigger_pod_test.gd',
@@ -101,11 +103,12 @@ foreach ($relative in $tests) {
     Write-Host "running $name ..." -NoNewline
 
     $started = Get-Date
+    # Every fixture quits itself after its assertions. --quit would terminate
+    # coroutine fixtures on the first frame and incorrectly report a pass.
     $godotArgs = @(
         '--headless',
         '--path', $project,
-        '--script', "res://$relative",
-        '--quit'
+        '--script', "res://$relative"
     )
     # Godot writes warnings and the RID-leak notice to stderr. Under Stop mode a
     # merged pipeline turns the first one into a terminating NativeCommandError,

@@ -1,4 +1,9 @@
-# Native Country Runtime（PKCN v13）
+# Native Country Runtime（PKCN v14）
+
+当前写出格式为 `NativeCountryRuntime::SCHEMA_VERSION = 14`，CPD2 checkpoint
+外壳仍是 ABI v2，内部 schema 字段为 14。`runtime_country_save_roundtrip_test.gd`
+同步固定这两个版本，继续检查拒绝损坏输入、完整恢复、业务 hash 和重复保存字节一致；
+不能把历史 v13 断言失败当作恢复数据损坏。下文 v13 段落保留格式沿革。
 
 ## 2026-09 研究热循环与发布边界
 
@@ -109,6 +114,9 @@ submits `DISCOVER` again. Local extinction does not revoke country evidence. The
 signal IDs, distinct counts, first/last days, and first cells. A signal catalog mismatch, malformed
 dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted; schema/catalog
 identity failures use `catalog_hash_mismatch`, while malformed commands keep their precise reason.
+Malformed Country command packets retain their transport request identity when rejected at worker
+entry, so the terminal rejection is visible to the host and cannot leave an accepted request
+waiting forever for a receipt.
 Evidence first/last days use the command `effective_day`, not the later scheduler slice day.
 Country POD catalog therefore carries reveal-condition CSR separately from research-eligibility CSR；
 signal ingress and technology activation both call the shared CountryCore discovery refresh.

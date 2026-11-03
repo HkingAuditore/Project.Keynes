@@ -388,6 +388,8 @@ public:
     // ACTIVE production: point at the live NativeEconomyRuntime formula owner.
     // StageOps mutate flag is independent; default attach is mutate=false and
     // production mutations use worker_run_compact_slice.
+    // Lifecycle boundary only: do not detach/reset the command executor while
+    // a worker can still use it. request_stop() does not join that worker.
     void attach_economy_production_runtime(class NativeEconomyRuntime *rt) noexcept;
     NativeEconomyRuntime *economy_production_runtime() const noexcept {
         return _economy_production_runtime;

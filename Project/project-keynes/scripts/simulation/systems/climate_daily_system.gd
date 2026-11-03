@@ -1504,7 +1504,8 @@ func _execute_finalize_tail_boundary_intents(
 					var dirty_ratio_out: float = float(generator._last_climate_dirty_ratio) if "_last_climate_dirty_ratio" in generator else 1.0
 					var visited_ratio_out: float = float(generator._last_climate_visited_ratio) if "_last_climate_visited_ratio" in generator else 1.0
 					var pass_b_path_out: String = String(generator._last_climate_pass_b_path) if "_last_climate_pass_b_path" in generator else "full"
-					generator._daily_climate_call_count += 1
+					if generator.has_method("increment_climate_diagnostic_call_count"):
+						generator.increment_climate_diagnostic_call_count()
 					var _pa_pushed_out: int = int(generator._pa_last_pushed_cells) if "_pa_last_pushed_cells" in generator else 0
 					var _pa_total_out: int = int(generator._pa_last_total_cells) if "_pa_last_total_cells" in generator else 0
 					var _pa_push_ratio_out: float = (float(_pa_pushed_out) / float(_pa_total_out)) if _pa_total_out > 0 else 1.0
@@ -1570,8 +1571,8 @@ func _execute_finalize_tail_boundary_intents(
 					_merge_climate_wrapper_diag(generator._last_climate_breakdown)
 				_last_finalize_diag["finalize_breakdown_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"annual_log":
-				if generator != null and "_daily_climate_call_count" in generator:
-					var n: int = generator._daily_climate_call_count
+				if generator != null and generator.has_method("climate_diagnostic_call_count"):
+					var n: int = int(generator.climate_diagnostic_call_count())
 					if _is_annual_log_tick(n):
 						var _path_str: String = "legacy"
 						var _w = generator.get_data_core_world() if generator.has_method("get_data_core_world") else null
@@ -1600,8 +1601,8 @@ func _execute_finalize_tail_boundary_intents(
 				var soak_dump = _get_soak_dump_instance()
 				if soak_dump != null and soak_dump.is_active():
 					var sim_day: int = 0
-					if generator != null and "_daily_climate_call_count" in generator:
-						sim_day = int(generator._daily_climate_call_count)
+					if generator != null and generator.has_method("climate_diagnostic_call_count"):
+						sim_day = int(generator.climate_diagnostic_call_count())
 					soak_dump.record_tick("climate", sim_day, _phase_locked, map)
 				_last_finalize_diag["finalize_soak_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"integrity_check":
@@ -1630,8 +1631,8 @@ func _execute_finalize_tail_boundary_intents(
 					var stats: Dictionary = generator.dump_climate_daily_round_slots_stats()
 					# 每 20 round 打一次，避免刷屏
 					if int(stats.get("refresh_count", 0)) > 0 \
-							and generator.get("_daily_climate_call_count") != null \
-							and int(generator._daily_climate_call_count) % 20 == 1:
+							and generator.has_method("climate_diagnostic_call_count") \
+							and int(generator.climate_diagnostic_call_count()) % 20 == 1:
 						print("[climate/round] refresh_count=%d skip_count=%d (per round)" % [
 							int(stats.get("refresh_count", 0)),
 							int(stats.get("skip_count", 0)),
