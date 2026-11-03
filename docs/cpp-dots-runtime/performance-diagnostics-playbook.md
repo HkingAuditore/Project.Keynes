@@ -1,5 +1,21 @@
 # Performance Diagnostics Playbook
 
+## Headless recording and shutdown validation (2026-11-03)
+
+The production recording entry is `tests/game/headless_perf_record.gd`.
+`authoritative_days_per_second` counts committed simulation days over one
+Godot observation-clock window; it includes main-thread handoff and harness
+frame waits. Never subtract worker `steady_clock` timestamps from Godot
+`Time.get_ticks_usec()`. Keep the 50 days/s checkpoint separate from successful
+simulation/CSV export, and require both the result marker and process exit code.
+The runner stops the worker through the production lifecycle wait before freeing
+the host. `runtime_worker_stop_lifetime_test.gd` exercises stop during an active
+Economy day; it must finish its six assertions and exit normally.
+
+Runtime fixtures quit themselves. Passing Godot `--quit` alongside `--script`
+terminates coroutine fixtures after the first frame and can hide failures, so
+`tools/runtime/Invoke-RuntimeTests.ps1` omits it.
+
 ## 2026-10-28 派生地块层的诊断口径
 
 理念派生层（plan 22）新增了一组计数器。**它们的「是累积量还是本次运行量」不一致**，

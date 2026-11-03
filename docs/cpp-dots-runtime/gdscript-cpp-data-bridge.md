@@ -539,6 +539,23 @@ CLM2 section ABI 现为 **6**：
 
 ## worker cyclone 常量必须走 capture（B8-2 genesis，2026-09-11）
 
+`WeatherSystem.build_field_knobs_for_worker()` 返回前必须对现有配置字典作浅拷贝。
+字典按引用共享，清理临时求解状态时会调用 `clear()`；直接返回原字典会连同
+`stage_weather` 一起清空，让后台天气阶段被跳过。里面的 PackedArray 继续使用
+写入时复制，无需深拷贝。回归入口是
+`tests/world/weather_worker_input_lifetime_test.gd`，同时覆盖原生和脚本构建路径，
+以及下一天的输入创建后上一份输入仍然有效。
+
+气候调用次数由 `DCDiagnosticsBus` 保存，保留的气候与天气检查通过
+`MapGenerator.increment_climate_diagnostic_call_count()` /
+`climate_diagnostic_call_count()` 访问。不要再写已经从 MapGenerator 移走的
+`_daily_climate_call_count` 字段；这是诊断计数，不参与模拟或存档。
+
+季节刷新在 worker-authoritative 模式下位于日边界 capture 的调用栈中，不能在这里
+同步等待 worker 回写；worker 可能正等待主线程推进下一段 continuation，形成互等并把
+一整轮性能记录拖到等待上限。capture 只使用最近一次已提交的气候回写，后续正常帧边界
+继续消费新回写；这与预发布路径使用的提交边界一致，也避免把等待时间计入气候计算。
+
 `capture_runtime_inputs` 的 `climate_stage_knobs["stage_weather"]` 是 worker 唯一
 能看到 cyclone profile 常量的入口。曾经这里只有 field-solve 标量，host 对
 `cyclone_storm_type_id` 的兜底是 -1 ⇒ genesis 永不触发（表现为 ACTIVE 下气旋即
@@ -1653,6 +1670,10 @@ Graph 仍包含 Godot bridge，因此未满足该条件时明确返回
 `capture_runtime_inputs()` 是输入冻结边界：主线程复制环境、拓扑和视野数组，
 worker 只消费 immutable native snapshot。视觉层只能消费 generation-tagged commit，
 不能从 worker 反向写 MapData 或 renderer。
+
+`request_runtime_stop()` 只发送停止请求，不能同时解除 Economy production runtime
+及命令执行器的挂接；后台可能仍在完成当前片段。`DCWorldExt` 析构先等待 Host
+退出，再释放经济等对象。运行中停止、重新生成和退出都必须保留这条生命周期边界。
 
 提交快照由主线程 cache 固定到单一 generation；当请求的 generation 已被更新提交
 覆盖时，视觉 patch 返回 `runtime_generation_expired`，不会把不同提交拼接到同一帧。

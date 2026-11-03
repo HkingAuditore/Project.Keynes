@@ -18,6 +18,12 @@ Output goes directly into the Godot project's addons/dots_ext/bin/<platform>/
 so no manual copy step is required after a build.
 """
 import os
+import re
+
+# The native runtime uses standard C++ exceptions for invariant failures and
+# catches them at the worker boundary. godot-cpp disables exceptions by default
+# on non-Web targets, so make the requirement explicit for every platform.
+ARGUMENTS.setdefault("disable_exceptions", "no")
 
 # Inherit the godot-cpp environment (it sets up compiler flags, include paths,
 # and exposes env["platform"], env["suffix"], env["SHLIBSUFFIX"], etc.).
@@ -97,7 +103,21 @@ sources = (
 addons_bin = "../Project/project-keynes/addons/dots_ext/bin/"
 
 platform = env["platform"]
-output_basename = os.environ.get("DOTS_EXT_OUTPUT_BASENAME", "dots_ext_fiscal_cashcap_v1" if platform == "windows" else "dots_ext")
+output_basename = os.environ.get("DOTS_EXT_OUTPUT_BASENAME", "dots_ext")
+if platform == "windows" and "DOTS_EXT_OUTPUT_BASENAME" not in os.environ:
+    # Upstream changes the loaded DLL name as interfaces evolve. Build the
+    # name selected by the manifest so a successful rebuild cannot leave
+    # Godot loading an older, differently named DLL.
+    manifest_path = os.path.join(addons_bin, "..", "dots_ext.gdextension")
+    with open(manifest_path, encoding="utf-8") as manifest_file:
+        manifest = manifest_file.read()
+    variant = "release" if env["target"] == "template_release" else "debug"
+    key = "windows.{}.{}".format(variant, env["arch"])
+    match = re.search(r'^' + re.escape(key) + r'\s*=\s*"res://[^"\n]*/([^/"\n]+)\.windows\.',
+                      manifest, re.MULTILINE)
+    if match is None:
+        raise ValueError("Missing Windows library mapping: " + key)
+    output_basename = match.group(1)
 if platform == "windows":
     output_path = addons_bin + "windows/{}{}{}".format(
         output_basename, env["suffix"], env["SHLIBSUFFIX"]
@@ -134,5 +154,8 @@ if platform == "android":
     # libc++_shared.so 互相插桩。
     env.Append(LINKFLAGS=["-static-libstdc++", "-Wl,--exclude-libs,ALL"])
 
-library = env.SharedLibrary(output_path, source=sources)
+# Expose object nodes directly as link inputs so the incremental build graph
+# includes every source and compiler setting at the object boundary.
+objects = env.SharedObject(sources)
+library = env.SharedLibrary(output_path, source=objects)
 Default(library)

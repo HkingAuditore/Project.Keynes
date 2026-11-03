@@ -53,6 +53,10 @@ func _run() -> int:
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 0
 	get_root().add_child(host)
+	# Wait for the child to enter the SceneTree; generate_world() has an
+	# intentional is_inside_tree() guard and otherwise returns before doing any
+	# work when called from SceneTree._init().
+	await process_frame
 	host.configure(null, null, clock)
 
 	var climate_profile_res: Resource = null

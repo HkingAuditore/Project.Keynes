@@ -1,5 +1,15 @@
 # Simulation Computation Pipelines
 
+## Tiled texture upload validation (2026-11-03)
+
+Native static bundles and CPU horizon/occluder results contain only the base image
+level. Upstream `984ef29d` retired the tiled mip-chain experiment: `VisualTileSet`
+creates both images and texture arrays without mipmaps, matching the single-level
+local inputs in `VisualTileHorizonBaker`. Do not mark base-only bytes as a complete
+mip chain or pass mipmapped readbacks into single-level compute textures. The graphical
+`tests/ui/visual_tile_horizon_smoke_test.gd` checks static uploads, GPU horizon
+seams and CPU horizon/occluder re-uploads using actual texture readback.
+
 ## Baked terrain surface: packed 4-layer surface array / horizon / Web HIGH features (2026-11-01)
 
 Desktop and Web no longer compute terrain normals from runtime height differences.

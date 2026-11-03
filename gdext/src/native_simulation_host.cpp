@@ -8735,13 +8735,15 @@ bool NativeSimulationHost::country_command_receipt_self_test(
     valid_command.producer_id = 0;
     valid_command.sequence = 1;
     valid_command.submit_order = 1;
-    valid_command.requested_day = snapshot->committed_day;
-    valid_command.effective_day = snapshot->committed_day + 1;
+    const int64_t probe_day = std::max<int64_t>(0, snapshot->committed_day);
+    valid_command.requested_day = probe_day;
+    valid_command.effective_day = probe_day + 1;
     valid_command.opcode = 5; // SET_RESEARCH_WEIGHTS
     // The command is intentionally queue-admission-valid but execution-invalid
     // for this protocol-only fixture. The second malformed packet must reject
     // the whole semantic batch and remove this first packet from POD pending.
     valid_command.target_handle = 0;
+    valid_command.weights_bp = {2500, 2500, 2500, 2500};
 
     RuntimeCommandPacket valid_packet;
     valid_packet.envelope.request_id = valid_command.request_id;
@@ -8760,8 +8762,8 @@ bool NativeSimulationHost::country_command_receipt_self_test(
     malformed_packet.envelope.request_id = 9902;
     malformed_packet.envelope.producer_id = 0;
     malformed_packet.envelope.sequence = 2;
-    malformed_packet.envelope.requested_day = snapshot->committed_day;
-    malformed_packet.envelope.effective_day = snapshot->committed_day + 1;
+    malformed_packet.envelope.requested_day = probe_day;
+    malformed_packet.envelope.effective_day = probe_day + 1;
     malformed_packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
     malformed_packet.envelope.opcode = 3;
     malformed_packet.envelope.payload_offset = 0;
@@ -9469,6 +9471,19 @@ bool NativeSimulationHost::execute_country_worker_stage(
             std::string command_error;
             const bool decoded = RuntimeCountryPodAdapter::decode_command(
                 packet, command, command_error);
+            if (!decoded) {
+                // A malformed packet has no POD payload to decode, but its
+                // envelope still identifies the accepted request. Preserve
+                // that identity so the terminal rejection is queryable
+                // instead of disappearing as request_id=0.
+                command.request_id = packet.envelope.request_id;
+                command.producer_id = packet.envelope.producer_id;
+                command.sequence = packet.envelope.sequence;
+                command.requested_day = packet.envelope.requested_day;
+                command.effective_day = packet.envelope.effective_day;
+                command.opcode = packet.envelope.opcode;
+                command.submit_order = packet.submit_order;
+            }
             // The submitter's clock trails this worker's. Reschedule a late
             // intent onto the day being planned instead of refusing it;
             // requested_day still records what the player asked for.
