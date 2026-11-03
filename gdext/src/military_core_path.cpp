@@ -173,13 +173,29 @@ inline bool cell_is_water(const MilitaryTerrainInput &terrain, int32_t cell) {
            terrain.is_water[(size_t)cell] != 0;
 }
 
-// Preview duration in days: one day per land cell, 1.5 days per water cell.
+// Preview duration in days: one day per land cell, 1.5 days per water cell,
+// divided by the naval-transport capacity the same way the A* step cost is.
 inline int32_t preview_days(const MilitaryTerrainInput &terrain,
-                            const std::vector<int32_t> &cells) {
-    int64_t halves = 0;
+                            const std::vector<int32_t> &cells,
+                            int32_t sea_scale_q16) {
+    if (sea_scale_q16 < 65536 / 8) sea_scale_q16 = 65536 / 8;
+    if (sea_scale_q16 > 65536 * 8) sea_scale_q16 = 65536 * 8;
+    // Halves in q16 so a scaled sea step keeps sub-day precision.
+    int64_t halves_q16 = 0;
     for (const int32_t cell : cells) {
-        halves += cell_is_water(terrain, cell) ? kSeaStepHalves : kLandStepHalves;
+        if (!cell_is_water(terrain, cell)) {
+            halves_q16 += (int64_t)kLandStepHalves * 65536;
+            continue;
+        }
+        int64_t sea_q16 = (int64_t)kSeaStepHalves * 65536;
+        sea_q16 = sea_q16 * 65536 / sea_scale_q16;
+        const int64_t floor_q16 = (int64_t)kLandStepHalves * 65536;
+        if (sea_q16 < floor_q16) sea_q16 = floor_q16;   // never cheaper than land
+        halves_q16 += sea_q16;
     }
+    // Round the q16 half-days up to whole halves first, then to days: 11 halves
+    // must read as 6 days, not 5.
+    const int64_t halves = (halves_q16 + 65535) / 65536;
     return (int32_t)((halves + 1) / 2);
 }
 
@@ -275,9 +291,18 @@ int32_t MilitaryCore::step_cost_q16(int32_t from, int32_t to, int32_t country_sl
     if (cost < 1) cost = 1;
     int32_t out = (int32_t)std::min<int64_t>((int64_t)cost * kOne, 0x07FFFFFF);
     if (to_water) {
-        // Sea steps cost 1.5x a land step. MSTAT_NAVAL_TRANSPORT deliberately
-        // does not scale this: it only scales consumption while at sea.
-        return (int32_t)std::min<int64_t>(mul_div(out, kSeaCostNumer, kSeaCostDenom), 0x07FFFFFF);
+        // Sea steps cost 1.5x a land step, divided by the naval-transport stat
+        // ("海运运力", registered 0..8 with 1.0 neutral): more capacity buys a
+        // cheaper crossing, never a free one and never cheaper than land.
+        int64_t sea = mul_div(out, kSeaCostNumer, kSeaCostDenom);
+        if (country_slot >= 0) {
+            int32_t transport = stat_q16(digest, country_slot, MSTAT_NAVAL_TRANSPORT);
+            if (transport < MILITARY_Q16 / 8) transport = MILITARY_Q16 / 8;
+            if (transport > MILITARY_Q16 * 8) transport = MILITARY_Q16 * 8;
+            sea = mul_div(sea, MILITARY_Q16, transport);
+            if (sea < out) sea = out;
+        }
+        return (int32_t)std::min<int64_t>(sea, 0x07FFFFFF);
     }
     // Own territory movement divided by the logistics-move stat (roads/rail).
     if (country_slot >= 0) {
@@ -446,6 +471,10 @@ bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<
     // A pre-planned route to this target is authoritative (design 7.1: a
     // planned route is not recomputed when the season changes), so a preview
     // always matches what the army will actually walk.
+    // Naval transport capacity (海运运力) scales the sea leg of the day count the
+    // same way it scales the A* step cost.
+    const int32_t naval_transport_q16 = owner >= 0
+        ? stat_q16(_last_digest, owner, MSTAT_NAVAL_TRANSPORT) : MILITARY_Q16;
     const int32_t off = a.path_offset[(size_t)slot];
     const int32_t len = a.path_len[(size_t)slot];
     const int32_t cursor = a.path_cursor[(size_t)slot];
@@ -453,7 +482,7 @@ bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<
         _path_cells[(size_t)(off + len - 1)] == target_cell) {
         for (int32_t k = cursor; k < len; ++k) out_cells.push_back(_path_cells[(size_t)(off + k)]);
         // Contract §2.2: the sea part must show up in the day count.
-        out_days = preview_days(_terrain, out_cells);
+        out_days = preview_days(_terrain, out_cells, naval_transport_q16);
         return true;
     }
     // Otherwise BFS over the walkable graph (control-agnostic variant): only the
@@ -509,7 +538,7 @@ bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<
         cursor2 = s.parent[(size_t)cursor2];
     }
     std::reverse(out_cells.begin(), out_cells.end());
-    out_days = preview_days(_terrain, out_cells);
+    out_days = preview_days(_terrain, out_cells, naval_transport_q16);
     return true;
 }
 

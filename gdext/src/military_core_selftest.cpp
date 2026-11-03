@@ -1024,7 +1024,8 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(core.preview_path(core.army_handle(army), shore_3, sea_cells, sea_days),
                  "naval: preview_path reaches the far shore with coastal transport");
         ST_CHECK((int32_t)sea_cells.size() == 4 && sea_days == 6,
-                 "naval: 3 sea cells + 1 landing preview as 3*1.5+1 = 6 days");
+                 std::string("naval: 3 sea cells + 1 landing preview as 3*1.5+1 = 6 days | got cells=") +
+                     std::to_string((int)sea_cells.size()) + " days=" + std::to_string(sea_days));
         std::vector<int32_t> land_cells;
         int32_t land_days = 0;
         ST_CHECK(core.preview_path(core.army_handle(army), cell_at(8, kNorthShore), land_cells, land_days),
