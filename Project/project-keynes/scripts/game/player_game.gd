@@ -19,6 +19,10 @@ var day_night_enabled: bool = DEFAULT_DAY_NIGHT_ENABLED
 @onready var _camera: MapCamera = $MapCamera
 @onready var _highlight: CellHighlight = $WorldRoot/CellHighlight
 @onready var _cell_highlight_set = $WorldRoot/CellHighlightSet
+## Peace-window overlays: candidate outline and the picked draft, separate sets
+## so a cession pick never repaints the candidates behind it.
+@onready var _peace_candidate_set = $WorldRoot/PeaceCandidateSet
+@onready var _peace_draft_set = $WorldRoot/PeaceDraftSet
 @onready var _map_overlay: DataOverlayLayer = $WorldRoot/DataOverlayLayer
 @onready var _colonization_route: ColonizationRouteLayer = $WorldRoot/ColonizationRouteLayer
 @onready var _map_activity = $WorldRoot/MapActivityLayer
@@ -131,6 +135,7 @@ func _configure_runtime() -> void:
 	# many-cell card overlay stay independent: selecting a hex must not wipe the
 	# card's hits, and showing a card's hits must not move the selection.
 	_player_controller.set_cell_highlight_set(_cell_highlight_set)
+	_player_controller.set_peace_highlight_sets(_peace_candidate_set, _peace_draft_set)
 	_ui_manager.set_colonization_route_layer(_colonization_route)
 	var save: Node = _game_save()
 	if save != null:

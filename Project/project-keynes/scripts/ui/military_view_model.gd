@@ -12,6 +12,8 @@ const BP := 10000.0
 const GOODS_SCALE := 1000.0
 const Q8 := 256.0
 
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+
 const CHAPTERS: Array[Dictionary] = [
 	{"id": "overview", "label": "总览", "icon": &"summary.overview"},
 	{"id": "forces", "label": "兵力", "icon": &"military.unit.line"},
@@ -62,6 +64,8 @@ const EVENT_CONVOY_INTERCEPTED := 46
 const EVENT_LEVY_APPLIED := 47
 const MAX_LOG_ROWS := 8
 const MAX_FRONT_ROWS := 8
+## 军务档案的对阵表：单侧最多读多少支部队的详情（攻防/士气/补给）。
+const DOSSIER_SIDE_ARMY_CAP := 12
 const MAX_CEDE_ROWS := 16
 
 var _model: Dictionary = {}
@@ -83,6 +87,18 @@ var _cell_names: Dictionary = {}
 var _country_names: Dictionary = {}
 var _neighbor_cache: Dictionary = {}
 var _event_rows: Array = []
+## 军务档案单次构建内的部队详情缓存（对阵表按句柄汇总攻防）。
+var _dossier_army_cache: Dictionary = {}
+## Country-level per-head daily wage in MONEY_SCALE units (0 = the economy has
+## not published the soldier living cost yet, so the roster says "待结算").
+var _daily_wage := 0
+## Stable technology ids the country has already researched. Empty with
+## `_gate_known == false` means "this mount cannot see the gate" (fixture,
+## offline gallery) and the roster must not filter anything out.
+var _researched: Dictionary = {}
+var _gate_known := false
+var _tech_names: Dictionary = {}
+var _tech_names_ready := false
 ## True once the front-edge probe answered (an empty table then means "quiet",
 ## not "no data source").
 var _front_queried := false
@@ -104,6 +120,13 @@ func configure(model: Dictionary) -> void:
 		_model.get("player_controller", null))
 	_cell_names = _as_dict(_model.get("cell_names", null))
 	_country_names = _as_dict(_model.get("country_names", null))
+	_daily_wage = int(_snapshot.get("daily_wage", 0))
+	_gate_known = bool(section.get("tech_gate_known", false))
+	_researched.clear()
+	var researched = section.get("researched_tech_ids", null)
+	if researched is PackedStringArray and _gate_known:
+		for stable_id in researched:
+			_researched[String(stable_id)] = true
 	_neighbor_cache.clear()
 	_event_rows = []
 	_index_catalog()
@@ -143,8 +166,7 @@ func build(chapter_id: String, state: Dictionary = {}) -> Dictionary:
 		"armies":
 			return armies_model(int(state.get("army", 0)))
 		"war":
-			return war_model(int(state.get("war", 0)),
-				_as_dict(state.get("ceding", null)))
+			return war_model(int(state.get("war", 0)))
 	return {"ok": false, "reason": "未知章节"}
 
 
@@ -244,6 +266,132 @@ func _category_label(index: int) -> String:
 		return "—"
 	var name := String(_as_dict(_catalog.get("category_names", null)).get(category_id, ""))
 	return name if not name.is_empty() else category_id
+
+
+## Equipment category icon. The papercut set registers every category as
+## `military.good.<category_id>`, so no per-category table is needed here.
+func _category_icon(index: int) -> StringName:
+	var category_id := _category_id(index)
+	if category_id.is_empty():
+		return &"military.good.melee_arms"
+	var key := StringName("military.good.%s" % category_id)
+	return key if IconCatalog.has_icon(key) else &"military.good.melee_arms"
+
+
+# ── unlock gate ──────────────────────────────────────────────────────────
+#
+# `unlock_bit` indexes the compiled catalog's `unlock_tech_ids`, `-1` meaning
+# "always available" (military_core.h:123). The country's researched ids come
+# from CountryFacade.snapshot()["technology_ids"], i.e. the same authority the
+# native digest uses for its per-country unlock bitset — the roster never
+# invents a second gate.
+
+func gate_known() -> bool:
+	return _gate_known
+
+
+func unit_unlock_tech(index: int) -> String:
+	var unit_id := String(unit_row(index).get("id", ""))
+	return String(_as_dict(_catalog.get("unit_tech", null)).get(unit_id, ""))
+
+
+## Readable technology name for the "未解锁" label. Falls back to the raw id so a
+## renamed technology degrades to something clickable-looking, never to "".
+func technology_name(tech_id: String) -> String:
+	if tech_id.is_empty():
+		return ""
+	if not _tech_names_ready:
+		_tech_names_ready = true
+		for definition in TechnologyCatalogScript.public_definitions():
+			var id := String((definition as Dictionary).get("id", ""))
+			if not id.is_empty():
+				_tech_names[id] = String((definition as Dictionary).get("display_name", ""))
+	var name := String(_tech_names.get(tech_id, ""))
+	return name if not name.is_empty() else tech_id
+
+
+func unit_unlocked(index: int) -> bool:
+	# A mount without a country snapshot (fixture, gallery, offline QA) cannot
+	# resolve the gate, so it shows the whole catalog; production always knows.
+	if not _gate_known:
+		return true
+	var tech_id := unit_unlock_tech(index)
+	if tech_id.is_empty():
+		return true
+	return _researched.has(tech_id)
+
+
+## Everything the roster needs for one unit, all read-only. Money values stay in
+## display units (already divided by MONEY_SCALE); goods stay in the catalog's
+## authored per-100 basis and are only ever printed in the tooltip.
+func unit_facts(index: int) -> Dictionary:
+	var unit := unit_row(index)
+	var unit_id := String(unit.get("id", ""))
+	var tech_id := unit_unlock_tech(index)
+	var unlocked := unit_unlocked(index)
+	return {
+		"id": unit_id,
+		"index": index,
+		"name": unit_name(index),
+		"class": String(UNIT_CLASSES[class_of(index)].id),
+		"class_label": class_label(index),
+		"era_index": int(unit.get("era", 0)),
+		"era": _era_label(int(unit.get("era", 0))),
+		"icon": String(unit_icon(index)),
+		"militia": is_militia(index),
+		"unlocked": unlocked,
+		"unlock_tech": tech_id,
+		"unlock_label": technology_name(tech_id),
+		"attack": _raw_q16(unit.get("attack_q16", 0)),
+		"defense": _raw_q16(unit.get("defense_q16", 0)),
+		"speed": _raw_q16(unit.get("speed_q16", Q16)),
+		"training_days": int(unit.get("training_days", 0)),
+		"wage_per_100": float(_daily_wage) * 100.0 / MONEY_SCALE,
+		"supply": _supply_chips(unit),
+		"equipment": _equipment_chips(unit),
+		"description": String(_as_dict(_catalog.get("descriptions", null)).get(unit_id, "")),
+	}
+
+
+## Supply classes this unit consumes while idle, one chip per non-zero class.
+## `value` is the catalog's authored per-100-heads-per-day figure (q16 in the
+## JSON), printed only in tooltips — see docs/plans/military-system-design.md.
+func _supply_chips(unit: Dictionary) -> Array:
+	var chips: Array = []
+	var raw = unit.get("supply_idle_per_100", null)
+	if not (raw is PackedInt64Array or raw is Array):
+		return chips
+	for index in range(mini(raw.size(), SUPPLY_CLASSES.size())):
+		var value := float(raw[index]) / (GOODS_SCALE * Q16)
+		if value <= 0.0001:
+			continue
+		chips.append({
+			"id": String(SUPPLY_CLASSES[index].id),
+			"label": String(SUPPLY_CLASSES[index].label),
+			"icon": SUPPLY_CLASSES[index].icon,
+			"value": value,
+			"text": "%.2f" % value,
+		})
+	return chips
+
+
+func _equipment_chips(unit: Dictionary) -> Array:
+	var chips: Array = []
+	for slot_value in _as_array(unit.get("equipment", null)):
+		var slot := _as_dict(slot_value)
+		if slot.is_empty():
+			continue
+		var category := int(slot.get("category", -1))
+		var quality := clampi(int(slot.get("min_quality", 1)), 1, 5)
+		chips.append({
+			"id": _category_id(category),
+			"label": _category_label(category),
+			"icon": String(_category_icon(category)),
+			"quality": quality,
+			"quality_text": "Q%d" % quality,
+			"per_100": float(slot.get("qty_per_100", 0)) / (GOODS_SCALE * Q16),
+		})
+	return chips
 
 
 # ── overview ─────────────────────────────────────────────────────────────
@@ -400,14 +548,17 @@ static func _insight(id: String, text: String, icon: String, accent: Color) -> D
 func forces_model() -> Dictionary:
 	var shares := shares_by_unit()
 	var barracks := _as_array(_snapshot.get("barracks", null))
+	var rows := unit_share_rows(shares)
 	return {
 		"ok": true,
 		"target_mode": int(_snapshot.get("target_mode", 0)),
 		"target_value": int(_snapshot.get("target_value", 0)),
 		"per_soldier_cost": int(_snapshot.get("per_soldier_cost", 0)),
+		"daily_wage": float(_daily_wage) / MONEY_SCALE,
 		"shares": share_segments(shares),
 		"share_total": _share_total(shares),
-		"units": unit_share_rows(shares),
+		"units": rows,
+		"unlocked_count": unlocked_unit_count(),
 		"quality_policy": int(_snapshot.get("quality_policy", 0)),
 		"auto_retrain": bool(_snapshot.get("auto_retrain", true)),
 		"levy_enabled": bool(_snapshot.get("levy_enabled", true)),
@@ -417,7 +568,6 @@ func forces_model() -> Dictionary:
 			_count(_snapshot.get("post_count", 0))],
 		"training": training_rows(),
 		"training_caption": "在训 %s 人" % _count(_snapshot.get("soldiers_training", 0)),
-		"codex": codex_cards(),
 	}
 
 
@@ -463,25 +613,99 @@ func _share_total(shares: Dictionary) -> int:
 	return total
 
 
+## Roster rows. Only units the country can actually field are offered: a locked
+## unit is shown solely when it already holds a share, so a lost gate can always
+## be lowered instead of becoming an invisible, un-cancellable allocation.
+## The militia closes the list: it is a real unit type and owns every unassigned
+## point, so the player reads the remainder as a row instead of a caption.
 func unit_share_rows(shares: Dictionary) -> Array:
 	var rows: Array = []
 	var total := _share_total(shares)
 	for index in range(_unit_rows.size()):
+		if is_militia(index):
+			continue
 		var unit_id := String(unit_row(index).get("id", ""))
-		if unit_id.is_empty() or is_militia(index):
+		if unit_id.is_empty():
 			continue
 		var bp := int(shares.get(unit_id, 0))
-		rows.append({
-			"id": unit_id,
-			"label": unit_name(index),
-			"class": class_label(index),
-			"icon": String(unit_icon(index)),
-			"era": _era_label(int(unit_row(index).get("era", 0))),
-			"bp": bp,
-			"can_raise": total < 10000,
-			"color": class_color(index),
-		})
+		var facts := unit_facts(index)
+		var locked := not bool(facts.unlocked)
+		if locked and bp <= 0:
+			continue
+		facts["label"] = facts.name
+		facts["bp"] = bp
+		facts["locked"] = locked
+		facts["can_raise"] = total < 10000 and not locked
+		facts["color"] = class_color(index)
+		rows.append(facts)
+	rows.sort_custom(func(a, b):
+		if int(a.era_index) != int(b.era_index):
+			return int(a.era_index) < int(b.era_index)
+		if not is_equal_approx(float(a.attack), float(b.attack)):
+			return float(a.attack) > float(b.attack)
+		return String(a.id) < String(b.id))
+	var militia := _militia_row(total)
+	if not militia.is_empty():
+		rows.append(militia)
+	_normalize_stats(rows)
 	return rows
+
+
+## 民兵行：占满剩余份额，永远排最后，不能加份额（它本来就是剩下的部分）。
+func _militia_row(total: int) -> Dictionary:
+	var index := militia_index()
+	if index < 0:
+		return {}
+	var row := unit_facts(index)
+	row["label"] = row.name
+	row["bp"] = maxi(0, 10000 - total)
+	row["locked"] = false
+	row["can_raise"] = false
+	row["color"] = class_color(index)
+	row["is_militia_row"] = true
+	return row
+
+
+func militia_index() -> int:
+	var declared := int(_catalog.get("militia_unit", -1))
+	if declared >= 0 and declared < _unit_rows.size() and is_militia(declared):
+		return declared
+	for index in range(_unit_rows.size()):
+		if is_militia(index):
+			return index
+	return -1
+
+
+## Stat bars compare units against each other, so each ratio is scaled by the best
+## value in the visible set. The printed number stays the raw catalog value.
+static func _normalize_stats(rows: Array) -> void:
+	var best := {"attack": 0.0, "defense": 0.0, "speed": 0.0}
+	for row in rows:
+		for field in best:
+			best[field] = maxf(float(best[field]), float(row[field]))
+	for row in rows:
+		for field in best:
+			var peak := float(best[field])
+			var ratio := 0.0
+			if peak > 0.0001:
+				ratio = clampf(float(row[field]) / peak, 0.0, 1.0)
+			row["%s_ratio" % field] = ratio
+
+
+func locked_unit_count() -> int:
+	var count := 0
+	for index in range(_unit_rows.size()):
+		if not is_militia(index) and not unit_unlocked(index):
+			count += 1
+	return count
+
+
+func unlocked_unit_count() -> int:
+	var count := 0
+	for index in range(_unit_rows.size()):
+		if not is_militia(index) and unit_unlocked(index):
+			count += 1
+	return count
 
 
 func barracks_rows(barracks: Array) -> Array:
@@ -556,59 +780,24 @@ func training_rows() -> Array:
 	return rows
 
 
-func codex_cards() -> Array:
-	var cards: Array = []
-	for index in range(_unit_rows.size()):
-		cards.append(unit_card(index))
-	return cards
-
-
-func unit_card(index: int) -> Dictionary:
-	var unit := unit_row(index)
-	var slots: Array = []
-	var min_quality := 1
-	for raw in _as_array(unit.get("equipment", null)):
-		var slot := _as_dict(raw)
-		var quality := clampi(int(slot.get("min_quality", 1)), 1, 5)
-		min_quality = maxi(min_quality, quality)
-		slots.append("%s ≥%s · %.0f/百人" % [_category_label(int(slot.get("category", -1))),
-			QUALITY_NAMES[quality], float(slot.get("qty_per_100", 0)) / GOODS_SCALE])
-	var unit_id := String(unit.get("id", ""))
-	return {
-		"id": unit_id,
-		"name": unit_name(index),
-		"class": String(UNIT_CLASSES[class_of(index)].id),
-		"subtitle": "%s · %s" % [class_label(index), _era_label(int(unit.get("era", 0)))],
-		"icon": String(unit_icon(index)),
-		"militia": is_militia(index),
-		"attack_text": "%.1f" % _raw_q16(unit.get("attack_q16", 0)),
-		"defense_text": "%.1f" % _raw_q16(unit.get("defense_q16", 0)),
-		"speed_text": "%.1f" % _raw_q16(unit.get("speed_q16", Q16)),
-		"training_text": "%d 日" % int(unit.get("training_days", 0)),
-		"min_quality": min_quality,
-		"equipment": slots,
-		"description": String(_as_dict(_catalog.get("descriptions", null)).get(unit_id, "")),
-	}
-
-
 # ── armies & logistics ───────────────────────────────────────────────────
 
+## 列表只给「哪支部队、多少人、还能不能打」；编成与补给天数在军务档案里。
 func armies_model(selected: int) -> Dictionary:
 	var rows: Array = []
-	var selected_row: Dictionary = {}
+	var selected_handle := 0
 	for raw in _armies:
 		var row := army_row(_as_dict(raw))
 		rows.append(row)
 		if int(row.handle) == selected:
-			selected_row = _as_dict(raw)
-	if selected_row.is_empty() and not _armies.is_empty():
-		selected_row = _as_dict(_armies[0])
+			selected_handle = int(row.handle)
+	if selected_handle == 0 and not rows.is_empty():
+		selected_handle = int((rows[0] as Dictionary).get("handle", 0))
 	var spend := spend_breakdown()
 	return {
 		"ok": true,
 		"rows": rows,
-		"selected": int(selected_row.get("handle", 0)),
-		"detail": army_detail(selected_row) if not selected_row.is_empty() else {},
+		"selected": selected_handle,
 		"convoys": convoy_rows(_as_array(_snapshot.get("convoys", null))),
 		"spend": spend.segments,
 		"spend_total": _money_text(spend.total_raw),
@@ -654,9 +843,10 @@ func army_warnings(army: Dictionary) -> Array:
 
 ## `detail` is a get_military_army() dictionary (composition, supply_days, convoys);
 ## the list row is used as-is when the facade cannot provide it.
-func army_detail(army: Dictionary) -> Dictionary:
-	var detail := army
-	if _facade != null and _facade.has_method("army"):
+## `prefetched` lets the dossier page skip a second facade.army() round trip.
+func army_detail(army: Dictionary, prefetched: Dictionary = {}) -> Dictionary:
+	var detail := prefetched if not prefetched.is_empty() else army
+	if prefetched.is_empty() and _facade != null and _facade.has_method("army"):
 		var fetched = _facade.call("army", int(army.get("handle", 0)))
 		if fetched is Dictionary and bool(fetched.get("ok", false)):
 			detail = fetched
@@ -701,6 +891,355 @@ func _mission_text(army: Dictionary) -> String:
 	return "%s → %s" % [label, cell_name(target)] if target >= 0 else label
 
 
+## ── 军务档案（右栏页面，见 docs/ui/military-dossier.md）─────────────────
+## 部队档案：KPI 4 格 + 编成 + 补给 + 战备环 + 徽记 + 同格名录。
+## `same_cell` 是渲染快照里同格的部队行（{handle, owner_slot, headcount}）。
+func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
+	if handle == 0:
+		return {"ok": false, "reason": "military_army_unknown"}
+	var detail: Dictionary = {}
+	if _facade != null and _facade.has_method("army"):
+		var fetched = _facade.call("army", handle)
+		if fetched is Dictionary and bool((fetched as Dictionary).get("ok", false)):
+			detail = fetched
+	if detail.is_empty():
+		return {"ok": false, "reason": "military_army_unknown"}
+	var info := army_detail(detail, detail)
+	var owner_slot := int(detail.get("owner_slot", -1))
+	var player_slot := int(_snapshot.get("country_slot", -1))
+	var heads := maxi(0, int(detail.get("headcount", 0)))
+	var morale := _ratio(detail.get("morale_q16", Q16))
+	var pay := _ratio(detail.get("pay_ratio_q16", Q16))
+	var supply := _ratio(detail.get("supply_ratio_q16", Q16))
+	var ration := _ratio(detail.get("ration_ratio_q16", Q16))
+	var attack := _raw_q16(detail.get("attack_q16", 0))
+	var defense := _raw_q16(detail.get("defense_q16", 0))
+	var speed := _raw_q16(detail.get("speed_q16", Q16))
+	# 编成条按「兵种 + 品阶」分段（最多 6 段，其余归入"其他"）：
+	# 一条比例带 + 一份图例就够读出编成，不再另开一张重复的名录表。
+	var lots: Array = []
+	for raw in _as_array(detail.get("composition", null)):
+		var lot := _as_dict(raw)
+		var unit := int(lot.get("unit", -1))
+		var quality := clampi(int(round(float(lot.get("quality_q8", 256)) / Q8)), 1, 5)
+		var count := maxi(0, int(lot.get("count", 0)))
+		if count <= 0:
+			continue
+		lots.append({
+			"label": "%s %s" % [unit_name(unit), String(QUALITY_NAMES[quality])],
+			"count": count,
+			"color": class_color(unit),
+		})
+	lots.sort_custom(func(a, b) -> bool: return int(a.count) > int(b.count))
+	var segments: Array = []
+	var divisor := maxf(1.0, float(heads))
+	var rest := 0
+	for i in lots.size():
+		var lot: Dictionary = lots[i]
+		if i >= 5:
+			rest += int(lot.count)
+			continue
+		segments.append({
+			"label": String(lot.label),
+			"text": _count(lot.count),
+			"value": float(lot.count) / divisor,
+			"color": lot.color,
+		})
+	if rest > 0:
+		segments.append({
+			"label": "其他",
+			"text": _count(rest),
+			"value": float(rest) / divisor,
+			"color": UITokens.DOSSIER_UMBER,
+		})
+	var badges: Array = []
+	for warning in info.get("warnings", []):
+		var entry := _as_dict(warning)
+		badges.append({
+			"text": String(entry.get("label", "")),
+			"accent": UITokens.DOSSIER_OXBLOOD if String(entry.get("tone", "")) == "risk" \
+				else UITokens.DOSSIER_BRASS,
+		})
+	var same_rows: Array = []
+	for raw in same_cell:
+		var other := _as_dict(raw)
+		var other_handle := int(other.get("handle", 0))
+		if other_handle == 0 or other_handle == handle:
+			continue
+		same_rows.append({
+			"id": other_handle,
+			"cells": {
+				"name": {"text": army_name(other), "icon": "military.banner",
+					"sub": cell_name(int(other.get("cell", -1)))},
+				"heads": {"text": _count(other.get("headcount", 0)),
+					"sort": float(other.get("headcount", 0))},
+				"owner": {"text": country_name(int(other.get("owner_slot", -1)))},
+			},
+		})
+	var own := owner_slot >= 0 and owner_slot == player_slot
+	var actions := [
+		{"id": "locate", "label": "定位", "enabled": true},
+		{"id": "move", "label": "移动", "enabled": own},
+		{"id": "area", "label": "军事控制", "enabled": own},
+	]
+	var remaining := 0
+	var path = detail.get("path", null)
+	if path is PackedInt32Array or path is Array:
+		remaining = path.size()
+	var note := ""
+	if remaining > 0:
+		note = "%s · 剩 %d 格" % [
+			String(MISSION_LABELS.get(int(detail.get("mission", 0)), "行军")), remaining]
+	var dominant_unit := -1
+	if not _as_array(detail.get("composition", null)).is_empty():
+		dominant_unit = int(_as_dict(_as_array(detail.get("composition", null))[0]).get("unit", -1))
+	return {
+		"ok": true, "kind": "army", "identity": "army:%d" % handle,
+		"kicker": "部队档案", "title": String(info.get("name", "部队")),
+		"subtitle": "%s · %s · %s" % [
+			cell_name(int(detail.get("cell", -1))), country_name(owner_slot),
+			String(STANCE_LABELS.get(int(detail.get("stance", 0)), "固守"))],
+		"icon": unit_icon(dominant_unit) if dominant_unit >= 0 else &"military.banner",
+		"accent": CountryBorderLayer.country_color(owner_slot, player_slot,
+			UITokens.DOSSIER_OXBLOOD),
+		"kpis": [
+			{"id": "heads", "title": "兵力", "value": float(heads), "kind": "count",
+				"icon": &"military.unit.line", "caption": "%d 类兵种" % segments.size()},
+			{"id": "morale", "title": "士气", "value": morale, "kind": "percent",
+				"icon": &"military.army.morale", "caption": "",
+				"tone": "risk" if morale < 0.4 else ("warn" if morale < 0.6 else "")},
+			{"id": "supply", "title": "补给", "value": supply, "kind": "percent",
+				"icon": &"military.army.supply", "caption": "口粮 %s" % _percent(ration),
+				"tone": "risk" if supply < 0.5 else ("warn" if supply < 0.8 else "")},
+			{"id": "pay", "title": "军饷", "value": pay, "kind": "percent",
+				"icon": &"military.army.pay", "caption": "",
+				"tone": "risk" if pay < 0.6 else ("warn" if pay < 0.85 else "")},
+		],
+		"focus_cell": int(detail.get("cell", -1)),
+		"selected": handle,
+		"army": {
+			# 攻 / 防 / 速 是平级战力数据：同一行、同一字号、同一墨色。
+			"peer_stats": [
+				{"label": "攻击", "text": "%.1f" % attack, "color": UITokens.DOSSIER_INK},
+				{"label": "防御", "text": "%.1f" % defense, "color": UITokens.DOSSIER_INK},
+				{"label": "速度", "text": "%.1f" % speed, "color": UITokens.DOSSIER_INK},
+			],
+			"composition": {"title": "", "total": "%s 人" % _count(heads),
+				"segments": segments},
+			"supply_rows": info.get("supply", []),
+			"badges": badges,
+			"note": note,
+			"actions": actions,
+			"same_cell_rows": same_rows,
+		},
+	}
+
+
+## 战线档案：双方在同一组指标上并排对比 + 交战段名录。
+## 扇区由 MilitaryMapLayers.front_sector() 聚合；每侧的攻击/防御/士气/补给由
+## 扇区内**可见**部队的 facade.army() 汇总（攻防求和，士气/补给按兵力加权）。
+func front_dossier(sector: Dictionary) -> Dictionary:
+	if not bool(sector.get("ok", false)):
+		return {}
+	var player_slot := int(sector.get("player_slot", -1))
+	var edge_key := int(sector.get("edge_key", -1))
+	var side_rows: Array = _as_array(sector.get("sides", null))
+	var owners = sector.get("owners", PackedInt32Array())
+	# 两个交战方：扇区内地块的归属。一侧此刻没有部队时也要能写出国名。
+	var belligerents: Array = []
+	if owners is PackedInt32Array:
+		for slot in owners:
+			if int(slot) >= 0 and not belligerents.has(int(slot)):
+				belligerents.append(int(slot))
+	belligerents.sort()
+	var own_slot := -1
+	var enemy_slot := -1
+	if belligerents.has(player_slot):
+		own_slot = player_slot
+		for slot in belligerents:
+			if int(slot) != player_slot:
+				enemy_slot = int(slot)
+				break
+	elif not belligerents.is_empty():
+		own_slot = int(belligerents[0])
+		if belligerents.size() > 1:
+			enemy_slot = int(belligerents[1])
+	_dossier_army_cache.clear()
+	var own := _side_totals(side_rows, own_slot)
+	var enemy := _side_totals(side_rows, enemy_slot)
+	var advance := float(sector.get("advance", -1.0))
+	var active_count := int(sector.get("active_count", 0))
+	var edge_count := int(sector.get("edge_count", 0))
+	var focused := int(sector.get("focus_cell", -1))
+	var versus_rows := [
+		_versus_row("兵力", float(own.heads), float(enemy.heads),
+			_count(own.heads), _count(enemy.heads)),
+		_versus_row("攻击", float(own.attack), float(enemy.attack),
+			"%.1f" % float(own.attack), "%.1f" % float(enemy.attack)),
+		_versus_row("防御", float(own.defense), float(enemy.defense),
+			"%.1f" % float(own.defense), "%.1f" % float(enemy.defense)),
+		_versus_row("士气", float(own.morale), float(enemy.morale),
+			_percent(own.morale), _percent(enemy.morale)),
+		_versus_row("补给", float(own.supply), float(enemy.supply),
+			_percent(own.supply), _percent(enemy.supply)),
+	]
+	var footnote_parts := PackedStringArray()
+	if advance >= 0.0:
+		footnote_parts.append("推进 %s" % _percent(advance))
+	footnote_parts.append("交战 %d 段" % active_count)
+	footnote_parts.append("接触 %d 边" % edge_count)
+	var army_rows: Array = []
+	_append_side_army_rows(army_rows, side_rows, own_slot)
+	_append_side_army_rows(army_rows, side_rows, enemy_slot)
+	army_rows.sort_custom(func(a, b) -> bool:
+		return float(a.cells.heads.sort) > float(b.cells.heads.sort))
+	var engagements: Array = _as_array(sector.get("engagements", null))
+	var rows: Array = []
+	for raw in engagements:
+		var engagement := _as_dict(raw)
+		var progress := clampf(float(engagement.get("progress", 0.0)), 0.0, 1.0)
+		var attacker := int(engagement.get("attacker", -1))
+		rows.append({
+			"id": int(_pair_key_for(
+				int(engagement.get("cell_a", -1)), int(engagement.get("cell_b", -1)))),
+			"tooltip": "%s ↔ %s" % [
+				cell_name(int(engagement.get("cell_a", -1))),
+				cell_name(int(engagement.get("cell_b", -1)))],
+			"cells": {
+				"zone": {"text": zone_name(int(engagement.get("cell_a", -1)))},
+				"progress": {"text": _percent(progress), "value": progress,
+					"bar_color": UITokens.DOSSIER_VERDIGRIS \
+						if attacker == player_slot else UITokens.DOSSIER_OXBLOOD},
+				"attacker": {"text": country_name(attacker)},
+			},
+		})
+	rows.sort_custom(func(a, b) -> bool:
+		return float(a.cells.progress.value) > float(b.cells.progress.value))
+	var left_name := "—" if own_slot < 0 else country_name(own_slot)
+	var right_name := "—" if enemy_slot < 0 else country_name(enemy_slot)
+	return {
+		"ok": true, "kind": "front", "identity": "front:%d" % edge_key,
+		"kicker": "战线档案",
+		"title": zone_name(focused) if focused >= 0 else "战线",
+		"subtitle": "%s ↔ %s" % [left_name, right_name],
+		"icon": &"military.war.front",
+		"accent": CountryBorderLayer.country_color(
+			own_slot if own_slot >= 0 else player_slot, player_slot,
+			UITokens.DOSSIER_BRASS),
+		"focus_cell": focused,
+		"selected": edge_key,
+		"front": {
+			"versus": {
+				"rows": versus_rows,
+				"own_color": CountryBorderLayer.country_color(own_slot, player_slot,
+					UITokens.DOSSIER_VERDIGRIS),
+				"enemy_color": CountryBorderLayer.country_color(enemy_slot, player_slot,
+					UITokens.DOSSIER_OXBLOOD),
+				"own_label": "我方" if own_slot == player_slot else left_name,
+				"enemy_label": "敌方" if enemy_slot != player_slot else right_name,
+			},
+			"footnote": " · ".join(footnote_parts),
+			"army_rows": army_rows.slice(0, 8),
+			"army_visible": not army_rows.is_empty(),
+			"engagement_rows": rows.slice(0, 8),
+			"engagement_visible": not rows.is_empty(),
+		},
+	}
+
+
+## 一侧的汇总：兵力来自渲染快照（受迷雾门控），攻防/士气/补给来自每支部队的
+## facade.army()。单侧最多读 12 支部队，其余只计入兵力，避免一次刷新打爆原生调用。
+func _side_totals(sides: Array, slot: int) -> Dictionary:
+	var out := {"heads": 0, "attack": 0.0, "defense": 0.0, "morale": 0.0, "supply": 0.0}
+	if slot < 0:
+		return out
+	var weight := 0.0
+	for raw in sides:
+		var side := _as_dict(raw)
+		if int(side.get("slot", -1)) != slot:
+			continue
+		out["heads"] = int(out["heads"]) + int(side.get("heads", 0))
+		var handles = side.get("handles", null)
+		if not (handles is Array or handles is PackedInt64Array):
+			continue
+		var limit := mini(handles.size(), DOSSIER_SIDE_ARMY_CAP)
+		for i in limit:
+			var detail := _dossier_army(int(handles[i]))
+			if detail.is_empty():
+				continue
+			out["attack"] = float(out["attack"]) + _raw_q16(detail.get("attack_q16", 0))
+			out["defense"] = float(out["defense"]) + _raw_q16(detail.get("defense_q16", 0))
+			var heads := float(maxi(1, int(detail.get("headcount", 0))))
+			out["morale"] = float(out["morale"]) \
+				+ _ratio(detail.get("morale_q16", Q16)) * heads
+			out["supply"] = float(out["supply"]) \
+				+ _ratio(detail.get("supply_ratio_q16", Q16)) * heads
+			weight += heads
+	if weight > 0.0:
+		out["morale"] = float(out["morale"]) / weight
+		out["supply"] = float(out["supply"]) / weight
+	return out
+
+
+func _dossier_army(handle: int) -> Dictionary:
+	if _dossier_army_cache.has(handle):
+		return _dossier_army_cache[handle]
+	var detail: Dictionary = {}
+	if _facade != null and _facade.has_method("army"):
+		var fetched = _facade.call("army", handle)
+		if fetched is Dictionary and bool((fetched as Dictionary).get("ok", false)):
+			detail = fetched
+	if _dossier_army_cache.size() < 64:
+		_dossier_army_cache[handle] = detail
+	return detail
+
+
+static func _versus_row(label: String, own_value: float, enemy_value: float,
+		own_text: String, enemy_text: String) -> Dictionary:
+	return {"label": label, "own_value": own_value, "enemy_value": enemy_value,
+		"own_text": own_text, "enemy_text": enemy_text}
+
+
+## 「在场部队」名录：把一侧的可见部队逐支列出（番号 / 兵力 / 攻击 / 归属）。
+## 详情来自 front_dossier 已经读过的缓存，不会为名录再多打一次原生调用。
+func _append_side_army_rows(out: Array, sides: Array, slot: int) -> void:
+	if slot < 0:
+		return
+	for raw in sides:
+		var side := _as_dict(raw)
+		if int(side.get("slot", -1)) != slot:
+			continue
+		var handles = side.get("handles", null)
+		if not (handles is Array or handles is PackedInt64Array):
+			continue
+		for i in mini(handles.size(), DOSSIER_SIDE_ARMY_CAP):
+			var detail := _dossier_army(int(handles[i]))
+			if detail.is_empty():
+				continue
+			out.append({
+				"id": int(handles[i]),
+				"cells": {
+					"name": {"text": army_name(detail)},
+					"heads": {"text": _count(detail.get("headcount", 0)),
+						"sort": float(detail.get("headcount", 0))},
+					"attack": {"text": "%.1f" % _raw_q16(detail.get("attack_q16", 0))},
+					"owner": {"text": country_name(slot)},
+				},
+			})
+
+
+static func _pair_key_for(cell_a: int, cell_b: int) -> int:
+	return mini(cell_a, cell_b) * 131072 + maxi(cell_a, cell_b)
+
+
+func _condition_color(value: float) -> Color:
+	if value < 0.4:
+		return UITokens.DOSSIER_OXBLOOD
+	if value < 0.7:
+		return UITokens.DOSSIER_BRASS
+	return UITokens.DOSSIER_VERDIGRIS
+
+
 func convoy_rows(convoys: Array) -> Array:
 	var rows: Array = []
 	for raw in convoys:
@@ -737,7 +1276,10 @@ func war_cards() -> Array:
 	return cards
 
 
-func war_model(selected: int, ceding: Dictionary = {}) -> Dictionary:
+## 战争章节只放索引：在打谁、打了多久、战争分怎么来的、周边有哪些邻国可以开战。
+## 条款草稿与占领格勾选在议和面板自己的模型里（MilitaryPeaceViewModel），
+## 会战记录在军务档案里，所以这里不再预取 ceded / log。
+func war_model(selected: int) -> Dictionary:
 	var wars := war_cards()
 	var current: Dictionary = {}
 	for war in wars:
@@ -749,13 +1291,9 @@ func war_model(selected: int, ceding: Dictionary = {}) -> Dictionary:
 		"ok": true,
 		"wars": wars,
 		"selected": int(current.get("id", 0)),
-		"detail": current,
 		"declare": declare_candidates(),
-		"ceded": ceded_cells(current, ceding),
-		"log": war_log(),
 		"fronts": front_rows(),
 		"front_source": _front_queried,
-		"log_source": event_log_available(),
 	}
 
 

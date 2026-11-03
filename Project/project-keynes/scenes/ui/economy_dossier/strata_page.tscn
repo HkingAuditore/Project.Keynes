@@ -26,6 +26,7 @@ size_flags_vertical = 0
 theme_override_constants/separation = 8
 
 [node name="ListKicker" type="Label" parent="Body/ListColumn" unique_id=124748881]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierKicker"
 text = "阶层"
@@ -134,6 +135,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="ProfessionKicker" type="Label" parent="Body/Detail/DetailBox/LowerRow/ProfessionColumn" unique_id=2078229723]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierKicker"
 text = "职业构成"

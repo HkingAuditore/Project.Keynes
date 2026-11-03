@@ -84,6 +84,13 @@ sequence      = PlayerController 的单调递增整数
 `handle_input()` 直接分发。HUD 图层/顶栏/国家栏按钮使用 `FOCUS_NONE`；空地图
 指针事件会释放残留的普通 UI 焦点。
 
+镜头平移是**硬边界**：`_clamped_position()` 要求视口完整落在
+`set_world_bounds()` 的世界矩形内，任何输入路径都不许把地图推出边界（越界露出的
+是 Viewport clear color 灰底）。低倍率仍然能拖，靠的是最小倍率地板：`fit_to_viewport(
+fill_safe_area=true)` 把地板抬到 `_cover_zoom()`（铺满整块视口，不是更小的 safe_area），
+窗口尺寸变化时 `_refresh_cover_floor()` 重算。回归测试
+`tests/ui/map_camera_pan_bounds_test.gd`。
+
 ## 视图存档
 
 `capture_view_state()` 保存 `selected_cell`、`camera_position`、`camera_zoom` 和

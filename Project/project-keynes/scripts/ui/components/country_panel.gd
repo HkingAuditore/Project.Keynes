@@ -12,6 +12,12 @@ signal locate_cell_requested(cell: int)
 ## a card with a per-cell selector resolves to. Kept separate because the two
 ## receivers differ: one selects a hex, the other paints a set.
 signal target_cells_requested(cells: PackedInt32Array)
+## 议和不再是卷宗里的内联卡：战争页只发「为这场战争开窗口」，条款与地图交割在
+## MilitaryPeaceWindow 里。转发一层，和 localization / target_cells 同一个出口。
+signal peace_negotiation_requested(war_id: int)
+## 军事卷宗里的「档案 / 定位」：部队与战线的详情面板在右侧 InspectorPanel，
+## 由 GameUIManager.open_military_dossier(kind, id, cell) 打开。
+signal military_dossier_requested(kind: String, id: int, cell: int)
 
 const SECTION_DEFINITIONS := [
 	{"id": "technology", "label": "科技", "title": "科技研究", "subtitle": "", "icon": &"country.technology", "hud_icon": &"hud.country.technology", "accent": UITokens.CLIMATE, "available": true},
@@ -114,6 +120,13 @@ func _ready() -> void:
 		if _military_workspace.has_signal("locate_cell_requested"):
 			_military_workspace.connect("locate_cell_requested",
 				func(cell: int): locate_cell_requested.emit(cell))
+		if _military_workspace.has_signal("peace_negotiation_requested"):
+			_military_workspace.connect("peace_negotiation_requested",
+				func(war_id: int): peace_negotiation_requested.emit(war_id))
+		if _military_workspace.has_signal("dossier_requested"):
+			_military_workspace.connect("dossier_requested",
+				func(kind: String, id: int, cell: int):
+					military_dossier_requested.emit(kind, id, cell))
 	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
 

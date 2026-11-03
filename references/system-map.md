@@ -350,9 +350,9 @@ visuals continue through the existing WeatherFront/LUT boundary.
 - `ui/components/country_action_bar.gd` / `country_panel.gd` / `ui/country_view_model.gd`：底部国家事务入口与全屏 section shell。玩家国家固定由 `gameplay_start_report().cell` 解析，模型经 `CountryFacade.cell_summary()`、`research_snapshot()` 与只读 `treasury_snapshot()` 读取已提交状态；`CountryPanel` 自身只有 section 标题条与内容区，不再叠加国家档案 header、摘要卡或 section tab，section 切换只由底栏驱动。经济 section 使用 `economy_workspace.gd` 展示国家现金与全部非零国库物资，每日只修补可见值；政治/军事/外交暂用 `section_placeholder_screen.gd`，不创建任何状态或命令。`IconBadge` 继续以 Font Awesome 为默认族，并为国家事务集中提供 Lucide 导航图标与 Tabler 摘要图标。
 - `ui/technology_tree_layout.gd` / `ui/components/technology_workspace.gd` / `technology_available_view.gd` / `technology_tree_view.gd` / `research_toast.gd` / `research_allocation_bars.gd` / `technology_available_list.gd` / `technology_overview_view.gd` / `procurement_budget_slider.gd` / `technology_detail_card.gd` / `technology_queue_row.gd`：全屏科技界面。打开时只建拓扑与 soft-edge 索引，完整全图 bake 按需延迟；默认中央是「可研究」清单，科技树/总览按需展开；树视图单 `Control` 自绘聚焦窗口，按「已揭示 ∪ 直接未知后继」裁剪迷雾并把可平移范围限制在可见集包围盒内，永远 1:1 绘制、滚轮只平移不缩放；四大领域同图四条垂直泳道、列宽随中央画布均分且不横向溢出，左右研究管理/科技详情常驻列；聚焦布局按依赖深度分层，同领域兄弟在泳道内叠放，每个可见时代带显示时代里程碑关隘；已揭示详情显示路线标签、研究阻塞、证据数/首次日/来源格，未知节点不读取语义；研究进入待生效时 HUD `ResearchToast` 提示；四行份额条与采购滑块拖动即预览、松手即通过 `PlayerController.request_command()` 提交，界面无任何提交按钮，工作区不持有 CountryFacade/玩家句柄/命令序列；日 tick 只修补状态数组与可见文本。
 - `ui/components/map_overlay_toolbar.gd` / `ui/overlay_legend.gd`：左侧纯图标双列信息菜单与非交互图例。资源按钮来自 `ResourceProfileRegistry`，按钮无可见文字，名称和说明通过 Tooltip/图例呈现。图例停靠右下角，Inspector 打开时自动左移避让；连续资源使用固定 profile 参考值与低值扩展的高色差色带，海拔使用同时改变色相和亮度的高对比科学色带。
-- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地理页在已探索/可见格读取本格 CSR 的 `Kind.BIO` 目击（玉米、小麦等），用徽章展示中文名，不与可采集储量混列；自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。市场行打开物资卷宗后，「贸易与税率」章的**逐单商路**卡分页列出该物资的在途订单（方向、对端、数量、行程、状态），可翻页并定位当前可见对端；不可见对端遮罩名称、坐标与价格，且不画路线折线。
+- `ui/components/player_top_bar.gd` / `world_loading_overlay.gd` / `inspector_panel.gd`：正式局内顶栏、生成档案遮罩和右侧地块档案。地理页在已探索/可见格读取本格 CSR 的 `Kind.BIO` 目击（玉米、小麦等），用徽章展示中文名，不与可采集储量混列；自然资源页读取选中 cell 的权威 reserve；“本格存在”与“当前建筑可开采”是两个状态，不能因没有 extractor 而隐藏库存。人口页显示上次提交周期的人均收支与稀疏来源；市场使用可展开紧凑账簿行；建筑详情按岗位/生产/财务分组。所有列表在 460px Inspector 内无横向溢出，跨日采样只更新值并保留标签、展开与滚动状态。市场行打开物资卷宗后，「贸易与税率」章的**逐单商路**卡分页列出该物资的在途订单（方向、对端、数量、行程、状态），可翻页并定位当前可见对端；不可见对端遮罩名称、坐标与价格，且不画路线折线。军事页是同一张撕纸台账（`MilitaryCellLedger`）：驻军条、当地部队（点行开军务档案）、本地训练队列、三行官营建筑（兵营/城防/军校）；三行的动作由 `CellInspectorViewModel` 按 `state_buildings[].unlock_tech_id` 与玩家已研究科技判定为建造/升级/拆除，未解锁则不出现按钮，见 `docs/ui/military-cell-tab.md`。
 - `world_runtime_host.gd`：玩家场景的地图 runtime facade，封装 `MapGenerator.generate()`、renderer/camera 绑定和每日 `sus_tick_daily()` 桥接。
-- `player_controller.gd`：正式玩家输入、选中态、时间控制、镜头转发和玩家命令网关；不拥有模拟状态。`construction.build` 从选中玩家领土地块进入 `EconomyFacade`，报价只读当前页，实际结算由原生经济边界按国库物资→本格市场→国库现金原子处理，并以 sequence 对应的瞬态 receipt 回传。
+- `player_controller.gd`：正式玩家输入、选中态、时间控制、镜头转发和玩家命令网关；不拥有模拟状态。`construction.build` 从选中玩家领土地块进入 `EconomyFacade`，实际结算由原生经济边界按国库物资→本格市场→国库现金原子处理，并以 sequence 对应的瞬态 receipt 回传。报价不再由建筑页签的每日 patch 产生：`CellInspectorViewModel.build_construction_model()` 只在营造窗口打开、切部门 / 切排序 / 翻页 / 搜索、日推进（1 s 节流）与结算回执时运行，对该部门**全部**候选做一次报价（实测 ≤0.26 ms/部门），在 GD 侧按「可建优先 + 推荐(估算毛利)/造价/最新(成熟度)」排序后再切一页（16 项）；窗口用 `eligible` 决定「营造」按钮能否点，行内只写短因由与成本，岗位 / 投入 / 产出与逐项拆解走 hover 提示。见 `docs/ui/building-workspace.md`。
 - `main.gd`：debug TopBar、时间、速度、overlay、快捷键、splash、状态推送。
 - `info_panel_controller.gd`：右侧地块信息面板。
 - `debug_console.gd`：默认 `LEGACY_DEBUG_LAB` 保留 overlay、模拟开关、迁移实验与 Telemetry；正式玩家场景显式选择 `PLAYER_GM`，只展示白名单运营能力。GM 可见时只以 2Hz 刷新当前页并更新缓存控件，隐藏时停止计时器，不在日 tick 重建节点树。
@@ -691,7 +691,11 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
   双 backend，`military_formation_catalog.gd` 只做 dense unit→生图动作原型的冷路径映射；
   `tests/military/military_formation_visual_harness.tscn` 是四动作隔离预览，
   `military_formation_token_harness.tscn` 直接驱动生产 token backend。
-  UI：`scripts/ui/military_view_model.gd`、`components/military_workspace.gd`。
+  UI：`scripts/ui/military_view_model.gd`、`components/military_workspace.gd`；
+  议和窗口另成一套：`scripts/ui/military_peace_view_model.gd`、`components/military/military_peace_window.gd`
+  （`scenes/ui/military_peace_window.tscn`）与战争页启动卡 `military_peace_card.tscn`，
+  挂 `player_game.tscn` 的 `ModalLayer/MilitaryPeaceWindow`，地图候选/草稿高亮在
+  `WorldRoot/PeaceCandidateSet`、`WorldRoot/PeaceDraftSet`（`docs/ui/military-peace-window.md`）。
 - 测试：`tests/military/military_native_binding_test.gd`（`runtime_military_self_test`、`run_military_bench`）、
   `military_formation_render_feed_test.gd`（旧 DLL/CSR/签名）与 `military_formation_token_layer_test.gd`
   （1–5 成员、三档 LOD、玩家灰度、迷雾、移动、cue 增量）。

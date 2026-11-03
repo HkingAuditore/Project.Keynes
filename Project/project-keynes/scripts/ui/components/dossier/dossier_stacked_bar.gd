@@ -11,6 +11,15 @@ var total_text := ""
 ## 合计与图例的数值是不是货币：是就在数字前画金币图标（见 MoneyDisplay）。
 ## 人口、在建座数这类非货币读数保持 false，否则会被当成金额。
 var money_icon := false
+## 图例（色块 + 名称 + 数值）默认跟随堆叠条。军事兵种名册本身已经逐条列出份额，
+## 再复述一遍只是白占一行高度，所以那一处关掉图例、只保留条与合计。
+var show_legend := true:
+	set(value):
+		if show_legend == value:
+			return
+		show_legend = value
+		_update_min_height()
+		queue_redraw()
 var _segments: Array = []
 var _values := PackedFloat32Array()
 var _from := PackedFloat32Array()
@@ -66,12 +75,15 @@ func _update_min_height() -> void:
 	var rows := 1
 	var x := 0.0
 	var available := maxf(120.0, size.x)
-	for segment in _segments:
-		var item_width := _legend_item_width(segment)
-		if x > 0.0 and x + item_width > available:
-			rows += 1
-			x = 0.0
-		x += item_width
+	if show_legend:
+		for segment in _segments:
+			var item_width := _legend_item_width(segment)
+			if x > 0.0 and x + item_width > available:
+				rows += 1
+				x = 0.0
+			x += item_width
+	else:
+		rows = 0
 	if rows != _legend_rows or custom_minimum_size.y < 1.0:
 		_legend_rows = rows
 	var wanted := 20.0 + BAR_HEIGHT + 6.0 + LEGEND_ROW * float(_legend_rows)
@@ -121,6 +133,8 @@ func _draw() -> void:
 	draw_rect(bar, UITokens.DOSSIER_RULE, false, 1.0)
 	var lx := 0.0
 	var ly := bar.end.y + 6.0
+	if not show_legend:
+		return
 	for segment in _segments:
 		var item_width := _legend_item_width(segment)
 		if lx > 0.0 and lx + item_width > w:

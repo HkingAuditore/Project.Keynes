@@ -1,0 +1,219 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/building/building_workspace.gd" id="1_workspace"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="4_nav"]
+
+[node name="BuildingWorkspace" type="Control"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_workspace")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 10
+
+[node name="Body" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="TitleRow" type="HBoxContainer" parent="Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="HeaderIcon" parent="Margin/Body/TitleRow" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Titles" type="VBoxContainer" parent="Margin/Body/TitleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Kicker" type="Label" parent="Margin/Body/TitleRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
+[node name="Title" type="Label" parent="Margin/Body/TitleRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKTitle"
+theme_override_font_sizes/font_size = 28
+
+[node name="Subtitle" type="Label" parent="Margin/Body/TitleRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="CloseButton" type="Button" parent="Margin/Body/TitleRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(34, 34)
+layout_mode = 2
+size_flags_vertical = 0
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="RuleTop" type="ColorRect" parent="Margin/Body"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.48, 0.16, 0.1, 0.7)
+
+[node name="SectorNav" type="Control" parent="Margin/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_nav")
+
+[node name="SortRow" type="HBoxContainer" parent="Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SortLabel" type="Label" parent="Margin/Body/SortRow"]
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_type_variation = &"PKDossierMuted"
+
+[node name="SortRecommended" type="Button" parent="Margin/Body/SortRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+toggle_mode = true
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="SortCost" type="Button" parent="Margin/Body/SortRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+toggle_mode = true
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="SortNewest" type="Button" parent="Margin/Body/SortRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+toggle_mode = true
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKDossierChip"
+
+[node name="FilterRow" type="HBoxContainer" parent="Margin/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Search" type="LineEdit" parent="Margin/Body/FilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "筛选建筑名称"
+
+[node name="Count" type="Label" parent="Margin/Body/FilterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_type_variation = &"PKDossierMuted"
+
+[node name="ListArea" type="VBoxContainer" parent="Margin/Body"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/Body/ListArea"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Rows" type="VBoxContainer" parent="Margin/Body/ListArea/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="EmptyNote" type="PanelContainer" parent="Margin/Body/ListArea"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="EmptyLabel" type="Label" parent="Margin/Body/ListArea/EmptyNote"]unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+autowrap_mode = 2
+theme_type_variation = &"PKDossierBody"
+
+[node name="Footer" type="HBoxContainer" parent="Margin/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PrevButton" type="Button" parent="Margin/Body/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(68, 30)
+layout_mode = 2
+focus_mode = 2
+mouse_default_cursor_shape = 2
+text = "上一页"
+theme_type_variation = &"PKTabButton"
+
+[node name="PageLabel" type="Label" parent="Margin/Body/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_type_variation = &"PKDossierMuted"
+
+[node name="NextButton" type="Button" parent="Margin/Body/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(68, 30)
+layout_mode = 2
+focus_mode = 2
+mouse_default_cursor_shape = 2
+text = "下一页"
+theme_type_variation = &"PKTabButton"
+
+[node name="StatusNote" type="PanelContainer" parent="Margin/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierNote"
+
+[node name="StatusLabel" type="Label" parent="Margin/Body/StatusNote"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+autowrap_mode = 2
+theme_type_variation = &"PKDossierBody"

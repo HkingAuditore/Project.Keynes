@@ -11,19 +11,21 @@ const KPI_KEYS: Array[String] = [
 	"tax_per_day", "job_openings", "suspended_units", "pending_units",
 	"wage_arrears_per_day",
 ]
+## 阶层与职业共用同一组序列键：展示层要的是「满意度怎么变」「人均收入怎么变」。
 const STRATUM_KEYS: Array[String] = ["satisfaction", "income_per_capita", "population"]
 
 var _country_handle := 0
 var _days := PackedInt32Array()
 var _series: Dictionary = {}
-var _strata_series: Dictionary = {}
+## 分组序列：`s:<阶层下标>` 与 `p:<职业稳定 id>` 都落在这里，值都是 {key: PackedFloat32Array}。
+var _group_series: Dictionary = {}
 
 
 func reset(country_handle: int = 0) -> void:
 	_country_handle = country_handle
 	_days = PackedInt32Array()
 	_series.clear()
-	_strata_series.clear()
+	_group_series.clear()
 
 
 func country_handle() -> int:
@@ -58,7 +60,10 @@ func sample(economy_facade, country_handle_value: int, treasury_cash: int,
 		country_handle_value, "professions")
 	var strata: Array = EconomyDossierViewModel.aggregate_strata(professions, strata_table) \
 		if bool(professions.get("ok", false)) and strata_table != null else []
-	record(day, kpi_values(summary, treasury_cash), strata)
+	var profession_rows: Array = EconomyDossierViewModel.profession_rows(
+		professions, strata_table) if bool(professions.get("ok", false)) \
+		and strata_table != null else []
+	record(day, kpi_values(summary, treasury_cash), strata, profession_rows)
 	return true
 
 
@@ -85,7 +90,9 @@ static func kpi_values(summary: Dictionary, treasury_cash: int) -> Dictionary:
 
 
 ## strata：aggregate_strata() 的结果数组，按阶层下标对齐。
-func record(day: int, kpis: Dictionary, strata: Array = []) -> void:
+## professions：profession_rows() 的结果数组，按职业稳定 id 对齐（可缺省）。
+func record(day: int, kpis: Dictionary, strata: Array = [],
+		professions: Array = []) -> void:
 	if not _days.is_empty() and day <= latest_day():
 		return
 	_days.append(day)
@@ -94,17 +101,23 @@ func record(day: int, kpis: Dictionary, strata: Array = []) -> void:
 		values.append(float(kpis.get(key, 0.0)))
 		_series[key] = values
 	for index in range(strata.size()):
-		var row: Dictionary = strata[index]
-		var bucket: Dictionary = _strata_series.get(index, {})
-		for key in STRATUM_KEYS:
-			var values: PackedFloat32Array = bucket.get(key, PackedFloat32Array())
-			# 新阶层在中途出现时用 NAN 补齐前缀，保证各序列与日期对齐。
-			while values.size() < _days.size() - 1:
-				values.append(NAN)
-			values.append(float(row.get(key, 0.0)))
-			bucket[key] = values
-		_strata_series[index] = bucket
+		_record_group("s:%d" % index, strata[index])
+	for row in professions:
+		_record_group("p:%s" % String((row as Dictionary).get("id", "")), row)
 	_trim()
+
+
+## 一组序列按「已提交日」对齐：中途才出现的职业用 NAN 补齐前缀，
+## 这样画出来的趋势线不会把「刚出现的职业」冒充成「一直很高」。
+func _record_group(group_key: String, row: Dictionary) -> void:
+	var bucket: Dictionary = _group_series.get(group_key, {})
+	for key in STRATUM_KEYS:
+		var values: PackedFloat32Array = bucket.get(key, PackedFloat32Array())
+		while values.size() < _days.size() - 1:
+			values.append(NAN)
+		values.append(float(row.get(key, 0.0)))
+		bucket[key] = values
+	_group_series[group_key] = bucket
 
 
 func days() -> PackedInt32Array:
@@ -116,7 +129,15 @@ func series(key: String) -> PackedFloat32Array:
 
 
 func stratum_series(stratum_index: int, key: String) -> PackedFloat32Array:
-	return (_strata_series.get(stratum_index, {}) as Dictionary).get(key, PackedFloat32Array())
+	return group_series("s:%d" % stratum_index, key)
+
+
+func profession_series(profession_id: String, key: String) -> PackedFloat32Array:
+	return group_series("p:" + profession_id, key)
+
+
+func group_series(group_key: String, key: String) -> PackedFloat32Array:
+	return (_group_series.get(group_key, {}) as Dictionary).get(key, PackedFloat32Array())
 
 
 ## 与最近一次之前的样本相比的变化量；样本不足返回 NAN。
@@ -134,8 +155,8 @@ func _trim() -> void:
 	_days = _days.slice(overflow)
 	for key in _series.keys():
 		_series[key] = (_series[key] as PackedFloat32Array).slice(overflow)
-	for index in _strata_series.keys():
-		var bucket: Dictionary = _strata_series[index]
+	for group_key in _group_series.keys():
+		var bucket: Dictionary = _group_series[group_key]
 		for key in bucket.keys():
 			var values: PackedFloat32Array = bucket[key]
 			bucket[key] = values.slice(maxi(0, values.size() - _days.size()))

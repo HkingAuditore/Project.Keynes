@@ -383,11 +383,27 @@ res://assets/audio/native/music/stone.ogg` —— 那正是用户最早反馈的
 淡出（<0.85px 关掉、>2.2px 全开），关掉后回落到平滑 `edge_w` 过渡（不产生硬边）。
 仅 `PK_MOBILE_ANY` 生效，桌面不变。
 
-**② 低倍率下地图"拖不动"**
+**② 低倍率下地图"拖不动"，以及随后的"能拖出边界、露出灰底"**
 
-`map_camera._clamped_position()` 旧约束是"视口必须完全落在世界内"；缩放到整图
-（真机 `zoom≈0.94`）时 `min_p≈max_p`，相机被钉死。改为"至少保留约 40% 视口可见"，
-允许把地图推到边缘外一定距离。
+第一版反馈"拖不动"的成因：`map_camera._clamped_position()` 旧约束是"视口必须完全落在
+世界内"，缩放到整图（真机 `zoom≈0.94`）时 `min_p≈max_p`，相机被钉死。当时的修法是留
+0.6 × 半视口的 slack（"至少保留约 40% 视口能看到地图"）。
+
+第二版反馈"地图能上下拖出边界、后面一条灰底，特别难看"的成因就是那段 slack：世界矩形
+外没有任何渲染内容，露出的是 Viewport 的 clear color（`#4a4a4a`）。灰带宽度 = slack
+（0.3 × 视口高）+ `fit_to_viewport(fill_safe_area=true)` 只按 **safe_area** 铺满留下的
+letterbox（safe_area 挖掉了顶栏/操作栏/右侧面板，比视口矮）。
+
+现在的做法（两处配套，缺一不可）：
+
+- `_clamped_position()` 回归**严格**约束：视口完整落在 `_world_bounds` 内；世界在某轴
+  比视口还小的异常态该轴居中（灰边对称，不会只露一侧）。
+- `fit_to_viewport(fill_safe_area=true)` 的最小倍率地板改成按**整块视口**算
+  （`_cover_zoom()`），不再按 safe_area；窗口尺寸变化时 `_refresh_cover_floor()` 重算。
+  于是"铺满"状态下世界至少和视口一样大：溢出轴照常拖动，铺满轴本来就没有更多地图。
+
+回归测试：`tests/ui/map_camera_pan_bounds_test.gd`（四方向极端平移、退化态居中对称、
+铺满地板、地板随视口重算）。
 
 **③ 细线/边缘在移动时的走样**
 

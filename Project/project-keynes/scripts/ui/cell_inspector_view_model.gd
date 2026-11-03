@@ -50,6 +50,55 @@ const TRADE_ORDER_PAGE_CACHE_LIMIT := 8
 const TRADE_ORDER_MODEL_CACHE_LIMIT := 16
 const TRADE_ORDER_NAME_CACHE_LIMIT := 256
 
+## 营造窗口一页的建筑条目数。一页 = 16 条同时报价：够填满视口，又让
+## 「打开 / 切部门 / 翻页 / 每日刷新」的原生报价调用保持在毫秒级。
+const CONSTRUCTION_PAGE_SIZE := 16
+## Building kinds are compiled to dense ints; 3 == state-owned (barracks /
+## fortification / war college). Those are built from the military page, so the
+## civilian construction window never lists them.
+const STATE_BUILDING_KIND := 3
+## 军事页的三行官营建筑，顺序即行序；`role` 对齐 MilitaryStateRole (military_core.h)。
+const STATE_BUILDING_ROLES: Array[Dictionary] = [
+	{"id": "barracks", "label": "兵营", "role": 0},
+	{"id": "fortification", "label": "城防", "role": 1},
+	{"id": "war_college", "label": "军校", "role": 2},
+]
+## Same order as MilitaryUnitClass (military_core.h), used for unit icon keys.
+const MILITARY_UNIT_CLASS_IDS: Array[String] = ["line", "mobile", "artillery"]
+const CONSTRUCTION_SECTOR_LABELS := {
+	"agriculture": "农业",
+	"extractive": "采掘",
+	"manufacturing": "制造",
+	"energy": "能源",
+	"knowledge": "知识",
+}
+const CONSTRUCTION_SECTOR_ICONS := {
+	"agriculture": &"economy.building.farm",
+	"extractive": &"economy.building.mine",
+	"manufacturing": &"economy.building.factory",
+	"energy": &"economy.building.power",
+	"knowledge": &"economy.building.science",
+}
+## 营造目录的排序档。三档都遵守「可建优先」，档位只决定可建项之间的次序。
+const CONSTRUCTION_SORT_IDS := ["recommended", "cost", "newest"]
+## 原生报价的拒绝码 → 玩家可读的短因由（行内标签用，长解释在 hover 里）。
+const CONSTRUCTION_REASON_TEXT := {
+	"construction_cell_not_owned": "非本国领土",
+	"construction_technology_locked": "科技未解锁",
+	"construction_obsolete": "已被高阶取代",
+	"construction_conditions_failed": "地块不符",
+	"construction_resource_unavailable": "自然资源不足",
+	"construction_materials_insufficient": "建材不足",
+	"construction_market_short": "市场缺货",
+	"construction_treasury_cash_insufficient": "资金不足",
+	"construction_market_unavailable": "市场不可结算",
+	"construction_owner_signature_unavailable": "无合适业主",
+	"construction_target_invalid": "目标无效",
+}
+## one-tick memo for the (large) cell building snapshot: the buildings tab and
+## the construction window share one read per cell per committed day.
+var _building_snapshot_memo: Dictionary = {}
+
 var _map: MapData
 var _generator
 var _gdp_ledger: EconomyGdpLedger = null
@@ -82,8 +131,15 @@ var _player_country_handle_cache := -1
 ## 悬停卡与侧栏共用「玩家已掌握科技」口径：按模拟日缓存一次，避免每格重查。
 var _technology_day := -999
 var _technology_ids_cache := PackedStringArray()
+## 上面那次查询是否真的读到了国家快照（false = 科技闸门未知，UI 不过滤）。
+var _technology_ids_resolved := false
+var _technology_names: Dictionary = {}
 var _research_signal_catalog: Dictionary = {}
 var _technology_catalog: Dictionary = {}
+## 军事目录（官营建筑行 + 兵种名）按 facade 身份缓存：整局不变。
+var _military_catalog_facade = null
+var _military_catalog_rows: Array = []
+var _military_unit_names: Dictionary = {}
 ## 物资详情逐单商路：页缓存按 committed generation，行缓存再叠加 sample_day/视野 revision。
 var _trade_order_generation := -1
 var _trade_order_pages: Dictionary = {}
@@ -119,12 +175,18 @@ func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clo
 	_player_country_handle_cache = -1
 	_technology_day = -999
 	_technology_ids_cache = PackedStringArray()
+	_technology_ids_resolved = false
+	_technology_names.clear()
+	_military_catalog_facade = null
+	_military_catalog_rows = []
+	_military_unit_names = {}
 	_trade_order_generation = -1
 	_trade_order_pages.clear()
 	_trade_order_models.clear()
 	_trade_order_names.clear()
 	_trade_order_good_indices.clear()
 	_trade_order_query_count = 0
+	_building_snapshot_memo.clear()
 
 
 ## 年度产值账本由 GameUIManager 持有并推进；地块档案只读它的逐格累计值。
@@ -2069,98 +2131,373 @@ func _military_facade():
 	return facade
 
 
-## Inspector「军事」页签（design §14.2）：
-##   兵额 / 在驻（本地驻防、外地部队）/ 空额 / 本期配额 / 征召 / 训练队列 / 城防 / 控制者。
-## 玩家领土格额外给出「建造 / 拆除 兵营、城防、军校」的可用性说明（命令由
-## 军事面板发起，Inspector 只负责把这块地的状态说清楚）。
+## Inspector「军事」页签：本地驻军 / 部队 / 训练 / 三行官营建筑（兵营·城防·军校）。
+##
+## 全部数据来自一次 `get_military_cell_snapshot` + 编译目录：
+##   post_count / present / pending_enlist / paused / disrepair → 驻军条
+##   armies[]                                                   → 部队行（点行开军务档案）
+##   training[]                                                 → 训练行（兵种/人数/进度/剩余日）
+##   barracks_tiers / fort_tier / college_tier                  → 三行的现存档位与座数
+##   construction_buildings / construction_done_days            → 「在建 · 剩 N 日」
+##   state_buildings[] + 玩家已研究科技                          → 可建造的最高档与解锁闸门
+##
+## 这里不写任何解释性句子：没有部队/训练/建筑就整组隐藏，只有读不到快照时留一行错误态。
 func _military_category(cell_idx: int) -> Dictionary:
 	var facade = _military_facade()
 	if facade == null:
-		return {"insights": [{"id": "military_unavailable", "text": "军事机构尚未建立。",
-			"icon": "status.warning", "accent": UITokens.ARCHIVE_INK_MUTED}]}
+		return {}
 	var snapshot: Dictionary = facade.cell_snapshot(cell_idx, _player_country_handle())
 	if not bool(snapshot.get("ok", false)):
-		var reason := String(snapshot.get("reason", ""))
-		return {"insights": [{"id": "military_pending",
-			"text": "军事数据暂不可用" if reason.is_empty() else "军事数据暂不可用（%s）" % reason,
+		return {"insights": [{"id": "military_pending", "text": "军事数据暂不可用",
 			"icon": "status.warning", "accent": UITokens.ARCHIVE_INK_MUTED}]}
-	var posts := int(snapshot.get("post_count", 0))
-	var present := int(snapshot.get("present", 0))
-	var quota := int(snapshot.get("quota", 0))
-	var pending := int(snapshot.get("pending_enlist", 0))
-	var fort_tier := int(snapshot.get("fort_tier", -1))
-	var college_tier := int(snapshot.get("college_tier", -1))
-	var paused := bool(snapshot.get("paused", false))
-	var disrepair := bool(snapshot.get("disrepair", false))
+	return {"military_cell": _military_cell_model(facade, snapshot,
+		_country_summary(cell_idx), cell_idx)}
+
+
+func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
+		cell_idx: int) -> Dictionary:
+	var catalog := _military_catalog_cache(facade)
+	var researched: PackedStringArray = player_technology_ids()
+	# 科技快照读不到时不过滤（宁可见全目录也不误藏），与兵种名录同口径。
+	var gate_known := _technology_ids_resolved
+	var can_build := _military_can_build(snapshot, country)
+	var posts := maxi(0, int(snapshot.get("post_count", 0)))
+	var present := maxi(0, int(snapshot.get("present", 0)))
 	var owner_slot := int(snapshot.get("owner_slot", -1))
 	var controller_slot := int(snapshot.get("controller_slot", -1))
-	var armies_here: Array = snapshot.get("armies", []) if snapshot.get(
-		"armies", null) is Array else []
-	var army_heads := 0
-	for raw in armies_here:
-		if raw is Dictionary:
-			army_heads += int((raw as Dictionary).get("headcount", 0))
-	var garrison_lots: Array = snapshot.get("garrison_lots", []) if snapshot.get(
-		"garrison_lots", null) is Array else []
-	var training: Array = snapshot.get("training", []) if snapshot.get(
-		"training", null) is Array else []
-	var fort_icon := IconCatalog.military_building_semantic(
-		"", "fortification", maxi(0, fort_tier))
-	var college_icon := IconCatalog.military_building_semantic(
-		"", "war_college", maxi(0, college_tier))
-	var metrics := [
-		{"label": "兵额", "value": _count_text(posts), "icon": "country.military"},
-		{"label": "在驻", "value": _count_text(present), "icon": "profession.unemployed"},
-		{"label": "外地部队", "value": _count_text(army_heads), "icon": "map.expedition"},
-		{"label": "空额", "value": _count_text(maxi(0, int(snapshot.get("open", 0)))),
-			"icon": "military.plan.share"},
-		{"label": "本期配额", "value": _count_text(quota), "icon": "military.plan.barracks"},
-		{"label": "征召中", "value": _count_text(pending), "icon": "action.add"},
-		{"label": "城防", "value": "无" if fort_tier < 0 else "第 %d 级" % (fort_tier + 1),
-			"icon": String(fort_icon)},
-		{"label": "军校", "value": "无" if college_tier < 0 else "第 %d 级" % (college_tier + 1),
-			"icon": String(college_icon)},
-	]
-	var insights: Array = []
-	if owner_slot >= 0 and controller_slot >= 0 and owner_slot != controller_slot:
-		insights.append({"id": "occupied", "text": "此地被占领：兵营不能招兵或训练。",
-			"icon": "status.warning", "accent": UITokens.DOSSIER_OXBLOOD})
-	if paused:
-		insights.append({"id": "paused", "text": "兵营已暂停招募。",
-			"icon": "action.pause", "accent": UITokens.DOSSIER_BRASS})
-	if disrepair:
-		insights.append({"id": "disrepair", "text": "兵营失修：不能招兵或训练。",
-			"icon": "status.warning", "accent": UITokens.DOSSIER_OXBLOOD})
-	if posts <= 0:
-		insights.append({"id": "no_barracks", "text": "此地没有兵营：领土格可建造兵营、城防或军校。",
-			"icon": "military.building.barracks", "accent": UITokens.ARCHIVE_INK_MUTED})
-	elif army_heads > 0:
-		insights.append({"id": "foreign_army",
-			"text": "有部队驻扎：在外地部队撤离前，本地招兵配额会被压缩。",
-			"icon": "map.expedition", "accent": UITokens.DOSSIER_BRASS})
-	if training.size() > 0:
-		insights.append({"id": "training", "text": "%d 笔训练订单在训。" % training.size(),
-			"icon": "military.plan.training", "accent": UITokens.DOSSIER_VERDIGRIS})
+	var buildings: Array = []
+	for role_def in STATE_BUILDING_ROLES:
+		buildings.append(_state_building_entry(role_def, snapshot,
+			catalog.get("buildings", []), researched, gate_known, can_build))
 	return {
-		"kicker": "驻军与兵营",
-		"insights": insights,
-		"metrics": metrics,
-		"gauges": ([{"label": "驻军填充", "value": clampf(float(present) / float(posts), 0.0, 1.0),
-			"accent": UITokens.DOSSIER_VERDIGRIS,
-			"value_text": "%d / %d" % [present, posts]}] if posts > 0 else []),
-		"military_context": {
-			"cell": cell_idx,
-			"posts": posts,
+		"cell": cell_idx,
+		"garrison": {
 			"present": present,
-			"garrison_lot_count": garrison_lots.size(),
-			"training_count": training.size(),
-			"can_build_state_building": owner_slot >= 0 and controller_slot == owner_slot,
-			"has_role": {"barracks": posts > 0, "fortification": fort_tier >= 0,
-				"war_college": college_tier >= 0},
-			"paused": paused,
-			"disrepair": disrepair,
+			"posts": posts,
+			"ratio": clampf(float(present) / float(posts), 0.0, 1.0) if posts > 0 else 0.0,
+			"pending": maxi(0, int(snapshot.get("pending_enlist", 0))),
+			"paused": bool(snapshot.get("paused", false)),
+			"disrepair": bool(snapshot.get("disrepair", false)),
+			"occupied": owner_slot >= 0 and controller_slot != owner_slot,
 		},
+		"troops": _military_troop_rows(snapshot),
+		"training": _military_training_rows(snapshot, catalog.get("units", {})),
+		"buildings": buildings,
 	}
+
+
+## 玩家能否在这一格下令营造：本国领土、未被占领、玩家国家句柄已解析。
+func _military_can_build(snapshot: Dictionary, country: Dictionary) -> bool:
+	var owner_slot := int(snapshot.get("owner_slot", -1))
+	if owner_slot < 0 or int(snapshot.get("controller_slot", -1)) != owner_slot:
+		return false
+	var handle := _player_country_handle()
+	if handle <= 0 or not bool(country.get("owned", false)):
+		return false
+	return int(country.get("country_handle", 0)) == handle
+
+
+## 同格部队：番号走 MilitaryViewModel 的同一套回落（handle 低位 + 1），
+## 归属只标「外」（不是本格所属国的军队），国名留给点开的军务档案。
+func _military_troop_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var armies = snapshot.get("armies", null)
+	if not armies is Array:
+		return rows
+	for raw in armies:
+		if not raw is Dictionary:
+			continue
+		var army: Dictionary = raw
+		var handle := int(army.get("handle", 0))
+		if handle == 0:
+			continue
+		rows.append({
+			"handle": handle,
+			"name": "第 %d 军" % ((handle & 0xFFFFFFFF) + 1),
+			"heads": maxi(0, int(army.get("headcount", 0))),
+			"foreign": bool(army.get("foreign", false)),
+		})
+	rows.sort_custom(func(a, b) -> bool: return int(a.heads) > int(b.heads))
+	return rows
+
+
+## 本地训练队列：兵种名取自编译目录，`days_total` 已含军校加速，
+## 所以剩余天数与进度直接读快照，不再另算速率。
+func _military_training_rows(snapshot: Dictionary, units: Dictionary) -> Array:
+	var rows: Array = []
+	var orders = snapshot.get("training", null)
+	if not orders is Array:
+		return rows
+	var owner_slot := int(snapshot.get("owner_slot", -1))
+	for raw in orders:
+		if not raw is Dictionary:
+			continue
+		var order: Dictionary = raw
+		var from_row: Dictionary = units.get(int(order.get("from_unit", -1)), {})
+		var to_row: Dictionary = units.get(int(order.get("to_unit", -1)), {})
+		var days_total := maxi(1, int(order.get("days_total", 1)))
+		var days_done := clampi(int(order.get("days_done", 0)), 0, days_total)
+		rows.append({
+			"id": int(order.get("id", 0)),
+			"from": String(from_row.get("name", "—")),
+			"to": String(to_row.get("name", "—")),
+			"icon": String(IconCatalog.military_unit_semantic_for_id(
+				String(to_row.get("id", "")), String(to_row.get("class_id", "line")))),
+			"count": maxi(0, int(order.get("count", 0))),
+			"progress": float(days_done) / float(days_total),
+			"remaining_days": days_total - days_done,
+			"foreign": int(order.get("country_slot", -1)) != owner_slot,
+		})
+	return rows
+
+
+## 一类官营建筑的一行：现存档位/座数 + 效果 + 一个动作（建造 / 升级 / 拆除）。
+## 动作由这里判定，控件只负责画和发请求，避免同一套规则散在渲染层。
+func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
+		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
+		can_build: bool) -> Dictionary:
+	var role := int(role_def.get("role", -1))
+	var role_id := String(role_def.get("id", ""))
+	var label := String(role_def.get("label", ""))
+	var role_rows := _state_building_role_rows(catalog_rows, role)
+	var best: Dictionary = {}
+	for i in range(role_rows.size() - 1, -1, -1):
+		if _state_building_unlocked(role_rows[i].row, researched, gate_known):
+			best = role_rows[i]
+			break
+	var count := 0
+	var current_tier := -1
+	var known_tiers := true
+	if role_id == "barracks":
+		var tiers = snapshot.get("barracks_tiers", null)
+		if tiers is PackedInt32Array:
+			var tier_counts: PackedInt32Array = tiers
+			for tier_idx in range(tier_counts.size()):
+				var tier_count := int(tier_counts[tier_idx])
+				if tier_count <= 0:
+					continue
+				count += tier_count
+				current_tier = maxi(current_tier, tier_idx)
+		else:
+			# 旧 DLL 没有分档座数：只知道有兵营，不能安全地定位拆除目标。
+			known_tiers = false
+			count = 1 if int(snapshot.get("post_count", 0)) > 0 else 0
+	else:
+		current_tier = int(snapshot.get("fort_tier" if role_id == "fortification"
+			else "college_tier", -1))
+		count = 1 if current_tier >= 0 else 0
+	var current: Dictionary = _state_building_at_tier(role_rows, current_tier) \
+		if current_tier >= 0 else {}
+	var pending := _state_building_pending(catalog_rows, snapshot, role)
+	var pending_index := int(pending.get("index", -1))
+	var pending_days := int(pending.get("days", 0))
+	var display_row: Dictionary = {}
+	var target := -1
+	var action := "unavailable"
+	var action_label := ""
+	if pending_index >= 0:
+		display_row = catalog_rows[pending_index]
+		target = pending_index
+		action = "building"
+	elif not can_build or not known_tiers:
+		action = "unavailable"
+		display_row = current.row if not current.is_empty() else best.row if not best.is_empty() else {}
+	elif count <= 0:
+		if best.is_empty():
+			action = "locked"
+		else:
+			display_row = best.row
+			target = int(best.index)
+			action = "build"
+			action_label = "建造"
+	else:
+		display_row = current.row if not current.is_empty() else {}
+		if not best.is_empty() and int(best.row.get("tier", -1)) > current_tier:
+			target = int(best.index)
+			action = "upgrade"
+			action_label = "升级"
+		elif not current.is_empty():
+			target = int(current.index)
+			action = "demolish"
+			action_label = "拆除"
+	var disrepair := bool(snapshot.get("disrepair", false))
+	var effect := ""
+	if not display_row.is_empty():
+		effect = _state_building_effect(role_id, display_row, disrepair)
+	elif role_id == "barracks" and count > 0:
+		effect = "兵额 +%s" % _count_text(int(snapshot.get("post_count", 0)))
+	var display_name := label
+	if not display_row.is_empty():
+		var row_name := String(display_row.get("name", "")).strip_edges()
+		if not row_name.is_empty():
+			display_name = row_name
+	var icon: StringName = IconCatalog.military_building_semantic(
+		String(display_row.get("id", "")), role_id,
+		int(display_row.get("tier", current_tier)))
+	var tooltip := ""
+	match action:
+		"build", "upgrade":
+			tooltip = "%s · %d 日" % [display_name,
+				int(display_row.get("build_days", 0))]
+		"demolish":
+			tooltip = "拆除 %s" % display_name
+		"locked":
+			tooltip = _state_building_lock_tooltip(role_rows, researched, gate_known)
+	return {
+		"role": role_id,
+		"label": label,
+		"icon": String(icon),
+		"name": display_name,
+		"count": count,
+		"effect": effect,
+		"action": action,
+		"action_label": action_label,
+		"target": target,
+		"pending_days": pending_days if pending_index >= 0 else -1,
+		"tooltip": tooltip,
+	}
+
+
+## 一类角色的目录行，按 (档位, 容量) 升序：末尾即"最高档、同档里容量最大"。
+func _state_building_role_rows(catalog_rows: Array, role: int) -> Array:
+	var out: Array = []
+	for index in range(catalog_rows.size()):
+		var row: Dictionary = catalog_rows[index]
+		if int(row.get("role", -1)) != role:
+			continue
+		out.append({"row": row, "index": index})
+	out.sort_custom(func(a, b) -> bool:
+		var tier_a := int(a.row.get("tier", 0))
+		var tier_b := int(b.row.get("tier", 0))
+		if tier_a != tier_b:
+			return tier_a < tier_b
+		return int(a.row.get("capacity", 0)) < int(b.row.get("capacity", 0)))
+	return out
+
+
+## 目录档位是 0..7（编译器把 tier 8 也压到 7），同一档可能有两行：
+## 取容量较大的一行显示；拆除只看 role+tier，任一行的下标都等价。
+func _state_building_at_tier(role_rows: Array, tier: int) -> Dictionary:
+	var found: Dictionary = {}
+	for entry in role_rows:
+		if int(entry.row.get("tier", -1)) != tier:
+			continue
+		if found.is_empty() or int(entry.row.get("capacity", 0)) \
+				> int(found.row.get("capacity", 0)):
+			found = entry
+	return found
+
+
+## 该角色是否有在建工程（3 个施工位里最先完工的一个）。
+func _state_building_pending(catalog_rows: Array, snapshot: Dictionary,
+		role: int) -> Dictionary:
+	var built = snapshot.get("construction_buildings", null)
+	if not built is PackedInt32Array:
+		return {}
+	var done = snapshot.get("construction_done_days", null)
+	var done_days: PackedInt32Array = done if done is PackedInt32Array \
+		else PackedInt32Array()
+	var best: Dictionary = {}
+	var today := _current_sample_day()
+	for slot in range((built as PackedInt32Array).size()):
+		var index := int(built[slot])
+		if index < 0 or index >= catalog_rows.size():
+			continue
+		var row: Dictionary = catalog_rows[index]
+		if int(row.get("role", -1)) != role:
+			continue
+		var days := 0
+		if slot < done_days.size() and int(done_days[slot]) >= 0:
+			days = maxi(0, int(done_days[slot]) - today)
+		if best.is_empty() or days < int(best.get("days", 0)):
+			best = {"index": index, "days": days}
+	return best
+
+
+func _state_building_unlocked(row: Dictionary, researched: PackedStringArray,
+		gate_known: bool) -> bool:
+	if not gate_known:
+		return true
+	var tech := String(row.get("unlock_tech_id", ""))
+	return tech.is_empty() or researched.has(tech)
+
+
+## 一行建筑的效果：兵营=兵额贡献，城防=守备加成（失修折半，与原生一致），
+## 军校=训练天数倍数。单位只写百分比/倍数，不写货币记号。
+func _state_building_effect(role_id: String, row: Dictionary,
+		disrepair: bool) -> String:
+	match role_id:
+		"barracks":
+			return "兵额 +%s" % _count_text(int(row.get("capacity", 0)))
+		"fortification":
+			var bonus := float(row.get("fort_bonus", 0.0))
+			if disrepair:
+				bonus *= 0.5
+			return "守备 +%d%%" % int(round(bonus * 100.0))
+		_:
+			var speed := float(row.get("training_speed", 1.0))
+			return "训练 ×%s" % _one_decimal(speed)
+
+
+## 未解锁时 tooltip 指向"差哪项科技"：取最低一档尚未解锁的行。
+func _state_building_lock_tooltip(role_rows: Array, researched: PackedStringArray,
+		gate_known: bool) -> String:
+	for entry in role_rows:
+		var tech := String(entry.row.get("unlock_tech_id", ""))
+		if tech.is_empty() or (gate_known and researched.has(tech)):
+			continue
+		var tech_name := _technology_display_name(tech)
+		return "需 %s" % tech_name if not tech_name.is_empty() else ""
+	return ""
+
+
+func _technology_display_name(tech_id: String) -> String:
+	if tech_id.is_empty():
+		return ""
+	if _technology_names.is_empty():
+		var catalog := _ensure_technology_catalog()
+		var ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
+		var names: PackedStringArray = catalog.get(
+			"technology_display_names", PackedStringArray())
+		for index in range(mini(ids.size(), names.size())):
+			_technology_names[String(ids[index])] = String(names[index])
+	return String(_technology_names.get(tech_id, ""))
+
+
+## 军事目录在整局里不变，只按 facade 身份缓存一次：每格重建军事页时
+## 不再过滤/重排一遍官营建筑，也不再重建兵种名表。
+func _military_catalog_cache(facade) -> Dictionary:
+	if _military_catalog_facade == facade and not _military_catalog_rows.is_empty():
+		return {"buildings": _military_catalog_rows, "units": _military_unit_names}
+	var catalog: Dictionary = facade.catalog() if facade.has_method("catalog") else {}
+	var buildings: Array = []
+	for raw in catalog.get("state_buildings", []):
+		if raw is Dictionary:
+			buildings.append(raw)
+	var units := {}
+	var unit_rows: Array = catalog.get("units", []) if catalog.get(
+		"units", null) is Array else []
+	for index in range(unit_rows.size()):
+		var row = unit_rows[index]
+		if not row is Dictionary:
+			continue
+		var unit: Dictionary = row
+		var class_index := clampi(int(unit.get("class", 0)), 0,
+			MILITARY_UNIT_CLASS_IDS.size() - 1)
+		units[index] = {
+			"id": String(unit.get("id", "")),
+			"name": String(unit.get("name", unit.get("id", ""))).strip_edges(),
+			"class_id": MILITARY_UNIT_CLASS_IDS[class_index],
+		}
+	_military_catalog_facade = facade
+	_military_catalog_rows = buildings
+	_military_unit_names = units
+	return {"buildings": buildings, "units": units}
+
+
+static func _one_decimal(value: float) -> String:
+	var text := "%.1f" % value
+	return text.trim_suffix(".0")
 
 
 static func _count_text(value: int) -> String:
@@ -5111,7 +5448,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	var category := {
 		"insights": [{"id": "buildings_empty", "text": "此地块当前没有建筑。", "accent": UITokens.TEXT_MUTED, "icon": "building"}] if rows.is_empty() else [],
 		"metrics": metrics,
-		"construction": build_construction_options(cell_idx),
+		"construction_entry": build_construction_entry(cell_idx),
 		"building_rows": rows,
 	}
 	if not rows.is_empty():
@@ -5120,81 +5457,579 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	return category
 
 
-func build_construction_options(cell_idx: int, search: String = "",
-		offset: int = 0) -> Dictionary:
+## 建筑页签里的「营造新建筑」纸笺。只统计目录规模，**不报价**：这张纸笺会随
+## 建筑页签的每日 live patch 重建，报价必须留给真正打开窗口的那一次。
+func build_construction_entry(cell_idx: int) -> Dictionary:
+	var entry := {
+		"available": false,
+		"message": "只能在玩家领土内营造。",
+		"title": "营造新建筑",
+		"hint": "按部门浏览，国库物资优先",
+		"count": 0,
+	}
 	if cell_idx < 0 or _generator == null \
+			or not _generator.has_method("get_country_facade"):
+		return entry
+	var country = _generator.get_country_facade()
+	if country == null or not country.has_method("cell_summary"):
+		return entry
+	var player_handle := _player_country_handle()
+	var summary: Dictionary = country.cell_summary(cell_idx)
+	if player_handle <= 0 or not bool(summary.get("owned", false)) \
+			or int(summary.get("country_handle", 0)) != player_handle:
+		return entry
+	entry["available"] = true
+	entry["message"] = ""
+	var snapshot := _construction_building_snapshot(cell_idx)
+	if snapshot.is_empty():
+		entry["hint"] = "营造目录暂不可读"
+		return entry
+	if _snapshot_pending(snapshot):
+		entry["hint"] = "正在读取营造目录…"
+		return entry
+	var count := _construction_catalog_count(snapshot)
+	entry["count"] = count
+	entry["hint"] = "目录 %d 项 · 按部门浏览，国库物资优先" % count \
+		if count > 0 else "当前时代没有可营造的项目"
+	return entry
+
+
+## 营造窗口模型。查询身份 = cell + sector + search + offset：同身份刷新由窗口
+## 只写值，不重建行节点。
+func build_construction_model(cell_idx: int, sector_id: String = "",
+		search: String = "", sort_id: String = "recommended",
+		offset: int = 0) -> Dictionary:
+	var requested_offset := maxi(0, offset)
+	var sort := String(sort_id)
+	if not CONSTRUCTION_SORT_IDS.has(sort):
+		sort = String(CONSTRUCTION_SORT_IDS[0])
+	var model := {
+		"available": false,
+		"message": "营造目录暂不可用。",
+		"data_pending": false,
+		"cell": cell_idx,
+		"sector": sector_id,
+		"search": search,
+		"sort": sort,
+		"offset": requested_offset,
+		"limit": CONSTRUCTION_PAGE_SIZE,
+		"total": 0,
+		"sector_total": 0,
+		"items": [],
+		"sectors": [],
+		"sorts": _construction_sort_entries(sort),
+		"header": _construction_header(cell_idx),
+		"page_label": "",
+		"query": {"sector": sector_id, "search": search, "sort": sort,
+			"offset": requested_offset},
+	}
+	if cell_idx < 0 or _map == null or _generator == null \
 			or not _generator.has_method("get_country_facade") \
-			or not _generator.has_method("get_economy_facade") \
-			or not _generator.has_method("gameplay_start_report"):
-		return {"available": false, "message": "建造暂不可用。"}
+			or not _generator.has_method("get_economy_facade"):
+		return model
 	var country = _generator.get_country_facade()
 	var economy = _generator.get_economy_facade()
-	var start: Dictionary = _generator.gameplay_start_report()
-	if country == null or economy == null or not bool(start.get("ok", false)):
-		return {"available": false, "message": "国家数据暂不可用。"}
-	var player_summary: Dictionary = country.cell_summary(int(start.get("cell", -1)))
+	if country == null or economy == null \
+			or not economy.has_method("construction_type_columns"):
+		return model
+	var player_handle := _player_country_handle()
 	var target_summary: Dictionary = country.cell_summary(cell_idx)
-	var player_handle := int(player_summary.get("country_handle", 0))
-	if player_handle == 0 or not bool(target_summary.get("owned", false)) \
+	if player_handle <= 0 or not bool(target_summary.get("owned", false)) \
 			or int(target_summary.get("country_handle", 0)) != player_handle:
-		return {"available": false, "message": "只能在玩家领土内修建建筑。"}
-	var page: Dictionary = economy.treasury_construction_options(
-		player_handle, cell_idx, search, offset, 32)
-	if not bool(page.get("ok", false)):
-		return {"available": false, "message": "暂时无法取得建造报价。"}
-	var price_by_good := _construction_market_prices(cell_idx)
-	var unlocked_goods := _unlocked_good_ids(_market_snapshot(cell_idx))
-	for raw in page.get("items", []):
-		var item: Dictionary = raw
-		_decorate_construction_item(item, economy, price_by_good, unlocked_goods)
-	page["available"] = true
-	return page
+		model["message"] = "只能在本国领土内营造。"
+		return model
+	var snapshot := _construction_building_snapshot(cell_idx)
+	if snapshot.is_empty():
+		model["message"] = "营造目录暂不可读，稍后再试。"
+		return model
+	if _snapshot_pending(snapshot):
+		model["data_pending"] = true
+		model["message"] = "正在读取营造目录…"
+		return model
+	if not bool(snapshot.get("ok", false)):
+		model["message"] = "营造目录暂不可读，稍后再试。"
+		return model
+	var technology: PackedByteArray = snapshot.get(
+		"building_technology_available", PackedByteArray())
+	var type_ids: PackedStringArray = snapshot.get(
+		"building_type_ids", PackedStringArray())
+	var columns: Dictionary = economy.construction_type_columns()
+	var sectors: PackedInt32Array = columns.get(
+		"building_economic_sectors", PackedInt32Array())
+	var durations: PackedInt32Array = columns.get(
+		"building_construction_days", PackedInt32Array())
+	var sector_ids: PackedStringArray = economy.construction_sector_ids()
+	if technology.size() != type_ids.size() or sectors.size() != type_ids.size() \
+			or sector_ids.is_empty():
+		model["message"] = "营造目录暂不可读，稍后再试。"
+		return model
+	# 民用目录 = 科技可用 + 非官营。官营建筑只能从军事页的建造入口下达。
+	var kinds: PackedInt32Array = snapshot.get("building_kinds", PackedInt32Array())
+	var page_availability := technology.duplicate()
+	var counts := {}
+	for type_id in range(type_ids.size()):
+		if int(page_availability[type_id]) == 0:
+			continue
+		if type_id < kinds.size() and int(kinds[type_id]) == STATE_BUILDING_KIND:
+			page_availability[type_id] = 0
+			continue
+		var sector_name := _construction_sector_name(
+			sector_ids, int(sectors[type_id]))
+		if sector_name.is_empty():
+			page_availability[type_id] = 0
+			continue
+		counts[sector_name] = int(counts.get(sector_name, 0)) + 1
+	var resolved_sector := sector_id
+	if resolved_sector.is_empty() or int(counts.get(resolved_sector, 0)) <= 0:
+		resolved_sector = ""
+		for candidate in sector_ids:
+			if int(counts.get(String(candidate), 0)) > 0:
+				resolved_sector = String(candidate)
+				break
+	model["sectors"] = _construction_sector_entries(
+		sector_ids, counts, resolved_sector)
+	if resolved_sector.is_empty():
+		model["message"] = "当前时代没有可营造的项目。"
+		return model
+	model["sector"] = resolved_sector
+	model["query"]["sector"] = resolved_sector
+	model["sector_total"] = int(counts.get(resolved_sector, 0))
+	var sector_index := sector_ids.find(resolved_sector)
+	var candidates: PackedInt32Array = economy.construction_candidates(
+		search, page_availability, sector_index)
+	if candidates.is_empty():
+		model["offset"] = 0
+		model["query"]["offset"] = 0
+		model["available"] = true
+		model["message"] = ""
+		return model
+	# 整部门一次报价（实测 0.14–0.26 ms）：排序才能作用于整个部门，而不是只排当前页。
+	var quotes: Dictionary = economy.construction_quotes(
+		player_handle, cell_idx, candidates)
+	if not bool(quotes.get("ok", false)):
+		if bool(quotes.get("busy", false)) \
+				or bool(quotes.get("read_view_pending", false)):
+			model["data_pending"] = true
+			model["message"] = "正在读取营造报价…"
+		else:
+			model["message"] = "营造报价暂不可用。"
+		return model
+	var market := _market_snapshot(cell_idx)
+	var entries := _construction_entries(candidates, quotes, snapshot, market,
+		durations, columns.get("building_maturity_ranks", PackedInt32Array()))
+	# 科技门在目录层已经过滤过；这里再兜一层，绝不让「科技未解锁」进目录。
+	var visible_entries: Array = []
+	for raw in entries:
+		var entry: Dictionary = raw
+		if bool(entry.get("tech_locked", false)):
+			continue
+		visible_entries.append(entry)
+	var total := visible_entries.size()
+	visible_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _construction_entry_before(a, b, sort))
+	var safe_offset := requested_offset
+	if safe_offset >= total:
+		safe_offset = 0
+	model["offset"] = safe_offset
+	model["query"]["offset"] = safe_offset
+	model["total"] = total
+	model["page_label"] = _construction_page_label(safe_offset,
+		mini(CONSTRUCTION_PAGE_SIZE, total - safe_offset), total)
+	var page_entries := visible_entries.slice(safe_offset,
+		mini(total, safe_offset + CONSTRUCTION_PAGE_SIZE))
+	model["items"] = _construction_page_rows(page_entries, quotes, snapshot,
+		economy, market, columns.get("building_maturity_display_names",
+			PackedStringArray()))
+	model["available"] = true
+	model["message"] = ""
+	return model
 
 
-func _construction_market_prices(cell_idx: int) -> Dictionary:
+func _construction_header(cell_idx: int) -> Dictionary:
+	var header := {
+		"kicker": "营造目录",
+		"title": "新建建筑",
+		"subtitle": "国库物资优先，缺口向本地市场购入",
+	}
+	if cell_idx < 0 or _map == null or not _map.has_indices():
+		return header
+	var cell := _map.cell_at(cell_idx)
+	if cell == null:
+		return header
+	header["subtitle"] = "%s · %s · 国库出资，缺料市购" % [
+		LandformType.name_cn(_landform(cell, cell_idx)),
+		TerrainType.terrain_name_cn(_terrain(cell, cell_idx))]
+	return header
+
+
+func _construction_catalog_count(snapshot: Dictionary) -> int:
+	var technology: PackedByteArray = snapshot.get(
+		"building_technology_available", PackedByteArray())
+	var kinds: PackedInt32Array = snapshot.get("building_kinds", PackedInt32Array())
+	var count := 0
+	for type_id in range(technology.size()):
+		if int(technology[type_id]) == 0:
+			continue
+		if type_id < kinds.size() and int(kinds[type_id]) == STATE_BUILDING_KIND:
+			continue
+		count += 1
+	return count
+
+
+## 建筑快照只有「按已提交日」的语义：同格同日复用一份，避免建筑页签与
+## 营造窗口各拉一次完整快照。
+func _construction_building_snapshot(cell_idx: int) -> Dictionary:
+	var key := "%d|%d" % [cell_idx, _current_sample_day()]
+	if String(_building_snapshot_memo.get("key", "")) == key:
+		return _building_snapshot_memo.get("snapshot", {})
+	var snapshot := _building_snapshot(cell_idx)
+	if snapshot.is_empty() or _snapshot_pending(snapshot) \
+			or not bool(snapshot.get("ok", false)):
+		return snapshot
+	_building_snapshot_memo = {"key": key, "snapshot": snapshot}
+	return snapshot
+
+
+func _construction_sector_name(sector_ids: PackedStringArray, sector_index: int) -> String:
+	if sector_index < 0 or sector_index >= sector_ids.size():
+		return ""
+	return String(sector_ids[sector_index])
+
+
+func _construction_sort_entries(selected: String) -> Array:
+	return [
+		{
+			"id": "recommended", "label": "推荐", "selected": selected == "recommended",
+			"tooltip": "可建优先，再按估算毛利/日从高到低（本地市价，未计工资与税）",
+		},
+		{
+			"id": "cost", "label": "造价", "selected": selected == "cost",
+			"tooltip": "可建优先，再按现金支出从低到高",
+		},
+		{
+			"id": "newest", "label": "最新", "selected": selected == "newest",
+			"tooltip": "可建优先，再按生产成熟度从新到旧（自然获取 → 自动化）",
+		},
+	]
+
+
+func _construction_sector_entries(sector_ids: PackedStringArray,
+		counts: Dictionary, selected: String) -> Array:
+	var entries := []
+	for raw in sector_ids:
+		var sector_name := String(raw)
+		var count := int(counts.get(sector_name, 0))
+		if count <= 0:
+			continue
+		var label := String(CONSTRUCTION_SECTOR_LABELS.get(sector_name, sector_name))
+		entries.append({
+			"id": sector_name,
+			"label": label,
+			"count": count,
+			"icon": CONSTRUCTION_SECTOR_ICONS.get(sector_name, &"economy.building"),
+			"question": "%s · %d 项可营造" % [label, count],
+			"selected": sector_name == selected,
+		})
+	return entries
+
+
+func _construction_page_label(offset: int, count: int, total: int) -> String:
+	if total <= 0 or count <= 0:
+		return ""
+	return "%d–%d / %d" % [offset + 1, mini(total, offset + count), total]
+
+
+func _construction_local_stock(market: Dictionary) -> Dictionary:
+	var stock_by_good := {}
+	var ids: PackedStringArray = market.get("good_ids", PackedStringArray())
+	var stock: PackedInt64Array = market.get("stock", PackedInt64Array())
+	for index in range(mini(ids.size(), stock.size())):
+		stock_by_good[String(ids[index])] = int(stock[index])
+	return stock_by_good
+
+
+## 排序用的轻量条目：只带排序键与行内要用的字段，材料/配方等重数据留给当前页。
+func _construction_entries(candidates: PackedInt32Array, quotes: Dictionary,
+		snapshot: Dictionary, market: Dictionary, durations: PackedInt32Array,
+		maturity_ranks: PackedInt32Array) -> Array:
+	var entries := []
+	var items: Array = quotes.get("items", [])
+	var prices := _construction_price_by_good(market)
+	for index in range(mini(candidates.size(), items.size())):
+		var item: Dictionary = items[index]
+		var type_id := int(candidates[index])
+		var building_id := String(item.get("building_id", ""))
+		var reason_code := String(item.get("reason_code", ""))
+		entries.append({
+			"index": index,
+			"type_id": type_id,
+			"building_id": building_id,
+			"name": String(item.get("name", building_id)),
+			"icon": _building_icon(building_id, snapshot, type_id),
+			"eligible": bool(item.get("eligible", false)),
+			"reason_code": reason_code,
+			"tech_locked": reason_code == "construction_technology_locked",
+			"cash_required": int(item.get("cash_required", 0)),
+			"market_used": int(item.get("market_goods_used", 0)),
+			"score": _construction_daily_score(type_id, snapshot, prices),
+			"days": int(durations[type_id]) \
+				if type_id >= 0 and type_id < durations.size() else 0,
+			"maturity_rank": int(maturity_ranks[type_id]) \
+				if type_id >= 0 and type_id < maturity_ranks.size() else 0,
+		})
+	return entries
+
+
+## 三档排序共用的比较器：**可建永远在前**，再按该档的主键，最后按名称稳定排序。
+## recommended = 估算毛利/日（本地市价，未计工资与税）高→低；
+## cost = 现金支出 低→高；newest = 生产成熟度档位 高→低。
+static func _construction_entry_before(a: Dictionary, b: Dictionary,
+		sort: String) -> bool:
+	var a_eligible := bool(a.get("eligible", false))
+	var b_eligible := bool(b.get("eligible", false))
+	if a_eligible != b_eligible:
+		return a_eligible
+	var a_score := int(a.get("score", 0))
+	var b_score := int(b.get("score", 0))
+	var a_cash := int(a.get("cash_required", 0))
+	var b_cash := int(b.get("cash_required", 0))
+	if sort == "cost":
+		if a_cash != b_cash:
+			return a_cash < b_cash
+		if a_score != b_score:
+			return a_score > b_score
+	elif sort == "newest":
+		var a_rank := int(a.get("maturity_rank", 0))
+		var b_rank := int(b.get("maturity_rank", 0))
+		if a_rank != b_rank:
+			return a_rank > b_rank
+		if a_score != b_score:
+			return a_score > b_score
+	elif a_score != b_score:
+		return a_score > b_score
+	elif a_cash != b_cash:
+		return a_cash < b_cash
+	var a_name := String(a.get("name", ""))
+	var b_name := String(b.get("name", ""))
+	if a_name != b_name:
+		return a_name < b_name
+	return int(a.get("type_id", 0)) < int(b.get("type_id", 0))
+
+
+## 每座每日「产出市值 − 投入市值」（本地市价、单位对齐 GOODS_SCALE）。
+## 只是排序启发式，不写回任何模拟状态。
+func _construction_daily_score(type_id: int, snapshot: Dictionary,
+		prices: Dictionary) -> int:
+	var good_ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	return _construction_flow_value(snapshot, type_id, "output", good_ids, prices) \
+		- _construction_flow_value(snapshot, type_id, "input", good_ids, prices)
+
+
+func _construction_flow_value(snapshot: Dictionary, type_id: int, kind: String,
+		good_ids: PackedStringArray, prices: Dictionary) -> int:
+	var offsets: PackedInt32Array = snapshot.get(
+		"building_%s_offsets" % kind, PackedInt32Array())
+	var good_indices: PackedInt32Array = snapshot.get(
+		"building_%s_good_ids" % kind, PackedInt32Array())
+	var quantities: PackedInt64Array = snapshot.get(
+		"building_%s_quantities" % kind, PackedInt64Array())
+	if type_id < 0 or type_id + 1 >= offsets.size():
+		return 0
+	var total := 0
+	for cursor in range(int(offsets[type_id]), int(offsets[type_id + 1])):
+		if cursor >= good_indices.size() or cursor >= quantities.size():
+			break
+		var good_idx := int(good_indices[cursor])
+		if good_idx < 0 or good_idx >= good_ids.size():
+			continue
+		var price := int(prices.get(String(good_ids[good_idx]), 0))
+		if price <= 0:
+			continue
+		total += int(quantities[cursor]) * price / 1000
+	return total
+
+
+func _construction_price_by_good(market: Dictionary) -> Dictionary:
 	var prices := {}
-	var snapshot := _market_snapshot(cell_idx)
-	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
-	var values: PackedInt32Array = snapshot.get("price", PackedInt32Array())
+	var ids: PackedStringArray = market.get("good_ids", PackedStringArray())
+	var values: PackedInt32Array = market.get("price", PackedInt32Array())
 	for index in range(mini(ids.size(), values.size())):
 		prices[String(ids[index])] = int(values[index])
 	return prices
 
 
-func _decorate_construction_item(item: Dictionary, economy, prices: Dictionary,
-		unlocked_goods: Dictionary = {}) -> void:
-	var building_id := String(item.get("building_id", ""))
-	item["icon"] = _building_icon(building_id)
-	var placement: Dictionary = economy.building_placement_spec(StringName(building_id)) \
-		if economy.has_method("building_placement_spec") else {}
-	var job_spec: Dictionary = economy.building_job_spec(StringName(building_id)) \
-		if economy.has_method("building_job_spec") else {}
-	item["inputs"] = _construction_input_recipe_rows(placement, unlocked_goods)
-	item["outputs"] = _construction_recipe_rows(placement, "output_good_ids",
-		"output_quantities", "产出")
-	var jobs: Array = []
-	if bool(job_spec.get("ok", false)):
-		jobs.append({"name": _construction_profession_name(
-			String(job_spec.get("owner_profession", ""))),
-			"slots": int(job_spec.get("owner_slots", 0)), "owner": true})
-		var professions: PackedStringArray = job_spec.get(
-			"employee_professions", PackedStringArray())
-		var slots: PackedInt64Array = job_spec.get(
-			"employee_slots", PackedInt64Array())
-		for index in range(professions.size()):
-			jobs.append({"name": _construction_profession_name(String(professions[index])),
-				"slots": int(slots[index]) if index < slots.size() else 0,
-				"owner": false})
-	item["jobs"] = jobs
-	for material_value in item.get("materials", []):
-		var material: Dictionary = material_value
+func _construction_page_rows(entries: Array, quotes: Dictionary,
+		snapshot: Dictionary, economy, market: Dictionary,
+		maturity_names: PackedStringArray) -> Array:
+	var rows := []
+	var items: Array = quotes.get("items", [])
+	var local_stock := _construction_local_stock(market)
+	var unlocked_goods := _unlocked_good_ids(market)
+	for raw in entries:
+		var entry: Dictionary = raw
+		var index := int(entry.get("index", -1))
+		var item: Dictionary = items[index] \
+			if index >= 0 and index < items.size() else {}
+		var materials: Array = item.get("materials", [])
+		var type_id := int(entry.get("type_id", -1))
+		var building_id := String(entry.get("building_id", ""))
+		var eligible := bool(entry.get("eligible", false))
+		var reason_text := _construction_reason_text(
+			String(entry.get("reason_code", "")), materials, local_stock)
+		var maturity := String(maturity_names[type_id]) \
+			if type_id >= 0 and type_id < maturity_names.size() else ""
+		var placement: Dictionary = economy.building_placement_spec(
+			StringName(building_id)) if economy.has_method("building_placement_spec") else {}
+		var job_spec: Dictionary = economy.building_job_spec(
+			StringName(building_id)) if economy.has_method("building_job_spec") else {}
+		var cash := int(entry.get("cash_required", 0))
+		rows.append({
+			"building_id": building_id,
+			"type_id": type_id,
+			"name": String(entry.get("name", building_id)),
+			"icon": entry.get("icon", &"economy.building"),
+			"eligible": eligible,
+			"blocked": not eligible,
+			"reason_code": String(entry.get("reason_code", "")),
+			"reason_text": "" if eligible else reason_text,
+			"materials_text": _construction_materials_text(materials),
+			"cash_required": cash,
+			"cash_text": _money_text(cash),
+			"market_used": int(entry.get("market_used", 0)),
+			"tooltip": _construction_tooltip(entry, item, materials, local_stock,
+				placement, job_spec, unlocked_goods, int(entry.get("days", 0)),
+				maturity, reason_text),
+		})
+	return rows
+
+
+func _construction_materials_text(materials: Array) -> String:
+	var parts := PackedStringArray()
+	for raw in materials:
+		if parts.size() >= 3:
+			break
+		var material: Dictionary = raw
+		parts.append("%s %s" % [String(material.get("name", "建材")),
+			_goods_scaled(int(material.get("required", 0)))])
+	if parts.is_empty():
+		return "无需建材"
+	var text := " · ".join(parts)
+	if materials.size() > parts.size():
+		text += " 等 %d 项" % materials.size()
+	return text
+
+
+func _construction_reason_text(code: String, materials: Array,
+		local_stock: Dictionary) -> String:
+	if code.is_empty() or code == "ok":
+		return ""
+	if code == "construction_materials_insufficient":
+		# 同一个拒绝码覆盖两种缺料：国库+市场总量不够，或市场现货不够缺口。
+		for raw in materials:
+			var material: Dictionary = raw
+			var shortfall := int(material.get("market", 0))
+			if shortfall <= 0:
+				continue
+			var good_id := String(material.get("good_id", ""))
+			if int(local_stock.get(good_id, 0)) < shortfall:
+				return String(CONSTRUCTION_REASON_TEXT.get(
+					"construction_market_short", "市场缺货"))
+	return String(CONSTRUCTION_REASON_TEXT.get(code, "暂不可营造"))
+
+
+## hover 详情：先答「它提供什么岗位、吃什么、产什么」，再答成本与卡点。
+## 每段独立成行、段名在前；没有数据的段整行不出。
+func _construction_tooltip(entry: Dictionary, item: Dictionary, materials: Array,
+		local_stock: Dictionary, placement: Dictionary, job_spec: Dictionary,
+		unlocked_goods: Dictionary, days: int, maturity: String,
+		reason_text: String) -> String:
+	var lines := PackedStringArray()
+	var job_text := _construction_job_text(job_spec)
+	if not job_text.is_empty():
+		lines.append("岗位：%s" % job_text)
+	var inputs := _construction_recipe_side(
+		_construction_input_recipe_rows(placement, unlocked_goods))
+	if inputs != "无":
+		lines.append("投入：%s" % inputs)
+	var outputs := _construction_recipe_side(
+		_construction_recipe_rows(placement, "output_good_ids",
+			"output_quantities", "产出"))
+	if outputs != "无":
+		lines.append("产出：%s" % outputs)
+	for raw in materials:
+		var material: Dictionary = raw
+		var required := int(material.get("required", 0))
+		var treasury := int(material.get("treasury", 0))
+		var market := int(material.get("market", 0))
+		var line := "建材：%s %s（国库 %s" % [
+			String(material.get("name", "建材")),
+			_goods_scaled(required), _goods_scaled(treasury)]
+		if market > 0:
+			line += " / 市购 %s" % _goods_scaled(market)
+		var unit_price := int(material.get("unit_price", 0))
+		if unit_price > 0:
+			line += " · 单价 %s" % _money_text(unit_price)
+		lines.append(line + "）")
+	if not materials.is_empty():
+		lines.append("现金：%s" % _money_text(int(entry.get("cash_required", 0))))
+	for raw in materials:
+		var material: Dictionary = raw
+		var shortfall := int(material.get("market", 0))
+		if shortfall <= 0:
+			continue
 		var good_id := String(material.get("good_id", ""))
-		var unit_price := int(prices.get(good_id, 0))
-		material["unit_price"] = unit_price
-		material["unit_price_text"] = _money_text(unit_price) if unit_price > 0 else "—"
-		material["cost_text"] = _money_text(
-			int(material.get("required", 0)) * unit_price / 1000) \
-			if unit_price > 0 else "—"
+		lines.append("现货：%s 现有 %s / 缺口 %s" % [
+			String(material.get("name", "建材")),
+			_goods_scaled(int(local_stock.get(good_id, 0))),
+			_goods_scaled(shortfall)])
+	var facts := PackedStringArray()
+	if not maturity.is_empty():
+		facts.append(maturity)
+	if days > 0:
+		facts.append("工期 %d 日" % days)
+	var score := int(entry.get("score", 0))
+	if score != 0:
+		facts.append("估算毛利 %s/日" % _money_text(score))
+	if not facts.is_empty():
+		lines.append("概况：%s" % " · ".join(facts))
+	if not reason_text.is_empty():
+		lines.append("不满足：%s" % reason_text)
+	return "\n".join(lines)
+
+
+func _construction_job_text(job_spec: Dictionary) -> String:
+	if not bool(job_spec.get("ok", false)):
+		return ""
+	var parts := PackedStringArray()
+	var owner_slots := int(job_spec.get("owner_slots", 0))
+	if owner_slots > 0:
+		parts.append("业主 %s ×%d" % [_construction_profession_name(
+			String(job_spec.get("owner_profession", ""))), owner_slots])
+	var professions: PackedStringArray = job_spec.get(
+		"employee_professions", PackedStringArray())
+	var slots: PackedInt64Array = job_spec.get("employee_slots", PackedInt64Array())
+	for index in range(professions.size()):
+		var role_slots := int(slots[index]) if index < slots.size() else 0
+		if role_slots <= 0:
+			continue
+		parts.append("雇员 %s ×%d" % [_construction_profession_name(
+			String(professions[index])), role_slots])
+	return " · ".join(parts)
+
+
+func _construction_recipe_side(rows: Array) -> String:
+	if rows.is_empty():
+		return "无"
+	var parts := PackedStringArray()
+	for raw in rows:
+		var row: Dictionary = raw
+		parts.append("%s %s" % [String(row.get("name", "")),
+			String(row.get("quantity", ""))])
+	return "、".join(parts)
+
+
+func _goods_scaled(value: int) -> String:
+	return UITokens.format_compact_number_cn(float(value) / 1000.0, 3)
 
 
 func _construction_recipe_rows(placement: Dictionary, ids_key: String,
@@ -5205,7 +6040,7 @@ func _construction_recipe_rows(placement: Dictionary, ids_key: String,
 	for index in range(ids.size()):
 		var good_id := String(ids[index])
 		rows.append({"name": _good_display_name(good_id),
-			"quantity": "%.3f /日" % (float(quantities[index]) / 1000.0) \
+			"quantity": "%.3f/日" % (float(quantities[index]) / 1000.0) \
 				if index < quantities.size() else "—",
 			"label": label})
 	return rows
@@ -5219,7 +6054,7 @@ func _construction_input_recipe_rows(placement: Dictionary,
 	for index in range(ids.size()):
 		rows.append({
 			"name": _construction_input_candidate_label(placement, index, unlocked_goods),
-			"quantity": "%.3f /日" % (float(quantities[index]) / 1000.0) \
+			"quantity": "%.3f/日" % (float(quantities[index]) / 1000.0) \
 				if index < quantities.size() else "—",
 			"label": "原材料",
 		})
@@ -5264,9 +6099,14 @@ func _construction_input_candidate_label(placement: Dictionary, input_idx: int,
 		return String(a.id) < String(b.id))
 	var labels := PackedStringArray()
 	for entry in visible:
+		if labels.size() >= 3:
+			break
 		labels.append(_format_input_candidate_label(
 			String(entry.id), int(entry.efficiency)))
-	return " / ".join(labels)
+	var text := " / ".join(labels)
+	if visible.size() > labels.size():
+		text += " 等 %d 种" % visible.size()
+	return text
 
 
 func _unlocked_good_ids(snapshot: Dictionary) -> Dictionary:
@@ -5742,12 +6582,14 @@ func player_technology_ids() -> PackedStringArray:
 		return _technology_ids_cache
 	_technology_day = day
 	_technology_ids_cache = PackedStringArray()
+	_technology_ids_resolved = false
 	if _generator == null or not _generator.has_method("get_country_facade"):
 		return _technology_ids_cache
 	var viewer := _completed_technology_ids(
 		_generator.get_country_facade(), _player_country_handle())
 	if bool(viewer.get("ok", false)):
 		_technology_ids_cache = viewer.get("technology_ids", PackedStringArray())
+		_technology_ids_resolved = true
 	return _technology_ids_cache
 
 

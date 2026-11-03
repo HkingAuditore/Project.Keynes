@@ -16,6 +16,9 @@ class_name MilitaryFrontLayer
 
 const SHADER_PATH: String = "res://shaders/military_front_ribbon.gdshader"
 const Z_INDEX := 8
+## 军务档案选中一条战线时的颜色（深朱砂）。线宽由 shader uniform 决定，
+## per-edge 加宽会被裁掉，所以选中反馈走颜色通道。
+const SELECTED_COLOR := Color(0.36, 0.11, 0.08)
 const RIBBON_WIDTH_RATIO := 0.58
 const OUTER_BLEED_RATIO := 0.22
 const EDGE_CAP := 12288
@@ -35,6 +38,11 @@ var _owner_slot := PackedInt32Array()
 var _player_slot := -1
 var _edges := PackedInt32Array()
 var _progress := PackedByteArray()
+## key -> 在 _edges 里的下标。只在前线变化时重建；点击拾取与选中态共用。
+var _edge_lookup: Dictionary = {}
+## 军务档案选中的那条边（-1 = 无）。重新着色而不是加宽：shader 的线宽是
+## uniform，per-edge 加宽会被裁掉，颜色是唯一诚实的通道。
+var _selected_edge := -1
 var _dirty := true
 var _last_pushed_world_width := -1.0
 var _wall_time := 0.0
@@ -99,6 +107,8 @@ func set_enabled(enabled: bool) -> void:
 func clear() -> void:
 	_edges = PackedInt32Array()
 	_progress = PackedByteArray()
+	_edge_lookup.clear()
+	_selected_edge = -1
 	if _mesh_inst != null:
 		_mesh_inst.mesh = null
 	_update_visibility()
@@ -108,7 +118,101 @@ func clear() -> void:
 func set_front_edges(keys: PackedInt32Array, progress: PackedByteArray) -> void:
 	_edges = keys
 	_progress = progress
+	_edge_lookup.clear()
+	var count := mini(keys.size(), EDGE_CAP)
+	for i in count:
+		_edge_lookup[int(keys[i])] = i
+	if _selected_edge >= 0 and not _edge_lookup.has(_selected_edge):
+		_selected_edge = -1
 	_dirty = true
+
+
+## 军务档案选中一条战线：只改颜色，不重建几何以外的东西。
+func set_selected_edge(key: int) -> void:
+	if key == _selected_edge:
+		return
+	_selected_edge = key
+	_dirty = true
+
+
+func selected_edge() -> int:
+	return _selected_edge
+
+
+## ── 点击拾取 ────────────────────────────────────────────────────────────
+## 命中半径内最近的一条战线边（key = cell*6+dir，已规范化到较小格）；
+## -1 = 未命中。只在点击时调用：候选是本格 + 6 邻格的 42 条边。
+func pick_edge_at(world: Vector2, tolerance: float) -> int:
+	if _map == null or _edge_lookup.is_empty() or world.x != world.x:
+		return -1
+	var cell_obj = HexUtils.world_to_wrapped_cell(_map, world, _hex_size)
+	if cell_obj == null:
+		return -1
+	var origin := int(cell_obj.index)
+	var cells := PackedInt32Array([origin])
+	for dir in 6:
+		var neighbor := _neighbor_of(origin, dir)
+		if neighbor >= 0 and neighbor != origin:
+			cells.append(neighbor)
+	var best := -1
+	var best_distance := maxf(tolerance, 0.0)
+	var seen := {}
+	for cell in cells:
+		for dir in 6:
+			var key := _canonical_edge_key(cell, dir)
+			if key < 0 or seen.has(key) or not _edge_lookup.has(key):
+				continue
+			seen[key] = true
+			var mid := edge_world_midpoint(key)
+			if is_nan(mid.x):
+				continue
+			var distance := mid.distance_to(world)
+			if distance <= best_distance:
+				best_distance = distance
+				best = key
+	return best
+
+
+## 一条战线边的世界中点（跨 wrap 时用最近镜像）。NaN = 该边不可定位。
+func edge_world_midpoint(key: int) -> Vector2:
+	if _map == null or key < 0:
+		return Vector2(NAN, NAN)
+	var cell: int = key / 6
+	var dir: int = key % 6
+	var neighbor := _neighbor_of(cell, dir)
+	if neighbor < 0 or neighbor >= _cell_count:
+		return Vector2(NAN, NAN)
+	var cell_obj = _map.cell_at(cell)
+	var nb_obj = _map.cell_at(neighbor)
+	if cell_obj == null or nb_obj == null:
+		return Vector2(NAN, NAN)
+	var center: Vector2 = HexUtils.cube_to_world(cell_obj.q, cell_obj.r, _hex_size)
+	var n_center: Vector2 = HexUtils.cube_to_world(nb_obj.q, nb_obj.r, _hex_size)
+	if _wrap > 0.0001:
+		n_center = HexUtils.nearest_display_world(n_center, center.x, _wrap)
+	return (center + n_center) * 0.5
+
+
+func _neighbor_of(cell: int, dir: int) -> int:
+	if cell < 0 or dir < 0 or dir > 5:
+		return -1
+	var index := cell * 6 + dir
+	if index >= _neighbors.size():
+		return -1
+	return int(_neighbors[index])
+
+
+## 同一条物理边只认「较小格持有」的那把 key，两侧点击得到同一个值。
+func _canonical_edge_key(cell: int, dir: int) -> int:
+	var neighbor := _neighbor_of(cell, dir)
+	if neighbor < 0 or neighbor == cell or neighbor >= _cell_count:
+		return -1
+	if neighbor > cell:
+		return cell * 6 + dir
+	for back in 6:
+		if _neighbor_of(neighbor, back) == cell:
+			return neighbor * 6 + back
+	return -1
 
 
 func _process(delta: float) -> void:
@@ -199,6 +303,9 @@ func _rebuild() -> void:
 			mixed = mixed.lerp(a_col, clampf((p - 0.5) * 2.0, 0.0, 1.0))
 			col = Color(mixed.r, mixed.g, mixed.b, p)
 			color_cache[bucket] = col
+		# 选中边：深朱砂覆盖进度色，alpha 位仍是 per-edge 种子（shader 用它抖动）。
+		if key == _selected_edge:
+			col = Color(SELECTED_COLOR.r, SELECTED_COLOR.g, SELECTED_COLOR.b, p)
 		var cell_obj = _map.cell_at(cell)
 		var nb_obj = _map.cell_at(neighbor)
 		if cell_obj == null or nb_obj == null:

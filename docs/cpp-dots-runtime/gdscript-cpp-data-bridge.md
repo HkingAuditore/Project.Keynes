@@ -75,11 +75,21 @@ results through unchanged. Consumers:
   each `(view, scope, filter, offset, limit)` key per refresh round
   (`begin_refresh()`), so one daily refresh issues at most one native call per view.
 - `EconomyHistoryBuffer` samples the `summary` + `professions` views once per
-  committed day (deduped by `state_day_max`, 120-day ring) for KPI and stratum
-  sparklines. It is UI memory only: not saved, reset when the country changes.
+  committed day (deduped by `state_day_max`, 120-day ring) for KPI, stratum and
+  per-profession sparklines. It is UI memory only: not saved, reset when the
+  country changes.
 - `SocialStrataTable` (`data/ui/social_strata.tres`) maps every profession id to
-  one of 8 display strata. It is presentation-only and must not feed ideology,
+  one of 9 display strata. It is presentation-only and must not feed ideology,
   class opinion or any simulation input.
+- The 人口与民生 chapter offers two population views over the same `professions`
+  snapshot: **阶层** (the 9 aggregated strata) and **职业** (one row per native
+  profession, i.e. no merging at all). `EconomyDossierViewModel.profession_rows()`
+  builds the per-profession rows — population, share, per-capita income/expense/tax,
+  satisfaction, survival, living standard, 8 dimensions and worst needs — and both
+  views share one national 8-dimension baseline, so switching views never changes
+  the yardstick. A profession row that is not listed in `social_strata.tres` falls
+  back to `fallback_stratum` (`workers`), which is why `unmapped()` is the guard
+  test that every catalog profession stays explicitly classified.
 
 Bottleneck classification (`classify_bottlenecks`) is a display heuristic over
 the investment rejection histogram, wage arrears, job openings, discard,

@@ -1,0 +1,333 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_dossier.gd" id="1_dossier"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="3_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="4_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="5_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="6_table"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="7_badges"]
+[ext_resource type="PackedScene" path="res://scenes/ui/object_action_button.tscn" id="8_action"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_paper_rule.gd" id="9_rule"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_peer_stats.gd" id="10_peer"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_versus_chart.gd" id="11_versus"]
+
+[node name="MilitaryDossier" type="Control"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_dossier")
+
+[node name="Sheet" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"PKPaperNote"
+
+[node name="Margin" type="MarginContainer" parent="Sheet"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="Body" type="VBoxContainer" parent="Sheet/Margin"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="HeaderRow" type="HBoxContainer" parent="Sheet/Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderIcon" parent="Sheet/Margin/Body/HeaderRow" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(34, 34)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Titles" type="VBoxContainer" parent="Sheet/Margin/Body/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Kicker" type="Label" parent="Sheet/Margin/Body/HeaderRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierKicker"
+
+[node name="Title" type="Label" parent="Sheet/Margin/Body/HeaderRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKTitle"
+theme_override_font_sizes/font_size = 30
+
+[node name="Subtitle" type="Label" parent="Sheet/Margin/Body/HeaderRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKDossierCaption"
+
+[node name="CloseButton" type="Button" parent="Sheet/Margin/Body/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(34, 34)
+layout_mode = 2
+size_flags_vertical = 0
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="TopRule" type="Control" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("9_rule")
+
+[node name="PeerStats" type="Control" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 60)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("10_peer")
+
+[node name="StateRule" type="Control" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("9_rule")
+
+[node name="KpiRow" type="HBoxContainer" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Sheet/Margin/Body/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="Sheet/Margin/Body/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="Sheet/Margin/Body/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="Sheet/Margin/Body/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Versus" type="Control" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(240, 170)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("11_versus")
+
+[node name="DetailRule" type="Control" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("9_rule")
+
+[node name="Scroll" type="ScrollContainer" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Content" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ArmyGroup" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="CompositionBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="CompositionTag" type="Label" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/CompositionBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "编成"
+theme_type_variation = &"PKPaperTag"
+
+[node name="CompositionBar" type="Control" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/CompositionBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 58)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_stacked")
+
+[node name="SupplyBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="SupplyTag" type="Label" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/SupplyBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "补给"
+theme_type_variation = &"PKPaperTag"
+
+[node name="SupplyBars" type="Control" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/SupplyBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 96)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("5_bars")
+
+[node name="StatusBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="Badges" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/StatusBlock" instance=ExtResource("7_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Note" type="Label" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/StatusBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+
+[node name="ArmyActions" type="HBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="LocateButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+text = "定位"
+
+[node name="MoveButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+text = "移动"
+
+[node name="AreaButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+text = "军事控制"
+
+[node name="SameCellBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="SameCellTag" type="Label" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/SameCellBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "同格部队"
+theme_type_variation = &"PKPaperTag"
+
+[node name="SameCellTable" type="Control" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/SameCellBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_table")
+
+[node name="FrontGroup" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="FrontFootnote" type="Label" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+
+[node name="FrontArmiesBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="FrontArmiesTag" type="Label" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/FrontArmiesBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "在场部队"
+theme_type_variation = &"PKPaperTag"
+
+[node name="FrontArmiesTable" type="Control" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/FrontArmiesBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_table")
+
+[node name="EngagementBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="EngagementTag" type="Label" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/EngagementBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "交战段"
+theme_type_variation = &"PKPaperTag"
+
+[node name="EngagementTable" type="Control" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/EngagementBlock"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 56)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("6_table")
+
+[node name="FrontActions" type="HBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="FrontLocateButton" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/FrontActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+size_flags_horizontal = 0
+text = "定位"
+
+[node name="Spacer" type="Control" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/FrontActions"]
+layout_mode = 2
+size_flags_horizontal = 3

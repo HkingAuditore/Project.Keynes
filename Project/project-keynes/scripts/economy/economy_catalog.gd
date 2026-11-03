@@ -35,6 +35,12 @@ const UNEMPLOYED_PROFESSION_ID := "unemployed"
 ## into `[0, SATISFACTION_TIER_COUNT)`.
 const SATISFACTION_DIMENSION_COUNT := 8
 const SATISFACTION_TIER_COUNT := 4
+## Dense order of `building_economic_sectors`. The compiled column stores this
+## index, so the order is a data contract: append only, never reorder. The
+## construction workspace groups its catalog pages by these sectors.
+const BUILDING_SECTOR_IDS := [
+	"agriculture", "extractive", "manufacturing", "energy", "knowledge",
+]
 const SATISFACTION_DEVELOPMENT_INPUT_COUNT := 3
 const SIGNAL_IDS := {
 	"temperature": 0,
@@ -1444,9 +1450,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if building_kind != "state" and state_role != 0:
 			return {"ok": false, "reason": "state role on non-state building: %s" % stable_id}
 		building_state_roles.append(state_role)
-		var sector_ids := ["agriculture", "extractive", "manufacturing", "energy", "knowledge"]
 		var sector_id := String(profile.economic_sector_id).strip_edges()
-		var sector := sector_ids.find(sector_id)
+		var sector := BUILDING_SECTOR_IDS.find(sector_id)
 		if sector < 0:
 			return {"ok": false, "reason": "invalid building economic sector: %s" % stable_id,
 				"sector": sector_id}

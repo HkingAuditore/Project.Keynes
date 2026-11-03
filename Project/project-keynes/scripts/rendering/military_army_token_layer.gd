@@ -441,6 +441,77 @@ func set_selected_cell(cell: int) -> void:
 	_update_selection_ring()
 
 
+## ── 点击拾取（只在点击时调用，不做逐帧命中测试）──────────────────────────
+## 返回最近的可见部队 {handle, cell, row, distance}；空字典 = 未命中。
+## 迷雾：`_vis[row] == 0` 的外国部队不参与拾取（与 z10 的显示规则同源）。
+## 聚合 LOD 下一枚棋子代表整格，因此退化为「该格兵力最多的那支」。
+func pick_army_at(world: Vector2, radius: float = -1.0) -> Dictionary:
+	if not _has_shader or _map == null or world.x != world.x:
+		return {}
+	var limit := radius if radius > 0.0 else _token_world_size() * 0.62
+	var best := {}
+	var best_distance := limit
+	if _lod_mode == LOD_AGGREGATE:
+		for i in _agg_count:
+			var cell: int = int(_agg_cell[i])
+			var pos := _cell_world(cell, world.x)
+			if is_nan(pos.x):
+				continue
+			var distance := pos.distance_to(world)
+			if distance > best_distance:
+				continue
+			var row := _army_row_for_cell(cell)
+			if row < 0:
+				continue
+			best_distance = distance
+			best = {"handle": int(_handle[row]), "cell": cell, "row": row,
+				"headcount": int(_heads[row]), "distance": distance}
+		return best
+	for row in _army_count:
+		if int(_vis[row]) == 0:
+			continue
+		var x: float = _ax[row]
+		var y: float = _ay[row]
+		if is_nan(x) or is_nan(y):
+			continue
+		var distance := Vector2(x, y).distance_to(world)
+		if distance > best_distance:
+			continue
+		# 同格重叠时（普通 LOD 两支队伍站在同一格）取兵力更大的一支，
+		# 这样点击不会被"行号靠前"这种实现细节决定。
+		if absf(distance - best_distance) < 0.001 and not best.is_empty() \
+				and int(_heads[row]) <= int(best.get("headcount", 0)):
+			continue
+		best_distance = distance
+		best = {"handle": int(_handle[row]), "cell": int(_cell[row]), "row": row,
+			"headcount": int(_heads[row]), "distance": distance}
+	return best
+
+
+## 该格兵力最多的可见行（聚合 LOD 拾取用）。-1 = 该格没有可见部队。
+func _army_row_for_cell(cell: int) -> int:
+	var best := -1
+	for row in _army_count:
+		if int(_vis[row]) == 0 or int(_cell[row]) != cell:
+			continue
+		if best < 0 or int(_heads[row]) > int(_heads[best]):
+			best = row
+	return best
+
+
+## 部队当前显示位置（世界坐标，已处理 wrap 镜像）；未知句柄返回 NaN 向量。
+func army_world_position(handle: int) -> Vector2:
+	for row in _army_count:
+		if int(_handle[row]) != handle:
+			continue
+		var x: float = _ax[row]
+		var y: float = _ay[row]
+		if is_nan(x) or is_nan(y):
+			return _cell_world(int(_cell[row]), _camera_x())
+		return Vector2(x, y)
+	return Vector2(NAN, NAN)
+
+
 func set_formation_allow_all_for_tests(enabled: bool) -> void:
 	if _formation_allow_all_for_tests == enabled:
 		return

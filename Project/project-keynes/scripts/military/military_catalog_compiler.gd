@@ -10,15 +10,15 @@ extends RefCounted
 ##
 ## Output contract (frozen by docs/plans/military-implementation-contract.md §3):
 ##   ok, reason, schema, catalog_hash,
-##   units: Array[Dictionary]  { id, class, militia, era, unlock_bit, attack,
-##                               defense, speed, fortification_ignore,
-##                               training_days, equipment:[{category,
-##                               min_quality, per_100, weight}],
+##   units: Array[Dictionary]  { id, name, description, tech, class, militia,
+##                               era, unlock_bit, attack, defense, speed,
+##                               fortification_ignore, training_days,
+##                               equipment:[{category, min_quality, per_100, weight}],
 ##                               supply_idle / supply_combat:
 ##                               PackedFloat32Array(6) in MILITARY_SUPPLY_* order }
 ##                               -> order: ration, fodder, ammunition, fuel,
 ##                                          upkeep, equipment
-##   categories: Array[Dictionary] { id, goods:PackedInt32Array,
+##   categories: Array[Dictionary] { id, name, goods:PackedInt32Array,
 ##                                   qualities:PackedInt32Array }
 ##   state_buildings: Array[Dictionary]
 ##   supply_goods: Array (6) of PackedInt32Array   (dense good ids)
@@ -270,6 +270,9 @@ static func _compile_categories(raw_categories, good_index: Dictionary,
 			sorted_qualities.append(qualities[k])
 		categories.append({
 			"id": category_id,
+			# Display copy for equipment slots (兵器 / 护具 / 火器 …); the native
+			# parser only reads `id/goods/qualities`.
+			"name": String(raw.get("name", "")).strip_edges(),
 			"goods": sorted_goods,
 			"qualities": sorted_qualities,
 		})
@@ -379,6 +382,15 @@ static func _compile_units(raw_units, category_index: Dictionary,
 			combat_extra[supply_class] = maxf(0.0, combat[supply_class])
 		units.append({
 			"id": unit_id,
+			# Author-facing copy. The native parser ignores both keys; the country
+			# view model reads them so the roster can show 青铜矛兵 instead of
+			# `bronze_spearmen` without re-reading the JSON on every refresh.
+			"name": String(raw.get("name", "")).strip_edges(),
+			"description": String(raw.get("description", "")).strip_edges(),
+			# Stable technology id behind `unlock_bit` (-1 = always available).
+			# The UI needs the readable gate name ("需《青铜铸造》"), and the
+			# dense id alone cannot be resolved without the technology catalog.
+			"tech": tech_id,
 			"class": class_index,
 			"militia": is_militia,
 			"era": era,
@@ -521,10 +533,15 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 			material_qty.append(maxi(0, int(round(float(materials[good_key]) * 1000.0))))
 		out.append({
 			"id": building_id,
+			"name": String(raw.get("name", "")).strip_edges(),
 			"economy_building_id": _index_optional(building_index, building_id),
 			"role": role,
 			"tier": clampi(int(raw.get("tier", 0)), 0, 7),
 			"unlock_bit": unlock_bit,
+			# Authored stable technology id behind `unlock_bit` ("" = always
+			# available). UI-only label so a gate never has to reverse the dense
+			# id table; it is not part of the catalog hash.
+			"unlock_tech_id": tech_id,
 			"capacity": maxi(0, int(raw.get("capacity", 0))),
 			"fort_bonus": maxf(0.0, float(raw.get("fort_bonus", 0.0))),
 			"training_speed": maxf(0.0, float(raw.get("training_speed", 1.0))),
