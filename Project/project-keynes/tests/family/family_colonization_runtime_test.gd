@@ -161,7 +161,7 @@ func _run() -> void:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
 	_expect("PKEC v54 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 55
+		int(saved.get("schema", 0)) == 58
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -962,7 +962,7 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("PKEC v54 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 55
+		int(saved.get("schema", 0)) == 58
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -1669,7 +1669,7 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("v54 preparing/outbound expeditions restore with matching state hash",
-		int(saved.get("schema", 0)) == 55
+		int(saved.get("schema", 0)) == 58
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
@@ -1854,6 +1854,7 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 	ext.configure_modifiers(modifier_catalog, 3)
 	var effect_catalog := EffectCatalogScript.new()
 	ext.configure_effects(effect_catalog.compile_native_catalog())
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	var country_profile := {
 		"country_runtime_mode": "ACTIVE",
 		"starting_technology_ids": catalog.technology_ids,
@@ -1972,6 +1973,7 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	_expect("effect runtime configures for built-in colonization transactions",
 		bool(ext.configure_effects(effect_catalog.compile_native_catalog()).get(
 			"ok", false)))
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	var all_technology_ids: PackedStringArray = catalog.technology_ids
 	var granted := all_technology_ids if granted_technology_ids.is_empty() \
 		else granted_technology_ids

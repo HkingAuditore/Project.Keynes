@@ -2255,14 +2255,34 @@ input edge 缓存。ACTIVE 组的 epoch 经营计划只按基础配方产量报�
 
 - 声明了军供需求却没有 `state_service_only` 直接编译失败；
 - 军供需求的 need id 必须存在且不重复；
+- `building_kind` 必须是 `BUILDING_KIND_INDICES` 里的四个值之一，未识别值直接
+  编译失败并回传原始 kind 字符串。此前是嵌套三元表达式、末支 `else 1`，任何拼写
+  错误的 kind 都会静默变成 `industrial` 并开始参与市场买卖；
 - 官营类型必须带非零 `state_role`，非官营类型必须为 `none`；
 - 官营类型形状等同 `service`：无产出、无自然资源、`behavior_id = none`；
+- 官营类型不得声明 `maintenance_good_ids`，也不得声明非零
+  `maintenance_horizon_days`。官营建筑的维护由 Military 以国库现金结算，这里再
+  记一份物料账单就是重复收费，所以直接在编译期拒绝，而不是静默丢弃该列；
+- 官营类型不得声明 `resource_ids` 或 `resource_generation_ids`（§7.3）；
+- 官营类型的 `technology_tags` 必须**恰好一个** `tech.*`，并给出计数；军事目录
+  同名建筑的 `tech` 字段必须与它一致，不一致时两边都会报出建筑 id；
 - 官营类型必须至少一个雇员角色，且每个角色都必须是 `state_service_only` 职业、
-  工资政策为 `state_payroll`；
+  显式填写 `state_payroll`。省略 `employee_wage_policy_ids` 不再被当作合法写法：
+  那样会回落到建筑级市场工资，而国库从不结算这份工资；
 - 反过来，`state_service_only` 职业不得出现在非官营建筑的任何雇员角色里。
 
 `building_state_roles` 与三个 `profession_state_service_only*` 列都会从全部历史
 compat hash（v6/v7/v8/v13）的输入里剔除，所以未改动的旧目录哈希不变、旧存档仍可读取。
+
+### 军事部门（`military`）
+
+`BUILDING_SECTOR_IDS` 在民事五部门之后追加了 `military`（稠密索引 5），17 座官营
+建筑的 `economic_sector_id` 都填它。追加而不是插在前面是刻意的：原生侧所有
+sector 定长的数组（维护周期、国家级部门产出因子、地形/地貌/地块部门因子、
+overview 分桶、存档里的部门态）都按 `CIVIL_SECTOR_COUNT = 5` 划分，索引 5 必须
+被这些规则跳过而不是落进 `knowledge`。因此原生侧凡是取 sector 参与运算的地方都
+带 `sector < CIVIL_SECTOR_COUNT` 守卫，编译期则用 `BUILDING_SECTOR_COUNT` 作为
+合法性上界。军事部门不进部门产出因子，`military` 的建筑也不参与民事部门统计。
 
 ### 官营建筑哨兵业主
 
@@ -2340,3 +2360,49 @@ profession × ethnicity 笛卡尔积的一行，`compile_catalog()` 建好
   `--headless --check-only` 解析。
 - 完整目录编译当前被内容侧的未完成改动阻塞（新增军工建筑/物资的 progression
   元数据与 `good_technology_producer_missing`），与本次改动无关。
+
+## 2026-11-04 营造专用入口（`queue_treasury_sponsored_build`）
+
+### 症状
+
+玩家点击营造目录里的「营造」按钮永远拿不到开工回执：`PlayerController` 提交的
+`construction.build` 被
+`{"ok": false, "reason": "economy_legacy_ingress_disabled"}` 拒绝。
+
+### 根因
+
+`EconomyFacade.treasury_sponsored_build()` 走的是旧批量入口
+`DCWorldExt::submit_economy_commands`。自 Phase-2.4.5 起 StageOps 是生产写入边界
+（`world_runtime_host.gd` 在非 `ACTIVE_WITH_PARITY` 时显式下发
+`economy_production_writer=stage_ops`），该入口对**所有** opcode fail-closed，因此
+`COMMAND_TREASURY_SPONSORED_BUILD` 到不了 epoch 队列。运河与家族开拓早已各自
+有专用边界，只有营造还停在旧批量入口上；`treasury_construction_runtime_test` 的
+固件没有 runtime host，gate 不生效，所以测试一直"绿"。
+
+### 契约
+
+| 层 | 方法 | 行为 |
+| --- | --- | --- |
+| GDScript | `EconomyFacade.treasury_sponsored_build()` | 优先调用专用边界；只有老 DLL 没有该方法时才回退旧批量入口 |
+| GDExtension | `DCWorldExt::queue_treasury_sponsored_build(country, cell, type_id, day, seq)` | 按 `economy_worker_owns_execution()` 选择投递车道 |
+| Runtime | `NativeEconomyRuntime::queue_treasury_sponsored_build(..., queue_for_worker)` | worker 权威 → `enqueue_worker_command()`（互斥收件箱，epoch begin 排空）；否则 → `_pending_commands` |
+
+- 入队的是与旧路径**完全相同**的 `Command`（`i32_0=cell`、`i32_1=type_id`、
+  `i64_0=1`、`i64_1=OWNERSHIP_TREASURY_SPONSORED_PRIVATE`、`target_handle=country`），
+  所以 apply、`stage_construction_receipt`、Country asset bridge 全部不变。
+- 命令永远在 epoch 内结算：`apply_treasury_sponsored_build_command` 读
+  `_epoch_cell_country` 与本国造价/工期系数，也必须在结算边界内执行。
+- 立即受理只代表"已排队"；真正的成功/失败（`construction_materials_insufficient`、
+  `construction_treasury_cash_insufficient` 等）仍由 `get_construction_command_receipts`
+  的回执给出，UI 用它写状态纸笺。
+- `submit_economy_commands` 的 gate 未被放宽：旧入口对营造仍然是拒绝的。
+
+### 验证
+
+- `tests/probes` 中的临时探针（真实 `player_game` 会话）确认命令从
+  `economy_legacy_ingress_disabled` 变为 `{"ok": true, "code": "queued"}`。
+- `tests/economy/treasury_construction_runtime_test.gd` 的 `_submit` 改走专用边界后，
+  回执 `ok`、国库现金正好减少 `cash_paid`、`money/goods/population` 误差保持
+  `0/0/0`，建筑按工期落到地块快照。
+- 该测试仍保留两条与本改动无关的既存失败（`bast_wrap_shelter` 的 AND/OR
+  替代料报价形态、以及"完工后 construction+group 计数 != 1"的断言口径）。

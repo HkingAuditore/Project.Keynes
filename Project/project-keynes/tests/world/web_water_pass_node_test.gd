@@ -60,14 +60,22 @@ func _run() -> void:
 	renderer.parchment_tint = Color(0.9, 0.8, 0.7)
 	renderer.parchment_strength = 0.13
 
-	# ① 桌面守卫：_water_pass_active() 必须为 false，_sync_water_quad() 不建节点。
-	_expect(not renderer._water_pass_active(),
-		"water pass stays inactive off-web (no node is ever created on desktop)")
+	# ① 平台守卫：[land-water-split 2026-11-02] 桌面也走拆分，水面 pass 由
+	#    `_water_pass_active()` 决定；关掉拆分总闸时必须立刻不建节点。
+	_expect(renderer._water_pass_active(),
+		"desktop split keeps the water pass active (land_water_split 2026-11-02)")
+	renderer.split_land_water_passes = false
 	renderer._sync_water_quad()
 	_expect(renderer._water_quad == null,
-		"_sync_water_quad() creates nothing when the platform guard says no")
+		"_sync_water_quad() creates nothing when the split gate is closed")
+	renderer.split_land_water_passes = true
+	# web 紧凑水面变体：生产路径下只有「web + Compatibility + LOW」才选中它，这里用
+	# 测试开关固定，否则桌面会建 world_map 变体（那是另一份 program、另一套断言）。
+	renderer._forced_water_program_kind = "web_min"
 
-	# ② legacy（非 tiled）变体：4 sampler / 16 uniform。
+	# ② legacy（非 tiled）变体：6 sampler（height/map_index/enum/dyn/water_depth/
+	#    surface array）—— [surface-array-edge 2026-11-02] 起比 C 回合多 1 张，
+	#    用来恢复 edge_mix / shore_frac / 次生水格。
 	renderer._ensure_water_quad()
 	var quad = renderer._water_quad
 	var material: ShaderMaterial = renderer._water_mat
@@ -87,13 +95,42 @@ func _run() -> void:
 		+ "#define PK_WEB_TEXTURE_BUDGET\n" + FileAccess.get_file_as_string(SHADER_PATH),
 		"legacy variant code == HexRenderer.WATER_PASS_PREFIX + shader source")
 	var uniforms: Array = material.shader.get_shader_uniform_list()
-	_expect(uniforms.size() == 16, "legacy variant exposes 16 uniforms (got %d)" % uniforms.size())
+	# 不再钉死 exact total：uniform 会随功能增删（surface array 的这一轮就 +7）。
+	# 真正的不变量是"紧凑水面只拿它消费的键"，由下面的逐个取值断言 + 水位/羊皮纸
+	# 断言守；这里只要求它远小于 world_map 的 186 个。
+	_expect(uniforms.size() >= 16 and uniforms.size() < 60,
+		"legacy variant stays a compact uniform set (got %d)" % uniforms.size())
+	var legacy_samplers := 0
+	for entry in uniforms:
+		if int(entry.get("type", TYPE_NIL)) == TYPE_OBJECT:
+			legacy_samplers += 1
+	_expect(legacy_samplers == 6,
+		"legacy variant declares 6 samplers incl. the shared surface array (got %d)"
+			% legacy_samplers)
 	_expect(_range(material, "lut_dims") == Vector2(4.0, 2.0),
 		"lut_dims follows the world's cell LUT grid")
 	_expect(_range(material, "world_size") == Vector2(100.0, 80.0),
 		"world_size follows the world bounds")
 	_expect(is_equal_approx(float(_range(material, "parchment_strength")), 0.13),
 		"parchment_strength follows the renderer property")
+
+	# ②b [surface-array-edge 2026-11-02] edge 层门控推送：没有 surface array 时必须
+	#     是 false（水色退回 C 回合的硬边），换成 6 层 array 后必须整体翻到 true。
+	_expect(bool(_range(material, "has_terrain_edge_data")) == false,
+		"water pass disables edge blending when the surface array is missing")
+	_expect(bool(_range(material, "terrain_edge_layers_bound")) == false,
+		"water pass reports the edge layers as unbound without a surface array")
+	var six_layer := _surface_array(6)
+	world.terrain_surface_tex = six_layer
+	renderer._apply_water_uniforms()
+	_expect(_range(material, "terrain_surface_tex") == six_layer,
+		"water pass binds the shared surface array")
+	_expect(bool(_range(material, "terrain_edge_layers_bound"))
+		and bool(_range(material, "has_terrain_edge_data"))
+		and bool(_range(material, "terrain_static_baked")),
+		"6-layer surface array turns on edge_mix / shore_frac / static-bake path")
+	world.terrain_surface_tex = null
+	renderer._apply_water_uniforms()
 
 	# ③ tiled 变体：变体前缀变了必须重编，sampler 换成 sampler2DArray。
 	var tiles := FakeTiles.new()
@@ -108,8 +145,9 @@ func _run() -> void:
 		"#define MAP_VISUAL_TILED\n"),
 		"tiled variant prepends MAP_VISUAL_TILED")
 	var tiled_uniforms: Array = tiled_material.shader.get_shader_uniform_list()
-	_expect(tiled_uniforms.size() == 23,
-		"tiled variant exposes 23 uniforms (got %d)" % tiled_uniforms.size())
+	_expect(tiled_uniforms.size() > uniforms.size(),
+		"tiled variant adds the tile-array uniforms (got %d vs %d)"
+			% [tiled_uniforms.size(), uniforms.size()])
 	var tiled_names := {}
 	for entry in tiled_uniforms:
 		tiled_names[String(entry.get("name", ""))] = true
@@ -119,13 +157,15 @@ func _run() -> void:
 	_expect(tiled_names.has("visual_gutter_px"),
 		"tiled variant receives the shared visual-tile layout uniforms")
 
-	# ④ 拆节点：材质与节点一起清空，且下一次 _sync 会因平台守卫保持为空。
+	# ④ 拆节点：材质与节点一起清空，且拆分总闸关闭时下一次 _sync 保持为空。
 	renderer._drop_water_quad()
 	_expect(renderer._water_quad == null and renderer._water_mat == null,
 		"_drop_water_quad() clears both the node and the material")
+	renderer.split_land_water_passes = false
 	renderer._sync_water_quad()
 	_expect(renderer._water_quad == null,
-		"after drop, the platform guard keeps the pass absent")
+		"after drop, the closed split gate keeps the pass absent")
+	renderer.split_land_water_passes = true
 
 	# ⑤ 常量与磁盘文件一致：WATER_SHADER_PATH 一旦改名/搬走，_create_water_quad
 	# 只会 push_warning 然后静默不画水面（屏幕退化成占位色），必须在 CI 里拦住。
@@ -155,6 +195,18 @@ func _texture() -> Texture2D:
 	var image := Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0.1, 0.2, 0.3, 0.4))
 	return ImageTexture.create_from_image(image)
+
+
+## [surface-array-edge 2026-11-02] 合成 N 层同尺寸 RGBA8 array（层数门控用）。
+func _surface_array(layers: int) -> Texture2DArray:
+	var images: Array = []
+	for _i in range(layers):
+		var image := Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
+		image.fill(Color(0.5, 0.5, 0.5, 1.0))
+		images.append(image)
+	var array := Texture2DArray.new()
+	array.create_from_images(images)
+	return array
 
 
 func _range(material: ShaderMaterial, key: String):

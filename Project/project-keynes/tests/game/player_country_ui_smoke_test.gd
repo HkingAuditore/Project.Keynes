@@ -59,7 +59,7 @@ func _run() -> void:
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
 	_expect("country action bar is compact", bar.size.x <= 422.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "ideology", "economy"]:
+	for section_id in ["technology", "ideology", "economy", "military"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:
@@ -69,16 +69,90 @@ func _run() -> void:
 			_expect("%s panel opens" % section_id,
 				panel.is_panel_open() and panel.current_section() == section_id)
 			await _capture_workspace(section_id)
-	for section_id in ["military", "diplomacy"]:
-		var button := buttons.get(section_id) as Button
-		_expect("%s action exists" % section_id, button != null)
-		_expect("%s action is disabled" % section_id,
-			button != null and button.disabled and button.tooltip_text.contains("尚未开放"))
+	# 军事面板（design §14.3）：军事机构未接通时必须给出可读的原因，接通时必须
+	# 有八个页签；两种情况下章节导航与动作条都不能被禁用。
+	var military_button := buttons.get("military") as Button
+	_expect("military action is enabled", military_button != null \
+		and not military_button.disabled and not military_button.tooltip_text.contains("尚未开放"))
+	var military_workspace := panel.get("_military_workspace") as Control
+	_expect("country panel mounts the military workspace",
+		military_workspace != null and military_workspace.visible \
+			and panel.current_section() == "military")
+	if military_workspace != null:
+		_expect("military workspace announces its four chapters",
+			military_workspace.call("chapter_ids") == PackedStringArray(
+				["overview", "forces", "armies", "war"]))
+		var military_model: Dictionary = panel.get("_model").get("military", {})
+		var military_available := bool(military_model.get("available", false))
+		print("[military] available=%s reason=%s" % [military_available,
+			String(military_model.get("reason", ""))])
+		if military_available:
+			var military_vm = military_workspace.call("view_model")
+			_expect("military view model reads the native country snapshot",
+				military_vm != null and military_vm.available() \
+					and not military_vm.snapshot().is_empty())
+			_expect("military catalog exposes unit and equipment rows",
+				(military_vm.catalog().get("units", []) as Array).size() > 0
+					or military_vm.catalog().get("categories", null) != null)
+		else:
+			_expect("military workspace explains why it is unavailable",
+				not String(military_model.get("reason", "")).is_empty())
+		military_workspace.call("select_chapter", "forces")
+		_expect("military chapter navigation switches pages",
+			String(military_workspace.call("current_chapter")) == "forces")
+		military_workspace.call("select_chapter", "overview")
+	# 外交面板（docs/ui/diplomacy-workspace.md）：已解锁，且必须真的接上会话世界。
+	# 「名录非空」不能当断言（开局可能还没接触到任何国家），这里钉的是数据通路：
+	# 模型带上了 generator、领土镜像可读、句柄解析与战事通路都成立。
+	var military_vm_for_binding = military_workspace.call("view_model") \
+		if military_workspace != null else null
+	if military_vm_for_binding != null:
+		_expect("military view model binds the session world",
+			bool(military_vm_for_binding.call("session_bound")))
+	var diplomacy_button := buttons.get("diplomacy") as Button
+	_expect("diplomacy action is enabled", diplomacy_button != null \
+		and not diplomacy_button.disabled \
+		and not diplomacy_button.tooltip_text.contains("尚未开放"))
+	if diplomacy_button != null:
+		diplomacy_button.pressed.emit()
+		await process_frame
+		await process_frame
+		var diplomacy_workspace := panel.get("_diplomacy_workspace") as Control
+		_expect("country panel mounts the diplomacy workspace",
+			diplomacy_workspace != null and diplomacy_workspace.visible \
+				and panel.current_section() == "diplomacy")
+		var diplomacy_model: Dictionary = panel.get("_model")
+		var diplomacy_section: Dictionary = diplomacy_model.get("diplomacy", {})
+		_expect("diplomacy section is available in a live session",
+			bool(diplomacy_section.get("available", false)))
+		# 地图由 CountryViewModel 显式带进模型（MapGenerator 没有 map getter），
+		# 归属镜像可读才是「接上了世界」的证据。
+		var diplomacy_map = diplomacy_section.get("map")
+		_expect("diplomacy section carries the session world",
+			diplomacy_map != null and diplomacy_map.has_method("cell_count"))
+		if diplomacy_map != null:
+			var owners := CountryMapQuery.owner_map(null, {}, diplomacy_map)
+			_expect("diplomacy reads the territory mirror the borders use",
+				owners.size() > 0
+					and owners.size() == int(diplomacy_map.call("cell_count")))
+		if diplomacy_workspace != null:
+			_expect("diplomacy workspace announces its three chapters",
+				diplomacy_workspace.call("chapter_ids") == PackedStringArray(
+					["overview", "countries", "wars"]))
+			var diplomacy_vm = diplomacy_workspace.call("view_model")
+			_expect("diplomacy view model wraps the session military model",
+				diplomacy_vm != null and diplomacy_vm.call("view_military") != null
+					and bool(diplomacy_vm.call("view_military").call("session_bound")))
+			diplomacy_workspace.call("select_chapter", "wars")
+			_expect("diplomacy chapter navigation switches pages",
+				String(diplomacy_workspace.call("current_chapter")) == "wars")
+			diplomacy_workspace.call("select_chapter", "overview")
+			await _capture_workspace("diplomacy")
 	var navigation: Dictionary = panel.navigation_report()
 	_expect("country dossier has one complete chapter navigation system",
 		int(navigation.get("desktop_count", 0)) == 5
 		and int(navigation.get("mobile_count", 0)) == 5
-		and String(navigation.get("active", "")) == "economy")
+		and String(navigation.get("active", "")) == "diplomacy")
 	_expect("wide country dossier uses the archival bookmark rail",
 		bool(navigation.get("desktop_visible", false))
 		and not bool(navigation.get("mobile_visible", true)))

@@ -93,3 +93,10 @@
 ACTIVE 原生自然增长／完工集成检查通过。另在人工命令探测中观察到
 `economy_legacy_ingress_disabled`：当前原生生产写入边界拒绝旧建造提交入口。
 没有为播放特效绕过此拒绝或重开旧写入通道；只有正式成功的回执才播放开工。
+
+2026-11-04 补记：那个拒绝是**功能面**缺口而不只是特效问题——旧入口关掉后营造命令
+根本到不了经济结算，玩家点「营造」只会拿到拒绝。现已补上正式入口
+`DCWorldExt::queue_treasury_sponsored_build`（GDScript 侧
+`EconomyFacade.treasury_sponsored_build` 优先走它），命令仍在下一个 epoch 结算，
+成功回执才启动活动层动画。细节见 `cpp-dots-runtime/native-economy-runtime.md`
+的 2026-11-04 节。

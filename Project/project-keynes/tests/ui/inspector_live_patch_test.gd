@@ -24,43 +24,24 @@ func _run() -> void:
 	panel.visible = true
 	await process_frame
 
-	# Components may receive their initial model before the caller adds them to the tree.
-	var deferred_picker := (load("res://scenes/ui/construction_picker.tscn") as PackedScene).instantiate() as ConstructionPicker
-	deferred_picker.set_model({
-		"available": false,
-		"message": "测试：尚未拥有该地块。",
-	})
-	root.add_child(deferred_picker)
-	await process_frame
-	if deferred_picker._rows == null \
-			or deferred_picker._status.text != "测试：尚未拥有该地块。" \
-			or not deferred_picker._prev.disabled \
-			or not deferred_picker._next.disabled:
-		failures.append("construction picker lost a model supplied before entering the scene tree")
-	deferred_picker.custom_minimum_size = Vector2(400.0, 240.0)
-	deferred_picker.size = Vector2(400.0, 240.0)
-	deferred_picker.set_model(_construction_scroll_model())
+	# 营造窗口：模型可以先于入树送达，入树后按查询身份画行；按钮可用性即能不能建。
+	var deferred_workspace := (load(
+		"res://scenes/ui/building_workspace.tscn") as PackedScene).instantiate() as BuildingWorkspace
+	deferred_workspace.set_model(_building_workspace_model())
+	root.add_child(deferred_workspace)
 	await process_frame
 	await process_frame
-	var construction_scroll := deferred_picker._rows_scroll.get_v_scroll_bar()
-	if construction_scroll.max_value <= construction_scroll.page:
-		failures.append("construction quote list did not become vertically scrollable")
-	var first_option := deferred_picker._rows.get_child(0) as Button
-	if first_option == null \
-			or String((first_option.get_node(
-				"Margin/Line/Info/MaterialsRow/Materials") as Label).text).contains("国库") \
-			or not String((first_option.get_node(
-				"Margin/Line/Info/MaterialsRow/Materials") as Label).text).contains("单价") \
-			or not String((first_option.get_node(
-				"Margin/Line/Info/RecipeRow/Recipe") as Label).text).contains("产出") \
-			or not String((first_option.get_node(
-				"Margin/Line/Info/JobsRow/Jobs") as Label).text).contains("工匠") \
-			or first_option.find_children("", "IconBadge", true, false).size() < 4:
-		failures.append("construction option did not render the compact icon/material/recipe/job contract")
-	var jobs_label := first_option.get_node(
-		"Margin/Line/Info/JobsRow/Jobs") as Label
-	if jobs_label.get_global_rect().end.y > first_option.get_global_rect().end.y + 0.5:
-		failures.append("construction option content is clipped at the 400px detail width")
+	if deferred_workspace._rows == null or deferred_workspace._rows.get_child_count() != 2:
+		failures.append("building workspace lost a model supplied before entering the tree")
+	else:
+		var blocked_row := deferred_workspace._rows.get_child(1) as BuildingOptionRow
+		if blocked_row == null or not blocked_row._build.disabled \
+				or not blocked_row._meta.text.contains("缺建材"):
+			failures.append("blocked construction row did not read as unbuildable")
+	if deferred_workspace.get_combined_minimum_size().x > 400.0:
+		failures.append("building workspace overflows the 400px detail column")
+	deferred_workspace.queue_free()
+	await process_frame
 
 	var model := _make_model()
 	panel.set_model_for_selection(model)
@@ -432,10 +413,16 @@ func _run() -> void:
 
 	panel.select_tab("buildings")
 	await process_frame
-	var construction_picker := panel._construction_picker as ConstructionPicker
-	if construction_picker == null \
-			or construction_picker._status.text != "测试：尚未拥有该地块。":
-		failures.append("inspector did not initialize construction picker after adding it to the tree")
+	# 建筑页签底部是营造入口纸笺：它只报目录规模，报价留给打开窗口的那次请求。
+	var entry_hint := panel._construction_entry_hint
+	if panel._construction_workspace == null or not is_instance_valid(entry_hint) \
+			or entry_hint.text != "目录 12 项 · 按部门浏览，国库物资优先" \
+			or panel._construction_workspace.visible \
+			or panel.building_workspace_open():
+		failures.append("inspector did not render the construction entry note")
+	var construction_patch: Dictionary = _make_patch("buildings", 0.0)
+	if (construction_patch.get("category", {}) as Dictionary).has("construction"):
+		failures.append("building tab still quotes construction options on every tick")
 	var building_list = panel._building_list
 	var building_count := panel.visible_node_count()
 	for i in range(40):
@@ -588,30 +575,50 @@ func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
 	}
 
 
-func _construction_scroll_model() -> Dictionary:
-	var items := []
-	for i in range(16):
-		items.append({
-			"building_id": "scroll_test_%d" % i,
-			"name": "测试建筑 %02d" % (i + 1),
-			"eligible": true,
-			"cash_required": 10000,
-			"materials": [{
-				"name": "木材", "required": 1000,
-				"treasury": 1000, "market": 0,
-				"unit_price_text": "1.25", "cost_text": "1.25",
-			}],
-			"inputs": [{"name": "原木", "quantity": "0.500 /日"}],
-			"outputs": [{"name": "木板", "quantity": "0.250 /日"}],
-			"jobs": [{"name": "工匠", "slots": 4, "owner": false}],
-			"icon": "economy.building.workshop",
-		})
+func _building_workspace_model() -> Dictionary:
+	var rows := [
+		{
+			"building_id": "weaving", "type_id": 1, "name": "织造工坊",
+			"icon": "economy.building.workshop", "eligible": true, "blocked": false,
+			"reason_code": "ok", "reason_text": "",
+			"materials_text": "木材 2.4 · 石料 1.2", "cash_required": 32000,
+			"cash_text": "3.2", "market_used": 600,
+			"tooltip": "织造工坊\n木材 · 需 2.4 / 国库 1.8 / 市购 0.6",
+		},
+		{
+			"building_id": "forge", "type_id": 2, "name": "锻造工坊",
+			"icon": "economy.building.workshop", "eligible": false, "blocked": true,
+			"reason_code": "construction_materials_insufficient",
+			"reason_text": "缺建材",
+			"materials_text": "木材 2.4 · 石料 1.2", "cash_required": 0,
+			"cash_text": "0", "market_used": 0,
+			"tooltip": "锻造工坊\n不满足：缺建材",
+		},
+	]
 	return {
-		"available": true,
-		"items": items,
-		"total": items.size(),
-		"offset": 0,
-		"limit": 32,
+		"available": true, "message": "", "data_pending": false,
+		"cell": 12, "sector": "manufacturing", "search": "", "sort": "recommended",
+		"offset": 0, "limit": 16,
+		"total": rows.size(), "sector_total": rows.size(),
+		"header": {"kicker": "营造目录", "title": "新建建筑",
+			"subtitle": "低地 · 平原 · 国库出资，缺料市购"},
+		"sectors": [
+			{"id": "manufacturing", "label": "制造", "count": 2,
+				"icon": "economy.building.factory", "question": "制造 · 2 项可营造",
+				"selected": true},
+		],
+		"sorts": [
+			{"id": "recommended", "label": "推荐", "selected": true,
+				"tooltip": "可建优先，再按估算毛利/日从高到低"},
+			{"id": "cost", "label": "造价", "selected": false,
+				"tooltip": "可建优先，再按现金支出从低到高"},
+			{"id": "newest", "label": "最新", "selected": false,
+				"tooltip": "可建优先，再按生产成熟度从新到旧"},
+		],
+		"items": rows,
+		"page_label": "1–2 / 2",
+		"query": {"sector": "manufacturing", "search": "", "sort": "recommended",
+			"offset": 0},
 	}
 
 
@@ -768,13 +775,12 @@ func _demand_groups(step: float) -> Array:
 
 func _building_category(step: float) -> Dictionary:
 	return {
-		"construction": {
-			"available": false,
-			"message": "测试：尚未拥有该地块。",
-			"items": [],
-			"total": 0,
-			"offset": 0,
-			"limit": 32,
+		"construction_entry": {
+			"available": true,
+			"message": "",
+			"title": "营造新建筑",
+			"hint": "目录 12 项 · 按部门浏览，国库物资优先",
+			"count": 12,
 		},
 		"building_rows": [{
 			"id": "building_1", "name": "纺织工坊", "count": "2 栋",

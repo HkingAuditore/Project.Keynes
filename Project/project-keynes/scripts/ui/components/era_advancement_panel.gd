@@ -42,9 +42,13 @@ const COND_GAP := 6.0
 const COST_HEAD_Y := 276.0
 const COST_TOP := 286.0
 const COST_H := 38.0
-const BUDGET_Y := 390.0
+# 零预算提示独占一行，夹在物资小签与「晋升后获得」之间；有预算时这一行不存在。
+const BUDGET_TOP := 330.0
+const BUDGET_H := 22.0
+const BUDGET_GAP := 16.0
+# 右栏内容的最小下沿：加成条数很少时纸笺不塌缩。
+const CONTENT_FLOOR := 398.0
 const BUFF_HEAD_Y := 340.0
-const BUFF_TOP_Y := 440.0
 const BUFF_LINE := 19.0
 const BUFF_MAX_ROWS := 5
 # 操作行：笺线分隔，按钮与纸笺撕边之间留 BOTTOM_CLEAR。
@@ -332,9 +336,13 @@ func _compute_rows() -> Dictionary:
 	var buffs: PackedStringArray = _model.get("buffs", PackedStringArray())
 	var status := String(_model.get("status", ""))
 	var buff_rows := _buff_rows(buffs.size())
-	var content_end := BUDGET_Y + 8.0
+	var buff_head := _buff_head_y()
+	var content_end := CONTENT_FLOOR
+	if _budget_row():
+		content_end = maxf(content_end, BUDGET_TOP + BUDGET_H)
 	if buff_rows > 0:
-		content_end = BUFF_HEAD_Y + 22.0 + float(buff_rows - 1) * BUFF_LINE + 6.0
+		content_end = maxf(content_end,
+			buff_head + 22.0 + float(buff_rows - 1) * BUFF_LINE + 6.0)
 	if status == "max" or not bool(_model.get("ok", false)):
 		content_end = maxf(content_end, COST_HEAD_Y - 40.0 + 22.0 + float(buff_rows) * BUFF_LINE)
 	# 左栏：指标两行一格，问题纸贴紧跟其后，笺线取两栏较高者。
@@ -361,8 +369,23 @@ func _buff_rows(count: int) -> int:
 	return int(ceil(float(count) / float(columns)))
 
 
+## 零预算提示这一行只在该提示可见时存在。
+func _budget_row() -> bool:
+	return _treasury_link != null and _treasury_link.visible
+
+
+## 「晋升后获得」标题基线：预算行出现时整体下移，两者不共用基线。
+func _buff_head_y() -> float:
+	return BUDGET_TOP + BUDGET_H + BUDGET_GAP if _budget_row() else BUFF_HEAD_Y
+
+
 func sheet_height() -> float:
 	return float(_rows.get("height", 0.0))
+
+
+## 「晋升后获得」标题基线（零预算提示出现时为它让出空间），供回归测试核对不叠字。
+func buff_head_y() -> float:
+	return _buff_head_y()
 
 
 ## 文字左右界比纸笺矩形再内收 TEXT_INSET，撕边最深处也留 ≥16px。
@@ -397,8 +420,9 @@ func _place_buttons(width: float) -> void:
 	var link_font := _treasury_link.get_theme_font("font")
 	var link_w := link_font.get_string_size(_treasury_link.text, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
 		_treasury_link.get_theme_font_size("font_size")).x + 8.0 if link_font != null else rw
-	_treasury_link.position = Vector2(rx - 4.0, BUDGET_Y - 17.0)
-	_treasury_link.size = Vector2(minf(link_w, rw), 24.0)
+	# 预算行独占一格：右对齐在右栏右端，位于物资小签与「晋升后获得」之间。
+	_treasury_link.position = Vector2(rx + rw - minf(link_w, rw), BUDGET_TOP)
+	_treasury_link.size = Vector2(minf(link_w, rw), BUDGET_H)
 	var font := _action.get_theme_font("font")
 	var font_size := _action.get_theme_font_size("font_size")
 	var text_w := font.get_string_size(_action.text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x \
@@ -560,7 +584,8 @@ func _draw_canvas() -> void:
 	_draw_advancement(rx, rw)
 	if _treasury_link.visible and _treasury_link.is_hovered():
 		var r := _treasury_link.get_rect()
-		_canvas.draw_line(Vector2(r.position.x + 4.0, BUDGET_Y + 3.0), Vector2(r.end.x - 4.0, BUDGET_Y + 3.0),
+		var underline_y := r.end.y - 3.0
+		_canvas.draw_line(Vector2(r.position.x + 4.0, underline_y), Vector2(r.end.x - 4.0, underline_y),
 			Color(UITokens.DOSSIER_BRASS, 0.8), 1.0)
 
 
@@ -674,7 +699,7 @@ func _draw_advancement(x: float, w: float) -> void:
 	_draw_band(x, w, status)
 	_draw_conditions(x, w)
 	_draw_costs(x, w)
-	_draw_buffs(x, w, BUFF_HEAD_Y, "晋升后获得")
+	_draw_buffs(x, w, _buff_head_y(), "晋升后获得")
 	var rule_y: float = _rows.rule_y
 	_canvas.draw_line(Vector2(x, rule_y), Vector2(x + w, rule_y), Color(UITokens.DOSSIER_RULE, 0.75), 1.0)
 	var hint := action_hint()

@@ -24,6 +24,7 @@ func _run() -> void:
 			or not is_equal_approx(float(closed.get("panel_width", 0.0)), 460.0):
 		failures.append("closed Inspector did not keep its 460px dossier width")
 	await _check_scene_geometry(failures)
+	await _check_military_row_cost(failures)
 	if failures.is_empty():
 		print("[inspector-responsive-layout] PASS")
 		quit(0)
@@ -208,3 +209,62 @@ func _family_detail_payload() -> Dictionary:
 			}],
 		},
 	}
+
+
+## 地块档案列在宽屏下恒为 424 px。军事页的建筑行右侧同时有主键（建造/升级/再建）
+## 和运行时才显形的拆除键，左下还有成本段；三者挤在一起时最容易出现「文字钻到键
+## 底下」或「键被推出容器」。这里直接量绘制的实际占位，而不是只看按钮矩形。
+func _check_military_row_cost(failures: PackedStringArray) -> void:
+	var row_script: GDScript = load(
+		"res://scripts/ui/components/military/military_building_row.gd") as GDScript
+	var root := Control.new()
+	root.size = Vector2(424.0, 200.0)
+	root.theme = load("res://assets/themes/player_session_theme.tres") as Theme
+	get_root().add_child(root)
+	var row = row_script.new()
+	row.size = Vector2(424.0, 46.0)
+	root.add_child(row)
+	await process_frame
+	# 一份最坏情况的模型：长建筑名 + 三项建材 + 可拆除，把宽度同时压满。
+	row.set_data({
+		"name": "戍边营垒",
+		"count": 2,
+		"icon": "military.building.barracks",
+		"effect": "+50 兵额",
+		"materials_text": "木材 30 · 石料 12 等 3 项",
+		"cost_days_text": "18 日",
+		"cost_cash_text": "1.2 万钱",
+		"cost_reason": "",
+		"primary_action": "rebuild",
+		"action_label": "再建",
+		"can_demolish": true,
+		"demolish_target": 1,
+		"tooltip": "戍边营垒",
+	})
+	await process_frame
+	var room: float = row.text_room()
+	if room < 120.0:
+		failures.append(
+			"military row left only %.0fpx for name/effect/cost at 424px width" % room)
+	var primary: Button = row.action_button()
+	var demolish: Button = row.demolish_button()
+	if primary.position.x + primary.size.x > row.size.x + 1.0:
+		failures.append("military primary chip escaped the 424px row")
+	if demolish.position.x + demolish.size.x > primary.position.x + 0.5:
+		failures.append("military demolish chip is not clear of the primary chip")
+	# 拆除键的右边界必须落在文本区之外：文本按 `text_room()` 排版，
+	# 两者重叠就说明成本段会被按住的按钮压掉。
+	var text_right := 24.0 + 8.0 + room
+	if text_right > demolish.position.x + 0.5:
+		failures.append(
+			"military cost text (%.0fpx) runs under the demolish chip (%.0fpx)" % [
+				text_right, demolish.position.x])
+	# 悬停前后文本区不能变：变了就说明成本段会随鼠标跳动。
+	var room_before := room
+	row.mouse_entered.emit()
+	await process_frame
+	if not is_equal_approx(row.text_room(), room_before):
+		failures.append("military row text room shifted on hover: %.0f -> %.0f" % [
+			room_before, row.text_room()])
+	root.queue_free()
+	await process_frame

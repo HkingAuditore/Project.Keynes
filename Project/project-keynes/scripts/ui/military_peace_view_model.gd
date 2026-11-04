@@ -210,25 +210,31 @@ func _enemy_owned(enemy_slot: int) -> int:
 
 
 func _owner_array() -> PackedInt32Array:
+	return CountryMapQuery.owner_map(_generator_of(), _model, _map_of())
+
+
+## 会话 generator：模型顶层优先，其次军事段（军务档案上下文把 generator 放在段里）。
+func _generator_of():
 	var generator = _model.get("generator", null)
-	if generator == null:
-		var section = _model.get("military", null)
-		if section is Dictionary:
-			generator = (section as Dictionary).get("generator", null)
-	if generator != null and generator.has_method("get_data_core_world_ext"):
-		var ext = generator.call("get_data_core_world_ext")
-		if ext != null and ext.has_method("get_country_cell_snapshot"):
-			var owners = ext.call("get_country_cell_snapshot")
-			if owners is PackedInt32Array:
-				return owners
-	var stand_in = {}
+	if generator != null:
+		return generator
 	var military = _model.get("military", null)
 	if military is Dictionary:
-		var cell_owners = (military as Dictionary).get("cell_owners", null)
-		if cell_owners is Dictionary:
-			stand_in = cell_owners
-	var rows = stand_in.get("owners", PackedInt32Array())
-	return rows if rows is PackedInt32Array else PackedInt32Array()
+		return (military as Dictionary).get("generator", null)
+	return null
+
+
+## 会话地图：模型顶层优先，其次军事段，最后退回 fixture 的 `current_map()`。
+func _map_of():
+	var map = _model.get("map", null)
+	if map != null:
+		return map
+	var military = _model.get("military", null)
+	if military is Dictionary:
+		var section_map = (military as Dictionary).get("map", null)
+		if section_map != null:
+			return section_map
+	return CountryMapQuery.map_of(_generator_of())
 
 
 # ── situation / evaluation ───────────────────────────────────────────────

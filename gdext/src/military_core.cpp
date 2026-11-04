@@ -414,6 +414,24 @@ void normalize_digest(const MilitaryTerrainInput &t, MilitaryWorldDigest &d) {
     if (d.stat_count < 0) d.stat_count = 0;
     grow_zero(d.country_unlock_bits, cap * (size_t)d.unlock_words);
     grow_zero(d.country_stat_q16, cap * (size_t)d.stat_count);
+    // State building lanes are sparse, so they are only truncated to the
+    // shortest of the four (a producer that died mid-write must not leave a cell
+    // row without its unit count) instead of being resized to the cell count.
+    if (d.state_lane_rows < 0) d.state_lane_rows = 0;
+    size_t state_rows = (size_t)d.state_lane_rows;
+    state_rows = std::min(state_rows, d.state_cell.size());
+    state_rows = std::min(state_rows, d.state_type_id.size());
+    state_rows = std::min(state_rows, d.state_state_role.size());
+    state_rows = std::min(state_rows, d.state_units.size());
+    d.state_lane_rows = (int32_t)state_rows;
+    d.state_cell.resize(state_rows);
+    d.state_type_id.resize(state_rows);
+    d.state_state_role.resize(state_rows);
+    d.state_units.resize(state_rows);
+    // A payload with rows but no "the ledger answered" flag is a producer bug;
+    // trusting it would zero the cache. Treat rows as proof of presence so the
+    // lanes are never silently ignored, which is the safer of the two failures.
+    if (state_rows > 0) d.state_lanes_present = true;
 }
 
 } // namespace
@@ -1137,6 +1155,160 @@ MilitaryCellState *MilitaryCore::cell_state(int32_t cell, bool create) {
     _cell_states.insert(it, st);
     for (size_t i = (size_t)idx; i < _cell_states.size(); ++i) _cell_state_index[(size_t)_cell_states[i].cell] = (int32_t)i;
     return &_cell_states[(size_t)idx];
+}
+
+// Kept next to `cell_state` because it is the only other writer of the cache
+// fields: everything else in this TU only reads them.
+void MilitaryCore::refresh_state_building_cache(const MilitaryWorldDigest &digest) {
+    // No lane at all means the producer predates this contract; the cache the
+    // save restored is the only truth available, so leave it untouched.
+    if (!digest.state_lanes_present) return;
+    const size_t rows = std::min((size_t)std::max(0, digest.state_lane_rows),
+        std::min(digest.state_cell.size(),
+            std::min(digest.state_type_id.size(),
+                std::min(digest.state_state_role.size(), digest.state_units.size()))));
+    // Resolve each ledger row through the military catalog: `state_role` in the
+    // digest is the economy's copy and is only used to detect drift, while the
+    // military catalog stays the authority on what tier a lot represents.
+    struct LedgerRow {
+        int32_t cell;
+        int32_t role;
+        int32_t tier;
+        int64_t units;
+    };
+    static thread_local std::vector<LedgerRow> parsed;
+    parsed.clear();
+    parsed.reserve(rows);
+    for (size_t i = 0; i < rows; ++i) {
+        const int32_t cell = digest.state_cell[i];
+        const int32_t type_id = digest.state_type_id[i];
+        const int64_t units = digest.state_units[i];
+        if (cell < 0 || cell >= _terrain.cell_count || units <= 0) continue;
+        int32_t role = -1;
+        int32_t tier = -1;
+        for (const MilitaryStateBuilding &b : _catalog.state_buildings) {
+            if (b.economy_building_id != type_id) continue;
+            role = (int32_t)b.role;
+            tier = (int32_t)b.tier;
+            break;
+        }
+        if (role < 0) {
+            // A kind-3 lot with no military profile cannot contribute posts,
+            // fort bonus or training speed. Report it instead of guessing a tier.
+            ++_report.state_ledger_unmapped;
+            continue;
+        }
+        if (digest.state_state_role[i] != role + 1) ++_report.state_role_mismatch;
+        parsed.push_back({cell, role, tier, units});
+    }
+    // The producer reports rows sorted by (cell, type) and this function relies
+    // on cell order twice, so the sort is enforced here rather than assumed:
+    // a producer that ever changes its ordering would otherwise silently make
+    // the divergence probe compare the wrong cells.
+    std::stable_sort(parsed.begin(), parsed.end(),
+        [](const LedgerRow &a, const LedgerRow &b) {
+            if (a.cell != b.cell) return a.cell < b.cell;
+            if (a.role != b.role) return a.role < b.role;
+            return a.tier < b.tier;
+        });
+    // Divergence probe (requirement 6.4). The cache on entry is exactly what
+    // yesterday's rebuild wrote, unless something else in this TU touched it -
+    // which is the bug this counter exists to surface. "Yesterday's rebuild" is
+    // reconstructible from `_state_ledger_prev`, so a legitimate arrival or
+    // demolition (the ledger itself changed) is not mistaken for a stale cache.
+    if (_state_ledger_prev_valid) {
+        struct CachedCell {
+            int32_t cell;
+            int32_t barracks[MILITARY_STATE_BARRACKS_TIERS];
+            int32_t fort;
+            int32_t college;
+        };
+        static thread_local std::vector<CachedCell> expected;
+        expected.clear();
+        for (size_t i = 0; i < _state_ledger_prev.size();) {
+            const int32_t cell = _state_ledger_prev[i].cell;
+            CachedCell row;
+            row.cell = cell;
+            std::fill(row.barracks, row.barracks + MILITARY_STATE_BARRACKS_TIERS, 0);
+            row.fort = -1;
+            row.college = -1;
+            while (i < _state_ledger_prev.size() && _state_ledger_prev[i].cell == cell) {
+                const StateLedgerRow &prev = _state_ledger_prev[i];
+                if (prev.role == (int32_t)MILITARY_STATE_BARRACKS) {
+                    const int32_t tier = clamp32(prev.tier, 0, MILITARY_STATE_BARRACKS_TIERS - 1);
+                    row.barracks[tier] += prev.units;
+                } else if (prev.role == (int32_t)MILITARY_STATE_FORTIFICATION) {
+                    row.fort = std::max<int32_t>(row.fort, prev.tier);
+                } else {
+                    row.college = std::max<int32_t>(row.college, prev.tier);
+                }
+                ++i;
+            }
+            expected.push_back(row);
+        }
+        // Both sides are sorted by cell, so one merge walk answers every cell.
+        size_t cursor = 0;
+        for (const MilitaryCellState &st : _cell_states) {
+            while (cursor < expected.size() && expected[cursor].cell < st.cell) {
+                // A cell the ledger believed in that no longer has a row: its
+                // cache watched a building disappear without the ledger saying
+                // so. The rebuild below creates the row again, so only the
+                // mismatch is counted.
+                for (int32_t t = 0; t < MILITARY_STATE_BARRACKS_TIERS; ++t) {
+                    if (expected[cursor].barracks[t] != 0) { ++_report.state_cache_repairs; break; }
+                }
+                ++cursor;
+            }
+            bool same = true;
+            if (cursor < expected.size() && expected[cursor].cell == st.cell) {
+                const CachedCell &want = expected[cursor];
+                same = want.fort == st.fort_tier && want.college == st.college_tier;
+                for (int32_t t = 0; t < MILITARY_STATE_BARRACKS_TIERS && same; ++t) {
+                    if (want.barracks[t] != st.barracks_count[t]) same = false;
+                }
+                ++cursor;
+            } else {
+                // No ledger row yesterday: the cache must be empty too.
+                same = st.fort_tier < 0 && st.college_tier < 0;
+                for (int32_t t = 0; t < MILITARY_STATE_BARRACKS_TIERS && same; ++t) {
+                    if (st.barracks_count[t] != 0) same = false;
+                }
+            }
+            if (!same) ++_report.state_cache_repairs;
+        }
+    }
+    // Clear: a cell whose lots were all demolished must read as "no building",
+    // and the ledger rows below are the only thing that may put one back.
+    for (MilitaryCellState &st : _cell_states) {
+        std::fill(st.barracks_count, st.barracks_count + MILITARY_STATE_BARRACKS_TIERS, 0);
+        st.fort_tier = -1;
+        st.college_tier = -1;
+    }
+    for (const LedgerRow &row : parsed) {
+        MilitaryCellState *st = cell_state(row.cell, true);
+        if (st == nullptr) continue;
+        if (row.role == (int32_t)MILITARY_STATE_BARRACKS) {
+            const int32_t tier = clamp32(row.tier, 0, MILITARY_STATE_BARRACKS_TIERS - 1);
+            st->barracks_count[tier] += (int32_t)row.units;
+        } else if (row.role == (int32_t)MILITARY_STATE_FORTIFICATION) {
+            st->fort_tier = std::max<int32_t>(st->fort_tier, row.tier);
+        } else {
+            st->college_tier = std::max<int32_t>(st->college_tier, row.tier);
+        }
+    }
+    // Remember what this rebuild produced, sorted by cell, so tomorrow can tell
+    // a stale cache apart from a changed ledger.
+    _state_ledger_prev.clear();
+    _state_ledger_prev.reserve(parsed.size());
+    for (const LedgerRow &row : parsed) {
+        StateLedgerRow out;
+        out.cell = row.cell;
+        out.role = row.role;
+        out.tier = row.tier;
+        out.units = (int32_t)row.units;
+        _state_ledger_prev.push_back(out);
+    }
+    _state_ledger_prev_valid = true;
 }
 
 // ============================================================== army cache
@@ -2271,7 +2443,29 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
         // before, the army rows then take what is left; the combined `planned`
         // feeds the same pay-ratio statistics (contract §2.3: army and garrison
         // each count into the same ratio).
-        int64_t budget = std::max<int64_t>(0, cash);
+        //
+        // Budget envelope (任务 7 / 需求 5.2, 7.1): 军饷 is a high-priority
+        // channel, so its share is a PLANNING TARGET, not a hard cap - a country
+        // whose soldiers must be paid is allowed to overspend here, and the
+        // excess is reported so the panel can paint it rust red. Cash therefore
+        // stays the only hard limit; what the envelope changes is that the
+        // settlement now knows, and says, how far past its share it went.
+        const MilitaryBudgetSplit split = budget_split(s, cash);
+        // Procurement settled earlier in this same `step_day` (lap 11 before lap
+        // 16) and already charged the treasury, so its spend is no longer
+        // available to the wage and upkeep channels. Without this the two would
+        // both treat the full balance as theirs: with a 400,000 envelope the
+        // army could be paid 400,000 AND buy 400,000 of goods out of the same
+        // 2,000,000 - the emitted rows claim more cash than exists.
+        //
+        // Only metered countries are affected. Without an envelope
+        // `procurement_budget_used` stays 0 by contract (需求 5.5: the legacy
+        // cash-driven path is untouched), so AI countries settle exactly as
+        // before.
+        const int64_t committed = split.enabled
+                                      ? std::max<int64_t>(0, p.procurement_budget_used)
+                                      : 0;
+        int64_t budget = std::max<int64_t>(0, cash - committed);
         int64_t planned = 0;
         for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
             const int64_t amount = per_cell[(size_t)cell];
@@ -2309,9 +2503,34 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
         p.pay_ratio_30_q16 = demanded > 0
                                  ? (int32_t)clamp64(mul_div(planned, MILITARY_Q16, demanded), 0, MILITARY_Q16)
                                  : MILITARY_Q16;
+        // 需求 5.2 + 7.1, resolved the only way both can hold at once: the wage
+        // ceiling is a PLANNING TARGET, cash is the HARD limit. So
+        //   planned   = min(demand, cash)      -> what actually went out
+        //   overspend = paid past the ceiling  -> allowed (军饷 is high priority)
+        //   arrears   = demand  - planned      -> nobody could fund it
+        // The three are stored per country on the policy row, not in the report:
+        // the report is one global struct, so a shared counter would add every
+        // country's bill together and the panel would show a foreign AI's numbers.
+        // With no envelope they all stay 0 and the legacy path is untouched.
+        p.wage_demand = 0;
+        p.wage_arrears = 0;
+        p.wage_overspend = 0;
+        if (split.enabled) {
+            p.wage_demand = demanded;
+            if (planned > split.wage_ceiling)
+                p.wage_overspend = planned - split.wage_ceiling;
+            if (demanded > planned) p.wage_arrears = demanded - planned;
+        }
         // 30-day rolling spend (integer EWMA, deterministic).
         p.spend_payroll_30 = p.spend_payroll_30 - p.spend_payroll_30 / 30 + planned;
 
+        // The upkeep bill settles every `kUpkeepPeriod` days, so on the days in
+        // between there is nothing to report. Clearing here (before the early
+        // `continue`) is what keeps the panel from showing a stale shortfall for
+        // up to four days after the bill was already paid.
+        p.upkeep_demand = 0;
+        p.upkeep_arrears = 0;
+        p.upkeep_overspend = 0;
         if (!upkeep_day) continue;
         int64_t upkeep = 0;
         for (const MilitaryCellState &st : _cell_states) {
@@ -2338,17 +2557,50 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
             }
         }
         if (upkeep > 0) {
-            const int64_t afford = std::min(upkeep, std::max<int64_t>(0, cash - planned));
+            const int64_t afford = std::min(upkeep,
+                                            std::max<int64_t>(0, cash - committed - planned));
             MilitaryIntent in;
             in.kind = MILITARY_INTENT_SPEND_CASH;
             in.country_a = handle;
             in.amount = afford;
             out.push_back(in);
             p.spend_upkeep_30 = p.spend_upkeep_30 - p.spend_upkeep_30 / 6 + afford;
+            // Same three numbers as the wage channel (需求 5.3, 7.1), same reason
+            // for storing them per country. `upkeep` is the bill for
+            // kUpkeepPeriod days and `upkeep_ceiling` is valued PER DAY, so the
+            // ceiling has to be scaled by the period before comparing - otherwise
+            // a 5-day bill looks 5x over its one-day share.
+            if (split.enabled) {
+                const int64_t ceiling = split.upkeep_ceiling * kUpkeepPeriod;
+                p.upkeep_demand = upkeep;
+                if (afford > ceiling) p.upkeep_overspend = afford - ceiling;
+                if (upkeep > afford) p.upkeep_arrears = upkeep - afford;
+            }
             const uint8_t poor = (afford * 2 < upkeep) ? 1 : 0;
-            for (MilitaryCellState &st : _cell_states) st.disrepair = poor;
+            // The bill above is per country, so the flag that records it must be
+            // per country too. Writing every cell state here stamped one
+            // country's arrears onto every other country's cells (and onto cells
+            // with no state building at all, which then reported `disrepair` in
+            // the inspector and moved `state_hash`); the `else` arm was worse, as
+            // the last poor-free country wiped everybody else's flag. Only cells
+            // this country owns may carry its verdict.
+            for (MilitaryCellState &st : _cell_states) {
+                if (st.cell < 0 || st.cell >= _terrain.cell_count) continue;
+                if ((size_t)st.cell >= digest.cell_owner_slot.size()) continue;
+                if (digest.cell_owner_slot[(size_t)st.cell] != s) continue;
+                st.disrepair = poor;
+            }
         } else {
-            for (MilitaryCellState &st : _cell_states) st.disrepair = 0;
+            // No upkeep bill means this country has no state building that could
+            // fall into disrepair, so its own cells are cleared. `else` fires for
+            // every country in turn; clearing the whole map here would erase the
+            // flag of whichever neighbour was processed before it.
+            for (MilitaryCellState &st : _cell_states) {
+                if (st.cell < 0 || st.cell >= _terrain.cell_count) continue;
+                if ((size_t)st.cell >= digest.cell_owner_slot.size()) continue;
+                if (digest.cell_owner_slot[(size_t)st.cell] != s) continue;
+                st.disrepair = 0;
+            }
         }
     }
 }
@@ -2668,6 +2920,39 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
                 return false;
             }
             break;
+        case MCMD_POLICY_SET_BUDGET: {
+            if (!need_country()) return false;
+            if (command.value < -1 || command.value > 10000) {
+                error = "command_bad_budget_share";
+                return false;
+            }
+            if (command.ints.size() > 3) {
+                error = "command_bad_budget_channels";
+                return false;
+            }
+            for (const int32_t bp : command.ints) {
+                if (bp < -1 || bp > 10000) {
+                    error = "command_bad_budget_channel_share";
+                    return false;
+                }
+            }
+            // 三项之和必须 <= 100%：未传的通道沿用当前值，这样 UI 只推一项时
+            // 校验的仍然是玩家最终会看到的那个组合，而不是一份残缺的配置。
+            const int32_t slot_now = country_slot_for_handle(command.country);
+            const MilitaryCountryPolicy &now = _policies[(size_t)slot_now];
+            const int32_t wage = command.ints.size() >= 1 && command.ints[0] >= 0
+                                     ? command.ints[0] : now.budget_wage_bp;
+            const int32_t upkeep = command.ints.size() >= 2 && command.ints[1] >= 0
+                                       ? command.ints[1] : now.budget_upkeep_bp;
+            const int32_t procurement =
+                command.ints.size() >= 3 && command.ints[2] >= 0
+                    ? command.ints[2] : now.procurement_share_bp;
+            if (static_cast<int64_t>(wage) + upkeep + procurement > 10000) {
+                error = "command_budget_channels_exceed_10000";
+                return false;
+            }
+            break;
+        }
         case MCMD_ARMY_CREATE: {
             if (!need_country()) return false;
             if (!need_cell(command.cell)) return false;
@@ -2858,6 +3143,19 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         case MCMD_POLICY_SET_PROCUREMENT:
             policy.procurement_share_bp = (int32_t)cmd.value;
             return;
+        case MCMD_POLICY_SET_BUDGET: {
+            // -1 表示「本次不改」，让 UI 只推变化的那一项；其余按传入值落库。
+            // 采购占比走 ints[2] 而不是复用 value，因为 value 已经是总份额。
+            if (cmd.value >= 0)
+                policy.budget_share_bp = (int32_t)std::min<int64_t>(cmd.value, 10000);
+            if (cmd.ints.size() >= 1 && cmd.ints[0] >= 0)
+                policy.budget_wage_bp = std::min(cmd.ints[0], 10000);
+            if (cmd.ints.size() >= 2 && cmd.ints[1] >= 0)
+                policy.budget_upkeep_bp = std::min(cmd.ints[1], 10000);
+            if (cmd.ints.size() >= 3 && cmd.ints[2] >= 0)
+                policy.procurement_share_bp = std::min(cmd.ints[2], 10000);
+            return;
+        }
         case MCMD_BARRACKS_PAUSE:
             if (MilitaryCellState *st = cell_state(cmd.cell, cmd.count != 0)) st->paused = cmd.count != 0 ? 1 : 0;
             return;
@@ -2905,9 +3203,17 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             const MilitaryStateBuilding &b = _catalog.state_buildings[(size_t)cmd.unit_to];
             MilitaryCellState *st = cell_state(cmd.cell, true);
             if (!st) return;
-            // v1: cash-only. Country's TREASURY_SPONSORED_BUILD handles the real
-            // construction; Military records the completion day for its own
-            // barracks/fort/college bookkeeping and pays a material estimate.
+            // Bookkeeping only. `state.build` is no longer a settlement: the
+            // caller issues `COMMAND_TREASURY_SPONSORED_BUILD` first and only
+            // forwards this command once the economy accepted it, so the real
+            // bill (treasury goods, then market gap in cash, booked as
+            // NON_TAX_CONSTRUCTION) exists exactly once. The old cash-only
+            // material estimate charged a second, invented amount on top.
+            //
+            // `construction_done_day` is a cache of the economy's schedule:
+            // the authoritative completion is the economy building group's
+            // pending-construction row, which also applies the country
+            // construction time factor this local sum cannot see.
             const int64_t done_day = day + std::max(1, b.build_days);
             int32_t slot = -1;
             for (int32_t k = 0; k < 3; ++k) {
@@ -2919,31 +3225,21 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             if (slot < 0) slot = 0;
             st->construction_building[slot] = cmd.unit_to;
             st->construction_done_day[slot] = done_day;
-            int64_t material_value = 0;
-            for (size_t m = 0; m < b.material_qty.size(); ++m) {
-                // v1 simplification (documented): without market prices in the
-                // command path, materials are valued at MILITARY_MONEY_SCALE per
-                // whole good unit (1 money). Economy's TREASURY_SPONSORED_BUILD
-                // performs the real material/cash settlement; this SPEND_CASH
-                // intent only keeps the Military fiscal lane informed.
-                material_value += mul_div(b.material_qty[m], MILITARY_MONEY_SCALE, MILITARY_GOODS_SCALE);
-            }
-            pending_spend.push_back({cmd.country, material_value});
             return;
         }
         case MCMD_STATE_DEMOLISH: {
-            MilitaryCellState *st = cell_state(cmd.cell, false);
-            if (!st) return;
-            if (cmd.unit_to < 0 || (size_t)cmd.unit_to >= _catalog.state_buildings.size()) return;
-            const MilitaryStateBuilding &b = _catalog.state_buildings[(size_t)cmd.unit_to];
-            if (b.role == (uint8_t)MILITARY_STATE_BARRACKS) {
-                const int32_t tier = clamp32((int32_t)b.tier, 0, 7);
-                if (st->barracks_count[tier] > 0) --st->barracks_count[tier];
-            } else if (b.role == (uint8_t)MILITARY_STATE_FORTIFICATION) {
-                if (st->fort_tier == b.tier) st->fort_tier = -1;
-            } else {
-                if (st->college_tier == b.tier) st->college_tier = -1;
-            }
+            // Deliberately a no-op on the cache. The removal already happened in
+            // the economy ledger - the bridge only forwards this command after
+            // `queue_treasury_sponsored_demolish` accepted it (requirement 6.5) -
+            // and the next `refresh_state_building_cache` reads the smaller
+            // group back. Decrementing here as well would take the building down
+            // twice: once in the ledger, once in the cache, and every demolition
+            // would then look like a stale cache to the repair probe.
+            //
+            // The opcode is kept because the bridge still echoes an accepted
+            // removal through the ordinary command lane, and removing it would
+            // renumber the wire format.
+            (void)cmd;
             return;
         }
         case MCMD_ARMY_CREATE: {
@@ -3265,9 +3561,13 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
 
     const size_t intents_before = intents.size();
     _attrition_intents.clear();
-    pending_spend.clear();
     // Mirror the committed view for cold queries and the AI agenda.
     _last_digest = view;
+    // The state building cache is a derived read of the economy ledger, so it
+    // is rebuilt before anything downstream (posts, upkeep, training speed,
+    // fortification strength, the AI's barracks planner) consults it
+    // (requirement 6.1-6.4).
+    refresh_state_building_cache(view);
     _country_annual_revenue.assign(view.country_annual_revenue.begin(), view.country_annual_revenue.end());
     _country_era.assign(view.country_era.begin(), view.country_era.end());
     _cell_owner_dirty.assign((size_t)view.cell_owner_slot.size(), 0);
@@ -3282,10 +3582,12 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
     apply_due_commands(day);    for (MilitaryCellState &st : _cell_states) for (int32_t k = 0; k < 3; ++k) {   // A3: finish state builds
         const int32_t b = st.construction_building[k];
         if (b < 0 || st.construction_done_day[k] > day || (size_t)b >= _catalog.state_buildings.size()) continue;
-        const MilitaryStateBuilding &sb = _catalog.state_buildings[(size_t)b];
-        if (sb.role == (uint8_t)MILITARY_STATE_BARRACKS) ++st.barracks_count[clamp32(sb.tier, 0, 7)];
-        else if (sb.role == (uint8_t)MILITARY_STATE_FORTIFICATION) st.fort_tier = std::max<int32_t>(st.fort_tier, sb.tier);
-        else st.college_tier = std::max<int32_t>(st.college_tier, sb.tier);
+        // No cache increment: the economy ledger owns the count (requirement
+        // 6.1/6.5) and the next `refresh_state_building_cache` reads the
+        // finished lot back. This pass only expires the local schedule slot,
+        // which is a cache of the economy's completion day - the economy also
+        // applies the country construction time factor this local sum cannot
+        // see, so booking anything here would double count.
         st.construction_building[k] = -1; st.construction_done_day[k] = -1;
     }
     reconcile_receipts(receipts);
@@ -3314,18 +3616,20 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
     // Soldier losses from harsh-environment attrition drain into the batch.
     for (const MilitaryIntent &row : _attrition_intents) intents.push_back(row);
     _attrition_intents.clear();
-    // Cash for state buildings commanded today (materials estimate, see
-    // MCMD_STATE_BUILD).
-    for (const auto &row : pending_spend) {
-        if (row.second <= 0) continue;
-        MilitaryIntent in;
-        in.kind = MILITARY_INTENT_SPEND_CASH;
-        in.country_a = row.first;
-        in.amount = row.second;
-        in.source_id = 0x5354415445ull;   // state building material estimate
-        intents.push_back(in);
+    // State building requests become economy construction orders in the bridge.
+    // `MCMD_STATE_BUILD` no longer settles anything itself, so a request that
+    // the treasury cannot pay for simply never turns into a lot.
+    for (const StateBuildRequest &request : _build_requests) {
+        if (request.country == 0 || request.cell < 0 || request.building < 0) continue;
+        MilitaryIntent intent;
+        intent.kind = MILITARY_INTENT_STATE_BUILD;
+        intent.cell = request.cell;
+        intent.country_a = request.country;
+        intent.count = request.building;
+        intent.source_id = 0x5354415445ull;   // "STATE"
+        intents.push_back(intent);
     }
-    pending_spend.clear();
+    _build_requests.clear();
     run_area_missions(view);
     lap(8);
     run_engagements(view, intents);

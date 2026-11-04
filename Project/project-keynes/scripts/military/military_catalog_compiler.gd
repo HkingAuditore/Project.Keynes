@@ -65,11 +65,32 @@ const ROLE_IDS := ["barracks", "fortification", "war_college"]
 
 const SOLDIER_PLAN_ID := "soldier_household"
 const SOLDIER_PROFESSION_ID := "soldier"
+## Dense `building_kinds` value of a treasury-owned military lot. Mirrors
+## `EconomyCatalog.BUILDING_KIND_INDICES["state"]`. The bridge below rejects
+## any lot whose economy profile is not authored as a state building, so a
+## profile accidentally left at `industrial` cannot silently become a
+## market producer that the military runtime keeps counting.
+const ECONOMY_BUILDING_KIND_STATE := 3
 const UNEMPLOYED_PROFESSION_ID := "unemployed"
 ## The two `soldier_household` needs whose variants become ration candidates.
 const RATION_NEED_IDS: Array[String] = ["staple_food", "protein"]
 const MAX_UNITS := 64
 const MAX_EQUIP_SLOTS := 4
+
+## Authoring magnitude ceilings, not gameplay caps. Every float column in the
+## catalog is authored human-readable and scaled exactly once (compiler ->
+## native bridge -> q16 / MONEY_SCALE / GOODS_SCALE). No design value comes
+## close: max authored attack is 80, fort +2.4, training x3.0, upkeep 15/day.
+## The ceilings exist so a column accidentally written in its *internal* fixed
+## point form fails validation loudly instead of shipping `守备 +1966100%`.
+const MAX_FORT_BONUS := 10.0
+const MAX_TRAINING_SPEED := 10.0
+const MAX_BUILDING_UPKEEP := 100.0
+const MAX_UNIT_STAT := 1000.0
+## Material quantities are whole good units per building (max authored: 300).
+const MAX_MATERIAL_UNITS := 1000.0
+## Equipment power weight per unit (max authored: 0.6).
+const MAX_EQUIP_WEIGHT := 10.0
 
 
 ## Compile from the default catalog path. `economy_catalog` is
@@ -128,9 +149,23 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 	unlock_tech_ids = unit_result.get("unlock_tech_ids", PackedInt32Array())
 	unlock_bits = unit_result.get("unlock_bits", {})
 
+	var economy_tag_offsets: PackedInt32Array = economy_catalog.get(
+		"building_technology_tag_offsets", PackedInt32Array())
+	var economy_tags: PackedStringArray = economy_catalog.get(
+		"building_technology_tags", PackedStringArray())
+	var economy_kinds: PackedInt32Array = economy_catalog.get(
+		"building_kinds", PackedInt32Array())
+	# Every state lot must bridge to a compiled economy building type. A
+	# catalog that ships state buildings but no building columns at all can
+	# never resolve the bridge, so fail before the per-row check blames an
+	# individual building for a catalog-wide problem.
+	if not (data.get("state_buildings", []) as Array).is_empty() \
+			and building_type_ids.is_empty():
+		return _fail("military_economy_building_catalog_unavailable")
 	var building_result := _compile_state_buildings(
 		data.get("state_buildings", []), good_index, building_type_ids,
-		tech_index, unlock_tech_ids, unlock_bits)
+		tech_index, unlock_tech_ids, unlock_bits,
+		economy_tag_offsets, economy_tags, economy_kinds)
 	if not bool(building_result.get("ok", false)):
 		return building_result
 	var state_buildings: Array = building_result.get("state_buildings", [])
@@ -373,6 +408,25 @@ static func _compile_units(raw_units, category_index: Dictionary,
 		var combat := _supply_vector(raw.get("supply_combat", {}), unit_id)
 		if idle.is_empty() or combat.is_empty():
 			return _fail("military_unit_supply_invalid: %s" % unit_id)
+		# Same scale check as the state buildings: attack / defense / speed /
+		# per_100 / weight are authored human-readable and scaled once by the
+		# native bridge. An out-of-range value means the column was baked in q16.
+		var attack := maxf(0.0, float(raw.get("attack", 1.0)))
+		var defense := maxf(0.0, float(raw.get("defense", 1.0)))
+		var speed_stat := maxf(0.0, float(raw.get("speed", 1.0)))
+		for stat_pair in [["attack", attack], ["defense", defense],
+				["speed", speed_stat]]:
+			if float(stat_pair[1]) > MAX_UNIT_STAT:
+				return _fail("military_unit_stat_out_of_range: %s.%s (%s)"
+					% [unit_id, String(stat_pair[0]), str(stat_pair[1])])
+		for slot_value in equipment:
+			var slot: Dictionary = slot_value
+			if float(slot.get("per_100", 0.0)) > MAX_UNIT_STAT:
+				return _fail("military_unit_equipment_out_of_range: %s.per_100 (%s)"
+					% [unit_id, str(slot.get("per_100", 0.0))])
+			if float(slot.get("weight", 0.0)) > MAX_EQUIP_WEIGHT:
+				return _fail("military_unit_equipment_out_of_range: %s.weight (%s)"
+					% [unit_id, str(slot.get("weight", 0.0))])
 		# Combat supply rows are authored as the *extra* wartime consumption in
 		# some tables and as the absolute rate in others. The design (§9.2) says
 		# "daily + combat extra", so absolute rows are folded back to an extra.
@@ -395,9 +449,9 @@ static func _compile_units(raw_units, category_index: Dictionary,
 			"militia": is_militia,
 			"era": era,
 			"unlock_bit": unlock_bit,
-			"attack": maxf(0.0, float(raw.get("attack", 1.0))),
-			"defense": maxf(0.0, float(raw.get("defense", 1.0))),
-			"speed": maxf(0.0, float(raw.get("speed", 1.0))),
+			"attack": attack,
+			"defense": defense,
+			"speed": speed_stat,
 			"fortification_ignore": clampf(
 				float(raw.get("fortification_ignore", 0.0)), 0.0, 1.0),
 			"training_days": clampi(int(raw.get("training_days", 30)), 0, 3650),
@@ -492,7 +546,10 @@ static func _compile_naval_unlocks(raw_ids, tech_index: Dictionary,
 
 static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 		building_type_ids: PackedStringArray, tech_index: Dictionary,
-		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary) -> Dictionary:
+		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary,
+		economy_tag_offsets: PackedInt32Array = PackedInt32Array(),
+		economy_tags: PackedStringArray = PackedStringArray(),
+		economy_kinds: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	var building_index := _index_of(building_type_ids)
 	var out: Array = []
 	var seen := {}
@@ -512,15 +569,91 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 			return _fail("military_state_building_role_invalid: %s" % building_id)
 		var unlock_bit := -1
 		var tech_id := String(raw.get("tech", "")).strip_edges()
-		if not tech_id.is_empty():
-			var bit_result := _resolve_unlock(tech_id, tech_index,
-				ordered_unlock_tech, ordered_bits)
-			if not bool(bit_result.get("ok", false)):
-				return bit_result
-			ordered_unlock_tech = bit_result.get("unlock_tech_ids",
-				ordered_unlock_tech)
-			ordered_bits = bit_result.get("unlock_bits", ordered_bits)
-			unlock_bit = int(bit_result.get("bit", -1))
+		# Design §1.4: every state lot is gated by a technology. An empty
+		# `tech` used to mean "always buildable", which silently shipped a
+		# free barracks alongside the researched ones.
+		if tech_id.is_empty():
+			return _fail("military_state_building_technology_missing: %s"
+				% building_id)
+		# Bridge to the economy catalog (design §5.1/§5.2/§5.4). The dense
+		# economy building type index is the only handle either runtime may
+		# use to name "this same lot": it is what `building_commit` keys the
+		# ledger on, what the construction workspace offers, and what the
+		# derived `barracks_count` / `fort_tier` / `college_tier` read back.
+		# Resolving by stable id keeps the two catalogs independent; a -1
+		# placeholder would instead let the military side invent a lot that
+		# no economy group exists for, so it is a hard failure here.
+		var economy_building := _index_optional(building_index, building_id)
+		if economy_building < 0:
+			return _fail(
+				"military_state_building_without_economy_profile: %s"
+				% building_id)
+		if not economy_kinds.is_empty():
+			if economy_building >= economy_kinds.size():
+				return _fail(
+					"military_state_building_economy_columns_ragged: %s"
+					% building_id)
+			var economy_kind := int(economy_kinds[economy_building])
+			if economy_kind != ECONOMY_BUILDING_KIND_STATE:
+				return _fail(
+					"military_state_building_economy_kind_invalid: %s (kind=%d)"
+					% [building_id, economy_kind])
+		var bit_result := _resolve_unlock(tech_id, tech_index,
+			ordered_unlock_tech, ordered_bits)
+		if not bool(bit_result.get("ok", false)):
+			return bit_result
+		ordered_unlock_tech = bit_result.get("unlock_tech_ids",
+			ordered_unlock_tech)
+		ordered_bits = bit_result.get("unlock_bits", ordered_bits)
+		unlock_bit = int(bit_result.get("bit", -1))
+		# Design §1.4/§1.5: this catalog and the economy building profile are
+		# two separate content files that must agree on the one technology
+		# unlocking the lot. If they drift, the construction workspace and
+		# the military roster advertise different gates for the same
+		# building. Reported against the building id: it is an authoring
+		# error in that pair, not a catalog-wide one.
+		if not economy_tag_offsets.is_empty():
+			if economy_building + 1 >= economy_tag_offsets.size():
+				return _fail(
+					"military_state_building_technology_columns_ragged: %s"
+					% building_id)
+			var economy_technology_ids := PackedStringArray()
+			var economy_tag_begin := int(economy_tag_offsets[economy_building])
+			var economy_tag_end := int(economy_tag_offsets[economy_building + 1])
+			if economy_tag_begin < 0 or economy_tag_end > economy_tags.size():
+				return _fail(
+					"military_state_building_technology_columns_ragged: %s"
+					% building_id)
+			for economy_tag_index in range(economy_tag_begin, economy_tag_end):
+				var economy_tag := String(
+					economy_tags[economy_tag_index]).strip_edges()
+				if economy_tag.begins_with("tech."):
+					economy_technology_ids.append(economy_tag)
+			if economy_technology_ids.size() != 1:
+				return _fail(
+					"military_state_building_technology_count_invalid: %s (%d)"
+					% [building_id, economy_technology_ids.size()])
+			if economy_technology_ids[0] != tech_id:
+				return _fail(
+					("military_state_building_technology_mismatch: %s "
+						+ "(military=%s economy=%s)")
+					% [building_id, tech_id, economy_technology_ids[0]])
+		var fort_bonus := maxf(0.0, float(raw.get("fort_bonus", 0.0)))
+		var training_speed := maxf(0.0, float(raw.get("training_speed", 1.0)))
+		var upkeep := maxf(0.0, float(raw.get("upkeep", 0.0)))
+		# Scale check: these columns are authored human-readable and multiplied by
+		# q16 / MONEY_SCALE exactly once downstream. A value above the design
+		# ceiling means the column was written in its internal fixed-point form,
+		# which would render as `守备 +1966100%` and clamp training to int32 max.
+		if fort_bonus > MAX_FORT_BONUS:
+			return _fail("military_state_building_fort_bonus_out_of_range: %s (%s)"
+				% [building_id, str(fort_bonus)])
+		if training_speed > MAX_TRAINING_SPEED:
+			return _fail("military_state_building_training_speed_out_of_range: %s (%s)"
+				% [building_id, str(training_speed)])
+		if upkeep > MAX_BUILDING_UPKEEP:
+			return _fail("military_state_building_upkeep_out_of_range: %s (%s)"
+				% [building_id, str(upkeep)])
 		var material_goods := PackedInt32Array()
 		var material_qty := PackedInt64Array()
 		var materials: Dictionary = raw.get("materials", {})
@@ -529,12 +662,17 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 			if good < 0:
 				return _fail("military_state_building_material_unknown: %s" % String(
 					good_key))
+			var material_units := maxf(0.0, float(materials[good_key]))
+			if material_units > MAX_MATERIAL_UNITS:
+				return _fail(
+					"military_state_building_material_out_of_range: %s.%s (%s)"
+					% [building_id, String(good_key), str(material_units)])
 			material_goods.append(good)
-			material_qty.append(maxi(0, int(round(float(materials[good_key]) * 1000.0))))
+			material_qty.append(maxi(0, int(round(material_units * 1000.0))))
 		out.append({
 			"id": building_id,
 			"name": String(raw.get("name", "")).strip_edges(),
-			"economy_building_id": _index_optional(building_index, building_id),
+			"economy_building_id": economy_building,
 			"role": role,
 			"tier": clampi(int(raw.get("tier", 0)), 0, 7),
 			"unlock_bit": unlock_bit,
@@ -543,9 +681,9 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 			# id table; it is not part of the catalog hash.
 			"unlock_tech_id": tech_id,
 			"capacity": maxi(0, int(raw.get("capacity", 0))),
-			"fort_bonus": maxf(0.0, float(raw.get("fort_bonus", 0.0))),
-			"training_speed": maxf(0.0, float(raw.get("training_speed", 1.0))),
-			"upkeep": maxf(0.0, float(raw.get("upkeep", 0.0))),
+			"fort_bonus": fort_bonus,
+			"training_speed": training_speed,
+			"upkeep": upkeep,
 			"build_days": maxi(0, int(raw.get("build_days", 0))),
 			"material_goods": material_goods,
 			"material_qty": material_qty,
@@ -775,6 +913,12 @@ static func _catalog_hash(compiled: Dictionary, good_ids: PackedStringArray,
 		hash_mix(hasher, String(building.get("id", "")))
 		hash_mix(hasher, str(int(building.get("role", 0))))
 		hash_mix(hasher, str(int(building.get("capacity", 0))))
+		# The economy bridge is part of the identity. Two catalogs that point
+		# the same lot at different economy building types describe different
+		# worlds, and `MilitaryCore::catalog_hash()` (military_core.cpp) mixes
+		# this column too: leaving it out here would let a bridge-only edit look
+		# content-identical on this side while PKMI loads keep failing.
+		hash_mix(hasher, str(int(building.get("economy_building_id", -1))))
 	var unlock: PackedInt32Array = compiled.get("unlock_tech_ids", PackedInt32Array())
 	for dense in unlock:
 		hash_mix(hasher, "%d:%s" % [int(dense),

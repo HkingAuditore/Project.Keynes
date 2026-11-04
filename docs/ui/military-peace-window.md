@@ -7,6 +7,8 @@
 ```
 打开：国家事务 → 军事 → 战争 →「打开议和窗口」
      总览 → 战争卡「议和条款 ›」
+     外交 → 战事 → 战争档案「议和」（见 docs/ui/diplomacy-workspace.md）
+     外交 → 国家 → 交战国的档案「议和」
 窗口：MilitaryPeaceWindow（左停靠，560 × 剩余高度）
       ├ 战况：战争分 / 我方占领 / 敌方残土 / 战线 / 伤亡 / 最近战事
       ├ 条款：白和平 · 割地（地图点选）· 一次性赔款 · 分期赔款 · 吞并
@@ -109,6 +111,7 @@
 | 位置 | 必须提供 | 说明 |
 | --- | --- | --- |
 | `MilitaryWorkspace` | `signal peace_negotiation_requested(war_id)` | 战争页启动卡与总览战争卡动作都发它 |
+| `DiplomacyWorkspace` | 同名信号 | 战事档案与「交战国档案」的「议和」也发它；`CountryPanel` 把它和军事章接在同一个转发位上 |
 | `CountryPanel` | 同名信号转发 | 和 `locate_cell_requested` / `target_cells_requested` 同一个转发位 |
 | `GameUIManager` | `open_military_peace(war_id)`、`close_military_peace()`、`is_peace_window_open()`、`handle_peace_map_cell(cell) -> bool` | 开窗时先 `close_country_panel()` + `_suppress_ui_for_dispatch()`；`map_safe_area()` 加左沿；`_hover_blocked()` 加判断；ESC 关窗 |
 | `PlayerController` | `highlight_cells(cells, frame := true)`、`highlight_peace_candidates(cells)`、`highlight_peace_draft(cells)`、`clear_peace_highlights()`、`focus_map_cell(cell)` | 测试里的 `FakeController` 精确记录这三个高亮方法；`select_cell()` 在 `clear_cell_highlights()` **之前**把点击交给 `handle_peace_map_cell`，窗口开着时跳过 `military_map_pick` |

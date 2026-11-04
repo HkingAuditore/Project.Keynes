@@ -3,16 +3,19 @@ class_name EconomyWorkspace
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const NationalProcurementSliderScript = preload("res://scripts/ui/components/national_procurement_slider.gd")
+const FiscalBudgetPageScript = preload("res://scripts/ui/components/fiscal_budget_page.gd")
+const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const TaxCardScene := preload("res://scenes/ui/economy_tax_card.tscn")
 const TaxLaneScene := preload("res://scenes/ui/economy_tax_lane.tscn")
 const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
 
-const PAGE_IDS := ["treasury", "income", "consumption", "business", "trade"]
-const TOP_PAGE_IDS := ["treasury", "tax", "trade"]
+const PAGE_IDS := ["treasury", "fiscal", "income", "consumption", "business", "trade"]
+const TOP_PAGE_IDS := ["treasury", "fiscal", "tax", "trade"]
 const TAX_PAGE_IDS := ["income", "consumption", "business"]
 const PAGE_DEFINITIONS := {
 	"treasury": {"label": "国库", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
+	"fiscal": {"label": "财政", "icon": &"summary.overview", "accent": UITokens.BRASS_HIGHLIGHT},
 	"tax": {"label": "税制", "icon": &"tax.section", "accent": UITokens.BRASS_HIGHLIGHT},
 	"income": {"label": "所得税", "icon": &"tax.income", "accent": UITokens.ACCENT},
 	"consumption": {"label": "物资税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
@@ -92,6 +95,8 @@ var _embedded := false
 var _last_tax_page := "income"
 ## 国库页的「国家购买预算」滑条（NationalProcurementSlider）。
 var _procurement_slider: Control
+## 财政页：科技 / 时代收购 / 开拓 / 军事预算的统一调整区。
+var _fiscal_page: Control
 ## 提交成功但会话/快照尚未反映的政策，避免下一次刷新把滑块弹回旧值。
 var _procurement_local_policy: Dictionary = {}
 
@@ -127,6 +132,7 @@ func _ready() -> void:
 	_summary_heading = get_node_or_null("Column/SummaryHeading") as Control
 	_summary_cards = get_node_or_null("Column/Cards") as Control
 	_procurement_slider = get_node_or_null(ledger_root + "/Procurement") as Control
+	_fiscal_page = get_node_or_null(ledger_root + "/FiscalPage") as Control
 	var section_badge := get_node_or_null("Column/Header/SectionIcon") as IconBadge
 	if _cash_card == null or _tax_card == null or _subsidy_card == null \
 			or _fulfillment_card == null or _country_label == null \
@@ -156,6 +162,11 @@ func _ready() -> void:
 		IconButton.apply(_trade_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
 	if _procurement_slider != null:
 		_procurement_slider.policy_committed.connect(_on_procurement_committed)
+	if _fiscal_page != null:
+		_fiscal_page.set_player_controller(_player_controller)
+		_fiscal_page.procurement_committed.connect(_on_procurement_committed)
+		_fiscal_page.military_budget_committed.connect(
+			_on_military_budget_committed)
 	_draft_timer = Timer.new()
 	_draft_timer.one_shot = true
 	_draft_timer.wait_time = DRAFT_COMMIT_DELAY_SEC
@@ -189,6 +200,8 @@ func set_model(model: Dictionary) -> void:
 
 func set_player_controller(controller) -> void:
 	_player_controller = controller
+	if _fiscal_page != null:
+		_fiscal_page.set_player_controller(controller)
 
 
 ## 嵌入国民经济卷宗时：外壳负责国库 / 税收导航，只保留税种页签。
@@ -201,7 +214,7 @@ func set_embedded(embedded: bool) -> void:
 	if header != null:
 		header.visible = not embedded
 	_tab_signature = ""
-	if embedded and _page == "trade":
+	if embedded and (_page == "trade" or _page == "fiscal"):
 		_select_page("treasury")
 	elif not _model.is_empty():
 		_refresh_tabs()
@@ -299,8 +312,11 @@ func _apply_model(now_msec: int) -> void:
 	_refresh_procurement()
 
 
-# 国家购买预算只属于国库页；数据缺席（旧原生 / 外国）时按国库现金估算。
+# 国家购买预算在国库页与财政页各有一份视图：国库页保留紧凑的旧入口，
+# 财政页顶部是完整板块。数据缺席（旧原生 / 外国）时按国库现金估算。
 func _refresh_procurement() -> void:
+	if _fiscal_page != null:
+		_fiscal_page.set_player_controller(_player_controller)
 	if _procurement_slider == null:
 		return
 	_procurement_slider.visible = _page == "treasury" \
@@ -319,24 +335,85 @@ func _refresh_procurement() -> void:
 		int(policy.research_share_bp), cash, procurement)
 
 
-func _on_procurement_committed(treasury_share_bp: int) -> void:
-	if _procurement_slider == null:
-		return
-	var research_share := int(_procurement_slider.research_share_bp())
+## 提交国家购买政策。research_share_bp 传 -1 时沿用国库页滑条当前值
+## （国库页滑条的 policy_committed 只带国库份额），财政页滑条则四项全都带。
+## era/colonization 传 -1 表示本次不改该通道，命令里不出现这两个键。
+func _on_procurement_committed(treasury_share_bp: int, research_share_bp := -1,
+		era_share_bp := -1, colonization_share_bp := -1) -> void:
+	var research_share := research_share_bp
+	if research_share < 0:
+		if _procurement_slider != null:
+			research_share = int(_procurement_slider.research_share_bp())
+		elif _fiscal_page != null and _fiscal_page.national_slider() != null:
+			research_share = int(_fiscal_page.national_slider().research_share_bp())
+		else:
+			research_share = NationalProcurementSliderScript.DEFAULT_RESEARCH_SHARE_BP
 	var result: Dictionary = NationalProcurementSliderScript.submit_policy(_player_controller,
-		treasury_share_bp, research_share)
+		treasury_share_bp, research_share, era_share_bp, colonization_share_bp)
 	if bool(result.get("ok", false)):
 		_procurement_local_policy = {
 			"treasury_share_bp": treasury_share_bp,
 			"research_share_bp": research_share,
 		}
-		_set_status("国家购买预算已提交 · 次日生效")
+		if era_share_bp >= 0:
+			_procurement_local_policy["era_share_bp"] = era_share_bp
+		if colonization_share_bp >= 0:
+			_procurement_local_policy["colonization_share_bp"] = colonization_share_bp
+		if era_share_bp >= 0 or colonization_share_bp >= 0:
+			_set_status("国家购买预算与通道份额已提交 · 次日生效")
+		else:
+			_set_status("国家购买预算已提交 · 次日生效")
 	else:
 		var message := String(result.get("message", result.get("reason", ""))).strip_edges()
 		if NationalProcurementSliderScript.is_unsupported(result):
 			message = "国家购买预算尚未开放"
 		_set_status(message if not message.is_empty() else "国家购买预算提交失败", true)
 	_refresh_procurement()
+	if _fiscal_page != null:
+		_fiscal_page.set_local_policy(treasury_share_bp, research_share,
+			era_share_bp, colonization_share_bp)
+		_fiscal_page.refresh_live(_model)
+
+
+## 军事预算提交（任务 9）：把板块发来的份额意图转成 `military.policy.set_budget`。
+## `-1` 原样往上传，原生按未传入项沿用当前值校验三项份额之和 <= 100%。
+## 提交成功才写本地覆盖，让滑条在快照跟上之前不被弹回旧值。
+func _on_military_budget_committed(total_bp: int, wage_bp: int, upkeep_bp: int,
+		procurement_bp: int) -> void:
+	if _player_controller == null or not _player_controller.has_method("request_command"):
+		_set_status("玩家会话尚未就绪，军事预算未能提交", true)
+		return
+	var args := {"total_bp": int(total_bp)}
+	if wage_bp >= 0:
+		args["wage_bp"] = int(wage_bp)
+	if upkeep_bp >= 0:
+		args["upkeep_bp"] = int(upkeep_bp)
+	if procurement_bp >= 0:
+		args["procurement_bp"] = int(procurement_bp)
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_MILITARY_BUDGET, args)
+	if bool(result.get("ok", false)):
+		if _fiscal_page != null:
+			_fiscal_page.set_local_military_budget(
+				int(total_bp), wage_bp, upkeep_bp, procurement_bp)
+			_fiscal_page.refresh_live(_model)
+		if wage_bp >= 0 or upkeep_bp >= 0 or procurement_bp >= 0:
+			_set_status("军事预算与通道份额已提交 · 次日生效")
+		else:
+			_set_status("军事预算已提交 · 次日生效")
+		return
+	var message := String(result.get("message", result.get("reason", ""))).strip_edges()
+	var code := String(result.get("code", ""))
+	if code == "unsupported_command":
+		message = "军事预算尚未开放（原生军事核心未就绪）"
+	elif code == "command_budget_channels_exceed_10000":
+		message = "三项通道份额之和超过 100%，请下调任一项"
+	elif code.is_empty() and message.is_empty():
+		message = "军事预算提交失败"
+	_set_status(message, true)
+	# 失败不留覆盖：下一次刷新把滑条退回原生真实政策，玩家看到的就是真相。
+	if _fiscal_page != null:
+		_fiscal_page.refresh_live(_model)
 
 
 ## 测试入口：国库页滑条（未实例化时为 null）。
@@ -349,7 +426,7 @@ func _refresh_tabs() -> void:
 	var signature_parts: Array[String] = []
 	var tabs: Array = []
 	for page in TOP_PAGE_IDS:
-		if _embedded and page == "trade":
+		if _embedded and (page == "trade" or page == "fiscal"):
 			continue
 		var definition: Dictionary = PAGE_DEFINITIONS[page]
 		var tooltip := String(definition.label)
@@ -360,6 +437,9 @@ func _refresh_tabs() -> void:
 			var good_count := int(treasury.get("nonzero_good_count", 0))
 			tooltip = "国库 · %d 种物资" % good_count
 			signature_parts.append("%s:%d" % [page, good_count])
+		elif page == "fiscal":
+			tooltip = "财政 · 预算调配"
+			signature_parts.append("fiscal")
 		else:
 			tooltip = "税制"
 			signature_parts.append("tax")
@@ -403,6 +483,8 @@ func _refresh_tax_tabs() -> void:
 func _select_page(page: String) -> void:
 	if page == "tax":
 		page = _page if _is_tax_page(_page) else "income"
+	if page == "fiscal" and _fiscal_page == null:
+		page = "treasury"
 	if _is_tax_page(page):
 		_last_tax_page = page
 	_page = page
@@ -428,6 +510,7 @@ func _select_page(page: String) -> void:
 		_ledger_title.text = String(definition.get("label", "财政"))
 		_ledger_subtitle.text = _page_description(page)
 		_ledger_subtitle.visible = not _ledger_subtitle.text.is_empty()
+	_apply_fiscal_page_visibility(page)
 	_refresh_page()
 	_refresh_treasury_insights()
 	_refresh_procurement()
@@ -436,6 +519,48 @@ func _select_page(page: String) -> void:
 
 func _top_page_for(page: String) -> String:
 	return "tax" if _is_tax_page(page) else page
+
+
+# 财政页是账本区里的另一张卷宗：切入时把 Tools / StatusLabel / Scroll 让出来，
+# 而不是叠在物资列表上。
+func _apply_fiscal_page_visibility(page: String) -> void:
+	var fiscal := page == "fiscal" and _fiscal_page != null
+	if _fiscal_page != null:
+		var was_visible := _fiscal_page.visible
+		_fiscal_page.visible = fiscal
+		# 打开：滑入 + 淡入（180ms，落在需求 8.1 的 160–220ms 内）。
+		# 高速模拟下每日 tick 只走 refresh_live，不会进这里；切页本身是玩家
+		# 动作而非模拟事件，所以不做额外节流，但减动效偏好直接跳过。
+		if fiscal and not was_visible:
+			_play_fiscal_entrance()
+	if _scroll != null:
+		_scroll.visible = not fiscal
+	if _status_label != null:
+		_status_label.visible = not fiscal and _status_label.text != ""
+	if fiscal:
+		_apply_fiscal_model()
+
+
+## 财政页入场：整块滑入淡入。只对页面本身做一次，不逐板块错峰——
+## 板块里有可拖控件，错峰期间的可点击区域会和视觉位置错开。
+func _play_fiscal_entrance() -> void:
+	if _fiscal_page == null or UIAnimation.reduced_motion():
+		return
+	UIAnimation.fade_slide_in(_fiscal_page, Vector2(22.0, 0.0), 0.18)
+
+
+func _apply_fiscal_model() -> void:
+	if _fiscal_page == null:
+		return
+	_fiscal_page.set_compact(_compact)
+	# 分区只在首次进入时构建；之后切回沿用同一批节点，只刷新读数，
+	# 这样滑条不会因为来回切页签被销毁重建。
+	_fiscal_page.set_model(_model, false)
+
+
+## 测试入口：财政页（未实例化时为 null）。
+func fiscal_page() -> Control:
+	return _fiscal_page
 
 
 func _is_tax_page(page: String) -> bool:
@@ -453,6 +578,13 @@ func _refresh_page() -> void:
 	if _flow == null or _model.is_empty():
 		return
 	var wanted := {}
+	if _page == "fiscal":
+		# 分区只在切入页签时构建；每日 tick 走 refresh_live，只改读数文本。
+		_sync_visibility(wanted)
+		if _fiscal_page != null:
+			_fiscal_page.refresh_live(_model)
+		_set_status("")
+		return
 	if _page == "trade":
 		_refresh_trade_page(wanted)
 		_sync_visibility(wanted)

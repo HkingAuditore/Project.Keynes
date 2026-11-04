@@ -66,6 +66,19 @@ Economy store 都没有被改动。仍绑定当前 dispatch 的身份不一致�
 
 详见 `native-economy-runtime.md` 的「2026-09-22 Country asset backpressure 与 fatal 取证」。
 
+## 国库出资营造的入口（2026-11-04）
+
+`COMMAND_TREASURY_SPONSORED_BUILD` 的付款走本桥：`coordinate_country_treasury_spend()`
+经 `begin_economy_treasury_spend` → `acknowledge_economy_asset_peer_prepared` →
+`commit_economy_asset_transaction` 扣国家现金，随后 Economy 在同一次 epoch 内把等额现金
+记到本地商人 cohort，并在 `note_non_tax_outflow(NON_TAX_CONSTRUCTION)` 留下非税支出凭证。
+
+入口不再走 `submit_economy_commands`（StageOps 生产写入边界下该批量入口整体
+fail-closed，见 `native-economy-runtime.md` 的 2026-11-04 节），而是
+`DCWorldExt::queue_treasury_sponsored_build` → `NativeEconomyRuntime::_pending_commands`
+（worker 权威时先入互斥收件箱）。桥本身没有变化：付款仍是全有或全无，
+`construct` 失败时不会留下半笔付款。
+
 ## 地块税务 epoch 缓存
 
 地块税务不经 GDScript：Country snapshot 直接复制 cell→policy 映射与规范政策行。

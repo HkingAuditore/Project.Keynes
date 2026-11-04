@@ -1396,6 +1396,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         // expedition in SETTLING.
         const bool targets_cohort = !family_reward && !expedition_command &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
+                                    cmd.opcode != COMMAND_TREASURY_SPONSORED_DEMOLISH &&
                                     cmd.opcode != COMMAND_BUILD_CANAL &&
                                     cmd.opcode != COMMAND_ADD_STOCK &&
                                     cmd.opcode != COMMAND_REMOVE_STOCK &&
@@ -1422,9 +1423,16 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD) &&
+             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD ||
+             cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
+            return reject_epoch_command(cmd);
+        }
+        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
+            (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             _country_runtime == nullptr || !_country_runtime->valid_handle(
+                 static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&

@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## I01: one program = one backend (plan 22 §4.5, §13.4 `catalog` row).
 ##
 ## WHY THIS IS THE MOST IMPORTANT MISSING TEST

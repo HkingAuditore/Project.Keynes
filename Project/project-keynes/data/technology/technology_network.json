@@ -63927,8 +63927,21 @@
 				}
 			],
 			"expected_bindings": [],
-			"content_effects": [],
-			"effect_summary": "兵额 +25%；民兵战力 +20%",
+			"content_effects": [
+				{
+					"kind": "building",
+					"id": "warrior_lodge",
+					"binding_kind": 0.0,
+					"subject": "building.warrior_lodge",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "战士营地"
+				}
+			],
+			"effect_summary": "解锁建筑：战士营地；兵额 +25%；民兵战力 +20%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点以修正与支撑能力收束，不再单独开放建筑；其知识由后续军事节点与既有产业消费。",
@@ -63957,8 +63970,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑，它把共同体组织转成兵员动员能力。"
+				"policy": "single",
+				"rationale": "本科技开放石器时代的战士营地，把共同体组织转成可常驻的兵员。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -64212,9 +64225,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "木栅兵营"
+				},
+				{
+					"kind": "building",
+					"id": "earthen_rampart",
+					"binding_kind": 0.0,
+					"subject": "building.earthen_rampart",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "夯土城垣"
 				}
 			],
-			"effect_summary": "解锁建筑：木栅兵营；本国工事强度 +10%",
+			"effect_summary": "解锁建筑：木栅兵营；解锁建筑：夯土城垣；本国工事强度 +10%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -64244,8 +64269,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放木栅兵营，城垣本身随后续节点出现。"
+				"policy": "paired",
+				"rationale": "本科技同时开放木栅兵营与夯土城垣：前者提供兵额，后者提供工事。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -64341,9 +64366,33 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "铁甲坊"
+				},
+				{
+					"kind": "building",
+					"id": "garrison_barracks",
+					"binding_kind": 0.0,
+					"subject": "building.garrison_barracks",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "戍卫营"
+				},
+				{
+					"kind": "building",
+					"id": "martial_academy",
+					"binding_kind": 0.0,
+					"subject": "building.martial_academy",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "武学馆"
 				}
 			],
-			"effect_summary": "解锁建筑：弓弩坊；解锁建筑：铁甲坊；兵额 +20%；训练时长 -10%",
+			"effect_summary": "解锁建筑：弓弩坊；解锁建筑：铁甲坊；解锁建筑：戍卫营；解锁建筑：武学馆；兵额 +20%；训练时长 -10%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -64416,7 +64465,7 @@
 			},
 			"building_unlock_review": {
 				"policy": "paired",
-				"rationale": "本科技同时开放弓弩坊与铁甲坊，两者共同构成常备军的装备基础。"
+				"rationale": "本科技在弓弩坊与铁甲坊之外，同时开放戍卫营与武学馆：营舍与教习机关一并成立。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -64857,9 +64906,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "军械工场"
+				},
+				{
+					"kind": "building",
+					"id": "legion_fort",
+					"binding_kind": 0.0,
+					"subject": "building.legion_fort",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "军团营寨"
 				}
 			],
-			"effect_summary": "解锁建筑：军械工场；补给消耗 -15%",
+			"effect_summary": "解锁建筑：军械工场；解锁建筑：军团营寨；补给消耗 -15%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -64931,8 +64992,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放军械工场。"
+				"policy": "paired",
+				"rationale": "本科技在军械工场之外，同时开放军团营寨，为大规模常备编制提供营舍。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -65124,9 +65185,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "攻城器械坊"
+				},
+				{
+					"kind": "building",
+					"id": "citadel",
+					"binding_kind": 0.0,
+					"subject": "building.citadel",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "城堡要塞"
 				}
 			],
-			"effect_summary": "解锁建筑：攻城器械坊；本国工事强度 +15%",
+			"effect_summary": "解锁建筑：攻城器械坊；解锁建筑：城堡要塞；本国工事强度 +15%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -65178,8 +65251,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放攻城器械坊。"
+				"policy": "paired",
+				"rationale": "本科技在攻城器械坊之外，同时开放城堡要塞，攻城术与筑城术互为表里。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -65373,8 +65446,21 @@
 				}
 			],
 			"expected_bindings": [],
-			"content_effects": [],
-			"effect_summary": "本国工事强度 +20%",
+			"content_effects": [
+				{
+					"kind": "building",
+					"id": "star_fort",
+					"binding_kind": 0.0,
+					"subject": "building.star_fort",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "棱堡"
+				}
+			],
+			"effect_summary": "解锁建筑：棱堡；本国工事强度 +20%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点以修正与支撑能力收束，不再单独开放建筑；其知识由后续军事节点与既有产业消费。",
@@ -65426,8 +65512,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑，它提高本国工事。"
+				"policy": "single",
+				"rationale": "本科技直接开放棱堡，把本国工事推到棱堡体系。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -66018,9 +66104,33 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "燧发枪工场"
+				},
+				{
+					"kind": "building",
+					"id": "drill_depot",
+					"binding_kind": 0.0,
+					"subject": "building.drill_depot",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "操练营"
+				},
+				{
+					"kind": "building",
+					"id": "military_academy",
+					"binding_kind": 0.0,
+					"subject": "building.military_academy",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "军事学院"
 				}
 			],
-			"effect_summary": "解锁建筑：燧发枪工场；训练时长 -20%",
+			"effect_summary": "解锁建筑：燧发枪工场；解锁建筑：操练营；解锁建筑：军事学院；训练时长 -20%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -66092,8 +66202,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放燧发枪工场。"
+				"policy": "paired",
+				"rationale": "本科技在燧发枪工场之外，同时开放操练营与军事学院：操典既要营舍也要教习。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -66760,8 +66870,21 @@
 				}
 			],
 			"expected_bindings": [],
-			"content_effects": [],
-			"effect_summary": "战斗宽度 +25%；组织度恢复 +10%",
+			"content_effects": [
+				{
+					"kind": "building",
+					"id": "army_depot",
+					"binding_kind": 0.0,
+					"subject": "building.army_depot",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "兵站"
+				}
+			],
+			"effect_summary": "解锁建筑：兵站；战斗宽度 +25%；组织度恢复 +10%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点以修正与支撑能力收束，不再单独开放建筑；其知识由后续军事节点与既有产业消费。",
@@ -66854,8 +66977,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑，它提高战斗宽度与组织度恢复。"
+				"policy": "single",
+				"rationale": "本科技直接开放兵站，把参谋制度落到前送节点。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -67072,9 +67195,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "自动武器厂"
+				},
+				{
+					"kind": "building",
+					"id": "bunker_line",
+					"binding_kind": 0.0,
+					"subject": "building.bunker_line",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "碉堡防线"
 				}
 			],
-			"effect_summary": "解锁建筑：自动武器厂；全国部队攻击 +10%",
+			"effect_summary": "解锁建筑：自动武器厂；解锁建筑：碉堡防线；全国部队攻击 +10%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -67167,8 +67302,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放自动武器厂。"
+				"policy": "paired",
+				"rationale": "本科技在自动武器厂之外，同时开放碉堡防线，机枪的火力需要一个可依托的工事。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -67740,9 +67875,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "榴弹炮厂"
+				},
+				{
+					"kind": "building",
+					"id": "military_base",
+					"binding_kind": 0.0,
+					"subject": "building.military_base",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "军事基地"
 				}
 			],
-			"effect_summary": "解锁建筑：现代弹药厂；解锁建筑：榴弹炮厂；部队速度 +15%",
+			"effect_summary": "解锁建筑：现代弹药厂；解锁建筑：榴弹炮厂；解锁建筑：军事基地；部队速度 +15%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -67836,7 +67983,7 @@
 			},
 			"building_unlock_review": {
 				"policy": "paired",
-				"rationale": "本科技同时开放现代弹药厂与榴弹炮厂。"
+				"rationale": "本科技在现代弹药厂与榴弹炮厂之外，同时开放军事基地：机械化编制需要常设驻地。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -68395,9 +68542,21 @@
 					"implementation": "BuildingProfile.technology_tags",
 					"status": "catalog_rebind",
 					"display_name": "联合训练中心"
+				},
+				{
+					"kind": "building",
+					"id": "war_simulation_center",
+					"binding_kind": 0.0,
+					"subject": "building.war_simulation_center",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "兵棋推演中心"
 				}
 			],
-			"effect_summary": "解锁建筑：联合训练中心；组织度恢复 +20%；战斗宽度 +15%",
+			"effect_summary": "解锁建筑：联合训练中心；解锁建筑：兵棋推演中心；组织度恢复 +20%；战斗宽度 +15%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -68490,8 +68649,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技直接开放联合训练中心。"
+				"policy": "paired",
+				"rationale": "本科技同时开放联合训练中心与兵棋推演中心，网络化指挥兼有演训与推演两侧。"
 			},
 			"knowledge_basis": {
 				"required_ids": [
@@ -68903,8 +69062,21 @@
 				}
 			],
 			"expected_bindings": [],
-			"content_effects": [],
-			"effect_summary": "全国部队防御 +10%",
+			"content_effects": [
+				{
+					"kind": "building",
+					"id": "hardened_defense_network",
+					"binding_kind": 0.0,
+					"subject": "building.hardened_defense_network",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "NativeMilitaryRuntime.state_buildings",
+					"status": "runtime_consumed",
+					"display_name": "加固防御网"
+				}
+			],
+			"effect_summary": "解锁建筑：加固防御网；全国部队防御 +10%",
 			"opportunity_cost": "转入军事分支需补齐历史锚点；装备与官营建筑依赖专用资本、岗位或矿产条件。",
 			"application_target_ids": [],
 			"terminal_reason": "本节点以修正与支撑能力收束，不再单独开放建筑；其知识由后续军事节点与既有产业消费。",
@@ -68998,8 +69170,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑，它提高部队防御。"
+				"policy": "single",
+				"rationale": "本科技直接开放加固防御网，把智能防御落成工事。"
 			},
 			"knowledge_basis": {
 				"required_ids": [

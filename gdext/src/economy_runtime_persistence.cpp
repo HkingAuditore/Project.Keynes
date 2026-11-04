@@ -1151,6 +1151,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool split_policy = cmd.opcode == COMMAND_FAMILY_SET_SPLIT_POLICY;
         const bool treasury_build =
             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
+        const bool treasury_demolish =
+            cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH;
         const bool canal_build = cmd.opcode == COMMAND_BUILD_CANAL;
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
@@ -1167,6 +1169,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
+               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+            : treasury_demolish
+            ? (_country_runtime != nullptr && _country_runtime->valid_handle(
+                   static_cast<int64_t>(cmd.target_handle)) &&
+               cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+               cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
+                   _building_types.size()) && cmd.i64_0 > 0 &&
                cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
             : canal_build
             ? (_country_runtime != nullptr && _country_runtime->valid_handle(

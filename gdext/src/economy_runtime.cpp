@@ -8393,8 +8393,15 @@ bool NativeEconomyRuntime::is_storable_nonmonetary_good(int32_t good) const {
 int32_t NativeEconomyRuntime::resolved_maintenance_horizon_days(
         const BuildingType &type) const {
     if (type.maintenance_horizon_days > 0) return type.maintenance_horizon_days;
-    const int32_t sector = std::clamp(type.economic_sector, 0, 4);
-    return std::max(1, _maintenance_horizon_days_by_sector[sector]);
+    // Military state buildings settle upkeep in cash through the military
+    // runtime, so they never reach the sector-derived fallback. Guard anyway:
+    // clamping index 5 into `knowledge` would invent a civil horizon for a
+    // building that must not carry one.
+    if (type.economic_sector < 0 ||
+        type.economic_sector >= CIVIL_SECTOR_COUNT) {
+        return std::max(1, _maintenance_horizon_days_by_sector[2]);
+    }
+    return std::max(1, _maintenance_horizon_days_by_sector[type.economic_sector]);
 }
 
 int64_t NativeEconomyRuntime::merchant_protected_reserve(int32_t signal) const {
@@ -8465,7 +8472,13 @@ void NativeEconomyRuntime::resolve_building_maintenance_csr() {
             _building_maintenance_goods.push_back(row);
             authored = true;
         }
-        if (!authored && type.kind != 2 && type.construction_count > 0) {
+        // Only self-financing producers derive a maintenance bill from their
+        // own construction bill of materials. Service buildings (kind 2) have
+        // no maintenance, and state buildings (kind 3) settle upkeep in cash
+        // through the military runtime, so deriving one here would bill the
+        // same building twice.
+        if (!authored && type.kind != 2 && type.kind != 3 &&
+            type.construction_count > 0) {
             const int32_t horizon = resolved_maintenance_horizon_days(type);
             for (int32_t item = type.construction_begin;
                  item < type.construction_begin + type.construction_count; ++item) {
@@ -11306,11 +11319,19 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 group.type_id < static_cast<int32_t>(_building_types.size())
             ? _building_types[static_cast<size_t>(group.type_id)].economic_sector
             : 2;
-        const int64_t sector_factor_q16 = country_slot >= 0 &&
-                static_cast<size_t>(country_slot) * 5U + sector <
+        // Sector modifiers are authored for the civil sectors only. The military
+        // sector has no bucket, so clamping it into `knowledge` or striding past
+        // the row would silently apply another sector's or country's factor.
+        const bool sector_factor_applicable =
+            sector >= 0 && sector < CIVIL_SECTOR_COUNT;
+        const int64_t sector_factor_q16 = sector_factor_applicable &&
+                country_slot >= 0 &&
+                static_cast<size_t>(country_slot) * 5U +
+                        static_cast<size_t>(sector) <
                     _epoch_country_sector_output_factor_q16.size()
             ? _epoch_country_sector_output_factor_q16[
-                static_cast<size_t>(country_slot) * 5U + sector] : Q16_ONE;
+                static_cast<size_t>(country_slot) * 5U +
+                static_cast<size_t>(sector)] : Q16_ONE;
         int32_t family = -1;
         if (group.type_id >= 0 &&
             group.type_id < static_cast<int32_t>(
@@ -11350,23 +11371,29 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 _building_landform.size()) ? _building_landform[group.cell] : -1;
         const size_t terrain_index = (static_cast<size_t>(std::max(0, country_slot)) *
                 _modifier_terrain_ids.size() + static_cast<size_t>(std::max(0, terrain))) *
-                5U + static_cast<size_t>(sector);
+                5U + static_cast<size_t>(std::max(0, sector));
         const size_t landform_index = (static_cast<size_t>(std::max(0, country_slot)) *
                 _modifier_landform_ids.size() + static_cast<size_t>(std::max(0, landform))) *
-                5U + static_cast<size_t>(sector);
-        const int64_t terrain_sector_factor_q16 = country_slot >= 0 && terrain >= 0 &&
-                terrain_index < _epoch_country_terrain_sector_output_factor_q16.size()
-            ? _epoch_country_terrain_sector_output_factor_q16[terrain_index] : Q16_ONE;
-        const int64_t landform_sector_factor_q16 = country_slot >= 0 && landform >= 0 &&
-                landform_index < _epoch_country_landform_sector_output_factor_q16.size()
-            ? _epoch_country_landform_sector_output_factor_q16[landform_index] : Q16_ONE;
+                5U + static_cast<size_t>(std::max(0, sector));
+        const int64_t terrain_sector_factor_q16 = sector_factor_applicable &&
+                country_slot >= 0 && terrain >= 0 &&
+                terrain_index <
+                    _epoch_country_terrain_sector_output_factor_q16.size()
+            ? _epoch_country_terrain_sector_output_factor_q16[terrain_index]
+            : Q16_ONE;
+        const int64_t landform_sector_factor_q16 = sector_factor_applicable &&
+                country_slot >= 0 && landform >= 0 &&
+                landform_index <
+                    _epoch_country_landform_sector_output_factor_q16.size()
+            ? _epoch_country_landform_sector_output_factor_q16[landform_index]
+            : Q16_ONE;
         const int32_t family_owned_factor_q16 =
             family_group_owned_output_factor_q16(static_cast<int32_t>(group_index));
         const size_t cell_sector_index = static_cast<size_t>(
-            std::max(0, group.cell)) * 5U + static_cast<size_t>(sector);
+            std::max(0, group.cell)) * 5U + static_cast<size_t>(std::max(0, sector));
         const int32_t cell_sector_factor_q16 =
-            group.cell >= 0 && cell_sector_index <
-                _epoch_cell_sector_output_factor_q16.size()
+            sector_factor_applicable && group.cell >= 0 &&
+                cell_sector_index < _epoch_cell_sector_output_factor_q16.size()
             ? _epoch_cell_sector_output_factor_q16[cell_sector_index] : Q16_ONE;
         if (cache.country_factor_q16 == country_factor_q16 &&
             cache.sector_factor_q16 == sector_factor_q16 &&
@@ -11522,11 +11549,16 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
         const int32_t sector = type_id >= 0 &&
                 type_id < static_cast<int32_t>(_building_types.size())
             ? _building_types[static_cast<size_t>(type_id)].economic_sector : 2;
-        const double sector_factor = country_slot >= 0 &&
-                static_cast<size_t>(country_slot) * 5U + sector <
+        const bool sector_factor_applicable =
+            sector >= 0 && sector < CIVIL_SECTOR_COUNT;
+        const double sector_factor = sector_factor_applicable &&
+                country_slot >= 0 &&
+                static_cast<size_t>(country_slot) * 5U +
+                        static_cast<size_t>(sector) <
                     _epoch_country_sector_output_factor_q16.size()
             ? static_cast<double>(_epoch_country_sector_output_factor_q16[
-                static_cast<size_t>(country_slot) * 5U + sector]) / Q16_ONE
+                static_cast<size_t>(country_slot) * 5U +
+                static_cast<size_t>(sector)]) / Q16_ONE
             : 1.0;
         int32_t family = -1;
         if (type_id >= 0 &&
@@ -14445,6 +14477,8 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             return apply_family_set_split_policy(cmd, error);
         case COMMAND_TREASURY_SPONSORED_BUILD:
             return apply_treasury_sponsored_build_command(cmd, error);
+        case COMMAND_TREASURY_SPONSORED_DEMOLISH:
+            return apply_treasury_sponsored_demolish_command(cmd, error);
         case COMMAND_BUILD_CANAL:
             return apply_canal_build_command(cmd, error);
         default:

@@ -1,6 +1,6 @@
 #pragma once
 
-// NativeMilitaryRuntime core (v1, PKMI v1).
+// NativeMilitaryRuntime core (v2 counters, PKMI v2 save / v1 load).
 //
 // Pure C++: no Godot types, no Variant/Dictionary/String in hot loops, no
 // floating point in state that is hashed or saved. All state is SoA with
@@ -39,7 +39,10 @@
 namespace pk {
 
 constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
-constexpr uint32_t PKMI_VERSION = 1u;
+// v2: state buildings are counted through the economy ledger (kind-3 rows)
+// instead of a cumulative barracks/fort/college cache. v1 streams still load
+// (backward-compatible) and fold their cache into the ledger on restore.
+constexpr uint32_t PKMI_VERSION = 2u;
 constexpr int32_t MILITARY_MAX_UNIT_TYPES = 64;
 constexpr int32_t MILITARY_MAX_EQUIP_SLOTS = 4;
 constexpr int32_t MILITARY_MAX_SUPPLY_CLASSES = 6;
@@ -368,7 +371,55 @@ struct MilitaryCountryPolicy {
     uint8_t wage_mode = 0;              // 0 AUTO, 1 ABSOLUTE
     int64_t wage_absolute = 0;          // MONEY_SCALE per head/day
     int32_t procurement_share_bp = 2000;
+    // ---- budget envelope (任务 6). `budget_share_bp <= 0` means "no envelope":
+    // wages / upkeep / procurement settle against cash and demand exactly as
+    // before, which is what every foreign AI country and every save loaded
+    // without a re-pushed player policy must keep doing. The three channel
+    // shares are percentages of the envelope and must sum to <= 10000; the
+    // procurement channel reuses `procurement_share_bp` above rather than
+    // duplicating it, so there is one number for that channel everywhere.
+    //
+    // These four fields are TRANSIENT by design (需求 9.3): they stay out of
+    // PKMI and out of `state_hash`, and the player session re-pushes them after
+    // a load, exactly like `era_advancement`.
+    int32_t budget_share_bp = 0;
+    int32_t budget_wage_bp = 6000;
+    int32_t budget_upkeep_bp = 2000;
     std::vector<int32_t> config_share_bp;   // per unit type, sum <= 10000
+    // ---- budget settlement outcome (任务 7 / 需求 5.2, 5.3, 7.1) ----------
+    // Rewritten from scratch by every wage/upkeep settlement, so these describe
+    // the LAST settled day rather than a running total. Transient like the
+    // shares above: never saved, never hashed.
+    //
+    // The three numbers per channel answer three different questions, and
+    // conflating them is the easiest way to make the panel lie:
+    //   - `*_demand`    what the lots / buildings asked for.
+    //   - `*_overspend` how far the payment went PAST this channel's ceiling.
+    //                   军饷 and 建筑维护 are high-priority (需求 7.1), so going
+    //                   past the share is allowed - cash is still the hard limit -
+    //                   and this is what paints the panel rust red.
+    //   - `*_arrears`   what nobody could fund (需求 5.2's 缺额).
+    // With no envelope all six stay 0 and the legacy path is untouched.
+    int64_t wage_demand = 0;
+    int64_t wage_arrears = 0;
+    int64_t wage_overspend = 0;
+    int64_t upkeep_demand = 0;
+    int64_t upkeep_arrears = 0;
+    int64_t upkeep_overspend = 0;
+    // ---- procurement quota outcome (任务 8 / 需求 5.4, 6.2, 7.1) ---------
+    // Same per-step, non-cumulative contract as the six numbers above: they
+    // describe the LAST procurement pass. `used` is how much of the channel
+    // ceiling that pass actually spent, `deferred_units` is the need units it
+    // had to leave unpurchased because the quota ran out. Procurement is LOW
+    // priority (需求 7.2), so it never overspends and there is deliberately no
+    // overspend field to paint rust red - the panel shows 待购 instead.
+    //
+    // The deferred shortfall is not stored as a queue: a demander's demand is
+    // `want - held`, so an unfunded gap simply reappears tomorrow and is bought
+    // in the same cheapest-first order. Keeping a second copy of the queue
+    // would be a second truth that can drift. With no envelope both stay 0.
+    int64_t procurement_budget_used = 0;
+    int64_t procurement_deferred_units = 0;
     // Rolling digests (saved).
     int32_t pay_ratio_30_q16 = MILITARY_Q16;
     int64_t spend_payroll_30 = 0, spend_procurement_30 = 0, spend_upkeep_30 = 0;
@@ -379,6 +430,13 @@ struct MilitaryCountryPolicy {
 // buildings, garrison or pending quotas). Dense mirror arrays are derived.
 struct MilitaryCellState {
     int32_t cell = -1;
+    // ---- derived cache, rebuilt every day from the economy ledger
+    // (requirement 6.1-6.3). The economy's kind-3 building groups are the count
+    // of record; `MilitaryCore::refresh_state_building_cache` overwrites these
+    // three fields from the digest's `state_*` lanes at the top of every step,
+    // so nothing may increment or decrement them. They stay in the save and the
+    // state hash because a restored save has to reproduce the same day-0 view,
+    // and because a divergence is exactly what the repair counter reports.
     int32_t barracks_count[MILITARY_STATE_BARRACKS_TIERS] = {};     // per tier
     int32_t fort_tier = -1;
     int32_t college_tier = -1;
@@ -432,6 +490,21 @@ struct MilitaryReport {
     // panel needs to tell "who got paid today" apart from the 30-day EWMA.
     int64_t payroll_garrison = 0;
     int64_t payroll_army = 0;
+    // State building cache diagnostics (requirement 6.4). Transient: reset with
+    // the rest of the report every step, never saved and never hashed.
+    // - `state_cache_repairs`: cells whose rebuilt barracks/fort/college tuple
+    //   differed from the value the previous day left behind, i.e. the cache was
+    //   stale and the economy ledger corrected it.
+    // - `state_ledger_unmapped`: ledger rows whose economy building type has no
+    //   military catalog entry, so no posts / fort bonus / training speed could
+    //   be attributed to them.
+    // - `state_role_mismatch`: rows where the economy's `state_role` disagreed
+    //   with the military catalog's role for the same type. The military catalog
+    //   wins (it is the one that knows what a tier means), but a non-zero count
+    //   means the two catalogs drifted and needs fixing at the source.
+    int32_t state_cache_repairs = 0;
+    int32_t state_ledger_unmapped = 0;
+    int32_t state_role_mismatch = 0;
 };
 
 
@@ -478,6 +551,7 @@ enum MilitaryCommandOp : uint16_t {
     MCMD_STATE_DEMOLISH = 10,
     MCMD_POLICY_SET_WAGE = 11,        // count=mode, value
     MCMD_POLICY_SET_PROCUREMENT = 12, // value=bp
+    MCMD_POLICY_SET_BUDGET = 13,      // value=total bp, ints=(wage bp, upkeep bp)
     MCMD_ARMY_CREATE = 20,            // cell, ints=(unit,count)*
     MCMD_ARMY_STATION = 21,           // army, ints optional
     MCMD_ARMY_TRANSFER = 22,          // army -> other, ints
@@ -589,6 +663,9 @@ public:
     // ---- persistence (military_core_save.cpp)
     std::vector<uint8_t> encode() const;
     bool restore(const uint8_t *data, size_t size, std::string &error);
+    // PKMI version of the stream that produced the current state via restore.
+    // 0 = never restored, 1 = legacy cumulative cache, 2 = folded ledger.
+    int32_t restored_pkmi_version() const noexcept { return _restored_pkmi_version; }
 
     // ---- self test / bench (military_core_selftest.cpp)
     static bool self_test(std::string &report);
@@ -602,6 +679,14 @@ public:
     void apply_due_commands(int64_t day);
     void reconcile_receipts(const std::vector<MilitaryIntentReceipt> &receipts);
     void reconcile_soldier_roster(const MilitaryWorldDigest &digest);
+    // Rebuilds `barracks_count` / `fort_tier` / `college_tier` for every cell
+    // from the digest's state building lanes, which mirror the economy's kind-3
+    // building groups. Runs at the top of `step_day`, before posts, upkeep,
+    // training speed or fortification strength read the cache, so those readers
+    // keep their shape and only their provenance changes. A cell whose rebuilt
+    // tuple differs from what it held is repaired in place - the economy wins -
+    // and counted in `report().state_cache_repairs` (requirement 6.4).
+    void refresh_state_building_cache(const MilitaryWorldDigest &digest);
     // ---- army personnel lane (army-personnel contract §2.1, military_core.cpp)
     // Queues one EMBARK/DISEMBARK/MERGE_LANES intent and books the heads as in
     // flight. `peer_handle` carries the absorbed formation for MERGE_LANES
@@ -639,6 +724,26 @@ public:
     // the last committed digest (0 before the first day). Published so a test
     // can recompute the wage instead of hard-coding the formula.
     int64_t soldier_living_cost(int32_t country_slot) const;
+    // ---- budget envelope (military_core_budget.cpp) ----------------------
+    // Splits one day's military envelope into its three channel ceilings.
+    // `budget_share_bp` is a share of the country's CURRENT TREASURY CASH
+    // (需求 5.1: 每日国库现金份额), and the three channel shares are
+    // percentages of that envelope, so "channels sum to 100%" is a real
+    // constraint rather than a percentage of a remainder.
+    // `enabled == false` means the country has no envelope: every ceiling is -1
+    // and the legacy "spend what cash allows" path must run untouched.
+    struct MilitaryBudgetSplit {
+        bool enabled = false;
+        int64_t envelope_daily = 0;   // MONEY_SCALE / day
+        int64_t wage_ceiling = 0;
+        int64_t upkeep_ceiling = 0;
+        int64_t procurement_ceiling = 0;
+    };
+    // `cash` is the country's committed treasury cash for the current day.
+    MilitaryBudgetSplit budget_split(int32_t country_slot, int64_t cash) const;
+    // Treasury cash the last committed digest reported for a slot (0 before the
+    // first day or for an unknown slot). Cold query path only.
+    int64_t last_country_cash(int32_t country_slot) const;
     void refresh_army_cache(int32_t army_slot);
     // Country era index from the last committed digest (militia scaling).
     int32_t militia_era(int32_t country_slot) const;
@@ -790,8 +895,26 @@ public:
     std::vector<uint8_t> _ai_country;               // by slot
     std::vector<int64_t> _ai_next_decision_day;
     std::vector<MilitaryCellState> _cell_states;    // sorted by cell
+    // Transient restore metadata (never hashed, never saved): the PKMI version
+    // of the stream that last produced this state via restore(). 0 = none.
+    int32_t _restored_pkmi_version = 0;
     std::vector<int32_t> _cell_controller;          // dense, -1 = owner (saved sparse)
     uint64_t _control_revision = 0;
+    // Yesterday's state building ledger, resolved against the military catalog:
+    // (cell, role, tier, units) rows sorted by cell. Derived, never saved and
+    // never hashed. It exists so `refresh_state_building_cache` can tell "the
+    // cache is exactly what the ledger asked for yesterday" (nothing else wrote
+    // it) apart from "the ledger itself changed today" (a lot completed, a lot
+    // was demolished) - only the former being false is a divergence worth
+    // reporting in `report().state_cache_repairs`.
+    struct StateLedgerRow {
+        int32_t cell = -1;
+        int32_t role = -1;
+        int32_t tier = -1;
+        int32_t units = 0;
+    };
+    std::vector<StateLedgerRow> _state_ledger_prev;
+    bool _state_ledger_prev_valid = false;
     // Ledger (goods, GOODS_SCALE): received = stock + transit + consumed + intercepted_out - intercepted_in + returned
     int64_t _ledger_received = 0, _ledger_consumed = 0, _ledger_intercepted_out = 0,
             _ledger_intercepted_in = 0, _ledger_returned = 0;
@@ -826,9 +949,22 @@ public:
     std::vector<int32_t> _cell_state_index;   // cell -> row in _cell_states, -1 none (derived)
     std::vector<MilitaryIntent> _war_intents;      // treaty batch queued by war commands
     int32_t _event_counter_control = 0;       // per-day control event budget
-    // Cash the owner's command stage owes for state building materials; drained
-    // into the step_day intent vector as SPEND_CASH (see MCMD_STATE_BUILD).
-    std::vector<std::pair<uint64_t, int64_t>> pending_spend;
+    // (removed) A per-command cash staging vector used to hold a cash-only
+    // estimate of state building materials that MCMD_STATE_BUILD drained into
+    // SPEND_CASH. The economy's COMMAND_TREASURY_SPONSORED_BUILD owns that
+    // settlement now, so keeping the estimate would double-charge the treasury
+    // and would also bypass the goods ledger.
+    //
+    // State building requests queued during the AI pass, drained into
+    // MILITARY_INTENT_STATE_BUILD by step_day. The bridge pays for each request
+    // through the economy and echoes accepted lots back as MCMD_STATE_BUILD, so
+    // nothing is built without a settled bill.
+    struct StateBuildRequest {
+        uint64_t country = 0;
+        int32_t cell = -1;
+        int32_t building = -1;
+    };
+    std::vector<StateBuildRequest> _build_requests;
 
     // ---- derived performance indexes (appended by the perf pass; never
     // saved or hashed; rebuilt lazily after reset/restore). Helpers live in

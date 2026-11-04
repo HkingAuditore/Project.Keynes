@@ -346,7 +346,18 @@ func _on_row_build_requested(building_id: StringName) -> void:
 	if is_inside_tree():
 		get_tree().create_timer(PENDING_SECONDS).timeout.connect(
 			_release_pending.bind(key), CONNECT_ONE_SHOT)
-	build_requested.emit({"building_id": building_id})
+	var request := {"building_id": building_id}
+	# 军事部门的条目带原生 dense 序（`state.build` 的 `building` 参数），必须一起
+	# 送到守卫层，否则它会被当成经济建筑的稳定 id。
+	for raw in _model.get("items", []):
+		var item: Dictionary = raw
+		if String(item.get("building_id", "")) != key:
+			continue
+		if item.has("military_index"):
+			request["military_index"] = int(item.get("military_index", -1))
+			request["op"] = "state.build"
+		break
+	build_requested.emit(request)
 
 
 func _release_pending(building_id: String) -> void:

@@ -1091,6 +1091,13 @@ func release_military_ledger_busy() -> void:
 		_military_ledger.release_busy()
 
 
+## 官营建筑命令的回执：写在军事台账刚按下那一行上。营造反馈条只在营造窗口
+## 打开时可见，地块档案这一页如果也只写那边，被拒的命令就完全没有回音。
+func set_military_ledger_feedback(message: String, ok: bool) -> void:
+	if _military_ledger != null:
+		_military_ledger.show_feedback(message, ok)
+
+
 ## 次日结算 / 打开窗口后重发同一张目录页的请求（查询身份由窗口自己记住）。
 func request_construction_refresh() -> void:
 	if _construction_workspace != null and _construction_workspace.visible:

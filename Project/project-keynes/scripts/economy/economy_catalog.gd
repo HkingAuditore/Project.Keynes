@@ -38,9 +38,28 @@ const SATISFACTION_TIER_COUNT := 4
 ## Dense order of `building_economic_sectors`. The compiled column stores this
 ## index, so the order is a data contract: append only, never reorder. The
 ## construction workspace groups its catalog pages by these sectors.
+## `military` is appended after the five civil sectors on purpose: every native
+## sector-keyed array (maintenance horizon, country sector output factors,
+## overview buckets) is sized from the civil five, so the appended index stays
+## out of those rules instead of silently landing in `knowledge`.
 const BUILDING_SECTOR_IDS := [
 	"agriculture", "extractive", "manufacturing", "energy", "knowledge",
+	"military",
 ]
+## Number of civil sectors. Native sector-keyed columns are sized from this, so
+## `military` must never be indexed into them.
+const BUILDING_CIVIL_SECTOR_COUNT := 5
+## Authoring name -> dense `building_kinds` index. The native runtime
+## switches on these four values, so the mapping is a data contract with
+## `BuildingType::kind`: append only, never reorder or reuse an index.
+## A miss here is a hard error: an unrecognised kind must never fall
+## through to `industrial` and become a silent market producer.
+const BUILDING_KIND_INDICES := {
+	"collector": 0,
+	"industrial": 1,
+	"service": 2,
+	"state": 3,
+}
 const SATISFACTION_DEVELOPMENT_INPUT_COUNT := 3
 const SIGNAL_IDS := {
 	"temperature": 0,
@@ -1434,10 +1453,14 @@ static func _compile_building_columns(profession_index: Dictionary,
 				or int(profile.owner_slots_per_building) <= 0 or int(profile.construction_days) < 0:
 			return {"ok": false, "reason": "invalid building type: %s" % stable_id}
 		var building_kind := String(profile.building_kind)
-		if building_kind not in ["collector", "industrial", "service", "state"]:
-			return {"ok": false, "reason": "invalid building kind: %s" % stable_id}
-		building_kinds.append(0 if building_kind == "collector" \
-			else (2 if building_kind == "service" else (3 if building_kind == "state" else 1)))
+		# Explicit kind table. The previous nested ternary ended in a bare
+		# `else 1`, so any unrecognised kind - a typo like "state_" or a
+		# newly authored kind this runtime does not know - compiled into
+		# `industrial` and started bidding for inputs and selling output.
+		if not BUILDING_KIND_INDICES.has(building_kind):
+			return {"ok": false, "reason": "invalid building kind: %s" % stable_id,
+				"kind": building_kind}
+		building_kinds.append(int(BUILDING_KIND_INDICES[building_kind]))
 		# Military v1 (design §5.2/§5.3): a state-owned lot carries an authored
 		# role; every other kind must leave it at `none`.
 		var state_role_id := String(profile.state_role).strip_edges()
@@ -1479,6 +1502,20 @@ static func _compile_building_columns(profession_index: Dictionary,
 				return {"ok": false, "reason": "empty building technology tag: %s" % stable_id}
 			technology_tags.append(String(tag))
 		technology_tag_offsets.append(technology_tags.size())
+		# Military v1 (design §1.4/§1.5): every state lot is unlocked by
+		# exactly one technology. The generic binding rule below also rejects
+		# a double binding, but it reports a bare count; a state lot is the
+		# one kind whose whole purpose is a single gate, so fail with the
+		# role named and the offending count attached.
+		if building_kind == "state":
+			var state_technology_count := 0
+			for tag in profile.technology_tags:
+				if String(tag).strip_edges().begins_with("tech."):
+					state_technology_count += 1
+			if state_technology_count != 1:
+				return {"ok": false, "reason":
+					"state building requires exactly one technology tag: %s" % stable_id,
+					"count": state_technology_count}
 		var required_seen := {}
 		for tag in profile.required_technology_tags:
 			var required_tag := String(tag).strip_edges()
@@ -1545,7 +1582,12 @@ static func _compile_building_columns(profession_index: Dictionary,
 				if not role_state_service:
 					return {"ok": false, "reason":
 						"state building role requires state-service profession: %s" % stable_id}
-				if role_policy != "state_payroll" and not role_wage_policies.is_empty():
+				# Design §3.2/§3.3: the treasury pays every state role, so the
+				# policy must be authored explicitly. The earlier form skipped
+				# this check whenever `employee_wage_policy_ids` was empty, which
+				# let a state lot fall back to the building-level market wage
+				# and compile with a wage the treasury never settles.
+				if role_wage_policies.is_empty() or role_policy != "state_payroll":
 					return {"ok": false, "reason":
 						"state building role must use state_payroll: %s" % stable_id}
 			elif role_state_service:
@@ -1591,6 +1633,18 @@ static func _compile_building_columns(profession_index: Dictionary,
 			if pooled_error != "":
 				return {"ok": false, "reason": "%s: %s" % [pooled_error, stable_id]}
 		construction_offsets.append(construction_goods.size())
+		# Design §7.3: a state lot is a pure treasury cash sink. Its upkeep is
+		# settled by the military runtime, so a material maintenance bill here
+		# would charge the same building twice - once in goods, once in cash.
+		# Reject the authoring outright instead of silently dropping the
+		# column, so the double bill can never come back through content.
+		if building_kind == "state":
+			if not profile.maintenance_good_ids.is_empty():
+				return {"ok": false, "reason":
+					"state building must not declare maintenance goods: %s" % stable_id}
+			if int(profile.maintenance_horizon_days) != 0:
+				return {"ok": false, "reason":
+					"state building must not declare a maintenance horizon: %s" % stable_id}
 		var authored_maintenance_ids: PackedStringArray = profile.maintenance_good_ids
 		var authored_maintenance_qty: PackedInt64Array = profile.maintenance_quantities_per_day
 		if authored_maintenance_ids.size() != authored_maintenance_qty.size():
@@ -1725,6 +1779,18 @@ static func _compile_building_columns(profession_index: Dictionary,
 			production_resource_modes.append(0 if interaction_mode == "extract" else 1)
 			production_resource_access_modes.append(0)
 		production_resource_offsets.append(production_resources.size())
+		# Design §7.3: a state lot neither extracts nor cultivates. The
+		# generic collector/cultivation rules below would reject these too,
+		# but with a reason that never names the state contract, and the
+		# collector rule in particular reads as if a state lot could be
+		# fixed by re-tagging its kind.
+		if building_kind == "state":
+			if not prod_ids.is_empty():
+				return {"ok": false, "reason":
+					"state building must not consume natural resources: %s" % stable_id}
+			if not profile.resource_generation_ids.is_empty():
+				return {"ok": false, "reason":
+					"state building must not generate resources: %s" % stable_id}
 		if owner_id == "merchant":
 			# Route B: a merchant may own either a matching bullion collector
 			# (gold/silver) or a service "merchant post" (no output/resource).

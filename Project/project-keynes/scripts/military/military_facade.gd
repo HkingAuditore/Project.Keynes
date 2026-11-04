@@ -28,7 +28,7 @@ const SPEC_COMMON := {
 		"config.set", "config.set_quality_policy", "config.auto_retrain",
 	],
 	building_ops = ["barracks.pause", "train", "state.build", "state.demolish"],
-	policy_ops = ["policy.set_wage", "policy.set_procurement"],
+	policy_ops = ["policy.set_wage", "policy.set_procurement", "policy.set_budget"],
 	army_ops = [
 		"army.create", "army.station", "army.transfer", "army.merge",
 		"army.split", "army.set_template", "army.reinforce", "army.move",
@@ -45,6 +45,12 @@ var _world_ext: Object = null
 var _configured := false
 var _catalog: Dictionary = {}
 var _catalog_hash := 0
+## Economy's dense good id table, captured at configure time. The compiled
+## military catalog indexes materials by that dense id (`material_goods`), so
+## resolving a name needs this table; keeping it here means the view model never
+## has to reach into the economy catalog for a military row (see
+## docs/ui/military-cell-tab.md §2).
+var _good_ids: PackedStringArray = PackedStringArray()
 var _world_seed := 0
 var _last_configure_result: Dictionary = {}
 var _last_daily_report: Dictionary = {}
@@ -67,6 +73,9 @@ func configure(world_ext: Object, economy_catalog: Dictionary,
 	_configured = false
 	_catalog = {}
 	_catalog_hash = 0
+	_good_ids = economy_catalog.get("good_ids", PackedStringArray()) \
+		if economy_catalog.get("good_ids", null) is PackedStringArray \
+		else PackedStringArray()
 	_world_seed = int(world_seed)
 	_missing_api_reason = ""
 	if _world_ext == null or not _world_ext.has_method("configure_military"):
@@ -314,6 +323,17 @@ func submit(batch: Array) -> Dictionary:
 	return result
 
 
+## 军事预算信封（任务 6 / 需求 5.1）。三项通道份额各传 -1 表示「本次不改」，
+## 让 UI 只推变化的那一项；原生按未传入项沿用当前值校验三项之和 <= 100%。
+## `total_bp <= 0` 表示关闭预算控制，回落到旧的「按现金与需求直接结算」。
+func set_budget(country: int, total_bp: int, wage_bp: int = -1,
+		upkeep_bp: int = -1, procurement_bp: int = -1) -> Dictionary:
+	var pairs := PackedInt32Array([int(wage_bp), int(upkeep_bp),
+		int(procurement_bp)])
+	return submit([{"op": "policy.set_budget", "country": country,
+		"value": int(total_bp), "int_pairs": pairs}])
+
+
 func set_target(country: int, mode: int, value: int) -> Dictionary:
 	return submit([{"op": "force.set_target", "country": country,
 		"count": int(mode), "value": int(value)}])
@@ -440,6 +460,43 @@ func catalog_view() -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_military_catalog_view"):
 		return _fail("military_catalog_view_api_unavailable")
 	return _world_ext.get_military_catalog_view()
+
+
+## 官营建筑一座的建材需求：`[{good_id, name, qty}]`，qty 是 GOODS_SCALE（1000 = 1 单位）。
+##
+## 目录在编译期就把 `materials` 折成了 dense 的 `material_goods` / `material_qty`
+## 两条平行数组（见 military_catalog_compiler.gd），这里只负责把 dense id 还原成
+## 稳定 id 与名字。返回空数组表示该建筑不需要建材（不返回 null：调用方要能区分
+## 「没有建材」与「读不到目录」）。
+func state_building_materials(building_index: int) -> Array:
+	var rows: Array = _catalog.get("state_buildings", [])
+	if building_index < 0 or building_index >= rows.size():
+		return []
+	var row: Dictionary = rows[building_index]
+	var ids: PackedInt32Array = row.get("material_goods", PackedInt32Array())
+	var quantities: PackedInt64Array = row.get("material_qty", PackedInt64Array())
+	var out: Array = []
+	for index in range(ids.size()):
+		var dense := int(ids[index])
+		var good_id := String(_good_ids[dense]) \
+			if dense >= 0 and dense < _good_ids.size() else ""
+		out.append({
+			"good_id": good_id,
+			"qty": int(quantities[index]) if index < quantities.size() else 0,
+		})
+	return out
+
+
+## 该军事建筑对应的经济目录 `building_type_ids` 稠密索引。编译期按稳定 id 解析，
+## 解析失败或落到的类型不是 `state` 时整份军事目录直接编译失败（见
+## `_compile_state_buildings` 的 `military_state_building_without_economy_profile` /
+## `military_state_building_economy_kind_invalid`），因此成功编译的目录里这个值恒 >= 0；
+## 只有越界的 `building_index` 参数会返回 -1。
+func state_building_economy_id(building_index: int) -> int:
+	var rows: Array = _catalog.get("state_buildings", [])
+	if building_index < 0 or building_index >= rows.size():
+		return -1
+	return int((rows[building_index] as Dictionary).get("economy_building_id", -1))
 
 
 ## Drain the native event ring into GameplayEventBus-compatible batches.

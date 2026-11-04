@@ -24,6 +24,7 @@ func _init() -> void:
 	_audit_context_mappings()
 	_audit_semantic_contracts()
 	_audit_paper_controls()
+	_audit_military_paper_cutouts()
 	if _failures.is_empty():
 		print("[icon-catalog-audit] PASS")
 		quit(0)
@@ -34,10 +35,25 @@ func _init() -> void:
 
 
 func _audit_registered_semantics() -> void:
+	# 军需物资（firearms/ordnance/ammunition …）在军事面板里解析到军事纸贴，
+	# 语义键仍然是自己：这条白名单只覆盖这些有意的解析改写。
+	var military_goods := {}
+	for military_key in IconCatalog.MILITARY_PAPER_TEXTURES:
+		var raw := String(military_key)
+		if raw.begins_with("military.good."):
+			military_goods[StringName("good.%s" % raw.trim_prefix("military.good."))] = true
+	for good_id in IconCatalog.MILITARY_GOOD_ICONS:
+		var military_key: StringName = IconCatalog.MILITARY_GOOD_ICONS[good_id]
+		if IconCatalog.MILITARY_PAPER_TEXTURES.has(military_key):
+			military_goods[StringName("good.%s" % good_id)] = true
 	for semantic in IconCatalog.registered_keys():
-		if not IconCatalog.PAPER_TEXTURES.has(semantic) and not IconCatalog.PAPER_ALIASES.has(semantic):
+		if not IconCatalog.PAPER_TEXTURES.has(semantic) \
+				and not IconCatalog.PAPER_ALIASES.has(semantic) \
+				and not IconCatalog.MILITARY_PAPER_TEXTURES.has(semantic) \
+				and not military_goods.has(semantic):
 			_failures.append("semantic has no explicit paper artwork mapping: %s" % semantic)
-		if IconCatalog.resolve_semantic(semantic) != semantic:
+		if IconCatalog.resolve_semantic(semantic) != semantic \
+				and not military_goods.has(semantic):
 			_failures.append("semantic key does not resolve to itself: %s" % semantic)
 		var spec := IconCatalog.spec_for(semantic)
 		var has_glyph := not String(spec.get("glyph", "")).is_empty()
@@ -121,6 +137,9 @@ func _audit_shared_implementations() -> void:
 		if String(signature).begins_with("project_keynes:"):
 			var explicit_paper: Array = []
 			for paper_key in IconCatalog.PAPER_TEXTURES:
+				if IconCatalog.implementation_signature(paper_key) == signature:
+					explicit_paper.append(paper_key)
+			for paper_key in IconCatalog.MILITARY_PAPER_TEXTURES:
 				if IconCatalog.implementation_signature(paper_key) == signature:
 					explicit_paper.append(paper_key)
 			for alias in IconCatalog.PAPER_ALIASES:
@@ -290,6 +309,30 @@ func _audit_paper_controls() -> void:
 	if artwork != null and artwork.visible:
 		_failures.append("empty label must hide previous paper texture")
 	label.free()
+
+
+func _audit_military_paper_cutouts() -> void:
+	var unique_textures := {}
+	for key in IconCatalog.MILITARY_PAPER_TEXTURES:
+		var texture := IconCatalog.MILITARY_PAPER_TEXTURES[key] as Texture2D
+		if texture == null:
+			_failures.append("military paper icon has no texture: %s" % key)
+			continue
+		if not texture.resource_path.begins_with("res://assets/military/codex/"):
+			continue
+		unique_textures[texture.resource_path] = true
+		var image := texture.get_image()
+		if image == null:
+			_failures.append("military paper icon cannot export pixels: %s" % key)
+			continue
+		var used := image.get_used_rect()
+		var size := image.get_size()
+		if used.position.x < 8 or used.position.y < 8 \
+				or used.end.x > size.x - 8 or used.end.y > size.y - 8:
+			_failures.append("military paper icon is clipped at its cell edge: %s" % key)
+	if unique_textures.size() != 56:
+		_failures.append("military paper atlas must expose 56 unique stickers, got %d" % \
+			unique_textures.size())
 
 
 func _files_recursive(root: String, suffix: String) -> PackedStringArray:

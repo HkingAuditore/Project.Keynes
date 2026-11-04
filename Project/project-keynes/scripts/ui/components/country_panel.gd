@@ -24,7 +24,7 @@ const SECTION_DEFINITIONS := [
 	{"id": "ideology", "label": "理念", "title": "国家理念", "subtitle": "", "icon": &"country.politics", "hud_icon": &"hud.country.ideology", "accent": UITokens.ACCENT, "available": true},
 	{"id": "economy", "label": "经济", "title": "国民经济", "subtitle": "", "icon": &"country.economy", "hud_icon": &"hud.country.economy", "accent": UITokens.RESOURCE, "available": true},
 	{"id": "military", "label": "军事", "subtitle": "", "icon": &"country.military", "hud_icon": &"hud.country.military", "accent": UITokens.RISK, "available": true},
-	{"id": "diplomacy", "label": "外交", "subtitle": "尚未开放", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": false},
+	{"id": "diplomacy", "label": "外交", "title": "外交档案", "subtitle": "", "icon": &"country.diplomacy", "hud_icon": &"hud.country.diplomacy", "accent": UITokens.WATER, "available": true},
 ]
 const HEADER_HEIGHT := 30.0
 ## Fraction of the viewport the docked shell leaves to the map. The shell is
@@ -56,6 +56,7 @@ var _economy_workspace: Control
 var _hinges: Control
 var _ideology_workspace: Control
 var _military_workspace: Control
+var _diplomacy_workspace: Control
 var _model: Dictionary = {}
 var _section_id := ""
 var _compact := false
@@ -86,6 +87,7 @@ func _ready() -> void:
 	_economy_workspace = _economy_dossier.economy_workspace() if _economy_dossier != null else null
 	_ideology_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/IdeologyWorkspace") as Control
 	_military_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/MilitaryWorkspace") as Control
+	_diplomacy_workspace = get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/SectionHost/DiplomacyWorkspace") as Control
 	_hinges = get_node_or_null("Center/Dialog/Hinges") as Control
 	var close_button := get_node_or_null("Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CloseButton") as Button
 	if _center == null or _dialog == null or _section_host == null \
@@ -95,7 +97,8 @@ func _ready() -> void:
 			or _section_subtitle == null or _country_title == null \
 			or _country_subtitle == null or _country_mark == null or _header_panel == null \
 			or _technology_workspace == null or _economy_dossier == null or _economy_workspace == null \
-			or _ideology_workspace == null or _military_workspace == null or _hinges == null \
+			or _ideology_workspace == null or _military_workspace == null \
+			or _diplomacy_workspace == null or _hinges == null \
 			or close_button == null:
 		push_error("CountryPanel 必须通过 country_panel.tscn 实例化。")
 		return
@@ -127,6 +130,15 @@ func _ready() -> void:
 			_military_workspace.connect("dossier_requested",
 				func(kind: String, id: int, cell: int):
 					military_dossier_requested.emit(kind, id, cell))
+	# 外交面板只需要两个出口：定位一个格，或把某场战争交给议和窗口（与军事章的
+	# 「议和」是同一条链路，外壳不再区分是谁发起的）。
+	if _diplomacy_workspace != null:
+		if _diplomacy_workspace.has_signal("locate_cell_requested"):
+			_diplomacy_workspace.connect("locate_cell_requested",
+				func(cell: int): locate_cell_requested.emit(cell))
+		if _diplomacy_workspace.has_signal("peace_negotiation_requested"):
+			_diplomacy_workspace.connect("peace_negotiation_requested",
+				func(war_id: int): peace_negotiation_requested.emit(war_id))
 	_dialog.resized.connect(_place_hinges)
 	call_deferred("_update_responsive_layout")
 
@@ -173,6 +185,8 @@ func set_player_controller(controller) -> void:
 		_ideology_workspace.set_player_controller(controller)
 	if _military_workspace != null and _military_workspace.has_method("set_player_controller"):
 		_military_workspace.set_player_controller(controller)
+	if _diplomacy_workspace != null and _diplomacy_workspace.has_method("set_player_controller"):
+		_diplomacy_workspace.set_player_controller(controller)
 
 
 func current_section() -> String:
@@ -240,6 +254,9 @@ func refresh_summary(model: Dictionary) -> void:
 	if _section_id == "military" and _military_workspace != null:
 		_military_workspace.refresh_model(model)
 		return
+	if _section_id == "diplomacy" and _diplomacy_workspace != null:
+		_diplomacy_workspace.refresh_model(model)
+		return
 	_apply_section()
 
 
@@ -279,10 +296,12 @@ func _apply_section() -> void:
 	var economy_open := _section_id == "economy"
 	var ideology_open := _section_id == "ideology"
 	var military_open := _section_id == "military"
+	var diplomacy_open := _section_id == "diplomacy"
 	_technology_workspace.visible = technology_open
 	_economy_dossier.visible = economy_open
 	_ideology_workspace.visible = ideology_open
 	_military_workspace.visible = military_open
+	_diplomacy_workspace.visible = diplomacy_open
 	if technology_open:
 		if _technology_workspace.has_method("set_player_controller"):
 			_technology_workspace.set_player_controller(_player_controller)
@@ -313,6 +332,13 @@ func _apply_section() -> void:
 		_military_workspace.set_model(_model)
 		if _military_workspace.has_method("set_compact"):
 			_military_workspace.set_compact(_compact)
+		return
+	if diplomacy_open:
+		if _diplomacy_workspace.has_method("set_player_controller"):
+			_diplomacy_workspace.set_player_controller(_player_controller)
+		_diplomacy_workspace.set_model(_model)
+		if _diplomacy_workspace.has_method("set_compact"):
+			_diplomacy_workspace.set_compact(_compact)
 		return
 
 
@@ -438,6 +464,8 @@ func _update_responsive_layout() -> void:
 		_ideology_workspace.set_compact(_compact)
 	if _military_workspace != null and _military_workspace.has_method("set_compact"):
 		_military_workspace.set_compact(_compact)
+	if _diplomacy_workspace != null and _diplomacy_workspace.has_method("set_compact"):
+		_diplomacy_workspace.set_compact(_compact)
 	_place_hinges()
 
 

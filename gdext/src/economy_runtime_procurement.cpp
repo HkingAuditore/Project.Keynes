@@ -41,7 +41,8 @@ enum ProcurementCashKind : int32_t {
 
 Dictionary NativeEconomyRuntime::set_country_procurement_policy(
         int64_t country_handle, bool enabled, int32_t treasury_share_bp,
-        int32_t research_share_bp, int64_t effective_day, int64_t sequence) {
+        int32_t research_share_bp, int64_t effective_day, int64_t sequence,
+        int32_t era_share_bp, int32_t colonization_share_bp) {
     Dictionary out;
     if (_country_runtime == nullptr || !_country_runtime->valid_handle(country_handle)) {
         out["ok"] = false;
@@ -49,9 +50,23 @@ Dictionary NativeEconomyRuntime::set_country_procurement_policy(
         return out;
     }
     if (treasury_share_bp < 0 || treasury_share_bp > 10000 ||
-        research_share_bp < 0 || research_share_bp > 10000) {
+        research_share_bp < 0 || research_share_bp > 10000 ||
+        era_share_bp < -1 || era_share_bp > 10000 ||
+        colonization_share_bp < -1 || colonization_share_bp > 10000) {
         out["ok"] = false;
         out["code"] = "procurement_share_invalid";
+        return out;
+    }
+    // -1 means "keep the legacy split", so only positive shares compete for
+    // the 100% envelope. Anything above it is rejected instead of silently
+    // normalized: an over-allocated policy must fail loudly at the boundary.
+    int64_t allocated = static_cast<int64_t>(clamp_bp(research_share_bp)) +
+        std::max<int32_t>(0, era_share_bp) +
+        std::max<int32_t>(0, colonization_share_bp);
+    if (allocated > 10000) {
+        out["ok"] = false;
+        out["code"] = "procurement_share_over_allocated";
+        out["allocated_bp"] = allocated;
         return out;
     }
     PendingProcurementUpdate update;
@@ -60,6 +75,10 @@ Dictionary NativeEconomyRuntime::set_country_procurement_policy(
     update.flag = enabled;
     update.treasury_share_bp = treasury_share_bp;
     update.research_share_bp = research_share_bp;
+    // -1 is forwarded on purpose: apply_pending_procurement_updates keeps the
+    // previously stored channel share in that case.
+    update.era_share_bp = era_share_bp;
+    update.colonization_share_bp = colonization_share_bp;
     update.effective_day = std::max<int64_t>(0, effective_day);
     update.sequence = sequence;
     {
@@ -190,6 +209,11 @@ void NativeEconomyRuntime::apply_pending_procurement_updates(int64_t day_index) 
             state.policy_enabled = update.flag;
             state.treasury_share_bp = clamp_bp(update.treasury_share_bp);
             state.research_share_bp = clamp_bp(update.research_share_bp);
+            // -1 keeps the legacy split (or whatever was stored before), so a
+            // treasury-page submit never clears the fiscal-page channels.
+            if (update.era_share_bp >= 0) state.era_share_bp = clamp_bp(update.era_share_bp);
+            if (update.colonization_share_bp >= 0)
+                state.colonization_share_bp = clamp_bp(update.colonization_share_bp);
         } else if (update.kind == 2) {
             if (!update.flag) {
                 state.era_active = false;
@@ -301,14 +325,43 @@ void NativeEconomyRuntime::freeze_epoch_procurement_budgets() {
             }
         }
         const bool colonization = colonization_demand[static_cast<size_t>(country)] != 0;
-        if (era_demand && colonization) {
-            state->era_daily = state->other_daily / 2;
-            state->colonization_daily = state->other_daily - state->era_daily;
-        } else if (era_demand) {
-            state->era_daily = state->other_daily;
-        } else if (colonization) {
-            state->colonization_daily = state->other_daily;
+        // Share-based split of national_daily. All three shares (research, era,
+        // colonization) are percentages of the same national budget, which is
+        // what makes "the three shares sum to <= 100%" a real constraint.
+        // A channel share of -1 means the player never touched it, so the
+        // legacy allocation is kept: 50/50 when both channels demand cash, all
+        // of it to the only demander. Any unallocated remainder stays in the
+        // treasury.
+        const bool era_share_set = state->era_share_bp >= 0;
+        const bool colonization_share_set = state->colonization_share_bp >= 0;
+        int64_t era_daily = 0;
+        int64_t colonization_daily = 0;
+        if (!era_share_set && !colonization_share_set) {
+            if (era_demand && colonization) {
+                era_daily = state->other_daily / 2;
+                colonization_daily = state->other_daily - era_daily;
+            } else if (era_demand) {
+                era_daily = state->other_daily;
+            } else if (colonization) {
+                colonization_daily = state->other_daily;
+            }
+        } else {
+            if (era_share_set && era_demand)
+                era_daily = mul_div_sat(state->national_daily, clamp_bp(state->era_share_bp),
+                                        10000, _saturation_count);
+            if (colonization_share_set && colonization)
+                colonization_daily = mul_div_sat(state->national_daily,
+                    clamp_bp(state->colonization_share_bp), 10000, _saturation_count);
+            // An unspecified channel keeps the legacy "whatever is left of the
+            // other_daily pool" rule so an old treasury-page submit never
+            // starves colonization.
+            if (!era_share_set && era_demand)
+                era_daily = std::max<int64_t>(0, state->other_daily - colonization_daily);
+            if (!colonization_share_set && colonization)
+                colonization_daily = std::max<int64_t>(0, state->other_daily - era_daily);
         }
+        state->era_daily = era_daily;
+        state->colonization_daily = colonization_daily;
         (void)days;
     }
 }
@@ -827,6 +880,8 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
     bool policy_enabled = state != nullptr && state->policy_enabled;
     int32_t treasury_bp = state != nullptr ? state->treasury_share_bp : 0;
     int32_t research_bp = state != nullptr ? state->research_share_bp : 0;
+    int32_t era_bp = state != nullptr ? state->era_share_bp : -1;
+    int32_t colonization_bp = state != nullptr ? state->colonization_share_bp : -1;
     bool era_active = state != nullptr && state->era_active;
     std::vector<EraProcurementLine> lines = state != nullptr
         ? state->era_goods : std::vector<EraProcurementLine>{};
@@ -842,6 +897,9 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
                 policy_enabled = update.flag;
                 treasury_bp = update.treasury_share_bp;
                 research_bp = update.research_share_bp;
+                if (update.era_share_bp >= 0) era_bp = update.era_share_bp;
+                if (update.colonization_share_bp >= 0)
+                    colonization_bp = update.colonization_share_bp;
             } else if (update.kind == 2) {
                 era_pending = true;
                 era_active = update.flag;
@@ -865,6 +923,8 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
     out["policy_pending"] = policy_pending;
     out["treasury_share_bp"] = treasury_bp;
     out["research_share_bp"] = research_bp;
+    out["era_share_bp"] = era_bp;
+    out["colonization_share_bp"] = colonization_bp;
     // Frozen epoch values when available; otherwise a live preview from cash.
     int64_t national = 0, research = 0, other = 0, era_daily = 0, colonization = 0;
     if (state != nullptr && state->policy_enabled && !policy_pending) {
@@ -879,7 +939,22 @@ Dictionary NativeEconomyRuntime::country_procurement_snapshot(int64_t country_ha
         national = mul_div_sat(cash, clamp_bp(treasury_bp), 10000, sat);
         research = mul_div_sat(national, clamp_bp(research_bp), 10000, sat);
         other = national - research;
-        era_daily = era_active ? other : 0;
+        // Same split rule as the frozen path so the preview does not jump when
+        // the epoch lands: all three shares are percentages of national_daily.
+        const bool era_share_set = era_bp >= 0;
+        const bool colonization_share_set = colonization_bp >= 0;
+        if (!era_share_set && !colonization_share_set) {
+            era_daily = era_active ? other : 0;
+        } else {
+            if (era_share_set && era_active)
+                era_daily = mul_div_sat(national, clamp_bp(era_bp), 10000, sat);
+            if (colonization_share_set)
+                colonization = mul_div_sat(national, clamp_bp(colonization_bp), 10000, sat);
+            if (!era_share_set)
+                era_daily = std::max<int64_t>(0, other - colonization);
+            if (!colonization_share_set)
+                colonization = std::max<int64_t>(0, other - era_daily);
+        }
     }
     out["national_daily_budget"] = national;
     out["research_daily_budget"] = research;

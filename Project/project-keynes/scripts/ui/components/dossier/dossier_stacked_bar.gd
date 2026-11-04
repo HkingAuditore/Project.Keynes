@@ -24,6 +24,9 @@ var _segments: Array = []
 var _values := PackedFloat32Array()
 var _from := PackedFloat32Array()
 var _legend_rows := 1
+## 段点击回调：`func(segment_id: String, ratio: float)`，ratio 是该段内的相对位置
+## （0..1）。收入构成这类只读图表留空即可；兵种编制条把点击换算成具体份额。
+var segment_clicked := Callable()
 
 
 func _init() -> void:
@@ -64,6 +67,56 @@ func _current_values() -> PackedFloat32Array:
 ## 段数，供结构与截图测试断言。
 func segment_count() -> int:
 	return _segments.size()
+
+
+## 堆叠条的实际可点区域（自绘控件，没有子节点可量）。
+func _bar_rect() -> Rect2:
+	return Rect2(Vector2(0.0, 20.0), Vector2(size.x, BAR_HEIGHT))
+
+
+## 命中某段：返回 {id, ratio}，ratio 是落在该段内的相对位置（0..1）。
+## 只对累计宽度 >0 的段判定，避免零宽度段抢走点击。
+func segment_at(point: Vector2) -> Dictionary:
+	if not _bar_rect().has_point(point) or not segment_clicked.is_valid():
+		return {}
+	var values := _current_values()
+	var total := 0.0
+	for value in values:
+		total += value
+	if total <= 0.0:
+		return {}
+	var bar := _bar_rect()
+	var cursor := bar.position.x
+	for index in range(mini(values.size(), _segments.size())):
+		var width := bar.size.x * values[index] / total
+		if width <= 0.5:
+			continue
+		if point.x >= cursor and point.x <= cursor + width:
+			return {
+				"id": String((_segments[index] as Dictionary).get("id", "")),
+				"ratio": clampf((point.x - cursor) / width, 0.0, 1.0),
+			}
+		cursor += width
+	return {}
+
+
+func _gui_input(event: InputEvent) -> void:
+	if not segment_clicked.is_valid():
+		return
+	if event is InputEventMouseMotion:
+		var hit := segment_at((event as InputEventMouseMotion).position)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
+			if not hit.is_empty() else Control.CURSOR_ARROW
+		return
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index != MOUSE_BUTTON_LEFT or not button.pressed:
+			return
+		var hit := segment_at(button.position)
+		if hit.is_empty():
+			return
+		segment_clicked.call(String(hit.id), float(hit.ratio))
+		accept_event()
 
 
 func _notification(what: int) -> void:
