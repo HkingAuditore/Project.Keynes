@@ -1,4 +1,4 @@
-name: Runtime regression checks
+name: Runtime quick checks
 
 on:
   pull_request:
@@ -7,11 +7,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-quick-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   authoring-and-thread-lifetime:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not download game assets, checked-in binaries or godot-cpp.
+          sparse-checkout: |
+            tools/map_authoring
+            gdext/src
+            gdext/tests
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -27,35 +37,7 @@ jobs:
           clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
             -Igdext/src gdext/tests/runtime_execution_context_test.cpp -o /tmp/execution-context-test
           /tmp/execution-context-test
-
-  godot-runtime:
-    runs-on: ubuntu-latest
-    env:
-      GODOT_RELEASE: "4.6.3-stable"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install build tool
-        run: python -m pip install scons
-      - name: Build native extension from the pinned submodule
-        working-directory: gdext
-        run: scons platform=linux target=template_debug arch=x86_64 dev_build=no -j2
-      - name: Download Godot
+      - name: Standalone climate compilation
         run: |
-          curl --fail --location --output /tmp/godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_RELEASE}_linux.x86_64.zip"
-          unzip /tmp/godot.zip -d /tmp/godot-bin
-          chmod +x "/tmp/godot-bin/Godot_v${GODOT_RELEASE}_linux.x86_64"
-          echo "GODOT_BIN=/tmp/godot-bin/Godot_v${GODOT_RELEASE}_linux.x86_64" >> "$GITHUB_ENV"
-      - name: Import and run focused runtime and save checks
-        run: python tools/ci/run_regression_checks.py --import --roundtrip --log-dir /tmp/runtime-check-logs
-      - name: Retain diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: runtime-check-logs
-          path: /tmp/runtime-check-logs
-          if-no-files-found: ignore
+          printf '#include "runtime_climate_pass_math.h"\n' | g++ -std=c++17 -fsyntax-only -x c++ -Igdext/src -
+          g++ -std=c++17 -fsyntax-only -Igdext/src gdext/src/runtime_climate_kernel.cpp

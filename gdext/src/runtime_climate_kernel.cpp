@@ -7,6 +7,7 @@
 #include "runtime_climate_pass_math.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
