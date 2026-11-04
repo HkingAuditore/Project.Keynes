@@ -9,7 +9,7 @@
 //   world_ext_internal.h 里这些 helper 与 Godot 类型（FastNoiseLite、Vector2、
 //   PackedArray）混在同一个 TU 头里，worker 侧的共享 pass TU 不能包含它——
 //   否则 runtime_* 目录就被 Godot API 污染，SHADOW worker 也不再是纯 POD。
-//   这里只依赖 <algorithm>/<cmath>/<cstdint> 与同样 Godot 无依赖的
+//   这里只依赖标准库头文件与同样 Godot 无依赖的
 //   runtime_climate_formulas.h。
 //
 // 约束（不可放松）：
@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 namespace pk {
 
