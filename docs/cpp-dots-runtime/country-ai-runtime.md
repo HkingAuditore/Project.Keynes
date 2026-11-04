@@ -32,7 +32,9 @@
   `process_country_ai_colonization_intents` 先做报价预检，再转成普通
   `COMMAND_START_FAMILY_EXPEDITION`。其 `sequence` 带
   `COUNTRY_AI_COLONIZATION_SEQUENCE_TAG = 1 << 62`，执行期拒绝回执（kind 7）据此归因给 AI。
-- `publish_country_command_terminals` 跳过 AI 来源，玩家回执消费者不会看到 AI 的 REJECT。
+- `publish_country_command_terminals` 只为经 Host 入队的同步 AI 镜像登记内部终态，
+  使 SHADOW 的旧包及时退出重放队列；worker 本地规划的 AI 不登记传输终态。
+  `poll_country_command_receipts` 过滤所有 AI 来源，玩家消费者不会看到 AI 的 REJECT。
 
 ## 3. 调度与挂载
 

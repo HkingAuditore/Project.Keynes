@@ -75,6 +75,21 @@ Worker 命令公式收口到 `country_core_apply_command()`；业务投影 hash 
 `country_technologies` bits、command receipt codes。Headless harness 见
 `runtime_country_parity_test.gd`。
 
+### 2026-11-03 D11 财政与命令边界
+
+同步 Economy 的财政写入在 Country 当日封存后发生，因此镜像回执携带首次包含该写入的
+Country 日期（写入决定时的 `_last_committed_day + 1`）。Peer 的最终 ACK 延迟到达不会改变
+这个日期。SHADOW 只在对应 Country 边界按决定顺序重放，不把未来入账提前应用。
+镜像使用已决定的现金数额恢复原预留量；研究采购重放直接应用同步路径已完成的结果，
+不等待仅属于 ACTIVE Economy 的同周期结算调用。ACTIVE 的守恒窗口保持原有门禁。
+
+来自同步 AI 的镜像命令也是 Host 已接收的包，执行后必须登记内部终态，防止下次日重放。
+玩家回执接口仍过滤 AI；worker 自己规划、未经过 Host 入队的 AI 命令不创建传输终态。
+AI 失败后剔除并重规划仅用于 worker 自己规划的批次，SHADOW 不得静默丢弃参考路径的命令。
+
+Country POD 的研究入队与推进都使用编译好的统一研究条件，里程碑可以放入任一承载领域，
+普通科技仍必须在自身领域。不得再把兼容用前置 CSR 叠成第二道研究门槛。
+
 Host 有 Economy-origin 入队、unique-writer 门禁和 ACTIVE↔SYNC handoff
 `prepare/install/abort`（D10）。**D12（2026-09-11）** 已放行生产 Country ACTIVE：
 `implemented_domain_mask = 0x806`，`climate_authority_test` **16/0**，Host protocol **42/0**。

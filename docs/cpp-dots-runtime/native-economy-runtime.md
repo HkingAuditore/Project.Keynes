@@ -1,5 +1,21 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-11-03 后台重启接续未完成的经济周期
+
+后台线程停止时，`NativeEconomyRuntime` 的周期与分片进度仍然有效。新执行者通过
+`EconomyGraphStageOps::resume_stage_index()` 读取实际尚未完成的阶段，不从第一阶段重放。
+`FISCAL_SETTLEMENT` 对应图中的 `BUILDING_COMMIT`，必须在那里完成原事务后才能进入家族结算。
+普通只读对比仍从第一阶段开始；恢复过的前置阶段不伪造旧耗时或阶段哈希。
+
+周期输入的日期保留原生 `_sample_day`，不改成重启时的日历日期。生产计算、守恒检查、
+存档格式和周期长度不变。`runtime_economy_worker_restart_test.gd` 覆盖正式世界中的
+后台权限切换、持续提交及切换后新卡生效；它在修复前明确复现
+`building_employment_stage_past`。
+
+旧 ECP1 数据块的 `captured` 标记按验证后的原文保留。ABI7/8 没有的资源、家族或游标块
+不能被补标成完整捕获；完整 ECP2 的已有数据块照常恢复。兼容性自检和 ECP2 往返分别验证。
+
+
 ## 2026-10-28 城市因子 CSR 现在包含派生层覆盖的格
 
 `refresh_city_output_modifier_factors` 的工作集来自

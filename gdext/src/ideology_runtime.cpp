@@ -898,6 +898,7 @@ void NativeIdeologyRuntime::reset_runtime_state() {
     _pending_transitions.clear();
     _pending_transition_cursor = 0;
     _active_progress_day = -1;
+    _daily_continuation_day = -1;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
     _submit_order = 0;
@@ -1230,6 +1231,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
     // so replaying it on the main thread would double-apply it.
     _commands.clear();
     _command_cursor = 0;
+    _daily_continuation_day = -1;
     _active_progress_day = snapshot.round_day;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
@@ -4713,11 +4715,8 @@ void NativeIdeologyRuntime::accrue_points(int64_t day) {
 
 void NativeIdeologyRuntime::accrue_points_from(
         const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) {
-    // THE ONLY settlement body (R9-1). `accrue_points(day)` is the sole caller
-    // today: it feeds Economy's committed snapshot. The parity binding that would
-    // feed this from the worker's snapshot is not landed (05 §2.7) -- but keeping
-    // ONE body means that wiring only has to supply an opinion, never re-implement
-    // the accounting.
+    // The single settlement body: ordinary daily work reads Economy's committed
+    // snapshot, while explicit SHADOW parity pins that day's reference input.
     // Mirrors RuntimeIdeologyPodAuthority::accrue_points field for field -- the
     // two must stay line-comparable or parity regresses into a business diff.
     _points_accrue_result = -1;
@@ -5273,35 +5272,13 @@ bool NativeIdeologyRuntime::apply_command(const Command &command, int64_t day,
         default: error = "ideology_command_unknown"; return false;
     }
 }
-Dictionary NativeIdeologyRuntime::run_daily(int64_t day) {
+Dictionary NativeIdeologyRuntime::run_daily(int64_t day,
+        const RuntimeIdeologyOpinionSnapshot *frozen_opinion) {
     if (!_configured) return fail("ideology_runtime_unconfigured");
-    accrue_points(day);
-    Dictionary result = run_daily_slices(day);
-    // Rebuild the derived cell layer ONCE for the whole world (plan 22 §4.2).
-    //
-    // Placed on the daily entry rather than inside the per-country reconcile
-    // because the front is a single shared object: building it from one
-    // country and installing it would erase every other country's rows.
-    //
-    // A failed install is reported but does not fail the day: the layer is an
-    // optimisation, and aborting a day because a cache could not be published
-    // would turn a recoverable condition into a fatal one. The error is kept so
-    // the report can surface it (§12.4).
-    // Rebuild ONCE for the whole world (plan 22 §4.2).
-    //
-    // This was briefly moved into `run_daily_slices` as a sharded stage so a 6400-cell
-    // materialise could be split under the §14.3 1 ms budget. It was REVERTED: the
-    // sharded version measured `contribs=1600` at build time against 3200 collected,
-    // because a day's accumulator is reset by the next `run_ideology_daily` call, and
-    // B10 drives ten such days. The result silently covered only one country
-    // (M4-18). A correct shard needs `DerivedCellFrontBuilder` to be resumable across
-    // steps, which it is not -- that is a design change, not a wiring change.
-    //
-    // A failed install is reported but does not fail the day: the layer is an
-    // optimisation, and aborting a day because a cache could not be published would
-    // turn a recoverable condition into a fatal one.
-    // The derived rebuild runs as a slice stage now (see `run_daily_slices`).
-    return result;
+    if (frozen_opinion != nullptr)
+        accrue_points_from(*frozen_opinion, day);
+    else
+        accrue_points(day);
     return run_daily_slices(day);
 }
 
@@ -5310,10 +5287,12 @@ Dictionary NativeIdeologyRuntime::run_daily_slices(int64_t day) {
     int32_t handled = 0;    int32_t visits = 0;
     int32_t transition_visits = 0;
     auto finish = [&](bool done, const char *stage) {
+        _daily_continuation_day = done ? -1 : day;
         _last_slice_ms = elapsed_ms(slice_started);
         _max_slice_ms = std::max(_max_slice_ms, _last_slice_ms);
         Dictionary out;
         out["ok"] = true; out["done"] = done; out["stage"] = stage;
+        out["day_barrier"] = !done;
         out["path"] = "IDEOLOGY_GRAPH";
         out["commands_applied"] = handled; out["active_visits"] = visits;
         out["pending_transition_visits"] = transition_visits;
@@ -5467,10 +5446,17 @@ Dictionary NativeIdeologyRuntime::run_daily_slices(int64_t day) {
     }
     return finish(true, "ideology_active_progress");
 }
-bool NativeIdeologyRuntime::should_run(int64_t day) const {
+bool NativeIdeologyRuntime::needs_daily_continuation(int64_t day) const {
     const Command *command = next_command();
-    return _configured && ((command != nullptr && command->effective_day <= day) ||
-        !_pending_transitions.empty() || _active_progress_day == day || _last_day < day ||
+    return _configured && (_daily_continuation_day == day ||
+        _active_progress_day == day || _last_day < day ||
+        (command != nullptr && command->effective_day <= day));
+}
+
+bool NativeIdeologyRuntime::should_run(int64_t day) const {
+    return _configured && (needs_daily_continuation(day) ||
+        !_pending_transitions.empty() ||
+        derived_rebuild_pending() ||
         // P1-A: a stale input revision has to wake the graph, otherwise the
         // refresh would only ever run on a day that had other work to do.
         // Ideology scalars are local derived inputs: their dirty flag must wake
@@ -7803,6 +7789,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     auto previous_pending_transitions = std::move(_pending_transitions);
     const size_t previous_pending_transition_cursor = _pending_transition_cursor;
     const int64_t previous_active_progress_day = _active_progress_day;
+    const int64_t previous_daily_continuation_day = _daily_continuation_day;
     const int32_t previous_active_country_cursor = _active_country_cursor;
     const int32_t previous_active_item_cursor = _active_item_cursor;
     const int64_t previous_last_day = _last_day;
@@ -7821,6 +7808,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
         }
     }
     _command_cursor = 0;
+    _daily_continuation_day = -1;
     _active_progress_day = -1;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
@@ -7857,6 +7845,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
         _pending_transitions = std::move(previous_pending_transitions);
         _pending_transition_cursor = previous_pending_transition_cursor;
         _active_progress_day = previous_active_progress_day;
+        _daily_continuation_day = previous_daily_continuation_day;
         _active_country_cursor = previous_active_country_cursor;
         _active_item_cursor = previous_active_item_cursor;
         _last_day = previous_last_day;

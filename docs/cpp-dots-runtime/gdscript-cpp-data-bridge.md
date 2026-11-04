@@ -1,5 +1,24 @@
 # GDScript / C++ Data Bridge
 
+## 2026-11-03 控制状态共用字段
+
+轻量控制读取和完整诊断通过同一个 `append_runtime_control_state` 输出共有字段，
+其中包含视觉分片预算需要的 `interactive`。没有 Host 时也从执行器的原子开关读取该字段，
+不构建执行器报告。停止/故障后授权与 ready 同时清除，effective ACTIVE 不再残留；
+requested 模式继续保留以便诊断。普通帧仍按需读取原子状态，不引入状态缓存。
+
+
+## 2026-11-03 运行状态的轻量读取
+
+`DCWorldExt.get_runtime_control_state()` 和 `MapGenerator` 同名转发只读取当前运行状态、
+请求/生效模式、整体就绪、授权域与已提交日。有效模式和部分授权的就绪语义与
+`get_runtime_thread_report()` 相同；每次读取当前原子字段，不做时间缓存或降频。
+
+`WorldRuntimeHost` 的逐帧快照、意图与提交消费门禁使用此接口，避免每个消费者反复
+打包完整诊断报告。发现 `FAULTED` 后仍读取完整报告保存故障原因和最后提交证据。
+完整诊断、性能 CSV 与原有字段保持可用。内联调用传入 report_override 时仍由调用方
+负责已完成的 Climate 回灌，消费端不会重复执行。
+
 ## 2026-10-28 理念派生地块层的桥
 
 理念的永久地块效果改为写入 `ModifierRuntime` 内的派生层（plan 22）。GDScript 侧通过下面

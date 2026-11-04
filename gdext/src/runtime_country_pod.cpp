@@ -1826,6 +1826,63 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     state.research_completed_total = {0, 0};
     state.is_water = {0, 0, 0, 0};
 
+    // Eligibility comes from the compiled condition, including alternatives.
+    // Its compatibility prerequisite CSR must not impose an extra ALL gate.
+    RuntimeCountryPodCatalog route_catalog = catalog;
+    route_catalog.prerequisite_offsets = {0, 1, 1, 1, 1};
+    route_catalog.prerequisites = {1};
+    route_catalog.research_condition_offsets = {0, 3, 3, 3, 3};
+    route_catalog.research_condition_ops = {1, 1, 11};
+    route_catalog.research_condition_refs = {1, 2, 2};
+    route_catalog.research_condition_values = {0, 0, 0};
+    RuntimeCountryPodSnapshot route_state = state;
+    route_state.country_technologies[0] = uint64_t{1} << 2u;
+    route_state.country_goods[0] = 1;
+    RuntimeCountryCommand enqueue;
+    enqueue.request_id = 9001;
+    enqueue.sequence = 1;
+    enqueue.effective_day = 0;
+    enqueue.requested_day = 0;
+    enqueue.target_handle = uint64_t{1} << 32u;
+    enqueue.opcode = 6;
+    enqueue.aux = 0;
+    enqueue.domain = 0;
+    enqueue.position = -1;
+    RuntimeCountryPodAuthority route_authority;
+    RuntimeCountryPodPlan route_plan;
+    if (!route_authority.bootstrap(route_state, route_catalog, error) ||
+        !route_authority.queue_command(enqueue, error) ||
+        !route_authority.plan_day(0, 1, route_plan, error) ||
+        route_plan.next_state.research_consumed_total[0] != 1 ||
+        (route_plan.next_state.country_technologies[0] & 1u) == 0) {
+        error = "country_pod_self_test_alternative_route_blocked:" + error;
+        return false;
+    }
+    RuntimeCountryPodCatalog milestone_catalog = catalog;
+    milestone_catalog.technology_flags[0] = 2;
+    for (int32_t carrier = 0; carrier < 4; ++carrier) {
+        RuntimeCountryPodAuthority milestone_authority;
+        RuntimeCountryPodPlan milestone_plan;
+        enqueue.domain = carrier;
+        if (!milestone_authority.bootstrap(state, milestone_catalog, error) ||
+            !milestone_authority.queue_command(enqueue, error) ||
+            !milestone_authority.plan_day(0, 1, milestone_plan, error) ||
+            milestone_plan.next_state.research_queue_lengths[
+                static_cast<size_t>(carrier)] != 1) {
+            error = "country_pod_self_test_milestone_carrier_rejected:" + error;
+            return false;
+        }
+    }
+    RuntimeCountryPodAuthority wrong_domain_authority;
+    RuntimeCountryPodPlan wrong_domain_plan;
+    if (!wrong_domain_authority.bootstrap(state, catalog, error) ||
+        !wrong_domain_authority.queue_command(enqueue, error)) return false;
+    if (wrong_domain_authority.plan_day(0, 1, wrong_domain_plan, error) ||
+        error != "country_research_domain_mismatch") {
+        error = "country_pod_self_test_ordinary_wrong_domain_accepted";
+        return false;
+    }
+
     RuntimeCountryPodAuthority authority;
     if (!authority.bootstrap(state, catalog, error)) return false;
     RuntimeCountryPodSnapshot malformed = state;

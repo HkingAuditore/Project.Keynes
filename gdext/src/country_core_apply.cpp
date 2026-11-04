@@ -116,33 +116,10 @@ bool country_core_technology_prerequisites_met(
         const RuntimeCountryPodSnapshot &state,
         const RuntimeCountryPodCatalog &catalog, int32_t slot,
         int32_t technology) {
-    if (technology < 0 || technology >= static_cast<int32_t>(catalog.technology_count) ||
-        slot < 0 || slot >= static_cast<int32_t>(state.country_count)) return false;
-    const size_t base = static_cast<size_t>(slot) * catalog.technology_words;
-    const auto has = [&](int32_t ref) {
-        return ref >= 0 && ref < static_cast<int32_t>(catalog.technology_count) &&
-               (state.country_technologies[base + static_cast<size_t>(ref / 64)] &
-                (uint64_t{1} << (ref % 64))) != 0;
-    };
-    if (technology < static_cast<int32_t>(catalog.entry_milestone_indices.size())) {
-        const int32_t entry = catalog.entry_milestone_indices[static_cast<size_t>(technology)];
-        if (entry >= 0 && !has(entry)) return false;
-    }
-    const int32_t milestone_begin = catalog.milestone_offsets.empty()
-        ? 0 : catalog.milestone_offsets[static_cast<size_t>(technology)];
-    const int32_t milestone_end = catalog.milestone_offsets.empty()
-        ? 0 : catalog.milestone_offsets[static_cast<size_t>(technology + 1)];
-    if (milestone_end > milestone_begin) {
-        int32_t count = 0;
-        for (int32_t edge = milestone_begin; edge < milestone_end; ++edge)
-            if (has(catalog.milestone_candidates[static_cast<size_t>(edge)])) ++count;
-        return count >= catalog.milestone_required_counts[static_cast<size_t>(technology)];
-    }
-    const int32_t begin = catalog.prerequisite_offsets[static_cast<size_t>(technology)];
-    const int32_t end = catalog.prerequisite_offsets[static_cast<size_t>(technology + 1)];
-    for (int32_t edge = begin; edge < end; ++edge)
-        if (!has(catalog.prerequisites[static_cast<size_t>(edge)])) return false;
-    return true;
+    // The compiler has already combined hard prerequisites, route alternatives,
+    // milestone thresholds and era entry into this condition. Rechecking the
+    // old prerequisite CSR adds a second, different gate to the worker path.
+    return country_core_research_condition_met(state, catalog, slot, technology);
 }
 
 static bool country_core_reveal_condition_met(
@@ -598,12 +575,14 @@ bool country_core_apply_command(
             error = "country_research_technology_unavailable";
             return false;
         }
-        if (!country_core_technology_prerequisites_met(state, catalog, slot, command.aux) ||
-            !country_core_research_condition_met(state, catalog, slot, command.aux)) {
+        if (!country_core_research_condition_met(state, catalog, slot, command.aux)) {
             error = "country_research_requirements_incomplete";
             return false;
         }
-        if (catalog.technology_domains[static_cast<size_t>(command.aux)] != command.domain) {
+        const bool milestone =
+            (catalog.technology_flags[static_cast<size_t>(command.aux)] & 2) != 0;
+        if (!milestone &&
+            catalog.technology_domains[static_cast<size_t>(command.aux)] != command.domain) {
             error = "country_research_domain_mismatch";
             return false;
         }

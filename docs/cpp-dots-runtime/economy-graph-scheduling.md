@@ -1,5 +1,13 @@
 # Market V2 冻结周期、错峰与调度契约
 
+## 2026-11-03 执行者替换后的阶段接续
+
+经济数据持有者通过 `next_stage_ops_stage_index()` 声明下一个未完成阶段；POD 调度器在
+`plan_epoch` 绑定后接续这个位置。已完成前缀只记录完成位，不重算雇佣、生产、运输或收支，
+也不冒充有旧阶段的测量结果。财政等待继续属于 `BUILDING_COMMIT`。
+同一个原生查询也用于同步 `run_stage_ops_day`。每个周期始终使用冻结的 sample day。
+
+
 ## 当前建筑经济决策说明（2026-09）
 
 `building_commit.investment_prepare` 与 `investment` 不再为普通扩张、就业追赶、研究建设和启动生产维护独立利润算法。所有候选最终都写入 `InvestmentCandidatePlan`，经济字段来自 `EconomicOpportunityQuote`，触发差异只记录在 `InvestmentRequestContext`。生产结算统一执行“业主自用 -> 商人收购 -> producer support -> discard”。

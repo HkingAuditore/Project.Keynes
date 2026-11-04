@@ -2,6 +2,7 @@
 
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
+#include "runtime_authority_control.h"
 #include "runtime_day_waterfall.h"
 #include "runtime_snapshot_ring.h"
 #include "runtime_country_pod.h"
@@ -46,6 +47,28 @@ public:
 
     NativeSimulationHost(const NativeSimulationHost &) = delete;
     NativeSimulationHost &operator=(const NativeSimulationHost &) = delete;
+
+    // Hot-path gates need only these atomics. Do not construct the diagnostic
+    // report (timers, transport queues and domain snapshots) to read a grant.
+    struct ControlState {
+        RuntimeWorkerState state = RuntimeWorkerState::STOPPED;
+        RuntimeSimulationMode mode = RuntimeSimulationMode::OFF;
+        bool authority_ready = false;
+        bool interactive = false;
+        uint32_t authoritative_domain_mask = 0;
+        int64_t committed_day = -1;
+    };
+    ControlState control_state() const {
+        ControlState out;
+        out.state = _state.load(std::memory_order_acquire);
+        out.mode = _mode.load(std::memory_order_acquire);
+        const auto authority = _authority_control.snapshot();
+        out.authority_ready = authority.ready;
+        out.interactive = _interactive.load(std::memory_order_acquire);
+        out.authoritative_domain_mask = authority.granted_mask;
+        out.committed_day = _committed_day.load(std::memory_order_acquire);
+        return out;
+    }
 
     bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
         const AnnualDevelopmentProfile &profile, const AnnualEconomyFacts &baseline,
@@ -664,7 +687,8 @@ public:
     // follow the same rule. Rejected/faulted terminals still retire immediately.
     bool flush_country_economy_asset_commits(std::string &error,
                                             uint64_t settle_request_id = 0,
-                                            bool skip_audit_snapshot = false);
+                                            bool skip_audit_snapshot = false,
+                                            int64_t shadow_through_day = -1);
     bool publish_country_worker_snapshot(uint32_t dirty_families,
                                          std::string &error);
     // Publish plan.next_state for UI while the open plan is still peer-waiting.
@@ -896,17 +920,14 @@ public:
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
         const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error);
-    // R9-1: the opinion the WORKER actually consumed when it planned `day`.
-    //
-    // This is the only correct parity binding. Both sides used to read "the
-    // newest Economy state", which worker-side concurrency advances, so which
-    // version each side saw depended on thread scheduling and five runs produced
-    // different results. Handing the main thread the exact shared_ptr the worker
-    // settled makes "same day" mean "same input" by construction.
-    //
-    // Returns null when the worker never planned that day; the caller must then
-    // publish NO reference (the day is uncompared), never fall back to a
-    // re-derived opinion.
+    // SHADOW comparison captures the opinion at the reference's actual daily
+    // entry. The explicit simulation day is the join key, not Economy's
+    // committed_day or a period index. Continuations keep the first input.
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+        pin_ideology_reference_opinion(int64_t day,
+            const RuntimeIdeologyOpinionSnapshot &snapshot);
+    // Diagnostic lineage: the opinion the worker actually consumed for `day`,
+    // including its frozen Modifier factors. Null means no recorded worker plan.
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
         worker_opinion_snapshot_for_day(int64_t day) const;
     // The opinion consumed by the worker plan that produced `generation`.
@@ -916,10 +937,6 @@ public:
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
         worker_opinion_snapshot_for_ideology_generation(
             uint64_t generation) const;
-    // (removed) latest_worker_opinion_day / debug_ideology_worker_opinion_ring:
-    // the "bind to the newest recorded day" rule published 1278 references for 24
-    // distinct days and never compared anything. The reader above stays; the join
-    // is still open (05 §2.7).
     bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
                                     std::string &error);
     // Effect custom-domain grants are a semantic batch: validate and reserve
@@ -1053,7 +1070,7 @@ public:
     // published only after a commit whose completed_domain_mask covers the
     // request.
     uint32_t authoritative_domain_mask() const {
-        return _authoritative_domain_mask.load(std::memory_order_acquire);
+        return _authority_control.snapshot().granted_mask;
     }
     // Domains a PREVIOUS worker lifetime of this host proved at a barrier and was
     // granted. Both `request_stop()` and `set_fault()` clear the LIVE grant so the
@@ -1065,7 +1082,7 @@ public:
     // A FRESH start reads zero here and therefore keeps the deferred
     // 0x000-until-first-commit behaviour: no day has ever proven the handlers.
     uint32_t lifetime_granted_mask() const {
-        return _lifetime_granted_mask.load(std::memory_order_acquire);
+        return _authority_control.snapshot().proven_mask;
     }
     // Main-thread write-back boundary for ACTIVE Climate. Acquire, copy the
     // fields out, release. Non-blocking: returns false when the worker has not
@@ -1266,14 +1283,9 @@ private:
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
-    // The ONLY writer of `_authoritative_domain_mask`. Records the grant in the
-    // per-host `_lifetime_granted_mask` ledger at the same time, so a later
-    // restart can re-publish exactly what a previous lifetime proved instead of
-    // forgetting it. Never called with 0: revocation is a plain store, which is
-    // what keeps the ledger alive across a stop/fault.
+    // Grant and revoke share one atomic state; a finishing day cannot undo stop.
     void publish_authority_grant(uint32_t mask) noexcept {
-        _lifetime_granted_mask.store(mask, std::memory_order_release);
-        _authoritative_domain_mask.store(mask, std::memory_order_release);
+        _authority_control.grant(mask);
     }
     void record_save_failure(const char *reason);
     void publish_economy_tax_diag(const std::string &yield_reason,
@@ -1348,15 +1360,12 @@ private:
     std::atomic<bool> _interactive{false};
     std::atomic<double> _speed_days_per_second{0.0};
     std::atomic<bool> _graph_coverage_complete{false};
-    std::atomic<bool> _authority_ready{false};
     std::atomic<uint32_t> _requested_authority_mask{0};
-    std::atomic<uint32_t> _authoritative_domain_mask{0};
-    // Per-host, per-session grant ledger. `_authoritative_domain_mask` is the LIVE
-    // grant (revoked by stop/fault); this one is what the domains proved, and it is
-    // what a restart re-publishes. See `lifetime_granted_mask()`.
-    std::atomic<uint32_t> _lifetime_granted_mask{0};
+    static_assert((RUNTIME_ALL_DOMAIN_MASK & ~0xffffu) == 0u,
+                  "authority control mask capacity exceeded");
+    RuntimeAuthorityControl _authority_control;
     // True once a worker lifetime actually started on this host. Together with a
-    // non-zero `_lifetime_granted_mask` it is the positive proof that `start()` is a
+    // non-zero `lifetime_granted_mask()` it is the positive proof that `start()` is a
     // RESTART of a world this host already ran (see the resume-day block in
     // `start()`), as opposed to a fresh world on a reused host.
     std::atomic<bool> _has_started_once{false};
@@ -2074,11 +2083,8 @@ private:
     RuntimeIdeologyPodCatalog _ideology_pod_catalog;
     bool _ideology_pod_configured = false;
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
-    // The day-keyed opinion ring was removed with `select_ideology_opinion_for_day`
-    // (R9-1). Keying opinions by DAY never worked: Economy's `commit_day` and the
-    // worker's plan day are different scales, so the rule either found nothing or
-    // picked a future commit. Parity binds to the opinion the worker recorded
-    // USING (`_ideology_worker_opinion_ring`), which needs no day arithmetic.
+    std::map<int64_t, std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>>
+        _ideology_reference_opinions;
     std::shared_ptr<const RuntimeIdeologyPodSnapshot> _ideology_snapshot;
     // G8 ACTIVE write-back boundary. The shared_ptr above stays for SHADOW
     // consumers; the ring is the immutable main-thread apply path.

@@ -490,6 +490,9 @@ public:
         int64_t committed_quantity = 0;
         int64_t requested_cash = 0;
         int64_t committed_cash = 0;
+        // First Country boundary containing the decided treasury write. Peer
+        // completion can arrive later and must not move this boundary.
+        int64_t effective_country_day = -1;
         int64_t country_cash_before = 0;
         int64_t country_cash_after = 0;
         int64_t country_good_before = 0;

@@ -21,6 +21,7 @@ func _run() -> void:
 	_expect("country catalog compiles", bool(country_ir.get("ok", false)))
 	if not bool(country_ir.get("ok", false)):
 		return
+	_test_daily_continuation_contract(country_ir)
 	var ext := _country_ext(country_ir)
 	var modifier := ModifierFacadeScript.new()
 	_expect("modifier runtime configures", bool(modifier.configure(ext, 1).get("ok", false)))
@@ -131,6 +132,38 @@ func _run() -> void:
 	_test_resonance_tiers_activate_at_2_4_5_6(country_ir)
 	_test_effect_link_after_ideology_configuration(country_ir, catalog)
 	_test_native_publish_event_adapter(country_ir)
+
+
+# A pending Effect reply is schedulable work, but not an unfinished local day.
+func _test_daily_continuation_contract(country_ir: Dictionary) -> void:
+	var ext := _country_ext(country_ir)
+	var modifier := ModifierFacadeScript.new()
+	_expect("daily barrier fixture configures Modifier", bool(modifier.configure(ext, 1).get("ok", false)))
+	_expect("daily barrier fixture configures Effect", bool(ext.configure_effects(_effect_catalog().compile_native_catalog()).get("ok", false)))
+	_expect("daily barrier fixture configures Ideology", bool(ext.configure_ideologies(_catalog()).get("ok", false)))
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	_expect("daily barrier fixture queues a real card", bool(ext.submit_ideology_commands(_commands([
+		{"op": 1, "day": 0, "handle": handle, "idea": 0},
+		{"op": 5, "day": 0, "handle": handle, "idea": 0},
+	])).get("ok", false)))
+	var done := false
+	var saw_continuation := false
+	for _slice in range(32):
+		var result: Dictionary = ext.run_ideology_daily(0)
+		if not bool(result.get("ok", false)):
+			break
+		done = bool(result.get("done", false))
+		if done:
+			break
+		saw_continuation = true
+		_expect("unfinished local card work keeps its daily barrier",
+			bool(ext.ideology_needs_daily_continuation(0)))
+	_expect("real card exercises local slice continuation", saw_continuation and done)
+	_expect("completed daily work still has an unacknowledged card transition",
+		int(ext.get_ideology_report().get("pending_transitions", 0)) > 0)
+	_expect("pending card transition remains scheduled for polling", bool(ext.ideology_should_run(0)))
+	_expect("pending reply alone releases the calendar", not bool(ext.ideology_needs_daily_continuation(0)))
+	_expect("the next day's local work still requires completion", bool(ext.ideology_needs_daily_continuation(1)))
 
 
 # R8-1: a v7 PKID payload must fail by VERSION, not by misreading the rows.

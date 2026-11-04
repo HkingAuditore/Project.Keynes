@@ -418,23 +418,18 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
         out["day"] = day_index;
         return out;
     }
-    // R9-1 binding is NOT landed (05 §2.7). The worker DOES record the exact
-    // (plan_day -> opinion) pair in a locked ring, and `worker_opinion_snapshot_for_day`
-    // reads it correctly; what does not work is the join between the two calendars.
-    // Measured, three times over:
-    //   1. The ring is populated monotonically (plan=1,2,3,...) and lookups by the
-    //      same day DO match when the worker has already recorded that day.
-    //   2. The main thread is almost always called for a day the worker has not
-    //      recorded yet (wopinion=0), because the driver ticks faster than the
-    //      worker commits.
-    //   3. Binding to "the newest recorded day" instead published 1278 references
-    //      for 24 distinct days: re-publishing one day filled the comparison FIFO
-    //      with duplicates, and exact-day pairing then never matched (compared=0).
-    // Deduplicating those left the branch unreachable and ref_pub=0 again.
-    //
-    // Until that ordering is designed properly (the worker's plan day and the day
-    // the main thread is asked to run are simply not the same coordinate), the
-    // main thread keeps its pre-existing behaviour: settle from Economy.
+    // Pin the reference's actual daily input for SHADOW comparison. Worker
+    // catch-up can happen after Economy has published several newer commits;
+    // the explicit simulation day joins the inputs without deriving a date
+    // from Economy's period or committed_day.
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> reference_opinion;
+    if (_runtime_host != nullptr && _economy_runtime != nullptr &&
+        _runtime_host->ideology_parity_enabled() &&
+        _runtime_host->control_state().mode == RuntimeSimulationMode::SHADOW) {
+        reference_opinion = _runtime_host->pin_ideology_reference_opinion(
+            day_index, copy_opinion_snapshot(
+                *static_cast<NativeEconomyRuntime *>(_economy_runtime)));
+    }
     if (_runtime_host && _runtime_host->annual_development_enabled()) {
         AnnualDevelopmentReport pending;
         std::string error;
@@ -444,7 +439,8 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
                 pending.reward_sequence, day_index, error))
             _runtime_host->settle_annual_reward(pending.reward_sequence);
     }
-    Dictionary result = ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
+    Dictionary result = ideology_runtime_from(_ideology_runtime)->run_daily(
+        day_index, reference_opinion.get());
     // Parity reference: hash the main thread's own state for this day with the
     // SAME function the worker uses. Only meaningful in a live comparison run --
     // with no worker nothing ever compares against it, which the report shows as
@@ -468,8 +464,7 @@ Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
     // refusing to publish then would starve the comparison for every quiet day.
     const bool settled = ideology_runtime_from(_ideology_runtime)
         ->points_accrual_ever_settled();
-    // Compare against `bound_day`: when parity bound this settlement to the
-    // worker's recorded day, THAT is the day the reference describes.
+    // The reference is published under the same explicit daily input key.
     const bool day_finished = bool(result.get("done", true)) && settled &&
         ideology_runtime_from(_ideology_runtime)->last_day() == day_index;
     // Short-circuit BEFORE the export, not inside the publisher: building a
@@ -515,6 +510,14 @@ bool DCWorldExt::ideology_should_run(int64_t day_index) const {
     }
     return _ideology_runtime != nullptr &&
         ideology_runtime_from(_ideology_runtime)->should_run(day_index);
+}
+
+bool DCWorldExt::ideology_needs_daily_continuation(int64_t day_index) const {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))
+        return false;
+    return _ideology_runtime != nullptr &&
+        ideology_runtime_from(_ideology_runtime)->needs_daily_continuation(day_index);
 }
 
 Dictionary DCWorldExt::step_ideology_instance_refresh(int64_t day_index) {

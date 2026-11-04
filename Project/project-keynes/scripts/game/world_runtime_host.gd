@@ -2548,6 +2548,16 @@ func _note_climate_capacity_pending_stall() -> void:
 		})
 
 
+## Read live authority gates without constructing the full diagnostic report.
+func _runtime_control_state() -> Dictionary:
+	if _generator == null:
+		return {}
+	if _generator.has_method("get_runtime_control_state"):
+		return _generator.get_runtime_control_state()
+	return _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+
+
 ## When the native worker enters FAULTED, pause the authoritative clock and keep
 ## the last committed generation/hash diagnostics for soak evidence. Do not
 ## clear live MapData; the parked snapshot remains the recovery baseline.
@@ -2555,13 +2565,15 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 	if _runtime_worker_fault_paused:
 		return
 	if report.is_empty():
-		if _generator == null or not _generator.has_method("get_runtime_thread_report"):
-			return
-		report = _generator.get_runtime_thread_report()
+		report = _runtime_control_state()
 	var state := String(report.get(
 		"simulation_host_state", report.get("state", "")))
 	if state != "FAULTED":
 		return
+	# Full diagnostics are needed once, when a fault is actually observed.
+	if not report.has("fault_code") and _generator != null \
+			and _generator.has_method("get_runtime_thread_report"):
+		report = _generator.get_runtime_thread_report()
 	_runtime_worker_fault_paused = true
 	if _world_clock != null:
 		if _world_clock.has_method("latch_authority_fault_hold"):
@@ -2611,8 +2623,7 @@ func _service_country_worker_transport() -> void:
 	if not _runtime_ready_for_ticks or _generator == null \
 			or not _generator.has_method("service_country_worker_peer_adapter"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var mode := String(report.get("simulation_thread_mode",
 		report.get("requested_simulation_thread_mode", "OFF")))
 	if mode != "SHADOW" and mode != "ACTIVE":
@@ -2638,8 +2649,7 @@ func _consume_modifier_worker_snapshot_if_authoritative() -> void:
 		return
 	if not _generator.has_method("apply_runtime_modifier_snapshot"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x040) == 0:
 		return
@@ -2663,8 +2673,7 @@ func _consume_effect_worker_snapshot_if_authoritative() -> void:
 		return
 	if not _generator.has_method("apply_runtime_effect_snapshot"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x020) == 0:
 		return
@@ -2683,8 +2692,7 @@ func _consume_effect_worker_snapshot_if_authoritative() -> void:
 func _service_effect_worker_intents_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x020) == 0:
 		return
@@ -2767,8 +2775,7 @@ func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
 		return
 	if not _generator.has_method("step_ideology_instance_refresh"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	if (int(report.get("authoritative_domain_mask", 0)) & 0x010) == 0:
 		return
 	_ideology_pump_calls += 1
@@ -2806,8 +2813,7 @@ func _consume_ideology_worker_snapshot_if_authoritative() -> void:
 		return
 	if not _generator.has_method("apply_runtime_ideology_snapshot"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x010) == 0:
 		return
@@ -2846,8 +2852,7 @@ func _consume_ideology_worker_snapshot_if_authoritative() -> void:
 func _service_ideology_worker_intents_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x010) == 0:
 		return
@@ -2902,8 +2907,7 @@ func _consume_trigger_worker_snapshot_if_authoritative() -> void:
 		return
 	if not _generator.has_method("apply_runtime_trigger_snapshot"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x008) == 0:
 		return
@@ -2924,8 +2928,7 @@ func _consume_trigger_worker_snapshot_if_authoritative() -> void:
 func _service_trigger_worker_intents_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x008) == 0:
 		return
@@ -3023,8 +3026,7 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null \
 			or not _generator.has_method("get_country_worker_read_view"):
 		return
-	var report: Dictionary = _generator.get_runtime_thread_report() \
-		if _generator.has_method("get_runtime_thread_report") else {}
+	var report := _runtime_control_state()
 	var granted_mask := int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x004) == 0:
 		return
@@ -3154,7 +3156,7 @@ func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	var dcp_usec: int = commit_usec if dcp else 0
 	var report: Dictionary = report_override
 	if report.is_empty():
-		report = _generator.get_runtime_thread_report()
+		report = _runtime_control_state()
 	_observe_runtime_worker_fault(report)
 	if String(report.get("simulation_thread_mode", report.get(
 			"requested_simulation_thread_mode", "OFF"))) != "ACTIVE":

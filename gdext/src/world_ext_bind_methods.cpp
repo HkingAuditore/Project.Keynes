@@ -99,6 +99,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::set_runtime_qos);
     ClassDB::bind_method(D_METHOD("get_runtime_thread_report"),
                          &DCWorldExt::get_runtime_thread_report);
+    ClassDB::bind_method(D_METHOD("get_runtime_control_state"),
+                         &DCWorldExt::get_runtime_control_state);
     ClassDB::bind_method(D_METHOD("record_runtime_visual_timings",
                                   "ui_input_to_feedback_ms", "visual_apply_ms",
                                   "gpu_upload_ms"),
@@ -772,6 +774,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_ideology_daily);
     ClassDB::bind_method(D_METHOD("ideology_should_run", "day_index"),
                          &DCWorldExt::ideology_should_run);
+    ClassDB::bind_method(D_METHOD("ideology_needs_daily_continuation", "day_index"),
+                         &DCWorldExt::ideology_needs_daily_continuation);
     ClassDB::bind_method(D_METHOD("step_ideology_instance_refresh", "day_index"),
                          &DCWorldExt::step_ideology_instance_refresh);
     ClassDB::bind_method(D_METHOD("step_ideology_derived_rebuild", "day_index"),

@@ -969,6 +969,7 @@ public:
     // Phase-2.4.5: sync StageOps mutate day (prelude + all graph stage drains).
     bool run_stage_ops_day(int64_t day_index, std::string &error);
     bool stage_ops_epoch_open_ready() const noexcept { return _epoch_active; }
+    uint32_t next_stage_ops_stage_index() const noexcept;
     bool capture_worker_day_input(const RuntimeEconomyDayInput &input,
                                   std::string &error);
     bool capture_environment(int64_t day_index, const float *temperature,

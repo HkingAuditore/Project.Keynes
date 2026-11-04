@@ -683,10 +683,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (mode == RuntimeSimulationMode::OFF) {
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
-        _authority_ready.store(false, std::memory_order_release);
         _requested_authority_mask.store(0, std::memory_order_release);
-        _authoritative_domain_mask.store(0, std::memory_order_release);
-    _active_evidence_mask.store(0, std::memory_order_release);
+        _authority_control.revoke();
+        _active_evidence_mask.store(0, std::memory_order_release);
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return true;
     }
@@ -705,9 +704,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _active_gate_blocked.store(true, std::memory_order_release);
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
-        _authority_ready.store(false, std::memory_order_release);
         _requested_authority_mask.store(0, std::memory_order_release);
-        _authoritative_domain_mask.store(0, std::memory_order_release);
+        _authority_control.revoke();
         const char *blocker = graph_coverage_complete && ungranted != 0u
             ? "missing_native_domain_handlers"
             : "runtime_graph_not_thread_safe";
@@ -748,7 +746,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     const int64_t previous_committed = _committed_day.load(std::memory_order_acquire);
     const bool resuming_previous_lifetime =
         _has_started_once.load(std::memory_order_acquire) &&
-        _lifetime_granted_mask.load(std::memory_order_acquire) != 0u;
+        lifetime_granted_mask() != 0u;
     const int64_t start_day = restore_pending
         ? _pending_restore_bundle.committed_day
         : (resuming_previous_lifetime ? previous_committed : initial_day);
@@ -794,11 +792,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     // external `true` here must never make the facade report ACTIVE.
     _graph_coverage_complete.store(false, std::memory_order_release);
     _economy_authority_fault_paused.store(false, std::memory_order_release);
-    _authority_ready.store(false, std::memory_order_release);
+    _authority_control.begin_lifetime();
     // The request is recorded now; the grant is published only after a barrier
     // proves the worker actually ran those domains (see publish_day).
     _requested_authority_mask.store(wanted, std::memory_order_release);
-    _authoritative_domain_mask.store(0, std::memory_order_release);
     // I8: an ACTIVE EVENTS request owns the Events stage bit, so the POD store
     // must run whether or not the caller also asked for the diagnostic probe.
     // Leaving it off would make the stage soft-complete forever without ever
@@ -1630,7 +1627,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     // A RESTART re-publishes the grant a previous lifetime of THIS host earned.
     //
-    // `request_stop()` and `set_fault()` both clear `_authoritative_domain_mask`, and
+    // `request_stop()` and `set_fault()` both clear the live grant, and
     // that revocation is right: the schedule gate has to hand the domain back to the
     // main thread while the old worker winds down, otherwise nobody computes it.
     // What was missing is the other half of the handshake. Nothing re-published the
@@ -1674,9 +1671,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         if (mode != RuntimeSimulationMode::ACTIVE) {
             _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
             _graph_coverage_complete.store(false, std::memory_order_release);
-            _authority_ready.store(false, std::memory_order_release);
             _requested_authority_mask.store(0, std::memory_order_release);
-            _authoritative_domain_mask.store(0, std::memory_order_release);
+            _authority_control.revoke();
             const char *fault = "inline_daily_requires_active";
             size_t fault_size = 0;
             for (; fault_size + 1 < _fault_code.size() && fault[fault_size] != '\0';
@@ -1714,6 +1710,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         for (; fault_size < _fault_code.size(); ++fault_size)
             _fault_code[fault_size].store('\0', std::memory_order_relaxed);
         _stop_requested.store(true, std::memory_order_release);
+        _authority_control.revoke();
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
@@ -2189,6 +2186,27 @@ bool NativeSimulationHost::economy_authority_fault_gate_self_test(
         error = "superseded_ai_terminal_filter_hid_player_receipt";
         return false;
     }
+    // Unlike worker-local AI, a synchronous AI mirror owns an admitted Host
+    // packet. Its terminal must retire that packet without entering the UI
+    // receipt stream; otherwise the old enqueue repeats on every worker day.
+    RuntimeCountryCommand mirrored_ai = old_ai;
+    mirrored_ai.request_id = 3;
+    CountryCommandReceipt admitted_ai;
+    admitted_ai.request_id = mirrored_ai.request_id;
+    admitted_ai.producer_id = COUNTRY_AI_PRODUCER_ID;
+    admitted_ai.code = CountryCommandReceiptCode::ACCEPTED;
+    receipt_probe->_country_command_states.emplace(3, admitted_ai);
+    for (int repeat = 0; repeat < 2; ++repeat)
+        receipt_probe->publish_country_command_terminals({mirrored_ai},
+            CountryCommandReceiptCode::COMMITTED, 10840, nullptr);
+    if (!receipt_probe->try_country_command_terminal(3, terminal) ||
+        terminal.code != CountryCommandReceiptCode::COMMITTED ||
+        receipt_probe->_country_command_terminals.size() != 3u ||
+        !receipt_probe->poll_country_command_receipts(0, 8, player_receipts) ||
+        player_receipts.size() != 1u || player_receipts[0].request_id != 2) {
+        error = "mirrored_ai_terminal_not_retired_or_leaked";
+        return false;
+    }
     // First exercise the epoch-boundary half on a worker-shaped host without
     // starting a thread.  The switch must observe the explicit in-flight
     // counters even when the command ring itself is empty.
@@ -2227,8 +2245,47 @@ bool NativeSimulationHost::economy_authority_fault_gate_self_test(
     // Keep this probe isolated: constructing a temporary host does not start a
     // thread, and the live host (if any) remains untouched.
     const auto probe = std::make_unique<NativeSimulationHost>();
+    probe->_authority_control.begin_lifetime();
+    probe->_mode.store(RuntimeSimulationMode::ACTIVE, std::memory_order_release);
+    probe->_state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
+    probe->_committed_day.store(7, std::memory_order_release);
+    probe->publish_authority_grant(runtime_domain_mask(RuntimeDomainId::CLIMATE));
+    auto control = probe->control_state();
+    if (control.authority_ready || control.committed_day != 7 ||
+        control.authoritative_domain_mask != runtime_domain_mask(RuntimeDomainId::CLIMATE)) {
+        error = "runtime_control_partial_grant_not_visible";
+        return false;
+    }
+    probe->request_stop();
+    if (probe->control_state().authoritative_domain_mask != 0u) {
+        error = "runtime_control_stop_did_not_revoke";
+        return false;
+    }
+    // Model a commit tail that runs after stop has already revoked the grant.
+    probe->publish_authority_grant(probe->lifetime_granted_mask());
+    probe->_authority_control.mark_graph_ready();
+    if (probe->control_state().authoritative_domain_mask != 0u ||
+        probe->control_state().authority_ready) {
+        error = "runtime_control_late_commit_reopened_stopped_lifetime";
+        return false;
+    }
+    probe->_authority_control.begin_lifetime();
+    probe->_state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
+    probe->publish_authority_grant(probe->lifetime_granted_mask());
+    if (probe->control_state().authoritative_domain_mask !=
+            runtime_domain_mask(RuntimeDomainId::CLIMATE)) {
+        error = "runtime_control_restart_grant_not_visible";
+        return false;
+    }
     probe->set_fault("self_test_worker_fault");
+    probe->request_stop();
+    probe->publish_authority_grant(probe->lifetime_granted_mask());
+    probe->_authority_control.mark_graph_ready();
     if (probe->state() != RuntimeWorkerState::FAULTED ||
+        probe->control_state().state != RuntimeWorkerState::FAULTED ||
+        probe->control_state().authoritative_domain_mask != 0u ||
+        probe->control_state().authority_ready ||
+        probe->control_state().committed_day != 7 ||
         !probe->_economy_authority_fault_paused.load(std::memory_order_acquire)) {
         error = "economy_authority_fault_pause_not_armed";
         return false;
@@ -2440,7 +2497,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         }
         _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
         RuntimeEconomyEpochInput input;
-        input.sample_day = day;
+        input.sample_day = _economy_production_runtime->_sample_day;
         input.stage_hashes_enabled = economy_parity_shadow_enabled();
         input.session_epoch = 1;
         input.economy_generation =
@@ -2695,7 +2752,8 @@ bool NativeSimulationHost::execute_economy_worker_stage(
 }
 
 void NativeSimulationHost::request_stop() {
-    const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
+    _authority_control.revoke();
+    RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
     _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done), std::memory_order_release);
     // Revoke before the worker has actually wound down. The main-thread
@@ -2703,11 +2761,20 @@ void NativeSimulationHost::request_stop() {
     // it, so a domain must stop being worker-owned the instant a stop is asked
     // for. Leaving it set until the thread exits would drop the days in
     // between: nobody computes climate while the worker is on its way out.
-    _authoritative_domain_mask.store(0, std::memory_order_release);
-    _stop_requested.store(true, std::memory_order_release);
-    if (current != RuntimeWorkerState::FAULTED) {
-        _state.store(RuntimeWorkerState::STOPPING, std::memory_order_release);
+    // Publish STOPPING before waking the worker. Never overwrite a concurrent
+    // terminal state (STOPPED or FAULTED) with a stale stop request.
+    // Inline execution has no worker loop to publish STOPPED at an idle boundary.
+    const bool inline_idle = inline_daily_mode() &&
+        _worker_day_inflight.load(std::memory_order_acquire) == 0u;
+    while (current != RuntimeWorkerState::STOPPED &&
+           current != RuntimeWorkerState::FAULTED &&
+           current != RuntimeWorkerState::STOPPING) {
+        if (_state.compare_exchange_weak(current,
+                inline_idle ? RuntimeWorkerState::STOPPED : RuntimeWorkerState::STOPPING,
+                std::memory_order_acq_rel, std::memory_order_acquire)) break;
     }
+    if (inline_idle) _worker_timing.stop();
+    _stop_requested.store(true, std::memory_order_release);
     _control_cv.notify_all();
 }
 
@@ -2719,6 +2786,7 @@ void NativeSimulationHost::join_for_destruction() {
             return _reaper_count.load(std::memory_order_acquire) == 0;
         });
     }
+    _authority_control.revoke();
     _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
 }
 
@@ -2907,7 +2975,7 @@ bool NativeSimulationHost::publish_environment(
         return false;
     }
     const bool climate_authoritative_watermark =
-        (_authoritative_domain_mask.load(std::memory_order_acquire) &
+        (authoritative_domain_mask() &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
     const int64_t stale_watermark = climate_authoritative_watermark
         ? _climate_committed_day.load(std::memory_order_acquire)
@@ -4682,6 +4750,7 @@ bool NativeSimulationHost::country_shadow_parity_self_test(std::string &error) c
         fixture.country_pending_technologies.size(), 0);
     fixture.research_queue_lengths.assign(
         fixture.research_queue_lengths.size(), 0);
+    fixture.country_cash[static_cast<size_t>(slot)] = 0;
     fixture.state_hash = country_core_hash_business_state(fixture);
     probe._country_pod_catalog = _country_pod_catalog;
     std::string bootstrap_error;
@@ -4693,6 +4762,35 @@ bool NativeSimulationHost::country_shadow_parity_self_test(std::string &error) c
     }
     probe._country_pod_configured.store(true, std::memory_order_release);
     probe._country_worker_session_epoch = 1;
+    probe._mode.store(RuntimeSimulationMode::SHADOW, std::memory_order_release);
+    // The synchronous producer leads this worker by a Country boundary. The
+    // future receipt must stay queued while today's command/hash is checked.
+    RuntimeEconomyAssetRequest future_credit;
+    future_credit.operation = RuntimeEconomyAssetOperation::FISCAL_COLLECT;
+    future_credit.session_epoch = 1;
+    future_credit.transaction_id = 7702;
+    future_credit.request_id = 7702;
+    future_credit.day = fixture.committed_day + 2;
+    future_credit.operation_sequence = 1;
+    future_credit.country_slot = slot;
+    RuntimeEconomyAssetResult future_result;
+    future_result.code = RuntimeEconomyAssetResultCode::COMPLETED;
+    future_result.state = RuntimeEconomyAssetState::COMPLETED;
+    future_result.committed_cash = 17;
+    if (!probe.mirror_sync_country_economy_asset(
+            future_credit, future_result, error)) return false;
+    RuntimeEconomyAssetRequest future_purchase = future_credit;
+    future_purchase.operation = RuntimeEconomyAssetOperation::RESEARCH_PURCHASE;
+    future_purchase.request_id = 7703;
+    future_purchase.transaction_id = 7703;
+    future_purchase.operation_sequence = 2;
+    future_purchase.reserved_cash = 11;
+    future_purchase.prepared_quantity = 3;
+    RuntimeEconomyAssetResult purchase_result = future_result;
+    purchase_result.committed_cash = 11;
+    purchase_result.committed_quantity = 3;
+    if (!probe.mirror_sync_country_economy_asset(
+            future_purchase, purchase_result, error)) return false;
     RuntimeCountryCommand rename;
     rename.request_id = 7701;
     rename.producer_id = 0;
@@ -4812,6 +4910,34 @@ bool NativeSimulationHost::country_shadow_parity_self_test(std::string &error) c
             core_state, worker_state, field, sizeof(field), index) ||
         country_core_hash_business_state(worker_state) != core_state.state_hash) {
         error = std::string("country_parity_self_test_field_mismatch:") + field;
+        return false;
+    }
+    if (!probe.flush_country_economy_asset_commits(
+            error, 0, false, future_credit.day) ||
+        !probe._country_pod_authority.snapshot(worker_state, error)) return false;
+    const size_t country = static_cast<size_t>(slot);
+    const size_t points = country * fixture.good_count +
+        static_cast<size_t>(_country_pod_catalog.technology_points_good_id);
+    const int64_t expected_cash = core_state.country_cash[country] + 17 - 11;
+    const int64_t expected_points = core_state.country_goods[points] + 3;
+    const int64_t expected_purchased = core_state.research_purchased_total[country] + 3;
+    if (worker_state.country_cash[country] != expected_cash ||
+        worker_state.country_goods[points] != expected_points ||
+        worker_state.research_purchased_total[country] != expected_purchased) {
+        error = "country_parity_self_test_dated_assets_missing";
+        return false;
+    }
+    if (!probe.mirror_sync_country_economy_asset(
+            future_credit, future_result, error) ||
+        !probe.mirror_sync_country_economy_asset(
+            future_purchase, purchase_result, error) ||
+        !probe.flush_country_economy_asset_commits(
+            error, 0, false, future_credit.day + 1) ||
+        !probe._country_pod_authority.snapshot(worker_state, error)) return false;
+    if (worker_state.country_cash[country] != expected_cash ||
+        worker_state.country_goods[points] != expected_points ||
+        worker_state.research_purchased_total[country] != expected_purchased) {
+        error = "country_parity_self_test_dated_assets_reapplied";
         return false;
     }
     return true;
@@ -5883,7 +6009,7 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
 
 bool NativeSimulationHost::flush_country_economy_asset_commits(
         std::string &error, uint64_t settle_request_id,
-        bool skip_audit_snapshot) {
+        bool skip_audit_snapshot, int64_t shadow_through_day) {
     error.clear();
     struct PendingCommit {
         uint64_t request_id = 0;
@@ -5891,6 +6017,8 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
         RuntimeEconomyAssetResult result;
     };
     std::vector<PendingCommit> pending;
+    const bool shadow = _mode.load(std::memory_order_acquire) ==
+        RuntimeSimulationMode::SHADOW;
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
         pending.reserve(_country_economy_asset_terminal_results.size());
@@ -5901,6 +6029,14 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
             }
             const auto request = _country_economy_asset_requests.find(entry.first);
             if (request == _country_economy_asset_requests.end()) continue;
+            // The synchronous producer can lead SHADOW by several days. Apply
+            // its mirrored treasury results at the same Country boundary as
+            // the reference, never all at once on the worker's next pulse.
+            if (shadow &&
+                (shadow_through_day < 0 ||
+                 request->second.day > shadow_through_day)) {
+                continue;
+            }
             // Country day-start / Economy stage-end flush must not debit
             // treasury for COMPLETED RESEARCH_PURCHASE before Economy phase 4
             // credits merchants in the same conservation window. Early flush
@@ -5908,7 +6044,7 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
             // next epoch → money_conservation_failed / goods_error. The same
             // holds for wire ids whose Economy leg runs in the continuation
             // (colonization market purchase and treasury-to-cargo transfer).
-            if ((request->second.operation ==
+            if (!shadow && (request->second.operation ==
                      RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
                  _country_economy_asset_self_settled.count(entry.first) != 0) &&
                 entry.second.code ==
@@ -5919,6 +6055,19 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
             pending.push_back(PendingCommit{
                 entry.first, request->second, entry.second});
         }
+    }
+    if (shadow) {
+        // Preserve the synchronous decision order within each dated boundary.
+        // An unordered credit/debit replay can reject a valid spend that was
+        // funded by an earlier credit in the same boundary.
+        std::sort(pending.begin(), pending.end(),
+            [](const PendingCommit &a, const PendingCommit &b) {
+                if (a.request.day != b.request.day)
+                    return a.request.day < b.request.day;
+                if (a.request.operation_sequence != b.request.operation_sequence)
+                    return a.request.operation_sequence < b.request.operation_sequence;
+                return a.request_id < b.request_id;
+            });
     }
     const bool plan_active = _country_pod_plan_active.load(std::memory_order_acquire);
     uint32_t applied = 0u;
@@ -7996,6 +8145,7 @@ bool NativeSimulationHost::configure_ideology_pod(
     _ideology_pod_catalog = catalog;
     _ideology_pod_catalog.catalog_hash = _ideology_pod_authority.catalog_hash();
     _ideology_pod_configured = true;
+    _ideology_reference_opinions.clear();
     _ideology_commands.clear();
     _ideology_intents.clear();
     _ideology_acks.clear();
@@ -8071,6 +8221,25 @@ NativeSimulationHost::worker_opinion_snapshot_for_day(int64_t day) const {
     return nullptr;
 }
 
+std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+NativeSimulationHost::pin_ideology_reference_opinion(int64_t day,
+        const RuntimeIdeologyOpinionSnapshot &snapshot) {
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    const auto found = _ideology_reference_opinions.find(day);
+    if (found != _ideology_reference_opinions.end()) return found->second;
+    auto copy = std::make_shared<const RuntimeIdeologyOpinionSnapshot>(snapshot);
+    _ideology_reference_opinions.emplace(day, copy);
+    // Retain only inputs either side can still need. This is consumer-driven
+    // retirement, without a time/count cap or a "latest" fallback.
+    const int64_t worker_day = _committed_day.load(
+        std::memory_order_acquire);
+    const int64_t through = std::min(day, worker_day);
+    while (!_ideology_reference_opinions.empty() &&
+        _ideology_reference_opinions.begin()->first < through)
+        _ideology_reference_opinions.erase(_ideology_reference_opinions.begin());
+    return copy;
+}
+
 bool NativeSimulationHost::publish_ideology_opinion_snapshot(
         const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error) {
     if (snapshot.revision == 0 || snapshot.class_hash == 0 ||
@@ -8090,11 +8259,9 @@ bool NativeSimulationHost::publish_ideology_opinion_snapshot(
         return false;
     }
     auto copy = std::make_shared<RuntimeIdeologyOpinionSnapshot>(snapshot);
-    // The "latest input" pointer only. The day-keyed ring was removed with
-    // `select_ideology_opinion_for_day` (R9-1): picking an opinion by day was the
-    // rule that never worked, because Economy's `commit_day` and the worker's plan
-    // day are different scales. Parity now binds to the opinion the worker
-    // RECORDED using, not to one re-derived from a day.
+    // The ordinary worker path reads the latest committed input. SHADOW parity
+    // separately pins the input at the reference's actual daily entry; it never
+    // infers the simulation day from Economy's committed_day or period index.
     std::atomic_store_explicit(&_ideology_opinion_snapshot,
         std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>(std::move(copy)),
         std::memory_order_release);
@@ -8631,9 +8798,14 @@ void NativeSimulationHost::publish_country_command_terminals(
         const char *reason, bool include_superseded_ai) {
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
     for (const RuntimeCountryCommand &command : commands) {
-        // AI commands are internal to the worker: player receipt consumers
-        // treat any REJECT terminal as their own failure.
-        if (command.producer_id == COUNTRY_AI_PRODUCER_ID && !include_superseded_ai) continue;
+        // Worker-local AI has no admitted packet to retire. SHADOW's mirrored
+        // sync AI does: keep its terminal internally so successful commands do
+        // not repeat forever. poll_country_command_receipts filters AI from
+        // the player stream independently of this transport lifecycle.
+        if (command.producer_id == COUNTRY_AI_PRODUCER_ID &&
+            !include_superseded_ai &&
+            _country_command_states.find(command.request_id) ==
+                _country_command_states.end()) continue;
         if (command.request_id == 0 ||
             _country_command_terminals.find(command.request_id) !=
                 _country_command_terminals.end()) {
@@ -9340,7 +9512,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         day_commit.completed_domain_mask == RUNTIME_ALL_DOMAIN_MASK &&
         implemented_domain_mask() == RUNTIME_ALL_DOMAIN_MASK) {
         _graph_coverage_complete.store(true, std::memory_order_release);
-        _authority_ready.store(true, std::memory_order_release);
+        _authority_control.mark_graph_ready();
     }
     // 日尾与 worker 完全同序：per-domain grant → Climate writeback →
     // 提交水印 → publish_day → 读视图。少任何一步都会让主线程的
@@ -9411,7 +9583,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
     // 而不是等到扫描失败后才补救（那时已经先把 missing 记进 day_wait 了）。
     // 它只是把既有函数多调一次，不改变任何分支语义，也不新增等待。
     (void)resolve_pending_country_effect_peers();
-    if (!flush_country_economy_asset_commits(error)) {
+    if (!flush_country_economy_asset_commits(error, 0, false, day)) {
         commit.preflight_ok = 0;
         return false;
     }
@@ -9461,6 +9633,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
             // same state, so replaying them would only duplicate or go stale.
             if (country_ai != nullptr &&
                 packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID)
+                continue;
+            CountryCommandReceipt terminal;
+            if (try_country_command_terminal(packet.envelope.request_id, terminal))
                 continue;
             if (packet.envelope.request_id != 0 &&
                 _country_pod_authority.has_pending_request(
@@ -9537,6 +9712,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         bool country_planned = _country_pod_authority.plan_day(
             day, input_generation, _country_pod_plan, error);
         if (!country_planned &&
+            country_ai != nullptr &&
             _country_pod_authority.remove_pending_producer(COUNTRY_AI_PRODUCER_ID) > 0) {
             ai_ids.clear();
             if (country_ai != nullptr) country_ai->reject_staged(day, error.c_str());
@@ -9701,6 +9877,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 continue;
             if (packet.envelope.producer_id == COUNTRY_AI_PRODUCER_ID &&
                 country_ai_for_worker() != nullptr)
+                continue;
+            CountryCommandReceipt terminal;
+            if (try_country_command_terminal(packet.envelope.request_id, terminal))
                 continue;
             bool in_open_plan = false;
             for (const RuntimeCountryCommand &planned :
@@ -10123,7 +10302,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
         error.clear();
         return true;
     }
-    if (!flush_country_economy_asset_commits(error)) {
+    if (!flush_country_economy_asset_commits(error, 0, false, day)) {
         commit.preflight_ok = 0;
         return false;
     }
@@ -10328,19 +10507,13 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
         &_country_snapshot, std::memory_order_acquire);
     auto opinion = std::atomic_load_explicit(
         &_ideology_opinion_snapshot, std::memory_order_acquire);
-    // A1 day-binding is NOT landed. See 05 §2.6.
-    //
-    // The intended rule was "the newest opinion committed at or before the day
-    // being planned", applied identically by both authorities. It does not hold in
-    // this fixture, and NOT because the rule is wrong: Economy's `commit_day` and
-    // the worker's `plan.context.day` are different day scales. Measured with
-    // PK_IDEOLOGY_TRACE=1: the worker planned ideology day 1 while the newest
-    // Economy commit was day 4, day 2 against commit 2, day 3 against commit 6.
-    // Applying `committed_day <= plan_day` therefore selected nothing on most days
-    // (`worker_opinion_rev=0`), the worker booked no points at all, and parity fell
-    // from matched=4 to matched=0.
-    //
-    // Until that calendar mapping is measured properly, the input stays "the
+    if (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW &&
+        ideology_parity_enabled()) {
+        std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+        const auto found = _ideology_reference_opinions.find(day);
+        opinion = found != _ideology_reference_opinions.end()
+            ? found->second : nullptr;
+    }
     if (country == nullptr || opinion == nullptr) {
         error = country == nullptr ? "ideology_country_snapshot_missing" :
             "ideology_opinion_snapshot_missing";
@@ -10835,7 +11008,17 @@ bool NativeSimulationHost::map_effect_intent_to_modifier_command(
     // payload[2]==0 means "unset", not GLOBAL — defaulting to GLOBAL made
     // has_technology_effect miss ENTITY+TECH unique keys after a successful
     // apply, and wrong source_type blocked UNIQUE_SOURCE identity.
-    if (adapter_kind == EFFECT_MODIFIER_IDEOLOGY) {
+    if (adapter_kind == EFFECT_MODIFIER_TECHNOLOGY) {
+        // Mirrors EffectRuntime's technology adapter: technology modifiers
+        // represent an enabled capability, so their magnitude is always one
+        // regardless of the effect program's sampled value.
+        command.scope = 2; // ENTITY
+        command.entity_handle = intent.target_handle;
+        command.group_handle = 0;
+        command.source_type = 0x54454348ULL; // TECH
+        command.source_id = intent.source_id & 0xffffULL;
+        command.magnitude_q16 = 65536;
+    } else if (adapter_kind == EFFECT_MODIFIER_IDEOLOGY) {
         // Mirrors EffectRuntime's NATIVE_MODIFIER_IDEOLOGY branch:
         // effect_runtime.cpp:5317-5363.
         command.source_type = 0x4944454fULL; // IDEO
@@ -12853,6 +13036,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                             country_ai_for_worker() != nullptr) {
                             continue;
                         }
+                        CountryCommandReceipt terminal;
+                        if (try_country_command_terminal(
+                                packet.envelope.request_id, terminal)) continue;
                         if (_country_pod_authority.has_pending_request(
                                 packet.envelope.request_id)) {
                             continue;
@@ -14540,7 +14726,7 @@ void NativeSimulationHost::set_fault(const char *code) {
     // A faulted worker owns nothing. Same reason as request_stop: the schedule
     // gate must hand the domain back to the main thread rather than let a dead
     // worker keep it suppressed.
-    _authoritative_domain_mask.store(0, std::memory_order_release);
+    _authority_control.revoke();
     const char *value = code ? code : "unknown";
     size_t i = 0;
     for (; i + 1 < _fault_code.size() && value[i] != '\0'; ++i) {
@@ -16760,7 +16946,7 @@ void NativeSimulationHost::worker_main() {
                     day_commit.completed_domain_mask == RUNTIME_ALL_DOMAIN_MASK &&
                     implemented_domain_mask() == RUNTIME_ALL_DOMAIN_MASK) {
                     _graph_coverage_complete.store(true, std::memory_order_release);
-                    _authority_ready.store(true, std::memory_order_release);
+                    _authority_control.mark_graph_ready();
                 }
                 // Per-domain grant. A domain is promoted once this day's commit
                 // covers it, independently of whether the whole graph is
@@ -16846,6 +17032,7 @@ void NativeSimulationHost::worker_main() {
                 }
             }
         }
+        _authority_control.revoke();
         if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         }
@@ -16868,12 +17055,13 @@ void NativeSimulationHost::worker_main() {
 
 RuntimeThreadReport NativeSimulationHost::report() const {
     RuntimeThreadReport out;
+    const ControlState control = control_state();
     out.worker_time_us = _worker_timing.snapshot();
-    out.state = _state.load(std::memory_order_acquire);
-    out.mode = _mode.load(std::memory_order_acquire);
+    out.state = control.state;
+    out.mode = control.mode;
     out.inline_daily = _inline_daily_mode.load(std::memory_order_acquire);
     out.graph_coverage_complete = _graph_coverage_complete.load(std::memory_order_acquire);
-    out.authority_ready = _authority_ready.load(std::memory_order_acquire);
+    out.authority_ready = control.authority_ready;
     out.required_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
     out.implemented_domain_mask = implemented_domain_mask();
     out.missing_domain_mask = out.required_domain_mask & ~out.implemented_domain_mask;
@@ -16881,8 +17069,7 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.active_gate_blocked = _active_gate_blocked.load(std::memory_order_acquire);
     out.requested_authority_mask =
         _requested_authority_mask.load(std::memory_order_acquire);
-    out.authoritative_domain_mask =
-        _authoritative_domain_mask.load(std::memory_order_acquire);
+    out.authoritative_domain_mask = control.authoritative_domain_mask;
     out.active_evidence_mask =
         _active_evidence_mask.load(std::memory_order_acquire);
     const char *coverage = out.authority_ready ? "complete" : "partial";
@@ -16901,10 +17088,10 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         out.coverage_blocker[blocker_index] = blocker[blocker_index];
     }
     out.coverage_blocker[blocker_index] = '\0';
-    out.interactive = _interactive.load(std::memory_order_acquire);
+    out.interactive = control.interactive;
     out.paused = _paused.load(std::memory_order_acquire);
     out.speed_days_per_second = _speed_days_per_second.load(std::memory_order_acquire);
-    out.committed_day = _committed_day.load(std::memory_order_acquire);
+    out.committed_day = control.committed_day;
     out.generation = _generation.load(std::memory_order_acquire);
     out.command_queue_capacity_exceeded = _command_queue_capacity_exceeded.load(std::memory_order_relaxed);
     out.receipt_queue_capacity_exceeded = _receipt_queue_capacity_exceeded.load(std::memory_order_relaxed);

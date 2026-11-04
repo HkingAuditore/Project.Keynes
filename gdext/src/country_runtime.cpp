@@ -6255,8 +6255,15 @@ void NativeCountryRuntime::finish_economy_asset_transaction(
     }
     _economy_asset_request_index[transaction.request_id] =
         transaction.transaction_id;
-    _economy_asset_transactions_in_flight.erase(transaction.transaction_id);
-    _economy_asset_transaction_history.push_back(transaction);
+    // Keep the map entry alive until every consumer has copied the terminal
+    // transaction.  `transaction` is a reference into the map; erasing it
+    // before copying made the history entry and the mirrored terminal receipt
+    // read freed storage, so the final peer-applied ACK became
+    // `transaction_unknown`.
+    const uint64_t transaction_id = transaction.transaction_id;
+    const EconomyAssetTransaction terminal = transaction;
+    _economy_asset_transaction_history.push_back(terminal);
+    _economy_asset_transactions_in_flight.erase(transaction_id);
     while (_economy_asset_transaction_history.size() > 4096)
         _economy_asset_transaction_history.pop_front();
     if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
@@ -6264,52 +6271,61 @@ void NativeCountryRuntime::finish_economy_asset_transaction(
         RuntimeEconomyAssetRequest request;
         RuntimeEconomyAssetResult result;
         request.operation = static_cast<RuntimeEconomyAssetOperation>(
-            transaction.operation);
+            terminal.operation);
         request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
-        request.all_or_nothing = transaction.all_or_nothing ? 1 : 0;
-        request.session_epoch = transaction.session_epoch;
-        request.transaction_id = transaction.transaction_id;
-        request.request_id = transaction.request_id;
-        request.origin_domain = transaction.origin_domain;
-        request.origin_epoch = transaction.origin_epoch;
-        request.origin_stage = transaction.origin_stage;
-        request.operation_sequence = transaction.operation_sequence;
-        request.country_generation = transaction.country_generation_before;
-        request.peer_generation = transaction.peer_generation;
-        request.country_handle = transaction.country_handle;
-        request.country_slot = transaction.country_slot;
-        request.good_id = transaction.good_id;
+        request.all_or_nothing = terminal.all_or_nothing ? 1 : 0;
+        request.session_epoch = terminal.session_epoch;
+        request.transaction_id = terminal.transaction_id;
+        request.request_id = terminal.request_id;
+        request.origin_domain = terminal.origin_domain;
+        request.origin_epoch = terminal.origin_epoch;
+        request.origin_stage = terminal.origin_stage;
+        // Country references have already sealed _last_committed_day. An
+        // external Economy mutation belongs to the next Country boundary;
+        // SHADOW may be several days behind that reference when it arrives.
+        request.day = terminal.effective_country_day >= 0
+            ? terminal.effective_country_day
+            : std::max<int64_t>(0, _last_committed_day + 1);
+        request.operation_sequence = terminal.operation_sequence;
+        request.country_generation = terminal.country_generation_before;
+        request.peer_generation = terminal.peer_generation;
+        request.country_handle = terminal.country_handle;
+        request.country_slot = terminal.country_slot;
+        request.good_id = terminal.good_id;
         request.good_count = static_cast<uint32_t>(std::min<size_t>(
-            transaction.good_ids.size(), RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY));
+            terminal.good_ids.size(), RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY));
         for (uint32_t i = 0; i < request.good_count; ++i) {
-            request.good_ids[i] = transaction.good_ids[i];
-            request.good_quantities[i] = i < transaction.good_quantities.size()
-                ? transaction.good_quantities[i] : 0;
+            request.good_ids[i] = terminal.good_ids[i];
+            request.good_quantities[i] = i < terminal.good_quantities.size()
+                ? terminal.good_quantities[i] : 0;
         }
-        request.requested_quantity = transaction.requested_quantity;
-        request.prepared_quantity = transaction.prepared_quantity;
-        request.requested_cash = transaction.requested_cash;
-        request.reserved_cash = transaction.reserved_cash;
-        request.requested_goods_total = transaction.requested_goods_total;
-        request.reserved_goods_total = transaction.reserved_goods_total;
-        const bool ok = transaction.status == ECONOMY_ASSET_COMPLETED;
+        request.requested_quantity = terminal.requested_quantity;
+        request.prepared_quantity = terminal.prepared_quantity;
+        request.requested_cash = terminal.requested_cash;
+        // The sync commit has already released its reservation. Replay needs
+        // the amount that commit actually decided, not the remaining reserve.
+        request.reserved_cash = terminal.committed_cash;
+        request.requested_goods_total = terminal.requested_goods_total;
+        request.reserved_goods_total = terminal.reserved_goods_total;
+        const bool ok = terminal.status == ECONOMY_ASSET_COMPLETED;
         result.code = ok ? RuntimeEconomyAssetResultCode::COMPLETED
                          : RuntimeEconomyAssetResultCode::REJECTED;
         result.state = ok ? RuntimeEconomyAssetState::COMPLETED
                           : RuntimeEconomyAssetState::REJECTED;
         result.accepted = ok ? 1 : 0;
-        result.session_epoch = transaction.session_epoch;
-        result.transaction_id = transaction.transaction_id;
-        result.request_id = transaction.request_id;
+        result.session_epoch = terminal.session_epoch;
+        result.transaction_id = terminal.transaction_id;
+        result.request_id = terminal.request_id;
         result.operation = request.operation;
-        result.country_generation = transaction.country_generation_before;
-        result.peer_generation = transaction.peer_generation;
-        result.committed_peer_generation = transaction.peer_generation;
-        result.country_slot = transaction.country_slot;
-        result.committed_quantity = transaction.committed_quantity;
-        result.committed_cash = transaction.committed_cash;
-        result.committed_goods_total = transaction.committed_goods_total;
-        const char *reason_src = transaction.rejection_reason.c_str();
+        result.day = request.day;
+        result.country_generation = terminal.country_generation_before;
+        result.peer_generation = terminal.peer_generation;
+        result.committed_peer_generation = terminal.peer_generation;
+        result.country_slot = terminal.country_slot;
+        result.committed_quantity = terminal.committed_quantity;
+        result.committed_cash = terminal.committed_cash;
+        result.committed_goods_total = terminal.committed_goods_total;
+        const char *reason_src = terminal.rejection_reason.c_str();
         size_t reason_i = 0;
         if (reason_src != nullptr) {
             for (; reason_i + 1u < result.reason.size() && reason_src[reason_i] != '\0';
@@ -6377,6 +6393,7 @@ Dictionary economy_asset_transaction_dictionary(
     out["committed_goods_total"] = transaction.committed_goods_total;
     out["country_cash_before"] = transaction.country_cash_before;
     out["country_cash_after"] = transaction.country_cash_after;
+    out["effective_country_day"] = transaction.effective_country_day;
     out["country_good_before"] = transaction.country_good_before;
     out["country_good_after"] = transaction.country_good_after;
     out["all_or_nothing"] = transaction.all_or_nothing;
@@ -7004,6 +7021,7 @@ Dictionary NativeCountryRuntime::commit_economy_asset_transaction(
             return economy_asset_failure("country_treasury_async_commit_goods_invalid");
     }
     transaction.status = ECONOMY_ASSET_COMMIT_DECIDED;
+    transaction.effective_country_day = std::max<int64_t>(0, _last_committed_day + 1);
     ++_economy_asset_commit_count;
     if (credits_country)
         _countries.cash[slot] += commit_cash;
@@ -7142,9 +7160,10 @@ Dictionary NativeCountryRuntime::economy_asset_transaction_snapshot(
     if (pending != _economy_asset_transactions_in_flight.end())
         return economy_asset_transaction_dictionary(pending->second);
     for (auto it = _economy_asset_transaction_history.rbegin();
-         it != _economy_asset_transaction_history.rend(); ++it)
+         it != _economy_asset_transaction_history.rend(); ++it) {
         if (it->transaction_id == transaction_id)
             return economy_asset_transaction_dictionary(*it);
+    }
     return economy_asset_failure("country_treasury_async_transaction_unknown");
 }
 

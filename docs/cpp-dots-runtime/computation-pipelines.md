@@ -1,5 +1,17 @@
 # Simulation Computation Pipelines
 
+## 2026-11-03 transaction and technology adapter checks
+
+Country Economy asset transactions copy the terminal record before removing the
+in-flight map entry. The terminal copy is used for the history row, mirrored
+peer result and final ACK, so a completed transaction cannot turn into
+`transaction_unknown` through a dangling reference.
+
+The native Effect-to-Modifier bridge treats Technology intents as an enabled
+entity capability: scope is `ENTITY`, source type is `TECH`, and magnitude is
+one Q16 (`65536`) regardless of the sampled effect value. This keeps the
+worker adapter aligned with the Technology EffectRuntime adapter.
+
 ## Tiled texture upload validation (2026-11-03)
 
 Native static bundles and CPU horizon/occluder results contain only the base image
