@@ -1,11 +1,28 @@
 # C++/DOTS Runtime 架构总览
 
+世界的准备和关闭由 `WorldSession` 管理；现有生成、展示、恢复和模拟通过
+`world_session_modules.gd` 登记的适配器接入。扩展可在进入世界前登记资源依赖、
+准备、取消及释放步骤。GameFlow 等待实际关闭再换场景，存档协调使用同一会话的
+捕获状态。具体接入方法与仍保留的旧边界见
+[开发指南](../architecture/development-guide.md)。
+
 ## 2026-11-03 停止与日完成边界
 
 `RuntimeAuthorityControl` 集中持有当前授权、整图就绪和本次运行是否已关闭。
 这些值在同一个原子状态里更新；stop/fault 关闭后，迟到的日提交只能保留重启所需的
 完成证据，不能重新授予当前权限。只有前一次执行者退出后的显式 start 才能开启下一次运行。
 后台退出时再次关闭授权；无后台线程的 inline 在空闲边界直接完成停止。
+
+`RuntimeExecutionContext` 将已进入执行调用的数据归属与可随时撤销的新工作许可分开。
+worker 和 inline 在入口安装同一种会话作用域，十二个域通过共同查询使用该作用域的
+固定路由；stop 仍立即清空对外授权，但在途财政结算不会因此改读旧的同步国库。
+作用域也统一执行者身份，代替读取 `std::thread` 句柄或另一份 inline 线程标记。
+离开调用及异常返回都会恢复之前的上下文，其他线程和其他世界不继承这份权限。
+
+扩展目标与实际迁移边界见 [世界运行架构](../architecture/world-runtime-design.md)。
+保存模块已通过 `world_state_modules.gd` 登记恢复依赖，`runtime_module_registry.gd`
+检查重复身份、状态归属、缺失依赖及依赖环。`GameSave.register_state_module` 允许在
+绑定世界之前加入自带编码/恢复/版本策略的模块；玩家展示统一在这些模块之后恢复。
 
 理念的 `should_run(day)` 表示仍值得访问；`needs_daily_continuation(day)` 表示当天
 本地分片尚未完成。等待其他域回复只保留前者。SUS、原生 graph 和 MapGenerator 的
@@ -321,3 +338,68 @@ committed GameplayEventBus records, weather-front snapshots, and bounded
 near-camera economy situation queries, but it does not own or mutate simulation
 state. `GameAudioService` receives normalized values only and never calls native
 economy/climate authorities directly.
+
+
+## Worker handle retirement (2026-11-03)
+
+`NativeSimulationHost::reap_completed_worker_nonblocking()` hands a completed
+worker handle to `RuntimeThreadRetirement`. Publishing `STOPPED` happens after timing cleanup.
+The wrapper additionally publishes an independent completion token after all
+`worker_main` locals unwind; `simulation_executor_exited` uses it for both normal
+and fault exits. New starts reject an unreturned prior executor. The OS thread
+handle can still require joining. A detached cleanup task owns only that handle and shared completion
+state, never `this`. It joins, decrements the pending count and notifies under
+the completion mutex. `join_for_destruction()` joins the active worker and then
+waits on this shared state. The final cleanup unlock is safe even if the host
+has already been destroyed because the cleanup task retains its own shared
+reference. Failure to start a cleanup thread restores the joinable handle to
+the caller. This changes lifetime management only, with no simulation-domain
+ownership or scheduling changes.
+
+## World resource ownership and exit (2026-11-03)
+
+`MapGenerator` owns its passes, scheduler and jobs. The reverse links share
+`scripts/simulation/generator_context.gd` and use `WeakRef`; `SusJob.generator`
+is the public spelling of that borrowed link. `WeatherSystem` uses the same
+ownership direction through `scripts/weather/weather_context.gd` for its four
+helpers. Callers retain the owner throughout a synchronous pass or job.
+The ocean commit callback is a bound method, not a stored lambda retaining
+the generator. No simulation authority or scheduling order changes.
+
+`MapData` owns its cells; cells may retain `DCWorld`/`DCWorldExt`. The GDScript
+world therefore borrows its map, and its pooled `DCQuery` objects borrow their
+world. A surviving helper/query sees null once its owner has been released.
+This prevents the owner/child cycles that previously retained entire worlds,
+textures and native workers after scene replacement and process exit.
+
+`WorldRuntimeHost._exit_tree()` cancels generation and requests worker stop.
+`loading_frame_gate.gd` belongs to one generation and resumes waiting loading
+steps on either the next frame or cancellation. Catalog reads, native loading
+tasks, map-array assembly, start selection and baking share that gate. Exit
+marks the host as closing before canceling, so the suspended call chain unwinds
+while the host still exists and cannot start scene binding again. Canceled
+native work returns a cancellation result, and already requested threaded
+resource loads are consumed before releasing their pending ownership. This
+adds no timeout or fallback. Standalone callers without a gate keep their
+existing frame waits.
+
+`DCWorldExt` destruction retains the existing stop/join-before-runtime-release
+contract. The `HexRenderer.country_border_layer()` accessor returns `Node2D`:
+using the custom script return type here retains the caller dependency graph
+in Godot 4.6.3, reproducible by loading `WorldRuntimeHost` without instantiation.
+The owned border-layer field remains `CountryBorderLayer`.
+
+CI treats ObjectDB, Resource and RID shutdown leak reports as failures. The
+resource-lifetime regression checks borrowed owners, query reuse and map/cell
+release; the production worker-stop test also checks weak references to the
+generator, map and both DataCore worlds after freeing the host.
+The loading-exit regression closes worlds at six different frame positions,
+including before the first generation frame, and requires clean process exit.
+
+### 2026-11 经济模块内部交接
+
+主机通过 `EconomyAuthorityTransfer` 处理经济状态交接与国家身份核验，不再拥有经济类的私有访问权限。
+经济记录由 `EconomyRecordSource` 在读取边界复制为 `Batch`；`EconomyCsvRecorder` 仅负责文件和线程。
+测试开局通过 `TestStartInputs` 捕获输入，纯规划和资金模块不持有活动世界。
+实际接入、保留大类及验证见 `../architecture/world-runtime-design.md` 与
+`../architecture/world-runtime-validation.md`；扩展规则见 `../architecture/development-guide.md`。

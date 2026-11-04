@@ -2997,7 +2997,8 @@ Dictionary DCWorldExt::request_runtime_stop() {
     // The request itself is asynchronous even if the worker exits during this
     // call.  Callers use pending to schedule a later lifecycle poll, while the
     // state field is allowed to already be STOPPED.
-    out["pending"] = before != RuntimeWorkerState::STOPPED;
+    out["pending"] = before != RuntimeWorkerState::STOPPED ||
+        !_runtime_host->execution_has_stopped();
     out["state"] = runtime_state_name(state);
     return out;
 }

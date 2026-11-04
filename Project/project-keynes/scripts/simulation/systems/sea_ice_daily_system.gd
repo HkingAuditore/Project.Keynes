@@ -9,7 +9,6 @@ class_name SeaIceDailySystem
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var season_phase_getter: Callable = Callable()
 var stride: int = 1

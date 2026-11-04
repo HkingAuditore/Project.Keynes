@@ -99,3 +99,11 @@ From the repository root run:
 
 Use `-Build` for debug/release GDExtension builds and `-Godot` when a Godot executable is available.
 Report unrun gates explicitly, including performance gates that need the release benchmark scene.
+
+## Execution ownership versus admission (2026-11-03)
+
+Country treasury reads/transfers during a worker or inline call use the common
+Host predicate backed by `RuntimeExecutionContext`. Live stop admission can be
+zero while that call finishes against the same Country store. Do not substitute
+a raw public grant-mask check inside a fiscal transaction, and do not treat
+stop-request as transfer of the Country store to a stale synchronous mirror.

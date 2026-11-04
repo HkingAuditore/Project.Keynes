@@ -333,3 +333,13 @@ For ideology panel work, preserve card/slot nodes on support_revision and pendin
 ### Structured ideology hover details (2026-10-26)
 
 Remove the point-scroll ledger text button entirely; do not replace it with another character. Render card hover details through ideology_detail_tooltip.gd and the read-only detail_model, not one concatenated Label. Separate identity/status, understanding progress, individual current effects, next-level effects, directional support score/threshold and restrictions. Effect-number emphasis must preserve authored strings; gauges read native snapshot values. Bound tooltip height to the logical viewport and forward wheel input from the hovered card to long details without scrolling the collection. Verify actual mouse-hover creation, long-detail scroll isolation, and absence of a replacement point-bar button in ideology_workspace_stability_test.gd.
+
+
+## Main-thread continuation under worker authority
+
+The host must continue pending instance refresh and derived rebuild from frame liveness,
+even while the calendar cannot admit another day. Both native calls share the IDEOLOGY
+main-boundary request: finish one before starting the other, stop polling completed work,
+and reset day markers for a new world. Never wait for a later daily tick to release a
+request that parks the worker. Run `tests/runtime/ideology_day_continuation_test.gd` and
+the production starter soak when changing this handoff; retain real Effect acknowledgments.

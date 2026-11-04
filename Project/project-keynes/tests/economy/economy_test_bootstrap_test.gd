@@ -4,6 +4,8 @@ const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 const EconomyTestBootstrapScript = preload("res://scripts/economy/economy_test_bootstrap.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const WorldSetupScript = preload("res://scripts/ui/world_setup.gd")
+const StartInputs = preload("res://scripts/economy/bootstrap/test_start_inputs.gd")
+const StartPlanner = preload("res://scripts/economy/bootstrap/test_settlement_planner.gd")
 const CountryTestHelper = preload("res://tests/country/country_test_helper.gd")
 
 var _failures := PackedStringArray()
@@ -55,7 +57,9 @@ func _initialize() -> void:
 		csv_resource_ids.append(String(compiled.building_resource_ids[i]))
 	var facade = EconomyFacadeScript.new()
 	var profile = load("res://data/economy/default_economy.tres").duplicate(true)
-	profile.market_cycle_days = 5
+	profile.market_cycle_days = 1
+	profile.market_min_cycle_days = 1
+	profile.market_max_cycle_days = 1
 	var native_catalog := compiled.duplicate(true)
 	native_catalog.erase("ok")
 	_expect("all-technology test country bootstraps", CountryTestHelper.configure_all_technologies(
@@ -67,6 +71,9 @@ func _initialize() -> void:
 	if not configure_ok:
 		_finish()
 		return
+	var isolated_capture: Dictionary = StartInputs.capture(map, facade)
+	_expect("planner input capture succeeds", bool(isolated_capture.get("ok", false)))
+	var isolated_before := var_to_bytes(StartPlanner.build(isolated_capture.inputs, 1))
 	var first: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var same: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42)
 	var resource_tiered: Dictionary = EconomyTestBootstrapScript.build(map, facade, 42, 0)
@@ -109,8 +116,13 @@ func _initialize() -> void:
 	var short_horizon_map := _make_map()
 	_clear_resource(short_horizon_map, &"timber")
 	_clear_resource(short_horizon_map, &"stone")
-	_set_resource_cell(short_horizon_map, &"timber", 0, 500.0)
-	_set_resource_cell(short_horizon_map, &"stone", 0, 500.0)
+	# Two years of the current extraction recipe: enough for the one-year
+	# construction roots, deliberately below the normal ten-year requirement.
+	for pair in [[&"timber", &"timber_collector"], [&"stone", &"stone_collector"]]:
+		var spec: Dictionary = facade.building_placement_spec(pair[1])
+		var resource_index: int = spec.resource_ids.find(String(pair[0]))
+		_set_resource_cell(short_horizon_map, pair[0], 0,
+			float(spec.resource_quantities[resource_index]) / 1000.0 * 730.0)
 	var short_horizon: Dictionary = EconomyTestBootstrapScript.build(
 		short_horizon_map, facade, 42)
 	var short_fallbacks: Dictionary = short_horizon.get(
@@ -178,12 +190,11 @@ func _initialize() -> void:
 			int(first.get("basic_capacity_deficient_cells", 0)) == 2)
 	var catalog_buildings: PackedStringArray = facade.building_type_ids()
 	var communal_hearth_jobs: Dictionary = facade.building_job_spec(&"communal_hearth")
-	_expect("communal hearth uses an artisan owner and an early apprentice position",
+	_expect("communal hearth uses its current artisan-only household recipe",
 		bool(communal_hearth_jobs.get("ok", false)) and
 		String(communal_hearth_jobs.get("owner_profession", "")) == "artisan" and
-		communal_hearth_jobs.get("employee_professions", PackedStringArray()).has("apprentice") and
-		(communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array).size() == 1 and
-		int((communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array)[0]) == 1)
+		(communal_hearth_jobs.get("employee_professions", PackedStringArray()) as PackedStringArray).is_empty() and
+		(communal_hearth_jobs.get("employee_slots", PackedInt64Array()) as PackedInt64Array).is_empty())
 	_expect("fixture is restricted to a sparse mid-stone subset",
 		int(first.get("building_group_count", 0)) > 0 and
 		int(first.get("eligible_building_type_count", 0)) < catalog_buildings.size() / 4 and
@@ -249,20 +260,18 @@ func _initialize() -> void:
 		int(csv_test.get("schema_version", 0)) == 25)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
-	_expect("closed-chain land receives a settlement and the broken chain stays empty",
+	_expect("both resource-backed land cells receive the planned settlements",
 		(buildings.get("group_type_ids", PackedInt32Array()) as PackedInt32Array).size() > 0 and
-		(second_buildings.get("group_type_ids", PackedInt32Array()) as PackedInt32Array).is_empty())
-	_expect("fertile soil and flint create their mid-stone chains",
+		(second_buildings.get("group_type_ids", PackedInt32Array()) as PackedInt32Array).size() > 0)
+	_expect("fertile soil retains the food root and all retained hard input chains close",
 		_has_building(buildings, "gathering_ground") and
-		_has_building(buildings, "flint_quarry") and
-		_has_building(buildings, "knapping_workshop"))
-	_expect("complete stone-age material chain includes logging quarrying and lumber",
+		_all_positive_coverage(first.get("chain_input_coverage_q16", PackedInt32Array())))
+	_expect("construction sources retain local logging and quarrying",
 		_has_building(buildings, "timber_collector") and
-		_has_building(buildings, "stone_collector") and
-		_has_building(buildings, "lumber_plant"))
-	_expect("wild game creates hunting only where its local tool chain is closed",
+		_has_building(buildings, "stone_collector"))
+	_expect("wild game supports hunting on both source cells with optional tool inputs",
 		_has_building(buildings, "stone_age_hunting_camp") and
-		not _has_building(second_buildings, "stone_age_hunting_camp") and
+		_has_building(second_buildings, "stone_age_hunting_camp") and
 		not _has_building(buildings, "wild_game_collector") and
 		not _has_building(second_buildings, "wild_game_collector"))
 	_expect("resource-backed stone-age bullion extraction is present",
@@ -272,8 +281,9 @@ func _initialize() -> void:
 		_has_building(buildings, "household_weaving_shelter"))
 	_expect("stone food processing is demand-sized instead of fixed at two",
 		_building_count(buildings, "communal_hearth") <= 2)
-	_expect("stone tool fixture trims to one workshop after root-chain coverage",
-		_building_count(buildings, "knapping_workshop") == 1)
+	_expect("unused optional tool chain is pruned from the initial settlement",
+		_building_count(buildings, "knapping_workshop") == 0 and
+		not _has_building(buildings, "flint_quarry"))
 	var initial_land: Dictionary = facade.population_cell_snapshot(0)
 	var initial_second_land: Dictionary = facade.population_cell_snapshot(1)
 	_expect("survival satisfaction alias matches the compatibility fields",
@@ -281,15 +291,16 @@ func _initialize() -> void:
 			int(initial_land.get("satisfaction_q16", -2)) and
 		initial_land.get("survival_satisfaction_by_cohort_q16", PackedInt32Array()) ==
 			initial_land.get("satisfaction_by_cohort_q16", PackedInt32Array()))
-	_expect("bootstrapped closed-chain population starts unemployed",
-		_all_population_unemployed(initial_land) and
-		int(initial_second_land.get("population", 0)) == 0)
+	_expect("bootstrap reserves owners and leaves employee matching to the first settlement",
+		_bootstrap_employment_reconciles(initial_land) and
+		_bootstrap_employment_reconciles(initial_second_land))
 	_expect("populated native market receives its complete startup stock",
-		_market_stock_total(facade.market_cell_snapshot(0)) ==
+		_market_stock_total(facade.market_cell_snapshot(0)) +
+			_market_stock_total(facade.market_cell_snapshot(1)) ==
 			int(first.get("initial_stock_units", 0)) and
-		_market_stock_total(facade.market_cell_snapshot(1)) == 0)
+		_market_stock_total(facade.market_cell_snapshot(1)) > 0)
 	var startup_market: Dictionary = facade.market_cell_snapshot(0)
-	_expect("startup inventory covers food, clothing, construction, and real tool inputs",
+	_expect("startup inventory covers food, clothing, construction and available household tools",
 		_good_stock(startup_market, "gathered_plants") > 0 and
 		(_good_stock(startup_market, "fur") > 0 or
 			_good_stock(startup_market, "cloth") > 0) and
@@ -303,8 +314,8 @@ func _initialize() -> void:
 	var second_land: Dictionary = facade.population_cell_snapshot(1)
 	var ocean: Dictionary = facade.population_cell_snapshot(2)
 	var mountain: Dictionary = facade.population_cell_snapshot(3)
-	_expect("only the viable land cell exposes resource-specific professions",
-		int(land.get("cohort_count", 0)) > 1 and int(second_land.get("cohort_count", 0)) == 0)
+	_expect("both viable land cells expose resource-specific professions",
+		int(land.get("cohort_count", 0)) > 1 and int(second_land.get("cohort_count", 0)) > 1)
 	_expect("land has merchant", _sum_u8(land.get("merchant_flags", PackedByteArray())) >= 1)
 	_expect("water and impassable cells stay empty", int(ocean.get("population", -1)) == 0 and int(mountain.get("population", -1)) == 0)
 	_expect("demand preview CSR aligns with cohorts",
@@ -373,8 +384,8 @@ func _initialize() -> void:
 	_expect("double buffer overload applies lossless writer backpressure",
 		str(overload_status.get("state", "")) == "completed" and
 		str(overload_status.get("error_code", "")) == "" and
-		int(overload_status.get("captured_epochs", 0)) == 3 and
-		int(overload_status.get("written_epochs", 0)) == 3 and
+		int(overload_status.get("captured_epochs", 0)) == 4 and
+		int(overload_status.get("written_epochs", 0)) == 4 and
 		int(overload_status.get("backpressure_wait_count", 0)) >= 1 and
 		float(overload_status.get("backpressure_wait_ms_total", 0.0)) > 0.0 and
 		int(overload_status.get("first_unrecorded_epoch", -1)) == -1)
@@ -437,6 +448,23 @@ func _initialize() -> void:
 		soak_final_unemployed * 100 <= maxi(1, soak_final_population) * 35)
 	_expect("120-cycle calibrated bootstrap keeps producer support below 90 percent",
 		soak_support_q16 <= int(0.90 * 65536))
+	var map_weak: WeakRef = weakref(map)
+	var facade_weak: WeakRef = weakref(facade)
+	map.temp_arr.fill(-100.0)
+	map.terrain_arr.fill(0)
+	map = null
+	facade = null
+	_expect("copied planner inputs do not retain source map or facade",
+		map_weak.get_ref() == null and facade_weak.get_ref() == null)
+	_expect("source changes and release cannot alter a captured plan",
+		var_to_bytes(StartPlanner.build(isolated_capture.inputs, 1)) == isolated_before)
+	var rich_spec := {"owner_slots": 1, "employee_slots": PackedInt64Array(),
+		"output_good_ids": PackedStringArray(["gathered_plants", "cloth"]),
+		"output_quantities": PackedInt64Array([10000000, 10000000])}
+	var bounded: Dictionary = StartPlanner._prepare_regional_capacity_fallback(
+		{0: [{"spec": rich_spec, "count": 1}]}, [{"cells": [0]}])
+	_expect("regional population allocation respects physical cell capacity",
+		int(bounded.target_population_by_cell.get(0, -1)) == StartPlanner.CELL_POPULATION_CAP * StartPlanner.INITIAL_CARRYING_CAPACITY_SHARE_Q16 / StartPlanner.Q16_ONE)
 	_finish()
 
 
@@ -634,14 +662,14 @@ func _start_csv_recorder(ext: Object, map: MapData, resource_slots: PackedInt32A
 func _verify_single_cell_csv(ext: Object, start_result: Dictionary,
 		expected_cell: int) -> void:
 	var status := _wait_csv_terminal(ext)
-	_expect("single-cell CSV drains one accepted commit",
+	_expect("single-cell CSV drains its opening snapshot and next commit",
 		str(status.get("state", "")) == "completed" and
-		int(status.get("captured_epochs", 0)) == 1 and
-		int(status.get("written_epochs", 0)) == 1)
+		int(status.get("captured_epochs", 0)) == 2 and
+		int(status.get("written_epochs", 0)) == 2)
 	var paths: Dictionary = start_result.get("test_paths", {})
 	var summary_lines := FileAccess.get_file_as_string(str(paths.summary)) \
 		.trim_prefix("﻿").split("\n", false)
-	_expect("summary remains one global row per selected-cell epoch", summary_lines.size() == 2)
+	_expect("summary includes opening and next selected-cell epoch", summary_lines.size() == 3)
 	for dim in ["cohorts", "buildings", "resources", "market"]:
 		var lines := FileAccess.get_file_as_string(str(paths[dim])) \
 			.trim_prefix("﻿").split("\n", false)
@@ -657,8 +685,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		resource_slots: PackedInt32Array, resource_ids: PackedStringArray) -> void:
 	ext.request_stop_economy_csv_recording()
 	var status: Dictionary = ext.get_economy_csv_recording_status()
-	var deadline := Time.get_ticks_msec() + 5000
-	while str(status.get("state", "")) == "draining" and Time.get_ticks_msec() < deadline:
+	while str(status.get("state", "")) == "draining":
 		OS.delay_msec(1)
 		status = ext.get_economy_csv_recording_status()
 	_expect("CSV worker drains asynchronously", str(status.get("state", "")) == "completed")
@@ -667,8 +694,8 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 181, "cohorts": 26, "buildings": 89,
-		"resources": 23, "market": 49}
+	var expected_columns := {"summary": 186, "cohorts": 32, "buildings": 132,
+		"resources": 23, "market": 50}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)
@@ -821,9 +848,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 func _wait_csv_terminal(ext: Object) -> Dictionary:
 	ext.request_stop_economy_csv_recording()
 	var status: Dictionary = ext.get_economy_csv_recording_status()
-	var deadline := Time.get_ticks_msec() + 5000
-	while str(status.get("state", "")) in ["opening", "recording", "draining"] \
-			and Time.get_ticks_msec() < deadline:
+	while str(status.get("state", "")) in ["opening", "recording", "draining"]:
 		OS.delay_msec(1)
 		status = ext.get_economy_csv_recording_status()
 	return status
@@ -1149,17 +1174,25 @@ func _fixture_uses_only_mid_stone_buildings(packet: Dictionary, facade) -> bool:
 		for tag in spec.get("technology_tags", PackedStringArray()):
 			var technology := String(tag)
 			if technology.begins_with("tech.") and technology not in [
-					"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control"]:
+					"tech.hunting", "tech.gathering", "tech.stone_knapping", "tech.fire_control",
+					"tech.deadwood_collection", "tech.ground_stone_tools",
+					"tech.communal_specialization", "tech.timber_sawing", "tech.gold_panning",
+					"tech.surface_silver_collection", "tech.weaving"]:
 				return false
 	return true
 
 
-func _all_population_unemployed(snapshot: Dictionary) -> bool:
+func _all_positive_coverage(values: PackedInt32Array) -> bool:
+	return not values.is_empty() and Array(values).all(func(value): return value >= 65536)
+
+
+func _bootstrap_employment_reconciles(snapshot: Dictionary) -> bool:
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
-	return not populations.is_empty() and \
-		_sum_i64(snapshot.get("owner_employed_by_cohort", PackedInt64Array())) == 0 and \
-		_sum_i64(snapshot.get("employee_employed_by_cohort", PackedInt64Array())) == 0 and \
-		_sum_i64(snapshot.get("unemployed_by_cohort", PackedInt64Array())) == _sum_i64(populations)
+	var owners := _sum_i64(snapshot.get("owner_employed_by_cohort", PackedInt64Array()))
+	var employees := _sum_i64(snapshot.get("employee_employed_by_cohort", PackedInt64Array()))
+	var unemployed := _sum_i64(snapshot.get("unemployed_by_cohort", PackedInt64Array()))
+	return not populations.is_empty() and owners > 0 and employees == 0 and \
+		owners + unemployed == _sum_i64(populations)
 
 
 func _all_market_stock_zero(snapshot: Dictionary) -> bool:
@@ -1302,13 +1335,15 @@ func _basic_capacity_is_covered(fixture: Dictionary) -> bool:
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report := {}
-	var simulation_day := day * 5
-	for slice in range(256):
+	var simulation_day := day
+	var slice := 0
+	while true:
 		report = ext.run_economy_slice({
 			"day_index": simulation_day,
 			"tick_index": simulation_day * 1000 + slice,
 		})
-		if bool(report.get("done", false)):
+		slice += 1
+		if bool(report.get("fatal", false)) or bool(report.get("done", false)):
 			return report
 	return report
 

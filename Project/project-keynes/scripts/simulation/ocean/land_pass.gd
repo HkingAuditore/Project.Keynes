@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCOceanLandPass
 
 ## Phase E.5 / dots-full-migration §Phase E.5：洋流热输运·陆段抽出。
@@ -27,7 +27,6 @@ class_name DCOceanLandPass
 ## 2. 写陆地 cell.temperature（注入 anomaly），不写水域；
 ## 3. 受 enable_ocean_heat_transport flag 控制（与 water 同一个开关）。
 
-var _generator
 
 func _init(generator) -> void:
 	_generator = generator

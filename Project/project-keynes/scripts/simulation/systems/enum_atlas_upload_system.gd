@@ -17,7 +17,6 @@ class_name EnumAtlasUploadSystem
 const _MapBakerScript = preload("res://scripts/rendering/map_baker.gd")
 const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var baker: _MapBakerScript = null
 var map: MapData = null
 var world_data: WorldData = null  # 与 DCSystem._world (DCWorld) 区分

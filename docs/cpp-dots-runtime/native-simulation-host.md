@@ -5,6 +5,12 @@
 
 ## 当前状态
 
+执行上下文由 `runtime_execution_context.h` 统一管理。线程控制报告的
+`authoritative_domain_mask` 仍表示当前对外授权；在 worker/inline 调用内部，
+`domain_is_worker_authoritative()` 使用该次执行固定的模块路由。请求停止不改变
+已经执行到一半的事务使用的数据源，也不重新开放入口。`on_worker_thread()`
+通过同一个会话上下文判断，不能从任意主线程调用伪造 worker 路径。
+
 `DCWorldExt` 持有唯一的 `NativeSimulationHost`。Godot 主线程只通过
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
@@ -99,7 +105,9 @@ worker 发布 `STOPPED` 后，其 `std::thread` 句柄仍可能保持 joinable�
 会等待 worker 和 reaper 完成；这条路径不属于 UI 或输入流程。
 
 模式在一次 host 生命周期内不可热切换。新世界必须先停止旧 host，再在下一帧确认
-`STOPPED/FAULTED` 后替换 generator。
+`STOPPED/FAULTED` 且 `simulation_executor_exited=true` 后替换 generator。
+后一字段由执行函数返回后的独立完成标记确认；`FAULTED` 可能早于执行者释放局部资源，
+不能单独用作释放依据。`request_runtime_stop.pending` 也覆盖状态已停止但执行函数尚未返回的窗口。
 
 ## 数据流
 
@@ -314,3 +322,10 @@ worker 日循环在缺 EVENTS 且 `events_failed_day == day` 持续超过
 Climate 环后面无声重试。
 
 
+
+### 2026-11 经济状态访问收窄
+
+`NativeSimulationHost` 不再是 `NativeEconomyRuntime` 的友元。采样日期、国家请求服务及
+保存恢复通过 `EconomyAuthorityTransfer`；临时国家身份与延后核验设置由作用域恢复，失败也不遗留。
+内部资金/债务不变量检查在 `EconomyInvariantProbe` 自行创建的运行对象上进行，不接收活动世界。
+ECP2 目前要求提交边界，旧中途保存开关不能绕过完整性检查；详见 `economy-save-migration-sop.md`。

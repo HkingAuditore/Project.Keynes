@@ -1,5 +1,9 @@
 # C++/DOTS Runtime 开发文档索引
 
+新增系统及架构迁移先读 [世界运行架构](../architecture/world-runtime-design.md)
+和 [开发指南](../architecture/development-guide.md)。两者说明目标、接入契约及迁移
+顺序；本目录仍记录各模块的当前实现与兼容规则。
+
 国家年度报告：`NativeSimulationHost -> AnnualDevelopmentLedger -> PKAR -> AnnualReportViewModel`。玩家点击左上角日期打开年度纪事；年度评价与奖励只在 native 提交。见 [年度报告运行时](./annual-development-report.md)。
 
 - [贸易载具运行时](./trade-visual-runtime.md)：真实在途订单的有界已提交观察、独立分片寻路、

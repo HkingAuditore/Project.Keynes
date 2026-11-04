@@ -1,3 +1,5 @@
+#include "economy_authority_transfer.h"
+#include "economy_invariant_probe.h"
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -617,28 +619,7 @@ NativeSimulationHost::~NativeSimulationHost() {
 }
 
 bool NativeSimulationHost::reap_completed_worker_nonblocking() {
-    if (!_worker.joinable()) return true;
-
-    // Do not move a joinable std::thread into a lambda capture directly: if
-    // the std::thread constructor throws, destruction of that capture would
-    // call std::terminate. A shared holder lets the failure path move the
-    // handle back into this object without blocking the caller.
-    auto holder = std::make_shared<std::thread>(std::move(_worker));
-    _reaper_count.fetch_add(1, std::memory_order_acq_rel);
-    try {
-        std::thread([this, holder]() {
-            if (holder->joinable()) holder->join();
-            if (_reaper_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                std::lock_guard<std::mutex> lock(_control_mutex);
-                _control_cv.notify_all();
-            }
-        }).detach();
-    } catch (...) {
-        _worker = std::move(*holder);
-        _reaper_count.fetch_sub(1, std::memory_order_acq_rel);
-        return false;
-    }
-    return true;
+    return _retired_workers.retire(_worker);
 }
 
 uint64_t NativeSimulationHost::now_us() {
@@ -658,6 +639,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
                                   double speed_days_per_second,
                                   bool paused,
                                   uint32_t requested_authority_mask) {
+    if (!_worker_returned->load(std::memory_order_acquire)) return false;
     RuntimeWorkerState expected = RuntimeWorkerState::STOPPED;
     if (!_state.compare_exchange_strong(expected, RuntimeWorkerState::STARTING,
             std::memory_order_acq_rel, std::memory_order_relaxed)) {
@@ -672,8 +654,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
-    // The previous worker is fully reaped here, so reset the continuation
-    // machine before publishing STARTING.  This avoids touching its
+    // STOPPED proves the previous worker no longer accesses the host; the
+    // independent retirement task may still be joining its OS handle. Reset
+    // the continuation machine here rather than touching its
     // non-atomic bookkeeping from request_stop while a worker is still live.
     _stage_ops_day_index = -1;
     _stage_ops_day_input_generation = 0;
@@ -1264,13 +1247,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         // So the identity the archive asked for is captured here and verified again
         // below, once Country is actually installed -- the same comparison, just moved
         // to a point where it is meaningful.
-        const bool previous_stale_identity =
-            _economy_production_runtime->_accept_stale_country_identity;
-        _economy_production_runtime->_accept_stale_country_identity = true;
-        const bool ecp2_applied = _economy_production_runtime->apply_ecp2_authority(
-            restored_ecp2, ecp2_apply_error);
-        _economy_production_runtime->_accept_stale_country_identity =
-            previous_stale_identity;
+        const bool ecp2_applied = EconomyAuthorityTransfer::restore_before_country(
+            *_economy_production_runtime, restored_ecp2, ecp2_apply_error);
         if (!ecp2_applied) {
             set_fault(ecp2_apply_error.empty()
                 ? "economy_ecp2_apply_failed"
@@ -1435,8 +1413,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         // must fail to start the worker, not load silently.
         if (_economy_production_runtime != nullptr) {
             std::string identity_error;
-            if (!_economy_production_runtime->verify_deferred_country_identity(
-                    identity_error)) {
+            if (!EconomyAuthorityTransfer::verify_after_country(
+                    *_economy_production_runtime, identity_error)) {
                 set_fault(identity_error.empty()
                     ? "economy_country_identity_mismatch"
                     : identity_error.c_str());
@@ -1693,8 +1671,16 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         return true;
     }
     try {
-        _worker = std::thread(&NativeSimulationHost::worker_main, this);
+        _worker_returned = std::make_shared<std::atomic<bool>>(false);
+        const auto returned = _worker_returned;
+        _worker = std::thread([this, returned] {
+            worker_main();
+            // This final signal owns no host reference and performs no further
+            // host access. A caller can now release the world, even on fault.
+            returned->store(true, std::memory_order_release);
+        });
     } catch (...) {
+        _worker_returned->store(true, std::memory_order_release);
         // A failed thread creation must leave the host reusable.  Returning
         // false while keeping STARTING would make every later start look like
         // a forbidden hot switch and would strand the caller without a
@@ -1997,157 +1983,7 @@ bool NativeSimulationHost::switch_economy_authority(
 bool NativeSimulationHost::economy_authority_fault_gate_self_test(
         std::string &error) const noexcept {
     error.clear();
-    {
-        auto economy = std::make_unique<NativeEconomyRuntime>();
-        economy->_cell_count = 1;
-        economy->_merchant_profession_id = 0;
-        for (int32_t profession = 0; profession < 3; ++profession) {
-            NativeEconomyRuntime::Signature signature;
-            signature.profession_id = profession;
-            economy->_signatures.push_back(signature);
-        }
-        NativeEconomyRuntime::BuildingType type;
-        type.owner_slots_per_building = 1;
-        economy->_building_types.push_back(type);
-        auto &population = economy->population_store();
-        population.clear(1);
-        const int32_t merchant = population.allocate_slot(0, 0);
-        const int32_t sponsor = population.allocate_slot(0, 1);
-        const int32_t owner = population.allocate_slot(0, 2);
-        for (int32_t slot : {merchant, sponsor, owner}) {
-            population.population.write_scalar(slot, 10);
-            population.funds.write_scalar(slot, slot == owner ? 0 : 100);
-        }
-        if (!economy->rebuild_merchant_ranges(error)) return false;
-        NativeEconomyRuntime::InvestmentCandidatePlan own, borrowed;
-        own.type_id = borrowed.type_id = 0;
-        own.sponsor = merchant;
-        own.owner_signature_id = 0;
-        own.allocated_count = borrowed.allocated_count = 1;
-        own.funding_capital = 90;
-        borrowed.sponsor = sponsor;
-        borrowed.owner_signature_id = 2;
-        borrowed.merchant_credit = 90;
-        const NativeEconomyRuntime::InvestmentCandidatePlan *plans[] = {&own, &borrowed};
-        NativeEconomyRuntime::ConstructionMaterialPlan materials[2];
-        for (auto &material : materials) {
-            material.feasible = true;
-            material.total_cost = 90;
-        }
-        if (economy->investment_portfolio_funds_feasible(0, plans, materials, 2) ||
-            population.funds[merchant] != 100 || population.funds[sponsor] != 100 ||
-            population.funds[owner] != 0 || population.population[sponsor] != 10) {
-            error = "investment_portfolio_reused_merchant_construction_cash";
-            return false;
-        }
-        // The construction guard must still reject the old funding sequence.
-        population.funds.write_scalar(merchant, 10);
-        NativeEconomyRuntime::Command command;
-        command.i32_0 = command.i32_1 = 0;
-        command.i64_0 = 1;
-        economy->market_store().cell_to_market.resize(1);
-        economy->market_store().cell_to_market.write_scalar(0, 0);
-        std::string drift;
-        if (economy->commit_preflighted_build_command(command, merchant,
-                materials[0], 0, 0, 0, 0, drift) ||
-            drift != "building_construction_preflight_funds_drift") {
-            error = "investment_portfolio_construction_funds_guard_missing";
-            return false;
-        }
-        population.funds.write_scalar(merchant, 100);
-        borrowed.allocated_count = 0;
-        if (!economy->investment_portfolio_funds_feasible(0, plans, materials, 2)) {
-            error = "investment_portfolio_funded_prefix_rejected";
-            return false;
-        }
-        borrowed.allocated_count = 1;
-        population.funds.write_scalar(merchant, 200);
-        if (!economy->investment_portfolio_funds_feasible(0, plans, materials, 2)) {
-            error = "investment_portfolio_funded_credit_rejected";
-            return false;
-        }
-        own.sponsor = sponsor;
-        own.owner_signature_id = 2;
-        own.funding_capital = borrowed.funding_capital = 60;
-        borrowed.merchant_credit = 0;
-        materials[0].total_cost = materials[1].total_cost = 60;
-        if (economy->investment_portfolio_funds_feasible(0, plans, materials, 2)) {
-            error = "investment_portfolio_reused_shared_sponsor_cash";
-            return false;
-        }
-        population.funds.write_scalar(sponsor, 200);
-        if (!economy->investment_portfolio_funds_feasible(0, plans, materials, 2)) {
-            error = "investment_portfolio_funded_shared_owner_rejected";
-            return false;
-        }
-    }
-    // A cohort can leave the merchant profession during employment while the
-    // cached merchant CSR still names its old slot. Debt service must never
-    // debit an owner when that cache has no living recipient (day 10315).
-    {
-        auto economy = std::make_unique<NativeEconomyRuntime>();
-        economy->_cell_count = 1;
-        economy->_merchant_profession_id = 0;
-        NativeEconomyRuntime::Signature merchant_signature;
-        merchant_signature.profession_id = 0;
-        NativeEconomyRuntime::Signature owner_signature;
-        owner_signature.profession_id = 1;
-        economy->_signatures.push_back(merchant_signature);
-        economy->_signatures.push_back(owner_signature);
-        auto &population = economy->population_store();
-        population.clear(1);
-        const int32_t merchant = population.allocate_slot(0, 0);
-        const int32_t owner = population.allocate_slot(0, 1);
-        population.population.write_scalar(merchant, 1);
-        population.population.write_scalar(owner, 1);
-        population.funds.write_scalar(owner, 100000);
-        if (!economy->rebuild_merchant_ranges(error)) return false;
-        population.population.write_scalar(merchant, 0);
-        NativeEconomyRuntime::BuildingGroup debt;
-        debt.cell = 0;
-        debt.owner_signature_id = 1;
-        debt.count = 1;
-        debt.merchant_debt_principal = 11166;
-        debt.merchant_debt_term_cycles_left = 1;
-        const size_t group = economy->append_building_group(debt);
-        int64_t premium = 0;
-        int64_t paid = 0;
-        {
-            auto row = economy->building_at(group);
-            paid = economy->repay_building_debt(0, owner, row, 11166, premium);
-        }
-        if (paid != 0 ||
-            population.funds[owner] != 100000 || premium != 0 ||
-            economy->buildings_store().merchant_debt_principal[group] != 11166) {
-            error = "merchant_debt_missing_receiver_burned_owner_cash";
-            return false;
-        }
-        int64_t repairs = 0;
-        if (!economy->ensure_merchant_invariant(0, repairs, error) ||
-            repairs != 1 || !economy->_merchant_ranges_dirty ||
-            !economy->refresh_merchant_ranges_if_dirty(error) ||
-            economy->_merchant_ranges_dirty ||
-            economy->_merchant_slots != std::vector<int32_t>{owner}) {
-            error = "merchant_replacement_did_not_refresh_receiver_csr";
-            return false;
-        }
-        const int32_t debtor = population.allocate_slot(0, 1);
-        population.population.write_scalar(debtor, 1);
-        population.funds.write_scalar(owner, 0);
-        population.funds.write_scalar(debtor, 100000);
-        {
-            auto row = economy->building_at(group);
-            paid = economy->repay_building_debt(0, debtor, row, 11166, premium);
-        }
-        if (paid != 11166 ||
-            population.funds[debtor] != 88834 ||
-            population.funds[owner] != 11166 ||
-            population.funds[merchant] != 0 ||
-            economy->buildings_store().merchant_debt_principal[group] != 0) {
-            error = "merchant_debt_receiver_retry_did_not_conserve_cash";
-            return false;
-        }
-    }
+    if (!EconomyInvariantProbe::run(error)) return false;
     // 遗留 AI 包的终态可供收尾/保存查询，但不能污染玩家回执流。
     const auto receipt_probe = std::make_unique<NativeSimulationHost>();
     RuntimeCountryCommand old_ai;
@@ -2497,7 +2333,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         }
         _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
         RuntimeEconomyEpochInput input;
-        input.sample_day = _economy_production_runtime->_sample_day;
+        input.sample_day = EconomyAuthorityTransfer::sample_day(*_economy_production_runtime);
         input.stage_hashes_enabled = economy_parity_shadow_enabled();
         input.session_epoch = 1;
         input.economy_generation =
@@ -2780,12 +2616,7 @@ void NativeSimulationHost::request_stop() {
 
 void NativeSimulationHost::join_for_destruction() {
     if (_worker.joinable()) _worker.join();
-    if (_reaper_count.load(std::memory_order_acquire) != 0) {
-        std::unique_lock<std::mutex> lock(_control_mutex);
-        _control_cv.wait(lock, [this]() {
-            return _reaper_count.load(std::memory_order_acquire) == 0;
-        });
-    }
+    _retired_workers.wait();
     _authority_control.revoke();
     _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
 }
@@ -9386,14 +9217,10 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     // 与 worker 日事务同一把边界锁。内联模式下执行者就是调用线程，这把锁在
     // 这里只是"一天一个事务"的互斥，不会再有人跨线程等它。
     std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);
-    // 登记执行者线程：内联模式下 on_worker_thread() 用它判断"这次调用是否就是
-    // 那一个在跑日事务的线程"。离开作用域（含早退）必须清掉，否则主线程在日
-    // 之外的经济调用会被当成 worker 线程内路径。
-    struct InlineThreadScope {
-        std::atomic<std::thread::id> &slot;
-        ~InlineThreadScope() { slot.store(std::thread::id{}, std::memory_order_release); }
-    } inline_thread_scope{_inline_day_thread};
-    _inline_day_thread.store(std::this_thread::get_id(), std::memory_order_release);
+    // Both executors use the same scoped identity and domain routing. Leaving
+    // the call (including an early return) restores the caller's context.
+    const RuntimeExecutionContext execution_context(this,
+        _requested_authority_mask.load(std::memory_order_acquire));
     const int64_t from_day = _committed_day.load(std::memory_order_acquire);
     const int64_t day = from_day + 1;
     out.from_day = from_day;
@@ -13733,9 +13560,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 // closes the same-day Host peer before Climate capacity fills.
                 if (_economy_production_runtime != nullptr) {
                     std::string service_error;
-                    if (!_economy_production_runtime
-                             ->service_country_economy_asset_peer(
-                                 64, service_error) &&
+                    if (!EconomyAuthorityTransfer::service_country_requests(
+                                 *_economy_production_runtime, 64, service_error) &&
                         !runtime_country_asset_pending_reason(service_error) &&
                         !service_error.empty()) {
                         economy_error = service_error;
@@ -15921,16 +15747,14 @@ void NativeSimulationHost::build_save_bundle(
         const bool stamp_worker_country =
             country_checkpoint != nullptr &&
             domain_is_worker_authoritative(RuntimeDomainId::COUNTRY);
+        EconomyAuthorityTransfer::CountryIdentity country_identity;
         if (stamp_worker_country) {
-            _economy_production_runtime->set_save_country_identity(
-                country_checkpoint->generation,
-                country_checkpoint->business_state_hash);
+            country_identity = {country_checkpoint->generation,
+                                country_checkpoint->business_state_hash};
         }
-        const bool ecp2_captured =
-            _economy_production_runtime->capture_ecp2_authority(
-                ecp2_state, ecp2_capture_error, capture_flags);
-        if (stamp_worker_country)
-            _economy_production_runtime->clear_save_country_identity();
+        const bool ecp2_captured = EconomyAuthorityTransfer::capture(
+            *_economy_production_runtime, ecp2_state, ecp2_capture_error,
+            capture_flags, stamp_worker_country ? &country_identity : nullptr);
         if (ecp2_captured) {
             std::string ecp2_encode_error;
             if (encode_ecp2(ecp2_state, bundle->economy_ecp2_bytes,
@@ -16234,6 +16058,8 @@ void NativeSimulationHost::build_save_bundle(
 }
 
 void NativeSimulationHost::worker_main() {
+    const RuntimeExecutionContext execution_context(this,
+        _requested_authority_mask.load(std::memory_order_acquire));
     _worker_timing.pause(_paused.load(std::memory_order_acquire));
     _worker_timing.start();
 #if defined(_WIN32)
@@ -17033,9 +16859,6 @@ void NativeSimulationHost::worker_main() {
             }
         }
         _authority_control.revoke();
-        if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
-            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
-        }
     } catch (const std::exception &error) {
         // `unhandled_worker_exception` alone is a dead end: it names the symptom and
         // throws away the only cheap evidence. Log what() before publishing the same
@@ -17051,6 +16874,11 @@ void NativeSimulationHost::worker_main() {
         set_fault("unhandled_worker_exception");
     }
     _worker_timing.stop();
+    // STOPPED is the restart handoff: even timing cleanup must precede it,
+    // otherwise the retiring worker can stop the next worker's timing state.
+    if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
+        _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+    }
 }
 
 RuntimeThreadReport NativeSimulationHost::report() const {

@@ -102,7 +102,6 @@ const _TRANSP_TIME_CHECK_INTERVAL: int = 32
 const _TRANSP_WATER_LANDFORM_MAX: int = 3
 
 # External references — wired up by MapGenerator at registration time.
-var generator = null  # MapGenerator (untyped to avoid circular preload)
 var map: MapData = null
 var season_phase_getter: Callable = Callable()
 

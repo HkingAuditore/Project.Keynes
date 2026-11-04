@@ -1396,9 +1396,13 @@ func _ensure_daily_pass_modules() -> void:
 
 
 var _loading_epoch := 0
+const LoadingFrameGateScript = preload("res://scripts/geography/loading_frame_gate.gd")
+var _loading_frames = LoadingFrameGateScript.new()
 
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_epoch += 1
+	_loading_frames.cancel()
+	_loading_frames = LoadingFrameGateScript.new()
 	var epoch := _loading_epoch
 	# ── 诊断上下文：任何一次 generate() 失败都要能回答"失败在哪一步/为什么" ──
 	last_generation_error = {}
@@ -1412,7 +1416,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	_mapgen_stage = "loading_catalog"
-	await LoadingCatalogCache.prepare(_ensure_generation_world_ext())
+	await LoadingCatalogCache.prepare(_ensure_generation_world_ext(), _loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 
@@ -1524,6 +1528,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
+	_baker.set_loading_frame_gate(_loading_frames)
 	# 转发 baker.stage_progress → generator.bake_progress（main.gd 已订阅）。
 	if _baker.has_signal("stage_progress") and not _baker.stage_progress.is_connected(_on_baker_stage_progress):
 		_baker.stage_progress.connect(_on_baker_stage_progress)
@@ -1549,7 +1554,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_profile_step("await map.build_indices_cooperative()")
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
-	await map.build_indices_cooperative()
+	await map.build_indices_cooperative(_loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
@@ -1697,7 +1702,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# regenerate 路径：MapData 实例随每次 generate() 调用整体替换，本次构建
 	# 的索引随旧 MapData 一起被丢弃，无需手动 invalidate。
 	if not map.has_indices():
-		await map.build_indices_cooperative()
+		await map.build_indices_cooperative(_loading_frames)
 		if epoch != _loading_epoch:
 			return _generation_superseded(_mapgen_stage)
 
@@ -1713,7 +1718,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_profile_step("await map.init_soa_from_bake_cooperative()")
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
-	await map.init_soa_from_bake_cooperative()
+	await map.init_soa_from_bake_cooperative(_loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
@@ -2116,8 +2121,9 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 
 ## Military catalog compile + configure + terrain + AI arming.
 ##
-## Order matters: it must run after Country and Economy are configured and
-## bootstrapped (dense good/profession/technology ids and the territory mirror),
+## Order matters: it runs after Country and Economy catalogs are configured
+## (dense good/profession/technology ids and the territory mirror). New games
+## bootstrap first; load preparation configures before PKMI/ECP2 restore,
 ## and before the daily system registration so the first simulation day already
 ## has a usable terrain layer.
 ##
@@ -3372,6 +3378,9 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 		# Player handles arrive with PKSV pkai (or the legacy fallback); until
 		# then the native AI stays unarmed.
 		_configure_country_ai(_sus_map, _save_restore_seed, PackedInt64Array())
+		# PKMI is the next provider, before ECP2. It needs its catalog and map
+		# shape now; settlement tiers are refreshed after ECP2 restores below.
+		_configure_military_runtime(_sus_map, null, _save_restore_seed)
 		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
 	return configured
 
@@ -3393,13 +3402,16 @@ func finalize_save_restore_runtime() -> Dictionary:
 	var registered: Dictionary = _register_country_economy_systems(_c())
 	if not bool(registered.get("ok", false)):
 		return registered
-	# Military configure must follow the restored Country/Economy catalogs. The
-	# PKMI payload itself is applied afterwards by GameSaveCoordinator's provider
-	# loop (pkmi restore), preceded by the generation-time terrain push here.
-	var military_configured: Dictionary = _configure_military_runtime(
-		_sus_map, null, _save_restore_seed)
-	if bool(military_configured.get("ok", false)):
-		_arm_military_ai(_gameplay_player_country_handles())
+	# PKMI has already restored. Never configure again here: that would erase
+	# the recovered armies, orders and AI state. Refresh settlement terrain
+	# from restored ECP2 through the facade's state-preserving terrain path.
+	if _military_facade != null and _military_facade.is_configured():
+		var terrain: Dictionary = _military_facade.set_terrain(_sus_map, -1, true,
+			_military_settlement_tiers(_sus_map))
+		if not bool(terrain.get("ok", false)) or not bool(terrain.get("state_preserved", false)):
+			return {"ok": false, "reason": "military_restore_terrain_failed"}
+		if _military_facade.ai_player_handles().is_empty():
+			_arm_military_ai(_gameplay_player_country_handles())
 	_maybe_register_military_system()
 	if not _runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}
@@ -4426,7 +4438,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var _hoisted := false
 		for _ci in range(_n_cells_for_bind):
 			if _generation_slice_due():
-				await (Engine.get_main_loop() as SceneTree).process_frame
+				await _yield_generation_frame()
 				_generation_slice_start_usec = Time.get_ticks_usec()
 			var _c_for_bind = _cell_arr_for_bind[_ci]
 			if _c_for_bind == null or not _c_for_bind.has_method("bind_world"):
@@ -4498,7 +4510,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			world,
 			int(cfg.seed),
 			int(country_config.get("foreign_count", NewGameConfig.DEFAULT_FOREIGN_COUNT)),
-			String(country_config.get("name", "新国家")))
+			String(country_config.get("name", "新国家")), _loading_frames)
 		if not bool(_gameplay_start_report.get("ok", false)):
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)
@@ -4602,8 +4614,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_ocean_currents_job = ocean_sys.get_inner()
 	_sus.configure_job_from_profile(ocean_sys, cp, false, &"ocean_currents", 1)
 	_sus.configure_job_from_profile(_ocean_currents_job, cp, false, &"ocean_currents", 1)
-	_ocean_currents_job.on_commit = func():
-		_compute_ocean_currents(map, world, hex_size)
+	# A method Callable borrows self; an owned lambda retains the generator.
+	_ocean_currents_job.on_commit = _compute_ocean_currents.bind(map, world, hex_size)
 	if _world_clock_ref != null:
 		_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
 	_runtime_register_system(ocean_sys)
@@ -10091,7 +10103,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 				belt_noises[belt_key] = belt_noise
 		for i in range(n_cells):
 			if cooperative and _generation_slice_due():
-				await (Engine.get_main_loop() as SceneTree).process_frame
+				await _yield_generation_frame()
 				_generation_slice_start_usec = Time.get_ticks_usec()
 			if habitat_code > 0 and not ResourceProfileRegistry.habitat_available(
 					p, int(habitat_arr[i])):
@@ -10483,7 +10495,7 @@ func _collect_resource_habitat_mask(map_ref, cooperative: bool = false) -> Packe
 	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
 	for i in range(n_cells):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var mask := 0
 		var is_water_cell := have_water and water_arr[i] != 0
@@ -10533,7 +10545,7 @@ func _collect_estuary_strength(map_ref, cooperative: bool = false) -> PackedFloa
 		return estuary_strength_arr
 	for source in range(n_cells):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if river_arr[source] == 0:
 			continue
@@ -13502,7 +13514,9 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary
 	var n: int
 	if ext.has_method("run_native_world_generate_full_pass"):
-		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict})
+		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict}, _loading_frames)
+		if bool(final_res.get("canceled", false)):
+			return null
 		_native_generation_base_report = final_res.duplicate(true)
 		if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
 			var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
@@ -21755,7 +21769,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
@@ -21764,7 +21778,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		temp_before[cell] = _valid_runtime_temp_or_baseline(cell.temperature, float(baseline[cell]))
 	
@@ -21776,7 +21790,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var iter_cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for ic in range(n_cells_air):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		anom_out_arr[ic] = 0.0
 	
@@ -21788,7 +21802,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var has_wind_soa_air: bool = wind_x_arr_air.size() == n_cells_air and wind_y_arr_air.size() == n_cells_air
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ci_air: int = int(cell.index)
 		var wind: Vector2
@@ -21839,7 +21853,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var _anom_ok: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_air
 	for ic in range(n_cells_air):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _anom_ok:
 			map.air_mass_temp_anomaly_arr[ic] = anom_out_arr[ic]
@@ -21871,7 +21885,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
@@ -21886,7 +21900,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	# 默认值：anom=0；temp 优先保留 air_mass pass 写入 SoA 的最新值。
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var c0: HexCell = iter_cells_s[ic]
 		anom_out_s[ic] = 0.0
@@ -21902,13 +21916,13 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var has_temp_soa_s: bool = temp_arr_s.size() == n_cells_s
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if has_temp_soa_s:
 			temp_out_s[ic] = temp_arr_s[ic]
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
@@ -21957,7 +21971,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var _anom_ok_s: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_s
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _temp_ok_s:
 			map.temp_arr[ic] = temp_out_s[ic]
@@ -21997,14 +22011,8 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 ## 浏览器实测单帧 31–34 ms ⇒ 一次 yield ≈ 130 ms，光是这些等待就占掉「进新游戏」
 ## 3.5–5.3 秒。多等 3 帧的原始动机是"让加载条动画走一下"，但一帧就足以把本帧的
 ## 绘制提交出去；再等 3 帧只是把墙钟乘以 4。改成 1 帧。
-const GENERATION_YIELD_FRAMES := 1
-
-func _yield_generation_frame() -> void:
-	var main_loop := Engine.get_main_loop()
-	if main_loop is SceneTree:
-		var tree := main_loop as SceneTree
-		for _i in range(GENERATION_YIELD_FRAMES):
-			await tree.process_frame
+func _yield_generation_frame():
+	return _loading_frames.next_frame()
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -22401,6 +22409,7 @@ func cancel_loading_work() -> void:
 		_data_core_world_ext.cancel_all_loading_tasks()
 	if _baker != null:
 		_baker.cancel_loading_work()
+	_loading_frames.cancel()
 
 
 var _loading_step_usec := 0
@@ -22510,7 +22519,9 @@ func _prepare_season_geometry_cooperative(map: MapData, n: int) -> void:
 			rows[i] = _cube_to_row(cell,_last_cfg)
 			jitter[i] = _height_warp.get_noise_2d(float(cell.q)*8.0,float(cell.r)*8.0)*.04 if _height_warp != null else 0.0
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await _yield_generation_frame()
+			if _loading_frames.canceled:
+				return
 			start = Time.get_ticks_usec()
 	_season_knob_row_idx_cache = rows
 	_season_knob_jitter_cache = jitter

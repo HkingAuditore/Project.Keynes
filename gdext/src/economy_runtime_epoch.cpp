@@ -1511,6 +1511,11 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
     if (!_bootstrapped || _fatal) {
         return true;
     }
+    // Both compact and StageOps must advance the observed day before epoch
+    // preparation: spread/cache phases read it while freezing derived demand.
+    // Advancing only at the end of open_epoch makes StageOps reuse yesterday's
+    // phase and changes real prices and household purchases after day zero.
+    _current_day = std::max(_current_day.get(), day_index);
     // A day can only be opened against a shaped market matrix. If the store the
     // graph stages are about to read is empty or mis-strided, say so with the
     // day, the ownership and the sizes *before* a stage read throws an

@@ -1,5 +1,20 @@
 # Project.Keynes System Map
 
+架构与扩展入口：[世界运行架构](../docs/architecture/world-runtime-design.md)、
+[开发指南](../docs/architecture/development-guide.md)。现有功能的接入映射和迁移
+顺序在目标设计中维护；下面的路径用于查阅当前实现。
+
+世界会话：`GameFlow → WorldRuntimeHost → WorldSession`；装配位于
+`scripts/game/world_session_modules.gd`。生命周期扩展使用 `register_session_module`，
+保存扩展使用 `GameSave.register_state_module`。前者决定准备/关闭依赖，后者决定数据恢复依赖，
+不能混成同一组顺序。后台计算继续通过既有原生模块接入共享执行上下文。
+
+现有 18 个保存模块由 `scripts/game/world_state_modules.gd` 装配；编码、解析和恢复
+实现在 `scripts/game/save_modules/`。`world_state_bindings.gd` 每次调用才取得所需接口，
+避免国家恢复后仍使用已被替换的经济对象。保存协调者只管理保存时点、整个文件的校验与读写。
+时间控制由 `WorldClock.control_changed → RuntimeClockBinding → 模拟执行者/WorldSession`
+直接连接，绑定随世界创建和释放；界面回调只负责展示，不再承担启动后台的职责。
+
 玩家 UI 字体与辨识度：`UITokens -> player_session/menu_atlas/family_workspace Theme`，
 Muyao 承担手写短标题，完整 Swei Regular/Bold 承担正文与读数；统一字阶与位图尺寸见
 [`docs/ui-readability.md`](../docs/ui-readability.md)。
@@ -702,3 +717,10 @@ The adaptive music path lives below `scripts/audio/music_situation_aggregator.gd
 It reads committed runtime data and sends normalized `Tension` values to
 `GameAudioService`; it is outside simulation authority and must not introduce
 full-map scans or per-frame economy reads.
+
+## 经济内部边界（2026-11）
+
+- 测试开局：`economy_test_bootstrap.gd` → `bootstrap/test_start_inputs.gd` → 纯规划/资金模块，策略集中在 `test_start_policy.gd`。
+- 状态交接：`EconomyAuthorityTransfer`；总控不直接访问经济私有状态。
+- 记录：`EconomyRecordSource` → 复制的 `Batch` → `EconomyCsvRecorder` 文件线程。
+- 当前扩展与保存边界：`docs/architecture/development-guide.md`；当前验证：`docs/architecture/world-runtime-validation.md`。

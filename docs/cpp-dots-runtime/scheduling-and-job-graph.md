@@ -78,7 +78,10 @@ and blocking the main thread waiting for work that needs its peer pump.
 
 **Host frame split (liveness vs progress).** `_process` always runs
 `_service_runtime_liveness()` (economy same-day capture, Country peer pump,
-Effect/Trigger/Ideology snapshot+intent ACK). Under capacity pending it retries
+Effect/Trigger/Ideology snapshot+intent ACK, and pending ideology instance/derived
+continuation for its original day). A main-boundary request can park the worker,
+so it must be serviced without waiting for the calendar to admit another day.
+Completed ideology passes are not retried on idle frames. Under capacity pending it retries
 `_on_clock_day_changed(_climate_capacity_pending_day)`: if capacity cleared
 (`_climate_capacity_pending_day < 0`), the same frame continues into
 `_service_runtime_progress()`; if capacity remains full, it still runs
@@ -1513,3 +1516,13 @@ result diagnostics in deterministic task order.
 也服务最新请求。停止请求两秒后不再做观察工作，既有模拟任务优先。
 显示与 GPU 上传由 `TradeActivityLayer` 按墙钟 2Hz/1Hz 节流；相同路径不重复上传。
 见 [trade-visual-runtime.md](trade-visual-runtime.md)。
+
+## Shared execution boundary (2026-11-03)
+
+The worker and inline executor install the same `RuntimeExecutionContext` before
+calling existing module stages. Data routing stays fixed for that call even if
+stop/fault closes admission concurrently; it never grants another day. Domain
+order, economy cycle cadence, business cursors and formulas are unchanged.
+The scope replaces the separate inline thread-id marker. Verify stop/transaction
+races, production economy restart, inline/worker isolation and save continuation
+when changing it. See the [target design](../architecture/world-runtime-design.md).

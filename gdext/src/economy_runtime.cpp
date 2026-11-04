@@ -10251,8 +10251,36 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             }
             const int32_t owner_slot = find_cohort_slot(
                 group.cell, group.owner_signature_id);
-            const int64_t owner_slot_cash = owner_slot >= 0
+            int64_t owner_slot_cash = owner_slot >= 0
                 ? std::max<int64_t>(0, population_store().funds[owner_slot]) : 0;
+            // Suspension moves the owner, including savings, into unemployment.
+            // Quote the cash that idle recruits would carry back with them;
+            // an empty canonical slot must not force a wealthy former owner to
+            // borrow (or reject them because the old lot has overdue debt).
+            // This is eligibility only: employment transfers the actual share,
+            // and production independently caps purchases by installed cash.
+            int64_t recruitable = std::max<int64_t>(0,
+                saturating_mul(group.count, type.owner_slots_per_building,
+                    _saturation_count) - (owner_slot >= 0
+                    ? population_store().population[owner_slot] : 0));
+            population_store().for_each_in_cell(group.cell, [&](int32_t slot) {
+                if (recruitable <= 0 || slot == owner_slot || is_merchant_slot(slot)) return;
+                const int64_t people = population_store().population[slot];
+                if (people <= 0) return;
+                const uint32_t signature = population_store().signature_id[slot];
+                if (signature >= _signatures.size()) return;
+                const int32_t profession = _signatures[signature].profession_id;
+                if (profession != _unemployed_profession_id &&
+                    profession != type.owner_profession_id) return;
+                const int64_t idle = std::max<int64_t>(0, people -
+                    population_store().owner_employed[slot] -
+                    population_store().employee_employed[slot]);
+                const int64_t moving = std::min(recruitable, idle);
+                owner_slot_cash = saturating_add(owner_slot_cash,
+                    mul_div_sat(std::max<int64_t>(0, population_store().funds[slot]),
+                        moving, people, _saturation_count), _saturation_count);
+                recruitable -= moving;
+            });
             // Restart finance bills only hard inputs and employee wages. Soft
             // tools are optional productivity bought from the recruited
             // owners' carried savings; billing them, or owner livelihood
@@ -11803,12 +11831,9 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     // are all income.  Otherwise a cashless subsistence cycle is reported as
     // a loss even when it covered the owner's food needs.
     const int64_t observed_receipts = scale_fact(saturating_add(
-        saturating_add(
-            saturating_add(std::max<int64_t>(0, group.last_market_receipt),
-                           std::max<int64_t>(0, group.last_bullion_mint_receipt),
-                           sat),
-            std::max<int64_t>(0, group.last_producer_support_receipt), sat),
-        std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat));
+        saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                       std::max<int64_t>(0, group.last_bullion_mint_receipt), sat),
+        std::max<int64_t>(0, group.last_producer_support_receipt), sat));
     int64_t realized_survival_output_value = 0;
     if (group.last_output > 0 && group.cell >= 0 && group.cell < _cell_count.get()) {
         const int32_t market = market_store().cell_to_market[group.cell];
@@ -11824,17 +11849,13 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
                     GOODS_SCALE, sat));
         }
     }
-    // The frozen quote is re-derived from the current plan every planning pass
-    // and is cleared to zero whenever the group goes unavailable or suspends,
-    // so it is a live figure rather than a stale nameplate. Groups without a
-    // quote fall back to the previous period's settled receipts.
-    const int64_t quoted_revenue = group.last_quoted_market_receipt > 0
-        ? saturating_add(
-            scale_fact(group.last_quoted_market_receipt),
-            observed_capacity
-                ? scale_fact(group.last_in_kind_livelihood_value) : 0, sat)
-        : (observed_capacity ? observed_receipts
-            : std::max<int64_t>(0, group.last_expected_revenue));
+    // Once a period has settled, mobility uses its actual cash receipts.
+    // A production-plan quote can outlive both a price change and a workforce
+    // move. Scaling that stale quote again invents income and causes workers
+    // to oscillate between otherwise equivalent lots. In-kind income is added
+    // exactly once below and is never a cash tax base.
+    const int64_t quoted_revenue = observed_capacity
+        ? observed_receipts : std::max<int64_t>(0, group.last_expected_revenue);
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
         (1U << NativeCountryRuntime::TAX_INCOME) |
         (1U << NativeCountryRuntime::TAX_BUSINESS));
@@ -22022,80 +22043,16 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 4) {
         _executed_substage = "investment_prepare";
-        static const bool commit_track_b_enabled4 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
-            return !(value && std::strcmp(value, "0") == 0);
-        }();
-        static const int32_t commit_track_b_cadence4 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_CADENCE");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
-        }();
-        static const int32_t commit_track_b_offset4 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed != 0 ? std::abs(parsed) : 3;
-        }();
-        static const int32_t commit_track_b_spread4 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_SPREAD");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
-        }();
-        const bool commit_spread_active = commit_track_b_enabled4 &&
-            commit_track_b_spread4 > 1;
-        const bool investment_due = commit_track_b_enabled4 &&
-            commit_track_b_cadence4 > 1 &&
-            (((_current_day.get() - commit_track_b_offset4) %
-              commit_track_b_cadence4 + commit_track_b_cadence4) %
-             commit_track_b_cadence4) == 0;
-        if (commit_spread_active) {
-            if (!_track_b_investment_cells_pending.empty()) {
-                // Continue the carried review list instead of preparing a new one.
-                _investment_review_cell_indices =
-                    _track_b_investment_cells_pending;
-                _building_cell_cursor = 0;
-                _building_commit_phase = 5;
-                record_commit_phase(0);
-                if (finish_chunk_and_should_yield()) {
-                    return BuildingCommitChunkResult::StopSlice;
-                }
-                ++_budgeted_building_commit_phase_fusions;
-                return BuildingCommitChunkResult::ContinueFusing;
-            }
-            if (!investment_due) {
-                EconomyCostProbe::record(
-                    "building_commit.track_b_investment_skip",
-                    _current_day.get(), 0.0, 1u);
-                _building_commit_phase = 5;
-                record_commit_phase(0);
-                if (finish_chunk_and_should_yield()) {
-                    return BuildingCommitChunkResult::StopSlice;
-                }
-                ++_budgeted_building_commit_phase_fusions;
-                return BuildingCommitChunkResult::ContinueFusing;
-            }
-        } else if (!investment_due) {
-            EconomyCostProbe::record("building_commit.track_b_investment_skip",
-                                     _current_day.get(), 0.0, 1u);
-            _building_commit_phase = 5;
-            record_commit_phase(0);
-            if (finish_chunk_and_should_yield()) {
-                return BuildingCommitChunkResult::StopSlice;
-            }
-            ++_budgeted_building_commit_phase_fusions;
-            return BuildingCommitChunkResult::ContinueFusing;
-        }
+        // The review list already owns the N/P/I cadence. Prepare once for
+        // this epoch and finish it through normal continuation slices. Moving
+        // ordinals into another epoch loses newly scheduled reviews and mixes
+        // candidate caches with a different frozen market input.
         bool population_changed = false;
         if (!run_endogenous_building_investment(0, 0, true, population_changed,
                                                 error)) {
             fail(error.empty() ? "building_investment_prepare_failed" : error);
             record_commit_phase(0);
             return BuildingCommitChunkResult::Fatal;
-        }
-        if (commit_spread_active) {
-            _track_b_investment_cells_pending =
-                _investment_review_cell_indices;
-            _building_cell_cursor = 0;
         }
         _building_commit_phase = 5;
         record_commit_phase(1);
@@ -22107,63 +22064,12 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 5) {
         _executed_substage = "investment";
-        static const bool commit_track_b_enabled5 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
-            return !(value && std::strcmp(value, "0") == 0);
-        }();
-        static const int32_t commit_track_b_cadence5 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_CADENCE");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
-        }();
-        static const int32_t commit_track_b_offset5 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed != 0 ? std::abs(parsed) : 3;
-        }();
-        static const int32_t commit_track_b_spread5 = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B_COMMIT_SPREAD");
-            const int32_t parsed = value ? std::atoi(value) : 0;
-            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
-        }();
-        const bool commit_spread_active5 = commit_track_b_enabled5 &&
-            commit_track_b_spread5 > 1;
-        const bool skip_commit_investment5 = !commit_spread_active5 &&
-            commit_track_b_enabled5 && commit_track_b_cadence5 > 1 &&
-            (((_current_day.get() - commit_track_b_offset5) %
-              commit_track_b_cadence5 + commit_track_b_cadence5) %
-             commit_track_b_cadence5) != 0;
-        if (skip_commit_investment5) {
-            if (!flush_market_signal_overflow(error)) {
-                fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
-                record_commit_phase(0);
-                return BuildingCommitChunkResult::Fatal;
-            }
-            _building_cell_cursor = 0;
-            _building_commit_phase = 6;
-            record_commit_phase(1);
-            if (finish_chunk_and_should_yield()) {
-                return BuildingCommitChunkResult::StopSlice;
-            }
-            ++_budgeted_building_commit_phase_fusions;
-            return BuildingCommitChunkResult::ContinueFusing;
-        }
         const int32_t investment_cell_count =
             static_cast<int32_t>(_investment_review_cell_indices.size());
-        // Spread mode: process only ~1/N of the carried review list per epoch so
-        // the investment spike is flattened; the remaining ordinals are carried
-        // to the next epoch. Exact/cadence modes keep processing the full list.
-        int32_t daily_target = investment_cell_count;
-        if (commit_spread_active5 && investment_cell_count > 0) {
-            daily_target = std::max<int32_t>(1,
-                (investment_cell_count + commit_track_b_spread5 - 1) /
-                commit_track_b_spread5);
-        }
         cursor_start = _building_cell_cursor;
         int32_t end = std::min<int32_t>(
             investment_cell_count,
             _building_cell_cursor + _investment_cells_per_slice);
-        if (commit_spread_active5) end = std::min(end, daily_target);
         bool population_changed = false;
         if (end > _building_cell_cursor && !run_endogenous_building_investment(
                 _building_cell_cursor, end, false, population_changed, error)) {
@@ -22176,31 +22082,9 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         cursor_end = _building_cell_cursor;
         building_range_used = true;
         if (_building_cell_cursor < investment_cell_count) {
-            if (commit_spread_active5 &&
-                _building_cell_cursor >= daily_target) {
-                _track_b_investment_cells_pending.assign(
-                    _investment_review_cell_indices.begin() +
-                        _building_cell_cursor,
-                    _investment_review_cell_indices.end());
-                if (!flush_market_signal_overflow(error)) {
-                    fail(error.empty()
-                        ? "market_signal_overflow_flush_failed" : error);
-                    record_commit_phase(0);
-                    return BuildingCommitChunkResult::Fatal;
-                }
-                _building_cell_cursor = 0;
-                _building_commit_phase = 6;
-                record_commit_phase(1);
-                if (finish_chunk_and_should_yield()) {
-                    return BuildingCommitChunkResult::StopSlice;
-                }
-                ++_budgeted_building_commit_phase_fusions;
-                return BuildingCommitChunkResult::ContinueFusing;
-            }
             record_commit_phase(0);
             return BuildingCommitChunkResult::StopSlice;
         }
-        if (commit_spread_active5) _track_b_investment_cells_pending.clear();
         if (!flush_market_signal_overflow(error)) {
             fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
             record_commit_phase(0);
@@ -22919,6 +22803,9 @@ NativeEconomyRuntime::advance_household_market_chunk(
             _saturation_count);
         _production_output_supported = saturating_add(
             _production_output_supported, market_result.supported_output,
+            _saturation_count);
+        _cycle_flow_produced = saturating_add(
+            _cycle_flow_produced, market_result.supported_cycle_flow_output,
             _saturation_count);
         _production_output_stock = saturating_add(
             _production_output_stock, market_result.supported_output,

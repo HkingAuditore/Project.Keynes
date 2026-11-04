@@ -13,10 +13,6 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var profile: ClimateProfile = load("res://data/world/earth_like.tres").duplicate(true)
-	profile.native_generation_mode = ClimateProfile.NATIVE_MODE_ACTIVE
-	profile.native_daily_sim_mode = ClimateProfile.NATIVE_MODE_ACTIVE
-	profile.native_environment_runtime_enabled = false
 	var config := NewGameConfig.create_default()
 	config.country.name = "Starter Soak Nation"
 	config.country.foreign_count = _configured_int("PK_STARTER_SETTLEMENT_FOREIGN_COUNT", 3)
@@ -27,22 +23,26 @@ func _run() -> void:
 	config.base.continent_size = 0.9
 	config.base.sea_level = 0.42
 	config.base.river_count = 8
-	var map_config := MapConfig.make(int(config.base.map_width), int(config.base.map_height))
-	map_config.seed = int(config.base.initial_seed)
-	map_config.num_continents = int(config.base.num_continents)
-	map_config.continent_size = float(config.base.continent_size)
-	map_config.sea_level = float(config.base.sea_level)
-	map_config.river_count = int(config.base.river_count)
-	map_config.climate_profile = profile
 	var clock := WorldClock.new()
-	var generator := MapGenerator.new()
-	generator.climate_profile = profile
-	generator.set_world_clock_ref(clock)
-	generator.set_gameplay_start_config(config.to_dictionary())
-	var generated: Dictionary = await generator.generate(map_config, 10.0)
-	var map: MapData = generated.get("map", null)
+	clock.auto_start = false
+	root.add_child(clock)
+	clock.set_process(false)
+	var host := WorldRuntimeHost.new()
+	host.runtime_economy_auto_pod_active = true
+	root.add_child(host)
+	host.configure(null, null, clock)
+	# Match PlayerGame: AUTO is a diagnostic size policy, not the formal path.
+	host.set_climate_authority_override("force_on")
+	var configured := host.configure_session({"kind": "new_game", "config": config.to_dictionary()})
+	_expect("formal starter session configures", bool(configured.get("ok", false)))
+	await host.generate_world()
+	var generator := host.get_generator()
+	var map: MapData = host.current_map()
 	_expect("formal starter world generates", map != null)
 	if map == null:
+		await host.close_world()
+		host.free()
+		clock.free()
 		_finish()
 		return
 	var start: Dictionary = generator.gameplay_start_report()
@@ -68,6 +68,9 @@ func _run() -> void:
 	var economy = generator.get_economy_facade()
 	_expect("starter economy is configured", economy != null and economy.is_configured())
 	if economy == null or not economy.is_configured() or start_cell < 0:
+		await host.close_world()
+		host.free()
+		clock.free()
 		_finish()
 		return
 	_expect("starter population begins at exactly 40",
@@ -87,12 +90,16 @@ func _run() -> void:
 		_expect("starter capital begins with one notable founder",
 			int(opening_people.get("total", 0)) == 1)
 
+	# Drive one semantic day at a time through the formal session. The ordinary
+	# host performs input capture, peer service and commit consumption; the test
+	# only controls when the next day is submitted so no ledger sample is missed.
+	clock.pause(false)
 	var soak_days := _configured_soak_days()
 	var all_commits_conserved := true
 	var all_values_finite := true
 	var completed_days := 0
-	for day in range(soak_days):
-		var report := await _run_day(generator, economy, clock, day)
+	for day in range(1, soak_days + 1):
+		var report := await _run_day(host, economy, clock, day)
 		var committed := bool(report.get("done", false)) \
 			and not bool(report.get("fatal", false)) \
 			and int(report.get("last_completed_sample_day", -1)) == day
@@ -109,7 +116,7 @@ func _run() -> void:
 				str(report.get("money_error", "missing")),
 				str(report.get("goods_error", "missing"))])
 			break
-		completed_days = day + 1
+		completed_days = day
 		if completed_days in CHECKPOINT_DAYS:
 			var population_snapshot: Dictionary = economy.population_cell_snapshot(start_cell)
 			var market_snapshot: Dictionary = economy.market_cell_snapshot(start_cell)
@@ -120,12 +127,15 @@ func _run() -> void:
 				_variant_is_finite(population_snapshot) \
 				and _variant_is_finite(market_snapshot) \
 				and _variant_is_finite(building_snapshot))
-			_expect("%d-day checkpoint starter population does not decline" % completed_days,
+			_expect("%d-day checkpoint starter population stays above the survival floor" % completed_days,
 				int(population_snapshot.get("population", 0)) >= 20)
 	_expect("every completed starter settlement day conserves all ledgers",
 		completed_days == soak_days and all_commits_conserved)
 	_expect("every completed starter settlement day contains only finite values",
 		completed_days == soak_days and all_values_finite)
+	_expect("starter session closes and releases its executor", bool((await host.close_world()).get("ok", false)))
+	host.free()
+	clock.free()
 	_finish()
 
 
@@ -139,50 +149,32 @@ func _configured_int(name: String, fallback: int) -> int:
 	return int(value) if value.is_valid_int() else fallback
 
 
-func _run_day(generator: MapGenerator, economy, clock: WorldClock, day: int) -> Dictionary:
-	var ext: Object = economy.world_ext()
-	var phase := float(day % 365) / 365.0
-	generator.sus_tick_daily(clock, day, phase)
-	var bootstrap = generator.get_sus_bootstrap()
-	var scheduler = bootstrap.get_scheduler() if bootstrap != null else null
-	if scheduler == null:
-		return {"fatal": true, "fatal_reason": "starter_soak_scheduler_unavailable"}
-	var ctx := SusTickContext.make(
-		day, day, phase, 1.0, &"country_economy_continuation")
+func _run_day(host: WorldRuntimeHost, economy, clock: WorldClock, day: int) -> Dictionary:
+	var generator := host.get_generator()
+	clock.current_day = float(day + 1)
+	# Same headless driver as headless_perf_record: exercise the daily runtime
+	# without opening annual-report UI, whose year-end catchup can submit extra
+	# days before the test reads this day's ledger.
+	host.run_daily_tick(day + 1, clock.season_phase())
+	host.finish_daily_tick(0.0, {})
 	for _slice in range(MAX_SLICES_PER_DAY):
-		# Research completions emit Effect recipes. Dispatch those first, then
-		# let Country consume the resulting effect commands in the same slice
-		# before ACK. Country-before-drain left native_country_ack_pending=1.
-		var drained := int(generator.call("_drain_native_effect_ack_chain", ctx))
-		var country_busy := bool(ext.country_should_run(day))
-		if country_busy:
-			scheduler.continue_system(&"country_daily", ctx)
-		generator.call("_ack_native_effect_domain_bindings")
-		var ack_passes := 1
-		while ack_passes < 8 and bool(generator.call("_hard_effect_ack_chain_due", day)):
-			drained += int(generator.call("_drain_native_effect_ack_chain", ctx))
-			if bool(ext.country_should_run(day)):
-				scheduler.continue_system(&"country_daily", ctx)
-			generator.call("_ack_native_effect_domain_bindings")
-			ack_passes += 1
-		if bool(ext.economy_should_run(day)):
-			var continued: Dictionary = scheduler.continue_system(&"economy_daily", ctx)
-			if bool(continued.get("fatal", false)):
-				return ext.get_economy_report()
-			await process_frame
-			continue
-		if country_busy or bool(ext.country_should_run(day)) \
-				or bool(generator.call("_hard_effect_ack_chain_due", day)):
-			await process_frame
-			continue
-		var report: Dictionary = ext.get_economy_report()
-		report["done"] = true
-		return report
-	print("starter soak drain stuck day=%d country=%s economy=%s ack=%s" % [
-		day,
-		ext.country_should_run(day) if ext.has_method("country_should_run") else "n/a",
-		ext.economy_should_run(day) if ext.has_method("economy_should_run") else "n/a",
-		generator.call("_hard_effect_ack_chain_due", day)])
+		host._process(0.0)
+		var runtime: Dictionary = generator.get_runtime_thread_report()
+		if String(runtime.get("simulation_host_state", "")) == "FAULTED":
+			return {"fatal": true, "fatal_reason": runtime.get("fault_code", "worker_fault")}
+		if int(runtime.get("simulation_committed_day", -1)) >= day:
+			var report: Dictionary = economy.world_ext().get_economy_report()
+			if bool(report.get("fatal", false)):
+				return report
+			if not bool(report.get("report_boundary_pending", false)) \
+					and int(report.get("last_completed_sample_day", -1)) == day:
+				# A state snapshot has no `done` flag. Supply it only after the
+				# executor and this ledger both publish the requested exact day.
+				report["done"] = true
+				return report
+		await process_frame
+	print("starter soak drain stuck day=%d runtime=%s economy=%s" % [
+		day, generator.get_runtime_thread_report(), economy.world_ext().get_economy_report()])
 	return {"fatal": true, "fatal_reason": "starter_soak_slice_limit"}
 
 

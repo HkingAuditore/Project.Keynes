@@ -705,6 +705,7 @@ Dictionary DCWorldExt::get_runtime_control_state() const {
     host.interactive = NativeParallelExecutor::instance().interactive();
     Dictionary out;
     append_runtime_control_state(out, host);
+    out["simulation_executor_exited"] = !_runtime_host || _runtime_host->execution_has_stopped();
     return out;
 }
 
@@ -717,6 +718,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
     const NativeParallelExecutor::Report report =
         NativeParallelExecutor::instance().report();
     Dictionary out;
+    out["simulation_executor_exited"] = !_runtime_host || _runtime_host->execution_has_stopped();
     out["process_cpu_us"] = process_cpu_us_now();
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();

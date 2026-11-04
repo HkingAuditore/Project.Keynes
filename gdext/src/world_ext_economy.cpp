@@ -1,3 +1,4 @@
+#include "economy_authority_transfer.h"
 #include "world_ext.h"
 
 #include "economy_runtime.h"
@@ -2602,11 +2603,11 @@ Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
     const bool stamp_worker_country = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         _runtime_host->country_checkpoint_identity(country_generation, country_hash);
-    if (stamp_worker_country)
-        economy->set_save_country_identity(country_generation, country_hash);
-    const bool captured = economy->capture_ecp2_authority(
-        state, error, static_cast<uint32_t>(std::max(0, flags)));
-    if (stamp_worker_country) economy->clear_save_country_identity();
+    const EconomyAuthorityTransfer::CountryIdentity country_identity{
+        country_generation, country_hash};
+    const bool captured = EconomyAuthorityTransfer::capture(*economy,
+        state, error, static_cast<uint32_t>(std::max(0, flags)),
+        stamp_worker_country ? &country_identity : nullptr);
     if (!captured) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());

@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCTranspirationPass
 
 ## Phase E.5 / dots-full-migration §Phase E.5：植被→湿度反馈（蒸腾）抽出。
@@ -34,7 +34,6 @@ class_name DCTranspirationPass
 ## 3. 受 enable_local_climate_coupling flag 控制（与 climate Pass-B 同开关）；
 ## 4. donor_table 从 ClimateProfile 一次性派生（C++ pass 入参），不在 hot loop 查 Resource。
 
-var _generator
 
 func _init(generator) -> void:
 	_generator = generator

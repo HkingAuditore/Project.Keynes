@@ -51,7 +51,7 @@ static func invalidate() -> void:
 	_technology.clear()
 	_research.clear()
 
-static func prepare(ext: Object) -> void:
+static func prepare(ext: Object, frame_gate = null) -> void:
 	if _ready:
 		return
 	var manifest_path := DIRECTORY+"sources.json"
@@ -63,7 +63,9 @@ static func prepare(ext: Object) -> void:
 		_miss("快照清单为空或 JSON 解析失败（%s）" % manifest_path)
 		return
 	if OS.has_feature("editor"):
-		var validated: Dictionary = await NativeLoadingTasks.compute(ext,"catalog_manifest", {"files":manifest})
+		var validated: Dictionary = await NativeLoadingTasks.compute(ext,"catalog_manifest", {"files":manifest}, frame_gate)
+		if frame_gate != null and frame_gate.canceled:
+			return
 		if not bool(validated.get("valid",false)):
 			_miss("快照清单与当前源文件指纹不一致（%d 条指纹，可能改过 scripts/ 或 data/）" % (manifest as Dictionary).size())
 			return
@@ -81,7 +83,13 @@ static func prepare(ext: Object) -> void:
 	for filename: String in SNAPSHOT_FILES:
 		var path := DIRECTORY+filename
 		while tree != null and ResourceLoader.load_threaded_get_status(path)==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-			await tree.process_frame
+			if frame_gate != null and frame_gate.canceled:
+				for pending in SNAPSHOT_FILES:
+					var status := ResourceLoader.load_threaded_get_status(DIRECTORY+pending)
+					if status in [ResourceLoader.THREAD_LOAD_IN_PROGRESS, ResourceLoader.THREAD_LOAD_LOADED]:
+						ResourceLoader.load_threaded_get(DIRECTORY+pending)
+				return
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
 		if ResourceLoader.load_threaded_get_status(path)!=ResourceLoader.THREAD_LOAD_LOADED:
 			_miss("快照加载失败：%s" % path)
 			return

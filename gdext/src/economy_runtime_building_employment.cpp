@@ -485,6 +485,17 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
     const int32_t end = _building_cell_offsets[cell + 1];
     if (begin >= end) return true;
     const int32_t market = market_store().cell_to_market[cell];
+    // Employment precedes consumption. Quote the current frozen basket here,
+    // including the first settlement; the consumption pass has not populated
+    // this cycle's living costs yet. Otherwise a new role posts a zero wage
+    // while its recruitment check subtracts the real basket cost.
+    thread_local std::vector<int64_t> variant_scores, variant_prices;
+    thread_local std::vector<int64_t> need_scores, need_composites, need_environment;
+    build_demand_basis_cached(cell, market, environment_sample_for_cell(cell),
+        variant_scores, variant_prices, need_scores, need_composites,
+        need_environment, _saturation_count);
+    compute_cell_living_costs_from_basis(cell, variant_scores, variant_prices,
+        need_scores, need_environment, _saturation_count);
     int64_t merchant_cash = 0;
     if (market >= 0 && market + 1 < static_cast<int32_t>(
             _merchant_offsets.size())) {
@@ -969,6 +980,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             : group.planned_utilization_q16;
         return std::clamp<int64_t>(utilization, 0, Q16_ONE);
     };
+    auto employee_living_cost = [&](int32_t role_index) -> int64_t {
+        if (role_index < 0 || role_index >= static_cast<int32_t>(
+                _building_role_living_cost.size())) return 0;
+        return std::max(_building_role_base_living_cost[role_index],
+                        _building_role_living_cost[role_index]);
+    };
     auto expected_employee_gross = [&](const JobRole &role,
                                        int32_t role_index) -> int64_t {
         const int32_t signal = labor_signal_index(cell, role.profession_id);
@@ -1005,11 +1022,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // A new or currently empty role has no role-specific observation. Use
         // its funded absorption forecast directly; do not assume the contract
         // is collectible and do not inherit another employer's arrears.
-        // An empty role has no realized payroll ratio yet.  Use the posted
-        // contract for every mobility lane (including owner -> employee),
-        // otherwise a zero forecast pay ratio makes a profitable vacancy look
-        // like a zero-income job and prevents cross-profession entry.
-        if (due <= 0) return std::max(forecast_expected, contract);
+        if (due <= 0) return forecast_expected;
         const int64_t fulfillment_q16 = due > 0
             ? std::clamp<int64_t>(mul_div_sat(
                 paid, Q16_ONE, due, _saturation_count), 0, Q16_ONE)
@@ -1385,6 +1398,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         auto vacancy_adjusted_hurdle_q16 = [&](int64_t base_hurdle,
                                                int32_t group_index,
                                                int32_t fill_index) -> int64_t {
+            // Zero is the deliberate unemployed-entry hurdle. Vacancy relief
+            // must not turn a break-even first job into an ineligible job.
+            if (base_hurdle <= 0) return 0;
             if (group_index < 0 || group_index >= static_cast<int32_t>(
                     buildings_store().group_units.size()))
                 return base_hurdle;
@@ -2422,9 +2438,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int32_t target_sig = signature_for_profession_ethnicity(
                         role.profession_id, eth);
                     if (target_sig < 0) continue;
-                    const int64_t target_disposable = wage -
-                        living_cost_for_signature(cell, target_sig, -1,
-                            _saturation_count);
+                    const int64_t target_disposable = wage - employee_living_cost(fi);
                     add_candidate(eth, EmploymentJobOption{
                         g, r, target_sig, role.profession_id, eth, need,
                         target_disposable, 0, 0, 0, group.realized_profit_margin_q16,
@@ -2451,8 +2465,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (source_signature < 0 || source_signature >=
                     static_cast<int32_t>(_signatures.size()))
                 return deny(EMPLOYMENT_REJECTION_SOURCE_SIGNATURE);
-            const int64_t target_cost = living_cost_for_signature(
-                cell, candidate.target_signature, -1, _saturation_count);
+            const int64_t target_cost = candidate.role >= 0
+                ? employee_living_cost(static_cast<int32_t>(
+                    building_view(static_cast<size_t>(candidate.group)).employee_fill_begin)
+                    + candidate.role)
+                : living_cost_for_signature(
+                    cell, candidate.target_signature, -1, _saturation_count);
             const int64_t source_disposable = unemployed_disposable_income(pool);
             // Apply the entry-savings gate before proportional allocation so a
             // gated vacancy cannot reserve unemployed moves it will never take.
@@ -2844,8 +2862,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         drop(EMPLOYMENT_REJECTION_NO_ALLOCATION);
                         continue;
                     }
-                    const int64_t target_cost = living_cost_for_signature(
-                        cell, target_sig, -1, _saturation_count);
+                    const int64_t target_cost = employee_living_cost(fi);
                     const int64_t target_disposable = expected_wage - target_cost;
                     const int64_t source_disposable =
                         unemployed_disposable_income(pool);

@@ -174,7 +174,8 @@ public:
     using FamilyExpeditionStore = EconomyFamilyExpeditionStore;
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
-    friend class NativeSimulationHost;
+    friend class EconomyAuthorityTransfer;
+    friend class EconomyInvariantProbe;
     // Builds a synthetic per-cell snapshot (neighbour grid + terrain columns)
     // so the shared effect target selector can be exercised without a live
     // map_data, matching the economy_authority_fault_gate_self_test pattern.
@@ -1156,16 +1157,6 @@ public:
     // ECP2 full-authority capture/apply (PKEC section remapping + resource wire).
     bool capture_ecp2_authority(RuntimeEconomyEcp2State &out, std::string &error,
                                   uint32_t flags = 0) const;
-    // The save header binds Economy to the Country it was saved with. When the
-    // Country section of a bundle comes from the worker's committed checkpoint
-    // rather than the attached runtime, the Host stamps that identity here for
-    // the duration of the capture.
-    void set_save_country_identity(uint64_t generation, uint64_t state_hash) {
-        _save_country_identity_override = true;
-        _save_country_generation = generation;
-        _save_country_state_hash = state_hash;
-    }
-    void clear_save_country_identity() { _save_country_identity_override = false; }
     bool apply_ecp2_authority(const RuntimeEconomyEcp2State &in,
                               std::string &error);
     const std::string &restore_rejected_reason() const noexcept {
@@ -1686,7 +1677,7 @@ public:
 
 private:
     friend class TradeVisualCache;
-    friend class EconomyCsvRecorder;
+    friend class EconomyRecordSource;
     // The Country worker gate must not be represented by a bool: callers need
     // to distinguish an operation that is not routed through the worker from
     // one that is pending or has been rejected by the gate.
@@ -4209,6 +4200,7 @@ private:
         // Markets run on parallel tasks, so producer-support ledgers are
         // accumulated here and folded into the runtime totals serially.
         int64_t supported_output = 0;
+        int64_t supported_cycle_flow_output = 0;
         int64_t supported_money = 0;
         int64_t bullion_money = 0;
         int64_t bullion_stock = 0;
@@ -6305,7 +6297,6 @@ private:
     std::vector<int64_t> _track_b_derived_carry;
     // Track B commit spread: investment review cells still waiting for their
     // turn (processed incrementally across epochs, 1/N per day).
-    std::vector<int32_t> _track_b_investment_cells_pending;
     // Track B: per-runtime carry for the cadenced AGGREGATE_PUBLISH state hash.
     // Must be per-runtime (not file-static): parity tests boot two runtimes in
     // one process and interleave their days.
@@ -10136,7 +10127,7 @@ private:
     // Set only for the begin_save call inside an ECP2 rollback-backup capture.
     mutable bool _ecp2_rollback_backup_export = false;
     // Country identity written into the save header while the Host builds a
-    // bundle under worker Country authority (see set_save_country_identity).
+    // bundle under worker Country authority (see EconomyAuthorityTransfer::capture).
     bool _save_country_identity_override = false;
     uint64_t _save_country_generation = 0;
     uint64_t _save_country_state_hash = 0;

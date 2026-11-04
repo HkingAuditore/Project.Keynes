@@ -1,5 +1,120 @@
 # Formal Game Flow, Player Start, and PKSV
 
+## Legacy state adapters and clock control (2026-11-04)
+
+All 18 built-in providers now implement encoding/restore in `scripts/game/save_modules/`.
+`world_state_bindings.gd` resolves the current facade/capabilities on each call;
+providers receive only owned/declared peer sections and do not retain a host or generator.
+The coordinator delegates decoding before world creation. Country's adapter owns the
+explicit post-PKCN economy preparation callback; Economy rebinds the building catalog
+before PKFG. Clock and player adapters notify the coordinator of autosave year and pending
+view through dedicated callbacks. PKSV bytes, provider identities and restore order stay compatible.
+
+`RuntimeClockBinding` attaches after executor creation, replays the current clock state,
+and detaches on cancellation/exit. `WorldClock.control_changed` covers direct pause/speed
+assignment as well as methods; UI refresh no longer drives native clock control. The old
+2.5-second worker-unpause retry has been removed.
+
+Opening bootstrap carries optional `building_owner_fill` alongside the building columns.
+The native bootstrap validates length, nonnegative fill, lot capacity and total cohort
+population, then installs the specified allocation before generic owner matching. Thus a
+wood lot sharing the forager profession cannot consume the operators allocated to gathering.
+Absent columns retain the old generic bootstrap policy; saves do not gain a new section.
+The planner still creates exactly 40 people per country and preserves its regional founder.
+
+## World session composition (2026-11-03)
+
+`WorldRuntimeHost.generate_world()` now delegates preparation to `WorldSession`.
+The composition in `world_session_modules.gd` orders world data, presentation,
+restore and simulation adapters. New lifecycle modules register before generation
+with `register_session_module`; their dependencies and owned state names are
+validated before installation. All extensions prepare before the simulation
+adapter and release after that executor has stopped. A partially prepared module
+is still canceled and released. Close calls share a completion result, and a
+failed release retains ownership instead of claiming CLOSED.
+
+The session owns generation tokens and preparation/running/paused/capture/closing
+states. Host callbacks check cancellation after awaits; deferred presentation
+checks its original session token. Save capture enters SAVING and returns to the
+clock's mode after the bytes are frozen. The repository owns a frozen background
+write independently of the world.
+
+`GameFlow` waits for `close_world()` before replacing a world with the menu or
+another game. Menu transitions return `pending=true` on acceptance. Application
+quit, including the window close request, waits for both world close and pending
+repository I/O. Transition catalog preparation shares a cancelable frame gate.
+Scene-owned visual caches are released by scene destruction after session close.
+Native `simulation_executor_exited` confirms the executor function returned;
+FAULTED alone is insufficient. A stale native library missing that acknowledgement
+fails with `runtime_stop_ack_missing`, rather than waiting forever or assuming success.
+
+See the [development guide](../architecture/development-guide.md) for the lifecycle
+and save extension APIs and the [world architecture](../architecture/world-runtime-design.md)
+for the actual migration boundary. This wiring preserves the existing business
+algorithms and explicitly retains legacy adapters that still need narrower APIs.
+
+## Save session and container boundary (2026-11-03)
+
+`GameSave.bind_runtime()` owns a generation for the bound game. It disconnects
+both signals on the previous clock, resets the annual-save marker to the new
+clock's year, and clears pending camera state. Clock exit invalidates the
+generation and releases scene references. A deferred annual save, annual-report
+wait, safe-boundary wait or native-save poll may continue only in its original
+generation; cancellation must not restore pause/speed on the next game's clock.
+Restoring a clock aligns the annual marker with the restored year. A background
+write whose bytes were already frozen retains `_busy` until it actually finishes.
+The separately prepared load bundle survives scene replacement.
+
+`save_container_reader.gd` is the single PKSV v2 parser for listing, previews,
+verification and full loads. Before allocating payload buffers it validates the
+JSON field types, section identities, integral offsets/lengths, non-overlap,
+file bounds and checksum syntax. The supported container limits are 1 MiB of
+JSON header, 128 sections, 512 MiB per encoded or decoded section, and 1 GiB of
+combined decoded data. Both writer and reader enforce these limits; failures
+are explicit and never truncate data. These are file acceptance limits, not a
+promise that peak process memory is limited to the decoded size. The wire
+format and provider compatibility rules remain unchanged.
+
+`SaveRepository.list_slots()` reads only the header and table and returns
+`integrity_checked=false`. It does not certify payload integrity. The desktop
+load menu immediately creates its rows, then awaits one shared background
+verification job; simultaneous menu requests reuse that job. Failed files are
+disabled and a verified backup may be selected. Changing/closing the menu
+invalidates its pending UI result. Single-threaded Web exports check full
+integrity on actual load instead; their load-button tooltip states this.
+Every actual load reopens and checks the file, including hashes, independently
+of earlier list results. Preview reads only its requested payload after the
+whole table is validated. Repository jobs never access live scene objects.
+
+Regression commands (after building the native extension):
+
+```sh
+python tools/ci/run_regression_checks.py --godot /path/to/godot --import --roundtrip
+python -m unittest discover -s tools/map_authoring/tests -v
+```
+
+Load preparation configures Military immediately after the restored Country
+and newly configured Economy catalogs, before the PKMI provider runs. Final
+restore refreshes settlement terrain from ECP2 while preserving restored PKMI;
+it must not configure Military again and erase armies or pending orders. The
+round-trip test waits for `is_runtime_ready_for_ticks()`, reports generation errors,
+and compares frozen Military bytes at load completion (before the worker starts
+another day), as well as the saved clock before restored UI offers can pause it. Simulation-advance
+steps explicitly release presentation pauses while retaining authority fault
+holds. Headless catalog refresh still validates building type IDs for PKFG but
+skips visual-layer setup, matching the headless renderer binding boundary.
+
+The PR workflow builds the native extension from the pinned `godot-cpp`
+submodule and runs these checks. The runner treats script errors as failures
+even when Godot exits with status 0. ObjectDB, resource and RID leak reports at
+shutdown also fail the checks; there are no shutdown-leak exemptions.
+
+Leaving the world during generation cancels a shared loading frame gate before
+the host is freed. Waiting catalog/native/map/bake calls unwind immediately,
+and the closing host rejects subsequent scene binding. Six loading-exit
+sampling points join the regular save/load and native-worker lifetime checks.
+
+
 ## 2026-10-28 理念派生地块层不参与存档
 
 理念的永久地块效果在 `ModifierRuntime` 里维护一个派生 front。**它不写入任何存档。**
@@ -225,10 +340,11 @@ across every locally discovered, runnable food good in its matching substitute s
 has several discoveries, the bridge splits that quantity deterministically among them. All settlements are compiled
 into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
-Each capital also starts with exactly one founder family: the two foragers who
-operate its gathering ground become conserved family members, that building unit
-becomes the family's first industry, and one of those occupied owner jobs becomes
-the family's named notable founder. This explicit opening exception is created
+Each capital also starts with exactly one founder family on its declared regional
+primary food producer. Its occupied owner jobs become conserved family members,
+that building unit becomes the family's first industry, and one occupied owner
+job becomes the family's named notable founder. Counts follow the compiled catalog,
+not a hardcoded two-person gathering-ground assumption. This explicit opening exception is created
 inside native bootstrap, preserves total population, money, goods, and building
 count, and is immediately queryable before the first daily settlement.
 The v3 `founder_family_*` columns remain the preferred explicit contract. Native
@@ -244,7 +360,7 @@ even though 40 people remain below the ordinary rural naming threshold. This is
 a naming exception only: prosperity remains population-derived and the exact
 40-person economy contract is unchanged.
 
-## PKSV v1
+## PKSV v2
 
 `SaveRepository` writes one PKSV file for each fixed slot:
 `manual_1.pksv`, `manual_2.pksv`, `manual_3.pksv`, and `autosave.pksv`.
@@ -259,9 +375,12 @@ Load ignores `.tmp`, prefers a valid final file, and falls back to a valid
 backup. Incompatible generator/catalog/schema hashes are rejected rather than
 guessed or migrated.
 
-Required sections are `new_game_config`, `world_clock`, `dynamic_world`,
-`environment`, `pkcm`, `pkcn`, `pkec`, `pkgp`, `pkef`, `pkid`, `pkfg`, `journal`, `pktr`, `player_context`,
-`player_view`, and `preview`. Missing authority fails closed. `environment` uses
+Current containers carry `new_game_config`, `world_clock`, `dynamic_world`,
+`environment`, `simulation_runtime`, `pkcm`, `pkcn`, `ecp2`, `pkgp`, `pkef`,
+`pkid`, `pkfg`, `pkai`, `pkmi`, `journal`, `pktr`, `player_context`, `player_view`,
+and `preview`, with `pkar` and `pknr` provider state as available. The coordinator's
+`OPTIONAL_PROVIDER_SECTIONS` names the older-save omissions that restore empty;
+all other missing required data is rejected. `environment` uses
 `PKEnvironmentRuntime v1` and includes native core SoA, weather ping-pong,
 topology, dirty/active sets, round flags, stage cursors, and publish versions;
 diagnostic counts alone are not a save provider.
@@ -272,8 +391,9 @@ Every authority is registered through `RuntimeStateProvider`, whose contract is
 provider manifest (id, schema, owned sections, and capture hash). Slot listing
 and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
-PKCM, clock, PKCN, PKMI, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
-session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
+PKCM, clock, simulation runtime, PKCN, PKMI, PKEF, ECP2, PKGP, PKFG, PKAI,
+journal, PKTR, PKID, annual reports, narrative, then player session/view/preview.
+PKEF precedes ECP2 so Economy can cross-check every settling
 cross-domain transaction against authoritative Effect state. `PKID v4` follows
 `PKEF v11`: every active ideology must match its
 durable external binding by identity, generation, level, location, template
@@ -679,3 +799,18 @@ WorldClock retains its existing workload limits.
 These controls extend the existing host, facade and DebugConsole paths. This is
 a scoped file-size exception for those existing oversized files: no simulation
 state or alternative command dispatcher is added.
+
+## Extensible state modules (2026-11-03)
+
+`world_state_modules.gd` assembles the existing 18 providers.
+`runtime_module_registry.gd` validates unique IDs/section ownership and sorts
+explicit restore dependencies before any state is installed. Compatibility
+versions belong to `RuntimeStateProvider`, not coordinator-specific branches.
+`GameSave.register_state_module(provider, restore_after)` accepts additional
+providers only before a world is bound and outside save/load work. The player
+view restores after all business providers, including extensions. Extra sections
+are forwarded as bytes for their own provider to decode; unknown provider IDs
+in an archive fail compatibility rather than silently losing their data.
+Built-in PKSV sections and payload schemas remain unchanged.
+The round-trip test registers an independent extension, saves its state, changes
+it and verifies restoration, alongside the original Country/Economy assertions.

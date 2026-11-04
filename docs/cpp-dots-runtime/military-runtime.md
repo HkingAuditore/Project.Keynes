@@ -225,7 +225,11 @@ simulation_runtime → pkcn → **pkmi** → pkef → ecp2 → pkgp → pkfg →
 pknr → player_session`。`pkmi` 在 `REQUIRED_SECTIONS` 与 `OPTIONAL_PROVIDER_SECTIONS` 中都有：
 旧存档缺失时 `pkmi_absent_migration` 以空军事状态继续；存档含 PKMI 而运行时无 Military API 时以
 `pkmi_runtime_unavailable` 拒绝；schema 只接受 1。恢复成功后重新 `arm_ai`。读档时 Military 先由
-`map_generator` 配置并推地形，再由 provider 恢复 PKMI。
+`map_generator.prepare_economy_save_restore_runtime()` 在 PKCN 恢复、Economy
+目录配置完成后配置军事系统并推地形，随后 provider 恢复 PKMI（仍在 ECP2 之前）。
+`finalize_save_restore_runtime()` 在 ECP2 恢复后更新聚落地形，通过 facade 的 PKMI
+保留/恢复路径保存军队和命令；此时不能再次 configure，否则会抹掉刚恢复的状态。
+该顺序由完整存读档测试覆盖。
 
 ## 9. 渲染契约
 

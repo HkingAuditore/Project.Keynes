@@ -3,7 +3,6 @@ class_name NativeEnvironmentRuntimeSystem
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var _last_result: Dictionary = {}
 var _did_run_last_tick: bool = false
