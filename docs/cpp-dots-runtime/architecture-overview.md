@@ -1,5 +1,17 @@
 # C++/DOTS Runtime 架构总览
 
+## 2026-11-03 停止与日完成边界
+
+`RuntimeAuthorityControl` 集中持有当前授权、整图就绪和本次运行是否已关闭。
+这些值在同一个原子状态里更新；stop/fault 关闭后，迟到的日提交只能保留重启所需的
+完成证据，不能重新授予当前权限。只有前一次执行者退出后的显式 start 才能开启下一次运行。
+后台退出时再次关闭授权；无后台线程的 inline 在空闲边界直接完成停止。
+
+理念的 `should_run(day)` 表示仍值得访问；`needs_daily_continuation(day)` 表示当天
+本地分片尚未完成。等待其他域回复只保留前者。SUS、原生 graph 和 MapGenerator 的
+日等待标记共用后一条判断，避免完成与空闲被混用。模拟存储和提交顺序不变。
+
+
 ## Native Modifier authority
 
 `DCWorldExt` 内的 `ModifierRuntime` 共享实现但隔离 Climate、Country、Economy、Gameplay

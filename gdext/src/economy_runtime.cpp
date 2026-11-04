@@ -23694,6 +23694,33 @@ bool NativeEconomyRuntime::run_building_plan_drain(int64_t &work_done,
     return true;
 }
 
+uint32_t NativeEconomyRuntime::next_stage_ops_stage_index() const noexcept {
+    // Native stage/cursors survive a worker restart. Fiscal settlement belongs
+    // to BUILDING_COMMIT in the graph; its pending transaction must finish there.
+    using Graph = RuntimeEconomyGraphStage;
+    if (!_epoch_active) return 0u;
+    Graph next = Graph::BUILDING_PLAN;
+    switch (_stage) {
+        case Stage::TRADE_SETTLE: next = Graph::TRADE_SETTLE; break;
+        case Stage::LEDGER_APPLY: next = Graph::LEDGER_APPLY; break;
+        case Stage::BUILDING_EMPLOYMENT: next = Graph::BUILDING_EMPLOYMENT; break;
+        case Stage::BUILDING_PRODUCTION: next = Graph::BUILDING_PRODUCTION; break;
+        case Stage::HOUSEHOLD_MARKET: next = Graph::HOUSEHOLD_MARKET; break;
+        case Stage::GOVERNMENT_RESEARCH_PROCUREMENT:
+            next = Graph::GOVERNMENT_RESEARCH_PROCUREMENT; break;
+        case Stage::TRADE_DISPATCH: next = Graph::TRADE_DISPATCH; break;
+        case Stage::STRUCTURAL_COMMIT: next = Graph::STRUCTURAL_COMMIT; break;
+        case Stage::WAIT_COMMIT:
+        case Stage::BUILDING_COMMIT:
+        case Stage::FISCAL_SETTLEMENT: next = Graph::BUILDING_COMMIT; break;
+        case Stage::FAMILY_COMMIT: next = Graph::FAMILY_COMMIT; break;
+        case Stage::PERSON_COMMIT: next = Graph::PERSON_COMMIT; break;
+        case Stage::AGGREGATE_PUBLISH: next = Graph::AGGREGATE_PUBLISH; break;
+        default: break;
+    }
+    return static_cast<uint32_t>(next);
+}
+
 bool NativeEconomyRuntime::run_stage_ops_day(int64_t day_index,
                                               std::string &error) {
     error.clear();
@@ -23763,7 +23790,8 @@ bool NativeEconomyRuntime::run_stage_ops_day(int64_t day_index,
     }
 
     EconomyStageCursor cursor;
-    for (uint32_t stage_i = 0; stage_i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT;
+    for (uint32_t stage_i = next_stage_ops_stage_index();
+         stage_i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT;
          ++stage_i) {
         const auto stage = static_cast<RuntimeEconomyGraphStage>(stage_i);
         EconomyStageResult result;

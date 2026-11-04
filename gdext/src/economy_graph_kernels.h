@@ -145,6 +145,9 @@ class EconomyGraphStageOps {
 public:
     virtual ~EconomyGraphStageOps() = default;
     virtual bool bind_view(EconomySoAView &view, std::string &error) = 0;
+    // A replacement executor resumes the formula owner's unfinished stage.
+    // Probe/custom implementations start at the beginning by default.
+    virtual uint32_t resume_stage_index() const noexcept { return 0; }
     virtual bool run_stage(RuntimeEconomyGraphStage stage,
                            EconomyStageCursor &cursor,
                            const RuntimeEconomyEpochInput &input,

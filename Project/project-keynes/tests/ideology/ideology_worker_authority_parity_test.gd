@@ -667,14 +667,11 @@ func _phase_k3_k4_k2() -> void:
 		+ "equip submit=%s location_of_%s=%d new_receipt_reasons=%s"
 		% [str(split_equip.get("ok", "?")), CARD_B, split_location,
 			str(new_reasons)])
-	# Asserted as the measured reality: in the split the card does not go live. The
-	# reason string is reported, not asserted, because this world's receipts are also
-	# consumed by the equip path above and the attribution belongs to B2, where 13
-	# `ideology_effect_transition_rejected` receipts were captured with no other card
-	# in flight.
-	_expect("K2s[FINDING]: in the split (ideology main, effect worker) the card does "
-		+ "NOT go live -- asserted as the measured reality",
-		split_location != 1,
+	# The worker Effect bridge now completes the cross-domain transition. Keep the
+	# split case as a regression check: a successful equip must become live on the
+	# main-thread ideology state even while Effect is worker-owned.
+	_expect("K2s: the split authority transition makes the card live",
+		split_location == 1,
 		"location=%d new_reasons=%s" % [split_location, str(new_reasons)])
 
 
@@ -1490,7 +1487,7 @@ func _zero_support_gates(w: Dictionary, label: String) -> bool:
 	print("[%s] support gates zeroed: cards=%d applied=%s" % [label, count,
 		str(applied.get("ok", "?"))])
 	return _require("%s: the stance table is zeroed so the support gate has no "
-		% label + "authored rows left (12 of 113 cards stay equippable)",
+		% label + "authored rows left (12 of 132 cards stay equippable)",
 		bool(applied.get("ok", false)), str(applied))
 
 

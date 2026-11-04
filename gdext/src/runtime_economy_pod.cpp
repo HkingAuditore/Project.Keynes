@@ -394,35 +394,9 @@ void assign_owned_blocks_from_ledger(const RuntimeEconomyLedgerState &ledger,
     state.epoch_cursor = ledger.epoch_cursor;
     if (ledger.epoch_cursor.captured)
         state.epoch_cursors = ledger.epoch_cursor.store;
-    // The OwnedState that comes out of a successful ledger read is a COMPLETE capture,
-    // so every block must say so -- the ledger's own flags are not the authority here.
-    //
-    // `assign_owned_blocks_from_ledger` runs only after `validate_owned_ledger`, which
-    // already rejected a mismatched shape (`building_trade_block_pairing`) and any
-    // missing required block. What it did NOT do was update the flags on the state it
-    // produced, so a restored `_state` could carry `trade_escrow.captured == false`
-    // while `building.captured == true`.
-    //
-    // That matters because `NativeEconomyRuntime` reads those flags verbatim when it is
-    // bound to this state (`formula_owned_bound()` branch of
-    // `capture_committed_ledger_state`): `building` is refilled from the store (which
-    // sets `captured = true`), the rest are copied as-is. The very next capture --
-    // which `restore_ecp2_authority` performs as its rollback backup -- then failed
-    // `building.captured != trade_escrow.captured`, surfaced as
-    // `ecp2_atomic_backup_failed`, and `start_runtime_worker` died. Production hits
-    // this on every load that restarts the worker (`world_runtime_host.gd:804`).
-    if (state.building.captured || state.trade_escrow.captured ||
-        state.family.captured || state.resource.captured ||
-        state.epoch_cursor.captured) {
-        state.trade_escrow.captured = true;
-        // ABI8/ABI9 pair family with building and resource with family, so a state
-        // that captured building also owns the later blocks by construction. Setting
-        // them keeps the shape self-consistent for the next capture, which is exactly
-        // the check that rejected it.
-        state.family.captured = true;
-        state.resource.captured = true;
-        state.epoch_cursor.captured = true;
-    }
+    // Preserve exactly the validated archive's captured blocks. Older ABIs may
+    // omit family/resource/cursors; inventing those captures falsely promotes
+    // incomplete state and makes the next save claim data it never restored.
 }
 
 bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
@@ -1392,6 +1366,17 @@ bool RuntimeEconomyPodAuthority::plan_epoch(const RuntimeEconomyEpochInput &inpu
                                        : bind_error;
             return false;
         }
+        const uint32_t resume = _stage_ops->resume_stage_index();
+        if (resume >= RUNTIME_ECONOMY_GRAPH_STAGE_COUNT) {
+            error = "economy_pod_resume_stage_invalid";
+            return false;
+        }
+        _scratch.stage_index = resume;
+        _stage_cursor.stage_index = resume;
+        // Earlier stages are already complete in the surviving formula owner.
+        // Their old timings/hashes are unavailable; never replay their mutations.
+        _completed_stage_mask = (1u << resume) - 1u;
+        _replay.completed_stage_mask = _completed_stage_mask;
     }
     return true;
 }

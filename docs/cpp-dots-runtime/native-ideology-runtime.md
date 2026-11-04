@@ -1,5 +1,34 @@
 # Native Ideology Runtime
 
+## 2026-11-03 职业效果文案与卡池检查
+
+职业满意度与税负承受能力分别识别；满意度使用“点”、税率变化使用“百分点”，
+职业列表使用中文顿号并合并同值效果。完整卡池当前含 132 张，内容检查保留未完成机制卡的
+排除名单，并检查现有军事卡。修正显示文字不会改变效果数值、卡池资源或存档目录哈希。
+卡池生成脚本还未包含后来加入资源的军事卡，不能为了更新数量直接重跑并覆盖正式资源。
+
+
+## 2026-11-03 当天完成与等待回复
+
+`needs_daily_continuation(day)` 是当天是否必须续跑的唯一原生判断，独立于包含待回复
+事务的 `should_run(day)`。`run_daily_slices` 每次返回时记录真实 done，未完成的采集、
+折叠、命令或遍历保持当日屏障；本地完成而仅等待 Effect/Modifier 回复时不再保持屏障。
+三个调度入口（SUS、原生 graph、MapGenerator）共用该判断。
+此更改不改变卡片确认、回复、数值计算、PKID/PKEF 格式或恢复顺序。
+
+
+## 2026-11-03 SHADOW 对比的输入边界
+
+显式启用 `ideology_parity_enabled` 的 SHADOW 检查在主线程日入口保存一份不可变的
+opinion 输入，以该次调用的模拟日为键；同日续片继续使用首次输入，后台赶上该日时
+读取同一份输入。Economy 的 `committed_day`、周期下标和输入 revision 仍分别保留，
+不从其中推算模拟日，也不从较新的输入补齐缺失日期。
+
+两边仍独立计算点数、基线、历史和卡牌状态，并完整比较。输入只在主线程和后台都
+越过对应日后回收。正式日计算和 ACTIVE 的输入读取继续走原有路径；检查不会通过
+复制 worker 结果来修改主线程。驱动脚本只推进正常生产日，不再按后台较早的日期
+额外调用一次主线程结算。
+
 ## 2026-10-28 派生地块层（plan 22 M0–M5）
 
 永久、无状态的 cell 理念不再创建逐格 Effect 实例，而是贡献到 **ModifierRuntime 内的只读派生层**。
@@ -32,6 +61,12 @@ bool derived_rebuild_pending() const;
 `done()` 用 `_started && _index >= _total`，不能用 `_index >= _total`（首调用前两者都是 0）。
 
 调用方若需要「当天立刻可读」，用 `drain_derived_cell_layer(day)` 排空。
+
+`should_run(day)` 必须把 `derived_rebuild_pending()` 算作待办，即使主要日计算已经更新
+`_last_day`、没有已装备卡牌，也要继续同日分片直到安装完成。否则 SUS 停止调度，
+`ideology_day_barrier` 无法解除，正式游戏和 SHADOW 检查都会停在当天。
+首片经过 `IdeologyRuntimeSystem`、续片直接经过 native graph 时，MapGenerator 在续片后
+也必须按 `ideology_needs_daily_continuation(day)` 更新同一个等待标记，避免收尾已完成但标记仍被保留。
 
 诊断：`cell_layer_rebuild_steps`、`cell_layer_rebuild_ms`（**单步最大值**，不是全天累积）、
 `cell_layer_collect_ms`、`cell_layer_materialize_ms`、`derived_rebuild_pending`。

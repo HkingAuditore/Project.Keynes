@@ -253,3 +253,13 @@ Composite is capped by both subsistence (10% slack) and applicable basic living
 (20% slack). Cohort living-standard display uses actual consumption. See
 `docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
 layout; updated need tiers change the content catalog hash.
+
+## Worker replacement and unfinished epochs (2026-11-03)
+
+Resume from `NativeEconomyRuntime::next_stage_ops_stage_index()` through the
+mutating StageOps adapter; a new worker is not a new economy epoch. Fiscal
+settlement maps to BUILDING_COMMIT. Keep the frozen sample day and never replay
+completed mutating stages or invent their historical hashes/timings. Read-only
+probes start at zero. Preserve archive captured flags, including absent blocks
+in older ECP1 ABIs. Validate runtime_economy_worker_restart_test, StageOps/compact
+parity, ECP1 compatibility and ECP2 round trips.

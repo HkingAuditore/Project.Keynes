@@ -262,6 +262,7 @@ public:
     void flush_runtime_visuals(uint32_t dirty_mask = 0);
     void set_runtime_qos(bool interactive);
     godot::Dictionary get_runtime_thread_report() const;
+    godot::Dictionary get_runtime_control_state() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
     godot::Dictionary get_economy_checkpoint_format() const;
@@ -995,6 +996,7 @@ public:
                                              int32_t limit) const;
     godot::Dictionary run_ideology_daily(int64_t day_index);
     bool ideology_should_run(int64_t day_index) const;
+    bool ideology_needs_daily_continuation(int64_t day_index) const;
     godot::Dictionary step_ideology_instance_refresh(int64_t day_index);
     // Worker-authority pump for the DERIVED half, symmetric to the instance refresh.
     // Needed because `run_ideology_daily` is suppressed when the worker owns IDEOLOGY.

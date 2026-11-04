@@ -65,6 +65,12 @@ func _run() -> void:
 	var stopped: Dictionary = ext.get_runtime_thread_report()
 	_expect("worker reaches STOPPED", String(stopped.get("simulation_host_state", "")) == "STOPPED")
 	_expect("worker finishes its outstanding slice", int(stopped.get("worker_day_inflight", -1)) == 0)
+	var control: Dictionary = ext.get_runtime_control_state()
+	_expect("stopped worker owns no domains", int(control.get("authoritative_domain_mask", -1)) == 0)
+	_expect("stopped worker is not ready or effectively ACTIVE",
+		not bool(control.get("authority_ready", true))
+		and not bool(control.get("simulation_worker_ready", true))
+		and String(control.get("simulation_thread_mode", "")) == "OFF")
 	_expect("stop does not fault the worker", int(stopped.get("worker_fault_count", -1)) == 0)
 	# Drop the scene and its owning references on the main thread.
 	host.free()

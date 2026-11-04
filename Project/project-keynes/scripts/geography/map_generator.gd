@@ -2407,6 +2407,16 @@ func get_runtime_thread_report() -> Dictionary:
 	return _data_core_world_ext.get_runtime_thread_report()
 
 
+## Live scheduling/consumption gates. Read each call so stop, fault and restart
+## revoke or restore grants immediately, without rebuilding full diagnostics.
+func get_runtime_control_state() -> Dictionary:
+	if _data_core_world_ext == null:
+		return get_runtime_thread_report()
+	if _data_core_world_ext.has_method("get_runtime_control_state"):
+		return _data_core_world_ext.get_runtime_control_state()
+	return get_runtime_thread_report()
+
+
 ## WorldRuntimeHost probes the generator, not DCWorldExt, for the ACTIVE
 ## write-backs that refresh the legacy facades. The Trigger facade feeds the
 ## main-thread Trigger -> Effect handoff, so a missing forwarder here means no
@@ -3922,6 +3932,11 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 			&"economy_day_barrier", barrier_armed)
 		_world_clock_ref.request_simulation_backpressure(
 			&"country_day_barrier", barrier_armed)
+		# The first slice can run through IdeologyRuntimeSystem (which arms its
+		# own barrier), while continuation goes straight to the native graph.
+		# Reconcile that same barrier here after native completion as well.
+		_world_clock_ref.request_simulation_backpressure(
+			&"ideology_day_barrier", bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index)))
 	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
 		_data_core_world_ext.flush_runtime_visuals(token_dirty)
 	# Country slice 已在 pulse 内写入 native + MapData.country_slot_arr，但

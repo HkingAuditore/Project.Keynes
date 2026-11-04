@@ -1,5 +1,39 @@
 # Performance Diagnostics Playbook
 
+## 2026-11-03 控制状态回归检查
+
+`gdext/tests/runtime_authority_control_test.cpp` 独立检查 stop 与日尾授权同时发生，
+以及迟到提交、显式重启和完成证据保留。`runtime_worker_stop_lifetime_test.gd` 走正式开局，
+在真实生产日内停止，要求 STOPPED、授权为零、ready=false 和 effective OFF 同时成立。
+`runtime_thread_isolation_test.gd` 覆盖交互开关、诊断/轻量状态一致和 idle inline 停止。
+日等待回归使用 `ideology_day_continuation_test.gd` 与真实卡片运行时测试。
+这些检查证明功能边界，不作为吞吐量提升的证据。
+
+
+## Control-state polling comparison (2026-11-03)
+
+Per-frame authority gates use `get_runtime_control_state()` instead of building
+the full thread report for every snapshot and intent consumer. Full reports
+remain the source for diagnostics and fault evidence; there is no polling cache
+or simulation-rate change.
+
+One same-machine debug comparison used the formal new-game path, seed 20260718,
+60×40, four countries, initial population 160, speed 50, warmup 5, measured 50,
+pipeline depth 3. Throughput was **33.063 → 35.044 days/s**, including frame waits.
+Both runs exported 50 rows, with no fatal or ledger failure and exact zero
+population/money/goods error. This is still below the **50 days/s** checkpoint.
+Mean snapshot service time was **2.238 → 0.157 ms** and mean commit service time
+was **2.849 → 2.220 ms**. This measures reduced report construction, not complete
+resolution of the remaining throughput bottleneck. Evidence is under
+`tmp/bugfix-20261103/perf-before/` and `perf-after/`.
+
+The final 50-day repeat measured **33.768 days/s** with the same exact-zero
+ledger checks. The report-construction cost fell, but total throughput remains
+variable and below the checkpoint; do not claim a stable whole-run speedup.
+See `tmp/bugfix-20261103/perf-final/` and
+`tmp/bugfix-20261103/validation-summary.json` for the final functional results
+and the separate wider-suite failures.
+
 ## Headless recording and shutdown validation (2026-11-03)
 
 The production recording entry is `tests/game/headless_perf_record.gd`.

@@ -590,10 +590,10 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // hit the wall-clock budget (for example a range cap stopped the loop).
     // Keep the committed-day barrier armed until every hard domain reports idle.
     //
-    // Only the hard domains below may arm it. Running out of wall-clock budget
-    // is deliberately NOT sufficient: Trigger/Ideology own soft cursors that
-    // legitimately carry work into tomorrow, so a pulse that spends its whole
-    // budget on them must still let WorldClock commit the day. Arming on the
+    // Only unfinished daily work may arm it. Ideology explicitly distinguishes
+    // local slice continuation from pending peer replies; Trigger and peer
+    // polling can carry work into tomorrow. Running out of wall-clock budget
+    // alone must still let WorldClock commit the day. Arming on the
     // budget yield alone froze the calendar for as long as trigger stayed
     // busy, because the frozen day kept trigger's own work queued.
     //
@@ -611,6 +611,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     const bool modifier_worker_owns_barrier = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER);
     const bool pending =
+        ideology_needs_daily_continuation(day) ||
         (!country_worker_owns_barrier && _country_runtime != nullptr &&
          static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) ||
         (!effect_worker_owns_barrier && _effect_runtime != nullptr &&
@@ -651,16 +652,60 @@ void DCWorldExt::flush_runtime_visuals(uint32_t dirty_mask) {
         static_cast<double>(elapsed_us(started)) / 1000.0;
 }
 
-static String runtime_effective_mode_name(const RuntimeThreadReport &report) {
-    if (report.mode == RuntimeSimulationMode::SHADOW) return "SHADOW";
+static String runtime_effective_mode_name(RuntimeSimulationMode mode,
+        bool authority_ready, uint32_t authoritative_domain_mask) {
+    if (mode == RuntimeSimulationMode::SHADOW) return "SHADOW";
     // A partial promotion is still ACTIVE: some domain's days are now produced
     // by the worker and the main thread must consume its commits. Requiring
     // authority_ready here would report OFF for a worker that already owns
     // Climate, and the commit-consumption boundary would never run.
-    if (report.mode == RuntimeSimulationMode::ACTIVE &&
-        (report.authority_ready || report.authoritative_domain_mask != 0u))
+    if (mode == RuntimeSimulationMode::ACTIVE &&
+        (authority_ready || authoritative_domain_mask != 0u))
         return "ACTIVE";
     return "OFF";
+}
+
+static const char *runtime_worker_state_name(RuntimeWorkerState state) {
+    switch (state) {
+        case RuntimeWorkerState::STOPPED: return "STOPPED";
+        case RuntimeWorkerState::STARTING: return "STARTING";
+        case RuntimeWorkerState::RUNNING: return "RUNNING";
+        case RuntimeWorkerState::PAUSED: return "PAUSED";
+        case RuntimeWorkerState::SAVE_PENDING: return "SAVE_PENDING";
+        case RuntimeWorkerState::STOPPING: return "STOPPING";
+        case RuntimeWorkerState::FAULTED: return "FAULTED";
+    }
+    return "UNKNOWN";
+}
+
+// Shared field contract for cheap control reads and full diagnostics.
+static void append_runtime_control_state(Dictionary &out,
+        const NativeSimulationHost::ControlState &host) {
+    out["simulation_host_state"] = runtime_worker_state_name(host.state);
+    out["state"] = out["simulation_host_state"];
+    out["authority_ready"] = host.authority_ready;
+    out["simulation_thread_mode"] = runtime_effective_mode_name(
+        host.mode, host.authority_ready, host.authoritative_domain_mask);
+    out["requested_simulation_thread_mode"] =
+        host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
+        host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
+    out["simulation_worker_ready"] =
+        host.authority_ready || host.authoritative_domain_mask != 0u;
+    out["authoritative_domain_mask"] =
+        static_cast<int64_t>(host.authoritative_domain_mask);
+    out["climate_worker_authoritative"] =
+        (host.authoritative_domain_mask & runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    out["simulation_committed_day"] = host.committed_day;
+    out["interactive"] = host.interactive;
+}
+
+Dictionary DCWorldExt::get_runtime_control_state() const {
+    auto host = _runtime_host != nullptr
+        ? _runtime_host->control_state() : NativeSimulationHost::ControlState{};
+    host.interactive = NativeParallelExecutor::instance().interactive();
+    Dictionary out;
+    append_runtime_control_state(out, host);
+    return out;
 }
 
 void DCWorldExt::set_runtime_qos(bool interactive) {
@@ -677,17 +722,9 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         const RuntimeThreadReport host = _runtime_host->report();
         out["runtime_domain_abi_version"] = static_cast<int>(host.domain_abi_version);
         out["pod_domain_abi_version"] = static_cast<int>(host.pod_domain_abi_version);
-        const char *state = "UNKNOWN";
-        switch (host.state) {
-            case RuntimeWorkerState::STOPPED: state = "STOPPED"; break;
-            case RuntimeWorkerState::STARTING: state = "STARTING"; break;
-            case RuntimeWorkerState::RUNNING: state = "RUNNING"; break;
-            case RuntimeWorkerState::PAUSED: state = "PAUSED"; break;
-            case RuntimeWorkerState::SAVE_PENDING: state = "SAVE_PENDING"; break;
-            case RuntimeWorkerState::STOPPING: state = "STOPPING"; break;
-            case RuntimeWorkerState::FAULTED: state = "FAULTED"; break;
-        }
-        out["simulation_host_state"] = state;
+        append_runtime_control_state(out, NativeSimulationHost::ControlState{
+            host.state, host.mode, host.authority_ready, report.interactive,
+            host.authoritative_domain_mask, host.committed_day});
         // R-3b: how many CLIENTS are still waiting for a boundary turn. A non-zero
         // value with `state == PAUSED` means the worker is parked for that client --
         // which is the exact condition that used to persist for a whole session
@@ -700,26 +737,8 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["main_boundary_service_trigger"] =
             _runtime_host->main_boundary_service_requested_by(
                 NativeSimulationHost::MainBoundaryClient::TRIGGER);
-        // Keep the raw readiness bit in the direct report.  The effective
-        // mode intentionally remains OFF until every native domain is proven;
-        // callers still need to distinguish a merely running SHADOW worker
-        // from an authority-ready worker without relying on a missing-key
-        // default.
-        out["authority_ready"] = host.authority_ready;
         out["graph_coverage_complete"] = host.graph_coverage_complete;
-        out["simulation_thread_mode"] = runtime_effective_mode_name(host);
-        out["requested_simulation_thread_mode"] =
-            host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
-            host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
-        // native_daily_inline：主机没有 worker 线程，日屏障由调用线程逐日执行。
-        // 诊断必须显式区分，否则 "ACTIVE 但没有 worker 线程" 看起来自相矛盾。
         out["native_daily_inline"] = host.inline_daily;
-        // Ready-for-commit-consumption, which a partially promoted worker also
-        // is. `authority_ready` stays available above for callers that mean the
-        // whole-graph gate.
-        out["simulation_worker_ready"] =
-            host.authority_ready || host.authoritative_domain_mask != 0u;
-        out["state"] = state;
         out["state_id"] = static_cast<int>(host.state);
         out["domain_abi_version"] = static_cast<int>(host.domain_abi_version);
         out["graph_coverage_state"] = String(host.graph_coverage_state);
@@ -731,17 +750,11 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["active_gate_blocked"] = host.active_gate_blocked;
         out["requested_authority_mask"] =
             static_cast<int64_t>(host.requested_authority_mask);
-        out["authoritative_domain_mask"] =
-            static_cast<int64_t>(host.authoritative_domain_mask);
         out["active_evidence_mask"] =
             static_cast<int64_t>(host.active_evidence_mask);
-        out["climate_worker_authoritative"] =
-            (host.authoritative_domain_mask &
-             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
         out["simulation_worker_blocker"] = String(host.coverage_blocker).is_empty()
             ? String(host.fault_code)
             : String(host.coverage_blocker);
-        out["simulation_committed_day"] = host.committed_day;
         out["input_capture_count"] = static_cast<int64_t>(host.input_capture_count);
         out["input_capture_reused"] = static_cast<int64_t>(host.input_capture_reused);
         out["economy_input_requested_day"] = _runtime_host->economy_input_requested_day();
@@ -1351,11 +1364,10 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
     } else {
         out["runtime_domain_abi_version"] = static_cast<int>(RUNTIME_DOMAIN_ABI_VERSION);
         out["pod_domain_abi_version"] = static_cast<int>(RUNTIME_DOMAIN_POD_ABI_VERSION);
-        out["simulation_host_state"] = "STOPPED";
-        out["simulation_thread_mode"] = "OFF";
-        out["requested_simulation_thread_mode"] = "OFF";
+        NativeSimulationHost::ControlState control;
+        control.interactive = report.interactive;
+        append_runtime_control_state(out, control);
         out["native_daily_inline"] = false;
-        out["simulation_worker_ready"] = false;
         out["graph_coverage_state"] = "partial";
         out["required_domain_mask"] = static_cast<int64_t>(RUNTIME_ALL_DOMAIN_MASK);
         out["implemented_domain_mask"] = 0;
@@ -1369,7 +1381,6 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
     out["worker_threads"] = static_cast<int64_t>(report.worker_threads);
     out["active_worker_limit"] =
         static_cast<int64_t>(report.active_worker_limit);
-    out["interactive"] = report.interactive;
     out["dispatch_count"] = static_cast<int64_t>(report.dispatch_count);
     out["serial_dispatch_count"] =
         static_cast<int64_t>(report.serial_dispatch_count);
@@ -1418,7 +1429,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["country_deferred_peer_count"] = 0;
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();
-        out["simulation_thread_mode"] = runtime_effective_mode_name(host);
+        out["simulation_thread_mode"] = runtime_effective_mode_name(
+            host.mode, host.authority_ready, host.authoritative_domain_mask);
         out["requested_simulation_thread_mode"] =
             host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";

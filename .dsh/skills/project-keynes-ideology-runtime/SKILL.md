@@ -101,6 +101,12 @@ or a second Modifier writer for equipped ideas.
   and a head-cursor command merge. Quiescent evidence is
   `sparse_idea_scan_count=0`, `dormant_scan_count=0`,
   `command_queue_resorts=0`, `command_queue_shift_steps=0`.
+- Keep scheduling eligibility separate from the daily barrier: `should_run(day)`
+  may remain true while Effect replies are pending; `needs_daily_continuation(day)`
+  alone pins the calendar for unfinished local slices. IdeologyRuntimeSystem,
+  native graph status, and MapGenerator must use that same query. Worker-owned
+  Ideology returns false at the facade boundary. Never release unfinished work
+  by a timeout or retry count.
 - Cap levels at 64 because entered confirmation is a packed bitset.
 - Resolve stable IDs in `IdeologyCatalog` / `IdeologyFacade`. Native hot loops
   use dense IDs, Q16, bitsets, and bounded scratch. No Dictionary, String,
@@ -270,6 +276,7 @@ godot --headless --path Project/project-keynes \
 Core set for any ideology change:
 
 - `tests/ideology/ideology_runtime_test.gd`
+- `tests/runtime/ideology_day_continuation_test.gd` when daily completion or barriers change
 - `tests/ideology/ideology_opinion_synergy_test.gd`
 - `tests/ideology/ideology_content_test.gd`
 - `tests/ideology/ideology_effect_instance_test.gd`

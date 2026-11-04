@@ -1,5 +1,20 @@
 # Scheduling and Job Graph
 
+## 2026-11-03 理念待办与当天续跑分离
+
+- `ideology_should_run(day)` 包含待回复事务，继续用于调度和轮询。
+- `ideology_needs_daily_continuation(day)` 只包含当天尚未完成的本地分片、到期命令和未执行的日工作。
+- 原生日入口返回 `day_barrier = !done`，并保留该日的续跑状态；完成后等待回复不再阻止换日。
+- `IdeologyRuntimeSystem` 和 MapGenerator 都通过同一原生查询更新 `ideology_day_barrier`。
+  `advance_runtime_pulse` 也用它决定 status=3，继续保留派生层采集/折叠的完整同日边界。
+- 该续跑状态是暂存游标，不增加存档字段；configure、快照替换和成功 restore 会清理它，
+  被拒绝的 restore 会恢复原状态。
+
+验证：`tests/ideology/ideology_runtime_test.gd` 使用真实卡片证明“日工作完成、事务待回复、
+仍需轮询、无需阻止换日”可以同时成立；`tests/runtime/ideology_day_continuation_test.gd`
+覆盖 MapGenerator 到 WorldClock 的设置与清除。
+
+
 ## 2026-10-28 派生地块层重建进入每日图
 
 理念的永久地块效果不再创建逐格 Effect 实例，而是在 `ModifierRuntime` 里维护一个派生 front。

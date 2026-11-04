@@ -126,6 +126,9 @@ threshold, any authored alternative route, and previous-era milestone **only for
 era-milestone nodes**). Player, AI and low-level enqueue commands share this native
 check.
 
+Country POD 与同步路径都只执行这份统一条件；兼容用 prerequisite CSR 不再另加一层 ALL
+门槛。里程碑可放入四个领域中的任一承载队列，普通节点仍只允许自己的领域。
+
 The active reveal subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`, `ALL_OF`, `ANY_OF`,
 `AT_LEAST`, and `NOT`. Signal predicates only discover/reveal nodes. Missing hard prerequisites keep
 the node non-researchable; signals cannot bypass them. Deferred domain points do not spill to another
