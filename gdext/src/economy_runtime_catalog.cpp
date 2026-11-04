@@ -2742,7 +2742,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             owner_slots[i] <= 0 || construction_days[i] < 0 ||
             _building_kinds[i] < 0 || _building_kinds[i] > 3 ||
             _building_economic_sectors[i] < 0 ||
-            _building_economic_sectors[i] >= 5 ||
+            _building_economic_sectors[i] >= BUILDING_SECTOR_COUNT ||
 			climate_profile_indices[i] < -1 ||
 			climate_profile_indices[i] >= static_cast<int32_t>(climate_count) ||
             behavior_ids[i] < 0 || behavior_ids[i] > 2 || behavior_versions[i] != 1 ||

@@ -114,6 +114,43 @@ void NativeEconomyRuntime::military_read_cell_view(
     (void)good_count;
 }
 
+bool NativeEconomyRuntime::military_read_state_buildings(
+        std::vector<int32_t> &out_cells,
+        std::vector<int32_t> &out_type_ids,
+        std::vector<int32_t> &out_state_roles,
+        std::vector<int64_t> &out_units) const {
+    out_cells.clear();
+    out_type_ids.clear();
+    out_state_roles.clear();
+    out_units.clear();
+    // An empty answer and "no state buildings" look identical to the caller,
+    // so the two cases have to be separated here: a runtime that has not
+    // bootstrapped, or a save/restore mid-flight, is not an empty ledger.
+    if (!_bootstrapped) return false;
+    if (_save.active || _restore.active) return false;
+    // One pass over the committed building groups. Groups are the ledger of
+    // record for every kind; only kind 3 (state) rows are military buildings,
+    // and a group whose units already reached 0 is "demolished but not yet
+    // pruned" - it must not read as a standing building, so it is skipped
+    // instead of reported with 0 units (the caller would otherwise create a
+    // barracks at tier 0 that does not exist).
+    const size_t groups = building_count();
+    for (size_t row = 0; row < groups; ++row) {
+        const auto group = building_view(row);
+        if (group.type_id < 0 ||
+            static_cast<size_t>(group.type_id) >= _building_types.size()) continue;
+        const BuildingType &type = _building_types[static_cast<size_t>(group.type_id)];
+        if (type.kind != 3) continue;
+        const int64_t units = group.count;
+        if (units <= 0) continue;
+        out_cells.push_back(group.cell);
+        out_type_ids.push_back(group.type_id);
+        out_state_roles.push_back(type.state_role);
+        out_units.push_back(units);
+    }
+    return true;
+}
+
 void NativeEconomyRuntime::military_read_market(
         int32_t good, std::vector<int32_t> &out_cells,
         std::vector<int64_t> &out_sellable,

@@ -167,6 +167,7 @@ func _bind_forces() -> void:
 		PlayerControllerScript.COMMAND_MILITARY_AUTO_DISCHARGE))
 	_share_bar.set_segments("", [])
 	_share_bar.show_legend = false
+	_share_bar.segment_clicked = _on_share_bar_clicked
 	_unit_roster.empty_text = "尚未解锁可配置的兵种：先研究军事科技"
 	_unit_roster.share_step.connect(_on_roster_step)
 	_barracks_table.empty_text = "尚无兵营：在领土地块面板里建造"
@@ -665,6 +666,30 @@ func _on_roster_step(unit_id: String, delta_bp: int) -> void:
 	# 份额合计上限 10000，未分配的部分保持民兵。
 	var ceiling := maxi(current, 10000 - (int(_forces.get("share_total", 0)) - current))
 	var target := clampi(current + delta_bp, 0, ceiling)
+	if target == current:
+		return
+	_request(PlayerControllerScript.COMMAND_MILITARY_CONFIG_SHARES,
+		{"unit": unit_id, "bp": target})
+
+
+## 份额条点击：色段宽度只反映现有份额，所以点击是「把这个兵种调整到该处」，
+## 不是重新划分整条。落在段内的位置换算成该段已占份额的绝对千分比，
+## 再夹到「其他兵种份额之和」允许的余量里，未分配部分仍旧留给民兵。
+func _on_share_bar_clicked(unit_id: String, ratio: float) -> void:
+	if unit_id.is_empty():
+		return
+	var current := 0
+	var others := 0
+	for unit in _forces.get("units", []):
+		var bp := int(unit.bp)
+		if String(unit.id) == unit_id:
+			current = bp
+		else:
+			others += bp
+	if current <= 0:
+		return
+	var target := clampi(int(round(float(current) * clampf(ratio, 0.0, 1.0))),
+		0, maxi(0, 10000 - others))
 	if target == current:
 		return
 	_request(PlayerControllerScript.COMMAND_MILITARY_CONFIG_SHARES,

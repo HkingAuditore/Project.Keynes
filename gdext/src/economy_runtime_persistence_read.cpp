@@ -37,7 +37,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
     // migrates to v58 by starting the research procurement outflow at zero;
     // v58 migrates to v59 by starting with no army personnel lanes (the
     // section is optional, so a pre-59 stream restores zero lanes).
-    if (schema != SCHEMA_VERSION && schema != 58 && schema != 57 && schema != 56) {
+    // v58 migrates to v59 by zeroing the research procurement outflow; v59
+    // migrates to v60 by starting with no state lanes (the building section is
+    // all kind-0/1/2 rows, so a pre-60 stream restores zero state lanes).
+    if (schema != SCHEMA_VERSION && schema != 59 && schema != 58 &&
+        schema != 57 && schema != 56) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }

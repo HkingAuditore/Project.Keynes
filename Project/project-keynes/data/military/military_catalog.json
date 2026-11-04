@@ -9,44 +9,44 @@
       "era": 1,
       "tech": "tech.bronze_casting",
       "militia": false,
-      "attack": 104858,
-      "defense": 144179,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 1.6,
+      "defense": 2.2,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 30,
       "equipment": [
         {
           "category": "melee_arms",
           "min_quality": 2,
-          "per_100": 786432,
-          "weight": 39322
+          "per_100": 12.0,
+          "weight": 0.6
         },
         {
           "category": "body_armor",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 16384
+          "per_100": 6.0,
+          "weight": 0.25
         },
         {
           "category": "missile_arms",
           "min_quality": 1,
-          "per_100": 262144,
-          "weight": 9830
+          "per_100": 4.0,
+          "weight": 0.15
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 9830
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.15
       },
       "icon": "unit.line"
     },
@@ -58,44 +58,44 @@
       "era": 2,
       "tech": "tech.military.mounted_warfare",
       "militia": false,
-      "attack": 222822,
-      "defense": 117965,
-      "speed": 131072,
-      "fortification_ignore": 0,
+      "attack": 3.4,
+      "defense": 1.8,
+      "speed": 2.0,
+      "fortification_ignore": 0.0,
       "training_days": 40,
       "equipment": [
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 1638400,
-          "weight": 32768
+          "per_100": 25.0,
+          "weight": 0.5
         },
         {
           "category": "melee_arms",
           "min_quality": 3,
-          "per_100": 524288,
-          "weight": 22938
+          "per_100": 8.0,
+          "weight": 0.35
         },
         {
           "category": "body_armor",
           "min_quality": 1,
-          "per_100": 262144,
-          "weight": 9830
+          "per_100": 4.0,
+          "weight": 0.15
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 131072,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 2.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 196608,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 13107
+        "ration": 0.0,
+        "fodder": 3.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.2
       },
       "icon": "unit.mobile"
     },
@@ -107,38 +107,38 @@
       "era": 1,
       "tech": "tech.military.chariot_warfare",
       "militia": false,
-      "attack": 170394,
-      "defense": 78643,
-      "speed": 104858,
-      "fortification_ignore": 0,
+      "attack": 2.6,
+      "defense": 1.2,
+      "speed": 1.6,
+      "fortification_ignore": 0.0,
       "training_days": 40,
       "equipment": [
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 1835008,
-          "weight": 39322
+          "per_100": 28.0,
+          "weight": 0.6
         },
         {
           "category": "melee_arms",
           "min_quality": 2,
-          "per_100": 393216,
-          "weight": 26214
+          "per_100": 6.0,
+          "weight": 0.4
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 131072,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 2.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 196608,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 13107
+        "ration": 0.0,
+        "fodder": 3.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.2
       },
       "icon": "unit.mobile"
     },
@@ -150,44 +150,44 @@
       "era": 9,
       "tech": "tech.military.network_centric",
       "militia": false,
-      "attack": 2949120,
-      "defense": 2949120,
-      "speed": 163840,
-      "fortification_ignore": 0,
+      "attack": 45.0,
+      "defense": 45.0,
+      "speed": 2.5,
+      "fortification_ignore": 0.0,
       "training_days": 70,
       "equipment": [
         {
           "category": "armored_vehicles",
           "min_quality": 2,
-          "per_100": 262144,
-          "weight": 26214
+          "per_100": 4.0,
+          "weight": 0.4
         },
         {
           "category": "firearms",
           "min_quality": 4,
-          "per_100": 524288,
-          "weight": 26214
+          "per_100": 8.0,
+          "weight": 0.4
         },
         {
           "category": "ammunition",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 13107
+          "per_100": 6.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 32768,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.5,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 131072,
-        "fuel": 98304,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 2.0,
+        "fuel": 1.5,
+        "upkeep": 0.25
       },
       "icon": "unit.line"
     },
@@ -199,38 +199,38 @@
       "era": 5,
       "tech": "tech.military.drill_regulations",
       "militia": false,
-      "attack": 557056,
-      "defense": 327680,
-      "speed": 131072,
-      "fortification_ignore": 0,
+      "attack": 8.5,
+      "defense": 5.0,
+      "speed": 2.0,
+      "fortification_ignore": 0.0,
       "training_days": 45,
       "equipment": [
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 1638400,
-          "weight": 26214
+          "per_100": 25.0,
+          "weight": 0.4
         },
         {
           "category": "firearms",
           "min_quality": 2,
-          "per_100": 524288,
-          "weight": 39322
+          "per_100": 8.0,
+          "weight": 0.6
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 131072,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 1966
+        "ration": 0.0,
+        "fodder": 2.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.03
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 196608,
-        "ammunition": 65536,
-        "fuel": 0,
-        "upkeep": 11796
+        "ration": 0.0,
+        "fodder": 3.0,
+        "ammunition": 1.0,
+        "fuel": 0.0,
+        "upkeep": 0.18
       },
       "icon": "unit.mobile"
     },
@@ -242,32 +242,32 @@
       "era": 10,
       "tech": "tech.military.autonomous_warfare",
       "militia": false,
-      "attack": 5242880,
-      "defense": 3276800,
-      "speed": 196608,
-      "fortification_ignore": 0,
+      "attack": 80.0,
+      "defense": 50.0,
+      "speed": 3.0,
+      "fortification_ignore": 0.0,
       "training_days": 80,
       "equipment": [
         {
           "category": "drones",
           "min_quality": 1,
-          "per_100": 655360,
-          "weight": 65536
+          "per_100": 10.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 65536,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 1.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 32768,
-        "fuel": 163840,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.5,
+        "fuel": 2.5,
+        "upkeep": 0.25
       },
       "icon": "unit.mobile"
     },
@@ -279,32 +279,32 @@
       "era": 7,
       "tech": "tech.military.armored_warfare",
       "militia": false,
-      "attack": 1703936,
-      "defense": 1179648,
-      "speed": 85197,
-      "fortification_ignore": 0,
+      "attack": 26.0,
+      "defense": 18.0,
+      "speed": 1.3,
+      "fortification_ignore": 0.0,
       "training_days": 60,
       "equipment": [
         {
           "category": "armored_vehicles",
           "min_quality": 1,
-          "per_100": 262144,
-          "weight": 65536
+          "per_100": 4.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 65536,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 1.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 98304,
-        "fuel": 196608,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.5,
+        "fuel": 3.0,
+        "upkeep": 0.25
       },
       "icon": "unit.mobile"
     },
@@ -316,44 +316,44 @@
       "era": 10,
       "tech": "tech.military.autonomous_warfare",
       "militia": false,
-      "attack": 3932160,
-      "defense": 4587520,
-      "speed": 98304,
-      "fortification_ignore": 0,
+      "attack": 60.0,
+      "defense": 70.0,
+      "speed": 1.5,
+      "fortification_ignore": 0.0,
       "training_days": 80,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 5,
-          "per_100": 655360,
-          "weight": 32768
+          "per_100": 10.0,
+          "weight": 0.5
         },
         {
           "category": "body_armor",
           "min_quality": 4,
-          "per_100": 655360,
-          "weight": 19661
+          "per_100": 10.0,
+          "weight": 0.3
         },
         {
           "category": "ammunition",
           "min_quality": 1,
-          "per_100": 262144,
-          "weight": 13107
+          "per_100": 4.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 98304,
-        "fuel": 0,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.5,
+        "fuel": 0.0,
+        "upkeep": 0.25
       },
       "icon": "unit.line"
     },
@@ -365,38 +365,38 @@
       "era": 4,
       "tech": "tech.military.field_artillery",
       "militia": false,
-      "attack": 557056,
-      "defense": 131072,
-      "speed": 45875,
-      "fortification_ignore": 32768,
+      "attack": 8.5,
+      "defense": 2.0,
+      "speed": 0.7,
+      "fortification_ignore": 0.5,
       "training_days": 50,
       "equipment": [
         {
           "category": "ordnance",
           "min_quality": 2,
-          "per_100": 393216,
-          "weight": 52429
+          "per_100": 6.0,
+          "weight": 0.8
         },
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 655360,
-          "weight": 13107
+          "per_100": 10.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 32768,
-        "ammunition": 6554,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.5,
+        "ammunition": 0.1,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 49152,
-        "ammunition": 229376,
-        "fuel": 0,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.75,
+        "ammunition": 3.5,
+        "fuel": 0.0,
+        "upkeep": 0.25
       },
       "icon": "unit.artillery"
     },
@@ -408,32 +408,32 @@
       "era": 6,
       "tech": "tech.military.rifled_weapons",
       "militia": false,
-      "attack": 1179648,
-      "defense": 196608,
-      "speed": 45875,
-      "fortification_ignore": 45875,
+      "attack": 18.0,
+      "defense": 3.0,
+      "speed": 0.7,
+      "fortification_ignore": 0.7,
       "training_days": 55,
       "equipment": [
         {
           "category": "ordnance",
           "min_quality": 3,
-          "per_100": 786432,
-          "weight": 65536
+          "per_100": 12.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 6554,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.1,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 262144,
-        "fuel": 0,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 4.0,
+        "fuel": 0.0,
+        "upkeep": 0.25
       },
       "icon": "unit.artillery"
     },
@@ -445,44 +445,44 @@
       "era": 3,
       "tech": "tech.military.heavy_cavalry",
       "militia": false,
-      "attack": 327680,
-      "defense": 235930,
-      "speed": 104858,
-      "fortification_ignore": 0,
+      "attack": 5.0,
+      "defense": 3.6,
+      "speed": 1.6,
+      "fortification_ignore": 0.0,
       "training_days": 45,
       "equipment": [
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 1966080,
-          "weight": 32768
+          "per_100": 30.0,
+          "weight": 0.5
         },
         {
           "category": "body_armor",
           "min_quality": 3,
-          "per_100": 983040,
-          "weight": 19661
+          "per_100": 15.0,
+          "weight": 0.3
         },
         {
           "category": "melee_arms",
           "min_quality": 3,
-          "per_100": 524288,
-          "weight": 13107
+          "per_100": 8.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 131072,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 2.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 196608,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 13107
+        "ration": 0.0,
+        "fodder": 3.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.2
       },
       "icon": "unit.mobile"
     },
@@ -494,44 +494,44 @@
       "era": 2,
       "tech": "tech.military.standing_army",
       "militia": false,
-      "attack": 157286,
-      "defense": 209715,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 2.4,
+      "defense": 3.2,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 30,
       "equipment": [
         {
           "category": "melee_arms",
           "min_quality": 3,
-          "per_100": 786432,
-          "weight": 32768
+          "per_100": 12.0,
+          "weight": 0.5
         },
         {
           "category": "body_armor",
           "min_quality": 2,
-          "per_100": 524288,
-          "weight": 22938
+          "per_100": 8.0,
+          "weight": 0.35
         },
         {
           "category": "missile_arms",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 9830
+          "per_100": 6.0,
+          "weight": 0.15
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 9830
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.15
       },
       "icon": "unit.line"
     },
@@ -543,44 +543,44 @@
       "era": 3,
       "tech": "tech.military.legion_logistics",
       "militia": false,
-      "attack": 235930,
-      "defense": 301466,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 3.6,
+      "defense": 4.6,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 30,
       "equipment": [
         {
           "category": "melee_arms",
           "min_quality": 3,
-          "per_100": 786432,
-          "weight": 29491
+          "per_100": 12.0,
+          "weight": 0.45
         },
         {
           "category": "body_armor",
           "min_quality": 3,
-          "per_100": 786432,
-          "weight": 26214
+          "per_100": 12.0,
+          "weight": 0.4
         },
         {
           "category": "missile_arms",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 9830
+          "per_100": 6.0,
+          "weight": 0.15
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 9830
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.15
       },
       "icon": "unit.line"
     },
@@ -592,32 +592,32 @@
       "era": 5,
       "tech": "tech.military.drill_regulations",
       "militia": false,
-      "attack": 524288,
-      "defense": 425984,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 8.0,
+      "defense": 6.5,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 35,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 2,
-          "per_100": 786432,
-          "weight": 65536
+          "per_100": 12.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 1966
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.03
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 65536,
-        "fuel": 0,
-        "upkeep": 8520
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.0,
+        "fuel": 0.0,
+        "upkeep": 0.13
       },
       "icon": "unit.line"
     },
@@ -629,32 +629,32 @@
       "era": 7,
       "tech": "tech.military.machine_guns",
       "militia": false,
-      "attack": 1048576,
-      "defense": 1048576,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 16.0,
+      "defense": 16.0,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 45,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 4,
-          "per_100": 917504,
-          "weight": 65536
+          "per_100": 14.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 1966
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.03
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 91750,
-        "fuel": 0,
-        "upkeep": 8520
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.4,
+        "fuel": 0.0,
+        "upkeep": 0.13
       },
       "icon": "unit.line"
     },
@@ -666,44 +666,44 @@
       "era": 8,
       "tech": "tech.military.mechanization",
       "militia": false,
-      "attack": 1572864,
-      "defense": 1572864,
-      "speed": 163840,
-      "fortification_ignore": 0,
+      "attack": 24.0,
+      "defense": 24.0,
+      "speed": 2.5,
+      "fortification_ignore": 0.0,
       "training_days": 55,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 4,
-          "per_100": 655360,
-          "weight": 36045
+          "per_100": 10.0,
+          "weight": 0.55
         },
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 16384
+          "per_100": 6.0,
+          "weight": 0.25
         },
         {
           "category": "body_armor",
           "min_quality": 4,
-          "per_100": 393216,
-          "weight": 13107
+          "per_100": 6.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 65536,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 1.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 98304,
-        "fuel": 196608,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.5,
+        "fuel": 3.0,
+        "upkeep": 0.25
       },
       "icon": "unit.line"
     },
@@ -715,25 +715,25 @@
       "era": 0,
       "tech": "",
       "militia": true,
-      "attack": 32768,
-      "defense": 39322,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 0.5,
+      "defense": 0.6,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 0,
       "equipment": [],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 9830
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.15
       },
       "icon": "unit.line"
     },
@@ -745,38 +745,38 @@
       "era": 9,
       "tech": "tech.military.precision_guidance",
       "militia": false,
-      "attack": 3932160,
-      "defense": 983040,
-      "speed": 163840,
-      "fortification_ignore": 52429,
+      "attack": 60.0,
+      "defense": 15.0,
+      "speed": 2.5,
+      "fortification_ignore": 0.8,
       "training_days": 75,
       "equipment": [
         {
           "category": "ordnance",
           "min_quality": 5,
-          "per_100": 262144,
-          "weight": 45875
+          "per_100": 4.0,
+          "weight": 0.7
         },
         {
           "category": "ammunition",
           "min_quality": 4,
-          "per_100": 262144,
-          "weight": 19661
+          "per_100": 4.0,
+          "weight": 0.3
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 6554,
-        "fuel": 32768,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.1,
+        "fuel": 0.5,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 262144,
-        "fuel": 65536,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 4.0,
+        "fuel": 1.0,
+        "upkeep": 0.25
       },
       "icon": "unit.artillery"
     },
@@ -788,38 +788,38 @@
       "era": 4,
       "tech": "tech.gunpowder_weapons",
       "militia": false,
-      "attack": 393216,
-      "defense": 262144,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 6.0,
+      "defense": 4.0,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 35,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 1,
-          "per_100": 655360,
-          "weight": 49152
+          "per_100": 10.0,
+          "weight": 0.75
         },
         {
           "category": "melee_arms",
           "min_quality": 3,
-          "per_100": 262144,
-          "weight": 16384
+          "per_100": 4.0,
+          "weight": 0.25
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 1966
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.03
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 52429,
-        "fuel": 0,
-        "upkeep": 8520
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.8,
+        "fuel": 0.0,
+        "upkeep": 0.13
       },
       "icon": "unit.line"
     },
@@ -831,32 +831,32 @@
       "era": 6,
       "tech": "tech.military.rifled_weapons",
       "militia": false,
-      "attack": 786432,
-      "defense": 655360,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 12.0,
+      "defense": 10.0,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 40,
       "equipment": [
         {
           "category": "firearms",
           "min_quality": 3,
-          "per_100": 655360,
-          "weight": 65536
+          "per_100": 10.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 3277,
-        "fuel": 0,
-        "upkeep": 1966
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.05,
+        "fuel": 0.0,
+        "upkeep": 0.03
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 78643,
-        "fuel": 0,
-        "upkeep": 8520
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.2,
+        "fuel": 0.0,
+        "upkeep": 0.13
       },
       "icon": "unit.line"
     },
@@ -868,32 +868,32 @@
       "era": 3,
       "tech": "tech.military.siegecraft",
       "militia": false,
-      "attack": 262144,
-      "defense": 65536,
-      "speed": 39322,
-      "fortification_ignore": 39322,
+      "attack": 4.0,
+      "defense": 1.0,
+      "speed": 0.6,
+      "fortification_ignore": 0.6,
       "training_days": 45,
       "equipment": [
         {
           "category": "ordnance",
           "min_quality": 1,
-          "per_100": 1310720,
-          "weight": 65536
+          "per_100": 20.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 6554,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.1,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 196608,
-        "fuel": 0,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 3.0,
+        "fuel": 0.0,
+        "upkeep": 0.25
       },
       "icon": "unit.artillery"
     },
@@ -905,38 +905,38 @@
       "era": 8,
       "tech": "tech.military.mechanization",
       "militia": false,
-      "attack": 2949120,
-      "defense": 786432,
-      "speed": 131072,
-      "fortification_ignore": 49152,
+      "attack": 45.0,
+      "defense": 12.0,
+      "speed": 2.0,
+      "fortification_ignore": 0.75,
       "training_days": 65,
       "equipment": [
         {
           "category": "ordnance",
           "min_quality": 4,
-          "per_100": 524288,
-          "weight": 52429
+          "per_100": 8.0,
+          "weight": 0.8
         },
         {
           "category": "mounts",
           "min_quality": 1,
-          "per_100": 262144,
-          "weight": 13107
+          "per_100": 4.0,
+          "weight": 0.2
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 6554,
-        "fuel": 65536,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.1,
+        "fuel": 1.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 294912,
-        "fuel": 131072,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 4.5,
+        "fuel": 2.0,
+        "upkeep": 0.25
       },
       "icon": "unit.artillery"
     },
@@ -948,32 +948,32 @@
       "era": 8,
       "tech": "tech.military.main_battle_tanks",
       "militia": false,
-      "attack": 2621440,
-      "defense": 2097152,
-      "speed": 144179,
-      "fortification_ignore": 0,
+      "attack": 40.0,
+      "defense": 32.0,
+      "speed": 2.2,
+      "fortification_ignore": 0.0,
       "training_days": 65,
       "equipment": [
         {
           "category": "armored_vehicles",
           "min_quality": 2,
-          "per_100": 524288,
-          "weight": 65536
+          "per_100": 8.0,
+          "weight": 1.0
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 65536,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 1.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 98304,
-        "fuel": 196608,
-        "upkeep": 16384
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 1.5,
+        "fuel": 3.0,
+        "upkeep": 0.25
       },
       "icon": "unit.mobile"
     },
@@ -985,38 +985,38 @@
       "era": 0,
       "tech": "",
       "militia": false,
-      "attack": 65536,
-      "defense": 65536,
-      "speed": 65536,
-      "fortification_ignore": 0,
+      "attack": 1.0,
+      "defense": 1.0,
+      "speed": 1.0,
+      "fortification_ignore": 0.0,
       "training_days": 20,
       "equipment": [
         {
           "category": "melee_arms",
           "min_quality": 1,
-          "per_100": 655360,
-          "weight": 45875
+          "per_100": 10.0,
+          "weight": 0.7
         },
         {
           "category": "missile_arms",
           "min_quality": 1,
-          "per_100": 393216,
-          "weight": 19661
+          "per_100": 6.0,
+          "weight": 0.3
         }
       ],
       "supply_idle": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 3277
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
       },
       "supply_combat": {
-        "ration": 0,
-        "fodder": 0,
-        "ammunition": 0,
-        "fuel": 0,
-        "upkeep": 9830
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.15
       },
       "icon": "unit.line"
     }
@@ -1195,15 +1195,15 @@
       "name": "战士营地",
       "role": "barracks",
       "tier": 1,
-      "tech": "",
+      "tech": "tech.military.war_bands",
       "capacity": 4,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 200,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 0.02,
       "build_days": 10,
       "materials": {
-        "logs": 20000,
-        "turf_block": 10000
+        "logs": 20.0,
+        "turf_block": 10.0
       }
     },
     {
@@ -1213,13 +1213,13 @@
       "tier": 2,
       "tech": "tech.military.earthen_ramparts",
       "capacity": 10,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 500,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 0.05,
       "build_days": 20,
       "materials": {
-        "lumber": 30000,
-        "adobe_brick": 20000
+        "lumber": 30.0,
+        "adobe_brick": 20.0
       }
     },
     {
@@ -1229,14 +1229,14 @@
       "tier": 3,
       "tech": "tech.military.standing_army",
       "capacity": 25,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 1500,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 0.15,
       "build_days": 30,
       "materials": {
-        "bricks": 40000,
-        "lumber": 30000,
-        "wrought_iron": 5000
+        "bricks": 40.0,
+        "lumber": 30.0,
+        "wrought_iron": 5.0
       }
     },
     {
@@ -1246,13 +1246,13 @@
       "tier": 4,
       "tech": "tech.military.legion_logistics",
       "capacity": 50,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 4000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 0.4,
       "build_days": 45,
       "materials": {
-        "bricks": 80000,
-        "raw_stone": 60000
+        "bricks": 80.0,
+        "raw_stone": 60.0
       }
     },
     {
@@ -1262,13 +1262,13 @@
       "tier": 5,
       "tech": "tech.military.drill_regulations",
       "capacity": 100,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 10000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 1.0,
       "build_days": 45,
       "materials": {
-        "bricks": 120000,
-        "glass": 20000
+        "bricks": 120.0,
+        "glass": 20.0
       }
     },
     {
@@ -1278,13 +1278,13 @@
       "tier": 6,
       "tech": "tech.military.general_staff",
       "capacity": 200,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 25000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 2.5,
       "build_days": 60,
       "materials": {
-        "steel": 40000,
-        "cement": 60000
+        "steel": 40.0,
+        "cement": 60.0
       }
     },
     {
@@ -1294,14 +1294,14 @@
       "tier": 7,
       "tech": "tech.military.mechanization",
       "capacity": 400,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 60000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 6.0,
       "build_days": 75,
       "materials": {
-        "concrete": 100000,
-        "steel": 60000,
-        "electrical_equipment": 10000
+        "concrete": 100.0,
+        "steel": 60.0,
+        "electrical_equipment": 10.0
       }
     },
     {
@@ -1311,14 +1311,14 @@
       "tier": 8,
       "tech": "tech.military.network_centric",
       "capacity": 800,
-      "fort_bonus": 0,
-      "training_speed": 65536,
-      "upkeep": 150000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.0,
+      "upkeep": 15.0,
       "build_days": 90,
       "materials": {
-        "concrete": 150000,
-        "computers": 10000,
-        "telecom_equipment": 10000
+        "concrete": 150.0,
+        "computers": 10.0,
+        "telecom_equipment": 10.0
       }
     },
     {
@@ -1328,13 +1328,13 @@
       "tier": 1,
       "tech": "tech.military.earthen_ramparts",
       "capacity": 0,
-      "fort_bonus": 19661,
-      "training_speed": 65536,
-      "upkeep": 500,
+      "fort_bonus": 0.3,
+      "training_speed": 1.0,
+      "upkeep": 0.05,
       "build_days": 20,
       "materials": {
-        "turf_block": 40000,
-        "logs": 30000
+        "turf_block": 40.0,
+        "logs": 30.0
       }
     },
     {
@@ -1344,13 +1344,13 @@
       "tier": 2,
       "tech": "tech.masonry",
       "capacity": 0,
-      "fort_bonus": 39322,
-      "training_speed": 65536,
-      "upkeep": 1500,
+      "fort_bonus": 0.6,
+      "training_speed": 1.0,
+      "upkeep": 0.15,
       "build_days": 30,
       "materials": {
-        "raw_stone": 120000,
-        "bricks": 60000
+        "raw_stone": 120.0,
+        "bricks": 60.0
       }
     },
     {
@@ -1360,13 +1360,13 @@
       "tier": 3,
       "tech": "tech.military.siegecraft",
       "capacity": 0,
-      "fort_bonus": 65536,
-      "training_speed": 65536,
-      "upkeep": 3000,
+      "fort_bonus": 1.0,
+      "training_speed": 1.0,
+      "upkeep": 0.3,
       "build_days": 45,
       "materials": {
-        "raw_stone": 200000,
-        "bricks": 120000
+        "raw_stone": 200.0,
+        "bricks": 120.0
       }
     },
     {
@@ -1376,14 +1376,14 @@
       "tier": 4,
       "tech": "tech.military.star_forts",
       "capacity": 0,
-      "fort_bonus": 91750,
-      "training_speed": 65536,
-      "upkeep": 5000,
+      "fort_bonus": 1.4,
+      "training_speed": 1.0,
+      "upkeep": 0.5,
       "build_days": 55,
       "materials": {
-        "bricks": 250000,
-        "raw_stone": 150000,
-        "bronze_cannon": 4000
+        "bricks": 250.0,
+        "raw_stone": 150.0,
+        "bronze_cannon": 4.0
       }
     },
     {
@@ -1393,13 +1393,13 @@
       "tier": 5,
       "tech": "tech.military.machine_guns",
       "capacity": 0,
-      "fort_bonus": 117965,
-      "training_speed": 65536,
-      "upkeep": 10000,
+      "fort_bonus": 1.8,
+      "training_speed": 1.0,
+      "upkeep": 1.0,
       "build_days": 70,
       "materials": {
-        "concrete": 200000,
-        "steel": 60000
+        "concrete": 200.0,
+        "steel": 60.0
       }
     },
     {
@@ -1409,13 +1409,13 @@
       "tier": 6,
       "tech": "tech.military.ai_defense_grid",
       "capacity": 0,
-      "fort_bonus": 157286,
-      "training_speed": 65536,
-      "upkeep": 30000,
+      "fort_bonus": 2.4,
+      "training_speed": 1.0,
+      "upkeep": 3.0,
       "build_days": 90,
       "materials": {
-        "concrete": 300000,
-        "military_electronics": 20000
+        "concrete": 300.0,
+        "military_electronics": 20.0
       }
     },
     {
@@ -1425,13 +1425,13 @@
       "tier": 1,
       "tech": "tech.military.standing_army",
       "capacity": 0,
-      "fort_bonus": 0,
-      "training_speed": 98304,
-      "upkeep": 2000,
+      "fort_bonus": 0.0,
+      "training_speed": 1.5,
+      "upkeep": 0.2,
       "build_days": 40,
       "materials": {
-        "bricks": 60000,
-        "lumber": 40000
+        "bricks": 60.0,
+        "lumber": 40.0
       },
       "national": {
         "stat": "country.military.organization_recovery_factor",
@@ -1446,13 +1446,13 @@
       "tier": 2,
       "tech": "tech.military.drill_regulations",
       "capacity": 0,
-      "fort_bonus": 0,
-      "training_speed": 131072,
-      "upkeep": 5000,
+      "fort_bonus": 0.0,
+      "training_speed": 2.0,
+      "upkeep": 0.5,
       "build_days": 50,
       "materials": {
-        "bricks": 100000,
-        "glass": 20000
+        "bricks": 100.0,
+        "glass": 20.0
       },
       "national": {
         "stat": "country.military.organization_recovery_factor",
@@ -1472,13 +1472,13 @@
       "tier": 3,
       "tech": "tech.military.network_centric",
       "capacity": 0,
-      "fort_bonus": 0,
-      "training_speed": 196608,
-      "upkeep": 80000,
+      "fort_bonus": 0.0,
+      "training_speed": 3.0,
+      "upkeep": 8.0,
       "build_days": 90,
       "materials": {
-        "concrete": 120000,
-        "computers": 8000
+        "concrete": 120.0,
+        "computers": 8.0
       },
       "national": {
         "stat": "country.military.attack_factor",

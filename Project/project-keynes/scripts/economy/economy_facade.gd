@@ -39,6 +39,9 @@ enum Opcode {
 	FAMILY_FREE_BUILDING = 14,
 	FAMILY_POPULATION_REWARD = 15,
 	TREASURY_SPONSORED_BUILD = 16,
+	# 35: 国库出资拆除。16 在移除侧的镜像：官营建筑组的属主是保留的官营签名，
+	# 不是任何活着的族群，所以普通拆除（11）永远够不到它——11 用族群句柄反解属主。
+	TREASURY_SPONSORED_DEMOLISH = 35,
 	FAMILY_COLONIZATION_START = 17,
 	FAMILY_COLONIZATION_CANCEL = 18,
 	FAMILY_COLONIZATION_SETTLE = 19,
@@ -605,18 +608,86 @@ func treasury_construction_options(country_handle: int, cell_idx: int,
 		"snapshot_day": int(quotes.get("snapshot_day", -1)), "nonbinding": true}
 
 
+## 营造是一条正式经济命令。当原生端把 StageOps 作为生产写入边界时，旧批量入口
+## `submit_economy_commands` 是 fail-closed 的（`economy_legacy_ingress_disabled`），
+## 所以优先走专用入口 `queue_treasury_sponsored_build`：命令进经济属主的收件箱，
+## 在下一个 epoch 结算并照常产出营造回执。旧批量入口只留给没有该方法的旧 DLL。
 func treasury_sponsored_build(country_handle: int, cell_idx: int,
 		building_id: StringName, effective_day: int, sequence: int,
 		ownership_policy: StringName = &"treasury_sponsored_private") -> Dictionary:
 	if ownership_policy != &"treasury_sponsored_private":
-		return {"ok": false, "reason": "unsupported_ownership_policy"}
+		return {"ok": false, "code": "unsupported_ownership_policy",
+			"reason": "unsupported_ownership_policy",
+			"message": _construction_result_message("unsupported_ownership_policy"),
+			"effective_day": effective_day, "sequence": sequence}
 	var type_id := building_type_id(building_id)
 	if type_id < 0:
-		return {"ok": false, "reason": "construction_target_invalid"}
-	return submit([{"opcode": Opcode.TREASURY_SPONSORED_BUILD,
+		return {"ok": false, "code": "construction_target_invalid",
+			"reason": "construction_target_invalid",
+			"message": _construction_result_message("construction_target_invalid"),
+			"effective_day": effective_day, "sequence": sequence}
+	if _configured and _world_ext.has_method("queue_treasury_sponsored_build"):
+		var queued: Dictionary = _world_ext.queue_treasury_sponsored_build(
+			country_handle, cell_idx, type_id, effective_day, sequence)
+		if not bool(queued.get("ok", false)):
+			var code := String(queued.get("code", "command_rejected"))
+			queued["reason"] = code
+			queued["message"] = _construction_result_message(code)
+		return queued
+	var legacy := submit([{"opcode": Opcode.TREASURY_SPONSORED_BUILD,
 		"effective_day": effective_day, "sequence": sequence,
 		"target_handle": country_handle, "i32_0": cell_idx, "i32_1": type_id,
 		"i64_0": 1, "i64_1": OWNERSHIP_TREASURY_SPONSORED_PRIVATE}])
+	if not bool(legacy.get("ok", false)) \
+			and String(legacy.get("reason", "")) == "economy_legacy_ingress_disabled":
+		# 旧 DLL 没有专用入口，而当前生产写入边界拒绝旧批量提交。
+		legacy["code"] = "construction_ingress_unavailable"
+		legacy["message"] = "原生扩展过旧：营造入口不可用，请重建 GDExtension。"
+	return legacy
+
+
+## 拆除的镜像入口：官营建筑先在经济账本里减座数，军事侧随后才读出变化。
+## 与 `treasury_sponsored_build` 同构，所以两条命令的回执形状、拒因码与
+## 「先扣后建 / 先减后记」的顺序约束完全一致。
+func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
+		building_id: StringName, count: int, effective_day: int,
+		sequence: int) -> Dictionary:
+	var type_id := building_type_id(building_id)
+	if type_id < 0 or count <= 0:
+		return {"ok": false, "code": "demolish_target_invalid",
+			"reason": "demolish_target_invalid",
+			"message": _demolish_result_message("demolish_target_invalid"),
+			"effective_day": effective_day, "sequence": sequence}
+	if _configured and _world_ext.has_method("queue_treasury_sponsored_demolish"):
+		var queued: Dictionary = _world_ext.queue_treasury_sponsored_demolish(
+			country_handle, cell_idx, type_id, count, effective_day, sequence)
+		if not bool(queued.get("ok", false)):
+			var code := String(queued.get("code", "command_rejected"))
+			queued["reason"] = code
+			queued["message"] = _demolish_result_message(code)
+		return queued
+	# 旧 DLL 没有专用入口，而当前生产写入边界拒绝旧批量提交：明确说不可用，
+	# 而不是退回到一条永远够不到官营建筑组的普通拆除。
+	return {"ok": false, "code": "demolish_ingress_unavailable",
+		"reason": "demolish_ingress_unavailable",
+		"message": "原生扩展过旧：拆除入口不可用，请重建 GDExtension。",
+		"effective_day": effective_day, "sequence": sequence}
+
+
+static func _demolish_result_message(code: String) -> String:
+	return {
+		"ok": "拆除已受理。",
+		"demolish_queued": "拆除已排队，将在下一个经济结算边界执行。",
+		"demolish_target_invalid": "拆除目标无效。",
+		"demolish_not_state_owned": "该建筑不属于官营，无法按官营方式拆除。",
+		"demolish_state_owner_unresolved": "官营属主未能解析，请检查建筑与职业目录。",
+		"demolish_state_building_absent": "该地块上已没有这座官营建筑。",
+		"demolish_owned_count_insufficient": "该地块的这座建筑座数不足。",
+		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
+		"economy_not_bootstrapped": "经济运行时尚未就绪。",
+		"economy_fatal": "经济运行时已停止，无法执行拆除。",
+		"save_restore_active": "存档正在读写，稍后再试。",
+	}.get(code, "拆除命令未能执行。")
 
 
 func dispatch_construction_command_receipts() -> void:
@@ -753,14 +824,18 @@ func cancel_family_colonization(country_handle: int, expedition_handle: int,
 
 ## 国家购买预算（时代晋升 §2.2）。transient：读档后由玩家会话重推。
 ## 原生侧只把请求放进收件箱，在下一个经济周期开始时生效。
+## era/colonization 传 -1 表示本次不改该通道的份额。
 func set_country_procurement_policy(country_handle: int, enabled: bool,
 		treasury_share_bp: int, research_share_bp: int,
-		effective_day: int, sequence: int) -> Dictionary:
+		effective_day: int, sequence: int,
+		era_share_bp: int = -1, colonization_share_bp: int = -1) -> Dictionary:
 	if not _configured or not _world_ext.has_method("set_country_procurement_policy"):
 		return {"ok": false, "code": "procurement_policy_unavailable"}
 	return _world_ext.set_country_procurement_policy(country_handle, enabled,
 		clampi(treasury_share_bp, 0, 10000), clampi(research_share_bp, 0, 10000),
-		effective_day, sequence)
+		effective_day, sequence,
+		-1 if era_share_bp < 0 else clampi(era_share_bp, 0, 10000),
+		-1 if colonization_share_bp < 0 else clampi(colonization_share_bp, 0, 10000))
 
 
 ## 时代收购目标（§2.3）。active=false 清空目标（暂停）；已买入国库的物资不退回。

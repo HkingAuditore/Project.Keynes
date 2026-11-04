@@ -54,9 +54,16 @@ const TRADE_ORDER_NAME_CACHE_LIMIT := 256
 ## 「打开 / 切部门 / 翻页 / 每日刷新」的原生报价调用保持在毫秒级。
 const CONSTRUCTION_PAGE_SIZE := 16
 ## Building kinds are compiled to dense ints; 3 == state-owned (barracks /
-## fortification / war college). Those are built from the military page, so the
-## civilian construction window never lists them.
+## fortification / war college). They never enter the civilian department loop
+## (the economy catalog has no `state` building type), so they are listed by the
+## construction window's dedicated military department instead, fed from
+## MilitaryCatalog's `state_buildings`.
 const STATE_BUILDING_KIND := 3
+## 军事部门不是经济目录里的部门：条目来自 MilitaryCatalog 的 `state_buildings`，
+## 命令走军事运行时的 `state.build`，与经济侧的 `construction.build` 是两条通道
+## （见 docs/ui/military-cell-tab.md §2.1）。这个 id 故意不并入 economy 的
+## sector 表，避免被 `construction_candidates` 当成经济部门下标。
+const CONSTRUCTION_MILITARY_SECTOR := "military"
 ## 军事页的三行官营建筑，顺序即行序；`role` 对齐 MilitaryStateRole (military_core.h)。
 const STATE_BUILDING_ROLES: Array[Dictionary] = [
 	{"id": "barracks", "label": "兵营", "role": 0},
@@ -71,6 +78,7 @@ const CONSTRUCTION_SECTOR_LABELS := {
 	"manufacturing": "制造",
 	"energy": "能源",
 	"knowledge": "知识",
+	"military": "军事",
 }
 const CONSTRUCTION_SECTOR_ICONS := {
 	"agriculture": &"economy.building.farm",
@@ -78,6 +86,7 @@ const CONSTRUCTION_SECTOR_ICONS := {
 	"manufacturing": &"economy.building.factory",
 	"energy": &"economy.building.power",
 	"knowledge": &"economy.building.science",
+	"military": &"military.building.barracks",
 }
 ## 营造目录的排序档。三档都遵守「可建优先」，档位只决定可建项之间的次序。
 const CONSTRUCTION_SORT_IDS := ["recommended", "cost", "newest"]
@@ -2163,19 +2172,28 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 	var can_build := _military_can_build(snapshot, country)
 	var posts := maxi(0, int(snapshot.get("post_count", 0)))
 	var present := maxi(0, int(snapshot.get("present", 0)))
+	var pending := maxi(0, int(snapshot.get("pending_enlist", 0)))
 	var owner_slot := int(snapshot.get("owner_slot", -1))
 	var controller_slot := int(snapshot.get("controller_slot", -1))
+	var building_rows: Array = catalog.get("buildings", [])
 	var buildings: Array = []
 	for role_def in STATE_BUILDING_ROLES:
 		buildings.append(_state_building_entry(role_def, snapshot,
-			catalog.get("buildings", []), researched, gate_known, can_build))
+			building_rows, researched, gate_known, can_build, facade, cell_idx))
+	# 驻军条上的读数一律照实给（包括 0）：玩家要靠这些数字判断"这一格能养多少兵、
+	# 还差多少、征召排了多少、训练快不快"，所以没有部队时也要显示 0 而不是整条消失。
 	return {
 		"cell": cell_idx,
 		"garrison": {
 			"present": present,
 			"posts": posts,
+			"open": maxi(0, posts - present - pending),
+			"quota": maxi(0, int(snapshot.get("quota", 0))),
+			"pending": pending,
+			"barracks_count": _military_barracks_count(snapshot),
+			"training_speed": _military_training_speed(building_rows,
+				int(snapshot.get("college_tier", -1))),
 			"ratio": clampf(float(present) / float(posts), 0.0, 1.0) if posts > 0 else 0.0,
-			"pending": maxi(0, int(snapshot.get("pending_enlist", 0))),
 			"paused": bool(snapshot.get("paused", false)),
 			"disrepair": bool(snapshot.get("disrepair", false)),
 			"occupied": owner_slot >= 0 and controller_slot != owner_slot,
@@ -2184,6 +2202,34 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 		"training": _military_training_rows(snapshot, catalog.get("units", {})),
 		"buildings": buildings,
 	}
+
+
+## 本格兵营座数：逐档座数求和（旧 DLL 没有分档表时退回兵额>0 ? 1 : 0 由调用方处理）。
+func _military_barracks_count(snapshot: Dictionary) -> int:
+	var tiers = snapshot.get("barracks_tiers", null)
+	if not tiers is PackedInt32Array:
+		return 0
+	var total := 0
+	for value in (tiers as PackedInt32Array):
+		total += maxi(0, int(value))
+	return total
+
+
+## 本格训练速度倍数：军校档位的 `training_speed`（原生在同档取最大值，1.0 为基数）。
+## 没有军校就是 1.0 —— 这个"1.0"本身也是要告诉玩家的状态。
+func _military_training_speed(catalog_rows: Array, college_tier: int) -> float:
+	if college_tier < 0:
+		return 1.0
+	var speed := 1.0
+	var college_role := int(STATE_BUILDING_ROLES[2].get("role", 2))
+	for row in catalog_rows:
+		var entry: Dictionary = row
+		if int(entry.get("role", -1)) != college_role:
+			continue
+		if int(entry.get("tier", -1)) != college_tier:
+			continue
+		speed = maxf(speed, float(entry.get("training_speed", 1.0)))
+	return speed
 
 
 ## 玩家能否在这一格下令营造：本国领土、未被占领、玩家国家句柄已解析。
@@ -2255,7 +2301,7 @@ func _military_training_rows(snapshot: Dictionary, units: Dictionary) -> Array:
 ## 动作由这里判定，控件只负责画和发请求，避免同一套规则散在渲染层。
 func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
-		can_build: bool) -> Dictionary:
+		can_build: bool, facade = null, cell_idx: int = -1) -> Dictionary:
 	var role := int(role_def.get("role", -1))
 	var role_id := String(role_def.get("id", ""))
 	var label := String(role_def.get("label", ""))
@@ -2295,6 +2341,10 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 	var target := -1
 	var action := "unavailable"
 	var action_label := ""
+	# 主键语义恒定：只有 build / upgrade / rebuild 会占用它，拆除单独一条通道。
+	# 这样「右下角那个键」永远代表在这格里增加建筑，不会某一刻变成会毁掉已有建筑的键。
+	var primary_action := "none"
+	var can_demolish := false
 	if pending_index >= 0:
 		display_row = catalog_rows[pending_index]
 		target = pending_index
@@ -2305,21 +2355,34 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 	elif count <= 0:
 		if best.is_empty():
 			action = "locked"
+			# 全锁着时也把最低一档的名字/效果摆出来：这一行不能只剩一个类目名。
+			if not role_rows.is_empty():
+				display_row = role_rows[0].row
 		else:
 			display_row = best.row
 			target = int(best.index)
 			action = "build"
 			action_label = "建造"
+			primary_action = "build"
 	else:
 		display_row = current.row if not current.is_empty() else {}
+		can_demolish = not current.is_empty()
 		if not best.is_empty() and int(best.row.get("tier", -1)) > current_tier:
 			target = int(best.index)
+			# 升级时整行必须描述**要建的那一档**：名称、效果、工期、建材要指向同一座
+			# 建筑。若沿用现有档，玩家会看到「戍卫营」却报价「联合训练中心」的料。
+			display_row = best.row
 			action = "upgrade"
 			action_label = "升级"
-		elif not current.is_empty():
+			primary_action = "upgrade"
+		elif not current.is_empty() and role_id == "barracks":
+			# 兵营可按档叠加（原生 barracks_count[tier] 是计数数组，兵额按
+			# count x capacity 累加），所以到顶档后仍给「再建」，而不是把它换成拆除。
+			# 城防与军校在原生侧是单值取最大档，叠加没有意义，因此不给这个入口。
 			target = int(current.index)
-			action = "demolish"
-			action_label = "拆除"
+			action = "rebuild"
+			action_label = "再建"
+			primary_action = "rebuild"
 	var disrepair := bool(snapshot.get("disrepair", false))
 	var effect := ""
 	if not display_row.is_empty():
@@ -2334,15 +2397,30 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 	var icon: StringName = IconCatalog.military_building_semantic(
 		String(display_row.get("id", "")), role_id,
 		int(display_row.get("tier", current_tier)))
+	# 成本只对「真正会新建一座」的行有意义：在建与锁定态没有可下单目标，
+	# 传 -1 让成本函数返回空档，行内就不会显示一份不会兑现的报价。
+	var cost := _empty_state_building_cost()
+	if primary_action in ["build", "upgrade", "rebuild"] and target >= 0:
+		cost = _state_building_cost(facade, target, display_row,
+			_country_cash(), cell_idx, {}, {},
+			current.row if not current.is_empty() else display_row, count)
+	# 缺料/缺钱时按需求把主键置为不可用，但成本信息本身继续留在行里。
+	if bool(cost.get("blocked", false)):
+		primary_action = "none"
+	# 维护成本是「这座建筑天天在吃钱」，与能不能下单无关：只要这一行有具体对象
+	# （可建造的档位、已建成的档位、在建目标），提示卡就必须写着它。
 	var tooltip := ""
-	match action:
-		"build", "upgrade":
-			tooltip = "%s · %d 日" % [display_name,
-				int(display_row.get("build_days", 0))]
-		"demolish":
-			tooltip = "拆除 %s" % display_name
-		"locked":
-			tooltip = _state_building_lock_tooltip(role_rows, researched, gate_known)
+	if primary_action != "none" or bool(cost.get("blocked", false)):
+		tooltip = _state_building_cost_tooltip(display_name, effect, cost)
+	# 拆除是独立通道（`can_demolish`），不再占用 `action` 的取值。
+	elif can_demolish:
+		tooltip = _state_building_cost_tooltip(display_name, effect,
+			_state_building_standing_cost(display_row, count))
+	elif action == "building" and not display_row.is_empty():
+		tooltip = _state_building_cost_tooltip(display_name, effect,
+			_state_building_standing_cost(display_row, count))
+	elif action == "locked":
+		tooltip = _state_building_lock_tooltip(role_rows, researched, gate_known)
 	return {
 		"role": role_id,
 		"label": label,
@@ -2350,12 +2428,328 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 		"name": display_name,
 		"count": count,
 		"effect": effect,
+		# `action` 保留为纯展示态（building / locked / unavailable / rebuild / …），
+		# 控件据此决定要不要画槽位；`primary_action` 与 `can_demolish` 才是可点性。
 		"action": action,
+		"primary_action": primary_action,
 		"action_label": action_label,
+		"can_demolish": can_demolish and can_build and known_tiers,
 		"target": target,
+		# 拆除目标必须指向**已建成的那一档**：主键在可升级时指向更高档，
+		# 两者混用会把「升级」的 target 拿去拆掉现有建筑。
+		"demolish_target": int(current.index) if can_demolish else -1,
 		"pending_days": pending_days if pending_index >= 0 else -1,
+		"materials_text": String(cost.get("materials_text", "")),
+		# 全量建材明细：行内文本会截断成「等 N 项」，提示卡与测试都要看这一份。
+		"materials_detail": cost.get("materials", []),
+		"upkeep_text": String(cost.get("upkeep_text", "")),
+		"cost_days_text": String(cost.get("days_text", "")),
+		"cost_cash_text": String(cost.get("cash_text", "")),
+		"cost_reason": String(cost.get("reason_text", "")),
 		"tooltip": tooltip,
 	}
+
+
+## 一座官营建筑的建材与工期成本，供行内成本总览与 hover 提示卡使用。
+##
+## 建材是目录里的权威值（门面 `state_building_materials` 已把 dense id 还原成
+## `{good_id, qty}`，qty 为 GOODS_SCALE），这里只做排版与卡点判断：可得量取国库
+## 现货加本地市场现货，与营造目录同一口径。
+##
+## 返回的 `materials` 每项带 `required` / `treasury` / `market`（都是 GOODS_SCALE），
+## 让提示卡能像营造那样写「国库 X / 市购 Y」；`shortfall` 是真正缺的那部分。
+##
+## `building_row` 是**要建的那一档**（升级时是更高一档，不是现有档），工期取它；
+## `standing_row` 是**现有已建成的那一档**，维护成本取它——升级前后维护是两个数，
+## 混用会让玩家看到「旧档的钱」却建的是新档。
+## 报价与可建判定的统一入口（任务 7）：两个入口（地块军事页 `_state_building_entry`
+## 与营造窗口军事部门 `_construction_military_row`）都必须看见同一份「国库出多少钱、
+## 差多少料、卡在哪」，否则一边报可建一边报缺料是对着同一座建筑打脸。因此造价和
+## 卡点一律以经济侧 `treasury_construction_quotes` 为唯一数据源——它就是
+## `COMMAND_TREASURY_SPONSORED_BUILD` 真正会扣的钱（缺口 × 市场价，不是建材量折现）。
+##
+## 返回字段与旧 `_state_building_cost` 完全一致（`materials`/`materials_text`/
+## `build_days`/`days_text`/`cash_required`/`cash_text`/`reason_text`/`blocked`/
+## `upkeep_text`/`upkeep_after_text`），额外带 `reason_code`（经济侧原样拒绝码）供
+## 调用方按统一顺序组卡点文案。
+func _state_building_cost(facade, building_index: int,
+		building_row: Dictionary, cash_available: int, cell_idx: int,
+		treasury_cache: Dictionary = {}, market_cache: Dictionary = {},
+		standing_row: Dictionary = {}, held_count: int = 0) -> Dictionary:
+	return _state_building_economy_quote(facade, building_index, building_row,
+		_player_country_handle(), cell_idx, cash_available, standing_row, held_count)
+
+
+## 上面那个外壳只是为了不惊动两处旧调用与契约测试；真正的统一逻辑在这里。
+## `economy_id` 由军事门面把 dense 索引翻成经济目录类型索引，再喂给经济侧报价。
+func _state_building_economy_quote(facade, building_index: int,
+		building_row: Dictionary, country_handle: int, cell_idx: int,
+		cash_available: int, standing_row: Dictionary = {},
+		held_count: int = 0) -> Dictionary:
+	if building_index < 0 or building_row.is_empty():
+		return _empty_state_building_cost()
+	# 报价以经济目录的类型索引为钥匙：军事索引先翻成经济稠密类型，再交给经济侧报价。
+	var economy_id := -1
+	if facade != null and facade.has_method("state_building_economy_id"):
+		economy_id = int(facade.state_building_economy_id(building_index))
+	var quote: Dictionary = {}
+	var reason_code := ""
+	var economy = _economy_facade()
+	if economy_id >= 0 and economy != null \
+			and economy.has_method("construction_quotes"):
+		var where := PackedInt32Array([economy_id])
+		var result: Dictionary = economy.construction_quotes(
+			country_handle, cell_idx, where)
+		var items: Array = result.get("items", []) if bool(result.get("ok", false)) \
+			else []
+		if not items.is_empty():
+			var item: Dictionary = items[0] as Dictionary
+			quote = item
+			reason_code = String(item.get("reason_code", ""))
+			# 报价命令本身失败也要亮卡点：桥接通了但不是数据问题就是范围问题，
+			# 静默当成「可建」会让玩家看到一座永远扣不了钱的建筑。
+			if reason_code.is_empty() and not bool(result.get("ok", false)):
+				reason_code = "construction_target_invalid"
+	elif economy == null or economy_id < 0 \
+			or not economy.has_method("construction_quotes"):
+		# economy == null（受限 headless / 旧夹具）或桥接失效：退回本地安全空档。
+		# blocked 置真，让行显示「暂不可营造」，绝不编造一条「差 X 料」的假报价。
+		var locked := _empty_state_building_cost()
+		locked["reason_text"] = "暂不可营造"
+		locked["blocked"] = true
+		return locked
+	# 未传现有档（营造目录是在报「还没建的这一档」）时，维护就按目标档算。
+	var has_standing := not standing_row.is_empty()
+	var upkeep_row := standing_row if has_standing else building_row
+	var effective_held := held_count if has_standing else 0
+	var days := maxi(0, int(building_row.get("build_days", 0)))
+	var materials: Array = quote.get("materials", []) if not quote.is_empty() else []
+	var cash_required := int(quote.get("cash_required", 0)) if not quote.is_empty() \
+		else 0
+	var reason := ""
+	if not reason_code.is_empty() and reason_code != "ok":
+		# 用与经济部门同一套文案；这里只是把码变成短因由，长解释交给行内 tooltip。
+		reason = String(CONSTRUCTION_REASON_TEXT.get(reason_code, "暂不可营造"))
+	# 经济侧没给拒绝码但缺口仍在（例如降级路径缺市场现货）时，兜底统一措辞。
+	if reason.is_empty():
+		var shortfall := 0
+		for raw in materials:
+			shortfall += maxi(0, int((raw as Dictionary).get("market", 0)))
+		if shortfall > 0:
+			reason = "建材不足"
+		elif cash_required > 0 and cash_available >= 0 and cash_available < cash_required:
+			reason = "资金不足"
+	return {
+		"materials": materials,
+		"materials_text": _state_building_materials_text(materials),
+		"build_days": days,
+		"days_text": "%d 日" % days if days > 0 else "",
+		"cash_required": cash_required,
+		"cash_text": _money_text(cash_required) if cash_required > 0 else "",
+		"reason_text": reason,
+		"reason_code": reason_code,
+		"blocked": not reason.is_empty(),
+		"upkeep_text": _state_building_upkeep_text(upkeep_row, effective_held),
+		"upkeep_after_text": _state_building_upkeep_after_text(building_row,
+			upkeep_row, effective_held),
+	}
+
+
+## 「已建成 / 在建」用的成本档：没有可下单目标，所以建材与现金留空，
+## 但维护成本必须照写——玩家判断该不该留着这座建筑，靠的就是这个数字。
+## `count` 是这一格里该角色的实有座数（兵营可按档叠加），维护要按座数合计，
+## 否则两座兵营只报一座的钱，玩家会低估 upkeep。
+func _state_building_standing_cost(building_row: Dictionary,
+		count: int = 1) -> Dictionary:
+	return {
+		"materials": [],
+		"materials_text": "",
+		"build_days": 0,
+		"days_text": "",
+		"cash_required": 0,
+		"cash_text": "",
+		"reason_text": "",
+		"blocked": false,
+		"upkeep_text": _state_building_upkeep_text(building_row, count),
+		"upkeep_after_text": "",
+	}
+
+
+## 建成后这座（或这几座）每天要吃多少。三种情形各不相同，不能一句话糊住：
+##   - 同档再建：现有 N 座 + 新建 1 座 = N+1 座。
+##   - 升级到新档：原生按档位取最大档只算一份，所以是目标档单座的维护。
+##   - 首次建造（现有 0 座）：就是目标档单座。
+func _state_building_upkeep_after_text(build_row: Dictionary,
+		standing_row: Dictionary, held_count: int) -> String:
+	var per_day := maxf(0.0, float(build_row.get("upkeep", 0.0)))
+	if per_day <= 0.0:
+		return ""
+	var one := _money_text(int(round(per_day * MONEY_SCALE)))
+	var same_tier := int(build_row.get("tier", -1)) \
+		== int(standing_row.get("tier", -2)) and held_count > 0
+	if same_tier:
+		var total := _money_text(int(round(per_day * MONEY_SCALE)) * (held_count + 1))
+		return "建成后 %d 座，共 %s/日" % [held_count + 1, total]
+	if held_count > 0:
+		# 升级：旧档被新档替换，维护按新档单份算，不是两份相加。
+		return "升级后 %s/日" % one
+	return "建成后 %s/日" % one
+
+
+## 官营建筑的维护成本。目录的 `upkeep` 是「每日货币单位」（原生
+## `money_from_units` 乘 MONEY_SCALE 存进 `upkeep_per_day`），所以这里只做单位
+## 换算与文案，不乘 5。
+##
+## 原生 `run_wages_and_upkeep` 每 5 日扣一次 `upkeep_per_day * 5`，折成日均仍是
+## `upkeep_per_day`；提示卡写「每日」是因为玩家的决策周期是天，结算节奏属于引擎
+## 细节（写「每 5 日」会被读成另一项成本）。
+##
+## 兵营在原生侧按 `barracks_count[tier] * upkeep_per_day` 逐档累加，所以多座时
+## 必须把合计一起写出来：只报单价会让玩家拿一座的钱去做多座的决策。
+func _state_building_upkeep_text(building_row: Dictionary,
+		count: int = 1, existing: bool = true) -> String:
+	var per_day := maxf(0.0, float(building_row.get("upkeep", 0.0)))
+	if per_day <= 0.0:
+		return ""
+	var one := _money_text(int(round(per_day * MONEY_SCALE)))
+	var held := maxi(1, count)
+	if held <= 1:
+		return "%s/日" % one
+	var total := _money_text(int(round(per_day * MONEY_SCALE)) * held)
+	# 「现有」只在描述当前状态时用；说建成后的数字时不能拿「现有」去修饰未落成的那座。
+	if existing:
+		return "%s/日（现有 %d 座，共 %s/日）" % [one, held, total]
+	return "%s × %d 座 = %s/日" % [one, held, total]
+
+
+func _empty_state_building_cost() -> Dictionary:
+	return {
+		"materials": [],
+		"materials_text": "",
+		"build_days": 0,
+		"days_text": "",
+		"cash_required": 0,
+		"cash_text": "",
+		"reason_text": "",
+		"blocked": false,
+		"upkeep_text": "",
+		"upkeep_after_text": "",
+	}
+
+
+## 行内成本总览：最多三项建材，超出以「等 N 项」收尾；没有建材写明「无需建材」。
+## 与营造目录的 `_construction_materials_text` 保持同一套排版。
+## 注意：只有**行内**接受这个截断。hover 提示卡在 `_state_building_cost_tooltip()` 里
+## 自己逐项遍历 `materials`，不复用这份文本——两处各取所需，不要合并。
+func _state_building_materials_text(materials: Array) -> String:
+	var parts := PackedStringArray()
+	for raw in materials:
+		if parts.size() >= 3:
+			break
+		var material: Dictionary = raw
+		parts.append("%s %s" % [String(material.get("name", "建材")),
+			_goods_scaled(int(material.get("required", 0)))])
+	if parts.is_empty():
+		return "无需建材"
+	var text := " · ".join(parts)
+	if materials.size() > parts.size():
+		text += " 等 %d 项" % materials.size()
+	return text
+
+
+## 提示卡正文：先写这一座给什么，再写吃多少、维护多少、卡在哪。
+## 段序与营造提示卡一致，但建材必须**逐项列全**：行内只放得下三项，
+## 提示卡是玩家核对「到底要哪几种料」的唯一落点，不能复用行内的截断文本。
+func _state_building_cost_tooltip(display_name: String, effect: String,
+		cost: Dictionary) -> String:
+	var lines := PackedStringArray()
+	if not display_name.is_empty():
+		lines.append(display_name)
+	if not effect.is_empty():
+		lines.append("效果：%s" % effect)
+	var materials: Array = cost.get("materials", [])
+	if materials.is_empty():
+		lines.append("建材：无需建材")
+	# 每一种建材都单独一行：公布「国库多少、市购多少、还缺多少」，缺料时才看得懂
+	# 是缺哪一种。逐项列全是这段代码存在的理由，不要为了行数改成汇总。
+	var total := 0
+	var shortage := 0
+	for raw in materials:
+		var material: Dictionary = raw
+		var required := int(material.get("required", 0))
+		var treasury := int(material.get("treasury", 0))
+		var market := int(material.get("market", 0))
+		var missing := maxi(0, required - treasury - market)
+		total += required
+		shortage += missing
+		var line := "建材：%s %s（国库 %s" % [
+			String(material.get("name", "建材")),
+			_goods_scaled(required),
+			_goods_scaled(treasury)]
+		if market > 0:
+			line += " / 市购 %s" % _goods_scaled(market)
+		if missing > 0:
+			line += " / 缺 %s" % _goods_scaled(missing)
+		lines.append(line + "）")
+	if materials.size() > 1:
+		var summary := "建材合计：%s" % _goods_scaled(total)
+		if shortage > 0:
+			summary += "，缺 %s" % _goods_scaled(shortage)
+		lines.append(summary)
+	var cash_text := String(cost.get("cash_text", ""))
+	if not cash_text.is_empty():
+		lines.append("现金：%s（一次性）" % cash_text)
+	var upkeep_text := String(cost.get("upkeep_text", ""))
+	if not upkeep_text.is_empty():
+		lines.append("维护：%s" % upkeep_text)
+	var after_text := String(cost.get("upkeep_after_text", ""))
+	if not after_text.is_empty() and after_text != upkeep_text:
+		lines.append("建成后维护：%s" % after_text)
+	var days_text := String(cost.get("days_text", ""))
+	if not days_text.is_empty():
+		lines.append("工期：%s" % days_text)
+	var reason := String(cost.get("reason_text", ""))
+	if not reason.is_empty():
+		lines.append("卡点：%s" % reason)
+	return "\n".join(lines)
+
+
+## 国库逐物资现货（GOODS_SCALE）。读不到时返回空表：成本会显示成全部市购，
+## 比编造一个「国库充足」的假象安全。
+func _treasury_good_stock() -> Dictionary:
+	var out := {}
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return out
+	var facade = _generator.get_country_facade()
+	if facade == null or not facade.has_method("treasury_snapshot"):
+		return out
+	var handle := _player_country_handle()
+	if handle <= 0:
+		return out
+	var treasury: Dictionary = facade.treasury_snapshot(handle)
+	var ids: PackedStringArray = treasury.get("good_ids", PackedStringArray())
+	var quantities: PackedInt64Array = treasury.get(
+		"quantities", PackedInt64Array())
+	for index in range(mini(ids.size(), quantities.size())):
+		out[String(ids[index])] = int(quantities[index])
+	return out
+
+
+## 国库现金（MONEY_SCALE 子单位）。读不到时返回 -1：调用方据此跳过资金卡点判断，
+## 而不是把「未知」当成「没钱」把按钮锁死。
+func _country_cash() -> int:
+	if _generator == null or not _generator.has_method("get_country_facade"):
+		return -1
+	var facade = _generator.get_country_facade()
+	if facade == null or not facade.has_method("treasury_snapshot"):
+		return -1
+	var handle := _player_country_handle()
+	if handle <= 0:
+		return -1
+	var treasury: Dictionary = facade.treasury_snapshot(handle)
+	if not treasury.has("cash"):
+		return -1
+	return int(treasury.get("cash", 0))
 
 
 ## 一类角色的目录行，按 (档位, 容量) 升序：末尾即"最高档、同档里容量最大"。
@@ -5488,9 +5882,11 @@ func build_construction_entry(cell_idx: int) -> Dictionary:
 		entry["hint"] = "正在读取营造目录…"
 		return entry
 	var count := _construction_catalog_count(snapshot)
-	entry["count"] = count
-	entry["hint"] = "目录 %d 项 · 按部门浏览，国库物资优先" % count \
-		if count > 0 else "当前时代没有可营造的项目"
+	# 军事部门也是这个窗口的一部分：只数民用会给玩家一个偏小的目录读数。
+	var military_count := _construction_military_count()
+	entry["count"] = count + military_count
+	entry["hint"] = "目录 %d 项 · 按部门浏览，国库物资优先" % (count + military_count) \
+		if count + military_count > 0 else "当前时代没有可营造的项目"
 	return entry
 
 
@@ -5563,7 +5959,8 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 			or sector_ids.is_empty():
 		model["message"] = "营造目录暂不可读，稍后再试。"
 		return model
-	# 民用目录 = 科技可用 + 非官营。官营建筑只能从军事页的建造入口下达。
+	# 民用目录 = 科技可用 + 非官营。官营建筑不进经济部门循环（经济目录没有
+	# `state` 建筑类型），改由下面单独的军事部门列出，数据来自军事目录。
 	var kinds: PackedInt32Array = snapshot.get("building_kinds", PackedInt32Array())
 	var page_availability := technology.duplicate()
 	var counts := {}
@@ -5579,21 +5976,38 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 			page_availability[type_id] = 0
 			continue
 		counts[sector_name] = int(counts.get(sector_name, 0)) + 1
+	# 军事部门：条目来自军事目录而非经济目录，所以只取规模做部门计数。
+	# 真正切到这一页时才组行（组行要读国库/市场快照，不能白算）。
+	var military_total := _construction_military_count()
+	if military_total > 0:
+		counts[CONSTRUCTION_MILITARY_SECTOR] = military_total
+	# 部门索引签按「民用部门 + 军事部门」给出；军事部门排在最后。
+	var page_sector_ids := sector_ids.duplicate()
+	if military_total > 0:
+		page_sector_ids.append(CONSTRUCTION_MILITARY_SECTOR)
 	var resolved_sector := sector_id
-	if resolved_sector.is_empty() or int(counts.get(resolved_sector, 0)) <= 0:
+	if resolved_sector == CONSTRUCTION_MILITARY_SECTOR:
+		if military_total <= 0:
+			resolved_sector = ""
+	elif resolved_sector.is_empty() \
+			or int(counts.get(resolved_sector, 0)) <= 0:
 		resolved_sector = ""
+	if resolved_sector.is_empty():
 		for candidate in sector_ids:
 			if int(counts.get(String(candidate), 0)) > 0:
 				resolved_sector = String(candidate)
 				break
 	model["sectors"] = _construction_sector_entries(
-		sector_ids, counts, resolved_sector)
+		page_sector_ids, counts, resolved_sector)
 	if resolved_sector.is_empty():
 		model["message"] = "当前时代没有可营造的项目。"
 		return model
 	model["sector"] = resolved_sector
 	model["query"]["sector"] = resolved_sector
 	model["sector_total"] = int(counts.get(resolved_sector, 0))
+	if resolved_sector == CONSTRUCTION_MILITARY_SECTOR:
+		return _construction_military_page(model,
+			_construction_military_rows(cell_idx, search), sort, requested_offset)
 	var sector_index := sector_ids.find(resolved_sector)
 	var candidates: PackedInt32Array = economy.construction_candidates(
 		search, page_availability, sector_index)
@@ -5674,6 +6088,251 @@ func _construction_catalog_count(snapshot: Dictionary) -> int:
 			continue
 		count += 1
 	return count
+
+
+## 军事目录规模：只读缓存里的行数，不读国库/市场、不算成本。部门计数与
+## 营造入口的「目录 N 项」用它，避免为了一个数字把 17 座建筑的成本全算一遍。
+func _construction_military_count() -> int:
+	var facade = _military_facade()
+	if facade == null:
+		return 0
+	return (_military_catalog_cache(facade).get("buildings", []) as Array).size()
+
+
+## 营造窗口的军事部门：一次性把军事目录的 `state_buildings`（17 座）组成本窗口
+## 的行。数据源与地块档案「军事」页同源（MilitaryCatalog），命令也走同一条
+## `state.build`：这里不发明新的结算通道，只把「能建什么」摊开成一个可浏览的目录。
+##
+## 与经济部门一样的判定链：官方建筑与普通建筑都用 `construction_quotes` 报价，
+## 卡点顺序同为「科技 → 施工位 → 该档已建成 → 建材/现金」。官营建筑的造价来自
+## 库里经济目录的同类型定义（`COMMAND_TREASURY_SPONSORED_BUILD` 会真正扣的那
+## 笔钱），不再用 v1 的建材折现估计（见 docs/ui/military-cell-tab.md §2.1）。
+func _construction_military_rows(cell_idx: int, search: String) -> Array:
+	var facade = _military_facade()
+	if facade == null:
+		return []
+	var country = _generator.get_country_facade() if _generator != null \
+		and _generator.has_method("get_country_facade") else null
+	var snapshot: Dictionary = facade.cell_snapshot(cell_idx,
+		_player_country_handle())
+	if not bool(snapshot.get("ok", false)):
+		return []
+	var catalog := _military_catalog_cache(facade)
+	var catalog_rows: Array = catalog.get("buildings", [])
+	if catalog_rows.is_empty():
+		return []
+	var researched := player_technology_ids()
+	var gate_known := _technology_ids_resolved
+	var can_build := _military_can_build(snapshot, _country_summary(cell_idx))
+	var cash := _country_cash() if can_build else -1
+	# 库存与市场各读一次：17 座建筑共用，避免逐行重复拉国库与市场快照。
+	var treasury_stock := _treasury_good_stock() if can_build else {}
+	var market_stock := _construction_local_stock(_market_snapshot(cell_idx)) \
+		if can_build else {}
+	var occupied := _construction_military_occupied(catalog_rows, snapshot)
+	var query := search.strip_edges().to_lower()
+	var rows: Array = []
+	for index in range(catalog_rows.size()):
+		var row: Dictionary = catalog_rows[index]
+		var name := String(row.get("name", row.get("id", ""))).strip_edges()
+		if not query.is_empty() and name.to_lower().find(query) < 0 \
+				and String(row.get("id", "")).to_lower().find(query) < 0:
+			continue
+		rows.append(_construction_military_row(facade, index, row, snapshot,
+			researched, gate_known, can_build, cash, cell_idx, occupied,
+			treasury_stock, market_stock))
+	return rows
+
+
+## 这一格已建成的档位：兵营按档累加（`barracks_count[tier]` 是计数数组），
+## 城防/军校在原生侧只保留最高档（military_core.cpp:3287 用 std::max 覆盖）。
+## 因此「该档已建成」只能用来拦城防/军校：兵营同档再建是有效操作，兵额会叠加。
+func _construction_military_occupied(catalog_rows: Array, snapshot: Dictionary) -> Dictionary:
+	var occupied := {"barracks": {}, "fortification": {}, "war_college": {}}
+	var tiers = snapshot.get("barracks_tiers", null)
+	if tiers is PackedInt32Array:
+		for tier_idx in range((tiers as PackedInt32Array).size()):
+			if int((tiers as PackedInt32Array)[tier_idx]) > 0:
+				(occupied["barracks"] as Dictionary)[tier_idx] = true
+	for role_name in ["fortification", "war_college"]:
+		var tier := int(snapshot.get("fort_tier" if role_name == "fortification"
+			else "college_tier", -1))
+		if tier >= 0:
+			(occupied[role_name] as Dictionary)[tier] = true
+	return occupied
+
+
+## 军事部门的一行：与经济部门同字段（`building_id` / `eligible` / `reason_text` /
+## `materials_text` / `cash_required` / `tooltip`），好让同一个行控件画两种条目。
+## 额外带 `military_index`（原生 `state.build` 的 `building` 参数）与 `role_id`。
+func _construction_military_row(facade, index: int, row: Dictionary,
+		snapshot: Dictionary, researched: PackedStringArray, gate_known: bool,
+		can_build: bool, cash: int, cell_idx: int, occupied: Dictionary,
+		treasury_stock: Dictionary, market_stock: Dictionary) -> Dictionary:
+	var role := int(row.get("role", -1))
+	var role_id := String((STATE_BUILDING_ROLES[clampi(role, 0,
+		STATE_BUILDING_ROLES.size() - 1)] as Dictionary).get("id", ""))
+	var role_label := String((STATE_BUILDING_ROLES[clampi(role, 0,
+		STATE_BUILDING_ROLES.size() - 1)] as Dictionary).get("label", ""))
+	var building_id := String(row.get("id", ""))
+	var tier := int(row.get("tier", -1))
+	var name := String(row.get("name", building_id)).strip_edges()
+	if name.is_empty():
+		name = role_label
+	var disrepair := bool(snapshot.get("disrepair", false))
+	var effect := _state_building_effect(role_id, row, disrepair)
+	var cost := _empty_state_building_cost()
+	if can_build:
+		cost = _state_building_cost(facade, index, row, cash, cell_idx,
+			treasury_stock, market_stock)
+	var unlocked := _state_building_unlocked(row, researched, gate_known)
+	var pending := _state_building_pending_by_index(snapshot, index)
+	# 可建判定与地块档案那一行同序：科技 -> 施工位 -> 该档已存在 -> 建材/现金。
+	# 顺序决定玩家先看到「差科技」而不是「缺钱」，因为科技是更硬的闸门。
+	# 兵营例外：原生 `barracks_count[tier]` 是计数数组，同档再建会叠加兵额。
+	var reason := ""
+	var eligible := false
+	if not can_build:
+		reason = _construction_military_block_text(snapshot)
+	elif not unlocked:
+		reason = "科技未解锁"
+	elif pending >= 0:
+		reason = "在建 · 剩 %d 日" % pending
+	elif role_id != "barracks" \
+			and bool((occupied.get(role_id, {}) as Dictionary).get(tier, false)):
+		reason = "该档已建成"
+	elif bool(cost.get("blocked", false)):
+		reason = String(cost.get("reason_text", "暂不可营造"))
+	else:
+		eligible = true
+	var cash_required := int(cost.get("cash_required", 0))
+	var tooltip_lines := PackedStringArray()
+	tooltip_lines.append(name)
+	tooltip_lines.append("类别：%s · %d 档" % [role_label, tier])
+	if not effect.is_empty():
+		tooltip_lines.append("效果：%s" % effect)
+	var materials_text := String(cost.get("materials_text", ""))
+	if can_build:
+		for raw in (cost.get("materials", []) as Array):
+			var material: Dictionary = raw
+			var line := "建材：%s %s（国库 %s" % [
+				String(material.get("name", "建材")),
+				_goods_scaled(int(material.get("required", 0))),
+				_goods_scaled(int(material.get("treasury", 0)))]
+			var market := int(material.get("market", 0))
+			if market > 0:
+				line += " / 市购 %s" % _goods_scaled(market)
+			tooltip_lines.append(line + "）")
+		if (cost.get("materials", []) as Array).is_empty():
+			tooltip_lines.append("建材：无需建材")
+		var days_text := String(cost.get("days_text", ""))
+		if not days_text.is_empty():
+			tooltip_lines.append("工期：%s" % days_text)
+		var cash_text := String(cost.get("cash_text", ""))
+		if not cash_text.is_empty():
+			tooltip_lines.append("现金：%s（一次性）" % cash_text)
+		if not reason.is_empty():
+			tooltip_lines.append("卡点：%s" % reason)
+	else:
+		tooltip_lines.append("卡点：%s" % reason)
+	return {
+		"building_id": building_id,
+		"military_index": index,
+		"role_id": role_id,
+		"role_label": role_label,
+		"tier": tier,
+		"name": name,
+		"icon": String(IconCatalog.military_building_semantic(building_id, role_id, tier)),
+		"eligible": eligible,
+		"blocked": not eligible,
+		"reason_code": String(cost.get("reason_code", "")),
+		"reason_text": "" if eligible else reason,
+		"materials_text": materials_text if can_build else "",
+		"cash_required": cash_required,
+		"cash_text": _money_text(cash_required) if cash_required > 0 else "",
+		"market_used": 0,
+		"tooltip": "\n".join(tooltip_lines),
+	}
+
+
+## 不可建的具体原因：驻军格已被外人占领与「不是自家地」对玩家是两件事，
+## 而「读不到归属」又不该被说成「不是你的地」。三者分开写。
+func _construction_military_block_text(snapshot: Dictionary) -> String:
+	var owner_slot := int(snapshot.get("owner_slot", -1))
+	if owner_slot < 0:
+		return "无主之地"
+	if int(snapshot.get("controller_slot", -1)) != owner_slot:
+		return "领土被占领"
+	return "非本国领土"
+
+
+## 该建筑是否正在这一格的施工位里（原生 3 个施工位），返回剩余天数，-1 = 不在建。
+func _state_building_pending_by_index(snapshot: Dictionary, index: int) -> int:
+	var built = snapshot.get("construction_buildings", null)
+	if not built is PackedInt32Array:
+		return -1
+	var done = snapshot.get("construction_done_days", null)
+	var done_days: PackedInt32Array = done if done is PackedInt32Array \
+		else PackedInt32Array()
+	var today := _current_sample_day()
+	for slot in range((built as PackedInt32Array).size()):
+		if int((built as PackedInt32Array)[slot]) != index:
+			continue
+		if slot < done_days.size() and int(done_days[slot]) >= 0:
+			return maxi(0, int(done_days[slot]) - today)
+		return 0
+	return -1
+
+
+## 军事部门的一页：排序（可建优先）+ 分页，字段与经济部门完全一致。
+func _construction_military_page(model: Dictionary, rows: Array,
+		sort: String, requested_offset: int) -> Dictionary:
+	var sorted_rows := rows.duplicate()
+	sorted_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _construction_military_before(a, b, sort))
+	var total := sorted_rows.size()
+	var safe_offset := requested_offset
+	if safe_offset >= total:
+		safe_offset = 0
+	model["offset"] = safe_offset
+	model["query"]["offset"] = safe_offset
+	model["total"] = total
+	model["page_label"] = _construction_page_label(safe_offset,
+		mini(CONSTRUCTION_PAGE_SIZE, total - safe_offset), total)
+	model["items"] = sorted_rows.slice(safe_offset,
+		mini(total, safe_offset + CONSTRUCTION_PAGE_SIZE))
+	model["available"] = true
+	model["message"] = "" if not sorted_rows.is_empty() else "没有匹配的军事建筑。"
+	return model
+
+
+## 军事部门的排序：与经济部门同口径（可建优先），档位是这里的第二主键——
+## 官营建筑是逐档升级的一条线，低档在前才读得通。
+static func _construction_military_before(a: Dictionary, b: Dictionary,
+		sort: String) -> bool:
+	var a_eligible := bool(a.get("eligible", false))
+	var b_eligible := bool(b.get("eligible", false))
+	if a_eligible != b_eligible:
+		return a_eligible
+	if sort == "cost":
+		var a_cash := int(a.get("cash_required", 0))
+		var b_cash := int(b.get("cash_required", 0))
+		if a_cash != b_cash:
+			return a_cash < b_cash
+	elif sort == "newest":
+		var a_tier := int(a.get("tier", 0))
+		var b_tier := int(b.get("tier", 0))
+		if a_tier != b_tier:
+			return a_tier > b_tier
+	var a_role := String(a.get("role_id", ""))
+	var b_role := String(b.get("role_id", ""))
+	if a_role != b_role:
+		return a_role < b_role
+	var a_order := int(a.get("tier", 0))
+	var b_order := int(b.get("tier", 0))
+	if a_order != b_order:
+		return a_order < b_order
+	return String(a.get("name", "")) < String(b.get("name", ""))
 
 
 ## 建筑快照只有「按已提交日」的语义：同格同日复用一份，避免建筑页签与

@@ -96,6 +96,7 @@ func _test_market_funded_build(catalog: Dictionary, profile: Dictionary) -> void
 		return
 	var submit := _submit(ext, int(country.country_handle), candidate, 701)
 	_expect("treasury-sponsored build queues", bool(submit.get("ok", false)))
+	var buildings_before: Dictionary = ext.get_building_cell_snapshot(0)
 	var report := _run_day(ext, 1)
 	var receipts: Array = ext.get_construction_command_receipts(0, 8).get(
 		"receipts", [])
@@ -106,9 +107,13 @@ func _test_market_funded_build(catalog: Dictionary, profile: Dictionary) -> void
 		int(receipt.get("sequence", 0)) == 701 and
 		int(receipt.get("cash_paid", 0)) > 0 and
 		int(receipt.get("market_goods_used", 0)) > 0)
-	_expect("successful command leaves one pending or completed building",
-		_sum_i64(buildings.get("construction_counts", PackedInt64Array())) +
-		_sum_i64(buildings.get("group_counts", PackedInt64Array())) == 1)
+	# The fixture also settles its own starter buildings during the first day, so
+	# the contract is the quoted type's delta: exactly one more pending-or-built
+	# group of that building after the formal command settles.
+	_expect("successful command adds one pending or completed quoted building",
+		int(receipt.get("type_id", -1)) == candidate and
+		_type_total(buildings, candidate) ==
+			_type_total(buildings_before, candidate) + 1)
 	_expect("funded construction preserves economy conservation",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -328,18 +333,13 @@ func _cash_blocked_candidate(ext: Object, catalog: Dictionary,
 	return -1
 
 
+## Production ingress: the legacy batch (`submit_economy_commands`) is
+## fail-closed while StageOps owns production, so a formal build request must
+## ride the dedicated boundary that queues it on the next epoch.
 func _submit(ext: Object, country_handle: int, type_id: int,
 		sequence: int) -> Dictionary:
-	return ext.submit_economy_commands({
-		"opcodes": PackedInt32Array([16]),
-		"effective_days": PackedInt64Array([5]),
-		"sequences": PackedInt64Array([sequence]),
-		"target_handles": PackedInt64Array([country_handle]),
-		"i32_0": PackedInt32Array([0]),
-		"i32_1": PackedInt32Array([type_id]),
-		"i64_0": PackedInt64Array([1]),
-		"i64_1": PackedInt64Array([1]),
-	})
+	return ext.queue_treasury_sponsored_build(
+		country_handle, 0, type_id, 5, sequence)
 
 
 func _run_day(ext: Object, day: int) -> Dictionary:
@@ -386,6 +386,23 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	var total := 0
 	for value in values:
 		total += int(value)
+	return total
+
+
+## Pending construction and committed groups are both indexed by building type,
+## so one quoted type can be counted without touching any other starter group.
+func _type_total(snapshot: Dictionary, type_id: int) -> int:
+	if type_id < 0:
+		return 0
+	var total := 0
+	var pending: PackedInt64Array = snapshot.get(
+		"construction_counts", PackedInt64Array())
+	if type_id < pending.size():
+		total += int(pending[type_id])
+	var built: PackedInt64Array = snapshot.get(
+		"building_counts_by_type", PackedInt64Array())
+	if type_id < built.size():
+		total += int(built[type_id])
 	return total
 
 

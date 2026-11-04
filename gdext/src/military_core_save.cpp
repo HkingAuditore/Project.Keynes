@@ -534,6 +534,11 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     w.u32((uint32_t)_cell_states.size());
     for (const MilitaryCellState &st : _cell_states) {
         w.i32(st.cell);
+        // Derived cache (requirement 6.1): the economy building groups are the
+        // count of record, but the tuple is still written so a restored save
+        // reproduces the same day-0 cache and the same state hash. The first
+        // `step_day` after the restore rebuilds it from the ledger anyway, and
+        // any difference is reported by `report().state_cache_repairs`.
         for (int32_t t = 0; t < 8; ++t) w.i32(st.barracks_count[t]);
         w.i32(st.fort_tier);
         w.i32(st.college_tier);
@@ -620,7 +625,11 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         return false;
     }
     const uint32_t version = r.u32();
-    if (version != PKMI_VERSION) {
+    // v1 streams are legacy: their barracks/fort/college fields were cumulative
+    // and are folded into the economy ledger by the caller (part 2). We accept
+    // them here so an older save always loads; the caller sees `version` via
+    // the decode result and triggers the migration.
+    if (version != 1u && version != PKMI_VERSION) {
         error = "pkmi_bad_version";
         return false;
     }
@@ -1155,6 +1164,9 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 for (uint32_t i = 0; i < n; ++i) {
                     MilitaryCellState st;
                     st.cell = r.i32();
+                    // Derived cache: restored verbatim for hash parity, then
+                    // rebuilt from the economy ledger on the first step (see the
+                    // writer above and `refresh_state_building_cache`).
                     for (int32_t t = 0; t < 8; ++t) st.barracks_count[t] = r.i32();
                     st.fort_tier = r.i32();
                     st.college_tier = r.i32();
@@ -1373,7 +1385,10 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
         error = "pkmi_bad_magic";
         return false;
     }
-    if (head.u32() != PKMI_VERSION) {
+    const uint32_t restored_pkmi_version = head.u32();
+    // v1 is the pre-ledger stream (cumulative barracks/fort/college cache);
+    // v2 folds through the economy ledger after restore. Both load.
+    if (restored_pkmi_version != 1u && restored_pkmi_version != PKMI_VERSION) {
         error = "pkmi_bad_version";
         return false;
     }
@@ -1478,8 +1493,12 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _report = MilitaryReport();
     _report.day = _last_day;
     _attrition_intents.clear();
-    pending_spend.clear();
     _last_digest = MilitaryWorldDigest();
+    // The previous-day ledger is a derived signal for the divergence probe, not
+    // state: after a restore there is no "yesterday" to compare against, so the
+    // first rebuild must not report the whole map as repaired.
+    _state_ledger_prev.clear();
+    _state_ledger_prev_valid = false;
     _country_annual_revenue.clear();
     _war_intents.clear();
     _event_counter_control = 0;

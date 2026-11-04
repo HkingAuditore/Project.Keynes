@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Derived-layer merge contract (plan 22 §5.1 / §5.5).
 ##
 ## The derived contribution must enter the SAME formula as every other

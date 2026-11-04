@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Scope enumeration union (plan 22 §8.5).
 ##
 ## `refresh_city_modifier_factors` and `refresh_city_output_modifier_factors`

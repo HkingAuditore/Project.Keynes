@@ -226,7 +226,20 @@ public:
     // 58: the fiscal section also stores the non-tax research procurement cash
     //     outflow per country, so 国库支出 survives save/restore instead of
     //     reading zero for the batch it was paid in.
-    static constexpr int32_t SCHEMA_VERSION = 59;
+    // 59: the fiscal section also stores the non-tax construction cash outflow
+    //     per country so treasury-sponsored state building charges survive.
+    // 60: state buildings (building_kind = "state") are part of the building
+    //     ledger; a v59 stream restores them as empty lanes and the military
+    //     side folds its cumulative barracks/fort/college cache into the
+    //     ledger on the first step (see military_core_save.cpp).
+    static constexpr int32_t SCHEMA_VERSION = 60;
+    // Dense order of the compiled `building_economic_sectors` column. It mirrors
+    // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
+    // manufacturing, energy, knowledge, then the appended `military` sector. The
+    // order is a data contract, so append only, never reorder.
+    static constexpr int32_t CIVIL_SECTOR_COUNT = 5;
+    static constexpr int32_t MILITARY_SECTOR_ID = CIVIL_SECTOR_COUNT;
+    static constexpr int32_t BUILDING_SECTOR_COUNT = CIVIL_SECTOR_COUNT + 1;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -377,6 +390,14 @@ public:
         // structural command is needed; deduplicated by `sequence` like 24/30-33.
         COMMAND_ARMY_LANE_PAY = 34,
         // END army personnel lane
+        // 35: treasury-sponsored DEMOLISH of a state lot (dense 3 only). The
+        // mirror of 16 on the removal side: a state building group is owned by
+        // the reserved state owner signature, never by a live cohort, so the
+        // ordinary COMMAND_DEMOLISH (11) - which resolves its owner from a
+        // cohort handle - can never reach it. Payload shape matches 16:
+        //   i32_0 = cell, i32_1 = type_id, i64_0 = count,
+        //   i64_1 = OWNERSHIP_TREASURY_SPONSORED_PRIVATE, target_handle = country.
+        COMMAND_TREASURY_SPONSORED_DEMOLISH = 35,
     };
 
     static constexpr uint16_t FAMILY_FLAG_SPLIT_RETAIN_ONLY = 1u;
@@ -1054,6 +1075,20 @@ public:
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
                                                      int32_t limit) const;
+    // Player-facing treasury construction ingress. `submit_commands` is
+    // fail-closed while StageOps owns production, so a formal build request
+    // reaches the epoch command queue through this boundary instead (same
+    // contract as the canal / family-colonization lanes).
+    godot::Dictionary queue_treasury_sponsored_build(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t effective_day, int64_t sequence, bool queue_for_worker);
+    // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
+    // economy ledger first, and the military bookkeeping command is only
+    // forwarded afterwards (requirement 6.5).
+    godot::Dictionary queue_treasury_sponsored_demolish(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t count, int64_t effective_day, int64_t sequence,
+        bool queue_for_worker);
     godot::Dictionary canal_route_quote(
         int64_t country_handle, int32_t start_cell, int32_t end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -1110,7 +1145,8 @@ public:
     // table that the Economy owner thread applies at the next epoch begin.
     godot::Dictionary set_country_procurement_policy(
         int64_t country_handle, bool enabled, int32_t treasury_share_bp,
-        int32_t research_share_bp, int64_t effective_day, int64_t sequence);
+        int32_t research_share_bp, int64_t effective_day, int64_t sequence,
+        int32_t era_share_bp = -1, int32_t colonization_share_bp = -1);
     godot::Dictionary set_era_procurement_target(
         int64_t country_handle, bool active,
         const godot::PackedInt32Array &good_indices,
@@ -1173,6 +1209,13 @@ public:
     // Explicit one-shot PKEC migrate helper: arms restore and clears into a
     // candidate scratch. Production coordinator/facade must not call this.
     godot::Dictionary begin_restore_pkec_migrate();
+    // Legacy state-buildings fold (PKMI v1 saves counted barracks/fort/college
+    // cumulatively on the military side). Folding them into the kind-3 ledger
+    // makes the economy side the single authority. Bookkeeping only: charges no
+    // cash or goods, and never invents a lot that has no economy profile.
+    // Repeated calls are idempotent (an existing (cell,type) group accumulates).
+    godot::Dictionary migrate_legacy_state_buildings(
+        const godot::Array &states);
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.
@@ -5585,6 +5628,11 @@ private:
         bool policy_enabled = false;
         int32_t treasury_share_bp = 0;
         int32_t research_share_bp = 0;
+        // Shares of other_daily for the two non-research channels. -1 keeps
+        // the legacy 50/50 split when both channels have demand, 0 pauses the
+        // channel. research + era + colonization stays <= 10000 by contract.
+        int32_t era_share_bp = -1;
+        int32_t colonization_share_bp = -1;
         bool era_active = false;
         std::vector<EraProcurementLine> era_goods;
         // Frozen at epoch begin (MONEY_SCALE per day).
@@ -5610,6 +5658,10 @@ private:
         bool flag = false;
         int32_t treasury_share_bp = 0;
         int32_t research_share_bp = 0;
+        // -1 leaves the channel share untouched (the treasury page only owns
+        // the treasury/research pair).
+        int32_t era_share_bp = -1;
+        int32_t colonization_share_bp = -1;
         std::vector<int32_t> goods;
         std::vector<int64_t> quantities;
         int64_t effective_day = 0;
@@ -9489,6 +9541,23 @@ public:
         std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
     };
     void military_read_cell_view(MilitaryCellView &out, int32_t good_count = 0) const;
+    // State (kind 3) building groups, sparse, sorted by cell then type. This
+    // is the single authoritative ledger of how many military buildings exist:
+    // the military core keeps no independent tally, it refreshes its
+    // `barracks_count` / `fort_tier` / `college_tier` cache from this read
+    // every day (requirement 6.1-6.3). `units` is a plain building count, the
+    // same unit `demolish` decrements; `state_role` mirrors the catalog role so
+    // the caller does not have to re-derive barracks / fortification / college.
+    //
+    // Returns false when the answer is not authoritative (runtime not
+    // bootstrapped, or a save/restore owns the ledger right now). A false must
+    // be read as "the ledger did not answer", never as "there are no state
+    // buildings": the military side keeps the cache its save restored instead
+    // of zeroing it. The out vectors are cleared either way.
+    bool military_read_state_buildings(std::vector<int32_t> &out_cells,
+                                       std::vector<int32_t> &out_type_ids,
+                                       std::vector<int32_t> &out_state_roles,
+                                       std::vector<int64_t> &out_units) const;
     // Market sellable stock and retail price for one good across every live
     // market, sparse. `sellable` (GOODS_SCALE) already excludes the merchant
     // operating floor; `price` is MONEY_SCALE per 1.0 good.
@@ -10174,6 +10243,8 @@ private:
 
     bool apply_treasury_sponsored_build_command(const Command &cmd,
                                                  std::string &error);
+    bool apply_treasury_sponsored_demolish_command(const Command &cmd,
+                                                    std::string &error);
     bool apply_canal_build_command(const Command &cmd, std::string &error);
     bool process_due_canal_projects(int64_t day, std::string &error);
     bool plan_canal_route(uint64_t country_handle, int32_t start_cell,

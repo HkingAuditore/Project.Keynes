@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Slice-budget probe (plan 22 §14.3 "main-thread derived native slice <= 1 ms").
 ##
 ## M1-5's micro-benchmark produced per-covered-cell constants, but a constant is

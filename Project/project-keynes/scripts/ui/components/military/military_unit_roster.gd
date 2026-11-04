@@ -12,14 +12,16 @@ extends DossierChart
 
 signal share_step(unit_id: String, delta_bp: int)
 
-const CARD_HEIGHT := 96.0
+const CARD_HEIGHT := 104.0
 const MIN_CARD_WIDTH := 292.0
 const MAX_COLUMNS := 3
 const GAP := 8.0
 const PAD := 10.0
 const ICON := 32.0
-const ACTION := 22.0
-const ACTION_GAP := 4.0
+## ± 是这张卡上唯一的编制入口，22px 在 125% 缩放的 1080p 上只有手指盖大小，
+## 玩家会以为整张卡不可点，所以给到 30px 并画出明确的按钮底。
+const ACTION := 30.0
+const ACTION_GAP := 6.0
 const EMPTY_HEIGHT := 48.0
 const STEP_BP := 500
 
@@ -37,6 +39,8 @@ var _rows: Array = []
 var _rects: Array = []
 var _hover := -1
 var _hover_action := ""
+## 悬停所在的禁用按钮 id（`""` = 没停在禁用按钮上）。
+var _hover_disabled := ""
 
 
 func _init() -> void:
@@ -85,9 +89,10 @@ func _notification(what: int) -> void:
 		NOTIFICATION_RESIZED:
 			_relayout()
 		NOTIFICATION_MOUSE_EXIT:
-			if _hover >= 0 or not _hover_action.is_empty():
+			if _hover >= 0 or not _hover_action.is_empty() or not _hover_disabled.is_empty():
 				_hover = -1
 				_hover_action = ""
+				_hover_disabled = ""
 				tooltip_text = ""
 				queue_redraw()
 
@@ -137,14 +142,44 @@ func _update_hover(point: Vector2) -> void:
 			hit = index
 			action = _action_at(index, point)
 			break
-	if hit == _hover and action == _hover_action:
+	# 禁用按钮也算「悬停状态」的一部分：否则在同一张卡里横向移到禁用的 + 上时
+	# hit 没变，下面的早退会把原因吞掉。
+	var disabled := ""
+	if hit >= 0 and action.is_empty():
+		disabled = _disabled_action_at(hit, point)
+	if hit == _hover and action == _hover_action and disabled == _hover_disabled:
 		return
 	_hover = hit
 	_hover_action = action
-	tooltip_text = _tooltip(_rows[hit], action) if hit >= 0 else ""
+	_hover_disabled = disabled
+	if hit < 0:
+		tooltip_text = ""
+	elif not disabled.is_empty():
+		tooltip_text = _disabled_reason(_rows[hit], disabled)
+	else:
+		tooltip_text = _tooltip(_rows[hit], action)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
 		if hit >= 0 and not action.is_empty() else Control.CURSOR_ARROW
 	queue_redraw()
+
+
+## 落在按钮矩形内但当前禁用时返回按钮 id（`_action_at` 只回报可点的那些）。
+func _disabled_action_at(index: int, point: Vector2) -> String:
+	for entry in _action_rects(index):
+		if bool(entry.get("enabled", true)):
+			continue
+		if (entry.rect as Rect2).has_point(point):
+			return String(entry.id)
+	return ""
+
+
+func _disabled_reason(row: Dictionary, action: String) -> String:
+	if bool(row.get("locked", false)):
+		var gate := String(row.get("unlock_label", ""))
+		return "需研究 %s 才能编入" % (gate if not gate.is_empty() else "相关军事科技")
+	if action == "raise":
+		return "编制份额已占满 100%：先从其它兵种调低，才有余量加到这里"
+	return "%s 当前没有份额" % String(row.get("name", ""))
 
 
 func _action_rects(index: int) -> Array:
@@ -156,8 +191,12 @@ func _action_rects(index: int) -> Array:
 		return []
 	var rect: Rect2 = _rects[index]
 	var locked := bool(row.get("locked", false))
+	var bp := int(row.get("bp", 0))
+	# 份额合计满 10000 时再加也没有余量：`unit_share_rows` 的 can_raise 已经算过
+	# 这一条，但仍要保证「已满」不会画成一个能点的 +（点了 target==current，
+	# 命令根本不会发出，玩家只会觉得按钮坏了）。
 	var can_raise := not locked and bool(row.get("can_raise", true))
-	var can_lower := int(row.get("bp", 0)) > 0
+	var can_lower := bp > 0
 	var top := rect.position.y + PAD - 2.0
 	var right := rect.end.x - PAD
 	return [
@@ -229,7 +268,9 @@ func _draw_card(index: int, rect: Rect2, row: Dictionary) -> void:
 			suffix, 11, Color(UITokens.DOSSIER_INK_MUTED, ui_alpha))
 	_draw_actions(actions)
 	# ── 行2：攻 / 防 / 速 ───────────────────────────────────────────────
-	var stats_top := rect.position.y + 42.0
+	# 一行三段，每段「图标 + 数值」紧跟一条细度量条。数值是绝对读数，
+	# 条只是在同一份可见集合内归一，供快速比较；不再印重复说明。
+	var stats_top := rect.position.y + 44.0
 	var inner := rect.size.x - PAD * 2.0
 	var group := (inner - 16.0) / 3.0
 	_draw_stat(Vector2(rect.position.x + PAD, stats_top), group,
@@ -242,7 +283,7 @@ func _draw_card(index: int, rect: Rect2, row: Dictionary) -> void:
 		&"hud.clock.speed", float(row.get("speed", 0.0)),
 		float(row.get("speed_ratio", 0.0)), locked)
 	# ── 行3：军饷 / 供给 / 装备 ─────────────────────────────────────────
-	var chips_baseline := rect.position.y + 68.0
+	var chips_baseline := rect.position.y + 74.0
 	var chips_x := rect.position.x + PAD
 	chips_x = _draw_wage(chips_x, chips_baseline, row, locked)
 	var equip_width := _equipment_width(row)
@@ -268,19 +309,22 @@ func _draw_actions(actions: Array) -> void:
 	for entry in actions:
 		var rect: Rect2 = entry.rect
 		var id := String(entry.id)
+		var glyph := "+" if id == "raise" else "−"
 		if not bool(entry.get("enabled", true)):
-			draw_rect(rect, Color(UITokens.DOSSIER_RULE, 0.22), false, 1.0)
-			_text(Vector2(rect.position.x, rect.position.y + rect.size.y * 0.5 + 5.0),
-				"+" if id == "raise" else "−", 14, Color(UITokens.DOSSIER_INK_MUTED, 0.35),
+			draw_rect(rect, Color(UITokens.DOSSIER_PAPER_DEEP, 0.30))
+			draw_rect(rect, Color(UITokens.DOSSIER_RULE, 0.45), false, 1.0)
+			_text(Vector2(rect.position.x, rect.position.y + rect.size.y * 0.5 + 6.0),
+				glyph, 16, Color(UITokens.DOSSIER_INK_MUTED, 0.40),
 				"sans_strong", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x)
 			continue
 		var active := id == _hover_action and _hover >= 0
-		draw_rect(rect, UITokens.DOSSIER_HOVER if active else Color(
-			UITokens.DOSSIER_PAPER, 0.55))
-		draw_rect(rect, UITokens.DOSSIER_BRASS if active else UITokens.DOSSIER_RULE, false, 1.0)
-		_text(Vector2(rect.position.x, rect.position.y + rect.size.y * 0.5 + 5.0),
-			"+" if id == "raise" else "−", 14,
-			UITokens.DOSSIER_OXBLOOD if active else UITokens.DOSSIER_INK_SOFT,
+		draw_rect(rect, UITokens.DOSSIER_BRASS if active
+			else Color(UITokens.DOSSIER_PAPER, 0.85))
+		draw_rect(rect, UITokens.DOSSIER_BRASS if active
+			else Color(UITokens.DOSSIER_RULE, 0.75), false, 1.0)
+		_text(Vector2(rect.position.x, rect.position.y + rect.size.y * 0.5 + 6.0),
+			glyph, 16,
+			UITokens.DOSSIER_PAPER_DEEP if active else UITokens.DOSSIER_INK,
 			"sans_strong", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x)
 
 
@@ -347,41 +391,49 @@ func _draw_equipment(left: float, baseline: float, rect: Rect2, row: Dictionary,
 
 static func _tooltip(row: Dictionary, action: String) -> String:
 	if action == "raise":
-		return "把 %s 的编制份额提高 5%%" % String(row.get("name", ""))
+		return "%s 编制 +5%%" % String(row.get("name", ""))
 	if action == "lower":
-		return "把 %s 的编制份额降低 5%%" % String(row.get("name", ""))
+		return "%s 编制 −5%%" % String(row.get("name", ""))
 	var lines := PackedStringArray()
 	var title := String(row.get("name", ""))
 	if bool(row.get("locked", false)):
 		title += "（未解锁）"
 	lines.append(title)
-	var description := String(row.get("description", ""))
-	if not description.is_empty():
-		lines.append(description)
-	if bool(row.get("is_militia_row", false)):
-		lines.append("未分配的份额自动编入民兵：不配装备，也不能单独加份额。")
-	lines.append("攻 %.1f · 防 %.1f · 速 %.1f · 成军 %d 日" % [
+	# 只给数值：玩家已经在卡片上读过这一行，tooltip 不再复述兵种是什么。
+	lines.append("攻 %.1f　防 %.1f　速 %.1f" % [
 		float(row.get("attack", 0.0)), float(row.get("defense", 0.0)),
-		float(row.get("speed", 0.0)), int(row.get("training_days", 0))])
+		float(row.get("speed", 0.0))])
+	var days := int(row.get("training_days", 0))
+	lines.append("成军 %s" % ("%d 日" % days if days > 0 else "即时"))
+	# 民兵吃的是剩余份额；其它兵种给出当前份额与本次可调整的手感提示。
+	if bool(row.get("is_militia_row", false)):
+		lines.append("份额 %.0f%%（未分配部分）" % (float(int(row.get("bp", 0))) / 100.0))
+	else:
+		lines.append("份额 %.0f%%" % (float(int(row.get("bp", 0))) / 100.0))
 	var wage := float(row.get("wage_per_100", 0.0))
-	lines.append("军饷 %s / 百人日" % ("待结算" if wage <= 0.0 else
-		UITokens.format_compact_number_cn(wage, 2)))
+	lines.append("军饷 " + ("待结算" if wage <= 0.0
+		else UITokens.format_compact_number_cn(wage, 2) + " / 百人日"))
+	# 维护物资逐项列出：类别名 + 数量 + 单位，缺一项就明确写 0。
 	var supply: Array = row.get("supply", [])
-	if not supply.is_empty():
+	if supply.is_empty():
+		lines.append("维护物资 不计")
+	else:
 		var parts := PackedStringArray()
 		for chip_value in supply:
 			var chip: Dictionary = chip_value
-			parts.append("%s %s" % [String(chip.get("label", "")), String(chip.get("text", ""))])
-		lines.append("每日供给（每百人，目录值）：" + " · ".join(parts))
+			parts.append("%s %.2f" % [String(chip.get("label", "")),
+				float(chip.get("value", 0.0))])
+		lines.append("维护物资（每百人日）")
+		lines.append("　" + "　".join(parts))
 	var equipment: Array = row.get("equipment", [])
 	if not equipment.is_empty():
-		var parts := PackedStringArray()
+		lines.append("装备需求")
 		for slot_value in equipment:
 			var slot: Dictionary = slot_value
-			parts.append("%s ≥%s" % [String(slot.get("label", "")),
-				String(slot.get("quality_text", ""))])
-		lines.append("装备需求：" + " · ".join(parts) + "（按市场价另购）")
+			var per_100 := float(slot.get("per_100", 0.0))
+			lines.append("　%s Q%d　每百人 %.0f 件" % [
+				String(slot.get("label", "")), int(slot.get("quality", 1)), per_100])
 	if bool(row.get("locked", false)):
 		var gate := String(row.get("unlock_label", ""))
-		lines.append("需先研究：%s" % (gate if not gate.is_empty() else "相关军事科技"))
+		lines.append("需研究 " + (gate if not gate.is_empty() else "相关军事科技"))
 	return "\n".join(lines)

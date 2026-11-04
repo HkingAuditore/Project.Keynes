@@ -8,7 +8,8 @@ const IdeologyEffectCatalogScript = preload("res://scripts/ideology/ideology_eff
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const WorkspaceScene = preload("res://scenes/ui/ideology_workspace.tscn")
 
-const EXPECTED_PUBLISHED_CARDS := 113
+## 113 generated cards + 19 military cards (tools/ideology/add_military_cards.gd).
+const EXPECTED_PUBLISHED_CARDS := 132
 const EXPECTED_HOLDOUT_CARDS := [
 	"idea.little_ice_age",
 	"idea.air_conditioning",
@@ -64,7 +65,7 @@ func _init() -> void:
 			bool(ideology_ir.get("ok", false)))
 		if bool(ideology_ir.get("ok", false)):
 			var compiled_ids: PackedStringArray = ideology_ir.ideology_ids
-			_expect("temporary content gate publishes exactly 113 cards",
+			_expect("temporary content gate publishes exactly %d cards" % EXPECTED_PUBLISHED_CARDS,
 				compiled_ids.size() == EXPECTED_PUBLISHED_CARDS)
 			var leaked_holdouts := PackedStringArray()
 			for held_out in EXPECTED_HOLDOUT_CARDS:

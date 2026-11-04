@@ -37,6 +37,9 @@ const STATUS_MAX := "max"
 const SAVE_VERSION := 1
 const DEFAULT_TREASURY_SHARE_BP := 200
 const DEFAULT_RESEARCH_SHARE_BP := 5000
+## -1 = 沿用原生「谁有需求谁拿剩余」的分配规则（两项都未设置时是 50/50）。
+## 玩家一旦在财政页拖动某个通道，该通道就固定按份额切分，0 即暂停。
+const SHARE_UNSET := -1
 ## Days to wait for the milestone to become pending/complete after a
 ## completion submission before falling back to PURCHASING.
 const COMPLETION_TIMEOUT_DAYS := 5
@@ -63,6 +66,8 @@ var _completion_day := -1
 var _prelude_granted := false
 var _treasury_share_bp := DEFAULT_TREASURY_SHARE_BP
 var _research_share_bp := DEFAULT_RESEARCH_SHARE_BP
+var _era_share_bp := SHARE_UNSET
+var _colonization_share_bp := SHARE_UNSET
 # --- transient ---------------------------------------------------------------
 var _last_trade_total := -1
 var _last_refresh_day := -2147483648
@@ -109,6 +114,8 @@ func reset() -> void:
 	_prelude_granted = false
 	_treasury_share_bp = DEFAULT_TREASURY_SHARE_BP
 	_research_share_bp = DEFAULT_RESEARCH_SHARE_BP
+	_era_share_bp = SHARE_UNSET
+	_colonization_share_bp = SHARE_UNSET
 	_last_trade_total = -1
 	_last_refresh_day = -2147483648
 	_last_snapshot = {}
@@ -122,23 +129,43 @@ func reset() -> void:
 
 func policy() -> Dictionary:
 	return {"treasury_share_bp": _treasury_share_bp,
-		"research_share_bp": _research_share_bp}
+		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp}
 
 
-static func validate_policy(treasury_share_bp: int, research_share_bp: int) -> Dictionary:
+## 三项（科技 + 时代 + 开拓）都是 national_daily 的份额，合计不得超过 100%。
+## era/colonization 允许 -1（未设置，沿用原生旧规则）。
+static func validate_policy(treasury_share_bp: int, research_share_bp: int,
+		era_share_bp: int = SHARE_UNSET,
+		colonization_share_bp: int = SHARE_UNSET) -> Dictionary:
 	if treasury_share_bp < 0 or treasury_share_bp > 10000 \
 			or research_share_bp < 0 or research_share_bp > 10000:
 		return _result(false, "invalid_args", "国家购买预算份额必须在 0–10000 基点之间。")
+	for pair in [["时代收购", era_share_bp], ["派遣储备", colonization_share_bp]]:
+		var value := int(pair[1])
+		if value < SHARE_UNSET or value > 10000:
+			return _result(false, "invalid_args",
+				"%s份额必须在 0–10000 基点之间。" % String(pair[0]))
+	var allocated := research_share_bp + maxi(0, era_share_bp) + maxi(0, colonization_share_bp)
+	if allocated > 10000:
+		return _result(false, "share_over_allocated",
+			"科技、时代收购与派遣储备的份额之和不能超过 100%。")
 	return _result(true, "ok", "")
 
 
 func set_policy(treasury_share_bp: int, research_share_bp: int,
-		effective_day: int, sequence: int) -> Dictionary:
-	var valid := validate_policy(treasury_share_bp, research_share_bp)
+		effective_day: int, sequence: int,
+		era_share_bp: int = SHARE_UNSET,
+		colonization_share_bp: int = SHARE_UNSET) -> Dictionary:
+	var valid := validate_policy(treasury_share_bp, research_share_bp,
+		era_share_bp, colonization_share_bp)
 	if not bool(valid.ok):
 		return valid
 	_treasury_share_bp = treasury_share_bp
 	_research_share_bp = research_share_bp
+	_era_share_bp = era_share_bp
+	_colonization_share_bp = colonization_share_bp
 	var result := push_policy(effective_day, sequence)
 	_emit_refresh()
 	return result
@@ -150,7 +177,8 @@ func push_policy(effective_day: int, sequence: int) -> Dictionary:
 		return _result(true, "policy_stored_runtime_pending",
 			"国家购买预算已记录，等待经济运行时接口就绪。")
 	var result: Dictionary = _economy.set_country_procurement_policy(_handle, true,
-		_treasury_share_bp, _research_share_bp, effective_day, sequence)
+		_treasury_share_bp, _research_share_bp, effective_day, sequence,
+		_era_share_bp, _colonization_share_bp)
 	return _normalized(result, "国家购买预算已更新，将在下一个经济周期生效。")
 
 
@@ -491,12 +519,16 @@ static func _cost_row(good_id: String, required: int, stock: Dictionary,
 
 func _budget() -> Dictionary:
 	var out := {"national_daily": 0, "era_daily": 0,
+		"colonization_daily": 0,
 		"treasury_share_bp": _treasury_share_bp,
-		"research_share_bp": _research_share_bp}
+		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp}
 	var procurement := _procurement_snapshot()
 	if bool(procurement.get("ok", false)):
 		out.national_daily = int(procurement.get("national_daily_budget", 0))
 		out.era_daily = int(procurement.get("era_daily_budget", 0))
+		out.colonization_daily = int(procurement.get("colonization_daily_budget", 0))
 	return out
 
 
@@ -532,6 +564,8 @@ func to_save() -> Dictionary:
 		"prelude_granted": _prelude_granted,
 		"treasury_share_bp": _treasury_share_bp,
 		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp,
 	}
 
 
@@ -567,10 +601,14 @@ func restore(state: Dictionary) -> void:
 	_completion_day = int(state.get("completion_day", -1))
 	_prelude_granted = bool(state.get("prelude_granted", false))
 	var valid := validate_policy(int(state.get("treasury_share_bp", DEFAULT_TREASURY_SHARE_BP)),
-		int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP)))
+		int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP)),
+		int(state.get("era_share_bp", SHARE_UNSET)),
+		int(state.get("colonization_share_bp", SHARE_UNSET)))
 	if bool(valid.ok):
 		_treasury_share_bp = int(state.get("treasury_share_bp", DEFAULT_TREASURY_SHARE_BP))
 		_research_share_bp = int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP))
+		_era_share_bp = int(state.get("era_share_bp", SHARE_UNSET))
+		_colonization_share_bp = int(state.get("colonization_share_bp", SHARE_UNSET))
 	# The native trade counter is transient: the next sample is the baseline.
 	_last_trade_total = -1
 

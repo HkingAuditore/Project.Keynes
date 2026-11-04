@@ -793,6 +793,11 @@ struct DemandEntry {
     int32_t reach_end = 0;
     int32_t cursor = 0;         // next reach row to offer
     int32_t markets = 0;        // distinct markets that served it
+    // Set when this entry was cut short by its country's procurement quota
+    // (任务 8). Deliberately a flag rather than a running total: the shortfall is
+    // read off `want - sourced` once the selling pass is over, so a partial buy
+    // followed by a second truncation cannot be counted twice.
+    uint8_t quota_hit = 0;
 };
 
 // One delivery of an entry, in the order the markets were offered.
@@ -823,6 +828,11 @@ struct DemandScratch {
     std::vector<Take> takes;
     std::vector<int64_t> row_left;    // per live row: need units for sale
     std::vector<int32_t> open;        // entries still wanted, deterministic order
+    // Per country: procurement money still spendable this pass. -1 = no
+    // envelope (buy the whole gap, the legacy behaviour). Only the procurement
+    // channel is metered this way - 军饷 and 维护 are high priority and settle
+    // against cash, not against a quota.
+    std::vector<int64_t> quota_left;
     void clear() {
         holders.clear();
         entries.clear();
@@ -830,6 +840,7 @@ struct DemandScratch {
         takes.clear();
         row_left.clear();
         open.clear();
+        quota_left.clear();
     }
 };
 
@@ -861,9 +872,35 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     const int32_t unit_count = (int32_t)_catalog.units.size();
     if (unit_count > MILITARY_MAX_UNIT_TYPES) return;
 
-    // ---- 1. DEMAND --------------------------------------------------------
+    // ---- 0. QUOTA (任务 8 / 需求 5.4, 7.1) --------------------------------
+    // 采购量 = min(缺口, 预算配额). The quota is money, taken from the same
+    // envelope split that pays wages and upkeep, so all three channels read one
+    // arithmetic and cannot disagree about what the day's cash is.
+    //
+    // Procurement is a LOW-priority channel (需求 7.2): unlike 军饷 it never
+    // overspends, it just stops. `-1` marks "no envelope" and leaves the legacy
+    // full-gap purchase untouched, which is what every foreign AI country runs.
+    //
+    // Both outcome fields are reset here, before any early return, so a day with
+    // no demanders or no markets reports zero instead of last pass's numbers.
+    for (size_t slot = 0; slot < _policies.size(); ++slot) {
+        _policies[slot].procurement_budget_used = 0;
+        _policies[slot].procurement_deferred_units = 0;
+    }
     DemandScratch &ds = demand_scratch();
     ds.clear();
+    ds.quota_left.assign((size_t)capacity, -1);
+    for (size_t slot = 0; slot < _policies.size() && (int32_t)slot < capacity; ++slot) {
+        if (_policies[slot].budget_share_bp <= 0) continue;
+        const int64_t cash = (size_t)slot < digest.country_cash.size()
+                                 ? digest.country_cash[slot] : 0;
+        const MilitaryBudgetSplit split = budget_split((int32_t)slot, cash);
+        if (!split.enabled) continue;
+        ds.quota_left[slot] = std::max<int64_t>(0, split.procurement_ceiling);
+    }
+
+
+    // ---- 1. DEMAND --------------------------------------------------------
     const int64_t ration_per_head =
         _catalog.ration_need_per_head_q16 > 0 ? _catalog.ration_need_per_head_q16 : MILITARY_Q16;
     const int32_t category_count = (int32_t)_catalog.categories.size();
@@ -1110,6 +1147,15 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             if (e.sourced >= e.want || e.cursor >= e.reach_end || e.markets >= PROCURE_MARKETS) {
                 continue;
             }
+            // Quota exhausted for this country: drop the entry from the round
+            // robin outright (it is not re-queued below) instead of walking the
+            // rest of its reach rows only to be refused at every one. The flag
+            // survives so the shortfall is still reported as 待购.
+            if (e.country >= 0 && (size_t)e.country < ds.quota_left.size() &&
+                ds.quota_left[(size_t)e.country] == 0) {
+                e.quota_hit = 1;
+                continue;
+            }
             ds.open[(size_t)next_open++] = ei;
             const ReachRow rr = ds.reach[(size_t)e.cursor];
             ++e.cursor;
@@ -1132,6 +1178,58 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 units = goods;
             }
             if (units <= 0) continue;
+            // ---- quota gate (任务 8 / 需求 5.4, 7.2) ----------------------
+            // 采购量 = min(缺口, 预算配额). Procurement is a LOW-priority channel
+            // (需求 7.2): it never overspends, it just stops, and the gap it
+            // leaves is reported as 待购 rather than as arrears.
+            //
+            // The cost is computed exactly as the DELIVER pass will charge it -
+            // need units -> goods at the row's yield, then price x goods /
+            // GOODS_SCALE - instead of using a per-unit approximation. That
+            // matters here and nowhere else: a rounded-down unit price would let
+            // a full quota buy one good more than it can pay for, and a budget
+            // that can be exceeded by rounding is not a budget.
+            if (e.country >= 0 && (size_t)e.country < ds.quota_left.size() &&
+                ds.quota_left[(size_t)e.country] >= 0) {
+                const int64_t quota = ds.quota_left[(size_t)e.country];
+                const int64_t raw_price = _md_row_price[(size_t)rr.row];
+                int32_t yield_q16 = MILITARY_Q16;
+                if (e.cls >= 0) {
+                    const int32_t index = class_index_of_good(_catalog, e.cls,
+                                                              _md_row_good[(size_t)rr.row]);
+                    const std::vector<int32_t> &yields = _catalog.supply_yield_q16[(size_t)e.cls];
+                    if (index >= 0 && (size_t)index < yields.size() && yields[(size_t)index] > 0) {
+                        yield_q16 = yields[(size_t)index];
+                    }
+                }
+                auto goods_of = [&](int64_t count) {
+                    return e.cls >= 0 ? (count * MILITARY_Q16 + yield_q16 - 1) / yield_q16
+                                      : count;
+                };
+                auto cost_of = [&](int64_t count) {
+                    return (raw_price * goods_of(count)) / MILITARY_GOODS_SCALE;
+                };
+                if (cost_of(units) > quota) {
+                    // Start from the per-unit ceiling estimate (always an upper
+                    // bound) and walk down until the exact charge fits. The walk
+                    // is one or two steps: the estimate is off by at most a good,
+                    // never by a whole unit of demand.
+                    const int64_t unit_cost =
+                        std::max<int64_t>(1, (raw_price + MILITARY_GOODS_SCALE - 1) /
+                                                MILITARY_GOODS_SCALE);
+                    int64_t fit = std::min(units, quota / unit_cost);
+                    while (fit > 0 && cost_of(fit) > quota) --fit;
+                    // Flagged so the shortfall is counted as 待购 rather than as
+                    // "no market in range"; the two mean different things to the
+                    // panel and only this one recovers when the quota does.
+                    e.quota_hit = 1;
+                    units = fit;
+                    if (units <= 0) continue;
+                    goods = goods_of(units);
+                    if (goods > left) goods = left;
+                }
+                ds.quota_left[(size_t)e.country] = quota - cost_of(units);
+            }
             ds.row_left[(size_t)rr.row] = left - goods;
             e.sourced += units;
             ++e.markets;
@@ -1205,6 +1303,17 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 }
                 const int64_t price = _md_row_price[(size_t)take.row];
                 const int64_t cost = (price * qty) / MILITARY_GOODS_SCALE;
+                // 任务 8: how much of the channel QUOTA this pass consumed. Only
+                // counted when a quota exists - `quota_left` stays -1 for a
+                // country with no envelope, which is what makes "no envelope
+                // reports nothing" a fact of the code rather than a convention.
+                // Read from the same `cost` the intent carries, so the panel's
+                // 已用配额 reconciles with the treasury one-for-one.
+                if (h.country >= 0 && (size_t)h.country < _policies.size() &&
+                    (size_t)h.country < ds.quota_left.size() &&
+                    ds.quota_left[(size_t)h.country] >= 0) {
+                    _policies[(size_t)h.country].procurement_budget_used += cost;
+                }
                 MilitaryIntent buy;
                 buy.kind = MILITARY_INTENT_PROCURE_GOOD;
                 buy.cell = market_cell;
@@ -1249,10 +1358,21 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             }
         }
         int64_t missing = 0;
+        int64_t deferred = 0;
         for (int32_t ei = h.entry_begin; ei < h.entry_begin + h.entry_count; ++ei) {
-            missing += entries[(size_t)ei].want - entries[(size_t)ei].sourced;
+            const DemandEntry &e = entries[(size_t)ei];
+            const int64_t gap = e.want - e.sourced;
+            if (gap <= 0) continue;
+            missing += gap;
+            // 任务 8 / 需求 5.4: only the part the BUDGET refused counts as 待购.
+            // A gap with no quota flag means no market in range could serve it,
+            // which is a supply problem the panel must not blame on the budget.
+            if (e.quota_hit != 0) deferred += gap;
         }
         if (missing <= 0) continue;
+        if (deferred > 0 && h.country >= 0 && (size_t)h.country < _policies.size()) {
+            _policies[(size_t)h.country].procurement_deferred_units += deferred;
+        }
         unmet_units += missing;
         if (!any_take) ++unmet_holders;
         // Per-country unmet demand (report / UI / AI demand signal).
