@@ -500,7 +500,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _event_detail_ms = 0.0;
     _event_publish_ms = 0.0;
     _explicit_money_mint = 0;
-    _explicit_money_burn = 0;
+    _explicit_money_burn = _pending_military_cash_burn;
+    _pending_military_cash_burn = 0;
     _external_population_delta = 0;
     _explicit_stock_delta = 0;
     _country_research_consumed_opening = 0;

@@ -24,6 +24,9 @@ const ACTION := 30.0
 const ACTION_GAP := 6.0
 const EMPTY_HEIGHT := 48.0
 const STEP_BP := 500
+const TOOLTIP_WIDTH := 392.0
+const TOOLTIP_STAT_WIDTH := 116.0
+const TOOLTIP_STAT_HEIGHT := 78.0
 
 var empty_text := "尚未解锁可配置的兵种：先研究军事科技"
 ## 未解锁兵种默认不进军册；打开后灰显（名字、所需科技都在，± 不可用）。
@@ -161,6 +164,255 @@ func _update_hover(point: Vector2) -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND \
 		if hit >= 0 and not action.is_empty() else Control.CURSOR_ARROW
 	queue_redraw()
+
+
+## 兵种详情使用自定义卷宗卡，不走 Godot 默认的单行 TooltipPanel。
+## 默认 tooltip 适合短句，无法表达「三项战力 + 成军 + 维护 + 装备」这类需要
+## 分组比较的信息；这里把同一份 row 数据做成可扫描的图形化卡片。
+func _make_custom_tooltip(for_text: String) -> Object:
+	if _hover < 0 or _hover >= _rows.size():
+		return null
+	return _build_unit_tooltip(_rows[_hover], for_text, _hover_action)
+
+
+func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String) -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "MilitaryUnitTooltip"
+	panel.theme_type_variation = &"PKPaperPopup"
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# TooltipPanel 会把返回控件放进可用屏幕区域；明确使用内容尺寸，
+	# 否则 PanelContainer 的默认 FILL 会把纸片纵向拉满整个窗口。
+	panel.custom_minimum_size = Vector2(TOOLTIP_WIDTH, 0.0)
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.add_theme_stylebox_override("panel", _tooltip_panel_style())
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(margin)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", 8)
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(column)
+
+	# 页头：徽记 + 兵种身份 + 当前编制状态。
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 10)
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(header)
+	var emblem := IconBadge.new()
+	emblem.custom_minimum_size = Vector2(42, 42)
+	emblem.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	emblem.set_icon(String(row.get("icon", "military.unit.line")),
+		row.get("color", UITokens.DOSSIER_BRASS))
+	header.add_child(emblem)
+	var identity := VBoxContainer.new()
+	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	identity.add_theme_constant_override("separation", 2)
+	header.add_child(identity)
+	var title := _tooltip_label(String(row.get("name", "")), 20,
+		UITokens.DOSSIER_INK, "sans_strong")
+	identity.add_child(title)
+	var training_days := int(row.get("training_days", 0))
+	identity.add_child(_tooltip_label(
+		"军事编制 · 成军 %s" % ("即时" if training_days <= 0 else "%d 日" % training_days),
+		12, UITokens.DOSSIER_INK_MUTED))
+	var share := int(row.get("bp", 0))
+	var share_badge := _tooltip_badge("编制 %d%%" % int(round(float(share) / 100.0)),
+		row.get("color", UITokens.DOSSIER_BRASS))
+	share_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	header.add_child(share_badge)
+
+	# 三项核心指标采用同宽小卡片：标签、绝对值、相对条形图一眼可比。
+	var stats := HBoxContainer.new()
+	stats.add_theme_constant_override("separation", 6)
+	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(stats)
+	var stat_specs := [
+		{"label": "攻击", "icon": &"military.army.attack", "value": float(row.get("attack", 0.0)),
+			"ratio": float(row.get("attack_ratio", 0.0)), "color": UITokens.DOSSIER_OXBLOOD},
+		{"label": "防御", "icon": &"military.army.defense", "value": float(row.get("defense", 0.0)),
+			"ratio": float(row.get("defense_ratio", 0.0)), "color": UITokens.DOSSIER_VERDIGRIS},
+		{"label": "机动", "icon": &"hud.clock.speed", "value": float(row.get("speed", 0.0)),
+			"ratio": float(row.get("speed_ratio", 0.0)), "color": UITokens.DOSSIER_BRASS},
+	]
+	for spec in stat_specs:
+		stats.add_child(_tooltip_stat(spec))
+
+	# 运行成本胶囊：把训练与军饷放到同一条横向信息带，避免大段文字。
+	var meta := HBoxContainer.new()
+	meta.add_theme_constant_override("separation", 6)
+	meta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(meta)
+	var wage := float(row.get("wage_per_100", 0.0))
+	var wage_text := "军饷待结算" if wage <= 0.0 else "军饷 %s / 百人日" % UITokens.format_compact_number_cn(wage, 2)
+	meta.add_child(_tooltip_badge(wage_text, UITokens.DOSSIER_OXBLOOD))
+	var share_text := "未分配份额" if bool(row.get("is_militia_row", false)) else "当前编制"
+	meta.add_child(_tooltip_badge("%s %d%%" % [share_text, int(round(float(share) / 100.0))],
+		row.get("color", UITokens.DOSSIER_BRASS)))
+
+	var supply: Array = row.get("supply", [])
+	var equipment: Array = row.get("equipment", [])
+	if not supply.is_empty() or not equipment.is_empty():
+		column.add_child(_tooltip_rule())
+	if not supply.is_empty():
+		column.add_child(_tooltip_section_title("维护物资 · 每百人日", &"military.army.supply"))
+		for chip_value in supply:
+			var chip: Dictionary = chip_value
+			column.add_child(_tooltip_resource_row(String(chip.get("label", "")),
+				"%.2f / 百人日" % float(chip.get("value", 0.0)),
+				String(chip.get("icon", "military.army.supply")), UITokens.DOSSIER_OXBLOOD))
+	else:
+		column.add_child(_tooltip_section_title("维护物资", &"military.army.supply"))
+		column.add_child(_tooltip_label("无需额外维护物资", 13, UITokens.DOSSIER_INK_MUTED))
+	if not equipment.is_empty():
+		column.add_child(_tooltip_section_title("装备需求", &"military.army.supply"))
+		for slot_value in equipment:
+			var slot: Dictionary = slot_value
+			column.add_child(_tooltip_resource_row(
+				String(slot.get("label", "")),
+				"Q%d · 每百人 %.0f 件" % [int(slot.get("quality", 1)), float(slot.get("per_100", 0.0))],
+				String(slot.get("icon", "military.army.supply")), UITokens.DOSSIER_UMBER))
+	if bool(row.get("locked", false)):
+		column.add_child(_tooltip_rule())
+		var gate := String(row.get("unlock_label", ""))
+		column.add_child(_tooltip_label("🔒 需研究 " + (gate if not gate.is_empty() else "相关军事科技"),
+			13, UITokens.DOSSIER_OXBLOOD, "sans_strong"))
+	elif not action.is_empty() or not _hover_disabled.is_empty():
+		column.add_child(_tooltip_rule())
+		column.add_child(_tooltip_label(fallback_text, 12, UITokens.DOSSIER_INK_MUTED))
+	return panel
+
+
+static func _tooltip_panel_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(UITokens.DOSSIER_PAPER, 0.98)
+	style.border_color = Color(UITokens.DOSSIER_RULE, 0.82)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(7)
+	style.shadow_color = Color(0.08, 0.05, 0.02, 0.24)
+	style.shadow_size = 8
+	style.shadow_offset = Vector2(0, 3)
+	return style
+
+
+static func _tooltip_label(text: String, size: int, color: Color,
+		font_kind: String = "sans") -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_override("font", UITokens.dossier_font(font_kind))
+	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_color_override("font_color", color)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
+
+
+static func _tooltip_badge(text: String, accent: Color) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	badge.add_theme_stylebox_override("panel", _tooltip_surface_style(accent))
+	var label := _tooltip_label(text, 12, UITokens.DOSSIER_INK, "sans_strong")
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.custom_minimum_size.y = 24
+	badge.add_child(label)
+	return badge
+
+
+static func _tooltip_surface_style(accent: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(accent, 0.10)
+	style.border_color = Color(accent, 0.36)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
+	return style
+
+
+static func _tooltip_stat(spec: Dictionary) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(TOOLTIP_STAT_WIDTH, TOOLTIP_STAT_HEIGHT)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _tooltip_surface_style(spec.color))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 2)
+	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(column)
+	var heading := HBoxContainer.new()
+	var icon := IconBadge.new()
+	icon.custom_minimum_size = Vector2(16, 16)
+	icon.set_icon(String(spec.icon), spec.color)
+	heading.add_child(icon)
+	heading.add_child(_tooltip_label(String(spec.label), 12, UITokens.DOSSIER_INK_MUTED))
+	column.add_child(heading)
+	column.add_child(_tooltip_label("%.1f" % float(spec.value), 22, UITokens.DOSSIER_INK, "sans_strong"))
+	var bar := ProgressBar.new()
+	bar.show_percentage = false
+	bar.max_value = 1.0
+	bar.value = clampf(float(spec.ratio), 0.0, 1.0)
+	bar.custom_minimum_size.y = 5
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = UITokens.DOSSIER_TRACK
+	bg.set_corner_radius_all(3)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = spec.color
+	fill.set_corner_radius_all(3)
+	bar.add_theme_stylebox_override("background", bg)
+	bar.add_theme_stylebox_override("fill", fill)
+	column.add_child(bar)
+	return card
+
+
+static func _tooltip_section_title(text: String, icon_key: StringName) -> HBoxContainer:
+	var line := HBoxContainer.new()
+	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_theme_constant_override("separation", 6)
+	var icon := IconBadge.new()
+	icon.custom_minimum_size = Vector2(16, 16)
+	icon.set_icon(String(icon_key), UITokens.DOSSIER_UMBER)
+	line.add_child(icon)
+	var title := _tooltip_label(text, 12, UITokens.DOSSIER_INK_MUTED, "sans_strong")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.custom_minimum_size.x = 120.0
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF
+	line.add_child(title)
+	return line
+
+
+static func _tooltip_resource_row(label_text: String, value_text: String,
+		icon_key: String, accent: Color) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 7)
+	var icon := IconBadge.new()
+	icon.custom_minimum_size = Vector2(16, 16)
+	icon.set_icon(icon_key, accent)
+	row.add_child(icon)
+	var label := _tooltip_label(label_text, 13, UITokens.DOSSIER_INK)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var value := _tooltip_label(value_text, 13, UITokens.DOSSIER_INK, "sans_strong")
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.custom_minimum_size.x = 112.0
+	row.add_child(value)
+	return row
+
+
+static func _tooltip_rule() -> HSeparator:
+	var rule := HSeparator.new()
+	rule.add_theme_constant_override("separation", 4)
+	rule.add_theme_color_override("separator", UITokens.DOSSIER_RULE)
+	return rule
 
 
 ## 落在按钮矩形内但当前禁用时返回按钮 id（`_action_at` 只回报可点的那些）。

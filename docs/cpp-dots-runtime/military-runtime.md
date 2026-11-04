@@ -128,7 +128,7 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
 | 6 `PROCURE_GOOD` | Economy | 13 `MARKET_GOOD_TO_COUNTRY` | target = 国家句柄，`i32_0` = 市场格，`i32_1` = good，`i64_0` = 数量 |
 | 7 `CONSUME_TREASURY_GOOD` | Country | 21 `CONSUME_TREASURY_GOODS` | `aux` = good，`value` = 数量 |
 | 8 `REQUISITION` | Economy | 5 `REMOVE_STOCK` | `i32_0` = 格，`i32_1` = good，无付款 |
-| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执。只用于维护费，官营建造已改走经济侧结算（§5.3） |
+| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执。维护费是终端现金 sink，实收额登记为 Economy 的 `explicit_money_burn`；官营建造已改走经济侧结算（§5.3） |
 | 15 `STATE_BUILD` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_build` | 军事建筑索引经 `economy_building_id` 翻成经济类型；经济受理后回送 `MCMD_STATE_BUILD` 仅记排期，`economy_building_id < 0` 或经济拒绝则该 lot 不建 |
 | 16 `STATE_DEMOLISH` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_demolish`（economy opcode 35） | 15 的镜像：`cell` + `count` = 军事建筑索引，`country_a` = 属主国句柄。经济侧先减座数，受理后才回送 `MCMD_STATE_DEMOLISH`；该命令在核心里是 no-op（§6.2） |
 | 20 `TRANSFER_TERRITORY` | Country | 3 | target = 接收国，`cell` |

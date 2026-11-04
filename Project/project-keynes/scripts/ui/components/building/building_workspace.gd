@@ -15,6 +15,7 @@ signal page_requested(sector: String, search: String, sort: String, offset: int)
 signal build_requested(request: Dictionary)
 
 const RowScene := preload("res://scenes/ui/building_option_row.tscn")
+const HoverCardScene := preload("res://scenes/ui/building_hover_card.tscn")
 ## 点击后短暂禁用同一行：只防手抖重复下单，不阻止「今天连排两座」。
 const PENDING_SECONDS := 1.2
 
@@ -52,12 +53,18 @@ var _sector_signature := ""
 var _pending_ids: Dictionary = {}
 var _feedback := ""
 var _feedback_ok := true
+var _hover_card: BuildingHoverCard
+var _hovered_row_id := ""
 
 
 func _ready() -> void:
 	if _rows == null:
 		push_error("BuildingWorkspace 必须通过 building_workspace.tscn 实例化。")
 		return
+	_hover_card = HoverCardScene.instantiate() as BuildingHoverCard
+	add_child(_hover_card)
+	_hover_card.z_index = 40
+	_hover_card.hide_card()
 	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭")
 	_header_icon.set_semantic(&"economy.building", UITokens.DOSSIER_BRASS)
 	_close_button.pressed.connect(func() -> void: closed.emit())
@@ -106,6 +113,9 @@ func clear() -> void:
 	_feedback = ""
 	_feedback_ok = true
 	_pending_ids.clear()
+	_hovered_row_id = ""
+	if _hover_card != null:
+		_hover_card.hide_card()
 	_chapters = []
 	if _rows == null:
 		return
@@ -216,6 +226,9 @@ func _apply_rows(items: Array, rebuild: bool) -> void:
 		if row == null:
 			continue
 		row.set_row(item, _pending_ids.has(String(item.get("building_id", ""))))
+		if String(item.get("building_id", "")) == _hovered_row_id \
+				and _hover_card != null and _hover_card.visible:
+			_hover_card.refresh(item)
 	var empty := items.is_empty()
 	_empty_note.visible = empty
 	_scroll.visible = not empty
@@ -231,12 +244,30 @@ func _rows_match(items: Array) -> bool:
 
 func _build_rows(items: Array) -> void:
 	_clear_rows()
+	if _hover_card != null:
+		_hover_card.hide_card()
+	_hovered_row_id = ""
 	for raw in items:
 		var item: Dictionary = raw
 		var row := RowScene.instantiate() as BuildingOptionRow
 		_rows.add_child(row)
 		row.build_requested.connect(_on_row_build_requested)
+		row.hover_started.connect(_on_row_hover_started)
+		row.hover_ended.connect(_on_row_hover_ended)
 		_rows_by_id[String(item.get("building_id", ""))] = row
+
+
+func _on_row_hover_started(row_data: Dictionary, source: Control) -> void:
+	if _hover_card == null or not visible:
+		return
+	_hovered_row_id = String(row_data.get("building_id", ""))
+	_hover_card.show_for(row_data, source, self)
+
+
+func _on_row_hover_ended() -> void:
+	_hovered_row_id = ""
+	if _hover_card != null:
+		_hover_card.hide_card()
 
 
 func _empty_text() -> String:
