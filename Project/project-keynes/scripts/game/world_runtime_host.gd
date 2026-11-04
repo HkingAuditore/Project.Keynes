@@ -17,6 +17,15 @@ signal annual_report_ready(report_id: int)
 const AnnualReportSessionScript = preload("res://scripts/annual/annual_report_session.gd")
 var _annual_reports = AnnualReportSessionScript.new()
 
+const WorldSession = preload("res://scripts/game/world_session.gd")
+const WorldSessionModules = preload("res://scripts/game/world_session_modules.gd")
+const SessionFrameGate = preload("res://scripts/geography/loading_frame_gate.gd")
+var _runtime_session = WorldSession.new()
+var _session_frames = SessionFrameGate.new()
+var _session_extensions: Array = []
+var _session_prepare_options: Dictionary = {}
+var _generation_request := 0
+
 const RuntimeForensics = preload("res://scripts/game/runtime_forensics.gd")
 const WORLD_SETUP_META := &"world_setup_config"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
@@ -232,11 +241,13 @@ var _renderer: HexRenderer = null
 var _gi_saved_strengths: Dictionary = {}
 var _camera: MapCamera = null
 var _world_clock: WorldClock = null
+var _clock_binding = preload("res://scripts/game/runtime_clock_binding.gd").new()
 var _map_overlay_layer: DataOverlayLayer = null
 var _settlement_label_layer: SettlementLabelLayer = null
 var _current_map: MapData = null
 var _world_data: WorldData = null
 var _generator: MapGenerator = null
+var _exiting_tree := false
 var _view_adapter: DCViewAdapter = null
 var _selected_cell: HexCell = null
 # ---- Military layers
@@ -464,6 +475,7 @@ func configure(
 	world_clock: WorldClock,
 	map_overlay_layer: DataOverlayLayer = null
 ) -> void:
+	_clock_binding.detach()
 	if _world_clock != null:
 		var old_day_callback := Callable(self, "_on_clock_day_changed")
 		if _world_clock.day_changed.is_connected(old_day_callback):
@@ -888,13 +900,15 @@ func building_visual_type_count() -> int:
 ## 这一步（economy facade 目录 + renderer.configure_building_visuals）在浏览器里
 ## 实测 42s，放在加载路径里会把"进世界"卡死；延后执行只影响建筑外观的可用时间。
 func _defer_building_visual_catalog_after_ready() -> void:
-	if not is_inside_tree():
+	if _exiting_tree or not is_inside_tree():
 		return
 	if PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
 		return
+	var session = _runtime_session
+	var token: int = session.generation
 	var timer := get_tree().create_timer(3.0, true, false, true)
 	await timer.timeout
-	if not is_inside_tree():
+	if _exiting_tree or not is_inside_tree() or not session.is_current(token):
 		return
 	var started := Time.get_ticks_msec()
 	var report: Dictionary = refresh_building_visual_catalog()
@@ -919,6 +933,10 @@ func refresh_building_visual_catalog() -> Dictionary:
 		return {"ok": false, "deferred": true,
 			"reason": "building_visual_catalog_not_ready"}
 	_building_visual_type_count = ids.size()
+	# Headless binding intentionally creates no renderer map. Keep the catalog
+	# for PKFG validation, but do not configure visual layers with null context.
+	if DisplayServer.get_name() == "headless":
+		return {"ok": true, "headless": true, "type_count": ids.size()}
 	if _renderer == null or not _renderer.has_method("configure_building_visuals"):
 		return {"ok": false, "reason": "building_visual_renderer_unavailable"}
 	return _renderer.configure_building_visuals(
@@ -1116,8 +1134,87 @@ func is_day_night_enabled() -> bool:
 	return day_night_enabled
 
 
+func register_session_module(module) -> Dictionary:
+	if _generator != null or _runtime_session.report().state != "CONFIGURING":
+		return {"ok": false, "code": "session_composition_locked"}
+	if module == null or not module.has_method("descriptor"):
+		return {"ok": false, "code": "session_module_contract_invalid"}
+	var candidate := _session_extensions.duplicate()
+	candidate.append(module)
+	var result: Dictionary = _runtime_session.configure(WorldSessionModules.entries(self, candidate))
+	if bool(result.get("ok", false)):
+		_session_extensions = candidate
+	return result
+
+
+func session_report() -> Dictionary:
+	return _runtime_session.report()
+
+
+func is_session_closing() -> bool:
+	return _runtime_session.is_closing()
+
+
+func begin_state_capture() -> Dictionary:
+	return _runtime_session.begin_capture()
+
+
+func end_state_capture() -> void:
+	_runtime_session.end_capture()
+
+
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
+	_generation_request += 1
+	var request := _generation_request
+	var clock_was_paused := _world_clock.paused if _world_clock != null else true
+	var closed: Dictionary = await close_world()
+	if request != _generation_request or _exiting_tree or not is_inside_tree():
+		return
+	if not bool(closed.get("ok", false)):
+		_emit_world_generation_failure("close", String(closed.get("code", "close_failed")),
+			"上一局游戏尚未关闭。", "请保留运行日志。")
+		return
+	_runtime_session = WorldSession.new()
+	_session_frames = SessionFrameGate.new()
+	_session_prepare_options = {"seed": seed_override, "safe_area": safe_area,
+		"clock_was_paused": clock_was_paused}
+	last_world_generation_error.clear()
+	var configured: Dictionary = _runtime_session.configure(WorldSessionModules.entries(self, _session_extensions))
+	if not bool(configured.get("ok", false)):
+		_emit_world_generation_failure("modules", String(configured.get("code", "module_invalid")),
+			"游戏系统配置不完整。", String(configured.get("detail", "")))
+		return
+	var prepared: Dictionary = await _runtime_session.prepare()
+	if not bool(prepared.get("ok", false)):
+		if prepared.get("code") != "session_cancelled" and not _exiting_tree:
+			if last_world_generation_error.is_empty():
+				_emit_world_generation_failure("modules", String(prepared.get("code", "module_prepare_failed")),
+					"游戏系统准备失败。", String(prepared.get("message", "")))
+			await close_world()
+		return
+	_runtime_ready_for_ticks = true
+	# The host process also drains building visual dirty cells. Keep it alive for
+	# the normal runtime; overlay refreshes must not disable construction/era
+	# intelligence updates.
+	set_process(true)
+	if _world_clock != null:
+		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
+		_world_clock.pause(bool(_session_prepare_options.clock_was_paused))
+		on_clock_running_changed(not _world_clock.paused)
+	# Web 构建：世界就绪事件（agent 侧据此判断"可以点开始了"）。
+	WebTelemetry.emit("ready", {
+		"day": _world_clock.day_index() if _world_clock != null else -1,
+		"paused": _world_clock.paused if _world_clock != null else true,
+	})
+	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
+
+
+func _prepare_world_data() -> Dictionary:
+	var seed_override: int = _session_prepare_options.seed
 	_runtime_ready_for_ticks = false
+	_ideology_refresh_pending_day = -1
+	_ideology_instance_refreshed_day = -1
+	_ideology_derived_pumped_day = -1
 	# 生成后阶段（渲染绑定 + 植被层 + 建筑外观）的进度游标复位：
 	# 0.0 表示"本次生成还没进入后期阶段"，_loading_visual_step 在复位前不会发进度。
 	_visual_progress = 0.0
@@ -1152,21 +1249,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_country_visual_refresh_defer_count = 0
 	_country_visual_last_refresh_ms = 0.0
 	_sched_proc_country_visual_ms = 0.0
-	# A new map must never race the previous simulation host.  The stop request
-	# is non-blocking. Wait for the lifecycle acknowledgement one render frame
-	# at a time before replacing the generator, so the old DCWorldExt destructor
-	# never has to join a live simulation from the UI call stack.
-	await _stop_previous_runtime_worker()
-	if not is_inside_tree():
-		return
-	var clock_was_paused := true
-	if _world_clock != null:
-		clock_was_paused = _world_clock.paused
-		_world_clock.pause(true)
-		on_clock_running_changed(false)
 	_selected_cell = null
 	clear_map_overlay()
 	world_generation_started.emit()
+	if not _session_preparation_active():
+		return _session_preparation_failure()
 	if _generator != null and _generator.has_method("sus_reset_all"):
 		_generator.sus_reset_all()
 
@@ -1205,7 +1292,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		_world_data = null
 		_view_adapter = null
 		_report_world_generation_failure(preflight)
-		return
+		return _session_preparation_failure()
 	print("[mapgen][preflight] ok platform=%s/%s extension_loaded=%s native_mode=%d bound=%s"
 		% [
 			String(preflight["env"].get("platform", "?")), String(preflight["env"].get("arch", "?")),
@@ -1214,14 +1301,14 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		])
 
 	var result: Dictionary = await _generator.generate(cfg, hex_size)
-	if not is_inside_tree():
-		return
+	if not _session_preparation_active():
+		return _session_preparation_failure()
 	if result.is_empty() or not result.has("map") or not result.has("world_data"):
 		_current_map = null
 		_world_data = null
 		_view_adapter = null
 		_report_world_generation_failure()
-		return
+		return _session_preparation_failure()
 	if not _new_game_config.is_empty():
 		var start_report: Dictionary = _generator.gameplay_start_report()
 		if not bool(start_report.get("ok", false)):
@@ -1244,7 +1331,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 				String(start_report.get("message", "开局初始化失败。")),
 				"开局初始化是玩法层失败（地图本身已生成）。gameplay_start_report：%s"
 					% " ".join(report_bits))
-			return
+			return _session_preparation_failure()
 
 	_current_map = result["map"] as MapData
 	_building_visual_intel.configure(
@@ -1261,17 +1348,22 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	if _world_clock != null:
 		_generator.set_world_clock_ref(_world_clock)
 	_rebuild_view_adapter()
+	return {"ok": true}
+
+
+func _prepare_world_presentation() -> Dictionary:
+	var safe_area: Rect2 = _session_prepare_options.safe_area
 	# 生成器已返回（bake_progress "done"=96%）：从这里开始的渲染绑定、植被层构建、
 	# 建筑外观目录刷新原先完全不发进度，进度条会钉在 98%。改由单调游标推进
 	# 0.96 → 0.99（+ 逐层回调），1.0 仍然只由 hide_completed() 负责。
 	_advance_visual_progress("bind", true)
 	await _bind_renderer_and_camera(safe_area)
-	if not is_inside_tree():
-		return
+	if not _session_preparation_active():
+		return _session_preparation_failure()
 	_loading_visual_step("building_visual_setup")
-	await get_tree().process_frame
-	if not is_inside_tree():
-		return
+	await _session_frames.next_frame()
+	if not _session_preparation_active():
+		return _session_preparation_failure()
 	var building_visual_setup: Dictionary
 	if OS.has_feature("web"):
 		# Web：这一步 = economy building_visual_catalog() + renderer.configure_building_visuals()，
@@ -1290,6 +1382,10 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			building_visual_setup.get("reason", "catalog audit failed")))
 	# 目录刷新是这一步的真实耗时：跑完才推进游标（[loading-visual-substep] 会打出来）。
 	_loading_visual_step("building_visual_ready")
+	return {"ok": true}
+
+
+func _prepare_world_restore() -> Dictionary:
 	if not _pending_load_bundle.is_empty():
 		var save_service := _game_save_service()
 		var restore_result: Dictionary = save_service.restore_prepared_game(self) if save_service != null \
@@ -1302,13 +1398,17 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			_emit_world_generation_failure("save_restore", "save_restore_failed",
 				String(restore_result.get("message", "存档恢复失败。")),
 				"存档可能损坏或与当前版本不兼容；code=%s" % String(restore_result.get("code", "unknown")))
-			return
+			return _session_preparation_failure()
 		# 运行中保存的时钟会恢复为 unpaused；随后仍有数个加载 await。
 		# 在输入捕获/worker 启动完成前推进日历会漏掉环境输入并卡住日屏障。
 		if _world_clock != null:
-			clock_was_paused = _world_clock.paused
+			_session_prepare_options.clock_was_paused = _world_clock.paused
 			_world_clock.pause(true)
 		_pending_load_bundle.clear()
+	return {"ok": true}
+
+
+func _prepare_world_simulation() -> Dictionary:
 	# Phase A: freeze all worker inputs after generation/restore has completed.
 	# Capture is a copy boundary. SHADOW worker starts immediately after so
 	# production days have a live compare path; ACTIVE still waits on the
@@ -1334,9 +1434,9 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	# `world_ready` 之前会让加载条卡在 98% 几十秒；放到之后，玩家先进世界，
 	# 这一帧变成一次性顿挫（不影响日历，后续帧 ~16ms）。
 	if not OS.has_feature("web"):
-		await get_tree().process_frame
-		if not is_inside_tree():
-			return
+		await _session_frames.next_frame()
+		if not _session_preparation_active():
+			return _session_preparation_failure()
 	WebTelemetry.emit("bind_step", {"s": "post_worker_frame"})
 	var annual_handle: int = _resolve_player_country_handle()
 	if annual_handle != 0:
@@ -1347,6 +1447,8 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		if not _annual_reports.report_ready.is_connected(_on_annual_report_ready):
 			_annual_reports.report_ready.connect(_on_annual_report_ready)
 	_start_production_shadow_worker()
+	_clock_binding.attach(_world_clock, _generator.set_runtime_clock_threaded,
+		_runtime_session.set_running)
 	WebTelemetry.emit("bind_step", {"s": "worker_skipped"})
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
@@ -1364,24 +1466,93 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	# 一次性开销。放在 ready 之后就变成"先进世界，随后一次性顿挫"，而不是把
 	# 加载条钉在 98%。
 	if not OS.has_feature("web"):
-		await get_tree().process_frame
-		if not is_inside_tree():
-			return
-	_runtime_ready_for_ticks = true
-	# The host process also drains building visual dirty cells. Keep it alive for
-	# the normal runtime; overlay refreshes must not disable construction/era
-	# intelligence updates.
-	set_process(true)
-	if _world_clock != null:
-		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
-		_world_clock.pause(clock_was_paused)
-		on_clock_running_changed(not _world_clock.paused)
-	# Web 构建：世界就绪事件（agent 侧据此判断"可以点开始了"）。
-	WebTelemetry.emit("ready", {
-		"day": _world_clock.day_index() if _world_clock != null else -1,
-		"paused": _world_clock.paused if _world_clock != null else true,
-	})
-	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
+		await _session_frames.next_frame()
+		if not _session_preparation_active():
+			return _session_preparation_failure()
+	return {"ok": true}
+
+
+func _session_preparation_active() -> bool:
+	return not _exiting_tree and is_inside_tree() and _runtime_session.is_preparing()
+
+
+func _session_preparation_failure() -> Dictionary:
+	return {"ok": false, "code": "session_cancelled" if not _session_preparation_active()
+		else String(last_world_generation_error.get("reason", "world_prepare_failed"))}
+
+
+func close_world() -> Dictionary:
+	_runtime_ready_for_ticks = false
+	set_process(false)
+	if is_instance_valid(_world_clock):
+		_world_clock.pause(true)
+		on_clock_running_changed(false)
+	return await _runtime_session.close()
+
+
+func _cancel_world_preparation() -> void:
+	_clock_binding.detach()
+	_runtime_ready_for_ticks = false
+	set_process(false)
+	_session_frames.cancel()
+	if _generator != null:
+		_generator.cancel_loading_work()
+		_generator.request_runtime_stop()
+
+
+func _cancel_session_simulation() -> void:
+	_clock_binding.detach()
+	if _generator != null:
+		_generator.request_runtime_stop()
+
+
+func _release_session_simulation() -> Dictionary:
+	return await _stop_previous_runtime_worker()
+
+
+func _cancel_session_presentation() -> void:
+	_session_frames.cancel()
+
+
+func _release_session_presentation() -> Dictionary:
+	clear_map_overlay()
+	if is_instance_valid(_settlement_label_layer):
+		_settlement_label_layer.free()
+		_settlement_label_layer = null
+	if is_instance_valid(military_map_layers):
+		military_map_layers.free()
+		military_map_layers = null
+	# Renderer resources remain owned by their scene; detach the simulation API
+	# before releasing host ownership. Scene replacement frees the visual caches.
+	if is_instance_valid(_renderer):
+		_renderer.set_world_ext(null)
+		_renderer.set_map_baker(null)
+	return {"ok": true}
+
+
+func _release_world_data() -> Dictionary:
+	# Restore can have created a paused executor before the simulation adapter.
+	var stopped: Dictionary = await _stop_previous_runtime_worker()
+	if not bool(stopped.get("ok", false)):
+		return stopped
+	_annual_reports = AnnualReportSessionScript.new()
+	if _generator != null:
+		_generator.sus_reset_all()
+	_view_adapter = null
+	_selected_cell = null
+	_current_map = null
+	_world_data = null
+	_generator = null
+	return {"ok": true}
+
+
+func _session_noop() -> void:
+	pass
+
+
+func _session_ok() -> Dictionary:
+	return {"ok": true}
+
 
 ## native_daily_inline 是否要在本次会话生效。
 ##
@@ -1719,21 +1890,24 @@ func _environment_prefetch_capable() -> bool:
 		and ext.has_method("runtime_committed_day")
 
 
-func _stop_previous_runtime_worker() -> void:
+func _stop_previous_runtime_worker() -> Dictionary:
 	if _generator == null or not _generator.has_method("request_runtime_stop"):
-		return
-	var stop_result: Dictionary = _generator.request_runtime_stop()
+		return {"ok": true}
+	var stopping_generator = _generator
+	var stop_result: Dictionary = stopping_generator.request_runtime_stop()
+	if not bool(stop_result.get("ok", false)):
+		return stop_result
 	if not bool(stop_result.get("pending", false)):
-		return
+		return {"ok": true}
 	# This is intentionally an async lifecycle wait, never a mutex/worker join.
-	# A faulted worker has already unwound its thread and is safe to release.
-	while true:
-		var report: Dictionary = _generator.get_runtime_thread_report() \
-			if _generator.has_method("get_runtime_thread_report") else {}
-		var state := String(report.get("simulation_host_state", report.get("state", "STOPPED")))
-		if state in ["STOPPED", "FAULTED"]:
-			return
+	# FAULTED alone does not prove the worker has unwound its local resources.
+	var report: Dictionary = stopping_generator.get_runtime_thread_report()
+	while not bool(report.get("simulation_executor_exited", false)):
+		if not report.has("simulation_executor_exited"):
+			return {"ok": false, "code": "runtime_stop_ack_missing"}
 		await get_tree().process_frame
+		report = stopping_generator.get_runtime_thread_report()
+	return {"ok": true}
 
 
 func is_loading_session() -> bool:
@@ -1969,7 +2143,6 @@ func _process(_delta: float) -> void:
 	#   - **不要**依赖两个 Node 的 _process 相对顺序（历史上踩过）。
 	_service_worker_lead_and_prefetch()
 	_service_runtime_liveness(frame_usec, capacity_pending)
-	_service_worker_unstick()
 	_web_mark("liveness_end")
 	_annual_reports.poll()
 	_web_mark("annual_poll_end")
@@ -2460,6 +2633,8 @@ func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void
 	_service_trigger_worker_intents_if_authoritative()
 	_consume_ideology_worker_snapshot_if_authoritative()
 	_service_ideology_worker_intents_if_authoritative()
+	if _ideology_refresh_pending_day >= 0:
+		_step_ideology_instance_refresh_if_authoritative(_ideology_refresh_pending_day)
 	_sched_proc_snapshots_ms += _sched_elapsed_ms(segment_usec)
 
 
@@ -2751,8 +2926,10 @@ func _service_effect_worker_intents_if_authoritative() -> void:
 
 ## P1-A: under IDEOLOGY worker authority the main-thread daily job is
 ## suppressed, so the sliced instance refresh -- whose instances still belong to
-## this facade -- has to be pumped here. Bounded per call; `done == false` only
-## means the pass has more countries left.
+## this facade -- has to be pumped here. A pending boundary or slice is continued
+## by frame liveness, even when the calendar cannot admit another day.
+var _ideology_refresh_pending_day: int = -1
+var _ideology_instance_refreshed_day: int = -1
 ## Last day the derived-layer pump reached completion.
 ##
 ## The throttle belongs to the PUMP, because the pump is the only caller invoked every
@@ -2778,9 +2955,15 @@ func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
 	var report := _runtime_control_state()
 	if (int(report.get("authoritative_domain_mask", 0)) & 0x010) == 0:
 		return
+	_ideology_refresh_pending_day = day_idx
 	_ideology_pump_calls += 1
-	_ideology_instance_refresh_last = \
-		_generator.step_ideology_instance_refresh(day_idx).duplicate(false)
+	if _ideology_instance_refreshed_day != day_idx:
+		_ideology_instance_refresh_last = \
+			_generator.step_ideology_instance_refresh(day_idx).duplicate(false)
+		if not bool(_ideology_instance_refresh_last.get("done", false)) \
+				or bool(_ideology_instance_refresh_last.get("pending", true)):
+			return
+		_ideology_instance_refreshed_day = day_idx
 	# Plan §9.3 in worker mode: the DERIVED half needs the same pump.
 	#
 	# `run_ideology_daily` is suppressed under IDEOLOGY worker authority and it is the only
@@ -2796,14 +2979,19 @@ func _step_ideology_instance_refresh_if_authoritative(day_idx: int) -> void:
 	# -- measured, and it cost two attempts and a broken save fixture before it was
 	# understood.
 	#
-	# A tick landing inside the worker's day transaction returns `economy_day_inflight` and
-	# is retried on the next tick. That is normal contention, not a failure.
+	# A call landing inside the worker's day transaction returns `economy_day_inflight`.
+	# Retry from frame liveness: the worker may be parked on the main-boundary request,
+	# so waiting for the next calendar tick can deadlock. Instance and derived calls
+	# share that request bit; finish one before starting the other.
 	if _generator.has_method("step_ideology_derived_rebuild"):
 		if _ideology_derived_pumped_day != day_idx:
 			var pumped: Dictionary = _generator.step_ideology_derived_rebuild(day_idx)
 			_ideology_pump_last = pumped.duplicate(false)
 			if bool(pumped.get("done", false)) and not bool(pumped.get("pending", true)):
 				_ideology_derived_pumped_day = day_idx
+			else:
+				return
+	_ideology_refresh_pending_day = -1
 
 
 ## G8 ACTIVE Ideology write-back. Non-blocking: drops intermediate generations.
@@ -5814,7 +6002,6 @@ func _recorder_ready(recorder: RefCounted) -> bool:
 
 
 func on_speed_changed(new_speed: float) -> void:
-	_sync_runtime_worker_clock()
 	if _renderer != null:
 		if _renderer.has_method("set_simulation_speed_multiplier"):
 			_renderer.set_simulation_speed_multiplier(new_speed)
@@ -5843,11 +6030,6 @@ func on_speed_changed(new_speed: float) -> void:
 
 
 func on_clock_running_changed(running: bool) -> void:
-	if _generator != null and _world_clock != null \
-			and _generator.has_method("set_runtime_clock_threaded"):
-		# This is a non-blocking control message. In OFF the facade simply reports
-		# that no worker exists and the legacy clock remains authoritative.
-		_generator.set_runtime_clock_threaded(not running, _world_clock.speed_multiplier)
 	if _renderer == null:
 		return
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
@@ -5858,53 +6040,8 @@ func on_clock_running_changed(running: bool) -> void:
 		fog_layer.set_clock_running(running)
 
 
-## [worker-unstick 2026-11-01] 安卓上复现过一种启动竞态：worker 已经起来、环境帧也
-## 发布成功，但 host 仍停在 state=PAUSED / attempt_slices=0，日历永远停在 day 1
-## （同一份 APK 重装后有时能跑，属于竞态）。根因是启动时那一次
-## `set_runtime_clock_threaded(paused=false, speed)` 落在 worker 还没就绪的窗口里，
-## 之后没有任何人补发，于是"暂停"这个初值一直留着。
-## 这里做一次兜底：时钟在跑、日期超过 2.5 秒没动、worker 又没有 in-flight 的一天时，
-## 重发一次时钟状态（幂等）。只在该卡死形态下触发，正常运行时不会打日志。
-var _worker_unstick_last_day: int = -1
-var _worker_unstick_since_ms: int = 0
-var _worker_unstick_count: int = 0
-
-
-func _service_worker_unstick() -> void:
-	if _generator == null or _world_clock == null or _runtime_worker_fault_paused:
-		return
-	if _world_clock.paused:
-		return
-	if not _generator.has_method("get_runtime_thread_report"):
-		return
-	var day := int(_world_clock.day_index())
-	var now := Time.get_ticks_msec()
-	if day != _worker_unstick_last_day:
-		_worker_unstick_last_day = day
-		_worker_unstick_since_ms = now
-		return
-	if now - _worker_unstick_since_ms < 2500:
-		return
-	var report: Dictionary = _generator.get_runtime_thread_report()
-	if report.is_empty():
-		return
-	if String(report.get("state", "")) != "PAUSED":
-		return
-	if int(report.get("worker_day_inflight", 0)) != 0:
-		return
-	_worker_unstick_since_ms = now
-	_worker_unstick_count += 1
-	print("[runtime-worker] unstick#%d day=%d 日历 2.5s 未推进且 worker=PAUSED，重发 clock(paused=false, speed=%.2f)"
-		% [_worker_unstick_count, day, _world_clock.speed_multiplier])
-	_sync_runtime_worker_clock()
-
-
 func _sync_runtime_worker_clock() -> void:
-	if _generator == null or _world_clock == null \
-			or not _generator.has_method("set_runtime_clock_threaded"):
-		return
-	_generator.set_runtime_clock_threaded(
-		_world_clock.paused, _world_clock.speed_multiplier)
+	_clock_binding.synchronize()
 
 
 func on_visual_day_phase_changed(visual_day_phase: float) -> void:
@@ -6184,6 +6321,8 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 	if not _renderer.loading_layer_progress.is_connected(layer_progress):
 		_renderer.loading_layer_progress.connect(layer_progress)
 	await _renderer.set_map_cooperative(_current_map, _world_data)
+	if not _session_preparation_active():
+		return
 	if _renderer.loading_layer_progress.is_connected(layer_progress):
 		_renderer.loading_layer_progress.disconnect(layer_progress)
 	if _map_overlay_layer != null:
@@ -6198,7 +6337,9 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 		_loading_visual_step("_renderer.set_map_baker(_generator._baker)")
 		_renderer.set_map_baker(_generator._baker)
 	_loading_visual_step("_bind_country_visuals()")
-	await get_tree().process_frame
+	await _session_frames.next_frame()
+	if not _session_preparation_active():
+		return
 	WebTelemetry.emit("bind_step", {"s": "pre_bind_country"})
 	_bind_country_visuals()
 	WebTelemetry.emit("bind_step", {"s": "post_bind_country"})
@@ -6232,7 +6373,9 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 				_loading_visual_step("_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())")
 				await _generator.refresh_climate_loading(_current_map, _world_clock.season_phase())
 	WebTelemetry.emit("bind_step", {"s": "before_camera_frame"})
-	await get_tree().process_frame
+	await _session_frames.next_frame()
+	if not _session_preparation_active():
+		return
 	WebTelemetry.emit("bind_step", {"s": "camera_bounds"})
 	if _camera != null:
 		_camera.set_world_bounds(_renderer.get_world_bounds())
@@ -6255,13 +6398,15 @@ func _bind_renderer_and_camera(safe_area: Rect2) -> void:
 
 ## Web 专用：把定居点标签层推到进世界之后（逐 cell 建 Label 在 wasm 上 45s 量级）。
 func _defer_settlement_labels_after_ready() -> void:
-	if not is_inside_tree():
+	if _exiting_tree or not is_inside_tree():
 		return
 	if PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
 		return
+	var session = _runtime_session
+	var token: int = session.generation
 	var timer := get_tree().create_timer(4.0, true, false, true)
 	await timer.timeout
-	if not is_inside_tree():
+	if _exiting_tree or not is_inside_tree() or not session.is_current(token):
 		return
 	var started := Time.get_ticks_msec()
 	_bind_settlement_labels()
@@ -6965,9 +7110,19 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 	generation_progress.emit(stage, fraction)
 
 
+func _enter_tree() -> void:
+	_exiting_tree = false
+	add_to_group(&"world_sessions")
+
+
 func _exit_tree() -> void:
+	_clock_binding.detach()
+	_exiting_tree = true
+	_runtime_session.request_close()
+	_session_frames.cancel()
 	if _generator != null:
 		_generator.cancel_loading_work()
+		_generator.request_runtime_stop()
 
 
 var _loading_visual_usec := 0

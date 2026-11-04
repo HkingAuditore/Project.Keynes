@@ -51,7 +51,13 @@ var _slot_by_name: Dictionary = {}             # StringName → comp_id (int)
 var _entity_count: int = 0
 
 # Bind 状态（Task 4 完整接入；首版仅占位）
-var _map_data = null                           # MapData 弱引用
+var _map_data_ref: WeakRef
+# MapData owns HexCells, which retain this world. Do not close that cycle.
+var _map_data:
+	get:
+		return _map_data_ref.get_ref() if _map_data_ref != null else null
+	set(value):
+		_map_data_ref = weakref(value) if value != null else null
 var _bound: bool = false
 
 # Pending sub-pass 计数（Task 2 swap 守卫用）。每个 sub-pass 开始时 +1，完成

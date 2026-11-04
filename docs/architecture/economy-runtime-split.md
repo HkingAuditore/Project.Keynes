@@ -28,32 +28,32 @@ save-schema change.
 This document is the migration contract for splitting the native economy
 runtime. It describes file boundaries, not new simulation behavior.
 
-## Current Monolith
+## Current source sizes (2026-11-04)
 
 | File | Approx. size | Current responsibility |
 | --- | ---: | --- |
-| `gdext/src/economy_runtime.cpp` | ~11,102 lines | Native state, stage dispatch/cursors, worker dispatch, stage transitions and cross-module invariants |
-| `gdext/src/economy_runtime_epoch.cpp` | ~912 lines | Epoch preflight, frozen country/workset setup, transient initialization, opening audit lanes and completed performance snapshot |
-| `gdext/src/economy_runtime_publish.cpp` | ~525 lines | Publish phase cursor state, closing audits, watermark/trade diagnostics and ordered COMMIT handoff |
-| `gdext/src/economy_runtime_results.cpp` | ~159 lines | Market/production result reset and capacity accounting plus worker TLS result sinks |
-| `gdext/src/economy_runtime_diagnostics.cpp` | ~1,775 lines | Read-only stage progress, memory accounting, slice breakdown and compact/full runtime report formatting |
-| `gdext/src/economy_runtime_settlements.cpp` | ~320 lines | Committed population totals, prosperity hysteresis, stable settlement naming, settlement updates and bounded settlement row construction |
-| `gdext/src/economy_runtime_catalog.cpp` | ~1,571 lines | Stable-ID catalog decoding and validation for family traits, goods, needs, signatures, families, people, settlements and buildings |
-| `gdext/src/economy_runtime_profile.cpp` | ~410 lines | Built-in formula registration plus runtime and satisfaction profile decoding |
-| `gdext/src/economy_runtime_configuration.cpp` | ~936 lines | Public configure/bootstrap/command submission facade over the sole native runtime owner |
-| `gdext/src/economy_runtime_events.cpp` | ~712 lines | Committed trace/cashflow/gameplay facts, event schema/query/ack/report and PKEJ archive streaming |
-| `gdext/src/economy_runtime_persistence.cpp` | ~912 lines | Save/restore lifecycle, committed-boundary validation and public stream coordination |
-| `gdext/src/economy_runtime_persistence_write.cpp` | ~802 lines | Ordered PKEC v30 section encoding and bounded chunk writer |
-| `gdext/src/economy_runtime_persistence_read.cpp` | ~1,595 lines | PKEC v30 section decoding, record validation and restore staging |
-| `gdext/src/economy_runtime_persistence_codec.h` | ~60 lines | Single PKEC magic/section-number contract and save-chunk envelope helper |
-| `gdext/src/economy_runtime_binary_codec.h` | ~60 lines | Shared stateless little-endian/string/ID-table binary helpers used by PKEC and event archive code |
-| `gdext/src/economy_runtime_queries_population.cpp` | ~466 lines | Settlement delta/snapshot and bounded population cell summary/snapshot formatting |
-| `gdext/src/economy_runtime_queries_market_building.cpp` | ~1,912 lines | Bounded market, satisfaction, fiscal, building, family, notable-person and trade-order facade methods; no scheduler cursor ownership |
-| `gdext/src/economy_runtime_variant_helpers.h` | ~87 lines | Shared stateless Godot `Dictionary`/packed-array UTF-8 and numeric decoding helpers used by configuration, catalog, queries and retained root event code |
-| `gdext/src/economy_runtime.h` | 3,619 lines | Public facade, all private stores/records, stage state, configuration and persistence types |
-| `scripts/economy/economy_facade.gd` | 1,067 lines | Commands, selected-cell queries, inspector formatting, save/event facade |
-| `scripts/economy/economy_catalog.gd` | 1,184 lines | Resource loading, stable IDs, catalog compilation and validation |
-| `scripts/simulation/systems/economy_daily_system.gd` | 286 lines | Scheduler shell, cadence/deadline and report forwarding |
+| `gdext/src/economy_runtime.cpp` | 26,752 lines | Native state, stage dispatch/cursors, worker dispatch, stage transitions and cross-module invariants |
+| `gdext/src/economy_runtime_epoch.cpp` | 1,701 lines | Epoch preflight, frozen country/workset setup, transient initialization, opening audit lanes and completed performance snapshot |
+| `gdext/src/economy_runtime_publish.cpp` | 828 lines | Publish phase cursor state, closing audits, watermark/trade diagnostics and ordered COMMIT handoff |
+| `gdext/src/economy_runtime_results.cpp` | 213 lines | Market/production result reset and capacity accounting plus worker TLS result sinks |
+| `gdext/src/economy_runtime_diagnostics.cpp` | 2,975 lines | Read-only stage progress, memory accounting, slice breakdown and compact/full runtime report formatting |
+| `gdext/src/economy_runtime_settlements.cpp` | 343 lines | Committed population totals, prosperity hysteresis, stable settlement naming, settlement updates and bounded settlement row construction |
+| `gdext/src/economy_runtime_catalog.cpp` | 3,020 lines | Stable-ID catalog decoding and validation for family traits, goods, needs, signatures, families, people, settlements and buildings |
+| `gdext/src/economy_runtime_profile.cpp` | 609 lines | Built-in formula registration plus runtime and satisfaction profile decoding |
+| `gdext/src/economy_runtime_configuration.cpp` | 1,827 lines | Public configure/bootstrap/command submission facade over the sole native runtime owner |
+| `gdext/src/economy_runtime_events.cpp` | 1,697 lines | Committed trace/cashflow/gameplay facts, event schema/query/ack/report and PKEJ archive streaming |
+| `gdext/src/economy_runtime_persistence.cpp` | 2,405 lines | Save/restore lifecycle, committed-boundary validation and public stream coordination |
+| `gdext/src/economy_runtime_persistence_write.cpp` | 1,536 lines | Ordered PKEC v30 section encoding and bounded chunk writer |
+| `gdext/src/economy_runtime_persistence_read.cpp` | 3,104 lines | PKEC v30 section decoding, record validation and restore staging |
+| `gdext/src/economy_runtime_persistence_codec.h` | 93 lines | Single PKEC magic/section-number contract and save-chunk envelope helper |
+| `gdext/src/economy_runtime_binary_codec.h` | 138 lines | Shared stateless little-endian/string/ID-table binary helpers used by PKEC and event archive code |
+| `gdext/src/economy_runtime_queries_population.cpp` | 654 lines | Settlement delta/snapshot and bounded population cell summary/snapshot formatting |
+| `gdext/src/economy_runtime_queries_market_building.cpp` | 3,008 lines | Bounded market, satisfaction, fiscal, building, family, notable-person and trade-order facade methods; no scheduler cursor ownership |
+| `gdext/src/economy_runtime_variant_helpers.h` | 87 lines | Shared stateless Godot `Dictionary`/packed-array UTF-8 and numeric decoding helpers used by configuration, catalog, queries and retained root event code |
+| `gdext/src/economy_runtime.h` | 10,249 lines | Public facade, all private stores/records, stage state, configuration and persistence types |
+| `scripts/economy/economy_facade.gd` | 2,146 lines | Commands, selected-cell queries, inspector formatting, save/event facade |
+| `scripts/economy/economy_catalog.gd` | 2,325 lines | Resource loading, stable IDs, catalog compilation and validation |
+| `scripts/simulation/systems/economy_daily_system.gd` | 468 lines | Scheduler shell, cadence/deadline and report forwarding |
 
 ## Non-Negotiable Authority
 
@@ -411,3 +411,25 @@ in `technology-tree-runtime.md`.
 2026-09-21: the bounded exception also covers `record_investment_material_demand`
 and its quote/commit call sites in the same investment translation unit; no new
 store/save schema. This keeps material feedback beside candidate feasibility.
+
+
+## 2026-11 capability boundaries
+
+`EconomyAuthorityTransfer` now owns the limited host/save handshake (sample day,
+Country peer service, scoped identity override and deferred validation). Host no
+longer has whole-class friendship. `EconomyInvariantProbe` constructs isolated
+runtimes for private financial checks instead of exposing live state to tests.
+
+`EconomyRecordSource` samples copied fields into `EconomyCsvRecorder::Batch`.
+Recorder owns file encoding, buffers and its writer thread; it has no private
+runtime access and does not recompute business formulas. These responsibilities
+are separate from the native runtime's authoritative stores.
+
+ECP2 has no complete mid-epoch execution state: legacy cursor-only export/apply
+is rejected. Committed save/restore remains supported and tested; do not label
+wire-codec resume roundtrip as proof of executable continuation.
+
+The main runtime class and pure settlement planner remain large. Their current
+size is a tracked limitation, not a claim that this capability extraction fully
+rewrote the domain. New independent behavior must use the world-runtime
+contracts and cannot acquire arbitrary Host/runtime fields.

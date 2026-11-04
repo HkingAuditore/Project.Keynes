@@ -175,6 +175,11 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 - 弹窗开启时复用 `AnnualReportFlow` 同款时钟锁（保存原速度与暂停态并同步 Worker 暂停），与 `EraReward`、`FamilyFounding`、`AnnualReport` 互斥排队。
 - 持久化通过 `GameSaveCoordinator` 的可选兼容 provider `pknr`（`PKNarrativeRuntime v1`）与 `player_view.narrative_event_view` 完成存读档恢复。
 
+文字与图片服务使用独立密钥，由 `narrative_ai_credentials.gd` 管理文件读写。
+缺少图片密钥时不会复用文字密钥。设置页保存空字段会清除该密钥；环境变量
+`PK_AI_LLM_API_KEY` / `PK_AI_IMAGE_API_KEY` 只为尚未保存的字段提供初始值。
+凭据回归测试使用独立文件及虚构密钥，不发送网络请求。
+
 ### 事件文案规范（2026-11）
 
 事件 UI 只放可决策的信息，不写场景描写与修辞：
@@ -186,3 +191,13 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 - 效果行统一「对象 + 幅度 + 时长」，如 `本地农业产出 +15%，90 日`；`NarrativeEffectSpec.describe()` 是唯一兜底。
 - 只有映射到 `TAG_CN_LABELS` 的标签才显示（最多 3 个），内部 id 不进 UI。
 - `NarrativeAiPromptBuilder` 要求模型按同一规范输出，`NarrativeAiValidator` 对正文做 160 字截断兜底。
+
+## Clock control and modal regression coverage (2026-11-04)
+
+PlayerController changes WorldClock and displays its state. Native clock synchronization
+belongs to the session-owned `runtime_clock_binding.gd`, which subscribes directly to
+`WorldClock.control_changed`; `sync_ui()` is no longer a native-control operation.
+The country UI soak handles narrative choices through the player command and outcome
+acknowledgement, then reopens country affairs. A narrative pause is an expected user
+interaction, not evidence of a worker stall. Scroll preservation is checked with a
+nonzero position in a compact viewport after layout settles.

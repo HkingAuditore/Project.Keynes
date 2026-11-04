@@ -1012,6 +1012,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
         return out;
     }
     _environment_hash = _restore.environment_hash;
+    // Rain is an edge (precipitation rose), not simply a wet day. Seed the
+    // previous observation from the saved sample so unchanged rain after a
+    // restore does not reset a persisted dry streak.
+    _cell_previous_precipitation_q16.assign(
+        _environment_precipitation_q16.values().begin(),
+        _environment_precipitation_q16.values().end());
+
     const size_t expected_population_slots =
         population_store().page_next.size() * static_cast<size_t>(COHORT_PAGE_SIZE);
     if (population_store().active.size() != expected_population_slots ||
@@ -1869,6 +1876,10 @@ bool NativeEconomyRuntime::verify_deferred_country_identity(
 bool NativeEconomyRuntime::validate_ecp2_candidate(
         const RuntimeEconomyEcp2State &in, std::string &error) const {
     error.clear();
+    if ((in.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0) {
+        error = "ecp2_mid_epoch_resume_unsupported";
+        return false;
+    }
     // Resource wire shape is checked HERE, before `end_restore_internal` commits the
     // candidate.
     //
@@ -2031,7 +2042,10 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
         error = !_bootstrapped ? "economy_not_bootstrapped" : "economy_fatal";
         return false;
     }
-    if (_epoch_active && (flags & ECP2_CAPTURE_ALLOW_MID_EPOCH) == 0) {
+    // Resume v3 contains cursors but no frozen inputs, partial market results,
+    // or pending transactions. Exporting it would promise a continuation that
+    // cannot be reconstructed. Flags cannot bypass the committed boundary.
+    if (_epoch_active) {
         error = "save_requires_committed_boundary";
         return false;
     }
@@ -2164,53 +2178,6 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     out.authority_domain_mask |= ECP2_DOMAIN_OWNED_STATE;
     }
 
-    if ((flags & ECP2_CAPTURE_INCLUDE_RESUME) != 0 && _epoch_active) {
-        RuntimeEconomyEcp2Resume &resume = out.resume;
-        resume.epoch_active = 1;
-        resume.native_stage = static_cast<int32_t>(_stage);
-        resume.graph_completed_mask = 0;
-        resume.sample_day = _sample_day;
-        resume.current_day = _current_day.get();
-        resume.epoch_id = _epoch_id.get();
-        resume.epoch_days = _epoch_days.get();
-        resume.publish_cursor = _publish_cursor;
-        resume.publish_order_cursor = _publish_order_cursor;
-        resume.publish_line_cursor = _publish_line_cursor;
-        resume.executed_stage = static_cast<int32_t>(_executed_stage);
-        resume.publish_phase = static_cast<int32_t>(_publish_phase);
-        resume.cell_cursor = static_cast<uint32_t>(std::max(0, _cell_cursor));
-        resume.command_cursor =
-            static_cast<uint32_t>(std::max(0, _command_cursor));
-        resume.structural_cursor =
-            static_cast<uint32_t>(std::max(0, _structural_cursor));
-        resume.building_cell_cursor =
-            static_cast<uint32_t>(std::max(0, _building_cell_cursor));
-        resume.plan_evaluate_cursor =
-            static_cast<uint32_t>(std::max(0, _plan_evaluate_cursor));
-        resume.building_plan_phase = _building_plan_phase;
-        resume.household_market_phase = _household_market_phase;
-        resume.household_post_cursor = _household_post_cursor;
-        resume.building_commit_phase = _building_commit_phase;
-        resume.building_commit_cursor = _building_commit_cursor;
-        resume.building_finalize_phase = _building_finalize_phase;
-        resume.family_commit_cursor = _family_commit_cursor;
-        resume.family_commit_phase = _family_commit_phase;
-        resume.person_commit_cursor = _person_commit_cursor;
-        resume.person_commit_phase = _person_commit_phase;
-        resume.trade_plan_phase = static_cast<uint8_t>(
-            std::max(0, std::min(255, _trade_plan.phase)));
-        resume.trade_plan_scan_cursor = static_cast<uint32_t>(
-            std::max<int64_t>(0, _trade_plan.scan_cursor));
-        resume.trade_plan_route_cursor = static_cast<uint32_t>(
-            std::max(0, _trade_plan.route_cursor));
-        resume.waiting_for_peer =
-            (_fiscal_reservation_continuation.active ||
-             _fiscal_settlement_continuation.active ||
-             _country_research_procurement_continuation.active)
-                ? 1
-                : 0;
-        out.authority_domain_mask |= ECP2_DOMAIN_EPOCH_RESUME;
-    }
 
     return true;
 }
@@ -2318,43 +2285,12 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
             _resource_snapshot = store.stock;
             _cell_resource_gen = store.cell_generation;
         }
+        // The typed ECP2 resource block replaces the legacy resource chunks.
+        // end_restore() cannot see it: protect these exact integer quantities
+        // from the first recapture of the world's rounded float mirror.
+        _resource_stock_restored_pending_capture = true;
     }
 
-    if ((in.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0) {
-        const RuntimeEconomyEcp2Resume &resume = in.resume;
-        _epoch_active = resume.epoch_active != 0;
-        _stage = static_cast<Stage>(resume.native_stage);
-        if (resume.epoch_id != 0) _epoch_id = resume.epoch_id;
-        if (resume.epoch_days != 0) _epoch_days = resume.epoch_days;
-        if (resume.sample_day >= 0) _sample_day = resume.sample_day;
-        if (resume.current_day >= 0) _current_day = resume.current_day;
-        _publish_cursor = static_cast<size_t>(resume.publish_cursor);
-        _publish_order_cursor = resume.publish_order_cursor;
-        _publish_line_cursor = resume.publish_line_cursor;
-        _executed_stage = static_cast<Stage>(resume.executed_stage);
-        _publish_phase = static_cast<PublishPhase>(resume.publish_phase);
-        _cell_cursor = static_cast<int32_t>(resume.cell_cursor);
-        _command_cursor = static_cast<int32_t>(resume.command_cursor);
-        _structural_cursor = static_cast<int32_t>(resume.structural_cursor);
-        _building_cell_cursor =
-            static_cast<int32_t>(resume.building_cell_cursor);
-        _plan_evaluate_cursor =
-            static_cast<int32_t>(resume.plan_evaluate_cursor);
-        _building_plan_phase = resume.building_plan_phase;
-        _household_market_phase = resume.household_market_phase;
-        _household_post_cursor = resume.household_post_cursor;
-        _building_commit_phase = resume.building_commit_phase;
-        _building_commit_cursor = resume.building_commit_cursor;
-        _building_finalize_phase = resume.building_finalize_phase;
-        _family_commit_cursor = resume.family_commit_cursor;
-        _family_commit_phase = resume.family_commit_phase;
-        _person_commit_cursor = resume.person_commit_cursor;
-        _person_commit_phase = resume.person_commit_phase;
-        _trade_plan.phase = resume.trade_plan_phase;
-        _trade_plan.scan_cursor = resume.trade_plan_scan_cursor;
-        _trade_plan.route_cursor =
-            static_cast<int32_t>(resume.trade_plan_route_cursor);
-    }
 
     if (!validate_restored_committed_snapshot(error)) {
         _restore = {};
@@ -2366,6 +2302,11 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
 bool NativeEconomyRuntime::apply_ecp2_authority(
         const RuntimeEconomyEcp2State &in, std::string &error) {
     error.clear();
+
+    if (_epoch_active) {
+        error = "restore_requires_committed_boundary";
+        return false;
+    }
 
     // Fixed restore flow (stage 4):
     // decode candidate (caller) → semantic validation → backup live →

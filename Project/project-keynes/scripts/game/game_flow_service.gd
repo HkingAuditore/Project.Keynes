@@ -4,15 +4,19 @@ signal request_changed(kind: String)
 
 const MAIN_MENU_SCENE := "res://scenes/main_menu.tscn"
 const PLAYER_GAME_SCENE := "res://scenes/player_game.tscn"
+const TransitionFrames = preload("res://scripts/geography/loading_frame_gate.gd")
 
 var _pending_request: Dictionary = {}
 var _session: Dictionary = {}
 var _transition_id := 0
 var _transition_active := false
 var _transition_layer: CanvasLayer
+var _quitting := false
+var _transition_frames = TransitionFrames.new()
 
 
 func _ready() -> void:
+	get_tree().auto_accept_quit = false
 	# 最早能跑到的应用代码（autoload 先于主场景）。用它把「引擎/wasm 启动」与
 	# 「菜单构建」分开：`boot` → `menu_ready` → `ready`（进世界）。
 	WebTelemetry.emit("boot", {"engine_msec": Time.get_ticks_msec()})
@@ -101,15 +105,41 @@ func clear_session() -> void:
 
 
 func return_to_main_menu() -> Dictionary:
+	if _quitting:
+		return _result(false, "application_closing", "游戏正在关闭。")
 	_transition_id += 1
-	_transition_active = false
+	_transition_frames.cancel()
+	_transition_active = true
 	if is_instance_valid(_transition_layer):
 		_transition_layer.queue_free()
 	_pending_request.clear()
 	_session.clear()
+	_finish_menu_transition.call_deferred(_transition_id)
+	return {"ok": true, "code": "transition_accepted", "pending": true, "message": ""}
+
+
+func _close_world_sessions() -> Dictionary:
+	for host in get_tree().get_nodes_in_group(&"world_sessions"):
+		if not is_instance_valid(host):
+			continue
+		var result: Dictionary = await host.close_world()
+		if not bool(result.get("ok", false)):
+			return result
+	return {"ok": true}
+
+
+func _finish_menu_transition(id: int) -> void:
+	var closed := await _close_world_sessions()
+	if id != _transition_id:
+		return
+	if not bool(closed.get("ok", false)):
+		_transition_active = false
+		push_error("[game-flow] world close failed: %s" % str(closed))
+		return
 	var error := get_tree().change_scene_to_file(MAIN_MENU_SCENE)
-	return _result(error == OK, "ok" if error == OK else "scene_change_failed",
-		"" if error == OK else "无法返回主菜单。")
+	_transition_active = false
+	if error != OK:
+		push_error("[game-flow] main menu transition failed: %s" % error)
 
 
 func _queue_player_scene() -> Error:
@@ -121,6 +151,8 @@ func _queue_player_scene() -> Error:
 		return error
 	_transition_active = true
 	_transition_id += 1
+	_transition_frames.cancel()
+	_transition_frames = TransitionFrames.new()
 	_transition_layer = CanvasLayer.new()
 	_transition_layer.layer = 100
 	# 先把 overlay 挂到（尚未入树的）CanvasLayer 上，再整体 deferred 入树。
@@ -137,17 +169,17 @@ func _queue_player_scene() -> Error:
 		if is_instance_valid(_transition_layer):_transition_layer.queue_free()
 		_queue_player_scene())
 	get_tree().root.add_child.call_deferred(_transition_layer)
-	call_deferred("_finish_player_scene_transition",_transition_id,overlay)
+	call_deferred("_finish_player_scene_transition",_transition_id,overlay,_transition_frames)
 	return OK
 
 
-func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay) -> void:
-	await get_tree().process_frame
+func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, frames) -> void:
+	await frames.next_frame()
 	var load_progress: Array = []
 	while id==_transition_id and ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE, load_progress)==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
 		var stage_frac := float(load_progress[0]) if not load_progress.is_empty() else 0.0
 		overlay.set_progress("preparing", clampf(stage_frac * 0.12, 0.02, 0.12))
-		await get_tree().process_frame
+		await frames.next_frame()
 	if id!=_transition_id:return
 	if ResourceLoader.load_threaded_get_status(PLAYER_GAME_SCENE)!=ResourceLoader.THREAD_LOAD_LOADED:
 		overlay.show_failure("游戏场景载入失败。")
@@ -155,23 +187,52 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay) -> v
 		return
 	overlay.set_progress("preparing", 0.15)
 	var ext: RefCounted = ClassDB.instantiate("DCWorldExt")
-	await LoadingCatalogCache.prepare(ext)
+	await LoadingCatalogCache.prepare(ext, frames)
 	if id!=_transition_id:return
+	var closed := await _close_world_sessions()
+	if id != _transition_id:
+		return
+	if not bool(closed.get("ok", false)):
+		overlay.show_failure("上一局游戏尚未关闭，请重试。")
+		_transition_active = false
+		return
 	var scene := ResourceLoader.load_threaded_get(PLAYER_GAME_SCENE) as PackedScene
 	var error := get_tree().change_scene_to_packed(scene)
 	if error != OK:
 		overlay.show_failure("无法进入游戏场景。")
 		_transition_active = false
 		return
-	await get_tree().process_frame
-	await get_tree().process_frame
-	if id==_transition_id and is_instance_valid(_transition_layer):
+	await frames.next_frame()
+	await frames.next_frame()
+	if id != _transition_id:
+		return
+	if is_instance_valid(_transition_layer):
 		_transition_layer.queue_free()
 	_transition_active = false
 
 
 func quit_game() -> void:
+	if _quitting:
+		return
+	_quitting = true
+	_transition_id += 1
+	_transition_frames.cancel()
+	_transition_active = true
+	var closed := await _close_world_sessions()
+	if not bool(closed.get("ok", false)):
+		_quitting = false
+		_transition_active = false
+		push_error("[game-flow] world close failed: %s" % str(closed))
+		return
+	var save_service := get_node_or_null(^"/root/GameSave")
+	if save_service != null:
+		await save_service.wait_for_pending_io()
 	get_tree().quit()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		quit_game()
 
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:

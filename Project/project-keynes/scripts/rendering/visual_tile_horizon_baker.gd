@@ -13,6 +13,13 @@ var _cancelled: bool = false
 var _generation_id: int = -1
 var _rd: RenderingDevice
 var _owned_rids: Array[RID] = []
+var _submitted := false
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		# RefCounted has reached zero here; do not call an instance method on self.
+		_release_device(_rd, _owned_rids, _submitted)
 
 
 func cancel() -> void:
@@ -242,6 +249,7 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	var command_record_ms := float(Time.get_ticks_usec() - command_t0) / 1000.0
 	var submit_t0 := Time.get_ticks_usec()
 	_rd.submit()
+	_submitted = true
 	var submit_ms := float(Time.get_ticks_usec() - submit_t0) / 1000.0
 
 	var tree := Engine.get_main_loop() as SceneTree
@@ -253,6 +261,7 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 		return _failure("stale_generation", t0)
 	var sync_t0 := Time.get_ticks_usec()
 	_rd.sync()
+	_submitted = false
 	var sync_ms := float(Time.get_ticks_usec() - sync_t0) / 1000.0
 	# Release large compute inputs before allocating the CPU readback buffer.
 	_free_owned_rid(trace_set)
@@ -375,15 +384,27 @@ func _make_uniform_set(shader: RID, uniforms: Array) -> RID:
 
 
 func _cleanup() -> void:
-	if _rd != null:
-		var reverse_index := _owned_rids.size() - 1
-		while reverse_index >= 0:
-			var rid: RID = _owned_rids[reverse_index]
-			if rid.is_valid():
-				_rd.free_rid(rid)
-			reverse_index -= 1
-	_owned_rids.clear()
+	_release_device(_rd, _owned_rids, _submitted)
+	_submitted = false
 	_rd = null
+
+
+static func _release_device(device: RenderingDevice, owned_rids: Array[RID], submitted: bool) -> void:
+	if device != null:
+		# Cancellation can arrive between submit and the readback frame. Release
+		# only after this device's actual GPU work has completed.
+		if submitted:
+			device.sync()
+		var reverse_index := owned_rids.size() - 1
+		while reverse_index >= 0:
+			var rid: RID = owned_rids[reverse_index]
+			if rid.is_valid():
+				device.free_rid(rid)
+			reverse_index -= 1
+		# Local RenderingDevice is an Object, not a RefCounted resource. Clearing
+		# the field alone leaks the device and its internal objects after every bake.
+		device.free()
+	owned_rids.clear()
 
 
 func _free_owned_rid(rid: RID) -> void:

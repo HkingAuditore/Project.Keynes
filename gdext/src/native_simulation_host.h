@@ -2,7 +2,9 @@
 
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
+#include "runtime_thread_retirement.h"
 #include "runtime_authority_control.h"
+#include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
 #include "runtime_snapshot_ring.h"
 #include "runtime_country_pod.h"
@@ -68,6 +70,15 @@ public:
         out.authoritative_domain_mask = authority.granted_mask;
         out.committed_day = _committed_day.load(std::memory_order_acquire);
         return out;
+    }
+
+    // FAULTED describes a business failure, not thread completion. The token
+    // is published by the worker wrapper after all worker_main locals unwind.
+    bool execution_has_stopped() const {
+        const auto state = _state.load(std::memory_order_acquire);
+        return (state == RuntimeWorkerState::STOPPED || state == RuntimeWorkerState::FAULTED) &&
+            _worker_returned->load(std::memory_order_acquire) &&
+            _worker_day_inflight.load(std::memory_order_acquire) == 0u;
     }
 
     bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
@@ -665,13 +676,7 @@ public:
     // path; a main-thread caller that is NOT inside an inline day still has to
     // use the Host peer queue.
     bool on_worker_thread() const noexcept {
-        if (_inline_daily_mode.load(std::memory_order_acquire)) {
-            const std::thread::id executor =
-                _inline_day_thread.load(std::memory_order_acquire);
-            return executor != std::thread::id{} &&
-                executor == std::this_thread::get_id();
-        }
-        return std::this_thread::get_id() == _worker.get_id();
+        return RuntimeExecutionContext::active_for(this);
     }
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
                                    std::string &error);
@@ -1121,9 +1126,11 @@ public:
         _climate_writeback_input_generation.store(generation,
                                                    std::memory_order_release);
     }
-    // Whether a given domain may be suppressed on the main thread this frame.
+    // Main-thread callers see live admission. Within an executor call, routing
+    // keeps that call's data owners even if another thread requests stop.
     bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
-        return (authoritative_domain_mask() & runtime_domain_mask(domain)) != 0u;
+        return (RuntimeExecutionContext::domains_for(this,
+                    authoritative_domain_mask()) & runtime_domain_mask(domain)) != 0u;
     }
     // ACTIVE 请求了该域、worker 仍在跑、但还没有一日提交覆盖它。这段窗口里主线程
     // 若照常跑该域，写进 MapData 的结果会被 worker 首日当作种子读走，而它落在首次
@@ -1344,9 +1351,6 @@ private:
     std::atomic<bool> _inline_daily_mode{false};
     // P2：Country peer 由 worker 自己发起。见公开区同名注释。
     std::atomic<bool> _country_deferred_peers{false};
-    // 内联日执行者线程。内联模式下 `on_worker_thread()` 比对它而不是 `_worker`
-    // （那个 std::thread 在内联模式下从未创建，get_id() 恒不等于任何真实线程）。
-    std::atomic<std::thread::id> _inline_day_thread{};
     // 内联日分域计时累加器。只在内联模式下写（worker 日恒为 0），执行者恒是
     // 同一个调用线程，所以不需要原子；run_inline_day() 在每次尝试开始时清零、
     // 结束时抄进 InlineDayOutcome。
@@ -1432,8 +1436,10 @@ private:
     // 同一个 CV 上等 preflight 重试，而 worker 自己在消费环境后 notify 会让它
     // 自唤醒自旋（实测 50 天内 3200 万次不提交的重试）。
     std::condition_variable _climate_wait_cv;
-    std::atomic<uint32_t> _reaper_count{0};
+    RuntimeThreadRetirement _retired_workers;
     std::thread _worker;
+    std::shared_ptr<std::atomic<bool>> _worker_returned =
+        std::make_shared<std::atomic<bool>>(true);
     RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     RuntimeEnvironmentInputRing _environment_ring;

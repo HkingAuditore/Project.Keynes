@@ -2956,3 +2956,24 @@ or change clock debt policy to make the result look faster. v35's isolated
 39.2860 result did not reproduce: v33 binary/current scripts rechecked at
 46.9689 and v35 rechecked at 47.2888 over 3000 measured days. Preserve the
 outlier but do not attribute it to a demonstrated code regression.
+
+## Treasury jumps to initial values during stop (2026-11-03)
+
+If a fiscal VERIFY reports money/goods drift and Country authority becomes zero
+between otherwise consistent probes, compare the selected data source before
+changing tax formulas. Clearing live admission used to route an in-flight audit
+to the untouched synchronous Country store. `RuntimeExecutionContext` pins
+module routing through the executor call. Reproduce with
+`tests/runtime/runtime_economy_worker_restart_test.gd`; also run the standalone
+`gdext/tests/runtime_execution_context_test.cpp` stop/transaction race test.
+Passing once is insufficient for a previously intermittent failure.
+
+
+### 2026-11 headless sample count
+
+`headless_perf_record.gd` must compare CSV rows with requested samples. A pipeline
+may publish another committed day during the final frame; emit the late callback
+only when a requested row is still missing. Do not unconditionally publish after
+the loop has already collected all rows, and do not truncate the CSV or redefine
+the expected count to match an accidental extra row. Report native-library build
+selection separately from the Godot executable type.

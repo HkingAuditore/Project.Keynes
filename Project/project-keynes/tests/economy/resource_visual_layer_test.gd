@@ -256,16 +256,20 @@ func _test_save_provider(map: MapData, observed_rows: Dictionary) -> void:
 	var intel := host.building_visual_intel_cache()
 	intel.configure(map.cell_count())
 	intel.resource_observations.rows = observed_rows.duplicate(true)
-	var captured: Dictionary = save.call("_write_vision_provider", {"host": host})
+	var provider = null
+	for candidate in save.get("_providers"):
+		if String(candidate.provider_id()) == "pkfg":
+			provider = candidate
+	var captured: Dictionary = provider.write_sections({"host": host})
 	_expect("production provider captures PKFG v4 resource memory", bool(captured.get("ok", false)) and int(captured.sections.pkfg.version) == 4 and not captured.sections.pkfg.resource_intel_cells.is_empty())
-	var restored: Dictionary = save.call("_restore_vision_provider", captured.sections, {"host": host})
+	var restored: Dictionary = provider.restore_sections( captured.sections, {"host": host})
 	_expect("production provider restores v4", bool(restored.get("ok", false)))
 	var bad: Dictionary = captured.sections.duplicate(true)
 	bad.pkfg.explored = PackedByteArray()
 	bad.pkfg.explored.resize(map.cell_count())
 	bad.pkfg.resource_intel_bands = PackedByteArray([255])
 	var before := map.explored_arr.duplicate()
-	var rejected: Dictionary = save.call("_restore_vision_provider", bad, {"host": host})
+	var rejected: Dictionary = provider.restore_sections( bad, {"host": host})
 	_expect("production provider rejects bad memory before committing exploration", not bool(rejected.get("ok", false)) and map.explored_arr == before)
 	host.free()
 

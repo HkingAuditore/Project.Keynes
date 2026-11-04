@@ -383,3 +383,10 @@ order. Bootstrap and legacy restore are the only full-cell rebuild paths.
 
 
 Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。
+
+## 2026-11-03：投资评估只使用一份到期列表
+
+BUILDING_COMMIT 第 4 阶段准备当前周期的投资评估，第 5 阶段用该周期的列表和游标分片完成。
+不再用额外的 Track B cadence/spread 把序号带入后续周期：价格、资金、科技与候选属于同一份
+冻结输入。结束前核对 scheduled review cells 与 completed review cells 一致。N/P/I 锁定周期、
+其他 Track B 路径及正常的跨帧继续机制保持各自职责；这次不改变周期区间或引入新默认近似。

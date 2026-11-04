@@ -655,3 +655,16 @@ whole 2,912-subunit bill with logs, bast fibre, reed bundles, or a mixture.
   always receive a deterministic settlement name. The bit round-trips in current
   PKEC v44 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.
+
+
+## 2026-11-03 internal boundaries
+
+Diagnostic opening composition lives in `economy_test_bootstrap.gd`; copied input,
+policy, pure planning and initial money/stock calculation live in `bootstrap/`.
+Neither calculation module receives a live facade or registry. Formal player
+opening remains `StarterSettlementBootstrap`.
+
+Native Host/save handoff uses `EconomyAuthorityTransfer`, isolated self-checks use
+`EconomyInvariantProbe`, and CSV collection uses `EconomyRecordSource`. The Host
+and CSV writer no longer have economy-runtime friendship. Recorded rows contain
+copied values; the writer owns file I/O and drains before destruction.

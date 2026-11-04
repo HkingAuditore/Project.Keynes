@@ -674,3 +674,12 @@ CLAIM，又会把 Host read-view 刚打进 `country_slot_arr` 的正确平面整
 MapGenerator 在 generation 变化时不得用该字段提前拦截；`CountryFacade`
 必须先消费原生事件流，并从 `CREATE_COUNTRY` / `TRANSFER_TERRITORY` /
 `CLAIM_UNOWNED_TERRITORY` 事件归一化出非零 `changed_cells`，再决定是否广播。
+
+## Save adapter boundary (2026-11-04)
+
+PKFG v4 encoding/restoration now lives in `scripts/game/save_modules/vision_state.gd`.
+The composition supplies only MapData, the intel cache/type bound, player slot, fog
+setting and a refresh callback. The adapter still validates the entire intel payload
+before assigning exploration; Country/Economy restore dependencies and final visibility
+recalculation are unchanged. `resource_visual_layer_test.gd` exercises the registered
+provider rather than private coordinator methods.

@@ -40,6 +40,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 	var building_types := PackedInt32Array()
 	var building_owners := PackedInt32Array()
 	var building_counts := PackedInt64Array()
+	var building_owner_fill := PackedInt64Array()
 	var founder_family_cells := PackedInt32Array()
 	var founder_family_building_types := PackedInt32Array()
 	var founder_family_owner_signatures := PackedInt32Array()
@@ -104,6 +105,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			building_types.append(building_type)
 			building_owners.append(owner_signature)
 			building_counts.append(planned_count)
+			building_owner_fill.append(planned_count * owner_slots if _is_opening_food_building(building_id) else 0)
 			starter_building_ids.append(String(building_id))
 			if first_building_type < 0:
 				first_building_type = building_type
@@ -225,6 +227,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			"building_type_ids": building_types,
 			"building_owner_signature_ids": building_owners,
 			"building_counts": building_counts,
+			"building_owner_fill": building_owner_fill,
 			"founder_family_cells": founder_family_cells,
 			"founder_family_building_type_ids": founder_family_building_types,
 			"founder_family_owner_signature_ids": founder_family_owner_signatures,

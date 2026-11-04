@@ -39,7 +39,6 @@ const EVENT_FORWARD_BATCH := 64
 
 var facade = null
 var world_clock: WorldClock = null
-var generator = null
 var event_bus = null
 var _last_report: Dictionary = {}
 var _event_cursor: int = 0

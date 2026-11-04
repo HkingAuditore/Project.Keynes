@@ -27,6 +27,7 @@ void NativeEconomyRuntime::MarketResult::reset() {
     retained_output_consumed = 0;
     retained_output_discarded = 0;
     supported_output = 0;
+    supported_cycle_flow_output = 0;
     supported_money = 0;
     bullion_money = 0;
     bullion_stock = 0;

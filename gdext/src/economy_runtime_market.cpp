@@ -2053,6 +2053,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                             }
                             result.supported_output = saturating_add(
                                 result.supported_output, entry->quantity, sat);
+                            if (_good_storage_modes[entry->good_id] == 1) {
+                                result.supported_cycle_flow_output = saturating_add(
+                                    result.supported_cycle_flow_output, entry->quantity, sat);
+                            }
                             result.supported_money = saturating_add(
                                 result.supported_money, support_paid, sat);
                             if (issue_value > 0) {
@@ -2094,6 +2098,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             entry->quantity = 0;
             ++entry;
         }
+    }
+    // Cycle-flow goods are services within this settlement. Unsold shelf
+    // remainder expires after both retail and retained-output reconciliation.
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
+        if (_good_storage_modes[good] != 1) continue;
+        const int32_t index = market_store().index(market, good);
+        const int64_t remainder = std::max<int64_t>(0, market_store().stock[index]);
+        if (remainder <= 0) continue;
+        audit_touch_market_lane(static_cast<size_t>(index));
+        market_store().stock.write_scalar(index, 0, market_mutation_sink());
+        result.cycle_flow_discarded = saturating_add(
+            result.cycle_flow_discarded, remainder, sat);
     }
     result.fallback_ms += elapsed_ms(fallback_start);
 

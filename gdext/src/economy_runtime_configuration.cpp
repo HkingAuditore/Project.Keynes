@@ -480,7 +480,6 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_output_signals_scratch.reserve(max_building_outputs);
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
-    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_values.clear();
     _startup_demand_stamps.clear();
@@ -715,7 +714,6 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
-    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_touched_keys.clear();
     _startup_remote_lanes.clear();
@@ -905,6 +903,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     const std::vector<int32_t> building_types = packed_i32(market_packet, "building_type_ids");
     const std::vector<int32_t> building_owners = packed_i32(market_packet, "building_owner_signature_ids");
     const std::vector<int64_t> building_counts = packed_i64(market_packet, "building_counts");
+    const std::vector<int64_t> building_owner_fill = packed_i64(market_packet, "building_owner_fill");
+    const bool has_owner_fill = market_packet.has("building_owner_fill");
     std::vector<int32_t> founder_cells = packed_i32(
         market_packet, "founder_family_cells");
     std::vector<int32_t> founder_types = packed_i32(
@@ -913,7 +913,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         market_packet, "founder_family_owner_signature_ids");
     if (building_cells.size() != building_types.size() ||
         building_cells.size() != building_owners.size() ||
-        building_cells.size() != building_counts.size()) {
+        building_cells.size() != building_counts.size() ||
+        (has_owner_fill && building_owner_fill.size() != building_cells.size())) {
         out["ok"] = false;
         out["reason"] = "building_bootstrap_column_size_mismatch";
         return out;
@@ -983,6 +984,37 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     }
     rebuild_building_role_storage();
     refresh_building_modifier_factors();
+
+    // The opening planner owns staffing intent. Apply its explicit allocation
+    // before automatic matching: catalog/type ordering must not let a non-food
+    // lot consume the same profession reserved for opening food production.
+    if (has_owner_fill) {
+        std::vector<int64_t> reserved(population_store().population.size(), 0);
+        for (size_t i = 0; i < building_cells.size(); ++i) {
+            const int64_t fill = building_owner_fill[i];
+            const int32_t slot = find_cohort_slot(building_cells[i], building_owners[i]);
+            const int64_t capacity = saturating_mul(building_counts[i],
+                _building_types[building_types[i]].owner_slots_per_building, _saturation_count);
+            if (fill < 0 || fill > capacity || (fill > 0 &&
+                (slot < 0 || fill > population_store().population[slot] - reserved[slot]))) {
+                out["ok"] = false;
+                out["reason"] = "building_bootstrap_owner_fill_invalid";
+                return out;
+            }
+            if (fill > 0) reserved[slot] += fill;
+        }
+        for (size_t i = 0; i < building_cells.size(); ++i) {
+            if (building_owner_fill[i] == 0) continue;
+            const int32_t group = find_building_group(
+                building_cells[i], building_types[i], building_owners[i]);
+            buildings_store().filled_owner.write_scalar(group,
+                buildings_store().filled_owner[group] + building_owner_fill[i]);
+        }
+        for (size_t slot = 0; slot < reserved.size(); ++slot) {
+            if (reserved[slot] > 0)
+                population_store().owner_employed.write_scalar(slot, reserved[slot], market_mutation_sink());
+        }
+    }
 
     int32_t founder_family_count = 0;
     int32_t founder_person_count = 0;

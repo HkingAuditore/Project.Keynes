@@ -1684,6 +1684,11 @@ worker 只消费 immutable native snapshot。视觉层只能消费 generation-ta
 及命令执行器的挂接；后台可能仍在完成当前片段。`DCWorldExt` 析构先等待 Host
 退出，再释放经济等对象。运行中停止、重新生成和退出都必须保留这条生命周期边界。
 
+`WorldRuntimeHost._exit_tree()` 取消生成任务并请求停止。GDScript 侧不再通过
+generator/job、weather/helper、map/cell/world 或 world/query 的双向强引用
+阻止析构：辅助计算对象与查询对象使用弱引用回到所属对象，`DCWorld` 也只弱引用
+`MapData`。地图和后台对象释放前的 native 等待顺序保持不变。
+
 提交快照由主线程 cache 固定到单一 generation；当请求的 generation 已被更新提交
 覆盖时，视觉 patch 返回 `runtime_generation_expired`，不会把不同提交拼接到同一帧。
 `consume_runtime_visual_patch()` 的 cursor 始终按原始 intent 索引推进，即使 family
@@ -1775,3 +1780,24 @@ mutation revisions and preserves the original FNV value across identical copies.
 `bake_trade_visual_paths()` 仅将有界 CSR 路径转换为 RGBAF GPU 数据，不读取模拟。
 没有新 DataCore slot、dirty 消费者或存档段。
 完整契约见 [trade-visual-runtime.md](trade-visual-runtime.md)。
+
+## Execution context and state-module composition (2026-11-03)
+
+Worker and inline module calls share `RuntimeExecutionContext`. Revoking new-work
+admission cannot change an in-flight Country/Economy transfer to the synchronous
+Country mirror. The context holds no Godot objects or business state, does not
+reopen grants, and is local to the executing thread and world. Public control
+reports continue to expose the revoked mask immediately.
+
+GameSave's 18 state providers are composed in `world_state_modules.gd`. Restore
+dependencies and unique section ownership are validated before callbacks run.
+Additional providers register before a world is bound, receive opaque section
+bytes and own their decoder/compatible versions. Unknown installed-save modules
+are rejected instead of silently discarded. No built-in section format changed.
+
+### 2026-11 复制输入与记录输出
+
+测试开局入口只组装 `bootstrap/test_start_inputs.gd`、策略、规划与资金计算模块。
+仅输入捕获可读取 MapData/Facade/资源注册表，随后使用复制的普通数据；测试验证源对象改变和释放不影响规划。
+原生记录采集只在可读取的提交边界运行；`EconomyRecordSource` 复制数据到 `EconomyCsvRecorder::Batch`，
+写盘线程不得查询活动运行状态或重算价格业务公式。CSV 仍为版本 25，未增加列或改变布局。

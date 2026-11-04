@@ -106,7 +106,7 @@ func _run() -> void:
 		not bool(legacy_submit.get("ok", true))
 		and String(legacy_submit.get("reason", "")).contains("legacy_ingress"))
 
-	ext.request_runtime_stop()
+	await _stop(ext)
 
 	# Phase-2.4.5: STAGE_OPS writer starts when mutate+readiness pass.
 	var started_stage_ops: Dictionary = ext.start_runtime_worker({
@@ -127,7 +127,7 @@ func _run() -> void:
 				"economy_production_writer_effective", "")) == "stage_ops"
 			and bool(stage_ops_report.get(
 				"economy_stage_ops_soak_parity_ok", false)))
-		ext.request_runtime_stop()
+		await _stop(ext)
 	var refuse_stage_ops_no_mutate: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -171,7 +171,7 @@ func _run() -> void:
 			String(parity_report.get("economy_execution_mode_name", "")) ==
 				"ACTIVE_WITH_PARITY"
 			and bool(parity_report.get("economy_shadow_probe_enabled", false)))
-		ext.request_runtime_stop()
+		await _stop(ext)
 
 	var started_legacy: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
@@ -188,7 +188,7 @@ func _run() -> void:
 			String(legacy_report.get("economy_execution_mode_name", "")) ==
 				"LEGACY_ONLY"
 			and (int(legacy_report.get("requested_authority_mask", 0xFFF)) & 0x100) == 0)
-		ext.request_runtime_stop()
+		await _stop(ext)
 	else:
 		_expect("LEGACY_ONLY ACTIVE without capture fails closed (soft)",
 			not String(started_legacy.get("code", "")).is_empty())
@@ -209,12 +209,18 @@ func _run() -> void:
 		_expect("production default remains ACTIVE_ONLY",
 			String(active_report.get("economy_execution_mode_name", "")) ==
 				"ACTIVE_ONLY")
-		ext.request_runtime_stop()
+		await _stop(ext)
 	else:
 		_expect("ACTIVE without capture fails closed (soft)",
 			not String(started_active.get("code", "")).is_empty())
 
 	_finish()
+
+
+func _stop(ext: Object) -> void:
+	ext.request_runtime_stop()
+	while not bool(ext.get_runtime_thread_report().get("simulation_executor_exited", false)):
+		await process_frame
 
 
 func _expect(label: String, ok: bool) -> void:

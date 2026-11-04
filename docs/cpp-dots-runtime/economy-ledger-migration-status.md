@@ -1,3 +1,8 @@
+> 2026-11-04 更正：下面历史记录中“mid-epoch working path”的结论不成立。
+> resume 只保存游标而未保存冻结输入和部分结果，实际恢复继续会崩溃。
+> 当前明确要求提交边界保存，拒绝旧 resume 输入及活动周期内替换。
+> 完整中途保存仍未实现；当前证据见 `economy-save-migration-sop.md` 与架构验证记录。
+
 # Economy Ledger Migration Status
 
 > 2026-09-19 correction: the terminal-closeout description below records the
@@ -24,7 +29,7 @@ the epoch harvest scratch live on `owned.resources` (N5 / N9); and bound
  production cutover gate and long soak are closed. ECP1 ABI9 remains a
  committed mirror only.
 
-## ECP2 / mid-epoch（working path landed）
+## ECP2 committed save / mid-epoch 未完成
 
 - **Landed:** `runtime_economy_ecp2.{h,cpp}` wire (ABI 1, schema 52, marker
   `ECP2`); typed envelope + PKEC section→`ECP2_DOMAIN_*` opaque remapping
@@ -41,10 +46,10 @@ the epoch harvest scratch live on `owned.resources` (N5 / N9); and bound
 - **M2 implementation:** ECP2 now carries a canonical independent `OwnedState` SoA
   block (`OSOA` v1) for population/market/building/trade/family/resource typed
   lanes. Capture requires a valid block; restore rejects missing, duplicate,
-  malformed, or hash-tampered blocks before mutating live state. Mid-epoch
-  capture includes the typed resume cursor and the fixture verifies restore to
-  a later commit. Debug and release builds both pass the focused Economy
-  cadence/POD/parity tests. PKEC v52 remains an explicitly retained
+  malformed, or hash-tampered blocks before mutating live state. The old mid-epoch fixture did not reach a valid continuation: it failed
+  before capture, and a committed-base reproduction exposed missing transient
+  state and a crash. Capture/restore now enforce committed boundaries and reject
+  legacy resume payloads before mutation. No mid-epoch acceptance is claimed. PKEC v52 remains an explicitly retained
   compatibility decoder and writer during the migration window.
 - **M2 release gates still open:** switch the public save coordinator to ECP2
   only, complete the 60/730/3650-day mid-epoch soak and daily hash continuity,

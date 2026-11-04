@@ -100,16 +100,16 @@ func _ready() -> void:
 	if _cash_card != null:
 		return
 	set_process(false)
-	_cash_card = get_node_or_null("Column/Cards/CashCard") as MetricCard
-	_tax_card = get_node_or_null("Column/Cards/TaxCard") as MetricCard
-	_subsidy_card = get_node_or_null("Column/Cards/SubsidyCard") as MetricCard
-	_fulfillment_card = get_node_or_null("Column/Cards/FulfillmentCard") as MetricCard
-	_country_label = get_node_or_null("Column/Header/CountryLabel") as Label
-	_day_label = get_node_or_null("Column/Header/DayLabel") as Label
-	_tabs = get_node_or_null("Column/Tabs") as CategoryTabs
-	_tax_tabs = get_node_or_null("Column/TaxTabs") as CategoryTabs
-	_insights = get_node_or_null("Column/Insights") as InsightList
-	var ledger_root := "Column/Ledger/LedgerColumn"
+	_cash_card = get_node_or_null("Viewport/Column/Cards/CashCard") as MetricCard
+	_tax_card = get_node_or_null("Viewport/Column/Cards/TaxCard") as MetricCard
+	_subsidy_card = get_node_or_null("Viewport/Column/Cards/SubsidyCard") as MetricCard
+	_fulfillment_card = get_node_or_null("Viewport/Column/Cards/FulfillmentCard") as MetricCard
+	_country_label = get_node_or_null("Viewport/Column/Header/CountryLabel") as Label
+	_day_label = get_node_or_null("Viewport/Column/Header/DayLabel") as Label
+	_tabs = get_node_or_null("Viewport/Column/Tabs") as CategoryTabs
+	_tax_tabs = get_node_or_null("Viewport/Column/TaxTabs") as CategoryTabs
+	_insights = get_node_or_null("Viewport/Column/Insights") as InsightList
+	var ledger_root := "Viewport/Column/Ledger/LedgerColumn"
 	_search = get_node_or_null(ledger_root + "/Tools/Search") as LineEdit
 	_overrides_only = get_node_or_null(ledger_root + "/Tools/OverridesOnly") as Button
 	_status_label = get_node_or_null(ledger_root + "/StatusLabel") as Label
@@ -124,10 +124,10 @@ func _ready() -> void:
 	_trade_page_label = get_node_or_null(ledger_root + "/Tools/TradePage") as Label
 	_ledger_title = get_node_or_null(ledger_root + "/LedgerHeading/Title") as Label
 	_ledger_subtitle = get_node_or_null(ledger_root + "/LedgerHeading/Subtitle") as Label
-	_summary_heading = get_node_or_null("Column/SummaryHeading") as Control
-	_summary_cards = get_node_or_null("Column/Cards") as Control
+	_summary_heading = get_node_or_null("Viewport/Column/SummaryHeading") as Control
+	_summary_cards = get_node_or_null("Viewport/Column/Cards") as Control
 	_procurement_slider = get_node_or_null(ledger_root + "/Procurement") as Control
-	var section_badge := get_node_or_null("Column/Header/SectionIcon") as IconBadge
+	var section_badge := get_node_or_null("Viewport/Column/Header/SectionIcon") as IconBadge
 	if _cash_card == null or _tax_card == null or _subsidy_card == null \
 			or _fulfillment_card == null or _country_label == null \
 			or _day_label == null or _tabs == null or _search == null \
@@ -197,7 +197,7 @@ func set_embedded(embedded: bool) -> void:
 		_ready()
 	_embedded = embedded
 	_tabs.visible = not embedded
-	var header := get_node_or_null("Column/Header") as Control
+	var header := get_node_or_null("Viewport/Column/Header") as Control
 	if header != null:
 		header.visible = not embedded
 	_tab_signature = ""
@@ -219,16 +219,25 @@ func set_compact(compact: bool) -> void:
 	# 所以恒走紧凑版（只留页签与可滚动的账本）。
 	_compact = compact or TouchUI.is_short_viewport()
 	if _summary_heading != null:
-		_summary_heading.visible = not compact
+		_summary_heading.visible = not _compact
 	if _summary_cards != null:
-		_summary_cards.visible = not compact
+		_summary_cards.visible = not _compact
 	if _insights != null:
-		_insights.visible = not compact
-	var card_size := SUMMARY_CARD_SIZE_COMPACT if compact else SUMMARY_CARD_SIZE
+		_insights.visible = not _compact
+	var card_size := SUMMARY_CARD_SIZE_COMPACT if _compact else SUMMARY_CARD_SIZE
 	for card in [_cash_card, _tax_card, _subsidy_card, _fulfillment_card]:
 		if card != null:
 			card.custom_minimum_size = card_size
-			card.set_compact(compact)
+			card.set_compact(_compact)
+	# On short screens all controls and rows share one viewport. Disabling the
+	# inner scroll exposes its content minimum to the outer scroll, so headings
+	# and procurement never consume the last usable pixel of the goods list.
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if _compact \
+		else ScrollContainer.SCROLL_MODE_AUTO
+
+
+func scroll_container() -> ScrollContainer:
+	return get_node("Viewport") as ScrollContainer if _compact else _scroll
 
 
 func refresh_model(model: Dictionary) -> void:

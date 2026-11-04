@@ -1,7 +1,9 @@
 # Module Boundaries
 
-This document is the source of truth for source-file decomposition. It is a
-maintenance rule, not a proposal for a second runtime architecture.
+This document defines source-file ownership during migration to the
+[world runtime design](world-runtime-design.md). New development starts with
+the [development guide](development-guide.md); the extraction list below
+describes the implementation, not completion of the target architecture.
 
 ## Ownership
 
@@ -13,6 +15,17 @@ maintenance rule, not a proposal for a second runtime architecture.
 | Diagnostics | `DCDiagnosticsBus` | domain systems recording reports | simulation authority or slot writes |
 | DataCore bridge | `DCWorld` / `DCWorldExt` | slot and pass implementation units | UI policy |
 | Economy | `NativeEconomyRuntime` public API | economy domain translation units | per-cell gameplay mirrors in GDScript |
+| Save containers | `GameSave` / `SaveRepository` | `scripts/game/save_container_reader.gd` | session state, UI nodes or provider restore order |
+| Retired thread handles | `NativeSimulationHost` | `gdext/src/runtime_thread_retirement.h` | host pointers, simulation state or stop policy |
+| In-flight module access | Native worker / inline executor | `gdext/src/runtime_execution_context.h` | live admission, business state or starting work after stop |
+| Legacy state adapters | `RuntimeStateProvider` | `scripts/game/save_modules/*_state.gd`, `world_state_bindings.gd` | host/generator references inside adapters, undeclared peer sections, world references retained across sessions |
+| Clock-to-executor binding | `WorldClock.control_changed` | `scripts/game/runtime_clock_binding.gd` | UI lifetime, timed unpause repair, business state |
+| Local GPU bake device | `VisualTileHorizonBaker` | `scripts/rendering/visual_tile_horizon_baker.gd` | session state or treating `null` assignment as device destruction; submitted GPU work must finish before freeing its device |
+| State-module composition | `GameSave` | `scripts/game/world_state_modules.gd`, `runtime_module_registry.gd` | module state, encoding formulas or hidden restore dependencies |
+| World lifecycle | `WorldRuntimeHost` adapter / `GameFlow` caller | `scripts/game/world_session.gd`, `runtime_session_module.gd`, `world_session_modules.gd` | simulation formulas, arbitrary scene access, treating stop requests as completion |
+| Borrowed world owners | `MapGenerator` / `WeatherSystem` | `scripts/simulation/generator_context.gd`, `scripts/weather/weather_context.gd` | strong references back to the owning generator/weather system |
+| Loading cancellation | `WorldRuntimeHost` / `MapGenerator` | `scripts/geography/loading_frame_gate.gd`, loading consumers | new timeouts, simulation scheduling or ownership of the scene |
+| Narrative credentials | `NarrativeAiClient` | `scripts/narrative/ai/narrative_ai_credentials.gd` | network requests or cross-provider key fallback |
 | Audio presentation | `GameAudio` | `scripts/audio/game_audio_service.gd`, `addons/keynes_audio_export` | simulation authority, era or political-state inference |
 
 `GameAudio` observes `GameSettings` and explicitly loads the Windows FMOD backend.
@@ -47,6 +60,31 @@ These are review thresholds, not permission to split unrelated code:
 Generated code, shader sources, test fixtures, and data assets are excluded.
 An existing over-limit file may only increase through a documented exception;
 every extraction must reduce the recorded baseline.
+
+The 2026-11-03 exit fix permits small lifecycle additions to `MapGenerator`,
+`MapBaker` and `WorldRuntimeHost`: passing the shared loading gate, returning
+from the suspended owner after cancellation, and marking scene exit. The wait
+and borrowed-owner mechanisms live in the new small modules listed above;
+these guards must remain at their caller's continuation boundary.
+
+The world-runtime migration adds two execution-context scopes and one common
+domain-routing call to the existing native host. This boundary change applies
+to all domains; the mechanism stays in a standalone Godot-free header.
+Save-module registration and compatibility declarations move out of the
+coordinator, reducing its size while preserving provider bytes.
+
+The session migration permits lifecycle adapter methods in the existing host:
+generation/presentation/restore/execution methods retain existing behavior while
+ordering, cancellation, capture state and reverse release move into WorldSession.
+This is a documented exception to the host size threshold, not permission for
+new business logic there. Extensions register through the two module APIs;
+future work can narrow the remaining legacy adapter inputs independently.
+
+The ideology continuation fix also permits host-owned day/completion markers at
+the existing instance/derived pump. This is scheduling of the main-thread
+boundary, not ideology business state: frame liveness retries an unfinished
+call while calendar admission is blocked. Native code retains the actual
+cursor, boundary lock and effects; completed passes are not polled every frame.
 
 ## Migration rules
 
@@ -193,3 +231,46 @@ changes additionally require native/fallback A-B or shadow evidence and a
   production forwarding duplicate remains. A legacy native mirror is isolated
   in `MapBaker` for stale-DLL/A-B diagnostics only. Native C++ authority,
   DataCore binding, and Godot texture ownership are unchanged.
+
+## Review fixes (2026-11-03)
+
+- Container parsing, table validation, decompression and checksums now have one
+  owner, `save_container_reader.gd`. Repository slot paths, compatibility policy,
+  backup rotation and atomic replacement remain in `SaveRepository`.
+- `RuntimeThreadRetirement` owns only retired handles and a shared completion
+  condition. Its detached join tasks never capture the host. The host retains
+  active-worker ownership and stop/restart decisions; host destruction waits
+  for the active handle and all retired handles.
+- Credential persistence accepts an explicit path for isolated tests. Text and
+  image keys have independent saved values and environment defaults. Saving an
+  empty field clears it, including an environment default; neither field can
+  borrow the other service's key.
+- The already oversized `GameSave` coordinator has a scoped size exception for
+  generation checks and one shared list-verification job: it remains the sole
+  owner of active-session references, `_busy`, provider order and annual-save
+  state. Moving just those fields elsewhere would create a second lifecycle
+  owner. `MapGenerator` likewise keeps the small restore-order correction in
+  its existing preparation/finalization boundary. This change does not claim
+  to complete the broader facade split.
+
+## Economy boundary follow-up (2026-11-03)
+
+- `economy_test_bootstrap.gd` is composition only. `bootstrap/test_start_inputs.gd`
+  copies map, catalog, finance and resource-policy values; the planner and finance
+  calculator receive those values without retaining the facade or global registry.
+  `test_start_policy.gd` owns authored diagnostic-world capabilities and constants.
+- `EconomyAuthorityTransfer` scopes Country identity overrides, deferred validation,
+  and prepared asset servicing. `NativeSimulationHost` no longer has friendship on
+  `NativeEconomyRuntime`; isolated finance self-tests live in `EconomyInvariantProbe`.
+- `EconomyRecordSource` owns sampling and resource-delta history. The recorder owns
+  buffer handoff, CSV encoding, rollback and writer lifetime. Public `Batch` contains
+  copied values only. The file writer has no economic-runtime friendship or private
+  access; resource capture and final price-pressure calculation stay on the owner.
+- Scope exception: the remaining pure settlement planning leaf is about 1,550 lines
+  (formerly part of a 2,069-line external-object entry). Placement, regional supply
+  closure and allocation still form one algorithm. This is recorded as a remaining
+  leaf-size exception, not permission to add world/service access or new unrelated
+  responsibilities. The native recovery calculation gains one local eligibility
+  check for savings carried by idle recruits; no new mutable cross-module interface.
+
+Validation and remaining platform scope: `world-runtime-validation.md`.

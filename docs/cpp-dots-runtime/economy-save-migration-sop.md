@@ -53,8 +53,9 @@ Domain 与 PKEC section 映射：`SAVE_SECTION_*` → `ECP2_DOMAIN_*`；同一 d
 内按 save 发射顺序拼接 **完整 PKEC chunk**（magic+schema+section+records+size+
 payload），restore 时按 section 0..30 重建顺序并走既有 `feed_restore_chunk`。
 `ECP2_DOMAIN_RESOURCE` 单独打包 dense stock wire（PKEC 无等价段）。
-`ECP2_DOMAIN_EPOCH_RESUME`（M 系列）为 mid-epoch 游标 blob；开启
-`economy_ecp2_mid_epoch_save` 时 capture/apply 会恢复 `_stage` 与 slice cursors。
+`ECP2_DOMAIN_EPOCH_RESUME`（M 系列）是历史游标 blob，缺少冻结输入、部分结果及待办事务。
+2026-11-04 证实其不能完整恢复；当前导出必须在提交边界，安装带 resume 的输入明确拒绝。
+`economy_ecp2_mid_epoch_save` 与旧 capture flags 均不能绕过这项检查。
 
 Mask 常量：
 
@@ -64,7 +65,7 @@ Mask 常量：
 Host 行为（默认）：
 
 - `economy_ecp2_dual_write=true`：committed save 在 ECP1/PKEC 之外 **额外** 写 ECP2
-- `economy_ecp2_mid_epoch_save=false`：mid-epoch capture 默认拒绝（`ALLOW_MID_EPOCH`）
+- mid-epoch capture 始终拒绝；旧 `ALLOW_MID_EPOCH` 标志保留兼容解析，但不再承诺游标恢复
 - `economy_ecp2_authority=false`（E10 cutover）：为 true 且 ECP2 含 FULL_AUTHORITY 时
   restore 跳过 ECP1 POD；PKEC/ECP1 路径仍保留 compat
 
