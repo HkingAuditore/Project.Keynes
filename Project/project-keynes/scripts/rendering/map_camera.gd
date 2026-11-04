@@ -17,6 +17,10 @@
 # 用法：作为主场景的 Camera2D，调用 set_world_bounds(rect) 限制可视范围；
 #       连接 tile_tapped(world_pos) 信号做地块选择；
 #       选中后用 ensure_point_visible(world_pos, safe_area) 在不重置缩放的前提下把地块移出 UI 遮挡。
+#
+# [pan-strict 2026-11-03] 可视范围是硬约束：视口永远完整落在世界矩形内，绝不推出边界。
+# 越界露出的就是 Viewport 的 clear color（#4a4a4a 灰底）。低倍率"拖不动"由最小倍率地板
+# 解决（fit_to_viewport(fill_safe_area=true) 抬到"铺满整块视口"），不靠放松夹取。
 
 class_name MapCamera
 extends Camera2D
@@ -131,6 +135,7 @@ func center_on_bounds() -> void:
 		return
 	_stop_motion()
 	position = _world_bounds.position + _world_bounds.size * 0.5
+	_clamp_position()
 
 func fit_to_viewport(
 		margin: float = 1.05,
@@ -149,7 +154,15 @@ func fit_to_viewport(
 	var sy := area.size.y / (_world_bounds.size.y * margin)
 	var requested_zoom := maxf(sx, sy) if fill_safe_area else minf(sx, sy)
 	var s := clampf(requested_zoom, zoom_min, _maximum_zoom())
-	_fit_floor_zoom = s if fill_safe_area else 0.0
+	if fill_safe_area:
+		# [pan-strict 2026-11-03] 铺满的对象是"整块视口"而不是 safe_area：safe_area 永远
+		# 比视口小（顶栏 / 操作栏 / 右侧面板都被挖掉），只按它铺满会在这些栏后面露出
+		# 引擎 clear color（#4a4a4a 灰底）。同时把这个倍率记成最小倍率地板：玩家再缩小
+		# 也到不了"世界比视口小"的态，_clamped_position() 的严格约束就永远有解。
+		s = clampf(maxf(s, _cover_zoom()), zoom_min, _maximum_zoom())
+		_fit_floor_zoom = s
+	else:
+		_fit_floor_zoom = 0.0
 	zoom = Vector2(s, s)
 	_target_zoom = zoom
 	# 让 safe_area 的中心对齐世界 bounds 的中心
@@ -198,6 +211,10 @@ func _process(delta: float) -> void:
 
 
 func _on_viewport_size_changed() -> void:
+	# [pan-strict 2026-11-03] 窗口放大（窗口化 → 最大化 / 全屏）会让"刚好铺满"失效，
+	# 地板必须跟着抬；否则玩家一改窗口尺寸就能缩小到看见灰底。
+	_refresh_cover_floor()
+	_clamp_position()
 	_emit_view_changed_if_needed(true)
 
 func _update_zoom(delta: float) -> void:
@@ -437,6 +454,32 @@ func _minimum_zoom() -> float:
 	return maxf(zoom_min, _fit_floor_zoom)
 
 
+## [pan-strict 2026-11-03] 让世界在当前视口下"刚好铺满"的最小倍率：任一轴铺满，
+## 另一轴溢出（可拖动）。低于它必然有某个轴的世界比视口小 → 无论怎么平移都会露灰底。
+## 只对 fill_safe_area 的"铺满"装配生效，debug 的整图 fit（要看到图外留白）不受影响。
+func _cover_zoom() -> float:
+	if _world_bounds.size.x <= 0.001 or _world_bounds.size.y <= 0.001:
+		return 0.0
+	var vp_size := get_viewport_rect().size
+	return maxf(vp_size.x / _world_bounds.size.x, vp_size.y / _world_bounds.size.y)
+
+
+## 视口尺寸变化后重算"铺满地板"，并把已经低于地板的倍率立刻收回来。
+## 只在 _fit_floor_zoom > 0（即走过 fill_safe_area 铺满）时生效。
+func _refresh_cover_floor() -> void:
+	if _fit_floor_zoom <= 0.0 or _world_bounds.size == Vector2.ZERO:
+		return
+	var floor_zoom := clampf(_cover_zoom(), zoom_min, _maximum_zoom())
+	if floor_zoom <= _fit_floor_zoom + 0.0001:
+		return
+	_fit_floor_zoom = floor_zoom
+	if zoom.x >= floor_zoom:
+		return
+	zoom = Vector2(floor_zoom, floor_zoom)
+	_target_zoom = zoom
+	_emit_zoom_changed_if_needed()
+
+
 ## [mobile-zoom-compensate 2026-11-03] 有效缩放上限 = zoom_max / 视口补偿系数。
 ## 所有上限判定（fit_to_viewport / 捏合 / _set_target_zoom / restore_view_state /
 ## _apply_zoom_anchored）都必须走这里，只堵一处的话其它路径仍然能突破。
@@ -592,13 +635,15 @@ func _clamped_position(p: Vector2) -> Vector2:
 		return p
 	var view_size := get_viewport_rect().size / zoom
 	var half_view := view_size * 0.5
-	# [pan-slack 2026-11-03] 旧逻辑把"视口完全落在世界内"作为约束：当缩放到整图
-	# （真机实测 zoom≈0.94，视口≈整张地图）时 min_p≈max_p，相机被钉死 → 玩家反馈
-	# "地图拖不动"。现在改成"至少保留 20% 视口能看到地图"：允许把地图推到边缘外，
-	# 但不会推出屏幕，低倍率下也能正常拖动。
-	var slack := half_view * 0.6
-	var min_p := _world_bounds.position - slack
-	var max_p := _world_bounds.position + _world_bounds.size + slack
+	# [pan-strict 2026-11-03] 视口必须完整落在世界矩形内。上一版为了让低倍率"能拖动"
+	# 留了 0.6 × 半视口的 slack，结果玩家把地图推出边界后看到的是 Viewport 的 clear
+	# color 灰底（顶栏 / 面板背后一整条），观感极差。约束回归严格，但配套改了两处，
+	# 所以不会再回到"相机被钉死"：
+	#   1) fit_to_viewport(fill_safe_area=true) 把最小倍率抬到"铺满整块视口"，
+	#      正常游戏态下世界至少和视口一样大，另一个轴仍然可以随意拖；
+	#   2) 世界比视口还小的异常态（未 fit / 极端窗口尺寸）该轴居中，不会一边露灰。
+	var min_p := _world_bounds.position + half_view
+	var max_p := _world_bounds.position + _world_bounds.size - half_view
 	var out := p
 	if _horizontal_wrap_enabled:
 		out.x = _wrap_camera_x(p.x)

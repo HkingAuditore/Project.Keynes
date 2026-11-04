@@ -23,8 +23,13 @@ const IVORY_MARGIN := 24.0
 @export var frame_scale := 0.42:
 	set(value):
 		frame_scale = maxf(0.1, value)
+		_apply_content_margin()
 		queue_redraw()
-@export var content_margin := Vector4(16, 12, 16, 12):
+## Content inset. The nine-sliced edge is drawn at `EDGE_MARGIN * frame_scale`
+## pixels, so a fixed 12px bottom margin let children (the army order row, the
+## peace submit button) slide underneath the frame. Anything below the painted
+## edge is invisible, so the inset is derived from it.
+@export var content_margin := Vector4(0, 0, 0, 0):
 	set(value):
 		content_margin = value
 		_apply_content_margin()
@@ -37,12 +42,21 @@ func _init() -> void:
 	_apply_content_margin()
 
 
+## 默认内边距：左右/下让开绘制出来的边框（≈20px）+ 呼吸，顶部留 14px。
+func _default_content_margin() -> Vector4:
+	var border := ceilf(EDGE_MARGIN * frame_scale)
+	return Vector4(border + 2.0, 14.0, border + 2.0, border + 8.0)
+
+
 func _apply_content_margin() -> void:
+	var margins: Vector4 = content_margin
+	if margins == Vector4(0, 0, 0, 0):
+		margins = _default_content_margin()
 	var empty := StyleBoxEmpty.new()
-	empty.content_margin_left = content_margin.x
-	empty.content_margin_top = content_margin.y
-	empty.content_margin_right = content_margin.z
-	empty.content_margin_bottom = content_margin.w
+	empty.content_margin_left = margins.x
+	empty.content_margin_top = margins.y
+	empty.content_margin_right = margins.z
+	empty.content_margin_bottom = margins.w
 	add_theme_stylebox_override("panel", empty)
 
 

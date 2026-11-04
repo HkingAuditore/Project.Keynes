@@ -12,7 +12,7 @@ signal locate_cell_requested(cell: int)
 const LIVE_REFRESH_INTERVAL_MSEC := 200
 const PENDING_RETRY_SECONDS := 0.25
 const COMPACT_WIDTH := 760.0
-const FILTER_CHAPTERS := {"industry": "sector", "market": "group"}
+const FILTER_CHAPTERS := {"industry": "sector", "market": "group", "strata": "mode"}
 ## 页内锚点落位时在区段小标题上方留的空隙。不留会把小标题顶到视口上沿，
 ## 看起来像被裁掉了半个字。
 const SECTION_SCROLL_PAD := 12
@@ -21,7 +21,7 @@ var _vm := EconomyDossierViewModel.new()
 var _model: Dictionary = {}
 var _chapter := "overview"
 var _compact := false
-var _filters := {"sector": -1, "group": ""}
+var _filters := {"sector": -1, "group": "", "mode": "stratum"}
 var _scroll_by_chapter: Dictionary = {}
 var _viewport_was_visible := false
 ## 合并篇章后的页内锚点（如「利润」卡点落在产业章的「投资风向」一段）。
@@ -319,6 +319,12 @@ func _refresh_filters() -> void:
 		_filter_label.text = "产业部门"
 		for sector in EconomyDossierViewModel.SECTORS:
 			options.append({"id": int(sector.id), "label": String(sector.name)})
+	elif kind == "mode":
+		# 人口视角不是筛选而是分组口径：阶层是九个聚合行，职业是原生逐职业行。
+		_filter_label.text = "人口视角"
+		options = []
+		for mode in EconomyDossierViewModel.POPULATION_MODES:
+			options.append({"id": String(mode.id), "label": String(mode.label)})
 	else:
 		_filter_label.text = "物资类别"
 		var market := _vm.market_model("")
@@ -353,6 +359,9 @@ func _on_page_navigate(chapter_id: String, payload: Dictionary) -> void:
 		_filters["sector"] = int(payload.sector)
 	if payload.has("group"):
 		_filters["group"] = String(payload.group)
+	# 章节页可以自己改分组口径（阶层页点职业 = 从阶层视角跳到职业视角）。
+	if payload.has("mode"):
+		_filters["mode"] = String(payload.mode)
 	var target = _pages.get(chapter_id, null)
 	if target != null and target.has_method("focus_item") and payload.has("focus"):
 		target.focus_item(payload.focus)

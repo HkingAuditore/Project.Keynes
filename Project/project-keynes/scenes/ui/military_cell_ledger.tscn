@@ -1,0 +1,42 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_cell_ledger.gd" id="1_ledger"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_garrison_strip.gd" id="2_garrison"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_roster_list.gd" id="3_roster"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_training_list.gd" id="4_training"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_paper_rule.gd" id="5_rule"]
+
+[node name="MilitaryCellLedger" type="PanelContainer"]
+theme_type_variation = &"PKPaperNote"
+script = ExtResource("1_ledger")
+
+[node name="Body" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="GarrisonStrip" type="Control" parent="Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_garrison")
+
+[node name="TroopList" type="Control" parent="Body"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_roster")
+
+[node name="TrainingList" type="Control" parent="Body"]
+layout_mode = 2
+unique_name_in_owner = true
+size_flags_horizontal = 3
+script = ExtResource("4_training")
+
+[node name="Rule" type="Control" parent="Body"]
+layout_mode = 2
+script = ExtResource("5_rule")
+
+[node name="Rows" type="VBoxContainer" parent="Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2

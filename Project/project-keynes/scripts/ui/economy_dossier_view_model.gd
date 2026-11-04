@@ -31,6 +31,13 @@ const SATISFACTION_DIMENSIONS: Array[String] = [
 ## 前四维是实际生活消费，后四维是财务与社会感受。-1 表示不适用。
 const CONSUMPTION_TIER_COUNT := 4
 
+## 人口视角。阶层是聚合口径（九个展示阶层），职业是原生 professions 视图的原始口径；
+## 两者读同一份快照，所以同名职业在两边的数字必然一致，只是分组粗细不同。
+const POPULATION_MODES: Array[Dictionary] = [
+	{"id": "stratum", "label": "阶层", "tooltip": "按九个社会阶层合并看"},
+	{"id": "profession", "label": "职业", "tooltip": "逐职业看，精确到具体职业"},
+]
+
 const BOTTLENECK_ORDER: Array[String] = [
 	"demand", "input", "capital", "labor", "resource", "margin"]
 const BOTTLENECK_META := {
@@ -703,12 +710,14 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 			"cohort_count": 0, "funds": 0.0, "income_per_day": 0.0, "expense_per_day": 0.0,
 			"tax_per_day": 0.0, "subsidy_per_day": 0.0, "in_kind_per_day": 0.0,
 			"employed": 0.0, "unemployed": 0.0, "satisfaction": 0.0, "survival": 0.0,
+			"living": 0.0, "living_name": "",
 			"dims": dims, "dims_population": dims_population, "professions": [], "need_population": {}})
 	var stable_ids = professions.get("profession_stable_ids", PackedStringArray())
 	var names = professions.get("profession_display_names", stable_ids)
 	var population = professions.get("population", PackedInt64Array())
 	var satisfaction = professions.get("satisfaction_q16", PackedInt32Array())
 	var survival = professions.get("survival_satisfaction_q16", PackedInt32Array())
+	var living = professions.get("living_standard_level_q16", PackedInt32Array())
 	var dims_flat = professions.get("satisfaction_dims_q16", PackedInt32Array())
 	var dims_people = professions.get("satisfaction_dims_population", PackedInt64Array())
 	var worst = professions.get("worst_need_population", PackedInt64Array())
@@ -733,6 +742,7 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 		bucket.unemployed += _at(professions.get("unemployed", []), row)
 		bucket.satisfaction += _at(satisfaction, row) * people
 		bucket.survival += _at(survival, row) * people
+		bucket.living += _at(living, row) * people
 		var dims: PackedFloat32Array = bucket.dims
 		for d in range(dim_count):
 			var value := _at(dims_flat, row * dim_count + d)
@@ -767,6 +777,12 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 		bucket.income_per_capita = _per_capita(float(bucket.income_per_day), people) / MONEY_SCALE
 		bucket.expense_per_capita = _per_capita(float(bucket.expense_per_day), people) / MONEY_SCALE
 		bucket.funds_per_capita = _per_capita(float(bucket.funds), people) / MONEY_SCALE
+		bucket.living = float(bucket.living) / people / Q16 if people > 0.0 else 0.0
+		bucket.living_name = living_name(float(bucket.living)) if people > 0.0 else ""
+		# 详情里的职业条按「本阶层内占比」画：分母是阶层人口而不是全国人口，
+		# 这一列要回答的是「这个阶层里谁占大头」。
+		for profession in bucket.professions:
+			profession["share"] = float(profession.population) / people if people > 0.0 else 0.0
 		(bucket.professions as Array).sort_custom(
 			func(a, b): return float(a.population) > float(b.population))
 		var needs: Array = []
@@ -782,45 +798,185 @@ static func aggregate_strata(professions: Dictionary, table: SocialStrataTable) 
 	return rows
 
 
-func strata_model(selected_index: int) -> Dictionary:
+## 生活档名称：原生给的是 Q16 的 0..6 连续档位，这里只做台阶命名。
+static func living_name(level: float) -> String:
+	if is_nan(level) or level < 0.0:
+		return ""
+	return LIVING_STANDARD_NAMES[clampi(roundi(level), 0, LIVING_STANDARD_NAMES.size() - 1)]
+
+
+## 职业视角：原生 professions 视图逐职业一行，不做任何阶层合并。
+## 原生只发布「有 cohort 的职业」，所以这里天然没有零人口行；按人口降序排，
+## 与阶层表的默认「人口占比」排序同向，切视角时第一行还是同一批人。
+## 每个职业行仍带着它所属的阶层 id / 名称 / 颜色，用来回答「这个职业算什么阶层」。
+static func profession_rows(professions: Dictionary, table: SocialStrataTable) -> Array:
+	if table == null or not bool(professions.get("ok", false)):
+		return []
+	var dim_count := int(professions.get("satisfaction_dimension_count",
+		SATISFACTION_DIMENSIONS.size()))
+	var need_count := int(professions.get("need_count", 0))
+	var stable_ids = professions.get("profession_stable_ids", PackedStringArray())
+	var names = professions.get("profession_display_names", stable_ids)
+	var population = professions.get("population", PackedInt64Array())
+	var satisfaction = professions.get("satisfaction_q16", PackedInt32Array())
+	var survival = professions.get("survival_satisfaction_q16", PackedInt32Array())
+	var living = professions.get("living_standard_level_q16", PackedInt32Array())
+	var dims_flat = professions.get("satisfaction_dims_q16", PackedInt32Array())
+	var dims_people = professions.get("satisfaction_dims_population", PackedInt64Array())
+	var worst = professions.get("worst_need_population", PackedInt64Array())
+	var need_names = professions.get("need_display_names",
+		professions.get("need_ids", PackedStringArray()))
+	var rows: Array = []
+	var total_population := 0.0
+	for row in range(stable_ids.size()):
+		var people := _at(population, row)
+		if people <= 0.0:
+			continue
+		var stable_id := String(stable_ids[row])
+		var index := table.stratum_index_for(stable_id)
+		var entry := table.stratum(index)
+		var dims := PackedFloat32Array()
+		dims.resize(dim_count)
+		var dims_population := PackedFloat32Array()
+		dims_population.resize(dim_count)
+		for d in range(dim_count):
+			var value := _at(dims_flat, row * dim_count + d)
+			dims[d] = value / Q16 if value >= 0.0 else -1.0
+			dims_population[d] = _at(dims_people, row * dim_count + d)
+		var needs: Array = []
+		for n in range(need_count):
+			var affected := _at(worst, row * need_count + n)
+			if affected <= 0.0:
+				continue
+			needs.append({"index": n,
+				"name": String(need_names[n]) if n < need_names.size() else "需求 %d" % n,
+				"population": affected, "share": affected / people})
+		needs.sort_custom(func(a, b): return float(a.population) > float(b.population))
+		total_population += people
+		rows.append({
+			"id": stable_id, "index": index,
+			"name": String(names[row]) if row < names.size() else stable_id,
+			"icon": IconCatalog.profession_semantic(stable_id),
+			"color": entry.get("color", UITokens.FAMILY_BRASS),
+			"stratum_id": String(entry.get("id", "")),
+			"stratum_name": String(entry.get("name", "")),
+			"population": people,
+			"cohort_count": int(_at(professions.get("cohort_count", []), row)),
+			"cell_count": int(_at(professions.get("cell_count", []), row)),
+			"funds": _at(professions.get("funds", []), row),
+			"funds_per_capita": _per_capita(_at(professions.get("funds", []), row), people) / MONEY_SCALE,
+			"income_per_capita": _per_capita(_at(professions.get("income_per_day", []), row), people) / MONEY_SCALE,
+			"expense_per_capita": _per_capita(_at(professions.get("expense_per_day", []), row), people) / MONEY_SCALE,
+			"tax_per_capita": _per_capita(_at(professions.get("tax_per_day", []), row), people) / MONEY_SCALE,
+			"employed": _at(professions.get("owner_employed", []), row)
+				+ _at(professions.get("employee_employed", []), row),
+			"unemployed": _at(professions.get("unemployed", []), row),
+			"satisfaction": _at(satisfaction, row) / Q16,
+			"survival": _at(survival, row) / Q16,
+			"living": _at(living, row) / Q16,
+			"living_name": living_name(_at(living, row) / Q16),
+			"dims": dims, "dims_population": dims_population,
+			"worst_needs": needs.slice(0, 4),
+			"professions": [],
+		})
+	for entry in rows:
+		entry["share"] = float(entry.population) / total_population \
+			if total_population > 0.0 else 0.0
+	rows.sort_custom(func(a, b): return float(a.population) > float(b.population))
+	return rows
+
+
+## 全国 8 维基线：按「该维适用人口」加权，不适用（-1）的维度不进分母。
+static func national_dims(rows: Array) -> PackedFloat32Array:
+	var national := PackedFloat32Array()
+	national.resize(SATISFACTION_DIMENSIONS.size())
+	var weight := PackedFloat32Array()
+	weight.resize(national.size())
+	for row in rows:
+		if float(row.population) <= 0.0:
+			continue
+		for d in range(national.size()):
+			if float(row.dims[d]) >= 0.0:
+				var applicable := float(row.dims_population[d])
+				national[d] += float(row.dims[d]) * applicable
+				weight[d] += applicable
+	for d in range(national.size()):
+		national[d] = national[d] / weight[d] if weight[d] > 0.0 else -1.0
+	return national
+
+
+## 阶层 / 职业两个视角共用一次查询与一份 8 维基线，页面上切视角不会换口径。
+func strata_model(selected_index: int = -1, mode: String = "stratum",
+		selected_profession: String = "") -> Dictionary:
 	var professions := query("professions")
 	if not bool(professions.get("ok", false)):
 		return {"ok": false, "reason": _reason(professions)}
 	var rows := aggregate_strata(professions, _strata)
+	var profession_list := profession_rows(professions, _strata)
+	var national := national_dims(rows)
+	var model := {"ok": true, "mode": mode, "rows": rows, "professions": profession_list,
+		"selected": {}, "selected_index": -1, "selected_id": "",
+		"national_dims": national}
+	if mode == "profession":
+		var picked := _pick_profession(profession_list, selected_profession)
+		if picked.is_empty():
+			return model
+		var detail: Dictionary = (picked as Dictionary).duplicate(true)
+		detail["cities"] = _cities_for(-1, String(detail.id))
+		# 同阶层职业：职业视角里的「同业对照」，选中的那一行由页面高亮。
+		var stratum_index := int(detail.index)
+		detail["professions"] = rows[stratum_index].professions \
+			if stratum_index >= 0 and stratum_index < rows.size() else []
+		if _history != null and scope_cell < 0:
+			detail["satisfaction_trend"] = _history.profession_series(
+				String(detail.id), "satisfaction")
+			detail["income_trend"] = _history.profession_series(
+				String(detail.id), "income_per_capita")
+		model["selected"] = detail
+		model["selected_id"] = String(detail.id)
+		model["selected_index"] = stratum_index
+		return model
 	var populated: Array = rows.filter(func(r): return float(r.population) > 0.0)
-	var index := selected_index
 	if populated.is_empty():
-		return {"ok": true, "rows": rows, "selected": {}, "national_dims": PackedFloat32Array()}
+		return model
+	var index := selected_index
 	if index < 0 or index >= rows.size() or float(rows[index].population) <= 0.0:
 		index = int(populated[0].index)
-	var national := PackedFloat32Array()
-	national.resize(SATISFACTION_DIMENSIONS.size())
-	var national_population := PackedFloat32Array()
-	national_population.resize(national.size())
-	for row in populated:
-		for d in range(national.size()):
-			if row.dims[d] >= 0.0:
-				var applicable_people := float(row.dims_population[d])
-				national[d] += float(row.dims[d]) * applicable_people
-				national_population[d] += applicable_people
-	for d in range(national.size()):
-		national[d] = national[d] / national_population[d] if national_population[d] > 0.0 else -1.0
 	var selected: Dictionary = rows[index]
-	selected["cities"] = _stratum_cities(index)
+	selected["cities"] = _cities_for(index, "")
 	if _history != null and scope_cell < 0:
 		selected["satisfaction_trend"] = _history.stratum_series(index, "satisfaction")
 		selected["income_trend"] = _history.stratum_series(index, "income_per_capita")
-	return {"ok": true, "rows": rows, "selected": selected, "selected_index": index,
-		"national_dims": national}
+	model["selected"] = selected
+	model["selected_index"] = index
+	model["selected_id"] = String(selected.id)
+	return model
 
 
-func _stratum_cities(stratum_index: int) -> Array:
+static func _pick_profession(rows: Array, wanted: String) -> Dictionary:
+	if rows.is_empty():
+		return {}
+	if not wanted.is_empty():
+		for row in rows:
+			if String(row.id) == wanted:
+				return row
+	return rows[0]
+
+
+## 地域分布：stratum_index >= 0 时按阶层归并，否则只看 profession_id 这一个职业。
+## 两者读同一份按格职业 CSR（settlements 视图），所以阶层分布加起来就是职业分布。
+func _cities_for(stratum_index: int, profession_id: String) -> Array:
 	var page := query("settlements")
-	if not bool(page.get("ok", false)):
+	if not bool(page.get("ok", false)) or _strata == null:
 		return []
 	var professions := PackedStringArray()
 	if _facade != null and _facade.has_method("profession_ids"):
 		professions = _facade.profession_ids()
+	var profession_match := -1
+	if not profession_id.is_empty():
+		profession_match = professions.find(profession_id)
+		if profession_match < 0:
+			return []
 	var cells = page.get("cell_indices", PackedInt32Array())
 	var names = page.get("settlement_names", PackedStringArray())
 	var offsets = page.get("profession_offsets", PackedInt32Array())
@@ -835,7 +991,10 @@ func _stratum_cities(stratum_index: int) -> Array:
 		var weighted := 0.0
 		for k in range(int(offsets[row]), int(offsets[row + 1])):
 			var p := int(profession_index[k])
-			if p < 0 or p >= professions.size() \
+			if profession_match >= 0:
+				if p != profession_match:
+					continue
+			elif p < 0 or p >= professions.size() \
 					or _strata.stratum_index_for(String(professions[p])) != stratum_index:
 				continue
 			var count := _at(profession_population, k)

@@ -1543,5 +1543,3 @@ static func _accumulate_building_jobs(spec: Dictionary, count: int, jobs: Dictio
 		if retained_positions == 0 and full_positions > 0 and PLANNED_UTILIZATION_Q16 > 0:
 			retained_positions = 1
 		jobs[profession] = int(jobs.get(profession, 0)) + retained_positions
-
-

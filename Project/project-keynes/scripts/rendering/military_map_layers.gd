@@ -33,6 +33,16 @@ const LAYER_NODES := [
 	["MilitaryRouteLayer", "res://scripts/rendering/military_route_layer.gd"],
 ]
 
+## 点击拾取：点到战线中点的容差（占 hex 半径的比例）。必须明显小于半格，
+## 否则正常选格会被战线抢走。
+const PICK_EDGE_TOLERANCE_RATIO := 0.42
+## 战线扇区（军务档案的一页）向上限：BFS 只在这两个预算内展开。
+const SECTOR_MAX_EDGES := 96
+const SECTOR_MAX_CELLS := 128
+## 一侧最多返回多少支部队句柄（对阵表要拿它们去读攻防/士气）。
+const SECTOR_MAX_SIDE_ARMIES := 24
+const Q16 := 65536.0
+
 var occupation_layer: MilitaryOccupationLayer
 var area_layer: MilitaryAreaLayer
 var front_layer: MilitaryFrontLayer
@@ -65,6 +75,10 @@ var _last_front := -1
 var _last_army_sig := -1
 var _selected_army := 0
 var _feed_unavailable := false
+## 战线边集合（key -> 在 feed.front_edge_key 里的下标）。只在
+## front_snapshot_revision 变化、且军务档案正在看战线时重建。
+var _front_edge_set: Dictionary = {}
+var _front_set_revision := -1
 
 
 func _ready() -> void:
@@ -93,6 +107,8 @@ func configure(map, world, camera: Camera2D, clock: WorldClock, host) -> void:
 	_last_front = -1
 	_last_army_sig = -1
 	_feed_unavailable = false
+	_front_edge_set.clear()
+	_front_set_revision = -1
 
 	var dims := Vector2i(1, 1)
 	var atlas: Texture2D = null
@@ -397,6 +413,251 @@ func clear_route() -> void:
 func set_selected_cell(cell: int) -> void:
 	if token_layer != null:
 		token_layer.set_selected_cell(cell)
+
+
+## ── 点击拾取（军务档案入口）──────────────────────────────────────────────
+## 优先级：部队棋子 → 战线边 → 空（交回地块选择）。
+## 只在点击时调用；迷雾由 token_layer 的 army_visible 把关，战线位置视为公开。
+func pick_at_world(world: Vector2) -> Dictionary:
+	if not _configured or not _enabled or _map == null or _feed == null \
+			or not bool(_feed.ok):
+		return {}
+	if token_layer != null:
+		var army: Dictionary = token_layer.pick_army_at(world)
+		var handle := int(army.get("handle", 0))
+		if handle != 0:
+			return {"kind": "army", "handle": handle,
+				"cell": int(army.get("cell", -1)), "row": int(army.get("row", -1))}
+	if front_layer != null and int(_feed.front_edge_count) > 0:
+		var edge: int = front_layer.pick_edge_at(
+			world, _hex_size * PICK_EDGE_TOLERANCE_RATIO)
+		if edge >= 0:
+			return {"kind": "front", "edge": edge, "cell": int(edge) / 6}
+	return {}
+
+
+func army_anchor_world(handle: int) -> Vector2:
+	if token_layer == null:
+		return Vector2(NAN, NAN)
+	return token_layer.army_world_position(handle)
+
+
+## 同格部队（军务档案的「同格部队」名录）。只返回当前可见的行。
+func armies_at_cell(cell: int) -> Array:
+	var out: Array = []
+	if _feed == null or not bool(_feed.ok) or cell < 0:
+		return out
+	for row in _feed.army_count:
+		if int(_feed.army_cell[row]) != cell:
+			continue
+		if int(_feed.army_visible[row]) == 0:
+			continue
+		out.append({
+			"handle": int(_feed.army_handle[row]),
+			"owner_slot": int(_feed.army_owner[row]),
+			"headcount": int(_feed.army_headcount[row]),
+			"cell": int(_feed.army_cell[row]),
+		})
+	return out
+
+
+func army_cell(handle: int) -> int:
+	if _feed == null or not bool(_feed.ok) or handle == 0:
+		return -1
+	for row in _feed.army_count:
+		if int(_feed.army_handle[row]) == handle:
+			return int(_feed.army_cell[row])
+	return -1
+
+
+func front_edge_anchor_world(edge_key: int) -> Vector2:
+	if front_layer == null:
+		return Vector2(NAN, NAN)
+	return front_layer.edge_world_midpoint(edge_key)
+
+
+func set_selected_front_edge(edge_key: int) -> void:
+	if front_layer != null:
+		front_layer.set_selected_edge(edge_key)
+
+
+## 战线边集合：key -> feed 下标。12k 边的重建只发生在前线变化时。
+func _ensure_front_edge_set() -> bool:
+	if _feed == null or _map == null:
+		return false
+	var revision := int(_feed.front_snapshot_revision)
+	if _front_set_revision == revision and not _front_edge_set.is_empty():
+		return true
+	_front_set_revision = revision
+	_front_edge_set.clear()
+	var keys: PackedInt32Array = _feed.front_edge_key
+	var count := keys.size()
+	for i in count:
+		_front_edge_set[int(keys[i])] = i
+	return not _front_edge_set.is_empty()
+
+
+## 军务档案的「战线扇区」：从被点击的边出发，沿共享格 BFS 展开一段连续战线。
+## 返回按沿带角度排好序的边（≤ max_edges），外加交战段、双方在场兵力与锚点。
+func front_sector(edge_key: int, max_edges: int = SECTOR_MAX_EDGES) -> Dictionary:
+	if _map == null or _feed == null or not bool(_feed.ok) or edge_key < 0:
+		return {}
+	if not _ensure_front_edge_set() or not _front_edge_set.has(edge_key):
+		return {}
+	var neighbors: PackedInt32Array = _map.neighbor_indices_packed()
+	if neighbors.is_empty():
+		return {}
+	var owners: PackedInt32Array = _map.country_slot_arr
+	var origin: int = int(edge_key) / 6
+	var queue := PackedInt32Array([origin])
+	var queue_cursor := 0
+	var seen_cells := {origin: true}
+	var seen_edges := {}
+	var cells := PackedInt32Array()
+	var keys := PackedInt32Array()
+	var progress := PackedFloat32Array()
+	var active := PackedByteArray()
+	while queue_cursor < queue.size() and keys.size() < max_edges \
+			and cells.size() < SECTOR_MAX_CELLS:
+		var cell: int = int(queue[queue_cursor])
+		queue_cursor += 1
+		cells.append(cell)
+		var base := cell * 6
+		for dir in 6:
+			var index := base + dir
+			if index < 0 or index >= neighbors.size():
+				break
+			var neighbor := int(neighbors[index])
+			if neighbor < 0 or neighbor == cell:
+				continue
+			var key := index
+			if neighbor < cell:
+				key = _edge_key_between(neighbors, neighbor, cell)
+			if key < 0 or not _front_edge_set.has(key) or seen_edges.has(key):
+				continue
+			seen_edges[key] = true
+			var slot := int(_front_edge_set[key])
+			var byte := 255
+			if slot >= 0 and slot < _feed.front_edge_progress.size():
+				byte = int(_feed.front_edge_progress[slot])
+			keys.append(key)
+			active.append(0 if byte == 255 else 1)
+			progress.append(0.0 if byte == 255 else float(byte) / 254.0)
+			if not seen_cells.has(neighbor):
+				seen_cells[neighbor] = true
+				queue.append(neighbor)
+			if keys.size() >= max_edges:
+				break
+	if keys.is_empty():
+		return {}
+	# 交战段：engagement 的 (cell_a, cell_b) 恰好落在扇区的某条边上。
+	var pair_to_key := {}
+	for key in keys:
+		var a: int = int(key) / 6
+		var b := _edge_neighbor(neighbors, a, int(key) % 6)
+		if b >= 0:
+			pair_to_key[_pair_id(mini(a, b), maxi(a, b))] = int(key)
+	var engagements: Array = []
+	if int(_feed.engagement_count) > 0:
+		for i in _feed.engagement_count:
+			var a := int(_feed.engagement_cell_a[i])
+			var b := int(_feed.engagement_cell_b[i])
+			var pair := _pair_id(mini(a, b), maxi(a, b))
+			if not pair_to_key.has(pair):
+				continue
+			engagements.append({
+				"cell_a": a, "cell_b": b,
+				"progress": clampf(float(_feed.engagement_progress[i]) / Q16, 0.0, 1.0),
+				"attacker": int(_feed.engagement_side[i]),
+				"battle": i < _feed.engagement_battle.size() \
+					and int(_feed.engagement_battle[i]) != 0,
+			})
+	# 交战方：扇区格的归属。即使一侧此刻没有部队，界面也要能写出国名。
+	var owner_slots := {}
+	for cell in cells:
+		var owner := _owner_of(owners, int(cell))
+		if owner >= 0:
+			owner_slots[owner] = true
+	var owner_rows := PackedInt32Array()
+	var owner_keys: Array = owner_slots.keys()
+	owner_keys.sort()
+	for slot in owner_keys:
+		owner_rows.append(int(slot))
+	# 双方在场兵力 + 部队句柄（对阵表按句柄汇总攻防）：扇区格 + 1 环内、当前可见。
+	var ring := {}
+	for cell in cells:
+		ring[int(cell)] = true
+	for cell in cells:
+		for dir in 6:
+			var neighbor := _edge_neighbor(neighbors, int(cell), dir)
+			if neighbor >= 0:
+				ring[neighbor] = true
+	var sides := {}
+	for row in _feed.army_count:
+		if int(_feed.army_visible[row]) == 0:
+			continue
+		if not ring.has(int(_feed.army_cell[row])):
+			continue
+		var slot := int(_feed.army_owner[row])
+		var entry: Dictionary = sides.get(slot, {"slot": slot, "heads": 0,
+			"armies": 0, "handles": PackedInt64Array()})
+		entry["heads"] = int(entry["heads"]) + int(_feed.army_headcount[row])
+		entry["armies"] = int(entry["armies"]) + 1
+		var handles: PackedInt64Array = entry["handles"]
+		if handles.size() < SECTOR_MAX_SIDE_ARMIES:
+			handles.append(int(_feed.army_handle[row]))
+			entry["handles"] = handles
+		sides[slot] = entry
+	var side_rows: Array = sides.values()
+	side_rows.sort_custom(func(a, b) -> bool: return int(a.heads) > int(b.heads))
+	var advance_total := 0.0
+	var advance_count := 0
+	for i in active.size():
+		if int(active[i]) == 0:
+			continue
+		advance_total += float(progress[i])
+		advance_count += 1
+	var focus_cell := int(cells[cells.size() / 2])
+	return {
+		"ok": true,
+		"edge_key": int(edge_key),
+		"cells": cells,
+		"edge_count": keys.size(),
+		"active_count": advance_count,
+		"advance": (advance_total / float(advance_count)) if advance_count > 0 else -1.0,
+		"engagements": engagements,
+		"sides": side_rows,
+		"owners": owner_rows,
+		"player_slot": _player_slot,
+		"focus_cell": focus_cell,
+		"max_edges": max_edges,
+	}
+
+
+func _owner_of(owners: PackedInt32Array, cell: int) -> int:
+	if cell < 0 or cell >= owners.size():
+		return -1
+	return int(owners[cell])
+
+
+func _edge_neighbor(neighbors: PackedInt32Array, cell: int, dir: int) -> int:
+	if cell < 0 or dir < 0 or dir > 5:
+		return -1
+	var index := cell * 6 + dir
+	if index >= neighbors.size():
+		return -1
+	return int(neighbors[index])
+
+
+func _edge_key_between(neighbors: PackedInt32Array, a: int, b: int) -> int:
+	for dir in 6:
+		if _edge_neighbor(neighbors, a, dir) == b:
+			return a * 6 + dir
+	return -1
+
+
+func _pair_id(a: int, b: int) -> int:
+	return a * 131072 + b
 
 
 func debug_snapshot() -> Dictionary:

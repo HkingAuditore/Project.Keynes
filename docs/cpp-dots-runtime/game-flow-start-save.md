@@ -546,6 +546,51 @@ is allocated from each restored building type's input count and initialized to
 finalization validates the span shape so a missing cache fails during load
 instead of surfacing later in `BUILDING_PRODUCTION`.
 
+### Load-time world identity and the player start cell
+
+The load path regenerates the entire world from the saved `NewGameConfig` and
+re-runs the new-game start solver (`StartLocationPolicy`), because that solver is
+part of generation. Its `gameplay_start_report().cell` is therefore a **derived**
+value of the *regenerated* world, never the saved player identity. The restored
+`player_context.start_cell` is the authority: `WorldRuntimeHost._resolve_player_start_cell()`
+prefers it while the pending load bundle exists and only falls back to the report
+for saves that lack it.
+
+`finalize_save_restore_visuals()` enforces that identity instead of assuming it:
+
+- It first re-syncs the native country plane into `MapData.country_slot_arr`
+  (`sync_country_territory_to_map`) before resolving the player slot. PKCN's own
+  restore publish can fail silently — `write_i32_range` no-ops when the slot
+  buffer is the wrong size while still reporting `published_to_slot=true` — and a
+  recoverable desync must not be escalated into a load failure.
+- It compares the restored `start_cell` with the re-selected cell. A mismatch
+  means the regenerated world is not the world the save was taken on (different
+  seed/map source/PKMAP bytes), so territory, terrain, resources and buildings
+  are mutually inconsistent. The load fails with the explicit `start_cell_drift`
+  code instead of binding the player to a cell of a different world, which used
+  to surface as the misleading `load_visual_finalize_failed` /
+  "读档后无法绑定玩家国家，视野不可解算".
+- The unbound-player failure still fails closed (no all-unexplored map is handed
+  to the player), and its report detail now carries `start_cell`,
+  `mirror_slot`, `saved_start_cell` and the native `cell_summary`, which is what
+  separates a world-identity failure from a mirror/flush failure in a player log.
+
+Two generation-side rules keep the saved config able to reproduce its world:
+
+- `MapGenerator.generate()` treats `cfg.seed == 0` as "roll a random seed". The
+  host therefore adopts the resolved seed back into `_new_game_config.base.initial_seed`
+  after a successful generation, so a later save records the seed that actually
+  produced its world.
+- The loading-failure retry replays the pending session request
+  (`PlayerGame._retry_session`: `configure_session` + `generate_world(-1)`).
+  It must never regenerate a random world: the old path called
+  `generate_world(0)` while the saved PKCN bundle was still pending, restoring
+  the save's country state onto an unrelated map and failing every retry with
+  `load_visual_finalize_failed`. Debug regeneration is separate and resolves a
+  fresh nonzero seed into the session config *before* generating.
+- A `pkmap=` command-line override is a new-game affordance only; it is ignored
+  during a load so the saved map source stays authoritative.
+
 The PKSV `pkec` section is a byte-for-byte concatenation of native framed PKEC
 chunks. `EconomyFacade.restore_bytes()` must recover each frame from its
 16-byte header and feed exact frame boundaries to native restore; a fixed-size
@@ -577,7 +622,12 @@ by the previous one, so a fix that stops early simply exposes the next.
 first settlement (must be rejected cleanly), enables a 10% income tax, advances
 20 days so Country state really changes on the worker, saves, loads, compares
 the capital's country summary and tax policy, and runs a full settlement cycle
-after the load.
+after the load. It also asserts that the load regenerates the saved world's
+start cell. `tests/game/start_cell_authority_test.gd` locks the narrower
+contract on its own:
+`godot --headless --path Project/project-keynes --script res://tests/game/start_cell_authority_test.gd`
+(load prefers the saved `player_context.start_cell`, the new-game report is only
+a fallback, and `start_cell_drift` fires exactly when the two disagree).
 
 **Save side**
 
@@ -723,6 +773,20 @@ ID migration is provided.
 且 environment ring 与 day in-flight 都为零，才捕获主线程 Country 只读副本。
 `save_requires_idle_worker` 属于可重试边界原因，等待期间沿用现有 boundary pump。
 否则 PKCN 可能比稍后捕获的 PKSR 落后数天；Host 的 checkpoint day 不一致拒绝保持开启。
+
+2026-11-04 边界超时可诊断化。上面那段 `_can_save()` 里有三条子条件（worker state 仍是
+STARTING/RUNNING/SAVE_PENDING、已停稳之外还留着待消费的环境帧、以及一天正飞）都会以
+同一个 `save_requires_idle_worker` 报出来，而暂停期间没有任何其它遥测：`WorldClock._process`
+在 paused 时首行返回（`[clock/rate]`/`[clock/step]` 静音），`_poll_simulation_stall_watchdog`
+也直接返回（不落 stall 取证）。因此每个可重试分支现在附一个 `blocking_condition`
+（`state_running` / `environment_ring_pending` / `worker_day_inflight` / `economy_busy` /
+`country_should_run` / `effect_*_pending` 等）；`_wait_for_safe_boundary()` 在等待期间留痕
+（frame 0 一行 `[save] boundary wait begin`，之后每 `SAVE_BOUNDARY_PROBE_FRAMES`=30 帧带
+`_boundary_diagnostics()` 全文）；超时再用
+`RuntimeForensics.capture_and_dump("save_boundary_timeout", ...)` 落
+`tmp/runtime_forensics_save_boundary_timeout.json` 与 `user://diagnostics/`。
+失败判定、重试策略、provider/section 契约与落盘路径均不变；`game_save_fault_boundary_test.gd`
+把三个子条件的判别钉住。
 
 安全边界捕获后，provider sections 在主线程冻结成私有 PackedByteArray，随后恢复
 原时钟模式。既有 SaveRepository 的压缩、SHA、临时文件、回读验证与原子替换移至

@@ -96,6 +96,12 @@ enum MilitaryStateRole : uint8_t {
     MILITARY_STATE_WAR_COLLEGE = 2,
 };
 
+// Sizes of MilitaryCellState's per-cell arrays. They are part of the cell
+// snapshot ABI (`barracks_tiers` / `construction_*`), so the bridge and the
+// dossier read the same numbers the core writes.
+constexpr int32_t MILITARY_STATE_BARRACKS_TIERS = 8;
+constexpr int32_t MILITARY_STATE_BUILD_SLOTS = 3;
+
 // Country-level military Modifier stats (country.military.*), q16, 1.0 base
 // unless noted. Order is ABI for MilitaryWorldDigest.country_stat_q16.
 enum MilitaryStatId : uint16_t {
@@ -373,7 +379,7 @@ struct MilitaryCountryPolicy {
 // buildings, garrison or pending quotas). Dense mirror arrays are derived.
 struct MilitaryCellState {
     int32_t cell = -1;
-    int32_t barracks_count[8] = {};     // per tier
+    int32_t barracks_count[MILITARY_STATE_BARRACKS_TIERS] = {};     // per tier
     int32_t fort_tier = -1;
     int32_t college_tier = -1;
     uint8_t paused = 0;
@@ -381,8 +387,8 @@ struct MilitaryCellState {
     int64_t pending_enlist = 0;
     int64_t quota = 0;
     int64_t requisition_until_day = -1;
-    int64_t construction_done_day[3] = {-1, -1, -1};
-    int32_t construction_building[3] = {-1, -1, -1};
+    int64_t construction_done_day[MILITARY_STATE_BUILD_SLOTS] = {-1, -1, -1};
+    int32_t construction_building[MILITARY_STATE_BUILD_SLOTS] = {-1, -1, -1};
 };
 
 struct MilitaryReport {

@@ -174,6 +174,23 @@ state.* / policy.* / army.* / war.declare / peace.*`）由 `kMilitaryOps` 映射
 - **目录**：`MilitaryCatalog`（units 按 stable id 排序，恰好一个民兵兵种；装备类别；官营建筑；
   6 类补给候选与 `supply_yield_q16`）；`catalog.hash` 进入 PKMI 头。
 
+### 6.1 格军事快照 `get_military_cell_snapshot(cell, observer)`
+
+地块档案「军事」页只读这一个查询（不进存档、不进 hash）：
+
+| 字段 | 含义 |
+| --- | --- |
+| `post_count` / `present` | 兵额（逐档兵营容量之和）/ 在驻（驻军 lot + 在场部队） |
+| `pending_enlist` / `quota` / `paused` / `disrepair` | 征召中人数 / 本期配额 / 兵营暂停 / 欠饷失修 |
+| `owner_slot` / `controller_slot` | 归属国 slot / 控制国 slot（不相等 = 被占领） |
+| `fort_tier` / `college_tier` | 现存城防档 / 军校档（-1 = 无） |
+| `barracks_tiers` | `PackedInt32Array(8)`，逐档兵营座数；拆除据此定位档位 |
+| `construction_buildings` / `construction_done_days` | 3 个施工位：目录下标 / 完工绝对日（-1 = 空） |
+| `garrison_lots` / `armies` / `training` | 驻军编成 / 同格部队（handle、headcount、foreign）/ 训练订单 |
+
+档位 8 的兵营在目录编译期被 `clampi(..., 0, 7)` 压到 7，所以 `barracks_tiers[7]` 同时代表
+tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `role+tier`，任一同档下标等价。
+
 ## 7. 性能设计
 
 | 机制 | 实现 |
@@ -289,6 +306,77 @@ cue 只增量更新成员 custom data；handle 变化会清除旧的一次性动
 
 全部低于 `FogOfWarLayer` z12。迷雾门控：`MapData.visible_arr` 非空且 host `is_fog_of_war_enabled()` 时，
 外国部队、交战标记、车队只在可见格显示；己方部队总显示。占领/战线不做迷雾过滤（战线位置视为公开）。
+
+### 9.1 地图拾取与军务档案（右栏部队页 / 战线页）
+
+地图点击的语义：`MapCamera.tile_tapped` → `PlayerController._on_tile_tapped`。部队指令模式
+（`_military_order_mode`）仍然吃掉点击；否则先给拾取一次机会，未命中才 `select_cell()`。
+
+拾取由图层自己完成（几何归图层，UI 只消费结果）：
+
+| 层 | 入口 | 规则 |
+| --- | --- | --- |
+| `MilitaryArmyTokenLayer` | `pick_army_at(world, radius)` | 半径默认 `token_world_size×0.62`；聚合 LOD 退化为「该格兵力最多的一支」；同格重叠时取兵力大者；`_vis=0` 不参与 |
+| `MilitaryFrontLayer` | `pick_edge_at(world, tolerance)` | 候选是本格+6 邻格的 42 条边，容差 `0.42×hex`（远小于半格）；key 规范化为 `min(cell,neighbor)*6+dir` |
+| `MilitaryMapLayers` | `pick_at_world(world)` | 优先级部队 → 战线 → 空；`feed.ok=false` 时一律不拾取 |
+
+选中态：部队 → `token_layer.set_selected_cell(cell)` + `facade.set_render_selection(handle)`
+（区域 z6 / 路线 z11）；战线 → `front_layer.set_selected_edge(key)`。战线选中只换颜色不换宽度：
+ribbon 的线宽是 shader uniform，per-edge 加宽会被裁掉。
+
+`front_sector(edge_key, 96)` 从被点的边沿共享格 BFS 展开一段连续战线（≤96 边 / ≤128 格），
+返回交战段、交战方（扇区格归属）、双方在场兵力与每侧的部队句柄（≤24/侧，供对阵表汇总
+攻防/士气/补给），以及锚点格；`cell → 边` 的集合按 `front_snapshot_revision` 缓存，
+只在档案打开且前线变化时重建（>6 ms 时降级为单格）。
+
+右栏军务档案：在 `InspectorPanel` 的 `DetailShell` 里新增一块与对象详情同级的内容页
+（`scenes/ui/military_dossier.tscn`），因此自动继承面板变宽、地块目录列、开合动效与 ESC。
+模型由 `CountryViewModel.military_dossier_context()` + `MilitaryViewModel.army_dossier()` /
+`front_dossier()` 生成；`GameUIManager` 只负责开合、定位与动作转发，并在 `notify_committed_day`
+里以 200 ms 合并窗口刷新。**不新增原生查询**：拾取读已缓存的 `MilitaryRenderFeed`，
+数据只走 `facade.army()`（单支部队）与既有的目录缓存。
+
+契约与页面规格见 `docs/ui/military-dossier.md`；验证脚本
+`tests/military/military_map_pick_test.gd`、`tests/military/military_dossier_test.gd`、
+`tests/qa/military_dossier_screenshot_qa.gd`。
+
+### 9.2 议和窗口（`MilitaryPeaceWindow`）
+
+议和不再是国家卷宗里的内联卡，而是一块**独立的左停靠非模态窗口**：不暂停、不压暗，地图保持可见，
+窗口开着时地图左键就是「交割选格」。规格见 `docs/ui/military-peace-window.md`。
+
+```text
+战争页/总览「议和」→ CountryPanel.peace_negotiation_requested
+  → GameUIManager.open_military_peace(war_id)
+      ├ close_country_panel() + _suppress_ui_for_dispatch()（隐藏右栏与悬浮工具条）
+      ├ CountryViewModel.build("military") → MilitaryPeaceViewModel.peace_model(war_id, draft)
+      └ MilitaryPeaceWindow.open()：候选描边 + 镜头对准第一块候选
+地图左键 → PlayerController.select_cell()
+      ├ 议和窗口开着 → GameUIManager.handle_peace_map_cell(cell)（清高亮之前拦截）
+      └ 否则照旧（先军务档案拾取，再开地块档案）
+递交 → PlayerController.request_command("military.peace.propose")
+      → GameUIManager._on_peace_submit_requested → 回执喂 set_command_result()
+```
+
+要点：
+
+- 条款编码只有一处：`MilitaryPeaceViewModel.peace_terms()` → `white` / 每格一条 `cede` / `annex` /
+  `lump_sum` / `installments`（`n` 夹 2..12），金额是游戏货币单位，由桥侧 `money_from_units` 换算。
+- 价格与接受倾向只认原生 `evaluate_military_peace`（`price / willing / gap / band`）；没有评估器时
+  退化为「至少 2 分/格」的本地估价并标注为估算。
+- 候选格 = 控制快照里控制者是我方、所有权属敌国的格（`MilitaryViewModel.ceded_cells()` 同一条规则）；
+  没勾选的占领格会随和约自动交还（原生 `execute_treaty` 语义），窗口把它写在条款区底部。
+- 地图点击在 `select_cell()` 里、`clear_cell_highlights()` **之前**被拦截，否则每次点选都会把草案高亮
+  擦掉；窗口开着时 `_on_tile_tapped` 跳过 `military_map_pick()`，避免部队棋子抢走交割点击。
+- 两层高亮：`WorldRoot/PeaceCandidateSet`（低饱和候选描边）与 `WorldRoot/PeaceDraftSet`（朱红草稿），
+  由 `PlayerController.highlight_peace_candidates/draft()` 驱动，窗口关闭时一起清空。
+- 日刷新与命令回执都经 `_refresh_peace_window()`（`invalidate_cache(COUNTRY_DIRTY_MILITARY)` → 重建模型 →
+  `refresh_model`），窗口内部 200 ms 合并且只写值、不重建节点。
+- 已知缺口：原生快照不导出 `score_parts`（四项拆解有则显示）与 `last_rejected_offer_day`
+  （30 日冷却目前按会话内「递交日 + 30」推算）；`peace.respond` 仍无 pending offer 状态。
+
+验证：`tests/military/military_peace_window_test.gd`（视图模型 + 窗口 + 启动卡 + 控制器高亮契约）、
+`tests/qa/military_peace_window_screenshot_qa.gd`（1280/1920 两种 UI 宽 × 白和平/已点选）。
 
 ## 10. 事件 40–47 与 report 计数
 

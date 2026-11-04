@@ -1,11 +1,12 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1_script"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="2_kpi"]
 [ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="3_nav"]
 [ext_resource type="PackedScene" path="res://scenes/ui/object_detail_dialog.tscn" id="4_detail"]
-[ext_resource type="PackedScene" path="res://scenes/ui/construction_picker.tscn" id="5_construction"]
+[ext_resource type="PackedScene" path="res://scenes/ui/building_workspace.tscn" id="5_construction"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family_workspace.tscn" id="6_family"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_dossier.tscn" id="7_military"]
 
 [node name="RightPanel" type="PanelContainer"]
 visible = false
@@ -57,32 +58,16 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ConstructionPane" type="VBoxContainer" parent="Margin/Split/DetailShell"]
+[node name="BuildingWorkspace" parent="Margin/Split/DetailShell" instance=ExtResource("5_construction")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="Margin/Split/DetailShell/ConstructionPane"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="BackButton" type="Button" parent="Margin/Split/DetailShell/ConstructionPane/Header"]
-custom_minimum_size = Vector2(34, 34)
-layout_mode = 2
-focus_mode = 0
-theme_type_variation = &"PKIconButton"
-
-[node name="Title" type="Label" parent="Margin/Split/DetailShell/ConstructionPane/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "新建建筑"
-theme_type_variation = &"PKTitle"
-
-[node name="ConstructionPicker" parent="Margin/Split/DetailShell/ConstructionPane" instance=ExtResource("5_construction")]
+[node name="MilitaryDossier" parent="Margin/Split/DetailShell" instance=ExtResource("7_military")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3

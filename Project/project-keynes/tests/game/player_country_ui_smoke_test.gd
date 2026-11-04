@@ -882,8 +882,8 @@ func _finish() -> void:
 
 
 func _handle_narrative_offer(game: Node) -> bool:
-	# The production narrative now offers a choice on day five. Exercise the
-	# same choose/acknowledge path as a player before expecting days to advance.
+	# When production narrative offers a choice, exercise the same
+	# choose/acknowledge path as a player before expecting days to advance.
 	var controller := game.get_node("PlayerController")
 	var flow = controller.get("_narrative_flow")
 	if flow == null or not flow.is_locked():

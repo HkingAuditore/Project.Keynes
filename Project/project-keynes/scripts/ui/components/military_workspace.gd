@@ -4,13 +4,25 @@ class_name MilitaryWorkspace
 ## Country military workspace (design §14.3). Four chapters; every number comes from
 ## MilitaryViewModel and every action goes through PlayerController.request_command.
 ## Daily refreshes only rewrite values on pre-built nodes; nothing is instantiated.
+##
+## This panel is an INDEX, not a workbench: armies, fronts and peace talks each have
+## their own detail panel, so a row here only says what exists and hands the player
+## over (档案 / 定位 / 议和). Anything that belongs to one army — move, area control,
+## stop, disband, composition, supply days — lives in the army dossier.
 
+## 打开军务档案（部队 / 战线）。外壳转给 GameUIManager.open_military_dossier()。
+signal dossier_requested(kind: String, id: int, cell: int)
+## 打开议和面板。外壳转给 GameUIManager.open_military_peace()。
+signal peace_negotiation_requested(war_id: int)
 signal locate_cell_requested(cell: int)
 signal target_cells_requested(cells: PackedInt32Array)
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const VIEW_MODEL_SCRIPT = preload("res://scripts/ui/military_view_model.gd")
+## 新脚本刻意不写 class_name：未进 global_script_class_cache 的类名会让引用方解析失败
+## （同 touch_ui.gd 的说明），统一 preload。
+const UnitRosterScript = preload("res://scripts/ui/components/military/military_unit_roster.gd")
 
 const LIVE_REFRESH_INTERVAL_MSEC := 200
 const NARROW_WIDTH := 820.0
@@ -26,9 +38,6 @@ const CHAPTER_NAV_PAD := 22.0
 const SHORT_HEIGHT := 520.0
 const CHAPTER_NAV_MIN_WIDTH := 330.0
 const SMALL_BUTTON := Vector2(0, 28)
-## Military control radius limits (PlayerController rejects > 6).
-const MIN_AREA_RADIUS := 1
-const MAX_AREA_RADIUS := 6
 
 var _vm = VIEW_MODEL_SCRIPT.new()
 var _model: Dictionary = {}
@@ -43,17 +52,10 @@ var _scroll_by_chapter: Dictionary = {}
 var _signatures: Dictionary = {}
 var _selected_army := 0
 var _selected_war := 0
-var _war_score := 0.0
 var _forces: Dictionary = {}
 var _war_data: Dictionary = {}
 var _slider_dragging := false
 var _flash_text := ""
-## Peace terms: occupied enemy cells ticked for cession / return.
-var _ceded_checked: Dictionary = {}
-## Army order mode owned by the map ("", "move", "area") — see
-## PlayerController.begin_military_arm_order.
-var _arm_order := ""
-var _arm_radius := 1
 ## Short viewport (phone landscape): the KPI band collapses to one dense line.
 var _short := false
 var _summoned := false
@@ -71,8 +73,8 @@ var _summoned := false
 @onready var _deployment_bar: DossierStackedBar = %DeploymentBar
 @onready var _spend_bar: DossierStackedBar = %SpendBar
 @onready var _overview_insights: InsightList = %OverviewInsights
-@onready var _overview_wars: Array = [%OverviewWar0, %OverviewWar1]
-@onready var _overview_war_empty: Label = %OverviewWarEmpty
+@onready var _overview_war_kicker: Label = %WarKicker
+@onready var _overview_war_link: Button = %WarLink
 
 @onready var _mode_headcount: Button = %ModeHeadcount
 @onready var _mode_budget: Button = %ModeBudget
@@ -88,25 +90,14 @@ var _summoned := false
 @onready var _toggle_levy: CheckButton = %ToggleLevy
 @onready var _toggle_auto_discharge: CheckButton = %ToggleAutoDischarge
 @onready var _share_bar: DossierStackedBar = %ShareBar
-@onready var _unit_share_table: DossierLedgerTable = %UnitShareTable
+@onready var _unit_roster = %UnitRoster
 @onready var _barracks_caption: Label = %BarracksCaption
 @onready var _barracks_table: DossierLedgerTable = %BarracksTable
 @onready var _training_caption: Label = %TrainingCaption
 @onready var _training_table: DossierLedgerTable = %TrainingTable
-@onready var _codex_toggle: Button = %CodexToggle
-@onready var _codex_grid: Control = %CodexGrid
 
 @onready var _army_caption: Label = %ArmyCaption
 @onready var _army_table: DossierLedgerTable = %ArmyTable
-@onready var _army_detail: Control = %ArmyDetail
-@onready var _army_icon: IconBadge = %ArmyIcon
-@onready var _army_title: Label = %ArmyTitle
-@onready var _army_meta: Label = %ArmyMeta
-@onready var _army_warning: Label = %ArmyWarning
-@onready var _army_move: Button = %ArmyMove
-@onready var _army_area: Button = %ArmyArea
-@onready var _lot_list: DossierBarList = %LotList
-@onready var _supply_list: DossierBarList = %SupplyList
 @onready var _army_empty: Control = %ArmyEmpty
 @onready var _convoy_caption: Label = %ConvoyCaption
 @onready var _convoy_table: DossierLedgerTable = %ConvoyTable
@@ -117,28 +108,8 @@ var _summoned := false
 @onready var _declare_table: DossierLedgerTable = %DeclareTable
 @onready var _declare_empty: Label = %DeclareEmpty
 @onready var _declare_caption: Label = %DeclareCaption
-@onready var _log_list: DossierBarList = %BattleLogList
-@onready var _log_empty: Label = %BattleLogEmpty
 @onready var _front_list: DossierBarList = %FrontList
 @onready var _front_empty: Label = %FrontEmpty
-@onready var _ceding_list: Control = %CedingList
-@onready var _ceding_caption: Label = %CedingCaption
-@onready var _cession_rule: Control = %CessionRule
-@onready var _peace_return: Button = %PeaceReturn
-@onready var _peace_editor: Control = %PeaceEditor
-@onready var _peace_title: Label = %PeaceTitle
-@onready var _peace_white: CheckBox = %PeaceWhite
-@onready var _peace_lump: CheckBox = %PeaceLump
-@onready var _lump_amount: SpinBox = %LumpAmount
-@onready var _peace_install: CheckBox = %PeaceInstall
-@onready var _install_amount: SpinBox = %InstallAmount
-@onready var _install_count: SpinBox = %InstallCount
-@onready var _install_total: Label = %InstallTotal
-@onready var _peace_annex: CheckBox = %PeaceAnnex
-@onready var _peace_price: Label = %PeacePrice
-@onready var _peace_score: Label = %PeaceScore
-@onready var _peace_band: Label = %PeaceBand
-@onready var _peace_submit: Button = %PeaceSubmit
 
 
 func _ready() -> void:
@@ -149,21 +120,18 @@ func _ready() -> void:
 	_refresh_timer.one_shot = true
 	add_child(_refresh_timer)
 	_refresh_timer.timeout.connect(_flush_pending_refresh)
-	%WarLink.pressed.connect(select_chapter.bind("war"))
-	for card in _overview_wars:
-		card.set_action("议和条款 ›")
-		card.action_requested.connect(_on_overview_war)
+	_overview_war_link.pressed.connect(select_chapter.bind("war"))
 	for card in _war_cards:
-		card.set_action("")
+		# 战争卡片只负责“这是个什么战争”，条款编辑器在议和面板里。
+		card.set_action("议和")
+		card.action_requested.connect(func(war_id: int) -> void: peace_negotiation_requested.emit(war_id))
 		card.gui_input.connect(_on_war_card_input.bind(card))
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	for button in [_mode_headcount, _mode_budget, _quality_best, _quality_cheap,
-			%ArmyLocate, %ArmyStop, %ArmyDisband]:
+	for button in [_mode_headcount, _mode_budget, _quality_best, _quality_cheap]:
 		(button as Button).custom_minimum_size = SMALL_BUTTON
 	_bind_forces()
 	_bind_armies()
 	_bind_war()
-	_bind_peace()
 	for card in _kpi_row.get_children():
 		(card as DossierKpiCard).show_divider = card.get_index() < _kpi_row.get_child_count() - 1
 	_apply_chapter_visibility()
@@ -198,15 +166,9 @@ func _bind_forces() -> void:
 	_toggle_auto_discharge.toggled.connect(_on_toggle.bind(
 		PlayerControllerScript.COMMAND_MILITARY_AUTO_DISCHARGE))
 	_share_bar.set_segments("", [])
-	_unit_share_table.empty_text = "尚未解锁可配置的兵种"
-	_unit_share_table.row_action.connect(_on_share_action)
-	_unit_share_table.set_columns([
-		{"id": "name", "label": "兵种", "kind": "text", "expand": true, "min_width": 120.0},
-		{"id": "class", "label": "类别", "kind": "text", "width": 58.0, "optional": true},
-		{"id": "era", "label": "时代", "kind": "text", "width": 58.0, "optional": true},
-		{"id": "share", "label": "份额", "kind": "bar", "width": 170.0},
-		{"id": "actions", "label": "", "kind": "actions", "width": 64.0, "sortable": false},
-	], "share")
+	_share_bar.show_legend = false
+	_unit_roster.empty_text = "尚未解锁可配置的兵种：先研究军事科技"
+	_unit_roster.share_step.connect(_on_roster_step)
 	_barracks_table.empty_text = "尚无兵营：在领土地块面板里建造"
 	_barracks_table.row_selected.connect(func(cell) -> void: locate_cell_requested.emit(int(cell)))
 	_barracks_table.row_action.connect(_on_barracks_action)
@@ -224,39 +186,21 @@ func _bind_forces() -> void:
 		{"id": "count", "label": "人数", "kind": "number", "width": 52.0},
 		{"id": "progress", "label": "进度", "kind": "bar", "width": 122.0},
 	], "progress")
-	_codex_toggle.toggled.connect(func(on: bool) -> void:
-		_codex_grid.visible = on
-		_codex_toggle.text = "收起" if on else "展开")
 
 
 func _bind_armies() -> void:
 	_army_table.empty_text = "尚无野战部队"
-	_army_table.row_selected.connect(_on_army_selected)
+	# 点行 = 打开军务档案（编成、补给、移动 / 控制 / 停止都在那边）。
+	_army_table.row_selected.connect(func(handle) -> void: _open_army_dossier(int(handle)))
+	_army_table.row_action.connect(_on_army_action)
 	_army_table.set_columns([
 		{"id": "name", "label": "部队", "kind": "text", "expand": true, "min_width": 104.0},
 		{"id": "heads", "label": "兵力", "kind": "number", "width": 60.0},
 		{"id": "power", "label": "攻 / 防", "kind": "text", "width": 70.0, "optional": true},
 		{"id": "morale", "label": "士气", "kind": "bar", "width": 96.0},
 		{"id": "supply", "label": "补给", "kind": "bar", "width": 96.0, "optional": true},
+		{"id": "actions", "label": "", "kind": "actions", "width": 58.0, "sortable": false},
 	], "heads")
-	_army_icon.set_semantic(&"military.banner", UITokens.DOSSIER_OXBLOOD)
-	%CommanderIcon.set_semantic(&"family.workspace.person", UITokens.DOSSIER_INK_MUTED)
-	for list in [_lot_list, _supply_list]:
-		list.row_height = 24.0
-		list.label_width = 96.0
-		list.value_width = 54.0
-	%ArmyLocate.pressed.connect(func() -> void: _locate_selected_army())
-	%ArmyMove.pressed.connect(_on_army_move)
-	%ArmyArea.pressed.connect(_on_army_area)
-	%RadiusMinus.pressed.connect(_on_radius_step.bind(-1))
-	%RadiusPlus.pressed.connect(_on_radius_step.bind(1))
-	%AreaRadius.value_changed.connect(_on_radius_changed)
-	_arm_radius = clampi(int(%AreaRadius.value), MIN_AREA_RADIUS, MAX_AREA_RADIUS)
-	_update_radius_label()
-	%ArmyStop.pressed.connect(func() -> void:
-		_request(PlayerControllerScript.COMMAND_MILITARY_ARMY_STOP, {"army": _selected_army}))
-	%ArmyDisband.pressed.connect(func() -> void:
-		_request(PlayerControllerScript.COMMAND_MILITARY_ARMY_DISBAND, {"army": _selected_army}))
 	_convoy_table.empty_text = "没有在途车队"
 	_convoy_table.row_selected.connect(_on_convoy_selected)
 	_convoy_table.set_columns([
@@ -278,28 +222,12 @@ func _bind_war() -> void:
 		{"id": "state", "label": "状态", "kind": "text", "width": 104.0},
 		{"id": "actions", "label": "", "kind": "actions", "width": 64.0, "sortable": false},
 	], "name", false)
-	for list in [_log_list, _front_list]:
-		list.row_height = 24.0
-		list.label_width = 150.0
-		list.value_width = 60.0
+	_front_list.row_height = 24.0
+	_front_list.label_width = 150.0
+	_front_list.value_width = 60.0
 	_front_list.selectable = true
+	# 点战线 = 打开战线档案，镜头同时落到该扇区。
 	_front_list.row_selected.connect(_on_front_selected)
-	_ceding_list.row_toggled.connect(_on_ceding_toggled)
-
-
-func _bind_peace() -> void:
-	%PeaceIcon.set_semantic(&"military.war.peace", UITokens.DOSSIER_OXBLOOD)
-	_peace_white.toggled.connect(_on_white_toggled)
-	for box in [_peace_lump, _peace_install, _peace_annex]:
-		box.toggled.connect(func(on: bool) -> void:
-			if on:
-				_peace_white.set_pressed_no_signal(false)
-			_refresh_peace_preview())
-	for spin in [_lump_amount, _install_amount, _install_count]:
-		spin.value_changed.connect(func(_v: float) -> void: _refresh_peace_preview())
-	_peace_submit.pressed.connect(_submit_peace)
-	_peace_return.pressed.connect(_on_peace_return)
-	_peace_return.custom_minimum_size = SMALL_BUTTON
 
 
 func _chapter_definitions() -> Array:
@@ -410,6 +338,7 @@ func focus_army(army_handle: int) -> void:
 	_refresh_now()
 
 
+## 外壳让面板跳到某场战争（例如从总览点「议和」）：切到战争章节即可。
 func open_peace_for(war_id: int) -> void:
 	_selected_war = war_id
 	select_chapter("war")
@@ -472,9 +401,11 @@ func _apply_layout() -> void:
 	_signatures["__layout_stamp__"] = stamp
 	_narrow = narrow
 	var columns := 1 if narrow else 2
-	for grid in [%OverviewGrid, %OverviewWarGrid, %ForcesGrid, %ArmyGrid, %WarGrid,
-			%WarLowerGrid]:
+	# 部队只剩一张列表卡（详情在军务档案里）；战争卡与战线并排，宣战表独占一行。
+	for grid in [%OverviewGrid, %ForcesGrid, %WarGrid]:
 		(grid as GridContainer).columns = columns
+	(%ArmyGrid as GridContainer).columns = 1
+	(%WarLowerGrid as GridContainer).columns = 1
 	_shape_kpis()
 	warn_if_unbound()
 
@@ -496,17 +427,25 @@ func session_bound() -> bool:
 	return _vm.session_bound()
 
 
-## The KPI band is one square-set row of 66px cells, matching the technology and
-## family bands; the 86px card clips at 720p once the chapter nav is above it.
-## Below 520px of workspace (phone landscape) the band switches to DossierKpiCard's
-## dense single-line mode, exactly like the family summary band.
+## The KPI band keeps DossierKpiCard's own heights (86 px, 54 px dense). It used
+## to force 66 px so the band would not clip at 720p, but the card draws its value
+## baseline at y=57 and its caption at y=h-8: at 66 those land on the same line and
+## the two strings overlap. The page column is a ScrollContainer, so the honest
+## height costs nothing but a scroll.
 func _shape_kpis() -> void:
 	_apply_kpi_density()
 	for card in _kpi_row.get_children():
 		var kpi := card as DossierKpiCard
 		if kpi.dense:
+			if kpi.custom_minimum_size.y < DossierKpiCard.DENSE_HEIGHT:
+				kpi.custom_minimum_size.y = DossierKpiCard.DENSE_HEIGHT
 			continue
-		kpi.custom_minimum_size.y = 66.0
+		if kpi.custom_minimum_size.y < DossierKpiCard.HEIGHT:
+			kpi.custom_minimum_size.y = DossierKpiCard.HEIGHT
+		if not kpi.caption.is_empty() and kpi.custom_minimum_size.y < 78.0:
+			push_warning("MilitaryWorkspace: KPI '%s' is %.0f px tall; value and "
+				% [kpi.title, kpi.custom_minimum_size.y]
+				+ "caption baselines collide below 78 px.")
 		kpi.queue_redraw()
 	_rescale_type()
 
@@ -526,9 +465,7 @@ func _apply_kpi_density() -> void:
 func _rescale_type() -> void:
 	for label in [_target_value]:
 		(label as Label).add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
-	for label in [%PeacePrice]:
-		(label as Label).add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
-	for card in _war_cards + _overview_wars:
+	for card in _war_cards:
 		(card as Control).set_type_scale(UITokens.FONT_VALUE)
 
 
@@ -569,18 +506,11 @@ func _refresh_overview() -> void:
 
 	if _changed("overview_insights", data.insights):
 		_overview_insights.set_items(data.insights)
+	# 战争只在「战争」章节展开；总览留一行指路，不再重复两张战争卡。
 	var wars: Array = data.get("wars", [])
-	_overview_war_empty.visible = wars.is_empty()
-	%WarLink.visible = not wars.is_empty()
-	for index in range(_overview_wars.size()):
-		var card: Control = _overview_wars[index]
-		card.visible = index < wars.size()
-		if card.visible:
-			card.set_data(wars[index])
-
-
-func _on_overview_war(war_id: int) -> void:
-	open_peace_for(war_id)
+	_overview_war_kicker.text = "进行中的战争 %d 场" % wars.size() if not wars.is_empty() \
+		else "当前没有战争"
+	_overview_war_link.visible = not wars.is_empty()
 
 
 # ── forces ──────────────────────────────────────────────────────────────
@@ -603,10 +533,14 @@ func _refresh_forces() -> void:
 	_toggle_levy.set_pressed_no_signal(bool(_forces.get("levy_enabled", true)))
 	_toggle_auto_discharge.set_pressed_no_signal(bool(_forces.get("auto_discharge", false)))
 	var assigned := int(_forces.get("share_total", 0))
-	if _changed("shares", _forces.shares):
-		_share_bar.set_segments("兵种配置", _forces.shares,
-			"已配置 %.0f%%，其余保持民兵" % (assigned / 100.0))
-		_apply_share_rows(_forces.units)
+	# 名册行是「份额 + 目录 + 解锁闸门 + 军饷」的纯函数，所以签名只取这四项，
+	# 免得每 200ms 对整份行表做一次 var_to_str。
+	var roster_stamp := [_forces.get("shares", []), assigned,
+		_forces.get("unlocked_count", 0), _forces.get("gate_known", false),
+		_forces.get("daily_wage", 0.0)]
+	if _changed("shares", roster_stamp):
+		_share_bar.set_segments("兵种编制", _forces.shares, "已配 %.0f%%" % (assigned / 100.0))
+		_apply_unit_roster(_forces)
 	_barracks_caption.text = String(_forces.get("barracks_caption", ""))
 	if _changed("barracks", _forces.barracks):
 		_apply_barracks(_forces.barracks)
@@ -616,34 +550,11 @@ func _refresh_forces() -> void:
 		else "没有训练订单"
 	if _changed("training", _forces.training):
 		_apply_training(_forces.training)
-	if _changed("codex", _forces.codex.size()):
-		_codex_grid.set_cards(_forces.codex)
 
 
-func _apply_share_rows(units: Array) -> void:
-	var rows: Array = []
-	for unit in units:
-		var bp := int(unit.bp)
-		var actions: Array = []
-		if bp > 0:
-			actions.append({"id": "lower", "icon": "trend.down", "tooltip": "份额 −5%"})
-		if bool(unit.can_raise):
-			actions.append({"id": "raise", "icon": "action.add", "tooltip": "份额 +5%"})
-		rows.append({
-			"id": String(unit.id),
-			"muted": bp == 0,
-			"tooltip": "%s · %s · %s时代" % [String(unit.label), String(unit["class"]), String(unit.era)],
-			"cells": {
-				"name": {"text": String(unit.label), "icon": String(unit.icon)},
-				"class": {"text": String(unit["class"])},
-				"era": {"text": String(unit.era)},
-				"share": {"text": "%.0f%%" % (bp / 100.0), "value": bp / 10000.0,
-					"bar_color": unit.color, "sort": bp},
-				"actions": {},
-			},
-			"actions": actions,
-		})
-	_unit_share_table.set_rows(rows)
+## 名册只列国家现在真的能编成的兵种；民兵作为“剩余份额”的持有者在行尾出现。
+func _apply_unit_roster(forces: Dictionary) -> void:
+	_unit_roster.set_units(forces.get("units", []))
 
 
 func _apply_barracks(rows: Array) -> void:
@@ -745,18 +656,19 @@ func _on_toggle(enabled: bool, command: StringName) -> void:
 	_request(command, {"enabled": enabled})
 
 
-func _on_share_action(unit_id, action_id: String) -> void:
+func _on_roster_step(unit_id: String, delta_bp: int) -> void:
 	var current := 0
 	for unit in _forces.get("units", []):
-		if String(unit.id) == String(unit_id):
+		if String(unit.id) == unit_id:
 			current = int(unit.bp)
-	var free := 10000 - int(_forces.get("share_total", 0))
-	var step := mini(MilitaryViewModel.SHARE_STEP_BP, free) if action_id == "raise" \
-		else -mini(MilitaryViewModel.SHARE_STEP_BP, current)
-	if step == 0:
+			break
+	# 份额合计上限 10000，未分配的部分保持民兵。
+	var ceiling := maxi(current, 10000 - (int(_forces.get("share_total", 0)) - current))
+	var target := clampi(current + delta_bp, 0, ceiling)
+	if target == current:
 		return
 	_request(PlayerControllerScript.COMMAND_MILITARY_CONFIG_SHARES,
-		{"unit": String(unit_id), "bp": current + step})
+		{"unit": unit_id, "bp": target})
 
 
 func _on_barracks_action(cell, action_id: String) -> void:
@@ -771,6 +683,9 @@ func _locate_training(order_id: int) -> void:
 
 
 # ── armies & logistics ─────────────────────────────────────────────────
+#
+# 这里只是索引：一行说明「哪支部队、多少人、还能不能打」，编成、补给天数、
+# 移动 / 军事控制 / 停止 / 解散都在军务档案面板里（点击行或「档案」按钮）。
 
 func _refresh_armies() -> void:
 	var data: Dictionary = _vm.build("armies", {"army": _selected_army})
@@ -786,9 +701,6 @@ func _refresh_armies() -> void:
 		_apply_army_rows(rows)
 	_army_table.selected_id = _selected_army
 	_army_table.queue_redraw()
-	var detail: Dictionary = data.get("detail", {})
-	if not detail.is_empty() and _changed("army_detail", detail):
-		_apply_army_detail(detail)
 	var convoys: Array = data.get("convoys", [])
 	var at_risk := convoys.filter(func(c): return float(c.risk) >= 0.25).size()
 	_convoy_table.visible = not convoys.is_empty()
@@ -804,8 +716,9 @@ func _apply_army_rows(rows: Array) -> void:
 	for row in rows:
 		table_rows.append({
 			"id": int(row.handle),
-			"tooltip": "%s · %s\n%s%s" % [String(row.name), String(row.cell_text),
-				String(row.mission), ("\n" + String(row.warning)) if not String(row.warning).is_empty() else ""],
+			"tooltip": "%s · %s\n%s%s\n点击打开军务档案" % [String(row.name),
+				String(row.cell_text), String(row.mission),
+				("\n" + String(row.warning)) if not String(row.warning).is_empty() else ""],
 			"cells": {
 				"name": {"text": String(row.name), "icon": "military.banner",
 					"sub": String(row.warning) if not String(row.warning).is_empty() else String(row.cell_text),
@@ -816,23 +729,16 @@ func _apply_army_rows(rows: Array) -> void:
 					"bar_color": _tone(float(row.morale))},
 				"supply": {"text": _percent(row.supply), "value": float(row.supply),
 					"bar_color": _tone(float(row.supply))},
+				"actions": {},
 			},
+			"actions": [
+				{"id": "locate", "icon": "action.pin",
+					"tooltip": "在地图上定位这支部队"},
+				{"id": "dossier", "icon": "summary.overview",
+					"tooltip": "打开军务档案（编成 / 补给 / 指令）"},
+			],
 		})
 	_army_table.set_rows(table_rows)
-
-
-func _apply_army_detail(detail: Dictionary) -> void:
-	_army_title.text = String(detail.name)
-	_army_meta.text = String(detail.meta)
-	var warnings: Array = detail.get("warnings", [])
-	_army_warning.visible = not warnings.is_empty()
-	if not warnings.is_empty():
-		_army_warning.text = String(warnings[0].label)
-		_army_warning.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD
-			if String(warnings[0].tone) == "risk" else UITokens.DOSSIER_BRASS)
-	_lot_list.set_rows(detail.get("lots", []))
-	_supply_list.set_rows(detail.get("supply", []))
-	%SupplyList.get_parent().get_node("SupplyKicker").visible = not (detail.get("supply", []) as Array).is_empty()
 
 
 func _apply_convoys(convoys: Array) -> void:
@@ -855,117 +761,25 @@ func _apply_convoys(convoys: Array) -> void:
 	_convoy_table.set_rows(rows)
 
 
-func _on_army_selected(handle) -> void:
-	_selected_army = int(handle)
-	_refresh_armies()
+func _on_army_action(handle, action_id: String) -> void:
+	match String(action_id):
+		"locate":
+			locate_cell_requested.emit(_army_cell(int(handle)))
+		"dossier":
+			_open_army_dossier(int(handle))
 
 
-func _locate_selected_army() -> void:
+## 「定位」= 镜头落到部队所在格；「档案」= 打开军务档案（外壳会顺带对焦）。
+func _open_army_dossier(handle: int) -> void:
+	if handle <= 0:
+		return
+	_selected_army = handle
+	dossier_requested.emit("army", handle, _army_cell(handle))
+
+
+func _army_cell(handle: int) -> int:
 	for raw in _vm.armies():
-		if int(raw.get("handle", 0)) == _selected_army:
-			locate_cell_requested.emit(int(raw.get("cell", -1)))
-
-
-# ── 部队指令（设计 §14.2）：移动 / 军事控制 ───────────────────────────
-
-## Try to hand the next map click to the army order. The map side owns the
-## target-pick state (PlayerController.begin_military_arm_order); clicking the
-## army's cell only needs a camera focus there.
-func _arm_order_target_count() -> int:
-	return 2 if _arm_order == "move" else 1
-
-
-func _on_army_move() -> void:
-	if _arm_order == "move":
-		cancel_arm_order()
-		return
-	if _selected_army <= 0:
-		_flash("先选一支自己的部队。", true)
-		return
-	if _player_controller == null \
-			or not _player_controller.has_method("begin_military_arm_order"):
-		_flash("地图指令尚未接通。", true)
-		return
-	var result: Dictionary = _player_controller.begin_military_arm_order(
-		_selected_army, "move", 0)
-	if not bool(result.get("ok", false)):
-		_flash(String(result.get("message", "无法进入移动指令。")), true)
-		return
-	_arm_order = "move"
-	_set_arm_buttons("取消移动")
-	var cell := _selected_army_cell()
-	if cell >= 0:
-		locate_cell_requested.emit(cell)
-	_flash("在地图上点目标格预览路线，再点一次确认行军。", false)
-
-
-func _on_army_area() -> void:
-	if _arm_order == "area":
-		cancel_arm_order()
-		return
-	if _selected_army <= 0:
-		_flash("先选一支自己的部队。", true)
-		return
-	if _player_controller == null \
-			or not _player_controller.has_method("begin_military_arm_order"):
-		_flash("地图指令尚未接通。", true)
-		return
-	var radius := _arm_radius
-	var result: Dictionary = _player_controller.begin_military_arm_order(
-		_selected_army, "area", radius)
-	if not bool(result.get("ok", false)):
-		_flash(String(result.get("message", "无法进入军事控制指令。")), true)
-		return
-	_arm_order = "area"
-	_set_arm_buttons("取消控制")
-	_flash("在地图上点中心格，半径 %d 格设为军事控制区。" % radius, false)
-
-
-## Leaving the order clears it on the map side too: PlayerController owns the
-## target-pick state, and a stale order would swallow the next map click.
-func cancel_arm_order() -> void:
-	if not _arm_order.is_empty() and _player_controller != null \
-			and _player_controller.has_method("cancel_military_arm_order"):
-		_player_controller.call("cancel_military_arm_order")
-	_arm_order = ""
-	_set_arm_buttons()
-
-
-func arm_order() -> String:
-	return _arm_order
-
-
-func _set_arm_buttons(mode_text: String = "") -> void:
-	_army_move.text = mode_text if mode_text == "取消移动" else "移动"
-	_army_area.text = mode_text if mode_text == "取消控制" else "军事控制"
-	_army_move.button_pressed = mode_text == "取消移动"
-	_army_area.button_pressed = mode_text == "取消控制"
-
-
-func _on_radius_step(delta: int) -> void:
-	_arm_radius = clampi(_arm_radius + delta, MIN_AREA_RADIUS, MAX_AREA_RADIUS)
-	%AreaRadius.set_value_no_signal(float(_arm_radius))
-	_update_radius_label()
-
-
-func _on_radius_changed(value: float) -> void:
-	_arm_radius = clampi(int(round(value)), MIN_AREA_RADIUS, MAX_AREA_RADIUS)
-	_update_radius_label()
-
-
-func area_radius() -> int:
-	return _arm_radius
-
-
-func _update_radius_label() -> void:
-	%RadiusMinus.disabled = _arm_radius <= MIN_AREA_RADIUS
-	%RadiusPlus.disabled = _arm_radius >= MAX_AREA_RADIUS
-	%AreaRadius.tooltip_text = "军事控制半径 %d 格（上限 6 格）" % _arm_radius
-
-
-func _selected_army_cell() -> int:
-	for raw in _vm.armies():
-		if int(raw.get("handle", 0)) == _selected_army:
+		if int(raw.get("handle", 0)) == handle:
 			return int(raw.get("cell", -1))
 	return -1
 
@@ -987,9 +801,12 @@ func _on_convoy_selected(convoy_id) -> void:
 
 
 # ── war & peace ─────────────────────────────────────────────────────────
+#
+# 这一页只回答「在打谁、打到什么程度、要不要谈」。条款编辑器在议和面板里
+# （每张战争卡的「议和」按钮打开它），战报属于战争细节，也不在这里堆。
 
 func _refresh_war() -> void:
-	var data: Dictionary = _vm.build("war", {"war": _selected_war, "ceding": _ceded_checked})
+	var data: Dictionary = _vm.build("war", {"war": _selected_war})
 	_war_data = data
 	var wars: Array = data.get("wars", [])
 	_selected_war = int(data.get("selected", 0))
@@ -1004,16 +821,6 @@ func _refresh_war() -> void:
 				else Color(1, 1, 1, 0.72)
 	_refresh_declare(data)
 	_refresh_fronts(data)
-	_refresh_log(data)
-	_refresh_ceding(data)
-	var detail: Dictionary = data.get("detail", {})
-	_peace_editor.visible = not detail.is_empty()
-	if detail.is_empty():
-		return
-	_war_score = float(detail.get("score", 0.0))
-	_peace_title.text = "与%s议和" % String(detail.get("enemy_name", "敌国"))
-	_peace_score.text = "当前战争分 %s" % String(detail.get("score_text", "0"))
-	_refresh_peace_preview()
 
 
 # ── 宣战：邻国候选（真实领土图 + Country 名称）──────────────────────────
@@ -1082,7 +889,7 @@ func _declare_row(row_id: int) -> Dictionary:
 	return {}
 
 
-# ── 战线与战报 ──────────────────────────────────────────────────────────
+# ── 战线 ────────────────────────────────────────────────────────────────
 
 func _refresh_fronts(data: Dictionary) -> void:
 	var rows: Array = data.get("fronts", [])
@@ -1094,119 +901,28 @@ func _refresh_fronts(data: Dictionary) -> void:
 	else:
 		_front_empty.text = "当前没有接触中的战线。"
 	if _changed("fronts", rows):
-		_front_list.set_rows(rows)
+		var list_rows: Array = []
+		for row in rows:
+			var progress := float(row.progress)
+			list_rows.append({
+				"id": String(row.id),
+				"label": String(row.zone),
+				"text": String(row.text),
+				"value": progress,
+				"color": UITokens.DOSSIER_OXBLOOD if progress > 0.001
+					else UITokens.DOSSIER_SLATE,
+				"tooltip": "%s · %d 处接触\n点击打开战线档案" % [String(row.zone),
+					int(row.edges)],
+			})
+		_front_list.set_rows(list_rows)
 
 
-func _refresh_log(data: Dictionary) -> void:
-	var rows: Array = data.get("log", [])
-	_log_empty.visible = rows.is_empty()
-	_log_empty.text = "最近没有会战记录。" if _event_log_available() \
-		else "战报需要军事运行时的事件流。"
-	var list_rows: Array = []
-	for row in rows:
-		var label := String(row.text)
-		var detail := String(row.detail)
-		if not detail.is_empty():
-			label = "%s · %s" % [label, detail]
-		list_rows.append({
-			"id": int(row.id),
-			"label": "%d日 %s" % [int(row.day), String(row.kind)],
-			"text": label,
-			"value": clampf(float(row.day) / maxf(1.0, float(_model.get("current_day", 1))),
-				0.0, 1.0),
-			"color": UITokens.DOSSIER_OXBLOOD if String(row.team) == "敌方"
-				else UITokens.DOSSIER_SLATE,
-			"text_color": UITokens.DOSSIER_INK,
-			"tooltip": label,
-		})
-	if _changed("battle_log", list_rows):
-		_log_list.set_rows(list_rows)
-
-
-func _event_log_available() -> bool:
-	return _vm.event_log_available()
-
-
+## 点战线 = 打开战线档案；外壳会同时把镜头落到该扇区（等同于「定位」）。
 func _on_front_selected(row_id) -> void:
 	for row in _war_data.get("fronts", []):
 		if String(row.id) == String(row_id):
-			locate_cell_requested.emit(int(row.cell))
+			dossier_requested.emit("front", int(row.cell), int(row.cell))
 			return
-
-
-# ── 议和：占领格交还 / 割让（设计 §12.3）──────────────────────────────
-func _refresh_ceding(data: Dictionary) -> void:
-	var ceded: Dictionary = data.get("ceded", {})
-	var rows: Array = ceded.get("rows", [])
-	_ceding_list.set_rows(rows, _ceded_checked)
-	_ceding_list.visible = not rows.is_empty()
-	_cession_rule.visible = not rows.is_empty()
-	_peace_return.visible = not rows.is_empty()
-	_ceding_caption.visible = not rows.is_empty()
-	_ceding_caption.text = "我方占领其 %d 格，已选 %d 格" % [int(ceded.get("total", 0)),
-		int(ceded.get("checked", 0))]
-
-
-func _on_ceding_toggled(_row_id, _checked: bool) -> void:
-	_refresh_peace_preview()
-
-
-func _refresh_peace_preview() -> void:
-	_install_total.text = UITokens.format_compact_number_cn(
-		_install_amount.value * _install_count.value, 1)
-	var terms := _peace_terms()
-	var result: Dictionary = _vm.evaluate_peace(_selected_war, _war_score, terms)
-	_peace_price.text = "条款总价 %.0f 分" % float(result.get("price", 0.0))
-	var band := int(result.get("band", -1))
-	_peace_band.text = "接受倾向 %s" % (MilitaryViewModel.BAND_LABELS[band] if band >= 0 else "—")
-	_peace_band.add_theme_color_override("font_color", [UITokens.DOSSIER_OXBLOOD,
-		UITokens.DOSSIER_BRASS, UITokens.DOSSIER_VERDIGRIS][band] if band >= 0
-		else UITokens.DOSSIER_INK_MUTED)
-	_peace_submit.disabled = terms.is_empty() or _selected_war <= 0
-	_peace_submit.tooltip_text = "先勾选条款" if terms.is_empty() else "提交给对方，次日答复"
-
-
-func _submit_peace() -> void:
-	var terms := _peace_terms()
-	if terms.is_empty() or _selected_war <= 0:
-		return
-	_request(PlayerControllerScript.COMMAND_MILITARY_PEACE_PROPOSE,
-		{"war_id": _selected_war, "terms": terms})
-
-
-func _peace_terms() -> Array:
-	var terms: Array = []
-	if _peace_white.button_pressed:
-		terms.append({"kind": "white"})
-	if _peace_lump.button_pressed:
-		terms.append({"kind": "lump_sum", "amount": _lump_amount.value})
-	if _peace_install.button_pressed:
-		terms.append({"kind": "installments", "amount": _install_amount.value,
-			"n": int(_install_count.value)})
-	if _peace_annex.button_pressed:
-		terms.append({"kind": "annex"})
-	return terms
-
-
-func _on_white_toggled(on: bool) -> void:
-	if on:
-		for box in [_peace_lump, _peace_install, _peace_annex]:
-			box.set_pressed_no_signal(false)
-	_refresh_peace_preview()
-
-
-## 交还：tick the occupied enemy cells the player picked in the 战争 chapter.
-func _on_peace_return() -> void:
-	var ceded: Dictionary = _war_data.get("ceded", {})
-	var cells: Array = ceded.get("cells", [])
-	if cells.is_empty():
-		_flash("先在上面的占领格清单里勾选要交还的格子。", true)
-		return
-	var packed := PackedInt32Array()
-	for cell in cells:
-		packed.append(int(cell))
-	target_cells_requested.emit(packed)
-	_flash("已在地图标出 %d 格交还给对方的领土。" % packed.size(), false)
 
 
 # ── commands ────────────────────────────────────────────────────────────

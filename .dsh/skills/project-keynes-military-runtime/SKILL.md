@@ -157,6 +157,44 @@ embark/disembark; no naval units or blockade; the 100k-cell bench is still over 
 
 Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("海运运力", clamped to
 [1/8, 8], never cheaper than a land step), and `preview_path` scales its day count the same way.
+
+## Peace window (`MilitaryPeaceWindow`)
+
+Peace is a **separate docked, non-modal window**, not a card in the country shell. It owns the term draft and
+turns map clicks into cession picks; the war page only hosts a launcher card. Spec:
+`docs/ui/military-peace-window.md`; wiring summary: `military-runtime.md` §9.2.
+
+```text
+war page 「议和」/ overview war card
+  → CountryPanel.peace_negotiation_requested(war_id)
+  → GameUIManager.open_military_peace(war_id)
+       close_country_panel() + _suppress_ui_for_dispatch()
+       CountryViewModel.build("military") → MilitaryPeaceViewModel.peace_model(war_id, draft)
+       MilitaryPeaceWindow.open() + PlayerController.highlight_peace_candidates()
+map click → PlayerController.select_cell()
+       while the window is open → GameUIManager.handle_peace_map_cell(cell)  (before clear_cell_highlights)
+       _on_tile_tapped skips military_map_pick() so a token never steals a cession click
+submit → request_command("military.peace.propose") → set_command_result() on the window
+```
+
+- Terms are encoded in exactly one place: `MilitaryPeaceViewModel.peace_terms()` →
+  `white` / one `cede` per cell / `annex` / `lump_sum` / `installments` (n clamped 2..12). Amounts are game
+  money units; the bridge converts with `money_from_units`.
+- The bridge already accepts 7 term kinds (`white/cede/annex/lump_sum/installments/goods/return`); the window
+  deliberately exposes only five. `return` duplicates the automatic "un-ceded occupation is released" rule and
+  is a free discount; `goods` needs a payer-stock picker. Do not wire either without a design decision.
+- Price/willingness/gap come from `evaluate_military_peace()` only. Without a facade the view model falls back
+  to a floor estimate (2 points per ceded cell) and flags `estimated`.
+- Cession candidates = cells we control whose owner is the enemy (`MilitaryViewModel.ceded_cells()`); untouched
+  cells still return automatically on execution, and the window says so.
+- Two highlight layers (`WorldRoot/PeaceCandidateSet`, `WorldRoot/PeaceDraftSet`) driven by
+  `PlayerController.highlight_peace_candidates/draft()`; `clear_peace_highlights()` on close.
+- Refresh path: `invalidate_cache(COUNTRY_DIRTY_MILITARY)` → `build("military")` →
+  `MilitaryPeaceWindow.refresh_model()` (200 ms coalescing, values only, node count constant).
+- Known gaps: the snapshot exports neither `score_parts` (four-part war score) nor `last_rejected_offer_day`
+  (the 30-day rejection cooldown is session-local: submit day + 30); `peace.respond` still has no pending-offer
+  state, so AI proposals settle by evaluator alone.
+
 ## Invariants
 
 - Read the **committed day-D** Country/Economy digest; mutate only Military stores; every Country/Economy
@@ -208,6 +246,52 @@ Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("
 4. Apply fog gating for foreign information; update z table in `military-runtime.md` §9 and
    `vision-fog-and-borders.md`. Verify shaders on a real renderer (headless does not compile them).
 
+**Add map picking / a right-panel dossier page**
+
+Clicking a map entity is the same input path as cell selection: `MapCamera.tile_tapped` →
+`PlayerController._on_tile_tapped`, where a pending army order is checked first, then
+`MilitaryMapLayers.pick_at_world(world)`, then `select_cell`. Keep geometry in the layers:
+`MilitaryArmyTokenLayer.pick_army_at` (radius = token size, `_vis` gates fogged armies, ties by
+headcount) and `MilitaryFrontLayer.pick_edge_at` (42 candidate edges, tolerance 0.42×hex,
+canonical key = `min(cell,neighbor)*6+dir`). `MilitaryFrontLayer.set_selected_edge` only recolors
+the selected ribbon — the shader's line width is a uniform, so per-edge widening gets clipped.
+
+`MilitaryMapLayers.front_sector(edge_key, 96)` BFS's along shared cells into one contiguous
+front stretch and returns the engagements, the belligerent slots, per-side heads + army handles
+(≤24/side) and a focus cell — the dossier aggregates attack/defense (sum) and morale/supply
+(head-weighted mean) from those handles via `facade.army()`. Cache the cell→edge set on
+`front_snapshot_revision` and degrade to the clicked edge above ~6 ms.
+
+The dossier itself is a fourth content pane in `InspectorPanel.DetailShell`
+(`scenes/ui/military_dossier.tscn`), not a floating window: it inherits panel widening, the
+tile-dossier directory column, ESC and the open/close motion. It is one torn-paper sheet
+(`PKPaperNote`) with hand-drawn rules (`MilitaryPaperRule` / `MilitaryPaperStyle`) and cut-paper
+section tags (`PKPaperTag`) — do not put it back into boxed cards. Data layout is a contract:
+an army page shows **attack / defense / speed as three equal peer stats**
+(`MilitaryPeerStats`), never attack-as-headline with defense as a caption; a front page is a
+mirrored comparison table (`MilitaryVersusChart`: 兵力 / 攻击 / 防御 / 士气 / 补给 per side).
+Decorative charts with no decision behind them (per-edge "front section" strips, morale rings)
+were removed on purpose — do not reintroduce them.
+
+Panels are driven by `CountryViewModel.military_dossier_context()` +
+`MilitaryViewModel.army_dossier()/front_dossier()`; `GameUIManager.open_military_dossier` /
+`close_military_dossier` / `_refresh_military_dossier` only wire, locate and throttle (200 ms
+coalescing on `notify_committed_day`). Nothing in that path may call native again except
+`facade.army(handle)`; picking reads the already-polled `MilitaryRenderFeed`. Same-identity
+refreshes must not create nodes (`military_dossier_test` asserts the node count across a refresh).
+
+**Tile dossier military page** (`docs/ui/military-cell-tab.md`) is the same paper language, one
+sheet per cell: garrison strip → local armies (row click opens the army dossier) → training queue →
+three state-building rows. It reads only `get_military_cell_snapshot` plus the compiled catalog, and
+each building row gets **one** action resolved in `CellInspectorViewModel`: `build` / `upgrade`
+(both `state.build`) / `demolish` (`state.demolish`) / `locked` (no button) / `building` (remaining
+days) / `unavailable` (not own territory). The command takes the **dense catalog index** in
+`unit_to`; never send the role name — `dict_i32` returns the `-1` fallback for strings and the
+command silently no-ops. `PlayerController` re-checks `unlock_tech_id` against
+`CountryFacade.snapshot().technology_ids` because the native build path stays permissive for AI
+and the selftest. `barracks_tiers` is indexed by tier with tier 8 clamped to 7, so demolish only
+needs `role+tier`.
+
 ## Verification
 
 1. Static: `rg` for changed op names/intents/fields across C++, GDScript and docs; `git diff --check`.
@@ -228,7 +312,11 @@ Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("
    `pending_intents`. Use it before blaming the bridge when nothing lands.
 7. For schedule changes: run a session in both legacy/domain ACTIVE and whole-graph ACTIVE and confirm one
    military step per committed day (`last_step_day`, no `military_day_already_stepped` storms).
-8. Sync docs: `military-runtime.md`, `runtime-authority-matrix.md`, `scheduling-and-job-graph.md`,
+8. Peace window: `res://tests/military/military_peace_window_test.gd` (view model + window + launcher card +
+   `PlayerController` highlight contract, headless) and `res://tests/qa/military_peace_window_screenshot_qa.gd`
+   (rendered, 1280/1920 UI width × white-peace/picked). `ui_scene_structure_test.gd` must keep passing
+   `ModalLayer/MilitaryPeaceWindow` and the two `military_peace_*` scene trees.
+9. Sync docs: `military-runtime.md`, `runtime-authority-matrix.md`, `scheduling-and-job-graph.md`,
    `vision-fog-and-borders.md`, `game-flow-start-save.md`, `references/system-map.md`, this skill.
    Report unrun gates explicitly.
 

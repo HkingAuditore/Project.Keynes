@@ -163,4 +163,3 @@ static func _make_provider(owner: Object, provider_id: StringName, schema: int, 
 	if identity_method != &"":
 		provider.configure_manifest_identity(Callable(owner, identity_method))
 	return provider
-
