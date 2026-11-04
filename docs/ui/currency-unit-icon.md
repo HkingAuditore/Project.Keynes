@@ -114,6 +114,9 @@ MoneyDisplay.apply_icon(rect, 13)     # 把场景里的 TextureRect 配成金币
   阶层「人均收入 / 人均支出」、城市「人均收入」、产业「营收 / 日」、
   总览收支明细「税基 / 实收 / 补贴申请 / 补贴实付」、贸易「进口额 / 出口额 / 关税」、
   家族成员账本「个人净资产 / 周期净收支」、商队订单「单价」。
+  阶层页的金额列标了 `optional`：账簿挤进双列版面时先让位给人口占比与满意度，
+  列被挤窄时表头自动退回 `short_label`（「人均收入」→「收入」），
+  再挤不下时 `DossierLedgerTable._layout_columns` 会压缩固定列而不是画到面板外面。
 - **数据里标 `"money": true`**：
   - `InspectorFactGrid`（地块档案事实表）：居民存款、商家现金、贸易净额、库存估值、
     商业资产、采购毛利、本地年度产值、人均年度产值、本期利润、个人净资产、周期净收支；
@@ -123,6 +126,12 @@ MoneyDisplay.apply_icon(rect, 13)     # 把场景里的 TextureRect 配成金币
 - **自绘图表**：`dossier_kpi_card`（`kind == "money"` 自动配图标，含差值行）、
   `dossier_spark_value`（人均产值读数与日变化）、`dossier_stacked_bar`
   （`set_segments(..., money_icon := true)` 的合计与图例）。
+- **营造窗口**：窗口本身**没有聚合金额读数**（曾经的「国库资金 / 现金支出」两张 KPI
+  已随 KPI 带一起删除 —— 国库余额顶栏本来就有，逐页加法又与玩家的决定无关）。
+  唯一的金额是每行的现金列：`money_icon.tscn` + `Label` 的容器行，
+  `MoneyDisplay.apply_icon()` 按 17px 字号对图标；现金为 0 的行整列隐藏，
+  不画一枚孤零零的金币。该窗口的 hover 提示里金额是纯数字
+  （tooltip 不支持内联图标，也不能在散文里塞单位）。
 
 ## 五、仍未带图标的金额
 

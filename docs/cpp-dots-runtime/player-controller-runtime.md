@@ -180,6 +180,27 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 `PK_AI_LLM_API_KEY` / `PK_AI_IMAGE_API_KEY` 只为尚未保存的字段提供初始值。
 凭据回归测试使用独立文件及虚构密钥，不发送网络请求。
 
+### 弹窗节奏（Pacing，2026-11）
+
+旧节奏约为「每 8 天一次弹窗」（x5 速度下约 1.6 秒），实测过密，已整体下调一个数量级。
+`NarrativeEventService` 用三个常量控制，全部集中在文件头部：
+
+| 常量 | 旧值 | 新值 | 作用 |
+| --- | --- | --- | --- |
+| `DEFAULT_PULSE_INTERVAL_DAYS` | 5 | 20 | 脉冲采样间隔 |
+| `DEFAULT_MIN_POPUP_GAP_DAYS` | 15 | 60 | 全局弹窗间隔闸门 |
+| `pulse_trigger_chance_q16` | ~60% | ~25% | 单次脉冲放行概率 |
+| `ai_slot_chance_q16` | ~25% | ~4% | AI 事件预热概率 |
+
+要点：
+- `popup_pacing_blocked(day)` 是唯一闸门，对**脉冲采样、事实驱动、AI 生成**三条通道无条件生效，不再只在「弹窗未关闭」时才拦；`days_until_next_allowed_popup(day)` 供诊断/UI 查询。
+- 脉冲顺序改为「闸门先掷、候选后采」：闸门只依赖 `(day, 首都格)`，未过闸时跳过 8 格上下文采样，顺带省下大部分脉冲开销。
+- 链式后续与 `SCHEDULE_FOLLOWUP_EVENT` 走 `enqueue_event_offer(..., bypass_gap = true)`，不受间隔限制，保证剧情链因果连续。
+- 事实驱动通道即使被闸门拦下也会推进 `_last_fact_event_id` 游标，避免解冻后把积压事实一次性补弹。
+- 实测节奏：1440 天（4 年）内约 10~16 次弹窗，平均 90~140 天一次（旧值约 8 天一次，约 10 倍削弱）；x5 速度下约 18~28 秒一次。
+- 要再调紧/放松只改头部四个参数，不必动触发逻辑。
+- 回归入口：`tests/game/narrative_event_runtime_test.gd`（内部直连 `enqueue_event_offer` 时均已传 `bypass_gap = true`，不受闸门影响）。
+
 ### 事件文案规范（2026-11）
 
 事件 UI 只放可决策的信息，不写场景描写与修辞：

@@ -18,17 +18,26 @@ const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_eff
 const SCHEMA_NAME := "PKNarrativeRuntime"
 const SCHEMA_VERSION := 1
 const Q16_ONE := 65536
-const DEFAULT_PULSE_INTERVAL_DAYS := 5
-const DEFAULT_MIN_POPUP_GAP_DAYS := 15
+
+# ─── 触发节奏（Pacing）────────────────────────────────────────────────────────
+# 1 现实秒 = 1 游戏天（x1 速度）。旧档的默认节奏约为「每 8 天一次弹窗」（x5 速度下
+# 约 1.6 秒一次），实测过于密集，故整体下调约一个数量级：
+#   旧：脉冲每 5 天一次 × 60% 放行，且 15 天间隔仅在弹窗未关闭时生效 → 平均 8 天一次
+#   新：脉冲每 20 天一次 × 25% 放行，且 60 天间隔对全部弹窗通道无条件生效
+# 实测新节奏：1440 天（4 年）内约 10~16 次，平均 90~140 天一次
+# （x5 速度下约 18~28 秒一次）。链式/定时事件不受影响。
+const DEFAULT_PULSE_INTERVAL_DAYS := 20
+const DEFAULT_MIN_POPUP_GAP_DAYS := 60
 const MAX_SAMPLED_CELLS_PER_PULSE := 8
 const MAX_CHRONICLE_RECORDS := 256
 const AI_PREFETCH_LEAD_DAYS := 3
 const CONSUMER_ID := &"narrative_event_service"
+const NEVER_POPPED_DAY := -999
 
 var pulse_interval_days: int = DEFAULT_PULSE_INTERVAL_DAYS
 var min_popup_gap_days: int = DEFAULT_MIN_POPUP_GAP_DAYS
-var pulse_trigger_chance_q16: int = 39322 # ~60% per pulse when eligible events exist
-var ai_slot_chance_q16: int = 16384 # 25% chance to also pre-warm an AI event when AI is enabled
+var pulse_trigger_chance_q16: int = 16384 # ~25% per pulse when eligible events exist
+var ai_slot_chance_q16: int = 2621 # ~4% chance to also pre-warm an AI event when AI is enabled
 
 var _generator = null
 var _map = null
@@ -45,7 +54,7 @@ var _next_bias_id: int = 1
 var _next_mod_source_id: int = 1
 
 var _last_pulse_day: int = 0
-var _last_popup_day: int = -999
+var _last_popup_day: int = NEVER_POPPED_DAY
 var _last_fact_event_id: int = -1
 
 var _active_offer: Dictionary = {}
@@ -309,6 +318,14 @@ func _poll_fact_events(day: int) -> void:
 	var count := int(batch.get("count", 0))
 	if count <= 0:
 		return
+	# Always advance the cursor so stale facts never replay as a burst later.
+	var event_ids: PackedInt64Array = batch.get("event_id", PackedInt64Array())
+	for i in range(count):
+		if i < event_ids.size():
+			_last_fact_event_id = maxi(_last_fact_event_id, int(event_ids[i]))
+	# 事实驱动通道同样受全局弹窗间隔闸门限制，避免高频事实（市场、人口等）连续弹窗。
+	if popup_pacing_blocked(day):
+		return
 	var fact_defs := catalog().events_for_channel(NarrativeEventDefinitionScript.TriggerChannel.FACT_DRIVEN)
 	if fact_defs.is_empty():
 		return
@@ -317,10 +334,7 @@ func _poll_fact_events(day: int) -> void:
 	var territory: PackedInt32Array = country_ctx.get("territory_cells", PackedInt32Array())
 	var types: PackedInt32Array = batch.get("type", PackedInt32Array())
 	var cells: PackedInt32Array = batch.get("cell_idx", PackedInt32Array())
-	var event_ids: PackedInt64Array = batch.get("event_id", PackedInt64Array())
 	for i in range(count):
-		if i < event_ids.size():
-			_last_fact_event_id = maxi(_last_fact_event_id, int(event_ids[i]))
 		var ev_type := int(types[i]) if i < types.size() else int(batch.get("type_scalar", 0))
 		var cell_idx := int(cells[i]) if i < cells.size() else -1
 		if cell_idx >= 0 and not territory.is_empty() and not territory.has(cell_idx):
@@ -341,8 +355,23 @@ func _poll_fact_events(day: int) -> void:
 				return
 
 
+# ─── Popup Pacing Gate ───────────────────────────────────────────────────────
+# 全局弹窗间隔闸门：对所有非强制通道（脉冲采样、事实驱动、AI 生成）无条件生效，
+# 与「当前是否有弹窗在屏」无关。链式后续与定时事件走 bypass_gap，不受此限，
+# 以保证剧情链的因果连续性。
+
+func days_until_next_allowed_popup(day: int) -> int:
+	if min_popup_gap_days <= 0 or _last_popup_day <= NEVER_POPPED_DAY:
+		return 0
+	return maxi(0, _last_popup_day + min_popup_gap_days - day)
+
+
+func popup_pacing_blocked(day: int) -> bool:
+	return days_until_next_allowed_popup(day) > 0
+
+
 func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
-	if day - _last_popup_day < min_popup_gap_days and (_active_offer.size() > 0 or _ready_queue.size() > 0):
+	if popup_pacing_blocked(day):
 		return {"ok": false, "reason": "popup_cooldown_active"}
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, day, _story_flags)
@@ -372,6 +401,12 @@ func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 	if pulse_defs.is_empty():
 		return {"ok": false, "reason": "no_pulse_events"}
 
+	# Gate first, sample later: the roll only depends on (day, capital cell), so rejecting
+	# here skips the expensive 8-cell context scan on the majority of pulses.
+	var pulse_gate := NarrativeRngScript.roll_q16(_world_seed, day, _player_country_handle, sampled_cells[0], 0x50554C53)
+	if pulse_gate >= pulse_trigger_chance_q16:
+		return {"ok": false, "reason": "pulse_roll_skipped"}
+
 	var candidate_defs: Array[NarrativeEventDefinition] = []
 	var candidate_cells := PackedInt32Array()
 	var candidate_weights := PackedInt64Array()
@@ -388,10 +423,6 @@ func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 
 	if candidate_defs.is_empty():
 		return {"ok": false, "reason": "no_eligible_events"}
-
-	var pulse_gate := NarrativeRngScript.roll_q16(_world_seed, day, _player_country_handle, sampled_cells[0], 0x50554C53)
-	if pulse_gate >= pulse_trigger_chance_q16:
-		return {"ok": false, "reason": "pulse_roll_skipped"}
 
 	var picked_idx := NarrativeRngScript.pick_weighted_index(
 		candidate_weights, _world_seed, day, _player_country_handle, sampled_cells[0], 0x57474854)
@@ -512,7 +543,7 @@ func enqueue_event_offer(
 ) -> Dictionary:
 	if def == null:
 		return {}
-	if not bypass_gap and (day - _last_popup_day < min_popup_gap_days) and not _active_offer.is_empty():
+	if not bypass_gap and popup_pacing_blocked(day):
 		return {}
 	if def.is_ai_generated:
 		register_dynamic_event(def)
@@ -805,7 +836,7 @@ func restore_state(state: Dictionary) -> Dictionary:
 	_next_bias_id = maxi(1, int(state.get("next_bias_id", 1)))
 	_next_mod_source_id = maxi(1, int(state.get("next_mod_source_id", 1)))
 	_last_pulse_day = int(state.get("last_pulse_day", 0))
-	_last_popup_day = int(state.get("last_popup_day", -999))
+	_last_popup_day = int(state.get("last_popup_day", NEVER_POPPED_DAY))
 	_last_fact_event_id = int(state.get("last_fact_event_id", -1))
 
 	var raw_active = state.get("active_offer", {})
@@ -856,7 +887,7 @@ func _reset_empty() -> void:
 	_next_bias_id = 1
 	_next_mod_source_id = 1
 	_last_pulse_day = 0
-	_last_popup_day = -999
+	_last_popup_day = NEVER_POPPED_DAY
 	_last_fact_event_id = -1
 	_active_offer.clear()
 	_ready_queue.clear()

@@ -46,6 +46,11 @@ const OVERLAY_TOOLBAR_TOP_GAP := UITokens.SPACE_MD
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 const INSPECTOR_FULL_PATCH_INTERVAL_MSEC := 750
+## 军务档案（右栏部队/战线页）的每日刷新窗口。它只改值、不建节点，
+## 所以可以比地块档案更密；仍然合并，避免 50× 时每个已提交日都重建一次模型。
+const MILITARY_DOSSIER_REFRESH_INTERVAL_MSEC := 200
+## 营造窗口打开时的报价刷新节流：报价只读已提交日快照，1 秒足够跟上国库与市场。
+const BUILDING_WORKSPACE_REFRESH_MSEC := 1000
 # Country economy/treasury snapshots include the native trade summary and can
 # be materially more expensive than applying the already-built panel model.
 # Economy commits may arrive several times per rendered frame at high speed;
@@ -71,10 +76,18 @@ var _loading_overlay: WorldLoadingOverlay
 var _colonization_panel: ColonizationPlannerPanel
 var _colonization_route: ColonizationRouteLayer
 var _colonization_targeting: Dictionary = {}
+## Peace-negotiation window (MilitaryPeaceWindow). Same map-first contract as the
+## colonization planner, but it owns cession picking instead of a route target.
+var _peace_window = null
 var _dispatch_previous_inspector_visible := false
 var _dispatch_previous_toolbar_visible := false
 var _dispatch_ui_suppressed := false
 var _object_detail_context: Dictionary = {}
+var _military_dossier_context: Dictionary = {}
+var _last_military_dossier_ms: int = 0
+var _military_dossier_pending := false
+var _military_dossier_timer_active := false
+var _last_construction_refresh_ms: int = 0
 var _pending_inspector_tab := ""
 var _pending_object_request: Dictionary = {}
 var _inspector_retry_generation := 0
@@ -367,6 +380,12 @@ func notify_committed_day() -> void:
 		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_day")
 	elif _country_view_model != null:
 		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
+	# 军务档案也随已提交日推进；合并窗口由 _refresh_military_dossier 负责。
+	_refresh_military_dossier()
+	# 营造窗口开着时，国库现金、市场库存与仓库每天都会变；节流由这里负责。
+	_refresh_building_workspace()
+	# 议和窗口开着时，战争分/占领格/对方意愿每天都会变，跟着已提交日重建一次。
+	_refresh_peace_window()
 
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
@@ -377,11 +396,12 @@ func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 ## 命令后请求一次，让「已排队」的反馈和面板数值同步。
 func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
 	_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_commit")
+	_refresh_peace_window()
 
 
 ## Inspector 军事页签的官营建筑入口：翻成正式命令交给 PlayerController。
-## Inspector 只报「这一格该建/拆什么」，角色名 → 目录里的 dense 建筑序由
-## 军事目录决定，所以这里只把角色名透传，由 facade 侧解析。
+## 请求里的 `building` 已经是军事目录里的 dense 建筑序（由视图模型按科技闸门解析），
+## 所以这里原样透传，不再把角色名当建筑名送过去。
 func _on_military_state_building_requested(request: Dictionary) -> void:
 	if _player_controller == null:
 		return
@@ -390,8 +410,12 @@ func _on_military_state_building_requested(request: Dictionary) -> void:
 		if op == "state.build" else PlayerControllerScript.COMMAND_MILITARY_STATE_DEMOLISH
 	var result: Dictionary = _player_controller.request_command(command_id, {
 		"cell": int(request.get("cell", -1)),
-		"building": String(request.get("role", "")),
+		"building": int(request.get("building", -1)),
 	})
+	# 被拒时立刻解锁动作键，不然要等到下一次日推进才恢复——玩家会以为按钮坏了。
+	if not bool(result.get("ok", false)) and _right_panel != null \
+			and _right_panel.has_method("release_military_ledger_busy"):
+		_right_panel.release_military_ledger_busy()
 	if _right_panel != null and _right_panel.has_method("set_construction_feedback"):
 		_right_panel.set_construction_feedback(String(result.get("message", "")),
 			bool(result.get("ok", false)))
@@ -630,6 +654,12 @@ func toggle_perf_hud() -> void:
 
 
 func show_cell_panel(cell: HexCell) -> void:
+	# 议和窗口开着时地图是交割选格面（PlayerController.select_cell 已经拦过一次，
+	# 这里是第二次兜底：任何把点击送到地块档案的路径都不能把窗口顶掉）。
+	if is_peace_window_open():
+		if cell != null:
+			_peace_window.handle_map_cell(int(cell.index))
+		return
 	if _colonization_panel != null and _colonization_panel.visible:
 		# 派发界面开着时，地图左键一律交给它：先出发城、后目的地，
 		# 不再需要玩家先按面板上的“选点”按钮进入模式。
@@ -645,6 +675,8 @@ func show_cell_panel(cell: HexCell) -> void:
 	if _right_panel != null:
 		_right_panel.close_detail(false)
 	_object_detail_context.clear()
+	_military_dossier_context.clear()
+	_military_dossier_pending = false
 	_selected_cell = cell
 	_invalidate_live_revision()
 	_last_cached_panel_ms = Time.get_ticks_msec()
@@ -679,6 +711,10 @@ func hide_cell_panel() -> void:
 	_selected_cell = null
 	_selection_context = ""
 	_inspector_suppressed_for_country = false
+	_military_dossier_context.clear()
+	_military_dossier_pending = false
+	if _right_panel != null:
+		_right_panel.set_directory_available(true)
 	_invalidate_live_revision()
 	_set_inspector_trace_cell(-1)
 	if _right_panel != null:
@@ -1102,12 +1138,26 @@ func _retry_inspector_reads(generation: int) -> void:
 		_schedule_inspector_retry()
 
 
-func _on_construction_page_requested(search: String, offset: int) -> void:
+## 营造窗口的一次目录页请求：部门 + 搜索词 + 排序档 + 偏移由窗口自己记，这里只
+## 负责让 view model 组一整页模型（整部门报价后排序、再切一页）并推回窗口。
+func _on_construction_page_requested(sector: String, search: String,
+		sort_id: String, offset: int) -> void:
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return
+	_last_construction_refresh_ms = Time.get_ticks_msec()
 	_right_panel.set_construction_model(
-		_inspector_view_model.build_construction_options(
-			int(_selected_cell.index), search, offset))
+		_inspector_view_model.build_construction_model(
+			int(_selected_cell.index), sector, search, sort_id, offset))
+
+
+## 次日结算会改变国库、市场与仓库；只在窗口打开时按墙钟节流重发同一页。
+func _refresh_building_workspace(force: bool = false) -> void:
+	if _right_panel == null or not _right_panel.building_workspace_open():
+		return
+	if not force and Time.get_ticks_msec() - _last_construction_refresh_ms \
+			< BUILDING_WORKSPACE_REFRESH_MSEC:
+		return
+	_right_panel.request_construction_refresh()
 
 
 func _on_construction_requested(request: Dictionary) -> void:
@@ -1174,6 +1224,85 @@ func _on_dispatch_closed() -> void:
 		var cell = _player_controller.selected_cell()
 		if cell != null:
 			show_cell_panel(cell)
+
+
+# ── peace window (MilitaryPeaceWindow) ──────────────────────────────────
+
+## Open the dedicated peace window for one war. The country shell is full-bleed,
+## so it has to close first — the whole point of this window is the map behind it.
+func open_military_peace(war_id: int) -> void:
+	if _peace_window == null or _country_view_model == null:
+		return
+	if int(war_id) <= 0:
+		return
+	if _country_panel != null and _country_panel.is_panel_open():
+		close_country_panel()
+	if _colonization_panel != null and _colonization_panel.visible:
+		_colonization_panel.close_panel()
+	_colonization_targeting.clear()
+	_suppress_ui_for_dispatch()
+	# The window is the only consumer here, so one fresh military model is enough.
+	_country_view_model.invalidate_cache(COUNTRY_DIRTY_MILITARY)
+	_peace_window.set_player_controller(_player_controller)
+	_peace_window.open(int(war_id), _country_view_model.build("military"))
+	var focus_cell := _peace_focus_cell()
+	if focus_cell >= 0 and _player_controller != null \
+			and _player_controller.has_method("focus_map_cell"):
+		_player_controller.call("focus_map_cell", focus_cell)
+
+
+func close_military_peace() -> void:
+	if _peace_window != null:
+		_peace_window.close_panel()
+
+
+func is_peace_window_open() -> bool:
+	return _peace_window != null and bool(_peace_window.is_open())
+
+
+## Map click entry: true means the window consumed it (a cession toggle or a
+## "you cannot cede this" note), false only when no window is open.
+func handle_peace_map_cell(cell: int) -> bool:
+	if not is_peace_window_open():
+		return false
+	return bool(_peace_window.handle_map_cell(int(cell)))
+
+
+func _peace_focus_cell() -> int:
+	if _peace_window == null:
+		return -1
+	var candidates: PackedInt32Array = _peace_window.candidate_cells()
+	return int(candidates[0]) if not candidates.is_empty() else -1
+
+
+func _on_peace_window_closed() -> void:
+	# No clear_selection_requested() here: the window never moved the selection
+	# (it eats map clicks), so closing it must hand the inspector back exactly as
+	# the player left it.
+	_on_dispatch_closed()
+
+
+func _on_peace_submit_requested(payload: Dictionary) -> void:
+	if _player_controller == null or _peace_window == null:
+		return
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_MILITARY_PEACE_PROPOSE, {
+			"war_id": int(payload.get("war_id", 0)),
+			"terms": payload.get("terms", []),
+		})
+	_peace_window.set_command_result(result)
+
+
+func _on_peace_locate_requested(cell: int) -> void:
+	if _player_controller != null and _player_controller.has_method("focus_map_cell"):
+		_player_controller.call("focus_map_cell", int(cell))
+
+
+func _refresh_peace_window() -> void:
+	if not is_peace_window_open() or _country_view_model == null or _peace_window == null:
+		return
+	_country_view_model.invalidate_cache(COUNTRY_DIRTY_MILITARY)
+	_peace_window.refresh_model(_country_view_model.build("military"))
 
 
 func _on_colonization_start_requested(args: Dictionary) -> void:
@@ -1247,6 +1376,8 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 		_right_panel.set_construction_feedback(
 			String(result.get("message", "修建命令已结算。")),
 			bool(result.get("ok", false)))
+	# 结算花掉了国库物资/现金，窗口里的报价与按钮态必须立刻跟着变。
+	_refresh_building_workspace(true)
 	_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "construction_settled")
 
 
@@ -1322,6 +1453,170 @@ func _refresh_object_detail(force: bool = false) -> void:
 		_right_panel.refresh_object_detail(payload)
 
 
+## ── 军务档案（右栏部队 / 战线页）──────────────────────────────────────────
+## 拾取在地图层、格式在 MilitaryViewModel；这里只负责开合、定位、动作转发与
+## 每日合并刷新。它和对象详情共用 DetailShell，所以面板变宽/目录列都由既有的
+## _layout_right_panel() 与 InspectorPanel._sync_split_layout() 决定。
+
+func open_military_dossier(kind: String, id: int, cell: int = -1) -> bool:
+	if _right_panel == null or _player_controller == null or kind.is_empty() or id == 0:
+		return false
+	if kind == "army" and cell < 0 and _player_controller.has_method("military_army_cell"):
+		cell = int(_player_controller.call("military_army_cell", id))
+	var payload := _military_dossier_payload(kind, id, cell)
+	if payload.is_empty():
+		return false
+	# 同一实体再点一次 = 收起（地图点击的 toggle 语义）。
+	if _right_panel.military_dossier_open() \
+			and _right_panel.military_dossier_identity() == String(payload.get("identity", "")):
+		close_military_dossier()
+		return true
+	_military_dossier_context = {"kind": kind, "id": id, "cell": cell}
+	_last_military_dossier_ms = Time.get_ticks_msec()
+	_military_dossier_pending = false
+	_right_panel.set_directory_available(_selected_cell != null)
+	# 只开军务档案、没有地块档案时，面板本身也要出现。
+	if not _right_panel.visible:
+		_right_panel.visible = true
+		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
+	_right_panel.show_military_dossier(payload)
+	var focus := int(payload.get("focus_cell", -1))
+	if focus >= 0 and _player_controller.has_method("focus_cell"):
+		_player_controller.call("focus_cell", focus)
+	return true
+
+
+func close_military_dossier() -> void:
+	var was_open := _right_panel != null and _right_panel.military_dossier_open()
+	# 每次点格都会走到这里：什么都没开时直接返回，别为一次选格多付一次原生调用。
+	if not was_open and _military_dossier_context.is_empty():
+		return
+	_military_dossier_context.clear()
+	_military_dossier_pending = false
+	if _right_panel != null:
+		_right_panel.set_directory_available(true)
+		if was_open:
+			_right_panel.close_detail(false)
+	if _player_controller != null \
+			and _player_controller.has_method("clear_military_map_selection"):
+		_player_controller.call("clear_military_map_selection")
+	# 没有地块档案可回落时，面板本身也该收起。
+	if was_open and _selected_cell == null:
+		hide_cell_panel()
+
+
+func military_dossier_open() -> bool:
+	return _right_panel != null and _right_panel.military_dossier_open()
+
+
+func _military_dossier_payload(kind: String, id: int, cell: int = -1) -> Dictionary:
+	var vm := _military_view_model()
+	if vm == null:
+		return {}
+	if kind == "army":
+		var same_cell: Array = []
+		if cell >= 0 and _player_controller != null \
+				and _player_controller.has_method("military_armies_at_cell"):
+			same_cell = _player_controller.call("military_armies_at_cell", cell)
+		return vm.army_dossier(id, same_cell)
+	if kind == "front":
+		if _player_controller == null \
+				or not _player_controller.has_method("military_front_sector"):
+			return {}
+		var sector: Dictionary = _player_controller.call("military_front_sector", id)
+		if sector.is_empty():
+			return {}
+		return vm.front_dossier(sector)
+	return {}
+
+
+## 每次开页/刷新建一个 view model：configure 只拷字典，真正的查询在
+## build_military_model（O(armies)，走 200ms 合并窗口）与 facade.army（单支部队）。
+func _military_view_model() -> MilitaryViewModel:
+	if _country_view_model == null or _player_controller == null:
+		return null
+	var handle := int(_player_controller.get_player_country_handle())
+	if handle == 0:
+		return null
+	var context: Dictionary = _country_view_model.military_dossier_context(handle)
+	context["current_day"] = int(_world_clock.day_index()) if _world_clock != null else -1
+	context["player_controller"] = _player_controller
+	var vm := MilitaryViewModel.new()
+	vm.configure(context)
+	if not vm.available():
+		return null
+	return vm
+
+
+func _refresh_military_dossier(force: bool = false) -> void:
+	if _military_dossier_context.is_empty() or _right_panel == null \
+			or not _right_panel.military_dossier_open():
+		return
+	var now := Time.get_ticks_msec()
+	if not force and now - _last_military_dossier_ms < MILITARY_DOSSIER_REFRESH_INTERVAL_MSEC:
+		_military_dossier_pending = true
+		_arm_military_dossier_timer()
+		return
+	_last_military_dossier_ms = now
+	_military_dossier_pending = false
+	var payload := _military_dossier_payload(
+		String(_military_dossier_context.get("kind", "")),
+		int(_military_dossier_context.get("id", 0)),
+		int(_military_dossier_context.get("cell", -1)))
+	if payload.is_empty():
+		close_military_dossier()
+		return
+	_right_panel.refresh_military_dossier(payload)
+
+
+func _arm_military_dossier_timer() -> void:
+	if _military_dossier_timer_active:
+		return
+	_military_dossier_timer_active = true
+	get_tree().create_timer(
+		float(MILITARY_DOSSIER_REFRESH_INTERVAL_MSEC) / 1000.0).timeout.connect(
+			_on_military_dossier_timer, CONNECT_ONE_SHOT)
+
+
+func _on_military_dossier_timer() -> void:
+	_military_dossier_timer_active = false
+	if _military_dossier_pending:
+		_refresh_military_dossier(true)
+
+
+func _on_military_dossier_action_requested(action: StringName, payload: Dictionary) -> void:
+	if _player_controller == null:
+		return
+	if action == &"locate" or action == &"locate_cell":
+		var cell := int(payload.get("cell", -1))
+		if cell < 0:
+			cell = int(payload.get("focus_cell", -1))
+		if cell >= 0 and _player_controller.has_method("focus_cell"):
+			_player_controller.call("focus_cell", cell)
+		return
+	var handle := int(payload.get("handle", 0))
+	if handle <= 0:
+		return
+	# begin_* 会自己收起档案并进入地图选点模式；下一次点击就是目标格。
+	var mode := "area" if action == &"area" else "move"
+	_player_controller.call("begin_military_arm_order", handle, mode, 1)
+
+
+func _on_military_dossier_army_selected(handle: int) -> void:
+	if handle <= 0:
+		return
+	open_military_dossier("army", handle)
+
+
+## 地块军事页里点了一支部队：用它所在格（就是当前选中的格）打开军务档案，
+## 于是「同格部队」名录能把这一格的其它部队也列出来。
+func _on_military_army_selected(handle: int) -> void:
+	if handle <= 0:
+		return
+	open_military_dossier("army", handle,
+		int(_selected_cell.index) if _selected_cell != null else -1)
+
+
 func _set_inspector_trace_cell(cell_idx: int) -> void:
 	if _inspector_view_model == null:
 		return
@@ -1372,6 +1667,13 @@ func hide_loading() -> void:
 
 func map_safe_area() -> Rect2:
 	var safe := _base_map_safe_area()
+	if _peace_window != null and _peace_window.visible:
+		# The peace window docks left, so the camera may not frame a target under it.
+		var peace_edge: float = _peace_window.get_global_rect().end.x + UITokens.SPACE_MD
+		var peace_inset: float = clampf(peace_edge - safe.position.x, 0.0,
+			maxf(safe.size.x - 1.0, 0.0))
+		safe.position.x += peace_inset
+		safe.size.x -= peace_inset
 	if _colonization_panel != null and _colonization_panel.visible:
 		var edge := _colonization_panel.get_global_rect().end.x + UITokens.SPACE_MD
 		var inset := clampf(edge - safe.position.x, 0.0, maxf(safe.size.x - 1.0, 0.0))
@@ -2135,6 +2437,12 @@ func _bind_ui() -> void:
 		_on_trade_order_locate_requested)
 	_right_panel.military_state_building_requested.connect(
 		_on_military_state_building_requested)
+	_right_panel.military_army_selected.connect(
+		_on_military_army_selected)
+	_right_panel.military_dossier_action_requested.connect(
+		_on_military_dossier_action_requested)
+	_right_panel.military_dossier_army_selected.connect(
+		_on_military_dossier_army_selected)
 	_layout_right_panel()
 
 	_colonization_panel = get_node(
@@ -2157,6 +2465,12 @@ func _bind_ui() -> void:
 	_colonization_panel.start_requested.connect(_on_colonization_start_requested)
 	_colonization_panel.cancel_requested.connect(_on_colonization_cancel_requested)
 	_colonization_panel.expedition_selected.connect(_on_expedition_selected)
+	# 议和窗口：与开拓面板同一条「地图作业面」通道，但它的草案是交割地块。
+	_peace_window = get_node_or_null("UIRoot/ModalLayer/MilitaryPeaceWindow")
+	if _peace_window != null:
+		_peace_window.closed.connect(_on_peace_window_closed)
+		_peace_window.submit_requested.connect(_on_peace_submit_requested)
+		_peace_window.locate_cell_requested.connect(_on_peace_locate_requested)
 	_debug_layer = get_node("UIRoot/DebugLayer") as Control
 
 	if _gm_available:
@@ -2215,6 +2529,10 @@ func _bind_ui() -> void:
 	_country_panel.section_selected.connect(open_country_section)
 	_country_panel.locate_cell_requested.connect(_locate_cell_from_country_panel)
 	_country_panel.target_cells_requested.connect(_on_target_cells_from_country_panel)
+	if _country_panel.has_signal("peace_negotiation_requested"):
+		_country_panel.peace_negotiation_requested.connect(open_military_peace)
+	if _country_panel.has_signal("military_dossier_requested"):
+		_country_panel.military_dossier_requested.connect(open_military_dossier)
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
@@ -2339,6 +2657,8 @@ func _hover_blocked() -> bool:
 		return true
 	if bool(_colonization_targeting.get("active", false)):
 		return true
+	if is_peace_window_open():
+		return true
 	if _gm_console != null and _gm_console.is_panel_open():
 		return true
 	return false
@@ -2395,6 +2715,12 @@ func _on_colonization_planning_context(context: Dictionary) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 议和窗口没有独立的「选点模式」——窗口开着时任何左键都算交割，所以 Esc 直接关窗。
+	if is_peace_window_open() and event is InputEventKey and event.pressed \
+			and not event.echo and event.keycode == KEY_ESCAPE:
+		close_military_peace()
+		get_viewport().set_input_as_handled()
+		return
 	if _status_card != null and _status_card.is_open() and TouchUI.is_touch():
 		if (event is InputEventMouseButton and event.pressed) or (event is InputEventScreenTouch and event.pressed):
 			_status_card_generation += 1
@@ -2459,6 +2785,8 @@ func _on_inspector_detail_visibility_changed(open: bool) -> void:
 	if not open:
 		_object_detail_context.clear()
 		_pending_object_request.clear()
+		_military_dossier_context.clear()
+		_military_dossier_pending = false
 	_layout_right_panel()
 	_layout_overlay_legend()
 	_layout_country_action_bar()

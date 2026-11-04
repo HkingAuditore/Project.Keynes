@@ -22,12 +22,25 @@ theme_override_constants/separation = 0
 
 [node name="Title" type="Label" parent="Row/Text"]
 layout_mode = 2
-text = "修建新建筑"
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+text = "营造新建筑"
 theme_type_variation = &"PKDossierRowText"
+
+[node name="Hint" type="Label" parent="Row/Text"]
+layout_mode = 2
+mouse_filter = 2
+clip_text = true
+text_overrun_behavior = 3
+text = "按部门浏览，国库物资优先"
+theme_type_variation = &"PKDossierCaption"
 
 [node name="OpenButton" type="Button" parent="Row"]
 custom_minimum_size = Vector2(84, 30)
 layout_mode = 2
 size_flags_vertical = 4
+focus_mode = 2
+mouse_default_cursor_shape = 2
 text = "选择项目"
 theme_type_variation = &"PKPrimaryButton"

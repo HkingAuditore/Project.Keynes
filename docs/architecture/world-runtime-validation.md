@@ -1,6 +1,6 @@
 # 世界运行架构：接入与验证记录
 
-本记录对应本地架构改造，以 `1de2d472` 为改动前对照。当前改动尚未提交或推送。
+本记录对应世界运行架构改造，以 `1de2d472` 为改动前对照。提交 PR 前与上游整合的结果单独列于文末。
 设计与实际迁移范围见 [世界运行架构](world-runtime-design.md#13-实际接入状态)，扩展方法见
 [开发指南](development-guide.md)。以下通过结果不代表所有平台、所有界面或全部旧测试通过。
 
@@ -244,3 +244,29 @@ SUS 每样本平均/p95/最大 0.695/4.600/8.779 ms，最大单次分片的平�
 日志 `/tmp/keynes-domain-final-graphical-ui.log`；进程和严格错误核对在
 `/tmp/keynes-domain-final-visual-gates.log`。未执行 Web 实机或远端 Linux CI。
 
+## PR 提交前的上游整合复核（2026-11-04）
+
+全部本地改动先保存于 `2df19a33`，并包含此前未推送的 `1de2d472`；随后合入
+上游 `0fa5a071`。保存协调器、世界宿主、测试 UID 和玩家开发文档的冲突已处理，
+保留上游保存起始格/种子校验、失败详情和军事/建筑界面，以及本次会话关闭与保存模块边界。
+下列结果来自合并后的实际代码，不以之前的检查替代。
+
+| 检查 | 结果 | 本机证据 |
+| --- | --- | --- |
+| 导入、默认 31 个脚本及真实保存载入 | 33 个进程全部通过；1435 条通过断言，0 失败断言、0 退出泄漏报告 | `/tmp/keynes-pr-integration-regression-summary.log` 及同名目录 |
+| 正式世界 3650 日 | 两次均为 21 项业务检查通过；第一次退出有 ObjectDB 警告，详细复跑未再出现，见下方限制 | `/tmp/keynes-pr-integration-soak-summary.log`、`/tmp/keynes-pr-integration-soak-verbose.log` |
+| Metal 实际窗口 | 137 条通过断言、0 失败、0 脚本错误及 ObjectDB/Resource/RID 泄漏报告；7 张截图，已查看军事页及 640×480 国库滚动结果 | `/tmp/keynes-pr-integration-graphical.log`、`/tmp/keynes-pr-integration-ui/` |
+| 地图作者工具 | 16 项通过 | `/tmp/keynes-pr-authoring-tests.log` |
+| 原生执行范围与线程回收 | ASan/UBSan 下通过 256 次停止交接、256 次销毁及 128 次重启 | `/tmp/keynes-pr-native-lifetime.log` |
+| macOS arm64 调试库 | 构建成功 | `/tmp/keynes-pr-integration-debug-build.log` |
+| macOS arm64 发布库 | 构建成功，构建期间未运行 Godot | `/tmp/keynes-pr-integration-release-build.log` |
+
+**仍需跟踪的退出提示：**首次 3650 日进程虽然全部业务断言通过、退出码为 0，
+检查器仍因一条 `ObjectDB instances leaked at exit` 将该次执行判为失败。
+相同代码、配置的 `--verbose` 完整复跑未出现 ObjectDB/Resource/RID 泄漏；没有修改代码
+或放宽检查规则。首次原因尚未定位，不能用一次成功复跑宣称已彻底排除偶发泄漏。
+详细模式另输出 44 个（长程）及 50 个（图形）未回收 StringName 名称，保留在原日志。
+
+图形断言数量从之前的 143 变为 137：合入新的剧情节奏后，实际剧情选择检查由 7 次变为 1 次；
+仍执行原界面检查脚本，没有移除断言。发布库性能 63.559 日/秒仍只对应上游整合前的测量；
+合并后的版本未重新测量性能。Windows/Web 未在本机重建，远端 Linux CI 以 PR 检查为准。

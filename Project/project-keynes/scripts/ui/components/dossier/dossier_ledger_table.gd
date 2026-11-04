@@ -124,11 +124,7 @@ func _layout_columns() -> void:
 	var available := maxf(160.0, size.x)
 	var keep: Array = _columns.duplicate()
 	while true:
-		var total := 0.0
-		for column in keep:
-			total += float(column.get("width", 80.0)) if not bool(column.get("expand", false)) \
-				else float(column.get("min_width", 120.0))
-		if total <= available:
+		if _column_span(keep) <= available:
 			break
 		var dropped := false
 		for i in range(keep.size() - 1, -1, -1):
@@ -138,23 +134,49 @@ func _layout_columns() -> void:
 				break
 		if not dropped:
 			break
+	# 可选列删光还是超宽时等比例压缩：超出去的部分会画到控件外面（被右侧详情
+	# 面板盖住），看起来就是「这一列根本不存在」，比窄列难读得多。
+	# 展开列（通常是名字列）保住它的最小宽度——那一列的字最长，先压它会把
+	# 「自耕农牧渔」截成「自耕农…」；压缩量全部由固定列吸收。
+	var span := _column_span(keep)
+	var squeeze := 1.0
+	if span > available:
+		var expand_min := 0.0
+		var fixed_total := 0.0
+		for column in keep:
+			if bool(column.get("expand", false)):
+				expand_min += float(column.get("min_width", 120.0))
+			else:
+				fixed_total += float(column.get("width", 80.0))
+		squeeze = clampf((available - expand_min) / fixed_total, 0.0, 1.0) \
+			if fixed_total > 0.0 else 1.0
 	var fixed := 0.0
 	var expanders := 0
 	for column in keep:
 		if bool(column.get("expand", false)):
 			expanders += 1
 		else:
-			fixed += float(column.get("width", 80.0))
+			fixed += float(column.get("width", 80.0)) * squeeze
 	var extra := maxf(0.0, available - fixed)
 	var x := 0.0
 	_visible_columns.clear()
 	for column in keep:
-		var width := float(column.get("width", 80.0))
+		var width := float(column.get("width", 80.0)) * squeeze
 		if bool(column.get("expand", false)):
-			width = maxf(float(column.get("min_width", 120.0)), extra / float(maxi(1, expanders)))
+			width = maxf(float(column.get("min_width", 120.0)),
+				extra / float(maxi(1, expanders)))
 		_visible_columns.append({"column": column, "x": x, "width": width})
 		x += width
 	queue_redraw()
+
+
+## 一组列在给定宽度下需要的横向空间（展开列按它的最小宽度计）。
+static func _column_span(columns: Array) -> float:
+	var total := 0.0
+	for column in columns:
+		total += float(column.get("width", 80.0)) if not bool(column.get("expand", false)) \
+			else float(column.get("min_width", 120.0))
+	return total
 
 
 func _sort() -> void:
@@ -384,6 +406,12 @@ func _draw_header(y: float, w: float) -> void:
 		var align := _align(column)
 		var color := UITokens.DOSSIER_OXBLOOD if active else UITokens.DOSSIER_INK_SOFT
 		var text_width := width - 16.0
+		# 列被挤窄时退回同义的短标题（"人均收入" → "收入"），
+		# 否则表头会被截成「人均…」，玩家分不清这一列到底在算什么。
+		var short_label := String(column.get("short_label", ""))
+		if not short_label.is_empty() and not label.is_empty() \
+				and _text_width(label, 12, "sans_strong") > text_width - 10.0:
+			label = short_label
 		_text(Vector2(x + 8.0, text_y), _fit_text(label, 12, text_width - 10.0, "sans_strong"),
 			12, color, "sans_strong", align, text_width - (10.0 if active and align == HORIZONTAL_ALIGNMENT_RIGHT else 0.0))
 		if active:

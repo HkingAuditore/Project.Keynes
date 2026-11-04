@@ -84,5 +84,3 @@ static func technology_available(tags: PackedStringArray) -> bool:
 		if TECHNOLOGY_IDS.has(stable_id):
 			return true
 	return not has_technology_gate
-
-

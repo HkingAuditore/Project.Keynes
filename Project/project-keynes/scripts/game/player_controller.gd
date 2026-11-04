@@ -151,6 +151,11 @@ const SUPPORTED_COMMANDS := {
 var _camera = null
 var _highlight = null
 var _cell_highlight_set = null
+## Peace-window map overlays: candidates (muted outline) and the picked draft
+## (vermilion fill). Two separate sets, because picking a cell must repaint the
+## draft without touching the candidate outline behind it.
+var _peace_candidate_set = null
+var _peace_draft_set = null
 var _runtime_host = null
 var _world_clock = null
 var _ui_manager = null
@@ -265,23 +270,22 @@ func set_cell_highlight_set(node) -> void:
 ## Paint the cells a card's effect instances resolved to. Returns how many were
 ## actually painted, so the caller can tell "nothing to show" from "the map
 ## refused every index" without re-querying the map. An empty input clears.
-func highlight_cells(cells: PackedInt32Array) -> int:
+## `frame` is false for live drafting (peace cession picks), where yanking the
+## camera on every toggle would fight the player.
+func highlight_cells(cells: PackedInt32Array, frame: bool = true) -> int:
 	if _cell_highlight_set == null:
 		return 0
 	if cells.is_empty():
 		_cell_highlight_set.clear()
 		return 0
-	var ref_x: float = _camera.position.x if _camera != null else 0.0
-	var centers: PackedVector2Array = _runtime_host.cell_display_centers(cells, ref_x) \
-		if _runtime_host != null and _runtime_host.has_method("cell_display_centers") \
-		else PackedVector2Array()
+	var centers := _cell_centers(cells)
 	_cell_highlight_set.set_cells(centers,
 		_runtime_host.hex_size if _runtime_host != null else 22.0,
 		_runtime_host.map_wrap_period_x() if _runtime_host != null else 0.0)
 	if centers.is_empty():
 		return 0
 	# Frame the first hit, the way select_cell frames the cell the player picked.
-	if _camera != null and _ui_manager != null:
+	if frame and _camera != null and _ui_manager != null:
 		_camera.ensure_point_visible(centers[0], _ui_manager.map_safe_area())
 	return centers.size()
 
@@ -289,6 +293,61 @@ func highlight_cells(cells: PackedInt32Array) -> int:
 func clear_cell_highlights() -> void:
 	if _cell_highlight_set != null:
 		_cell_highlight_set.clear()
+
+
+## ── peace window (MilitaryPeaceWindow) ───────────────────────────────────
+## The window owns the draft; this side only paints it. Kept as three flat
+## methods so the window can feature-detect them (`has_method`) in tests and in
+## a session that has no WorldRoot children.
+func set_peace_highlight_sets(candidate_set, draft_set) -> void:
+	_peace_candidate_set = candidate_set
+	_peace_draft_set = draft_set
+	clear_peace_highlights()
+
+
+func highlight_peace_candidates(cells: PackedInt32Array) -> void:
+	_paint_peace_set(_peace_candidate_set, cells)
+
+
+func highlight_peace_draft(cells: PackedInt32Array) -> void:
+	_paint_peace_set(_peace_draft_set, cells)
+
+
+func clear_peace_highlights() -> void:
+	if _peace_candidate_set != null:
+		_peace_candidate_set.clear()
+	if _peace_draft_set != null:
+		_peace_draft_set.clear()
+
+
+func _paint_peace_set(node, cells: PackedInt32Array) -> void:
+	if node == null:
+		return
+	if cells.is_empty():
+		node.clear()
+		return
+	var centers := _cell_centers(cells)
+	node.set_cells(centers,
+		_runtime_host.hex_size if _runtime_host != null else 22.0,
+		_runtime_host.map_wrap_period_x() if _runtime_host != null else 0.0)
+
+
+func _cell_centers(cells: PackedInt32Array) -> PackedVector2Array:
+	if _runtime_host == null or not _runtime_host.has_method("cell_display_centers"):
+		return PackedVector2Array()
+	var ref_x: float = _camera.position.x if _camera != null else 0.0
+	return _runtime_host.cell_display_centers(cells, ref_x)
+
+
+## Center the camera on a cell without selecting it (war-situation rows).
+func focus_map_cell(cell_index: int) -> void:
+	if _runtime_host == null or _runtime_host.current_map() == null or cell_index < 0:
+		return
+	var cell = _runtime_host.current_map().cell_at(cell_index)
+	if cell == null:
+		return
+	if _camera != null and _ui_manager != null:
+		_camera.ensure_point_visible(_cell_display_world(cell), _ui_manager.map_safe_area())
 
 
 func ensure_selected_visible() -> void:
@@ -299,11 +358,22 @@ func ensure_selected_visible() -> void:
 
 
 func select_cell(cell) -> void:
+	# The peace window is a map-first editing surface: a click on a cession
+	# candidate toggles the draft and must not clear the draft highlight or open
+	# the cell panel. Checked before clear_cell_highlights() for exactly that
+	# reason.
+	if cell != null and _ui_manager != null \
+			and _ui_manager.has_method("handle_peace_map_cell") \
+			and bool(_ui_manager.call("handle_peace_map_cell", int(cell.index))):
+		return
 	# A pending army order (移动 / 军事控制) takes the next map click instead of
 	# opening the cell panel; the order itself decides what the click means.
 	if not _military_order_mode.is_empty() and cell != null \
 			and military_arm_order_click(int(cell.index)):
 		return
+	# 选格是"新的地图焦点"：军务档案关闭，右侧回到地块档案。
+	if _ui_manager != null and _ui_manager.has_method("close_military_dossier"):
+		_ui_manager.call("close_military_dossier")
 	# Picking a hex ends whatever card-level question the player was asking:
 	# leaving a card's hit set on screen while a different hex is selected reads
 	# as "this hex is one of them" and there is no way to tell otherwise.
@@ -1064,8 +1134,103 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 		return
 	var cell: Variant = HexUtils.world_to_wrapped_cell(_runtime_host.current_map(), world_pos,
 		_runtime_host.hex_size)
+	# 议和窗口开着时地图就是「交割选格」：部队/战线拾取必须让路，否则停在候选格上的
+	# 部队棋子会先抢走这次点击。
+	if cell != null and _peace_window_open():
+		select_cell(cell)
+		return
+	# 部队指令模式下地图点击是目标格，保持旧语义；否则先给军务档案一次拾取机会。
+	if _military_order_mode.is_empty() and cell != null and military_map_pick(world_pos):
+		return
 	if cell != null:
 		select_cell(cell)
+
+
+## True while the peace window owns map clicks (see select_cell / _on_tile_tapped).
+func _peace_window_open() -> bool:
+	return _ui_manager != null and _ui_manager.has_method("is_peace_window_open") \
+		and bool(_ui_manager.call("is_peace_window_open"))
+
+
+## 军务档案拾取入口：命中部队/战线时打开右栏档案并返回 true（本次点击不再选格）。
+## 拾取本身在图层里完成（token / front 各自拥有几何），这里只转发与接线。
+func military_map_pick(world: Vector2) -> bool:
+	if _ui_manager == null or not _ui_manager.has_method("open_military_dossier"):
+		return false
+	var layers = _military_layers()
+	if layers == null or not layers.has_method("pick_at_world"):
+		return false
+	var pick: Dictionary = layers.pick_at_world(world)
+	match String(pick.get("kind", "")):
+		"army":
+			var handle := int(pick.get("handle", 0))
+			if handle == 0:
+				return false
+			_apply_military_render_selection(handle)
+			if layers.has_method("set_selected_cell"):
+				layers.call("set_selected_cell", int(pick.get("cell", -1)))
+			return bool(_ui_manager.call("open_military_dossier", "army", handle,
+				int(pick.get("cell", -1))))
+		"front":
+			var edge := int(pick.get("edge", -1))
+			if edge < 0:
+				return false
+			_apply_military_render_selection(0)
+			if layers.has_method("set_selected_front_edge"):
+				layers.call("set_selected_front_edge", edge)
+			return bool(_ui_manager.call("open_military_dossier", "front", edge))
+	return false
+
+
+## 军务档案的战线扇区：几何与聚合都在图层侧，UI 只消费结果。
+func military_front_sector(edge_key: int) -> Dictionary:
+	var layers = _military_layers()
+	if layers == null or not layers.has_method("front_sector"):
+		return {}
+	return layers.call("front_sector", int(edge_key))
+
+
+## 同格部队（军务档案「同格部队」名录）。空数组 = 该格只有这一支或图层未就绪。
+func military_armies_at_cell(cell: int) -> Array:
+	var layers = _military_layers()
+	if layers == null or not layers.has_method("armies_at_cell"):
+		return []
+	var rows = layers.call("armies_at_cell", int(cell))
+	return rows if rows is Array else []
+
+
+## 部队所在格（-1 = 未知）。换页时用来留住「同格部队」名录。
+func military_army_cell(handle: int) -> int:
+	var layers = _military_layers()
+	if layers == null or not layers.has_method("army_cell"):
+		return -1
+	return int(layers.call("army_cell", int(handle)))
+
+
+## 关掉档案时同时撤掉地图上的选中态（部队选中环 / 战线高亮 / 区域与路线层）。
+func clear_military_map_selection() -> void:
+	_apply_military_render_selection(0)
+	var layers = _military_layers()
+	if layers == null:
+		return
+	if layers.has_method("set_selected_front_edge"):
+		layers.call("set_selected_front_edge", -1)
+	if layers.has_method("set_selected_cell"):
+		layers.call("set_selected_cell", -1)
+
+
+## 把某一格移进地图安全区（不改变选中态）。军务档案打开后用它把实体带进视野。
+func focus_cell(cell: int) -> void:
+	if _runtime_host == null or _camera == null or _ui_manager == null or cell < 0:
+		return
+	var map = _runtime_host.current_map()
+	if map == null:
+		return
+	var cell_obj = map.cell_at(int(cell))
+	if cell_obj == null:
+		return
+	_camera.ensure_point_visible(_cell_display_world(cell_obj),
+		_ui_manager.map_safe_area())
 
 
 func get_country_facade():
@@ -1691,8 +1856,14 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					or int(args.get("count", 0)) <= 0:
 				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
-			if int(args.get("cell", -1)) < 0 or String(args.get("building", "")).is_empty():
+			if int(args.get("cell", -1)) < 0 or int(args.get("building", -1)) < 0:
 				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
+			# 拆除不查科技：打下别人城市的旧城墙也要能拆，只是仍需在本国领土上。
+			var gate := _state_building_gate(int(args.get("cell", -1)),
+				int(args.get("building", -1)), id == COMMAND_MILITARY_STATE_DEMOLISH)
+			if not bool(gate.get("ok", false)):
+				return _result(false, String(gate.get("code", "technology_locked")),
+					String(gate.get("message", "该官营建筑尚未解锁。")))
 		COMMAND_MILITARY_WAGE:
 			var wage_mode := int(args.get("mode", -1))
 			if wage_mode < 0 or wage_mode > 1:
@@ -2251,6 +2422,55 @@ func has_military_runtime() -> bool:
 	return facade != null
 
 
+## 官营建筑（兵营 / 城防 / 军校）的玩家侧闸门：科技必须已研究，且只能在本国、
+## 未被占领的领土上营造。原生 `state.build` 对 AI 与自测保持宽松，所以玩家边界
+## 在这里拦一次，避免旧 UI 缓存或脚本绕过科技门槛。
+## `demolishing` 为真时跳过科技检查：占领来的高阶城防也得能拆。
+func _state_building_gate(cell: int, building: int,
+		demolishing: bool = false) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return {"ok": false, "code": "runtime_unavailable", "message": "军事机构尚未接通。"}
+	var catalog: Dictionary = facade.catalog() if facade.has_method("catalog") else {}
+	var rows: Array = catalog.get("state_buildings", []) if catalog.get(
+		"state_buildings", null) is Array else []
+	if building < 0 or building >= rows.size() or not rows[building] is Dictionary:
+		return {"ok": false, "code": "invalid_args", "message": "建筑不在军事目录里。"}
+	var row: Dictionary = rows[building]
+	var tech_id := String(row.get("unlock_tech_id", ""))
+	if not demolishing and not tech_id.is_empty():
+		var researched = _completed_technology_ids()
+		if researched == null:
+			return {"ok": false, "code": "technology_unknown",
+				"message": "科技状态暂不可读，稍后再试。"}
+		if not (researched as PackedStringArray).has(tech_id):
+			return {"ok": false, "code": "technology_locked",
+				"message": "尚未解锁这项科技。"}
+	var country_facade = _country_facade
+	if country_facade != null and country_facade.has_method("cell_summary"):
+		var summary: Dictionary = country_facade.cell_summary(cell)
+		if bool(summary.get("ok", false)):
+			if not bool(summary.get("owned", false)) \
+					or int(summary.get("country_handle", 0)) != _player_country_handle:
+				return {"ok": false, "code": "not_own_territory",
+					"message": "只能在自家领土上营造。"}
+	return {"ok": true}
+
+
+## 玩家已完成的科技稳定 id。读不到国家快照时返回 null（调用方据此拒绝而不是放行）。
+func _completed_technology_ids():
+	var country_facade = _country_facade
+	if country_facade == null or not country_facade.has_method("snapshot"):
+		return null
+	if _player_country_handle <= 0:
+		return null
+	var country: Dictionary = country_facade.snapshot(_player_country_handle)
+	if not bool(country.get("ok", false)):
+		return null
+	var ids = country.get("technology_ids", null)
+	return ids if ids is PackedStringArray else PackedStringArray()
+
+
 ## 把面板参数翻译成契约 §2 的命令项。缺省字段留空，由 facade/原生侧给默认。
 static func _military_command_entry(id: StringName, args: Dictionary) -> Dictionary:
 	var entry := {"op": String(MILITARY_COMMANDS[id]), "country": 0}
@@ -2277,7 +2497,7 @@ static func _military_command_entry(id: StringName, args: Dictionary) -> Diction
 			entry["count"] = int(args.get("count", 0))
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
 			entry["cell"] = int(args.get("cell", -1))
-			entry["unit_to"] = String(args.get("building", ""))
+			entry["unit_to"] = int(args.get("building", -1))
 		COMMAND_MILITARY_WAGE:
 			entry["count"] = int(args.get("mode", 0))
 			entry["value"] = int(args.get("value", 0))
@@ -2370,6 +2590,9 @@ func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dicti
 	_military_order_mode = mode
 	_military_order_radius = radius
 	_military_order_target = -1
+	# 下一次点击是目标格：档案先收起，免得它与路线预览抢同一块地方。
+	if _ui_manager != null and _ui_manager.has_method("close_military_dossier"):
+		_ui_manager.call("close_military_dossier")
 	_apply_military_render_selection(army)
 	_clear_military_path_preview()
 	var armed := _result(true, "ok", "在地图上点目标格。")

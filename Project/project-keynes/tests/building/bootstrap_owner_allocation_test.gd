@@ -101,4 +101,3 @@ func _new_ext(catalog: Dictionary, cell_count: int = 1) -> Object:
 		ext.write_f32_range(reserve_sid, 0, reserve)
 		ext.write_f32_range(extra_sid, 0, extra)
 	return ext
-

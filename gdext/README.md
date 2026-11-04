@@ -51,7 +51,7 @@ The build creates object nodes explicitly before linking so a changed source or
 compiler setting also relinks the dylib in the same SCons run.
 
 The default Windows output basename is read from the matching library entry in
-`addons/dots_ext/dots_ext.gdextension` (currently `dots_ext_army_v13`). An explicit
+`addons/dots_ext/dots_ext.gdextension` (currently `dots_ext_state_snap_v1`). An explicit
 `DOTS_EXT_OUTPUT_BASENAME` override must also be reflected in that manifest.
 
 ## Setup after fresh clone
