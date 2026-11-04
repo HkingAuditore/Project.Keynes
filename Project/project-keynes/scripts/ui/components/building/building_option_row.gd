@@ -11,11 +11,14 @@ class_name BuildingOptionRow
 ## 节点全部来自 building_option_row.tscn；本脚本只写值。
 
 signal build_requested(building_id: StringName)
+signal hover_started(row: Dictionary, source: Control)
+signal hover_ended()
 
 const CASH_FONT_SIZE := 17
 const PENDING_TEXT := "营造中…"
 
 var building_id := ""
+var _row_data: Dictionary = {}
 
 var _blocked := false
 var _pending := false
@@ -34,12 +37,15 @@ func _ready() -> void:
 		return
 	MoneyDisplay.apply_icon(_cash_icon, CASH_FONT_SIZE)
 	_build.pressed.connect(_on_build_pressed)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
 	_apply_button_state()
 
 
 func set_row(row: Dictionary, pending: bool = false) -> void:
 	if _build == null:
 		_ready()
+	_row_data = row.duplicate(true)
 	building_id = String(row.get("building_id", ""))
 	_blocked = not bool(row.get("eligible", false))
 	_pending = pending and not _blocked
@@ -54,7 +60,8 @@ func set_row(row: Dictionary, pending: bool = false) -> void:
 	var cash := int(row.get("cash_required", 0))
 	_cash_row.visible = cash > 0
 	_cash.text = String(row.get("cash_text", ""))
-	tooltip_text = String(row.get("tooltip", ""))
+	# 详情由 BuildingHoverCard 承担；清空原生 tooltip，避免两张卡重叠。
+	tooltip_text = ""
 	_build.tooltip_text = String(row.get("reason_text", "")) if _blocked \
 		else "从国库与本地市场备料，营造一座%s" % _name.text
 	_apply_button_state()
@@ -94,3 +101,12 @@ func _on_build_pressed() -> void:
 		return
 	set_pending(true)
 	build_requested.emit(StringName(building_id))
+
+
+func _on_mouse_entered() -> void:
+	if not _row_data.is_empty():
+		hover_started.emit(_row_data, self)
+
+
+func _on_mouse_exited() -> void:
+	hover_ended.emit()

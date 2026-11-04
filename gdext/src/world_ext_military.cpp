@@ -1797,6 +1797,8 @@ void DCWorldExt::apply_military_deferred_cash(int64_t day) {
         }
         const int64_t collected = economy->military_collect_cash(
             static_cast<int64_t>(row.country_handle), row.amount);
+        if (collected > 0)
+            economy->military_record_cash_burn(collected);
         row.amount = collected;
         row.count = collected > 0 ? 1 : 0;
         row.receipt_pending = collected > 0 ? 2 : 3;

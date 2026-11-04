@@ -356,6 +356,17 @@ int64_t NativeEconomyRuntime::military_collect_cash(int64_t country_handle,
     return _country_runtime->collect_fiscal_cash(country_handle, reserved);
 }
 
+void NativeEconomyRuntime::military_record_cash_burn(int64_t amount) {
+    if (amount <= 0) return;
+    if (_epoch_active) {
+        _explicit_money_burn = saturating_add(
+            _explicit_money_burn, amount, _saturation_count);
+        return;
+    }
+    _pending_military_cash_burn = saturating_add(
+        _pending_military_cash_burn, amount, _saturation_count);
+}
+
 bool NativeEconomyRuntime::military_command_window_open() const {
     return _bootstrapped && !_epoch_active && !_save.active && !_restore.active &&
         !_fatal;

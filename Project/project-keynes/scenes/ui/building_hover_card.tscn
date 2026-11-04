@@ -1,0 +1,220 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="1_theme"]
+[ext_resource type="Script" path="res://scripts/ui/components/building/building_hover_card.gd" id="2_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="4_note"]
+
+[sub_resource type="StyleBoxTexture" id="CardPaper"]
+content_margin_left = 18.0
+content_margin_top = 14.0
+content_margin_right = 18.0
+content_margin_bottom = 14.0
+texture = ExtResource("4_note")
+texture_margin_left = 32.0
+texture_margin_top = 32.0
+texture_margin_right = 32.0
+texture_margin_bottom = 32.0
+expand_margin_left = 8.0
+expand_margin_top = 8.0
+expand_margin_right = 8.0
+expand_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="StatCard"]
+content_margin_left = 9.0
+content_margin_top = 6.0
+content_margin_right = 9.0
+content_margin_bottom = 6.0
+bg_color = Color(0.94, 0.88, 0.74, 0.58)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.22)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="SectionCard"]
+content_margin_left = 9.0
+content_margin_top = 7.0
+content_margin_right = 9.0
+content_margin_bottom = 7.0
+bg_color = Color(0.94, 0.88, 0.74, 0.34)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.16, 0.16)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="BuildingHoverCard" type="PanelContainer"]
+custom_minimum_size = Vector2(500, 0)
+size_flags_vertical = 0
+mouse_filter = 2
+theme = ExtResource("1_theme")
+theme_type_variation = &"PKPaperPopup"
+theme_override_styles/panel = SubResource("CardPaper")
+script = ExtResource("2_script")
+
+[node name="Body" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Body/Header" instance=ExtResource("3_icon")]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Identity" type="VBoxContainer" parent="Body/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="Kicker" type="Label" parent="Body/Header/Identity"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+theme_override_font_sizes/font_size = 10
+text = "建筑详情"
+
+[node name="Title" type="Label" parent="Body/Header/Identity"]
+layout_mode = 2
+theme_type_variation = &"PKDossierHeading"
+theme_override_font_sizes/font_size = 19
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Subtitle" type="Label" parent="Body/Header/Identity"]
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="Status" type="Label" parent="Body/Header"]
+layout_mode = 2
+size_flags_vertical = 1
+theme_type_variation = &"PKPaperTag"
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Rule" type="ColorRect" parent="Body"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.48, 0.16, 0.1, 0.62)
+
+[node name="Stats" type="HBoxContainer" parent="Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Cost" type="PanelContainer" parent="Body/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StatCard")
+
+[node name="Text" type="VBoxContainer" parent="Body/Stats/Cost"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Body/Stats/Cost/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+theme_override_font_sizes/font_size = 10
+text = "现金投入"
+
+[node name="Value" type="Label" parent="Body/Stats/Cost/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 17
+text = "—"
+
+[node name="Duration" type="PanelContainer" parent="Body/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StatCard")
+
+[node name="Text" type="VBoxContainer" parent="Body/Stats/Duration"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Body/Stats/Duration/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+theme_override_font_sizes/font_size = 10
+text = "建造周期"
+
+[node name="Value" type="Label" parent="Body/Stats/Duration/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 17
+text = "—"
+
+[node name="Profit" type="PanelContainer" parent="Body/Stats"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StatCard")
+
+[node name="Text" type="VBoxContainer" parent="Body/Stats/Profit"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Body/Stats/Profit/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierMuted"
+theme_override_font_sizes/font_size = 10
+text = "估算毛利 / 日"
+
+[node name="Value" type="Label" parent="Body/Stats/Profit/Text"]
+layout_mode = 2
+theme_type_variation = &"PKDossierValue"
+theme_override_font_sizes/font_size = 17
+text = "—"
+
+[node name="Sections" type="VBoxContainer" parent="Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Employment" type="PanelContainer" parent="Body/Sections"]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("SectionCard")
+
+[node name="Text" type="Label" parent="Body/Sections/Employment"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Flow" type="PanelContainer" parent="Body/Sections"]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("SectionCard")
+
+[node name="Text" type="Label" parent="Body/Sections/Flow"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Materials" type="PanelContainer" parent="Body/Sections"]
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("SectionCard")
+
+[node name="Text" type="Label" parent="Body/Sections/Materials"]
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="Summary" type="Label" parent="Body"]
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 2

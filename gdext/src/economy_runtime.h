@@ -5387,6 +5387,7 @@ private:
     EconomyTrackedScalar<int64_t> _last_committed_day{_metadata_changes, {{15, 18}, "metadata.last_committed_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
+    int64_t _pending_military_cash_burn = 0;
     int64_t _external_population_delta = 0;
     int64_t _explicit_stock_delta = 0;
     int64_t _country_research_consumed_opening = 0;
@@ -9610,6 +9611,10 @@ public:
     // the country fiscal escrow so the amount lands in the non-tax expenditure
     // slots. Returns the amount actually collected.
     int64_t military_collect_cash(int64_t country_handle, int64_t amount);
+    // Military maintenance is a terminal cash sink: unlike army pay it has no
+    // Economy-owned recipient. Record it in the current epoch, or carry it
+    // across the idle-day boundary until the next epoch opens.
+    void military_record_cash_burn(int64_t amount);
     // True while Economy can queue near-cash commands (no open epoch, not
     // saving/restoring, not faulted).
     bool military_command_window_open() const;

@@ -26269,6 +26269,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _current_day = -1;
     _commit_day = -1;
     _last_committed_day = -1;
+    _explicit_money_mint = 0;
+    _explicit_money_burn = 0;
+    _pending_military_cash_burn = 0;
     _cadence_initialized = false;
     _locked_market_cycle_days = MARKET_CYCLE_MIN_DAYS;
     _market_cycle_start_day = 0;
