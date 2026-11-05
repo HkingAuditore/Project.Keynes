@@ -67,4 +67,4 @@ func _draw() -> void:
 			_text(Vector2(clampf(center - width * 0.5, 0.0, maxf(0.0, w - width)), label_y), text, 13, _muted, "label")
 			label_index += 1
 		cursor += length
-	_caption(Vector2(0.0, 14.0), "五项税收合计 " + UITokens.format_compact_number_cn(_total))
+	_caption(Vector2(0.0, 14.0), "共 %d 项税收合计 %s" % [_parts.size(), UITokens.format_compact_number_cn(_total)])

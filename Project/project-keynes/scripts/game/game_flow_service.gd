@@ -31,6 +31,8 @@ func _ready() -> void:
 	# tests/probes/_tmp_autoplay.gd（PK_AUTOPLAY_PROBE=1）。
 	_attach_headless_runner("PK_AUTOPLAY_PROBE",
 		"res://tests/probes/_tmp_autoplay.gd")
+	_attach_headless_runner("PK_CONSTRUCTION_PROBE",
+		"res://tests/probes/_tmp_construction_probe.gd")
 
 
 func _attach_headless_runner(env_name: String, script_path: String) -> void:

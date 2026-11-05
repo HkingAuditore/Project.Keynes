@@ -45,7 +45,6 @@ mouse_filter = 2
 theme_type_variation = &"PKMutedLabel"
 theme_override_font_sizes/font_size = 16
 text_overrun_behavior = 3
-text = "正在预编译着色器（首次进入较慢，之后会快很多）"
 
 [node name="Count" type="Label" parent="Band/Column/Line"]
 unique_name_in_owner = true

@@ -519,7 +519,7 @@ func _boundary_diagnostics() -> Dictionary:
 
 func _can_save() -> Dictionary:
 	if _runtime_host == null or _world_clock == null or _runtime_host.generator() == null:
-		return _result(false, "save_runtime_missing", "游戏运行时尚未就绪。")
+		return _result(false, "save_runtime_missing", "游戏尚未就绪，请稍后再试。")
 	var generator := _runtime_host.generator()
 	# 暂停后 worker 仍会排空已经接收的环境输入。必须等它停稳，才可捕获
 	# 主线程国家只读副本，避免请求时的 PKCN 与稍后生成的 PKSR 相差数天。

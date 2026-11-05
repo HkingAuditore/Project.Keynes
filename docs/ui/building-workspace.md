@@ -138,18 +138,32 @@ BuildingOptionRow (PanelContainer, PKPaperCard)
 模型里**没有 `kpis`**：窗口不显示任何聚合读数（见第二节）。
 
 目录口径：**科技可用 + 非官营**。官营建筑（`building_kinds == 3`：兵营 / 城防 / 军校）
-只从军事页签的建造入口下达，不进民用目录；部门取 `building_economic_sectors`
-（`agriculture / extractive / manufacturing / energy / knowledge`，见
-`EconomyCatalog.BUILDING_SECTOR_IDS`，顺序即编译列索引，只准追加）。
+不进民用部门，改由营造目录末尾的**第 6 个部门「军事」**列出，条目来自
+`MilitaryCatalog.state_buildings`，命令走军事运行时的 `state.build`。部门取
+`building_economic_sectors`（`agriculture / extractive / manufacturing / energy /
+knowledge / military`，见 `EconomyCatalog.BUILDING_SECTOR_IDS`，顺序即编译列索引，
+只准追加）。**`military` 已经在编译列里**，VM 不得再往部门签里 append 一次，
+否则会出现两个一模一样的「军事」页签。
 
 科技未解锁的条目在目录层就被 `building_technology_available` 过滤（原生侧它就是完整的
 `building_available`：直接科技标签 + 必需科技标签 + 依赖闭包），VM 再按报价的
-`construction_technology_locked` 兜底剔除一次。
+`construction_technology_locked` 兜底剔除一次。军事部门同理：按每行
+`unlock_tech_id` 与玩家已掌握科技比对，未解锁的档位**不进列表**，部门计数与营造入口
+的「目录 N 项」也按过滤后的数量算；科技快照不可读时保留「宁可见不误藏」的兜底，
+命令层再拦一次。
 
 报价来源是原生的 `get_treasury_construction_quotes`：`eligible` 已经同时包含
 科技、地形、自然资源、建材（国库 + 本地市场）、市场可结算与国库现金五道门；
 UI 不重算这些规则，只做展示、排序与细分因由。报价对象是**整个部门**的候选
 （`EconomyFacade.construction_candidates` + `construction_quotes`），排序与分页都在 GD 侧完成。
+
+其中「自然资源」门 `family_free_building_resources_legal` 只在启用托管采收
+（`resource_safe_harvest_q16 > 0`）时按日可采预算限制同格采集建筑。全时代默认的
+**开放获取**（`= 0`）不设行政预算门：此时 `renewable_safe_harvest()` 按设计返回 0，
+若仍拿它当预算，一片满蓄积的林地里连最低档枯枝采集营都会被判
+`construction_resource_unavailable`（UI 显示「自然资源不足」），而玩家看到的
+其实是充足的 `timber` 存量。资源可用性交给生产侧的存量密度 CPUE 处理，与投资闸门
+（`economy_runtime_building_investment.cpp`）口径一致。
 
 ## 6. 性能与刷新契约
 
@@ -180,6 +194,19 @@ godot --headless --path Project/project-keynes -s res://tests/economy/treasury_c
 godot --path Project/project-keynes --resolution 1920x1080 \
   -s res://tests/qa/building_workspace_screenshot_qa.gd
 ```
+
+端到端回归（新开局走真实 `begin_new_game`，一次覆盖部门签去重、军事科技过滤、
+枯枝采集营地的原生报价与营造命令；探针会往目录里注入一行已解锁 + 一行未解锁，
+因为开局军事科技全锁，真实目录里两项都进不了列表）：
+
+```text
+PK_CONSTRUCTION_PROBE=1 <godot_console> --headless --path Project/project-keynes \
+  > /tmp/construction.log 2>&1
+```
+
+判据看 `[construction-probe]` 行：`INJECTED military_tabs=1`（军事页签只有一个）、
+`INJECTED_MILITARY total=1 names=["probe_unlocked"]`（未解锁档不进目录）、
+`DEADWOOD eligible=1 code=ok` 与 `DIRECT ... "ok": true`（枯枝营地可建并成功排队）。
 
 截图输出在 `res://tmp/building_workspace_qa/`（424 / 604 / 1236 三种页宽 ×
 可营造 / 被拒 / 空目录）。

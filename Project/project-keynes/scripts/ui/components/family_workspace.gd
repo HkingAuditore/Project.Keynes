@@ -422,7 +422,7 @@ func _add_overview_branches_card(host: Control, branches: Array) -> void:
 	meta_label.name = "BranchMetaLabel"
 	meta_label.text = _overview_branch_meta_text(branches)
 	meta_label.theme_type_variation = &"PKDossierCaption"
-	meta_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	meta_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(meta_label)
 
 
@@ -431,9 +431,12 @@ func _refresh_overview_rings(ring_grid: Control, branches: Array) -> void:
 		return
 	var specs := _build_overview_Branch_ring_specs(branches)
 	var children := ring_grid.get_children()
-	for i in range(mini(children.size(), specs.size())):
+	for i in range(children.size()):
 		var ring := children[i] as DossierRingGauge
 		if ring == null:
+			continue
+		ring.visible = i < specs.size()
+		if i >= specs.size():
 			continue
 		var spec: Dictionary = specs[i]
 		ring.set_gauge(
@@ -467,7 +470,7 @@ func _build_overview_Branch_ring_specs(branches: Array) -> Array:
 			{"label": "主支威望", "ratio": clampf(score_pct / 100.0, 0.0, 1.0),
 				"sub": "威望 %s" % String(primary.get("prestige_label", "0")),
 				"color": UITokens.DOSSIER_OXBLOOD,
-				"tooltip": "主分支威望综合得分 %.1f%%（等级 %s）" % [score_pct, String(primary.get("prestige_label", "0"))]},
+				"tooltip": "主分支威望综合得分为人口、资金与产业份额的加权结果"},
 			{"label": "人口份额", "ratio": clampf(pop_pct / 100.0, 0.0, 1.0),
 				"sub": String(primary.get("population_share_text", "%.0f%%" % pop_pct)),
 				"color": UITokens.DOSSIER_VERDIGRIS,
@@ -489,15 +492,6 @@ func _build_overview_Branch_ring_specs(branches: Array) -> Array:
 		{"label": "家族威望", "ratio": clampf(prestige_pct / 100.0, 0.0, 1.0),
 			"sub": "等级 %s" % p_label, "color": UITokens.DOSSIER_OXBLOOD,
 			"tooltip": "当前家族威望得分 %.1f%%" % prestige_pct},
-		{"label": "人口份额", "ratio": clampf(prestige_pct * 0.85 / 100.0, 0.0, 1.0),
-			"sub": "核心支脉", "color": UITokens.DOSSIER_VERDIGRIS,
-			"tooltip": "家族在所在区域的族人规模占比"},
-		{"label": "资金份额", "ratio": clampf(prestige_pct * 0.92 / 100.0, 0.0, 1.0),
-			"sub": "家族财力", "color": UITokens.DOSSIER_BRASS,
-			"tooltip": "家族在所在区域的流动资金占比"},
-		{"label": "产业份额", "ratio": clampf(prestige_pct * 0.95 / 100.0, 0.0, 1.0),
-			"sub": "控股实业", "color": UITokens.DOSSIER_SLATE,
-			"tooltip": "家族在所在区域的控股建筑占比"},
 	]
 
 
@@ -515,9 +509,10 @@ func _build_overview_branch_meters(branches: Array) -> Array:
 			{"id": "ov_br_score", "label": "威望总分",
 				"value": clampf(score_pct / 100.0, 0.0, 1.0),
 				"value_text": String(primary.get("prestige_text", "%.1f%%" % score_pct)),
-				"status_label": "目标 %s（%d/2）" % [
+				"status_label": "目标 %s（%d/%d）" % [
 					String(primary.get("target_label", "0")),
-					int(primary.get("review_streak", 0))],
+					int(primary.get("review_streak", 0)),
+					int(primary.get("review_required", 2))],
 				"accent": UITokens.WARN},
 			# 分支满意度是成员 cohort 的「综合」口径；没有读数时留空并说明，
 			# 不要用 85% 之类的常量把它填满（编出来的数会被当成真实民生）。
@@ -539,7 +534,7 @@ func _build_overview_branch_meters(branches: Array) -> Array:
 		{"id": "ov_fam_tier_progress", "label": "晋级阈值",
 			"value": clampf(prestige_pct / 100.0, 0.0, 1.0),
 			"marker": 0.25,
-			"value_text": "五档阶梯评定",
+			"value_text": "阶梯评定",
 			"accent": UITokens.ECO},
 	]
 
@@ -554,9 +549,10 @@ func _overview_branch_meta_text(branches: Array) -> String:
 			String(header.get("prestige_progress_text", "0%"))]
 	var primary: Dictionary = all_branches[0]
 	var loc := String(primary.get("location_label", "地块 %d" % int(primary.get("cell", -1))))
-	return "核心据点：%s · 晋级目标 %s（复核 %d/2）· 共 %d 处分支" % [
+	return "核心据点：%s · 晋级目标 %s（复核 %d/%d）· 共 %d 处分支" % [
 		loc, String(primary.get("target_label", "0")),
-		int(primary.get("review_streak", 0)), all_branches.size()]
+		int(primary.get("review_streak", 0)),
+		int(primary.get("review_required", 2)), all_branches.size()]
 
 
 func _add_overview_preferences_card(host: Control, items: Array) -> void:
@@ -567,7 +563,6 @@ func _add_overview_preferences_card(host: Control, items: Array) -> void:
 	var body := _card_body(card)
 	_add_overview_heading(body, "preferences", "显著行为偏好")
 	if items.is_empty():
-		_add_empty_label(body, "偏好：无")
 		return
 	var bar_list := DossierBarList.new()
 	bar_list.name = "OverviewPrefBars"
@@ -611,8 +606,8 @@ func _build_preference_bar_rows(items: Array) -> Array:
 			"color": color,
 			"text": readout,
 			"text_color": color if absf(signed_delta) >= 5.0 else UITokens.DOSSIER_INK,
-			"tooltip": "%s · %s偏好\n当前权重 %s（相对 100%% 基准 %s）" % [
-				String(item.get("name", "偏好")), axis_label, factor_str, delta_str],
+			"tooltip": "%s · %s偏好\n中线为 100%% 常规基线" % [
+				String(item.get("name", "偏好")), axis_label],
 		})
 	return out
 
@@ -646,10 +641,6 @@ func _add_overview_list_card(host: Control, page_id: String, title_text: String,
 		grid.add_theme_constant_override("v_separation", 6)
 		body.add_child(grid)
 		item_host = grid
-	if items.is_empty():
-		_add_empty_label(item_host,
-			"无"
-			if page_id == "effects" else "无")
 	for item_index in range(items.size()):
 		var item_value: Variant = items[item_index]
 		var item: Dictionary = item_value
@@ -733,7 +724,7 @@ func _overview_item_detail_text(page_id: String, item: Dictionary) -> String:
 				return "未达威望Ⅰ · 解锁预览：%s" % String(tiers[0])
 			return "当前未达威望Ⅰ · 提升本地威望至Ⅰ级后激活此项地域加成"
 	elif page_id == "traits" and detail.is_empty():
-		return "无"
+		return ""
 	return detail
 
 
@@ -748,6 +739,16 @@ func _append_trait_badges(host: HBoxContainer, item: Dictionary) -> void:
 		pill.theme_type_variation = &"FamilyTraitBadgePos" \
 			if bool(badge_data.get("positive", true)) else &"FamilyTraitBadgeNeg"
 		host.add_child(pill)
+	if badges.size() > 2:
+		var more := FamilyLabelScene.instantiate() as Label
+		more.text = "+%d 项" % (badges.size() - 2)
+		var all_names := PackedStringArray()
+		for badge_value in badges:
+			var badge_entry: Dictionary = badge_value
+			all_names.append(String(badge_entry.get("text", "")))
+		more.tooltip_text = " · ".join(all_names)
+		more.theme_type_variation = &"FamilyMutedLabel"
+		host.add_child(more)
 
 
 func _add_overview_people_card(host: Control, items: Array) -> void:
@@ -763,8 +764,6 @@ func _add_overview_people_card(host: Control, items: Array) -> void:
 	people_grid.add_theme_constant_override("h_separation", 8)
 	people_grid.add_theme_constant_override("v_separation", 6)
 	body.add_child(people_grid)
-	if items.is_empty():
-		_add_empty_label(people_grid, "无")
 	for item_index in range(items.size()):
 		var item_value: Variant = items[item_index]
 		var item: Dictionary = item_value
@@ -947,7 +946,6 @@ func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
 
 func _build_preference_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "无")
 		return
 	var current_axis := ""
 	for raw in rows:
@@ -955,7 +953,7 @@ func _build_preference_page(page: VBoxContainer, rows: Array) -> void:
 		var axis_name := String(row.get("axis_name", "行为"))
 		if axis_name != current_axis:
 			current_axis = axis_name
-			_add_section_label(page, "%s偏好 · 竖线为 100%% 常规基准" % axis_name)
+			_add_section_label(page, "%s偏好" % axis_name)
 		var card := _new_card()
 		page.add_child(card)
 		var body := _card_body(card)
@@ -1008,7 +1006,6 @@ func _preference_meter_dict(row: Dictionary) -> Dictionary:
 
 func _build_effect_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "无")
 		return
 	var current_cell := -999999
 	for raw in rows:
@@ -1068,7 +1065,6 @@ func _build_effect_page(page: VBoxContainer, rows: Array) -> void:
 
 func _build_people_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "无")
 		return
 	var table := DossierLedgerTable.new()
 	table.name = "PeoplePageLedger"
@@ -1167,7 +1163,6 @@ func _update_person_cashflow_bar(bar: DossierDivergingBar, row: Dictionary) -> v
 
 func _build_branch_page(page: VBoxContainer, rows: Array) -> void:
 	if rows.is_empty():
-		_add_empty_label(page, "无")
 		return
 	_add_section_label(page, "家族晋升 · 家风特性")
 	var trait_rows: Array = _model.get("pages", {}).get("traits", [])
@@ -1189,8 +1184,9 @@ func _build_branch_page(page: VBoxContainer, rows: Array) -> void:
 			String(row.get("population_share_text", "0%")),
 			String(row.get("cash_share_text", "0%")),
 			String(row.get("building_share_text", "0%"))], true)
-		_add_wrapped_label(body, "晋级目标 %s · 复核 %d/2" % [
-			String(row.get("target_label", "0")), int(row.get("review_streak", 0))], true)
+		_add_wrapped_label(body, "晋级目标 %s · 复核 %d/%d" % [
+			String(row.get("target_label", "0")), int(row.get("review_streak", 0)),
+			int(row.get("review_required", 2))], true)
 		var meters := MeterListScene.instantiate() as InspectorMeterList
 		meters.name = "BranchMeters"
 		meters.set_meters(_branch_meter_dicts(row))
@@ -1215,8 +1211,7 @@ func _branch_meter_dicts(row: Dictionary) -> Array:
 	return [
 		{"id": "br_%d_score" % cell, "label": "威望总分",
 			"value": clampf(score_pct / 100.0, 0.0, 1.0),
-			"value_text": String(row.get("prestige_text", "%.1f%%" % score_pct)),
-			"status_label": "威望 %s" % String(row.get("prestige_label", "0")),
+			"status_label": "据点综合威望",
 			"accent": UITokens.WARN},
 		{"id": "br_%d_pop" % cell, "label": "人口份额",
 			"value": clampf(pop_pct / 100.0, 0.0, 1.0),
@@ -1312,7 +1307,7 @@ func _apply_card_live(page_id: String, card: PanelContainer, row_value: Variant)
 			labels[0].text = "地块 %d" % int(row.get("cell", -1))
 			if labels.size() > 1: labels[1].text = "威望 %s · %s" % [String(row.get("prestige_label", "0")), String(row.get("prestige_text", "0%"))]
 			if labels.size() > 2: labels[2].text = "人口 %s · 现金 %s · 建筑 %s" % [String(row.get("population_share_text", "0%")), String(row.get("cash_share_text", "0%")), String(row.get("building_share_text", "0%"))]
-			if labels.size() > 3: labels[3].text = "晋级目标 %s · 复核 %d/2" % [String(row.get("target_label", "0")), int(row.get("review_streak", 0))]
+			if labels.size() > 3: labels[3].text = "晋级目标 %s · 复核 %d/%d" % [String(row.get("target_label", "0")), int(row.get("review_streak", 0)), int(row.get("review_required", 2))]
 			var branch_meters := card.find_child("BranchMeters", true, false) as InspectorMeterList
 			if branch_meters != null:
 				branch_meters.set_meters(_branch_meter_dicts(row))
@@ -1656,7 +1651,7 @@ func _add_empty_label(host: Control, text: String) -> void:
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.theme_type_variation = &"FamilyMutedLabel"
-	label.custom_minimum_size = Vector2(0.0, 56.0)
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	host.add_child(label)
 
 

@@ -1183,6 +1183,9 @@ func _refresh_building_workspace(force: bool = false) -> void:
 
 func _on_construction_requested(request: Dictionary) -> void:
 	if _selected_cell == null or _player_controller == null or _right_panel == null:
+		push_warning("[construction] click dropped: selected_cell=%s controller=%s right_panel=%s" % [
+			str(_selected_cell != null), str(_player_controller != null),
+			str(_right_panel != null)])
 		return
 	# 军事部门的条目带 `military_index`：它是军事目录里的 dense 序，必须走
 	# `state.build`（原生 MCMD_STATE_BUILD）。送进经济侧的 construction.build
@@ -1198,6 +1201,10 @@ func _on_construction_requested(request: Dictionary) -> void:
 		&"construction.build", {"cell_idx": int(_selected_cell.index),
 			"building_id": StringName(request.get("building_id", &"")),
 			"ownership_policy": &"treasury_sponsored_private"})
+	print("[construction] click cell=%d id=%s -> ok=%s code=%s message=%s" % [
+		int(_selected_cell.index), String(request.get("building_id", &"")),
+		str(result.get("ok", false)), str(result.get("code", "")),
+		String(result.get("message", result.get("reason", "")))])
 	_right_panel.set_construction_feedback(
 		String(result.get("message", result.get("reason", "修建命令未能提交。"))),
 		bool(result.get("ok", false)))
@@ -2779,7 +2786,6 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 				title = profile.display_name
 				icon_key = ResourceProfileRegistry.icon_key(profile)
 				break
-		hint = "透明区域无可用储量"
 	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
 		var signal_id := StringName(request.get("signal_id", &""))
 		for entry in ResearchSignalCatalog.occupancy_overlay_entries():
@@ -2788,7 +2794,6 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 				icon_key = String(entry.get("icon_key", &"ecology.growth"))
 				occupancy_bit = int(entry.get("occupancy_bit", -1))
 				break
-		hint = "透明区域当前没有该物种"
 	if _map_overlay_legend != null:
 		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key, occupancy_bit)
 		call_deferred("_layout_overlay_legend")

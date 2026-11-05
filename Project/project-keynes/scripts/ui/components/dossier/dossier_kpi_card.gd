@@ -153,7 +153,7 @@ func _draw() -> void:
 		draw_colored_polygon(tri, delta_color)
 		var delta_text := EconomyDossierViewModel.format_value(absf(_delta), kind)
 		if kind == "percent":
-			delta_text = "%.1f 点" % (absf(_delta) * 100.0)
+			delta_text = "%.1f 百分点" % (absf(_delta) * 100.0)
 		# 没有副行时不要留下「0.02 · 」这样的空分隔符。
 		var delta_line_text := delta_text if caption.is_empty() \
 			else "%s · %s" % [delta_text, caption]

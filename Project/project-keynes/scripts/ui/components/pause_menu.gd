@@ -101,7 +101,7 @@ func show_save_failure(action: String, result: Dictionary) -> void:
 	_pending_destructive_action = action
 	_clear_panel()
 	_title("自动存档失败")
-	_status.text = String(result.get("message", "自动存档未完成。"))
+	_status.text = "自动存档未完成，可重试或放弃保存。"
 	_status.visible = true
 	_add_button("重试", "regenerate", func() -> void: _retry_pending_action())
 	_add_button("放弃保存", "warning", func() -> void: _finish_pending_action())
@@ -187,7 +187,7 @@ func _save_slot(slot_id: String) -> void:
 	var save_service := get_node_or_null("/root/GameSave")
 	var result: Dictionary = await save_service.request_manual_save(slot_id) \
 		if save_service != null else {"ok": false, "message": "存档服务不可用。"}
-	_status.text = "存档完成。" if bool(result.ok) else String(result.message)
+	_status.text = "存档完成。" if bool(result.ok) else "存档未完成，请重试。"
 	_status.visible = true
 
 
@@ -217,7 +217,6 @@ func _title(text_value: String) -> void:
 func _add_button(text_value: String, icon: String, callback: Callable) -> Button:
 	var button := MenuButtonScene.instantiate() as Button
 	preload("res://scripts/ui/ui_audio_feedback.gd").tag_icon(button, StringName(icon))
-	button.tooltip_text = text_value
 	var icon_label := button.get_node("Row/Icon") as Label
 	IconButton.apply_to_label(icon_label, StringName(icon), 15)
 	var text_label := button.get_node("Row/Label") as Label

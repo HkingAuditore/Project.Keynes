@@ -629,12 +629,15 @@ func _build_page_tax_section(context: Dictionary) -> void:
 	var editable := bool(context.get("editable", false))
 	var hint := section.get_node("Hint") as Label
 	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
+		var reason := String(context.get("reason", ""))
+		hint.text = reason
+		hint.visible = not reason.is_empty()
 	elif not editable:
 		hint.text = "仅可查看该国当前政策。"
+		hint.visible = true
 	else:
 		hint.text = "未单独设档的项目适用此地税率，次日生效。"
-	hint.visible = true
+		hint.visible = true
 	var lanes := section.get_node("Lanes") as VBoxContainer
 	for raw in defaults:
 		var lane: Dictionary = raw

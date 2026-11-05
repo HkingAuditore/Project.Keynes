@@ -67,9 +67,6 @@ func _draw() -> void:
 		if width > 150.0:
 			size_px = maxi(15, int(float(size_px) * 150.0 / width))
 		var current_color: Color = _ink
-		var unit: String = String(row.get("unit", ""))
-		if unit == "%":
-			current_color = _ink
 		_right_text(value_right, baseline, current, size_px, current_color)
 
 		if _show_previous:

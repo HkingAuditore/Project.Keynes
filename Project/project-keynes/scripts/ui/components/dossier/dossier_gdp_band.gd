@@ -119,24 +119,19 @@ func _draw() -> void:
 		else:
 			_mixed_line(Vector2(PAD_LEFT, h - 9.0), detail, 12, UITokens.DOSSIER_INK_SOFT)
 
-	if show_progress:
+	if show_progress and _has_data:
 		_draw_progress(w, h, progress_width)
 
 
 func _draw_progress(w: float, h: float, progress_width: float) -> void:
 	var x := w - PAD_RIGHT - progress_width
 	var ratio := clampf(float(_days_counted) / float(_days_per_year), 0.0, 1.0)
-	# 右块三件套整体垂直居中，与左侧小标/数字/副行的视觉重心对齐。
-	var label := "年度进度 %d%%" % int(round(ratio * 100.0))
-	_text(Vector2(x, h * 0.44), _fit_text(label, 11, progress_width),
-		11, UITokens.DOSSIER_INK_MUTED)
 	var track := Rect2(Vector2(x, h * 0.53), Vector2(progress_width, 3.0))
 	draw_rect(track, Color(UITokens.DOSSIER_RULE, 0.55), true)
 	if ratio > 0.0:
 		draw_rect(Rect2(track.position, Vector2(progress_width * ratio, 3.0)),
 			UITokens.DOSSIER_BRASS, true)
-	var caption := "尚无结算日" if not _has_data \
-		else "第 %d / %d 天" % [_days_counted, _days_per_year]
+	var caption := "第 %d / %d 天" % [_days_counted, _days_per_year]
 	_text(Vector2(x, h * 0.76), _fit_text(caption, 11, progress_width),
 		11, UITokens.DOSSIER_INK_MUTED)
 
@@ -197,7 +192,6 @@ func _tooltip() -> String:
 		lines.append("人均产值：%s" % _money(_per_capita))
 	if _days_counted > 0:
 		lines.append("日均产值：%s" % _money(_value / float(_days_counted)))
-	lines.append("口径：收入法 —— 建筑营收 − 中间投入 − 维护（= 工资 + 营业盈余，不含营业税）。")
 	lines.append("逐格累加，各聚落之和即全国值。")
 	var start_day := _year_index * _days_per_year
 	lines.append("第 %d 年起算于第 %d 日，当前第 %d / %d 天。" % [
@@ -205,5 +199,5 @@ func _tooltip() -> String:
 	if _backfilled:
 		lines.append("年初至首次结算的那几天按当时速率折算，之后逐日累计。")
 	if _partial:
-		lines.append("聚落过多，逐格累计未覆盖全部村落；全国值取自原生汇总。")
+		lines.append("聚落过多，逐格累计未覆盖全部村落；全国值取自全国汇总值。")
 	return "\n".join(lines)

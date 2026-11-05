@@ -633,13 +633,11 @@ func _draw_alerts(x: float, w: float) -> void:
 	var strong := UITokens.dossier_font("sans_strong")
 	var sans := UITokens.dossier_font("sans")
 	var alerts: Array = _overview.get("alerts", [])
+	if alerts.is_empty():
+		return
 	var alert_top: float = _rows.get("alert_top", 0.0)
 	_text(Vector2(x, _rows.get("alert_head_y", 0.0)), "国家问题", strong, SIZE_BODY, UITokens.DOSSIER_INK,
 		w * 0.5)
-	if alerts.is_empty():
-		_chip(Rect2(x, alert_top, minf(w, 140.0), ALERT_H), &"control.checkbox_checked",
-			"暂无突出问题", false, "目前没有达到提示阈值的突出问题。")
-		return
 	var cx := x
 	var shown := 0
 	for i in range(alerts.size()):
@@ -847,13 +845,12 @@ func _draw_costs(x: float, w: float) -> void:
 	var strong := UITokens.dossier_font("sans_strong")
 	var sans := UITokens.dossier_font("sans")
 	var numeral := UITokens.dossier_font("numeral")
+	var costs: Array = m.get("costs", [])
+	if costs.is_empty():
+		return
 	_text(Vector2(x, COST_HEAD_Y), "晋升物资", strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
 	_region(Rect2(x, COST_HEAD_Y - 16.0, 80.0, 22.0),
 		"%s；物资齐备后自动从国库扣除" % String(m.get("territory_note", "")))
-	var costs: Array = m.get("costs", [])
-	if costs.is_empty():
-		_text(Vector2(x, COST_TOP + 24.0), "本次晋升无需物资", sans, SIZE_MINOR, UITokens.DOSSIER_INK_MUTED, w)
-		return
 	var overflow := costs.size() > MAX_COST_CHIPS
 	var shown := MAX_COST_CHIPS - 1 if overflow else costs.size()
 	# 签宽按实际签数均分：固定 4 等分时中文名（如「采集植物食物」）会被截断。

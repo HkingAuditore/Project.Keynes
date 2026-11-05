@@ -11679,7 +11679,8 @@
 				"route.resource.tin"
 			],
 			"hard_prerequisite_ids": [
-				"tech.tin_identification"
+				"tech.tin_identification",
+				"tech.composite_tools"
 			],
 			"reveal_condition": {
 				"operator": 2.0,
@@ -11790,7 +11791,8 @@
 			"reveal_summary": "铜锡配比与铸造由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"该科技需要先掌握 「锡矿辨识」。"
+				"该科技需要先掌握 「锡矿辨识」。",
+				"复合工具带来的制弓工艺是青铜时代军队远程装备的前提。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -17222,7 +17224,8 @@
 				"route.craft.textiles"
 			],
 			"hard_prerequisite_ids": [
-				"tech.herd_management"
+				"tech.herd_management",
+				"tech.bronze_casting"
 			],
 			"reveal_condition": {
 				"operator": 2.0,
@@ -17384,7 +17387,8 @@
 			"reveal_summary": "皮革鞣制由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"该科技需要先掌握 「畜群管理」。"
+				"该科技需要先掌握 「畜群管理」。",
+				"青铜兵器列装后皮甲成为配套护具，鞣制工艺需以铸造为前提。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -30823,7 +30827,8 @@
 			],
 			"hard_prerequisite_ids": [
 				"tech.gunpowder_formulation",
-				"tech.bronze_casting"
+				"tech.bronze_casting",
+				"tech.iron_smelting"
 			],
 			"reveal_condition": {
 				"kind": 1.0,
@@ -30928,7 +30933,8 @@
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"火器以稳定配方的火药为推进剂。",
-				"早期火炮以青铜铸造炮管。"
+				"早期火炮以青铜铸造炮管。",
+				"火枪兵仍配铁制兵器，火器列装前需具备冶铁产能。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -64078,7 +64084,8 @@
 			],
 			"hard_prerequisite_ids": [
 				"tech.horse_domestication",
-				"tech.animal_traction"
+				"tech.animal_traction",
+				"tech.bronze_casting"
 			],
 			"reveal_condition": {
 
@@ -64136,7 +64143,8 @@
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"战车以被驯化的马匹为牵引力。",
-				"畜力牵引提供了车体与挽具的工程基础。"
+				"畜力牵引提供了车体与挽具的工程基础。",
+				"战车兵的青铜兵器需先掌握青铜铸造。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -64296,7 +64304,8 @@
 				"route.institution.bureaucracy"
 			],
 			"hard_prerequisite_ids": [
-				"tech.state_bureaucracy"
+				"tech.state_bureaucracy",
+				"tech.iron_smelting"
 			],
 			"reveal_condition": {
 
@@ -64402,7 +64411,8 @@
 			"reveal_summary": "常备军由国家治理实践和反复的边境征发揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"常备军需要官僚机构提供兵籍、补给与调动。"
+				"常备军需要官僚机构提供兵籍、补给与调动。",
+				"常备军的铁制兵器需以冶铁为前提。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -64491,7 +64501,9 @@
 			],
 			"hard_prerequisite_ids": [
 				"tech.horse_domestication",
-				"tech.pastoralism"
+				"tech.pastoralism",
+				"tech.hide_tanning",
+				"tech.iron_smelting"
 			],
 			"reveal_condition": {
 
@@ -64528,7 +64540,9 @@
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"骑兵以家马为基础。",
-				"游牧实践提供了长距离骑乘与牧场保障。"
+				"游牧实践提供了长距离骑乘与牧场保障。",
+				"骑兵的皮甲依赖鞣制皮革工艺。",
+				"骑兵的铁制兵器需先具备冶铁产能。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -64864,7 +64878,9 @@
 				"route.institution.granary"
 			],
 			"hard_prerequisite_ids": [
-				"tech.regional_granaries"
+				"tech.regional_granaries",
+				"tech.iron_smelting",
+				"tech.crucible_steel"
 			],
 			"reveal_condition": {
 
@@ -64930,7 +64946,9 @@
 			"reveal_summary": "军需体系由区域粮仓的调拨经验与军团驻防实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"军需体系依赖区域粮仓的储备与调拨制度。"
+				"军需体系依赖区域粮仓的储备与调拨制度。",
+				"军团步兵的铁制兵器需以冶铁为前提。",
+				"军团步兵的板甲依赖坩埚钢锻造。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -65018,7 +65036,8 @@
 				"route.ecology.pasture"
 			],
 			"hard_prerequisite_ids": [
-				"tech.crucible_steel"
+				"tech.crucible_steel",
+				"tech.horse_domestication"
 			],
 			"reveal_condition": {
 
@@ -65054,7 +65073,8 @@
 			"reveal_summary": "重骑兵由坩埚钢工艺与大规模骑乘实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"甲骑具装需要能整体锻形的钢材。"
+				"甲骑具装需要能整体锻形的钢材。",
+				"具装骑兵的坐骑来自驯马。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -65278,7 +65298,8 @@
 				"route.military.ordnance"
 			],
 			"hard_prerequisite_ids": [
-				"tech.gunpowder_weapons"
+				"tech.gunpowder_weapons",
+				"tech.horse_domestication"
 			],
 			"reveal_condition": {
 
@@ -65332,7 +65353,8 @@
 			"reveal_summary": "野战火炮由火药武器在野战中的反复使用揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"野战火炮以火药武器与青铜炮管为基础。"
+				"野战火炮以火药武器与青铜炮管为基础。",
+				"野战炮兵的驮马来自驯马。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -66062,7 +66084,8 @@
 				"route.institution.bureaucracy"
 			],
 			"hard_prerequisite_ids": [
-				"tech.standardization"
+				"tech.standardization",
+				"tech.horse_domestication"
 			],
 			"reveal_condition": {
 
@@ -66140,7 +66163,8 @@
 			"reveal_summary": "操典由军营操练的反复订正与印刷条文的扩散揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"操典是把散乱的操练统一成可复制的条文。"
+				"操典是把散乱的操练统一成可复制的条文。",
+				"龙骑兵的坐骑来自驯马。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -67817,7 +67841,10 @@
 				"route.military.vehicles"
 			],
 			"hard_prerequisite_ids": [
-				"tech.global_logistics"
+				"tech.global_logistics",
+				"tech.horse_domestication",
+				"tech.military.machine_guns",
+				"tech.synthetic_fiber_engineering"
 			],
 			"reveal_condition": {
 
@@ -67899,7 +67926,10 @@
 			"reveal_summary": "机械化由内燃机装备与后勤补给的协同实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"机械化依赖全球物流体系保障油料与备件。"
+				"机械化依赖全球物流体系保障油料与备件。",
+				"机械化部队编制仍保留少量役用马匹，需以驯马为前提。",
+				"机械化步兵的自动火器来自机枪工艺。",
+				"机械化步兵的防弹护具依赖合成纤维工程。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -68488,7 +68518,10 @@
 				"route.institution.telecom"
 			],
 			"hard_prerequisite_ids": [
-				"tech.networked_computing"
+				"tech.networked_computing",
+				"tech.gunpowder_weapons",
+				"tech.military.machine_guns",
+				"tech.military.main_battle_tanks"
 			],
 			"reveal_condition": {
 
@@ -68566,7 +68599,10 @@
 			"reveal_summary": "网络中心战由网络化指挥系统的演训实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"网络中心战以网络化计算为基础。"
+				"网络中心战以网络化计算为基础。",
+				"合成部队的基础弹药链来自火药武器。",
+				"合成部队的自动火器来自机枪工艺。",
+				"合成部队的装甲车辆来自主战坦克制造。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -68857,7 +68893,9 @@
 				"route.military.vehicles"
 			],
 			"hard_prerequisite_ids": [
-				"tech.autonomous_systems"
+				"tech.autonomous_systems",
+				"tech.gunpowder_weapons",
+				"tech.synthetic_fiber_engineering"
 			],
 			"reveal_condition": {
 
@@ -68927,7 +68965,9 @@
 			"reveal_summary": "自主作战由自主系统的军事化试验揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"自主作战以自主系统为基础。"
+				"自主作战以自主系统为基础。",
+				"外骨骼步兵的弹药链来自火药武器。",
+				"外骨骼步兵的防弹护具依赖合成纤维工程。"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],

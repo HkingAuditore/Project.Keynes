@@ -4,13 +4,13 @@ class_name PapercutMapPreview
 const SeaChartShader := preload("res://shaders/sea_chart_astrolabe.gdshader")
 
 var _state: Dictionary = {
-	"country_name": "新国家",
-	"foreign_count": 5,
+	"country_name": "",
+	"foreign_count": 0,
 	"map_width": 60,
 	"map_height": 40,
-	"seed": 1024,
+	"seed": 0,
 	"land_layout": "two",
-	"land_layout_label": "两个大陆",
+	"land_layout_label": "",
 	"num_continents": 2,
 	"continent_size": 0.50,
 	"sea_level": 0.50,
@@ -38,6 +38,7 @@ var _polity_val: Label
 var _reveal := 1.0
 var _reveal_tween: Tween
 var _last_layout_signature := ""
+var _has_state := false
 
 
 func _ready() -> void:
@@ -81,6 +82,7 @@ func _sync_canvas_shader() -> void:
 func set_preview_state(next_state: Dictionary, animate_reveal: bool = false) -> void:
 	for k in next_state:
 		_state[k] = next_state[k]
+	_has_state = true
 	var sig := "%s|%d|%d|%.2f|%.2f|%d|%d|%s" % [
 		String(_state.get("land_layout", "")),
 		int(_state.get("seed", 0)),
@@ -123,11 +125,16 @@ func _sync_shader_params() -> void:
 
 
 func _refresh_labels() -> void:
+	if not _has_state:
+		for label in [_seed_badge, _scope_val, _land_val, _climate_val, _polity_val]:
+			if label != null:
+				(label as Label).text = ""
+		return
 	var w := maxi(10, int(_state.get("map_width", 60)))
 	var h := maxi(8, int(_state.get("map_height", 40)))
 	var cells := w * h
 	var is_pkmap := bool(_state.get("is_pkmap", false))
-	var seed_num := int(_state.get("seed", 1))
+	var seed_num := int(_state.get("seed", 0))
 	if _title_label != null:
 		_title_label.text = "地图预览"
 	if _seed_badge != null:
@@ -139,16 +146,16 @@ func _refresh_labels() -> void:
 			var fname := String(_state.get("pkmap_file", ""))
 			_land_val.text = fname if not fname.is_empty() else "未选择文件"
 		else:
-			var layout_lbl := String(_state.get("land_layout_label", "两个大陆"))
+			var layout_lbl := String(_state.get("land_layout_label", ""))
 			var sea_pct := int(round(float(_state.get("sea_level", 0.50)) * 100.0))
-			_land_val.text = "%s · 海平面 %d%%" % [layout_lbl, sea_pct]
+			_land_val.text = "%s · 海平面 %d%%" % [layout_lbl, sea_pct] \
+				if not layout_lbl.is_empty() else ""
 	if _climate_val != null:
 		var wet := int(_state.get("wetness", 55))
 		var riv := int(_state.get("river_density", 55))
 		_climate_val.text = "湿润 %d%% · 河流 %d%%" % [wet, riv]
 	if _polity_val != null:
-		var cname := String(_state.get("country_name", "新国家")).strip_edges()
-		if cname.is_empty():
-			cname = "新国家"
-		var fcount := int(_state.get("foreign_count", 5))
-		_polity_val.text = "%s · 外国 %d" % [cname, fcount]
+		var cname := String(_state.get("country_name", "")).strip_edges()
+		var fcount := int(_state.get("foreign_count", 0))
+		_polity_val.text = "%s · 外国 %d" % [cname, fcount] \
+			if not cname.is_empty() else ""

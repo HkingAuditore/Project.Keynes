@@ -247,11 +247,14 @@ static func _append_country_detail(sections: Array, country: Dictionary, treasur
 		return
 	var rows := []
 	var technologies: PackedStringArray = country.get("technology_ids", PackedStringArray())
-	rows.append({"label": "已解锁科技", "value": ", ".join(technologies) if not technologies.is_empty() else "无"})
+	if not technologies.is_empty():
+		rows.append({"label": "已解锁科技", "value": ", ".join(technologies)})
 	var good_ids: PackedStringArray = treasury.get("good_ids", PackedStringArray())
 	var quantities: PackedInt64Array = treasury.get("quantities", PackedInt64Array())
 	for i in range(mini(good_ids.size(), quantities.size())):
 		rows.append({"label": String(good_ids[i]), "value": _goods(int(quantities[i]))})
+	if rows.is_empty():
+		return
 	sections.append({"title": "国家详情", "rows": rows})
 
 
@@ -310,8 +313,8 @@ static func _append_buildings(sections: Array, snapshot: Dictionary) -> void:
 				and not bool(snapshot.get("busy", false)):
 			rows.append({"label": "经济图", "value": "已暂停 · committed=false busy=false"})
 		_append_scalar_rows(rows, snapshot, MAX_BUILDING_ROWS)
-	sections.append({"title": "建筑", "rows": rows if not rows.is_empty() else [
-		{"label": "建筑", "value": "无"}]})
+	if not rows.is_empty():
+		sections.append({"title": "建筑", "rows": rows})
 
 
 static func _append_scalar_report(sections: Array, title: String, report,

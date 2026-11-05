@@ -41,7 +41,10 @@ func set_rows(rows: Array) -> void:
 	_values = PackedFloat32Array()
 	for row in rows:
 		var value := float((row as Dictionary).get("value", 0.0))
-		_values.append(clampf(value, -1.0, 1.0) if diverging else clampf(value, 0.0, 1.0))
+		if bool((row as Dictionary).get("disabled", false)):
+			_values.append(0.0)
+		else:
+			_values.append(clampf(value, -1.0, 1.0) if diverging else clampf(value, 0.0, 1.0))
 	custom_minimum_size.y = row_height * float(rows.size())
 	if _hover >= rows.size():
 		_hover = -1
@@ -120,15 +123,18 @@ func _draw() -> void:
 	for i in range(_rows.size()):
 		var row: Dictionary = _rows[i]
 		var top := row_height * float(i)
-		var is_selected: bool = selected_id != null and row.get("id") == selected_id
+		var is_disabled := bool(row.get("disabled", false))
+		var is_selected: bool = selected_id != null and row.get("id") == selected_id \
+			and not is_disabled
 		if is_selected:
 			draw_rect(Rect2(Vector2(0.0, top + 1.0), Vector2(w, row_height - 2.0)),
 				UITokens.DOSSIER_SELECTED)
 			draw_rect(Rect2(Vector2(0.0, top + 3.0), Vector2(3.0, row_height - 6.0)),
 				UITokens.DOSSIER_OXBLOOD)
-		elif i == _hover and selectable:
+		elif i == _hover and selectable and not is_disabled:
 			draw_rect(Rect2(Vector2(0.0, top + 1.0), Vector2(w, row_height - 2.0)),
 				UITokens.DOSSIER_HOVER)
+		var ink: Color = UITokens.DOSSIER_INK_MUTED if is_disabled else UITokens.DOSSIER_INK
 		var baseline := top + row_height * 0.5 + 5.0
 		var x := 6.0
 		var icon_key := StringName(row.get("icon", &""))
@@ -137,7 +143,7 @@ func _draw() -> void:
 				row.get("color", UITokens.DOSSIER_INK_SOFT))
 			x += 21.0
 		_text(Vector2(x, baseline), _fit_text(String(row.get("label", "")), 13,
-			bar_left - x - 6.0), 13, UITokens.DOSSIER_INK, "sans")
+			bar_left - x - 6.0), 13, ink, "sans")
 		var bar_y := top + row_height * 0.5 - 4.0
 		var track := Rect2(Vector2(bar_left, bar_y), Vector2(bar_width, 8.0))
 		_rounded_bar(track, UITokens.DOSSIER_TRACK, 2.0)
@@ -160,8 +166,10 @@ func _draw() -> void:
 			var mx := bar_left + bar_width * clampf(marker, 0.0, 1.0)
 			draw_line(Vector2(mx, bar_y - 4.0), Vector2(mx, bar_y + 12.0),
 				UITokens.DOSSIER_INK, 2.0)
+		var value_color = UITokens.DOSSIER_INK_MUTED if is_disabled \
+			else row.get("text_color", UITokens.DOSSIER_INK)
 		_text(Vector2(bar_right + 8.0, baseline), _fit_text(String(row.get("text", "")), 12,
-			value_width), 12, row.get("text_color", UITokens.DOSSIER_INK), "sans_strong",
+			value_width), 12, value_color, "sans_strong",
 			HORIZONTAL_ALIGNMENT_RIGHT, value_width)
 		if i < _rows.size() - 1:
 			draw_line(Vector2(0.0, top + row_height - 0.5), Vector2(w, top + row_height - 0.5),

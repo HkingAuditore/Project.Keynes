@@ -369,7 +369,7 @@ static func _attach_notes(chapters: Array[Dictionary], totals: Dictionary, has_p
 		chapters[1].margin_notes.append("工资实付占经营收入 %.1f%%，中间投入与维护合计 %.1f%%。" % [float(totals.get("wages", 0)) * 100.0 / revenue, (float(totals.get("input_cost", 0)) + float(totals.get("maintenance", 0))) * 100.0 / revenue])
 	var gdp: float = float(totals.get("gdp", 0))
 	if gdp > 0.0:
-		chapters[6].margin_notes.append("五项税收合计相当于增加值的 %.1f%%。" % [(float(totals.get("income_tax", 0)) + float(totals.get("consumption_tax", 0)) + float(totals.get("business_tax", 0)) + float(totals.get("import_tax", 0)) + float(totals.get("export_tax", 0))) * 100.0 / gdp])
+		chapters[6].margin_notes.append("税收合计相当于增加值的 %.1f%%。" % [(float(totals.get("income_tax", 0)) + float(totals.get("consumption_tax", 0)) + float(totals.get("business_tax", 0)) + float(totals.get("import_tax", 0)) + float(totals.get("export_tax", 0))) * 100.0 / gdp])
 
 
 # ── 派生工具 ────────────────────────────────────────────────────────────────

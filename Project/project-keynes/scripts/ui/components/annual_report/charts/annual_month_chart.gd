@@ -113,3 +113,5 @@ func _draw() -> void:
 	_figure(Vector2(plot.end.x + 24.0, plot.position.y + 30.0), tail, 40, _ink)
 	_caption(Vector2(plot.end.x + 26.0, plot.position.y + 50.0), "12 月末值" if _observed >= 12 else "第 %d 月" % _observed)
 	_caption(Vector2(plot.end.x + 26.0, plot.position.y + 70.0), "已观测 %d 个月" % _observed, Color(_muted.r, _muted.g, _muted.b, 0.7))
+	_caption(Vector2(plot.end.x + 26.0, plot.position.y + 90.0), "纵轴上限 %s" % UITokens.format_compact_number_cn(hi),
+		Color(_muted.r, _muted.g, _muted.b, 0.7))

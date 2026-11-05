@@ -2470,6 +2470,9 @@ func _poll_environment_prefetch_resume() -> void:
 	_resume_environment_prefetch_after_save()
 
 
+var _construction_receipt_poll_ms: int = 0
+
+
 func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void:
 	var segment_usec := frame_usec
 	if _runtime_ready_for_ticks and _generator != null:
@@ -2477,6 +2480,17 @@ func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void
 		if ext != null and ext.has_method("capture_economy_day_inputs"):
 			# -1 只服务 worker 请求的同日输入，不推进经济公式。
 			ext.capture_economy_day_inputs(-1)
+		# 营造回执不能只等经济 pulse：worker PAUSED / 日历冻结时 pulse 不来，
+		# 玩家会一直停在「已排队」。这里按墙钟节流做一次纯读轮询，
+		# facade 的游标保证同一条回执不会被重复派发。
+		var receipt_now := Time.get_ticks_msec()
+		if receipt_now - _construction_receipt_poll_ms >= 250:
+			_construction_receipt_poll_ms = receipt_now
+			if _generator.has_method("get_economy_facade"):
+				var economy = _generator.get_economy_facade()
+				if economy != null and economy.has_method(
+						"dispatch_construction_command_receipts"):
+					economy.dispatch_construction_command_receipts()
 	_sched_proc_economy_input_ms += _sched_elapsed_ms(segment_usec)
 	segment_usec = Time.get_ticks_usec()
 	_service_country_worker_transport()
@@ -4176,7 +4190,7 @@ func get_gm_capabilities() -> Dictionary:
 			{"id": "visual.ocean_current", "label": "洋流显示", "group": "视觉"},
 			{"id": "visual.extreme_weather", "label": "极端天气地表效果", "group": "视觉"},
 			{"id": "diagnostics.perf_sampler", "label": "渲染性能采样", "group": "诊断"},
-			{"id": "diagnostics.pk_log", "label": "PKLog 诊断日志", "group": "诊断"},
+			{"id": "diagnostics.pk_log", "label": "诊断日志", "group": "诊断"},
 			{"id": "diagnostics.terrain_material_gate", "label": "材质贴图门禁视图（绿=激活）", "group": "诊断"},
 			{"id": "diagnostics.cell_index_view", "label": "Cell 索引视图（每格一色，全黑=索引图失效）", "group": "诊断"},
 			{"id": "diagnostics.enum_lut_view", "label": "enum_lut 直读视图（分区着色，全黑=LUT 读成零）", "group": "诊断"},

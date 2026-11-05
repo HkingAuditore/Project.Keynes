@@ -132,11 +132,11 @@ func breakdown_text() -> String:
 		_money(int(parts.research)), _money(int(parts.era)), _money(int(parts.colonization))]
 
 
-## 原生快照缺席时的占位说明；可用时返回空串。
+## 采购明细缺席时的说明；可用时返回空串。
 func unavailable_text() -> String:
 	if bool(_procurement.get("available", false)):
 		return ""
-	return "原生采购快照暂不可用，日额按国库现金估算"
+	return "采购明细尚未汇总，当前按国库现金估算每日额度。"
 
 
 ## 上一周期实际支出；原生快照不可用时返回空串（不显示）。

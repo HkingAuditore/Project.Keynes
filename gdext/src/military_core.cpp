@@ -342,22 +342,6 @@ int32_t barracks_speed_index_matches(const MilitaryCatalog &c, int32_t tier, int
     return found ? 1 : 0;
 }
 
-int64_t equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8) {
-    const int32_t q = clamp32((quality_q8 + 128) / 256, 1, 5);
-    int64_t wsum = 0, acc = 0;
-    for (int32_t s = 0; s < u.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
-        const int64_t w = u.slot_power_weight_q16[(size_t)s];
-        if (w <= 0) continue;
-        const int32_t minq = clamp32((int32_t)u.slot_min_quality[(size_t)s], 1, 5);
-        const int32_t actual = std::max(minq, q);
-        wsum += w;
-        // w * qmult(actual) / qmult(min)
-        acc += mul_div(w * quality_mult_q16(actual), 1, quality_mult_q16(minq));
-    }
-    if (wsum <= 0) return MILITARY_Q16;
-    return acc / wsum;
-}
-
 int32_t kind_factor_q16(uint8_t from_class, uint8_t to_class, bool same_unit) {
     if (same_unit) return MILITARY_Q16 / 4;   // re-equip 0.25
     if (from_class == to_class) return 26214; // same category retrain 0.4
@@ -2057,11 +2041,15 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
         if (!o.equipment_ready) continue;
         ++o.days_done;
         if (o.days_done < o.days_total) continue;
-        const int64_t moved = std::min(o.count, lot_remove_casualties((uint8_t)MILITARY_LOT_GARRISON, o.cell, o.count));
-        if (moved > 0) {
-            const int32_t lot = lot_find_or_create((uint8_t)MILITARY_LOT_GARRISON, o.cell, o.country_slot,
-                                                   o.to_unit, o.quality_q8);
-            if (lot >= 0) _lots.count[(size_t)lot] += moved;
+        // v3: the garrison lot kept its *source* unit type while training, so
+        // an unequipped order can never fight as the target unit. Only now -
+        // every equipment slot delivered and all training days elapsed - do the
+        // heads become the target unit, at the quality actually bought.
+        const int16_t delivered_q8 = o.delivered_quality_q8 > 0
+            ? o.delivered_quality_q8 : o.quality_q8;
+        if (o.from_unit >= 0) {
+            transfer_garrison(*this, o.cell, o.country_slot, o.country_slot,
+                              o.from_unit, o.to_unit, delivered_q8, o.count);
         }
         o.count = 0;
     }
@@ -2132,7 +2120,10 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
             }
             int64_t capacity = posts - in_training;
             if (capacity <= 0) continue;
-            const int64_t militia_heads = garrison_heads_for_unit(_lots, cell, s, militia);
+            // v3: heads stay in the militia lot until the order completes, so
+            // reserve those already committed to in-flight orders in this cell.
+            const int64_t militia_heads = std::max<int64_t>(0,
+                garrison_heads_for_unit(_lots, cell, s, militia) - in_training);
             if (militia_heads <= 0) continue;
             const int32_t speed = cell_training_speed_q16(_catalog, &st);
             const int64_t train_stat = stat_q16(digest, s, MSTAT_TRAINING_TIME);
@@ -2168,9 +2159,6 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
                 o.equipment_ready = 0;   // A2 fills this from procurement
                 o.manual = 0;
                 o.quality_q8 = (int16_t)(p.quality_policy == 0 ? 5 * 256 : 1 * 256);
-                if (transfer_garrison(*this, cell, s, s, militia, (int16_t)best, 256, count) != count) {
-                    break;
-                }
                 _training.push_back(o);
                 gap[(size_t)best] -= count;
                 capacity -= count;
@@ -2195,6 +2183,8 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
                     }
                 }
                 if (source < 0) break;
+                source_heads = std::max<int64_t>(0, source_heads - in_training);
+                if (source_heads <= 0) break;
                 const MilitaryUnitType &ut = _catalog.units[(size_t)u];
                 const int64_t count = std::min({capacity, source_heads, gap[(size_t)u]});
                 if (count <= 0) break;
@@ -2213,7 +2203,6 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
                 o.equipment_ready = 0;
                 o.manual = 0;
                 o.quality_q8 = (int16_t)(p.quality_policy == 0 ? 5 * 256 : 1 * 256);
-                if (transfer_garrison(*this, cell, s, s, (int16_t)source, (int16_t)u, 256, count) != count) break;
                 _training.push_back(o);
                 gap[(size_t)u] -= count;
                 gap[(size_t)source] += count;
@@ -2259,9 +2248,6 @@ void MilitaryCore::run_training(const MilitaryWorldDigest &digest) {
             o.equipment_ready = 0;
             o.manual = 0;
             o.quality_q8 = (int16_t)max_q8;
-            if (transfer_garrison(*this, cell, s, s, (int16_t)u, (int16_t)u, (int16_t)_lots.equip_quality_q8[i], count) != count) {
-                continue;
-            }
             _training.push_back(o);
             break;
         }
@@ -3163,7 +3149,12 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             // Manual order: only from heads that exist in the local garrison.
             const int32_t from_unit = cmd.unit_from >= 0 ? cmd.unit_from : _catalog.militia_unit;
             if (from_unit < 0) return;
-            const int64_t have = garrison_heads_for_unit(_lots, cmd.cell, country, (int16_t)from_unit);
+            int64_t reserved = 0;
+            for (const MilitaryTrainingOrder &o : _training) {
+                if (o.cell == cmd.cell && o.country_slot == country) reserved += o.count;
+            }
+            const int64_t have = std::max<int64_t>(0,
+                garrison_heads_for_unit(_lots, cmd.cell, country, (int16_t)from_unit) - reserved);
             const int64_t count = std::min(have, cmd.count);
             if (count <= 0) return;
             const MilitaryUnitType &to = _catalog.units[(size_t)cmd.unit_to];
@@ -3192,10 +3183,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             o.equipment_ready = 0;
             o.manual = 1;
             o.quality_q8 = (int16_t)(policy.quality_policy == 0 ? 5 * 256 : 256);
-            if (transfer_garrison(*this, cmd.cell, country, country, (int16_t)from_unit,
-                                  (int16_t)cmd.unit_to, (int16_t)(o.quality_q8), count) == count) {
-                _training.push_back(o);
-            }
+            _training.push_back(o);
             return;
         }
         case MCMD_STATE_BUILD: {

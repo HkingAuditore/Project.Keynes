@@ -3847,18 +3847,77 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
     }
     if (cash == 0 && goods_total == 0) return true;
-    const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
-            country_handle, cash, goods_total, good_ids, treasury_quantities,
-            error);
-    if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
-        // Treasury spend must not silently create construction/canal without
-        // paying. Reject the coordinator so callers soft-fail the command.
-        committed_cash = 0;
-        return false;
+    // Country is the unique treasury writer in production (authority mask
+    // 0xFFF). Routing this spend through the Host peer queue yields
+    // ENQUEUED_PENDING with no terminal result inside the current economy
+    // slice; treating that as "not committed" rejected EVERY treasury-funded
+    // construction at the epoch, so the player saw an eligible quote but a
+    // failed build receipt a few ticks later. Army pay (opcode 34) already
+    // solves the same problem with a same-thread prepare -> service -> finish
+    // cycle; reuse it here so the treasury debit and the Economy-owned
+    // market/merchant legs share one audit window. The sync-only fixtures have
+    // no simulation host and keep the original transaction path below.
+    bool treasury_peer_committed = false;
+    int64_t peer_committed_cash = 0;
+    const bool worker_inline_country = _simulation_host != nullptr &&
+        _simulation_host->on_worker_thread() &&
+        _simulation_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY) &&
+        (_d7_operation_gate_mask &
+            (1u << static_cast<uint32_t>(
+                RuntimeEconomyAssetOperation::TREASURY_SPEND))) != 0u;
+    if (worker_inline_country) {
+        RuntimeEconomyAssetRequest request;
+        request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
+        request.origin_epoch = _epoch_id.get();
+        request.origin_stage = static_cast<int32_t>(_stage);
+        request.day = _current_day.get();
+        request.country_handle = static_cast<uint64_t>(country_handle);
+        request.peer_generation = _committed_generation;
+        request.requested_cash = cash;
+        request.requested_quantity = goods_total;
+        request.requested_goods_total = goods_total;
+        const size_t copied = std::min(good_ids.size(),
+            static_cast<size_t>(RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY));
+        for (size_t i = 0; i < copied; ++i) {
+            request.good_ids[i] = good_ids[i];
+            request.good_quantities[i] = treasury_quantities[i];
+            ++request.good_count;
+        }
+        if (request.good_count > 0) request.good_id = request.good_ids[0];
+        std::string peer_error;
+        if (!_simulation_host->prepare_worker_cohort_cash(request, peer_error) ||
+            !service_country_economy_asset_peer(
+                RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY, peer_error)) {
+            error = peer_error.empty()
+                ? "country_treasury_peer_prepare_failed" : peer_error;
+            return false;
+        }
+        RuntimeEconomyAssetResult terminal;
+        if (!_simulation_host->finish_worker_country_asset(
+                request.request_id, terminal, peer_error) ||
+            terminal.code != RuntimeEconomyAssetResultCode::COMPLETED) {
+            error = peer_error.empty()
+                ? "country_treasury_peer_not_completed" : peer_error;
+            return false;
+        }
+        treasury_peer_committed = true;
+        peer_committed_cash = terminal.committed_cash;
+        error.clear();
+    } else {
+        const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
+                static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+                country_handle, cash, goods_total, good_ids, treasury_quantities,
+                error);
+        if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
+            // Treasury spend must not silently create construction/canal without
+            // paying. Reject the coordinator so callers soft-fail the command.
+            committed_cash = 0;
+            return false;
+        }
+        if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
+            return false;
     }
-    if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
-        return false;
 
     std::vector<int32_t> living_merchants;
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
@@ -3900,55 +3959,62 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         return false;
     }
 
-    godot::PackedInt32Array ids;
-    godot::PackedInt64Array quantities;
-    ids.resize(static_cast<int64_t>(good_ids.size()));
-    quantities.resize(static_cast<int64_t>(treasury_quantities.size()));
-    for (int64_t i = 0; i < ids.size(); ++i) {
-        ids.set(i, good_ids[static_cast<size_t>(i)]);
-        quantities.set(i, treasury_quantities[static_cast<size_t>(i)]);
-    }
-    const godot::Dictionary begun = _country_runtime->begin_economy_treasury_spend(
-        country_handle, ids, quantities, cash, _epoch_id.get(),
-        static_cast<int32_t>(_stage));
-    if (!static_cast<bool>(begun.get("ok", false))) {
-        error = String(begun.get("code", "country_treasury_peer_country_rejected"))
-            .utf8().get_data();
-        return false;
-    }
-    const uint64_t transaction_id = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("transaction_id", 0)));
-    const uint64_t session_epoch = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("session_epoch", 0)));
-    const uint64_t country_generation = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("country_generation", 0)));
+    int64_t actual_cash = cash;
+    uint64_t transaction_id = 0;
+    uint64_t session_epoch = 0;
+    uint64_t country_generation = 0;
     const uint64_t peer_generation = _committed_generation;
-    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
-        peer_generation == 0) {
-        error = "country_treasury_peer_identity_invalid";
-        return false;
+    if (!treasury_peer_committed) {
+        godot::PackedInt32Array ids;
+        godot::PackedInt64Array quantities;
+        ids.resize(static_cast<int64_t>(good_ids.size()));
+        quantities.resize(static_cast<int64_t>(treasury_quantities.size()));
+        for (int64_t i = 0; i < ids.size(); ++i) {
+            ids.set(i, good_ids[static_cast<size_t>(i)]);
+            quantities.set(i, treasury_quantities[static_cast<size_t>(i)]);
+        }
+        const godot::Dictionary begun = _country_runtime->begin_economy_treasury_spend(
+            country_handle, ids, quantities, cash, _epoch_id.get(),
+            static_cast<int32_t>(_stage));
+        if (!static_cast<bool>(begun.get("ok", false))) {
+            error = String(begun.get("code", "country_treasury_peer_country_rejected"))
+                .utf8().get_data();
+            return false;
+        }
+        transaction_id = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("transaction_id", 0)));
+        session_epoch = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("session_epoch", 0)));
+        country_generation = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("country_generation", 0)));
+        if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
+            peer_generation == 0) {
+            error = "country_treasury_peer_identity_invalid";
+            return false;
+        }
+        const godot::Dictionary prepared =
+            _country_runtime->acknowledge_economy_asset_peer_prepared(
+                transaction_id, session_epoch, country_generation, peer_generation,
+                true, String());
+        if (!static_cast<bool>(prepared.get("ok", false))) {
+            error = "country_treasury_peer_prepare_failed";
+            return false;
+        }
+        const godot::Dictionary commit =
+            _country_runtime->commit_economy_asset_transaction(transaction_id);
+        if (!static_cast<bool>(commit.get("ok", false))) {
+            error = String(commit.get("code", "country_treasury_peer_country_commit_failed"))
+                .utf8().get_data();
+            return false;
+        }
+        actual_cash = static_cast<int64_t>(commit.get("committed_cash", cash));
+        if (actual_cash != cash) {
+            error = "country_treasury_peer_cash_commit_drift";
+            return false;
+        }
     }
-    const godot::Dictionary prepared =
-        _country_runtime->acknowledge_economy_asset_peer_prepared(
-            transaction_id, session_epoch, country_generation, peer_generation,
-            true, String());
-    if (!static_cast<bool>(prepared.get("ok", false))) {
-        error = "country_treasury_peer_prepare_failed";
-        return false;
-    }
-    const godot::Dictionary commit =
-        _country_runtime->commit_economy_asset_transaction(transaction_id);
-    if (!static_cast<bool>(commit.get("ok", false))) {
-        error = String(commit.get("code", "country_treasury_peer_country_commit_failed"))
-            .utf8().get_data();
-        return false;
-    }
-    const int64_t actual_cash = static_cast<int64_t>(
-        commit.get("committed_cash", cash));
-    if (actual_cash != cash) {
-        error = "country_treasury_peer_cash_commit_drift";
-        return false;
-    }
+    // Economy-owned legs are identical for both routes: Country only debits its
+    // treasury, it never touches the local market stock or merchant cohorts.
     for (size_t i = 0; i < good_ids.size(); ++i) {
         const size_t lane = market_store().index(market, good_ids[i]);
         audit_touch_market_lane(lane);
@@ -3970,16 +4036,18 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         trace_record_cashflow(merchant_cell, population_store().handle_for_slot(slot),
                               CASHFLOW_MERCHANT_BUSINESS, share, 0);
     }
-    const godot::Dictionary applied =
-        _country_runtime->acknowledge_economy_asset_peer_applied(
-            transaction_id, session_epoch, country_generation, peer_generation,
-            true, String());
-    if (!static_cast<bool>(applied.get("ok", false)) ||
-        String(applied.get("status_name", "")) != "completed") {
-        error = "country_treasury_peer_apply_ack_failed";
-        return false;
+    if (!treasury_peer_committed) {
+        const godot::Dictionary applied =
+            _country_runtime->acknowledge_economy_asset_peer_applied(
+                transaction_id, session_epoch, country_generation, peer_generation,
+                true, String());
+        if (!static_cast<bool>(applied.get("ok", false)) ||
+            String(applied.get("status_name", "")) != "completed") {
+            error = "country_treasury_peer_apply_ack_failed";
+            return false;
+        }
     }
-    committed_cash = actual_cash;
+    committed_cash = treasury_peer_committed ? peer_committed_cash : actual_cash;
     return true;
 }
 
@@ -18907,7 +18975,16 @@ bool NativeEconomyRuntime::family_free_building_resources_legal(
          ++target_edge) {
         const ResourceAmount &target = _building_resources[
             reward_type.resource_begin + target_edge];
-        if (target.mode != 0 || target.quantity <= 0) continue;
+        // Open access (resource_safe_harvest_q16 == 0) has no administrative
+        // harvest budget: renewable_safe_harvest() deliberately returns 0 in
+        // that mode, so gating on it would reject EVERY extract building even
+        // on a cell with a full timber reserve. Mirror the investment gate
+        // (economy_runtime_building_investment.cpp) and skip budget accounting
+        // here; production-side availability still scales with the cell's
+        // remaining stock via the CPUE/density path. When a profile later
+        // enables managed harvest, this gate resumes automatically.
+        if (target.mode != 0 || target.quantity <= 0 ||
+                _resource_safe_harvest_q16.get() <= 0) continue;
         if (target.resource_id < 0 || target.resource_id >=
                 static_cast<int32_t>(_resource_ids.size())) {
             return false;

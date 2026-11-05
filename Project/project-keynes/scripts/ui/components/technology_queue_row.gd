@@ -127,6 +127,7 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 		return null
 	var preview := DragPreviewScene.instantiate() as Label
 	preview.text = display_name
+	preview.custom_minimum_size = Vector2(160.0, 24.0)
 	set_drag_preview(preview)
 	return {
 		"type": "technology_queue_item",

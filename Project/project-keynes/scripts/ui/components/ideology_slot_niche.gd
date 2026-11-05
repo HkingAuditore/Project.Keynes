@@ -207,7 +207,6 @@ func _init() -> void:
 
 
 func _ready() -> void:
-	_apply_surface()
 	mouse_entered.connect(_set_hover.bind(true))
 	mouse_exited.connect(_set_hover.bind(false))
 
@@ -249,7 +248,6 @@ func configure(niche_kind: int, is_empty: bool, compact: bool) -> void:
 	_queue_effect_layout()
 	_apply_visibility()
 	theme_type_variation = &"PKPaperNote" if empty else &"PKPaperCard"
-	_apply_surface()
 
 
 func set_empty_count(count: int, milestone := "") -> void:
@@ -498,12 +496,6 @@ func _set_hover(on: bool) -> void:
 	_hover_tween.tween_property(_rail, "glow", 1.0 if on else 0.0, 0.15)
 	_hover_tween.tween_property(self, "self_modulate",
 		Color(1.025, 1.015, 0.98) if on else Color.WHITE, 0.15)
-
-
-func _apply_surface() -> void:
-	add_theme_stylebox_override("panel", ArtScript.paper_style(0.0,
-		(Color(0.96, 0.94, 0.87) if empty else Color.WHITE) if kind == 1
-		else (Color(0.91, 0.93, 0.83) if empty else Color(1.0, 0.96, 0.85))))
 
 
 func _make_custom_tooltip(for_text: String) -> Object:

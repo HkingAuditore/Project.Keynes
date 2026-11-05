@@ -44,6 +44,8 @@ func _init() -> void:
 	_test_channel_slider_basics()
 	_test_ceiling_clamps_drag()
 	await _test_fiscal_page_mounts()
+	await _test_technology_slider_and_three_way_ceiling()
+	await _test_auto_channels_stay_unpinned()
 	await _test_three_way_sum_constraint()
 	await _test_all_paused_copy()
 	await _test_commit_carries_four_shares()
@@ -135,6 +137,67 @@ func _test_fiscal_page_mounts() -> void:
 		page.colonization_slider() != null
 		and page.colonization_slider().get_parent()
 			== page.section_body("colonization"))
+	page.queue_free()
+
+
+func _test_technology_slider_and_three_way_ceiling() -> void:
+	var controller := ControllerStub.new()
+	controller.policy = {"treasury_share_bp": 200, "research_share_bp": 5000,
+		"era_share_bp": 2000, "colonization_share_bp": 1000}
+	var page := _make_page(controller)
+	page.set_model(_model({"available": true, "policy_enabled": true,
+		"treasury_share_bp": 200, "research_share_bp": 5000,
+		"national_daily_budget": 20000000, "research_daily_budget": 10000000,
+		"other_daily_budget": 10000000, "era_active": true,
+		"era_daily_budget": 4000000, "colonization_daily_budget": 2000000,
+		"era_share_bp": 2000, "colonization_share_bp": 1000}), true)
+	await process_frame
+	var technology: Control = page.technology_slider()
+	_expect("fiscal page mounts a writable technology slider in its own section",
+		technology != null and technology.get_parent() == page.section_body("technology"))
+	_expect("fiscal page mounts the fixed allocation ribbon", page.ribbon() != null)
+	if technology == null:
+		page.queue_free()
+		return
+	# 100% - 时代 20% - 开拓 10% = 70%；三条通道现在互相收窄，不只是两条。
+	_expect("technology ceiling leaves only the unallocated remainder",
+		technology.effective_max_bp() == 7000)
+	_expect("era ceiling accounts for research and colonization",
+		page.era_slider().effective_max_bp() == 4000)
+	_expect("colonization ceiling accounts for research and era",
+		page.colonization_slider().effective_max_bp() == 3000)
+	var captured: Array = []
+	page.procurement_committed.connect(
+		func(_t: int, r: int, e: int, c: int) -> void:
+			captured.append({"r": r, "e": e, "c": c}))
+	technology.set_channel_state(7000, 20000000, true, true, 7000, false)
+	technology.share_committed.emit(7000)
+	_expect("committing technology carries the new research share and both channels",
+		captured.size() == 1 and int(captured[0].r) == 7000
+		and int(captured[0].e) == 2000 and int(captured[0].c) == 1000)
+	page.queue_free()
+
+
+func _test_auto_channels_stay_unpinned() -> void:
+	var controller := ControllerStub.new()
+	controller.policy = {"treasury_share_bp": 200, "research_share_bp": 4000,
+		"era_share_bp": -1, "colonization_share_bp": -1}
+	var page := _make_page(controller)
+	page.set_model(_model({"available": true, "policy_enabled": true,
+		"treasury_share_bp": 200, "research_share_bp": 4000,
+		"national_daily_budget": 20000000, "research_daily_budget": 8000000,
+		"other_daily_budget": 12000000, "era_active": true,
+		"era_daily_budget": 6000000, "colonization_daily_budget": 6000000,
+		"era_share_bp": -1, "colonization_share_bp": -1}), true)
+	await process_frame
+	var captured: Array = []
+	page.procurement_committed.connect(
+		func(_t: int, _r: int, e: int, c: int) -> void:
+			captured.append({"e": e, "c": c}))
+	page.technology_slider().share_committed.emit(3500)
+	_expect("auto channels keep -1 instead of being pinned to their derived share",
+		captured.size() == 1 and int(captured[0].e) == -1
+		and int(captured[0].c) == -1)
 	page.queue_free()
 
 

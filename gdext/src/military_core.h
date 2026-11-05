@@ -42,7 +42,11 @@ constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
 // v2: state buildings are counted through the economy ledger (kind-3 rows)
 // instead of a cumulative barracks/fort/college cache. v1 streams still load
 // (backward-compatible) and fold their cache into the ledger on restore.
-constexpr uint32_t PKMI_VERSION = 2u;
+// v3: a training order no longer relabels its garrison lot on submission, and
+// carries the *actually delivered* equipment quality / per-slot coverage. Old
+// streams are rejected: their in-flight lots already have the target unit type
+// and their orders carry only the policy-requested quality.
+constexpr uint32_t PKMI_VERSION = 3u;
 constexpr int32_t MILITARY_MAX_UNIT_TYPES = 64;
 constexpr int32_t MILITARY_MAX_EQUIP_SLOTS = 4;
 constexpr int32_t MILITARY_MAX_SUPPLY_CLASSES = 6;
@@ -222,7 +226,9 @@ struct MilitaryTrainingOrder {
     int32_t days_done = 0;
     uint8_t equipment_ready = 0;
     uint8_t manual = 0;
-    int16_t quality_q8 = 256;
+    int16_t quality_q8 = 256;          // requested/policy quality (q8)
+    int16_t delivered_quality_q8 = 0;  // weakest actually delivered slot (q8), 0 = none yet
+    uint64_t equipped_slot_mask = 0;   // one bit per delivered equipment category
 };
 
 struct MilitaryArmyStore {
@@ -281,7 +287,9 @@ struct MilitaryShipment {
     uint64_t dest_handle = 0;   // army handle / training order id
     int32_t origin_cell = -1;
     int32_t current_cell = -1;
-    int32_t good = -1;
+    int32_t good = -1;                 // -1-category pseudo id for equipment rows
+    int32_t real_good = -1;            // economy good id actually bought (equipment)
+    int8_t quality = 0;                // delivered quality tier (1..5) for equipment
     int64_t qty = 0;
     int64_t value = 0;          // MONEY_SCALE paid
     int64_t departure_day = 0;

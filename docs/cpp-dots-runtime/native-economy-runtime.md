@@ -1922,7 +1922,11 @@ Endogenous investment counts installed, pending, and same-review portfolio
 extraction before approving another collector. Renewable candidates must fit the
 daily safe yield; non-renewables must fit `reserve / resource_min_horizon_days`.
 Setting `resource_safe_harvest_q16=0` explicitly disables these gates for isolated
-fixtures and compatibility tests.
+fixtures and compatibility tests. The same open-access short-circuit must be kept in
+`family_free_building_resources_legal` (construction quotes and sponsored builds):
+without it the zero safe yield is used as a hard daily budget and every `extract`
+building is rejected as `construction_resource_unavailable`, even on a cell with a
+full standing stock.
 
 Resource CSV rows keep the existing schema. `safe_yield` is now the local,
 reserve-responsive daily value rather than capacity-only potential. For a renewable,

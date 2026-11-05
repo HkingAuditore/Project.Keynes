@@ -1,25 +1,30 @@
 extends Control
 class_name FiscalBudgetPage
 
-## 财政预算页：把所有可调的国家支出通道收在一张卷宗里。
+## 财政预算卷宗：所有可调的国家支出通道收在一张卷宗里，直接挂在国库页。
 ##
-## 页面本身只负责分区与滚动；每个分区是一张撕边纸（BudgetSection），
-## 内部控件由后续接入的份额滑条填充。分区只在页签切换时重建一次，
-## 每日 tick 走 refresh_live()，只改读数文本，不动节点树——这样快进时
-## 玩家手里的滑条不会被销毁重建。
+## 版面分三层，都是为了把「两个额度池」讲清楚：
+##  1. 顶部固定纸带（BudgetRibbon）：国家购买每日总额、共同的 100% 分配带、
+##     军事独立信封。滚动分区时它不跟着走，玩家随时能看到还剩多少额度。
+##  2. 左栏「共同额度」：国库份额 + 科技 / 时代收购 / 开拓三条滑条，三者之和
+##     不得超过 100%，可拖上限互相收窄。
+##  3. 右栏「独立信封」：军事预算板块与口径说明便笺。
+##
+## 页面只发意图，不经手命令；分区只在首次构建时生成，每日 tick 走
+## refresh_live() 只改读数文本，玩家手里的滑条不会被销毁重建。
 
 signal status_changed(text: String, warn: bool)
 ## 国家购买份额提交意图：由工作区统一经 PlayerController 提交，财政页不直接下命令。
 ## era / colonization 传 -1 表示"沿用原生自动分配"，本次不改写该通道。
 signal procurement_committed(treasury_share_bp: int, research_share_bp: int,
 	era_share_bp: int, colonization_share_bp: int)
-## 军事预算提交意图：`-1` 表示该项本次不改（原生按未传入项沿用当前值校验
-## 三项份额之和）。与 procurement_committed 一样只发意图，不下命令。
+## 军事预算提交意图：`-1` 表示该项本次不改。
 signal military_budget_committed(total_bp: int, wage_bp: int, upkeep_bp: int,
 	procurement_bp: int)
 
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const BudgetSectionScript = preload("res://scripts/ui/components/budget_section.gd")
+const BudgetRibbonScript = preload("res://scripts/ui/components/budget_ribbon.gd")
 const NationalProcurementSliderScript = preload(
 	"res://scripts/ui/components/national_procurement_slider.gd")
 const ChannelShareSliderScript = preload(
@@ -34,13 +39,15 @@ const SECTION_COLONIZATION := "colonization"
 const SECTION_MILITARY := "military"
 const SECTION_ORDER := [SECTION_NATIONAL, SECTION_TECHNOLOGY, SECTION_ERA,
 	SECTION_COLONIZATION, SECTION_MILITARY]
+const POOL_SECTIONS := [SECTION_NATIONAL, SECTION_TECHNOLOGY,
+	SECTION_ERA, SECTION_COLONIZATION]
 
 const SECTION_META := {
 	"national": {"title": "国家购买总额", "icon": &"metric.treasury",
 		"tone": UITokens.DOSSIER_BRASS,
 		"note": "每日从国库现金拨出，供科技、时代晋升与派遣共同使用"},
 	"technology": {"title": "科技", "icon": &"metric.technology",
-		"tone": UITokens.DOSSIER_SLATE, "note": "国家购买中投向科技值采购的份额"},
+		"tone": UITokens.DOSSIER_SLATE, "note": "共同额度中投向科技值采购的份额"},
 	"era": {"title": "时代收购", "icon": &"system.clock",
 		"tone": UITokens.DOSSIER_UMBER, "note": "升级时代所需物资的收购份额"},
 	"colonization": {"title": "开拓", "icon": &"metric.territory",
@@ -49,23 +56,35 @@ const SECTION_META := {
 		"tone": UITokens.DOSSIER_OXBLOOD,
 		"note": "招募本身不拨款；花销落在军饷、维护与装备给养"},
 }
+const POOL_TAG_TEXT := "共同额度 · 科技 / 时代收购 / 开拓 合计 100%"
+const MILITARY_TAG_TEXT := "独立信封 · 军饷 / 维护 / 装备给养"
+## 「两个池互不相加」直接画在顶部纸带的分栏与右列脚注里，不再另占一张纸：
+## 右栏军事板块本身就已经很高，再挂便笺会把四条共同额度挤回首屏之外。
 
 const PAD_X := 2.0
 const PAD_TOP := 2.0
 const PAD_BOTTOM := 8.0
+const COLUMN_SEPARATION := 12.0
 
+var _root: VBoxContainer = null
+var _ribbon: Control = null
 var _scroll: ScrollContainer = null
-var _column: VBoxContainer = null
+var _columns: HBoxContainer = null
+var _pool_group: VBoxContainer = null
+## 共同额度四块撕纸排成 2×2：桌面一屏能同时看到四条滑条，窄屏退回单列。
+var _pool_grid: GridContainer = null
+var _military_group: VBoxContainer = null
 var _sections: Dictionary = {}
 var _model: Dictionary = {}
 var _built := false
 var _compact := false
-## 国家购买滑条：财政页顶部的第一块，宿主经 PlayerController 提交政策。
+var _ribbon_signature := ""
+## 国家购买滑条：共同额度池的总闸门。
 var _national_slider: Control = null
-## 时代收购 / 开拓 两条通道份额滑条（满量程为国家购买总额的 100%）。
+## 科技 / 时代收购 / 开拓 三条通道份额滑条，共享同一个 100% 池。
+var _technology_slider: Control = null
 var _era_slider: Control = null
 var _colonization_slider: Control = null
-## 军事只读实付板块（第二层接入预算信封前不可编辑）。
 var _military_block: Control = null
 var _player_controller = null
 ## 提交成功但快照尚未反映的政策，避免刷新把滑条弹回旧值。
@@ -87,13 +106,22 @@ func _ready() -> void:
 func _build() -> void:
 	_built = true
 	mouse_filter = Control.MOUSE_FILTER_PASS
+	_root = VBoxContainer.new()
+	_root.name = "Root"
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_PASS
+	_root.add_theme_constant_override("separation", 6)
+	add_child(_root)
+	_ribbon = BudgetRibbonScript.new() as Control
+	_ribbon.name = "Ribbon"
+	_root.add_child(_ribbon)
 	_scroll = ScrollContainer.new()
 	_scroll.name = "Scroll"
-	_scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# 横向滚动关掉：撕边纸在任何宽度下都按容器宽度重画，多出来的内容只能向下排。
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# 横向滚动关掉：撕边纸在任何宽度下都按容器宽度重画。
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	add_child(_scroll)
+	_root.add_child(_scroll)
 	var pad := MarginContainer.new()
 	pad.name = "Pad"
 	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -102,11 +130,11 @@ func _build() -> void:
 	pad.add_theme_constant_override("margin_right", int(PAD_X))
 	pad.add_theme_constant_override("margin_bottom", int(PAD_BOTTOM))
 	_scroll.add_child(pad)
-	_column = VBoxContainer.new()
-	_column.name = "Sections"
-	_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_column.add_theme_constant_override("separation", 10)
-	pad.add_child(_column)
+	_columns = HBoxContainer.new()
+	_columns.name = "Columns"
+	_columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_columns.add_theme_constant_override("separation", int(COLUMN_SEPARATION))
+	pad.add_child(_columns)
 
 
 ## 注入玩家会话：财政页自身不提交命令，只把滑条意图转成信号交给工作区。
@@ -115,7 +143,6 @@ func set_player_controller(controller) -> void:
 
 
 ## 提交成功后的本地覆盖：让滑条在原生快照跟上之前保持玩家刚设的值。
-## era/colonization 传 -1 表示该通道未被本次提交改动，不覆盖。
 func set_local_policy(treasury_share_bp: int, research_share_bp: int,
 		era_share_bp: int = -1, colonization_share_bp: int = -1) -> void:
 	_local_policy = {
@@ -128,23 +155,33 @@ func set_local_policy(treasury_share_bp: int, research_share_bp: int,
 		_local_policy["colonization_share_bp"] = colonization_share_bp
 
 
-## 财政页顶部的国家购买滑条（尚未构建时为 null）。
+## 命令提交失败时清掉乐观覆盖，让刷新把滑条退回原生真实政策。
+func clear_local_policy() -> void:
+	_local_policy.clear()
+	_ribbon_signature = ""
+
+
 func national_slider() -> Control:
 	return _national_slider
 
 
-## 时代收购份额滑条（尚未构建时为 null）。
+## 科技份额滑条（尚未构建时为 null）。
+func technology_slider() -> Control:
+	return _technology_slider
+
+
 func era_slider() -> Control:
 	return _era_slider
 
 
-## 开拓（派遣储备）份额滑条（尚未构建时为 null）。
 func colonization_slider() -> Control:
 	return _colonization_slider
 
 
-## 军事预算提交成功后调用：让滑条在原生快照跟上之前保持玩家刚设的值。
-## 只覆盖本次真正提交了的项（`< 0` 的项保持原样，因为玩家没碰它）。
+func ribbon() -> Control:
+	return _ribbon
+
+
 func set_local_military_budget(total_bp: int, wage_bp: int = -1,
 		upkeep_bp: int = -1, procurement_bp: int = -1) -> void:
 	if total_bp >= 0:
@@ -157,7 +194,6 @@ func set_local_military_budget(total_bp: int, wage_bp: int = -1,
 		_military_local_budget["budget_procurement_bp"] = procurement_bp
 
 
-## 军事只读实付板块（尚未构建时为 null）。
 func military_block() -> Control:
 	return _military_block
 
@@ -179,23 +215,21 @@ func refresh_live(model: Dictionary) -> void:
 		return
 	for section_id in SECTION_ORDER:
 		_refresh_section_values(String(section_id))
+	_refresh_ribbon()
 
 
 func set_compact(compact: bool) -> void:
 	if not _built:
 		_ready()
 	_compact = compact
-	if _national_slider != null:
-		# 财政页的滑条恒为紧凑版（标题由板块头承担），不随页面档位切换。
-		_national_slider.set_condensed(true)
-	if _era_slider != null:
-		_era_slider.set_condensed(true)
-	if _colonization_slider != null:
-		_colonization_slider.set_condensed(true)
-	# 军事板块内的滑条在构建时已固定为紧凑档（标题由板块自身承担），
-	# 页面档位只影响撕纸板块容器，不再逐个下推。
+	# 财政页的滑条恒为紧凑版（标题由板块头承担），不随页面档位切换。
+	for slider in [_national_slider, _technology_slider, _era_slider,
+			_colonization_slider]:
+		if slider != null:
+			slider.set_condensed(true)
 	for value in _sections.values():
 		((value as Dictionary).section as Control).set_condensed(compact)
+	_apply_columns_layout()
 
 
 func section(section_id: String) -> Control:
@@ -225,20 +259,26 @@ func section_body(section_id: String) -> VBoxContainer:
 
 
 func _rebuild_sections() -> void:
-	for child in _column.get_children():
-		_column.remove_child(child)
+	for child in _columns.get_children():
+		_columns.remove_child(child)
 		child.queue_free()
 	_sections.clear()
 	_national_slider = null
+	_technology_slider = null
 	_era_slider = null
 	_colonization_slider = null
 	_military_block = null
+	_pool_grid = null
+	_pool_group = _make_group("PoolGroup", POOL_TAG_TEXT, UITokens.DOSSIER_BRASS, true)
+	_military_group = _make_group("MilitaryGroup", MILITARY_TAG_TEXT,
+		UITokens.DOSSIER_OXBLOOD, false)
 	for section_id in SECTION_ORDER:
 		var meta: Dictionary = SECTION_META[section_id]
 		var section := BudgetSectionScript.new() as Control
 		section.name = "Section_%s" % String(section_id)
 		section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_column.add_child(section)
+		section.custom_minimum_size = Vector2(220.0, 0.0)
+		_group_for(String(section_id)).add_child(section)
 		section.configure(String(meta.title), meta.icon, meta.tone, String(meta.note))
 		section.set_condensed(_compact)
 		var entry := {
@@ -250,12 +290,70 @@ func _rebuild_sections() -> void:
 		}
 		_sections[String(section_id)] = entry
 		_build_section_body(String(section_id), entry)
+	_apply_columns_layout()
+	_wire_focus_chain()
 	_refresh_section_values(SECTION_NATIONAL)
 
 
-## 各分区的正文内容。国家购买分区经由通用份额滑条承载国库总额，
-## 时代收购与开拓分区各挂一条通道份额滑条（满量程为国家购买总额的 100%），
-## 军事分区挂只读实付板块，科技分区先铺读数占位。
+func _make_group(name: String, tag_text: String, tone: Color,
+		with_grid: bool) -> VBoxContainer:
+	var group := VBoxContainer.new()
+	group.name = name
+	group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	group.add_theme_constant_override("separation", 8)
+	_columns.add_child(group)
+	var tag := BudgetRibbonScript.GroupTag.new() as Control
+	tag.name = "GroupTag"
+	tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tag.configure(tag_text, tone)
+	group.add_child(tag)
+	if with_grid:
+		_pool_grid = GridContainer.new()
+		_pool_grid.name = "PoolGrid"
+		_pool_grid.columns = 2
+		_pool_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_pool_grid.add_theme_constant_override("h_separation", 8)
+		_pool_grid.add_theme_constant_override("v_separation", 8)
+		group.add_child(_pool_grid)
+	return group
+
+
+func _group_for(section_id: String) -> Control:
+	return _pool_grid if POOL_SECTIONS.has(section_id) else _military_group
+
+
+func _apply_columns_layout() -> void:
+	if _pool_group == null or _military_group == null:
+		return
+	# 宽屏左栏更宽：四条滑条要能一眼扫完；窄屏收敛成接近等比，避免右栏被挤爆。
+	_pool_group.size_flags_stretch_ratio = 3.0 if not _compact else 1.5
+	_military_group.size_flags_stretch_ratio = 2.0 if not _compact else 1.0
+	if _pool_grid != null:
+		_pool_grid.columns = 2 if not _compact else 1
+
+
+## 键盘 / 手柄：四条滑条串成一条纵向链，Tab 与方向键都沿版面顺序走。
+func _wire_focus_chain() -> void:
+	var chain: Array = []
+	for slider in [_national_slider, _technology_slider, _era_slider,
+			_colonization_slider]:
+		if slider != null:
+			chain.append(slider)
+	# focus_neighbor_* 存的是 NodePath，节点必须已在树里；测试里 set_model
+	# 会赶在首帧布局之前调用，此时退回 Godot 的自动空间邻居即可。
+	for item in chain:
+		if not (item as Control).is_inside_tree():
+			return
+	for index in range(chain.size()):
+		var control := chain[index] as Control
+		if index > 0:
+			control.focus_neighbor_top = (chain[index - 1] as Control).get_path()
+		if index < chain.size() - 1:
+			control.focus_neighbor_bottom = (chain[index + 1] as Control).get_path()
+
+
+## 各分区正文：共同额度池里每条通道挂一条份额滑条；军事挂预算板块；
+## 每个分区底下留一行小字说明特殊状态（暂停 / 自动分配 / 无待办需求）。
 func _build_section_body(section_id: String, entry: Dictionary) -> void:
 	var body := entry.body as VBoxContainer
 	if body == null:
@@ -263,29 +361,18 @@ func _build_section_body(section_id: String, entry: Dictionary) -> void:
 	if section_id == SECTION_NATIONAL:
 		_build_national_slider(body)
 		return
-	if section_id == SECTION_ERA or section_id == SECTION_COLONIZATION:
+	if section_id in [SECTION_TECHNOLOGY, SECTION_ERA, SECTION_COLONIZATION]:
 		_build_channel_slider(section_id, body, entry)
 		return
 	if section_id == SECTION_MILITARY:
 		_build_military_block(body, entry)
 		return
-	var line := Label.new()
-	line.name = "Detail"
-	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	line.add_theme_font_override("font", UITokens.dossier_font("sans"))
-	line.add_theme_font_size_override("font_size", 14)
-	line.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
-	body.add_child(line)
-	entry["detail_label"] = line
 
 
 func _build_national_slider(body: VBoxContainer) -> void:
 	var slider := NationalProcurementSliderScript.new() as Control
 	slider.name = "NationalSlider"
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# 板块头已经写了标题与汇总金额，滑条这里只留读数与轨道，不再重复标题行。
-	# 因此财政页内的滑条恒为紧凑版，与页面本身的紧凑档无关。
 	slider.set_condensed(true)
 	slider.policy_committed.connect(_on_national_committed)
 	body.add_child(slider)
@@ -295,25 +382,24 @@ func _build_national_slider(body: VBoxContainer) -> void:
 func _build_channel_slider(section_id: String, body: VBoxContainer,
 		entry: Dictionary) -> void:
 	var slider := ChannelShareSliderScript.new() as Control
-	slider.name = "EraSlider" if section_id == SECTION_ERA else "ColonizationSlider"
+	slider.name = "%sSlider" % String(section_id).capitalize()
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.set_condensed(true)
-	slider.share_committed.connect(_on_channel_committed.bind(section_id))
+	match section_id:
+		SECTION_TECHNOLOGY:
+			slider.configure_channel("科技份额", &"metric.technology")
+			_technology_slider = slider
+			slider.share_committed.connect(_on_technology_committed)
+		SECTION_ERA:
+			slider.configure_channel("时代收购份额", &"system.clock")
+			_era_slider = slider
+			slider.share_committed.connect(_on_channel_committed.bind(section_id))
+		_:
+			slider.configure_channel("开拓份额", &"metric.territory")
+			_colonization_slider = slider
+			slider.share_committed.connect(_on_channel_committed.bind(section_id))
 	body.add_child(slider)
-	if section_id == SECTION_ERA:
-		_era_slider = slider
-	else:
-		_colonization_slider = slider
-	# 说明行：暂停态、自动分配、无待办需求这些语义只有一行文字说得清。
-	var line := Label.new()
-	line.name = "Detail"
-	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	line.add_theme_font_override("font", UITokens.dossier_font("sans"))
-	line.add_theme_font_size_override("font_size", 14)
-	line.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
-	body.add_child(line)
-	entry["detail_label"] = line
+	_add_detail_label(body, entry)
 
 
 func _build_military_block(body: VBoxContainer, entry: Dictionary) -> void:
@@ -323,15 +409,17 @@ func _build_military_block(body: VBoxContainer, entry: Dictionary) -> void:
 	block.budget_committed.connect(_on_military_budget_committed)
 	body.add_child(block)
 	_military_block = block
-	# 板块头右侧的读数与板块内三行同源，说明行放周期口径，避免玩家把 30 日累计
-	# 当成一天的花销。
+	_add_detail_label(body, entry)
+
+
+func _add_detail_label(body: VBoxContainer, entry: Dictionary) -> void:
 	var line := Label.new()
 	line.name = "Detail"
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	line.add_theme_font_override("font", UITokens.dossier_font("sans"))
-	line.add_theme_font_size_override("font_size", 14)
-	line.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
+	line.add_theme_font_size_override("font_size", 12)
+	line.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	body.add_child(line)
 	entry["detail_label"] = line
 
@@ -345,13 +433,21 @@ func _on_military_budget_committed(total_bp: int, wage_bp: int, upkeep_bp: int,
 func _on_national_committed(treasury_share_bp: int) -> void:
 	if _national_slider == null:
 		return
-	procurement_committed.emit(treasury_share_bp,
-		int(_national_slider.research_share_bp()),
+	procurement_committed.emit(treasury_share_bp, _research_share(),
 		int(_current_channel_share(SECTION_ERA)),
 		int(_current_channel_share(SECTION_COLONIZATION)))
 
 
-## 通道提交：国库/科技两项沿用当前滑条位置（本次没动），只改这一条通道。
+## 科技份额提交：另两条通道沿用当前值（自动分配的通道传 -1，不把它钉死）。
+func _on_technology_committed(share_bp: int) -> void:
+	if _national_slider == null:
+		return
+	procurement_committed.emit(int(_national_slider.treasury_share_bp()), share_bp,
+		int(_current_channel_share(SECTION_ERA)),
+		int(_current_channel_share(SECTION_COLONIZATION)))
+
+
+## 时代 / 开拓通道提交：只改这一条，其余三项沿用当前滑条位置。
 func _on_channel_committed(share_bp: int, section_id: String) -> void:
 	if _national_slider == null:
 		return
@@ -362,14 +458,24 @@ func _on_channel_committed(share_bp: int, section_id: String) -> void:
 	else:
 		colonization = share_bp
 	procurement_committed.emit(int(_national_slider.treasury_share_bp()),
-		int(_national_slider.research_share_bp()), era, colonization)
+		_research_share(), era, colonization)
 
 
-## 某条通道滑条当前显示的份额；-1 表示该通道仍沿用原生自动分配。
+## 科技份额的当前可见值；滑条未构建时退回解析出的政策值。
+func _research_share() -> int:
+	if _technology_slider != null:
+		return int(_technology_slider.share_bp())
+	return int(_channel_policy().research)
+
+
+## 某条通道滑条当前显示的份额；-1 表示该通道仍沿用原生自动分配
+## （自动通道显示的是从日额反推的位置，提交时必须保持 -1，否则会被钉成手动值）。
 func _current_channel_share(section_id: String) -> int:
 	var slider := _era_slider if section_id == SECTION_ERA \
 		else _colonization_slider
 	if slider == null:
+		return -1
+	if bool(slider.is_auto_allocated()):
 		return -1
 	return int(slider.share_bp())
 
@@ -384,94 +490,112 @@ func _refresh_section_values(section_id: String) -> void:
 		return
 	entry["signature"] = signature
 	var section := entry.section as Control
-	var detail := entry.get("detail_label") as Label
 	match section_id:
 		SECTION_NATIONAL:
 			section.set_value_text(_national_value_text())
 			_refresh_national_slider()
 		SECTION_TECHNOLOGY:
 			section.set_value_text(_share_value_text(SECTION_TECHNOLOGY))
-			if detail != null:
-				detail.text = _technology_detail_text()
+			_refresh_channel_sliders()
+			_set_detail(entry, _technology_detail_text())
 		SECTION_ERA:
 			section.set_value_text(_share_value_text(SECTION_ERA))
 			_refresh_channel_sliders()
-			if detail != null:
-				detail.text = _era_detail_text()
+			_set_detail(entry, _era_detail_text())
 		SECTION_COLONIZATION:
 			section.set_value_text(_share_value_text(SECTION_COLONIZATION))
 			_refresh_channel_sliders()
-			if detail != null:
-				detail.text = _colonization_detail_text()
+			_set_detail(entry, _colonization_detail_text())
 		SECTION_MILITARY:
 			section.set_value_text(_military_value_text())
 			if _military_block != null:
 				_military_block.set_state(_military_model(),
 					_military_editable())
-			if detail != null:
-				detail.text = _military_detail_text()
+			_set_detail(entry, _military_detail_text())
+
+
+## 说明行只在异常状态出现：正常运行时的日额已经画在滑条右侧读数里，
+## 再写一行只会把 2×2 网格的纸撑高、把第四块挤出首屏。
+func _set_detail(entry: Dictionary, text: String) -> void:
+	var detail := entry.get("detail_label") as Label
+	if detail == null:
+		return
+	if detail.text != text:
+		detail.text = text
+	detail.visible = not text.is_empty()
 
 
 func _section_signature(section_id: String) -> String:
 	var procurement: Dictionary = _model.get("procurement", {})
 	var treasury: Dictionary = _model.get("treasury", {})
-	# 军事模型含覆盖合并与现金补项，只有军事分区需要，别在别的分区白算一遍。
-	var military: Dictionary = _military_model() if section_id == SECTION_MILITARY \
-		else {}
-	# 通道签名要感知另外两项份额：三者互相约束可拖上限，任一变化都得重刷。
-	var policy: Dictionary = _channel_policy() if section_id == SECTION_ERA \
-		or section_id == SECTION_COLONIZATION else {}
-	match section_id:
-		SECTION_NATIONAL:
-			return "n:%d:%d:%d:%d:%d:%d:%d:%d" % [
-				int(procurement.get("treasury_share_bp", -1)),
-				int(procurement.get("research_share_bp", -1)),
-				int(procurement.get("national_daily_budget", 0)),
-				int(procurement.get("research_daily_budget", 0)),
-				int(procurement.get("era_daily_budget", 0)),
-				int(procurement.get("colonization_daily_budget", 0)),
-				int(treasury.get("cash", 0)),
-				1 if bool(procurement.get("available", false)) else 0]
-		SECTION_TECHNOLOGY:
-			return "t:%d:%d" % [int(procurement.get("research_share_bp", -1)),
-				int(procurement.get("research_daily_budget", 0))]
-		SECTION_ERA:
-			return "e:%d:%d:%d:%d:%d:%d" % [int(procurement.get("era_share_bp", -1)),
-				int(procurement.get("era_daily_budget", 0)),
-				1 if bool(procurement.get("era_active", false)) else 0,
-				int(policy.research), int(policy.colonization),
-				1 if bool(policy.colonization_auto) else 0]
-		SECTION_COLONIZATION:
-			return "c:%d:%d:%d:%d:%d" % [
-				int(procurement.get("colonization_share_bp", -1)),
-				int(procurement.get("colonization_daily_budget", 0)),
-				int(policy.research), int(policy.era),
-				1 if bool(policy.era_auto) else 0]
-		SECTION_MILITARY:
-			return "m:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
-				int(military.get("wage_paid_last_period", 0)),
-				int(military.get("maintenance_paid_last_period", 0)),
-				int(military.get("procurement_paid_last_period", 0)),
-				int(military.get("soldiers_training", 0)),
-				int(military.get("waiting_equipment", 0)),
-				1 if bool(military.get("available", false)) else 0,
-				1 if bool(military.get("envelope_enabled", false)) else 0,
-				int(military.get("budget_share_bp", 0)),
-				int(military.get("budget_wage_bp", 0)),
-				int(military.get("budget_upkeep_bp", 0)),
-				int(military.get("budget_procurement_bp", 0)),
-				int(military.get("envelope_daily", 0)),
-				int(military.get("wage_overspend", 0)),
-				int(military.get("upkeep_overspend", 0)),
-				int(military.get("wage_demand", 0)),
-				int(military.get("upkeep_demand", 0)),
-				int(military.get("procurement_deferred_units", 0))]
+	if POOL_SECTIONS.has(section_id):
+		# 三条通道互相约束可拖上限：任一变化都要让四块一起重刷，
+		# 否则玩家拖完科技，时代/开拓的上限还停在旧额度上。
+		var policy: Dictionary = _channel_policy()
+		return "p:%s:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+			section_id,
+			int(policy.research), int(policy.era), int(policy.colonization),
+			int(policy.base_daily),
+			1 if bool(policy.era_auto) else 0,
+			1 if bool(policy.colonization_auto) else 0,
+			1 if bool(procurement.get("era_active", false)) else 0,
+			int(procurement.get("research_daily_budget", 0)),
+			int(procurement.get("era_daily_budget", 0)),
+			int(procurement.get("colonization_daily_budget", 0)),
+			1 if bool(_model.get("available", false)) else 0,
+			1 if _procurement_enabled() else 0]
+	if section_id == SECTION_MILITARY:
+		var military: Dictionary = _military_model()
+		return "m:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+			int(military.get("wage_paid_last_period", 0)),
+			int(military.get("maintenance_paid_last_period", 0)),
+			int(military.get("procurement_paid_last_period", 0)),
+			int(military.get("soldiers_training", 0)),
+			int(military.get("waiting_equipment", 0)),
+			1 if bool(military.get("available", false)) else 0,
+			1 if bool(military.get("envelope_enabled", false)) else 0,
+			int(military.get("budget_share_bp", 0)),
+			int(military.get("budget_wage_bp", 0)),
+			int(military.get("budget_upkeep_bp", 0)),
+			int(military.get("budget_procurement_bp", 0)),
+			int(military.get("envelope_daily", 0)),
+			int(military.get("wage_overspend", 0)),
+			int(military.get("upkeep_overspend", 0)),
+			int(military.get("wage_demand", 0)),
+			int(military.get("upkeep_demand", 0)),
+			int(military.get("procurement_deferred_units", 0))]
 	return ""
+
+
+## 顶部纸带：滚动分区时它不动，所以每次刷新都要按最新政策重画。
+func _refresh_ribbon() -> void:
+	if _ribbon == null:
+		return
+	var policy: Dictionary = _channel_policy()
+	var military: Dictionary = _military_model()
+	var resolved: Dictionary = NationalProcurementSliderScript.resolve_policy(
+		_player_controller, _model.get("procurement", {}), _local_policy)
+	var signature := "r:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+		int(policy.base_daily), int(policy.research), int(policy.era),
+		int(policy.colonization),
+		int(resolved.get("treasury_share_bp", 0)),
+		int(military.get("envelope_daily", 0)),
+		1 if bool(military.get("envelope_enabled", false)) else 0,
+		1 if bool(_model.get("available", false)) else 0,
+		1 if _procurement_enabled() else 0]
+	if signature == _ribbon_signature:
+		return
+	_ribbon_signature = signature
+	_ribbon.set_state(int(policy.base_daily),
+		int(resolved.get("treasury_share_bp", 0)),
+		int(policy.research), int(policy.era), int(policy.colonization),
+		int(military.get("envelope_daily", 0)),
+		bool(military.get("envelope_enabled", false)),
+		bool(_model.get("available", false)))
 
 
 ## 军事分区的模型：补一项目国库现金，供预算滑条在拖动时估算日额；
 ## 并叠上玩家刚提交、快照尚未反映的份额覆盖。
-## 视图模型的军事段本身不含现金（它是军事快照的投影），现金在 treasury 段。
 func _military_model() -> Dictionary:
 	var military: Dictionary = (_model.get("military", {}) as Dictionary).duplicate()
 	var treasury: Dictionary = _model.get("treasury", {})
@@ -480,7 +604,6 @@ func _military_model() -> Dictionary:
 		military["country_cash"] = cash
 	if _military_local_budget.is_empty():
 		return military
-	# 快照已经反映本地提交时丢弃覆盖值，避免它一直盖住真实政策。
 	var settled := true
 	for key in _military_local_budget.keys():
 		if int(military.get(String(key), -1)) != int(_military_local_budget[key]):
@@ -491,15 +614,11 @@ func _military_model() -> Dictionary:
 		return military
 	for key in _military_local_budget.keys():
 		military[String(key)] = int(_military_local_budget[key])
-	# 覆盖了总份额就同时改判「是否启用」：拖到 0 应立刻显示未启用，
-	# 而不是等快照回来才从血红色褪成灰色。
 	if _military_local_budget.has("budget_share_bp"):
 		military["envelope_enabled"] = int(_military_local_budget["budget_share_bp"]) > 0
 	return military
 
 
-## 军事预算是否可编辑：需要玩家会话（命令要有出口）与可用快照。
-## 原生 DLL 缺席时快照 itself 会 available=false，此时整块已是占位态。
 func _military_editable() -> bool:
 	if _player_controller == null:
 		return false
@@ -517,19 +636,16 @@ func _procurement_enabled() -> bool:
 	return int(procurement.get("treasury_share_bp", 0)) > 0
 
 
-## 把当前模型推给国家购买滑条：政策优先取玩家会话，其次本地覆盖，再其次快照。
 func _refresh_national_slider() -> void:
 	if _national_slider == null:
 		return
 	var procurement: Dictionary = _model.get("procurement", {})
 	var policy: Dictionary = NationalProcurementSliderScript.resolve_policy(
 		_player_controller, procurement, _local_policy)
-	# 会话或快照已经反映本地提交后，丢弃本地覆盖值，避免它一直盖住真实政策。
 	if not _local_policy.is_empty() and String(policy.get("source", "")) != "local":
 		_local_policy.clear()
 	var treasury: Dictionary = _model.get("treasury", {})
 	var cash := int(treasury.get("cash", _model.get("cash", 0)))
-	# 原生快照缺席时仍可拖：日额按国库现金估算，滑条照常工作，只是分项实付不显示。
 	_national_slider.set_state(int(policy.get("treasury_share_bp", 0)),
 		int(policy.get("research_share_bp", 5000)), cash, procurement,
 		bool(_model.get("available", false)))
@@ -545,8 +661,8 @@ func _national_value_text() -> String:
 
 
 ## 三项份额（科技 / 时代收购 / 开拓）解析后的统一视图。
-## 三者基数相同（国家购买总额 national_daily），pct 一律落在 0..10000；
-## auto_* 标记该通道仍沿用原生自动分配。
+## 三者基数相同（国家购买总额 national_daily），一律落在 0..10000；
+## auto_* 标记该通道仍沿用原生自动分配，不占手动额度。
 func _channel_policy() -> Dictionary:
 	var procurement: Dictionary = _model.get("procurement", {})
 	var policy: Dictionary = NationalProcurementSliderScript.resolve_policy(
@@ -554,7 +670,6 @@ func _channel_policy() -> Dictionary:
 	var research := clampi(int(policy.get("research_share_bp", 5000)), 0, 10000)
 	var era := int(policy.get("era_share_bp", -1))
 	var colonization := int(policy.get("colonization_share_bp", -1))
-	# 自动分配时用快照里的实际日额反推占比，让滑条落在真实位置上。
 	var base := _national_daily_budget()
 	var era_auto := era < 0
 	var colonization_auto := colonization < 0
@@ -563,26 +678,24 @@ func _channel_policy() -> Dictionary:
 	if colonization_auto:
 		colonization = _derive_share(
 			int(procurement.get("colonization_daily_budget", 0)), base)
-	# 三项之和不得超过 100%：上限按"扣掉科技 + 另一条通道已手动定下的份额"算，
-	# 自动通道不占额度，避免一拖动就顺手把自动通道钉成固定值。
-	var era_ceiling := maxi(0, 10000 - research
-		- (0 if colonization_auto else clampi(colonization, 0, 10000)))
-	var colonization_ceiling := maxi(0, 10000 - research
-		- (0 if era_auto else clampi(era, 0, 10000)))
+	var era_manual := 0 if era_auto else clampi(era, 0, 10000)
+	var colonization_manual := 0 if colonization_auto \
+		else clampi(colonization, 0, 10000)
 	return {
 		"research": research,
 		"era": clampi(era, 0, 10000),
 		"colonization": clampi(colonization, 0, 10000),
 		"era_auto": era_auto,
 		"colonization_auto": colonization_auto,
-		"era_ceiling": era_ceiling,
-		"colonization_ceiling": colonization_ceiling,
+		# 三条通道都受同一条 100% 约束：科技也要被另外两条手动份额收窄。
+		"research_ceiling": maxi(0, 10000 - era_manual - colonization_manual),
+		"era_ceiling": maxi(0, 10000 - research - colonization_manual),
+		"colonization_ceiling": maxi(0, 10000 - research - era_manual),
 		"base_daily": base,
 		"all_paused": research <= 0 and era <= 0 and colonization <= 0,
 	}
 
 
-## 国家购买每日总额（MONEY_SCALE）；快照缺席时按国库现金 × 国库份额估算。
 func _national_daily_budget() -> int:
 	if not _procurement_enabled():
 		return 0
@@ -603,17 +716,21 @@ static func _derive_share(daily: int, base: int) -> int:
 	return clampi(int(round(float(daily) * 10000.0 / float(base))), 0, 10000)
 
 
-## 把份额推给两条通道滑条：可拖上限随其余两项实时收窄，拖到底就停在剩余额度上。
+## 把份额推给三条通道滑条：可拖上限随其余两项实时收窄。
 func _refresh_channel_sliders() -> void:
 	var policy := _channel_policy()
 	var interactive := bool(_model.get("available", false)) and _procurement_enabled()
 	var procurement: Dictionary = _model.get("procurement", {})
 	var era_active := bool(procurement.get("era_active", false))
+	if _technology_slider != null:
+		# 科技恒有需求（科技值采购不会因为没有项目就停摆）。
+		_technology_slider.set_channel_state(int(policy.research),
+			int(policy.base_daily), true, interactive,
+			int(policy.research_ceiling), false)
 	if _era_slider != null:
 		_era_slider.set_channel_state(int(policy.era), int(policy.base_daily),
 			era_active, interactive, int(policy.era_ceiling), bool(policy.era_auto))
 	if _colonization_slider != null:
-		# 开拓通道恒有需求（派遣储备不会因为没有目标就停摆）。
 		_colonization_slider.set_channel_state(int(policy.colonization),
 			int(policy.base_daily), true, interactive,
 			int(policy.colonization_ceiling), bool(policy.colonization_auto))
@@ -635,13 +752,11 @@ func _share_value_text(section_id: String) -> String:
 
 
 func _technology_detail_text() -> String:
-	var procurement: Dictionary = _model.get("procurement", {})
 	if not bool(_model.get("available", false)):
 		return "科技采购预算随国库账目一起待命。"
 	if not _procurement_enabled():
 		return "国家购买已关闭，科技值暂不采购。"
-	return "每日 %s 用于科技值采购" % _money(
-		int(procurement.get("research_daily_budget", 0)))
+	return ""
 
 
 func _era_detail_text() -> String:
@@ -656,10 +771,7 @@ func _era_detail_text() -> String:
 		return "当前没有待收购的时代物资，份额先记在这里，有待收购项目时生效。"
 	if int(policy.era) <= 0:
 		return "时代收购份额为 0，即使有需求也不采购。"
-	var suffix := "（自动分配）" if bool(policy.era_auto) else ""
-	return "每日 %s 用于升级时代物资%s" % [_money(
-		int((_model.get("procurement", {}) as Dictionary).get("era_daily_budget", 0))),
-		suffix]
+	return ""
 
 
 func _colonization_detail_text() -> String:
@@ -672,10 +784,7 @@ func _colonization_detail_text() -> String:
 		return "科技、时代收购与开拓份额均为 0，三条通道全部暂停采购。"
 	if int(policy.colonization) <= 0:
 		return "开拓份额为 0，派遣储备不再补充。"
-	var suffix := "（自动分配）" if bool(policy.colonization_auto) else ""
-	return "每日 %s 作为派遣储备%s" % [_money(
-		int((_model.get("procurement", {}) as Dictionary).get(
-			"colonization_daily_budget", 0))), suffix]
+	return ""
 
 
 func _military_value_text() -> String:

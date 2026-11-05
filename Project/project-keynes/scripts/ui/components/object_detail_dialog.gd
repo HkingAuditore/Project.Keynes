@@ -314,8 +314,8 @@ func _patch_tax_section(context_value: Variant, row: Dictionary) -> bool:
 	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
 	var hint := _tax_section.get_node("Hint") as Label
 	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
-		hint.visible = true
+		hint.text = String(context.get("reason", ""))
+		hint.visible = not hint.text.is_empty()
 	else:
 		hint.text = _tax_hint(_payload_kind)
 		hint.visible = true
@@ -438,15 +438,21 @@ func _facts_for_row(kind: String, row: Dictionary) -> Array:
 
 
 func _patch_fact_values(facts: Array) -> void:
-	if facts.is_empty() or _fact_value_labels.is_empty():
+	if _fact_value_labels.is_empty():
 		return
 	var count := mini(facts.size(), _fact_value_labels.size())
-	for index in range(count):
-		var fact: Dictionary = facts[index]
+	var overflow := facts.size() - _fact_value_labels.size()
+	for index in range(_fact_value_labels.size()):
 		var value := _fact_value_labels[index] as Label
 		if value == null or not is_instance_valid(value):
 			continue
+		value.visible = index < count
+		if index >= count:
+			continue
+		var fact: Dictionary = facts[index]
 		value.text = String(fact.get("value", "—"))
+		value.tooltip_text = ("另有 %d 项" % overflow) \
+			if (overflow > 0 and index == count - 1) else ""
 		value.add_theme_color_override("font_color",
 			_dossier_accent(fact.get("accent", UITokens.DOSSIER_INK)))
 
@@ -473,8 +479,8 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary,
 	var hint := _tax_section.get_node("Hint") as Label
 	hint.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
-		hint.visible = true
+		hint.text = String(context.get("reason", ""))
+		hint.visible = not hint.text.is_empty()
 	else:
 		hint.text = _tax_hint(kind)
 		hint.visible = true
@@ -602,6 +608,8 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 	var operations_page := root.get_node("%OperationsPage") as VBoxContainer
 	var notes := root.get_node("%Notes") as InspectorNoteList
 	var supply_demand_bar := root.get_node("%SupplyDemandBar") as DossierDivergingBar
+	# 与 DemandSupplyBars 同为本地供需读数，二选一渲染避免同值重复。
+	supply_demand_bar.visible = false
 	var demand_supply_bars := root.get_node("%DemandSupplyBars") as DossierBarList
 	var price_stock_bars := root.get_node("%PriceStockBars") as DossierBarList
 	var trade_flow_bar := root.get_node("%TradeFlowBar") as DossierDivergingBar
@@ -623,7 +631,6 @@ func _build_good_details(row: Dictionary, tax_context: Variant) -> void:
 	orders_table.set_columns(_trade_order_columns(), "", true)
 	orders_table.row_height = 28.0
 	orders_table.focus_mode = Control.FOCUS_NONE
-	orders_table.empty_text = "本地目前没有该物资的在途商队。"
 	orders_table.row_selected.connect(_on_trade_order_row_selected)
 	IconButton.apply(orders_prev, &"action.back", IconButton.MEDIUM, "上一页")
 	IconButton.apply(orders_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
@@ -738,10 +745,11 @@ func _apply_trade_orders(model_value: Variant) -> void:
 	if model.is_empty():
 		_trade_orders_signature = ""
 		_trade_orders_model = {}
-		table.empty_text = "本地目前没有该物资的在途商队。"
+		table.empty_text = ""
 		table.set_rows([])
 		if hint != null:
-			hint.text = "暂无贸易流水"
+			hint.text = ""
+			hint.visible = false
 		if footer != null:
 			footer.visible = false
 		return
@@ -765,7 +773,7 @@ func _apply_trade_orders(model_value: Variant) -> void:
 		return
 	_trade_orders_signature = signature
 	_trade_orders_model = model
-	table.empty_text = String(model.get("empty_text", "本地目前没有该物资的在途商队。"))
+	table.empty_text = String(model.get("empty_text", ""))
 	table.set_rows(model.get("rows", []))
 	if hint != null:
 		hint.text = String(model.get("hint", ""))
@@ -1000,7 +1008,8 @@ func _populate_inline_fact_grid(grid: GridContainer, facts: Array) -> void:
 		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 		var value := cell.get_node("Value") as Label
 		value.text = String(fact.get("value", "—"))
-		value.clip_text = false
+		value.clip_text = true
+		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		value.autowrap_mode = TextServer.AUTOWRAP_OFF
 		value.custom_minimum_size.y = 18
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
@@ -1173,11 +1182,7 @@ func _build_family_details(row: Dictionary) -> void:
 	elif effects_target == null:
 		effects_target = trigger_target
 	var people: Array = row.get("notable_person_rows", [])
-	if people.is_empty():
-		var empty_people := _add_muted_note("该家族目前没有重要人物。")
-		if people_target == null:
-			people_target = empty_people
-	else:
+	if not people.is_empty():
 		var notable_target := _add_rows_card("主要人物", "family.house", UITokens.DOSSIER_INK, people)
 		if people_target == null:
 			people_target = notable_target
@@ -1251,7 +1256,8 @@ func _add_fact_grid(facts: Array) -> Control:
 		label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 		var value := cell.get_node("Value") as Label
 		value.text = String(fact.get("value", "—"))
-		value.clip_text = false
+		value.clip_text = true
+		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		value.autowrap_mode = TextServer.AUTOWRAP_OFF
 		value.custom_minimum_size.y = 18
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))

@@ -337,6 +337,29 @@ int32_t category_of_good(const MilitaryCatalog &catalog, int32_t good) {
     return -1;
 }
 
+// v3: fold one delivered equipment batch into its training order. Orders are
+// matched by their stable id (the vector index compacts when orders finish),
+// and only become ready once EVERY equipment category of the target unit has
+// actually arrived. The weakest delivered tier sets the lot's final quality.
+void note_training_delivery(std::vector<MilitaryTrainingOrder> &orders,
+        const MilitaryCatalog &catalog, uint64_t order_id,
+        int32_t category, int32_t quality) {
+    if (order_id == 0) return;
+    for (MilitaryTrainingOrder &o : orders) {
+        if (o.id != order_id) continue;
+        if (category >= 0 && category < 64)
+            o.equipped_slot_mask |= (uint64_t{1} << category);
+        const int32_t q8 = clamp32(quality, 1, 5) * 256;
+        if (o.delivered_quality_q8 <= 0 || q8 < o.delivered_quality_q8)
+            o.delivered_quality_q8 = static_cast<int16_t>(q8);
+        if (o.to_unit >= 0 && o.to_unit < static_cast<int32_t>(catalog.units.size())) {
+            const uint64_t needed = equipment_slot_mask(catalog.units[(size_t)o.to_unit]);
+            o.equipment_ready = (o.equipped_slot_mask & needed) == needed ? 1 : 0;
+        }
+        return;
+    }
+}
+
 } // namespace mil
 
 using namespace mil;
@@ -1284,6 +1307,8 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 // Goods bought and the price paid (need units -> goods at the yield).
                 int64_t qty = take.units;
                 int64_t good_id = good_slot;
+                int32_t real_good = -1;
+                int32_t delivered_quality = 0;
                 if (e.cls >= 0) {
                     int32_t index = 0;
                     const std::vector<int32_t> &goods = _catalog.supply_goods[(size_t)e.cls];
@@ -1300,6 +1325,10 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                     if (qty <= 0) continue;
                 } else {
                     good_id = -1 - e.category;
+                    // v3: keep the good actually bought and its quality tier.
+                    // The pseudo id above stays for stock / intent compatibility.
+                    real_good = good_slot;
+                    delivered_quality = equip_good_quality(_catalog, real_good);
                 }
                 const int64_t price = _md_row_price[(size_t)take.row];
                 const int64_t cost = (price * qty) / MILITARY_GOODS_SCALE;
@@ -1331,6 +1360,14 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                     // Own-cell purchase arrives the same day, no convoy (sec 9.3).
                     stock_add(e.kind, h.holder, h.country, (int32_t)good_id, qty);
                     _ledger_received += qty;
+                    // v3: same-day equipment must count too; previously this
+                    // branch never set equipment_ready, so orders hung forever.
+                    if (e.kind == MILITARY_LOT_TRAINING && e.cls < 0
+                        && delivered_quality > 0 && h.holder >= 0
+                        && (size_t)h.holder < _training.size()) {
+                        note_training_delivery(_training, _catalog,
+                            _training[(size_t)h.holder].id, e.category, delivered_quality);
+                    }
                     continue;
                 }
                 MilitaryShipment shipment;
@@ -1343,6 +1380,13 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 shipment.origin_cell = market_cell;
                 shipment.current_cell = market_cell;
                 shipment.good = (int32_t)good_id;
+                shipment.real_good = real_good;
+                shipment.quality = static_cast<int8_t>(delivered_quality);
+                if (e.kind == MILITARY_LOT_TRAINING && h.holder >= 0
+                    && (size_t)h.holder < _training.size()) {
+                    // Stable order id, not the compacting vector index.
+                    shipment.dest_handle = _training[(size_t)h.holder].id;
+                }
                 shipment.qty = qty;
                 shipment.value = cost;
                 shipment.departure_day = digest.day;
@@ -1514,13 +1558,13 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
             _ledger_returned += shipment.qty;   // army gone: refund to treasury
             return false;
         }
-        stock_add(0, shipment.dest, slot, shipment.good, shipment.qty);
-        if (shipment.dest_kind == 2) {
-            for (size_t t = 0; t < _training.size(); ++t) {
-                if (_training[t].cell == shipment.dest && _training[t].country_slot == slot) {
-                    _training[t].equipment_ready = 1;
-                }
-            }
+        // Keep the stock under the same holder kind it was booked against, and
+        // fold delivered equipment into the exact training order (stable id).
+        stock_add(shipment.dest_kind, shipment.dest, slot, shipment.good, shipment.qty);
+        if (shipment.dest_kind == MILITARY_LOT_TRAINING && shipment.quality > 0) {
+            const int32_t category = -1 - shipment.good;
+            note_training_delivery(_training, _catalog, shipment.dest_handle,
+                                   category, (int32_t)shipment.quality);
         }
         return true;
     };

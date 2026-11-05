@@ -243,6 +243,32 @@ static func validate(catalog: Dictionary, economy_catalog: Dictionary,
 	var units: Array = compiled.get("units", [])
 	if units.size() > MAX_UNITS:
 		problems.append("unit count %d exceeds %d" % [units.size(), MAX_UNITS])
+	# A supply class with unit demand but no candidate goods can never settle:
+	# procurement (`military_core_logistics.cpp:1064`) and consumption (`:1787`)
+	# both short-circuit on the empty row, while `use.need` still counts it.
+	# Only `equipment` is allowed to stay empty (it uses the slot path).
+	for supply_class in [SUPPLY_FODDER, SUPPLY_AMMUNITION, SUPPLY_FUEL, SUPPLY_UPKEEP]:
+		if supply_class >= supply_goods.size():
+			continue
+		var row: PackedInt32Array = supply_goods[supply_class]
+		if not row.is_empty():
+			continue
+		var demanded := false
+		for unit_value in units:
+			var unit_row: Dictionary = unit_value
+			var idle: PackedFloat32Array = unit_row.get("supply_idle",
+				PackedFloat32Array())
+			var combat: PackedFloat32Array = unit_row.get("supply_combat",
+				PackedFloat32Array())
+			if supply_class < idle.size() and float(idle[supply_class]) > 0.0:
+				demanded = true
+			if supply_class < combat.size() and float(combat[supply_class]) > 0.0:
+				demanded = true
+			if demanded:
+				break
+		if demanded:
+			problems.append("supply class %s has demand but no candidate goods"
+				% SUPPLY_CLASS_IDS[supply_class])
 	var barracks := 0
 	for building in compiled.get("state_buildings", []):
 		if int((building as Dictionary).get("role", -1)) == ROLE_BARRACKS:
@@ -834,36 +860,59 @@ static func _compile_supply(raw_supply, good_index: Dictionary,
 		supply_yields.append(PackedInt32Array())
 	if ration_goods.size() != ration_yields.size() or ration_goods.is_empty():
 		return _fail("military_ration_candidates_invalid")
-	(supply_goods[SUPPLY_RATION] as PackedInt32Array).append_array(ration_goods)
-	(supply_yields[SUPPLY_RATION] as PackedInt32Array).append_array(ration_yields)
+	# Packed*Array is copy-on-write: mutating a row fetched out of an Array edits a
+	# temporary copy and leaves the stored row empty (all six candidate rows used to
+	# end up empty this way). Build each row locally, then assign it back whole.
+	var ration_row := PackedInt32Array()
+	ration_row.append_array(ration_goods)
+	supply_goods[SUPPLY_RATION] = ration_row
+	var ration_yield_row := PackedInt32Array()
+	ration_yield_row.append_array(ration_yields)
+	supply_yields[SUPPLY_RATION] = ration_yield_row
 	for supply_class in range(SUPPLY_CLASS_COUNT):
 		if supply_class == SUPPLY_RATION:
 			continue
+		# The equipment class settles through the training-order equipment slots
+		# (`military_core_logistics.cpp:1040-1058`); every native supply loop skips
+		# STOCK_CLASS_EQUIPMENT, so an empty candidate row is expected here.
+		if supply_class == SUPPLY_EQUIPMENT:
+			continue
 		var key := SUPPLY_CLASS_IDS[supply_class]
 		var raw_value = raw_supply.get(key, []) if raw_supply is Dictionary else []
+		var goods_row := PackedInt32Array()
+		var yields_row := PackedInt32Array()
 		if raw_value is String:
 			# `"@ammunition"` style: take the ammunition equip category's goods.
-			if String(raw_value) == "@ammunition" and not ammunition_candidates.is_empty():
-				(supply_goods[supply_class] as PackedInt32Array).append_array(
-					ammunition_candidates)
-				for _unused in range(ammunition_candidates.size()):
-					(supply_yields[supply_class] as PackedInt32Array).append(Q16_ONE)
-			continue
-		if not raw_value is Array:
-			continue
-		for entry_value in (raw_value as Array):
-			var entry: Dictionary = {}
-			if entry_value is Dictionary:
-				entry = entry_value
-			else:
-				entry = {"good": String(entry_value), "yield": 1.0}
-			var good := _index_optional(good_index, String(entry.get("good", "")))
-			if good < 0:
-				return _fail("military_supply_good_unknown: %s" % String(
-					entry.get("good", "")))
-			(supply_goods[supply_class] as PackedInt32Array).append(good)
-			(supply_yields[supply_class] as PackedInt32Array).append(
-				maxi(1, int(round(float(entry.get("yield", 1.0)) * Q16_ONE))))
+			if String(raw_value) != "@ammunition" or ammunition_candidates.is_empty():
+				# An unrecognised marker used to be silently skipped, leaving the
+				# class with no candidates while units kept declaring a demand.
+				return _fail("military_supply_value_unsupported: %s=%s" % [key, raw_value])
+			goods_row.append_array(ammunition_candidates)
+			for _unused in range(ammunition_candidates.size()):
+				yields_row.append(Q16_ONE)
+		else:
+			if not raw_value is Array:
+				return _fail("military_supply_value_type_invalid: %s" % key)
+			for entry_value in (raw_value as Array):
+				var entry: Dictionary = {}
+				if entry_value is Dictionary:
+					entry = entry_value
+				else:
+					entry = {"good": String(entry_value), "yield": 1.0}
+				var good := _index_optional(good_index, String(entry.get("good", "")))
+				if good < 0:
+					return _fail("military_supply_good_unknown: %s" % String(
+						entry.get("good", "")))
+				goods_row.append(good)
+				yields_row.append(maxi(1, int(round(
+					float(entry.get("yield", 1.0)) * Q16_ONE))))
+		# Native consumption walks at most MILITARY_MAX_SUPPLY_CLASSES * 2
+		# candidates per class (`military_core_logistics.cpp:1790-1792`); a
+		# longer row would be silently truncated at runtime.
+		if goods_row.size() > SUPPLY_CLASS_COUNT * 2:
+			return _fail("military_supply_candidates_overflow: %s" % key)
+		supply_goods[supply_class] = goods_row
+		supply_yields[supply_class] = yields_row
 	return {
 		"ok": true,
 		"supply_goods": supply_goods,

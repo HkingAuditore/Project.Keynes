@@ -65,6 +65,7 @@ var _empty: Label = null
 var _summary: Label = null
 var _train_value: Label = null
 var _note: Label = null
+var _content: VBoxContainer = null
 var _channels: Dictionary = {}
 var _rows: Dictionary = {}
 var _built := false
@@ -93,6 +94,7 @@ func set_state(model: Dictionary, editable := true) -> void:
 	_envelope_row.visible = available
 	_envelope.visible = available
 	_summary.visible = available
+	_content.visible = available
 	_empty.visible = not available
 	if not available:
 		return
@@ -224,6 +226,15 @@ func _build() -> void:
 	_envelope.share_committed.connect(_on_envelope_committed)
 	add_child(_envelope)
 
+	# 结算段与三条通道统一挂在 _content 下：空态整块不渲染，
+	# 不再留下空滑条、表头、破折号占位与假零读数。
+	_content = VBoxContainer.new()
+	_content.name = "Content"
+	_content.mouse_filter = Control.MOUSE_FILTER_PASS
+	_content.add_theme_constant_override("separation", 6)
+	add_child(_content)
+	_content.visible = false
+
 	# 三条通道各占一个纵向小块：滑条 + 状态脚注。滑条自带份额与日额读数，
 	# 脚注只写"为什么这条通道现在这样"。
 	for spec in CHANNELS:
@@ -231,7 +242,7 @@ func _build() -> void:
 		channel.name = "Channel_%s" % String(spec.id)
 		channel.mouse_filter = Control.MOUSE_FILTER_PASS
 		channel.add_theme_constant_override("separation", 1)
-		add_child(channel)
+		_content.add_child(channel)
 		var slider = MilitaryChannelSliderScript.new()
 		slider.name = "Slider"
 		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -258,18 +269,18 @@ func _build() -> void:
 	_summary.add_theme_font_override("font", UITokens.dossier_font("sans"))
 	_summary.add_theme_font_size_override("font_size", 13)
 	_summary.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
-	add_child(_summary)
+	_content.add_child(_summary)
 
 	# ---- 结算段 -----------------------------------------------------------
 	var divider := DottedRule.new()
 	divider.name = "Divider"
-	add_child(divider)
+	_content.add_child(divider)
 
 	var head := HBoxContainer.new()
 	head.name = "Head"
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_theme_constant_override("separation", 8)
-	add_child(head)
+	_content.add_child(head)
 	head.add_child(_make_caption("支出通道"))
 	head.add_child(DottedLeader.new())
 	var head_value := _make_caption("实付 · 日均")
@@ -279,19 +290,19 @@ func _build() -> void:
 
 	for spec in CHANNELS:
 		var entry := _make_row(String(spec.title))
-		add_child(entry.row as Control)
+		_content.add_child(entry.row as Control)
 		# 行键沿用原生字段名（`wage_paid_last_period` 等），宿主与测试按快照
 		# 字段名取读数即可，不必记两套命名。
 		_rows[String(spec.paid)] = entry
 
 	var rule := DottedRule.new()
 	rule.name = "TrainRule"
-	add_child(rule)
+	_content.add_child(rule)
 
 	var train := _make_row("招募集训")
 	_train_value = train.value as Label
 	_train_value.text = "在训 0 人 · 待装备 0 件"
-	add_child(train.row as Control)
+	_content.add_child(train.row as Control)
 
 	_note = Label.new()
 	_note.name = "Note"
@@ -301,7 +312,7 @@ func _build() -> void:
 	_note.add_theme_font_override("font", UITokens.dossier_font("sans"))
 	_note.add_theme_font_size_override("font_size", 12)
 	_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
-	add_child(_note)
+	_content.add_child(_note)
 
 	_envelope_row.visible = false
 	_envelope.visible = false
@@ -508,6 +519,7 @@ func _make_row(title: String) -> Dictionary:
 	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value.custom_minimum_size = Vector2(VALUE_MIN_WIDTH, 0.0)
+	value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	value.add_theme_font_override("font", UITokens.dossier_font("numeral"))
 	value.add_theme_font_size_override("font_size", 15)
 	value.add_theme_color_override("font_color", UITokens.DOSSIER_INK)

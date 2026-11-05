@@ -242,23 +242,48 @@ func _test_economy_workspace_wiring() -> void:
 		"procurement": {"available": false},
 	})
 	await process_frame
-	var slider: Control = workspace.procurement_slider()
-	_expect("treasury page mounts the national procurement slider",
-		slider != null and slider.visible)
-	if slider == null:
+	var page: Control = workspace.fiscal_page()
+	_expect("treasury page mounts the unified budget dossier",
+		page != null and page.visible)
+	var constants: Dictionary = workspace.get_script().get_script_constant_map()
+	var top_pages: Array = constants.get("TOP_PAGE_IDS", [])
+	_expect("the separate fiscal tab is gone", not top_pages.has("fiscal"))
+	var goods_scroll := workspace.get_node_or_null(
+		"Column/Ledger/LedgerColumn/Scroll") as Control
+	_expect("treasury goods stay visible beside the budget dossier",
+		goods_scroll != null and goods_scroll.visible)
+	if page == null:
 		host.queue_free()
 		return
-	_expect("slider starts from the session policy",
-		slider.treasury_share_bp() == 300 and slider.research_share_bp() == 4000)
-	slider.policy_committed.emit(800)
-	_expect("committing routes procurement.set_policy through PlayerController",
-		not controller.commands.is_empty()
+	var national: Control = page.national_slider()
+	var technology: Control = page.technology_slider()
+	_expect("budget dossier mounts national and technology sliders",
+		national != null and technology != null)
+	_expect("technology slider lives in the technology section",
+		technology != null and technology.get_parent() == page.section_body("technology"))
+	_expect("budget dossier mounts the fixed allocation ribbon", page.ribbon() != null)
+	_expect("national slider starts from the session policy",
+		national != null and national.treasury_share_bp() == 300)
+	if national == null or technology == null:
+		host.queue_free()
+		return
+	controller.commands.clear()
+	technology.share_committed.emit(6500)
+	_expect("technology share routes procurement.set_policy through the dossier",
+		controller.commands.size() == 1
 		and controller.commands[-1].id == &"procurement.set_policy"
-		and controller.commands[-1].args == {"treasury_share_bp": 800, "research_share_bp": 4000})
-	_expect("slider keeps the committed share after the refresh",
-		slider.treasury_share_bp() == 800)
+		and int(controller.commands[-1].args.research_share_bp) == 6500)
+	_expect("auto channels are not pinned into manual shares by the commit",
+		not controller.commands[-1].args.has("era_share_bp")
+		and not controller.commands[-1].args.has("colonization_share_bp"))
+	controller.commands.clear()
+	national.policy_committed.emit(800)
+	_expect("national share still commits with the current technology share",
+		controller.commands.size() == 1
+		and int(controller.commands[-1].args.treasury_share_bp) == 800
+		and int(controller.commands[-1].args.research_share_bp) == 6500)
 	workspace.select_page_for_test("income")
-	_expect("the slider belongs to the treasury page only", not slider.visible)
+	_expect("the budget dossier belongs to the treasury page only", not page.visible)
 	host.queue_free()
 
 

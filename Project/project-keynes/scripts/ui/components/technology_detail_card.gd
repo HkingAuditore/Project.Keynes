@@ -380,9 +380,8 @@ func _apply_action(state: int) -> void:
 			_action.disabled = true
 			_action.text = "前置尚未完成"
 		_:
-			_action.visible = state < 4
+			_action.visible = false
 			_action.disabled = true
-			_action.text = "无可用操作"
 
 
 # Research commands land on the next country day, so the button states the delay

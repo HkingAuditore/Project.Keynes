@@ -198,7 +198,7 @@ func push_runtime_state(effective_day: int) -> void:
 
 func start(effective_day: int, sequence: int) -> Dictionary:
 	if not is_bound():
-		return _result(false, "session_unavailable", "玩家国家尚未就绪。")
+		return _result(false, "session_unavailable", "玩家国家尚未就绪，请稍后再试。")
 	var model := _build_snapshot(effective_day)
 	match String(model.status):
 		STATUS_MAX:
@@ -620,7 +620,7 @@ func restore(state: Dictionary) -> void:
 func _push_target(active: bool, effective_day: int, sequence: int) -> Dictionary:
 	if _economy == null or _handle == 0 \
 			or not _economy.has_method("set_era_procurement_target"):
-		return _result(false, "era_target_runtime_pending", "时代收购运行时接口尚未就绪。")
+		return _result(false, "era_target_runtime_pending", "时代收购尚未就绪，请稍后再试。")
 	var indices := PackedInt32Array()
 	var quantities := PackedInt64Array()
 	if active:

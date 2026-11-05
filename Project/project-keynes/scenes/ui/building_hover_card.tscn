@@ -57,7 +57,6 @@ custom_minimum_size = Vector2(500, 0)
 size_flags_vertical = 0
 mouse_filter = 2
 theme = ExtResource("1_theme")
-theme_type_variation = &"PKPaperPopup"
 theme_override_styles/panel = SubResource("CardPaper")
 script = ExtResource("2_script")
 

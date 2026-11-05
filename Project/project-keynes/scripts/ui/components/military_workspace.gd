@@ -180,7 +180,7 @@ func _bind_forces() -> void:
 		{"id": "quota", "label": "配额", "kind": "number", "width": 52.0, "optional": true},
 		{"id": "actions", "label": "", "kind": "actions", "width": 34.0, "sortable": false},
 	], "fill")
-	_training_table.empty_text = "没有训练订单"
+	_training_table.empty_text = ""
 	_training_table.row_selected.connect(func(id) -> void: _locate_training(int(id)))
 	_training_table.set_columns([
 		{"id": "unit", "label": "改训", "kind": "text", "expand": true, "min_width": 96.0},
@@ -190,7 +190,7 @@ func _bind_forces() -> void:
 
 
 func _bind_armies() -> void:
-	_army_table.empty_text = "尚无野战部队"
+	_army_table.empty_text = ""
 	# 点行 = 打开军务档案（编成、补给、移动 / 控制 / 停止都在那边）。
 	_army_table.row_selected.connect(func(handle) -> void: _open_army_dossier(int(handle)))
 	_army_table.row_action.connect(_on_army_action)
@@ -202,7 +202,7 @@ func _bind_armies() -> void:
 		{"id": "supply", "label": "补给", "kind": "bar", "width": 96.0, "optional": true},
 		{"id": "actions", "label": "", "kind": "actions", "width": 58.0, "sortable": false},
 	], "heads")
-	_convoy_table.empty_text = "没有在途车队"
+	_convoy_table.empty_text = ""
 	_convoy_table.row_selected.connect(_on_convoy_selected)
 	_convoy_table.set_columns([
 		{"id": "route", "label": "路线", "kind": "text", "expand": true, "min_width": 120.0},
@@ -509,8 +509,9 @@ func _refresh_overview() -> void:
 		_overview_insights.set_items(data.insights)
 	# 战争只在「战争」章节展开；总览留一行指路，不再重复两张战争卡。
 	var wars: Array = data.get("wars", [])
-	_overview_war_kicker.text = "进行中的战争 %d 场" % wars.size() if not wars.is_empty() \
-		else "当前没有战争"
+	_overview_war_kicker.visible = not wars.is_empty()
+	if not wars.is_empty():
+		_overview_war_kicker.text = "进行中的战争 %d 场" % wars.size()
 	_overview_war_link.visible = not wars.is_empty()
 
 
@@ -547,8 +548,9 @@ func _refresh_forces() -> void:
 		_apply_barracks(_forces.barracks)
 	var training: Array = _forces.get("training", [])
 	_training_table.visible = not training.is_empty()
-	_training_caption.text = String(_forces.get("training_caption", "")) if not training.is_empty() \
-		else "没有训练订单"
+	_training_caption.visible = not training.is_empty()
+	if not training.is_empty():
+		_training_caption.text = String(_forces.get("training_caption", ""))
 	if _changed("training", _forces.training):
 		_apply_training(_forces.training)
 
@@ -729,8 +731,10 @@ func _refresh_armies() -> void:
 	var convoys: Array = data.get("convoys", [])
 	var at_risk := convoys.filter(func(c): return float(c.risk) >= 0.25).size()
 	_convoy_table.visible = not convoys.is_empty()
-	_convoy_caption.text = ("%d 支 · %d 支高风险" % [convoys.size(), at_risk]) if at_risk > 0 \
-		else ("%d 支" % convoys.size() if not convoys.is_empty() else "没有在途车队")
+	_convoy_caption.visible = not convoys.is_empty()
+	if not convoys.is_empty():
+		_convoy_caption.text = ("%d 支 · %d 支高风险" % [convoys.size(), at_risk]) if at_risk > 0 \
+			else "%d 支" % convoys.size()
 	if _changed("convoys", convoys):
 		_apply_convoys(convoys)
 	_procurement_label.text = String(data.get("procurement_text", ""))
@@ -918,13 +922,11 @@ func _declare_row(row_id: int) -> Dictionary:
 
 func _refresh_fronts(data: Dictionary) -> void:
 	var rows: Array = data.get("fronts", [])
-	_front_empty.visible = rows.is_empty()
-	# Three states, not two: the probe answering with an empty set means the
-	# country is at peace; no probe at all means the panel has no data source.
-	if not bool(data.get("front_source", true)):
+	# 和平（无战线）时空态整节不渲染；仅数据源缺失时给出原因提示（后果提示保留）。
+	var front_source_missing := not bool(data.get("front_source", true))
+	_front_empty.visible = rows.is_empty() and front_source_missing
+	if front_source_missing:
 		_front_empty.text = "战线需要军事运行时的推送。"
-	else:
-		_front_empty.text = "当前没有接触中的战线。"
 	if _changed("fronts", rows):
 		var list_rows: Array = []
 		for row in rows:

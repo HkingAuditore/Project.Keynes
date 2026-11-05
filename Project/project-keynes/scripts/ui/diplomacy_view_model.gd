@@ -584,7 +584,7 @@ func wars_model(selected: int) -> Dictionary:
 func wars_empty_text() -> String:
 	if not military_available():
 		return military_reason()
-	return "当前没有战争"
+	return ""
 
 
 func war_rows() -> Array:
