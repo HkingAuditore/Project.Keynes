@@ -470,6 +470,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
+    _investment_prepared_epoch = -1;
     _investment_merchant_cash_by_cell.clear();
     _investment_outstanding_credit_by_cell.clear();
     _investment_output_signals_scratch.clear();
@@ -711,6 +712,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
+    _investment_prepared_epoch = -1;
     _investment_merchant_cash_by_cell.clear();
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();

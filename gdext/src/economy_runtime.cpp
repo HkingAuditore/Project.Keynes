@@ -51,6 +51,17 @@ using namespace variant_helpers;
 
 
 namespace {
+// Keep the price-formation half of derived-demand conduction behind the same
+// switch as the Leontief shadow anchor computed in
+// economy_runtime_building_investment.cpp.
+bool derived_price_conduction_enabled() {
+    static const bool value = [] {
+        const char *flag = std::getenv("PK_ECONOMY_DERIVED_PRICE_CONDUCTION");
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
+
 bool reconcile_trigger_branch_binding(TriggerRuntime *runtime,
                                       const std::string &key,
                                       uint64_t branch_handle,
@@ -7946,8 +7957,9 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
             if (values.size() == old_size) values.push_back(0);
         };
         append_i64_if_aligned(_epoch_business_demand_ema);
-        append_i64_if_aligned(_epoch_derived_business_demand);
-        append_i64_if_aligned(_epoch_substitute_business_demand);
+    append_i64_if_aligned(_epoch_derived_business_demand);
+    append_i64_if_aligned(_epoch_derived_anchor_price);
+    append_i64_if_aligned(_epoch_substitute_business_demand);
         append_i64_if_aligned(_epoch_desired_business_demand);
         append_i64_if_aligned(_epoch_funded_business_demand);
     append_i64_if_aligned(_epoch_ceiling_business_requested);
@@ -7999,6 +8011,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
     };
     insert_i64_if_aligned(_epoch_business_demand_ema);
     insert_i64_if_aligned(_epoch_derived_business_demand);
+    insert_i64_if_aligned(_epoch_derived_anchor_price);
     insert_i64_if_aligned(_epoch_substitute_business_demand);
     insert_i64_if_aligned(_epoch_desired_business_demand);
     insert_i64_if_aligned(_epoch_funded_business_demand);
@@ -8093,6 +8106,7 @@ bool NativeEconomyRuntime::flush_market_signal_overflow(std::string &error) {
     reorder(_market_signals.cost_anchor_price);
     reorder(_epoch_business_demand_ema);
     reorder(_epoch_derived_business_demand);
+    reorder(_epoch_derived_anchor_price);
     reorder(_epoch_substitute_business_demand);
     reorder(_epoch_desired_business_demand);
     reorder(_epoch_funded_business_demand);
@@ -10847,9 +10861,17 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         // Demand conduction only: normalize derived against local flow and
         // apply the configured weight. No stock-gated pressure floor and no
         // later change_q16 clamp — inventory/excess still clear a glut.
+        // A GOODS_SCALE floor made a 225-unit BOM requirement read as ~0.003 Q16
+        // on a raw material with no other buyers, so its price never followed
+        // the scarce output. Relative-gap normalization keeps that signal
+        // proportional to the unmet downstream need while a genuine local glut
+        // still dilutes it.
+        const int64_t derived_scale = derived_price_conduction_enabled()
+            ? std::max<int64_t>(1, saturating_add(derived, real_flow, sat))
+            : std::max<int64_t>(GOODS_SCALE, real_flow);
         shadow_derived_pressure_q16 = mul_div_sat(
-            std::min<int64_t>(derived, std::max<int64_t>(GOODS_SCALE, real_flow)),
-            Q16_ONE, std::max<int64_t>(GOODS_SCALE, real_flow), sat);
+            std::min<int64_t>(derived, derived_scale),
+            Q16_ONE, derived_scale, sat);
         shadow_derived_pressure_q16 = mul_div_sat(
             shadow_derived_pressure_q16,
             std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
@@ -10876,8 +10898,25 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         _epoch_cost_anchor_price.size() == _market_signals.cost_anchor_price.size()
             ? _epoch_cost_anchor_price[signal_index]
             : (signal_index >= 0 ? _market_signals.cost_anchor_price[signal_index] : 0);
-    out.adjustment_anchor_price = std::max<int64_t>(
-        1, std::max<int64_t>(_good_default_price[good], anchor));
+    int64_t adjustment_anchor = std::max<int64_t>(
+        _good_default_price[good], anchor);
+    // An input with no built producer has no observed cost anchor, so its
+    // positive price moves were pinned to the authored default (flint: 4000)
+    // and crept up by one money unit a day while the scarce output rose by
+    // thousands. In that cold-start case only, use the damped Leontief shadow
+    // value of the downstream output as the adjustment reference. Shrink the
+    // reference as the market price approaches it so conduction converges
+    // instead of compounding; real producer cost anchors keep full authority.
+    if (derived_price_conduction_enabled() && anchor <= 0 &&
+        signal_index >= 0 &&
+        signal_index < static_cast<int32_t>(_epoch_derived_anchor_price.size()) &&
+        _epoch_derived_anchor_price[signal_index] > 0) {
+        const int64_t shadow =
+            _epoch_derived_anchor_price[signal_index];
+        adjustment_anchor = std::max<int64_t>(adjustment_anchor,
+            std::min<int64_t>(shadow, std::max<int64_t>(1, shadow - price)));
+    }
+    out.adjustment_anchor_price = std::max<int64_t>(1, adjustment_anchor);
     if (signal_index >= 0 && _good_monetary_issue_values[good] == 0 && anchor > 0) {
         const int64_t confidence = std::min<int64_t>(Q16_ONE, mul_div_sat(
             out.supply, Q16_ONE, std::max<int64_t>(GOODS_SCALE, demand), sat));
@@ -22409,6 +22448,7 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         }
         _investment_pending_by_cell_type.clear();
         _investment_existing_by_cell_type.clear();
+        _investment_prepared_epoch = -1;
         _investment_merchant_cash_by_cell.clear();
         _investment_outstanding_credit_by_cell.clear();
         _building_cell_cursor = 0;

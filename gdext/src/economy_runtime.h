@@ -49,6 +49,10 @@ namespace pk {
 struct TrackBDerivedCellWork {
     std::vector<int32_t> goods;
     std::vector<int64_t> quantities;
+    // Leontief shadow value of the downstream output attributable to each
+    // derived input edge. Parallel to goods/quantities; used only to lift the
+    // price-adjustment anchor when no producer has published a cost anchor.
+    std::vector<int64_t> anchors;
     int64_t edges = 0;
     uint64_t startup_calls = 0;
     uint64_t enqueued_goods = 0;
@@ -56,6 +60,7 @@ struct TrackBDerivedCellWork {
     void reset() {
         goods.clear();
         quantities.clear();
+        anchors.clear();
         edges = 0;
         startup_calls = 0;
         enqueued_goods = 0;
@@ -6351,6 +6356,19 @@ private:
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
     std::vector<int64_t> _epoch_derived_business_demand;
+    // Per-signal Leontief shadow value anchor: the downstream output price
+    // multiplied by the BOM input share, damped by _derived_shadow_anchor_weight_q16.
+    // Only used as the price-adjustment reference when no real producer cost
+    // anchor exists; never written into _market_signals.cost_anchor_price, so
+    // it stays out of PKEC, saves and the authoritative state hash.
+    std::vector<int64_t> _epoch_derived_anchor_price;
+    std::vector<int64_t> _track_b_derived_anchor_carry;
+    // Damping on the cost-push conduction from a scarce downstream good to its
+    // inputs. Deliberately small: this is "some" conduction, not full parity.
+    int32_t _derived_shadow_anchor_weight_q16 = Q16_ONE / 32;
+    // Share of derived demand treated as a committed indirect buyer when the
+    // first (greenfield) producer of an input is evaluated.
+    int32_t _derived_startup_absorption_q16 = Q16_ONE;
     // Track B (user-approved approximation): carry the last computed derived
     // business demand so every N-th day can reuse it instead of running the
     // full BFS/preview pass. Exact mode is restored with PK_ECONOMY_TRACK_B=0.
@@ -6564,6 +6582,11 @@ private:
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
+    // Review-only watermark: which economy epoch last rebuilt the transient
+    // investment incumbent index. Not persisted and not part of the state hash.
+    // The Track-B spread path can carry review cells into a later epoch without
+    // running the phase-4 prepare, while phase 6 clears the index every epoch.
+    int64_t _investment_prepared_epoch = -1;
     // Bounded cold-path diagnostics for the one inspector-selected cell. These
     // are transient, excluded from save/hash, and include absent building types.
     int32_t _investment_diagnostic_cell = -1;

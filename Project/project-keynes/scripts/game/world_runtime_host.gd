@@ -1347,7 +1347,18 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	# 真正原因是首帧 shader 编译 45s 堵住整帧，不是 capture 本身。ACTIVE worker
 	# 需要这份输入快照，所以恢复。
 	if _generator != null and _generator.has_method("capture_runtime_inputs_for_worker"):
-		var input_capture: Dictionary = _generator.capture_runtime_inputs_for_worker()
+		# The worker's first plan is `_committed_day + 1`, i.e. the day AFTER the
+		# saved calendar day. Its INPUT_CAPTURE stage requires
+		# environment->day == plan.context.day; publishing Phase A with the saved
+		# day leaves a one-day gap that the idempotent retry cannot bridge
+		# (climate store is still on the saved day). The first domain then parks
+		# and the remaining nine chain-park, so preflight_ok stays 0 and no day
+		# commit is ever published. Tag this frame with the day the worker is
+		# about to run instead.
+		var capture_day := int(_world_clock.day_index()) + 1 \
+			if _world_clock != null else -1
+		var input_capture: Dictionary = _generator.capture_runtime_inputs_for_worker(
+			capture_day)
 		if not bool(input_capture.get("ok", false)):
 			push_warning("[runtime-input] capture deferred: %s" % String(
 				input_capture.get("code", "unknown")))
