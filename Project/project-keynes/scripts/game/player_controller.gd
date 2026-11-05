@@ -662,7 +662,7 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_CONSTRUCTION_BUILD:
 			if _economy_facade == null or not _economy_facade.has_method(
 					"treasury_sponsored_build"):
-				result = _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+				result = _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 			else:
 				result = _economy_facade.treasury_sponsored_build(
 					_player_country_handle, int(args.get("cell_idx", -1)),
@@ -786,7 +786,7 @@ func get_family_colonization_quotes(target_cell: int, family_filter: int = 0,
 	if not bool(ready.get("ok", false)):
 		return ready
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_colonization_quotes(_player_country_handle,
 		target_cell, family_filter, source_filter, offset, limit)
 
@@ -813,7 +813,7 @@ func get_family_dispatch_candidates(source_cell: int, offset: int = 0,
 	if not bool(owned.get("ok", false)):
 		return owned
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_cell_snapshot(source_cell, offset, limit)
 
 
@@ -895,13 +895,13 @@ func good_display_name(good_index: int) -> String:
 
 func get_family_snapshot(family_handle: int) -> Dictionary:
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_snapshot(family_handle)
 
 
 func get_family_traits(family_handle: int) -> Dictionary:
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.get_family_traits(family_handle)
 
 
@@ -1609,7 +1609,7 @@ func _sync_time_ui() -> void:
 
 func _resolve_player_country() -> Dictionary:
 	if _runtime_host == null or _world_clock == null:
-		return _result(false, "runtime_unavailable", "玩家运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "游戏尚未就绪，请稍后再试。")
 	var generator: Variant = _runtime_host.generator()
 	if generator == null or not generator.has_method("gameplay_start_report") \
 			or not generator.has_method("get_country_facade"):
@@ -1770,7 +1770,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
 			if _economy_facade == null or not _economy_facade.has_method(
 					"submit_family_founding_choice"):
-				return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 			var founding_choice := int(args.get("choice_index", -1))
 			if founding_choice < 0 or founding_choice > 2 \
 					or int(args.get("offer_id", 0)) != _family_founding_offer_id \
@@ -1780,7 +1780,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					"家族候选已过期或选项无效。")
 		COMMAND_IDEOLOGY_OFFER:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			# Never advance time for a draw the authority would reject.
 			var preview := ideology_offer_eligibility()
 			if not bool(preview.get("can_draw", false)):
@@ -1788,7 +1788,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 				return _result(false, reason, CountryViewModel.ideology_player_reason(reason))
 		COMMAND_IDEOLOGY_REROLL:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			var reroll_preview := ideology_offer_eligibility()
 			if not bool(reroll_preview.get("can_reroll", false)):
 				var reroll_reason := "ideology_offer_not_active" \
@@ -1800,7 +1800,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					CountryViewModel.ideology_player_reason(reroll_reason))
 		COMMAND_IDEOLOGY_CHOOSE:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("offer_generation", 0)) <= 0 or \
 					int(args.get("choice_index", -1)) < 0 or \
 					int(args.get("choice_index", -1)) > 2:
@@ -1808,7 +1808,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 		COMMAND_IDEOLOGY_EQUIP, COMMAND_IDEOLOGY_UNEQUIP, \
 				COMMAND_IDEOLOGY_PROMOTE:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("ideology_id", -1)) < 0:
 				return _result(false, "invalid_args", "理念标识无效。")
 		COMMAND_ERA_ADVANCE_START:
@@ -1871,6 +1871,26 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if int(args.get("cell", -1)) < 0 or String(args.get("to", "")).is_empty() \
 					or int(args.get("count", 0)) <= 0:
 				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
+			# 与官营建筑一致：兵种未解锁时不允许手动下达训练命令。原生
+			# MCMD_TRAIN 拿不到当日 digest，闸门放在唯一的命令入口。
+			var train_facade = _military_facade()
+			if train_facade != null and train_facade.has_method("catalog"):
+				var train_catalog: Dictionary = train_facade.catalog()
+				var train_units: Array = train_catalog.get("units", []) if \
+					train_catalog.get("units", null) is Array else []
+				var train_tech := ""
+				for unit_row in train_units:
+					if unit_row is Dictionary and String((unit_row as Dictionary).get(
+							"id", "")) == String(args.get("to", "")):
+						train_tech = String((unit_row as Dictionary).get("tech", ""))
+						break
+				if not train_tech.is_empty():
+					var train_researched = _completed_technology_ids()
+					if train_researched == null:
+						return _result(false, "technology_unknown",
+							"科技状态暂不可读，稍后再试。")
+					if not (train_researched as PackedStringArray).has(train_tech):
+						return _result(false, "technology_locked", "尚未解锁这项科技。")
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
 			if int(args.get("cell", -1)) < 0 or int(args.get("building", -1)) < 0:
 				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
@@ -2589,7 +2609,7 @@ func _submit_state_build_command(args: Dictionary, effective_day: int,
 			"该项官营建筑尚未接入经济目录，暂时无法营造。")
 	if _economy_facade == null or not _economy_facade.has_method(
 			"treasury_sponsored_build"):
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	var economy_ids := PackedStringArray()
 	if _economy_facade.has_method("building_type_ids"):
 		economy_ids = _economy_facade.building_type_ids()
@@ -2645,7 +2665,7 @@ func _submit_state_demolish_command(args: Dictionary, effective_day: int,
 			"该项官营建筑尚未接入经济目录，暂时无法拆除。")
 	if _economy_facade == null or not _economy_facade.has_method(
 			"treasury_sponsored_demolish"):
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	var economy_ids := PackedStringArray()
 	if _economy_facade.has_method("building_type_ids"):
 		economy_ids = _economy_facade.building_type_ids()
@@ -3000,7 +3020,7 @@ static func _colonization_command_message(code: String) -> String:
 		"colonization_queued": "派遣已排队，将在经济结算完成后出发。",
 		"colonization_cancel_queued": "取消已排队，将在经济结算完成后执行。",
 		"economy_paused": "经济已因守恒失败暂停，无法派遣。",
-		"economy_not_available": "经济运行时尚未就绪。",
+		"economy_not_available": "经济系统尚未就绪，请稍后再试。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
 		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
 		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",

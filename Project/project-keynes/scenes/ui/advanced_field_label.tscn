@@ -1,3 +1,5 @@
 [gd_scene format=3]
 [node name="FieldLabel" type="Label"]
 theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 2
+text_overrun_behavior = 3

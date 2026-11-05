@@ -53,6 +53,18 @@ func _draw() -> void:
 	for end in [EDGE_PAD + 2.0, w - EDGE_PAD - 2.0]:
 		draw_line(Vector2(end, axis_y - 3.0), Vector2(end, axis_y + 3.0),
 			UITokens.DOSSIER_RULE, 1.0)
+	# 轴随数据自动张开，中心基准 100 与两端量程必须写出数字，
+	# 否则只看到三根刻度线，读不出指针落在哪个量级。
+	var window_pct := int(round(_window * 100.0))
+	var tick_font := get_theme_default_font()
+	var tick_color := UITokens.DOSSIER_INK_MUTED
+	var tick_y := axis_y + 15.0
+	draw_string(tick_font, Vector2(EDGE_PAD, tick_y), "-%d%%" % window_pct,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, 9, tick_color)
+	draw_string(tick_font, Vector2(0.0, tick_y), "100",
+		HORIZONTAL_ALIGNMENT_CENTER, w, 9, tick_color)
+	draw_string(tick_font, Vector2(0.0, tick_y), "+%d%%" % window_pct,
+		HORIZONTAL_ALIGNMENT_RIGHT, w - EDGE_PAD, 9, tick_color)
 	var positions := PackedFloat32Array()
 	for index in range(_rows.size()):
 		var row: Dictionary = _rows[index]

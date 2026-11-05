@@ -42,7 +42,7 @@ func _ready() -> void:
 	_sectors.label_width = 64.0
 	_sectors.value_width = 56.0
 	_pending.set_columns(PENDING_COLUMNS, "units")
-	_pending.empty_text = "当前没有在建项目"
+	_pending.empty_text = ""
 
 
 func focus_item(item) -> void:

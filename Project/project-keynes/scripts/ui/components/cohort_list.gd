@@ -83,7 +83,6 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 		StringName(data.get("living_icon", &"action.history")), living_accent)
 	living_badge.visible = false
 	var living_text := String(data.get("living_standard", "待评估"))
-	var satisfaction := String(data.get("satisfaction", "—"))
 	var name_label := refs.get("name") as Label
 	name_label.text = String(data.get("name", "阶层"))
 	name_label.tooltip_text = String(data.get("status", ""))
@@ -92,8 +91,6 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	if identity != "":
 		meta_parts.append(identity)
 	meta_parts.append(living_text)
-	if satisfaction.ends_with("%"):
-		meta_parts.append("满意 %d%%" % roundi(satisfaction.trim_suffix("%").to_float()))
 	(refs.get("meta") as Label).text = " · ".join(meta_parts)
 	(refs.get("population") as Label).text = String(data.get("population", ""))
 	(refs.get("wealth") as Label).text = String(data.get("wealth", "")).trim_prefix("人均 ")

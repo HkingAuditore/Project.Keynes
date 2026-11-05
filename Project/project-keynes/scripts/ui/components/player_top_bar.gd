@@ -151,7 +151,7 @@ func _ready() -> void:
 	IconButton.apply(
 		_setup_button, &"hud.system.settings", HUD_ICON_SIZE, "系统菜单（Esc）")
 	IconButton.apply(
-		_gm_button, &"hud.system.gm", HUD_ICON_SIZE, "GM 调试面板（F1 / `）")
+		_gm_button, &"hud.system.gm", HUD_ICON_SIZE, "调试面板（F1 / `）")
 	set_day_night_enabled(true)
 	_apply_clock_controls(false, 1.0)
 

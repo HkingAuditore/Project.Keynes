@@ -3,7 +3,7 @@ extends RefCounted
 
 const FORMAT_VERSION := 2
 const MAGIC := "PKSV"
-const LEGACY_FORMAT_REASON := "该存档使用 PKSV v1 格式，与当前 PKSV v2 不兼容。旧存档会保留，但不能载入。"
+const LEGACY_FORMAT_REASON := "该存档来自旧版本，无法载入；旧存档已保留。"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
 const LEGACY_TECHNOLOGY_INDUSTRY_REVISION := 1
 const LEGACY_INDUSTRY_REASON := "该存档使用旧产业科技规则，无法载入当前版本。请新建游戏或从兼容版本继续。"

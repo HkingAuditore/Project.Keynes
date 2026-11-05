@@ -877,7 +877,7 @@ func army_detail(army: Dictionary, prefetched: Dictionary = {}) -> Dictionary:
 				"text": "%d 日" % int(value), "marker": 7.0 / SUPPLY_HORIZON_DAYS,
 				"color": UITokens.DOSSIER_OXBLOOD if value < 3.0 else (UITokens.DOSSIER_BRASS
 					if value < 7.0 else UITokens.DOSSIER_VERDIGRIS),
-				"tooltip": "%s 可支撑 %d 日（刻度为 7 日警戒线）" % [label, int(value)]})
+				"tooltip": "%s 可支撑 %d 日" % [label, int(value)]})
 	return {
 		"handle": int(army.get("handle", 0)),
 		"name": army_name(army),

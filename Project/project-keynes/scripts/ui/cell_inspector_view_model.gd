@@ -977,7 +977,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 		elif price_index < 0.95:
 			price_index_caption = "低于成本锚 %.0f%%" % ((1.0 - price_index) * 100.0)
 	else:
-		price_index_caption = "尚无本地成本锚"
+		price_index_caption = ""
 
 	var stock_caption := "日变 %s" % delta_text if delta_text != "—" else "无日常消耗"
 	if total_demand > 0.001:
@@ -999,6 +999,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 	elif delta_text != "—":
 		balance_caption = "日变 %s" % delta_text
 
+	var price_index_text := "%.2f 倍" % price_index
 	var kpis := [
 		{
 			"id": "good_price",
@@ -1018,7 +1019,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"title": "价格锚比",
 			"value": price_index,
 			"kind": "text",
-			"text": "%.2f 倍" % price_index if has_anchor else "—",
+			"text": price_index_text if has_anchor else "",
 			"caption": price_index_caption,
 			"tone": price_tone,
 			"positive_good": false,
@@ -1063,7 +1064,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"value": clampf(hh_demand / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
 			"text": "%s/日" % UITokens.format_compact_number_cn(hh_demand, 2),
 			"color": UITokens.DOSSIER_OXBLOOD,
-			"tooltip": "本地各阶层居民日常消费需求：%s 单位/日" % UITokens.format_compact_number_cn(hh_demand, 2),
+			"tooltip": "本地各阶层居民日常消费需求",
 		},
 		{
 			"id": "biz_demand",
@@ -1072,7 +1073,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"value": clampf(biz_demand / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
 			"text": "%s/日" % UITokens.format_compact_number_cn(biz_demand, 2),
 			"color": UITokens.DOSSIER_BRASS,
-			"tooltip": "本地生产建筑与在建工程的原料需求：%s 单位/日" % UITokens.format_compact_number_cn(biz_demand, 2),
+			"tooltip": "本地生产建筑与在建工程的原料需求",
 		},
 		{
 			"id": "local_supply",
@@ -1081,7 +1082,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"value": clampf(supply_units / flow_peak, 0.0, 1.0) if (total_demand > 0.0 or supply_units > 0.0) else 0.0,
 			"text": "%s/日" % UITokens.format_compact_number_cn(supply_units, 2),
 			"color": UITokens.DOSSIER_VERDIGRIS,
-			"tooltip": "本地建筑向市场提供的日常供给：%s 单位/日" % UITokens.format_compact_number_cn(supply_units, 2),
+			"tooltip": "本地建筑向市场提供的日常供给",
 		},
 	]
 
@@ -1092,7 +1093,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"icon": &"metric.goods",
 			"value": clampf(price_index / 2.0, 0.0, 1.0) if has_anchor else 0.5,
 			"marker": 0.5,
-			"text": ("%.2f 倍" % price_index) if has_anchor else price_text,
+			"text": price_index_text if has_anchor else price_text,
 			"color": UITokens.DOSSIER_OXBLOOD if price_index > 1.05 else (UITokens.DOSSIER_VERDIGRIS if price_index < 0.95 else UITokens.DOSSIER_BRASS),
 			"tooltip": "竖线刻度为成本锚基准（1.00 倍 = %s），当前时价 %s" % [anchor_text, price_text],
 		},
@@ -1103,7 +1104,7 @@ static func good_dossier_model(row: Dictionary) -> Dictionary:
 			"value": clampf(shortage_ratio, 0.0, 1.0),
 			"text": "%.1f%%" % (shortage_ratio * 100.0),
 			"color": UITokens.DOSSIER_OXBLOOD if shortage_ratio >= 0.25 else (UITokens.DOSSIER_BRASS if shortage_ratio >= 0.05 else UITokens.DOSSIER_VERDIGRIS),
-			"tooltip": "买方未能买到所需物资的比例：%.1f%%" % (shortage_ratio * 100.0),
+			"tooltip": "买方未能买到所需物资的比例",
 		},
 		{
 			"id": "stock_days_bar",
@@ -1573,7 +1574,7 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 			"value": staff_ratio,
 			"kind": "text",
 			"text": staff_text,
-			"caption": ("到岗 %.0f%%" % (staff_ratio * 100.0)) if staff_req > 0 else "无需专职岗位",
+			"caption": ("到岗 %.0f%%" % (staff_ratio * 100.0)) if staff_req > 0 else "",
 			"tone": "risk" if (staff_req > 0 and staff_ratio < 0.5) else ("warn" if (staff_req > 0 and staff_ratio < 0.99) else ""),
 			"positive_good": true,
 			"icon": &"population.profession.worker",
@@ -1616,9 +1617,9 @@ static func building_dossier_model(row: Dictionary) -> Dictionary:
 			"icon": &"economy.building.factory",
 			"value": clampf(actual_util, 0.0, 1.0),
 			"marker": clampf(planned_util, 0.0, 1.0) if planned_util < 0.995 else -1.0,
-			"text": "%.0f%%" % (actual_util * 100.0),
+			"text": util_text,
 			"color": UITokens.DOSSIER_OXBLOOD if actual_util < 0.25 else (UITokens.DOSSIER_BRASS if actual_util < 0.75 else UITokens.DOSSIER_VERDIGRIS),
-			"tooltip": "实际产能利用率 %.1f%%（计划上限 %.1f%%）" % [actual_util * 100.0, planned_util * 100.0],
+			"tooltip": "计划上限 %.1f%%" % (planned_util * 100.0),
 		},
 	]
 	if bool(row.get("has_climate_profile", false)):
@@ -1886,7 +1887,7 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 	var country := _country_summary(cell_idx)
 	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
 		return {"available": false, "editable": false,
-			"reason": "无主之地没有税收政策", "cell": cell_idx,
+			"reason": "", "cell": cell_idx,
 			"default_lanes": []}
 	var facade = _generator.get_country_facade() if _generator != null \
 		and _generator.has_method("get_country_facade") else null
@@ -2637,7 +2638,7 @@ func _empty_state_building_cost() -> Dictionary:
 	}
 
 
-## 行内成本总览：最多三项建材，超出以「等 N 项」收尾；没有建材写明「无需建材」。
+## 行内成本总览：最多三项建材，超出以「等 N 项」收尾。
 ## 与营造目录的 `_construction_materials_text` 保持同一套排版。
 ## 注意：只有**行内**接受这个截断。hover 提示卡在 `_state_building_cost_tooltip()` 里
 ## 自己逐项遍历 `materials`，不复用这份文本——两处各取所需，不要合并。
@@ -2649,8 +2650,6 @@ func _state_building_materials_text(materials: Array) -> String:
 		var material: Dictionary = raw
 		parts.append("%s %s" % [String(material.get("name", "建材")),
 			_goods_scaled(int(material.get("required", 0)))])
-	if parts.is_empty():
-		return "无需建材"
 	var text := " · ".join(parts)
 	if materials.size() > parts.size():
 		text += " 等 %d 项" % materials.size()
@@ -2668,8 +2667,6 @@ func _state_building_cost_tooltip(display_name: String, effect: String,
 	if not effect.is_empty():
 		lines.append("效果：%s" % effect)
 	var materials: Array = cost.get("materials", [])
-	if materials.is_empty():
-		lines.append("建材：无需建材")
 	# 每一种建材都单独一行：公布「国库多少、市购多少、还缺多少」，缺料时才看得懂
 	# 是缺哪一种。逐项列全是这段代码存在的理由，不要为了行数改成汇总。
 	var total := 0
@@ -3098,7 +3095,7 @@ func _cell_composite_satisfaction(cell_idx: int) -> float:
 
 func _primary_resource_kpi(cell_idx: int, is_water: bool) -> Dictionary:
 	var kpi := {"id": "kpi_resource", "title": "主要资源", "icon": &"economy.resource",
-		"kind": "text", "text": "无", "caption": ""}
+		"kind": "text", "text": "", "caption": ""}
 	if cell_idx < 0:
 		return kpi
 	var best: Dictionary = {}
@@ -3352,7 +3349,7 @@ func _geography_category(cell: HexCell, idx: int, terrain_v: int, elev: float, p
 	return {
 		"metrics": metrics,
 		"gauges": [
-			{"id": "geography_elevation_gauge", "label": "海拔", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": "", "value_text": _elevation_band(elev, _sea_level), "tooltip": "竖线为海平面"},
+			{"id": "geography_elevation_gauge", "label": "海拔", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": "海平面", "value_text": _elevation_band(elev, _sea_level), "tooltip": ""},
 		],
 	}
 
@@ -3372,7 +3369,7 @@ func _climate_category(cell: HexCell, idx: int, temp: float, moist: float, base_
 		],
 		"gauges": [
 			{"id": "climate_temp_gauge", "label": "气温", "value": temp, "accent": UITokens.CLIMATE, "status_label": "", "value_text": _temperature_band(temp)},
-			{"id": "climate_moisture_gauge", "label": "湿度", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": "", "value_text": _moisture_band(moist), "tooltip": "竖线为此地常年湿度"},
+			{"id": "climate_moisture_gauge", "label": "湿度", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": "常年湿度", "value_text": _moisture_band(moist), "tooltip": ""},
 		],
 		"charts": [_temperature_chart("climate_temperature", "近期气温", idx, temp)],
 	}
@@ -4300,7 +4297,7 @@ func _gdp_metrics(cell_idx: int) -> Array:
 	var comparison := ""
 	if not is_nan(national_per_capita) and national_per_capita > 0.0:
 		var gap := (per_capita - national_per_capita) / national_per_capita * 100.0
-		comparison = "；全国人均 %s（本地%s%.0f%%）" % [
+		comparison = "全国人均 %s（本地%s%.0f%%）" % [
 			_money_text(int(round(national_per_capita))),
 			"高于" if gap >= 0.0 else "低于", absf(gap)]
 	metrics.append({
@@ -4308,7 +4305,7 @@ func _gdp_metrics(cell_idx: int) -> Array:
 		"value": _money_text(int(round(per_capita))),
 		"subtitle": "", "accent": UITokens.ACCENT,
 		"icon": "family.metric.wealth",
-		"tooltip": "本地产值 ÷ 本地人口%s。" % comparison,
+		"tooltip": comparison,
 	})
 	return metrics
 
@@ -4489,7 +4486,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 					"id": "demand_%s" % stable_id,
 					"stable_id": stable_id,
 					"name": display_name,
-					"value": "%.3f 单位/人/日" % (float(quantity) / 1000.0),
+					"value": "%s 单位/人/日" % UITokens.format_compact_number_cn(float(quantity) / 1000.0, 3),
 					"quantity": "%.3f" % (float(quantity) / 1000.0),
 					"price": _money_text(price) if has_price else "—",
 					"daily_cost": _money_text(daily_cost) if has_price else "—",
@@ -4582,9 +4579,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"expense_pc_float": float(expense_pc) / 10000.0,
 			"net_pc_float": float(net_pc) / 10000.0,
 			"net_positive": net_pc >= 0,
-			"status": "%s%s · 满意度 %.1f%% · 就业 %s · 结算 %d日" % [
+			"status": "%s%s · 就业 %s · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
-				ethnicity_name, sat * 100.0,
+				ethnicity_name,
 				UITokens.format_compact_number_cn(float(owners + employees), 1), settlement_days],
 			"accent": UITokens.ACCENT,
 			"icon": IconCatalog.profession_semantic(profession_id),
@@ -4616,10 +4613,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"visible": true,
 		}
 		rows.append(row_dict)
-	# 仅保留空态批注；承载/口粮/投资受阻改为由 gauges 与指标表达。
 	var insights := []
-	if rows.is_empty():
-		insights.append({"id": "population_empty", "text": "此地尚无人口。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
 	var job_capacity := int(snapshot.get("job_capacity", 0))
 	var jobs_filled := int(snapshot.get("jobs_filled", 0))
 	var job_openings := int(snapshot.get("job_openings", 0))
@@ -4851,8 +4845,8 @@ const SATISFACTION_DIMENSION_EXPLANATIONS := [
 	"实际享受到的舒适消费相对生活目标的满足率；存款不直接加分。",
 	"实际享受到的奢侈与身份消费相对生活目标的满足率；存款不直接加分。",
 	"近期收入相对长期收入基线的变化。",
-	"剩余存款可支撑的基础生活月数；六个月达到满分。",
-	"本期净税负相对毛收入的压力，税负越轻分数越高。",
+	"剩余存款可支撑的基础生活月数。",
+	"本期净税负相对毛收入的压力。",
 	"本地聚落等级、国家技术进度和建成产业种类。",
 ]
 
@@ -5156,7 +5150,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"metrics": [
 				{"id": "merchant_inventory_liquidation", "title": "库存估值", "money": true, "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "", "tooltip": "按零售价估算的库存价值。", "accent": UITokens.RESOURCE, "icon": "resource"},
 				{"id": "merchant_assets", "title": "商业资产", "money": true, "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "", "tooltip": "现金加库存估值。", "accent": UITokens.GOOD, "icon": "resource"},
-				{"id": "merchant_coverage", "title": "周转覆盖", "value": "%.1f 期" % (float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0), "subtitle": "", "tooltip": "现金可支撑的经营期数。", "accent": UITokens.ACCENT, "icon": "resource"},
+				{"id": "merchant_coverage", "title": "周转覆盖", "value": "%s 期" % UITokens.format_compact_number_cn(float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0, 1), "subtitle": "", "tooltip": "现金可支撑的经营期数。", "accent": UITokens.ACCENT, "icon": "resource"},
 				{"id": "merchant_margin", "title": "采购毛利", "money": true, "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "", "accent": UITokens.GOOD, "icon": "resource"},
 			],
 		}],
@@ -5178,7 +5172,7 @@ func trade_orders_model(cell_idx: int, good_id: String, offset: int = 0,
 		limit: int = TRADE_ORDER_PAGE_SIZE, generation: int = -1,
 		sample_day: int = -1) -> Dictionary:
 	if _map == null or cell_idx < 0:
-		return _trade_orders_failure("此地暂无可读贸易流水。", "trade_orders_map_unavailable")
+		return _trade_orders_failure("", "trade_orders_map_unavailable")
 	if VisionSolver.fog_state(_map, cell_idx) != VisionSolver.FOG_VISIBLE:
 		return _trade_orders_failure("此地不在当前视野内。", "cell_not_visible")
 	var facade = _economy_facade()
@@ -5444,7 +5438,7 @@ func _build_trade_orders_model(page: Dictionary,
 		"has_more": bool(page.get("has_more", false)),
 		"page_label": page_label,
 		"hint": page_text,
-		"empty_text": "本地目前没有该物资的在途商队。",
+		"empty_text": "",
 		"signature": "%d|%d|%d|%d|%d|%s" % [generation, day, page_begin,
 			total, int(_map.vision_revision), ",".join(ids)],
 		"sample_day": day,
@@ -5643,7 +5637,6 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 					"ratio": float(filled) / float(required) if required > 0 else 0.0,
 				})
 		var production_rows := []
-		var input_row_begin := production_rows.size()
 		_append_recipe_rows(production_rows, snapshot, type_idx, "input",
 			int(last_input[i]) if i < last_input.size() else 0, count, period_days, i)
 		_append_resource_generation_rows(production_rows, snapshot, type_idx,
@@ -5657,14 +5650,10 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			production_rows.append({"id": "resource_net", "name": "自然资源净额",
 				"value": _actual_daily_rate(resource_net, count, period_days),
 				"icon": "eco", "accent": UITokens.GOOD if resource_net > 0 else UITokens.WARN})
-		if production_rows.size() == input_row_begin:
-			production_rows.append({"id": "input_none", "name": "原材料", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
 		var output_row_begin := production_rows.size()
 		_append_recipe_rows(production_rows, snapshot, type_idx, "output",
 			int(last_output[i]) if i < last_output.size() else 0, count, period_days)
 		var has_outputs := production_rows.size() != output_row_begin
-		if not has_outputs:
-			production_rows.append({"id": "output_none", "name": "产出", "value": "无", "icon": "resource", "accent": UITokens.TEXT_MUTED})
 		var has_climate_profile := type_idx >= 0 \
 			and type_idx < building_climate_profiles.size() \
 			and int(building_climate_profiles[type_idx]) >= 0
@@ -5840,7 +5829,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	if group_types.size() > 0:
 		metrics.append({"id": "building_profit_total", "title": "本期利润", "money": true, "value": "%s%s" % ["+" if total_profit > 0 else "", _money_text(total_profit)], "subtitle": "", "tooltip": "本期各建筑利润合计，自用产出按市价折算。", "accent": UITokens.GOOD if total_profit >= 0 else UITokens.RISK, "icon": "resource"})
 	var category := {
-		"insights": [{"id": "buildings_empty", "text": "此地块当前没有建筑。", "accent": UITokens.TEXT_MUTED, "icon": "building"}] if rows.is_empty() else [],
+		"insights": [],
 		"metrics": metrics,
 		"construction_entry": build_construction_entry(cell_idx),
 		"building_rows": rows,
@@ -5886,7 +5875,7 @@ func build_construction_entry(cell_idx: int) -> Dictionary:
 	var military_count := _construction_military_count()
 	entry["count"] = count + military_count
 	entry["hint"] = "目录 %d 项 · 按部门浏览，国库物资优先" % (count + military_count) \
-		if count + military_count > 0 else "当前时代没有可营造的项目"
+		if count + military_count > 0 else ""
 	return entry
 
 
@@ -5981,9 +5970,12 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 	var military_total := _construction_military_count()
 	if military_total > 0:
 		counts[CONSTRUCTION_MILITARY_SECTOR] = military_total
-	# 部门索引签按「民用部门 + 军事部门」给出；军事部门排在最后。
+	# 部门索引签按编译列顺序给出。`military` 已经作为第 6 个 sector 追加进
+	# EconomyCatalog.BUILDING_SECTOR_IDS（列顺序是契约，只准追加），所以这里
+	# 只做防御性去重：早期版本曾无条件再 append 一次，索引签上会出现两个
+	# 一模一样的「军事」页签。
 	var page_sector_ids := sector_ids.duplicate()
-	if military_total > 0:
+	if military_total > 0 and page_sector_ids.find(CONSTRUCTION_MILITARY_SECTOR) < 0:
 		page_sector_ids.append(CONSTRUCTION_MILITARY_SECTOR)
 	var resolved_sector := sector_id
 	if resolved_sector == CONSTRUCTION_MILITARY_SECTOR:
@@ -6000,7 +5992,7 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 	model["sectors"] = _construction_sector_entries(
 		page_sector_ids, counts, resolved_sector)
 	if resolved_sector.is_empty():
-		model["message"] = "当前时代没有可营造的项目。"
+		model["message"] = ""
 		return model
 	model["sector"] = resolved_sector
 	model["query"]["sector"] = resolved_sector
@@ -6092,11 +6084,21 @@ func _construction_catalog_count(snapshot: Dictionary) -> int:
 
 ## 军事目录规模：只读缓存里的行数，不读国库/市场、不算成本。部门计数与
 ## 营造入口的「目录 N 项」用它，避免为了一个数字把 17 座建筑的成本全算一遍。
+## 口径必须与民用部门一致：科技未解锁的条目不进目录（见
+## docs/ui/building-workspace.md §5）。否则部门签写「17 项」、点进去却只有
+## 开局那一档，和民用部门的行为也对不上。
 func _construction_military_count() -> int:
 	var facade = _military_facade()
 	if facade == null:
 		return 0
-	return (_military_catalog_cache(facade).get("buildings", []) as Array).size()
+	var rows: Array = _military_catalog_cache(facade).get("buildings", [])
+	var researched := player_technology_ids()
+	var gate_known := _technology_ids_resolved
+	var count := 0
+	for raw in rows:
+		if raw is Dictionary and _state_building_unlocked(raw, researched, gate_known):
+			count += 1
+	return count
 
 
 ## 营造窗口的军事部门：一次性把军事目录的 `state_buildings`（17 座）组成本窗口
@@ -6134,6 +6136,11 @@ func _construction_military_rows(cell_idx: int, search: String) -> Array:
 	var rows: Array = []
 	for index in range(catalog_rows.size()):
 		var row: Dictionary = catalog_rows[index]
+		# 与经济部门同口径：科技未解锁的条目在目录层直接剔除，不进列表
+		# （民用部门由 building_technology_available 过滤，见 §5）。
+		# 科技快照不可读时保留「宁可见不误藏」的既有兜底，命令层还会再拦一次。
+		if not _state_building_unlocked(row, researched, gate_known):
+			continue
 		var name := String(row.get("name", row.get("id", ""))).strip_edges()
 		if not query.is_empty() and name.to_lower().find(query) < 0 \
 				and String(row.get("id", "")).to_lower().find(query) < 0:
@@ -6223,8 +6230,6 @@ func _construction_military_row(facade, index: int, row: Dictionary,
 			if market > 0:
 				line += " / 市购 %s" % _goods_scaled(market)
 			tooltip_lines.append(line + "）")
-		if (cost.get("materials", []) as Array).is_empty():
-			tooltip_lines.append("建材：无需建材")
 		var days_text := String(cost.get("days_text", ""))
 		if not days_text.is_empty():
 			tooltip_lines.append("工期：%s" % days_text)
@@ -6302,7 +6307,7 @@ func _construction_military_page(model: Dictionary, rows: Array,
 	model["items"] = sorted_rows.slice(safe_offset,
 		mini(total, safe_offset + CONSTRUCTION_PAGE_SIZE))
 	model["available"] = true
-	model["message"] = "" if not sorted_rows.is_empty() else "没有匹配的军事建筑。"
+	model["message"] = ""
 	return model
 
 
@@ -6573,8 +6578,6 @@ func _construction_materials_text(materials: Array) -> String:
 		var material: Dictionary = raw
 		parts.append("%s %s" % [String(material.get("name", "建材")),
 			_goods_scaled(int(material.get("required", 0)))])
-	if parts.is_empty():
-		return "无需建材"
 	var text := " · ".join(parts)
 	if materials.size() > parts.size():
 		text += " 等 %d 项" % materials.size()
@@ -6611,12 +6614,12 @@ func _construction_tooltip(entry: Dictionary, item: Dictionary, materials: Array
 		lines.append("岗位：%s" % job_text)
 	var inputs := _construction_recipe_side(
 		_construction_input_recipe_rows(placement, unlocked_goods))
-	if inputs != "无":
+	if not inputs.is_empty():
 		lines.append("投入：%s" % inputs)
 	var outputs := _construction_recipe_side(
 		_construction_recipe_rows(placement, "output_good_ids",
 			"output_quantities", "产出"))
-	if outputs != "无":
+	if not outputs.is_empty():
 		lines.append("产出：%s" % outputs)
 	for raw in materials:
 		var material: Dictionary = raw
@@ -6681,7 +6684,7 @@ func _construction_job_text(job_spec: Dictionary) -> String:
 
 func _construction_recipe_side(rows: Array) -> String:
 	if rows.is_empty():
-		return "无"
+		return ""
 	var parts := PackedStringArray()
 	for raw in rows:
 		var row: Dictionary = raw
@@ -6702,7 +6705,7 @@ func _construction_recipe_rows(placement: Dictionary, ids_key: String,
 	for index in range(ids.size()):
 		var good_id := String(ids[index])
 		rows.append({"name": _good_display_name(good_id),
-			"quantity": "%.3f/日" % (float(quantities[index]) / 1000.0) \
+			"quantity": "%s/日" % _goods_scaled(quantities[index]) \
 				if index < quantities.size() else "—",
 			"label": label})
 	return rows
@@ -6716,7 +6719,7 @@ func _construction_input_recipe_rows(placement: Dictionary,
 	for index in range(ids.size()):
 		rows.append({
 			"name": _construction_input_candidate_label(placement, index, unlocked_goods),
-			"quantity": "%.3f/日" % (float(quantities[index]) / 1000.0) \
+			"quantity": "%s/日" % _goods_scaled(quantities[index]) \
 				if index < quantities.size() else "—",
 			"label": "原材料",
 		})
@@ -7103,7 +7106,7 @@ func _fill_percent(filled: int, required: int) -> float:
 
 func _actual_daily_rate(actual_total: int, building_count: int, period_days: int) -> String:
 	var divisor := maxi(1, building_count) * maxi(1, period_days)
-	return "%.3f 单位/栋/日" % (float(actual_total) / 1000.0 / float(divisor))
+	return "%s 单位/栋/日" % UITokens.format_compact_number_cn(float(actual_total) / 1000.0 / float(divisor), 3)
 
 
 func _sum_i64(values: PackedInt64Array) -> int:
@@ -7530,9 +7533,9 @@ func _current_sample_day() -> int:
 
 func _daily_delta_text(v: float) -> String:
 	if is_nan(v):
-		return "—"
+		return ""
 	if absf(v) < 0.0001:
-		return "—"
+		return ""
 	return "%s%s" % ["+" if v > 0.0 else "", UITokens.format_compact_number_cn(v, 2)]
 
 
@@ -7581,7 +7584,7 @@ func _precip_band(v: float) -> String:
 
 
 func _cover_intensity_band(v: float) -> String:
-	if v < 0.05: return "无"
+	if v < 0.05: return ""
 	if v < 0.25: return "薄"
 	if v < 0.55: return "中"
 	if v < 0.80: return "厚"
@@ -7614,8 +7617,6 @@ func _history_badges(cell: HexCell) -> Array:
 	var start := maxi(hist.size() - 6, 0)
 	for i in range(start, hist.size()):
 		badges.append({"text": VegetationType.name_cn(int(hist[i])), "accent": UITokens.ECO})
-	if badges.is_empty():
-		badges.append({"text": "暂无记录", "accent": UITokens.TEXT_FAINT})
 	return badges
 
 
@@ -7636,7 +7637,7 @@ func _densify_series(source: Array, target_count: int) -> Array:
 
 func _dir_degrees_text(v: Vector2) -> String:
 	if v.length() < 0.0001:
-		return "—"
+		return ""
 	return "%.0f°" % fposmod(rad_to_deg(atan2(v.y, v.x)), 360.0)
 
 

@@ -230,9 +230,11 @@ func _apply_rows(items: Array, rebuild: bool) -> void:
 				and _hover_card != null and _hover_card.visible:
 			_hover_card.refresh(item)
 	var empty := items.is_empty()
-	_empty_note.visible = empty
+	# 空态整节不渲染：无真实反馈时不再留无用提示句；model.message 属后果提示，保留。
+	var empty_text := _empty_text() if empty else ""
+	_empty_note.visible = not empty_text.is_empty()
 	_scroll.visible = not empty
-	_empty_label.text = _empty_text() if empty else ""
+	_empty_label.text = empty_text
 
 
 func _rows_match(items: Array) -> bool:
@@ -271,12 +273,7 @@ func _on_row_hover_ended() -> void:
 
 
 func _empty_text() -> String:
-	var message := String(_model.get("message", "")).strip_edges()
-	if not message.is_empty():
-		return message
-	if not String(_model.get("search", "")).strip_edges().is_empty():
-		return "没有匹配的建筑。"
-	return "本部门当前没有可营造的项目。"
+	return String(_model.get("message", "")).strip_edges()
 
 
 func _apply_paging() -> void:

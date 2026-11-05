@@ -144,7 +144,7 @@ func _bind_countries() -> void:
 
 
 func _bind_wars() -> void:
-	_war_table.empty_text = "当前没有战争"
+	_war_table.empty_text = ""
 	_war_table.row_selected.connect(_on_war_selected)
 	_war_table.row_action.connect(_on_war_action)
 	_war_table.set_columns([
@@ -424,8 +424,9 @@ func _refresh_overview() -> void:
 			(cards[index] as DossierKpiCard).set_metric(kpis[index])
 	var wars: Array = _overview.get("wars", [])
 	_wars_caption.text = "%d 场" % wars.size() if not wars.is_empty() else ""
-	_wars_empty.visible = wars.is_empty()
-	_wars_empty.text = _vm.wars_empty_text()
+	var wars_hint: String = _vm.wars_empty_text()
+	_wars_empty.visible = wars.is_empty() and not wars_hint.is_empty()
+	_wars_empty.text = wars_hint
 	_overview_war_table.visible = not wars.is_empty()
 	if _changed("overview_wars", wars):
 		_overview_war_table.set_rows(_war_table_rows(wars, false))
@@ -508,8 +509,8 @@ func _apply_sheet(sheet_value) -> void:
 	_sheet_icon.set_semantic(&"country.world", UITokens.DOSSIER_SLATE)
 	if not bool(sheet.get("ok", false)):
 		_sheet_title.text = "未选择国家"
-		_sheet_era.text = "—"
-		_sheet_contact.text = "—"
+		_sheet_era.visible = false
+		_sheet_contact.visible = false
 		_sheet_note.text = String(sheet.get("reason", ""))
 		_sheet_facts.set_facts([])
 		_territory_bar.visible = false
@@ -519,7 +520,9 @@ func _apply_sheet(sheet_value) -> void:
 		_locate_button.disabled = true
 		return
 	_sheet_title.text = String(sheet.name)
+	_sheet_era.visible = true
 	_sheet_era.text = String(sheet.era_label)
+	_sheet_contact.visible = true
 	_sheet_contact.text = String(sheet.contact_text)
 	_sheet_note.text = String(sheet.note)
 	_sheet_facts.set_facts(sheet.get("facts", []))
@@ -634,17 +637,17 @@ func _apply_war_sheet(sheet_value) -> void:
 		log_label.text = ""
 	if not bool(sheet.get("ok", false)):
 		_war_title.text = "未选择战争"
-		_war_role.text = "—"
+		_war_role.visible = false
 		_war_note.text = String(sheet.get("reason", ""))
 		_score_list.visible = false
 		_front_list.visible = false
-		_front_empty.visible = true
-		_front_empty.text = ""
+		_front_empty.visible = false
 		_war_peace_button.visible = false
 		_war_peace_button.disabled = true
 		_war_locate_button.disabled = true
 		return
 	_war_title.text = "对%s" % String(sheet.enemy_name)
+	_war_role.visible = true
 	_war_role.text = String(sheet.role)
 	var note := "已战 %d 日 · %s" % [int(sheet.days), String(sheet.losses_text)]
 	if bool(sheet.fully_occupied):
@@ -659,8 +662,7 @@ func _apply_war_sheet(sheet_value) -> void:
 	if _front_list.visible:
 		if _changed("fronts", fronts):
 			_front_list.set_rows(fronts)
-	_front_empty.visible = fronts.is_empty()
-	_front_empty.text = "当前没有接触中的战线。"
+	_front_empty.visible = false
 	var log: Array = _as_array(sheet.get("log", []))
 	_log_tag.visible = not log.is_empty()
 	for index in range(_log_rows.size()):

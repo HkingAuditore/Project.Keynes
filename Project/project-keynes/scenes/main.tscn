@@ -205,7 +205,7 @@ autowrap_mode = 2
 
 [node name="WeatherLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=464816704]
 layout_mode = 2
-text = "天气：晴朗"
+text = ""
 autowrap_mode = 2
 
 [node name="FeatureLabel" type="Label" parent="UI/RightPanel/Margin/Scroll/VBox" unique_id=1127830009]

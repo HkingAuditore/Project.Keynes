@@ -3,6 +3,8 @@ name: project-keynes-ui-art-direction
 description: Guides Project.Keynes player-facing UI, art direction, visual design language, data visualization, iconography, button material, animation, HUD, inspector panels, and grand-strategy presentation. Use when designing or implementing UI/UX, visual polish, effects, motion, data dashboards, player HUDs, icon libraries, Font Awesome-style icons, or Civilization/Europa Universalis/Victoria/Crusader Kings inspired interface work for Project.Keynes.
 ---
 
+> **方向裁决（2026-11-05）**：本文件的「深墨 / 胡桃木 / 黄铜、文明7/EU5/V3/CK3 历史大战略 atlas」美术方向与 Project.Keynes 实际资产（剪纸 / 撕纸 / 手绘）及玩家认定不符，**该方向章节已废弃**。UI 开发一律以同目录的 `project-keynes-ui-development` skill 为准。本文件中仍可沿用：组件语法、数据获取链、性能约束、中文数字格式。
+
 # Project.Keynes UI Art Direction
 
 Use this skill whenever the task touches player-facing UI, HUD, inspector panels, UI architecture, visual design language, animation, effects, data visualization, or art direction for Project.Keynes.

@@ -11,11 +11,11 @@ func build_overview(country_facade, economy_facade, handle: int, ledger: Economy
 		"gdp": "—", "per_capita_gdp": "—", "territory": "—", "cpi": "—", "ppi": "—",
 		"satisfaction": "—", "living_standard": "—", "alerts": [],
 		"gdp_tooltip": "年度 GDP：本年累计产值",
-		"per_capita_gdp_tooltip": "人均 GDP：年度 GDP ÷ 全国人口；与年度 GDP 同口径（读数前的金币图标即单位）。",
+		"per_capita_gdp_tooltip": "人均 GDP",
 		"territory_tooltip": "领土：当前国家持有的有效地块数",
 		"cpi_tooltip": "居民消费价格指数：食品、纺织与消费品按居民需求量加权的现价／成本锚；1.00× 表示等于成本锚。",
 		"ppi_tooltip": "生产者价格指数：按有效生产供给量加权的现价／成本锚；1.00× 表示等于成本锚。",
-		"satisfaction_tooltip": "人民平均满意度：全国人口加权的「综合满意度」（八维加权，按生存与基本生活封顶）；生存维度另见民生告警。",
+		"satisfaction_tooltip": "人民平均满意度",
 		"living_standard_tooltip": "人民生活水平：按人口加权的生活水平等级均值（0 赤贫至 6 奢华）。",
 	}
 	if country_facade == null or handle == 0:
@@ -275,7 +275,7 @@ func present_advancement(snapshot: Dictionary) -> Dictionary:
 		"conditions": conditions, "conditions_met": met, "conditions_required": required,
 		"conditions_text": "已满足 %d/%d" % [mini(met, required), required],
 		"costs": costs, "territory_note": territory_note,
-		"progress": progress, "progress_text": "%d%%" % int(floor(progress * 100.0)),
+		"progress": progress,
 		"budget_enabled": share_bp > 0,
 		"era_daily": float(budget.get("era_daily", 0)) / MONEY_SCALE,
 		"national_daily": float(budget.get("national_daily", 0)) / MONEY_SCALE,

@@ -339,6 +339,8 @@ std::vector<uint8_t> MilitaryCore::encode() const {
         w.u8(o.equipment_ready);
         w.u8(o.manual);
         w.i16(o.quality_q8);
+        w.i16(o.delivered_quality_q8);
+        w.u64(o.equipped_slot_mask);
     }
     w.end();
 
@@ -414,6 +416,8 @@ std::vector<uint8_t> MilitaryCore::encode() const {
         w.i32(s.origin_cell);
         w.i32(s.current_cell);
         w.i32(s.good);
+        w.i32(s.real_good);
+        w.i8(s.quality);
         w.i64(s.qty);
         w.i64(s.value);
         w.i64(s.departure_day);
@@ -796,6 +800,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     o.equipment_ready = r.u8();
                     o.manual = r.u8();
                     o.quality_q8 = r.i16();
+                    if (version >= 3u) {
+                        o.delivered_quality_q8 = r.i16();
+                        o.equipped_slot_mask = r.u64();
+                    }
                     if (!r.ok()) break;
                     tmp._training.push_back(o);
                 }
@@ -953,6 +961,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     s.origin_cell = r.i32();
                     s.current_cell = r.i32();
                     s.good = r.i32();
+                    if (version >= 3u) {
+                        s.real_good = r.i32();
+                        s.quality = r.i8();
+                    }
                     s.qty = r.i64();
                     s.value = r.i64();
                     s.departure_day = r.i64();

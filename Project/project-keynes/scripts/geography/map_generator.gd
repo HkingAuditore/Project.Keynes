@@ -3932,12 +3932,15 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 		var economy_result: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
 		if bool(economy_result.get("fatal", false)):
 			_halt_on_economy_fatal(day_index, economy_result)
+		# 营造回执靠原生侧的独立游标推进，与经济报告是哪一天无关。它原来被
+		# 绑在下面的「报告日 == 当天」里：经济域落后 / stall 时报告仍是旧日，
+		# 回执就一次都不分发，玩家只看到「已排队」然后什么也没有。
+		if _economy_facade != null:
+			_economy_facade.dispatch_construction_command_receipts()
 		if int(economy_result.get("day_index", economy_result.get("sample_day", -1))) == day_index:
 			if _economy_facade != null and bool(economy_result.get(
 					"economy_event_batch_published", false)):
 				_economy_facade.dispatch_committed_events(economy_result)
-			if _economy_facade != null:
-				_economy_facade.dispatch_construction_command_receipts()
 	return {"token": token, "status": token_status,
 		"dirty_mask": token_dirty}
 

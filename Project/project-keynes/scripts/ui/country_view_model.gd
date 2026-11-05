@@ -1243,9 +1243,9 @@ static func ideology_player_reason(reason: String) -> String:
 		"ideology_offer_pending":
 			return "已有一次三选一待选择。"
 		"ideology_offer_not_active":
-			return "当前没有打开的三选一。"
+			return ""
 		"ideology_offer_pool_insufficient", "ideology_offer_weight_invalid":
-			return "当前没有可抽取的理念。"
+			return ""
 		"ideology_draw_in_progress":
 			return "正在抽取。"
 		"ideology_draw_timeout":
@@ -1530,7 +1530,7 @@ static func _unavailable_treasury_static(reason: String) -> Dictionary:
 		"available": false,
 		"reason": reason,
 		"cash": 0,
-		"cash_text": "—",
+		"cash_text": "",
 		"nonzero_good_count": 0,
 		"goods": [],
 	}

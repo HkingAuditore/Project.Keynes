@@ -396,10 +396,11 @@ func _fill_readout(data: Dictionary) -> void:
 			_compact(float(terms.get("gap", 0.0)))]
 	else:
 		_footer_readout.text = ""
-	_footer_band.text = MilitaryViewModelScript.BAND_LABELS[band] if band >= 0 else "—"
-	_footer_band.add_theme_color_override("font_color",
-		[UITokens.DOSSIER_OXBLOOD, UITokens.DOSSIER_BRASS, UITokens.DOSSIER_VERDIGRIS][band]
-		if band >= 0 else UITokens.DOSSIER_INK_MUTED)
+	_footer_band.visible = band >= 0
+	if band >= 0:
+		_footer_band.text = MilitaryViewModelScript.BAND_LABELS[band]
+		_footer_band.add_theme_color_override("font_color",
+			[UITokens.DOSSIER_OXBLOOD, UITokens.DOSSIER_BRASS, UITokens.DOSSIER_VERDIGRIS][band])
 	var blocked := _blocked_reason()
 	_submit.disabled = blocked != ""
 	_submit.tooltip_text = blocked if not blocked.is_empty() else "提交给对方，次日答复"
@@ -446,7 +447,7 @@ func _show_ended(reason: String) -> void:
 	_cede_caption.text = ""
 	_terms_price.text = ""
 	_footer_readout.text = ""
-	_footer_band.text = "—"
+	_footer_band.visible = false
 	_submit.disabled = true
 	_submit.tooltip_text = reason
 	if _submitted_day >= 0:

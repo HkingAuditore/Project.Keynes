@@ -1,3 +1,6 @@
 [gd_scene format=3]
 [node name="DragPreview" type="Label"]
 theme_type_variation = &"PKBadgeLabel"
+custom_minimum_size = Vector2(160, 24)
+text_overrun_behavior = 3
+clip_text = true

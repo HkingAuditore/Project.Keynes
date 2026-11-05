@@ -37,7 +37,11 @@ func _ready() -> void:
 func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
 	var model := vm.trade_model()
 	if not bool(model.get("ok", false)):
-		_show_empty(_empty, _content, "对外贸易尚未开展：%s" % String(model.get("reason", "暂无贸易伙伴")))
+		var reason := String(model.get("reason", "")).strip_edges()
+		var hint := "对外贸易尚未开展"
+		if not reason.is_empty():
+			hint = "对外贸易尚未开展：%s" % reason
+		_show_empty(_empty, _content, hint)
 		return
 	_show_empty(_empty, _content, "")
 	_scope_note.visible = vm.scope_cell >= 0
@@ -82,7 +86,7 @@ func _refresh_partners(partners: Array) -> void:
 			"text": "进 %s / 出 %s" % [money(float(row["import"])), money(float(row["export"]))],
 			"tooltip": "%s：%d 笔订单，净出口 %s" % [row.name, int(row.orders), money(net)]})
 	_partners.set_rows(rows)
-	_show_empty(_partner_empty, _partners, "" if not rows.is_empty() else "暂无贸易伙伴")
+	_show_empty(_partner_empty, _partners, "")
 
 
 func _apply_narrow() -> void:

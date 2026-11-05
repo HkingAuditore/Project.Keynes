@@ -7,7 +7,7 @@
       "description": "青铜兵器与皮甲让步兵第一次拥有稳定的攻防配比。",
       "class": "line",
       "era": 1,
-      "tech": "tech.bronze_casting",
+      "tech": "tech.hide_tanning",
       "militia": false,
       "attack": 1.6,
       "defense": 2.2,
@@ -726,14 +726,14 @@
         "fodder": 0.0,
         "ammunition": 0.0,
         "fuel": 0.0,
-        "upkeep": 0.05
+        "upkeep": 0.0
       },
       "supply_combat": {
         "ration": 0.0,
         "fodder": 0.0,
         "ammunition": 0.0,
         "fuel": 0.0,
-        "upkeep": 0.15
+        "upkeep": 0.0
       },
       "icon": "unit.line"
     },
@@ -983,7 +983,7 @@
       "description": "以石矛与弓箭武装的部落战士，是最早的有组织步兵。",
       "class": "line",
       "era": 0,
-      "tech": "",
+      "tech": "tech.composite_tools",
       "militia": false,
       "attack": 1.0,
       "defense": 1.0,
@@ -1506,15 +1506,12 @@
       "corn_grain",
       "gathered_plants"
     ],
-    "ammunition": {
-      "category": "ammunition",
-      "min_quality": 1,
-      "efficiency_q16": {
-        "powder_shot": 65536,
-        "cartridges": 85197,
-        "modern_munitions": 104858,
-        "guided_munitions": 131072
-      }
+    "ammunition": "@ammunition",
+    "ammunition_efficiency_q16": {
+      "powder_shot": 65536,
+      "cartridges": 85197,
+      "modern_munitions": 104858,
+      "guided_munitions": 131072
     },
     "fuel": [
       "refined_fuel"
@@ -1522,7 +1519,20 @@
     "fuel_autonomous": [
       "batteries"
     ],
-    "upkeep": "primary_equipment_slot",
+    "upkeep": [
+      "stone_spears",
+      "bronze_weapons",
+      "iron_weapons",
+      "steel_blades",
+      "bows",
+      "hide_armor",
+      "iron_armor",
+      "plate_armor",
+      "matchlocks",
+      "rifles",
+      "siege_engines",
+      "early_tanks"
+    ],
     "equipment": {
       "category_order": [
         "firearms",

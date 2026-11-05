@@ -562,14 +562,15 @@ KPI「当前时代」仍按已生效（state 5）的里程碑推导。
 水平位移」做相对调整，误点不会让权重跳变，按下未移动则一条命令都不发；拖动一行时其余三域
 按原比例缩放，最大余数法保证 `sum == 10000`，松手提交一次 `SET_RESEARCH_WEIGHTS`；
 「均衡分配」恢复各 25%。空队列行淡化并注明「空队列的份额并入其他领域」，与运行时把空领域份额
-并回非空领域的规则一致。拖动中实时预览各队列项的预计天数。`ProcurementBudgetSlider` 是
-「国家购买中科技占比」0–100%（`research_share_bp`，最左 0% 即不购买科技值），预览
-「占国家购买 40% · 每日 [金币]1.2万」（每日科技预算 = 国家每日购买额 × 占比；快照份额一致时用
-`country_procurement_snapshot().research_daily_budget`），松手经 `PlayerController.request_command(
-&"procurement.set_policy", {treasury_share_bp: 当前国库份额, research_share_bp})` 提交；会话返回
-`unsupported_command` 时回退旧 `research.set_budget`。国家购买总额由国库页
-`NationalProcurementSlider`（`EconomyWorkspace` 国库区，0–10%/日，最左关闭）设定，显示每日预算、
-科技/时代晋升/派遣储备分配、上一周期实付与说明行，提交同一命令。两处政策读取顺序：
+并回非空领域的规则一致。拖动中实时预览各队列项的预计天数。
+
+科技投入份额（`research_share_bp` 0..10000）不再在科技面板里调整：政策面板里的
+`ResearchBudgetNotice` 是一张只读「预算指引」撕纸便笺，显示当前占比与折算后的每日科技预算，
+并提供「前往预算调配」直达国民经济 · 国库。写入口统一到国库页的预算卷宗
+（`FiscalBudgetPage`）：科技 / 时代收购 / 开拓三条 `ChannelShareSlider` 共享同一个 100% 池，
+可拖上限互相收窄；`NationalProcurementSlider` 管国库总额 0–10%/日；军事是独立信封。
+提交仍走 `PlayerController.request_command(&"procurement.set_policy", {...})`，四项份额一次带齐，
+`era`/`colonization` 为 -1 时沿用原生自动分配。政策读取顺序：
 `PlayerController.get_procurement_policy()` → 本地已提交值 → 原生快照 → 默认 2%/50%。
 队列排序完全依赖拖放，队列行（自绘 `TechnologyQueueRow`）显示位次、
 名称、预计天数与进度微条，悬停出现移出按钮。

@@ -43,7 +43,6 @@ func setup(data: Dictionary) -> void:
 		_caption("操作条件")
 		for support in supports:
 			_support(support)
-		_copy("圆点表示当前评分，竖线表示门槛。评分按各阶层影响力加权。", 13, Art.INK_MUTED)
 	var notes: PackedStringArray = data.get("notes", PackedStringArray())
 	if not notes.is_empty():
 		_rule()

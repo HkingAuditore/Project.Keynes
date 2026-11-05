@@ -622,6 +622,9 @@ func treasury_sponsored_build(country_handle: int, cell_idx: int,
 			"effective_day": effective_day, "sequence": sequence}
 	var type_id := building_type_id(building_id)
 	if type_id < 0:
+		print("[construction] reject: unknown building_id=%s (catalog=%d types)" % [
+			String(building_id),
+			int((_catalog.get("building_type_ids", PackedStringArray()) as PackedStringArray).size())])
 		return {"ok": false, "code": "construction_target_invalid",
 			"reason": "construction_target_invalid",
 			"message": _construction_result_message("construction_target_invalid"),
@@ -633,6 +636,9 @@ func treasury_sponsored_build(country_handle: int, cell_idx: int,
 			var code := String(queued.get("code", "command_rejected"))
 			queued["reason"] = code
 			queued["message"] = _construction_result_message(code)
+		print("[construction] queue cell=%d type=%d(%s) day=%d seq=%d -> ok=%s code=%s" % [
+			cell_idx, type_id, String(building_id), effective_day, sequence,
+			str(queued.get("ok", false)), str(queued.get("code", ""))])
 		return queued
 	var legacy := submit([{"opcode": Opcode.TREASURY_SPONSORED_BUILD,
 		"effective_day": effective_day, "sequence": sequence,
@@ -684,7 +690,7 @@ static func _demolish_result_message(code: String) -> String:
 		"demolish_state_building_absent": "该地块上已没有这座官营建筑。",
 		"demolish_owned_count_insufficient": "该地块的这座建筑座数不足。",
 		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
-		"economy_not_bootstrapped": "经济运行时尚未就绪。",
+		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
 		"economy_fatal": "经济运行时已停止，无法执行拆除。",
 		"save_restore_active": "存档正在读写，稍后再试。",
 	}.get(code, "拆除命令未能执行。")
@@ -707,6 +713,11 @@ func dispatch_construction_command_receipts() -> void:
 				and type_id < stable_ids.size() else ""
 		result["message"] = _construction_result_message(
 			String(result.get("code", "command_rejected")))
+		print("[construction] receipt id=%s seq=%s cell=%s type=%s ok=%s code=%s settled_day=%s" % [
+			str(result.get("receipt_id", -1)), str(result.get("sequence", -1)),
+			str(result.get("cell_idx", -1)), str(result.get("type_id", -1)),
+			str(result.get("ok", false)), str(result.get("code", "")),
+			str(result.get("settled_day", -1))])
 		construction_command_settled.emit(result)
 	_construction_receipt_cursor = maxi(_construction_receipt_cursor,
 		int(page.get("last_receipt_id", _construction_receipt_cursor)))
@@ -919,8 +930,15 @@ static func _construction_result_message(code: String) -> String:
 		"construction_materials_insufficient": "国库与当地市场的建材总量不足。",
 		"construction_treasury_cash_insufficient": "国库资金不足以购买缺少的建材。",
 		"construction_market_unavailable": "当地市场没有可结算的商人。",
+		"construction_owner_signature_unavailable": "本地没有合适的业主人口。",
+		"construction_target_invalid": "目标建筑无效。",
+		"construction_treasury_preflight_drift": "国库结算与营造报价不一致，请重试。",
+		"country_economy_asset_host_pending": "国库结算尚未完成，请稍后重试。",
+		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",
+		"economy_fatal": "经济运行时已停止，无法营造。",
+		"save_restore_active": "存档正在读写，稍后再试。",
 		"unsupported_ownership_policy": "当前版本不支持该产权策略。",
-	}.get(code, "修建命令未能执行。")
+	}.get(code, "修建命令未能执行（%s）。" % code)
 
 
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:

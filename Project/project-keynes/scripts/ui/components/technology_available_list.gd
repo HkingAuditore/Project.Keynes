@@ -483,12 +483,10 @@ func _draw_empty() -> void:
 	var center := Vector2(size.x * 0.5, minf(size.y * 0.42, 180.0))
 	_icon(&"technology.state.locked", Rect2(center - Vector2(14.0, 46.0), Vector2(28.0, 28.0)),
 		UITokens.DOSSIER_INK_MUTED)
-	var title := "当前没有可立即研究的科技"
-	_text(Vector2(PAD, center.y), title, 16, UITokens.DOSSIER_INK, "serif",
-		HORIZONTAL_ALIGNMENT_CENTER, size.x - PAD * 2.0)
-	_text(Vector2(PAD, center.y + 24.0), "满足研究条件或有了新的发现后，新的科技会出现在这里。", 12,
+	# 空态套话不渲染；保留「何时可用」与「下一步」两条引导（后果提示）。
+	_text(Vector2(PAD, center.y), "满足研究条件或有了新的发现后，新的科技会出现在这里。", 12,
 		UITokens.DOSSIER_INK_MUTED, "sans", HORIZONTAL_ALIGNMENT_CENTER, size.x - PAD * 2.0)
-	_text(Vector2(PAD, center.y + 44.0), "可切换到“科技树”查看各项科技的研究条件。", 12,
+	_text(Vector2(PAD, center.y + 20.0), "可切换到“科技树”查看各项科技的研究条件。", 12,
 		UITokens.DOSSIER_INK_MUTED, "sans", HORIZONTAL_ALIGNMENT_CENTER, size.x - PAD * 2.0)
 
 

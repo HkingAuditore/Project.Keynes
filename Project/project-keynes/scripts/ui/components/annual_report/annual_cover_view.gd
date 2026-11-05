@@ -232,8 +232,7 @@ func _apply_model() -> void:
 	_score_unit.visible = complete
 	_reward.text = "理念嘉奖  +%s 点" % String(_model.get("reward_text", "0"))
 	_reward.visible = complete and available
-	if not complete:
-		_score.text = "—"
+	_score.visible = complete
 	_art.texture = _cover_texture()
 	if _art.texture != null:
 		# The generated illustration has an irregular transparent silhouette.
@@ -623,8 +622,7 @@ func _settle_visuals() -> void:
 				flight.kill()
 			child.queue_free()
 	_score.text = "%.2f" % float(_model.get("score", 0.0))
-	if not bool(_model.get("complete", false)):
-		_score.text = "—"
+	_score.visible = bool(_model.get("complete", false))
 	if _seal_material != null:
 		_seal_material.set_shader_parameter("press", 1.0)
 		_seal_material.set_shader_parameter("ring", 0.0)
