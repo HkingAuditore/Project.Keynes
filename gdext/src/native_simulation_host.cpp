@@ -16490,6 +16490,66 @@ void NativeSimulationHost::worker_main() {
                     }
                     const uint32_t missing = _requested_authority_mask.load(
                         std::memory_order_acquire) & ~day_commit.completed_domain_mask;
+                    // Cold-path diagnostic: expose which domain parks the day
+                    // while preflight_ok stays 0. Only runs on the failure
+                    // branch and is throttled to the first few occurrences, so
+                    // healthy days pay nothing but a compare.
+                    {
+                        static std::atomic<int> s_day_diag_tick{0};
+                        const int tick = s_day_diag_tick.fetch_add(
+                            1, std::memory_order_relaxed);
+                        if (tick < 24 && tick % 4 == 0) {
+                            std::string stage_text;
+                            for (uint32_t si = 0; si < day_plan.stage_count; ++si) {
+                                stage_text += runtime_domain_fault_tag(
+                                    day_plan.stages[si].domain);
+                                stage_text += ":";
+                                stage_text += std::to_string(
+                                    static_cast<unsigned>(
+                                        day_plan.stages[si].completed));
+                                stage_text += " ";
+                            }
+                            const int64_t env_day = environment != nullptr
+                                ? environment->day : int64_t{-1};
+                            const uint64_t env_gen = environment != nullptr
+                                ? environment->generation : uint64_t{0};
+                            // Plain string concatenation: MSVC's printf format
+                            // checker mis-counts arguments in concatenated
+                            // literals, so hand it a single "%s".
+                            std::string diag;
+                            diag += "[runtime-day-diag] day=" +
+                                std::to_string(static_cast<long long>(day));
+                            diag += " preflight=" + std::to_string(
+                                static_cast<unsigned>(day_commit.preflight_ok));
+                            diag += " missing=" + std::to_string(
+                                static_cast<unsigned long long>(missing));
+                            diag += " completed=" + std::to_string(
+                                static_cast<unsigned long long>(
+                                    day_commit.completed_domain_mask));
+                            diag += " stages=" + std::to_string(
+                                static_cast<unsigned>(
+                                    day_commit.completed_stage_count)) +
+                                "/" + std::to_string(
+                                static_cast<unsigned>(day_plan.stage_count));
+                            diag += " env_day=" + std::to_string(
+                                static_cast<long long>(env_day));
+                            diag += " env_gen=" + std::to_string(
+                                static_cast<unsigned long long>(env_gen));
+                            diag += " plan_day=" + std::to_string(
+                                static_cast<long long>(day_plan.context.day));
+                            diag += " plan_gen=" + std::to_string(
+                                static_cast<unsigned long long>(
+                                    day_plan.context.input_generation));
+                            diag += " climate_store_day=" + std::to_string(
+                                static_cast<long long>(
+                                    _climate_authority.store().committed_day));
+                            diag += " ring=" + std::to_string(
+                                static_cast<unsigned long long>(
+                                    _environment_ring.size()));
+                            diag += " stages=" + stage_text + "\n";
+                            std::fprintf(stderr, "%s", diag.c_str());
+                        }
+                    }
                     // Full domain coverage with preflight_ok=0 is a spurious
                     // barrier: parking here leaves future Climate envs stuck in
                     // a full ring and nails WorldClock on capacity forever.

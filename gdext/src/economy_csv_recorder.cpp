@@ -6,6 +6,8 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <system_error>
@@ -19,6 +21,14 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 constexpr size_t WRITE_CHUNK_BYTES = 1024 * 1024;
+
+bool derived_price_conduction_enabled() {
+    static const bool value = [] {
+        const char *flag = std::getenv("PK_ECONOMY_DERIVED_PRICE_CONDUCTION");
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
 
 constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,epoch_active,stage,progress_q16,sample_day,commit_day,cohort_count,market_count,good_count,building_type_count,building_group_count,pending_construction_count,filled_owner_jobs,filled_employee_jobs,unemployed_population,births,deaths,production_inputs_consumed,production_output_stock,production_output_discarded,production_output_retained,production_output_supported,owner_output_consumed,producer_revenue,producer_support_money_issued,bullion_money_issued,bullion_stock_consumed,gold_accepted,silver_accepted,gold_money_issued,silver_money_issued,cycle_flow_produced,cycle_flow_consumed,cycle_flow_discarded,building_wages_paid,building_wages_unpaid,building_resource_generated,building_resource_consumed,building_resource_net_delta,loss_suspended_building_groups,merchant_procurement_budget,merchant_procurement_opportunity,merchant_procurement_allocated,merchant_procurement_unspent_allocated,merchant_procurement_reserved,merchant_procurement_spent,owner_working_capital_reserved,production_input_reserved,production_input_reserve_shortfall,construction_material_reserved,maintenance_goods_consumed,maintenance_unmet,trade_runtime_mode,trade_topology_ready,trade_topology_generation,trade_topology_hash,trade_country_generation,trade_plan_phase,trade_scan_cursor,trade_scan_total,trade_route_cursor,trade_route_total,trade_completed_scans,trade_plan_reset_count,trade_topology_content_change_count,trade_last_plan_reset_reason,trade_source_signals,trade_destination_signals,trade_ready_candidates,trade_route_expansions,trade_route_cache_hits,trade_route_cache_misses,trade_candidates_generated,trade_candidates_accepted,trade_rejected_profit,trade_rejected_no_spread,trade_rejected_margin,trade_quantity_profit_clips,trade_relief_candidates,trade_rejected_capacity,trade_rejected_stock,trade_rejected_cash,trade_rejected_route,trade_rejected_order_cap,trade_orders_in_flight,trade_orders_dispatched,trade_orders_arrived,trade_unclaimed_orders,trade_capacity_available,trade_capacity_used,population_error,money_error,goods_error,construction_goods_consumed,building_investment_candidates,building_owner_mobility,building_owner_job_reallocations,building_owner_job_profession_changes,building_owner_job_probability_skips,building_employee_to_owner_reallocations,building_investments_started,building_investment_blocked_funds,building_investment_blocked_materials,building_investment_blocked_sponsor_capital,building_investment_blocked_resources,building_investment_probability_skips,building_investment_capital_transferred,desired_business_demand,funded_business_demand,unfunded_business_demand,owner_working_capital_allocated,trade_signal_max_age_days,trade_first_dispatch_delay_max_days,trade_response_deadline_misses,trade_response_deadline_misses_cumulative,trade_unresolved_no_attempt,trade_unresolved_no_spread,trade_unresolved_margin,trade_unresolved_route,trade_unresolved_stock,trade_unresolved_capacity,trade_unresolved_cash,trade_unresolved_order_cap,merchant_credit_budget,merchant_credit_committed,merchant_credit_drawn,merchant_credit_repaid,merchant_credit_premium_repaid,merchant_credit_outstanding,merchant_credit_bad_debt,recovery_candidates,recovery_approved,recovery_restarted,recovery_failed,recovery_liquidated_buildings,trade_active_keys_pruned,trade_deficit_episodes_started,trade_deficit_episodes_resolved,trade_candidates_stale_generation,trade_candidates_arbitrated_out,trade_true_source_stock_failures,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
@@ -61,6 +71,10 @@ constexpr const char *SUMMARY_V25_SUFFIX =
     ",bullion_quota_initial"
     ",bullion_quota_remaining"
     ",bullion_quota_remainder_units\n";
+constexpr const char *MARKET_V25_SUFFIX =
+    ",derived_business_demand"
+    ",shadow_anchor_price"
+    ",price_pressure_derived_q16\n";
 constexpr const char *BUILDING_V25_SUFFIX =
     ",last_temperature_fit_q16"
     ",last_water_fit_q16"
@@ -490,8 +504,38 @@ int32_t EconomyCsvRecorder::price_pressure_total_q16(const MarketRow &row) const
     weighted(shortage, _good_shortage_weight_q16[good]);
     weighted(cost, _good_cost_anchor_weight_q16[good]);
     weighted(idle, _good_inactive_reversion_weight_q16[good]);
+    // price_pressure() folds the Leontief shadow into total_q16 with the same
+    // excess-demand weight. It was missing here, so the recorder's pressure
+    // column could not show the very signal that moves intermediate prices.
+    weighted(price_pressure_derived_q16(row), _good_excess_demand_weight_q16[good]);
     return static_cast<int32_t>(std::clamp<int64_t>(
         total, std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()));
+}
+
+int32_t EconomyCsvRecorder::price_pressure_derived_q16(const MarketRow &row) const {
+    if (row.good_index < 0 || row.derived_business_demand <= 0) return 0;
+    int64_t sat = 0;
+    const int64_t demand = NativeEconomyRuntime::saturating_add(
+        std::max<int64_t>(0, row.demand_ema), row.pressure_business_demand, sat);
+    const int64_t real_flow = NativeEconomyRuntime::saturating_add(
+        demand, std::max<int64_t>(0, row.pressure_supply), sat);
+    // Mirror NativeEconomyRuntime::price_pressure(): relative-gap
+    // normalization when conduction is enabled, GOODS_SCALE floor otherwise.
+    const int64_t scale = derived_price_conduction_enabled()
+        ? std::max<int64_t>(1, NativeEconomyRuntime::saturating_add(
+              row.derived_business_demand, real_flow, sat))
+        : std::max<int64_t>(NativeEconomyRuntime::GOODS_SCALE, real_flow);
+    const int64_t normalized = NativeEconomyRuntime::mul_div_sat(
+        std::min<int64_t>(row.derived_business_demand, scale),
+        NativeEconomyRuntime::Q16_ONE, scale, sat);
+    const int64_t weighted = NativeEconomyRuntime::mul_div_sat(
+        normalized,
+        std::clamp<int64_t>(row.pressure_derived_weight_q16, 0,
+            static_cast<int64_t>(NativeEconomyRuntime::Q16_ONE)),
+        NativeEconomyRuntime::Q16_ONE, sat);
+    return static_cast<int32_t>(std::clamp<int64_t>(
+        weighted, std::numeric_limits<int32_t>::min(),
+        std::numeric_limits<int32_t>::max()));
 }
 
 void EconomyCsvRecorder::set_terminal_locked(const std::string &code,
@@ -1474,6 +1518,22 @@ bool EconomyCsvRecorder::fill_batch(
                     0, row.stock - std::max(row.production_input_reserve,
                         row.construction_material_reserve));
                 row.cost_anchor_price = signal >= 0 ? runtime._market_signals.cost_anchor_price[signal] : 0;
+                row.derived_business_demand = 0;
+                if (signal >= 0) {
+                    if (signal < static_cast<int32_t>(
+                            runtime._epoch_derived_business_demand.size()))
+                        row.derived_business_demand += std::max<int64_t>(0,
+                            runtime._epoch_derived_business_demand[signal]);
+                    if (signal < static_cast<int32_t>(
+                            runtime._epoch_substitute_business_demand.size()))
+                        row.derived_business_demand += std::max<int64_t>(0,
+                            runtime._epoch_substitute_business_demand[signal]);
+                }
+                row.shadow_anchor_price = signal >= 0 && signal <
+                        static_cast<int32_t>(runtime._epoch_derived_anchor_price.size())
+                    ? std::max<int64_t>(0, runtime._epoch_derived_anchor_price[signal]) : 0;
+                row.pressure_derived_weight_q16 =
+                    runtime._derived_business_demand_weight_q16;
                 row.pressure_business_demand = signal < 0 ? 0 : (frozen_signals
                     ? runtime._epoch_business_demand_ema[signal]
                     : runtime._market_signals.business_demand_ema[signal]);
@@ -1583,12 +1643,12 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
         _files[dim].write(bom, 3);
         const size_t header_length =
             std::char_traits<char>::length(HEADERS[dim]);
-        if ((dim == SUMMARY || dim == BUILDINGS) && header_length > 0 &&
-            HEADERS[dim][header_length - 1] == '\n') {
+        if ((dim == SUMMARY || dim == BUILDINGS || dim == MARKET) &&
+            header_length > 0 && HEADERS[dim][header_length - 1] == '\n') {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
-            const char *suffix = dim == SUMMARY
-                ? SUMMARY_V25_SUFFIX : BUILDING_V25_SUFFIX;
+            const char *suffix = dim == SUMMARY ? SUMMARY_V25_SUFFIX
+                : dim == BUILDINGS ? BUILDING_V25_SUFFIX : MARKET_V25_SUFFIX;
             _files[dim].write(suffix, static_cast<std::streamsize>(
                 std::char_traits<char>::length(suffix)));
         } else {
@@ -1967,6 +2027,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.merchant_operating_outflow);
         field(chunk, row.merchant_liquidity_coverage_q16);
         field(chunk, row.merchant_effective_buy_factor_q16);
+        field(chunk, row.derived_business_demand);
+        field(chunk, row.shadow_anchor_price);
+        field(chunk, price_pressure_derived_q16(row));
         chunk.push_back('\n'); if (!maybe_flush(MARKET)) goto write_failed;
     }
     if (!flush(MARKET)) goto write_failed;

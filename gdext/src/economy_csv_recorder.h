@@ -484,6 +484,11 @@ public:
         int64_t merchant_operating_outflow = 0;
         int64_t merchant_liquidity_coverage_q16 = 0;
         int32_t merchant_effective_buy_factor_q16 = 0;
+        // Derived-demand price conduction diagnostics. These are transient
+        // epoch values, never saved into the authoritative economy state.
+        int64_t derived_business_demand = 0;
+        int64_t shadow_anchor_price = 0;
+        int32_t pressure_derived_weight_q16 = 0;
     };
 
 private:
@@ -511,6 +516,7 @@ private:
                     int64_t epoch_row_id, int64_t projected_rows, std::string &error);
     int64_t projected_rows(const NativeEconomyRuntime &runtime) const;
     int32_t price_pressure_total_q16(const MarketRow &row) const;
+    int32_t price_pressure_derived_q16(const MarketRow &row) const;
     void set_terminal_locked(const std::string &code, const std::string &message,
                              int64_t first_unrecorded_epoch);
     static const char *state_name(int32_t state);

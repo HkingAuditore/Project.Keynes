@@ -26,6 +26,7 @@ var _last_day := -1
 var _new_game := false
 var _save_attempted := false
 var _reached_outbound := false
+var _quote_diag_left := 3
 
 
 func _ready() -> void:
@@ -56,6 +57,7 @@ func _run() -> void:
 	var observe_days := int(_env("PK_COLONIZATION_PROBE_DAYS", "60"))
 	var speed := float(_env("PK_COLONIZATION_PROBE_SPEED", "20"))
 	_print_mask(generator, "loaded")
+	_audit_colony_state(-1, controller, ext)
 	var start_day := -1
 	var launch_day := -1
 	var stall := 0
@@ -80,6 +82,7 @@ func _run() -> void:
 			continue
 		stall = 0
 		_last_day = day
+		_audit_colony_state(day, controller, ext)
 		if _expedition == 0 and day - start_day >= after_days:
 			_expedition = await _start(controller, host.current_map().cell_count(), population_cap)
 			if _expedition != 0:
@@ -123,6 +126,80 @@ func _run() -> void:
 				push_error("[colonization-probe] expedition never reached OUTBOUND")
 			_quit(0 if not require_outbound or _reached_outbound else 1)
 			return
+
+
+## Read-only colony audit. A restored save may already carry an expedition
+## stuck in SETTLING; replaying it is a better check of population landing than
+## trying to dispatch a fresh one (quotes can be unavailable in headless).
+## Prints the expedition rows, their target cell population, the in-transit
+## population and durable receipts on load and on every authoritative day.
+func _audit_colony_state(day: int, controller, ext) -> void:
+	if controller == null or ext == null:
+		return
+	var country := int(controller.get_player_country_handle()) \
+		if controller.has_method("get_player_country_handle") else 0
+	var page: Dictionary = controller.get_family_expeditions(0, 8) \
+		if controller.has_method("get_family_expeditions") else {}
+	var handles: Array = page.get("expedition_handles", [])
+	var targets: Array = page.get("target_cells", [])
+	var states: Array = page.get("states", [])
+	var populations: Array = page.get("populations", [])
+	var rows: Array = []
+	for index in range(handles.size()):
+		var target := int(targets[index]) if index < targets.size() else -1
+		var cell_pop := -1
+		var cohorts := -1
+		if target >= 0 and ext.has_method("get_population_cell_summary"):
+			var cell: Dictionary = ext.get_population_cell_summary(target)
+			cell_pop = int(cell.get("population", 0))
+			cohorts = int(cell.get("cohort_count", 0))
+		rows.append({
+			"handle": int(handles[index]),
+			"state": int(states[index]) if index < states.size() else -1,
+			"target": target,
+			"party": int(populations[index]) if index < populations.size() else -1,
+			"cell_pop": cell_pop,
+			"cohorts": cohorts,
+		})
+	var econ: Dictionary = ext.get_economy_report() \
+		if ext.has_method("get_economy_report") else {}
+	var receipts: Dictionary = ext.get_family_colonization_receipts(country, 0, 256) \
+		if ext.has_method("get_family_colonization_receipts") else {}
+	var codes: Array = []
+	for raw in receipts.get("receipts", []):
+		codes.append(String((raw as Dictionary).get("code", "")))
+	print("[colony-audit] day=%d country=%d active=%s transit=%s due=%s page_ok=%s page_total=%s receipts_ok=%s rows=%s receipts=%s" % [
+		day, country,
+		str(econ.get("family_expedition_active_count", -1)),
+		str(econ.get("family_expedition_transit_population", -1)),
+		str(econ.get("family_expedition_due_heap_count", -1)),
+		str(page.get("ok", false)), str(page.get("total", -1)),
+		str(receipts.get("ok", false)),
+		JSON.stringify(rows), JSON.stringify(codes)])
+	if day < 0 or day % 5 == 0:
+		_audit_territory_population(day, ext, country)
+
+
+## Direct evidence for "the colonized cell has 0 population": count the
+## player's owned cells whose authoritative population is still zero.
+func _audit_territory_population(day: int, ext, country: int) -> void:
+	if ext == null or not ext.has_method("get_country_snapshot") \
+			or not ext.has_method("get_population_cell_summary"):
+		return
+	var snap: Dictionary = ext.get_country_snapshot(country)
+	var cells: PackedInt32Array = snap.get("territory_cells", PackedInt32Array())
+	var zero: Array = []
+	var total_pop := 0
+	for cell in cells:
+		var summary: Dictionary = ext.get_population_cell_summary(int(cell))
+		var pop := int(summary.get("population", 0))
+		total_pop += pop
+		if pop <= 0:
+			zero.append(int(cell))
+	var sample: Array = zero.slice(0, 10)
+	print("[colony-territory] day=%d country=%d snapshot_ok=%s cells=%d total_pop=%d zero_count=%d zero_sample=%s" % [
+		day, country, str(snap.get("ok", snap.get("country_ok", false))),
+		cells.size(), total_pop, zero.size(), JSON.stringify(sample)])
 
 
 func _begin_new_game() -> bool:
@@ -196,14 +273,28 @@ func _report(day: int, controller, generator) -> Dictionary:
 
 func _start(controller, cell_count: int, population_cap: int) -> int:
 	var target_limit := int(_env("PK_COLONIZATION_PROBE_TARGET_LIMIT", str(MAX_TARGET_PROBES)))
+	# A silent "return 0" used to hide why no expedition was ever dispatched.
+	var diag_ok := 0
+	var diag_busy := 0
+	var diag_rejected := 0
+	var diag_empty := 0
+	var last_code := ""
+	var last_kind := ""
 	for target in range(mini(cell_count, target_limit)):
 		var page: Dictionary = controller.get_family_colonization_quotes(target, 0, -1, 0, 8)
 		if not bool(page.get("ok", false)):
+			last_code = String(page.get("code", ""))
 			if bool(page.get("busy", false)):
-				return 0
+				diag_busy += 1
+				break
+			diag_rejected += 1
 			continue
+		diag_ok += 1
 		var tokens: PackedInt64Array = page.get("quote_tokens", PackedInt64Array())
-		if tokens.is_empty() or String(page.get("kind", "")) != "colonize":
+		var kind := String(page.get("kind", ""))
+		last_kind = kind
+		if tokens.is_empty() or kind != "colonize":
+			diag_empty += 1
 			continue
 		var maxima: PackedInt64Array = page.get("maximum_populations", PackedInt64Array())
 		var args := {
@@ -230,6 +321,11 @@ func _start(controller, cell_count: int, population_cap: int) -> int:
 		push_error("[colonization-probe] queued start never produced an expedition")
 		return -1
 	# No family or no colonize target yet; retry on a later day.
+	if _quote_diag_left > 0:
+		_quote_diag_left -= 1
+		print("[colonization-probe] quote scan ok=%d busy=%d rejected=%d empty=%d last_code=%s last_kind=%s targets=%d" % [
+			diag_ok, diag_busy, diag_rejected, diag_empty,
+			last_code, last_kind, target_limit])
 	return 0
 
 

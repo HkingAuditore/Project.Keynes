@@ -3362,6 +3362,15 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 		# Player handles arrive with PKSV pkai (or the legacy fallback); until
 		# then the native AI stays unarmed.
 		_configure_country_ai(_sus_map, _save_restore_seed, PackedInt64Array())
+		# PKMI restores in the provider loop immediately after PKCN (design §22),
+		# long before finalize_save_restore_runtime(). Configure the facade here
+		# so _restore_military_provider() has somewhere to restore into; otherwise
+		# every save carrying a pkmi section is refused with
+		# pkmi_runtime_unavailable. A failed configure is intentionally not fatal:
+		# the provider still refuses honestly (or accepts the legacy empty-pkmi
+		# migration). Do not reconfigure in finalize: set_terrain() resets the
+		# native military store and would discard the restored state.
+		_configure_military_runtime(_sus_map, null, _save_restore_seed)
 		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
 	return configured
 
@@ -3383,13 +3392,16 @@ func finalize_save_restore_runtime() -> Dictionary:
 	var registered: Dictionary = _register_country_economy_systems(_c())
 	if not bool(registered.get("ok", false)):
 		return registered
-	# Military configure must follow the restored Country/Economy catalogs. The
-	# PKMI payload itself is applied afterwards by GameSaveCoordinator's provider
-	# loop (pkmi restore), preceded by the generation-time terrain push here.
-	var military_configured: Dictionary = _configure_military_runtime(
-		_sus_map, null, _save_restore_seed)
-	if bool(military_configured.get("ok", false)):
-		_arm_military_ai(_gameplay_player_country_handles())
+	# The military facade was configured in prepare_economy_save_restore_runtime()
+	# so the PKMI provider could restore into it. Never reconfigure here: a fresh
+	# set_terrain() resets the native military store and would wipe the state
+	# that provider just restored. Keep the old configure as a fallback only for
+	# the paths where prepare did not produce a configured facade.
+	if _military_facade == null or not _military_facade.is_configured():
+		var military_configured: Dictionary = _configure_military_runtime(
+			_sus_map, null, _save_restore_seed)
+		if bool(military_configured.get("ok", false)):
+			_arm_military_ai(_gameplay_player_country_handles())
 	_maybe_register_military_system()
 	if not _runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}

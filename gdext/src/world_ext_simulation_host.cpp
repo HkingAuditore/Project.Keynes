@@ -2373,7 +2373,31 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         return out;
     }
     std::string publish_error;
-    if (_runtime_host->economy_worker_owns_execution() && _economy_runtime != nullptr) {
+    // economy_input is a main-thread copy of the geographic/climate slots that
+    // the ACTIVE economy worker consumes for its day input. It is NOT part of
+    // RuntimeClimateKernel::input_hash and is not persisted, so capturing it
+    // cannot change parity hashes or save data -- only whether the worker has
+    // anything to read.
+    //
+    // Save restore calls capture_runtime_inputs_for_worker() in Phase A, BEFORE
+    // start_runtime_worker() attaches _economy_production_runtime and writes
+    // _requested_authority_mask. economy_worker_owns_execution() is therefore
+    // false for that first frame, so the old condition silently published an
+    // environment snapshot with an empty economy_input lane. The worker then
+    // has no day input, never asks for a same-day recapture
+    // (_economy_input_requested_day stays -1), and the economy day never
+    // commits -- the clock pins on the restored day. New games hide this
+    // because their later per-day snapshots (published after worker start)
+    // quickly displace the lane-less first frame.
+    //
+    // Decouple capture from worker lifetime: whenever the economy runtime is
+    // configured and the execution mode is not LEGACY_ONLY (the synchronous
+    // path does not read this lane), fill it. Consumers decide whether to use
+    // it; an unused lane costs one cold-path copy per capture.
+    const bool economy_input_lane_needed =
+        _economy_runtime != nullptr &&
+        (!_runtime_host || _runtime_host->economy_worker_production_allowed());
+    if (economy_input_lane_needed) {
         auto economy_input = std::make_shared<RuntimeEconomyDayInput>();
         economy_input->day = snapshot.day;
         economy_input->cell_count = static_cast<uint32_t>(cells);

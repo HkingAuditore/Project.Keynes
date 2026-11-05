@@ -1209,6 +1209,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
     _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    _epoch_derived_anchor_price.assign(_market_signals.good_ids.size(), 0);
     // Keep last epoch's substitute demand through Leontief refresh so one-hop
     // intermediates still see category co-candidate pressure, then clear for
     // this epoch's production to republish.
