@@ -1,5 +1,4 @@
-// Extracted residual economy methods; function bodies are token-preserved.
-// Residual economy methods extracted from economy_runtime.cpp; bodies are token-preserved.
+// NativeEconomyRuntime::capture_country_epoch, extracted from economy_runtime.cpp; body is token-preserved.
 #include "economy_cost_probe.h"
 #include "economy_effect_forward.h"
 #include "economy_runtime.h"
