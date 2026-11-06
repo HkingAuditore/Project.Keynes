@@ -1304,26 +1304,7 @@
         CASHFLOW_EXPORT_SUBSIDY = 23,
     };
 
-    enum EventKind : int32_t {
-        EVENT_COMMAND_SETTLED = 1,
-        EVENT_MARKET_SETTLED = 2,
-        EVENT_STRUCTURAL_CHANGE = 3,
-        EVENT_CONSTRUCTION_STARTED = 4,
-        EVENT_CONSTRUCTION_COMPLETED = 5,
-        EVENT_BUILDING_DEMOLISHED = 6,
-        EVENT_EMPLOYMENT_SETTLED = 7,
-        EVENT_WAGE_SETTLED = 8,
-        EVENT_BUILDING_PRODUCTION_SETTLED = 9,
-        EVENT_EPOCH_COMMITTED = 10,
-        EVENT_RESTORE_BOUNDARY = 11,
-        EVENT_TRADE_DISPATCHED = 12,
-        EVENT_TRADE_ARRIVED = 13,
-        EVENT_POPULATION_SOURCE = 14,
-        EVENT_TARIFF_SUBSIDY_INTENT = 15,
-        // 市场级人口变化（births/deaths 汇总）。逐格出生分摊在 market 结算内部，
-        // 这里只发市场级 delta，够表现层做音效/特效，且不进热路径。
-        EVENT_POPULATION_CHANGED = 16,
-    };
+    using EventKind = EconomyApi::EventKind;
 
     enum EventFlags : int32_t {
         EVENT_FLAG_DETAIL_PRESENT = 1 << 0,

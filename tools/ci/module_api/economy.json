@@ -41,12 +41,9 @@
     "world_ext_country.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_country_ai.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_economy.cpp": "Godot binding layer owns NativeEconomyRuntime",
-    "world_ext_economy_military.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_effect.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_events.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_ideology.cpp": "Godot binding layer owns NativeEconomyRuntime",
-    "world_ext_military.cpp": "Godot binding layer owns NativeEconomyRuntime",
-    "world_ext_military_cell_stats.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_modifier.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_resource.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_runtime_graph.cpp": "Godot binding layer owns NativeEconomyRuntime",
@@ -55,7 +52,9 @@
   },
   "legacy_includers": [],
   "forbidden_owner_includes": {
-    "patterns": ["native_simulation_host*.h"],
+    "patterns": [
+      "native_simulation_host*.h"
+    ],
     "allowed": {}
   }
 }

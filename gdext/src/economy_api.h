@@ -22,6 +22,8 @@
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
 
+namespace godot { class Dictionary; }
+
 namespace pk {
 
 class NativeEconomyRuntime;
@@ -55,7 +57,35 @@ struct EffectInputSnapshot {
     std::array<uint64_t, PK_EFFECT_INPUT_METRIC_REVISION_CAPACITY> metric_revision{};
 };
 
+struct EconomyMilitaryCellView {
+    std::vector<int64_t> population;
+    std::vector<int64_t> unemployed;    // unemployed-profession heads
+    std::vector<int64_t> soldiers;      // soldier-profession heads
+    std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
+};
+
 struct EconomyApi {
+    enum EventKind : int32_t {
+        EVENT_COMMAND_SETTLED = 1,
+        EVENT_MARKET_SETTLED = 2,
+        EVENT_STRUCTURAL_CHANGE = 3,
+        EVENT_CONSTRUCTION_STARTED = 4,
+        EVENT_CONSTRUCTION_COMPLETED = 5,
+        EVENT_BUILDING_DEMOLISHED = 6,
+        EVENT_EMPLOYMENT_SETTLED = 7,
+        EVENT_WAGE_SETTLED = 8,
+        EVENT_BUILDING_PRODUCTION_SETTLED = 9,
+        EVENT_EPOCH_COMMITTED = 10,
+        EVENT_RESTORE_BOUNDARY = 11,
+        EVENT_TRADE_DISPATCHED = 12,
+        EVENT_TRADE_ARRIVED = 13,
+        EVENT_POPULATION_SOURCE = 14,
+        EVENT_TARIFF_SUBSIDY_INTENT = 15,
+        // 市场级人口变化（births/deaths 汇总）。逐格出生分摊在 market 结算内部，
+        // 这里只发市场级 delta，够表现层做音效/特效，且不进热路径。
+        EVENT_POPULATION_CHANGED = 16,
+    };
+
     enum CommandOpcode : int32_t {
         COMMAND_TRANSFER_TO_COHORT = 1,
         COMMAND_MINT_TO_COHORT = 2,
@@ -481,6 +511,36 @@ uint64_t effect_input_revision(const NativeEconomyRuntime &economy);
 uint64_t committed_generation(const NativeEconomyRuntime &economy);
 void notify_era_milestone_activated(NativeEconomyRuntime &economy,
                                     uint64_t country_handle);
+
+// ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
+void military_read_cell_view(const NativeEconomyRuntime &economy, EconomyMilitaryCellView &out, int32_t good_count = 0);
+void military_read_market(const NativeEconomyRuntime &economy, int32_t good, std::vector<int32_t> &out_cells, std::vector<int64_t> &out_sellable, std::vector<int64_t> &out_price);
+int32_t military_soldier_profession(NativeEconomyRuntime &economy);
+int32_t military_unemployed_profession(const NativeEconomyRuntime &economy);
+int32_t military_merchant_profession(const NativeEconomyRuntime &economy);
+int64_t military_soldier_living_cost(const NativeEconomyRuntime &economy, int32_t country_slot);
+uint64_t military_cohort_handle_any_ethnicity(const NativeEconomyRuntime &economy, int32_t cell, int32_t profession_id);
+uint64_t military_cohort_handle_from_professions(const NativeEconomyRuntime &economy, int32_t cell, const int32_t *professions, int32_t count);
+int64_t military_soldier_heads(const NativeEconomyRuntime &economy, int32_t cell);
+int32_t military_cohort_signature(const NativeEconomyRuntime &economy, uint64_t handle);
+int32_t military_cohort_ethnicity(const NativeEconomyRuntime &economy, uint64_t handle);
+int32_t military_signature_for_cell_ethnicity(const NativeEconomyRuntime &economy, int32_t cell, int32_t profession);
+int32_t military_signature_for(const NativeEconomyRuntime &economy, int32_t profession_id, int32_t ethnicity_id);
+int64_t military_collect_cash(NativeEconomyRuntime &economy, int64_t country_handle, int64_t amount);
+bool military_command_window_open(const NativeEconomyRuntime &economy);
+int32_t set_military_ration_satisfaction(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+void set_military_army_ration(NativeEconomyRuntime &economy, uint64_t army_handle, int32_t ration_q16);
+int64_t military_army_population(const NativeEconomyRuntime &economy, uint64_t army_handle);
+int64_t military_army_funds(const NativeEconomyRuntime &economy, uint64_t army_handle);
+bool military_army_lane_split_supported(const NativeEconomyRuntime &economy);
+bool military_army_lane_pay_supported(const NativeEconomyRuntime &economy);
+int32_t profession_count(const NativeEconomyRuntime &economy);
+int64_t last_committed_day(const NativeEconomyRuntime &economy);
+bool epoch_active(const NativeEconomyRuntime &economy);
+godot::Dictionary poll_events(const NativeEconomyRuntime &economy, const godot::Dictionary &opts);
+godot::Dictionary trace_report(const NativeEconomyRuntime &economy);
+bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on);
+void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy);
 
 } // namespace economy_api
 

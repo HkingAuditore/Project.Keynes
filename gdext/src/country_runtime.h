@@ -19,7 +19,7 @@
 
 #include "runtime_pod_protocol.h"
 #include "country_core.h"
-#include "country_read_view.h"
+#include "country_api.h"
 #include "country_fiscal_return_intent.h"
 #include "country_procurement_intent.h"
 
@@ -35,7 +35,7 @@ class NativeSimulationHost;
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
 // graph stages and economy reads use only POD/SoA storage.
-class NativeCountryRuntime {
+class NativeCountryRuntime : public CountryApi {
     friend class CountryFiscalReturnPort;
 public:
     CountryFiscalReturnPort fiscal_return_port();
@@ -158,7 +158,7 @@ public:
         int32_t value = 0;
     };
 
-    using EconomySnapshot = CountryReadView::Snapshot;
+    using EconomySnapshot = CountryEconomySnapshot;
 
     // Minimal cross-section authority for an era reward. The complete frozen
     // alternatives remain in PKEF; PKCN stores only this reference/state so a

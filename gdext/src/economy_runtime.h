@@ -1588,12 +1588,7 @@ public:
     //
     // Per-cell committed view, filled from the bound population SoA without
     // building any Godot value. Every lane is resized to `cell_count()`.
-    struct MilitaryCellView {
-        std::vector<int64_t> population;
-        std::vector<int64_t> unemployed;    // unemployed-profession heads
-        std::vector<int64_t> soldiers;      // soldier-profession heads
-        std::vector<uint8_t> has_merchant;  // a live merchant serves the cell
-    };
+    using MilitaryCellView = EconomyMilitaryCellView;
     void military_read_cell_view(MilitaryCellView &out, int32_t good_count = 0) const;
     // Market sellable stock and retail price for one good across every live
     // market, sparse. `sellable` (GOODS_SCALE) already excludes the merchant

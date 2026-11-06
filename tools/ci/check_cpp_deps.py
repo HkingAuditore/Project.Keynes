@@ -116,11 +116,13 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
     paths = sorted(p for p in (root / "gdext/src").rglob("*")
                    if p.suffix in {".cpp", ".h", ".inc"} and ".gen." not in p.name)
     sources = {p: p.read_text(encoding="utf-8") for p in paths}
+    # Require a definition head, not a template parameter followed by a
+    # function body: `template<class A, class B> void f(...) {` declares no A.
     declarations: dict[str, set[str]] = {}
     for path, source in sources.items():
         owner = domain_of(path.name)
         if owner:
-            for symbol in re.findall(r"\b(?:class|struct|enum\s+class)\s+(\w+)[^;{}]*\{", code_only(source)):
+            for symbol in re.findall(r"\b(?:class|struct|enum\s+class)\s+(\w+)(?:\s+final)?\s*(?::[^;{}]+)?\s*\{", code_only(source)):
                 declarations.setdefault(symbol, set()).add(type_domain(symbol, {}) or owner)
     # Unqualified nested names such as Command/Stage exist in many domains.
     # Without C++ name resolution they cannot safely imply a foreign owner.

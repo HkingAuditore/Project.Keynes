@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "module": "country",
+  "api_headers": [
+    "country_api.h"
+  ],
+  "internal_header_patterns": [
+    "country_runtime*.h"
+  ],
+  "owner_file_patterns": [
+    "country_*"
+  ],
+  "composition_roots": {
+    "native_simulation_country_restore.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_day_shadow.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_asset_worker.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_climate.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_commands.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_country_assets.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_country_boundary.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_country_stage.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_economy.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_effect.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_effect_tests.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_ideology.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_journal.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_modifier.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_persistence.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_report.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_startup.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_trigger.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "native_simulation_host_worker.cpp": "simulation host composes and drives NativeCountryRuntime",
+    "world_ext.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_annual.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_bio.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_country.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_country_ai.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_economy.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_effect.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_ideology.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_modifier.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_runtime_graph.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_simulation_host.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_trigger.cpp": "Godot binding layer owns NativeCountryRuntime"
+  },
+  "legacy_includers": [
+    "economy_runtime_annual.cpp",
+    "economy_runtime_building_employment.cpp",
+    "economy_runtime_building_investment.cpp",
+    "economy_runtime_building_production.cpp",
+    "economy_runtime_colonization_kit.cpp",
+    "economy_runtime_diagnostics.cpp",
+    "economy_runtime_fiscal.cpp",
+    "economy_runtime_internal_external_types.inc",
+    "economy_runtime_market.cpp",
+    "economy_runtime_military_view.cpp",
+    "economy_runtime_persistence_read.cpp",
+    "economy_runtime_persistence_write.cpp",
+    "economy_runtime_procurement.cpp",
+    "economy_runtime_queries_market_building.cpp",
+    "economy_runtime_trade.cpp",
+    "effect_runtime.cpp",
+    "ideology_runtime.cpp",
+    "modifier_runtime.cpp",
+    "runtime_economy_army_personnel.cpp"
+  ]
+}

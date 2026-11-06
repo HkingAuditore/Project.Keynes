@@ -15,6 +15,7 @@
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include "modifier_api.h"
 #include "runtime_modifier_pod.h"
 #include "effect_magnitude.h"
 // ADR02: the derived cell layer is a SEPARATE member, never part of `_stores`,
@@ -28,7 +29,7 @@ class NativeEconomyRuntime;
 
 // Shared native implementation. Each authority domain owns an independent Store;
 // catalog strings are resolved only at the Godot/save boundary.
-class ModifierRuntime {
+class ModifierRuntime : public ModifierApi {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 2;
     static constexpr int32_t SAVE_SCHEMA_VERSION = 3;
@@ -38,7 +39,7 @@ public:
     // sides multiply the same per-instance scale and must clamp identically.
     static constexpr int32_t MAX_MAGNITUDE_Q16 = EFFECT_MAX_MAGNITUDE_Q16;
 
-    enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
+    using Domain = ModifierApi::Domain;
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
     enum StackPolicy : int32_t { INDEPENDENT = 0, UNIQUE_SOURCE = 1, STACK_REFRESH = 2 };
     enum Operation : int32_t { ADD = 0, SUBTRACT = 1, MULTIPLY = 2, DIVIDE = 3 };

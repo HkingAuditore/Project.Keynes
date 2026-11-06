@@ -546,6 +546,51 @@ class GuardsTest(unittest.TestCase):
                       "contract_references": {"gdext/src/modifier_runtime.cpp|modifier->economy|include:economy_runtime.h": 1}}
             self.assertTrue(deps.baseline_errors(forged, symbols))
 
+    def test_template_parameters_are_not_foreign_type_definitions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "economy_variable_record_codec.h").write_text(
+                "template<class A, class B> void f(const std::pair<A, B> &value) {}\n"
+                "template<class T> struct Record final : Base<T> { int x; };\n"
+                "enum class Mode : int { ON };\nstruct ARealType {};\n")
+            (src / "military_core_selftest.cpp").write_text(
+                "const int32_t A = cell_at(5, 5); int B = A; ARealType real; Record row; Mode mode;\n")
+            edges = deps.measure(root)
+            prefix = "gdext/src/military_core_selftest.cpp|military->economy|type:"
+            self.assertNotIn(prefix + "A", edges)
+            self.assertNotIn(prefix + "B", edges)
+            for name in ("ARealType", "Record", "Mode"):
+                self.assertIn(prefix + name, edges)
+
+    def test_military_core_rejects_foreign_and_godot_headers(self):
+        contract = json.loads((module_api.CONTRACT_DIR / "military.json").read_text())
+        contract["composition_roots"] = {}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "military_bridge.h").write_text('#include <cstdint>\n')
+            owner = src / "military_core.cpp"
+            owner.write_text('#include "military_bridge.h"\n#include <vector>\n')
+            self.assertEqual(module_api.check_contract(root, contract), [])
+            for target in ('"economy_runtime.h"', '<economy_runtime.h>',
+                           '<godot_cpp/variant/dictionary.hpp>', '"godot_cpp/variant/dictionary.hpp"'):
+                with self.subTest(target=target):
+                    owner.write_text('#include ' + target + '\n')
+                    errors = module_api.check_contract(root, contract)
+                    self.assertEqual(len(errors), 1)
+                    self.assertIn("forbidden owner header", errors[0])
+            # Every migrated adapter must remain outside each peer's exceptions.
+            adapters = ("world_ext_military.cpp", "world_ext_military_cell_stats.cpp",
+                        "world_ext_economy_military.cpp")
+            for module in ("economy", "country", "modifier"):
+                peer = json.loads((module_api.CONTRACT_DIR / (module + ".json")).read_text())
+                for adapter in adapters:
+                    self.assertNotIn(adapter, peer["composition_roots"])
+                    self.assertNotIn(adapter, peer["legacy_includers"])
+
     def test_shared_nested_names_do_not_invent_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

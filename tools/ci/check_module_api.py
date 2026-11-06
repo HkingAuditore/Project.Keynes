@@ -98,7 +98,7 @@ def check_contract(root: Path, contract: dict, shared: dict | None = None) -> li
         is_owner = matches(path.name, owners)
         if is_owner:
             hits = [t for _kind, t in incs
-                    if matches(Path(t).name, forbidden_patterns)]
+                    if matches(t, forbidden_patterns) or matches(Path(t).name, forbidden_patterns)]
             if hits:
                 forbidden_seen.add(rel)
                 if rel not in forbidden_allowed:
