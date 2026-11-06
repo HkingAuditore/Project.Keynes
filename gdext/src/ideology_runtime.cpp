@@ -5,7 +5,7 @@
 #include "effect_selector_cap.h"
 
 #include "country_runtime.h"
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
 #include "ideology_opinion_bridge.h"
@@ -1312,8 +1312,8 @@ NativeIdeologyRuntime::SupportResult NativeIdeologyRuntime::evaluate_support(
         return result;
     }
     if (_economy_runtime == nullptr) return result;
-    const NativeEconomyRuntime::CountryClassOpinionSnapshot &snapshot =
-        _economy_runtime->country_class_opinion_snapshot();
+    const EconomyApi::CountryClassOpinionSnapshot &snapshot =
+        economy_api::country_class_opinion_snapshot(*_economy_runtime);
     ++_class_snapshot_reads;
     const int32_t country_slot =
         static_cast<int32_t>(country.handle & 0xffffffffULL);
@@ -1949,7 +1949,8 @@ void NativeIdeologyRuntime::apply_fan_out_ownership_filter(
     // Read per source rather than once: a multi-country world can have sources in
     // different slots once the collector is widened, and a cached slot would silently
     // mis-filter.
-    const int32_t source_country = _economy_runtime->cell_country_slot(source_cell);
+    const int32_t source_country =
+        economy_api::cell_country_slot(*_economy_runtime, source_cell);
     if (source_country < 0) return;
     cells.erase(
         std::remove_if(cells.begin(), cells.end(),
@@ -1957,7 +1958,8 @@ void NativeIdeologyRuntime::apply_fan_out_ownership_filter(
                 // Three cases, not two: an unowned target is neither own nor "another
                 // country", and FOREIGN must not swallow neutral land.
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    source_country, _economy_runtime->cell_country_slot(target));
+                    source_country,
+                    economy_api::cell_country_slot(*_economy_runtime, target));
                 return !pk::ownership_accepts(ownership_scope, relation);
             }),
         cells.end());
@@ -1973,7 +1975,8 @@ void NativeIdeologyRuntime::apply_union_ownership_filter(
         std::remove_if(cells.begin(), cells.end(),
             [&](int32_t target) {
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    country_slot, _economy_runtime->cell_country_slot(target));
+                    country_slot,
+                    economy_api::cell_country_slot(*_economy_runtime, target));
                 return !pk::ownership_accepts(ownership_scope, relation);
             }),
         cells.end());
@@ -2016,10 +2019,11 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
             static_cast<int32_t>(EffectRuntime::SELECTOR_MAX_CELLS));
         const int32_t authored_min = effective.target_selector_param[1];
         const int32_t min_branches =
-            _economy_runtime->family_target_min_branches_for_test(authored_min);
+            economy_api::family_target_min_branches_for_test(
+                *_economy_runtime, authored_min);
         std::vector<uint64_t> handles;
-        _economy_runtime->collect_family_effect_target_handles(
-            country_slot, min_branches, cap, handles);
+        economy_api::collect_family_effect_target_handles(
+            *_economy_runtime, country_slot, min_branches, cap, handles);
         for (const uint64_t handle : handles) {
             const uint32_t generation = static_cast<uint32_t>(handle >> 32U);
             if (generation == 0) continue;
@@ -2038,7 +2042,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
     // TODO: replace with a real capital / city-cell anchor once the game models
     // one. Until then a country's cell-scoped effect is anchored on its first
     // owned cell, which keeps the selector deterministic and replayable.
-    const int32_t anchor = _economy_runtime->country_anchor_cell(country_slot);
+    const int32_t anchor =
+        economy_api::country_anchor_cell(*_economy_runtime, country_slot);
     if (anchor < 0) { ++_targets_anchor_neg; return false; }
     std::vector<int32_t> cells;
     std::vector<int32_t> source_counts;
@@ -2059,9 +2064,10 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // directly is important: OWN_TERRITORY caps at 32, which would silently
         // undercount a country with more matching sources.
         const int32_t tag = selector.tag - 1;
-        if (tag >= _economy_runtime->target_tag_count()) return false;
+        if (tag >= economy_api::target_tag_count(*_economy_runtime)) return false;
         std::vector<int32_t> sources;
-        _economy_runtime->collect_own_tagged_cells(country_slot, tag, sources);
+        economy_api::collect_own_tagged_cells(*_economy_runtime, country_slot,
+                                              tag, sources);
         if (sources.empty()) { ++_targets_fanout_no_source; return false; }
         std::sort(sources.begin(), sources.end());
         sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
@@ -2071,7 +2077,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // source loop) instead of a hash map: `effect_stable_cap` may retain cells
         // whose count is low, and the report is hot enough that Dictionary /
         // Variant work would be the wrong tool anyway.
-        const int32_t grid_cells = _economy_runtime->cell_count();
+        const int32_t grid_cells = economy_api::cell_count(*_economy_runtime);
         if (grid_cells <= 0) return false;
         source_counts.assign(static_cast<size_t>(grid_cells), 0);
         // Radius 1/2 use the precomputed six-neighbour table directly. BFS is
@@ -2089,7 +2095,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 ring_1.clear();
                 for (int32_t direction = 0; direction < 6; ++direction) {
                     const int32_t neighbor =
-                        _economy_runtime->building_neighbor(source, direction);
+                        economy_api::building_neighbor(
+                            *_economy_runtime, source, direction);
                     if (neighbor < 0 || neighbor >= grid_cells) continue;
                     if (neighbor == source) continue;
                     ring_1.push_back(neighbor);
@@ -2111,7 +2118,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                     for (const int32_t cell : ring_1) {
                         for (int32_t direction = 0; direction < 6; ++direction) {
                             const int32_t neighbor =
-                                _economy_runtime->building_neighbor(cell, direction);
+                                economy_api::building_neighbor(
+                                    *_economy_runtime, cell, direction);
                             if (neighbor < 0 || neighbor >= grid_cells) continue;
                             if (seen[static_cast<size_t>(neighbor)] != 0) continue;
                             seen[static_cast<size_t>(neighbor)] = 1;
@@ -2135,7 +2143,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 for (const int32_t cell : frontier) {
                     for (int32_t direction = 0; direction < 6; ++direction) {
                         const int32_t neighbor =
-                            _economy_runtime->building_neighbor(cell, direction);
+                            economy_api::building_neighbor(
+                                *_economy_runtime, cell, direction);
                         if (neighbor < 0 || neighbor >= grid_cells) continue;
                         if (seen[static_cast<size_t>(neighbor)] != 0) continue;
                         seen[static_cast<size_t>(neighbor)] = 1;
@@ -2162,7 +2171,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 // "is this cell mine" false for every cell and dropped the entire
                 // target set under the new OWN default.
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    country_slot, _economy_runtime->cell_country_slot(cell));
+                    country_slot,
+                    economy_api::cell_country_slot(*_economy_runtime, cell));
                 if (!pk::ownership_accepts(selector.ownership_scope, relation))
                     continue;
             }
@@ -2211,7 +2221,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
             ? authored_cap
             : pk::kSelectorNoCellCap;
         std::vector<int32_t> sources;
-        _economy_runtime->collect_effect_target_cells(anchor,
+        economy_api::collect_effect_target_cells(*_economy_runtime, anchor,
             EffectRuntime::SELECTOR_OWN_TERRITORY, cap, tag, sources,
             selection_salt, &_selector_stats);
         if (sources.empty()) { ++_targets_fanout_ring_empty; return false; }
@@ -2252,7 +2262,8 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // (kinds 6/7 contract). The per-source ring cap never bound (geometric reach is
         // 6/18) so dropping it changes nothing.
         (void)ring_cap;
-        _economy_runtime->dilate_cell_set(sources, first_ring ? 1 : 2, cells);
+        economy_api::dilate_cell_set(*_economy_runtime, sources,
+                                     first_ring ? 1 : 2, cells);
         // Every source came from the same OWN_TERRITORY scan, so one country slot covers
         // the union and the filter runs once instead of N times.
         apply_union_ownership_filter(
@@ -2268,7 +2279,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         else if (ownership_scope == EffectRuntime::OWNERSHIP_FOREIGN)
             ++_ownership_foreign_resolves;
     } else {
-        _economy_runtime->collect_effect_target_cells(anchor,
+        economy_api::collect_effect_target_cells(*_economy_runtime, anchor,
             effective.target_selector_kind, effective.target_selector_param[0],
             effective.target_selector_param[1], cells, selection_salt,
             &_selector_stats);
@@ -3015,7 +3026,7 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
     // One sample per distinct cell per reconcile: nine cards pointing at the
     // same cell cost one building scan, not nine.
     if (!desired.empty()) {
-        constexpr int32_t metric_count = NativeEconomyRuntime::FAMILY_METRIC_COUNT;
+        constexpr int32_t metric_count = EconomyApi::FAMILY_METRIC_COUNT;
         const int32_t effect_metric_count = _effect_runtime == nullptr
             ? metric_count : _effect_runtime->metric_count();
         const int64_t revision = day > (std::numeric_limits<int64_t>::max() - 1) / 4
@@ -3043,7 +3054,7 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
                 if (_economy_runtime == nullptr) continue;
                 const int32_t country_slot =
                     static_cast<int32_t>(country.handle & 0xffffffffULL);
-                cell = _economy_runtime->country_anchor_cell(country_slot);
+                cell = economy_api::country_anchor_cell(*_economy_runtime, country_slot);
             } else if (activation.target_domain == 2 ||
                        activation.target_domain == 5) {
                 const int64_t raw = static_cast<int64_t>(
@@ -3081,8 +3092,9 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
             if (_economy_runtime != nullptr && !economy_ids.empty()) {
                 MetricMask economy_mask;
                 for (int32_t metric_id : economy_ids) economy_mask.set(metric_id);
-                _economy_runtime->sample_effect_metrics(entry.first, metric_count,
-                    values.data(), economy_mask);
+                economy_api::sample_effect_metrics(
+                    *_economy_runtime, entry.first, metric_count, values.data(),
+                    economy_mask);
             }
             if (wants_ideology_scalars)
                 fill_ideology_scalars(country, state, values);
@@ -3197,14 +3209,14 @@ void NativeIdeologyRuntime::publish_effect_input_consumers() {
     if (_economy_runtime == nullptr) return;
     rebuild_level_managed_if_needed();
     constexpr int32_t kEconomyMetricCount =
-        NativeEconomyRuntime::FAMILY_METRIC_COUNT;
+        EconomyApi::FAMILY_METRIC_COUNT;
     MetricMask mask;
     bool tags = false;
     bool tag_ids_incomplete = false;
     std::vector<int32_t> tag_ids;
     bool families = false;
     MetricMask exact;
-    std::array<std::vector<int64_t>, NativeEconomyRuntime::FAMILY_METRIC_COUNT>
+    std::array<std::vector<int64_t>, EconomyApi::FAMILY_METRIC_COUNT>
         thresholds;
     for (const LevelManagedInfo &info : _level_managed) {
         if (info.has_managed == 0) continue;
@@ -3254,8 +3266,8 @@ void NativeIdeologyRuntime::publish_effect_input_consumers() {
     // skip tags a synergy rewrite can still read. An empty set with `tags == true` is
     // the protocol's "all tags" signal.
     if (tag_ids_incomplete) tag_ids.clear();
-    _economy_runtime->set_effect_input_consumers(
-        mask, tags, families, thresholds, tag_ids);
+    economy_api::set_effect_input_consumers(
+        *_economy_runtime, mask, tags, families, thresholds, tag_ids);
 }
 
 void NativeIdeologyRuntime::set_worker_opinion_inputs(
@@ -3769,7 +3781,7 @@ uint64_t NativeIdeologyRuntime::compute_activation_signature(
         // exact torn read the snapshot exists to prevent -- and cost up to 68
         // atomic shared_ptr loads per card, which is lock-prefixed on MSVC.
         const std::shared_ptr<const EffectInputSnapshot> snapshot =
-            _economy_runtime->effect_input_snapshot();
+            economy_api::effect_input_snapshot(*_economy_runtime);
         if (snapshot != nullptr) {
             if (info->consumer_mask.is_any()) {
                 // SUM, not max: the revisions are independent counters, so a max
@@ -3778,7 +3790,7 @@ uint64_t NativeIdeologyRuntime::compute_activation_signature(
                 // refresh. Revisions only increase, so the sum always moves.
                 uint64_t metric_revision = 0;
                 constexpr int32_t kMetricCount =
-                    static_cast<int32_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+                    static_cast<int32_t>(EconomyApi::FAMILY_METRIC_COUNT);
                 for (int32_t metric = 0; metric < kMetricCount; ++metric) {
                     if (!info->consumer_mask.test(metric)) continue;
                     metric_revision +=
@@ -3820,7 +3832,7 @@ bool NativeIdeologyRuntime::step_effect_instance_refresh(
     if (!_instance_refresh_pending) {
         const uint64_t revision = _economy_runtime == nullptr
             ? _effect_input_revision_seen
-            : _economy_runtime->effect_input_revision();
+            : economy_api::effect_input_revision(*_economy_runtime);
         if ((_economy_runtime == nullptr || revision == _effect_input_revision_seen) &&
                 !_instance_refresh_dirty)
             return false;
@@ -3872,7 +3884,7 @@ bool NativeIdeologyRuntime::step_effect_instance_refresh(
     _instance_refresh_pending = false;
     ++_instance_refresh_passes;
     if (_economy_runtime != nullptr) {
-        const uint64_t now = _economy_runtime->effect_input_revision();
+        const uint64_t now = economy_api::effect_input_revision(*_economy_runtime);
         if (now > _effect_input_revision_seen) {
             const uint64_t lag = now - _effect_input_revision_seen;
             if (lag > _instance_refresh_lag_revisions)
@@ -4709,7 +4721,7 @@ void NativeIdeologyRuntime::accrue_points(int64_t day) {
     }
     accrue_points_from(
         ideology_opinion_from_economy(
-            _economy_runtime->country_class_opinion_snapshot()),
+            economy_api::country_class_opinion_snapshot(*_economy_runtime)),
         day);
 }
 
@@ -5464,7 +5476,7 @@ bool NativeIdeologyRuntime::should_run(int64_t day) const {
         (_managed_active_total > 0 &&
          (_instance_refresh_pending || _instance_refresh_dirty ||
           (_economy_runtime != nullptr &&
-           _economy_runtime->effect_input_revision() != _effect_input_revision_seen))));
+           economy_api::effect_input_revision(*_economy_runtime) != _effect_input_revision_seen))));
 }
 
 bool NativeIdeologyRuntime::export_pod_catalog(
@@ -6236,8 +6248,8 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     out["offer_ids"] = offer_ids;
     uint64_t support_revision = 0;
     if (_economy_runtime != nullptr) {
-        const NativeEconomyRuntime::CountryClassOpinionSnapshot &opinion =
-            _economy_runtime->country_class_opinion_snapshot();
+        const EconomyApi::CountryClassOpinionSnapshot &opinion =
+            economy_api::country_class_opinion_snapshot(*_economy_runtime);
         const int32_t country_slot =
             static_cast<int32_t>(country->handle & 0xffffffffULL);
         if (opinion.class_hash == _political_class_hash &&
@@ -6813,7 +6825,7 @@ Dictionary NativeIdeologyRuntime::report() const {
         static_cast<int64_t>(_effect_input_revision_target);
     out["effect_input_revision"] = _economy_runtime == nullptr
         ? static_cast<int64_t>(0)
-        : static_cast<int64_t>(_economy_runtime->effect_input_revision());
+        : static_cast<int64_t>(economy_api::effect_input_revision(*_economy_runtime));
     out["transition_poll_ms"] = _transition_poll_ms;
     out["command_apply_ms"] = _command_apply_ms;
     out["active_progress_ms"] = _active_progress_ms;
@@ -7960,7 +7972,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     // The restore pass above already revisited every card and stamped its
     // signature, so the first refresh must not repeat it.
     _effect_input_revision_seen = _economy_runtime == nullptr
-        ? 0 : _economy_runtime->effect_input_revision();
+        ? 0 : economy_api::effect_input_revision(*_economy_runtime);
     _effect_input_revision_target = _effect_input_revision_seen;
     _instance_refresh_pending = false;
     _instance_refresh_dirty = false;
@@ -8029,7 +8041,7 @@ const std::string *NativeIdeologyRuntime::intern_program_key(
 void NativeIdeologyRuntime::ensure_derived_program_sampler() {
     if (_derived_program_sampler) return;
     _derived_program_metric_scratch.assign(
-        static_cast<size_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT), 0);
+        static_cast<size_t>(EconomyApi::FAMILY_METRIC_COUNT), 0);
     _derived_program_sampler = [this](const std::string &program_key, int32_t cell,
                                       uint64_t source_country) -> double {
         (void)source_country;   // the program reads cell metrics; scope is the cell
@@ -8040,7 +8052,7 @@ void NativeIdeologyRuntime::ensure_derived_program_sampler() {
         const int32_t count =
             static_cast<int32_t>(_derived_program_metric_scratch.size());
         const pk::MetricMask all = pk::MetricMask::all_declared(count);
-        _economy_runtime->sample_effect_metrics(cell, count,
+        economy_api::sample_effect_metrics(*_economy_runtime, cell, count,
             _derived_program_metric_scratch.data(), all);
         int64_t magnitude = 0;
         std::string error;
@@ -8060,7 +8072,7 @@ void NativeIdeologyRuntime::ensure_derived_program_sampler() {
 void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
     if (!_derived_ramp_sampler) {
         _derived_ramp_metric_scratch.resize(
-            static_cast<size_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT), 0);
+            static_cast<size_t>(EconomyApi::FAMILY_METRIC_COUNT), 0);
         // Captures MEMBERS, not locals: the job outlives this call.
         _derived_ramp_sampler = [this](int32_t metric_id, int32_t cell,
                                        uint64_t source_country) -> double {
@@ -8068,7 +8080,7 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
                 (metric_id >= 56 && metric_id <= 61) ||
                 (metric_id >= 63 && metric_id <= 69) || metric_id == 91;
             if (country_scope) {
-                static_assert(NativeEconomyRuntime::FAMILY_METRIC_COUNT <= 256,
+                static_assert(EconomyApi::FAMILY_METRIC_COUNT <= 256,
                     "ramp country-metric cache key packs metric_id into 8 bits");
                 const uint64_t key = (source_country << 8U) ^
                     static_cast<uint64_t>(metric_id);
@@ -8078,8 +8090,9 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
                     return found->second;
                 }
             }
-            _economy_runtime->sample_effect_metrics(
-                cell, static_cast<int32_t>(_derived_ramp_metric_scratch.size()),
+            economy_api::sample_effect_metrics(
+                *_economy_runtime, cell,
+                static_cast<int32_t>(_derived_ramp_metric_scratch.size()),
                 _derived_ramp_metric_scratch.data());
             ++_derived_ramp_samples_taken;
             const double sample = metric_id >= 0 &&

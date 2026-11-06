@@ -6,6 +6,18 @@
 
 每日表是 Host 的装配层，`DayExecution` 仅借用本次调用的计划、输入和输出，不跨日保存引用。各 stage 仍访问同一个 Host 的私有成员；拆方法不是独立 store 迁移。公共类名、绑定、scheduler/slot id 与保存格式未改变。
 
+## 模块公开接口（当前）
+
+规则与迁移步骤见 [开发指南](development-guide.md#模块公开接口module-api试点economy)。契约文件按模块分开放在 `tools/ci/module_api/`，由 `check_module_api.py` 检查。
+
+| 模块 | 接口头 | 待迁移的同级包含者 | 组合根 |
+|---|---|---|---|
+| Economy | `economy_api.h` / `economy_api.cpp` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 39：22 个 `native_simulation_*`、17 个 `world_ext*` |
+
+共享契约头（`tools/ci/module_api_shared.json`）：`metric_mask.h`、`effect_selector_cap.h`。
+
+已知限制：经济实现文件仍包含 `native_simulation_host.h`（41 个，其中约 10 个真正用到宿主），计划改为窄端口 `economy_host_port.h`。Country 尚无接口头，`country_read_view.h` 是只读视图的前身。
+
 ## 允许方向与现存债务
 
 目标依赖方向：外部命令 → 状态所有者；业务模块 → 对方已提交只读视图；业务后果 → 对方接受的 intent；显示 → 已发布结果。所有者之外不能直接写状态。

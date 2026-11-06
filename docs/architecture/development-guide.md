@@ -2,6 +2,20 @@
 
 先读 [现状](current-state.md) 与 [目标](design.md)，确认数据所有者、运行线程和真正提交点。不能把目标接口当已存在的 API。下方按轮次保留的历史记录，以文末 R2/L1–L5 的状态与入口为准。
 
+## 模块公开接口（Module API，试点：Economy）
+
+改一个模块时，别的模块只应通过它的 `<module>_api.h` 访问它；改模块内部时，只要接口不变，不需要读外部模块。
+
+- **接口头内容**：只放 POD、枚举、常量、前向声明和 `<module>_api::` 自由函数声明。接口头能包含三类头：`<系统头>`、其他模块的 `*_api.h`、登记过的共享契约头。不得包含任何内部头，由 `check_module_api.py` 机检。
+- **共享契约头**：多个模块经接口交换的叶子值类型，例如 `metric_mask.h`、`effect_selector_cap.h`，登记在 `tools/ci/module_api_shared.json`（`{头文件: 原因}`）。这些头本身只能包含系统头或其他共享契约头，护栏同样检查。新增一项前先确认它不依赖任何模块的内部状态。
+- **Economy 现状**：`gdext/src/economy_api.h` 定义 `struct EconomyApi`（命令码 `COMMAND_*`、`FAMILY_METRIC_*`、`EFFECT_PREFLIGHT_*`、`EffectCommand`、`CountryClassOpinionSnapshot`、`CountryAiColonizationStat`、`is_registered_economy_effect_opcode`）。`NativeEconomyRuntime` 继承 `EconomyApi`，所以经济内部仍可写 `NativeEconomyRuntime::COMMAND_X`；外部模块写 `EconomyApi::COMMAND_X`。
+- **调用经济方法**：外部模块写 `economy_api::method(*economy, args...)`，声明在 `economy_api.h`，实现在 `economy_api.cpp`，每个函数只转发到一个成员，不放逻辑。需要新的读取或请求时，在这两个文件里各加一个转发函数，按使用方分组。
+- **把一个外部文件迁到接口**：把 `#include "economy_runtime.h"` 换成 `#include "economy_api.h"`；`NativeEconomyRuntime::X`（类型或常量）改成 `EconomyApi::X`；`economy->m(a)` 改成 `economy_api::m(*economy, a)`；然后从 `tools/ci/module_api/economy.json` 的 `legacy_includers` 删掉该文件（不删会报"过期条目"）。
+- **模块自己的组件**：被模块内部头包含、读写模块私有状态的文件（例如 `trade_visual_cache.*`），不是外部包含者，而是登记进该模块的 `owner_file_patterns`。
+- **组合根**：构造或拥有 `NativeEconomyRuntime` 的宿主（`native_simulation_*`）和 Godot 绑定层（`world_ext*`）登记在 `composition_roots`，必须写原因，只减不增。
+- **依赖计数**：`check_cpp_deps.py` 把"包含 `<peer>_api.h`"、接口头内部的类型、以及直接包含接口头的文件对其中类型的使用记为已审契约引用（`contract_references`），不计入旧账；接口头里只有前向声明的 `NativeEconomyRuntime` 不算契约，仍计为依赖。
+- **新增模块接口**：建 `<module>_api.h/.cpp` 和 `tools/ci/module_api/<module>.json`（字段见 `check_module_api.py` 文档串），先把现有外部包含者全部放入 `legacy_includers`，再逐个迁移。
+
 ## 修改现有每日模块
 
 1. 在 `native_simulation_host.cpp` 的 modules 表找到对应域，修改其 `native_simulation_stage_<domain>.cpp` 成员函数；公式仍放数据所有者的现有实现中。
@@ -22,6 +36,7 @@
 python3 tools/ci/check_size_ratchet.py
 python3 tools/ci/check_cpp_deps.py
 python3 tools/ci/check_runtime_advancers.py
+python3 tools/ci/check_module_api.py
 python3 tools/ci/test_architecture_guards.py
 cd gdext
 scons platform=macos target=template_debug arch=arm64 dev_build=no -j8

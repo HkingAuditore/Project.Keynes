@@ -1,6 +1,6 @@
 #include "effect_runtime.h"
 #include "country_runtime.h"
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "modifier_runtime.h"
 #include "runtime_effect_pod.h"
 #include "world_ext.h"
@@ -80,7 +80,7 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
             break;
         case EffectRuntime::ECONOMY_COMMAND:
             if (domain != 2 ||
-                !NativeEconomyRuntime::is_registered_economy_effect_opcode(opcode)) {
+                !EconomyApi::is_registered_economy_effect_opcode(opcode)) {
                 reason = "effect_economy_opcode_unregistered";
                 return false;
             }
@@ -2985,7 +2985,7 @@ bool EffectRuntime::family_effect_metadata_pod(
         // guard above already rejected; keeping the check here too means a
         // program that somehow bypassed it publishes nothing rather than
         // publishing the wrong column.
-        if (metric_id < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+        if (metric_id < EconomyApi::FAMILY_METRIC_COUNT)
             out.metric_mask.set(metric_id);
         else
             out.scalar_mask.set(metric_id);
@@ -3002,14 +3002,14 @@ bool EffectRuntime::family_effect_metadata_pod(
                     // Truncating silently would leave a boundary unobserved while
                     // still bucketing the metric -- worse than not bucketing at
                     // all, because the miss is invisible.
-                    if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+                    if (condition.arg0 < EconomyApi::FAMILY_METRIC_COUNT)
                         out.exact_metric_mask.set(condition.arg0);
                     return;
                 }
                 // Economy consumes thresholds for revision bucketing. Ideology
                 // scalars live above that boundary and have no Economy consumer,
                 // but this skip must not abandon later conditions/instructions.
-                if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT) {
+                if (condition.arg0 < EconomyApi::FAMILY_METRIC_COUNT) {
                     const int32_t slot = out.metric_threshold_count++;
                     out.metric_threshold_ids[slot] = condition.arg0;
                     out.metric_threshold_values[slot] = boundary;
@@ -3032,7 +3032,7 @@ bool EffectRuntime::family_effect_metadata_pod(
             include_metric(instruction.arg0);
             // A Ramp consumes the continuous value: bucketing it would quantise
             // the card's own strength, which is a silent numeric change.
-            if (instruction.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+            if (instruction.arg0 < EconomyApi::FAMILY_METRIC_COUNT)
                 out.exact_metric_mask.set(instruction.arg0);
         }
     }
@@ -3817,7 +3817,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     Command settle;
     settle.action = ECONOMY_COMMAND;
     settle.domain = 8;
-    settle.opcode = NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION;
+    settle.opcode = EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION;
     settle.target_handle = expedition_handle;
     settle.target_generation = expedition_generation;
     settle.command_key_id = -1;
@@ -3879,7 +3879,7 @@ bool EffectRuntime::family_colonization_includes_claim(
             command->opcode == NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY)
             return true;
         if (command->action == ECONOMY_COMMAND &&
-            command->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+            command->opcode == EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
             command->payload[2] != 0)
             return true;
     }
@@ -3894,7 +3894,7 @@ int32_t EffectRuntime::family_colonization_population_reward(
     for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
         const Command *command = command_at(transaction, ordinal);
         if (command == nullptr || command->action != ECONOMY_COMMAND ||
-            command->opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION)
+            command->opcode != EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION)
             continue;
         return static_cast<int32_t>(std::max<int64_t>(0, command->payload[3]));
     }
@@ -6445,7 +6445,7 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
     if (economy_runtime == nullptr) return failure("economy_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
     struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
-    std::vector<NativeEconomyRuntime::EffectCommand> commands;
+    std::vector<EconomyApi::EffectCommand> commands;
     std::vector<PendingTransaction> pending;
     commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     int32_t rejected_transactions = 0;
@@ -6486,15 +6486,15 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
-                command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
-                (command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY)) {
+                command->opcode < EconomyApi::COMMAND_TRANSFER_TO_COHORT ||
+                (command->opcode > EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_SET_SPLIT_POLICY)) {
                 supported = false;
                 break;
             }
-            NativeEconomyRuntime::EffectCommand native;
+            EconomyApi::EffectCommand native;
             native.opcode = command->opcode;
             native.effective_day = transaction.effective_day;
             native.sequence = static_cast<int64_t>(command->idempotency_key &
@@ -6504,11 +6504,11 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             const uint64_t packed_i32 = static_cast<uint64_t>(command->payload[0]);
             native.i32_0 = static_cast<int32_t>(packed_i32 & 0xffffffffULL);
             native.i32_1 = command->opcode ==
-                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION
                 ? static_cast<int32_t>(command->payload[3])
                 : static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
             native.i64_0 = command->opcode ==
-                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION
                 ? command->payload[2] : command->value_q16;
             native.i64_1 = command->payload[1];
             native.idempotency_key = command->idempotency_key;
@@ -6525,15 +6525,15 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             continue;
         }
         std::string preflight_error;
-        const int32_t preflight = economy_runtime->preflight_effect_commands_pod(
-            commands.data() + begin, count, preflight_error);
-        if (preflight == NativeEconomyRuntime::EFFECT_PREFLIGHT_RETRY) {
+        const int32_t preflight = economy_api::preflight_effect_commands_pod(
+            *economy_runtime, commands.data() + begin, count, preflight_error);
+        if (preflight == EconomyApi::EFFECT_PREFLIGHT_RETRY) {
             commands.resize(begin);
             ++retryable_transactions;
             if (!preflight_error.empty()) _last_error = preflight_error;
             continue;
         }
-        if (preflight != NativeEconomyRuntime::EFFECT_PREFLIGHT_ACCEPT) {
+        if (preflight != EconomyApi::EFFECT_PREFLIGHT_ACCEPT) {
             commands.resize(begin);
             untrack_pending_transaction(transaction);
             unindex_transaction_commands(transaction);
@@ -6563,8 +6563,8 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
     }
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!economy_runtime->submit_effect_commands_pod(commands.data(), commands.size(),
-            request_ids, error) || request_ids.size() != commands.size()) {
+    if (!economy_api::submit_effect_commands_pod(*economy_runtime, commands.data(),
+            commands.size(), request_ids, error) || request_ids.size() != commands.size()) {
         _last_error = error.empty() ? "effect_native_economy_enqueue_failed" : error;
         out["ok"] = false;
         out["reason"] = String(_last_error.c_str());
@@ -6616,7 +6616,7 @@ Dictionary EffectRuntime::ack_native_economy(NativeEconomyRuntime *economy_runti
             }
             bool complete = false;
             bool ok = false;
-            if (!economy_runtime->effect_command_result_pod(
+            if (!economy_api::effect_command_result_pod(*economy_runtime,
                     _native_economy_request_ids[request_index], complete, ok, reason)) {
                 failed = true;
                 break;
@@ -8207,7 +8207,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             const bool settle_only = transaction.command_count == 1 &&
                 first != nullptr && first->action == ECONOMY_COMMAND &&
                 first->domain == 8 &&
-                first->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                first->opcode == EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
                 first->command_key_id == -1 && first->command_definition_id == -1;
             const bool claim_and_settle = transaction.command_count == 2;
             if (settle_only) {
@@ -8219,7 +8219,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                     claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
                     claim.command_key_id != -1 || claim.command_definition_id != -1 ||
                     settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
-                    settle.opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION ||
+                    settle.opcode != EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION ||
                     settle.command_key_id != -1 || settle.command_definition_id != -1 ||
                     claim.target_handle != settle.payload[1] ||
                     claim.payload[0] != settle.payload[0])

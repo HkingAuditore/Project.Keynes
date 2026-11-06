@@ -1,0 +1,4 @@
+{
+  "metric_mask.h": "Family/ideology metric bitmask exchanged between Effect, Ideology and Economy effect-input APIs; leaf value type",
+  "effect_selector_cap.h": "Effect target-selector caps and stats filled by Economy target collection for Ideology/Effect callers; leaf value type"
+}

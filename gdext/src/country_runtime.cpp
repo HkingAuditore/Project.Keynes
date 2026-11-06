@@ -5,7 +5,7 @@
 // instances, so they take the same worker/legacy door as the family ones.
 #include "economy_effect_forward.h"
 #include "modifier_runtime.h"
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "native_simulation_host.h"
 
 #include <algorithm>
@@ -7984,7 +7984,7 @@ bool NativeCountryRuntime::capture_peer_context(
     out.effect_generation = _effect_runtime_enabled && _effect_runtime != nullptr
         ? _effect_runtime->committed_generation() : 0;
     out.economy_generation = _economy_runtime != nullptr
-        ? _economy_runtime->committed_generation() : 0;
+        ? economy_api::committed_generation(*_economy_runtime) : 0;
     out.day = day;
     out.continuation_index = continuation_index;
     out.effect_enabled = _effect_runtime_enabled && _effect_runtime != nullptr ? 1 : 0;
@@ -8756,11 +8756,14 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
     if (intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE) {
         if (_economy_runtime == nullptr)
             return reject("country_peer_economy_runtime_unavailable");
-        if (_economy_runtime->committed_generation() < intent.peer_generation)
+        if (economy_api::committed_generation(*_economy_runtime) <
+                intent.peer_generation)
             return reject("country_peer_adapter_economy_generation_regressed");
-        _economy_runtime->notify_era_milestone_activated(intent.target_handle);
+        economy_api::notify_era_milestone_activated(*_economy_runtime,
+                                                    intent.target_handle);
         result.code = CountryPeerResultCode::APPLIED;
-        result.committed_peer_generation = _economy_runtime->committed_generation();
+        result.committed_peer_generation =
+            economy_api::committed_generation(*_economy_runtime);
         ++_peer_results_consumed;
         return result;
     }

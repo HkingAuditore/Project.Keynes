@@ -1,7 +1,7 @@
 #include "modifier_runtime.h"
 
 #include "country_runtime.h"
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "runtime_effect_pod.h"
 
 #include <algorithm>
@@ -722,14 +722,14 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
         const bool family_effect_entity =
             declared_family_entity || ideology_family_entity;
         if (declared_family_entity && _economy_runtime != nullptr &&
-            !_economy_runtime->valid_family_effect_entity_handle(
-                command.entity_handle)) {
+            !economy_api::valid_family_effect_entity_handle(
+                *_economy_runtime, command.entity_handle)) {
             error = "modifier_family_effect_handle_stale";
             return false;
         }
         if (ideology_family_entity && _economy_runtime != nullptr &&
-            !_economy_runtime->valid_family_effect_target_handle(
-                command.entity_handle)) {
+            !economy_api::valid_family_effect_target_handle(
+                *_economy_runtime, command.entity_handle)) {
             error = "modifier_ideology_family_handle_stale";
             return false;
         }
