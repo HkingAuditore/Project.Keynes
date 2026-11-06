@@ -1385,7 +1385,7 @@ L4未开始：经济cpp7989行、头2742行、host7010行与本轮起点相同�
 
 ## S31 R4b 实际状态（2026-11-05）
 
-宿主拆分已完成本轮目标：`scripts/game/world_runtime_host.gd` 为 2,955 行，生成/恢复准备、日调度、GM/诊断、视觉查询和生命周期由适配组件承接；`perf-validation` 宿主和 Web 回退路径未改。Economy 主实现 `gdext/src/economy_runtime.cpp` 为 1,974 行，六个最大成员函数搬到四个 `economy_runtime_residual_*.cpp`，新文件分别为 1,357、1,695、1,749、1,653 行。逐词元和逐行证明记录在 `/tmp/keynes-arch-phase1/stage31/economy-token-proof.json` 与 `economy_move_proof.json`。
+宿主拆分已完成本轮目标：`scripts/game/world_runtime_host.gd` 为 2,955 行，生成/恢复准备、日调度、GM/诊断、视觉查询和生命周期由适配组件承接；`perf-validation` 宿主和 Web 回退路径未改。Economy 主实现 `gdext/src/economy_runtime.cpp` 为 1,974 行，六个最大成员函数搬到四个按职责命名的文件（`economy_runtime_country_epoch_capture.cpp`、`economy_runtime_building_plan_body.cpp`、`economy_runtime_lineage_branch_effects.cpp`、`economy_runtime_state_hash.cpp`），新文件分别为 1,356、1,694、1,748、1,652 行。逐词元和逐行证明记录在 `/tmp/keynes-arch-phase1/stage31/economy-token-proof.json` 与 `economy_move_proof.json`。
 
 依赖棘轮当前为 506 keys、491 debt、`header_exposed=518`、`total=2209`、0 violations；新增 `.inc` 只供 Economy 实现聚合完整跨域类型，并在 `cpp_deps_baseline.json` 中有受控 relocation 记录。最终验证已完成：主链 runs=3、external runs=2、默认回归、full（7 场景）、annual、military-annual 全部 exit 0，所有回放进程 `first_difference=None`。
 

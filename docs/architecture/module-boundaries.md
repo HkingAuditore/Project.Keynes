@@ -761,4 +761,4 @@ Military拥有PKMI2的lot payload、链和槽位顺序，inactive行不能由通
 
 `world_runtime_host.gd` 只保留会话公开入口、信号和状态转发；生成/恢复、日推进、GM/记录、视觉查询分别由 `world_runtime_generation_adapter.gd`、`world_runtime_daily_adapter*.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_visual_adapter.gd` 承接，生命周期仍由既有 `world_runtime_lifecycle.gd` 承接。
 
-Economy 的六个大成员由 `economy_runtime_residual_1..4.cpp` 承接；这些文件通过私有 `.inc` 聚合所需的 Country/Modifier/Trigger 完整类型，未形成公共 ABI。`check_cpp_deps.py` 统计该 `.inc` 的真实依赖，并要求每个迁移项登记 `moved_from`；`header_exposed=518`、`total=2209`。
+Economy 的六个大成员由 `economy_runtime_country_epoch_capture.cpp`、`economy_runtime_building_plan_body.cpp`、`economy_runtime_lineage_branch_effects.cpp`、`economy_runtime_state_hash.cpp` 承接；这些文件通过私有 `.inc` 聚合所需的 Country/Modifier/Trigger 完整类型，未形成公共 ABI。`check_cpp_deps.py` 统计该 `.inc` 的真实依赖，并要求每个迁移项登记 `moved_from`；`header_exposed=518`、`total=2209`。
