@@ -1,0 +1,43 @@
+name: Runtime quick checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-quick-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authoring-and-thread-lifetime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Do not download game assets, checked-in binaries or godot-cpp.
+          sparse-checkout: |
+            tools/map_authoring
+            gdext/src
+            gdext/tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Map authoring regressions
+        run: python -m unittest discover -s tools/map_authoring/tests -v
+      - name: Thread retirement under address and undefined behavior sanitizers
+        run: |
+          clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+            -Igdext/src gdext/tests/runtime_thread_retirement_test.cpp -o /tmp/thread-retirement-test
+          /tmp/thread-retirement-test
+      - name: In-flight execution ownership during stop
+        run: |
+          clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+            -Igdext/src gdext/tests/runtime_execution_context_test.cpp -o /tmp/execution-context-test
+          /tmp/execution-context-test
+      - name: Standalone climate compilation
+        run: |
+          printf '#include "runtime_climate_pass_math.h"\n' | g++ -std=c++17 -fsyntax-only -x c++ -Igdext/src -
+          g++ -std=c++17 -fsyntax-only -Igdext/src gdext/src/runtime_climate_kernel.cpp

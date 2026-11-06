@@ -271,7 +271,7 @@ Worker 权威路径（Climate ACTIVE）：
   两侧数值不同时先排除输入差异，不要先怀疑这里。
 - `gdext/src/runtime_pod_protocol.h`：`RuntimeEnvironmentSnapshot` 与各 stage Input 结构的契约。
 - `Project/project-keynes/tests/climate_parity_probe.gd`：SHADOW 对拍 harness。
-- `docs/cpp-dots-runtime/full-authoritative-runtime-status.md` §39–§42：落地过程、四类缺陷
+- `docs/architecture/migration.md` §39–§42：落地过程、四类缺陷
   与方法论积累。
 
 ## 架构变更检查表

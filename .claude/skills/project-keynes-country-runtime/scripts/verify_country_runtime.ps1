@@ -14,7 +14,7 @@ try {
         'gdext/src/economy_runtime_persistence_read.cpp',
         'Project/project-keynes/scripts/country/country_facade.gd',
         'Project/project-keynes/scripts/simulation/systems/country_daily_system.gd',
-        'docs/cpp-dots-runtime/native-country-runtime.md'
+        'docs/architecture/current-state.md'
     )
     foreach ($path in $required) {
         if (-not (Test-Path $path)) { throw "Missing required country runtime file: $path" }

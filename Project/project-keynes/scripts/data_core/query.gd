@@ -22,7 +22,13 @@ class_name DCQuery
 ## 完成 chain 后直接 for_each_index，结束后调度器或工厂 release 回池。
 
 # 与 World 关联（执行时按 archetype / entity_count 确定遍历范围）
-var _world: DCWorld = null
+var _world_ref: WeakRef
+# The world owns its query pool; a query must not retain its owner.
+var _world: DCWorld:
+	get:
+		return _world_ref.get_ref() as DCWorld if _world_ref != null else null
+	set(value):
+		_world_ref = weakref(value) if value != null else null
 
 # 读 / 写集合（调用 with / readwrite / readonly 时累计）；首版仅做 debug 校验
 var _read_set: Array[int] = []

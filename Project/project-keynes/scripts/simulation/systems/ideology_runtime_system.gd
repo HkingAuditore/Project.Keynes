@@ -29,25 +29,8 @@ func is_deadline_critical(ctx: SusTickContext) -> bool: return ctx != null and s
 func tick(ctx) -> Dictionary:
 	if facade == null or not facade.is_configured(): return {"done": true, "stage_name": "ideology_unavailable"}
 	var started := Time.get_ticks_usec()
-	# Hard no-op when worker owns Ideology (belt-and-suspenders with ideology_should_run).
-	if facade.world_ext().has_method("get_runtime_thread_report"):
-		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
-		if bool(report.get("ideology_worker_authoritative", false)):
-			# [barrier-latch 2026-11-01] 一旦某天 tick 返回未完成把 ideology_day_barrier
-			# 置真，之后即使权威切给 worker（本分支直接返回 done），也没有任何人把它
-			# 清掉 —— 日历会永久停在当天（安卓 day 1 复现：barrier=ideology_day_barrier）。
-			if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
-				world_clock.request_simulation_backpressure(&"ideology_day_barrier", false)
-			return {
-				"done": true,
-				"work_done": 0,
-				"elapsed_ms": float(Time.get_ticks_usec() - started) / 1000.0,
-				"progress_ratio": 1.0,
-				"stage_name": "ideology_worker_authoritative",
-				"path": "IDEOLOGY_WORKER",
-			}
 	var result: Dictionary = facade.world_ext().run_ideology_daily(int(ctx.day_index) if ctx != null else 0)
-	if facade.has_method("drain_receipts"):
+	if not bool(result.get("suppressed", false)) and facade.has_method("drain_receipts"):
 		facade.drain_receipts()
 	var done := bool(result.get("done", true))
 	if not done and _stall_logs < 8:
@@ -59,7 +42,9 @@ func tick(ctx) -> Dictionary:
 			int(result.get("cursor_end", -1)), String(result.get("path", "?")),
 			int(result.get("active_visits", -1)), int(result.get("pending_transition_visits", -1))])
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
-		world_clock.request_simulation_backpressure(&"ideology_day_barrier", not done)
+		world_clock.request_simulation_backpressure(&"ideology_day_barrier",
+			bool(facade.world_ext().ideology_needs_daily_continuation(
+				int(ctx.day_index) if ctx != null else 0)))
 	return {"done": done, "work_done": int(result.get("commands_applied", 0)) + int(result.get("active_visits", 0)) + int(result.get("pending_transition_visits", 0)),
 		"elapsed_ms": float(Time.get_ticks_usec() - started) / 1000.0,
 		"progress_ratio": float(result.get("progress_ratio", 1.0 if done else 0.0)),

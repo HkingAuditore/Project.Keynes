@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCClimatePassB
 
 ## Phase E.4 / dots-full-migration §Phase E.4：climate Pass-B 抽出（本类同时
@@ -38,7 +38,6 @@ class_name DCClimatePassB
 ## 4. F.3 之后在 dots_gdscript fallback 路径仍由本类承载；dots_cpp 路径走
 ##    DCWorldExt::run_climate_pass_b。
 
-var _generator
 
 func _init(generator) -> void:
 	_generator = generator

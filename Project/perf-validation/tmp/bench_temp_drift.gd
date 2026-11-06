@@ -27,7 +27,7 @@ extends EditorScript
 #   path_cpp_full / path_gdscript_full → 两条路径的对照实现
 #   temp_drift_pass_gdscript / flush_to_mapdata → 可复用的 GDScript helper
 #
-# 参见 docs/performance-charter.md §12。
+# 参见 docs/architecture/current-state.md。
 # ════════════════════════════════════════════════════════════════════
 
 const N_CELLS: int = 1024            # 标杆规模：足够大以触发 SIMD 路径，足够小以瞬时跑完

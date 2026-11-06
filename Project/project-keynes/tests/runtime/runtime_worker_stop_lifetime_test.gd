@@ -7,6 +7,28 @@ extends SceneTree
 var _checks := 0
 var _failures := 0
 
+class AddedModule extends RefCounted:
+	var owner: WeakRef
+	var prepared_before_execution := false
+	var released_after_execution := false
+	var cancel_count := 0
+	func adapter(host):
+		owner = weakref(host)
+		return preload("res://scripts/game/runtime_session_module.gd").new().configure(
+			"added_system", PackedStringArray(["restore"]), PackedStringArray(["added.state"]),
+			prepare, cancel, release)
+	func prepare() -> Dictionary:
+		var host = owner.get_ref()
+		prepared_before_execution = host.current_map() != null and not host.is_runtime_ready_for_ticks()
+		return {"ok": true}
+	func cancel() -> void:
+		cancel_count += 1
+	func release() -> Dictionary:
+		var host = owner.get_ref()
+		released_after_execution = host.generator() != null and bool(
+			host.generator().get_runtime_thread_report().get("simulation_executor_exited", false))
+		return {"ok": released_after_execution}
+
 
 func _init() -> void:
 	call_deferred("_run")
@@ -31,9 +53,12 @@ func _run() -> void:
 	})
 	_expect("formal session configures", bool(configured.get("ok", false)))
 	host.configure(null, null, clock)
+	var added := AddedModule.new()
+	_expect("new system registers through session interface", host.register_session_module(added.adapter(host)).ok)
 	await host.generate_world(20260718)
 	var generator := host.get_generator()
 	_expect("world generation completes", generator != null)
+	_expect("extension prepares after world data and before execution", added.prepared_before_execution)
 	if generator == null:
 		host.free()
 		clock.free()
@@ -65,13 +90,33 @@ func _run() -> void:
 	var stopped: Dictionary = ext.get_runtime_thread_report()
 	_expect("worker reaches STOPPED", String(stopped.get("simulation_host_state", "")) == "STOPPED")
 	_expect("worker finishes its outstanding slice", int(stopped.get("worker_day_inflight", -1)) == 0)
+	var control: Dictionary = ext.get_runtime_control_state()
+	_expect("stopped worker owns no domains", int(control.get("authoritative_domain_mask", -1)) == 0)
+	_expect("stopped worker is not ready or effectively ACTIVE",
+		not bool(control.get("authority_ready", true))
+		and not bool(control.get("simulation_worker_ready", true))
+		and String(control.get("simulation_thread_mode", "")) == "OFF")
 	_expect("stop does not fault the worker", int(stopped.get("worker_fault_count", -1)) == 0)
+	_expect("worker confirms it has returned, not just received stop", bool(stopped.get("simulation_executor_exited", false)))
+	var released := {
+		"generator": weakref(generator),
+		"map": weakref(host.current_map()),
+		"native world": weakref(ext),
+		"DataCore world": weakref(generator.get_data_core_world()),
+	}
+	var closed: Dictionary = await host.close_world()
+	_expect("session closes all registered modules", closed.ok and host.session_report().state == "CLOSED")
+	_expect("extension releases after execution and before its dependencies", added.released_after_execution)
+	_expect("extension cancellation happens exactly once", added.cancel_count == 1)
+	_expect("closed host drops its world owner", host.generator() == null and host.current_map() == null)
 	# Drop the scene and its owning references on the main thread.
 	host.free()
 	clock.free()
 	generator = null
 	ext = null
 	await process_frame
+	for label in released:
+		_expect("exit releases " + label, released[label].get_ref() == null)
 	_finish()
 
 

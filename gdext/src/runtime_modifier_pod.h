@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime_pod_protocol.h"
+#include "runtime_committed_view_version.h"
 
 #include <array>
 #include <atomic>
@@ -132,6 +133,13 @@ struct RuntimeModifierPodSnapshot {
     std::vector<RuntimeDomainAck> acks;
 };
 
+struct RuntimeModifierCommittedView {
+    uint64_t generation = 0;
+    int64_t day = -1;
+    bool committed = false;
+    std::vector<RuntimeModifierPodBucket> buckets;
+};
+
 struct RuntimeModifierPodReport {
     uint64_t generation = 0;
     uint64_t state_hash = 0;
@@ -169,6 +177,12 @@ public:
     void discard_plan();
 
     const RuntimeModifierPodSnapshot &snapshot() const { return _snapshot; }
+    RuntimeModifierCommittedView copy_committed_view() const;
+    bool observe_committed_view(const RuntimeModifierCommittedView &view) const {
+        return _view_cursor.observe(view.generation, view.day, view.committed);
+    }
+    static bool committed_view_self_test(std::string &error);
+
     const RuntimeModifierPodReport &report() const { return _report; }
 
     void serialize(std::vector<uint8_t> &out) const;
@@ -235,6 +249,7 @@ private:
     std::vector<RuntimeModifierPodCommand> _pending_identities;
     bool _configured = false;
     bool _plan_ready = false;
+    mutable RuntimeCommittedViewVersion _view_cursor;
 };
 
 class RuntimeModifierSnapshotRing {

@@ -182,7 +182,7 @@ float spike_width = 0.55 * smoothstep(...)  // 从 0.50 改到 0.55
 如果想深入理解：
 - [`docs/visual-optimization/00-START-HERE.md`](visual-optimization/00-START-HERE.md) - 完整方案总览
 - [`docs/plant-animal-shape-design.md`](visual-optimization/plant-animal-shape-design.md) - 每个形状的设计细节
-- [`docs/IMPLEMENTATION-COMPLETE.md`](IMPLEMENTATION-COMPLETE.md) - 本次实施的完整总结
+- [`docs/architecture/migration.md`](../../../docs/architecture/migration.md) - 本次实施的完整总结
 
 ---
 

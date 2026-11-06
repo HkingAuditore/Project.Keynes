@@ -126,5 +126,37 @@ func _run() -> void:
 			push_error("visual_tile_horizon_smoke_test: CPU %s upload failed" % field_name)
 			quit(1)
 			return
-	print("visual_tile_horizon_smoke_test: PASS %s" % JSON.stringify(report))
+	# Cancel while a real local device owns submitted work. Clearing the baker's
+	# field is insufficient: the device itself must cease to exist after completion.
+	var cancelled_baker = VisualTileHorizonBaker.new()
+	var cancelled_result := {}
+	cancelled_baker.completed.connect(func(ok: bool, value: Dictionary) -> void:
+		cancelled_result["ok"] = ok
+		cancelled_result["report"] = value)
+	cancelled_baker.start(tiles, layout.generation_id)
+	while cancelled_baker._rd == null and cancelled_result.is_empty():
+		await process_frame
+	if cancelled_baker._rd == null:
+		push_error("visual_tile_horizon_smoke_test: cancellation never reached an owned device")
+		quit(1)
+		return
+	var device_ref: WeakRef = weakref(cancelled_baker._rd)
+	cancelled_baker.cancel()
+	while cancelled_result.is_empty():
+		await process_frame
+	if bool(cancelled_result.get("ok", true)) or device_ref.get_ref() != null:
+		push_error("visual_tile_horizon_smoke_test: cancelled bake retained its device")
+		quit(1)
+		return
+	# The destruction path also owns an allocated device, even if setup never
+	# reached a completed bake (e.g. the scene disappears during preparation).
+	var abandoned_baker = VisualTileHorizonBaker.new()
+	abandoned_baker._rd = RenderingServer.create_local_rendering_device()
+	var abandoned_device: WeakRef = weakref(abandoned_baker._rd)
+	abandoned_baker = null
+	if abandoned_device.get_ref() != null:
+		push_error("visual_tile_horizon_smoke_test: destroyed baker retained its device")
+		quit(1)
+		return
+	print("visual_tile_horizon_smoke_test: PASS success/cancel/destruction %s" % JSON.stringify(report))
 	quit(0)

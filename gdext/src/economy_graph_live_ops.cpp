@@ -54,6 +54,11 @@ bool NativeEconomyGraphStageOps::bind_view(EconomySoAView &view,
     return _runtime->bind_soa_view(view, error);
 }
 
+uint32_t NativeEconomyGraphStageOps::resume_stage_index() const noexcept {
+    return _mutate && _runtime != nullptr
+        ? _runtime->next_stage_ops_stage_index() : 0u;
+}
+
 bool NativeEconomyGraphStageOps::run_stage(
         RuntimeEconomyGraphStage stage, EconomyStageCursor &cursor,
         const RuntimeEconomyEpochInput &input, EconomyStageResult &result,

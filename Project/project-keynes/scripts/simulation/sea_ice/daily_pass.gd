@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCSeaIceDailyPass
 
 ## Phase E.5 / dots-full-migration §Phase E.5：海冰逐日演替抽出。
@@ -36,7 +36,6 @@ class_name DCSeaIceDailyPass
 ## 4. hysteresis 阈值（sea_ice_terrain_threshold / hysteresis_delta）保留在
 ##    ClimateProfile，本类读不写。
 
-var _generator
 
 func _init(generator) -> void:
 	_generator = generator

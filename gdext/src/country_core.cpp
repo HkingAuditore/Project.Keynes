@@ -338,6 +338,9 @@ bool validate_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
         error = "country_checkpoint_header_invalid";
         return false;
     }
+    if (checkpoint.compatibility_pkcn.size() > MAX_CANONICAL_BYTES) {
+        error = "country_checkpoint_compatibility_payload_invalid"; return false;
+    }
     if (checkpoint.canonical_pkcn.empty() ||
         checkpoint.canonical_pkcn.size() > MAX_CANONICAL_BYTES) {
         error = "country_checkpoint_payload_invalid";
@@ -432,7 +435,7 @@ bool encode_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
     append_u32(out, CPD2_MAGIC);
     append_u32(out, checkpoint.abi_version);
     append_u32(out, checkpoint.country_schema_version);
-    append_u32(out, 0u);
+    append_u32(out, 1u); // CPD2 payload revision 1; public ABI remains 2.
     append_u64(out, checkpoint.session_epoch);
     append_u64(out, checkpoint.catalog_hash);
     append_u64(out, checkpoint.generation);
@@ -459,6 +462,8 @@ bool encode_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
     append_u32(out, static_cast<uint32_t>(checkpoint.terminal_receipts.size()));
     for (const CountryCommandReceipt &receipt : checkpoint.terminal_receipts)
         append_receipt(out, receipt);
+    append_u32(out, static_cast<uint32_t>(checkpoint.compatibility_pkcn.size()));
+    out.insert(out.end(), checkpoint.compatibility_pkcn.begin(), checkpoint.compatibility_pkcn.end());
     append_u64(out, country_checkpoint_checksum(out.data(), out.size()));
     return true;
 }
@@ -489,7 +494,7 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
     if (!read_u32(bytes, size, cursor, magic) || magic != CPD2_MAGIC ||
         !read_u32(bytes, size, cursor, parsed.abi_version) ||
         !read_u32(bytes, size, cursor, parsed.country_schema_version) ||
-        !read_u32(bytes, size, cursor, flags) || flags != 0 ||
+        !read_u32(bytes, size, cursor, flags) ||
         !read_u64(bytes, size, cursor, parsed.session_epoch) ||
         !read_u64(bytes, size, cursor, parsed.catalog_hash) ||
         !read_u64(bytes, size, cursor, parsed.generation) ||
@@ -503,6 +508,7 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
         error = "country_checkpoint_header_invalid";
         return false;
     }
+    if (flags != 1u) { error = "country_checkpoint_payload_version_mismatch_expected_1"; return false; }
     if (payload_size == 0 || payload_size > MAX_CANONICAL_BYTES ||
         cursor > size - sizeof(uint64_t) ||
         payload_size > size - sizeof(uint64_t) - cursor) {
@@ -553,6 +559,12 @@ bool decode_country_core_checkpoint(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    if (!read_u32(bytes, size, cursor, count) || count > MAX_CANONICAL_BYTES ||
+        cursor > size - sizeof(uint64_t) || count > size - sizeof(uint64_t) - cursor) {
+        error = "country_checkpoint_compatibility_payload_invalid"; return false;
+    }
+    parsed.compatibility_pkcn.assign(bytes + cursor, bytes + cursor + count);
+    cursor += count;
     if (cursor != size - sizeof(uint64_t)) {
         error = "country_checkpoint_tail_invalid";
         return false;

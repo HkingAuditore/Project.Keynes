@@ -6,6 +6,7 @@
 #include "runtime_climate_passes.h"
 #include "runtime_climate_physics.h"
 #include "economy_graph_kernels.h"
+#include "runtime_freeze_contract.h"
 
 #include <array>
 #include <cstddef>
@@ -75,7 +76,7 @@ constexpr uint32_t RUNTIME_DOMAIN_POD_ABI_VERSION = 3u;
 // PKSR is the immutable runtime envelope inside the PKSV v2 container.  A
 // version bump is intentional: v1 did not carry an explicit ABI/section
 // header and must be rejected instead of being guessed at restore time.
-constexpr uint32_t RUNTIME_SAVE_BUNDLE_VERSION = 2u;
+constexpr uint32_t RUNTIME_SAVE_BUNDLE_VERSION = 5u;
 constexpr uint32_t RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE = 1u << 0;
 constexpr uint32_t RUNTIME_SAVE_SECTION_DOMAIN_POD = 1u << 1;
 constexpr uint32_t RUNTIME_SAVE_SECTION_CLIMATE = 1u << 2;
@@ -478,6 +479,7 @@ struct RuntimeEnvironmentSnapshot {
     // 与 own_snow_state / own_field_state 是同一套「ACTIVE 下谁负责」的区分，只是那
     // 两条问的是跨天状态谁持有，这条问的是被抑制的记录谁补。
     bool  climate_worker_authoritative = false;
+    std::vector<double> climate_capture_cursors; // CLM2 continuation, not a POD wire field.
     float climate_paw_water_balance_weight = 0.35f;
     float climate_paw_soil_buffer_weight = 0.25f;
     float climate_paw_drought_penalty = 0.65f;
@@ -493,7 +495,6 @@ struct RuntimeEnvironmentSnapshot {
     // 输入分开，因为它只在 bind_map_data 之后变一次。
     pk_async_climate::ClimateRoundStaticKnobs climate_round_static_knobs;
 };
-
 // Frozen input manifest for the twelve-domain barrier.  This is deliberately
 // numeric-only: it is safe to retain in the worker and in ECP2 without
 // crossing the Godot/Object boundary.  A manifest is valid only for one
@@ -608,6 +609,8 @@ struct RuntimeDayContext {
     double season_phase = 0.0;
     double speed_scale = 1.0;
     uint64_t input_generation = 0;
+    RuntimeFrozenInputVersion frozen_input;
+    RuntimeFreezeReadSet freeze_reads;
     // Points at a worker-owned immutable snapshot for the duration of one
     // day. It is never retained by a domain after the day barrier returns.
     const RuntimeEnvironmentSnapshot *environment = nullptr;
@@ -1006,6 +1009,9 @@ struct RuntimeEconomyAssetResult {
     int64_t committed_goods_total = 0;
     std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
 };
+
+using CountryEconomyAssetRequest = RuntimeEconomyAssetRequest;
+using CountryEconomyAssetResult = RuntimeEconomyAssetResult;
 
 struct RuntimeEconomyAssetProtocolStatus {
     uint32_t protocol_version = RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION;
@@ -1973,12 +1979,16 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).
     std::vector<uint8_t> economy_pod_bytes;
+    std::vector<uint8_t> economy_command_bytes, trigger_transport_bytes;
     // Economy ECP2 full-authority section (dual-write alongside ECP1/PKEC).
     std::vector<uint8_t> economy_ecp2_bytes;
     // D7T1 Host Country/Economy asset journal. Independent of Economy POD
     // section ownership; restores peer continuation without granting Economy
     // ACTIVE authority.
     std::vector<uint8_t> economy_asset_bytes;
+    uint64_t economy_fact_event_sequence = 0;
+    int64_t trigger_forwarded_event_id = 0;
+    uint64_t trigger_forward_sequence = 0;
     std::array<uint64_t, 256> producer_sequences{};
     uint64_t fallback_producer_sequence = 0;
 };

@@ -14,6 +14,15 @@ func _run() -> void:
 		_finish()
 		return
 	var ext := DCWorldExt.new()
+	_expect("control state API exported", ext.has_method("get_runtime_control_state"))
+	_expect_control_state(ext, "before start")
+	ext.set_runtime_qos(true)
+	_expect("interactive control state preserves the visual budget gate",
+		bool(ext.get_runtime_control_state().get("interactive", false)))
+	_expect_control_state(ext, "interactive")
+	ext.set_runtime_qos(false)
+	_expect("idle control state restores the normal visual budget",
+		not bool(ext.get_runtime_control_state().get("interactive", true)))
 	_expect("thread API exported", ext.has_method("start_runtime_worker"))
 	_expect("commit API exported", ext.has_method("poll_runtime_commit"))
 	_expect("stop API exported", ext.has_method("request_runtime_stop"))
@@ -40,6 +49,7 @@ func _run() -> void:
 		and int(complete_active.get("thread_report", {}).get(
 			"implemented_domain_mask", 0)) == 0xFFF)
 	if bool(complete_active.get("ok", false)):
+		_expect_control_state(ext, "fresh ACTIVE grant pending")
 		ext.request_runtime_stop()
 		var active_stop_deadline := Time.get_ticks_msec() + 5000
 		while Time.get_ticks_msec() < active_stop_deadline \
@@ -49,6 +59,18 @@ func _run() -> void:
 	_expect("ACTIVE admission probe stops cleanly",
 		str(ext.get_runtime_thread_report().get(
 			"simulation_host_state", "")) == "STOPPED")
+	_expect_control_state(ext, "after ACTIVE stop")
+	var inline_ext := DCWorldExt.new()
+	var inline_start: Dictionary = inline_ext.start_runtime_worker({
+		"simulation_thread_mode": "ACTIVE", "graph_coverage_complete": true,
+		"native_daily_inline": true, "paused": true,
+	})
+	_expect("inline lifecycle starts", bool(inline_start.get("ok", false)))
+	inline_ext.request_runtime_stop()
+	var inline_stopped: Dictionary = inline_ext.get_runtime_control_state()
+	_expect("idle inline stop completes without a worker loop",
+		String(inline_stopped.get("state", "")) == "STOPPED"
+		and int(inline_stopped.get("authoritative_domain_mask", -1)) == 0)
 
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
@@ -60,6 +82,7 @@ func _run() -> void:
 	_expect("shadow graph starts asynchronously", bool(started.get("ok", false)) and bool(started.get("pending", false)))
 	OS.delay_msec(120)
 	var report: Dictionary = ext.get_runtime_thread_report()
+	_expect_control_state(ext, "SHADOW restart")
 	_expect("domain POD ABI version is exposed", int(report.get("runtime_domain_abi_version", 0)) == 1)
 	_expect("worker reaches running state", str(report.get("simulation_host_state", "")) in ["RUNNING", "PAUSED"])
 	var barrier_blocked := int(report.get("simulation_committed_day", 0)) == 0 \
@@ -84,6 +107,7 @@ func _run() -> void:
 		_expect("barrier stop remains non-blocking", bool(barrier_stop.get("ok", false)))
 		OS.delay_msec(30)
 		_expect("barrier worker stops cleanly", str(ext.get_runtime_thread_report().get("simulation_host_state", "")) == "STOPPED")
+		_expect_control_state(ext, "after SHADOW stop")
 		_finish()
 		return
 	_expect("day plan exposes fixed domain barrier", int(report.get("day_stage_count", 0)) == 12 \
@@ -224,7 +248,7 @@ func _run() -> void:
 	_expect("runtime save bundle becomes available", bool(save_poll.get("ready", false)) and (save_poll.get("bytes", PackedByteArray()) as PackedByteArray).size() > 0)
 	_expect("runtime save bundle carries checksum metadata", int(save_poll.get("checksum", 0)) != 0 \
 		and (save_poll.get("bytes", PackedByteArray()) as PackedByteArray).size() >= 89)
-	_expect("runtime save bundle is PKSR v2", int(save_poll.get("bundle_version", 0)) == 2)
+	_expect("runtime save bundle is PKSR v5", int(save_poll.get("bundle_version", 0)) == 5)
 	_expect("runtime save bundle carries deferred commands", int(save_poll.get("pending_command_count", 0)) >= 1)
 	var saved_runtime_bytes: PackedByteArray = save_poll.get("bytes", PackedByteArray())
 	var saved_runtime_day := int(save_poll.get("committed_day", -1))
@@ -340,6 +364,23 @@ func _expect(label: String, ok: bool) -> void:
 func _fail(label: String) -> void:
 	_failures += 1
 	push_error("  [FAIL] %s" % label)
+
+func _expect_control_state(ext: Object, label: String) -> void:
+	var control: Dictionary = ext.get_runtime_control_state()
+	var report: Dictionary = ext.get_runtime_thread_report()
+	var defaults := {
+		"simulation_host_state": "STOPPED", "simulation_thread_mode": "OFF",
+		"requested_simulation_thread_mode": "OFF", "authority_ready": false,
+		"simulation_worker_ready": false, "authoritative_domain_mask": 0,
+		"climate_worker_authoritative": false, "simulation_committed_day": -1,
+		"interactive": false,
+	}
+	var matches := true
+	for key in defaults:
+		if control.get(key, null) != report.get(key, defaults[key]):
+			matches = false
+	_expect("live control state matches diagnostics: " + label, matches)
+
 
 func _finish() -> void:
 	print("=== done: %d checks, %d failures ===" % [_checks, _failures])

@@ -9,7 +9,7 @@
 // NativeEconomyRuntime's public section in economy_runtime.h.
 
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -346,14 +346,12 @@ int64_t NativeEconomyRuntime::military_soldier_heads(int32_t cell) const {
 int64_t NativeEconomyRuntime::military_collect_cash(int64_t country_handle,
                                                     int64_t amount) {
     if (country_handle == 0 || amount <= 0) return 0;
-    if (_country_runtime == nullptr || !_country_runtime->economy_available()) return 0;
-    // Fiscal escrow is the existing conserved path for "Military spends treasury
-    // cash": reserve then collect books the amount into Country's non-tax
-    // expenditure slots instead of silently zeroing the balance.
-    const int64_t reserved = _country_runtime->reserve_fiscal_cash(
-        country_handle, amount);
+    if (_country_runtime == nullptr || !country_reads().economy_available()) return 0;
+    // Preserve reserve then collect; this notification does not choose a payee.
+    auto port = country_api::fiscal_return_port(*_country_runtime);
+    const int64_t reserved = port.resolve_cash(port.reserve_intent(country_handle, amount, -1, -1));
     if (reserved <= 0) return 0;
-    return _country_runtime->collect_fiscal_cash(country_handle, reserved);
+    return port.resolve_cash(port.collect_intent(country_handle, reserved, -1, -1));
 }
 
 void NativeEconomyRuntime::military_record_cash_burn(int64_t amount) {

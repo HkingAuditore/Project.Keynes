@@ -6,7 +6,7 @@
 因此季节、雪盖、植被枯荣、迷雾等动态变化不触发任何重烘。
 
 配套文档：`visual-tile-rendering.md`（Tile 契约与 horizon compute）、
-`computation-pipelines.md`（生成期 pass 清单）。实施完成后两者都必须同步。
+`docs/architecture/current-state.md`（生成期 pass 清单）。实施完成后两者都必须同步。
 
 ## 权威边界
 
@@ -385,5 +385,5 @@ LUT 报告增加 `bounce_lut_bytes` 与编码耗时。
 - `visual-tile-rendering.md`：`Texture2DArray` 契约表新增 `gi_occluder` 行；
   bytes/texel 合计由 18 改 22；Horizon Compute 一节补充 occluder 输出；
   诊断与验收一节补充新报告字段与新测试入口。
-- `computation-pipelines.md`：生成期 pass 清单补充 occluder 产出；
+- `docs/architecture/current-state.md`：生成期 pass 清单补充 occluder 产出；
   若 `encode_cell_luts` 增产 bounce 通道，同步其 I/O 契约。

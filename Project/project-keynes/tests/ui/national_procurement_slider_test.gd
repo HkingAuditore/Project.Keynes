@@ -249,7 +249,7 @@ func _test_economy_workspace_wiring() -> void:
 	var top_pages: Array = constants.get("TOP_PAGE_IDS", [])
 	_expect("the separate fiscal tab is gone", not top_pages.has("fiscal"))
 	var goods_scroll := workspace.get_node_or_null(
-		"Column/Ledger/LedgerColumn/Scroll") as Control
+		"Viewport/Column/Ledger/LedgerColumn/Scroll") as Control
 	_expect("treasury goods stay visible beside the budget dossier",
 		goods_scroll != null and goods_scroll.visible)
 	if page == null:

@@ -114,7 +114,7 @@ This is the single failure mode that has reached players as a mid-game stop
   fallback?" for each one. `coordinate_country_cohort_cash`'s fast path could not reach the
   `block_or_enqueue_country_worker_asset` fallback sitting directly below it.
 
-Details: `docs/cpp-dots-runtime/native-economy-runtime.md`, section
+Details: `docs/architecture/current-state.md`, section
 「2026-09-22 Country asset backpressure 与 fatal 取证」.
 
 ## Keep fatal diagnostics honest
@@ -241,3 +241,13 @@ Include:
 - Release avg/p95/max and memory when performance can change.
 - Whether locked N/S or a historical auto/fixed-five path was benchmarked.
 - Remaining blockers and intentionally excluded systems.
+
+## Worker replacement and unfinished epochs (2026-11-03)
+
+Resume from `NativeEconomyRuntime::next_stage_ops_stage_index()` through the
+mutating StageOps adapter; a new worker is not a new economy epoch. Fiscal
+settlement maps to BUILDING_COMMIT. Keep the frozen sample day and never replay
+completed mutating stages or invent their historical hashes/timings. Read-only
+probes start at zero. Preserve archive captured flags, including absent blocks
+in older ECP1 ABIs. Validate runtime_economy_worker_restart_test, StageOps/compact
+parity, ECP1 compatibility and ECP2 round trips.

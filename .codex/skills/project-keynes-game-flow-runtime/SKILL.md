@@ -14,9 +14,8 @@ WorldClock, and player-scene ownership boundaries.
 Read these current sources before changing behavior:
 
 - `references/system-map.md`
-- `docs/cpp-dots-runtime/game-flow-start-save.md`
-- `docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `docs/cpp-dots-runtime/country-scheduling-save.md`
+- `docs/architecture/development-guide.md`
+- `docs/architecture/current-state.md`
 - `Project/project-keynes/project.godot`
 - `Project/project-keynes/scripts/game/game_flow_service.gd`
 - `Project/project-keynes/scripts/game/new_game_config.gd`
@@ -74,8 +73,8 @@ exists. Do not fall back to an arbitrary tile.
 ## Enforce the Settlement Contract
 
 Use `StarterSettlementBootstrap`; never call `EconomyTestBootstrap` from the
-formal path. Require exactly 20 people. Self-operated job slots follow the
-survival-core buildings and stay at or below 20 per opening country. Remaining
+formal path. Require exactly 40 people. Self-operated job slots follow the
+survival-core buildings and stay at or below 40 per opening country. Remaining
 people enter the unemployed pool for native job matching. Prefill owner operators
 on opening food buildings (`gathering_ground` and `stone_age_hunting_camp`) so the
 food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies. Formal starts always top up timber and grant/prebuild exactly one `deadwood_gathering_camp`; leftover construction-material techs (bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
@@ -89,8 +88,8 @@ the treasury so the pending knowledge practice can complete without covering lat
 queued techs. Do not prebuild leftover fishing or bast camps. Aggregate all starts through EconomyFacade
 catalog helpers and fixed-point packets, provide the 15-day local food bridge, and retain population/money/goods
 conservation checks.
-Require one native founder family per capital, conserving the gathering ground's two occupied
-forager owners as its membership and ownership, and immediately promote exactly one of them as the
+Require one native founder family per capital on the declared regional primary food producer,
+conserving its occupied owner jobs as membership and ownership, and immediately promote one as the
 named notable founder with a traceable owner job and building handle. Do not lower ordinary family
 formation thresholds to satisfy this opening contract.
 Keep the explicit v3 founder columns, but require native fallback recognition from a forced-named
@@ -136,7 +135,7 @@ are bootstrapped, the host is not STOPPED/FAULTED, and `newest_state_day` advanc
 PKSR restore lets the clock free-run with nothing simulating.
 
 Save/load under worker authority was repaired end to end on 2026-09-23; the full chain
-is in `docs/cpp-dots-runtime/game-flow-start-save.md` ("Save/load under worker
+is in `docs/architecture/development-guide.md` ("Save/load under worker
 authority"). The rules that fell out of it:
 
 - Under worker Country authority the main-thread `NativeCountryRuntime` is stale (never
@@ -167,7 +166,7 @@ Run at minimum:
 - Headless project startup.
 - `new_game_config_test.gd` and `save_repository_test.gd`.
 - `gameplay_start_runtime_test.gd` for deterministic starts, pairwise distance,
-  unique identity, one-cell ownership, 20 population per country, buildings,
+  unique identity, one-cell ownership, 40 population per country, buildings,
   and production-bootstrap source.
 - `environment_runtime_smoke_test.gd` for byte-exact native state round-trip.
 - `game_save_roundtrip_test.gd`, which hashes `explored_arr` across save/load.
@@ -179,7 +178,28 @@ Run at minimum:
 
 For changes that can affect settlement outcomes, run 60-day, two-year, and
 ten-year economy soaks and require zero population, money, and goods
-conservation error. Update `game-flow-start-save.md`, the authority matrix, and
+conservation error. Update `docs/architecture/development-guide.md`, the authority matrix, and
 the system map whenever ownership, ordering, sections, or compatibility changes.
 When a change touches the vision/fog provider, also update
 `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
+
+## World session lifecycle (2026-11-03)
+
+Read `docs/architecture/design.md` and `development-guide.md`.
+`WorldSession` orders preparation/cancellation/release through
+`world_session_modules.gd`. New lifecycle adapters register before generation;
+persisted state registers separately through `GameSave.register_state_module`.
+GameFlow awaits `close_world()` before scene replacement and pending repository
+I/O before application quit. `simulation_executor_exited` is the native release
+acknowledgement; neither a stop request nor FAULTED alone proves completion.
+Keep partial-prepare cleanup, concurrent-close sharing, generation-token checks
+and the real scene/save/quit round-trip tests. Do not place new business logic
+in the host's compatibility adapters.
+
+Legacy save implementations live in `scripts/game/save_modules/`; composition and per-call
+capability binding live in `world_state_modules.gd` / `world_state_bindings.gd`.
+Declare decoding and peer reads on providers; do not put module-specific branches back
+in GameSave. Clock control belongs to `RuntimeClockBinding`, attached after the executor
+exists and detached before stop; UI refresh does not synchronize native pause state.
+Opening packets declare `building_owner_fill` so shared professions cannot steal the
+food operators through catalog ordering. Preserve regional founder choice and 40 people.

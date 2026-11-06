@@ -98,8 +98,8 @@ godot -s Project/project-keynes/tests/economy/resource_visual_render_regression.
 - [x] 📖 `docs/visual-optimization/plant-animal-shape-design.md` - 完整设计文档
 - [x] 📖 `docs/visual-optimization/shape-implementation-checklist.md` - 实施清单
 - [x] 📋 `docs/QUICK-START.md` - 快速启动指南
-- [x] 📋 `docs/IMPLEMENTATION-COMPLETE.md` - 实施完整总结
-- [x] 📋 `docs/IMPLEMENTATION-PATCH.md` - 代码集成指南
+- [x] 📋 `docs/architecture/migration.md` - 实施完整总结
+- [x] 📋 `docs/architecture/migration.md` - 代码集成指南
 
 ## 代码质量检查
 

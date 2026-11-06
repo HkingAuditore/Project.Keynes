@@ -23,6 +23,7 @@ var _chapter := "overview"
 var _compact := false
 var _filters := {"sector": -1, "group": "", "mode": "stratum"}
 var _scroll_by_chapter: Dictionary = {}
+var _viewport_was_visible := false
 ## 合并篇章后的页内锚点（如「利润」卡点落在产业章的「投资风向」一段）。
 ## 等布局稳定后再滚，避免拿旧高度算出来的偏移。
 var _pending_section := ""
@@ -79,6 +80,8 @@ func _ready() -> void:
 	if _workspace.has_method("set_embedded"):
 		_workspace.set_embedded(true)
 	_apply_chapter_visibility()
+	_viewport_was_visible = _viewport.is_visible_in_tree()
+	_viewport.visibility_changed.connect(_on_viewport_visibility_changed)
 	if TouchUI.is_short_viewport():
 		set_compact(true)
 
@@ -175,7 +178,8 @@ func set_scroll_for_test(value: int) -> void:
 func select_chapter(chapter_id: String) -> void:
 	if chapter_id == _chapter or not _is_known_chapter(chapter_id):
 		return
-	_scroll_by_chapter[_chapter] = _viewport.scroll_vertical
+	if _viewport.is_visible_in_tree():
+		_scroll_by_chapter[_chapter] = _viewport.scroll_vertical
 	_chapter = chapter_id
 	_chapter_nav.select(chapter_id)
 	_apply_chapter_visibility()
@@ -184,7 +188,7 @@ func select_chapter(chapter_id: String) -> void:
 	UIAnimation.crossfade(target, UITokens.ANIM_FAST)
 	_viewport.scroll_vertical = int(_scroll_by_chapter.get(chapter_id, 0))
 	if not _is_finance_chapter(chapter_id):
-		call_deferred("_restore_scroll", chapter_id)
+		call_deferred("_restore_scroll", chapter_id, _viewport.scroll_vertical)
 
 
 func set_scope(cell: int) -> void:
@@ -411,8 +415,23 @@ func _apply_chapter_visibility() -> void:
 			_workspace.refresh_model(_model)
 
 
-func _restore_scroll(chapter_id: String) -> void:
-	if chapter_id != _chapter:
+func _on_viewport_visibility_changed() -> void:
+	var shown := _viewport.is_visible_in_tree()
+	if shown == _viewport_was_visible:
+		return
+	_viewport_was_visible = shown
+	if not shown:
+		# Containers collapse hidden content and clamp the ScrollBar afterwards.
+		# Keep the last reading position before that layout pass, including when
+		# a narrative dialog closes the entire country panel.
+		_scroll_by_chapter[_chapter] = _viewport.scroll_vertical
+	elif not _is_finance_chapter(_chapter):
+		call_deferred("_restore_scroll", _chapter, _viewport.scroll_vertical)
+
+
+func _restore_scroll(chapter_id: String, scheduled_value: int) -> void:
+	# A deferred layout restore must not overwrite a scroll made after navigation.
+	if chapter_id != _chapter or _viewport.scroll_vertical != scheduled_value:
 		return
 	if not _pending_section.is_empty():
 		_apply_pending_section()
@@ -428,7 +447,10 @@ func _apply_pending_section() -> void:
 	var page = _pages.get(_chapter, null)
 	if section.is_empty() or page == null or not page.has_method("section_offset"):
 		return
+	var chapter := _chapter
 	await get_tree().process_frame
+	if chapter != _chapter:
+		return
 	var offset := float(page.call("section_offset", section))
 	if offset <= 0.0:
 		return

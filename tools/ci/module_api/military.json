@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "module": "military",
+  "api_headers": [
+    "military_bridge.h"
+  ],
+  "internal_header_patterns": [
+    "military_core*.h"
+  ],
+  "owner_file_patterns": [
+    "military_*"
+  ],
+  "composition_roots": {
+    "world_ext.cpp": "Godot binding layer owns MilitaryCore",
+    "world_ext_military.cpp": "Godot binding layer owns MilitaryCore"
+  },
+  "legacy_includers": [],
+  "forbidden_owner_includes": {
+    "patterns": [
+      "economy_*.h",
+      "runtime_economy_*.h",
+      "country_*.h",
+      "modifier_*.h",
+      "ideology_*.h",
+      "effect_*.h",
+      "trigger_*.h",
+      "family_*.h",
+      "native_simulation*.h",
+      "world_ext*.h",
+      "runtime_*.h",
+      "godot_cpp/*"
+    ],
+    "allowed": {}
+  }
+}

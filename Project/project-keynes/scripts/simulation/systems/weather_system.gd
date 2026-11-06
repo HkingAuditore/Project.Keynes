@@ -34,7 +34,7 @@ class_name WeatherDCSystem
 ## 注意：Phase 1.3 F.6 fast-path 在 weather/weather_system.gd::tick_one_day 内（不在本
 ## DCSystem wrapper 内），inline 化时 weather_system.gd 的 fast-path 不需要改。
 ##
-## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
+## 详见 [`docs/architecture/migration.md`](../../../../../docs/architecture/migration.md)。
 ##
 ## reads / writes 声明：
 ##   - reads:  weather hot loop 读 25+ component（climate / 慢层 / weather 自身）

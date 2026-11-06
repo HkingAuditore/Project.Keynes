@@ -103,7 +103,7 @@ Keep `perf_record_*.csv` distinct from:
 
 For performance diagnosis, inspect avg/p95/max, `largest_slice_*`, skipped reasons,
 `continuation_*`, job stage/substage/path, fallback counts, and native compute/apply/flush/sync
-breakdowns. Read `docs/cpp-dots-runtime/performance-diagnostics-playbook.md` before drawing a root
+breakdowns. Read `docs/architecture/development-guide.md` before drawing a root
 cause conclusion.
 
 Once a specific native stage is implicated, load `project-keynes-runtime-hotloop-optimization`.

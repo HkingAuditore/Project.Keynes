@@ -241,6 +241,16 @@ bool runtime_climate_physics_inputs_ready(const RuntimeEnvironmentSnapshot &inpu
 // next store; commit swaps them only at the day barrier.
 class RuntimeClimateKernel {
 public:
+    struct Continuation {
+        std::vector<float> soil, insolation_now, insolation_dev, heat_input;
+        std::vector<float> day_length, temp_season_offset, conv_inhib;
+        std::vector<int32_t> accumulated_snow_days, pre_snow_cover;
+        std::vector<uint8_t> field_init;
+        bool field_init_seeded = false;
+        std::vector<double> capture_cursors;
+    };
+    void capture_continuation(Continuation &out) const;
+    void restore_continuation(const Continuation &state);
     void reset(uint32_t cell_count);
     bool compile_catalog(const RuntimeEnvironmentSnapshot &input,
                          RuntimeClimateCatalog &catalog, std::string &error) const;

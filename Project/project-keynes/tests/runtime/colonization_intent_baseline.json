@@ -1,0 +1,476 @@
+{
+  "country_reencoding_delta": [
+    [
+      42488,
+      1,
+      3
+    ]
+  ],
+  "country_sha256": "0c089bf1dea82b702f3a66b22d8feb160fd55c28a279dc28614f0bf195baba11",
+  "economy_sha256": "326759c3cd2948d22b9ef76415dc721cd84a06fc263892c7a29cb457cb7c2159",
+  "economy_state_hash": "552420137032510475",
+  "receipts": [
+    {
+      "all_or_nothing": false,
+      "committed_cash": 130290,
+      "committed_goods_total": 13029,
+      "committed_quantity": 13029,
+      "conservation_ok": true,
+      "country_cash_after": 999999869710,
+      "country_cash_before": 1000000000000,
+      "country_generation": 1,
+      "country_good_after": 13029,
+      "country_good_before": 0,
+      "country_goods_after": [
+        13029
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        87
+      ],
+      "good_quantities": [
+        13029
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 1,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 13029,
+      "rejection_reason": "",
+      "request_id": 1,
+      "requested_cash": 130290,
+      "requested_goods_total": 13029,
+      "requested_quantity": 13029,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 1
+    },
+    {
+      "all_or_nothing": true,
+      "committed_cash": 0,
+      "committed_goods_total": 13029,
+      "committed_quantity": 13029,
+      "conservation_ok": true,
+      "country_cash_after": 999999869710,
+      "country_cash_before": 999999869710,
+      "country_generation": 2,
+      "country_good_after": 0,
+      "country_good_before": 13029,
+      "country_goods_after": [
+        0
+      ],
+      "country_goods_before": [
+        13029
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        87
+      ],
+      "good_quantities": [
+        13029
+      ],
+      "ok": true,
+      "operation": 9,
+      "operation_sequence": 2,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 13029,
+      "rejection_reason": "",
+      "request_id": 2,
+      "requested_cash": 0,
+      "requested_goods_total": 13029,
+      "requested_quantity": 0,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 2
+    },
+    {
+      "all_or_nothing": false,
+      "committed_cash": 4104,
+      "committed_goods_total": 171,
+      "committed_quantity": 171,
+      "conservation_ok": true,
+      "country_cash_after": 999999865606,
+      "country_cash_before": 999999869710,
+      "country_generation": 3,
+      "country_good_after": 171,
+      "country_good_before": 0,
+      "country_goods_after": [
+        171
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        27
+      ],
+      "good_quantities": [
+        171
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 3,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 171,
+      "rejection_reason": "",
+      "request_id": 3,
+      "requested_cash": 4104,
+      "requested_goods_total": 171,
+      "requested_quantity": 171,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 3
+    },
+    {
+      "all_or_nothing": true,
+      "committed_cash": 0,
+      "committed_goods_total": 171,
+      "committed_quantity": 171,
+      "conservation_ok": true,
+      "country_cash_after": 999999865606,
+      "country_cash_before": 999999865606,
+      "country_generation": 4,
+      "country_good_after": 0,
+      "country_good_before": 171,
+      "country_goods_after": [
+        0
+      ],
+      "country_goods_before": [
+        171
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        27
+      ],
+      "good_quantities": [
+        171
+      ],
+      "ok": true,
+      "operation": 9,
+      "operation_sequence": 4,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 171,
+      "rejection_reason": "",
+      "request_id": 4,
+      "requested_cash": 0,
+      "requested_goods_total": 171,
+      "requested_quantity": 0,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 4
+    },
+    {
+      "all_or_nothing": false,
+      "committed_cash": 130290,
+      "committed_goods_total": 13029,
+      "committed_quantity": 13029,
+      "conservation_ok": true,
+      "country_cash_after": 999999735316,
+      "country_cash_before": 999999865606,
+      "country_generation": 5,
+      "country_good_after": 13029,
+      "country_good_before": 0,
+      "country_goods_after": [
+        13029
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        87
+      ],
+      "good_quantities": [
+        13029
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 5,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 13029,
+      "rejection_reason": "",
+      "request_id": 5,
+      "requested_cash": 130290,
+      "requested_goods_total": 13029,
+      "requested_quantity": 13029,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 5
+    },
+    {
+      "all_or_nothing": true,
+      "committed_cash": 0,
+      "committed_goods_total": 13029,
+      "committed_quantity": 13029,
+      "conservation_ok": true,
+      "country_cash_after": 999999735316,
+      "country_cash_before": 999999735316,
+      "country_generation": 6,
+      "country_good_after": 0,
+      "country_good_before": 13029,
+      "country_goods_after": [
+        0
+      ],
+      "country_goods_before": [
+        13029
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        87
+      ],
+      "good_quantities": [
+        13029
+      ],
+      "ok": true,
+      "operation": 9,
+      "operation_sequence": 6,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 13029,
+      "rejection_reason": "",
+      "request_id": 6,
+      "requested_cash": 0,
+      "requested_goods_total": 13029,
+      "requested_quantity": 0,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 6
+    },
+    {
+      "all_or_nothing": false,
+      "committed_cash": 488480,
+      "committed_goods_total": 30530,
+      "committed_quantity": 30530,
+      "conservation_ok": true,
+      "country_cash_after": 999999246836,
+      "country_cash_before": 999999735316,
+      "country_generation": 7,
+      "country_good_after": 30530,
+      "country_good_before": 0,
+      "country_goods_after": [
+        30530
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        118
+      ],
+      "good_quantities": [
+        30530
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 7,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 30530,
+      "rejection_reason": "",
+      "request_id": 7,
+      "requested_cash": 488480,
+      "requested_goods_total": 30530,
+      "requested_quantity": 30530,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 7
+    },
+    {
+      "all_or_nothing": true,
+      "committed_cash": 0,
+      "committed_goods_total": 30530,
+      "committed_quantity": 30530,
+      "conservation_ok": true,
+      "country_cash_after": 999999246836,
+      "country_cash_before": 999999246836,
+      "country_generation": 8,
+      "country_good_after": 0,
+      "country_good_before": 30530,
+      "country_goods_after": [
+        0
+      ],
+      "country_goods_before": [
+        30530
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        118
+      ],
+      "good_quantities": [
+        30530
+      ],
+      "ok": true,
+      "operation": 9,
+      "operation_sequence": 8,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 30530,
+      "rejection_reason": "",
+      "request_id": 8,
+      "requested_cash": 0,
+      "requested_goods_total": 30530,
+      "requested_quantity": 0,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 8
+    },
+    {
+      "all_or_nothing": false,
+      "committed_cash": 98800,
+      "committed_goods_total": 1900,
+      "committed_quantity": 1900,
+      "conservation_ok": true,
+      "country_cash_after": 999999148036,
+      "country_cash_before": 999999246836,
+      "country_generation": 9,
+      "country_good_after": 1900,
+      "country_good_before": 0,
+      "country_goods_after": [
+        1900
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        157
+      ],
+      "good_quantities": [
+        1900
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 9,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 1900,
+      "rejection_reason": "",
+      "request_id": 9,
+      "requested_cash": 98800,
+      "requested_goods_total": 1900,
+      "requested_quantity": 1900,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 9
+    },
+    {
+      "all_or_nothing": true,
+      "committed_cash": 0,
+      "committed_goods_total": 1900,
+      "committed_quantity": 1900,
+      "conservation_ok": true,
+      "country_cash_after": 999999148036,
+      "country_cash_before": 999999148036,
+      "country_generation": 10,
+      "country_good_after": 0,
+      "country_good_before": 1900,
+      "country_goods_after": [
+        0
+      ],
+      "country_goods_before": [
+        1900
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 0,
+      "good_ids": [
+        157
+      ],
+      "good_quantities": [
+        1900
+      ],
+      "ok": true,
+      "operation": 9,
+      "operation_sequence": 10,
+      "origin_domain": 9,
+      "origin_epoch": 0,
+      "origin_stage": 0,
+      "peer_generation": 2,
+      "prepared_quantity": 1900,
+      "rejection_reason": "",
+      "request_id": 10,
+      "requested_cash": 0,
+      "requested_goods_total": 1900,
+      "requested_quantity": 0,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 10
+    }
+  ],
+  "restored_country_sha256": "598001ce0a2637e02744f10b69d10cf5f43730c28dd3e594005e122d42d5930f",
+  "restored_economy_sha256": "558f93bd725441fa71d7da8312abcb5ecdf584e23e3b5eea74fddd839c457b03"
+}

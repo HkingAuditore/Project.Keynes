@@ -42,6 +42,7 @@ func _run() -> void:
 	var map: MapData = generated.get("map", null)
 	_expect("formal world generated", map != null)
 	if map == null:
+		clock.free()
 		_finish()
 		return
 
@@ -337,6 +338,8 @@ func _run() -> void:
 		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
 		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v9")
+	# This fixture owns an unattached Node; dropping a local does not free it.
+	clock.free()
 	_finish()
 
 

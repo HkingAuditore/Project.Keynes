@@ -114,7 +114,7 @@ This is the single failure mode that has reached players as a mid-game stop
   fallback?" for each one. `coordinate_country_cohort_cash`'s fast path could not reach the
   `block_or_enqueue_country_worker_asset` fallback sitting directly below it.
 
-Details: `docs/cpp-dots-runtime/native-economy-runtime.md`, section
+Details: `docs/architecture/current-state.md`, section
 「2026-09-22 Country asset backpressure 与 fatal 取证」.
 
 ## Keep fatal diagnostics honest
@@ -253,3 +253,54 @@ Composite is capped by both subsistence (10% slack) and applicable basic living
 (20% slack). Cohort living-standard display uses actual consumption. See
 `docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
 layout; updated need tiers change the content catalog hash.
+
+## Worker replacement and unfinished epochs (2026-11-03)
+
+Resume from `NativeEconomyRuntime::next_stage_ops_stage_index()` through the
+mutating StageOps adapter; a new worker is not a new economy epoch. Fiscal
+settlement maps to BUILDING_COMMIT. Keep the frozen sample day and never replay
+completed mutating stages or invent their historical hashes/timings. Read-only
+probes start at zero. Preserve archive captured flags, including absent blocks
+in older ECP1 ABIs. Validate runtime_economy_worker_restart_test, StageOps/compact
+parity, ECP1 compatibility and ECP2 round trips.
+
+## Stop during an in-flight fiscal transaction (2026-11-03)
+
+The executor installs `RuntimeExecutionContext` for both worker and inline calls.
+A concurrent stop revokes live admission but must not change Country routing
+inside the call: reading the stale synchronous treasury during closing audit
+caused money/goods drift. Keep all module routing on the common Host predicate;
+do not use the public live report mask to choose a data source inside execution.
+Validate the standalone execution-context races and production restart test.
+The target architecture and future extension workflow are in
+`docs/architecture/design.md` and
+`docs/architecture/development-guide.md`.
+
+Opening allocation: `StarterSettlementBootstrap` sends optional `building_owner_fill`
+per building packet row. Native bootstrap validates all fills against lot capacity
+and cohort totals, then applies them before generic matching. This reserves food
+operators even when a wood lot shares the same profession and sorts earlier.
+Preserve 40 people per formal start, regional founder identity, and conservation;
+test both input orders and invalid allocations with `bootstrap_owner_allocation_test.gd`.
+
+## Economy boundary and regression follow-up (2026-11-03)
+
+Use `EconomyAuthorityTransfer` for executor/save identity handoff and prepared
+Country asset servicing. Do not restore Host friendship or persistent override
+switches. `EconomyInvariantProbe` owns isolated self-test worlds.
+`EconomyRecordSource` freezes committed rows; the CSV writer must not access the
+runtime or duplicate price formulas. Diagnostic opening uses copied inputs,
+explicit policy and separate pure planning/finance modules under `economy/bootstrap`.
+Investment review cursors finish the current frozen epoch; do not reintroduce a
+second cross-epoch pending list. Preserve first post-restore integer resources
+and precipitation history, collectible income, recruit savings on restart and
+cycle-flow expiry accounting. New tests must declare content-dependent premises
+and keep full ledger, worker/scalar and continuation checks. See the current
+architecture development guide and validation record.
+
+- Current ECP2 capture and restore require a committed boundary. Legacy resume
+  carries cursors without frozen inputs/partial results and is rejected before
+  installation; do not enable its old flag to claim mid-epoch support. Test
+  rejection without mutation, unchanged continuation, and committed roundtrip.
+- Compact/StageOps epoch preparation must observe the same current day before
+  spread/cache selection; retain the optimization when checking daily parity.

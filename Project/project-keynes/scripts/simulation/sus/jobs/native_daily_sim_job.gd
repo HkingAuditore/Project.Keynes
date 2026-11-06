@@ -3,7 +3,6 @@ class_name NativeDailySimJob
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var world: WorldData = null
 var _did_run_last_tick: bool = false

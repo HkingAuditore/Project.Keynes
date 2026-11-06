@@ -33,6 +33,26 @@ struct RuntimeEventsRecord {
     int32_t payload_i3 = 0;
 };
 
+// Owned, worker-local copy of a completed Events commit.
+struct RuntimeEventsCommittedView {
+    uint64_t generation = 0;
+    int64_t day = -1;
+    bool committed = false;
+    std::vector<RuntimeEventsRecord> events;
+};
+
+struct RuntimeEventsViewCursor {
+    uint64_t generation = 0;
+    int64_t day = -1;
+    bool observe(const RuntimeEventsCommittedView &view) {
+        if (!view.committed || view.generation < generation || view.day < day ||
+            (view.generation == generation && view.day != day)) return false;
+        generation = view.generation;
+        day = view.day;
+        return true;
+    }
+};
+
 struct RuntimeEventsConsumerAck {
     uint64_t consumer_key = 0;
     int64_t event_id = 0;
@@ -85,6 +105,10 @@ public:
     void discard_plan();
 
     const RuntimeEventsSnapshot &snapshot() const { return _current; }
+    RuntimeEventsCommittedView copy_committed_view() const;
+    bool observe_trigger_view(const RuntimeEventsCommittedView &view) const {
+        return _trigger_view_cursor.observe(view);
+    }
     const RuntimeEventsReport &report() const { return _report; }
 
     bool serialize(std::vector<uint8_t> &out, std::string &error) const;
@@ -113,6 +137,7 @@ private:
     RuntimeEventsSnapshot _planned;
     RuntimeEventsReport _report{};
     bool _plan_ready = false;
+    mutable RuntimeEventsViewCursor _trigger_view_cursor;
 };
 
 class RuntimeEventsSnapshotRing {

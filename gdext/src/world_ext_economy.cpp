@@ -1,3 +1,4 @@
+#include "economy_authority_transfer.h"
 #include "world_ext.h"
 
 #include "economy_runtime.h"
@@ -1964,7 +1965,7 @@ Dictionary DCWorldExt::get_construction_command_receipts(
 Dictionary DCWorldExt::migrate_legacy_state_buildings(
         const Array &states) {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->migrate_legacy_state_buildings(
+    return economy_api::migrate_legacy_state_buildings(*runtime_from(_economy_runtime),
         states);
 }
 
@@ -1974,7 +1975,7 @@ Dictionary DCWorldExt::queue_treasury_sponsored_build(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
-    return runtime_from(_economy_runtime)->queue_treasury_sponsored_build(
+    return economy_api::queue_treasury_sponsored_build(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, effective_day, sequence,
         worker_owned);
 }
@@ -1985,7 +1986,7 @@ Dictionary DCWorldExt::queue_treasury_sponsored_demolish(
     if (_economy_runtime == nullptr) return unavailable();
     const bool worker_owned = _runtime_host != nullptr &&
         _runtime_host->economy_worker_owns_execution();
-    return runtime_from(_economy_runtime)->queue_treasury_sponsored_demolish(
+    return economy_api::queue_treasury_sponsored_demolish(*runtime_from(_economy_runtime),
         country_handle, cell_idx, type_id, count, effective_day, sequence,
         worker_owned);
 }
@@ -2120,9 +2121,9 @@ Dictionary DCWorldExt::diagnose_colonization_target(
     // exactly how it reported "all clear" while `family_colonization_quotes` kept
     // returning `colonization_target_invalid`. `:496` rejects a cell with
     // `passable == 0` unless an epoch is active, and neither input was visible.
-    out["topology_ready"] = economy->trade_topology_ready_for_test();
-    out["target_passable"] = economy->trade_passable_for_test(target_cell);
-    out["epoch_active"] = economy->epoch_active_for_test();
+    out["topology_ready"] = economy_api::trade_topology_ready_for_test(*economy);
+    out["target_passable"] = economy_api::trade_passable_for_test(*economy, target_cell);
+    out["epoch_active"] = economy_api::epoch_active_for_test(*economy);
     // The single verdict a caller actually needs.
     out["would_accept_target"] =
         target_visible && bool(out["owner_allows"]) &&
@@ -2240,7 +2241,7 @@ Dictionary DCWorldExt::set_country_procurement_policy(
         int research_share_bp, int64_t effective_day, int64_t sequence,
         int era_share_bp, int colonization_share_bp) {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->set_country_procurement_policy(
+    return economy_api::set_country_procurement_policy(*runtime_from(_economy_runtime),
         country_handle, enabled, treasury_share_bp, research_share_bp,
         effective_day, sequence, era_share_bp, colonization_share_bp);
 }
@@ -2637,11 +2638,11 @@ Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
     const bool stamp_worker_country = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         _runtime_host->country_checkpoint_identity(country_generation, country_hash);
-    if (stamp_worker_country)
-        economy->set_save_country_identity(country_generation, country_hash);
-    const bool captured = economy->capture_ecp2_authority(
-        state, error, static_cast<uint32_t>(std::max(0, flags)));
-    if (stamp_worker_country) economy->clear_save_country_identity();
+    const EconomyAuthorityTransfer::CountryIdentity country_identity{
+        country_generation, country_hash};
+    const bool captured = EconomyAuthorityTransfer::capture(*economy,
+        state, error, static_cast<uint32_t>(std::max(0, flags)),
+        stamp_worker_country ? &country_identity : nullptr);
     if (!captured) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());

@@ -232,7 +232,7 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/military_peace_card.tscn": "Box/Footer/Action",
 		"res://scenes/ui/military_peace_window.tscn": "Frame/Box/Scroll/Body/TermsNote/TermsBox/CedeScroll/CedingList",
 		"res://scenes/ui/economy_dossier.tscn": "FinanceHost/EconomyWorkspace",
-		"res://scenes/ui/economy_workspace.tscn": "Column/Ledger/LedgerColumn/Scroll/Flow",
+		"res://scenes/ui/economy_workspace.tscn": "Viewport/Column/Ledger/LedgerColumn/Scroll/Flow",
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
@@ -303,8 +303,8 @@ func _check_component_scenes() -> void:
 				page_column.get_node("GdpBand").get_index()
 					< page_column.get_node("KpiStrip").get_index())
 		if scene_path.ends_with("economy_workspace.tscn"):
-			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
-			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))
+			_expect("economy workspace has tax sub-tabs", scene.has_node("Viewport/Column/TaxTabs"))
+			_expect("economy workspace has treasury insights", scene.has_node("Viewport/Column/Insights"))
 		if scene_path.ends_with("era_reward_dialog.tscn"):
 			_expect("era reward dialog has three stable choices",
 				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0")

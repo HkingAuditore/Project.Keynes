@@ -322,8 +322,8 @@ needs `role+tier`.
    `PlayerController` highlight contract, headless) and `res://tests/qa/military_peace_window_screenshot_qa.gd`
    (rendered, 1280/1920 UI width × white-peace/picked). `ui_scene_structure_test.gd` must keep passing
    `ModalLayer/MilitaryPeaceWindow` and the two `military_peace_*` scene trees.
-9. Sync docs: `military-runtime.md`, `runtime-authority-matrix.md`, `scheduling-and-job-graph.md`,
-   `vision-fog-and-borders.md`, `game-flow-start-save.md`, `references/system-map.md`, this skill.
+9. Sync docs: `military-runtime.md`, `docs/architecture/current-state.md`, `docs/architecture/current-state.md`,
+   `vision-fog-and-borders.md`, `docs/architecture/development-guide.md`, `references/system-map.md`, this skill.
    Report unrun gates explicitly.
 
 ## Debugging playbook (order matters)

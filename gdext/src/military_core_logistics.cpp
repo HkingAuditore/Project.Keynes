@@ -499,7 +499,6 @@ void MilitaryCore::stock_clear_holder(uint8_t holder_kind, int32_t holder) {
 // precomputed once per topology.
 
 namespace {
-
 // Wrap-aware BFS over the neighbour table; neighbours already carry the wrap,
 // so this is the exact hex distance on the wrapped map. Built once per topology
 // change (MILITARY_SUPPLY_RADIUS rings, at most 19 cells).
@@ -555,21 +554,18 @@ void build_rings(MilitaryCore &core) {
     }
     core._ring_off[(size_t)cells] = (int32_t)core._ring_cells.size();
 }
-
 bool rings_ready(const MilitaryCore &core) {
     const size_t cells = (size_t)std::max(0, core._terrain.cell_count);
     if (cells <= 0) return false;
     if (core._ring_off.size() != cells + 1 || core._ring_len.size() != cells) return false;
     return (size_t)core._ring_off[cells] <= core._ring_cells.size();
 }
-
 // Market-good slot of a digest good id: the frozen digest carries one dense
 // good id per economy good, so the good id itself is the slot (ids below 128).
 int32_t market_good_slot(const MilitaryWorldDigest &digest, int32_t good) {
     (void)digest;
     return good >= 0 && good < 128 ? good : -1;
 }
-
 // One pass over the committed market rows: per-cell CSR (rows in (cell, row)
 // order), the day quota (50% of the sellable stock, design 9.3) and the
 // per-cell merchant flag used by the connectivity probes.
@@ -618,7 +614,6 @@ void build_market_csr(MilitaryCore &core, const MilitaryWorldDigest &digest) {
         }
     }
 }
-
 bool market_csr_current(const MilitaryCore &core, const MilitaryWorldDigest &digest) {
     if (core._md_day != digest.day) return false;
     if (core._md_cell_off.size() != (size_t)std::max(0, core._terrain.cell_count) + 1) return false;
@@ -626,7 +621,6 @@ bool market_csr_current(const MilitaryCore &core, const MilitaryWorldDigest &dig
     return live == core._md_row_good.size() && live == core._md_row_sellable.size() &&
            live == core._md_row_price.size() && live == core._md_cell_rows.size();
 }
-
 void market_csr_drop(MilitaryCore &core) {
     core._md_cell_off.clear();
     core._md_cell_rows.clear();
@@ -639,9 +633,7 @@ void market_csr_drop(MilitaryCore &core) {
     core._sup_row_own.clear();
     core._md_day = -1;
 }
-
 } // namespace
-
 void military_market_reset(MilitaryCore &core) {
     market_csr_drop(core);
     core._connected_valid = false;
@@ -652,16 +644,13 @@ void military_market_reset(MilitaryCore &core) {
     core._conn_mark_cells.clear();
     core._cache_rows.clear();
 }
-
 MilitaryCore::MarketDayScope::MarketDayScope(MilitaryCore &c) : core(c) {}
-
 MilitaryCore::MarketDayScope::~MarketDayScope() {
     // The indexes are per day (design 9.3: built once, dropped for the rest of
     // the day), so a day without a demander and without a disconnection probe
     // pays nothing at all.
     market_csr_drop(core);
 }
-
 void MilitaryCore::MarketDayScope::ensure(const MilitaryWorldDigest &digest) {
     if (!rings_ready(core)) build_rings(core);
     if (market_csr_current(core, digest)) return;
@@ -670,9 +659,7 @@ void MilitaryCore::MarketDayScope::ensure(const MilitaryWorldDigest &digest) {
     core._md_day = digest.day;
     core._connected_valid = false;   // the connectivity marks follow the rows
 }
-
 void MilitaryCore::MarketDayScope::drop() { market_csr_drop(core); }
-
 bool military_owns_cell(const MilitaryCore &core, const MilitaryWorldDigest &digest, int32_t cell,
                         int32_t slot) {
     if (cell < 0 || slot < 0) return false;
@@ -681,7 +668,6 @@ bool military_owns_cell(const MilitaryCore &core, const MilitaryWorldDigest &dig
     }
     return controller_of_cell(core, digest, cell) == slot;
 }
-
 // Connectivity per design 9.3: one BFS per country over the cells it owns and
 // controls. A cell is connected when its group holds at least one cell with a
 // market row. Built lazily on the first probe of a day (or after control moved)
@@ -747,7 +733,6 @@ bool military_connectivity_connected(const MilitaryCore &cc, const MilitaryWorld
     if (group < 0 || core._conn_group_slot[(size_t)group] != slot) return false;
     return core._conn_mark_cells[(size_t)group] > 0;
 }
-
 // Cheap disconnection probe of design 9.3: the ring of the cell holds at least
 // one market cell of the same country (owned AND controlled). No day CSR and no
 // BFS is needed, so a requisition / last-stand probe never builds global state.
@@ -766,7 +751,6 @@ bool military_supply_connected(const MilitaryCore &core, const MilitaryWorldDige
     }
     return false;
 }
-
 // ============================================================= procurement
 // Design 9.3 (user decision): a demander (garrison cell, army cell, training
 // order) only buys from markets in cells it OWNS and CONTROLS within hex
@@ -790,18 +774,15 @@ bool military_supply_connected(const MilitaryCore &core, const MilitaryWorldDige
 //      a same-cell purchase lands today, a farther one becomes a convoy whose
 //      route is the ring distance.
 namespace {
-
 // Distinct markets a single demand may be served by before it is cut off. The
 // design cap is 4 markets; the ring implementation allows 8, which keeps a
 // large garrison from starving on a few small markets.
 constexpr int32_t PROCURE_MARKETS = 8;
-
 // A market row an entry can reach.
 struct ReachRow {
     int32_t row = -1;
     int64_t price_q16 = 0;      // price per need unit (q16 of MONEY_SCALE)
 };
-
 // One need class (or equipment category) of one demander.
 struct DemandEntry {
     int32_t country = -1;
@@ -822,14 +803,12 @@ struct DemandEntry {
     // followed by a second truncation cannot be counted twice.
     uint8_t quota_hit = 0;
 };
-
 // One delivery of an entry, in the order the markets were offered.
 struct Take {
     int32_t entry = -1;
     int32_t row = -1;
     int64_t units = 0;          // need units (equipment: GOODS_SCALE)
 };
-
 // One demander of the day.
 struct Demander {
     int32_t country = -1;
@@ -843,7 +822,6 @@ struct Demander {
     int64_t held[MILITARY_MAX_SUPPLY_CLASSES] = {};   // need units in stock
     uint64_t equip_covered = 0;                       // equipment categories held
 };
-
 struct DemandScratch {
     std::vector<Demander> holders;
     std::vector<DemandEntry> entries;
@@ -866,26 +844,21 @@ struct DemandScratch {
         quota_left.clear();
     }
 };
-
 DemandScratch &demand_scratch() {
     static thread_local DemandScratch s;
     return s;
 }
-
 int64_t class_units_of(int64_t goods, int32_t yield_q16) {
     if (goods <= 0) return 0;
     const int32_t y = yield_q16 > 0 ? yield_q16 : MILITARY_Q16;
     return (goods * (int64_t)y) >> 16;
 }
-
 int64_t price_per_unit_q16(int64_t goods_price, int32_t yield_q16) {
     const int32_t y = yield_q16 > 0 ? yield_q16 : MILITARY_Q16;
     const int64_t price = goods_price > 0 ? goods_price : 0;
     return (price * MILITARY_Q16 + y - 1) / y;
 }
-
 } // namespace
-
 void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                                    std::vector<MilitaryIntent> &out) {
     const int32_t cells = _terrain.cell_count;
@@ -894,7 +867,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     if ((int32_t)_cell_controller.size() < cells) _cell_controller.resize((size_t)cells, -1);
     const int32_t unit_count = (int32_t)_catalog.units.size();
     if (unit_count > MILITARY_MAX_UNIT_TYPES) return;
-
     // ---- 0. QUOTA (任务 8 / 需求 5.4, 7.1) --------------------------------
     // 采购量 = min(缺口, 预算配额). The quota is money, taken from the same
     // envelope split that pays wages and upkeep, so all three channels read one
@@ -921,20 +893,16 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         if (!split.enabled) continue;
         ds.quota_left[slot] = std::max<int64_t>(0, split.procurement_ceiling);
     }
-
-
     // ---- 1. DEMAND --------------------------------------------------------
     const int64_t ration_per_head =
         _catalog.ration_need_per_head_q16 > 0 ? _catalog.ration_need_per_head_q16 : MILITARY_Q16;
     const int32_t category_count = (int32_t)_catalog.categories.size();
-
     auto scale_of = [&](int32_t slot, int32_t cell) {
         const int32_t landform = terrain_of_cell(_terrain, cell);
         const int64_t terrain_mult = landform_supply_mult_q16(_catalog, landform);
         const int64_t consume_mult = stat_or(digest, slot, MSTAT_SUPPLY_CONSUMPTION);
         return (int32_t)clamp_q16((terrain_mult * consume_mult) >> 16, 1, 8 * MILITARY_Q16);
     };
-
     auto add_demander = [&](uint8_t kind, int32_t holder, int32_t country, int32_t cell,
                             bool in_combat) {
         if (country < 0 || country >= capacity || cell < 0 || cell >= cells) return;
@@ -1014,7 +982,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         h.entry_count = 0;
         ds.holders.push_back(h);
     };
-
     for (int32_t a = 0; a < (int32_t)_armies.active.size(); ++a) {
         if (!_armies.active[(size_t)a]) continue;
         add_demander((uint8_t)MILITARY_LOT_ARMY, a, _armies.owner_slot[(size_t)a],
@@ -1052,7 +1019,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         ds.holders.push_back(h);
     }
     if (ds.holders.empty()) return;
-
     // ---- 2. ENTRIES -------------------------------------------------------
     std::vector<DemandEntry> &entries = ds.entries;
     for (size_t hi = 0; hi < ds.holders.size(); ++hi) {
@@ -1098,7 +1064,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         h.entry_count = (int32_t)entries.size() - h.entry_begin;
     }
     if (entries.empty()) return;
-
     // ---- 3. WANT + SELL ---------------------------------------------------
     MarketDayScope day(*this);
     day.ensure(digest);
@@ -1107,7 +1072,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     ds.row_left.assign(live, 0);
     for (size_t r = 0; r < live; ++r) ds.row_left[r] = _md_row_sellable[r];
     const int32_t ring_cells = MILITARY_SUPPLY_RING_CELLS;
-
     for (size_t ei = 0; ei < entries.size(); ++ei) {
         DemandEntry &e = entries[(size_t)ei];
         e.reach_begin = (int32_t)ds.reach.size();
@@ -1157,7 +1121,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             ds.reach[(size_t)b] = key;
         }
     }
-
     for (size_t ei = 0; ei < entries.size(); ++ei) {
         if (entries[ei].reach_begin < entries[ei].reach_end) ds.open.push_back((int32_t)ei);
     }
@@ -1265,7 +1228,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         ds.open.resize((size_t)next_open);
         if (next_open == 0) break;
     }
-
     // ---- 4. DELIVER -------------------------------------------------------
     // Takes are grouped by entry, and each entry's takes by market cell, so a
     // demander only walks its own deliveries and the order stays deterministic.
@@ -1290,7 +1252,6 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     }
     for (size_t i = 1; i < entry_first.size(); ++i) entry_first[i] += entry_first[i - 1];
     entry_last = entry_first;
-
     uint32_t unmet_holders = 0;
     int64_t unmet_units = 0;
     for (size_t hi = 0; hi < ds.holders.size(); ++hi) {
@@ -1430,9 +1391,7 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     _report.unmet_procurement_holders += (int32_t)unmet_holders;
     _report.unmet_procurement_units += unmet_units;
 }
-
 // ============================================================ threat fields
-
 void MilitaryCore::build_threat_fields(const MilitaryWorldDigest &digest) {
     const int32_t cells = _terrain.cell_count;
     if (cells <= 0) return;
@@ -1451,7 +1410,6 @@ void MilitaryCore::build_threat_fields(const MilitaryWorldDigest &digest) {
     const int32_t *neighbors = _terrain.neighbors.data();
     const int32_t ring_weight = 39322;   // 0.6
     int32_t touched = 0;
-
     // threat[c] = sum of hostile strength within distance 1; guard[c] = own
     // presence. _threat_owner keeps the strongest adjacent owner so convoys can
     // decide who intercepts (sec 9.5).
@@ -1494,7 +1452,6 @@ void MilitaryCore::build_threat_fields(const MilitaryWorldDigest &digest) {
     _report.threat_field_cells = touched;
     (void)digest;
 }
-
 // Destination cell of a shipment (-1 when the destination vanished).
 int32_t shipment_dest_cell(const MilitaryCore &core, const MilitaryShipment &shipment) {
     if (shipment.dest_kind == MILITARY_LOT_ARMY) {
@@ -1511,7 +1468,6 @@ int32_t shipment_dest_cell(const MilitaryCore &core, const MilitaryShipment &shi
     }
     return shipment.dest;
 }
-
 // Neighbour of <from> that reduces the hex distance to <target>; ties keep the
 // lowest neighbour id so replays are deterministic.
 int32_t convoy_step(const MilitaryTerrainInput &terrain, const MilitaryCore &core, int32_t from,
@@ -1532,7 +1488,6 @@ int32_t convoy_step(const MilitaryTerrainInput &terrain, const MilitaryCore &cor
     }
     return best;
 }
-
 void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
                                std::vector<MilitaryIntent> &out) {
     const int32_t cells = _terrain.cell_count;
@@ -1546,7 +1501,6 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
         s.event_stamp.assign(static_cast<size_t>(digest.country_capacity), 0xffffffffu);
     }
     int32_t intercepted_events = 0;
-
     const auto deliver = [&](const MilitaryShipment &shipment) {
         const int32_t slot = shipment.country_slot;
         if (shipment.dest_kind == MILITARY_LOT_ARMY) {
@@ -1568,7 +1522,6 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
         }
         return true;
     };
-
     size_t write = 0;
     for (size_t i = 0; i < _shipments.size(); ++i) {
         MilitaryShipment shipment = _shipments[i];
@@ -1607,7 +1560,6 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
         shipment.current_cell = next;
         shipment.progress_q16 += MILITARY_Q16;
         ++_report.convoy_hops;
-
         // Interception on the traversed cell (sec 9.5).
         const int64_t threat = _threat[static_cast<size_t>(next)];
         if (threat > 0) {
@@ -1678,11 +1630,8 @@ void MilitaryCore::run_convoys(const MilitaryWorldDigest &digest,
     _shipments.resize(write);
     (void)out;
 }
-
 // ============================================================== consumption
-
 namespace {
-
 int32_t ema_3day(int32_t previous_q16, int64_t sample_q16) {
     const int64_t sample = std::min<int64_t>(std::max<int64_t>(sample_q16, 0), MILITARY_Q16);
     if (previous_q16 <= 0) return static_cast<int32_t>(sample);
@@ -1692,7 +1641,6 @@ int32_t ema_3day(int32_t previous_q16, int64_t sample_q16) {
         16;
     return static_cast<int32_t>(std::min<int64_t>(std::max<int64_t>(blended, 0), MILITARY_Q16));
 }
-
 // One holder's daily use: garrison cell or army slot.
 struct HolderUse {
     int32_t country_slot = -1;
@@ -1704,9 +1652,7 @@ struct HolderUse {
     int64_t need[MILITARY_MAX_SUPPLY_CLASSES] = {};     // need units per class
     int64_t satisfied[MILITARY_MAX_SUPPLY_CLASSES] = {}; // need units actually met
 };
-
 } // namespace
-
 void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
                                    std::vector<MilitaryIntent> &out) {
     const int32_t cells = _terrain.cell_count;
@@ -1715,7 +1661,6 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
     const int32_t unit_count = std::min<int32_t>(static_cast<int32_t>(_catalog.units.size()),
                                                  MILITARY_MAX_UNIT_TYPES);
     const size_t lot_count = _lots.active.size();
-
     // --- Group lots into holders (deterministic: first-appearance order).
     static thread_local std::vector<HolderUse> holders;
     static thread_local std::vector<int32_t> holder_bucket;   // +1 packed holder row
@@ -1780,7 +1725,6 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
         }
         holders[static_cast<size_t>(found)].heads[unit] += count;
     }
-
     // --- Compute needs per holder.
     for (size_t h = 0; h < holders.size(); ++h) {
         HolderUse &use = holders[h];
@@ -1818,7 +1762,6 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
             }
         }
     }
-
     // --- Consume from stock (highest yield first) and emit the treasury
     // consumption intents that keep the sec 9.7 ledger exact.
     for (size_t h = 0; h < holders.size(); ++h) {
@@ -1901,7 +1844,6 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
                 ema_3day(_armies.supply_ratio_q16[static_cast<size_t>(army)], supply_q16);
         }
     }
-
     // --- Equipment condition decay / recovery (sec 4.2).
     // Condition falls 0.5%/day when maintenance stock is short and recovers
     // 1%/day otherwise; floor 50%.
@@ -1931,9 +1873,7 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
         _lots.condition_q16[i] = condition;
     }
 }
-
 // ============================================================= requisition
-
 void MilitaryCore::run_requisition(const MilitaryWorldDigest &digest,
                                    std::vector<MilitaryIntent> &out) {
     const int32_t cells = _terrain.cell_count;
@@ -1964,7 +1904,6 @@ void MilitaryCore::run_requisition(const MilitaryWorldDigest &digest,
         if (controller != slot) continue;
         day.ensure(digest);
         if (military_supply_connected(*this, digest, slot, cell)) continue;
-
         // Daily demand of the army, per unit type, from the lot index.
         int64_t unit_heads[MILITARY_MAX_UNIT_TYPES] = {};
         bool any = false;
@@ -2032,9 +1971,7 @@ void MilitaryCore::run_requisition(const MilitaryWorldDigest &digest,
         }
     }
 }
-
 // ================================================================== ledger
-
 int64_t MilitaryCore::ledger_stock_total() const {
     int64_t total = 0;
     for (size_t i = 0; i < _stocks.size(); ++i) {
@@ -2042,7 +1979,6 @@ int64_t MilitaryCore::ledger_stock_total() const {
     }
     return total;
 }
-
 int64_t MilitaryCore::ledger_transit_total() const {
     int64_t total = 0;
     for (size_t i = 0; i < _shipments.size(); ++i) {
@@ -2050,8 +1986,6 @@ int64_t MilitaryCore::ledger_transit_total() const {
     }
     return total;
 }
-
-
 // Daily sec 9.7 check. reconcile_delta is the residual of
 //   received ? stock + transit + consumed + intercepted_out - intercepted_in + returned
 // and must stay 0: every term is written by the stage that moves goods, so a

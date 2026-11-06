@@ -1,6 +1,5 @@
 #include "economy_runtime.h"
 
-#include "country_runtime.h"
 #include "effect_runtime.h"
 
 #include <godot_cpp/variant/array.hpp>
@@ -98,7 +97,7 @@ bool NativeEconomyRuntime::plan_canal_route(
         const godot::PackedInt32Array &waypoints, CanalQuote &quote,
         std::string &error) const {
     if (!_bootstrapped || _country_runtime == nullptr ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        !country_reads().valid_handle(static_cast<int64_t>(country_handle))) {
         error = "canal_country_invalid";
         return false;
     }
@@ -118,15 +117,15 @@ bool NativeEconomyRuntime::plan_canal_route(
         error = "canal_endpoints_invalid";
         return false;
     }
-    const int32_t country_slot = _country_runtime->country_slot_for_cell(start_cell);
-    if (country_slot < 0 || _country_runtime->country_handle_for_cell(start_cell) !=
+    const int32_t country_slot = country_reads().country_slot_for_cell(start_cell);
+    if (country_slot < 0 || country_reads().country_handle_for_cell(start_cell) !=
             static_cast<int64_t>(country_handle)) {
         error = "canal_cell_not_owned";
         return false;
     }
     const auto tech = std::find(_technology_ids.begin(), _technology_ids.end(),
                                 "tech.canal_engineering");
-    if (tech == _technology_ids.end() || !_country_runtime->has_technology(
+    if (tech == _technology_ids.end() || !country_reads().has_technology(
             country_slot, static_cast<int32_t>(tech - _technology_ids.begin()))) {
         error = "canal_technology_locked";
         return false;
@@ -134,7 +133,7 @@ bool NativeEconomyRuntime::plan_canal_route(
 
     auto legal_cell = [&](int32_t cell) {
         if (cell < 0 || cell >= _cell_count.get() || _building_is_water[cell] != 0 ||
-            _country_runtime->country_handle_for_cell(cell) !=
+            country_reads().country_handle_for_cell(cell) !=
                 static_cast<int64_t>(country_handle)) return false;
         const uint8_t terrain = _building_terrain[cell];
         const uint8_t landform = _building_landform[cell];
@@ -322,7 +321,7 @@ bool NativeEconomyRuntime::plan_canal_route(
     for (int i = 0; i < 2; ++i) {
         const int32_t good = quote.material_good_ids[static_cast<size_t>(i)];
         const int64_t required = quote.material_quantities[static_cast<size_t>(i)];
-        const int64_t treasury = std::max<int64_t>(0, _country_runtime->good_for_handle(
+        const int64_t treasury = std::max<int64_t>(0, country_reads().good_for_handle(
             static_cast<int64_t>(country_handle), good));
         const int64_t market_needed = required - std::min(required, treasury);
         const int64_t lane = market_store().index(market, good);
@@ -335,7 +334,7 @@ bool NativeEconomyRuntime::plan_canal_route(
         quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(market_store().stock[lane]));
         quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(treasury));
     }
-    if (_country_runtime->cash_for_handle(static_cast<int64_t>(country_handle)) <
+    if (country_reads().cash_for_handle(static_cast<int64_t>(country_handle)) <
             quote.cash_required) {
         error = "canal_treasury_cash_insufficient";
         return false;
@@ -384,7 +383,7 @@ godot::Dictionary NativeEconomyRuntime::canal_route_quote_detail(
 
 bool NativeEconomyRuntime::validate_canal_quote_snapshot(
         const CanalQuote &quote, std::string &error) const {
-    if (_country_runtime == nullptr || !_country_runtime->valid_handle(
+    if (_country_runtime == nullptr || !country_reads().valid_handle(
             static_cast<int64_t>(quote.country_handle)) ||
         quote.country_generation != (quote.country_handle >> 32U) ||
         !_trade_topology.ready || quote.topology_hash != _trade_topology.topology_hash ||
@@ -405,14 +404,14 @@ bool NativeEconomyRuntime::validate_canal_quote_snapshot(
         price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().price[lane]));
         price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().stock[lane]));
         price_hash = canal_mix(price_hash, static_cast<uint64_t>(
-            _country_runtime->good_for_handle(static_cast<int64_t>(quote.country_handle), good)));
+            country_reads().good_for_handle(static_cast<int64_t>(quote.country_handle), good)));
     }
     if (price_hash != quote.price_hash) {
         error = "canal_quote_price_snapshot_changed";
         return false;
     }
     for (const int32_t cell : quote.route_cells) {
-        if (_country_runtime->country_handle_for_cell(cell) !=
+        if (country_reads().country_handle_for_cell(cell) !=
                 static_cast<int64_t>(quote.country_handle)) {
             error = "canal_quote_territory_changed";
             return false;
@@ -492,7 +491,7 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         const int32_t good = quote.material_good_ids[static_cast<size_t>(i)];
         const int64_t required = quote.material_quantities[static_cast<size_t>(i)];
         treasury_used[i] = std::min(required, std::max<int64_t>(0,
-            _country_runtime->good_for_handle(static_cast<int64_t>(cmd.target_handle), good)));
+            country_reads().good_for_handle(static_cast<int64_t>(cmd.target_handle), good)));
         market_used[i] = required - treasury_used[i];
         const int64_t lane = market_store().index(market, good);
         if (market_store().stock[lane] < market_used[i]) {
@@ -503,7 +502,7 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         treasury_total += treasury_used[i];
         market_total += market_used[i];
     }
-    if (_country_runtime->cash_for_handle(static_cast<int64_t>(cmd.target_handle)) < cash) {
+    if (country_reads().cash_for_handle(static_cast<int64_t>(cmd.target_handle)) < cash) {
         stage_canal_receipt(cmd, false, "canal_treasury_cash_insufficient");
         return true;
     }

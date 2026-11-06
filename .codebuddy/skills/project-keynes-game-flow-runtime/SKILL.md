@@ -14,9 +14,8 @@ WorldClock, and player-scene ownership boundaries.
 Read these current sources before changing behavior:
 
 - `references/system-map.md`
-- `docs/cpp-dots-runtime/game-flow-start-save.md`
-- `docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `docs/cpp-dots-runtime/country-scheduling-save.md`
+- `docs/architecture/development-guide.md`
+- `docs/architecture/current-state.md`
 - `Project/project-keynes/project.godot`
 - `Project/project-keynes/scripts/game/game_flow_service.gd`
 - `Project/project-keynes/scripts/game/new_game_config.gd`
@@ -141,7 +140,7 @@ Run at minimum:
 
 For changes that can affect settlement outcomes, run 60-day, two-year, and
 ten-year economy soaks and require zero population, money, and goods
-conservation error. Update `game-flow-start-save.md`, the authority matrix, and
+conservation error. Update `docs/architecture/development-guide.md`, the authority matrix, and
 the system map whenever ownership, ordering, sections, or compatibility changes.
 When a change touches the vision/fog provider, also update
 `docs/cpp-dots-runtime/vision-fog-and-borders.md`.

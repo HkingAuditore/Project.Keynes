@@ -31,7 +31,7 @@ Start from current files rather than historical report line numbers:
   profiles.
 - Architecture contract:
   `.codex/skills/project-keynes-economy-runtime/references/` and
-  `docs/cpp-dots-runtime/native-economy-runtime.md`.
+  `docs/architecture/current-state.md`.
 
 ## 2. Field-to-formula workflow
 

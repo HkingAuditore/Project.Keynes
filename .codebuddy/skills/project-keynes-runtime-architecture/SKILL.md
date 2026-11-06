@@ -15,15 +15,9 @@ Do not leave current runtime truth only in chat, temporary notes, test logs, or 
 
 Minimum docs to consider:
 
-- `Project.Keynes/docs/cpp-dots-runtime/index.md`
-- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md`
-- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
-- `Project.Keynes/docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
-- `Project.Keynes/docs/cpp-dots-runtime/game-flow-start-save.md`
+- `docs/architecture/README.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 - `Project.Keynes/docs/cpp-dots-runtime/vision-fog-and-borders.md`
 - `Project.Keynes/references/system-map.md`
 
@@ -34,12 +28,8 @@ Before implementation, read the current code path and current docs. Do not proce
 For runtime architecture work, inspect:
 
 - `Project.Keynes/references/system-map.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md`
-- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
-- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 - `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd`
 - `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
 - `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
@@ -229,7 +219,7 @@ Generation and bake:
 
 ## Deletion And Fallback Rules
 
-Use `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md` before deleting runtime code.
+Use `docs/architecture/current-state.md` before deleting runtime code.
 
 Deletion classes:
 
@@ -277,4 +267,4 @@ When completing runtime architecture work, report:
 - Which docs were updated.
 - Whether fallback remains and how it reports.
 - What static/build/runtime validation was run.
-- Any remaining blockers from `runtime-authority-matrix.md` or `runtime-deletion-inventory.md`.
+- Any remaining blockers from `docs/architecture/current-state.md` or `docs/architecture/current-state.md`.

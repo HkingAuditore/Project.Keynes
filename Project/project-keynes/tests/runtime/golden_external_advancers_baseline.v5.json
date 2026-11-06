@@ -1,0 +1,71 @@
+{
+  "days": [
+    {
+      "chain": "03530fb171842d1642ec6f8e2cc3a2b6cfcb9a2df341a6378e2d42333a5b1ce3",
+      "day": 1,
+      "families": 1,
+      "hashes": {
+        "FAMILY": "948ceca1137f4b363dd84c6a66163d348929e6c895ec3715cc313c5bfbe065d7",
+        "MILITARY": "3552a9d6d1471b5e82aad51bca3e502b18224ec0014e174ab16d6116d1216c2f",
+        "NATURAL_RESOURCE": "12553f9ad93d9bf3beb36da68010229bfd2af1ca6982e0ffd9a7d33d86adf94e",
+        "PERSON": "12bc3ba9aeaecaec7b48aef3ed2dd77c0c20694bdac8446599bece94032dcdbf",
+        "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
+      },
+      "military_target": 2,
+      "people": 1,
+      "recovered_cells": 57,
+      "soldiers": 0
+    },
+    {
+      "chain": "4bb383f1e0064f5459fc6c8b3192aa69f24886bb94e94366d0b95ec79d4af669",
+      "day": 2,
+      "families": 1,
+      "hashes": {
+        "FAMILY": "733dc8607e9326829793f64255121c133268a27e110dbae7e9f19f096a48a95d",
+        "MILITARY": "56b36ed06d0ef1685a1e79bbb6d38949598b2f18cb486444ec8147706e7a7673",
+        "NATURAL_RESOURCE": "c5624c1cce8c5a3ac9e080bb4bcf5771a53f8e52ef88504bb4bd7744746dbc51",
+        "PERSON": "6db3c2db1fda781d2dc72b4e37b4b45ee5d1cc67ef753cf5b0767549d0ba3602",
+        "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
+      },
+      "military_target": 3,
+      "people": 1,
+      "recovered_cells": 119,
+      "soldiers": 0
+    },
+    {
+      "chain": "9ada8cbb9ba390aef1e7ac211789f3d1bfe5c0dbf9e7a18e710b07e70a91f19e",
+      "day": 3,
+      "families": 1,
+      "hashes": {
+        "FAMILY": "8ecd344c11fbbe831313d36264ba7a63eb2f8660bfff0e218ee8277470fbbb9b",
+        "MILITARY": "1493763348d4b4e6676b8b5ea77c0e973d8bc7670b06cec04f6072f18b4bdf60",
+        "NATURAL_RESOURCE": "d0bee4c4c73b090eb2375d375d21d2567131850c2693b79a5b5d8b8f65d45278",
+        "PERSON": "7a266f626ed4ca4368aad6cf043c96d2747528f0f43c4edb808ef5690cc5e068",
+        "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
+      },
+      "military_target": 4,
+      "people": 1,
+      "recovered_cells": 195,
+      "soldiers": 0
+    },
+    {
+      "chain": "fd6eb266bd6029243f7de37c1224857f1faed40fceed7b487bb751a82ab6c467",
+      "day": 4,
+      "families": 1,
+      "hashes": {
+        "FAMILY": "ca9d9733492ba4031efe5e6a6e9063c6d589873113305eee06c1d40a1ae9c691",
+        "MILITARY": "c8e93cf14cd93d71e39f7771f605fc9bae23ae3c742c9662ea5983e24618a88a",
+        "NATURAL_RESOURCE": "83b1e00784c268bdae2a833a660734f7ceab9a249bae190eed017b4889293e00",
+        "PERSON": "6e790cc34338cea8f10e5cba6a52acb9cfa11d77abf9d4e47bb323b776d7d7a6",
+        "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
+      },
+      "military_target": 5,
+      "people": 1,
+      "recovered_cells": 265,
+      "soldiers": 0
+    }
+  ],
+  "scope": "military_country_projection;all_resource_reserve_and_pending_columns;family_cell_and_person_projections;physical_vision",
+  "seed": 20260727,
+  "version": 5
+}

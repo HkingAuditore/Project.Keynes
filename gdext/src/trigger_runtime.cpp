@@ -1,6 +1,6 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
 #include "runtime_trigger_kernel.h"
@@ -963,7 +963,7 @@ void TriggerRuntime::emit_effects(int32_t trigger_id, int32_t state_index,
         effect.definition_key = source.definition_key;
         effect.payload = source.payload;
         if (effect.action == ECONOMY_COMMAND &&
-            (effect.opcode == NativeEconomyRuntime::COMMAND_FAMILY_FREE_BUILDING ||
+            (effect.opcode == EconomyApi::COMMAND_FAMILY_FREE_BUILDING ||
              effect.command_key == "family.free_building") &&
             event.payload[1] >= 0 && effect.payload[1] == 0)
             effect.payload[1] = event.payload[1];
@@ -1294,15 +1294,15 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
         else if (effect.action == ECONOMY_COMMAND) {
             effect_action = EffectRuntime::ECONOMY_COMMAND;
             if (effect.command_key == "family.free_building")
-                opcode = NativeEconomyRuntime::COMMAND_FAMILY_FREE_BUILDING;
+                opcode = EconomyApi::COMMAND_FAMILY_FREE_BUILDING;
             else if (effect.command_key == "family.population_reward")
-                opcode = NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD;
+                opcode = EconomyApi::COMMAND_FAMILY_POPULATION_REWARD;
             else if (effect.command_key == "family.absorb_anonymous")
-                opcode = NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS;
+                opcode = EconomyApi::COMMAND_FAMILY_ABSORB_ANONYMOUS;
             else if (effect.command_key == "family.purchase_discount")
-                opcode = NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT;
+                opcode = EconomyApi::COMMAND_FAMILY_PURCHASE_DISCOUNT;
             else if (effect.command_key == "family.set_split_policy")
-                opcode = NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY;
+                opcode = EconomyApi::COMMAND_FAMILY_SET_SPLIT_POLICY;
         }
         if (!effect_runtime->enqueue_trigger_effect_pod(
                 effect.id, effect.effective_day, effect.trigger_id,

@@ -1,6 +1,6 @@
 # Schema Migrations
 
-> Phase 4.2 / dots-phase4-followup.md §4.2
+> Phase 4.2 / docs/architecture/migration.md
 
 DCWorld 序列化 dict 跨版本迁移的中央目录。每个 `vN_to_vN_plus_1.gd` 把 dict 从 vN 迁移到 vN+1。
 

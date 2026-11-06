@@ -886,13 +886,10 @@ func _run_time_point_6(batches: Array) -> Dictionary:
 	var boundary_allows: bool = not bool(ext.ideology_should_run(1))
 	print("[sv6] boundary: ideology_should_run(1)=%s -> production gate would %s"
 		% [str(not boundary_allows), "ALLOW" if boundary_allows else "REFUSE"])
-	_expect("tp6: the production save boundary reports idle at the mid-materialize "
-		+ "instant (ideology_should_run == false), so the capture is inside the "
-		+ "existing safe boundary",
-		boundary_allows,
-		"ideology_should_run=%s (should_run has no derived_rebuild_pending term: "
-			% str(not boundary_allows)
-		+ "ideology_runtime.cpp:5057-5068; gate at game_save_coordinator.gd:416-421)")
+	# should_run now includes derived_rebuild_pending. The coordinator refuses
+	# this instant; the low-level capture below separately tests reconstruction.
+	_expect("tp6: production save boundary refuses in-flight derived rebuild",
+		not boundary_allows, "ideology_should_run must remain true until rebuild completes")
 
 	# -- capture AT that instant -----------------------------------------
 	var mid_state: Dictionary = _capture_state(cont, "tp6-cont/mid", true, 1,

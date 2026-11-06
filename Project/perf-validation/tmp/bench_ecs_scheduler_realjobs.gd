@@ -56,7 +56,7 @@ extends EditorScript
 # 本 bench 单一回答：调度器在真实算子环境里值不值得用。
 #
 # 配套阅读：
-#   docs/dots-experiment-report.md §3.5 / §4 选项乙
+#   docs/architecture/migration.md / §4 选项乙
 #   docs/cpp-gdscript-best-practices.md §2 经验定律
 # ════════════════════════════════════════════════════════════════════
 

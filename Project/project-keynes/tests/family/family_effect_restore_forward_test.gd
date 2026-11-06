@@ -278,7 +278,6 @@ func _new_ext(catalog: Dictionary, landform: int) -> Object:
 	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	modifier_catalog.erase("ok")
 	ext.configure_modifiers(modifier_catalog, 1)
-	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:

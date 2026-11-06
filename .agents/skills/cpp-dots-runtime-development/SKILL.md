@@ -13,14 +13,11 @@ This skill is project-local and should be used together with `civ-grounded-devel
 
 Before changing code, read the relevant current-runtime docs:
 
-- `docs/cpp-dots-runtime/index.md`
-- `docs/cpp-dots-runtime/architecture-overview.md`
-- `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+- `docs/architecture/README.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 
-Use these as current architecture references. Historical validation docs such as `docs/dots-f1-validation.md` through `docs/dots-f6-validation.md`, `docs/dots-master-execution-handbook.md`, and `docs/performance-charter.md` are still valuable, but they may describe plans or historical acceptance details rather than the current runtime shape.
+Use these as current architecture references. Historical validation docs such as `docs/architecture/migration.md` through `docs/architecture/migration.md`, `docs/architecture/development-guide.md`, and `docs/architecture/current-state.md` are still valuable, but they may describe plans or historical acceptance details rather than the current runtime shape.
 
 ## Mandatory Grounding Pass
 
@@ -151,10 +148,10 @@ Important interpretations:
 
 Whenever a C++/DOTS runtime change alters behavior or debugging expectations, update the project docs in the same PR:
 
-- Update `docs/cpp-dots-runtime/computation-pipelines.md` when pass ownership, inputs, outputs, fallback, or C++ status changes.
-- Update `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md` when bridge API, publish/flush/snapshot behavior, schema ownership, or CoW assumptions change.
-- Update `docs/cpp-dots-runtime/scheduling-and-job-graph.md` when job registration, budget policy, depends, stage naming, skip reasons, or scheduler reports change.
-- Update `docs/cpp-dots-runtime/performance-diagnostics-playbook.md` when logs gain/lose fields or when a new common diagnosis pattern is discovered.
+- Update `docs/architecture/current-state.md` when pass ownership, inputs, outputs, fallback, or C++ status changes.
+- Update `docs/architecture/development-guide.md` when bridge API, publish/flush/snapshot behavior, schema ownership, or CoW assumptions change.
+- Update `docs/architecture/current-state.md` when job registration, budget policy, depends, stage naming, skip reasons, or scheduler reports change.
+- Update `docs/architecture/development-guide.md` when logs gain/lose fields or when a new common diagnosis pattern is discovered.
 
 Do not bury current runtime truth only in handoff notes, chat logs, or one-off validation docs.
 

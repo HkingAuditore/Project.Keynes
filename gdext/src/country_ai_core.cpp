@@ -92,7 +92,6 @@ struct TechView {
     }
     bool available(int32_t tech) const {
         return discovered(tech) && !done(tech) && !pending(tech) && !is_queued(tech) &&
-               country_core_technology_prerequisites_met(state, catalog, slot, tech) &&
                country_core_research_condition_met(state, catalog, slot, tech);
     }
     int64_t remaining_closure_cost(const CountryAiTechIndex &index, int32_t tech) const {

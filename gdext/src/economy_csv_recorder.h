@@ -7,6 +7,7 @@
 #include <deque>
 #include <fstream>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -17,6 +18,7 @@
 namespace pk {
 
 class NativeEconomyRuntime;
+class EconomyRecordSource;
 
 // Debug-only committed economy recorder. The main thread copies native state
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
@@ -464,9 +466,7 @@ public:
         bool trade_deadline_exceeded = false;
         int32_t cost_anchor_price = 0;
         int32_t shortage_q16 = 0;
-        int64_t pressure_business_demand = 0;
-        int64_t pressure_supply = 0;
-        int32_t pressure_cost_anchor = 0;
+        int32_t price_pressure_total_q16 = 0;
         int32_t category_index = -1;
         int32_t storage_mode = 0;
         bool trade_enabled = false;
@@ -484,14 +484,13 @@ public:
         int64_t merchant_operating_outflow = 0;
         int64_t merchant_liquidity_coverage_q16 = 0;
         int32_t merchant_effective_buy_factor_q16 = 0;
-        // Derived-demand price conduction diagnostics. These are transient
-        // epoch values, never saved into the authoritative economy state.
         int64_t derived_business_demand = 0;
         int64_t shadow_anchor_price = 0;
-        int32_t pressure_derived_weight_q16 = 0;
+        int32_t price_pressure_derived_q16 = 0;
     };
 
-private:
+public:
+    // Immutable to the writer once queued; no runtime pointers or callbacks.
     struct Batch {
         int64_t epoch_id = -1;
         int64_t row_count = 0;
@@ -505,18 +504,13 @@ private:
         void clear_rows();
     };
 
+private:
     enum BufferState : uint8_t { FREE = 0, FILLING = 1, READY = 2, WRITING = 3 };
 
     void worker_main();
     bool open_files(std::string &error);
     void close_files();
     bool write_batch(const Batch &batch, int64_t &bytes, std::string &error);
-    bool fill_batch(Batch &batch, NativeEconomyRuntime &runtime,
-                    const std::vector<const float *> &resource_arrays,
-                    int64_t epoch_row_id, int64_t projected_rows, std::string &error);
-    int64_t projected_rows(const NativeEconomyRuntime &runtime) const;
-    int32_t price_pressure_total_q16(const MarketRow &row) const;
-    int32_t price_pressure_derived_q16(const MarketRow &row) const;
     void set_terminal_locked(const std::string &code, const std::string &message,
                              int64_t first_unrecorded_epoch);
     static const char *state_name(int32_t state);
@@ -524,23 +518,8 @@ private:
     Config _config;
     std::vector<std::string> _good_ids;
     std::vector<std::string> _good_category_ids;
-    std::vector<int32_t> _good_default_price;
     std::vector<int32_t> _good_storage_modes;
-    std::vector<int32_t> _good_target_inventory_days_q16;
-    std::vector<int32_t> _good_inventory_weight_q16;
-    std::vector<int32_t> _good_shortage_weight_q16;
-    std::vector<int32_t> _good_excess_demand_weight_q16;
-    std::vector<int32_t> _good_cost_anchor_weight_q16;
-    std::vector<int32_t> _good_inactive_reversion_weight_q16;
-    std::vector<int64_t> _good_monetary_issue_values;
-    std::vector<int32_t> _sample_cells;
-    std::vector<int32_t> _sample_cell_positions;
-    // Recorder resource rows follow the caller's slot order, while native
-    // building deltas follow the economy catalog's stable-id order.
-    std::vector<int32_t> _resource_runtime_indices;
-    std::vector<float> _previous_resource_reserve;
-    std::vector<int64_t> _pending_resource_artificial;
-    std::vector<uint8_t> _resource_history_valid;
+    std::unique_ptr<EconomyRecordSource> _source;
     std::array<Batch, 2> _buffers;
     std::array<BufferState, 2> _buffer_states{{FREE, FREE}};
     std::deque<int32_t> _ready;

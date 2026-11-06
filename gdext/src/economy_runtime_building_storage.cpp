@@ -673,8 +673,11 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
         const auto group = building_view(static_cast<size_t>(group_index));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
-            group.type_id >= static_cast<int32_t>(_building_types.size()) ||
-            _building_types[group.type_id].kind == 2) continue;
+            group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
+        // Must skip exactly the kinds the counting pass skipped (2 and 3), or
+        // state lots are written past the end of the sized index list.
+        const int32_t kind = _building_types[group.type_id].kind;
+        if (kind == 2 || kind == 3) continue;
         _building_review_group_indices[cursor++] = group_index;
     }
 }

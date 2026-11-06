@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "advancers": [
+    {
+      "id": "military",
+      "thread": "main",
+      "reads": "committed Country/Economy; terrain",
+      "writes": "military runtime; next-day intents; military events",
+      "trigger": "host frame catchup of observed committed days",
+      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
+      "entrypoint": "_drain_runtime_military_commits",
+      "host_fields": [
+        "_runtime_military_last_commit_day",
+        "_runtime_military_pending_target_day"
+      ],
+      "host_methods": [
+        "_queue_runtime_military_commit",
+        "_drain_runtime_military_commits"
+      ]
+    },
+    {
+      "id": "natural_resource_recovery",
+      "thread": "main",
+      "reads": "resource reserves; climate/terrain/vegetation inputs",
+      "writes": "resource slots; MapData mirror",
+      "trigger": "host frame catchup of observed committed days",
+      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
+      "entrypoint": "_drain_runtime_natural_resource_commits",
+      "host_fields": [
+        "_runtime_natural_resource_last_commit_day",
+        "_runtime_natural_resource_pending_target_day"
+      ],
+      "host_methods": [
+        "_queue_runtime_natural_resource_commit",
+        "_drain_runtime_natural_resource_commits"
+      ]
+    },
+    {
+      "id": "family",
+      "thread": "executor",
+      "reads": "economy family/cohort/market state; Country and Modifier inputs",
+      "writes": "family state; frozen behavior CSR; effect metrics",
+      "trigger": "economy FAMILY_COMMIT; worker or inline caller",
+      "source": "gdext/src/economy_graph_stage_dispatch.cpp",
+      "entrypoint": "RuntimeEconomyGraphStage::FAMILY_COMMIT",
+      "host_fields": [],
+      "host_methods": []
+    },
+    {
+      "id": "person",
+      "thread": "executor",
+      "reads": "economy family/person state",
+      "writes": "person state",
+      "trigger": "economy PERSON_COMMIT; worker or inline caller",
+      "source": "gdext/src/economy_graph_stage_dispatch.cpp",
+      "entrypoint": "RuntimeEconomyGraphStage::PERSON_COMMIT",
+      "host_fields": [],
+      "host_methods": []
+    },
+    {
+      "id": "vision",
+      "thread": "main",
+      "reads": "committed Country territory; terrain; bio occupancy; research signals",
+      "writes": "visibility/exploration/fog; Country observation intents",
+      "trigger": "host vision refresh on world/country changes",
+      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
+      "entrypoint": "_refresh_vision",
+      "host_fields": [],
+      "host_methods": []
+    },
+    {
+      "id": "visual_delivery",
+      "thread": "main",
+      "reads": "published commit and dirty-family patches",
+      "writes": "MapData/display mirrors; renderer uploads",
+      "trigger": "host frame consumption of commit and visual patches",
+      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
+      "entrypoint": "_consume_runtime_commit_if_ready",
+      "host_fields": [
+        "_runtime_commit_day",
+        "_runtime_commit_family_cursors"
+      ],
+      "host_methods": []
+    },
+    {
+      "id": "climate_writeback",
+      "thread": "main",
+      "reads": "published Climate snapshots",
+      "writes": "DataCore slots; MapData mirror",
+      "trigger": "host consumption of a newer committed Climate day",
+      "source": "Project/project-keynes/scripts/game/world_runtime_host.gd",
+      "entrypoint": "_apply_climate_writeback_if_authoritative",
+      "host_fields": [
+        "_runtime_climate_writeback_last_day"
+      ],
+      "host_methods": []
+    }
+  ]
+}

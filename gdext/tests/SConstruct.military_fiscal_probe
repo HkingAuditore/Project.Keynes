@@ -1,0 +1,30 @@
+# Opt-in macOS test fixture; never collected by the production src glob.
+# First build the normal template_debug/arm64 extension serially.
+from pathlib import Path
+root = Path(Dir("#").abspath)
+ARGUMENTS.setdefault("disable_exceptions", "no")
+env = SConscript(str(root / "godot-cpp/SConstruct"))
+assert env["platform"] == "macos" and env["arch"] == "arm64"
+assert env["target"] == "template_debug" and not env["dev_build"]
+scratch = Path(ARGUMENTS["probe_dir"]).resolve()
+scratch.mkdir(parents=True, exist_ok=True)
+env.Append(CPPPATH=[str(root / "src")])
+# These external .os files were built as PIC SharedObjects by production SCons.
+# This independent graph cannot inherit their node attributes.
+env["STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME"] = True
+probe = env.SharedObject(str(scratch / "military_fiscal_probe.os"),
+    str(root / "tests/military_fiscal_probe.cpp"))
+sources = []
+for folder in ("src", "src/components", "src/systems", "src/profiles"):
+    for source in sorted((root / folder).glob("*.cpp")):
+        if source.name == "register_types.cpp": continue
+        obj = source.with_suffix(".os")
+        if not obj.exists(): raise RuntimeError("Build production debug first: " + str(obj))
+        sources.append(str(obj))
+library = env.SharedLibrary(str(scratch / "libmilitary_fiscal_probe.dylib"), sources + probe)
+(scratch / "military_fiscal_probe.gdextension").write_text(
+    '[configuration]\nentry_symbol = "military_fiscal_probe_init"\n'
+    'compatibility_minimum = "4.6"\n\n[libraries]\n'
+    'macos.debug.arm64 = "' + str(scratch / "libmilitary_fiscal_probe.dylib") + '"\n',
+    encoding="utf-8")
+Default(library)

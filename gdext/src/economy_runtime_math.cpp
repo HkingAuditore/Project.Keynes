@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -87,7 +87,7 @@ int64_t NativeEconomyRuntime::mul_div_sat(int64_t a, int64_t b, int64_t divisor,
                                     : std::numeric_limits<int64_t>::max();
     }
     static const bool scalar_identity = [] {
-        const char *value = std::getenv("PK_ECONOMY_MUL_DIV_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MUL_DIV_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (!scalar_identity) {
@@ -215,11 +215,11 @@ int64_t NativeEconomyRuntime::pow_q16(int64_t ratio_q16, int64_t exponent_q16,
     return economy_clamp_i64_from_unsigned(out_q32 >> 16, false, sat);
     };
     static const bool disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_POW_CACHE_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_POW_CACHE_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (disabled) return compute(sat);

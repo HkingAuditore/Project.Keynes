@@ -1,13 +1,12 @@
 #include "world_ext.h"
 
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "military_bridge.h"
 #include "native_simulation_host.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -20,88 +19,21 @@ NativeEconomyRuntime *economy_runtime_from(void *opaque) {
     return static_cast<NativeEconomyRuntime *>(opaque);
 }
 
-// NativeEconomyRuntime::EventKind / Opcode values (economy_runtime.h). Kept as
-// literals so this TU only depends on the public poll_events() surface.
-constexpr int32_t kEconomyEventCommandSettled = 1;
-constexpr int32_t kEconomyEventStructuralChange = 3;
-constexpr int32_t kEconomyEventEpochCommitted = 10;
-constexpr int32_t kEconomyOpTransferToCohort = 1;
-constexpr int32_t kEconomyOpRemoveStock = 5;
-constexpr int32_t kEconomyOpAddPopulation = 6;
-constexpr int32_t kEconomyOpChangeSignature = 8;
-constexpr int32_t kEconomyOpConvertCohort = 24;   // B: in-cell signature move
-constexpr int32_t kEconomyOpMarketGoodToCountry = 13;
-constexpr int32_t kEconomyOpArmyEmbark = 30;      // cell cohort -> army lane
-constexpr int32_t kEconomyOpArmyDisembark = 31;   // army lane -> cell cohort
-constexpr int32_t kEconomyOpArmyMergeLanes = 32;  // src lane -> dst lane
-constexpr int32_t kEconomyOpArmyLanePay = 34;     // treasury -> army lane wages
-
-// ---- Army personnel lane probe (army-personnel contract §1.4) -------------
-// The lane bindings live on NativeEconomyRuntime, which is owned by the Economy
-// engineer and may not exist yet in this tree (two concurrent engineers, one
-// DLL). Detect them at compile time instead of failing to link: that is the C++
-// equivalent of the GDScript `has_method` guard, so the bridge keeps running on
-// a build whose economy has no army lane and reports "unsupported" instead of
-// calling into a method that does not exist.
-template <typename T, typename = void>
-struct HasArmyLanePopulation : std::false_type {};
-template <typename T>
-struct HasArmyLanePopulation<T,
-    std::void_t<decltype(std::declval<T &>().military_army_population(
-        std::declval<uint64_t>()))>> : std::true_type {};
-
-template <typename T, typename = void>
-struct HasArmyLaneRation : std::false_type {};
-template <typename T>
-struct HasArmyLaneRation<T,
-    std::void_t<decltype(std::declval<T &>().set_military_army_ration(
-        std::declval<uint64_t>(), std::declval<int32_t>()))>> : std::true_type {};
-
-// Army pay receipt base (army-pay contract §3.2): the lane's cash balance.
-// Probed at compile time like the population read, so an Economy build without
-// it answers -1 and the pay rows settle on the requested amount instead of
-// trapping.
-template <typename T, typename = void>
-struct HasArmyLaneFunds : std::false_type {};
-template <typename T>
-struct HasArmyLaneFunds<T, std::void_t<decltype(
-        std::declval<const T &>().military_army_funds(std::declval<uint64_t>()))>>
-    : std::true_type {};
-
-template <typename T>
-int64_t lane_funds_of(T *runtime, uint64_t army_handle) {
-    if constexpr (HasArmyLaneFunds<T>::value) {
-        return static_cast<int64_t>(runtime->military_army_funds(army_handle));
-    } else {
-        (void)runtime;
-        (void)army_handle;
-        return -1;
-    }
-}
-
-template <typename T>
-int64_t lane_population_of(T *runtime, uint64_t army_handle) {
-    if constexpr (HasArmyLanePopulation<T>::value) {
-        return static_cast<int64_t>(runtime->military_army_population(army_handle));
-    } else {
-        (void)runtime;
-        (void)army_handle;
-        return -1;
-    }
-}
-
-template <typename T>
-bool set_lane_ration_of(T *runtime, uint64_t army_handle, int32_t q16) {
-    if constexpr (HasArmyLaneRation<T>::value) {
-        runtime->set_military_army_ration(army_handle, q16);
-        return true;
-    } else {
-        (void)runtime;
-        (void)army_handle;
-        (void)q16;
-        return false;
-    }
-}
+// EventKind / Opcode values come from the public Economy contract.
+// Local names keep the receipt matching code unchanged.
+constexpr int32_t kEconomyEventCommandSettled = EconomyApi::EVENT_COMMAND_SETTLED;
+constexpr int32_t kEconomyEventStructuralChange = EconomyApi::EVENT_STRUCTURAL_CHANGE;
+constexpr int32_t kEconomyEventEpochCommitted = EconomyApi::EVENT_EPOCH_COMMITTED;
+constexpr int32_t kEconomyOpTransferToCohort = EconomyApi::COMMAND_TRANSFER_TO_COHORT;
+constexpr int32_t kEconomyOpRemoveStock = EconomyApi::COMMAND_REMOVE_STOCK;
+constexpr int32_t kEconomyOpAddPopulation = EconomyApi::COMMAND_ADD_POPULATION;
+constexpr int32_t kEconomyOpChangeSignature = EconomyApi::COMMAND_CHANGE_SIGNATURE;
+constexpr int32_t kEconomyOpConvertCohort = EconomyApi::COMMAND_MILITARY_CONVERT_COHORT;   // B: in-cell signature move
+constexpr int32_t kEconomyOpMarketGoodToCountry = EconomyApi::COMMAND_MARKET_GOOD_TO_COUNTRY;
+constexpr int32_t kEconomyOpArmyEmbark = EconomyApi::COMMAND_ARMY_EMBARK;      // cell cohort -> army lane
+constexpr int32_t kEconomyOpArmyDisembark = EconomyApi::COMMAND_ARMY_DISEMBARK;   // army lane -> cell cohort
+constexpr int32_t kEconomyOpArmyMergeLanes = EconomyApi::COMMAND_ARMY_MERGE_LANES;  // src lane -> dst lane
+constexpr int32_t kEconomyOpArmyLanePay = EconomyApi::COMMAND_ARMY_LANE_PAY;     // treasury -> army lane wages
 
 struct EconomyEventPage {
     PackedInt64Array event_id, epoch_id, sample_day, commit_day, subject_id;
@@ -145,28 +77,26 @@ int64_t expected_i64_0(int32_t opcode, int64_t count, int64_t amount) {
 } // namespace
 
 // ---- Army personnel lane bridge helpers (army-personnel contract §1.4) -----
-// Declared in world_ext_military.cpp (this TU is the only one that may look at
-// the Economy bindings). `supported` answers false, the population probe -1 and
-// the ration publish false whenever the loaded economy has no lane bindings, so
-// Military degrades to the pre-lane model instead of trapping.
+// Declared in world_ext_military.cpp; this build has all three lane methods.
+// Null Economy still answers false / -1; non-null calls use the public API.
 bool economy_army_lane_supported(const void *economy) {
     if (economy == nullptr) return false;
-    return HasArmyLanePopulation<NativeEconomyRuntime>::value;
+    return true;
 }
 
 int64_t economy_army_lane_population(void *economy, uint64_t army_handle) {
     if (economy == nullptr) return -1;
-    return lane_population_of(economy_runtime_from(economy), army_handle);
+    return economy_api::military_army_population(*economy_runtime_from(economy), army_handle);
 }
 
 int64_t economy_army_lane_funds(void *economy, uint64_t army_handle) {
     if (economy == nullptr) return -1;
-    return lane_funds_of(economy_runtime_from(economy), army_handle);
+    return economy_api::military_army_funds(*economy_runtime_from(economy), army_handle);
 }
 
 bool economy_set_army_ration(void *economy, uint64_t army_handle, int32_t q16) {
     if (economy == nullptr) return false;
-    return set_lane_ration_of(economy_runtime_from(economy), army_handle, q16);
+    economy_api::set_military_army_ration(*economy_runtime_from(economy), army_handle, q16); return true;
 }
 
 // Economy-side military hooks (design §5.1). Everything here is a
@@ -198,8 +128,8 @@ Dictionary DCWorldExt::set_military_ration_satisfaction(
         cell_indices[static_cast<size_t>(i)] = cells[i];
         values[static_cast<size_t>(i)] = q16[i];
     }
-    const int32_t written = economy_runtime_from(_economy_runtime)
-        ->set_military_ration_satisfaction(cell_indices, values);
+    const int32_t written = economy_api::set_military_ration_satisfaction(
+        *economy_runtime_from(_economy_runtime), cell_indices, values);
     out["ok"] = true;
     out["written"] = static_cast<int64_t>(written);
     return out;
@@ -248,11 +178,11 @@ void DCWorldExt::collect_military_economy_receipts(
     std::unique_lock<std::mutex> boundary;
     if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
         boundary = _runtime_host->try_lock_economy_read_boundary();
-        if (!boundary.owns_lock() || economy->epoch_active()) return;
+        if (!boundary.owns_lock() || economy_api::epoch_active(*economy)) return;
     }
-    const Dictionary report = economy->trace_report();
+    const Dictionary report = economy_api::trace_report(*economy);
     if (String(report.get("mode", "SELECTIVE")) == String("OFF")) {
-        const int64_t committed = economy->last_committed_day();
+        const int64_t committed = economy_api::last_committed_day(*economy);
         for (MilitaryPendingIntent &row : _military_pending_intents) {
             if (row.authority != 2 || row.receipt_pending != 1) continue;
             if (row.effective_day > committed) continue;
@@ -265,7 +195,7 @@ void DCWorldExt::collect_military_economy_receipts(
     // command-settled trace, so they settle on the committed-day boundary with
     // the requested quantity. They carry no request id (legacy ingress rows do).
     {
-        const int64_t committed = economy->last_committed_day();
+        const int64_t committed = economy_api::last_committed_day(*economy);
         for (MilitaryPendingIntent &row : _military_pending_intents) {
             if (row.authority != 2 || row.receipt_pending != 1) continue;
             if (row.request_id != 0) continue;
@@ -275,7 +205,7 @@ void DCWorldExt::collect_military_economy_receipts(
             int64_t applied = 0;
             if (row.opcode == kEconomyOpChangeSignature ||
                 row.opcode == kEconomyOpConvertCohort) {
-                applied = economy->military_soldier_heads(row.cell);
+                applied = economy_api::military_soldier_heads(*economy, row.cell);
             } else if (row.opcode == kEconomyOpArmyEmbark) {
                 // Army personnel lane: the row names the formation
                 // (target_cohort = army handle), so the truth is the lane itself.
@@ -350,7 +280,7 @@ void DCWorldExt::collect_military_economy_receipts(
         opts["kind"] = kind;
         opts["max_events"] = static_cast<int64_t>(65536);
         opts["consumer_id"] = StringName("military_bridge");
-        return read_page(economy->poll_events(opts));
+        return read_page(economy_api::poll_events(*economy, opts));
     };
     // All three pages are read under the same boundary, so they describe the
     // same set of committed batches.

@@ -22,7 +22,7 @@ Trigger handoff, player writes, or panel work.
 
 ## Ground before editing
 
-Read `docs/cpp-dots-runtime/native-ideology-runtime.md` first. Then read only
+Read `docs/architecture/current-state.md` first. Then read only
 the bundled reference that matches the task:
 
 - Authority, catalog IR, commands, support, Effect binding, PKID:
@@ -101,6 +101,12 @@ or a second Modifier writer for equipped ideas.
   and a head-cursor command merge. Quiescent evidence is
   `sparse_idea_scan_count=0`, `dormant_scan_count=0`,
   `command_queue_resorts=0`, `command_queue_shift_steps=0`.
+- Keep scheduling eligibility separate from the daily barrier: `should_run(day)`
+  may remain true while Effect replies are pending; `needs_daily_continuation(day)`
+  alone pins the calendar for unfinished local slices. IdeologyRuntimeSystem,
+  native graph status, and MapGenerator must use that same query. Worker-owned
+  Ideology returns false at the facade boundary. Never release unfinished work
+  by a timeout or retry count.
 - Cap levels at 64 because entered confirmation is a packed bitset.
 - Resolve stable IDs in `IdeologyCatalog` / `IdeologyFacade`. Native hot loops
   use dense IDs, Q16, bitsets, and bounded scratch. No Dictionary, String,
@@ -270,6 +276,7 @@ godot --headless --path Project/project-keynes \
 Core set for any ideology change:
 
 - `tests/ideology/ideology_runtime_test.gd`
+- `tests/runtime/ideology_day_continuation_test.gd` when daily completion or barriers change
 - `tests/ideology/ideology_opinion_synergy_test.gd`
 - `tests/ideology/ideology_content_test.gd`
 - `tests/ideology/ideology_effect_instance_test.gd`
@@ -326,3 +333,13 @@ For ideology panel work, preserve card/slot nodes on support_revision and pendin
 ### Structured ideology hover details (2026-10-26)
 
 Remove the point-scroll ledger text button entirely; do not replace it with another character. Render card hover details through ideology_detail_tooltip.gd and the read-only detail_model, not one concatenated Label. Separate identity/status, understanding progress, individual current effects, next-level effects, directional support score/threshold and restrictions. Effect-number emphasis must preserve authored strings; gauges read native snapshot values. Bound tooltip height to the logical viewport and forward wheel input from the hovered card to long details without scrolling the collection. Verify actual mouse-hover creation, long-detail scroll isolation, and absence of a replacement point-bar button in ideology_workspace_stability_test.gd.
+
+
+## Main-thread continuation under worker authority
+
+The host must continue pending instance refresh and derived rebuild from frame liveness,
+even while the calendar cannot admit another day. Both native calls share the IDEOLOGY
+main-boundary request: finish one before starting the other, stop polling completed work,
+and reset day markers for a new world. Never wait for a later daily tick to release a
+request that parks the worker. Run `tests/runtime/ideology_day_continuation_test.gd` and
+the production starter soak when changing this handoff; retain real Effect acknowledgments.

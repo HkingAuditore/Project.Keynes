@@ -10,9 +10,9 @@
 
 | 文件 | 新增章节 | 关键内容 |
 |---|---|---|
-| `native-economy-runtime.md` | 「城市因子 CSR 现在包含派生层覆盖的格」| `collect_scope_stat_entries` 的并集（`modifier_runtime.cpp:1571-1584`）；**不加这条并集，只有派生贡献的格不在工作集里，读者会静默退回 `shared`**；逐格取值走 `effective_value`（`:7327`）|
-| `scheduling-and-job-graph.md` | 「派生地块层重建进入每日图」| 单步 0.45 ms 预算、采集与折叠**必须分两步**（合起来首步 1.03 ms）、`done()` 的 `_started` 细节、换日丢半成品、空闲日不重建；**片数随形态变化**（常数卡 6400 格 3 片 / ramp 卡 1600 格 25 片）|
-| `performance-diagnostics-playbook.md` | 「派生地块层的诊断口径」| 8 个计数器**哪些是累积量、哪些是本次运行量**的对照表；两个必记口径；一个真实教训（`cell_layer_rebuild_visits` 丢了 `++` 导致假失败）|
+| `docs/architecture/current-state.md` | 「城市因子 CSR 现在包含派生层覆盖的格」| `collect_scope_stat_entries` 的并集（`modifier_runtime.cpp:1571-1584`）；**不加这条并集，只有派生贡献的格不在工作集里，读者会静默退回 `shared`**；逐格取值走 `effective_value`（`:7327`）|
+| `docs/architecture/current-state.md` | 「派生地块层重建进入每日图」| 单步 0.45 ms 预算、采集与折叠**必须分两步**（合起来首步 1.03 ms）、`done()` 的 `_started` 细节、换日丢半成品、空闲日不重建；**片数随形态变化**（常数卡 6400 格 3 片 / ramp 卡 1600 格 25 片）|
+| `docs/architecture/development-guide.md` | 「派生地块层的诊断口径」| 8 个计数器**哪些是累积量、哪些是本次运行量**的对照表；两个必记口径；一个真实教训（`cell_layer_rebuild_visits` 丢了 `++` 导致假失败）|
 | `project-keynes-economy-runtime` skill | 「Derived cell layer 对经济侧的影响」| 与文档同源的短版，指向具体行号 |
 
 ## 2. 我先前的一个错误假设
@@ -55,7 +55,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `docs/cpp-dots-runtime/native-economy-runtime.md` | +1 节（2229 行）|
-| `docs/cpp-dots-runtime/scheduling-and-job-graph.md` | +1 节（1498 行）|
-| `docs/cpp-dots-runtime/performance-diagnostics-playbook.md` | +1 节（2897 行）|
+| `docs/architecture/current-state.md` | +1 节（2229 行）|
+| `docs/architecture/current-state.md` | +1 节（1498 行）|
+| `docs/architecture/development-guide.md` | +1 节（2897 行）|
 | `.claude` / `.agents` × `economy-runtime/references/architecture-and-data.md` | 各 +14 行，逐字节相同 |
