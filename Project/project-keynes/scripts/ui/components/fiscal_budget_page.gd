@@ -437,7 +437,6 @@ func _on_national_committed(treasury_share_bp: int) -> void:
 		int(_current_channel_share(SECTION_ERA)),
 		int(_current_channel_share(SECTION_COLONIZATION)))
 
-
 ## 科技份额提交：另两条通道沿用当前值（自动分配的通道传 -1，不把它钉死）。
 func _on_technology_committed(share_bp: int) -> void:
 	if _national_slider == null:
@@ -445,7 +444,6 @@ func _on_technology_committed(share_bp: int) -> void:
 	procurement_committed.emit(int(_national_slider.treasury_share_bp()), share_bp,
 		int(_current_channel_share(SECTION_ERA)),
 		int(_current_channel_share(SECTION_COLONIZATION)))
-
 
 ## 时代 / 开拓通道提交：只改这一条，其余三项沿用当前滑条位置。
 func _on_channel_committed(share_bp: int, section_id: String) -> void:
@@ -460,13 +458,11 @@ func _on_channel_committed(share_bp: int, section_id: String) -> void:
 	procurement_committed.emit(int(_national_slider.treasury_share_bp()),
 		_research_share(), era, colonization)
 
-
 ## 科技份额的当前可见值；滑条未构建时退回解析出的政策值。
 func _research_share() -> int:
 	if _technology_slider != null:
 		return int(_technology_slider.share_bp())
 	return int(_channel_policy().research)
-
 
 ## 某条通道滑条当前显示的份额；-1 表示该通道仍沿用原生自动分配
 ## （自动通道显示的是从日额反推的位置，提交时必须保持 -1，否则会被钉成手动值）。
@@ -478,7 +474,6 @@ func _current_channel_share(section_id: String) -> int:
 	if bool(slider.is_auto_allocated()):
 		return -1
 	return int(slider.share_bp())
-
 
 func _refresh_section_values(section_id: String) -> void:
 	var entry: Dictionary = _sections.get(section_id, {})
@@ -513,7 +508,6 @@ func _refresh_section_values(section_id: String) -> void:
 					_military_editable())
 			_set_detail(entry, _military_detail_text())
 
-
 ## 说明行只在异常状态出现：正常运行时的日额已经画在滑条右侧读数里，
 ## 再写一行只会把 2×2 网格的纸撑高、把第四块挤出首屏。
 func _set_detail(entry: Dictionary, text: String) -> void:
@@ -523,7 +517,6 @@ func _set_detail(entry: Dictionary, text: String) -> void:
 	if detail.text != text:
 		detail.text = text
 	detail.visible = not text.is_empty()
-
 
 func _section_signature(section_id: String) -> String:
 	var procurement: Dictionary = _model.get("procurement", {})
@@ -566,7 +559,6 @@ func _section_signature(section_id: String) -> String:
 			int(military.get("procurement_deferred_units", 0))]
 	return ""
 
-
 ## 顶部纸带：滚动分区时它不动，所以每次刷新都要按最新政策重画。
 func _refresh_ribbon() -> void:
 	if _ribbon == null:
@@ -593,7 +585,6 @@ func _refresh_ribbon() -> void:
 		bool(military.get("envelope_enabled", false)),
 		bool(_model.get("available", false)))
 
-
 ## 军事分区的模型：补一项目国库现金，供预算滑条在拖动时估算日额；
 ## 并叠上玩家刚提交、快照尚未反映的份额覆盖。
 func _military_model() -> Dictionary:
@@ -618,14 +609,12 @@ func _military_model() -> Dictionary:
 		military["envelope_enabled"] = int(_military_local_budget["budget_share_bp"]) > 0
 	return military
 
-
 func _military_editable() -> bool:
 	if _player_controller == null:
 		return false
 	if not _player_controller.has_method("request_command"):
 		return false
 	return bool((_model.get("military", {}) as Dictionary).get("available", false))
-
 
 func _procurement_enabled() -> bool:
 	var procurement: Dictionary = _model.get("procurement", {})
@@ -634,7 +623,6 @@ func _procurement_enabled() -> bool:
 	if procurement.has("policy_enabled"):
 		return bool(procurement.get("policy_enabled", false))
 	return int(procurement.get("treasury_share_bp", 0)) > 0
-
 
 func _refresh_national_slider() -> void:
 	if _national_slider == null:
@@ -650,7 +638,6 @@ func _refresh_national_slider() -> void:
 		int(policy.get("research_share_bp", 5000)), cash, procurement,
 		bool(_model.get("available", false)))
 
-
 func _national_value_text() -> String:
 	var procurement: Dictionary = _model.get("procurement", {})
 	if not bool(_model.get("available", false)):
@@ -658,7 +645,6 @@ func _national_value_text() -> String:
 	if not _procurement_enabled():
 		return "已关闭"
 	return _money(int(procurement.get("national_daily_budget", 0))) + "/日"
-
 
 ## 三项份额（科技 / 时代收购 / 开拓）解析后的统一视图。
 ## 三者基数相同（国家购买总额 national_daily），一律落在 0..10000；
@@ -695,7 +681,6 @@ func _channel_policy() -> Dictionary:
 		"all_paused": research <= 0 and era <= 0 and colonization <= 0,
 	}
 
-
 func _national_daily_budget() -> int:
 	if not _procurement_enabled():
 		return 0
@@ -709,12 +694,10 @@ func _national_daily_budget() -> int:
 		_player_controller, procurement, _local_policy).get("treasury_share_bp", 0))
 	return int(round(float(cash) * float(clampi(treasury_share, 0, 1000)) / 10000.0))
 
-
 static func _derive_share(daily: int, base: int) -> int:
 	if base <= 0 or daily <= 0:
 		return 0
 	return clampi(int(round(float(daily) * 10000.0 / float(base))), 0, 10000)
-
 
 ## 把份额推给三条通道滑条：可拖上限随其余两项实时收窄。
 func _refresh_channel_sliders() -> void:
@@ -735,7 +718,6 @@ func _refresh_channel_sliders() -> void:
 			int(policy.base_daily), true, interactive,
 			int(policy.colonization_ceiling), bool(policy.colonization_auto))
 
-
 func _share_value_text(section_id: String) -> String:
 	if not bool(_model.get("available", false)):
 		return "暂不可用"
@@ -750,14 +732,12 @@ func _share_value_text(section_id: String) -> String:
 		return _percent(int(policy.era))
 	return _percent(int(policy.colonization))
 
-
 func _technology_detail_text() -> String:
 	if not bool(_model.get("available", false)):
 		return "科技采购预算随国库账目一起待命。"
 	if not _procurement_enabled():
 		return "国家购买已关闭，科技值暂不采购。"
 	return ""
-
 
 func _era_detail_text() -> String:
 	if not bool(_model.get("available", false)):
@@ -773,7 +753,6 @@ func _era_detail_text() -> String:
 		return "时代收购份额为 0，即使有需求也不采购。"
 	return ""
 
-
 func _colonization_detail_text() -> String:
 	if not bool(_model.get("available", false)):
 		return "开拓储备随国库账目一起待命。"
@@ -786,7 +765,6 @@ func _colonization_detail_text() -> String:
 		return "开拓份额为 0，派遣储备不再补充。"
 	return ""
 
-
 func _military_value_text() -> String:
 	var military: Dictionary = _model.get("military", {})
 	if not bool(military.get("available", false)):
@@ -797,7 +775,6 @@ func _military_value_text() -> String:
 		+ int(military.get("maintenance_paid_last_period", 0)) \
 		+ int(military.get("procurement_paid_last_period", 0))
 	return _money(total) + "/日"
-
 
 func _military_detail_text() -> String:
 	var military: Dictionary = _model.get("military", {})
@@ -816,10 +793,8 @@ func _military_detail_text() -> String:
 			+ int(military.get("maintenance_paid_last_period", 0))
 			+ int(military.get("procurement_paid_last_period", 0)))]
 
-
 func _money(value: int) -> String:
 	return UITokens.format_compact_number_cn(float(maxi(0, value)) / 10000.0, 2)
-
 
 func _percent(basis_points: int) -> String:
 	return "%.1f%%" % (float(clampi(basis_points, 0, 10000)) / 100.0)

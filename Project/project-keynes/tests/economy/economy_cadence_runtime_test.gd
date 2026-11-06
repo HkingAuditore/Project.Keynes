@@ -352,45 +352,55 @@ func _test_ecp2_owned_state_roundtrip(compiled: Dictionary) -> void:
 	_expect("ECP2 typed OwnedState restores atomically",
 		bool(restored.get("ok", false)) and
 		int(twin.get_economy_state_hash()) == int(source.get_economy_state_hash()))
-	var damaged: PackedByteArray = captured.get("bytes", PackedByteArray())
+	var damaged: PackedByteArray = (captured.get("bytes", PackedByteArray()) as PackedByteArray).duplicate()
 	if damaged.size() > 0:
 		damaged[damaged.size() - 1] = damaged[damaged.size() - 1] ^ 1
 	var rejected: Dictionary = twin.restore_economy_ecp2(damaged)
 	_expect("ECP2 tampered OwnedState is rejected before mutation",
 		not bool(rejected.get("ok", true)) and
 		String(rejected.get("reason", "")).find("hash") >= 0)
-	var mid := _boot(compiled, 4, 1000000.0, 1000000.0, 612,
-		{"building_plan_cells_per_slice": 1})
-	var partial: Dictionary = {}
-	for slice in range(32):
-		partial = mid.run_economy_slice({"day_index": 0, "tick_index": slice})
-		if (bool(partial.get("epoch_active", false)) and
-			not bool(partial.get("fiscal_reservation_continuation_active", false))):
-			break
-	var mid_capture: Dictionary = mid.capture_economy_ecp2(3)
-	if not bool(mid_capture.get("ok", false)):
-		print("  [info] mid ECP2 capture reason=", mid_capture.get("reason", ""),
-			" epoch_active=", partial.get("epoch_active", false))
-	_expect("ECP2 mid-epoch capture carries resume cursor",
-		bool(partial.get("done", false)) == false and
-		bool(mid_capture.get("ok", false)) and
-		(int(mid_capture.get("authority_domain_mask", 0)) & (1 << 16)) != 0)
-	if bool(mid_capture.get("ok", false)):
-		var resume_twin := _boot(compiled, 4, 1000000.0, 1000000.0, 612,
-			{"building_plan_cells_per_slice": 1})
-		_run_day(resume_twin, 0)
-		var restored_mid: Dictionary = resume_twin.restore_economy_ecp2(
-			mid_capture.get("bytes", PackedByteArray()))
-		if not bool(restored_mid.get("ok", false)):
-			print("  [info] mid ECP2 restore reason=", restored_mid.get("reason", ""))
-		_expect("ECP2 mid-epoch restore succeeds", bool(restored_mid.get("ok", false)))
-		var resumed_done := false
-		for slice in range(256):
-			var resumed: Dictionary = resume_twin.run_economy_slice({"day_index": 0, "tick_index": slice})
-			if bool(resumed.get("done", false)):
-				resumed_done = true
+	var options := {"building_plan_cells_per_slice": 1,
+		"economy_cadence_force_market_days": 1}
+	var mid := _boot(compiled, 4, 0.01, 0.01, 612, options)
+	var reference := _boot(compiled, 4, 0.01, 0.01, 612, options)
+	for day in range(2):
+		var partial: Dictionary = {}
+		while true:
+			partial = mid.run_economy_slice({"day_index": day})
+			if (bool(partial.get("epoch_active", false)) and
+				not bool(partial.get("fiscal_reservation_continuation_active", false))):
 				break
-		_expect("ECP2 mid-epoch restore resumes to commit", resumed_done)
+			if bool(partial.get("done", false)) or bool(partial.get("fatal", false)):
+				break
+		_expect("ECP2 rejection fixture is actually mid-epoch on day %d" % day,
+			bool(partial.get("epoch_active", false)) and not bool(partial.get("done", false)))
+		var before: int = mid.get_economy_state_hash()
+		for flags in [0, 1, 3]:
+			var refused: Dictionary = mid.capture_economy_ecp2(flags)
+			_expect("ECP2 refuses incomplete mid-epoch export day=%d flags=%d" % [day, flags],
+				not bool(refused.get("ok", true)) and
+				String(refused.get("reason", "")) == "save_requires_committed_boundary" and
+				mid.get_economy_state_hash() == before)
+		var refused_restore: Dictionary = mid.restore_economy_ecp2(
+			captured.get("bytes", PackedByteArray()))
+		if String(refused_restore.get("reason", "")) != "restore_requires_committed_boundary":
+			print("[active-restore] ", refused_restore)
+		_expect("ECP2 refuses replacement of an active epoch without mutation",
+			not bool(refused_restore.get("ok", true)) and
+			String(refused_restore.get("reason", "")) == "restore_requires_committed_boundary" and
+			mid.get_economy_state_hash() == before)
+		var continued := _run_day(mid, day)
+		var reference_report := _run_day(reference, day)
+		_expect("ECP2 rejected save leaves the original calculation intact",
+			bool(continued.get("done", false)) and not bool(continued.get("fatal", false)) and
+			bool(reference_report.get("done", false)) and
+			mid.get_economy_state_hash() == reference.get_economy_state_hash())
+	var completed: Dictionary = mid.capture_economy_ecp2(0)
+	var completed_restore: Dictionary = reference.restore_economy_ecp2(
+		completed.get("bytes", PackedByteArray()))
+	_expect("ECP2 saves and restores after the pending calculation commits",
+		bool(completed.get("ok", false)) and bool(completed_restore.get("ok", false)) and
+		mid.get_economy_state_hash() == reference.get_economy_state_hash())
 
 func _restore_country(ext: Object, chunks: Array) -> bool:
 	if not bool(ext.begin_country_restore().get("ok", false)):
@@ -502,9 +512,8 @@ func _new_ext(cells: int) -> Object:
 
 func _run_day(ext: Object, day: int) -> Dictionary:
 	var report := {}
-	for slice in range(256):
-		report = ext.run_economy_slice({
-			"day_index": day, "tick_index": day * 1000 + slice})
+	while true:
+		report = ext.run_economy_slice({"day_index": day})
 		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
 			return report
 	return report

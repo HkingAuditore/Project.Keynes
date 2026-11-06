@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 
 #include <algorithm>
 #include <chrono>
@@ -213,7 +213,7 @@ bool NativeEconomyRuntime::capture_trade_visibility(
         std::string &error) {
     _trade_visibility_manual = !from_map;
     _epoch_player_country_slot = _country_runtime != nullptr
-        ? _country_runtime->starting_country_slot() : -1;
+        ? country_reads().starting_country_slot() : -1;
     if (!fog_solved) {
         _epoch_trade_vision_gated = false;
         _epoch_cell_visible.clear();
@@ -537,16 +537,16 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
         source_country != destination_country;
     if (quote.foreign) {
         const int32_t import_rate = frozen_tax_rate(
-            destination, NativeCountryRuntime::TAX_IMPORT, good);
+            destination, CountryApi::TAX_IMPORT, good);
         const int32_t export_rate = frozen_tax_rate(
-            source, NativeCountryRuntime::TAX_EXPORT, good);
+            source, CountryApi::TAX_EXPORT, good);
         const int32_t import_mode = frozen_tax_mode(
-            destination, NativeCountryRuntime::TAX_IMPORT, good);
+            destination, CountryApi::TAX_IMPORT, good);
         const int32_t export_mode = frozen_tax_mode(
-            source, NativeCountryRuntime::TAX_EXPORT, good);
+            source, CountryApi::TAX_EXPORT, good);
         const int64_t qty = std::max<int64_t>(0, quantity);
         const int64_t import_amount =
-            import_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+            import_mode == CountryApi::TAX_MODE_ABSOLUTE
                 ? saturating_mul(qty,
                     std::abs(static_cast<int64_t>(import_rate)),
                     saturation_count)
@@ -554,7 +554,7 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
                     std::abs(static_cast<int64_t>(import_rate)), 10000,
                     saturation_count);
         const int64_t export_amount =
-            export_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+            export_mode == CountryApi::TAX_MODE_ABSOLUTE
                 ? saturating_mul(qty,
                     std::abs(static_cast<int64_t>(export_rate)),
                     saturation_count)
@@ -568,12 +568,12 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
     // applies at the buyer endpoint; negative rates wait for final household
     // or enterprise-input absorption to prevent closed inventory subsidy loops.
     const int32_t transaction_rate = frozen_tax_rate(
-        destination, NativeCountryRuntime::TAX_TRANSACTION, good);
+        destination, CountryApi::TAX_TRANSACTION, good);
     const int32_t transaction_mode = frozen_tax_mode(
-        destination, NativeCountryRuntime::TAX_TRANSACTION, good);
+        destination, CountryApi::TAX_TRANSACTION, good);
     if (transaction_rate > 0) {
         quote.transaction_transfer =
-            transaction_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+            transaction_mode == CountryApi::TAX_MODE_ABSOLUTE
                 ? saturating_mul(std::max<int64_t>(0, quantity),
                     static_cast<int64_t>(transaction_rate), saturation_count)
                 : mul_div_sat(quote.base, transaction_rate, 10000,
@@ -2411,7 +2411,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                     _tariff_epoch_requests[lane] = saturating_add(
                         _tariff_epoch_requests[lane], import_request, sat);
                     const int32_t row = ensure_tariff_history(
-                        destination_country, NativeCountryRuntime::TAX_IMPORT);
+                        destination_country, CountryApi::TAX_IMPORT);
                     _tariff_history.requests.write_scalar(row, saturating_add(
                         _tariff_history.requests[row], import_request, sat), market_mutation_sink());
                 }
@@ -2425,7 +2425,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                     _tariff_epoch_requests[lane] = saturating_add(
                         _tariff_epoch_requests[lane], export_request, sat);
                     const int32_t row = ensure_tariff_history(
-                        source_country, NativeCountryRuntime::TAX_EXPORT);
+                        source_country, CountryApi::TAX_EXPORT);
                     _tariff_history.requests.write_scalar(row, saturating_add(
                         _tariff_history.requests[row], export_request, sat), market_mutation_sink());
                 }
@@ -2603,15 +2603,15 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         const int64_t import_tax = std::max<int64_t>(
             0, clipped.import_transfer);
         const int32_t tx_rate = frozen_tax_rate(candidate.destination,
-            NativeCountryRuntime::TAX_TRANSACTION, candidate.good);
+            CountryApi::TAX_TRANSACTION, candidate.good);
         const int32_t tx_mode = frozen_tax_mode(candidate.destination,
-            NativeCountryRuntime::TAX_TRANSACTION, candidate.good);
+            CountryApi::TAX_TRANSACTION, candidate.good);
         const int64_t tx_base =
-            tx_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+            tx_mode == CountryApi::TAX_MODE_ABSOLUTE
                 ? std::max<int64_t>(0, clipped.quantity)
                 : clipped.base_value;
         const int64_t transaction_tax = apply_fiscal_tax(
-            candidate.destination, NativeCountryRuntime::TAX_TRANSACTION,
+            candidate.destination, CountryApi::TAX_TRANSACTION,
             tx_base, std::max<int32_t>(0, tx_rate), tx_mode,
             _saturation_count);
         // The merchant pays the base purchase. A positive import transfer is
@@ -2816,9 +2816,9 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 }
             };
             update_tariff_history(destination_country,
-                NativeCountryRuntime::TAX_IMPORT, clipped.import_transfer);
+                CountryApi::TAX_IMPORT, clipped.import_transfer);
             update_tariff_history(source_country,
-                NativeCountryRuntime::TAX_EXPORT, clipped.export_transfer);
+                CountryApi::TAX_EXPORT, clipped.export_transfer);
         }
         merchant_funds_touched.push_back(candidate.destination);
         accepted.push_back(clipped);

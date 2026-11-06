@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCClimatePassA
 
 ## Phase E.4 / dots-full-migration §Phase E.4：climate Pass-A 抽出。
@@ -34,7 +34,6 @@ class_name DCClimatePassA
 ## - map_generator.gd 中 line 3129-3300 + 3941-4196 共 ~440 行被搬走
 ## - ClimateDailySystem._inner._run_pass(_PASS_A) → DCClimatePassA.run(...)
 
-var _generator  # MapGenerator owner（持有 _last_cfg / _c() 等配置）
 
 func _init(generator) -> void:
 	_generator = generator

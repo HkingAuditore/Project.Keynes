@@ -1,8 +1,7 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime.h"
-#include "country_runtime.h"
 #include "effect_runtime.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -1309,7 +1308,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         _saturation_count += opening_escrow_saturation;
         ++_opening_audit_fast_paths;
     }
-    const char *verify_opening = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
+    const char *verify_opening = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY);
     if (continuous_audit && verify_opening && std::strcmp(verify_opening, "1") == 0) {
         const AuditTotals reference = audit_totals();
         if (_opening_totals.population != reference.population ||
@@ -1329,7 +1328,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     int64_t opening_research_consumed = 0;
     int64_t opening_country_cash = 0;
     if (_country_runtime != nullptr) {
-        _country_runtime->sample_economy_goods_audit(
+        country_reads().sample_economy_goods_audit(
             opening_country_goods, opening_research_consumed,
             opening_country_cash);
         _opening_totals.goods_stock +=
@@ -1433,19 +1432,19 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
             (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
-             _country_runtime == nullptr || !_country_runtime->valid_handle(
+             _country_runtime == nullptr || !country_reads().valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
             (cmd.i64_0 != 1 ||
              cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
-             _country_runtime == nullptr || !_country_runtime->valid_handle(
+             _country_runtime == nullptr || !country_reads().valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_BUILD_CANAL &&
-            (_country_runtime == nullptr || !_country_runtime->valid_handle(
+            (_country_runtime == nullptr || !country_reads().valid_handle(
                 static_cast<int64_t>(cmd.target_handle)) || cmd.i64_0 <= 0)) {
             return reject_epoch_command(cmd);
         }
@@ -1521,6 +1520,11 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
     if (!_bootstrapped || _fatal) {
         return true;
     }
+    // Both compact and StageOps must advance the observed day before epoch
+    // preparation: spread/cache phases read it while freezing derived demand.
+    // Advancing only at the end of open_epoch makes StageOps reuse yesterday's
+    // phase and changes real prices and household purchases after day zero.
+    _current_day = std::max(_current_day.get(), day_index);
     // A day can only be opened against a shaped market matrix. If the store the
     // graph stages are about to read is empty or mis-strided, say so with the
     // day, the ownership and the sizes *before* a stage read throws an

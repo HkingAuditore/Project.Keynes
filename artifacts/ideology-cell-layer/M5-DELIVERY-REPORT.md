@@ -41,8 +41,8 @@
 
 ### 1.4 文档
 
-`docs/cpp-dots-runtime/native-ideology-runtime.md`（+派生层整节）、
-`native-modifier-runtime.md`（+派生层整节）、`runtime-deletion-inventory.md`（+5 行台账）、
+`docs/architecture/current-state.md`（+派生层整节）、
+`docs/architecture/current-state.md`（+派生层整节）、`docs/architecture/current-state.md`（+5 行台账）、
 `docs/plans/ideology-review/22-progress-checklist.md`、本文所在目录 18 份里程碑报告。
 
 ---

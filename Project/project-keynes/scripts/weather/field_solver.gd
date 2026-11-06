@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherFieldSolver
 
 ## Phase E.1 / dots-full-migration §Phase E.1：weather field solver 抽出。
@@ -68,7 +68,6 @@ class_name DCWeatherFieldSolver
 
 # ─── solver 实现入口（hot loop 已全量实装，见上方 PR-1..7 清单）─────
 
-var _weather_system  # WeatherSystem owner; 在 E.1 后替换为本类持有的字段
 
 
 ## 在 weather_system 实例上注入本 solver。为 E.3 cleanup 时 weather_system 可

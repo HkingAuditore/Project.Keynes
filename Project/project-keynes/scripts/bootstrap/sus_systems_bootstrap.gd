@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCSusSystemsBootstrap
 
 ## Phase D.3 / D.4 — runtime system 注册逻辑的目的地。
@@ -30,7 +30,6 @@ class_name DCSusSystemsBootstrap
 ##
 ## DCSystemScheduler 路径会按拓扑序重写 priority；上面的 priority 仅 SUS 兼容路径用。
 
-var _generator: Object = null
 var _scheduler: RefCounted = null
 var _bootstrap_done: bool = false
 var _bootstrap_ts_msec: int = -1

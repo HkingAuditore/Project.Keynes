@@ -19,6 +19,7 @@ public:
     NativeEconomyGraphStageOps(NativeEconomyRuntime *runtime, bool mutate);
 
     bool bind_view(EconomySoAView &view, std::string &error) override;
+    uint32_t resume_stage_index() const noexcept override;
     bool run_stage(RuntimeEconomyGraphStage stage, EconomyStageCursor &cursor,
                    const RuntimeEconomyEpochInput &input,
                    EconomyStageResult &result, std::string &error) override;

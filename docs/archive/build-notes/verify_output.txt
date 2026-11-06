@@ -1,6 +1,6 @@
 warning: in the working copy of 'docs/cpp-dots-runtime/economy-fixed-point-ledger-formulas.md', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'docs/cpp-dots-runtime/game-flow-start-save.md', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'docs/cpp-dots-runtime/native-economy-runtime.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/architecture/development-guide.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/architecture/current-state.md', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'docs/cpp-dots-runtime/technology-route-differentiation.md', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'gdext/src/economy_runtime_market.cpp', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'tmp/codex_perf_analysis_20260725/node_modules/.modules.yaml', LF will be replaced by CRLF the next time Git touches it

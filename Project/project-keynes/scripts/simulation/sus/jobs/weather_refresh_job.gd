@@ -31,7 +31,6 @@ const _DEFER_AFTER_CLIMATE_SLICE_MS: float = 1.0
 const _MAX_CLIMATE_DEFER_STREAK: int = 4
 
 # External references — wired up by MapGenerator at registration time.
-var generator = null  # MapGenerator (untyped to avoid circular preload)
 var map: MapData = null
 var world: WorldData = null
 # WorldClock-bound getters; nil-safe at call sites.

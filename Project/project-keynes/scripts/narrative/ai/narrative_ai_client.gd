@@ -12,6 +12,7 @@ const NarrativeAiPromptBuilderScript = preload("res://scripts/narrative/ai/narra
 const NarrativeAiValidatorScript = preload("res://scripts/narrative/ai/narrative_ai_validator.gd")
 const NarrativeEventDefinitionScript = preload("res://scripts/narrative/narrative_event_definition.gd")
 
+const CredentialsScript = preload("res://scripts/narrative/ai/narrative_ai_credentials.gd")
 const CREDENTIALS_PATH := "user://ai_credentials.cfg"
 const CACHE_DIR := "user://narrative_cache/images"
 const LLM_TIMEOUT_SEC := 18.0
@@ -43,35 +44,12 @@ func clear_mock_responders() -> void:
 
 
 static func save_api_keys(llm_key: String, image_key: String = "") -> Dictionary:
-	var cfg := ConfigFile.new()
-	cfg.load(CREDENTIALS_PATH)
-	cfg.set_value("ai", "llm_api_key", llm_key.strip_edges())
-	if not image_key.is_empty() or not cfg.has_section_key("ai", "image_api_key"):
-		cfg.set_value("ai", "image_api_key", image_key.strip_edges())
-	var err := cfg.save(CREDENTIALS_PATH)
-	return {
-		"ok": err == OK,
-		"code": "ok" if err == OK else "credentials_save_failed",
-	}
+	return CredentialsScript.save_keys(CREDENTIALS_PATH, llm_key, image_key)
 
 
 static func load_api_keys() -> Dictionary:
-	var llm_key := OS.get_environment("PK_AI_LLM_API_KEY").strip_edges()
-	var img_key := OS.get_environment("PK_AI_IMAGE_API_KEY").strip_edges()
-	var cfg := ConfigFile.new()
-	if cfg.load(CREDENTIALS_PATH) == OK:
-		var saved_llm := String(cfg.get_value("ai", "llm_api_key", "")).strip_edges()
-		var saved_img := String(cfg.get_value("ai", "image_api_key", "")).strip_edges()
-		if not saved_llm.is_empty():
-			llm_key = saved_llm
-		if not saved_img.is_empty():
-			img_key = saved_img
-	if img_key.is_empty():
-		img_key = llm_key
-	return {
-		"llm_api_key": llm_key,
-		"image_api_key": img_key,
-	}
+	return CredentialsScript.load_keys(CREDENTIALS_PATH,
+		OS.get_environment("PK_AI_LLM_API_KEY"), OS.get_environment("PK_AI_IMAGE_API_KEY"))
 
 
 static func get_llm_api_key() -> String:

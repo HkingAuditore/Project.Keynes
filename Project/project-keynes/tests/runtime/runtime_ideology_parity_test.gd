@@ -129,7 +129,6 @@ func _run_production_shadow_parity() -> int:
 	var saw_ideology_grant := false
 	var indexed_out := false
 	var scheduler_sealed := true
-	var last_main_day := -1
 	# Climate yields one comparable frame roughly every two driver ticks, so
 	# budget by frames rather than assuming one comparison per input tick.
 	var soak_days := _soak_days()
@@ -155,12 +154,9 @@ func _run_production_shadow_parity() -> int:
 		report = ext.get_runtime_thread_report()
 		var consumed_before := int(report.get("climate_trace_consumed", 0))
 		var trace_available := int(report.get("climate_trace_consumable", 0)) > 0
-		# Publish the fresh opinion BEFORE stepping the worker.
-		#
-		# Ordering is load-bearing. If the worker plans the day first, it settles
-		# against the PREVIOUS Economy revision while the main thread settles the
-		# current one, and the two sides then accrue different amounts. That is a
-		# fixture artefact that reads exactly like a business divergence.
+		# Keep ordinary input publication active. The parity path replays the
+		# input pinned by the production day above, even when this latest
+		# Economy input is already ahead of the worker's calendar.
 		var published: Dictionary = ext.publish_ideology_worker_inputs()
 		if OS.get_environment("PK_IDEOLOGY_TRACE") == "1" and tick <= 16:
 			print("  [pub %d] ok=%s rev=%d main_seen=%d settled=%s accrue=%d" % [
@@ -186,56 +182,10 @@ func _run_production_shadow_parity() -> int:
 						and int(report.get(
 							"climate_trace_consumed", 0)) > consumed_before):
 				break
-		# The main thread now settles the SAME opinion revision the worker used.
-		#
-		# BUT only once the worker exists. Accrual sets a per-country high-water
-		# baseline from the first observation it sees, and the mark only ever
-		# rises -- so whichever side accrues FIRST fixes its own starting point.
-		# Letting the main thread accrue revision 1 while the worker had not
-		# started yet gave the main side a baseline of 9 installed buildings; the
-		# worker then baselined at 10 from revision 3, and the one-off catch-up the
-		# main side earned could never be repaid. The result was a permanent
-		# `points_revision` mismatch on every day (`matched=5/12`).
-		#
-		# Withholding the main-thread day until the worker has bootstrapped makes
-		# both sides observe their first revision together. `pod_generation > 0`
-		# means the worker has planned at least one day.
-		# Drive the main thread on the WORKER's calendar, not the driver's (R8-4).
-		#
-		# The two clocks are not the same: the driver ticks once per loop, the
-		# worker commits when Climate hands it a day. Running `run_ideology_daily`
-		# with the driver's `tick` published a reference under one day and let the
-		# worker commit under another, and the comparator then had to pair
-		# misaligned days. It paired them by "closest", which compared day 14
-		# against day 12 and reported the date difference as a business
-		# divergence.
-		#
-		# The comparator now refuses a non-zero distance, so the driver owes it an
-		# exact match: run every main-thread day up to and including the day the
-		# worker just committed. `ideology_parity_worker_committed_day` is that
-		# day; before the worker has committed anything it is -1.
-		# Drive the main thread on the WORKER's calendar, not the driver's (R8-4).
-		#
-		# The two clocks are not the same: the driver ticks once per loop, the
-		# worker commits when Climate hands it a day. Running `run_ideology_daily`
-		# with the driver's `tick` published a reference under one day and let the
-		# worker commit under another, and the comparator then had to pair
-		# misaligned days.
-		#
-		# The comparator refuses a non-zero distance, so the driver owes it an exact
-		# match: run the day the worker just committed.
-		#
-		# NOTE (05 §2.7): this is still one calendar per side. R9-1 intended to bind
-		# the main thread to the OPINION the worker used for this day, which needs
-		# the two sides' day numbering to be the same coordinate; that join is not
-		# landed, so this driver stays as it is.
-		var daily: Dictionary = {}
-		var worker_day := int(report.get("ideology_parity_worker_committed_day", -1))
-		if worker_day >= 0 and int(report.get(
-				"ideology_pod_snapshot_generation", 0)) > 0 \
-				and worker_day > last_main_day:
-			daily = ext.run_ideology_daily(worker_day)
-			last_main_day = worker_day
+		# The production tick above runs the main-thread day and records its
+		# exact opinion input. SHADOW replays that input for the same day;
+		# advancing the reference again on the worker's older calendar would
+		# settle newer Economy data under an already completed day's key.
 		ext.set_runtime_clock(true, WORKER_SPEED)
 		_wait_worker_paused(ext)
 		OS.delay_msec(2)

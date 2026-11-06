@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "module": "economy",
+  "api_headers": [
+    "economy_api.h"
+  ],
+  "internal_header_patterns": [
+    "economy_runtime*.h"
+  ],
+  "owner_file_patterns": [
+    "economy_*",
+    "runtime_economy_*",
+    "trade_visual_cache.*"
+  ],
+  "composition_roots": {
+    "native_simulation_country_restore.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_day_shadow.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_asset_worker.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_climate.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_commands.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_committed_views.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_country_assets.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_country_boundary.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_country_stage.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_economy.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_effect.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_effect_tests.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_ideology.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_journal.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_modifier.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_persistence.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_report.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_startup.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_trigger.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_host_worker.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "native_simulation_stage_economy.cpp": "simulation host composes and drives NativeEconomyRuntime",
+    "world_ext.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_annual.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_bio.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_country.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_country_ai.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_economy.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_effect.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_events.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_ideology.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_modifier.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_resource.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_runtime_graph.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_simulation_host.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_trigger.cpp": "Godot binding layer owns NativeEconomyRuntime"
+  },
+  "legacy_includers": [],
+  "forbidden_owner_includes": {
+    "patterns": [
+      "native_simulation_host*.h"
+    ],
+    "allowed": {}
+  }
+}

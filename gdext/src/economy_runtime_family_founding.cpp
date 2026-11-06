@@ -1,5 +1,4 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
 #include "economy_hash.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_variant_helpers.h"
@@ -79,8 +78,8 @@ bool NativeEconomyRuntime::family_founding_player_choice(int32_t cell) const {
     // A paired CLAIM can commit after EPOCH_BEGIN. Only the player-decision
     // gate sees committed ownership; economic inputs remain frozen.
     if (_country_runtime == nullptr) return false;
-    const int32_t player = _country_runtime->starting_country_slot();
-    const int64_t owner = _country_runtime->country_handle_for_cell(cell);
+    const int32_t player = country_reads().starting_country_slot();
+    const int64_t owner = country_reads().country_handle_for_cell(cell);
     return player >= 0 && owner != 0 &&
         static_cast<int32_t>(static_cast<uint64_t>(owner) & 0xffffffffU) == player;
 }

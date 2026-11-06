@@ -33,6 +33,11 @@ func _run() -> void:
 
 	var generator := MapGenerator.new()
 	generator.climate_profile = profile
+	# `_init()` runs before the SceneTree enters its first frame.  MapGenerator
+	# yields through the tree during generation, so let the tree become live
+	# before invoking it; otherwise get_main_loop() is still a null instance and
+	# every later assertion is only a cascade from the failed setup.
+	await process_frame
 	var generated: Dictionary = await generator.generate(cfg, 10.0)
 	var map: MapData = generated.get("map", null) as MapData
 	var world: WorldData = generated.get("world_data", null) as WorldData

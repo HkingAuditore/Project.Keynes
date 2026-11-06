@@ -374,7 +374,7 @@ var _wf_diag_total_cells: int = 0   # cell_pixel_lists.size()，最近一次记�
 const PREBAKED_LOADING_DIR := "res://assets/textures/loading_prebaked_v1/"
 static var _prebaked_images: Dictionary = {}
 
-static func prepare_shared_materials_async() -> void:
+static func prepare_shared_materials_async(frame_gate = null) -> void:
 	var paths := [PREBAKED_LOADING_DIR+"noise_rgba.res"]
 	var target := _terrain_material_size()
 	for i in TERRAIN_MATERIAL_TEXTURE_PATHS.size():
@@ -387,7 +387,13 @@ static func prepare_shared_materials_async() -> void:
 		if _prebaked_images.has(path):
 			continue
 		while tree != null and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
-			await tree.process_frame
+			if frame_gate != null and frame_gate.canceled:
+				break
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+		# Drain every requested load on cancellation too; threaded_get waits for
+		# the request to finish and releases the loader's pending ownership.
+		if frame_gate != null and frame_gate.canceled and ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			_prebaked_images[path] = ResourceLoader.load_threaded_get(path)
 		if ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_LOADED:
 			_prebaked_images[path] = ResourceLoader.load_threaded_get(path)
 
@@ -1107,6 +1113,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 进度（不是精确百分比）。
 	stage_progress.emit("terrain", 0.0)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 
 	# dots-total-cpp step2（2026-06-25）：bake 期几何场编排下沉 C++——一次
 	# run_bake_geometry_fields_pass 在 C++ 进程内串起 terrain-index → erosion → river →
@@ -1116,6 +1124,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	var pix_count := world.hm_size.x * world.hm_size.y
 	_baseline_procedural_height = PackedFloat32Array()
 	var fused: bool = await _bake_geometry_fields_native(map, hex_size, world, seed_val)
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	if fused:
 		print("  geometry fields (fused C++): %dms" % (Time.get_ticks_msec() - t))
 	else:
@@ -1193,6 +1203,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 
 	stage_progress.emit("physical", 0.62)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	_bake_initial_physical_circulation(map, world, hex_size, cfg)
 	_bake_initial_vector_buffers(map, world, hex_size, cfg)
 
@@ -1207,14 +1219,18 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 动态视觉状态统一由 map_index_atlas + LUT 提供，不再初始化逐像素 dynamic/smooth/eco/ice atlas。
 	stage_progress.emit("atlas", 0.82)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 
 	# 编码纹理：height+flow 打进同一张 RGBA8（RG=16-bit height，B=flow）；map_index 独立；
 	# 动态视觉走 LUT。hm_size==derived_size，分辨率可合；Web 省 1 个材质 sampler。
 	stage_progress.emit("encode", 0.88)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	t = Time.get_ticks_msec()
 	world.height_tex = await DCAtlasEncoders.encode_height_flow_tex_async(
-		world.height_buffer, world.flow_buffer, world.hm_size, world.height_tex, _world_ext)
+		world.height_buffer, world.flow_buffer, world.hm_size, world.height_tex, _world_ext, _loading_frames)
 	# 独立 flow_tex 退役：legacy shader 从 height_tex.B 读 flow。字段保留以兼容旧诊断/存档读。
 	world.flow_tex = null
 	# [terrain-web-baked-surface 2026-11-01] 旧的 RG8 粗法线烘焙已移到 _bake_visual_tiles 之后：
@@ -1222,6 +1238,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 只有那条路径失败时才回退这里的老 RG8 编码（无 BA/relief 通道，shader 只用粗法线）。
 	stage_progress.emit("encode", 0.90)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	# [terrain-web-baked-surface-B 2026-11-01] enum atlas 提前到 horizon 之前烘：
 	# Web 的 horizon bundle 要同时产出 GI 遮挡源 cell id（occluder），而 occluder 需要
 	# map_index bytes 里的 G/B（cell.index 低/高字节）把命中像素反查成 cell。
@@ -1299,6 +1317,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	prewarm_dynamic_axis_caches(map, world)
 	stage_progress.emit("encode", 0.93)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	world.scalar_atlas_tex = null
 	# flow 已在 encode_height_flow_tex 打进 height_tex.B；此处不再单独 encode_flow_tex。
 	world.sea_ice_tex = null
@@ -1311,7 +1331,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 		"origin_x":world.world_bounds.position.x,"origin_y":world.world_bounds.position.y,
 		"size_x":world.world_bounds.size.x,"size_y":world.world_bounds.size.y,
 		"wrap_period_x":world.wrap_period_x,"hex_size":hex_size,
-		"min_detail":TERRAIN_DETAIL_BAKE_MIN,"max_detail":TERRAIN_DETAIL_BAKE_MAX})
+		"min_detail":TERRAIN_DETAIL_BAKE_MIN,"max_detail":TERRAIN_DETAIL_BAKE_MAX}, _loading_frames)
 	if not bool(detail_payload.get("fallback",true)):
 		world.terrain_detail_tex = DCAtlasEncoders.encode_r8_tex(detail_payload.data,world.derived_size,world.terrain_detail_tex,_world_ext)
 	else:
@@ -1341,6 +1361,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	else:
 		stage_progress.emit("encode", 0.95)
 		await _yield_generation_frame()
+		if _loading_frames != null and _loading_frames.canceled:
+			return null
 		var legacy_surface_ok: bool = await _bake_legacy_static_surface(
 			map, world, hex_size, seed_val, visual_generation_id)
 		if not legacy_surface_ok:
@@ -1349,7 +1371,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 				"buffer":world.height_buffer,"width":world.hm_size.x,"height":world.hm_size.y,
 				"coarse_radius":4,"slope_gain":8.0,"wrap_x":true,"world_size_x":world.world_bounds.size.x,
 				"world_size_y":world.world_bounds.size.y,"hex_size":hex_size,
-				"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX})
+				"sample_radius_hex":TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,"height_scale_hex":TERRAIN_NORMAL_HEIGHT_SCALE_HEX}, _loading_frames)
 			var rg8_bytes := PackedByteArray()
 			var gd_normal_tex: ImageTexture = null
 			if not bool(normal_data.get("fallback",true)):
@@ -1373,6 +1395,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 				world.water_depth_tex != null, str(world.derived_size)])
 	stage_progress.emit("encode", 0.96)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 仅 F6 调试 shader 分支采样，主路径不读；这里不再无条件烘，
@@ -1381,7 +1405,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# 不绑定不会渲染异常（hex_renderer 也已改为仅在 debug 开启时 set_shader_parameter）。
 	world.upwelling_tex = null
 	# v10.noise-pack：共享 RGBA 噪声包（首次调用时 lazy 烘焙，之后所有 world 复用同一张）
-	await prepare_shared_materials_async()
+	await prepare_shared_materials_async(_loading_frames)
 	world.noise_tex = get_or_build_shared_noise_tex()
 	# [terrain-material-tiles] Shared static material array. B 方案起固定 5 层
 	# （0..3 原材质族 + 4=micro，见 _build_terrain_material_tex）。A missing import /
@@ -1405,6 +1429,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			shared_terrain_material_error(terrain_material_size))
 	stage_progress.emit("encode", 0.98)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	# 视野静态场（view_height / view_block）：地形一旦定型就不再变，烘一次即可。
 	# 必须排在 bake_cell_luts 之前——LUT 的 A 通道要带当前迷雾值，而首解算需要
 	# 这两张表。此刻 map SoA 尚未 init_soa_from_bake，VisionSolver 会自动走 AoS。
@@ -1427,19 +1453,23 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	print("MapBaker v6: total %dms" % (Time.get_ticks_msec() - t_total))
 	stage_progress.emit("done", 1.0)
 	await _yield_generation_frame()
+	if _loading_frames != null and _loading_frames.canceled:
+		return null
 	return world
 
 
 ## 见 map_generator.gd 的同名函数：多等的 3 帧在没有动画需求时只是把墙钟乘以 4。
 ## 浏览器单帧 31–34 ms，57 个调用点累计 3.5–5.3 秒纯等待。
-const GENERATION_YIELD_FRAMES := 1
+var _loading_frames
 
-func _yield_generation_frame() -> void:
-	var main_loop := Engine.get_main_loop()
-	if main_loop is SceneTree:
-		var tree := main_loop as SceneTree
-		for _i in range(GENERATION_YIELD_FRAMES):
-			await tree.process_frame
+func set_loading_frame_gate(frame_gate) -> void:
+	_loading_frames = frame_gate
+
+func _yield_generation_frame():
+	if _loading_frames != null:
+		return _loading_frames.next_frame()
+	var tree := Engine.get_main_loop() as SceneTree
+	return tree.process_frame if tree != null else null
 
 
 ## [terrain-web-baked-surface 2026-11-01] 组装 native `visual_tile` pass 的公共 knobs。
@@ -1646,7 +1676,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 			"size_y": physical_size.y,
 		}, true)
 		var layer_t0 := Time.get_ticks_usec()
-		var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext,"visual_tile",knobs)
+		var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext,"visual_tile",knobs, _loading_frames)
 		if bundle == null or bool(bundle.get("fallback", true)) \
 				or int(bundle.get("generation_id", -1)) != generation_id:
 			tiles.fallback_reason = "native_layer_failed:%d:%s" % [
@@ -1756,7 +1786,7 @@ func _bake_legacy_static_surface(map: MapData, world: WorldData, hex_size: float
 		"algorithm_halo_px": 8,
 	}, true)
 	var t0 := Time.get_ticks_msec()
-	var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext, "visual_tile", knobs)
+	var bundle: Dictionary = await NativeLoadingTasks.compute(_world_ext, "visual_tile", knobs, _loading_frames)
 	var wall_ms := Time.get_ticks_msec() - t0
 	if bundle == null or bool(bundle.get("fallback", true)):
 		push_warning("[terrain-baked-surface] single-tile bake failed: %s"
@@ -4800,7 +4830,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		return false
 
 	# Cell SoA and object lookup are shared with the standalone native path.
-	await map.build_indices_cooperative()
+	await map.build_indices_cooperative(_loading_frames)
 	var terrain_inputs: Dictionary = TerrainIndexBakerScript.build_cell_inputs(map)
 
 	# ── 几何参数（合并 sub-pass 所需 knob，origin/hex_size/seed/W/H 共用）──
@@ -4848,7 +4878,9 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 	}
 	knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
-	var rep: Dictionary = await NativeLoadingTasks.compute(_world_ext,"geometry",knobs)
+	var rep: Dictionary = await NativeLoadingTasks.compute(_world_ext,"geometry",knobs, _loading_frames)
+	if bool(rep.get("canceled", false)):
+		return false
 	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
 		push_warning("[bake_geometry_fields] 融合 pass 返回 fallback（reason=%s）；回退旧 per-pass 编排。"
 			% (String(rep.get("reason", "?")) if rep != null and typeof(rep) == TYPE_DICTIONARY else "null"))

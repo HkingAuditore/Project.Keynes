@@ -10,6 +10,15 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# macOS window-mode changes can process frames and deferred calls from inside
+	# GameSettings._ready. Wait for the final autoload, then leave its ready call,
+	# before adding a scene or overriding the viewport used by these assertions.
+	while not root.has_node("GameFlow"):
+		await root.child_entered_tree
+	var flow := root.get_node("GameFlow")
+	if not flow.is_node_ready():
+		await flow.ready
+	await process_frame
 	# 此测试的宽/窄断言使用 1:1 逻辑视口；缩放覆盖由截图 QA 单独验证。
 	root.content_scale_factor = 1.0
 	for argument in OS.get_cmdline_user_args():
@@ -125,8 +134,6 @@ func _run() -> void:
 		var diplomacy_section: Dictionary = diplomacy_model.get("diplomacy", {})
 		_expect("diplomacy section is available in a live session",
 			bool(diplomacy_section.get("available", false)))
-		# 地图由 CountryViewModel 显式带进模型（MapGenerator 没有 map getter），
-		# 归属镜像可读才是「接上了世界」的证据。
 		var diplomacy_map = diplomacy_section.get("map")
 		_expect("diplomacy section carries the session world",
 			diplomacy_map != null and diplomacy_map.has_method("cell_count"))
@@ -418,8 +425,8 @@ func _run() -> void:
 	ui.refresh_country_summary()
 	_expect("daily research refresh preserves the tree view",
 		tree != null and tree.get_instance_id() == tree_id)
-	_expect("technology tree draws itself instead of spawning nodes",
-		tree != null and tree.get_child_count() == 0)
+	_expect("technology tree shares one effects layer without per-technology nodes",
+		tree != null and tree.get_child_count() == 1 and tree.has_node("ResearchEffects"))
 
 	var layout := panel.layout_diagnostics()
 	var dialog_rect: Rect2 = layout.get("dialog_rect", Rect2())
@@ -450,12 +457,30 @@ func _run() -> void:
 		bool(compact_dossier_navigation.get("mobile_visible", false))
 		and not bool(compact_dossier_navigation.get("desktop_visible", true)))
 	ui.open_country_section("economy")
+	dossier.select_chapter("treasury")
 	await process_frame
-	var goods_scroll := economy.get("_scroll") as ScrollContainer
+	await process_frame
+	var goods_scroll: ScrollContainer = economy.scroll_container()
 	_expect("compact economy treasury uses a bounded vertical scroll",
 		goods_scroll != null \
 			and goods_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED \
+			and goods_scroll.size.y > 0.0 \
 			and compact_rect.encloses(goods_scroll.get_global_rect()))
+	await _capture_workspace("economy_treasury")
+	goods_scroll.scroll_vertical = int(goods_scroll.get_v_scroll_bar().max_value
+		- goods_scroll.get_v_scroll_bar().page)
+	await process_frame
+	await process_frame
+	var reachable_goods_row := false
+	for row in (economy.get("_rows") as Dictionary).values():
+		var control := (row as Dictionary).get("control") as Control
+		if String(row.get("page", "")) == "treasury" and control != null \
+				and control.is_visible_in_tree() \
+				and goods_scroll.get_global_rect().intersects(control.get_global_rect()):
+			reachable_goods_row = true
+	_expect("compact treasury scroll reaches actual goods rows", reachable_goods_row)
+	await _capture_workspace("economy_treasury_scrolled")
+	goods_scroll.scroll_vertical = 0
 	var compact_workspace := panel.get("_technology_workspace") as Control
 	var compact_tree := compact_workspace.tree_view() as Control
 	var compact_navigation: Dictionary = compact_workspace.navigation_report()
@@ -773,8 +798,12 @@ func _run() -> void:
 	var soak_deadline := Time.get_ticks_msec() + 30000
 	while clock.day_index() < soak_start_day + 30 \
 			and Time.get_ticks_msec() < soak_deadline:
+		if not _handle_narrative_offer(game):
+			break
 		await process_frame
 	clock.set_speed(speed_before)
+	print("[ui-soak] days=%d..%d paused=%s fault=%s" % [soak_start_day,
+		clock.day_index(), clock.paused, runtime.get_runtime_fault_diagnostics()])
 	_expect("50x soak advances at least 30 simulation days",
 		clock.day_index() >= soak_start_day + 30)
 	_expect("50x soak preserves Inspector and scroll node identities",
@@ -791,30 +820,47 @@ func _run() -> void:
 		soak_tax_row_id != 0 and int(economy.call(
 			"tax_row_instance_id", "income", first_profession)) == soak_tax_row_id)
 	_expect("50x soak preserves the technology tree node",
-		tree != null and tree.get_instance_id() == tree_id and tree.get_child_count() == 0)
+		tree != null and tree.get_instance_id() == tree_id and tree.get_child_count() == 1
+			and tree.has_node("ResearchEffects"))
 	_expect("50x soak leaves core country actions clickable",
 		not (buttons.get("technology") as Button).disabled \
 			and not (buttons.get("economy") as Button).disabled)
 
+	# Use a genuinely scrollable viewport; the wide strata page can fit in one
+	# screen after its first layout, where a stale scrollbar maximum proves nothing.
+	root.size = Vector2i(640, 480)
+	ui.open_country_section("economy")
 	dossier.select_chapter("strata")
+	await process_frame
+	await process_frame
 	await process_frame
 	var strata_page := dossier.page("strata")
 	var strata_page_id := strata_page.get_instance_id()
 	var dossier_scroll := dossier.get_node("%PageViewport") as ScrollContainer
-	dossier.set_scroll_for_test(mini(40, int(dossier_scroll.get_v_scroll_bar().max_value)))
+	dossier.set_scroll_for_test(mini(40, int(dossier_scroll.get_v_scroll_bar().max_value - dossier_scroll.get_v_scroll_bar().page)))
 	var dossier_scroll_before := dossier.scroll_value()
+	_expect("dossier soak begins with a real nonzero reading position", dossier_scroll_before > 0)
+	await _capture_workspace("economy_strata")
 	var dossier_start_day := clock.day_index()
 	clock.set_speed(50.0)
 	soak_deadline = Time.get_ticks_msec() + 20000
 	while clock.day_index() < dossier_start_day + 10 \
 			and Time.get_ticks_msec() < soak_deadline:
+		if not _handle_narrative_offer(game):
+			break
 		await process_frame
 	clock.set_speed(speed_before)
+	print("[dossier-soak] chapter=%s page=%s scroll=%d..%d days=%d..%d" % [
+		dossier.current_chapter(), dossier.page("strata").get_instance_id() == strata_page_id,
+		dossier_scroll_before, dossier.scroll_value(), dossier_start_day, clock.day_index()])
 	_expect("50x soak keeps the dossier chapter, page node and scroll",
 		dossier.current_chapter() == "strata" and dossier.page("strata").get_instance_id() == strata_page_id
 			and dossier.scroll_value() == dossier_scroll_before)
 	_expect("50x soak keeps dossier KPIs populated",
 		dossier.kpi_texts().size() == 5 and not dossier.kpi_texts()[0].is_empty())
+	root.size = Vector2i(1280, 720)
+	await process_frame
+	await process_frame
 	dossier.select_chapter("treasury")
 
 	var unavailable := CountryViewModel.new().build()
@@ -843,36 +889,49 @@ func _run() -> void:
 		if image != null and not image.is_empty():
 			_expect("country UI capture saves", image.save_png(capture_path) == OK)
 
+	# Capture the state at the input boundary. The soak has deliberately resumed
+	# the clock, and a narrative offer may pause it later during the close tween.
+	# Neither is an effect of Escape. Reopen after the optional screenshot too.
+	if not _handle_narrative_offer(game):
+		_finish()
+		return
+	ui.open_country_section("economy")
+	_expect("Escape starts with an open country panel", panel.is_panel_open())
 	var escape := InputEventKey.new()
 	escape.keycode = KEY_ESCAPE
 	escape.pressed = true
+	var paused_before_escape := clock.paused
 	game._unhandled_key_input(escape)
-	# The close is tween-driven, so a single wall-clock wait races the frame
-	# rate: a busier simulation fits fewer frames into the same window and the
-	# panel is still mid-animation when the timer fires. Poll the state instead
-	# and keep the assertion itself unchanged.
+	_expect("Escape close preserves pause state", clock.paused == paused_before_escape)
+	# The close is tween-driven; wait for its visible result independently from
+	# the synchronous input/clock assertion above.
 	for _attempt in range(60):
 		if not panel.is_panel_open():
 			break
 		await create_timer(UITokens.ANIM_FAST + 0.05).timeout
 	_expect("Escape closes country panel", not panel.is_panel_open())
-	_expect("Escape close preserves pause state", clock.paused == paused_before)
 	_finish()
 
 
 func _capture_workspace(section_id: String) -> void:
 	if _capture_dir.is_empty():
 		return
+	var clock := root.get_node("PlayerGame/WorldClock") as WorldClock
+	var was_paused := clock.paused
+	clock.pause(true)
 	DirAccess.make_dir_recursive_absolute(_capture_dir)
 	await create_timer(UITokens.ANIM_MED + 0.05).timeout
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
-	if image == null:
-		push_error("UI capture failed for %s" % section_id)
+	_expect("%s capture contains an image" % section_id, image != null and not image.is_empty())
+	if image == null or image.is_empty():
+		clock.pause(was_paused)
 		return
-	var output := _capture_dir.path_join("country_%s_1280x720.png" % section_id)
+	var output := _capture_dir.path_join("country_%s_%dx%d.png" % [section_id, root.size.x, root.size.y])
 	var error := image.save_png(output)
+	_expect("%s capture saves" % section_id, error == OK)
 	print("[ui-capture] %s error=%d" % [output, error])
+	clock.pause(was_paused)
 
 
 func _expect(label: String, condition: bool) -> void:
@@ -884,5 +943,31 @@ func _expect(label: String, condition: bool) -> void:
 
 
 func _finish() -> void:
+	var game := root.get_node_or_null("PlayerGame")
+	if game != null:
+		var host := game.get_node("RuntimeHost") as WorldRuntimeHost
+		_expect("UI session closes before scene teardown", bool((await host.close_world()).get("ok", false)))
+		game.queue_free()
+		await process_frame
 	print("=== player country UI smoke: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _handle_narrative_offer(game: Node) -> bool:
+	# When production narrative offers a choice, exercise the same
+	# choose/acknowledge path as a player before expecting days to advance.
+	var controller := game.get_node("PlayerController")
+	var flow = controller.get("_narrative_flow")
+	if flow == null or not flow.is_locked():
+		return true
+	var service = controller.get("_narrative_service")
+	var offer: Dictionary = service.active_offer()
+	if offer.is_empty():
+		return true
+	var result: Dictionary = flow.on_option_chosen(int(offer.offer_id),
+		int(offer.get("offer_generation", 0)), 0)
+	_expect("narrative choice resolves through the player command", bool(result.get("ok", false)))
+	if bool(result.get("ok", false)):
+		flow.on_outcome_acknowledged()
+		game.get_node("UI").open_country_section("economy")
+	return bool(result.get("ok", false))

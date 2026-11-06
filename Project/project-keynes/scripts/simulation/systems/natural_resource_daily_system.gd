@@ -19,7 +19,6 @@ class_name NaturalResourceDailySystem
 
 const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var stride: int = 1
 var _last_path: String = "none"

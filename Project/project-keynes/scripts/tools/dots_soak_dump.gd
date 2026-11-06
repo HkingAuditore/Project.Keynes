@@ -29,7 +29,7 @@ class_name DCSoakDump
 ##   --data-core --soak-dump=30:summary:user://soak/with_dc.tsv
 ##   diff a.tsv b.tsv                       → mean 列应 ≤1e-4
 ##
-## 详见 docs/dots-soak-dump-howto.md。
+## 详见 docs/architecture/current-state.md。
 
 
 # ─── 单例（main.gd 持引用，全局可见；CLI 启动时初始化）─────────────────

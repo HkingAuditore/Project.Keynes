@@ -5210,7 +5210,7 @@ void DCWorldExt::async_climate_shutdown_all() {
 //   - 主线程 poll 时把 output 写回 _slots，调 _flush_slot_to_map 推到
 //     MapData，复用现有 dirty_world.mark_dirty_all() 信号
 //
-// 单元测试 / A-B 验证策略：见 docs/cpp-dots-runtime/computation-pipelines.md
+// 单元测试 / A-B 验证策略：见 docs/architecture/current-state.md
 // 中 transpiration 段落新增的 "async parity" 描述（Stage 1 写文档时补）。
 
 namespace pk_async_climate {

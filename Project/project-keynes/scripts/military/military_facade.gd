@@ -60,6 +60,7 @@ var _terrain_set_day := -1
 var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
 var _event_cursor := 0
+var _restored_event_progress := PackedInt64Array()
 
 
 ## `economy_catalog` is `EconomyFacade.native_catalog()`; `technology_catalog`
@@ -104,6 +105,7 @@ func configure(world_ext: Object, economy_catalog: Dictionary,
 	_catalog_hash = int(compiled.get("catalog_hash", 0))
 	_configured = true
 	_event_cursor = 0
+	_restored_event_progress.clear()
 	_terrain_signature = 0
 	_terrain_set_day = -1
 	_last_configure_result = result.duplicate(false)
@@ -598,3 +600,19 @@ func player_tension(handle: int) -> float:
 
 func _fail(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason}
+
+
+# The save provider restores before DCSystem registration. Hold only forwarding
+# metadata here, then hand it to the session-owned job once at construction.
+func restore_pending_event_progress(values: PackedInt64Array) -> bool:
+	if values.size() != 3 or values[0] < 0 or values[1] < -1 or values[2] < 0: return false
+	_restored_event_progress = values.duplicate()
+	return true
+
+func capture_pending_event_progress() -> PackedInt64Array:
+	return PackedInt64Array([0, -1, 0]) if _restored_event_progress.is_empty() else _restored_event_progress.duplicate()
+
+func take_restored_event_progress() -> PackedInt64Array:
+	var values := _restored_event_progress.duplicate()
+	_restored_event_progress.clear()
+	return values

@@ -2,6 +2,7 @@ extends Node
 
 signal save_completed(slot_id: String, result: Dictionary)
 signal load_completed(slot_id: String, result: Dictionary)
+signal _slot_verification_completed(slots: Array)
 
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
@@ -12,15 +13,10 @@ const REQUIRED_SECTIONS := [
 ]
 ## Providers that an older save may legitimately lack. They restore from an
 ## empty section (a fresh runtime) instead of refusing the load.
-const OPTIONAL_PROVIDER_SECTIONS := [
-	"pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai", "pknr", "pkmi",
-]
-## PKMI v1 — Military runtime state (design §22). Registered after pkcn and
-## before pkef/ecp2 so Military's own store is back before any provider that
-## could read it, and so Country territory it depends on already exists.
 const PKMI_SCHEMA := 1
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
-const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
+const ModuleRegistry = preload("res://scripts/game/runtime_module_registry.gd")
+const WorldStateModules = preload("res://scripts/game/world_state_modules.gd")
 const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd")
 ## 存档边界超时自己的现场。暂停期间 stall watchdog 不工作
 ## (WorldRuntimeHost._poll_simulation_stall_watchdog 在 paused 时直接 return)，
@@ -54,10 +50,14 @@ var _world_clock: WorldClock
 var _player_controller
 var _pending_load: Dictionary = {}
 var _pending_view: Dictionary = {}
+var _runtime_generation := 0
 var _last_autosave_year := -1
 var _autosave_enabled := true
 var _busy := false
+var _slot_verification_active := false
 var _providers: Array = []
+var _provider_entries: Array = []
+var _provider_registration_error: Dictionary = {}
 var _economy_format: Dictionary = {}
 var _next_runtime_save_request_id: int = 1
 
@@ -71,7 +71,38 @@ func _ready() -> void:
 
 
 func list_slots() -> Array:
-	var slots := _repository.list_slots()
+	return _filter_compatible_slots(_repository.list_slots())
+
+
+func list_slots_verified() -> Array:
+	if OS.has_feature("web"):
+		# Single-threaded exports verify at load; never decompress the list on UI.
+		return list_slots()
+	if _slot_verification_active:
+		return _filter_compatible_slots(await _slot_verification_completed)
+	_slot_verification_active = true
+	var completion: Array = []
+	var task := WorkerThreadPool.add_task(_repository.verify_slots_background.bind(completion),
+		false, "Verify PKSV slots")
+	var slots: Array = []
+	if task >= 0:
+		while not WorkerThreadPool.is_task_completed(task):
+			await get_tree().process_frame
+		var error := WorkerThreadPool.wait_for_task_completion(task)
+		if error == OK and not completion.is_empty():
+			slots = completion[0]
+	if slots.is_empty():
+		slots = _repository.list_slots()
+		for slot in slots:
+			if bool(slot.get("loadable", false)):
+				slot.loadable = false
+				slot.reason = "无法完成存档检查，请重新打开此列表。"
+	_slot_verification_active = false
+	_slot_verification_completed.emit(slots)
+	return _filter_compatible_slots(slots)
+
+
+func _filter_compatible_slots(slots: Array) -> Array:
 	var running_contract := _running_execution_contract()
 	for slot in slots:
 		if not bool(slot.get("loadable", false)):
@@ -82,7 +113,7 @@ func list_slots() -> Array:
 			slot.reason = SaveRepositoryScript.LEGACY_INDUSTRY_REASON
 		elif not _manifest_compatible(manifest):
 			slot.loadable = false
-			slot.reason = "存档运行时 provider 版本不兼容。"
+			slot.reason = "存档需要的游戏系统或数据版本与当前游戏不兼容。"
 		else:
 			# Plan 11.5. The slot list reads the HEADER only, so `state_present`
 			# is unknowable here; it never decides the flag (an unstamped entry is
@@ -105,13 +136,59 @@ func load_preview(slot_id: String) -> Dictionary:
 
 func bind_runtime(host: WorldRuntimeHost, clock: WorldClock,
 		player_controller) -> void:
+	if is_instance_valid(_world_clock) and _runtime_host == host \
+			and _world_clock == clock and _player_controller == player_controller:
+		return
+	_disconnect_runtime_clock()
+	_runtime_generation += 1
 	_runtime_host = host
 	_world_clock = clock
 	_player_controller = player_controller
-	if _world_clock != null:
-		var callback := Callable(self, "_on_year_changed")
-		if not _world_clock.year_changed.is_connected(callback):
-			_world_clock.year_changed.connect(callback)
+	_pending_view.clear()
+	_last_autosave_year = clock.year_index() if is_instance_valid(clock) else -1
+	if is_instance_valid(clock):
+		clock.year_changed.connect(_on_year_changed.bind(_runtime_generation))
+		clock.tree_exiting.connect(_on_runtime_exiting.bind(_runtime_generation))
+
+
+func _disconnect_runtime_clock() -> void:
+	if not is_instance_valid(_world_clock):
+		return
+	var year_callback := _on_year_changed.bind(_runtime_generation)
+	var exit_callback := _on_runtime_exiting.bind(_runtime_generation)
+	if _world_clock.year_changed.is_connected(year_callback):
+		_world_clock.year_changed.disconnect(year_callback)
+	if _world_clock.tree_exiting.is_connected(exit_callback):
+		_world_clock.tree_exiting.disconnect(exit_callback)
+
+
+func _on_runtime_exiting(generation: int) -> void:
+	if generation != _runtime_generation:
+		return
+	_disconnect_runtime_clock()
+	_runtime_generation += 1
+	_runtime_host = null
+	_world_clock = null
+	_player_controller = null
+	_pending_view.clear()
+	_last_autosave_year = -1
+	# An already frozen background write still owns _busy until it finishes.
+
+
+func _session_active(generation: int) -> bool:
+	return generation == _runtime_generation and is_instance_valid(_runtime_host) \
+		and is_instance_valid(_world_clock) and not _runtime_host.is_session_closing()
+
+
+func wait_for_pending_io() -> void:
+	# Frozen writes belong to the repository, so scene cancellation must not
+	# discard them. Application quit waits for their actual write/verify result.
+	while _busy or _slot_verification_active:
+		await get_tree().process_frame
+
+
+func _session_cancelled() -> Dictionary:
+	return _result(false, "save_session_changed", "游戏已切换，本次存档请求已取消。")
 
 
 func request_manual_save(slot_id: String) -> Dictionary:
@@ -155,6 +232,8 @@ func delete_manual_slot(slot_id: String) -> Dictionary:
 
 
 func prepare_load(slot_id: String) -> Dictionary:
+	if not _provider_registration_error.is_empty():
+		return _provider_registration_error
 	if _busy:
 		return _result(false, "save_busy", "已有存档请求正在处理。")
 	var container: Dictionary = _repository.load_slot(slot_id)
@@ -177,50 +256,12 @@ func prepare_load(slot_id: String) -> Dictionary:
 	if not bool(contract.get("ok", false)):
 		return _result(false, String(contract.get("code", EXECUTION_CONTRACT_MANIFEST_CODE)),
 			String(contract.get("message", "")))
-	for required in REQUIRED_SECTIONS:
-		if not bytes_by_id.has(required):
-			if required in OPTIONAL_PROVIDER_SECTIONS:
-				bytes_by_id[required] = PackedByteArray()
-				continue
-			return _result(false, "save_provider_missing", "存档缺少必需 section：%s" % required)
 	var decoded := {}
-	for section_id in ["new_game_config", "world_clock", "dynamic_world", "environment",
-			"pkfg", "journal", "player_context", "player_view"]:
-		var value = bytes_to_var(bytes_by_id[section_id])
-		if value == null:
-			return _result(false, "save_section_decode_failed", "无法解析存档 section：%s" % section_id)
-		decoded[section_id] = value
-	var runtime_bytes: PackedByteArray = bytes_by_id.get("simulation_runtime", PackedByteArray())
-	if runtime_bytes.is_empty():
-		decoded["simulation_runtime"] = {}
-	elif _valid_native_runtime_bundle(runtime_bytes):
-		# Keep the immutable PKSR bytes intact. The runtime host consumes this
-		# envelope during STARTING/RESTORING; it must not be decoded through
-		# Godot's Variant serializer on the UI thread.
-		decoded["simulation_runtime"] = runtime_bytes
-	else:
-		decoded["simulation_runtime"] = bytes_to_var(runtime_bytes)
-		if not decoded["simulation_runtime"] is Dictionary:
-			return _result(false, "save_section_decode_failed", "无法解析存档 section：simulation_runtime")
-	decoded["pkcn"] = bytes_by_id.pkcn
-	decoded["ecp2"] = bytes_by_id.ecp2
-	decoded["pkcm"] = bytes_by_id.pkcm
-	decoded["pkgp"] = bytes_by_id.pkgp
-	decoded["pktr"] = bytes_by_id.pktr
-	decoded["pkef"] = bytes_by_id.pkef
-	decoded["pkid"] = bytes_by_id.pkid
-	decoded["pkar"] = bytes_by_id.get("pkar", PackedByteArray())
-	var raw_pknr: PackedByteArray = bytes_by_id.get("pknr", PackedByteArray())
-	if raw_pknr.is_empty():
-		decoded["pknr"] = {}
-	else:
-		var pknr_val = bytes_to_var(raw_pknr)
-		if not (pknr_val is Dictionary):
-			return _result(false, "save_section_decode_failed", "无法解析存档 section：pknr")
-		decoded["pknr"] = pknr_val
-	decoded["pkai"] = bytes_by_id.pkai
-	decoded["pkmi"] = bytes_by_id.get("pkmi", PackedByteArray())
-	decoded["preview"] = bytes_by_id.preview
+	for provider in _providers:
+		var unpacked: Dictionary = provider.decode_sections(bytes_by_id)
+		if not bool(unpacked.get("ok", false)):
+			return unpacked
+		decoded.merge(unpacked.sections)
 	_pending_load = {
 		"slot_id": slot_id,
 		"header": container.header,
@@ -232,6 +273,8 @@ func prepare_load(slot_id: String) -> Dictionary:
 
 
 func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
+	if not _provider_registration_error.is_empty():
+		return _provider_registration_error
 	if _pending_load.is_empty() or host == null:
 		return _result(false, "load_not_prepared", "没有待恢复的存档。")
 	var sections: Dictionary = _pending_load.sections
@@ -261,14 +304,6 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 		var provider_result: Dictionary = provider.restore_sections(sections, context)
 		if not bool(provider_result.get("ok", false)):
 			return provider_result
-		if String(provider.provider_id()) == "pkcn":
-			if not generator.has_method("prepare_economy_save_restore_runtime"):
-				return _result(false, "load_economy_prepare_missing",
-					"地图运行时缺少经济恢复准备接口。")
-			var prepared: Dictionary = generator.prepare_economy_save_restore_runtime()
-			if not bool(prepared.get("ok", false)):
-				return _result(false, "load_economy_prepare_failed",
-					String(prepared.get("reason", "PKCN 后无法准备经济恢复。")))
 	if not generator.has_method("finalize_save_restore_runtime"):
 		return _result(false, "load_runtime_finalize_missing",
 			"地图运行时缺少读档收尾接口。")
@@ -311,8 +346,16 @@ func apply_pending_view(map: MapData) -> void:
 
 
 func _save(slot_id: String, reason: String) -> Dictionary:
+	if not _provider_registration_error.is_empty():
+		return _provider_registration_error
 	if _busy:
 		return _result(false, "save_busy", "已有存档请求正在处理。")
+	var generation := _runtime_generation
+	if not _session_active(generation):
+		return _result(false, "save_runtime_missing", "游戏运行时尚未就绪。")
+	var capture: Dictionary = _runtime_host.begin_state_capture()
+	if not bool(capture.get("ok", false)):
+		return _result(false, "save_runtime_not_ready", "游戏仍在准备或关闭中，暂时无法保存。")
 	_busy = true
 	var was_paused := _world_clock.paused
 	var previous_speed := _world_clock.speed_multiplier
@@ -322,14 +365,14 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		and OS.get_environment("PK_SAVE_PROVIDER_HASH_SYNC") != "1"
 	_profile_save_window(true)
 	_world_clock.pause(true)
-	var boundary: Dictionary = await _wait_for_safe_boundary()
+	var boundary: Dictionary = await _wait_for_safe_boundary(generation)
 	if not bool(boundary.get("ok", false)):
-		_restore_clock_mode(was_paused, previous_speed)
+		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return boundary
-	var runtime_bundle := await _capture_native_runtime_bundle()
+	var runtime_bundle := await _capture_native_runtime_bundle(generation)
 	if not bool(runtime_bundle.get("ok", false)):
-		_restore_clock_mode(was_paused, previous_speed)
+		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return runtime_bundle
 	var collected := _collect_sections(was_paused, previous_speed,
@@ -337,7 +380,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		 runtime_bundle.get("country_pkcn", PackedByteArray()),
 		 runtime_bundle.get("economy_ecp2", PackedByteArray()), defer_provider_hashes)
 	if not bool(collected.get("ok", false)):
-		_restore_clock_mode(was_paused, previous_speed)
+		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return collected
 	var session := GameFlow.session()
@@ -364,11 +407,11 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	var result: Dictionary
 	if not background_write:
 		result = _repository.write_slot(slot_id, header, frozen_sections)
-		_restore_clock_mode(was_paused, previous_speed)
+		_restore_clock_mode(was_paused, previous_speed, generation)
 	else:
 		# 捕获已经完成；恢复模拟后，压缩/SHA/回读验证/原子替换仍走原仓库路径。
 		# _busy 保持到真正落盘完成，禁止另一个写入、删除或加载与它交叉。
-		_restore_clock_mode(was_paused, previous_speed)
+		_restore_clock_mode(was_paused, previous_speed, generation)
 		var completion: Array[Dictionary] = []
 		var task := WorkerThreadPool.add_task(_repository.write_slot_background.bind(
 			slot_id, header, frozen_sections, completion,
@@ -386,7 +429,9 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	return result
 
 
-func _wait_for_safe_boundary() -> Dictionary:
+func _wait_for_safe_boundary(generation: int = -1) -> Dictionary:
+	if generation < 0:
+		generation = _runtime_generation
 	const MAX_WAIT_FRAMES := 1800
 	# 同一个 blocking code 连续出现的帧/墙钟上限。
 	#
@@ -412,6 +457,8 @@ func _wait_for_safe_boundary() -> Dictionary:
 	var last_code := ""
 	var stall_frames := 0
 	for frame in range(MAX_WAIT_FRAMES):
+		if not _session_active(generation):
+			return _session_cancelled()
 		var boundary := _can_save()
 		if bool(boundary.get("ok", false)):
 			return boundary
@@ -451,6 +498,8 @@ func _wait_for_safe_boundary() -> Dictionary:
 				and (frame % 2 == 0):
 			generator.advance_save_boundary()
 		await get_tree().process_frame
+	if not _session_active(generation):
+		return _session_cancelled()
 	var blocking_code := String(last_boundary.get("code", ""))
 	var blocking_condition := String(last_boundary.get("blocking_condition", ""))
 	var diagnostics := _boundary_diagnostics()
@@ -518,7 +567,9 @@ func _boundary_diagnostics() -> Dictionary:
 
 
 func _can_save() -> Dictionary:
-	if _runtime_host == null or _world_clock == null or _runtime_host.generator() == null:
+	if _runtime_host == null or _world_clock == null \
+			or not _session_active(_runtime_generation) \
+			or _runtime_host.generator() == null:
 		return _result(false, "save_runtime_missing", "游戏尚未就绪，请稍后再试。")
 	var generator := _runtime_host.generator()
 	# 暂停后 worker 仍会排空已经接收的环境输入。必须等它停稳，才可捕获
@@ -694,90 +745,40 @@ func _economy_checkpoint_format() -> Dictionary:
 
 
 func _register_providers() -> void:
-	_providers = [
-		_make_provider(&"dynamic_world", 1,
-			PackedStringArray(["new_game_config", "dynamic_world"]),
-			"_can_world_provider", "_write_world_provider", "_restore_world_provider"),
-		_make_provider(&"environment", 2, PackedStringArray(["environment"]),
-			"_can_environment_provider", "_write_environment_provider",
-			"_restore_environment_provider"),
-		_make_provider(&"pkcm", 3, PackedStringArray(["pkcm"]),
-			"_can_modifier_provider", "_write_climate_modifier_provider",
-			"_restore_climate_modifier_provider"),
-		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
-			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"simulation_runtime", 2, PackedStringArray(["simulation_runtime"]),
-			"_can_simulation_runtime_provider", "_write_simulation_runtime_provider",
-			"_restore_simulation_runtime_provider"),
-		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
-			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		# Military restores right after Country (its digest reads territory) and
-		# before Effect/Economy (design §22: PKMI between PKCN and PKEF/ECP2).
-		_make_provider(&"pkmi", PKMI_SCHEMA, PackedStringArray(["pkmi"]),
-			"_can_military_provider", "_write_military_provider",
-			"_restore_military_provider"),
-		# Effect restores before Economy so ECP2 can cross-check every
-		# SETTLING expedition transaction against authoritative PKEF state.
-		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
-			"_can_effect_provider", "_write_effect_provider",
-			"_restore_effect_provider"),
-		# Negotiate with the loaded DLL: an old editor must never stamp a new
-		# manifest on bytes produced by its still-loaded ABI2 extension.
-		_make_provider(&"ecp2", int(_economy_checkpoint_format().schema_version), PackedStringArray(["ecp2"]),
-			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
-		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
-			"_can_modifier_provider", "_write_gameplay_modifier_provider",
-			"_restore_gameplay_modifier_provider"),
-		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
-		_make_provider(&"pkfg", 4, PackedStringArray(["pkfg"]),
-			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
-		# Country AI memory, player exclusion and Economy-pending colonization
-		# intents. Restores after PKCN/ECP2 so handles and the Economy inbox exist.
-		_make_provider(&"pkai", 1, PackedStringArray(["pkai"]),
-			"_can_country_ai_provider", "_write_country_ai_provider",
-			"_restore_country_ai_provider"),
-		# v4 also persists custom gameplay commits (including canal geography)
-		# with event_id=-1 idempotency evidence. The manifest
-		# must match the payload schema, or list_slots() rejects newly written saves.
-		_make_provider(&"journal", 4, PackedStringArray(["journal"]),
-			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
-		_make_provider(&"pktr", 6, PackedStringArray(["pktr"]),
-			"_can_trigger_provider", "_write_trigger_provider",
-			"_restore_trigger_provider"),
-		# PKID also certifies the plan 11.5 execution contract in the manifest.
-		# THREE version spaces live here and are never interchangeable:
-		#   * this provider-section `schema` = 2 (the pkid manifest entry's own);
-		#   * the PKID payload schema = 14 (inside the section bytes, native);
-		#   * `execution_contract_hash` -- neither of the above, a hash of the
-		#     rule versions plus the ideology / Effect / Modifier catalogs this
-		#     runtime was configured with.
-		# The contract can stay equal across a payload schema bump and change
-		# without one (a catalog edit), so bumping the payload schema does NOT
-		# certify a different contract, and PK_SAVE_MIGRATE cannot make one safe:
-		# migration is a schema operation, the contract is not a schema version.
-		# Never compare the three.
-		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
-			"_can_ideology_provider", "_write_ideology_provider",
-			"_restore_ideology_provider", &"_ideology_manifest_identity"),
-		_make_provider(&"pkar", 1, PackedStringArray(["pkar"]),
-			"_can_annual_provider", "_write_annual_provider", "_restore_annual_provider"),
-		_make_provider(&"pknr", 1, PackedStringArray(["pknr"]),
-			"_can_narrative_provider", "_write_narrative_provider", "_restore_narrative_provider"),
-		_make_provider(&"player_session", 1,
-			PackedStringArray(["player_context", "player_view", "preview"]),
-			"_can_player_provider", "_write_player_provider", "_restore_player_provider"),
-	]
+	var registered := _install_provider_entries(WorldStateModules.builtins(
+		int(_economy_checkpoint_format().schema_version), PKMI_SCHEMA))
+	if not bool(registered.ok):
+		_provider_registration_error = registered
+		push_error(String(registered.message))
 
 
-func _make_provider(provider_id: StringName, schema: int, section_ids: PackedStringArray,
-		can_method: StringName, write_method: StringName,
-		restore_method: StringName, identity_method: StringName = &""):
-	var provider = RuntimeStateProviderScript.new().configure(provider_id, schema, section_ids,
-		Callable(self, can_method), Callable(self, write_method),
-		Callable(self, restore_method), Callable(self, "_hash_provider_sections"))
-	if identity_method != &"":
-		provider.configure_manifest_identity(Callable(self, identity_method))
-	return provider
+func _install_provider_entries(entries: Array) -> Dictionary:
+	var resolved := ModuleRegistry.resolve(entries)
+	if not bool(resolved.ok):
+		return resolved
+	_provider_entries = entries.duplicate()
+	_providers = resolved.modules
+	_provider_registration_error.clear()
+	return {"ok": true, "code": "ok"}
+
+
+## Register a new persistent module at composition time, before binding a game.
+## The module supplies its own callbacks; the coordinator needs no new branch.
+func register_state_module(provider, restore_after: PackedStringArray) -> Dictionary:
+	if is_instance_valid(_runtime_host) or _busy or not _pending_load.is_empty():
+		return _result(false, "module_registration_session_active", "请在进入游戏前登记模块。")
+	var candidate := _provider_entries.duplicate()
+	var entry := ModuleRegistry.state_entry(provider, restore_after)
+	if entry.is_empty():
+		return _result(false, "module_descriptor_invalid", "模块缺少保存接口。")
+	# Player presentation is installed after every business module, including
+	# extensions unknown to the built-in composition.
+	for index in candidate.size():
+		if String(candidate[index].id) == "player_session":
+			candidate[index] = candidate[index].duplicate(true)
+			candidate[index].after.append(String(entry.id))
+	candidate.append(entry)
+	return _install_provider_entries(candidate)
 
 
 func _provider_context(host: WorldRuntimeHost, generator: MapGenerator,
@@ -789,10 +790,19 @@ func _provider_context(host: WorldRuntimeHost, generator: MapGenerator,
 		"event_bus": generator.get_gameplay_event_bus() if generator != null else null,
 		"saved_paused": saved_paused,
 		"saved_speed": saved_speed,
+		"clock": _world_clock,
+		"session": GameFlow.session(),
+		"set_session": GameFlow.set_session,
+		"player": _player_controller,
+		"viewport": get_viewport(),
+		"clock_restored": Callable(self, "_clock_restored"),
+		"set_pending_view": Callable(self, "_set_pending_view"),
 	}
 
 
 func _manifest_compatible(raw_manifest) -> bool:
+	if not _provider_registration_error.is_empty():
+		return false
 	if not raw_manifest is Array:
 		return false
 	var by_id := {}
@@ -803,55 +813,19 @@ func _manifest_compatible(raw_manifest) -> bool:
 	var industry_entry: Dictionary = by_id.get(TECHNOLOGY_INDUSTRY_PROVIDER_ID, {})
 	if int(industry_entry.get("schema_version", 1)) != TECHNOLOGY_INDUSTRY_REVISION:
 		return false
+	var expected_ids := {TECHNOLOGY_INDUSTRY_PROVIDER_ID: true}
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
+		expected_ids[provider_id] = true
 		if not by_id.has(provider_id):
-			if provider_id in OPTIONAL_PROVIDER_SECTIONS or provider_id == "pkar":
+			if provider.allows_missing_archive():
 				continue
 			return false
-		var entry: Dictionary = by_id[provider_id]
-		var saved_schema := int(entry.get("schema_version", -1))
-		var schema_compatible: bool = saved_schema == provider.schema_version()
-		if provider_id == "pkfg":
-			schema_compatible = saved_schema in [1, 2, 3, 4]
-		if provider_id == "environment":
-			schema_compatible = saved_schema in [1, 2]
-		elif provider_id == "pkmi":
-			# Military v1 only. A newer PKMI cannot be read by this runtime, and an
-			# unchanged one is restored byte-for-byte; nothing older exists yet.
-			schema_compatible = saved_schema == PKMI_SCHEMA
-		elif provider_id == "pkcn":
-			# PKCN v11 carries the authoritative era-reward plan reference. Its native reader is
-			# exact-version only, so advertising an older schema would defer failure
-			# until after partial session restore.
-			schema_compatible = saved_schema == 11
-		elif provider_id == "ecp2":
-			schema_compatible = saved_schema == int(_economy_checkpoint_format().schema_version)
-			if OS.get_environment("PK_SAVE_MIGRATE") == "1" and saved_schema == 53:
-				schema_compatible = true
-		elif provider_id == "pkec":
-			# Legacy provider id is no longer loadable through the coordinator.
-			schema_compatible = false
-		elif provider_id == "pktr":
-			schema_compatible = saved_schema == 6
-		elif provider_id == "journal":
-			schema_compatible = saved_schema in [1, 2, 3, 4]
-		elif provider_id == "pkef":
-			schema_compatible = saved_schema == 11
-		elif provider_id == "pkid":
-			# Legacy saves predate the ideology provider; an absent PKID restores
-			# as an empty ideology state. PKID v1 is readable only for fully
-			# inactive ideology state; active v1 lacks the required PKEF binding.
-			schema_compatible = saved_schema in [1, 2]
-		elif provider_id == "pkai":
-			schema_compatible = saved_schema == 1
-		if not schema_compatible:
+		if not provider.accepts_manifest(by_id[provider_id]):
 			return false
-		var actual := PackedStringArray(entry.get("sections", []))
-		var expected: PackedStringArray = provider.section_ids()
-		actual.sort()
-		expected.sort()
-		if actual != expected:
+	# A missing optional system must not silently erase that system's save data.
+	for provider_id in by_id:
+		if not expected_ids.has(provider_id):
 			return false
 	return true
 
@@ -926,27 +900,6 @@ func _contract_value(value) -> int:
 	if value is String or value is StringName:
 		return String(value).to_int()
 	return 0
-
-
-## The pkid provider's manifest identity (plan 11.5). An empty dictionary means
-## the entry carries NO `execution_contract_hash` key, which the load gate reads
-## as UNSTATED -- that is the same shape as an archive written before the field
-## existed, and it must not be confused with a stored zero.
-##
-## The value is written as a DECIMAL STRING, not as a JSON number. The PKSV
-## header is JSON, and JSON numbers are IEEE-754 doubles by spec, so a 64-bit
-## hash is only exact while the reader happens to preserve int64 -- any reader
-## past 2^53 (a browser, a Python tool, or a future parser) would silently
-## compare a ROUNDED identity and refuse a save that is fine. `_contract_value`
-## still accepts a numeric form, so a manifest written either way compares.
-func _ideology_manifest_identity(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	if generator == null or not generator.has_method("get_ideology_report"):
-		return {}
-	var contract := _contract_from_report(generator.get_ideology_report())
-	if contract == 0:
-		return {}
-	return {EXECUTION_CONTRACT_KEY: str(contract)}
 
 
 static func _manifest_entry_for(raw_manifest, provider_id: String) -> Dictionary:
@@ -1041,81 +994,11 @@ func _contract_verdict_message(detail: String, running: int, saved: int) -> Stri
 	return ""
 
 
-func _can_world_provider(context: Dictionary) -> Dictionary:
-	var world = context.get("world")
-	return _result(world != null and world.has_method("serialize") \
-		and world.has_method("deserialize"), "ok" if world != null else "save_provider_missing",
-		"" if world != null else "动态世界 provider 不可用。")
-
-
-func _can_environment_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	return _result(generator != null, "ok" if generator != null else "save_provider_missing",
-		"" if generator != null else "环境 provider 不可用。")
-
-
-func _can_clock_provider(_context: Dictionary) -> Dictionary:
-	return _result(_world_clock != null, "ok" if _world_clock != null else "save_provider_missing",
-		"" if _world_clock != null else "WorldClock provider 不可用。")
-
-
-func _can_simulation_runtime_provider(context: Dictionary) -> Dictionary:
-	return _result(context.get("generator") != null, "ok" \
-		if context.get("generator") != null else "save_provider_missing",
-		"模拟 runtime provider 不可用。")
-
-
-func _write_simulation_runtime_provider(context: Dictionary) -> Dictionary:
-	var host: WorldRuntimeHost = context.get("host")
-	var native_bundle: PackedByteArray = context.get("native_runtime_bundle", PackedByteArray())
-	if not native_bundle.is_empty():
-		return {"ok": true, "sections": {"simulation_runtime": native_bundle}}
-	var runtime_report: Dictionary = {}
-	var generator = context.get("generator")
-	if generator != null and generator.has_method("get_runtime_thread_report"):
-		runtime_report = generator.get_runtime_thread_report()
-	return {"ok": true, "sections": {"simulation_runtime": {
-		"schema": "PKSR",
-		"version": 2,
-		"committed_day": _world_clock.day_index() if _world_clock != null else 0,
-		"paused": bool(context.get("saved_paused", true)),
-		"speed_days_per_second": float(context.get("saved_speed", 0.0)),
-		"runtime_thread_report": runtime_report,
-		"native_save_bundle": false,
-	}}}
-
-
-func _restore_simulation_runtime_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var runtime = sections.get("simulation_runtime", {})
-	if runtime is PackedByteArray:
-		if not _valid_native_runtime_bundle(runtime):
-			return _result(false, "simulation_runtime_checksum_failed",
-				"PKSR runtime bundle 校验失败。")
-		var generator = context.get("generator")
-		if generator == null or not generator.has_method("restore_runtime_bundle"):
-			return _result(false, "simulation_runtime_restore_missing",
-				"地图运行时缺少 PKSR 后台恢复接口。")
-		# SaveRepository has already verified both PKSV section SHA-256 hashes.
-		# Native restore accepts this duplicate only for the exact legacy 64 MiB truncation.
-		var restored: Dictionary = generator.restore_runtime_bundle(runtime,
-			sections.get("ecp2", PackedByteArray()))
-		if not bool(restored.get("ok", false)):
-			return _result(false, String(restored.get("code",
-				"simulation_runtime_restore_failed")),
-				"PKSR runtime bundle 恢复失败：%s" % String(
-					restored.get("code", "unknown")))
-		if bool(restored.get("recovered_truncated_ecp2", false)):
-			print("[save/restore] recovered legacy 64 MiB ECP2 truncation from verified PKSV section")
-		return restored
-	if runtime.is_empty():
-		return _result(true, "ok", "")
-	if String(runtime.get("schema", "PKSR")) != "PKSR" \
-			or int(runtime.get("version", 1)) != 2:
-		return _result(false, "simulation_runtime_incompatible", "PKSR runtime section 版本不兼容。")
-	return _result(true, "ok", "")
-
-
-func _capture_native_runtime_bundle() -> Dictionary:
+func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:
+	if generation < 0:
+		generation = _runtime_generation
+	if not _session_active(generation):
+		return _session_cancelled()
 	if _runtime_host == null or _runtime_host.generator() == null:
 		return {"ok": true, "bytes": PackedByteArray(),
 			"country_pkcn": PackedByteArray()}
@@ -1140,6 +1023,8 @@ func _capture_native_runtime_bundle() -> Dictionary:
 			"后台 runtime 保存请求失败。")
 	const MAX_POLL_FRAMES := 1800
 	for _frame in MAX_POLL_FRAMES:
+		if not _session_active(generation):
+			return _session_cancelled()
 		var polled: Dictionary = generator.poll_runtime_save(request_id)
 		if not bool(polled.get("ok", true)) and not bool(polled.get("pending", false)):
 			var failed := _result(false, String(polled.get("code", "runtime_save_failed")),
@@ -1162,6 +1047,8 @@ func _capture_native_runtime_bundle() -> Dictionary:
 		await get_tree().process_frame
 	# 超时时 worker 停在哪一步只有 thread report 知道；不带上它，这条失败在日志里
 	# 只剩一行 code，无法区分"准入条件不满足"和"worker 卡在某个 stage"。
+	if not _session_active(generation):
+		return _session_cancelled()
 	var timeout := _result(false, "runtime_save_timeout", "等待后台 runtime 保存超时。")
 	timeout["runtime_thread"] = generator.get_runtime_thread_report()
 	push_warning("[save] runtime_save_timeout thread=%s" % JSON.stringify(
@@ -1171,565 +1058,10 @@ func _capture_native_runtime_bundle() -> Dictionary:
 
 func _valid_native_runtime_bundle(bytes: PackedByteArray,
 		polled: Dictionary = {}) -> bool:
-	# PKSR v2 contains the immutable runtime envelope. The container section hash
+	# PKSR v4 contains the immutable runtime envelope. The container section hash
 	# is checked by SaveRepository; the header contract lives in PksrBundleHeader
 	# so it stays next to the offsets it depends on.
 	return PksrBundleHeaderScript.valid(bytes, polled)
-
-
-func _can_country_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_country_facade() if generator != null else null
-	return _result(facade != null and facade.is_configured(),
-		"ok" if facade != null and facade.is_configured() else "save_provider_missing",
-		"" if facade != null and facade.is_configured() else "PKCN provider 不可用。")
-
-
-## Military state is optional: a world without the military runtime (older DLL or
-## a catalog that failed to compile) still writes a well-formed empty section so
-## a later runtime can tell "no military" from "PKMI missing".
-func _can_military_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_military_facade() \
-		if generator != null and generator.has_method("get_military_facade") else null
-	var available: bool = facade != null and facade.is_configured()
-	return _result(true, "ok" if available else "save_military_unavailable",
-		"" if available else "Military runtime 未配置，写入空 PKMI。")
-
-
-func _can_economy_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_economy_facade() if generator != null else null
-	var available: bool = facade != null and facade.is_configured() \
-		and facade.has_method("capture_ecp2") and facade.has_method("restore_ecp2")
-	return _result(available,
-		"ok" if available else "save_provider_missing",
-		"" if available else "ECP2 economy provider 不可用。")
-
-
-func _write_economy_provider(context: Dictionary) -> Dictionary:
-	var shared_ecp2: PackedByteArray = context.get("native_economy_ecp2", PackedByteArray())
-	if not shared_ecp2.is_empty() and OS.get_environment("PK_SAVE_ECP2_REUSE_DISABLE") != "1":
-		if OS.get_environment("PK_SAVE_ECP2_REUSE_VERIFY") == "1":
-			var reference: Dictionary = context.generator.get_economy_facade().capture_ecp2(0)
-			if not bool(reference.get("ok", false)) or reference.get("bytes") != shared_ecp2:
-				return _result(false, "ecp2_shared_capture_mismatch",
-					"冻结 ECP2 与完整捕获结果不一致。")
-			print("[save/ecp2-reuse] full byte comparison passed bytes=%d" % shared_ecp2.size())
-		return {"ok": true, "sections": {"ecp2": shared_ecp2}}
-	var facade = context.generator.get_economy_facade()
-	var captured: Dictionary = facade.capture_ecp2(0)
-	if not bool(captured.get("ok", false)):
-		return _result(false, "ecp2_save_failed",
-			String(captured.get("reason", "无法捕获 ECP2 经济权威。")))
-	var bytes: PackedByteArray = captured.get("bytes", PackedByteArray())
-	if bytes.is_empty():
-		return _result(false, "ecp2_save_empty", "ECP2 捕获结果为空。")
-	return {"ok": true, "sections": {"ecp2": bytes}}
-
-
-func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	if not sections.has("ecp2"):
-		return _result(false, "ecp2_missing",
-			"存档缺少 ECP2 经济 section。")
-	var bytes: PackedByteArray = sections.ecp2
-	if bytes.is_empty():
-		return _result(false, "ecp2_missing", "ECP2 section 为空。")
-	var facade = context.generator.get_economy_facade()
-	var result: Dictionary = facade.restore_ecp2(bytes)
-	if not bool(result.get("ok", false)):
-		return _result(false, "ecp2_restore_failed",
-			String(result.get("restore_rejected_reason",
-				result.get("reason", "经济 ECP2 恢复失败。"))))
-	# ECP2 owns the authored building catalog. Bind it before PKFG is restored so
-	# building intel type indices are checked against the authoritative type count.
-	if context.host != null and context.host.has_method(
-			"refresh_building_visual_catalog"):
-		var visual_setup: Dictionary = context.host.refresh_building_visual_catalog()
-		if not bool(visual_setup.get("ok", false)) \
-				and not bool(visual_setup.get("deferred", false)):
-			push_warning("[building-visual] restore bind disabled: %s" % String(
-				visual_setup.get("reason", "catalog audit failed")))
-	return result
-
-
-func _can_modifier_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_modifier_facade() if generator != null else null
-	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_modifier_domain") \
-		and ext.has_method("restore_modifier_domain") \
-		and ext.has_method("clear_modifier_domain")
-	return _result(available, "ok" if available else "save_provider_missing",
-		"" if available else "Modifier provider 不可用。")
-
-
-func _can_vision_provider(context: Dictionary) -> Dictionary:
-	var host = context.get("host")
-	var map = host.current_map() if host != null else null
-	return _result(map != null and map.cell_count() > 0,
-		"ok" if map != null else "save_provider_missing",
-		"" if map != null else "视野 provider 不可用。")
-
-
-func _can_trigger_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_trigger_facade() if generator != null and generator.has_method("get_trigger_facade") else null
-	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_trigger_state") \
-		and ext.has_method("restore_trigger_state") and ext.has_method("clear_trigger_state")
-	return _result(available, "ok" if available else "save_provider_missing",
-		"Trigger provider unavailable" if not available else "")
-
-
-func _can_effect_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_effect_facade() if generator != null and generator.has_method("get_effect_facade") else null
-	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_effect_state") \
-		and ext.has_method("restore_effect_state") and ext.has_method("clear_effect_state")
-	return _result(available, "ok" if available else "save_provider_missing",
-		"Effect provider unavailable" if not available else "")
-
-
-func _can_ideology_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_ideology_facade() if generator != null and generator.has_method("get_ideology_facade") else null
-	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_ideology_state") \
-		and ext.has_method("restore_ideology_state") and ext.has_method("clear_ideology_state")
-	return _result(available, "ok" if available else "save_provider_missing",
-		"Ideology provider unavailable" if not available else "")
-
-
-func _can_country_ai_provider(context: Dictionary) -> Dictionary:
-	# A world without Country AI still writes an empty pkai section.
-	var generator = context.get("generator")
-	var available: bool = generator != null and generator.has_method("get_country_ai_facade")
-	return _result(available, "ok" if available else "save_provider_missing",
-		"Country AI provider unavailable" if not available else "")
-
-
-func _can_journal_provider(context: Dictionary) -> Dictionary:
-	var event_bus = context.get("event_bus")
-	return _result(event_bus != null, "ok" if event_bus != null else "save_provider_missing",
-		"" if event_bus != null else "事件 journal provider 不可用。")
-
-
-func _can_player_provider(_context: Dictionary) -> Dictionary:
-	var session := GameFlow.session()
-	return _result(not session.is_empty() and session.has("new_game_config"),
-		"ok" if not session.is_empty() else "save_provider_missing",
-		"" if not session.is_empty() else "玩家会话 provider 不可用。")
-
-
-func _write_world_provider(context: Dictionary) -> Dictionary:
-	return {"ok": true, "sections": {
-		"new_game_config": GameFlow.session().get("new_game_config", {}),
-		"dynamic_world": context.world.serialize(),
-	}}
-
-
-func _write_environment_provider(context: Dictionary) -> Dictionary:
-	var environment: Dictionary = context.generator.export_environment_runtime_state()
-	if String(environment.get("schema", "")) != "PKEnvironmentRuntime":
-		return _result(false, "environment_provider_incomplete",
-			"环境运行时未提供可持久化的完整状态。")
-	return {"ok": true, "sections": {"environment": environment}}
-
-
-func _write_clock_provider(context: Dictionary) -> Dictionary:
-	var state: Dictionary = _world_clock.export_state()
-	state.paused = bool(context.saved_paused)
-	state.speed_multiplier = float(context.saved_speed)
-	return {"ok": true, "sections": {"world_clock": state}}
-
-
-func _write_country_provider(context: Dictionary) -> Dictionary:
-	var shared_pkcn: PackedByteArray = context.get(
-		"native_country_pkcn", PackedByteArray())
-	if not shared_pkcn.is_empty():
-		return {"ok": true, "sections": {"pkcn": shared_pkcn}}
-	var captured := _capture_native(context.generator.get_country_facade(), "country")
-	return {"ok": true, "sections": {"pkcn": captured.bytes}} \
-		if bool(captured.get("ok", false)) else captured
-
-
-func _write_climate_modifier_provider(context: Dictionary) -> Dictionary:
-	return _write_modifier_provider(context, 0, "pkcm")
-
-
-func _write_gameplay_modifier_provider(context: Dictionary) -> Dictionary:
-	return _write_modifier_provider(context, 3, "pkgp")
-
-
-func _write_trigger_provider(context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_trigger_facade()
-	var bytes: PackedByteArray = facade.world_ext().capture_trigger_state()
-	if bytes.is_empty():
-		return _result(false, "pktr_save_failed", "Trigger state serialization failed")
-	return {"ok": true, "sections": {"pktr": bytes}}
-
-
-func _write_military_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_military_facade() \
-		if generator != null and generator.has_method("get_military_facade") else null
-	if facade == null or not facade.is_configured():
-		return {"ok": true, "sections": {"pkmi": PackedByteArray()}}
-	var bytes: PackedByteArray = facade.encode_state()
-	if bytes.is_empty():
-		# A configured facade that cannot encode is a real failure: writing an
-		# empty section would silently reset every army on the next load.
-		return _result(false, "pkmi_save_failed", "Military state serialization failed")
-	return {"ok": true, "sections": {"pkmi": bytes}}
-
-
-func _write_effect_provider(context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_effect_facade()
-	var bytes: PackedByteArray = facade.world_ext().capture_effect_state()
-	if bytes.is_empty():
-		return _result(false, "pkef_save_failed", "Effect state serialization failed")
-	return {"ok": true, "sections": {"pkef": bytes}}
-
-
-func _write_ideology_provider(context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_ideology_facade()
-	var bytes: PackedByteArray = facade.world_ext().capture_ideology_state()
-	if bytes.is_empty():
-		return _result(false, "pkid_save_failed", "Ideology state serialization failed")
-	return {"ok": true, "sections": {"pkid": bytes}}
-
-
-func _write_country_ai_provider(context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_country_ai_facade()
-	if facade == null or not facade.is_configured():
-		return {"ok": true, "sections": {"pkai": PackedByteArray()}}
-	var bytes: PackedByteArray = facade.encode_state()
-	if bytes.is_empty():
-		return _result(false, "pkai_save_failed", "Country AI state serialization failed")
-	return {"ok": true, "sections": {"pkai": bytes}}
-
-
-func _write_modifier_provider(context: Dictionary, domain: int,
-		section_id: String) -> Dictionary:
-	var facade = context.generator.get_modifier_facade()
-	var bytes: PackedByteArray = facade.world_ext().capture_modifier_domain(domain)
-	if bytes.is_empty():
-		return _result(false, "%s_save_failed" % section_id,
-			"Modifier domain 无法序列化。")
-	return {"ok": true, "sections": {section_id: bytes}}
-
-
-## 只存 cell_explored：它是单调累积的玩家进度，重算不回来。cell_visible 与
-## fog_k 都是领土 + 地形的纯函数，恢复后由 refresh_country_visuals 重解算。
-func _write_vision_provider(context: Dictionary) -> Dictionary:
-	var host: WorldRuntimeHost = context.host
-	var map: MapData = host.current_map()
-	var explored := map.explored_arr
-	if explored.size() != map.cell_count():
-		# 迷雾从未解算过（沙盒 / 迷雾关）。写一份空进度，保持 section 必存。
-		explored = PackedByteArray()
-		explored.resize(map.cell_count())
-	# 迷雾开启且玩家已有领土时 explored 必然非空：首都及其邻格一定被揭开。
-	# 全 0 只可能是本局视野没解算成功，落盘会把上一份存档的探索进度永久抹掉。
-	# 先重解一次，仍为空就拒绝写档，把旧进度留在磁盘上。
-	if host.is_fog_of_war_enabled() and not _has_explored_progress(explored) \
-			and _player_territory_cells(host, map) > 0:
-		host.refresh_country_visuals("save_capture_vision_repair")
-		explored = map.explored_arr
-		if explored.size() != map.cell_count() \
-				or not _has_explored_progress(explored):
-			return _result(false, "pkfg_vision_unsolved",
-				"玩家视野尚未解算，写档会清空探索进度。")
-	var payload := {
-		"schema": "PKFogOfWar",
-		"version": 4,
-		"cells": map.cell_count(),
-		"explored": explored,
-	}
-	var intel = host.building_visual_intel_cache() \
-		if host.has_method("building_visual_intel_cache") else null
-	if intel != null:
-		payload.merge(intel.to_pkfg_fields(), true)
-	else:
-		var empty_intel := BuildingVisualIntelCache.new()
-		empty_intel.configure(map.cell_count())
-		payload.merge(empty_intel.to_pkfg_fields(), true)
-	return {"ok": true, "sections": {"pkfg": payload}}
-
-
-func _has_explored_progress(explored: PackedByteArray) -> bool:
-	for value in explored:
-		if value != 0:
-			return true
-	return false
-
-
-func _player_territory_cells(host: WorldRuntimeHost, map: MapData) -> int:
-	var slot := host.player_country_slot()
-	if slot < 0:
-		return 0
-	var count := 0
-	for value in map.country_slot_arr:
-		count += 1 if int(value) == slot else 0
-	return count
-
-
-func _write_journal_provider(context: Dictionary) -> Dictionary:
-	var journal: Dictionary = context.event_bus.snapshot_journal()
-	if bool(journal.get("fallback", false)):
-		return _result(false, "journal_provider_missing", "事件 journal provider 不可用。")
-	return {"ok": true, "sections": {"journal": journal}}
-
-
-func _write_player_provider(_context: Dictionary) -> Dictionary:
-	var preview := _capture_preview()
-	var view: Dictionary = _player_controller.capture_view_state() \
-		if _player_controller != null else {
-			"selected_cell": -1,
-			"camera_position": Vector2.ZERO,
-			"camera_zoom": Vector2.ONE,
-		}
-	return {"ok": true, "sections": {
-		"player_context": GameFlow.session(),
-		"player_view": view,
-		"preview": preview,
-	}}
-
-
-func _capture_preview() -> PackedByteArray:
-	var preview := PackedByteArray()
-	var viewport := get_viewport()
-	if DisplayServer.get_name() != "headless" and viewport != null \
-			and viewport.get_texture() != null:
-		var image := viewport.get_texture().get_image()
-		if image != null and not image.is_empty():
-			preview = image.save_png_to_buffer()
-	if preview.is_empty():
-		var fallback := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-		fallback.fill(Color.TRANSPARENT)
-		preview = fallback.save_png_to_buffer()
-	return preview
-
-
-func _restore_world_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	context.world.deserialize(sections.dynamic_world)
-	return _result(true, "ok", "")
-
-
-func _restore_environment_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	return context.generator.restore_environment_runtime_state(sections.environment)
-
-
-func _restore_clock_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
-	var state: Dictionary = sections.world_clock.duplicate(true)
-	if OS.get_environment("PK_SAVE_MIGRATE") == "1":
-		# Offline migration may not advance business state while loading.
-		state["paused"] = true
-	return _world_clock.restore_state(state)
-
-
-func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_country_facade()
-	var ext = facade.world_ext() if facade != null else null
-	if ext != null and ext.has_method("restore_country_runtime_checkpoint"):
-		var checkpoint_result: Dictionary = ext.restore_country_runtime_checkpoint(
-			sections.pkcn)
-		if bool(checkpoint_result.get("available", false)):
-			return checkpoint_result if bool(checkpoint_result.get("ok", false)) else \
-				_result(false, String(checkpoint_result.get("code",
-					"country_checkpoint_restore_failed")),
-					"CPD2/PKCN 国家恢复失败。")
-	var result: Dictionary = facade.restore_bytes(sections.pkcn)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"pkcn_restore_failed", String(result.get("reason", "国家恢复失败。")))
-
-
-func _restore_climate_modifier_provider(sections: Dictionary,
-		context: Dictionary) -> Dictionary:
-	return _restore_modifier_provider(sections, context, 0, "pkcm")
-
-
-func _restore_gameplay_modifier_provider(sections: Dictionary,
-		context: Dictionary) -> Dictionary:
-	return _restore_modifier_provider(sections, context, 3, "pkgp")
-
-
-func _restore_trigger_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_trigger_facade()
-	var ext = facade.world_ext()
-	var bytes := PackedByteArray(sections.get("pktr", PackedByteArray()))
-	var result: Dictionary = ext.clear_trigger_state() if bytes.is_empty() else ext.restore_trigger_state(bytes)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"pktr_restore_failed", String(result.get("reason", "Trigger state restore failed")))
-
-
-func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var facade = generator.get_military_facade() \
-		if generator != null and generator.has_method("get_military_facade") else null
-	if facade == null or not facade.is_configured():
-		# The save carries military state but this runtime has none (DLL without
-		# the military API, or the catalog failed to compile). Refusing is the
-		# only honest answer: silently dropping armies and wars would corrupt the
-		# session state the player is reloading.
-		var bytes := PackedByteArray(sections.get("pkmi", PackedByteArray()))
-		if bytes.is_empty():
-			return {"ok": true}
-		return _result(false, "pkmi_runtime_unavailable",
-			"存档含军事状态，但当前运行时没有 Military API。")
-	var bytes := PackedByteArray(sections.get("pkmi", PackedByteArray()))
-	if bytes.is_empty():
-		# Save written before the military runtime: start from an empty military
-		# store rather than refusing the load.
-		return {"ok": true, "restored": false, "reason": "pkmi_absent_migration"}
-	var result: Dictionary = facade.restore_state(bytes)
-	if not bool(result.get("ok", false)):
-		return _result(false, "pkmi_restore_failed",
-			String(result.get("reason", "Military PKMI restore failed")))
-	# AI arming is part of the military store's meaning: after a restore, every
-	# non-player country must be AI again or the armed forces stop planning.
-	var player_handles: PackedInt64Array = facade.ai_player_handles()
-	if player_handles.is_empty():
-		var player_context = sections.get("player_context", {})
-		var start_cell := int(player_context.get("start_cell", -1)) \
-			if player_context is Dictionary else -1
-		var country = generator.get_country_facade() \
-			if generator.has_method("get_country_facade") else null
-		var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
-			if country != null and start_cell >= 0 else 0
-		if handle != 0:
-			player_handles = PackedInt64Array([handle])
-	facade.arm_ai(player_handles)
-	return result
-
-
-func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_effect_facade()
-	var ext = facade.world_ext()
-	var bytes := PackedByteArray(sections.get("pkef", PackedByteArray()))
-	var result: Dictionary = ext.clear_effect_state() if bytes.is_empty() else ext.restore_effect_state(bytes)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"pkef_restore_failed", String(result.get("reason", "Effect state restore failed")))
-
-
-func _restore_ideology_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_ideology_facade()
-	var ext = facade.world_ext()
-	# PKID is intentionally an empty-state migration for saves made before the
-	# ideology runtime. New saves always contain a non-empty native PKID payload.
-	var bytes := PackedByteArray(sections.get("pkid", PackedByteArray()))
-	var result: Dictionary = ext.clear_ideology_state() if bytes.is_empty() else ext.restore_ideology_state(bytes)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"pkid_restore_failed", String(result.get("reason", "Ideology state restore failed")))
-
-
-func _restore_country_ai_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var facade = context.generator.get_country_ai_facade()
-	if facade == null or not facade.is_configured():
-		return {"ok": true}
-	var bytes := PackedByteArray(sections.get("pkai", PackedByteArray()))
-	if not bytes.is_empty():
-		var restored: Dictionary = facade.restore_state(bytes)
-		return restored if bool(restored.get("ok", false)) else _result(false,
-			"pkai_restore_failed", String(restored.get("reason", "Country AI state restore failed")))
-	# Saves made before Country AI: exclude the player country found at the
-	# saved start cell, then let the AI start fresh for every foreign country.
-	var player_context = sections.get("player_context", {})
-	var start_cell := int(player_context.get("start_cell", -1)) if player_context is Dictionary else -1
-	var country = context.generator.get_country_facade()
-	var handle := int(country.cell_summary(start_cell).get("country_handle", 0)) \
-		if country != null and start_cell >= 0 else 0
-	if handle == 0:
-		return {"ok": true}
-	return facade.set_player_handles(PackedInt64Array([handle]))
-
-
-func _restore_modifier_provider(sections: Dictionary, context: Dictionary,
-		domain: int, section_id: String) -> Dictionary:
-	var ext = context.generator.get_modifier_facade().world_ext()
-	var bytes := PackedByteArray(sections.get(section_id, PackedByteArray()))
-	var result: Dictionary
-	if bytes.is_empty():
-		result = ext.clear_modifier_domain(domain)
-	else:
-		result = ext.restore_modifier_domain(domain, bytes)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"%s_restore_failed" % section_id,
-		String(result.get("reason", "Modifier domain 恢复失败。")))
-
-
-func _restore_vision_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var payload = sections.get("pkfg")
-	if not payload is Dictionary or String(payload.get("schema", "")) != "PKFogOfWar":
-		return _result(false, "pkfg_restore_failed", "视野 section 格式不正确。")
-	var host: WorldRuntimeHost = context.host
-	var map: MapData = host.current_map()
-	if map == null:
-		return _result(false, "pkfg_restore_failed", "视野恢复时地图不可用。")
-	var n := map.cell_count()
-	if int(payload.get("cells", -1)) != n:
-		return _result(false, "pkfg_restore_failed", "视野 section 的格数与当前地图不一致。")
-	var explored := PackedByteArray(payload.get("explored", PackedByteArray()))
-	if explored.size() != n:
-		return _result(false, "pkfg_restore_failed", "视野 section 已截断。")
-	var intel = host.building_visual_intel_cache() \
-		if host.has_method("building_visual_intel_cache") else null
-	if intel != null:
-		var type_count := host.building_visual_type_count() \
-			if host.has_method("building_visual_type_count") else -1
-		var intel_restore: Dictionary = intel.restore_pkfg(payload, type_count)
-		if not bool(intel_restore.get("ok", false)):
-			return _result(false, "pkfg_restore_failed",
-				String(intel_restore.get("reason", "建筑情报 CSR 无效。")))
-	# Commit exploration only after the complete PKFG payload validated. A bad
-	# building CSR therefore cannot partially mutate the current fog state.
-	map.explored_arr = explored
-	# 玩家 session provider 仍在 PKFG 之后。这里只提交单调探索权威；全部
-	# provider 恢复完毕后由 finalize_save_restore_visuals 重绑玩家国家，
-	# 再依据 PKCN 领土重算 visible/fog 并发布 enum_lut.a。
-	return _result(true, "ok", "")
-
-
-func _restore_journal_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var result: Dictionary = context.event_bus.restore_journal(sections.journal)
-	if not bool(result.get("ok", false)) and not bool(result.get("fallback", false)):
-		return _result(false, "journal_restore_failed",
-			"事件 journal 恢复失败：%s" % String(result.get("reason", "unknown")))
-	return _result(true, "ok", "")
-
-
-func _restore_player_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
-	GameFlow.set_session(sections.player_context)
-	_pending_view = sections.player_view.duplicate(true)
-	return _result(true, "ok", "")
-
-
-func _hash_provider_sections(context: Dictionary) -> String:
-	var bytes := var_to_bytes(context.get("current_provider_sections", {}))
-	var hashing := HashingContext.new()
-	hashing.start(HashingContext.HASH_SHA256)
-	if not bytes.is_empty():
-		hashing.update(bytes)
-	return hashing.finish().hex_encode()
-
-
-func _capture_native(facade, provider_name: String) -> Dictionary:
-	var begun: Dictionary = facade.begin_save()
-	if not bool(begun.get("ok", false)):
-		return _result(false, "%s_save_begin_failed" % provider_name,
-			String(begun.get("reason", "无法开始 native 存档。")))
-	var bytes := PackedByteArray()
-	while true:
-		var chunk: PackedByteArray = facade.read_save_chunk()
-		if chunk.is_empty(): break
-		bytes.append_array(chunk)
-	var ended: Dictionary = facade.end_save()
-	if not bool(ended.get("ok", false)):
-		return _result(false, "%s_save_end_failed" % provider_name,
-			String(ended.get("reason", "无法结束 native 存档。")))
-	return {"ok": true, "code": "ok", "message": "", "bytes": bytes}
 
 
 func _profile_save_window(active: bool) -> void:
@@ -1740,13 +1072,20 @@ func _profile_save_window(active: bool) -> void:
 		ext.profile_runtime_save_window(active)
 
 
-func _restore_clock_mode(was_paused: bool, previous_speed: float) -> void:
+func _restore_clock_mode(was_paused: bool, previous_speed: float, generation: int) -> void:
+	if not _session_active(generation):
+		return
 	_profile_save_window(false)
+	_runtime_host.end_state_capture()
 	_world_clock.speed_multiplier = previous_speed
 	_world_clock.pause(was_paused)
 
 
-func _on_year_changed(year: int) -> void:
+func _on_year_changed(year: int, generation: int = -1) -> void:
+	if generation < 0:
+		generation = _runtime_generation
+	if not _session_active(generation):
+		return
 	# Year 0 is the clock's initial publication, not a completed game year.
 	if year <= 0 or year <= _last_autosave_year:
 		return
@@ -1755,19 +1094,23 @@ func _on_year_changed(year: int) -> void:
 		# 禁用期间仍推进年份标记：重新启用后从下一个完整年份开始存档，
 		# 而不是在开关切回的那一刻立刻补写一次。
 		return
-	call_deferred("_autosave_year", year)
+	call_deferred("_autosave_year", year, generation)
 
 
-func _autosave_year(year: int) -> void:
+func _autosave_year(year: int, generation: int) -> void:
+	if not _session_active(generation):
+		return
 	# The annual grant is part of this checkpoint, including an unread report.
 	var deadline: int = Time.get_ticks_msec() + 30000
-	while _runtime_host != null and _runtime_host.annual_reports_waiting_for_year(year):
+	while _session_active(generation) and _runtime_host.annual_reports_waiting_for_year(year):
 		if Time.get_ticks_msec() >= deadline or _runtime_host.is_runtime_fault_paused():
 			_last_autosave_year = year - 1
 			return
 		await get_tree().process_frame
+	if not _session_active(generation):
+		return
 	var result := await request_autosave("year_%d" % year)
-	if not bool(result.get("ok", false)):
+	if _session_active(generation) and not bool(result.get("ok", false)):
 		# A busy boundary is retried on the next committed day through the player
 		# host; the year marker prevents duplicate completed writes.
 		_last_autosave_year = year - 1
@@ -1777,52 +1120,14 @@ static func _result(ok: bool, code: String, message: String) -> Dictionary:
 	return {"ok": ok, "code": code, "message": message}
 
 
-## `_result(false, ...)` 的可诊断版本：把"卡在哪一条子条件"作为
-## `blocking_condition` 一起带出去。结果字典只多一个键，读取方仍然只看
-## ok / code / message，所以对既有调用方零影响。
+func _clock_restored(year: int) -> void:
+	_last_autosave_year = year
+
+## Preserve the precise save-boundary condition for failure diagnostics.
 static func _blocked_result(code: String, message: String, condition: String) -> Dictionary:
 	var blocked := _result(false, code, message)
 	blocked["blocking_condition"] = condition
 	return blocked
 
-
-func _can_annual_provider(context: Dictionary) -> Dictionary:
-	var generator = context.get("generator")
-	var ext = generator.get_data_core_world_ext() if generator != null else null
-	return _result(ext != null and ext.has_method("capture_annual_report_state"),
-		"ok" if ext != null else "annual_provider_missing", "")
-
-
-func _write_annual_provider(context: Dictionary) -> Dictionary:
-	var ext = context.generator.get_data_core_world_ext()
-	var bytes: PackedByteArray = ext.capture_annual_report_state()
-	if bytes.is_empty() and bool(ext.get_annual_report_status().get("ok", false)):
-		return _result(false, "annual_capture_failed", "年度报告存档失败。")
-	return {"ok": true, "sections": {"pkar": bytes}}
-
-
-func _restore_annual_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var bytes: PackedByteArray = sections.get("pkar", PackedByteArray())
-	if bytes.is_empty():
-		return {"ok": true}
-	var ext = context.generator.get_data_core_world_ext()
-	return ext.restore_annual_report_state(bytes)
-
-
-func _can_narrative_provider(_context: Dictionary) -> Dictionary:
-	return _result(true, "ok", "")
-
-
-func _write_narrative_provider(_context: Dictionary) -> Dictionary:
-	var state: Dictionary = _player_controller.export_narrative_state() \
-		if _player_controller != null and _player_controller.has_method("export_narrative_state") \
-		else {}
-	return {"ok": true, "sections": {"pknr": state}}
-
-
-func _restore_narrative_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
-	var raw_state = sections.get("pknr", {})
-	var state: Dictionary = raw_state if raw_state is Dictionary else {}
-	if _player_controller != null and _player_controller.has_method("restore_narrative_state"):
-		return _player_controller.restore_narrative_state(state)
-	return _result(true, "ok", "")
+func _set_pending_view(view: Dictionary) -> void:
+	_pending_view = view

@@ -1,6 +1,6 @@
 extends RefCounted
 
-# PKSR v2 fixed scalar header contract.
+# PKSR v5 fixed scalar header contract.
 #
 # The layout mirrors build_save_bundle in gdext/src/native_simulation_host.cpp.
 # It lives here rather than inline in GameSaveCoordinator for two reasons: the
@@ -27,9 +27,9 @@ const SCALAR_HEADER_SIZE := 89
 
 # Smallest bundle the host can emit: scalar header, empty command tail, producer
 # cursors and the trailing checksum.
-const MIN_BUNDLE_SIZE := 2161
+const MIN_BUNDLE_SIZE := 2241
 
-const BUNDLE_VERSION := 2
+const BUNDLE_VERSION := 5
 # Mirrors RUNTIME_DOMAIN_ABI_VERSION. The legacy host envelope stays at 1; the
 # POD section ABI is versioned separately inside the DPD2 section.
 const DOMAIN_ABI_VERSION := 1

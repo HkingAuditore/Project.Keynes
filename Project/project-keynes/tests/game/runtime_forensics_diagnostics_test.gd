@@ -23,6 +23,20 @@ class StubClock extends RefCounted:
 		return 42
 
 
+class FaultProbe extends MapGenerator:
+	var faulted := false
+	var diagnostic_reads := 0
+
+	func get_runtime_control_state() -> Dictionary:
+		return {"simulation_host_state": "FAULTED" if faulted else "RUNNING"}
+
+	func get_runtime_thread_report() -> Dictionary:
+		diagnostic_reads += 1
+		return {"simulation_host_state": "FAULTED" if faulted else "RUNNING",
+			"fault_code": "money_conservation_failed", "simulation_committed_day": 42,
+			"generation": 7, "state_hash": 123, "worker_fault_count": 1}
+
+
 var _checks := 0
 var _failures := 0
 
@@ -102,6 +116,28 @@ func _run() -> void:
 		"stall capture must emit an economy trace")
 	_expect(not RuntimeForensics._should_print_economy_trace("save_replay"),
 		"ordinary save replay capture must not emit a pause trace")
+	var probe := FaultProbe.new()
+	var host := WorldRuntimeHost.new()
+	var clock := WorldClock.new()
+	clock.pause(false)
+	host._generator = probe
+	host._world_clock = clock
+	host._observe_runtime_worker_fault()
+	_expect(probe.diagnostic_reads == 0 and not host.is_runtime_fault_paused(),
+		"healthy control-state polling does not build diagnostic reports")
+	probe.faulted = true
+	host._observe_runtime_worker_fault()
+	var fault: Dictionary = host.get_runtime_fault_diagnostics()
+	_expect(clock.paused and host.is_runtime_fault_paused() and probe.diagnostic_reads > 0,
+		"a fault observed through control state pauses and captures full diagnostics")
+	_expect(fault.get("fault_code", "") == "money_conservation_failed"
+		and fault.get("committed_day", -1) == 42 and fault.get("generation", 0) == 7,
+		"lightweight polling preserves the fault cause and last committed evidence")
+	var reads := probe.diagnostic_reads
+	host._observe_runtime_worker_fault()
+	_expect(probe.diagnostic_reads == reads, "a latched fault is captured once")
+	host.free()
+	clock.free()
 	print("runtime_forensics_diagnostics_test: %d checks, %d failures" % [_checks, _failures])
 
 

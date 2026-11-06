@@ -5,7 +5,6 @@ const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
 var facade = null
 var world_clock: WorldClock = null
-var generator = null
 var _last_report: Dictionary = {}
 
 func _init(p_facade, p_world_clock: WorldClock = null, p_generator = null) -> void:

@@ -44,8 +44,8 @@
 
 #include "world_ext.h"
 
-#include "economy_runtime.h"
-#include "modifier_runtime.h"
+#include "economy_api.h"
+#include "modifier_api.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -332,7 +332,7 @@ Dictionary DCWorldExt::set_military_cell_tags(const Array &tags) {
             const bool on = (_military_cell_tag_bits[cell] &
                 static_cast<uint8_t>(mask)) != 0;
             if (on) ++forced_true; else ++forced_false;
-            economy->set_cell_tag_override_for_test(
+            economy_api::set_cell_tag_override_for_test(*economy,
                 key, static_cast<int32_t>(cell), on);
         }
     }
@@ -369,15 +369,15 @@ Dictionary DCWorldExt::get_military_cell_stat_q16(const String &cell_key,
     const ModifierRuntime *runtime =
         static_cast<const ModifierRuntime *>(_modifier_runtime);
     const std::string key(cell_key.utf8().get_data());
-    const int32_t stat_id = runtime->stat_id_for_key(key);
+    const int32_t stat_id = modifier_api::stat_id_for_key(*runtime, key);
     if (stat_id < 0) {
         out["reason"] = "stat_unknown";
         return out;
     }
     const double base = static_cast<double>(base_value_q16) /
         static_cast<double>(kMilitaryQ16);
-    const double effective = runtime->effective_value(
-        ModifierRuntime::ECONOMY, stat_id, static_cast<uint64_t>(entity_handle),
+    const double effective = modifier_api::effective_value(*runtime,
+        ModifierApi::ECONOMY, stat_id, static_cast<uint64_t>(entity_handle),
         static_cast<uint64_t>(cell), base);
     out["ok"] = true;
     out["stat_id"] = stat_id;
@@ -385,7 +385,7 @@ Dictionary DCWorldExt::get_military_cell_stat_q16(const String &cell_key,
     // The derived layer's own slice, reported separately so a fixture can tell
     // "the channel-A cell program contributed" from "a national row did".
     bool derived_present = false;
-    const DerivedCellFront *front = runtime->derived_cell_front();
+    const DerivedCellFront *front = modifier_api::derived_cell_front(*runtime);
     if (front != nullptr && cell >= 0) {
         const DerivedCellStatRow *row = front->row_for_stat(stat_id);
         if (row != nullptr) {
@@ -459,8 +459,8 @@ Dictionary DCWorldExt::clear_military_cell_stats() {
     // tags, so clearing one without the other would leave a card matching cells
     // Military no longer claims.
     if (_economy_runtime != nullptr) {
-        static_cast<NativeEconomyRuntime *>(_economy_runtime)
-            ->clear_cell_tag_overrides_for_test();
+        economy_api::clear_cell_tag_overrides_for_test(
+            *static_cast<NativeEconomyRuntime *>(_economy_runtime));
     }
     out["ok"] = true;
     return out;

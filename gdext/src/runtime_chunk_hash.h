@@ -8,20 +8,20 @@
 #include <memory>
 #include <type_traits>
 #include <vector>
-
+#include "runtime_switch_registry.h"
 namespace pk {
 template<class T> class EconomyTrackedColumn;
 
 inline bool runtime_chunk_hash_enabled() noexcept {
     static const bool enabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_HASH_V2");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_HASH_V2);
         return !value || std::strcmp(value, "0") != 0;
     }();
     return enabled;
 }
 
 inline bool runtime_hash_migration_enabled() noexcept {
-    const char *value = std::getenv("PK_SAVE_MIGRATE");
+    const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_MIGRATE);
     return value && std::strcmp(value, "1") == 0;
 }
 
@@ -58,7 +58,7 @@ public:
             _metrics = {};
             _metrics.reused_pages = _pages.size();
             _cumulative_metrics.reused_pages += _pages.size();
-            const char *verify = std::getenv("PK_ECONOMY_HASH_VERIFY");
+            const char *verify = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_HASH_VERIFY);
             if (verify && std::strcmp(verify, "1") == 0 &&
                 _last_root != rebuild(values.values(), domain, column)) {
                 std::fprintf(stderr, "economy_tracked_hash_mismatch domain=%u column=%u\n", domain, column);
@@ -184,7 +184,7 @@ private:
         _cumulative_metrics.reused_pages += _metrics.reused_pages;
         const uint64_t root = mix(mix(mix(mix(mix(mix(mix(OFFSET, ROOT), VERSION), domain), column), width), values.size()), _tree[1]);
         static const bool verify = [] {
-            const char *value = std::getenv("PK_ECONOMY_HASH_VERIFY");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_HASH_VERIFY);
             return value && std::strcmp(value, "1") == 0;
         }();
         if (verify && !_reference && root != rebuild(values, domain, column)) {

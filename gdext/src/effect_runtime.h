@@ -1,5 +1,6 @@
 #pragma once
 
+#include "effect_magnitude.h"
 #include "selector_cell_cap.h"
 #include "selector_ownership.h"
 

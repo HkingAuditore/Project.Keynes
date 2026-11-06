@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
-#include "modifier_runtime.h"
-#include "native_simulation_host.h"
+#include "country_api.h"
+#include "modifier_api.h"
+#include "economy_host_port.h"
 
 #include <algorithm>
 #include <limits>
@@ -76,7 +76,7 @@ int64_t NativeEconomyRuntime::epoch_procurement_demand_daily_for_market(
 void NativeEconomyRuntime::refresh_epoch_colonization_demand() {
     _epoch_colonization_demand_by_cell.clear();
     _epoch_colonization_demand_by_market.clear();
-    if (_country_runtime == nullptr || !_country_runtime->economy_available()) return;
+    if (_country_runtime == nullptr || !country_reads().economy_available()) return;
     std::vector<int32_t> preparing;
     for (int32_t i = 0; i < static_cast<int32_t>(family_expeditions_store().active.size()); ++i)
         if (family_expeditions_store().active[i] != 0 &&
@@ -91,7 +91,7 @@ void NativeEconomyRuntime::refresh_epoch_colonization_demand() {
     });
     std::vector<int64_t> budgets(static_cast<size_t>(_epoch_country_count), 0);
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        const int64_t cash = std::max<int64_t>(0, _country_runtime->cash_for_slot(country));
+        const int64_t cash = std::max<int64_t>(0, country_reads().cash_for_slot(country));
         bool enabled = false;
         int64_t daily = 0, remaining = 0;
         research_procurement_policy_for(country, enabled, daily, remaining);
@@ -125,7 +125,7 @@ void NativeEconomyRuntime::refresh_epoch_colonization_demand() {
         const int32_t country = static_cast<int32_t>(static_cast<uint64_t>(country_handle) & 0xffffffffU);
         if (source < 0 || source >= _cell_count.get() ||
             country < 0 || country >= _epoch_country_count || budgets[country] <= 0 ||
-            !_country_runtime->valid_handle(country_handle) ||
+            !country_reads().valid_handle(country_handle) ||
             _epoch_cell_country[source] != country ||
             !colonization_target_owner_allowed(country_handle, target) ||
             family_population_in_cell(family_expeditions_store().family_handle[expedition], source) <=
@@ -619,8 +619,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         }
     }
     if (_country_runtime != nullptr) {
-        NativeCountryRuntime::EconomySnapshot snapshot;
-        if (_country_runtime->copy_economy_snapshot(snapshot))
+        CountryReadView::Snapshot snapshot;
+        if (country_reads().copy_economy_snapshot(snapshot))
             kit.dest_identity = trace_hash_mix(kit.dest_identity,
                 snapshot.generation);
     }
@@ -1342,7 +1342,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         FamilyExpeditionProcurementContinuation &c, std::string &error) {
     error.clear();
     if (!c.active) return true;
-    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+    if (_country_runtime == nullptr || !country_reads().economy_available()) {
         c.last_error = "colonization_treasury_peer_unavailable";
         c.active = false;
         error = c.last_error;
@@ -1418,9 +1418,9 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         }
         if (!c.host_peer) {
             const godot::Dictionary applied =
-                _country_runtime->acknowledge_economy_asset_peer_applied(
-                    c.transaction_id, c.session_epoch, c.country_generation,
-                    c.peer_generation, true, godot::String());
+                country_api::fiscal_return_port(*_country_runtime).applied(
+                    {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
+                    true, "");
             if (!static_cast<bool>(applied.get("ok", false)) ||
                 godot::String(applied.get("status_name", "")) != "completed") {
                 c.phase = 6;
@@ -1436,7 +1436,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         const std::vector<int32_t> ids{c.good};
         const std::vector<int64_t> treasury{c.quantity};
         const auto route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+            static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_TREASURY_SPEND),
             static_cast<uint64_t>(family_expeditions_store().country_handle[c.expedition]),
             0, c.quantity, ids, treasury, error, &c.pending_request_id);
         if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
@@ -1466,9 +1466,9 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         const godot::PackedInt64Array packed_qty = [&]() {
             godot::PackedInt64Array out; out.resize(1); out.set(0, c.quantity); return out;
         }();
-        const godot::Dictionary begun = _country_runtime->begin_economy_treasury_spend(
+        const godot::Dictionary begun = country_api::fiscal_return_port(*_country_runtime).submit_spend(country_api::fiscal_return_port(*_country_runtime).spend_intent(
             static_cast<int64_t>(family_expeditions_store().country_handle[c.expedition]),
-            packed_ids, packed_qty, 0, _epoch_id.get(), static_cast<int32_t>(_stage));
+            packed_ids, packed_qty, 0, _epoch_id.get(), static_cast<int32_t>(_stage)));
         if (!static_cast<bool>(begun.get("ok", false))) {
             c.active = false;
             error = godot::String(begun.get(
@@ -1483,23 +1483,23 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             static_cast<int64_t>(begun.get("country_generation", 0)));
         c.peer_generation = _committed_generation;
         const godot::Dictionary prepared =
-            _country_runtime->acknowledge_economy_asset_peer_prepared(
-                c.transaction_id, c.session_epoch, c.country_generation,
-                c.peer_generation, true, godot::String());
+            country_api::fiscal_return_port(*_country_runtime).prepared(
+                    {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
+                    true, "");
         if (!static_cast<bool>(prepared.get("ok", false))) {
             c.active = false; error = "colonization_treasury_transfer_prepare_failed";
             return false;
         }
         const godot::Dictionary committed =
-            _country_runtime->commit_economy_asset_transaction(c.transaction_id);
+            country_api::fiscal_return_port(*_country_runtime).apply(c.transaction_id);
         if (!static_cast<bool>(committed.get("ok", false))) {
             c.active = false; error = "colonization_treasury_transfer_commit_failed";
             return false;
         }
         const godot::Dictionary applied =
-            _country_runtime->acknowledge_economy_asset_peer_applied(
-                c.transaction_id, c.session_epoch, c.country_generation,
-                c.peer_generation, true, godot::String());
+            country_api::fiscal_return_port(*_country_runtime).applied(
+                    {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
+                    true, "");
         if (!static_cast<bool>(applied.get("ok", false)) ||
             godot::String(applied.get("status_name", "")) != "completed") {
             c.active = false; error = "colonization_treasury_transfer_ack_failed";
@@ -1510,9 +1510,9 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
     }
     if (c.phase == 6) {
         const godot::Dictionary applied =
-            _country_runtime->acknowledge_economy_asset_peer_applied(
-                c.transaction_id, c.session_epoch, c.country_generation,
-                c.peer_generation, true, godot::String());
+            country_api::fiscal_return_port(*_country_runtime).applied(
+                    {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
+                    true, "");
         if (!static_cast<bool>(applied.get("ok", false)) ||
             godot::String(applied.get("status_name", "")) != "completed") {
             error = "colonization_treasury_peer_apply_ack_failed";
@@ -1708,7 +1708,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
     std::vector<int32_t> ids{good};
     std::vector<int64_t> goods{quantity};
     const auto route = block_or_enqueue_country_worker_asset(
-        static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET),
+        static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET),
         static_cast<uint64_t>(family_expeditions_store().country_handle[expedition]),
         cash, quantity, ids, goods, error, &c.pending_request_id, market);
     if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
@@ -1722,9 +1722,9 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         c.active = false;
         return false;
     }
-    const godot::Dictionary begun = _country_runtime->begin_economy_good_from_market(
-        static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
-        good, quantity, _epoch_id.get(), static_cast<int32_t>(_stage), 0, cash);
+    const godot::Dictionary begun = country_api::procurement_port(*_country_runtime).submit({
+        country_api::procurement_port(*_country_runtime).next_order_key(), static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
+        good, quantity, _epoch_id.get(), static_cast<int32_t>(_stage), cash});
     if (!static_cast<bool>(begun.get("ok", false))) {
         error = godot::String(begun.get(
             "code", "colonization_treasury_peer_country_rejected")).utf8().get_data();
@@ -1748,16 +1748,16 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         return false;
     }
     const godot::Dictionary prepared =
-        _country_runtime->acknowledge_economy_asset_peer_prepared(
-            c.transaction_id, c.session_epoch, c.country_generation,
-            c.peer_generation, true, godot::String());
+        country_api::fiscal_return_port(*_country_runtime).prepared(
+                    {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
+                    true, "");
     if (!static_cast<bool>(prepared.get("ok", false))) {
         error = "colonization_treasury_peer_prepare_failed";
         c.active = false;
         return false;
     }
     const godot::Dictionary committed =
-        _country_runtime->commit_economy_asset_transaction(c.transaction_id);
+        country_api::fiscal_return_port(*_country_runtime).apply(c.transaction_id);
     if (!static_cast<bool>(committed.get("ok", false)) ||
         static_cast<int64_t>(committed.get("committed_quantity", 0)) != quantity ||
         static_cast<int64_t>(committed.get("committed_cash", cash)) != cash) {
@@ -1823,7 +1823,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             _building_handle_index_clean = false;
             if (_modifier_runtime != nullptr &&
                 buildings_store().modifier_handle[existing] == 0) {
-                buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                buildings_store().modifier_handle.write_scalar(existing, modifier_api::ensure_building_identity(*_modifier_runtime,
                         destination_cell, row.type_id, owner_signature));
             }
         } else {
@@ -1834,7 +1834,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             group.count = row.count;
             if (_modifier_runtime != nullptr) {
                 group.modifier_handle =
-                    _modifier_runtime->ensure_building_identity(
+                    modifier_api::ensure_building_identity(*_modifier_runtime,
                         destination_cell, row.type_id, owner_signature);
             }
             append_building_group(group);
@@ -1914,7 +1914,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     _building_handle_index_clean = false;
                     if (_modifier_runtime != nullptr &&
                         buildings_store().modifier_handle[existing] == 0) {
-                        buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                        buildings_store().modifier_handle.write_scalar(existing, modifier_api::ensure_building_identity(*_modifier_runtime,
                                 destination_cell, row.type_id, owner_signature));
                     }
                 } else {
@@ -1925,7 +1925,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     group.count = row.count;
                     if (_modifier_runtime != nullptr) {
                         group.modifier_handle =
-                            _modifier_runtime->ensure_building_identity(
+                            modifier_api::ensure_building_identity(*_modifier_runtime,
                                 destination_cell, row.type_id, owner_signature);
                     }
                     append_building_group(group);

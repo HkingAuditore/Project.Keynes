@@ -604,7 +604,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
             // itself as the single source of truth: any slot listed here is
             // auto-registered with stride=1 / track_prev=false (snapshot
             // model — double buffering belongs to the pass code, not to the
-            // bind layer; see docs/performance-charter.md §11).
+            // bind layer; see docs/architecture/current-state.md).
             slot_id = register_component(slot_name,
                                          static_cast<int>(e.dtype),
                                          /*stride=*/1,
@@ -632,7 +632,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
                 s.external_ref = true;
                 // ─── Snapshot + flush model (NOT two-way alias) ────────────
                 // GDExtension ABI reality (verified by tmp/test_bind_alias.gd
-                // T1/T2 and locked into docs/performance-charter.md §11):
+                // T1/T2 and locked into docs/architecture/current-state.md):
                 //   Every PackedArray that traverses the boundary is wrapped
                 //   in a Variant. By the time we hold s.arr_f32 here, refcount
                 //   is ≥ 2, so any subsequent ptrw() in the C++ hot loop will

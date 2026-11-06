@@ -371,6 +371,8 @@ func _drive_day(ext: Object, day: int) -> void:
 			break
 		if bool(ideology_slice.get("done", false)):
 			break
+		_expect("unfinished ideology work remains scheduled on the same day",
+			bool(ext.ideology_should_run(day)), str(ideology_slice))
 	for _effect_slice in range(16):
 		var effect_slice: Dictionary = ext.run_effect_daily(day)
 		if not bool(effect_slice.get("ok", true)):

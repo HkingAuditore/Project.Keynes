@@ -158,9 +158,7 @@ MilitaryWorldDigest make_digest(const MilitaryTerrainInput &t) {
     d.stat_count = 0;
     return d;
 }
-
 // In-process bridge: intents of day D become receipts for day D+1.
-//
 // It also stands in for the economy's building ledger. `MilitaryCellState`'s
 // barracks/fort/college fields are a derived read of the economy's kind-3
 // building groups (requirement 6.1), so a harness that only submitted
@@ -185,11 +183,9 @@ struct Sim {
     int64_t first_leak_day = -1;
     std::string first_leak_events;
     std::string error;
-
     bool init(const MilitaryTerrainInput &t, uint64_t seed) {
         return init(t, seed, make_catalog());
     }
-
     bool init(const MilitaryTerrainInput &t, uint64_t seed, MilitaryCatalog catalog) {
         if (!core.configure(std::move(catalog), seed, error)) return false;
         if (!core.set_terrain(t, error)) return false;
@@ -203,7 +199,6 @@ struct Sim {
         enlist_by_cell.assign((size_t)t.cell_count, 0);
         return true;
     }
-
     bool submit(uint16_t op, int32_t slot, MilitaryCommand cmd) {
         cmd.op = op;
         cmd.country = handle_for(slot);
@@ -217,7 +212,6 @@ struct Sim {
         if (op == MCMD_STATE_BUILD) record_lot(build_cell, build_index);
         return true;
     }
-
     // The economy side of a `state.build`: one unit that starts standing on its
     // completion day.
     void record_lot(int32_t cell, int32_t building) {
@@ -233,7 +227,6 @@ struct Sim {
         lot.units = 1;
         lots.push_back(lot);
     }
-
     // Publishes the ledger as the digest's state lanes, the way
     // `capture_military_digest` reads the economy's building groups.
     void publish_state_ledger() {
@@ -252,7 +245,6 @@ struct Sim {
         dg.state_lanes_present = true;
         dg.state_lane_rows = (int32_t)dg.state_cell.size();
     }
-
     bool step() {
         last.clear();
         dg.day = day;
@@ -322,14 +314,12 @@ struct Sim {
         ++day;
         return true;
     }
-
     bool run_until(int64_t end_day) {
         while (day < end_day) {
             if (!step()) return false;
         }
         return true;
     }
-
     int32_t army_of(int32_t slot) const {
         const MilitaryArmyStore &a = core.armies();
         for (int32_t i = 0; i < (int32_t)a.active.size(); ++i) {
@@ -338,7 +328,6 @@ struct Sim {
         return -1;
     }
 };
-
 int64_t garrison_at(const MilitaryCore &core, int32_t cell) {
     const MilitaryLotStore &l = core.lots();
     int64_t total = 0;
@@ -347,7 +336,6 @@ int64_t garrison_at(const MilitaryCore &core, int32_t cell) {
     }
     return total;
 }
-
 bool is_neighbor(const MilitaryTerrainInput &t, int32_t a, int32_t b) {
     if (a == b) return true;
     for (int32_t d = 0; d < 6; ++d) {
@@ -355,7 +343,6 @@ bool is_neighbor(const MilitaryTerrainInput &t, int32_t a, int32_t b) {
     }
     return false;
 }
-
 // Names the first state component that differs after a PKMI round trip.
 std::string describe_diff(const MilitaryCore &a, const MilitaryCore &b) {
     std::string out;
@@ -403,14 +390,12 @@ std::string describe_diff(const MilitaryCore &a, const MilitaryCore &b) {
     note(a._seed == b._seed && a._catalog.hash == b._catalog.hash, "seed/catalog");
     return out;
 }
-
 bool has_event(const MilitaryCore &core, uint16_t type) {
     for (const MilitaryEvent &e : core.events_after(0, 100000)) {
         if (e.type == type) return true;
     }
     return false;
 }
-
 #define ST_CHECK(cond, msg)                                    \
     do {                                                       \
         if (!(cond)) {                                         \
@@ -419,7 +404,6 @@ bool has_event(const MilitaryCore &core, uint16_t type) {
         }                                                      \
         report += std::string("ok   ") + (msg) + "\n";         \
     } while (0)
-
 #define ST_STEP(sim, end)                                                          \
     do {                                                                           \
         if (!(sim).run_until(end)) {                                               \
@@ -427,7 +411,6 @@ bool has_event(const MilitaryCore &core, uint16_t type) {
             return false;                                                          \
         }                                                                          \
     } while (0)
-
 // --- 1. peaceful empty world
 bool test_idle(const MilitaryTerrainInput &t, std::string &report) {
     MilitaryCore core;
@@ -444,7 +427,6 @@ bool test_idle(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(!core2.should_run(1) && !core2.should_run(7), "peaceful registered world idle off the 5-day cadence");
     return true;
 }
-
 // --- 2..4. recruitment quota, army move path, foreign presence suppression
 bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out) {
     Sim sim;
@@ -473,7 +455,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     ST_CHECK(sim.enlist_by_cell[(size_t)A] + sim.enlist_by_cell[(size_t)B] == enlisted_before,
              "no enlistment after target reached");
     ST_CHECK(sim.core.country_soldiers(1) == 0, "other countries untouched");
-
     // Army from A's whole garrison marches to B (3 hexes east).
     const int64_t gA = garrison_at(sim.core, A);
     {
@@ -504,7 +485,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     }
     ST_CHECK(trail.back() == B, "army arrived at B");
     ST_CHECK(contiguous && moves == sim.core.cell_distance(A, B), "army walked a contiguous shortest path, 1 hex/day");
-
     // Raise the target: A (emptied) gets quota, B (army present >= posts) gets none.
     {
         MilitaryCommand target;
@@ -520,7 +500,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     hash_out = sim.core.state_hash();
     return true;
 }
-
 // --- 5..8. war -> engagement -> capture -> peace (cede + annex) -> PKMI -> ledger
 bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out) {
     Sim sim;
@@ -567,7 +546,6 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
     ST_CHECK(has_event(sim.core, MILITARY_EVENT_CELL_CONTROL_CHANGED), "CELL_CONTROL_CHANGED event emitted");
     ST_CHECK(sim.core.report().cells_captured > 0 || sim.core.control_revision() > 0, "control revision bumped");
     ST_STEP(sim, sim.day + 2);   // let run_wars record the full occupation
-
     // PKMI round trip mid-war (armies, engagements history, wars, events).
     {
         const std::vector<uint8_t> bytes = sim.core.encode();
@@ -581,7 +559,6 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
         ST_CHECK(copy.state_hash() == sim.core.state_hash(), "PKMI restore -> identical state_hash");
         ST_CHECK(copy.encode() == bytes, "PKMI re-encode byte-identical");
     }
-
     std::vector<int32_t> ints = {MPEACE_CEDE_CELL, kEnclave, 0, MPEACE_ANNEX, 0, 0};
     std::vector<int64_t> longs = {0, 0};
     int32_t war_id = sim.core.war_between(0, 2);
@@ -626,9 +603,7 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
     hash_out = sim.core.state_hash();
     return true;
 }
-
 // --- 9. auto-discharge reconciled against a partially applied Economy move
-//
 // run_recruitment removes the surplus garrison heads when it emits the
 // DISCHARGE intent; the receipt must then only put back the heads Economy did
 // NOT move (requested - committed). A receipt that removed them a second time
@@ -738,9 +713,7 @@ bool test_partial_discharge(const MilitaryTerrainInput &t, std::string &report) 
              "partial discharge: a failed receipt refunds the whole request");
     return true;
 }
-
 // --- 9b. Army pay (army-pay contract §2 / §4.3): wages follow the people.
-//
 // Two holders, one treasury: a garrison lot at A and an army lot that marched
 // off it. run_wages_and_upkeep must emit exactly one PAY_WAGES row for the
 // garrison (headed for A) and one ARMY_PAY row for the formation (headed for its
@@ -799,7 +772,6 @@ bool test_army_pay(const MilitaryTerrainInput &t, std::string &report) {
     army_heads = sim.core.armies().cached_headcount[(size_t)army];
     ST_CHECK(garrison_heads == 10 && army_heads == 40,
              "army pay: 10 garrisoned at A, 40 with the formation");
-
     // One wages day, collected instead of auto-receipted: the harness only
     // answers ENLIST/LEVY/DISCHARGE, so the pay rows stay in `last` for us.
     sim.last.clear();
@@ -874,7 +846,6 @@ bool test_army_pay(const MilitaryTerrainInput &t, std::string &report) {
              "army pay: a pay receipt leaves the garrison lot untouched");
     return true;
 }
-
 // --- 10. AI agenda soak
 bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out, std::string &stats) {
     Sim sim;
@@ -947,11 +918,9 @@ bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_
     hash_out = c.state_hash();
     return true;
 }
-
 // --- 11. 3-cell procurement (design 9.3): only markets of the same country in
 // the demander's ring, nothing in range is unmet demand, and a delivered
 // quantity is booked in the sec 9.7 ledger.
-//
 // The synthetic digest carries a market every 37th cell, so a garrison on its
 // own ring sources locally; a garrison far from any own market records unmet
 // demand instead of scanning the map.
@@ -1006,9 +975,7 @@ bool test_procurement(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(far_held == 0, "procurement: nothing supplied outside the 3-cell ring (no fallback scan)");
     return true;
 }
-
 // --- 12. Naval transport (army-personnel contract 2 §2.1 / design §7.4).
-//
 // The synthetic map only wraps east-west, so a full-width water band cuts it in
 // two and every land route between the shores has to cross exactly `band`
 // consecutive water cells. Those are the shapes the transport gate has to
@@ -1026,14 +993,12 @@ MilitaryTerrainInput make_hex_terrain_with_water_band(int32_t first_row, int32_t
     }
     return t;
 }
-
 // Unlock bits: 0 = cannon (existing fixture), 1 = coastal transport,
 // 2 = ocean transport (army-personnel contract 2 §2.2 catalog slots).
 constexpr int32_t kCoastalTransportBit = 1;
 constexpr int32_t kOceanTransportBit = 2;
 constexpr uint64_t kCoastalUnlock = 1ull << kCoastalTransportBit;
 constexpr uint64_t kOceanUnlock = 1ull << kOceanTransportBit;
-
 MilitaryCatalog make_naval_catalog() {
     MilitaryCatalog c = make_catalog();
     c.unlock_count = 3;
@@ -1041,7 +1006,6 @@ MilitaryCatalog make_naval_catalog() {
     c.ocean_transport_bit = kOceanTransportBit;
     return c;
 }
-
 // Digest over a water-band map: water is unowned (crossing it must not open an
 // engagement) and country 0 carries exactly `unlock_bits`.
 MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t unlock_bits) {
@@ -1053,13 +1017,10 @@ MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t un
     d.country_unlock_bits[0] = unlock_bits;
     return d;
 }
-
 // --- 9c. Budget envelope (任务 6 / 需求 5.1, 5.5, 9.3).
-//
 // The envelope is a share of the country's daily treasury cash, split into
 // three channel ceilings. Three properties are easy to get wrong and are pinned
 // here because the panel and the settlement both read them:
-//
 //  1. `budget_share_bp <= 0` is NO envelope, not a zero envelope. Every foreign
 //     AI country and every save loaded before the player re-pushes a policy must
 //     keep the legacy cash-driven behaviour, so `enabled` stays false on the
@@ -1073,7 +1034,6 @@ MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t un
 //     - it predates this work and is already a persisted policy field - so the
 //     procurement channel reuses it instead of introducing a second, unsaved
 //     copy of the same number.
-//
 // State is driven through `apply_command` (immediate, queues nothing) and the
 // guard rails through `submit` (rejections leave the queue untouched), so the
 // hash/encode comparisons at the end are not disturbed by pending commands.
@@ -1082,7 +1042,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(sim.init(t, 60602), "budget envelope sim init");
     const int64_t cash = sim.dg.country_cash[(size_t)0];
     ST_CHECK(cash > 0, "budget envelope: digest carries treasury cash");
-
     // (1) The default policy has no envelope at all.
     {
         const MilitaryCore::MilitaryBudgetSplit split = sim.core.budget_split(0, cash);
@@ -1091,7 +1050,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                      split.upkeep_ceiling == 0 && split.procurement_ceiling == 0,
                  "budget envelope: no envelope splits into zero ceilings");
     }
-
     // (2) A total share opens the envelope; the default channels fill it.
     {
         MilitaryCommand c;
@@ -1111,7 +1069,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                      split.envelope_daily,
                  "budget envelope: the default channels spend it exactly");
     }
-
     // (3) -1 keeps a channel; 0 pauses exactly that channel.
     {
         MilitaryCommand c;
@@ -1127,7 +1084,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                      split.upkeep_ceiling == split.envelope_daily * 2000 / 10000,
                  "budget envelope: untouched channels keep their stored share");
     }
-
     // (4) A zero total removes the envelope but keeps the channel shares, so the
     // panel never loses what the player chose.
     {
@@ -1142,7 +1098,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(p.budget_wage_bp == 6000 && p.procurement_share_bp == 0,
                  "budget envelope: disabling keeps the stored channel shares");
     }
-
     // (5) Guard rails. Rejections never queue, so nothing below moves the state
     // the hash comparison at the end is looking at.
     {
@@ -1153,14 +1108,12 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         std::string error;
         ST_CHECK(!sim.core.submit(c, error) && error == "command_bad_budget_share",
                  "budget envelope: a total above 100% is rejected");
-
         MilitaryCommand many;
         many.op = MCMD_POLICY_SET_BUDGET;
         many.country = handle_for(0);
         many.ints = {1000, 1000, 1000, 1000};
         ST_CHECK(!sim.core.submit(many, error) && error == "command_bad_budget_channels",
                  "budget envelope: more than three channels is rejected");
-
         MilitaryCommand bad;
         bad.op = MCMD_POLICY_SET_BUDGET;
         bad.country = handle_for(0);
@@ -1168,7 +1121,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(!sim.core.submit(bad, error) &&
                      error == "command_bad_budget_channel_share",
                  "budget envelope: an out-of-range channel share is rejected");
-
         // Stored 4000 / 4000 / 2000 is exactly 100%. One more basis point on a
         // single channel must fail, which also proves an unspecified channel is
         // checked against its STORED value rather than against zero.
@@ -1193,7 +1145,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(sim.core.submit(equal, error),
                  "budget envelope: channels totalling exactly 100% are accepted");
     }
-
     // (6) Transient (需求 9.3). Two identical cores that differ ONLY in the three
     // NEW budget fields have to agree on both the hash and the encoded bytes.
     // `procurement_share_bp` is deliberately NOT in that set: it predates this
@@ -1234,7 +1185,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_CHECK(slot >= 0 && !restored.budget_split(slot, cash).enabled,
                  "budget envelope: a restored core starts with no envelope");
     }
-
     // (7) Settlement (任务 7 / 需求 5.2, 5.3, 7.1). Runs the real `step_day`
     // path over a recruited garrison instead of re-deriving the arithmetic here:
     // the point is that the settlement WRITES these numbers, and that with no
@@ -1266,7 +1216,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
         ST_STEP(pay, 41);
         ST_CHECK(garrison_at(pay.core, A) == 40,
                  "budget settlement: 40 soldiers recruited");
-
         // One settled day WITHOUT an envelope: nothing may be reported, which is
         // 需求 5.5's "AI countries do not change" expressed as a contract.
         ST_STEP(pay, pay.day + 1);
@@ -1276,7 +1225,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                          p.wage_overspend == 0,
                      "budget settlement: no envelope reports no wage outcome");
         }
-
         // Now open an envelope whose wage share is far below the payroll, and
         // settle one more day. 军饷 is high priority, so it gets paid anyway and
         // the excess is reported; nothing is left in arrears.
@@ -1305,12 +1253,9 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
                      "budget settlement: paying past the share is reported, not blocked");
         }
     }
-
     return true;
 }
-
 // --- 12. Procurement quota (任务 8 / 需求 5.4, 6.2, 7.1).
-//
 // The point of this case is that `run_procurement` now CONSUMES a money quota
 // rather than buying whatever the market can sell. It therefore asserts three
 // things the arithmetic alone cannot: that a country without an envelope still
@@ -1321,7 +1266,6 @@ bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
 bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) {
     Sim buy;
     ST_CHECK(buy.init(t, 60604), "procurement quota: sim init");
-
     // Same market-cell discovery as test_procurement: a garrison must sit on a
     // cell whose 3-ring holds one of the synthetic digest's markets.
     int32_t near_cell = -1;
@@ -1343,7 +1287,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
     }
     ST_STEP(buy, 60);
     ST_CHECK(garrison_at(buy.core, near_cell) > 0, "procurement quota: garrison recruited");
-
     // Money the emitted PROCURE_GOOD intents carry on the last stepped day. This
     // is the treasury's view of the pass, so comparing it with the policy row is
     // a conservation check rather than a restatement of the same variable.
@@ -1358,7 +1301,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
         }
         return sum;
     };
-
     // ---- 1. no envelope: buy the gap, report nothing ----------------------
     int64_t free_spend = 0;
     for (int32_t day = 0; day < 20; ++day) {
@@ -1371,7 +1313,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
         }
     }
     ST_CHECK(free_spend > 0, "procurement quota: an unmetered country keeps buying");
-
     // ---- 2. a tiny envelope: the quota meters the purchase ----------------
     // cash 1e6 x 0.01% = an envelope of 100 money, and with the whole envelope on
     // the procurement channel that is the day's ceiling. A need unit costs 20
@@ -1395,7 +1336,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
         0, buy.dg.country_cash[(size_t)0]);
     ST_CHECK(split.enabled && split.procurement_ceiling == 100,
              "procurement quota: the ceiling is the whole 100-money envelope");
-
     bool metered = false;
     bool overspent = false;
     bool drifted = false;
@@ -1418,7 +1358,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
              "procurement quota: reported spend equals the emitted intents");
     ST_CHECK(metered && deferred_total > 0,
              "procurement quota: the unfunded gap is reported as 待购");
-
     // ---- 3. restore the quota and the same gap is bought again ------------
     // The shortfall is not a separate queue: demand is `want - held`, so nothing
     // has to be replayed and the next pass buys in the same cheapest-first order.
@@ -1444,13 +1383,10 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
     }
     return true;
 }
-
 // --- 13. Cross-channel conservation (任务 10 / 需求 9.4, 7.2).
-//
 // 7 and 8 each prove their own channel books itself. Neither checks what happens
 // when all three settle against the SAME treasury on the SAME day, which is the
 // only configuration where a double debit could hide:
-//
 //   * 军饷 (op 5) and 采购 (op 6) are emitted in one `step_day`, and both are
 //     translated into economy commands keyed by the same country handle. If the
 //     payroll planner and the procurement quota each assumed the full cash
@@ -1460,7 +1396,6 @@ bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) 
 //     that has to hold is therefore not "cash - spend >= 0" on the military book
 //     alone, but "the emitted rows never claim more than the cash the split was
 //     computed from" - the split is what the bridge will actually collect from.
-//
 // The assertions below are all cross-channel: per-day sums of the three intent
 // kinds, compared against the cash the core itself used for the split, and each
 // channel's own reported figure compared against the rows it emitted. An envelope
@@ -1473,7 +1408,6 @@ bool test_cross_channel_conservation(const MilitaryTerrainInput &t,
     // default 0 catalog the channel has nothing to bill, so every cross-channel
     // assertion about it would pass without ever running.
     ST_CHECK(sim.init(t, 60605, make_catalog(20000)), "cross channel: sim init");
-
     // A garrison that owes wages and wants equipment, parked on a market cell so
     // procurement has somewhere to buy. Same discovery rule as the quota case.
     int32_t near_cell = -1;
@@ -1503,7 +1437,6 @@ bool test_cross_channel_conservation(const MilitaryTerrainInput &t,
     sim.run_until(61);
     ST_CHECK(garrison_at(sim.core, near_cell) > 0,
              "cross channel: the garrison recruited");
-
     // Every channel is squeezed at once. The total share is 20% of cash and the
     // channels are 40/30/30 - deliberately close to 100% so each ceiling is a
     // binding constraint, and no channel can be funded out of another's slack.
@@ -1522,7 +1455,6 @@ bool test_cross_channel_conservation(const MilitaryTerrainInput &t,
         }
         return n;
     };
-
     // Shrink the treasury so the envelope is a real constraint rather than a
     // rounding detail on a 1e12 pile: 2,000,000 cash x 20% = 400,000 envelope,
     // which the 40/30/30 split cuts into 160,000 / 120,000 / 120,000 per day.
@@ -1619,8 +1551,6 @@ bool test_cross_channel_conservation(const MilitaryTerrainInput &t,
              "cross channel: the envelope covered nearly the whole window");
     return true;
 }
-
-
 bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     constexpr int32_t kBandRow = 10;                 // water rows 10..(10+band-1)
     constexpr int32_t kNorthShore = kBandRow - 1;    // land row just above the band
@@ -1628,7 +1558,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     const int32_t shore_3 = cell_at(5, kBandRow + 3);   // land past a 3-water strait
     const int32_t shore_4 = cell_at(5, kBandRow + 4);   // land past a 4-water strait
     std::string error;
-
     // ---- 1. no transport technology: water is refused exactly as before
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -1650,7 +1579,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(!core.preview_path(core.army_handle(army), shore_3, cells, days),
                  "naval: no transport technology -> preview_path reports unreachable");
     }
-
     // ---- 2. coastal transport: runs of <= 3 consecutive water cells
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -1673,7 +1601,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(!core.find_path(army, shore_4, coastal4, path),
                  "naval: coastal transport refuses 4 consecutive water cells");
     }
-
     // ---- 3. ocean transport: the run limit is gone
     {
         const MilitaryTerrainInput t4 = make_hex_terrain_with_water_band(kBandRow, 4);
@@ -1691,7 +1618,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(core.find_path(army, cell_at(3, kBandRow + 4), ocean, path),
                  "naval: ocean transport keeps ordinary crossings working");
     }
-
     // ---- 4. preview_path days include the sea cost (contract §2.2)
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -1716,7 +1642,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
                  "naval: land steps still preview as one day each");
         ST_CHECK(sea_days > land_days, "naval: a sea move costs more days than the land equivalent");
     }
-
     // ---- 5. crossing: forced EMBARKED, stance restored on landing, sea
     //         attrition at kSeaAttritionBp (0.2%/day) instead of land loss
     {
@@ -1766,7 +1691,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     return true;
 }
 } // namespace
-
 bool MilitaryCore::self_test(std::string &report) {
     report.clear();
     const MilitaryTerrainInput t = make_hex_terrain(kW, kH);
@@ -1779,6 +1703,46 @@ bool MilitaryCore::self_test(std::string &report) {
         }
     }
     ST_CHECK(symmetric, "32x24 wrap hex map: neighbour table symmetric");
+    {
+        Sim sim;
+        ST_CHECK(sim.init(t, 2526), "index continuation init");
+        auto &c = sim.core;
+        const int32_t cell = cell_at(5, 5);
+        const int32_t old = c.lot_find_or_create(MILITARY_LOT_GARRISON, cell, 0, 0, 256);
+        c._lots.count[(size_t)old] = 0;
+        c._lots.active[(size_t)old] = 0;
+        c._lots.free_list.push_back(old);
+        const int32_t reused = c.lot_find_or_create(MILITARY_LOT_GARRISON, cell, 0, 0, 256);
+        c._lots.count[(size_t)reused] = 3;
+        ST_CHECK(reused == old && c._lots.active[(size_t)old] == 0,
+            "inactive linked slot reuse keeps original mutation semantics");
+        const auto bytes = c.encode();
+        MilitaryCore copy;
+        std::string error;
+        ST_CHECK(copy.configure(make_catalog(), 2526, error) && copy.set_terrain(t, error) &&
+            copy.restore(bytes.data(), bytes.size(), error), "index continuation restore");
+        ST_CHECK(copy._lot_army_head == c._lot_army_head && copy._lot_cell_head == c._lot_cell_head &&
+            copy._lot_next == c._lot_next && copy._lot_link_kind == c._lot_link_kind &&
+            copy._lot_link_loc == c._lot_link_loc && copy._lots.active == c._lots.active &&
+            copy._lots.location_kind == c._lots.location_kind && copy._lots.location == c._lots.location &&
+            copy._lots.count == c._lots.count && copy._lots.country_slot == c._lots.country_slot &&
+            copy._lots.unit_type == c._lots.unit_type && copy._lots.equip_quality_q8 == c._lots.equip_quality_q8 &&
+            copy._lots.condition_q16 == c._lots.condition_q16 && copy._lots.free_list == c._lots.free_list &&
+            copy._armies.generation == c._armies.generation && copy._army_lane_pending == c._army_lane_pending &&
+            copy._armies.free_list == c._armies.free_list,
+            "index heads next inactive payload and free-slot order match field by field");
+        ST_CHECK(copy.present_for_cell(cell) == c.present_for_cell(cell) && copy.encode() == bytes,
+            "index continuation query and bytes stable");
+        c._lot_next[(size_t)old] = old;
+        auto cycle = c.encode();
+        ST_CHECK(!copy.restore(cycle.data(), cycle.size(), error) && copy.encode() == bytes,
+            "cyclic index rejected without modifying live state");
+        c._lot_next[(size_t)old] = -1;
+        auto legacy = bytes;
+        legacy[4] = 1;
+        ST_CHECK(!copy.restore(legacy.data(), legacy.size(), error) &&
+            error == "pkmi_version_mismatch_expected_3", "PKMI v1 explicitly refused");
+    }
     if (!test_idle(t, report)) return false;
     uint64_t h1 = 0, h2 = 0, w1 = 0, w2 = 0, a1 = 0, a2 = 0;
     std::string stats, stats2;
@@ -1808,9 +1772,7 @@ bool MilitaryCore::self_test(std::string &report) {
     }
     return true;
 }
-
 // ================================================================= bench
-
 bool MilitaryCore::bench(int32_t cells, int32_t armies, int32_t engagements, int32_t days, double &avg_ms,
                          double &p95_ms, double &max_ms, std::string &report) {
     avg_ms = p95_ms = max_ms = 0.0;
@@ -2035,5 +1997,4 @@ bool MilitaryCore::bench(int32_t cells, int32_t armies, int32_t engagements, int
     }
     return true;
 }
-
 } // namespace pk

@@ -276,6 +276,7 @@ struct CountryCoreCheckpoint {
     uint64_t next_boundary_id = 1;
     uint64_t checkpoint_hash = 0;
     std::vector<uint8_t> canonical_pkcn;
+    std::vector<uint8_t> compatibility_pkcn; // Non-authoritative Economy input replica.
     std::vector<CountryPendingCommandProtocol> pending_protocol;
     std::vector<CountryCommandReceipt> request_states;
     std::vector<CountryCommandReceipt> terminal_receipts;

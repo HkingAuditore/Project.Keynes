@@ -250,7 +250,7 @@ EXPECTED_FIXTURES = {
     # with the card still at `locations=[0]`).
     #
     # The mechanism is now covered by `settle_split_authority_effects` (see
-    # docs/cpp-dots-runtime/computation-pipelines.md, "Split authority settle"), but
+    # docs/architecture/current-state.md, "Split authority settle"), but
     # it is measured by `tests/ideology/ideology_split_authority_effect_worker_probe.gd`
     # -- a PROBE, like `ideology_worker_authority_parity_test` above, and for the same
     # reason: it builds worker worlds, and a worker world is timing-sensitive and

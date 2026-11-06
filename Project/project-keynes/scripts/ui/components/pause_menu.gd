@@ -18,6 +18,7 @@ var _frame: PanelContainer
 var _center: CenterContainer
 var _rows_scroll: ScrollContainer
 var _pending_destructive_action: String = ""
+var _panel_generation := 0
 
 
 func _ready() -> void:
@@ -86,6 +87,7 @@ func open() -> void:
 
 
 func close() -> void:
+	_panel_generation += 1
 	visible = false
 	_pending_destructive_action = ""
 	visibility_requested.emit(false)
@@ -136,16 +138,32 @@ func _show_load() -> void:
 	_title("加载游戏")
 	var save_service := get_node_or_null("/root/GameSave")
 	var flow_service := get_node_or_null("/root/GameFlow")
+	var generation := _panel_generation
 	var slots: Array = save_service.list_slots() if save_service != null else []
+	var buttons := {}
 	for slot in slots:
 		var slot_id := String(slot.slot_id)
 		var label := "自动存档" if slot_id == "autosave" else "手动存档 %s" % slot_id.trim_prefix("manual_")
 		var button := _add_button(label, "history", func() -> void:
 			if flow_service != null:
 				flow_service.begin_load_game(slot_id))
+		buttons[slot_id] = button
+		button.disabled = true
+		button.tooltip_text = "正在检查存档…" if bool(slot.loadable) else String(slot.reason)
+	_add_button("返回", "back", _show_main)
+	if save_service == null:
+		return
+	var verified: Array = await save_service.list_slots_verified()
+	if generation != _panel_generation:
+		return
+	for slot in verified:
+		var button: Button = buttons.get(String(slot.slot_id))
+		if not is_instance_valid(button):
+			continue
 		button.disabled = not bool(slot.loadable)
 		button.tooltip_text = String(slot.reason)
-	_add_button("返回", "back", _show_main)
+		if bool(slot.loadable) and not bool(slot.get("integrity_checked", false)):
+			button.tooltip_text = "载入时将检查存档完整性。"
 
 
 func _show_settings() -> void:
@@ -205,6 +223,7 @@ func _finish_pending_action() -> void:
 
 
 func _clear_panel() -> void:
+	_panel_generation += 1
 	for child in _rows.get_children():
 		child.queue_free()
 	_status.visible = false

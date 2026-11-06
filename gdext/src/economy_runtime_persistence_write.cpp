@@ -1,8 +1,8 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 
 namespace pk {
@@ -25,12 +25,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _epoch_days.get());
         append_le<int64_t>(payload, _last_committed_day.get());
         append_le<int64_t>(payload, _epoch_id.get());
-        append_le<int32_t>(payload, NativeCountryRuntime::SCHEMA_VERSION);
+        append_le<int32_t>(payload, CountryApi::SCHEMA_VERSION);
         append_le<uint64_t>(payload, _save_country_identity_override
-            ? _save_country_generation : _country_runtime->generation());
+            ? _save_country_generation : country_reads().generation());
         append_le<uint64_t>(payload, _save_country_identity_override
             ? _save_country_state_hash
-            : static_cast<uint64_t>(_country_runtime->state_hash()));
+            : static_cast<uint64_t>(country_reads().state_hash()));
         append_le<int64_t>(payload, _seed.get());
         append_le<int64_t>(payload, _catalog_hash.get());
         append_le<int64_t>(payload, _building_catalog_hash.get());
@@ -661,7 +661,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
-            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8 +
+            4 + CountryApi::TAX_KIND_COUNT * 12 * 8 + 8 +
             NON_TAX_PERSISTED_KIND_COUNT * 8;
         const int32_t country_count = _save.fiscal_country_count;
         const int32_t max_records = std::max(
@@ -672,9 +672,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const auto append_group = [&](const std::vector<int64_t> &values,
                                       int32_t country) {
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 const size_t index = static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                    CountryApi::TAX_KIND_COUNT + kind;
                 append_le<int64_t>(payload,
                     index < values.size() ? values[index] : 0);
             }
@@ -1334,7 +1334,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 record += record_bytes;
             }
             static const bool verify_codec = [] {
-                const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+                const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_CODEC_VERIFY);
                 return value && std::strcmp(value, "1") == 0;
             }();
             if (verify_codec) {
@@ -1411,6 +1411,14 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             // Optional v52 footer. Older v52 streams end after the fixed-size
             // cell records; readers accept both layouts.
             append_le<uint64_t>(payload, _committed_generation);
+            // Optional: Track-B commit-spread review cells carried to the next
+            // commit. Omitted when empty so the common stream is unchanged.
+            if (!_track_b_investment_cells_pending.empty()) {
+                append_le<uint32_t>(payload, static_cast<uint32_t>(
+                    _track_b_investment_cells_pending.size()));
+                for (const int32_t cell : _track_b_investment_cells_pending)
+                    append_le<int32_t>(payload, cell);
+            }
             _save.section = SCHEMA_VERSION >= 53
                 ? SAVE_SECTION_D7_PEER_EXT
                 : SAVE_SECTION_END;

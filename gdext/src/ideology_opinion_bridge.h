@@ -11,7 +11,7 @@
 // business divergence rather than as a missing field. Both paths now go through
 // this header.
 
-#include "economy_runtime.h"
+#include "economy_api.h"
 #include "runtime_ideology_pod.h"
 
 #include <algorithm>
@@ -20,7 +20,7 @@
 namespace pk {
 
 inline RuntimeIdeologyOpinionSnapshot ideology_opinion_from_economy(
-        const NativeEconomyRuntime::CountryClassOpinionSnapshot &source) {
+        const EconomyApi::CountryClassOpinionSnapshot &source) {
     RuntimeIdeologyOpinionSnapshot out;
     out.revision = source.revision;
     out.class_hash = source.class_hash;

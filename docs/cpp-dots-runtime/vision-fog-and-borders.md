@@ -1,8 +1,8 @@
 # 视野迷雾与国界线
 
 本文是「三态视野迷雾 + 国界线渲染」的权威契约。数据流、存档边界与渲染层次
-以本文为准；`computation-pipelines.md`、`gdscript-cpp-data-bridge.md`、
-`game-flow-start-save.md` 只保留各自视角的交叉引用。
+以本文为准；`docs/architecture/current-state.md`、`docs/architecture/development-guide.md`、
+`docs/architecture/development-guide.md` 只保留各自视角的交叉引用。
 
 ## 三态语义
 
@@ -131,7 +131,7 @@ k 存进 **`enum_lut` 的 A 通道**，而不是新开一张 `fog_lut`。主地�
 传空数组，两条路径都落到"A 恒为 255"的全知默认。这与 `fog_state()` 在数组未初始化时
 返回 `FOG_VISIBLE` 是同一条原则——**没解算过就当全知，绝不当全黑**，否则任何早于首次
 solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `bind_map_data` 之后
-（见 `computation-pipelines.md`）时就踩过这个坑：`enum_lut.a` 均值从 255 掉到 0。
+（见 `docs/architecture/current-state.md`）时就踩过这个坑：`enum_lut.a` 均值从 255 掉到 0。
 
 视野变化时不能等 `DynamicVisualAtlasUploadSystem` 的日刷——它在 `dirty_count == 0`
 时会 early-return，而视野变化不体现在 climate/weather 的 dirty mask 上。所以
@@ -587,7 +587,7 @@ ribbon 的内边界截断。
 
 `cell_explored` 是单调累积的玩家进度，必须持久化，落在 PKSV 的 `pkfg` section
 （`PKFogOfWar v1`）。`visible` 与 `fog_k` 是领土与地形的纯函数，不存，恢复后重算。
-恢复顺序必须排在 PKCN 之后（解算读领土），细节见 `game-flow-start-save.md`。
+恢复顺序必须排在 PKCN 之后（解算读领土），细节见 `docs/architecture/development-guide.md`。
 
 单调进度只能靠两道闸守住，因为一次视野解算失效就会被下一次自动存档写死：
 
@@ -678,3 +678,12 @@ CLAIM，又会把 Host read-view 刚打进 `country_slot_arr` 的正确平面整
 MapGenerator 在 generation 变化时不得用该字段提前拦截；`CountryFacade`
 必须先消费原生事件流，并从 `CREATE_COUNTRY` / `TRANSFER_TERRITORY` /
 `CLAIM_UNOWNED_TERRITORY` 事件归一化出非零 `changed_cells`，再决定是否广播。
+
+## Save adapter boundary (2026-11-04)
+
+PKFG v4 encoding/restoration now lives in `scripts/game/save_modules/vision_state.gd`.
+The composition supplies only MapData, the intel cache/type bound, player slot, fog
+setting and a refresh callback. The adapter still validates the entire intel payload
+before assigning exploration; Country/Economy restore dependencies and final visibility
+recalculation are unchanged. `resource_visual_layer_test.gd` exercises the registered
+provider rather than private coordinator methods.

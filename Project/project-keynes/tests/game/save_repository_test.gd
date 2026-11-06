@@ -86,7 +86,15 @@ func _run() -> void:
 		== sections.preview)
 	repository.write_slot("autosave", written.header, sections)
 	_corrupt_last_byte("autosave.pksv")
-	var invalid_slots := repository.list_slots()
+	var pending_slots := repository.list_slots()
+	_expect("header listing does not claim payload verification",
+		bool(pending_slots[3].loadable) and not bool(pending_slots[3].integrity_checked))
+	var completion: Array = []
+	var verify_task := WorkerThreadPool.add_task(repository.verify_slots_background.bind(completion))
+	while not WorkerThreadPool.is_task_completed(verify_task):
+		await process_frame
+	WorkerThreadPool.wait_for_task_completion(verify_task)
+	var invalid_slots: Array = completion[0]
 	_expect("legacy save stays visible and disabled",
 		bool(invalid_slots[1].exists) and not bool(invalid_slots[1].loadable) \
 		and not String(invalid_slots[1].reason).is_empty())
@@ -111,7 +119,7 @@ func _check_background_provider_hash(repository, original_header: Dictionary) ->
 	var expected := hashing.finish().hex_encode()
 	var header := original_header.duplicate(true)
 	header["provider_manifest"] = [{"provider_id": "test", "schema_version": 1,
-		"sections": ["bytes"], "state_hash": ""}]
+		"sections": PackedStringArray(["bytes"]), "state_hash": ""}]
 	var frozen := {"bytes": source_sections.bytes}
 	var completion: Array[Dictionary] = []
 	var task := WorkerThreadPool.add_task(repository.write_slot_background.bind(
