@@ -79,3 +79,13 @@ __pycache__/
 /WebBuild/
 /Build/
 worklog/.index/
+
+# ==== 误产物与 user-scope 工具（2026-11-06 skill 审计）====
+# svn export 命令里的 %USERPROFILE% 没被 shell 展开时会生成这个字面量目录，
+# 曾把整份 skill-version-manager 误提交进仓库。
+/%USERPROFILE%/
+**/%USERPROFILE%/
+
+# skill-version-manager 是 user-scope 的团队工具（manifest 里 install_scope=user），
+# 内含内网 SVN 地址与同事账号，属于本机环境而不是项目源码：不进仓库。
+**/skills/skill-version-manager/

@@ -123,8 +123,11 @@ and save layout stay unchanged. Cover congestion/restore with `runtime_trigger_p
 From the repository root run:
 
 ```powershell
-& "C:\Users\hkinghuang\.codex\skills\project-keynes-technology-runtime\scripts\verify_technology_runtime.ps1" -GodotExe "<godot_console.exe>"
+& "<SKILL_DIR>\scripts\verify_technology_runtime.ps1" -GodotExe "<godot_console.exe>"
 ```
+
+`<SKILL_DIR>` is this skill's own directory inside the repo (e.g.
+`.agents\skills\project-keynes-technology-runtime`).
 
 Add `-Build` to compile the debug GDExtension first. Run the 50-day headless performance workflow for
 changes to research or procurement hot loops and compare country/economy/modifier timing plus

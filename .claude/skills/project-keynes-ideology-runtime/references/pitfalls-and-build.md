@@ -14,7 +14,7 @@ directly:
 
 ```bash
 cd gdext && PYTHONPATH= VSLANG=1033 \
-  "C:/Users/hkinghuang/AppData/Local/Programs/Python/Python313/Scripts/scons.exe" \
+  "$LOCALAPPDATA/Programs/Python/Python313/Scripts/scons.exe" \
   platform=windows target=template_debug dev_build=no -j8
 ```
 

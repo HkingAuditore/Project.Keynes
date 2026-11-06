@@ -12,7 +12,7 @@ description: >-
 
 Produce ~3-minute interactive era suites, era transition fanfares and camera-zoom ambience beds with ElevenLabs, split them locally with Demucs, and compile them into FMOD Studio `2.03.15` banks.
 
-Entry point: `tools/audio/generate_grand_strategy_music_elevenlabs.py` (v3). The v2 backup lives at `D:/Godot/ProjectKeynes/tmp/generate_grand_strategy_music_elevenlabs.v2.bak.py`; do not revert to it.
+Entry point: `tools/audio/generate_grand_strategy_music_elevenlabs.py` (v3). The v2 backup lives at `tmp/generate_grand_strategy_music_elevenlabs.v2.bak.py`; do not revert to it.
 
 ## 1. Audio-Quality Rules (lessons from v2)
 
@@ -46,7 +46,7 @@ Output format: 48 kHz, 16-bit WAV with TPDF dither.
 ## 3. Local Stem Separation (Demucs)
 
 - Script: `tools/audio/separate_stems_demucs.py`, model `htdemucs_ft`, CUDA.
-- Venv: `D:/Godot/ProjectKeynes/tmp/audio_venv`, created with `--system-site-packages` and `demucs==4.0.1`.
+- Venv: `tmp/audio_venv`, created with `--system-site-packages` and `demucs==4.0.1`.
 - The system torchaudio DLL fails with WinError 5. The script injects a stub `torchaudio` module and does file I/O with scipy. Keep that shim.
 - The generator calls Demucs at 44.1 kHz and maps stems back to 48 kHz. `LAYER_SPLIT` assigns each stem across the three layers:
 
@@ -92,7 +92,7 @@ python tools/audio/generate_grand_strategy_music_elevenlabs.py --no-api         
 - **Flags:** `--force-music`, `--force-separation`, `--force-ambience`, `--force-transitions`, `--skip-transitions`, `--no-api`.
 - **API key:** set `ELEVENLABS_API_KEY=sk_...` in the repo-root `.env`. Use the 51-character secret key, not the hex Key ID.
 - **Sound-generation format:** `/v1/sound-generation` accepts `wav_48000` or `mp3_44100_192`, but not `mp3_48000_192`.
-- **Cache:** `D:/Godot/ProjectKeynes/tmp/fmod_<era>/elevenlabs_cache_v3/` holds `master_48k.pcm`, `composition_plan.json`, `demucs_htdemucs_ft/`, `zoom_*.bin` and `transition_48k.pcm`.
+- **Cache:** `tmp/fmod_<era>/elevenlabs_cache_v3/` holds `master_48k.pcm`, `composition_plan.json`, `demucs_htdemucs_ft/`, `zoom_*.bin` and `transition_48k.pcm`.
 - **Outputs:**
   - `tmp/fmod_<era>/audio/` and `Audio/ProjectKeynes/Assets/` (flat; no per-era subfolders).
   - `<prefix>reference_full_mix.wav`, an exact-sum check for A/B listening.
