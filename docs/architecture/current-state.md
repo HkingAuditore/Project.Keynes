@@ -597,6 +597,15 @@ v5等待同日Modifier回写和worker空闲，再继续host消费，直到军事
 
 **实验，非生产接入**：`tests/runtime/fixtures/day_aligned_external_host.gd`继承原Host，仅在注册的`PK_EXPERIMENT_EXTERNAL_DAY_ALIGNMENT`精确等于`1`时暂停两个逐帧drain；默认关闭。`golden_external_day_alignment_test.gd`等待同日worker空闲和Modifier回写后，在下一日提交前显式调用原两个drain，保持资源→军事、首次观察、跳过、事件转发规则。相邻日/目标日不满足则拒绝，不猜历史视图。原v5只新增创建Host的测试替换点；正式脚本不构造此子类，生产没有实验入口。开关仅追加注册项，既有枚举值、默认值和135处C++读取保持。
 
+**框架决定（2026-11-05）**：日期对齐属于调度框架，不是玩法，目标如下。
+- 资源和军事对每个日 D 恰好推进一次，读第 D 日已提交的输入，按资源 → 军事的固定顺序。不再跳日；首次观察从模块已保存的 last_step_day 接续，不再使用 `target-4`。
+- 两者完成后，第 D 日才算完整：`simulation_committed` 和记录器在外围完成之后才可见。主线程在 D 提交和接纳 D+1 输入之间设确认屏障。
+- 保存时先排空外围边界，不新增存档字段。
+- 长期把两者收进原生日图，作为普通日模块。
+- 对模块作者的契约是：“每日一次、当日输入”，不能依赖追赶或跳日。军事内部规则仍归军事设计方。
+
+实施排在合并 upstream 之后。验收要求：5 条黄金链不变，另新增带兵、战争、多日积压的链和吞吐测量。
+
 最小实验只验证v5的四个逐日边界；不能证明批量积压、带兵军费/战争、读档后首次观察、帧内信号可见性或高倍速吞吐。完整产品方案需在生产的D提交与D+1输入接纳之间建立主线程确认屏障，资源回写就绪后按固定顺序执行，确认前继续服务peer但不接纳下一日；再明确simulation_committed/记录器是在外围完成前还是完成后可见。保存时需选择排空外围边界还是记录可恢复游标；任何涉及保存格式或原命令接纳顺序的变化须另轮授权。本轮不切默认。
 
 
@@ -858,6 +867,10 @@ perf-validation是有独立project.godot/场景的另一份工程，其host4,739
 逃生键 `PK_WEB_ALLOW_GDSCRIPT_DAILY_FALLBACK` 仅精确字符串`1`有效；或者在导出场景/会话启动前将 host 导出属性 `runtime_web_allow_gdscript_daily_fallback=true`。两者取OR，默认均关闭。选择属性是因为浏览器不能保证提供环境变量；不新增URL解析、公共原生绑定或新UI。注册元数据：`gdext/src/runtime_switch_registry.cpp:102`。这是一项脚本端消费的行为开关，不是假装已有C++读取调用。
 
 失败设置`_web_worker_start_code`、`_runtime_last_fault_diagnostics.fault_code`并锁住WorldClock，发`web_daily_executor_failed`遥测，再复用`_emit_world_generation_failure`和`player_game.gd:236`的加载失败面板。加载准备返回失败，不能随后发world_ready；运行中原生日接口缺失也走同一面板，后续日回调/公开tick被阻断。新会话在旧会话完整关闭后只清除本通道的锁，不清除native故障（`Project/project-keynes/scripts/game/world_runtime_host.gd:1686`）。既有C++故障状态没有被伪造写入，host诊断明确标`source=web_daily_executor`。
+
+### 第2步范围决定（2026-11-05）
+
+Web 正式执行器定为“worker ＋ 原生 inline”：worker 仍是默认；inline 作为兼容路径保留，因为它不依赖 worker，代价是重日在主线程上卡顿。GDScript 每日回退和配套逃生开关在第 2 步删除，因为它和 ACTIVE 路径的完整世界等价性从未验证，相当于另一套规则。删除前须满足两项：下列测试先迁离同步/SHADOW 配置，并有一次 emcc 构建的真实浏览器验证。这是工程范围决定，不改变玩法规则。
 
 ### 第2步删除前必须复核的依赖
 

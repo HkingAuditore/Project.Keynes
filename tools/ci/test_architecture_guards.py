@@ -15,6 +15,7 @@ import check_committed_views as views
 import check_save_contracts as saves
 import check_module_contracts as modules
 import check_resolve_apply as resolve_apply
+import check_module_api as module_api
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -425,6 +426,85 @@ class GuardsTest(unittest.TestCase):
             source.write_text('#include "country_read_view.h"\nCountryReadView view;\n')
             self.assertFalse(deps.measure(root))
             self.assertEqual(deps.metrics(deps.measure(root, include_contracts=True))["total"], 2)
+
+    def test_module_api_rejects_new_internal_includes_and_stale_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "economy_api.h").write_text('#include <cstdint>\n#include "country_api.h"\nstruct EconomyApi {};\n')
+            (src / "economy_runtime.h").write_text('#include "economy_api.h"\n')
+            (src / "economy_runtime_market.cpp").write_text('#include "economy_runtime.h"\n')
+            (src / "native_simulation_host.cpp").write_text('#include "economy_runtime.h"\n')
+            (src / "ideology_runtime.cpp").write_text('#include "economy_runtime.h"\n')
+            (src / "modifier_runtime.cpp").write_text('#include "economy_api.h"\n// #include "economy_runtime.h"\n')
+            contract = {"module": "economy", "api_headers": ["economy_api.h"],
+                        "internal_header_patterns": ["economy_runtime*.h"],
+                        "owner_file_patterns": ["economy_*", "runtime_economy_*"],
+                        "composition_roots": {"native_simulation_host.cpp": "host owns runtime"},
+                        "legacy_includers": ["ideology_runtime.cpp"]}
+            self.assertEqual(module_api.check_contract(root, contract), [])
+            # A new peer reaching into internals is rejected.
+            (src / "trigger_runtime.cpp").write_text('#include "economy_runtime_internal_state_members.h"\n')
+            self.assertEqual(len(module_api.check_contract(root, contract)), 1)
+            (src / "trigger_runtime.cpp").unlink()
+            # Migrating a legacy peer without shrinking the list is rejected.
+            (src / "ideology_runtime.cpp").write_text('#include "economy_api.h"\n')
+            errors = module_api.check_contract(root, contract)
+            self.assertTrue(any("stale entry ideology_runtime.cpp" in e for e in errors))
+            contract["legacy_includers"] = []
+            self.assertEqual(module_api.check_contract(root, contract), [])
+            # The API header must not pull in internals.
+            (src / "economy_api.h").write_text('#include "economy_runtime_internal_market_types.h"\n')
+            self.assertEqual(len(module_api.check_contract(root, contract)), 1)
+            (src / "economy_api.h").write_text('struct EconomyApi {};\n')
+            # A composition root needs a written reason.
+            contract["composition_roots"]["native_simulation_host.cpp"] = " "
+            self.assertEqual(len(module_api.check_contract(root, contract)), 1)
+
+    def test_module_api_shared_contract_headers_must_stay_leaf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "metric_mask.h").write_text('#include <cstdint>\nclass MetricMask {};\n')
+            (src / "economy_api.h").write_text('#include <cstdint>\n#include "metric_mask.h"\nstruct EconomyApi {};\n')
+            contract = {"module": "economy", "api_headers": ["economy_api.h"],
+                        "internal_header_patterns": ["economy_runtime*.h"],
+                        "owner_file_patterns": ["economy_*"], "composition_roots": {}, "legacy_includers": []}
+            shared = {"metric_mask.h": "leaf value type"}
+            # Unregistered: the API header may not include it.
+            self.assertEqual(len(module_api.check_contract(root, contract)), 1)
+            self.assertEqual(module_api.check_contract(root, contract, shared), [])
+            self.assertEqual(module_api.check_shared(root, shared), [])
+            # A shared header that grows an internal include is rejected.
+            (src / "metric_mask.h").write_text('#include "economy_runtime.h"\nclass MetricMask {};\n')
+            self.assertEqual(len(module_api.check_shared(root, shared)), 1)
+            (src / "metric_mask.h").write_text('class MetricMask {};\n')
+            # Reasons are mandatory and entries must exist.
+            self.assertEqual(len(module_api.check_shared(root, {"metric_mask.h": " "})), 1)
+            self.assertEqual(len(module_api.check_shared(root, {"missing.h": "x"})), 1)
+
+    def test_api_header_references_are_contracts_but_forward_handles_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "economy_api.h").write_text(
+                "class NativeEconomyRuntime;\nstruct EconomyApi { struct EffectCommand { int x; }; };\n")
+            (src / "modifier_runtime.cpp").write_text(
+                '#include "economy_api.h"\nEconomyApi::EffectCommand c;\nNativeEconomyRuntime *rt;\n')
+            debt = deps.measure(root)
+            self.assertEqual(list(debt), ["gdext/src/modifier_runtime.cpp|modifier->economy|type:NativeEconomyRuntime"])
+            everything = deps.measure(root, include_contracts=True)
+            self.assertIn("gdext/src/modifier_runtime.cpp|modifier->economy|include:economy_api.h", everything)
+            # A foreign internal include inside an API header stays debt.
+            (src / "economy_api.h").write_text('#include "country_runtime.h"\nstruct EconomyApi {};\n')
+            self.assertIn("gdext/src/economy_api.h|economy->country|include:country_runtime.h", deps.measure(root))
+            symbols = deps.api_symbols(root)
+            forged = {"version": 1, "references": {},
+                      "contract_references": {"gdext/src/modifier_runtime.cpp|modifier->economy|include:economy_runtime.h": 1}}
+            self.assertTrue(deps.baseline_errors(forged, symbols))
 
     def test_shared_nested_names_do_not_invent_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:

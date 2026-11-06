@@ -44,6 +44,59 @@ def domain_of(path: str) -> str | None:
     return None
 
 
+def api_domain(path: str) -> str | None:
+    """Domain whose public module API file this is (`<domain>_api.h/.cpp`)."""
+    match = re.fullmatch(r"(\w+)_api\.(?:h|cpp)", Path(path).name)
+    if match and match.group(1) in DOMAINS:
+        return match.group(1)
+    return None
+
+
+def api_symbols(root: Path) -> dict[str, str]:
+    """Types declared in module API headers, mapped to the owning domain."""
+    symbols: dict[str, str] = {}
+    for path in sorted((root / "gdext/src").glob("*_api.h")):
+        domain = api_domain(path.name)
+        if domain:
+            # Definitions only: a forward-declared runtime handle in an API
+            # header does not turn every use of that runtime into a contract.
+            for symbol in re.findall(r"\b(?:class|struct|enum\s+class|enum)\s+(\w+)[^;{}]*\{",
+                                     code_only(path.read_text(encoding="utf-8"))):
+                symbols.setdefault(symbol, domain)
+    return symbols
+
+
+def api_contract_key(key: str, symbols: dict[str, str],
+                     api_includes: dict[str, set[str]] | None = None) -> bool:
+    """A reviewed module-API reference: a peer including `<peer>_api.h`, a
+    type edge inside the owner's own API file, or a type defined in an API
+    header used by that API's own module or by a file that includes the API
+    header directly. Foreign includes inside an API file are never contracts.
+    Without `api_includes` (baseline validation) the include condition is not
+    checked."""
+    path, pair, symbol = key.split('|')
+    owner, peer = pair.split('->')
+    if symbol == f"include:{peer}_api.h":
+        return True
+    if not symbol.startswith("type:"):
+        return False
+    if api_domain(path) == owner:
+        return True
+    token = symbol[len("type:"):]
+    api_owner = symbols.get(token)
+    if api_owner is None:
+        return False
+    if api_includes is None:
+        return True
+    # A same-named nested type of another module (Country's own EffectCommand)
+    # is not credited unless this file actually reaches the API. Family leaves
+    # live under the economy prefix and share Economy's API types.
+    file_domain = domain_of(path)
+    if api_owner == file_domain or (api_owner == "economy" and file_domain == "family"):
+        return True
+    return api_owner in api_includes.get(path, set())
+
+
 def code_only(source: str) -> str:
     return NON_CODE.sub(lambda match: "\n" * match.group().count("\n"), source)
 
@@ -74,6 +127,7 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
     declared = {symbol: next(iter(owners)) for symbol, owners in declarations.items()
                 if len(owners) == 1}
     edges: Counter[str] = Counter()
+    api_includes: dict[str, set[str]] = {}
     for path, source in sources.items():
         owner = domain_of(path.name)
         if not owner:
@@ -93,6 +147,8 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
             if not code[match.start():match.end()].lstrip().startswith("#"):
                 continue
             target = match.group(1)
+            if api_domain(target):
+                api_includes.setdefault(name, set()).add(api_domain(target))
             peer = domain_of(target)
             if not include_contracts and owner == "economy" and target == "country_read_view.h":
                 continue  # Reviewed read contract; no mutable runtime surface.
@@ -111,6 +167,10 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
                     token = "CountryReadView::Snapshot"
             if peer and peer != owner:
                 edges[f"{name}|{owner}->{peer}|type:{token}"] += 1
+    if not include_contracts:
+        symbols = api_symbols(root)
+        edges = Counter({k: n for k, n in edges.items()
+                         if not api_contract_key(k, symbols, api_includes)})
     return dict(sorted(edges.items()))
 
 
@@ -153,7 +213,8 @@ def relocation_source(key: str, origin: str) -> str:
 
 
 def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, str],
-                     contracts: dict[str, int] | None = None) -> dict:
+                     contracts: dict[str, int] | None = None,
+                     symbols: dict[str, str] | None = None) -> dict:
     contracts = contracts or {}
     previous = baseline['references']
     allowances = dict(previous)
@@ -191,19 +252,22 @@ def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, s
     if errors:
         raise ValueError('\n'.join(errors))
     result = {'version': 2, 'metrics': new_metrics, 'references': current, 'contract_references': contracts, 'relocations': history}
-    errors = baseline_errors(result)
+    errors = baseline_errors(result, symbols)
     if errors:
         raise ValueError('\n'.join(errors))
     return result
 
 
-def baseline_errors(baseline: dict) -> list[str]:
+def baseline_errors(baseline: dict, symbols: dict[str, str] | None = None) -> list[str]:
     errors = []
+    symbols = symbols or {}
     references = baseline['references']
     if baseline.get('version') == 2 and baseline.get('metrics') != metrics(references, baseline.get('contract_references', {})):
         errors.append('baseline metrics do not match references')
     for key, count in baseline.get('contract_references', {}).items():
         path, pair, symbol = key.split('|')
+        if count > 0 and api_contract_key(key, symbols):
+            continue
         if (pair != 'economy->country' or domain_of(path) != 'economy' or count <= 0 or
                 symbol not in {'include:country_read_view.h', 'type:CountryReadView',
                                'type:CountryReadView::Snapshot'}):
@@ -257,7 +321,8 @@ def main() -> int:
     all_references = measure(args.root, include_contracts=True)
     contracts = dict(Counter(all_references) - Counter(current))
     baseline = json.loads(args.baseline.read_text(encoding='utf-8'))
-    errors = baseline_errors(baseline)
+    symbols = api_symbols(args.root)
+    errors = baseline_errors(baseline, symbols)
     errors += country_write_errors(args.root, baseline.get("country_writes", {}))
     exceptions = baseline.get("country_write_exceptions", {})
     for key in baseline.get("country_writes", {}):
@@ -266,7 +331,7 @@ def main() -> int:
     if args.write_baseline and not errors:
         try:
             moves = json.loads(args.moves.read_text()) if args.moves else {}
-            baseline = updated_baseline(current, baseline, moves, contracts)
+            baseline = updated_baseline(current, baseline, moves, contracts, symbols)
             baseline["country_writes"] = measure_country_writes(args.root)
             baseline["country_write_exceptions"] = {k: exceptions[k] for k in baseline["country_writes"]}
             args.baseline.write_text(json.dumps(baseline, indent=2) + '\n', encoding='utf-8')
