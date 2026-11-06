@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "module": "modifier",
+  "api_headers": [
+    "modifier_api.h"
+  ],
+  "internal_header_patterns": [
+    "modifier_runtime*.h"
+  ],
+  "owner_file_patterns": [
+    "modifier_*"
+  ],
+  "composition_roots": {
+    "world_ext.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_climate.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_country.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_economy.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_effect.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_ideology.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_modifier.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_resource.cpp": "Godot binding layer owns ModifierRuntime",
+    "world_ext_runtime_graph.cpp": "Godot binding layer owns ModifierRuntime"
+  },
+  "legacy_includers": [
+    "country_runtime.cpp",
+    "economy_runtime_building_commit.cpp",
+    "economy_runtime_colonization_kit.cpp",
+    "economy_runtime_configuration.cpp",
+    "economy_runtime_family_buff.cpp",
+    "economy_runtime_internal_external_types.inc",
+    "economy_runtime_persistence.cpp",
+    "economy_runtime_persistence_read.cpp",
+    "effect_runtime.cpp",
+    "ideology_runtime.cpp"
+  ]
+}

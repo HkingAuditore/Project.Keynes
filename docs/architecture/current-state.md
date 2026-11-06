@@ -1389,3 +1389,8 @@ L4未开始：经济cpp7989行、头2742行、host7010行与本轮起点相同�
 
 依赖棘轮当前为 506 keys、491 debt、`header_exposed=518`、`total=2209`、0 violations；新增 `.inc` 只供 Economy 实现聚合完整跨域类型，并在 `cpp_deps_baseline.json` 中有受控 relocation 记录。最终验证已完成：主链 runs=3、external runs=2、默认回归、full（7 场景）、annual、military-annual 全部 exit 0，所有回放进程 `first_difference=None`。
 
+
+
+## 军事适配层公开接口（2026-11-05）
+
+三个 `world_ext*military*.cpp` 通过 Economy / Country / Modifier 的公开接口调用它们，不再直接包含三个运行时实现头。军事核心和 `military_bridge.h` 未修改，主线程推进、调用顺序、数值与存档格式不变。Country / Modifier 的其他直接包含者仍分别有 19 / 10 个，不能称为全模块迁移完成；军事契约为 0 个待迁移项、2 个组合根。公开接口、共享值头及扫描规则见 [模块边界](module-boundaries.md#模块公开接口当前)。

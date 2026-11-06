@@ -12,11 +12,20 @@
 
 | 模块 | 接口头 | 待迁移的同级包含者 | 组合根 |
 |---|---|---|---|
-| Economy | `economy_api.h` / `economy_api.cpp`；宿主端口 `economy_host_port.h` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 39：22 个 `native_simulation_*`、17 个 `world_ext*` |
+| Economy | `economy_api.h` / `economy_api.cpp`；宿主端口 `economy_host_port.h` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 和三个军事适配文件已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 36：22 个 `native_simulation_*`、14 个 `world_ext*` |
+| Country | `country_api.h` / `country_api.cpp`（Military 组） | 19 | 32：20 个 `native_simulation_*`、12 个 `world_ext*` |
+| Modifier | `modifier_api.h` / `modifier_api.cpp`（Military 组） | 10 | 9 个 `world_ext*` |
+| Military | `military_bridge.h`（纯 C++ 契约） | 0 | 2：`world_ext.cpp`、`world_ext_military.cpp` |
 
-共享契约头（`tools/ci/module_api_shared.json`）：`metric_mask.h`、`effect_selector_cap.h`。
+共享契约头（`tools/ci/module_api_shared.json`）：`metric_mask.h`、`effect_selector_cap.h`、`country_read_view.h`、`derived_cell_layer.h`。后两者仅含系统头，分别提供国家只读快照和已发布的逐格修正值；后者保留既有独立构建器，不持有运行时。
 
-经济的 11 个宿主调用实现文件已经改用 `economy_host_port.h` 的 24 个纯虚方法；`NativeSimulationHost final` 实现端口并保持原有方法体和调用顺序。经济所有者文件直接包含 `native_simulation_host*.h` 的数量为 0，`forbidden_owner_includes.allowed` 为空。端口指针调用仍是虚调用，未改写热循环。Country 尚无接口头，`country_read_view.h` 是只读视图的前身。
+军事核心只依赖 `military_bridge.h` 和系统头；`military.json` 禁止军事所有者包含其他模块、宿主与 Godot 头（引号、尖括号都检查）。三个军事适配文件经由 `economy_api.h`、`country_api.h`、`modifier_api.h` 调用其他模块；宿主和 `MilitaryCore` 仍由适配层拥有。五项旧编译期探测均为 true，已改为公开函数调用，空对象判断和 split/pay 方法的实际返回值不变。
+
+Country 本轮只锁 `country_runtime*.h`：`country_core.h`、`country_core_apply.h`、`country_ai_core.h`、`country_ai_runtime.h` 的其他跨模块调用尚未迁移；`country_fiscal_return_intent.h`、`country_procurement_intent.h` 是已有请求契约，`country_read_view.h` 是共享只读契约，不将它们误标成实现头。
+
+依赖扫描已修复将 `template<class A, class B>` 参数识别为类型定义的误判。军事自测的局部变量 `A` 不再形成 `military->economy` 债务边；基线仅由 `check_cpp_deps.py --write-baseline` 收紧。当前 515 引用键（462 债务键）、header_exposed=524、total=2193；原基线为 517 键、total=2220，域对没有增加。
+
+经济的 11 个宿主调用实现文件已经改用 `economy_host_port.h` 的 24 个纯虚方法；`NativeSimulationHost final` 实现端口并保持原有方法体和调用顺序。经济所有者文件直接包含 `native_simulation_host*.h` 的数量为 0，`forbidden_owner_includes.allowed` 为空。端口指针调用仍是虚调用，未改写热循环。Country 已为军事提供窄接口；其他直接包含者保留在待迁移清单中。
 
 ## 允许方向与现存债务
 

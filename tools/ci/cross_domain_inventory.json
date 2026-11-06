@@ -25,7 +25,6 @@
     {"pair": "ideology->effect", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "ideology->family", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "ideology->modifier", "status": "已迁移", "note": "Modifier committed view -> Ideology，generation/day 护栏"},
-    {"pair": "military->economy", "status": "待逐函数核查", "note": "军事读取经济提交结果，仍需逐函数核查"},
     {"pair": "modifier->country", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "modifier->economy", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "modifier->effect", "status": "待逐函数核查", "note": "未统一视图"},

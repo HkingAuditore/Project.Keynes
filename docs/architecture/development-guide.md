@@ -9,7 +9,7 @@
 - **接口头内容**：只放 POD、枚举、常量、前向声明和 `<module>_api::` 自由函数声明。接口头能包含三类头：`<系统头>`、其他模块的 `*_api.h`、登记过的共享契约头。不得包含任何内部头，由 `check_module_api.py` 机检。
 - **共享契约头**：多个模块经接口交换的叶子值类型，例如 `metric_mask.h`、`effect_selector_cap.h`，登记在 `tools/ci/module_api_shared.json`（`{头文件: 原因}`）。这些头本身只能包含系统头或其他共享契约头，护栏同样检查。新增一项前先确认它不依赖任何模块的内部状态。
 - **Economy 现状**：`gdext/src/economy_api.h` 定义 `struct EconomyApi`（命令码 `COMMAND_*`、`FAMILY_METRIC_*`、`EFFECT_PREFLIGHT_*`、`EffectCommand`、`CountryClassOpinionSnapshot`、`CountryAiColonizationStat`、`is_registered_economy_effect_opcode`）。`NativeEconomyRuntime` 继承 `EconomyApi`，所以经济内部仍可写 `NativeEconomyRuntime::COMMAND_X`；外部模块写 `EconomyApi::COMMAND_X`。
-- **调用经济方法**：外部模块写 `economy_api::method(*economy, args...)`，声明在 `economy_api.h`，实现在 `economy_api.cpp`，每个函数只转发到一个成员，不放逻辑。需要新的读取或请求时，在这两个文件里各加一个转发函数，按使用方分组。
+- **调用经济方法**：外部模块写 `economy_api::method(*economy, args...)`，声明在 `economy_api.h`，实现在 `economy_api.cpp`，每个函数只转发到一个成员，不放逻辑。需要新的读取或请求时，在这两个文件里各加一个转发函数，按使用方分组。接口头按调用方分组，新调用方在对应模块的接口头里加自己的组。
 - **宿主端口**：模块调用宿主只能经由 `<module>_host_port.h`；新增宿主能力时，在端口中加入纯虚方法，再由宿主类用 `override` 实现。端口只包含系统头和不含宿主类的协议类型头，不得把宿主实现头带回模块。模块契约的 `forbidden_owner_includes` 禁止所有者文件包含宿主头；例外必须说明原因，移除包含后必须同时删除例外。
 - **把一个外部文件迁到接口**：把 `#include "economy_runtime.h"` 换成 `#include "economy_api.h"`；`NativeEconomyRuntime::X`（类型或常量）改成 `EconomyApi::X`；`economy->m(a)` 改成 `economy_api::m(*economy, a)`；然后从 `tools/ci/module_api/economy.json` 的 `legacy_includers` 删掉该文件（不删会报"过期条目"）。
 - **模块自己的组件**：被模块内部头包含、读写模块私有状态的文件（例如 `trade_visual_cache.*`），不是外部包含者，而是登记进该模块的 `owner_file_patterns`。

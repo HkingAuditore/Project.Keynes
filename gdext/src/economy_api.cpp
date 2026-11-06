@@ -131,5 +131,35 @@ void notify_era_milestone_activated(NativeEconomyRuntime &economy,
     economy.notify_era_milestone_activated(country_handle);
 }
 
+// ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
+void military_read_cell_view(const NativeEconomyRuntime &economy, EconomyMilitaryCellView &out, int32_t good_count) { economy.military_read_cell_view(out, good_count); }
+void military_read_market(const NativeEconomyRuntime &economy, int32_t good, std::vector<int32_t> &out_cells, std::vector<int64_t> &out_sellable, std::vector<int64_t> &out_price) { economy.military_read_market(good, out_cells, out_sellable, out_price); }
+int32_t military_soldier_profession(NativeEconomyRuntime &economy) { return economy.military_soldier_profession(); }
+int32_t military_unemployed_profession(const NativeEconomyRuntime &economy) { return economy.military_unemployed_profession(); }
+int32_t military_merchant_profession(const NativeEconomyRuntime &economy) { return economy.military_merchant_profession(); }
+int64_t military_soldier_living_cost(const NativeEconomyRuntime &economy, int32_t country_slot) { return economy.military_soldier_living_cost(country_slot); }
+uint64_t military_cohort_handle_any_ethnicity(const NativeEconomyRuntime &economy, int32_t cell, int32_t profession_id) { return economy.military_cohort_handle_any_ethnicity(cell, profession_id); }
+uint64_t military_cohort_handle_from_professions(const NativeEconomyRuntime &economy, int32_t cell, const int32_t *professions, int32_t count) { return economy.military_cohort_handle_from_professions(cell, professions, count); }
+int64_t military_soldier_heads(const NativeEconomyRuntime &economy, int32_t cell) { return economy.military_soldier_heads(cell); }
+int32_t military_cohort_signature(const NativeEconomyRuntime &economy, uint64_t handle) { return economy.military_cohort_signature(handle); }
+int32_t military_cohort_ethnicity(const NativeEconomyRuntime &economy, uint64_t handle) { return economy.military_cohort_ethnicity(handle); }
+int32_t military_signature_for_cell_ethnicity(const NativeEconomyRuntime &economy, int32_t cell, int32_t profession) { return economy.military_signature_for_cell_ethnicity(cell, profession); }
+int32_t military_signature_for(const NativeEconomyRuntime &economy, int32_t profession_id, int32_t ethnicity_id) { return economy.military_signature_for(profession_id, ethnicity_id); }
+int64_t military_collect_cash(NativeEconomyRuntime &economy, int64_t country_handle, int64_t amount) { return economy.military_collect_cash(country_handle, amount); }
+bool military_command_window_open(const NativeEconomyRuntime &economy) { return economy.military_command_window_open(); }
+int32_t set_military_ration_satisfaction(NativeEconomyRuntime &economy, const std::vector<int32_t> &cells, const std::vector<int32_t> &q16) { return economy.set_military_ration_satisfaction(cells, q16); }
+void set_military_army_ration(NativeEconomyRuntime &economy, uint64_t army_handle, int32_t ration_q16) { economy.set_military_army_ration(army_handle, ration_q16); }
+int64_t military_army_population(const NativeEconomyRuntime &economy, uint64_t army_handle) { return economy.military_army_population(army_handle); }
+int64_t military_army_funds(const NativeEconomyRuntime &economy, uint64_t army_handle) { return economy.military_army_funds(army_handle); }
+bool military_army_lane_split_supported(const NativeEconomyRuntime &economy) { return economy.military_army_lane_split_supported(); }
+bool military_army_lane_pay_supported(const NativeEconomyRuntime &economy) { return economy.military_army_lane_pay_supported(); }
+int32_t profession_count(const NativeEconomyRuntime &economy) { return economy.profession_count(); }
+int64_t last_committed_day(const NativeEconomyRuntime &economy) { return economy.last_committed_day(); }
+bool epoch_active(const NativeEconomyRuntime &economy) { return economy.epoch_active(); }
+godot::Dictionary poll_events(const NativeEconomyRuntime &economy, const godot::Dictionary &opts) { return economy.poll_events(opts); }
+godot::Dictionary trace_report(const NativeEconomyRuntime &economy) { return economy.trace_report(); }
+bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on) { return economy.set_cell_tag_override_for_test(tag_key, cell, on); }
+void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy) { economy.clear_cell_tag_overrides_for_test(); }
+
 } // namespace economy_api
 } // namespace pk
