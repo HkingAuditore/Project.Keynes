@@ -22,15 +22,6 @@
     "world_ext_runtime_graph.cpp": "Godot binding layer owns ModifierRuntime"
   },
   "legacy_includers": [
-    "country_runtime.cpp",
-    "economy_runtime_building_commit.cpp",
-    "economy_runtime_colonization_kit.cpp",
-    "economy_runtime_configuration.cpp",
-    "economy_runtime_family_buff.cpp",
-    "economy_runtime_internal_external_types.inc",
-    "economy_runtime_persistence.cpp",
-    "economy_runtime_persistence_read.cpp",
-    "effect_runtime.cpp",
-    "ideology_runtime.cpp"
+    "country_runtime.cpp"
   ]
 }

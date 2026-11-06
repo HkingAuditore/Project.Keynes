@@ -5,7 +5,7 @@
 #include "selector_cell_cap.h"
 #include "economy_effect_forward.h"
 #include "effect_runtime.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "pk_log.h"
 
 #include <algorithm>
@@ -149,7 +149,7 @@ int32_t NativeEconomyRuntime::family_scoped_output_factor_q16(
         return Q16_ONE;
     return static_cast<int32_t>(std::clamp<int64_t>(
         static_cast<int64_t>(std::llround(
-            _modifier_runtime->effective_value(ModifierRuntime::ECONOMY,
+            modifier_api::effective_value(*_modifier_runtime, ModifierApi::ECONOMY,
                 _family_scoped_output_stat_id, family_handle, 0, 1.0) *
                 Q16_ONE)),
         0, 4 * Q16_ONE));

@@ -12,7 +12,7 @@
 // Authority-aware instance queries: the ideology report and the ideology restore
 // both ask whether an instance still exists / has fired.
 #include "economy_effect_forward.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "runtime_effect_pod.h"
 #include "runtime_ideology_draw_kernel.h"
 
@@ -2340,10 +2340,10 @@ CellProgramFacts NativeIdeologyRuntime::cell_program_facts_for(
             // synthesised city families are produced by `compile_native_catalog`,
             // so they resolve here exactly like the .tres ones -- that is the
             // 101-of-325 trap §4.4 condition 3 names.
-            std::vector<ModifierRuntime::ResolvedTerm> terms;
+            std::vector<ModifierApi::ResolvedTerm> terms;
             row.definition_resolved =
                 _modifier_runtime != nullptr &&
-                _modifier_runtime->resolve_definition_terms(
+                modifier_api::resolve_definition_terms(*_modifier_runtime,
                     command.definition_key, terms);
             // City stats are forced SUM by the catalog validator
             // (`modifier_catalog.gd:448-457`), so a resolved city term is SUM by
@@ -2372,12 +2372,12 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
             _modifier_runtime == nullptr)
         return;
     for (const EffectRuntime::ProgramModifierCommand &command : commands) {
-        std::vector<ModifierRuntime::ResolvedTerm> terms;
-        if (!_modifier_runtime->resolve_definition_terms(
+        std::vector<ModifierApi::ResolvedTerm> terms;
+        if (!modifier_api::resolve_definition_terms(*_modifier_runtime,
                 command.definition_key, terms))
             continue;  // counted by the materializer's missing_stat
         const int64_t magnitude = std::clamp<int64_t>(
-            command.value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16);
+            command.value_q16, 0, ModifierApi::MAX_MAGNITUDE_Q16);
         // ── M3: a metric-fed ramp must stay a LIVE function ──────
         //
         // `command.value_q16` is only meaningful when the magnitude is
@@ -2425,7 +2425,7 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
                 }
             }
         }
-        for (const ModifierRuntime::ResolvedTerm &term : terms) {
+        for (const ModifierApi::ResolvedTerm &term : terms) {
             DerivedProgramContribution::Term row;
             row.stat_id = term.stat_id;
             row.operation = term.operation;
@@ -2469,9 +2469,9 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
                 row.add = 0.0;
                 row.factor = 1.0;
             } else {
-                row.add = term.operation == ModifierRuntime::ADD
+                row.add = term.operation == ModifierApi::ADD
                     ? term.value * stacks * scaled_magnitude : 0.0;
-                row.factor = term.operation == ModifierRuntime::ADD
+                row.factor = term.operation == ModifierApi::ADD
                     ? 1.0 : std::pow(term.value, stacks);
             }
             out.push_back(row);
@@ -4280,15 +4280,15 @@ int64_t NativeIdeologyRuntime::reroll_cost_for(uint64_t draw_sequence,
 int32_t NativeIdeologyRuntime::resolve_ideology_stat_id(
         const std::string &key, int32_t &cache) const {
     if (cache >= 0 || key.empty() || _modifier_runtime == nullptr ||
-            !_modifier_runtime->configured()) return cache;
-    cache = _modifier_runtime->stat_id_for_key(key);
+            !modifier_api::configured(*_modifier_runtime)) return cache;
+    cache = modifier_api::stat_id_for_key(*_modifier_runtime, key);
     return cache;
 }
 int32_t NativeIdeologyRuntime::ideology_stat_factor_q16(
         const std::string &key, int32_t &cache, uint64_t handle) const {
     if (resolve_ideology_stat_id(key, cache) < 0)
         return static_cast<int32_t>(Q16_ONE);
-    double factor = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double factor = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 1.0);
     if (!std::isfinite(factor)) factor = 1.0;
     return static_cast<int32_t>(std::lround(std::clamp(factor, 0.0, 4.0) * 65536.0));
@@ -4296,7 +4296,7 @@ int32_t NativeIdeologyRuntime::ideology_stat_factor_q16(
 int32_t NativeIdeologyRuntime::ideology_stat_bp(
         const std::string &key, int32_t &cache, uint64_t handle) const {
     if (resolve_ideology_stat_id(key, cache) < 0) return 0;
-    double value = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double value = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 0.0);
     if (!std::isfinite(value)) return 0;
     return static_cast<int32_t>(std::lround(std::clamp(value, 0.0, 10000.0)));
@@ -4306,7 +4306,7 @@ int32_t NativeIdeologyRuntime::ideology_stat_count(
         const std::string &key, int32_t &cache, uint64_t handle,
         int32_t cap) const {
     if (resolve_ideology_stat_id(key, cache) < 0) return 0;
-    double value = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double value = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 0.0);
     if (!std::isfinite(value)) return 0;
     return static_cast<int32_t>(std::lround(std::clamp(
@@ -4342,19 +4342,19 @@ bool NativeIdeologyRuntime::program_writes_school_strength(
                 _school_strength_factor_stat_keys.size())) {
         return false;
     }
-    const int32_t stat_id = _modifier_runtime->stat_id_for_key(
+    const int32_t stat_id = modifier_api::stat_id_for_key(*_modifier_runtime,
         _school_strength_factor_stat_keys[static_cast<size_t>(school_index)]);
     if (stat_id < 0) return false;
     std::vector<EffectRuntime::ProgramModifierCommand> commands;
     if (!_effect_runtime->program_modifier_commands(program, commands))
         return false;
     for (const EffectRuntime::ProgramModifierCommand &command : commands) {
-        std::vector<ModifierRuntime::ResolvedTerm> terms;
-        if (!_modifier_runtime->resolve_definition_terms(
+        std::vector<ModifierApi::ResolvedTerm> terms;
+        if (!modifier_api::resolve_definition_terms(*_modifier_runtime,
                 command.definition_key, terms)) {
             continue;
         }
-        for (const ModifierRuntime::ResolvedTerm &term : terms)
+        for (const ModifierApi::ResolvedTerm &term : terms)
             if (term.stat_id == stat_id) return true;
     }
     return false;
@@ -4853,8 +4853,8 @@ void NativeIdeologyRuntime::accrue_points_from(
         if (resolve_ideology_stat_id(
                 _opinion_factor_floor_stat_key,
                 _opinion_factor_floor_stat_id) >= 0) {
-            double floor_value = _modifier_runtime->effective_value(
-                ModifierRuntime::COUNTRY, _opinion_factor_floor_stat_id,
+            double floor_value = modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::COUNTRY, _opinion_factor_floor_stat_id,
                 handle, 0, 0.5);
             if (!std::isfinite(floor_value)) floor_value = 0.5;
             opinion_floor_q16 = static_cast<int32_t>(std::lround(
@@ -4864,9 +4864,9 @@ void NativeIdeologyRuntime::accrue_points_from(
         ledger.opinion_factor_q16 = ideology_opinion_factor_q16(
             satisfaction, opinion_floor, 0);
         double factor = 1.0;
-        if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+        if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime) &&
                 !_point_gain_stat_key.empty())
-            factor = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+            factor = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
                 _point_gain_stat_key.c_str(), handle, 0, 1.0);
         if (!std::isfinite(factor)) factor = 1.0;
         factor = std::clamp(factor, 0.0, 4.0);
@@ -5513,10 +5513,10 @@ bool NativeIdeologyRuntime::export_pod_catalog(
     catalog.reroll_cost_stat_id = -1;
     catalog.school_strength_factor_stat_ids.assign(
         _school_strength_factor_stat_keys.size(), -1);
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)) {
         if (!_point_gain_stat_key.empty())
             catalog.point_gain_stat_id =
-                _modifier_runtime->stat_id_for_key(_point_gain_stat_key);
+                modifier_api::stat_id_for_key(*_modifier_runtime, _point_gain_stat_key);
         catalog.point_population_factor_stat_id = resolve_ideology_stat_id(
             _point_population_factor_stat_key,
             _point_population_factor_stat_id);
@@ -6843,7 +6843,7 @@ uint64_t NativeIdeologyRuntime::compute_execution_contract_hash() const {
     hash = mixv(hash, _effect_runtime != nullptr
         ? _effect_runtime->catalog_hash() : uint64_t{0});
     hash = mixv(hash, _modifier_runtime != nullptr
-        ? _modifier_runtime->catalog_hash() : uint64_t{0});
+        ? modifier_api::catalog_hash(*_modifier_runtime) : uint64_t{0});
     return hash;
 }
 
@@ -8232,7 +8232,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
     DerivedCellFront front;
     DerivedMaterializeReport report;
     bool skipped = false;
-    const DerivedCellFront *previous = _modifier_runtime->derived_cell_front();
+    const DerivedCellFront *previous = modifier_api::derived_cell_front(*_modifier_runtime);
     if (!_derived_rebuild_job->finish(previous, front, report, skipped)) {
         error = "derived_cell_layer_finish_failed";
         return true;
@@ -8262,7 +8262,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
     _ramp_terms_deferred = report.ramp_terms_deferred;
     if (!skipped) {
         bool install_skipped = false;
-        _modifier_runtime->install_derived_cell_layer(
+        modifier_api::install_derived_cell_layer(*_modifier_runtime,
             std::move(front), 0, install_skipped, error);
         // §18.5: the sample day of the projection that is now serving readers. Read
         // back from the INSTALLED front rather than from the job argument, because
@@ -8270,7 +8270,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
         // install can be refused (`derived_cell_layer_identity_mismatch`), and a build
         // in flight is not a projection yet. Reading it back makes this member equal to
         // `derived_cell_front()->sample_day` by construction instead of by assumption.
-        const DerivedCellFront *serving = _modifier_runtime->derived_cell_front();
+        const DerivedCellFront *serving = modifier_api::derived_cell_front(*_modifier_runtime);
         _derived_basis_sample_day = serving != nullptr ? serving->sample_day : -1;
     }
     // ── the step does not END until the front is built and installed ────────────

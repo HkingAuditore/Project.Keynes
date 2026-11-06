@@ -6,7 +6,7 @@
 #include "economy_runtime_publication_codec.h"
 #include "economy_authority_transfer.h"
 #include "effect_runtime.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "runtime_economy_ecp2.h"
 #include "pk_log.h"
 #include "runtime_switch_registry.h"
@@ -251,7 +251,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     _save.fiscal_country_count = country_snapshot.country_count;
     std::string modifier_error;
     if (_modifier_runtime != nullptr &&
-        !_modifier_runtime->serialize_domain(ModifierRuntime::ECONOMY,
+        !modifier_api::serialize_domain(*_modifier_runtime, ModifierApi::ECONOMY,
                                               _save.modifier_bytes,
                                               modifier_error)) {
         _save = {};
@@ -1174,7 +1174,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
         std::string modifier_restore_error;
-        if (!_modifier_runtime->restore_domain(ModifierRuntime::ECONOMY,
+        if (!modifier_api::restore_domain(*_modifier_runtime, ModifierApi::ECONOMY,
                                                _restore.modifier_bytes,
                                                modifier_restore_error,
                                                _restore.schema_version == 22)) {
@@ -1184,7 +1184,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     } else if (_modifier_runtime != nullptr) {
-        _modifier_runtime->clear_domain(ModifierRuntime::ECONOMY);
+        modifier_api::clear_domain(*_modifier_runtime, ModifierApi::ECONOMY);
     }
     if (_modifier_runtime != nullptr) refresh_building_modifier_factors();
     {

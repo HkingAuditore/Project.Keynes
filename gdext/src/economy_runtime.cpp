@@ -1890,7 +1890,7 @@ void NativeEconomyRuntime::clear_family_branch_effects(uint64_t branch_handle) {
             if (binding.branch_handle != branch_handle ||
                 binding.magnitude_q16 == 0) continue;
             std::string error;
-            _modifier_runtime->queue_family_group_effect_remove(
+            modifier_api::queue_family_group_effect_remove(*_modifier_runtime,
                 binding.definition_key, family_influences().cell[branch],
                 static_cast<uint64_t>(family_influences().stable_id[branch]),
                 _current_day.get(), error);
@@ -1929,7 +1929,7 @@ void NativeEconomyRuntime::retire_person(int32_t person_index) {
                           generation, _current_day.get(), error);
     }
     if (_modifier_runtime != nullptr)
-        _modifier_runtime->unregister_person_target(person_handle);
+        modifier_api::unregister_person_target(*_modifier_runtime, person_handle);
     // Releasing the slot bumps the generation, so the retired handle can never
     // match again. Orphaned need rows are dropped by one compaction pass
     // instead of one full-array erase per retirement.
@@ -1945,7 +1945,7 @@ void NativeEconomyRuntime::register_person_effect(int32_t person_index) {
         person_index < 0 || person_index >= static_cast<int32_t>(persons_store().active.size()) ||
         persons_store().active[person_index] == 0) return;
     const uint64_t person_handle = persons_store().handle_for_index(person_index);
-    _modifier_runtime->register_person_target(person_handle);
+    modifier_api::register_person_target(*_modifier_runtime, person_handle);
     uint64_t hash = trace_hash_mix(1469598103934665603ULL,
         static_cast<uint64_t>(persons_store().stable_id[person_index]));
     hash = trace_hash_mix(hash, 0x504552534f4eULL);

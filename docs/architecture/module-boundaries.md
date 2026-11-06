@@ -14,7 +14,7 @@
 |---|---|---|---|
 | Economy | `economy_api.h` / `economy_api.cpp`；宿主端口 `economy_host_port.h` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 和三个军事适配文件已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 36：22 个 `native_simulation_*`、14 个 `world_ext*` |
 | Country | `country_api.h` / `country_api.cpp`（Military 组） | 19 | 32：20 个 `native_simulation_*`、12 个 `world_ext*` |
-| Modifier | `modifier_api.h` / `modifier_api.cpp`（Military 组） | 10 | 9 个 `world_ext*` |
+| Modifier | `modifier_api.h` / `modifier_api.cpp`（Military/Economy/Effect/Ideology 组） | 1 | 9 个 `world_ext*` |
 | Military | `military_bridge.h`（纯 C++ 契约） | 0 | 2：`world_ext.cpp`、`world_ext_military.cpp` |
 
 共享契约头（`tools/ci/module_api_shared.json`）：`metric_mask.h`、`effect_selector_cap.h`、`country_read_view.h`、`derived_cell_layer.h`。后两者仅含系统头，分别提供国家只读快照和已发布的逐格修正值；后者保留既有独立构建器，不持有运行时。
