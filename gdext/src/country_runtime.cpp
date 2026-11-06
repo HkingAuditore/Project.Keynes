@@ -8756,14 +8756,11 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
     if (intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE) {
         if (_economy_runtime == nullptr)
             return reject("country_peer_economy_runtime_unavailable");
-        if (economy_api::committed_generation(*_economy_runtime) <
-                intent.peer_generation)
+        if (economy_api::committed_generation(*_economy_runtime) < intent.peer_generation)
             return reject("country_peer_adapter_economy_generation_regressed");
-        economy_api::notify_era_milestone_activated(*_economy_runtime,
-                                                    intent.target_handle);
+        economy_api::notify_era_milestone_activated(*_economy_runtime, intent.target_handle);
         result.code = CountryPeerResultCode::APPLIED;
-        result.committed_peer_generation =
-            economy_api::committed_generation(*_economy_runtime);
+        result.committed_peer_generation = economy_api::committed_generation(*_economy_runtime);
         ++_peer_results_consumed;
         return result;
     }
