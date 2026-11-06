@@ -2,21 +2,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Water surface helpers extracted from world_map.gdshader (2026-05-08 refactor).
 // Contents:
-//   - Gerstner-Lite wave constants
-//   - water_surface_height        : height field for differential normals
-//   - sample_water_normal         : central-diff normal from height field + smooth strength envelope
-//   - water_domain_warp           : ShaderToy 3tyBRh-style coord warp
-//   - water_shade_lines           : legacy sin-band stripes (kept for API compat)
-//   - water_calm_brightness       : low-contrast fbm brightness noise (±8%)
-//   - water_calm_tint             : low-contrast fbm cold/warm tint (±3%)
-//   - water_biome_weights         : 3×3 neighborhood soft weights for biome blend
+//   - 旧版正弦波浪（Gerstner-Lite）：water_surface_height / sample_water_normal。
+//                                   【仅陆地河流水面使用】；海洋已不走这条路径。
+//   - sample_flow_water_normal    : 【海洋波浪入口】= 底层涟漪（哈希值噪声 + 两相位 flowmap）
+//                                   + 顺流洋流丝 + 海况强度场。
+//                                   （离散浪头笔触 2026-11-06 停用，代码以注释形式留档）
+//                                   输出法线 / 波高 / 洋流丝；冰面剔除。
+//   - water_shade_lines           : 湖面横向波痕（水面管线仍在用）
+//   - water_biome_weights         : 3×3 邻域 biome 软权重
+//   （water_domain_warp / water_calm_brightness / water_calm_tint 已确认零调用，2026-11 清理删除）
 //
 // Dependencies (caller-side MUST declare BEFORE #include):
 //   - sampler2D map_index_atlas       (for water_biome_weights biome id lookup)
 //   - int       B_LAKE / B_REEF / B_KELP / B_SEA_ICE  (biome id constants)
 //   - fbm / value_noise / voronoi_cell / hash21       (from common_noise.gdshaderinc)
 //
-// No behavior change vs. the pre-refactor inline version — pure text move.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── Water Visual Overhaul：统一水面波浪高度场（Gerstner-Lite） ──────────
@@ -61,10 +61,6 @@ vec2 water_cyl_noise_p(vec2 wp, float freq, vec2 ofs) {
 
 float water_fbm_cyl(vec2 wp, float freq, vec2 ofs, int octaves) {
 	return fbm(water_cyl_noise_p(wp, freq, ofs), octaves);
-}
-
-float water_value_noise_cyl(vec2 wp, float freq, vec2 ofs) {
-	return value_noise(water_cyl_noise_p(wp, freq, ofs));
 }
 
 float water_periodic_wave_phase(vec2 wp, vec2 dir, float k) {
@@ -258,50 +254,307 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	return normalize(vec3(-dhx, -dhy, 1.0));
 }
 
-vec2 water_flow_phase_grad(vec2 dir, float k) {
-	if (wrap_period_x <= 0.0001) {
-		return dir * k;
-	}
-	float desired_cycles = dir.x * k * wrap_period_x / WATER_WRAP_TAU;
-	float cycles = floor(abs(desired_cycles) + 0.5);
-	float gx = (cycles > 0.0) ? sign(desired_cycles) * cycles * WATER_WRAP_TAU / wrap_period_x : 0.0;
-	return vec2(gx, dir.y * k);
+// ═══════════════════════════════════════════════════════════════════════════
+// [water-wave-marks 2026-11-06] 第五版：离散「浪头笔触」，取代正弦平面波叠加。
+//
+// 前四版的共同问题：任何「正弦叠加」都是处处连续、周期规整的纹理（用户评价：太规律、
+// 太连续、丑），而且每像素要几十次 sin/cos + atan + 多次噪声采样（太贵）。
+//
+// 这一版换成剪纸 / 版画式的离散笔触：
+//   · 空间切成斜切格（x 方向按周期取整 ⇒ 环绕缝连续），每格用哈希决定「有没有浪头」
+//     「出生相位」「位置」「朝向抖动」「长度」「弯曲方向」；约 15%~60% 的格子有笔触，
+//     其余是平静海面 ⇒ 稀疏、不均、不连续；
+//   · 每个笔触是一小段弧形浪脊（前亮后暗），沿浪向漂移，生命周期 sin² 式淡入淡出；
+//   · 浪向 = 背景浪向（单倍频低频噪声）向洋流方向靠拢；每格再随机偏转 ±0.55 rad，
+//     所以同一片海里笔触朝向不一，但整体顺流；
+//   · 洋流丝：同一函数的「顺流拉长」变体，快速顺流漂移，静帧也能读出流向；
+//   · 成本：每层 2 次 ALU 哈希 + 少量乘加，无 sin/cos / atan / 额外纹理采样；
+//     整个函数只剩 2 次 noise_tex 采样（背景浪向 + 海况分区）。
+// ═══════════════════════════════════════════════════════════════════════════
+const float WATER_FLOW_PRESENCE_LO = 0.015;
+const float WATER_FLOW_PRESENCE_HI = 0.16;
+
+vec3 water_hash32(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+	p3 += dot(p3, p3.yxz + 33.33);
+	return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-vec3 sample_flow_water_normal(vec2 wp, float t, vec2 flow, float amp_scale,
-		float freq_scale, float noise_lf) {
-	vec2 d1 = length(flow) > 0.035 ? normalize(flow) : normalize(WATER_WAVE_DIR_A);
-	float k1 = WATER_WAVE_FREQ_A * freq_scale * water_base_normal_scale;
-	float p1 = water_periodic_wave_phase(wp, d1, k1) - t * WATER_WAVE_SPEED_A;
-	float noise_gain = mix(0.78, 1.22, clamp(noise_lf, 0.0, 1.0));
-	vec2 grad = cos(p1) * WATER_WAVE_AMP_A * water_flow_phase_grad(d1, k1);
-	if (visual_quality >= 2) {
-		vec2 side = vec2(-d1.y, d1.x);
-		vec2 d2 = normalize(d1 * 0.58 + side * 0.82);
-		float k2 = WATER_WAVE_FREQ_B * freq_scale * water_base_normal_scale;
-		float p2 = water_periodic_wave_phase(wp, d2, k2) - t * WATER_WAVE_SPEED_B;
-		grad += cos(p2) * WATER_WAVE_AMP_B * water_flow_phase_grad(d2, k2);
+// 圆柱噪声坐标：与 water_cyl_noise_p 数值一致，但 cos/sin 由调用方算一次后传入。
+vec2 water_cyl_p_cs(vec2 cs, vec2 wp, float freq, vec2 ofs) {
+	if (wrap_period_x <= 0.0001) {
+		return wp * freq + ofs;
 	}
-	// Keep the broad wave set readable without amplifying residual Flowmap cell edges.
-	grad *= 12.0 * water_base_normal_strength * amp_scale * noise_gain;
+	float radius = max(abs(freq) * wrap_period_x / WATER_WRAP_TAU, 1e-4);
+	return vec2(cs.x * radius, cs.y * radius + wp.y * freq) + ofs;
+}
+
+// 一层笔触。返回 xy = 高度场对世界坐标的梯度，z = 高度（浪脊为正、后方浪谷为负），w = 笔触强度 [0,1]。
+//   cell / shear：格尺寸（世界单位）与斜切系数（打破格线）；dirv：浪向（单位向量）；
+//   streak：true 时笔触沿 dirv 拉长（洋流丝），false 时垂直 dirv 拉长（浪脊）；
+//   cover：有笔触的格子比例；rate / travel：生命周期频率与生命内的漂移距离（格宽倍数）；
+//   width_frac / len_frac：笔触厚度 / 半长（格宽倍数，逐格再抽一次倍率）；fp：屏幕像素对应的
+//   世界长度（调用方在分支外求值）：笔触比 1 像素细时整体淡出，避免远景闪烁；
+//   jit：0..1 的低频抖动（复用入口静态噪声，零采样）：逐笔轻重不同，轮廓不再是同一条解析曲线。
+vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv, bool streak,
+		float cover, float t, float rate, float travel,
+		float width_frac, float len_frac, float fp, float seed, float jit) {
+	bool wrapped = wrap_period_x > 0.0001;
+	float n_cells = wrapped ? max(floor(wrap_period_x / cell + 0.5), 1.0) : 1.0;
+	float cw = wrapped ? wrap_period_x / n_cells : cell;
+	vec2 q = vec2((wp.x + shear * wp.y) / cw, wp.y / cell);
+	vec2 ci = floor(q);
+	vec2 f = q - ci;
+	vec2 id = vec2(wrapped ? mod(ci.x, n_cells) : ci.x, ci.y) + vec2(seed, seed * 1.37);
+	// 生命周期序号参与哈希：同一格每个周期长出**不同**的笔触（有无 / 位置 / 长度 / 弯曲都重抽）。
+	// 相位偏移 h0.x 只由格子决定（否则周期边界会错位）；周期边界处 env=0，重抽不可见。
+	float ph = t * rate + water_hash32(id * 0.731 + 5.3).x;
+	float life = fract(ph);
+	vec2 cyc = vec2(mod(floor(ph), 997.0));
+	vec3 ha = water_hash32(id + cyc * vec2(7.13, 3.77));
+	float present = smoothstep(cover, cover - 0.10, ha.z);
+	if (present <= 0.0) {
+		return vec4(0.0);
+	}
+	vec3 hb = water_hash32((id + cyc * vec2(7.13, 3.77)) * 1.713 + 31.7);
+	// 平台式包络：生命中段近满强度，前后各 22% 淡入淡出（旧的 (4x(1-x))² 大部分时间很暗）。
+	float env = clamp(min(life, 1.0 - life) * 4.5, 0.0, 1.0);
+	env = env * env * (3.0 - 2.0 * env);
+	// 长度用 hb.z、粗细用 hb.x、弯曲用二者混合：旧版"越长弯得越厉害"的耦合被解开，
+	// 形状不再是一族缩放后的同一条曲线。
+	float L = len_frac * cell * (0.55 + 0.90 * hb.z);
+	// 格内位置：长笔触必须靠中间站（否则两头被格线切掉），短笔触可以到处跑。
+	// 于是小碎浪散得开、大浪脊铺得稳，行与行之间不再对齐。
+	float inset = clamp(L / max(cell, 1e-4) * 0.5 + 0.06, 0.06, 0.40);
+	vec2 dq = f - vec2(mix(inset, 1.0 - inset, ha.x), mix(inset, 1.0 - inset, ha.y));
+	vec2 d = vec2(dq.x * cw - shear * dq.y * cell, dq.y * cell);
+	float e = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+	// 每格浪向抖动（小角度近似，不用 sin/cos）。±0.55 rad：同片海里朝向不再像排线。
+	float a = (hb.y - 0.5) * (streak ? 0.30 : 1.10);
+	float ca = 1.0 - 0.5 * a * a;
+	float sa = a - a * a * a * 0.1666667;
+	vec2 dd = vec2(dirv.x * ca - dirv.y * sa, dirv.x * sa + dirv.y * ca);
+	d -= dd * ((life - 0.5) * travel * cell);
+	float uu = dot(d, dd);
+	float ss = dot(d, vec2(-dd.y, dd.x));
+	if (streak) {
+		float tmp = uu;
+		uu = ss;
+		ss = tmp;
+	}
+	// 粗细倍率：逐格 0.62~1.38，同一层不再所有笔触一样粗。
+	float wr = 0.62 + 0.76 * hb.x;
+	float w_nom = width_frac * cell * wr;
+	float w = max(w_nom, fp * 1.1);
+	float aa = smoothstep(0.30, 1.10, w_nom / max(fp, 1e-4));
+	float cr = fract(hb.x * 3.71 + hb.z * 1.93);
+	float curve = (cr - 0.5) * 2.0 * ss * ss / (L * 2.4);
+	float xu = (uu - curve) / w;
+	float b = max(1.0 - xu * xu, 0.0);
+	float b2 = b * b;
+	float lm = clamp(1.0 - abs(ss) / L, 0.0, 1.0);
+	lm = lm * lm * (3.0 - 2.0 * lm);
+	// 逐笔轻重：低频噪声调制强度（0.70~1.30），相邻笔触浓淡不同。
+	float k = present * env * smoothstep(0.0, 0.14, e) * aa * lm * (0.70 + 0.60 * jit);
+	if (streak) {
+		return vec4(0.0, 0.0, b2 * k, b2 * k);
+	}
+	// 前亮后暗：浪脊 + 后方 1.7w 处的浅谷。
+	float xt = (uu - curve + 1.7 * w) / (1.4 * w);
+	float c = max(1.0 - xt * xt, 0.0);
+	float c2 = c * c;
+	// [water-mark-shape] 截面指数逐格微调：b²（圆肩）↔ b³（更软的肩）之间插值。
+	// 旧版整层共用一条抛物线，所以每条笔触的坡肩一模一样 —— 这是"形状太规律"的一半。
+	// 用 hb.x 的再次打散（而不是 hb.y）——hb.y 已经决定朝向，复用会让"朝某个方向的笔触总是更软"，
+	// 那又是一种能被眼睛读出来的规律。
+	float prof = 0.6 * fract(hb.x * 7.31);
+	float hs = mix(b2, b2 * b, prof);
+	float dhs = mix(-4.0 * xu * b, -6.0 * xu * b2, prof) * (b > 0.0 ? 1.0 : 0.0);
+	float h = (hs - 0.40 * c2) * k;
+	float dh = (dhs / w
+			+ 0.40 * 4.0 * xt * c / (1.4 * w) * (c > 0.0 ? 1.0 : 0.0)) * k;
+	// [water-mark-shape 2026-11-06] 补上 ss 方向梯度：h 沿 ss 的依赖主要来自弯曲项 curve，
+	// ∂h/∂ss ≈ -dh·∂curve/∂ss（长度收口 lm 的导数仍忽略）。旧版只取 ∂h/∂uu，
+	// 所以弯曲的两侧完全不受光，弯笔触看起来像一条被压平的纸片。
+	float dcurve = (cr - 0.5) * 4.0 * ss / (L * 2.4);
+	vec2 perp = vec2(-dd.y, dd.x);
+	return vec4(dh * (dd - perp * dcurve), h, b2 * k);
+}
+
+// ─── 底层细节海面 v2：哈希值噪声 + 解析梯度（零纹理采样）──────────────────────
+// 实机定位（固定种子 A/B 逐层关闭）：旧的「noise_tex 差分涟漪」单独就会在太阳高光区产生
+// 大片同向的斜向长亮条——预烘噪声贴图的梯度不是各向同性的。改用逐格哈希 + quintic 插值的
+// 值噪声，梯度解析求出，天然各向同性、梯度连续（无菱形小面）；x 向格数取整 ⇒ 环绕缝连续。
+// 返回 xy = 对世界坐标的梯度，z = 起伏（零均值）。drift 以「格」为单位。
+vec3 water_hash_ripple(vec2 wp, float cell, vec2 drift, float seed, float shear) {
+	bool wrapped = wrap_period_x > 0.0001;
+	float n_cells = wrapped ? max(floor(wrap_period_x / cell + 0.5), 1.0) : 1.0;
+	float cw = wrapped ? wrap_period_x / n_cells : cell;
+	// 斜切：q.x 加 y 的线性项，格线不再轴对齐（x 向仍严格周期）。
+	vec2 q = vec2(wp.x / cw + shear * wp.y / cell, wp.y / cell) + drift;
+	vec2 ci = floor(q);
+	vec2 f = q - ci;
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	vec2 du = 30.0 * f * f * (f - 1.0) * (f - 1.0);
+	float x0 = wrapped ? mod(ci.x, n_cells) : ci.x;
+	float x1 = wrapped ? mod(ci.x + 1.0, n_cells) : ci.x + 1.0;
+	float a = water_hash32(vec2(x0, ci.y) + seed).x;
+	float b = water_hash32(vec2(x1, ci.y) + seed).x;
+	float c = water_hash32(vec2(x0, ci.y + 1.0) + seed).x;
+	float d = water_hash32(vec2(x1, ci.y + 1.0) + seed).x;
+	float h = mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+	vec2 dq = vec2((b - a + (a - b - c + d) * u.y) * du.x,
+			(c - a + (a - b - c + d) * u.x) * du.y);
+	return vec3(dq.x / cw, (dq.y + shear * dq.x) / cell, h - 0.5);
+}
+
+// 两相位 flowmap：每个相位内位移有界；周期序号换哈希种子 ⇒ 不循环；保方差混合。
+vec3 water_hash_ripple_flow(vec2 wp, float cell, vec2 adv_world, float t, float rate, float seed, float shear) {
+	float ph0 = fract(t * rate);
+	float ph1 = fract(ph0 + 0.5);
+	float w0 = 1.0 - abs(1.0 - 2.0 * ph0);
+	float w1 = 1.0 - w0;
+	float s0 = seed + mod(floor(t * rate), 997.0) * 13.7;
+	float s1 = seed + 5.0 + mod(floor(t * rate + 0.5), 997.0) * 13.7;
+	vec3 a = water_hash_ripple(wp, cell, -adv_world * (ph0 / cell), s0, shear);
+	vec3 b = water_hash_ripple(wp, cell, -adv_world * (ph1 / cell) + vec2(0.37, 0.11), s1, shear);
+	return (a * w0 + b * w1) * inversesqrt(w0 * w0 + w1 * w1);
+}
+
+// ─── 洋流驱动的波浪法线 + 波高 + 洋流丝 ─────────────────────────────────
+// 返回：z-up 法线；wave_height：波高（浪脊为正、后方为负，供明暗与浪尖）；
+//       flow_streak：已乘 cur 与强度的洋流丝 [0,1]。wave_mask = 冰面剔除权重。
+vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
+		float freq_scale, float noise_lf, float wave_mask,
+		inout float wave_height, inout float flow_streak) {
+	wave_height = 0.0;
+	flow_streak = 0.0;
+	if (wave_mask <= 0.001) {
+		return vec3(0.0, 0.0, 1.0);
+	}
+	// 屏幕像素的世界尺寸：必须在任何分支之外求导数。
+	float fp = max(length(dFdx(wp)), length(dFdy(wp)));
+	float flow_mag = length(flow);
+	// sqrt：弱流（0.03~0.08，占海面大头）也要有可见的方向偏置，停滞点仍平滑归零。
+	float cur = sqrt(smoothstep(WATER_FLOW_PRESENCE_LO, WATER_FLOW_PRESENCE_HI, flow_mag))
+			* clamp(ocean_current_strength * 1.15, 0.0, 1.0);
+	vec2 flow_dir = flow / max(flow_mag, 1e-3);
+
+	bool wrapped = wrap_period_x > 0.0001;
+	float theta = wrapped ? water_wrap_lon_angle(wp) : 0.0;
+	vec2 cs = vec2(cos(theta), sin(theta));
+
+	// 背景浪向：单倍频 value noise（频率 0.003 ⇒ 成片同向，片间换向）；总跨度 < π。
+	float bg_r = value_noise(water_cyl_p_cs(cs, wp, 0.0030, vec2(t * 0.0030, t * 0.0021)));
+	float bg_ang = (bg_r - 0.5) * 2.6 + 0.35;
+	vec2 bg_dir = vec2(cos(bg_ang), sin(bg_ang));
+	vec2 dirv = normalize(bg_dir * (1.0 - clamp(cur * 1.25, 0.0, 1.0)) + flow_dir * clamp(cur * 1.25, 0.0, 1.0));
+
+	// 海况分区：一次 fbm 采样，同时决定涌浪笔触与碎浪笔触的覆盖率（互补）。
+	float zone_n = 0.37;
+#if !defined(PK_MOBILE_ANY)
+	zone_n = fbm(water_cyl_p_cs(cs, wp, 0.0065, vec2(t * 0.008, -t * 0.006)), 2);
+#else
+	zone_n = noise_lf * 0.74;
+#endif
+	float zs = smoothstep(0.20, 0.55, zone_n);
+	// 海况强度场：两个尺度的低频哈希噪声合成「粗糙度」rough ∈ [0,1]：平静海域法线接近
+	// water_rough_min、风浪海域拉满到 water_rough_max；同时调制笔触覆盖率与波高。
+	//   water_rough_scale    ：海况分区的空间尺度（越大，平静 / 风浪区块越大）
+	//   water_rough_coverage ：风浪区所占比例（0 = 几乎全平静，1 = 几乎全风浪）
+	float rs = max(water_rough_scale, 0.05);
+	float rough_n = water_hash_ripple(wp, 420.0 * rs, vec2(t * 0.0040, -t * 0.0027) / rs, 211.0, 0.31).z * 0.62
+			+ water_hash_ripple(wp, 150.0 * rs, vec2(-t * 0.0060, t * 0.0040) / rs, 307.0, -0.27).z * 0.38 + 0.5;
+	float rough_c = mix(0.75, 0.25, clamp(water_rough_coverage, 0.0, 1.0));
+	float rough = smoothstep(rough_c - 0.20, rough_c + 0.20, rough_n);
+	// [water-mark-off 2026-11-06] 笔触覆盖率随笔触一起停用（原先只服务涌浪 / 碎浪两层）。
+	// float cov_k = max(water_mark_coverage, 0.0);
+	// float cover_a = clamp(mix(0.20, 0.66, zs) * mix(0.25, 1.25, rough) * cov_k, 0.0, 0.95);
+	// float cover_b = clamp(mix(0.58, 0.18, zs) * mix(0.30, 1.20, rough) * cov_k, 0.0, 0.95);
+
+	// 格尺寸随 water_flow_wave_density 缩放（默认密度时 ≈ 66 / 34 世界单位）；
+	// water_ripple_scale 只缩放底层涟漪的格子大小。
+	float dens = max(water_flow_wave_density * freq_scale * water_base_normal_scale, 0.05);
+	float sc = 1.27 / dens;
+	// 流动速度 ∝ water_flow_advection（位移固定、周期缩放；旧版位移与周期都乘它，速度成了平方关系）。
+	float rate_s = water_flow_advection / 1.15;
+	float rsc = sc * max(water_ripple_scale, 0.05);
+	// 底层细节海面：先于笔触求值，笔触叠在其上。
+	// 平流位移 = 背景浪向 × water_flow_drift_base + 洋流向量 × water_flow_drift_current（世界单位 / 周期）；
+	// 位移必须大于一个格宽，才是净流动而不是原地淡入淡出。
+	vec2 adv_big = bg_dir * water_flow_drift_base + flow * water_flow_drift_current;
+	vec3 rp1 = water_hash_ripple_flow(wp, 52.0 * rsc, adv_big, t, 0.04 * rate_s, 71.0, 0.47);
+	float rip_k = 6.5 * water_ripple_strength;
+	vec2 grad = rp1.xy * rip_k;
+	float height = rp1.z * 0.60 * water_ripple_strength;
+	if (visual_quality >= 1) {
+		vec2 adv_small = vec2(bg_dir.x * 0.5 - bg_dir.y * 0.87, bg_dir.x * 0.87 + bg_dir.y * 0.5)
+				* (water_flow_drift_base * 0.47) + flow * (water_flow_drift_current * 0.60);
+		vec3 rp2 = water_hash_ripple_flow(wp, 23.0 * rsc, adv_small, t, 0.06 * rate_s, 133.0, -0.39);
+		grad += rp2.xy * rip_k * water_ripple_detail_mix;
+		height += rp2.z * 0.45 * water_ripple_strength;
+	}
+	float mlen = max(water_mark_length, 0.05);
+	// ── [water-mark-off 2026-11-06] 浪头笔触停用 ───────────────────────────
+	// 主浪改由底层涟漪 + 顺流洋流丝表达。下面是**注释掉**而不是运行期开关：
+	// 编译期就不存在这段，不占指令也不占寄存器。回退时把注释放开即可。
+	// 注意：`wave_height` 因此只剩涟漪高度，浪尖碎白（smoothstep(0.30,0.72,wave_h)）
+	// 会明显变少 —— 这是停用笔触的直接后果，不是 bug。
+	// vec4 la = water_mark_layer(wp, 66.0 * sc, 0.21, dirv, false, cover_a,
+	// 		t, 0.06 * rate_s, 0.40, 0.14, 0.26 * mlen, fp, 3.0, noise_lf);
+	// grad += la.xy * (0.55 * water_mark_strength);
+	// height += la.z;
+	// if (visual_quality >= 1) {
+	// 	// 碎浪层：浪向相对主向偏转约 50°（常量旋转），格线反向斜切。
+	// 	// [water-mark-shape] 34 → 37：两层格宽从近 2:1 挪开，避免叠出超周期摩尔纹。
+	// 	vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
+	// 	vec4 lb = water_mark_layer(wp, 37.0 * sc, -0.27, dirb, false, cover_b,
+	// 			t, 0.10 * rate_s, 0.50, 0.14, 0.22 * mlen, fp, 11.0, noise_lf);
+	// 	grad += lb.xy * (0.40 * water_mark_strength);
+	// 	height += lb.z * 0.80;
+	// }
+	float amp_mod = mix(0.90, 1.20, cur);
+	wave_height = clamp(height * amp_mod * mix(0.35, 1.0, rough), -1.0, 1.0);
+
+#if !defined(PK_MOBILE_ANY)
+	if (visual_quality >= 2 && water_flow_streak_strength > 0.001 && cur > 0.004) {
+		// 洋流丝：顺流拉长、漂得更快；覆盖率随流强升高 ⇒ 强流区丝更密。
+		vec2 adv = flow_dir;
+		vec4 ls = water_mark_layer(wp, 52.0 * sc, 0.17, adv, true,
+				mix(0.22, 0.65, cur), t, 0.07 * rate_s, 0.7, 0.11, 0.30 * mlen, fp, 23.0, noise_lf);
+		flow_streak = ls.w * cur * water_flow_streak_strength * wave_mask;
+	}
+#endif
+
+	// 法线强度：平静区 = water_rough_min、风浪区 = water_rough_max。
+	float env = mix(water_rough_min, water_rough_max, rough) * mix(0.85, 1.15, zs);
+	grad *= 0.6 * water_base_normal_strength * amp_scale * env * wave_mask
+			* water_flow_wave_amplitude * amp_mod;
 	return normalize(vec3(-grad, 1.0));
 }
 
-// ─── ShaderToy 启发：水面域扭曲 ──────────────────────────────────────
-// 参考 https://www.shadertoy.com/view/3tyBRh 中的 "p += fbm(p)*warp" 手法。
-// 在水色采样/条纹采样前，把 wp 沿两个 fbm 方向偏移，让同一片水体的 noise
-// 纹理不再是规整 fbm 线条，也让 biome 边界（下一步 biome soft weight）
-// 不再是直线的 NEAREST 网格切，而是像水流搅散。
-//
-// warp_strength：0 = 不扭曲；1.6（默认）≈ 半个 cell；4.0 极强。
-vec2 water_domain_warp(vec2 wp, float t, float warp_strength) {
-	if (warp_strength <= 0.001) {
-		return wp;
-	}
-	// 两层速度不同的低频 fbm，方向互相正交，形成"旋转感"
-	float n1 = water_fbm_cyl(wp, 0.032, vec2(t * 0.025,  t * 0.014), 2) - 0.5;
-	float n2 = water_fbm_cyl(wp, 0.032, vec2(-t * 0.018, t * 0.022) + vec2(37.0, 13.0), 2) - 0.5;
-	return wp + vec2(n1, n2) * warp_strength;
+// 兼容层：旧调用点（8 参 / 7 参）继续可编，丢弃洋流丝 / 波高。
+// （Godot 的 shader include 分别缓存，编辑器可能短暂持有旧版 water_pipeline。）
+vec3 sample_flow_water_normal(vec2 wp, float t, vec2 flow, float amp_scale,
+		float freq_scale, float noise_lf, float wave_mask,
+		inout float wave_height, inout float flow_streak) {
+	return water_flow_surface(wp, t, flow, amp_scale, freq_scale, noise_lf,
+			wave_mask, wave_height, flow_streak);
+}
+
+vec3 sample_flow_water_normal(vec2 wp, float t, vec2 flow, float amp_scale,
+		float freq_scale, float noise_lf, float wave_mask, inout float wave_height) {
+	float discarded_streak = 0.0;
+	return water_flow_surface(wp, t, flow, amp_scale, freq_scale, noise_lf,
+			wave_mask, wave_height, discarded_streak);
+}
+
+vec3 sample_flow_water_normal(vec2 wp, float t, vec2 flow, float amp_scale,
+		float freq_scale, float noise_lf, float wave_mask) {
+	float discarded_height = 0.0;
+	float discarded_streak = 0.0;
+	return water_flow_surface(wp, t, flow, amp_scale, freq_scale, noise_lf,
+			wave_mask, discarded_height, discarded_streak);
 }
 
 // ─── ShaderToy 启发：横向波痕条纹 ─────────────────────────────────────
@@ -328,28 +581,6 @@ float water_shade_lines(vec2 wp, float t, float freq_scale, int quality) {
 	float bands = b1 * 0.55 + b2 * 0.30 + b3 * 0.15;
 	// [-0.5, 0.5] 居中化
 	return (bands - 0.5) * 0.55;
-}
-
-// ─── Water Calm Noise（本轮）：大尺度柔和亮度噪声 ──────────────────────
-// 用低频 fbm（空间缩放 0.010，单个斑块约 30~80 hex 跨度）代替旧 3 层 sin
-// 条纹；返回 [-1, 1]，caller 以 col *= 1.0 + calm * 0.08 形式叠加，即 ±8%
-// 亮度扰动，从而营造"淡淡的、像云影一样缓慢起伏"的观感。
-// [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_lf（与 base_ripple
-// 共享同一层低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
-float water_calm_brightness(vec2 wp, float t) {
-	float n = water_fbm_cyl(wp, 0.006, vec2(t * 0.014, t * 0.008), 2);
-	// fbm 基本落在 [0, ~0.9]，线性重新映射到 [-1, 1]
-	return clamp(n * 1.9 - 0.95, -1.0, 1.0);
-}
-
-// ─── Water Calm Noise：低对比度色相扰动层 ──────────────────────────────
-// 更低频（0.006）、更慢的时间推进（1/2 亮度噪声速度）、相位反向，让色相变化
-// 与亮暗不同步，奉上"呼吸感"。octaves 由 quality 控制（≥ 2 提升到 3）。
-// [water-noise-reuse 2026-06-29] DEPRECATED：调用方已改用 WaterStageCtx.macro_vlf（与 deep_ripple
-// 共享同一层极低频 fbm），本函数保留作 API 兼容/独立采样回退，正常路径不再调用。
-float water_calm_tint(vec2 wp, float t, int octaves) {
-	float n = water_fbm_cyl(wp, 0.0038, vec2(-t * 0.008, t * 0.010), octaves);
-	return clamp(n * 1.15, 0.0, 1.0);
 }
 
 // ─── biome soft weights (radius-aware 3×3 neighborhood) ───────────────────

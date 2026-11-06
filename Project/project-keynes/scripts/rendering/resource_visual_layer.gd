@@ -336,7 +336,8 @@ func _apply_profile() -> void:
 		"wind_strength", "animal_motion", "detailed_pixels", "simple_pixels", "fade_pixels",
 		"palette_saturation", "badge_px", "decal_opacity", "submerged_opacity",
 		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
-		"area_feather", "area_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
+			"area_feather", "area_edge_noise", "solid_edge_softness", "decal_edge_softness",
+			"decal_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
 		_set_param(name, profile.get(name))
 	for name in ["herd_size_min", "herd_size_max", "animal_length_hex", "animal_min_pixels"]:
 		_set_param(name, profile.get(name))
@@ -990,6 +991,12 @@ func _build_style_texture() -> void:
 		var e := _styles[i]
 		var override: Dictionary = profile.style_overrides.get(e.id, {})
 		_max_style_scale = maxf(_max_style_scale, float(override.get("size_scale", 1.0)))
+		var art := ResourceArtLibrary.shared()
+		var material_cell := art.material_cell(e.id)
+		# X=0.125采样（像素0）：specular、材质图集格+1、是否绑定位图、metallic。
+		image.set_pixel(0, i, Color(float(e.get("specular", 0.0)),
+			float(material_cell + 1), 1.0 if material_cell >= 0 else 0.0,
+			float(e.get("metallic", 0.0))))
 		# X=0.25采样（像素1）：颜色数据
 		var color_val = override.get("color", e.color) if override.has("color") else e.color
 		image.set_pixel(1, i, color_val)
@@ -997,7 +1004,6 @@ func _build_style_texture() -> void:
 		image.set_pixel(3, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
 		# X=0.625采样（像素2）：动物/鱼位图（-, 图集层+1, 图集精灵数, -）；0 = 无位图。
 		# 植物位图由 ResourceGroundCover 自己的 LUT 映射。
-		var art := ResourceArtLibrary.shared()
 		var fauna_layer := art.fauna_layer(e.id)
 		image.set_pixel(2, i, Color(0.0, float(fauna_layer + 1),
 			float(art.fauna_count) if fauna_layer >= 0 else 0.0, 0.0))
@@ -1009,6 +1015,9 @@ func _bind_art() -> void:
 	_set_param("art_fauna_bound", art.fauna != null)
 	if art.fauna != null:
 		_set_param("art_fauna", art.fauna)
+	_set_param("art_material_bound", art.material != null)
+	if art.material != null:
+		_set_param("art_material", art.material)
 
 func diagnostics() -> Dictionary:
 	var result := _stats.duplicate()

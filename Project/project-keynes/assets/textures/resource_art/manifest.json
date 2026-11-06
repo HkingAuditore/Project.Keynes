@@ -1,6 +1,6 @@
 {
- "version": 2,
- "generated": "2026-10-17",
+ "version": 3,
+ "generated": "2026-11-06",
  "provenance": "AI generated with the Codex built-in image generator; post-processed by tools/resource_art/build.py",
  "common_prompt": "Seamless tileable texture, strictly orthographic top-down aerial view, realistic, natural, slightly desaturated muted colours like a painted strategy-game map, soft diffuse overcast light, very soft short shadows, gaps fully transparent, no soil, no rows, no text, no border, no perspective.",
  "cover": {
@@ -220,6 +220,131 @@
     "id": "shrub",
     "prompt": "8 wild shrubs (hazel, juniper, gorse, myrtle), twiggy leaf clumps",
     "tall": 0.6
+   },
+   {
+    "id": "rock.decor",
+    "prompt": "Eight isolated top-down weathered boulders, rough granite and sandstone, chipped silhouettes, dark fissures, sparse lichen and tiny loose chips, muted semi-realistic painted strategy-map style, transparent background",
+    "tall": 0.9,
+    "path": "geology/rocks.png"
+   }
+  ]
+ },
+ "material": {
+  "file": "resource_material.png",
+  "cell": 128,
+  "cols": 8,
+  "rows": 4,
+  "layers": {
+   "albedo": 0,
+   "normal": 1
+  },
+  "ids": [
+   "timber",
+   "stone",
+   "fertile_soil",
+   "arable_land",
+   "paddy_land",
+   "plantation_land",
+   "pasture",
+   "coal",
+   "oil",
+   "natural_gas",
+   "copper_ore",
+   "iron_ore",
+   "gold_ore",
+   "silver_ore",
+   "salt",
+   "saltpeter",
+   "rare_earth",
+   "clay",
+   "wild_game",
+   "",
+   "bauxite",
+   "limestone",
+   "silica_sand",
+   "phosphate_rock",
+   "tin_ore",
+   "lead_ore",
+   "zinc_ore",
+   "manganese_ore",
+   "sulfur",
+   "flint",
+   "",
+   ""
+  ],
+  "sources": [
+   {
+    "path": "geology/stone.png",
+    "cols": 1,
+    "rows": 1,
+    "sprite_offset": 0,
+    "prompt": "One top-down weathered stone outcrop, compact irregular grey-brown boulders with dark fissures and gravel, muted semi-realistic painted strategy-map style, transparent background",
+    "ids": [
+     "stone"
+    ],
+    "sprites": 1,
+    "edge_px": 8.0
+   },
+   {
+    "path": "geology/ores.png",
+    "cols": 4,
+    "rows": 2,
+    "sprite_offset": 1,
+    "prompt": "Seven top-down ore outcrops: coal, copper, iron, gold, silver, tin and lead; realistic mineral texture, transparent background, orthographic, soft overcast light",
+    "ids": [
+     "coal",
+     "copper_ore",
+     "iron_ore",
+     "gold_ore",
+     "silver_ore",
+     "tin_ore",
+     "lead_ore"
+    ],
+    "sprites": 8,
+    "edge_px": 10.0
+   },
+   {
+    "path": "geology/minerals.png",
+    "cols": 5,
+    "rows": 2,
+    "sprite_offset": 0,
+    "prompt": "Ten top-down industrial mineral deposits: bauxite, limestone, phosphate, manganese, zinc, rare earth, flint, salt, saltpeter and sulfur; transparent background, orthographic",
+    "ids": [
+     "bauxite",
+     "limestone",
+     "phosphate_rock",
+     "manganese_ore",
+     "zinc_ore",
+     "rare_earth",
+     "flint",
+     "salt",
+     "saltpeter",
+     "sulfur"
+    ],
+    "sprites": 10,
+    "edge_px": 10.0
+   },
+   {
+    "path": "ground/materials.png",
+    "cols": 4,
+    "rows": 3,
+    "sprite_offset": 0,
+    "prompt": "Eleven top-down ground resources: fertile soil, arable soil, paddy, plantation undergrowth, pasture, clay, silica sand, oil seep, gas vent, game trail and cut timber; transparent background, orthographic, realistic natural texture",
+    "ids": [
+     "fertile_soil",
+     "arable_land",
+     "paddy_land",
+     "plantation_land",
+     "pasture",
+     "clay",
+     "silica_sand",
+     "oil",
+     "natural_gas",
+     "wild_game",
+     "timber"
+    ],
+    "sprites": 12,
+    "edge_px": 20.0
    }
   ]
  }
