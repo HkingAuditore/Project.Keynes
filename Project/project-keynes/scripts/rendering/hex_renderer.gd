@@ -550,19 +550,9 @@ var _simulation_speed_multiplier: float = 1.0
 		water_flow_drift_current = v
 		_push_water_param(&"water_flow_drift_current", v)
 
-@export_group("海洋水面 · 浪头笔触（已停用）")
-## 【已停用】笔触法线强度。2026-11-06 起 `water_flow_surface` 里的两层笔触调用已注释，
-## 改这里不再影响画面；保留参数只为兼容已序列化到场景里的值。
-@export_range(0.0, 2.0, 0.01) var water_mark_strength: float = 1.0:
-	set(v):
-		water_mark_strength = v
-		_push_water_param(&"water_mark_strength", v)
-## 【已停用】笔触出现比例。同上，现在无效。
-@export_range(0.0, 2.0, 0.01) var water_mark_coverage: float = 1.0:
-	set(v):
-		water_mark_coverage = v
-		_push_water_param(&"water_mark_coverage", v)
-## 【笔触长度】仍在生效：顺流洋流丝复用同一个格宽倍率（`water_mark_layer` 的 streak 分支）。
+@export_group("海洋水面 · 洋流丝")
+## 【洋流丝长度】顺流拉长的丝的弧长倍率；觉得丝太长就调小。
+## 浪头笔触已于 2026-11-06 删除，这一组只剩洋流丝。
 @export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
 	set(v):
 		water_mark_length = v
@@ -1562,8 +1552,6 @@ const WATER_PARAM_NAMES: Array[StringName] = [
 	&"water_ripple_scale",
 	&"water_flow_drift_base",
 	&"water_flow_drift_current",
-	&"water_mark_strength",
-	&"water_mark_coverage",
 	&"water_mark_length",
 	&"water_rough_min",
 	&"water_rough_max",

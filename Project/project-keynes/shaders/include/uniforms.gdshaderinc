@@ -381,11 +381,9 @@ uniform float water_ripple_detail_mix   : hint_range(0.0, 1.5)  = 0.5;    // 小
 uniform float water_ripple_scale        : hint_range(0.3, 3.0)  = 1.0;    // 涟漪格子大小倍率（越大越舒缓）
 uniform float water_flow_drift_base     : hint_range(0.0, 100.0) = 30.0;  // 无洋流时的漂移位移（世界单位 / 周期）
 uniform float water_flow_drift_current  : hint_range(0.0, 300.0) = 100.0; // 洋流带来的额外漂移（× 流速）
-// [浪头笔触] 2026-11-06 停用：`water_flow_surface` 里的两层笔触调用已注释。
-// 这三个参数保留**只为兼容已序列化到场景里的值**，现在改它们不影响画面。
-uniform float water_mark_strength       : hint_range(0.0, 2.0)  = 1.0;    // （停用）笔触法线强度
-uniform float water_mark_coverage       : hint_range(0.0, 2.0)  = 1.0;    // （停用）出现笔触的格子比例倍率
-uniform float water_mark_length         : hint_range(0.3, 3.0)  = 1.0;    // 笔触长度倍率（洋流丝仍在用）
+// [洋流丝] 2026-11-06 起浪头笔触（`water_mark_strength` / `water_mark_coverage`）已删除，
+// 只剩顺流洋流丝；它复用同一个格宽倍率参数。
+uniform float water_mark_length         : hint_range(0.3, 3.0)  = 1.0;    // 洋流丝长度倍率
 // [海况强度场：平静 / 风浪分区]
 uniform float water_rough_min           : hint_range(0.0, 1.0)  = 0.22;   // 平静海域的法线强度
 uniform float water_rough_max           : hint_range(0.0, 2.0)  = 1.0;    // 风浪海域的法线强度

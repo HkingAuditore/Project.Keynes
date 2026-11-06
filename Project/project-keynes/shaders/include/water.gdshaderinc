@@ -289,14 +289,14 @@ vec2 water_cyl_p_cs(vec2 cs, vec2 wp, float freq, vec2 ofs) {
 	return vec2(cs.x * radius, cs.y * radius + wp.y * freq) + ofs;
 }
 
-// 一层笔触。返回 xy = 高度场对世界坐标的梯度，z = 高度（浪脊为正、后方浪谷为负），w = 笔触强度 [0,1]。
-//   cell / shear：格尺寸（世界单位）与斜切系数（打破格线）；dirv：浪向（单位向量）；
-//   streak：true 时笔触沿 dirv 拉长（洋流丝），false 时垂直 dirv 拉长（浪脊）；
-//   cover：有笔触的格子比例；rate / travel：生命周期频率与生命内的漂移距离（格宽倍数）；
-//   width_frac / len_frac：笔触厚度 / 半长（格宽倍数，逐格再抽一次倍率）；fp：屏幕像素对应的
-//   世界长度（调用方在分支外求值）：笔触比 1 像素细时整体淡出，避免远景闪烁；
-//   jit：0..1 的低频抖动（复用入口静态噪声，零采样）：逐笔轻重不同，轮廓不再是同一条解析曲线。
-vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv, bool streak,
+// 一层顺流洋流丝。返回丝的强度 [0,1]（高度剖面 b²）——只参与颜色，不参与法线。
+// （原 water_mark_layer 的浪脊分支 2026-11-06 已删除，见 SHADER_DEV_GUIDE 9.2b。）
+//   cell / shear：格尺寸（世界单位）与斜切系数；dirv：顺流方向（单位向量）；
+//   cover：有丝的格子比例；rate / travel：生命周期频率与生命内的漂移距离（格宽倍数）；
+//   width_frac / len_frac：丝厚 / 半长（格宽倍数，逐格再抽一次倍率）；fp：屏幕像素对应的
+//   世界长度（调用方在分支外求值）：丝比 1 像素细时整体淡出，避免远景闪烁；
+//   jit：0..1 的低频抖动（复用入口静态噪声，零采样）：逐丝浓淡不同。
+float water_streak_layer(vec2 wp, float cell, float shear, vec2 dirv,
 		float cover, float t, float rate, float travel,
 		float width_frac, float len_frac, float fp, float seed, float jit) {
 	bool wrapped = wrap_period_x > 0.0001;
@@ -314,7 +314,7 @@ vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv, bool streak,
 	vec3 ha = water_hash32(id + cyc * vec2(7.13, 3.77));
 	float present = smoothstep(cover, cover - 0.10, ha.z);
 	if (present <= 0.0) {
-		return vec4(0.0);
+		return 0.0;
 	}
 	vec3 hb = water_hash32((id + cyc * vec2(7.13, 3.77)) * 1.713 + 31.7);
 	// 平台式包络：生命中段近满强度，前后各 22% 淡入淡出（旧的 (4x(1-x))² 大部分时间很暗）。
@@ -329,19 +329,15 @@ vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv, bool streak,
 	vec2 dq = f - vec2(mix(inset, 1.0 - inset, ha.x), mix(inset, 1.0 - inset, ha.y));
 	vec2 d = vec2(dq.x * cw - shear * dq.y * cell, dq.y * cell);
 	float e = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
-	// 每格浪向抖动（小角度近似，不用 sin/cos）。±0.55 rad：同片海里朝向不再像排线。
-	float a = (hb.y - 0.5) * (streak ? 0.30 : 1.10);
+	// 每格方向抖动 ±0.15 rad（小角度近似，不用 sin/cos）：丝基本顺流，只轻微散开。
+	float a = (hb.y - 0.5) * 0.30;
 	float ca = 1.0 - 0.5 * a * a;
 	float sa = a - a * a * a * 0.1666667;
 	vec2 dd = vec2(dirv.x * ca - dirv.y * sa, dirv.x * sa + dirv.y * ca);
 	d -= dd * ((life - 0.5) * travel * cell);
-	float uu = dot(d, dd);
-	float ss = dot(d, vec2(-dd.y, dd.x));
-	if (streak) {
-		float tmp = uu;
-		uu = ss;
-		ss = tmp;
-	}
+	// 顺流拉长：横截面取「垂直流向」、长度取「沿流向」——等价于旧版 streak 分支的 uu/ss 对调。
+	float uu = dot(d, vec2(-dd.y, dd.x));
+	float ss = dot(d, dd);
 	// 粗细倍率：逐格 0.62~1.38，同一层不再所有笔触一样粗。
 	float wr = 0.62 + 0.76 * hb.x;
 	float w_nom = width_frac * cell * wr;
@@ -354,31 +350,9 @@ vec4 water_mark_layer(vec2 wp, float cell, float shear, vec2 dirv, bool streak,
 	float b2 = b * b;
 	float lm = clamp(1.0 - abs(ss) / L, 0.0, 1.0);
 	lm = lm * lm * (3.0 - 2.0 * lm);
-	// 逐笔轻重：低频噪声调制强度（0.70~1.30），相邻笔触浓淡不同。
+	// 逐丝浓淡：低频噪声调制强度（0.70~1.30），相邻丝浓淡不同。
 	float k = present * env * smoothstep(0.0, 0.14, e) * aa * lm * (0.70 + 0.60 * jit);
-	if (streak) {
-		return vec4(0.0, 0.0, b2 * k, b2 * k);
-	}
-	// 前亮后暗：浪脊 + 后方 1.7w 处的浅谷。
-	float xt = (uu - curve + 1.7 * w) / (1.4 * w);
-	float c = max(1.0 - xt * xt, 0.0);
-	float c2 = c * c;
-	// [water-mark-shape] 截面指数逐格微调：b²（圆肩）↔ b³（更软的肩）之间插值。
-	// 旧版整层共用一条抛物线，所以每条笔触的坡肩一模一样 —— 这是"形状太规律"的一半。
-	// 用 hb.x 的再次打散（而不是 hb.y）——hb.y 已经决定朝向，复用会让"朝某个方向的笔触总是更软"，
-	// 那又是一种能被眼睛读出来的规律。
-	float prof = 0.6 * fract(hb.x * 7.31);
-	float hs = mix(b2, b2 * b, prof);
-	float dhs = mix(-4.0 * xu * b, -6.0 * xu * b2, prof) * (b > 0.0 ? 1.0 : 0.0);
-	float h = (hs - 0.40 * c2) * k;
-	float dh = (dhs / w
-			+ 0.40 * 4.0 * xt * c / (1.4 * w) * (c > 0.0 ? 1.0 : 0.0)) * k;
-	// [water-mark-shape 2026-11-06] 补上 ss 方向梯度：h 沿 ss 的依赖主要来自弯曲项 curve，
-	// ∂h/∂ss ≈ -dh·∂curve/∂ss（长度收口 lm 的导数仍忽略）。旧版只取 ∂h/∂uu，
-	// 所以弯曲的两侧完全不受光，弯笔触看起来像一条被压平的纸片。
-	float dcurve = (cr - 0.5) * 4.0 * ss / (L * 2.4);
-	vec2 perp = vec2(-dd.y, dd.x);
-	return vec4(dh * (dd - perp * dcurve), h, b2 * k);
+	return b2 * k;
 }
 
 // ─── 底层细节海面 v2：哈希值噪声 + 解析梯度（零纹理采样）──────────────────────
@@ -467,10 +441,7 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 			+ water_hash_ripple(wp, 150.0 * rs, vec2(-t * 0.0060, t * 0.0040) / rs, 307.0, -0.27).z * 0.38 + 0.5;
 	float rough_c = mix(0.75, 0.25, clamp(water_rough_coverage, 0.0, 1.0));
 	float rough = smoothstep(rough_c - 0.20, rough_c + 0.20, rough_n);
-	// [water-mark-off 2026-11-06] 笔触覆盖率随笔触一起停用（原先只服务涌浪 / 碎浪两层）。
-	// float cov_k = max(water_mark_coverage, 0.0);
-	// float cover_a = clamp(mix(0.20, 0.66, zs) * mix(0.25, 1.25, rough) * cov_k, 0.0, 0.95);
-	// float cover_b = clamp(mix(0.58, 0.18, zs) * mix(0.30, 1.20, rough) * cov_k, 0.0, 0.95);
+	// [water-mark-removed 2026-11-06] 笔触覆盖率（cov_k / cover_a / cover_b）随笔触一起删除。
 
 	// 格尺寸随 water_flow_wave_density 缩放（默认密度时 ≈ 66 / 34 世界单位）；
 	// water_ripple_scale 只缩放底层涟漪的格子大小。
@@ -495,24 +466,9 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 		height += rp2.z * 0.45 * water_ripple_strength;
 	}
 	float mlen = max(water_mark_length, 0.05);
-	// ── [water-mark-off 2026-11-06] 浪头笔触停用 ───────────────────────────
-	// 主浪改由底层涟漪 + 顺流洋流丝表达。下面是**注释掉**而不是运行期开关：
-	// 编译期就不存在这段，不占指令也不占寄存器。回退时把注释放开即可。
-	// 注意：`wave_height` 因此只剩涟漪高度，浪尖碎白（smoothstep(0.30,0.72,wave_h)）
-	// 会明显变少 —— 这是停用笔触的直接后果，不是 bug。
-	// vec4 la = water_mark_layer(wp, 66.0 * sc, 0.21, dirv, false, cover_a,
-	// 		t, 0.06 * rate_s, 0.40, 0.14, 0.26 * mlen, fp, 3.0, noise_lf);
-	// grad += la.xy * (0.55 * water_mark_strength);
-	// height += la.z;
-	// if (visual_quality >= 1) {
-	// 	// 碎浪层：浪向相对主向偏转约 50°（常量旋转），格线反向斜切。
-	// 	// [water-mark-shape] 34 → 37：两层格宽从近 2:1 挪开，避免叠出超周期摩尔纹。
-	// 	vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
-	// 	vec4 lb = water_mark_layer(wp, 37.0 * sc, -0.27, dirb, false, cover_b,
-	// 			t, 0.10 * rate_s, 0.50, 0.14, 0.22 * mlen, fp, 11.0, noise_lf);
-	// 	grad += lb.xy * (0.40 * water_mark_strength);
-	// 	height += lb.z * 0.80;
-	// }
+	// [water-mark-removed 2026-11-06] 浪头笔触（原 la/lb 两层）已整段删除。
+	// 海面 = 底层涟漪 + 顺流洋流丝；`wave_height` 只剩涟漪高度，浪尖碎白的阈值
+	// 需要按此重新配平。要恢复请查 git 历史，不再保留注释块。
 	float amp_mod = mix(0.90, 1.20, cur);
 	wave_height = clamp(height * amp_mod * mix(0.35, 1.0, rough), -1.0, 1.0);
 
@@ -520,9 +476,9 @@ vec3 water_flow_surface(vec2 wp, float t, vec2 flow, float amp_scale,
 	if (visual_quality >= 2 && water_flow_streak_strength > 0.001 && cur > 0.004) {
 		// 洋流丝：顺流拉长、漂得更快；覆盖率随流强升高 ⇒ 强流区丝更密。
 		vec2 adv = flow_dir;
-		vec4 ls = water_mark_layer(wp, 52.0 * sc, 0.17, adv, true,
-				mix(0.22, 0.65, cur), t, 0.07 * rate_s, 0.7, 0.11, 0.30 * mlen, fp, 23.0, noise_lf);
-		flow_streak = ls.w * cur * water_flow_streak_strength * wave_mask;
+		flow_streak = water_streak_layer(wp, 52.0 * sc, 0.17, adv,
+				mix(0.22, 0.65, cur), t, 0.07 * rate_s, 0.7, 0.11, 0.30 * mlen, fp, 23.0, noise_lf)
+				* cur * water_flow_streak_strength * wave_mask;
 	}
 #endif
 
