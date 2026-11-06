@@ -276,8 +276,10 @@ void vertex() {
 	v_material = texture(style_lut, vec2(0.125, (style + 0.5) / 64.0));
 	vec4 meta = texture(style_lut, vec2(0.75, (style + 0.5) / 64.0));
 	v_art = texture(style_lut, vec2(0.625, (style + 0.5) / 64.0));
-	float radius_px_world = length(MODEL_MATRIX[0].xy) * camera_zoom;
-	v_radius_world = length(MODEL_MATRIX[0].xy);
+	vec2 model_scale = vec2(length(MODEL_MATRIX[0].xy), length(MODEL_MATRIX[1].xy));
+	vec2 model_px_scale = model_scale * camera_zoom;
+	float radius_px_world = max(model_px_scale.x, model_px_scale.y);
+	v_radius_world = max(model_scale.x, model_scale.y);
 	float radius_px = mix(radius_px_world, badge_px * 0.5, clamp(lens_amount, 0.0, 1.0));
 	v_data = vec4(meta.r, meta.g, INSTANCE_CUSTOM.b, live);
 	v_transmission = COLOR.g;
@@ -318,7 +320,10 @@ void vertex() {
 	float thin = step(rv_hash(cell * 0.731 + 3.17), keep);
 	float lens_vis = step(COLOR.r, 0.1) * matches * thin * carrier;
 	v_style.a = mix(world_vis, lens_vis, lens) * present;
-	VERTEX *= mix(1.0, badge_px * 0.5 / max(radius_px_world, 0.001), lens);
+	vec2 lens_vertex_scale = vec2(
+		badge_px * 0.5 / max(model_px_scale.x, 0.001),
+		badge_px * 0.5 / max(model_px_scale.y, 0.001));
+	VERTEX *= mix(vec2(1.0), lens_vertex_scale, lens);
 	VERTEX *= step(0.001, v_style.a);
 	v_world_position = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
@@ -419,13 +424,23 @@ bool rv_material_art_bound() {
 	return art_material_bound && v_material.z > 0.5 && v_material.y > 0.5;
 }
 
+// One deterministic orientation/mirror per instance. The inverse-looking matrix is
+// intentional: it maps form-space p into source-texture space, so the visible subject
+// rotates by +angle while footprint collision remains axis-aligned.
+mat2 rv_material_instance_xform(float seed) {
+	float angle = rv_h1(seed * 37.17 + 3.11) * 6.2831853;
+	float mirror = rv_h1(seed * 71.93 + 9.41) < 0.5 ? -1.0 : 1.0;
+	return rs_rot(-angle) * mat2(vec2(mirror, 0.0), vec2(0.0, 1.0));
+}
+
 vec2 rv_material_uv(vec2 p) {
 	// Atlas is 8x4 cells. p is top-down form space (+y = image top), while texture
 	// v grows downward, so flip only v before selecting the cell.
 	float cell = floor(v_material.y - 0.5);
 	vec2 grid = vec2(8.0, 4.0);
 	vec2 cell_xy = vec2(mod(cell, grid.x), floor(cell / grid.x));
-	vec2 local_uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+	vec2 local_uv = clamp(vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5),
+		vec2(0.0), vec2(1.0));
 	return (cell_xy + local_uv) / grid;
 }
 
@@ -437,14 +452,16 @@ vec4 rv_material_surface(vec2 p) {
 	return texture(art_material, vec3(rv_material_uv(p), 1.0));
 }
 
-vec3 rv_material_local_normal(vec4 surface) {
+vec3 rv_material_local_normal(vec4 surface, mat2 material_xform) {
 	vec2 nxy = (surface.rg * 2.0 - 1.0) * material_normal_strength;
+	// Normals are gradients, so their components transform with the transpose.
+	nxy = transpose(material_xform) * nxy;
 	float nz = sqrt(max(1.0 - dot(nxy, nxy), 0.08));
 	return normalize(vec3(nxy, nz));
 }
 
-vec3 rv_material_normal(vec4 surface, vec2 axis, vec3 terrain) {
-	vec3 local_n = rv_material_local_normal(surface);
+vec3 rv_material_normal(vec4 surface, vec2 axis, vec3 terrain, mat2 material_xform) {
+	vec3 local_n = rv_material_local_normal(surface, material_xform);
 	vec2 nxy = local_n.xy;
 	float nz = local_n.z;
 	vec2 screen_n = vec2(nxy.x, -nxy.y);
@@ -569,14 +586,16 @@ void fragment() {
 		vec4 mat_surface = vec4(0.5, 0.5, 0.0, 1.0);
 		float material_edge = 1.0;
 		if (material_art) {
-			mat_albedo = rv_material_albedo(pf);
-			mat_surface = rv_material_surface(pf);
+			mat2 material_xform = rv_material_instance_xform(seed);
+			vec2 material_p = material_xform * pf;
+			mat_albedo = rv_material_albedo(material_p);
+			mat_surface = rv_material_surface(material_p);
 			material_edge = mix(1.0,
-				rv_material_contact_edge(mat_albedo, mat_surface, pf, seed, false,
+				rv_material_contact_edge(mat_albedo, mat_surface, material_p, seed, false,
 					solid_edge_softness),
 				step(lens, 0.5));
 			s.albedo = mat_albedo.rgb;
-			s.n = rv_material_local_normal(mat_surface);
+			s.n = rv_material_local_normal(mat_surface, material_xform);
 			s.h = mat_surface.b;
 			s.ao = mix(1.0, mat_surface.a, 0.92);
 			s.spec = v_material.r;
@@ -731,7 +750,9 @@ void fragment() {
 #else
 		bool material_ground = material_art && (form == 19 || form == 20 || form == 21
 			|| form == 22 || form == 23 || form == 25);
-		vec4 g = material_ground ? rv_material_albedo(p) : rd_ground_decal(p, form, sub_style, tint, seed);
+		mat2 material_xform = rv_material_instance_xform(seed);
+		vec2 material_p = material_xform * p;
+		vec4 g = material_ground ? rv_material_albedo(material_p) : rd_ground_decal(p, form, sub_style, tint, seed);
 		vec3 col = g.rgb;
 		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
 		col = mix(vec3(grey_albedo), col, palette_saturation);
@@ -742,14 +763,15 @@ void fragment() {
 		// replaces that mask with its height-feathered material coverage below.
 		float material_coverage = g.a;
 		if (material_ground) {
-			vec4 surf = rv_material_surface(p);
-			material_edge = rv_material_contact_edge(g, surf, p, seed, true,
+			vec4 surf = rv_material_surface(material_p);
+			material_edge = rv_material_contact_edge(g, surf, material_p, seed, true,
 				decal_edge_softness);
 			// Never manufacture coverage outside the authored silhouette. The atlas
 			// height already eases to zero inside that silhouette, so this feather
 			// follows the mineral/soil edge instead of revealing the square cell.
 			material_coverage = g.a * material_edge;
-			vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal);
+			vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal,
+				material_xform);
 			vec3 normal = normalize(mix(terrain_normal, material_normal,
 				mix(1.0, material_edge, 0.72)));
 			float diffuse = max(dot(normal, light_dir), 0.0);
@@ -806,12 +828,15 @@ void fragment() {
 		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
 #endif // PK_PROBE_NO_HERD
 	} else if (kind == 3 && material_art && (form == 21 || form == 25)) {
-		vec4 g = rv_material_albedo(p);
-		vec4 surf = rv_material_surface(p);
-		float material_edge = rv_material_contact_edge(g, surf, p, seed, true,
+		mat2 material_xform = rv_material_instance_xform(seed);
+		vec2 material_p = material_xform * p;
+		vec4 g = rv_material_albedo(material_p);
+		vec4 surf = rv_material_surface(material_p);
+		float material_edge = rv_material_contact_edge(g, surf, material_p, seed, true,
 			decal_edge_softness);
 		float material_coverage = g.a * material_edge;
-		vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal);
+		vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal,
+			material_xform);
 		vec3 normal = normalize(mix(terrain_normal, material_normal,
 			mix(1.0, material_edge, 0.72)));
 		float diffuse = max(dot(normal, light_dir), 0.0);

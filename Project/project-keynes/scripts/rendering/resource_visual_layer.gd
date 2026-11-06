@@ -7,6 +7,10 @@ const DEFAULT_PROFILE = preload("res://data/visual/resource_default.tres")
 const RESOURCE_SHADER = preload("res://shaders/resource_impostor.gdshader")
 const GroundCover = preload("res://scripts/rendering/resource_ground_cover.gd")
 const FAMILY_COUNT := 4
+const INSTANCE_SCALE_MIN := 0.82
+const INSTANCE_SCALE_MAX := 1.22
+const INSTANCE_ASPECT_MIN := 0.78
+const INSTANCE_ASPECT_MAX := 1.28
 # Batches 0..3 = prop subjects per family (3 = submerged cues); 4 = ground decals,
 # drawn first so props always sit on top of their own scar/soil patch.
 const BATCH_COUNT := 5
@@ -746,14 +750,18 @@ func _append_cell(cell: int, buffers: Array) -> void:
 		var size_scale := float(override.get("size_scale", 1.0))
 		var prop_diameter := float(profile.plant_diameter_hex) if render_family == 0 and int(e.form) != 26 else float(profile.patch_diameter_hex)
 		var ground_diameter := float(profile.fertility_diameter_hex) if int(e.form) == 22 else float(profile.decal_diameter_hex)
-		var prop_radius := _hex * prop_diameter * 0.5 * size_scale
+		var variation := _hash(cell, style)
+		var instance_scale := _instance_scale(cell, style, render_family)
+		var prop_radius := Vector2.ONE * _hex * prop_diameter * 0.5 * size_scale * instance_scale
 		if render_family == 1:
 			# Real-scale herd: the quad only has to contain herd_size_max animals.
-			prop_radius = _hex * herd_radius_hex() * size_scale
-		var decal_radius := _hex * ground_diameter * 0.5 * size_scale
+			prop_radius = Vector2.ONE * _hex * herd_radius_hex() * size_scale * instance_scale
+		var decal_radius := Vector2.ONE * _hex * ground_diameter * 0.5 * size_scale * instance_scale
 		var submerged := (plan & PLAN_SUBMERGED) != 0
 		var has_prop := (plan & (PLAN_PROP | PLAN_BADGE)) != 0
-		var foot := prop_radius if has_prop else decal_radius * 0.55
+		var prop_foot := maxf(prop_radius.x, prop_radius.y)
+		var decal_foot := maxf(decal_radius.x, decal_radius.y)
+		var foot := prop_foot if has_prop else decal_foot * 0.55
 		var domain_family := 3 if submerged else render_family
 		var accepted := false
 		var point := cell_center
@@ -780,7 +788,6 @@ func _append_cell(cell: int, buffers: Array) -> void:
 			continue
 		occupied.append(Vector3(point.x, point.y, foot))
 		var importance := (3.0 - float(rank)) * 2.0 + float(bands[style]) * 0.2 + _patch_noise(point)
-		var variation := _hash(cell, style)
 		if submerged:
 			# Fish are everywhere at sea; only a few cells show a shoal.
 			if render_family == 3 and _hash(cell, style + 577) > float(profile.shoal_density):
@@ -795,18 +802,31 @@ func _append_cell(cell: int, buffers: Array) -> void:
 			_emit(buffers[DECAL_BATCH], point, decal_radius, rank, cell, style, variation, bands[style], importance, kind)
 		if (plan & PLAN_PROP) != 0:
 			# Pebbles sit slightly off-centre on their own scar, never dead centre.
-			var offset := Vector2.from_angle(_hash(cell, style + 913) * TAU) * decal_radius * 0.12
+			var offset := Vector2.from_angle(_hash(cell, style + 913) * TAU) * decal_foot * 0.12
 			_emit(buffers[render_family], point + offset, prop_radius, rank, cell, style, variation, bands[style], importance + 0.5, KIND_PROP)
 		elif (plan & PLAN_BADGE) != 0:
 			_emit(buffers[render_family], point, prop_radius, rank, cell, style, variation, bands[style], importance, KIND_BADGE_ONLY)
 
-# Axis-aligned quad; decals and props rotate internally by their static seed.
+# Axis-aligned quad with independent X/Y radii; the shader rotates the material
+# sampling internally so footprints keep no rotated collision corners.
 # COLOR.g carries light transmission through water (1 on land).
-func _emit(buffer: Array, point: Vector2, radius: float, rank: int, cell: int, style: int,
+func _emit(buffer: Array, point: Vector2, radius: Vector2, rank: int, cell: int, style: int,
 		variation: float, band: int, importance: float, kind: float, transmission: float = 1.0) -> void:
-	buffer.append_array([radius, 0.0, 0.0, point.x, 0.0, radius, 0.0, point.y,
+	buffer.append_array([radius.x, 0.0, 0.0, point.x, 0.0, radius.y, 0.0, point.y,
 		float(rank), transmission, importance, kind,
 		float(cell), float(style), variation, float(band)])
+
+# Deterministic silhouette variation. Herds keep a square quad because their bitmap
+# sprites already vary heading and body scale; props/decals use area-preserving aspect.
+func _instance_scale(cell: int, style: int, family: int) -> Vector2:
+	var size_scale := lerpf(INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX,
+		_hash(cell, style * 457 + 1223))
+	if family == 1:
+		return Vector2.ONE * size_scale
+	var aspect := lerpf(INSTANCE_ASPECT_MIN, INSTANCE_ASPECT_MAX,
+		_hash(cell, style * 719 + 1571))
+	var axis := sqrt(aspect)
+	return Vector2(size_scale * axis, size_scale / axis)
 
 # Deep water hides the seabed: same falloff the old terrain-shader path used.
 func _water_transmission(cell: int) -> float:
