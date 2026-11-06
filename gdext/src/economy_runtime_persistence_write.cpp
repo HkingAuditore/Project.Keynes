@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
 #include "runtime_switch_registry.h"
@@ -25,7 +25,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _epoch_days.get());
         append_le<int64_t>(payload, _last_committed_day.get());
         append_le<int64_t>(payload, _epoch_id.get());
-        append_le<int32_t>(payload, NativeCountryRuntime::SCHEMA_VERSION);
+        append_le<int32_t>(payload, CountryApi::SCHEMA_VERSION);
         append_le<uint64_t>(payload, _save_country_identity_override
             ? _save_country_generation : country_reads().generation());
         append_le<uint64_t>(payload, _save_country_identity_override
@@ -661,7 +661,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
-            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8 +
+            4 + CountryApi::TAX_KIND_COUNT * 12 * 8 + 8 +
             NON_TAX_PERSISTED_KIND_COUNT * 8;
         const int32_t country_count = _save.fiscal_country_count;
         const int32_t max_records = std::max(
@@ -672,9 +672,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const auto append_group = [&](const std::vector<int64_t> &values,
                                       int32_t country) {
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 const size_t index = static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                    CountryApi::TAX_KIND_COUNT + kind;
                 append_le<int64_t>(payload,
                     index < values.size() ? values[index] : 0);
             }

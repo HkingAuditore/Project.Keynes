@@ -8,6 +8,7 @@
 #include "economy_graph_live_ops.h"
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
+#include "country_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
@@ -956,7 +957,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         // negative business tax is a cost reimbursement and negative income tax
         // is valued only at the funded fiscal fulfillment ratio.
         const int32_t expected_business_rate = frozen_tax_rate(
-            group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+            group.cell, CountryApi::TAX_BUSINESS, group.type_id);
         const int64_t expected_business_eligible_cost = saturating_add(
             saturating_add(input_cost, employee_wages, _saturation_count),
             maintenance_cost, _saturation_count);
@@ -964,7 +965,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
         const int64_t expected_business_transfer =
             expected_resolved_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+                group.cell, CountryApi::TAX_BUSINESS, group.type_id,
                 expected_business_base, 1, _saturation_count);
         // Income tax excludes owner livelihood from the tax base. Business
         // tax is deductible only when positive; a business subsidy is a
@@ -975,11 +976,11 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 std::max<int64_t>(0, expected_business_transfer),
                 _saturation_count));
         const int32_t expected_income_rate = frozen_tax_rate(
-            group.cell, NativeCountryRuntime::TAX_INCOME,
+            group.cell, CountryApi::TAX_INCOME,
             type.owner_profession_id);
         const int64_t expected_income_transfer =
             expected_resolved_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_INCOME,
+                group.cell, CountryApi::TAX_INCOME,
                 type.owner_profession_id,
                 expected_income_rate < 0
                     ? std::max<int64_t>(expected_income_base, owner_living_cost)
@@ -1021,7 +1022,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     _saturation_count),
                 group.last_maintenance_cost, _saturation_count);
             const int32_t realized_business_rate = frozen_tax_rate(
-                group.cell, NativeCountryRuntime::TAX_BUSINESS,
+                group.cell, CountryApi::TAX_BUSINESS,
                 group.type_id);
             // Fiscal bases follow realized cash, while lifecycle viability still
             // includes wage obligations through owner_business_cost.
@@ -1031,7 +1032,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 _saturation_count);
             const int64_t realized_business_transfer = realized_business_rate < 0
                 ? expected_resolved_fiscal_transfer(
-                    group.cell, NativeCountryRuntime::TAX_BUSINESS,
+                    group.cell, CountryApi::TAX_BUSINESS,
                     group.type_id, realized_business_eligible_cost,
                     absolute_building_days, _saturation_count)
                 : 0;
@@ -1043,7 +1044,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     group.owner_signature_id < static_cast<int32_t>(_signatures.size())
                 ? _signatures[group.owner_signature_id].profession_id : -1;
             const int32_t realized_income_rate = frozen_tax_rate(
-                group.cell, NativeCountryRuntime::TAX_INCOME,
+                group.cell, CountryApi::TAX_INCOME,
                 realized_profession);
             const int64_t realized_income_base = std::max<int64_t>(0,
                 saturating_sub(group.last_revenue, realized_taxable_cost,
@@ -1053,7 +1054,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 std::max<int64_t>(1, _epoch_days.get()), _saturation_count);
             const int64_t realized_income_transfer =
                 expected_resolved_fiscal_transfer(
-                    group.cell, NativeCountryRuntime::TAX_INCOME,
+                    group.cell, CountryApi::TAX_INCOME,
                     realized_profession,
                     realized_income_rate < 0
                         ? std::max<int64_t>(realized_income_base, owner_living_cost)
@@ -1304,7 +1305,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     : std::max<int64_t>(0, recovery_revenue);
                 const int64_t recovery_business_transfer =
                     expected_resolved_fiscal_transfer(
-                        group.cell, NativeCountryRuntime::TAX_BUSINESS,
+                        group.cell, CountryApi::TAX_BUSINESS,
                         group.type_id, recovery_business_base, 1,
                         _saturation_count);
                 const int64_t recovery_income_base = std::max<int64_t>(0,
@@ -1315,7 +1316,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         _saturation_count));
                 const int64_t recovery_income_transfer =
                     expected_resolved_fiscal_transfer(
-                        group.cell, NativeCountryRuntime::TAX_INCOME,
+                        group.cell, CountryApi::TAX_INCOME,
                         type.owner_profession_id,
                         expected_income_rate < 0
                             ? std::max<int64_t>(
@@ -1546,21 +1547,21 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 saturating_add(input_cost, employee_wages, _saturation_count),
                 maintenance_cost, _saturation_count);
             const int32_t business_rate = frozen_tax_rate(
-                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+                group.cell, CountryApi::TAX_BUSINESS, group.type_id);
             const int64_t business_base = business_rate < 0
                 ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
             const int64_t business_transfer = expected_resolved_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+                group.cell, CountryApi::TAX_BUSINESS, group.type_id,
                 business_base, 1, _saturation_count);
             const int64_t income_base = std::max<int64_t>(0,
                 saturating_sub(saturating_sub(
                     revenue, expected_business_eligible_cost, _saturation_count),
                     std::max<int64_t>(0, business_transfer), _saturation_count));
             const int32_t income_rate = frozen_tax_rate(
-                group.cell, NativeCountryRuntime::TAX_INCOME,
+                group.cell, CountryApi::TAX_INCOME,
                 type.owner_profession_id);
             const int64_t income_transfer = expected_resolved_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_INCOME,
+                group.cell, CountryApi::TAX_INCOME,
                 type.owner_profession_id,
                 income_rate < 0
                     ? std::max<int64_t>(income_base, owner_living_cost)

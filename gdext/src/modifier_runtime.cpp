@@ -1,6 +1,6 @@
 #include "modifier_runtime.h"
 
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_api.h"
 #include "runtime_effect_pod.h"
 
@@ -705,7 +705,7 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
             return false;
         }
         if (command.domain == COUNTRY && _country_runtime != nullptr &&
-            !_country_runtime->valid_handle(static_cast<int64_t>(command.entity_handle))) {
+            !country_api::valid_handle(*_country_runtime, static_cast<int64_t>(command.entity_handle))) {
             error = "modifier_country_handle_stale";
             return false;
         }

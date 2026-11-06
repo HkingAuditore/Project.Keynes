@@ -14,7 +14,7 @@
 // Economy owner thread folds the inbox at the next epoch begin so a policy
 // change never leaks into an already-frozen economy cycle.
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_host_port.h"
 
 #include <algorithm>
@@ -546,7 +546,7 @@ bool NativeEconomyRuntime::advance_era_procurement(EraProcurementContinuation &c
             return false;
         }
         if (!c.host_peer) {
-            const Dictionary applied = _country_runtime->procurement_port().applied(
+            const Dictionary applied = country_api::procurement_port(*_country_runtime).applied(
                 {c.transaction_id, c.session_epoch, c.country_generation,
                 c.peer_generation}, true, "");
             if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -746,7 +746,7 @@ bool NativeEconomyRuntime::run_government_era_procurement(std::string &error) {
         const std::vector<int64_t> goods{quantity};
         std::string route_error;
         const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET),
+            static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET),
             static_cast<int64_t>(handle), cash, quantity, ids, goods, route_error,
             &c.pending_request_id, candidate.market);
         if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
@@ -769,7 +769,7 @@ bool NativeEconomyRuntime::run_government_era_procurement(std::string &error) {
             settle();
             continue;
         }
-        const auto port = _country_runtime->procurement_port();
+        const auto port = country_api::procurement_port(*_country_runtime);
         const Dictionary begun = port.submit({port.next_order_key(),
             static_cast<int64_t>(handle), candidate.good, quantity, _epoch_id.get(),
             static_cast<int32_t>(_stage), cash});
@@ -946,7 +946,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
     };
     const auto reject_prepare = [&](const char *reason) {
         if (!continuation.host_peer && continuation.transaction_id != 0) {
-            _country_runtime->fiscal_return_port().prepared(
+            country_api::fiscal_return_port(*_country_runtime).prepared(
                 {continuation.transaction_id, continuation.session_epoch, continuation.country_generation, continuation.peer_generation},
                 false, reason);
         }
@@ -1114,7 +1114,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             const CountryWorkerAssetRoute route =
                 block_or_enqueue_country_worker_asset(
                     static_cast<uint16_t>(
-                        NativeCountryRuntime::ECONOMY_ASSET_RESEARCH_PURCHASE),
+                        CountryApi::ECONOMY_ASSET_RESEARCH_PURCHASE),
                     research_handle, continuation.cash, continuation.quantity,
                     continuation.good, error, &continuation.pending_request_id);
             if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE)
@@ -1137,7 +1137,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
 
         if (continuation.phase == 1) {
         const godot::Dictionary begun =
-            _country_runtime->fiscal_return_port().submit_research(_country_runtime->fiscal_return_port().research_intent(
+            country_api::fiscal_return_port(*_country_runtime).submit_research(country_api::fiscal_return_port(*_country_runtime).research_intent(
                 research_handle,
                 continuation.quantity, continuation.cash, _epoch_id.get(),
                 static_cast<int32_t>(_stage)));
@@ -1174,7 +1174,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
                 ? preflight_reason
                 : "country_research_peer_market_stock_changed");
         const godot::Dictionary prepared =
-            _country_runtime->fiscal_return_port().prepared(
+            country_api::fiscal_return_port(*_country_runtime).prepared(
                 {continuation.transaction_id, continuation.session_epoch, continuation.country_generation, continuation.peer_generation},
                 true, "");
         if (!static_cast<bool>(prepared.get("ok", false)))
@@ -1187,7 +1187,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
         if (continuation.host_peer)
             return fail_fault("country_research_host_peer_phase_invalid");
         const godot::Dictionary committed =
-            _country_runtime->fiscal_return_port().apply(
+            country_api::fiscal_return_port(*_country_runtime).apply(
                 continuation.transaction_id);
         if (!static_cast<bool>(committed.get("ok", false)))
             return fail_fault(String(committed.get(
@@ -1276,7 +1276,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
     if (continuation.phase == 5) {
         if (!continuation.host_peer) {
             const godot::Dictionary applied =
-                _country_runtime->fiscal_return_port().applied(
+                country_api::fiscal_return_port(*_country_runtime).applied(
                 {continuation.transaction_id, continuation.session_epoch, continuation.country_generation, continuation.peer_generation},
                 true, "");
             if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -1423,8 +1423,8 @@ bool NativeEconomyRuntime::pull_owned_command_result(
         int64_t committed = 0;
         const int32_t operation =
             command.opcode == COMMAND_TRANSFER_TO_COHORT
-                ? NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT
-                : NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT;
+                ? CountryApi::ECONOMY_ASSET_CASH_TO_COHORT
+                : CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT;
         if (!coordinate_country_cohort_cash(slot, country_handle, operation,
                                             settled, committed, error))
             return false;
@@ -1453,8 +1453,8 @@ bool NativeEconomyRuntime::pull_owned_command_result(
         int64_t moved = 0;
         const int32_t operation =
             command.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET
-                ? NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET
-                : NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET;
+                ? CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET
+                : CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET;
         if (!coordinate_country_market_goods(
                 market_id, good_id, country_handle, operation, settled, moved,
                 error))

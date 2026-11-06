@@ -8,6 +8,7 @@
 #include "economy_graph_live_ops.h"
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
+#include "country_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
@@ -608,10 +609,10 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 market_store().price[market_store().index(market, candidate.good_id)],
                 GOODS_SCALE, sat);
             const int32_t transaction_rate = frozen_tax_rate(
-                group.cell, NativeCountryRuntime::TAX_TRANSACTION,
+                group.cell, CountryApi::TAX_TRANSACTION,
                 candidate.good_id);
             const int64_t input_transfer = expected_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_TRANSACTION, base_cost,
+                group.cell, CountryApi::TAX_TRANSACTION, base_cost,
                 transaction_rate, sat);
             total = saturating_add(total,
                 std::max<int64_t>(0, saturating_add(base_cost, input_transfer, sat)),

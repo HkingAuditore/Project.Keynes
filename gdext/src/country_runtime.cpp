@@ -1468,7 +1468,7 @@ bool NativeCountryRuntime::validate_admission_command(
 }
 
 const char *economy_asset_status_name(
-        NativeCountryRuntime::EconomyAssetTransactionStatus status) {
+        NativeCountryRuntime::AssetTransactionStatus status) {
     switch (status) {
     case NativeCountryRuntime::ECONOMY_ASSET_CREATED: return "created";
     case NativeCountryRuntime::ECONOMY_ASSET_COUNTRY_PREPARED:
@@ -6642,7 +6642,7 @@ Dictionary NativeCountryRuntime::begin_economy_fiscal_reserve(
 }
 
 Dictionary NativeCountryRuntime::begin_economy_fiscal_cash_credit(
-        EconomyAssetOperation operation, int64_t country_handle, int64_t offered,
+        AssetOperation operation, int64_t country_handle, int64_t offered,
         int64_t origin_epoch, int32_t origin_stage, uint64_t request_id,
         const char *invalid_reason) {
     if (request_id != 0) {

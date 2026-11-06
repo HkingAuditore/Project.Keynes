@@ -9,6 +9,7 @@
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
 #include "modifier_api.h"
+#include "country_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
@@ -272,11 +273,11 @@ NativeEconomyRuntime::advance_household_market_chunk(
              ++_household_post_cursor) {
             const int32_t cell = _epoch_settlement_cells[_household_post_cursor];
             if ((_epoch_negative_tax_mask & static_cast<uint8_t>(
-                    1U << NativeCountryRuntime::TAX_INCOME)) != 0)
+                    1U << CountryApi::TAX_INCOME)) != 0)
                 settle_income_subsidies_for_cell(cell, _saturation_count);
             if ((_epoch_absolute_tax_mask & static_cast<uint8_t>(
-                    (1U << NativeCountryRuntime::TAX_INCOME) |
-                    (1U << NativeCountryRuntime::TAX_BUSINESS))) != 0)
+                    (1U << CountryApi::TAX_INCOME) |
+                    (1U << CountryApi::TAX_BUSINESS))) != 0)
                 settle_absolute_daily_taxes_for_cell(cell, _saturation_count);
             ++work_done;
         }
@@ -1028,7 +1029,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
             fiscal_country_snapshot.country_count))
         : _epoch_country_handles.size();
     const size_t fiscal_hash_lanes = fiscal_hash_countries *
-        NativeCountryRuntime::TAX_KIND_COUNT;
+        CountryApi::TAX_KIND_COUNT;
     const auto mix_fiscal_lanes = [&](const std::vector<int64_t> &values) {
         for (size_t lane = 0; lane < fiscal_hash_lanes; ++lane) {
             mix_u64(static_cast<uint64_t>(

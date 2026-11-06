@@ -4,7 +4,7 @@
 #include "derived_cell_materializer.h"
 #include "effect_selector_cap.h"
 
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_api.h"
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
@@ -1252,7 +1252,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
     return true;
 }
 
-bool NativeIdeologyRuntime::validate_country(uint64_t handle, int32_t &slot) const { slot=static_cast<int32_t>(handle & 0xffffffffULL); return _country_runtime!=nullptr && handle!=0 && _country_runtime->valid_handle(static_cast<int64_t>(handle)); }
+bool NativeIdeologyRuntime::validate_country(uint64_t handle, int32_t &slot) const { slot=static_cast<int32_t>(handle & 0xffffffffULL); return _country_runtime!=nullptr && handle!=0 && country_api::valid_handle(*_country_runtime, static_cast<int64_t>(handle)); }
 NativeIdeologyRuntime::CountryState *NativeIdeologyRuntime::country_state_for(
         uint64_t handle, bool create) {
     int32_t slot = -1;
@@ -1291,7 +1291,7 @@ bool NativeIdeologyRuntime::known(const CountryState &c,int32_t id) const { retu
 void NativeIdeologyRuntime::set_known(CountryState &c,int32_t id) { c.known_bits[id/64]|=(1ULL<<(id%64)); }
 bool NativeIdeologyRuntime::gate(const CountryState &c,int32_t id) const { return id>=0 && id<_gate_count && (c.gate_bits[id/64]&(1ULL<<(id%64)))!=0; }
 void NativeIdeologyRuntime::set_gate(CountryState &c,int32_t id,bool value) { if(id<0||id>=_gate_count)return; const uint64_t mask=1ULL<<(id%64); if(value)c.gate_bits[id/64]|=mask; else c.gate_bits[id/64]&=~mask; }
-bool NativeIdeologyRuntime::requirements_met(const CountryState &country,int32_t slot,const Definition &d) const { if(_country_runtime==nullptr)return false; for(int32_t i=0;i<d.technology_requirement_count;++i) if(!_country_runtime->has_technology(slot,_technology_requirements[d.technology_requirement_begin+i])) return false; for(int32_t i=0;i<d.signal_requirement_count;++i) if(!_country_runtime->has_research_signal(slot,_signal_requirements[d.signal_requirement_begin+i])) return false; for(int32_t i=0;i<d.gate_requirement_count;++i) if(!gate(country,_gate_requirements[d.gate_requirement_begin+i])) return false; return true; }
+bool NativeIdeologyRuntime::requirements_met(const CountryState &country,int32_t slot,const Definition &d) const { if(_country_runtime==nullptr)return false; for(int32_t i=0;i<d.technology_requirement_count;++i) if(!country_api::has_technology(*_country_runtime, slot,_technology_requirements[d.technology_requirement_begin+i])) return false; for(int32_t i=0;i<d.signal_requirement_count;++i) if(!country_api::has_research_signal(*_country_runtime, slot,_signal_requirements[d.signal_requirement_begin+i])) return false; for(int32_t i=0;i<d.gate_requirement_count;++i) if(!gate(country,_gate_requirements[d.gate_requirement_begin+i])) return false; return true; }
 
 NativeIdeologyRuntime::SupportResult NativeIdeologyRuntime::evaluate_support(
         CountryState &country, int32_t ideology_id,
@@ -4248,7 +4248,7 @@ int32_t NativeIdeologyRuntime::ideology_capacity_for(int32_t slot) const {
     if (_country_runtime != nullptr)
         for (const CapacityUnlock &unlock : _capacity_unlocks)
             if (unlock.ideology_delta != 0 &&
-                    _country_runtime->has_technology(slot, unlock.technology_id))
+                    country_api::has_technology(*_country_runtime, slot, unlock.technology_id))
                 capacity += unlock.ideology_delta;
     return static_cast<int32_t>(std::min<int64_t>(capacity, _ideology_capacity_max));
 }
@@ -4257,7 +4257,7 @@ int32_t NativeIdeologyRuntime::spirit_capacity_for(int32_t slot) const {
     if (_country_runtime != nullptr)
         for (const CapacityUnlock &unlock : _capacity_unlocks)
             if (unlock.spirit_delta != 0 &&
-                    _country_runtime->has_technology(slot, unlock.technology_id))
+                    country_api::has_technology(*_country_runtime, slot, unlock.technology_id))
                 capacity += unlock.spirit_delta;
     return static_cast<int32_t>(std::min<int64_t>(capacity, _spirit_capacity_max));
 }
@@ -4578,7 +4578,7 @@ int32_t NativeIdeologyRuntime::unlocked_era_for(int32_t country_slot) const {
         const int32_t technology =
             _era_milestone_technologies[static_cast<size_t>(era)];
         if (technology < 0 || era <= reached) continue;
-        if (_country_runtime->has_technology(country_slot, technology)) reached = era;
+        if (country_api::has_technology(*_country_runtime, country_slot, technology)) reached = era;
     }
     return reached;
 }
@@ -6029,7 +6029,7 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     const int32_t country_slot_id = static_cast<int32_t>(
         static_cast<uint64_t>(handle) & 0xffffffffULL);
     const bool handle_valid = _country_runtime != nullptr && handle != 0 &&
-        _country_runtime->valid_handle(handle);
+        country_api::valid_handle(*_country_runtime, handle);
     out["ideology_slots_capacity_max"] = _ideology_capacity_max;
     out["national_spirit_slots_capacity_max"] = _spirit_capacity_max;
     out["reroll_cost_percent"] = _reroll_cost_percent;
@@ -6042,7 +6042,7 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
             unlock_ideology.append(unlock.ideology_delta);
             unlock_spirit.append(unlock.spirit_delta);
             unlock_owned.append(handle_valid &&
-                _country_runtime->has_technology(country_slot_id, unlock.technology_id) ? 1 : 0);
+                country_api::has_technology(*_country_runtime, country_slot_id, unlock.technology_id) ? 1 : 0);
         }
         out["capacity_unlock_technology_ids"] = unlock_tech;
         out["capacity_unlock_ideology_deltas"] = unlock_ideology;

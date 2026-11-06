@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_cost_probe.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -1505,13 +1505,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // current employment income. A funded negative income tax is the
             // one current reservation-income source and must remain visible.
             const int32_t income_rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_INCOME, profession);
+                cell, CountryApi::TAX_INCOME, profession);
             if (income_rate >= 0) return 0;
             const int64_t daily_floor = living_cost_for_signature(
                 cell, signature, _living_cost_base_plan_id,
                 _saturation_count);
             const int64_t signed_transfer = expected_resolved_fiscal_transfer(
-                cell, NativeCountryRuntime::TAX_INCOME, profession,
+                cell, CountryApi::TAX_INCOME, profession,
                 daily_floor, 1, _saturation_count);
             const int64_t funded_transfer = std::max<int64_t>(0, saturating_sub(
                 0, signed_transfer, _saturation_count));
@@ -1520,7 +1520,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // epoch, so expose the already reserved floor here as well.
             const int32_t fulfillment = static_cast<int32_t>(std::clamp<int64_t>(
                 _fiscal_fulfillment_q16[static_cast<size_t>(cell) *
-                    ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME],
+                    ACTIVE_TAX_KIND_COUNT + CountryApi::TAX_INCOME],
                 0, Q16_ONE));
             const int64_t funded_period_floor = mul_div_sat(
                 saturating_mul(daily_floor, std::max<int64_t>(1, _epoch_days.get()),

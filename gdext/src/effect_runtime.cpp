@@ -1,5 +1,5 @@
 #include "effect_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_api.h"
 #include "modifier_api.h"
 #include "runtime_effect_pod.h"
@@ -72,8 +72,8 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
             }
             break;
         case EffectRuntime::COUNTRY_COMMAND:
-            if (domain != 1 || opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
-                opcode > NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
+            if (domain != 1 || opcode < CountryApi::COMMAND_CREATE_COUNTRY ||
+                opcode > CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
                 reason = "effect_country_opcode_unregistered";
                 return false;
             }
@@ -1554,7 +1554,7 @@ bool EffectRuntime::compile_era_reward_catalog(const Dictionary &catalog,
                  command.opcode == ModifierApi::COMMAND_REMOVE);
         if (command.action == COUNTRY_COMMAND)
             return command.domain == 1 &&
-                command.opcode == NativeCountryRuntime::COMMAND_GRANT_TECHNOLOGY;
+                command.opcode == CountryApi::COMMAND_GRANT_TECHNOLOGY;
         if (command.action == ECONOMY_COMMAND)
             return command.domain == 2 && command.opcode >= 1 && command.opcode <= 8;
         if (command.action == GAMEPLAY_COMMAND || command.action == PUBLISH_EVENT)
@@ -1790,7 +1790,7 @@ bool EffectRuntime::bind_era_reward_player_country_pod(uint64_t country_handle,
         return false;
     }
     if (country_handle == 0 ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        !country_api::valid_handle(*_country_runtime, static_cast<int64_t>(country_handle))) {
         error = "era_reward_player_country_invalid";
         return false;
     }
@@ -1907,17 +1907,17 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
         ? _era_reward_country_view : _country_runtime;
     if (pool_index < 0 || pool_index >= static_cast<int32_t>(_era_reward_pools.size()) ||
         _country_runtime == nullptr ||
-        !source->valid_handle(static_cast<int64_t>(country_handle))) {
+        !country_api::valid_handle(*source, static_cast<int64_t>(country_handle))) {
         error = "era_reward_plan_input_invalid";
         return false;
     }
-    const Dictionary country = source->country_snapshot(
+    const Dictionary country = country_api::country_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary treasury = source->treasury_snapshot(
+    const Dictionary treasury = country_api::treasury_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary research = source->research_snapshot(
+    const Dictionary research = country_api::research_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary signals_snapshot = source->research_signal_snapshot(
+    const Dictionary signals_snapshot = country_api::research_signal_snapshot(*source,
         static_cast<int64_t>(country_handle));
     if (!static_cast<bool>(country.get("ok", false)) ||
         !static_cast<bool>(treasury.get("ok", false)) ||
@@ -1973,7 +1973,7 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
             candidate.reasons, candidate.reason_count);
         (option.fallback != 0 ? fallbacks : normal).push_back(std::move(candidate));
     }
-    uint64_t seed = static_cast<uint64_t>(source->world_seed());
+    uint64_t seed = static_cast<uint64_t>(country_api::world_seed(*source));
     seed = fnv_string(seed, String(country.get("country_id", "")).utf8().get_data());
     seed = fnv_string(seed, pool.id);
     seed = fnv_value(seed, _era_reward_next_generation);
@@ -2051,7 +2051,7 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
     _last_era_reward_plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_start).count();
     ++_era_reward_offers_planned;
-    _country_runtime->set_era_reward_reference_pod(
+    country_api::set_era_reward_reference_pod(*_country_runtime,
         _era_reward_offer.plan_id, _era_reward_offer.generation,
         _era_reward_offer.milestone_technology, _era_reward_offer.status);
     return true;
@@ -2090,7 +2090,7 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
         _era_reward_offer.status = 2;
         _era_reward_offer.transaction_id = 0;
         if (_country_runtime != nullptr)
-            _country_runtime->set_era_reward_reference_pod(
+            country_api::set_era_reward_reference_pod(*_country_runtime,
                 _era_reward_offer.plan_id, _era_reward_offer.generation,
                 _era_reward_offer.milestone_technology, _era_reward_offer.status);
         Dictionary out;
@@ -2179,7 +2179,7 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
     _era_reward_offer.selected_choice = choice_index;
     _era_reward_offer.transaction_id = _transactions.back().id;
     if (_country_runtime != nullptr)
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
     Dictionary out;
@@ -2248,7 +2248,7 @@ void EffectRuntime::settle_era_reward_selection_pod(bool ok, const char *error) 
     if (!ok) _era_reward_offer.error = error != nullptr && error[0] != '\0'
         ? error : "era_reward_transaction_rejected";
     if (_country_runtime != nullptr)
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
 }
@@ -2267,7 +2267,7 @@ void EffectRuntime::refresh_era_reward_offer_status() {
     }
     if (_country_runtime != nullptr &&
         (_era_reward_offer.status == 3 || _era_reward_offer.status == 4))
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
 }
@@ -3428,7 +3428,7 @@ bool EffectRuntime::enqueue_external_effect_pod(
         const CommandDefinition &candidate = _command_definitions[i];
         const bool dynamic_country_signal_payload =
             action == COUNTRY_COMMAND &&
-            opcode == NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+            opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
             candidate.action == action && candidate.opcode == opcode &&
             (static_cast<uint64_t>(candidate.payload[0]) >> 32U) ==
                 (static_cast<uint64_t>(payload[0]) >> 32U) &&
@@ -3608,7 +3608,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
             const bool dynamic_country_signal_payload =
                 source.action == COUNTRY_COMMAND &&
                 source.opcode ==
-                    NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+                    CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
                 candidate.action == source.action &&
                 candidate.opcode == source.opcode &&
                 (static_cast<uint64_t>(candidate.payload[0]) >> 32U) ==
@@ -3804,7 +3804,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
         Command claim;
         claim.action = COUNTRY_COMMAND;
         claim.domain = 7;
-        claim.opcode = NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY;
+        claim.opcode = CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY;
         claim.target_handle = country_handle;
         claim.target_generation = country_generation;
         claim.command_key_id = -1;
@@ -3876,7 +3876,7 @@ bool EffectRuntime::family_colonization_includes_claim(
         const Command *command = command_at(transaction, ordinal);
         if (command == nullptr) continue;
         if (command->action == COUNTRY_COMMAND &&
-            command->opcode == NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY)
+            command->opcode == CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY)
             return true;
         if (command->action == ECONOMY_COMMAND &&
             command->opcode == EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
@@ -6214,7 +6214,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
     struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
-    std::vector<NativeCountryRuntime::EffectCommand> commands;
+    std::vector<CountryEffectCommand> commands;
     std::vector<PendingTransaction> pending;
     commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
@@ -6239,15 +6239,15 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
-                command->opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
-                command->opcode > NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                command->opcode < CountryApi::COMMAND_CREATE_COUNTRY ||
+                command->opcode > CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY ||
                 (command->command_definition_id < 0 &&
-                 command->opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY) ||
+                 command->opcode != CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY) ||
                 command->command_definition_id >= static_cast<int32_t>(_command_definitions.size())) {
                 supported = false;
                 break;
             }
-            NativeCountryRuntime::EffectCommand native;
+            CountryEffectCommand native;
             native.opcode = command->opcode;
             native.effective_day = transaction.effective_day;
             native.sequence = static_cast<int64_t>(command->idempotency_key &
@@ -6286,7 +6286,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
     }
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!country_runtime->submit_effect_commands_pod(commands.data(), commands.size(), request_ids, error) ||
+    if (!country_api::submit_effect_commands_pod(*country_runtime, commands.data(), commands.size(), request_ids, error) ||
         request_ids.size() != commands.size()) {
         _last_error = error.empty() ? "effect_native_country_enqueue_failed" : error;
         out["ok"] = false; out["reason"] = String(_last_error.c_str());
@@ -6314,7 +6314,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
 Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
-    country_runtime->drain_effect_host_command_receipts();
+    country_api::drain_effect_host_command_receipts(*country_runtime);
     int32_t acknowledged = 0, rejected = 0;
     std::vector<NativeAckBinding> retained;
     std::vector<int64_t> retained_ids;
@@ -6330,7 +6330,7 @@ Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runti
             const size_t request_index = static_cast<size_t>(binding.request_begin) + i;
             if (request_index >= _native_country_request_ids.size()) { failed = true; reason = "effect_native_country_binding_invalid"; break; }
             bool complete = false, ok = false;
-            if (!country_runtime->effect_command_result_pod(_native_country_request_ids[request_index],
+            if (!country_api::effect_command_result_pod(*country_runtime, _native_country_request_ids[request_index],
                     complete, ok, reason)) { failed = true; break; }
             if (!complete) { pending = true; break; }
             if (!ok) { failed = true; break; }
@@ -8216,7 +8216,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 const Command &claim = restored_command_arena[transaction.command_begin];
                 const Command &settle = restored_command_arena[transaction.command_begin + 1];
                 if (claim.action != COUNTRY_COMMAND || claim.domain != 7 ||
-                    claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                    claim.opcode != CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY ||
                     claim.command_key_id != -1 || claim.command_definition_id != -1 ||
                     settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
                     settle.opcode != EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION ||
@@ -8399,8 +8399,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
         }
     }
     if (_country_runtime != nullptr) {
-        const NativeCountryRuntime::EraRewardReference country_reference =
-            _country_runtime->era_reward_reference_pod();
+        const CountryApi::EraRewardReference country_reference =
+            country_api::era_reward_reference_pod(*_country_runtime);
         if (country_reference.plan_id != restored_offer.plan_id ||
             country_reference.offer_generation != restored_offer.generation ||
             country_reference.milestone_technology !=

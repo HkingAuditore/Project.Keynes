@@ -44,25 +44,5 @@
     "world_ext_simulation_host.cpp": "Godot binding layer owns NativeCountryRuntime",
     "world_ext_trigger.cpp": "Godot binding layer owns NativeCountryRuntime"
   },
-  "legacy_includers": [
-    "economy_runtime_annual.cpp",
-    "economy_runtime_building_employment.cpp",
-    "economy_runtime_building_investment.cpp",
-    "economy_runtime_building_production.cpp",
-    "economy_runtime_colonization_kit.cpp",
-    "economy_runtime_diagnostics.cpp",
-    "economy_runtime_fiscal.cpp",
-    "economy_runtime_internal_external_types.inc",
-    "economy_runtime_market.cpp",
-    "economy_runtime_military_view.cpp",
-    "economy_runtime_persistence_read.cpp",
-    "economy_runtime_persistence_write.cpp",
-    "economy_runtime_procurement.cpp",
-    "economy_runtime_queries_market_building.cpp",
-    "economy_runtime_trade.cpp",
-    "effect_runtime.cpp",
-    "ideology_runtime.cpp",
-    "modifier_runtime.cpp",
-    "runtime_economy_army_personnel.cpp"
-  ]
+  "legacy_includers": []
 }
