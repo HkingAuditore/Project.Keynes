@@ -31,7 +31,7 @@ func _init() -> void:
 	profile.starvation_death_rate_q32 = 0
 	for domain in range(4):
 		_expect("restore modifier domain", bool(restored.restore_modifier_domain(domain, ext.capture_modifier_domain(domain)).get("ok", false)))
-	var evidence := SaveEvidence.capture(ext, restored, [8, 9], func() -> Dictionary: return restored.configure_economy(catalog, profile, 3, 260823), [[42047, 1, 3]])
+	var evidence := SaveEvidence.capture(ext, restored, [8, 9], func() -> Dictionary: return restored.configure_economy(catalog, profile, 3, 260823), [[42488, 1, 3]])
 	_expect("save evidence complete", not evidence.is_empty())
 	print("COLONIZATION_INTENT_RESULT=" + JSON.stringify(evidence))
 	if OS.get_environment("PK_COLONIZATION_INTENT_CAPTURE") != "1":

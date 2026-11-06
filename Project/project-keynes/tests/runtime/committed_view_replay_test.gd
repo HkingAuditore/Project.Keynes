@@ -112,13 +112,30 @@ func _run() -> void:
 		var day := int(command.day)
 		if mode == "resume" and day <= save_day: continue
 		if scenario == "military" and day == 1:
-			var state_building := -1
-			for item in military.catalog_view().get("state_buildings", []):
-				if int(item.role) == 0:
-					state_building = int(item.index)
-					break
-			_expect("military state building admitted", state_building >= 0 and bool(military.build_state_building(handle, cell, state_building).get("ok", false)))
+			# Every barracks needs a military technology; the scenario grants
+			# the earliest one (warrior lodge) instead of researching it. Like
+			# the rename above, the GM command is dated ahead of the running day
+			# so it lands on the same day in every mode.
+			_expect("military technology granted", bool(host.execute_gm_command("country.grant_technology", {
+				"country_handle": handle, "technology_id": "tech.military.war_bands", "day": day + 1}).get("ok", false)))
 			_expect("military levy admitted", bool(military.set_levy_enabled(handle, true).get("ok", false)))
+		if scenario == "military" and day == 4:
+			# State buildings are economy construction: the treasury pays and
+			# queues the lot, then the military side books the schedule (the
+			# PlayerController order). Day 4 is the first day the economy's
+			# frozen availability sees the day-2 grant.
+			var economy_ids: PackedStringArray = economy.building_type_ids()
+			var state_building := -1
+			var building_id := &""
+			for item in military.catalog_view().get("state_buildings", []):
+				var economy_type := int(military.state_building_economy_id(int(item.index)))
+				if economy_type >= 0 and economy_type < economy_ids.size() and economy_ids[economy_type] == "warrior_lodge":
+					state_building = int(item.index)
+					building_id = StringName(economy_ids[economy_type])
+					break
+			_expect("military state building paid", state_building >= 0 and bool(economy.treasury_sponsored_build(
+				handle, cell, building_id, day + 1, 900001).get("ok", false)))
+			_expect("military state building admitted", state_building >= 0 and bool(military.build_state_building(handle, cell, state_building).get("ok", false)))
 		if scenario == "military" and day == 20:
 			_expect("military army admitted", bool(military.create_army(handle, cell, {0: 5}).get("ok", false)))
 		if scenario == "military" and day == 21:

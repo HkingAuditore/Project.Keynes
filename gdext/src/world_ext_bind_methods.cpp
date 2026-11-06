@@ -971,6 +971,16 @@ void DCWorldExt::_bind_methods() {
                                   "after_receipt_id", "limit"),
                          &DCWorldExt::get_construction_command_receipts,
                          DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("migrate_legacy_state_buildings", "states"),
+                         &DCWorldExt::migrate_legacy_state_buildings);
+    ClassDB::bind_method(D_METHOD("queue_treasury_sponsored_build",
+                                  "country_handle", "cell_idx", "type_id",
+                                  "effective_day", "sequence"),
+                         &DCWorldExt::queue_treasury_sponsored_build);
+    ClassDB::bind_method(D_METHOD("queue_treasury_sponsored_demolish",
+                                  "country_handle", "cell_idx", "type_id",
+                                  "count", "effective_day", "sequence"),
+                         &DCWorldExt::queue_treasury_sponsored_demolish);
     ClassDB::bind_method(D_METHOD("get_family_cell_snapshot", "cell_idx",
                                   "offset", "limit"),
                          &DCWorldExt::get_family_cell_snapshot, DEFVAL(0),
@@ -1004,8 +1014,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_country_procurement_policy",
                                   "country_handle", "enabled",
                                   "treasury_share_bp", "research_share_bp",
-                                  "effective_day", "sequence"),
-                         &DCWorldExt::set_country_procurement_policy);
+                                  "effective_day", "sequence",
+                                  "era_share_bp", "colonization_share_bp"),
+                         &DCWorldExt::set_country_procurement_policy,
+                         DEFVAL(-1), DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("set_era_procurement_target",
                                   "country_handle", "active", "good_indices",
                                   "required_quantities", "effective_day",

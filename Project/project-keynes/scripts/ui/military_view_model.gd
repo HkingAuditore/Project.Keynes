@@ -82,6 +82,9 @@ var _category_rows: Array = []
 var _unit_index_by_id := {}
 ## Optional live session readers (see configure). Null in fixtures.
 var _generator = null
+## 会话地图（`MapData`）。生产链路由 `CountryViewModel` 显式交过来：`MapGenerator`
+## 没有公开的 map getter，fixture 那条 `current_map()` 只在截图 harness 里存在。
+var _map_obj = null
 var _player_controller = null
 var _cell_names: Dictionary = {}
 var _country_names: Dictionary = {}
@@ -116,6 +119,7 @@ func configure(model: Dictionary) -> void:
 	_catalog = _as_dict(section.get("catalog", null))
 	_armies = _as_array(section.get("armies", null))
 	_generator = section.get("generator", _model.get("generator", null))
+	_map_obj = section.get("map", _model.get("map", null))
 	_player_controller = section.get("player_controller",
 		_model.get("player_controller", null))
 	_cell_names = _as_dict(_model.get("cell_names", null))
@@ -354,15 +358,16 @@ func unit_facts(index: int) -> Dictionary:
 
 
 ## Supply classes this unit consumes while idle, one chip per non-zero class.
-## `value` is the catalog's authored per-100-heads-per-day figure (q16 in the
-## JSON), printed only in tooltips — see docs/plans/military-system-design.md.
+## `supply_idle_per_100` comes from the native catalog view, which already
+## converted the authored float through `goods_from_units`: the int64 is in
+## GOODS_SCALE per 100 heads per day, so only GOODS_SCALE divides it back.
 func _supply_chips(unit: Dictionary) -> Array:
 	var chips: Array = []
 	var raw = unit.get("supply_idle_per_100", null)
 	if not (raw is PackedInt64Array or raw is Array):
 		return chips
 	for index in range(mini(raw.size(), SUPPLY_CLASSES.size())):
-		var value := float(raw[index]) / (GOODS_SCALE * Q16)
+		var value := float(raw[index]) / GOODS_SCALE
 		if value <= 0.0001:
 			continue
 		chips.append({
@@ -389,7 +394,7 @@ func _equipment_chips(unit: Dictionary) -> Array:
 			"icon": String(_category_icon(category)),
 			"quality": quality,
 			"quality_text": "Q%d" % quality,
-			"per_100": float(slot.get("qty_per_100", 0)) / (GOODS_SCALE * Q16),
+			"per_100": float(slot.get("qty_per_100", 0)) / GOODS_SCALE,
 		})
 	return chips
 
@@ -872,7 +877,7 @@ func army_detail(army: Dictionary, prefetched: Dictionary = {}) -> Dictionary:
 				"text": "%d 日" % int(value), "marker": 7.0 / SUPPLY_HORIZON_DAYS,
 				"color": UITokens.DOSSIER_OXBLOOD if value < 3.0 else (UITokens.DOSSIER_BRASS
 					if value < 7.0 else UITokens.DOSSIER_VERDIGRIS),
-				"tooltip": "%s 可支撑 %d 日（刻度为 7 日警戒线）" % [label, int(value)]})
+				"tooltip": "%s 可支撑 %d 日" % [label, int(value)]})
 	return {
 		"handle": int(army.get("handle", 0)),
 		"name": army_name(army),
@@ -1590,28 +1595,30 @@ func _region_map() -> Dictionary:
 	if _neighbor_cache.has(key):
 		return _neighbor_cache[key]
 	var regions := {}
-	if _generator != null and _generator.has_method("get_data_core_world_ext") \
-			and _generator.has_method("current_map"):
+	if _map() != null:
 		regions = _scan_regions()
 	_neighbor_cache[key] = regions
 	return regions
 
 
-## Neighbour scan over Country's territory map. Returns {} when the session
-## does not expose a map (fixture/offline mount).
+## 会话地图：模型显式给的优先，其次 fixture 的 `current_map()`。
+func _map():
+	if _map_obj != null:
+		return _map_obj
+	return CountryMapQuery.map_of(_generator)
+
+
+## Neighbour scan over the territory mirror. Returns {} when the session does not
+## expose a map (fixture/offline mount). The owner array comes from
+## `CountryMapQuery`, i.e. `MapData.country_slot_arr` first — the same mirror the
+## borders and the fog are solved from.
 func _scan_regions() -> Dictionary:
 	var regions := {}
-	var ext = _generator.call("get_data_core_world_ext")
-	if ext == null or not ext.has_method("get_country_cell_snapshot"):
+	var owners := CountryMapQuery.owner_map(_generator, _model, _map())
+	var neighbors := CountryMapQuery.neighbors_of(_generator, _map())
+	if owners.is_empty() or neighbors.size() < owners.size() * 6:
 		return regions
-	var owners = ext.call("get_country_cell_snapshot")
-	var map = _generator.call("current_map")
-	if not (owners is PackedInt32Array) or map == null:
-		return regions
-	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
-	if neighbors.size() < owners.size() * 6:
-		return regions
-	var my_slot := int(_snapshot.get("country_slot", -1))
+	var my_slot := _player_slot()
 	var frontier: Array = []
 	for cell in range(owners.size()):
 		if int(owners[cell]) == my_slot:
@@ -1670,9 +1677,34 @@ func _war_status(slot: int) -> Dictionary:
 
 
 func _handle_for_slot(slot: int) -> int:
+	var key := "handle_%d" % slot
+	if _neighbor_cache.has(key):
+		return int(_neighbor_cache[key])
 	var section := _as_dict(_model.get("military", null))
 	var handles: Dictionary = _as_dict(section.get("country_handles", null))
-	return int(handles.get(slot, 0))
+	var handle := CountryMapQuery.handle_for_slot(_owner_map(), slot,
+		_country_facade(), handles, _slot_first_cells())
+	_neighbor_cache[key] = handle
+	return handle
+
+
+## 槽位 → 该国领土首格。句柄只能按「拿一个格去问 Country」解析，所以这张表必须
+## 一次扫完并缓存：每个槽位重扫一遍归属镜像在十万格地图上是平方级开销。
+func _slot_first_cells() -> Dictionary:
+	if _neighbor_cache.has("__slot_cells__"):
+		return _neighbor_cache["__slot_cells__"]
+	var cells := CountryMapQuery.first_cell_by_slot(_owner_map())
+	_neighbor_cache["__slot_cells__"] = cells
+	return cells
+
+
+## 玩家自己在这个会话里的槽位。军事快照最权威；军事机构未接通时退回句柄低 32 位
+## 的编码（`make_handle = generation << 32 | slot`），这里只用于排除本国。
+func _player_slot() -> int:
+	var slot := int(_snapshot.get("country_slot", -1))
+	if slot >= 0:
+		return slot
+	return CountryMapQuery.slot_of_handle(_country_handle)
 
 
 func _capital_name(handle: int) -> String:
@@ -1699,6 +1731,10 @@ func ceded_cells(war: Dictionary, checked: Dictionary = {}) -> Dictionary:
 	var attacker := int(war.get("attacker_slot", -1)) == my_slot
 	var enemy_slot := int(war.get("defender_slot" if attacker else "attacker_slot", -1))
 	var control := _as_dict(_snapshot.get("control", null))
+	# 原生国家快照不带 control 段（它只在自己的 country_snapshot 里），生产环境要
+	# 问一次军事 facade：否则议和窗口的割地候选永远是空的。
+	if control.is_empty() and _facade != null and _facade.has_method("control_snapshot"):
+		control = _as_dict(_facade.call("control_snapshot"))
 	var cells = control.get("cells", PackedInt32Array())
 	var slots = control.get("controller_slots", PackedInt32Array())
 	if not (cells is PackedInt32Array) or not (slots is PackedInt32Array) \
@@ -1730,18 +1766,11 @@ func ceded_cells(war: Dictionary, checked: Dictionary = {}) -> Dictionary:
 
 
 func _owner_map() -> PackedInt32Array:
-	if _generator != null and _generator.has_method("get_data_core_world_ext"):
-		var ext = _generator.call("get_data_core_world_ext")
-		if ext != null and ext.has_method("get_country_cell_snapshot"):
-			var owners = ext.call("get_country_cell_snapshot")
-			if owners is PackedInt32Array:
-				return owners
-	var stand_in = _as_dict(_as_dict(_model.get("military", null)).get(
-		"cell_owners", null))
-	if stand_in.is_empty():
-		return PackedInt32Array()
-	var rows = stand_in.get("owners", PackedInt32Array())
-	return rows if rows is PackedInt32Array else PackedInt32Array()
+	if _neighbor_cache.has("__owners__"):
+		return _neighbor_cache["__owners__"]
+	var owners := CountryMapQuery.owner_map(_generator, _model, _map())
+	_neighbor_cache["__owners__"] = owners
+	return owners
 
 
 ## One occupied cell of the peace draft. The region name alone repeats for every
@@ -1850,13 +1879,7 @@ func _facade_country_name(slot: int) -> String:
 	var key := "name_%d" % slot
 	if _neighbor_cache.has(key):
 		return String(_neighbor_cache[key])
-	var resolved := ""
-	var facade = _country_facade()
-	var handle := _handle_for_slot(slot)
-	if facade != null and handle != 0 and facade.has_method("snapshot"):
-		var snapshot = facade.call("snapshot", handle)
-		if snapshot is Dictionary and bool((snapshot as Dictionary).get("ok", false)):
-			resolved = String((snapshot as Dictionary).get("country_name", "")).strip_edges()
+	var resolved := CountryMapQuery.country_name(_country_facade(), _handle_for_slot(slot))
 	_neighbor_cache[key] = resolved
 	return resolved
 

@@ -303,6 +303,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_market_signals_rebuild_scratch.cost_anchor_price);
     cap(_market_signal_overflow_cells);
     cap(_epoch_business_demand_ema); cap(_epoch_derived_business_demand);
+    cap(_epoch_derived_anchor_price); cap(_track_b_derived_anchor_carry);
     cap(_derived_household_preview_scratch);
     for (const auto &preview : _derived_household_preview_scratch) cap(preview.goods);
     cap(_epoch_substitute_business_demand);

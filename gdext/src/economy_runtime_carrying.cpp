@@ -663,12 +663,19 @@ int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) con
                         _epoch_country_output_factor_q16[static_cast<size_t>(country)],
                         Q16_ONE, sat);
                 }
-                const size_t sector_index = static_cast<size_t>(country) * 5U +
-                    static_cast<size_t>(std::clamp(type.economic_sector, 0, 4));
-                if (sector_index < _epoch_country_sector_output_factor_q16.size()) {
-                    food = mul_div_sat(food,
-                        _epoch_country_sector_output_factor_q16[sector_index],
-                        Q16_ONE, sat);
+                // Country sector output modifiers only exist for the civil
+                // sectors. The military sector has no bucket, so it must not be
+                // clamped into `knowledge` nor stride into the next country row.
+                if (type.economic_sector >= 0 &&
+                    type.economic_sector < CIVIL_SECTOR_COUNT) {
+                    const size_t sector_index = static_cast<size_t>(country) * 5U +
+                        static_cast<size_t>(type.economic_sector);
+                    if (sector_index <
+                        _epoch_country_sector_output_factor_q16.size()) {
+                        food = mul_div_sat(food,
+                            _epoch_country_sector_output_factor_q16[sector_index],
+                            Q16_ONE, sat);
+                    }
                 }
                 const size_t building_index = static_cast<size_t>(country) *
                     _building_types.size() +

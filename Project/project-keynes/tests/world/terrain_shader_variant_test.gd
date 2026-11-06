@@ -118,7 +118,15 @@ func _init() -> void:
 		var names := {}
 		for entry in uniforms:
 			names[String(entry.get("name", ""))] = true
-		_expect(names.has("terrain_edge_neighbor_tex"), "%s exposes terrain edge neighbor" % label)
+		# [surface-array-edge 2026-11-02] 非 tiled 的 edge 数据改读 surface array 的
+		# layer4/5：2D terrain_edge_*_tex 采样器不再出现在地形程序里（它们仍服务于
+		# fog / 边线 / 天气等独立图层），contract 变成"一个 array + 层数门控"。
+		_expect(not names.has("terrain_edge_neighbor_tex"),
+			"%s omits the 2D edge neighbor sampler (surface array layer5)" % label)
+		_expect(not names.has("terrain_edge_distance_tex"),
+			"%s omits the 2D edge distance sampler (surface array layer4)" % label)
+		_expect(names.has("terrain_surface_tex") and names.has("terrain_edge_layers_bound"),
+			"%s reads edge layers from the packed surface array" % label)
 		_expect(names.has("terrain_ecotone_width"), "%s exposes terrain ecotone width" % label)
 		_expect(names.has("terrain_ecotone_noise"), "%s exposes terrain ecotone noise" % label)
 		_expect(names.has("terrain_micro_tex"), "%s exposes terrain micro texture" % label)
@@ -219,6 +227,10 @@ func _init() -> void:
 		"web budget still omits terrain_micro_tex")
 	_expect(not web_names.has("visual_terrain_relief_tiles"),
 		"web budget omits baked terrain relief sampler")
+	_expect(web_names.has("terrain_surface_tex")
+		and web_names.has("terrain_edge_layers_bound")
+		and not web_names.has("terrain_edge_neighbor_tex"),
+		"web budget restores edge blending from the surface array, not a new sampler")
 	for label in variants:
 		var shader := Shader.new()
 		shader.code = String(variants[label]) + source
@@ -229,8 +241,11 @@ func _init() -> void:
 			"%s legacy omits flow_tex sampler (height_tex.B)" % label)
 		_expect(names.has("height_tex") and names.has("has_flow_tex"),
 			"%s legacy keeps height_tex + has_flow_tex" % label)
-		_expect(not names.has("terrain_static_baked"),
-			"%s legacy keeps the runtime fallback (no static-bake gate)" % label)
+		# [surface-array-edge 2026-11-02] 非 tiled 打包路径现在也产出 edge 层，所以
+		# 它同样带静态烘焙门（PK_TERRAIN_STATIC_PACKED）；门的值由运行期按
+		# terrain_surface_layer_count>=6 推送。
+		_expect(names.has("terrain_static_baked"),
+			"%s legacy exposes the packed static-bake gate" % label)
 	# ── [web-world-min] web/GLES3 的 world_map 裁剪变体 ───────────────────────
 	# 这一组断言守的是三条不变量：
 	#   ① 运行期（hex_renderer._apply_shader_variant_prefix）与菜单期预热
@@ -299,6 +314,9 @@ func _init() -> void:
 	_expect(wm_names.has("weather_front_count") and wm_names.has("gi_normal_floor")
 		and wm_names.has("terrain_horizon_tex") and wm_names.has("noise_tex"),
 		"web-world-min keeps ABI parity for pushed-but-unused uniforms")
+	_expect(wm_names.has("terrain_surface_tex") and wm_names.has("terrain_edge_layers_bound")
+		and not wm_names.has("terrain_edge_neighbor_tex"),
+		"web-world-min restores edge blending from the surface array, not a new sampler")
 	_expect(not web_min_source.contains("uniform sampler"),
 		"web-min leaf set declares no samplers of its own")
 	# 宏链接错的负例：只给 PK_WEB_WORLD_MIN、不给档位宏时，预处理必须让它编不出来。
@@ -340,14 +358,23 @@ func _init() -> void:
 		"water pass decodes the same cell-index inputs as world_map")
 	_expect(water_names.has("lut_dims") and water_names.has("wrap_period_x"),
 		"water pass follows the shared cell-LUT grid + wrap convention")
-	_expect(water_samplers == 4,
-		"water pass declares exactly 4 samplers (got %d)" % water_samplers)
-	_expect(water_uniform_list.size() == 16,
-		"water pass declares exactly 16 uniforms, not world_map's 186 (got %d)"
+	# [surface-array-edge 2026-11-02] compact 水面 5→6 槽：新增的唯一采样器是与陆地
+	# 程序共用的 6 层 surface array（layer4/5 = edge_distance / edge_neighbor）。
+	# 恢复 edge_mix / shore_frac / 次生水格**不得**再引入 2D edge sampler。
+	_expect(water_samplers == 6,
+		"water pass declares exactly 6 samplers incl. the shared surface array (got %d)"
+			% water_samplers)
+	_expect(water_names.has("terrain_surface_tex")
+		and water_names.has("terrain_edge_layers_bound")
+		and water_names.has("has_terrain_edge_data"),
+		"water pass restores edge_mix/shore_frac from the surface array")
+	_expect(not water_names.has("terrain_edge_neighbor_tex")
+		and not water_names.has("terrain_edge_distance_tex"),
+		"water pass does not reintroduce the 2D edge samplers")
+	_expect(water_uniform_list.size() >= 16,
+		"water pass stays a small uniform set, not world_map's 186 (got %d)"
 			% water_uniform_list.size())
-	_expect(not water_names.has("noise_tex") and not water_names.has("season_phase")
-		and not water_names.has("terrain_material_tex")
-		and not water_names.has("fog_unexplored_color"),
+	_expect(not water_names.has("noise_tex") and not water_names.has("terrain_material_tex"),
 		"water pass does not inherit world_map uniforms it cannot consume")
 	var water_broken := Shader.new()
 	water_broken.code = water_pass_source

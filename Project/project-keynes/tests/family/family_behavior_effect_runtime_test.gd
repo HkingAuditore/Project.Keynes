@@ -316,8 +316,6 @@ func _test_conserved_family_commands() -> void:
 	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
 	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
 	for type_id in range(building_ids.size()):
-		if type_id == reward_building_id:
-			continue
 		for item in range(int(construction_offsets[type_id]), int(construction_offsets[type_id + 1])):
 			construction_quantities[item] = 1000000000000
 	catalog.building_construction_quantities = construction_quantities
@@ -510,8 +508,8 @@ func _test_conserved_family_commands() -> void:
 		print("economy preflight report=", effect_report)
 
 	# The Economy epoch for effect_day is already closed here. A newly emitted
-	# same-day Economy Effect must wait for the next frozen cycle instead of
-	# keeping the world clock in a no-op same-day continuation forever.
+	# same-day Economy Effect applies immediately without reopening the closed
+	# Economy day or spinning in a no-op same-day continuation.
 	var late_instance: Dictionary = ext.submit_effect_instances({
 		"instance_ids": PackedInt64Array([91003]),
 		"program_keys": PackedStringArray(["test.economy.valid_absorb"]),
@@ -544,7 +542,7 @@ func _test_conserved_family_commands() -> void:
 	var late_same_day_ack: Dictionary = ext.ack_effect_native_economy()
 	_expect("closed Economy day does not spin on late Effect ACK",
 		bool(late_same_day.get("done", false))
-		and int(late_same_day_ack.get("acknowledged", 0)) == 0)
+		and int(late_same_day_ack.get("acknowledged", 0)) == 1)
 	var late_next_day := _run_day(ext, ready_day + 7)
 	var late_next_day_ack: Dictionary = ext.ack_effect_native_economy()
 	_expect("next Economy day commits late Effect exactly once",
@@ -552,7 +550,7 @@ func _test_conserved_family_commands() -> void:
 		and int(late_next_day.get("population_error", 1)) == 0
 		and int(late_next_day.get("money_error", 1)) == 0
 		and int(late_next_day.get("goods_error", 1)) == 0
-		and int(late_next_day_ack.get("acknowledged", 0)) == 1)
+		and int(late_next_day_ack.get("acknowledged", 0)) == 0)
 
 
 func _economy_preflight_catalog() -> Resource:
@@ -774,13 +772,14 @@ func _new_ext(catalog: Dictionary, landform: int) -> Object:
 	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	modifier_catalog.erase("ok")
 	ext.configure_modifiers(modifier_catalog, 1)
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		var value := landform if slot_name == &"cell_landform" else 0
 		ext.write_u8_range(sid, 0, PackedByteArray([value]))

@@ -40,13 +40,13 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 			host._queue_runtime_natural_resource_commit(host._runtime_commit_day)
 		# Military reads the Country/Economy view committed for this day. It is
 		# a synchronous main-thread runtime (never a worker domain), so the host
-		# is the only thing that can advance it while the host.graph is ACTIVE.
+		# is the only thing that can advance it while the graph is ACTIVE.
 		host._queue_runtime_military_commit(host._runtime_commit_day)
 		host._runtime_commit_family_cursors.clear()
 		host._runtime_commit_family_done.clear()
 		host._runtime_pending_visual_generation = generation
 		host._runtime_pending_dirty_families = int(commit.get("dirty_families", 0))
-		# Whole-host.graph ACTIVE bypasses run_daily_tick, including its visual and
+		# Whole-graph ACTIVE bypasses run_daily_tick, including its visual and
 		# recorder tail. Publish those consumers from the committed boundary.
 		var whole_graph = bool(report.get("authority_ready", false))
 		if whole_graph:
@@ -83,8 +83,8 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 		host._sched_proc_commit_ms += host._sched_elapsed_ms(commit_usec)
 		commit_usec = Time.get_ticks_usec()
 	# Economy ACTIVE mutates resource deltas on the worker-owned runtime. Drain
-	# them only host.after a committed boundary is visible, then run the same natural
-	# resource pass that SUS would have run on the synchronous host.path. If the worker
+	# them only after a committed boundary is visible, then run the same natural
+	# resource pass that SUS would have run on the synchronous path. If the worker
 	# still owns the boundary lock, keep the day queued and retry next frame.
 	var resource_usec = Time.get_ticks_usec()
 	if economy_worker_authoritative and host._runtime_natural_resource_pending_target_day >= 0 \
@@ -98,7 +98,7 @@ func _consume_runtime_commit_if_ready(host, report_override: Dictionary = {}) ->
 	if dcp:
 		host._dcp_resource_ms = float(Time.get_ticks_usec() - resource_usec) / 1000.0
 	# Military catch-up. It consumes only the committed Country/Economy view, so
-	# it is host.safe to run as soon as a commit is visible — no writeback or
+	# it is safe to run as soon as a commit is visible — no writeback or
 	# boundary lock is involved. Same-frame budget as the resource drain.
 	var military_usec = Time.get_ticks_usec()
 	host._drain_runtime_military_commits()
@@ -197,7 +197,7 @@ func _queue_runtime_military_commit(host, day: int) -> void:
 
 
 ## Military is a main-thread synchronous runtime that reads the committed
-## Country/Economy view of day D and emits D+1 intents. In whole-host.graph ACTIVE the
+## Country/Economy view of day D and emits D+1 intents. In whole-graph ACTIVE the
 ## worker never runs it (it is not a worker domain), so the host replays every
 ## observed committed day here, bounded per frame. When the API is missing (older
 ## DLL) or the facade is unconfigured this is a single null check.
@@ -211,8 +211,8 @@ func _drain_runtime_military_commits(host) -> void:
 		return
 	var facade = host._generator.get_military_facade()
 	if facade == null or not facade.is_configured():
-		# No military authority in this host.world (old DLL / host.catalog missing). Drop
-		# the queue so every frame does not re-host.probe the facade.
+		# No military authority in this world (old DLL / catalog missing). Drop
+		# the queue so every frame does not re-probe the facade.
 		host._runtime_military_pending_target_day = -1
 		return
 	var target_day = host._runtime_military_pending_target_day
@@ -230,10 +230,10 @@ func _drain_runtime_military_commits(host) -> void:
 			# Peace with no movement: the native side owns the skip decision and
 			# reports zero work, but the committed-day cursor still advances so a
 			# later war does not replay a hundred idle days.
-			result = {"ok": true, "host.path": "native_military_skip", "day_index": day}
+			result = {"ok": true, "path": "native_military_skip", "day_index": day}
 		host._runtime_military_last_commit_day = day
 		host._runtime_military_last_result = result.duplicate(false)
-		# Forward the day's facts on the same boundary as every other host.bus batch.
+		# Forward the day's facts on the same boundary as every other bus batch.
 		var job = host._generator.get_military_daily_job() \
 			if host._generator.has_method("get_military_daily_job") else null
 		if job != null and job.has_method("forward_military_events"):
@@ -245,7 +245,7 @@ func _drain_runtime_military_commits(host) -> void:
 
 
 ## Season refresh changes cover (snowline / flood / glacier), which feeds the
-## military terrain cost tables. Push the new host.layer once per refreshed season.
+## military terrain cost tables. Push the new layer once per refreshed season.
 
 
 func _refresh_military_terrain_after_season(host) -> void:
@@ -259,7 +259,7 @@ func _refresh_military_terrain_after_season(host) -> void:
 			print("[military] terrain refresh rejected: %s" % reason)
 
 
-## Whole-host.graph ACTIVE bypasses `MapGenerator.finish_season_refresh`'s daily host.path,
+## Whole-graph ACTIVE bypasses `MapGenerator.finish_season_refresh`'s daily path,
 ## so the season edge is detected here. The facade's cover signature makes this
 ## a no-op on every day whose cover did not actually change.
 
@@ -278,7 +278,7 @@ func _refresh_military_terrain_on_season_edge(host, day_idx: int) -> void:
 
 func military_report(host) -> Dictionary:
 	if host._generator == null or not host._generator.has_method("get_military_report"):
-		return {"host.configured": false}
+		return {"configured": false}
 	var report: Dictionary = host._generator.get_military_report()
 	report["host_last_commit_day"] = host._runtime_military_last_commit_day
 	report["host_pending_target_day"] = host._runtime_military_pending_target_day
@@ -288,19 +288,19 @@ func military_report(host) -> Dictionary:
 
 ## Climate 权威在 worker 时，把它提交的那一天刷进 MapData。
 ##
-## 这是 ACTIVE Climate 的主线程另一半：抑制门已经让主线程不再算 host.climate，
+## 这是 ACTIVE Climate 的主线程另一半：抑制门已经让主线程不再算 climate，
 ## 如果这里不回灌，MapData 就永久停在转权威那一天。
 ##
 ## 语义上滞后一日：worker 提交第 N 天之后，主线程在下一个渲染帧才把它应用到
 ## MapData，所以同一帧里读 MapData 的消费者看到的是第 N-1 天。这与视觉 patch
 ## 消费的滞后一致，也是 worker 不阻塞主线程的代价。需要同帧一致的读者必须走
-## host.simulation_committed 信号，而不是直接轮询 MapData。
+## simulation_committed 信号，而不是直接轮询 MapData。
 
 
 func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void:
 	if not bool(report.get("climate_worker_authoritative", false)):
 		return
-	# 只接受严格递增的 worker 提交日。host.capacity barrier 期间，host 可能在
+	# 只接受严格递增的 worker 提交日。capacity barrier 期间，host 可能在
 	# 多个渲染帧重试同一个 pending day；重复调用 writeback 会让视觉消费者
 	# 在旧快照与新快照之间来回切换，尤其在 50x 下表现为海冰闪烁。
 	var committed_day = int(report.get("simulation_committed_day", -1))
@@ -316,8 +316,8 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 		host._runtime_climate_writeback_generation)
 	if not bool(applied.get("ok", false)):
 		# 形状不符 / 权威已撤销都会走到这里。抑制门这时也已经放开（授予位是同一个
-		# 来源），所以主线程会自己重新算 host.climate，不需要在这里补算。
-		push_warning("[host.climate-authority] writeback rejected: %s" % String(
+		# 来源），所以主线程会自己重新算 climate，不需要在这里补算。
+		push_warning("[climate-authority] writeback rejected: %s" % String(
 			applied.get("code", "unknown")))
 		return
 	if not bool(applied.get("applied", false)):
@@ -331,9 +331,9 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 		"committed_day", report.get("simulation_committed_day", -1)))
 	host._runtime_climate_writeback_days += 1
 	# A field the slot guards reject is a field the worker owns but never
-	# publishes, so MapData silently keeps the pre-promotion host.value. Kept for
+	# publishes, so MapData silently keeps the pre-promotion value. Kept for
 	# diagnostics rather than warned about per day: the set is constant for a
-	# given host.world, so the host.probe reads it once instead of spamming the log.
+	# given world, so the probe reads it once instead of spamming the log.
 	host._runtime_climate_writeback_applied_fields = int(applied.get("applied_fields", 0))
 	host._runtime_climate_writeback_skipped = applied.get("skipped_fields", [])
 	host._runtime_climate_writeback_memcpy_ms = float(applied.get("memcpy_ms", 0.0))
@@ -364,15 +364,15 @@ func wait_for_climate_consumed(host, after_environment_generation: int) -> Dicti
 		# 旧 DLL / 未接线：不阻塞，也不假装等过。调用方（day 边界）继续走原路径。
 		return {"ok": false, "code": "climate_wait_api_missing", "waited_ms": 0.0}
 	if after_environment_generation == 0:
-		# Native zero means ring host.capacity, not "no environment". Never spin
+		# Native zero means ring capacity, not "no environment". Never spin
 		# here: the main thread must remain available to service domain peers.
 		return ext.wait_climate_consumed(0, 0)
 	var total_waited_ms = 0.0
 	while true:
 		# 先服务 peer，再进入下一次等待：Country 的 barrier 可能正是 worker
 		# 还没消费这份环境的原因。
-		# Peer pump only: host.country read-view is owned by _process so a full
-		# host.snapshot / host.vision refresh cannot inflate host.climate-wait or day_cost_ema.
+		# Peer pump only: country read-view is owned by _process so a full
+		# snapshot / vision refresh cannot inflate climate-wait or day_cost_ema.
 		host._service_country_worker_transport()
 		var slice: Dictionary = ext.wait_climate_consumed(
 			after_environment_generation, host.RUNTIME_CLIMATE_WAIT_SLICE_MS)
@@ -386,7 +386,7 @@ func wait_for_climate_consumed(host, after_environment_generation: int) -> Dicti
 			continue
 		# 终止条件。作者/Debug 读者需要知道是"谁没在跑"，所以带上 worker state
 		# 与已消费代次，而不是只报 false。
-		push_warning("[host.climate-authority] wait terminated: %s (state=%s consumed=%s target=%s)" % [
+		push_warning("[climate-authority] wait terminated: %s (state=%s consumed=%s target=%s)" % [
 			code, str(slice.get("worker_state", -1)),
 			str(slice.get("consumed_generation", -1)),
 			str(after_environment_generation)])

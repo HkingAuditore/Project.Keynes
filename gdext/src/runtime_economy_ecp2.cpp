@@ -512,7 +512,7 @@ bool decode_ecp2(const uint8_t *data, size_t size,
         return false;
     }
     if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)) {
-        error = "ecp2_schema_version_incompatible_expected_59";
+        error = "ecp2_schema_version_incompatible_expected_60";
         return false;
     }
     constexpr uint32_t known_domains = ECP2_DOMAIN_FULL_AUTHORITY |
@@ -601,7 +601,7 @@ bool runtime_economy_ecp2_self_test(std::string &error) {
         auto old_wire = wire;
         binary_codec::store_le(old_wire.data() + 8u, old_schema);
         if (decode_ecp2(old_wire.data(), old_wire.size(), roundtrip, error) ||
-            error != "ecp2_schema_version_incompatible_expected_59") {
+            error != "ecp2_schema_version_incompatible_expected_60") {
             error = "ecp2_old_publication_schema_not_rejected";
             return false;
         }

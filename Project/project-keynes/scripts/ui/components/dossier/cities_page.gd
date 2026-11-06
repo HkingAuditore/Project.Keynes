@@ -27,7 +27,6 @@ const ACTIONS := [
 
 func _ready() -> void:
 	_table.set_columns(COLUMNS, "population")
-	_table.empty_text = "本国尚无聚落"
 	_table.row_selected.connect(_on_row_selected)
 	_table.row_action.connect(_on_row_action)
 
@@ -57,7 +56,7 @@ func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
 func _ledger_row(row: Dictionary, scope: int) -> Dictionary:
 	var village := bool(row.village)
 	var shortage := float(row.get("shortage", 0.0))
-	var shortage_text := "—"
+	var shortage_text := "无"
 	if shortage > 0.02 and not String(row.get("shortage_good", "")).is_empty():
 		shortage_text = "%s %s" % [row.shortage_good, percent(shortage)]
 	return {"id": int(row.id), "muted": village,

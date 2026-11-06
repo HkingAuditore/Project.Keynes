@@ -1208,6 +1208,20 @@ public:
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary get_construction_command_receipts(
         int64_t after_receipt_id, int limit = 64) const;
+    // Formal player construction ingress. `submit_economy_commands` is
+    // fail-closed while StageOps owns production, so the build request is
+    // queued on the economy epoch boundary instead (canal lane contract).
+    godot::Dictionary migrate_legacy_state_buildings(
+        const godot::Array &states);
+    godot::Dictionary queue_treasury_sponsored_build(
+        int64_t country_handle, int cell_idx, int type_id,
+        int64_t effective_day, int64_t sequence);
+    // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
+    // economy ledger on the epoch boundary and the military bookkeeping command
+    // is only forwarded afterwards (requirement 6.5).
+    godot::Dictionary queue_treasury_sponsored_demolish(
+        int64_t country_handle, int cell_idx, int type_id, int64_t count,
+        int64_t effective_day, int64_t sequence);
     godot::Dictionary get_canal_route_quote(
         int64_t country_handle, int start_cell, int end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -1240,7 +1254,8 @@ public:
     // Era advancement / national procurement budget (transient economy).
     godot::Dictionary set_country_procurement_policy(
         int64_t country_handle, bool enabled, int treasury_share_bp,
-        int research_share_bp, int64_t effective_day, int64_t sequence);
+        int research_share_bp, int64_t effective_day, int64_t sequence,
+        int era_share_bp = -1, int colonization_share_bp = -1);
     godot::Dictionary set_era_procurement_target(
         int64_t country_handle, bool active,
         const godot::PackedInt32Array &good_indices,
@@ -3739,6 +3754,13 @@ private:
         std::vector<int64_t> country_annual_revenue;
         std::vector<uint64_t> country_unlock_bits;
         std::vector<int32_t> country_stat_q16;
+        // State (kind 3) building group lanes, reused across days. Filled from
+        // `military_read_state_buildings` only when that read was authoritative;
+        // cleared otherwise so a busy ledger never looks like an empty one.
+        std::vector<int32_t> state_cell;
+        std::vector<int32_t> state_type_id;
+        std::vector<int32_t> state_state_role;
+        std::vector<int64_t> state_units;
     };
     // pk::MilitaryCore (military_core.h), lazy-allocated by configure_military
     // and deleted by the destructor next to _country_ai_runtime.

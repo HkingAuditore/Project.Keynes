@@ -6,6 +6,8 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <system_error>
@@ -61,6 +63,10 @@ constexpr const char *SUMMARY_V25_SUFFIX =
     ",bullion_quota_initial"
     ",bullion_quota_remaining"
     ",bullion_quota_remainder_units\n";
+constexpr const char *MARKET_V25_SUFFIX =
+    ",derived_business_demand"
+    ",shadow_anchor_price"
+    ",price_pressure_derived_q16\n";
 constexpr const char *BUILDING_V25_SUFFIX =
     ",last_temperature_fit_q16"
     ",last_water_fit_q16"
@@ -422,12 +428,12 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
         _files[dim].write(bom, 3);
         const size_t header_length =
             std::char_traits<char>::length(HEADERS[dim]);
-        if ((dim == SUMMARY || dim == BUILDINGS) && header_length > 0 &&
-            HEADERS[dim][header_length - 1] == '\n') {
+        if ((dim == SUMMARY || dim == BUILDINGS || dim == MARKET) &&
+            header_length > 0 && HEADERS[dim][header_length - 1] == '\n') {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
-            const char *suffix = dim == SUMMARY
-                ? SUMMARY_V25_SUFFIX : BUILDING_V25_SUFFIX;
+            const char *suffix = dim == SUMMARY ? SUMMARY_V25_SUFFIX
+                : dim == BUILDINGS ? BUILDING_V25_SUFFIX : MARKET_V25_SUFFIX;
             _files[dim].write(suffix, static_cast<std::streamsize>(
                 std::char_traits<char>::length(suffix)));
         } else {
@@ -806,6 +812,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.merchant_operating_outflow);
         field(chunk, row.merchant_liquidity_coverage_q16);
         field(chunk, row.merchant_effective_buy_factor_q16);
+        field(chunk, row.derived_business_demand);
+        field(chunk, row.shadow_anchor_price);
+        field(chunk, row.price_pressure_derived_q16);
         chunk.push_back('\n'); if (!maybe_flush(MARKET)) goto write_failed;
     }
     if (!flush(MARKET)) goto write_failed;

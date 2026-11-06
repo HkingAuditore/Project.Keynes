@@ -484,6 +484,9 @@ public:
         int64_t merchant_operating_outflow = 0;
         int64_t merchant_liquidity_coverage_q16 = 0;
         int32_t merchant_effective_buy_factor_q16 = 0;
+        int64_t derived_business_demand = 0;
+        int64_t shadow_anchor_price = 0;
+        int32_t price_pressure_derived_q16 = 0;
     };
 
 public:

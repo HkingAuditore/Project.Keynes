@@ -95,6 +95,11 @@ func _init() -> void:
 			"family_handle": 1, "source_cell": 0, "target_cell": 1,
 			"population": 1, "quote_token": 1,
 		})) == "runtime_unavailable")
+	# 军事 facade 由 MapGenerator 持有，宿主（WorldRuntimeHost）本身没有同名访问器。
+	# 只问宿主会让每条玩家军事命令都判成 runtime_unavailable：面板读得到数据，
+	# 按钮却毫无反应——这条断言把「必须经 generator() 取」钉死在契约里。
+	_expect("military facade resolves through the host generator",
+		_military_facade_from_host_generator() != null)
 	_expect("national and cell tax commands are formal player commands",
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"country.tax.set_default") and
 		PlayerControllerScript.SUPPORTED_COMMANDS.has(&"country.tax.set_override") and
@@ -513,6 +518,35 @@ func _badge_tooltips(row: Node) -> PackedStringArray:
 
 func _code(result: Dictionary) -> String:
 	return String(result.get("code", ""))
+
+
+## 一个只有 `generator()` 的宿主 + 一个只有 `get_military_facade()` 的生成器：
+## 正是 WorldRuntimeHost / MapGenerator 的真实形状。控制器必须从生成器拿到 facade。
+class _MilitaryFacadeStub:
+	func submit(_batch: Array) -> Dictionary:
+		return {"ok": true, "accepted": 1, "rejected": []}
+
+
+class _GeneratorStub:
+	var facade = _MilitaryFacadeStub.new()
+
+	func get_military_facade():
+		return facade
+
+
+class _RuntimeHostStub:
+	var generated = _GeneratorStub.new()
+
+	func generator():
+		return generated
+
+
+func _military_facade_from_host_generator():
+	var controller = PlayerControllerScript.new()
+	var host := _RuntimeHostStub.new()
+	controller.set("_runtime_host", host)
+	var resolved = controller.call("_military_facade")
+	return resolved if resolved == host.generated.facade else null
 
 
 func _expect(label: String, condition: bool) -> void:

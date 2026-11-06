@@ -34,7 +34,6 @@ var _selected := -1
 
 func _ready() -> void:
 	_table.set_columns(COLUMNS, "revenue")
-	_table.empty_text = "该部门暂无建筑"
 	_table.row_selected.connect(_on_row_selected)
 
 
@@ -65,6 +64,7 @@ func refresh(vm: EconomyDossierViewModel, filter = null) -> void:
 func _refresh_industry(vm: EconomyDossierViewModel, filter = null) -> void:
 	var model := vm.industry_model(int(filter) if filter != null else -1)
 	if not bool(model.get("ok", false)):
+		_detail_grid.visible = false
 		_show_empty(_empty, null, String(model.get("reason", "")))
 		return
 	var source: Array = model.rows
@@ -109,7 +109,7 @@ func _ledger_row(row: Dictionary) -> Dictionary:
 			"fill": {"value": float(row.fill_rate), "text": percent(float(row.fill_rate)),
 				"bar_color": satisfaction_color(float(row.fill_rate)),
 				"sort": float(row.fill_rate) if float(row.jobs_required) > 0.0 else 2.0},
-			"arrears": {"text": percent(float(row.arrears_rate)) if float(row.arrears_rate) > 0.0 else "—",
+			"arrears": {"text": percent(float(row.arrears_rate)) if float(row.arrears_rate) > 0.0 else "无",
 				"value": float(row.arrears_rate),
 				"color": UITokens.DOSSIER_OXBLOOD if float(row.arrears_rate) > 0.0 else UITokens.DOSSIER_INK_MUTED},
 			"blocker": {"text": String(row.blocker) if not String(row.blocker).is_empty() else "—",
@@ -130,11 +130,9 @@ func _mix_segments(row: Dictionary) -> Array:
 
 func _refresh_detail(row: Dictionary) -> void:
 	if row.is_empty():
-		_detail_title.text = "暂无建筑"
-		_detail_meta.text = ""
-		_mix_bar.set_segments("每日营收去向", [], "")
-		_advice.text = "该范围内还没有运营中的建筑。"
+		_detail_grid.visible = false
 		return
+	_detail_grid.visible = true
 	_detail_title.text = String(row.name)
 	_detail_meta.text = "%s · %d 座 · %d 处 · 利用率 %s" % [row.sector_name, int(row.units),
 		int(row.cells), percent(float(row.utilization))]

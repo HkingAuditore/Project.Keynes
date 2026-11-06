@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Numeric contract of the derived merge (plan 22 §13.4 `numeric` row / §5.1 / §5.5).
 ##
 ## THE GAP THIS FILLS

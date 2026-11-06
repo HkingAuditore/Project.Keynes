@@ -927,6 +927,7 @@
     };
 
     struct PricePressure {
+        int64_t derived_q16 = 0;
         int64_t household_demand = 0;
         int64_t business_demand = 0;
         int64_t supply = 0;

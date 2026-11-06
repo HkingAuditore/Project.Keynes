@@ -1,0 +1,65 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"training_complex"
+display_name = "联合训练中心"
+building_kind = "state"
+state_role = "barracks"
+economic_sector_id = "military"
+semantic_tags = PackedStringArray("military.barracks")
+technology_tags = PackedStringArray("tech.military.network_centric")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &""
+upgrade_tier = 0
+industry_chain_id = &""
+progression_step = 0
+maturity_rank = 0
+maturity_display_name = ""
+progression_role = ""
+predecessor_building_ids = PackedStringArray()
+construction_days = 90
+construction_good_ids = PackedStringArray("concrete", "computers", "telecom_equipment")
+construction_quantities = PackedInt64Array(150000, 10000, 10000)
+construction_category_ids = PackedStringArray("", "", "")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+maintenance_horizon_days = 0
+owner_profession_id = &"soldier"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("soldier")
+employee_slots_per_building = PackedInt64Array(800)
+employee_wage_policy_ids = PackedStringArray("state_payroll")
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array()
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray()
+output_quantities_per_day = PackedInt64Array()
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+resource_generation_floor_q16 = 0
+behavior_id = "none"
+behavior_version = 1
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()
+wage_policy_id = "none"
+wage_per_employee_per_day = 0

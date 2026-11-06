@@ -629,12 +629,15 @@ func _build_page_tax_section(context: Dictionary) -> void:
 	var editable := bool(context.get("editable", false))
 	var hint := section.get_node("Hint") as Label
 	if not bool(context.get("available", true)):
-		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
+		var reason := String(context.get("reason", ""))
+		hint.text = reason
+		hint.visible = not reason.is_empty()
 	elif not editable:
 		hint.text = "仅可查看该国当前政策。"
+		hint.visible = true
 	else:
 		hint.text = "未单独设档的项目适用此地税率，次日生效。"
-	hint.visible = true
+		hint.visible = true
 	var lanes := section.get_node("Lanes") as VBoxContainer
 	for raw in defaults:
 		var lane: Dictionary = raw
@@ -1089,6 +1092,13 @@ func building_workspace_open() -> bool:
 func release_military_ledger_busy() -> void:
 	if _military_ledger != null:
 		_military_ledger.release_busy()
+
+
+## 官营建筑命令的回执：写在军事台账刚按下那一行上。营造反馈条只在营造窗口
+## 打开时可见，地块档案这一页如果也只写那边，被拒的命令就完全没有回音。
+func set_military_ledger_feedback(message: String, ok: bool) -> void:
+	if _military_ledger != null:
+		_military_ledger.show_feedback(message, ok)
 
 
 ## 次日结算 / 打开窗口后重发同一张目录页的请求（查询身份由窗口自己记住）。

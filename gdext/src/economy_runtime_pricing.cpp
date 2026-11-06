@@ -42,6 +42,14 @@ using namespace godot;
 using namespace variant_helpers;
 
 namespace {
+bool derived_price_conduction_enabled() {
+    static const bool value = [] {
+        const char *flag = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_PRICE_CONDUCTION);
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
+
 constexpr int64_t price_adjustment_reference(
         int64_t current_price, int64_t adjustment_anchor_price,
         int64_t period_change_q16) {
@@ -108,14 +116,20 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         // Demand conduction only: normalize derived against local flow and
         // apply the configured weight. No stock-gated pressure floor and no
         // later change_q16 clamp — inventory/excess still clear a glut.
+        // Relative-gap normalization keeps a small BOM requirement visible on
+        // an otherwise empty lane while a real local glut still dilutes it.
+        const int64_t derived_scale = derived_price_conduction_enabled()
+            ? std::max<int64_t>(1, saturating_add(derived, real_flow, sat))
+            : std::max<int64_t>(GOODS_SCALE, real_flow);
         shadow_derived_pressure_q16 = mul_div_sat(
-            std::min<int64_t>(derived, std::max<int64_t>(GOODS_SCALE, real_flow)),
-            Q16_ONE, std::max<int64_t>(GOODS_SCALE, real_flow), sat);
+            std::min<int64_t>(derived, derived_scale),
+            Q16_ONE, derived_scale, sat);
         shadow_derived_pressure_q16 = mul_div_sat(
             shadow_derived_pressure_q16,
             std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
             Q16_ONE, sat);
     }
+    out.derived_q16 = shadow_derived_pressure_q16;
     const int64_t demand = saturating_add(out.household_demand, out.business_demand, sat);
     const int64_t flow = saturating_add(demand, out.supply, sat);
     out.excess_q16 = std::clamp<int64_t>(mul_div_sat(
@@ -137,8 +151,17 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         _epoch_cost_anchor_price.size() == _market_signals.cost_anchor_price.size()
             ? _epoch_cost_anchor_price[signal_index]
             : (signal_index >= 0 ? _market_signals.cost_anchor_price[signal_index] : 0);
-    out.adjustment_anchor_price = std::max<int64_t>(
-        1, std::max<int64_t>(_good_default_price[good], anchor));
+    int64_t adjustment_anchor = std::max<int64_t>(
+        _good_default_price[good], anchor);
+    if (derived_price_conduction_enabled() && anchor <= 0 &&
+        signal_index >= 0 &&
+        signal_index < static_cast<int32_t>(_epoch_derived_anchor_price.size()) &&
+        _epoch_derived_anchor_price[signal_index] > 0) {
+        const int64_t shadow = _epoch_derived_anchor_price[signal_index];
+        adjustment_anchor = std::max<int64_t>(adjustment_anchor,
+            std::min<int64_t>(shadow, std::max<int64_t>(1, shadow - price)));
+    }
+    out.adjustment_anchor_price = std::max<int64_t>(1, adjustment_anchor);
     if (signal_index >= 0 && _good_monetary_issue_values[good] == 0 && anchor > 0) {
         const int64_t confidence = std::min<int64_t>(Q16_ONE, mul_div_sat(
             out.supply, Q16_ONE, std::max<int64_t>(GOODS_SCALE, demand), sat));

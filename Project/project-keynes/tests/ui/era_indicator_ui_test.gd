@@ -95,19 +95,19 @@ func _run() -> void:
 	var snapshot := {"technology_states": states, "technology_progress": progress,
 		"queue_technology_indices": PackedInt32Array()}
 	var model := vm.build(snapshot)
-	_check("new country starts at stone", model.era_id == "stone" and not model.researching)
+	_check("new country starts at stone", model.era_id == "stone" and not model.has("researching"))
 	states[milestones[0]] = 5
 	states[milestones[1]] = 3
 	progress[milestones[1]] = int(catalog.technology_costs[milestones[1]]) / 2
 	snapshot = {"technology_states": states, "technology_progress": progress,
 		"queue_technology_indices": PackedInt32Array([milestones[1]])}
 	model = vm.build(snapshot)
-	_check("queued milestone uses authoritative scaled cost", model.era_id == "stone"
-		and model.researching and is_equal_approx(float(model.progress), 0.5))
+	_check("milestone research no longer drives the badge (no research progress fields)",
+		model.era_id == "stone" and not model.has("progress") and not model.has("research_name"))
 	states[milestones[1]] = 4
 	snapshot.technology_states = states
 	model = vm.build(snapshot)
-	_check("pending ACK fills progress without advancing era", model.era_id == "stone" and model.progress == 1.0)
+	_check("pending ACK does not advance era", model.era_id == "stone")
 	var host := Control.new()
 	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(host)
@@ -174,10 +174,12 @@ func _run() -> void:
 	badge.set_offer_available(true)
 	await _capture("reward_hover")
 	_check("reward reminder updates shader edge", bool((badge.get_node("Badge/Icon").material as ShaderMaterial).get_shader_parameter("reward_available")))
-	badge.get_node("Hit").emit_signal("pressed")
-	dialog.refresh_overview(overview)
+	# 纸徽点击现在打开合并速览（tests/ui/era_advancement_panel_test.gd 覆盖）；
+	# EraRewardDialog 的概况页只在三选一流程里出现，这里直接验证它的版式。
+	dialog.open_overview(overview)
+	badge.set_expanded(true)
 	await create_timer(UITokens.ERA_BADGE_SLIDE_SECONDS + 0.06).timeout
-	_check("click fully reveals badge and opens a seven-metric overview with an inline concern row",
+	_check("reward-flow overview fully reveals badge with a seven-metric grid and an inline concern row",
 		is_equal_approx(body.position.y, 10.0) and dialog.visible and not dialog.is_offer_open()
 		and dialog.get_node("%Metrics").get_child_count() == 7
 		and dialog.get_node("%Metrics").columns == 3)
@@ -223,7 +225,7 @@ func _run() -> void:
 	states[milestones[1]] = 5
 	snapshot.technology_states = states
 	model = vm.build(snapshot)
-	_check("only ACK advances era", model.era_id == "agrarian" and not model.researching)
+	_check("only ACK advances era", model.era_id == "agrarian")
 	badge.set_model(model)
 	_check("live era advance starts ceremony", badge.get("_celebrating"))
 	_check("advancement does not fully expand badge without click", body.position.y < 0.0 and not dialog.visible)
@@ -255,10 +257,44 @@ func _run() -> void:
 	dialog.close_offer()
 	_check("reward ACK removes choices but retains the overview", dialog.visible and not dialog.is_offer_open())
 	manager._on_era_popup_dismissed()
+	# 大典接管：纸徽保留旧图标直到新徽记飞回（reveal_pending_era），不自行放礼花。
+	await create_timer(0.3).timeout
+	var icon_rect := badge.get_node("Badge/Icon") as TextureRect
+	var agrarian_texture := icon_rect.texture
+	badge.defer_celebration = true
+	# 只测纸徽自身：这里的 manager 不在树内（无 ModalLayer），会退化成立即落地。
+	badge.era_advanced.disconnect(manager._on_era_indicator_advanced)
+	states[milestones[2]] = 5
+	snapshot.technology_states = states
+	var kingdom := vm.build(snapshot)
+	badge.set_model(kingdom)
+	_check("deferred advance keeps the old emblem until the ceremony lands",
+		kingdom.era_id == "kingdom" and icon_rect.texture == agrarian_texture
+		and badge.has_pending_era() and not badge.get("_celebrating"))
+	badge.reveal_pending_era(true)
+	_check("landing swaps to the new emblem and flashes the badge",
+		icon_rect.texture != agrarian_texture and not badge.has_pending_era()
+		and badge.get("_celebrating"))
+	badge.defer_celebration = false
+	badge.era_advanced.connect(manager._on_era_indicator_advanced)
+	model = kingdom
 	badge.reset_for_world()
 	badge.set_model(model)
 	_check("restore establishes baseline without replaying ceremony", not badge.get("_celebrating"))
 	_check("world reset returns badge to half-hidden state", is_equal_approx(body.position.y, -110.0))
+	# 晋升纸贴是玩家在卷宗/科技面板里唯一还能看见的晋升提示，必须点名新时代与待领奖励。
+	var toast := (load("res://scenes/ui/research_toast.tscn") as PackedScene).instantiate() as ResearchToast
+	host.add_child(toast)
+	await process_frame
+	toast.show_era_promoted("agrarian", "农耕时代", true)
+	var notes := toast.visible_texts()
+	_check("promotion note names the new era", notes.size() == 1 and notes[0].contains("农耕时代"))
+	var note_entries: Array = toast.get("_entries")
+	_check("promotion note calls out the pending era reward",
+		note_entries.size() == 1 and String(note_entries[0].get("hint", "")).contains("时代奖励待领取"))
+	toast.show_research_completed("陶器制作")
+	_check("research notes keep working beside promotion notes",
+		(toast.visible_texts() as PackedStringArray).has("「陶器制作」研究完成 · 次日生效"))
 	host.queue_free()
 	manager.free()
 	await process_frame

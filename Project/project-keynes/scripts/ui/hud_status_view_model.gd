@@ -115,7 +115,6 @@ static func build_population(professions: Dictionary, summary: Dictionary) -> Di
 			"living": _at(living, row) / Q16,
 		})
 	if entries.is_empty():
-		model["note"] = "当前还没有人口。"
 		return model
 	entries.sort_custom(func(a, b): return float(a.population) > float(b.population))
 	var total := 0.0

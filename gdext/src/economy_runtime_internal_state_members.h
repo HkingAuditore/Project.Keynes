@@ -238,12 +238,19 @@
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
     std::vector<int64_t> _epoch_derived_business_demand;
+    // Per-signal Leontief shadow value anchor used only for price adjustment
+    // when no real producer cost anchor exists.
+    std::vector<int64_t> _epoch_derived_anchor_price;
+    std::vector<int64_t> _track_b_derived_anchor_carry;
+    int32_t _derived_shadow_anchor_weight_q16 = Q16_ONE / 32;
+    int32_t _derived_startup_absorption_q16 = Q16_ONE;
     // Track B (user-approved approximation): carry the last computed derived
     // business demand so every N-th day can reuse it instead of running the
     // full BFS/preview pass. Exact mode is restored with PK_ECONOMY_TRACK_B=0.
     std::vector<int64_t> _track_b_derived_carry;
     // Track B commit spread: investment review cells still waiting for their
     // turn (processed incrementally across epochs, 1/N per day).
+    std::vector<int32_t> _track_b_investment_cells_pending;
     // Track B: per-runtime carry for the cadenced AGGREGATE_PUBLISH state hash.
     // Must be per-runtime (not file-static): parity tests boot two runtimes in
     // one process and interleave their days.
@@ -450,6 +457,10 @@
     std::vector<int64_t> _building_investment_score_q16;
     std::vector<int64_t> _building_investment_payback_days;
     std::vector<int32_t> _building_investment_rejection;
+    // Review-only watermark: which economy epoch last rebuilt the transient
+    // investment incumbent index. The Track-B spread path can carry review
+    // cells into a later epoch without running the phase-4 prepare.
+    int64_t _investment_prepared_epoch = -1;
     // Bounded cold-path diagnostics for the one inspector-selected cell. These
     // are transient, excluded from save/hash, and include absent building types.
     int32_t _investment_diagnostic_cell = -1;

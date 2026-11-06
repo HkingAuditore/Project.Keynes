@@ -895,12 +895,14 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 		world.wind_field_buffer = PackedByteArray()
 		world.ocean_current_buffer = PackedByteArray()
 		world.ocean_upwelling_buffer = PackedByteArray()
+		world.ocean_current_flow_tex = null
 		print("  wind/ocean pixel buffers: skipped (ocean_current_visual off)")
 		return
 	if _use_physical_circulation(cfg) and _initial_physical_deferred:
 		world.wind_field_buffer = PackedByteArray()
 		world.ocean_current_buffer = PackedByteArray()
 		world.ocean_upwelling_buffer = PackedByteArray()
+		world.ocean_current_flow_tex = null
 		_pending_currents_buf = PackedByteArray()
 		_pending_upwelling_buf = PackedByteArray()
 		_pending_upwelling_mask = PackedByteArray()
@@ -933,7 +935,7 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 		world.wind_field_buffer = _bake_wind_field(world.world_bounds, world.derived_size, _INITIAL_PHYSICAL_SEASON_PHASE)
 		world.ocean_current_buffer = _bake_ocean_currents(map, hex_size, world, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
 		world.ocean_upwelling_buffer = _bake_ocean_upwelling(map, hex_size, world, cfg, _INITIAL_PHYSICAL_SEASON_PHASE)
-	_rebuild_vector_atlas_data_from_buffers(world)
+	_update_ocean_current_flow_texture(world)
 	_pending_currents_buf = PackedByteArray()
 	_pending_upwelling_buf = PackedByteArray()
 	_pending_upwelling_mask = PackedByteArray()
@@ -943,6 +945,27 @@ func _bake_initial_vector_buffers(map: MapData, world: WorldData, hex_size: floa
 	_pending_phys_solved_phase = NAN
 	_pending_psi_state = null
 	print("  wind/ocean/upwelling pixel buffers: %dms" % (Time.get_ticks_msec() - t_vec))
+
+func _update_ocean_current_flow_texture(world: WorldData) -> void:
+	if world == null:
+		return
+	var w: int = world.derived_size.x
+	var h: int = world.derived_size.y
+	var data: PackedByteArray = world.ocean_current_buffer
+	if w <= 0 or h <= 0 or data.size() < w * h * 2:
+		world.ocean_current_flow_tex = null
+		return
+	var image := Image.create_from_data(w, h, false, Image.FORMAT_RG8, data)
+	image.generate_mipmaps()
+	var texture_size_matches := false
+	if world.ocean_current_flow_tex != null:
+		var texture_size: Vector2 = world.ocean_current_flow_tex.get_size()
+		texture_size_matches = int(texture_size.x) == w and int(texture_size.y) == h
+	if texture_size_matches:
+		world.ocean_current_flow_tex.update(image)
+	else:
+		world.ocean_current_flow_tex = ImageTexture.create_from_image(image)
+
 
 func run_deferred_initial_physical_circulation(map: MapData, world: WorldData, hex_size: float, cfg: MapConfig) -> bool:
 	if not _initial_physical_deferred:
@@ -3911,7 +3934,9 @@ func rebake_ocean_currents(map: MapData, world: WorldData, hex_size: float,
 		world.ocean_current_buffer = PackedByteArray()
 		world.ocean_upwelling_buffer = PackedByteArray()
 	if _ocean_visual:
-		_rebuild_vector_atlas_data_from_buffers(world)
+		_update_ocean_current_flow_texture(world)
+	else:
+		world.ocean_current_flow_tex = null
 	world.vector_atlas_tex = null
 	# 方案 0：upwelling_tex 不在 rebake 路径里烘焙；F6 调试模式再 lazy build。
 	world.upwelling_tex = null
@@ -4252,39 +4277,11 @@ func commit_ocean_buffers(world: WorldData, update_textures: bool = true) -> Dic
 	# 为空，跳过。
 	if not _pending_wind_buf.is_empty():
 		world.wind_field_buffer = _pending_wind_buf
-	# [ocean-visual-skip 2026-06-16] flag 关 → 不重建/更新 vector_atlas_tex（纯视觉）。
+	# 洋流 Flowmap 与 pixel buffer 同步提交；RG8 直接复用现有 RG buffer。
 	# 正常路径下 ocean_currents_job 已用 _phys_need_visual=false 提前 round_done、根本
 	# 走不到 commit；此处的额外条件是防御性兜底（避免任何其它调用方在 flag 关时重建纹理）。
 	if update_textures and DCFeatureFlags.ocean_current_visual_active():
-		# I + L: 复用 GPU 句柄 + 持久交错缓冲（方案 A：fast path 永远成立）。
-		# 典型 round 收尾下 _vector_atlas_data 已被 pixel slices 同步更新；
-		# 缓存未就绪时（首次 commit / regenerate）直接从已 commit 的 buffer 重建
-		# 交错缓冲（一次 620k×4 byte 写入，~3ms），然后立即走 fast path，
-		# vector_atlas 已退役，正常运行不会进入此防御分支。
-		var W: int = world.derived_size.x
-		var H: int = world.derived_size.y
-		var atlas_size_match: bool = (_vector_atlas_data_size == Vector2i(W, H) \
-				and _vector_atlas_data.size() == W * H * 4 \
-				and world.vector_atlas_tex != null \
-				and world.vector_atlas_tex.get_size() == Vector2(float(W), float(H)))
-		if not atlas_size_match:
-			# 把 fallback 路径打印出来，方便后续定位"理论上不该走到这里"的边界 case。
-			# 已 commit 的 ocean/wind buffer 直接喂 _rebuild_..._from_buffers 把交错缓冲填上；
-			# 它内部会按需 resize _vector_atlas_data。
-			print("[map_baker] commit_ocean_buffers: vector_atlas_data cache miss (size=%s expected=%s tex=%s) → rebuilding"
-					% [str(_vector_atlas_data_size), str(Vector2i(W, H)), str(world.vector_atlas_tex)])
-			_rebuild_vector_atlas_data_from_buffers(world)
-			if world.vector_atlas_tex == null or world.vector_atlas_tex.get_size() != Vector2(float(W), float(H)):
-				# size 不匹配 ImageTexture 必须重建；这一步走 ImageTexture.create_from_image
-				# （一次性，无 update 复用），同样耗时但只在 size 变更（regenerate）时发生。
-				var img_init := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
-				world.vector_atlas_tex = ImageTexture.create_from_image(img_init)
-			else:
-				var img_init2 := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
-				world.vector_atlas_tex.update(img_init2)
-		else:
-			var img_va := Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, _vector_atlas_data)
-			world.vector_atlas_tex.update(img_va)
+		_update_ocean_current_flow_texture(world)
 		# 方案 0：upwelling_tex 默认不在 commit 路径里上传。
 		# F6 切到 ocean_current_debug 后会显式调 rebake_upwelling_tex_for_debug。
 		# 这里不再调 _encode_upwelling_tex（省 ~10-15ms GPU 上传 + 编码）。

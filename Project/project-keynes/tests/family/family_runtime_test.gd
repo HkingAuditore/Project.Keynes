@@ -133,8 +133,6 @@ func _run() -> void:
 	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
 	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
 	for type_id in range(building_ids.size()):
-		if type_id == reward_building_id:
-			continue
 		var qty_begin := int(construction_offsets[type_id])
 		var qty_end := int(construction_offsets[type_id + 1])
 		for item in range(qty_begin, qty_end):
@@ -161,7 +159,7 @@ func _run() -> void:
 		"building_cells": PackedInt32Array([0]),
 		"building_type_ids": PackedInt32Array([building_id]),
 		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
-		"building_counts": PackedInt64Array([10]),
+		"building_counts": PackedInt64Array([20]),
 	})
 	_expect("family fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
@@ -454,13 +452,19 @@ func _run() -> void:
 	_expect("reward building completion is excluded from recursive gameplay facts",
 		not (gameplay_events.get("type", PackedInt32Array()) as PackedInt32Array).has(6))
 
-	person_count_before = int(ext.get_family_notable_people(
-		family_handle, 0, 64).get("total", 0))
+	var family_people_after: Dictionary = ext.get_family_notable_people(
+		family_handle, 0, 64)
+	person_count_before = int(family_people_after.get("total", 0))
+	for candidate_handle in (family_people_after.get("person_handles", PackedInt64Array()) as PackedInt64Array):
+		var candidate_snap: Dictionary = ext.get_notable_person_snapshot(int(candidate_handle))
+		if int(candidate_snap.get("building_handle", 0)) != 0:
+			person_handle = int(candidate_handle)
+			break
 	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v58 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 58)
+	_expect("PKEC v60 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 60)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -482,7 +486,7 @@ func _run() -> void:
 	_expect("PKEC v31 and earlier return an explicit incompatibility error",
 		not bool(legacy_result.get("ok", true))
 		and String(legacy_result.get("reason", ""))
-			== "economy_save_v31_or_earlier_unsupported")
+			== "economy_save_price_v6_requires_new_game")
 	var restored := _new_ext(catalog)
 	_expect("restore country bootstraps", _configure_country(
 		restored, catalog, 260801))
@@ -773,6 +777,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	modifier_catalog.erase("ok")
 	ext.configure_modifiers(modifier_catalog, 1)
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:

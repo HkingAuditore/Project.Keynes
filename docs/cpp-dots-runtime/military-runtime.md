@@ -35,14 +35,15 @@
 | 交战段、战争、停战、赔款、会战日志 | `MilitaryCore` | 同上 |
 | 控制权 `_cell_controller`（-1 = 由 owner 控制） | `MilitaryCore`，PKMI 保存 | 只读：`get_military_control_snapshot()` / 渲染快照。**Economy 占领税/补贴归属 v1 未切换** |
 | 军需库存（驻军格 / 部队）、在途车队、物资账本 | `MilitaryCore` | — |
+| 官营建筑（兵营 / 城防 / 军校）的座数与档位 | `NativeEconomyRuntime` 的 kind 3 建筑组 | Military 每日从 digest 的 `state_*` 通道重建成派生缓存（§6.2），自己既不累加也不递减 |
 | 领土、国库现金/物资、国家句柄 | `NativeCountryRuntime` | Military 只发 D+1 Country 命令（§5） |
 | 人口、士兵 cohort、市场库存、商人 | `NativeEconomyRuntime` | Military 只发 D+1 Economy 命令（§5） |
 
 不变量：
 
 - Military **读 D 日已提交**的 Country/Economy（`capture_military_digest`：`copy_economy_snapshot`、
-  `cash_for_slot`、`military_read_cell_view`、`military_read_market`、`has_technology`、
-  Modifier `effective_value`），**只写自己的 store**，产出生效于 D+1 的意图。
+  `cash_for_slot`、`military_read_cell_view`、`military_read_market`、`military_read_state_buildings`、
+  `has_technology`、Modifier `effective_value`），**只写自己的 store**，产出生效于 D+1 的意图。
 - 不新增 `RuntimeDomainId`；Military 不是 worker domain，永远在主线程同步执行。
 - 所有权变化（割地、吞并）只走 Country 命令，照常触发 `country_committed`。
 - 状态全整数（q16 / MONEY_SCALE=10000 / GOODS_SCALE=1000），RNG 只由 `(seed, key, day)` 派生。
@@ -67,9 +68,9 @@
 
 | # | 阶段 | 说明 |
 | --- | --- | --- |
-| 0 | `normalize_digest`、scratch 扩容、`_last_digest` 镜像 | 每日重置路径请求预算 |
+| 0 | `normalize_digest`、scratch 扩容、`_last_digest` 镜像、`refresh_state_building_cache` | 每日重置路径请求预算；官营建筑缓存最先重建，排在一切读者之前（§6.2） |
 | 1 | `apply_due_commands` | 到期命令按 sequence 应用（含战争/和议命令） |
-| 2 | 完成到期的官营建筑 | 兵营/城防/军校计数 |
+| 2 | 过期本地施工位 | 只清 `construction_building` / `construction_done_day`，**不写**兵营/城防/军校计数：账本在 Economy（§5.3、§6.2） |
 | 3 | `reconcile_receipts` | ENLIST/LEVY → 驻军 lot；DISCHARGE → 扣 lot |
 | 4 | `update_force_targets` | 目标兵力（人数/预算模式） |
 | 5 | (无) | ~~`build_supply_fields`~~ 已删除：市场索引由采购/征发按需构建（`MarketDayScope`），无每日供应场阶段 |
@@ -77,7 +78,7 @@
 | 7 | `run_recruitment` | 每 5 日采样：配额、入伍、缺员征召（事件 47）、自动退伍、欠饷逃兵 |
 | 8 | `run_training` / `run_reinforcement` | |
 | 9 | `run_movement` | 行军、ZOC、遇敌开交战段、环境损耗（CASUALTY 意图） |
-| 10 | 排空 attrition / state-build `SPEND_CASH` 意图 | |
+| 10 | 排空 attrition 意图 / 官营营造请求 | 建造（kind 15）与拆除（kind 16）由桥侧分别转成 `queue_treasury_sponsored_build` / `queue_treasury_sponsored_demolish`，见 §5.3 |
 | 11 | `run_area_missions` | 每日最多 32 次区域评估 |
 | 12 | `run_engagements` | plan → 按边键升序 replay → 夺格 |
 | 13 | `run_wars` | 冲刷和约意图批、战争分、全境沦陷跟踪、战线清理、过期停战 |
@@ -127,7 +128,9 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
 | 6 `PROCURE_GOOD` | Economy | 13 `MARKET_GOOD_TO_COUNTRY` | target = 国家句柄，`i32_0` = 市场格，`i32_1` = good，`i64_0` = 数量 |
 | 7 `CONSUME_TREASURY_GOOD` | Country | 21 `CONSUME_TREASURY_GOODS` | `aux` = good，`value` = 数量 |
 | 8 `REQUISITION` | Economy | 5 `REMOVE_STOCK` | `i32_0` = 格，`i32_1` = good，无付款 |
-| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执 |
+| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执。维护费是终端现金 sink，实收额登记为 Economy 的 `explicit_money_burn`；官营建造已改走经济侧结算（§5.3） |
+| 15 `STATE_BUILD` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_build` | 军事建筑索引经 `economy_building_id` 翻成经济类型；经济受理后回送 `MCMD_STATE_BUILD` 仅记排期，`economy_building_id < 0` 或经济拒绝则该 lot 不建 |
+| 16 `STATE_DEMOLISH` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_demolish`（economy opcode 35） | 15 的镜像：`cell` + `count` = 军事建筑索引，`country_a` = 属主国句柄。经济侧先减座数，受理后才回送 `MCMD_STATE_DEMOLISH`；该命令在核心里是 no-op（§6.2） |
 | 20 `TRANSFER_TERRITORY` | Country | 3 | target = 接收国，`cell` |
 | 21 `TRANSFER_CASH` | Country | 23 `TRANSFER_CASH_BETWEEN_COUNTRIES` | target = 付款国，`cell`/`aux` = 收款国 slot/generation，`value` = 金额 |
 | 22 `TRANSFER_GOODS` | Country | 24 `TRANSFER_GOODS_BETWEEN_COUNTRIES` | 同上，`domain` = good |
@@ -160,6 +163,47 @@ Country 22/25/26 保留不用。玩家/AI 军事命令字符串（`force.* / con
 state.* / policy.* / army.* / war.declare / peace.*`）由 `kMilitaryOps` 映射到 `MilitaryCommandOp`，
 提交即校验，`effective_day = _military_last_step_day + 1`。
 
+### 5.3 官营建筑的营造结算
+
+官营建筑（`building_kind = "state"`，经济侧 `kind` 数值 3）的座数由 **Economy 的建筑组**持有，
+Military 只读（§6.2）。军事侧不再按建材估价折现金自己扣款。
+
+- **建造**：`MCMD_STATE_BUILD` 写本地施工位（`construction_building` / `construction_done_day`），
+  真正的付款由桥侧在做意图翻译时完成：`queue_treasury_sponsored_build(country, cell, economy_type,
+  count, effective_day, sequence)` 优先扣 `NativeCountryRuntime` 国库物资，缺口按本地市场价从商人现货
+  买入并付现金，支出记入 `NON_TAX_CONSTRUCTION`。经济侧受理后回送 `MCMD_STATE_BUILD`（§5 的 15），
+  拒绝则发失败回执。建材不足 → `construction_materials_insufficient`；国库现金不足 →
+  `construction_treasury_cash_insufficient`，两种情况都不留部分扣减。
+- **拆除**：镜像入口 `queue_treasury_sponsored_demolish`，对应 economy opcode
+  `COMMAND_TREASURY_SPONSORED_DEMOLISH = 35`。参数形状与 opcode 16 一致
+  （`i32_0` = cell、`i32_1` = 经济建筑类型、`i64_0` = 座数、`i64_1` = `OWNERSHIP_TREASURY_SPONSORED_PRIVATE`、
+  `target_handle` = 国家句柄）。**为什么不能复用普通 `COMMAND_DEMOLISH`(11)**：
+  `apply_demolish_command` 要求 `population_store().valid_handle(cmd.target_handle, slot)` 并用该 cohort 的
+  `signature_id` 去 `find_building_group`，而 state 建筑组的属主是保留签名 `_state_owner_signature`
+  （第一个 `state_service_only` 职业 × 第一个有签名的族群，该职业不会被活着的 cohort 占据），
+  没有任何 cohort 能命中它。拒因码：`demolish_target_invalid` / `demolish_not_state_owned` /
+  `demolish_state_owner_unresolved` / `demolish_state_building_absent` / `demolish_owned_count_insufficient`。
+- **两侧都不许二次记账**：竣工入账只清本地施工位、不改缓存（经济侧还要乘国家建造时间因子，
+  军事侧那份完成日只是它的缓存）；`MCMD_STATE_DEMOLISH` 在核心里是 no-op。两侧各改一次会让同一座
+  建筑被算两遍，并让 §6.2 的漂移探针每天误报一次。
+
+### 5.4 维护与失修
+
+官营建筑只有一张账单：**现金维护在 Military，物资维护不存在**。
+
+| 环节 | 归属 | 行为 |
+| --- | --- | --- |
+| 维护物资 | Economy | 17 份档案的 `maintenance_good_ids` 全为空；`resolve_building_maintenance_csr` 也不会为 `kind == 3` 从建造 BOM 推导日耗，所以 `maintenance_count == 0`，经济侧维护循环直接跳过该组 |
+| 现金维护 | Military | `run_wages_and_upkeep` 每 `kUpkeepPeriod = 5` 日按 `barracks_count[tier] × upkeep_per_day × 5`（兵营）与单座 `upkeep`（城防 / 军校）汇总每国账单，经 `MILITARY_INTENT_SPEND_CASH` 走 D+1 财政托管 |
+| 岗位工资 | Economy | `state_payroll_group = (type.kind == 3)` 时 `wage_due = wage_paid = 0`，不产生欠薪、不停发工资、不抽业主现金；士兵的饷银由 Military 经 `COMMAND_TRANSFER_TO_COHORT` 直接转入 soldier cohort |
+| 失修标记 | Military 唯一产者 | `afford * 2 < upkeep` 时置位。**只写在本次结算所属国自己拥有的格上**：账单按 `digest.cell_owner_slot[cell] == s` 汇总，写入也必须按同一条边界过滤，否则 A 国的欠费会盖到 B 国的格上（并让 `state_hash` 变化）。无账单的分支同样按国家清除自己的标记 |
+| `operating_state` | Economy | `kind == 3` 在 `build_economic_plan` 里于 9636 行提前 `continue`，绝不会进入私营亏损 / 停业 / 清算状态机；`operating_state` 恒 0 |
+
+失修的**作用范围严格限定**为两处：`cell_training_speed_q16`（军校训练速度减半，即 `MILITARY_Q16 + (speed - MILITARY_Q16) / 2`）与
+`fort_q16`（工事加成减半 `best /= 2`）。它**不影响**兵额 `posts_for_cell`、不影响招募判定
+（`run_recruitment` 只看 `paused`、兵额、在场与待征），也不改变士兵 cohort 的 `state_service_only` 语义：
+该职业不服兵役时回流失业池、不主动转职、不参与普通劳动报价，经济侧的就业恒等式审计对它直接放行。
+
 ## 6. 数据结构
 
 - **Lot**（`MilitaryLotStore`，SoA + free list）：`(location_kind 驻军格/部队, location, country_slot,
@@ -190,6 +234,35 @@ state.* / policy.* / army.* / war.declare / peace.*`）由 `kMilitaryOps` 映射
 
 档位 8 的兵营在目录编译期被 `clampi(..., 0, 7)` 压到 7，所以 `barracks_tiers[7]` 同时代表
 tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `role+tier`，任一同档下标等价。
+`fort_tier` / `college_tier` / `barracks_tiers` 都是 §6.2 的派生缓存，本查询只读它们。
+
+### 6.2 官营建筑缓存（派生，非权威）
+
+`MilitaryCellState::barracks_count[8]` / `fort_tier` / `college_tier` **不是权威状态**，只是可重建缓存，
+权威是 Economy 的 kind 3 建筑组（§5.3）。
+
+| 环节 | 行为 |
+| --- | --- |
+| 采集 | `capture_military_digest` 调 `NativeEconomyRuntime::military_read_state_buildings`，把 `(cell, type_id, state_role, units)` 四条稀疏通道写进 `MilitaryWorldDigest` |
+| 重建 | `step_day` 阶段 0 在 `_last_digest` 镜像之后立刻 `refresh_state_building_cache(view)`，早于兵额、工事系数、训练速度、部队支付与 AI 兵营规划的任何读者 |
+| 写回 | 清零全部格的三个字段后按行重建：`barracks_count[tier] += units`、`fort_tier / college_tier = max(现有, tier)` |
+
+契约要点：
+
+- 读视图返回 `bool`。`false` 表示「账本没回答」（运行时未 bootstrap，或正在 save/restore），此时 out 向量
+  已清空，但军事侧必须**保留存档恢复的缓存**，不能读成「所有官营建筑都没了」。
+- `state_lanes_present` 区分「账本回答了但是空的」与「生产方没有这套通道」（早于本契约编译的桥）。
+  只有前者（`true` 且 `state_lane_rows == 0`）才允许清零；后者必须原样留缓存。
+- 档位来自军事目录 `state_buildings[].role/tier`。`state_state_role` 是经济侧 `STATE_ROLE_*`（1..3），
+  比军事侧 `MILITARY_STATE_*`（0..2）大 1，重建时按 `role + 1` 比对，不一致记 `state_role_mismatch`。
+  经济类型在军事目录里找不到的记 `state_ledger_unmapped`，这些行不产生兵额 / 工事 / 训练加成。
+- `parsed` 强制按 `(cell, role, tier)` 稳定排序：漂移探针与昨日快照都依赖 cell 顺序，生产方改序不能静默比错格。
+- **漂移探针**：`_state_ledger_prev`（昨日账本按军事目录解析出的 `(cell, role, tier, units)`，派生、
+  不存不哈希）与当下缓存做归并比较，只有「缓存不符合昨天账本的要求」才 `state_cache_repairs += 1`。
+  这样正常竣工 / 拆除不算漂移，真有别的代码写这三个字段才会暴露。`restore` 后
+  `_state_ledger_prev_valid = false`，读档首日不会把整张地图报成漂移。
+- 三个诊断计数在 `MilitaryReport` 里，随每日 report 重置，不存档、不进 hash，经
+  `get_military_report` 以 `state_cache_repairs` / `state_ledger_unmapped` / `state_role_mismatch` 导出。
 
 ## 7. 性能设计
 
@@ -236,6 +309,18 @@ Ledger 19、Events 20、Ai 21、End 0xFFFF。未知段跳过。
 
 Restore 先解到临时实例并校验（catalog hash、地形尺寸、lot/army 引用），全部通过才交换；派生结构
 （格索引、威胁场、市场场、cell_state 索引、free list、army cache）在恢复后重建。
+
+Catalog identity 与官营建筑桥接：`MilitaryCore::catalog_hash()`（`military_core.cpp`）把
+`state_buildings[]` 的 `id / economy_building_id / role / tier / unlock_bit / capacity /
+fort_bonus / training_speed / upkeep / build_days / materials` 全部混入，因此军事目录指向的
+经济建筑类型（稠密 `building_type_ids` 索引）参与存档身份：`encode()` 把头部的
+`_catalog.hash` 写入 PKMI，`restore()` 在分配任何内存之前先比对
+`saved_hash != _catalog.hash`，不一致直接 `pkmi_catalog_mismatch`。GDScript 侧
+`MilitaryCatalogCompiler._catalog_hash()` 是另一份摘要，同样混入该列，但
+`configure_military` 的返回值以原生重算的 hash 为准：前者只做内容变更播报，
+后者才是读档闸门。两侧目录由同一份内容编译时 `economy_building_id` 稳定；
+任一侧新增/重命名建筑以致稠密顺序变化都会改变原生 hash，从而让旧档以
+`pkmi_catalog_mismatch` 被拒绝，而不是静默错配。
 
 Provider 顺序（`game_save_coordinator.gd`）：`dynamic_world → environment → pkcm → world_clock →
 simulation_runtime → pkcn → **pkmi** → pkef → ecp2 → pkgp → pkfg → pkai → journal → pktr → pkid → pkar →
@@ -346,7 +431,8 @@ ribbon 的线宽是 shader uniform，per-edge 加宽会被裁掉。
 窗口开着时地图左键就是「交割选格」。规格见 `docs/ui/military-peace-window.md`。
 
 ```text
-战争页/总览「议和」→ CountryPanel.peace_negotiation_requested
+战争页/总览「议和」，或外交章（战事档案 / 交战国档案）的「议和」
+  → CountryPanel.peace_negotiation_requested（军事章与外交章共用同一个出口）
   → GameUIManager.open_military_peace(war_id)
       ├ close_country_panel() + _suppress_ui_for_dispatch()（隐藏右栏与悬浮工具条）
       ├ CountryViewModel.build("military") → MilitaryPeaceViewModel.peace_model(war_id, draft)
@@ -399,9 +485,12 @@ ribbon 的线宽是 shader uniform，per-edge 加宽会被裁掉。
 Report（`get_military_report` / `run_military_daily`）：`military_day_ms(day_ms)`、`armies_active`、
 `armies_moving`、`engagements_active`、`wars_active`、`soldiers_total`、`astar_expansions`、`area_evals`、
 `threat_field_cells`、`convoys_due`、`convoy_hops`、`front_edges_touched`、`vision_patch_cells`（恒 0）、
-`event_coalesced`、`reconcile_delta`、`intents_emitted`、`idle`；`get_military_report` 另含 ledger、
+`event_coalesced`、`reconcile_delta`、`intents_emitted`、`idle`、`state_cache_repairs`、
+`state_ledger_unmapped`、`state_role_mismatch`；`get_military_report` 另含 ledger、
 `pending_intents`、`sequence_cursor`、`render_revision`、`state_hash`。核心另计 `cells_captured`、
 `armies_retreated`、`casualties_annihilation`、`battles_fought`（未导出到字典）。
+后三个 `state_*` 是 §6.2 的缓存诊断：`state_cache_repairs` 只在缓存与昨日账本不符时增加，
+因此一个正常推进的日子应当恒为 0。
 
 ## 11. 验证
 
@@ -423,7 +512,8 @@ godot --headless --path Project/project-keynes -s res://tests/military/military_
 2. ~~Economy 回执不回流~~（已修复，§5.1）。剩余近似：trace OFF 时按请求量视为成功；trace 被驱逐/读边界长期
    繁忙时行靠 8 日超时失败（可能低估入伍）。
 3. ~~`SPEND_CASH` 同步收取~~（已改为 D+1，§5）；仍是桥侧财政托管调用而非 Country 命令（Country 无扣现金
-   opcode）。state build 材料按每单位 1 money 估价（`military_core.cpp:2244`）。
+   opcode）。~~state build 材料按每单位 1 money 估价~~ 已移除：官营建造的建材与现金由
+   `COMMAND_TREASURY_SPONSORED_BUILD` 真实结算（§5.3），军事侧只保留完成日排期。
 4. ~~口粮恒满额~~（已修复，§5.2）；部队（army lot）口粮不回写 Economy，因 cohort 留在家乡格。
 5. ~~选择/战线进度恒空~~（已修复，§9）；`risk_q16` 仍是路线成本代理而非拦截概率。`MilitaryAreaLayer` 需由
    UI 调 `set_render_selection` 才显示。
@@ -440,3 +530,10 @@ godot --headless --path Project/project-keynes -s res://tests/military/military_
 15. 部队编队视觉 M1/M2 源码已接入：快照提供前三兵种 CSR、`heading_q16`、`attack_seq/hit_seq`，
     `MilitaryArmyTokenLayer` 已支持纸片/formation 双 backend、1–5 成员和三档 LOD。当前明确缺口是：
     工作区 DLL 尚未重建、M2 尚未做真实世界视口裁剪/长时间 soak、cue 生产者仍未实现（M3）。
+16. 官营建筑已收敛到 Economy 单一账本（§5.3、§6.2）。剩余缺口：`MILITARY_INTENT_STATE_DEMOLISH` 目前
+    只有消费者没有生产者——`MilitaryCore` 没有拆除请求队列，玩家拆除走「Economy facade 直接 queue →
+    军事 submit `MCMD_STATE_DEMOLISH`」的直连路径，AI 也还不会主动拆官营建筑。若 AI 需要拆，要补
+    `_demolish_requests` 与 `step_day` 里的 drain。
+17. opcode 35 只走专用 `queue_treasury_sponsored_demolish` 入口，**不在** `submit_commands` 的批量白名单里
+    （白名单上界仍是 `COMMAND_TREASURY_SPONSORED_BUILD`，与 opcode 16 同构地走专用入口）。
+    `submit_commands` 若收到 35 会被拒为 `unsupported_opcode`，这是刻意的：拆除必须先在经济侧落实。

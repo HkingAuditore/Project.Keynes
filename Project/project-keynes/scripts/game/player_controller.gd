@@ -80,6 +80,7 @@ const COMMAND_MILITARY_STATE_BUILD := &"military.state.build"
 const COMMAND_MILITARY_STATE_DEMOLISH := &"military.state.demolish"
 const COMMAND_MILITARY_WAGE := &"military.policy.set_wage"
 const COMMAND_MILITARY_PROCUREMENT := &"military.policy.set_procurement"
+const COMMAND_MILITARY_BUDGET := &"military.policy.set_budget"
 const COMMAND_MILITARY_ARMY_CREATE := &"military.army.create"
 const COMMAND_MILITARY_ARMY_STATION := &"military.army.station"
 const COMMAND_MILITARY_ARMY_MOVE := &"military.army.move"
@@ -467,6 +468,9 @@ func refresh_country_binding() -> void:
 	if _country_facade != null:
 		_resolve_player_country()
 		_configure_music_situation()
+		# 读档可能早于国家句柄解析：那时重推只会因为句柄为 0 而放弃，
+		# 这里在绑定完成后补一次，避免预算控制静默失效。
+		_repush_military_budget()
 		_sync_era_reward_offer()
 		_sync_era_music(true)
 	_sync_family_founding_offer()
@@ -507,6 +511,7 @@ func capture_view_state() -> Dictionary:
 		"ideology_draw_start_day": _ideology_draw_start_day,
 		"ideology_draw_sequence": _ideology_draw_sequence,
 		"era_advancement": _era_advancement.to_save(),
+		"military_budget": _military_budget_state.duplicate(),
 		"narrative_event_view": _narrative_flow.capture(),
 	}
 
@@ -569,6 +574,7 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_sync_ideology_draw()
 	_sync_era_music(true)
 	_restore_era_advancement(state.get("era_advancement", {}))
+	_restore_military_budget(state.get("military_budget", {}))
 	_annual_report_flow.try_present()
 	_narrative_flow.try_present()
 
@@ -656,7 +662,7 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_CONSTRUCTION_BUILD:
 			if _economy_facade == null or not _economy_facade.has_method(
 					"treasury_sponsored_build"):
-				result = _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+				result = _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 			else:
 				result = _economy_facade.treasury_sponsored_build(
 					_player_country_handle, int(args.get("cell_idx", -1)),
@@ -722,7 +728,10 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result = _era_advancement.resume(effective_day, sequence)
 		COMMAND_PROCUREMENT_SET_POLICY:
 			result = _era_advancement.set_policy(int(args.get("treasury_share_bp", -1)),
-				int(args.get("research_share_bp", -1)), effective_day, sequence)
+				int(args.get("research_share_bp", -1)), effective_day, sequence,
+				int(args.get("era_share_bp", EraAdvancementServiceScript.SHARE_UNSET)),
+				int(args.get("colonization_share_bp",
+					EraAdvancementServiceScript.SHARE_UNSET)))
 		COMMAND_NARRATIVE_CHOOSE:
 			result = _narrative_service.choose_option(
 				int(args.get("offer_id", -1)),
@@ -732,7 +741,11 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 				Callable(self, "_allocate_command_sequence")
 			)
 		_:
-			if MILITARY_COMMANDS.has(id):
+			if id == COMMAND_MILITARY_STATE_BUILD:
+				result = _submit_state_build_command(args, effective_day, sequence)
+			elif id == COMMAND_MILITARY_STATE_DEMOLISH:
+				result = _submit_state_demolish_command(args, effective_day, sequence)
+			elif MILITARY_COMMANDS.has(id):
 				result = _submit_military_command(id, args, effective_day, sequence)
 			else:
 				result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
@@ -773,7 +786,7 @@ func get_family_colonization_quotes(target_cell: int, family_filter: int = 0,
 	if not bool(ready.get("ok", false)):
 		return ready
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_colonization_quotes(_player_country_handle,
 		target_cell, family_filter, source_filter, offset, limit)
 
@@ -800,7 +813,7 @@ func get_family_dispatch_candidates(source_cell: int, offset: int = 0,
 	if not bool(owned.get("ok", false)):
 		return owned
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_cell_snapshot(source_cell, offset, limit)
 
 
@@ -882,13 +895,13 @@ func good_display_name(good_index: int) -> String:
 
 func get_family_snapshot(family_handle: int) -> Dictionary:
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_snapshot(family_handle)
 
 
 func get_family_traits(family_handle: int) -> Dictionary:
 	if _economy_facade == null:
-		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.get_family_traits(family_handle)
 
 
@@ -1596,7 +1609,7 @@ func _sync_time_ui() -> void:
 
 func _resolve_player_country() -> Dictionary:
 	if _runtime_host == null or _world_clock == null:
-		return _result(false, "runtime_unavailable", "玩家运行时尚未就绪。")
+		return _result(false, "runtime_unavailable", "游戏尚未就绪，请稍后再试。")
 	var generator: Variant = _runtime_host.generator()
 	if generator == null or not generator.has_method("gameplay_start_report") \
 			or not generator.has_method("get_country_facade"):
@@ -1757,7 +1770,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 		COMMAND_FAMILY_FOUNDING_CHOOSE:
 			if _economy_facade == null or not _economy_facade.has_method(
 					"submit_family_founding_choice"):
-				return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 			var founding_choice := int(args.get("choice_index", -1))
 			if founding_choice < 0 or founding_choice > 2 \
 					or int(args.get("offer_id", 0)) != _family_founding_offer_id \
@@ -1767,7 +1780,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					"家族候选已过期或选项无效。")
 		COMMAND_IDEOLOGY_OFFER:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			# Never advance time for a draw the authority would reject.
 			var preview := ideology_offer_eligibility()
 			if not bool(preview.get("can_draw", false)):
@@ -1775,7 +1788,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 				return _result(false, reason, CountryViewModel.ideology_player_reason(reason))
 		COMMAND_IDEOLOGY_REROLL:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			var reroll_preview := ideology_offer_eligibility()
 			if not bool(reroll_preview.get("can_reroll", false)):
 				var reroll_reason := "ideology_offer_not_active" \
@@ -1787,7 +1800,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					CountryViewModel.ideology_player_reason(reroll_reason))
 		COMMAND_IDEOLOGY_CHOOSE:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("offer_generation", 0)) <= 0 or \
 					int(args.get("choice_index", -1)) < 0 or \
 					int(args.get("choice_index", -1)) > 2:
@@ -1795,7 +1808,7 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 		COMMAND_IDEOLOGY_EQUIP, COMMAND_IDEOLOGY_UNEQUIP, \
 				COMMAND_IDEOLOGY_PROMOTE:
 			if _ideology_facade == null:
-				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+				return _result(false, "runtime_unavailable", "理念系统尚未就绪，请稍后再试。")
 			if int(args.get("ideology_id", -1)) < 0:
 				return _result(false, "invalid_args", "理念标识无效。")
 		COMMAND_ERA_ADVANCE_START:
@@ -1820,7 +1833,10 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if not args.has("treasury_share_bp") or not args.has("research_share_bp"):
 				return _result(false, "invalid_args", "国家购买预算参数不完整。")
 			var policy_check: Dictionary = EraAdvancementServiceScript.validate_policy(
-				int(args.get("treasury_share_bp", -1)), int(args.get("research_share_bp", -1)))
+				int(args.get("treasury_share_bp", -1)), int(args.get("research_share_bp", -1)),
+				int(args.get("era_share_bp", EraAdvancementServiceScript.SHARE_UNSET)),
+				int(args.get("colonization_share_bp",
+					EraAdvancementServiceScript.SHARE_UNSET)))
 			if not bool(policy_check.get("ok", false)):
 				return policy_check
 		COMMAND_NARRATIVE_CHOOSE:
@@ -1855,6 +1871,26 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if int(args.get("cell", -1)) < 0 or String(args.get("to", "")).is_empty() \
 					or int(args.get("count", 0)) <= 0:
 				return _result(false, "invalid_args", "训练命令缺少地块、兵种或人数。")
+			# 与官营建筑一致：兵种未解锁时不允许手动下达训练命令。原生
+			# MCMD_TRAIN 拿不到当日 digest，闸门放在唯一的命令入口。
+			var train_facade = _military_facade()
+			if train_facade != null and train_facade.has_method("catalog"):
+				var train_catalog: Dictionary = train_facade.catalog()
+				var train_units: Array = train_catalog.get("units", []) if \
+					train_catalog.get("units", null) is Array else []
+				var train_tech := ""
+				for unit_row in train_units:
+					if unit_row is Dictionary and String((unit_row as Dictionary).get(
+							"id", "")) == String(args.get("to", "")):
+						train_tech = String((unit_row as Dictionary).get("tech", ""))
+						break
+				if not train_tech.is_empty():
+					var train_researched = _completed_technology_ids()
+					if train_researched == null:
+						return _result(false, "technology_unknown",
+							"科技状态暂不可读，稍后再试。")
+					if not (train_researched as PackedStringArray).has(train_tech):
+						return _result(false, "technology_locked", "尚未解锁这项科技。")
 		COMMAND_MILITARY_STATE_BUILD, COMMAND_MILITARY_STATE_DEMOLISH:
 			if int(args.get("cell", -1)) < 0 or int(args.get("building", -1)) < 0:
 				return _result(false, "invalid_args", "官营建筑命令缺少地块或建筑。")
@@ -2389,6 +2425,7 @@ const MILITARY_COMMANDS := {
 	COMMAND_MILITARY_STATE_DEMOLISH: "state.demolish",
 	COMMAND_MILITARY_WAGE: "policy.set_wage",
 	COMMAND_MILITARY_PROCUREMENT: "policy.set_procurement",
+	COMMAND_MILITARY_BUDGET: "policy.set_budget",
 	COMMAND_MILITARY_ARMY_CREATE: "army.create",
 	COMMAND_MILITARY_ARMY_STATION: "army.station",
 	COMMAND_MILITARY_ARMY_MOVE: "army.move",
@@ -2408,13 +2445,25 @@ const MILITARY_FACADE_SUBMIT_METHOD := "submit"
 
 ## 军事 facade 由 MapGenerator（E 负责接线）持有；会话没有它就返回 null，
 ## 军事面板据此给出「军事机构尚未接通」，不会伪造成功。
+##
+## 必须经 `generator()` 取：WorldRuntimeHost 自己只是宿主，并没有同名访问器
+## （它内部也是 `_generator.get_military_facade()`）。只问 host 会让每条玩家军事
+## 命令都以 runtime_unavailable 被拒——面板照常读得到数据，按钮却毫无反应。
+## 与 `refresh_country_binding()` 里 country / economy 的取法保持一致。
 func _military_facade():
 	var host = _runtime_host
 	if host == null:
 		return null
 	if host.has_method("get_military_facade"):
-		return host.get_military_facade()
-	return null
+		var direct = host.get_military_facade()
+		if direct != null:
+			return direct
+	if not host.has_method("generator"):
+		return null
+	var generator = host.generator()
+	if generator == null or not generator.has_method("get_military_facade"):
+		return null
+	return generator.get_military_facade()
 
 
 func has_military_runtime() -> bool:
@@ -2503,6 +2552,14 @@ static func _military_command_entry(id: StringName, args: Dictionary) -> Diction
 			entry["value"] = int(args.get("value", 0))
 		COMMAND_MILITARY_PROCUREMENT:
 			entry["value"] = int(args.get("bp", 0))
+		COMMAND_MILITARY_BUDGET:
+			# -1 表示本项不改；原生按未传入项沿用当前值校验三项之和 <= 100%。
+			entry["value"] = int(args.get("total_bp", 0))
+			entry["int_pairs"] = PackedInt32Array([
+				int(args.get("wage_bp", -1)),
+				int(args.get("upkeep_bp", -1)),
+				int(args.get("procurement_bp", -1)),
+			])
 		COMMAND_MILITARY_ARMY_CREATE:
 			entry["cell"] = int(args.get("cell", -1))
 			entry["units"] = args.get("units", {})
@@ -2529,6 +2586,120 @@ static func _military_command_entry(id: StringName, args: Dictionary) -> Diction
 	return entry
 
 
+## 官营建筑的营造先由经济侧按国库出资结算（国库物资优先、缺口按市价现购），
+## 只有经济侧受理后才把排期命令交给军事侧记账。经济侧拒绝时一条军事命令都不发，
+## 两本账因此不会各自为政：不会出现「经济没扣钱、军事却已动工」。
+##
+## `economy_building_id` 是军事目录里的经济建筑稠密索引，这里反查回稳定 id 再交给
+## 经济外观层，因为它会在自己的目录里重新解析一次；稠密索引只是编译期坐标，
+## 不能当身份跨运行时传递。
+func _submit_state_build_command(args: Dictionary, effective_day: int,
+		sequence: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+	var building := int(args.get("building", -1))
+	var cell := int(args.get("cell", -1))
+	if not facade.has_method("state_building_economy_id"):
+		return _result(false, "runtime_unavailable",
+			"军事机构尚未接通：缺少官营建筑目录。")
+	var economy_type := int(facade.state_building_economy_id(building))
+	if economy_type < 0:
+		return _result(false, "military_state_building_unmapped",
+			"该项官营建筑尚未接入经济目录，暂时无法营造。")
+	if _economy_facade == null or not _economy_facade.has_method(
+			"treasury_sponsored_build"):
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
+	var economy_ids := PackedStringArray()
+	if _economy_facade.has_method("building_type_ids"):
+		economy_ids = _economy_facade.building_type_ids()
+	if economy_type >= economy_ids.size():
+		return _result(false, "military_state_building_unmapped",
+			"该项官营建筑与经济目录不一致，暂时无法营造。")
+	var building_id := StringName(economy_ids[economy_type])
+	var paid: Dictionary = _economy_facade.treasury_sponsored_build(
+		_player_country_handle, cell, building_id, effective_day, sequence)
+	if not bool(paid.get("ok", false)):
+		var code := String(paid.get("code", paid.get("reason", "command_rejected")))
+		var message := String(paid.get("message", ""))
+		if message.is_empty() or message == code:
+			message = "营造未能下单，请稍后重试。"
+		return _result(false, code, message)
+	var forwarded := _submit_military_command(COMMAND_MILITARY_STATE_BUILD,
+		args, effective_day, sequence)
+	if not bool(forwarded.get("ok", false)):
+		# The economy already accepted (and will settle) the lot, so a military
+		# bookkeeping failure must not read like "nothing happened": report the
+		# economy code and say the schedule still lands.
+		var forwarded_code := String(forwarded.get("code", "command_rejected"))
+		var out := _result(false, forwarded_code,
+			"营造已由国库出资排队，但军事排期未能登记。")
+		out["economy_code"] = String(paid.get("code", "construction_queued"))
+		return out
+	var settled := _result(true, "construction_queued",
+		"营造已由国库出资排队，将在下一个经济结算边界执行。")
+	settled["building_id"] = String(building_id)
+	settled["economy_sequence"] = sequence
+	return settled
+
+
+## 拆除是营造的镜像：先让经济账本把这座建筑减掉，再让军事侧记账。
+## 顺序不能反——官营建筑组的座数是唯一账本，军事侧只是它的派生缓存，
+## 若先发军事命令，军事侧会报出一座账本里已经不存在的建筑。
+##
+## 与营造一样，`economy_building_id` 只是编译期坐标，这里反查回稳定 id
+## 再交给经济外观层重新解析。
+func _submit_state_demolish_command(args: Dictionary, effective_day: int,
+		sequence: int) -> Dictionary:
+	var facade = _military_facade()
+	if facade == null:
+		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+	var building := int(args.get("building", -1))
+	var cell := int(args.get("cell", -1))
+	if not facade.has_method("state_building_economy_id"):
+		return _result(false, "runtime_unavailable",
+			"军事机构尚未接通：缺少官营建筑目录。")
+	var economy_type := int(facade.state_building_economy_id(building))
+	if economy_type < 0:
+		return _result(false, "military_state_building_unmapped",
+			"该项官营建筑尚未接入经济目录，暂时无法拆除。")
+	if _economy_facade == null or not _economy_facade.has_method(
+			"treasury_sponsored_demolish"):
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
+	var economy_ids := PackedStringArray()
+	if _economy_facade.has_method("building_type_ids"):
+		economy_ids = _economy_facade.building_type_ids()
+	if economy_type >= economy_ids.size():
+		return _result(false, "military_state_building_unmapped",
+			"该项官营建筑与经济目录不一致，暂时无法拆除。")
+	var building_id := StringName(economy_ids[economy_type])
+	# 一次拆一座：行内拆除键的语义就是「减掉这一座」，批量拆除没有入口，
+	# 也就不需要在这里替玩家猜一个数量。
+	var removed: Dictionary = _economy_facade.treasury_sponsored_demolish(
+		_player_country_handle, cell, building_id, 1, effective_day, sequence)
+	if not bool(removed.get("ok", false)):
+		var code := String(removed.get("code", removed.get("reason", "command_rejected")))
+		var message := String(removed.get("message", ""))
+		if message.is_empty() or message == code:
+			message = "拆除未能下单，请稍后重试。"
+		return _result(false, code, message)
+	var forwarded := _submit_military_command(COMMAND_MILITARY_STATE_DEMOLISH,
+		args, effective_day, sequence)
+	if not bool(forwarded.get("ok", false)):
+		# 经济侧已经受理（并会在下一个结算边界减掉座数），所以军事记账失败
+		# 不能读成「什么都没发生」。
+		var forwarded_code := String(forwarded.get("code", "command_rejected"))
+		var out := _result(false, forwarded_code,
+			"拆除已由经济账本受理，但军事侧记账未能登记。")
+		out["economy_code"] = String(removed.get("code", "demolish_queued"))
+		return out
+	var settled := _result(true, "demolish_queued",
+		"拆除已排队，将在下一个经济结算边界执行。")
+	settled["building_id"] = String(building_id)
+	settled["economy_sequence"] = sequence
+	return settled
+
+
 func _submit_military_command(id: StringName, args: Dictionary,
 		effective_day: int, sequence: int) -> Dictionary:
 	var facade = _military_facade()
@@ -2552,10 +2723,24 @@ func _submit_military_command(id: StringName, args: Dictionary,
 		if not result.has("message"):
 			result["message"] = "军事命令已排队，将在下一游戏日生效。"
 		_military_last_sequence = sequence
+		if id == COMMAND_MILITARY_BUDGET:
+			_remember_military_budget(args)
 	return result
 
 
 var _military_last_sequence := -1
+## 玩家亲手设过的军事预算份额（任务 10 / 需求 9.3）。
+##
+## 原生侧这三个份额是 transient：不进 PKMI、不进 `state_hash`，读档后归零，
+## 也就是退回「无信封、按现金与需求直接结算」的旧行为。不重推的话，玩家存档
+## 里的预算控制会静默消失，面板显示的份额还会和原生真实政策对不上。
+##
+## 所以会话自己留一份，读档时原样重推一次。`-1` 表示该项从未被玩家碰过：
+## 重推时原样传回，原生按未传入项沿用当前值，与当时的行为完全等价。
+var _military_budget_state := {
+	"total_bp": -1, "wage_bp": -1, "upkeep_bp": -1, "procurement_bp": -1,
+}
+var _military_budget_repushed := false
 # Army order awaiting a map click (design §14.2). "move" previews the path on the
 # first click and confirms on the second; "area" takes the first click as centre.
 var _military_order_army := 0
@@ -2566,6 +2751,60 @@ var _military_order_target := -1
 
 func military_last_sequence() -> int:
 	return _military_last_sequence
+
+
+## 命令成功后记下玩家这次真正改动的项。`-1` 表示「本次不改」，绝不覆盖已有值，
+## 否则拖一次军饷滑条就会把另外两个通道的既有份额清空。
+func _remember_military_budget(args: Dictionary) -> void:
+	var total := int(args.get("total_bp", 0))
+	if total < 0:
+		return
+	_military_budget_state["total_bp"] = total
+	for key in ["wage_bp", "upkeep_bp", "procurement_bp"]:
+		if not args.has(key):
+			continue
+		var value := int(args[key])
+		if value >= 0:
+			_military_budget_state[key] = value
+
+
+## 读档恢复：先接受存档里的份额，再尝试重推。重推失败不算错误——玩家国家句柄
+## 或军事 facade 可能还没接上，`refresh_country_binding()` 会再试一次。
+func _restore_military_budget(state) -> void:
+	_military_budget_state = {
+		"total_bp": -1, "wage_bp": -1, "upkeep_bp": -1, "procurement_bp": -1,
+	}
+	if state is Dictionary:
+		var restored: Dictionary = state
+		for key in ["total_bp", "wage_bp", "upkeep_bp", "procurement_bp"]:
+			_military_budget_state[key] = int(restored.get(key, -1))
+	_military_budget_repushed = false
+	_repush_military_budget()
+
+
+## 把会话里记住的份额原样推回原生。原生这三个字段是 transient（读档归零），
+## 不重推就等于玩家读档后预算控制静默失效。
+##
+## 返回 true 表示「已推成功」或「本来就没有可推的」；false 表示环境还没就绪，
+## 调用方（`refresh_country_binding`）应在绑定完成后重试。
+func _repush_military_budget() -> bool:
+	if _military_budget_repushed:
+		return true
+	if int(_military_budget_state.get("total_bp", -1)) < 0:
+		# 玩家从未设过预算，原生保持无信封，这正是存档前的状态。
+		_military_budget_repushed = true
+		return true
+	if _player_country_handle <= 0 or _military_facade() == null:
+		return false
+	var args := {"total_bp": int(_military_budget_state.get("total_bp", 0))}
+	for key in ["wage_bp", "upkeep_bp", "procurement_bp"]:
+		args[key] = int(_military_budget_state.get(key, -1))
+	var result: Dictionary = _submit_military_command(COMMAND_MILITARY_BUDGET,
+		args, _next_effective_day(), _allocate_command_sequence())
+	if not bool(result.get("ok", false)):
+		return false
+	_military_budget_repushed = true
+	return true
 
 
 # ─── Military army orders on the map (design §14.2) ────────────────────────
@@ -2781,7 +3020,7 @@ static func _colonization_command_message(code: String) -> String:
 		"colonization_queued": "派遣已排队，将在经济结算完成后出发。",
 		"colonization_cancel_queued": "取消已排队，将在经济结算完成后执行。",
 		"economy_paused": "经济已因守恒失败暂停，无法派遣。",
-		"economy_not_available": "经济运行时尚未就绪。",
+		"economy_not_available": "经济系统尚未就绪，请稍后再试。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
 		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
 		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",

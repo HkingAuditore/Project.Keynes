@@ -1411,6 +1411,14 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             // Optional v52 footer. Older v52 streams end after the fixed-size
             // cell records; readers accept both layouts.
             append_le<uint64_t>(payload, _committed_generation);
+            // Optional: Track-B commit-spread review cells carried to the next
+            // commit. Omitted when empty so the common stream is unchanged.
+            if (!_track_b_investment_cells_pending.empty()) {
+                append_le<uint32_t>(payload, static_cast<uint32_t>(
+                    _track_b_investment_cells_pending.size()));
+                for (const int32_t cell : _track_b_investment_cells_pending)
+                    append_le<int32_t>(payload, cell);
+            }
             _save.section = SCHEMA_VERSION >= 53
                 ? SAVE_SECTION_D7_PEER_EXT
                 : SAVE_SECTION_END;

@@ -13,7 +13,7 @@ class NativeEconomyRuntime;
 
 constexpr uint32_t RUNTIME_ECONOMY_ECP2_MARKER = 0x32504345u; // "ECP2"
 constexpr uint32_t RUNTIME_ECONOMY_ECP2_ABI_VERSION = 3u;
-constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 59;
+constexpr int32_t RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION = 60;
 
 enum EconomyEcp2Domain : uint32_t {
     ECP2_DOMAIN_ENVELOPE = 1u << 0,

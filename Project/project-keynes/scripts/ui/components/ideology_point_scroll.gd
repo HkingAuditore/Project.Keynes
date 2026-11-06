@@ -189,9 +189,14 @@ static func build_ledger(snapshot: Dictionary) -> Control:
 		ArtScript.q16(int(snapshot.get("lifetime_points_q16", 0)))], 14, ArtScript.VERMILION))
 	var chart := LedgerChart.new()
 	chart.history = snapshot.get("point_history_q16", PackedInt64Array())
+	var peak := 1
+	for value in chart.history:
+		peak = maxi(peak, int(value))
 	chart.custom_minimum_size = Vector2(360, 96)
 	chart.tooltip_text = "最近 32 次收益"
 	column.add_child(chart)
+	column.add_child(ArtScript.label("纵轴 0–%s · 最近 32 次收益" % ArtScript.q16(peak),
+		11, ArtScript.INK_MUTED))
 	return panel
 
 
@@ -206,6 +211,8 @@ class LedgerChart:
 		for value in history:
 			peak = maxi(peak, int(value))
 		draw_line(Vector2(0, size.y - 1), Vector2(size.x, size.y - 1),
+			Color(0.40, 0.28, 0.16, 0.55), 1.0)
+		draw_line(Vector2(0, 0), Vector2(0, size.y - 1),
 			Color(0.40, 0.28, 0.16, 0.55), 1.0)
 		var offset := count - history.size()
 		for index in history.size():

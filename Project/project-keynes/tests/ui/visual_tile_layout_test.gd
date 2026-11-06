@@ -58,8 +58,14 @@ func _test_device_profiles(failures: Array[String]) -> void:
 		bounds, wrap_period, "auto", false, common)
 	var desktop_high = VisualTileLayout.resolve(
 		bounds, wrap_period, "high", false, common)
+	var mobile_low = VisualTileLayout.resolve(
+		bounds, wrap_period, "low", true, common)
+	var mobile_medium = VisualTileLayout.resolve(
+		bounds, wrap_period, "medium", true, common)
 	var mobile_high = VisualTileLayout.resolve(
 		bounds, wrap_period, "high", true, common)
+	var mobile_auto = VisualTileLayout.resolve(
+		bounds, wrap_period, "auto", true, common)
 	_expect(desktop_auto.profile == "desktop_auto"
 		and desktop_auto.requested_texels_per_hex == 14.0,
 		"desktop auto profile density changed", failures)
@@ -71,10 +77,25 @@ func _test_device_profiles(failures: Array[String]) -> void:
 		and desktop_high.grid_size == Vector2i(6, 4)
 		and desktop_high.layer_count == 24,
 		"desktop high profile layout changed", failures)
-	_expect(mobile_high.requested_texels_per_hex == 10.0
-		and mobile_high.grid_size == Vector2i(4, 2)
-		and mobile_high.layer_count == 8,
+	# [mobile-density 2026-11-03] 移动端档位 6/8/10/6 → 8/10/12/10，同时稳态/峰值上限
+	# 64/96 → 96/128 MB。large preset（100x64，hex_size=22）实测：
+	#   low 8.08（6 层）/ medium 10.10（8 层）/ high 12.09（15 层，86.6 MB 稳态）/ auto 10.10。
+	# 只抬请求值不抬上限时 high 会被压回 9.83（比改前的 10.10 还低），所以两组数字必须一起锁。
+	_expect(mobile_low.requested_texels_per_hex == 8.0
+		and mobile_low.grid_size == Vector2i(3, 2)
+		and mobile_low.layer_count == 6,
+		"mobile low profile layout changed", failures)
+	_expect(mobile_medium.requested_texels_per_hex == 10.0
+		and mobile_medium.grid_size == Vector2i(4, 2)
+		and mobile_medium.layer_count == 8,
+		"mobile medium profile layout changed", failures)
+	_expect(mobile_high.requested_texels_per_hex == 12.0
+		and mobile_high.grid_size == Vector2i(5, 3)
+		and mobile_high.layer_count == 15
+		and mobile_high.logical_size == Vector2i(2080, 1224),
 		"mobile high profile layout changed", failures)
+	_expect(mobile_auto.requested_texels_per_hex == 10.0,
+		"mobile auto profile density changed", failures)
 	_expect(desktop_auto.requested_tile_world_span.x > 0.0
 		and desktop_auto.tile_world_area > 0.0,
 		"tile world coverage diagnostics are missing", failures)
@@ -138,8 +159,13 @@ func _test_compatibility_fallback(failures: Array[String]) -> void:
 		{"mode": "tiled", "hex_size": 20.0,
 			"rendering_method": "gl_compatibility"}
 	)
-	_expect(layout.mode == "legacy" and layout.fallback_reason == "compatibility_renderer",
-		"Compatibility renderer did not force legacy", failures)
+	# [mobile-density 2026-11-03] 这条断言在 2026-08-05「compat 改为优先 tiled」之后就已过期
+	# （resolve() 里 compat 分支现在写 MODE_TILED + "compatibility_renderer_tiles_preferred"：
+	# WebGL2 下单张大纹理会被引擎静默降成 4x4 白纹理，Texture2DArray 分层上传才是稳定通道）。
+	# 之前一直是红的，与本次移动端档位/上限改动无关，这里对齐成当前契约。
+	_expect(layout.mode == "tiled"
+		and layout.fallback_reason == "compatibility_renderer_tiles_preferred",
+		"Compatibility renderer no longer prefers tiled arrays", failures)
 
 
 func _test_wrap_address(failures: Array[String]) -> void:

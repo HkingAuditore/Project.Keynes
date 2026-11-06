@@ -56,7 +56,7 @@ MilitaryTerrainInput make_hex_terrain(int32_t w, int32_t h) {
     return t;
 }
 
-MilitaryCatalog make_catalog() {
+MilitaryCatalog make_catalog(int64_t barracks_upkeep = 0) {
     MilitaryCatalog c;
     MilitaryUnitType militia;
     militia.id = "a_militia";
@@ -94,10 +94,18 @@ MilitaryCatalog make_catalog() {
     c.categories = {arms};
     MilitaryStateBuilding barracks;
     barracks.id = "barracks";
+    // The economy type this lot is filed under. The core resolves the digest's
+    // state rows back through this column, so a synthetic catalog without it
+    // would make every ledger row unmappable.
+    barracks.economy_building_id = 0;
     barracks.role = MILITARY_STATE_BARRACKS;
     barracks.tier = 0;
     barracks.capacity = 100;
     barracks.build_days = 5;
+    // MONEY_SCALE per building per day. Zero by default: every other case bills
+    // nothing for standing buildings, so the upkeep channel stays silent exactly
+    // as before this parameter existed.
+    barracks.upkeep_per_day = barracks_upkeep;
     c.state_buildings = {barracks};
     c.supply_goods[MILITARY_SUPPLY_RATION] = {0};
     c.supply_yield_q16[MILITARY_SUPPLY_RATION] = {MILITARY_Q16};
@@ -150,22 +158,36 @@ MilitaryWorldDigest make_digest(const MilitaryTerrainInput &t) {
     d.stat_count = 0;
     return d;
 }
-
 // In-process bridge: intents of day D become receipts for day D+1.
+// It also stands in for the economy's building ledger. `MilitaryCellState`'s
+// barracks/fort/college fields are a derived read of the economy's kind-3
+// building groups (requirement 6.1), so a harness that only submitted
+// `MCMD_STATE_BUILD` would hold a cache that is forever empty. Every lot the
+// harness accepts is therefore recorded here and published on the digest from
+// its completion day on - exactly what a re-read of the economy would report.
 struct Sim {
     MilitaryCore core;
     MilitaryWorldDigest dg;
     std::vector<MilitaryIntentReceipt> receipts;
     std::vector<MilitaryIntent> last;
     std::vector<int64_t> enlist_by_cell;
+    struct LedgerLot {
+        int32_t cell = -1;
+        int32_t building = -1;
+        int64_t ready_day = 0;
+        int32_t units = 0;
+    };
+    std::vector<LedgerLot> lots;
     int64_t day = 0;
     int64_t max_abs_reconcile = 0;
     int64_t first_leak_day = -1;
     std::string first_leak_events;
     std::string error;
-
     bool init(const MilitaryTerrainInput &t, uint64_t seed) {
-        if (!core.configure(make_catalog(), seed, error)) return false;
+        return init(t, seed, make_catalog());
+    }
+    bool init(const MilitaryTerrainInput &t, uint64_t seed, MilitaryCatalog catalog) {
+        if (!core.configure(std::move(catalog), seed, error)) return false;
         if (!core.set_terrain(t, error)) return false;
         dg = make_digest(t);
         for (int32_t s = 0; s < dg.country_capacity; ++s) {
@@ -177,17 +199,56 @@ struct Sim {
         enlist_by_cell.assign((size_t)t.cell_count, 0);
         return true;
     }
-
     bool submit(uint16_t op, int32_t slot, MilitaryCommand cmd) {
         cmd.op = op;
         cmd.country = handle_for(slot);
         cmd.effective_day = day;
-        return core.submit(std::move(cmd), error);
+        const int32_t build_cell = cmd.cell;
+        const int32_t build_index = cmd.unit_to;
+        if (!core.submit(std::move(cmd), error)) return false;
+        // A submitted `state.build` is by contract one the economy already
+        // accepted (the bridge only forwards after the bill settled), so the
+        // harness's ledger has to know about it too.
+        if (op == MCMD_STATE_BUILD) record_lot(build_cell, build_index);
+        return true;
     }
-
+    // The economy side of a `state.build`: one unit that starts standing on its
+    // completion day.
+    void record_lot(int32_t cell, int32_t building) {
+        if (cell < 0 || building < 0 ||
+            (size_t)building >= core.catalog().state_buildings.size())
+            return;
+        const MilitaryStateBuilding &sb = core.catalog().state_buildings[(size_t)building];
+        if (sb.economy_building_id < 0) return;   // no economy profile, no bill
+        LedgerLot lot;
+        lot.cell = cell;
+        lot.building = building;
+        lot.ready_day = day + std::max(1, sb.build_days);
+        lot.units = 1;
+        lots.push_back(lot);
+    }
+    // Publishes the ledger as the digest's state lanes, the way
+    // `capture_military_digest` reads the economy's building groups.
+    void publish_state_ledger() {
+        dg.state_cell.clear();
+        dg.state_type_id.clear();
+        dg.state_state_role.clear();
+        dg.state_units.clear();
+        for (const LedgerLot &lot : lots) {
+            if (lot.units <= 0 || lot.ready_day > day) continue;
+            const MilitaryStateBuilding &sb = core.catalog().state_buildings[(size_t)lot.building];
+            dg.state_cell.push_back(lot.cell);
+            dg.state_type_id.push_back(sb.economy_building_id);
+            dg.state_state_role.push_back((int32_t)sb.role + 1);
+            dg.state_units.push_back(lot.units);
+        }
+        dg.state_lanes_present = true;
+        dg.state_lane_rows = (int32_t)dg.state_cell.size();
+    }
     bool step() {
         last.clear();
         dg.day = day;
+        publish_state_ledger();
         // Economy owns the soldier cohort count and Military reconciles against
         // it every day, so the synthetic digest has to expose what the "economy"
         // side of this harness would hold: the heads enlisted so far.
@@ -217,6 +278,27 @@ struct Sim {
                 case MILITARY_INTENT_CASUALTY:
                     receipts.push_back(r);
                     break;
+                case MILITARY_INTENT_STATE_BUILD: {
+                    // The bridge's state.build lane: accept the lot in the
+                    // ledger, then echo the bookkeeping command the way
+                    // `translate_military_intent` does.
+                    const int32_t building = static_cast<int32_t>(in.count);
+                    if (building >= 0 &&
+                        (size_t)building < core.catalog().state_buildings.size() &&
+                        core.catalog().state_buildings[(size_t)building].economy_building_id >= 0 &&
+                        in.cell >= 0) {
+                        record_lot(in.cell, building);
+                        MilitaryCommand echo;
+                        echo.op = MCMD_STATE_BUILD;
+                        echo.country = in.country_a;
+                        echo.cell = in.cell;
+                        echo.unit_to = building;
+                        echo.effective_day = day;
+                        std::string echo_error;
+                        core.submit(std::move(echo), echo_error);
+                    }
+                    break;
+                }
                 default:
                     break;
             }
@@ -232,14 +314,12 @@ struct Sim {
         ++day;
         return true;
     }
-
     bool run_until(int64_t end_day) {
         while (day < end_day) {
             if (!step()) return false;
         }
         return true;
     }
-
     int32_t army_of(int32_t slot) const {
         const MilitaryArmyStore &a = core.armies();
         for (int32_t i = 0; i < (int32_t)a.active.size(); ++i) {
@@ -248,7 +328,6 @@ struct Sim {
         return -1;
     }
 };
-
 int64_t garrison_at(const MilitaryCore &core, int32_t cell) {
     const MilitaryLotStore &l = core.lots();
     int64_t total = 0;
@@ -257,7 +336,6 @@ int64_t garrison_at(const MilitaryCore &core, int32_t cell) {
     }
     return total;
 }
-
 bool is_neighbor(const MilitaryTerrainInput &t, int32_t a, int32_t b) {
     if (a == b) return true;
     for (int32_t d = 0; d < 6; ++d) {
@@ -265,7 +343,6 @@ bool is_neighbor(const MilitaryTerrainInput &t, int32_t a, int32_t b) {
     }
     return false;
 }
-
 // Names the first state component that differs after a PKMI round trip.
 std::string describe_diff(const MilitaryCore &a, const MilitaryCore &b) {
     std::string out;
@@ -313,14 +390,12 @@ std::string describe_diff(const MilitaryCore &a, const MilitaryCore &b) {
     note(a._seed == b._seed && a._catalog.hash == b._catalog.hash, "seed/catalog");
     return out;
 }
-
 bool has_event(const MilitaryCore &core, uint16_t type) {
     for (const MilitaryEvent &e : core.events_after(0, 100000)) {
         if (e.type == type) return true;
     }
     return false;
 }
-
 #define ST_CHECK(cond, msg)                                    \
     do {                                                       \
         if (!(cond)) {                                         \
@@ -329,7 +404,6 @@ bool has_event(const MilitaryCore &core, uint16_t type) {
         }                                                      \
         report += std::string("ok   ") + (msg) + "\n";         \
     } while (0)
-
 #define ST_STEP(sim, end)                                                          \
     do {                                                                           \
         if (!(sim).run_until(end)) {                                               \
@@ -337,7 +411,6 @@ bool has_event(const MilitaryCore &core, uint16_t type) {
             return false;                                                          \
         }                                                                          \
     } while (0)
-
 // --- 1. peaceful empty world
 bool test_idle(const MilitaryTerrainInput &t, std::string &report) {
     MilitaryCore core;
@@ -354,7 +427,6 @@ bool test_idle(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(!core2.should_run(1) && !core2.should_run(7), "peaceful registered world idle off the 5-day cadence");
     return true;
 }
-
 // --- 2..4. recruitment quota, army move path, foreign presence suppression
 bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out) {
     Sim sim;
@@ -383,7 +455,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     ST_CHECK(sim.enlist_by_cell[(size_t)A] + sim.enlist_by_cell[(size_t)B] == enlisted_before,
              "no enlistment after target reached");
     ST_CHECK(sim.core.country_soldiers(1) == 0, "other countries untouched");
-
     // Army from A's whole garrison marches to B (3 hexes east).
     const int64_t gA = garrison_at(sim.core, A);
     {
@@ -414,7 +485,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     }
     ST_CHECK(trail.back() == B, "army arrived at B");
     ST_CHECK(contiguous && moves == sim.core.cell_distance(A, B), "army walked a contiguous shortest path, 1 hex/day");
-
     // Raise the target: A (emptied) gets quota, B (army present >= posts) gets none.
     {
         MilitaryCommand target;
@@ -430,7 +500,6 @@ bool test_recruit_and_move(const MilitaryTerrainInput &t, std::string &report, u
     hash_out = sim.core.state_hash();
     return true;
 }
-
 // --- 5..8. war -> engagement -> capture -> peace (cede + annex) -> PKMI -> ledger
 bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out) {
     Sim sim;
@@ -477,7 +546,6 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
     ST_CHECK(has_event(sim.core, MILITARY_EVENT_CELL_CONTROL_CHANGED), "CELL_CONTROL_CHANGED event emitted");
     ST_CHECK(sim.core.report().cells_captured > 0 || sim.core.control_revision() > 0, "control revision bumped");
     ST_STEP(sim, sim.day + 2);   // let run_wars record the full occupation
-
     // PKMI round trip mid-war (armies, engagements history, wars, events).
     {
         const std::vector<uint8_t> bytes = sim.core.encode();
@@ -491,7 +559,6 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
         ST_CHECK(copy.state_hash() == sim.core.state_hash(), "PKMI restore -> identical state_hash");
         ST_CHECK(copy.encode() == bytes, "PKMI re-encode byte-identical");
     }
-
     std::vector<int32_t> ints = {MPEACE_CEDE_CELL, kEnclave, 0, MPEACE_ANNEX, 0, 0};
     std::vector<int64_t> longs = {0, 0};
     int32_t war_id = sim.core.war_between(0, 2);
@@ -536,9 +603,7 @@ bool test_war_peace_save(const MilitaryTerrainInput &t, std::string &report, uin
     hash_out = sim.core.state_hash();
     return true;
 }
-
 // --- 9. auto-discharge reconciled against a partially applied Economy move
-//
 // run_recruitment removes the surplus garrison heads when it emits the
 // DISCHARGE intent; the receipt must then only put back the heads Economy did
 // NOT move (requested - committed). A receipt that removed them a second time
@@ -648,9 +713,7 @@ bool test_partial_discharge(const MilitaryTerrainInput &t, std::string &report) 
              "partial discharge: a failed receipt refunds the whole request");
     return true;
 }
-
 // --- 9b. Army pay (army-pay contract §2 / §4.3): wages follow the people.
-//
 // Two holders, one treasury: a garrison lot at A and an army lot that marched
 // off it. run_wages_and_upkeep must emit exactly one PAY_WAGES row for the
 // garrison (headed for A) and one ARMY_PAY row for the formation (headed for its
@@ -709,7 +772,6 @@ bool test_army_pay(const MilitaryTerrainInput &t, std::string &report) {
     army_heads = sim.core.armies().cached_headcount[(size_t)army];
     ST_CHECK(garrison_heads == 10 && army_heads == 40,
              "army pay: 10 garrisoned at A, 40 with the formation");
-
     // One wages day, collected instead of auto-receipted: the harness only
     // answers ENLIST/LEVY/DISCHARGE, so the pay rows stay in `last` for us.
     sim.last.clear();
@@ -784,7 +846,6 @@ bool test_army_pay(const MilitaryTerrainInput &t, std::string &report) {
              "army pay: a pay receipt leaves the garrison lot untouched");
     return true;
 }
-
 // --- 10. AI agenda soak
 bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_out, std::string &stats) {
     Sim sim;
@@ -811,6 +872,31 @@ bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_
     int32_t barracks = 0;
     for (const MilitaryCellState &st : c.cell_states()) barracks += st.barracks_count[0];
     ST_CHECK(barracks > 0 && c.country_soldiers(0) > 0, "AI built barracks and recruited");
+    // The upkeep bill is per country, so its `disrepair` verdict has to stay
+    // inside that country. Two things are checked, because the old writer broke
+    // both at once by walking every cell state inside the per-country loop:
+    //  - a flagged cell must actually hold a state building. `upkeep` is only
+    //    ever charged for standing barracks / fortification / college, so a flag
+    //    on an empty cell is a bill with no building behind it.
+    //  - the flag may only appear on cells the billing country owns.
+    {
+        bool scope_ok = true;
+        for (const MilitaryCellState &st : c.cell_states()) {
+            if (st.disrepair == 0) continue;
+            bool has_building = st.fort_tier >= 0 || st.college_tier >= 0;
+            for (int32_t tier = 0; tier < MILITARY_STATE_BARRACKS_TIERS && !has_building; ++tier)
+                has_building = st.barracks_count[tier] > 0;
+            if (!has_building) { scope_ok = false; break; }
+            if (st.cell < 0 || (size_t)st.cell >= sim.dg.cell_owner_slot.size()) { scope_ok = false; break; }
+            if (sim.dg.cell_owner_slot[(size_t)st.cell] < 0) { scope_ok = false; break; }
+        }
+        ST_CHECK(scope_ok, "disrepair only marks cells that hold a state building");
+    }
+    // The cache is a derived read, so a rebuild that disagrees with the ledger
+    // would already have been counted here.
+    ST_CHECK(c.report().state_cache_repairs == 0 && c.report().state_ledger_unmapped == 0 &&
+                 c.report().state_role_mismatch == 0,
+             "state building cache tracks the ledger with no divergence");
     int32_t wars = 0, ended = 0;
     for (const MilitaryWar &w : c.wars()) {
         ++wars;
@@ -832,11 +918,9 @@ bool test_ai(const MilitaryTerrainInput &t, std::string &report, uint64_t &hash_
     hash_out = c.state_hash();
     return true;
 }
-
 // --- 11. 3-cell procurement (design 9.3): only markets of the same country in
 // the demander's ring, nothing in range is unmet demand, and a delivered
 // quantity is booked in the sec 9.7 ledger.
-//
 // The synthetic digest carries a market every 37th cell, so a garrison on its
 // own ring sources locally; a garrison far from any own market records unmet
 // demand instead of scanning the map.
@@ -891,9 +975,7 @@ bool test_procurement(const MilitaryTerrainInput &t, std::string &report) {
     ST_CHECK(far_held == 0, "procurement: nothing supplied outside the 3-cell ring (no fallback scan)");
     return true;
 }
-
 // --- 12. Naval transport (army-personnel contract 2 §2.1 / design §7.4).
-//
 // The synthetic map only wraps east-west, so a full-width water band cuts it in
 // two and every land route between the shores has to cross exactly `band`
 // consecutive water cells. Those are the shapes the transport gate has to
@@ -911,14 +993,12 @@ MilitaryTerrainInput make_hex_terrain_with_water_band(int32_t first_row, int32_t
     }
     return t;
 }
-
 // Unlock bits: 0 = cannon (existing fixture), 1 = coastal transport,
 // 2 = ocean transport (army-personnel contract 2 §2.2 catalog slots).
 constexpr int32_t kCoastalTransportBit = 1;
 constexpr int32_t kOceanTransportBit = 2;
 constexpr uint64_t kCoastalUnlock = 1ull << kCoastalTransportBit;
 constexpr uint64_t kOceanUnlock = 1ull << kOceanTransportBit;
-
 MilitaryCatalog make_naval_catalog() {
     MilitaryCatalog c = make_catalog();
     c.unlock_count = 3;
@@ -926,7 +1006,6 @@ MilitaryCatalog make_naval_catalog() {
     c.ocean_transport_bit = kOceanTransportBit;
     return c;
 }
-
 // Digest over a water-band map: water is unowned (crossing it must not open an
 // engagement) and country 0 carries exactly `unlock_bits`.
 MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t unlock_bits) {
@@ -938,7 +1017,540 @@ MilitaryWorldDigest make_naval_digest(const MilitaryTerrainInput &t, uint64_t un
     d.country_unlock_bits[0] = unlock_bits;
     return d;
 }
-
+// --- 9c. Budget envelope (任务 6 / 需求 5.1, 5.5, 9.3).
+// The envelope is a share of the country's daily treasury cash, split into
+// three channel ceilings. Three properties are easy to get wrong and are pinned
+// here because the panel and the settlement both read them:
+//  1. `budget_share_bp <= 0` is NO envelope, not a zero envelope. Every foreign
+//     AI country and every save loaded before the player re-pushes a policy must
+//     keep the legacy cash-driven behaviour, so `enabled` stays false on the
+//     default policy. A ceiling of 0 is the different statement "this channel is
+//     paused", and only a real envelope can express it.
+//  2. Channel shares are percentages of the envelope itself, so 6000/2000/2000
+//     spends it exactly and a single 0 pauses exactly one channel.
+//  3. The three NEW budget fields are transient (需求 9.3): they must not enter
+//     state_hash and must not survive PKMI, because the player session re-pushes
+//     them after a load. `procurement_share_bp` is deliberately outside that set
+//     - it predates this work and is already a persisted policy field - so the
+//     procurement channel reuses it instead of introducing a second, unsaved
+//     copy of the same number.
+// State is driven through `apply_command` (immediate, queues nothing) and the
+// guard rails through `submit` (rejections leave the queue untouched), so the
+// hash/encode comparisons at the end are not disturbed by pending commands.
+bool test_budget_envelope(const MilitaryTerrainInput &t, std::string &report) {
+    Sim sim;
+    ST_CHECK(sim.init(t, 60602), "budget envelope sim init");
+    const int64_t cash = sim.dg.country_cash[(size_t)0];
+    ST_CHECK(cash > 0, "budget envelope: digest carries treasury cash");
+    // (1) The default policy has no envelope at all.
+    {
+        const MilitaryCore::MilitaryBudgetSplit split = sim.core.budget_split(0, cash);
+        ST_CHECK(!split.enabled, "budget envelope: default policy has no envelope");
+        ST_CHECK(split.envelope_daily == 0 && split.wage_ceiling == 0 &&
+                     split.upkeep_ceiling == 0 && split.procurement_ceiling == 0,
+                 "budget envelope: no envelope splits into zero ceilings");
+    }
+    // (2) A total share opens the envelope; the default channels fill it.
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = 1000;   // 10% of treasury cash per day
+        sim.core.apply_command(c, sim.day);
+        const MilitaryCore::MilitaryBudgetSplit split = sim.core.budget_split(0, cash);
+        ST_CHECK(split.enabled, "budget envelope: a positive share enables it");
+        ST_CHECK(split.envelope_daily == cash / 10,
+                 "budget envelope: envelope is the share x treasury cash");
+        ST_CHECK(split.wage_ceiling == split.envelope_daily * 6000 / 10000 &&
+                     split.upkeep_ceiling == split.envelope_daily * 2000 / 10000 &&
+                     split.procurement_ceiling == split.envelope_daily * 2000 / 10000,
+                 "budget envelope: default channels are 60/20/20 of the envelope");
+        ST_CHECK(split.wage_ceiling + split.upkeep_ceiling + split.procurement_ceiling ==
+                     split.envelope_daily,
+                 "budget envelope: the default channels spend it exactly");
+    }
+    // (3) -1 keeps a channel; 0 pauses exactly that channel.
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = -1;
+        c.ints = {-1, -1, 0};
+        sim.core.apply_command(c, sim.day);
+        const MilitaryCore::MilitaryBudgetSplit split = sim.core.budget_split(0, cash);
+        ST_CHECK(split.enabled && split.procurement_ceiling == 0,
+                 "budget envelope: a zero channel pauses, the envelope stays on");
+        ST_CHECK(split.wage_ceiling == split.envelope_daily * 6000 / 10000 &&
+                     split.upkeep_ceiling == split.envelope_daily * 2000 / 10000,
+                 "budget envelope: untouched channels keep their stored share");
+    }
+    // (4) A zero total removes the envelope but keeps the channel shares, so the
+    // panel never loses what the player chose.
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = 0;
+        sim.core.apply_command(c, sim.day);
+        ST_CHECK(!sim.core.budget_split(0, cash).enabled,
+                 "budget envelope: a zero total disables it again");
+        const MilitaryCountryPolicy &p = sim.core.policies()[(size_t)0];
+        ST_CHECK(p.budget_wage_bp == 6000 && p.procurement_share_bp == 0,
+                 "budget envelope: disabling keeps the stored channel shares");
+    }
+    // (5) Guard rails. Rejections never queue, so nothing below moves the state
+    // the hash comparison at the end is looking at.
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = 10001;
+        std::string error;
+        ST_CHECK(!sim.core.submit(c, error) && error == "command_bad_budget_share",
+                 "budget envelope: a total above 100% is rejected");
+        MilitaryCommand many;
+        many.op = MCMD_POLICY_SET_BUDGET;
+        many.country = handle_for(0);
+        many.ints = {1000, 1000, 1000, 1000};
+        ST_CHECK(!sim.core.submit(many, error) && error == "command_bad_budget_channels",
+                 "budget envelope: more than three channels is rejected");
+        MilitaryCommand bad;
+        bad.op = MCMD_POLICY_SET_BUDGET;
+        bad.country = handle_for(0);
+        bad.ints = {10001, -1, -1};
+        ST_CHECK(!sim.core.submit(bad, error) &&
+                     error == "command_bad_budget_channel_share",
+                 "budget envelope: an out-of-range channel share is rejected");
+        // Stored 4000 / 4000 / 2000 is exactly 100%. One more basis point on a
+        // single channel must fail, which also proves an unspecified channel is
+        // checked against its STORED value rather than against zero.
+        MilitaryCommand stored;
+        stored.op = MCMD_POLICY_SET_BUDGET;
+        stored.country = handle_for(0);
+        stored.value = 1000;
+        stored.ints = {4000, 4000, 2000};
+        sim.core.apply_command(stored, sim.day);
+        MilitaryCommand over;
+        over.op = MCMD_POLICY_SET_BUDGET;
+        over.country = handle_for(0);
+        over.ints = {4001, -1, -1};
+        ST_CHECK(!sim.core.submit(over, error) &&
+                     error == "command_budget_channels_exceed_10000",
+                 "budget envelope: a partial update is checked against stored channels");
+        MilitaryCommand equal;
+        equal.op = MCMD_POLICY_SET_BUDGET;
+        equal.country = handle_for(0);
+        equal.value = -1;
+        equal.ints = {4000, 4000, 2000};
+        ST_CHECK(sim.core.submit(equal, error),
+                 "budget envelope: channels totalling exactly 100% are accepted");
+    }
+    // (6) Transient (需求 9.3). Two identical cores that differ ONLY in the three
+    // NEW budget fields have to agree on both the hash and the encoded bytes.
+    // `procurement_share_bp` is deliberately NOT in that set: it predates this
+    // work and is already a persisted policy field, so the procurement channel
+    // reuses it instead of introducing a second, unsaved copy.
+    {
+        std::string error;
+        MilitaryCore plain;
+        MilitaryCore budgeted;
+        ST_CHECK(plain.configure(make_catalog(), 60602, error) &&
+                     budgeted.configure(make_catalog(), 60602, error),
+                 "budget envelope: two cores configure");
+        ST_CHECK(plain.set_terrain(t, error) && budgeted.set_terrain(t, error),
+                 "budget envelope: two cores take the terrain");
+        ST_CHECK(plain.ensure_country_slot(handle_for(0)) == 0 &&
+                     budgeted.ensure_country_slot(handle_for(0)) == 0,
+                 "budget envelope: two cores open the same country slot");
+        MilitaryCountryPolicy &p = budgeted._policies[(size_t)0];
+        p.budget_share_bp = 3000;
+        p.budget_wage_bp = 5000;
+        p.budget_upkeep_bp = 3000;
+        ST_CHECK(budgeted.budget_split(0, cash).enabled &&
+                     !plain.budget_split(0, cash).enabled,
+                 "budget envelope: the two cores really differ on the envelope");
+        ST_CHECK(plain.state_hash() == budgeted.state_hash(),
+                 "budget envelope: the three budget fields stay out of state_hash");
+        ST_CHECK(plain.encode() == budgeted.encode(),
+                 "budget envelope: the three budget fields stay out of PKMI");
+        // A restored core therefore comes back with no envelope: the player
+        // session re-pushes the policy, which is the documented contract.
+        const std::vector<uint8_t> bytes = budgeted.encode();
+        MilitaryCore restored;
+        restored.configure(make_catalog(), 60602, error);
+        restored.set_terrain(t, error);
+        ST_CHECK(restored.restore(bytes.data(), bytes.size(), error),
+                 "budget envelope: PKMI restore accepts the stream");
+        const int32_t slot = restored.country_slot_for_handle(handle_for(0));
+        ST_CHECK(slot >= 0 && !restored.budget_split(slot, cash).enabled,
+                 "budget envelope: a restored core starts with no envelope");
+    }
+    // (7) Settlement (任务 7 / 需求 5.2, 5.3, 7.1). Runs the real `step_day`
+    // path over a recruited garrison instead of re-deriving the arithmetic here:
+    // the point is that the settlement WRITES these numbers, and that with no
+    // envelope it writes none of them.
+    {
+        Sim pay;
+        ST_CHECK(pay.init(t, 60603), "budget settlement sim init");
+        const int32_t A = cell_at(5, 5);
+        {
+            MilitaryCommand c;
+            c.cell = A;
+            c.unit_to = 0;
+            ST_CHECK(pay.submit(MCMD_STATE_BUILD, 0, c),
+                     "budget settlement: barracks at A");
+            MilitaryCommand target;
+            target.count = 0;
+            target.value = 40;
+            ST_CHECK(pay.submit(MCMD_FORCE_SET_TARGET, 0, target),
+                     "budget settlement: target 40");
+            MilitaryCommand wage;
+            wage.count = 1;          // ABSOLUTE, so the arithmetic is exact
+            // Large enough that 40 heads out-earn the 1-bp envelope opened
+            // below (cash 1e12 -> envelope 1e8 -> wage ceiling 6e7, payroll
+            // 40 * 2e6 = 8e7). A smaller wage would never exercise overspend.
+            wage.value = 2000000;
+            ST_CHECK(pay.submit(MCMD_POLICY_SET_WAGE, 0, wage),
+                     "budget settlement: absolute wage policy");
+        }
+        ST_STEP(pay, 41);
+        ST_CHECK(garrison_at(pay.core, A) == 40,
+                 "budget settlement: 40 soldiers recruited");
+        // One settled day WITHOUT an envelope: nothing may be reported, which is
+        // 需求 5.5's "AI countries do not change" expressed as a contract.
+        ST_STEP(pay, pay.day + 1);
+        {
+            const MilitaryCountryPolicy &p = pay.core.policies()[(size_t)0];
+            ST_CHECK(p.wage_demand == 0 && p.wage_arrears == 0 &&
+                         p.wage_overspend == 0,
+                     "budget settlement: no envelope reports no wage outcome");
+        }
+        // Now open an envelope whose wage share is far below the payroll, and
+        // settle one more day. 军饷 is high priority, so it gets paid anyway and
+        // the excess is reported; nothing is left in arrears.
+        const int64_t payroll = 40 * 2000000;
+        {
+            MilitaryCommand c;
+            c.op = MCMD_POLICY_SET_BUDGET;
+            c.country = handle_for(0);
+            c.value = 1;     // 0.01% of cash: a ceiling far under the payroll
+            c.ints = {6000, 2000, 2000};
+            ST_CHECK(pay.submit(MCMD_POLICY_SET_BUDGET, 0, c),
+                     "budget settlement: a tiny envelope is accepted");
+        }
+        ST_STEP(pay, pay.day + 1);
+        {
+            const MilitaryCountryPolicy &p = pay.core.policies()[(size_t)0];
+            const MilitaryCore::MilitaryBudgetSplit split = pay.core.budget_split(
+                0, pay.dg.country_cash[(size_t)0]);
+            ST_CHECK(split.enabled && split.wage_ceiling < payroll,
+                     "budget settlement: the wage ceiling really is under the bill");
+            ST_CHECK(p.wage_demand == payroll,
+                     "budget settlement: the day's demand is the whole payroll");
+            ST_CHECK(p.wage_arrears == 0,
+                     "budget settlement: a solvent country leaves no wage arrears");
+            ST_CHECK(p.wage_overspend == payroll - split.wage_ceiling,
+                     "budget settlement: paying past the share is reported, not blocked");
+        }
+    }
+    return true;
+}
+// --- 12. Procurement quota (任务 8 / 需求 5.4, 6.2, 7.1).
+// The point of this case is that `run_procurement` now CONSUMES a money quota
+// rather than buying whatever the market can sell. It therefore asserts three
+// things the arithmetic alone cannot: that a country without an envelope still
+// reports nothing, that a metered country never spends past its ceiling
+// (procurement is low priority - it stops, it does not overspend), and that the
+// reported spend equals the money the emitted intents actually carry, so the
+// panel and the treasury cannot drift apart.
+bool test_procurement_quota(const MilitaryTerrainInput &t, std::string &report) {
+    Sim buy;
+    ST_CHECK(buy.init(t, 60604), "procurement quota: sim init");
+    // Same market-cell discovery as test_procurement: a garrison must sit on a
+    // cell whose 3-ring holds one of the synthetic digest's markets.
+    int32_t near_cell = -1;
+    for (int32_t c = 0; c < t.cell_count && near_cell < 0; ++c) {
+        if (c % kW >= 14) continue;            // country 0 owns columns 0..13
+        if (c % 37 != 0) continue;
+        near_cell = c;
+    }
+    ST_CHECK(near_cell >= 0, "procurement quota: a country 0 market cell exists");
+    {
+        MilitaryCommand c;
+        c.cell = near_cell;
+        c.unit_to = 0;
+        ST_CHECK(buy.submit(MCMD_STATE_BUILD, 0, c), "procurement quota: barracks at the market");
+        MilitaryCommand target;
+        target.count = 0;
+        target.value = 50;
+        ST_CHECK(buy.submit(MCMD_FORCE_SET_TARGET, 0, target), "procurement quota: target 50");
+    }
+    ST_STEP(buy, 60);
+    ST_CHECK(garrison_at(buy.core, near_cell) > 0, "procurement quota: garrison recruited");
+    // Money the emitted PROCURE_GOOD intents carry on the last stepped day. This
+    // is the treasury's view of the pass, so comparing it with the policy row is
+    // a conservation check rather than a restatement of the same variable.
+    // Filtered by country: the other two slots have no demanders today, and a
+    // shared sum would silently start passing if they ever did.
+    const uint64_t home = handle_for(0);
+    auto procured_amount = [&](const std::vector<MilitaryIntent> &rows) {
+        int64_t sum = 0;
+        for (const MilitaryIntent &in : rows) {
+            if (in.kind == MILITARY_INTENT_PROCURE_GOOD && in.country_a == home)
+                sum += in.amount;
+        }
+        return sum;
+    };
+    // ---- 1. no envelope: buy the gap, report nothing ----------------------
+    int64_t free_spend = 0;
+    for (int32_t day = 0; day < 20; ++day) {
+        ST_STEP(buy, buy.day + 1);
+        free_spend += procured_amount(buy.last);
+        const MilitaryCountryPolicy &p = buy.core.policies()[(size_t)0];
+        if (p.procurement_budget_used != 0 || p.procurement_deferred_units != 0) {
+            report += "FAIL procurement quota: no envelope must report no outcome\n";
+            return false;
+        }
+    }
+    ST_CHECK(free_spend > 0, "procurement quota: an unmetered country keeps buying");
+    // ---- 2. a tiny envelope: the quota meters the purchase ----------------
+    // cash 1e6 x 0.01% = an envelope of 100 money, and with the whole envelope on
+    // the procurement channel that is the day's ceiling. A need unit costs 20
+    // money here (price 20000 per GOODS_SCALE with the ration yield at 1.0), so
+    // the quota affords 5 units - far below a 50-head garrison's 10-day target.
+    buy.dg.country_cash[(size_t)0] = 1000000;
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = 1;
+        c.ints = {0, 0, 10000};
+        ST_CHECK(buy.submit(MCMD_POLICY_SET_BUDGET, 0, c),
+                 "procurement quota: a procurement-only envelope is accepted");
+    }
+    // Commands apply inside `step_day` on their effective day, so the split can
+    // only be read after one more day; asserting it here (before the step) was
+    // reading the pre-command policy and is exactly the mistake this line fixes.
+    ST_STEP(buy, buy.day + 1);
+    const MilitaryCore::MilitaryBudgetSplit split = buy.core.budget_split(
+        0, buy.dg.country_cash[(size_t)0]);
+    ST_CHECK(split.enabled && split.procurement_ceiling == 100,
+             "procurement quota: the ceiling is the whole 100-money envelope");
+    bool metered = false;
+    bool overspent = false;
+    bool drifted = false;
+    int64_t deferred_total = 0;
+    for (int32_t day = 0; day < 20; ++day) {
+        ST_STEP(buy, buy.day + 1);
+        const MilitaryCountryPolicy &p = buy.core.policies()[(size_t)0];
+        if (p.procurement_budget_used > split.procurement_ceiling) overspent = true;
+        // Conservation: what the policy reports spending is exactly what the
+        // batch charges the treasury. No second ledger, no rounding gap.
+        if (p.procurement_budget_used != procured_amount(buy.last)) drifted = true;
+        if (p.procurement_deferred_units > 0) {
+            metered = true;
+            deferred_total += p.procurement_deferred_units;
+        }
+    }
+    ST_CHECK(!overspent,
+             "procurement quota: a low-priority channel never overspends its share");
+    ST_CHECK(!drifted,
+             "procurement quota: reported spend equals the emitted intents");
+    ST_CHECK(metered && deferred_total > 0,
+             "procurement quota: the unfunded gap is reported as 待购");
+    // ---- 3. restore the quota and the same gap is bought again ------------
+    // The shortfall is not a separate queue: demand is `want - held`, so nothing
+    // has to be replayed and the next pass buys in the same cheapest-first order.
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = handle_for(0);
+        c.value = 0;            // back to "no envelope"
+        c.ints = {-1, -1, -1};
+        ST_CHECK(buy.submit(MCMD_POLICY_SET_BUDGET, 0, c),
+                 "procurement quota: the envelope can be switched off again");
+    }
+    int64_t resumed = 0;
+    for (int32_t day = 0; day < 10; ++day) {
+        ST_STEP(buy, buy.day + 1);
+        resumed += procured_amount(buy.last);
+    }
+    ST_CHECK(resumed > 0, "procurement quota: procurement resumes once the quota is gone");
+    {
+        const MilitaryCountryPolicy &p = buy.core.policies()[(size_t)0];
+        ST_CHECK(p.procurement_budget_used == 0 && p.procurement_deferred_units == 0,
+                 "procurement quota: switching the envelope off clears the counters");
+    }
+    return true;
+}
+// --- 13. Cross-channel conservation (任务 10 / 需求 9.4, 7.2).
+// 7 and 8 each prove their own channel books itself. Neither checks what happens
+// when all three settle against the SAME treasury on the SAME day, which is the
+// only configuration where a double debit could hide:
+//   * 军饷 (op 5) and 采购 (op 6) are emitted in one `step_day`, and both are
+//     translated into economy commands keyed by the same country handle. If the
+//     payroll planner and the procurement quota each assumed the full cash
+//     balance, a country could pay out cash + ceiling while only cash existed.
+//   * 维护 (op 9) is deferred to D+1 by the bridge, so on day D the military side
+//     reports an amount the treasury has not been charged for yet. The invariant
+//     that has to hold is therefore not "cash - spend >= 0" on the military book
+//     alone, but "the emitted rows never claim more than the cash the split was
+//     computed from" - the split is what the bridge will actually collect from.
+// The assertions below are all cross-channel: per-day sums of the three intent
+// kinds, compared against the cash the core itself used for the split, and each
+// channel's own reported figure compared against the rows it emitted. An envelope
+// that lets every channel individually stay under its ceiling but collectively
+// promise more money than exists fails here and nowhere else.
+bool test_cross_channel_conservation(const MilitaryTerrainInput &t,
+                                     std::string &report) {
+    Sim sim;
+    // A non-zero barracks upkeep is what makes 维护 reachable at all: with the
+    // default 0 catalog the channel has nothing to bill, so every cross-channel
+    // assertion about it would pass without ever running.
+    ST_CHECK(sim.init(t, 60605, make_catalog(20000)), "cross channel: sim init");
+    // A garrison that owes wages and wants equipment, parked on a market cell so
+    // procurement has somewhere to buy. Same discovery rule as the quota case.
+    int32_t near_cell = -1;
+    for (int32_t c = 0; c < t.cell_count && near_cell < 0; ++c) {
+        if (c % kW >= 14) continue;
+        if (c % 37 != 0) continue;
+        near_cell = c;
+    }
+    ST_CHECK(near_cell >= 0, "cross channel: a country 0 market cell exists");
+    {
+        MilitaryCommand c;
+        c.cell = near_cell;
+        c.unit_to = 0;
+        ST_CHECK(sim.submit(MCMD_STATE_BUILD, 0, c),
+                 "cross channel: barracks at the market");
+        MilitaryCommand target;
+        target.count = 0;
+        target.value = 50;
+        ST_CHECK(sim.submit(MCMD_FORCE_SET_TARGET, 0, target),
+                 "cross channel: target 50");
+        MilitaryCommand wage;
+        wage.count = 1;              // ABSOLUTE, so the payroll is exact
+        wage.value = 2000000;
+        ST_CHECK(sim.submit(MCMD_POLICY_SET_WAGE, 0, wage),
+                 "cross channel: absolute wage policy");
+    }
+    sim.run_until(61);
+    ST_CHECK(garrison_at(sim.core, near_cell) > 0,
+             "cross channel: the garrison recruited");
+    // Every channel is squeezed at once. The total share is 20% of cash and the
+    // channels are 40/30/30 - deliberately close to 100% so each ceiling is a
+    // binding constraint, and no channel can be funded out of another's slack.
+    const uint64_t home = handle_for(0);
+    auto amount_of = [&](const std::vector<MilitaryIntent> &rows, uint8_t kind) {
+        int64_t sum = 0;
+        for (const MilitaryIntent &in : rows) {
+            if (in.kind == kind && in.country_a == home) sum += in.amount;
+        }
+        return sum;
+    };
+    auto rows_of = [&](const std::vector<MilitaryIntent> &rows, uint8_t kind) {
+        int64_t n = 0;
+        for (const MilitaryIntent &in : rows) {
+            if (in.kind == kind && in.country_a == home) ++n;
+        }
+        return n;
+    };
+    // Shrink the treasury so the envelope is a real constraint rather than a
+    // rounding detail on a 1e12 pile: 2,000,000 cash x 20% = 400,000 envelope,
+    // which the 40/30/30 split cuts into 160,000 / 120,000 / 120,000 per day.
+    sim.dg.country_cash[(size_t)0] = 2000000;
+    {
+        MilitaryCommand c;
+        c.op = MCMD_POLICY_SET_BUDGET;
+        c.country = home;
+        c.value = 2000;
+        c.ints = {4000, 3000, 3000};
+        ST_CHECK(sim.submit(MCMD_POLICY_SET_BUDGET, 0, c),
+                 "cross channel: a binding 40/30/30 envelope is accepted");
+    }
+    // Budget commands take effect on their own day, so step once before reading
+    // the split (same trap the quota case documents).
+    // 50 days: long enough to cross several `kUpkeepPeriod` (5) settlements and
+    // to let a suppressed procurement queue build up a backlog, which is where
+    // a channel would start reaching into another channel's cash if the
+    // committed-采购 deduction were missing.
+    int64_t days_checked = 0;
+    int64_t wage_rows_total = 0;
+    int64_t proc_rows_total = 0;
+    int64_t upkeep_rows_total = 0;
+    int64_t upkeep_bills = 0;
+    bool over_cash = false;
+    bool wage_drift = false;
+    bool proc_drift = false;
+    bool upkeep_drift = false;
+    bool upkeep_overpaid = false;
+    bool ceiling_blown = false;
+    for (int32_t day = 0; day < 50; ++day) {
+        sim.step();
+        const MilitaryCountryPolicy &p = sim.core.policies()[(size_t)0];
+        const MilitaryCore::MilitaryBudgetSplit split = sim.core.budget_split(
+            0, sim.dg.country_cash[(size_t)0]);
+        if (!split.enabled) continue;
+        const int64_t cash = sim.dg.country_cash[(size_t)0];
+        const int64_t wages = amount_of(sim.last, MILITARY_INTENT_PAY_WAGES);
+        const int64_t bought = amount_of(sim.last, MILITARY_INTENT_PROCURE_GOOD);
+        const int64_t upkeep = amount_of(sim.last, MILITARY_INTENT_SPEND_CASH);
+        // The three channels must never together promise more than the treasury
+        // holds: 军饷 and 维护 draw cash, and 采购 is charged the same treasury.
+        if (wages + upkeep + bought > cash) over_cash = true;
+        // 军饷 is high priority: it may pass its share, but what it reports as
+        // paid has to be exactly what the rows charge. A drift here means the
+        // panel and the treasury disagree about the same money.
+        if (p.wage_demand > 0 && p.wage_demand - p.wage_arrears != wages) wage_drift = true;
+        // 采购 is low priority: never past its ceiling, and its reported spend is
+        // the row amount (no second ledger, no rounding gap).
+        if (bought > split.procurement_ceiling) ceiling_blown = true;
+        if (p.procurement_budget_used != bought) proc_drift = true;
+        // 维护 settles every kUpkeepPeriod days. The bill is computed even when
+        // the wage channel already drained the cash, in which case it settles
+        // for 0 - so "the row exists" and "the row never overpays" are the two
+        // invariants that actually hold. `upkeep_demand` records the full bill,
+        // not the afford amount, which is why the comparison is against the bill
+        // being at least what was paid.
+        if (p.upkeep_demand > 0) {
+            ++upkeep_bills;
+            if (upkeep > cash) upkeep_overpaid = true;
+            if (p.upkeep_demand < upkeep) upkeep_drift = true;
+        } else if (upkeep != 0) {
+            // A row with no bill behind it is money leaving for nothing.
+            upkeep_drift = true;
+        }
+        wage_rows_total += rows_of(sim.last, MILITARY_INTENT_PAY_WAGES);
+        proc_rows_total += rows_of(sim.last, MILITARY_INTENT_PROCURE_GOOD);
+        upkeep_rows_total += rows_of(sim.last, MILITARY_INTENT_SPEND_CASH);
+        ++days_checked;
+    }
+    ST_CHECK(days_checked > 0, "cross channel: the envelope stayed on for the window");
+    ST_CHECK(!over_cash,
+             "cross channel: the three channels never promise more cash than exists");
+    ST_CHECK(!wage_drift,
+             "cross channel: reported payroll equals the PAY_WAGES rows");
+    ST_CHECK(!proc_drift,
+             "cross channel: reported procurement equals the PROCURE_GOOD rows");
+    ST_CHECK(!ceiling_blown,
+             "cross channel: procurement stays inside its own share");
+    ST_CHECK(!upkeep_drift,
+             "cross channel: upkeep never pays without a bill behind it");
+    ST_CHECK(!upkeep_overpaid,
+             "cross channel: upkeep never pays more than the treasury holds");
+    // Each channel really did settle something: a window where all three stayed
+    // silent would make every assertion above vacuously true.
+    ST_CHECK(wage_rows_total > 0 && proc_rows_total > 0,
+             "cross channel: payroll and procurement both settled in the window");
+    // 维护 (op 9) bills every `kUpkeepPeriod` (5) days, so a 50-day window must
+    // contain ten bills. This is what proves the assertions above ran at all:
+    // with a 0-upkeep catalog the channel is silent and every check is vacuous.
+    ST_CHECK(upkeep_bills >= 9,
+             "cross channel: upkeep billed on the 5-day cadence for the window");
+    ST_CHECK(days_checked >= 45,
+             "cross channel: the envelope covered nearly the whole window");
+    return true;
+}
 bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     constexpr int32_t kBandRow = 10;                 // water rows 10..(10+band-1)
     constexpr int32_t kNorthShore = kBandRow - 1;    // land row just above the band
@@ -946,7 +1558,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     const int32_t shore_3 = cell_at(5, kBandRow + 3);   // land past a 3-water strait
     const int32_t shore_4 = cell_at(5, kBandRow + 4);   // land past a 4-water strait
     std::string error;
-
     // ---- 1. no transport technology: water is refused exactly as before
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -968,7 +1579,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(!core.preview_path(core.army_handle(army), shore_3, cells, days),
                  "naval: no transport technology -> preview_path reports unreachable");
     }
-
     // ---- 2. coastal transport: runs of <= 3 consecutive water cells
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -991,7 +1601,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(!core.find_path(army, shore_4, coastal4, path),
                  "naval: coastal transport refuses 4 consecutive water cells");
     }
-
     // ---- 3. ocean transport: the run limit is gone
     {
         const MilitaryTerrainInput t4 = make_hex_terrain_with_water_band(kBandRow, 4);
@@ -1009,7 +1618,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
         ST_CHECK(core.find_path(army, cell_at(3, kBandRow + 4), ocean, path),
                  "naval: ocean transport keeps ordinary crossings working");
     }
-
     // ---- 4. preview_path days include the sea cost (contract §2.2)
     {
         const MilitaryTerrainInput t3 = make_hex_terrain_with_water_band(kBandRow, 3);
@@ -1034,7 +1642,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
                  "naval: land steps still preview as one day each");
         ST_CHECK(sea_days > land_days, "naval: a sea move costs more days than the land equivalent");
     }
-
     // ---- 5. crossing: forced EMBARKED, stance restored on landing, sea
     //         attrition at kSeaAttritionBp (0.2%/day) instead of land loss
     {
@@ -1084,7 +1691,6 @@ bool test_naval_transport(const MilitaryTerrainInput &, std::string &report) {
     return true;
 }
 } // namespace
-
 bool MilitaryCore::self_test(std::string &report) {
     report.clear();
     const MilitaryTerrainInput t = make_hex_terrain(kW, kH);
@@ -1135,7 +1741,7 @@ bool MilitaryCore::self_test(std::string &report) {
         auto legacy = bytes;
         legacy[4] = 1;
         ST_CHECK(!copy.restore(legacy.data(), legacy.size(), error) &&
-            error == "pkmi_version_mismatch_expected_2", "PKMI v1 explicitly refused");
+            error == "pkmi_version_mismatch_expected_3", "PKMI v1 explicitly refused");
     }
     if (!test_idle(t, report)) return false;
     uint64_t h1 = 0, h2 = 0, w1 = 0, w2 = 0, a1 = 0, a2 = 0;
@@ -1145,6 +1751,9 @@ bool MilitaryCore::self_test(std::string &report) {
     if (!test_partial_discharge(t, report)) return false;
     if (!test_procurement(t, report)) return false;
     if (!test_army_pay(t, report)) return false;
+    if (!test_budget_envelope(t, report)) return false;
+    if (!test_procurement_quota(t, report)) return false;
+    if (!test_cross_channel_conservation(t, report)) return false;
     if (!test_naval_transport(t, report)) return false;
     if (!test_ai(t, report, a1, stats)) return false;
     report += stats;
@@ -1163,9 +1772,7 @@ bool MilitaryCore::self_test(std::string &report) {
     }
     return true;
 }
-
 // ================================================================= bench
-
 bool MilitaryCore::bench(int32_t cells, int32_t armies, int32_t engagements, int32_t days, double &avg_ms,
                          double &p95_ms, double &max_ms, std::string &report) {
     avg_ms = p95_ms = max_ms = 0.0;
@@ -1390,5 +1997,4 @@ bool MilitaryCore::bench(int32_t cells, int32_t armies, int32_t engagements, int
     }
     return true;
 }
-
 } // namespace pk

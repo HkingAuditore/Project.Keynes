@@ -1957,6 +1957,40 @@ Dictionary DCWorldExt::get_construction_command_receipts(
         [&] { return runtime->construction_command_receipts(after_receipt_id, limit); });
 }
 
+// Player construction cannot ride `submit_economy_commands`: that batch is
+// fail-closed as soon as StageOps is the effective production writer, which is
+// the shipping configuration. Queue the formal command on the economy owner's
+// inbox instead and let the next epoch apply it (same contract as the canal and
+// family-colonization lanes).
+Dictionary DCWorldExt::migrate_legacy_state_buildings(
+        const Array &states) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return economy_api::migrate_legacy_state_buildings(*runtime_from(_economy_runtime),
+        states);
+}
+
+Dictionary DCWorldExt::queue_treasury_sponsored_build(
+        int64_t country_handle, int cell_idx, int type_id,
+        int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    const bool worker_owned = _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution();
+    return economy_api::queue_treasury_sponsored_build(*runtime_from(_economy_runtime),
+        country_handle, cell_idx, type_id, effective_day, sequence,
+        worker_owned);
+}
+
+Dictionary DCWorldExt::queue_treasury_sponsored_demolish(
+        int64_t country_handle, int cell_idx, int type_id, int64_t count,
+        int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    const bool worker_owned = _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution();
+    return economy_api::queue_treasury_sponsored_demolish(*runtime_from(_economy_runtime),
+        country_handle, cell_idx, type_id, count, effective_day, sequence,
+        worker_owned);
+}
+
 Dictionary DCWorldExt::get_family_cell_snapshot(
         int cell_idx, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();
@@ -2087,9 +2121,9 @@ Dictionary DCWorldExt::diagnose_colonization_target(
     // exactly how it reported "all clear" while `family_colonization_quotes` kept
     // returning `colonization_target_invalid`. `:496` rejects a cell with
     // `passable == 0` unless an epoch is active, and neither input was visible.
-    out["topology_ready"] = economy->trade_topology_ready_for_test();
-    out["target_passable"] = economy->trade_passable_for_test(target_cell);
-    out["epoch_active"] = economy->epoch_active_for_test();
+    out["topology_ready"] = economy_api::trade_topology_ready_for_test(*economy);
+    out["target_passable"] = economy_api::trade_passable_for_test(*economy, target_cell);
+    out["epoch_active"] = economy_api::epoch_active_for_test(*economy);
     // The single verdict a caller actually needs.
     out["would_accept_target"] =
         target_visible && bool(out["owner_allows"]) &&
@@ -2204,11 +2238,12 @@ Dictionary DCWorldExt::get_family_expeditions(
 // ACTIVE worker mode without taking the economy boundary.
 Dictionary DCWorldExt::set_country_procurement_policy(
         int64_t country_handle, bool enabled, int treasury_share_bp,
-        int research_share_bp, int64_t effective_day, int64_t sequence) {
+        int research_share_bp, int64_t effective_day, int64_t sequence,
+        int era_share_bp, int colonization_share_bp) {
     if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->set_country_procurement_policy(
+    return economy_api::set_country_procurement_policy(*runtime_from(_economy_runtime),
         country_handle, enabled, treasury_share_bp, research_share_bp,
-        effective_day, sequence);
+        effective_day, sequence, era_share_bp, colonization_share_bp);
 }
 
 Dictionary DCWorldExt::set_era_procurement_target(

@@ -17,18 +17,18 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 		_connect_country_committed(host, )
 		# Keep monotonic exploration and discovery ingress identical to a visual
 		# session. Only texture/LUT/border publication is omitted.
-		host._loading_visual_step("_refresh_vision(host, )")
+		host._loading_visual_step("_refresh_vision()")
 		_refresh_vision(host, )
 		return
 	host._renderer.hex_size = host.hex_size
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null and host._generator.has_method("get_data_core_world_ext") else null
 	if ext != null and host._renderer.has_method("set_world_ext"):
 		host._renderer.set_world_ext(ext)
-	host._loading_visual_step("host._renderer.set_map(host._current_map, host._world_data)")
+	host._loading_visual_step("_renderer.set_map(_current_map, _world_data)")
 	# 植被层构建（set_map_cooperative → _rebuild_cooperative）在这里面跑 14+ 层，
 	# 逐层回调转成本次加载的进度（stage="visual"）。只在加载边界连接/断开，
 	# 运行期重建不会误发进度。
-	var layer_progress = Callable(self, "host._on_renderer_loading_layer_progress")
+	var layer_progress = Callable(host, "_on_renderer_loading_layer_progress")
 	if not host._renderer.loading_layer_progress.is_connected(layer_progress):
 		host._renderer.loading_layer_progress.connect(layer_progress)
 	await host._renderer.set_map_cooperative(host._current_map, host._world_data)
@@ -45,9 +45,9 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 			host._world_data.lut_dims
 		)
 	if host._renderer.has_method("set_map_baker") and host._generator != null and "_baker" in host._generator:
-		host._loading_visual_step("host._renderer.set_map_baker(host._generator._baker)")
+		host._loading_visual_step("_renderer.set_map_baker(_generator._baker)")
 		host._renderer.set_map_baker(host._generator._baker)
-	host._loading_visual_step("_bind_country_visuals(host, )")
+	host._loading_visual_step("_bind_country_visuals()")
 	await host._session_frames.next_frame()
 	if not host._session_preparation_active():
 		return
@@ -56,9 +56,9 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 	WebTelemetry.emit("bind_step", {"s": "post_bind_country"})
 	# ---- Military layers
 	# Created after the world/renderer bind, configured by PlayerGame on
-	# host.world_ready (map/camera/clock are all valid there).
+	# world_ready (map/camera/clock are all valid there).
 	if host.military_map_layers == null and not OS.has_feature("mobile") and DisplayServer.get_name() != "headless":
-		var military_script = load("res://scripts/rendering/host.military_map_layers.gd") as Script
+		var military_script = load("res://scripts/rendering/military_map_layers.gd") as Script
 		if military_script != null:
 			host.military_map_layers = Node2D.new()
 			host.military_map_layers.name = "MilitaryMapLayers"
@@ -70,7 +70,7 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 		host._renderer.set_season_phase(host._world_clock.season_phase())
 		WebTelemetry.emit("bind_step", {"s": "set_climate_anomaly"})
 		host._renderer.set_climate_anomaly(host._world_clock.climate_anomaly)
-		WebTelemetry.emit("bind_step", {"s": "host.on_visual_day_phase_changed"})
+		WebTelemetry.emit("bind_step", {"s": "on_visual_day_phase_changed"})
 		host.on_visual_day_phase_changed(host._world_clock.visual_day_phase)
 		var cp = host._generator._c() if host._generator != null and host._generator.has_method("_c") else null
 		if cp != null and cp.daily_climate_interpolation:
@@ -81,7 +81,7 @@ func _bind_renderer_and_camera(host, safe_area: Rect2) -> void:
 			if OS.has_feature("web"):
 				print("[loading] web build: skip initial refresh_climate_loading (60s+ in browser; first daily tick recomputes it)")
 			else:
-				host._loading_visual_step("host._generator.refresh_climate_daily(host._current_map, host._world_clock.season_phase())")
+				host._loading_visual_step("_generator.refresh_climate_daily(_current_map, _world_clock.season_phase())")
 				await host._generator.refresh_climate_loading(host._current_map, host._world_clock.season_phase())
 	WebTelemetry.emit("bind_step", {"s": "before_camera_frame"})
 	await host._session_frames.next_frame()
@@ -134,7 +134,7 @@ func _bind_settlement_labels(host) -> void:
 # ─── 国界线与视野迷雾 ─────────────────────────────────────────────────
 # 两者共用同一个触发源：领土是国界的定义，也是视野的源头。
 # country_committed 仅在真实领土 diff > 0 时挂起刷新；刷新本身走
-# `host._service_country_visual_refresh_budgeted`，不阻塞 ACTIVE day_changed。
+# `_service_country_visual_refresh_budgeted`，不阻塞 ACTIVE day_changed。
 
 ## 世界就绪后一次性绑定。此刻 country bootstrap 已完成，country_slot_arr 已由
 ## NativeCountryRuntime 发布到 MapData，可以直接首解算。
@@ -146,7 +146,7 @@ func _bind_country_visuals(host) -> void:
 	if host._renderer != null and host._renderer.has_method("set_fog_of_war_enabled"):
 		host._renderer.set_fog_of_war_enabled(host._fog_of_war_enabled, host.fog_early_out_enabled)
 	_connect_country_committed(host, )
-	var report = refresh_country_visuals(host, "host.world_ready")
+	var report = refresh_country_visuals(host, "world_ready")
 	var vision: Dictionary = report.get("vision", {})
 	var border: Dictionary = report.get("border", {})
 	print("[vision] fog=%s player_slot=%d early_out=%s visible=%d explored=%d/%d solve_ms=%.3f border_edges=%d" % [
@@ -284,7 +284,7 @@ func player_country_slot(host) -> int:
 	return host._player_country_slot
 
 
-## PKFG is restored before the PlayerGame host.world_ready callback. Rebind the
+## PKFG is restored before the PlayerGame world_ready callback. Rebind the
 ## player identity only after all providers (including player_session) have
 ## restored, then solve and publish fog exactly once from the restored explored
 ## array and PKCN territory.
@@ -344,7 +344,7 @@ func finalize_save_restore_visuals(host) -> Dictionary:
 	return refresh_country_visuals(host, "save_restore_finalized")
 
 
-## 存档里的玩家起始格。读档期间 `host._pending_load_bundle.sections.player_context`
+## 存档里的玩家起始格。读档期间 `_pending_load_bundle.sections.player_context`
 ## 是解码后的权威来源（成功返回后才清空），`GameFlow.session()` 作为兜底。
 
 func _saved_player_start_cell(host) -> int:
@@ -391,7 +391,7 @@ func _player_start_cell_drift(host) -> Dictionary:
 	var config_seed = -1
 	var base = host._new_game_config.get("base", {})
 	if base is Dictionary:
-		config_seed = int((base as Dictionary).get("host.initial_seed", -1))
+		config_seed = int((base as Dictionary).get("initial_seed", -1))
 	return {
 		"message": "读档重建出的世界与存档世界不一致，无法恢复。",
 		"detail": "saved_start_cell=%d computed_start_cell=%d map=%dx%d generated_seed=%d config_seed=%d" % [

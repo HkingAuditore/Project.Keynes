@@ -62,7 +62,7 @@ func _check_strata_table() -> void:
 	_expect("strata table loads", table != null)
 	if table == null:
 		return
-	_expect("eight display strata", table.stratum_count() == 8)
+	_expect("nine display strata (owners … military … unemployed)", table.stratum_count() == 9)
 	var ids := PackedStringArray()
 	for path in ResourceLoader.list_directory(EconomyCatalogScript.PROFESSION_DIR):
 		if path.get_extension() != "tres":
@@ -88,6 +88,17 @@ func _check_strata_table() -> void:
 		var icon := StringName(table.stratum(index).get("icon", ""))
 		_expect("stratum %s icon resolves" % table.stratum_id(index),
 			IconCatalog.has_icon(icon))
+	# 职业视角要逐职业画行，图标缺一个就会在职业账簿里露出 system.unknown。
+	var icon_misses := PackedStringArray()
+	for profession_id in ids:
+		if not IconCatalog.has_icon(IconCatalog.profession_semantic(profession_id)):
+			icon_misses.append(profession_id)
+	_expect("every profession icon resolves (%s)" % ", ".join(icon_misses),
+		icon_misses.is_empty())
+	_expect("two population views (stratum / profession)",
+		EconomyDossierViewModel.POPULATION_MODES.size() == 2
+			and String(EconomyDossierViewModel.POPULATION_MODES[0].id) == "stratum"
+			and String(EconomyDossierViewModel.POPULATION_MODES[1].id) == "profession")
 	for chapter in EconomyDossierViewModel.CHAPTERS:
 		_expect("chapter %s icon resolves" % chapter.id, IconCatalog.has_icon(chapter.icon))
 
@@ -139,15 +150,21 @@ func _check_history_buffer() -> void:
 	var history := EconomyHistoryBuffer.new()
 	history.reset(7)
 	for day in range(EconomyHistoryBuffer.CAPACITY + 15):
-		history.record(day, {"population": float(day)}, [{"satisfaction": 0.5}])
+		history.record(day, {"population": float(day)}, [{"satisfaction": 0.5}],
+			[{"id": "worker", "satisfaction": 0.4, "income_per_capita": 2.0}])
 	history.record(3, {"population": -1.0})
 	_expect("history trims to capacity", history.size() == EconomyHistoryBuffer.CAPACITY)
 	_expect("history ignores stale days", history.latest_day() == EconomyHistoryBuffer.CAPACITY + 14)
 	_expect("history delta", is_equal_approx(history.delta("population", 7), 7.0))
 	_expect("stratum series aligned with days",
 		history.stratum_series(0, "satisfaction").size() == history.size())
+	_expect("profession series aligned with days",
+		history.profession_series("worker", "satisfaction").size() == history.size())
+	_expect("unknown profession has no series",
+		history.profession_series("___none___", "satisfaction").is_empty())
 	history.reset(8)
-	_expect("history reset clears", history.size() == 0 and is_nan(history.delta("population")))
+	_expect("history reset clears", history.size() == 0 and is_nan(history.delta("population"))
+		and history.profession_series("worker", "satisfaction").is_empty())
 
 
 ## 国库收支：合计只算非零项，明细表则五类税种全列，零值写成短横线。
@@ -392,7 +409,33 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 		and workspace.tax_row_instance_id("consumption", "__default__") == tax_row)
 	dossier.select_chapter("strata")
 	var strata_table := dossier.page("strata").get_node("%StrataTable") as DossierLedgerTable
-	_expect("strata ledger has 8 rows", strata_table != null and strata_table.row_count() == 8)
+	_expect("strata ledger has 9 rows", strata_table != null and strata_table.row_count() == 9)
+	# 职业视角：账簿从 9 个阶层行换成逐职业行，且选中项落在人口最多的职业上。
+	dossier.page("strata").navigate_requested.emit("strata", {"mode": "profession"})
+	await process_frame
+	var profession_rows: Array = dossier.view_model().strata_model(-1, "profession", "").professions
+	_expect("profession view lists every populated profession (%d rows / %d professions)" % [
+		strata_table.row_count(), profession_rows.size()],
+		strata_table.row_count() == profession_rows.size() and strata_table.row_count() > 0)
+	_expect("profession view selects a profession id",
+		strata_table.selected_id is String and not String(strata_table.selected_id).is_empty())
+	_expect("population view mode is carried by the shell filter",
+		String((dossier.get("_filters") as Dictionary).get("mode", "")) == "profession")
+	var profession_page := dossier.page("strata")
+	_expect("profession view labels its columns and detail list",
+		String(profession_page.get_node("%ListKicker").text) == "职业与所属阶层"
+			and String(profession_page.get_node("%ProfessionKicker").text) == "同阶层职业")
+	# 点职业构成里的一个职业＝下钻到该职业；回到阶层视角仍保留原选中阶层。
+	dossier.page("strata").navigate_requested.emit("strata",
+		{"mode": "profession", "focus": String(profession_rows[0].id)})
+	await process_frame
+	_expect("profession focus sticks",
+		String(strata_table.selected_id) == String(profession_rows[0].id))
+	dossier.page("strata").navigate_requested.emit("strata", {"mode": "stratum"})
+	await process_frame
+	_expect("stratum mode restores the aggregate ledger",
+		strata_table.row_count() == 9
+			and String((dossier.get("_filters") as Dictionary).get("mode", "")) == "stratum")
 	dossier.select_chapter("industry")
 	# 位置要等容器重排完才有意义（页面刚从隐藏转为可见）。
 	await process_frame
@@ -515,6 +558,42 @@ func _check_runtime_models() -> void:
 		bool(strata_model.get("ok", false)) and not (strata_model.get("selected", {}) as Dictionary).is_empty())
 	_expect("national radar has 8 dims",
 		(strata_model.get("national_dims", PackedFloat32Array()) as PackedFloat32Array).size() == 8)
+	# 职业视角与阶层视角读同一份快照：人口合计必须相等，否则「精确到职业」就换了口径。
+	var profession_model := vm.strata_model(-1, "profession", "")
+	var profession_rows: Array = profession_model.get("professions", [])
+	var profession_total := 0.0
+	for row in profession_rows:
+		profession_total += float(row.population)
+	var stratum_total := 0.0
+	for row in strata_model.get("rows", []):
+		stratum_total += float(row.population)
+	_expect("profession view partitions the population the strata view aggregates",
+		profession_rows.size() > 0 and is_equal_approx(profession_total, stratum_total))
+	# 粒度不变量：每个职业只归一个阶层，所以职业行数不会少于「有人口的阶层」数。
+	var populated_strata := 0
+	for row in strata_model.get("rows", []):
+		if float(row.population) > 0.0:
+			populated_strata += 1
+	_expect("profession view is as fine-grained as the strata view (%d professions / %d populated strata)" % [
+		profession_rows.size(), populated_strata],
+		profession_rows.size() >= populated_strata)
+	_expect("profession view defaults to the most populous profession",
+		String(profession_model.get("selected_id", "")) == String(profession_rows[0].id))
+	var profession_selected: Dictionary = profession_model.get("selected", {})
+	_expect("profession detail carries its stratum, cities and 8 dims",
+		not String(profession_selected.get("stratum_name", "")).is_empty()
+			and (profession_selected.get("dims", PackedFloat32Array()) as PackedFloat32Array).size() == 8)
+	var last_profession := String(profession_rows[profession_rows.size() - 1].id)
+	_expect("explicit profession focus wins over the default",
+		String(vm.strata_model(-1, "profession", last_profession).get("selected_id", ""))
+			== last_profession)
+	# 每个职业都要能说出「属于哪个阶层」，否则职业视角里的阶层标签会退回兜底组。
+	var unlabeled := PackedStringArray()
+	for row in profession_rows:
+		if String(row.get("stratum_name", "")).is_empty():
+			unlabeled.append(String(row.id))
+	_expect("every profession row names its stratum (%s)" % ", ".join(unlabeled),
+		unlabeled.is_empty())
 	var industry := vm.industry_model(-1)
 	_expect("industry model ok (%s, %d rows, %d units)" % [String(industry.get("reason", "")),
 		(industry.get("rows", []) as Array).size(), int(summary.get("building_units", 0))],

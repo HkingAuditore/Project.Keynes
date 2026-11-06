@@ -21,7 +21,7 @@ var row_height := 30.0
 var selected_id: Variant = null
 var sort_column := ""
 var sort_descending := true
-var empty_text := "暂无记录"
+var empty_text := ""
 
 var _columns: Array = []
 var _visible_columns: Array = []
@@ -361,7 +361,7 @@ func _draw() -> void:
 	var w := size.x
 	var hh := _header_height()
 	var visible := _visible_range()
-	if _rows.is_empty():
+	if _rows.is_empty() and not empty_text.is_empty():
 		_text(Vector2(0.0, hh + 20.0), empty_text, 13, UITokens.DOSSIER_INK_MUTED,
 			"sans", HORIZONTAL_ALIGNMENT_CENTER, w)
 	var first := maxi(0, int(floor((visible.x - hh) / row_height)))

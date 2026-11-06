@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## M1 prerequisite: measure the REAL per-cell cost of the two city-factor
 ## readers, because plan §14.1 now says the取消-cap cost is
 ## `covered_cells × 156` and nobody has a number for the per-query constant.

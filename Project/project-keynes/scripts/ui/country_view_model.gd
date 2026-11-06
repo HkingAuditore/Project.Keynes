@@ -15,6 +15,8 @@ const DevelopmentAchievementCatalogScript = preload(
 static var _tax_content_cache: Dictionary = {}
 
 var _generator = null
+## 会话地图（`MapData`）：军事/外交章的领土镜像、邻接与视野都从它读。
+var _map = null
 var _section_cache: Dictionary = {}
 var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
@@ -29,8 +31,11 @@ var _gdp_ledger: EconomyGdpLedger = null
 var _strata_table: SocialStrataTable
 
 
-func set_context(generator) -> void:
+## `map` 是会话的 `MapData`。必须显式传入：`MapGenerator` 没有公开的 map getter，
+## 而军事/外交章要读领土镜像（`country_slot_arr`）、邻接与视野数组。
+func set_context(generator, map = null) -> void:
 	_generator = generator
+	_map = map
 	_section_cache.clear()
 	_section_cache_revisions.clear()
 	_ideology_catalog_cache.clear()
@@ -104,6 +109,9 @@ func invalidate_cache(domains: int = -1) -> void:
 	if (domains & 8) != 0:
 		_section_cache.erase("military")
 		_section_cache_revisions.erase("military")
+	if (domains & 16) != 0:
+		_section_cache.erase("diplomacy")
+		_section_cache_revisions.erase("diplomacy")
 
 
 func cached_section(section_id: String) -> Dictionary:
@@ -290,7 +298,7 @@ func player_research_states() -> PackedInt32Array:
 
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military"] else "technology"
+		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	# Keep the pre-snapshot path intentionally verbose for debug/A-B comparison.
@@ -366,6 +374,11 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	}
 	if normalized_section == "technology":
 		model.merge(build_static_catalog(), true)
+	if normalized_section in ["military", "diplomacy"]:
+		model["good_ids"] = _good_stable_ids()
+		build_military_model(country_handle, model)
+	if normalized_section == "diplomacy":
+		build_diplomacy_model(country_handle, model, facade)
 	_section_cache[normalized_section] = model
 	_section_cache_revisions[normalized_section] = revision_components
 	return model
@@ -399,9 +412,10 @@ func _country_context() -> Dictionary:
 
 func _section_mask(section_id: String) -> int:
 	# 军事没有原生 country_ui_snapshot 分片（它走自己的 facade），给 0 表示
-	# 「不需要国家快照」，国家壳数据仍由 summary 提供。
-	return int({"technology": 1, "economy": 2, "ideology": 4, "military": 0}.get(
-		section_id, 1))
+	# 「不需要国家快照」，国家壳数据仍由 summary 提供。外交同理：它读的是
+	# 领土镜像 + 军事快照，不读国家快照分片。
+	return int({"technology": 1, "economy": 2, "ideology": 4, "military": 0,
+		"diplomacy": 0}.get(section_id, 1))
 
 
 func build_summary_snapshot(country_handle: int, summary: Dictionary,
@@ -519,7 +533,7 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 
 func build(section_id: String = "technology") -> Dictionary:
 	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military"] else "technology"
+		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	var context := _country_context()
@@ -527,9 +541,12 @@ func build(section_id: String = "technology") -> Dictionary:
 		var unavailable := _unavailable_model(String(context.get("reason", "国家数据暂不可用")))
 		# 军事面板有自己的一条数据通路（军事 facade + 它自己的国家槽），
 		# 国家壳没就绪时也不能整段消失：面板要能说清「军事机构尚未接通」。
-		if normalized_section == "military":
+		if normalized_section in ["military", "diplomacy"]:
 			unavailable["military"] = _unavailable_military_section(0,
 				String(context.get("reason", "国家数据暂不可用")))
+			if normalized_section == "diplomacy":
+				unavailable["diplomacy"] = _unavailable_diplomacy_section(
+					String(context.get("reason", "国家数据暂不可用")))
 		return unavailable
 	var facade = context.facade
 	var country_handle := int(context.country_handle)
@@ -552,6 +569,9 @@ func build(section_id: String = "technology") -> Dictionary:
 			# 军事自成一个模型源：CountryViewModel 只负责装配，军事自己的展示
 			# 逻辑在 MilitaryViewModel 里。这里先把模型占位放好，装配在
 			# merge 之后（需要 model 本身带 good_ids/country_handle 才能查名字）。
+			section_snapshot = {}
+		"diplomacy":
+			# 外交同理：名单/档案/战事都由 DiplomacyViewModel 算，这里只占位。
 			section_snapshot = {}
 	var treasury: Dictionary = section_snapshot.get("treasury", {})
 	var treasury_available := bool(treasury.get("available", false))
@@ -576,10 +596,12 @@ func build(section_id: String = "technology") -> Dictionary:
 		research["country_cash"] = cash
 		model["research"] = research
 		model.merge(build_static_catalog(), true)
-	if normalized_section == "military":
+	if normalized_section in ["military", "diplomacy"]:
 		# 军事面板需要 dense good id → 稳定 id 的对照表来给装备类别起名。
 		model["good_ids"] = _good_stable_ids()
 		build_military_model(country_handle, model)
+	if normalized_section == "diplomacy":
+		build_diplomacy_model(country_handle, model, facade)
 	_section_cache[normalized_section] = model
 	_section_cache_revisions[normalized_section] = model.get(
 		"revision_components", {}).duplicate(false)
@@ -613,6 +635,10 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		"reason": "军事机构尚未接通：本局没有可用的军事运行时。",
 		"facade": facade,
 		"country_handle": country_handle,
+		# 视图模型按国家槽位反查邻国/句柄/名称都要经过会话世界（领土镜像 + Country
+		# facade）。缺了它 `session_bound()` 恒为 false，战争页的邻国表就永远是空的。
+		"generator": _generator,
+		"map": _map,
 	}
 	if facade == null:
 		model["military"] = section
@@ -675,10 +701,120 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		"catalog": merged_catalog,
 		"researched_tech_ids": researched,
 		"tech_gate_known": gate_known,
+		"generator": _generator,
+		"map": _map,
 		"query_ms": (Time.get_ticks_usec() - started_usec) / 1000.0,
 	}
+	# 财政页的军事只读实付板块。原生只给 30 日滑窗累计，这里统一折成日均，
+	# 三个通道口径相同（否则玩家会把 30 日总额当成一天的花销）。
+	section.merge(military_spending_model(snapshot), true)
 	model["military"] = section
 	return section
+
+
+## 军事支出视图（财政页只读板块用）。输入 `get_military_country_snapshot` 的
+## 原始快照，输出三个通道的日均实付与招募集训的等待装备计数。
+##
+## 招募本身不拨预算：这一点由 `recruitment_funded = false` 明确表达，
+## 面板据此把招募行标成「不拨款」，而不是显示 0。
+static func military_spending_model(snapshot: Dictionary) -> Dictionary:
+	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
+		return {"available": false}
+	if not bool(snapshot.get("has_policy", false)):
+		return {"available": false}
+	# 30 日滑窗累计 ÷ 30。整除而非四舍五入：上报的是"至少花了这么多"。
+	var payroll_30 := maxi(0, int(snapshot.get("spend_payroll_30", 0)))
+	var upkeep_30 := maxi(0, int(snapshot.get("spend_upkeep_30", 0)))
+	var procurement_30 := maxi(0, int(snapshot.get("spend_procurement_30", 0)))
+	# 训练队列里还没拿到装备的兵：这就是"已排队但还在等"的装备需求。
+	var waiting_equipment := 0
+	var training_rows: Array = snapshot.get("training", [])
+	if training_rows is Array:
+		for row_value in training_rows:
+			if not row_value is Dictionary:
+				continue
+			var row: Dictionary = row_value
+			if bool(row.get("equipment_ready", false)):
+				continue
+			waiting_equipment += maxi(0, int(row.get("count", 0)))
+	return {
+		"available": true,
+		"wage_paid_last_period": payroll_30 / 30,
+		"maintenance_paid_last_period": upkeep_30 / 30,
+		"procurement_paid_last_period": procurement_30 / 30,
+		"wage_paid_window": payroll_30,
+		"maintenance_paid_window": upkeep_30,
+		"procurement_paid_window": procurement_30,
+		"window_days": 30,
+		"procurement_share_bp": clampi(
+			int(snapshot.get("procurement_share_bp", 0)), 0, 10000),
+		"waiting_equipment": waiting_equipment,
+		"soldiers_training": maxi(0, int(snapshot.get("soldiers_training", 0))),
+		# 招募与训练本身不领取军事预算：预算只覆盖军饷、维护与采购。
+		"recruitment_funded": false,
+		# ---- 预算信封（任务 6/7/8 的原生字段，任务 9 的可编辑 UI 直接消费）----
+		# `envelope_enabled == false` 是「没有信封」：三个日额是 -1 而不是 0，
+		# 表示"不设上限、跟随现金"，与"份额为 0 暂停该通道"是相反的语义。
+		"envelope_enabled": bool(snapshot.get("budget_enabled", false)),
+		"budget_share_bp": clampi(int(snapshot.get("budget_share_bp", 0)), 0, 10000),
+		"budget_wage_bp": clampi(int(snapshot.get("budget_wage_bp", 6000)), 0, 10000),
+		"budget_upkeep_bp": clampi(int(snapshot.get("budget_upkeep_bp", 2000)), 0, 10000),
+		"budget_procurement_bp": clampi(
+			int(snapshot.get("procurement_share_bp", 2000)), 0, 10000),
+		"envelope_daily": int(snapshot.get("budget_envelope_daily", 0)),
+		"wage_budget_daily": int(snapshot.get("budget_wage_daily", -1)),
+		"upkeep_budget_daily": int(snapshot.get("budget_upkeep_daily", -1)),
+		"procurement_budget_daily": int(snapshot.get("budget_procurement_daily", -1)),
+		# ---- 上一轮结算结果（任务 7/8）----
+		# 军饷与维护是高优先级：超支是允许的，用 `*_overspend` 画铁锈红。
+		# 采购是低优先级：绝不超支，被配额截断的部分在 `procurement_deferred_units`
+		# 里，面板用「待购」而不是「超支」标示。
+		"wage_demand": maxi(0, int(snapshot.get("budget_wage_demand", 0))),
+		"wage_arrears": maxi(0, int(snapshot.get("budget_wage_arrears", 0))),
+		"wage_overspend": maxi(0, int(snapshot.get("budget_wage_overspend", 0))),
+		"upkeep_demand": maxi(0, int(snapshot.get("budget_upkeep_demand", 0))),
+		"upkeep_arrears": maxi(0, int(snapshot.get("budget_upkeep_arrears", 0))),
+		"upkeep_overspend": maxi(0, int(snapshot.get("budget_upkeep_overspend", 0))),
+		"procurement_used": maxi(0, int(snapshot.get("budget_procurement_used", 0))),
+		"procurement_deferred_units": maxi(0,
+			int(snapshot.get("budget_procurement_deferred_units", 0))),
+	}
+
+
+
+## 外交章的模型。它自己不算任何东西：名单、档案与战事都由 DiplomacyViewModel 从
+## 「已提交的国家壳 + 领土镜像 + 军事快照」里算。这里只把这条通路上要用的几个
+## 句柄交出去，并保证军事段已经装好（战事与割地候选复用同一份快照）。
+func build_diplomacy_model(country_handle: int, model: Dictionary, facade) -> Dictionary:
+	var military: Dictionary = model.get("military", {})
+	var section := {
+		"available": true,
+		"reason": "",
+		"generator": _generator,
+		"map": _map,
+		"country_facade": facade,
+		"military_facade": military.get("facade", null),
+		"country_handle": country_handle,
+		"day": int(model.get("current_day", -1)),
+		"military_available": bool(military.get("available", false)),
+		"military_reason": String(military.get("reason", "")),
+	}
+	model["diplomacy"] = section
+	return section
+
+
+## 「外交一起不可用」的兜底段：国家壳都没就绪时也要给外交面板一个可读原因。
+func _unavailable_diplomacy_section(reason: String) -> Dictionary:
+	return {
+		"available": false,
+		"reason": "外交档案暂不可用（%s）" % reason if not reason.is_empty()
+			else "外交档案暂不可用",
+		"country_facade": null,
+		"military_facade": null,
+		"country_handle": 0,
+		"military_available": false,
+		"military_reason": "",
+	}
 
 
 ## 军务档案（右栏部队/战线页）的模型上下文：只装 MilitaryViewModel 需要的那几项，
@@ -691,6 +827,7 @@ func military_dossier_context(country_handle: int) -> Dictionary:
 		"country_handle": country_handle,
 		"good_ids": model.get("good_ids", PackedStringArray()),
 		"generator": _generator,
+		"map": _map,
 	}
 
 
@@ -1106,9 +1243,9 @@ static func ideology_player_reason(reason: String) -> String:
 		"ideology_offer_pending":
 			return "已有一次三选一待选择。"
 		"ideology_offer_not_active":
-			return "当前没有打开的三选一。"
+			return ""
 		"ideology_offer_pool_insufficient", "ideology_offer_weight_invalid":
-			return "当前没有可抽取的理念。"
+			return ""
 		"ideology_draw_in_progress":
 			return "正在抽取。"
 		"ideology_draw_timeout":
@@ -1147,6 +1284,9 @@ static func present_procurement(snapshot: Dictionary) -> Dictionary:
 			"research_cash_spent_last_epoch", "colonization_cash_spent_last_epoch",
 			"trade_orders_total"]:
 		out[key] = int(snapshot.get(key, 0))
+	# 通道份额可以是 -1（沿用原生自动分配），不能用上面那批「缺省为 0」的循环。
+	for key in ["era_share_bp", "colonization_share_bp"]:
+		out[key] = int(snapshot.get(key, -1))
 	return out
 
 
@@ -1390,7 +1530,7 @@ static func _unavailable_treasury_static(reason: String) -> Dictionary:
 		"available": false,
 		"reason": reason,
 		"cash": 0,
-		"cash_text": "—",
+		"cash_text": "",
 		"nonzero_good_count": 0,
 		"goods": [],
 	}

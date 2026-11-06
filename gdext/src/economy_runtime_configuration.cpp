@@ -469,6 +469,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
+    _investment_prepared_epoch = -1;
     _investment_merchant_cash_by_cell.clear();
     _investment_outstanding_credit_by_cell.clear();
     _investment_output_signals_scratch.clear();
@@ -709,6 +710,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
+    _investment_prepared_epoch = -1;
     _investment_merchant_cash_by_cell.clear();
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();
@@ -1368,7 +1370,12 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         }
         const bool treasury_build =
             opcodes[i] == COMMAND_TREASURY_SPONSORED_BUILD;
-        if (!family_reward && !treasury_build && !split_policy &&
+        // The sponsored demolish lane names a country handle in `target_handle`
+        // exactly like the build lane, so it must skip the cohort-handle probe
+        // for the same reason.
+        const bool treasury_demolish =
+            opcodes[i] == COMMAND_TREASURY_SPONSORED_DEMOLISH;
+        if (!family_reward && !treasury_build && !treasury_demolish && !split_policy &&
             opcodes[i] != COMMAND_ADD_STOCK &&
             opcodes[i] != COMMAND_REMOVE_STOCK &&
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&
@@ -1408,11 +1415,22 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             return out;
         }
         if ((opcodes[i] == COMMAND_BUILD || opcodes[i] == COMMAND_DEMOLISH ||
-             treasury_build) &&
+             treasury_build || treasury_demolish) &&
             (i32_0[i] < 0 || i32_0[i] >= _cell_count.get() || i32_1[i] < 0 ||
              i32_1[i] >= static_cast<int32_t>(_building_types.size()) || i64_0[i] <= 0)) {
             out["ok"] = false;
             out["reason"] = "command_building_target_invalid";
+            out["index"] = static_cast<int64_t>(i);
+            return out;
+        }
+        if (treasury_demolish &&
+            (i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             _country_runtime == nullptr ||
+             !country_reads().valid_handle(handles[i]))) {
+            out["ok"] = false;
+            out["reason"] = i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE
+                ? "unsupported_ownership_policy"
+                : "command_treasury_build_target_invalid";
             out["index"] = static_cast<int64_t>(i);
             return out;
         }

@@ -86,7 +86,7 @@ func refresh_overview(model: Dictionary) -> void:
 	%GDP.set_data("年度 GDP", String(model.get("gdp", "—")),
 		String(model.get("gdp_tooltip", "本年累计产值")), UITokens.HUD_INK, "", "hud.country.economy")
 	%PerCapitaGDP.set_data("人均 GDP", String(model.get("per_capita_gdp", "—")),
-		String(model.get("per_capita_gdp_tooltip", "年度 GDP ÷ 全国人口")),
+		String(model.get("per_capita_gdp_tooltip", "人均 GDP")),
 		UITokens.HUD_INK, "", "hud.country.economy")
 	%Territory.set_data("地块", String(model.get("territory", "—")),
 		String(model.get("territory_tooltip", "当前国家持有的有效地块数")),
@@ -101,7 +101,7 @@ func refresh_overview(model: Dictionary) -> void:
 		String(model.get("satisfaction_tooltip", "全国人口加权的满意度均值")),
 		UITokens.ECO, "", "population.heart")
 	%LivingStandard.set_data("人民生活水平", String(model.get("living_standard", "—")),
-		String(model.get("living_standard_tooltip", "按人口加权的生活水平等级均值")),
+		String(model.get("living_standard_tooltip", "人民生活水平")),
 		UITokens.ECO, "", "population.living.comfortable")
 	_update_alerts(model.get("alerts", []))
 	_layout_popup.call_deferred()

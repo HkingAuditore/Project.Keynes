@@ -555,7 +555,6 @@ func _build_dynamic_parts() -> void:
 ## an indexed folio for everything the country has collected.
 func _build_archive_chrome() -> void:
 	if _top_bar != null:
-		_top_bar.add_theme_stylebox_override("panel", ArtScript.paper_style(10.0))
 		var top_row := _point_scroll.get_parent() as Control
 		var identity := VBoxContainer.new()
 		identity.custom_minimum_size.x = 112
@@ -569,16 +568,11 @@ func _build_archive_chrome() -> void:
 			preload("res://assets/fonts/muyao/display_handwritten.tres"))
 		identity.add_child(_top_title)
 	if _deck_table != null:
-		_deck_table.add_theme_stylebox_override("panel", ArtScript.paper_style(8.0,
-			Color(0.94, 0.95, 0.90)))
 		_build_deck_heading()
 	if _collection_drop != null:
-		_collection_drop.add_theme_stylebox_override("panel", ArtScript.paper_style(8.0))
 		_build_collection_heading()
 	if _scroll != null and not _scroll.resized.is_connected(_on_collection_resized):
 		_scroll.resized.connect(_on_collection_resized)
-	if _empty != null:
-		_empty.add_theme_stylebox_override("panel", ArtScript.paper_style(16.0))
 	if _resonance_bar != null:
 		var row := _resonance_bar.get_parent() as Control
 		var tag := row.get_node_or_null("ResonanceTag") as Label
@@ -586,8 +580,6 @@ func _build_archive_chrome() -> void:
 			tag.theme_type_variation = &"Label"
 			tag.add_theme_color_override("font_color", ArtScript.INK)
 			tag.add_theme_font_size_override("font_size", 14)
-		var panel := row.get_parent().get_parent() as PanelContainer
-		panel.add_theme_stylebox_override("panel", ArtScript.paper_style(4.0))
 	_apply_archive_metrics()
 
 
@@ -924,7 +916,6 @@ func _play_workspace_intro() -> void:
 
 ## Keep the modal paper quiet so the candidate cards carry the hierarchy.
 func _build_stage_scenery() -> void:
-	_offer.add_theme_stylebox_override("panel", ArtScript.paper_style(16.0))
 	ArtScript.attach_panel_shadow(_offer, 0.30, 16)
 	_offer_layer.theme = preload("res://assets/themes/player_session_theme.tres")
 	_offer_title.add_theme_color_override("font_color", ArtScript.INK)

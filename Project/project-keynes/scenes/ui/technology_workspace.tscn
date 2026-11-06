@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/ui/components/technology_workspace.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
 [ext_resource type="PackedScene" path="res://scenes/ui/research_allocation_bars.tscn" id="3_allocation"]
-[ext_resource type="PackedScene" path="res://scenes/ui/procurement_budget_slider.tscn" id="4_budget"]
+[ext_resource type="Script" path="res://scripts/ui/components/research_budget_notice.gd" id="4_budget"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_queue_drop_zone.tscn" id="5_zone"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_tree_view.tscn" id="6_tree"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_detail_card.tscn" id="7_detail"]
@@ -263,9 +263,11 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Budget" parent="Root/Main/PolicyPanel/Scroll/Body" instance=ExtResource("4_budget")]
+[node name="Budget" type="Control" parent="Root/Main/PolicyPanel/Scroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 96)
+script = ExtResource("4_budget")
 
 [node name="Rule" type="HSeparator" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2

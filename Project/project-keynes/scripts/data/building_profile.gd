@@ -16,7 +16,10 @@ extends Resource
 @export_enum("none", "barracks", "fortification", "war_college") var state_role: String = "none"
 ## Explicit technology-output sector. Authoring must not infer farms from the
 ## generic collector kind because collectors also cover mines and fisheries.
-@export_enum("agriculture", "extractive", "manufacturing", "energy", "knowledge") \
+## `military` is appended last so the dense order still matches
+## `EconomyCatalog.BUILDING_SECTOR_IDS`; every native sector-keyed column is
+## sized from the five civil sectors and never indexes it.
+@export_enum("agriculture", "extractive", "manufacturing", "energy", "knowledge", "military") \
 var economic_sector_id: String = ""
 ## Cold-path taxonomy used by data-driven selectors. Runtime compilation
 ## expands tags to dense building IDs; simulation loops never compare strings.

@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Sharding behaviour of `refresh_city_modifier_factors` (plan 22 §14.3).
 ##
 ## M1-6 measured the whole reader at 0.465 ms (2400 cells) and 1.264 ms (6400

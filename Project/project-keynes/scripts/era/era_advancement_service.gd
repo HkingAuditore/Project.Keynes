@@ -37,6 +37,9 @@ const STATUS_MAX := "max"
 const SAVE_VERSION := 1
 const DEFAULT_TREASURY_SHARE_BP := 200
 const DEFAULT_RESEARCH_SHARE_BP := 5000
+## -1 = 沿用原生「谁有需求谁拿剩余」的分配规则（两项都未设置时是 50/50）。
+## 玩家一旦在财政页拖动某个通道，该通道就固定按份额切分，0 即暂停。
+const SHARE_UNSET := -1
 ## Days to wait for the milestone to become pending/complete after a
 ## completion submission before falling back to PURCHASING.
 const COMPLETION_TIMEOUT_DAYS := 5
@@ -63,6 +66,8 @@ var _completion_day := -1
 var _prelude_granted := false
 var _treasury_share_bp := DEFAULT_TREASURY_SHARE_BP
 var _research_share_bp := DEFAULT_RESEARCH_SHARE_BP
+var _era_share_bp := SHARE_UNSET
+var _colonization_share_bp := SHARE_UNSET
 # --- transient ---------------------------------------------------------------
 var _last_trade_total := -1
 var _last_refresh_day := -2147483648
@@ -109,6 +114,8 @@ func reset() -> void:
 	_prelude_granted = false
 	_treasury_share_bp = DEFAULT_TREASURY_SHARE_BP
 	_research_share_bp = DEFAULT_RESEARCH_SHARE_BP
+	_era_share_bp = SHARE_UNSET
+	_colonization_share_bp = SHARE_UNSET
 	_last_trade_total = -1
 	_last_refresh_day = -2147483648
 	_last_snapshot = {}
@@ -122,23 +129,43 @@ func reset() -> void:
 
 func policy() -> Dictionary:
 	return {"treasury_share_bp": _treasury_share_bp,
-		"research_share_bp": _research_share_bp}
+		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp}
 
 
-static func validate_policy(treasury_share_bp: int, research_share_bp: int) -> Dictionary:
+## 三项（科技 + 时代 + 开拓）都是 national_daily 的份额，合计不得超过 100%。
+## era/colonization 允许 -1（未设置，沿用原生旧规则）。
+static func validate_policy(treasury_share_bp: int, research_share_bp: int,
+		era_share_bp: int = SHARE_UNSET,
+		colonization_share_bp: int = SHARE_UNSET) -> Dictionary:
 	if treasury_share_bp < 0 or treasury_share_bp > 10000 \
 			or research_share_bp < 0 or research_share_bp > 10000:
 		return _result(false, "invalid_args", "国家购买预算份额必须在 0–10000 基点之间。")
+	for pair in [["时代收购", era_share_bp], ["派遣储备", colonization_share_bp]]:
+		var value := int(pair[1])
+		if value < SHARE_UNSET or value > 10000:
+			return _result(false, "invalid_args",
+				"%s份额必须在 0–10000 基点之间。" % String(pair[0]))
+	var allocated := research_share_bp + maxi(0, era_share_bp) + maxi(0, colonization_share_bp)
+	if allocated > 10000:
+		return _result(false, "share_over_allocated",
+			"科技、时代收购与派遣储备的份额之和不能超过 100%。")
 	return _result(true, "ok", "")
 
 
 func set_policy(treasury_share_bp: int, research_share_bp: int,
-		effective_day: int, sequence: int) -> Dictionary:
-	var valid := validate_policy(treasury_share_bp, research_share_bp)
+		effective_day: int, sequence: int,
+		era_share_bp: int = SHARE_UNSET,
+		colonization_share_bp: int = SHARE_UNSET) -> Dictionary:
+	var valid := validate_policy(treasury_share_bp, research_share_bp,
+		era_share_bp, colonization_share_bp)
 	if not bool(valid.ok):
 		return valid
 	_treasury_share_bp = treasury_share_bp
 	_research_share_bp = research_share_bp
+	_era_share_bp = era_share_bp
+	_colonization_share_bp = colonization_share_bp
 	var result := push_policy(effective_day, sequence)
 	_emit_refresh()
 	return result
@@ -150,7 +177,8 @@ func push_policy(effective_day: int, sequence: int) -> Dictionary:
 		return _result(true, "policy_stored_runtime_pending",
 			"国家购买预算已记录，等待经济运行时接口就绪。")
 	var result: Dictionary = _economy.set_country_procurement_policy(_handle, true,
-		_treasury_share_bp, _research_share_bp, effective_day, sequence)
+		_treasury_share_bp, _research_share_bp, effective_day, sequence,
+		_era_share_bp, _colonization_share_bp)
 	return _normalized(result, "国家购买预算已更新，将在下一个经济周期生效。")
 
 
@@ -170,7 +198,7 @@ func push_runtime_state(effective_day: int) -> void:
 
 func start(effective_day: int, sequence: int) -> Dictionary:
 	if not is_bound():
-		return _result(false, "session_unavailable", "玩家国家尚未就绪。")
+		return _result(false, "session_unavailable", "玩家国家尚未就绪，请稍后再试。")
 	var model := _build_snapshot(effective_day)
 	match String(model.status):
 		STATUS_MAX:
@@ -257,7 +285,6 @@ func refresh(day: int, force: bool = false) -> Dictionary:
 		_daily_step(day)
 	return _emit_refresh(day)
 
-
 func _daily_step(day: int) -> void:
 	var effective_day := day + 1
 	if _phase == STATUS_COMPLETING:
@@ -283,7 +310,6 @@ func _daily_step(day: int) -> void:
 		return
 	_submit_completion(day)
 
-
 func _submit_completion(day: int) -> void:
 	if _country == null or not _country.has_method("advance_era"):
 		return
@@ -301,7 +327,6 @@ func _submit_completion(day: int) -> void:
 	# The goods are consumed by the same Country batch; stop the economy from
 	# re-buying them before the Country ACK raises the era.
 	_push_target(false, day + 1, _next_sequence())
-
 
 func _detect_era_change() -> void:
 	var era := _current_era()
@@ -337,7 +362,6 @@ func _detect_era_change() -> void:
 	_trade_accumulated = 0
 	era_advanced.emit(old_era, era, buffs)
 
-
 func _sample_trade_counter() -> void:
 	var total := _trade_orders_total()
 	if total < 0:
@@ -350,7 +374,6 @@ func _sample_trade_counter() -> void:
 	_trade_accumulated += total - _last_trade_total
 	_last_trade_total = total
 
-
 # =============================================================================
 # Snapshot (§5)
 # =============================================================================
@@ -360,17 +383,14 @@ func snapshot() -> Dictionary:
 		return _build_snapshot(_last_refresh_day)
 	return _last_snapshot
 
-
 ## Fresh, side-effect-free model (no submissions, no signals).
 func preview() -> Dictionary:
 	return _build_snapshot(_last_refresh_day)
-
 
 func _emit_refresh(day: int = -2147483648) -> Dictionary:
 	_last_snapshot = _build_snapshot(day if day != -2147483648 else _last_refresh_day)
 	changed.emit(_last_snapshot)
 	return _last_snapshot
-
 
 func _build_snapshot(_day: int) -> Dictionary:
 	var current := _current_era()
@@ -423,13 +443,11 @@ func _build_snapshot(_day: int) -> Dictionary:
 		"budget": _budget(),
 	}
 
-
 ## Why a fully stocked purchase has not completed yet ("" when not blocked).
 ## Kept outside the §5 snapshot so that model stays exact.
 func blocked_reason() -> String:
 	var model := snapshot()
 	return _blocked_reason(String(model.get("status", "")), model.get("costs", []))
-
 
 func _conditions(current: int, target: int) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -456,12 +474,10 @@ func _conditions(current: int, target: int) -> Array[Dictionary]:
 		"%d / %d 次" % [_trade_accumulated, trade_target]))
 	return out
 
-
 static func _condition(key: String, current: int, target: int, met: bool,
 		text: String) -> Dictionary:
 	return {"key": key, "label": String(CatalogScript.CONDITION_LABELS.get(key, key)),
 		"current": current, "target": target, "met": met, "text": text}
-
 
 func _costs(target: int, territory: int) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -480,7 +496,6 @@ func _costs(target: int, territory: int) -> Array[Dictionary]:
 			CatalogScript.required_quantity(row, maxi(1, territory)), stock, names))
 	return out
 
-
 static func _cost_row(good_id: String, required: int, stock: Dictionary,
 		names: Dictionary) -> Dictionary:
 	var have := int(stock.get(good_id, 0))
@@ -488,17 +503,19 @@ static func _cost_row(good_id: String, required: int, stock: Dictionary,
 		"required": required, "in_treasury": have,
 		"ratio": clampf(float(have) / float(maxi(1, required)), 0.0, 1.0)}
 
-
 func _budget() -> Dictionary:
 	var out := {"national_daily": 0, "era_daily": 0,
+		"colonization_daily": 0,
 		"treasury_share_bp": _treasury_share_bp,
-		"research_share_bp": _research_share_bp}
+		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp}
 	var procurement := _procurement_snapshot()
 	if bool(procurement.get("ok", false)):
 		out.national_daily = int(procurement.get("national_daily_budget", 0))
 		out.era_daily = int(procurement.get("era_daily_budget", 0))
+		out.colonization_daily = int(procurement.get("colonization_daily_budget", 0))
 	return out
-
 
 func _blocked_reason(status: String, costs: Array) -> String:
 	if status != STATUS_PURCHASING:
@@ -511,7 +528,6 @@ func _blocked_reason(status: String, costs: Array) -> String:
 	if not _prelude_complete():
 		return "前置时代里程碑正在生效，完成后将自动晋升。"
 	return ""
-
 
 # =============================================================================
 # Persistence (§6 player_view.era_advancement)
@@ -532,8 +548,9 @@ func to_save() -> Dictionary:
 		"prelude_granted": _prelude_granted,
 		"treasury_share_bp": _treasury_share_bp,
 		"research_share_bp": _research_share_bp,
+		"era_share_bp": _era_share_bp,
+		"colonization_share_bp": _colonization_share_bp,
 	}
-
 
 func restore(state: Dictionary) -> void:
 	var keep_country = _country
@@ -567,13 +584,16 @@ func restore(state: Dictionary) -> void:
 	_completion_day = int(state.get("completion_day", -1))
 	_prelude_granted = bool(state.get("prelude_granted", false))
 	var valid := validate_policy(int(state.get("treasury_share_bp", DEFAULT_TREASURY_SHARE_BP)),
-		int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP)))
+		int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP)),
+		int(state.get("era_share_bp", SHARE_UNSET)),
+		int(state.get("colonization_share_bp", SHARE_UNSET)))
 	if bool(valid.ok):
 		_treasury_share_bp = int(state.get("treasury_share_bp", DEFAULT_TREASURY_SHARE_BP))
 		_research_share_bp = int(state.get("research_share_bp", DEFAULT_RESEARCH_SHARE_BP))
+		_era_share_bp = int(state.get("era_share_bp", SHARE_UNSET))
+		_colonization_share_bp = int(state.get("colonization_share_bp", SHARE_UNSET))
 	# The native trade counter is transient: the next sample is the baseline.
 	_last_trade_total = -1
-
 
 # =============================================================================
 # Facade adapters
@@ -582,7 +602,7 @@ func restore(state: Dictionary) -> void:
 func _push_target(active: bool, effective_day: int, sequence: int) -> Dictionary:
 	if _economy == null or _handle == 0 \
 			or not _economy.has_method("set_era_procurement_target"):
-		return _result(false, "era_target_runtime_pending", "时代收购运行时接口尚未就绪。")
+		return _result(false, "era_target_runtime_pending", "时代收购尚未就绪，请稍后再试。")
 	var indices := PackedInt32Array()
 	var quantities := PackedInt64Array()
 	if active:
@@ -593,7 +613,6 @@ func _push_target(active: bool, effective_day: int, sequence: int) -> Dictionary
 	var result: Dictionary = _economy.set_era_procurement_target(_handle, active,
 		indices, quantities, effective_day, sequence)
 	return _normalized(result, "")
-
 
 func _grant_prelude_if_needed(effective_day: int) -> void:
 	if _target_era != CatalogScript.MIN_TARGET_ERA:
@@ -610,7 +629,6 @@ func _grant_prelude_if_needed(effective_day: int) -> void:
 			return
 	_prelude_granted = true
 
-
 func _prelude_complete() -> bool:
 	var target := _target_era if _target_era > 0 else _current_era() + 1
 	for prelude in CatalogScript.prelude_milestone_ids(target):
@@ -618,14 +636,12 @@ func _prelude_complete() -> bool:
 			return false
 	return true
 
-
 func _era_reward_unresolved() -> bool:
 	if _country == null or not _country.has_method("era_reward_offer"):
 		return false
 	var offer: Dictionary = _country.era_reward_offer()
 	return bool(offer.get("ok", false)) and String(offer.get("status", "NONE")) \
 		in ["OPEN", "SELECTED_PENDING", "ERROR"]
-
 
 func _treasury_satisfies_requirements() -> bool:
 	if _required_good_ids.is_empty():
@@ -636,19 +652,16 @@ func _treasury_satisfies_requirements() -> bool:
 			return false
 	return true
 
-
 func _current_era() -> int:
 	if _country == null or _handle == 0 or not _country.has_method("current_era_index"):
 		return -1
 	return int(_country.current_era_index(_handle))
-
 
 func _territory_count() -> int:
 	if _country == null or _handle == 0 or not _country.has_method("snapshot"):
 		return 0
 	var snapshot: Dictionary = _country.snapshot(_handle)
 	return int(snapshot.get("territory_count", 0))
-
 
 func _treasury_goods() -> Dictionary:
 	var out := {}
@@ -661,7 +674,6 @@ func _treasury_goods() -> Dictionary:
 		out[String(ids[i])] = int(quantities[i])
 	return out
 
-
 func _economy_summary() -> Dictionary:
 	if _economy == null or _handle == 0 \
 			or not _economy.has_method("country_economy_overview"):
@@ -669,13 +681,11 @@ func _economy_summary() -> Dictionary:
 	var summary: Dictionary = _economy.country_economy_overview(_handle, "summary")
 	return summary if bool(summary.get("ok", false)) else {}
 
-
 func _procurement_snapshot() -> Dictionary:
 	if _economy == null or _handle == 0 \
 			or not _economy.has_method("country_procurement_snapshot"):
 		return {}
 	return _economy.country_procurement_snapshot(_handle)
-
 
 func _trade_orders_total() -> int:
 	var procurement := _procurement_snapshot()
@@ -685,7 +695,6 @@ func _trade_orders_total() -> int:
 	if not bool(procurement.get("ok", false)) or not procurement.has("trade_orders_total"):
 		return -1
 	return maxi(0, int(procurement.get("trade_orders_total", 0)))
-
 
 func _catalog() -> Dictionary:
 	if not _catalog_cache.is_empty():
@@ -701,7 +710,6 @@ func _catalog() -> Dictionary:
 	_catalog_cache = catalog
 	return _catalog_cache
 
-
 func _good_indices(good_ids: PackedStringArray) -> PackedInt32Array:
 	var all_ids: PackedStringArray = _economy.good_ids() \
 		if _economy != null and _economy.has_method("good_ids") \
@@ -713,7 +721,6 @@ func _good_indices(good_ids: PackedStringArray) -> PackedInt32Array:
 			return PackedInt32Array()
 		out.append(index)
 	return out
-
 
 func _good_names() -> Dictionary:
 	var out := {}
@@ -727,7 +734,6 @@ func _good_names() -> Dictionary:
 			out[String(good_id)] = String(_economy.good_display_name(index))
 	return out
 
-
 func _technology_state(technology_id: StringName) -> int:
 	if _country == null or _handle == 0 or not _country.has_method("research_snapshot"):
 		return 0
@@ -738,7 +744,6 @@ func _technology_state(technology_id: StringName) -> int:
 	var research: Dictionary = _country.research_snapshot(_handle)
 	var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
 	return int(states[index]) if index < states.size() else 0
-
 
 ## Non-milestone research technologies of era `era_index` and how many are done.
 func _tech_progress(era_index: int) -> Dictionary:
@@ -751,7 +756,6 @@ func _tech_progress(era_index: int) -> Dictionary:
 			if int(index) < states.size() and int(states[int(index)]) >= TECHNOLOGY_STATE_COMPLETED:
 				completed += 1
 	return {"completed": completed, "total": indices.size()}
-
 
 func _era_technologies(era_index: int) -> PackedInt32Array:
 	if _era_tech_indices.is_empty():
@@ -779,10 +783,8 @@ func _era_technologies(era_index: int) -> PackedInt32Array:
 		return PackedInt32Array()
 	return _era_tech_indices[era_index]
 
-
 func _next_sequence() -> int:
 	return int(_sequence_provider.call()) if _sequence_provider.is_valid() else 0
-
 
 static func _normalized(result: Dictionary, success_message: String) -> Dictionary:
 	var out := result.duplicate()
@@ -793,7 +795,6 @@ static func _normalized(result: Dictionary, success_message: String) -> Dictiona
 	if not out.has("message"):
 		out["message"] = success_message if bool(out.ok) else String(out.get("reason", ""))
 	return out
-
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:
 	return {"ok": ok, "code": code, "message": message}

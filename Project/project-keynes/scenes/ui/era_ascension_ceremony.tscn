@@ -246,13 +246,11 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 material = SubResource("TitleMaterial")
 layout_mode = 2
-text = "进入 农耕时代"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="Text"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "禾黍盈仓，定居成邦"
 horizontal_alignment = 1
 
 [node name="Gap" type="Control" parent="Text"]

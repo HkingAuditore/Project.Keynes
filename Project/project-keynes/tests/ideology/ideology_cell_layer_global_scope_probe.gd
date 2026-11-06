@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## Minimal probe: does a GLOBAL-scope ECONOMY modifier row reach the GLOBAL key?
 ##
 ## WHY THIS FILE EXISTS

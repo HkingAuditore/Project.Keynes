@@ -56,7 +56,8 @@ func _init() -> void:
 		_finish()
 		return
 	var rows: Array = view.get("ideologies", [])
-	_expect("card-face traversal covers all 113 published cards", rows.size() == 113)
+	# 113 generated cards + 19 military cards (tools/ideology/add_military_cards.gd).
+	_expect("card-face traversal covers all 132 published cards", rows.size() == 132)
 	var by_id := {}
 	var all_lines := PackedStringArray()
 	var details := PackedStringArray()
@@ -80,7 +81,7 @@ func _init() -> void:
 				all_lines.append(line)
 				_expect("%s L%d has no blank line" % [card_id, level_index + 1],
 					not String(line).strip_edges().is_empty())
-	_expect("card-face traversal covers 339 levels", level_count == 339)
+	_expect("card-face traversal covers 396 levels", level_count == 396)
 	_expect("every exported card has a readable school heading",
 		missing_school_name_count == 0)
 	var joined := "\n".join(all_lines)
@@ -218,8 +219,11 @@ func _init() -> void:
 	# the tooltip wording), so the content is internally consistent and only this constant
 	# had rotted -- this fixture was never wired into verify_delivery.py, so nothing caught
 	# the drift when the catalog grew. It is pinned now, so the next drift fails loudly.
-	_expect("all visible synergies are reviewed (%d, catalog as of 2026-10-28)" % synergy_count,
-		synergy_count == 52)
+	# UPDATED 2026-11-02: +3 military bonds (synergy.tuntian_garrison,
+	# synergy.military_industrial_complex, synergy.death_ground) authored by
+	# tools/ideology/add_military_cards.gd.
+	_expect("all visible synergies are reviewed (%d, catalog as of 2026-11-02)" % synergy_count,
+		synergy_count == 55)
 	_expect("full semantic traversal completed", _checks >= 1750)
 
 	_finish()

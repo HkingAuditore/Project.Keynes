@@ -12,6 +12,8 @@ const TOP_PAD := 26.0
 const BOTTOM_PAD := 14.0
 const DOT_RADIUS := 2.5
 const BAND_ALPHA := 0.16
+## 两倍面积低于此值的三角形肉眼已不可见，直接跳过。只做视觉裁剪，
+## 不承担引擎防错——色带走 draw_primitive，不经过三角化。
 const BAND_AREA_EPSILON := 0.001
 
 var _income := PackedFloat32Array()
@@ -133,13 +135,19 @@ func _draw_band(income: PackedFloat32Array, expense: PackedFloat32Array,		days: 
 		_draw_band_triangle(PackedVector2Array([income0, expense1, expense0]), color)
 
 
+## 只提交三角形图元，不走 draw_colored_polygon：那条路径会先做耳切三角化，
+## 用绝对坐标的 shoelace 判绕向，扁三角形会被浮点抵消判错方向，引擎报
+## "Invalid polygon data, triangulation failed." 并整片放弃绘制。
+## canvas_item_add_primitive 直接收 1~4 个点，不需要三角化。
 func _draw_band_triangle(points: PackedVector2Array, color: Color) -> void:
 	if points.size() != 3:
 		return
 	var area := (points[1] - points[0]).cross(points[2] - points[0])
 	if not is_finite(area) or absf(area) <= BAND_AREA_EPSILON:
 		return
-	draw_colored_polygon(points, color)
+	var colors := PackedColorArray([color, color, color])
+	var uvs := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+	draw_primitive(points, colors, uvs)
 
 
 static func _band_color(delta: float) -> Color:

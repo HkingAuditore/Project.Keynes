@@ -172,16 +172,52 @@ func _check_player_game() -> void:
 		"PanelLayer/CountryPanel",
 		"PanelLayer/RightPanel/Margin/Split/DetailShell/ObjectDetail",
 		"PanelLayer/RightPanel/Margin/Split/DetailShell/FamilyWorkspace",
-		"PanelLayer/RightPanel/Margin/Split/DetailShell/ConstructionPane",
+		"PanelLayer/RightPanel/Margin/Split/DetailShell/BuildingWorkspace",
 		"ModalLayer/WorldLoadingOverlay",
+		"ModalLayer/MilitaryPeaceWindow",
 		"ModalLayer/PauseMenu"]
 	for path in fixed_paths:
 		_expect("player UI has static %s" % path, ui_root.has_node(path))
 	_expect("modal layer renders above panel layer",
 		ui_root.get_node("ModalLayer").get_index() > ui_root.get_node("PanelLayer").get_index())
+	# 时代纸徽只是 HUD 装饰：与日期栏同级，画在顶栏之上、任何面板之下。
+	# 它曾经独占一个高层，结果打开国家卷宗时压暗遮罩盖不住它，徽记浮在整个 UI 之上。
+	var hud_layer := ui_root.get_node("HUDLayer") as Control
+	var era_badge := ui_root.get_node_or_null("HUDLayer/EraIndicator") as Control
+	var top_bar := ui_root.get_node_or_null("HUDLayer/PlayerTopBar") as Control
+	_expect("player UI keeps the era badge inside the HUD layer",
+		era_badge != null and top_bar != null)
+	if era_badge != null and top_bar != null:
+		_expect("era badge draws above the date bar but stays in its HUD layer",
+			era_badge.get_index() > top_bar.get_index() and era_badge.get_parent() == hud_layer)
+	for layer in ["PanelLayer", "ModalLayer", "DebugLayer"]:
+		var cover := ui_root.get_node_or_null(layer) as Control
+		_expect("%s can cover the era badge" % layer,
+			cover != null and cover.get_index() > hud_layer.get_index())
+	# 纸笺与晋升光带仍要压在面板层之上、模态层之下（晋升通常发生在科技卷宗里）。
+	var era_layer := ui_root.get_node_or_null("EraOverlayLayer") as Control
+	_expect("player UI has EraOverlayLayer carrying the era paper and its flight",
+		era_layer != null and era_layer.has_node("EraTransitionFlight"))
+	if era_layer != null:
+		_expect("era overlay renders above panels but below modals",
+			era_layer.get_index() > ui_root.get_node("PanelLayer").get_index() \
+				and era_layer.get_index() < ui_root.get_node("ModalLayer").get_index())
 	root.add_child(scene)
 	await process_frame
 	_expect("player UI keeps one fixed UIRoot", scene.get_node("UI").get_child_count() == 1)
+	# 议和窗口：UI 管理器必须真的绑定到场景里那个实例，否则入口会静默失效。
+	var ui_manager := scene.get_node_or_null("UI")
+	_expect("player UI manager exposes the peace window API",
+		ui_manager != null and ui_manager.has_method("open_military_peace")
+		and ui_manager.has_method("handle_peace_map_cell"))
+	_expect("peace window starts closed (binding reached the scene instance)",
+		ui_manager != null and ui_manager.has_method("is_peace_window_open")
+		and not bool(ui_manager.call("is_peace_window_open")))
+	var peace_window := scene.get_node_or_null("UI/UIRoot/ModalLayer/MilitaryPeaceWindow")
+	_expect("the peace window sits in the modal layer, above the panels",
+		peace_window != null and peace_window.get_parent() == ui_root.get_node("ModalLayer")
+		and ui_root.get_node("ModalLayer").get_index()
+			> ui_root.get_node("PanelLayer").get_index())
 	scene.queue_free()
 	await process_frame
 
@@ -190,11 +226,18 @@ func _check_component_scenes() -> void:
 	var expectations := {
 		"res://scenes/ui/inspector_panel.tscn": "Margin/Split/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
 		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyDossier",
+		"res://scenes/ui/military_workspace.tscn": "Root/PageViewport/PageColumn/PageStack/WarPage/WarGrid/FrontCard/FrontColumn/FrontList",
+		"res://scenes/ui/diplomacy_workspace.tscn": "Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/ScoreList",
+		"res://scenes/ui/military_war_card.tscn": "Box/Parts",
+		"res://scenes/ui/military_peace_card.tscn": "Box/Footer/Action",
+		"res://scenes/ui/military_peace_window.tscn": "Frame/Box/Scroll/Body/TermsNote/TermsBox/CedeScroll/CedingList",
 		"res://scenes/ui/economy_dossier.tscn": "FinanceHost/EconomyWorkspace",
-		"res://scenes/ui/economy_workspace.tscn": "Column/Ledger/LedgerColumn/Scroll/Flow",
+		"res://scenes/ui/economy_workspace.tscn": "Viewport/Column/Ledger/LedgerColumn/Scroll/Flow",
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
+		"res://scenes/ui/building_workspace.tscn": "Margin/Body/ListArea/Scroll/Rows",
+		"res://scenes/ui/building_option_row.tscn": "Row/Info/Meta",
 		"res://scenes/ui/object_good_dossier.tscn": "OperationsPage/OrdersCard/Box/TradeOrdersTable",
 		"res://scenes/ui/family_workspace.tscn": "SafeMargin/Main/PageArea/PageViewport/PageScroll/PageHost",
 		"res://scenes/ui/archival_surface.tscn": "Frame/Margin/Column/Body",
@@ -215,6 +258,8 @@ func _check_component_scenes() -> void:
 			required_path.is_empty() or scene.has_node(required_path))
 		if scene_path.ends_with("country_panel.tscn"):
 			_expect("country shell has seam hinges", scene.has_node("Center/Dialog/Hinges/HingeMiddle"))
+			_expect("country shell mounts the diplomacy workspace",
+				scene.has_node("Center/Dialog/Main/PageSurface/PageArea/SectionHost/DiplomacyWorkspace"))
 			# 定位到地块 must not close the shell any more, which only works if
 			# the shell can stop being full-bleed. These checks pin the dock's
 			# geometry rule rather than a rendered frame: a layout that can only
@@ -258,8 +303,8 @@ func _check_component_scenes() -> void:
 				page_column.get_node("GdpBand").get_index()
 					< page_column.get_node("KpiStrip").get_index())
 		if scene_path.ends_with("economy_workspace.tscn"):
-			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
-			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))
+			_expect("economy workspace has tax sub-tabs", scene.has_node("Viewport/Column/TaxTabs"))
+			_expect("economy workspace has treasury insights", scene.has_node("Viewport/Column/Insights"))
 		if scene_path.ends_with("era_reward_dialog.tscn"):
 			_expect("era reward dialog has three stable choices",
 				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0")

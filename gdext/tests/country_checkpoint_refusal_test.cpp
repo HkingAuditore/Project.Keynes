@@ -97,8 +97,8 @@ void test_control_round_trip() {
         "A: the test seam mints a checkpoint the validator accepts", error);
     // Pinned on purpose: a deliberate ABI/schema bump must be accompanied by re-reading
     // this fixture, and a silent drift must fail here rather than in the field.
-    expect(checkpoint.abi_version == 2u && checkpoint.country_schema_version == 13u,
-        "A: the shipped ABI is 2 and the schema is 13",
+    expect(checkpoint.abi_version == 2u && checkpoint.country_schema_version == 14u,
+        "A: the shipped ABI is 2 and the schema is 14",
         std::to_string(checkpoint.abi_version) + "/" +
             std::to_string(checkpoint.country_schema_version));
 
@@ -146,7 +146,8 @@ void test_struct_level_refusal() {
         "B: a foreign ABI is refused with the exact reason", error);
 
     pk::CountryCoreCheckpoint wrong_schema = checkpoint;
-    wrong_schema.country_schema_version = pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION - 1u;
+    // Restore accepts PKCN 11..14; one past the shipped schema must be refused.
+    wrong_schema.country_schema_version = pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION + 1u;
     error.clear();
     expect(!pk::validate_country_core_checkpoint(wrong_schema, error) &&
             error == "country_checkpoint_schema_incompatible",
@@ -213,7 +214,7 @@ void test_container_schema_refusal() {
         return;
     }
     std::vector<uint8_t> tampered = bytes;
-    write_u32_at(tampered, 8u, pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION - 1u);
+    write_u32_at(tampered, 8u, pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION + 1u);
     if (!reseal(tampered)) {
         expect(false, "D: the tampered container is re-sealed");
         return;
@@ -223,7 +224,7 @@ void test_container_schema_refusal() {
     expect(reason == "country_checkpoint_schema_incompatible",
         "D: with the exact code the restore path reports", reason);
     std::printf("[checkpoint] container schema=%u -> %s\n",
-        static_cast<unsigned>(pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION - 1u),
+        static_cast<unsigned>(pk::COUNTRY_CHECKPOINT_SCHEMA_VERSION + 1u),
         reason.c_str());
 }
 

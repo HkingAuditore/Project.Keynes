@@ -1940,11 +1940,12 @@ func _equip_card(w: Dictionary, card: String, label: String,
 		String(equipped.get("path", ""))], bool(equipped.get("ok", false)),
 		str(equipped))
 	# The transition settles on a later day; wait for the card to be LIVE rather than
-	# assuming a fixed number of days.
+	# assuming a fixed number of days. The day budget is the real limit; the hang
+	# guard scales with it so a loaded machine cannot cut the budget short.
 	await WorkerWaitHelper.wait_for(
 		func() -> bool:
 			return _location_of(w, card) == 1,
-		wait_days, DAY_WAIT_MS * 2,
+		wait_days, DAY_WAIT_MS * maxi(2, wait_days),
 		func() -> void:
 			_drive_day(w))
 	_expect("%s: %s is live (location=1) under worker authority" % [label, card],

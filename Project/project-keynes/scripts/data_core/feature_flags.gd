@@ -370,11 +370,11 @@ const OCEAN_CURRENT_VISUAL_META: StringName = &"ocean_current_visual_enabled"
 
 ## 当前是否启用洋流/风场逐像素视觉（bake / commit / job / render 统一读这里）。
 static func ocean_current_visual_active() -> bool:
-	return false
+	return bool(Engine.get_meta(OCEAN_CURRENT_VISUAL_META, false))
 
 ## 设置洋流/风场逐像素视觉开关（main.gd @export → _generate_and_render 推送）。
 static func set_ocean_current_visual(enabled: bool) -> void:
-	Engine.set_meta(OCEAN_CURRENT_VISUAL_META, false)
+	Engine.set_meta(OCEAN_CURRENT_VISUAL_META, enabled)
 
 
 # ─── 旧 sea_ice_tex（R8）逐像素海冰贴图开关 ───────────────────────────────────

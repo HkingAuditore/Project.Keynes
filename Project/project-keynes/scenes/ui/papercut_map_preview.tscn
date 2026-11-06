@@ -33,7 +33,7 @@ text = "地图预览"
 [node name="SeedBadge" type="Label" parent="Margin/Column/HeaderRow"]
 layout_mode = 2
 theme_type_variation = &"PKDossierKicker"
-text = "#1024"
+text = ""
 
 [node name="CanvasFrame" type="PanelContainer" parent="Margin/Column"]
 custom_minimum_size = Vector2(240, 184)
@@ -70,7 +70,7 @@ text = "地图尺寸"
 [node name="Value" type="Label" parent="Margin/Column/SummaryGrid/ScopeBox"]
 layout_mode = 2
 theme_type_variation = &"PKDossierValue"
-text = "60 × 40 (2400 格)"
+text = ""
 text_overrun_behavior = 3
 
 [node name="LandBox" type="VBoxContainer" parent="Margin/Column/SummaryGrid"]
@@ -86,7 +86,7 @@ text = "陆地布局"
 [node name="Value" type="Label" parent="Margin/Column/SummaryGrid/LandBox"]
 layout_mode = 2
 theme_type_variation = &"PKDossierValue"
-text = "两个大陆 · 海平面 50%"
+text = ""
 text_overrun_behavior = 3
 
 [node name="ClimateBox" type="VBoxContainer" parent="Margin/Column/SummaryGrid"]
@@ -102,7 +102,7 @@ text = "水文气候"
 [node name="Value" type="Label" parent="Margin/Column/SummaryGrid/ClimateBox"]
 layout_mode = 2
 theme_type_variation = &"PKDossierValue"
-text = "湿润 55% · 河流 55%"
+text = ""
 text_overrun_behavior = 3
 
 [node name="PolityBox" type="VBoxContainer" parent="Margin/Column/SummaryGrid"]
@@ -118,5 +118,5 @@ text = "开局国家"
 [node name="Value" type="Label" parent="Margin/Column/SummaryGrid/PolityBox"]
 layout_mode = 2
 theme_type_variation = &"PKDossierValue"
-text = "新国家 · 外国 5"
+text = ""
 text_overrun_behavior = 3

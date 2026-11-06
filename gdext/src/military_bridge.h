@@ -69,6 +69,24 @@ struct MilitaryWorldDigest {
     // Military Modifier stats, by country slot, q16 (see MilitaryStatId).
     int32_t stat_count = 0;
     std::vector<int32_t> country_stat_q16;     // country_capacity * stat_count
+    // State (kind 3) building groups, sparse, sorted by (cell, type). This is a
+    // read of the economy ledger, not a second tally: the core rebuilds
+    // `MilitaryCellState::barracks_count` / `fort_tier` / `college_tier` from
+    // these rows every day and never increments them locally (requirement
+    // 6.1-6.3). `units` counts building instances, the same unit the demolish
+    // lane decrements; a row whose count already reached zero is dropped by the
+    // producer so a demolished-but-unpruned group never reads as standing.
+    //
+    // `state_lanes_present` separates "the ledger answered and it is empty"
+    // from "the producer has no such lane" (a bridge compiled before this
+    // contract). Only the former may zero the military cache; the latter must
+    // leave the restored cache alone.
+    int32_t state_lane_rows = 0;
+    bool state_lanes_present = false;
+    std::vector<int32_t> state_cell;
+    std::vector<int32_t> state_type_id;
+    std::vector<int32_t> state_state_role;   // economy STATE_ROLE_* (1..3)
+    std::vector<int64_t> state_units;
 };
 
 // --- Outputs (core -> bridge), emitted for effective day D+1 --------------
@@ -108,6 +126,22 @@ enum MilitaryIntentKind : uint16_t {
     // garrison path uses), `country_a` = the paying country. Appended after 13
     // so no existing kind is renumbered.
     MILITARY_INTENT_ARMY_PAY = 14,
+    // State building request (military-state-buildings-economy-integration 4.x).
+    // `state.build` is not a settlement: the bridge turns this request into a
+    // `queue_treasury_sponsored_build` call, and only a successful economy
+    // acceptance is echoed back as `MCMD_STATE_BUILD` for the core's own
+    // completion-day bookkeeping. Emitted by the AI (which has no command
+    // ingress of its own) and by any caller that only has the intent lane.
+    // cell, count = state building index, country_a = payer.
+    MILITARY_INTENT_STATE_BUILD = 15,
+    // State building removal (military-state-buildings-economy-integration 6.5).
+    // The mirror of 15: the bridge turns this request into a
+    // `queue_treasury_sponsored_demolish` call and only an accepted removal is
+    // echoed back as `MCMD_STATE_DEMOLISH` for the core's bookkeeping, so the
+    // economy ledger is always the first to change and the core can never
+    // report a demolition the ledger did not record.
+    // cell, count = state building index, country_a = owner. One unit per row.
+    MILITARY_INTENT_STATE_DEMOLISH = 16,
     // Country
     MILITARY_INTENT_TRANSFER_TERRITORY = 20, // cell, to_country (treaty cession)
     MILITARY_INTENT_TRANSFER_CASH = 21,      // from, to, amount (reparations)

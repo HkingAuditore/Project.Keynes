@@ -47,7 +47,9 @@ uniform bool terrain_relief_tex_bound = false;
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309; // ~75 degrees
 uniform float terrain_horizon_softness = 0.30;
-uniform float terrain_horizon_strength = 0.90;
+// [macro-relief 2026-11-06] 加强宏观地形遮蔽，让山脊背光面与谷地的总体走向
+// 在中远景仍保持可读；renderer 同步放宽到 1.20，避免运行时 clamp 回 1.0。
+uniform float terrain_horizon_strength = 1.20;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct visibility
 // [terrain-gi 2026-07-31] 同一张 horizon 图派生的全局光照量。设计与推导见
@@ -60,7 +62,7 @@ uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct vi
 //   绝不能让未初始化的全零表把地表打黑。
 uniform bool gi_lut_bound = false;
 uniform vec3 gi_horizon_lut[16];
-uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.90;
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.95;
 // V_sky 的下限。几何遮蔽算出的 0 意味着"看不到任何天空"，但真实峡谷底部仍被岩壁多次
 // 散射照亮；没有下限时封闭地形会被压成死黑，暗部还会把地表 dither 的对比度一并放大。
 uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.38;
@@ -68,8 +70,8 @@ uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.38;
 uniform float gi_ao_smoothing : hint_range(0.0, 1.0) = 0.75;
 // 环境光查询法线向 bent normal 偏转的比例。**1.0 会完全丢弃几何法线**，让环境光只跟随
 // 4-bit × 8 扇区的量化方向，出现块状跳变；保持在 0.5 以下才是"倾斜"而非"替换"。
-uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
-uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
+uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.45;
+uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.80;
 uniform float gi_bounce_strength : hint_range(0.0, 0.5) = 0.18;
 // 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only
 // 5=白模光照（底色换中性灰，光照全保留）
@@ -106,7 +108,9 @@ uniform float terrain_ecotone_noise = 0.22;
 // 材质数组重新纳入；height+flow 合并后再腾 1 槽（现为 height/horizon/map_index/noise/
 // enum/dyn/material = 7，留 1 裕量）。
 // 微纹理仍裁掉（材质激活时本就跳过；未激活走 procedural）。
+#ifndef PK_WATER_ONLY
 uniform sampler2DArray terrain_material_tex : filter_linear_mipmap, repeat_enable;
+#endif
 uniform bool terrain_material_tex_bound = false;
 uniform bool terrain_materials_enabled = true;
 uniform float terrain_material_world_size = 384.0;
@@ -409,6 +413,10 @@ uniform float dynamic_snow_strength : hint_range(0.0, 1.0) = 0.85;
 uniform bool debug_force_dyn_snow_only = false;
 // 洋流动画总开关与强度
 uniform float ocean_current_strength : hint_range(0.0, 1.0) = 0.88;
+#if !defined(PK_LAND_ONLY) && (!defined(PK_WEB_TEXTURE_BUDGET) || defined(PK_WEB_WATER_ONLY))
+uniform sampler2D ocean_current_flow_tex : filter_linear_mipmap, repeat_enable;
+#endif
+uniform bool ocean_current_flow_tex_bound = false;
 
 
 // =========================================================================
@@ -521,7 +529,8 @@ uniform float terrain_normal_sample_radius_hex = 1.35;
 uniform float terrain_normal_height_scale_hex = 2.10;
 // [normal-soften 2026-07-31] 1.6→1.25：先压低 residual 中频引起的过硬阴阳面。
 // [起伏增强 2026-09-01] 1.25→1.65：在 1.35-hex 宽半径粗法线上恢复宏观走向，不提高细节法线。
-uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.65;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
+// [macro-relief 2026-11-06] 放大生成期粗法线的 xy 分量，突出山系/盆地的连续大尺度坡向。
+uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 2.10;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
 uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
 // [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
 // [baked-surface 2026-11-01] 细节来源改为烘焙 normal.ba / relief，不走运行期差分。

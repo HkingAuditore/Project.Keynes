@@ -147,7 +147,7 @@ const VISUAL_SWITCHES: Array = [
 	["day_night_enabled", "昼夜开关（day_night_enabled）", "set_day_night_enabled"],
 	["water_effect_enabled", "水面效果（water_effect_enabled）", "set_water_effect_enabled"],
 	["ocean_current_enabled", "洋流可视化（ocean_current_enabled）", "set_ocean_current_enabled"],
-	["ocean_current_debug", "洋流高对比 Debug（F6）", "set_ocean_current_debug"],
+	["ocean_current_debug", "洋流高对比（F6）", "set_ocean_current_debug"],
 	["extreme_weather_ground_effect_enabled", "极端天气地表特效", "set_extreme_weather_ground_effect_enabled"],
 	["perf_sampler_enabled", "性能采样日志", "set_perf_sampler_enabled"],
 ]
@@ -576,7 +576,7 @@ func _gm_load_capabilities() -> void:
 	_gm_capabilities = _main.call("get_gm_capabilities") \
 		if _main != null and _main.has_method("get_gm_capabilities") else {"commands": [], "toggles": []}
 	var toggles: Array = Array(_gm_capabilities.get("toggles", [])).duplicate()
-	toggles.append({"id": "diagnostics.perf_hud", "label": "Perf HUD", "group": "诊断", "local": true})
+	toggles.append({"id": "diagnostics.perf_hud", "label": "性能显示", "group": "诊断", "local": true})
 	_gm_capabilities["toggles"] = toggles
 	_rebuild_gm_toggle_controls(toggles)
 	var usage := PackedStringArray()
@@ -697,7 +697,7 @@ func _refresh_gm_data_page(section: String) -> void:
 		return
 	var snapshot: Dictionary = _main.call("get_gm_snapshot", section, {}) \
 		if _main != null and _main.has_method("get_gm_snapshot") else {
-			"ok": false, "message": "运行时尚未就绪。"}
+			"ok": false, "message": "数据尚未就绪，请稍后再试。"}
 	var lines := PackedStringArray()
 	for raw_section in GMPanelViewModel.format_snapshot(section, snapshot):
 		var section_model: Dictionary = raw_section
@@ -1142,19 +1142,19 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 	btn_temp.pressed.connect(_on_btn_diagnose_temperature)
 	parent.add_child(btn_temp)
 
-	_add_action_button(parent, "打印 DataCore 标志（F11）", &"print_data_core_flags_debug")
-	_add_action_button(parent, "打印 validate-weather 快照（F12）", &"print_validate_weather_snapshot_debug")
-	_add_action_button(parent, "打印性能 Verdict", &"print_perf_verdict_debug")
+	_add_action_button(parent, "打印数据标志（F11）", &"print_data_core_flags_debug")
+	_add_action_button(parent, "打印天气校验快照（F12）", &"print_validate_weather_snapshot_debug")
+	_add_action_button(parent, "打印性能结论", &"print_perf_verdict_debug")
 	_add_action_button(parent, "切换材质贴图门禁视图（绿=激活）", &"toggle_terrain_material_gate_debug")
 
-	parent.add_child(_make_section_header("DataCore / Soak"))
-	_add_action_button(parent, "切换 DataCore Weather（F9）", &"toggle_data_core_weather_debug")
-	_add_action_button(parent, "切换 DataCore Master（F10）", &"toggle_data_core_master_debug")
-	_add_action_button(parent, "启动 Soak Dump 30 tick（F2）", &"start_soak_dump_debug")
-	_add_action_button(parent, "启动 Soak A/B SAME 30（F3）", &"start_soak_ab_same_source_debug")
-	_add_action_button(parent, "启动 Soak A/B Legacy（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
-	_add_action_button(parent, "Soak A/B Thread 矩阵（30+1000 tick）", &"start_soak_ab_thread_batch_debug")
-	_add_action_button(parent, "取消 Soak / Dump（Alt+F3）", &"cancel_soak_debug")
+	parent.add_child(_make_section_header("数据与压测"))
+	_add_action_button(parent, "切换天气数据（F9）", &"toggle_data_core_weather_debug")
+	_add_action_button(parent, "切换总数据开关（F10）", &"toggle_data_core_master_debug")
+	_add_action_button(parent, "启动 30 帧压测导出（F2）", &"start_soak_dump_debug")
+	_add_action_button(parent, "启动同源对照 30 帧（F3）", &"start_soak_ab_same_source_debug")
+	_add_action_button(parent, "启动旧版对照（Shift+F3）", &"start_soak_ab_vs_legacy_debug")
+	_add_action_button(parent, "线程对照矩阵（30+1000 帧）", &"start_soak_ab_thread_batch_debug")
+	_add_action_button(parent, "取消压测 / 导出（Alt+F3）", &"cancel_soak_debug")
 
 	parent.add_child(_make_section_header("选择"))
 	var btn_clear := Button.new()
@@ -1168,19 +1168,19 @@ func _build_diagnose_group(parent: VBoxContainer) -> void:
 # 都会在面板下次同步时回显）；dump_render_profile 是一次性 dump，保留为按钮。
 # 每项 = [展示名, main 上的 toggle 方法名, get_debug_toggle_state 的 state key]
 const EXPERIMENT_TOGGLES: Array = [
-	["Perf Mini HUD 可见（F4）", "toggle_perf_mini_hud", "perf_mini_hud"],
-	["主地形 Shader 关闭（F9）", "toggle_world_shader_disabled", "world_shader_disabled"],
-	["Weather 层隐藏（F10）", "toggle_weather_layer_visible", "weather_hidden"],
-	["冻结 Overlay 每日重 bake（F5）", "toggle_overlay_refresh_disabled", "overlay_refresh_disabled"],
-	["禁用 Atlas 上传 Job（F11）", "toggle_dynamic_visual_atlas_upload", "atlas_upload_disabled"],
-	["Atlas 强制 256（否=512，F12，会重 bake）", "toggle_atlas_resolution", "atlas_quarter_size"],
-	["诊断日志 PKLog 启用（L）", "toggle_diagnostic_logging_debug", "diagnostic_logging"],
+	["性能小窗可见（F4）", "toggle_perf_mini_hud", "perf_mini_hud"],
+	["主地形着色器关闭（F9）", "toggle_world_shader_disabled", "world_shader_disabled"],
+	["天气层隐藏（F10）", "toggle_weather_layer_visible", "weather_hidden"],
+	["冻结热力图每日重绘（F5）", "toggle_overlay_refresh_disabled", "overlay_refresh_disabled"],
+	["禁用图集上传（F11）", "toggle_dynamic_visual_atlas_upload", "atlas_upload_disabled"],
+	["图集强制 256（否=512，F12，会重绘）", "toggle_atlas_resolution", "atlas_quarter_size"],
+	["诊断日志（L）", "toggle_diagnostic_logging_debug", "diagnostic_logging"],
 ]
 
 func _build_experiments_group(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_header("性能 / 渲染实验（原 60FPS 调查热键）"))
-	_add_action_button(parent, "Dump 渲染性能监视器（F3）", &"dump_render_profile")
-	_add_action_button(parent, "循环 Weather Debug View", &"cycle_weather_debug_view")
+	_add_action_button(parent, "导出渲染性能监视器（F3）", &"dump_render_profile")
+	_add_action_button(parent, "循环天气调试视图", &"cycle_weather_debug_view")
 	for entry in EXPERIMENT_TOGGLES:
 		var label_text: String = entry[0]
 		var method: String = entry[1]
@@ -1212,9 +1212,9 @@ func _on_experiment_toggle(_pressed: bool, method: String, key: String) -> void:
 # 生成迁移（C++ DOTS 化）验收：parity 逐字段对比 + 异步气候 bench。
 # 结果打到输出日志（[gen-parity] / [async/bench] 前缀）。
 func _build_migration_group(parent: VBoxContainer) -> void:
-	parent.add_child(_make_section_header("生成迁移 / DOTS 验收"))
-	_add_action_button(parent, "异步气候 Bench transp（B）", &"run_async_climate_bench_debug", ["transp"])
-	_add_action_button(parent, "异步气候 Bench pass_a（V）", &"run_async_climate_bench_debug", ["pass_a"])
+	parent.add_child(_make_section_header("生成迁移验收"))
+	_add_action_button(parent, "异步气候基准 · 蒸腾（B）", &"run_async_climate_bench_debug", ["transp"])
+	_add_action_button(parent, "异步气候基准 · A 组（V）", &"run_async_climate_bench_debug", ["pass_a"])
 
 func _add_action_button(parent: VBoxContainer, text: String, method: StringName, args: Array = []) -> void:
 	var btn := Button.new()
@@ -1240,13 +1240,13 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	ctrl_row.add_theme_constant_override("separation", 6)
 	_pause_btn = Button.new()
 	IconButton.apply_with_text(_pause_btn, (&"action.play" if _telemetry_paused else &"action.pause"), _gm_sanitize_legacy_status("⏸ 暂停刷新"), 14)
-	_pause_btn.tooltip_text = "暂停后 telemetry 文本冻结，方便复制/截图当前快照"
+	_pause_btn.tooltip_text = "暂停后性能文本冻结，方便复制/截图当前快照"
 	_pause_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pause_btn.pressed.connect(_on_btn_toggle_pause)
 	ctrl_row.add_child(_pause_btn)
 	_snapshot_btn = Button.new()
 	IconButton.apply_with_text(_snapshot_btn, &"action.save", _gm_sanitize_legacy_status("📸 快照→文件"), 14)
-	_snapshot_btn.tooltip_text = "导出当前 SUS report + 滚动统计 + breakdowns 到 res://tmp/perf_snapshot_<时间>.json"
+	_snapshot_btn.tooltip_text = "导出当前性能记录到文件"
 	_snapshot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_snapshot_btn.pressed.connect(_on_btn_snapshot)
 	ctrl_row.add_child(_snapshot_btn)
@@ -1255,7 +1255,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	# mobile 落盘到 user://perf，避免 Android APK 资源目录不可写。
 	_record_btn = Button.new()
 	IconButton.apply_with_text(_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始录制"), 14)
-	_record_btn.tooltip_text = "录制每个 fast_tick 的核心耗时；完整 Job/Breakdown 仅低频采样 → 桌面 ../../tmp；手机 user://perf"
+	_record_btn.tooltip_text = "录制每帧核心耗时；完整分项仅低频采样 → 桌面 ../../tmp；手机 user://perf"
 	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)
@@ -1265,7 +1265,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	tile_ctrl_row.add_theme_constant_override("separation", 6)
 	_tile_record_btn = Button.new()
 	IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏺ 开始地块全量录制"), 14)
-	_tile_record_btn.tooltip_text = "录制每个 fast_tick、每个地块、所有可用 SoA 字段；会同步写入大型 CSV → 桌面 ../../tmp；手机 user://tile_data"
+	_tile_record_btn.tooltip_text = "录制每帧、每个地块的所有可用字段；会同步写入大型 CSV → 桌面 ../../tmp；手机 user://tile_data"
 	_tile_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tile_record_btn.pressed.connect(_on_btn_toggle_tile_record)
 	tile_ctrl_row.add_child(_tile_record_btn)
@@ -2015,7 +2015,7 @@ func _refresh_tile_record_btn_text(force: bool = false) -> void:
 				float(summary.get("last_tick_format_ms", 0.0)),
 				float(summary.get("last_tick_flush_ms", 0.0)),
 			]
-		IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏹ 停止并导出（全量 %d/%d tick / %d 行%s / %.1fms%s）" % [
+		IconButton.apply_with_text(_tile_record_btn, &"action.history", _gm_sanitize_legacy_status("⏹ 停止并导出（全量 %d/%d 帧 / %d 行%s / %.1fms%s）" % [
 			recorded_ticks, ticks, rows, stride_txt, last_ms, detail_txt,
 		]), 14)
 		_tile_record_btn.add_theme_color_override("font_color", Color(0.98, 0.45, 0.45))

@@ -74,7 +74,9 @@ func _draw() -> void:
 	if marker >= 0.0:
 		var mx := bar_rect.position.x + bar_rect.size.x * clampf(marker, 0.0, 1.0)
 		draw_line(Vector2(mx, y - 3.0), Vector2(mx, y + bar_rect.size.y + 3.0), Color(1.0, 1.0, 1.0, 0.70), 1.0)
-	if status_label == "" and min_label != "":
+	# 量程端点始终绘制：status 已在顶部读数行单独显示，与底部两端量程分处两行，
+	# 不再因为传了 status_label 就把整个量程吞掉。
+	if min_label != "":
 		draw_string(get_theme_default_font(), Vector2(0.0, y + 24.0), min_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, UITokens.ARCHIVE_INK_MUTED)
-	if status_label == "" and max_label != "":
+	if max_label != "":
 		draw_string(get_theme_default_font(), Vector2(0.0, y + 24.0), max_label, HORIZONTAL_ALIGNMENT_RIGHT, size.x, 11, UITokens.ARCHIVE_INK_MUTED)

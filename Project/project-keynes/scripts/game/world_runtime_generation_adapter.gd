@@ -9,7 +9,7 @@ func _prepare_world_data(host) -> Dictionary:
 	host._ideology_instance_refreshed_day = -1
 	host._ideology_derived_pumped_day = -1
 	# 生成后阶段（渲染绑定 + 植被层 + 建筑外观）的进度游标复位：
-	# 0.0 表示"本次生成还没进入后期阶段"，host._loading_visual_step 在复位前不会发进度。
+	# 0.0 表示"本次生成还没进入后期阶段"，_loading_visual_step 在复位前不会发进度。
 	host._visual_progress = 0.0
 	host._clear_climate_capacity_pending()
 	host._runtime_commit_generation = 0
@@ -132,10 +132,10 @@ func _prepare_world_data(host) -> Dictionary:
 	host._building_visual_diag_logged = false
 	host._world_data = result["world_data"] as WorldData
 	host._last_seed = int(result.get("seed", cfg.seed))
-	# 生成出的世界只能用它实际使用的 seed 复现。`host.generate_world(0)`（失败重试 /
+	# 生成出的世界只能用它实际使用的 seed 复现。`generate_world(0)`（失败重试 /
 	# 调试重生成）会把 0 解析成随机 seed，若会话配置仍记录旧 seed，之后写出的
 	# 存档就是「旧 seed + 另一张世界的 PKCN/领土」，下次读档会在
-	# `host._player_start_cell_drift()` 处必然失败。这里把生效 seed 回写进会话配置。
+	# `_player_start_cell_drift()` 处必然失败。这里把生效 seed 回写进会话配置。
 	host._adopt_generated_seed(host._last_seed)
 	host._fast_tick_count = 0
 	host._last_fast_tick_ms = 0
@@ -170,11 +170,15 @@ func _restore_prepared_world(host) -> Dictionary:
 
 func _prepare_world_simulation(host) -> Dictionary:
 	# Fresh worlds freeze here; loads first install committed climate state.
-	# Web 曾经在这里跳过 capture（当时日志停在 host._bind_country_visuals 之后、心跳全停）。
+	# Web 曾经在这里跳过 capture（当时日志停在 _bind_country_visuals 之后、心跳全停）。
 	# 真正原因是首帧 shader 编译 45s 堵住整帧，不是 capture 本身。ACTIVE worker
 	# 需要这份输入快照，所以恢复。
 	if host._load_slot_id.is_empty() and host._generator != null and host._generator.has_method("capture_runtime_inputs_for_worker"):
-		var input_capture: Dictionary = host._generator.capture_runtime_inputs_for_worker()
+		# The first worker plan runs the day after the saved calendar day.
+		var capture_day := int(host._world_clock.day_index()) + 1 \
+			if host._world_clock != null else -1
+		var input_capture: Dictionary = host._generator.capture_runtime_inputs_for_worker(
+			capture_day)
 		if not bool(input_capture.get("ok", false)):
 			push_warning("[runtime-input] capture deferred: %s" % String(
 				input_capture.get("code", "unknown")))
@@ -187,7 +191,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 	WebTelemetry.emit("bind_step", {"s": "start_worker_step"})
 	# Web：这一帧是「第一次真正把地图画出来」，实测在 ANGLE 上要 45s（探针已排除
 	# 世界材质与迷雾 shader，属于首次 GPU 上传/驱动编译的合成开销）。把它放在
-	# `host.world_ready` 之前会让加载条卡在 98% 几十秒；放到之后，玩家先进世界，
+	# `world_ready` 之前会让加载条卡在 98% 几十秒；放到之后，玩家先进世界，
 	# 这一帧变成一次性顿挫（不影响日历，后续帧 ~16ms）。
 	if not OS.has_feature("web"):
 		await host._session_frames.next_frame()
@@ -220,7 +224,7 @@ func _prepare_world_simulation(host) -> Dictionary:
 	})
 	WebTelemetry.emit("bind_step", {"s": "intel_refreshed"})
 	host._loading_visual_step("visual_done")
-	# Web：同样把这一帧让给 `host.world_ready` 之后——第一次真正绘制的 ~45s 已经确认
+	# Web：同样把这一帧让给 `world_ready` 之后——第一次真正绘制的 ~45s 已经确认
 	# 不是世界材质 / 迷雾 shader（两个探针都排除），是首次 GPU 上传/驱动合成的
 	# 一次性开销。放在 ready 之后就变成"先进世界，随后一次性顿挫"，而不是把
 	# 加载条钉在 98%。
@@ -243,7 +247,7 @@ func _session_preparation_failure(host) -> Dictionary:
 func _start_production_shadow_worker(host) -> void:
 	# 决策留痕：这一行是 web 上"worker 为什么起不来"的第一现场。
 	# 之前它不打印，只能靠 diag 反推，代价是一整轮排查。
-	print("[runtime-worker] decide web=%s web_worker=%s inline_requested=%s meta=%s env=%s host.runtime_native_daily_inline=%s fallback=%s shadow_on_generate=%s" % [
+	print("[runtime-worker] decide web=%s web_worker=%s inline_requested=%s meta=%s env=%s runtime_native_daily_inline=%s fallback=%s shadow_on_generate=%s" % [
 		str(host._is_web_build()),
 		str(host._web_worker_requested()),
 		str(host._native_daily_inline_requested()),
@@ -255,12 +259,12 @@ func _start_production_shadow_worker(host) -> void:
 	if not host.runtime_shadow_on_generate:
 		if host._reject_web_daily_fallback("web_native_executor_disabled", "原生执行器启动已关闭"):
 			return
-		print("[runtime-worker] skipped: host.runtime_shadow_on_generate=false")
+		print("[runtime-worker] skipped: runtime_shadow_on_generate=false")
 		return
 	if host._generator == null or not host._generator.has_method("start_runtime_worker"):
 		if host._reject_web_daily_fallback("web_native_start_api_missing", "缺少原生启动接口"):
 			return
-		print("[runtime-worker] skipped: host.generator or start_runtime_worker unavailable")
+		print("[runtime-worker] skipped: generator or start_runtime_worker unavailable")
 		return
 	# ── web 的两种执行者先算清楚，再决定要不要进下面这段 ──────────────
 	#
@@ -350,7 +354,7 @@ func _start_production_shadow_worker(host) -> void:
 		# 线程安全"，不是整图。
 		# Player/default play requests the full graph (0xFFF) so Trigger/Effect/
 		# Economy are worker-owned. Focused Climate|Country|COMMIT (0x806) remains
-		# available by setting host.runtime_authority_domain_mask for soaks/debug.
+		# available by setting runtime_authority_domain_mask for soaks/debug.
 		# Phase 2-6：Economy 与 Climate|Country|Modifier|Effect|Ideology|Trigger|Events
 		# 同开关进入生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
 		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
@@ -400,7 +404,7 @@ func _start_production_shadow_worker(host) -> void:
 				started.get("code", "unknown")))
 		# web 上 worker 没起来，而内联又被互斥关掉 ⇒ 没有任何执行者。必须当场
 		# 退回内联，否则日历停在 day 1（用户看到的"世界不动"）。
-		# 判据用 `host.runtime_native_daily_inline`（用户是否允许内联），不要求
+		# 判据用 `runtime_native_daily_inline`（用户是否允许内联），不要求
 		# "worker 被要过" —— 起不来就是起不来，与谁请求的无关。
 		if host._is_web_build() and host.runtime_native_daily_inline and not want_inline \
 				and not host._web_worker_inline_fallback:
@@ -438,7 +442,7 @@ func _start_production_shadow_worker(host) -> void:
 
 
 ## P1/P3 的开关落地。只有"worker 线程真的在跑"时才打开：
-##   P1 预发布 K 天 + 把环境帧发布权收归 `host._process` 预发布器（单一发布者）
+##   P1 预发布 K 天 + 把环境帧发布权收归 `_process` 预发布器（单一发布者）
 ##   P3 允许 worker 领先主线程 K 天
 ## 关掉时 K=0、发布权归还全部调用点、领先上限 0 ⇒ 回到改动前逐表达式的行为。
 
@@ -457,7 +461,7 @@ func _apply_web_worker_parallel_channels(host, climate_authority_active: bool,
 	# 这一条是 web 上"日历停在 day 1"的直接原因，必须写清楚：预发布器需要
 	# `environment_ring_has_capacity()` / `runtime_committed_day()`（本轮新增）。
 	# 如果 side module 是旧的一份（`Build-Web.cmd skip-native` 就会这样），这两个
-	# 方法不存在 ⇒ `host._service_worker_lead_and_prefetch()` 第一行就 return ⇒
+	# 方法不存在 ⇒ `_service_worker_lead_and_prefetch()` 第一行就 return ⇒
 	# **一帧都不会发**；而发布权已经被预发布器独占，S1/S2/S3 三个调用点全部
 	# 被 suppressed ⇒ 环境帧为 0 ⇒ worker 无法推进 ⇒ `mode=OFF`、日历停住、
 	# `fault_code` 为空（因为没有任何域报错，只是没输入）。

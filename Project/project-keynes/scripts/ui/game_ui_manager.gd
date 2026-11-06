@@ -165,8 +165,10 @@ const COUNTRY_DIRTY_ECONOMY := 2
 const COUNTRY_DIRTY_IDEOLOGY := 4
 ## 军事：自己的 facade，不参与国家 ui_snapshot 分段，但仍然共用同一个脏位管道。
 const COUNTRY_DIRTY_MILITARY := 8
+## 外交：读的是领土镜像 + 军事快照 + 视野，没有自己的原生分片，同样只借脏位管道。
+const COUNTRY_DIRTY_DIPLOMACY := 16
 const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY \
-	| COUNTRY_DIRTY_IDEOLOGY | COUNTRY_DIRTY_MILITARY
+	| COUNTRY_DIRTY_IDEOLOGY | COUNTRY_DIRTY_MILITARY | COUNTRY_DIRTY_DIPLOMACY
 # Native RUNTIME_DIRTY_COUNTRY_* bits from runtime_pod_protocol.h.
 const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
 const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
@@ -250,7 +252,9 @@ func set_world_context(
 	_invalidate_live_revision()
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
-	_country_view_model.set_context(generator)
+	# 地图必须一起交出去：军事/外交视图模型要读领土镜像、邻接与视野，而 MapGenerator
+	# 没有公开的 map getter（它的 `current_map()` 只在截图 fixture 里存在）。
+	_country_view_model.set_context(generator, map)
 	_country_view_model.set_gdp_ledger(_gdp_ledger)
 	_bind_country_runtime_events(generator)
 	if _era_reward_dialog != null:
@@ -378,6 +382,10 @@ func notify_committed_day() -> void:
 	elif _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "military":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_day")
+	# 外交读的是战争与领地，两者每天都可能变；同样每个已提交日推进一次。
+	elif _country_panel != null and _country_panel.is_panel_open() \
+			and _country_panel.current_section() == "diplomacy":
+		_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "diplomacy_day")
 	elif _country_view_model != null:
 		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
 	# 军务档案也随已提交日推进；合并窗口由 _refresh_military_dossier 负责。
@@ -396,6 +404,8 @@ func _on_ideology_runtime_settled(_result: Dictionary) -> void:
 ## 命令后请求一次，让「已排队」的反馈和面板数值同步。
 func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
 	_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_commit")
+	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
+	_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "military_commit")
 	_refresh_peace_window()
 
 
@@ -412,13 +422,18 @@ func _on_military_state_building_requested(request: Dictionary) -> void:
 		"cell": int(request.get("cell", -1)),
 		"building": int(request.get("building", -1)),
 	})
+	var ok := bool(result.get("ok", false))
+	var message := String(result.get("message", ""))
 	# 被拒时立刻解锁动作键，不然要等到下一次日推进才恢复——玩家会以为按钮坏了。
-	if not bool(result.get("ok", false)) and _right_panel != null \
+	if not ok and _right_panel != null \
 			and _right_panel.has_method("release_military_ledger_busy"):
 		_right_panel.release_military_ledger_busy()
+	# 回执先写在地块档案那一行上（成功=已排队，失败=被拒的理由）；营造反馈条
+	# 只在营造窗口打开时可见，不能当作这一页的回音。
+	if _right_panel != null and _right_panel.has_method("set_military_ledger_feedback"):
+		_right_panel.set_military_ledger_feedback(message, ok)
 	if _right_panel != null and _right_panel.has_method("set_construction_feedback"):
-		_right_panel.set_construction_feedback(String(result.get("message", "")),
-			bool(result.get("ok", false)))
+		_right_panel.set_construction_feedback(message, ok)
 
 
 func _country_section_mask(section_id: String) -> int:
@@ -429,6 +444,8 @@ func _country_section_mask(section_id: String) -> int:
 			return COUNTRY_DIRTY_IDEOLOGY
 		"military":
 			return COUNTRY_DIRTY_MILITARY
+		"diplomacy":
+			return COUNTRY_DIRTY_DIPLOMACY
 		_:
 			return COUNTRY_DIRTY_TECHNOLOGY
 
@@ -861,6 +878,10 @@ func _on_country_committed(report: Dictionary) -> void:
 	if territory_changed or state_dirty \
 			or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
 		domains |= COUNTRY_DIRTY_ECONOMY
+	# 归属变了，「已发现国家」清单、接壤面数与占领格都会变；外交页必须同一瞬间重算，
+	# 否则名录会停在上一张地图上。
+	if territory_changed or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
+		domains |= COUNTRY_DIRTY_DIPLOMACY
 	# A worker country commit can advance the published country generation while
 	# leaving the legacy dirty-family bits empty.  The technology archive reads
 	# that committed research snapshot, so while it is open it must observe every
@@ -1162,11 +1183,28 @@ func _refresh_building_workspace(force: bool = false) -> void:
 
 func _on_construction_requested(request: Dictionary) -> void:
 	if _selected_cell == null or _player_controller == null or _right_panel == null:
+		push_warning("[construction] click dropped: selected_cell=%s controller=%s right_panel=%s" % [
+			str(_selected_cell != null), str(_player_controller != null),
+			str(_right_panel != null)])
+		return
+	# 军事部门的条目带 `military_index`：它是军事目录里的 dense 序，必须走
+	# `state.build`（原生 MCMD_STATE_BUILD）。送进经济侧的 construction.build
+	# 会因为经济目录里没有这座建筑而被拒。
+	if request.has("military_index"):
+		_on_military_state_building_requested({
+			"cell": int(_selected_cell.index),
+			"op": String(request.get("op", "state.build")),
+			"building": int(request.get("military_index", -1)),
+		})
 		return
 	var result: Dictionary = _player_controller.request_command(
 		&"construction.build", {"cell_idx": int(_selected_cell.index),
 			"building_id": StringName(request.get("building_id", &"")),
 			"ownership_policy": &"treasury_sponsored_private"})
+	print("[construction] click cell=%d id=%s -> ok=%s code=%s message=%s" % [
+		int(_selected_cell.index), String(request.get("building_id", &"")),
+		str(result.get("ok", false)), str(result.get("code", "")),
+		String(result.get("message", result.get("reason", "")))])
 	_right_panel.set_construction_feedback(
 		String(result.get("message", result.get("reason", "修建命令未能提交。"))),
 		bool(result.get("ok", false)))
@@ -2748,7 +2786,6 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 				title = profile.display_name
 				icon_key = ResourceProfileRegistry.icon_key(profile)
 				break
-		hint = "透明区域无可用储量"
 	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
 		var signal_id := StringName(request.get("signal_id", &""))
 		for entry in ResearchSignalCatalog.occupancy_overlay_entries():
@@ -2757,7 +2794,6 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 				icon_key = String(entry.get("icon_key", &"ecology.growth"))
 				occupancy_bit = int(entry.get("occupancy_bit", -1))
 				break
-		hint = "透明区域当前没有该物种"
 	if _map_overlay_legend != null:
 		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key, occupancy_bit)
 		call_deferred("_layout_overlay_legend")

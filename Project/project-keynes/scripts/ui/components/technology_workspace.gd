@@ -55,10 +55,8 @@ var _has_valid_research := false
 var _development: Dictionary = {}
 ## Normalised EconomyFacade.country_procurement_snapshot (CountryViewModel
 ## .present_procurement); {available: false} when the native query is absent.
+## 科技份额已经统一到国库的预算卷宗里，这里只读不写，不再需要本地乐观覆盖。
 var _procurement: Dictionary = {}
-## Policy accepted by PlayerController but not yet visible in the session or
-## snapshot, so the slider does not snap back for one refresh.
-var _procurement_local_policy: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
 var _last_states := PackedInt32Array()
@@ -201,7 +199,7 @@ func _ready() -> void:
 		_queue_rows.append([])
 	_dial.weights_previewed.connect(_on_weights_previewed)
 	_dial.weights_committed.connect(_on_weights_committed)
-	_budget.share_committed.connect(_on_research_share_committed)
+	_budget.open_budget_requested.connect(_on_open_budget_requested)
 	_available.technology_selected.connect(_on_available_selected)
 	_available.technology_activated.connect(_on_tree_activated)
 	_available.show_in_tree_requested.connect(_focus_technology)
@@ -749,7 +747,6 @@ func _research_state_signature() -> int:
 		_optimistic_queue.keys(),
 		_current_day,
 		_procurement,
-		_procurement_local_policy,
 		_procurement_policy(),
 	])
 
@@ -782,7 +779,7 @@ func _apply_research(force: bool = false) -> void:
 	var weights: PackedInt32Array = _research.get("domain_weights_bp",
 		PackedInt32Array([2500, 2500, 2500, 2500]))
 	_dial.set_weights(weights)
-	_apply_procurement_slider()
+	_apply_budget_notice()
 	_patch_queues(research_states, research_progress, weights,
 		offsets, technologies)
 	_sample_history()
@@ -1120,7 +1117,7 @@ func _patch_schedule(states: PackedInt32Array, progress: PackedInt64Array,
 				if rate < 0.0:
 					eta[technology] = ""
 				elif domain_rate <= 0.0:
-					eta[technology] = "暂无投入"
+					eta[technology] = ""
 				else:
 					var days := int(ceil(owed / domain_rate))
 					eta[technology] = "约 %d 日" % days if days <= 999 else "超过 999 日"
@@ -1262,7 +1259,7 @@ func _current_era_label(states: PackedInt32Array) -> String:
 
 func _scan_era_label(states: PackedInt32Array) -> String:
 	if _eras.is_empty():
-		return "—"
+		return ""
 	var reached := 0
 	for index in range(mini(states.size(), _definitions.size())):
 		var definition: Dictionary = _definitions[index]
@@ -1792,15 +1789,12 @@ func _on_weights_committed(weights_bp: PackedInt32Array) -> void:
 		policy_submitted.emit()
 
 
-# ---- 国家购买政策：科技占比 ------------------------------------------------
+# ---- 国家购买政策：科技占比（只读展示） --------------------------------------
 
-## {treasury_share_bp, research_share_bp, source}: session → local → snapshot → default.
+## {treasury_share_bp, research_share_bp, source}: session → snapshot → default。
+## 这里不再提交政策，写入口统一在国民经济 · 国库的预算卷宗。
 func _procurement_policy() -> Dictionary:
-	var policy: Dictionary = NationalProcurementSliderScript.resolve_policy(_player_controller,
-		_procurement, _procurement_local_policy)
-	if not _procurement_local_policy.is_empty() and String(policy.get("source", "")) != "local":
-		_procurement_local_policy.clear()
-	return policy
+	return NationalProcurementSliderScript.resolve_policy(_player_controller, _procurement)
 
 
 ## Daily national procurement cash at the current policy (MONEY_SCALE). The
@@ -1835,7 +1829,8 @@ func _daily_research_budget() -> int:
 		* float(int(policy.research_share_bp)) / 10000.0))
 
 
-func _apply_procurement_slider() -> void:
+## 只读便笺：把当前科技份额与折算日额写清楚，不再提供第二条可拖的滑条。
+func _apply_budget_notice() -> void:
 	if _budget == null:
 		return
 	var policy := _procurement_policy()
@@ -1844,31 +1839,18 @@ func _apply_procurement_slider() -> void:
 		int(policy.treasury_share_bp) > 0)
 
 
-func _on_research_share_committed(research_share_bp: int) -> void:
-	if _player_controller == null:
-		return
-	var policy := _procurement_policy()
-	var treasury_share := int(policy.treasury_share_bp)
-	var result: Dictionary = NationalProcurementSliderScript.submit_policy(_player_controller,
-		treasury_share, research_share_bp)
-	if NationalProcurementSliderScript.is_unsupported(result):
-		# Session without procurement.set_policy: fall back to the legacy
-		# Country research budget with the same daily cash figure.
-		var national := int(round(float(int(_research.get("country_cash", 0))) \
-			* float(treasury_share) / 10000.0))
-		var limit := int(round(float(national) * float(research_share_bp) / 10000.0))
-		result = _player_controller.request_command(
-			PlayerControllerScript.COMMAND_RESEARCH_SET_BUDGET,
-			{"enabled": research_share_bp > 0 and limit > 0, "daily_cash_limit": limit})
-	if bool(result.get("ok", false)):
-		_procurement_local_policy = {"treasury_share_bp": treasury_share,
-			"research_share_bp": research_share_bp}
-		_apply_procurement_slider()
-		_kpi_signatures.erase("treasury")
-		_update_kpis(_research.get("technology_states", PackedInt32Array()))
-		policy_submitted.emit()
-	else:
-		_apply_procurement_slider()
+## 便笺上的「前往预算调配」：沿节点树上溯到国家面板外壳，由它把
+## 「切到国民经济 · 国库」的意图交给 GameUIManager。不在本组件里持有
+## 面板引用，避免科技卷宗被单独实例化时产生悬空依赖。
+func _on_open_budget_requested() -> void:
+	var node := get_parent()
+	while node != null:
+		if node.has_signal("section_selected") \
+				and node.has_method("focus_economy_chapter"):
+			node.emit_signal("section_selected", "economy")
+			node.call("focus_economy_chapter", "treasury")
+			return
+		node = node.get_parent()
 
 
 func _enqueue(index: int) -> void:

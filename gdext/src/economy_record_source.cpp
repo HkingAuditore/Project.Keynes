@@ -1030,12 +1030,27 @@ bool EconomyRecordSource::fill_batch(
                     0, row.stock - std::max(row.production_input_reserve,
                         row.construction_material_reserve));
                 row.cost_anchor_price = signal >= 0 ? runtime._market_signals.cost_anchor_price[signal] : 0;
+                row.derived_business_demand = 0;
+                if (signal >= 0) {
+                    if (signal < static_cast<int32_t>(
+                            runtime._epoch_derived_business_demand.size()))
+                        row.derived_business_demand += std::max<int64_t>(0,
+                            runtime._epoch_derived_business_demand[signal]);
+                    if (signal < static_cast<int32_t>(
+                            runtime._epoch_substitute_business_demand.size()))
+                        row.derived_business_demand += std::max<int64_t>(0,
+                            runtime._epoch_substitute_business_demand[signal]);
+                }
+                row.shadow_anchor_price = signal >= 0 && signal <
+                        static_cast<int32_t>(runtime._epoch_derived_anchor_price.size())
+                    ? std::max<int64_t>(0, runtime._epoch_derived_anchor_price[signal]) : 0;
                 // Freeze the authoritative diagnostic while holding the same
                 // committed boundary as the other columns. The writer only
                 // formats this value and never reimplements market rules.
                 int64_t pressure_sat = 0;
                 const auto pressure = runtime.price_pressure(market, good,
                     row.demand_ema, row.stock, row.shortage_q16, signal, pressure_sat);
+                row.price_pressure_derived_q16 = static_cast<int32_t>(pressure.derived_q16);
                 row.price_pressure_total_q16 = static_cast<int32_t>(
                     std::clamp<int64_t>(pressure.total_q16,
                         std::numeric_limits<int32_t>::min(),

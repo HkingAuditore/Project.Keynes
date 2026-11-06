@@ -225,7 +225,11 @@ bool NativeEconomyRuntime::family_free_building_resources_legal(
          ++target_edge) {
         const ResourceAmount &target = _building_resources[
             reward_type.resource_begin + target_edge];
-        if (target.mode != 0 || target.quantity <= 0) continue;
+        // Open access has no administrative harvest budget. The renewable
+        // budget helper returns zero in that mode, so skip this gate and let
+        // production availability follow the cell's stock/density path.
+        if (target.mode != 0 || target.quantity <= 0 ||
+                _resource_safe_harvest_q16.get() <= 0) continue;
         if (target.resource_id < 0 || target.resource_id >=
                 static_cast<int32_t>(_resource_ids.size())) {
             return false;

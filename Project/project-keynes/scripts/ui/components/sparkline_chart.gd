@@ -53,6 +53,8 @@ func set_data(
 
 
 func _draw() -> void:
+	if values.is_empty():
+		return
 	var rect := Rect2(Vector2(0.0, 28.0), Vector2(size.x, maxf(size.y - 32.0, 20.0)))
 	if not paper_mode:
 		draw_rect(rect, Color(0.027, 0.026, 0.023, 0.88), true)
@@ -60,9 +62,6 @@ func _draw() -> void:
 		var grid_y := rect.position.y + rect.size.y * (float(i) / 4.0)
 		draw_line(Vector2(rect.position.x, grid_y), Vector2(rect.end.x, grid_y), Color(0.70, 0.55, 0.31, 0.10), 1.0)
 	draw_rect(rect, UITokens.PANEL_BORDER_SOFT, false, 1.0)
-	if values.is_empty():
-		draw_string(get_theme_default_font(), rect.position + Vector2(10.0, rect.size.y * 0.58), "暂无观测", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UITokens.ARCHIVE_INK_MUTED)
-		return
 	var range_min := min_value
 	var range_max := max_value
 	if is_nan(range_min) or is_nan(range_max) or range_max <= range_min:

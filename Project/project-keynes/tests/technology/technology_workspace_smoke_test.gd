@@ -22,7 +22,7 @@ func _init() -> void:
 	var domains: Array = TechnologyCatalogScript.public_domain_metadata()
 	var visual_edges: Array = TechnologyCatalogScript.public_visual_edges()
 	var baked_layout: Dictionary = TechnologyTreeLayoutScript.build(
-		definitions, eras, domains, visual_edges)
+		definitions, eras, domains, visual_edges, true)
 	var initialization_ms := float(Time.get_ticks_usec() - initialization_started) / 1000.0
 	print("  [info] catalog compile + public metadata + layout %.3fms" % initialization_ms)
 	_expect("technology layout compiles", bool(baked_layout.get("ok", false)))
@@ -121,7 +121,107 @@ func _init() -> void:
 	_audit_refresh(workspace, tree, definitions, eras, domains)
 	_audit_navigation(workspace, tree, definitions)
 	_audit_application_card(definitions, eras, domains)
+	_audit_retired_milestones(definitions, eras, domains)
 	_finish()
+
+
+# Era milestones became internal era tokens granted by era advancement. They
+# must never be offered for research, counted, searched, or related, while the
+# 「当前时代」 KPI still follows completed (state 5) milestones.
+func _audit_retired_milestones(definitions: Array, eras: Array, domains: Array) -> void:
+	var milestone := -1
+	var second := -1
+	for index in range(definitions.size()):
+		if bool((definitions[index] as Dictionary).get("is_milestone", false)):
+			if milestone < 0:
+				milestone = index
+			elif second < 0:
+				second = index
+	_expect("catalog exposes era milestone tokens for the retirement audit",
+		milestone >= 0 and second >= 0)
+	if milestone < 0 or second < 0:
+		return
+	var model := _model(definitions, eras, domains)
+	var states: PackedInt32Array = (model.research.technology_states as PackedInt32Array).duplicate()
+	states[milestone] = 5
+	states[second] = 2
+	model.research.technology_states = states
+	var workspace := WorkspaceScene.instantiate() as Control
+	get_root().add_child(workspace)
+	workspace.set_model(model)
+	var list: Control = (workspace.available_view() as TechnologyAvailableView).list_canvas()
+	_expect("available list never offers a researchable era milestone",
+		list.item_rect(second) == Rect2())
+	var search := workspace.get("_search") as LineEdit
+	var second_name := String((definitions[second] as Dictionary).get("display_name", ""))
+	workspace._on_search_submitted(second_name)
+	_expect("search never resolves to an era milestone",
+		int(workspace.get("_selected_technology")) != second)
+	var overview: Control = workspace.overview_view()
+	overview.patch_states(workspace._presentation_states(states))
+	var overview_total := 0
+	for cell in overview.get("_cells"):
+		for technology in (cell as Dictionary).technologies:
+			if bool((definitions[int(technology)] as Dictionary).get("is_milestone", false)):
+				overview_total += 1
+	_expect("overview counts exclude era milestones", overview_total == 0)
+	var cards: Dictionary = workspace.get("_kpi_cards")
+	var era_name := String((eras[_era_of(definitions[milestone], eras)] as Dictionary).get(
+		"display_name", ""))
+	_expect("current era KPI still follows completed era milestones",
+		(cards.Era as DossierKpiCard).value_text() == era_name)
+	var relations: Dictionary = workspace._relations_for(5, workspace._presentation_states(states))
+	var leaked := false
+	for group in ["prerequisites", "hard_successors", "branch_successors", "applications"]:
+		for entry in relations.get(group, []) as Array:
+			if String((entry as Dictionary).get("name", "")).contains(second_name):
+				leaked = true
+	_expect("detail relation rows never list an era milestone", not leaked)
+	var condition_items: Array = workspace._condition_items(5, workspace._presentation_states(states))
+	_expect("detail conditions no longer mention milestone gates",
+		not _items_contain(condition_items, "里程碑") and not _items_contain(condition_items, "时代门槛"))
+	# A legacy save may still queue a milestone: show it, removal only.
+	var queued := model.duplicate(true)
+	var queued_states: PackedInt32Array = (queued.research.technology_states as PackedInt32Array).duplicate()
+	queued_states[second] = 3
+	queued.research.technology_states = queued_states
+	var domain := 0
+	for cursor in range(domains.size()):
+		if String((domains[cursor] as Dictionary).id) == String((definitions[second] as Dictionary).domain_id):
+			domain = cursor
+	# Technology 4 stays queued in domain 0; the milestone follows in its domain.
+	var technologies := PackedInt32Array([4, second])
+	var offsets := PackedInt32Array([0, 1, 1, 1, 1])
+	for cursor in range(maxi(1, domain + 1), 5):
+		offsets[cursor] = 2
+	queued.research.queue_offsets = offsets
+	queued.research.queue_technology_indices = technologies
+	queued.research.generation = 999
+	workspace.refresh_research(queued)
+	var retired_row: Node = null
+	for rows in workspace.get("_queue_rows"):
+		for row in rows:
+			if int(row.technology_index) == second:
+				retired_row = row
+	_expect("a legacy queued era milestone still shows a queue row", retired_row != null)
+	if retired_row != null:
+		_expect("the legacy milestone row is removal-only (no drag)",
+			retired_row.is_retired() and retired_row._get_drag_data(Vector2.ZERO) == null)
+	workspace._focus_technology(second)
+	var detail := workspace.get("_detail") as TechnologyDetailCard
+	var action := detail.get_node("%Action") as Button
+	_expect("selecting a legacy queued milestone offers only removal",
+		action.visible and not action.disabled and action.text == "移出研究队列")
+	_expect("selecting a legacy milestone never jumps into the atlas",
+		int(workspace.navigation_report().mode) == 0)
+	workspace.queue_free()
+
+
+func _era_of(definition: Dictionary, eras: Array) -> int:
+	for index in range(eras.size()):
+		if String((eras[index] as Dictionary).get("id", "")) == String(definition.get("era_id", "")):
+			return index
+	return 0
 
 
 func _audit_unknown_conditions(workspace: Control, definitions: Array,
@@ -299,20 +399,36 @@ func _audit_layout(layout: Dictionary, definitions: Array) -> void:
 			ordered = false
 			break
 	_expect("era bands never overlap or invert", ordered)
-	var milestones_centred := true
-	var milestones_last := true
+	# Era milestones are retired internal era tokens: index-aligned entries with
+	# no geometry, no row, and no edge in either direction.
+	var retired_count := 0
+	var retired_placed := false
+	var retired := {}
 	for index in range(nodes.size()):
 		var node: Dictionary = nodes[index]
-		if not bool(node.is_milestone):
+		if not bool((definitions[index] as Dictionary).get("is_milestone", false)):
 			continue
-		var rect: Rect2 = node.rect
-		if absf(rect.position.x + rect.size.x * 0.5) > 0.5:
-			milestones_centred = false
-		var rows: Array = (bands[int(node.era_index)] as Dictionary).rows
-		if int(node.layer) != rows.size() - 1:
-			milestones_last = false
-	_expect("era milestones are horizontally centred", milestones_centred)
-	_expect("era milestones terminate their band", milestones_last)
+		retired_count += 1
+		retired[index] = true
+		if not bool(node.get("retired", false)) or (node.rect as Rect2).size != Vector2.ZERO \
+				or int(node.layer) >= 0:
+			retired_placed = true
+	_expect("catalog still carries eleven era milestone tokens", retired_count == 11)
+	_expect("era milestones occupy no row or rect in the layout", not retired_placed)
+	var retired_edge := false
+	for edge in layout.get("edges", []) as Array:
+		if retired.has(int((edge as Dictionary).from)) or retired.has(int((edge as Dictionary).to)):
+			retired_edge = true
+			break
+	_expect("no layout edge touches a retired era milestone", not retired_edge)
+	var retired_parents := false
+	for index in range(nodes.size()):
+		for parent in (layout.get("parents", []) as Array)[index]:
+			if retired.has(int(parent)):
+				retired_parents = true
+		if retired.has(index) and not ((layout.get("parents", []) as Array)[index]).is_empty():
+			retired_parents = true
+	_expect("dependency graph drops parents/children of retired milestones", not retired_parents)
 
 
 func _audit_fog(tree: Control, layout: Dictionary) -> void:
@@ -719,9 +835,13 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 	var has_milestone := false
 	for node_value in initial_focus.get("nodes", []) as Array:
 		var node: Dictionary = node_value
-		if bool(node.get("is_milestone", false)):
+		if bool(node.get("is_milestone", false)) or bool((definitions[int(node.index)] \
+				as Dictionary).get("is_milestone", false)):
 			has_milestone = true
-	_expect("focus view includes the era milestone gate", has_milestone)
+	_expect("focus view no longer draws an era milestone gate", not has_milestone)
+	_expect("focus bands carry no milestone gate index",
+		(initial_focus.get("bands", []) as Array).all(func(band) -> bool:
+			return not (band as Dictionary).has("milestone_index")))
 	var states := PackedInt32Array()
 	var progress := PackedInt64Array()
 	states.resize(definitions.size())
@@ -745,7 +865,8 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 		var rect: Rect2 = node.rect
 		if not bounds.grow(1.0).encloses(rect):
 			overflow = true
-		if bool(node.get("is_milestone", false)):
+		if bool(node.get("is_milestone", false)) or bool((definitions[int(node.index)] \
+				as Dictionary).get("is_milestone", false)):
 			focus_has_milestone = true
 			continue
 		var domain := int(node.get("domain", -1))
@@ -755,8 +876,8 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 			split_column = true
 		xs_by_domain[domain] = x
 	_expect("every focus node stays inside the canvas-fitted bounds", not overflow)
-	_expect("full reveal still shows era milestones in the focused window",
-		focus_has_milestone)
+	_expect("full reveal keeps retired era milestones out of the focused window",
+		not focus_has_milestone)
 	_expect("focus view keeps all four research domains on one map",
 		domains_seen.size() == 4)
 	_expect("each research domain occupies a single vertical lane", not split_column)
@@ -778,6 +899,8 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 	var counted := {"owned": 0, "total": 0}
 	var expected := {"owned": 0, "total": 0}
 	for index in range(fog_states.size()):
+		if bool((definitions[index] as Dictionary).get("is_milestone", false)):
+			continue
 		if TechnologyTreeView.presents_state(int(fog_states[index])):
 			expected.total += 1
 			if int(fog_states[index]) == 5:

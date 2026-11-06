@@ -214,7 +214,5 @@ theme_override_constants/separation = 8
 
 [node name="ClearTaxConfirmation" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
-title = "重置本栏税收设置"
-dialog_text = "将重置本栏税收设置，并于下一日生效。"
 ok_button_text = "确认重置"
 cancel_button_text = "取消"

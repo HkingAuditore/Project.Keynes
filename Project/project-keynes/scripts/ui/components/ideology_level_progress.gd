@@ -5,7 +5,7 @@ extends RefCounted
 ## Keeping threshold lookup here means the cabinet and collection cannot drift
 ## when a catalog row is missing levels (common in UI fixtures).
 
-const DEFAULT_LEVEL_COUNT := 3
+# 缺等级数据时不再臆造 3 级，见 build() 的 data_missing 分支。
 
 
 static func build(metadata: Dictionary, state: Dictionary,
@@ -14,24 +14,26 @@ static func build(metadata: Dictionary, state: Dictionary,
 		"level_thresholds_q16", PackedInt64Array())
 	var level := clampi(int(state.get("level", 0)), 0, 64)
 	var level_count := maxi(1, thresholds.size())
+	var data_missing := false
 	if level_count <= 1:
 		var labels: PackedStringArray = metadata.get(
 			"level_labels", PackedStringArray())
 		var effect_sets: Array = metadata.get("level_effect_lines", [])
 		level_count = maxi(1, maxi(labels.size(), effect_sets.size()))
 		if level_count <= 1:
-			level_count = DEFAULT_LEVEL_COUNT
+			level_count = 1
+			data_missing = true
 	var labels: PackedStringArray = metadata.get(
 		"level_labels", PackedStringArray())
 	var level_label := level_label_override.strip_edges()
 	if level_label.is_empty() and level >= 0 and level < labels.size():
 		level_label = String(labels[level])
 	var amount := maxi(0, int(state.get("understanding", 0)))
-	var maxed := level + 1 >= level_count
+	var maxed := level + 1 >= level_count and not data_missing
 	var low := _threshold(thresholds, level, 0)
 	var high := _threshold(thresholds, level + 1, low)
 	var progress := 1.0 if maxed else 0.0
-	if not maxed:
+	if not maxed and not data_missing:
 		progress = clampf(float(amount - low) / float(maxi(1, high - low)),
 			0.0, 1.0)
 	return {

@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## M3: a Ramp program's magnitude tracks its metric, per metric input
 ## (plan §15.5 exit condition "same country, different cells, different ramp values").
 ##

@@ -19,7 +19,7 @@ func set_data(parts: PackedInt64Array, labels: PackedStringArray, weights: Packe
 	_parts = parts
 	_labels = labels
 	_weights = weights
-	custom_minimum_size.y = ROW_HEIGHT * maxf(1.0, parts.size()) + 54.0
+	custom_minimum_size.y = ROW_HEIGHT * maxf(1.0, mini(parts.size(), labels.size())) + 54.0
 	_start_reveal()
 	return true
 
@@ -34,17 +34,24 @@ func _draw() -> void:
 	var track_right: float = maxf(track_left + 40.0, w - value_width - 12.0)
 	var track_len: float = track_right - track_left
 
+	# 只画有指标名的分项；没有名字的分项不拿「第 N 项」占位名冒充真实指标。
+	var count: int = mini(_parts.size(), _labels.size())
+	# 口径说明：每行右侧是「得分 / 满分」，条长按本页最大权重统一缩放。
+	_caption(Vector2(0.0, 2.0), "得分 / 满分")
+	_right_text(w, 2.0, "条长按本页最大权重统一缩放", 11,
+		Color(_muted.r, _muted.g, _muted.b, 0.85))
+
 	var max_weight: float = 1.0
 	for weight in _weights:
 		max_weight = maxf(max_weight, weight)
 
 	var total: float = 0.0
-	for i in _parts.size():
+	for i in count:
 		var weight: float = _weights[i] if i < _weights.size() else 0.0
 		var score: float = float(_parts[i]) / 100.0
 		total += score
 		var y: float = ROW_HEIGHT * i + 20.0
-		var label: String = _labels[i] if i < _labels.size() else "第 %d 项" % (i + 1)
+		var label: String = _labels[i]
 		_caption(Vector2(0.0, y), label)
 		# 轨道只有一条极淡的底线，不是"进度条底槽"。
 		draw_line(Vector2(track_left, y - 3.0), Vector2(track_right, y - 3.0), Color(_ink.r, _ink.g, _ink.b, 0.09), 1.0, true)
@@ -66,6 +73,6 @@ func _draw() -> void:
 		_right_text(w, y, text, 19, _ink)
 		_right_text(w - 52.0, y, "/ %.0f" % weight, 13, Color(_muted.r, _muted.g, _muted.b, 0.85), "label")
 
-	_baseline(ROW_HEIGHT * _parts.size() + 30.0, 0.0, w)
-	_caption(Vector2(0.0, ROW_HEIGHT * _parts.size() + 50.0), "综合得分")
-	_right_text(w, ROW_HEIGHT * _parts.size() + 50.0, "%.2f / 100" % total, 24, _accent)
+	_baseline(ROW_HEIGHT * count + 30.0, 0.0, w)
+	_caption(Vector2(0.0, ROW_HEIGHT * count + 50.0), "综合得分")
+	_right_text(w, ROW_HEIGHT * count + 50.0, "%.2f / 100" % total, 24, _accent)
