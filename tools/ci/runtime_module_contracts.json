@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "known_order_debts": [
+    {"module": "input_capture", "owner": "country", "reason": "captures the previous committed Country generation before the new day"},
+    {"module": "country", "owner": "economy", "reason": "Country AI consumes the previous committed Economy digest"},
+    {"module": "trigger_input", "owner": "events", "reason": "trigger consumes the previous committed event journal"},
+    {"module": "trigger_input", "owner": "effect", "reason": "trigger consumes the previous committed Effect acknowledgements"},
+    {"module": "ideology", "owner": "economy", "reason": "Ideology consumes the previous committed Economy opinion view"},
+    {"module": "ideology", "owner": "modifier", "reason": "Ideology consumes the previous committed Modifier view"}
+  ],
+  "modules": [
+    {
+      "id": "input_capture",
+      "domain": "INPUT_CAPTURE",
+      "cadence": "per requested day",
+      "reads": "environment, country, catalog",
+      "store": "RuntimeInputCaptureManifest",
+      "intent_types": "none",
+      "save_sections": "PKSR.input manifests",
+      "view_version": 0
+    },
+    {
+      "id": "climate",
+      "domain": "CLIMATE",
+      "cadence": "per day; kernel cadence unchanged",
+      "reads": "environment",
+      "store": "RuntimeClimateStore",
+      "intent_types": "none",
+      "save_sections": "CLM2",
+      "view_version": 1
+    },
+    {
+      "id": "country",
+      "domain": "COUNTRY",
+      "cadence": "per day; AI cadence unchanged",
+      "reads": "climate, economy",
+      "store": "RuntimeCountryPodSnapshot",
+      "intent_types": "RuntimeCountryCommand",
+      "save_sections": "PKSR.country_bytes;PKCN",
+      "view_version": 0
+    },
+    {
+      "id": "trigger_input",
+      "domain": "TRIGGER_INPUT",
+      "cadence": "per day",
+      "reads": "country, events, effect",
+      "store": "RuntimeTriggerSnapshot",
+      "intent_types": "RuntimeTriggerEffectIntent",
+      "save_sections": "PKSR.trigger_bytes;PKTR",
+      "view_version": 0
+    },
+    {
+      "id": "ideology",
+      "domain": "IDEOLOGY",
+      "cadence": "per day; own cadence unchanged",
+      "reads": "country, economy, modifier",
+      "store": "RuntimeIdeologyPodSnapshot",
+      "intent_types": "RuntimeIdeologyPodCommand",
+      "save_sections": "PKSR.ideology_bytes;PKID",
+      "view_version": 1
+    },
+    {
+      "id": "effect",
+      "domain": "EFFECT",
+      "cadence": "per day; instance due day unchanged",
+      "reads": "trigger, ideology, country",
+      "store": "RuntimeEffectPodSnapshot",
+      "intent_types": "RuntimeEffectPodCommand",
+      "save_sections": "PKSR.effect_bytes;PKEF",
+      "view_version": 1
+    },
+    {
+      "id": "modifier",
+      "domain": "MODIFIER",
+      "cadence": "per day",
+      "reads": "effect, ideology",
+      "store": "RuntimeModifierPodSnapshot",
+      "intent_types": "RuntimeModifierPodCommand",
+      "save_sections": "PKSR.modifier_bytes;PKCM;PKGP",
+      "view_version": 1
+    },
+    {
+      "id": "gameplay_effect",
+      "domain": "GAMEPLAY_EFFECT",
+      "cadence": "per day",
+      "reads": "commands",
+      "store": "host ingress counters and command queues",
+      "intent_types": "RuntimeCommandPacket",
+      "save_sections": "PKSR.gameplay_effect_bytes",
+      "view_version": 0
+    },
+    {
+      "id": "economy",
+      "domain": "ECONOMY",
+      "cadence": "per day; epoch cadence unchanged",
+      "reads": "climate, country, modifier",
+      "store": "RuntimeEconomyOwnedState",
+      "intent_types": "CountryFiscalReturnIntent",
+      "save_sections": "ECP2;PKEC",
+      "view_version": 1
+    },
+    {
+      "id": "events",
+      "domain": "EVENTS",
+      "cadence": "per day",
+      "reads": "economy, gameplay_effect",
+      "store": "RuntimeEventsSnapshot",
+      "intent_types": "RuntimeCommandPacket",
+      "save_sections": "PKSR.events_bytes",
+      "view_version": 1
+    },
+    {
+      "id": "visual",
+      "domain": "VISUAL",
+      "cadence": "per day dirty publication",
+      "reads": "dirty families",
+      "store": "RuntimeVisualIntent",
+      "intent_types": "RuntimeVisualIntent",
+      "save_sections": "none",
+      "view_version": 0
+    },
+    {
+      "id": "commit",
+      "domain": "COMMIT",
+      "cadence": "per completed day",
+      "reads": "stage results",
+      "store": "RuntimeDayCommit",
+      "intent_types": "none",
+      "save_sections": "PKSR",
+      "view_version": 0
+    }
+  ],
+  "reviewed_reads": [
+    {
+      "module": "economy",
+      "owner": "climate",
+      "source": "gdext/src/native_simulation_stage_economy.cpp",
+      "call": "copy_committed_view"
+    },
+    {
+      "module": "trigger_input",
+      "owner": "events",
+      "source": "gdext/src/native_simulation_host_trigger.cpp",
+      "call": "copy_committed_view"
+    },
+    {
+      "module": "ideology",
+      "owner": "modifier",
+      "source": "gdext/src/native_simulation_host_ideology.cpp",
+      "call": "copy_committed_view"
+    },
+    {
+      "module": "ideology",
+      "owner": "economy",
+      "source": "gdext/src/native_simulation_host_ideology.cpp",
+      "call": "copy_economy_opinion_view"
+    },
+    {
+      "module": "modifier",
+      "owner": "effect",
+      "source": "gdext/src/native_simulation_host_modifier.cpp",
+      "call": "copy_committed_view"
+    },
+    {
+      "module": "country",
+      "owner": "economy",
+      "source": "gdext/src/native_simulation_host_country_stage.cpp",
+      "call": "copy_country_ai_economy_view"
+    },
+    {
+      "module": "annual_report",
+      "owner": "country",
+      "source": "gdext/src/annual_development_host.cpp",
+      "call": "copy_annual_country_view"
+    },
+    {
+      "module": "annual_report",
+      "owner": "ideology",
+      "source": "gdext/src/annual_development_host.cpp",
+      "call": "copy_annual_ideology_view"
+    },
+    {
+      "module": "family_metrics",
+      "owner": "economy",
+      "source": "gdext/src/economy_runtime_family_buff.cpp",
+      "call": "copy_lineage_opinion_view"
+    }
+  ],
+  "consumers": [
+    {
+      "id": "annual_report",
+      "reads": "country, ideology"
+    },
+    {
+      "id": "family_metrics",
+      "reads": "economy"
+    }
+  ]
+}

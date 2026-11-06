@@ -15,13 +15,19 @@ class_name NativeLoadingTasks
 ## 单个原生任务的最长等待。桌面 40x28 生成约 2.6s，手机慢 10 倍也够；真卡住就 60s 后兜底。
 const LOADING_TASK_TIMEOUT_MS := 60000
 
-static func compute(ext: Object, operation: String, input: Dictionary) -> Dictionary:
+static func compute(ext: Object, operation: String, input: Dictionary, frame_gate = null) -> Dictionary:
+	if frame_gate != null and frame_gate.canceled:
+		return {"fallback": true, "canceled": true, "reason": "loading_canceled", "rc": -1}
 	var tree := Engine.get_main_loop() as SceneTree
 	if ext != null and ext.has_method("begin_loading_task") and tree != null:
 		var handle: int = ext.begin_loading_task(operation, input)
 		if handle > 0:
 			var started_ms := Time.get_ticks_msec()
 			while true:
+				if frame_gate != null and frame_gate.canceled:
+					if ext.has_method("cancel_loading_task"):
+						ext.cancel_loading_task(handle)
+					return {"fallback": true, "canceled": true, "reason": "loading_canceled", "rc": -1}
 				var status: Dictionary = ext.poll_loading_task(handle)
 				if not bool(status.get("valid", false)) or bool(status.get("canceled", false)):
 					return {"fallback": true, "canceled": true, "reason": "loading_canceled", "rc": -1}
@@ -40,7 +46,7 @@ static func compute(ext: Object, operation: String, input: Dictionary) -> Dictio
 					if ext.has_method("cancel_loading_task"):
 						ext.cancel_loading_task(handle)
 					break
-				await tree.process_frame
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
 	if ext == null:
 		return {"fallback": true, "reason": "native_unavailable", "rc": -1}
 	# Legacy binaries and no-thread targets retain the same authoritative kernels.
@@ -54,9 +60,11 @@ static func compute(ext: Object, operation: String, input: Dictionary) -> Dictio
 		"detail_scatter": return ext.call("encode_detail_scatter", input)
 		"catalog_manifest":
 			for path in input.get("files", {}):
+				if frame_gate != null and frame_gate.canceled:
+					return {"valid": false, "canceled": true}
 				if FileAccess.get_sha256(path) != input.files[path]:
 					return {"valid": false}
 				if tree != null:
-					await tree.process_frame
+					await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
 			return {"valid": true}
 	return {"fallback": true, "reason": "unsupported_loading_operation", "rc": -1}

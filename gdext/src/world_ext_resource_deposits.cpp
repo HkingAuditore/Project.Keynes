@@ -474,11 +474,13 @@ godot::Dictionary DCWorldExt::run_resource_deposit_pass(const godot::Dictionary 
                 values[i] = 0.0f;
                 continue;
             }
-            if (excluded_terrain_row != nullptr && excluded_terrain_row[size_t(terrain[i])]) {
+            if (excluded_terrain_row != nullptr && int(terrain[i]) < excluded_terrain_width
+                    && excluded_terrain_row[size_t(terrain[i])]) {
                 values[i] = 0.0f;
                 continue;
             }
-            if (excluded_veg_row != nullptr && excluded_veg_row[size_t(veg[i])]) {
+            if (excluded_veg_row != nullptr && int(veg[i]) < excluded_veg_width
+                    && excluded_veg_row[size_t(veg[i])]) {
                 values[i] = 0.0f;
                 continue;
             }

@@ -1,7 +1,7 @@
 #include "effect_runtime.h"
-#include "country_runtime.h"
-#include "economy_runtime.h"
-#include "modifier_runtime.h"
+#include "country_api.h"
+#include "economy_api.h"
+#include "modifier_api.h"
 #include "runtime_effect_pod.h"
 #include "world_ext.h"
 #include "parallel_dispatcher.h"
@@ -65,22 +65,22 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
     }
     switch (action) {
         case EffectRuntime::MODIFIER_COMMAND:
-            if (domain > 3 || (opcode != ModifierRuntime::COMMAND_APPLY &&
-                               opcode != ModifierRuntime::COMMAND_REMOVE)) {
+            if (domain > 3 || (opcode != ModifierApi::COMMAND_APPLY &&
+                               opcode != ModifierApi::COMMAND_REMOVE)) {
                 reason = "effect_modifier_opcode_unregistered";
                 return false;
             }
             break;
         case EffectRuntime::COUNTRY_COMMAND:
-            if (domain != 1 || opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
-                opcode > NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
+            if (domain != 1 || opcode < CountryApi::COMMAND_CREATE_COUNTRY ||
+                opcode > CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL) {
                 reason = "effect_country_opcode_unregistered";
                 return false;
             }
             break;
         case EffectRuntime::ECONOMY_COMMAND:
             if (domain != 2 ||
-                !NativeEconomyRuntime::is_registered_economy_effect_opcode(opcode)) {
+                !EconomyApi::is_registered_economy_effect_opcode(opcode)) {
                 reason = "effect_economy_opcode_unregistered";
                 return false;
             }
@@ -1281,9 +1281,9 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         }
         if (definition.managed_declared) {
             const int32_t expected_modifier_domain =
-                definition.target_domain == 3 ? ModifierRuntime::COUNTRY
-                : definition.target_domain == 4 ? ModifierRuntime::CLIMATE
-                                                : ModifierRuntime::ECONOMY;
+                definition.target_domain == 3 ? ModifierApi::COUNTRY
+                : definition.target_domain == 4 ? ModifierApi::CLIMATE
+                                                : ModifierApi::ECONOMY;
             if (definition.operation == 3 && definition.condition_count == 0)
                 return failure("effect_conditional_override_requires_condition");
             if ((definition.operation == 4) != (definition.lifecycle == 2))
@@ -1299,7 +1299,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                         return failure("effect_event_operation_modifier_invalid");
                     has_event_command = true;
                 } else if (command.action != MODIFIER_COMMAND ||
-                           command.opcode != ModifierRuntime::COMMAND_APPLY ||
+                           command.opcode != ModifierApi::COMMAND_APPLY ||
                            command.domain != expected_modifier_domain) {
                     return failure("effect_family_target_adapter_mismatch");
                 }
@@ -1550,11 +1550,11 @@ bool EffectRuntime::compile_era_reward_catalog(const Dictionary &catalog,
     const auto reward_command_whitelisted = [](const CommandDefinition &command) {
         if (command.action == MODIFIER_COMMAND)
             return command.domain >= 0 && command.domain <= 3 &&
-                (command.opcode == ModifierRuntime::COMMAND_APPLY ||
-                 command.opcode == ModifierRuntime::COMMAND_REMOVE);
+                (command.opcode == ModifierApi::COMMAND_APPLY ||
+                 command.opcode == ModifierApi::COMMAND_REMOVE);
         if (command.action == COUNTRY_COMMAND)
             return command.domain == 1 &&
-                command.opcode == NativeCountryRuntime::COMMAND_GRANT_TECHNOLOGY;
+                command.opcode == CountryApi::COMMAND_GRANT_TECHNOLOGY;
         if (command.action == ECONOMY_COMMAND)
             return command.domain == 2 && command.opcode >= 1 && command.opcode <= 8;
         if (command.action == GAMEPLAY_COMMAND || command.action == PUBLISH_EVENT)
@@ -1790,7 +1790,7 @@ bool EffectRuntime::bind_era_reward_player_country_pod(uint64_t country_handle,
         return false;
     }
     if (country_handle == 0 ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle))) {
+        !country_api::valid_handle(*_country_runtime, static_cast<int64_t>(country_handle))) {
         error = "era_reward_player_country_invalid";
         return false;
     }
@@ -1907,17 +1907,17 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
         ? _era_reward_country_view : _country_runtime;
     if (pool_index < 0 || pool_index >= static_cast<int32_t>(_era_reward_pools.size()) ||
         _country_runtime == nullptr ||
-        !source->valid_handle(static_cast<int64_t>(country_handle))) {
+        !country_api::valid_handle(*source, static_cast<int64_t>(country_handle))) {
         error = "era_reward_plan_input_invalid";
         return false;
     }
-    const Dictionary country = source->country_snapshot(
+    const Dictionary country = country_api::country_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary treasury = source->treasury_snapshot(
+    const Dictionary treasury = country_api::treasury_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary research = source->research_snapshot(
+    const Dictionary research = country_api::research_snapshot(*source,
         static_cast<int64_t>(country_handle));
-    const Dictionary signals_snapshot = source->research_signal_snapshot(
+    const Dictionary signals_snapshot = country_api::research_signal_snapshot(*source,
         static_cast<int64_t>(country_handle));
     if (!static_cast<bool>(country.get("ok", false)) ||
         !static_cast<bool>(treasury.get("ok", false)) ||
@@ -1973,7 +1973,7 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
             candidate.reasons, candidate.reason_count);
         (option.fallback != 0 ? fallbacks : normal).push_back(std::move(candidate));
     }
-    uint64_t seed = static_cast<uint64_t>(source->world_seed());
+    uint64_t seed = static_cast<uint64_t>(country_api::world_seed(*source));
     seed = fnv_string(seed, String(country.get("country_id", "")).utf8().get_data());
     seed = fnv_string(seed, pool.id);
     seed = fnv_value(seed, _era_reward_next_generation);
@@ -2051,7 +2051,7 @@ bool EffectRuntime::plan_era_reward_offer(int32_t pool_index,
     _last_era_reward_plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_start).count();
     ++_era_reward_offers_planned;
-    _country_runtime->set_era_reward_reference_pod(
+    country_api::set_era_reward_reference_pod(*_country_runtime,
         _era_reward_offer.plan_id, _era_reward_offer.generation,
         _era_reward_offer.milestone_technology, _era_reward_offer.status);
     return true;
@@ -2090,7 +2090,7 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
         _era_reward_offer.status = 2;
         _era_reward_offer.transaction_id = 0;
         if (_country_runtime != nullptr)
-            _country_runtime->set_era_reward_reference_pod(
+            country_api::set_era_reward_reference_pod(*_country_runtime,
                 _era_reward_offer.plan_id, _era_reward_offer.generation,
                 _era_reward_offer.milestone_technology, _era_reward_offer.status);
         Dictionary out;
@@ -2179,7 +2179,7 @@ Dictionary EffectRuntime::choose_era_reward(int64_t offer_generation,
     _era_reward_offer.selected_choice = choice_index;
     _era_reward_offer.transaction_id = _transactions.back().id;
     if (_country_runtime != nullptr)
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
     Dictionary out;
@@ -2229,7 +2229,7 @@ bool EffectRuntime::era_reward_selected_modifier_commands(
         command.domain = source.domain;
         command.target_handle = alternative.target_handle;
         command.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            source.value, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            source.value, 0, EFFECT_MAX_MAGNITUDE_Q16));
         command.duration_days = source.duration_days;
         command.stacks = std::max(1, source.stacks);
         command.source_id = _era_reward_offer.generation;
@@ -2248,7 +2248,7 @@ void EffectRuntime::settle_era_reward_selection_pod(bool ok, const char *error) 
     if (!ok) _era_reward_offer.error = error != nullptr && error[0] != '\0'
         ? error : "era_reward_transaction_rejected";
     if (_country_runtime != nullptr)
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
 }
@@ -2267,7 +2267,7 @@ void EffectRuntime::refresh_era_reward_offer_status() {
     }
     if (_country_runtime != nullptr &&
         (_era_reward_offer.status == 3 || _era_reward_offer.status == 4))
-        _country_runtime->set_era_reward_reference_pod(
+        country_api::set_era_reward_reference_pod(*_country_runtime,
             _era_reward_offer.plan_id, _era_reward_offer.generation,
             _era_reward_offer.milestone_technology, _era_reward_offer.status);
 }
@@ -2985,7 +2985,7 @@ bool EffectRuntime::family_effect_metadata_pod(
         // guard above already rejected; keeping the check here too means a
         // program that somehow bypassed it publishes nothing rather than
         // publishing the wrong column.
-        if (metric_id < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+        if (metric_id < EconomyApi::FAMILY_METRIC_COUNT)
             out.metric_mask.set(metric_id);
         else
             out.scalar_mask.set(metric_id);
@@ -3002,14 +3002,14 @@ bool EffectRuntime::family_effect_metadata_pod(
                     // Truncating silently would leave a boundary unobserved while
                     // still bucketing the metric -- worse than not bucketing at
                     // all, because the miss is invisible.
-                    if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+                    if (condition.arg0 < EconomyApi::FAMILY_METRIC_COUNT)
                         out.exact_metric_mask.set(condition.arg0);
                     return;
                 }
                 // Economy consumes thresholds for revision bucketing. Ideology
                 // scalars live above that boundary and have no Economy consumer,
                 // but this skip must not abandon later conditions/instructions.
-                if (condition.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT) {
+                if (condition.arg0 < EconomyApi::FAMILY_METRIC_COUNT) {
                     const int32_t slot = out.metric_threshold_count++;
                     out.metric_threshold_ids[slot] = condition.arg0;
                     out.metric_threshold_values[slot] = boundary;
@@ -3032,7 +3032,7 @@ bool EffectRuntime::family_effect_metadata_pod(
             include_metric(instruction.arg0);
             // A Ramp consumes the continuous value: bucketing it would quantise
             // the card's own strength, which is a silent numeric change.
-            if (instruction.arg0 < NativeEconomyRuntime::FAMILY_METRIC_COUNT)
+            if (instruction.arg0 < EconomyApi::FAMILY_METRIC_COUNT)
                 out.exact_metric_mask.set(instruction.arg0);
         }
     }
@@ -3422,13 +3422,13 @@ bool EffectRuntime::enqueue_external_effect_pod(
         return true;
     }
     const bool modifier_remove = action == MODIFIER_COMMAND &&
-        opcode == ModifierRuntime::COMMAND_REMOVE;
+        opcode == ModifierApi::COMMAND_REMOVE;
     int32_t command_definition_id = -1;
     for (int32_t i = 0; i < static_cast<int32_t>(_command_definitions.size()); ++i) {
         const CommandDefinition &candidate = _command_definitions[i];
         const bool dynamic_country_signal_payload =
             action == COUNTRY_COMMAND &&
-            opcode == NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+            opcode == CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
             candidate.action == action && candidate.opcode == opcode &&
             (static_cast<uint64_t>(candidate.payload[0]) >> 32U) ==
                 (static_cast<uint64_t>(payload[0]) >> 32U) &&
@@ -3444,7 +3444,7 @@ bool EffectRuntime::enqueue_external_effect_pod(
             candidate.definition_key == definition_key &&
             candidate.action == action && candidate.domain == domain &&
             (candidate.opcode == opcode || (modifier_remove &&
-                candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
+                candidate.opcode == ModifierApi::COMMAND_APPLY)) &&
             candidate.target_resolver == TARGET_INSTANCE &&
             (candidate.duration_days == duration_days ||
              action == MODIFIER_COMMAND) &&
@@ -3597,7 +3597,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
         }
         const bool modifier_remove =
             source.action == MODIFIER_COMMAND &&
-            source.opcode == ModifierRuntime::COMMAND_REMOVE;
+            source.opcode == ModifierApi::COMMAND_REMOVE;
         int32_t command_definition_id = -1;
         for (int32_t definition_index = 0;
                 definition_index <
@@ -3608,7 +3608,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
             const bool dynamic_country_signal_payload =
                 source.action == COUNTRY_COMMAND &&
                 source.opcode ==
-                    NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+                    CountryApi::COMMAND_DISCOVER_COUNTRY_SIGNAL &&
                 candidate.action == source.action &&
                 candidate.opcode == source.opcode &&
                 (static_cast<uint64_t>(candidate.payload[0]) >> 32U) ==
@@ -3622,7 +3622,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
                     candidate.domain == source.domain &&
                     (candidate.opcode == source.opcode ||
                      (modifier_remove &&
-                      candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
+                      candidate.opcode == ModifierApi::COMMAND_APPLY)) &&
                     candidate.target_resolver == TARGET_INSTANCE &&
                     (candidate.duration_days == source.duration_days ||
                      source.action == MODIFIER_COMMAND) &&
@@ -3804,7 +3804,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
         Command claim;
         claim.action = COUNTRY_COMMAND;
         claim.domain = 7;
-        claim.opcode = NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY;
+        claim.opcode = CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY;
         claim.target_handle = country_handle;
         claim.target_generation = country_generation;
         claim.command_key_id = -1;
@@ -3817,7 +3817,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     Command settle;
     settle.action = ECONOMY_COMMAND;
     settle.domain = 8;
-    settle.opcode = NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION;
+    settle.opcode = EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION;
     settle.target_handle = expedition_handle;
     settle.target_generation = expedition_generation;
     settle.command_key_id = -1;
@@ -3876,10 +3876,10 @@ bool EffectRuntime::family_colonization_includes_claim(
         const Command *command = command_at(transaction, ordinal);
         if (command == nullptr) continue;
         if (command->action == COUNTRY_COMMAND &&
-            command->opcode == NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY)
+            command->opcode == CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY)
             return true;
         if (command->action == ECONOMY_COMMAND &&
-            command->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+            command->opcode == EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
             command->payload[2] != 0)
             return true;
     }
@@ -3894,7 +3894,7 @@ int32_t EffectRuntime::family_colonization_population_reward(
     for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
         const Command *command = command_at(transaction, ordinal);
         if (command == nullptr || command->action != ECONOMY_COMMAND ||
-            command->opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION)
+            command->opcode != EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION)
             continue;
         return static_cast<int32_t>(std::max<int64_t>(0, command->payload[3]));
     }
@@ -4707,12 +4707,12 @@ bool EffectRuntime::create_retirement_transaction(int32_t instance_index,
         const CommandDefinition &definition_command =
             _command_definitions[static_cast<size_t>(command_definition_id)];
         if (definition_command.action != MODIFIER_COMMAND ||
-            definition_command.opcode != ModifierRuntime::COMMAND_APPLY)
+            definition_command.opcode != ModifierApi::COMMAND_APPLY)
             continue;
         Command command;
         command.action = MODIFIER_COMMAND;
         command.domain = definition_command.domain;
-        command.opcode = ModifierRuntime::COMMAND_REMOVE;
+        command.opcode = ModifierApi::COMMAND_REMOVE;
         command.duration_days = -1;
         command.stacks = 1;
         command.command_key_id = command_definition_id;
@@ -5675,64 +5675,64 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
     out.stacks = std::max(1, command.stacks);
     out.domain_bit = adapter_ack_bit_for(command);
     // A REMOVE row is proved by absence, everything else by presence.
-    out.expect_present = command.opcode != ModifierRuntime::COMMAND_REMOVE;
+    out.expect_present = command.opcode != ModifierApi::COMMAND_REMOVE;
 
     if (adapter_kind == NATIVE_MODIFIER_TECHNOLOGY) {
         out.producer = 180;
-        out.domain = ModifierRuntime::COUNTRY;
-        out.scope = ModifierRuntime::ENTITY;
+        out.domain = ModifierApi::COUNTRY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x54454348ULL; // TECH
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id) & 0xffffULL;
-        out.magnitude_q16 = ModifierRuntime::Q16_ONE;
+        out.magnitude_q16 = ModifierApi::Q16_ONE;
     } else if (adapter_kind == NATIVE_MODIFIER_FAMILY) {
         out.producer = 160;
-        out.domain = ModifierRuntime::ECONOMY;
-        out.scope = ModifierRuntime::GROUP;
+        out.domain = ModifierApi::ECONOMY;
+        out.scope = ModifierApi::GROUP;
         out.group_handle = command.target_generation;
         out.source_type = 0x46414d494c59ULL; // FAMILY
         out.source_id = command.target_handle;
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
         out.producer = 170;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x504552534f4eULL; // PERSON
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
         out.producer = 175;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x54524947474552ULL; // TRIGGER
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
         out.producer = 161;
         out.domain = command.domain;
         out.source_type = 0x46414d4546464543ULL; // FAMEFFEC
         out.source_id = static_cast<uint64_t>(source_instance.id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
         switch (source_instance.target_domain) {
             case 0: // Family.
             case 1: // Branch.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 break;
             case 2: // Settlement cell.
             case 5: // Building/resource selector within the cell.
-                out.scope = ModifierRuntime::GROUP;
+                out.scope = ModifierApi::GROUP;
                 out.group_handle = command.target_handle;
                 break;
             case 3: // Country.
             case 4: // Climate cell.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 break;
             default:
@@ -5744,25 +5744,25 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         out.source_type = 0x4944454fULL; // IDEO
         out.source_id = static_cast<uint64_t>(source_instance.id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
         // X9-b family programs carry the stable family handle in ENTITY;
         // cell/resource programs (2/5) carry a cell in GROUP. Both
         // handles must not be set: Modifier's scope_id_for() would read
         // the family handle as a settlement group while scope is GROUP.
         switch (source_instance.target_domain) {
             case 0: // Family.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 out.group_handle = 0;
                 break;
             case 2: // Settlement cell.
             case 5: // Building/resource selector within the cell.
-                out.scope = ModifierRuntime::GROUP;
+                out.scope = ModifierApi::GROUP;
                 out.entity_handle = command.target_handle;
                 out.group_handle = command.target_handle;
                 break;
             default:
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 out.group_handle = 0;
                 break;
@@ -5772,7 +5772,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         // widen a cell effect to the whole country.
         if (command.payload[2] >= 1 && command.payload[2] <= 2) {
             out.scope = static_cast<int32_t>(command.payload[2]);
-            out.group_handle = out.scope == ModifierRuntime::GROUP
+            out.group_handle = out.scope == ModifierApi::GROUP
                 ? command.target_handle : 0;
         }
     } else if (command.action == MODIFIER_COMMAND) {
@@ -5784,7 +5784,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         // never reached for them.
         out.producer = 200;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = static_cast<uint64_t>(source_instance.source_type);
         // A command may carry its own stable identity; synergy rows do
@@ -5800,7 +5800,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
             ? static_cast<uint64_t>(command.external_source_id)
             : static_cast<uint64_t>(source_instance.source_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else {
         return false;
     }
@@ -5809,7 +5809,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
 
 Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
-    if (modifier_runtime == nullptr || !modifier_runtime->configured())
+    if (modifier_runtime == nullptr || !modifier_api::configured(*modifier_runtime))
         return failure("modifier_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
 
@@ -5830,7 +5830,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         uint32_t request_count = 0;
         uint32_t domain_mask = 0;
     };
-    std::vector<ModifierRuntime::NativeCommand> native_commands;
+    std::vector<ModifierApi::NativeCommand> native_commands;
     std::vector<PendingTransaction> pending_transactions;
     native_commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     pending_transactions.reserve(std::min<int32_t>(_max_transactions, 4096));
@@ -5873,7 +5873,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 supported = false;
                 break;
             }
-            ModifierRuntime::NativeCommand native;
+            ModifierApi::NativeCommand native;
             native.opcode = row.opcode;
             native.producer = row.producer;
             native.sequence = row.sequence;
@@ -5924,7 +5924,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
 
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!modifier_runtime->submit_commands_pod(native_commands.data(), native_commands.size(),
+    if (!modifier_api::submit_commands_pod(*modifier_runtime, native_commands.data(), native_commands.size(),
                                                request_ids, error) ||
         request_ids.size() != native_commands.size()) {
         _last_error = error.empty() ? "effect_native_modifier_enqueue_failed" : error;
@@ -5956,7 +5956,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
 
 Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
-    if (modifier_runtime == nullptr || !modifier_runtime->configured())
+    if (modifier_runtime == nullptr || !modifier_api::configured(*modifier_runtime))
         return failure("modifier_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
 
@@ -5986,7 +5986,7 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
             }
             bool complete = false, ok = false;
             std::string reason;
-            modifier_runtime->command_result_pod(_native_request_ids[request_index],
+            modifier_api::command_result_pod(*modifier_runtime, _native_request_ids[request_index],
                                                  complete, ok, reason);
             if (!complete) {
                 pending = true;
@@ -6014,10 +6014,10 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
                     source_index < static_cast<int32_t>(_instances.size())) {
                     const Instance &source =
                         _instances[static_cast<size_t>(source_index)];
-                    modifier_runtime->remove_rows_for_source(
+                    modifier_api::remove_rows_for_source(*modifier_runtime,
                         static_cast<uint64_t>(source.source_type),
                         static_cast<uint64_t>(source.id), _current_day);
-                    modifier_runtime->remove_rows_for_source(
+                    modifier_api::remove_rows_for_source(*modifier_runtime,
                         static_cast<uint64_t>(source.source_type),
                         static_cast<uint64_t>(source.source_id), _current_day);
                 }
@@ -6214,7 +6214,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
     struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
-    std::vector<NativeCountryRuntime::EffectCommand> commands;
+    std::vector<CountryEffectCommand> commands;
     std::vector<PendingTransaction> pending;
     commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
@@ -6239,15 +6239,15 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
-                command->opcode < NativeCountryRuntime::COMMAND_CREATE_COUNTRY ||
-                command->opcode > NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                command->opcode < CountryApi::COMMAND_CREATE_COUNTRY ||
+                command->opcode > CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY ||
                 (command->command_definition_id < 0 &&
-                 command->opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY) ||
+                 command->opcode != CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY) ||
                 command->command_definition_id >= static_cast<int32_t>(_command_definitions.size())) {
                 supported = false;
                 break;
             }
-            NativeCountryRuntime::EffectCommand native;
+            CountryEffectCommand native;
             native.opcode = command->opcode;
             native.effective_day = transaction.effective_day;
             native.sequence = static_cast<int64_t>(command->idempotency_key &
@@ -6286,7 +6286,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
     }
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!country_runtime->submit_effect_commands_pod(commands.data(), commands.size(), request_ids, error) ||
+    if (!country_api::submit_effect_commands_pod(*country_runtime, commands.data(), commands.size(), request_ids, error) ||
         request_ids.size() != commands.size()) {
         _last_error = error.empty() ? "effect_native_country_enqueue_failed" : error;
         out["ok"] = false; out["reason"] = String(_last_error.c_str());
@@ -6314,7 +6314,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
 Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
-    country_runtime->drain_effect_host_command_receipts();
+    country_api::drain_effect_host_command_receipts(*country_runtime);
     int32_t acknowledged = 0, rejected = 0;
     std::vector<NativeAckBinding> retained;
     std::vector<int64_t> retained_ids;
@@ -6330,7 +6330,7 @@ Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runti
             const size_t request_index = static_cast<size_t>(binding.request_begin) + i;
             if (request_index >= _native_country_request_ids.size()) { failed = true; reason = "effect_native_country_binding_invalid"; break; }
             bool complete = false, ok = false;
-            if (!country_runtime->effect_command_result_pod(_native_country_request_ids[request_index],
+            if (!country_api::effect_command_result_pod(*country_runtime, _native_country_request_ids[request_index],
                     complete, ok, reason)) { failed = true; break; }
             if (!complete) { pending = true; break; }
             if (!ok) { failed = true; break; }
@@ -6445,7 +6445,7 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
     if (economy_runtime == nullptr) return failure("economy_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
     struct PendingTransaction { int32_t index = -1; uint32_t begin = 0; uint32_t count = 0; uint32_t domain_mask = 0; };
-    std::vector<NativeEconomyRuntime::EffectCommand> commands;
+    std::vector<EconomyApi::EffectCommand> commands;
     std::vector<PendingTransaction> pending;
     commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     int32_t rejected_transactions = 0;
@@ -6486,15 +6486,15 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             if ((transaction.received_ack_mask & adapter_ack_bit_for(*command)) != 0)
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
-                command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
-                (command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY)) {
+                command->opcode < EconomyApi::COMMAND_TRANSFER_TO_COHORT ||
+                (command->opcode > EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+                 command->opcode != EconomyApi::COMMAND_FAMILY_SET_SPLIT_POLICY)) {
                 supported = false;
                 break;
             }
-            NativeEconomyRuntime::EffectCommand native;
+            EconomyApi::EffectCommand native;
             native.opcode = command->opcode;
             native.effective_day = transaction.effective_day;
             native.sequence = static_cast<int64_t>(command->idempotency_key &
@@ -6504,11 +6504,11 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             const uint64_t packed_i32 = static_cast<uint64_t>(command->payload[0]);
             native.i32_0 = static_cast<int32_t>(packed_i32 & 0xffffffffULL);
             native.i32_1 = command->opcode ==
-                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION
                 ? static_cast<int32_t>(command->payload[3])
                 : static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
             native.i64_0 = command->opcode ==
-                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION
                 ? command->payload[2] : command->value_q16;
             native.i64_1 = command->payload[1];
             native.idempotency_key = command->idempotency_key;
@@ -6525,15 +6525,15 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             continue;
         }
         std::string preflight_error;
-        const int32_t preflight = economy_runtime->preflight_effect_commands_pod(
-            commands.data() + begin, count, preflight_error);
-        if (preflight == NativeEconomyRuntime::EFFECT_PREFLIGHT_RETRY) {
+        const int32_t preflight = economy_api::preflight_effect_commands_pod(
+            *economy_runtime, commands.data() + begin, count, preflight_error);
+        if (preflight == EconomyApi::EFFECT_PREFLIGHT_RETRY) {
             commands.resize(begin);
             ++retryable_transactions;
             if (!preflight_error.empty()) _last_error = preflight_error;
             continue;
         }
-        if (preflight != NativeEconomyRuntime::EFFECT_PREFLIGHT_ACCEPT) {
+        if (preflight != EconomyApi::EFFECT_PREFLIGHT_ACCEPT) {
             commands.resize(begin);
             untrack_pending_transaction(transaction);
             unindex_transaction_commands(transaction);
@@ -6563,8 +6563,8 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
     }
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!economy_runtime->submit_effect_commands_pod(commands.data(), commands.size(),
-            request_ids, error) || request_ids.size() != commands.size()) {
+    if (!economy_api::submit_effect_commands_pod(*economy_runtime, commands.data(),
+            commands.size(), request_ids, error) || request_ids.size() != commands.size()) {
         _last_error = error.empty() ? "effect_native_economy_enqueue_failed" : error;
         out["ok"] = false;
         out["reason"] = String(_last_error.c_str());
@@ -6616,7 +6616,7 @@ Dictionary EffectRuntime::ack_native_economy(NativeEconomyRuntime *economy_runti
             }
             bool complete = false;
             bool ok = false;
-            if (!economy_runtime->effect_command_result_pod(
+            if (!economy_api::effect_command_result_pod(*economy_runtime,
                     _native_economy_request_ids[request_index], complete, ok, reason)) {
                 failed = true;
                 break;
@@ -8141,8 +8141,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                     static_cast<size_t>(command.command_definition_id)];
                 std::string command_error;
                 const bool remove_alias = command.action == MODIFIER_COMMAND &&
-                    command.opcode == ModifierRuntime::COMMAND_REMOVE &&
-                    definition.opcode == ModifierRuntime::COMMAND_APPLY;
+                    command.opcode == ModifierApi::COMMAND_REMOVE &&
+                    definition.opcode == ModifierApi::COMMAND_APPLY;
                 const bool family_stack_alias = !remove_alias &&
                     definition.owner_program_id >= 0 &&
                     definition.owner_program_id < static_cast<int32_t>(
@@ -8207,7 +8207,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             const bool settle_only = transaction.command_count == 1 &&
                 first != nullptr && first->action == ECONOMY_COMMAND &&
                 first->domain == 8 &&
-                first->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                first->opcode == EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION &&
                 first->command_key_id == -1 && first->command_definition_id == -1;
             const bool claim_and_settle = transaction.command_count == 2;
             if (settle_only) {
@@ -8216,10 +8216,10 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 const Command &claim = restored_command_arena[transaction.command_begin];
                 const Command &settle = restored_command_arena[transaction.command_begin + 1];
                 if (claim.action != COUNTRY_COMMAND || claim.domain != 7 ||
-                    claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                    claim.opcode != CountryApi::COMMAND_CLAIM_UNOWNED_TERRITORY ||
                     claim.command_key_id != -1 || claim.command_definition_id != -1 ||
                     settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
-                    settle.opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION ||
+                    settle.opcode != EconomyApi::COMMAND_SETTLE_FAMILY_EXPEDITION ||
                     settle.command_key_id != -1 || settle.command_definition_id != -1 ||
                     claim.target_handle != settle.payload[1] ||
                     claim.payload[0] != settle.payload[0])
@@ -8399,8 +8399,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
         }
     }
     if (_country_runtime != nullptr) {
-        const NativeCountryRuntime::EraRewardReference country_reference =
-            _country_runtime->era_reward_reference_pod();
+        const CountryApi::EraRewardReference country_reference =
+            country_api::era_reward_reference_pod(*_country_runtime);
         if (country_reference.plan_id != restored_offer.plan_id ||
             country_reference.offer_generation != restored_offer.generation ||
             country_reference.milestone_technology !=

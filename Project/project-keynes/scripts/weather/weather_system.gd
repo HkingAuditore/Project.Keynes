@@ -117,7 +117,7 @@ var _field_condensation_gain: float = 0.42
 # ⚠ DEPRECATED 僵尸 knob（2026-06-20 根因重构）：precip 已改 EMA 惯性，C++ 与 GDScript
 # hot-loop 均不再读取 precip_decay / carryover_max（world_ext.cpp 仅剩注释、field_solver.gd
 # 无引用）。仍保留成员/configure/knobs 传递仅为存档 + resident 链路兼容，待后续连同
-# NativeKnobs 字段与 positional 签名一并删除（见 computation-pipelines.md 根因重构节）。
+# NativeKnobs 字段与 positional 签名一并删除（见 docs/architecture/current-state.md 根因重构节）。
 var _field_precip_decay: float = 0.85
 var _field_precip_carryover_max: float = 0.08
 var _field_vapor_precip_sink: float = 0.85

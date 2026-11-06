@@ -19,6 +19,9 @@
 
 #include "runtime_pod_protocol.h"
 #include "country_core.h"
+#include "country_api.h"
+#include "country_fiscal_return_intent.h"
+#include "country_procurement_intent.h"
 
 namespace pk {
 
@@ -27,95 +30,22 @@ class EffectInstanceForwarder;
 
 class ModifierRuntime;
 class NativeEconomyRuntime;
-class NativeSimulationHost;
+class CountryHostPort;
 
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
 // graph stages and economy reads use only POD/SoA storage.
-class NativeCountryRuntime {
+class NativeCountryRuntime : public CountryApi {
+    friend class CountryFiscalReturnPort;
 public:
-    // v14: inactive (annexed) country records with zero territory.
-    static constexpr int32_t SCHEMA_VERSION = 14;
-    static constexpr int64_t MONEY_SCALE = 10000;
-    static constexpr int64_t GOODS_SCALE = 1000;
-    static constexpr int32_t NEUTRAL_SLOT = -1;
-    // Percent mode: signed basis points. Positive taxes are capped at 100%,
-    // while subsidies may reach 1000%. Absolute mode: signed currency per
-    // countable unit. INT32_MIN is reserved for inheritance on both lanes.
-    static constexpr int32_t TAX_RATE_MIN_BP = -100000;
-    static constexpr int32_t TAX_RATE_MAX_BP = 10000;
-    static constexpr int32_t TAX_ABSOLUTE_MIN = -1000000000;
-    static constexpr int32_t TAX_ABSOLUTE_MAX = 1000000000;
-    static constexpr int32_t TAX_RATE_INHERIT =
-        std::numeric_limits<int32_t>::min();
-    static constexpr int32_t TAX_MODE_INHERIT =
-        std::numeric_limits<int32_t>::min();
+    CountryFiscalReturnPort fiscal_return_port();
+    CountryProcurementPort procurement_port();
+    // Tax kind/mode and command/asset opcode contracts live in CountryApi so
+    // peer modules can name them without this internal header.
+    using TaxKind = CountryApi::TaxKind;
+    using TaxAssessmentMode = CountryApi::TaxAssessmentMode;
 
-    enum TaxKind : int32_t {
-        TAX_INCOME = 0,
-        TAX_TRANSACTION = 1,
-        TAX_CONSUMPTION = TAX_TRANSACTION, // Compatibility alias.
-        TAX_BUSINESS = 2,
-        TAX_IMPORT = 3,
-        TAX_EXPORT = 4,
-        TAX_KIND_COUNT = 5,
-    };
-
-    enum TaxAssessmentMode : int32_t {
-        TAX_MODE_PERCENT_BP = 0,
-        TAX_MODE_ABSOLUTE = 1,
-    };
-
-    enum CommandOpcode : int32_t {
-        COMMAND_CREATE_COUNTRY = 1,
-        COMMAND_RENAME_COUNTRY = 2,
-        COMMAND_TRANSFER_TERRITORY = 3,
-        COMMAND_GRANT_TECHNOLOGY = 4,
-        COMMAND_SET_RESEARCH_WEIGHTS = 5,
-        COMMAND_ENQUEUE_RESEARCH = 6,
-        COMMAND_REMOVE_RESEARCH = 7,
-        COMMAND_MOVE_RESEARCH = 8,
-        COMMAND_SET_RESEARCH_BUDGET = 9,
-        COMMAND_REVEAL_ALL_TECHNOLOGIES = 10,
-        COMMAND_SET_TAX_DEFAULT = 11,
-        COMMAND_SET_TAX_OVERRIDE = 12,
-        COMMAND_CLEAR_TAX_OVERRIDE = 13,
-        // Internal/domain command: static map/event evidence becomes
-        // country-owned research knowledge at the country command boundary.
-        COMMAND_DISCOVER_COUNTRY_SIGNAL = 14,
-        COMMAND_SET_CELL_TAX_DEFAULT = 15,
-        COMMAND_CLEAR_CELL_TAX_DEFAULT = 16,
-        COMMAND_SET_CELL_TAX_OVERRIDE = 17,
-        COMMAND_CLEAR_CELL_TAX_OVERRIDE = 18,
-        COMMAND_CLEAR_CELL_TAX_POLICY = 19,
-        // Effect-only territorial acquisition used by family expeditions.
-        // Unlike TRANSFER_TERRITORY this is compare-and-set: the command is
-        // rejected unless the committed/staged owner is still neutral.
-        COMMAND_CLAIM_UNOWNED_TERRITORY = 20,
-        // Era advancement: aux = good dense id, value = GOODS_SCALE quantity.
-        // Validated against the staged treasury (earlier commands in the same
-        // batch included); insufficient stock rejects the whole batch. The
-        // consumed quantity feeds a transient per-country sink counter that
-        // Economy treats like research consumption in the goods audit.
-        COMMAND_CONSUME_TREASURY_GOODS = 21,
-        // 22/25/26 are reserved (cell controller lives in Military) and are
-        // rejected at admission as country_command_opcode_unsupported.
-        COMMAND_RESERVED_22 = 22,
-        // Military v1 peace/annex commands. Receiver/annexer handle is packed
-        // as cell = receiver slot, aux = receiver generation, i.e.
-        // ((uint64)aux << 32) | (uint32)cell. Transfers move
-        // min(available balance, value) and conserve totals exactly.
-        COMMAND_TRANSFER_CASH_BETWEEN_COUNTRIES = 23,   // value = MONEY_SCALE
-        COMMAND_TRANSFER_GOODS_BETWEEN_COUNTRIES = 24,  // domain = good, value = GOODS_SCALE
-        COMMAND_RESERVED_25 = 25,
-        COMMAND_RESERVED_26 = 26,
-        // target_handle = victim. Atomic within the batch: all territory,
-        // cash and goods move to the annexer; the victim becomes inactive
-        // with generation + 1, so later commands holding the old handle are
-        // rejected as country_handle_invalid.
-        COMMAND_ANNEX_COUNTRY = 27,
-        COMMAND_OPCODE_MAX = COMMAND_ANNEX_COUNTRY,
-    };
+    using CommandOpcode = CountryApi::CommandOpcode;
     static constexpr bool command_opcode_reserved(int32_t opcode) {
         return opcode == COMMAND_RESERVED_22 || opcode == COMMAND_RESERVED_25 ||
                opcode == COMMAND_RESERVED_26;
@@ -128,104 +58,19 @@ public:
 
     enum RuntimeMode : int32_t { MODE_OFF = 0, MODE_PROBE = 1, MODE_ACTIVE = 2 };
 
-    // EffectRuntime's country adapter uses this POD ABI.  `payload` is
-    // precompiled by the Effect catalog: [cell|aux], [domain|position], four
-    // packed int16 research weights, and tax kind/item/rate respectively.
-    struct EffectCommand {
-        int32_t opcode = 0;
-        int64_t effective_day = 0;
-        int64_t sequence = 0;
-        uint64_t target_handle = 0;
-        uint32_t target_generation = 0;
-        int64_t value = 0;
-        std::array<int64_t, 4> payload{};
-        uint64_t idempotency_key = 0;
-        const char *stable_id = nullptr;
-        const char *display_name = nullptr;
-    };
+    using EffectCommand = CountryEffectCommand;
 
-    // Canonical sparse cell policy payload. Policy id 0 is implicit and means
-    // complete inheritance; ids are transient runtime implementation details.
-    struct CellTaxOverride {
-        int32_t kind = -1;
-        int32_t item = -1;
-        int32_t rate = TAX_RATE_INHERIT;
-        int32_t mode = TAX_MODE_INHERIT;
-
-        bool operator==(const CellTaxOverride &other) const {
-            return kind == other.kind && item == other.item &&
-                   rate == other.rate && mode == other.mode;
-        }
-    };
-
-    struct CellTaxPolicy {
-        std::array<int32_t, TAX_KIND_COUNT> defaults{
-            TAX_RATE_INHERIT, TAX_RATE_INHERIT, TAX_RATE_INHERIT,
-            TAX_RATE_INHERIT, TAX_RATE_INHERIT};
-        std::array<int32_t, TAX_KIND_COUNT> default_modes{
-            TAX_MODE_INHERIT, TAX_MODE_INHERIT, TAX_MODE_INHERIT,
-            TAX_MODE_INHERIT, TAX_MODE_INHERIT};
-        std::vector<CellTaxOverride> overrides;
-
-        bool empty() const {
-            return std::all_of(defaults.begin(), defaults.end(),
-                               [](int32_t rate) { return rate == TAX_RATE_INHERIT; }) &&
-                   std::all_of(default_modes.begin(), default_modes.end(),
-                               [](int32_t mode) {
-                                   return mode == TAX_MODE_INHERIT;
-                               }) &&
-                   overrides.empty();
-        }
-        bool operator==(const CellTaxPolicy &other) const {
-            return defaults == other.defaults &&
-                   default_modes == other.default_modes &&
-                   overrides == other.overrides;
-        }
-    };
+    using CellTaxOverride = CountryReadView::CellTaxOverride;
+    using CellTaxPolicy = CountryReadView::CellTaxPolicy;
 
     struct ResolvedTaxPolicy {
         int32_t mode = TAX_MODE_PERCENT_BP;
         int32_t value = 0;
     };
 
-    struct EconomySnapshot {
-        std::vector<int32_t> cell_country_slot;
-        std::vector<uint64_t> country_handles;
-        std::vector<uint64_t> country_technologies;
-        std::vector<uint64_t> country_research_signals;
-        std::vector<int32_t> income_tax_rates;
-        std::vector<int32_t> consumption_tax_rates;
-        std::vector<int32_t> business_tax_rates;
-        std::vector<int32_t> import_tax_rates;
-        std::vector<int32_t> export_tax_rates;
-        std::vector<int32_t> income_tax_modes;
-        std::vector<int32_t> consumption_tax_modes;
-        std::vector<int32_t> business_tax_modes;
-        std::vector<int32_t> import_tax_modes;
-        std::vector<int32_t> export_tax_modes;
-        std::vector<uint32_t> cell_tax_policy_ids;
-        std::vector<CellTaxPolicy> cell_tax_policies;
-        int32_t country_count = 0;
-        int32_t technology_words = 0;
-        int32_t research_signal_words = 0;
-        int32_t research_signal_count = 0;
-        int32_t profession_count = 0;
-        int32_t good_count = 0;
-        int32_t building_type_count = 0;
-        uint64_t tax_policy_version = 0;
-        uint64_t generation = 0;
-        uint64_t state_hash = 0;
-    };
+    using EconomySnapshot = CountryEconomySnapshot;
 
-    // Minimal cross-section authority for an era reward. The complete frozen
-    // alternatives remain in PKEF; PKCN stores only this reference/state so a
-    // restore can reject orphaned or contradictory offers.
-    struct EraRewardReference {
-        int64_t plan_id = 0;
-        int64_t offer_generation = 0;
-        int32_t milestone_technology = -1;
-        int32_t status = 0;
-    };
+    using EraRewardReference = CountryApi::EraRewardReference;
 
     godot::Dictionary configure(const godot::Dictionary &catalog,
                                 const godot::Dictionary &profile,
@@ -344,8 +189,8 @@ public:
     godot::Dictionary capture_reference_checkpoint() const;
     bool capture_core_checkpoint(CountryCoreCheckpoint &out,
                                  std::string &error) const;
-    // Checkpoint of the worker-committed read replica, without the stale
-    // main-thread command/peer state the replica was copied from.
+    bool restore_compatibility_state(const std::vector<uint8_t> &bytes,
+                                     std::string &error);
     bool capture_worker_committed_checkpoint(CountryCoreCheckpoint &out,
                                              std::string &error) const;
     bool restore_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
@@ -408,6 +253,7 @@ public:
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
+    CountryReadView read_view() const;
     int64_t cash_for_slot(int32_t country_slot) const;
     int64_t cash_for_handle(int64_t country_handle) const;
     // When the Host grants Country worker authority, Economy must not mutate
@@ -418,7 +264,7 @@ public:
     bool sync_store_writes_forbidden() const {
         return _sync_store_writes_forbidden;
     }
-    void attach_simulation_host(NativeSimulationHost *host) {
+    void attach_simulation_host(CountryHostPort *host) {
         _simulation_host = host;
     }
     int64_t last_committed_day() const { return _last_committed_day; }
@@ -446,32 +292,6 @@ public:
     // in one non-blocking call.  The transaction identity and audit record are
     // already explicit so the same contract can be resumed across a future
     // peer ACK without changing Country business semantics.
-    enum EconomyAssetOperation : int32_t {
-        ECONOMY_ASSET_RESEARCH_PURCHASE = 1,
-        ECONOMY_ASSET_FISCAL_RESERVE = 2,
-        ECONOMY_ASSET_FISCAL_RETURN = 3,
-        ECONOMY_ASSET_FISCAL_COLLECT = 4,
-        ECONOMY_ASSET_CASH_TO_COHORT = 5,
-        ECONOMY_ASSET_CASH_FROM_COHORT = 6,
-        ECONOMY_ASSET_GOOD_TO_MARKET = 7,
-        ECONOMY_ASSET_GOOD_FROM_MARKET = 8,
-        ECONOMY_ASSET_TREASURY_SPEND = 9,
-    };
-    enum EconomyAssetTransactionStatus : int32_t {
-        ECONOMY_ASSET_CREATED = 1,
-        ECONOMY_ASSET_COUNTRY_PREPARED = 2,
-        ECONOMY_ASSET_PEER_PREPARED = 3,
-        ECONOMY_ASSET_COMMIT_DECIDED = 4,
-        ECONOMY_ASSET_COUNTRY_APPLIED = 5,
-        ECONOMY_ASSET_PEER_APPLIED = 6,
-        ECONOMY_ASSET_COMPLETED = 7,
-        ECONOMY_ASSET_REJECTED = 8,
-        // Explicit asynchronous bridge states.  The legacy values above are
-        // retained for compatibility with the synchronous accounting report.
-        ECONOMY_ASSET_AWAITING_PEER_PREPARED = 9,
-        ECONOMY_ASSET_AWAITING_PEER_APPLIED = 10,
-        ECONOMY_ASSET_FAULTED = 11,
-    };
     struct EconomyAssetTransaction {
         uint64_t transaction_id = 0;
         uint64_t session_epoch = 0;
@@ -480,8 +300,8 @@ public:
         int32_t origin_stage = -1;
         uint64_t operation_sequence = 0;
         uint64_t request_id = 0;
-        EconomyAssetOperation operation = ECONOMY_ASSET_RESEARCH_PURCHASE;
-        EconomyAssetTransactionStatus status = ECONOMY_ASSET_CREATED;
+        AssetOperation operation = ECONOMY_ASSET_RESEARCH_PURCHASE;
+        AssetTransactionStatus status = ECONOMY_ASSET_CREATED;
         uint64_t country_handle = 0;
         int32_t country_slot = -1;
         int32_t good_id = -1;
@@ -490,6 +310,9 @@ public:
         int64_t committed_quantity = 0;
         int64_t requested_cash = 0;
         int64_t committed_cash = 0;
+        // First Country boundary containing the decided treasury write. Peer
+        // completion can arrive later and must not move this boundary.
+        int64_t effective_country_day = -1;
         int64_t country_cash_before = 0;
         int64_t country_cash_after = 0;
         int64_t country_good_before = 0;
@@ -831,7 +654,7 @@ private:
     int64_t complete_economy_asset_compatibility(
         const godot::Dictionary &begin);
     godot::Dictionary begin_economy_fiscal_cash_credit(
-        EconomyAssetOperation operation, int64_t country_handle, int64_t offered,
+        AssetOperation operation, int64_t country_handle, int64_t offered,
         int64_t origin_epoch, int32_t origin_stage, uint64_t request_id,
         const char *invalid_reason);
     int32_t append_country(const std::string &stable_id,
@@ -1014,7 +837,7 @@ private:
 
     bool _configured = false;
     bool _sync_store_writes_forbidden = false;
-    NativeSimulationHost *_simulation_host = nullptr;
+    CountryHostPort *_simulation_host = nullptr;
     bool _bootstrapped = false;
     RuntimeMode _mode = MODE_ACTIVE;
     int32_t _cell_count = 0;

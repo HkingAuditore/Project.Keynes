@@ -10,9 +10,9 @@
 
 | 文档 | 章节 | 关键内容 |
 |---|---|---|
-| `gdscript-cpp-data-bridge.md` | 「理念派生地块层的桥」| 7 个桥的字段表 + **三个必知参数细节**：① `entity_handle` 必须是 0、cell 放 `cell` 参数（传错会看起来像「派生不存在」）② `install_..._for_test` 的列名是 `source_countries`/`adds` ③ metric 数组按 `metric_keys` 索引填，当前与 `FamilyEffectMetricId` 恒等但**不要假设永远如此** |
-| `runtime-authority-matrix.md` | 「理念派生地块层的权威归属」| 4 类数据的权威与是否持久化对照；**三条权威规则**（派生层不放 Store、后端判定只有一处、I01 一个 program 一个后端）；读档后的权威时序 |
-| `game-flow-start-save.md` | 「理念派生地块层不参与存档」| 格式版本未变、旧档可读、`serialize_domain`/`restore_domain` 完全不碰 front；**为什么可以这样**（front 完全由已恢复输入决定）；**不要做的两件事**（别把 front 塞进存档「修复」窗口、别在读档路径直接读派生层当已就绪）|
+| `docs/architecture/development-guide.md` | 「理念派生地块层的桥」| 7 个桥的字段表 + **三个必知参数细节**：① `entity_handle` 必须是 0、cell 放 `cell` 参数（传错会看起来像「派生不存在」）② `install_..._for_test` 的列名是 `source_countries`/`adds` ③ metric 数组按 `metric_keys` 索引填，当前与 `FamilyEffectMetricId` 恒等但**不要假设永远如此** |
+| `docs/architecture/current-state.md` | 「理念派生地块层的权威归属」| 4 类数据的权威与是否持久化对照；**三条权威规则**（派生层不放 Store、后端判定只有一处、I01 一个 program 一个后端）；读档后的权威时序 |
+| `docs/architecture/development-guide.md` | 「理念派生地块层不参与存档」| 格式版本未变、旧档可读、`serialize_domain`/`restore_domain` 完全不碰 front；**为什么可以这样**（front 完全由已恢复输入决定）；**不要做的两件事**（别把 front 塞进存档「修复」窗口、别在读档路径直接读派生层当已就绪）|
 
 ## 2. §16.5 的九项逐项状态
 
@@ -58,6 +58,6 @@
 
 | 文件 | 说明 |
 |---|---|
-| `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md` | +1 节（1737 行）|
-| `docs/cpp-dots-runtime/runtime-authority-matrix.md` | +1 节（449 行）|
-| `docs/cpp-dots-runtime/game-flow-start-save.md` | +1 节（642 行）|
+| `docs/architecture/development-guide.md` | +1 节（1737 行）|
+| `docs/architecture/current-state.md` | +1 节（449 行）|
+| `docs/architecture/development-guide.md` | +1 节（642 行）|

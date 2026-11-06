@@ -1,9 +1,12 @@
 #pragma once
-
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
+#include "runtime_thread_retirement.h"
+#include "runtime_authority_control.h"
+#include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
 #include "runtime_snapshot_ring.h"
+#include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
 #include "runtime_domain_pod.h"
@@ -19,7 +22,8 @@
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
 #include "annual_development_ledger.h"
-
+#include "economy_host_port.h"
+#include "country_host_port.h"
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -34,12 +38,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
 namespace pk {
-
+struct RuntimeGoldenSnapshot;
 class NativeEconomyRuntime;
 class CountryAiRuntime;
-class NativeSimulationHost {
+class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
     NativeSimulationHost();
     ~NativeSimulationHost();
@@ -47,18 +50,29 @@ public:
     NativeSimulationHost(const NativeSimulationHost &) = delete;
     NativeSimulationHost &operator=(const NativeSimulationHost &) = delete;
 
+    // Hot-path gates need only these atomics. Do not construct the diagnostic
+    // report (timers, transport queues and domain snapshots) to read a grant.
+    struct ControlState {
+        RuntimeWorkerState state = RuntimeWorkerState::STOPPED;
+        RuntimeSimulationMode mode = RuntimeSimulationMode::OFF;
+        bool authority_ready = false;
+        bool interactive = false;
+        uint32_t authoritative_domain_mask = 0;
+        int64_t committed_day = -1;
+    };
+    ControlState control_state() const;
+
+    // FAULTED describes a business failure, not thread completion. The token
+    // is published by the worker wrapper after all worker_main locals unwind.
+    bool execution_has_stopped() const;
+
     bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
         const AnnualDevelopmentProfile &profile, const AnnualEconomyFacts &baseline,
         const AnnualCountryFacts &country, std::string &error);
-    bool annual_development_enabled() const { return _annual_enabled.load(std::memory_order_acquire); }
-    bool annual_worker_managed() const {
-        const auto required = runtime_domain_mask(RuntimeDomainId::COUNTRY) | runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
-        return state() != RuntimeWorkerState::STOPPED &&
-            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
-            (_requested_authority_mask.load(std::memory_order_acquire) & required) == required;
-    }
-    uint64_t annual_country_handle() const { return _annual_country.load(std::memory_order_acquire); }
-    void publish_annual_economy(const AnnualEconomyFacts &facts);
+    bool annual_development_enabled() const override { return _annual_enabled.load(std::memory_order_acquire); }
+    bool annual_worker_managed() const;
+    uint64_t annual_country_handle() const override { return _annual_country.load(std::memory_order_acquire); }
+    void publish_annual_economy(const AnnualEconomyFacts &facts) override;
     void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
     void commit_annual_worker_day(int64_t day);
     void queue_annual_worker_reward(int64_t day);
@@ -240,7 +254,7 @@ public:
     void publish_economy_stage_reference(uint32_t stage, int64_t day,
                                          uint64_t generation,
                                          uint64_t state_hash,
-                                         uint64_t work_units) noexcept;
+                                         uint64_t work_units) noexcept override;
     bool execute_economy_worker_stage(int64_t day, uint64_t input_generation,
                                       uint32_t cell_count,
                                       uint64_t country_generation,
@@ -315,7 +329,7 @@ public:
         return static_cast<EconomyProductionWriter>(
             _economy_production_writer_requested.load(std::memory_order_acquire));
     }
-    EconomyProductionWriter economy_production_writer_effective() const noexcept {
+    EconomyProductionWriter economy_production_writer_effective() const noexcept override {
         return static_cast<EconomyProductionWriter>(
             _economy_production_writer_effective.load(std::memory_order_acquire));
     }
@@ -337,7 +351,7 @@ public:
         return static_cast<EconomyExecutionMode>(
             _economy_execution_mode.load(std::memory_order_acquire));
     }
-    bool economy_parity_shadow_enabled() const noexcept {
+    bool economy_parity_shadow_enabled() const noexcept override {
         return economy_execution_mode() ==
                    EconomyExecutionMode::ACTIVE_WITH_PARITY &&
                economy_shadow_probe_enabled();
@@ -417,7 +431,7 @@ public:
     int64_t economy_input_requested_day() const noexcept {
         return _economy_input_requested_day.load(std::memory_order_acquire);
     }
-    bool economy_worker_owns_execution() const noexcept {
+    bool economy_worker_owns_execution() const noexcept override {
         const auto current = _state.load(std::memory_order_acquire);
         return current != RuntimeWorkerState::STOPPED &&
             _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
@@ -508,7 +522,7 @@ public:
     }
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
-    bool country_pod_configured() const {
+    bool country_pod_configured() const override {
         return _country_pod_configured.load(std::memory_order_acquire);
     }
     // Ideology parity, mirroring the country pair above: the main thread publishes
@@ -603,10 +617,10 @@ public:
                                    std::string &error,
                                    const RuntimeCountryPodSnapshot *snapshot = nullptr);
     bool mirror_country_peer_result(const CountryPeerResult &result,
-                                    std::string &error);
+                                    std::string &error) override;
     bool mirror_sync_country_economy_asset(
             const RuntimeEconomyAssetRequest &request,
-            const RuntimeEconomyAssetResult &result, std::string &error);
+            const RuntimeEconomyAssetResult &result, std::string &error) override;
     bool country_shadow_parity_self_test(std::string &error) const;
     bool poll_country_worker_intent(CountryPeerIntent &out);
     bool submit_country_worker_result(const CountryPeerResult &result,
@@ -620,41 +634,35 @@ public:
     };
     bool poll_country_worker_notification(CountryWorkerNotification &out);
     bool poll_country_economy_asset_request(
-            RuntimeEconomyAssetRequest &out);
+            RuntimeEconomyAssetRequest &out) override;
     // Economy owns peer-side mutation. Its continuation needs a read-only
     // terminal lookup so it can resume the same request identity without
     // creating a second Country transaction.
     bool country_economy_asset_terminal_result(
-            uint64_t request_id, RuntimeEconomyAssetResult &out) const;
+            uint64_t request_id, RuntimeEconomyAssetResult &out) const override;
     bool submit_country_economy_asset_result(
-            const RuntimeEconomyAssetResult &result, std::string &error);
+            const RuntimeEconomyAssetResult &result, std::string &error) override;
     bool requeue_country_economy_asset_request(uint64_t request_id,
-                                               std::string &error);
+                                               std::string &error) override;
     RuntimeEconomyAssetProtocolStatus
     country_economy_asset_protocol_status() const;
     bool country_economy_asset_protocol_self_test(std::string &error) const;
     bool enqueue_economy_origin_country_asset(
-            RuntimeEconomyAssetRequest request, std::string &error);
+            RuntimeEconomyAssetRequest request, std::string &error) override;
     // True only on the thread that is currently executing a simulation day:
     // the worker thread in worker mode, or the calling thread inside
     // `run_inline_day()` under native_daily_inline. Callers that can run on
     // either thread must check this before taking a worker-only in-thread
     // path; a main-thread caller that is NOT inside an inline day still has to
     // use the Host peer queue.
-    bool on_worker_thread() const noexcept {
-        if (_inline_daily_mode.load(std::memory_order_acquire)) {
-            const std::thread::id executor =
-                _inline_day_thread.load(std::memory_order_acquire);
-            return executor != std::thread::id{} &&
-                executor == std::this_thread::get_id();
-        }
-        return std::this_thread::get_id() == _worker.get_id();
+    bool on_worker_thread() const noexcept override {
+        return RuntimeExecutionContext::active_for(this);
     }
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
-                                   std::string &error);
+                                   std::string &error) override;
     bool finish_worker_country_asset(uint64_t request_id,
                                   RuntimeEconomyAssetResult &result,
-                                  std::string &error);
+                                  std::string &error) override;
     // Commit Country treasury for Economy-origin terminals when Economy is
     // still sync (Country unique-writer). Worker-thread finish_worker_* is
     // preferred when Economy is also authoritative.
@@ -664,22 +672,23 @@ public:
     // follow the same rule. Rejected/faulted terminals still retire immediately.
     bool flush_country_economy_asset_commits(std::string &error,
                                             uint64_t settle_request_id = 0,
-                                            bool skip_audit_snapshot = false);
+                                            bool skip_audit_snapshot = false,
+                                            int64_t shadow_through_day = -1) override;
     bool publish_country_worker_snapshot(uint32_t dirty_families,
-                                         std::string &error);
+                                         std::string &error) override;
     // Publish plan.next_state for UI while the open plan is still peer-waiting.
     // Does not close the plan or mutate authority committed_day; commit_day /
     // commit_rejected_day remain the only authority closes.
     // Does NOT update country_economy_audit_snapshot — Economy conservation must
     // not observe uncommitted research spend / purchase credits from preview.
     bool publish_country_plan_preview_snapshot(std::string &error);
-    std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
+    std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const override {
         return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
     }
     // Last sealed / authority-published Country assets for Economy audits.
     // Falls back to country_asset_snapshot when no sealed view exists yet.
     std::shared_ptr<const RuntimeCountryPodSnapshot>
-    country_economy_audit_snapshot() const {
+    country_economy_audit_snapshot() const override {
         auto audit = std::atomic_load_explicit(&_country_economy_audit_snapshot,
                                                std::memory_order_acquire);
         if (audit != nullptr) return audit;
@@ -701,11 +710,11 @@ public:
     // D10 unique-writer / sync-slice gate. Independent of
     // authoritative_domain_mask for protocol tests, but production ACTIVE
     // Country also sets this via domain_is_worker_authoritative after D12.
-    bool country_authority_owner_is_worker() const {
+    bool country_authority_owner_is_worker() const override {
         return country_authority_handoff_status().owner ==
             CountryAuthorityOwner::WORKER;
     }
-    bool country_authority_handoff_prepare_pending() const {
+    bool country_authority_handoff_prepare_pending() const override {
         return country_authority_handoff_status().prepare_pending;
     }
     bool country_authority_handoff_self_test(std::string &error) const;
@@ -849,18 +858,18 @@ public:
                                  std::string &error);
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
-    int32_t effect_pod_program_id_for_key(const char *key) const;
+    int32_t effect_pod_program_id_for_key(const char *key) const override;
     // M2a: true once a compiled Effect POD catalog is installed. The forwarder
     // must report WORKER_TRANSPORT_NOT_READY rather than "ok" while EFFECT is
     // already worker-authoritative but this is still false -- otherwise every
     // queued instance fails and the batch looks partially accepted.
-    bool effect_pod_transport_ready() const { return _effect_pod_configured; }
+    bool effect_pod_transport_ready() const override { return _effect_pod_configured; }
     // Country ACTIVE peer adapter: technology.<id> instances live on the Effect
     // POD unique-writer. Sync EffectRuntime is writeback-only under F8.
     bool ensure_effect_pod_technology_instance(
             int64_t instance_id, uint32_t generation, int32_t program_id,
             uint64_t target_handle, uint32_t target_generation, int64_t day,
-            std::string &error);
+            std::string &error) override;
     // "Is this instance still in the Effect POD unique-writer's state?"
     //
     // Main-thread owners that keep their own bindings (Economy's family
@@ -880,7 +889,7 @@ public:
     bool effect_pod_instance_exists(int64_t instance_id,
                                     uint32_t generation) const;
     bool effect_pod_instance_fire_acked(int64_t instance_id,
-                                        uint32_t generation) const;
+                                        uint32_t generation) const override;
     // After Effect soft-skip/catchup/ACK, PENDING Country ENSURE/NUDGE peers
     // must become READY without re-queue (re-queue spun the main-thread pump).
     // Removing Country soft-commit made this same-day promote mandatory.
@@ -891,22 +900,19 @@ public:
     std::string describe_effect_pod_technology_state(int64_t instance_id,
                                                      uint32_t generation,
                                                      int32_t program_id,
-                                                     int32_t technology) const;
+                                                     int32_t technology) const override;
     bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
         const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error);
-    // R9-1: the opinion the WORKER actually consumed when it planned `day`.
-    //
-    // This is the only correct parity binding. Both sides used to read "the
-    // newest Economy state", which worker-side concurrency advances, so which
-    // version each side saw depended on thread scheduling and five runs produced
-    // different results. Handing the main thread the exact shared_ptr the worker
-    // settled makes "same day" mean "same input" by construction.
-    //
-    // Returns null when the worker never planned that day; the caller must then
-    // publish NO reference (the day is uncompared), never fall back to a
-    // re-derived opinion.
+    // SHADOW comparison captures the opinion at the reference's actual daily
+    // entry. The explicit simulation day is the join key, not Economy's
+    // committed_day or a period index. Continuations keep the first input.
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
+        pin_ideology_reference_opinion(int64_t day,
+            const RuntimeIdeologyOpinionSnapshot &snapshot);
+    // Diagnostic lineage: the opinion the worker actually consumed for `day`,
+    // including its frozen Modifier factors. Null means no recorded worker plan.
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
         worker_opinion_snapshot_for_day(int64_t day) const;
     // The opinion consumed by the worker plan that produced `generation`.
@@ -916,10 +922,6 @@ public:
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>
         worker_opinion_snapshot_for_ideology_generation(
             uint64_t generation) const;
-    // (removed) latest_worker_opinion_day / debug_ideology_worker_opinion_ring:
-    // the "bind to the newest recorded day" rule published 1278 references for 24
-    // distinct days and never compared anything. The reader above stays; the join
-    // is still open (05 §2.7).
     bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
                                     std::string &error);
     // Effect custom-domain grants are a semantic batch: validate and reserve
@@ -942,11 +944,11 @@ public:
     // capacity before publishing any packet and assigns submit_order in the
     // same critical section, so transport chunking cannot split a business
     // batch or change its tie-break order.
-    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
+    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets) override;
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
-    uint64_t allocate_command_request_id();
+    uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
-    uint64_t allocate_producer_sequence(uint32_t producer_id);
+    uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     bool poll_commit_generation(uint64_t generation, RuntimeCommit &out);
@@ -957,21 +959,21 @@ public:
     // Point lookup for Effect ACK. Cursor polls skip lower Effect terminals
     // once an unrelated Country commit advances the high-water mark.
     bool try_country_command_terminal(
-            uint64_t request_id, CountryCommandReceipt &out);
+            uint64_t request_id, CountryCommandReceipt &out) override;
     bool country_command_receipt_self_test(std::string &error) const;
     bool country_peer_rejection_self_test(std::string &error) const;
     bool publish_country_economy_asset_requests(
             const std::vector<RuntimeEconomyAssetRequest> &requests,
             std::string &error);
-    void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept;
+    void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept override;
     // An Economy continuation that commits Country and applies its own
     // market/merchant/cargo leg in one advance registers its wire id so the
     // generic flush leaves the COMPLETED terminal for the targeted settle.
-    void defer_country_economy_asset_settlement(uint64_t request_id);
+    void defer_country_economy_asset_settlement(uint64_t request_id) override;
     // The owning continuation was abandoned: hand the wire id back to the
     // generic flush so its terminal still retires.
-    void release_country_economy_asset_settlement(uint64_t request_id) noexcept;
-    bool country_economy_asset_settlement_deferred(uint64_t request_id) const;
+    void release_country_economy_asset_settlement(uint64_t request_id) noexcept override;
+    bool country_economy_asset_settlement_deferred(uint64_t request_id) const override;
     void set_country_economy_asset_protocol_error_locked(
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;
@@ -992,8 +994,8 @@ public:
     void record_visual_timings(double ui_input_to_feedback_ms,
                                double visual_apply_ms,
                                double gpu_upload_ms);
-
     RuntimeThreadReport report() const;
+    RuntimeGoldenSnapshot golden_snapshot() const;
     void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
         return _stop_requested.load(std::memory_order_acquire);
@@ -1045,7 +1047,7 @@ public:
             | runtime_domain_mask(RuntimeDomainId::VISUAL)
             | runtime_domain_mask(RuntimeDomainId::COMMIT);
     }
-    RuntimeWorkerState state() const {
+    RuntimeWorkerState state() const override {
         return _state.load(std::memory_order_acquire);
     }
     // Domains this worker has proven at a barrier and now owns. Zero means the
@@ -1053,7 +1055,7 @@ public:
     // published only after a commit whose completed_domain_mask covers the
     // request.
     uint32_t authoritative_domain_mask() const {
-        return _authoritative_domain_mask.load(std::memory_order_acquire);
+        return _authority_control.snapshot().granted_mask;
     }
     // Domains a PREVIOUS worker lifetime of this host proved at a barrier and was
     // granted. Both `request_stop()` and `set_fault()` clear the LIVE grant so the
@@ -1065,7 +1067,7 @@ public:
     // A FRESH start reads zero here and therefore keeps the deferred
     // 0x000-until-first-commit behaviour: no day has ever proven the handlers.
     uint32_t lifetime_granted_mask() const {
-        return _lifetime_granted_mask.load(std::memory_order_acquire);
+        return _authority_control.snapshot().proven_mask;
     }
     // Main-thread write-back boundary for ACTIVE Climate. Acquire, copy the
     // fields out, release. Non-blocking: returns false when the worker has not
@@ -1104,15 +1106,17 @@ public:
         _climate_writeback_input_generation.store(generation,
                                                    std::memory_order_release);
     }
-    // Whether a given domain may be suppressed on the main thread this frame.
-    bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
-        return (authoritative_domain_mask() & runtime_domain_mask(domain)) != 0u;
+    // Main-thread callers see live admission. Within an executor call, routing
+    // keeps that call's data owners even if another thread requests stop.
+    bool domain_is_worker_authoritative(RuntimeDomainId domain) const override {
+        return (RuntimeExecutionContext::domains_for(this,
+                    authoritative_domain_mask()) & runtime_domain_mask(domain)) != 0u;
     }
     // ACTIVE 请求了该域、worker 仍在跑、但还没有一日提交覆盖它。这段窗口里主线程
     // 若照常跑该域，写进 MapData 的结果会被 worker 首日当作种子读走，而它落在首次
     // capture 之前还是之后取决于线程时机。stop/fault 撤销授权时这里同样变 false，
     // 域交还主线程。
-    bool domain_grant_pending(RuntimeDomainId domain) const {
+    bool domain_grant_pending(RuntimeDomainId domain) const override {
         if (domain_is_worker_authoritative(domain) ||
             _mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
             (_requested_authority_mask.load(std::memory_order_acquire) &
@@ -1153,6 +1157,23 @@ public:
     }
 
 private:
+    struct DayExecution;
+    RuntimeDayCommit execute_shadow_day(DayExecution &);
+    void prepare_climate_day(DayExecution &);
+    bool capture_day_input(DayExecution &, const RuntimeEnvironmentSnapshot &);
+    bool run_day_events(DayExecution &, int64_t);
+    bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
+    bool stage_climate(DayExecution &, RuntimeDomainPlan &);
+    bool stage_country(DayExecution &, RuntimeDomainPlan &);
+    bool stage_trigger_input(DayExecution &, RuntimeDomainPlan &);
+    bool stage_ideology(DayExecution &, RuntimeDomainPlan &);
+    bool stage_effect(DayExecution &, RuntimeDomainPlan &);
+    bool stage_modifier(DayExecution &, RuntimeDomainPlan &);
+    bool stage_gameplay_effect(DayExecution &, RuntimeDomainPlan &);
+    bool stage_economy(DayExecution &, RuntimeDomainPlan &);
+    bool stage_events(DayExecution &, RuntimeDomainPlan &);
+    bool stage_visual(DayExecution &, RuntimeDomainPlan &);
+    bool stage_commit(DayExecution &, RuntimeDomainPlan &);
     static uint64_t now_us();
     static uint64_t mix_hash(uint64_t value, uint64_t input);
     // A worker publishes STOPPED immediately before returning.  Reusing a
@@ -1168,8 +1189,8 @@ private:
                                    std::vector<RuntimeCommandPacket> &day_commands,
                                    std::vector<RuntimeCommandReceipt> &day_receipts,
                                    uint64_t &admitted_submit_order);
-    RuntimeDayPlan build_day_plan(int64_t day, double speed_scale,
-                                  const RuntimeEnvironmentSnapshot *environment) const;
+    RuntimeDayPlan build_day_plan(int64_t day, double speed_scale, const RuntimeEnvironmentSnapshot *environment,
+                                  uint64_t command_watermark = 0) const;
     RuntimeDayCommit execute_day_plan(
             RuntimeDayPlan &plan,
             const RuntimeEnvironmentSnapshot *environment,
@@ -1218,6 +1239,8 @@ private:
     // the ACK barrier settles on the next Trigger visit instead of waiting a
     // frame for the main-thread pump.
     uint32_t ack_trigger_intents_in_worker(int64_t day);
+    std::vector<uint8_t> encode_trigger_transport() const;
+    bool restore_trigger_transport(const std::vector<uint8_t> &, std::string &, bool install);
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
@@ -1266,14 +1289,9 @@ private:
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
-    // The ONLY writer of `_authoritative_domain_mask`. Records the grant in the
-    // per-host `_lifetime_granted_mask` ledger at the same time, so a later
-    // restart can re-publish exactly what a previous lifetime proved instead of
-    // forgetting it. Never called with 0: revocation is a plain store, which is
-    // what keeps the ledger alive across a stop/fault.
+    // Grant and revoke share one atomic state; a finishing day cannot undo stop.
     void publish_authority_grant(uint32_t mask) noexcept {
-        _lifetime_granted_mask.store(mask, std::memory_order_release);
-        _authoritative_domain_mask.store(mask, std::memory_order_release);
+        _authority_control.grant(mask);
     }
     void record_save_failure(const char *reason);
     void publish_economy_tax_diag(const std::string &yield_reason,
@@ -1332,9 +1350,6 @@ private:
     std::atomic<bool> _inline_daily_mode{false};
     // P2：Country peer 由 worker 自己发起。见公开区同名注释。
     std::atomic<bool> _country_deferred_peers{false};
-    // 内联日执行者线程。内联模式下 `on_worker_thread()` 比对它而不是 `_worker`
-    // （那个 std::thread 在内联模式下从未创建，get_id() 恒不等于任何真实线程）。
-    std::atomic<std::thread::id> _inline_day_thread{};
     // 内联日分域计时累加器。只在内联模式下写（worker 日恒为 0），执行者恒是
     // 同一个调用线程，所以不需要原子；run_inline_day() 在每次尝试开始时清零、
     // 结束时抄进 InlineDayOutcome。
@@ -1348,15 +1363,12 @@ private:
     std::atomic<bool> _interactive{false};
     std::atomic<double> _speed_days_per_second{0.0};
     std::atomic<bool> _graph_coverage_complete{false};
-    std::atomic<bool> _authority_ready{false};
     std::atomic<uint32_t> _requested_authority_mask{0};
-    std::atomic<uint32_t> _authoritative_domain_mask{0};
-    // Per-host, per-session grant ledger. `_authoritative_domain_mask` is the LIVE
-    // grant (revoked by stop/fault); this one is what the domains proved, and it is
-    // what a restart re-publishes. See `lifetime_granted_mask()`.
-    std::atomic<uint32_t> _lifetime_granted_mask{0};
+    static_assert((RUNTIME_ALL_DOMAIN_MASK & ~0xffffu) == 0u,
+                  "authority control mask capacity exceeded");
+    RuntimeAuthorityControl _authority_control;
     // True once a worker lifetime actually started on this host. Together with a
-    // non-zero `_lifetime_granted_mask` it is the positive proof that `start()` is a
+    // non-zero `lifetime_granted_mask()` it is the positive proof that `start()` is a
     // RESTART of a world this host already ran (see the resume-day block in
     // `start()`), as opposed to a fresh world on a reused host.
     std::atomic<bool> _has_started_once{false};
@@ -1423,8 +1435,10 @@ private:
     // 同一个 CV 上等 preflight 重试，而 worker 自己在消费环境后 notify 会让它
     // 自唤醒自旋（实测 50 天内 3200 万次不提交的重试）。
     std::condition_variable _climate_wait_cv;
-    std::atomic<uint32_t> _reaper_count{0};
+    RuntimeThreadRetirement _retired_workers;
     std::thread _worker;
+    std::shared_ptr<std::atomic<bool>> _worker_returned =
+        std::make_shared<std::atomic<bool>>(true);
     RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     RuntimeEnvironmentInputRing _environment_ring;
@@ -2061,11 +2075,7 @@ private:
         RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY>
         _effect_pod_intent_program_ids{};
     std::atomic<uint32_t> _effect_pod_transaction_count{0};
-    // Retire requests that found nothing to retire. The main-thread contract
-    // (EffectRuntime::retire_instance_pod) treats a missing instance as success
-    // -- "no Effect instance means no Effect-owned Modifier was committed" --
-    // so the worker must not hard-fail these. Split in two so a superseded
-    // generation stays visible instead of hiding inside the benign case.
+    // Missing instances retire successfully; track absent and stale separately.
     std::atomic<uint64_t> _effect_retire_absent_count{0};
     std::atomic<uint64_t> _effect_retire_stale_count{0};
     std::array<std::atomic<char>, 64> _effect_pod_fallback_reason{};
@@ -2073,12 +2083,10 @@ private:
     RuntimeIdeologyPodAuthority _ideology_pod_authority;
     RuntimeIdeologyPodCatalog _ideology_pod_catalog;
     bool _ideology_pod_configured = false;
+#include "native_simulation_host_view_contracts.h"
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
-    // The day-keyed opinion ring was removed with `select_ideology_opinion_for_day`
-    // (R9-1). Keying opinions by DAY never worked: Economy's `commit_day` and the
-    // worker's plan day are different scales, so the rule either found nothing or
-    // picked a future commit. Parity binds to the opinion the worker recorded
-    // USING (`_ideology_worker_opinion_ring`), which needs no day arithmetic.
+    std::map<int64_t, std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>>
+        _ideology_reference_opinions;
     std::shared_ptr<const RuntimeIdeologyPodSnapshot> _ideology_snapshot;
     // G8 ACTIVE write-back boundary. The shared_ptr above stays for SHADOW
     // consumers; the ring is the immutable main-thread apply path.
@@ -2143,5 +2151,4 @@ private:
     std::vector<RuntimeVisualIntent> _pod_visual_intents;
     std::vector<RuntimeCommandReceipt> _pod_receipts;
 };
-
 } // namespace pk

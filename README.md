@@ -47,7 +47,7 @@ scripts/
 
 长期生效、跨任务有效的开发指南，统一放在 `docs/` 目录：
 
-- [`docs/performance-charter.md`](./docs/performance-charter.md) ——
+- [`docs/architecture/current-state.md`](docs/architecture/current-state.md) ——
   Hot-Loop 开发宪章。**新增或修改任何 ≥ 1k 元素的循环前必读**。
   内含三条铁律、性能决策树、C++ / GDScript 双语 code pattern、
   反模式黑名单、SIMD/线程化触发条件、当前 hot path 性能档案。

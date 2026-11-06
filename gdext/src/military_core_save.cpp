@@ -1,4 +1,4 @@
-// military_core_save.cpp - PKMI v1 encode/restore of the whole Military state
+// military_core_save.cpp - PKMI v3 encode/restore of the whole Military state
 // (owner: A1).
 //
 // Layout: every record is a little-endian fixed-width field sequence (no struct
@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace pk {
@@ -43,6 +44,7 @@ constexpr uint16_t kSection_Controller = 18;
 constexpr uint16_t kSection_Ledger = 19;
 constexpr uint16_t kSection_Events = 20;
 constexpr uint16_t kSection_Ai = 21;
+constexpr uint16_t kSection_IndexContinuation = 22;
 constexpr uint16_t kSection_End = 0xFFFF;
 
 // Sanity caps so a corrupt length can never trigger an enormous allocation.
@@ -265,11 +267,104 @@ void write_policies(Writer &w, const MilitaryCore &core) {
     }
 }
 
+
+template<class T> void write_index_vector(Writer &w, const std::vector<T> &values) {
+    w.u32((uint32_t)values.size());
+    for (T value : values) w.i64((int64_t)value);
+}
+template<class T> bool read_index_vector(Reader &r, std::vector<T> &values) {
+    const uint32_t n = r.u32();
+    if (n > kMaxRows || n > r.remaining() / 8) return false;
+    values.resize(n);
+    for (T &value : values) {
+        const int64_t raw = r.i64();
+        if (raw < (int64_t)std::numeric_limits<T>::min() ||
+            raw > (int64_t)std::numeric_limits<T>::max()) return false;
+        value = (T)raw;
+    }
+    return r.ok();
+}
+void write_index_continuation(Writer &w, const MilitaryCore &c) {
+    write_index_vector(w, c._lots.location_kind);
+    write_index_vector(w, c._lots.location);
+    write_index_vector(w, c._lots.country_slot);
+    write_index_vector(w, c._lots.unit_type);
+    write_index_vector(w, c._lots.equip_quality_q8);
+    write_index_vector(w, c._lots.condition_q16);
+    write_index_vector(w, c._lots.count);
+    write_index_vector(w, c._lots.free_list);
+    w.u8(c._lot_index_ok ? 1 : 0);
+    write_index_vector(w, c._lot_next);
+    write_index_vector(w, c._lot_link_kind);
+    write_index_vector(w, c._lot_link_loc);
+    write_index_vector(w, c._lot_army_head);
+    write_index_vector(w, c._lot_cell_head);
+    write_index_vector(w, c._armies.generation);
+    write_index_vector(w, c._armies.free_list);
+    write_index_vector(w, c._army_lane_pending);
+}
+bool read_index_continuation(Reader &r, MilitaryCore &c) {
+    if (!read_index_vector(r, c._lots.location_kind) ||
+        !read_index_vector(r, c._lots.location) ||
+        !read_index_vector(r, c._lots.country_slot) ||
+        !read_index_vector(r, c._lots.unit_type) ||
+        !read_index_vector(r, c._lots.equip_quality_q8) ||
+        !read_index_vector(r, c._lots.condition_q16) ||
+        !read_index_vector(r, c._lots.count) ||
+        !read_index_vector(r, c._lots.free_list)) return false;
+    c._lot_index_ok = r.u8() != 0;
+    return read_index_vector(r, c._lot_next) &&
+        read_index_vector(r, c._lot_link_kind) && read_index_vector(r, c._lot_link_loc) &&
+        read_index_vector(r, c._lot_army_head) && read_index_vector(r, c._lot_cell_head) &&
+        read_index_vector(r, c._armies.generation) && read_index_vector(r, c._armies.free_list) &&
+        read_index_vector(r, c._army_lane_pending);
+}
+bool valid_index_continuation(const MilitaryCore &c) {
+    const size_t n = c._lots.active.size();
+    if (c._lots.location_kind.size() != n || c._lots.location.size() != n ||
+        c._lots.country_slot.size() != n || c._lots.unit_type.size() != n ||
+        c._lots.equip_quality_q8.size() != n || c._lots.condition_q16.size() != n ||
+        c._lots.count.size() != n || c._armies.generation.size() != c._armies.active.size()) return false;
+    auto valid_free = [](const auto &free, const auto &active) {
+        std::vector<uint8_t> seen(active.size(), 0);
+        for (int32_t row : free) {
+            if (row < 0 || (size_t)row >= active.size() || active[(size_t)row] || seen[(size_t)row]) return false;
+            seen[(size_t)row] = 1;
+        }
+        for (size_t i = 0; i < active.size(); ++i) if (!active[i] && !seen[i]) return false;
+        return true;
+    };
+    if (!valid_free(c._lots.free_list, c._lots.active) || !valid_free(c._armies.free_list, c._armies.active)) return false;
+    for (size_t i = 0; i < n; ++i) {
+        if (c._lots.active[i] && (c._lots.location_kind[i] > MILITARY_LOT_ARMY ||
+            c._lots.country_slot[i] < 0 || c._lots.unit_type[i] < 0 ||
+            (size_t)c._lots.unit_type[i] >= c._catalog.units.size() || c._lots.count[i] < 0)) return false;
+    }
+    if (!c._lot_index_ok) return true;
+    if (c._lot_next.size() != n || c._lot_link_kind.size() != n || c._lot_link_loc.size() != n ||
+        c._lot_army_head.size() != c._armies.active.size() ||
+        c._lot_cell_head.size() != (size_t)c._terrain.cell_count) return false;
+    std::vector<uint8_t> seen(n, 0);
+    auto walk = [&](const auto &heads, uint8_t kind) {
+        for (size_t loc = 0; loc < heads.size(); ++loc) {
+            for (int32_t row = heads[loc]; row != -1; row = c._lot_next[(size_t)row]) {
+                if (row < 0 || (size_t)row >= n || seen[(size_t)row]) return false;
+                seen[(size_t)row] = 1;
+                if (c._lot_link_kind[(size_t)row] != kind || c._lot_link_loc[(size_t)row] != (int32_t)loc) return false;
+            }
+        }
+        return true;
+    };
+    return walk(c._lot_army_head, (uint8_t)MILITARY_LOT_ARMY) &&
+        walk(c._lot_cell_head, (uint8_t)MILITARY_LOT_GARRISON);
+}
+
 } // namespace
 
 // ============================================================== encode
 
 std::vector<uint8_t> MilitaryCore::encode() const {
+
     Writer w;
     w.out.reserve(1u << 16);
     // ---- header
@@ -612,6 +707,10 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     }
     w.end();
 
+    w.begin(kSection_IndexContinuation);
+    write_index_continuation(w, *this);
+    w.end();
+
     w.u16(kSection_End);
     w.u32(PKMI_MAGIC ^ (uint32_t)w.out.size());
     return w.out;
@@ -629,12 +728,8 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         return false;
     }
     const uint32_t version = r.u32();
-    // v1 streams are legacy: their barracks/fort/college fields were cumulative
-    // and are folded into the economy ledger by the caller (part 2). We accept
-    // them here so an older save always loads; the caller sees `version` via
-    // the decode result and triggers the migration.
-    if (version != 1u && version != PKMI_VERSION) {
-        error = "pkmi_bad_version";
+    if (version != PKMI_VERSION) {
+        error = "pkmi_version_mismatch_expected_3";
         return false;
     }
     const uint64_t saved_catalog_hash = r.u64();
@@ -662,6 +757,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     std::vector<int32_t> remap_path;
     std::vector<int32_t> remap_tpl;
     bool saw_end = false;
+    bool saw_index_continuation = false;
     while (r.ok()) {
         const uint16_t id = (uint16_t)r.open_section();
         if (!r.ok()) break;
@@ -1271,6 +1367,12 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 }
                 break;
             }
+            case kSection_IndexContinuation:
+                if (saw_index_continuation || !read_index_continuation(r, tmp)) {
+                    error = "pkmi_index_continuation_invalid"; return false;
+                }
+                saw_index_continuation = true;
+                break;
             case kSection_End:
                 saw_end = true;
                 break;
@@ -1290,6 +1392,9 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     if (!r.ok()) {
         error = "pkmi_truncated";
         return false;
+    }
+    if (!saw_index_continuation || !valid_index_continuation(tmp)) {
+        error = "pkmi_index_continuation_missing_or_invalid"; return false;
     }
     if (!saw_end) {
         error = "pkmi_missing_end_sentinel";
@@ -1332,24 +1437,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     tmp._path_cells.assign(remap_path.begin(), remap_path.begin() + (ptrdiff_t)max_path_end);
     tmp._template_rows.assign(remap_tpl.begin(), remap_tpl.begin() + (ptrdiff_t)max_tpl_end);
 
-    // ---- canonicalise gameplay state the encoder writes in raw form
-    // Free lists are rebuilt from `active`, armies are re-indexed, and a lot
-    // whose army slot points at a formation that ended up empty (legacy or
-    // hand-edited saves) is dropped rather than leaving a dangling owner.
-    tmp._lots.free_list.clear();
-    for (size_t i = 0; i < tmp._lots.active.size(); ++i) {
-        if (tmp._lots.active[i]) continue;
-        tmp._lots.free_list.push_back((int32_t)i);
-    }
-    for (size_t i = 0; i < tmp._lots.active.size(); ++i) {
-        if (tmp._lots.active[i]) continue;
-        tmp._lots.count[i] = 0;
-        tmp._lots.location[i] = -1;
-    }
-    tmp._armies.free_list.clear();
-    for (int32_t i = (int32_t)tmp._armies.active.size() - 1; i >= 0; --i) {
-        if (!tmp._armies.active[(size_t)i]) tmp._armies.free_list.push_back(i);
-    }
+    // Slot payload, free-list order and linked sets are continuation state.
     if (tmp._cell_states.size() > 1) {
         std::sort(tmp._cell_states.begin(), tmp._cell_states.end(),
                   [](const MilitaryCellState &a, const MilitaryCellState &b) { return a.cell < b.cell; });
@@ -1397,11 +1485,8 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
         error = "pkmi_bad_magic";
         return false;
     }
-    const uint32_t restored_pkmi_version = head.u32();
-    // v1 is the pre-ledger stream (cumulative barracks/fort/college cache);
-    // v2 folds through the economy ledger after restore. Both load.
-    if (restored_pkmi_version != 1u && restored_pkmi_version != PKMI_VERSION) {
-        error = "pkmi_bad_version";
+    if (head.u32() != PKMI_VERSION) {
+        error = "pkmi_version_mismatch_expected_3";
         return false;
     }
     const uint64_t saved_hash = head.u64();
@@ -1458,6 +1543,13 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _front_revision = tmp._front_revision;
     _path_daily_requests = std::move(tmp._path_daily_requests);
     _pending = std::move(tmp._pending);
+    _lot_next = std::move(tmp._lot_next);
+    _lot_link_kind = std::move(tmp._lot_link_kind);
+    _lot_link_loc = std::move(tmp._lot_link_loc);
+    _lot_army_head = std::move(tmp._lot_army_head);
+    _lot_cell_head = std::move(tmp._lot_cell_head);
+    _lot_index_ok = tmp._lot_index_ok;
+    _army_lane_pending = std::move(tmp._army_lane_pending);
     _lots = std::move(tmp._lots);
     _training = std::move(tmp._training);
     _armies = std::move(tmp._armies);
@@ -1515,16 +1607,8 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _war_intents.clear();
     _event_counter_control = 0;
     rebuild_cell_index();
-    // Lot free list hygiene: rebuild rather than trust the serialized order.
-    _lots.free_list.clear();
-    for (size_t i = 0; i < _lots.active.size(); ++i) {
-        if (!_lots.active[i]) _lots.free_list.push_back((int32_t)i);
-    }
-    _armies.free_list.clear();
-    for (int32_t i = (int32_t)_armies.active.size() - 1; i >= 0; --i) {
-        if (!_armies.active[(size_t)i]) _armies.free_list.push_back(i);
-    }
     // Cached army stats were restored verbatim from the save (hash parity).
+
     return true;
 }
 

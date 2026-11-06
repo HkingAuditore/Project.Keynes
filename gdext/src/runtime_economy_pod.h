@@ -410,6 +410,8 @@ public:
     // (Phase-2.6.2: host recaptures the committed mirror when > 0).
     uint32_t commit_pending_commands() noexcept;
 
+    std::vector<uint8_t> encode_command_continuation() const;
+    bool restore_command_continuation(const std::vector<uint8_t> &bytes, std::string &error);
     bool encode_ecp1(std::vector<uint8_t> &out, std::string &error) const;
     bool restore_ecp1(const uint8_t *data, size_t size, std::string &error);
     bool encode_ecp2(const RuntimeEconomyEcp2State &state,

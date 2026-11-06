@@ -9,7 +9,6 @@ class_name BioOccupancyDailySystem
 
 const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var world_clock = null
 var diffusion_stride: int = 8

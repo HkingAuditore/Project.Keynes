@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherSummaryBuilder
 
 ## Phase E.2 / dots-full-migration §Phase E.2：weather summary fronts 聚类抽出。
@@ -36,7 +36,6 @@ class_name DCWeatherSummaryBuilder
 ##
 ## 拆分前后视觉云团位置必须像素级一致——这是 weather_layer 的关键回归点。
 
-var _weather_system
 var _prev_summary_membership: Dictionary = {}
 var _prev_summary_seeds: Array = []
 

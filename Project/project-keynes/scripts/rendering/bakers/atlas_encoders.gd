@@ -297,8 +297,10 @@ static func _upload_height_flow_result(packed: Dictionary, size: Vector2i, exist
 
 
 static func encode_height_flow_tex_async(height_buf: PackedFloat32Array, flow_buf: PackedFloat32Array,
-		size: Vector2i, existing: ImageTexture, native_ext: Object) -> ImageTexture:
-	var packed: Dictionary = await NativeLoadingTasks.compute(native_ext,"height_flow",{"height_buffer":height_buf,"flow_buffer":flow_buf,"width":size.x,"height":size.y})
+		size: Vector2i, existing: ImageTexture, native_ext: Object, frame_gate = null) -> ImageTexture:
+	var packed: Dictionary = await NativeLoadingTasks.compute(native_ext,"height_flow",{"height_buffer":height_buf,"flow_buffer":flow_buf,"width":size.x,"height":size.y}, frame_gate)
+	if bool(packed.get("canceled", false)):
+		return null
 	if not bool(packed.get("fallback",true)):
 		return _upload_height_flow_result(packed,size,existing)
 	return encode_height_flow_tex(height_buf,flow_buf,size,existing,native_ext)

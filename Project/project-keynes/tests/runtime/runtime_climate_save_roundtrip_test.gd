@@ -100,6 +100,28 @@ func _run() -> int:
 		_expect("%s is exported" % method, ext != null and ext.has_method(method))
 	if _failures > 0:
 		return 4
+	# The generated host starts its SHADOW worker with the production ECP2
+	# dual-write gate.  This climate-only fixture intentionally has no economy
+	# settlement, so that gate would reject an otherwise valid CLM2 save with
+	# `save_requires_first_settlement`. Restart the same worker from its current
+	# snapshot with the optional ECP2 capture disabled; the climate save boundary
+	# remains the subject of this test.
+	ext.request_runtime_stop()
+	_expect("the generated worker stops before save-mode restart", _await_stopped(ext))
+	var save_mode_worker: Dictionary = ext.start_runtime_worker({
+		"simulation_thread_mode": "SHADOW",
+		"graph_coverage_complete": false,
+		"day": 0,
+		"speed_days_per_second": WORKER_SPEED_DAYS_PER_SECOND,
+		"paused": false,
+		"economy_ecp2_dual_write": false,
+	})
+	_expect("the climate-only save worker restarts (%s)" % String(
+		save_mode_worker.get("code", "unknown")),
+		bool(save_mode_worker.get("ok", false)))
+	if not bool(save_mode_worker.get("ok", false)):
+		_teardown(host, clock)
+		return 6
 
 	# generate_world already started SHADOW. Reconfigure cadence and keep forcing.
 	ext.set_runtime_climate_parity_forcing(true)
@@ -148,7 +170,7 @@ func _check_header(bytes: PackedByteArray, polled: Dictionary) -> void:
 		return
 	_expect("bundle is PKSR",
 		bytes.slice(OFFSET_MAGIC, OFFSET_MAGIC + 4).get_string_from_ascii() == "PKSR")
-	_expect("bundle version is 2", int(bytes.decode_u32(OFFSET_VERSION)) == 2)
+	_expect("bundle version is 5", int(bytes.decode_u32(OFFSET_VERSION)) == 5)
 	var abi := int(bytes.decode_u32(OFFSET_DOMAIN_ABI))
 	_expect("runtime domain ABI in the header matches the host report (%d)" % abi,
 		abi == int(polled.get("runtime_domain_abi_version", -1)))
@@ -216,6 +238,8 @@ func _check_coordinator_validator(bytes: PackedByteArray, polled: Dictionary) ->
 	var v1 := bytes.duplicate()
 	v1.encode_u32(OFFSET_VERSION, 1)
 	_expect("the validator rejects PKSR v1", not Header.valid(v1))
+	v1.encode_u32(OFFSET_VERSION, 2)
+	_expect("the validator rejects PKSR v2 missing event cursors", not Header.valid(v1))
 
 	var short_bundle := bytes.slice(0, Header.MIN_BUNDLE_SIZE - 1)
 	_expect("the validator rejects a bundle shorter than the v2 minimum",
@@ -254,6 +278,7 @@ func _check_restore(ext, bytes: PackedByteArray, polled: Dictionary,
 		"graph_coverage_complete": false,
 		"speed_days_per_second": WORKER_SPEED_DAYS_PER_SECOND,
 		"paused": true,
+		"economy_ecp2_dual_write": false,
 	})
 	_expect("the worker restarts on the restored bundle (%s)" % String(
 		restarted.get("code", "unknown")), bool(restarted.get("ok", false)))
@@ -326,7 +351,12 @@ func _capture_bundle(ext, request_id: int = 1) -> Dictionary:
 		if bool(polled.get("ready", false)):
 			return polled
 		if not bool(polled.get("ok", true)):
-			return {"ready": false, "code": String(polled.get("code", "poll_failed"))}
+			return {
+				"ready": false,
+				"code": String(polled.get("code", "poll_failed")),
+				"reason": String(polled.get("reason", "")),
+				"thread_report": ext.get_runtime_thread_report(),
+			}
 		OS.delay_msec(WORKER_POLL_MSEC)
 	return {"ready": false, "code": "save_poll_timeout",
 		"thread_report": ext.get_runtime_thread_report()}

@@ -1,5 +1,4 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
 
 #include <algorithm>
 #include <limits>
@@ -86,16 +85,16 @@ uint8_t NativeEconomyRuntime::water_capability_for_country(
     if (_country_runtime == nullptr) return 0;
     uint8_t cap = 0;
     if (_water_tech_river >= 0 &&
-        _country_runtime->has_technology(country_slot, _water_tech_river))
+        country_reads().has_technology(country_slot, _water_tech_river))
         cap |= WATER_CAP_RIVER;
     if (_water_tech_shallow >= 0 &&
-        _country_runtime->has_technology(country_slot, _water_tech_shallow))
+        country_reads().has_technology(country_slot, _water_tech_shallow))
         cap |= WATER_CAP_SHALLOW_SEA;
     if (_water_tech_far >= 0 &&
-        _country_runtime->has_technology(country_slot, _water_tech_far))
+        country_reads().has_technology(country_slot, _water_tech_far))
         cap |= WATER_CAP_FAR_SEA;
     if (_water_tech_deep >= 0 &&
-        _country_runtime->has_technology(country_slot, _water_tech_deep))
+        country_reads().has_technology(country_slot, _water_tech_deep))
         cap |= WATER_CAP_DEEP_SEA;
     return cap;
 }
@@ -103,7 +102,7 @@ uint8_t NativeEconomyRuntime::water_capability_for_country(
 uint8_t NativeEconomyRuntime::water_capability_for_handle(
         uint64_t country_handle, bool frozen) const {
     if (country_handle == 0 || _country_runtime == nullptr ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(country_handle)))
+        !country_reads().valid_handle(static_cast<int64_t>(country_handle)))
         return 0;
     const int32_t slot = static_cast<int32_t>(country_handle & 0xffffffffULL);
     return water_capability_for_country(slot, frozen);

@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherFeedback
 
 ## Phase E.2 / dots-full-migration §Phase E.2：weather → cell 反馈抽出。
@@ -30,7 +30,6 @@ class_name DCWeatherFeedback
 ## 3. cell.cover / cell.weather_* 写路径在 G.4 后改为 world.write_*；
 ## 4. _cover_dirty 标志保留在 weather_system（作为 baker pipeline 的输入）。
 
-var _weather_system
 
 func _init(weather_system) -> void:
 	_weather_system = weather_system

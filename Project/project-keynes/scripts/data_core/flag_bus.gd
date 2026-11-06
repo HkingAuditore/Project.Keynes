@@ -1,7 +1,7 @@
 extends Node
 class_name DCFlagBus
 
-## Phase 4.4 — Feature Flag Hot-Reload Signal Bus（dots-phase4-followup.md §4.4）。
+## Phase 4.4 — Feature Flag Hot-Reload Signal Bus（docs/architecture/migration.md）。
 ##
 ## **当前实现：骨架阶段**——signal 接口与基础 API 已就位；DCWorld._on_flag_changed
 ## handler 在 Phase 4.4 PR-4.4.1 时连接。当前 caller 代码改 cp.<flag> 之后**手动**

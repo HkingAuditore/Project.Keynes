@@ -215,8 +215,12 @@ public:
     const DerivedMaterializeReport &derived_materialize_report() const {
         return _last_derived_materialize;
     }
-    godot::Dictionary run_daily(int64_t day_index);
+    godot::Dictionary run_daily(int64_t day_index,
+        const RuntimeIdeologyOpinionSnapshot *frozen_opinion = nullptr);
     bool should_run(int64_t day_index) const;
+    // Local work that must finish before advancing the calendar. Pending peer
+    // replies remain schedulable through should_run without blocking the day.
+    bool needs_daily_continuation(int64_t day_index) const;
     godot::Dictionary snapshot(int64_t country_handle) const;
     // Read-only draw preflight for PlayerController: can_draw, cost, pool size
     // and a stable reason code. Never mutates state or advances RNG.
@@ -1281,6 +1285,7 @@ private:
     std::vector<PendingTransitionRef> _pending_transitions;
     size_t _pending_transition_cursor = 0;
     int64_t _active_progress_day = -1;
+    int64_t _daily_continuation_day = -1;
     int32_t _active_country_cursor = 0;
     int32_t _active_item_cursor = 0;
     uint64_t _submit_order = 0;

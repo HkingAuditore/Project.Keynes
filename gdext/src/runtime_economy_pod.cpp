@@ -1,3 +1,4 @@
+#include "runtime_resolve_contract.h"
 #include "economy_cost_probe.h"
 #include "runtime_economy_pod.h"
 #include "economy_hash.h"
@@ -5,7 +6,7 @@
 #include "economy_runtime.h"
 #include "runtime_economy_ecp2.h"
 #include "runtime_economy_population_store.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -394,35 +395,9 @@ void assign_owned_blocks_from_ledger(const RuntimeEconomyLedgerState &ledger,
     state.epoch_cursor = ledger.epoch_cursor;
     if (ledger.epoch_cursor.captured)
         state.epoch_cursors = ledger.epoch_cursor.store;
-    // The OwnedState that comes out of a successful ledger read is a COMPLETE capture,
-    // so every block must say so -- the ledger's own flags are not the authority here.
-    //
-    // `assign_owned_blocks_from_ledger` runs only after `validate_owned_ledger`, which
-    // already rejected a mismatched shape (`building_trade_block_pairing`) and any
-    // missing required block. What it did NOT do was update the flags on the state it
-    // produced, so a restored `_state` could carry `trade_escrow.captured == false`
-    // while `building.captured == true`.
-    //
-    // That matters because `NativeEconomyRuntime` reads those flags verbatim when it is
-    // bound to this state (`formula_owned_bound()` branch of
-    // `capture_committed_ledger_state`): `building` is refilled from the store (which
-    // sets `captured = true`), the rest are copied as-is. The very next capture --
-    // which `restore_ecp2_authority` performs as its rollback backup -- then failed
-    // `building.captured != trade_escrow.captured`, surfaced as
-    // `ecp2_atomic_backup_failed`, and `start_runtime_worker` died. Production hits
-    // this on every load that restarts the worker (`world_runtime_host.gd:804`).
-    if (state.building.captured || state.trade_escrow.captured ||
-        state.family.captured || state.resource.captured ||
-        state.epoch_cursor.captured) {
-        state.trade_escrow.captured = true;
-        // ABI8/ABI9 pair family with building and resource with family, so a state
-        // that captured building also owns the later blocks by construction. Setting
-        // them keeps the shape self-consistent for the next capture, which is exactly
-        // the check that rejected it.
-        state.family.captured = true;
-        state.resource.captured = true;
-        state.epoch_cursor.captured = true;
-    }
+    // Preserve exactly the validated archive's captured blocks. Older ABIs may
+    // omit family/resource/cursors; inventing those captures falsely promotes
+    // incomplete state and makes the next save claim data it never restored.
 }
 
 bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
@@ -615,7 +590,7 @@ bool RuntimeEconomyPodAuthority::import_and_publish_captured_ledger(
     publish_mirror_features();
     probe_lap("mirror.import.blocks");
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_MIRROR_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MIRROR_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (verify) {
@@ -650,10 +625,10 @@ bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
     _state.state_generation = std::max(generation, _state.state_generation);
     if (committed_day >= 0) _state.committed_day = committed_day;
     // Published undigested like the captured mirror; readers hash on demand.
-    const char *full_market = std::getenv("PK_ECONOMY_MARKET_PUBLISH_FULL");
+    const char *full_market = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MARKET_PUBLISH_FULL);
     const bool incremental_market = !(full_market && std::strcmp(full_market, "1") == 0);
     if (!export_committed_ledger_internal(ledger, error, false, incremental_market)) return false;
-    const char *verify = std::getenv("PK_ECONOMY_MIRROR_VERIFY");
+    const char *verify = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MIRROR_VERIFY);
     if (verify && std::strcmp(verify, "1") == 0) {
         RuntimeEconomyLedgerState reference;
         if (!export_committed_ledger(reference, error, false) ||
@@ -1392,6 +1367,17 @@ bool RuntimeEconomyPodAuthority::plan_epoch(const RuntimeEconomyEpochInput &inpu
                                        : bind_error;
             return false;
         }
+        const uint32_t resume = _stage_ops->resume_stage_index();
+        if (resume >= RUNTIME_ECONOMY_GRAPH_STAGE_COUNT) {
+            error = "economy_pod_resume_stage_invalid";
+            return false;
+        }
+        _scratch.stage_index = resume;
+        _stage_cursor.stage_index = resume;
+        // Earlier stages are already complete in the surviving formula owner.
+        // Their old timings/hashes are unavailable; never replay their mutations.
+        _completed_stage_mask = (1u << resume) - 1u;
+        _replay.completed_stage_mask = _completed_stage_mask;
     }
     return true;
 }
@@ -1652,17 +1638,11 @@ bool RuntimeEconomyPodAuthority::queue_command(
         error = "economy_pod_command_identity_invalid";
         return false;
     }
-    for (const RuntimeEconomyPodReceipt &terminal : _terminal_receipts) {
-        if (terminal.request_id == command.request_id) {
-            _receipts.push_back(terminal);
-            return true;
-        }
+    if (const auto *receipt = resolve_find_receipt(_terminal_receipts, command.request_id)) {
+        const auto copy = *receipt; _receipts.push_back(copy); return true;
     }
-    for (const RuntimeEconomyPodReceipt &pending : _receipts) {
-        if (pending.request_id == command.request_id) {
-            _receipts.push_back(pending);
-            return true;
-        }
+    if (const auto *receipt = resolve_find_receipt(_receipts, command.request_id)) {
+        const auto copy = *receipt; _receipts.push_back(copy); return true;
     }
     auto reject_admission = [&](const char *reason) {
         RuntimeEconomyPodReceipt rejected;
@@ -1692,7 +1672,7 @@ bool RuntimeEconomyPodAuthority::queue_command(
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_MERGE_LANES ||
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_SPLIT_LANES ||
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_LANE_PAY;
-    if (!military_convert && !army_personnel_lane &&
+    if (!military_convert && !army_personnel_lane && command.opcode != NativeEconomyRuntime::COMMAND_TREASURY_SPONSORED_DEMOLISH &&
         (command.opcode < 1 || command.opcode > 23)) {
         return reject_admission("economy_command_opcode_out_of_range");
     }
@@ -1710,7 +1690,9 @@ bool RuntimeEconomyPodAuthority::queue_command(
         // which made retry/idempotency indistinguishable from packet loss.
         return reject_admission("economy_pod_command_queue_full");
     }
-    _commands.push_back(command);
+    const auto admission = resolve_enqueue<ResolveFlow::EconomyCommand>(
+        _commands, command, RUNTIME_ECONOMY_COMMAND_CAPACITY);
+    if (admission != ResolveResult::Accepted) return reject_admission(resolve_reason(admission));
     RuntimeEconomyPodReceipt accepted;
     accepted.request_id = command.request_id;
     accepted.transaction_id = command.transaction_id;

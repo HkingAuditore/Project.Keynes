@@ -1,6 +1,6 @@
 #pragma once
 
-// NativeMilitaryRuntime core (v2 counters, PKMI v2 save / v1 load).
+// NativeMilitaryRuntime core (v2 counters, PKMI v3 save).
 //
 // Pure C++: no Godot types, no Variant/Dictionary/String in hot loops, no
 // floating point in state that is hashed or saved. All state is SoA with

@@ -123,14 +123,16 @@ func _test_satisfaction_driven_births(compiled: Dictionary) -> void:
 			CountryTestHelper.configure_all_technologies(ext, catalog, 1, 2201))
 		_expect("birth fixture runtime configures",
 			bool(ext.configure_economy(catalog, profile, 1, 2201).get("ok", false)))
-	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	# Merchants have an actual role without buildings; unassigned workers
+	# would move their existing population and savings into the newborn cohort.
+	var merchant_sig: int = (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	var unemployed_sig: int = (compiled.signature_keys as PackedStringArray).find("unemployed|default")
 	var stock := PackedInt64Array()
 	stock.resize((compiled.good_ids as PackedStringArray).size())
 	stock.fill(1000000000000)
 	var population_packet := {
 		"cell_indices": PackedInt32Array([0]),
-		"signature_ids": PackedInt32Array([worker_sig]),
+		"signature_ids": PackedInt32Array([merchant_sig]),
 		"population": PackedInt64Array([POPULATION]),
 		"funds": PackedInt64Array([1000000000000000]),
 	}
@@ -421,15 +423,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v58 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 58)
+	_expect("v60 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 60)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v52 save emits chunks", chunks.size() >= 12)
-	_expect("v52 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("current save emits chunks", chunks.size() >= 12)
+	_expect("current save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -641,7 +643,10 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 
 	var shortage := _configured_price_worker(compiled, 1811)
 	var shortage_report: Dictionary = {}
+	var frozen_business_demand := 0
 	for day in range(61):
+		frozen_business_demand = _good_value(shortage.get_market_cell_snapshot(0),
+			"business_demand_ema", "game_meat")
 		shortage_report = _run_price_day(shortage, day)
 	var shortage_market: Dictionary = shortage.get_market_cell_snapshot(0)
 	var game_meat := goods.find("game_meat")
@@ -651,11 +656,12 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 	var price_target := _good_value(
 		shortage_market, "price_inventory_target", "game_meat")
 	var daily_demand := _good_value(shortage_market, "demand_ema", "game_meat") + \
-		_good_value(shortage_market, "business_demand_ema", "game_meat")
+		frozen_business_demand
 	var merchant_target := _good_value(
 		shortage_market, "merchant_inventory_target", "game_meat")
 	_expect("price inventory pressure uses only one settlement period",
-		daily_demand > 0 and price_target == daily_demand * 5)
+		daily_demand > 0 and price_target == daily_demand *
+			int(shortage_report.get("epoch_days", 0)))
 	_expect("merchant procurement retains its longer inventory horizon",
 		merchant_target > price_target)
 

@@ -1,6 +1,6 @@
 #include "runtime_trigger_kernel.h"
 #include "economy_cost_probe.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -422,7 +422,7 @@ bool RuntimeTriggerKernel::evaluate_day(const RuntimeTriggerPodCatalog &catalog,
                                         bool reference_binding_scan) {
     EconomyCostProbe kernel_cost("trigger.kernel", day, state.states.size());
     static const bool scalar_bindings = [] {
-        const char *value = std::getenv("PK_TRIGGER_BINDING_SCAN_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TRIGGER_BINDING_SCAN_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool index_bindings = !reference_binding_scan && !scalar_bindings;

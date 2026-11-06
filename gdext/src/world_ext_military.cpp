@@ -64,10 +64,10 @@
 
 #include "world_ext.h"
 
-#include "country_runtime.h"
-#include "economy_runtime.h"
+#include "country_api.h"
+#include "economy_api.h"
 #include "military_core.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "native_simulation_host.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -79,7 +79,6 @@
 #include <cstring>
 #include <limits>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -803,8 +802,8 @@ bool DCWorldExt::military_should_run(int64_t day) const {
 int32_t DCWorldExt::ensure_military_country_slots() {
     if (_military_runtime == nullptr || _country_runtime == nullptr) return 0;
     NativeCountryRuntime *country = static_cast<NativeCountryRuntime *>(_country_runtime);
-    NativeCountryRuntime::EconomySnapshot snapshot;
-    if (!country->copy_economy_snapshot(snapshot)) return 0;
+    CountryEconomySnapshot snapshot;
+    if (!country_api::copy_economy_snapshot(*country, snapshot)) return 0;
     MilitaryCore *core = core_from(_military_runtime);
     int32_t active = 0;
     for (size_t slot = 0; slot < snapshot.country_handles.size(); ++slot) {
@@ -840,14 +839,14 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
     std::vector<uint64_t> handles;
     if (_country_runtime != nullptr) {
         NativeCountryRuntime *country = static_cast<NativeCountryRuntime *>(_country_runtime);
-        NativeCountryRuntime::EconomySnapshot snapshot;
-        if (country->copy_economy_snapshot(snapshot)) {
+        CountryEconomySnapshot snapshot;
+        if (country_api::copy_economy_snapshot(*country, snapshot)) {
             country_count = snapshot.country_count;
             owner = std::move(snapshot.cell_country_slot);
             handles = std::move(snapshot.country_handles);
             cash.assign(static_cast<size_t>(country_count), 0);
             for (int32_t slot = 0; slot < country_count; ++slot)
-                cash[static_cast<size_t>(slot)] = country->cash_for_slot(slot);
+                cash[static_cast<size_t>(slot)] = country_api::cash_for_slot(*country, slot);
         }
     }
     if (owner.size() < static_cast<size_t>(cells)) owner.resize(static_cast<size_t>(cells), -1);
@@ -883,9 +882,9 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
     if (_economy_runtime != nullptr) {
         NativeEconomyRuntime *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
         if (economy_ready != nullptr)
-            *economy_ready = economy->military_command_window_open();
-        NativeEconomyRuntime::MilitaryCellView view;
-        economy->military_read_cell_view(view, catalog.economy_good_count);
+            *economy_ready = economy_api::military_command_window_open(*economy);
+        EconomyMilitaryCellView view;
+        economy_api::military_read_cell_view(*economy, view, catalog.economy_good_count);
         const size_t n = std::min(view.population.size(), static_cast<size_t>(cells));
         for (size_t cell = 0; cell < n; ++cell) {
             scratch.cell_population[cell] = view.population[cell];
@@ -908,7 +907,7 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
             std::vector<int32_t> market_cells;
             std::vector<int64_t> sellable;
             std::vector<int64_t> price;
-            economy->military_read_market(good, market_cells, sellable, price);
+            economy_api::military_read_market(*economy, good, market_cells, sellable, price);
             for (size_t i = 0; i < market_cells.size(); ++i) {
                 scratch.market_cell.push_back(market_cells[i]);
                 scratch.market_good.push_back(good);
@@ -918,7 +917,7 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
         }
         for (int32_t slot = 0; slot < country_count; ++slot)
             digest.country_soldier_living_cost[static_cast<size_t>(slot)] =
-                economy->military_soldier_living_cost(slot);
+                economy_api::military_soldier_living_cost(*economy, slot);
         // The economy's kind-3 building groups are the ledger of record for
         // every state lot; the core rebuilds its cache from these rows and never
         // counts anything itself (requirement 6.1-6.3). A non-authoritative
@@ -928,7 +927,7 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
         std::vector<int32_t> state_types;
         std::vector<int32_t> state_roles;
         std::vector<int64_t> state_units;
-        if (economy->military_read_state_buildings(state_cells, state_types,
+        if (economy_api::military_read_state_buildings(*economy, state_cells, state_types,
                                                    state_roles, state_units)) {
             scratch.state_cell.swap(state_cells);
             scratch.state_type_id.swap(state_types);
@@ -967,7 +966,7 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
                 static_cast<size_t>(slot) * static_cast<size_t>(digest.unlock_words);
             for (int32_t bit = 0; bit < unlock_bits; ++bit) {
                 const int32_t tech = _military_unlock_tech_ids[static_cast<size_t>(bit)];
-                if (tech < 0 || !country->has_technology(slot, tech)) continue;
+                if (tech < 0 || !country_api::has_technology(*country, slot, tech)) continue;
                 row[bit >> 6] |= (uint64_t{1} << static_cast<uint32_t>(bit & 63));
             }
         }
@@ -983,8 +982,8 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
             int32_t value = military_stat_default_q16(stat);
             if (_modifier_runtime != nullptr && handle != 0) {
                 const double base = static_cast<double>(value) / static_cast<double>(MILITARY_Q);
-                const double effective = static_cast<ModifierRuntime *>(_modifier_runtime)
-                    ->effective_value(ModifierRuntime::COUNTRY,
+                const double effective = modifier_api::effective_value(
+                    *static_cast<ModifierRuntime *>(_modifier_runtime), ModifierApi::COUNTRY,
                                       kMilitaryStatKeys[static_cast<size_t>(stat)],
                                       handle, 0, base);
                 if (std::isfinite(effective))
@@ -1010,30 +1009,30 @@ constexpr int32_t MCOUNTRY_TRANSFER_CASH = 23;
 constexpr int32_t MCOUNTRY_TRANSFER_GOODS = 24;
 constexpr int32_t MCOUNTRY_ANNEX = 27;
 
-// Economy opcodes (economy_runtime.h Opcode).
-constexpr int32_t MECONOMY_TRANSFER_TO_COHORT = 1;
-constexpr int32_t MECONOMY_REMOVE_STOCK = 5;
-constexpr int32_t MECONOMY_ADD_POPULATION = 6;
-constexpr int32_t MECONOMY_CHANGE_SIGNATURE = 8;
-constexpr int32_t MECONOMY_CONVERT_COHORT = 24;   // B: (cell, src sig, dst sig, heads)
-constexpr int32_t MECONOMY_MARKET_GOOD_TO_COUNTRY = 13;
+// Economy opcodes from the public contract.
+constexpr int32_t MECONOMY_TRANSFER_TO_COHORT = EconomyApi::COMMAND_TRANSFER_TO_COHORT;
+constexpr int32_t MECONOMY_REMOVE_STOCK = EconomyApi::COMMAND_REMOVE_STOCK;
+constexpr int32_t MECONOMY_ADD_POPULATION = EconomyApi::COMMAND_ADD_POPULATION;
+constexpr int32_t MECONOMY_CHANGE_SIGNATURE = EconomyApi::COMMAND_CHANGE_SIGNATURE;
+constexpr int32_t MECONOMY_CONVERT_COHORT = EconomyApi::COMMAND_MILITARY_CONVERT_COHORT;   // B: (cell, src sig, dst sig, heads)
+constexpr int32_t MECONOMY_MARKET_GOOD_TO_COUNTRY = EconomyApi::COMMAND_MARKET_GOOD_TO_COUNTRY;
 // Army personnel lane (army-personnel contract §1.2). Same POD lane as 24:
 // payload0 = heads, payload1 = destination lane for MERGE_LANES, target_cohort
 // = army handle, target_cell = the cell, target_country = soldier signature.
-constexpr int32_t MECONOMY_ARMY_EMBARK = 30;
-constexpr int32_t MECONOMY_ARMY_DISEMBARK = 31;
-constexpr int32_t MECONOMY_ARMY_MERGE_LANES = 32;
+constexpr int32_t MECONOMY_ARMY_EMBARK = EconomyApi::COMMAND_ARMY_EMBARK;
+constexpr int32_t MECONOMY_ARMY_DISEMBARK = EconomyApi::COMMAND_ARMY_DISEMBARK;
+constexpr int32_t MECONOMY_ARMY_MERGE_LANES = EconomyApi::COMMAND_ARMY_MERGE_LANES;
 // Split / partial transfer (army-personnel contract-2 §1.1). Lane -> lane like
 // 32, so no cohort is named and no structural command is needed: payload0 =
 // heads actually moved, payload1 = destination army handle, target_cohort =
 // source army handle. payload0 <= 0 means "the whole lane" on the Economy side;
 // Military emits 32 for that case instead (contract §1.2).
-constexpr int32_t MECONOMY_ARMY_SPLIT_LANES = 33;
+constexpr int32_t MECONOMY_ARMY_SPLIT_LANES = EconomyApi::COMMAND_ARMY_SPLIT_LANES;
 // Army pay (army-pay contract §3, Economy opcode 34): payload0 = MONEY_SCALE
 // amount, payload1 = country handle, target_cohort = army handle. Treasury cash
 // only — no cohort and no structural command — so it rides the same POD lane as
 // 24/30-33 and is deduplicated by `sequence` there.
-constexpr int32_t MECONOMY_ARMY_LANE_PAY = 34;
+constexpr int32_t MECONOMY_ARMY_LANE_PAY = EconomyApi::COMMAND_ARMY_LANE_PAY;
 
 bool is_army_lane_opcode(int32_t opcode) {
     return opcode == MECONOMY_ARMY_EMBARK || opcode == MECONOMY_ARMY_DISEMBARK ||
@@ -1041,53 +1040,21 @@ bool is_army_lane_opcode(int32_t opcode) {
            opcode == MECONOMY_ARMY_LANE_PAY;
 }
 
-// Feature detection for the split lanes (army-personnel contract-2 §1.1): the
-// Economy runtime reports whether this build implements opcode 33. Probed at
-// compile time the same way world_ext_economy_military.cpp probes
-// military_army_population(), so an Economy build that predates the split lanes
-// still links and runs: the bridge then degrades to a no-op plus a failed
-// pending row instead of submitting an opcode nobody knows.
-template <typename T, typename = void>
-struct HasArmyLaneSplitProbe : std::false_type {};
-template <typename T>
-struct HasArmyLaneSplitProbe<T, std::void_t<decltype(
-        std::declval<const T &>().military_army_lane_split_supported())>>
-    : std::true_type {};
-
-template <typename T>
-bool army_lane_split_supported(const T *runtime) {
+// Both lane feature methods exist in this build; retain their runtime answers.
+bool army_lane_split_supported(const NativeEconomyRuntime *runtime) {
     if (runtime == nullptr) return false;
-    if constexpr (HasArmyLaneSplitProbe<T>::value)
-        return runtime->military_army_lane_split_supported();
-    return false;
+    return economy_api::military_army_lane_split_supported(*runtime);
 }
 
-// Feature detection for army pay (army-pay contract §3.3). Same compile-time
-// probe contract as the split lanes: an Economy build that predates opcode 34
-// must not be handed the command at all, because admission would reject the row
-// and (on the legacy ingress) could take the whole batch down with it. When the
-// probe is absent or false, MILITARY_INTENT_ARMY_PAY degrades to a no-op plus a
-// failed receipt and Military stays on the pre-army-pay accounting.
-template <typename T, typename = void>
-struct HasArmyLanePayProbe : std::false_type {};
-template <typename T>
-struct HasArmyLanePayProbe<T, std::void_t<decltype(
-        std::declval<const T &>().military_army_lane_pay_supported())>>
-    : std::true_type {};
-
-template <typename T>
-bool army_lane_pay_supported(const T *runtime) {
+bool army_lane_pay_supported(const NativeEconomyRuntime *runtime) {
     if (runtime == nullptr) return false;
-    if constexpr (HasArmyLanePayProbe<T>::value)
-        return runtime->military_army_lane_pay_supported();
-    return false;
+    return economy_api::military_army_lane_pay_supported(*runtime);
 }
 
 } // namespace
 
-// Army personnel lane probes, defined in world_ext_economy_military.cpp (the
-// only TU that looks at the Economy lane bindings). An economy build without
-// them answers false / -1 instead of trapping, so the bridge keeps working.
+// Army personnel lane helpers, defined in world_ext_economy_military.cpp.
+// Null Economy answers false / -1; this build has all lane bindings.
 bool economy_army_lane_supported(const void *economy);
 int64_t economy_army_lane_population(void *economy, uint64_t army_handle);
 int64_t economy_army_lane_funds(void *economy, uint64_t army_handle);
@@ -1293,8 +1260,8 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     // Diagnostic for the army-pay gate: paying needs a synchronous treasury debit,
     // which is only available while Country accepts sync store writes.
     out["army_pay_sync_cash_available"] = _country_runtime != nullptr &&
-        !static_cast<NativeCountryRuntime *>(_country_runtime)
-             ->sync_store_writes_forbidden();
+        !country_api::sync_store_writes_forbidden(
+             *static_cast<NativeCountryRuntime *>(_country_runtime));
     out["army_lane_trimmed"] = army_lane_trimmed;
     out["economy_ready"] = economy_ready;
     out["effective_day"] = effective_day;
@@ -1360,8 +1327,8 @@ Dictionary DCWorldExt::submit_military_commands(const Array &batch) {
         // rejected as command_unknown_country.
         if (command.country != 0 && _country_runtime != nullptr &&
             core_from(_military_runtime)->country_slot_for_handle(command.country) < 0 &&
-            static_cast<NativeCountryRuntime *>(_country_runtime)
-                ->valid_handle(static_cast<int64_t>(command.country))) {
+            country_api::valid_handle(
+                *static_cast<NativeCountryRuntime *>(_country_runtime), static_cast<int64_t>(command.country))) {
             ensure_military_country_slots();
         }
         const int64_t effective_day = command.effective_day;
@@ -1713,8 +1680,8 @@ void DCWorldExt::collect_military_receipts(int64_t day,
         // effective day has been reached by the country runtime.
         int64_t committed_day = -1;
         if (_country_runtime != nullptr)
-            committed_day = static_cast<NativeCountryRuntime *>(_country_runtime)
-                ->last_committed_day();
+            committed_day = country_api::last_committed_day(
+                *static_cast<NativeCountryRuntime *>(_country_runtime));
         for (MilitaryPendingIntent &row : _military_pending_intents) {
             if (row.authority != 1 || row.receipt_pending != 1 ||
                 row.effective_day > committed_day) continue;
@@ -1791,14 +1758,14 @@ void DCWorldExt::apply_military_deferred_cash(int64_t day) {
     for (MilitaryPendingIntent &row : _military_pending_intents) {
         if (row.authority != 3 || row.receipt_pending != 1) continue;
         if (row.effective_day > day) continue;
-        if (economy == nullptr || !economy->military_command_window_open()) {
+        if (economy == nullptr || !economy_api::military_command_window_open(*economy)) {
             // Retry next day; the timeout fails the row eventually.
             continue;
         }
-        const int64_t collected = economy->military_collect_cash(
+        const int64_t collected = economy_api::military_collect_cash(*economy,
             static_cast<int64_t>(row.country_handle), row.amount);
         if (collected > 0)
-            economy->military_record_cash_burn(collected);
+            economy_api::military_record_cash_burn(*economy, collected);
         row.amount = collected;
         row.count = collected > 0 ? 1 : 0;
         row.receipt_pending = collected > 0 ? 2 : 3;
@@ -1831,20 +1798,20 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
     NativeEconomyRuntime *economy_runtime = _economy_runtime == nullptr ? nullptr
         : static_cast<NativeEconomyRuntime *>(_economy_runtime);
     const int32_t soldier_profession = economy_runtime == nullptr ? -1
-        : economy_runtime->military_soldier_profession();
+        : economy_api::military_soldier_profession(*economy_runtime);
     const int32_t unemployed_profession = economy_runtime == nullptr ? -1
-        : economy_runtime->military_unemployed_profession();
+        : economy_api::military_unemployed_profession(*economy_runtime);
     // LEVY draws from the cell's non-merchant employee cohorts once the
     // unemployed pool is exhausted (design 5.4), so it must not reuse the
     // ENLIST source. The candidate list is built from the province catalog
     // (dense profession ids), never from a cohort scan.
     std::vector<int32_t> levy_professions;
     if (intent.kind == MILITARY_INTENT_LEVY && economy_runtime != nullptr) {
-        const int32_t count = economy_runtime->profession_count();
+        const int32_t count = economy_api::profession_count(*economy_runtime);
         levy_professions.reserve(static_cast<size_t>(std::max(0, count)));
         for (int32_t profession = 0; profession < count; ++profession) {
             if (profession == soldier_profession || profession == unemployed_profession ||
-                profession == economy_runtime->military_merchant_profession())
+                profession == economy_api::military_merchant_profession(*economy_runtime))
                 continue;
             levy_professions.push_back(profession);
         }
@@ -1866,7 +1833,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         case MILITARY_INTENT_ENLIST: {
             // unemployed -> soldier: the source is the cell's unemployed cohort
             // (lowest ethnicity that still has people).
-            handle = economy_runtime->military_cohort_handle_any_ethnicity(
+            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
                 intent.cell, unemployed_profession);
             target_signature = soldier_profession;
             if (handle == 0) {
@@ -1882,10 +1849,10 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         case MILITARY_INTENT_LEVY: {
             // Forced service: unemployed first, then any other cohort the
             // state may draft (employee lanes of the same cell).
-            handle = economy_runtime->military_cohort_handle_any_ethnicity(
+            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
                 intent.cell, unemployed_profession);
             if (handle == 0) {
-                handle = economy_runtime->military_cohort_handle_from_professions(
+                handle = economy_api::military_cohort_handle_from_professions(*economy_runtime,
                     intent.cell, levy_professions.data(),
                     static_cast<int32_t>(levy_professions.size()));
             }
@@ -1899,13 +1866,13 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
             break;
         }
         case MILITARY_INTENT_DISCHARGE:
-            handle = economy_runtime->military_cohort_handle_any_ethnicity(
+            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
                 intent.cell, soldier_profession);
             target_signature = unemployed_profession;
             break;
         default:
             // CASUALTY: negative population on the soldier cohort.
-            handle = economy_runtime->military_cohort_handle_any_ethnicity(
+            handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
                 intent.cell, soldier_profession);
             target_signature = -1;
             break;
@@ -1916,16 +1883,16 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         // (target_profession, source ethnicity) explicitly instead of relying on
         // the dense profession row and the signature row sharing an index.
         if (target_signature >= 0 && intent.kind != MILITARY_INTENT_CASUALTY) {
-            const int32_t ethnicity = economy_runtime->military_cohort_ethnicity(
+            const int32_t ethnicity = economy_api::military_cohort_ethnicity(*economy_runtime,
                 static_cast<uint64_t>(handle));
             // Resolve with the ECONOMY runtime's own table for this cell: the
             // bridge's profession id and the executor's signature id are not
             // guaranteed to line up, and a mismatch silently moves people into
             // another profession (unemployed drains, soldier cohort stays 0).
-            int32_t resolved = economy_runtime->military_signature_for_cell_ethnicity(
+            int32_t resolved = economy_api::military_signature_for_cell_ethnicity(*economy_runtime,
                 intent.cell, target_signature);
             if (resolved < 0 && ethnicity >= 0)
-                resolved = economy_runtime->military_signature_for(target_signature, ethnicity);
+                resolved = economy_api::military_signature_for(*economy_runtime, target_signature, ethnicity);
             if (resolved < 0) {
                 row.receipt_pending = 0;
                 pending.push_back(row);
@@ -1939,7 +1906,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         command.target_handle = static_cast<int64_t>(handle);
         if (intent.kind == MILITARY_INTENT_CASUALTY) {
             // The dead cannot be more than the cell's live soldier cohort.
-            const int64_t alive = economy_runtime->military_soldier_heads(intent.cell);
+            const int64_t alive = economy_api::military_soldier_heads(*economy_runtime, intent.cell);
             const int64_t dead = std::min(heads, alive);
             if (dead <= 0) {
                 row.receipt_pending = 0;
@@ -1957,7 +1924,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
             // people there, so this works under whole-graph ACTIVE without
             // reopening the legacy ingress.
             const int32_t source_signature =
-                economy_runtime->military_cohort_signature(static_cast<uint64_t>(handle));
+                economy_api::military_cohort_signature(*economy_runtime, static_cast<uint64_t>(handle));
             command.opcode = MECONOMY_CONVERT_COHORT;
             row.count = heads;
             command.i32_0 = intent.cell;
@@ -1978,7 +1945,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
     case MILITARY_INTENT_PAY_WAGES: {
         // Treasury -> soldier cohort (COMMAND_TRANSFER_TO_COHORT, i64_1 = country).
         if (economy_runtime == nullptr || intent.cell < 0 || intent.amount <= 0) return;
-        const uint64_t handle = economy_runtime->military_cohort_handle_any_ethnicity(
+        const uint64_t handle = economy_api::military_cohort_handle_any_ethnicity(*economy_runtime,
             intent.cell, soldier_profession);
         if (handle == 0) return;
         MilitaryEconomyCommand command;
@@ -2094,7 +2061,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         // lots have no economy profile, therefore no bill, therefore they are
         // not built at all instead of being built for free.
         if (economy_type < 0) return;
-        const Dictionary queued = economy_runtime->queue_treasury_sponsored_build(
+        const Dictionary queued = economy_api::queue_treasury_sponsored_build(*economy_runtime,
             static_cast<int64_t>(intent.country_a), intent.cell, economy_type,
             effective_day, next_sequence(), false);
         if (!bool(queued.get("ok", false))) return;
@@ -2137,7 +2104,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         // has no economy profile, so it is not in the ledger and there is
         // nothing that could remove it.
         if (economy_type < 0) return;
-        const Dictionary queued = economy_runtime->queue_treasury_sponsored_demolish(
+        const Dictionary queued = economy_api::queue_treasury_sponsored_demolish(*economy_runtime,
             static_cast<int64_t>(intent.country_a), intent.cell, economy_type, 1,
             effective_day, next_sequence(), false);
         if (!bool(queued.get("ok", false))) return;
@@ -2165,7 +2132,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         if (heads == 0) return;
         int32_t signature = -1;
         if (soldier_profession >= 0) {
-            signature = economy_runtime->military_signature_for_cell_ethnicity(
+            signature = economy_api::military_signature_for_cell_ethnicity(*economy_runtime,
                 intent.cell, soldier_profession);
         }
         MilitaryEconomyCommand command;
@@ -2307,7 +2274,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         // Base value for the receipt: the lane's cash before this payment.
         // Economy answers 0 for a lane that does not exist yet, which is also
         // the correct base (a new lane starts empty), so the read is unconditional.
-        row.count = economy_runtime->military_army_funds(
+        row.count = economy_api::military_army_funds(*economy_runtime,
             static_cast<uint64_t>(intent.source_id));
         row.amount = intent.amount;
         pending.push_back(row);
@@ -2413,7 +2380,7 @@ void DCWorldExt::publish_military_ration_satisfaction(
         const std::vector<MilitaryIntent> &intents) {
     if (_economy_runtime == nullptr) return;
     NativeEconomyRuntime *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
-    const int32_t soldier_profession = economy->military_soldier_profession();
+    const int32_t soldier_profession = economy_api::military_soldier_profession(*economy);
     if (soldier_profession < 0) return;
     // Real per-cell garrison ration satisfaction for the day just stepped,
     // reconstructed from public const state (military_core.h is frozen):
@@ -2507,7 +2474,7 @@ void DCWorldExt::publish_military_ration_satisfaction(
     }
     published_prev.swap(now_published);
     if (!cells.empty()) {
-        economy->set_military_ration_satisfaction(cells, ratios);
+        economy_api::set_military_ration_satisfaction(*economy, cells, ratios);
     }
     // ---- army lanes (contract §2.2) --------------------------------------
     // A deployed formation is not a home-cell cohort: its people sit in an
@@ -2936,8 +2903,8 @@ Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer
     // Owner comes from Country (Military only stores controllers).
     int32_t owner_slot = -1;
     if (_country_runtime != nullptr)
-        owner_slot = static_cast<NativeCountryRuntime *>(_country_runtime)
-            ->country_slot_for_cell(c);
+        owner_slot = country_api::country_slot_for_cell(
+            *static_cast<NativeCountryRuntime *>(_country_runtime), c);
     const int32_t controller = core->controller_of(c);
     Dictionary out;
     out["ok"] = true;
@@ -3538,8 +3505,6 @@ Dictionary DCWorldExt::get_military_catalog_view() const {
 PackedByteArray DCWorldExt::encode_military_state() const {
     PackedByteArray bytes;
     if (_military_runtime == nullptr) return bytes;
-    // PKMI already carries magic/version/catalog hash; the bridge adds only the
-    // rows the core cannot reconstruct (pending receipts + sequence cursor).
     const std::vector<uint8_t> core_bytes = core_from(_military_runtime)->encode();
     std::vector<uint8_t> out;
     out.reserve(core_bytes.size() + 8 * (_military_pending_intents.size() * 9 + 4) + 64);
@@ -3550,7 +3515,7 @@ PackedByteArray DCWorldExt::encode_military_state() const {
         for (int i = 0; i < 8; ++i) buffer.push_back(static_cast<uint8_t>(value >> (i * 8)));
     };
     append_u32(out, 0x4d494c42u);  // "MILB" bridge wrapper
-    append_u32(out, 2u);           // v2: pending rows carry economy match identity
+    append_u32(out, 3u);
     append_u32(out, static_cast<uint32_t>(core_bytes.size()));
     out.insert(out.end(), core_bytes.begin(), core_bytes.end());
     append_u64(out, static_cast<uint64_t>(std::max<int64_t>(0, _military_sequence)));
@@ -3561,6 +3526,7 @@ PackedByteArray DCWorldExt::encode_military_state() const {
     } else {
         append_u64(out, 0);
     }
+    append_u64(out, _military_pod_request);
     append_u32(out, static_cast<uint32_t>(_military_pending_intents.size()));
     for (const MilitaryPendingIntent &row : _military_pending_intents) {
         append_u32(out, row.kind);
@@ -3604,8 +3570,8 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     };
     uint32_t magic = 0, version = 0, core_size = 0;
     if (!read_u32(magic) || magic != 0x4d494c42u) return military_fail("pkmi_wrapper_magic_invalid");
-    if (!read_u32(version) || (version != 1u && version != 2u))
-        return military_fail("pkmi_wrapper_version_unsupported");
+    if (!read_u32(version) || version != 3u)
+        return military_fail("pkmi_wrapper_version_mismatch_expected_3");
     if (!read_u32(core_size) || size - at < core_size) return military_fail("pkmi_wrapper_truncated");
     std::string error;
     if (!core_from(_military_runtime)->restore(data + at, core_size, error)) {
@@ -3623,6 +3589,7 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     _military_last_step_day = static_cast<int64_t>(last_day);
     if (!_military_receipts) _military_receipts = std::make_unique<MilitaryReceiptCursor>();
     _military_receipts->after_request_id = static_cast<int64_t>(receipt_cursor);
+    uint64_t request_cursor = 0; if (!read_u64(request_cursor) || request_cursor == 0) return military_fail("pkmi_request_cursor_invalid"); _military_pod_request = request_cursor;
     uint32_t pending_count = 0;
     if (!read_u32(pending_count) || pending_count > (1u << 20))
         return military_fail("pkmi_pending_invalid");
@@ -3778,9 +3745,9 @@ Dictionary DCWorldExt::set_military_ai_player_handles(const PackedInt64Array &ha
     // Every country slot the digest knows becomes AI unless it is a player.
     int32_t country_count = 0;
     if (_country_runtime != nullptr) {
-        NativeCountryRuntime::EconomySnapshot snapshot;
-        if (static_cast<NativeCountryRuntime *>(_country_runtime)
-                ->copy_economy_snapshot(snapshot))
+        CountryEconomySnapshot snapshot;
+        if (country_api::copy_economy_snapshot(
+                *static_cast<NativeCountryRuntime *>(_country_runtime), snapshot))
             country_count = static_cast<int32_t>(snapshot.country_handles.size());
     }
     (void)arming_errors;

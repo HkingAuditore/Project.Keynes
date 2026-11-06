@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherFrontAdvect
 
 ## Phase E.2 / dots-full-migration §Phase E.2：weather front 推进抽出。
@@ -45,7 +45,6 @@ class_name DCWeatherFrontAdvect
 ## 3. F.6 之后 fronts 数据从 GDScript Array[WeatherFront] 升级为 World 的 FRONT_*
 ##    component pool（即真正 entity）。
 
-var _weather_system
 
 func _init(weather_system) -> void:
 	_weather_system = weather_system

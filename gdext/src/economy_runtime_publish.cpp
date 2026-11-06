@@ -1,10 +1,9 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "economy_csv_recorder.h"
-#include "native_simulation_host.h"
-#include "country_runtime.h"
+#include "economy_host_port.h"
 #include "parallel_dispatcher.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <limits>
@@ -89,7 +88,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             const bool periodic_full =
                 _full_audit_verify_interval_days > 0 &&
                 _current_day.get() % _full_audit_verify_interval_days == 0;
-            const char *verify_every_day = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
+            const char *verify_every_day = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY);
             const bool diagnostic_full = verify_every_day &&
                 std::strcmp(verify_every_day, "1") == 0;
             // Army personnel lanes (contract §1.2) move people and cash out of
@@ -138,7 +137,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         work_done += static_cast<int64_t>(end - start);
         if (_publish_cursor >= population_store().active.size()) {
             _closing_totals.country_cash =
-                _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
+                _country_runtime == nullptr ? 0 : country_reads().total_cash();
             int64_t expedition_population = 0;
             for (int32_t expedition = 0; expedition < static_cast<int32_t>(
                     family_expeditions_store().active.size()); ++expedition) {
@@ -346,7 +345,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         if (_country_runtime != nullptr) {
             for (; _publish_cursor < end; ++_publish_cursor) {
                 const int64_t country_good =
-                    _country_runtime->total_good(
+                    country_reads().total_good(
                         static_cast<int32_t>(_publish_cursor));
                 _closing_totals.country_goods += country_good;
                 _closing_totals.goods_stock += country_good;

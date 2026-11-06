@@ -1475,7 +1475,7 @@ Military report 提供：
 | **M4 和议、吞并与 AI** | 条款定价与接受倾向（含全境沦陷加成）；分期赔款 n×A；原子和约；吞并和约与 `ANNEX_COUNTRY`；国家覆灭结局；征发；AI 军事议程 | 和约失败整批回滚；全境沦陷不会自动吞并；吞并后句柄失效、无残留引用；AI 对 AI 50 年 soak 无 fault、无守恒误差 |
 | **M5 内容与平衡** | 科技节点与校验器；20 张理念卡、3 个羁绊、通道 B 规则、X4 军事事件种类；家族 24 条内容；数值调参 | 理念与家族校验通过；平衡指标见 §24 |
 
-每个阶段都同步更新 `docs/cpp-dots-runtime/military-runtime.md`、`runtime-authority-matrix.md`、`scheduling-and-job-graph.md`、`references/system-map.md`，并新建仓库 skill `project-keynes-military-runtime`。
+每个阶段都同步更新 `docs/cpp-dots-runtime/military-runtime.md`、`docs/architecture/current-state.md`、`docs/architecture/current-state.md`、`references/system-map.md`，并新建仓库 skill `project-keynes-military-runtime`。
 
 ---
 

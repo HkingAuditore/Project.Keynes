@@ -29,7 +29,7 @@ extends RefCounted
 #   - The scheduler is strictly serial; no thread-safety required from
 #     the runner today.
 #
-# References: docs/dots-experiment-report.md §3 (A2), §6.3.
+# References: docs/architecture/migration.md (A2), §6.3.
 # ════════════════════════════════════════════════════════════════════
 
 var name: StringName = &""

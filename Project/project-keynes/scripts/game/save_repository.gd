@@ -1,7 +1,8 @@
 class_name SaveRepository
 extends RefCounted
 
-const FORMAT_VERSION := 2
+const ContainerReader = preload("res://scripts/game/save_container_reader.gd")
+const FORMAT_VERSION := ContainerReader.FORMAT_VERSION
 const MAGIC := "PKSV"
 const LEGACY_FORMAT_REASON := "该存档来自旧版本，无法载入；旧存档已保留。"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
@@ -29,14 +30,15 @@ func _init(save_dir: String = "") -> void:
 	_save_dir = save_dir
 
 
-func list_slots() -> Array:
+## Header-only by default. Full checks run in the background or on actual load.
+func list_slots(validate_sections: bool = false) -> Array:
 	_ensure_directory()
 	var slots: Array = []
 	for slot_id in SLOT_IDS:
 		var path := _slot_path(slot_id)
-		var read := _read_container(path, false, true)
+		var read := _read_container(path, false, validate_sections)
 		if not bool(read.get("ok", false)):
-			var backup := _read_container(path + ".bak", false, true)
+			var backup := _read_container(path + ".bak", false, validate_sections)
 			if bool(backup.get("ok", false)):
 				read = backup
 		var header: Dictionary = read.get("header", {})
@@ -49,6 +51,7 @@ func list_slots() -> Array:
 		slots.append({
 			"slot_id": slot_id,
 			"exists": exists,
+			"integrity_checked": validate_sections and bool(read.get("ok", false)),
 			"loadable": bool(read.get("ok", false)) and _compatible(header),
 			"incompatible": exists and (not bool(read.get("ok", false)) or not _compatible(header)),
 			"format_version": format_version,
@@ -63,6 +66,10 @@ func list_slots() -> Array:
 			"provider_manifest": header.get("provider_manifest", []),
 		})
 	return slots
+
+
+func verify_slots_background(completion: Array) -> void:
+	completion.append(list_slots(true))
 
 
 ## WorkerThreadPool 入口：调用方先把全部 section 冻结为 PackedByteArray。
@@ -99,14 +106,23 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 	# valid while the runtime coordinator supplies the authoritative payload.
 	if not normalized_sections.has("simulation_runtime"):
 		normalized_sections["simulation_runtime"] = PackedByteArray()
+	if normalized_sections.size() > ContainerReader.MAX_SECTIONS:
+		return _error("save_too_large", "存档数据数量超过容量限制。")
+	var total_bytes := 0
 	var blocks: Array[PackedByteArray] = []
 	var offset := 0
 	var section_ids := normalized_sections.keys()
 	section_ids.sort()
 	for raw_id in section_ids:
+		if not raw_id is String or raw_id.is_empty():
+			return _error("save_section_table_invalid", "存档数据名称无效。")
 		var section_id := String(raw_id)
 		var bytes: PackedByteArray = normalized_sections[raw_id] if normalized_sections[raw_id] is PackedByteArray \
 			else var_to_bytes(normalized_sections[raw_id])
+		if bytes.size() > ContainerReader.MAX_SECTION_BYTES \
+				or bytes.size() > ContainerReader.MAX_TOTAL_BYTES - total_bytes:
+			return _error("save_too_large", "存档数据超过容量限制。")
+		total_bytes += bytes.size()
 		var compressed: PackedByteArray = PackedByteArray() if bytes.is_empty() \
 			else bytes.compress(FileAccess.COMPRESSION_ZSTD)
 		section_table.append({
@@ -128,6 +144,15 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 		"sections": section_table,
 	}, true)
 	var header_bytes := JSON.stringify(header).to_utf8_buffer()
+	if header_bytes.size() > ContainerReader.MAX_HEADER_BYTES:
+		return _error("save_too_large", "存档头超过容量限制。")
+	# Validate the on-disk JSON types, including packed provider section arrays.
+	var encoded_header = JSON.parse_string(header_bytes.get_string_from_utf8())
+	if not encoded_header is Dictionary:
+		return _error("save_header_invalid", "存档头无法编码。")
+	var checked := ContainerReader.validate_header(encoded_header, offset)
+	if not bool(checked.ok):
+		return checked
 	var path := _slot_path(slot_id)
 	var temp_path := path + ".tmp"
 	var file := FileAccess.open(temp_path, FileAccess.WRITE)
@@ -212,105 +237,15 @@ static func compatibility_hash() -> String:
 
 func _read_container(path: String, read_sections: bool,
 		validate_sections: bool = false) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return _error("save_missing", "存档不存在。")
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null or file.get_length() < 12:
-		return _error("save_truncated", "存档已截断。")
-	var magic := file.get_buffer(4).get_string_from_ascii()
-	var version := file.get_32()
-	var header_length := file.get_32()
-	if magic != MAGIC:
-		return _error("save_header_invalid", "存档头无效。")
-	if version != FORMAT_VERSION:
-		var version_error := _error("save_format_version_incompatible", LEGACY_FORMAT_REASON \
-			if version == 1 else "存档格式版本不受支持。")
-		version_error["format_version"] = version
-		return version_error
-	if header_length <= 0 or header_length > file.get_length() - 12:
-		return _error("save_header_invalid", "存档头无效。")
-	var parsed = JSON.parse_string(file.get_buffer(header_length).get_string_from_utf8())
-	if not parsed is Dictionary:
-		return _error("save_header_invalid", "存档头无法解析。")
-	var header := parsed as Dictionary
-	var result := {"ok": true, "code": "ok", "message": "", "header": header}
-	if not read_sections and not validate_sections:
-		return result
-	var payload_start := file.get_position()
-	var decoded := {}
-	for raw in header.get("sections", []):
-		var entry := raw as Dictionary
-		var offset := int(entry.get("offset", -1))
-		var length := int(entry.get("length", -1))
-		var uncompressed := int(entry.get("uncompressed_length", -1))
-		if offset < 0 or length < 0 or uncompressed < 0 \
-				or payload_start + offset + length > file.get_length():
-			return _error("save_section_truncated", "存档 section 已截断。")
-		file.seek(payload_start + offset)
-		var bytes := PackedByteArray()
-		if uncompressed > 0:
-			bytes = file.get_buffer(length).decompress(
-				uncompressed, FileAccess.COMPRESSION_ZSTD)
-		if bytes.size() != uncompressed:
-			return _error("save_section_decompress_failed", "存档 section 解压失败。")
-		var digest := _sha256(bytes)
-		if digest != String(entry.get("sha256", "")):
-			return _error("save_section_checksum_failed", "存档 section 校验失败。")
-		if read_sections:
-			decoded[String(entry.get("id", ""))] = bytes
-	if read_sections:
-		result["section_bytes"] = decoded
-	return result
+	return ContainerReader.read_container(path, read_sections, validate_sections)
 
 
 func _read_section(path: String, section_id: String,
 		require_compatibility: bool = true) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return _error("save_missing", "存档不存在。")
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null or file.get_length() < 12:
-		return _error("save_truncated", "存档已截断。")
-	var magic := file.get_buffer(4).get_string_from_ascii()
-	var version := file.get_32()
-	var header_length := file.get_32()
-	if magic != MAGIC:
-		return _error("save_header_invalid", "存档头无效。")
-	if version != FORMAT_VERSION:
-		var version_error := _error("save_format_version_incompatible", LEGACY_FORMAT_REASON \
-			if version == 1 else "存档格式版本不受支持。")
-		version_error["format_version"] = version
-		return version_error
-	if header_length <= 0 or header_length > file.get_length() - 12:
-		return _error("save_header_invalid", "存档头无效。")
-	var parsed = JSON.parse_string(file.get_buffer(header_length).get_string_from_utf8())
-	if not parsed is Dictionary:
-		return _error("save_header_invalid", "存档头无法解析。")
-	var header := parsed as Dictionary
-	if require_compatibility and not _compatible(header):
+	var result := ContainerReader.read_container(path, false, false, section_id)
+	if bool(result.get("ok", false)) and require_compatibility and not _compatible(result.header):
 		return _error("save_incompatible", "存档版本不兼容。")
-	var payload_start := file.get_position()
-	for raw in header.get("sections", []):
-		var entry := raw as Dictionary
-		if String(entry.get("id", "")) != section_id:
-			continue
-		var offset := int(entry.get("offset", -1))
-		var length := int(entry.get("length", -1))
-		var uncompressed := int(entry.get("uncompressed_length", -1))
-		if offset < 0 or length < 0 or uncompressed < 0 \
-				or payload_start + offset + length > file.get_length():
-			return _error("save_section_truncated", "存档 section 已截断。")
-		file.seek(payload_start + offset)
-		var bytes := PackedByteArray()
-		if uncompressed > 0:
-			bytes = file.get_buffer(length).decompress(
-				uncompressed, FileAccess.COMPRESSION_ZSTD)
-		if bytes.size() != uncompressed:
-			return _error("save_section_decompress_failed", "存档 section 解压失败。")
-		if _sha256(bytes) != String(entry.get("sha256", "")):
-			return _error("save_section_checksum_failed", "存档 section 校验失败。")
-		return {"ok": true, "code": "ok", "message": "", "bytes": bytes,
-			"header": header}
-	return _error("save_provider_missing", "存档缺少预览 section。")
+	return result
 
 
 func _compatible(header: Dictionary) -> bool:
@@ -356,8 +291,4 @@ static func _error(code: String, message: String) -> Dictionary:
 
 
 static func _sha256(bytes: PackedByteArray) -> String:
-	var context := HashingContext.new()
-	context.start(HashingContext.HASH_SHA256)
-	if not bytes.is_empty():
-		context.update(bytes)
-	return context.finish().hex_encode()
+	return ContainerReader.sha256(bytes)

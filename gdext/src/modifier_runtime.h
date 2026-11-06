@@ -15,6 +15,7 @@
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include "modifier_api.h"
 #include "runtime_modifier_pod.h"
 #include "effect_magnitude.h"
 // ADR02: the derived cell layer is a SEPARATE member, never part of `_stores`,
@@ -28,48 +29,29 @@ class NativeEconomyRuntime;
 
 // Shared native implementation. Each authority domain owns an independent Store;
 // catalog strings are resolved only at the Godot/save boundary.
-class ModifierRuntime {
+class ModifierRuntime : public ModifierApi {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 2;
     static constexpr int32_t SAVE_SCHEMA_VERSION = 3;
     static constexpr int64_t PERMANENT_EXPIRY = -1;
-    static constexpr int32_t Q16_ONE = 65536;
+    static constexpr int32_t Q16_ONE = ModifierApi::Q16_ONE;
     // Shared with the EFFECT worker's plan path via effect_magnitude.h: the two
     // sides multiply the same per-instance scale and must clamp identically.
-    static constexpr int32_t MAX_MAGNITUDE_Q16 = EFFECT_MAX_MAGNITUDE_Q16;
+    static constexpr int32_t MAX_MAGNITUDE_Q16 = ModifierApi::MAX_MAGNITUDE_Q16;
+    static_assert(MAX_MAGNITUDE_Q16 == EFFECT_MAX_MAGNITUDE_Q16,
+                  "ModifierApi magnitude ceiling must match effect_magnitude.h");
 
-    enum Domain : int32_t { CLIMATE = 0, COUNTRY = 1, ECONOMY = 2, GAMEPLAY = 3, DOMAIN_COUNT = 4 };
-    enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
+    using Domain = ModifierApi::Domain;
+    using Scope = ModifierApi::Scope;
+    using Operation = ModifierApi::Operation;
+    using CommandOpcode = ModifierApi::CommandOpcode;
+    using NativeCommand = ModifierApi::NativeCommand;
+    using ResolvedTerm = ModifierApi::ResolvedTerm;
     enum StackPolicy : int32_t { INDEPENDENT = 0, UNIQUE_SOURCE = 1, STACK_REFRESH = 2 };
-    enum Operation : int32_t { ADD = 0, SUBTRACT = 1, MULTIPLY = 2, DIVIDE = 3 };
-    enum CommandOpcode : int32_t {
-        COMMAND_APPLY = 1, COMMAND_REMOVE = 2, COMMAND_REFRESH = 3,
-        COMMAND_SET_STACKS = 4, COMMAND_SET_MAGNITUDE = 5,
-    };
     enum EventKind : int32_t {
         EVENT_APPLY = 1, EVENT_REPLACE = 2, EVENT_STACK = 3, EVENT_REFRESH = 4,
         EVENT_REMOVE = 5, EVENT_EXPIRE = 6, EVENT_TARGET_CLEANUP = 7,
         EVENT_REJECT = 8, EVENT_MAGNITUDE = 9,
-    };
-    // Native batch ingress used by EffectRuntime. `definition_key` is resolved
-    // before entering the Modifier daily commit, so no Godot Variant or
-    // Dictionary construction occurs per Effect command.
-    struct NativeCommand {
-        int32_t opcode = 0;
-        int32_t producer = 0;
-        int64_t sequence = 0;
-        int64_t effective_day = 0;
-        const char *definition_key = nullptr;
-        int32_t domain = CLIMATE;
-        int32_t scope = ENTITY;
-        uint64_t entity_handle = 0;
-        uint64_t group_handle = 0;
-        uint64_t source_type = 0;
-        uint64_t source_id = 0;
-        int32_t duration_days = -1;
-        int32_t stacks = 1;
-        int32_t magnitude_q16 = Q16_ONE;
-        uint64_t modifier_handle = 0;
     };
 
     godot::Dictionary configure(const godot::Dictionary &catalog, int32_t cell_count);
@@ -186,11 +168,6 @@ public:
     // DIVIDE is normalised to MULTIPLY(1/value) at parse time, so only ADD and
     // MULTIPLY are ever reported. A term that adds 0 and multiplies by 1 is
     // skipped: it contributes nothing.
-    struct ResolvedTerm {
-        int32_t stat_id = -1;
-        int32_t operation = ADD;
-        double value = 0.0;
-    };
     bool resolve_definition_terms(const std::string &definition_key,
                                   std::vector<ResolvedTerm> &out) const;
     // Active non-INDEPENDENT ENTITY entry keyed by exactly this source.

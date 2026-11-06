@@ -96,27 +96,21 @@ func available() -> bool:
 func reason() -> String:
 	return _reason if not _reason.is_empty() else "外交档案暂不可用"
 
-
 func military_available() -> bool:
 	return _military_available and _vm != null and _vm.available()
 
-
 func military_reason() -> String:
 	return _military_reason if not _military_reason.is_empty() else "军事机构尚未接通"
-
 
 ## 内层军事视图模型。战事与割地候选都从它来，面板不另建一份。
 func view_military():
 	return _vm
 
-
 func country_handle() -> int:
 	return _country_handle
 
-
 func day() -> int:
 	return _day
-
 
 func build(chapter_id: String, state: Dictionary = {}) -> Dictionary:
 	if not _available:
@@ -129,7 +123,6 @@ func build(chapter_id: String, state: Dictionary = {}) -> Dictionary:
 		"wars":
 			return wars_model(int(state.get("war", 0)))
 	return {"ok": false, "reason": "未知章节"}
-
 
 # ── 总览 ─────────────────────────────────────────────────────────────────
 
@@ -163,7 +156,6 @@ func overview_model() -> Dictionary:
 		"insights": _overview_insights(rows, soldiers),
 	}
 
-
 ## 列强榜：按领土排序，`marker` 是本国的同一标尺位置——一眼看出谁大谁小。
 func _power_rows() -> Array:
 	var countries := roster()
@@ -195,7 +187,6 @@ func _power_rows() -> Array:
 		})
 	return out
 
-
 func _overview_insights(wars: Array, soldiers: int) -> Array:
 	var out: Array = []
 	if soldiers <= 0 and military_available():
@@ -211,7 +202,6 @@ func _overview_insights(wars: Array, soldiers: int) -> Array:
 				int(strongest.border_edges)]})
 	return out.slice(0, MAX_INSIGHTS)
 
-
 func _strongest_neighbour() -> Dictionary:
 	var best: Dictionary = {}
 	for row in roster():
@@ -221,13 +211,11 @@ func _strongest_neighbour() -> Dictionary:
 			best = row
 	return best
 
-
 func _war_enemy_count() -> int:
 	var seen := {}
 	for entry in _entries():
 		seen[int(entry.enemy_slot)] = true
 	return seen.size()
-
 
 # ── 国家 ─────────────────────────────────────────────────────────────────
 
@@ -247,7 +235,6 @@ func countries_model(selected: int) -> Dictionary:
 		"empty": "",
 	}
 
-
 ## 名录行（供 DossierLedgerTable）。已发现国家、排除本国。
 func roster() -> Array:
 	if not _available:
@@ -257,14 +244,12 @@ func roster() -> Array:
 	_rebuild_roster(_session_signature)
 	return _roster
 
-
 func roster_empty_text() -> String:
 	if _generator == null:
 		return "外交档案尚未接通"
 	if _owners.is_empty():
 		return "尚未读到领土归属"
 	return "尚未接触任何国家"
-
 
 func _signature_now() -> String:
 	var generation := 0
@@ -277,7 +262,6 @@ func _signature_now() -> String:
 	if map != null:
 		vision = int(map.get("vision_revision"))
 	return "%d|%d|%d|%d" % [_day, generation, vision, _player_slot]
-
 
 func _rebuild_roster(signature: String) -> void:
 	_roster_signature = signature
@@ -339,7 +323,6 @@ func _rebuild_roster(signature: String) -> void:
 		if int(row.handle) != 0:
 			_row_by_handle[int(row.handle)] = row
 
-
 ## 交战中 → 接壤 → 领土大。同分按槽位稳定排序，刷新时行的顺序不会跳。
 static func _compare_rows(a: Dictionary, b: Dictionary) -> bool:
 	var a_war := String(_as_dict(a.relation).get("state", "")) == "war"
@@ -351,7 +334,6 @@ static func _compare_rows(a: Dictionary, b: Dictionary) -> bool:
 	if int(a.cells) != int(b.cells):
 		return int(a.cells) > int(b.cells)
 	return int(a.slot) < int(b.slot)
-
 
 func _roster_row_for(slot: int, entry: Dictionary, borders: Dictionary) -> Dictionary:
 	var first_cell := int(entry.first)
@@ -390,7 +372,6 @@ func _roster_row_for(slot: int, entry: Dictionary, borders: Dictionary) -> Dicti
 	row["declare_reason"] = String(gate.get("reason", ""))
 	return row
 
-
 func _row(row_id: int) -> Dictionary:
 	if row_id == 0:
 		return {}
@@ -398,7 +379,6 @@ func _row(row_id: int) -> Dictionary:
 		for row in roster():
 			_row_by_id[int(row.id)] = row
 	return _as_dict(_row_by_id.get(row_id, null))
-
 
 func _row_for_handle(handle: int) -> Dictionary:
 	if handle == 0:
@@ -408,7 +388,6 @@ func _row_for_handle(handle: int) -> Dictionary:
 			if int(row.handle) != 0:
 				_row_by_handle[int(row.handle)] = row
 	return _as_dict(_row_by_handle.get(handle, null))
-
 
 ## 单国档案。军事读数只在这里取——名录行不带，避免四十国 × 全局扫描。
 func country_sheet(row_id: int) -> Dictionary:
@@ -423,7 +402,6 @@ func country_sheet(row_id: int) -> Dictionary:
 	var sheet := _build_sheet(row)
 	_sheet_cache[key] = sheet
 	return sheet
-
 
 func _build_sheet(row: Dictionary) -> Dictionary:
 	var handle := int(row.handle)
@@ -485,7 +463,6 @@ func _build_sheet(row: Dictionary) -> Dictionary:
 		"note": _sheet_note(row),
 	}
 
-
 ## 国力对比：两条同标尺的两段条。对方军事读数未知时只留领土一条。
 func _compare_bars(row: Dictionary, soldiers: int) -> Array:
 	var bars: Array = []
@@ -522,7 +499,6 @@ func _compare_bars(row: Dictionary, soldiers: int) -> Array:
 		})
 	return bars
 
-
 func _sheet_note(row: Dictionary) -> String:
 	var relation := _as_dict(row.relation)
 	if String(relation.get("state", "")) == "war":
@@ -531,7 +507,6 @@ func _sheet_note(row: Dictionary) -> String:
 	if bool(row.adjacent):
 		return "接壤 · 边域 %d 面" % int(row.border_edges)
 	return "不接壤 · 跋涉不易"
-
 
 ## 宣战门控。原生只校验「有兵、未交战、无停战」（`MilitaryCore::apply_war_command`），
 ## 接壤不是前置——海军科技下远洋同样可及，所以这里也只按原生规则给结论。
@@ -545,7 +520,6 @@ func declare_gate(handle: int) -> Dictionary:
 		return {"enabled": false, "reason": "未建立往来"}
 	return _declare_gate_for_row(row)
 
-
 func _declare_gate_for_row(row: Dictionary) -> Dictionary:
 	var relation := _as_dict(row.relation)
 	if String(relation.get("state", "")) == "war":
@@ -556,7 +530,6 @@ func _declare_gate_for_row(row: Dictionary) -> Dictionary:
 	if _player_soldiers() <= 0:
 		return {"enabled": false, "reason": "无兵可战 · 先在军事中募兵"}
 	return {"enabled": true, "reason": ""}
-
 
 # ── 战事 ─────────────────────────────────────────────────────────────────
 
@@ -580,12 +553,10 @@ func wars_model(selected: int) -> Dictionary:
 		"empty": "",
 	}
 
-
 func wars_empty_text() -> String:
 	if not military_available():
 		return military_reason()
 	return ""
-
 
 func war_rows() -> Array:
 	var rows: Array = []
@@ -607,7 +578,6 @@ func war_rows() -> Array:
 				else ("交战中" if bool(card.get("battle", false)) else "对峙"),
 		})
 	return rows
-
 
 func war_sheet(war_id: int) -> Dictionary:
 	if not _available:
@@ -675,7 +645,6 @@ func war_sheet(war_id: int) -> Dictionary:
 		"log": log,
 	}
 
-
 ## 战争行的原始快照与映射卡配对。`war_cards()` 按快照顺序产出，所以按下标对齐。
 func _entries() -> Array:
 	if _vm == null:
@@ -703,14 +672,12 @@ func _entries() -> Array:
 		})
 	return _war_entries
 
-
 func _enemy_slot_of(war: Dictionary) -> int:
 	if _player_slot < 0:
 		return -1
 	var attacker := int(war.get("attacker_slot", -1))
 	var defender := int(war.get("defender_slot", -1))
 	return defender if attacker == _player_slot else attacker
-
 
 func _relation_for_slot(slot: int) -> Dictionary:
 	for entry in _entries():
@@ -726,7 +693,6 @@ func _relation_for_slot(slot: int) -> Dictionary:
 		}
 	return {"state": "peace", "war_id": 0, "days": 0, "score_text": "", "role": ""}
 
-
 # ── 会话读取 ─────────────────────────────────────────────────────────────
 
 ## 会话地图：模型显式给的优先，其次 fixture 的 `current_map()`。
@@ -735,14 +701,12 @@ func _map():
 		return _map_obj
 	return CountryMapQueryScript.map_of(_generator)
 
-
 func _resolve_player_slot() -> int:
 	if _vm != null and _vm.available():
 		var slot := int(_as_dict(_vm.snapshot()).get("country_slot", -1))
 		if slot >= 0:
 			return slot
 	return CountryMapQueryScript.slot_of_handle(_country_handle)
-
 
 func _handle_for_slot(slot: int, first_cell: int = -1) -> int:
 	if slot < 0:
@@ -759,7 +723,6 @@ func _handle_for_slot(slot: int, first_cell: int = -1) -> int:
 	_handle_by_slot[slot] = handle
 	return handle
 
-
 func _cell_summary(cell: int) -> Dictionary:
 	if cell < 0 or _country_facade == null \
 			or not _country_facade.has_method("cell_summary"):
@@ -769,12 +732,10 @@ func _cell_summary(cell: int) -> Dictionary:
 		return {}
 	return summary
 
-
 func _player_soldiers() -> int:
 	if not military_available():
 		return 0
 	return int(_as_dict(_vm.snapshot()).get("soldiers_total", 0))
-
 
 ## 我方控制、但归属不是本国的格数（= 占着别人的地）。
 func _occupied_cells() -> int:
@@ -804,7 +765,6 @@ func _occupied_cells() -> int:
 			occupied += 1
 	return occupied
 
-
 # ── 命名与格式化 ─────────────────────────────────────────────────────────
 
 func country_name(slot: int) -> String:
@@ -812,36 +772,29 @@ func country_name(slot: int) -> String:
 		return _vm.country_name(slot)
 	return "第 %d 国" % (slot + 1)
 
-
 func cell_name(cell: int) -> String:
 	if _vm != null:
 		return _vm.cell_name(cell)
 	return ("地块 #%d" % cell) if cell >= 0 else "—"
-
 
 func zone_name(cell: int) -> String:
 	if _vm != null:
 		return _vm.zone_name(cell)
 	return cell_name(cell)
 
-
 static func era_label(era: int) -> String:
 	if era < 0:
 		return "—"
 	return String(ERA_LABELS[clampi(era, 0, ERA_LABELS.size() - 1)])
 
-
 static func _count(raw) -> String:
 	return UITokens.format_compact_number_cn(float(raw), 1)
-
 
 static func _money_text(raw) -> String:
 	return UITokens.format_compact_number_cn(float(raw) / MONEY_SCALE, 2)
 
-
 static func _as_dict(value) -> Dictionary:
 	return value if value is Dictionary else {}
-
 
 static func _as_array(value) -> Array:
 	return value if value is Array else []

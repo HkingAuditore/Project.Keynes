@@ -54,6 +54,7 @@ const COMMIT_WAIT_MS := 4000
 const GLOBAL_BUDGET_MS := 900000
 
 const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
+const RestartBoundary = preload("res://tests/runtime/worker_restart_boundary.gd")
 
 ## Phase switch, so a single phase can be iterated on without paying for both.
 const RUN_RESTART_PHASE := true
@@ -423,8 +424,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 	var host: WorldRuntimeHost = w["host"]
 	w["tick"] = int(w["tick"]) + 1
 	var day := int(w["tick"])
-	var before := int(ext.get_runtime_thread_report().get(
-		"simulation_committed_day", -1))
 	clock.current_day = float(day)
 	_service_peers(ext)
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
@@ -437,21 +436,13 @@ func _drive_day(w: Dictionary) -> Dictionary:
 	# Soft barrier: let the worker consume the day this tick just captured. A
 	# stalled or faulted worker must not hang the fixture, so it is a bounded
 	# wait, exactly like the production host's day wait.
-	_wait_worker_day(w, before, COMMIT_WAIT_MS)
+	_wait_worker_day(w, COMMIT_WAIT_MS)
 	return {"ok": true, "day": day}
 
 
-func _wait_worker_day(w: Dictionary, before: int, timeout_ms: int) -> void:
-	var ext: Object = w["ext"]
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = ext.get_runtime_thread_report()
-			return int(report.get("simulation_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_ms,
-		func() -> void:
-			_service_peers(ext, 1))
+func _wait_worker_day(w: Dictionary, timeout_ms: int) -> void:
+	RestartBoundary.committed(w, timeout_ms,
+		func() -> void: _service_peers(w["ext"], 1))
 
 
 func _drive_days(w: Dictionary, days: int) -> void:
@@ -470,6 +461,8 @@ func _world_day(ext: Object) -> int:
 
 
 func _wait_worker_state(w: Dictionary, wanted: String, timeout_ms: int) -> bool:
+	if wanted == "STOPPED":
+		return RestartBoundary.stopped(w["ext"], timeout_ms)
 	var ext: Object = w["ext"]
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	while Time.get_ticks_msec() < deadline:

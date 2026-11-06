@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name DCTerrainGenerator
 
 ## Phase G.1 / dots-full-migration §G.1：map_generator.gd 一次性烘焙逻辑抽出。
@@ -54,7 +54,6 @@ class_name DCTerrainGenerator
 ## - map_generator.gd 减少 ~1500 行 generation 部分；剩余 ~1000 行（runtime sub-pass
 ##   + SUS 协调 + diagnostics 转发）；E.6 + 后续 PR 进一步压缩到 ≤ 250 行
 
-var _generator  # MapGenerator owner; retained for the facade context.
 
 func _init(generator) -> void:
 	_generator = generator

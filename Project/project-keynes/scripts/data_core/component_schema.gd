@@ -26,7 +26,7 @@ class_name DCComponentSchema
 ##   - `prev_field` 仅当 `track_prev=true` 时被使用，必须是 `MapData` 上
 ##     `<map_field>_prev` 形式的真实属性；track_prev=false 时填空字符串。
 ##
-## 加新字段的 5 步骤（详见 docs/dots-component-schema.md 的 SOP）：
+## 加新字段的 5 步骤（详见 docs/architecture/development-guide.md 的 SOP）：
 ##   1. 在 `DCComponentIds` 加一个 `CELL_<NAME>: StringName = &"cell.<name>"` 常量；
 ##   2. 在 `MapData` 加同名 `PackedArray` 字段并在 `_alloc_soa / rebuild_soa_from_cells`
 ##      里 resize / 镜像；

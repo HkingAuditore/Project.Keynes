@@ -766,7 +766,7 @@ func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	# `set()` 推回会把 PackedFloat32Array 的 refcount 顶到 ≥3，导致 GDScript
 	# climate Pass 内 `arr[i] = v` 触发 CoW 写到一份临时 storage 上，函数退出
 	# 即销毁，map.temp_arr 永远是初值（→ 渲染层"温度全蓝"）。详见
-	# docs/performance-charter.md §11.4 第三行的 "GDScript 端整体赋值后必须
+	# docs/architecture/current-state.md 第三行的 "GDScript 端整体赋值后必须
 	# bind_map_data" 反向对偶。
 	#
 	# 折中策略（路 C）：DCWorldExt 已 bind 时，climate Pass 暂时回退到 legacy
@@ -855,7 +855,7 @@ var _sus_bootstrap: RefCounted = null
 var _data_core_world: DCWorld = null
 # DataCore World — C++ co-processor（dots-roadmap-to-gdextension 务实 A）：
 # 仅服务于 climate Pass-A 的 C++ 加速；与 _data_core_world 共享同一份 MapData
-# PackedArray（CoW alias，详见 docs/performance-charter.md §11 + Phase 3a Step 2.0
+# PackedArray（CoW alias，详见 docs/architecture/current-state.md + Phase 3a Step 2.0
 # 验证报告）。weather / sus / ECB 完全不感知此实例。
 # - use_data_core=true 时创建并 bind_map_data；否则保持 null
 # - climate Pass-A 入口检查 _data_core_world_ext != null && run_climate_pass_a()>=0
@@ -871,7 +871,7 @@ var _dc_terrain_mirror_dirty: bool = true
 # 只跑一次。NaN = 未跑过；reset_progress 时清回 NaN。
 var _ocean_water_done_phase: float = NAN
 # F.5 transpiration pass C++ 加速运行时统计（charter §7 P2，3.2ms → 0.3ms 目标）。
-# 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 dots-f5-validation.md 验收。
+# 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 docs/architecture/migration.md 验收。
 var _gdext_transp_runs: int = 0
 var _gdext_transp_fallbacks: int = 0
 var _gdext_transp_total_ms: float = 0.0
@@ -1024,7 +1024,7 @@ var _gdext_sea_ice_signature_ok: bool = false
 # 经过游戏天数"而不是"调用次数"驱动。clamp 上限 30 天用于：
 #   1) 开局（_last_sea_ice_pass_day = -1）走 1.0 默认，避免大跳；
 #   2) 长时间 pause 后恢复，避免一次推进几百天导致全图冻死/全融。
-# 详见 docs/dots-master-execution-handbook.md §sea_ice-dt-compensation。
+# 详见 docs/architecture/development-guide.md。
 var _last_sea_ice_pass_day: float = -1.0
 
 # [thermal dt 补偿 2026-06-16] climate pass_a 热惯性与 sea_ice 同病：原本假定
@@ -1396,9 +1396,13 @@ func _ensure_daily_pass_modules() -> void:
 
 
 var _loading_epoch := 0
+const LoadingFrameGateScript = preload("res://scripts/geography/loading_frame_gate.gd")
+var _loading_frames = LoadingFrameGateScript.new()
 
 func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_epoch += 1
+	_loading_frames.cancel()
+	_loading_frames = LoadingFrameGateScript.new()
 	var epoch := _loading_epoch
 	# ── 诊断上下文：任何一次 generate() 失败都要能回答"失败在哪一步/为什么" ──
 	last_generation_error = {}
@@ -1412,7 +1416,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	_mapgen_stage = "loading_catalog"
-	await LoadingCatalogCache.prepare(_ensure_generation_world_ext())
+	await LoadingCatalogCache.prepare(_ensure_generation_world_ext(), _loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 
@@ -1524,6 +1528,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 
 	var t_bake := Time.get_ticks_msec()
 	_baker = MapBaker.new()
+	_baker.set_loading_frame_gate(_loading_frames)
 	# 转发 baker.stage_progress → generator.bake_progress（main.gd 已订阅）。
 	if _baker.has_signal("stage_progress") and not _baker.stage_progress.is_connected(_on_baker_stage_progress):
 		_baker.stage_progress.connect(_on_baker_stage_progress)
@@ -1549,7 +1554,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_profile_step("await map.build_indices_cooperative()")
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
-	await map.build_indices_cooperative()
+	await map.build_indices_cooperative(_loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
@@ -1697,7 +1702,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	# regenerate 路径：MapData 实例随每次 generate() 调用整体替换，本次构建
 	# 的索引随旧 MapData 一起被丢弃，无需手动 invalidate。
 	if not map.has_indices():
-		await map.build_indices_cooperative()
+		await map.build_indices_cooperative(_loading_frames)
 		if epoch != _loading_epoch:
 			return _generation_superseded(_mapgen_stage)
 
@@ -1713,7 +1718,7 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_loading_profile_step("await map.init_soa_from_bake_cooperative()")
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
-	await map.init_soa_from_bake_cooperative()
+	await map.init_soa_from_bake_cooperative(_loading_frames)
 	if epoch != _loading_epoch:
 		return _generation_superseded(_mapgen_stage)
 	await _yield_generation_frame()
@@ -2116,8 +2121,9 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 
 ## Military catalog compile + configure + terrain + AI arming.
 ##
-## Order matters: it must run after Country and Economy are configured and
-## bootstrapped (dense good/profession/technology ids and the territory mirror),
+## Order matters: it runs after Country and Economy catalogs are configured
+## (dense good/profession/technology ids and the territory mirror). New games
+## bootstrap first; load preparation configures before PKMI/ECP2 restore,
 ## and before the daily system registration so the first simulation day already
 ## has a usable terrain layer.
 ##
@@ -2405,6 +2411,16 @@ func get_runtime_thread_report() -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_thread_report"):
 		return {}
 	return _data_core_world_ext.get_runtime_thread_report()
+
+
+## Live scheduling/consumption gates. Read each call so stop, fault and restart
+## revoke or restore grants immediately, without rebuilding full diagnostics.
+func get_runtime_control_state() -> Dictionary:
+	if _data_core_world_ext == null:
+		return get_runtime_thread_report()
+	if _data_core_world_ext.has_method("get_runtime_control_state"):
+		return _data_core_world_ext.get_runtime_control_state()
+	return get_runtime_thread_report()
 
 
 ## WorldRuntimeHost probes the generator, not DCWorldExt, for the ACTIVE
@@ -3007,14 +3023,14 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		# 陈旧副本上、每 48 天才被 vegetation_dynamics 动一次，而生产侧每 30 天就被
 		# season refresh 重算一次。
 		#
-		# 顺序上成立：权威下到期的 season refresh 就在本函数开头跑完（见
-		# run_round_for_capture），所以这里读到的 MapData 已经是它写完之后的值。
+		# 权威下到期的 season refresh 已在本函数开头跑完。
 		"climate_season_refresh_ran": _season_refresh_edge_pending(),
 		# Climate 在 worker 手上时，worker 要自己补上「生产被抑制后就停更」的那些
 		# 记录：round scalars（season_phase）与 PAW。两处都不能无条件做，否则
 		# SHADOW parity 立刻分叉。见 RuntimeEnvironmentSnapshot::climate_worker_authoritative。
 		"climate_worker_authoritative": bool(
 			thread_report.get("climate_worker_authoritative", false)),
+		"climate_capture_cursors": preload("res://scripts/game/world_runtime_climate_restore.gd").capture(self),
 	})
 	_capture_trace("result day=%d ok=%s code=%s" % [
 		day, str(result.get("ok", false)), String(result.get("code", ""))])
@@ -3362,14 +3378,8 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 		# Player handles arrive with PKSV pkai (or the legacy fallback); until
 		# then the native AI stays unarmed.
 		_configure_country_ai(_sus_map, _save_restore_seed, PackedInt64Array())
-		# PKMI restores in the provider loop immediately after PKCN (design §22),
-		# long before finalize_save_restore_runtime(). Configure the facade here
-		# so _restore_military_provider() has somewhere to restore into; otherwise
-		# every save carrying a pkmi section is refused with
-		# pkmi_runtime_unavailable. A failed configure is intentionally not fatal:
-		# the provider still refuses honestly (or accepts the legacy empty-pkmi
-		# migration). Do not reconfigure in finalize: set_terrain() resets the
-		# native military store and would discard the restored state.
+		# PKMI is the next provider, before ECP2. It needs its catalog and map
+		# shape now; settlement tiers are refreshed after ECP2 restores below.
 		_configure_military_runtime(_sus_map, null, _save_restore_seed)
 		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
 	return configured
@@ -3392,12 +3402,20 @@ func finalize_save_restore_runtime() -> Dictionary:
 	var registered: Dictionary = _register_country_economy_systems(_c())
 	if not bool(registered.get("ok", false)):
 		return registered
-	# The military facade was configured in prepare_economy_save_restore_runtime()
-	# so the PKMI provider could restore into it. Never reconfigure here: a fresh
-	# set_terrain() resets the native military store and would wipe the state
-	# that provider just restored. Keep the old configure as a fallback only for
-	# the paths where prepare did not produce a configured facade.
-	if _military_facade == null or not _military_facade.is_configured():
+	# PKMI has already restored. Never configure again here: that would erase
+	# the recovered armies, orders and AI state. Refresh settlement terrain
+	# from restored ECP2 through the facade's state-preserving terrain path.
+	if _military_facade != null and _military_facade.is_configured():
+		var terrain: Dictionary = _military_facade.set_terrain(_sus_map, -1, true,
+			_military_settlement_tiers(_sus_map))
+		if not bool(terrain.get("ok", false)) or not bool(terrain.get("state_preserved", false)):
+			return {"ok": false, "reason": "military_restore_terrain_failed"}
+		if _military_facade.ai_player_handles().is_empty():
+			_arm_military_ai(_gameplay_player_country_handles())
+	else:
+		# Keep a fallback for restore paths whose preparation did not produce a
+		# configured facade. A successful configure is safe here because no PKMI
+		# state was installed into the facade in that path.
 		var military_configured: Dictionary = _configure_military_runtime(
 			_sus_map, null, _save_restore_seed)
 		if bool(military_configured.get("ok", false)):
@@ -3934,6 +3952,11 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 			&"economy_day_barrier", barrier_armed)
 		_world_clock_ref.request_simulation_backpressure(
 			&"country_day_barrier", barrier_armed)
+		# The first slice can run through IdeologyRuntimeSystem (which arms its
+		# own barrier), while continuation goes straight to the native graph.
+		# Reconcile that same barrier here after native completion as well.
+		_world_clock_ref.request_simulation_backpressure(
+			&"ideology_day_barrier", bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index)))
 	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
 		_data_core_world_ext.flush_runtime_visuals(token_dirty)
 	# Country slice 已在 pulse 内写入 native + MapData.country_slot_arr，但
@@ -3944,15 +3967,12 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 		var economy_result: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
 		if bool(economy_result.get("fatal", false)):
 			_halt_on_economy_fatal(day_index, economy_result)
-		# 营造回执靠原生侧的独立游标推进，与经济报告是哪一天无关。它原来被
-		# 绑在下面的「报告日 == 当天」里：经济域落后 / stall 时报告仍是旧日，
-		# 回执就一次都不分发，玩家只看到「已排队」然后什么也没有。
-		if _economy_facade != null:
-			_economy_facade.dispatch_construction_command_receipts()
 		if int(economy_result.get("day_index", economy_result.get("sample_day", -1))) == day_index:
 			if _economy_facade != null and bool(economy_result.get(
 					"economy_event_batch_published", false)):
 				_economy_facade.dispatch_committed_events(economy_result)
+			if _economy_facade != null:
+				_economy_facade.dispatch_construction_command_receipts()
 	return {"token": token, "status": token_status,
 		"dirty_mask": token_dirty}
 
@@ -4426,7 +4446,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		var _hoisted := false
 		for _ci in range(_n_cells_for_bind):
 			if _generation_slice_due():
-				await (Engine.get_main_loop() as SceneTree).process_frame
+				await _yield_generation_frame()
 				_generation_slice_start_usec = Time.get_ticks_usec()
 			var _c_for_bind = _cell_arr_for_bind[_ci]
 			if _c_for_bind == null or not _c_for_bind.has_method("bind_world"):
@@ -4498,7 +4518,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 			world,
 			int(cfg.seed),
 			int(country_config.get("foreign_count", NewGameConfig.DEFAULT_FOREIGN_COUNT)),
-			String(country_config.get("name", "新国家")))
+			String(country_config.get("name", "新国家")), _loading_frames)
 		if not bool(_gameplay_start_report.get("ok", false)):
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)
@@ -4602,8 +4622,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_ocean_currents_job = ocean_sys.get_inner()
 	_sus.configure_job_from_profile(ocean_sys, cp, false, &"ocean_currents", 1)
 	_sus.configure_job_from_profile(_ocean_currents_job, cp, false, &"ocean_currents", 1)
-	_ocean_currents_job.on_commit = func():
-		_compute_ocean_currents(map, world, hex_size)
+	# A method Callable borrows self; an owned lambda retains the generator.
+	_ocean_currents_job.on_commit = _compute_ocean_currents.bind(map, world, hex_size)
 	if _world_clock_ref != null:
 		_ocean_currents_job.season_phase_getter = Callable(_world_clock_ref, "season_phase")
 	_runtime_register_system(ocean_sys)
@@ -4706,7 +4726,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
 	# （每 round 前 10 个 stage 返回 done=false），weather 在 SUS 优先级序里
 	# 排在 season 之后（150 > 50），只要 season 切片中 weather 立刻 dep_pending。
-	# 实测 30 tick 内 weather ran=0（详见 docs/DOTS review.md 排查记录）。
+	# 实测 30 tick 内 weather ran=0（详见 docs/architecture/current-state.md 排查记录）。
 	#
 	# 真实依赖关系：weather hot loop 读的是 cell.temperature / moisture / wind /
 	# has_river 等慢层 baseline——这些字段跟 season 切换的"植被/cover redecide"
@@ -10091,7 +10111,7 @@ func _bootstrap_natural_resource_deposits(map_ref, cfg, cooperative: bool = fals
 				belt_noises[belt_key] = belt_noise
 		for i in range(n_cells):
 			if cooperative and _generation_slice_due():
-				await (Engine.get_main_loop() as SceneTree).process_frame
+				await _yield_generation_frame()
 				_generation_slice_start_usec = Time.get_ticks_usec()
 			if habitat_code > 0 and not ResourceProfileRegistry.habitat_available(
 					p, int(habitat_arr[i])):
@@ -10483,7 +10503,7 @@ func _collect_resource_habitat_mask(map_ref, cooperative: bool = false) -> Packe
 	var have_neighbors: bool = neighbor_indices.size() >= n_cells * 6
 	for i in range(n_cells):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var mask := 0
 		var is_water_cell := have_water and water_arr[i] != 0
@@ -10533,7 +10553,7 @@ func _collect_estuary_strength(map_ref, cooperative: bool = false) -> PackedFloa
 		return estuary_strength_arr
 	for source in range(n_cells):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if river_arr[source] == 0:
 			continue
@@ -13502,7 +13522,9 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	var final_res: Dictionary
 	var n: int
 	if ext.has_method("run_native_world_generate_full_pass"):
-		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict})
+		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict}, _loading_frames)
+		if bool(final_res.get("canceled", false)):
+			return null
 		_native_generation_base_report = final_res.duplicate(true)
 		if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
 			var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
@@ -15260,7 +15282,7 @@ func refresh_climate_loading(map: MapData, season_phase: float) -> void:
 # PR-2.1.1 helper：把 [name → cid → write_*_indexed] 三步压成一行调用，封装
 # `_data_core_world == null` / `cid < 0` 双守卫。供 _climate_pass_a /
 # _climate_pass_a_soa 以及后续 PR-2.1.2/3/4 的 hot pass push 块复用。
-# 详见 docs/dots-master-execution-handbook.md §3.4.2.C / §9.2 模板 2。
+# 详见 docs/architecture/development-guide.md / §9.2 模板 2。
 func _push_f32_to_world(name: StringName, indices: PackedInt32Array, values: PackedFloat32Array) -> void:
 	if _data_core_world == null:
 		return
@@ -15454,7 +15476,7 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	var season_idx: int = int(floor(fposmod(season_phase, 4.0))) & 3
 
 	# PR-2.1.1（climate Pass-A 写路径下移）：legacy fallback 9 写位预分配 batch buffer。
-	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
+	# 详见 docs/architecture/development-guide.md + §9.2 模板 2。
 	#   - 8 个 f32 字段：temp / moisture / snow_cover / temp_baseline / temp_season_offset
 	#                   / temp_30d / temp_365d / temp_anomaly
 	#   - 1 个 u8 字段：_ema_initialized
@@ -15722,7 +15744,7 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 			cell_pos[i] = HexUtils.cube_to_world(snap_cell.q, snap_cell.r, _last_hex_size)
 
 	# PR-2.1.2（climate Pass-B legacy 写路径下移）：预分配 batch buffer。
-	# 详见 docs/dots-master-execution-handbook.md §3.5。
+	# 详见 docs/architecture/development-guide.md。
 	var _pb_indices: PackedInt32Array = PackedInt32Array()
 	var _pb_temp: PackedFloat32Array = PackedFloat32Array()
 	var _pb_moist: PackedFloat32Array = PackedFloat32Array()
@@ -16397,7 +16419,7 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 				# 双 world 架构由 GDScript DCWorld（ECS 容器）+ DCWorldExt（C++ 镜像
 				# slot）组成，本来就是 superset/subset 关系；这里属于补足缺失的一条
 				# 镜像链路（B-Surgical），不动其它系统的写入路径。
-				# 见 docs/dots-master-execution-handbook.md §sea-ice-dual-world-sync。
+				# 见 docs/architecture/development-guide.md。
 				if _data_core_world_ext != null \
 						and _data_core_world_ext.has_method("write_f32_indexed") \
 						and _data_core_world_ext.has_method("component_id"):
@@ -16837,7 +16859,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			"edge_mix_rate": float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035,
 			"cell_temperature_arr": temp_input,
 		}
-		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/dots-f4-validation.md §2.2.b）：
+		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/architecture/migration.md）：
 		# GDScript pass_a 写 map.temp_arr / 上一段 sub-pass 写 map.*_arr 后，C++ slot
 		# 仍指向 CoW 解耦前的旧 buffer。先 refresh 让 C++ 读到 GDScript 端最新状态。
 		# 开销 ~14μs / 35 component（map_data->get + Variant 类型分发），可接受；
@@ -17050,7 +17072,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 	# PR-2.1.4（sea_ice daily fallback 写路径下移）：预分配 batch buffer。
 	# C++ 路径在 line 4140+ 已 return；本 batch 仅在 GDScript fallback 时使用。
-	# 详见 docs/dots-master-execution-handbook.md §3.8。
+	# 详见 docs/architecture/development-guide.md。
 	var _si_indices: PackedInt32Array = PackedInt32Array()
 	var _si_frac: PackedFloat32Array = PackedFloat32Array()
 	_si_indices.resize(n_cells)
@@ -17840,7 +17862,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# （多花一次 O(N) 拷贝，N=2400 时 < 0.5ms 可接受）。
 	# 当 _use_dc=false 但 _data_core_world != null 时这次写就是必须的（map.*_arr
 	# 与 DCWorld 不同源时唯一的 push 时机）。
-	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
+	# 详见 docs/architecture/development-guide.md + §9.2 模板 2。
 	# helper 内部守卫 _data_core_world / cid，故此处只判 n > 0。
 	#
 	# A.2.1.B — Dirty-aware push（dynamic_visual_atlas 35-50ms 长帧根治 M1）：
@@ -18090,7 +18112,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			"sea_ice_frac": map.sea_ice_frac_arr,
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：pass_a 刚写过 map.temp_arr，C++
-		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/dots-f4-validation.md §2.2.b。
+		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员，跨 pass 边界由
 		# climate_daily_system 在 _run_pass 切换 pass_id 时 mark stale。
 		_ensure_climate_daily_round_slots_fresh()
@@ -18346,7 +18368,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		moist_a[i] = moisture_final
 
 	# PR-2.1.2（climate Pass-B SoA 路径）：循环结束后批量 push temp_a / moist_a 到 DCWorld。
-	# 与 PR-2.1.1 SoA 收尾对称（详见 docs/dots-master-execution-handbook.md §3.5）。
+	# 与 PR-2.1.1 SoA 收尾对称（详见 docs/architecture/development-guide.md）。
 	#
 	# A.2.1.B — Dirty-aware push（M1 续）：复用 Pass-A 的 climate_dirty_mask 子集，
 	# 避免在 Pass-A 已稀疏化之后再被本 pass 全图覆盖。dirty_mask 不可用 / 大小不符
@@ -18522,7 +18544,7 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		_apply_temperature_transport_anomaly_knobs(knobs_w, tta)
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
 		# 但本 pass 还要读 map.is_water_arr / cell_lat_norm_arr 等静态/上一段写过的字段；
-		# refresh 后保证 C++ slot 与 map 一致。详见 docs/dots-f4-validation.md §2.2.b。
+		# refresh 后保证 C++ slot 与 map 一致。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员。
 		_ensure_climate_daily_round_slots_fresh()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
@@ -18762,7 +18784,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		}
 		_apply_temperature_transport_anomaly_knobs(knobs_l, _temperature_transport_anomaly_knobs(cp))
 		# storage A/B 同源契约（修复 B 2026-05-14）：ocean_water 已 flush 到 map，
-		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/dots-f4-validation.md §2.2.b。
+		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员；ocean_water→ocean_land
 		# 的跨 pass mark stale 由 climate_daily_system._run_pass 负责。
 		_ensure_climate_daily_round_slots_fresh()
@@ -20623,7 +20645,7 @@ func _apply_transpiration_pass(map: MapData) -> void:
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：sea_ice 已 flush 到 map，
 		# refresh 让本 pass 读 cell.moisture / cell.weather_precip 等取得最新值。
-		# 详见 docs/dots-f4-validation.md §2.2.b。
+		# 详见 docs/architecture/migration.md。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		var rc: float = float(_data_core_world_ext.run_transpiration_pass(knobs))
@@ -20690,7 +20712,7 @@ func _apply_transpiration_pass(map: MapData) -> void:
 	# 阶段 2：把所有 delta 应用到 current_state.moisture（一次性，避免顺序敏感）
 	#
 	# PR-2.1.5（transpiration 模板 PR）：写路径下移到 world.write_f32_indexed。
-	# 详见 docs/dots-master-execution-handbook.md §3.3 + §9.1 模板 1。
+	# 详见 docs/architecture/development-guide.md + §9.1 模板 1。
 	#   - 收集 dirty_indices + new_values（dirty 仅 deltas[i] != 0 的格子）
 	#   - 双写保留：cell.moisture 仍写（PR-2.3 facade 化时由 setter 统一处理）
 	#   - 一次性 write_f32_indexed（避免每 idx 单调用的开销 / CoW 风险）
@@ -21755,7 +21777,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
@@ -21764,7 +21786,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		temp_before[cell] = _valid_runtime_temp_or_baseline(cell.temperature, float(baseline[cell]))
 	
@@ -21776,7 +21798,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var iter_cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	for ic in range(n_cells_air):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		anom_out_arr[ic] = 0.0
 	
@@ -21788,7 +21810,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var has_wind_soa_air: bool = wind_x_arr_air.size() == n_cells_air and wind_y_arr_air.size() == n_cells_air
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ci_air: int = int(cell.index)
 		var wind: Vector2
@@ -21839,7 +21861,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 	var _anom_ok: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_air
 	for ic in range(n_cells_air):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _anom_ok:
 			map.air_mass_temp_anomaly_arr[ic] = anom_out_arr[ic]
@@ -21871,7 +21893,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
@@ -21886,7 +21908,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	# 默认值：anom=0；temp 优先保留 air_mass pass 写入 SoA 的最新值。
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var c0: HexCell = iter_cells_s[ic]
 		anom_out_s[ic] = 0.0
@@ -21902,13 +21924,13 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var has_temp_soa_s: bool = temp_arr_s.size() == n_cells_s
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if has_temp_soa_s:
 			temp_out_s[ic] = temp_arr_s[ic]
 	for cell: HexCell in map.all_cells():
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
@@ -21957,7 +21979,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	var _anom_ok_s: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_s
 	for ic in range(n_cells_s):
 		if cooperative and _generation_slice_due():
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		if _temp_ok_s:
 			map.temp_arr[ic] = temp_out_s[ic]
@@ -21997,14 +22019,8 @@ func _on_baker_stage_progress(stage: String, fraction: float) -> void:
 ## 浏览器实测单帧 31–34 ms ⇒ 一次 yield ≈ 130 ms，光是这些等待就占掉「进新游戏」
 ## 3.5–5.3 秒。多等 3 帧的原始动机是"让加载条动画走一下"，但一帧就足以把本帧的
 ## 绘制提交出去；再等 3 帧只是把墙钟乘以 4。改成 1 帧。
-const GENERATION_YIELD_FRAMES := 1
-
-func _yield_generation_frame() -> void:
-	var main_loop := Engine.get_main_loop()
-	if main_loop is SceneTree:
-		var tree := main_loop as SceneTree
-		for _i in range(GENERATION_YIELD_FRAMES):
-			await tree.process_frame
+func _yield_generation_frame():
+	return _loading_frames.next_frame()
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -22401,6 +22417,7 @@ func cancel_loading_work() -> void:
 		_data_core_world_ext.cancel_all_loading_tasks()
 	if _baker != null:
 		_baker.cancel_loading_work()
+	_loading_frames.cancel()
 
 
 var _loading_step_usec := 0
@@ -22510,7 +22527,9 @@ func _prepare_season_geometry_cooperative(map: MapData, n: int) -> void:
 			rows[i] = _cube_to_row(cell,_last_cfg)
 			jitter[i] = _height_warp.get_noise_2d(float(cell.q)*8.0,float(cell.r)*8.0)*.04 if _height_warp != null else 0.0
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await _yield_generation_frame()
+			if _loading_frames.canceled:
+				return
 			start = Time.get_ticks_usec()
 	_season_knob_row_idx_cache = rows
 	_season_knob_jitter_cache = jitter

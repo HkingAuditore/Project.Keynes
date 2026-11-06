@@ -159,7 +159,7 @@ weather front spawn / advect 路径读 cell.wind_vector → 累积偏差不超�
 
 1. ClimateProfile.use_gdext_wind_field 默认 → true
 2. 旧 GDScript path 加 `@deprecated` 注释（保留至 Phase III 拆分时移到 archive/）
-3. master 手册 Block B 状态 → DONE，记入 dots-framework-status.md
+3. master 手册 Block B 状态 → DONE，记入 docs/architecture/migration.md
 
 ---
 
@@ -183,7 +183,7 @@ Block B 仅覆盖 WIND stage；其他 stage 视性能 baseline 决定。
 
 ## 6. 引用
 
-- `docs/dots-master-execution-handbook.md` §4（Block B）
+- `docs/architecture/development-guide.md` §4（Block B）
 - `scripts/rendering/physical_circulation_solver.gd` `solve_wind_field`
 - `scripts/rendering/map_baker.gd` `_physical_solve_step_one` _PHYS_STAGE_WIND
 - `gdext/src/world_ext.cpp` 待加 `run_wind_field_pass`

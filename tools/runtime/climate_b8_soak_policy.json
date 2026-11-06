@@ -19,7 +19,7 @@
     },
     "existing_180x120_evidence": {
       "cells": 21600,
-      "source": "docs/cpp-dots-runtime/full-authoritative-runtime-status.md section 38",
+      "source": "Historical source removed; current architecture entry: docs/architecture/migration.md",
       "verdict": "throughput_neutral_but_worker_cannot_keep_up",
       "note": "SUS sim avg 6.02 (OFF) vs 6.08 (ACTIVE); writeback_days=30/50 because the worker could not sustain the day rate."
     },

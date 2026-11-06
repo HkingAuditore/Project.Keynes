@@ -51,7 +51,13 @@ var _slot_by_name: Dictionary = {}             # StringName → comp_id (int)
 var _entity_count: int = 0
 
 # Bind 状态（Task 4 完整接入；首版仅占位）
-var _map_data = null                           # MapData 弱引用
+var _map_data_ref: WeakRef
+# MapData owns HexCells, which retain this world. Do not close that cycle.
+var _map_data:
+	get:
+		return _map_data_ref.get_ref() if _map_data_ref != null else null
+	set(value):
+		_map_data_ref = weakref(value) if value != null else null
 var _bound: bool = false
 
 # Pending sub-pass 计数（Task 2 swap 守卫用）。每个 sub-pass 开始时 +1，完成
@@ -1147,7 +1153,7 @@ func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> voi
 	#   - C++ 端 `gdext/src/component_bind_table.gen.h` 由 codegen 脚本
 	#     `tools/codegen/gen_cpp_bind_table.py` 从同一份 schema 生成。
 	# 加新字段：在 component_schema.gd 加一行 → 跑 codegen → rebuild gdext。
-	# 详见 docs/dots-component-schema.md。
+	# 详见 docs/architecture/development-guide.md。
 	#
 	# Demo 条目（cell.demo.*）：仅在 demo_thermal_gradient_enabled=true 时
 	# 才 attach；为 false 时跳过（slot 不注册 → C++ pass component_id() 返回
@@ -1599,7 +1605,7 @@ func pool_count() -> int:
 	return _pools.size()
 
 
-# ─── Phase 4.1：序列化 / 反序列化 API（dots-phase4-followup.md §4.1）─────
+# ─── Phase 4.1：序列化 / 反序列化 API（docs/architecture/migration.md）─────
 #
 # 当前实现：**骨架阶段**——按 component_schema.gd CELL_SCHEMA 自动遍历
 # 生产 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。

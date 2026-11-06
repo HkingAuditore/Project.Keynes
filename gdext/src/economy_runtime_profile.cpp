@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_runtime_variant_helpers.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
@@ -120,7 +120,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     // Diagnostic-only override for worker task-count sweeps; task count never
     // changes simulation results (parallel paths are bit-identical to serial).
     static const int32_t worker_cap_env = [] {
-        const char *value = std::getenv("PK_ECONOMY_WORKER_TASK_CAP");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_WORKER_TASK_CAP);
         if (value == nullptr || *value == '\0') return 0;
         return std::atoi(value);
     }();

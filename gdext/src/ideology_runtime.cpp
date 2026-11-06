@@ -4,15 +4,15 @@
 #include "derived_cell_materializer.h"
 #include "effect_selector_cap.h"
 
-#include "country_runtime.h"
-#include "economy_runtime.h"
+#include "country_api.h"
+#include "economy_api.h"
 #include "effect_runtime.h"
 #include "effect_instance_forwarder.h"
 #include "ideology_opinion_bridge.h"
 // Authority-aware instance queries: the ideology report and the ideology restore
 // both ask whether an instance still exists / has fired.
 #include "economy_effect_forward.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "runtime_effect_pod.h"
 #include "runtime_ideology_draw_kernel.h"
 
@@ -898,6 +898,7 @@ void NativeIdeologyRuntime::reset_runtime_state() {
     _pending_transitions.clear();
     _pending_transition_cursor = 0;
     _active_progress_day = -1;
+    _daily_continuation_day = -1;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
     _submit_order = 0;
@@ -1230,6 +1231,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
     // so replaying it on the main thread would double-apply it.
     _commands.clear();
     _command_cursor = 0;
+    _daily_continuation_day = -1;
     _active_progress_day = snapshot.round_day;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
@@ -1250,7 +1252,7 @@ bool NativeIdeologyRuntime::apply_pod_snapshot(
     return true;
 }
 
-bool NativeIdeologyRuntime::validate_country(uint64_t handle, int32_t &slot) const { slot=static_cast<int32_t>(handle & 0xffffffffULL); return _country_runtime!=nullptr && handle!=0 && _country_runtime->valid_handle(static_cast<int64_t>(handle)); }
+bool NativeIdeologyRuntime::validate_country(uint64_t handle, int32_t &slot) const { slot=static_cast<int32_t>(handle & 0xffffffffULL); return _country_runtime!=nullptr && handle!=0 && country_api::valid_handle(*_country_runtime, static_cast<int64_t>(handle)); }
 NativeIdeologyRuntime::CountryState *NativeIdeologyRuntime::country_state_for(
         uint64_t handle, bool create) {
     int32_t slot = -1;
@@ -1289,7 +1291,7 @@ bool NativeIdeologyRuntime::known(const CountryState &c,int32_t id) const { retu
 void NativeIdeologyRuntime::set_known(CountryState &c,int32_t id) { c.known_bits[id/64]|=(1ULL<<(id%64)); }
 bool NativeIdeologyRuntime::gate(const CountryState &c,int32_t id) const { return id>=0 && id<_gate_count && (c.gate_bits[id/64]&(1ULL<<(id%64)))!=0; }
 void NativeIdeologyRuntime::set_gate(CountryState &c,int32_t id,bool value) { if(id<0||id>=_gate_count)return; const uint64_t mask=1ULL<<(id%64); if(value)c.gate_bits[id/64]|=mask; else c.gate_bits[id/64]&=~mask; }
-bool NativeIdeologyRuntime::requirements_met(const CountryState &country,int32_t slot,const Definition &d) const { if(_country_runtime==nullptr)return false; for(int32_t i=0;i<d.technology_requirement_count;++i) if(!_country_runtime->has_technology(slot,_technology_requirements[d.technology_requirement_begin+i])) return false; for(int32_t i=0;i<d.signal_requirement_count;++i) if(!_country_runtime->has_research_signal(slot,_signal_requirements[d.signal_requirement_begin+i])) return false; for(int32_t i=0;i<d.gate_requirement_count;++i) if(!gate(country,_gate_requirements[d.gate_requirement_begin+i])) return false; return true; }
+bool NativeIdeologyRuntime::requirements_met(const CountryState &country,int32_t slot,const Definition &d) const { if(_country_runtime==nullptr)return false; for(int32_t i=0;i<d.technology_requirement_count;++i) if(!country_api::has_technology(*_country_runtime, slot,_technology_requirements[d.technology_requirement_begin+i])) return false; for(int32_t i=0;i<d.signal_requirement_count;++i) if(!country_api::has_research_signal(*_country_runtime, slot,_signal_requirements[d.signal_requirement_begin+i])) return false; for(int32_t i=0;i<d.gate_requirement_count;++i) if(!gate(country,_gate_requirements[d.gate_requirement_begin+i])) return false; return true; }
 
 NativeIdeologyRuntime::SupportResult NativeIdeologyRuntime::evaluate_support(
         CountryState &country, int32_t ideology_id,
@@ -1310,8 +1312,8 @@ NativeIdeologyRuntime::SupportResult NativeIdeologyRuntime::evaluate_support(
         return result;
     }
     if (_economy_runtime == nullptr) return result;
-    const NativeEconomyRuntime::CountryClassOpinionSnapshot &snapshot =
-        _economy_runtime->country_class_opinion_snapshot();
+    const EconomyApi::CountryClassOpinionSnapshot &snapshot =
+        economy_api::country_class_opinion_snapshot(*_economy_runtime);
     ++_class_snapshot_reads;
     const int32_t country_slot =
         static_cast<int32_t>(country.handle & 0xffffffffULL);
@@ -1947,7 +1949,7 @@ void NativeIdeologyRuntime::apply_fan_out_ownership_filter(
     // Read per source rather than once: a multi-country world can have sources in
     // different slots once the collector is widened, and a cached slot would silently
     // mis-filter.
-    const int32_t source_country = _economy_runtime->cell_country_slot(source_cell);
+    const int32_t source_country = economy_api::cell_country_slot(*_economy_runtime, source_cell);
     if (source_country < 0) return;
     cells.erase(
         std::remove_if(cells.begin(), cells.end(),
@@ -1955,7 +1957,7 @@ void NativeIdeologyRuntime::apply_fan_out_ownership_filter(
                 // Three cases, not two: an unowned target is neither own nor "another
                 // country", and FOREIGN must not swallow neutral land.
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    source_country, _economy_runtime->cell_country_slot(target));
+                    source_country, economy_api::cell_country_slot(*_economy_runtime, target));
                 return !pk::ownership_accepts(ownership_scope, relation);
             }),
         cells.end());
@@ -1971,7 +1973,7 @@ void NativeIdeologyRuntime::apply_union_ownership_filter(
         std::remove_if(cells.begin(), cells.end(),
             [&](int32_t target) {
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    country_slot, _economy_runtime->cell_country_slot(target));
+                    country_slot, economy_api::cell_country_slot(*_economy_runtime, target));
                 return !pk::ownership_accepts(ownership_scope, relation);
             }),
         cells.end());
@@ -2014,10 +2016,10 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
             static_cast<int32_t>(EffectRuntime::SELECTOR_MAX_CELLS));
         const int32_t authored_min = effective.target_selector_param[1];
         const int32_t min_branches =
-            _economy_runtime->family_target_min_branches_for_test(authored_min);
+            economy_api::family_target_min_branches_for_test(*_economy_runtime, authored_min);
         std::vector<uint64_t> handles;
-        _economy_runtime->collect_family_effect_target_handles(
-            country_slot, min_branches, cap, handles);
+        economy_api::collect_family_effect_target_handles(
+            *_economy_runtime, country_slot, min_branches, cap, handles);
         for (const uint64_t handle : handles) {
             const uint32_t generation = static_cast<uint32_t>(handle >> 32U);
             if (generation == 0) continue;
@@ -2036,7 +2038,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
     // TODO: replace with a real capital / city-cell anchor once the game models
     // one. Until then a country's cell-scoped effect is anchored on its first
     // owned cell, which keeps the selector deterministic and replayable.
-    const int32_t anchor = _economy_runtime->country_anchor_cell(country_slot);
+    const int32_t anchor = economy_api::country_anchor_cell(*_economy_runtime, country_slot);
     if (anchor < 0) { ++_targets_anchor_neg; return false; }
     std::vector<int32_t> cells;
     std::vector<int32_t> source_counts;
@@ -2057,9 +2059,9 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // directly is important: OWN_TERRITORY caps at 32, which would silently
         // undercount a country with more matching sources.
         const int32_t tag = selector.tag - 1;
-        if (tag >= _economy_runtime->target_tag_count()) return false;
+        if (tag >= economy_api::target_tag_count(*_economy_runtime)) return false;
         std::vector<int32_t> sources;
-        _economy_runtime->collect_own_tagged_cells(country_slot, tag, sources);
+        economy_api::collect_own_tagged_cells(*_economy_runtime, country_slot, tag, sources);
         if (sources.empty()) { ++_targets_fanout_no_source; return false; }
         std::sort(sources.begin(), sources.end());
         sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
@@ -2069,7 +2071,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // source loop) instead of a hash map: `effect_stable_cap` may retain cells
         // whose count is low, and the report is hot enough that Dictionary /
         // Variant work would be the wrong tool anyway.
-        const int32_t grid_cells = _economy_runtime->cell_count();
+        const int32_t grid_cells = economy_api::cell_count(*_economy_runtime);
         if (grid_cells <= 0) return false;
         source_counts.assign(static_cast<size_t>(grid_cells), 0);
         // Radius 1/2 use the precomputed six-neighbour table directly. BFS is
@@ -2087,7 +2089,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 ring_1.clear();
                 for (int32_t direction = 0; direction < 6; ++direction) {
                     const int32_t neighbor =
-                        _economy_runtime->building_neighbor(source, direction);
+                        economy_api::building_neighbor(*_economy_runtime, source, direction);
                     if (neighbor < 0 || neighbor >= grid_cells) continue;
                     if (neighbor == source) continue;
                     ring_1.push_back(neighbor);
@@ -2109,7 +2111,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                     for (const int32_t cell : ring_1) {
                         for (int32_t direction = 0; direction < 6; ++direction) {
                             const int32_t neighbor =
-                                _economy_runtime->building_neighbor(cell, direction);
+                                economy_api::building_neighbor(*_economy_runtime, cell, direction);
                             if (neighbor < 0 || neighbor >= grid_cells) continue;
                             if (seen[static_cast<size_t>(neighbor)] != 0) continue;
                             seen[static_cast<size_t>(neighbor)] = 1;
@@ -2133,7 +2135,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 for (const int32_t cell : frontier) {
                     for (int32_t direction = 0; direction < 6; ++direction) {
                         const int32_t neighbor =
-                            _economy_runtime->building_neighbor(cell, direction);
+                            economy_api::building_neighbor(*_economy_runtime, cell, direction);
                         if (neighbor < 0 || neighbor >= grid_cells) continue;
                         if (seen[static_cast<size_t>(neighbor)] != 0) continue;
                         seen[static_cast<size_t>(neighbor)] = 1;
@@ -2160,7 +2162,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
                 // "is this cell mine" false for every cell and dropped the entire
                 // target set under the new OWN default.
                 const pk::OwnershipRelation relation = pk::ownership_relation(
-                    country_slot, _economy_runtime->cell_country_slot(cell));
+                    country_slot, economy_api::cell_country_slot(*_economy_runtime, cell));
                 if (!pk::ownership_accepts(selector.ownership_scope, relation))
                     continue;
             }
@@ -2209,7 +2211,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
             ? authored_cap
             : pk::kSelectorNoCellCap;
         std::vector<int32_t> sources;
-        _economy_runtime->collect_effect_target_cells(anchor,
+        economy_api::collect_effect_target_cells(*_economy_runtime, anchor,
             EffectRuntime::SELECTOR_OWN_TERRITORY, cap, tag, sources,
             selection_salt, &_selector_stats);
         if (sources.empty()) { ++_targets_fanout_ring_empty; return false; }
@@ -2250,7 +2252,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         // (kinds 6/7 contract). The per-source ring cap never bound (geometric reach is
         // 6/18) so dropping it changes nothing.
         (void)ring_cap;
-        _economy_runtime->dilate_cell_set(sources, first_ring ? 1 : 2, cells);
+        economy_api::dilate_cell_set(*_economy_runtime, sources, first_ring ? 1 : 2, cells);
         // Every source came from the same OWN_TERRITORY scan, so one country slot covers
         // the union and the filter runs once instead of N times.
         apply_union_ownership_filter(
@@ -2266,7 +2268,7 @@ bool NativeIdeologyRuntime::resolve_effect_targets(
         else if (ownership_scope == EffectRuntime::OWNERSHIP_FOREIGN)
             ++_ownership_foreign_resolves;
     } else {
-        _economy_runtime->collect_effect_target_cells(anchor,
+        economy_api::collect_effect_target_cells(*_economy_runtime, anchor,
             effective.target_selector_kind, effective.target_selector_param[0],
             effective.target_selector_param[1], cells, selection_salt,
             &_selector_stats);
@@ -2338,10 +2340,10 @@ CellProgramFacts NativeIdeologyRuntime::cell_program_facts_for(
             // synthesised city families are produced by `compile_native_catalog`,
             // so they resolve here exactly like the .tres ones -- that is the
             // 101-of-325 trap §4.4 condition 3 names.
-            std::vector<ModifierRuntime::ResolvedTerm> terms;
+            std::vector<ModifierApi::ResolvedTerm> terms;
             row.definition_resolved =
                 _modifier_runtime != nullptr &&
-                _modifier_runtime->resolve_definition_terms(
+                modifier_api::resolve_definition_terms(*_modifier_runtime,
                     command.definition_key, terms);
             // City stats are forced SUM by the catalog validator
             // (`modifier_catalog.gd:448-457`), so a resolved city term is SUM by
@@ -2370,12 +2372,12 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
             _modifier_runtime == nullptr)
         return;
     for (const EffectRuntime::ProgramModifierCommand &command : commands) {
-        std::vector<ModifierRuntime::ResolvedTerm> terms;
-        if (!_modifier_runtime->resolve_definition_terms(
+        std::vector<ModifierApi::ResolvedTerm> terms;
+        if (!modifier_api::resolve_definition_terms(*_modifier_runtime,
                 command.definition_key, terms))
             continue;  // counted by the materializer's missing_stat
         const int64_t magnitude = std::clamp<int64_t>(
-            command.value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16);
+            command.value_q16, 0, ModifierApi::MAX_MAGNITUDE_Q16);
         // ── M3: a metric-fed ramp must stay a LIVE function ──────
         //
         // `command.value_q16` is only meaningful when the magnitude is
@@ -2423,7 +2425,7 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
                 }
             }
         }
-        for (const ModifierRuntime::ResolvedTerm &term : terms) {
+        for (const ModifierApi::ResolvedTerm &term : terms) {
             DerivedProgramContribution::Term row;
             row.stat_id = term.stat_id;
             row.operation = term.operation;
@@ -2467,9 +2469,9 @@ void NativeIdeologyRuntime::resolve_program_fold_terms(
                 row.add = 0.0;
                 row.factor = 1.0;
             } else {
-                row.add = term.operation == ModifierRuntime::ADD
+                row.add = term.operation == ModifierApi::ADD
                     ? term.value * stacks * scaled_magnitude : 0.0;
-                row.factor = term.operation == ModifierRuntime::ADD
+                row.factor = term.operation == ModifierApi::ADD
                     ? 1.0 : std::pow(term.value, stacks);
             }
             out.push_back(row);
@@ -3013,7 +3015,7 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
     // One sample per distinct cell per reconcile: nine cards pointing at the
     // same cell cost one building scan, not nine.
     if (!desired.empty()) {
-        constexpr int32_t metric_count = NativeEconomyRuntime::FAMILY_METRIC_COUNT;
+        constexpr int32_t metric_count = EconomyApi::FAMILY_METRIC_COUNT;
         const int32_t effect_metric_count = _effect_runtime == nullptr
             ? metric_count : _effect_runtime->metric_count();
         const int64_t revision = day > (std::numeric_limits<int64_t>::max() - 1) / 4
@@ -3041,7 +3043,7 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
                 if (_economy_runtime == nullptr) continue;
                 const int32_t country_slot =
                     static_cast<int32_t>(country.handle & 0xffffffffULL);
-                cell = _economy_runtime->country_anchor_cell(country_slot);
+                cell = economy_api::country_anchor_cell(*_economy_runtime, country_slot);
             } else if (activation.target_domain == 2 ||
                        activation.target_domain == 5) {
                 const int64_t raw = static_cast<int64_t>(
@@ -3079,8 +3081,8 @@ bool NativeIdeologyRuntime::reconcile_effect_activations(
             if (_economy_runtime != nullptr && !economy_ids.empty()) {
                 MetricMask economy_mask;
                 for (int32_t metric_id : economy_ids) economy_mask.set(metric_id);
-                _economy_runtime->sample_effect_metrics(entry.first, metric_count,
-                    values.data(), economy_mask);
+                economy_api::sample_effect_metrics(*_economy_runtime, entry.first, metric_count, values.data(),
+                    economy_mask);
             }
             if (wants_ideology_scalars)
                 fill_ideology_scalars(country, state, values);
@@ -3195,14 +3197,14 @@ void NativeIdeologyRuntime::publish_effect_input_consumers() {
     if (_economy_runtime == nullptr) return;
     rebuild_level_managed_if_needed();
     constexpr int32_t kEconomyMetricCount =
-        NativeEconomyRuntime::FAMILY_METRIC_COUNT;
+        EconomyApi::FAMILY_METRIC_COUNT;
     MetricMask mask;
     bool tags = false;
     bool tag_ids_incomplete = false;
     std::vector<int32_t> tag_ids;
     bool families = false;
     MetricMask exact;
-    std::array<std::vector<int64_t>, NativeEconomyRuntime::FAMILY_METRIC_COUNT>
+    std::array<std::vector<int64_t>, EconomyApi::FAMILY_METRIC_COUNT>
         thresholds;
     for (const LevelManagedInfo &info : _level_managed) {
         if (info.has_managed == 0) continue;
@@ -3252,8 +3254,8 @@ void NativeIdeologyRuntime::publish_effect_input_consumers() {
     // skip tags a synergy rewrite can still read. An empty set with `tags == true` is
     // the protocol's "all tags" signal.
     if (tag_ids_incomplete) tag_ids.clear();
-    _economy_runtime->set_effect_input_consumers(
-        mask, tags, families, thresholds, tag_ids);
+    economy_api::set_effect_input_consumers(
+        *_economy_runtime, mask, tags, families, thresholds, tag_ids);
 }
 
 void NativeIdeologyRuntime::set_worker_opinion_inputs(
@@ -3767,7 +3769,7 @@ uint64_t NativeIdeologyRuntime::compute_activation_signature(
         // exact torn read the snapshot exists to prevent -- and cost up to 68
         // atomic shared_ptr loads per card, which is lock-prefixed on MSVC.
         const std::shared_ptr<const EffectInputSnapshot> snapshot =
-            _economy_runtime->effect_input_snapshot();
+            economy_api::effect_input_snapshot(*_economy_runtime);
         if (snapshot != nullptr) {
             if (info->consumer_mask.is_any()) {
                 // SUM, not max: the revisions are independent counters, so a max
@@ -3776,7 +3778,7 @@ uint64_t NativeIdeologyRuntime::compute_activation_signature(
                 // refresh. Revisions only increase, so the sum always moves.
                 uint64_t metric_revision = 0;
                 constexpr int32_t kMetricCount =
-                    static_cast<int32_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT);
+                    static_cast<int32_t>(EconomyApi::FAMILY_METRIC_COUNT);
                 for (int32_t metric = 0; metric < kMetricCount; ++metric) {
                     if (!info->consumer_mask.test(metric)) continue;
                     metric_revision +=
@@ -3818,7 +3820,7 @@ bool NativeIdeologyRuntime::step_effect_instance_refresh(
     if (!_instance_refresh_pending) {
         const uint64_t revision = _economy_runtime == nullptr
             ? _effect_input_revision_seen
-            : _economy_runtime->effect_input_revision();
+            : economy_api::effect_input_revision(*_economy_runtime);
         if ((_economy_runtime == nullptr || revision == _effect_input_revision_seen) &&
                 !_instance_refresh_dirty)
             return false;
@@ -3870,7 +3872,7 @@ bool NativeIdeologyRuntime::step_effect_instance_refresh(
     _instance_refresh_pending = false;
     ++_instance_refresh_passes;
     if (_economy_runtime != nullptr) {
-        const uint64_t now = _economy_runtime->effect_input_revision();
+        const uint64_t now = economy_api::effect_input_revision(*_economy_runtime);
         if (now > _effect_input_revision_seen) {
             const uint64_t lag = now - _effect_input_revision_seen;
             if (lag > _instance_refresh_lag_revisions)
@@ -4246,7 +4248,7 @@ int32_t NativeIdeologyRuntime::ideology_capacity_for(int32_t slot) const {
     if (_country_runtime != nullptr)
         for (const CapacityUnlock &unlock : _capacity_unlocks)
             if (unlock.ideology_delta != 0 &&
-                    _country_runtime->has_technology(slot, unlock.technology_id))
+                    country_api::has_technology(*_country_runtime, slot, unlock.technology_id))
                 capacity += unlock.ideology_delta;
     return static_cast<int32_t>(std::min<int64_t>(capacity, _ideology_capacity_max));
 }
@@ -4255,7 +4257,7 @@ int32_t NativeIdeologyRuntime::spirit_capacity_for(int32_t slot) const {
     if (_country_runtime != nullptr)
         for (const CapacityUnlock &unlock : _capacity_unlocks)
             if (unlock.spirit_delta != 0 &&
-                    _country_runtime->has_technology(slot, unlock.technology_id))
+                    country_api::has_technology(*_country_runtime, slot, unlock.technology_id))
                 capacity += unlock.spirit_delta;
     return static_cast<int32_t>(std::min<int64_t>(capacity, _spirit_capacity_max));
 }
@@ -4278,15 +4280,15 @@ int64_t NativeIdeologyRuntime::reroll_cost_for(uint64_t draw_sequence,
 int32_t NativeIdeologyRuntime::resolve_ideology_stat_id(
         const std::string &key, int32_t &cache) const {
     if (cache >= 0 || key.empty() || _modifier_runtime == nullptr ||
-            !_modifier_runtime->configured()) return cache;
-    cache = _modifier_runtime->stat_id_for_key(key);
+            !modifier_api::configured(*_modifier_runtime)) return cache;
+    cache = modifier_api::stat_id_for_key(*_modifier_runtime, key);
     return cache;
 }
 int32_t NativeIdeologyRuntime::ideology_stat_factor_q16(
         const std::string &key, int32_t &cache, uint64_t handle) const {
     if (resolve_ideology_stat_id(key, cache) < 0)
         return static_cast<int32_t>(Q16_ONE);
-    double factor = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double factor = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 1.0);
     if (!std::isfinite(factor)) factor = 1.0;
     return static_cast<int32_t>(std::lround(std::clamp(factor, 0.0, 4.0) * 65536.0));
@@ -4294,7 +4296,7 @@ int32_t NativeIdeologyRuntime::ideology_stat_factor_q16(
 int32_t NativeIdeologyRuntime::ideology_stat_bp(
         const std::string &key, int32_t &cache, uint64_t handle) const {
     if (resolve_ideology_stat_id(key, cache) < 0) return 0;
-    double value = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double value = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 0.0);
     if (!std::isfinite(value)) return 0;
     return static_cast<int32_t>(std::lround(std::clamp(value, 0.0, 10000.0)));
@@ -4304,7 +4306,7 @@ int32_t NativeIdeologyRuntime::ideology_stat_count(
         const std::string &key, int32_t &cache, uint64_t handle,
         int32_t cap) const {
     if (resolve_ideology_stat_id(key, cache) < 0) return 0;
-    double value = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+    double value = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
         cache, handle, 0, 0.0);
     if (!std::isfinite(value)) return 0;
     return static_cast<int32_t>(std::lround(std::clamp(
@@ -4340,19 +4342,19 @@ bool NativeIdeologyRuntime::program_writes_school_strength(
                 _school_strength_factor_stat_keys.size())) {
         return false;
     }
-    const int32_t stat_id = _modifier_runtime->stat_id_for_key(
+    const int32_t stat_id = modifier_api::stat_id_for_key(*_modifier_runtime,
         _school_strength_factor_stat_keys[static_cast<size_t>(school_index)]);
     if (stat_id < 0) return false;
     std::vector<EffectRuntime::ProgramModifierCommand> commands;
     if (!_effect_runtime->program_modifier_commands(program, commands))
         return false;
     for (const EffectRuntime::ProgramModifierCommand &command : commands) {
-        std::vector<ModifierRuntime::ResolvedTerm> terms;
-        if (!_modifier_runtime->resolve_definition_terms(
+        std::vector<ModifierApi::ResolvedTerm> terms;
+        if (!modifier_api::resolve_definition_terms(*_modifier_runtime,
                 command.definition_key, terms)) {
             continue;
         }
-        for (const ModifierRuntime::ResolvedTerm &term : terms)
+        for (const ModifierApi::ResolvedTerm &term : terms)
             if (term.stat_id == stat_id) return true;
     }
     return false;
@@ -4576,7 +4578,7 @@ int32_t NativeIdeologyRuntime::unlocked_era_for(int32_t country_slot) const {
         const int32_t technology =
             _era_milestone_technologies[static_cast<size_t>(era)];
         if (technology < 0 || era <= reached) continue;
-        if (_country_runtime->has_technology(country_slot, technology)) reached = era;
+        if (country_api::has_technology(*_country_runtime, country_slot, technology)) reached = era;
     }
     return reached;
 }
@@ -4707,17 +4709,14 @@ void NativeIdeologyRuntime::accrue_points(int64_t day) {
     }
     accrue_points_from(
         ideology_opinion_from_economy(
-            _economy_runtime->country_class_opinion_snapshot()),
+            economy_api::country_class_opinion_snapshot(*_economy_runtime)),
         day);
 }
 
 void NativeIdeologyRuntime::accrue_points_from(
         const RuntimeIdeologyOpinionSnapshot &opinion, int64_t day) {
-    // THE ONLY settlement body (R9-1). `accrue_points(day)` is the sole caller
-    // today: it feeds Economy's committed snapshot. The parity binding that would
-    // feed this from the worker's snapshot is not landed (05 §2.7) -- but keeping
-    // ONE body means that wiring only has to supply an opinion, never re-implement
-    // the accounting.
+    // The single settlement body: ordinary daily work reads Economy's committed
+    // snapshot, while explicit SHADOW parity pins that day's reference input.
     // Mirrors RuntimeIdeologyPodAuthority::accrue_points field for field -- the
     // two must stay line-comparable or parity regresses into a business diff.
     _points_accrue_result = -1;
@@ -4854,8 +4853,8 @@ void NativeIdeologyRuntime::accrue_points_from(
         if (resolve_ideology_stat_id(
                 _opinion_factor_floor_stat_key,
                 _opinion_factor_floor_stat_id) >= 0) {
-            double floor_value = _modifier_runtime->effective_value(
-                ModifierRuntime::COUNTRY, _opinion_factor_floor_stat_id,
+            double floor_value = modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::COUNTRY, _opinion_factor_floor_stat_id,
                 handle, 0, 0.5);
             if (!std::isfinite(floor_value)) floor_value = 0.5;
             opinion_floor_q16 = static_cast<int32_t>(std::lround(
@@ -4865,9 +4864,9 @@ void NativeIdeologyRuntime::accrue_points_from(
         ledger.opinion_factor_q16 = ideology_opinion_factor_q16(
             satisfaction, opinion_floor, 0);
         double factor = 1.0;
-        if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+        if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime) &&
                 !_point_gain_stat_key.empty())
-            factor = _modifier_runtime->effective_value(ModifierRuntime::COUNTRY,
+            factor = modifier_api::effective_value(*_modifier_runtime, ModifierApi::COUNTRY,
                 _point_gain_stat_key.c_str(), handle, 0, 1.0);
         if (!std::isfinite(factor)) factor = 1.0;
         factor = std::clamp(factor, 0.0, 4.0);
@@ -5273,35 +5272,13 @@ bool NativeIdeologyRuntime::apply_command(const Command &command, int64_t day,
         default: error = "ideology_command_unknown"; return false;
     }
 }
-Dictionary NativeIdeologyRuntime::run_daily(int64_t day) {
+Dictionary NativeIdeologyRuntime::run_daily(int64_t day,
+        const RuntimeIdeologyOpinionSnapshot *frozen_opinion) {
     if (!_configured) return fail("ideology_runtime_unconfigured");
-    accrue_points(day);
-    Dictionary result = run_daily_slices(day);
-    // Rebuild the derived cell layer ONCE for the whole world (plan 22 §4.2).
-    //
-    // Placed on the daily entry rather than inside the per-country reconcile
-    // because the front is a single shared object: building it from one
-    // country and installing it would erase every other country's rows.
-    //
-    // A failed install is reported but does not fail the day: the layer is an
-    // optimisation, and aborting a day because a cache could not be published
-    // would turn a recoverable condition into a fatal one. The error is kept so
-    // the report can surface it (§12.4).
-    // Rebuild ONCE for the whole world (plan 22 §4.2).
-    //
-    // This was briefly moved into `run_daily_slices` as a sharded stage so a 6400-cell
-    // materialise could be split under the §14.3 1 ms budget. It was REVERTED: the
-    // sharded version measured `contribs=1600` at build time against 3200 collected,
-    // because a day's accumulator is reset by the next `run_ideology_daily` call, and
-    // B10 drives ten such days. The result silently covered only one country
-    // (M4-18). A correct shard needs `DerivedCellFrontBuilder` to be resumable across
-    // steps, which it is not -- that is a design change, not a wiring change.
-    //
-    // A failed install is reported but does not fail the day: the layer is an
-    // optimisation, and aborting a day because a cache could not be published would
-    // turn a recoverable condition into a fatal one.
-    // The derived rebuild runs as a slice stage now (see `run_daily_slices`).
-    return result;
+    if (frozen_opinion != nullptr)
+        accrue_points_from(*frozen_opinion, day);
+    else
+        accrue_points(day);
     return run_daily_slices(day);
 }
 
@@ -5310,10 +5287,12 @@ Dictionary NativeIdeologyRuntime::run_daily_slices(int64_t day) {
     int32_t handled = 0;    int32_t visits = 0;
     int32_t transition_visits = 0;
     auto finish = [&](bool done, const char *stage) {
+        _daily_continuation_day = done ? -1 : day;
         _last_slice_ms = elapsed_ms(slice_started);
         _max_slice_ms = std::max(_max_slice_ms, _last_slice_ms);
         Dictionary out;
         out["ok"] = true; out["done"] = done; out["stage"] = stage;
+        out["day_barrier"] = !done;
         out["path"] = "IDEOLOGY_GRAPH";
         out["commands_applied"] = handled; out["active_visits"] = visits;
         out["pending_transition_visits"] = transition_visits;
@@ -5467,10 +5446,17 @@ Dictionary NativeIdeologyRuntime::run_daily_slices(int64_t day) {
     }
     return finish(true, "ideology_active_progress");
 }
-bool NativeIdeologyRuntime::should_run(int64_t day) const {
+bool NativeIdeologyRuntime::needs_daily_continuation(int64_t day) const {
     const Command *command = next_command();
-    return _configured && ((command != nullptr && command->effective_day <= day) ||
-        !_pending_transitions.empty() || _active_progress_day == day || _last_day < day ||
+    return _configured && (_daily_continuation_day == day ||
+        _active_progress_day == day || _last_day < day ||
+        (command != nullptr && command->effective_day <= day));
+}
+
+bool NativeIdeologyRuntime::should_run(int64_t day) const {
+    return _configured && (needs_daily_continuation(day) ||
+        !_pending_transitions.empty() ||
+        derived_rebuild_pending() ||
         // P1-A: a stale input revision has to wake the graph, otherwise the
         // refresh would only ever run on a day that had other work to do.
         // Ideology scalars are local derived inputs: their dirty flag must wake
@@ -5478,7 +5464,7 @@ bool NativeIdeologyRuntime::should_run(int64_t day) const {
         (_managed_active_total > 0 &&
          (_instance_refresh_pending || _instance_refresh_dirty ||
           (_economy_runtime != nullptr &&
-           _economy_runtime->effect_input_revision() != _effect_input_revision_seen))));
+           economy_api::effect_input_revision(*_economy_runtime) != _effect_input_revision_seen))));
 }
 
 bool NativeIdeologyRuntime::export_pod_catalog(
@@ -5527,10 +5513,10 @@ bool NativeIdeologyRuntime::export_pod_catalog(
     catalog.reroll_cost_stat_id = -1;
     catalog.school_strength_factor_stat_ids.assign(
         _school_strength_factor_stat_keys.size(), -1);
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)) {
         if (!_point_gain_stat_key.empty())
             catalog.point_gain_stat_id =
-                _modifier_runtime->stat_id_for_key(_point_gain_stat_key);
+                modifier_api::stat_id_for_key(*_modifier_runtime, _point_gain_stat_key);
         catalog.point_population_factor_stat_id = resolve_ideology_stat_id(
             _point_population_factor_stat_key,
             _point_population_factor_stat_id);
@@ -6043,7 +6029,7 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     const int32_t country_slot_id = static_cast<int32_t>(
         static_cast<uint64_t>(handle) & 0xffffffffULL);
     const bool handle_valid = _country_runtime != nullptr && handle != 0 &&
-        _country_runtime->valid_handle(handle);
+        country_api::valid_handle(*_country_runtime, handle);
     out["ideology_slots_capacity_max"] = _ideology_capacity_max;
     out["national_spirit_slots_capacity_max"] = _spirit_capacity_max;
     out["reroll_cost_percent"] = _reroll_cost_percent;
@@ -6056,7 +6042,7 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
             unlock_ideology.append(unlock.ideology_delta);
             unlock_spirit.append(unlock.spirit_delta);
             unlock_owned.append(handle_valid &&
-                _country_runtime->has_technology(country_slot_id, unlock.technology_id) ? 1 : 0);
+                country_api::has_technology(*_country_runtime, country_slot_id, unlock.technology_id) ? 1 : 0);
         }
         out["capacity_unlock_technology_ids"] = unlock_tech;
         out["capacity_unlock_ideology_deltas"] = unlock_ideology;
@@ -6250,8 +6236,8 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     out["offer_ids"] = offer_ids;
     uint64_t support_revision = 0;
     if (_economy_runtime != nullptr) {
-        const NativeEconomyRuntime::CountryClassOpinionSnapshot &opinion =
-            _economy_runtime->country_class_opinion_snapshot();
+        const EconomyApi::CountryClassOpinionSnapshot &opinion =
+            economy_api::country_class_opinion_snapshot(*_economy_runtime);
         const int32_t country_slot =
             static_cast<int32_t>(country->handle & 0xffffffffULL);
         if (opinion.class_hash == _political_class_hash &&
@@ -6827,7 +6813,7 @@ Dictionary NativeIdeologyRuntime::report() const {
         static_cast<int64_t>(_effect_input_revision_target);
     out["effect_input_revision"] = _economy_runtime == nullptr
         ? static_cast<int64_t>(0)
-        : static_cast<int64_t>(_economy_runtime->effect_input_revision());
+        : static_cast<int64_t>(economy_api::effect_input_revision(*_economy_runtime));
     out["transition_poll_ms"] = _transition_poll_ms;
     out["command_apply_ms"] = _command_apply_ms;
     out["active_progress_ms"] = _active_progress_ms;
@@ -6857,7 +6843,7 @@ uint64_t NativeIdeologyRuntime::compute_execution_contract_hash() const {
     hash = mixv(hash, _effect_runtime != nullptr
         ? _effect_runtime->catalog_hash() : uint64_t{0});
     hash = mixv(hash, _modifier_runtime != nullptr
-        ? _modifier_runtime->catalog_hash() : uint64_t{0});
+        ? modifier_api::catalog_hash(*_modifier_runtime) : uint64_t{0});
     return hash;
 }
 
@@ -7803,6 +7789,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     auto previous_pending_transitions = std::move(_pending_transitions);
     const size_t previous_pending_transition_cursor = _pending_transition_cursor;
     const int64_t previous_active_progress_day = _active_progress_day;
+    const int64_t previous_daily_continuation_day = _daily_continuation_day;
     const int32_t previous_active_country_cursor = _active_country_cursor;
     const int32_t previous_active_item_cursor = _active_item_cursor;
     const int64_t previous_last_day = _last_day;
@@ -7821,6 +7808,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
         }
     }
     _command_cursor = 0;
+    _daily_continuation_day = -1;
     _active_progress_day = -1;
     _active_country_cursor = 0;
     _active_item_cursor = 0;
@@ -7857,6 +7845,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
         _pending_transitions = std::move(previous_pending_transitions);
         _pending_transition_cursor = previous_pending_transition_cursor;
         _active_progress_day = previous_active_progress_day;
+        _daily_continuation_day = previous_daily_continuation_day;
         _active_country_cursor = previous_active_country_cursor;
         _active_item_cursor = previous_active_item_cursor;
         _last_day = previous_last_day;
@@ -7971,7 +7960,7 @@ Dictionary NativeIdeologyRuntime::restore(const PackedByteArray &packed) {
     // The restore pass above already revisited every card and stamped its
     // signature, so the first refresh must not repeat it.
     _effect_input_revision_seen = _economy_runtime == nullptr
-        ? 0 : _economy_runtime->effect_input_revision();
+        ? 0 : economy_api::effect_input_revision(*_economy_runtime);
     _effect_input_revision_target = _effect_input_revision_seen;
     _instance_refresh_pending = false;
     _instance_refresh_dirty = false;
@@ -8040,7 +8029,7 @@ const std::string *NativeIdeologyRuntime::intern_program_key(
 void NativeIdeologyRuntime::ensure_derived_program_sampler() {
     if (_derived_program_sampler) return;
     _derived_program_metric_scratch.assign(
-        static_cast<size_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT), 0);
+        static_cast<size_t>(EconomyApi::FAMILY_METRIC_COUNT), 0);
     _derived_program_sampler = [this](const std::string &program_key, int32_t cell,
                                       uint64_t source_country) -> double {
         (void)source_country;   // the program reads cell metrics; scope is the cell
@@ -8051,7 +8040,7 @@ void NativeIdeologyRuntime::ensure_derived_program_sampler() {
         const int32_t count =
             static_cast<int32_t>(_derived_program_metric_scratch.size());
         const pk::MetricMask all = pk::MetricMask::all_declared(count);
-        _economy_runtime->sample_effect_metrics(cell, count,
+        economy_api::sample_effect_metrics(*_economy_runtime, cell, count,
             _derived_program_metric_scratch.data(), all);
         int64_t magnitude = 0;
         std::string error;
@@ -8071,7 +8060,7 @@ void NativeIdeologyRuntime::ensure_derived_program_sampler() {
 void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
     if (!_derived_ramp_sampler) {
         _derived_ramp_metric_scratch.resize(
-            static_cast<size_t>(NativeEconomyRuntime::FAMILY_METRIC_COUNT), 0);
+            static_cast<size_t>(EconomyApi::FAMILY_METRIC_COUNT), 0);
         // Captures MEMBERS, not locals: the job outlives this call.
         _derived_ramp_sampler = [this](int32_t metric_id, int32_t cell,
                                        uint64_t source_country) -> double {
@@ -8079,7 +8068,7 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
                 (metric_id >= 56 && metric_id <= 61) ||
                 (metric_id >= 63 && metric_id <= 69) || metric_id == 91;
             if (country_scope) {
-                static_assert(NativeEconomyRuntime::FAMILY_METRIC_COUNT <= 256,
+                static_assert(EconomyApi::FAMILY_METRIC_COUNT <= 256,
                     "ramp country-metric cache key packs metric_id into 8 bits");
                 const uint64_t key = (source_country << 8U) ^
                     static_cast<uint64_t>(metric_id);
@@ -8089,8 +8078,8 @@ void NativeIdeologyRuntime::ensure_derived_ramp_sampler() {
                     return found->second;
                 }
             }
-            _economy_runtime->sample_effect_metrics(
-                cell, static_cast<int32_t>(_derived_ramp_metric_scratch.size()),
+            economy_api::sample_effect_metrics(*_economy_runtime, cell,
+                static_cast<int32_t>(_derived_ramp_metric_scratch.size()),
                 _derived_ramp_metric_scratch.data());
             ++_derived_ramp_samples_taken;
             const double sample = metric_id >= 0 &&
@@ -8243,7 +8232,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
     DerivedCellFront front;
     DerivedMaterializeReport report;
     bool skipped = false;
-    const DerivedCellFront *previous = _modifier_runtime->derived_cell_front();
+    const DerivedCellFront *previous = modifier_api::derived_cell_front(*_modifier_runtime);
     if (!_derived_rebuild_job->finish(previous, front, report, skipped)) {
         error = "derived_cell_layer_finish_failed";
         return true;
@@ -8273,7 +8262,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
     _ramp_terms_deferred = report.ramp_terms_deferred;
     if (!skipped) {
         bool install_skipped = false;
-        _modifier_runtime->install_derived_cell_layer(
+        modifier_api::install_derived_cell_layer(*_modifier_runtime,
             std::move(front), 0, install_skipped, error);
         // §18.5: the sample day of the projection that is now serving readers. Read
         // back from the INSTALLED front rather than from the job argument, because
@@ -8281,7 +8270,7 @@ bool NativeIdeologyRuntime::step_derived_rebuild(int64_t day,
         // install can be refused (`derived_cell_layer_identity_mismatch`), and a build
         // in flight is not a projection yet. Reading it back makes this member equal to
         // `derived_cell_front()->sample_day` by construction instead of by assumption.
-        const DerivedCellFront *serving = _modifier_runtime->derived_cell_front();
+        const DerivedCellFront *serving = modifier_api::derived_cell_front(*_modifier_runtime);
         _derived_basis_sample_day = serving != nullptr ? serving->sample_day : -1;
     }
     // ── the step does not END until the front is built and installed ────────────

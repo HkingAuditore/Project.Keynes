@@ -222,7 +222,7 @@ class Cell extends DCViewAdapter:
 # ─── 实现 2：World（DOTS）───────────────────────────────────────────────
 #
 # 不缓存 PackedArray view（避免 GDExtension CoW 解耦后视图陈旧 bug，2026-05-14
-# "极寒 bug" 修复，详见 docs/dots-f4-validation.md §2.2.b 同源契约）。
+# "极寒 bug" 修复，详见 docs/architecture/migration.md 同源契约）。
 #
 # 每次 getter 直接从 MapData.<map_field> 读 PackedArray —— map.<field> 是
 # GDScript var，一旦 GDScript 写或 C++ _flush_slot_to_map 推回，引用即时反映

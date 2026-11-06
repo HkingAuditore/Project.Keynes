@@ -88,7 +88,7 @@ func _run() -> void:
 	var start_day := clock.day_index()
 	if OS.get_environment("PK_SAVE_MIGRATE") == "1" and not OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT").is_empty():
 		var format: Dictionary = generator.get_data_core_world_ext().get_economy_checkpoint_format()
-		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 54:
+		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 60:
 			_fail("save_migration_requires_hash_v2_extension")
 			return
 		clock.pause(true)

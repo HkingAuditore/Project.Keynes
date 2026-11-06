@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
-#include "country_runtime.h"
-
+#include "country_api.h"
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -76,17 +76,17 @@ void NativeEconomyRuntime::build_demand_basis(
     EconomyCostProbe cost("demand_basis.compute", _current_day.get(), 1);
     static thread_local bool reference_call = false;
     static const bool disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_PREVIEW_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse = !disabled && !reference_call &&
         _preview_need_basis_source.size() == _needs.size();
     static const bool price_basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_prices = reuse && !price_basis_disabled;
@@ -343,17 +343,17 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     std::vector<int64_t> need_saturations(_needs.size(), 0);
     int64_t reused_needs = 0;
     static const bool basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_PREVIEW_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_basis = memo_active && !basis_disabled;
     static const bool workset_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_ACTIVE_WORKSET_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool filter_locked = memo_active && !workset_disabled;
     static const bool price_basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_prices = reuse_basis && !price_basis_disabled;
@@ -570,7 +570,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     // Validate the complete actor-specific result, including saturation events,
     // against a fresh basis. This diagnostic does not change production cadence.
     static const bool verify_preview_memo = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (memo_active && verify_preview_memo) {
@@ -1134,7 +1134,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     };
     const bool consumption_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_CONSUMPTION)) != 0;
+            1U << CountryApi::TAX_CONSUMPTION)) != 0;
     bool family_purchase_discount_active = false;
     for (int32_t local = 0; local < cohort_count; ++local) {
         if (family_purchase_pay_factor_q16(slots[local]) < Q16_ONE) {
@@ -1146,7 +1146,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         consumption_tax_active || family_purchase_discount_active;
     const bool income_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+            1U << CountryApi::TAX_INCOME)) != 0;
     const auto household_quote = [&](int32_t slot, int32_t variant_id,
                                      int64_t base_price) {
         if (!consumption_tax_active) return base_price;
@@ -1157,7 +1157,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const NeedComponent &component =
                 _components[variant.component_begin + c];
             const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                cell, CountryApi::TAX_CONSUMPTION,
                 component.good_id);
             if (rate <= 0) continue;
             const int64_t component_value = goods_cost(
@@ -1180,7 +1180,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const NeedComponent &component =
                 _components[variant.component_begin + c];
             const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                cell, CountryApi::TAX_CONSUMPTION,
                 component.good_id);
             if (rate >= 0) continue;
             const int64_t quantity = mul_div_sat(
@@ -1191,7 +1191,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 GOODS_SCALE, sat);
             subsidy = saturating_add(subsidy,
                 -expected_resolved_fiscal_transfer(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     component.good_id, component_base, quantity, sat), sat);
         }
         return subsidy;
@@ -1213,7 +1213,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     return subsidy_quota_remaining[i];
             }
             const size_t lane = static_cast<size_t>(cell) *
-                ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_CONSUMPTION;
+                ACTIVE_TAX_KIND_COUNT + CountryApi::TAX_CONSUMPTION;
             subsidy_quota_cells.push_back(cell);
             subsidy_quota_remaining.push_back(lane < _fiscal_remaining.size()
                 ? std::max<int64_t>(0, _fiscal_remaining[lane]) : 0);
@@ -1238,7 +1238,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 const int64_t family_request = mul_div_sat(
                     gross, Q16_ONE - pay, Q16_ONE, sat);
                 const int64_t family_alloc = -expected_fiscal_transfer(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     family_request, -10000, sat);
                 allocated = saturating_add(
                     allocated, family_alloc, sat);
@@ -1297,12 +1297,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         if (best > 0 && (cheapest_food_index_q16 == 0 || best < cheapest_food_index_q16))
             cheapest_food_index_q16 = best;
     }
-    static const bool diag_no_substitute = std::getenv("PK_DIAG_NO_FOOD_SUBSTITUTE") != nullptr;
+    static const bool diag_no_substitute = pk::runtime_switch_value(pk::RuntimeSwitch::PK_DIAG_NO_FOOD_SUBSTITUTE) != nullptr;
     const int64_t food_substitute_cap_q16 = !diag_no_substitute && cheapest_food_index_q16 > 0
         ? mul_div_sat(cheapest_food_index_q16, FOOD_SUBSTITUTE_RATIO_Q16, Q16_ONE, sat)
         : 0;
     static const bool family_good_cache_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_FAMILY_GOOD_CACHE_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_FAMILY_GOOD_CACHE_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     thread_local std::vector<int32_t> household_family_good_factors;
@@ -1648,7 +1648,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     const VariantChoice &variant = _variants[orders[i].variant_index];
                     for (int32_t c = 0; c < variant.component_count; ++c) {
                         const int32_t rate = frozen_tax_rate(cohort_cell(orders[i].slot),
-                            NativeCountryRuntime::TAX_CONSUMPTION,
+                            CountryApi::TAX_CONSUMPTION,
                             _components[variant.component_begin + c].good_id);
                         size_t policy = 0;
                         while (policy < policies && budget_tax_rates[policy] != rate) ++policy;
@@ -1724,7 +1724,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             food_eq = saturating_add(food_eq,
                 food_equivalent(component.good_id, quantity), sat);
             const int32_t rate = consumption_tax_active ? frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION, component.good_id) : 0;
+                cell, CountryApi::TAX_CONSUMPTION, component.good_id) : 0;
             size_t bucket = 0;
             while (bucket < settlement_bill_count && settlement_bills[bucket].rate != rate)
                 ++bucket;
@@ -1741,14 +1741,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ++result.small_payment_roundups;
             if (consumption_tax_active) {
                 const int32_t mode = frozen_tax_mode(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     component.good_id);
                 const int64_t tax_base =
-                    mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                    mode == CountryApi::TAX_MODE_ABSOLUTE
                         ? quantity
                         : component_base;
                 const int64_t transfer = apply_fiscal_tax(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION, tax_base,
+                    cell, CountryApi::TAX_CONSUMPTION, tax_base,
                     rate, mode, sat);
                 if (transfer > 0) positive_tax = saturating_add(positive_tax, transfer, sat);
                 else subsidy = saturating_add(subsidy, -transfer, sat);
@@ -1761,7 +1761,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         if (pay < Q16_ONE && base_spend > 0) {
             const int64_t request = mul_div_sat(base_spend, Q16_ONE - pay, Q16_ONE, sat);
             subsidy = saturating_add(subsidy, -apply_fiscal_tax(cell,
-                NativeCountryRuntime::TAX_CONSUMPTION, request, -10000, sat), sat);
+                CountryApi::TAX_CONSUMPTION, request, -10000, sat), sat);
         }
         cohort_base_spend[order.local_cohort] = saturating_add(
             cohort_base_spend[order.local_cohort], base_spend, sat);
@@ -2053,6 +2053,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                             }
                             result.supported_output = saturating_add(
                                 result.supported_output, entry->quantity, sat);
+                            if (_good_storage_modes[entry->good_id] == 1) {
+                                result.supported_cycle_flow_output = saturating_add(
+                                    result.supported_cycle_flow_output, entry->quantity, sat);
+                            }
                             result.supported_money = saturating_add(
                                 result.supported_money, support_paid, sat);
                             if (issue_value > 0) {
@@ -2094,6 +2098,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             entry->quantity = 0;
             ++entry;
         }
+    }
+    // Cycle-flow goods are services within this settlement. Unsold shelf
+    // remainder expires after both retail and retained-output reconciliation.
+    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
+        if (_good_storage_modes[good] != 1) continue;
+        const int32_t index = market_store().index(market, good);
+        const int64_t remainder = std::max<int64_t>(0, market_store().stock[index]);
+        if (remainder <= 0) continue;
+        audit_touch_market_lane(static_cast<size_t>(index));
+        market_store().stock.write_scalar(index, 0, market_mutation_sink());
+        result.cycle_flow_discarded = saturating_add(
+            result.cycle_flow_discarded, remainder, sat);
     }
     result.fallback_ms += elapsed_ms(fallback_start);
 
@@ -2187,10 +2203,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ? _signatures[signature].profession_id : -1;
             const int32_t cell = cohort_cell(slot);
             const int32_t income_rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_INCOME, profession);
+                cell, CountryApi::TAX_INCOME, profession);
             const int32_t income_mode = frozen_tax_mode(
-                cell, NativeCountryRuntime::TAX_INCOME, profession);
-            if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                cell, CountryApi::TAX_INCOME, profession);
+            if (income_mode == CountryApi::TAX_MODE_ABSOLUTE) {
                 // Absolute income levies settle in
                 // settle_absolute_daily_taxes_for_cell.
             } else if (income_rate < 0) {
@@ -2202,7 +2218,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 }
             } else {
                 income_tax = apply_fiscal_tax(
-                    cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
+                    cell, CountryApi::TAX_INCOME, taxable_income,
                     income_rate, income_mode, sat);
                 record_cohort_fiscal(slot, income_tax);
             }
