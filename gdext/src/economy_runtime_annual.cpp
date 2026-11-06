@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_host_port.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_cost_probe.h"
 #include <algorithm>
 
@@ -78,7 +78,7 @@ AnnualEconomyFacts NativeEconomyRuntime::capture_annual_facts(uint64_t handle,bo
         if(flows){
             for(int32_t kind=0;kind<ACTIVE_TAX_KIND_COUNT;++kind){const size_t lane=static_cast<size_t>(cell)*ACTIVE_TAX_KIND_COUNT+kind;
                 if(lane>=_fiscal_epoch_collected.size())continue;
-                const AnnualMetric m=kind==NativeCountryRuntime::TAX_INCOME?AnnualMetric::INCOME_TAX:kind==NativeCountryRuntime::TAX_CONSUMPTION?AnnualMetric::CONSUMPTION_TAX:AnnualMetric::BUSINESS_TAX;
+                const AnnualMetric m=kind==CountryApi::TAX_INCOME?AnnualMetric::INCOME_TAX:kind==CountryApi::TAX_CONSUMPTION?AnnualMetric::CONSUMPTION_TAX:AnnualMetric::BUSINESS_TAX;
                 plus(m,_fiscal_epoch_collected[lane]);plus(AnnualMetric::SUBSIDIES,_fiscal_epoch_paid[lane]);
             }
         }

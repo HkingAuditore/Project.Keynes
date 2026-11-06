@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
@@ -4243,8 +4243,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 int64_t daily_variable_cost = quoted_daily_variable_cost;
                 int64_t daily_after_tax_cash_revenue = daily_cash_revenue;
                 const uint8_t investment_tax_mask = static_cast<uint8_t>(
-                    (1U << NativeCountryRuntime::TAX_INCOME) |
-                    (1U << NativeCountryRuntime::TAX_BUSINESS));
+                    (1U << CountryApi::TAX_INCOME) |
+                    (1U << CountryApi::TAX_BUSINESS));
                 if ((_epoch_active_tax_mask & investment_tax_mask) != 0) {
                     const int64_t eligible_cost_base = mul_div_sat(
                         saturating_add(saturating_add(

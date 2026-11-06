@@ -2,5 +2,7 @@
   "metric_mask.h": "Family/ideology metric bitmask exchanged between Effect, Ideology and Economy effect-input APIs; leaf value type",
   "effect_selector_cap.h": "Effect target-selector caps and stats filled by Economy target collection for Ideology/Effect callers; leaf value type",
   "country_read_view.h": "Country committed read queries and Snapshot exchanged through Country API; only system includes, no runtime ownership",
-  "derived_cell_layer.h": "Immutable published Modifier cell contributions read by Military diagnostics; system-only value/front and detached builder, no runtime dependency"
+  "derived_cell_layer.h": "Immutable published Modifier cell contributions read by Military diagnostics; system-only value/front and detached builder, no runtime dependency",
+  "country_fiscal_return_intent.h": "Country fiscal return/transfer intent PODs and CountryFiscalReturnPort exchanged with Economy through the Country API; includes only system headers and no runtime ownership",
+  "country_procurement_intent.h": "Country procurement intent and CountryProcurementPort returned by the Country API to Economy; includes only the shared fiscal return intent header"
 }

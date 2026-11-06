@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
@@ -1134,7 +1134,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     };
     const bool consumption_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_CONSUMPTION)) != 0;
+            1U << CountryApi::TAX_CONSUMPTION)) != 0;
     bool family_purchase_discount_active = false;
     for (int32_t local = 0; local < cohort_count; ++local) {
         if (family_purchase_pay_factor_q16(slots[local]) < Q16_ONE) {
@@ -1146,7 +1146,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         consumption_tax_active || family_purchase_discount_active;
     const bool income_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+            1U << CountryApi::TAX_INCOME)) != 0;
     const auto household_quote = [&](int32_t slot, int32_t variant_id,
                                      int64_t base_price) {
         if (!consumption_tax_active) return base_price;
@@ -1157,7 +1157,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const NeedComponent &component =
                 _components[variant.component_begin + c];
             const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                cell, CountryApi::TAX_CONSUMPTION,
                 component.good_id);
             if (rate <= 0) continue;
             const int64_t component_value = goods_cost(
@@ -1180,7 +1180,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const NeedComponent &component =
                 _components[variant.component_begin + c];
             const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                cell, CountryApi::TAX_CONSUMPTION,
                 component.good_id);
             if (rate >= 0) continue;
             const int64_t quantity = mul_div_sat(
@@ -1191,7 +1191,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 GOODS_SCALE, sat);
             subsidy = saturating_add(subsidy,
                 -expected_resolved_fiscal_transfer(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     component.good_id, component_base, quantity, sat), sat);
         }
         return subsidy;
@@ -1213,7 +1213,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     return subsidy_quota_remaining[i];
             }
             const size_t lane = static_cast<size_t>(cell) *
-                ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_CONSUMPTION;
+                ACTIVE_TAX_KIND_COUNT + CountryApi::TAX_CONSUMPTION;
             subsidy_quota_cells.push_back(cell);
             subsidy_quota_remaining.push_back(lane < _fiscal_remaining.size()
                 ? std::max<int64_t>(0, _fiscal_remaining[lane]) : 0);
@@ -1238,7 +1238,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 const int64_t family_request = mul_div_sat(
                     gross, Q16_ONE - pay, Q16_ONE, sat);
                 const int64_t family_alloc = -expected_fiscal_transfer(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     family_request, -10000, sat);
                 allocated = saturating_add(
                     allocated, family_alloc, sat);
@@ -1648,7 +1648,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     const VariantChoice &variant = _variants[orders[i].variant_index];
                     for (int32_t c = 0; c < variant.component_count; ++c) {
                         const int32_t rate = frozen_tax_rate(cohort_cell(orders[i].slot),
-                            NativeCountryRuntime::TAX_CONSUMPTION,
+                            CountryApi::TAX_CONSUMPTION,
                             _components[variant.component_begin + c].good_id);
                         size_t policy = 0;
                         while (policy < policies && budget_tax_rates[policy] != rate) ++policy;
@@ -1724,7 +1724,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             food_eq = saturating_add(food_eq,
                 food_equivalent(component.good_id, quantity), sat);
             const int32_t rate = consumption_tax_active ? frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION, component.good_id) : 0;
+                cell, CountryApi::TAX_CONSUMPTION, component.good_id) : 0;
             size_t bucket = 0;
             while (bucket < settlement_bill_count && settlement_bills[bucket].rate != rate)
                 ++bucket;
@@ -1741,14 +1741,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ++result.small_payment_roundups;
             if (consumption_tax_active) {
                 const int32_t mode = frozen_tax_mode(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    cell, CountryApi::TAX_CONSUMPTION,
                     component.good_id);
                 const int64_t tax_base =
-                    mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                    mode == CountryApi::TAX_MODE_ABSOLUTE
                         ? quantity
                         : component_base;
                 const int64_t transfer = apply_fiscal_tax(
-                    cell, NativeCountryRuntime::TAX_CONSUMPTION, tax_base,
+                    cell, CountryApi::TAX_CONSUMPTION, tax_base,
                     rate, mode, sat);
                 if (transfer > 0) positive_tax = saturating_add(positive_tax, transfer, sat);
                 else subsidy = saturating_add(subsidy, -transfer, sat);
@@ -1761,7 +1761,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         if (pay < Q16_ONE && base_spend > 0) {
             const int64_t request = mul_div_sat(base_spend, Q16_ONE - pay, Q16_ONE, sat);
             subsidy = saturating_add(subsidy, -apply_fiscal_tax(cell,
-                NativeCountryRuntime::TAX_CONSUMPTION, request, -10000, sat), sat);
+                CountryApi::TAX_CONSUMPTION, request, -10000, sat), sat);
         }
         cohort_base_spend[order.local_cohort] = saturating_add(
             cohort_base_spend[order.local_cohort], base_spend, sat);
@@ -2203,10 +2203,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ? _signatures[signature].profession_id : -1;
             const int32_t cell = cohort_cell(slot);
             const int32_t income_rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_INCOME, profession);
+                cell, CountryApi::TAX_INCOME, profession);
             const int32_t income_mode = frozen_tax_mode(
-                cell, NativeCountryRuntime::TAX_INCOME, profession);
-            if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                cell, CountryApi::TAX_INCOME, profession);
+            if (income_mode == CountryApi::TAX_MODE_ABSOLUTE) {
                 // Absolute income levies settle in
                 // settle_absolute_daily_taxes_for_cell.
             } else if (income_rate < 0) {
@@ -2218,7 +2218,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 }
             } else {
                 income_tax = apply_fiscal_tax(
-                    cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
+                    cell, CountryApi::TAX_INCOME, taxable_income,
                     income_rate, income_mode, sat);
                 record_cohort_fiscal(slot, income_tax);
             }

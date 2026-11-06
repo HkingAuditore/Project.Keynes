@@ -9,6 +9,7 @@
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
 #include "modifier_api.h"
+#include "country_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
@@ -709,7 +710,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
                     const size_t index = begin + item;
                     if (index >= modes.size() ||
                         modes[index] ==
-                            NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                            CountryApi::TAX_MODE_ABSOLUTE) {
                         continue;
                     }
                     percent_stat_ids.push_back(stat_ids[item]);
@@ -726,8 +727,8 @@ bool NativeEconomyRuntime::capture_country_epoch(
                     rates[percent_indices[i]] = static_cast<int32_t>(
                         std::clamp<int64_t>(
                             effective[i],
-                            NativeCountryRuntime::TAX_RATE_MIN_BP,
-                            NativeCountryRuntime::TAX_RATE_MAX_BP));
+                            CountryApi::TAX_RATE_MIN_BP,
+                            CountryApi::TAX_RATE_MAX_BP));
                 }
             };
             freeze_tax_group(_income_tax_stat_ids, _epoch_income_tax_rates,
@@ -1012,13 +1013,13 @@ bool NativeEconomyRuntime::capture_country_epoch(
     std::unordered_map<uint64_t, int32_t> default_row_ids;
     const auto item_count_for_kind = [&](int32_t kind) -> size_t {
         switch (kind) {
-            case NativeCountryRuntime::TAX_INCOME:
+            case CountryApi::TAX_INCOME:
                 return _profession_ids.size();
-            case NativeCountryRuntime::TAX_BUSINESS:
+            case CountryApi::TAX_BUSINESS:
                 return _building_types.size();
-            case NativeCountryRuntime::TAX_CONSUMPTION:
-            case NativeCountryRuntime::TAX_IMPORT:
-            case NativeCountryRuntime::TAX_EXPORT:
+            case CountryApi::TAX_CONSUMPTION:
+            case CountryApi::TAX_IMPORT:
+            case CountryApi::TAX_EXPORT:
                 return _good_ids.size();
             default: return 0;
         }
@@ -1026,15 +1027,15 @@ bool NativeEconomyRuntime::capture_country_epoch(
     const auto &stat_ids_for_kind = [&](int32_t kind)
             -> const std::vector<int32_t> & {
         switch (kind) {
-            case NativeCountryRuntime::TAX_INCOME:
+            case CountryApi::TAX_INCOME:
                 return _income_tax_stat_ids;
-            case NativeCountryRuntime::TAX_CONSUMPTION:
+            case CountryApi::TAX_CONSUMPTION:
                 return _consumption_tax_stat_ids;
-            case NativeCountryRuntime::TAX_BUSINESS:
+            case CountryApi::TAX_BUSINESS:
                 return _business_tax_stat_ids;
-            case NativeCountryRuntime::TAX_IMPORT:
+            case CountryApi::TAX_IMPORT:
                 return _import_tax_stat_ids;
-            case NativeCountryRuntime::TAX_EXPORT:
+            case CountryApi::TAX_EXPORT:
                 return _export_tax_stat_ids;
             default: {
                 static const std::vector<int32_t> empty;
@@ -1069,7 +1070,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
             _epoch_compiled_cell_tax_default_modes.size() + item_count,
             base_mode);
         if (_modifier_runtime != nullptr && item_count > 0 &&
-            base_mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+            base_mode != CountryApi::TAX_MODE_ABSOLUTE) {
             const auto &stat_ids = stat_ids_for_kind(kind);
             modifier_api::effective_values(*_modifier_runtime,
                 ModifierApi::COUNTRY, stat_ids.data(),
@@ -1107,7 +1108,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
             const auto &authority = snapshot_cell_tax_policies[authority_id];
             CompiledCellTaxPolicy compiled;
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 compiled.override_begin[static_cast<size_t>(kind)] =
                     static_cast<int32_t>(
                         _epoch_compiled_cell_tax_overrides.size());
@@ -1115,11 +1116,11 @@ bool NativeEconomyRuntime::capture_country_epoch(
                     if (entry.kind != kind) continue;
                     int32_t effective = entry.rate;
                     const int32_t mode =
-                        entry.mode == NativeCountryRuntime::TAX_MODE_INHERIT
-                            ? NativeCountryRuntime::TAX_MODE_PERCENT_BP
+                        entry.mode == CountryApi::TAX_MODE_INHERIT
+                            ? CountryApi::TAX_MODE_PERCENT_BP
                             : entry.mode;
                     if (_modifier_runtime != nullptr &&
-                        mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                        mode != CountryApi::TAX_MODE_ABSOLUTE) {
                         const auto &stat_ids = stat_ids_for_kind(kind);
                         modifier_api::effective_values(*_modifier_runtime,
                             ModifierApi::COUNTRY,
@@ -1139,16 +1140,16 @@ bool NativeEconomyRuntime::capture_country_epoch(
                     authority.defaults[static_cast<size_t>(kind)];
                 const int32_t local_default_mode =
                     authority.default_modes[static_cast<size_t>(kind)];
-                if (local_default != NativeCountryRuntime::TAX_RATE_INHERIT ||
+                if (local_default != CountryApi::TAX_RATE_INHERIT ||
                     local_default_mode !=
-                        NativeCountryRuntime::TAX_MODE_INHERIT) {
+                        CountryApi::TAX_MODE_INHERIT) {
                     const int32_t resolved_mode =
                         local_default_mode ==
-                                NativeCountryRuntime::TAX_MODE_INHERIT
-                            ? NativeCountryRuntime::TAX_MODE_PERCENT_BP
+                                CountryApi::TAX_MODE_INHERIT
+                            ? CountryApi::TAX_MODE_PERCENT_BP
                             : local_default_mode;
                     const int32_t resolved_rate =
-                        local_default == NativeCountryRuntime::TAX_RATE_INHERIT
+                        local_default == CountryApi::TAX_RATE_INHERIT
                             ? 0
                             : local_default;
                     const int32_t row_id = ensure_default_row(
@@ -1174,13 +1175,13 @@ bool NativeEconomyRuntime::capture_country_epoch(
             const auto national_rates_for_kind = [&](int32_t kind)
                     -> const std::vector<int32_t> & {
                 switch (kind) {
-                    case NativeCountryRuntime::TAX_INCOME:
+                    case CountryApi::TAX_INCOME:
                         return _epoch_income_tax_rates;
-                    case NativeCountryRuntime::TAX_CONSUMPTION:
+                    case CountryApi::TAX_CONSUMPTION:
                         return _epoch_consumption_tax_rates;
-                    case NativeCountryRuntime::TAX_BUSINESS:
+                    case CountryApi::TAX_BUSINESS:
                         return _epoch_business_tax_rates;
-                    case NativeCountryRuntime::TAX_IMPORT:
+                    case CountryApi::TAX_IMPORT:
                         return _epoch_import_tax_rates;
                     default: return _epoch_export_tax_rates;
                     }
@@ -1188,19 +1189,19 @@ bool NativeEconomyRuntime::capture_country_epoch(
             const auto national_modes_for_kind = [&](int32_t kind)
                     -> const std::vector<int32_t> & {
                 switch (kind) {
-                    case NativeCountryRuntime::TAX_INCOME:
+                    case CountryApi::TAX_INCOME:
                         return _epoch_income_tax_modes;
-                    case NativeCountryRuntime::TAX_CONSUMPTION:
+                    case CountryApi::TAX_CONSUMPTION:
                         return _epoch_consumption_tax_modes;
-                    case NativeCountryRuntime::TAX_BUSINESS:
+                    case CountryApi::TAX_BUSINESS:
                         return _epoch_business_tax_modes;
-                    case NativeCountryRuntime::TAX_IMPORT:
+                    case CountryApi::TAX_IMPORT:
                         return _epoch_import_tax_modes;
                     default: return _epoch_export_tax_modes;
                 }
             };
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 const size_t item_count = item_count_for_kind(kind);
                 const auto &national = national_rates_for_kind(kind);
                 const auto &national_modes = national_modes_for_kind(kind);
@@ -1213,7 +1214,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
                 for (int32_t item = 0;
                      item < static_cast<int32_t>(item_count); ++item) {
                     int32_t rate = 0;
-                    int32_t mode = NativeCountryRuntime::TAX_MODE_PERCENT_BP;
+                    int32_t mode = CountryApi::TAX_MODE_PERCENT_BP;
                     while (override_cursor < override_end &&
                            _epoch_compiled_cell_tax_overrides[
                                static_cast<size_t>(override_cursor)].item < item)
@@ -1248,7 +1249,7 @@ bool NativeEconomyRuntime::capture_country_epoch(
                         if (rate < 0)
                             compiled.negative_mask |=
                                 static_cast<uint8_t>(1U << kind);
-                        if (mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE)
+                        if (mode == CountryApi::TAX_MODE_ABSOLUTE)
                             compiled.absolute_mask |=
                                 static_cast<uint8_t>(1U << kind);
                     }
@@ -1281,24 +1282,24 @@ bool NativeEconomyRuntime::capture_country_epoch(
                 country_tax_masks[static_cast<size_t>(country)] |= bit;
                 if (rate < 0)
                     country_negative_tax_masks[static_cast<size_t>(country)] |= bit;
-                if (modes[offset + item] == NativeCountryRuntime::TAX_MODE_ABSOLUTE)
+                if (modes[offset + item] == CountryApi::TAX_MODE_ABSOLUTE)
                     country_absolute_tax_masks[static_cast<size_t>(country)] |= bit;
             }
         }
     };
-    mark_country_tax(NativeCountryRuntime::TAX_INCOME,
+    mark_country_tax(CountryApi::TAX_INCOME,
                      _epoch_income_tax_rates, _epoch_income_tax_modes,
                      _profession_ids.size());
-    mark_country_tax(NativeCountryRuntime::TAX_CONSUMPTION,
+    mark_country_tax(CountryApi::TAX_CONSUMPTION,
                      _epoch_consumption_tax_rates, _epoch_consumption_tax_modes,
                      _good_ids.size());
-    mark_country_tax(NativeCountryRuntime::TAX_BUSINESS,
+    mark_country_tax(CountryApi::TAX_BUSINESS,
                      _epoch_business_tax_rates, _epoch_business_tax_modes,
                      _building_types.size());
-    mark_country_tax(NativeCountryRuntime::TAX_IMPORT,
+    mark_country_tax(CountryApi::TAX_IMPORT,
                      _epoch_import_tax_rates, _epoch_import_tax_modes,
                      _good_ids.size());
-    mark_country_tax(NativeCountryRuntime::TAX_EXPORT,
+    mark_country_tax(CountryApi::TAX_EXPORT,
                      _epoch_export_tax_rates, _epoch_export_tax_modes,
                      _good_ids.size());
     _epoch_active_tax_mask = 0;

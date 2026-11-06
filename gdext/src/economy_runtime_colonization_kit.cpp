@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "modifier_api.h"
 #include "economy_host_port.h"
 
@@ -1418,7 +1418,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         }
         if (!c.host_peer) {
             const godot::Dictionary applied =
-                _country_runtime->fiscal_return_port().applied(
+                country_api::fiscal_return_port(*_country_runtime).applied(
                     {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
                     true, "");
             if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -1436,7 +1436,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         const std::vector<int32_t> ids{c.good};
         const std::vector<int64_t> treasury{c.quantity};
         const auto route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+            static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_TREASURY_SPEND),
             static_cast<uint64_t>(family_expeditions_store().country_handle[c.expedition]),
             0, c.quantity, ids, treasury, error, &c.pending_request_id);
         if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
@@ -1466,7 +1466,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         const godot::PackedInt64Array packed_qty = [&]() {
             godot::PackedInt64Array out; out.resize(1); out.set(0, c.quantity); return out;
         }();
-        const godot::Dictionary begun = _country_runtime->fiscal_return_port().submit_spend(_country_runtime->fiscal_return_port().spend_intent(
+        const godot::Dictionary begun = country_api::fiscal_return_port(*_country_runtime).submit_spend(country_api::fiscal_return_port(*_country_runtime).spend_intent(
             static_cast<int64_t>(family_expeditions_store().country_handle[c.expedition]),
             packed_ids, packed_qty, 0, _epoch_id.get(), static_cast<int32_t>(_stage)));
         if (!static_cast<bool>(begun.get("ok", false))) {
@@ -1483,7 +1483,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             static_cast<int64_t>(begun.get("country_generation", 0)));
         c.peer_generation = _committed_generation;
         const godot::Dictionary prepared =
-            _country_runtime->fiscal_return_port().prepared(
+            country_api::fiscal_return_port(*_country_runtime).prepared(
                     {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
                     true, "");
         if (!static_cast<bool>(prepared.get("ok", false))) {
@@ -1491,13 +1491,13 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             return false;
         }
         const godot::Dictionary committed =
-            _country_runtime->fiscal_return_port().apply(c.transaction_id);
+            country_api::fiscal_return_port(*_country_runtime).apply(c.transaction_id);
         if (!static_cast<bool>(committed.get("ok", false))) {
             c.active = false; error = "colonization_treasury_transfer_commit_failed";
             return false;
         }
         const godot::Dictionary applied =
-            _country_runtime->fiscal_return_port().applied(
+            country_api::fiscal_return_port(*_country_runtime).applied(
                     {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
                     true, "");
         if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -1510,7 +1510,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
     }
     if (c.phase == 6) {
         const godot::Dictionary applied =
-            _country_runtime->fiscal_return_port().applied(
+            country_api::fiscal_return_port(*_country_runtime).applied(
                     {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
                     true, "");
         if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -1708,7 +1708,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
     std::vector<int32_t> ids{good};
     std::vector<int64_t> goods{quantity};
     const auto route = block_or_enqueue_country_worker_asset(
-        static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET),
+        static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET),
         static_cast<uint64_t>(family_expeditions_store().country_handle[expedition]),
         cash, quantity, ids, goods, error, &c.pending_request_id, market);
     if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
@@ -1722,8 +1722,8 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         c.active = false;
         return false;
     }
-    const godot::Dictionary begun = _country_runtime->procurement_port().submit({
-        _country_runtime->procurement_port().next_order_key(), static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
+    const godot::Dictionary begun = country_api::procurement_port(*_country_runtime).submit({
+        country_api::procurement_port(*_country_runtime).next_order_key(), static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
         good, quantity, _epoch_id.get(), static_cast<int32_t>(_stage), cash});
     if (!static_cast<bool>(begun.get("ok", false))) {
         error = godot::String(begun.get(
@@ -1748,7 +1748,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         return false;
     }
     const godot::Dictionary prepared =
-        _country_runtime->fiscal_return_port().prepared(
+        country_api::fiscal_return_port(*_country_runtime).prepared(
                     {c.transaction_id, c.session_epoch, c.country_generation, c.peer_generation},
                     true, "");
     if (!static_cast<bool>(prepared.get("ok", false))) {
@@ -1757,7 +1757,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
         return false;
     }
     const godot::Dictionary committed =
-        _country_runtime->fiscal_return_port().apply(c.transaction_id);
+        country_api::fiscal_return_port(*_country_runtime).apply(c.transaction_id);
     if (!static_cast<bool>(committed.get("ok", false)) ||
         static_cast<int64_t>(committed.get("committed_quantity", 0)) != quantity ||
         static_cast<int64_t>(committed.get("committed_cash", cash)) != cash) {

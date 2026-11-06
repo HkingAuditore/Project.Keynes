@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
 #include "modifier_api.h"
@@ -553,7 +553,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const bool country_schema_compatible =
             // PKCN 14 (military Country opcodes) added no Economy-visible
             // fields, so PKEC written against PKCN 13 stays loadable.
-            (country_schema >= 13 && country_schema <= NativeCountryRuntime::SCHEMA_VERSION) ||
+            (country_schema >= 13 && country_schema <= CountryApi::SCHEMA_VERSION) ||
             (schema == 22 && country_schema == 3) ||
             (schema <= 19 && country_schema == 1);
         const uint64_t expected_country_hash =
@@ -604,7 +604,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     "compatible=%d economy_available=%d deferred=%d",
                     country_schema,
                     _country_runtime == nullptr ? -1
-                        : NativeCountryRuntime::SCHEMA_VERSION,
+                        : CountryApi::SCHEMA_VERSION,
                     static_cast<unsigned long long>(country_generation),
                     static_cast<unsigned long long>(
                         _country_runtime == nullptr ? 0
@@ -1620,7 +1620,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const int32_t country_count = std::max(0,
             country_snapshot.country_count);
         const size_t summary_count = static_cast<size_t>(country_count) *
-            NativeCountryRuntime::TAX_KIND_COUNT;
+            CountryApi::TAX_KIND_COUNT;
         if (_restore.expected_fiscal < 0) {
             _restore.expected_fiscal = country_count;
             _fiscal_escrow_by_country.assign(
@@ -1652,9 +1652,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const auto read_group = [&](auto &values,
                                     int32_t country) {
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 const size_t index = static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                    CountryApi::TAX_KIND_COUNT + kind;
                 if (index >= values.size() ||
                     !read_column_le(bytes, cursor, values, index) ||
                     values[index] < 0)
@@ -1668,7 +1668,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             if (!read_le(bytes, cursor, country) ||
                 country != _restore.restored_fiscal ||
                 country < 0 || static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT >= summary_count ||
+                    CountryApi::TAX_KIND_COUNT >= summary_count ||
                 !read_group(_fiscal_last_bases, country) ||
                 !read_group(_fiscal_last_assessed, country) ||
                 !read_group(_fiscal_last_collected, country) ||
@@ -2406,8 +2406,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, cumulative_collected) ||
                 !read_le(bytes, cursor, cumulative_requests) ||
                 !read_le(bytes, cursor, cumulative_paid) || country < 0 ||
-                kind < NativeCountryRuntime::TAX_IMPORT ||
-                kind > NativeCountryRuntime::TAX_EXPORT || base < 0 || assessed < 0 ||
+                kind < CountryApi::TAX_IMPORT ||
+                kind > CountryApi::TAX_EXPORT || base < 0 || assessed < 0 ||
                 collected < 0 || requests < 0 || reserved < 0 || paid < 0 ||
                 cumulative_base < 0 || cumulative_collected < 0 ||
                 cumulative_requests < 0 || cumulative_paid < 0) {

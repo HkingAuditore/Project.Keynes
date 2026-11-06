@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_variant_helpers.h"
 
 #include <algorithm>
@@ -2932,7 +2932,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_catalog_hash"] = _building_catalog_hash.get();
     out["environment_day"] = _environment_day.get();
     out["environment_hash"] = _environment_hash.get();
-    out["country_schema_version"] = NativeCountryRuntime::SCHEMA_VERSION;
+    out["country_schema_version"] = CountryApi::SCHEMA_VERSION;
     out["country_generation"] = static_cast<int64_t>(_epoch_country_generation);
     out["country_state_hash"] = static_cast<int64_t>(_epoch_country_hash);
     out["country_commands_due"] = _country_runtime != nullptr &&

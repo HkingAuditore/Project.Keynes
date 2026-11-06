@@ -7,6 +7,7 @@
 #include "economy_graph_live_ops.h"
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
+#include "country_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_host_port.h"
 #include "economy_runtime_variant_helpers.h"
@@ -206,16 +207,16 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         return false;
     const int64_t handle = static_cast<int64_t>(
         _epoch_country_handles[static_cast<size_t>(country)]);
-    const bool returning = operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RETURN;
-    const auto return_port = _country_runtime->fiscal_return_port();
+    const bool returning = operation == CountryApi::ECONOMY_ASSET_FISCAL_RETURN;
+    const auto return_port = country_api::fiscal_return_port(*_country_runtime);
     godot::Dictionary begun;
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE)
+    if (operation == CountryApi::ECONOMY_ASSET_FISCAL_RESERVE)
         begun = return_port.submit_cash(return_port.reserve_intent(
             handle, amount, _epoch_id.get(), static_cast<int32_t>(_stage)));
     else if (returning)
         begun = return_port.submit({return_port.next_order_key(),
             handle, amount, _epoch_id.get(), static_cast<int32_t>(_stage)});
-    else if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_COLLECT)
+    else if (operation == CountryApi::ECONOMY_ASSET_FISCAL_COLLECT)
         begun = return_port.submit_cash(return_port.collect_intent(
             handle, amount, _epoch_id.get(), static_cast<int32_t>(_stage)));
     else {
@@ -243,7 +244,7 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
     const size_t country_index = static_cast<size_t>(country);
     const int64_t escrow = country_index < _fiscal_escrow_by_country.size()
         ? _fiscal_escrow_by_country[country_index] : 0;
-    if (operation != NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE &&
+    if (operation != CountryApi::ECONOMY_ASSET_FISCAL_RESERVE &&
         escrow < prepared_quantity) {
         return_port.prepared(
             {transaction_id, session_epoch, country_generation, peer_generation},
@@ -251,7 +252,7 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         error = "country_fiscal_peer_escrow_insufficient";
         return false;
     }
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE &&
+    if (operation == CountryApi::ECONOMY_ASSET_FISCAL_RESERVE &&
         escrow > std::numeric_limits<int64_t>::max() - prepared_quantity) {
         return_port.prepared(
             {transaction_id, session_epoch, country_generation, peer_generation},
@@ -276,7 +277,7 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         error = "country_fiscal_peer_commit_quantity_invalid";
         return false;
     }
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE)
+    if (operation == CountryApi::ECONOMY_ASSET_FISCAL_RESERVE)
         _fiscal_escrow_by_country.write_scalar(country_index, escrow + actual, market_mutation_sink());
     else
         _fiscal_escrow_by_country.write_scalar(country_index, escrow - actual, market_mutation_sink());
@@ -314,8 +315,8 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     }
     if (cohort_slot < 0 || cohort_slot >= static_cast<int32_t>(
             population_store().active.size()) || population_store().active[cohort_slot] == 0 ||
-        (operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
-         operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT)) {
+        (operation != CountryApi::ECONOMY_ASSET_CASH_TO_COHORT &&
+         operation != CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT)) {
         error = "country_cohort_cash_request_invalid";
         return false;
     }
@@ -346,9 +347,9 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         (_d7_operation_gate_mask & (1u << static_cast<uint32_t>(operation))) != 0u) {
         const int64_t funds = population_store().funds[cohort_slot];
-        if ((operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT &&
+        if ((operation == CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT &&
              (funds < amount || population_store().epoch_expense[cohort_slot] > INT64_MAX - amount)) ||
-            (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
+            (operation == CountryApi::ECONOMY_ASSET_CASH_TO_COHORT &&
              (funds > INT64_MAX - amount ||
               population_store().epoch_income[cohort_slot] > INT64_MAX - amount))) {
             error = "country_cohort_cash_balance_invalid";
@@ -383,9 +384,9 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     }
     if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
         return false;
-    const auto port = _country_runtime->fiscal_return_port();
+    const auto port = country_api::fiscal_return_port(*_country_runtime);
     godot::Dictionary begun;
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+    if (operation == CountryApi::ECONOMY_ASSET_CASH_TO_COHORT) {
         begun = port.submit_transfer(port.cash_to_cohort(
             country_handle, amount, _epoch_id.get(), static_cast<int32_t>(_stage)));
     } else {
@@ -415,7 +416,7 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     const int64_t funds_before = std::max<int64_t>(0, population_store().funds[cohort_slot]);
     const int64_t income_before = std::max<int64_t>(
         0, population_store().epoch_income[cohort_slot]);
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+    if (operation == CountryApi::ECONOMY_ASSET_CASH_TO_COHORT) {
         if (funds_before > std::numeric_limits<int64_t>::max() - prepared_quantity ||
             income_before > std::numeric_limits<int64_t>::max() - prepared_quantity) {
             port.prepared(
@@ -455,7 +456,7 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
     }
 
     touch_accounting_slot(cohort_slot);
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+    if (operation == CountryApi::ECONOMY_ASSET_CASH_TO_COHORT) {
         population_store().funds.write_scalar(cohort_slot, saturating_add(
             population_store().funds[cohort_slot], actual, _saturation_count), market_mutation_sink());
         population_store().epoch_income.write_scalar(cohort_slot, saturating_add(
@@ -490,8 +491,8 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
     }
     if (market < 0 || market >= market_store().market_count.get() || good < 0 ||
         good >= market_store().good_count.get() || country_handle == 0 || amount < 0 ||
-        (operation != NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET &&
-         operation != NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET)) {
+        (operation != CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET &&
+         operation != CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET)) {
         error = "country_market_goods_request_invalid";
         return false;
     }
@@ -510,9 +511,9 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
         error = "country_market_goods_lane_invalid";
         return false;
     }
-    const auto port = _country_runtime->fiscal_return_port();
+    const auto port = country_api::fiscal_return_port(*_country_runtime);
     godot::Dictionary begun;
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET) {
+    if (operation == CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET) {
         begun = port.submit_transfer(port.good_to_market(
             country_handle, good, amount, _epoch_id.get(), static_cast<int32_t>(_stage)));
     } else {
@@ -539,7 +540,7 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
         return false;
     }
     const int64_t market_before = std::max<int64_t>(0, market_store().stock[market_index]);
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET &&
+    if (operation == CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET &&
         market_before < prepared_quantity) {
         port.prepared(
                 {transaction_id, session_epoch, country_generation, peer_generation},
@@ -547,7 +548,7 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
         error = "country_market_goods_stock_insufficient";
         return false;
     }
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET &&
+    if (operation == CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET &&
         market_before > std::numeric_limits<int64_t>::max() - prepared_quantity) {
         port.prepared(
                 {transaction_id, session_epoch, country_generation, peer_generation},
@@ -577,7 +578,7 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
         return false;
     }
     audit_touch_market_lane(market_index);
-    if (operation == NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET)
+    if (operation == CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET)
         market_store().stock.write_scalar(market_index, saturating_add(
             market_store().stock[market_index], actual, _saturation_count), market_mutation_sink());
     else
@@ -633,7 +634,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
     }
     if (cash == 0 && goods_total == 0) return true;
     const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+            static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_TREASURY_SPEND),
             country_handle, cash, goods_total, good_ids, treasury_quantities,
             error);
     if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
@@ -693,7 +694,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         ids.set(i, good_ids[static_cast<size_t>(i)]);
         quantities.set(i, treasury_quantities[static_cast<size_t>(i)]);
     }
-    const godot::Dictionary begun = _country_runtime->fiscal_return_port().submit_spend(_country_runtime->fiscal_return_port().spend_intent(
+    const godot::Dictionary begun = country_api::fiscal_return_port(*_country_runtime).submit_spend(country_api::fiscal_return_port(*_country_runtime).spend_intent(
         country_handle, ids, quantities, cash, _epoch_id.get(),
         static_cast<int32_t>(_stage)));
     if (!static_cast<bool>(begun.get("ok", false))) {
@@ -714,7 +715,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         return false;
     }
     const godot::Dictionary prepared =
-        _country_runtime->fiscal_return_port().prepared(
+        country_api::fiscal_return_port(*_country_runtime).prepared(
                 {transaction_id, session_epoch, country_generation, peer_generation},
                 true, "");
     if (!static_cast<bool>(prepared.get("ok", false))) {
@@ -722,7 +723,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         return false;
     }
     const godot::Dictionary commit =
-        _country_runtime->fiscal_return_port().apply(transaction_id);
+        country_api::fiscal_return_port(*_country_runtime).apply(transaction_id);
     if (!static_cast<bool>(commit.get("ok", false))) {
         error = String(commit.get("code", "country_treasury_peer_country_commit_failed"))
             .utf8().get_data();
@@ -756,7 +757,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
                               CASHFLOW_MERCHANT_BUSINESS, share, 0);
     }
     const godot::Dictionary applied =
-        _country_runtime->fiscal_return_port().applied(
+        country_api::fiscal_return_port(*_country_runtime).applied(
                 {transaction_id, session_epoch, country_generation, peer_generation},
                 true, "");
     if (!static_cast<bool>(applied.get("ok", false)) ||
@@ -769,7 +770,7 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
 }
 
 CountryReadView NativeEconomyRuntime::country_reads() const {
-    return _country_runtime->read_view();
+    return country_api::read_view(*_country_runtime);
 }
 
 bool NativeEconomyRuntime::cell_has_technology(int32_t cell, int32_t technology_id,
@@ -788,7 +789,7 @@ bool NativeEconomyRuntime::cell_has_technology(int32_t cell, int32_t technology_
             (_epoch_country_technologies[index] & (uint64_t{1} << (technology_id % 64))) != 0;
     }
     const int32_t country = _country_runtime == nullptr
-        ? NativeCountryRuntime::NEUTRAL_SLOT : country_reads().country_slot_for_cell(cell);
+        ? CountryApi::NEUTRAL_SLOT : country_reads().country_slot_for_cell(cell);
     return _country_runtime != nullptr && country_reads().has_technology(country, technology_id);
 }
 
@@ -959,8 +960,8 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int64_t quoted_revenue = observed_capacity
         ? observed_receipts : std::max<int64_t>(0, group.last_expected_revenue);
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
-        (1U << NativeCountryRuntime::TAX_INCOME) |
-        (1U << NativeCountryRuntime::TAX_BUSINESS));
+        (1U << CountryApi::TAX_INCOME) |
+        (1U << CountryApi::TAX_BUSINESS));
     if ((_epoch_active_tax_mask & owner_tax_mask) == 0) {
         const int64_t owner_pool = std::max<int64_t>(0,
             saturating_sub(quoted_revenue,
@@ -980,7 +981,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         saturating_add(saturating_add(
             input_cost, wage_cost, sat), maintenance_cost, sat), sat);
     const int32_t business_rate = frozen_tax_rate(
-        group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+        group.cell, CountryApi::TAX_BUSINESS, group.type_id);
     const int64_t eligible_business_cost = saturating_add(
         saturating_add(input_cost, wage_cost, sat), maintenance_cost, sat);
     const int64_t business_base = business_rate < 0
@@ -992,7 +993,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         ? saturating_sub(scale_fact(group.last_business_subsidy_received),
                          scale_fact(group.last_business_tax_paid), sat)
         : expected_resolved_fiscal_transfer(
-            group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+            group.cell, CountryApi::TAX_BUSINESS, group.type_id,
             business_base, absolute_building_days, sat);
     const int64_t taxable_income = std::max<int64_t>(0, saturating_sub(
         operating_income, std::max<int64_t>(0, business_transfer), sat));
@@ -1000,7 +1001,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
             group.owner_signature_id < static_cast<int32_t>(_signatures.size())
         ? _signatures[group.owner_signature_id].profession_id : -1;
     const int32_t income_rate = frozen_tax_rate(
-        group.cell, NativeCountryRuntime::TAX_INCOME, profession);
+        group.cell, CountryApi::TAX_INCOME, profession);
     int64_t income_subsidy_base = taxable_income;
     if (income_rate < 0) {
         income_subsidy_base = std::max(
@@ -1009,7 +1010,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int64_t absolute_owner_days = saturating_mul(
         owner_jobs, std::max<int64_t>(1, days), sat);
     const int64_t income_transfer = expected_resolved_fiscal_transfer(
-        group.cell, NativeCountryRuntime::TAX_INCOME, profession,
+        group.cell, CountryApi::TAX_INCOME, profession,
         income_subsidy_base, absolute_owner_days, sat);
     const int64_t owner_pool = std::max<int64_t>(0, saturating_sub(
         saturating_sub(operating_income, business_transfer, sat),
@@ -1079,7 +1080,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             std::string cohort_cash_error;
             if (!coordinate_country_cohort_cash(
                     slot, country_handle,
-                    NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT,
+                    CountryApi::ECONOMY_ASSET_CASH_TO_COHORT,
                     std::max<int64_t>(0, cmd.i64_0), amount, cohort_cash_error)) {
                 error = cohort_cash_error.empty()
                     ? "country_cohort_cash_transfer_failed" : cohort_cash_error;
@@ -1184,7 +1185,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             if (!coordinate_country_market_goods(
                     cmd.i32_0, cmd.i32_1,
                     static_cast<int64_t>(cmd.target_handle),
-                    NativeCountryRuntime::ECONOMY_ASSET_GOOD_TO_MARKET,
+                    CountryApi::ECONOMY_ASSET_GOOD_TO_MARKET,
                     std::max<int64_t>(0, cmd.i64_0), moved, market_goods_error)) {
                 error = market_goods_error.empty()
                     ? "country_market_goods_transfer_failed" : market_goods_error;
@@ -1210,7 +1211,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             if (!coordinate_country_market_goods(
                     cmd.i32_0, cmd.i32_1,
                     static_cast<int64_t>(cmd.target_handle),
-                    NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET,
+                    CountryApi::ECONOMY_ASSET_GOOD_FROM_MARKET,
                     offered, moved, market_goods_error)) {
                 error = market_goods_error.empty()
                     ? "country_market_goods_transfer_failed" : market_goods_error;
@@ -1362,7 +1363,7 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             std::string cohort_cash_error;
             if (!coordinate_country_cohort_cash(
                     slot, country_handle,
-                    NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                    CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT,
                     offered, amount, cohort_cash_error)) {
                 error = cohort_cash_error.empty()
                     ? "country_cohort_cash_transfer_failed" : cohort_cash_error;
@@ -1504,7 +1505,7 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
         std::string cohort_cash_error;
         if (!coordinate_country_cohort_cash(
                 source, country_handle,
-                NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT,
                 estate_funds, moved, cohort_cash_error)) {
             error = cohort_cash_error.empty()
                 ? "country_treasury_estate_transfer_failed" : cohort_cash_error;
@@ -1746,7 +1747,7 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
         std::string cohort_cash_error;
         if (!coordinate_country_cohort_cash(
                 source, country_handle,
-                NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT,
                 residue_funds, moved, cohort_cash_error)) {
             error = cohort_cash_error.empty()
                 ? "country_treasury_residue_transfer_failed" : cohort_cash_error;

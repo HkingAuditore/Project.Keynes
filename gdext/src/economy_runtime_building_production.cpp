@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
@@ -443,10 +443,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
         ? _building_cell_offsets[cell + 1] : 0;
     const bool income_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+            1U << CountryApi::TAX_INCOME)) != 0;
     const bool business_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
-            1U << NativeCountryRuntime::TAX_BUSINESS)) != 0;
+            1U << CountryApi::TAX_BUSINESS)) != 0;
     const bool owner_operation_tax_active =
         income_tax_active || business_tax_active;
     if (owner_operation_tax_active)
@@ -1245,7 +1245,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     struct InputPolicyBill {
         int32_t good = -1;
         int32_t rate = 0;
-        int32_t mode = NativeCountryRuntime::TAX_MODE_PERCENT_BP;
+        int32_t mode = CountryApi::TAX_MODE_PERCENT_BP;
         int64_t quantity = 0;
         GoodsBill bill;
     };
@@ -1333,9 +1333,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
             }
             const int32_t rate = frozen_tax_rate(cell,
-                NativeCountryRuntime::TAX_TRANSACTION, candidate.good_id);
+                CountryApi::TAX_TRANSACTION, candidate.good_id);
             const int32_t mode = frozen_tax_mode(cell,
-                NativeCountryRuntime::TAX_TRANSACTION, candidate.good_id);
+                CountryApi::TAX_TRANSACTION, candidate.good_id);
             size_t policy = 0;
             while (policy < input_policy_count &&
                    (input_policy_bills[policy].good != candidate.good_id ||
@@ -1968,7 +1968,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t input_fiscal_transfer = 0;
             int64_t settled_input_outlay = 0;
             const FiscalLaneSnapshot input_tax_lane = snapshot_fiscal_lane(
-                cell, NativeCountryRuntime::TAX_TRANSACTION);
+                cell, CountryApi::TAX_TRANSACTION);
             // Reuse the final preflight bills verbatim, so splitting a recipe
             // into several input edges cannot change the rounded fee or tax.
             for (size_t policy = 0; policy < input_policy_count; ++policy) {
@@ -2692,17 +2692,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (business_tax_active) {
                 const auto tax_group = building_view(static_cast<size_t>(offer.group));
                 const int32_t business_rate = frozen_tax_rate(
-                    cell, NativeCountryRuntime::TAX_BUSINESS,
+                    cell, CountryApi::TAX_BUSINESS,
                     tax_group.type_id);
                 const int32_t business_mode = frozen_tax_mode(
-                    cell, NativeCountryRuntime::TAX_BUSINESS,
+                    cell, CountryApi::TAX_BUSINESS,
                     tax_group.type_id);
                 // Absolute business tax is a per-building daily levy settled in
                 // settle_absolute_daily_taxes_for_cell, not per receipt.
                 if (business_rate > 0 &&
-                    business_mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                    business_mode != CountryApi::TAX_MODE_ABSOLUTE) {
                     business_tax = apply_fiscal_tax(
-                        cell, NativeCountryRuntime::TAX_BUSINESS,
+                        cell, CountryApi::TAX_BUSINESS,
                         producer_receipt,
                         business_rate, business_mode, _saturation_count);
                     record_cohort_fiscal(offer.owner_slot, business_tax);
@@ -3162,14 +3162,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t g = begin; g < end; ++g) {
             const auto group = building_view(static_cast<size_t>(g));
             const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+                cell, CountryApi::TAX_BUSINESS, group.type_id);
             const int32_t mode = frozen_tax_mode(
-                cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+                cell, CountryApi::TAX_BUSINESS, group.type_id);
             // Absolute business subsidies settle once per building-day in
             // settle_absolute_daily_taxes_for_cell. Never reinterpret the
             // absolute currency amount as a percent-of-cost basis point.
             if (rate >= 0 ||
-                mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE ||
+                mode == CountryApi::TAX_MODE_ABSOLUTE ||
                 group.owner_signature_id < 0) continue;
             const int32_t owner_slot = find_cohort_slot(
                 cell, group.owner_signature_id);
@@ -3180,7 +3180,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                _saturation_count),
                 group.last_maintenance_cost, _saturation_count);
             const int64_t transfer = apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_BUSINESS, eligible_cost,
+                cell, CountryApi::TAX_BUSINESS, eligible_cost,
                 rate, mode, _saturation_count);
             if (transfer >= 0) continue;
             const int64_t subsidy = -transfer;
@@ -3234,11 +3234,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 signature < static_cast<int32_t>(_signatures.size())
             ? _signatures[signature].profession_id : -1;
         const int32_t income_rate = frozen_tax_rate(
-            cell, NativeCountryRuntime::TAX_INCOME, profession);
+            cell, CountryApi::TAX_INCOME, profession);
         const int32_t income_mode = frozen_tax_mode(
-            cell, NativeCountryRuntime::TAX_INCOME, profession);
+            cell, CountryApi::TAX_INCOME, profession);
         int64_t income_tax = 0;
-        if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+        if (income_mode == CountryApi::TAX_MODE_ABSOLUTE) {
             // Settled in settle_absolute_daily_taxes_for_cell.
         } else if (income_rate < 0) {
             if (owner_slot < static_cast<int32_t>(
@@ -3249,7 +3249,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
         } else {
             income_tax = apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
+                cell, CountryApi::TAX_INCOME, net_operating_income,
                 income_rate, income_mode, _saturation_count);
             record_cohort_fiscal(owner_slot, income_tax);
         }

@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 // Army pay's worker route drives the Country economy-asset peer synchronously
 // (prepare -> service -> finish in one epoch), which needs the host's concrete
 // type, exactly like economy_runtime.cpp.
@@ -219,7 +219,7 @@ int64_t ArmyPersonnelStore::total_funds() const {
 int64_t NativeEconomyRuntime::army_lane_country_handle(int32_t cell) const {
     if (_country_runtime == nullptr) return 0;
     if (cell < 0 || cell >= _cell_count.get()) return 0;
-    return _country_runtime->country_handle_for_cell(cell);
+    return country_api::country_handle_for_cell(*_country_runtime, cell);
 }
 
 bool NativeEconomyRuntime::queue_or_commit_army_lane(const StructuralCommand &record,
@@ -652,13 +652,13 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // `money_conservation_failed`).
         int64_t moved = 0;
         std::string cash_error;
-        if (_country_runtime != nullptr && _country_runtime->economy_available() &&
-            _country_runtime->sync_store_writes_forbidden() &&
+        if (_country_runtime != nullptr && country_api::economy_available(*_country_runtime) &&
+            country_api::sync_store_writes_forbidden(*_country_runtime) &&
             _simulation_host != nullptr &&
             _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
             (_d7_operation_gate_mask &
              (1u << static_cast<uint32_t>(
-                 NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND))) != 0u) {
+                 CountryApi::ECONOMY_ASSET_TREASURY_SPEND))) != 0u) {
             if (!pay_army_lane_from_worker_country(army, country, requested, moved,
                                                    cash_error)) {
                 error = cash_error.empty() ? "army_lane_pay_worker_route_failed"
@@ -666,14 +666,14 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
                 return false;
             }
         } else {
-            if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+            if (_country_runtime == nullptr || !country_api::economy_available(*_country_runtime)) {
                 error = "army_lane_pay_country_unavailable";
                 return false;
             }
             // Complete the same debit protocol as the old reserve half. Do not
             // credit Country back before paying the lane: that would mint cash.
             const auto debit = [&]() -> int64_t {
-                const auto port = _country_runtime->fiscal_return_port();
+                const auto port = country_api::fiscal_return_port(*_country_runtime);
                 const auto begun = port.submit_cash(port.reserve_intent(
                     country, requested, -1, -1));
                 if (!static_cast<bool>(begun.get("ok", false))) return 0;
@@ -913,7 +913,7 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
             std::string cohort_cash_error;
             if (!coordinate_country_cohort_cash(
                     source, country_handle,
-                    NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                    CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT,
                     residue, transferred, cohort_cash_error)) {
                 error = cohort_cash_error.empty()
                     ? "country_treasury_residue_transfer_failed"
@@ -1115,7 +1115,7 @@ bool NativeEconomyRuntime::military_army_lane_pay_supported() const {
     // Two shapes provide that: the synchronous fiscal escrow when Country still
     // accepts sync store writes, and the synchronous worker peer cycle when Country
     // is worker-authoritative. Both need the Country runtime to be usable.
-    return _country_runtime != nullptr && _country_runtime->economy_available();
+    return _country_runtime != nullptr && country_api::economy_available(*_country_runtime);
 }
 
 void NativeEconomyRuntime::set_military_army_ration(uint64_t army_handle,
