@@ -7,7 +7,7 @@ render_mode blend_mix, unshaded;
 
 // Compact water pass for Web LOW/MID. HIGH uses world_map's PC water pipeline
 // in a separate draw, with PK_WEB_WATER_ONLY. Both share Earth daylight and GGX.
-// Five material samplers; LOW keeps flat water, MID enables PBR and wave normals.
+// Seven material samplers; LOW keeps flat water, MID enables PBR and wave normals.
 // Cell indexing, height packing and fog conventions match the terrain pass.
 //
 // [surface-array-edge 2026-11-02] 采样器 5→6：新增的 1 张是与陆地程序**同一个**
@@ -112,6 +112,9 @@ uniform float day_phase = 0.25;
 uniform float axial_tilt_rad = 0.4091;
 uniform bool day_night_enabled = true;
 uniform bool water_effect_enabled = true;
+uniform bool ocean_current_enabled = true;
+uniform sampler2D ocean_current_flow_tex : filter_linear_mipmap, repeat_enable;
+uniform bool ocean_current_flow_tex_bound = false;
 uniform bool tod_debug_sun_position_enabled = false;
 uniform vec2 tod_debug_sun_uv = vec2(0.5);
 uniform float tod_debug_sun_height_scale = 1.0;
@@ -127,16 +130,22 @@ uniform float tod_exposure = 1.0;
 vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 	EarthDaylight ed = eval_earth_daylight(uv, uv.y * 2.0 - 1.0, day_night_enabled);
 	float longitude = earth_daylight_longitude_u(uv) * EARTH_DAYLIGHT_TAU;
-	float phase_a = longitude * 96.0 + v_world.y * 0.18 + world_time * 0.75;
-	float phase_b = longitude * 173.0 - v_world.y * 0.26 - world_time * 0.53;
-	float footprint = max(fwidth(phase_a), fwidth(phase_b));
+	vec2 flow = vec2(0.8, 0.3);
+	if (ocean_current_enabled && ocean_current_flow_tex_bound) {
+		flow = textureLod(ocean_current_flow_tex, uv, 2.0).rg * 2.0 - 1.0;
+	}
+	vec2 d1 = length(flow) > 0.035 ? normalize(flow) : normalize(vec2(0.8, 0.3));
+	float phase_a = longitude * 96.0 * d1.x + v_world.y * 0.18 * d1.y + world_time * 0.75;
+	float footprint = max(fwidth(phase_a), 0.0);
 	float wave = water_effect_enabled ? (1.0 - ice) * (1.0 - smoothstep(0.5, 2.5, footprint)) : 0.0;
 	// Integer longitude frequencies preserve continuity across the world seam.
-	phase_a += sin(longitude * 43.0 - v_world.y * 0.065 - world_time * 0.1325) * 1.7
-		+ sin(longitude * 19.0) * 1.2;
-	phase_b += sin(longitude * 31.0 + v_world.y * 0.04) * 2.1;
-	vec3 N = normalize(vec3((cos(phase_a) + cos(phase_b) * 0.35) * 0.08 * wave,
-		(cos(phase_b) + cos(phase_a) * 0.25) * 0.07 * wave, 1.0));
+	vec2 slope = cos(phase_a) * d1 * 0.08;
+	if (visual_quality >= 2) {
+		vec2 d2 = normalize(vec2(-d1.y, d1.x) * 0.58 + d1 * 0.82);
+		float phase_b = longitude * 173.0 * d2.x - v_world.y * 0.26 * d2.y - world_time * 0.53;
+		slope += cos(phase_b) * d2 * 0.028;
+	}
+	vec3 N = normalize(vec3(slope * wave, 1.0));
 	vec3 V = vec3(0.0, 0.0, 1.0);
 	vec3 L = ed.local_day >= ed.moon_strength ? ed.sun_dir : ed.moon_dir;
 	vec3 H = normalize(L + V);

@@ -38,15 +38,15 @@ func _draw() -> void:
 		return
 	var valid := not is_nan(_level)
 	var shown := clampf(_level, 0.0, float(_max_level)) if valid else 0.0
-	var text := "%.1f" % shown if valid else "—"
-	_text(Vector2(0.0, 21.0), text, 21, UITokens.DOSSIER_INK if valid
-		else UITokens.DOSSIER_INK_MUTED, "serif")
-	var cursor := _text_width(text, 21, "serif") + 5.0
-	_text(Vector2(cursor, 21.0), "／ %d" % _max_level, 11, UITokens.DOSSIER_INK_MUTED)
-	cursor += _text_width("／ %d" % _max_level, 11) + 10.0
-	if not _name.is_empty():
-		_text(Vector2(cursor, 21.0), _name, 12, UITokens.DOSSIER_BRASS, "sans_strong")
-	_draw_ladder(w, shown if valid else 0.0)
+	if valid:
+		var text := "%.1f" % shown
+		_text(Vector2(0.0, 21.0), text, 21, UITokens.DOSSIER_INK, "serif")
+		var cursor := _text_width(text, 21, "serif") + 5.0
+		_text(Vector2(cursor, 21.0), "／ %d" % _max_level, 11, UITokens.DOSSIER_INK_MUTED)
+		cursor += _text_width("／ %d" % _max_level, 11) + 10.0
+		if not _name.is_empty():
+			_text(Vector2(cursor, 21.0), _name, 12, UITokens.DOSSIER_BRASS, "sans_strong")
+	_draw_ladder(w, shown)
 
 
 func _draw_ladder(w: float, level: float) -> void:

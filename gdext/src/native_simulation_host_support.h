@@ -9,6 +9,8 @@
 namespace pk {
 namespace {
 
+
+
 template <typename T>
 inline bool read_modifier_payload(const uint8_t *data, size_t size, size_t &cursor, T &value) {
     if (data == nullptr || cursor > size || size - cursor < sizeof(T)) return false;

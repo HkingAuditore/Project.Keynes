@@ -19,7 +19,7 @@ func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
 	host._pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
 	host._refresh_military_terrain_on_season_edge(day_idx)
 	# Web 单日成本探针：host 这一处 sus_tick_daily（s2）与它调度的日级 Job 分项。
-	# 桌面 host._dcp_on() 为假 → 既不记时也不额外读一次 SUS 报告。
+	# 桌面 _dcp_on() 为假 → 既不记时也不额外读一次 SUS 报告。
 	if host._dcp_on():
 		host._world_clock.day_cost_add(&"s2", host._pending_tick_sus_ms)
 		if host._generator.has_method("sus_report_last_tick"):
@@ -57,8 +57,8 @@ func run_daily_tick(host, day_idx: int, season_phase: float) -> Dictionary:
 	host._pending_tick_render_ms = (Time.get_ticks_usec() - t_render_usec) / 1000.0
 	if host._settlement_label_layer != null:
 		host._settlement_label_layer.sync_from_runtime()
-	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 host.stride/host.policy
-	# 不能把同日 host.climate/host.economy job 误标成“整日未刷新”。
+	# 玩家场景每次 day_changed 都真实执行一次 SUS；weather 自身的 stride/policy
+	# 不能把同日 climate/economy job 误标成“整日未刷新”。
 	host._pending_tick_skipped_day = false
 	host._last_tick_report = report.duplicate()
 	host._annual_reports.poll()
@@ -97,16 +97,16 @@ func map_overlay_diagnostics(host) -> Dictionary:
 	host._bind_overlay_resources()
 	return host._overlay.map_overlay_diagnostics()
 ## Host frame split (liveness vs progress):
-## - liveness: peer pumps, host.snapshot ACKs, same-day host.economy capture, host.capacity
-##   retry. MUST run every frame even when the host.climate input ring is full.
-## - progress: host.country read-view, building visual, map overlay. May be skipped
+## - liveness: peer pumps, snapshot ACKs, same-day economy capture, capacity
+##   retry. MUST run every frame even when the climate input ring is full.
+## - progress: country read-view, building visual, map overlay. May be skipped
 ##   under climate_input_capacity_day_barrier so peer ACKs get the frame budget.
 
 ## Web 心跳：每 2 秒把「日历走到第几天 / 快进次数 / worker 状态」推到事件通道。
 ## agent 侧 tail tmp/web_events.jsonl 就能判断页面活着、日历在走还是在原地空转，
 ## 不需要截图轮询。
-## Web：头 120 帧逐帧计时，用来判断那次长帧是 CPU 还是 GPU（host.setup 时间小但
-## 帧时长巨大 = GPU 侧；host.setup 也大 = 主线程 CPU）。之后只在出现长帧时上报，
+## Web：头 120 帧逐帧计时，用来判断那次长帧是 CPU 还是 GPU（setup 时间小但
+## 帧时长巨大 = GPU 侧；setup 也大 = 主线程 CPU）。之后只在出现长帧时上报，
 ## 这样整轮 soak 里的卡顿都能被抓到，而不是只看开头。
 ## 慢帧轨迹：记录本帧各阶段进入时刻（纯内存操作，不发网络请求）。
 ## 若下一帧发现上一帧耗时 >2s，就把上一帧的轨迹补发出来——这样"整帧不返回"之前
@@ -149,7 +149,7 @@ func _emit_web_frame_probe(host, frame_usec: int) -> void:
 	WebTelemetry.emit("frame", {
 		"i": 120 - host._web_frame_probe_left,
 		"dt": dt_ms,
-		"host.setup": int(RenderingServer.get_frame_setup_time_cpu() * 1000.0),
+		"setup": int(RenderingServer.get_frame_setup_time_cpu() * 1000.0),
 		"proc": int(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0),
 		"draws": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		"objs": int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
@@ -215,8 +215,8 @@ func _process(host, _delta: float) -> void:
 	host._web_mark("annual_poll_end")
 	if capacity_pending:
 		host._note_climate_capacity_pending_stall()
-		# Worker may have force-advanced past the day that armed host.capacity.
-		# Retrying the stale arm republishes an old host.env into a full FIFO and
+		# Worker may have force-advanced past the day that armed capacity.
+		# Retrying the stale arm republishes an old env into a full FIFO and
 		# keeps the calendar nailed. Advance the pending publish to the
 		# worker's next needed day when the committed watermark moved on.
 		if host._generator != null and host._generator.has_method("get_runtime_thread_report"):
@@ -294,9 +294,9 @@ func _service_worker_lead_and_prefetch(host) -> void:
 	# 已提交日是上界：环里未消费的帧只是内存，不是事实。
 	var committed_raw = int(ext.runtime_committed_day())
 	# 日历日与已提交日都可能读到**负值**，这不是"没有水位"，而是启动哨兵：
-	#   - `host._world_clock.day_index()` = `_last_day`，在第一个"非暂停帧"之前一直是
+	#   - `_world_clock.day_index()` = `_last_day`，在第一个"非暂停帧"之前一直是
 	#     -1（`_process` 的 paused 早退在哨兵对齐之前）；
-	#   - host 的 `_committed_day` 取自 `host.config["day"]`，也就是同一个 -1。
+	#   - host 的 `_committed_day` 取自 `config["day"]`，也就是同一个 -1。
 	# 旧写法里 `if committed < 0: return` 会在浏览器启动窗口直接把预发布**永久**
 	# 关死；`clock_day + K` 这个上界也会被 -1 压成"最多只能发 1 帧"。
 	# 两者叠加正好是"max_day=1 且 frames_ahead=0"。所以这里统一按 0 **以下的下界**
@@ -327,9 +327,9 @@ func _service_worker_lead_and_prefetch(host) -> void:
 	var lead = committed - clock_day
 	# 发布窗口深度：`prefetch_days`(K) 只决定"日历锚定几天前"，真正允许的在途深度
 	# 必须显著更大，否则 worker 永远只能领先 K 天 —— 每消费一天都要等主线程下一帧
-	# 再补一帧，等于每算一天绕一个来回。真机实测：worker `execute` 只要 60 host.ms/天，
-	# 但 `input_wait` 高达 88 host.ms/天，正是这个来回。
-	# 上限取 K + host.WORKER_LEAD_MARGIN_DAYS（= 时钟侧 `max_lead`，两边同一个数）。
+	# 再补一帧，等于每算一天绕一个来回。真机实测：worker `execute` 只要 60 ms/天，
+	# 但 `input_wait` 高达 88 ms/天，正是这个来回。
+	# 上限取 K + WORKER_LEAD_MARGIN_DAYS（= 时钟侧 `max_lead`，两边同一个数）。
 	var lead_cap = prefetch_days + host.WORKER_PUBLISH_DEPTH_DAYS
 	if lead >= lead_cap:
 		host._prefetch_diag_note(&"lead_over")
@@ -383,7 +383,7 @@ func _service_worker_lead_and_prefetch(host) -> void:
 #
 # 契约：
 #   * 每帧只记一个码（最后一次判定的结果），不逐帧发事件；
-#   * 每 ~2000 host.ms 聚合成**一条** `prefetch_diag`（payload < 200 B）；
+#   * 每 ~2000 ms 聚合成**一条** `prefetch_diag`（payload < 200 B）；
 #   * `seen` 只放"自上次事件以来出现过的码 + 次数"，按次数降序取前 4 个。
 #   * headless 想看得设 `PK_PREFETCH_DIAG=1`（桌面默认不打印）。
 ## 一次性"环境自检"：只在第一条 `prefetch_diag` 里出现一次。
@@ -462,7 +462,7 @@ func _prefetch_diag_boot_payload(host) -> Dictionary:
 		"in_tree": 1 if host.is_inside_tree() else 0,
 		"proc_host": 1 if host.is_processing() else 0,
 		"proc_clk": 1 if (host._world_clock != null and host._world_clock.has_method("is_processing") \
-			and host._world_clock.host.is_processing()) else 0,
+			and host._world_clock.is_processing()) else 0,
 		# 依赖的方法是否真的存在（wasm 上 side module 旧/未绑定时会是 0）
 		"has_pub": 1 if (host._generator != null \
 			and host._generator.has_method("set_worker_environment_publisher")) else 0,
@@ -471,9 +471,9 @@ func _prefetch_diag_boot_payload(host) -> Dictionary:
 		"ext_cap": 1 if (ext != null \
 			and ext.has_method("environment_ring_has_capacity")) else 0,
 		"ext_cmd": 1 if (ext != null and ext.has_method("runtime_committed_day")) else 0,
-		# 开关来源：浏览器里 host.env 恒空，必须靠 meta
+		# 开关来源：浏览器里 env 恒空，必须靠 meta
 		"meta": 1 if bool(Engine.get_meta("pk_web_worker", false)) else 0,
-		"host.env": 1 if OS.get_environment("PK_WEB_WORKER") == "1" else 0,
+		"env": 1 if OS.get_environment("PK_WEB_WORKER") == "1" else 0,
 	}
 	return host._prefetch_diag_boot
 
@@ -514,7 +514,7 @@ func _prefetch_diag_collect_extras(host) -> void:
 			pub.get("environment_publish_count", -1))
 		host._prefetch_diag_snapshot["suppressed"] = int(
 			pub.get("environment_publish_suppressed", -1))
-		host._prefetch_diag_snapshot["host.callsite"] = int(
+		host._prefetch_diag_snapshot["callsite"] = int(
 			pub.get("environment_publisher_callsite", -1))
 
 
@@ -554,7 +554,7 @@ func _emit_prefetch_diag(host, code: StringName) -> void:
 		"ready": 1 if bool(snap.get("ready", false)) else 0,
 		"pub": int(snap.get("publish_count", -1)),
 		"sup": int(snap.get("suppressed", -1)),
-		"cs": int(snap.get("host.callsite", -1)),
+		"cs": int(snap.get("callsite", -1)),
 		"bp": int(host._prefetch_diag_publish_count),
 		"seg": host._prefetch_diag_last_code,
 		"seen": host._prefetch_diag_seen_text(),
@@ -609,7 +609,7 @@ func _set_environment_publish_next_day(host, day: int) -> void:
 ## 存盘前必须先把预发布降下来并让环排空：`build_save_bundle` 的 worker 侧准入
 ## 条件是 `!has_pending_climate_input()`，环长期非空会让存盘永远等不到。
 ## 这里把 K 降到 0 并清掉发布游标；环里的帧由 worker 自己按 `pop_while_day_at_most`
-## 消费，不再有新帧进来。恢复时调用 `host._resume_environment_prefetch_after_save()`。
+## 消费，不再有新帧进来。恢复时调用 `_resume_environment_prefetch_after_save()`。
 
 
 func _suspend_environment_prefetch_for_save(host, reason: String) -> void:
@@ -659,14 +659,14 @@ func _resume_environment_prefetch_after_save(host) -> void:
 	# 而 game_save_coordinator 直接调的是它，不经过本 host）。
 	if host._generator != null and host._generator.has_method("set_save_prefetch_suspend_callback"):
 		host._generator.set_save_prefetch_suspend_callback(Callable(
-			self, "_suspend_environment_prefetch_for_save"))
+			host, "_suspend_environment_prefetch_for_save"))
 
 
 ## 存盘窗口结束后恢复预发布。判据用"worker 不再处于 SAVE_PENDING"而不是
 ## "过了一段时间"——前者是真实边界，后者只是猜。
 ##
-## **只有 `host._environment_prefetch_suspended_for_save` 为真时才可能恢复。**
-## 用 `host._max_worker_lead_days == 0` 当"被暂停了"的判据是个陷阱：能力门
+## **只有 `_environment_prefetch_suspended_for_save` 为真时才可能恢复。**
+## 用 `_max_worker_lead_days == 0` 当"被暂停了"的判据是个陷阱：能力门
 ## （旧 side module / `PK_NO_ENV_PREFETCH`）与"worker 没起来"也会把它置 0，
 ## 那样本函数会在下一帧把发布权抢回给预发布器，而预发布器根本发不出去 ⇒
 ## 环境帧为 0 ⇒ 日历停在 day 1。这正是本轮 web 事故的形态。
@@ -689,6 +689,9 @@ func _poll_environment_prefetch_resume(host) -> void:
 
 
 
+var _construction_receipt_poll_ms: int = 0
+
+
 func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -> void:
 	var segment_usec = frame_usec
 	if host._runtime_ready_for_ticks and host._generator != null:
@@ -696,6 +699,17 @@ func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -
 		if ext != null and ext.has_method("capture_economy_day_inputs"):
 			# -1 只服务 worker 请求的同日输入，不推进经济公式。
 			ext.capture_economy_day_inputs(-1)
+		# 营造回执不能只等经济 pulse：worker PAUSED / 日历冻结时 pulse 不来，
+		# 玩家会一直停在「已排队」。这里按墙钟节流做一次纯读轮询，
+		# facade 的游标保证同一条回执不会被重复派发。
+		var receipt_now := Time.get_ticks_msec()
+		if receipt_now - _construction_receipt_poll_ms >= 250:
+			_construction_receipt_poll_ms = receipt_now
+			if host._generator.has_method("get_economy_facade"):
+				var economy = host._generator.get_economy_facade()
+				if economy != null and economy.has_method(
+						"dispatch_construction_command_receipts"):
+					economy.dispatch_construction_command_receipts()
 	host._sched_proc_economy_input_ms += host._sched_elapsed_ms(segment_usec)
 	segment_usec = Time.get_ticks_usec()
 	host._service_country_worker_transport()
@@ -751,7 +765,7 @@ func _arm_climate_capacity_pending(host, day_idx: int) -> void:
 		# 于是它变成一个会自我维持的停止条件。改成"本帧不重试、下一帧再试"+
 		# 领先量上限之后，日历不再被 worker 的等待状态绑架。
 		#
-		# `host._climate_capacity_pending_day` 仍然记账：`_process` 里那条"重试保留日"
+		# `_climate_capacity_pending_day` 仍然记账：`_process` 里那条"重试保留日"
 		# 的路径依赖它，关掉的是**屏障**而不是记账。
 		if host._max_worker_lead_days > 0:
 			return

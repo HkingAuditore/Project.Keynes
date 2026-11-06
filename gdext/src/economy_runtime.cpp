@@ -75,35 +75,11 @@ bool reconcile_trigger_branch_binding(TriggerRuntime *runtime,
     return static_cast<bool>(result.get("ok", false));
 }
 
-int32_t modifier_factor_q16(double factor) {
-    if (!std::isfinite(factor) || factor <= 0.0) return 0;
-    const double scaled = std::round(factor *
-        static_cast<double>(NativeEconomyRuntime::Q16_ONE));
-    return static_cast<int32_t>(std::clamp(
-        scaled, 0.0, static_cast<double>(std::numeric_limits<int32_t>::max())));
-}
 } // namespace
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
-
-// effect_pod_upsert / effect_pod_metric / effect_pod_retire now live in
-// economy_effect_forward.h: the family write points are split across
-// economy_runtime.cpp and economy_runtime_family_buff.cpp, and both translation
-// units have to funnel through the same routing decision.
-
-constexpr int64_t price_adjustment_reference(
-        int64_t current_price, int64_t adjustment_anchor_price,
-        int64_t period_change_q16) {
-    return period_change_q16 < 0
-        ? std::max<int64_t>(NativeEconomyRuntime::PRICE_NUMERIC_GUARD_MIN,
-                            current_price)
-        : adjustment_anchor_price;
-}
-
-static_assert(price_adjustment_reference(100, 1000, -1) == 100);
-static_assert(price_adjustment_reference(100, 1000, 1) == 1000);
 
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -111,22 +87,6 @@ double elapsed_ms(const Clock::time_point &start) {
 
 
 } // namespace
-
-// ─── PopulationStore ───────────────────────────────────────────────────
-
-// PopulationStore implementation moved to economy_runtime_storage.cpp.
-
-// PopulationStore allocation and lookup implementation moved to
-// economy_runtime_storage.cpp.
-
-// PopulationStore::allocate_slot implementation moved to
-// economy_runtime_storage.cpp.
-
-// PopulationStore handle/release implementation moved to
-// economy_runtime_storage.cpp.
-
-
-// FamilyStore implementation moved to runtime_economy_live_tables.cpp.
 
 #define PK_RESOURCE_SCRATCH_ACCESSOR(TYPE, METHOD, COLUMN, LOCAL)              \
     std::vector<TYPE> &NativeEconomyRuntime::METHOD() noexcept {               \
@@ -633,18 +593,72 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
     }
     if (cash == 0 && goods_total == 0) return true;
-    const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
-            static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_TREASURY_SPEND),
-            country_handle, cash, goods_total, good_ids, treasury_quantities,
-            error);
-    if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
-        // Treasury spend must not silently create construction/canal without
-        // paying. Reject the coordinator so callers soft-fail the command.
-        committed_cash = 0;
-        return false;
+    // Country is the unique treasury writer in production. When Economy is
+    // running on the worker and Country is the worker-authoritative peer, use
+    // the same-thread prepare/service/finish cycle so construction does not
+    // observe an ENQUEUED_PENDING result as a failed debit. Synchronous
+    // fixtures keep the ordinary transaction path below.
+    bool treasury_peer_committed = false;
+    int64_t peer_committed_cash = 0;
+    const bool worker_inline_country = _simulation_host != nullptr &&
+        _simulation_host->on_worker_thread() &&
+        _simulation_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY) &&
+        (_d7_operation_gate_mask &
+            (1u << static_cast<uint32_t>(
+                RuntimeEconomyAssetOperation::TREASURY_SPEND))) != 0u;
+    if (worker_inline_country) {
+        RuntimeEconomyAssetRequest request;
+        request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
+        request.origin_epoch = _epoch_id.get();
+        request.origin_stage = static_cast<int32_t>(_stage);
+        request.day = _current_day.get();
+        request.country_handle = static_cast<uint64_t>(country_handle);
+        request.peer_generation = _committed_generation;
+        request.requested_cash = cash;
+        request.requested_quantity = goods_total;
+        request.requested_goods_total = goods_total;
+        const size_t copied = std::min(good_ids.size(),
+            static_cast<size_t>(RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY));
+        for (size_t i = 0; i < copied; ++i) {
+            request.good_ids[i] = good_ids[i];
+            request.good_quantities[i] = treasury_quantities[i];
+            ++request.good_count;
+        }
+        if (request.good_count > 0) request.good_id = request.good_ids[0];
+        std::string peer_error;
+        if (!_simulation_host->prepare_worker_cohort_cash(request, peer_error) ||
+            !service_country_economy_asset_peer(
+                RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY, peer_error)) {
+            error = peer_error.empty()
+                ? "country_treasury_peer_prepare_failed" : peer_error;
+            return false;
+        }
+        RuntimeEconomyAssetResult terminal;
+        if (!_simulation_host->finish_worker_country_asset(
+                request.request_id, terminal, peer_error) ||
+            terminal.code != RuntimeEconomyAssetResultCode::COMPLETED) {
+            error = peer_error.empty()
+                ? "country_treasury_peer_not_completed" : peer_error;
+            return false;
+        }
+        treasury_peer_committed = true;
+        peer_committed_cash = terminal.committed_cash;
+        error.clear();
+    } else {
+        const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
+                static_cast<uint16_t>(CountryApi::ECONOMY_ASSET_TREASURY_SPEND),
+                country_handle, cash, goods_total, good_ids, treasury_quantities,
+                error);
+        if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
+            // Treasury spend must not silently create construction/canal without
+            // paying. Reject the coordinator so callers soft-fail the command.
+            committed_cash = 0;
+            return false;
+        }
+        if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
+            return false;
     }
-    if (route != CountryWorkerAssetRoute::NOT_APPLICABLE)
-        return false;
 
     std::vector<int32_t> living_merchants;
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
@@ -694,46 +708,53 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         ids.set(i, good_ids[static_cast<size_t>(i)]);
         quantities.set(i, treasury_quantities[static_cast<size_t>(i)]);
     }
-    const godot::Dictionary begun = country_api::fiscal_return_port(*_country_runtime).submit_spend(country_api::fiscal_return_port(*_country_runtime).spend_intent(
-        country_handle, ids, quantities, cash, _epoch_id.get(),
-        static_cast<int32_t>(_stage)));
-    if (!static_cast<bool>(begun.get("ok", false))) {
-        error = String(begun.get("code", "country_treasury_peer_country_rejected"))
-            .utf8().get_data();
-        return false;
-    }
-    const uint64_t transaction_id = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("transaction_id", 0)));
-    const uint64_t session_epoch = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("session_epoch", 0)));
-    const uint64_t country_generation = static_cast<uint64_t>(
-        static_cast<int64_t>(begun.get("country_generation", 0)));
+    int64_t actual_cash = cash;
+    uint64_t transaction_id = 0;
+    uint64_t session_epoch = 0;
+    uint64_t country_generation = 0;
     const uint64_t peer_generation = _committed_generation;
-    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
-        peer_generation == 0) {
-        error = "country_treasury_peer_identity_invalid";
-        return false;
-    }
-    const godot::Dictionary prepared =
-        country_api::fiscal_return_port(*_country_runtime).prepared(
+    if (!treasury_peer_committed) {
+        const godot::Dictionary begun =
+            country_api::fiscal_return_port(*_country_runtime).submit_spend(
+                country_api::fiscal_return_port(*_country_runtime).spend_intent(
+                    country_handle, ids, quantities, cash, _epoch_id.get(),
+                    static_cast<int32_t>(_stage)));
+        if (!static_cast<bool>(begun.get("ok", false))) {
+            error = String(begun.get("code", "country_treasury_peer_country_rejected"))
+                .utf8().get_data();
+            return false;
+        }
+        transaction_id = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("transaction_id", 0)));
+        session_epoch = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("session_epoch", 0)));
+        country_generation = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("country_generation", 0)));
+        if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
+            peer_generation == 0) {
+            error = "country_treasury_peer_identity_invalid";
+            return false;
+        }
+        const godot::Dictionary prepared =
+            country_api::fiscal_return_port(*_country_runtime).prepared(
                 {transaction_id, session_epoch, country_generation, peer_generation},
                 true, "");
-    if (!static_cast<bool>(prepared.get("ok", false))) {
-        error = "country_treasury_peer_prepare_failed";
-        return false;
-    }
-    const godot::Dictionary commit =
-        country_api::fiscal_return_port(*_country_runtime).apply(transaction_id);
-    if (!static_cast<bool>(commit.get("ok", false))) {
-        error = String(commit.get("code", "country_treasury_peer_country_commit_failed"))
-            .utf8().get_data();
-        return false;
-    }
-    const int64_t actual_cash = static_cast<int64_t>(
-        commit.get("committed_cash", cash));
-    if (actual_cash != cash) {
-        error = "country_treasury_peer_cash_commit_drift";
-        return false;
+        if (!static_cast<bool>(prepared.get("ok", false))) {
+            error = "country_treasury_peer_prepare_failed";
+            return false;
+        }
+        const godot::Dictionary commit =
+            country_api::fiscal_return_port(*_country_runtime).apply(transaction_id);
+        if (!static_cast<bool>(commit.get("ok", false))) {
+            error = String(commit.get("code", "country_treasury_peer_country_commit_failed"))
+                .utf8().get_data();
+            return false;
+        }
+        actual_cash = static_cast<int64_t>(commit.get("committed_cash", cash));
+        if (actual_cash != cash) {
+            error = "country_treasury_peer_cash_commit_drift";
+            return false;
+        }
     }
     for (size_t i = 0; i < good_ids.size(); ++i) {
         const size_t lane = market_store().index(market, good_ids[i]);
@@ -756,16 +777,18 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         trace_record_cashflow(merchant_cell, population_store().handle_for_slot(slot),
                               CASHFLOW_MERCHANT_BUSINESS, share, 0);
     }
-    const godot::Dictionary applied =
-        country_api::fiscal_return_port(*_country_runtime).applied(
+    if (!treasury_peer_committed) {
+        const godot::Dictionary applied =
+            country_api::fiscal_return_port(*_country_runtime).applied(
                 {transaction_id, session_epoch, country_generation, peer_generation},
                 true, "");
-    if (!static_cast<bool>(applied.get("ok", false)) ||
-        String(applied.get("status_name", "")) != "completed") {
-        error = "country_treasury_peer_apply_ack_failed";
-        return false;
+        if (!static_cast<bool>(applied.get("ok", false)) ||
+            String(applied.get("status_name", "")) != "completed") {
+            error = "country_treasury_peer_apply_ack_failed";
+            return false;
+        }
     }
-    committed_cash = actual_cash;
+    committed_cash = treasury_peer_committed ? peer_committed_cash : actual_cash;
     return true;
 }
 
@@ -1408,6 +1431,8 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             return apply_family_set_split_policy(cmd, error);
         case COMMAND_TREASURY_SPONSORED_BUILD:
             return apply_treasury_sponsored_build_command(cmd, error);
+        case COMMAND_TREASURY_SPONSORED_DEMOLISH:
+            return apply_treasury_sponsored_demolish_command(cmd, error);
         case COMMAND_BUILD_CANAL:
             return apply_canal_build_command(cmd, error);
         default:

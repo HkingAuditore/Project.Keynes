@@ -85,7 +85,7 @@ var test_economy_population_scale: int = 0
 @export var fog_early_out_enabled: bool = false
 
 @export var cell_indirection_enabled: bool = true
-@export var ocean_current_visual_enabled: bool = false
+@export var ocean_current_visual_enabled: bool = true
 @export var sea_ice_atlas_enabled: bool = false
 @export var mobile_terrain_horizon_enabled: bool = false
 ## Web-only escape hatch. Export/runtime property works without browser environment variables.

@@ -14,7 +14,7 @@ func _note_climate_capacity_pending_stall(host) -> void:
 	host._climate_capacity_stall_next_diag_msec = now_msec + host._CLIMATE_CAPACITY_STALL_DIAG_MSEC
 	var report = host._generator.get_runtime_thread_report() \
 		if host._generator != null and host._generator.has_method("get_runtime_thread_report") else {}
-	push_warning("[host.climate-host.capacity-stall] day=%d pending_ms=%d stall=0x%x ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
+	push_warning("[climate-capacity-stall] day=%d pending_ms=%d stall=0x%x ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
 		% [host._climate_capacity_pending_day, stalled_ms,
 			int(report.get("day_stall_reason_mask", 0)),
 			str(report.get("environment_ring_pending", -1)),
@@ -48,9 +48,9 @@ func _runtime_control_state(host) -> Dictionary:
 		if host._generator.has_method("get_runtime_thread_report") else {}
 
 
-## When the native worker enters FAULTED, pause the authoritative host.clock and keep
+## When the native worker enters FAULTED, pause the authoritative clock and keep
 ## the last committed generation/hash diagnostics for soak evidence. Do not
-## clear live MapData; the parked host.snapshot remains the recovery baseline.
+## clear live MapData; the parked snapshot remains the recovery baseline.
 
 
 func _observe_runtime_worker_fault(host, report: Dictionary = {}) -> void:
@@ -132,10 +132,10 @@ func _service_country_worker_transport(host) -> void:
 		host.country_peer_serviced.emit(host._country_worker_transport_last_service.duplicate(false))
 
 
-## ACTIVE Country's only MapData read-back boundary.  The worker host.snapshot is
+## ACTIVE Country's only MapData read-back boundary.  The worker snapshot is
 ## immutable and stays on the native side; this method copies either the
 ## generation-contiguous sparse owner patch or an explicit full bootstrap /
-## recovery host.snapshot.  It never waits for the worker and never calls the
+## recovery snapshot.  It never waits for the worker and never calls the
 ## synchronous Country write API.
 
 ## E8 ACTIVE Modifier write-back. Non-blocking: drops intermediate generations.
@@ -207,7 +207,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 			"domain": domain,
 			# RuntimeDomainAckCode::OK == 0; 1 is RETRY (clears intent_emitted).
 			"code": 0,
-			"host.effective_day": int(intent.get("host.effective_day", 0)),
+			"effective_day": int(intent.get("effective_day", 0)),
 			"producer_id": int(intent.get("producer_id", 0)),
 			"sequence": int(intent.get("sequence", 0)),
 		}
@@ -242,12 +242,12 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 ## suppressed, so the sliced instance refresh -- whose instances still belong to
 ## this facade -- has to be pumped here. A pending boundary or slice is continued
 ## by frame liveness, even when the calendar cannot admit another day.
-## Last day the derived-host.layer pump reached completion.
+## Last day the derived-layer pump reached completion.
 ##
 ## The throttle belongs to the PUMP, because the pump is the only caller invoked every
 ## tick. Putting it inside `step_derived_rebuild` also throttled a new epoch that began
 ## within the same calendar day -- see the comment at the pump.
-## How many times this pump has actually reached the host.generator, and the last shapes it
+## How many times this pump has actually reached the generator, and the last shapes it
 ## got back. The pump is the only place the IDEOLOGY mask bit turns into work, so
 ## without a counter "the gate opened" was not observable from outside the process --
 ## which is exactly how a mask that read 0x000 while the writer followed the request
@@ -276,22 +276,22 @@ func _step_ideology_instance_refresh_if_authoritative(host, day_idx: int) -> voi
 	# Plan §9.3 in worker mode: the DERIVED half needs the same pump.
 	#
 	# `run_ideology_daily` is suppressed under IDEOLOGY worker authority and it is the only
-	# production caller of `step_derived_rebuild`, so without this the derived host.layer was
+	# production caller of `step_derived_rebuild`, so without this the derived layer was
 	# never stepped and produced nothing (measured: visits delta 0 over 12 days with a live
-	# card, vs 4 with host.ideology on the main thread).
+	# card, vs 4 with ideology on the main thread).
 	#
 	# THE THROTTLE LIVES HERE, NOT IN THE STEP, and that placement is the whole lesson.
 	# Only the pump is called every tick, so only the pump needs throttling; the normal day
 	# loop and `drain_derived_cell_layer` legitimately step the rebuild many times per day,
-	# and a NEW EPOCH can host.begin on the SAME calendar day. A once-per-day guard inside
+	# and a NEW EPOCH can begin on the SAME calendar day. A once-per-day guard inside
 	# `step_derived_rebuild`, keyed on the day alone, skipped that epoch's rebuild entirely
-	# -- measured, and it cost two attempts and a broken save fixture host.before it was
+	# -- measured, and it cost two attempts and a broken save fixture before it was
 	# understood.
 	#
 	# A call landing inside the worker's day transaction returns `economy_day_inflight`.
 	# Retry from frame liveness: the worker may be parked on the main-boundary request,
 	# so waiting for the next calendar tick can deadlock. Instance and derived calls
-	# share that request bit; finish one host.before starting the other.
+	# share that request bit; finish one before starting the other.
 	if host._generator.has_method("step_ideology_derived_rebuild"):
 		if host._ideology_derived_pumped_day != day_idx:
 			var pumped: Dictionary = host._generator.step_ideology_derived_rebuild(day_idx)
@@ -326,9 +326,9 @@ func _consume_ideology_worker_snapshot_if_authoritative(host) -> void:
 	host._ideology_worker_snapshot_generation = generation
 
 
-## G8: Ideology transition intents address EFFECT and require an ACK host.before the
-## worker applies the transition. When EFFECT is granted in the same host.session the
-## worker already ACKs them in-worker; this pump is the protocol host.path and covers an
+## G8: Ideology transition intents address EFFECT and require an ACK before the
+## worker applies the transition. When EFFECT is granted in the same session the
+## worker already ACKs them in-worker; this pump is the protocol path and covers an
 ## IDEOLOGY-only grant where EFFECT is still main-thread owned.
 ##
 ## R-3d: "Effect accepted" is a real statement, not a formality. `submit_ideology_worker_ack`
@@ -338,14 +338,14 @@ func _consume_ideology_worker_snapshot_if_authoritative(host) -> void:
 ## while the modifier row is still live, which is the exact divergence the earlier
 ## rounds chased.
 ##
-## So the pump is ONLY the host.fallback for the split-authority case:
+## So the pump is ONLY the fallback for the split-authority case:
 ##   * IDEOLOGY must be worker-authoritative (otherwise the main thread owns the day
 ##     and this queue is empty anyway), and
 ##   * EFFECT must NOT be worker-authoritative. When the worker owns EFFECT it drains
 ##     the intents itself (`ack_ideology_intents_in_worker`) and a GDScript ACK would
 ##     be a duplicate.
 ##
-## `host._ideology_intent_duplicate_acks` and `host._ideology_intent_unknown_acks` count the two
+## `_ideology_intent_duplicate_acks` and `_ideology_intent_unknown_acks` count the two
 ## ways a reply can be wrong; both must stay 0 under the 0xFFF fixture, where the worker
 ## owns everything and this function should never fire at all.
 
@@ -396,10 +396,10 @@ func _service_ideology_worker_intents_if_authoritative(host) -> void:
 			# intent_emitted and makes the worker re-emit the same transition
 			# forever instead of settling it.
 			"code": 0,
-			"host.effective_day": int(intent.get("host.effective_day", 0)),
+			"effective_day": int(intent.get("effective_day", 0)),
 		})
 
-## H8 ACTIVE Trigger write-back. The worker owns aggregation and host.effect emission;
+## H8 ACTIVE Trigger write-back. The worker owns aggregation and effect emission;
 ## this is the only boundary that copies its committed state back into the legacy
 ## TriggerRuntime facade, which the UI, save, and Trigger->Effect handoff still
 ## read. Non-blocking and generation-gated: intermediate generations are dropped.
@@ -424,9 +424,9 @@ func _consume_trigger_worker_snapshot_if_authoritative(host) -> void:
 	host._trigger_worker_snapshot_generation = generation
 
 
-## H8: Trigger host.effect intents address EFFECT and require an ACK host.before the worker
-## considers the firing day committed. With EFFECT granted in the same host.session the
-## worker ACKs them itself at the Effect stage; this pump is the protocol host.path and
+## H8: Trigger effect intents address EFFECT and require an ACK before the worker
+## considers the firing day committed. With EFFECT granted in the same session the
+## worker ACKs them itself at the Effect stage; this pump is the protocol path and
 ## covers a TRIGGER-only grant plus anything the in-worker drain missed.
 
 
@@ -459,7 +459,7 @@ func _service_trigger_worker_intents_if_authoritative(host) -> void:
 			# RuntimeDomainAckCode::OK == 0. RETRY(1) would make the worker
 			# replay the same firing day forever instead of settling it.
 			"code": 0,
-			"host.effective_day": int(intent.get("host.effective_day", 0)),
+			"effective_day": int(intent.get("effective_day", 0)),
 		})
 
 
@@ -484,7 +484,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 			and bool(recovery.get("complete", false))
 		if int(recovery.get("submitted", 0)) > 0:
 			print("[research-evidence-recovery] ", recovery)
-	# Full-host.graph ACTIVE skips advance_runtime_pulse(), which used to own this
+	# Full-graph ACTIVE skips advance_runtime_pulse(), which used to own this
 	# handoff. Drain a bounded prefix through the existing Effect -> Country
 	# adapter, including restored effects whose effective day is in the past.
 	var batch: Dictionary = ext.poll_trigger_effects(0, 64)
@@ -502,8 +502,8 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 	host._trigger_country_delivery_waiting = bool(handoff.get("deferred", false))
 	if int(handoff.get("handed_off", 0)) <= 0:
 		return
-	# Delivery order is host.canonical while host.effect host.ids are ingress-allocated: ACK
-	# exactly the host.ids that were handed off, never a numeric high-water cursor.
+	# Delivery order is canonical while effect ids are ingress-allocated: ACK
+	# exactly the ids that were handed off, never a numeric high-water cursor.
 	var delivered_ids: PackedInt64Array = handoff.get("effect_ids", PackedInt64Array())
 	host._trigger_country_delivery_id = int(handoff.get("last_effect_id", 0))
 	if delivered_ids.is_empty() and host._trigger_country_delivery_id > 0:
@@ -519,7 +519,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 	ext.ack_effect_native_country()
 
 
-## ACK a delivery batch by the exact host.effect host.ids the handoff returned. Old DLLs
+## ACK a delivery batch by the exact effect ids the handoff returned. Old DLLs
 ## without ack_trigger_effect_ids() fall back to the numeric cursor lane.
 
 
@@ -561,11 +561,11 @@ func _consume_country_worker_read_view_if_authoritative(host) -> void:
 			"full_cell_owners", PackedInt32Array())
 		if full_owners.size() != cell_count:
 			host._country_worker_read_rejected_count += 1
-			push_warning("[host.country-authority] full read view rejected: cell shape mismatch")
+			push_warning("[country-authority] full read view rejected: cell shape mismatch")
 			return
 		# Repair MapData with the full owner plane, but never advertise
-		# cell_count as "host.changed": that forced O(host.n) host.vision/host.border on every
-		# missed-generation catch-up even when only a few host.cells differed.
+		# cell_count as "changed": that forced O(n) vision/border on every
+		# missed-generation catch-up even when only a few cells differed.
 		var previous_owners: PackedInt32Array = host._current_map.country_slot_arr
 		if previous_owners.size() == cell_count:
 			for cell in range(cell_count):
@@ -578,17 +578,17 @@ func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	else:
 		if changed_cells.size() != changed_owners.size():
 			host._country_worker_read_rejected_count += 1
-			push_warning("[host.country-authority] sparse read view rejected: patch shape mismatch")
+			push_warning("[country-authority] sparse read view rejected: patch shape mismatch")
 			return
 		if host._current_map.country_slot_arr.size() != cell_count:
 			host._country_worker_read_rejected_count += 1
-			push_warning("[host.country-authority] sparse read view rejected: MapData shape mismatch")
+			push_warning("[country-authority] sparse read view rejected: MapData shape mismatch")
 			return
 		for i in changed_cells.size():
 			var cell = int(changed_cells[i])
 			if cell < 0 or cell >= cell_count:
 				host._country_worker_read_rejected_count += 1
-				push_warning("[host.country-authority] sparse read view rejected: cell host.out of range")
+				push_warning("[country-authority] sparse read view rejected: cell out of range")
 				return
 			host._current_map.country_slot_arr[cell] = int(changed_owners[i])
 		territory_changed_count = changed_cells.size()
@@ -608,21 +608,21 @@ func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	host._country_worker_read_last_result["territory_changed_cells"] = territory_changed_count
 	host._country_worker_read_last_result["full_snapshot_applied"] = full_required
 	var worker_report = host._country_worker_read_last_result.duplicate(false)
-	# Vision/host.border consumers key off changed_cells. Use the real territory
+	# Vision/border consumers key off changed_cells. Use the real territory
 	# delta, never the repaired plane width.
 	worker_report["changed_cells"] = territory_changed_count
 	worker_report["changed_cell_count"] = territory_changed_count
 	worker_report["full_snapshot_applied"] = full_required
 	worker_report["country_generation"] = generation
-	# CountryFacade is the existing notification host.path.  It emits the same
-	# country_committed signal consumed by host.vision, host.border, controller and UI.
+	# CountryFacade is the existing notification path.  It emits the same
+	# country_committed signal consumed by vision, border, controller and UI.
 	var facade = host._generator.get_country_facade() \
 		if host._generator.has_method("get_country_facade") else null
 	if facade != null and facade.has_method("dispatch_worker_committed_view"):
 		facade.dispatch_worker_committed_view(worker_report)
 
 
-## Budgeted host.country host.vision/host.border refresh. Pending work survives frames that
+## Budgeted country vision/border refresh. Pending work survives frames that
 ## already spent their sim budget so day capture and peer pumps stay responsive.
 
 
@@ -654,6 +654,6 @@ func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> 
 ## `report_override`：同一调用栈里刚刚取过的 runtime report。内联日没有 worker
 ## 线程，两次读取必然同值，因此传进来可以省掉一天里第二次
 ## get_runtime_thread_report() 的打包/拷贝，并且把**已经由调用方做过的**
-## host.climate 回灌跳过一次（同一个 report、同一个 committed_day，回灌的单调日门
+## climate 回灌跳过一次（同一个 report、同一个 committed_day，回灌的单调日门
 ## 保证第二次调用本来就是空转）。非 override 调用（每帧 _process）行为不变。
 

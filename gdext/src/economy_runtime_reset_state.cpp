@@ -129,6 +129,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _closing_audit_mismatch_ledger = "none";
     _closing_audit_mismatch_lane = -1;
     _deferred_population_reconcile_cells.clear();
+    _pending_military_cash_burn = 0;
     clear_epoch_metrics();
     _epoch_previous_producer_sellable.clear();
     _epoch_previous_producer_merchant_sold.clear();
@@ -344,6 +345,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_clamp_traces.clear();
     _investment_output_signals_scratch.clear();
     _investment_review_cell_indices.clear();
+    _track_b_investment_cells_pending.clear();
+    _track_b_derived_carry.clear();
+    _track_b_derived_anchor_carry.clear();
     _investment_resource_committed_by_cell.clear();
     _investment_merchant_cash_by_cell.clear();
     _investment_outstanding_credit_by_cell.clear();

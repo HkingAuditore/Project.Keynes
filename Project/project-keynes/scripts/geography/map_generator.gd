@@ -3412,6 +3412,14 @@ func finalize_save_restore_runtime() -> Dictionary:
 			return {"ok": false, "reason": "military_restore_terrain_failed"}
 		if _military_facade.ai_player_handles().is_empty():
 			_arm_military_ai(_gameplay_player_country_handles())
+	else:
+		# Keep a fallback for restore paths whose preparation did not produce a
+		# configured facade. A successful configure is safe here because no PKMI
+		# state was installed into the facade in that path.
+		var military_configured: Dictionary = _configure_military_runtime(
+			_sus_map, null, _save_restore_seed)
+		if bool(military_configured.get("ok", false)):
+			_arm_military_ai(_gameplay_player_country_handles())
 	_maybe_register_military_system()
 	if not _runtime_build_topology("save restore finalize"):
 		return {"ok": false, "reason": "save_restore_scheduler_topology_failed"}

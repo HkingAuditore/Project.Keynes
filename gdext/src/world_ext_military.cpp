@@ -246,6 +246,7 @@ const MilitaryOpName kMilitaryOps[] = {
     {"state.demolish", MCMD_STATE_DEMOLISH},
     {"policy.set_wage", MCMD_POLICY_SET_WAGE},
     {"policy.set_procurement", MCMD_POLICY_SET_PROCUREMENT},
+    {"policy.set_budget", MCMD_POLICY_SET_BUDGET},
     {"army.create", MCMD_ARMY_CREATE},
     {"army.station", MCMD_ARMY_STATION},
     {"army.transfer", MCMD_ARMY_TRANSFER},
@@ -825,6 +826,12 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
     if (economy_ready != nullptr) *economy_ready = false;
     const int32_t cells = std::max(0, core_from(_military_runtime)->terrain().cell_count);
     digest.day = -1;
+    // The digest object is reused across days, so the state building lanes must
+    // be reset up front: an economy read that fails below must not leave
+    // yesterday's rows in place, because the core would rebuild its cache from
+    // stale ledger data instead of keeping what the save restored.
+    digest.state_lanes_present = false;
+    digest.state_lane_rows = 0;
     // ---- Country: one pinned committed projection ----
     int32_t country_count = 0;
     std::vector<int64_t> cash(std::max<size_t>(scratch.country_cash.size(), 1), 0);
@@ -911,6 +918,24 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
         for (int32_t slot = 0; slot < country_count; ++slot)
             digest.country_soldier_living_cost[static_cast<size_t>(slot)] =
                 economy_api::military_soldier_living_cost(*economy, slot);
+        // The economy's kind-3 building groups are the ledger of record for
+        // every state lot; the core rebuilds its cache from these rows and never
+        // counts anything itself (requirement 6.1-6.3). A non-authoritative
+        // read leaves `state_lanes_present` false, which tells the core to keep
+        // the cache it has instead of zeroing it.
+        std::vector<int32_t> state_cells;
+        std::vector<int32_t> state_types;
+        std::vector<int32_t> state_roles;
+        std::vector<int64_t> state_units;
+        if (economy_api::military_read_state_buildings(*economy, state_cells, state_types,
+                                                   state_roles, state_units)) {
+            scratch.state_cell.swap(state_cells);
+            scratch.state_type_id.swap(state_types);
+            scratch.state_state_role.swap(state_roles);
+            scratch.state_units.swap(state_units);
+            digest.state_lanes_present = true;
+            digest.state_lane_rows = static_cast<int32_t>(scratch.state_cell.size());
+        }
     }
     digest.cell_population = scratch.cell_population;
     digest.cell_unemployed = scratch.cell_unemployed;
@@ -920,6 +945,12 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
     digest.market_good = scratch.market_good;
     digest.market_sellable = scratch.market_sellable;
     digest.market_price = scratch.market_price;
+    // Copied (not moved) because the scratch is reused next day; the copy only
+    // costs the sparse state rows, which are a few hundred at most.
+    digest.state_cell = scratch.state_cell;
+    digest.state_type_id = scratch.state_type_id;
+    digest.state_state_role = scratch.state_state_role;
+    digest.state_units = scratch.state_units;
     // ---- Technology unlock bits: one row per country, bit = unlock_bit ----
     // `_military_unlock_tech_ids` records the dense technology id each bit
     // stands for at configure time, so a country's row is one
@@ -1733,6 +1764,8 @@ void DCWorldExt::apply_military_deferred_cash(int64_t day) {
         }
         const int64_t collected = economy_api::military_collect_cash(*economy,
             static_cast<int64_t>(row.country_handle), row.amount);
+        if (collected > 0)
+            economy_api::military_record_cash_burn(*economy, collected);
         row.amount = collected;
         row.count = collected > 0 ? 1 : 0;
         row.receipt_pending = collected > 0 ? 2 : 3;
@@ -2007,6 +2040,84 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         row.receipt_pending = 1;
         row.sequence = next_sequence();
         pending.push_back(row);
+        return;
+    }
+    case MILITARY_INTENT_STATE_BUILD: {
+        // A state building request (see MILITARY_INTENT_STATE_BUILD in
+        // military_bridge.h). This is the only settlement path for a state lot:
+        // the economy charges the treasury for the real materials and, only
+        // when it accepted the order, the core gets the bookkeeping command
+        // that schedules the completion day.
+        if (economy_runtime == nullptr || intent.country_a == 0 ||
+            intent.cell < 0 || intent.count <= 0)
+            return;
+        MilitaryCore *core = core_from(_military_runtime);
+        const int32_t building = static_cast<int32_t>(intent.count);
+        if (building >= static_cast<int32_t>(core->_catalog.state_buildings.size()))
+            return;
+        const int32_t economy_type = core->_catalog.state_buildings[
+            static_cast<size_t>(building)].economy_building_id;
+        // A catalog compiled before this bridge leaves the column at -1: those
+        // lots have no economy profile, therefore no bill, therefore they are
+        // not built at all instead of being built for free.
+        if (economy_type < 0) return;
+        const Dictionary queued = economy_api::queue_treasury_sponsored_build(*economy_runtime,
+            static_cast<int64_t>(intent.country_a), intent.cell, economy_type,
+            effective_day, next_sequence(), false);
+        if (!bool(queued.get("ok", false))) return;
+        // The economy owns the schedule; the core only mirrors it. Feeding the
+        // accepted lot back through the ordinary command queue keeps the
+        // pending construction slots and the completion day on one code path.
+        MilitaryCommand command;
+        command.op = MCMD_STATE_BUILD;
+        command.country = intent.country_a;
+        command.cell = intent.cell;
+        command.unit_to = building;
+        command.effective_day = effective_day;
+        command.sequence = static_cast<uint64_t>(next_sequence());
+        std::string command_error;
+        core->submit(std::move(command), command_error);
+        // Deliberately no `pending` row: this branch already holds the economy's
+        // synchronous accept/reject, so there is nothing left to await, and the
+        // core's receipt fold has no case for this kind. Pushing an authority=2
+        // row here would sit unresolved until the receipt timeout and then emit
+        // a failure the core ignores anyway.
+        return;
+    }
+    case MILITARY_INTENT_STATE_DEMOLISH: {
+        // The mirror of STATE_BUILD on the removal side. The economy drops the
+        // unit from the ledger row first and only an accepted removal is echoed
+        // back as MCMD_STATE_DEMOLISH, so the ledger is always the first to
+        // change and the core can never report a demolition the ledger did not
+        // record (requirement 6.5). `count` carries the state building index,
+        // exactly like STATE_BUILD; one unit per request.
+        if (economy_runtime == nullptr || intent.country_a == 0 ||
+            intent.cell < 0 || intent.count <= 0)
+            return;
+        MilitaryCore *core = core_from(_military_runtime);
+        const int32_t building = static_cast<int32_t>(intent.count);
+        if (building >= static_cast<int32_t>(core->_catalog.state_buildings.size()))
+            return;
+        const int32_t economy_type = core->_catalog.state_buildings[
+            static_cast<size_t>(building)].economy_building_id;
+        // A catalog compiled before this bridge leaves the column at -1: the lot
+        // has no economy profile, so it is not in the ledger and there is
+        // nothing that could remove it.
+        if (economy_type < 0) return;
+        const Dictionary queued = economy_api::queue_treasury_sponsored_demolish(*economy_runtime,
+            static_cast<int64_t>(intent.country_a), intent.cell, economy_type, 1,
+            effective_day, next_sequence(), false);
+        if (!bool(queued.get("ok", false))) return;
+        MilitaryCommand command;
+        command.op = MCMD_STATE_DEMOLISH;
+        command.country = intent.country_a;
+        command.cell = intent.cell;
+        command.unit_to = building;
+        command.effective_day = effective_day;
+        command.sequence = static_cast<uint64_t>(next_sequence());
+        std::string command_error;
+        core->submit(std::move(command), command_error);
+        // No `pending` row: the economy's accept/reject above is synchronous.
         return;
     }
     case MILITARY_INTENT_ARMY_EMBARK:
@@ -2418,6 +2529,12 @@ Dictionary DCWorldExt::get_military_report() {
     out["wars_active"] = static_cast<int64_t>(report.wars_active);
     out["soldiers_total"] = report.soldiers_total;
     out["idle"] = report.idle != 0;
+    // State building cache diagnostics (requirement 6.4). They are transient:
+    // a nonzero `state_cache_repairs` means "the economy ledger disagreed with
+    // the cache on this day", not "the save is broken".
+    out["state_cache_repairs"] = static_cast<int64_t>(report.state_cache_repairs);
+    out["state_ledger_unmapped"] = static_cast<int64_t>(report.state_ledger_unmapped);
+    out["state_role_mismatch"] = static_cast<int64_t>(report.state_role_mismatch);
     out["configured_units"] = static_cast<int64_t>(core->catalog().units.size());
     out["catalog_hash"] = static_cast<int64_t>(core->catalog().hash);
     out["last_step_day"] = _military_last_step_day;
@@ -2485,10 +2602,46 @@ Dictionary DCWorldExt::get_military_country_snapshot(int64_t country) const {
         out["wage_mode"] = static_cast<int64_t>(policy.wage_mode);
         out["wage_absolute"] = policy.wage_absolute;
         out["procurement_share_bp"] = static_cast<int64_t>(policy.procurement_share_bp);
+        // ---- budget envelope (任务 6). `budget_enabled == false` is the
+        // documented "no envelope" state: the panel keeps the read-only block
+        // and the native settlement keeps the legacy cash-driven path, so both
+        // sides agree on what an absent policy means.
+        out["budget_share_bp"] = static_cast<int64_t>(policy.budget_share_bp);
+        out["budget_enabled"] = policy.budget_share_bp > 0;
+        out["budget_wage_bp"] = static_cast<int64_t>(policy.budget_wage_bp);
+        out["budget_upkeep_bp"] = static_cast<int64_t>(policy.budget_upkeep_bp);
+        // The channel ceilings need the envelope base, which is the country's
+        // committed treasury cash (需求 5.1). Publish the split so the panel and
+        // the settlement cannot drift apart.
+        const MilitaryCore::MilitaryBudgetSplit split =
+            core->budget_split(slot, core->last_country_cash(slot));
+        out["budget_envelope_daily"] = split.envelope_daily;
+        out["budget_wage_daily"] = split.enabled ? split.wage_ceiling : -1;
+        out["budget_upkeep_daily"] = split.enabled ? split.upkeep_ceiling : -1;
+        out["budget_procurement_daily"] = split.enabled ? split.procurement_ceiling : -1;
         out["pay_ratio_30_q16"] = static_cast<int64_t>(policy.pay_ratio_30_q16);
         out["spend_payroll_30"] = policy.spend_payroll_30;
         out["spend_procurement_30"] = policy.spend_procurement_30;
         out["spend_upkeep_30"] = policy.spend_upkeep_30;
+        // ---- budget settlement outcome (任务 7 / 需求 5.2, 5.3, 7.1) -------
+        // Per-step, non-cumulative: these describe the LAST settled day, so the
+        // panel paints today's shortfall/overspend and forgets it tomorrow. All
+        // six stay 0 when the country has no envelope.
+        out["budget_wage_demand"] = policy.wage_demand;
+        out["budget_wage_arrears"] = policy.wage_arrears;
+        out["budget_wage_overspend"] = policy.wage_overspend;
+        out["budget_upkeep_demand"] = policy.upkeep_demand;
+        out["budget_upkeep_arrears"] = policy.upkeep_arrears;
+        out["budget_upkeep_overspend"] = policy.upkeep_overspend;
+        // ---- procurement quota outcome (任务 8 / 需求 5.4, 6.2, 7.1) ------
+        // `procurement_budget_used` is money committed to markets on the last
+        // procurement pass, read off the same `cost` the intents carry, so it
+        // reconciles with the treasury one-for-one. `procurement_deferred_units`
+        // is the need-unit gap the QUOTA refused (not the gap no market could
+        // fill), which is what the panel labels 待购. Both stay 0 with no
+        // envelope, so a country without budget control looks exactly as before.
+        out["budget_procurement_used"] = policy.procurement_budget_used;
+        out["budget_procurement_deferred_units"] = policy.procurement_deferred_units;
         out["per_soldier_cost"] = policy.per_soldier_cost;
         // The per-head DAILY WAGE both pay paths use (army-pay contract §2.2):
         // ABSOLUTE takes the policy value, AUTO is living cost x the MSTAT_WAGE

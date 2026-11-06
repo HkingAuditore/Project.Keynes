@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## M1 prerequisite: real-world `epoch_begin_city_factor_ms` baseline.
 ##
 ## The synthetic probe (`ideology_cell_layer_m0_city_factor_probe.gd`) proved the

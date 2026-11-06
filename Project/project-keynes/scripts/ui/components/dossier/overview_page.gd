@@ -121,7 +121,6 @@ func _refresh_per_capita(per_capita: Dictionary) -> void:
 		"kind": "money",
 		"caption": String(per_capita.get("caption", "")),
 	})
-	_per_capita.tooltip_text = "当日全国产值 ÷ 人口；年度累计人均见上方横幅。"
 
 
 func _refresh_living(living: Dictionary) -> void:
@@ -154,8 +153,9 @@ func _refresh_sectors(sectors: Array) -> void:
 	var rows: Array = []
 	for sector in sectors:
 		var units := float(sector.units)
-		var text := "%s · 利用 %s" % [money(float(sector.revenue)), percent(float(sector.utilization))] \
-			if units > 0.0 else "尚无建筑"
+		if units <= 0.0:
+			continue
+		var text := "%s · %s" % [money(float(sector.revenue)), percent(float(sector.utilization))]
 		rows.append({"id": int(sector.id), "label": String(sector.name), "icon": sector.icon,
 			"value": float(sector.revenue) / peak if peak > 0.0 else 0.0,
 			"text": text, "color": sector.color,

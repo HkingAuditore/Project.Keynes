@@ -131,6 +131,49 @@ inline int64_t quality_mult_q16(int32_t quality_1_5) {
     return MILITARY_QUALITY_MULT_Q16[(size_t)(q - 1)];
 }
 
+// The quality tier (1..5) of a concrete economy good inside the equipment
+// catalog. 0 means the good is not an equipment good.
+inline int32_t equip_good_quality(const MilitaryCatalog &catalog, int32_t good) {
+    for (size_t c = 0; c < catalog.categories.size(); ++c) {
+        const MilitaryEquipCategory &cat = catalog.categories[c];
+        for (size_t g = 0; g < cat.good_ids.size(); ++g) {
+            if (cat.good_ids[g] != good) continue;
+            if (g >= cat.good_quality.size()) return 1;
+            return clamp32(cat.good_quality[g], 1, 5);
+        }
+    }
+    return 0;
+}
+
+// One bit per equipment category a unit needs. A training order is ready only
+// when every one of these bits has been delivered.
+inline uint64_t equipment_slot_mask(const MilitaryUnitType &u) {
+    uint64_t mask = 0;
+    for (int32_t s = 0; s < u.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
+        const int32_t cat = u.slot_category[(size_t)s];
+        if (cat >= 0 && cat < 64) mask |= (uint64_t{1} << cat);
+    }
+    return mask;
+}
+
+// Weighted multiplier from the lot's *actually delivered* quality (q8).
+// Shared by the army cache (UI / AI / threat) and the live engagement formula
+// so the number a player sees is the number that fights.
+inline int64_t equip_factor_q16(const MilitaryUnitType &u, int32_t quality_q8) {
+    const int32_t q = clamp32((quality_q8 + 128) / 256, 1, 5);
+    int64_t wsum = 0, acc = 0;
+    for (int32_t s = 0; s < u.slot_count && s < MILITARY_MAX_EQUIP_SLOTS; ++s) {
+        const int64_t w = u.slot_power_weight_q16[(size_t)s];
+        if (w <= 0) continue;
+        const int32_t minq = clamp32((int32_t)u.slot_min_quality[(size_t)s], 1, 5);
+        const int32_t actual = std::max(minq, q);
+        wsum += w;
+        acc += (w * quality_mult_q16(actual)) / quality_mult_q16(minq);
+    }
+    if (wsum <= 0) return MILITARY_Q16;  // units without equipment slots: 1.0
+    return acc / wsum;
+}
+
 // ------------------------------------------------------------ armies / lots
 
 inline bool army_alive(const MilitaryArmyStore &s, int32_t slot) {

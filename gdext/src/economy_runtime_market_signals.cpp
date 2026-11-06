@@ -336,6 +336,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
         };
         append_i64_if_aligned(_epoch_business_demand_ema);
         append_i64_if_aligned(_epoch_derived_business_demand);
+        append_i64_if_aligned(_epoch_derived_anchor_price);
         append_i64_if_aligned(_epoch_substitute_business_demand);
         append_i64_if_aligned(_epoch_desired_business_demand);
         append_i64_if_aligned(_epoch_funded_business_demand);
@@ -388,6 +389,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
     };
     insert_i64_if_aligned(_epoch_business_demand_ema);
     insert_i64_if_aligned(_epoch_derived_business_demand);
+    insert_i64_if_aligned(_epoch_derived_anchor_price);
     insert_i64_if_aligned(_epoch_substitute_business_demand);
     insert_i64_if_aligned(_epoch_desired_business_demand);
     insert_i64_if_aligned(_epoch_funded_business_demand);
@@ -482,6 +484,7 @@ bool NativeEconomyRuntime::flush_market_signal_overflow(std::string &error) {
     reorder(_market_signals.cost_anchor_price);
     reorder(_epoch_business_demand_ema);
     reorder(_epoch_derived_business_demand);
+    reorder(_epoch_derived_anchor_price);
     reorder(_epoch_substitute_business_demand);
     reorder(_epoch_desired_business_demand);
     reorder(_epoch_funded_business_demand);

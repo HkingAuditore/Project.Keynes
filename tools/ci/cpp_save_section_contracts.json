@@ -43,7 +43,7 @@
       "domain": "economy",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 59,
+      "version": 60,
       "source": "gdext/src/runtime_economy_ecp2.cpp",
       "tokens": [
         "RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION",
@@ -58,7 +58,7 @@
       "domain": "military",
       "owner": "country",
       "tag": "PKMI",
-      "version": 2,
+      "version": 3,
       "source": "gdext/src/military_core_save.cpp",
       "tokens": [
         "PKMI_VERSION",
@@ -130,7 +130,7 @@
       "domain": "family",
       "owner": "economy",
       "tag": "ECP2",
-      "version": 59,
+      "version": 60,
       "source": "gdext/src/runtime_economy_family_store.cpp",
       "tokens": [
         "runtime_economy_family_store"

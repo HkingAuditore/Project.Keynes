@@ -518,7 +518,7 @@ func _run() -> void:
 		if country_chunk.is_empty(): break
 		country_chunks.append(country_chunk)
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
-	# Production restore is ECP2-only (ABI3/schema59). PKEC chunk streaming is
+	# Production restore is ECP2-only (ABI3/schema60). PKEC chunk streaming is
 	# reserved for the explicit one-shot migrate helper and must not be used
 	# as the building runtime round-trip authority.
 	_expect("building ECP2 capture API is bound",
@@ -527,7 +527,7 @@ func _run() -> void:
 	_expect("building ECP2 save captures OwnedState",
 		bool(ecp2_capture.get("ok", false)) and
 		str(ecp2_capture.get("format", "")) == "ECP2" and
-		int(ecp2_capture.get("schema_version", 0)) == 59)
+		int(ecp2_capture.get("schema_version", 0)) == 60)
 	var ecp2_bytes: PackedByteArray = ecp2_capture.get("bytes", PackedByteArray())
 	_expect("building ECP2 payload is non-empty", not ecp2_bytes.is_empty())
 	var restored := _new_ext(compiled)

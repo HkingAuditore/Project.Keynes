@@ -426,7 +426,7 @@ func set_wind_field(dir: Vector2, boost: float) -> void:
 
 
 func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, softness: float,
-		max_angle: float, cast_floor: float, debug_view: int) -> void:
+		max_angle: float, cast_floor: float, debug_view: int, coarse_normal_strength: float) -> void:
 	if _material == null:
 		return
 	# tiled 变体采 visual_horizon_tiles（由 _sync_world_material_inputs 绑定）；legacy tex 可空。
@@ -434,11 +434,12 @@ func set_terrain_horizon_inputs(tex: Texture2D, bound: bool, strength: float, so
 	if not _visual_tiles_active():
 		_material.set_shader_parameter("terrain_horizon_tex", tex)
 	_material.set_shader_parameter("terrain_horizon_tex_bound", bound)
-	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.0))
+	_material.set_shader_parameter("terrain_horizon_strength", clampf(strength, 0.0, 1.5))
 	_material.set_shader_parameter("terrain_horizon_softness", clampf(softness, 0.01, 1.0))
 	_material.set_shader_parameter("terrain_horizon_max_angle", clampf(max_angle, 0.30, 1.5708))
 	_material.set_shader_parameter("terrain_horizon_cast_floor", clampf(cast_floor, 0.35, 1.0))
 	_material.set_shader_parameter("terrain_horizon_debug_view", clampi(debug_view, 0, 2))
+	_material.set_shader_parameter("hillshade_coarse_strength", clampf(coarse_normal_strength, 0.0, 3.0))
 
 
 # [terrain-gi 2026-07-31] 天空可见度 LUT 与强度。lut 必须是 HexRenderer.build_gi_horizon_lut
@@ -3470,7 +3471,7 @@ func _apply_profile_uniforms() -> void:
 	var shading_on: bool = bool(cfg.get("shading_enabled")) if cfg.get("shading_enabled") != null else true
 	_material.set_shader_parameter("shading_enabled", 1.0 if shading_on else 0.0)
 	_material.set_shader_parameter("veg_shade_quality", tier)
-	_material.set_shader_parameter("terrain_normal_influence", _profile_float(&"terrain_normal_influence", 0.65))
+	_material.set_shader_parameter("terrain_normal_influence", _profile_float(&"terrain_normal_influence", 1.0))
 	_material.set_shader_parameter("sun_shade_strength", _profile_float(&"sun_shade_strength", 0.55))
 	_material.set_shader_parameter("ambient_floor", _profile_float(&"ambient_floor", 0.18))
 	_material.set_shader_parameter("contact_ao_strength", _profile_float(&"contact_ao_strength", 0.42))

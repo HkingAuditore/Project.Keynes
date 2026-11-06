@@ -960,6 +960,16 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
                      cmd.cell, moved, moved_funds, cmd.cell, cmd.cell,
                      legs.empty() ? nullptr : &legs);
         if (moved_out != nullptr) *moved_out = moved;
+        // Between epochs the structural reconcile is a day away, but the
+        // committed ledger is exported right after this drain. Soldiers who
+        // left a barracks must stop counting as its employees before that
+        // export (cohort employment <= population), so reconcile this cell now;
+        // the deferred pass next epoch then finds nothing left to move.
+        if (!_epoch_active &&
+            !reconcile_building_employment_after_population_change({cmd.cell}, error)) {
+            if (error.empty()) error = "army_embark_employment_reconcile_failed";
+            return false;
+        }
         defer_reconcile_if_idle();
         return true;
     }

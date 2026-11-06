@@ -162,10 +162,12 @@ Naval cost: sea steps are 1.5x a land step divided by `MSTAT_NAVAL_TRANSPORT` ("
 
 Peace is a **separate docked, non-modal window**, not a card in the country shell. It owns the term draft and
 turns map clicks into cession picks; the war page only hosts a launcher card. Spec:
-`docs/ui/military-peace-window.md`; wiring summary: `military-runtime.md` §9.2.
+`docs/ui/military-peace-window.md`; wiring summary: `military-runtime.md` §9.2. The diplomacy chapter
+(`docs/ui/diplomacy-workspace.md`) is a second entry point to the same window: its war sheet and its
+belligerent country sheet both emit `CountryPanel.peace_negotiation_requested`.
 
 ```text
-war page 「议和」/ overview war card
+war page 「议和」/ overview war card / diplomacy war sheet / diplomacy belligerent sheet
   → CountryPanel.peace_negotiation_requested(war_id)
   → GameUIManager.open_military_peace(war_id)
        close_country_panel() + _suppress_ui_for_dispatch()
@@ -187,6 +189,10 @@ submit → request_command("military.peace.propose") → set_command_result() on
   to a floor estimate (2 points per ceded cell) and flags `estimated`.
 - Cession candidates = cells we control whose owner is the enemy (`MilitaryViewModel.ceded_cells()`); untouched
   cells still return automatically on execution, and the window says so.
+- Owner/handle resolution lives in `scripts/ui/country_map_query.gd` — **never** re-derive it: production truth
+  is `MapData.country_slot_arr` (per-cell slot mirror) plus `CountryFacade.cell_summary(cell).country_handle`
+  (handle = `generation << 32 | slot`). `ext.get_country_cell_snapshot()` only exists in the screenshot fixture;
+  the control snapshot comes from `MilitaryFacade.control_snapshot()`, not from the country snapshot.
 - Two highlight layers (`WorldRoot/PeaceCandidateSet`, `WorldRoot/PeaceDraftSet`) driven by
   `PlayerController.highlight_peace_candidates/draft()`; `clear_peace_highlights()` on close.
 - Refresh path: `invalidate_cache(COUNTRY_DIRTY_MILITARY)` → `build("military")` →

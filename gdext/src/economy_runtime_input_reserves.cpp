@@ -351,8 +351,11 @@ bool NativeEconomyRuntime::is_storable_nonmonetary_good(int32_t good) const {
 int32_t NativeEconomyRuntime::resolved_maintenance_horizon_days(
         const BuildingType &type) const {
     if (type.maintenance_horizon_days > 0) return type.maintenance_horizon_days;
-    const int32_t sector = std::clamp(type.economic_sector, 0, 4);
-    return std::max(1, _maintenance_horizon_days_by_sector[sector]);
+    if (type.economic_sector < 0 ||
+        type.economic_sector >= CIVIL_SECTOR_COUNT) {
+        return std::max(1, _maintenance_horizon_days_by_sector[2]);
+    }
+    return std::max(1, _maintenance_horizon_days_by_sector[type.economic_sector]);
 }
 
 int64_t NativeEconomyRuntime::merchant_protected_reserve(int32_t signal) const {
@@ -423,7 +426,11 @@ void NativeEconomyRuntime::resolve_building_maintenance_csr() {
             _building_maintenance_goods.push_back(row);
             authored = true;
         }
-        if (!authored && type.kind != 2 && type.construction_count > 0) {
+        // Service buildings have no goods maintenance, and state buildings
+        // settle upkeep in cash through Military. Deriving a civil bill for
+        // either would charge the same building twice.
+        if (!authored && type.kind != 2 && type.kind != 3 &&
+                type.construction_count > 0) {
             const int32_t horizon = resolved_maintenance_horizon_days(type);
             for (int32_t item = type.construction_begin;
                  item < type.construction_begin + type.construction_count; ++item) {

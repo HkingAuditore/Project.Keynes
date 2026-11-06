@@ -778,7 +778,7 @@ func _draw_node(node: Dictionary) -> void:
 		label_font_size, text_colour)
 	if is_application:
 		draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 54.0),
-			"已启用" if state >= 5 else "应用条件未齐",
+			STATE_NAMES[5] if state >= 5 else "应用条件未齐",
 			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 50.0, 11, muted_text_colour)
 	else:
 		if not Art.draw_icon(self, Art.state_seal(state),

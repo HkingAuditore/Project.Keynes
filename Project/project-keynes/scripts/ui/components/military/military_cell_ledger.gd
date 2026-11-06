@@ -15,10 +15,11 @@ signal action_requested(request: Dictionary)
 const RosterListScript := preload("res://scripts/ui/components/military/military_roster_list.gd")
 const BuildingRowScript := preload("res://scripts/ui/components/military/military_building_row.gd")
 const ROW_COUNT := 3
-## 视图模型的动作 → 正式军事命令。
+## 视图模型的主键动作 → 正式军事命令。主键语义恒定：只会是这三个正向动作。
 const ACTION_OPS := {
 	"build": "state.build",
 	"upgrade": "state.build",
+	"rebuild": "state.build",
 	"demolish": "state.demolish",
 }
 
@@ -30,6 +31,9 @@ const ACTION_OPS := {
 var _model: Dictionary = {}
 var _cell := -1
 var _rows: Array = []
+## 最近一次按下动作键的行：命令回执写在这一行上（成功与被拒都写）。
+## 只在按下时更新，模型落地不改写——回执的存活时间由行自己按秒计。
+var _action_index := -1
 
 
 func _ready() -> void:
@@ -52,6 +56,7 @@ func _build_rows() -> void:
 		row.name = "Row%d" % index
 		_rows_box.add_child(row)
 		row.action_pressed.connect(_on_row_action.bind(index))
+		row.demolish_pressed.connect(_on_row_demolish.bind(index))
 		_rows.append(row)
 
 
@@ -91,19 +96,59 @@ func release_busy() -> void:
 		(row as Control).set_busy(false)
 
 
+## 命令回执（成功=已排队 / 失败=被拒的理由）写在刚按下的那一行上。
+## 营造反馈条只在营造窗口里可见，地块档案这一页必须自己给回音，否则按钮像坏了。
+func show_feedback(message: String, ok: bool) -> void:
+	if _action_index < 0 or _action_index >= _rows.size():
+		return
+	(_rows[_action_index] as Control).flash_notice(message, ok)
+
+
+func feedback_text() -> String:
+	if _action_index < 0 or _action_index >= _rows.size():
+		return ""
+	return String((_rows[_action_index] as Control).notice_text())
+
+
 func _on_row_action(index: int) -> void:
 	var buildings: Array = _model.get("buildings", [])
 	if index < 0 or index >= buildings.size():
 		return
 	var entry: Dictionary = buildings[index]
-	var op := String(ACTION_OPS.get(String(entry.get("action", "")), ""))
+	# 主键只走正向动作：视图模型的 primary_action 只会是 build / upgrade / rebuild。
+	var primary := String(entry.get("primary_action", "none"))
+	var op := String(ACTION_OPS.get(primary, "")) if primary != "none" \
+		else String(ACTION_OPS.get(String(entry.get("action", "")), ""))
 	var target := int(entry.get("target", -1))
 	if op.is_empty() or target < 0 or _cell < 0:
 		return
+	_action_index = index
 	(_rows[index] as Control).set_busy(true)
 	action_requested.emit({
 		"cell": _cell,
 		"role": String(entry.get("role", "")),
 		"op": op,
+		"building": target,
+	})
+
+
+## 拆除是独立通道：它的目标必须是**已建成的那一档**，不是主键的 target
+## （主键在可升级时指向更高档，拿它去拆会拆错建筑）。
+func _on_row_demolish(index: int) -> void:
+	var buildings: Array = _model.get("buildings", [])
+	if index < 0 or index >= buildings.size():
+		return
+	var entry: Dictionary = buildings[index]
+	if not bool(entry.get("can_demolish", false)):
+		return
+	var target := int(entry.get("demolish_target", -1))
+	if target < 0 or _cell < 0:
+		return
+	_action_index = index
+	(_rows[index] as Control).set_busy(true)
+	action_requested.emit({
+		"cell": _cell,
+		"role": String(entry.get("role", "")),
+		"op": String(ACTION_OPS.get("demolish", "state.demolish")),
 		"building": target,
 	})

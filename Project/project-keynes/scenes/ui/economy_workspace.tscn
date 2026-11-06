@@ -5,7 +5,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/metric_card.tscn" id="3_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="4_tabs"]
 [ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="5_insights"]
-[ext_resource type="PackedScene" path="res://scenes/ui/national_procurement_slider.tscn" id="6_procurement"]
+[ext_resource type="Script" path="res://scripts/ui/components/fiscal_budget_page.gd" id="7_fiscal"]
 
 [node name="EconomyWorkspace" type="Control"]
 layout_mode = 3
@@ -130,9 +130,24 @@ vertical_alignment = 1
 text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 
-[node name="Procurement" parent="Viewport/Column/Ledger/LedgerColumn" instance=ExtResource("6_procurement")]
+[node name="FiscalPage" type="Control" parent="Viewport/Column/Ledger/LedgerColumn"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 3.0
+custom_minimum_size = Vector2(0, 260)
+script = ExtResource("7_fiscal")
+
+[node name="GoodsHeading" type="HBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="GoodsTitle" type="Label" parent="Viewport/Column/Ledger/LedgerColumn/GoodsHeading"]
+layout_mode = 2
+text = "国库物资"
+theme_type_variation = &"PKMutedLabel"
+[node name="Rule" type="HSeparator" parent="Viewport/Column/Ledger/LedgerColumn/GoodsHeading"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Tools" type="HBoxContainer" parent="Viewport/Column/Ledger/LedgerColumn"]
 layout_mode = 2
@@ -196,6 +211,8 @@ theme_type_variation = &"PKMutedLabel"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+size_flags_stretch_ratio = 1.0
+custom_minimum_size = Vector2(0, 100)
 horizontal_scroll_mode = 0
 [node name="Flow" type="HFlowContainer" parent="Viewport/Column/Ledger/LedgerColumn/Scroll"]
 unique_name_in_owner = true
@@ -205,7 +222,7 @@ theme_override_constants/h_separation = 10
 theme_override_constants/v_separation = 10
 [node name="EmptyLabel" type="Label" parent="Viewport/Column/Ledger/LedgerColumn/Scroll/Flow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 80)
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "没有符合条件的项目"

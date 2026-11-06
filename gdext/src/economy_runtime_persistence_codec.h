@@ -3,6 +3,7 @@
 #include "economy_runtime.h"
 #include "economy_runtime_binary_codec.h"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -88,6 +89,31 @@ inline godot::PackedByteArray make_save_chunk(
     if (!bytes.empty())
         std::memcpy(out.ptrw(), bytes.data(), bytes.size());
     return out;
+}
+
+// CADENCE_STATE footer: committed generation, then optionally the Track-B
+// commit-spread review cells still waiting for a later commit (u32 count +
+// i32 cells, written only when the list is non-empty).
+inline bool read_cadence_footer(const std::vector<uint8_t> &bytes,
+        size_t &cursor, int32_t cell_count, uint64_t &generation,
+        std::vector<int32_t> &pending) {
+    using binary_codec::read_le;
+    uint32_t count = 0;
+    pending.clear();
+    if (!read_le(bytes, cursor, generation) || generation == 0) return false;
+    if (cursor == bytes.size()) return true;
+    if (!read_le(bytes, cursor, count) || count == 0 ||
+        count > static_cast<uint32_t>(std::max(0, cell_count)) ||
+        bytes.size() - cursor != static_cast<size_t>(count) * sizeof(int32_t))
+        return false;
+    pending.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        int32_t cell = -1;
+        if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= cell_count)
+            return false;
+        pending.push_back(cell);
+    }
+    return true;
 }
 
 } // namespace pk::persistence_codec

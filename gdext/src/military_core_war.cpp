@@ -155,8 +155,11 @@ int64_t sum_lot_value(const MilitaryCore &core, size_t army_slot, bool attack) {
         const MilitaryUnitType &type = catalog.units[(size_t)core._lots.unit_type[s]];
         const int64_t condition = std::max(core._lots.condition_q16[s], 32768);
         const int64_t factor = 32768 + mul_q(32768, condition);
+        // v3: fold the *actually delivered* equipment quality into live combat,
+        // exactly as refresh_army_cache does for the UI / AI numbers.
+        const int64_t eq = equip_factor_q16(type, core._lots.equip_quality_q8[s]);
         const int64_t per = attack ? type.attack_q16 : type.defense_q16;
-        sum += mul_q(mul_q(core._lots.count[s], per), factor);
+        sum += mul_q(mul_q(mul_q(core._lots.count[s], per), factor), eq);
     });
     return sum;
 }

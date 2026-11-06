@@ -22,7 +22,7 @@
 #include "metric_mask.h"
 #include "effect_selector_cap.h"
 
-namespace godot { class Dictionary; }
+namespace godot { class Dictionary; class Array; }
 
 namespace pk {
 
@@ -141,6 +141,10 @@ struct EconomyApi {
         // structural command is needed; deduplicated by `sequence` like 24/30-33.
         COMMAND_ARMY_LANE_PAY = 34,
         // END army personnel lane
+        // 35: treasury-sponsored DEMOLISH of a state lot. Payload matches
+        // opcode 16: i32_0=cell, i32_1=type_id, i64_0=count,
+        // i64_1=OWNERSHIP_TREASURY_SPONSORED_PRIVATE, target_handle=country.
+        COMMAND_TREASURY_SPONSORED_DEMOLISH = 35,
     };
 
     enum FamilyEffectMetricId : int32_t {
@@ -541,6 +545,17 @@ godot::Dictionary poll_events(const NativeEconomyRuntime &economy, const godot::
 godot::Dictionary trace_report(const NativeEconomyRuntime &economy);
 bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on);
 void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy);
+
+// ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
+bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
+void military_record_cash_burn(NativeEconomyRuntime &economy, int64_t amount);
+godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
+godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
+godot::Dictionary migrate_legacy_state_buildings(NativeEconomyRuntime &economy, const godot::Array &states);
+godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
+bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
+bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);
+bool epoch_active_for_test(const NativeEconomyRuntime &economy);
 
 } // namespace economy_api
 

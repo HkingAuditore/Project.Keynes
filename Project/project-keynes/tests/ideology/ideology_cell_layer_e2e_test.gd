@@ -1,4 +1,4 @@
-﻿extends SceneTree
+extends SceneTree
 ## END-TO-END: does an equipped card actually produce derived rows?
 ##
 ## Six rounds carried the same gap: every derived-layer capability was verified in

@@ -161,5 +161,16 @@ godot::Dictionary trace_report(const NativeEconomyRuntime &economy) { return eco
 bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on) { return economy.set_cell_tag_override_for_test(tag_key, cell, on); }
 void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy) { economy.clear_cell_tag_overrides_for_test(); }
 
+// ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
+bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units) { return economy.military_read_state_buildings(out_cells, out_type_ids, out_state_roles, out_units); }
+void military_record_cash_burn(NativeEconomyRuntime &economy, int64_t amount) { economy.military_record_cash_burn(amount); }
+godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_build(country_handle, cell_idx, type_id, effective_day, sequence, queue_for_worker); }
+godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker) { return economy.queue_treasury_sponsored_demolish(country_handle, cell_idx, type_id, count, effective_day, sequence, queue_for_worker); }
+godot::Dictionary migrate_legacy_state_buildings(NativeEconomyRuntime &economy, const godot::Array &states) { return economy.migrate_legacy_state_buildings(states); }
+godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp) { return economy.set_country_procurement_policy(country_handle, enabled, treasury_share_bp, research_share_bp, effective_day, sequence, era_share_bp, colonization_share_bp); }
+bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy) { return economy.trade_topology_ready_for_test(); }
+bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell) { return economy.trade_passable_for_test(cell); }
+bool epoch_active_for_test(const NativeEconomyRuntime &economy) { return economy.epoch_active_for_test(); }
+
 } // namespace economy_api
 } // namespace pk

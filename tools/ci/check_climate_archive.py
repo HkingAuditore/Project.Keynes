@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLM2 v9 / ECP2 59 fixture: exact continuation bytes and full eight-day replay."""
+"""CLM2 v9 / ECP2 60 fixture: exact continuation bytes and full eight-day replay."""
 import argparse
 import hashlib
 import json
@@ -38,7 +38,7 @@ def climate_section(data):
 
 
 def publication_section(data, wanted=8):
-    assert data[:4] == b"ECP2" and struct.unpack_from("<II", data, 4) == (3, 59)
+    assert data[:4] == b"ECP2" and struct.unpack_from("<II", data, 4) == (3, 60)
     offset = 28 + struct.unpack_from("<I", data, 24)[0]
     owned = None
     while offset < len(data):
@@ -122,7 +122,7 @@ def military_index(data):
     assert struct.unpack_from("<II", data)[0:2] == (0x4d494c42, 3)
     size = struct.unpack_from("<I", data, 8)[0]
     wire = data[12:12 + size]
-    assert wire[:4] == b"PKMI" and struct.unpack_from("<I", wire, 4)[0] == 2
+    assert wire[:4] == b"PKMI" and struct.unpack_from("<I", wire, 4)[0] == 3
     offset = 44
     while offset < len(wire):
         section, length = struct.unpack_from("<HI", wire, offset)

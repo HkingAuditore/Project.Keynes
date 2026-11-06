@@ -35,6 +35,7 @@ var _game_flow: Node
 var _failures := PackedStringArray()
 var _result := {}
 var _finished := false
+var _dump_generator = null
 
 
 func _ready() -> void:
@@ -74,6 +75,7 @@ func _run() -> void:
 	var scene := host.get_parent() as PlayerGame
 	var clock: WorldClock = scene.get_node("WorldClock")
 	var generator := host.generator()
+	_dump_generator = generator
 	# 场景起来了不等于存档恢复成功。PKSR/PKCN 恢复失败时世界照样存在、时钟照样
 	# 能跑，只是没有任何权威在模拟 —— 那种情况下"跑满 N 天"是假绿，必须拦住。
 	var restore_error := _restore_defect(generator)
@@ -86,7 +88,7 @@ func _run() -> void:
 	var start_day := clock.day_index()
 	if OS.get_environment("PK_SAVE_MIGRATE") == "1" and not OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT").is_empty():
 		var format: Dictionary = generator.get_data_core_world_ext().get_economy_checkpoint_format()
-		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 59:
+		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 60:
 			_fail("save_migration_requires_hash_v2_extension")
 			return
 		clock.pause(true)
@@ -362,10 +364,37 @@ func _fail(reason: String) -> void:
 	_finish()
 
 
+## Optional cold-path dump shared by the success and stall paths. An owner
+## vacancy must produce INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY (3); an all
+## zero rejection array means the transient incumbent index was missing during
+## the review. Enabled by PK_SAVE_REPLAY_DUMP_BUILDING_CELL=<cell_idx>.
+func _dump_investment_index() -> void:
+	var cell_text := _env("PK_SAVE_REPLAY_DUMP_BUILDING_CELL", "")
+	if cell_text.is_empty() or _dump_generator == null:
+		return
+	var ext = _dump_generator.get_data_core_world_ext() \
+		if _dump_generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("get_building_cell_snapshot"):
+		return
+	var snap: Dictionary = ext.get_building_cell_snapshot(int(cell_text))
+	print("[invest-index] ", JSON.stringify({
+		"cell": int(cell_text),
+		"ok": snap.get("ok", false),
+		"epoch_id": snap.get("epoch_id", -1),
+		"group_rejection_reasons": snap.get("investment_rejection_reason", []),
+		"filled_owner": snap.get("filled_owner", []),
+		"owner_required": snap.get("owner_required", []),
+		"candidate_type_ids": snap.get("investment_candidate_type_ids", []),
+		"candidate_rejection_reasons": snap.get(
+			"investment_candidate_rejection_reasons", []),
+	}))
+
+
 func _finish() -> void:
 	if _finished:
 		return
 	_finished = true
+	_dump_investment_index()
 	_result["failures"] = _failures
 	_result["ok"] = _failures.is_empty()
 	# 单行机器可读结果。包装脚本按这个前缀解析，不要改前缀。

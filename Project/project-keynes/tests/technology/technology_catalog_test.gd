@@ -123,7 +123,8 @@ func _init() -> void:
 	var milestone_position := 0
 	var recipe_ids := {}
 	var modifier_stats: PackedStringArray = catalog.technology_modifier_term_stat_keys
-	assert(modifier_stats.size() == 480)
+	# 480 research terms + 33 era-advancement buffs on the 11 milestone tokens.
+	assert(modifier_stats.size() == 513)
 	var geography_terms := 0
 	var climate_terms := 0
 	var geography_technologies := {}

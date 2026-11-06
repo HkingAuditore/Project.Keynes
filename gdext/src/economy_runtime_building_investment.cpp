@@ -69,6 +69,27 @@ struct DerivedQueueEntry {
 };
 
 using DerivedCellWork = TrackBDerivedCellWork;
+
+// Derived-demand price conduction is on by default. Setting
+// PK_ECONOMY_DERIVED_PRICE_CONDUCTION=0 restores the old price formation;
+// PK_ECONOMY_DERIVED_STARTUP=0 disables only the investment-side absorption.
+// The two switches let a rerun separate "price did not rise" from "price rose
+// but the producer still would not start".
+bool derived_price_conduction_enabled() {
+    static const bool value = [] {
+        const char *flag = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_PRICE_CONDUCTION);
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
+
+bool derived_startup_absorption_enabled() {
+    static const bool value = [] {
+        const char *flag = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_STARTUP);
+        return !(flag && std::strcmp(flag, "0") == 0);
+    }();
+    return value;
+}
 } // namespace
 
 bool NativeEconomyRuntime::investment_portfolio_funds_feasible(
@@ -1694,6 +1715,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     _derived_business_demand_lanes = 0;
     _derived_business_demand_edges = 0;
     _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    _epoch_derived_anchor_price.assign(_market_signals.good_ids.size(), 0);
     if (track_b_enabled && track_b_derived_spread <= 1 &&
         track_b_derived_cadence > 1 &&
         !_track_b_derived_carry.empty() &&
@@ -1703,6 +1725,10 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         std::copy(_track_b_derived_carry.begin(),
                   _track_b_derived_carry.end(),
                   _epoch_derived_business_demand.begin());
+        if (_track_b_derived_anchor_carry.size() ==
+                _epoch_derived_anchor_price.size()) {
+            _epoch_derived_anchor_price = _track_b_derived_anchor_carry;
+        }
         int64_t lane_count = 0;
         for (const int64_t quantity : _epoch_derived_business_demand) {
             if (quantity <= 0) continue;
@@ -1765,6 +1791,22 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         return parsed > 0 ? std::min<int32_t>(parsed, 32) : 0;
     }();
     const int32_t good_count = market_store().good_count.get();
+    // Household demand can exist before the first building of a production
+    // chain is installed.  In that cold-start state the sparse market-signal
+    // CSR is empty for the finished good, so seeding only from signal lanes
+    // would never reach its hard inputs.  Build the sorted producer-output
+    // list once per refresh and use it as a bounded demand seed; the per-cell
+    // `seed_good()` gate still drops goods with no actual deficit.
+    std::vector<int32_t> producer_output_goods;
+    if (good_count > 0 && _investment_good_type_offsets.size() ==
+            static_cast<size_t>(good_count + 1)) {
+        producer_output_goods.reserve(static_cast<size_t>(good_count));
+        for (int32_t good = 0; good < good_count; ++good) {
+            if (_investment_good_type_offsets[good] <
+                    _investment_good_type_offsets[good + 1])
+                producer_output_goods.push_back(good);
+        }
+    }
     const int32_t tasks = (derived_parallel_enabled && use_snapshot &&
             _worker_enabled && cells >= 2 && parallel_has_real_worker_threads())
         ? (derived_forced_tasks > 0
@@ -1882,7 +1924,10 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 has_seed = key != _trade_active_keys.end() &&
                     (*key >> 32) == static_cast<uint32_t>(cell);
             }
-            if (!has_seed) continue;
+            // A market with no installed building signal can still have a
+            // demanded finished good whose catalog producer has hard inputs.
+            // Keep such cells alive for the cold-start output seed below.
+            if (!has_seed && producer_output_goods.empty()) continue;
             // Same arithmetic as the retired parallel household prepare:
             // per-capita previews weighted by cohort population.
             std::fill(household_demand_by_good.begin(),
@@ -1956,6 +2001,15 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                     cell, _epoch_research_good_id);
                 if (research > 0) enqueue(_epoch_research_good_id, research);
             }
+            // Do this after the existing sparse lanes so installed-building
+            // demand keeps its stable ordering.  The producer-output list is
+            // only a candidate set; `seed_good()` checks household demand,
+            // inventory gap, business flow, and procurement before enqueueing.
+            // This is the bridge that lets a demanded but unbuilt product
+            // (for example chipped stone tools) conduct its hard flint input
+            // upstream without manufacturing a producer owner or cashflow.
+            for (const int32_t good : producer_output_goods)
+                seed_good(good);
             if (queue.empty()) continue;
             out.seeded = true;
             out.enqueued_goods = queue.size();
@@ -2042,6 +2096,34 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                     if (derived <= 0) continue;
                     out.goods.push_back(derived_input_good);
                     out.quantities.push_back(derived);
+                    // Leontief shadow value: the downstream output price scaled
+                    // by this input's share of the recipe. It is a damped
+                    // price-adjustment reference for an input that has no
+                    // producer (and hence no observed cost anchor), not a
+                    // claim about the input's real production cost.
+                    int64_t shadow_anchor = 0;
+                    if (derived_price_conduction_enabled() &&
+                        entry.good >= 0 && entry.good < good_count) {
+                        const int64_t downstream_index =
+                            market_store().index(market, entry.good);
+                        if (downstream_index >= 0) {
+                            const int64_t downstream_price = std::max<int64_t>(
+                                1, market_store().price[downstream_index]);
+                            shadow_anchor = mul_div_sat(
+                                downstream_price, derived,
+                                std::max<int64_t>(1, entry.needed), sat);
+                            shadow_anchor = mul_div_sat(
+                                shadow_anchor,
+                                std::clamp<int64_t>(
+                                    _derived_shadow_anchor_weight_q16, 0, Q16_ONE),
+                                Q16_ONE, sat);
+                            shadow_anchor = std::clamp<int64_t>(
+                                shadow_anchor, 0,
+                                static_cast<int64_t>(
+                                    std::numeric_limits<int32_t>::max()));
+                        }
+                    }
+                    out.anchors.push_back(shadow_anchor);
                 }
             }
         }
@@ -2137,6 +2219,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 _track_b_derived_cell_cache[static_cast<size_t>(relative)];
             cached.goods = work_item.goods;
             cached.quantities = work_item.quantities;
+            cached.anchors = work_item.anchors;
             cached.edges = work_item.edges;
             cached.startup_calls = work_item.startup_calls;
             cached.enqueued_goods = work_item.enqueued_goods;
@@ -2180,6 +2263,18 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                     _epoch_derived_business_demand.resize(
                         _market_signals.good_ids.size(), 0);
                 }
+                if (derived_price_conduction_enabled()) {
+                    if (signal >= static_cast<int32_t>(
+                            _epoch_derived_anchor_price.size())) {
+                        _epoch_derived_anchor_price.resize(
+                            _market_signals.good_ids.size(), 0);
+                    }
+                    if (index < out.anchors.size() && out.anchors[index] > 0) {
+                        _epoch_derived_anchor_price[signal] = std::max(
+                            _epoch_derived_anchor_price[signal],
+                            out.anchors[index]);
+                    }
+                }
                 const int64_t before = _epoch_derived_business_demand[signal];
                 _epoch_derived_business_demand[signal] = saturating_add(
                     before, out.quantities[index], _saturation_count);
@@ -2209,8 +2304,10 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     }
     _derived_snapshot_hash = derived_hash;
     if (track_b_enabled && track_b_derived_spread <= 1 &&
-        track_b_derived_cadence > 1)
+        track_b_derived_cadence > 1) {
         _track_b_derived_carry = _epoch_derived_business_demand;
+        _track_b_derived_anchor_carry = _epoch_derived_anchor_price;
+    }
     // Deterministic work counters for the optimization gates. Aggregated by
     // EconomyCostProbe into one row per day, so this is cheap.
     EconomyCostProbe::record("derived.seed_cells", _current_day.get(), 0.0,
@@ -2433,6 +2530,15 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     population_changed = false;
     if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
         return true;
+    // The Track-B spread path carries review cells into later epochs without
+    // running the phase-4 prepare, while phase 6 clears the transient incumbent
+    // index at every epoch end. Key the prepare off the epoch itself so the
+    // first evaluation slice of any epoch always rebuilds that index; otherwise
+    // carried cells are reviewed as greenfield, the owner-vacancy gate and the
+    // staffing ceiling silently disappear, and empty shells keep expanding.
+    const bool need_prepare = initialize ||
+        _investment_prepared_epoch != _epoch_id.get();
+    if (need_prepare) _investment_prepared_epoch = _epoch_id.get();
     auto type_emits_monetary = [&](int32_t type_id) {
         if (type_id < 0 || type_id >= static_cast<int32_t>(
                 _building_types.size())) return false;
@@ -2446,7 +2552,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         }
         return false;
     };
-    if (initialize) {
+    if (need_prepare) {
         const auto prepare_lanes_started = Clock::now();
         _building_investment_score_q16.assign(building_count(), 0);
         _building_investment_payback_days.assign(building_count(), 0);
@@ -2542,7 +2648,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 _building_investment_rejection[group] = reason;
         }
     };
-    if (initialize) {
+    if (need_prepare) {
       auto is_review_cell = [&](int32_t cell) {
           return std::binary_search(_investment_review_cell_indices.begin(),
                                     _investment_review_cell_indices.end(), cell);
@@ -3440,6 +3546,31 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 // Remote preparation already deducted executable capacity for
                 // the component, so merge that lane after local reservations.
                 output_deficit = std::max(output_deficit, remote_startup);
+                // Derived-demand bootstrap: a scarce downstream recipe whose
+                // price has conducted into this input is a committed indirect
+                // buyer for its FIRST producer. Fold a bounded share of that
+                // shadow quantity into the demand-backed deficit so the
+                // absorption and revenue gates can see it. Price conduction
+                // alone leaves expected sales at zero on an empty shelf, so
+                // the upstream would still fail the owner-livelihood gate.
+                if (greenfield && derived_startup_absorption_enabled() &&
+                    derived_price_conduction_enabled() && signal >= 0 &&
+                    signal < static_cast<int32_t>(
+                        _epoch_derived_business_demand.size()) &&
+                    signal < static_cast<int32_t>(
+                        _epoch_derived_anchor_price.size()) &&
+                    _epoch_derived_anchor_price[signal] > 0) {
+                    const int64_t derived_qty = std::max<int64_t>(0,
+                        _epoch_derived_business_demand[signal]);
+                    if (derived_qty > 0) {
+                        const int64_t committed = mul_div_sat(
+                            derived_qty,
+                            std::clamp<int64_t>(
+                                _derived_startup_absorption_q16, 0, Q16_ONE),
+                            Q16_ONE, _saturation_count);
+                        output_deficit = std::max(output_deficit, committed);
+                    }
+                }
                 const int64_t anticipated_demand = std::max(
                     local_startup, remote_startup);
                 const int64_t demand_for_pressure = std::max(
@@ -3584,10 +3715,26 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int64_t exports = flow >= 0 && flow < static_cast<int32_t>(
                         _trade_flows.export_ema.size())
                     ? std::max<int64_t>(0, _trade_flows.export_ema[flow]) : 0;
+                // A priced Leontief shadow demand is a claim from a real
+                // downstream shortage, not a speculative ranking signal.
+                // Accept it as buyer evidence only for the first producer of
+                // that input, and only once conduction has actually priced it.
+                const int32_t boot_signal = market_signal_index(
+                    cell, driver.good_id);
+                const bool derived_boot_evidence =
+                    greenfield && derived_startup_absorption_enabled() &&
+                    derived_price_conduction_enabled() && boot_signal >= 0 &&
+                    boot_signal < static_cast<int32_t>(
+                        _epoch_derived_business_demand.size()) &&
+                    boot_signal < static_cast<int32_t>(
+                        _epoch_derived_anchor_price.size()) &&
+                    _epoch_derived_business_demand[boot_signal] > 0 &&
+                    _epoch_derived_anchor_price[boot_signal] > 0;
                 driver_real_evidence = household_demand > 0 || business_demand > 0 ||
                     withdrawal > 0 || epoch_real > 0 || epoch_substitute > 0 ||
                     epoch_funded > 0 ||
-                    research > 0 || startup > 0 || exports > 0;
+                    research > 0 || startup > 0 || exports > 0 ||
+                    derived_boot_evidence;
             }
             const int32_t driver_signal = driver.good_id >= 0
                 ? market_signal_index(cell, driver.good_id) : -1;
@@ -5587,6 +5734,5 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     if (population_changed && !rebuild_merchant_ranges(error)) return false;
     return true;
 }
-
 
 } // namespace pk

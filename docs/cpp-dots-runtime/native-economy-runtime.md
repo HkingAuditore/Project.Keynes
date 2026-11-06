@@ -1,0 +1,2426 @@
+# 原生阶层与本地市场运行时（Market V2 / Price V6）
+
+## 2026-11-06 下游缺料的冷启动价格传导
+
+派生业务需求刷新不再只从已经存在的建筑市场信号 lane 播种。每个活动市场还会检查
+具有投资生产者的商品输出；当该商品存在真实 household/business/inventory 缺口时，
+它会进入同一 Leontief 队列，按生产计划的硬投入数量向上游展开。该需求仍然是
+**shadow demand**：它只参与上游价格压力、成本锚和启动排序，不创建 owner、不扣现金、
+不虚增库存。这样一个尚未建成的石器工坊也能把打制石器的缺口传导为燧石派生需求，
+同时保留空闲建筑不能凭影子需求凭空生成业主的约束。
+
+该播种集来自编译后的 `investment_good_type_offsets`，按稳定商品 ID 排序；已安装建筑
+信号先处理，冷启动输出候选随后处理，因而不改变既有 lane 的确定性顺序。回归覆盖位于
+`tests/building/building_runtime_test.gd` 的
+`_test_leontief_seeds_without_installed_downstream`。
+
+## 2026-10-28 城市因子 CSR 现在包含派生层覆盖的格
+
+`refresh_city_output_modifier_factors` 的工作集来自
+`ModifierRuntime::collect_scope_stat_entries(ECONOMY, GROUP, ...)`，而该函数
+**已经并入派生层**（`modifier_runtime.cpp:1571-1584`）：
+
+```cpp
+if (domain == ECONOMY && scope == GROUP) {
+    for (const DerivedCellStatRow &row : _derived_cell_front.rows) {
+        if (!std::binary_search(wanted.begin(), wanted.end(), row.stat_id)) continue;
+        for (const int32_t cell : row.cells) {
+            if (cell < 0) continue;
+            entries.emplace_back(static_cast<uint64_t>(cell), row.stat_id);
+        }
+    }
+}
+```
+
+**为什么这对经济侧重要**：旧的理念 v1 平面曾是这条路的一个 override 生产者，它已被删除
+（plan 22 §15.7）。若没有上面这条并集，只有派生贡献、没有 legacy GROUP 桶的格会
+**不在工作集里**，于是逐格因子永远不会被记录，读者静默退回 `shared` 值。
+
+逐格取值本身走 `effective_value(ECONOMY, stat, 0, cell, 1.0)`（`economy_runtime.cpp:7327`），
+与派生层合并用的是同一次调用，所以在 `economy_runtime.cpp:7331` 处
+`factor_q16 == shared` 的比较自然包含了派生贡献。
+
+**不要**为了「让派生格进工作集」再加第二条路径；并集就是那条路径。
+
+
+## 2026-10-18 实际消费满意度
+
+舒适和奢侈改读各自 need tier 的实际消费 / 生活目标量；目标不随本轮财富、价格缩量、预算或缺货消失。
+正式 need 内容显式分为基本、舒适与奢侈。没有适用需求的消费维度在查询返回 -1，界面显示“不适用”，
+人口均值只使用该维度适用的人口。职业偏好在消费70%、财务20%、税负5%、发展5%四类预算内归一，
+缺少奢侈需求不再放大财务权重。存款只直接影响储蓄，缺少估价也不再自动给储蓄满分。
+综合分同时受温饱10%松弛与基本生活20%松弛约束，短板诊断会指出实际限制总分的维度。
+cohort 的生活档位改按实际消费判定。原生 C++ 权威、购买和资金划转、N/P/I、PKEC v56 字节布局不变；
+需求分档改变 catalog hash。公式、UI/查询契约与后续未实现项见[综合满意度运行时](./satisfaction-runtime.md)。
+
+## 2026-10-16 投资组合现金预检
+
+内生投资冻结整批建材发票后，先在本格临时账户上预演整组资金顺序：全部迁人、
+出资和商人放贷完成后，才依次支付建材并把收入分给商人。同一个 cohort 兼任
+出资人、商人或业主时，现金必须承受整个序列，不能把各候选的独立报价当成资金预留。
+不可支付时移除排名最低的剩余尾部项目并重试，沿用
+`building_investment_capital_limited` 计数；保留前缀不改变已冻结的材料选择。
+源 cohort 必须保留占位人口，负余额目标也必须在划款前通过可行性门。
+
+预演只使用 native、本格、临时数据；实际资金仍走原有迁移、家族归属、贷款和建造
+提交。funds/stock drift 硬校验、三项守恒、信贷敞口、周期、公共 API 和存档格式不变。
+`building_portfolio_funds_regression_test.gd` 通过现有 native fault-gate self-test
+覆盖商人自建款重复放贷、共用出资人透支、可支付前缀和资金充足的组合。
+
+## 2026-10-16 商人迁移与还贷守恒修复
+
+第 10315 天现场的 `money_error=-11166` 对应格子 4847 的七笔还贷
+`4939+774+193+1+1439+325+3495`。原还贷路径先扣业主现金；旧商人 CSR
+已没有活的收款人时，分账返回零，债务保持未偿但现金已丢失。
+
+商人迁移清空源 cohort、新增商人目的 cohort 或 invariant repair 改变商人槽位时，
+原生侧标记派生 CSR 失效。compact 与 StageOps 的生产入口都在派发并行任务前按需
+刷新一次；无商人结构变化时不重建。还贷必须先确认存在有效收款商人，缺失时延期且
+保持业主现金和债务原值；分账跳过已失效或已转职的缓存槽位。
+该 dirty 标记不进入 hash 或 PKEC，不改变 N/P/I、税率、铸币规则或状态权威。
+
+`tests/merchant_debt_conservation_regression_test.gd` 经已有 native fault-gate self-test
+验证无收款人时不扣款、商人替换后 CSR 刷新，以及重试时准确转移 11166 并清偿本金。
+
+## 2026-10-15 稀疏工作集与提交发布
+
+需求预估先查询既有国家商品科技门，再计算可用 variant 的价格。EPOCH_BEGIN
+预估发生在 `_epoch_active` 置位之前，必须沿用原来的 `good_available` 查询；不能
+只依赖周期中途的冻结掩码。目录编译证明价格计算不会产生饱和事件的 variant
+才可提前跳过；超大自定义组件数量仍执行原路径，以保持诊断计数和完整 hash。
+生产科技门、可交易商品与已有库存仍遵循各自现有规则，不因未解锁本地生产而删除库存。
+
+OwnedState 的 committed mirror 复用既有 ChangeRegistry Publish 消费游标。
+市场五列按 4 KiB 脏页复制；双缓冲必须取本轮与前一轮脏页并集，前两次或形状改变时
+全量复制。Hash/Audit 游标独立。所有账本字段仍更新，完整 shape/value 校验仍在每次
+发布执行；验证成功后才交换快照，失败、import、restore 会重置预热状态。
+公开导出及存档参照仍可全量导出，派生脏页历史不进入存档或权威 hash。
+
+`PK_ECONOMY_ACTIVE_WORKSET_DISABLE=1` 恢复晚过滤和全格家族评审；
+`PK_ECONOMY_MARKET_PUBLISH_FULL=1` 恢复全量市场发布；
+`PK_ECONOMY_MIRROR_VERIFY=1` 逐次与独立全量账本比较完整 hash。
+回归入口包括 `economy_sparse_workset_parity_test.gd`、`runtime_economy_pod_test.gd`
+与 `runtime_authority_m5_m6_gate_test.gd`。OwnedState 能否生效还须检查 Host 的
+switch count、pending command count 和 formula backing，不能仅以架构配置推断。
+
+## 国家经济总览查询（2026-10-11）
+
+`NativeEconomyRuntime::country_economy_overview(handle, view, scope_cell, filter_id,
+offset, limit)`（`economy_runtime_queries_country.cpp`）是国民经济卷宗唯一的数据源，
+只读、不进 PKEC、不参与状态 hash，也不得被任何模拟阶段读取。`scope_cell < 0` 汇总
+本国全部领土格，`>= 0` 只看该格（不属于本国返回 `cell_not_in_country`）。
+
+| view | 内容 |
+| --- | --- |
+| `summary` | 人口/就业/资金、居民日收支（工资、补贴、实物、税）、综合与温饱满意度、建筑单位/停业/产值/成本/欠薪/产出/丢弃/气候损失、5 个经济部门数组、`state_day_min/max` |
+| `professions` | 每职业人口、就业、资金、日收支、人口加权的生活档（`living_standard_level_q16`，与 `summary` 的 `living_standard_level_q16` 同口径）、8 维满意度（扁平 `satisfaction_dims_q16`）、按需求的最差需求人口 |
+| `buildings` | 每建筑类型的单位、停业、营收与各项成本、岗位、利用率、在建数和 19 种投资拒绝直方图；`filter_id` = 经济部门 |
+| `investment` | 全局与分部门拒绝直方图、在建项目（类型、组数、首个完工日） |
+| `goods` | 每物资需求/供给/实际提取 EMA、库存、短缺率、价格与成本锚、外贸 EMA、短缺格数 |
+| `settlements` | 每聚落人口、收入、满意度、岗位、建筑、利润、最缺物资和职业 CSR |
+
+口径：人口侧 period 账本按每格自身经过的天数折算为“每日”，建筑侧同样逐格归一；
+不同城市结算日可能不同步，结果用 `state_day_min/max` 标出，UI 必须提示而不是假装同日。
+金额为 money scale 10000 的整数，比率为 Q16。查询在 worker 模式下走
+`EconomyCommitView`（`ReadQuery::COUNTRY_ECONOMY_OVERVIEW`），未命中返回
+`economy_busy_retry`，调用方下一帧重试。
+
+## 建筑报价与税费口径（2026-09-30）
+
+建筑预测把产出拆成业主自用、商人收购和 producer support 三条收入分量。商人收购比例
+使用上一期 `producer_sellable` 与 `producer_merchant_sold` 的冻结快照；本期未被商人收购的
+可销售余量按实际结算的 producer support 价格（普通商品为零售价的五分之一，贵金属为
+`monetary_issue_value`）计入预计现金收入。没有历史渠道数据时，商人份额按 100% 处理，
+避免冷启动凭空创造 support 收入。
+
+正营业税和业主收入税的预测税基与结算保持一致：正营业税、收入税只对商人经营收入计征；
+营业补贴继续以合格投入、实际支付基础工资和维护费为基数；producer support 单独进入
+经济收入，不在当前税基中重复计税。投资、业主机会报价和就业使用同一分解字段。
+
+生产投入的 `quote_transaction()` 必须同时接收金额和实际商品数量。百分比交易税使用金额，
+绝对额交易税使用数量；生产输入按 `(good_id, rate, mode)` 聚合账单，不能只按税率合并。
+库存内部采购明确传入非应税标记，避免把库存采购误当成企业原材料采购。
+
+## 当前经济闭环契约（2026-09）
+
+以下规则覆盖本文中较早的铸币配额、投资分路和固定工资描述；旧段落保留用于迁移历史，不能作为当前运行时行为依据。
+
+- 所有建筑产出统一走：业主按消费计划自用，剩余交给商人收购，商人未接走的可存余量进入 producer support，超过当前 support issuance cap 的部分才是真实 discard。贵金属不走商人现金采购，直接由 producer support 按 `monetary_issue_value` 产生货币。
+- 贵金属铸币配额已经退役。`bullion_quota_initial`、`bullion_quota_remaining` 和 `bullion_quota_remainder_units` 仅为兼容诊断保留并恒为零；投资预测不得以配额限制贵金属收入。
+- 工资预测不读取建筑内容工资。岗位报价由生活成本、同职业本地合同工资/已付工资 EMA、建筑盈利能力和岗位填充情况共同形成。
+- 投资、启动生产、研究建设和就业追赶共享 `EconomicOpportunityQuote` 与 `InvestmentCandidatePlan`。不同入口只能改变 `InvestmentRequestContext`，不得重新计算另一套利润或回本期。
+- 公开经济恢复流程是 `begin -> feed -> end`；`begin_economy_restore()` 会准备 candidate scratch。
+
+## 2026-09-22 Country asset backpressure 与 fatal 取证
+
+### 唯一的 pending reason 集合
+
+`runtime_country_asset_pending_reason()`（`runtime_pod_protocol.h`）是 Country/Economy
+资产 backpressure 原因的**单一定义**。此前同一份字符串列表在五处各抄一遍
+（`economy_runtime.cpp` ×2、`economy_runtime_epoch.cpp`、`native_simulation_host.cpp` ×2），
+新增一个原因就要改五处，漏一处就变成生产停机。
+
+集合成员：
+
+```text
+country_economy_asset_host_pending
+country_economy_asset_results_pending
+country_economy_asset_rejection_retry_pending
+country_economy_asset_completion_retry_pending
+country_economy_fiscal_terminal_retry_pending
+country_economy_asset_result_identity_retry_pending  ← stale poll during CREATED→COUNTRY_PREPARED
+country_economy_asset_country_plan_pending   ← 2026-09-22 新增
+```
+
+共同语义：**请求要么还没分配、要么已被原样重新入队，没有任何 store 被改动**，调用方必须
+yield 并在后续 pulse 重试。把其中任何一个当成 fatal，都会留下半开 epoch。
+
+`country_economy_asset_result_identity_retry_pending` 只在 Host 已经用同一 request ID
+发布了新的 `COUNTRY_PREPARED` canonical row、而 Economy 仍提交旧的已 poll 副本时返回。
+Host 拒绝旧结果并重新入队当前 row；若 dispatch 仍指向同一 canonical row，身份不一致仍是
+真正的协议错误 `country_economy_asset_result_identity_mismatch`，继续 fatal。
+
+注意 `country_economy_fiscal_rejection_retry_pending` /
+`country_economy_fiscal_completion_retry_pending` 目前**不在**集合里（历史如此，未验证过
+改动影响）。它们看上去是同一类 backpressure，纳入前需要单独回归。
+
+### cohort cash 的 plan 窗口
+
+线程内 `coordinate_country_cohort_cash()` 路由以 Host 的 COUNTRY worker grant
+和当前 worker 线程身份为准，不再额外要求 Country facade 的
+`sync_store_writes_forbidden` 镜像已同步。镜像滞后时走异步兜底会丢失 cohort target
+和可续接的 request id；空 cohort 遗产回收在 `structural_commit` 重试时不断创建请求，
+最终表现为 `structural_country_asset_pending`、气候输入环满、日期停止但 `fatal=false`。
+结算仍复用 prepare → Economy peer side effect → Country finish，保持资金守恒；
+主线程不进入线程内路径，Country plan 窗口仍按下表 park。
+
+`prepare_worker_cohort_cash()` 的拒绝按类分开：
+
+| 条件 | reason | 语义 |
+| --- | --- | --- |
+| 非 worker 线程 / COUNTRY 未 worker 权威 / operation 不是 CASH_TO·FROM_COHORT | `country_worker_cohort_cash_boundary_invalid` | 契约违反，fatal |
+| `_country_pod_plan_active` | `country_economy_asset_country_plan_pending` | 时序窗口，park 重试 |
+
+`_country_pod_plan_active` 为真是 Country continuation 的**正常**形态：
+`execute_country_worker_stage()` 在 `country_economy_asset_results_pending` 等出口保留
+plan 不 discard，下个 pulse 从 pending 检查继续。它不是 flag 泄漏，不要加 RAII guard 去
+"修"它 —— 那会导致重复 plan_day。
+
+### 游标 drain 的 park 语义
+
+`LEDGER_APPLY` 与 `STRUCTURAL_COMMIT` 在 StageOps 与 compact 两条路径上都是游标驱动
+（`_command_cursor` / `_structural_cursor`）。命中 pending reason 时：
+
+- 不推进游标 → 同一条命令下个 pulse 原样重放，不需要新的 continuation 状态。
+- 不调用 `fail()`，不把 `EffectCommandResult` 标记为失败。
+- 调 `park_on_country_asset_pending()`：它先 `service_country_economy_asset_peer(64)`
+  让 Country 的终态继续落地（否则 Economy 等 Country 关窗口、Country 等 Economy 落终态，
+  互等），再写 `_executed_substage`。
+- compact 路径额外置 `country_asset_window_pending`，让外层 stage 循环整片 break 并在
+  `out` 里给出 `pending_input=true` + `yield_reason=country_economy_asset_country_plan_pending`；
+  否则 `command_range_incomplete → continue` 会在同一个 slice 里反复重放到预算耗尽。
+
+### fatal 现场与 audit_incomplete
+
+`fail()` 现在先 `capture_fatal_context()`，`report()` / `compact_report()` 以
+`fatal_context` 字典暴露：`stage`、`executed_stage`、`executed_substage`、
+`command_cursor`、`structural_cursor`、`command_opcode`、`target_handle`、
+`subject_handle`、`amount`、`d7_operation_gate_mask`、
+`country_sync_writes_forbidden`、`country_worker_authoritative`。
+命令 opcode 与 handle 直接从停在出错位置的游标反查，不需要在每个调用方埋面包屑。
+
+守恒三项改为只在**审计真的跑过**时才报：
+
+- 新增 `_closing_totals_valid`：epoch 打开时置 false，`PublishPhase::VERIFY` 置 true。
+- `report()` 计算 `audit_incomplete = !_epoch_active && !_closing_totals_valid`，
+  并给出 `audit_incomplete_reason`（`epoch_aborted_before_closing_audit` /
+  `closing_audit_not_run_this_epoch`）。
+- `audit_incomplete` 为真时 `population_error / money_error / goods_error` 一律报 0。
+
+原因：`fail()` 会把 `_epoch_active` 置 false，而这三项原先只按 `!_epoch_active` 计算。
+半开 epoch 里 mint 已入账、closing 还是上个 epoch 的快照，差值恰好等于本 epoch 的 mint。
+day 2744 那次 `money_error=-639200` 精确等于当天 `bullion_money_issued`，于是排查方向被
+带到一个不存在的守恒缺陷上。
+
+## Fiscal reserve 跨 slice continuation（K2-B 部分完成）
+
+财政 reserve 现在由两个明确阶段组成：`prepare_fiscal_budgets()` 一次性构造并冻结
+fiscal/tariff lane 的 `requested_by_country` 计划；`advance_fiscal_reservation()` 按稳定
+Country 顺序逐国执行 `fiscal_reserve` typed transaction。单个 `run_economy_slice()` 最多
+推进一个 Country，并持续报告 cursor、Country 数、day、最后请求量和实际预留量。
+
+reserve continuation 活跃时，Economy 保持在 `EPOCH_BEGIN`，不刷新 research demand、
+bullion quota 或开始后续 stage；完成后才进入 `finish_epoch_start_after_fiscal()` 的原有
+研究/生产路径。后续 slice 即使拿到更大的 wall-clock day，也继续保存的 admission day，
+不会把正常续跑误判成 `epoch_begin_fiscal_day_mismatch`；只有 transaction/request/session
+identity 真正不匹配才拒绝或 fault，且不自动切换同步权威。保存/恢复在 continuation 或
+`epoch_begin_post_fiscal_pending` 状态下明确失败，不编码财政事务中间态。
+
+回归：`economy_fiscal_reservation_continuation_test.gd` 当前 **failures=0**；
+当前 PKEC schema 为 52。v52 在既有 fiscal record 的十二组税务汇总后追加 Economy-owned
+`_fiscal_escrow_by_country`，并新增 `SAVE_SECTION_FISCAL_PEER` 保存 Economy-owned
+`request_id -> terminal result` journal；escrow 与 journal 都进入 Economy state hash。
+恢复时按 Country snapshot 的固定 slot 数逐项校验，journal 要求 identity 唯一且完整；
+缺项、重复项、负值或 shape 不匹配都会失败，不会把 D7 peer reservation 静默归零。
+重复 request 只重发原 terminal，不再次修改 escrow。财政 continuation
+仍由 Economy-owned coordinator 在同步 Economy stage 内推进，但 M1 fiscal bridge 已可在
+Country worker 唯一写者模式下经 Host request/result transport 完成 peer 结果消费；Host
+已具备 `D7T1` transaction journal section 的编解码、checksum 和恢复基础。
+
+2026-09-13 Phase 2–6：`implemented_domain_mask` / 生产 request 为 **`0xFFF`**
+（Climate|Country|Trigger|Ideology|Modifier|Effect|Economy|Events|COMMIT）。
+ACTIVE 日路径在 ECONOMY 授予位下调用
+`NativeEconomyRuntime::worker_run_compact_slice`（同一 `run_slice_compact` 公式
+owner，最多 64 片/日）。StageOps 默认 `mutate=false`（SHADOW POD 哈希对拍）；
+Phase-2.4.1 可用 `economy_stage_ops_mutate` 武装 mutate，但 ACTIVE 日环仍走
+compact-slice，且 `ACTIVE_WITH_PARITY` 会强制 StageOps 只读。主线程
+`economy_should_run` 仅在 worker 权威且 production runtime 已挂接时抑制。
+worker 权威下主线程仍通过 `DCWorldExt::capture_economy_day_inputs` 冻结当日
+环境/建筑上下文（不跑 mutation）；缺捕获时 compact slice 以
+`pending_input` 软停车，不写 ledger fatal。
+Phase 3：权威时 `open_all_d7_operation_gates` + 非财政 peer side-effects。
+Phase 4：POD opcode 1..23 准入/ACK；`commit_pending_commands` 在 Host ACTIVE
+挂接 `EconomyPodCommandExecutor` 后经 `apply_pod_command` → `apply_command`
+执行（与 sync `submit_commands` 单路径，禁止同请求双提交）。无 executor 时
+SHADOW self_test 仍可 Committed-without-mutate。
+Phase 5：`RuntimeEconomySnapshotRing` + PKSR **ECP1 ABI4**（业务摘要、
+committed cohort/market ledger mirror、独立 ledger generation/hash）；恢复先在临时
+POD owner 中校验页拓扑与 hash，失败不替换 live committed state。PKEC 仍管完整业务态。
+named kernel TU 经
+`economy_dispatch_mutate_stage(EconomySoAView&)` 复用 `NativeEconomyRuntime` 公式。
+Soak：`tests/runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`）。
+
+## A+Y Terminal Closeout（2026-09-15）
+
+Save 轴 **A**：PKEC v52 全量权威；ECP1 ABI9 仅 committed mirror。
+Runtime 轴 **Y**：`POD_ACTIVE` 下 `bind_formula_owned_state` 使
+`population_store()` / `market_store()` / `buildings_store()` /
+`resource_stock_lanes()` 别名 `RuntimeEconomyOwnedState`；trade/family live 经
+`trade_orders_store()` / `families_store()` 单实例，扁平 SoA 为 ECP 投影。
+
+| 域 | 终态 |
+|----|------|
+| Pop / Market | OwnedState sole SoA |
+| Building | Owned SoA 阶段间权威；`_buildings` 为 drain scratch（materialize/flush） |
+| Trade | NER `TradeOrderStore` sole live；arrival buckets 派生不入 ECP hash |
+| Family | NER `FamilyStore` sole live；`RuntimeEconomyFamilyStore` = capture/ECP |
+| Resource | bind 时 stock move 进 Owned；热路径经 `resource_stock_lanes()` |
+| Dispatch | `economy_dispatch_mutate_stage(view)`；bound 时要求 view pop/market/buildings |
+| Capture | 日末 flush → Owned identity pack；命令失配 fault（非静默 recapture） |
+
+报告：`economy_formula_backing=owned_state`（生产 `POD_ACTIVE`）。
+**Still open（非本收口）**：ECP2 取代 PKEC；mid-epoch resume。
+
+## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
+
+Country treasury 仍由 `NativeCountryRuntime` 持有；本节新增的 typed transaction 只定义
+Economy 与 Country 之间的异步边界，不改变现有 Economy 价格、采购或财政算法。第一条已落地
+的 `treasury_spend` 流程为：
+
+`Created -> CountryPrepared / reservation -> AwaitingPeerPrepared -> PeerPrepared`
+` -> CommitDecided -> CountryApplied -> AwaitingPeerApplied -> PeerApplied -> Completed`
+
+Country 侧 reservation 按国家现金和逐商品库存累计，reservation 阶段不修改已提交余额；
+prepare ACK 必须匹配 session、Country generation 和 peer generation，拒绝时释放 reservation。
+commit decision 之后只允许使用原 transaction ID 重试，Country 现金和商品只应用一次；peer
+apply 拒绝进入 `FAULTED`，不自动回滚或伪装为成功。每个商品都记录 before/after/committed
+quantity 并执行守恒检查，业务拒绝与 ledger failure 分开统计。
+
+Country 保存入口在存在 in-flight asset transaction 时明确阻塞，拒绝捕获 reservation 或
+commit 中间态；事务完成或进入终态后才允许保存。当前生产 Economy 已调用
+Economy-owned coordinator，但仍在同一同步调用内完成 peer prepare/commit/apply/ACK，尚未移到
+持久 Host 的跨帧 outbox/inbox。
+此外，`fiscal_reserve` 已复用同一状态机：Country 侧按「现金余额减去已有 reservation」
+计算 prepared quantity，允许实际准备量小于请求量；commit 只扣减 prepared quantity，之后
+等待 peer applied ACK。它目前仍是可调用的协议垂直切片，不代表现有
+`economy_reserve_fiscal_cash()` 已改为跨帧执行。
+
+Country↔cohort cash 与 Country↔market goods 也已具备同一可调用事务边界：扣款方向按未预留
+现金/商品返回实际 prepared quantity，入账方向按 Country 的现金/商品容量做溢出预检；commit
+只应用一次，商品守恒按 operation 方向分别检查。生产 Economy 的 cohort cash 与 market goods
+命令已改为分别调用 `coordinate_country_cohort_cash()` /
+`coordinate_country_market_goods()`；结构性空 cohort 清理和迁移余数也经过同一 cash coordinator。
+
+research purchase 已接入统一 typed transaction state machine。政府采购现由
+`NativeEconomyRuntime::coordinate_country_research_purchase()` 负责真实 peer-side
+预检和应用：固定候选顺序下先验证市场库存、活商人和整数分账，再执行 Country
+prepare/commit、市场扣货、商人入账、withdrawal EMA 和 Country applied ACK；不再调用
+`economy_purchase_research_points()` 合成兼容入口。`GOVERNMENT_RESEARCH_PROCUREMENT`
+阶段的候选列表、预算、剩余需求和 cursor 保存于 epoch continuation，窗口未完成时不会
+推进到 `TRADE_DISPATCH`。专项证据为 `technology_procurement_runtime_test.gd` 与
+`technology_procurement_country_worker_test.gd`，以及
+`runtime_country_economy_transaction_test.gd`：**43 checks, 0 failures**。
+财政 reserve/return/collect 已由 `coordinate_country_fiscal_transaction()` 驱动；
+construction/canal treasury material/cash 已由 `coordinate_country_treasury_spend()` 统一
+完成 Country 多商品扣款、market 扣货、merchant 分账与 peer ACK，调用方不再重复应用
+market/merchant 副作用。上述 coordinator 仍是同步 Economy stage 内的纵向切片；Host
+transport 已有内存协议和 D7T1 journal，M1 fiscal 的 Economy-owned peer reservation/apply
+journal 与 PKEC v52 restore 已完成；cohort/market/research/treasury 的跨帧 continuation、
+restore 后 reservation reconciliation 和正式 per-operation gate 尚未完成。
+当前 M1 财政三件套（`fiscal_reserve` / `fiscal_return` / `fiscal_collect`）与
+`research_purchase` 在 Country worker 唯一写者模式下经 Host peer 完成：财政走既有
+reservation/settlement continuation；政府采购在 `government_research_procurement`
+内用 `pending_request_id` 跨 pulse 入队/准备/终态。`COMPLETED` 的 `RESEARCH_PURCHASE`
+不得由 Country day-start / Economy stage-end 的通用 `flush_country_economy_asset_commits`
+提前扣国库；否则开盘快照已含扣款、商人入账落到下一 epoch，会打出
+`money_conservation_failed`（正 money_error）与负 `goods_error`。终态后由政府采购
+continuation 在同一 advance 内：`finish_worker_country_asset(request_id)` 或
+`flush_country_economy_asset_commits(error, settle_request_id)` +
+`publish_country_worker_snapshot` 落地国库扣款/科技值，再完成市场扣货与商人入账。
+同理，殖民远征采购 continuation 在 epoch 之间推进，其 `GOOD_FROM_MARKET`（市场 → 国库，
+商人入账在 continuation 内）与 `TREASURY_SPEND`（国库 → 远征货物）入队后经
+`defer_country_economy_asset_settlement` 登记：任何不带该 id 的 flush（通用或科研采购的
+定向 flush）都不得提前提交其 `COMPLETED` 终态；epoch 打开期间
+`service_country_economy_asset_peer` 也不 journal 这类请求，留待 epoch 外服务。否则市场扣货
+或国库扣款落在科研采购所在的 epoch 窗口内、商人入账/远征装货落在窗口外，会打出
+`money_conservation_failed` / `goods_conservation_failed`。远征取消时，若第 1/5 阶段请求仍在途，
+续接转入 `_family_expedition_procurement_orphans` 并保持推迟；
+`settle_family_expedition_procurement_orphans`（`process_due_family_expeditions` 开头调用）
+等到终态后定向结算。采购腿补上商人入账，货留在国库；转移腿把货退回来源市场。直接
+`release_country_economy_asset_settlement` 交还通用 flush 会丢掉这条对侧腿。没有在途请求时才
+`release`。只交物资不付现金的
+`TREASURY_SPEND` / `GOOD_TO_MARKET` / `GOOD_FROM_MARKET`（`requested_cash == 0`）的
+`committed_cash` 必须为 0，Country worker 提交扣款不得超过 prepare 的 `reserved_cash`；
+旧存档 journal 中“数量当现金”的记录读档时归零。
+若当时 Country `plan_active`，flush 必须同时写入 `plan.next_state` 与 authority
+（不 bump generation），否则 publish 仍读到未扣款基线、UI 科技值停在开局库存、
+商人入账后守恒失败。拒绝/故障终态仍由通用 flush 立即退役。Country ACTIVE 时主线程图会打开
+`RESEARCH_PURCHASE` 门（Economy ACTIVE 仍
+`open_all_d7_operation_gates`）。Enqueue 会唤醒 Country peer，便于同日 prepare。StageOps 把
+`country_research_peer_results` 当作同日回压，不写入 epoch fatal；否则
+`commit_epoch` 会以 `economy_pod_fatal` 停钟，并把国家读视图退回交接前的同步存档。
+cohort/market/treasury 的跨帧 continuation 与 operation gate 验收仍未完成；未开放的
+operation 继续显式返回 `country_economy_operation_gate_closed`。
+
+2026-10-11：D7 掩码的开放规则收敛到 `native_simulation_host.cpp` 的
+`open_granted_economy_d7_gates`（Economy worker 权威 → 全开；Country worker 权威 →
+研究 + `GOOD_FROM_MARKET` / `TREASURY_SPEND`；否则只开研究），只做按位或。
+`attach_economy_production_runtime` 与 worker 每次进入 ECONOMY 阶段都调用它。新开局的
+worker 在 attach 之后才异步提升为权威，而 ACTIVE 下主线程不再跑 runtime-graph pulse，
+`sync_runtime_domain_ownership` 不会再执行；此前掩码因此停在 attach 时的 `0x1e`，
+家族开拓备货每天以 `country_economy_operation_gate_closed` 被拒、停在 0%。读档路径在
+worker start 后立即同步，不受影响。
+
+## 2026-09-03 Incumbent 扩容使用揭示单位经济
+
+本地已有同类型在营组且上期有产出实绩时，扩容投资的利用率取
+`min(市场驱动, 气候, max(软投入覆盖, 揭示产能强度))`，生计/目标利润/回本门禁改用
+`(Σ last_revenue + Σ in_kind) / active_count` 等揭示每座日经济，现金份额仍按吸收率缩放。
+绿地说（无 incumbent）保持原报价。避免「旧营地富得流油、新建一座却 OWNER_LIVELIHOOD」的口径分裂。
+
+## 2026-09-03 投资批量按共用库存收窄
+
+内生投资的报价按「单座 + 满库存 + 最便宜候选材料」冻结每座所需资本（自筹 + 商人信贷），
+而下单阶段同一格最多四种建筑要按 portfolio 顺序共用同一份库存，前面的类型占走便宜的首选
+材料后，后面只能选更贵的替代品。原实现在分配阶段只校验材料能否凑齐，把资金校验留到
+下单前，材料替代抬价即触发 `building_investment_cost_preflight_drift` 致命中止。
+
+现在 `additional_capacity` 的材料二分同时要求「该栋数的重算发票 ≤ 该栋数的资金包络」，
+并在全部分配轮次结束、迁移人口与资金之前，按与下单完全一致的顺序和共用库存再核一次：
+超包络即把 `allocated_count` 二分收窄到仍撑得住的最大栋数（可为零，视作本次不投），
+随后重算 `active_types`/总栋数/业主人口与 `portfolio_credit_required`。单位造价随批量
+单调不减，故该谓词单调、可二分。下单前的三个 `*_preflight_drift` 检查保留为兜底断言。
+
+`building_investment_cost_envelope_trimmed` 报告被收窄掉的栋数；受此约束的批量沿用既有
+`building_investment_capital_limited` 计数。资金包络公式、商人信贷政策与材料替代选择算法
+均未改动，不涉及 PKEC 字节布局、state hash 或调度阶段。
+
+## 2026-08-31 开放获取资源与可兑现工资（PKEC v50）
+
+可再生资源默认 `resource_safe_harvest_q16=0`，即不实施行政安全产量。
+`extract` 建筑按冻结本地生态容量与当前存量计算线性 CPUE；允许开采超过自然增长并
+耗尽资源。正值仍开启原有 `(cell,resource)` 共享安全开采预算，作为未来政策入口。
+
+### 湾区单格资源尺度（`BAY_CELL_EARLY_BUILDING_TARGET = 5000`）
+
+一格约粤港澳湾区面积。内容校准锚点为约 **5000** 座早期建筑（千–万量级），单位须计入
+`CELL_AREA_RESOURCE_SCALE(=100)` 与 `GOODS_SCALE(=1000)`：
+
+- 生物 extract（BH）：`ecology_capacity ≈ 4·N·q_early / (r·1e5)`，使半载 MSY 约等于 `N` 座满负荷抽取；
+  例 `wild_game` 用 `q=163,r=0.01` → authored `3260`（运行承载 `3260×100`）。
+- 农业 capacity：门闩为 `available/(count·q)`，现有 `init_min_reserve` 已远超 `N`；补齐牧场/农地
+  `gen_self`/`decay_self` 做缓慢恢复，不走密度 CPUE。
+- 矿产 extract：`init_min_reserve ≈ N·q_early·3650 / 1e5`，使约 `N` 座早期矿场满抽仍约十年储量；
+  真矿产 `gen_self=0`，仅 `clay`/`salt`/`saltpeter` 保留并上调现网再生。
+
+不恢复抽取硬配额；线性密度 CPUE 仅作用于 `ecology_capacity>0` 的可再生 extract。
+
+雇员机会收入由合同工资、上一周期岗位实付比例和 cell/profession 实付工资 EMA
+共同形成。工资可负担报价按含资源 CPUE、气候和计划利用率的可执行产能计算。
+低兑现岗位的可移动在职人口按周期化 mobility 比例进入既有失业池，再通过确定性
+largest-remainder 候选分配转岗；不增加逐人口 agent、稠密职业矩阵或新调度阶段。
+
+权威实现仍位于 `NativeEconomyRuntime`。资源密度与预期工资均为派生值，不进入
+PKEC 字节布局或 state hash；公式版本升级要求新游戏。
+
+## 2026-08-30 Price V6 当前契约
+
+定价权威仍在 NativeEconomyRuntime。移除目录最低售价，`1` 只作为数值下界；
+商品最高价改为参考上限，由成本基础上限和持续有效短缺共同决定当前上限；保留 1–5 日周期。库存积压按已有库存压力削弱正成本锚，负成本压力不变。
+小额账单合并后向上取整，报价、预算与支付共同使用整数计价；不增加持久化费用余数。
+PKEC v49 要求新游戏，旧价格机制没有静默回退。详见
+[定点计价与账本](economy-fixed-point-ledger-formulas.md)。
+
+聚合诊断新增 `price_numeric_floor_hits`、`price_min_tick_hits`、
+`price_glut_cost_damp_hits`、`small_payment_roundups`，并保存对应 `last_completed_*`。
+`last_completed_price_ms` 记录完整结算周期的价格 CPU 时间；选中市场还可查询
+`price_cost_glut_damped` 和 `price_numeric_min`。无逐商品日志或全局快照复制。
+
+验证入口：`tests/price_v6_runtime_test.gd`、`tests/price_v6_business_test.gd`、`tests/price_v5_runtime_test.gd`、`tests/price_v5_bench.gd`，以及
+`scons -C gdext/tests -f SConstruct.price_v5` 的原生定点边界测试。
+基准必须显式标明 DLL、周期、场景和重复次数；不能将守恒或单次计时当作经济精度／性能证明。
+下方带日期的 V3/V4 内容属于历史记录，价格下限和存档兼容以本节为准。
+
+
+历史契约（已被 v49 仅同版本读取规则替代）：PKEC v47 writer 的 reader 曾接受 v47、v46、v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
+`startup_demand_runtime_mode` 固定为 `OFF`；v41 不得含 `EXPEDITION_PREPARING`。
+v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
+分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
+（人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
+且该毫秒只在 `aggregate_publish` COMMIT 完成时累计，不恢复 `market_cycle_days=0` 的 50/334 日快进档。
+每天工作集是活格 ∩ 市场桶；`due_cells` 不再等于 `cell_count / N`。
+当前 reader 只对 v45 交易订单显式把缺失交易税列迁移为零；v40 及更早 schema 全部明确拒绝。
+v41 仅向前兼容读。
+
+建筑决策严格区分事实锚与边际反事实：实际生产仍按真实 owner/role fill 的最小 workforce
+capacity 执行，但就业、转职和投资使用一次性的建筑级 opportunity quote，不因空缺 owner 或
+当前填充率把收益压成零；报价收入优先采用上一结算期回执，并把自用商品按冻结零售价并入同一
+总收入。绿地候选才使用结构化配方、冻结价格、财政支持比例和 bounded prior，并在
+首栋/首个职业上受数量上限约束。金银矿共享 epoch 铸币配额：财政 reserve 后只以可支配的 cohort
+现金和国库现金计算发行基数，排除 fiscal/trade/expedition escrow；同格已装/在建铸币单位和至多四个
+可执行绿地候选共同分摊该池，避免 gold/silver 各自预占全额。**以上 bullion shared pool 仅为历史设计，当前版本已退役；现行贵金属按 producer support 面值结算，quota 字段恒为零。**科研采购同样读取财政 reserve 后的
+可用现金，正税、补贴、营业税和收入税通过同一 after-tax cashflow helper 同时进入事实与预测。
+`last_observed_capacity_days_q16` 是上一结算期实际到岗能力天数的事实标记，不是计划值；已观测
+回款先除以该标记得到满能力日回款，再乘当前 `min(workforce, plan, climate)` 一次，不能把周期总额
+再次乘以建筑天数或把 workforce 重复缩放。该标记只含到岗率、不含计划开工率，因此现金类回款
+（商人收购、铸币、兜底支持）还要再除以上期自选开工份额 `min(1, 上期计划/上期到岗)`（上期计划取
+`_building_planned_capacity_before_climate_q16`，份额下限 1/32，上期计划为 0 时不放大）；业主实物
+自用受消费篮上限约束，不做此缩放。否则停在生存下限的食物组会把自己的限产当作低价，永远报不出
+满负荷盈利。实际回款为零仍是零，但生存食品/衣物可以在冻结最低
+生存下限内获得有界执行探针，且仍受资源、投入和工作资本约束。
+
+经济录制器 CSV v25 追加且不重排既有列：`summary` 记录 epoch 的
+历史版本的 `bullion_quota_initial`、`bullion_quota_remaining` 与
+`bullion_quota_remainder_units`；被选格的 `buildings` 候选行记录共享额度、每日额度、
+已装/在建单位数、候选槽数、铸币请求和预期收入。这些是派生诊断，不进入 PKEC 或 state hash。
+领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
+
+2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
+closing audit 契约见
+[运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
+
+实现入口为 `gdext/src/economy_runtime.{h,cpp}` 与
+`gdext/src/world_ext_economy.cpp`。`DCWorldExt` 组合持有独立
+`NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
+`MapData.goods_*`。
+
+## 2026-08 终端需求、阶层响应与冷启动
+
+当前内容目录为 135 goods、356 buildings、20 needs、11 consumption plans。每个计划都
+包含稳定的八项主食替代：`prepared_staples`、`bread`、`grain`、`wheat_grain`、
+`rice_grain`、`corn_grain`、`potatoes`、`gathered_plants`。小麦、稻米和玉米是可直接
+进入居民 `staple_food` 的栽培主食；`food_fat`、`seasoning`、`domestic_wares`、
+低频 `housing` 维护组合和 `electricity` 公用事业路径也由同一消费目录编译。
+
+居民数量由 Need 财富弹性和商品财富弹性共同决定；计划的
+`variant_class_wealth_elasticity_delta_q16` 调整阶层响应，
+`variant_class_savings_threshold_factor_q16` 调整不同阶层的储蓄门槛。价格先影响
+variant 替代分数，再影响 Need 总量；财富提高不会降低同一阶层的需求，商品涨价不会
+提高该商品需求。所有计算使用 native Q16/LUT，不增加 cohort×variant 稠密状态。
+
+`startup_demand_runtime_mode` 仅接受 `OFF`/`ACTIVE`。ACTIVE 在投资 review batch 中
+从真实家庭、营业、科研和库存缺口沿现有生产 CSR 向上游传播瞬态预期需求；同一
+`(cell, good)` 采用 max 聚合并用 generation stamp 终止环路。预期值不写入价格、库存、
+贸易或任何 EMA，也不进入 PKEC/state hash。国内远程缺口只在同国、同 component、可见
+且可达 lane 内匹配，并按稳定 cell ID 扣减共享容量。
+
+## 2026-08-04 综合满意度接管（PKEC v30）
+
+cohort 满意度不再是单一的生存指标。`_population.composite_satisfaction` 是权威的
+八维度综合指数（温饱/基本/舒适/奢侈/收入增长/储蓄/税负/社会发展），按 profession
+数据驱动权重在类别预算内归一后加权，并经温饱与基本生活约束封顶，接管出生率、同格就业流动排序与家族分支晋升评审，
+并按等级跨越发布 `EVENT_ECONOMY_SOCIAL_PRESSURE`。`needs_satisfaction`
+（`SAT_DIM_SUBSISTENCE`）保留原语义但**只**驱动饥饿死亡。
+
+2026-10-18 起基本/舒适/奢侈取实际消费相对生活目标的满足率，目标不随财富与价格缩量。
+未适用消费档不参与评分，权重在消费类别内部重分配；存款购买力只用于储蓄。
+
+维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
+性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。
+
+## 2026-08 真实物流承载力（PKEC v45 历史段）
+
+承载力只读取本格最近完整结算的食物流量，不扫描自然资源或寻找最佳建筑。
+本地净食物当量为实际产出减生产投入；有效供给再加已送达进口并减已发出出口。
+`local_food_capacity_persons = local_net / days / per_person_food`，
+`effective_food_capacity_persons = effective_supply / days / per_person_food`。
+家庭购买是所有权转移，不重复计入产出；加工链按输出当量减输入当量。
+`food_access_q16` 仅记录家庭实际购买与生产者自留消费，生育仍由综合满意度和有效供养负载共同决定。
+首个尚无完整物流周期时不施加密度约束。查询字段见 `carrying_schema_version=2`。
+
+### 2026-10-20 错峰结算下的口粮快照
+
+`food_access_q16 = clamp(已取得食物当量 / (人口 × 统计天数 × 每人每日生存口粮), 0, 1) × 65536`。
+食物当量通过目录的 `good_food_equivalent_q16` 折算；当前每人每日生存口粮为基础生存计划中
+食品需求的 `base_qty_per_person` 合计。购买和生产者自产自用计入取得量；仓库库存和在途货物不计入。
+它反映食物取得量，不等于饮食多样性、综合满意度或本地产量。
+
+每天只结算 `_epoch_settlement_cells` 中的市场桶。`commit_food_flow_snapshot()` 只替换这些格的
+生产、投入、口粮取得量，其他格保留最近一次完整观察；禁止将未结算格的零 scratch 发布为缺粮。
+尚未观察的格保持原有 bootstrap 默认值，不提前标为已观察。真实结算取得量为零时仍报告零。
+已发布流量统一保存为每日当量，`food_flow_previous_period_days=1`，避免下一桶的账期或 N 重锁
+改变未结算格分母。使用实际计算本批生产/消费的 `_epoch_days` 归一，整数误差小于一个食物当量子单位/日。
+贸易仍按原全局 epoch 观察更新进口/出口，包括非本日市场桶的到货；不更改贸易调度或账本。
+承载力仍在既有 COMMIT 内重算，并可响应现有可用库存变化。
+
+PKEC/ECP2 字节布局、字段 ID、schema、N/P/I 和经济权威不变。旧档保留其原统计天数；
+第一次新 COMMIT 将旧流量除以所存天数，之后按每日口径写入。原先被清零的旧观察须等本格
+下一次结算恢复（最多一个当前市场周期）。UI 不做插值或平滑。
+专项入口 `tests/economy_food_snapshot_test.gd` 复用 `economy_cadence_runtime_test.gd` 的夹具：
+N=1/3/5、未结算/真实缺粮、N 重锁、
+本地产量保留、summary/detail 一致、worker/scalar hash 和 ECP2 往返。
+Windows 构建默认库名为 `dots_ext_food_snapshot_v56_r7`，与 `.gdextension` 保持一致，
+避免覆盖仍被运行中游戏占用的旧库；重启后加载新库。
+
+Economy configure 会把职业的稳定 `profession_class_id` 独立 intern 为政治阶层
+slot，不复用承载力权重。在 `aggregate_publish` 的 committed swap 之后，
+country-development 的既有人口扫描同时聚合双缓冲
+`CountryClassOpinionSnapshot`：国家句柄/代际、阶层 hash、人口、资金、
+owner-employed、人口加权满意度、epoch/commit day 与单调 revision。行布局固定为
+`country_slot * class_count + class_slot`。该快照是 derived POD，不进入 PKEC；
+Ideology 只读上一个 committed buffer，不扫描 cohort。报告字段
+`class_opinion_last_cells_scanned`、`class_opinion_last_slots_scanned`、
+`class_opinion_last_zero_population_rows` 与 `class_opinion_ms` 提供每次 COMMIT
+工作量，累计字段用于长窗口审计。
+
+## PKEC v22 production climate（历史基础，当前由 PKEC v41 持久化）
+
+PKEC v22 introduced frozen daily temperature, 30-day temperature, and
+plant-available water in every cell record and four climate diagnostics in every
+building record. The `foraging_plants` profile now uses the daily temperature
+snapshot. All production profiles use plant-available water captured at the
+economy-day boundary, while other profiles retain the established 30-day
+thermal signal. These fields remain in v41, enter the state hash,
+and participate in restore range validation; the current reader accepts only v41.
+
+`ProductionClimateProfile` is compiled by stable ID. Due-cell building prepare
+computes Q16 temperature fit, water fit, and floor/exposure capacity. Employment
+uses the pre-climate plan, while expected revenue, investment, retained offers,
+input/resource withdrawals, and actual output use the climate-capped plan.
+Production applies the cap after labor, input, capital, and resource abilities.
+CSV v23 and selected-cell snapshots expose the decomposition; no new scheduler
+stage or GDScript economy authority exists.
+
+## PKEC v19 就业稳定、企业重整与商人信用（historical）
+
+Endogenous entry uses `endogenous_owner_portfolio_v8`. A reviewed cell keeps
+at most four unique building types in a fixed native portfolio, fills at most
+25% of each persistent marginal-output gap, and submits one aggregate BUILD
+command per selected type. Aggregate willingness is derived once from the
+source cohort's projected disposable-income improvement; it never loops over
+persons or gives the unemployed profession an explicit priority. Shared
+population, capital, merchant credit, construction stock, and driver-good gap
+budgets are consumed once across the portfolio. When two or more types start,
+no type may exceed 50% of newly planned owner slots.
+
+Candidate entry now requires only a marketable driver with positive marginal
+deficit and positive projected utilization. Historical sell-through still
+discounts projected cash revenue; shortage and utilization still rank the
+portfolio; discard remains a utilization/diagnostic signal. None is an
+independent 80%, 10%, 12.5%, or 65% profitability gate. Approval still requires
+the configured operating margin and payback plus sponsor capital, construction
+materials, input coverage, building conditions, and natural resources.
+`investment_min_shortage_q16` and `investment_min_utilization_q16` remain in the
+PKEC policy bytes only for compatibility.
+
+Before scoring, the runtime subtracts unused installed capacity and aggregate
+pending-construction capacity from the marginal-output gap. Established types
+may grow by at most 10% per review; absent types seed at one building. A
+non-merchant must gain at least 50% Q16 disposable income to enter the merchant
+profession. The test fixture creates one merchant post per populated cell, and
+runtime employment, colonization extract/kit filling, and merchant-index rebuild
+all protect or repair the final local merchant. Epoch preflight treats a
+zero-population merchant primary as missing and repairs it instead of trusting
+the stale CSR. Household demography can still zero a merchant cohort immediately;
+`STRUCTURAL_REMOVE_EMPTY` and merchant repair wait until after
+`government_research_procurement` and `trade_dispatch`. Procurement therefore
+pays only living merchants (`population > 0`) and skips dead lanes instead of
+debiting country treasury and then failing the epoch. The legacy
+`purchase_research_points` caller now routes through the Country typed
+research-purchase transaction; the compatibility adapter completes it with
+synthetic peer ACKs until the real market/merchant coordinator is connected.
+ACTIVE must not use that synthetic path.
+
+Recovery liquidation remains behind the existing executable-but-unprofitable
+review gate. An approved review now retires only confirmed excess capacity,
+capped at 25% of the group per review, and moves the same proportion of
+merchant debt to bad debt. Building groups remain aggregate; no per-building
+state is introduced.
+
+`NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。PKEC v35 的建筑公开状态仅为
+`ACTIVE / SUSPENDED_LOSS`；停产组不再保留试产产能、岗位或投入需求。停产组可从本格
+商人聚合现金池取得仅用于建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金
+优先偿还。满足硬输入、资源、融资和盈利条件的停产组只写入 `pending_operating_state=ACTIVE`，
+在下一个 frozen 结算边界直接恢复；软投入缺货不阻挡该门（只降低反事实产能）。有利可图的
+复工可从本格任意非商人劳动力回填业主（不仅限失业/同业），以便涨价后的燧石类停业组能重新上岗。
+连续 73 次五日清算复核（约 365 天）仍不可恢复时，
+才按确认的过剩产能分批清算，商栈除外，未偿债务只记坏账。自产实物收入按冻结零售价
+持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
+2026-09-20 旧语义对照修复：实际亏损停业的经营成本恢复为本组已结算的
+投入、基础工资应付及维护费（参照提交 `207f5099`）；业主生活成本仍参与岗位
+收益和生活可行性评价，不再将单座单日生活报价加到整组实际经营成本。
+连续亏损计数与停业/恢复边界保留。当前 `owner_only_loss_enters_lifecycle`
+测试要求仅生活费不足就停业，与恢复的旧规则冲突，尚未作为通过项；其余就业与恢复
+回归也未全部通过，不能据此宣告迁移经济验收完成。
+建筑角色存储重建保留既有 employee fill，新扩容量保持空缺。自然资源容量在就业前压入
+`planned_utilization_q16`；零资源 ACTIVE 建筑保留资产和业主席位、释放按利用率缩放的雇员，
+若随后进入 SUSPENDED 才释放业主。停产组每个五日结算边界复核一次，连续 73 次失败
+复核（约一年）后才按过剩容量分批清算；v34 及更早 PKEC 因建筑目录/建材契约变化拒绝加载，
+不做旧存档迁移。
+
+> 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
+> worker/scalar 确定性、移动和 10M cohort 性能门槛均已通过。
+
+## 2026-07-18 石器经济与资源平衡修正
+
+- 国内贸易拓扑读取 `cell_base_terrain`、`cell_base_landform` 与 `cell_has_river`；气候系统对 `cell_terrain` 的季节性海冰切换不再改变规范化拓扑哈希或重置路线计划。水体格不当市场节点；科技解锁的河运/浅海/远海/深海通过预计算海岸门户跳跃连通对岸。
+- `satisfaction_q16` 保持兼容，新增同值的 `survival_satisfaction_q16` 与 cohort 数组别名，明确该指标是食品与气候衣着两者较低值，不代表全部舒适/奢侈需求。2026-08-04 起舒适/奢侈由 `composite_satisfaction` 的独立维度表达。
+- 石器食物的商品库存比例从 1.5 调到 1.0，即仍维持完整 30 日目标；生产者托底收购和现金保留规则不变，避免采购量断崖式下降。
+- 火塘配方为每日 `7000` 植物 + `3500` 肉类 → `12628` 加工食品，肉类为 50% 软约束；打制石器为 `100` 燧石 → `220` 工具；家庭织造为 `120` 采集植物 → `110` 布匹，不再无原料产布。伐木建筑只开采森林，不再反向生成人工林。
+- 黄金/白银发行价值为 `800000/50000`；淘金场和露天银矿分别雇用 1/2 名矿工，参考日薪统一为
+  `40000`。满产发行收入可覆盖矿工工资、merchant 业主生计与约 14% 目标利润，矿工收入相对当前
+  生存消费形成小幅正结余。测试聚落仍把单人非商人职业保留为至少 2 人，以降低出生人口尚未被下周期就业吸收前的短期职业链断裂风险。
+- 黏土、盐、石油按地质存量处理，不再自然生成或自发消退；肥沃土壤长期平衡量基本不变，但日变化率降为原来的约 1/20。金矿、燧石和石料初始储量改用 `0.1` 丰度倍率，并同步缩小适宜度系数，防止省级面积倍率造成超长寿命矿床。
+
+## 2026-07-20 内生业主投资
+
+- `building_employment` 仍先从失业池填补既有盈利岗位；资本投资只在既有业主岗位已满后负责新增建筑，不与就业分配争抢同一空缺。
+- `building_commit` 每 30 日进行一次资本评估，每地块最多执行一个动作。只有 industrial 建筑可自动扩张；collector/service 继续由资源、国家或显式建设策略决定，避免石器时代因价格上涨自动放大开采。
+- 候选建筑必须达到自身配置的目标利润率、计划利用率至少 75%，业主预计日收入至少高于生活成本 10%，且成交短缺或需求 EMA 超过供给 EMA 的压力至少 12.5%。新增一座的需求缺口还必须达到半座日产能。
+- 出资者必须与目标业主同民族、来源 cohort 至少保留一人、人均储蓄覆盖全部建材现价和 30 日生活储备，且目标业主收入至少比来源收入高 12.5%。转职人口按比例携带储蓄；BUILD 复用原生建设交易，真实扣库存、向本地商人付款并计入商品守恒。
+- 石器打制工坊建设消耗 `1000` 木材 + `500` 燧石；家庭织造棚消耗 `2000` 木材 + `4000` 采集植物。CSV v10 summary 发布建材消耗、候选、业主流动、开工及资金/建材阻塞计数。
+
+## 权威边界
+
+| 数据/行为 | 权威 | 契约 |
+| --- | --- | --- |
+| cohort、handle、人口、资金、收入/支出、满足度 | C++ `PopulationStore` | GDScript 无逐 cohort setter。 |
+| 本地库存、价格、居民需求 EMA、短缺率 | C++ `MarketStore` | 无 per-cell goods component，无匿名市场现金。 |
+| 企业可行需求/供给 EMA、实际出库 EMA、成本锚 | C++ 稀疏 `MarketSignalStore` | 仅保存建筑实际引用的 `(cell, good)` 边；实际出库用于商人库存目标。 |
+| 国内路线、稀疏贸易信号、订单、货物/现金托管、进出口 EMA | C++ `Trade*Store` | 同一冻结国家内预算化规划；PKEC v19 保存订单/托管/EMA。 |
+| 需求、预算、bundle 清算、替代 fallback、商人结算、Price V3 | C++ Market V2 hot loop | 不访问 Godot Object/Callable/Dictionary。 |
+| 周期环境快照 | DataCore 环境 slots → C++ Q16 snapshot | 周期 sample day 捕获 temp/moisture/snow/weather，周期内冻结。 |
+| catalog 编译 | `EconomyCatalog`/`EconomyFacade` 冷路径 | stable ID 排序后一次性提交 PackedArrays。 |
+| 调度和结算屏障 | `EconomyDailySystem`/`WorldClock` | 周期内正常跨日；仅截止日未完成时 same-day catchup。 |
+| 查询与存档 I/O | GDScript 薄壳 | Inspector 只读 selected-cell slice-complete snapshot；存档只读 committed boundary，4–16MB byte chunks。 |
+
+### 玩家国库资助建设
+
+`TREASURY_SPONSORED_BUILD` 沿用通用 `(effective_day, sequence, submit_order)` 命令序列，
+固定 `count=1` 和私营业主布局。执行时重新验证领土、科技、条件及自然资源承载，随后仅
+遍历目标建筑的 construction CSR：国家物资优先，本格市场补足，并按本期零售价计算国库现金。
+全部物资、市场、商人与现金先预检，国家国库通过单次批量接口扣减，之后才扣市场、向当地商人
+付款并追加 `pending_construction`。失败不产生部分状态。轻量 receipt 独立于诊断 trace，发布
+sequence、settled day、稳定结果码及实际两类物资/现金支出；它是瞬态 UI 回执，不进入状态 hash
+或 PKEC v31，因此没有新增存档 section、DataCore slot 或调度阶段。
+
+不存在大规模 GDScript fallback。原生 ABI 不可用时经济显式 disabled；显式 PROBE 模式
+保留 catalog/bootstrap/查询和显式测试能力，但不进入生产 scheduler。
+
+## 2026-07-15 企业与商人现金闭环
+
+- 国内贸易默认 `ACTIVE`；`OFF/PROBE` 仅供显式配置和测试。范围仍是冻结的同一国家、可通行且连通地块。
+- 企业采购意图容量取建筑可用性、业主/关键岗位就业率、业主输入资金覆盖率和自然资源覆盖率的瓶颈；实际产能再叠加本地输入库存瓶颈。缺货输入保留受约束的补货意图，但不能产生实际产出。
+- `EconomyProfile.building_output_efficiency_q16` 在 native 目录载入冷路径只缩放物资产出列，默认 `131072`（2 倍）；建设材料、日常投入、自然资源扣减、岗位与工资均不缩放。它是运行配置而非目录内容，因此不改变 building catalog hash、运行时状态布局或 PKEC 字节结构。
+- 食物产出倍率已从运行配置移除；食物平衡由各 `BuildingProfile.output_quantities_per_day` 直接表达。现有食物配置已吸收原 `1.25` 倍基线，石器时代采集、狩猎、捕鱼和陷阱线另有定向增产；自然资源消耗列保持不变。
+- 早期知识建筑的 `owner_slots_per_building` 为 1。知识产业不再有本地人口占比上限；科研人数由工资、补贴和粮价调节。
+- 向上转职存款门槛：`ProfessionProfile.entry_savings_days`（编目为 `profession_entry_savings_days`，夹到 `[0, 36500]`）。目标职业门槛高于来源职业门槛时，来源 cohort 的人均存款必须 ≥ 门槛天数 × 本格 `_cell_living_cost_per_capita`，不扣钱；平级和向下流动免检。失业池招聘在比例分配前检查（拒绝码 `EMPLOYMENT_REJECTION_ENTRY_SAVINGS = 9`），雇员↔雇员、业主→雇员、业主↔业主、雇员→业主四条转岗路径在挑选来源民族 cohort 时检查。2026-11-05 起**统一为单一 30 天档**：全部技术、工业、知识职业（原 60/180/365/730/1095 五档共 22 个）均为 30 天；其余（含商人、地主、采集狩猎、农业、普通劳工、士兵与失业者）为 0。由此任何两个 30 天职业之间的横向流动都满足「来源门槛 ≥ 目标门槛」而免检，只有从 0 档（含失业池）进入 30 档仍需人均存款覆盖 30 天 `_cell_living_cost_per_capita`。注意门槛乘的是**当前**本地生活成本，物价上涨会等比放大实际准入线。
+- 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润达到重启门槛（默认约 +10%），且硬投入有货、自然资源可用、本地可回岗劳动力存在、业主/信贷能覆盖**可执行**一周期成本后恢复。软投入（`required_q16 < 1`）不是开工门槛：货架为空时基础活动率仍按 100% 计算，实际产量倍率按 `1 + Σ(required × coverage)` 计算，不把软投入缺货计入重启信贷，不得把涨价后有利可图的停业组（如燧石采掘场）永久锁死。
+  重启融资只计「可执行投入 + 雇员工资」× 建筑天数，**不计业主生活费**：业主靠本组产出（现金或自留实物）生活，生活费只参与利润率判断。2026-10-13 之前重启成本含业主生活费，导致无投入、无雇员的空手组（狩猎营地）借款需求永远大于 0；组上若还挂着停业前的商人欠款，逾期计数（`merchant_debt_delinquent_cycles`）只增不减，信贷永远被拒，`_building_recovery_liquidation_eligible` 又要求 executable，于是利润率已到上限（+100%）的狩猎营地被锁死。表现为：野味价格涨到数百万、需求未满足，格内零收入工匠存款归零后饿死，人口从约 150 跌到个位数且多年不恢复（8 国 30 年测试里有 3 国这样崩溃）。修复后空手组借款需求为 0，可直接重启，正常就业/转岗再把挨饿人口吸引过去。
+  同日补充两道同类全有或全无门：①重启融资**只计硬投入**，有货的软投入也不计入（软投入由招来的业主按比例携带的存款购买，买不起就按 `1-required` 效率徒手干；仍计入复工利润率）；②自然资源门只要求**一栋建筑一个周期**的资源量（`mode==1` 为单栋容量，抽取为 `epoch_days × quantity`），不再要求整组满负荷。正式配置 `resource_safe_harvest_q16=0`（开放获取），抽取可用量就是剩余储量；好年景扩到 35 座的狩猎营地在猎物被压低后停业，整组一周期需求（35×209×epoch_days）超过当时储量，既不能复工（不 executable）也不会被清算，猎物恢复后仍可能长期达不到整组门槛，表现为营地机会收益数百万、野味与生皮库存为零。复工后生产照常按资源容量／密度 CPUE 缩放产量。
+- 本格商人全部死亡（商人 cohort 人口为 0，`local_merchants_can_receive(cell) == false`）时，市场仍可能有库存，但没有卖方可收款：建筑投入采购按 ACTIVE_UNFUNDED 处理（本周期产能 0、保留购买意向），维护品视为无货，投资审查跳过该格。此前分别以 `building_input_has_no_merchant_owner` / `building_maintenance_has_no_merchant_owner` / `building_construction_has_no_merchant_owner` 让整个世界致命停机。
+- 下一周期利用率的可负担需求同时读取居民 `demand_ema` 与稀疏 `business_demand_ema`。库存不足时，以两者之和相对实际出库 EMA 的缺口触发短缺恢复；因此没有家庭终端消费、但被下游建筑持续采购的工具和中间品不会被误压到 1/32 探测产能。
+- 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
+- `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
+- ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
+- 生产者只保留生存食品健康下限和寒冷条件下最低衣物；普通非生存自产商品全部进入市场。剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量。实际消费的自用物按冻结零售价计入来源建筑的实物收入而不产生现金，并进入实际出库 EMA；该价值影响经济收益和岗位选择，但不能偿债。
+- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
+- 正常商人现金采购仍受目标库存配额与现金预算约束；商人未买下的可卖余量由生产者托底应收尽收入库（不再按目标库存缺口截断），直到本格托底发行预算用尽。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。预算用尽后的余量才进入真实 discard sink。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
+- 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
+- PKEC v47 是当前 writer，reader 接受 v47、v46、v45、v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
+  building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
+  per-cell influence、运河工程、上一期真实食物流量承载力、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
+  PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
+- 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
+  成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
+- 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
+  稀疏归因。完整契约见[家族重要人物原生运行时](./notable-person-runtime.md)。
+- `BUILDING_PLAN` 是原生两遍 continuation：第一遍（evaluate）按 `cell % building_plan_days == day % building_plan_days` 抽取的 plan 子集（`_epoch_plan_cells`，rolling 工作集的进一步稀疏化，默认每格 10 天评审一次）计算利润、停产恢复和计划利用率；第二遍（reserve）仍按全部到期建筑 cell 的相同稳定顺序重建生产投入 reserve——未评审格沿用最近一次计划，生产始终消费一份连贯的（最多滞后 `building_plan_days` 天的）计划快照，只影响采购意图刷新频率，不动存量/现金守恒。`building_cells_per_slice=0` 确定性使用 256 个 active cell；正值可做平台定标。cursor、plan 子集、生存利用率 floor 和 reserve 构建缓存不保存、不哈希。
+- 建筑生产的 owner-retention scratch 只为本格实际出现的 `(owner, output good)` 建立紧凑 lane；owner signature、owner cohort slot 与 lane 都通过 thread-local generation direct map 查询。它不再为每格清零 `owner_count × good_count` 的 target/used/produced 三个稠密矩阵，也不再为每个 offer 线性搜索 owner。lane 仍按稳定建筑组/output 边首次出现顺序建立，生产、保留、offer 和账本提交顺序不变。
+- 人口或建筑结构变化后的就业对账使用 thread-local signature/profession generation scratch，只初始化 affected cell 实际出现的 signature、profession 和 role；affected cell 先用 stamp 去重后按 cell 升序处理。该 scratch 不进入 PKEC、状态 hash 或 report，岗位裁剪和人口就业分摊公式不变。
+- 业主营运资金缩放使用 8 次确定性整数二分并返回可支付下界，因此绝不透支；最大利用率低估为请求区间的 `1/256`，实际 Q16 未决界由 `working_capital_scale_error_bound_q16` 报告。
+
+## 2026-07-15 价格弹性、成本底线与生态修正
+
+- 消费目录新增 Need 总量价格弹性和刚需下限，并加入商品/阶层财富弹性与储蓄门槛。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食、采集食物和电力 utility 走同一 native bundle 清算，房屋材料按低频日量摊销。
+- 低于目标库存且仍有需求时，生产成本锚通过受单日涨幅上限约束的正向价格压力形成动态软底；库存堆积时下跌按当前价格限速，仍可跌破成本清仓。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
+- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物，工具软槽 `32768`；软投入缺货不再把基础产量减半，而是从 100% 基础活动率开始，按工具库存覆盖度累加产量加成。采集营地为 2 个岗位、标称日产 `14000` 采集植物（承载力占用保持原值）；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
+- `audit_economy_content.ps1` 现在委托 `audit_economy_content_v2.ps1`，从权威 technology topology 展开 goods/building/Need/plan 图，验证全部 135 goods、356 buildings、20 needs、11 plans 的真实终端和外部来源闭包；孤儿产出、未引用 goods、不可启动的产业 SCC 均拒绝。审计不再依赖过期时代或收益硬编码。
+
+### 2026-07-18 调度、贸易与工资稳定性修正
+
+- `country_daily` 和 `economy_daily` 仅在当日确属提交截止点时动态声明 `deadline_critical`，可绕过一次 tick 内的 frame/strict 启动门槛，但仍受单 slice 与 continuation 上限约束；`must_run` 保持 false。WorldClock 每推进一天后立即重读 country/economy barrier，不能在同一渲染帧越过刚升起的截止屏障。
+- 贸易候选数量用交易后源/目的库存重新报价，并以确定性整数二分裁剪为仍满足最小利润率的最大数量；relief 路线允许零价差但禁止负价差。发运前依据最新库存、现金和国家运力二次裁剪。报告增加 `trade_rejected_no_spread`、`trade_rejected_margin`、`trade_quantity_profit_clips`、`trade_relief_candidates`。
+- adaptive 工资可负担上限改为日流量：`满产日结算收入 / (1 + 目标利润率) - 日投入` 得到工资池，再除以员工槽位并应用工资收入缓冲比例。停产建筑也使用该反事实报价，避免周期总收入被错当成日收入而把工资放大约 `epoch_days` 倍。
+- PKEC v50 的 `rolling_cell_settlement_v21_funded_cold_start_labor` 不再让无历史岗位默认兑现全部合同。岗位输出先受家庭、企业、启动、出口需求与无自我供给的库存缺口约束，普通市场回执再受当前商人现金／结算日限制；该资金预测与岗位支付历史取较低值。只有失业招聘使用 1/8 合同的低置信先验，已就业者转职、employee-to-owner 比较和 inspector 均使用严格资金预测。
+- 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
+- 林木使用理想承载量 `100000×100`、1% 日增长和正迁入的 Beverton-Holt 分支；新地图只对适生度最高的 30% 陆地保证 30,000 最低储量。它在低于承载量时自然增长，并通过单伐木场五年持续采收回归。野生动物后续按湾区 `N=5000` 校准为 `3260×100`（见上文「湾区单格资源尺度」）。
+
+## PopulationCohort
+
+同一 `(cell, profession, ethnicity)` 只保留一个聚合 cohort。每页 64 lane，字段采用
+平行 SoA：`signature_id`、`generation`、`population`、`funds`、epoch income/expense、
+income EMA、Q16 满足度、最差 need ID、flags 与预留 residual。外部 handle 是
+`(generation << 32) | slot_index`；回收后 generation 加一。
+
+每个人口非零地块必须有商人：
+
+1. 若没有商人，从本地人口最多的非商人 cohort 转出 1 人。
+2. 新商人继承民族，资金按人口比例转移。
+3. 总人口、总资金不变；同签名自动合并。
+4. 一个地块可有多个民族的商人 cohort，库存由它们共同持有。
+
+成交收入按商人人口使用稳定前缀商分配，直接进入商人 cohort 资金与 epoch income；
+不存在 `market_cash` 中间账户。商人自身也按其消费计划正常购买。
+
+## MarketStore 与商品所有权
+
+V2 固定一地块一市场，`market_count == cell_count` 且 `cell_to_market[cell] == cell`。
+持久稠密矩阵为：
+
+```text
+stock[market, good]             i64  # 商人共同拥有
+price[market, good]             i32
+demand_ema[market, good]        i64
+last_shortage_q16[market, good] i32
+```
+
+建筑侧价格信号不扩张该稠密矩阵。`MarketSignalStore` 按 `(cell, good)` 排序保存企业投入需求
+EMA、实际 offer 供给 EMA 与单位成本锚；key 只来自现有建筑输入/输出边，并在建筑结构变化时
+重建且保留稳定 key 的旧值。
+
+库存初始为零；本轮没有生产。开发/测试通过 `ADD_STOCK` 显式命令增加库存，且目标地块
+必须有商人。人口归零的地块不得保留库存。
+
+## Need、替代品与互补品
+
+catalog 编译成 CSR：plan→needs、need→variants、variant→components。
+
+- need：优先级、人均基础量、连续财富弹性/上下限、总量价格弹性/刚需下限、数量环境曲线。
+- variant：偏好权重、价格弹性、偏好环境曲线。
+- component：good 与每份 bundle 所需数量。
+- 同一 need 的 variants 是替代方案；同一 variant 的 components 是必须按比例满足的
+  互补 bundle。
+- `last_shortage_q16` 只度量**本货自身货架**相对本周期请求 component demand 的缺口
+  （`stock_shortfall / demand`），不把互补品/替代品导致的整包失败算进本货短缺。
+  预算不足仍不会产生实际扣款或 withdrawal，`demand_ema` 仍跟踪 funded component
+  demand，但未满足的请求会进入统一货架短缺比例，避免库存为零时短缺信号被预算裁剪吞掉。
+
+每 cohort 每日按优先级重置预算和需求。财富是 `funds/population` 相对
+`wealth_reference_per_capita` 的连续定点函数，不形成额外身份分桶。民族以稀疏 need
+修正表参与数量计算；温度、湿度、积雪和天气强度通过 17 点 Q16 曲线影响数量或偏好。
+variant 价格分数先决定替代份额，再形成 market×need 的总量价格因子。主食和衣着保留正下限但
+仍会随价格、人均存款缩量；蛋白质与非刚需在所有替代品过贵时可以接近零购买。
+
+## 周期清算顺序
+
+每个本地市场独立执行，数量按冻结周期 N 日累计：
+
+1. 冻结当日价格、环境和 cohort 视图。
+2. 计算 need 数量与各 variant 的价格/环境加权份额。
+3. 按 need 优先级约束 cohort 可支配资金。
+4. 对 bundle 的每个 component 做稳定前缀库存分配，以最短 component 决定 bundle fill。
+5. 首选 variant 未满足部分只进行一次同 tick 替代 fallback。
+6. 扣买方资金和库存，按**在世**商人人口分配收入，发布 need 满足度/最差 need。零人口商人槽不算做市商；有人市场若缺在世商人，家庭清算在扣款前从最大非商人 cohort 拆/转 1 人修复，并按本市场格上的活槽分账，而不是盲信 `_merchant_offsets[market]`。
+7. 以日均居民需求更新 EMA，合并上一周期企业需求/供给与成本锚，用 Price V3 冻结压力的
+   一阶 N 日积分更新下周期价格。
+
+household market 在建筑生产、产品出售和收入分配后计算食品/衣着生存满足，执行确定性缺乏
+生存资料死亡，并按 cohort 人数、当前生存满足率及职业/民族 Q32 率累计出生贡献。worker 只写
+自身 `MarketResult`；主线程按 `cell×ethnicity` 合并为出生结构命令。国内贸易在同一经济
+边界的 `trade_settle` / `trade_dispatch` 阶段运行：到货先进入目的库存；新发运等待本地 household
+清算完成，并保留最新本地需求目标库存和生产投入 reserve 后才移除源库存并
+托管目的商人现金；随后 household market 只使用剩余/已到货状态。出生在结构提交中最后写入
+`unemployed|eth`，不生成资金、收入或商品；人口变化后的建筑就业对账只裁剪超额岗位，正常招聘
+留到下一次 `building_employment`。完整契约见 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+
+## 并行与确定性
+
+slice 按连续 market range 切分；每个 worker 只写自身市场行及其地块 cohort。worker
+结果先写 `MarketResult`，主线程再按 market 索引归并指标。定点乘除使用 128 位中间
+值与饱和计数；短缺、bundle 和商人收入都使用稳定前缀商，无逐单位余数循环。
+focused test 必须验证 worker/scalar state hash 完全相同。
+
+## 公共 API
+
+### 近景地块告警投影（2026-10-25）
+
+`DCWorldExt.get_cell_situation_snapshot(requested_cells)` 为自动悬浮图标提供最多
+128 格的 committed 批量查询，经 `EconomyFacade.cell_situation_snapshot` 调用。
+它沿用 EconomyCommitView 的 `committed_read`，返回八位 `flags`、八列 Q16 严重度、
+三类短缺的具体商品、最不满政治阶层和每格最近结算日；不复制模拟矩阵或修改存档。
+生活/消费类别来自已有需求层级，工业缺口来自建筑生产/施工预留；失业和空缺岗位
+复用 cohort 就业列、`group_job_totals`。天气两列留给已发布 climate adapter。
+
+正式玩家场景使用 `CellSituationLayer` 在近景自动显示八种透明位图，屏幕外与当前
+不可见格不查询，远景停止查询。无新增地图模式或 selector。完整判定、渲染、预算与
+验证入口见 [近景地块告警](./cell-situation-icons.md)。
+
+`configure_economy`、`bootstrap_economy`、`submit_economy_commands`、
+`economy_should_run`、`run_economy_slice`、`run_economy_slice_compact`、`get_economy_report`、人口/市场 cell
+snapshot、reset、分块 save/restore、固定数学 probe 与 state hash。跨边界写入均为平行
+PackedArrays；UI 只查询选中地块。
+
+`run_economy_slice` 返回 `report_mode=full`，供普通 daily tick、显式查询、UI 与录制诊断；
+same-day barrier continuation 使用 `run_economy_slice_compact`，返回
+`report_mode=compact_slice` 和调度所需的 stage/progress/cursor/work、deadline/fatal、committed event
+以及当前 trade/publish/building-commit breakdown。compact 路径不计算 `memory_bytes`、商人债务全量和
+贸易 transit/escrow 全量统计。两条 API 共用同一 native stage/cursor 和 `DCWorldExt` 提交包装，资源
+delta flush、CSV committed capture 与 gameplay event publish 均不绕过；仅返回 Dictionary 形状不同。
+
+`population_cell_summary()` 与 population/market/building selected-cell snapshot
+都发布该地块的 `settlement_generation`。人口 Inspector 每日列表 live patch 走
+`get_population_cell_snapshot(cell, include_details=false)`，刷新可见人数、财富和净值；
+不得用 `settlement_generation` 冻结这些列表数字。对象详情与首次打开人口页仍走完整
+snapshot（含需求预览、福利 CSR 与现金流分项）。完整 category 的内容 hash 只用于跳过
+相同列表的控件 apply，不代替 list snapshot 本身。
+
+`trade_plan_ms` 是当前一次 `run_economy_slice()` 中 planner 的墙钟时间，不是 epoch、
+simulation day 或进程累计值。未执行 planner 的 native slice 必须报告 `0`；跨 slice
+分析直接采样该字段，禁止再用相邻 report 相减。`trade_plan_breakdown_ms` 以
+`trade_planning.scan_body / scan_finalize / route_prepare / route_expand /
+route_finalize / other` 完整归因该 slice，`trade_plan_breakdown_work` 同步报告扫描 pair、
+初始化 source、Dijkstra expansion 和最终候选数；这些字段只用于诊断，不进入 PKEC、
+状态哈希或确定性推进决策。
+
+每个 slice report 同时提供 `executed_stage`、`next_stage` 与 `executed_substage`：前者是本次
+调用实际支付成本的阶段，`next_stage` 是返回后的 continuation 状态，兼容字段 `stage` 仍等于
+`next_stage`。调度器和性能 CSV 必须用 `executed_stage` 归因，禁止把完成 publish 后切换出的
+`trade_planning` 当成本来源。`aggregate_publish` 的 `publish_breakdown_ms/work` 只描述当前
+slice，按 prepare、精确审计、verify、watermark、trade flow/diagnostics、trade init 与 commit
+对账；`publish_cumulative_breakdown_ms/work` 才是本 epoch 累计。分片游标与临时
+累加器不进入 PKEC 或 state hash。完整审计、贸易初始化和水位线完成前 `_epoch_active` 保持 true，
+save 继续返回 `save_requires_committed_boundary`，半发布结果不成为 gameplay 权威。
+`building_commit_breakdown_ms/work` 同样按当前 slice 报告 `review_prepare`、`special_reset`、
+`recovery_review`、`construction_commit`、`investment_prepare`、`investment` 与
+`finalize`，用于定位该 stage 内的不可抢占尖峰。
+`finalize` 内部先完成二次 construction commit 并将 affected cell 去重为升序，再以默认 128-cell
+continuation 执行就业对账，最后用独立 slice 清理投资 transient cache 并转入 publish。report 公开
+`building_finalize_cells_per_slice`；profile 为 0 时使用该默认值，正值作为兼容覆盖。该私有
+phase/cursor 不进入 PKEC v19 或 state hash，batch 边界不改变
+岗位裁剪、人口分配和 cell 提交顺序。
+
+建筑结构提交按 `(cell,type,owner signature)` 合批。竣工命中已有 group 时只更新 count 与债务，
+不得重建 role、market-signal 或 labor-signal topology；真正新增/删除 group 时，稳定有序旧 group 与
+新增尾部做一次线性 merge。每种建筑的有序唯一 input/output good 集与 employee profession 集在
+catalog 编译时烘焙，market/labor CSR 按 cell 用 generation stamp 直接生成，并通过双缓冲线性复制旧
+EMA，不再创建全局 `(cell,key)` 临时对象或做比较排序。删除 group 的 role/input span 进入按 type
+free list，后续同 type 新 group 优先复用。上述 spans、scratch store、stamp 与 free list 都是可重建
+transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 group/role 逻辑顺序读取权威 lane，
+不依赖物理 span 编号。report 通过 `building_structure_count_only_updates/new_groups/removed_groups`、
+`building_structure_topology_rebuilds/role_span_reuses/role_span_appends` 以及
+`building_structure_group_merge_ms/market_cache_ms/labor_cache_ms` 公开结构路径与成本。
+`commit_ready_construction` 对进入本批次后新追加的 `(cell,type,owner)` group 保持仅本次调用存活的
+hash 索引；既有排序前缀仍二分查找，新组不再被每一条待建记录线性重扫，避免大批投资提交退化成二次主线程尖峰。
+
+冻结国家快照同时烘焙 country-major 建筑可用位与升序 building-type CSR。`building_available()`
+只要求建筑的 direct/required 科技以及投入/产出/资源依赖组；施工材料组（kind 1）不进入开工门。
+新建造仍通过 `good_market_available()` 与 `plan_construction_materials()` 选择已解锁材料。
+Country worker ACTIVE 时，epoch 外的 live `building_available(..., false)`（建筑检视
+`building_technology_available`）经 `NativeCountryRuntime::has_technology` 钉住同一份
+`country_asset_snapshot`，与 `capture_country_epoch` 一致，避免同步 facade 停更后把已掌握
+科技误判为技术停用。
+在 ACTIVE epoch 内走 O(1) 稠密位查询，投资目录直接遍历该国 CSR；两者均为 transient cache，
+不改变 catalog 顺序、PKEC v19 或 state hash。`building_commit.investment` 与普通建筑图分开使用
+默认 96-cell batch，report 公开 `investment_cells_per_slice`；profile 为 0 时自动采用 96，正值
+作为确定性覆盖。投资准备只聚合当日同时命中锁定市场桶 N 与投资周期 I 的 cell；I 到期但不在当天市场工作集的格推迟到该格下一次市场日。
+
+贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入、
+`capture_economy_trade_visibility()` 测试夹具，以及分页
+`get_trade_orders_for_cell(cell, offset, limit, good_index = -1)` 冷查询：`good_index >= 0`
+只返回含该物资行的订单并裁剪物资行 CSR，行按 `(arrival_day, order_id)` 升序，响应带
+`page_begin`、`economy_generation`（committed generation）与 `sample_day`；省略第 4 参保持
+既有三参全量语义。单页 `limit` 仍 clamp 1..256、总量受 `trade_max_orders` 约束，只读且不
+进入 PKEC/state hash；禁止跨桥返回全局路线/订单矩阵。`get_market_cell_snapshot()` 额外返回
+`economy_generation`（最近 committed generation），供 UI 以 generation 做缓存键，不是模拟状态。
+正式地图由 `MapGenerator._setup_economy_runtime()` 在 economy configure 后、bootstrap 前
+捕获一次静态邻接、terrain passability 与 move-cost LUT。`fog_solved` 之后每个 market-cycle
+sample 再冻结 `visible_arr`：玩家开局国参与的贸易两端必须当前可见。默认 `trade_runtime_mode=ACTIVE`；
+非 `OFF` 模式捕获失败会中止经济初始化，不允许继续运行一个 topology-not-ready 的假 ACTIVE。
+
+调试录制控制面另提供 `start_economy_csv_recording(config)`、
+`request_stop_economy_csv_recording()` 和 `get_economy_csv_recording_status()`。它们管理独立的
+`EconomyCsvRecorder`，只在成功 committed publish 且资源 delta 已回写后抓取 CSV v16 POD
+批次；worker 编码/写盘状态不属于 runtime report、PKEC 或 state hash。状态包含
+`captured/written epochs/rows`、`bytes_written`、`queued_batches`、主线程 capture 与 worker
+耗时、`buffer_memory_bytes`、路径、`error_code` 和 `first_unrecorded_epoch`。
+`start` 的可选 `cell_indices` 为空时沿用 `cell_stride`；非空时经范围校验、排序和去重后成为
+本次录制的冻结样本集合，并在状态中报告 `cell_scope`、`sampled_cell_count` 和
+`selected_cell_index`。summary 保持全局语义，其余四表按样本 cell 输出。
+
+人口 cell snapshot 在 committed boundary 额外返回 cohort-major CSR 预计需求：
+`demand_good_offsets`、`demand_good_indices`、`demand_per_capita_daily` 和
+`demand_good_stable_ids`。它复用正式清算的财富、环境、替代品与互补品定点内核，固定
+`dt_days=1`，只计算预算/库存约束前的预计单位/人/日。当前地块环境由 `DCWorldExt`
+直接读取 DataCore slots；查询只使用局部临时数组，不改变 state hash、report、存档或
+持久内存布局。
+
+同一查询还返回 `demand_need_offsets/indices`、`demand_need_variant_offsets`、
+`demand_variant_component_offsets`、`demand_component_good_indices` 与
+`demand_component_per_capita_daily` 的嵌套 CSR。Inspector 始终以 `demand_good_*` 聚合列作为
+商品数量与支出的唯一来源；嵌套列只为每个商品附加 `need_ids`、中文 `need_names`、`category_text`
+和 `has_bundle` 展示元数据。同一 good 属于多个 need 时仍只显示一行并列出全部用途，不生成
+替代方案分组，也不得用嵌套 component 行重新累计总量。新增列仍是 selected-cell 冷查询输出，
+不进入 catalog hash、PKEC schema 或持久状态。
+
+世界生成页的“生成测试经济数据”默认关闭。显式启用后使用石器中期科技，只在已发现资源能
+支撑配方的地块放置 collector，并只在本地上游齐全时放置 industrial；升级族只放置最高可用档。
+候选建筑按食品 `1300`、衣着 `4` GOODS_SCALE/人/日检查净产能；食品/衣着直接消费品作为产出
+增加容量、作为生产投入扣减容量。削减时只移除重复栋数并保留每种可用建筑至少一栋，仍无法覆盖
+一人最低需求的地块不生成聚落。随后按保留的 owner/employee 岗位容量聚合 cohort，初始就业和
+库存保持为零。fixture 会在 GDScript population packet 中提前执行 native merchant invariant
+同形的“从最大非商人 cohort 转 1 人”步骤，并按 30 日生存金、业主两周期输入金和商人目标库存金配置启动资金；
+总人口仍等于建筑岗位人口，native bootstrap 不再需要二次修复商人。它是开发 fixture，不是正式历史人口来源。
+
+## 实测门槛
+
+Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是历史显式
+`market_cycle_days=0` 自动周期（N=50/334）性能档，**不是**当前生产默认。
+当前生产是锁定 N∈[1,5]、P∈[5,15]、I∈[10,30] 且 I > P：
+
+| 档位 | 样本 | avg | p95 | max | runtime memory | ACTIVE 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 10k cells / 200k cohort / 100 goods / 16 needs / N=50 | 2500 | 1.883ms | 2.766ms | 3.126ms | 101.0MB | 通过 |
+| 100k cells / 10m cohort / 200 goods / 16 needs / N=334 | 668 | 5.542ms | 6.333ms | 9.394ms | 1680.6MB | 通过 |
+
+错峰把 10M p95 从约 89ms 降至约 4ms；惰性会计清零和按需 merchant rebuild 消除了
+周期边界 90/30ms 尖峰。代价是可配置的结算延迟与 reference 误差，详见调度文档。
+# Native Building / Employment Runtime（PKEC v14 + PKCN v1）
+
+建筑、岗位与生产由 `NativeEconomyRuntime` 内独立的 `BUILDING_GRAPH` 管理，仍与
+Market V2 共用冻结周期和原子发布边界，但不进入 `household_market` 热循环。建筑不进入
+`MapData`/`HexCell`/DataCore schema；运行时以按 `(cell, building_type,
+owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR 只遍历有建筑地块。
+
+`BuildingProfile` 编译 owner/employee role、建造成本、输入/输出、投入候选 CSR、自然资源交互模式和 postfix
+建造条件。人口仍保持唯一 `(cell, signature)` cohort；lane 新增 owner/employee employed
+计数。**失业者是一等 cohort**：新增保留 profession `unemployed`（消费走极简 `plan_unemployed`，
+仅 survival food），按 ethnicity 分桶生成 `unemployed|<eth>` signature；失业惩罚由 starvation
+自动施加（收入 0 + 只吃 survival food → satisfaction 掉 → 自然死上升，无硬编死亡率）。就业为
+**跨周期存量**（A1 真实人口迁移）：非商人/非失业的 `profession|eth` cohort 恒有
+`owner_employed + employee_employed == population`（无闲置，未被雇佣者立即迁往 `unemployed|eth`）；
+预期可支配收入 ≤ 0 且 cohort 已陷入困境（`needs_satisfaction < 0.5` 或人均资金不足一日生活成本）
+时，就业 pass 在裁员之前做 **distress career exit**：清掉对应 owner/employee 席位，经失业池
+在同周期再雇入仍有正收入的生存食物空岗（主动转行，不走国库救济）。饥饿 cohort 对自给食物岗
+免除普通转职门槛；自留口粮按生活成本热量估值（`max(市价, 生活成本口径)`），避免市价崩溃时
+采集岗在流动决策里被当成零收入。生存食物篮相对最便宜在库篮超过 `FOOD_SUBSTITUTE_RATIO`
+（默认 4×）时，该篮的 survival floor 与 ordinary demand 一并清零，强制改买便宜主食；
+`_unemployed_population` = Σ(unemployed cohort population)，是派生量、不进 save/hash（失业 cohort
+本身随 population section 存档）。工资 ABI 位于 employee role：`adaptive` 以本地基础生活
+成本、岗位 cohort 消费篮子和本地岗位合同工资 EMA 形成生活工资硬下限；`fixed` 仅保留给
+显式固定报酬内容。当前跨时代目录用低额 `fixed` 报酬近似奴隶维持、农奴供养、租佃和契约
+劳工的食宿/份额，使用 profession stable ID 区分关系；它不提供法律身份、地租倒流、迁徙限制
+或 owner-lot 人身绑定。产品出售后，业主现金不足时按 owner 全部 role 义务稳定比例支付；最终
+欠薪取消奖金并保留诊断，但不追溯取消本期生产。工资仍按本地同职业实际就业权重分配，不铸币且
+保持资金守恒。
+
+建筑编译同时生成 building-dependency branch IR。每项活动建筑恰好一个 direct technology，
+`required_technology_tags` 必须为空；多科技汇合由科技目录中的可见应用科技硬前置表达。目录继续为
+construction goods、inputs、outputs、local resource extract/generation 生成依赖组，同一输入槽的
+候选 good 属于同一替代组。建设、投资、生产和开局 bootstrap 共用这套闭包：只有直接科技、每个
+物资依赖组和每个自然资源依赖组均已满足时建筑才可用。河流/湖泊水系不是这套资源依赖中的 good 或
+ResourceProfile，只有 `landform.freshwater_access` 揭示信号。
+
+建筑实践发布掩码仍在 catalog 冷启动阶段一次性编译。由于建筑现在通常直接绑定应用科技，编译器会
+读取 `technology_prerequisite_offsets/technology_prerequisites`，构造临时的科技祖先位集，并沿每项
+直接科技的硬前置闭包识别水利、蒸汽、电气、自动化等基础实践。该临时位集约 58 KiB，配置完成后不
+进入热循环、运行时状态、state hash 或 PKEC；建筑建设资格仍只检查其唯一直接科技。
+
+普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：商人业主、无商品投入、保留矿工雇员岗位，
+必须消耗匹配的金/银矿藏且只产对应金银。矿藏 ID 仍为 `gold_ore`/`silver_ore`，但目录中不再有同名可交易物资或矿石精炼站。
+市场按 `monetary_issue_value` 全额收购产出并增加业主商人资金，并进入
+`_explicit_money_mint`、`bullion_money_issued`、金银分项发行额与 closing audit。后期金银矿仍由
+industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚空商站铸币分支。
+
+投入边可以是精确 good，也可以声明 category 与最低质量等级。`EconomyCatalog` 将类别展开为按
+stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每个输入槽另有
+`input_required_q16`：默认 `65536` 保持旧的硬互补行为；`0..65535` 表示软输入，缺货时保留
+`1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
+中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
+`ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1000/46/46` 野味/生皮/毛皮并抽取 `209` 野生动物。无工具时仍按基础活动率产出，工具库存覆盖度按 `required × coverage` 逐项增加产量。纯抽取采集者的软工具加成只影响产出，不扩大 `extract` 资源消耗；含 `capacity` 的农田/牧场等也保持资源容量与基础活动率上限。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按基础活动率估算食物与抽取，且不把软互补品当作必须闭环的硬投入。采集营地满工具标称日产 `2300` 采集植物（土地 capacity `1215`）；枯枝采集营地满工具标称日产 `3400` 原木并抽取 `1148` 木材。
+玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
+
+建造边使用同一套机制：`BuildingProfile.construction_category_ids` /
+`construction_min_quality_levels` 与 `input_category_ids` / `input_min_quality_levels` 语义完全一致，
+`EconomyCatalog` 按 good 的 `substitution_category_ids` 展开为 construction candidate CSR 并附
+good-level Q16 效率。每个建造组内 category 与 explicit 候选互斥，同时声明是编译期错误。
+`StarterEconomyPlanner._construction_groups` 直接读 profile 原始数组，必须同步展开 category
+**并施加同一套 min_quality 过滤**，否则开局路线规划与编译后的 catalog 会分叉。
+
+建材池按**时代切分**，而不是一个通用大池加质量门槛。`construction_min_quality_levels` 只是下限，
+没有上限，单一大池会让钢和铝下沉去建石器时代的采集营。当前池：
+
+| 池 | 成员 | 用于 |
+| --- | --- | --- |
+| `primitive_construction` | turf_block / reed_bundle / adobe_brick / logs / raw_stone / clay | 石器带结构槽 |
+| `primitive_lashing` | bast_fiber / reed_bundle | 石器带绑扎槽 |
+| `classical_construction` | lumber / bricks / raw_stone | 古典带 |
+| `industrial_construction` | construction_components / concrete / bricks / glass | 工业与现代带 |
+| `structural_metal` | steel / stainless_steel / aluminum | 金属结构槽 |
+| `conductor_metal` | copper / aluminum | 电气导体槽 |
+| `tools`（min_quality 2） | bronze_tools / tools / precision_tools | 手工业建筑装配槽 |
+
+配方的时代由它自己命名的材料推出：含 concrete/construction_components/steel 即工业带，含
+lumber/bricks 即古典带，其余为石器带。`raw_stone` 与 `bricks` 因此按上下文落入不同的池。
+玻璃进工业池是必要的——silica 是地块资源，没有硅石就造不出玻璃，而 139 个建筑的建造配方要玻璃。
+
+同池成员价格接近，所以"选有效成本最低的候选"不会把其余成员永久排除。**候选效率取自 good 的全局
+`production_efficiency_q16`，一个 good 无法按用途给出不同折算率**；需要按槽位区分折算时只能用
+explicit 候选列表（例如冶炼槽的 `coke = 78643`）。因此扩池时不要改建材 good 的全局效率：
+`steel` 出现在 26 个建筑的生产投入里，`logs` 13 个，改效率会连带改掉这些配方的物理消耗。
+
+1222 个建造组里 1196 个已有替代，`modern_economy_catalog_test` 的
+`_audit_construction_substitution_breadth` 锁住这条不变量；余下 26 个允许保持单候选的 good 列在
+`CONSTRUCTION_SOLE_CANDIDATE_GOODS`，都是功能性专用件（芯片、铁路设备、船体、燧石）或
+刻意不入池的 `gathered_plants`——把采集植物拉进建材池会让茅草屋顶和口粮抢同一批产出。
+
+固体燃料同理：`solid_fuel`（logs / charcoal / coal / coke）与 `smelting_fuel`
+（charcoal / coal / coke）此前只有 charcoal 一个成员且无人引用，导致没有木炭就炼不了铁、烧不了砖。
+燃料的 `production_quality_level` 兼作时代闸：木柴与木炭 0、煤 1、焦炭 2，所以工业锅炉不会退回烧
+木炭，焦炭高炉也不会退回烧煤。只有**燃烧**该 good 的槽位接入类别；原料位（logs→charcoal、
+coal→coke、logs→lumber）以及已有手工 explicit 候选的槽位保持原样。
+
+候选列表进入 `technology_content_binding_hash`，因此改建材候选会让旧 PKCN 存档
+`catalog_hash_mismatch`。
+
+`upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
+档位；高阶知识不会使低阶方式失效，旧 owner-lot 继续生产且不会自动转换。快照发布 family、tier、
+highest available tier 和当前可建状态。
+`subsistence_food` 与 `household_cloth` 家族仍保留 gathering、pottery、guild、steam 等历史层级，
+但这只是家庭/小农升级族的构造选择，不是食物产能的时代上限。农业专门化、机械化、精准农业和
+自动化建筑继续在电气、原子、信息与智能时代提供新生产法；食物容量按每名劳动者的完整
+`survival_household` 生存篮子标定，后期基线为蒸汽 `6.0`、电气 `18.0`、原子 `40.0`、信息
+`90.0`、智能 `180.0`。Modifier 和地域因子仍可在运行时继续放大该基线。
+
+科技 Country Modifier 的生产家族和精确建筑类型 stat 在 `configure()` 时解析为 dense ID；
+`capture_country_epoch()` 将国家×家族与国家×建筑类型因子冻结为连续 Q16 表。建筑组缓存把国家、
+部门、科研机构、家族、精确建筑和 Economy building identity 因子一次性合成，实际生产与投资/恢复
+预测共用同一组合顺序。热循环不查询字符串或 Country ModifierStore，这些表为 epoch 临时数据，
+不进入 PKEC、状态哈希或国家持久状态。
+
+2026-08 的科技效果审查把同一冻结契约扩展到精确物资、自然资源和地理条件。冷启动解析
+`country.output.good.<good>_factor`、`country.input.good.<good>_factor`、
+`country.consumption.good.<good>_factor`、`country.resource.<resource>.use_factor`、
+`country.resource.<resource>.managed_generation_factor`，以及
+`country.output.terrain|landform.<id>.<sector>_factor`；全局轴另有
+`country.production.input_factor`、`country.household.consumption_factor` 和
+`country.resource.use_factor`。`EconomyCatalog` 同时提交稳定的 sector、terrain 与 landform ID，
+原生运行时在 `capture_country_epoch()` 将它们冻结为国家稠密 Q16 表，热循环不拼接 stat key。
+
+精确产出和地理×产业因子进入实际生产、恢复探针与投资预测的同一产出组合；生产投入因子同时进入
+能力上限、候选价格、采购、预留、成本和需求信号；自然资源 use 因子同时约束容量、实际扣减、恢复
+探针和投资资源核算，managed-generation 只作用于建筑明确产生的资源。居民消费的全局与精确物资
+因子改变物理篮子数量、订单、结算和税费，并从家庭偏好函数中移除重复乘算。所有因子仍是 epoch
+scratch，不改变 PKEC 字节布局、状态哈希或调度阶段。
+
+周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
+收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率按可售产出的真实售罄率调整，
+耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；严重亏损状态机仍是完全停产的唯一入口。生产者自留只在该业主实际生产的单组分生存食品或寒冷衣物之间重新归一化，不再把最低生存额稀释到其无法生产的理想替代品上。
+
+周期开始时先做**增量就业**（不再全量清零重建）：按本周期计划利用率目标夹紧各建筑
+`filled_owner`/`_building_employee_filled`（缩产差额裁员 → 超出目标的在岗人口迁往 `unemployed|eth`），
+再让活跃建筑按 `(realized_profit_margin_q16, planned_utilization_q16, group_index)` 稳定序**跨建筑类型**
+优先从失业池增量招人（先喂最赚钱；招人跨原职业，失业者可被任意缺人建筑吸收，ethnicity 不变）；
+同一 owner signature 被多个建筑组共享时，现有 `filled_owner` 也按该优先级夹到该 cohort 的存活人口，
+防止人口减少后各组分别“已填满”但 cohort 无对应在岗人口。household demography 与 structural commit
+ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席位，planned utilization 只降低
+每栋投入、产量和资源消耗；RECOVERY 才按 probe capacity 缩放业主需求，SUSPENDED/不可用组为零。
+`planned_owner_equivalent` 是利用率折算诊断，不是可裁撤岗位，因而 ACTIVE 的 `filled_owner` 高于该值
+属于正常状态。`projected_owner_income_per_day` 保留实际/已结算的建筑组日收益口径；业主岗位流动使用建筑级
+`opportunity_owner_income_per_day`，两者都不按 owner 数平摊。已消费的自留商品继续按冻结零售价计入该总收入，
+但不铸币。
+失业池的岗位比较不读取迁移时按比例携带的存款、周期账目或收入 EMA：劳动/经营收益为零，只有按
+失业 profession 的冻结负所得税率、`survival_household` 日成本和当前财政履约率计算出的可兑现所得补贴
+进入保留收益。改善率以该来源保留收益为分母；目标机会收益已经包含生活成本，不能再用生活成本
+重复压低改善率。候选只读阶段与人口迁移 replay 复用同一个值，避免二次判断使用不同收入公式。
+之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
+`owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
+失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可沿机会梯度从同民族、至少有一名
+业主的 ACTIVE 建筑吸引一名业主；若没有合格业主来源，还可从任一 ACTIVE 建筑吸引同民族
+在岗 employee 晋升或转行为 owner。目标按冻结预期税后业主日收入（`opportunity_owner_income_per_day`）
+降序，owner 来源按该收入升序，employee 来源按合同工资的预计税后收入升序。来源不再要求
+已满编：缺编 lot 也可以放走人，使劳动力能从低机会岗集中到高机会空岗。目标收入必须至少
+高出来源的基础转岗门槛（同职为 displacement 最小优势，跨职至少约 12.5%）；当来源在快照时
+已缺编且来源机会收入仍为正时，门槛再乘
+`employment_understaffed_reallocation_hurdle_mult_q16`（默认 2×），以抑制两个缺编正机会
+岗在噪声下互挖乒乓；从来源机会收入≤0 跳到正机会目标时仍只用基础门槛，使离开亏损/零机会
+岗更容易。达到门槛后确定性转岗，不再用随机抽签截断已经形成的价格信号。每个目标和来源
+建筑组每周期最多参与一次成功流动，来源可失去最后一名普通业主或 employee，但最后一名本地
+商人不可流出。挂着重启采购意向、上期零产出零销售的 ACTIVE lot 原本整体不做 owner 来源（保住
+重启预留）；当其业主 cohort 生存满足度低于 0.5 时取消该保护，打光猎物的营地里挨饿的猎人
+可以转去其他岗位，而不是守着零产出的营地饿死。同职业只调整岗位归属；跨职业通过 `move_cohort_population()` 按人口比例携带
+资金和当期 cohort 账目，不发生出资、建设或额外现金转移。SUSPENDED、不可用建筑与不同民族
+不参与。report 以 `building_employee_to_owner_reallocations` 单独统计 employee 来源，
+`building_owner_understaffed_reallocations` 统计来源快照时缺编的 owner→owner 成功流动；
+兼容字段 `building_owner_job_probability_skips` 保留但当前确定性路径不再递增。
+**同类型**已建组仍有业主空缺时，投资审查以 `ACTIVE_OWNER_VACANCY` 拒绝该类型继续扩容，
+直到就业侧先填齐空缺。**不得**因生存食品短缺（旧 `survival_vacancy`）绕过该门：空岗上的
+机会报价按满员假设仍可 `feasible`，短缺不会因继续垒空壳而消失，曾导致
+`wild_tuber_patch` / `wild_wheat_stand` 在数十人口下扩到上百座空建筑。生存食品缺口改为
+通过就业/转岗填现有空岗竞争劳动力。**不得**因格内其他类型的空缺而禁止无关 greenfield；
+新建产业与既有空缺岗通过利润/机会收益竞争劳动力，而不是用整格硬门互锁。就业追赶
+（`employment_catchup`）同样不得绕过同类型空缺门。capacity 资源边（如肥沃土壤）与 extract
+一样参与投资承诺与批量上限。单次审查还另加**人口编制硬顶**：已建 + 在建 + 本轮已分配的
+业主岗总数不得超过本格人口，避免赞助意愿/商人信贷在 greenfield 水填中一次盖出远超劳动力的空壳。
+利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
+保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
+`survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
+暴露保留最低衣物；其他需求和超过最低量的产出直接进入 offer。商人按 `max(feasible demand, actual withdrawal) + export EMA` 与 30 日基线乘商品比例后的有效库存天数计算
+库存缺口，以 good-specific `merchant_buy_price_factor_q16`（默认
+`62259 / 65536 ≈ 95%`）计价。该配置是硬上限：库存为零或极端短缺也不会把生产者
+结算系数推向 100%；短缺、生存品和生产投入只改变数量与预算优先级。期初采购现金
+保留 12.5%。Price V4 的成本锚继续用“生产者所需结算价 ÷ 收购系数”反推零售目标，
+因此可同时覆盖生产者成本和商人流通毛利。
+
+业主流动收入（`owner_mobility_income`）：已有结算产出的建筑用上期已实现现金流；
+**从未投产的空岗**改用 `owner_opportunity_quote` 的人均反事实机会（打制工坊的影子需求门仍生效），
+避免 UI「机会收益」很高、转职侧却因 settled=0 永久拒招的死锁。
+
+建设竣工（`commit_ready_construction`）：本次 pending 落成时只增加
+`pending.count × owner_slots` 的 `filled_owner`（与投资时迁入的出资人数一致），
+不把同签名 cohort 整批塞进建筑。1 人出资占 1 岗，N 栋新楼占 N×slots 岗。
+
+国内贸易按目的地冻结 `max(0, merchant_cash - existing_order_reserved_cash -
+merchant_cash × merchant_procurement_cash_reserve_q16)`。候选裁量、利润裁剪与最终
+扣款使用同一余额并逐单递减；资金不足记录现金拒绝，不创建零数量或未充分预留订单。
+若 survival food / cold-clothing 出现居民短缺，或生产投入 reserve 大于当前库存，native 会把 `last_shortage_q16` / reserve shortfall 转为 `trade_relief_pressure_q16`，提高本地库存目标和商人采购目标；建设命令因材料库存不足被拒绝时，也会把材料缺口写入 business demand / non-household withdrawal，使后续采购和贸易能看到长期建设短缺。未解锁施工材料直接返回 `building_construction_good_locked`，不会生成采购需求。
+无历史出库或本地供给时仍按完整有效天数建立冷启动做市库存，
+其余预算按缺口价值和稳定 good/group 顺序分配；未获正常采购的耐储余货按本地零售价 20% 托底发行并入库，`cycle_flow` 余货先低价清算/托底、再在 cell 边界清零。销售后统一分配工资和奖金，居民再用本期收入购买
+包括本期新产出在内的库存。留用品直接增加该 owner 的 need filled，不转移资金；未消费余量按
+来源 owner-lot 计入 `last_discarded`。建筑采样使用
+`max(0, reserve + min(pending_extra_change, 0))` 作为有效可采储量：尚未被资源 pass 消费的负
+delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacity` 模式：extract 按产量扣减并
+发布负 delta；capacity 只以 `reserve / (building_count × requirement)` 限制产能，不扣减储量。
+自然资源 reserve 与 goods 使用相同的定点尺度，但不是同一种经济单位。extract 配方按采集方式、
+技术和资源类型使用 `2:1` 至 `25:1` 的总产出/资源投入效率；例如砂金淘洗 `2:1`、露天银矿
+`4:1`、蒸汽煤铁矿 `12:1`、现代煤铁矿 `20:1`。多副产品按输出总量计算。原生公式仍分别读取
+资源投入量和物资产出量，因此效率分级不增加新状态、调度、API 或存档字段。
+农场使用旱作耕地/水田/种植园容量和肥沃土壤生产 crop goods，不再培育 crop resource。
+资源边只允许 `local`。海鱼储量由 `coastal_land` habitat 直接生成在与海洋相邻的沿海陆格，
+岸上渔场、狩猎营、矿山和农场 capacity 都只检查建筑本格；catalog 和 native 配置同时拒绝非本格
+访问模式。该约束不增加运行时状态，且移除了生产热循环的邻格 gather。
+
+**worker 自持资源储量（2026-10-13）。** 经济在 worker 上执行时（`capture_worker_day_input`），
+主线程槽位只在首次 worker 捕获时用来播种一次：worker 用和主线程同语义的 float 通道
+（`_worker_resource_reserve` / `_worker_resource_extra`，按资源 × 格排布）保存储量和待处理差额；
+读档时改用存档里的储量播种，差额为 0。之后：
+
+- 提交时（publish 末尾 `fold_worker_resource_deltas`），本 epoch 的采集差额并入 worker 差额通道，
+  并立刻重写对应格的 `resource_stock_lanes()`，存档拿到的就是采集后的储量；
+- 每次捕获时（`advance_worker_resource_reserves`），用 worker 当天的气候（经济输入 f0–f3）、
+  水面（geography[3]）、栖息地掩码（`RuntimeEconomyDayInput::resource_habitat`）和 ECONOMY 域的
+  `economy.city.resource[.<id>].regen_factor` 结算自然再生。节奏与主线程相同：有人格子
+  （`_economy_live_cells`）每天补算，连续有人时最多追 5 天；其他格子按 `idx % 60 == day % 60`
+  轮转，最多追 60 天。节奏状态不进存档，读档后从当天重新开始（与原主线程行为一致）；
+- 储量仍是 `max(0, reserve + min(extra, 0)) × GOODS_SCALE`，换算与原来的槽位播种完全相同。
+
+再生公式与主线程 `run_natural_resource_pass` 共用 `natural_resource_kernel.h`，系数来自
+`EconomyFacade.configure()` 调用 `configure_economy_natural_resources(ResourceProfileRegistry.build_pass_knobs())`，
+按储量槽名对齐经济资源。worker 模式下主线程的 `run_natural_resource_pass` 跳过这些资源
+（返回 `skipped_worker_owned_resources`），`flush_runtime_economy_resource_writeback` 改为把 worker 的
+储量和差额按变化格镜像回槽位并 flush 到 MapData，供 UI、生态和存档读取。同步（SUS）路径不变。
+原因：主线程最多领先 worker 3 天，槽位在捕获时反映到哪一天取决于机器速度，按槽位重置储量会让
+同种子长跑不可复现（见 `country-ai-runtime.md` §9）。
+
+世界设置启用测试经济数据时，fixture 先生成资源适配的自给、采集与本地产业 owner-lot，随后
+通过 `EconomyFacade.building_job_spec()` 读取 catalog 岗位列并派生 cohort。生成前用
+`building_placement_spec()` 的投入/产出数量计算本地净食品和衣着容量。每格目标人口为岗位容量、
+预测 `K_eff` 的最小值，并封顶 `300`；预测 `K_eff` 使用计划食物净供给除以每人每日生存口粮，
+衣着容量继续作为诊断列保留。商栈的一个 merchant 岗位也计入人口和生存
+容量。重复建筑只削减到该目标，每种已投放类型至少保留一栋；不具备最低承载力的地块不生成人口。
+人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
+
+Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口页每日列表
+走 `include_details=false` 的 snapshot，需求、福利分项与市场价仍留给对象详情和完整页
+重建。人口页暴露 `carrying_k_geo` / `carrying_k_eff` / 物资覆盖 / 阶层 sat，
+以及各族 bindable cover，不把 21 族做成调试表。
+资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
+Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝。
+
+Inspector 将 `busy/read_view_pending` 作为等待态：保留已显示的已提交内容，首次打开
+Tab 或对象详情时由 `GameUIManager` 每 150ms 重试，切格、关面板或换世界后取消旧请求。
+`CellInspectorViewModel` 只缓存当前地块各 Tab 的完整展示 category，等待态不覆盖它，
+且缓存仍受可见性门控；它不保存或修改经济权威状态。首份有效 category 到达后，
+`InspectorPanel` 按控件结构补建首次缺失的内容，其余数值更新只打补丁。人口、建筑、
+资源和家族名录仅隐藏已消失的行，不能先隐藏全部行再显示，以免高速日更打断点击。
+相关回归为 `tests/inspector_refresh_lifecycle_test.gd`，真实 50x worker 对局点击验证为
+`tests/inspector_fast_forward_runtime_test.gd`。
+
+公共冷路径 `get_building_cell_snapshot` 返回建筑 owner-lot、岗位实到、周期投入/产出/销售、
+资源容量/采收及选中地块的 reserve/pending/effective 三列。PKEC v5 的历史字段
+`last_resource_generated` 仍为 byte-layout 兼容保留；当前 crop-capacity 目录不依赖正培育。
+食品和气候衣着不足在居民清算后产生确定性死亡，不以前一周期满足度前置削减就业人口。
+Inspector 对 capacity 边显示有效容量，对 extract 边显示实际采收。v4 的实际投入成本与实付工资继续用于
+利润；v8 另保存 role 合同工资、生活成本、当地均薪、基础工资/奖金、欠薪停产标记和稀疏
+LaborMarketStore。利用率按带舍入容差和短缺恢复的售罄率响应；生产完成后仅将超过目标业主利润的 25% 结为奖金。
+命令流包含 BUILD/DEMOLISH；v2-v7 均可迁移，缺失字段使用确定性默认值。
+
+10k cells / 10k owner-lot / 30k cohorts、固定 N=5、template_release 的同工作树 A/B 中，
+禁用生活成本调用 p95 为 9.098ms，启用完整机制为 9.388ms，净回退约 3.2%；完整机制
+`wage_plan_ms=0.34ms`、`labor_signal_ms=0.30ms`、5000 个稀疏 labor edges，
+runtime memory 114.6MB（SELECTIVE；TRACE_OFF 为 111.3MB）。该 A/B 用于本次小于 10%
+回退门槛，不与较早目录/实现的绝对 p95 混作同基线。
+
+2026-07-12 最终复跑同一固定 N=5 release 场景：SELECTIVE 为 avg/p95/max
+`2.414/10.105/10.105ms`、114.6MB；TRACE_OFF 为 `2.222/9.272/9.272ms`、111.3MB。
+TRACE_OFF 的 `wage_plan_ms=0.341ms`、`labor_signal_ms=0.326ms`，population/money/goods
+error 为 `0/0/0`，无 fallback。
+
+## 建筑资源链性能门槛
+
+Windows / Godot 4.6.2 / template_release / 2026-07-12，历史显式固定 `market_cycle_days=5` 基线：
+10k cells、10k 稀疏 owner-lot（煤矿/玉米农场各半）、30k cohorts 共 9 个建筑切片，
+avg `2.152ms`、p95/max `8.834ms`、runtime memory `113.3MB`。资源生成/消耗/净变化为
+`0 / 224.995M / -224.995M` GOODS_SCALE，population/money/goods error 为 `0/0/0`，
+无 fallback。该结果是建筑混合资源边门槛，不代表自动周期的 Market V2 大规模档。
+
+## 分层经济事件追踪（PKEJ v1）
+
+`NativeEconomyRuntime` 同时拥有 committed economy event journal。生产默认
+`economy_trace_mode=SELECTIVE`：所有 market、command、结构变化和稀疏建筑组结算生成紧凑
+cause summary；只有 `set_economy_trace_filter()` 选中的 cell 才附带 cohort/market 字段的
+`before -> after` delta legs。建筑事件沿用 `(cell, building_type, owner_signature)` owner-lot
+身份，不创建逐栋建筑 Object。
+
+worker 只把选中 market 的 detail fragment 写进 `MarketResult`，主线程按 market index 稳定
+append，并在 append 时增量生成 provisional event ID 与 stream hash；`aggregate_publish` 守恒
+通过后只做 O(1) batch commit。失败 epoch 丢弃 staging events，handler 永远看不到未提交变化。
+
+GDScript 通过 `poll_economy_events`/`ack_economy_events` 的独立 consumer cursor 批量读取
+PackedArrays。通用 gameplay event bus 每次只接收一个 `ECONOMY_EPOCH_COMMITTED` 通知，
+不承载高频 delta。事件不参与核心 economy state hash；另以 `event_stream_hash` 验证
+scalar/worker 事件确定性。
+
+玩家人口 Inspector 使用独立的 `set_economy_inspector_trace_cell()` 单地块目标。事件 schema v4
+新增 `producer_support_issuance`，把托底发行与普通 `owner_operations` 收入分开。冻结周期中
+worker 仅把居民消费与商人居民销售写入局部结果，主线程再与工资、业主经营、产业供货、商人
+收购、建设和转移支付资金腿合并；提交时以 cohort 总账补齐 `other`，保证来源合计严格等于
+`epoch_income/epoch_expense`。正所得税继续在工资、业主净经营所得和商人家庭销售净所得的
+来源处扣缴；负所得税先写入逐 cohort 临时应税收入，在全部 household clearing 完成后的
+`income_subsidy` 子阶段，以
+`max(汇总应税收入, survival_household 本地每日成本 × 人口 × 周期天数)` 申请，并在 cell
+预算不足时按 cohort 申请同比例兑现。财政预算在 epoch 开始除当前 cohort 外，还为本国已解锁
+建筑的 owner/employee 职业按民族预留一份有界的最低生活所得补贴 floor，因此目标职业当前为零人口
+或目标建筑尚不存在时，税后收入比较仍能看到可兑现的所得补贴。
+履约率是预测与结算共用的冻结承诺比例，因此没有申请、也没有分到托管份额的车道履约率为零，
+不得沿用 100% 默认值；否则报价会承诺 `apply_fiscal_tax` 无法兑付的补贴。新车道靠首个 epoch
+记录申请、下个 epoch 从国库预留托管现金完成自举，家族购买折扣同样按此路径受国库上限约束。最低生活税基不进入正税。消费/业主结算同时按财政税率
+记录 `income_tax`、`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
+`business_subsidy` 收入腿（负税率），人口快照的 `settlement_cashflow_source_stable_ids`
+一并导出这些来源，Inspector 阶层收支按来源名展示税收支出与补贴收入。人口快照返回上次提交
+的 cohort-major 稀疏 cashflow CSR、周期日期与 available/pending。滚动五相模式只为本日到期
+地块发布完整 cashflow；未到期日不会用旧总账对零条本日来源做 `other` 对账，而是继续返回
+该地块上一次完整分类。它随 PKEJ retention 有界保留，不进入 PKEC、核心 state hash 或全
+世界 cohort 常驻布局。
+
+2026-07-13 固定 N=5、10k owner-lot release 复核：SELECTIVE + 单 inspector cell 的 building
+slice avg/p95/max 为 `2.236/8.884/8.884ms`、runtime 114.6MB、trace 3.4MB；同版本
+TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
+`3524023550113083945`，population/money/goods error 均为零。
+
+2026-07-12 / Windows / Godot 4.6.2 / template_release 的同版本 A/B：
+
+| 档位 | 模式 | avg | p95 | max | trace memory |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 10k cells / 200k cohorts / auto N=50 | SELECTIVE | 1.983ms | 2.685ms | 2.914ms | 6.8MB |
+| 同档，选中 1 cell detail | SELECTIVE | 2.056ms | 2.769ms | 3.040ms | 6.8MB |
+| 100k cells / 10M cohorts / auto N=334 | TRACE_OFF | 4.986ms | 5.598ms | 7.930ms | 0.1MB |
+| 同档 | SELECTIVE | 5.111ms | 5.748ms | 9.238ms | 16.9MB |
+| 10k owner-lot / fixed N=5，5-epoch soak | TRACE_OFF | 0.841ms | 1.804ms | 2.096ms | 0MB |
+| 同档 | SELECTIVE | 0.865ms | 1.826ms | 1.903ms | 16.8MB |
+
+10M SELECTIVE 相对同版本 TRACE_OFF 的 avg/p95 增量约 2.5%/2.7%；固定五日建筑 soak
+增量约 2.9%/1.2%。两档核心 state hash 在 trace 模式间不变，journal 均低于 32MB 默认上限。
+
+## 跨时代产业目录与货币发行（2026-07-14）
+
+现代基线由可复现且支持只读 `-Check` 的 `tools/codegen/gen_modern_economy_content.ps1` 生成，
+跨时代扩展后全目录为 135 goods、356 building types、45 professions、20 household needs 和 11 consumption plans。31 种注册自然资源均至少被一个
+`collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
+`technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
+由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
+
+生成器以默认商品价格和消费计划计算每个职业的参考生活成本。fixed 与 adaptive role 的目录工资
+均不低于该值；产量取“投入与工资达到目标利润率”和“投入与工资支付后业主仍覆盖生活成本”所需
+收入的较大值。内容审计复算同一公式，防止低工资使建筑表面盈利但人口持续死亡。
+
+职业目录优先表达劳动关系和长期技能层，而不是为每个时代/单品建立一次性职业：石器生产由
+forager/hunter/artisan 自营；青铜和古典使用小规模 apprentice 与 enslaved_laborer；封建和
+探索时期加入 serf、tenant_farmer、indentured_laborer、journeyman；蒸汽以后才由
+industrial_worker、technician、engineer、manager、researcher 组成多角色企业。该变化只修改
+catalog/content，PopulationStore、signature ABI、BUILDING_GRAPH 和 PKEC byte schema 均未改变。
+
+内容生成器以显式生命周期表区分持续产业和有界产业。只有持续产业会自动获得后续时代生产法；
+有界产业在其最后一个有宏观意义的时代停止扩展。审计不再要求每个时代达到人为建筑数量下限，
+而是要求每时代非空、累计闭包成立、目录不超过复杂度预算，并拒绝未分类的早期单点生产源。
+该约束只改变 catalog 内容，不增加 native 热循环分支、状态列或存档字节。
+
+锂、钴、石墨、镍、铂族和铀的独立目录项合并为显示为“战略矿产”的
+`rare_earth → rare_earth_ore → rare_earth_metals` 稳定内部链，并新增独立 `nuclear_fuel` 加工。
+核电站与同位素反应堆不再直接消费战略矿物材料。对应的旧 DataCore 资源 slots 已删除；
+当前 schema 与 30 个注册资源对齐，当前 catalog 和旧 PKEC stable-ID 表不兼容。
+
+`BuildingProfile` 的单个输入槽可在精确 good、category 候选和显式候选 CSR 三种模式中选择。
+显式 CSR 携带配方级 Q16 效率并由 `EconomyCatalog` 按 stable good ID 规范化，native 继续使用
+既有 InputCandidate 库存满足度、有效价格和 stable ID 决策。建筑查询通过
+`group_input_selected_offsets/group_input_selected_good_ids` 返回每槽上次实际采购项；这是有界的
+Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC。restore 后保持 `-1`
+直到下一次成功生产。PKEC restore 解码每个建筑组时必须按对应 building type 的 input count
+重新分配这一 transient span，并在 `end_restore()` 校验 span 边界；缺失或越界必须在恢复阶段
+明确失败，不能延迟到后续 `BUILDING_PRODUCTION`。该扩展没有修改权威公式或存档字段。
+
+`gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/50000 money subunits。市场接收
+建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
+库存参与珠宝、电子等生产且不重复发行。每 epoch 的总池按财政 reserve 后的 spendable money 乘
+冻结月发行率，再按 epoch 天数和 cell 资金权重以最大余数法精确分配；fiscal/trade/expedition escrow
+不构成发行基数。report 分别发布 accepted quantity、issued money、`bullion_money_issued` 及
+`bullion_quota_initial`/`bullion_quota_remaining`。普通产出的正常采购仍受 merchant cash cap，余货则走低价托底发行。merchant 建筑预检只允许单一金/银产出、
+严格对应的唯一金/银矿藏、extract 行为且无资源生成；后期矿井可以有雇员和工具输入。
+
+职业消费使用八套结构不同的原型；全部原型都包含主食、蛋白质、蔬果、衣着、居住、家庭用品、
+卫生、医疗和家庭能源九项基础需求，其他舒适/奢侈需求按生存、农业、采掘、产业工人、工匠、
+技术、商人和业主原型分层。基准数量不再用统一的 food/non-food 常数，而按实际消费频率配置；
+各原型再分别应用基础、舒适、奢侈三档比例，财富弹性从主食的低弹性逐步提高到身份消费。
+`survival_household` 继续作为自适应工资的生活成本基准。
+
+三个饮食 need 对 UI 统一显示为“食品”，但 native 仍分别保留营养、价格和技术替代权重；野味与鱼类是
+蛋白质替代品，马铃薯也是主食替代品。Inspector 从嵌套 CSR 枚举计划内全部组件，以 market 科技位过滤，零分配但已解锁
+的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义是
+食品总满足或任一完整食品子篮子与气候衣着满足的较小值，等价于 `SAT_DIM_SUBSISTENCE`；自 2026-08-04 起它
+**只**驱动饥饿死亡，出生率与其余玩法读 `composite_satisfaction`，见
+[综合满意度运行时](./satisfaction-runtime.md)。周期开始时仍存活人口先就业和生产；默认 50%
+是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
+审计和结构回收路径。默认职业年出生/基础自然死亡率为 20.0%/7.5%；自然死亡率乘国家科技 stat
+`country.population.death_factor`（下限 1/3，科技叠满到 2.5%）。出生乘数在 composite 0.70→0.85 间
+从 1.0 升到 1.15，负载 0.9→1.0 渐退，石器开局净增长约 15.5%/年；
+出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
+混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
+贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
+`K_eff` 由上一周期净食品流量与当地可用食品库存共同决定；库存按 `carrying_stock_buffer_days`
+（默认 30 天）折算，并排除生产/建设锁定量。默认 `carrying_soft_start_q16=58982`（约 90%），
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v47 持久化；不新增调度阶段。
+
+建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
+`wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
+
+居民直接消费不再使用 railway_equipment、oceanic_vessels 或 scientific_instruments 代理交通/科研
+服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
+仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
+Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v47（建筑事实/报价诊断追加在业务 payload 尾部；v46/v45/v44/v43/v42/v41 可读），旧存档的食物流量标记为无效并在首个新周期重建，cadence 为锁定 N/P/I。
+生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
+野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
+
+`electricity` 是唯一 `cycle_flow` good。`building_production` 内先运行只产出 cycle-flow 的
+utility groups并结算 offers，再运行其他 groups；cycle-flow 产出会先按本周期可售量进入同周期低价清算/producer support，随后剩余电力在 cell 生产结束时清零并计入 goods
+sink。report 发布 `cycle_flow_produced/consumed/discarded`，跨周期市场库存必须为零；家庭公用
+事业结算尚未实现，因此家庭能源替代不包含电力。
+
+软件、数字服务、AI 模型、轨道科研、遥测、卫星、深空探测、轨道回收与聚变燃料链本轮删除，
+不再伪装为可交易服务或地表商品。本轮不建立服务经济或轨道市场替代系统。
+
+2026-07-12 template_release Price V3 验证：100-good/200k-cohort auto N=50 为
+avg/p95/max `1.883/2.766/3.126ms`、`101.0MB`；200-good/10M-cohort auto N=334 为
+`5.542/6.333/9.394ms`、`1680.6MB`。10k cells/10k owner-lots/124 goods、固定 N=5、
+SELECTIVE 的 building slices 为 `2.152/8.834/8.834ms`、`113.3MB`，三项审计均为零。
+相对改造前同目录基线，三档 p95 分别变化 `-4.1%/-40.1%/-27.3%`，runtime memory
+分别变化约 `+0.1/+0.4/-0.4MB`，满足 p95 不回退超过 10%、内存增量不超过 64MB 的门槛。
+
+2026-07-14 产业链简并后的最终 template_release、固定 `N=5`、`TRACE_OFF` 复核：
+
+- Market V2 synthetic 10k cells / 200k cohorts / 100 goods / 16 needs：2500 samples，
+  avg/p95/max `1.838/2.982/3.665ms`，4 worker tasks，runtime memory `94.6MB`。
+- 实际 181-building catalog 的 10k owner-lot / 30k cohorts：每次 9 building slices，最终二进制三次
+  中位 avg/p95/max `1.359/5.945/5.945ms`，三次 p95 范围 `5.733-7.642ms`，观察到的
+  all-slice max `11.801ms`，runtime memory `111.9MB`。
+  `production_output_discarded=0`、`building_wages_unpaid=0`，population/money/goods error 为 `0/0/0`。
+
+以上是历史显式固定五日 / workload-auto 证据，不与当前锁定 N∈[1,5]、P/I 分锁混用。
+
+同日 habitat/geology/crop-capacity 收口后的 `TRACE_OFF` 复核：100 goods / 200k cohorts 为
+avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
+`5.372/6.072/8.891ms`、`1663.8MB`。加入 frozen 六邻资源访问后的 10k owner-lot 混合建筑档为
+`2.129/8.643/8.643ms`、`110.2MB`，记录 `capacity_checks=10000`、
+`capacity_limited=0`、`extract_limited=0`，population/money/goods error 仍为 `0/0/0`。
+
+2026-07-15 need 总量价格弹性与企业售罄率响应加入后的 template_release 复核：同一 synthetic
+10k cells / 200k cohorts / 100 goods / 16 needs，auto `N=50`、SELECTIVE 为 2500 samples、
+avg/p95/max `2.064/2.919/12.441ms`、`112.8MB`；固定 `N=5`、`TRACE_OFF` 为
+`2.185/3.269/3.892ms`、`94.6MB`。相对 2026-07-14 固定五日 TRACE_OFF 的 p95 增幅为 9.6%，
+低于 10% 门槛；总量价格幂仍只按 market×need 预计算，不进入 cohort hot loop。
+## 2026-07-18 producer viability and procurement calibration
+
+- Owner-operated building plans and output cost anchors include the filled
+  owners' frozen-period base living cost. This is a viability/cost signal, not
+  a wage transfer and not a new wallet. Realized-loss suspension still uses
+  actually paid inputs and employee base wages, so an imputed owner income does
+  not create a fake cash loss.
+- A producer cohort reserves at most one period of base household cost and at
+  most half of its current cash. The reserve constrains physical inputs and
+  discretionary profit bonuses. Contracted employee base wages remain senior
+  claims and may use the full owner balance; the reserve therefore cannot
+  manufacture wage arrears or permanently lock a viable workshop out of its
+  next input purchase.
+- Merchant bids interpolate from the configured base buy factor toward frozen
+  retail price as shortage or the unchanged inventory-target gap grows.
+  Procurement budgets are weighted by survival, shortage, and production-input
+  urgency, capped by each good's actual target gap value, and repeatedly
+  redistributed when a high-priority good reaches that cap. Inventory horizon
+  and target quantities are unchanged.
+- The mid-Stone-Age hand workshop lots are demand-sized: household weaving uses
+  `120 -> 90` goods units/day and knapping uses `100 -> 140` units/day. This
+  prevents one five-day cottage batch from overshooting local cloth/tool demand
+  by an order of magnitude while preserving physical inputs and owner jobs.
+- These fields are derived from existing authority columns. PKEC schema and the
+  five-day committed cadence do not change.
+## 2026-07-20 PKEC v14 economic repair
+
+PKEC v14 keeps `NativeEconomyRuntime` authoritative and replaces the former
+cash-compressed production signal. Each frozen production cycle now records
+desired, funded, and unfunded business demand. Desired demand drives the sparse
+market signal, price pressure, trade relief, and investment gap; funded demand
+alone may buy inputs and produce goods.
+
+Working capital is allocated once per `(cell, owner_signature)` across all
+owned building groups. A capped livelihood reserve and the part of base payroll
+not covered by frozen expected revenue are protected. Critical survival and
+downstream-input groups receive a deterministic first-pass allocation of up to
+25 percent of desired cost, followed by score-ordered allocation. No account may
+become negative and no money is created by this allocator.
+
+Endogenous investment is reviewed every 10 days and considers every
+technology-unlocked building type, including types absent locally. Every catalog
+building has an explicit, positive construction recipe; an empty recipe is a
+codegen/audit failure rather than a zero-cost investment exception.
+Required capital includes construction goods, two market cycles of inputs, one
+cycle of base wages, and 30 days of owner livelihood. Every local
+profession/ethnicity cohort with enough cash after retaining its full 30-day
+livelihood reserve is
+eligible; the last local merchant is the only mobility exception. Projected
+owner income must exceed current per-capita income. The fixed-point income-gain
+ratio is the investment probability, sampled deterministically from
+`seed/day/cell/type/signature`. A cross-profession winner moves one person and
+the required capital into the building's configured owner profession; an
+already matching owner cohort invests without a fabricated mobility transfer.
+
+## 2026-07-26 weighted worker and exact audit update
+
+`NativeEconomyRuntime` remains the sole mutable authority. Building-plan
+evaluation, production, and household markets now use deterministic contiguous
+weighted ranges capped by `economy_worker_task_cap` (default 12). Plan metrics and
+production/market result buffers are task-local; the authority thread waits and
+merges by task id, preserving scalar state and event hashes. No new DataCore
+slot, bridge packet, PKEC field, or fallback is introduced.
+
+Opening totals reuse the previous exact committed close on ordinary days and
+refresh country treasury cash/goods directly from `NativeCountryRuntime`.
+`economy_full_audit_verify_interval_days` defaults to 25 simulation days (five
+economy epochs) for a periodic complete opening scan. The closing audit and
+population/money/goods conservation checks remain complete on every rolling
+transaction.
+Collector entry is additionally constrained by the current cell-resource
+budget: renewables use reserve-responsive safe yield, while non-renewables must
+retain the configured deposit runway. Local construction conditions and the
+configured 30-day bullion issuance cap remain; its base is post-reservation
+spendable money rather than locked escrow.
+
+Investment catalog traversal now has an exact sparse front end controlled by
+`economy_investment_sparse_mode=OFF|PROBE|ACTIVE` (default `ACTIVE`). Only a
+cell whose capital review is due refreshes its market's transient active-good
+bitset from frozen household/business demand, supply, realized withdrawals,
+exports, stock, and the exact merchant inventory target; ordinary household
+markets do not pay for a second full goods scan. A catalog-baked
+output-good-to-building CSR expands those goods to candidate types. Existing and pending local types are always retained,
+their output goods are enqueued so unlocked competitors of an already-supplied good stay visible,
+and their construction inputs close the candidate set recursively, so repair,
+growth, and same-review construction-shortage feedback cannot disappear.
+`PROBE` evaluates the full country catalog while measuring the subset. `ACTIVE`
+skips only types outside the conservative closure; inspector diagnostics and
+every `economy_full_audit_verify_interval_days` boundary still perform a full
+scan. If a full scan ever finds a viable omitted type, the runtime increments
+`investment_sparse_mismatches` and disables sparse filtering for the rest of
+the session. The reverse CSR, bitsets, and stamps are derived caches and are
+excluded from PKEC, state hash, and event hash.
+
+The default merchant inventory horizon is 60 days. Per-good target ratios still
+compile to one dense Q16 days column, so ordinary goods target 60 days,
+survival goods 90 days, important goods 75 days, and luxury goods about 40 days.
+This changes configuration only: market cadence, save layout, and ownership do
+not change.
+
+The 20 percent producer-support price remains a cold-start fallback. Issuance is
+capped per cell at 5 percent of opening money per 30 days. All support and
+bullion issues remain explicit mint audit entries.
+
+## 2026-07-22 construction closure and investment v6
+
+The generated catalog assigns all 261 buildings a positive construction bill.
+Recipes scale with owner plus employee slots, remove every self-output, and give
+construction-material backbone producers only earlier topological materials.
+The content audit closes construction goods and recurring production inputs
+together for ranks 0 through 10, starting from gathering/merchant/timber/stone
+roots and one-time `logs=1000`, `gathered_plants=250`, `flint=500` bridge stock.
+Unreachable components are reported as construction dependency SCCs.
+
+`endogenous_owner_portfolio_v8` selects one deterministic marginal output per
+candidate. Driver strength is the maximum of raw persistent shortage pressure
+and single-building utilization, with pressure, utilization, and stable good ID
+as tie breakers. A positive marginal deficit and utilization allow viability
+evaluation; no minimum shortage/utilization, sell-through, or discard ratio
+pre-approves or vetoes profit. Sell-through counts merchant cash purchases only:
+owner retention, producer support, and bullion issuance do not count. Projected
+revenue is summed per output after applying that output's observed merchant
+absorption or persistent deficit, so a scarce primary output can drive entry
+without assuming that every by-product sells at its quoted price.
+
+Monetary-issue outputs are the explicit exception to ordinary market absorption.
+For a building whose outputs all have a positive `monetary_issue_value`, household
+and business demand EMA does not throttle planned utilization because production
+settlement sends the full sellable batch to the mint. Investment keeps
+`merchant_sold` limited to cash-funded merchant procurement for diagnostics, but
+treats mint settlement as 100% economic sell-through, seeds a first entrant with
+one building of mint-backed utilization, and values projected revenue at the
+catalog issue value. The existing 30-day issuance-share cap, local construction
+conditions, construction materials, wages, owner livelihood, and capital checks
+still apply. Collector candidates must also fit the renewable safe-yield or
+non-renewable deposit-life budget after installed, pending, and same-review
+portfolio extraction are counted.
+
+The three sparse current-cycle producer lanes and all driver diagnostics are
+transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
+good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
+columns.
+
+投资组合提交在 `endogenous_owner_portfolio_v9` 中保持一次性预检：最多四个候选
+先按稳定顺序共享虚拟施工库存生成精确材料账单，再迁移 owner 人口/资金并提交
+这些账单。提交阶段不再重新调用会“成功返回但软拒绝”的通用 BUILD 入口，因此
+预检与提交之间的报价差异不会把已发生的迁移变成 fatal；材料、资金和人口审计
+仍在每个已提交账单上逐项校验。
+
+## PKEC v22 rolling settlement (historical foundation, retained by PKEC v41)
+
+The production runtime no longer waits for a global epoch. Stable cell phase is
+`cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded
+native continuation calls run plan, employment, production, household clearing,
+price/EMA, investment, audit, and publish for the due workset. Each call consumes
+up to eight deterministic chunks and may fuse cheap phase boundaries while its
+0.8 ms normal / 1.8 ms high-speed budget remains. While the due bucket remains
+in flight, the same-day barrier drives consecutive bounded continuations inside
+the current real-frame `sim_frame_budget_ms` time box. It stops before starting
+another range once the budget is consumed, or after a defensive maximum of 64
+continuations. Completed cells publish together at the final boundary, with
+`max_state_age_days<=4` and `deferred_cells=0`.
+
+Trade arrivals, refunds, escrow release, and invalid-order handling are daily
+transactions. ETA is `departure_day + ceil(route_cost / daily_speed)` and is not
+aligned to a market boundary. Incremental route planning may continue across
+days, but it cannot defer the due local phase.
+
+PKEC v22 persists per-cell settlement dates/generations, dirty generations, six
+frozen environment columns, building recovery pending state/cooldown,
+BuildingIdentityStore, the Economy Modifier domain, and building climate
+diagnostics. Restore accepts v22 only; v2-v21 are rejected with
+`legacy_climate_production_save_unsupported`. References to older PKEC versions
+above describe historical migrations, not the current reader.
+
+Accuracy policy is configured independently as
+`EXACT|BALANCED|FAST|CUSTOM` and rollout as `OFF|PROBE|ACTIVE`. The production
+default is `BALANCED+ACTIVE`: non-survival variant families use the certified
+anytime frontier, while deterministic 1% exact probes validate its demand and
+spending allocation. `ACTIVE` always keeps the highest-scoring exact candidate,
+begins with deterministic Top-K, and adds candidates until omitted score mass
+is below the configured regret certificate. Food/clothing survival families
+are never pruned. An invalid certificate, a failed exact probe, or an active
+cooldown takes the exact local path. `OFF` and `PROBE` remain exact
+rollback/baseline modes. Reports use
+`rolling_cell_settlement_v19_class_good_elasticity` and expose decisions, probes, frontier
+size/pruning, certified regret, failures, and fallbacks. These frontiers are
+derived scratch and are not persisted.
+
+Household settlement now uses thread-local result/staging-touch sinks and
+per-task landing buffers, so `BALANCED+ACTIVE` worlds above 4096 cells can use
+the same deterministic worker path as smaller worlds. The compatibility report
+field `approximation_large_world_scalar_guard` remains present but is always
+`false`; `market_worker_parallel_dispatches` and its `last_completed_*`
+snapshot show how many market ranges actually used more than one worker task.
+The worker/scalar authority hash and all conservation ledgers must remain equal.
+
+Each compact `household_market` continuation also exposes
+`household_market_breakdown_ms/work`. Settlement is split into `settle.prepare`,
+`settle.worker`, `settle.merge_aggregate`, `settle.merge_trade`, `settle.trace`
+and `settle.other`; the four bounded finalization substages are reported as
+`post_buildings`, `reserve_shortfall`, `income_subsidy` and `structural_sort`.
+These fields are diagnostic only and do not change the rolling five-day
+cadence, work ordering, save schema, or state hash.
+
+The rolling hot path also keeps a non-authoritative per-cell demand-basis cache.
+Building owner-retention and household clearing share the same frozen prices,
+technology, and environment, so fixed-point elasticity/power terms are computed
+once per due cell. Due building cells precompute disjoint cache slices in stable
+worker ranges; saturation counts are reduced in cell order. The cache is excluded
+from save and state hash and is rebuilt after restore. It adds about 18.2 MiB in
+the 2400-cell building benchmark, within the 64 MiB rollout ceiling.
+
+Building planning aggregates survival utilization floors in linear cell-local
+passes over owner signatures; it no longer rescans all later groups for every
+owner. Production market-signal observation uses cell-local CSR scratch lanes
+instead of catalog-wide good arrays. Endogenous investment runs as bounded
+rolling-phase cell continuations backed by epoch-transient `(cell,type)` pending
+and existing indexes plus a `(cell,resource)` harvest index. Sponsor, population,
+cash, material, and construction mutations remain in stable cell order.
+
+Building production now partitions the due-cell range through
+`parallel_for_range` when workers are enabled, the range and group counts clear
+the configured threshold, `WorkerThreadPool` is available, and the current
+identity mapping `cell_to_market[cell] == cell` proves disjoint market ownership.
+Each worker mutates only its cell-local population, building, resource-delta,
+market, and sparse-signal lanes. Non-local diagnostics, retained output, trace
+events, and cashflow entries are accumulated in one `ProductionResult` per cell
+and merged on the native main thread in original cursor order. The scalar path
+uses the same result-and-merge contract, so worker count does not change state or
+event ordering. Reports expose `building_production_worker_tasks` and
+`building_production_merge_ms`; merge time is already included in
+`building_production_ms`. This changes neither PKEC v15 bytes nor state-hash,
+DataCore, bridge, stage, cadence, or continuation inputs.
+
+## 2026-07-20 economy remediation
+
+`NativeEconomyRuntime` remains the sole mutable authority and the default
+five-day rolling settlement is unchanged. Employment report totals now use a
+per-cell epoch replacement cache, so non-due construction or population
+reconciliation cannot create negative unemployment by subtracting live state
+that was never counted in the current epoch.
+
+Investment V8 aggregates all owner lots of the same `(cell,type)`, compares
+demand with actual offered-supply EMA, caps entry utilization by input coverage,
+includes owner livelihood in operating cost, uses markup over cost for the target
+margin, and uses recent sell-through only to estimate cash absorption. Owner vacancies are left exclusively to building
+employment; they never transfer investment capital or count as candidates.
+Rejection codes are: `0` none, `1` pending construction,
+`2` suspended capacity, `3` owner vacancy, `4` legacy installed-capacity
+diagnostic (no longer emitted by Investment V8),
+`5` owner livelihood, `6` legacy sell-through, `7` legacy discard, `8` input chain, `9` target
+margin, `10` payback, `11` sponsor capital, `12` materials, `13` resource, and
+`14` deterministic probability skip. Codes `6` and `7` remain reserved for
+diagnostic/schema compatibility but the current scan does not emit them. Code
+`15` means there is no positive marginal output opportunity; it no longer means
+that a 12.5% shortage or 65% utilization threshold was missed. The summary report and CSV expose
+`building_investment_probability_skips`; `building_owner_mobility` now counts
+only profession changes attached to a construction start.
+CSV v14 historically added
+`building_owner_job_reallocations`, `building_owner_job_profession_changes`,
+`building_owner_job_probability_skips`, diagnostics
+`building_owner_understaffed_reallocations`, and building-row
+`projected_owner_income_per_day`. CSV v23 adds summary
+`building_employee_to_owner_reallocations`; CSV v16 additionally publishes aggregate debt,
+recovery, in-kind income, trade episode, generation, and arbitration diagnostics.
+Suspended groups retain one owner only when no active non-service owner vacancy
+exists. Otherwise active-first employment moves that owner through the ordinary
+unemployed-pool transition. They retain no employee demand or production intent.
+
+Trade diagnostics distinguish the current unresolved deadline count from
+`trade_response_deadline_misses_cumulative`, which increments once per shortage
+episode. Selected-cell market snapshots and CSV expose last attempt day, last
+rejection reason, and whether the signal is currently over deadline. Diagnostic
+reason codes are `0` none, `1` no spread, `2` margin, `3` route, `4` source
+stock, `5` capacity, `6` destination cash, `7` order cap, and `8` dispatched.
+The current count and maximum age are recomputed from every live signal clock at
+the committed boundary; planner-slice resets cannot hide unresolved signals.
+Bounded signal collection rotates its deterministic scan origin by simulation day,
+and destination ranking serves never-attempted signals before rejected or already
+dispatched signals. Destinations with no matching source receive reason `4`
+directly at scan completion. This prevents fixed cell/good ordering and the
+per-country/good target cap from starving the same settlements forever. These
+clocks and scan-order diagnostics are derived state and remain outside PKEC and
+state hash.
+
+## CSV v12 livelihood and response diagnostics
+
+CSV v12 separates the merchant opening-cash ceiling from real procurement opportunity.
+`merchant_procurement_opportunity` is the priced inventory gap, `allocated` is the
+cash assigned to that opportunity, and `unspent_allocated` is assigned cash that did
+not settle. Producer-retained goods consumed by their owner cohort are valued at the
+committed local retail price and exposed as `epoch_in_kind_income`, with cash-only and
+combined livelihood coverage. This diagnostic lane resets per epoch, follows
+proportional cohort migration, and remains outside PKEC v15 and state hash.
+
+Current overdue trade signals are bucketed by last rejection reason. The buckets sum
+to `trade_response_deadline_misses` and distinguish no attempt, no spread, margin,
+route, source stock, capacity, destination cash, and order-cap failures. They are live
+diagnostics, not cumulative authoritative state.
+
+High output discard accelerates the existing utilization response when no active
+shortage recovery is required. At 25% discard the response is at least 0.75; at 50%
+it is immediate. A real shortage recovery signal still has priority, and the
+survival/probe floor remains authoritative, so this changes neither the five-day
+cadence nor suspension authority.
+
+## 2026-07-21 livelihood, mobility, and investment correction
+
+Subsistence production now has a separate `survival_production_target_q16`, defaulting
+to 65536. Hunting plans food and cold-weather clothing retention toward healthy
+satisfaction; the 32768 starvation threshold remains only the mortality/work threshold.
+Consumed owner-retained output receives a frozen retail-value livelihood credit at its
+source building. The credit changes realized profitability only: it creates no cash,
+cashflow leg, mint, or money-audit delta. Selected-cell building snapshots expose
+`owner_livelihood_in_kind_credit` as derived epoch diagnostics.
+
+Household clearing is the single protection point for input working capital. Production
+does not reserve owner livelihood a second time, but still protects the uncovered wage
+commitment. A suspended group keeps its recovery owner only when no active non-service
+owner vacancy exists; otherwise active-first employment releases and rehires that person
+through the existing unemployed pool.
+
+Investment V5 derives entry utilization from `demand - offered_supply_ema`, never from
+installed count times recipe output. Hard-required inputs may then cap entry
+utilization by one-period coverage from unreserved stock plus offered supply EMA.
+Soft inputs (`required_q16 < 1`) scale expected throughput as
+`(1 - required) + required * coverage` and bill only the covered share — they do
+not ceiling entry utilization. Zero coverage on a **fully required** input reports
+`INPUT_CHAIN`. Soft inputs with no available candidate keep zero coverage / zero
+bill and only lower soft efficiency — empty tool shelves cannot veto
+hunting/gathering investment while those buildings can still operate. These are
+formula and derived-diagnostic changes only; PKEC v15, cadence, authority, and state hash
+Candidate viability also reserves survival-food/clothing output up to the prospective owners'
+daily livelihood cost. That quantity is removed from merchant-sellable output and valued at the
+frozen retail price only as in-kind livelihood coverage; remaining output alone uses merchant
+absorption. The projection creates neither goods nor cash and changes no conservation ledger.
+layout are unchanged.
+
+## 2026-07-22 production input quote coherence
+
+Production settlement now quotes the complete input bundle before mutating market stock.
+If multiple input slots select the same good, their physical quantities are aggregated
+against the frozen stock, matching the production-input reservation rule. The final
+candidate IDs and quantities are frozen and reused for stock withdrawal and cash
+settlement, so working-capital allocation, executable utilization, and actual input cost
+cannot drift because a later slot reselects a substitute after an earlier withdrawal.
+Each group also settles against its own allocated owner-capital share before using its
+approved merchant-credit share. A recovery group no longer consumes owner cash allocated
+to sibling groups merely because that cash is visible in the shared owner cohort account.
+At withdrawal time the approved credit is intersected with current local merchant cash;
+if liquidity has changed since the frozen recovery plan, utilization is reduced before
+any stock mutation. Delinquent groups receive no merchant-credit working-capital grant.
+Internal quote/credit invariant failures now include cell, group, type, and financing
+values in the fatal reason. This changes no PKEC field, scheduler stage, or authority
+boundary.
+
+## 历史：2026-07-21 Price V3 dynamic range correction
+
+Price inventory pressure now uses at most one committed settlement period. The full
+good-specific merchant inventory horizon remains authoritative for procurement and
+trade stock planning, but no longer makes a flow-balanced good look maximally scarce to
+the price integrator. Selected-cell market snapshots expose `price_inventory_target`
+beside `merchant_inventory_target` so the two derived horizons can be audited directly.
+
+Catalog `min_price` is now the only hard settlement bound; `max_price` is a soft
+ceiling. A rising price is damped twice before the clamp: first by the rise fade
+`(anchor / max(anchor, price))^2` applied inside `next_price_v4`, then by the remaining
+catalog headroom `(max - price) / (max - min)`. With `u = max(anchor, price) / anchor`
+the rise fade integrates to `u^3 = 3 * max_price_rise_q16 * days`, so the
+price-to-anchor ratio grows like the cube root of elapsed time and the approach to the
+catalog ceiling is asymptotic rather than a wall. A chronic shortage therefore keeps a
+live price signal instead of pinning at the bound, while long-run drift stays bounded.
+Falling prices keep the hard floor because the integer guard alone still lets prices
+collapse to one sub-unit and display as zero.
+
+Settlement prices are clamped to each good's catalog interval intersected with the
+emergency numeric interval `[1, INT32_MAX]`; trade quotes, cost anchors, bootstrap
+packets, and PKEC restore validation therefore never expose a price outside those
+bounds. `estimate_trade_price` shares the same shaping as settlement, so a planned
+destination price can never exceed a price settlement is able to reach. Configured
+per-day rise/fall limits still bound volatility, and the observed production cost
+anchor remains a rate-limited dynamic soft floor. Trade relief is derived from
+shortage, unfunded business demand, and production-input reserve gaps. PKEC v15 and
+authoritative state layout are unchanged.
+
+## 历史：2026-07-22 Price V4 anchored additive pricing and investment feedback
+
+Price V4 uses catalog-bounded economic prices with directional adjustment references. Frozen
+market pressure is clamped by the per-good daily rise/fall rate. Positive pressure is
+multiplied by `max(default_price, cost_anchor_price)`, so repeated equal shortages produce
+linear reference-value increments instead of exponential increments. Negative pressure is
+multiplied by the current market price, so a high production-cost anchor cannot amplify a
+glut-driven markdown into an immediate price collapse. The resulting price is finally
+clamped to the catalog min/max and fixed-point numeric guards. Fully idle goods use a
+separate bounded mean-reversion step
+toward `default_price`; legacy goods profiles receive an effective minimum inactive-reversion
+weight of 8192 Q16.
+
+The severe-loss lifecycle consumes the authoritative realized margin directly. That margin's
+denominator includes inputs, base wages, and owner livelihood minus retained-goods livelihood
+credit. It is not gated by `last_operating_cost`, which excludes owner livelihood; therefore
+owner-only workshops enter the same suspension, recovery, and liquidation path as employers.
+For an owner-only self-employment group, positive realized business surplus
+`cash revenue + retained-goods livelihood value - inputs` prevents severe-loss accumulation even
+when it does not cover the owner's full livelihood basket. The remaining livelihood deficit affects
+household coverage and demography; it does not suspend a still-productive livelihood and release all
+owners. Employer groups retain the full livelihood-and-payroll lifecycle rule.
+
+Endogenous investment evaluates every technology-unlocked building type without a kind-based
+allowlist. Collectors use the same market-signal, local-resource, construction-material, viability,
+payback, and sponsor-capital gates as industrial buildings. Services without a marketable output
+naturally fail the market-signal gate until their content provides an investable demand signal. Every generated
+and curated `BuildingProfile` carries an explicit construction bill selected by technology era,
+scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles, except
+zero-day service lots and `starter.construction` collectors with no daily good inputs. The catalog
+rejects any other profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
+stock and `merchant_inventory_target`. When that deficit is zero, a cheaper unlocked type may still
+enter if local incumbents offer the same good at a strictly higher unit cost after
+`investment_displacement_min_advantage_q16` (default 1/16). Rejection 15 is reserved for types with
+no marketable output; rejection 18 (`INVESTMENT_REJECTION_NO_COST_ADVANTAGE`) means no gap, no
+stealable incumbent supply, no employment catch-up, and no profitable full same-type seat
+expansion (`realized_profit_margin_q16 >= 1/4`). Utilization, livelihood, margin, and payback then
+use that stealable or catch-up share exactly as they would a shortage.
+
+The inspector-selected cell owns a bounded transient candidate table containing every
+evaluated unlocked type, including types with no installed group. Rejection reason 17 remains
+reserved for snapshot compatibility but is no longer emitted by the general type scan. The table reports rejection,
+shortage, utilization, score, payback, required capital, and projected daily profit through
+`get_building_cell_snapshot`. CSV v19 appends candidate-only building rows (`group_index=-1`,
+`investment_candidate=1`) with the same fields. This table is excluded from PKEC and the
+authoritative state hash.
+
+## 2026-07-22 blocked-producer lifecycle correction
+
+Service buildings are outside the producer profit lifecycle; an old suspended service group
+is normalized back to `ACTIVE`. For production buildings, only an actually settled severe
+loss advances the bounded suspension counter. An owner-occupied cycle with no input, output,
+extraction, or generation is a recoverable execution blockage and remains active/idle.
+`SUSPENDED_LOSS` always releases every owner to the unemployment pool while preserving
+installed capacity.
+
+A suspended producer publishes no production or employment and does not claim
+funded procurement. It still publishes nameplate **desired** input demand (and
+business-demand EMA observations) so upstream producers can discover the latent
+restart buyer — for example a suspended flint quarry that needs soft tools.
+Permanent-liquidation
+reviews advance only when a full restart is physically and financially executable but the expected
+margin still misses the restart threshold. A supply, resource, or financing blockage resets failed
+liquidation reviews, so scarcity pauses the business without destroying it. The failed-review
+threshold is 73 fixed five-day reviews (approximately one year), and the counter is retained in
+the building snapshot/CSV for diagnostics.
+
+## 2026-07-23 initial renewable configuration and test-fixture population
+
+Safe yield is authoritative for runtime renewable `extract` edges. At each frozen
+cell epoch, all local extractors share a transient budget after retaining
+`resource_min_reserve_q16` of that cell's frozen stock. The catalog ecology
+capacity remains only the growth-biomass ceiling because it is not a local
+climate-adjusted carrying capacity; `capacity` edges continue to read standing stock.
+The budget is derived state, is not serialized or hashed, and extraction still
+publishes through the existing negative-delta and exact-audit contract.
+
+Endogenous investment counts installed, pending, and same-review portfolio
+extraction before approving another collector. Renewable candidates must fit the
+daily safe yield; non-renewables must fit `reserve / resource_min_horizon_days`.
+Setting `resource_safe_harvest_q16=0` explicitly disables these gates for isolated
+fixtures and compatibility tests. The same open-access short-circuit must be kept in
+`family_free_building_resources_legal` (construction quotes and sponsored builds):
+without it the zero safe yield is used as a hard daily budget and every `extract`
+building is rejected as `construction_resource_unavailable`, even on a cell with a
+full standing stock.
+
+Resource CSV rows keep the existing schema. `safe_yield` is now the local,
+reserve-responsive daily value rather than capacity-only potential. For a renewable,
+`projected_life_days` estimates days until the reserve floor under installed peak
+extraction above safe yield; `-1` means installed extraction does not exceed safe
+yield. Non-renewables retain the reserve divided by installed daily extraction.
+
+The optional resource-tiered economy bootstrap uses the same reserve floor and
+daily yield to cap renewable building counts at peak utilization. It uses a
+3650-day runway only for non-renewables.
+The capacity-balanced base owner-lots scale with population as an employment
+floor; a physical resource cap is the only reason an extractor may fall below
+that proportional count. After all building and merchant jobs are known,
+generated population is limited to `jobs / 0.95`; only the employment-target
+margin becomes initially unemployed. The explicit uniform stress scales remain
+deliberately synthetic.
+These changes add report fields only and do not change runtime authority, PKEC
+v16, the scheduler graph, or the authoritative hash.
+
+## 2026-07-26 transient indexes and stable bulk signal merge
+
+The sparse market-signal CSR remains authoritative and ascending by
+`(cell, good)`. Worlds with at most four million `cell_count * good_count`
+entries additionally build a transient dense `int32` lookup. Larger worlds keep
+the existing CSR binary search. The dense table, pending-construction cell CSR,
+market result scratch, trade-clock merge scratch, and investment signal overflow
+are all rebuildable caches excluded from PKEC v19 and the state hash.
+
+Investment does not pre-create construction signals. Only a material shortage
+that reached the existing authoritative gate appends an overflow entry. The
+entry is immediately visible to later investment evaluation through the dense
+lookup, then all actually-created entries are stably merged into the aligned CSR
+lanes before aggregate publish. This preserves the reference creation set,
+`(cell, good)` order, saturation order, and final hash while avoiding repeated
+middle insertion into every aligned vector.
+
+Household result buffers retain nested vector capacity across slices. Trade
+response clocks are extended with one sorted merge per market batch instead of
+one aligned-vector insertion per `(market, good)`. Both changes retain market
+evaluation and commit order; trade clocks remain diagnostic-only. Report fields
+split worker, aggregate merge, trade-clock merge, signal insertion/flush,
+allocation growth, epoch preflight, and epoch prepare costs. `EconomyDailySystem`
+exports the bounded subset as fresh `bd_economy_*` performance CSV columns.
+
+Production uses the same transient-capacity rule: a runtime-owned
+`ProductionResult` scratch lane is reset and reused for each due-cell range
+instead of reconstructing nested vectors for every continuation. Report fields
+`production_result_allocation_growth_count/bytes` expose residual capacity
+growth; a warmed steady state should report zero. Building plan and household
+post-building passes use deterministic stage-local batching (auto is twice the
+normal building cell/group range), while investment/finalize default to 96/128
+cells. Profile overrides change only range boundaries and never stable
+evaluation or commit order.
+
+The full report also retains one `last_completed_*` snapshot captured after the
+publish COMMIT slice. It preserves completed-epoch worker counts, stage totals,
+allocation growth, and structure-rebuild diagnostics across the next
+`clear_epoch_metrics()`. The snapshot is recorder-only transient state, excluded
+from PKEC v19 and the authoritative hash.
+
+## 2026-07-27 incremental audit and review-cell scheduling
+
+Closing audit modes are `FULL`, `PROBE`, and `INCREMENTAL`; the production
+default is `INCREMENTAL` after the fixed-seed 200-day daily dual-audit gate
+completed with zero mismatch. Incremental totals are computed from opening totals plus
+the real delta of generation-stamped population/funds and market-good lanes
+captured at their first mutation. Due household/production worksets are
+pre-registered on the main thread before worker dispatch, while trade, command,
+and structural mutations touch their lanes at the native mutation site. The
+shadow, stamps, touched lists, mismatch ledger/lane, and counters are transient
+and excluded from PKEC v19 and both hashes. Bootstrap/restore rebuild the shadow;
+commit advances only touched lanes. The first day, restore boundary, anomaly,
+and every 25th day still run a complete verification; mismatch blocks publish
+and disables incremental closing for the rest of the session. Opening fast path
+reuses the last committed close, then live-replaces country cash/goods and the
+combined trade+fiscal+expedition escrow. That is only valid when in-transit
+expedition population, `expedition_funds` and `expedition_goods` still match the copied close. Idle
+colonization start/return changes those holdings before the next opening, so
+the opening scan upgrades to full instead of copying stale cohort funds next
+to a live expedition escrow. `EconomyDailySystem` fatal logs now include
+`money_error` plus the opening/closing money buckets, not only goods sinks.
+`PROBE` and `FULL` remain explicit validation and rollback modes.
+
+`building_commit.review_prepare` now builds one ascending list containing only
+the current rolling phase's populated capital-review cells. Investment finance
+initialization, pending/existing/resource aggregation, and candidate evaluation
+consume that list, and the continuation cursor is an ordinal into it. Reports
+publish `investment_scheduled_review_cells` and
+`investment_review_cells`; completed epochs require equality. Candidate
+evaluation is still scalar. After ready construction is committed,
+`building_commit.investment_prepare` now performs the transient finance and
+pending/existing/resource aggregation as its own cooperative phase; the following
+`investment` phase evaluates and commits bounded review-cell ranges. Both keys are
+always present in `building_commit_breakdown_ms/work`. The planned `>=64` read-only worker result plus
+stable main-thread revalidation/commit split is not yet production behavior.
+
+## 2026-08-24 merit-order offtake and displacement investment
+
+Local producer offers still share one retail price per good. Offtake sorts
+`(good, unit_cost, group)` and fills `merchant_procurement_quota` from
+lowest operating-cost units; equal-cost offers at the marginal tier share the
+leftover quota in proportion to sellable quantity. Producer-support mint no longer props up leftover
+high-cost output once cheaper offers have filled the quota. Price V4 cost
+anchors weight by `merchant_sold`.
+
+Investment sparse closure now enqueues each local group's output goods so
+unlocked challengers of an already-supplied good remain visible. When market
+deficit is zero, stealable incumbent daily offered supply (same good, other
+types, unit cost above challenger × (1 + min advantage)) becomes utilization
+and `desired_count` input. Reports add
+`investment_displacement_type_evaluations` and
+`building_investment_displacement_starts`. Diagnostics add `stealable`,
+`challenger_unit_cost`, and `incumbent_unit_cost`. None of this enters PKEC or
+the state-hash column set.
+
+## CSV writer backpressure (current)
+
+When both recorder batches are `READY/WRITING`, committed capture now waits for
+the worker to free one instead of stopping with `queue_full`; no committed epoch
+is skipped. Status adds `backpressure_wait_count` and
+`backpressure_wait_ms_total`. Row-limit and real write/flush failures remain
+terminal and atomic at epoch boundaries. This changes only debug file-I/O
+pacing, not native economy authority, PKEC, state hash, CSV columns, or cadence.
+> PKEC v21 新增 `government_research_procurement` 阶段、科技值采购累计与存档字段。采购发生在
+> 私人购买后、国内贸易前；详细契约见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
+
+## SettlementStore
+
+`SettlementStore` is native per-cell SoA for `u8 tier`, prosperity/name
+generations, name components, and disambiguator. The default pack mixes
+stable-ID historical city names with the 4096-entry fictional combination
+space; `full_name_share_q16` controls their deterministic allocation share.
+Exact upgrade thresholds and
+90% downgrade hysteresis consume committed population only. Entering tier 2
+allocates a globally unique deterministic name; leaving it releases the name
+and advances `name_roll_generation`.
+
+Normal commits process only deduplicated changed cells. Reports expose changes,
+promotion/demotion, name allocation/release/collision probes,
+`prosperity_update_ms`, revision and memory. State hash and PKEC v24 include all
+authoritative settlement fields.
+
+Formal-game bootstrap can set the per-cell `name_forced` bit for opening-country
+capitals. A forced capital receives and retains a deterministic name below tier
+2 without changing its population-derived prosperity. PKEC v24 stores the bit
+backward-compatibly in the high bit of the persisted tier byte; older v24
+records have it clear. Selected-cell summaries expose
+`settlement_name_forced`.
+
+## 2026-09-03 Leontief shadow derived demand
+
+Sample-boundary `refresh_derived_business_demand()` explodes unmet final/business
+deficits through the preferred producer BOM into `_epoch_derived_business_demand`
+(sparse signal-aligned, not PKEC). Price pressure, merchant procurement quota,
+trade import targets, and investment startup deficits fold that shadow demand
+with default weight `Q16_ONE/2`. Vacant downstream workshops can therefore raise
+intermediate prices (for example tools → flint) without realized input purchases.
+Conservation is unchanged: derived demand never withdraws stock or mints money.
+
+2026-09-18 briefly moved shadow out of `business_demand` so it would not inflate
+merchant inventory targets or vacant-owner opportunity. That separation remains:
+shadow stays out of procurement and owner hiring. Price formation still consumes
+shadow pressure, and when `_epoch_derived_business_demand > 0` the idle-default
+reversion path is suppressed so intermediate goods are not pinned to catalog
+default while a scarce downstream good is propagating one-hop demand.
+
+Cold-start soft-input discovery (2026-09-24): when every substitute on a
+production input is out of stock, candidate ranking prefers the good whose
+preferred startup producer can already cover hard inputs from local stock
+(for example knapping when flint is stocked) instead of ranking solely by
+ghost ceiling prices that push demand onto copper/bronze tools. Soft-only
+or input-free producers score cold_cover `0`, not `Q16_ONE`, so they cannot
+beat an empty hard-input stone-age lane on a vacuous cover. Empty-shelf
+input selection additionally requires `good_production_available` (tech
+unlock): `good_market_available` alone is insufficient because every
+trade-enabled stock good — including locked metal `tools` — was treated as
+marketable and absorbed soft-category demand before iron was researched.
+Suspended buyers publish nameplate desired demand into that same path so a
+paused flint quarry can still seed chipped-stone demand. Investment quotes
+bill soft inputs only for the covered (stocked/offered) share and apply soft
+coverage as an independent output bonus rather than an entry-utilization
+ceiling. The production multiplier is `1 + Σ(required × coverage)`, so
+multiple soft inputs add together while activity, jobs, resources, and base
+input purchasing remain bounded by the ordinary activity scale.
+When every soft-input
+candidate fails availability, investment keeps coverage/bill at zero and
+continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
+
+建筑经济报价（2026-09-30）：`owner_opportunity_quote` 是就业、投资和生产诊断共用的
+周期报价。owner 到岗率 `owner_run_q16` 只作为运行规模；气候和自然资源分别计算
+`climate_factor_q16`、`resource_factor_q16`，自然产能为两者的 Q16 乘积，软投入只写入
+`soft_productivity_q16` 生产率倍率。报价同时保留 `natural_max_output`、
+`fundable_output` 和 `actual_output`，用于区分自然上限、资金可支付上限和最终结算产量。
+报价只在资金约束后的规模上试算（有软投入时再试算一次不买软投入的方案）；原先 0..16/16
+共 17 档的收益最优规模搜索只写 `optimal_*` 字段而无任何读者，2026-10-09 已删除。岗位目录不再提供工资金额；缺少动态合同工资时，岗位使用当地
+职业生活成本作为冷启动底线，再由合同工资/实付工资 EMA、岗位收入、vacancy 和企业支付能力
+形成动态报价。实际工资转移仍走原有守恒结算。
+
+关闭审计的增量快速路径若得到非零人口、货币或商品守恒误差，会在判定 fatal 前
+仅对此周期执行一次全量账本重算。全量审计平衡时以全量结果完成提交，并停用后续
+增量审计；全量审计仍不平衡时才报告守恒 fatal。正常周期仍使用原快速路径，不增加
+全表扫描。
+
+Shadow-derived pricing (2026-09-26): one-hop derived/substitute demand enters
+price formation only as weighted pressure
+(`shadow_pressure = min(derived, flow) / flow * derived_weight`, then the same
+excess-demand weight as other pressure terms). There is **no** `change_q16`
+uplift floor and **no** empty-shelf `pressure = max(..., 1)` clamp — glut
+clearing stays on inventory/excess. Shadow still stays out of real business
+demand, procurement targets, and owner hiring.
+
+Owner mobility discovery income (2026-09-26): vacancy opportunity quotes and
+settled `projected_owner_income_per_day` are both **per-owner daily** signals
+(group residual ÷ nameplate seats for counterfactual quotes; ÷ attached
+`filled_owner` for settled lots). Mobility compares like-for-like per person.
+
+## 2026-09-24 Distressed-owner mobility and profitable seat expansion
+
+Owner mobility no longer treats `last_output/last_revenue > 0` as a permanent
+pin. Reusing the already-computed mobility income, an incumbent is
+**distressed** (and remains a mobility source) when disposable income `<= 0`,
+settled profit margin `< 0`, or employee fill is below half of role slots
+(employee walk skipped when income/margin already distress). Healthy settled
+producers stay pinned; restart-intent lots stay protected.
+
+Investment `NO_COST_ADVANTAGE` gains a bounded sibling of employment catch-up:
+when the local same-type incumbent is fully owner-staffed and its
+representative `realized_profit_margin_q16 >= 1/4`, a `1/6` utilization quote
+may still open so sponsors can buy an owner seat / change profession. Losing
+industries (e.g. under-margin placer gold) do not qualify; `OWNER_LIVELIHOOD`
+continues to block expanding them.
+
+Portfolio spare-population staffing (`cell_population - committed_owner_slots`)
+applies only to greenfield seats that need a new body. A sponsor who already
+holds an owner seat and changes profession (`reallocates_owner_seat`) is a
+zero-sum reallocation and bypasses that ceiling; willing-population and capital
+caps still bind. Without this, fully owner-employed cells reported
+`owner_population_limited` forever while merchants stayed stuck on losing
+placer lots despite viable hunting/gathering candidates.
+
+## 2026-09-24 Same-edge substitute business demand
+
+When a building input edge selects one catalog candidate for procurement
+(e.g. `bronze_tools`), every other co-candidate on that same edge
+(already filtered by `input_category` + `min_quality`) receives equal
+`_epoch_substitute_business_demand`. This is deliberate substitute
+visibility: producers of `chipped_stone_tools` must see the unmet tools
+need even when the picker booked bronze. Substitute demand feeds
+investment deficits, `driver_real_evidence`, price shadow pressure, and
+next-epoch Leontief seeding. It does **not** inflate merchant inventory
+targets, funded procurement, or owner hiring — only the selected SKU
+keeps real `business_demand_ema` / funded demand.
+
+Complementary (BOM) demand remains the existing one-hop Leontief
+`_epoch_derived_business_demand` path (tools shortage → flint).
+
+
+
+Price V6 数值护栏（无人为经济限价）与稀疏上限 ABI 兼容说明见 [实施与验收](price-v6-validation.md)。
+
+
+## 普通投资建材需求（2026-09-21）
+
+普通自动投资缺料时，先以虚拟库存计算完整建材报价，仅用于利润、生计、回本期与
+出资人可行性检查，不扣库存或创建建筑。通过这些检查后才发布一座建筑的建材需求；
+批量分配因材料不足收窄时同样只发布一座的有界补货目标，不把批量试算次数作为需求。
+材料使用已解锁候选、国家建设成本系数和转换效率。每个 cell/good 的候选报价采用
+max 包络，与当轮既有需求合并，只对增量更新 desired/unfunded 汇总、建材保留量。
+
+投资位于 BUILDING_COMMIT，晚于生产端商业 EMA 更新，因此增量按实际 epoch 天数
+转成日需求，按既有商业 EMA alpha 追加到持久商业需求。下一周期价格、采购目标及
+贸易读取该信号；未成交不计入 funded demand，也不创造现金或商品。报价只是有资金
+来源的购买意愿，不等于已成交订单。多个替代投资候选不逐项相加，当前采用保守包络。
+
+回归：`building_runtime_test.gd -- --materials-only`，普通打制石器工坊缺原石：
+desired demand、business EMA、merchant target、价格响应、试算需求上界及守恒；
+无法负担的建设不应在既有维护需求之外增加投资需求。科研专项仍用 `--research-only`。
+
+## 2026-09-21 就业工资与跨职业流动
+
+自适应岗位工资以生活成本底线和本地工资 EMA 为基础，并叠加当前可兑现的
+岗位收入、动态工资成本和 vacancy 比例形成的岗位 bid。货币产出（例如黄金）
+在尚无员工、尚无已实现利润时仍提供潜在日利润信号，因此不会因为缺员停产
+而把招聘工资信号清零；工资目标仍受可持续经营收入上限和每日变化阻尼约束。
+
+员工岗位缺口达到严重程度且潜在/已实现利润足够高时，跨职业迁移门槛降低。
+没有失业人口时，已满员或低机会的 owner-only cohort 也可以转入该员工 vacancy；
+每个就业周期每个来源组和目标组最多发生一次此类移动，最后一个商人受到保护。
+所有人口、资金和职业计数变化都通过 `move_cohort_population()` 及对应岗位计数
+完成，人口、资金、商品审计必须保持为零。
+
+回归：`building_runtime_test.gd -- --employment-only` 覆盖一名 forager owner
+转入无失业人口的淘金场 miner vacancy、vacancy 工资上调、黄金铸币和三项审计。
+
+## 软投入与生存生产（2026-09-27）
+
+`required_q16 < Q16_ONE` 的生产投入属于可选生产增强。生产端估算软投入带来的增量产出，
+先扣除基准产量本来能满足的业主自用需求，再把剩余增产按上一期同格同商品的商人实购占比
+和兜底支持占比分段估值：商人部分按本地有效收购价，兜底部分按零售价的五分之一。新组
+没有历史销量时，首期按正常商人收购估值。只有增量收入大于软投入采购支出才购买；采购
+支出包含本地交易税。上一期可售量与商人实购量在 epoch 边界冻结为瞬态快照，不进入
+PKEC 或权威状态哈希。未购买时不扣库存、不计入成本，也不发布对应的完整企业需求/短缺
+压力；购买后才计入投入成本，并按库存覆盖度提供效率加成。该判断按本轮市场的 catalog
+input edge 缓存。ACTIVE 组的 epoch 经营计划只按基础配方产量报收入，因此 `input_cost` 只累计
+硬投入（`required_q16 == Q16_ONE`），不计软投入：生产端只在增产价值超过采购支出时才买，
+把缺货或天价的工具按市价全额计入会让采集/狩猎组误判亏损、停在生存下限（2026-10-13 修复）。
+
+所有建筑的 owner 自用产出都属于 owner 的实物收入，并与现金收入共同参与经营可行性
+判断；已有结算值优先复用，只有没有结算值的新组才做一次机会报价。硬投入、资源、气候
+和实际资金约束仍保持原有执行限制。
+
+## 军事 v1：士兵职业、官营建筑与军供需求（2026-11-02）
+
+设计依据 `docs/plans/military-system-design.md` §5.1–§5.4，接口冻结于
+`docs/plans/military-implementation-contract.md`。本段只描述 Economy 侧新增的
+通用能力；兵员编制、口粮采购、军饷发放全部属于 Military。
+
+### 目录列（catalog，全部可选，缺省即旧行为）
+
+| 列 | 类型 | 含义 |
+| --- | --- | --- |
+| `profession_state_service_only` | i32 × P | 1 = 该职业只能作为官营建筑雇员岗（士兵） |
+| `profession_state_supplied_need_offsets` | i32 × (P+1) | 军供需求 CSR，按 profession 分片 |
+| `profession_state_supplied_need_ids` | i32 × N | 全局 need stable id（`staple_food`、`protein`） |
+| `building_state_roles` | i32 × T | 0=none,1=barracks,2=fortification,3=war_college |
+
+`ProfessionProfile.state_service_only` / `state_supplied_need_ids`、
+`BuildingProfile.building_kind = "state"` / `state_role` 由
+`EconomyCatalog.compile_native_catalog()` 编译。校验规则：
+
+- 声明了军供需求却没有 `state_service_only` 直接编译失败；
+- 军供需求的 need id 必须存在且不重复；
+- `building_kind` 必须是 `BUILDING_KIND_INDICES` 里的四个值之一，未识别值直接
+  编译失败并回传原始 kind 字符串。此前是嵌套三元表达式、末支 `else 1`，任何拼写
+  错误的 kind 都会静默变成 `industrial` 并开始参与市场买卖；
+- 官营类型必须带非零 `state_role`，非官营类型必须为 `none`；
+- 官营类型形状等同 `service`：无产出、无自然资源、`behavior_id = none`；
+- 官营类型不得声明 `maintenance_good_ids`，也不得声明非零
+  `maintenance_horizon_days`。官营建筑的维护由 Military 以国库现金结算，这里再
+  记一份物料账单就是重复收费，所以直接在编译期拒绝，而不是静默丢弃该列；
+- 官营类型不得声明 `resource_ids` 或 `resource_generation_ids`（§7.3）；
+- 官营类型的 `technology_tags` 必须**恰好一个** `tech.*`，并给出计数；军事目录
+  同名建筑的 `tech` 字段必须与它一致，不一致时两边都会报出建筑 id；
+- 官营类型必须至少一个雇员角色，且每个角色都必须是 `state_service_only` 职业、
+  显式填写 `state_payroll`。省略 `employee_wage_policy_ids` 不再被当作合法写法：
+  那样会回落到建筑级市场工资，而国库从不结算这份工资；
+- 反过来，`state_service_only` 职业不得出现在非官营建筑的任何雇员角色里。
+
+`building_state_roles` 与三个 `profession_state_service_only*` 列都会从全部历史
+compat hash（v6/v7/v8/v13）的输入里剔除，所以未改动的旧目录哈希不变、旧存档仍可读取。
+
+### 军事部门（`military`）
+
+`BUILDING_SECTOR_IDS` 在民事五部门之后追加了 `military`（稠密索引 5），17 座官营
+建筑的 `economic_sector_id` 都填它。追加而不是插在前面是刻意的：原生侧所有
+sector 定长的数组（维护周期、国家级部门产出因子、地形/地貌/地块部门因子、
+overview 分桶、存档里的部门态）都按 `CIVIL_SECTOR_COUNT = 5` 划分，索引 5 必须
+被这些规则跳过而不是落进 `knowledge`。因此原生侧凡是取 sector 参与运算的地方都
+带 `sector < CIVIL_SECTOR_COUNT` 守卫，编译期则用 `BUILDING_SECTOR_COUNT` 作为
+合法性上界。军事部门不进部门产出因子，`military` 的建筑也不参与民事部门统计。
+
+### 官营建筑哨兵业主
+
+`building_kind = 3` 的业主签名是 `STATE_OWNER_SIGNATURE`，它在
+`compile_catalog()` 里解析为「第一个 `state_service_only` 职业 × 第一个
+ethnicity」的 signature id（`_state_owner_signature`）。这样 group 键仍然是真实
+的 `(profession, ethnicity)` 对，但**不会有活 cohort 占用它**：state-service 职业
+从不进入失业池，`move_cohort_population()` 也不会把任何职业转成它。没有
+state-service 职业的目录里该值为 -1，官营建筑因此无法建造。
+
+### 军供需求：跳过市场购买，满足率来自 Military
+
+`process_market_cell()` 的 cohort/need 循环在最前面判一次
+`profession_need_is_state_supplied()`：
+
+- 命中时**不生成**任何 `BundleOrder`，`desired_units = 0`，因此清算、预算裁剪、
+  fallback 替换都不会看见它，也不会产生支出或消费税；
+- 但仍压入一条 `NeedState{desired_units=0, living_target_units=…}`，保留福利权重；
+- 清算结束后、`satisfaction` 归约之前，把这些 state 的 `filled_units` 直接写为
+  `living_target_units × military_ration_satisfaction_q16(cell) / Q16`。
+
+所以口粮断供照样落进生存维度（进而影响士气与饥饿死亡），只是不经市场。
+`_state_supplied_need_columns == 0` 时整段跳过，热循环零额外开销。
+
+### `set_military_ration_satisfaction`
+
+```cpp
+int32_t NativeEconomyRuntime::set_military_ration_satisfaction(
+    const std::vector<int32_t> &cells, const std::vector<int32_t> &q16);
+```
+
+稀疏 `(cell, q16)` 写入 `_military_ration_sat_q16`；**未出现的格保持上次值，初值
+Q16_ONE**，所以没有士兵的世界与军事版本前逐位一致。该列是派生瞬态，不进 PKEC、
+不进权威状态哈希，`reset()` 清空、`configure()` 按 `cell_count` 初值化为 1.0。
+DCWorldExt 侧是本文件所属的 `world_ext_economy_military.cpp` 与 `world_ext.h`
+的 `// ---- Economy military hooks` 块，绑定名 `set_military_ration_satisfaction`。
+
+### 士兵不向外转职、超编不裁员
+
+`soldier` 是 `state_service_only`，所以下列**向外**通道全部按
+`profession_is_state_service_only()` 放行前拦截：
+
+- 雇员↔雇员重分配：state-service 角色不进 `employee_sources`；
+- 雇员→业主、业主→雇员、业主→业主：state-service 的 owner / employee 都不进
+  来源集合，也不会成为来源候选；
+- 超编析出（surplus → `unemployed|eth`）：`surplus` 直接置 0，只停止招人；
+- 对账后的 idle 回流（`reconcile_building_employment_cells_range`）：同样跳过；
+- 亏损职业退出（`profession_cohort_distressed`）：直接返回 false；
+- 家族开拓抽人（`extract_family_expedition_payload`）：state-service cohort 不入选。
+
+### 官营建筑的经济侧排除
+
+| 通道 | 处理 |
+| --- | --- |
+| 私人生成经济计划/恢复/亏损停业 | `kind == 3` 在输出/资源判定前 `continue`，固定 `operating_state = 0`、`planned_utilization_q16 = planned_capacity = Q16_ONE`、私人成本清零 |
+| special reset（`kind == 2`） | 扩展到 `kind == 3`，保证官营永不悬挂 |
+| 恢复期清算（`review_recovery_building_group`） | `kind == 3` 直接 return |
+| 内生投资评审 | `INVESTMENT_REJECTION_STATE_OWNED = 19`，包括就业追补与恢复通道 |
+| 商人借贷 | `requested_credit` 归零，且不再自动生成 probe 授信 |
+| `state_payroll` 工资政策 | 官营组 `_building_role_base_wage_due = 0`，且 `prepare_cell_wages` 不为官营组报合约工资；工资由国库经 Military 直接发给士兵 cohort，建筑现金不提款、不产生欠薪 |
+
+### `COMMAND_CHANGE_SIGNATURE` 入伍/征召/退伍
+
+命令本身未改动（`i32_0` = 目标 signature，`i64_0` = 人数）。入伍 =
+`(unemployed|eth) → (soldier|eth)`，退伍 = 反向；因为士兵 signature 是目录里
+profession × ethnicity 笛卡尔积的一行，`compile_catalog()` 建好
+`_signature_by_profession_ethnicity` 后它一定存在，不需要动态 interning。
+`COMMAND_ADD_POPULATION` 负数按既有路径处理伤亡。
+
+### 验证
+
+- `economy_runtime*.cpp` 与本功能新增的 `world_ext_economy_military.cpp` 用
+  `cl /std:c++17 /W3` 单独编译通过（无新增 warning）。
+- `profession_profile.gd`、`building_profile.gd`、`economy_catalog.gd` 通过
+  `--headless --check-only` 解析。
+- 完整目录编译当前被内容侧的未完成改动阻塞（新增军工建筑/物资的 progression
+  元数据与 `good_technology_producer_missing`），与本次改动无关。
+
+## 2026-11-04 营造专用入口（`queue_treasury_sponsored_build`）
+
+### 症状
+
+玩家点击营造目录里的「营造」按钮永远拿不到开工回执：`PlayerController` 提交的
+`construction.build` 被
+`{"ok": false, "reason": "economy_legacy_ingress_disabled"}` 拒绝。
+
+### 根因
+
+`EconomyFacade.treasury_sponsored_build()` 走的是旧批量入口
+`DCWorldExt::submit_economy_commands`。自 Phase-2.4.5 起 StageOps 是生产写入边界
+（`world_runtime_host.gd` 在非 `ACTIVE_WITH_PARITY` 时显式下发
+`economy_production_writer=stage_ops`），该入口对**所有** opcode fail-closed，因此
+`COMMAND_TREASURY_SPONSORED_BUILD` 到不了 epoch 队列。运河与家族开拓早已各自
+有专用边界，只有营造还停在旧批量入口上；`treasury_construction_runtime_test` 的
+固件没有 runtime host，gate 不生效，所以测试一直"绿"。
+
+### 契约
+
+| 层 | 方法 | 行为 |
+| --- | --- | --- |
+| GDScript | `EconomyFacade.treasury_sponsored_build()` | 优先调用专用边界；只有老 DLL 没有该方法时才回退旧批量入口 |
+| GDExtension | `DCWorldExt::queue_treasury_sponsored_build(country, cell, type_id, day, seq)` | 按 `economy_worker_owns_execution()` 选择投递车道 |
+| Runtime | `NativeEconomyRuntime::queue_treasury_sponsored_build(..., queue_for_worker)` | worker 权威 → `enqueue_worker_command()`（互斥收件箱，epoch begin 排空）；否则 → `_pending_commands` |
+
+- 入队的是与旧路径**完全相同**的 `Command`（`i32_0=cell`、`i32_1=type_id`、
+  `i64_0=1`、`i64_1=OWNERSHIP_TREASURY_SPONSORED_PRIVATE`、`target_handle=country`），
+  所以 apply、`stage_construction_receipt`、Country asset bridge 全部不变。
+- 命令永远在 epoch 内结算：`apply_treasury_sponsored_build_command` 读
+  `_epoch_cell_country` 与本国造价/工期系数，也必须在结算边界内执行。
+- 立即受理只代表"已排队"；真正的成功/失败（`construction_materials_insufficient`、
+  `construction_treasury_cash_insufficient` 等）仍由 `get_construction_command_receipts`
+  的回执给出，UI 用它写状态纸笺。
+- `submit_economy_commands` 的 gate 未被放宽：旧入口对营造仍然是拒绝的。
+
+### 验证
+
+- `tests/probes` 中的临时探针（真实 `player_game` 会话）确认命令从
+  `economy_legacy_ingress_disabled` 变为 `{"ok": true, "code": "queued"}`。
+- `tests/economy/treasury_construction_runtime_test.gd` 的 `_submit` 改走专用边界后，
+  回执 `ok`、国库现金正好减少 `cash_paid`、`money/goods/population` 误差保持
+  `0/0/0`，建筑按工期落到地块快照。
+- 该测试仍保留两条与本改动无关的既存失败（`bast_wrap_shelter` 的 AND/OR
+  替代料报价形态、以及"完工后 construction+group 计数 != 1"的断言口径）。

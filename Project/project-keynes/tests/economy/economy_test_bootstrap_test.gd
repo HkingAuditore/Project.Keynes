@@ -695,7 +695,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
 	var expected_columns := {"summary": 186, "cohorts": 32, "buildings": 132,
-		"resources": 23, "market": 50}
+		"resources": 23, "market": 53}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
 		var bytes := FileAccess.get_file_as_bytes(path)

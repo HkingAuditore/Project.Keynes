@@ -936,6 +936,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool split_policy = cmd.opcode == COMMAND_FAMILY_SET_SPLIT_POLICY;
         const bool treasury_build =
             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
+        const bool treasury_demolish =
+            cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH;
         const bool canal_build = cmd.opcode == COMMAND_BUILD_CANAL;
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
@@ -952,6 +954,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
                cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
+               cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+            : treasury_demolish
+            ? (_country_runtime != nullptr && country_reads().valid_handle(
+                   static_cast<int64_t>(cmd.target_handle)) &&
+               cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+               cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
+                   _building_types.size()) && cmd.i64_0 > 0 &&
                cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
             : canal_build
             ? (_country_runtime != nullptr && country_reads().valid_handle(
@@ -1089,18 +1098,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
     refresh_cadence_estimates();
-    if (_restore.schema_version < 38)
-        synthesize_cadence_locks_from_legacy_save();
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
-    if (_restore.schema_version < 15) {
-        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
-            const int64_t phase = cell % ROLLING_PHASE_COUNT;
-            const int64_t delta = ((_last_committed_day.get() - phase) %
-                ROLLING_PHASE_COUNT + ROLLING_PHASE_COUNT) %
-                ROLLING_PHASE_COUNT;
-            _cell_last_settlement_day.write_scalar(cell, _last_committed_day.get() - delta, market_mutation_sink());
-        }
-    }
     for (int32_t cell = 0; cell < _cell_count.get(); ++cell)
         _market_signals.cell_offsets.write_scalar(cell + 1, _market_signals.cell_offsets[cell + 1] + (_market_signals.cell_offsets[cell]), market_mutation_sink());
     // PKEC stores the committed signal rows, including zero-valued rows that
@@ -1500,6 +1498,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_family_demography_weights();
     _bootstrapped = true;
     military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
+    _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
     if (_restore.committed_generation_seen) {
         _committed_generation = _restore.restored_committed_generation;
     } else if (++_committed_generation == 0) {
@@ -1514,23 +1513,17 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_country_trade_indices();
     rebuild_trade_arrival_buckets();
     rebuild_committed_summaries();
-    if (_restore.schema_version < 24) {
-        initialize_settlements_from_population();
-    } else {
-        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
-            const bool should_have_name =
-                _settlements.tier[cell] >= _settlement_named_tier ||
-                _settlements.name_forced[cell] != 0;
-            if (should_have_name !=
-                (_settlements.name_active[cell] != 0)) {
-                out["ok"] = false;
-                out["reason"] =
-                    "restore_settlement_name_activity_mismatch";
-                return out;
-            }
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
+        const bool should_have_name =
+            _settlements.tier[cell] >= _settlement_named_tier ||
+            _settlements.name_forced[cell] != 0;
+        if (should_have_name != (_settlements.name_active[cell] != 0)) {
+            out["ok"] = false;
+            out["reason"] = "restore_settlement_name_activity_mismatch";
+            return out;
         }
-        _settlements.revision = 1;
     }
+    _settlements.revision = 1;
     _closing_totals = audit_totals();
     std::atomic_store_explicit(&_committed_audit_view,
         std::shared_ptr<const CommittedAuditView>{}, std::memory_order_release);
@@ -1705,7 +1698,7 @@ bool NativeEconomyRuntime::validate_ecp2_candidate(
         return false;
     }
     if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) {
-        error = "ecp2_schema_version_incompatible_expected_59";
+        error = "ecp2_schema_version_incompatible_expected_60";
         return false;
     }
     if (in.envelope.hash_version != (runtime_chunk_hash_enabled() ? 2u : 1u) &&

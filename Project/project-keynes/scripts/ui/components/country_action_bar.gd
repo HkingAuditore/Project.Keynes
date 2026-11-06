@@ -13,7 +13,7 @@ const SECTIONS := [
 	{"id": "ideology", "label": "理念", "icon": &"hud.country.ideology", "available": true},
 	{"id": "economy", "label": "经济", "icon": &"hud.country.economy", "available": true},
 	{"id": "military", "label": "军事", "icon": &"hud.country.military", "available": true},
-	{"id": "diplomacy", "label": "外交", "icon": &"hud.country.diplomacy", "available": false},
+	{"id": "diplomacy", "label": "外交", "icon": &"hud.country.diplomacy", "available": true},
 ]
 
 var _buttons: Dictionary = {}

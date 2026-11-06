@@ -96,7 +96,7 @@ func _build_header() -> void:
 	var lead_height: float = 0.0
 	if not lead_text.is_empty():
 		var measured: float = soft.get_multiline_string_size(lead_text, HORIZONTAL_ALIGNMENT_LEFT, _measure, lead_size).y
-		lead_height = minf(measured, float(lead_size) * 1.52 * 2.0) + 4.0
+		lead_height = minf(measured, float(lead_size) * 1.52 * 3.0) + 4.0
 	var height: float = (lead_top + lead_height + 4.0) if lead_height > 0.0 else (title_top + title_height + 4.0)
 	height = maxf(height, title_top + title_height + 8.0)
 	# 水印字号由内容高度反推：数字底边压在导语基线上，不再向下压正文。
@@ -140,7 +140,7 @@ func _build_header() -> void:
 		var lead := _text_label(lead_text, lead_size, UITokens.CHRONICLE_MUTED, false)
 		lead.add_theme_font_override("font", soft)
 		lead.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lead.max_lines_visible = 2
+		lead.max_lines_visible = 3
 		lead.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		_place(lead, Vector2(0.0, lead_top), Vector2(_measure, lead_height))
 		_header.add_child(lead)
@@ -193,7 +193,7 @@ func _build_visuals() -> void:
 			"month_area":
 				_add_chart("各月已结算增加值", _month_chart(visual))
 			"radar":
-				_add_chart("八维满意度（人口加权）", _radar_chart(visual))
+				_add_chart("满意度（人口加权）", _radar_chart(visual))
 			"bars":
 				_add_chart(String(visual.get("label", "分项")), _bars_chart(visual))
 			"stairs":
@@ -203,7 +203,7 @@ func _build_visuals() -> void:
 			"tax":
 				_add_chart("税种构成", _tax_chart(visual))
 			"score_parts":
-				_add_chart("十项评分分解", _score_chart(visual))
+				_add_chart("评分分解", _score_chart(visual))
 			"grade_ruler":
 				_add_chart("评级位置", _ruler_chart(visual))
 	var notes: Array = _chapter.get("margin_notes", [])

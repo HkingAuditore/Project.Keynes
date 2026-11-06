@@ -169,7 +169,7 @@ func _link_style(button: Button) -> void:
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
 		button.add_theme_stylebox_override(state, UITokens.chronicle_link_style(state))
 	for state in ["font_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
-		button.add_theme_color_override("font_color", UITokens.CHRONICLE_INK)
+		button.add_theme_color_override(state, UITokens.CHRONICLE_INK)
 	button.add_theme_color_override("font_hover_color", UITokens.CHRONICLE_RED)
 	button.add_theme_color_override("font_disabled_color", Color(UITokens.CHRONICLE_MUTED.r, UITokens.CHRONICLE_MUTED.g, UITokens.CHRONICLE_MUTED.b, 0.45))
 	if not _links.has(button):
@@ -492,7 +492,7 @@ func _refresh_page_label() -> void:
 	if _page_label == null:
 		return
 	if _current < 0:
-		_page_label.text = "封面 / %02d" % maxi(1, total_chapters())
+		_page_label.text = "00 / %02d" % maxi(1, total_chapters())
 	else:
 		_page_label.text = "%02d / %02d" % [_current + 1, maxi(1, total_chapters())]
 
@@ -584,7 +584,7 @@ func _apply_footer_ink(t: float) -> void:
 		if not is_instance_valid(button):
 			continue
 		for state in ["font_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
-			button.add_theme_color_override("font_color", ink)
+			button.add_theme_color_override(state, ink)
 		button.add_theme_color_override("font_hover_color", hot)
 		button.add_theme_color_override("font_disabled_color",
 			Color(ink.r, ink.g, ink.b, 0.45))
@@ -620,8 +620,6 @@ func set_history(rows: Array, offset: int, has_more: bool) -> void:
 	for row in rows:
 		_history_ids.append(int(row.get("id", 0)))
 		_history.add_item("第 %d 年 · %s" % [int(row.get("year", 0)) + 1, String(row.get("grade", "—"))])
-	if rows.is_empty():
-		_history.add_item("尚无年度报告")
 	_history.disabled = rows.is_empty()
 	_newer.visible = offset > 0
 	_newer.disabled = offset <= 0

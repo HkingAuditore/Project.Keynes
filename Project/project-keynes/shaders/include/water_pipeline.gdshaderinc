@@ -327,9 +327,9 @@ vec3 apply_water_depth_gradient(vec3 col, WaterStageCtx ctx) {
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
 	// 60 FPS 优化（2026-06-15）：mobile 三档变体
-	// LOW: 完全跳过（0 sample）→ 海面纯色
-	// MID/HIGH: 跑 base_ripple fbm（1 sample）
-	// Desktop: 跑 base_ripple + deep_ripple + color_block（3 sample）
+// LOW: 完全跳过（0 extra sample）→ 海面纯色
+// MID/HIGH: 复用入口的预烘噪声包
+// Desktop: 深海色块同样复用入口噪声包，不额外采样
 #if !defined(PK_MOBILE_ANY)
 	// [water-noise-reuse 2026-06-29] 复用 ctx.macro_lf（与 calm_brightness 同源），不再单独采样。
 	col *= 1.0 + (ctx.macro_lf - 0.5) * mix(0.050, 0.082, ctx.deep_layer_w);
@@ -343,7 +343,7 @@ vec3 apply_global_water_ripple(vec3 col, WaterStageCtx ctx) {
 	vec3 deep_variation = mix(vec3(0.92, 1.03, 1.14), vec3(1.08, 0.94, 1.05), ctx.macro_vlf);
 	col *= mix(vec3(1.0), deep_variation, ctx.deep_layer_w * 0.115);
 	if (water_cartoon_color_strength > 0.001) {
-		float color_block = water_fbm_cyl(ctx.wpw, 0.0048, vec2(world_time * 0.010, -world_time * 0.006), 2);
+		float color_block = ctx.macro_vlf;
 		vec3 block_tint = mix(vec3(0.80, 1.16, 1.15), vec3(0.92, 0.93, 1.24), color_block);
 		col *= mix(vec3(1.0), block_tint, water_cartoon_color_strength * mix(0.10, 0.18, ctx.deep_layer_w));
 	}
@@ -451,12 +451,10 @@ vec3 apply_open_ocean_patch(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 #if defined(MOBILE_QUALITY_LOW) || defined(MOBILE_QUALITY_MID) || defined(MOBILE_QUALITY_HIGH)
 	return col;
 #else
-	int ocean_patch_oct = (ctx.quality >= 2) ? 3 : 2;
-	float gyre_a = water_fbm_cyl(ctx.wpw, 0.0056, vec2(13.0, -31.0), ocean_patch_oct);
-	float gyre_b = water_fbm_cyl(ctx.wpw, 0.012, vec2(-29.0, 47.0), 1);
-	if (ctx.quality >= 1) {
-		gyre_b = water_fbm_cyl(ctx.wpw, 0.012, vec2(world_time * 0.012, -world_time * 0.007), 2);
-	}
+	// Packed noise channels already contain distinct 2/3-octave fields; reuse them
+	// rather than evaluating two additional FBMs for the deep-ocean patch.
+	float gyre_a = ctx.macro_lf;
+	float gyre_b = ctx.macro_vlf;
 	float gyre_mix = smoothstep(0.20, 0.86, gyre_a * 0.72 + gyre_b * 0.28);
 	float patch_boost = clamp(deep_ocean_patch_boost * deep_ocean_color_richness, 0.0, 1.0);
 	vec3 cobalt_patch = vec3(0.10, 0.20, 0.40);
@@ -697,24 +695,13 @@ vec3 apply_ocean_currents(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	vec2 oc = ctx.ocean_current_v;
 	float flow_mag = clamp(length(oc), 0.0, 1.0);
 	vec2 oc_dir = (flow_mag > 0.035) ? normalize(oc) : normalize(ctx.wind_v + vec2(0.0001, 0.0));
-	vec2 oc_side = vec2(-oc_dir.y, oc_dir.x);
-	float along = water_periodic_wave_phase(ctx.wp, oc_dir, mix(0.010, 0.024, water_cartoon_color_strength)) + world_time * 0.035;
-	float across = water_periodic_wave_phase(ctx.wp, oc_side, mix(0.060, 0.105, water_cartoon_color_strength));
-	int current_oct = (ctx.quality >= 2) ? 2 : 1;
-	float lane_low = fbm(vec2(along, across), current_oct);
-	float lane_high = fbm(vec2(along * 2.8 + 17.0, across * 0.55 - 31.0), 1);
-	float current_lane = smoothstep(0.38, 0.80, lane_low * 0.72 + lane_high * 0.28);
 	float non_static = clamp(1.0 - ww.w_ice - ww.w_lake * 0.85, 0.0, 1.0);
 	float current_w = ocean_current_strength * non_static
 				   * mix(0.48, 1.0, smoothstep(0.08, 0.74, ctx.offshore_depth));
 	current_w = clamp(current_w * mix(0.45, 1.0, flow_mag), 0.0, 1.0);
-	float streak_amp = ocean_current_debug ? 0.82 : mix(0.24, 0.42, water_cartoon_color_strength);
 	vec3 current_tint = mix(vec3(0.78, 1.08, 1.16), vec3(0.50, 0.76, 1.25),
 							 smoothstep(0.34, 1.0, ctx.offshore_depth));
-	vec3 current_shadow = mix(vec3(1.03, 0.99, 0.92), vec3(0.84, 0.94, 1.10),
-							   smoothstep(0.20, 1.0, ctx.offshore_depth));
-	col *= mix(1.0, 1.0 + (current_lane - 0.50) * streak_amp, current_w);
-	col *= mix(vec3(1.0), mix(current_shadow, current_tint, current_lane), current_w * 0.20);
+	col = mix(col, col * current_tint, current_w * 0.10);
 	if (ocean_current_debug) {
 		vec3 dir_tint = vec3(0.5 + oc_dir.x * 0.5, 0.5 + oc_dir.y * 0.3, 0.5 - oc_dir.x * 0.5);
 		col = mix(col, dir_tint, 0.28 * ocean_current_strength * non_static);
@@ -801,7 +788,10 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, i
 	// web 变体直接把这条调用（以及整份 water.gdshaderinc）编译掉。
 	N_out = vec3(0.0, 0.0, 1.0);
 #else
-	N_out = sample_water_normal(wave_wp, world_time, wave_amp_scale, wave_freq_scale, wave_q, waves_on);
+	N_out = waves_on
+			? sample_flow_water_normal(wave_wp, world_time, ctx.ocean_current_v,
+				wave_amp_scale, wave_freq_scale, ctx.pixel_noise.g)
+			: vec3(0.0, 0.0, 1.0);
 #endif
 
 	// 近岸法线放大
@@ -899,17 +889,12 @@ SurfaceParams compute_water_base_surface(
 #else
 		float water_boundary_softness = clamp(water_biome_blend_radius / 2.2, 0.0, 1.0);
 		float warp_for_water = water_domain_warp_strength * mix(0.45, 1.0, water_boundary_softness);
-		ctx.wpw = water_domain_warp(wp, world_time, warp_for_water);
+		ctx.wpw = wp + (pixel_noise.rg - vec2(0.5)) * warp_for_water * 2.0;
 #endif
 	}
-	// [water-noise-reuse 2026-06-29] 两层共享低频噪声只算一次（LOW 档两个消费者都不跑 → 跳过）。
-	// 原 base_ripple 静态、calm_brightness 慢飘；合并后统一带极慢时间漂移（±5% 亮度下不可察）。
-	ctx.macro_lf = 0.5;
-	ctx.macro_vlf = 0.5;
-#if !defined(PK_MOBILE_ANY)
-	ctx.macro_lf  = water_fbm_cyl(ctx.wpw, 0.0072, vec2(world_time * 0.012,  world_time * 0.007) + vec2(31.0, 7.0), 2);
-	ctx.macro_vlf = water_fbm_cyl(ctx.wpw, 0.0039, vec2(-world_time * 0.008, world_time * 0.010) + vec2(-47.0, 23.0), 2);
-#endif
+	// Reuse the shared packed noise fetch: G/B provide broad color variation and calm tint.
+	ctx.macro_lf = pixel_noise.g;
+	ctx.macro_vlf = pixel_noise.b;
 
 	// ── SEA 1.1: 离岸度 + 深度梯度 ─────────────────────────────────────
 	compute_offshore_depth(ctx);

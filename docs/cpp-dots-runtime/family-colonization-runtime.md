@@ -164,6 +164,8 @@ COUNTRY worker 权威下 CLAIM 在 worker 自己的边界提交，`country_asset
 成员），命令原样重排、Effect 请求保持未完成，等快照带上 CLAIM 后重放。把这个时序窗口
 当成 `TARGET_LOST_RETURNING` 会让领土归玩家、移民却被遣返，玩家看到的就是
 「国家变成我的、人口是 0」。只有 `owner` 是**别的国家**才是真正的目标易主。
+Country worker 发布带有领土变化的快照时还必须递增 `_country_peer_signal` 并唤醒
+`_control_cv`，否则 Economy 已经停在上述 pending 状态，却要等下一条无关命令才会重放。
 与此对应，`settle_orphaned_native_country_acks()` 不得为同时含 Country 与 Economy
 命令的事务伪造 ACK——那正是 `dispatch_native_economy` 的排序前置；只有不跨这两域的
 事务才继续 soft-settle，以保留它防止 Country 卡死时钟的原意。

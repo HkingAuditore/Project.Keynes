@@ -1,9 +1,15 @@
 #include "economy_runtime.h"
 
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/string.hpp>
+#include <godot_cpp/variant/variant.hpp>
+
 #include <algorithm>
 #include <limits>
 
 namespace pk {
+
+using namespace godot;
 
 bool NativeEconomyRuntime::plan_construction_materials(
         int32_t cell, int32_t type_id, int64_t count, int32_t cost_factor_q16,
@@ -221,7 +227,17 @@ int32_t NativeEconomyRuntime::treasury_build_owner_signature(
         int32_t cell, int32_t type_id) const {
     if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size())) return -1;
-    const int32_t owner_profession = _building_types[type_id].owner_profession_id;
+    const BuildingType &requested_type = _building_types[type_id];
+    // State lots are owned by the reserved state owner signature, never by a
+    // live cohort: their owner profession is state_service_only, which no
+    // plan-driven cohort occupies, so the "dominant ethnicity" fallback below
+    // would report -1 in every cell that has no soldier cohort yet - i.e. the
+    // first barracks of a country could never be built. This is the same
+    // signature the state payroll group and the military reader use, so the
+    // lot lands where the rest of the state lane already looks for it.
+    if (requested_type.kind == 3 && _state_owner_signature >= 0)
+        return _state_owner_signature;
+    const int32_t owner_profession = requested_type.owner_profession_id;
     if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
@@ -292,6 +308,11 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     if (!family_free_building_resources_legal(cell, type_id, 1))
         return reject("construction_resource_unavailable");
 
+    // State buildings resolve to the reserved state owner signature (see
+    // treasury_build_owner_signature), so a barracks can be founded in a cell
+    // that has no soldier cohort yet. Military's `state.build` ingress only
+    // forwards its bookkeeping command after this function accepted the lot,
+    // so the codes below are the ones the build receipt shows to the player.
     const int32_t owner_signature = treasury_build_owner_signature(cell, type_id);
     if (owner_signature < 0) return reject("construction_owner_signature_unavailable");
     const int32_t market = market_store().cell_to_market[cell];
@@ -382,6 +403,67 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     stage_construction_receipt(cmd, true, "ok", total_cash,
                                treasury_goods_total, market_goods_total);
     return true;
+}
+
+// Formal treasury-sponsored build ingress.
+//
+// `submit_commands` is fail-closed whenever the StageOps production writer is
+// effective (`economy_legacy_ingress_disabled`), which is the shipping
+// configuration, so a player build request could never reach the epoch queue
+// through the legacy batch. This boundary queues the very same Command the
+// legacy path queued: the apply step, the receipt, and the country asset
+// bridge stay untouched.
+//
+// The command is always applied inside an epoch (`_pending_commands` /
+// worker inbox), because `apply_treasury_sponsored_build_command` reads the
+// epoch-frozen `_epoch_cell_country` and the country cost/time factors.
+godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_build(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t effective_day, int64_t sequence, bool queue_for_worker) {
+    godot::Dictionary out;
+    out["effective_day"] = effective_day;
+    out["sequence"] = sequence;
+    auto reject = [&](const char *code) {
+        out["ok"] = false;
+        out["code"] = godot::String(code);
+        out["message"] = godot::String(code);
+        return out;
+    };
+    if (!_bootstrapped) return reject("economy_not_bootstrapped");
+    if (_fatal) return reject("economy_fatal");
+    if (_save.active || _restore.active) return reject("save_restore_active");
+    if (effective_day < 0 || sequence < 0 || cell_idx < 0 ||
+        cell_idx >= _cell_count.get() || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()))
+        return reject("construction_target_invalid");
+    if (_country_runtime == nullptr ||
+        !country_reads().valid_handle(country_handle))
+        return reject("construction_target_invalid");
+    Command command;
+    command.opcode = COMMAND_TREASURY_SPONSORED_BUILD;
+    command.effective_day = effective_day;
+    command.sequence = sequence;
+    command.target_handle = static_cast<uint64_t>(country_handle);
+    command.i32_0 = cell_idx;
+    command.i32_1 = type_id;
+    command.i64_0 = 1;
+    command.i64_1 = OWNERSHIP_TREASURY_SPONSORED_PRIVATE;
+    // The caller is the main thread and may race the worker mid-day, so the
+    // worker-owned case goes through the mutex-guarded inbox drained at epoch
+    // begin on the owning thread.
+    if (queue_for_worker) {
+        enqueue_worker_command(command);
+    } else {
+        command.submit_order = _next_submit_order++;
+        _pending_commands.push_back(command);
+    }
+    out["ok"] = true;
+    out["code"] = "construction_queued";
+    out["message"] = "construction_queued";
+    out["queued"] = true;
+    out["cell_idx"] = cell_idx;
+    out["type_id"] = type_id;
+    return out;
 }
 
 bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner_slot,
@@ -681,6 +763,112 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
                  count, total_cost, _sample_day + effective_construction_days, cmd.sequence,
                  event_legs.empty() ? nullptr : &event_legs);
     return true;
+}
+
+// Treasury-sponsored removal of a state lot: the mirror of
+// apply_treasury_sponsored_build_command. Military's `state.demolish` ingress
+// only forwards its bookkeeping command once this function accepted the
+// removal, so the economy ledger is always the first to change (requirement
+// 6.5) and the military core can never report a demolition the ledger did not
+// record.
+bool NativeEconomyRuntime::apply_treasury_sponsored_demolish_command(
+        const Command &cmd, std::string &error) {
+    const int32_t cell = cmd.i32_0;
+    const int32_t type_id = cmd.i32_1;
+    auto reject = [&](const char *code) {
+        _last_building_rejection_reason = code;
+        ++_rejected_commands;
+        stage_construction_receipt(cmd, false, code);
+        return true;
+    };
+    if (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
+        return reject("unsupported_ownership_policy");
+    if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()) ||
+        cmd.i64_0 <= 0)
+        return reject("demolish_target_invalid");
+    if (_country_runtime == nullptr ||
+        !country_reads().valid_handle(static_cast<int64_t>(cmd.target_handle)))
+        return reject("demolish_target_invalid");
+    // Only state lots go through this ingress; an industrial group must use the
+    // ordinary owner-driven COMMAND_DEMOLISH (11) so its cohort keeps paying.
+    if (_building_types[type_id].kind != 3) return reject("demolish_not_state_owned");
+    // Ownership and signature are both derived from the catalog, not from the
+    // caller: a state group's owner is the reserved state signature, which is
+    // the only key under which the build ingress could have created it.
+    const int32_t owner_signature = treasury_build_owner_signature(cell, type_id);
+    if (owner_signature < 0) return reject("demolish_state_owner_unresolved");
+    const int32_t group_id = find_building_group(cell, type_id, owner_signature);
+    if (group_id < 0) return reject("demolish_state_building_absent");
+    const int64_t before = buildings_store().group_units[group_id];
+    if (before < cmd.i64_0) return reject("demolish_owned_count_insufficient");
+    record_annual_event(cell, AnnualMetric::REMOVED, cmd.i64_0);
+    buildings_store().group_units.write_scalar(group_id, before - cmd.i64_0);
+    _building_handle_index_clean = false;
+    std::vector<EventLeg> event_legs;
+    if (trace_detail_for_cell(cell)) {
+        event_legs.push_back({FIELD_BUILDING_COUNT, SUBJECT_BUILDING_GROUP,
+                              owner_signature, type_id, before,
+                              buildings_store().group_units[group_id]});
+    }
+    // Same event and stage as the ordinary demolish so a replay sees one shape:
+    // the removal is a ledger-apply fact regardless of who ordered it.
+    trace_append(EVENT_BUILDING_DEMOLISHED, static_cast<int32_t>(Stage::LEDGER_APPLY),
+                 cell, SUBJECT_BUILDING_GROUP, owner_signature, type_id, -1,
+                 cmd.i64_0, before, buildings_store().group_units[group_id],
+                 cmd.sequence, event_legs.empty() ? nullptr : &event_legs);
+    _structural_touched_cells.push_back(cell);
+    stage_construction_receipt(cmd, true, "ok");
+    return true;
+}
+
+godot::Dictionary NativeEconomyRuntime::queue_treasury_sponsored_demolish(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t count, int64_t effective_day, int64_t sequence,
+        bool queue_for_worker) {
+    godot::Dictionary out;
+    out["effective_day"] = effective_day;
+    out["sequence"] = sequence;
+    auto reject = [&](const char *code) {
+        out["ok"] = false;
+        out["code"] = godot::String(code);
+        out["message"] = godot::String(code);
+        return out;
+    };
+    if (!_bootstrapped) return reject("economy_not_bootstrapped");
+    if (_fatal) return reject("economy_fatal");
+    if (_save.active || _restore.active) return reject("save_restore_active");
+    if (effective_day < 0 || sequence < 0 || count <= 0 || cell_idx < 0 ||
+        cell_idx >= _cell_count.get() || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()))
+        return reject("demolish_target_invalid");
+    if (_country_runtime == nullptr ||
+        !country_reads().valid_handle(country_handle))
+        return reject("demolish_target_invalid");
+    if (_building_types[type_id].kind != 3) return reject("demolish_not_state_owned");
+    Command command;
+    command.opcode = COMMAND_TREASURY_SPONSORED_DEMOLISH;
+    command.effective_day = effective_day;
+    command.sequence = sequence;
+    command.target_handle = static_cast<uint64_t>(country_handle);
+    command.i32_0 = cell_idx;
+    command.i32_1 = type_id;
+    command.i64_0 = count;
+    command.i64_1 = OWNERSHIP_TREASURY_SPONSORED_PRIVATE;
+    if (queue_for_worker) {
+        enqueue_worker_command(command);
+    } else {
+        command.submit_order = _next_submit_order++;
+        _pending_commands.push_back(command);
+    }
+    out["ok"] = true;
+    out["code"] = "demolish_queued";
+    out["message"] = "demolish_queued";
+    out["queued"] = true;
+    out["cell_idx"] = cell_idx;
+    out["type_id"] = type_id;
+    out["count"] = count;
+    return out;
 }
 
 bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t owner_slot,

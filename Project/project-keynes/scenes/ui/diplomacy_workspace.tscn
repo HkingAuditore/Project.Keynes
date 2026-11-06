@@ -1,0 +1,584 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/diplomacy_workspace.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_chapter_nav.gd" id="2_nav"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_kpi_card.gd" id="3_kpi"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_ledger_table.gd" id="4_ledger"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_bar_list.gd" id="5_bars"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/dossier_stacked_bar.gd" id="6_stacked"]
+[ext_resource type="Script" path="res://scripts/ui/components/dossier/inspector_fact_grid.gd" id="7_facts"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_frame_panel.gd" id="8_frame"]
+[ext_resource type="Script" path="res://scripts/ui/components/military/military_paper_rule.gd" id="9_rule"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="10_insights"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="11_badge"]
+
+[node name="DiplomacyWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 6
+
+[node name="HeaderPlate" type="PanelContainer" parent="Root"]
+layout_mode = 2
+theme_type_variation = &"PKArchivePage"
+
+[node name="ChapterNav" type="Control" parent="Root/HeaderPlate"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(330, 48)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 0
+script = ExtResource("2_nav")
+
+[node name="StatusLabel" type="Label" parent="Root"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+
+[node name="PageViewport" type="ScrollContainer" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PageColumn" type="VBoxContainer" parent="Root/PageViewport"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="KpiStrip" type="PanelContainer" parent="Root/PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierBand"
+
+[node name="KpiRow" type="HBoxContainer" parent="Root/PageViewport/PageColumn/KpiStrip"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 86)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 86)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 86)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="Root/PageViewport/PageColumn/KpiStrip/KpiRow"]
+custom_minimum_size = Vector2(150, 86)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="PageStack" type="MarginContainer" parent="Root/PageViewport/PageColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 16
+
+[node name="OverviewPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OverviewGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="WarsCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+
+[node name="WarsColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="WarsHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard/WarsColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Kicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard/WarsColumn/WarsHeader"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "战事"
+
+[node name="WarsCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard/WarsColumn/WarsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = ""
+
+[node name="OverviewWarTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard/WarsColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+script = ExtResource("4_ledger")
+
+[node name="WarsEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/WarsCard/WarsColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="PowersCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+
+[node name="PowersColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/PowersCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="PowersHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/PowersCard/PowersColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Kicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/PowersCard/PowersColumn/PowersHeader"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "列强"
+
+[node name="PowersCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/PowersCard/PowersColumn/PowersHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = ""
+
+[node name="PowerList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/OverviewGrid/PowersCard/PowersColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 168)
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="InsightsCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage"]
+layout_mode = 2
+theme_type_variation = &"PKPaperNote"
+
+[node name="InsightsColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/InsightsCard"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="InsightsTag" type="Label" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/InsightsCard/InsightsColumn"]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKPaperTag"
+text = "时局"
+
+[node name="Insights" parent="Root/PageViewport/PageColumn/PageStack/OverviewPage/InsightsCard/InsightsColumn" instance=ExtResource("10_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CountriesPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="CountriesGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="RosterCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+
+[node name="RosterColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="RosterHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Kicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn/RosterHeader"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "国家名录"
+
+[node name="RosterCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn/RosterHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = ""
+
+[node name="RosterScroll" type="ScrollContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 246)
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_scroll_mode = 0
+
+[node name="RosterTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn/RosterScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("4_ledger")
+
+[node name="RosterEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/RosterCard/RosterColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="SheetCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+edge = "cinnabar"
+
+[node name="SheetColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="SheetHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SheetIcon" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetHeader" instance=ExtResource("11_badge")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+
+[node name="SheetTitle" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierHeading"
+text = "未选择国家"
+text_overrun_behavior = 3
+
+[node name="SheetEra" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "—"
+
+[node name="SheetContact" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "—"
+
+[node name="SheetNote" type="Label" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="SheetRule" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+layout_mode = 2
+script = ExtResource("9_rule")
+
+[node name="SheetFooter" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LocateButton" type="Button" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetFooter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKDossierLink"
+text = "定位"
+tooltip_text = "在地图上定位该国领土"
+
+[node name="Spacer" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetFooter"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="DeclareButton" type="Button" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetFooter"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(88, 32)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKSealPrimaryButton"
+disabled = true
+text = "宣战"
+
+[node name="PeaceButton" type="Button" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/SheetFooter"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(88, 32)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKSealPrimaryButton"
+disabled = true
+text = "议和"
+
+[node name="SheetFacts" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("7_facts")
+
+[node name="CompareBars" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TerritoryBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/CompareBars"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_stacked")
+
+[node name="SoldierBar" type="Control" parent="Root/PageViewport/PageColumn/PageStack/CountriesPage/CountriesGrid/SheetCard/SheetColumn/CompareBars"]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("6_stacked")
+
+[node name="WarsPage" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="WarsGrid" type="GridContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="WarListCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+
+[node name="WarListColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="WarListHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard/WarListColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Kicker" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard/WarListColumn/WarListHeader"]
+layout_mode = 2
+theme_type_variation = &"PKDossierKicker"
+text = "战争"
+
+[node name="WarListCaption" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard/WarListColumn/WarListHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierCaption"
+text = ""
+
+[node name="WarTable" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard/WarListColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+script = ExtResource("4_ledger")
+
+[node name="WarEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarListCard/WarListColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="WarSheetCard" type="PanelContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+script = ExtResource("8_frame")
+edge = "cinnabar"
+
+[node name="WarSheetColumn" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="WarSheetHeader" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WarIcon" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarSheetHeader" instance=ExtResource("11_badge")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+
+[node name="WarTitle" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarSheetHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKDossierHeading"
+text = "未选择战争"
+text_overrun_behavior = 3
+
+[node name="WarRole" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarSheetHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PKPaperTag"
+text = "—"
+
+[node name="WarSheetNote" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="WarSheetRule" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+script = ExtResource("9_rule")
+
+[node name="WarFooter" type="HBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WarLocateButton" type="Button" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarFooter"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKDossierLink"
+disabled = true
+text = "定位战线"
+tooltip_text = "在地图上定位这条战线"
+
+[node name="Spacer" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarFooter"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="WarPeaceButton" type="Button" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/WarFooter"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(88, 32)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKSealPrimaryButton"
+disabled = true
+text = "议和"
+
+[node name="ScoreTag" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKPaperTag"
+text = "战争分"
+
+[node name="ScoreList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="FrontTag" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKPaperTag"
+text = "战线"
+
+[node name="FrontList" type="Control" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+script = ExtResource("5_bars")
+
+[node name="FrontEmpty" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 3
+text = ""
+
+[node name="LogTag" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"PKPaperTag"
+text = "近日战事"
+
+[node name="LogRows" type="VBoxContainer" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Log0" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/LogRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3
+
+[node name="Log1" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/LogRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3
+
+[node name="Log2" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/LogRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3
+
+[node name="Log3" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/LogRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3
+
+[node name="Log4" type="Label" parent="Root/PageViewport/PageColumn/PageStack/WarsPage/WarsGrid/WarSheetCard/WarSheetColumn/LogRows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+text_overrun_behavior = 3

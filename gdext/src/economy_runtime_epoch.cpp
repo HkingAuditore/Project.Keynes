@@ -499,7 +499,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _event_detail_ms = 0.0;
     _event_publish_ms = 0.0;
     _explicit_money_mint = 0;
-    _explicit_money_burn = 0;
+    _explicit_money_burn = _pending_military_cash_burn;
+    _pending_military_cash_burn = 0;
     _external_population_delta = 0;
     _explicit_stock_delta = 0;
     _country_research_consumed_opening = 0;
@@ -1207,6 +1208,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
     _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    _epoch_derived_anchor_price.assign(_market_signals.good_ids.size(), 0);
     // Keep last epoch's substitute demand through Leontief refresh so one-hop
     // intermediates still see category co-candidate pressure, then clear for
     // this epoch's production to republish.
@@ -1395,6 +1397,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         // expedition in SETTLING.
         const bool targets_cohort = !family_reward && !expedition_command &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
+                                    cmd.opcode != COMMAND_TREASURY_SPONSORED_DEMOLISH &&
                                     cmd.opcode != COMMAND_BUILD_CANAL &&
                                     cmd.opcode != COMMAND_ADD_STOCK &&
                                     cmd.opcode != COMMAND_REMOVE_STOCK &&
@@ -1421,9 +1424,16 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
-             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD) &&
+             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD ||
+             cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
+            return reject_epoch_command(cmd);
+        }
+        if (cmd.opcode == COMMAND_TREASURY_SPONSORED_DEMOLISH &&
+            (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
+             _country_runtime == nullptr || !country_reads().valid_handle(
+                 static_cast<int64_t>(cmd.target_handle)))) {
             return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&

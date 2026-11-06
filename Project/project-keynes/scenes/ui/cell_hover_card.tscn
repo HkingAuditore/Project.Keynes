@@ -74,7 +74,6 @@ offset_top = 8.0
 offset_right = 312.0
 offset_bottom = 174.0
 mouse_filter = 2
-theme_type_variation = &"PKPaperPopup"
 theme_override_styles/panel = SubResource("CardPaper")
 
 [node name="Body" type="VBoxContainer" parent="Paper"]

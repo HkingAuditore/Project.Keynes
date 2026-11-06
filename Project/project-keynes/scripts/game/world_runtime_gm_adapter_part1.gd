@@ -62,7 +62,7 @@ func dump_render_profile(host) -> Dictionary:
 	var nodes: float = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 	var resources: float = Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)
 	var orphan_nodes: float = Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
-	# Godot 4 没有单独的 GPU 时间 monitor；TIME_PROCESS 含 GDScript + host.render submit。
+	# Godot 4 没有单独的 GPU 时间 monitor；TIME_PROCESS 含 GDScript + render submit。
 	var rs_view_calls: int = -1
 	var rs_view_prims: int = -1
 	if Engine.has_singleton("RenderingServer"):
@@ -78,9 +78,9 @@ func dump_render_profile(host) -> Dictionary:
 		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
 	]
 	var lines = PackedStringArray()
-	lines.append("[host.render-profile] === GPU / Frame metrics @ frame %d (player GM) %s ===" % [Engine.get_frames_drawn(), stamp])
-	lines.append("  FPS=%.1f  process(host.sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
-	lines.append("  frame wall host.ms over %d samples: min=%.2f avg=%.2f p50=%.2f p95=%.2f max=%.2f" % [_SAMPLE_FRAMES, f_min, f_avg, f_p50, f_p95, f_max])
+	lines.append("[render-profile] === GPU / Frame metrics @ frame %d (player GM) %s ===" % [Engine.get_frames_drawn(), stamp])
+	lines.append("  FPS=%.1f  process(sample)=%.2fms  physics=%.2fms  nav=%.2fms" % [fps, proc_ms, phys_ms, nav_ms])
+	lines.append("  frame wall ms over %d samples: min=%.2f avg=%.2f p50=%.2f p95=%.2f max=%.2f" % [_SAMPLE_FRAMES, f_min, f_avg, f_p50, f_p95, f_max])
 	lines.append("  sus_ticks=%d/%d sus_frame_avg=%.2fms non_sus_frame_avg=%.2fms" % [sus_count, _SAMPLE_FRAMES, sus_frame_avg, non_sus_frame_avg])
 	lines.append("  histogram (4ms bins): [0-4)=%d [4-8)=%d [8-12)=%d [12-16)=%d [16-20)=%d [20-24)=%d [24-28)=%d [28-32)=%d [32-36)=%d [36-40)=%d [40+)=%d" % [
 		bins[0], bins[1], bins[2], bins[3], bins[4], bins[5], bins[6], bins[7], bins[8], bins[9], bins[10]
@@ -104,7 +104,7 @@ func dump_render_profile(host) -> Dictionary:
 	var tf = FileAccess.open(txt_path, FileAccess.WRITE)
 	if tf == null:
 		var err: int = FileAccess.get_open_error()
-		push_error("[host.render-profile] open txt failed host.path=%s err=%d" % [txt_path, err])
+		push_error("[render-profile] open txt failed path=%s err=%d" % [txt_path, err])
 		return {"ok": false, "error": "open txt failed err=%d" % err}
 	for line in lines:
 		tf.store_line(line)
@@ -114,12 +114,12 @@ func dump_render_profile(host) -> Dictionary:
 	var cf = FileAccess.open(csv_path, FileAccess.READ_WRITE) if csv_exists else FileAccess.open(csv_path, FileAccess.WRITE)
 	if cf == null:
 		var err2: int = FileAccess.get_open_error()
-		push_error("[host.render-profile] open csv failed host.path=%s err=%d" % [csv_path, err2])
+		push_error("[render-profile] open csv failed path=%s err=%d" % [csv_path, err2])
 		return {"ok": true, "txt_path": txt_path, "csv_path": "", "error": "csv open failed err=%d" % err2}
 	if csv_exists:
 		cf.seek_end()
 	else:
-		cf.store_line("host.timestamp,frame,fps,process_ms,physics_ms,nav_ms,"
+		cf.store_line("timestamp,frame,fps,process_ms,physics_ms,nav_ms,"
 			+ "wall_min_ms,wall_avg_ms,wall_p50_ms,wall_p95_ms,wall_max_ms,"
 			+ "sus_count,sus_frame_avg_ms,non_sus_frame_avg_ms,sus_ticks_in_window,"
 			+ "hist_0_4,hist_4_8,hist_8_12,hist_12_16,hist_16_20,hist_20_24,hist_24_28,hist_28_32,hist_32_36,hist_36_40,hist_40_plus,"
@@ -139,7 +139,7 @@ func dump_render_profile(host) -> Dictionary:
 	])
 	cf.store_line(",".join(row))
 	cf.close()
-	print("[host.render-profile] dumped txt=%s csv=%s" % [txt_path, csv_path])
+	print("[render-profile] dumped txt=%s csv=%s" % [txt_path, csv_path])
 	return {"ok": true, "txt_path": txt_path, "csv_path": csv_path}
 
 
@@ -195,8 +195,8 @@ func get_gm_capabilities(host) -> Dictionary:
 			if economy.has_method("building_type_ids"):
 				buildings = economy.building_type_ids()
 	var capabilities = {
-		"host.sections": PackedStringArray(["overview", "selected"]),
-		"host.commands": host._gm_command_specs(technologies, goods, buildings),
+		"sections": PackedStringArray(["overview", "selected"]),
+		"commands": host._gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
 			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
@@ -208,19 +208,19 @@ func get_gm_capabilities(host) -> Dictionary:
 			{"id": "visual.ocean_current", "label": "洋流显示", "group": "视觉"},
 			{"id": "visual.extreme_weather", "label": "极端天气地表效果", "group": "视觉"},
 			{"id": "diagnostics.perf_sampler", "label": "渲染性能采样", "group": "诊断"},
-			{"id": "diagnostics.pk_log", "label": "PKLog 诊断日志", "group": "诊断"},
+			{"id": "diagnostics.pk_log", "label": "诊断日志", "group": "诊断"},
 			{"id": "diagnostics.terrain_material_gate", "label": "材质贴图门禁视图（绿=激活）", "group": "诊断"},
 			{"id": "diagnostics.cell_index_view", "label": "Cell 索引视图（每格一色，全黑=索引图失效）", "group": "诊断"},
 			{"id": "diagnostics.enum_lut_view", "label": "enum_lut 直读视图（分区着色，全黑=LUT 读成零）", "group": "诊断"},
 			{"id": "diagnostics.water_branch_view", "label": "陆/水分支视图（绿=陆地 白=海冰 蓝=海洋）", "group": "诊断"},
 			{"id": "diagnostics.pre_adjust_view", "label": "全局调整前的颜色（对比正常画面）", "group": "诊断"},
 			{"id": "diagnostics.base_color_view", "label": "光照前的地表底色", "group": "诊断"},
-			{"id": "diagnostics.river_flow_view", "label": "河流 host.flow 视图（红=判定为河，整屏红=flow_tex 未绑定）", "group": "诊断"},
+			{"id": "diagnostics.river_flow_view", "label": "河流 flow 视图（红=判定为河，整屏红=flow_tex 未绑定）", "group": "诊断"},
 			{"id": "diagnostics.static_color_view", "label": "河流层之前的静态底色", "group": "诊断"},
 			{"id": "diagnostics.flow_texsize_view", "label": "flow_tex 采样器尺寸（12 位条：derived_size=正常 4×4=兜底白纹理）", "group": "诊断"},
-			{"id": "diagnostics.flow_texel_view", "label": "host.flow texelFetch 取样（绕过过滤/wrap）", "group": "诊断"},
+			{"id": "diagnostics.flow_texel_view", "label": "flow texelFetch 取样（绕过过滤/wrap）", "group": "诊断"},
 			{"id": "diagnostics.dump_flow_tex_report", "label": "输出 FlowTex 完整诊断（CPU/材质/sampler/GPU）",
-				"group": "诊断", "host.kind": "button", "icon": &"host.summary.overview",
+				"group": "诊断", "kind": "button", "icon": &"summary.overview",
 				"tooltip": "打印 Web FlowTex 的生成、编码、上传、绑定、Shader 变体和 GPU 实际读取信息"},
 			{"id": "diagnostics.dyn_lut_view", "label": "dyn_lut 直读视图（R温度 G湿度 B雪，全黑=读成零）", "group": "诊断"},
 			{"id": "diagnostics.eco_lut_view", "label": "eco_lut 视图（主地形已退役，灰占位；植被层仍用）", "group": "诊断"},
@@ -506,7 +506,7 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
 			host._renderer.terrain_surface_debug_view = 16 if enabled else 0
 			if enabled:
-				print("[host.flow-texsize-view] 12 位二进制条：上半屏=宽 下半屏=高，左起最高位，"
+				print("[flow-texsize-view] 12 位二进制条：上半屏=宽 下半屏=高，左起最高位，"
 					+ "白=1 深蓝=0，每 4 位一条红分隔")
 				host._print_terrain_sampler_inventory()
 		"diagnostics.flow_texel_view":
@@ -514,7 +514,7 @@ func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 				return host._gm_error("renderer_unavailable", "渲染器尚未就绪。")
 			host._renderer.terrain_surface_debug_view = 17 if enabled else 0
 			if enabled:
-				print("[host.flow-texel-view] texelFetch 整数取样，绕过 filter_linear 与 wrap host.uv；"
+				print("[flow-texel-view] texelFetch 整数取样，绕过 filter_linear 与 wrap uv；"
 					+ "恢复出细红河线 = 问题在过滤/采样状态而非纹理内容")
 		"diagnostics.dyn_lut_view":
 			if host._renderer == null:
@@ -565,8 +565,8 @@ func _gm_overview_snapshot(host) -> Dictionary:
 		"world": {"ready": host._current_map != null, "seed": host._last_seed,
 			"width": host._current_map.width if host._current_map != null else 0,
 			"height": host._current_map.height if host._current_map != null else 0,
-			"host.cells": host._current_map.cell_count() if host._current_map != null else 0},
-		"host.clock": {"day_index": host._world_clock.day_index() if host._world_clock != null else -1,
+			"cells": host._current_map.cell_count() if host._current_map != null else 0},
+		"clock": {"day_index": host._world_clock.day_index() if host._world_clock != null else -1,
 			"year": int(calendar.get("year", 0)), "month": int(calendar.get("month", 0)),
 			"day": int(calendar.get("day", 0)), "paused": host._world_clock.paused if host._world_clock != null else true,
 			"speed": host._world_clock.speed_multiplier if host._world_clock != null else 0.0},
@@ -583,7 +583,7 @@ func _gm_overview_snapshot(host) -> Dictionary:
 ## 于是 country_worker_cohort_cash_boundary_invalid 这类边界停机，玩家拿到的
 ## 也是一份钱的报表，里面既没有 stage 也没有触发的命令。
 ## 每帧调一次的运行时健康巡检。卡死检测很便宜，逐帧跑；fatal 需要拉整份经济
-## 报告，按 host._RUNTIME_HEALTH_POLL_MSEC 限频。
+## 报告，按 _RUNTIME_HEALTH_POLL_MSEC 限频。
 
 
 func _poll_runtime_health(host) -> void:
@@ -640,10 +640,10 @@ func _poll_simulation_stall_watchdog(host) -> void:
 	if now_msec < host._stall_watchdog_next_report_msec:
 		return
 	host._stall_watchdog_next_report_msec = now_msec + host.STALL_WATCHDOG_REPEAT_MSEC
-	push_warning("[runtime-stall] day=%d stalled for %d host.ms host.at speed=%.1f" % [
+	push_warning("[runtime-stall] day=%d stalled for %d ms at speed=%.1f" % [
 		day, stalled_ms, host._world_clock.speed_multiplier])
-	# Web：把 day barrier 的关键诊断塞进事件流（小 host.payload，不走 JSON 转储），
-	# 这样就能直接看出是哪个域没 host.commit。字段名以 graph_keys 事件里的真实键为准。
+	# Web：把 day barrier 的关键诊断塞进事件流（小 payload，不走 JSON 转储），
+	# 这样就能直接看出是哪个域没 commit。字段名以 graph_keys 事件里的真实键为准。
 	var barrier_diag = host._web_barrier_diag()
 	var graph_keys = PackedStringArray(barrier_diag.get("_keys", PackedStringArray()))
 	barrier_diag.erase("_keys")
@@ -665,7 +665,7 @@ func _poll_simulation_stall_watchdog(host) -> void:
 		})
 
 
-## Web 诊断：从 runtime perf host.snapshot 里挑出 day barrier / 权威相关的真实字段。
+## Web 诊断：从 runtime perf snapshot 里挑出 day barrier / 权威相关的真实字段。
 ## 键名以 graph_keys 事件为准（simulation_worker_ready / domain_authority_* 等）。
 
 
@@ -696,8 +696,8 @@ func _web_barrier_diag(host) -> Dictionary:
 			"native_daily_inline",
 			# P1/P2：预发布与 peer 归属。
 			"environment_ring_pending", "environment_frames_ahead",
-			# [worker 计时分解] C++ 侧一直在累计（RuntimeWorkerTiming::host.snapshot() →
-			# `worker_time_<host.phase>_us`），但这份 diag 白名单没带它们，于是"worker 比
+			# [worker 计时分解] C++ 侧一直在累计（RuntimeWorkerTiming::snapshot() →
+			# `worker_time_<phase>_us`），但这份 diag 白名单没带它们，于是"worker 比
 			# 主线程慢 8 倍"只能靠 cd/clk 速率间接推断。带上 8 个分项后一条 diag 就能
 			# 区分"worker 在算"（execute）与"worker 在等"（input_wait / clock_wait /
 			# boundary_wait / paused），这是决定"优化图"还是"改交付方式"的分水岭。
@@ -735,13 +735,13 @@ func _web_barrier_diag(host) -> Dictionary:
 	#                                            常见 worker_thread_create_failed）
 	#   == "runtime_thread_mode_hot_switch.."  → 上一代 worker 没退干净
 	#   == "authority_policy_disabled:<reason>"→ 策略没给 ACTIVE，已回退内联
-	#   == "inline_flag_mismatch"              → host.config 没生效（配置 bug）
+	#   == "inline_flag_mismatch"              → config 没生效（配置 bug）
 	out["web_worker_started"] = host._web_worker_start_ok
 	out["web_worker_start_code"] = host._web_worker_start_code
 	out["web_worker_inline_fallback"] = host._web_worker_inline_fallback
 	out["native_daily_inline_active"] = host._native_daily_inline_active
 	# 长跑内存曲线：web 的 wasm32 堆是 2 GiB 硬上限，超了就是
-	# "Cannot enlarge memory" + 每次鼠标事件一条 "table index is out of host.bounds"。
+	# "Cannot enlarge memory" + 每次鼠标事件一条 "table index is out of bounds"。
 	# 把真实堆大小和引擎自报的静态内存一起打进 diag，就能在崩之前看到斜率。
 	out["wasm_heap_mb"] = WebTelemetry.wasm_heap_mb()
 	out["memory_static_mb"] = WebTelemetry.memory_mb()

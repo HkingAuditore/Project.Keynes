@@ -227,16 +227,83 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 4) {
         _executed_substage = "investment_prepare";
-        // The review list already owns the N/P/I cadence. Prepare once for
-        // this epoch and finish it through normal continuation slices. Moving
-        // ordinals into another epoch loses newly scheduled reviews and mixes
-        // candidate caches with a different frozen market input.
+        static const bool commit_track_b_enabled4 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B);
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t commit_track_b_cadence4 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_COMMIT_CADENCE);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
+        }();
+        static const int32_t commit_track_b_offset4 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed != 0 ? std::abs(parsed) : 3;
+        }();
+        static const int32_t commit_track_b_spread4 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_COMMIT_SPREAD);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
+        }();
+        const bool commit_spread_active = commit_track_b_enabled4 &&
+            commit_track_b_spread4 > 1;
+        const bool investment_due = commit_track_b_enabled4 &&
+            commit_track_b_cadence4 > 1 &&
+            (((_current_day.get() - commit_track_b_offset4) %
+              commit_track_b_cadence4 + commit_track_b_cadence4) %
+             commit_track_b_cadence4) == 0;
+        if (commit_spread_active) {
+            if (!_track_b_investment_cells_pending.empty()) {
+                _investment_review_cell_indices =
+                    _track_b_investment_cells_pending;
+                _building_cell_cursor = 0;
+                _building_commit_phase = 5;
+                record_commit_phase(0);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
+            if (!investment_due) {
+                EconomyCostProbe::record(
+                    "building_commit.track_b_investment_skip",
+                    _current_day.get(), 0.0, 1u);
+                _building_commit_phase = 5;
+                record_commit_phase(0);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
+        } else if (!investment_due) {
+            EconomyCostProbe::record("building_commit.track_b_investment_skip",
+                                     _current_day.get(), 0.0, 1u);
+            _building_commit_phase = 5;
+            record_commit_phase(0);
+            if (finish_chunk_and_should_yield()) {
+                return BuildingCommitChunkResult::StopSlice;
+            }
+            ++_budgeted_building_commit_phase_fusions;
+            return BuildingCommitChunkResult::ContinueFusing;
+        }
         bool population_changed = false;
         if (!run_endogenous_building_investment(0, 0, true, population_changed,
                                                 error)) {
             fail(error.empty() ? "building_investment_prepare_failed" : error);
             record_commit_phase(0);
             return BuildingCommitChunkResult::Fatal;
+        }
+        if (commit_spread_active) {
+            _track_b_investment_cells_pending =
+                _investment_review_cell_indices;
+            _building_cell_cursor = 0;
         }
         _building_commit_phase = 5;
         record_commit_phase(1);
@@ -248,12 +315,70 @@ NativeEconomyRuntime::advance_building_commit_chunk(
     }
     if (_building_commit_phase == 5) {
         _executed_substage = "investment";
+        static const bool commit_track_b_enabled5 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B);
+            return !(value && std::strcmp(value, "0") == 0);
+        }();
+        static const int32_t commit_track_b_cadence5 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_COMMIT_CADENCE);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 30) : 4;
+        }();
+        static const int32_t commit_track_b_offset5 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_INVESTMENT_OFFSET);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed != 0 ? std::abs(parsed) : 3;
+        }();
+        static const int32_t commit_track_b_spread5 = [] {
+            const char *value = pk::runtime_switch_value(
+                pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_COMMIT_SPREAD);
+            const int32_t parsed = value ? std::atoi(value) : 0;
+            return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
+        }();
+        const bool commit_spread_active5 = commit_track_b_enabled5 &&
+            commit_track_b_spread5 > 1;
+        const bool skip_commit_investment5 = !commit_spread_active5 &&
+            commit_track_b_enabled5 && commit_track_b_cadence5 > 1 &&
+            (((_current_day.get() - commit_track_b_offset5) %
+              commit_track_b_cadence5 + commit_track_b_cadence5) %
+             commit_track_b_cadence5) != 0;
+        if (skip_commit_investment5) {
+            if (!flush_market_signal_overflow(error)) {
+                fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
+                record_commit_phase(0);
+                return BuildingCommitChunkResult::Fatal;
+            }
+            _building_cell_cursor = 0;
+            _building_commit_phase = 6;
+            record_commit_phase(1);
+            if (finish_chunk_and_should_yield()) {
+                return BuildingCommitChunkResult::StopSlice;
+            }
+            ++_budgeted_building_commit_phase_fusions;
+            return BuildingCommitChunkResult::ContinueFusing;
+        }
         const int32_t investment_cell_count =
             static_cast<int32_t>(_investment_review_cell_indices.size());
+        int32_t daily_target = investment_cell_count;
+        if (commit_spread_active5 && investment_cell_count > 0) {
+            daily_target = std::max<int32_t>(1,
+                (investment_cell_count + commit_track_b_spread5 - 1) /
+                commit_track_b_spread5);
+        }
+        // The diagnostic is the number of cells scheduled for this commit,
+        // rather than the size of a carried list that may span later epochs.
+        // Under commit spread the list may be a carried tail, and only
+        // daily_target cells run before the rest is carried again.
+        if (_building_cell_cursor == 0)
+            _investment_scheduled_review_cells = daily_target;
         cursor_start = _building_cell_cursor;
         int32_t end = std::min<int32_t>(
             investment_cell_count,
             _building_cell_cursor + _investment_cells_per_slice);
+        if (commit_spread_active5) end = std::min(end, daily_target);
         bool population_changed = false;
         if (end > _building_cell_cursor && !run_endogenous_building_investment(
                 _building_cell_cursor, end, false, population_changed, error)) {
@@ -266,9 +391,31 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         cursor_end = _building_cell_cursor;
         building_range_used = true;
         if (_building_cell_cursor < investment_cell_count) {
+            if (commit_spread_active5 &&
+                _building_cell_cursor >= daily_target) {
+                _track_b_investment_cells_pending.assign(
+                    _investment_review_cell_indices.begin() +
+                        _building_cell_cursor,
+                    _investment_review_cell_indices.end());
+                if (!flush_market_signal_overflow(error)) {
+                    fail(error.empty()
+                        ? "market_signal_overflow_flush_failed" : error);
+                    record_commit_phase(0);
+                    return BuildingCommitChunkResult::Fatal;
+                }
+                _building_cell_cursor = 0;
+                _building_commit_phase = 6;
+                record_commit_phase(1);
+                if (finish_chunk_and_should_yield()) {
+                    return BuildingCommitChunkResult::StopSlice;
+                }
+                ++_budgeted_building_commit_phase_fusions;
+                return BuildingCommitChunkResult::ContinueFusing;
+            }
             record_commit_phase(0);
             return BuildingCommitChunkResult::StopSlice;
         }
+        if (commit_spread_active5) _track_b_investment_cells_pending.clear();
         if (!flush_market_signal_overflow(error)) {
             fail(error.empty() ? "market_signal_overflow_flush_failed" : error);
             record_commit_phase(0);
@@ -366,6 +513,7 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         }
         _investment_pending_by_cell_type.clear();
         _investment_existing_by_cell_type.clear();
+        _investment_prepared_epoch = -1;
         _investment_merchant_cash_by_cell.clear();
         _investment_outstanding_credit_by_cell.clear();
         _building_cell_cursor = 0;

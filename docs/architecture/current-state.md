@@ -74,7 +74,7 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 | country | PKCN v14 | country | environment |
 | military | PKMI v2 | country | country |
 | effect | PKEF v14 | rules | military |
-| economy | ECP2 schema 59 | economy | country、effect |
+| economy | ECP2 schema 60 | economy | country、effect |
 | family | 在 ECP2 内 | economy | economy |
 | technology | 在 PKCN 内 | country | country |
 | modifier | PKMD v3 | rules | effect |
@@ -87,7 +87,7 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 继续态里容易漏的字段（每项都曾造成读档后分叉，已修复）：
 
-- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）。
+- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
 - PKMI2：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行。`military_for_each_lot_ordered` 不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
 - PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1）、军事事件转发进度（MDJ1）。
 - CLM2 v9：权威 extras 与天气初始化状态。
@@ -96,8 +96,8 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 - `simulation_state_hash` 每天只把日期混入前值，不是业务状态摘要；`runtime_day_waterfall.h` 记耗时与完成掩码，也不是状态链。气候 ACTIVE 的 `compute_hashes=false`。
 - 整体经济哈希还读同步国家对象与 Modifier 的 ECONOMY 序列；`get_country_state_hash` 取同步对象，`get_country_report` 取 worker 快照副本，二者不是同一提交边界。
-- 黄金五链（`tests/runtime/golden_*`，`check_golden_determinism.py`）：v1 开局账目、v2 整体经济、v3 七个 worker 域投影、v4 Country 追加链、v5 表外推进者（军事政策与资源恢复）。末日 domains 摘要 `95aedaac…537a`。这是投影，不是完整十二域状态。
-- 保存续跑（`check_committed_replay.py --checkpoint --trace`、`check_replay_matrix.py`）：不中断、重放、保存不中断、另进程读档四条轨迹逐日比较，读档后至少八日。默认矩阵 5 个场景：save1、calendar5、multicountry5、military20、military365；`--full` 另加 save2/5/9 与 mixed5；`--annual` 保存第 365 日；`--annual-neighbors` 保存 364/366（手动档）。
+- 黄金五链（`tests/runtime/golden_*`，`check_golden_determinism.py`）：v1 开局账目、v2 整体经济、v3 七个 worker 域投影、v4 Country 追加链、v5 表外推进者（军事政策与资源恢复）。末日 domains 摘要 `ccccb169…2291`。这是投影，不是完整十二域状态。2026-11-06 合并上游 c849f255（军事、建造/投资/采购/仓储改动）后重录 v2–v5：v1 账目链 `2242b251` 不变；改变的是 v2 整体经济哈希、v3 中 EVENTS/MODIFIER/TRIGGER_INPUT 三域、v4 COUNTRY、v5 MILITARY；CLIMATE/IDEOLOGY/EFFECT/ECONOMY 和 v5 其余域不变。旧值见合并提交的第一父提交。
+- 保存续跑（`check_committed_replay.py --checkpoint --trace`、`check_replay_matrix.py`）：不中断、重放、保存不中断、另进程读档四条轨迹逐日比较，读档后至少八日。默认矩阵 4 个场景：save1、calendar5、multicountry5、military20；`--military-annual` 单跑 military365（真实年度自动存档，受时序影响不稳定，见 migration 已知问题）；`--full` 另加 save2/5/9 与 mixed5；`--annual` 保存第 365 日；`--annual-neighbors` 保存 364/366（手动档）。
 - 未覆盖：其他种子与平台、实际占领与战斗（测试地图路径不可达，只有合成占领自测）、任意 worker 日内命令位置、真实浏览器 Web 导出、图形长跑。
 
 ## 规模（2026-11-05）

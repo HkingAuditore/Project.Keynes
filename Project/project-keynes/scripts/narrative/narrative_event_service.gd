@@ -28,6 +28,7 @@ const Q16_ONE := 65536
 # （x5 速度下约 18~28 秒一次）。链式/定时事件不受影响。
 const DEFAULT_PULSE_INTERVAL_DAYS := 20
 const DEFAULT_MIN_POPUP_GAP_DAYS := 60
+const MAX_CELL_EVENTS_PER_YEAR := 2
 const MAX_SAMPLED_CELLS_PER_PULSE := 8
 const MAX_CHRONICLE_RECORDS := 256
 const AI_PREFETCH_LEAD_DAYS := 3
@@ -56,6 +57,7 @@ var _next_mod_source_id: int = 1
 var _last_pulse_day: int = 0
 var _last_popup_day: int = NEVER_POPPED_DAY
 var _last_fact_event_id: int = -1
+var _cell_year_event_counts: Dictionary = {}
 
 var _active_offer: Dictionary = {}
 var _ready_queue: Array[Dictionary] = []
@@ -370,6 +372,38 @@ func popup_pacing_blocked(day: int) -> bool:
 	return days_until_next_allowed_popup(day) > 0
 
 
+func _days_per_year() -> int:
+	if _world_clock != null and _world_clock.has_method("days_per_year"):
+		return maxi(1, int(_world_clock.days_per_year()))
+	return 365
+
+
+func _cell_year_key(cell_idx: int, day: int) -> String:
+	return "%d:%d" % [int(floor(float(day) / float(_days_per_year()))), cell_idx]
+
+
+func cell_year_pacing_blocked(cell_idx: int, day: int) -> bool:
+	if cell_idx < 0:
+		return false
+	return int(_cell_year_event_counts.get(_cell_year_key(cell_idx, day), 0)) >= MAX_CELL_EVENTS_PER_YEAR
+
+
+func _record_cell_year_event(cell_idx: int, day: int) -> void:
+	if cell_idx < 0:
+		return
+	var key := _cell_year_key(cell_idx, day)
+	_cell_year_event_counts[key] = int(_cell_year_event_counts.get(key, 0)) + 1
+	# Keep only the current and previous year so long-running games do not grow this map.
+	var current_year := int(floor(float(day) / float(_days_per_year())))
+	var stale_keys: Array[String] = []
+	for old_key in _cell_year_event_counts.keys():
+		var parts := String(old_key).split(":")
+		if parts.size() >= 2 and int(parts[0]) < current_year - 1:
+			stale_keys.append(String(old_key))
+	for old_key in stale_keys:
+		_cell_year_event_counts.erase(old_key)
+
+
 func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 	if popup_pacing_blocked(day):
 		return {"ok": false, "reason": "popup_cooldown_active"}
@@ -545,6 +579,10 @@ func enqueue_event_offer(
 		return {}
 	if not bypass_gap and popup_pacing_blocked(day):
 		return {}
+	# Scheduled follow-ups explicitly bypass pacing so authored chains remain intact;
+	# ordinary pulse/fact/AI events are capped at two visible events per cell-year.
+	if not bypass_gap and cell_year_pacing_blocked(cell_idx, day):
+		return {}
 	if def.is_ai_generated:
 		register_dynamic_event(def)
 
@@ -628,6 +666,7 @@ func enqueue_event_offer(
 		"ai_visual_prompt": def.ai_visual_prompt,
 		"tags": Array(def.tags),
 		"chain_id": String(chain_id),
+		"bypass_pacing": bypass_gap,
 		"is_ai_generated": def.is_ai_generated,
 		"one_shot": def.one_shot,
 		"on_trigger_summaries": Array(on_trigger_summaries),
@@ -645,6 +684,8 @@ func _promote_next_ready_offer(day: int) -> void:
 	var next_offer: Dictionary = _ready_queue.pop_front()
 	_active_offer = next_offer.duplicate(true)
 	_last_popup_day = day
+	if not bool(_active_offer.get("bypass_pacing", false)):
+		_record_cell_year_event(int(_active_offer.get("cell_idx", -1)), day)
 	offer_ready.emit(_active_offer.duplicate(true))
 
 
@@ -805,6 +846,7 @@ func export_state() -> Dictionary:
 		"last_pulse_day": _last_pulse_day,
 		"last_popup_day": _last_popup_day,
 		"last_fact_event_id": _last_fact_event_id,
+		"cell_year_event_counts": _cell_year_event_counts.duplicate(true),
 		"active_offer": _active_offer.duplicate(true),
 		"ready_queue": _ready_queue.duplicate(true),
 		"cooldowns": _cooldowns.duplicate(true),
@@ -838,6 +880,8 @@ func restore_state(state: Dictionary) -> Dictionary:
 	_last_pulse_day = int(state.get("last_pulse_day", 0))
 	_last_popup_day = int(state.get("last_popup_day", NEVER_POPPED_DAY))
 	_last_fact_event_id = int(state.get("last_fact_event_id", -1))
+	var raw_cell_counts = state.get("cell_year_event_counts", {})
+	_cell_year_event_counts = (raw_cell_counts as Dictionary).duplicate(true) if raw_cell_counts is Dictionary else {}
 
 	var raw_active = state.get("active_offer", {})
 	_active_offer = (raw_active as Dictionary).duplicate(true) if raw_active is Dictionary else {}
@@ -889,6 +933,7 @@ func _reset_empty() -> void:
 	_last_pulse_day = 0
 	_last_popup_day = NEVER_POPPED_DAY
 	_last_fact_event_id = -1
+	_cell_year_event_counts.clear()
 	_active_offer.clear()
 	_ready_queue.clear()
 	_cooldowns.clear()

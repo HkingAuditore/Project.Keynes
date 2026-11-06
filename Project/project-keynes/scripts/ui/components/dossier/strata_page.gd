@@ -140,7 +140,7 @@ func _ledger_cells(row: Dictionary) -> Dictionary:
 			"icon": row.icon, "icon_color": row.color,
 			"sort": String(row.get("name", "")) if _mode == "profession" \
 				else int(row.get("index", 0))},
-		"population": {"text": count(people) if alive else "—", "value": people},
+		"population": {"text": count(people) if alive else "", "value": people},
 		"share": {"value": float(row.get("share", 0.0)), "bar_color": row.color,
 			"text": percent(float(row.get("share", 0.0)))},
 		"income": {"text": money(float(row.get("income_per_capita", 0.0))),
@@ -149,10 +149,10 @@ func _ledger_cells(row: Dictionary) -> Dictionary:
 			"value": float(row.get("expense_per_capita", 0.0))},
 		"satisfaction": {"value": float(row.satisfaction) if alive else 0.0,
 			"bar_color": satisfaction_color(float(row.satisfaction)),
-			"text": percent(float(row.satisfaction)) if alive else "—"},
+			"text": percent(float(row.satisfaction)) if alive else ""},
 		"survival": {"value": float(row.survival) if alive else 0.0,
 			"bar_color": satisfaction_color(float(row.survival)),
-			"text": percent(float(row.survival)) if alive else "—"},
+			"text": percent(float(row.survival)) if alive else ""},
 	}
 
 
@@ -179,9 +179,8 @@ func _refresh_detail(selected: Dictionary, national: PackedFloat32Array) -> void
 		tier_rows.append({"id": i, "label": EconomyDossierViewModel.SATISFACTION_DIMENSIONS[i],
 			"value": maxf(0.0, dims[i]), "text": percent(dims[i]) if dims[i] >= 0.0 else "不适用", "color": satisfaction_color(dims[i]),
 			"marker": national[i] if i < national.size() else -1.0,
-			"tooltip": "%s需求满足率 %s（竖线为全国平均 %s）" % [
-				EconomyDossierViewModel.SATISFACTION_DIMENSIONS[i], percent(dims[i]),
-				percent(national[i] if i < national.size() else 0.0)]})
+			"tooltip": "%s需求满足率 %s" % [
+				EconomyDossierViewModel.SATISFACTION_DIMENSIONS[i], percent(dims[i])]})
 	_tiers.set_rows(tier_rows)
 	var survival_caption := "生存 %s" % percent(float(selected.get("survival", 0.0)))
 	var living := String(selected.get("living_name", ""))
@@ -215,7 +214,7 @@ func _refresh_detail(selected: Dictionary, national: PackedFloat32Array) -> void
 			"text": "%s 人 · %s" % [count(float(city.population)), percent(float(city.satisfaction))],
 			"tooltip": "切换到此城市范围"})
 	_cities.set_rows(city_rows)
-	_show_empty(_cities_empty, _cities, "" if not city_rows.is_empty() else "暂无城市分布")
+	_show_empty(_cities_empty, _cities, "")
 
 
 ## 职业构成：阶层视角下列出该阶层的全部职业（不再截断到前 6），

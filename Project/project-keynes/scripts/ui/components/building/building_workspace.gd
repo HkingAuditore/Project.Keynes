@@ -15,6 +15,7 @@ signal page_requested(sector: String, search: String, sort: String, offset: int)
 signal build_requested(request: Dictionary)
 
 const RowScene := preload("res://scenes/ui/building_option_row.tscn")
+const HoverCardScene := preload("res://scenes/ui/building_hover_card.tscn")
 ## 点击后短暂禁用同一行：只防手抖重复下单，不阻止「今天连排两座」。
 const PENDING_SECONDS := 1.2
 
@@ -52,12 +53,18 @@ var _sector_signature := ""
 var _pending_ids: Dictionary = {}
 var _feedback := ""
 var _feedback_ok := true
+var _hover_card: BuildingHoverCard
+var _hovered_row_id := ""
 
 
 func _ready() -> void:
 	if _rows == null:
 		push_error("BuildingWorkspace 必须通过 building_workspace.tscn 实例化。")
 		return
+	_hover_card = HoverCardScene.instantiate() as BuildingHoverCard
+	add_child(_hover_card)
+	_hover_card.z_index = 40
+	_hover_card.hide_card()
 	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭")
 	_header_icon.set_semantic(&"economy.building", UITokens.DOSSIER_BRASS)
 	_close_button.pressed.connect(func() -> void: closed.emit())
@@ -106,6 +113,9 @@ func clear() -> void:
 	_feedback = ""
 	_feedback_ok = true
 	_pending_ids.clear()
+	_hovered_row_id = ""
+	if _hover_card != null:
+		_hover_card.hide_card()
 	_chapters = []
 	if _rows == null:
 		return
@@ -216,10 +226,15 @@ func _apply_rows(items: Array, rebuild: bool) -> void:
 		if row == null:
 			continue
 		row.set_row(item, _pending_ids.has(String(item.get("building_id", ""))))
+		if String(item.get("building_id", "")) == _hovered_row_id \
+				and _hover_card != null and _hover_card.visible:
+			_hover_card.refresh(item)
 	var empty := items.is_empty()
-	_empty_note.visible = empty
+	# 空态整节不渲染：无真实反馈时不再留无用提示句；model.message 属后果提示，保留。
+	var empty_text := _empty_text() if empty else ""
+	_empty_note.visible = not empty_text.is_empty()
 	_scroll.visible = not empty
-	_empty_label.text = _empty_text() if empty else ""
+	_empty_label.text = empty_text
 
 
 func _rows_match(items: Array) -> bool:
@@ -231,21 +246,34 @@ func _rows_match(items: Array) -> bool:
 
 func _build_rows(items: Array) -> void:
 	_clear_rows()
+	if _hover_card != null:
+		_hover_card.hide_card()
+	_hovered_row_id = ""
 	for raw in items:
 		var item: Dictionary = raw
 		var row := RowScene.instantiate() as BuildingOptionRow
 		_rows.add_child(row)
 		row.build_requested.connect(_on_row_build_requested)
+		row.hover_started.connect(_on_row_hover_started)
+		row.hover_ended.connect(_on_row_hover_ended)
 		_rows_by_id[String(item.get("building_id", ""))] = row
 
 
+func _on_row_hover_started(row_data: Dictionary, source: Control) -> void:
+	if _hover_card == null or not visible:
+		return
+	_hovered_row_id = String(row_data.get("building_id", ""))
+	_hover_card.show_for(row_data, source, self)
+
+
+func _on_row_hover_ended() -> void:
+	_hovered_row_id = ""
+	if _hover_card != null:
+		_hover_card.hide_card()
+
+
 func _empty_text() -> String:
-	var message := String(_model.get("message", "")).strip_edges()
-	if not message.is_empty():
-		return message
-	if not String(_model.get("search", "")).strip_edges().is_empty():
-		return "没有匹配的建筑。"
-	return "本部门当前没有可营造的项目。"
+	return String(_model.get("message", "")).strip_edges()
 
 
 func _apply_paging() -> void:
@@ -346,7 +374,18 @@ func _on_row_build_requested(building_id: StringName) -> void:
 	if is_inside_tree():
 		get_tree().create_timer(PENDING_SECONDS).timeout.connect(
 			_release_pending.bind(key), CONNECT_ONE_SHOT)
-	build_requested.emit({"building_id": building_id})
+	var request := {"building_id": building_id}
+	# 军事部门的条目带原生 dense 序（`state.build` 的 `building` 参数），必须一起
+	# 送到守卫层，否则它会被当成经济建筑的稳定 id。
+	for raw in _model.get("items", []):
+		var item: Dictionary = raw
+		if String(item.get("building_id", "")) != key:
+			continue
+		if item.has("military_index"):
+			request["military_index"] = int(item.get("military_index", -1))
+			request["op"] = "state.build"
+		break
+	build_requested.emit(request)
 
 
 func _release_pending(building_id: String) -> void:

@@ -207,7 +207,11 @@ func refresh_info_panel() -> void:
 	if (ad.get_has_river(idx) if ad != null else cell.has_river): feats.append("河流")
 	if cell.has_volcano: feats.append("火山")
 	if cell.is_lake_seed: feats.append("湖泊种子")
-	_feature_label.text = "地理特征：%s" % ("无" if feats.is_empty() else ", ".join(feats))
+	if feats.is_empty():
+		_feature_label.visible = false
+	else:
+		_feature_label.visible = true
+		_feature_label.text = "地理特征：%s" % ", ".join(feats)
 
 	# ── 通行（基础通行 + 当季通行）
 	# B.1：陆行能力来自 terrain profile；is_water 是物理水体语义，不能反推陆行。
@@ -228,15 +232,17 @@ func refresh_info_panel() -> void:
 		var names := PackedStringArray()
 		for i in range(veg_history.size()):
 			names.append(VegetationType.name_cn(int(veg_history[i])))
+		_history_label.visible = true
 		_history_label.text = "近期植被：%s" % " → ".join(names)
 	else:
 		var bio_history := cell.biome_history
 		if bio_history.is_empty():
-			_history_label.text = "近期植被：尚无记录"
+			_history_label.visible = false
 		else:
 			var names2 := PackedStringArray()
 			for i in range(bio_history.size()):
 				names2.append(TerrainType.terrain_name_cn(int(bio_history[i])))
+			_history_label.visible = true
 			_history_label.text = "近期气候区：%s（旧兼容记录）" % " → ".join(names2)
 
 	# Emergent Climate Coupling：三行涌现耦合信息（温度分解 / 海冰覆盖度 / 反馈缓冲）

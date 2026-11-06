@@ -356,11 +356,17 @@ void decide_barracks(MilitaryCore &core, const MilitaryWorldDigest &digest, cons
         }
     }
     for (int32_t i = 0; i < ntop; ++i) {
-        MilitaryCommand cmd;
-        cmd.op = MCMD_STATE_BUILD;
-        cmd.cell = top[i].second;
-        cmd.unit_to = building;
-        ai_submit(core, handle, std::move(cmd));
+        // Request, do not submit: `state.build` is no longer a settlement, so a
+        // direct submit here would found a barracks without the economy ever
+        // charging for its materials. The bridge runs each request through
+        // `queue_treasury_sponsored_build` and echoes accepted lots back as
+        // MCMD_STATE_BUILD, which keeps the same-origin `posts` accounting
+        // above honest: an unaffordable request simply never completes.
+        MilitaryCore::StateBuildRequest request;
+        request.country = handle;
+        request.cell = top[i].second;
+        request.building = building;
+        core._build_requests.push_back(request);
     }
 }
 

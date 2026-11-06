@@ -31,7 +31,6 @@ var _card: PanelContainer
 var _title_label: Label
 var _list_scroll: ScrollContainer
 var _list_vbox: VBoxContainer
-var _empty_label: Label
 var _ai_config_panel: PanelContainer
 var _ai_toggle_button: Button
 var _ai_enabled_check: CheckButton
@@ -183,13 +182,6 @@ func _build_ui() -> void:
 	_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_vbox.add_theme_constant_override("separation", 12)
 	_list_scroll.add_child(_list_vbox)
-
-	_empty_label = Label.new()
-	_empty_label.text = "暂无记录。"
-	_empty_label.add_theme_font_override("font", UITokensScript.DOSSIER_SERIF)
-	_empty_label.add_theme_font_size_override("font_size", 16)
-	_empty_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_MUTED)
-	_list_vbox.add_child(_empty_label)
 
 	# AI Configuration Drawer (styled as an inserted torn-paper dossier leaf)
 	_ai_config_panel = PanelContainer.new()
@@ -411,9 +403,8 @@ func set_records(records: Array) -> void:
 		_build_ui()
 	_records = records.duplicate(true)
 	for child in _list_vbox.get_children():
-		if child != _empty_label:
-			child.queue_free()
-	_empty_label.visible = _records.is_empty()
+		child.queue_free()
+	_card.custom_minimum_size.y = 0.0 if _records.is_empty() else 520.0
 	for i in range(_records.size()):
 		if not (_records[i] is Dictionary):
 			continue

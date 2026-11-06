@@ -34,6 +34,8 @@ func _draw() -> void:
 		points.append(points[0])
 		draw_polyline(points, Color(_ink.r, _ink.g, _ink.b, 0.13 if ring < 4 else 0.34),
 			1.0 if ring < 4 else 2.0, true)
+		if ring == 4:
+			_text(Vector2(center.x + 6.0, center.y - radius + 14.0), "100%", 11, _muted, "label")
 	for i in count:
 		var angle := -PI * 0.5 + TAU * float(i) / float(count)
 		draw_line(center, center + Vector2(cos(angle), sin(angle)) * radius,
@@ -70,7 +72,7 @@ func _draw() -> void:
 			x = at.x
 		elif cos(angle) < -0.35:
 			x = at.x - width
-		var value_text := "—" if _values[i] < 0.0 else "%.0f%%" % _values[i]
+		var value_text := "" if _values[i] < 0.0 else "%.0f%%" % _values[i]
 		_text(Vector2(x, at.y + 4.0), label, 15, _ink, "body")
 		var value_width: float = _text_width(value_text, 13, "label")
 		var value_x: float = x
@@ -81,9 +83,6 @@ func _draw() -> void:
 		else:
 			value_x = x + width * 0.5 - value_width * 0.5
 		_text(Vector2(value_x, at.y + 22.0), value_text, 13, _muted, "label")
-
-	if _previous.size() == count:
-		_right_text(size.x, size.y - 6.0, "实线为本年，虚线为上年", 13, Color(_muted.r, _muted.g, _muted.b, 0.7), "label")
 
 
 func _polygon(center: Vector2, radius: float, values: PackedFloat64Array, count: int, scale: float) -> PackedVector2Array:

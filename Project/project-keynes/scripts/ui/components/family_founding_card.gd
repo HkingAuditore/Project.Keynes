@@ -124,15 +124,13 @@ func set_candidate(candidate: Dictionary) -> void:
 	if _candidate_empty:
 		_title.text = "无候选"
 		_origin.text = "可扶持家族：无"
-		_population.text = "—"
-		_trait_summary.text = "—"
-		_effect_preview.text = "—"
+		_population.text = ""
+		_trait_summary.text = ""
+		_effect_preview.text = ""
 		_meta.text = ""
 		_badges.visible = false
 		_clear_rows(_traits_list)
-		_add_copy(_traits_list, "无")
 		_clear_rows(_effect_tiers_box)
-		_add_copy(_effect_tiers_box, "无")
 		_effect_title.text = "独特效果 · 无"
 		_effect_context.visible = false
 		_choose.disabled = true
@@ -181,7 +179,7 @@ func _trait_names_text(candidate: Dictionary) -> String:
 				var name := String(item.get("name", "")).strip_edges()
 				if not name.is_empty():
 					names.append(name)
-	return " · ".join(names) if not names.is_empty() else "无"
+	return " · ".join(names) if not names.is_empty() else ""
 
 
 func _effect_short_text(candidate: Dictionary) -> String:
@@ -264,8 +262,6 @@ func _refresh_details(candidate: Dictionary) -> void:
 				"name": names[index],
 				"description": descriptions[index] if index < descriptions.size() else "",
 			})
-	if _traits_list.get_child_count() == 0:
-		_add_copy(_traits_list, "无")
 	var effect_name := String(candidate.get("effect_display_name", "")).strip_edges()
 	var raw_description := String(candidate.get("effect_description", "")).strip_edges()
 	var tiers: PackedStringArray = candidate.get("effect_prestige_descriptions", PackedStringArray())
@@ -280,8 +276,8 @@ func _refresh_details(candidate: Dictionary) -> void:
 	for row in presentation.get("rows", []):
 		if not String(row.get("body", "")).is_empty():
 			_add_effect_row(row)
-	if _effect_tiers_box.get_child_count() == 0:
-		_add_copy(_effect_tiers_box, raw_description if not raw_description.is_empty() else "无")
+	if _effect_tiers_box.get_child_count() == 0 and not raw_description.is_empty():
+		_add_copy(_effect_tiers_box, raw_description)
 
 
 func _effect_summary_bbcode(candidate: Dictionary, compact: bool) -> String:
@@ -909,7 +905,6 @@ func _add_tooltip_traits(column: VBoxContainer) -> void:
 			items.append({"name": names[index],
 				"description": descriptions[index] if index < descriptions.size() else ""})
 	if items.is_empty():
-		_add_tooltip_muted(column, "无")
 		return
 	for raw in items:
 		var item: Dictionary = raw
@@ -985,9 +980,8 @@ func _add_tooltip_effects(column: VBoxContainer) -> void:
 		column.add_child(current)
 	else:
 		var fallback := String(_candidate.get("effect_description", "")).strip_edges()
-		if fallback.is_empty():
-			fallback = "无"
-		_add_tooltip_muted(column, fallback)
+		if not fallback.is_empty():
+			_add_tooltip_muted(column, fallback)
 
 
 func _add_tooltip_prestige_ladder(column: VBoxContainer) -> void:

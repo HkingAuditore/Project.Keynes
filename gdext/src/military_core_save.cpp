@@ -1,4 +1,4 @@
-// military_core_save.cpp - PKMI v2 encode/restore of the whole Military state
+// military_core_save.cpp - PKMI v3 encode/restore of the whole Military state
 // (owner: A1).
 //
 // Layout: every record is a little-endian fixed-width field sequence (no struct
@@ -434,6 +434,8 @@ std::vector<uint8_t> MilitaryCore::encode() const {
         w.u8(o.equipment_ready);
         w.u8(o.manual);
         w.i16(o.quality_q8);
+        w.i16(o.delivered_quality_q8);
+        w.u64(o.equipped_slot_mask);
     }
     w.end();
 
@@ -509,6 +511,8 @@ std::vector<uint8_t> MilitaryCore::encode() const {
         w.i32(s.origin_cell);
         w.i32(s.current_cell);
         w.i32(s.good);
+        w.i32(s.real_good);
+        w.i8(s.quality);
         w.i64(s.qty);
         w.i64(s.value);
         w.i64(s.departure_day);
@@ -629,6 +633,11 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     w.u32((uint32_t)_cell_states.size());
     for (const MilitaryCellState &st : _cell_states) {
         w.i32(st.cell);
+        // Derived cache (requirement 6.1): the economy building groups are the
+        // count of record, but the tuple is still written so a restored save
+        // reproduces the same day-0 cache and the same state hash. The first
+        // `step_day` after the restore rebuilds it from the ledger anyway, and
+        // any difference is reported by `report().state_cache_repairs`.
         for (int32_t t = 0; t < 8; ++t) w.i32(st.barracks_count[t]);
         w.i32(st.fort_tier);
         w.i32(st.college_tier);
@@ -720,7 +729,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     }
     const uint32_t version = r.u32();
     if (version != PKMI_VERSION) {
-        error = "pkmi_version_mismatch_expected_2";
+        error = "pkmi_version_mismatch_expected_3";
         return false;
     }
     const uint64_t saved_catalog_hash = r.u64();
@@ -887,6 +896,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     o.equipment_ready = r.u8();
                     o.manual = r.u8();
                     o.quality_q8 = r.i16();
+                    if (version >= 3u) {
+                        o.delivered_quality_q8 = r.i16();
+                        o.equipped_slot_mask = r.u64();
+                    }
                     if (!r.ok()) break;
                     tmp._training.push_back(o);
                 }
@@ -1044,6 +1057,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                     s.origin_cell = r.i32();
                     s.current_cell = r.i32();
                     s.good = r.i32();
+                    if (version >= 3u) {
+                        s.real_good = r.i32();
+                        s.quality = r.i8();
+                    }
                     s.qty = r.i64();
                     s.value = r.i64();
                     s.departure_day = r.i64();
@@ -1255,6 +1272,9 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 for (uint32_t i = 0; i < n; ++i) {
                     MilitaryCellState st;
                     st.cell = r.i32();
+                    // Derived cache: restored verbatim for hash parity, then
+                    // rebuilt from the economy ledger on the first step (see the
+                    // writer above and `refresh_state_building_cache`).
                     for (int32_t t = 0; t < 8; ++t) st.barracks_count[t] = r.i32();
                     st.fort_tier = r.i32();
                     st.college_tier = r.i32();
@@ -1466,7 +1486,7 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
         return false;
     }
     if (head.u32() != PKMI_VERSION) {
-        error = "pkmi_version_mismatch_expected_2";
+        error = "pkmi_version_mismatch_expected_3";
         return false;
     }
     const uint64_t saved_hash = head.u64();
@@ -1577,8 +1597,12 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _report = MilitaryReport();
     _report.day = _last_day;
     _attrition_intents.clear();
-    pending_spend.clear();
     _last_digest = MilitaryWorldDigest();
+    // The previous-day ledger is a derived signal for the divergence probe, not
+    // state: after a restore there is no "yesterday" to compare against, so the
+    // first rebuild must not report the whole map as repaired.
+    _state_ledger_prev.clear();
+    _state_ledger_prev_valid = false;
     _country_annual_revenue.clear();
     _war_intents.clear();
     _event_counter_control = 0;

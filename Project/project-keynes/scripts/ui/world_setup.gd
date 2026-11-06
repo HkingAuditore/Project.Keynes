@@ -33,21 +33,21 @@ const BASE_FIELDS := [
 	{"name": "sea_level", "label": "海洋多少", "hint": "调大：海洋更多、陆地更少", "type": "float", "default": 0.42, "min": 0.1, "max": 0.8, "step": 0.01},
 	{"name": "num_continents", "label": "大陆块数", "hint": "调大：大陆核心更多、更分散", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
 	{"name": "continent_size", "label": "大陆整体大小", "hint": "调大：每块大陆更大、更容易连成片", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
-	{"name": "generate_test_economy_data", "label": "生成测试经济数据", "hint": "仅用于开发测试：按石器时代科技与可见资源生成临时人口和建筑，市场库存从零开始。", "type": "bool", "default": false},
+	{"name": "generate_test_economy_data", "label": "预置起步聚落", "hint": "开局按石器时代科技与可见资源生成初始人口和建筑，市场库存从零开始。", "type": "bool", "default": false},
 	{"name": "test_economy_population_scale",
-		"label": "测试人口规模",
+		"label": "起步聚落规模",
 		"hint": "混合模式按当地资源承载力，让同一世界同时出现十人、百人、千人、万人级聚落。",
 		"type": "option",
 		"default": 0,
 		"options": [
 			{"label": "资源分层混合（推荐）", "value": 0},
 			{"label": "产能基线（约数十人）", "value": 1},
-			{"label": "百人级（10 倍）", "value": 10},
-			{"label": "千人级（100 倍）", "value": 100},
-			{"label": "万人级（1000 倍）", "value": 1000},
+			{"label": "百人级", "value": 10},
+			{"label": "千人级", "value": 100},
+			{"label": "万人级", "value": 1000},
 		],
 	},
-	{"name": "pkmap_path", "label": "PKMAP 路径", "hint": "开发入口：填作者编译的 .pkmap。空=程序生成。失败硬中止。", "type": "string", "default": ""},
+	{"name": "pkmap_path", "label": "地图文件", "hint": "填地图文件路径。留空则程序生成。加载失败将中止开局。", "type": "string", "default": ""},
 ]
 
 const CLIMATE_GROUPS := [
@@ -277,12 +277,11 @@ func _build_climate_panel(parent: VBoxContainer) -> void:
 func _create_foldout(title: String) -> Dictionary:
 	var root := SetupFoldoutScene.instantiate() as VBoxContainer
 	var header := root.get_node("Header") as Button
-	header.text = "v  " + title
+	header.text = title
 	header.custom_minimum_size = _button_min_size(0.0)
 	var body := root.get_node("Body") as VBoxContainer
 	header.toggled.connect(func(pressed: bool) -> void:
 		body.visible = pressed
-		header.text = ("v  " if pressed else ">  ") + title
 	)
 	return {"root": root, "body": body}
 
@@ -319,7 +318,7 @@ func _create_field_control(field: Dictionary) -> Control:
 	if field_type == "string":
 		var edit := LineEdit.new()
 		edit.text = str(field.get("default", ""))
-		edit.placeholder_text = "可选：.pkmap 绝对路径"
+		edit.placeholder_text = "可选：地图文件绝对路径"
 		edit.custom_minimum_size = _control_min_size(220.0, DESKTOP_CONTROL_HEIGHT)
 		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		edit.text_changed.connect(func(_text: String) -> void: _on_field_changed())

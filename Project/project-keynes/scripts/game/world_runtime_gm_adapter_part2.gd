@@ -33,7 +33,7 @@ func _gm_selected_snapshot(host, cell_idx: int) -> Dictionary:
 			"landform": host._view_adapter.get_landform(cell_idx) if host._view_adapter != null else int(cell.landform),
 			"temperature": host._view_adapter.get_temp(cell_idx) if host._view_adapter != null else float(cell.temperature),
 			"moisture": host._view_adapter.get_moisture(cell_idx) if host._view_adapter != null else float(cell.moisture),
-			"host.elevation": host._view_adapter.get_elevation(cell_idx) if host._view_adapter != null else float(cell.elevation)},
+			"elevation": host._view_adapter.get_elevation(cell_idx) if host._view_adapter != null else float(cell.elevation)},
 		"country_summary": country_summary,
 		"country": country_snapshot,
 		"treasury": treasury,
@@ -87,7 +87,7 @@ func _gm_execute_country_command(host, command_id: String, args: Dictionary,
 func _gm_execute_economy_command(host, command_id: String, args: Dictionary,
 		effective_day: int, sequence: int) -> Dictionary:
 	return host.HostGmCommands._gm_execute_economy_command(command_id, args, effective_day, sequence,
-		host._generator, host._resolve_player_country_handle, host._resolve_player_start_cell, _gm_resolve_cell)
+		host._generator, host._resolve_player_country_handle, host._resolve_player_start_cell, host._gm_resolve_cell)
 
 
 
@@ -102,7 +102,7 @@ func _gm_convert_arg(host, value, spec: Dictionary) -> Dictionary:
 
 
 func _gm_find_command_spec(host, command_id: String) -> Dictionary:
-	for raw in host.get_gm_capabilities().get("host.commands", []):
+	for raw in host.get_gm_capabilities().get("commands", []):
 		var spec: Dictionary = raw
 		if String(spec.get("id", "")) == command_id:
 			return spec
@@ -281,15 +281,15 @@ func _print_enum_lut_view_state(host) -> void:
 				+ "日刷内容全部落在另一张纹理上")
 
 
-# GM 开关「河流 host.flow 视图」：屏幕给的是 shader 采到的 host.flow，这里补上 CPU 侧的
-# height_tex.B / tiled host.flow 绑定状态。注意 CPU 侧全绿并不能排除问题——GLES3 兜底成 4×4 白纹理时这里
+# GM 开关「河流 flow 视图」：屏幕给的是 shader 采到的 flow，这里补上 CPU 侧的
+# height_tex.B / tiled flow 绑定状态。注意 CPU 侧全绿并不能排除问题——GLES3 兜底成 4×4 白纹理时这里
 # 每一项都正常，要判死必须看 dv16 的 textureSize。
 
 
 func _print_river_flow_state(host) -> void:
 	if host._renderer == null:
 		return
-	print("[river-host.flow-view] 黑底+细红线=正常 / 整屏红=host.flow 恒高（sampler 落到 GLES3 兜底白纹理，用 dv16 确认）")
+	print("[river-flow-view] 黑底+细红线=正常 / 整屏红=flow 恒高（sampler 落到 GLES3 兜底白纹理，用 dv16 确认）")
 	var world = host._renderer._world
 	var tiled = false
 	var tiles = world.visual_tiles if world != null else null
@@ -299,7 +299,7 @@ func _print_river_flow_state(host) -> void:
 	var world_tex: Texture2D = null
 	if world != null:
 		world_tex = tiles.height if tiled else world.height_tex
-		print("[river-host.flow-view] world 侧: packed_in_height=true tiled=%s tex=%s size=%s derived_size=%s" % [
+		print("[river-flow-view] world 侧: packed_in_height=true tiled=%s tex=%s size=%s derived_size=%s" % [
 			str(tiled), str(world_tex != null),
 			str(world_tex.get_size()) if world_tex != null else "-",
 			str(world.derived_size)])
@@ -308,29 +308,29 @@ func _print_river_flow_state(host) -> void:
 		var bound: Texture2D = host._renderer._shader_mat.get_shader_parameter(bound_name)
 		var bound_fmt: int = bound.get_format() if bound != null and bound.has_method("get_format") else -1
 		var want_fmt: int = Image.FORMAT_RGBA8
-		print("[river-host.flow-view] 材质 uniform: %s=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
+		print("[river-flow-view] 材质 uniform: %s=%s size=%s fmt=%d want=%d 与 world 同对象=%s has_flow_tex=%s" % [
 			bound_name, str(bound != null), str(bound.get_size()) if bound != null else "-",
 			bound_fmt, want_fmt,
 			str(bound != null and bound == world_tex),
 			str(host._renderer._shader_mat.get_shader_parameter("has_flow_tex"))])
 		if bound == null:
-			push_warning("[river-host.flow-view] %s 未绑定；GLES3 兜底白纹理会让整片陆地被判成河" % bound_name)
+			push_warning("[river-flow-view] %s 未绑定；GLES3 兜底白纹理会让整片陆地被判成河" % bound_name)
 		elif bound_fmt != want_fmt and not tiled:
-			push_warning("[river-host.flow-view] height_tex 格式=%d，期望 RGBA8（B=host.flow）；格式错会导致 height/host.flow 解码错乱" % [
+			push_warning("[river-flow-view] height_tex 格式=%d，期望 RGBA8（B=flow）；格式错会导致 height/flow 解码错乱" % [
 				bound_fmt])
 		elif tiled and bound != null and bound.has_method("get_format") \
 				and bound_fmt != want_fmt and bound_fmt != -1:
 			# Texture2DArray.get_format 在部分后端可用；不对则跳过。
-			push_warning("[river-host.flow-view] visual_height_tiles 格式=%d，期望 RGBA8（B=host.flow）" % bound_fmt)
-	print("[river-host.flow-view] river_strength=%.2f threshold_low=%.2f threshold_high=%.2f" % [
+			push_warning("[river-flow-view] visual_height_tiles 格式=%d，期望 RGBA8（B=flow）" % bound_fmt)
+	print("[river-flow-view] river_strength=%.2f threshold_low=%.2f threshold_high=%.2f" % [
 		host._renderer.river_strength, host._renderer.river_threshold_low, host._renderer.river_threshold_high])
 	# 关键读数：源 float buffer 与编码字节的分布。src.hi_frac≈1 说明上游 river SDF 就
 	# 产出了全 1（渲染无关的数据 bug）；src 正常而 out.hi_frac≈1 说明编码器；两者都正常
-	# 却仍整屏红，才是上传/格式问题。upload=RGBA8 表示 height+host.flow 合并路径。
-	print("[river-host.flow-view] encode=", DCAtlasEncoders.last_flow_encode_info)
+	# 却仍整屏红，才是上传/格式问题。upload=RGBA8 表示 height+flow 合并路径。
+	print("[river-flow-view] encode=", DCAtlasEncoders.last_flow_encode_info)
 	var world_now = host._renderer._world
 	if world_now != null:
-		print("[river-host.flow-view] world.flow_buffer size=%d（期望 %d）" % [
+		print("[river-flow-view] world.flow_buffer size=%d（期望 %d）" % [
 			world_now.flow_buffer.size(), world_now.derived_size.x * world_now.derived_size.y])
 
 
@@ -344,7 +344,7 @@ func dump_flow_tex_report(host) -> Dictionary:
 		return host._gm_error("renderer_unavailable", "渲染器尚未就绪，无法输出 FlowTex 诊断。")
 	var report = host._collect_flow_tex_report()
 	host._print_flow_tex_report_section("runtime", report.get("runtime", {}))
-	host._print_flow_tex_report_section("host.path", report.get("host.path", {}))
+	host._print_flow_tex_report_section("path", report.get("path", {}))
 	host._print_flow_tex_report_section("buffer", report.get("buffer", {}))
 	host._print_flow_tex_report_section("encode", report.get("encode", {}))
 	host._print_flow_tex_report_section("textures", report.get("textures", {}))
@@ -364,8 +364,8 @@ func dump_flow_tex_report(host) -> Dictionary:
 	host._renderer.terrain_surface_debug_view = previous_view
 
 	var issues: PackedStringArray = report.get("issues", PackedStringArray())
-	print("[host.flow-tex-report] issues=%s" % str(issues))
-	print("[host.flow-tex-report] END")
+	print("[flow-tex-report] issues=%s" % str(issues))
+	print("[flow-tex-report] END")
 	return {"ok": true, "code": "ok", "message": "FlowTex 完整诊断已输出（%d 个疑点；详情见 stdout/浏览器控制台）。" % issues.size(),
 		"data": report}
 
@@ -399,7 +399,7 @@ func _collect_flow_tex_report(host) -> Dictionary:
 	var effective_flow = world_flow
 	var expected_buffer = int(world.derived_size.x * world.derived_size.y) if world != null else 0
 	var buffer: PackedFloat32Array = world.flow_buffer if world != null else PackedFloat32Array()
-	report["host.path"] = {
+	report["path"] = {
 		"tiled": tiled,
 		"layout_mode": String(tiles.layout.mode) if tiles != null and tiles.layout != null else "none",
 		"shader_variant_tiled": material != null and material.shader != null
@@ -600,10 +600,10 @@ func _summarize_flow_debug_image(host, image) -> Dictionary:
 
 
 func _print_flow_tex_report_section(host, name: String, value) -> void:
-	print("[host.flow-tex-report][%s] %s" % [name, str(value)])
+	print("[flow-tex-report][%s] %s" % [name, str(value)])
 
 
-# [host.flow-diag] 列出主地图材质每个 sampler 当前绑的纹理与尺寸。dv16 报出的采样器尺寸
+# [flow-diag] 列出主地图材质每个 sampler 当前绑的纹理与尺寸。dv16 报出的采样器尺寸
 # 若和这里某一行对得上，就说明纹理单元串位了（绑到了另一张图）；若谁都对不上（例如 4×4），
 # 那是引擎内部的兜底纹理。fmt 列同样关键：单通道（0=L8 / 2=R8）在 WebGL2 上就是建不起来的。
 
@@ -629,9 +629,9 @@ func _print_terrain_sampler_inventory(host) -> void:
 				str(tex.get_format()) if tex.has_method("get_format") else "?"])
 		else:
 			lines.append("%s=<%s>" % [uname, tex.get_class()])
-	print("[host.flow-diag] 材质 sampler 清单（%d 项）：" % lines.size())
+	print("[flow-diag] 材质 sampler 清单（%d 项）：" % lines.size())
 	for line in lines:
-		print("[host.flow-diag]   ", line)
+		print("[flow-diag]   ", line)
 
 
 # GM 开关「dyn_lut / eco_lut 直读视图」：屏幕给的是 GPU 侧读到的值，这里补上

@@ -52,6 +52,10 @@ namespace pk {
 struct TrackBDerivedCellWork {
     std::vector<int32_t> goods;
     std::vector<int64_t> quantities;
+    // Leontief shadow value of the downstream output attributable to each
+    // derived input edge. Parallel to goods/quantities; used only to lift the
+    // price-adjustment anchor when no producer has published a cost anchor.
+    std::vector<int64_t> anchors;
     int64_t edges = 0;
     uint64_t startup_calls = 0;
     uint64_t enqueued_goods = 0;
@@ -59,6 +63,7 @@ struct TrackBDerivedCellWork {
     void reset() {
         goods.clear();
         quantities.clear();
+        anchors.clear();
         edges = 0;
         startup_calls = 0;
         enqueued_goods = 0;
@@ -202,7 +207,20 @@ public:
     // 58: the fiscal section also stores the non-tax research procurement cash
     //     outflow per country, so 国库支出 survives save/restore instead of
     //     reading zero for the batch it was paid in.
-    static constexpr int32_t SCHEMA_VERSION = 59;
+    // 59: the fiscal section also stores the non-tax construction cash outflow
+    //     per country so treasury-sponsored state building charges survive.
+    // 60: state buildings (building_kind = "state") are part of the building
+    //     ledger; a v59 stream restores them as empty lanes and the military
+    //     side folds its cumulative barracks/fort/college cache into the
+    //     ledger on the first step (see military_core_save.cpp).
+    static constexpr int32_t SCHEMA_VERSION = 60;
+    // Dense order of the compiled `building_economic_sectors` column. It mirrors
+    // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
+    // manufacturing, energy, knowledge, then the appended `military` sector. The
+    // order is a data contract, so append only, never reorder.
+    static constexpr int32_t CIVIL_SECTOR_COUNT = 5;
+    static constexpr int32_t MILITARY_SECTOR_ID = CIVIL_SECTOR_COUNT;
+    static constexpr int32_t BUILDING_SECTOR_COUNT = CIVIL_SECTOR_COUNT + 1;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -719,6 +737,20 @@ public:
         const godot::PackedInt32Array &type_ids) const;
     godot::Dictionary construction_command_receipts(int64_t after_receipt_id,
                                                      int32_t limit) const;
+    // Player-facing treasury construction ingress. `submit_commands` is
+    // fail-closed while StageOps owns production, so a formal build request
+    // reaches the epoch command queue through this boundary instead (same
+    // contract as the canal / family-colonization lanes).
+    godot::Dictionary queue_treasury_sponsored_build(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t effective_day, int64_t sequence, bool queue_for_worker);
+    // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
+    // economy ledger first, and the military bookkeeping command is only
+    // forwarded afterwards (requirement 6.5).
+    godot::Dictionary queue_treasury_sponsored_demolish(
+        int64_t country_handle, int32_t cell_idx, int32_t type_id,
+        int64_t count, int64_t effective_day, int64_t sequence,
+        bool queue_for_worker);
     godot::Dictionary canal_route_quote(
         int64_t country_handle, int32_t start_cell, int32_t end_cell,
         const godot::PackedInt32Array &waypoints);
@@ -775,7 +807,8 @@ public:
     // table that the Economy owner thread applies at the next epoch begin.
     godot::Dictionary set_country_procurement_policy(
         int64_t country_handle, bool enabled, int32_t treasury_share_bp,
-        int32_t research_share_bp, int64_t effective_day, int64_t sequence);
+        int32_t research_share_bp, int64_t effective_day, int64_t sequence,
+        int32_t era_share_bp = -1, int32_t colonization_share_bp = -1);
     godot::Dictionary set_era_procurement_target(
         int64_t country_handle, bool active,
         const godot::PackedInt32Array &good_indices,
@@ -828,6 +861,13 @@ public:
     // Explicit one-shot PKEC migrate helper: arms restore and clears into a
     // candidate scratch. Production coordinator/facade must not call this.
     godot::Dictionary begin_restore_pkec_migrate();
+    // Legacy state-buildings fold (PKMI v1 saves counted barracks/fort/college
+    // cumulatively on the military side). Folding them into the kind-3 ledger
+    // makes the economy side the single authority. Bookkeeping only: charges no
+    // cash or goods, and never invents a lot that has no economy profile.
+    // Repeated calls are idempotent (an existing (cell,type) group accumulates).
+    godot::Dictionary migrate_legacy_state_buildings(
+        const godot::Array &states);
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.
@@ -1591,6 +1631,9 @@ public:
     // building any Godot value. Every lane is resized to `cell_count()`.
     using MilitaryCellView = EconomyMilitaryCellView;
     void military_read_cell_view(MilitaryCellView &out, int32_t good_count = 0) const;
+    bool military_read_state_buildings(std::vector<int32_t> &out_cells,
+        std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles,
+        std::vector<int64_t> &out_units) const;
     // Market sellable stock and retail price for one good across every live
     // market, sparse. `sellable` (GOODS_SCALE) already excludes the merchant
     // operating floor; `price` is MONEY_SCALE per 1.0 good.
@@ -1643,6 +1686,10 @@ public:
     // the country fiscal escrow so the amount lands in the non-tax expenditure
     // slots. Returns the amount actually collected.
     int64_t military_collect_cash(int64_t country_handle, int64_t amount);
+    // Military maintenance is a terminal cash sink: unlike army pay it has no
+    // Economy-owned recipient. Record it in the current epoch, or carry it
+    // across the idle-day boundary until the next epoch opens.
+    void military_record_cash_burn(int64_t amount);
     // True while Economy can queue near-cash commands (no open epoch, not
     // saving/restoring, not faulted).
     bool military_command_window_open() const;
@@ -2276,6 +2323,8 @@ private:
 
     bool apply_treasury_sponsored_build_command(const Command &cmd,
                                                  std::string &error);
+    bool apply_treasury_sponsored_demolish_command(const Command &cmd,
+                                                    std::string &error);
     bool apply_canal_build_command(const Command &cmd, std::string &error);
     bool process_due_canal_projects(int64_t day, std::string &error);
     bool plan_canal_route(uint64_t country_handle, int32_t start_cell,

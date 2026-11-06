@@ -13,6 +13,7 @@ const EffectDefinitionScript = preload("res://scripts/effect/effect_definition.g
 const EffectInstructionScript = preload("res://scripts/effect/effect_instruction.gd")
 const EffectConditionScript = preload("res://scripts/effect/effect_condition.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
+const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 
 const Q16_ONE := 65536
 const OPCODE_SET_SPLIT_POLICY := 23
@@ -201,6 +202,96 @@ func _test_catalog_foundation() -> void:
 		and (compiled.get("family_effect_exclusion_offsets", PackedInt32Array()) as PackedInt32Array).size() == 49
 		and exclusions.size() > 0
 		and (compiled.get("family_effect_magnitude_by_prestige_q16", PackedInt32Array()) as PackedInt32Array).size() == 48 * 6)
+	var prestige_mags: PackedInt32Array = compiled.get(
+		"family_effect_magnitude_by_prestige_q16", PackedInt32Array())
+	var expected_prestige_tiers := {
+		"family.effect.birth_plenty": PackedInt32Array([43691, 218453]),
+		"family.effect.production_boost": PackedInt32Array([32768, 163840]),
+		"family.effect.rain_prayer": PackedInt32Array([1311, 6554]),
+		"family.effect.cold_resist": PackedInt32Array([6554, 32768]),
+		"family.effect.expansionism": PackedInt32Array([20, 80]),
+		"family.effect.heat_stress": PackedInt32Array([32768, 163840]),
+		"family.effect.city_founder": PackedInt32Array([25, 120]),
+		"family.effect.city_chain": PackedInt32Array([39322, 183501]),
+		"family.effect.trade_nation": PackedInt32Array([5461, 32768]),
+		"family.effect.market_bully": PackedInt32Array([13107, 65536]),
+		"family.effect.century_shop": PackedInt32Array([32768, 81920]),
+		"family.effect.new_nobility": PackedInt32Array([5, 50]),
+		"family.effect.wealthy_few_heirs": PackedInt32Array([3277, 19661]),
+	}
+	for effect_key in expected_prestige_tiers:
+		var effect_id := effect_keys.find(String(effect_key))
+		var expected_tiers: PackedInt32Array = expected_prestige_tiers[effect_key]
+		_expect("%s compiles exact Prestige I and V magnitudes" % effect_key,
+			effect_id >= 0
+			and effect_id * 6 + 5 < prestige_mags.size()
+			and int(prestige_mags[effect_id * 6 + 1]) == int(expected_tiers[0])
+			and int(prestige_mags[effect_id * 6 + 5]) == int(expected_tiers[1]))
+	var trigger_catalog := TriggerCatalogScript.new()
+	var trigger_compiled: Dictionary = trigger_catalog.compile_native_catalog()
+	var trigger_keys: PackedStringArray = trigger_compiled.get(
+		"trigger_keys", PackedStringArray())
+	var trigger_thresholds: PackedInt64Array = trigger_compiled.get(
+		"thresholds", PackedInt64Array())
+	var trigger_window_days: PackedInt32Array = trigger_compiled.get(
+		"window_days", PackedInt32Array())
+	var trigger_effect_offsets: PackedInt32Array = trigger_compiled.get(
+		"effect_offsets", PackedInt32Array())
+	var trigger_effect_durations: PackedInt32Array = trigger_compiled.get(
+		"effect_duration_days", PackedInt32Array())
+	var trigger_effect_values: PackedInt64Array = trigger_compiled.get(
+		"effect_values", PackedInt64Array())
+	var expected_trigger_thresholds := {
+		"family.buff.trade_population": PackedInt64Array([5, 4, 3, 2, 1]),
+		"family.buff.market_window": PackedInt64Array([20, 20, 20, 20, 20]),
+		"family.buff.construction_gift": PackedInt64Array([10, 8, 6, 3, 1]),
+		"family.buff.drought_store": PackedInt64Array([45, 60, 90, 120, 180]),
+	}
+	var trigger_thresholds_ok := bool(trigger_compiled.get("ok", false))
+	for prefix in expected_trigger_thresholds:
+		var expected_tiers: PackedInt64Array = expected_trigger_thresholds[prefix]
+		for tier in range(1, 6):
+			var trigger_id := trigger_keys.find("%s_t%d" % [prefix, tier])
+			trigger_thresholds_ok = trigger_thresholds_ok \
+				and trigger_id >= 0 \
+				and trigger_id < trigger_thresholds.size() \
+				and int(trigger_thresholds[trigger_id]) == int(expected_tiers[tier - 1])
+	_expect("tiered family buff triggers compile exact per-tier thresholds",
+		trigger_thresholds_ok)
+	var market_durations := PackedInt32Array([30, 45, 60, 90, 120])
+	var market_values := PackedInt64Array([39322, 65536, 91750, 117965, 157286])
+	var market_tiers_ok := true
+	for tier in range(1, 6):
+		var trigger_id := trigger_keys.find("family.buff.market_window_t%d" % tier)
+		if trigger_id < 0 or trigger_id >= trigger_effect_offsets.size():
+			market_tiers_ok = false
+			continue
+		var effect_id := int(trigger_effect_offsets[trigger_id])
+		if effect_id < 0 or effect_id >= trigger_effect_durations.size() \
+				or effect_id >= trigger_effect_values.size():
+			market_tiers_ok = false
+			continue
+		market_tiers_ok = market_tiers_ok \
+			and int(trigger_window_days[trigger_id]) == 30 \
+			and int(trigger_effect_durations[effect_id]) == int(market_durations[tier - 1]) \
+			and int(trigger_effect_values[effect_id]) == int(market_values[tier - 1])
+	_expect("family.buff.market_window compiles exact duration and effect values",
+		market_tiers_ok)
+	var drought_values := PackedInt64Array([32768, 65536, 98304, 131072, 163840])
+	var drought_tiers_ok := true
+	for tier in range(1, 6):
+		var trigger_id := trigger_keys.find("family.buff.drought_store_t%d" % tier)
+		if trigger_id < 0 or trigger_id >= trigger_effect_offsets.size():
+			drought_tiers_ok = false
+			continue
+		var effect_id := int(trigger_effect_offsets[trigger_id])
+		if effect_id < 0 or effect_id >= trigger_effect_values.size():
+			drought_tiers_ok = false
+			continue
+		drought_tiers_ok = drought_tiers_ok \
+			and int(trigger_effect_values[effect_id]) == int(drought_values[tier - 1])
+	_expect("family.buff.drought_store compiles exact effect values",
+		drought_tiers_ok)
 	var trait_match: PackedByteArray = compiled.get(
 		"family_trait_technology_match_any", PackedByteArray())
 	var effect_match: PackedByteArray = compiled.get(
@@ -510,13 +601,14 @@ func _new_ext(catalog: Dictionary, landform: int) -> Object:
 	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	modifier_catalog.erase("ok")
 	ext.configure_modifiers(modifier_catalog, 1)
+	ext.start_runtime_worker({"simulation_thread_mode": "OFF", "economy_production_writer": "compact_slice"})
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		var value := landform if slot_name == &"cell_landform" else 0
 		ext.write_u8_range(sid, 0, PackedByteArray([value]))

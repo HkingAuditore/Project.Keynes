@@ -57,7 +57,7 @@ func _refresh_market(vm: EconomyDossierViewModel, filter = null) -> void:
 		_show_empty(_empty, _grid, String(model.get("reason", "")))
 		return
 	var cells: Array = model.cells
-	_show_empty(_empty, _grid, "" if not cells.is_empty() else "该类别下没有物资")
+	_show_empty(_empty, _grid, "")
 	_sample_prices(vm, cells)
 	var short_count := 0
 	var surplus_count := 0
@@ -147,8 +147,7 @@ func _refresh_detail(cell: Dictionary) -> void:
 		{"id": "price", "label": "价格指数", "value": clampf(price_index / 2.0, 0.0, 1.0),
 			"marker": 0.5, "text": "%.2f 倍" % price_index,
 			"color": UITokens.DOSSIER_OXBLOOD if price_index > 1.05
-				else (UITokens.DOSSIER_VERDIGRIS if price_index < 0.95 else UITokens.DOSSIER_BRASS),
-			"tooltip": "竖线为成本锚价格（1.0 倍）"},
+				else (UITokens.DOSSIER_VERDIGRIS if price_index < 0.95 else UITokens.DOSSIER_BRASS)},
 	])
 	_trade_bar.set_values("进口", float(cell["import"]), count(float(cell["import"])),
 		"出口", float(cell["export"]), count(float(cell["export"])))

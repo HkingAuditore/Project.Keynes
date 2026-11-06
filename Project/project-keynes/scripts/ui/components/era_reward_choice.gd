@@ -61,16 +61,17 @@ func mark_selected(selected_choice: bool) -> void:
 
 func set_option(option: Dictionary) -> void:
 	_option_empty = option.is_empty()
+	visible = not _option_empty
 	var icon_key := StringName(option.get("icon_key", "system.unknown"))
 	_icon.set_semantic(icon_key, UITokens.ARCHIVE_BRASS)
-	_title.text = String(option.get("title", "暂无方案"))
-	_description.text = String(option.get("description", "当前没有可用的时代奖励。"))
+	_title.text = String(option.get("title", ""))
+	_description.text = String(option.get("description", ""))
 	var reasons: PackedStringArray = option.get("reasons", PackedStringArray())
 	_choose.disabled = _option_empty
 	tooltip_text = "%s\n作用对象：%s" % [String(option.get("category", "时代方案")), String(option.get("target_summary", "玩家国家"))]
 	if not reasons.is_empty():
 		tooltip_text += "\n适配：" + "；".join(reasons)
-	_choose.tooltip_text = "当前没有可用的时代方案" if _option_empty else "采纳「%s」\n%s" % [_title.text, tooltip_text]
+	_choose.tooltip_text = "" if _option_empty else "采纳「%s」\n%s" % [_title.text, tooltip_text]
 
 func choose_button() -> Button:
 	return _choose

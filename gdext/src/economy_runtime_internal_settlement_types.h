@@ -575,6 +575,7 @@
         int32_t restored_cadence_cells = 0;
         bool committed_generation_seen = false;
         uint64_t restored_committed_generation = 0;
+        std::vector<int32_t> track_b_investment_cells_pending;
         bool settlement_names_seen = false;
         int32_t restored_families = 0;
         int32_t restored_family_memberships = 0;
@@ -931,6 +932,7 @@
     EconomyTrackedScalar<int64_t> _last_committed_day{_metadata_changes, {{15, 18}, "metadata.last_committed_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
+    int64_t _pending_military_cash_burn = 0;
     int64_t _external_population_delta = 0;
     int64_t _explicit_stock_delta = 0;
     int64_t _country_research_consumed_opening = 0;
@@ -1172,6 +1174,10 @@
         bool policy_enabled = false;
         int32_t treasury_share_bp = 0;
         int32_t research_share_bp = 0;
+        // Shares of other_daily for era and colonization channels. -1 keeps
+        // the legacy split when both channels have demand; 0 pauses a channel.
+        int32_t era_share_bp = -1;
+        int32_t colonization_share_bp = -1;
         bool era_active = false;
         std::vector<EraProcurementLine> era_goods;
         // Frozen at epoch begin (MONEY_SCALE per day).
@@ -1197,6 +1203,8 @@
         bool flag = false;
         int32_t treasury_share_bp = 0;
         int32_t research_share_bp = 0;
+        int32_t era_share_bp = -1;
+        int32_t colonization_share_bp = -1;
         std::vector<int32_t> goods;
         std::vector<int64_t> quantities;
         int64_t effective_day = 0;
