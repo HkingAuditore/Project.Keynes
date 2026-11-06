@@ -2,6 +2,7 @@
 
 // Public peer surface; each free function forwards to one runtime member.
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include "derived_cell_layer.h"
@@ -50,6 +51,16 @@ struct ModifierApi {
 };
 
 namespace modifier_api {
+// ---- Country checkpoint staging (country_runtime.cpp)
+struct ModifierRuntimeDeleter {
+    void operator()(ModifierRuntime *runtime) const;
+};
+using ModifierRuntimeCopy = std::unique_ptr<ModifierRuntime, ModifierRuntimeDeleter>;
+ModifierRuntimeCopy copy_runtime(const ModifierRuntime &source);
+void replace_runtime(ModifierRuntime &live, ModifierRuntime &&staged);
+void attach_country_runtime(ModifierRuntime &modifier, void *runtime);  // NativeCountryRuntime*; untyped to keep the header free of peer names
+void attach_economy_runtime(ModifierRuntime &modifier, void *runtime);  // NativeEconomyRuntime*
+
 // ---- Military (world_ext_military*.cpp, world_ext_economy_military.cpp)
 double effective_value(const ModifierRuntime &modifier, int32_t domain, int32_t stat_id, uint64_t entity_handle, uint64_t group_handle, double base_value);
 double effective_value(const ModifierRuntime &modifier, int32_t domain, const char *stat_key, uint64_t entity_handle, uint64_t group_handle, double base_value);
@@ -58,12 +69,20 @@ const DerivedCellFront *derived_cell_front(const ModifierRuntime &modifier);
 
 // ---- Economy/Effect/Ideology shared (economy_runtime_building_commit.cpp, effect_runtime.cpp, ideology_runtime.cpp)
 bool configured(const ModifierRuntime &modifier);
+bool should_run(const ModifierRuntime &modifier, int64_t day_index);
+uint64_t domain_snapshot_version(const ModifierRuntime &modifier, int32_t domain);
+double stat_clamp_max(const ModifierRuntime &modifier, const char *key, double fallback);
 
 // ---- Economy (economy_runtime_building_commit.cpp, economy_runtime_colonization_kit.cpp, economy_runtime_configuration.cpp, economy_runtime_family_buff.cpp, economy_runtime_persistence.cpp, economy_runtime.cpp, economy_runtime_state_hash.cpp, economy_runtime_lineage_branch_effects.cpp, economy_runtime_country_epoch_capture.cpp)
 void effective_values(const ModifierRuntime &modifier, int32_t domain, const int32_t *stat_ids, uint64_t entity_handle, const int32_t *base_values, int32_t *out_values, size_t count);
 void collect_scope_ids(const ModifierRuntime &modifier, int32_t domain, int32_t scope, const int32_t *stat_ids, size_t stat_count, std::vector<uint64_t> &out_scope_ids);
 void collect_scope_stat_entries(const ModifierRuntime &modifier, int32_t domain, int32_t scope, const int32_t *stat_ids, size_t stat_count, std::vector<uint64_t> &out_scope_ids, std::vector<int32_t> &out_stat_ids);
 uint64_t stat_bucket_version(const ModifierRuntime &modifier, int32_t domain, const int32_t *stat_ids, size_t stat_count);
+bool has_technology_effect(const ModifierRuntime &modifier, uint64_t country_handle,
+                           const std::string &definition_key, int32_t technology_id);
+bool apply_technology_effect(ModifierRuntime &modifier, uint64_t country_handle,
+                             const std::string &definition_key, int32_t technology_id,
+                             int64_t day_index, std::string &error);
 double country_economy_output_factor(const ModifierRuntime &modifier, uint64_t country_handle);
 double country_sector_output_factor(const ModifierRuntime &modifier, uint64_t country_handle, int32_t economic_sector);
 double country_research_institution_output_factor(const ModifierRuntime &modifier, uint64_t country_handle);

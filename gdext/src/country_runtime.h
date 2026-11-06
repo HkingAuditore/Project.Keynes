@@ -30,7 +30,7 @@ class EffectInstanceForwarder;
 
 class ModifierRuntime;
 class NativeEconomyRuntime;
-class NativeSimulationHost;
+class CountryHostPort;
 
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
@@ -264,7 +264,7 @@ public:
     bool sync_store_writes_forbidden() const {
         return _sync_store_writes_forbidden;
     }
-    void attach_simulation_host(NativeSimulationHost *host) {
+    void attach_simulation_host(CountryHostPort *host) {
         _simulation_host = host;
     }
     int64_t last_committed_day() const { return _last_committed_day; }
@@ -837,7 +837,7 @@ private:
 
     bool _configured = false;
     bool _sync_store_writes_forbidden = false;
-    NativeSimulationHost *_simulation_host = nullptr;
+    CountryHostPort *_simulation_host = nullptr;
     bool _bootstrapped = false;
     RuntimeMode _mode = MODE_ACTIVE;
     int32_t _cell_count = 0;

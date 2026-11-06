@@ -21,7 +21,5 @@
     "world_ext_resource.cpp": "Godot binding layer owns ModifierRuntime",
     "world_ext_runtime_graph.cpp": "Godot binding layer owns ModifierRuntime"
   },
-  "legacy_includers": [
-    "country_runtime.cpp"
-  ]
+  "legacy_includers": []
 }
