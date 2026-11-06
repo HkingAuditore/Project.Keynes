@@ -37,13 +37,5 @@ PKEC writer=56，显式兼容55；其他旧 schema 保留原拒绝规则。v55 �
 
 首都日常补建入口的取消经过调用点静态核对；未声称存在独立的迁空首都端到端通过记录。
 ''',encoding='utf-8')
-p=Path('docs/cpp-dots-runtime/runtime-deletion-inventory.md')
-s=p.read_text(encoding='utf-8').rstrip()+'''\n\n## 2026-10-17 家族首都补建入口移除
-
-`NativeEconomyRuntime::repair_forced_capital_founder` 及 FAMILY_COMMIT 日常调用已删除。
-原0..30天兼容逻辑只以当地是否仍有家族判断是否补建，会在首都原族迁出或消亡后绕过玩家扶持
-再造 Starter。正式 bootstrap 的 v3 创始声明与 v2 forced_named_cells + gathering_ground
-兼容仍保留；后续普通家族走正常里程碑／玩家选择。分家另走同一待决队列。参见
-[家族运行时](notable-family-runtime.md) 的 v56 说明。此删除依据玩家明确要求修正静默立族。
-'''
-p.write_text(s,encoding='utf-8')
+# Architecture process reports were retired. See docs/architecture/migration.md;
+# keep this historical validation writer scoped to its original artifact.

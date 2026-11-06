@@ -147,7 +147,7 @@ docs/dots-experiment-report-phase-iv-XXX.md  # 每个优化独立报告
 
 参考已有报告：
 
-- `docs/dots-experiment-report.md`（GDExtension F.1-F.5 实测）
+- `docs/architecture/migration.md`（GDExtension F.1-F.5 实测）
 - charter §12.5（template_bench.gd 模板）
 
 ---
@@ -165,7 +165,7 @@ docs/dots-experiment-report-phase-iv-XXX.md  # 每个优化独立报告
 
 ## 4. 引用
 
-- `docs/performance-charter.md` §3.1 / §3.2（Phase IV trigger 权威定义）
-- `docs/dots-master-execution-handbook.md` §8（28 周方案 Phase IV preplan）
-- `docs/dots-experiment-report.md`（GDExtension 实测先例）
+- `docs/architecture/current-state.md` §3.1 / §3.2（Phase IV trigger 权威定义）
+- `docs/architecture/development-guide.md` §8（28 周方案 Phase IV preplan）
+- `docs/architecture/migration.md`（GDExtension 实测先例）
 - `docs/dots-block-e-acceptance.md`（Definition of Done）

@@ -1275,8 +1275,8 @@ func _refuse(target: Object, label: String, payload: PackedByteArray,
 	_expect("NEG/%s: the refusal NAMES %s" % [label, expected_reason],
 		reason == expected_reason, "reason='%s' expected='%s'"
 			% [reason, expected_reason])
-	_expect("NEG/%s: the refusal left the runtime untouched (a refused restore is "
-		+ "not a half-applied one)" % label, before == after, "fingerprint changed")
+	_expect(("NEG/%s: the refusal left the runtime untouched (a refused restore is "
+		+ "not a half-applied one)") % label, before == after, "fingerprint changed")
 	return reason
 
 

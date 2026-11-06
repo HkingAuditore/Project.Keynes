@@ -2,6 +2,7 @@
 
 #include "economy_cost_probe.h"
 #include "runtime_climate_kernel.h"
+#include "runtime_climate_committed_view.h"
 
 #include <array>
 #include <atomic>
@@ -62,7 +63,8 @@ struct RuntimeClimateSnapshot {
     // writeback 为可见场投影，不携带无消费者的温度历史。
     // snapshot() 的完整诊断快照仍包含全部字段。
     RuntimeClimateStore payload;
-    // 没有 store 成员、但仍须回灌 MapData 的场。不需要跨天自持，不加入 CLM2。
+    std::vector<double> restored_capture_cursors;
+    // 没有 store 成员、但仍须回灌 MapData 的场。跨日继续态由 CLM2 v9 保存。
     // RuntimeClimateStore 不决定 PKEC 或旧 PDP3/PDP4 格式；后者使用独立 POD 类型。
     //
     // soil_moisture 是 distribute 的产物，ACTIVE 下主线程那份 distribute 被抑制，
@@ -204,6 +206,12 @@ public:
     // retried from a clean base state.
     void discard_plan();
 
+    bool copy_committed_view(int64_t day, uint32_t cells, size_t lane_size,
+                             RuntimeClimateCommittedView &out) const;
+    int64_t committed_day() const { return _store.committed_day; }
+    bool observe_economy_view(const RuntimeClimateCommittedView &view) const {
+        return _economy_view_cursor.observe(view);
+    }
     const RuntimeClimateStore &store() const { return _store; }
     // The next-lane state produced by plan_day. Meaningful only between
     // plan_day and the following commit_day/discard_plan, which is exactly the
@@ -221,6 +229,7 @@ public:
     // state_hash 只取已知的提交态归约；ACTIVE 热路径 plan 不算哈希时为 0，
     // 这里不补算整 store —— 唯一读者是写回诊断字典，存档 serialize 自己会算。
     void snapshot_into(RuntimeClimateSnapshot &out, bool visible_only = false) const {
+        out.restored_capture_cursors.clear();
         out.generation = _store.generation;
         out.committed_day = _store.committed_day;
         out.input_generation = _last_input_generation;
@@ -247,13 +256,17 @@ public:
     static constexpr size_t MAX_SECTION_BYTES = 64u * 1024u * 1024u;
     bool serialize(std::vector<uint8_t> &bytes, std::string &error) const;
     bool restore(const uint8_t *bytes, size_t size, std::string &error);
+    const std::vector<double> &capture_cursors() const { return _continuation.capture_cursors; }
     static bool self_test(std::string &error);
 
 private:
     bool seed_from_input(const RuntimeEnvironmentSnapshot &environment,
                          std::string &error);
 
+    mutable RuntimeClimateViewCursor _economy_view_cursor;
     RuntimeClimateKernel _kernel;
+    RuntimeClimateKernel::Continuation _continuation;
+    std::vector<double> _planned_capture_cursors;
     RuntimeClimateCatalog _catalog;
     RuntimeClimateStore _store;
     RuntimeClimateStore _next;

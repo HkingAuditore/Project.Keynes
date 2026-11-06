@@ -2,7 +2,7 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -114,7 +114,7 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
     }
     _food_flow_previous_period_days = 1;
     static const bool serial_cells = [] {
-        const char *value = std::getenv("PK_ECONOMY_FOOD_CAPACITY_SERIAL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_FOOD_CAPACITY_SERIAL);
         return value && std::strcmp(value, "1") == 0;
     }();
     const int32_t tasks = !serial_cells && _worker_enabled && cells >= 1024 &&
@@ -136,7 +136,7 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
         parallel_for_range("pk_economy_food_capacity", static_cast<int32_t>(cells), tasks, 128, compute);
     else compute(0, static_cast<int32_t>(cells));
     static const bool verify_cells = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (verify_cells) {
@@ -154,7 +154,7 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
     for (int64_t sat : cell_saturations) _saturation_count += sat;
     EconomyCostProbe::record("food_capacity.cell_tasks", _current_day.get(), 0.0, tasks);
     static const bool scalar = [] {
-        const char *value = std::getenv("PK_ECONOMY_FOOD_STOCK_SCAN_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_FOOD_STOCK_SCAN_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     const int32_t good_limit = std::min<int32_t>(market_store().good_count.get(),
@@ -200,11 +200,11 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
             market_store().good_count.get(),
             static_cast<int32_t>(_good_food_equivalent_q16.size()));
         static const bool scalar = [] {
-            const char *value = std::getenv("PK_ECONOMY_FOOD_STOCK_SCAN_SCALAR");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_FOOD_STOCK_SCAN_SCALAR);
             return value && std::strcmp(value, "1") == 0;
         }();
         static const bool verify = [] {
-            const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
             return value && std::strcmp(value, "1") == 0;
         }();
         auto stock_equivalent = [&](bool full_scan, int64_t &scan_sat) {

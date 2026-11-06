@@ -52,7 +52,7 @@ Also load `project-keynes-country-runtime` (Country authority, commands, PKCN),
    with long negative cash, milestones and territory grow, rejection rate is low and
    `plan_ms_max` stays well under 1 ms. Read `[headless-perf/country-ai]` and the per-country
    `[headless-perf/country-ai/country]` lines.
-6. Update the contract doc (and `runtime-authority-matrix.md` / `references/system-map.md` when
+6. Update the contract doc (and `docs/architecture/current-state.md` / `references/system-map.md` when
    ownership or file layout changes) in the same change.
 
 ## Diagnosis hints

@@ -248,7 +248,7 @@ func _run() -> void:
 	_expect("runtime save bundle becomes available", bool(save_poll.get("ready", false)) and (save_poll.get("bytes", PackedByteArray()) as PackedByteArray).size() > 0)
 	_expect("runtime save bundle carries checksum metadata", int(save_poll.get("checksum", 0)) != 0 \
 		and (save_poll.get("bytes", PackedByteArray()) as PackedByteArray).size() >= 89)
-	_expect("runtime save bundle is PKSR v2", int(save_poll.get("bundle_version", 0)) == 2)
+	_expect("runtime save bundle is PKSR v5", int(save_poll.get("bundle_version", 0)) == 5)
 	_expect("runtime save bundle carries deferred commands", int(save_poll.get("pending_command_count", 0)) >= 1)
 	var saved_runtime_bytes: PackedByteArray = save_poll.get("bytes", PackedByteArray())
 	var saved_runtime_day := int(save_poll.get("committed_day", -1))

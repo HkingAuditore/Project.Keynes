@@ -9,13 +9,13 @@
 #include <vector>
 #include "economy_tracked_column.h"
 #include "economy_tracked_scalar.h"
-
+#include "runtime_switch_registry.h"
 namespace pk::binary_codec {
 
 inline bool bulk_little_endian_enabled() {
     static const bool enabled = [] {
         const uint16_t endian = 1;
-        const char *scalar = std::getenv("PK_SAVE_CODEC_SCALAR");
+        const char *scalar = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_CODEC_SCALAR);
         return *reinterpret_cast<const uint8_t *>(&endian) == 1 &&
             !(scalar && std::strcmp(scalar, "1") == 0);
     }();

@@ -43,10 +43,10 @@ func _run() -> void:
 	prefix.resize(24 + 4 + 128)
 	prefix.encode_u32(0, 0x32504345)
 	prefix.encode_u32(4, 3)
-	prefix.encode_u32(8, 54)
+	prefix.encode_u32(8, 59)
 	prefix.encode_u32(12, 0x2ffff)
 	prefix.encode_u32(24, 128)
-	prefix.encode_u32(28, 54)
+	prefix.encode_u32(28, 59)
 	prefix.encode_u32(32, 3)
 	prefix.encode_u32(152, 2) # envelope hash_version
 	var suffix := PackedByteArray()

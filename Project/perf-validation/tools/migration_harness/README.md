@@ -3,7 +3,7 @@
 > 本目录是 dots-migration-roadmap §3 B3（MigrationHarness）的物理产物。
 > 任何模块（economy / unit / AI / pollution / 旧 climate sub-pass …）做 DOTS 化都按本目录的 7 步 SOP + 4 个模板走。
 >
-> 详细背景：[`docs/dots-migration-roadmap.md §5`](../../../../docs/dots-migration-roadmap.md#5-单模块-dots-迁移-sop7-步检查清单)（设计哲学）+ [`docs/performance-charter.md §12`](../../../../docs/performance-charter.md)（性能契约）。
+> 详细背景：[`docs/architecture/design.md`](../../../../docs/architecture/design.md)（设计哲学）+ [`docs/architecture/current-state.md`](../../../../docs/architecture/current-state.md)（性能契约）。
 
 ---
 
@@ -126,7 +126,7 @@ else:
 godot --editor --script tmp/bench_economy.gd
 ```
 
-通过标准（与 [`docs/performance-charter.md §6.2`](../../../../docs/performance-charter.md) 对齐）：
+通过标准（与 [`docs/architecture/current-state.md`](../../../../docs/architecture/current-state.md) 对齐）：
 
 | 指标 | 红线 |
 |---|---|
@@ -137,7 +137,7 @@ godot --editor --script tmp/bench_economy.gd
 
 ### Step 6 —（仅当 Step 5 显示 ≥ 5 ms 且 N ≥ 1k）→ C++ 化
 
-按 [`performance-charter.md §12.4`](../../../../docs/performance-charter.md#124-用模板做下一个-pass--7-步操作清单) 的 7 步走。在 `module_manifest.tres` 的 `dispatch_paths` 加 `"dots_cpp"`。重跑 Step 5 bench；C++ ≥ GDScript 5× 才合入（charter 铁律 3）。
+按 [`docs/architecture/current-state.md`](../../../../docs/architecture/current-state.md) 的 7 步走。在 `module_manifest.tres` 的 `dispatch_paths` 加 `"dots_cpp"`。重跑 Step 5 bench；C++ ≥ GDScript 5× 才合入（charter 铁律 3）。
 
 ### Step 7 —（仅当模块需要 UI / overlay 消费）接入 ViewAdapter / Overlay
 
@@ -172,7 +172,7 @@ UI / renderer / baker 通过 adapter 读 → 模块 dispatch_path 切换对它�
 
 ## 进度追踪
 
-完成迁移后请在 [`docs/dots-migration-roadmap.md §9 已迁移模块清单`](../../../../docs/dots-migration-roadmap.md#9-已迁移模块清单) 追加一行：
+完成迁移后请在 [`docs/architecture/design.md 已迁移模块清单`](../../../../docs/architecture/design.md) 追加一行：
 
 ```markdown
 | 模块名 | 状态 | dispatch_path | 完成日 | commit | 备注 |

@@ -69,7 +69,7 @@ When adding or retuning an ideology:
    here, not at runtime.
 7. Update `ideology_content_test.gd` presenter expectations and any Modifier
    catalog tests that pin the UniqueSource terms.
-8. Update `docs/cpp-dots-runtime/native-ideology-runtime.md` production table
+8. Update `docs/architecture/current-state.md` production table
    and this skill when display names or magnitudes change.
 
 Draw requirements may be `TECHNOLOGY`, `RESEARCH_SIGNAL`, or `GATE`. Gates are
@@ -180,15 +180,11 @@ full discovered-idea scan.
 
 Update in the same change when the contract moves:
 
-- `docs/cpp-dots-runtime/native-ideology-runtime.md`
-- `docs/cpp-dots-runtime/native-effect-runtime.md` (external binding / PKID audit)
-- `docs/cpp-dots-runtime/native-modifier-runtime.md` (ideology UniqueSource keys)
-- `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `docs/cpp-dots-runtime/game-flow-start-save.md`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
-- `docs/cpp-dots-runtime/index.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/current-state.md` (external binding / PKID audit)
+- `docs/architecture/current-state.md` (ideology UniqueSource keys)
+- `docs/architecture/development-guide.md`
+- `docs/architecture/README.md`
 - `references/system-map.md`
 - this skill and its references
 

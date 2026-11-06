@@ -11,14 +11,14 @@ extends EditorScript
 # 字段名必须与 scripts/data_core/world.gd line 598-637 中实际访问的
 # MapData 属性名一致（这是 Step 2.0 修两个静默 bug 的根本依据）。
 #
-# ─── 边界契约（已在 docs/performance-charter.md §11 固化） ───────────
+# ─── 边界契约（已在 docs/architecture/current-state.md 固化） ───────────
 # GDExtension ABI 把每个 PackedArray 跨界都包成 Variant，refcount 必然
 # ≥ 2，C++ 端任何 ptrw() 都 CoW-detach 成私有副本。因此真正的契约是：
 #   方向 1 (C++ → GDScript)：必须用 "write-then-set" 推送（T1b 验证）
 #   方向 2 (GDScript → C++)：禁止在 pass 内回写已 flush 的字段；
 #                            重新 reseat 后必须 bind_map_data() 重绑
 # 这是"单向快照"模型，不是"双向 alias"。所有性能账已确认收益不受影响
-# （边界开销 < 0.04% / daily-tick），见 performance-charter.md §11。
+# （边界开销 < 0.04% / daily-tick），见 docs/architecture/current-state.md。
 
 class _MockMap:
 	# ─── F32 fields (mirrors BIND_TABLE F32 entries) ──────────────────
@@ -243,7 +243,7 @@ func _run() -> void:
 	# 自己那份，C++ view_f32 看不到。
 	# 这是 GDExtension ABI 的物理结果（每次跨界 Variant 包装 → refcount≥2
 	# → ptrw 必 CoW），不是实现 bug。
-	# 工程纪律（已写入 performance-charter.md §11）：
+	# 工程纪律（已写入 docs/architecture/current-state.md）：
 	#   1) GDScript 端的输入应该在 pass 之间通过 write_f32 / write_f32_indexed
 	#      显式回写 C++ buffer，绝不依赖"in-place 写 mock.temp_arr"
 	#   2) C++ 端在 pass 末尾用 set() flush 把结果推回 GDScript（这就是 T1b
@@ -272,7 +272,7 @@ func _run() -> void:
 		push_warning("T3: alias survived a GDScript-side resize?? double-check Phase 3a contract.")
 
 	# ─── 总结 ────────────────────────────────────────────────────────
-	# 真正的 alias 契约（performance-charter.md §11 固化）：
+	# 真正的 alias 契约（docs/architecture/current-state.md 固化）：
 	#   - T0 必须 PASS：BIND_TABLE 1:1 对齐 world.gd（零静默 skip）
 	#   - T1b 必须 PASS：write-then-set 是唯一可行的 C++ → GDScript 通路
 	#   - T1 / T2 "not synced" 是 EXPECTED 行为（GDExtension ABI 单向快照）
@@ -297,7 +297,7 @@ func _run() -> void:
 		print("       the GDExtension ABI: every cross-boundary PackedArray traverses")
 		print("       a Variant; refcount ≥ 2 forces ptrw() to CoW-detach. There is no")
 		print("       two-way zero-copy alias possible at this layer.")
-		print("     ⚠ Engineering rules (see docs/performance-charter.md §11):")
+		print("     ⚠ Engineering rules (see docs/architecture/current-state.md):")
 		print("       1) C++ hot loop writes its own buffer freely, then calls")
 		print("          map_data->set(prop, arr) ONCE at end of pass to flush.")
 		print("       2) GDScript MUST NOT mutate already-flushed fields in-place")
@@ -313,7 +313,7 @@ func _run() -> void:
 
 	if abi_surprise:
 		push_warning("GDExtension ABI surprise: T1 or T2 unexpectedly synced — Godot may have")
-		push_warning("changed CoW semantics. Re-audit performance-charter.md §11 assumptions.")
+		push_warning("changed CoW semantics. Re-audit docs/architecture/current-state.md assumptions.")
 
 	if step20_pass and contract_pass:
 		print("")

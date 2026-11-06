@@ -36,7 +36,7 @@ Read the current source before editing:
 - Read `Project/project-keynes/scripts/ui/cell_inspector_view_model.gd` and
   `scripts/game/world_runtime_host.gd` for player-visible read paths.
 - Read `Project/project-keynes/tests/family_runtime_test.gd` before changing behavior or schemas.
-- Read `docs/cpp-dots-runtime/economy-save-migration-sop.md` before changing persistence.
+- Read `docs/architecture/development-guide.md` before changing persistence.
 
 Use `rg` to locate all family policy, query, report, and schema call sites. Do not infer the current
 contract from roadmap text or a previous chat.

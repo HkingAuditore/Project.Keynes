@@ -730,7 +730,7 @@ func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
 	# `set()` 推回会把 PackedFloat32Array 的 refcount 顶到 ≥3，导致 GDScript
 	# climate Pass 内 `arr[i] = v` 触发 CoW 写到一份临时 storage 上，函数退出
 	# 即销毁，map.temp_arr 永远是初值（→ 渲染层"温度全蓝"）。详见
-	# docs/performance-charter.md §11.4 第三行的 "GDScript 端整体赋值后必须
+	# docs/architecture/current-state.md 第三行的 "GDScript 端整体赋值后必须
 	# bind_map_data" 反向对偶。
 	#
 	# 折中策略（路 C）：DCWorldExt 已 bind 时，climate Pass 暂时回退到 legacy
@@ -819,7 +819,7 @@ var _sus_bootstrap: RefCounted = null
 var _data_core_world: DCWorld = null
 # DataCore World — C++ co-processor（dots-roadmap-to-gdextension 务实 A）：
 # 仅服务于 climate Pass-A 的 C++ 加速；与 _data_core_world 共享同一份 MapData
-# PackedArray（CoW alias，详见 docs/performance-charter.md §11 + Phase 3a Step 2.0
+# PackedArray（CoW alias，详见 docs/architecture/current-state.md + Phase 3a Step 2.0
 # 验证报告）。weather / sus / ECB 完全不感知此实例。
 # - use_data_core=true 时创建并 bind_map_data；否则保持 null
 # - climate Pass-A 入口检查 _data_core_world_ext != null && run_climate_pass_a()>=0
@@ -835,7 +835,7 @@ var _dc_terrain_mirror_dirty: bool = true
 # 只跑一次。NaN = 未跑过；reset_progress 时清回 NaN。
 var _ocean_water_done_phase: float = NAN
 # F.5 transpiration pass C++ 加速运行时统计（charter §7 P2，3.2ms → 0.3ms 目标）。
-# 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 dots-f5-validation.md 验收。
+# 一次性诊断 print + 累计 runs / fallbacks / total_ms 供 HUD / 后续 docs/architecture/migration.md 验收。
 var _gdext_transp_runs: int = 0
 var _gdext_transp_fallbacks: int = 0
 var _gdext_transp_total_ms: float = 0.0
@@ -988,7 +988,7 @@ var _gdext_sea_ice_signature_ok: bool = false
 # 经过游戏天数"而不是"调用次数"驱动。clamp 上限 30 天用于：
 #   1) 开局（_last_sea_ice_pass_day = -1）走 1.0 默认，避免大跳；
 #   2) 长时间 pause 后恢复，避免一次推进几百天导致全图冻死/全融。
-# 详见 docs/dots-master-execution-handbook.md §sea_ice-dt-compensation。
+# 详见 docs/architecture/development-guide.md。
 var _last_sea_ice_pass_day: float = -1.0
 
 # [thermal dt 补偿 2026-06-16] climate pass_a 热惯性与 sea_ice 同病：原本假定
@@ -3876,7 +3876,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# 把 weather 硬挂在 season_refresh 上，但 season 是 11-stage 切片 round
 	# （每 round 前 10 个 stage 返回 done=false），weather 在 SUS 优先级序里
 	# 排在 season 之后（150 > 50），只要 season 切片中 weather 立刻 dep_pending。
-	# 实测 30 tick 内 weather ran=0（详见 docs/DOTS review.md 排查记录）。
+	# 实测 30 tick 内 weather ran=0（详见 docs/architecture/current-state.md 排查记录）。
 	#
 	# 真实依赖关系：weather hot loop 读的是 cell.temperature / moisture / wind /
 	# has_river 等慢层 baseline——这些字段跟 season 切换的"植被/cover redecide"
@@ -13221,7 +13221,7 @@ func refresh_climate_daily(map: MapData, season_phase: float) -> void:
 # PR-2.1.1 helper：把 [name → cid → write_*_indexed] 三步压成一行调用，封装
 # `_data_core_world == null` / `cid < 0` 双守卫。供 _climate_pass_a /
 # _climate_pass_a_soa 以及后续 PR-2.1.2/3/4 的 hot pass push 块复用。
-# 详见 docs/dots-master-execution-handbook.md §3.4.2.C / §9.2 模板 2。
+# 详见 docs/architecture/development-guide.md / §9.2 模板 2。
 func _push_f32_to_world(name: StringName, indices: PackedInt32Array, values: PackedFloat32Array) -> void:
 	if _data_core_world == null:
 		return
@@ -13415,7 +13415,7 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 	var season_idx: int = int(floor(fposmod(season_phase, 4.0))) & 3
 
 	# PR-2.1.1（climate Pass-A 写路径下移）：legacy fallback 9 写位预分配 batch buffer。
-	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
+	# 详见 docs/architecture/development-guide.md + §9.2 模板 2。
 	#   - 8 个 f32 字段：temp / moisture / snow_cover / temp_baseline / temp_season_offset
 	#                   / temp_30d / temp_365d / temp_anomaly
 	#   - 1 个 u8 字段：_ema_initialized
@@ -13683,7 +13683,7 @@ func _apply_local_climate_coupling_pass(map: MapData, season_phase: float, winte
 			cell_pos[i] = HexUtils.cube_to_world(snap_cell.q, snap_cell.r, _last_hex_size)
 
 	# PR-2.1.2（climate Pass-B legacy 写路径下移）：预分配 batch buffer。
-	# 详见 docs/dots-master-execution-handbook.md §3.5。
+	# 详见 docs/architecture/development-guide.md。
 	var _pb_indices: PackedInt32Array = PackedInt32Array()
 	var _pb_temp: PackedFloat32Array = PackedFloat32Array()
 	var _pb_moist: PackedFloat32Array = PackedFloat32Array()
@@ -14358,7 +14358,7 @@ func _run_sea_ice_state_machine_slice(map: MapData, season_phase: float, token: 
 				# 双 world 架构由 GDScript DCWorld（ECS 容器）+ DCWorldExt（C++ 镜像
 				# slot）组成，本来就是 superset/subset 关系；这里属于补足缺失的一条
 				# 镜像链路（B-Surgical），不动其它系统的写入路径。
-				# 见 docs/dots-master-execution-handbook.md §sea-ice-dual-world-sync。
+				# 见 docs/architecture/development-guide.md。
 				if _data_core_world_ext != null \
 						and _data_core_world_ext.has_method("write_f32_indexed") \
 						and _data_core_world_ext.has_method("component_id"):
@@ -14798,7 +14798,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			"edge_mix_rate": float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035,
 			"cell_temperature_arr": temp_input,
 		}
-		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/dots-f4-validation.md §2.2.b）：
+		# storage A/B 同源契约（修复 B 2026-05-14；详见 docs/architecture/migration.md）：
 		# GDScript pass_a 写 map.temp_arr / 上一段 sub-pass 写 map.*_arr 后，C++ slot
 		# 仍指向 CoW 解耦前的旧 buffer。先 refresh 让 C++ 读到 GDScript 端最新状态。
 		# 开销 ~14μs / 35 component（map_data->get + Variant 类型分发），可接受；
@@ -15011,7 +15011,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 
 	# PR-2.1.4（sea_ice daily fallback 写路径下移）：预分配 batch buffer。
 	# C++ 路径在 line 4140+ 已 return；本 batch 仅在 GDScript fallback 时使用。
-	# 详见 docs/dots-master-execution-handbook.md §3.8。
+	# 详见 docs/architecture/development-guide.md。
 	var _si_indices: PackedInt32Array = PackedInt32Array()
 	var _si_frac: PackedFloat32Array = PackedFloat32Array()
 	_si_indices.resize(n_cells)
@@ -15797,7 +15797,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 	# （多花一次 O(N) 拷贝，N=2400 时 < 0.5ms 可接受）。
 	# 当 _use_dc=false 但 _data_core_world != null 时这次写就是必须的（map.*_arr
 	# 与 DCWorld 不同源时唯一的 push 时机）。
-	# 详见 docs/dots-master-execution-handbook.md §3.4 + §9.2 模板 2。
+	# 详见 docs/architecture/development-guide.md + §9.2 模板 2。
 	# helper 内部守卫 _data_core_world / cid，故此处只判 n > 0。
 	#
 	# A.2.1.B — Dirty-aware push（dynamic_visual_atlas 35-50ms 长帧根治 M1）：
@@ -16047,7 +16047,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			"sea_ice_frac": map.sea_ice_frac_arr,
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：pass_a 刚写过 map.temp_arr，C++
-		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/dots-f4-validation.md §2.2.b。
+		# slot 仍指向旧 buffer；先 refresh 同步。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员，跨 pass 边界由
 		# climate_daily_system 在 _run_pass 切换 pass_id 时 mark stale。
 		_ensure_climate_daily_round_slots_fresh()
@@ -16303,7 +16303,7 @@ func _climate_pass_b_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		moist_a[i] = moisture_final
 
 	# PR-2.1.2（climate Pass-B SoA 路径）：循环结束后批量 push temp_a / moist_a 到 DCWorld。
-	# 与 PR-2.1.1 SoA 收尾对称（详见 docs/dots-master-execution-handbook.md §3.5）。
+	# 与 PR-2.1.1 SoA 收尾对称（详见 docs/architecture/development-guide.md）。
 	#
 	# A.2.1.B — Dirty-aware push（M1 续）：复用 Pass-A 的 climate_dirty_mask 子集，
 	# 避免在 Pass-A 已稀疏化之后再被本 pass 全图覆盖。dirty_mask 不可用 / 大小不符
@@ -16479,7 +16479,7 @@ func _ocean_water_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile
 		_apply_temperature_transport_anomaly_knobs(knobs_w, tta)
 		# storage A/B 同源契约（修复 B 2026-05-14）：climate_b 已 flush 到 map，
 		# 但本 pass 还要读 map.is_water_arr / cell_lat_norm_arr 等静态/上一段写过的字段；
-		# refresh 后保证 C++ slot 与 map 一致。详见 docs/dots-f4-validation.md §2.2.b。
+		# refresh 后保证 C++ slot 与 map 一致。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员。
 		_ensure_climate_daily_round_slots_fresh()
 		# ─── sim-2ms-perf-push（plan/ocean-water-land-simd）派发 ─────────────
@@ -16719,7 +16719,7 @@ func _ocean_land_pass_soa(map: MapData, season_phase: float, cp: ClimateProfile)
 		}
 		_apply_temperature_transport_anomaly_knobs(knobs_l, _temperature_transport_anomaly_knobs(cp))
 		# storage A/B 同源契约（修复 B 2026-05-14）：ocean_water 已 flush 到 map，
-		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/dots-f4-validation.md §2.2.b。
+		# refresh 让本 pass C++ slot 看到最新海洋温度修正。详见 docs/architecture/migration.md。
 		# refresh-consolidation-2026-06：climate_daily round 守门员；ocean_water→ocean_land
 		# 的跨 pass mark stale 由 climate_daily_system._run_pass 负责。
 		_ensure_climate_daily_round_slots_fresh()
@@ -18580,7 +18580,7 @@ func _apply_transpiration_pass(map: MapData) -> void:
 		}
 		# storage A/B 同源契约（修复 B 2026-05-14）：sea_ice 已 flush 到 map，
 		# refresh 让本 pass 读 cell.moisture / cell.weather_precip 等取得最新值。
-		# 详见 docs/dots-f4-validation.md §2.2.b。
+		# 详见 docs/architecture/migration.md。
 		if _data_core_world_ext.has_method("refresh_slots_from_map"):
 			_data_core_world_ext.refresh_slots_from_map()
 		var rc: float = float(_data_core_world_ext.run_transpiration_pass(knobs))
@@ -18647,7 +18647,7 @@ func _apply_transpiration_pass(map: MapData) -> void:
 	# 阶段 2：把所有 delta 应用到 current_state.moisture（一次性，避免顺序敏感）
 	#
 	# PR-2.1.5（transpiration 模板 PR）：写路径下移到 world.write_f32_indexed。
-	# 详见 docs/dots-master-execution-handbook.md §3.3 + §9.1 模板 1。
+	# 详见 docs/architecture/development-guide.md + §9.1 模板 1。
 	#   - 收集 dirty_indices + new_values（dirty 仅 deltas[i] != 0 的格子）
 	#   - 双写保留：cell.moisture 仍写（PR-2.3 facade 化时由 setter 统一处理）
 	#   - 一次性 write_f32_indexed（避免每 idx 单调用的开销 / CoW 风险）

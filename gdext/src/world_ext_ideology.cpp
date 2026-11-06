@@ -1,5 +1,5 @@
 #include "world_ext.h"
-
+#include "runtime_switch_registry.h"
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "effect_runtime.h"
@@ -162,7 +162,7 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
     // Opt-in through the environment so production can never take it by accident:
     // without the variable the catalog passes through untouched.
     Dictionary effective = catalog;
-    if (std::getenv("PK_DISABLE_SUPPORT_GATE") != nullptr) {
+    if (pk::runtime_switch_value(pk::RuntimeSwitch::PK_DISABLE_SUPPORT_GATE) != nullptr) {
         // Clear the stance rows so `support_allows` has nothing to average.
         //
         // `stance_count == 0` is the documented "no gate" shape and it is exactly what

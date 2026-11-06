@@ -490,6 +490,11 @@ Dictionary DCWorldExt::handoff_trigger_effects_unlocked(int limit) {
         const PackedInt64Array handed_off_ids = out.get("effect_ids", PackedInt64Array());
         publish_trigger_ack_ids(this, handed_off_ids, out);
     }
+    // Finish the Country enqueue while the handoff still holds the day
+    // boundary. Releasing it before the script dispatch races command admission.
+    if (handed_off > 0 && _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY))
+        dispatch_effect_native_country();
     if (_runtime_host != nullptr)
         _runtime_host->complete_main_boundary_service(
             NativeSimulationHost::MainBoundaryClient::TRIGGER);

@@ -4,7 +4,7 @@
 #include "economy_runtime_persistence_codec.h"
 #include "modifier_runtime.h"
 #include "pk_log.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
@@ -560,9 +560,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             schema == 22 && country_schema == 3 &&
                     _country_runtime != nullptr
                 ? static_cast<uint64_t>(
-                    _country_runtime->state_hash_v3_compat())
+                    country_reads().state_hash_v3_compat())
                 : (_country_runtime != nullptr
-                    ? static_cast<uint64_t>(_country_runtime->state_hash())
+                    ? static_cast<uint64_t>(country_reads().state_hash())
                     : 0);
         // LOAD ORDER EXCEPTION (worker start after a save).
         //
@@ -593,12 +593,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _deferred_country_state_hash = country_hash;
             _deferred_country_identity_recorded = true;
         }
-        if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
+        if (_country_runtime == nullptr || !country_reads().economy_available() ||
             !country_schema_compatible ||
             (!country_identity_deferred && (
-                country_generation != _country_runtime->generation() ||
+                country_generation != country_reads().generation() ||
                 country_hash != expected_country_hash))) {
-            if (std::getenv("PK_COUNTRY_HASH_PROBE") != nullptr)
+            if (pk::runtime_switch_value(pk::RuntimeSwitch::PK_COUNTRY_HASH_PROBE) != nullptr)
                 pk::log_error("[country-hash] saved_schema=%u live_schema=%d "
                     "saved_gen=%llu live_gen=%llu saved_hash=%llu live_hash=%llu "
                     "compatible=%d economy_available=%d deferred=%d",
@@ -608,12 +608,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     static_cast<unsigned long long>(country_generation),
                     static_cast<unsigned long long>(
                         _country_runtime == nullptr ? 0
-                            : _country_runtime->generation()),
+                            : country_reads().generation()),
                     static_cast<unsigned long long>(country_hash),
                     static_cast<unsigned long long>(expected_country_hash),
                     country_schema_compatible ? 1 : 0,
                     (_country_runtime != nullptr &&
-                     _country_runtime->economy_available()) ? 1 : 0,
+                     country_reads().economy_available()) ? 1 : 0,
                     country_identity_deferred ? 1 : 0);
             error = "economy_country_restore_order_or_hash_mismatch";
             return false;
@@ -1611,9 +1611,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         cursor = bytes.size();
         _restore.modifier_seen = true;
     } else if (schema >= 23 && section == SAVE_SECTION_FISCAL) {
-        NativeCountryRuntime::EconomySnapshot country_snapshot;
+        CountryReadView::Snapshot country_snapshot;
         if (_country_runtime == nullptr ||
-            !_country_runtime->copy_economy_snapshot(country_snapshot)) {
+            !country_reads().copy_economy_snapshot(country_snapshot)) {
             error = "save_fiscal_country_snapshot_unavailable";
             return false;
         }
@@ -2162,7 +2162,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             int32_t family = -1;
             if (active != 0) {
                 if (stable_id <= 0 || country_handle == 0 ||
-                    !_country_runtime->valid_handle(
+                    !country_reads().valid_handle(
                         static_cast<int64_t>(country_handle))) {
                     error = "save_family_expedition_country_identity_invalid";
                     return false;

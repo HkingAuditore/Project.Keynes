@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "resolve": [
+    {
+      "domain": "country",
+      "source": "gdext/src/runtime_country_pod.cpp",
+      "function": "RuntimeCountryPodAuthority::queue_command",
+      "entry": "resolve_enqueue<ResolveFlow::CountryCommand>",
+      "bypass": [
+        "_pending\\s*\\.\\s*(?:push_back|emplace_back|insert)\\s*\\("
+      ],
+      "policy": "existing owner ordering, receipts and semantic dedup; no second queue"
+    },
+    {
+      "domain": "economy",
+      "source": "gdext/src/runtime_economy_pod.cpp",
+      "function": "RuntimeEconomyPodAuthority::queue_command",
+      "entry": "resolve_enqueue<ResolveFlow::EconomyCommand>",
+      "bypass": [
+        "_commands\\s*\\.\\s*(?:push_back|emplace_back|insert)\\s*\\("
+      ],
+      "policy": "existing owner ordering, receipts and semantic dedup; no second queue"
+    },
+    {
+      "domain": "trigger",
+      "source": "gdext/src/runtime_trigger_pod.cpp",
+      "function": "RuntimeTriggerPodAuthority::queue_command",
+      "entry": "resolve_enqueue<ResolveFlow::TriggerCommand>",
+      "bypass": [
+        "_pending_commands\\s*\\.\\s*(?:push_back|emplace_back|insert)\\s*\\("
+      ],
+      "policy": "existing owner ordering, receipts and semantic dedup; no second queue"
+    }
+  ],
+  "apply": [
+    {
+      "domain": "country",
+      "source": "gdext/src/runtime_country_pod.cpp",
+      "function": "RuntimeCountryPodAuthority::commit_day",
+      "writes": "Country snapshot, generation, pending queue, plan receipts",
+      "scope": "Reviewed owner Apply entry; member access superset, not transitive alias proof",
+      "allowed_members": [
+        "_bootstrapped",
+        "_next_generation",
+        "_pending",
+        "_plan_active",
+        "_state"
+      ],
+      "forbidden_peer_mutations": [
+        "reserve_fiscal_cash",
+        "collect_fiscal_cash",
+        "begin_economy_treasury_spend"
+      ],
+      "readonly_members": [
+        "_bootstrapped"
+      ]
+    },
+    {
+      "domain": "economy",
+      "source": "gdext/src/runtime_economy_pod.cpp",
+      "function": "RuntimeEconomyPodAuthority::commit_pending_commands",
+      "writes": "Economy owned/formula state, command receipts and queues",
+      "scope": "Reviewed owner Apply entry; member access superset, not transitive alias proof",
+      "allowed_members": [
+        "_authority_mode",
+        "_command_executor",
+        "_commands",
+        "_receipts",
+        "_terminal_receipts"
+      ],
+      "forbidden_peer_mutations": [
+        "reserve_fiscal_cash",
+        "collect_fiscal_cash",
+        "begin_economy_treasury_spend"
+      ],
+      "readonly_members": [
+        "_authority_mode"
+      ]
+    },
+    {
+      "domain": "military",
+      "source": "gdext/src/military_core.cpp",
+      "function": "MilitaryCore::reconcile_receipts",
+      "writes": "Military lots, barracks, army caches, intents and receipts",
+      "scope": "Reviewed owner Apply entry; member access superset, not transitive alias proof",
+      "allowed_members": [
+        "_army_lane_pending",
+        "_catalog",
+        "_last_digest",
+        "_lots",
+        "_report",
+        "_terrain"
+      ],
+      "forbidden_peer_mutations": [
+        "reserve_fiscal_cash",
+        "collect_fiscal_cash",
+        "begin_economy_treasury_spend"
+      ],
+      "readonly_members": [
+        "_catalog",
+        "_terrain"
+      ]
+    }
+  ],
+  "registered_entrypoints": {
+    "gdext/src/economy_runtime_colonization.cpp|NativeEconomyRuntime::enqueue_worker_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/economy_runtime_owned_bridge.cpp|NativeEconomyRuntime::enqueue_or_apply_pod_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_trigger_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_external_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_external_effect_batch_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_family_colonization_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_canal_commit_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/native_simulation_host_asset_worker.cpp|NativeSimulationHost::enqueue_economy_origin_country_asset": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_batch": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_modifier_shadow": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/native_simulation_host_economy.cpp|NativeSimulationHost::submit_economy_pod_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/runtime_country_pod.cpp|RuntimeCountryPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/runtime_economy_pod.cpp|RuntimeEconomyPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/runtime_ideology_pod.cpp|RuntimeIdeologyPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/runtime_trigger_pod.cpp|RuntimeTriggerPodAuthority::queue_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/world_ext_simulation_host.cpp|DCWorldExt::submit_runtime_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md."
+  },
+  "stage_writes": {
+    "input_capture": "input manifest",
+    "climate": "stage completion; climate store committed in prelude",
+    "country": "country POD, peer intents",
+    "trigger_input": "trigger POD, effect intents",
+    "ideology": "ideology POD, modifier intents",
+    "effect": "effect POD, modifier/event intents",
+    "modifier": "modifier POD, ACKs",
+    "gameplay_effect": "events and ideology command queues, ingress summary",
+    "economy": "economy runtime/OwnedState, country/effect peer intents",
+    "events": "event journal and consumer cursors, trigger ingress",
+    "visual": "POD visual intents",
+    "commit": "day commit header (publication follows loop)"
+  },
+  "retained_soft_paths": [
+    {
+      "source": "gdext/src/native_simulation_stage_ideology.cpp",
+      "condition": "ideology_soft",
+      "reason": "Bootstrap lacks the first committed opinion; preserving first-day semantics. Invalid data is no longer accepted.",
+      "reasons": [
+        "ideology_opinion_snapshot_missing",
+        "ideology_country_snapshot_missing",
+        "ideology_pod_not_configured",
+        "ideology_day_not_monotonic"
+      ]
+    },
+    {
+      "source": "gdext/src/native_simulation_stage_trigger_input.cpp",
+      "condition": "trigger_soft",
+      "reason": "Trigger precedes Effect; ACK can only arrive later. Existing retry/reject state stays in Trigger, no fabricated ACK.",
+      "reasons": [
+        "trigger_pod_not_configured",
+        "trigger_pod_not_bootstrapped",
+        "ack_barrier_incomplete",
+        "ack_retry",
+        "stale_generation",
+        "ack_rejected"
+      ]
+    }
+  ]
+}

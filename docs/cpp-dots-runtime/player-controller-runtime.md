@@ -131,7 +131,7 @@ SpinBox 的草稿与次日 pending 不得被日常 live patch 回写成继承默
 - 不把国家/经济读模型迁移到控制器；只读 ViewModel 仍从各自 facade 快照读取。
 - 不把 GM、诊断、作弊开关加入正式玩家协议。
 - 改变输入动作、player_view 字段、命令序列或权威边界时，同步更新本文件、
-  `runtime-authority-matrix.md`、`references/system-map.md` 和对应专项文档。
+  `docs/architecture/current-state.md`、`references/system-map.md` 和对应专项文档。
 
 ## 验证
 

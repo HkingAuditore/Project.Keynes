@@ -1,0 +1,78 @@
+{
+  "seed": 20260727,
+  "clock_rng_seed": 150015,
+  "committed_day": 2,
+  "climate_version": 9,
+  "archive_sha256": "e865d0bf90a2f4e9f386470363398c54099fae98693686d9adccbc808e1bb0f5",
+  "climate_sha256": "31fd39b27926cb42315a85bc6647a966fbd9f58677e3fcce9554e739a6cf48f8",
+  "climate_bytes": 1901228,
+  "climate_days_3_to_10": [
+    {
+      "hash": "8506758247628532623",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 3
+    },
+    {
+      "hash": "10230635849912990213",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 4
+    },
+    {
+      "hash": "9606514352757369157",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 5
+    },
+    {
+      "hash": "10670374861322461417",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 6
+    },
+    {
+      "hash": "4628079566695992178",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 7
+    },
+    {
+      "hash": "2143057663953480291",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 8
+    },
+    {
+      "hash": "11965448605660975429",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 9
+    },
+    {
+      "hash": "7290533636034341428",
+      "scope": "committed_store_lanes_and_physics_v1",
+      "state_day": 10
+    }
+  ],
+  "note": "R2 L1-L3: original lot traversal preserved; PKMI2 index continuation; ECP2 59 in-kind-income lanes; PKSR5 ACK transport and Host request allocator. Military provider also owns MDJ1 forwarding cursor; no old-event replay.",
+  "validated_library_sha256": "993ebe5508f620f2afcf0c8f866e08095688796be49d4dd8dbca9e82d4329c10",
+  "ecp2_schema": 59,
+  "publication_bytes": 1167,
+  "publication_sha256": "5932ccac9ffd61ed95e6a203085c5593a1a2e099d220619df035dc5fb35fca87",
+  "osoa_version": 3,
+  "cpd2_payload_revision": 1,
+  "resources_bytes": 283412,
+  "resources_sha256": "048f7dac886a86b781cf9bdb605d3366ac07b1b29979470aa6fcf1623ae8fc9c",
+  "compatibility_bytes": 50562,
+  "compatibility_sha256": "fbddb7856c288e25f212cc8345f48b5e5edc809c611287b20913e1e0487d02bb",
+  "mobility_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+  "mobility_bytes": 4,
+  "pksr_version": 5,
+  "environment_adapter_version": 3,
+  "pkmi_version": 2,
+  "population_bytes": 516,
+  "population_sha256": "9e87d72695e560711f5162369547994a786f9a32185ebbe726f0df97413b2a44",
+  "transport_bytes": 28,
+  "transport_sha256": "a5fd309ad82589916c25724b1f8c9c3561d0d6e734913c7e5800f4b802593a7d",
+  "military_index_bytes": 32833,
+  "military_index_sha256": "ff4bad74aead7d7decaf24afef6d44c8f979d96b714c222b457bfe6bcc799955",
+  "cadence_bytes": 48,
+  "cadence_sha256": "032b5d6d748f28463ac364afe7ca137ed781d99fec46a8c766adef5119137cc1",
+  "military_forwarder_bytes": 28,
+  "military_forwarder_sha256": "20976a4a65e4b16bb41002b84a7cd04e75ec4d971a52468f058e19228454f808",
+  "military_forwarder_version": 1
+}

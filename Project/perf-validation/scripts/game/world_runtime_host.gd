@@ -87,7 +87,7 @@ var runtime_economy_auto_pod_active: bool = false
 ## 调用栈内串行，不再依赖节点树的 _process 顺序。并发触碰同一批 slot 导致的
 ## 0xC0000005 也已修（native_parallel_executor 的 barrier 竞态）。
 ##
-## 已知的两条限制，见 docs/cpp-dots-runtime/full-authoritative-runtime-status.md
+## 已知的两条限制，见 docs/architecture/migration.md
 ## 第 38 节的实测数字：
 ##   1. 小地图（≈2400 格）是负收益。climate 本来只占 0.27ms，capture 打包与回灌
 ##      memcpy 的固定开销比它还大。真正有意义的规模是万级格数以上。

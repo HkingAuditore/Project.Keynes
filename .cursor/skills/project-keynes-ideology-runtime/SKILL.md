@@ -22,7 +22,7 @@ Trigger handoff, player writes, or panel work.
 
 ## Ground before editing
 
-Read `docs/cpp-dots-runtime/native-ideology-runtime.md` first. Then read only
+Read `docs/architecture/current-state.md` first. Then read only
 the bundled reference that matches the task:
 
 - Authority, catalog IR, commands, support, Effect binding, PKID:

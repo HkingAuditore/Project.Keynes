@@ -19,6 +19,9 @@
 
 #include "runtime_pod_protocol.h"
 #include "country_core.h"
+#include "country_read_view.h"
+#include "country_fiscal_return_intent.h"
+#include "country_procurement_intent.h"
 
 namespace pk {
 
@@ -33,7 +36,10 @@ class NativeSimulationHost;
 // and treasury state. Godot values are converted at coarse API boundaries;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
+    friend class CountryFiscalReturnPort;
 public:
+    CountryFiscalReturnPort fiscal_return_port();
+    CountryProcurementPort procurement_port();
     // v14: inactive (annexed) country records with zero territory.
     static constexpr int32_t SCHEMA_VERSION = 14;
     static constexpr int64_t MONEY_SCALE = 10000;
@@ -144,78 +150,15 @@ public:
         const char *display_name = nullptr;
     };
 
-    // Canonical sparse cell policy payload. Policy id 0 is implicit and means
-    // complete inheritance; ids are transient runtime implementation details.
-    struct CellTaxOverride {
-        int32_t kind = -1;
-        int32_t item = -1;
-        int32_t rate = TAX_RATE_INHERIT;
-        int32_t mode = TAX_MODE_INHERIT;
-
-        bool operator==(const CellTaxOverride &other) const {
-            return kind == other.kind && item == other.item &&
-                   rate == other.rate && mode == other.mode;
-        }
-    };
-
-    struct CellTaxPolicy {
-        std::array<int32_t, TAX_KIND_COUNT> defaults{
-            TAX_RATE_INHERIT, TAX_RATE_INHERIT, TAX_RATE_INHERIT,
-            TAX_RATE_INHERIT, TAX_RATE_INHERIT};
-        std::array<int32_t, TAX_KIND_COUNT> default_modes{
-            TAX_MODE_INHERIT, TAX_MODE_INHERIT, TAX_MODE_INHERIT,
-            TAX_MODE_INHERIT, TAX_MODE_INHERIT};
-        std::vector<CellTaxOverride> overrides;
-
-        bool empty() const {
-            return std::all_of(defaults.begin(), defaults.end(),
-                               [](int32_t rate) { return rate == TAX_RATE_INHERIT; }) &&
-                   std::all_of(default_modes.begin(), default_modes.end(),
-                               [](int32_t mode) {
-                                   return mode == TAX_MODE_INHERIT;
-                               }) &&
-                   overrides.empty();
-        }
-        bool operator==(const CellTaxPolicy &other) const {
-            return defaults == other.defaults &&
-                   default_modes == other.default_modes &&
-                   overrides == other.overrides;
-        }
-    };
+    using CellTaxOverride = CountryReadView::CellTaxOverride;
+    using CellTaxPolicy = CountryReadView::CellTaxPolicy;
 
     struct ResolvedTaxPolicy {
         int32_t mode = TAX_MODE_PERCENT_BP;
         int32_t value = 0;
     };
 
-    struct EconomySnapshot {
-        std::vector<int32_t> cell_country_slot;
-        std::vector<uint64_t> country_handles;
-        std::vector<uint64_t> country_technologies;
-        std::vector<uint64_t> country_research_signals;
-        std::vector<int32_t> income_tax_rates;
-        std::vector<int32_t> consumption_tax_rates;
-        std::vector<int32_t> business_tax_rates;
-        std::vector<int32_t> import_tax_rates;
-        std::vector<int32_t> export_tax_rates;
-        std::vector<int32_t> income_tax_modes;
-        std::vector<int32_t> consumption_tax_modes;
-        std::vector<int32_t> business_tax_modes;
-        std::vector<int32_t> import_tax_modes;
-        std::vector<int32_t> export_tax_modes;
-        std::vector<uint32_t> cell_tax_policy_ids;
-        std::vector<CellTaxPolicy> cell_tax_policies;
-        int32_t country_count = 0;
-        int32_t technology_words = 0;
-        int32_t research_signal_words = 0;
-        int32_t research_signal_count = 0;
-        int32_t profession_count = 0;
-        int32_t good_count = 0;
-        int32_t building_type_count = 0;
-        uint64_t tax_policy_version = 0;
-        uint64_t generation = 0;
-        uint64_t state_hash = 0;
-    };
+    using EconomySnapshot = CountryReadView::Snapshot;
 
     // Minimal cross-section authority for an era reward. The complete frozen
     // alternatives remain in PKEF; PKCN stores only this reference/state so a
@@ -344,8 +287,8 @@ public:
     godot::Dictionary capture_reference_checkpoint() const;
     bool capture_core_checkpoint(CountryCoreCheckpoint &out,
                                  std::string &error) const;
-    // Checkpoint of the worker-committed read replica, without the stale
-    // main-thread command/peer state the replica was copied from.
+    bool restore_compatibility_state(const std::vector<uint8_t> &bytes,
+                                     std::string &error);
     bool capture_worker_committed_checkpoint(CountryCoreCheckpoint &out,
                                              std::string &error) const;
     bool restore_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
@@ -408,6 +351,7 @@ public:
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
+    CountryReadView read_view() const;
     int64_t cash_for_slot(int32_t country_slot) const;
     int64_t cash_for_handle(int64_t country_handle) const;
     // When the Host grants Country worker authority, Economy must not mutate

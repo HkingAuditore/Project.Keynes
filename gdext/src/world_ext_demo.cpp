@@ -82,7 +82,7 @@ using namespace godot;
 // ─── Mode-B reference implementation: temp_drift_pass ─────────────────────
 //
 // The minimal canonical example for the "Owned-by-C++ + GDScript snapshot"
-// communication contract documented in `docs/performance-charter.md` §12.
+// communication contract documented in `docs/architecture/current-state.md` §12.
 // Behaviour: for every element in _slots[CELL_TEMP].arr_f32, add
 // `drift_amount`. Pure scalar, no SIMD, no threading — the goal is to
 // ship a template that is impossible to get wrong, not to be fast.

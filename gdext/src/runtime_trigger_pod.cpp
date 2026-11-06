@@ -1,7 +1,8 @@
+#include "runtime_resolve_contract.h"
 #include "runtime_trigger_pod.h"
 #include "runtime_trigger_kernel.h"
 #include "economy_cost_probe.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -74,8 +75,8 @@ bool ack_matches(const RuntimeDomainAck &ack, const RuntimeTriggerEffectIntent &
 
 bool command_less(const RuntimeTriggerCommand &a,
                   const RuntimeTriggerCommand &b) noexcept {
-    return std::tie(a.effective_day, a.producer_id, a.sequence, a.request_id) <
-        std::tie(b.effective_day, b.producer_id, b.sequence, b.request_id);
+    return ResolveOrder{a.effective_day, a.producer_id, a.sequence, a.request_id} <
+        ResolveOrder{b.effective_day, b.producer_id, b.sequence, b.request_id};
 }
 
 bool state_less(const RuntimeTriggerPodSnapshotState &a,
@@ -179,7 +180,7 @@ void hash_snapshot_dual(const RuntimeTriggerSnapshot &snapshot,
                         uint64_t &hash_with_gen, uint64_t &hash_zero_gen) {
     EconomyCostProbe hash_cost("trigger.hash_dual", snapshot.current_day, snapshot.states.size());
     static const bool scalar_distinct = [] {
-        const char *value = std::getenv("PK_TRIGGER_HASH_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TRIGGER_HASH_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool little_endian = [] {
@@ -887,8 +888,7 @@ bool RuntimeTriggerPodAuthority::queue_command(const RuntimeTriggerCommand &comm
         error = "trigger_command_capacity_exhausted";
         return false;
     }
-    _pending_commands.push_back(command);
-    return true;
+    return resolve_enqueue<ResolveFlow::TriggerCommand>(_pending_commands, command, capacity) == ResolveResult::Accepted;
 }
 
 bool RuntimeTriggerPodAuthority::apply_command(RuntimeTriggerSnapshot &state,
@@ -1071,7 +1071,7 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     {
     EconomyCostProbe command_cost("trigger.commands", day, _pending_commands.size());
     static const bool scalar_commands = [] {
-        const char *value = std::getenv("PK_TRIGGER_COMMAND_COPY_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TRIGGER_COMMAND_COPY_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     std::vector<RuntimeTriggerCommand> scalar_ordered;
@@ -1107,7 +1107,7 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
         ordered.size() * sizeof(const RuntimeTriggerCommand *));
     }
     static const bool verify_kernel = [] {
-        const char *value = std::getenv("PK_TRIGGER_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TRIGGER_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     RuntimeTriggerSnapshot reference_state;

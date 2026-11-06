@@ -1056,7 +1056,7 @@ func _capture_native_runtime_bundle(generation: int = -1) -> Dictionary:
 
 func _valid_native_runtime_bundle(bytes: PackedByteArray,
 		polled: Dictionary = {}) -> bool:
-	# PKSR v2 contains the immutable runtime envelope. The container section hash
+	# PKSR v4 contains the immutable runtime envelope. The container section hash
 	# is checked by SaveRepository; the header contract lives in PksrBundleHeader
 	# so it stays next to the offsets it depends on.
 	return PksrBundleHeaderScript.valid(bytes, polled)

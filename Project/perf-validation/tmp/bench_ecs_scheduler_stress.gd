@@ -6,7 +6,7 @@ extends EditorScript
 # ════════════════════════════════════════════════════════════════════
 #
 # 唯一职责：度量 DemoEcsScheduler 在 J ∈ {3, 10, 20, 30, 50} 个 mock job
-# 下的开销与正确性，回答 docs/dots-experiment-report.md §4 选项甲：
+# 下的开销与正确性，回答 docs/architecture/migration.md 选项甲：
 #
 #   "O(J²) 依赖图构建在 J=50 是否仍 < 100 µs？"
 #   "拓扑序在大规模下是否仍合法 + 稳定？"
@@ -35,7 +35,7 @@ extends EditorScript
 #     是 GDScript 解释器开销（pair 内层极简，斜率 ≈ O(J^1.1) 几乎线性）。
 #     未来移植到 C++ 调度器可加速 50-100x；并且 topo 通常可缓存，稳态成本 ≈ 0。
 #     因此这条红线下放为"信息性输出 + 报告留底"，而非硬性失败标准。
-#     详见 docs/dots-experiment-report.md §3.5。
+#     详见 docs/architecture/migration.md。
 #
 # 这个 bench **不**测算子性能（无算子可测）、**不**做 bit-equal（无副作用）。
 # 它单一职责：调度器自身的复杂度与确定性。
@@ -131,7 +131,7 @@ func _run() -> void:
 			topo_us_at_j50, TOPO_INFO_BUDGET_US_AT_J50,
 			"within" if within_info_budget else "above (informational only)"])
 		print("  note         : topo µs is INFORMATIONAL (GDScript interpreter-bound;")
-		print("                 see docs/dots-experiment-report.md §3.5 for rationale).")
+		print("                 see docs/architecture/migration.md for rationale).")
 	print("  overall      : " + ("PASS" if not any_fail else "FAIL"))
 	print("[bench_ecs_scheduler_stress] DONE - " + ("all=PASS" if not any_fail else "all=FAIL"))
 

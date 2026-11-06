@@ -1623,7 +1623,7 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 旧实现"跳日时仍刷新"的理由是慢层（base_moisture / 气候带）在跳日内
 	# 可能变；但在 x20 倍速实测中，每 fast tick 都重 bake 1080×574 RGBA8
 	# 纹理 → ImageTexture.create_from_image 5-15ms 同步阻塞，是温度/天气
-	# overlay 卡顿的主因（详见 docs/cpp-dots-runtime/performance-diagnostics-playbook.md
+	# overlay 卡顿的主因（详见 docs/architecture/development-guide.md
 	# §Overlay Bake Cost）。
 	#
 	# 现在改成两层 gate：
@@ -3954,7 +3954,7 @@ func _rebuild_view_adapter() -> void:
 		if dc_world != null and dc_world.has_method("is_bound") and dc_world.is_bound():
 			# 修复 A（2026-05-14）：传入 _current_map 让 adapter 直读 map.<field>，
 			# 避开 GDExtension CoW 后 view 缓存陈旧 → UI "极寒" bug。
-			# 详见 docs/dots-f4-validation.md §2.2.b storage A/B 同源契约。
+			# 详见 docs/architecture/migration.md storage A/B 同源契约。
 			_view_adapter = DCViewAdapter.World.new(dc_world, _current_map)
 			adapter_kind = "World"
 		else:

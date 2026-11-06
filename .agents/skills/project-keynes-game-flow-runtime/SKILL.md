@@ -14,9 +14,8 @@ WorldClock, and player-scene ownership boundaries.
 Read these current sources before changing behavior:
 
 - `references/system-map.md`
-- `docs/cpp-dots-runtime/game-flow-start-save.md`
-- `docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `docs/cpp-dots-runtime/country-scheduling-save.md`
+- `docs/architecture/development-guide.md`
+- `docs/architecture/current-state.md`
 - `Project/project-keynes/project.godot`
 - `Project/project-keynes/scripts/game/game_flow_service.gd`
 - `Project/project-keynes/scripts/game/new_game_config.gd`
@@ -136,7 +135,7 @@ are bootstrapped, the host is not STOPPED/FAULTED, and `newest_state_day` advanc
 PKSR restore lets the clock free-run with nothing simulating.
 
 Save/load under worker authority was repaired end to end on 2026-09-23; the full chain
-is in `docs/cpp-dots-runtime/game-flow-start-save.md` ("Save/load under worker
+is in `docs/architecture/development-guide.md` ("Save/load under worker
 authority"). The rules that fell out of it:
 
 - Under worker Country authority the main-thread `NativeCountryRuntime` is stale (never
@@ -179,14 +178,14 @@ Run at minimum:
 
 For changes that can affect settlement outcomes, run 60-day, two-year, and
 ten-year economy soaks and require zero population, money, and goods
-conservation error. Update `game-flow-start-save.md`, the authority matrix, and
+conservation error. Update `docs/architecture/development-guide.md`, the authority matrix, and
 the system map whenever ownership, ordering, sections, or compatibility changes.
 When a change touches the vision/fog provider, also update
 `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
 
 ## World session lifecycle (2026-11-03)
 
-Read `docs/architecture/world-runtime-design.md` and `development-guide.md`.
+Read `docs/architecture/design.md` and `development-guide.md`.
 `WorldSession` orders preparation/cancellation/release through
 `world_session_modules.gd`. New lifecycle adapters register before generation;
 persisted state registers separately through `GameSave.register_state_module`.

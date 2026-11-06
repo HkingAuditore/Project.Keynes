@@ -114,7 +114,7 @@ This is the single failure mode that has reached players as a mid-game stop
   fallback?" for each one. `coordinate_country_cohort_cash`'s fast path could not reach the
   `block_or_enqueue_country_worker_asset` fallback sitting directly below it.
 
-Details: `docs/cpp-dots-runtime/native-economy-runtime.md`, section
+Details: `docs/architecture/current-state.md`, section
 「2026-09-22 Country asset backpressure 与 fatal 取证」.
 
 ## Keep fatal diagnostics honest

@@ -1,6 +1,7 @@
+#include <cassert>
 #include "runtime_events_authority.h"
 #include "economy_cost_probe.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -129,6 +130,7 @@ RuntimeEventsAuthority::RuntimeEventsAuthority() { reset(); }
 
 void RuntimeEventsAuthority::reset(uint32_t capacity) {
     const uint32_t bounded = std::clamp(capacity, 1u, RUNTIME_DOMAIN_EVENT_CAPACITY);
+    _trigger_view_cursor = {};
     _current = RuntimeEventsSnapshot{};
     _current.capacity = bounded;
     _current.events.reserve(bounded);
@@ -138,6 +140,11 @@ void RuntimeEventsAuthority::reset(uint32_t capacity) {
     _planned = RuntimeEventsSnapshot{};
     _report = RuntimeEventsReport{};
     _plan_ready = false;
+}
+
+RuntimeEventsCommittedView RuntimeEventsAuthority::copy_committed_view() const {
+    assert(!_plan_ready);
+    return {_current.generation, _current.committed_day, !_plan_ready, _current.events};
 }
 
 uint64_t RuntimeEventsAuthority::hash_snapshot(const RuntimeEventsSnapshot &snapshot) {
@@ -376,7 +383,7 @@ bool RuntimeEventsAuthority::plan_day(int64_t day,
                                       RuntimeEventsReport &report,
                                       std::string &error) {
     static const bool scalar_compaction = [] {
-        const char *value = std::getenv("PK_EVENTS_APPEND_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_EVENTS_APPEND_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     return plan_day_internal(day, commands, planned_snapshot, receipts, report, error, scalar_compaction);
@@ -585,6 +592,7 @@ bool RuntimeEventsAuthority::restore(const uint8_t *data, size_t size,
         if (error.empty()) error = "events_save_state_hash_invalid";
         return false;
     }
+    _trigger_view_cursor = {};
     _current = std::move(candidate);
     _planned = RuntimeEventsSnapshot{};
     _report = RuntimeEventsReport{};
@@ -621,6 +629,20 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
         if (error.empty()) error = "events_order_or_overflow_invalid";
         return false;
     }
+    const auto first_view = authority.copy_committed_view();
+    RuntimeEventsViewCursor cursor;
+    if (!cursor.observe(first_view) || !cursor.observe(first_view)) {
+        error = "events_view_retry_invalid"; return false;
+    }
+    auto invalid_view = first_view;
+    invalid_view.committed = false;
+    if (cursor.observe(invalid_view)) { error = "events_view_uncommitted_accepted"; return false; }
+    invalid_view = first_view;
+    --invalid_view.generation;
+    if (cursor.observe(invalid_view)) { error = "events_view_generation_regressed"; return false; }
+    invalid_view = first_view;
+    --invalid_view.day;
+    if (cursor.observe(invalid_view)) { error = "events_view_day_regressed"; return false; }
     RuntimeCommandPacket ack{};
     ack.envelope.request_id = 31; ack.envelope.producer_id = 1; ack.envelope.sequence = 2;
     ack.envelope.requested_day = 2; ack.envelope.effective_day = 2;
@@ -649,6 +671,10 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
         if (error.empty()) error = "events_ack_monotonic_invalid";
         return false;
     }
+    if (!cursor.observe(authority.copy_committed_view()) || first_view.day != 1 ||
+        first_view.events.size() != 2 || first_view.events[0].type != 4) {
+        error = "events_view_ownership_invalid"; return false;
+    }
     const RuntimeEventsSnapshot copy = authority.snapshot();
     if (copy.events.empty() || copy.state_hash != authority.snapshot().state_hash) {
         error = "events_snapshot_copy_invalid";
@@ -665,6 +691,13 @@ bool RuntimeEventsAuthority::self_test(std::string &error) {
         return false;
     }
 
+    if (!restored.observe_trigger_view(restored.copy_committed_view())) {
+        error = "events_view_restore_invalid"; return false;
+    }
+    restored.reset();
+    if (!restored.observe_trigger_view(restored.copy_committed_view())) {
+        error = "events_view_reset_invalid"; return false;
+    }
     RuntimeEventsAuthority isolated;
     isolated.reset(2u);
     RuntimeCommandPacket future_ack = ack;

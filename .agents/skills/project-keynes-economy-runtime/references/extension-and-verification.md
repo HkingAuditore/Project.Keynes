@@ -102,13 +102,13 @@ worker tasks, memory, state hash, and stage breakdown. Do not compare release fi
 
 Update as applicable:
 
-- `native-economy-runtime.md`: authority, data, benchmark, status.
+- `docs/architecture/current-state.md`: authority, data, benchmark, status.
 - `domestic-trade-runtime.md`: topology, planner, orders, escrow, query, report, and non-goals.
 - `economy-fixed-point-ledger-formulas.md`: numeric/clearing/price behavior.
-- `economy-graph-scheduling.md`: stages, cadence, barriers, approximation.
-- `economy-save-migration-sop.md`: byte schema and migration.
-- `runtime-authority-matrix.md`: ACTIVE/PROBE/default and blockers.
-- `scheduling-and-job-graph.md`, `computation-pipelines.md`, bridge and diagnostics docs.
+- `docs/architecture/current-state.md`: stages, cadence, barriers, approximation.
+- `docs/architecture/development-guide.md`: byte schema and migration.
+- `docs/architecture/current-state.md`: ACTIVE/PROBE/default and blockers.
+- `docs/architecture/current-state.md`, `docs/architecture/current-state.md`, bridge and diagnostics docs.
 - `scripts/economy/MODULE.md`, `references/system-map.md`, performance charter.
 
 Run `git diff --check` and use `rg` to ensure retired per-cell goods fields or stale default-cadence

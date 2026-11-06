@@ -8,10 +8,17 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 	var generator = source.get("generator")
 	match id:
 		"dynamic_world":
-			return {"world": source.get("world"), "session": source.session}
+			var ext = generator.get_data_core_world_ext() if generator != null else null
+			return {"world": source.get("world"), "session": source.session,
+				"restore_base_moisture": func():
+					ext.refresh_slots_from_map_keys(PackedStringArray(["cell_base_moisture"])),
+				"base_moisture": func():
+					return ext.snapshot_f32(ext.component_id("cell_base_moisture")) if ext != null else PackedFloat32Array()}
 		"environment":
 			return {"capture_environment": _method(generator, "export_environment_runtime_state"),
-				"restore_environment": _method(generator, "restore_environment_runtime_state")}
+				"restore_environment": _method(generator, "restore_environment_runtime_state"),
+				"weather_result": func(): return int(generator._native_daily_last_result.get("rc", -1)),
+				"restore_weather_result": func(rc: int): generator._native_daily_last_result["rc"] = rc}
 		"world_clock":
 			return {"clock": source.get("clock"), "clock_restored": source.clock_restored,
 				"saved_paused": source.saved_paused, "saved_speed": source.saved_speed}
@@ -26,7 +33,8 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 				"native_country_pkcn": source.get("native_country_pkcn", PackedByteArray()),
 				"prepare_economy": _method(generator, "prepare_economy_save_restore_runtime")}
 		"pkmi":
-			return {"military": _facade(generator, "military"), "country": _facade(generator, "country")}
+			return {"military": _facade(generator, "military"), "country": _facade(generator, "country"),
+				"military_progress": generator.get_military_daily_job() if generator != null else null}
 		"pkai":
 			return {"country_ai": _facade(generator, "country_ai"), "country": _facade(generator, "country")}
 		"ecp2":

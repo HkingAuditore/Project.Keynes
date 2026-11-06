@@ -12,7 +12,7 @@
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
 #include "metric_mask_tests.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -483,7 +483,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // 诊断旁路：PK_INLINE_PARALLEL=1 时即使内联日也保留线程池，用来 A/B 量
     // "内联日 + 固定线程池" 到底多贵（浏览器挂死的现场复现/复测）。
     static const bool inline_parallel_override = [] {
-        const char *value = std::getenv("PK_INLINE_PARALLEL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_INLINE_PARALLEL);
         return value != nullptr && std::strcmp(value, "1") == 0;
     }();
     // [web-parallel 2026-10-31] 浏览器里 Emscripten 的 pthread 池是**固定 16 槽**
@@ -500,7 +500,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     // 与走 inline 还是 worker 无关。桌面（非 wasm）不受影响。
     // A/B 旁路：PK_WEB_PARALLEL=1 时保留线程池。
     static const bool web_parallel_override = [] {
-        const char *value = std::getenv("PK_WEB_PARALLEL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_WEB_PARALLEL);
         return value != nullptr && std::strcmp(value, "1") == 0;
     }();
 #if defined(__EMSCRIPTEN__)
@@ -1482,6 +1482,10 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     // 这两个标志的语义见 RuntimeEnvironmentSnapshot 里各自的注释。两者都不能默认
     // 成 true：SHADOW 下 round scalars 与 season refresh 的真值来自 reference
     // publish，无条件补偿会让 parity 立刻分叉。
+    if (inputs.has("climate_capture_cursors")) {
+        const PackedFloat64Array cursors = inputs["climate_capture_cursors"];
+        if (cursors.size() == 11) snapshot.climate_capture_cursors.assign(cursors.ptr(), cursors.ptr() + cursors.size());
+    }
     if (!read_bool("climate_worker_authoritative", false,
                    snapshot.climate_worker_authoritative) ||
         !read_bool("climate_season_refresh_ran", false,
@@ -1490,7 +1494,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         out["code"] = "invalid_runtime_input_value";
         return out;
     }
-
     // 生产 Climate round 的输入缓冲。ACTIVE 下这个字典还带着全套 round scalars
     // （GDScript 的 _build_runtime_climate_round_scalar_knobs），因为生产各 pass 的
     // record_production_round_scalars 在抑制门后不再被调到。fill_climate_round_input
@@ -1518,7 +1521,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         _captured_climate_round_input_valid = true;
         _captured_climate_round_input_day = snapshot.day;
     }
-
     // round 不变量。只在 bind_map_data 之后变一次，所以与 per-day 输入分开走。
     // 缺 albedo_table 会让 stage 8 静默跳过（而 albedo 是 temp 的日内最后写者）；
     // 缺 water_terrain_ids 会让 sea_ice 撞守卫跳过 —— 实测的 starved=0x40 就是它。
@@ -1552,7 +1554,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             dst.water_terrain_ids.assign(ids.ptr(), ids.ptr() + ids.size());
         }
     }
-
     // ── climate_stage_knobs：ACTIVE 下 worker 自己到不了的那几个 stage ─────
     //
     // 这些 stage 不在 climate round 里 —— 它们跑在 native daily graph 的 stage_b 段、
@@ -1564,7 +1565,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     if (inputs.has("climate_stage_knobs") &&
         inputs["climate_stage_knobs"].get_type() == Variant::DICTIONARY) {
         const Dictionary stage_knobs = inputs["climate_stage_knobs"];
-
         // stage 11 后半段 weather distribute —— snow_cover / snowpack /
         // water_balance_30d 的当日最后一个写者。缺了它这三条恒为 0，而 sea_ice 与
         // albedo 都读 snow_cover，缺口会一路往下游传。
@@ -1584,7 +1584,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             // distribute 正是被抑制的那一方 —— 每天拿它那份不再推进的缓存播种会让
             // snow_accum_days_req 永远攒不满，snow_cover 于是恒为 0。
             wd->own_snow_state = true;
-
             const auto kf = [&d](const char *key, float fallback) {
                 return d.has(key) ? float(d[key]) : fallback;
             };
@@ -1620,7 +1619,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             k.weather_temp_anomaly_cap = anomaly_cap;
             k.direct_moisture_enabled =
                 bool(d.get("weather_direct_moisture_enabled", false));
-
             // 四张 WeatherType 剖面表都是定长 8。长度不对就整份不发：内核对它们
             // 只按 wt id 索引、不做范围检查。
             bool tables_ok = true;
@@ -1654,7 +1652,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             table_f32("moisture_delta_arr", k.moist_delta);
             table_u8("can_form_snow_arr", k.can_form_snow);
             table_u8("can_form_flood_arr", k.can_form_flood);
-
             // 读 lane 走 environment 快照（与生产读 _slots 同一份数据）。temp /
             // moisture / snow_cover / snowpack / water_balance_30d 与 weather 四条
             // 不在这里：内核用 worker 自己 store 那一份，见 runtime_climate_kernel.cpp
@@ -1672,7 +1669,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             // 语义（一定写 field_init=1），内核也用自己的 scratch 覆盖它 —— 这里
             // 只是把守卫喂饱。
             wd->weather_field_init.assign(cells, 1u);
-
             const auto lane_i32 = [&d, cells](const char *key,
                                               std::vector<int32_t> &out_vec) {
                 const Variant raw = d.get(key, Variant());
@@ -1691,7 +1687,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             if (wd->pre_snow_cover.size() != cells) {
                 wd->pre_snow_cover.assign(cells, 0);
             }
-
                 if (tables_ok) {
                     snapshot.climate_weather_distribute = wd;
                 }
@@ -2782,23 +2777,23 @@ Dictionary DCWorldExt::request_runtime_save(int64_t request_id) {
     if (_country_runtime != nullptr) {
         CountryCoreCheckpoint checkpoint;
         std::string country_error;
-        // Under worker Country authority the main-thread NativeCountryRuntime
-        // is never written after bootstrap (the read view only repairs
-        // MapData territory), so capturing it saved the day-0 country: every
-        // territory, research, and treasury change made on the worker was
-        // lost on save, and the restored POD (committed_day=-1) could not
-        // continue from the host's committed day. The query replica tracks the
-        // worker's latest committed snapshot and is what the UI already reads.
+        // Save authority and the compatibility input replica separately.
         NativeCountryRuntime *country_source = country_query_runtime();
         const bool worker_owns_country =
             country_source != static_cast<NativeCountryRuntime *>(_country_runtime);
-        if (country_source == nullptr ||
-            !(worker_owns_country
+        CountryCoreCheckpoint compatibility;
+        if (worker_owns_country &&
+            !static_cast<NativeCountryRuntime *>(_country_runtime)->capture_worker_committed_checkpoint(
+                compatibility, country_error)) {
+            out["ok"] = false; out["code"] = String(country_error.c_str()); return out;
+        }
+        const bool captured = country_source != nullptr && (worker_owns_country
                 ? country_source->capture_worker_committed_checkpoint(
                       checkpoint, country_error)
                 : country_source->capture_core_checkpoint(
-                      checkpoint, country_error)) ||
-            !_runtime_host->publish_country_checkpoint(checkpoint,
+                      checkpoint, country_error));
+        checkpoint.compatibility_pkcn = std::move(compatibility.canonical_pkcn);
+        if (!captured || !_runtime_host->publish_country_checkpoint(checkpoint,
                                                        country_error)) {
             out["ok"] = false;
             out["pending"] = false;
@@ -3874,6 +3869,11 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     apply_extra_u8("weather_field_init", "cell_weather_field_init",
                    snapshot.weather_field_init);
 
+    if (!snapshot.restored_capture_cursors.empty()) {
+        PackedFloat64Array cursors; cursors.resize(snapshot.restored_capture_cursors.size());
+        std::memcpy(cursors.ptrw(), snapshot.restored_capture_cursors.data(), cursors.size() * sizeof(double));
+        out["restored_capture_cursors"] = cursors;
+    }
     const int64_t applied_day = snapshot.committed_day;
     const uint64_t applied_generation = snapshot.generation;
     const uint64_t applied_state_hash = snapshot.state_hash;

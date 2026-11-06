@@ -2,7 +2,7 @@
 #include "country_runtime.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 
 namespace pk {
@@ -27,10 +27,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int64_t>(payload, _epoch_id.get());
         append_le<int32_t>(payload, NativeCountryRuntime::SCHEMA_VERSION);
         append_le<uint64_t>(payload, _save_country_identity_override
-            ? _save_country_generation : _country_runtime->generation());
+            ? _save_country_generation : country_reads().generation());
         append_le<uint64_t>(payload, _save_country_identity_override
             ? _save_country_state_hash
-            : static_cast<uint64_t>(_country_runtime->state_hash()));
+            : static_cast<uint64_t>(country_reads().state_hash()));
         append_le<int64_t>(payload, _seed.get());
         append_le<int64_t>(payload, _catalog_hash.get());
         append_le<int64_t>(payload, _building_catalog_hash.get());
@@ -1334,7 +1334,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 record += record_bytes;
             }
             static const bool verify_codec = [] {
-                const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+                const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_CODEC_VERIFY);
                 return value && std::strcmp(value, "1") == 0;
             }();
             if (verify_codec) {

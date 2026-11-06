@@ -1097,6 +1097,46 @@ bool MilitaryCore::self_test(std::string &report) {
         }
     }
     ST_CHECK(symmetric, "32x24 wrap hex map: neighbour table symmetric");
+    {
+        Sim sim;
+        ST_CHECK(sim.init(t, 2526), "index continuation init");
+        auto &c = sim.core;
+        const int32_t cell = cell_at(5, 5);
+        const int32_t old = c.lot_find_or_create(MILITARY_LOT_GARRISON, cell, 0, 0, 256);
+        c._lots.count[(size_t)old] = 0;
+        c._lots.active[(size_t)old] = 0;
+        c._lots.free_list.push_back(old);
+        const int32_t reused = c.lot_find_or_create(MILITARY_LOT_GARRISON, cell, 0, 0, 256);
+        c._lots.count[(size_t)reused] = 3;
+        ST_CHECK(reused == old && c._lots.active[(size_t)old] == 0,
+            "inactive linked slot reuse keeps original mutation semantics");
+        const auto bytes = c.encode();
+        MilitaryCore copy;
+        std::string error;
+        ST_CHECK(copy.configure(make_catalog(), 2526, error) && copy.set_terrain(t, error) &&
+            copy.restore(bytes.data(), bytes.size(), error), "index continuation restore");
+        ST_CHECK(copy._lot_army_head == c._lot_army_head && copy._lot_cell_head == c._lot_cell_head &&
+            copy._lot_next == c._lot_next && copy._lot_link_kind == c._lot_link_kind &&
+            copy._lot_link_loc == c._lot_link_loc && copy._lots.active == c._lots.active &&
+            copy._lots.location_kind == c._lots.location_kind && copy._lots.location == c._lots.location &&
+            copy._lots.count == c._lots.count && copy._lots.country_slot == c._lots.country_slot &&
+            copy._lots.unit_type == c._lots.unit_type && copy._lots.equip_quality_q8 == c._lots.equip_quality_q8 &&
+            copy._lots.condition_q16 == c._lots.condition_q16 && copy._lots.free_list == c._lots.free_list &&
+            copy._armies.generation == c._armies.generation && copy._army_lane_pending == c._army_lane_pending &&
+            copy._armies.free_list == c._armies.free_list,
+            "index heads next inactive payload and free-slot order match field by field");
+        ST_CHECK(copy.present_for_cell(cell) == c.present_for_cell(cell) && copy.encode() == bytes,
+            "index continuation query and bytes stable");
+        c._lot_next[(size_t)old] = old;
+        auto cycle = c.encode();
+        ST_CHECK(!copy.restore(cycle.data(), cycle.size(), error) && copy.encode() == bytes,
+            "cyclic index rejected without modifying live state");
+        c._lot_next[(size_t)old] = -1;
+        auto legacy = bytes;
+        legacy[4] = 1;
+        ST_CHECK(!copy.restore(legacy.data(), legacy.size(), error) &&
+            error == "pkmi_version_mismatch_expected_2", "PKMI v1 explicitly refused");
+    }
     if (!test_idle(t, report)) return false;
     uint64_t h1 = 0, h2 = 0, w1 = 0, w2 = 0, a1 = 0, a2 = 0;
     std::string stats, stats2;

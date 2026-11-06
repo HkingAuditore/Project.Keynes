@@ -117,4 +117,4 @@ VERIFY OK
 | `gdext/src/world_ext_modifier.cpp` | 报告新增 5 个内存字段 |
 | `Project/project-keynes/tests/ideology/ideology_b7_wide_territory_test.gd` | 4 条内存断言（含不变量 + 上限），27 checks |
 | `Project/project-keynes/tools/ideology/verify_delivery.py` | 配对行判定 + B7 期望 27 |
-| `docs/cpp-dots-runtime/native-ideology-runtime.md` | 字段说明 |
+| `docs/architecture/current-state.md` | 字段说明 |

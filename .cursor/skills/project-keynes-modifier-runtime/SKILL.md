@@ -17,7 +17,7 @@ Use this skill for every Modifier Runtime change. Also load:
 
 ## Grounding
 
-Read `docs/cpp-dots-runtime/native-modifier-runtime.md` first. Then read only the
+Read `docs/architecture/current-state.md` first. Then read only the
 reference relevant to the task:
 
 - Data structures, catalog, handles, formula: `references/architecture-and-data.md`.

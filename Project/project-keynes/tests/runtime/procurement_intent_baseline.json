@@ -1,0 +1,55 @@
+{
+  "country_sha256": "13d8d3ceb67405b86efa774e33080c369267e516268c717abfc8169c85add609",
+  "economy_sha256": "8486a3eb674de2850b9d1ba22245dddf9cadefa3a32e71421d48ded35efd9d0a",
+  "economy_state_hash": "4441927483466265613",
+  "restored_economy_sha256": "b3fa8883cfd9d859a649820814baa56919e1b86ccfb5422ad8966dde00d0cf35",
+  "restored_economy_state_hash": "4441927483466265613",
+  "returns": [
+    {
+      "all_or_nothing": false,
+      "committed_cash": 48850,
+      "committed_goods_total": 10000,
+      "committed_quantity": 10000,
+      "conservation_ok": true,
+      "country_cash_after": 451150,
+      "country_cash_before": 500000,
+      "country_generation": 3,
+      "country_good_after": 10000,
+      "country_good_before": 0,
+      "country_goods_after": [
+        10000
+      ],
+      "country_goods_before": [
+        0
+      ],
+      "country_handle": 4294967296,
+      "country_slot": 0,
+      "effective_country_day": 1,
+      "good_ids": [
+        62
+      ],
+      "good_quantities": [
+        10000
+      ],
+      "ok": true,
+      "operation": 8,
+      "operation_sequence": 2,
+      "origin_domain": 9,
+      "origin_epoch": 2,
+      "origin_stage": 15,
+      "peer_generation": 3,
+      "prepared_quantity": 10000,
+      "rejection_reason": "",
+      "request_id": 2,
+      "requested_cash": 48850,
+      "requested_goods_total": 10000,
+      "requested_quantity": 10000,
+      "reserved_cash": 0,
+      "reserved_goods_total": 0,
+      "session_epoch": 3,
+      "status": 7,
+      "status_name": "completed",
+      "transaction_id": 2
+    }
+  ]
+}

@@ -65,7 +65,7 @@ Assert-Text "gdext/src/modifier_runtime.h" @(
 Assert-Text "Project/project-keynes/scripts/game/game_save_coordinator.gd" @(
 	'"pkcm"', '"pkgp"', '&"pkcn", 10', '&"pkec", 33'
 )
-Assert-Text "docs/cpp-dots-runtime/native-modifier-runtime.md" @(
+Assert-Text "docs/architecture/current-state.md" @(
 	"clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v11", "PKEC v33", "PKGP v1"
 )
 Assert-Text ".codex/skills/project-keynes-modifier-runtime/SKILL.md" @(

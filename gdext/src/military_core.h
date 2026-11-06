@@ -39,7 +39,7 @@
 namespace pk {
 
 constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
-constexpr uint32_t PKMI_VERSION = 1u;
+constexpr uint32_t PKMI_VERSION = 2u;
 constexpr int32_t MILITARY_MAX_UNIT_TYPES = 64;
 constexpr int32_t MILITARY_MAX_EQUIP_SLOTS = 4;
 constexpr int32_t MILITARY_MAX_SUPPLY_CLASSES = 6;

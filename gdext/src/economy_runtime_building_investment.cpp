@@ -2,7 +2,7 @@
 #include "economy_cost_probe.h"
 #include "country_runtime.h"
 #include "parallel_dispatcher.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -633,7 +633,7 @@ NativeEconomyRuntime::StartupProducerMemoScope::StartupProducerMemoScope(
         const NativeEconomyRuntime &owner) : runtime(owner) {
     auto &state = startup_producer_memo_state();
     static const bool memo_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (memo_disabled) return;
@@ -699,7 +699,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                          _building_inputs.size(), _building_types.size());
         if (memo.producer_stamp[slot_idx] == memo.fast_gen) {
             static const bool verify_startup_memo = [] {
-                const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+                const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
                 return value && std::strcmp(value, "1") == 0;
             }();
             if (verify_startup_memo) {
@@ -728,7 +728,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
     }
     EconomyCostProbe cost("startup_producer_select", _current_day.get(), 1);
     static const bool startup_trace = [] {
-        const char *value = std::getenv("PK_ECONOMY_STARTUP_TRACE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_STARTUP_TRACE);
         return value && std::strcmp(value, "1") == 0;
     }();
     double trace_cond_ms = 0.0;
@@ -1669,11 +1669,11 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     // reuses the previous computed vector instead of re-running the full
     // per-cell preview/BFS pass. PK_ECONOMY_TRACK_B=0 restores exact mode.
     static const bool track_b_enabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B);
         return !(value && std::strcmp(value, "0") == 0);
     }();
     static const int32_t track_b_derived_cadence = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B_DERIVED_CADENCE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_DERIVED_CADENCE);
         const int32_t parsed = value ? std::atoi(value) : 0;
         return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
     }();
@@ -1682,7 +1682,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     // rest, flattening the per-day cost. Set to 1 to fall back to whole-pass
     // cadence; PK_ECONOMY_TRACK_B=0 restores the exact daily pass.
     static const int32_t track_b_derived_spread = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B_DERIVED_SPREAD");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_DERIVED_SPREAD);
         const int32_t parsed = value ? std::atoi(value) : 0;
         return parsed > 0 ? std::min<int32_t>(parsed, 32) : 4;
     }();
@@ -1735,7 +1735,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         _economy_live_cells.empty()) return;
     if (_investment_good_stamp.size() != _good_ids.size())
         _investment_good_stamp.assign(_good_ids.size(), 0);
-    const char *workset_disabled = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+    const char *workset_disabled = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_ACTIVE_WORKSET_DISABLE);
     const bool use_snapshot = !(workset_disabled && std::strcmp(workset_disabled, "1") == 0);
     // capture_country_epoch 已完成，后面的派生传播不修改国家科技。这里可在
     // _epoch_active 置位之前复用同一冻结掩码，避免每个组件再查询国家运行时。
@@ -1753,13 +1753,13 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     // the ordered merge stays bit-identical regardless of task count.
     // PK_ECONOMY_DERIVED_PARALLEL=0 restores the serial reference path.
     static const bool derived_parallel_enabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_DERIVED_PARALLEL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_PARALLEL);
         return !(value && std::strcmp(value, "0") == 0);
     }();
     // Diagnostic-only override for task-count sweeps; task count never changes
     // simulation results (parallel and serial outputs are bit-identical).
     static const int32_t derived_forced_tasks = [] {
-        const char *value = std::getenv("PK_ECONOMY_DERIVED_TASKS");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_TASKS);
         if (value == nullptr || *value == '\0') return 0;
         const int32_t parsed = std::atoi(value);
         return parsed > 0 ? std::min<int32_t>(parsed, 32) : 0;
@@ -1806,7 +1806,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     // probe-free runs (no PK_ECONOMY_COST_CSV) can still compare the derived
     // section wall clock against the sum of task wall clocks.
     static const bool derived_trace = [] {
-        const char *value = std::getenv("PK_ECONOMY_DERIVED_TRACE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_DERIVED_TRACE);
         return value && std::strcmp(value, "1") == 0;
     }();
     static std::atomic<int64_t> derived_trace_task_us{0};

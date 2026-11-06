@@ -57,11 +57,8 @@ description: Develop, review, tune, migrate, optimize, or diagnose the Project.K
 
 再读当前文档中的相关章节：
 
-- `docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 
 输出一份简短 grounding note，至少写明：
 
@@ -154,7 +151,7 @@ climate_pass_a
 - 保留明确的 PROBE/A-B/stale-DLL/failure fallback，直到有 parity 和 soak 证据。
 - 报告 `fallback_reason`，不要只打印日志。
 - 证明 fallback 仍在生产可达前，保持公式镜像；若只作隔离测试，明确标记并从 hot path 移出。
-- 删除前更新 `runtime-deletion-inventory.md`，用 `rg` 证明无生产调用。
+- 删除前更新 `docs/architecture/current-state.md`，用 `rg` 证明无生产调用。
 
 ## 数值与物理底线
 

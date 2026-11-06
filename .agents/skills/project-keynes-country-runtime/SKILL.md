@@ -73,7 +73,7 @@ snapshot must treat an open window as **backpressure**, not as an error.
 authoritative / illegal operation stay `country_worker_cohort_cash_boundary_invalid` and remain
 fatal. Merging the two classes back into one reason is what produced the day-2744 economy stop;
 `country_economy_asset_protocol_self_test()` now guards the split. See
-`docs/cpp-dots-runtime/country-economy-bridge.md`.
+`docs/architecture/development-guide.md`.
 
 ## Research-signal evidence
 

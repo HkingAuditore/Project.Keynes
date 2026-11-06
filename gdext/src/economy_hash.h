@@ -7,7 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
-
+#include "runtime_switch_registry.h"
 namespace pk {
 
 // 保持原 little-endian 八字节 FNV-1a ABI；连续零字节可合并为一次乘法。
@@ -76,11 +76,11 @@ inline uint64_t economy_hash_bytes(uint64_t hash, const uint8_t *data,
 inline uint64_t economy_save_hash_bytes(const uint8_t *data, size_t size) noexcept {
     constexpr uint64_t offset = 1469598103934665603ULL;
     static const bool scalar = []() {
-        const char *value = std::getenv("PK_SAVE_BYTE_HASH_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_BYTE_HASH_SCALAR);
         return value && value[0] == '1';
     }();
     static const bool verify = []() {
-        const char *value = std::getenv("PK_SAVE_BYTE_HASH_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_BYTE_HASH_VERIFY);
         return value && value[0] == '1';
     }();
     if (scalar) return economy_hash_bytes_scalar(offset, data, size);

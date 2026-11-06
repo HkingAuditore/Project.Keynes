@@ -704,7 +704,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
             research_daily_budget, std::max(1, _epoch_days.get()), _saturation_count);
     }
     const int64_t spendable = std::max<int64_t>(
-        0, _country_runtime->cash_for_slot(country));
+        0, country_reads().cash_for_slot(country));
     const int64_t reservable =
         std::max<int64_t>(0, spendable - research_floor);
     // Keep the original weight total as the allocation denominator. Capping
@@ -1823,6 +1823,159 @@ bool NativeEconomyRuntime::run_fiscal_settlement_drain(std::string &error) {
     error = "fiscal_settlement_drain_exhausted";
     fail(error);
     return false;
+}
+
+int64_t NativeEconomyRuntime::pay_building_wage_amount(
+        int32_t cell, int32_t owner_slot, int32_t profession_id,
+        int64_t filled_jobs, int64_t due, int64_t payment_cap,
+        int64_t *saturation_override) {
+    int64_t &_saturation_count = saturation_override != nullptr
+        ? *saturation_override : this->_saturation_count;
+    if (filled_jobs <= 0 || due <= 0 || payment_cap <= 0 || owner_slot < 0) return 0;
+    const bool trace_detail = trace_detail_for_cell(cell);
+    const int64_t owner_handle = static_cast<int64_t>(population_store().handle_for_slot(owner_slot));
+    const int64_t owner_funds_before = population_store().funds[owner_slot];
+    const int64_t owner_expense_before = population_store().epoch_expense[owner_slot];
+    thread_local std::vector<int32_t> trace_slots;
+    thread_local std::vector<int64_t> trace_funds;
+    thread_local std::vector<int64_t> trace_income;
+    trace_slots.clear(); trace_funds.clear(); trace_income.clear();
+    int64_t total_employed = 0;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
+        if (_signatures[signature].profession_id == profession_id) {
+            total_employed = saturating_add(total_employed,
+                population_store().employee_employed[slot], _saturation_count);
+            if (trace_detail && population_store().employee_employed[slot] > 0) {
+                trace_slots.push_back(slot);
+                trace_funds.push_back(population_store().funds[slot]);
+                trace_income.push_back(population_store().epoch_income[slot]);
+            }
+        }
+    });
+    if (total_employed <= 0) {
+        trace_append(EVENT_WAGE_SETTLED, static_cast<int32_t>(Stage::BUILDING_PRODUCTION),
+                     cell, SUBJECT_COHORT, owner_handle, profession_id, -1,
+                     filled_jobs, due, 0, due, nullptr);
+        return 0;
+    }
+    const int64_t paid = std::min(
+        std::min(due, payment_cap), std::max<int64_t>(0, population_store().funds[owner_slot]));
+    touch_accounting_slot(owner_slot);
+    population_store().funds.write_scalar(owner_slot, population_store().funds[owner_slot] - (paid), market_mutation_sink());
+    population_store().epoch_expense.write_scalar(owner_slot, saturating_add(
+        population_store().epoch_expense[owner_slot], paid, _saturation_count), market_mutation_sink());
+    trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
+                          CASHFLOW_OWNER_WAGES, 0, paid);
+    int64_t prefix = 0;
+    int64_t distributed = 0;
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
+        if (_signatures[signature].profession_id != profession_id ||
+            population_store().employee_employed[slot] <= 0) return;
+        touch_accounting_slot(slot);
+        prefix = saturating_add(prefix, population_store().employee_employed[slot],
+                                _saturation_count);
+        const int64_t next = mul_div_sat(paid, prefix, total_employed, _saturation_count);
+        const int64_t share = std::max<int64_t>(0, next - distributed);
+        distributed = next;
+        int64_t income_tax = 0;
+        if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+                1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
+            const int32_t income_rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_INCOME, profession_id);
+            const int32_t income_mode = frozen_tax_mode(
+                cell, NativeCountryRuntime::TAX_INCOME, profession_id);
+            if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                // Settled in settle_absolute_daily_taxes_for_cell.
+            } else if (income_rate < 0) {
+                if (slot >= 0 && slot < static_cast<int32_t>(
+                        _income_taxable_base_by_slot.size())) {
+                    _income_taxable_base_by_slot[slot] = saturating_add(
+                        _income_taxable_base_by_slot[slot], share,
+                        _saturation_count);
+                }
+            } else {
+                income_tax = apply_fiscal_tax(
+                    cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
+                    income_mode, _saturation_count);
+                record_cohort_fiscal(slot, income_tax);
+            }
+        }
+        const int64_t net_share = saturating_sub(
+            share, income_tax, _saturation_count);
+        population_store().funds.write_scalar(slot, saturating_add(population_store().funds[slot], net_share,
+                                                 _saturation_count), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, saturating_add(
+            population_store().epoch_income[slot], share, _saturation_count), market_mutation_sink());
+        trace_record_cashflow(cell, population_store().handle_for_slot(slot),
+                              CASHFLOW_WAGES, share, 0);
+        if (income_tax > 0)
+            trace_record_cashflow(cell, population_store().handle_for_slot(slot),
+                                  CASHFLOW_INCOME_TAX, 0, income_tax);
+        else if (income_tax < 0)
+            trace_record_cashflow(cell, population_store().handle_for_slot(slot),
+                                  CASHFLOW_INCOME_SUBSIDY, -income_tax, 0);
+    });
+    std::vector<EventLeg> legs;
+    if (trace_detail) {
+        if (owner_funds_before != population_store().funds[owner_slot]) {
+            legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, owner_handle, -1,
+                            owner_funds_before, population_store().funds[owner_slot]});
+        }
+        if (owner_expense_before != population_store().epoch_expense[owner_slot]) {
+            legs.push_back({FIELD_COHORT_EPOCH_EXPENSE, SUBJECT_COHORT, owner_handle, -1,
+                            owner_expense_before, population_store().epoch_expense[owner_slot]});
+        }
+        for (size_t i = 0; i < trace_slots.size(); ++i) {
+            const int32_t worker_slot = trace_slots[i];
+            const int64_t handle = static_cast<int64_t>(population_store().handle_for_slot(worker_slot));
+            if (trace_funds[i] != population_store().funds[worker_slot]) {
+                legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, handle, -1,
+                                trace_funds[i], population_store().funds[worker_slot]});
+            }
+            if (trace_income[i] != population_store().epoch_income[worker_slot]) {
+                legs.push_back({FIELD_COHORT_EPOCH_INCOME, SUBJECT_COHORT, handle, -1,
+                                trace_income[i], population_store().epoch_income[worker_slot]});
+            }
+        }
+    }
+    trace_append(EVENT_WAGE_SETTLED, static_cast<int32_t>(Stage::BUILDING_PRODUCTION),
+                 cell, SUBJECT_COHORT, owner_handle, profession_id, -1,
+                 filled_jobs, due, distributed, due - distributed,
+                 legs.empty() ? nullptr : &legs);
+    return distributed;
+}
+
+int64_t NativeEconomyRuntime::projected_employee_tax_retention_q16(
+        BuildingGroupConstRef group, int64_t &sat) const {
+    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) == 0)
+        return Q16_ONE;
+    if (group.type_id < 0 ||
+        group.type_id >= static_cast<int32_t>(_building_types.size()) ||
+        group.count <= 0) return 0;
+    const BuildingType &type = _building_types[group.type_id];
+    int64_t weighted_take_home = 0;
+    int64_t weighted_gross = 0;
+    for (int32_t r = 0; r < type.employee_count; ++r) {
+        const JobRole &role = _building_employee_roles[type.employee_begin + r];
+        const int32_t role_index = group.employee_fill_begin + r;
+        const int64_t gross_wage = role_index >= 0 && role_index <
+                static_cast<int32_t>(_building_role_contract_wage.size())
+            ? _building_role_contract_wage[role_index]
+            : 0;
+        const int64_t take_home = expected_after_tax_income(
+            group.cell, role.profession_id, gross_wage, sat);
+        const int64_t slots = std::max<int64_t>(0,
+            role.slots_per_building);
+        weighted_take_home = saturating_add(
+            weighted_take_home, saturating_mul(take_home, slots, sat), sat);
+        weighted_gross = saturating_add(
+            weighted_gross, saturating_mul(gross_wage, slots, sat), sat);
+    }
+    if (weighted_gross <= 0) return Q16_ONE;
+    return mul_div_sat(weighted_take_home, Q16_ONE, weighted_gross, sat);
 }
 
 } // namespace pk

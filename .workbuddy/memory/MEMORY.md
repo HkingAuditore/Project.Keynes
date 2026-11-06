@@ -1,7 +1,7 @@
 # Project.Keynes 长期项目记忆
 
 ## 关键架构
-- 地图生成三阶段：① GDScript 发请求 → ② C++ 算完全部 → ③ C++ 返回、GDScript 解包。权威文档：`Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
+- 地图生成三阶段：① GDScript 发请求 → ② C++ 算完全部 → ③ C++ 返回、GDScript 解包。权威文档：`docs/architecture/current-state.md`
 - 详见 skill：`.codebuddy/skills/map-generation-pipeline/SKILL.md`
 
 ## 关键运行参数（实际值，非 map_config 默认）
@@ -19,7 +19,7 @@
 - 河流：缩放指数 0.65→1.0；min_length 指数 0.75→1.0；river_headwater_init 6→10
 - 高原：新增 plateau_max_land_ratio=0.25 面积占比上限（按连通分量面积降序保留，余下降级HILL）；plateau_max_relief 按 pow(15000/N,0.25) 收紧；plateau_min_land_h 0.25→0.35；PK_PLATFORM_UNDULATE 0.03→0.04
 - up_count 未单独归一化（指数1.0已隐含等价归一化，SPL式inv对up_count无效）
-- 改动文件：world_ext_generate.cpp、world_ext_internal.h、climate_profile.gd、computation-pipelines.md
+- 改动文件：world_ext_generate.cpp、world_ext_internal.h、climate_profile.gd、docs/architecture/current-state.md
 
 ## 自然资源系统（2026-06-30 规划阶段，未实现）
 - 状态：已完成 plan，代码实现被回退（git stash@{0} "resource-system-implementation"），用户要求先看 plan 不应用

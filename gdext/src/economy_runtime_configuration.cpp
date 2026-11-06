@@ -1,5 +1,4 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "modifier_runtime.h"
 #include "native_simulation_host.h"
@@ -317,7 +316,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     }
     clear_procurement_runtime_state(true);
     _next_colonization_receipt_id = 1;
-    import_country_ai_pending({}, {}, 0);
+    reset_country_ai_pending();
     _next_family_expedition_stable_id = 1;
     _colonization_quote_cache.clear();
     _colonization_quote_index.clear();
@@ -570,7 +569,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _demand_basis_need_composites.resize(cache_cells * _needs.size());
     _demand_basis_need_environment.resize(cache_cells * _needs.size());
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
-    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+    if (_country_runtime == nullptr || !country_reads().economy_available()) {
         reset("country_runtime_required");
         out["ok"] = false;
         out["reason"] = "country_runtime_required";
@@ -580,7 +579,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     // must not keep reading live Country catalog state across the authority
     // boundary, and the four domain masks are static for the whole session.
     std::vector<int32_t> technology_domains;
-    if (!_country_runtime->copy_technology_domains(technology_domains) ||
+    if (!country_reads().copy_technology_domains(technology_domains) ||
         technology_domains.size() != _technology_ids.size()) {
         reset("country_technology_domains_invalid");
         out["ok"] = false;
@@ -1421,7 +1420,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             (i64_0[i] != 1 ||
              i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
              _country_runtime == nullptr ||
-             !_country_runtime->valid_handle(handles[i]))) {
+             !country_reads().valid_handle(handles[i]))) {
             out["ok"] = false;
             out["reason"] = i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE
                 ? "unsupported_ownership_policy"

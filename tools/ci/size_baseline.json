@@ -1,0 +1,457 @@
+{
+  "version": 1,
+  "files": {
+    "Project/project-keynes/scripts/audio/game_audio_service.gd": {
+      "lines": 1294,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/data/climate_profile.gd": {
+      "lines": 1544,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/data_core/world.gd": {
+      "lines": 1729,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/economy/bootstrap/test_settlement_planner.gd": {
+      "lines": 1545,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/economy/economy_catalog.gd": {
+      "lines": 2330,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/economy/economy_facade.gd": {
+      "lines": 2208,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/economy/starter_economy_planner.gd": {
+      "lines": 1291,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/economy/technology_catalog.gd": {
+      "lines": 1176,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/effect/effect_domain_catalog.gd": {
+      "lines": 946,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
+      "lines": 1133,
+      "limit": 600
+    },
+    "Project/project-keynes/scripts/game/player_controller.gd": {
+      "lines": 2967,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/start_location_policy.gd": {
+      "lines": 1080,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/world_runtime_host.gd": {
+      "lines": 7010,
+      "limit": 600
+    },
+    "Project/project-keynes/scripts/geography/hex_cell.gd": {
+      "lines": 1094,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/geography/map_data.gd": {
+      "lines": 1227,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/geography/map_generator.gd": {
+      "lines": 22547,
+      "limit": 600
+    },
+    "Project/project-keynes/scripts/geography/world_clock.gd": {
+      "lines": 1127,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ideology/ideology_catalog.gd": {
+      "lines": 1787,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/main.gd": {
+      "lines": 4362,
+      "limit": 600
+    },
+    "Project/project-keynes/scripts/military/military_catalog_compiler.gd": {
+      "lines": 827,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/modifier/modifier_catalog.gd": {
+      "lines": 1194,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/narrative/narrative_event_catalog.gd": {
+      "lines": 824,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/narrative/narrative_event_service.gd": {
+      "lines": 921,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/building_visual_layer.gd": {
+      "lines": 1111,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/data_overlay_baker.gd": {
+      "lines": 895,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
+      "lines": 5814,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/map_baker.gd": {
+      "lines": 8588,
+      "limit": 600
+    },
+    "Project/project-keynes/scripts/rendering/military_army_token_layer.gd": {
+      "lines": 1319,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/physical_circulation_solver.gd": {
+      "lines": 1245,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
+      "lines": 1025,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/shrub_layer.gd": {
+      "lines": 5940,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/weather_layer.gd": {
+      "lines": 1857,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd": {
+      "lines": 1386,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/sus/jobs/weather_refresh_job.gd": {
+      "lines": 1181,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd": {
+      "lines": 1000,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd": {
+      "lines": 2982,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd": {
+      "lines": 2069,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/technology/technology_authoring_model.gd": {
+      "lines": 890,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/technology/technology_network_validator.gd": {
+      "lines": 834,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/tools/technology_authoring/technology_authoring_editor.gd": {
+      "lines": 1704,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/tools/technology_authoring/technology_authoring_inspector.gd": {
+      "lines": 890,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/cell_inspector_view_model.gd": {
+      "lines": 7023,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/colonization_planner_panel.gd": {
+      "lines": 2398,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/economy_workspace.gd": {
+      "lines": 1739,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/era_advancement_panel.gd": {
+      "lines": 903,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/family_founding_card.gd": {
+      "lines": 1071,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/family_workspace.gd": {
+      "lines": 1711,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/ideology_card.gd": {
+      "lines": 889,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/ideology_workspace.gd": {
+      "lines": 3165,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/inspector_panel.gd": {
+      "lines": 1419,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/military_workspace.gd": {
+      "lines": 972,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/object_detail_dialog.gd": {
+      "lines": 1556,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/technology_tree_view.gd": {
+      "lines": 945,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/technology_workspace.gd": {
+      "lines": 2105,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/country_view_model.gd": {
+      "lines": 1409,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/debug_console.gd": {
+      "lines": 2355,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/economy_dossier_view_model.gd": {
+      "lines": 1411,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/game_ui_manager.gd": {
+      "lines": 3233,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/icon_catalog.gd": {
+      "lines": 1394,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/main_menu.gd": {
+      "lines": 1136,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/military_view_model.gd": {
+      "lines": 1926,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/perf_recorder.gd": {
+      "lines": 967,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
+      "lines": 1448,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/weather/field_solver.gd": {
+      "lines": 1855,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/weather/weather_system.gd": {
+      "lines": 4327,
+      "limit": 800
+    },
+    "Project/project-keynes/tmp/family_baseline_test.gd": {
+      "lines": 933,
+      "limit": 800
+    },
+    "Project/project-keynes/tools/export_technology_tree.gd": {
+      "lines": 927,
+      "limit": 800
+    },
+    "Project/project-keynes/tools/ideology/add_military_cards.gd": {
+      "lines": 1256,
+      "limit": 800
+    },
+    "Project/project-keynes/tools/migrate_technology_industry_v2.gd": {
+      "lines": 1269,
+      "limit": 800
+    },
+    "gdext/src/country_runtime.cpp": {
+      "lines": 11465,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime.cpp": {
+      "lines": 7989,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime.h": {
+      "lines": 2742,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_employment.cpp": {
+      "lines": 3802,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_investment.cpp": {
+      "lines": 5592,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_production.cpp": {
+      "lines": 3813,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_catalog.cpp": {
+      "lines": 3020,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_colonization.cpp": {
+      "lines": 2738,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_colonization_kit.cpp": {
+      "lines": 2060,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_diagnostics.cpp": {
+      "lines": 2975,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_family_buff.cpp": {
+      "lines": 3119,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_market.cpp": {
+      "lines": 3005,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_persistence.cpp": {
+      "lines": 2216,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_persistence_read.cpp": {
+      "lines": 3104,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_queries_market_building.cpp": {
+      "lines": 3008,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_trade.cpp": {
+      "lines": 3018,
+      "limit": 2000
+    },
+    "gdext/src/effect_runtime.cpp": {
+      "lines": 8479,
+      "limit": 2000
+    },
+    "gdext/src/ideology_runtime.cpp": {
+      "lines": 8302,
+      "limit": 2000
+    },
+    "gdext/src/military_core.cpp": {
+      "lines": 3698,
+      "limit": 2000
+    },
+    "gdext/src/modifier_runtime.cpp": {
+      "lines": 2825,
+      "limit": 2000
+    },
+    "gdext/src/native_simulation_host.h": {
+      "lines": 2154,
+      "limit": 600
+    },
+    "gdext/src/runtime_climate_kernel.cpp": {
+      "lines": 3422,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_passes.cpp": {
+      "lines": 5615,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_passes.h": {
+      "lines": 2021,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_physics.cpp": {
+      "lines": 2296,
+      "limit": 2000
+    },
+    "gdext/src/runtime_country_pod.cpp": {
+      "lines": 2052,
+      "limit": 2000
+    },
+    "gdext/src/runtime_economy_pod.cpp": {
+      "lines": 3391,
+      "limit": 2000
+    },
+    "gdext/src/runtime_effect_pod.cpp": {
+      "lines": 3389,
+      "limit": 2000
+    },
+    "gdext/src/runtime_ideology_pod.cpp": {
+      "lines": 2679,
+      "limit": 2000
+    },
+    "gdext/src/trigger_runtime.cpp": {
+      "lines": 2102,
+      "limit": 2000
+    },
+    "gdext/src/world_ext.h": {
+      "lines": 4095,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_atlas.cpp": {
+      "lines": 2741,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_bake.cpp": {
+      "lines": 3262,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_bio.cpp": {
+      "lines": 2035,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_building_visual.cpp": {
+      "lines": 3026,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_climate.cpp": {
+      "lines": 6951,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_country.cpp": {
+      "lines": 2210,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_daily_sim.cpp": {
+      "lines": 3407,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_economy.cpp": {
+      "lines": 2825,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_generate.cpp": {
+      "lines": 6303,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_military.cpp": {
+      "lines": 3665,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_physical.cpp": {
+      "lines": 2433,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_simulation_host.cpp": {
+      "lines": 4164,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_weather.cpp": {
+      "lines": 3559,
+      "limit": 2000
+    }
+  }
+}

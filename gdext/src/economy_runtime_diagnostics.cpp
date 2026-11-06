@@ -2936,7 +2936,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["country_generation"] = static_cast<int64_t>(_epoch_country_generation);
     out["country_state_hash"] = static_cast<int64_t>(_epoch_country_hash);
     out["country_commands_due"] = _country_runtime != nullptr &&
-        _country_runtime->should_run(_current_day.get());
+        country_reads().should_run(_current_day.get());
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = _merchant_repairs;
     out["price_cap_hits"] = _price_cap_hits;
