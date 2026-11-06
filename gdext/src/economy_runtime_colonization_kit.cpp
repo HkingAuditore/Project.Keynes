@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "economy_host_port.h"
 
 #include <algorithm>
@@ -1823,7 +1823,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             _building_handle_index_clean = false;
             if (_modifier_runtime != nullptr &&
                 buildings_store().modifier_handle[existing] == 0) {
-                buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                buildings_store().modifier_handle.write_scalar(existing, modifier_api::ensure_building_identity(*_modifier_runtime,
                         destination_cell, row.type_id, owner_signature));
             }
         } else {
@@ -1834,7 +1834,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             group.count = row.count;
             if (_modifier_runtime != nullptr) {
                 group.modifier_handle =
-                    _modifier_runtime->ensure_building_identity(
+                    modifier_api::ensure_building_identity(*_modifier_runtime,
                         destination_cell, row.type_id, owner_signature);
             }
             append_building_group(group);
@@ -1914,7 +1914,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     _building_handle_index_clean = false;
                     if (_modifier_runtime != nullptr &&
                         buildings_store().modifier_handle[existing] == 0) {
-                        buildings_store().modifier_handle.write_scalar(existing, _modifier_runtime->ensure_building_identity(
+                        buildings_store().modifier_handle.write_scalar(existing, modifier_api::ensure_building_identity(*_modifier_runtime,
                                 destination_cell, row.type_id, owner_signature));
                     }
                 } else {
@@ -1925,7 +1925,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     group.count = row.count;
                     if (_modifier_runtime != nullptr) {
                         group.modifier_handle =
-                            _modifier_runtime->ensure_building_identity(
+                            modifier_api::ensure_building_identity(*_modifier_runtime,
                                 destination_cell, row.type_id, owner_signature);
                     }
                     append_building_group(group);

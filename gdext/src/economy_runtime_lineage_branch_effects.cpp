@@ -1683,7 +1683,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         } else if (submit_changes && _modifier_runtime != nullptr &&
             magnitude != binding.magnitude_q16) {
             std::string error;
-            _modifier_runtime->queue_family_group_effect(binding.definition_key,
+            modifier_api::queue_family_group_effect(*_modifier_runtime, binding.definition_key,
                 family_influences().cell[branch], static_cast<uint64_t>(
                     family_influences().stable_id[branch]), magnitude,
                 _current_day.get(), error);
@@ -1695,7 +1695,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
         if (item.second == 0) continue;
         int32_t magnitude = item.second;
         if (!submit_changes && _modifier_runtime != nullptr) {
-            const int32_t restored = _modifier_runtime->family_group_effect_magnitude(
+            const int32_t restored = modifier_api::family_group_effect_magnitude(*_modifier_runtime,
                 item.first, family_influences().cell[branch], static_cast<uint64_t>(
                     family_influences().stable_id[branch]));
             if (restored >= 0) magnitude = restored;
@@ -1703,7 +1703,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
             submit_effect_instance(item.first, magnitude);
         } else if (_modifier_runtime != nullptr) {
             std::string error;
-            _modifier_runtime->queue_family_group_effect(item.first,
+            modifier_api::queue_family_group_effect(*_modifier_runtime, item.first,
                 family_influences().cell[branch], static_cast<uint64_t>(
                     family_influences().stable_id[branch]), magnitude,
                 _current_day.get(), error);

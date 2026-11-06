@@ -8,7 +8,7 @@
 #include <cstring>
 #include <numeric>
 #include "economy_runtime.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 
 #include <algorithm>
 #include <tuple>
@@ -191,7 +191,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
             const auto group = building_view(pk_row);
             if (group.count > 0) continue;
             if (_modifier_runtime != nullptr)
-                _modifier_runtime->retire_building_identity(
+                modifier_api::retire_building_identity(*_modifier_runtime,
                     group.cell, group.type_id, group.owner_signature_id,
                     _current_day.get());
             changed_cells.push_back(group.cell);
@@ -316,10 +316,10 @@ bool NativeEconomyRuntime::advance_worker_resource_reserves(
     const uint8_t *habitat = have_habitat ? input.resource_habitat.data() : nullptr;
     const bool have_water = input.geography[3].size() == static_cast<size_t>(count);
     const uint8_t *water = have_water ? input.geography[3].data() : nullptr;
-    const ModifierRuntime *modifier = _modifier_runtime;
-    const bool modifier_ready = modifier != nullptr && modifier->configured();
+    const auto *modifier = _modifier_runtime;
+    const bool modifier_ready = modifier != nullptr && modifier_api::configured(*modifier);
     const int32_t generic_stat = modifier_ready
-        ? modifier->stat_id_for_key("economy.city.resource.regen_factor") : -1;
+        ? modifier_api::stat_id_for_key(*modifier, "economy.city.resource.regen_factor") : -1;
 
     if (!cells.empty()) {
         std::vector<NatResRuntime> active;
@@ -347,7 +347,7 @@ bool NativeEconomyRuntime::advance_worker_resource_reserves(
         double seg = 0.0;
         for (NatResRuntime &rr : active) {
             const int32_t resource_stat = modifier_ready
-                ? modifier->stat_id_for_key("economy.city.resource." +
+                ? modifier_api::stat_id_for_key(*modifier, "economy.city.resource." +
                     _resource_ids[static_cast<size_t>(rr.resource_index)] + ".regen_factor")
                 : -1;
             if (generic_stat >= 0 || resource_stat >= 0) {
@@ -356,10 +356,10 @@ bool NativeEconomyRuntime::advance_worker_resource_reserves(
                 for (const int32_t cell : cells) {
                     double factor = 1.0;
                     if (generic_stat >= 0)
-                        factor = modifier->effective_value(ModifierRuntime::ECONOMY,
+                        factor = modifier_api::effective_value(*modifier, ModifierApi::ECONOMY,
                             generic_stat, 0, static_cast<uint64_t>(cell), 1.0);
                     if (resource_stat >= 0)
-                        factor = modifier->effective_value(ModifierRuntime::ECONOMY,
+                        factor = modifier_api::effective_value(*modifier, ModifierApi::ECONOMY,
                             resource_stat, 0, static_cast<uint64_t>(cell), factor);
                     if (!std::isfinite(factor) || factor < 0.0) factor = 1.0;
                     factors[static_cast<size_t>(cell)] = static_cast<float>(factor);
@@ -431,8 +431,8 @@ bool NativeEconomyRuntime::refresh_city_modifier_factors() {
         _city_factor_stat_ids_scratch.end(),
         _city_good_consumption_stat_ids.begin(),
         _city_good_consumption_stat_ids.end());
-    const uint64_t version = _modifier_runtime->stat_bucket_version(
-        ModifierRuntime::ECONOMY, _city_factor_stat_ids_scratch.data(),
+    const uint64_t version = modifier_api::stat_bucket_version(*_modifier_runtime,
+        ModifierApi::ECONOMY, _city_factor_stat_ids_scratch.data(),
         _city_factor_stat_ids_scratch.size());
     // A shard in flight must keep resuming even when the version has not moved:
     // otherwise the second entry short-circuits on `_epoch_city_factor_valid`,
@@ -447,8 +447,8 @@ bool NativeEconomyRuntime::refresh_city_modifier_factors() {
     // once with an empty group handle, then re-probe only the cells that own a
     // group bucket.
     const auto shared_factor = [&](int32_t stat_id) {
-        return modifier_factor_q16(_modifier_runtime->effective_value(
-            ModifierRuntime::ECONOMY, stat_id, 0,
+        return modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
+            ModifierApi::ECONOMY, stat_id, 0,
             std::numeric_limits<uint64_t>::max(), 1.0));
     };
     const auto need_factor = [](int32_t general, int32_t selected) {
@@ -512,8 +512,8 @@ bool NativeEconomyRuntime::refresh_city_modifier_factors() {
     // anyway, and finishing it would bill time for work nobody reads.
     if (_city_factor_shard_cursor < 0 ||
             _city_factor_shard_version != version) {
-        _modifier_runtime->collect_scope_ids(
-            ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
+        modifier_api::collect_scope_ids(*_modifier_runtime,
+            ModifierApi::ECONOMY, ModifierApi::GROUP,
             _city_factor_stat_ids_scratch.data(),
             _city_factor_stat_ids_scratch.size(),
             _city_factor_group_cells_scratch);
@@ -528,8 +528,8 @@ bool NativeEconomyRuntime::refresh_city_modifier_factors() {
     }
 
     const auto cell_factor = [&](int32_t stat_id, uint64_t scope_id) {
-        return modifier_factor_q16(_modifier_runtime->effective_value(
-            ModifierRuntime::ECONOMY, stat_id, 0, scope_id, 1.0));
+        return modifier_factor_q16(modifier_api::effective_value(*_modifier_runtime,
+            ModifierApi::ECONOMY, stat_id, 0, scope_id, 1.0));
     };
     // Reset per pass so the counter answers "did THIS pass do the work", which
     // `_city_factor_work_cells` cannot: that field only moves when collect runs,
@@ -622,8 +622,8 @@ bool NativeEconomyRuntime::refresh_city_output_modifier_factors() {
         return true;
     }
 
-    const uint64_t version = _modifier_runtime->stat_bucket_version(
-        ModifierRuntime::ECONOMY, _city_good_output_stat_ids.data(),
+    const uint64_t version = modifier_api::stat_bucket_version(*_modifier_runtime,
+        ModifierApi::ECONOMY, _city_good_output_stat_ids.data(),
         _city_good_output_stat_ids.size());
     // Same rule as the city reader: a shard in flight must keep resuming, so the
     // version gate only short-circuits when no shard is pending.
@@ -635,8 +635,8 @@ bool NativeEconomyRuntime::refresh_city_output_modifier_factors() {
     _city_output_shared_goods_q16.resize(good_count);
     for (size_t good = 0; good < good_count; ++good) {
         _city_output_shared_goods_q16[good] = modifier_factor_q16(
-            _modifier_runtime->effective_value(
-                ModifierRuntime::ECONOMY,
+            modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::ECONOMY,
                 _city_good_output_stat_ids[good], 0,
                 std::numeric_limits<uint64_t>::max(), 1.0));
     }
@@ -659,8 +659,8 @@ bool NativeEconomyRuntime::refresh_city_output_modifier_factors() {
     // on the LAST city shard.
     if (_city_output_shard_cursor < 0 ||
             _city_output_shard_version != version) {
-        _modifier_runtime->collect_scope_stat_entries(
-            ModifierRuntime::ECONOMY, ModifierRuntime::GROUP,
+        modifier_api::collect_scope_stat_entries(*_modifier_runtime,
+            ModifierApi::ECONOMY, ModifierApi::GROUP,
             _city_good_output_stat_ids.data(), _city_good_output_stat_ids.size(),
             _city_output_scope_cells_scratch,
             _city_output_scope_stat_ids_scratch);
@@ -691,8 +691,8 @@ bool NativeEconomyRuntime::refresh_city_output_modifier_factors() {
             if (scope >= cells || found == good_by_stat.end()) continue;
             const int32_t good = found->second;
             const int32_t factor_q16 = modifier_factor_q16(
-                _modifier_runtime->effective_value(
-                    ModifierRuntime::ECONOMY,
+                modifier_api::effective_value(*_modifier_runtime,
+                    ModifierApi::ECONOMY,
                     _city_good_output_stat_ids[static_cast<size_t>(good)], 0,
                     scope, 1.0));
             if (factor_q16 == _city_output_shared_goods_q16[
@@ -754,7 +754,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
     // Gated on the building output stats alone: an unrelated economy modifier
     // must not invalidate every building group's cached factor.
     const uint64_t mod_version = _modifier_runtime != nullptr
-        ? _modifier_runtime->building_output_stat_version()
+        ? modifier_api::building_output_stat_version(*_modifier_runtime)
         : 0;
     // exact_building_mod_version 只由 type_id 决定，原来每个 group 各查一次 bucket
     // 版本。组数随存档单调增长，类型数不变，故按类型算一遍复用。-1 表示尚未解析。
@@ -777,8 +777,8 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
             uint64_t &memo = exact_building_mod_version_by_type[
                 static_cast<size_t>(group.type_id)];
             if (memo == std::numeric_limits<uint64_t>::max())
-                memo = _modifier_runtime->stat_bucket_version(
-                    ModifierRuntime::ECONOMY, &exact_building_stat_id, 1);
+                memo = modifier_api::stat_bucket_version(*_modifier_runtime,
+                    ModifierApi::ECONOMY, &exact_building_stat_id, 1);
             exact_building_mod_version = memo;
         }
         // 空组无产出，其唯一非平凡输入（family-owned 混合）也已早退成 Q16_ONE。
@@ -918,14 +918,14 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 static_cast<double>(family_owned_factor_q16) / Q16_ONE *
                 static_cast<double>(cell_sector_factor_q16) / Q16_ONE);
         } else {
-            writable_group.modifier_handle = _modifier_runtime->ensure_building_identity(
+            writable_group.modifier_handle = modifier_api::ensure_building_identity(*_modifier_runtime,
                 group.cell, group.type_id, group.owner_signature_id);
             const double building_factor =
-                _modifier_runtime->economy_building_output_factor(
+                modifier_api::economy_building_output_factor(*_modifier_runtime,
                     writable_group.modifier_handle, static_cast<uint64_t>(group.cell), sector);
             const double exact_building_factor = exact_building_stat_id >= 0
-                ? _modifier_runtime->effective_value(
-                    ModifierRuntime::ECONOMY, exact_building_stat_id, 0,
+                ? modifier_api::effective_value(*_modifier_runtime,
+                    ModifierApi::ECONOMY, exact_building_stat_id, 0,
                     static_cast<uint64_t>(group.cell), 1.0)
                 : 1.0;
             writable_group.output_factor_q16 = modifier_factor_q16(
@@ -979,7 +979,7 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
                 country_slot < static_cast<int32_t>(_epoch_country_handles.size())
             ? _epoch_country_handles[static_cast<size_t>(country_slot)] : 0;
         target.modifier_handle = owner_signature_id >= 0
-            ? _modifier_runtime->ensure_building_identity(
+            ? modifier_api::ensure_building_identity(*_modifier_runtime,
                 cell, type_id, owner_signature_id)
             : 0;
         const double country_factor = country_slot >= 0 &&
@@ -1052,14 +1052,14 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity_for_target(
                     _city_building_output_stat_ids.size())
             ? _city_building_output_stat_ids[static_cast<size_t>(type_id)] : -1;
         const double exact_building_factor = exact_building_stat_id >= 0
-            ? _modifier_runtime->effective_value(
-                ModifierRuntime::ECONOMY, exact_building_stat_id, 0,
+            ? modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::ECONOMY, exact_building_stat_id, 0,
                 static_cast<uint64_t>(cell), 1.0)
             : 1.0;
         target.output_factor_q16 = modifier_factor_q16(
             country_factor * sector_factor * research_factor * family_factor *
             building_type_factor * terrain_factor * landform_factor *
-            _modifier_runtime->economy_building_output_factor(
+            modifier_api::economy_building_output_factor(*_modifier_runtime,
                 target.modifier_handle, static_cast<uint64_t>(cell), sector) *
             exact_building_factor);
     }

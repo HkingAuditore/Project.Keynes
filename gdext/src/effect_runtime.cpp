@@ -1,7 +1,7 @@
 #include "effect_runtime.h"
 #include "country_runtime.h"
 #include "economy_api.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "runtime_effect_pod.h"
 #include "world_ext.h"
 #include "parallel_dispatcher.h"
@@ -65,8 +65,8 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
     }
     switch (action) {
         case EffectRuntime::MODIFIER_COMMAND:
-            if (domain > 3 || (opcode != ModifierRuntime::COMMAND_APPLY &&
-                               opcode != ModifierRuntime::COMMAND_REMOVE)) {
+            if (domain > 3 || (opcode != ModifierApi::COMMAND_APPLY &&
+                               opcode != ModifierApi::COMMAND_REMOVE)) {
                 reason = "effect_modifier_opcode_unregistered";
                 return false;
             }
@@ -1281,9 +1281,9 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         }
         if (definition.managed_declared) {
             const int32_t expected_modifier_domain =
-                definition.target_domain == 3 ? ModifierRuntime::COUNTRY
-                : definition.target_domain == 4 ? ModifierRuntime::CLIMATE
-                                                : ModifierRuntime::ECONOMY;
+                definition.target_domain == 3 ? ModifierApi::COUNTRY
+                : definition.target_domain == 4 ? ModifierApi::CLIMATE
+                                                : ModifierApi::ECONOMY;
             if (definition.operation == 3 && definition.condition_count == 0)
                 return failure("effect_conditional_override_requires_condition");
             if ((definition.operation == 4) != (definition.lifecycle == 2))
@@ -1299,7 +1299,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                         return failure("effect_event_operation_modifier_invalid");
                     has_event_command = true;
                 } else if (command.action != MODIFIER_COMMAND ||
-                           command.opcode != ModifierRuntime::COMMAND_APPLY ||
+                           command.opcode != ModifierApi::COMMAND_APPLY ||
                            command.domain != expected_modifier_domain) {
                     return failure("effect_family_target_adapter_mismatch");
                 }
@@ -1550,8 +1550,8 @@ bool EffectRuntime::compile_era_reward_catalog(const Dictionary &catalog,
     const auto reward_command_whitelisted = [](const CommandDefinition &command) {
         if (command.action == MODIFIER_COMMAND)
             return command.domain >= 0 && command.domain <= 3 &&
-                (command.opcode == ModifierRuntime::COMMAND_APPLY ||
-                 command.opcode == ModifierRuntime::COMMAND_REMOVE);
+                (command.opcode == ModifierApi::COMMAND_APPLY ||
+                 command.opcode == ModifierApi::COMMAND_REMOVE);
         if (command.action == COUNTRY_COMMAND)
             return command.domain == 1 &&
                 command.opcode == NativeCountryRuntime::COMMAND_GRANT_TECHNOLOGY;
@@ -2229,7 +2229,7 @@ bool EffectRuntime::era_reward_selected_modifier_commands(
         command.domain = source.domain;
         command.target_handle = alternative.target_handle;
         command.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            source.value, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            source.value, 0, EFFECT_MAX_MAGNITUDE_Q16));
         command.duration_days = source.duration_days;
         command.stacks = std::max(1, source.stacks);
         command.source_id = _era_reward_offer.generation;
@@ -3422,7 +3422,7 @@ bool EffectRuntime::enqueue_external_effect_pod(
         return true;
     }
     const bool modifier_remove = action == MODIFIER_COMMAND &&
-        opcode == ModifierRuntime::COMMAND_REMOVE;
+        opcode == ModifierApi::COMMAND_REMOVE;
     int32_t command_definition_id = -1;
     for (int32_t i = 0; i < static_cast<int32_t>(_command_definitions.size()); ++i) {
         const CommandDefinition &candidate = _command_definitions[i];
@@ -3444,7 +3444,7 @@ bool EffectRuntime::enqueue_external_effect_pod(
             candidate.definition_key == definition_key &&
             candidate.action == action && candidate.domain == domain &&
             (candidate.opcode == opcode || (modifier_remove &&
-                candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
+                candidate.opcode == ModifierApi::COMMAND_APPLY)) &&
             candidate.target_resolver == TARGET_INSTANCE &&
             (candidate.duration_days == duration_days ||
              action == MODIFIER_COMMAND) &&
@@ -3597,7 +3597,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
         }
         const bool modifier_remove =
             source.action == MODIFIER_COMMAND &&
-            source.opcode == ModifierRuntime::COMMAND_REMOVE;
+            source.opcode == ModifierApi::COMMAND_REMOVE;
         int32_t command_definition_id = -1;
         for (int32_t definition_index = 0;
                 definition_index <
@@ -3622,7 +3622,7 @@ bool EffectRuntime::enqueue_external_effect_batch_pod(
                     candidate.domain == source.domain &&
                     (candidate.opcode == source.opcode ||
                      (modifier_remove &&
-                      candidate.opcode == ModifierRuntime::COMMAND_APPLY)) &&
+                      candidate.opcode == ModifierApi::COMMAND_APPLY)) &&
                     candidate.target_resolver == TARGET_INSTANCE &&
                     (candidate.duration_days == source.duration_days ||
                      source.action == MODIFIER_COMMAND) &&
@@ -4707,12 +4707,12 @@ bool EffectRuntime::create_retirement_transaction(int32_t instance_index,
         const CommandDefinition &definition_command =
             _command_definitions[static_cast<size_t>(command_definition_id)];
         if (definition_command.action != MODIFIER_COMMAND ||
-            definition_command.opcode != ModifierRuntime::COMMAND_APPLY)
+            definition_command.opcode != ModifierApi::COMMAND_APPLY)
             continue;
         Command command;
         command.action = MODIFIER_COMMAND;
         command.domain = definition_command.domain;
-        command.opcode = ModifierRuntime::COMMAND_REMOVE;
+        command.opcode = ModifierApi::COMMAND_REMOVE;
         command.duration_days = -1;
         command.stacks = 1;
         command.command_key_id = command_definition_id;
@@ -5675,64 +5675,64 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
     out.stacks = std::max(1, command.stacks);
     out.domain_bit = adapter_ack_bit_for(command);
     // A REMOVE row is proved by absence, everything else by presence.
-    out.expect_present = command.opcode != ModifierRuntime::COMMAND_REMOVE;
+    out.expect_present = command.opcode != ModifierApi::COMMAND_REMOVE;
 
     if (adapter_kind == NATIVE_MODIFIER_TECHNOLOGY) {
         out.producer = 180;
-        out.domain = ModifierRuntime::COUNTRY;
-        out.scope = ModifierRuntime::ENTITY;
+        out.domain = ModifierApi::COUNTRY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x54454348ULL; // TECH
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id) & 0xffffULL;
-        out.magnitude_q16 = ModifierRuntime::Q16_ONE;
+        out.magnitude_q16 = ModifierApi::Q16_ONE;
     } else if (adapter_kind == NATIVE_MODIFIER_FAMILY) {
         out.producer = 160;
-        out.domain = ModifierRuntime::ECONOMY;
-        out.scope = ModifierRuntime::GROUP;
+        out.domain = ModifierApi::ECONOMY;
+        out.scope = ModifierApi::GROUP;
         out.group_handle = command.target_generation;
         out.source_type = 0x46414d494c59ULL; // FAMILY
         out.source_id = command.target_handle;
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_PERSON) {
         out.producer = 170;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x504552534f4eULL; // PERSON
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_TRIGGER) {
         out.producer = 175;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = 0x54524947474552ULL; // TRIGGER
         out.source_id = static_cast<uint64_t>(transaction.source_instance_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
         out.producer = 161;
         out.domain = command.domain;
         out.source_type = 0x46414d4546464543ULL; // FAMEFFEC
         out.source_id = static_cast<uint64_t>(source_instance.id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
         switch (source_instance.target_domain) {
             case 0: // Family.
             case 1: // Branch.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 break;
             case 2: // Settlement cell.
             case 5: // Building/resource selector within the cell.
-                out.scope = ModifierRuntime::GROUP;
+                out.scope = ModifierApi::GROUP;
                 out.group_handle = command.target_handle;
                 break;
             case 3: // Country.
             case 4: // Climate cell.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 break;
             default:
@@ -5744,25 +5744,25 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         out.source_type = 0x4944454fULL; // IDEO
         out.source_id = static_cast<uint64_t>(source_instance.id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
         // X9-b family programs carry the stable family handle in ENTITY;
         // cell/resource programs (2/5) carry a cell in GROUP. Both
         // handles must not be set: Modifier's scope_id_for() would read
         // the family handle as a settlement group while scope is GROUP.
         switch (source_instance.target_domain) {
             case 0: // Family.
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 out.group_handle = 0;
                 break;
             case 2: // Settlement cell.
             case 5: // Building/resource selector within the cell.
-                out.scope = ModifierRuntime::GROUP;
+                out.scope = ModifierApi::GROUP;
                 out.entity_handle = command.target_handle;
                 out.group_handle = command.target_handle;
                 break;
             default:
-                out.scope = ModifierRuntime::ENTITY;
+                out.scope = ModifierApi::ENTITY;
                 out.entity_handle = command.target_handle;
                 out.group_handle = 0;
                 break;
@@ -5772,7 +5772,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         // widen a cell effect to the whole country.
         if (command.payload[2] >= 1 && command.payload[2] <= 2) {
             out.scope = static_cast<int32_t>(command.payload[2]);
-            out.group_handle = out.scope == ModifierRuntime::GROUP
+            out.group_handle = out.scope == ModifierApi::GROUP
                 ? command.target_handle : 0;
         }
     } else if (command.action == MODIFIER_COMMAND) {
@@ -5784,7 +5784,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
         // never reached for them.
         out.producer = 200;
         out.domain = command.domain;
-        out.scope = ModifierRuntime::ENTITY;
+        out.scope = ModifierApi::ENTITY;
         out.entity_handle = command.target_handle;
         out.source_type = static_cast<uint64_t>(source_instance.source_type);
         // A command may carry its own stable identity; synergy rows do
@@ -5800,7 +5800,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
             ? static_cast<uint64_t>(command.external_source_id)
             : static_cast<uint64_t>(source_instance.source_id);
         out.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
-            scaled_magnitude(command.value_q16), 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            scaled_magnitude(command.value_q16), 0, EFFECT_MAX_MAGNITUDE_Q16));
     } else {
         return false;
     }
@@ -5809,7 +5809,7 @@ bool EffectRuntime::map_modifier_row(const Transaction &transaction,
 
 Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
-    if (modifier_runtime == nullptr || !modifier_runtime->configured())
+    if (modifier_runtime == nullptr || !modifier_api::configured(*modifier_runtime))
         return failure("modifier_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
 
@@ -5830,7 +5830,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
         uint32_t request_count = 0;
         uint32_t domain_mask = 0;
     };
-    std::vector<ModifierRuntime::NativeCommand> native_commands;
+    std::vector<ModifierApi::NativeCommand> native_commands;
     std::vector<PendingTransaction> pending_transactions;
     native_commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
     pending_transactions.reserve(std::min<int32_t>(_max_transactions, 4096));
@@ -5873,7 +5873,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                 supported = false;
                 break;
             }
-            ModifierRuntime::NativeCommand native;
+            ModifierApi::NativeCommand native;
             native.opcode = row.opcode;
             native.producer = row.producer;
             native.sequence = row.sequence;
@@ -5924,7 +5924,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
 
     std::vector<int64_t> request_ids;
     std::string error;
-    if (!modifier_runtime->submit_commands_pod(native_commands.data(), native_commands.size(),
+    if (!modifier_api::submit_commands_pod(*modifier_runtime, native_commands.data(), native_commands.size(),
                                                request_ids, error) ||
         request_ids.size() != native_commands.size()) {
         _last_error = error.empty() ? "effect_native_modifier_enqueue_failed" : error;
@@ -5956,7 +5956,7 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
 
 Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
-    if (modifier_runtime == nullptr || !modifier_runtime->configured())
+    if (modifier_runtime == nullptr || !modifier_api::configured(*modifier_runtime))
         return failure("modifier_runtime_unavailable");
     const auto started = std::chrono::steady_clock::now();
 
@@ -5986,7 +5986,7 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
             }
             bool complete = false, ok = false;
             std::string reason;
-            modifier_runtime->command_result_pod(_native_request_ids[request_index],
+            modifier_api::command_result_pod(*modifier_runtime, _native_request_ids[request_index],
                                                  complete, ok, reason);
             if (!complete) {
                 pending = true;
@@ -6014,10 +6014,10 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
                     source_index < static_cast<int32_t>(_instances.size())) {
                     const Instance &source =
                         _instances[static_cast<size_t>(source_index)];
-                    modifier_runtime->remove_rows_for_source(
+                    modifier_api::remove_rows_for_source(*modifier_runtime,
                         static_cast<uint64_t>(source.source_type),
                         static_cast<uint64_t>(source.id), _current_day);
-                    modifier_runtime->remove_rows_for_source(
+                    modifier_api::remove_rows_for_source(*modifier_runtime,
                         static_cast<uint64_t>(source.source_type),
                         static_cast<uint64_t>(source.source_id), _current_day);
                 }
@@ -8141,8 +8141,8 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                     static_cast<size_t>(command.command_definition_id)];
                 std::string command_error;
                 const bool remove_alias = command.action == MODIFIER_COMMAND &&
-                    command.opcode == ModifierRuntime::COMMAND_REMOVE &&
-                    definition.opcode == ModifierRuntime::COMMAND_APPLY;
+                    command.opcode == ModifierApi::COMMAND_REMOVE &&
+                    definition.opcode == ModifierApi::COMMAND_APPLY;
                 const bool family_stack_alias = !remove_alias &&
                     definition.owner_program_id >= 0 &&
                     definition.owner_program_id < static_cast<int32_t>(

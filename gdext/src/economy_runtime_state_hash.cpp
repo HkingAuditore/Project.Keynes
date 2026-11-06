@@ -8,6 +8,7 @@
 #include "economy_graph_live_ops.h"
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
+#include "modifier_api.h"
 #include "economy_runtime_internal_external_types.inc"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
@@ -1625,7 +1626,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
     if (_modifier_runtime != nullptr) {
         std::vector<uint8_t> modifier_bytes;
         std::string modifier_error;
-        if (_modifier_runtime->serialize_domain(ModifierRuntime::ECONOMY,
+        if (modifier_api::serialize_domain(*_modifier_runtime, ModifierApi::ECONOMY,
                                                 modifier_bytes,
                                                 modifier_error)) {
             // Modifier snapshot_version is a cache invalidation counter and
