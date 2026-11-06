@@ -1,6 +1,6 @@
 [gd_resource type="Theme" format=3 uid="uid://cnjby7mpvii16"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_sans"]
+[ext_resource type="FontFile" uid="uid://ob2q0rcuc6oo" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_sans"]
 [ext_resource type="FontVariation" path="res://assets/fonts/muyao/display_handwritten.tres" id="2_serif"]
 [ext_resource type="Texture2D" uid="uid://ccrb06urnvs1j" path="res://assets/ui/family_workspace/bitmap/card_frame_clean_v4.png" id="3_card"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_normal_bitmap.tres" id="4_nav_normal"]
@@ -15,33 +15,31 @@
 [ext_resource type="Texture2D" path="res://assets/ui/archive_material_v1/archive_page_v1.tres" id="14_page"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/torn_note_v1.tres" id="15_note"]
 [ext_resource type="Texture2D" path="res://assets/ui/paper_aux_v1/cut_tag_v1.tres" id="16_tag"]
-
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/panel_horizontal.png" id="paper_panel_horizontal"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/panel_vertical.png" id="paper_panel_vertical"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_normal.png" id="paper_button_normal"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_hover.png" id="paper_button_hover"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_pressed.png" id="paper_button_pressed"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/button_disabled.png" id="paper_button_disabled"]
-
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_down.png" id="paper_ctrl_arrow_down"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_left.png" id="paper_ctrl_arrow_left"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_right.png" id="paper_ctrl_arrow_right"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/arrow_up.png" id="paper_ctrl_arrow_up"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/checked.png" id="paper_ctrl_checked"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/close.png" id="paper_ctrl_close"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/grabber.png" id="paper_ctrl_grabber"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/indeterminate.png" id="paper_ctrl_indeterminate"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_checked.png" id="paper_ctrl_radio_checked"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/radio_unchecked.png" id="paper_ctrl_radio_unchecked"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/reset.png" id="paper_ctrl_reset"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/target.png" id="paper_ctrl_target"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_off.png" id="paper_ctrl_toggle_off"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/toggle_on.png" id="paper_ctrl_toggle_on"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/unchecked.png" id="paper_ctrl_unchecked"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/updown.png" id="paper_ctrl_updown"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_in.png" id="paper_ctrl_zoom_in"]
-[ext_resource type="Texture2D" path="res://assets/ui/paper_hud/control_icons/zoom_out.png" id="paper_ctrl_zoom_out"]
-[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf" id="ui_swei_bold"]
+[ext_resource type="Texture2D" uid="uid://ceb18eo05c81h" path="res://assets/ui/paper_hud/button_disabled.png" id="paper_button_disabled"]
+[ext_resource type="Texture2D" uid="uid://baxvg36oulco4" path="res://assets/ui/paper_hud/button_hover.png" id="paper_button_hover"]
+[ext_resource type="Texture2D" uid="uid://bgn0rylmgv7qm" path="res://assets/ui/paper_hud/button_normal.png" id="paper_button_normal"]
+[ext_resource type="Texture2D" uid="uid://ndjiurtko108" path="res://assets/ui/paper_hud/button_pressed.png" id="paper_button_pressed"]
+[ext_resource type="Texture2D" uid="uid://si44qukjjuoe" path="res://assets/ui/paper_hud/control_icons/arrow_down.png" id="paper_ctrl_arrow_down"]
+[ext_resource type="Texture2D" uid="uid://bwtceiwho2v7s" path="res://assets/ui/paper_hud/control_icons/arrow_left.png" id="paper_ctrl_arrow_left"]
+[ext_resource type="Texture2D" uid="uid://c4xxixpctlbqy" path="res://assets/ui/paper_hud/control_icons/arrow_right.png" id="paper_ctrl_arrow_right"]
+[ext_resource type="Texture2D" uid="uid://y6kw7a042qd2" path="res://assets/ui/paper_hud/control_icons/arrow_up.png" id="paper_ctrl_arrow_up"]
+[ext_resource type="Texture2D" uid="uid://bxgdwe3t1qux3" path="res://assets/ui/paper_hud/control_icons/checked.png" id="paper_ctrl_checked"]
+[ext_resource type="Texture2D" uid="uid://cob7b2lkxxcf2" path="res://assets/ui/paper_hud/control_icons/close.png" id="paper_ctrl_close"]
+[ext_resource type="Texture2D" uid="uid://cifmdssej58et" path="res://assets/ui/paper_hud/control_icons/grabber.png" id="paper_ctrl_grabber"]
+[ext_resource type="Texture2D" uid="uid://cxkuy1vtcktdw" path="res://assets/ui/paper_hud/control_icons/indeterminate.png" id="paper_ctrl_indeterminate"]
+[ext_resource type="Texture2D" uid="uid://kka7an5i0ihj" path="res://assets/ui/paper_hud/control_icons/radio_checked.png" id="paper_ctrl_radio_checked"]
+[ext_resource type="Texture2D" uid="uid://b05ehj3ahpsqw" path="res://assets/ui/paper_hud/control_icons/radio_unchecked.png" id="paper_ctrl_radio_unchecked"]
+[ext_resource type="Texture2D" uid="uid://dsvcg442u4w4r" path="res://assets/ui/paper_hud/control_icons/reset.png" id="paper_ctrl_reset"]
+[ext_resource type="Texture2D" uid="uid://bjug3a22xwql3" path="res://assets/ui/paper_hud/control_icons/target.png" id="paper_ctrl_target"]
+[ext_resource type="Texture2D" uid="uid://o0hy5rywrhiu" path="res://assets/ui/paper_hud/control_icons/toggle_off.png" id="paper_ctrl_toggle_off"]
+[ext_resource type="Texture2D" uid="uid://cyk6cf4b84jdr" path="res://assets/ui/paper_hud/control_icons/toggle_on.png" id="paper_ctrl_toggle_on"]
+[ext_resource type="Texture2D" uid="uid://d1h2w7lm7vtw0" path="res://assets/ui/paper_hud/control_icons/unchecked.png" id="paper_ctrl_unchecked"]
+[ext_resource type="Texture2D" uid="uid://bpl6c8wyb3rxu" path="res://assets/ui/paper_hud/control_icons/updown.png" id="paper_ctrl_updown"]
+[ext_resource type="Texture2D" uid="uid://b364qafnymj4v" path="res://assets/ui/paper_hud/control_icons/zoom_in.png" id="paper_ctrl_zoom_in"]
+[ext_resource type="Texture2D" uid="uid://bifxygevvlgi7" path="res://assets/ui/paper_hud/control_icons/zoom_out.png" id="paper_ctrl_zoom_out"]
+[ext_resource type="Texture2D" uid="uid://g8wlkf520ad0" path="res://assets/ui/paper_hud/panel_horizontal.png" id="paper_panel_horizontal"]
+[ext_resource type="Texture2D" uid="uid://bxonggf5com1" path="res://assets/ui/paper_hud/panel_vertical.png" id="paper_panel_vertical"]
+[ext_resource type="FontFile" uid="uid://deyvwwap0gcmr" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf" id="ui_swei_bold"]
 
 [sub_resource type="StyleBoxTexture" id="ButtonDisabled"]
 content_margin_left = 8.0
@@ -137,8 +135,8 @@ shadow_size = 4
 shadow_offset = Vector2(0, 2)
 
 [sub_resource type="FontVariation" id="SansStrong"]
+fallbacks = Array[Font]([ExtResource("1_sans")])
 base_font = ExtResource("ui_swei_bold")
-fallbacks = [ExtResource("1_sans")]
 
 [sub_resource type="StyleBoxFlat" id="SealPrimaryHover"]
 content_margin_left = 18.0
@@ -204,9 +202,6 @@ border_width_left = 2
 border_color = Color(0.69, 0.49, 0.24, 0.55)
 
 [sub_resource type="StyleBoxEmpty" id="DossierRow"]
-
-[sub_resource type="FontVariation" id="SerifStrong"]
-base_font = ExtResource("2_serif")
 
 [sub_resource type="FontVariation" id="SansMedium"]
 base_font = ExtResource("1_sans")
@@ -338,6 +333,9 @@ content_margin_bottom = 4.0
 bg_color = Color(0.36, 0.25, 0.13, 0.03)
 border_width_left = 2
 border_color = Color(0.42, 0.29, 0.16, 0.28)
+
+[sub_resource type="FontVariation" id="SerifStrong"]
+base_font = ExtResource("2_serif")
 
 [sub_resource type="StyleBoxFlat" id="TraitBadgeNeg"]
 content_margin_left = 6.0
@@ -861,36 +859,49 @@ shadow_color = Color(0.04, 0.02, 0.01, 0.38)
 shadow_size = 8
 shadow_offset = Vector2(0, 3)
 
-[sub_resource type="StyleBoxTexture" id="HudButtonHover"]
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_disabled"]
 content_margin_left = 2.0
 content_margin_top = 2.0
 content_margin_right = 2.0
 content_margin_bottom = 2.0
-texture = ExtResource("12_button")
-texture_margin_left = 12.0
-texture_margin_top = 12.0
-texture_margin_right = 12.0
-texture_margin_bottom = 16.0
-expand_margin_left = 4.0
-expand_margin_top = 3.0
-expand_margin_right = 4.0
-expand_margin_bottom = 7.0
-modulate_color = Color(1.06, 1.04, 0.98, 1)
+texture = ExtResource("paper_button_disabled")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
 
-[sub_resource type="StyleBoxTexture" id="HudButtonNormal"]
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_hover"]
 content_margin_left = 2.0
 content_margin_top = 2.0
 content_margin_right = 2.0
 content_margin_bottom = 2.0
-texture = ExtResource("12_button")
-texture_margin_left = 12.0
-texture_margin_top = 12.0
-texture_margin_right = 12.0
-texture_margin_bottom = 16.0
-expand_margin_left = 4.0
-expand_margin_top = 3.0
-expand_margin_right = 4.0
-expand_margin_bottom = 7.0
+texture = ExtResource("paper_button_hover")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_pressed"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_pressed")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_button_normal"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("paper_button_normal")
+texture_margin_left = 10.0
+texture_margin_top = 10.0
+texture_margin_right = 10.0
+texture_margin_bottom = 10.0
 
 [sub_resource type="StyleBoxTexture" id="HudInset"]
 content_margin_left = 12.0
@@ -907,20 +918,16 @@ expand_margin_top = 9.0
 expand_margin_right = 12.0
 expand_margin_bottom = 15.0
 
-[sub_resource type="StyleBoxTexture" id="HudPanel"]
+[sub_resource type="StyleBoxTexture" id="PaperHud_panel_horizontal"]
 content_margin_left = 8.0
 content_margin_top = 5.0
 content_margin_right = 8.0
 content_margin_bottom = 5.0
-texture = ExtResource("11_hud")
-texture_margin_left = 30.0
-texture_margin_top = 30.0
-texture_margin_right = 30.0
-texture_margin_bottom = 36.0
-expand_margin_left = 12.0
-expand_margin_top = 9.0
-expand_margin_right = 12.0
-expand_margin_bottom = 15.0
+texture = ExtResource("paper_panel_horizontal")
+texture_margin_left = 16.0
+texture_margin_top = 16.0
+texture_margin_right = 16.0
+texture_margin_bottom = 16.0
 
 [sub_resource type="StyleBoxEmpty" id="HudTopBarShell"]
 content_margin_left = 0.0
@@ -1001,6 +1008,17 @@ texture_margin_top = 22.0
 texture_margin_right = 24.0
 texture_margin_bottom = 22.0
 modulate_color = Color(1, 0.99, 0.96, 0.92)
+
+[sub_resource type="StyleBoxTexture" id="PaperHud_panel_vertical"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+texture = ExtResource("paper_panel_vertical")
+texture_margin_left = 16.0
+texture_margin_top = 16.0
+texture_margin_right = 16.0
+texture_margin_bottom = 16.0
 
 [sub_resource type="StyleBoxTexture" id="PaperPopup"]
 content_margin_left = 10.0
@@ -1157,72 +1175,6 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[sub_resource type="StyleBoxTexture" id="PaperHud_panel_horizontal"]
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 5.0
-texture = ExtResource("paper_panel_horizontal")
-texture_margin_left = 16.0
-texture_margin_top = 16.0
-texture_margin_right = 16.0
-texture_margin_bottom = 16.0
-
-[sub_resource type="StyleBoxTexture" id="PaperHud_panel_vertical"]
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 5.0
-texture = ExtResource("paper_panel_vertical")
-texture_margin_left = 16.0
-texture_margin_top = 16.0
-texture_margin_right = 16.0
-texture_margin_bottom = 16.0
-
-[sub_resource type="StyleBoxTexture" id="PaperHud_button_normal"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("paper_button_normal")
-texture_margin_left = 10.0
-texture_margin_top = 10.0
-texture_margin_right = 10.0
-texture_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxTexture" id="PaperHud_button_hover"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("paper_button_hover")
-texture_margin_left = 10.0
-texture_margin_top = 10.0
-texture_margin_right = 10.0
-texture_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxTexture" id="PaperHud_button_pressed"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("paper_button_pressed")
-texture_margin_left = 10.0
-texture_margin_top = 10.0
-texture_margin_right = 10.0
-texture_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxTexture" id="PaperHud_button_disabled"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("paper_button_disabled")
-texture_margin_left = 10.0
-texture_margin_top = 10.0
-texture_margin_right = 10.0
-texture_margin_bottom = 10.0
-
 [resource]
 default_font = SubResource("SansMedium")
 default_font_size = 20
@@ -1237,17 +1189,37 @@ Button/styles/hover = SubResource("ButtonHover")
 Button/styles/hover_pressed = SubResource("ButtonPressed")
 Button/styles/normal = SubResource("ButtonNormal")
 Button/styles/pressed = SubResource("ButtonPressed")
+CheckBox/colors/checkbox_checked_color = Color(1, 1, 1, 1)
+CheckBox/colors/checkbox_unchecked_color = Color(1, 1, 1, 1)
 CheckBox/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 CheckBox/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
 CheckBox/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 CheckBox/colors/font_hover_pressed_color = Color(0.55, 0.19, 0.13, 1)
 CheckBox/colors/font_pressed_color = Color(0.55, 0.19, 0.13, 1)
+CheckBox/icons/checked = ExtResource("paper_ctrl_checked")
+CheckBox/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+CheckBox/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+CheckBox/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+CheckBox/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+CheckBox/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+CheckBox/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
 CheckBox/styles/disabled = SubResource("ButtonDisabled")
 CheckBox/styles/focus = SubResource("ButtonFocus")
 CheckBox/styles/hover = SubResource("ButtonHover")
 CheckBox/styles/hover_pressed = SubResource("PresetCardPressed")
 CheckBox/styles/normal = SubResource("ButtonNormal")
 CheckBox/styles/pressed = SubResource("PresetCardPressed")
+CheckButton/colors/button_checked_color = Color(1, 1, 1, 1)
+CheckButton/colors/button_unchecked_color = Color(1, 1, 1, 1)
+CheckButton/icons/checked = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_disabled_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/checked_mirrored = ExtResource("paper_ctrl_toggle_on")
+CheckButton/icons/unchecked = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_disabled_mirrored = ExtResource("paper_ctrl_toggle_off")
+CheckButton/icons/unchecked_mirrored = ExtResource("paper_ctrl_toggle_off")
 FamilyActionButton/base_type = &"Button"
 FamilyActionButton/colors/font_color = Color(0.98, 0.91, 0.72, 1)
 FamilyActionButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
@@ -1343,20 +1315,39 @@ FamilyTraitBadgePos/colors/font_color = Color(0.18, 0.38, 0.32, 1)
 FamilyTraitBadgePos/font_sizes/font_size = 15
 FamilyTraitBadgePos/fonts/font = SubResource("SansStrong")
 FamilyTraitBadgePos/styles/normal = SubResource("TraitBadgePos")
+GraphEdit/icons/grid_toggle = ExtResource("paper_ctrl_unchecked")
+GraphEdit/icons/layout = ExtResource("paper_ctrl_reset")
+GraphEdit/icons/minimap_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/snapping_toggle = ExtResource("paper_ctrl_target")
+GraphEdit/icons/zoom_in = ExtResource("paper_ctrl_zoom_in")
+GraphEdit/icons/zoom_out = ExtResource("paper_ctrl_zoom_out")
+GraphEdit/icons/zoom_reset = ExtResource("paper_ctrl_reset")
+HScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_left")
+HScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+HScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_right")
 HScrollBar/styles/grabber = SubResource("ScrollGrabber")
 HScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
 HScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 HScrollBar/styles/scroll = SubResource("ScrollTrack")
 HScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 HSeparator/styles/separator = SubResource("Rule")
+HSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
+HSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
 HSlider/styles/grabber_area = SubResource("SliderFill")
 HSlider/styles/grabber_area_highlight = SubResource("SliderFillHighlight")
 HSlider/styles/slider = SubResource("SliderTrack")
 Label/colors/font_color = Color(0.12, 0.07, 0.035, 1)
 Label/colors/font_shadow_color = Color(0, 0, 0, 0)
 LineEdit/colors/caret_color = Color(0.57, 0.25, 0.16, 1)
+LineEdit/colors/clear_button_color = Color(1, 1, 1, 1)
+LineEdit/colors/clear_button_color_pressed = Color(1, 1, 1, 1)
 LineEdit/colors/font_color = Color(0.12, 0.07, 0.035, 1)
 LineEdit/colors/font_placeholder_color = Color(0.39, 0.29, 0.2, 0.72)
+LineEdit/icons/clear = ExtResource("paper_ctrl_close")
 LineEdit/styles/focus = SubResource("LineEditFocus")
 LineEdit/styles/normal = SubResource("LineEditNormal")
 OptionButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
@@ -1364,6 +1355,7 @@ OptionButton/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
 OptionButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 OptionButton/colors/font_hover_pressed_color = Color(0.99, 0.94, 0.8, 1)
 OptionButton/colors/font_pressed_color = Color(0.95, 0.86, 0.66, 1)
+OptionButton/icons/arrow = ExtResource("paper_ctrl_arrow_down")
 OptionButton/styles/disabled = SubResource("ButtonDisabled")
 OptionButton/styles/focus = SubResource("ButtonFocus")
 OptionButton/styles/hover = SubResource("ButtonHover")
@@ -1607,6 +1599,10 @@ PKIconButton/styles/normal = SubResource("ButtonNormal")
 PKIconButton/styles/pressed = SubResource("ButtonPressed")
 PKIdeologyStage/base_type = &"PanelContainer"
 PKIdeologyStage/styles/panel = SubResource("IdeologyStage")
+PKIdeologyStageTitle/base_type = &"Label"
+PKIdeologyStageTitle/colors/font_color = Color(0.12, 0.075, 0.04, 1)
+PKIdeologyStageTitle/font_sizes/font_size = 20
+PKIdeologyStageTitle/fonts/font = SubResource("SerifStrong")
 PKInsetPanel/base_type = &"PanelContainer"
 PKInsetPanel/styles/panel = SubResource("PaperCard")
 PKMenuChapterButton/base_type = &"Button"
@@ -1635,6 +1631,8 @@ PKPaperAnnotation/font_sizes/font_size = 17
 PKPaperAnnotation/styles/normal = SubResource("PaperNote")
 PKPaperCard/base_type = &"PanelContainer"
 PKPaperCard/styles/panel = SubResource("PaperCard")
+PKPaperHUDVertical/base_type = &"PanelContainer"
+PKPaperHUDVertical/styles/panel = SubResource("PaperHud_panel_vertical")
 PKPaperNote/base_type = &"PanelContainer"
 PKPaperNote/styles/panel = SubResource("PaperNote")
 PKPaperPopup/base_type = &"PanelContainer"
@@ -1644,10 +1642,6 @@ PKPaperTag/colors/font_color = Color(0.12, 0.075, 0.04, 1)
 PKPaperTag/font_sizes/font_size = 15
 PKPaperTag/fonts/font = SubResource("SansStrong")
 PKPaperTag/styles/normal = SubResource("PaperTag")
-PKIdeologyStageTitle/base_type = &"Label"
-PKIdeologyStageTitle/colors/font_color = Color(0.12, 0.075, 0.04, 1)
-PKIdeologyStageTitle/font_sizes/font_size = 20
-PKIdeologyStageTitle/fonts/font = SubResource("SerifStrong")
 PKPaperToast/base_type = &"PanelContainer"
 PKPaperToast/styles/panel = SubResource("PaperToast")
 PKPresetCardButton/base_type = &"Button"
@@ -1723,122 +1717,77 @@ PKWorkspaceToolbar/styles/panel = SubResource("WorkspaceToolbar")
 PanelContainer/styles/panel = SubResource("PaperCard")
 PopupMenu/colors/font_color = Color(0.14, 0.08, 0.04, 1)
 PopupMenu/colors/font_hover_color = Color(0.48, 0.16, 0.1, 1)
+PopupMenu/icons/checked = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+PopupMenu/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
+PopupMenu/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
+PopupMenu/icons/submenu = ExtResource("paper_ctrl_arrow_right")
+PopupMenu/icons/submenu_mirrored = ExtResource("paper_ctrl_arrow_left")
+PopupMenu/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+PopupMenu/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
 PopupMenu/styles/hover = SubResource("ButtonHover")
 PopupMenu/styles/panel = SubResource("PaperPopup")
 ProgressBar/styles/background = SubResource("ProgressBackground")
 ProgressBar/styles/fill = SubResource("ProgressFill")
+SpinBox/colors/down_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+SpinBox/colors/down_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/down_pressed_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_disabled_icon_modulate = Color(1, 1, 1, 0.45)
+SpinBox/colors/up_hover_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_icon_modulate = Color(1, 1, 1, 1)
+SpinBox/colors/up_pressed_icon_modulate = Color(1, 1, 1, 1)
 SpinBox/colors/updown = Color(0.55, 0.19, 0.13, 0.92)
+SpinBox/icons/down = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_disabled = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_hover = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/down_pressed = ExtResource("paper_ctrl_arrow_down")
+SpinBox/icons/up = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_disabled = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_hover = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/up_pressed = ExtResource("paper_ctrl_arrow_up")
+SpinBox/icons/updown = ExtResource("paper_ctrl_updown")
+TabBar/colors/icon_hovered_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_selected_color = Color(1, 1, 1, 1)
+TabBar/colors/icon_unselected_color = Color(1, 1, 1, 1)
+TabBar/icons/close = ExtResource("paper_ctrl_close")
+TabBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
+TabBar/icons/drop_mark = ExtResource("paper_ctrl_arrow_down")
+TabBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
+TabBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
+TextEdit/icons/space = ExtResource("paper_ctrl_radio_unchecked")
+TextEdit/icons/tab = ExtResource("paper_ctrl_arrow_right")
 TooltipLabel/colors/font_color = Color(0.12, 0.07, 0.035, 1)
 TooltipPanel/styles/panel = SubResource("PaperPopup")
+Tree/icons/arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/arrow_collapsed = ExtResource("paper_ctrl_arrow_right")
+Tree/icons/arrow_collapsed_mirrored = ExtResource("paper_ctrl_arrow_left")
+Tree/icons/checked = ExtResource("paper_ctrl_checked")
+Tree/icons/checked_disabled = ExtResource("paper_ctrl_checked")
+Tree/icons/indeterminate = ExtResource("paper_ctrl_indeterminate")
+Tree/icons/indeterminate_disabled = ExtResource("paper_ctrl_indeterminate")
+Tree/icons/scroll_hint = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/select_arrow = ExtResource("paper_ctrl_arrow_down")
+Tree/icons/unchecked = ExtResource("paper_ctrl_unchecked")
+Tree/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
+Tree/icons/updown = ExtResource("paper_ctrl_updown")
+VScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_up")
+VScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_down")
+VScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_down")
 VScrollBar/styles/grabber = SubResource("ScrollGrabber")
 VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
 VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("Rule")
-
-PKPaperHUDVertical/base_type = &"PanelContainer"
-PKPaperHUDVertical/styles/panel = SubResource("PaperHud_panel_vertical")
-
-; Generated paper control icons: tools/bake_paper_control_icons.gd
-CheckBox/icons/checked = ExtResource("paper_ctrl_checked")
-CheckBox/icons/checked_disabled = ExtResource("paper_ctrl_checked")
-CheckBox/icons/unchecked = ExtResource("paper_ctrl_unchecked")
-CheckBox/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
-CheckBox/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
-CheckBox/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
-CheckBox/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
-CheckBox/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
-PopupMenu/icons/checked = ExtResource("paper_ctrl_checked")
-PopupMenu/icons/checked_disabled = ExtResource("paper_ctrl_checked")
-PopupMenu/icons/unchecked = ExtResource("paper_ctrl_unchecked")
-PopupMenu/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
-PopupMenu/icons/radio_checked = ExtResource("paper_ctrl_radio_checked")
-PopupMenu/icons/radio_checked_disabled = ExtResource("paper_ctrl_radio_checked")
-PopupMenu/icons/radio_unchecked = ExtResource("paper_ctrl_radio_unchecked")
-PopupMenu/icons/radio_unchecked_disabled = ExtResource("paper_ctrl_radio_unchecked")
-Tree/icons/checked = ExtResource("paper_ctrl_checked")
-Tree/icons/checked_disabled = ExtResource("paper_ctrl_checked")
-Tree/icons/unchecked = ExtResource("paper_ctrl_unchecked")
-Tree/icons/unchecked_disabled = ExtResource("paper_ctrl_unchecked")
-Tree/icons/indeterminate = ExtResource("paper_ctrl_indeterminate")
-Tree/icons/indeterminate_disabled = ExtResource("paper_ctrl_indeterminate")
-CheckButton/icons/checked = ExtResource("paper_ctrl_toggle_on")
-CheckButton/icons/checked_disabled = ExtResource("paper_ctrl_toggle_on")
-CheckButton/icons/checked_mirrored = ExtResource("paper_ctrl_toggle_on")
-CheckButton/icons/checked_disabled_mirrored = ExtResource("paper_ctrl_toggle_on")
-CheckButton/icons/unchecked = ExtResource("paper_ctrl_toggle_off")
-CheckButton/icons/unchecked_disabled = ExtResource("paper_ctrl_toggle_off")
-CheckButton/icons/unchecked_mirrored = ExtResource("paper_ctrl_toggle_off")
-CheckButton/icons/unchecked_disabled_mirrored = ExtResource("paper_ctrl_toggle_off")
-OptionButton/icons/arrow = ExtResource("paper_ctrl_arrow_down")
-SpinBox/icons/updown = ExtResource("paper_ctrl_updown")
-SpinBox/icons/up = ExtResource("paper_ctrl_arrow_up")
-SpinBox/icons/up_hover = ExtResource("paper_ctrl_arrow_up")
-SpinBox/icons/up_pressed = ExtResource("paper_ctrl_arrow_up")
-SpinBox/icons/up_disabled = ExtResource("paper_ctrl_arrow_up")
-SpinBox/icons/down = ExtResource("paper_ctrl_arrow_down")
-SpinBox/icons/down_hover = ExtResource("paper_ctrl_arrow_down")
-SpinBox/icons/down_pressed = ExtResource("paper_ctrl_arrow_down")
-SpinBox/icons/down_disabled = ExtResource("paper_ctrl_arrow_down")
-PopupMenu/icons/submenu = ExtResource("paper_ctrl_arrow_right")
-PopupMenu/icons/submenu_mirrored = ExtResource("paper_ctrl_arrow_left")
-Tree/icons/updown = ExtResource("paper_ctrl_updown")
-Tree/icons/select_arrow = ExtResource("paper_ctrl_arrow_down")
-Tree/icons/arrow = ExtResource("paper_ctrl_arrow_down")
-Tree/icons/arrow_collapsed = ExtResource("paper_ctrl_arrow_right")
-Tree/icons/arrow_collapsed_mirrored = ExtResource("paper_ctrl_arrow_left")
-Tree/icons/scroll_hint = ExtResource("paper_ctrl_arrow_down")
-HSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
-HSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
-HSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
 VSlider/icons/grabber = ExtResource("paper_ctrl_grabber")
-VSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
 VSlider/icons/grabber_disabled = ExtResource("paper_ctrl_grabber")
-HScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
-HScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
-HScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_right")
-HScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
-HScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
-HScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_left")
-VScrollBar/icons/increment = ExtResource("paper_ctrl_arrow_down")
-VScrollBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_down")
-VScrollBar/icons/increment_pressed = ExtResource("paper_ctrl_arrow_down")
-VScrollBar/icons/decrement = ExtResource("paper_ctrl_arrow_up")
-VScrollBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_up")
-VScrollBar/icons/decrement_pressed = ExtResource("paper_ctrl_arrow_up")
-LineEdit/icons/clear = ExtResource("paper_ctrl_close")
-TextEdit/icons/tab = ExtResource("paper_ctrl_arrow_right")
-TextEdit/icons/space = ExtResource("paper_ctrl_radio_unchecked")
-TabBar/icons/increment = ExtResource("paper_ctrl_arrow_right")
-TabBar/icons/increment_highlight = ExtResource("paper_ctrl_arrow_right")
-TabBar/icons/decrement = ExtResource("paper_ctrl_arrow_left")
-TabBar/icons/decrement_highlight = ExtResource("paper_ctrl_arrow_left")
-TabBar/icons/drop_mark = ExtResource("paper_ctrl_arrow_down")
-TabBar/icons/close = ExtResource("paper_ctrl_close")
+VSlider/icons/grabber_highlight = ExtResource("paper_ctrl_grabber")
 Window/icons/close = ExtResource("paper_ctrl_close")
 Window/icons/close_pressed = ExtResource("paper_ctrl_close")
-GraphEdit/icons/zoom_in = ExtResource("paper_ctrl_zoom_in")
-GraphEdit/icons/zoom_out = ExtResource("paper_ctrl_zoom_out")
-GraphEdit/icons/zoom_reset = ExtResource("paper_ctrl_reset")
-GraphEdit/icons/grid_toggle = ExtResource("paper_ctrl_unchecked")
-GraphEdit/icons/minimap_toggle = ExtResource("paper_ctrl_target")
-GraphEdit/icons/snapping_toggle = ExtResource("paper_ctrl_target")
-GraphEdit/icons/layout = ExtResource("paper_ctrl_reset")
-CheckBox/colors/checkbox_checked_color = Color(1, 1, 1, 1)
-CheckBox/colors/checkbox_unchecked_color = Color(1, 1, 1, 1)
-CheckButton/colors/button_checked_color = Color(1, 1, 1, 1)
-CheckButton/colors/button_unchecked_color = Color(1, 1, 1, 1)
-LineEdit/colors/clear_button_color = Color(1, 1, 1, 1)
-LineEdit/colors/clear_button_color_pressed = Color(1, 1, 1, 1)
-SpinBox/colors/up_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/up_hover_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/up_pressed_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/up_disabled_icon_modulate = Color(1, 1, 1, 0.45)
-SpinBox/colors/down_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/down_hover_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/down_pressed_icon_modulate = Color(1, 1, 1, 1)
-SpinBox/colors/down_disabled_icon_modulate = Color(1, 1, 1, 0.45)
-TabBar/colors/icon_selected_color = Color(1, 1, 1, 1)
-TabBar/colors/icon_hovered_color = Color(1, 1, 1, 1)
-TabBar/colors/icon_unselected_color = Color(1, 1, 1, 1)

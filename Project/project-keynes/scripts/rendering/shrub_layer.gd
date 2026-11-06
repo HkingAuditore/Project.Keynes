@@ -5581,8 +5581,8 @@ func _shader_share_layer_count() -> int:
 	return maxi(count, 1)
 
 
-# Generated single-tree crown sprites (resource_art/crown_atlas); the body shader
-# falls back to procedural crowns when the art is missing.
+# Generated single-tree crown and hardscape-rock sprites (resource_art/crown_atlas);
+# the body shader falls back to procedural forms when the art is missing.
 static func _bind_crown_art(mat: ShaderMaterial) -> void:
 	var art := ResourceArtLibrary.shared()
 	var bound := art.crown != null and art.crown_normal != null

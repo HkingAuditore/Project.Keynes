@@ -562,9 +562,16 @@ void fragment() {
 	float local_day = daylight.x;
 	float sun_vis = 1.0;
 	float floor_shadow = 0.0;
+#ifdef VF_CROWN_ART
+	// Atlas boulders already carry painted cavity shading. The synthetic ellipse
+	// underneath them reads as a dark pasted-on plate, so only procedural rocks use it.
+	bool atlas_rock = form == VF_ROCK && crown_art_bound;
+#else
+	bool atlas_rock = false;
+#endif
 #ifndef PK_MOBILE_ANY
 	float hs = vf_height_scale(form);
-	if (!far && veg_shade_quality >= 2 && local_day > 0.02 && hs > 0.1) {
+	if (!atlas_rock && !far && veg_shade_quality >= 2 && local_day > 0.02 && hs > 0.1) {
 		vec2 sl = vec2(dot(L.xy, bx), dot(L.xy, by)) / max(L.z, 0.28);
 		vec2 sh = vf_soft_shadow(pe, ctx, form, -sl * hs);
 		sun_vis = 1.0 - sh.y * 0.50 * step(0.001, s.cov);

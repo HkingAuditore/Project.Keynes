@@ -61,6 +61,18 @@ uniform float plant_cluster_density = 1.30;
 uniform sampler2DArray art_fauna : filter_linear_mipmap, repeat_disable;
 uniform bool art_fauna_bound = false;
 uniform float art_animal_shadow = 0.35;
+// Generated material atlas: layer 0 = albedo, layer 1 = RG normal/B height/A AO.
+// One sampler covers geology props, ground resources and their lens badges.
+uniform sampler2DArray art_material : filter_linear_mipmap, repeat_disable;
+uniform bool art_material_bound = false;
+uniform float material_normal_strength = 0.90;
+uniform float material_shadow = 0.18;
+// Generated materials carry a soft height field in normal-layer B. Fade their
+// silhouette and surface normal by that height so decals meet terrain without
+// a painted-on cutoff. Lower/medium keep the smoothstep but skip edge noise.
+uniform float decal_edge_softness = 1.0;
+uniform float decal_edge_noise = 0.65;
+uniform float solid_edge_softness = 0.72;
 uniform int herd_size_min = 3;
 uniform int herd_size_max = 9;
 // Body length of one animal, in hexes; herds fade out below animal_min_pixels.
@@ -104,6 +116,7 @@ vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #endif
 
 varying flat vec4 v_style;
+varying flat vec4 v_material;
 varying flat vec4 v_climate;
 varying flat vec4 v_data;
 varying flat vec4 v_art;
@@ -175,14 +188,77 @@ float rv_ellipse(vec2 p, vec2 extent) {
 	return (length(p / extent) - 1.0) * min(extent.x, extent.y);
 }
 
-// 与树木同源的定向天光；地表法线与 GI 只在 vertex 采样。
-vec3 rv_ambient(vec3 normal) {
-	vec3 mixed_n = mix(normal, v_sky.xyz, gi_bent_strength);
+struct RvDaylightState {
+	vec3 ambient;
+	vec3 direct;
+	vec3 sun;
+	vec3 day;
+};
+
+struct RvHorizonState {
+	float direct_visibility;
+	vec4 sky;
+};
+
+// Procedural props and lens badges use the anchor sample. Ground decals, submerged
+// cues and generated-material geology re-sample it per pixel at q2.
+RvDaylightState rv_sample_daylight(vec2 map_uv) {
+	RvDaylightState state;
+	if (tod_debug_sun_position_enabled) {
+		state.sun = normalize(tod_sun_dir);
+		float d_day = smoothstep(-0.08, 0.22, state.sun.z);
+		float d_dusk = smoothstep(-0.06, 0.14, state.sun.z) * (1.0 - smoothstep(0.14, 0.42, state.sun.z));
+		vec3 sun_c = mix(EARTH_DAYLIGHT_NOON, EARTH_DAYLIGHT_DUSK, d_dusk);
+		vec3 amb_c = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, d_day);
+		float moon = (1.0 - d_day) * 0.72;
+		state.ambient = amb_c * tod_exposure;
+		state.direct = sun_c * tod_exposure;
+		state.day = vec3(d_day, smoothstep(0.0, 0.65, state.sun.z), moon);
+	} else {
+		EarthDaylight daylight = eval_earth_daylight(
+			map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
+		state.sun = daylight.sun_dir;
+		state.ambient = daylight.amb_col * tod_exposure;
+		state.direct = daylight.sun_col * tod_exposure;
+		state.day = vec3(daylight.local_day, daylight.sun_high, daylight.moon_strength);
+	}
+	return state;
+}
+
+RvHorizonState rv_sample_horizon(vec2 map_uv, vec3 sun) {
+	RvHorizonState state;
+#ifdef PK_WEB_RESOURCE_MIN
+	// Compatibility/web-min has no baked horizon input by design.
+	state.direct_visibility = 1.0;
+	state.sky = vec4(0.0, 0.0, 1.0, 1.0);
+#else
+	TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, sun);
+	state.direct_visibility = horizon.direct_visibility;
+	state.sky = vec4(horizon.bent_normal, horizon.sky_visibility);
+#endif
+	return state;
+}
+
+vec3 rv_terrain_normal_at(vec2 map_uv) {
+	vec2 terrain_xy = terrain_normal_tex_bound
+		? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * 0.65
+		: vec2(0.0);
+	return normalize(vec3(terrain_xy, 1.0));
+}
+
+// Same directional sky as vegetation; callers choose anchor or per-pixel inputs.
+vec3 rv_ambient_from(vec3 normal, vec3 ambient_color, vec3 direct_color, vec3 sun_dir,
+		vec3 day, vec4 sky) {
+	vec3 mixed_n = mix(normal, sky.xyz, gi_bent_strength);
 	vec3 amb_n = dot(mixed_n, mixed_n) > 0.000001 ? normalize(mixed_n) : normal;
-	float ao = terrain_horizon_apply_normal(v_sky.w, normal, v_sky.xyz);
-	vec3 sky = earth_sky_sh(v_light, v_direct, v_sun, v_day.x, amb_n);
-	return sky * ao * mix(1.0, 0.70, v_day.x)
-		+ EARTH_MOONLIGHT * v_day.z * max(dot(normal, -v_sun), 0.0) * 0.35 * tod_exposure;
+	float ao = terrain_horizon_apply_normal(sky.w, normal, sky.xyz);
+	vec3 directional_sky = earth_sky_sh(ambient_color, direct_color, sun_dir, day.x, amb_n);
+	return directional_sky * ao * mix(1.0, 0.70, day.x)
+		+ EARTH_MOONLIGHT * day.z * max(dot(normal, -sun_dir), 0.0) * 0.35 * tod_exposure;
+}
+
+vec3 rv_ambient(vec3 normal) {
+	return rv_ambient_from(normal, v_light, v_direct, v_sun, v_day, v_sky);
 }
 
 void vertex() {
@@ -197,6 +273,7 @@ void vertex() {
 	v_ecology = mix(vec2(memory.a, 1.0 - memory.a), ecology.rg, has_ecology_lut ? live : 0.0);
 	float style = INSTANCE_CUSTOM.g;
 	v_style = texture(style_lut, vec2(0.25, (style + 0.5) / 64.0));
+	v_material = texture(style_lut, vec2(0.125, (style + 0.5) / 64.0));
 	vec4 meta = texture(style_lut, vec2(0.75, (style + 0.5) / 64.0));
 	v_art = texture(style_lut, vec2(0.625, (style + 0.5) / 64.0));
 	float radius_px_world = length(MODEL_MATRIX[0].xy) * camera_zoom;
@@ -208,35 +285,15 @@ void vertex() {
 	v_rank = vec2(INSTANCE_CUSTOM.a, radius_px);
 	vec2 center = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xy;
 	vec2 map_uv = visual_static_wrap_uv((center - world_origin) / max(world_size, vec2(0.0001)));
-	EarthDaylight daylight = eval_earth_daylight(map_uv, clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0, day_night_enabled);
-	if (tod_debug_sun_position_enabled) {
-		v_sun = normalize(tod_sun_dir);
-		float d_day = smoothstep(-0.08, 0.22, v_sun.z);
-		float d_dusk = smoothstep(-0.06, 0.14, v_sun.z) * (1.0 - smoothstep(0.14, 0.42, v_sun.z));
-		vec3 sun_c = mix(EARTH_DAYLIGHT_NOON, EARTH_DAYLIGHT_DUSK, d_dusk);
-		vec3 amb_c = mix(EARTH_NIGHT_AMBIENT, EARTH_DAY_AMBIENT, d_day);
-		float moon = (1.0 - d_day) * 0.72;
-		v_light = amb_c * tod_exposure;
-		v_direct = sun_c * tod_exposure;
-		v_day = vec3(d_day, smoothstep(0.0, 0.65, v_sun.z), moon);
-	} else {
-		v_sun = daylight.sun_dir;
-		v_light = daylight.amb_col * tod_exposure;
-		v_direct = daylight.sun_col * tod_exposure;
-		v_day = vec3(daylight.local_day, daylight.sun_high, daylight.moon_strength);
-	}
-#ifdef PK_WEB_RESOURCE_MIN
-	// 与 terrain_horizon_evaluate() 在 LOW 档 / 未绑 horizon 贴图时的返回值逐位相同
-	// （terrain_horizon.gdshaderinc:134-136、273-280）：web 上这条路径恒为中性值。
-	v_horizon = 1.0;
-	v_sky = vec4(0.0, 0.0, 1.0, 1.0);
-#else
-	TerrainHorizonSample horizon = terrain_horizon_evaluate(map_uv, v_sun);
-	v_horizon = horizon.direct_visibility;
-	v_sky = vec4(horizon.bent_normal, horizon.sky_visibility);
-#endif
-	vec2 terrain_xy = terrain_normal_tex_bound ? (visual_sample_terrain_normal(map_uv).rg * 2.0 - 1.0) * 0.65 : vec2(0.0);
-	v_terrain = normalize(vec3(terrain_xy, 1.0));
+	RvDaylightState anchor_daylight = rv_sample_daylight(map_uv);
+	v_sun = anchor_daylight.sun;
+	v_light = anchor_daylight.ambient;
+	v_direct = anchor_daylight.direct;
+	v_day = anchor_daylight.day;
+	RvHorizonState anchor_horizon = rv_sample_horizon(map_uv, v_sun);
+	v_horizon = anchor_horizon.direct_visibility;
+	v_sky = anchor_horizon.sky;
+	v_terrain = rv_terrain_normal_at(map_uv);
 	v_axis = normalize(MODEL_MATRIX[0].xy);
 	float kind_raw = COLOR.a + 0.01;
 	float kind = floor(kind_raw);
@@ -358,6 +415,78 @@ vec4 rv_herd(vec2 p, float layer, float count, float seed, float band, float t, 
 	return vec4(pm / max(pa, 0.0001), pa);
 }
 
+bool rv_material_art_bound() {
+	return art_material_bound && v_material.z > 0.5 && v_material.y > 0.5;
+}
+
+vec2 rv_material_uv(vec2 p) {
+	// Atlas is 8x4 cells. p is top-down form space (+y = image top), while texture
+	// v grows downward, so flip only v before selecting the cell.
+	float cell = floor(v_material.y - 0.5);
+	vec2 grid = vec2(8.0, 4.0);
+	vec2 cell_xy = vec2(mod(cell, grid.x), floor(cell / grid.x));
+	vec2 local_uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+	return (cell_xy + local_uv) / grid;
+}
+
+vec4 rv_material_albedo(vec2 p) {
+	return texture(art_material, vec3(rv_material_uv(p), 0.0));
+}
+
+vec4 rv_material_surface(vec2 p) {
+	return texture(art_material, vec3(rv_material_uv(p), 1.0));
+}
+
+vec3 rv_material_local_normal(vec4 surface) {
+	vec2 nxy = (surface.rg * 2.0 - 1.0) * material_normal_strength;
+	float nz = sqrt(max(1.0 - dot(nxy, nxy), 0.08));
+	return normalize(vec3(nxy, nz));
+}
+
+vec3 rv_material_normal(vec4 surface, vec2 axis, vec3 terrain) {
+	vec3 local_n = rv_material_local_normal(surface);
+	vec2 nxy = local_n.xy;
+	float nz = local_n.z;
+	vec2 screen_n = vec2(nxy.x, -nxy.y);
+	vec2 world_slope = axis * screen_n.x + vec2(-axis.y, axis.x) * screen_n.y;
+	return normalize(vec3(world_slope + terrain.xy * nz, max(nz, 0.22)));
+}
+
+float rv_material_edge_noise(vec2 p, float seed, float amount) {
+#ifdef PK_WEB_RESOURCE_MIN
+	return 0.0;
+#else
+	if (amount <= 0.0001) {
+		return 0.0;
+	}
+	vec2 q = p * vec2(3.7, 4.3) + vec2(seed * 19.3, seed * 7.1);
+	// A pair of low-frequency waves gives every tier an irregular contact contour.
+	// High quality adds one value-noise octave; lower tiers keep only the cheap waves.
+	float macro = sin(q.x) * sin(q.y * 1.17 + 0.8);
+	float broad = vf_vnoise(q * 1.15 + vec2(5.7, 1.3)) - 0.5;
+	if (visual_quality < 2) {
+		return (broad * 0.55 + macro * 0.28) * amount * 0.22;
+	}
+	float screen_detail = smoothstep(2.0, 8.0, v_rank.y);
+	float fine = (vf_vnoise(q * 2.9 + vec2(seed * 31.1, 9.4)) - 0.5) * screen_detail;
+	return (broad * 0.62 + fine * 0.38 + macro * 0.22) * amount * 0.26;
+#endif
+}
+
+// Keep the interior opaque, but let the outer 15-30% dissolve through a noisy
+// height+alpha band. This is what turns the authored silhouette into a contact edge
+// instead of a pasted-on cutout. Badges bypass this pass and stay legible.
+float rv_material_contact_edge(vec4 albedo, vec4 surface, vec2 p, float seed,
+		bool ground, float softness) {
+	float n = rv_material_edge_noise(p, seed, decal_edge_noise * (ground ? 1.0 : 0.72));
+	float height_edge = smoothstep(ground ? 0.012 : 0.024, ground ? 0.34 : 0.30,
+		surface.b + n);
+	float alpha_edge = smoothstep(ground ? 0.018 : 0.025, ground ? 0.46 : 0.42,
+		albedo.a + n * 0.82);
+	float feathered = height_edge * alpha_edge;
+	return mix(1.0, feathered, softness);
+}
+
 void fragment() {
 	int form = int(v_data.x + 0.5);
 	int family = int(v_data.y + 0.5);
@@ -366,6 +495,7 @@ void fragment() {
 	float seed = v_data.z;
 	float live = v_data.w;
 	float lens = clamp(lens_amount, 0.0, 1.0);
+	bool material_art = rv_material_art_bound();
 	// QuadMesh V is inverted relative to Canvas Y. The map is viewed straight down, so
 	// every subject is drawn top-down (p.y up in form space, canvas y down on screen).
 	vec2 p = vec2(UV.x * 2.0 - 1.0, 1.0 - UV.y * 2.0);
@@ -374,11 +504,36 @@ void fragment() {
 	float motion = world_time * live;
 	vec3 tint = v_style.rgb;
 	float snow = clamp(v_climate.b * snow_response, 0.0, 1.0);
+	// Ground decals and submerged cues span enough terrain that anchor-only lighting
+	// showed as a uniform tint. Re-sample the same inputs as ground cover per pixel at
+	// q2; props, lens badges and lower tiers keep the cheaper anchor sample.
+	bool pixel_surface_lighting = lens < 0.001 && visual_quality >= 2
+		&& (kind == 2 || kind == 3 || (kind == 1 && material_art));
 	vec3 light_dir = normalize(v_sun);
-	vec3 direct_light = v_direct * v_day.x * v_horizon;
+	vec3 ambient_color = v_light;
+	vec3 direct_color = v_direct;
+	vec3 day_state = v_day;
+	vec4 sky_state = v_sky;
+	float horizon_visibility = v_horizon;
+	vec3 terrain_normal = v_terrain;
+	if (pixel_surface_lighting) {
+		vec2 surface_uv = visual_static_wrap_uv(
+			(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
+		RvDaylightState surface_daylight = rv_sample_daylight(surface_uv);
+		light_dir = surface_daylight.sun;
+		ambient_color = surface_daylight.ambient;
+		direct_color = surface_daylight.direct;
+		day_state = surface_daylight.day;
+		RvHorizonState surface_horizon = rv_sample_horizon(surface_uv, light_dir);
+		horizon_visibility = surface_horizon.direct_visibility;
+		sky_state = surface_horizon.sky;
+		terrain_normal = rv_terrain_normal_at(surface_uv);
+	}
+	vec3 direct_light = direct_color * day_state.x * horizon_visibility;
 	// Flat-ground lighting shared by decals and submerged cues.
-	float flat_diffuse = max(dot(v_terrain, light_dir), 0.0);
-	vec3 flat_light = rv_ambient(v_terrain) + direct_light * flat_diffuse * 0.78;
+	float flat_diffuse = max(dot(terrain_normal, light_dir), 0.0);
+	vec3 flat_light = rv_ambient_from(terrain_normal, ambient_color, direct_color,
+		light_dir, day_state, sky_state) + direct_light * flat_diffuse * 0.78;
 
 	// Subject = the full procedural drawing. In the world it is only drawn for small
 	// props; while the lens is on it is also the picture inside every badge.
@@ -410,32 +565,53 @@ void fragment() {
 			pf -= local_w * gust * amp * (1.0 - lens * 0.65);
 		}
 		RSurf s = rs_empty();
-#ifdef PK_WEB_RESOURCE_MIN
-		// web 精简变体：family == 3 也交给 rt_resource() → rt_badge_silhouette()。
-		// 水里真的会绘制的鱼群走 rv_herd() 位图兽群（art_fish），下面这段 4 鱼 + 8 鳍
-		// 的绘制只在 lens 徽章里出现，整段不参与编译（含 2×rs_blade 内联）。
-		s = rt_resource(pf, form, family, sub_style, tint, seed, px,
-			family == 1 ? motion * animal_motion : motion, lens < 0.5);
-#else
-		if (family == 3) {
-			// Badge picture of marine & freshwater fish: 4 curved silver-aqua fish in a shoal.
-			vec3 fish_col = sub_style == 0 ? vec3(0.46, 0.80, 0.88) : vec3(0.56, 0.86, 0.74);
-			for (int i = 0; i < 4; i++) {
-				float fi = float(i);
-				vec2 fc = i == 0 ? vec2(-0.18, -0.14) : (i == 1 ? vec2(0.20, -0.02) : (i == 2 ? vec2(-0.12, 0.22) : vec2(0.18, 0.28)));
-				float fscale = i == 0 ? 1.05 : (i == 1 ? 0.92 : 0.78);
-				vec2 fp = rs_rot(-0.42 + fi * 0.12) * ((pf - fc) / fscale);
-				fp.x += sin(fp.y * 6.5 + motion * 1.2 + fi) * 0.04;
-				rs_part(s, fp, vec2(0.0, -0.04), vec2(0.13, 0.32), fish_col * (0.92 + 0.08 * fi), 0.14, px);
-				rs_blade(s, fp, vec2(0.0, 0.20), vec2(-0.14, 0.44), 0.075, fish_col * 0.78, 0.10, px);
-				rs_blade(s, fp, vec2(0.0, 0.20), vec2(0.14, 0.44), 0.075, fish_col * 0.78, 0.10, px);
-			}
-			s.spec = 0.82;
-			s.rim = 0.35;
+		vec4 mat_albedo = vec4(0.0);
+		vec4 mat_surface = vec4(0.5, 0.5, 0.0, 1.0);
+		float material_edge = 1.0;
+		if (material_art) {
+			mat_albedo = rv_material_albedo(pf);
+			mat_surface = rv_material_surface(pf);
+			material_edge = mix(1.0,
+				rv_material_contact_edge(mat_albedo, mat_surface, pf, seed, false,
+					solid_edge_softness),
+				step(lens, 0.5));
+			s.albedo = mat_albedo.rgb;
+			s.n = rv_material_local_normal(mat_surface);
+			s.h = mat_surface.b;
+			s.ao = mix(1.0, mat_surface.a, 0.92);
+			s.spec = v_material.r;
+			s.metallic = v_material.a;
+			s.rim = 0.10;
+			s.floor_col = mat_albedo.rgb * 0.36;
+			s.floor_a = mat_albedo.a * material_shadow * material_edge;
 		} else {
-			s = rt_resource(pf, form, family, sub_style, tint, seed, px, family == 1 ? motion * animal_motion : motion, lens < 0.5);
-		}
+#ifdef PK_WEB_RESOURCE_MIN
+			// web 精简变体：family == 3 也交给 rt_resource() → rt_badge_silhouette()。
+			// 水里真的会绘制的鱼群走 rv_herd() 位图兽群（art_fish），下面这段 4 鱼 + 8 鳍
+			// 的绘制只在 lens 徽章里出现，整段不参与编译（含 2×rs_blade 内联）。
+			s = rt_resource(pf, form, family, sub_style, tint, seed, px,
+				family == 1 ? motion * animal_motion : motion, lens < 0.5);
+#else
+			if (family == 3) {
+				// Badge picture of marine & freshwater fish: 4 curved silver-aqua fish in a shoal.
+				vec3 fish_col = sub_style == 0 ? vec3(0.46, 0.80, 0.88) : vec3(0.56, 0.86, 0.74);
+				for (int i = 0; i < 4; i++) {
+					float fi = float(i);
+					vec2 fc = i == 0 ? vec2(-0.18, -0.14) : (i == 1 ? vec2(0.20, -0.02) : (i == 2 ? vec2(-0.12, 0.22) : vec2(0.18, 0.28)));
+					float fscale = i == 0 ? 1.05 : (i == 1 ? 0.92 : 0.78);
+					vec2 fp = rs_rot(-0.42 + fi * 0.12) * ((pf - fc) / fscale);
+					fp.x += sin(fp.y * 6.5 + motion * 1.2 + fi) * 0.04;
+					rs_part(s, fp, vec2(0.0, -0.04), vec2(0.13, 0.32), fish_col * (0.92 + 0.08 * fi), 0.14, px);
+					rs_blade(s, fp, vec2(0.0, 0.20), vec2(-0.14, 0.44), 0.075, fish_col * 0.78, 0.10, px);
+					rs_blade(s, fp, vec2(0.0, 0.20), vec2(0.14, 0.44), 0.075, fish_col * 0.78, 0.10, px);
+				}
+				s.spec = 0.82;
+				s.rim = 0.35;
+			} else {
+				s = rt_resource(pf, form, family, sub_style, tint, seed, px, family == 1 ? motion * animal_motion : motion, lens < 0.5);
+			}
 #endif // PK_WEB_RESOURCE_MIN
+		}
 
 		bool free_standing = family == 1 || form == 6 || form == 7 || form == 26 || form == 16 || form == 17 || form == 18;
 		// Outlines are off in the world by default (they read as stickers); badges keep a firm one.
@@ -460,7 +636,7 @@ void fragment() {
 
 		vec2 screen_n = vec2(s.n.x, -s.n.y);
 		vec2 world_slope = v_axis * screen_n.x + vec2(-v_axis.y, v_axis.x) * screen_n.y;
-		vec3 normal = normalize(vec3(world_slope + v_terrain.xy * s.n.z, max(s.n.z, 0.22)));
+		vec3 normal = normalize(vec3(world_slope + terrain_normal.xy * s.n.z, max(s.n.z, 0.22)));
 		float diffuse = max(dot(normal, light_dir), 0.0);
 
 		vec3 view_dir = vec3(0.0, 0.0, 1.0);
@@ -472,17 +648,24 @@ void fragment() {
 
 		float rim_factor = pow(1.0 - max(dot(normal, view_dir), 0.0), 2.0) * s.rim;
 		vec3 unlit = base;
-		vec3 diff_light = rv_ambient(normal) + direct_light * (diffuse * 0.78 + rim_factor * 0.10);
+		vec3 diff_light = rv_ambient_from(normal, ambient_color, direct_color,
+			light_dir, day_state, sky_state) + direct_light * (diffuse * 0.78 + rim_factor * 0.10);
 		base = (base * diff_light + direct_light * spec_color * spec_factor * 0.35) * s.ao;
 		base *= 0.92 + 0.22 * clamp(s.h * 2.0, 0.0, 1.0);
 
-		float edge_line = (1.0 - smoothstep(0.0, px * 2.2, -s.d)) * step(s.d, 0.0);
-		base *= 1.0 - edge_line * outline_k;
+		float edge_line = 0.0;
+		float alpha = mat_albedo.a * material_edge;
+		if (!material_art) {
+			edge_line = (1.0 - smoothstep(0.0, px * 2.2, -s.d)) * step(s.d, 0.0);
+			base *= 1.0 - edge_line * outline_k;
+		}
 		// Lens badges stay readable at night.
 		base = mix(base, unlit * (0.92 + 0.16 * diffuse), lens * 0.80);
 
-		float aa = clamp(fwidth(s.d), px * 0.60, px * 2.5);
-		float alpha = 1.0 - smoothstep(-aa, aa, s.d);
+		if (!material_art) {
+			float aa = clamp(fwidth(s.d), px * 0.60, px * 2.5);
+			alpha = 1.0 - smoothstep(-aa, aa, s.d);
+		}
 		if (family == 0 && form != 26) {
 			alpha *= mix(0.28, 1.0, health) * smoothstep(vitality_dead_threshold * 0.3, vitality_dead_threshold, v_climate.a);
 			alpha *= 1.0 - snow * 0.60;
@@ -498,8 +681,9 @@ void fragment() {
 		}
 		// Areas, not objects: feather the silhouette into the terrain and let the ground
 		// show between plants / crust grains. Badges keep the crisp silhouette.
-		bool area_form = (family == 0 && form != 6 && form != 7 && form != 26)
-			|| form == 18 || form == 19 || form == 20 || form == 22;
+		bool area_form = !material_art && (
+			(family == 0 && form != 6 && form != 7 && form != 26)
+			|| form == 18 || form == 19 || form == 20 || form == 22);
 		if (area_form) {
 			float warp = (vf_vnoise(pf * 5.0 + seed * 7.0) - 0.5) * area_edge_noise;
 			// 羽化群落外沿，不能对每片叶/晶体的距离场再羽化，否则小实体全部消失。
@@ -515,13 +699,13 @@ void fragment() {
 		// 默认值同为 0.0；而且 detailed_view 还要 visual_quality > 0，web auto 档解出 0。
 		// 两重运行期门都是关的 → 这段 silhouette cast shadow（含 dFdx/dFdy）不编译。
 #else
-		if (detailed_view && free_standing && lens < 0.5 && cast_shadow > 0.001) {
+		if (!material_art && detailed_view && free_standing && lens < 0.5 && cast_shadow > 0.001) {
 			vec2 grad = vec2(dFdx(s.d), dFdy(s.d));
-			vec2 away = -normalize(v_sun.xy + vec2(0.0001));
+			vec2 away = -normalize(light_dir.xy + vec2(0.0001));
 			float facing = clamp(dot(normalize(grad + vec2(0.00001)), away), 0.0, 1.0);
-			float reach = clamp(0.10 / max(v_sun.z, 0.35), 0.04, 0.26);
+			float reach = clamp(0.10 / max(light_dir.z, 0.35), 0.04, 0.26);
 			float cast = (1.0 - smoothstep(0.0, reach * facing + 0.01, s.d)) * step(0.0, s.d) * facing;
-			shadow = max(shadow, cast * 0.32 * cast_shadow * smoothstep(-0.06, 0.15, v_sun.z));
+			shadow = max(shadow, cast * 0.32 * cast_shadow * smoothstep(-0.06, 0.15, light_dir.z));
 		}
 #endif
 
@@ -545,17 +729,43 @@ void fragment() {
 		world_rgb = probe_col;
 		world_a = 0.42;
 #else
-		vec4 g = rd_ground_decal(p, form, sub_style, tint, seed);
+		bool material_ground = material_art && (form == 19 || form == 20 || form == 21
+			|| form == 22 || form == 23 || form == 25);
+		vec4 g = material_ground ? rv_material_albedo(p) : rd_ground_decal(p, form, sub_style, tint, seed);
 		vec3 col = g.rgb;
 		float grey_albedo = dot(col, vec3(0.299, 0.587, 0.114));
 		col = mix(vec3(grey_albedo), col, palette_saturation);
 		col = rv_compress_luma(col);
 		col = mix(col, vec3(0.84, 0.88, 0.92), snow * 0.55);
-		col *= flat_light;
+		float material_edge = 1.0;
+		// Procedural decals already carry their alpha mask; generated ground art
+		// replaces that mask with its height-feathered material coverage below.
+		float material_coverage = g.a;
+		if (material_ground) {
+			vec4 surf = rv_material_surface(p);
+			material_edge = rv_material_contact_edge(g, surf, p, seed, true,
+				decal_edge_softness);
+			// Never manufacture coverage outside the authored silhouette. The atlas
+			// height already eases to zero inside that silhouette, so this feather
+			// follows the mineral/soil edge instead of revealing the square cell.
+			material_coverage = g.a * material_edge;
+			vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal);
+			vec3 normal = normalize(mix(terrain_normal, material_normal,
+				mix(1.0, material_edge, 0.72)));
+			float diffuse = max(dot(normal, light_dir), 0.0);
+			// Decals keep the terrain's flat exposure. Their derived normals only bias
+			// direct light around that baseline; using full object ambient here washes
+			// dark generated material (oil, soil) into grey.
+			float response = clamp(1.0 + (diffuse - flat_diffuse) * 0.55, 0.45, 1.35);
+			col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.08;
+			col *= flat_light * response * mix(1.0, surf.a, 0.55);
+		} else {
+			col *= flat_light;
+		}
 		float grey = dot(col, vec3(0.299, 0.587, 0.114));
 		world_rgb = mix(vec3(grey) * 0.85, col, mix(0.25, 1.0, live));
 		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
-		world_a = g.a * decal_opacity * strength * (1.0 - snow * 0.45);
+		world_a = material_coverage * decal_opacity * strength * (1.0 - snow * 0.45);
 		if (form == 22) {
 			// 地力以健康草被表达，干旱/低活力转黄、退隐，积雪下不铺绿色地毯。
 			world_a *= smoothstep(vitality_dead_threshold, 0.65, v_climate.a) * (1.0 - snow * 0.80);
@@ -595,6 +805,23 @@ void fragment() {
 		world_rgb = col;
 		world_a = shoal.a * clamp(submerged_opacity * 1.5, 0.0, 0.85) * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
 #endif // PK_PROBE_NO_HERD
+	} else if (kind == 3 && material_art && (form == 21 || form == 25)) {
+		vec4 g = rv_material_albedo(p);
+		vec4 surf = rv_material_surface(p);
+		float material_edge = rv_material_contact_edge(g, surf, p, seed, true,
+			decal_edge_softness);
+		float material_coverage = g.a * material_edge;
+		vec3 material_normal = rv_material_normal(surf, v_axis, terrain_normal);
+		vec3 normal = normalize(mix(terrain_normal, material_normal,
+			mix(1.0, material_edge, 0.72)));
+		float diffuse = max(dot(normal, light_dir), 0.0);
+		float response = clamp(1.0 + (diffuse - flat_diffuse) * 0.55, 0.45, 1.35);
+		vec3 col = mix(g.rgb, vec3(0.10, 0.22, 0.25), form == 21 ? 0.48 : 0.30);
+		col *= 1.0 - (1.0 - material_edge) * contact_shadow * 0.08;
+		col *= flat_light * response * mix(1.0, surf.a, 0.55);
+		float strength = clamp(0.55 + v_rank.x * 0.15, 0.55, 1.0);
+		world_rgb = col;
+		world_a = material_coverage * submerged_opacity * strength * mix(0.6, 1.0, live) * clamp(v_transmission, 0.0, 1.0);
 	} else if (kind == 3) {
 #ifdef PK_PROBE_NO_SUBMERGED
 		// [probe] 把 rd_submerged()（kind == 3 的程序化水下贴花）换成常量。
@@ -609,9 +836,9 @@ void fragment() {
 	} else if (kind >= 4) {
 		world_a = 0.0;
 	}
-	float horizon_cast = clamp((1.0 - v_horizon) * v_day.x, 0.0, 1.0);
+	float horizon_cast = clamp((1.0 - horizon_visibility) * day_state.x, 0.0, 1.0);
 	float cast_floor = mix(1.0, terrain_horizon_cast_floor, 0.70);
-	cast_floor = mix(1.0, cast_floor, mix(1.0, v_sky.w, gi_ao_strength));
+	cast_floor = mix(1.0, cast_floor, mix(1.0, sky_state.w, gi_ao_strength));
 	world_rgb *= mix(1.0, cast_floor, horizon_cast);
 
 	vec3 color = world_rgb;
@@ -643,7 +870,9 @@ void fragment() {
 	// 调试视图：uniform 默认 0，只有 set_terrain_horizon_debug_view() 会推非 0。
 	// web 变体里 v_horizon 恒为 1，留着它只会把整张图刷白，所以整段不编译。
 	if (lens < 0.001 && terrain_horizon_debug_view > 0) {
-		color = vec3(terrain_horizon_debug_view == 1 ? (1.0 - v_horizon) * v_day.x : v_horizon);
+		color = vec3(terrain_horizon_debug_view == 1
+			? (1.0 - horizon_visibility) * day_state.x
+			: horizon_visibility);
 	}
 #endif
 	if ((family == 0 || kind == 2) && has_height_tex && lens < 1.0) {

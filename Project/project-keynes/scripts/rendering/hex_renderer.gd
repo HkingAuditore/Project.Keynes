@@ -74,10 +74,26 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 # [需求3 2026-06-19午] 缩小浅↔深海色差：原 coast(0.34,0.50,0.56)→deep(0.14,0.22,0.34) 亮度/色相跨度
 # 过大，海岸青绿环与深海深蓝对比太硬。提亮深/中海、略压浅/岸海，让整片海面更协调连续。
 @export_group("Hypsometric Colors")
-@export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43)
-@export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46)
-@export var color_shallow: Color = Color(0.27, 0.40, 0.49)
-@export var color_coast_water: Color = Color(0.30, 0.43, 0.51)
+## 【深海底色】远洋最深处的基础颜色。
+@export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43):
+	set(v):
+		color_deep_ocean = v
+		_push_water_param(&"color_deep_ocean", v)
+## 【中深海底色】
+@export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46):
+	set(v):
+		color_mid_ocean = v
+		_push_water_param(&"color_mid_ocean", v)
+## 【浅海底色】
+@export var color_shallow: Color = Color(0.27, 0.40, 0.49):
+	set(v):
+		color_shallow = v
+		_push_water_param(&"color_shallow", v)
+## 【近岸水色】
+@export var color_coast_water: Color = Color(0.30, 0.43, 0.51):
+	set(v):
+		color_coast_water = v
+		_push_water_param(&"color_coast_water", v)
 # [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
 # 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
 # mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
@@ -163,7 +179,6 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 		if _shader_mat != null:
 			_push_world_uniform("vegetation_season_strength", vegetation_season_strength)
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
 # 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
 # 1=每仿真日上传一次；2（默认）=每 2 仿真日；4=每 4 仿真日。值越大越省 CPU 但雪线/海冰
 # 视觉变化越"卡顿"。运行时改这个值会触发 DynamicVisualAtlasUploadSystem.reconfigure。
@@ -294,8 +309,6 @@ var terrain_materials_enabled: bool = true
 			_push_world_uniform("terrain_ecotone_noise", terrain_ecotone_noise)
 		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
-@export var water_effect_enabled: bool = true
-@export var ocean_current_enabled: bool = true
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
 
@@ -419,97 +432,322 @@ var _simulation_speed_multiplier: float = 1.0
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
-# water_sparkle_enabled：水面高频粼光（任务 4）
 # rain_density_boost_enabled：粒子数量提升（任务 5，renderer 仅转发到 WeatherLayer）
 # cloud_tod_tint_enabled：云层 TOD 染色（任务 6）
 @export_group("Pass 2")
-@export var water_sparkle_enabled: bool = true
 @export var rain_density_boost_enabled: bool = true
 @export var cloud_tod_tint_enabled: bool = true
 
-# ─── Water Visual Overhaul（本轮）：水体细分开关与参数 ──────────────────
-# 所有字段直通 shader 同名 uniform；关闭即回退到上一轮（pass2）表现，
-# 总开关 water_effect_enabled=false 时整组子特性被 shader 端短路。
-@export_group("Water Overhaul")
-@export var water_waves_enabled: bool = true
-@export var water_fresnel_enabled: bool = true
-@export var river_flow_enabled: bool = true
-@export var caustics_enabled: bool = true
-@export var shallow_transparency_enabled: bool = true
-@export_range(4.0, 128.0, 0.5) var water_gloss: float = 34.0
-@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32
-@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75
-@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
-@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
-@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
-@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
-# ShaderToy 启发的视觉增强（软边过渡 + 柔和噪声层）
-# 说明：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
-@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 1.45
-@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70
-# 柔和噪声的两个独立细分强度：
-# Open Ocean Color Rebalance：在新 base palette（已去饱和）上，把扰动幅度
-# 从 0.70 抬到 0.95，使原本肉眼难辨的 ±5% 亮度 / ±2% 色相变化更可见，
-# 让外海具备"云影感"色斑变化，而非一片均一。旧值 / 新值：0.70 / 0.95。
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95
-@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15
-@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75
-@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0
-@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65
+# ═══════════════════════════════════════════════════════════════════════════
+# 【水面参数】全部水面参数的唯一来源（main.gd 不再保留副本；以前两处都有、后写的覆盖先写的，
+# 在这里改了没效果）。每个参数都带内联 setter：运行中在检视器里拖动滑条即时刷新画面。
+# 参数名对应着色器 uniform（shaders/include/uniforms.gdshaderinc），悬停可看中文说明。
+# 初值由 _push_water_params_to() 按 WATER_PARAM_NAMES 统一推给主材质与水面材质。
+# ═══════════════════════════════════════════════════════════════════════════
+@export_group("海洋水面 · 效果开关")
+## 【水面效果总开关】关闭后水面退回纯色，下面所有波浪 / 反射 / 洋流效果一并失效。
+@export var water_effect_enabled: bool = true:
+	set(v):
+		water_effect_enabled = v
+		_push_water_param(&"water_effect_enabled", v)
+## 【洋流可视化】关闭后浪向不再跟随洋流，洋流丝、洋流染色也消失。
+@export var ocean_current_enabled: bool = true:
+	set(v):
+		ocean_current_enabled = v
+		_push_water_param(&"ocean_current_enabled", v)
+## 【波浪】关闭后水面法线恒为平面，只剩颜色与高光。
+@export var water_waves_enabled: bool = true:
+	set(v):
+		water_waves_enabled = v
+		_push_water_param(&"water_waves_enabled", v)
+## 【菲涅尔天空反射】
+@export var water_fresnel_enabled: bool = true:
+	set(v):
+		water_fresnel_enabled = v
+		_push_water_param(&"water_fresnel_enabled", v)
+## 【粼光】水面高频颗粒高光（需要画质 ≥ 中）。
+@export var water_sparkle_enabled: bool = true:
+	set(v):
+		water_sparkle_enabled = v
+		_push_water_param(&"water_sparkle_enabled", v)
+## 【焦散】只在珊瑚礁水域、白天生效。
+@export var caustics_enabled: bool = true:
+	set(v):
+		caustics_enabled = v
+		_push_water_param(&"caustics_enabled", v)
+## 【浅水透底】近岸浅水透出海底颜色。
+@export var shallow_transparency_enabled: bool = true:
+	set(v):
+		shallow_transparency_enabled = v
+		_push_water_param(&"shallow_transparency_enabled", v)
 
-# ─── 波浪可读性 / 细节法线（2026-06-29，类 UE 材质实例参数实时调） ──────────
-# 这几个字段用「内联 setter」直接把值推到 _shader_mat：运行时在远程检视器里选中
-# 本节点（WorldRoot/HexRenderer），展开 Inspector 拖动滑条即实时刷新画面，
-# 无需重编 shader / 重启游戏。_shader_mat 尚未创建时（.tscn 反序列化阶段）安全跳过，
-# 由 _apply_*（材质创建后）补推一次初值。
-@export_group("Water Waves (live-tunable)")
-@export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
+@export_group("海洋水面 · 波浪总体")
+## 【浪的疏密】越大，涟漪和笔触越小越密；越小越舒缓。
+@export_range(0.25, 4.0, 0.01, "or_greater") var water_flow_wave_density: float = 1.75:
 	set(v):
-		water_wave_shade_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_shade_strength", v)
-@export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
+		water_flow_wave_density = v
+		_push_water_param(&"water_flow_wave_density", v)
+## 【流动速度倍率】涟漪与笔触的流动速度正比于它；0 = 静止。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_advection: float = 1.15:
 	set(v):
-		water_wave_patch_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_patch_strength", v)
-@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
+		water_flow_advection = v
+		_push_water_param(&"water_flow_advection", v)
+## 【波浪总幅度】同时放大法线与波峰波谷明暗。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_wave_amplitude: float = 1.35:
 	set(v):
-		water_wave_patch_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_patch_scale", v)
+		water_flow_wave_amplitude = v
+		_push_water_param(&"water_flow_wave_amplitude", v)
+## 【浪尖碎白】浪头顶部的浅色高光强度，0 = 无。
+@export_range(0.0, 1.0, 0.01) var water_flow_crest_strength: float = 0.38:
+	set(v):
+		water_flow_crest_strength = v
+		_push_water_param(&"water_flow_crest_strength", v)
+## 【洋流丝】顺流拉长的亮丝强度。只在画质=高时出现，0 = 整段关闭（省 4 次纹理采样）。
+@export_range(0.0, 1.5, 0.01) var water_flow_streak_strength: float = 1.0:
+	set(v):
+		water_flow_streak_strength = v
+		_push_water_param(&"water_flow_streak_strength", v)
+## 【法线总强度】海洋波浪法线的整体倍率（同时影响陆地河流水面）。
 @export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
 	set(v):
 		water_base_normal_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_base_normal_strength", v)
+		_push_water_param(&"water_base_normal_strength", v)
+## 【波浪尺度】越大波越密越短（同时影响陆地河流水面）。
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_base_normal_scale: float = 0.93:
 	set(v):
 		water_base_normal_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_base_normal_scale", v)
-@export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
+		_push_water_param(&"water_base_normal_scale", v)
+## 【波坡明暗】按太阳方向给波浪坡面做明暗，没有直射高光的海域也能看出起伏。
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
 	set(v):
-		water_detail_normal_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_strength", v)
-@export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
+		water_wave_shade_strength = v
+		_push_water_param(&"water_wave_shade_strength", v)
+
+@export_group("海洋水面 · 底层涟漪")
+## 【涟漪强度】连续铺在整片海面下的细涟漪法线；0 = 去掉底层，只剩浪头笔触。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_ripple_strength: float = 1.0:
 	set(v):
-		water_detail_normal_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_scale", v)
-@export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
+		water_ripple_strength = v
+		_push_water_param(&"water_ripple_strength", v)
+## 【小尺度涟漪占比】小尺度涟漪相对大尺度的强度（需要画质 ≥ 中）。
+@export_range(0.0, 1.5, 0.01) var water_ripple_detail_mix: float = 0.5:
 	set(v):
-		water_detail_normal_warp = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_warp", v)
+		water_ripple_detail_mix = v
+		_push_water_param(&"water_ripple_detail_mix", v)
+## 【涟漪大小】越大涟漪越舒缓越粗；越小越细碎。
+@export_range(0.3, 3.0, 0.01, "or_greater") var water_ripple_scale: float = 1.0:
+	set(v):
+		water_ripple_scale = v
+		_push_water_param(&"water_ripple_scale", v)
+## 【无洋流时的漂移】每个流动周期的位移（世界单位）。必须大于涟漪格宽（约 52）才是真正的流动，否则只是原地淡入淡出。
+@export_range(0.0, 100.0, 0.5, "or_greater") var water_flow_drift_base: float = 30.0:
+	set(v):
+		water_flow_drift_base = v
+		_push_water_param(&"water_flow_drift_base", v)
+## 【洋流带来的漂移】位移 += 洋流向量 × 该值。越大，洋流强的海域流得越快。
+@export_range(0.0, 300.0, 1.0, "or_greater") var water_flow_drift_current: float = 100.0:
+	set(v):
+		water_flow_drift_current = v
+		_push_water_param(&"water_flow_drift_current", v)
+
+@export_group("海洋水面 · 浪头笔触（已停用）")
+## 【已停用】笔触法线强度。2026-11-06 起 `water_flow_surface` 里的两层笔触调用已注释，
+## 改这里不再影响画面；保留参数只为兼容已序列化到场景里的值。
+@export_range(0.0, 2.0, 0.01) var water_mark_strength: float = 1.0:
+	set(v):
+		water_mark_strength = v
+		_push_water_param(&"water_mark_strength", v)
+## 【已停用】笔触出现比例。同上，现在无效。
+@export_range(0.0, 2.0, 0.01) var water_mark_coverage: float = 1.0:
+	set(v):
+		water_mark_coverage = v
+		_push_water_param(&"water_mark_coverage", v)
+## 【笔触长度】仍在生效：顺流洋流丝复用同一个格宽倍率（`water_mark_layer` 的 streak 分支）。
+@export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
+	set(v):
+		water_mark_length = v
+		_push_water_param(&"water_mark_length", v)
+
+@export_group("海洋水面 · 海况分区")
+## 【平静海域强度】平静区的法线强度（相对值）。越小，平静区越平。
+@export_range(0.0, 1.0, 0.01) var water_rough_min: float = 0.22:
+	set(v):
+		water_rough_min = v
+		_push_water_param(&"water_rough_min", v)
+## 【风浪海域强度】风浪区的法线强度（相对值）。
+@export_range(0.0, 2.0, 0.01) var water_rough_max: float = 1.0:
+	set(v):
+		water_rough_max = v
+		_push_water_param(&"water_rough_max", v)
+## 【分区大小】平静 / 风浪区块的空间尺度，越大块越大。
+@export_range(0.25, 4.0, 0.01, "or_greater") var water_rough_scale: float = 1.0:
+	set(v):
+		water_rough_scale = v
+		_push_water_param(&"water_rough_scale", v)
+## 【风浪区占比】0 = 几乎整片平静，1 = 几乎整片风浪。
+@export_range(0.0, 1.0, 0.01) var water_rough_coverage: float = 0.5:
+	set(v):
+		water_rough_coverage = v
+		_push_water_param(&"water_rough_coverage", v)
+
+@export_group("海洋水面 · 洋流")
+## 【洋流影响强度】浪向跟随洋流、洋流丝、洋流染色的总权重。
+@export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88:
+	set(v):
+		ocean_current_strength = v
+		_push_water_param(&"ocean_current_strength", v)
+
+@export_group("海洋水面 · 光照与反射")
+## 【天空反射强度】
+@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32:
+	set(v):
+		water_reflection_strength = v
+		_push_water_param(&"water_reflection_strength", v)
+## 【次表面散射强度】低太阳时迎光波坡透出青绿色；0 = 关闭（需要画质 ≥ 中）。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_sss_strength: float = 0.18:
 	set(v):
 		water_sss_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_sss_strength", v)
+		_push_water_param(&"water_sss_strength", v)
+## 【次表面散射锐度】越大，只有正对太阳的波坡才透光。
+@export_range(1.0, 8.0, 0.1) var water_sss_power: float = 2.0:
+	set(v):
+		water_sss_power = v
+		_push_water_param(&"water_sss_power", v)
+## 【次表面散射颜色】
+@export var water_sss_color: Color = Color(0.10, 0.52, 0.46):
+	set(v):
+		water_sss_color = v
+		_push_water_param(&"water_sss_color", v)
+## 【焦散强度】仅珊瑚礁水域。
+@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32:
+	set(v):
+		caustics_strength = v
+		_push_water_param(&"caustics_strength", v)
+## 【浅水透底程度】
+@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56:
+	set(v):
+		shallow_transparency_factor = v
+		_push_water_param(&"shallow_transparency_factor", v)
+
+@export_group("海洋水面 · 色彩与过渡")
+## 【深海对比度】
+@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96:
+	set(v):
+		deep_ocean_contrast = v
+		_push_water_param(&"deep_ocean_contrast", v)
+## 【深海色彩层次总量】0 = 回到旧的单色深海，下面四项都乘它。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_color_richness: float = 0.85:
+	set(v):
+		deep_ocean_color_richness = v
+		_push_water_param(&"deep_ocean_color_richness", v)
+## 【暖流 / 寒流色偏】暖流偏暖、寒流偏冷青（需要开启洋流可视化）。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_current_tint_strength: float = 0.60:
+	set(v):
+		deep_ocean_current_tint_strength = v
+		_push_water_param(&"deep_ocean_current_tint_strength", v)
+## 【纬度色温带】热带翠绿 — 温带中性 — 极地冷青。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_latitude_tint_strength: float = 0.85:
+	set(v):
+		deep_ocean_latitude_tint_strength = v
+		_push_water_param(&"deep_ocean_latitude_tint_strength", v)
+## 【深渊幽冷】最深处压暗并偏蓝紫。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_abyss_tint_strength: float = 0.60:
+	set(v):
+		deep_ocean_abyss_tint_strength = v
+		_push_water_param(&"deep_ocean_abyss_tint_strength", v)
+## 【海盆色斑】放大半封闭海与开阔海的色相差。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_patch_boost: float = 0.50:
+	set(v):
+		deep_ocean_patch_boost = v
+		_push_water_param(&"deep_ocean_patch_boost", v)
+## 【开阔海色块】远洋大块冷暖色斑的强度。
+@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75:
+	set(v):
+		water_cartoon_color_strength = v
+		_push_water_param(&"water_cartoon_color_strength", v)
+## 【亮度柔噪声】大尺度云影般的亮度起伏。
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95:
+	set(v):
+		water_calm_noise_brightness = v
+		_push_water_param(&"water_calm_noise_brightness", v)
+## 【色相柔噪声】冷暖色相的缓慢起伏。
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95:
+	set(v):
+		water_calm_noise_tint_strength = v
+		_push_water_param(&"water_calm_noise_tint_strength", v)
+## 【柔噪声总强度】乘在上面两项上，同时影响湖面波痕。
+@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70:
+	set(v):
+		water_wave_line_strength = v
+		_push_water_param(&"water_wave_line_strength", v)
+## 【水色边界扭曲】让海 / 湖 / 礁交界不是直线。过大会和洋流叠加撕出折痕。
+@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 0.55:
+	set(v):
+		water_domain_warp_strength = v
+		_push_water_param(&"water_domain_warp_strength", v)
+## 【水体软混合半径】越大过渡带越宽；0 = 硬切。
+@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15:
+	set(v):
+		water_biome_blend_radius = v
+		_push_water_param(&"water_biome_blend_radius", v)
+## 【水色过渡柔和度】
+@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0:
+	set(v):
+		water_transition_softness = v
+		_push_water_param(&"water_transition_softness", v)
+## 【河口羽流】河水入海的扩散色带。
+@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65:
+	set(v):
+		estuary_plume_strength = v
+		_push_water_param(&"estuary_plume_strength", v)
+
+@export_group("湖泊与河流水面")
+## 【湖水颜色】
+@export var lake_water_color: Color = Color(0.18, 0.45, 0.60):
+	set(v):
+		lake_water_color = v
+		_push_water_param(&"lake_water_color", v)
+## 【河流流动条纹】
+@export var river_flow_enabled: bool = true:
+	set(v):
+		river_flow_enabled = v
+		_push_water_param(&"river_flow_enabled", v)
+## 【河流流速】
+@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75:
+	set(v):
+		river_flow_speed = v
+		_push_water_param(&"river_flow_speed", v)
+## 【河流条纹频率】
+@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16:
+	set(v):
+		river_flow_freq = v
+		_push_water_param(&"river_flow_freq", v)
+## 【河流浪带强弱对比】【仅陆地河流水面，不影响海洋】
+@export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
+	set(v):
+		water_wave_patch_strength = v
+		_push_water_param(&"water_wave_patch_strength", v)
+## 【河流浪带尺度】【仅陆地河流水面，不影响海洋】
+@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
+	set(v):
+		water_wave_patch_scale = v
+		_push_water_param(&"water_wave_patch_scale", v)
+## 【河流细节涟漪强度】【仅陆地河流水面，不影响海洋；需要画质=高】
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
+	set(v):
+		water_detail_normal_strength = v
+		_push_water_param(&"water_detail_normal_strength", v)
+## 【河流细节涟漪尺度】【仅陆地河流水面；需要画质=高】
+@export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
+	set(v):
+		water_detail_normal_scale = v
+		_push_water_param(&"water_detail_normal_scale", v)
+## 【河流细节涟漪扭曲】【仅陆地河流水面；需要画质=高】
+@export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
+	set(v):
+		water_detail_normal_warp = v
+		_push_water_param(&"water_detail_normal_warp", v)
+
 
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
 @export_group("Legacy (Unused)")
@@ -1303,6 +1541,92 @@ func _push_world_uniform(key: Variant, value: Variant) -> void:
 			and _water_uniform_names.has(key_name):
 		_water_mat.set_shader_parameter(key_name, value)
 
+const WATER_PARAM_NAMES: Array[StringName] = [
+	&"water_effect_enabled",
+	&"ocean_current_enabled",
+	&"water_waves_enabled",
+	&"water_fresnel_enabled",
+	&"water_sparkle_enabled",
+	&"caustics_enabled",
+	&"shallow_transparency_enabled",
+	&"water_flow_wave_density",
+	&"water_flow_advection",
+	&"water_flow_wave_amplitude",
+	&"water_flow_crest_strength",
+	&"water_flow_streak_strength",
+	&"water_base_normal_strength",
+	&"water_base_normal_scale",
+	&"water_wave_shade_strength",
+	&"water_ripple_strength",
+	&"water_ripple_detail_mix",
+	&"water_ripple_scale",
+	&"water_flow_drift_base",
+	&"water_flow_drift_current",
+	&"water_mark_strength",
+	&"water_mark_coverage",
+	&"water_mark_length",
+	&"water_rough_min",
+	&"water_rough_max",
+	&"water_rough_scale",
+	&"water_rough_coverage",
+	&"ocean_current_strength",
+	&"water_reflection_strength",
+	&"water_sss_strength",
+	&"water_sss_power",
+	&"water_sss_color",
+	&"caustics_strength",
+	&"shallow_transparency_factor",
+	&"deep_ocean_contrast",
+	&"deep_ocean_color_richness",
+	&"deep_ocean_current_tint_strength",
+	&"deep_ocean_latitude_tint_strength",
+	&"deep_ocean_abyss_tint_strength",
+	&"deep_ocean_patch_boost",
+	&"water_cartoon_color_strength",
+	&"water_calm_noise_brightness",
+	&"water_calm_noise_tint_strength",
+	&"water_wave_line_strength",
+	&"water_domain_warp_strength",
+	&"water_biome_blend_radius",
+	&"water_transition_softness",
+	&"estuary_plume_strength",
+	&"lake_water_color",
+	&"river_flow_enabled",
+	&"river_flow_speed",
+	&"river_flow_freq",
+	&"water_wave_patch_strength",
+	&"water_wave_patch_scale",
+	&"water_detail_normal_strength",
+	&"water_detail_normal_scale",
+	&"water_detail_normal_warp",
+]
+
+## 水面参数的运行期推送：_shader_mat 还没创建（场景反序列化阶段）时安全跳过，
+## 之后由 _push_water_params_to() 补推初值。
+func _push_water_param(key: StringName, value: Variant) -> void:
+	if _shader_mat != null:
+		_push_world_uniform(key, value)
+
+
+## 调试控制台 / GM 面板用的两个总开关入口（属性本身已带内联 setter，这里只多刷一次光照 uniform）。
+func set_water_effect_enabled(v: bool) -> void:
+	water_effect_enabled = v
+	_push_water_lighting_uniforms()
+
+
+func set_ocean_current_enabled(v: bool) -> void:
+	ocean_current_enabled = v
+	_push_water_lighting_uniforms()
+
+
+## 把全部水面参数一次推给指定材质（主地形材质 / 独立水面材质）。
+func _push_water_params_to(sm: ShaderMaterial) -> void:
+	if sm == null:
+		return
+	for n in WATER_PARAM_NAMES:
+		sm.set_shader_parameter(n, get(n))
+
+
 
 ## 拆分状态 / 覆盖 mesh 开关翻转后的统一重建入口：重新选 program 变体 + 重铺几何
 ## + 重推全部 uniform（其末尾会按新的拆分状态建/拆水面 pass）。
@@ -1460,6 +1784,7 @@ func _apply_water_uniforms() -> void:
 	if _water_mat == null or _world == null:
 		return
 	var sm := _water_mat
+	_push_water_params_to(sm)
 	if _water_uses_world_map and _shader_mat != null:
 		# Bind the PC water inputs from the terrain material after its full push.
 		# Shared textures update in place; this loop runs on bind/reconfiguration only.
@@ -4194,17 +4519,6 @@ func set_day_night_enabled(v: bool) -> void:
 	)
 	_sync_detail_and_activity_materials()
 
-func set_water_effect_enabled(v: bool) -> void:
-	water_effect_enabled = v
-	_push_water_lighting_uniforms()
-	if _shader_mat != null:
-		_push_world_uniform("water_effect_enabled", water_effect_enabled)
-
-func set_ocean_current_enabled(v: bool) -> void:
-	ocean_current_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("ocean_current_enabled", ocean_current_enabled)
-
 # 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
 # 方案 0：upwelling_tex 仅本开关 true 时使用——首次开启时通过 MapBaker.rebake_upwelling_tex_for_debug
@@ -4295,11 +4609,6 @@ func apply_tod(profile: TODProfile) -> void:
 	)
 	_sync_detail_and_activity_materials()
 
-func set_water_sparkle_enabled(v: bool) -> void:
-	water_sparkle_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_sparkle_enabled", water_sparkle_enabled)
-
 func set_rain_density_boost_enabled(v: bool) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_rain_density_boost_enabled"):
 		_weather_layer.set_rain_density_boost_enabled(v)
@@ -4325,147 +4634,6 @@ func set_wind(dir: Vector2, strength: float) -> void:
 	_wind_strength = wind_strength
 	if _weather_layer != null and _weather_layer.has_method("set_wind"):
 		_weather_layer.set_wind(_wind_dir, _wind_strength)
-
-# ─── Water Visual Overhaul：子特性 setter 组 ──────────────────────────
-# 每个 setter 只做"字段写回 + shader uniform 同步"，让 main.gd 能逐个切换。
-func set_water_waves_enabled(v: bool) -> void:
-	water_waves_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_waves_enabled", water_waves_enabled)
-
-func set_water_fresnel_enabled(v: bool) -> void:
-	water_fresnel_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_fresnel_enabled", water_fresnel_enabled)
-
-func set_river_flow_enabled(v: bool) -> void:
-	river_flow_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_enabled", river_flow_enabled)
-
-func set_caustics_enabled(v: bool) -> void:
-	caustics_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("caustics_enabled", caustics_enabled)
-
-func set_shallow_transparency_enabled(v: bool) -> void:
-	shallow_transparency_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform(
-			"shallow_transparency_enabled",
-			shallow_transparency_enabled
-		)
-
-func set_water_gloss(v: float) -> void:
-	water_gloss = clampf(v, 4.0, 128.0)
-	if _shader_mat != null:
-		_push_world_uniform("water_gloss", water_gloss)
-
-func set_water_reflection_strength(v: float) -> void:
-	water_reflection_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_reflection_strength",
-			water_reflection_strength
-		)
-
-func set_river_flow_speed(v: float) -> void:
-	river_flow_speed = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_speed", river_flow_speed)
-
-func set_river_flow_freq(v: float) -> void:
-	river_flow_freq = clampf(v, 0.02, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_freq", river_flow_freq)
-
-func set_caustics_strength(v: float) -> void:
-	caustics_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("caustics_strength", caustics_strength)
-
-func set_deep_ocean_contrast(v: float) -> void:
-	deep_ocean_contrast = clampf(v, 0.5, 3.0)
-	if _shader_mat != null:
-		_push_world_uniform("deep_ocean_contrast", deep_ocean_contrast)
-
-func set_lake_water_color(c: Color) -> void:
-	lake_water_color = c
-	if _shader_mat != null:
-		_push_world_uniform("lake_water_color", lake_water_color)
-
-func set_shallow_transparency_factor(v: float) -> void:
-	shallow_transparency_factor = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"shallow_transparency_factor",
-			shallow_transparency_factor
-		)
-
-# ShaderToy 启发：三个新视觉 setter（域扭曲 / 风格化波痕 / biome 软混合）
-func set_water_domain_warp_strength(v: float) -> void:
-	water_domain_warp_strength = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_domain_warp_strength",
-			water_domain_warp_strength
-		)
-
-func set_water_wave_line_strength(v: float) -> void:
-	water_wave_line_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_wave_line_strength",
-			water_wave_line_strength
-		)
-
-func set_water_calm_noise_brightness(v: float) -> void:
-	water_calm_noise_brightness = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_calm_noise_brightness",
-			water_calm_noise_brightness
-		)
-
-func set_water_calm_noise_tint_strength(v: float) -> void:
-	water_calm_noise_tint_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_calm_noise_tint_strength",
-			water_calm_noise_tint_strength
-		)
-
-func set_water_biome_blend_radius(v: float) -> void:
-	water_biome_blend_radius = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_biome_blend_radius",
-			water_biome_blend_radius
-		)
-
-func set_water_cartoon_color_strength(v: float) -> void:
-	water_cartoon_color_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_cartoon_color_strength",
-			water_cartoon_color_strength
-		)
-
-func set_water_transition_softness(v: float) -> void:
-	water_transition_softness = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_transition_softness",
-			water_transition_softness
-		)
-
-func set_estuary_plume_strength(v: float) -> void:
-	estuary_plume_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"estuary_plume_strength",
-			estuary_plume_strength
-		)
 
 # Upload active weather fronts to both the terrain shader and the weather layer.
 # Diag log（2026-05-10 引入用于诊断 weather_layer logs 缺失）：本次收尾把
@@ -5186,7 +5354,6 @@ func _apply_uniforms() -> void:
 	_push_vegetation_season_lut()
 	sm.set_shader_parameter("dynamic_snow_strength", dynamic_snow_strength)
 	sm.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
-	sm.set_shader_parameter("ocean_current_strength", ocean_current_strength)
 	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
 	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
 	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
@@ -5202,49 +5369,15 @@ func _apply_uniforms() -> void:
 
 	sm.set_shader_parameter("visual_quality", visual_quality)
 	sm.set_shader_parameter("day_night_enabled", day_night_enabled)
-	sm.set_shader_parameter("water_effect_enabled", water_effect_enabled)
-	sm.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
 	sm.set_shader_parameter(
 		"extreme_weather_ground_effect_enabled",
 		extreme_weather_ground_effect_enabled
 	)
-	# Pass 2（任务 2）：把 Pass 2 开关也同步到新建材质上
-	sm.set_shader_parameter("water_sparkle_enabled", water_sparkle_enabled)
+	# Pass 2：云染色开关与洋流调试开关同步到新建材质
 	sm.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
 	sm.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
-
-	# Water Visual Overhaul：首次建材质必须把本轮 uniform 全部初始化，
-	sm.set_shader_parameter("water_waves_enabled", water_waves_enabled)
-	sm.set_shader_parameter("water_fresnel_enabled", water_fresnel_enabled)
-	sm.set_shader_parameter("river_flow_enabled", river_flow_enabled)
-	sm.set_shader_parameter("caustics_enabled", caustics_enabled)
-	sm.set_shader_parameter("shallow_transparency_enabled", shallow_transparency_enabled)
-	sm.set_shader_parameter("water_gloss", water_gloss)
-	sm.set_shader_parameter("water_reflection_strength", water_reflection_strength)
-	sm.set_shader_parameter("river_flow_speed", river_flow_speed)
-	sm.set_shader_parameter("river_flow_freq", river_flow_freq)
-	sm.set_shader_parameter("caustics_strength", caustics_strength)
-	sm.set_shader_parameter("deep_ocean_contrast", deep_ocean_contrast)
-	sm.set_shader_parameter("lake_water_color", lake_water_color)
-	sm.set_shader_parameter("shallow_transparency_factor", shallow_transparency_factor)
-	sm.set_shader_parameter("water_domain_warp_strength", water_domain_warp_strength)
-	sm.set_shader_parameter("water_wave_line_strength", water_wave_line_strength)
-	sm.set_shader_parameter("water_calm_noise_brightness", water_calm_noise_brightness)
-	sm.set_shader_parameter("water_calm_noise_tint_strength", water_calm_noise_tint_strength)
-	sm.set_shader_parameter("water_biome_blend_radius", water_biome_blend_radius)
-	sm.set_shader_parameter("water_cartoon_color_strength", water_cartoon_color_strength)
-	sm.set_shader_parameter("water_transition_softness", water_transition_softness)
-	sm.set_shader_parameter("estuary_plume_strength", estuary_plume_strength)
-	# 波浪可读性 / 细节法线初值（材质创建后补推；之后由内联 setter 实时刷新）
-	sm.set_shader_parameter("water_wave_shade_strength", water_wave_shade_strength)
-	sm.set_shader_parameter("water_wave_patch_strength", water_wave_patch_strength)
-	sm.set_shader_parameter("water_wave_patch_scale", water_wave_patch_scale)
-	sm.set_shader_parameter("water_base_normal_strength", water_base_normal_strength)
-	sm.set_shader_parameter("water_base_normal_scale", water_base_normal_scale)
-	sm.set_shader_parameter("water_detail_normal_strength", water_detail_normal_strength)
-	sm.set_shader_parameter("water_detail_normal_scale", water_detail_normal_scale)
-	sm.set_shader_parameter("water_detail_normal_warp", water_detail_normal_warp)
-	sm.set_shader_parameter("water_sss_strength", water_sss_strength)
+	# 全部水面参数（57 项）统一推送，名单见 WATER_PARAM_NAMES。
+	_push_water_params_to(sm)
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:

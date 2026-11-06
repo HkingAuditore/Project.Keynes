@@ -2,13 +2,16 @@ class_name ResourceArtLibrary
 extends RefCounted
 
 # Generated bitmap art for the resource world view (built by tools/resource_art/build.py,
-# manifest v2). Three Texture2DArrays:
+# manifest v3). Generated arrays:
 #   cover_albedo / cover_normal  16 seamless 512px ground-cover layers: 13 wild plant
 #                                communities, then grazing traces (pasture, mud, sand).
 #                                Normal strip: RG = tangent normal, B = height, A = AO.
 #   fauna                        9 layers of 4x2 top-down sprites (128px cells, heads up).
-#   crown / crown_normal         4 layers (broadleaf, conifer, palm, shrub) of 4x2 single-tree
-#                                crowns (256px cells, alpha), sampled by vegetation_forms.
+#   crown / crown_normal         5 layers (broadleaf, conifer, palm, shrub, hardscape rock)
+#                                of 4x2 sprites (256px cells, alpha), sampled by vegetation_forms.
+#   material                     2 layers sharing one 8x4, 128px-cell atlas:
+#                                layer 0 = albedo, layer 1 = RG normal/B height/A AO.
+#                                Used by resource props, ground decals and lens badges.
 # The imported CompressedTexture2DArray (VRAM, mipmapped) is preferred; when the import is
 # missing (fresh checkout before the editor ran) the PNG strip is sliced at runtime.
 
@@ -24,9 +27,11 @@ var fauna: TextureLayered
 var fauna_count := 0
 var crown: TextureLayered
 var crown_normal: TextureLayered
+var material: TextureLayered
 var _cover_layer: Dictionary = {}  # id -> layer
 var _fauna_layer: Dictionary = {}  # id -> layer
 var _trace_for: Dictionary = {}    # fauna id -> trace id
+var _material_cell: Dictionary = {} # resource id -> atlas cell
 
 static var _shared: ResourceArtLibrary
 
@@ -37,7 +42,7 @@ static func shared() -> ResourceArtLibrary:
 	return _shared
 
 func available() -> bool:
-	return cover_albedo != null or fauna != null
+	return cover_albedo != null or fauna != null or crown != null or material != null
 
 func cover_layer(id: String) -> int:
 	return int(_cover_layer.get(id, -1))
@@ -48,6 +53,9 @@ func fauna_layer(id: String) -> int:
 ## Cover layer of the ground trace drawn under a herd (-1 = none, e.g. fish).
 func trace_layer_for(id: String) -> int:
 	return cover_layer(String(_trace_for.get(id, "")))
+
+func material_cell(id: String) -> int:
+	return int(_material_cell.get(id, -1))
 
 func cover_layer_count() -> int:
 	return _cover_layer.size()
@@ -80,6 +88,14 @@ func _load() -> void:
 	if not cl.is_empty():
 		crown = _array(ROOT + String(cr.file), cl.size())
 		crown_normal = _array(ROOT + String(cr.normal), cl.size())
+	var ma: Dictionary = parsed.get("material", {})
+	var mids: Array = ma.get("ids", [])
+	for i in mids.size():
+		if String(mids[i]).is_empty():
+			continue
+		_material_cell[String(mids[i])] = i
+	if not mids.is_empty():
+		material = _array(ROOT + String(ma.file), 2)
 
 func _array(path: String, slices: int) -> TextureLayered:
 	if ResourceLoader.exists(path):
