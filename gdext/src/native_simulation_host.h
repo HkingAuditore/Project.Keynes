@@ -22,6 +22,7 @@
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
 #include "annual_development_ledger.h"
+#include "economy_host_port.h"
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -36,12 +37,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
 namespace pk {
 struct RuntimeGoldenSnapshot;
 class NativeEconomyRuntime;
 class CountryAiRuntime;
-class NativeSimulationHost {
+class NativeSimulationHost final : public EconomyHostPort {
 public:
     NativeSimulationHost();
     ~NativeSimulationHost();
@@ -68,10 +68,10 @@ public:
     bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
         const AnnualDevelopmentProfile &profile, const AnnualEconomyFacts &baseline,
         const AnnualCountryFacts &country, std::string &error);
-    bool annual_development_enabled() const { return _annual_enabled.load(std::memory_order_acquire); }
+    bool annual_development_enabled() const override { return _annual_enabled.load(std::memory_order_acquire); }
     bool annual_worker_managed() const;
-    uint64_t annual_country_handle() const { return _annual_country.load(std::memory_order_acquire); }
-    void publish_annual_economy(const AnnualEconomyFacts &facts);
+    uint64_t annual_country_handle() const override { return _annual_country.load(std::memory_order_acquire); }
+    void publish_annual_economy(const AnnualEconomyFacts &facts) override;
     void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
     void commit_annual_worker_day(int64_t day);
     void queue_annual_worker_reward(int64_t day);
@@ -253,7 +253,7 @@ public:
     void publish_economy_stage_reference(uint32_t stage, int64_t day,
                                          uint64_t generation,
                                          uint64_t state_hash,
-                                         uint64_t work_units) noexcept;
+                                         uint64_t work_units) noexcept override;
     bool execute_economy_worker_stage(int64_t day, uint64_t input_generation,
                                       uint32_t cell_count,
                                       uint64_t country_generation,
@@ -328,7 +328,7 @@ public:
         return static_cast<EconomyProductionWriter>(
             _economy_production_writer_requested.load(std::memory_order_acquire));
     }
-    EconomyProductionWriter economy_production_writer_effective() const noexcept {
+    EconomyProductionWriter economy_production_writer_effective() const noexcept override {
         return static_cast<EconomyProductionWriter>(
             _economy_production_writer_effective.load(std::memory_order_acquire));
     }
@@ -350,7 +350,7 @@ public:
         return static_cast<EconomyExecutionMode>(
             _economy_execution_mode.load(std::memory_order_acquire));
     }
-    bool economy_parity_shadow_enabled() const noexcept {
+    bool economy_parity_shadow_enabled() const noexcept override {
         return economy_execution_mode() ==
                    EconomyExecutionMode::ACTIVE_WITH_PARITY &&
                economy_shadow_probe_enabled();
@@ -430,7 +430,7 @@ public:
     int64_t economy_input_requested_day() const noexcept {
         return _economy_input_requested_day.load(std::memory_order_acquire);
     }
-    bool economy_worker_owns_execution() const noexcept {
+    bool economy_worker_owns_execution() const noexcept override {
         const auto current = _state.load(std::memory_order_acquire);
         return current != RuntimeWorkerState::STOPPED &&
             _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
@@ -633,35 +633,35 @@ public:
     };
     bool poll_country_worker_notification(CountryWorkerNotification &out);
     bool poll_country_economy_asset_request(
-            RuntimeEconomyAssetRequest &out);
+            RuntimeEconomyAssetRequest &out) override;
     // Economy owns peer-side mutation. Its continuation needs a read-only
     // terminal lookup so it can resume the same request identity without
     // creating a second Country transaction.
     bool country_economy_asset_terminal_result(
-            uint64_t request_id, RuntimeEconomyAssetResult &out) const;
+            uint64_t request_id, RuntimeEconomyAssetResult &out) const override;
     bool submit_country_economy_asset_result(
-            const RuntimeEconomyAssetResult &result, std::string &error);
+            const RuntimeEconomyAssetResult &result, std::string &error) override;
     bool requeue_country_economy_asset_request(uint64_t request_id,
-                                               std::string &error);
+                                               std::string &error) override;
     RuntimeEconomyAssetProtocolStatus
     country_economy_asset_protocol_status() const;
     bool country_economy_asset_protocol_self_test(std::string &error) const;
     bool enqueue_economy_origin_country_asset(
-            RuntimeEconomyAssetRequest request, std::string &error);
+            RuntimeEconomyAssetRequest request, std::string &error) override;
     // True only on the thread that is currently executing a simulation day:
     // the worker thread in worker mode, or the calling thread inside
     // `run_inline_day()` under native_daily_inline. Callers that can run on
     // either thread must check this before taking a worker-only in-thread
     // path; a main-thread caller that is NOT inside an inline day still has to
     // use the Host peer queue.
-    bool on_worker_thread() const noexcept {
+    bool on_worker_thread() const noexcept override {
         return RuntimeExecutionContext::active_for(this);
     }
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
-                                   std::string &error);
+                                   std::string &error) override;
     bool finish_worker_country_asset(uint64_t request_id,
                                   RuntimeEconomyAssetResult &result,
-                                  std::string &error);
+                                  std::string &error) override;
     // Commit Country treasury for Economy-origin terminals when Economy is
     // still sync (Country unique-writer). Worker-thread finish_worker_* is
     // preferred when Economy is also authoritative.
@@ -672,9 +672,9 @@ public:
     bool flush_country_economy_asset_commits(std::string &error,
                                             uint64_t settle_request_id = 0,
                                             bool skip_audit_snapshot = false,
-                                            int64_t shadow_through_day = -1);
+                                            int64_t shadow_through_day = -1) override;
     bool publish_country_worker_snapshot(uint32_t dirty_families,
-                                         std::string &error);
+                                         std::string &error) override;
     // Publish plan.next_state for UI while the open plan is still peer-waiting.
     // Does not close the plan or mutate authority committed_day; commit_day /
     // commit_rejected_day remain the only authority closes.
@@ -709,7 +709,7 @@ public:
     // D10 unique-writer / sync-slice gate. Independent of
     // authoritative_domain_mask for protocol tests, but production ACTIVE
     // Country also sets this via domain_is_worker_authoritative after D12.
-    bool country_authority_owner_is_worker() const {
+    bool country_authority_owner_is_worker() const override {
         return country_authority_handoff_status().owner ==
             CountryAuthorityOwner::WORKER;
     }
@@ -945,7 +945,7 @@ public:
     // batch or change its tie-break order.
     bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
-    uint64_t allocate_command_request_id();
+    uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
     uint64_t allocate_producer_sequence(uint32_t producer_id);
     bool next_command(RuntimeCommandPacket &out) const;
@@ -964,15 +964,15 @@ public:
     bool publish_country_economy_asset_requests(
             const std::vector<RuntimeEconomyAssetRequest> &requests,
             std::string &error);
-    void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept;
+    void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept override;
     // An Economy continuation that commits Country and applies its own
     // market/merchant/cargo leg in one advance registers its wire id so the
     // generic flush leaves the COMPLETED terminal for the targeted settle.
-    void defer_country_economy_asset_settlement(uint64_t request_id);
+    void defer_country_economy_asset_settlement(uint64_t request_id) override;
     // The owning continuation was abandoned: hand the wire id back to the
     // generic flush so its terminal still retires.
-    void release_country_economy_asset_settlement(uint64_t request_id) noexcept;
-    bool country_economy_asset_settlement_deferred(uint64_t request_id) const;
+    void release_country_economy_asset_settlement(uint64_t request_id) noexcept override;
+    bool country_economy_asset_settlement_deferred(uint64_t request_id) const override;
     void set_country_economy_asset_protocol_error_locked(
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;
@@ -1107,7 +1107,7 @@ public:
     }
     // Main-thread callers see live admission. Within an executor call, routing
     // keeps that call's data owners even if another thread requests stop.
-    bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
+    bool domain_is_worker_authoritative(RuntimeDomainId domain) const override {
         return (RuntimeExecutionContext::domains_for(this,
                     authoritative_domain_mask()) & runtime_domain_mask(domain)) != 0u;
     }

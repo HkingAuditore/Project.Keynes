@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 #include "country_runtime.h"
 #include "economy_cost_probe.h"
 #include <algorithm>

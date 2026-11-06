@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "modifier_runtime.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 
 #include <algorithm>
 #include <limits>

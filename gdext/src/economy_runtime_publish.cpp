@@ -1,7 +1,7 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "economy_csv_recorder.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 #include "parallel_dispatcher.h"
 #include "runtime_switch_registry.h"
 #include <algorithm>

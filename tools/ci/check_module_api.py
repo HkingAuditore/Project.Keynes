@@ -10,6 +10,8 @@ tools/ci/module_api/<module>.json:
   composition_roots         {file: reason} files that construct/own the runtime
                             and may include internal headers (shrink-only)
   legacy_includers          peers not yet migrated to the API (shrink-only)
+  forbidden_owner_includes  {patterns: [...], allowed: {file: reason}} headers
+                            module-owned files must not include (shrink-only)
 
 Rules (all fail the check):
   * a non-owner file includes an internal header and is neither a composition
@@ -17,6 +19,8 @@ Rules (all fail the check):
   * a listed composition root / legacy includer no longer includes any internal
     header (stale entry: remove it so the ratchet tightens);
   * a composition root has no written reason;
+  * a module-owned file includes a forbidden owner header without an allowed
+    entry, an allowed entry has no reason, or an allowed entry is stale;
   * an API header includes anything other than a <system> header, another
     module's *_api.h, or a registered shared contract header (the API must stay
     free of internals).
@@ -81,19 +85,32 @@ def check_contract(root: Path, contract: dict, shared: dict | None = None) -> li
     owners = contract["owner_file_patterns"]
     roots = contract.get("composition_roots", {})
     legacy = set(contract.get("legacy_includers", []))
+    forbidden = contract.get("forbidden_owner_includes", {})
+    forbidden_patterns = forbidden.get("patterns", [])
+    forbidden_allowed = forbidden.get("allowed", {})
     errors: list[str] = []
     src = root / "gdext/src"
     seen: set[str] = set()
+    forbidden_seen: set[str] = set()
     for path in source_files(root):
         rel = path.relative_to(src).as_posix()
         incs = includes(path.read_text(encoding="utf-8"))
+        is_owner = matches(path.name, owners)
+        if is_owner:
+            hits = [t for _kind, t in incs
+                    if matches(Path(t).name, forbidden_patterns)]
+            if hits:
+                forbidden_seen.add(rel)
+                if rel not in forbidden_allowed:
+                    errors.append(f"{module}: {rel} includes forbidden owner header "
+                                  f"{', '.join(sorted(set(hits)))}")
         if path.name in api:
             for kind, target in incs:
                 if kind == "<" or target.endswith("_api.h") or target in shared:
                     continue
                 errors.append(f"{module}: API header {rel} includes non-API header {target}")
             continue
-        if matches(path.name, owners):
+        if is_owner:
             continue
         hits = [t for k, t in incs if k == '"' and matches(Path(t).name, internal)]
         if not hits:
@@ -108,6 +125,12 @@ def check_contract(root: Path, contract: dict, shared: dict | None = None) -> li
     for rel, reason in sorted(roots.items()):
         if not isinstance(reason, str) or not reason.strip():
             errors.append(f"{module}: composition root {rel} lacks a reason")
+    for rel in sorted(set(forbidden_allowed) - forbidden_seen):
+        errors.append(f"{module}: stale forbidden owner entry {rel} no longer "
+                      "includes a forbidden owner header; remove it from the contract")
+    for rel, reason in sorted(forbidden_allowed.items()):
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"{module}: forbidden owner entry {rel} lacks a reason")
     for header in sorted(api):
         if not (src / header).is_file():
             errors.append(f"{module}: API header {header} is missing")

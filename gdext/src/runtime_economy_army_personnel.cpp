@@ -3,7 +3,7 @@
 // Army pay's worker route drives the Country economy-asset peer synchronously
 // (prepare -> service -> finish in one epoch), which needs the host's concrete
 // type, exactly like economy_runtime.cpp.
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 
 #include <godot_cpp/variant/variant.hpp>
 #include <algorithm>

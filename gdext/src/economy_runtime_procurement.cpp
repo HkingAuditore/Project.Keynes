@@ -15,7 +15,7 @@
 // change never leaks into an already-frozen economy cycle.
 #include "economy_runtime.h"
 #include "country_runtime.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 
 #include <algorithm>
 #include <limits>

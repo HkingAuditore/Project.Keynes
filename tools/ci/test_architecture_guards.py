@@ -462,6 +462,46 @@ class GuardsTest(unittest.TestCase):
             contract["composition_roots"]["native_simulation_host.cpp"] = " "
             self.assertEqual(len(module_api.check_contract(root, contract)), 1)
 
+    def test_module_api_forbidden_owner_includes_ratchet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "economy_api.h").write_text("struct EconomyApi {};\n")
+            owner = src / "economy_runtime.cpp"
+            owner.write_text('#include "native_simulation_host.h"\n')
+            contract = {"module": "economy", "api_headers": ["economy_api.h"],
+                        "internal_header_patterns": ["economy_runtime*.h"],
+                        "owner_file_patterns": ["economy_*"],
+                        "composition_roots": {}, "legacy_includers": [],
+                        "forbidden_owner_includes": {
+                            "patterns": ["native_simulation_host*.h"], "allowed": {}}}
+            # A newly forbidden owner include is rejected.
+            errors = module_api.check_contract(root, contract)
+            self.assertTrue(any("forbidden owner header" in e for e in errors))
+            # A temporary exception is accepted only with a reason.
+            contract["forbidden_owner_includes"]["allowed"] = {
+                "economy_runtime.cpp": "legacy host dependency pending port migration"}
+            self.assertEqual(module_api.check_contract(root, contract), [])
+            # Removing the include makes the exception stale.
+            owner.write_text("struct EconomyRuntime {};\n")
+            errors = module_api.check_contract(root, contract)
+            self.assertTrue(any("stale forbidden owner entry" in e for e in errors))
+            # An active exception without a reason is rejected.
+            owner.write_text('#include "native_simulation_host.h"\n')
+            contract["forbidden_owner_includes"]["allowed"]["economy_runtime.cpp"] = " "
+            errors = module_api.check_contract(root, contract)
+            self.assertTrue(any("forbidden owner entry economy_runtime.cpp lacks a reason" in e
+                                for e in errors))
+            # Owner API headers and angle-bracket includes cannot bypass the rule.
+            contract["forbidden_owner_includes"]["allowed"] = {}
+            owner.write_text('// #include "native_simulation_host.h"\n')
+            (src / "economy_api.h").write_text(
+                '#include <native_simulation_host_support.h>\n')
+            errors = module_api.check_contract(root, contract)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("economy_api.h includes forbidden owner header", errors[0])
+
     def test_module_api_shared_contract_headers_must_stay_leaf(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

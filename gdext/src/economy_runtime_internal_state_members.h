@@ -1014,7 +1014,7 @@
     std::vector<uint8_t> _development_fact_qualified;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
-    NativeSimulationHost *_simulation_host = nullptr;
+    EconomyHostPort *_simulation_host = nullptr;
     std::array<int64_t, ANNUAL_METRIC_COUNT> _annual_epoch_events{};
     std::vector<AnnualBreakdown> _annual_epoch_industries;
     EconomyCsvRecorder *_csv_recorder = nullptr; // facade-owned; destroyed after worker joins
