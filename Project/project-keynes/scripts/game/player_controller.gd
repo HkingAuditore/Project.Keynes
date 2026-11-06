@@ -3113,6 +3113,10 @@ func narrative_ai_client():
 func narrative_event_locked() -> bool:
 	return _narrative_flow != null and _narrative_flow.is_locked()
 
+func set_popups_suppressed(enabled: bool) -> void:
+	_annual_report_flow.set_popups_suppressed(enabled)
+	_narrative_flow.set_popups_suppressed(enabled)
+
 
 func export_narrative_state() -> Dictionary:
 	return _narrative_service.export_state() if _narrative_service != null else {}

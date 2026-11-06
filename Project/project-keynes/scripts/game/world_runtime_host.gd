@@ -445,6 +445,7 @@ var _country_worker_read_full_snapshot_count: int = 0
 var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
+var _gm_suppress_popups: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
 var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
@@ -4192,6 +4193,7 @@ func get_gm_capabilities() -> Dictionary:
 		"commands": _gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+			{"id": "ui.suppress_popups", "label": "屏蔽事件与报告弹窗", "group": "界面"},
 			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
@@ -4302,6 +4304,8 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 	if _world_clock == null and toggle_id == "simulation.paused":
 		return _gm_error("clock_unavailable", "时钟尚未就绪。")
 	match toggle_id:
+		"ui.suppress_popups":
+			return {"ok": true, "enabled": _gm_suppress_popups}
 		"simulation.paused":
 			return {"ok": true, "enabled": _world_clock.paused}
 		"simulation.climate_worker_authority":
@@ -4399,6 +4403,8 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 
 func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
+		"ui.suppress_popups":
+			_gm_suppress_popups = enabled
 		"simulation.paused":
 			if _world_clock == null:
 				return _gm_error("clock_unavailable", "时钟尚未就绪。")
@@ -5902,6 +5908,10 @@ func on_clock_running_changed(running: bool) -> void:
 		_generator.set_runtime_clock_threaded(not running, _world_clock.speed_multiplier)
 	if _renderer == null:
 		return
+	if _world_clock != null and _renderer.has_method("set_simulation_speed_multiplier"):
+		_renderer.set_simulation_speed_multiplier(_world_clock.speed_multiplier)
+	if _renderer.has_method("set_clock_running"):
+		_renderer.set_clock_running(running)
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 	if weather_layer != null and weather_layer.has_method("set_clock_running"):
 		weather_layer.set_clock_running(running)

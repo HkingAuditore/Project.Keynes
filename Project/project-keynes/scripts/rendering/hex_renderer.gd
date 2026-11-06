@@ -450,7 +450,7 @@ var _simulation_speed_multiplier: float = 1.0
 	set(v):
 		water_effect_enabled = v
 		_push_water_param(&"water_effect_enabled", v)
-## 【洋流可视化】关闭后浪向不再跟随洋流，洋流丝、洋流染色也消失。
+## 【洋流可视化】关闭后浪向不再跟随洋流，洋流染色也消失。
 @export var ocean_current_enabled: bool = true:
 	set(v):
 		ocean_current_enabled = v
@@ -502,11 +502,26 @@ var _simulation_speed_multiplier: float = 1.0
 	set(v):
 		water_flow_crest_strength = v
 		_push_water_param(&"water_flow_crest_strength", v)
-## 【洋流丝】顺流拉长的亮丝强度。只在画质=高时出现，0 = 整段关闭（省 4 次纹理采样）。
-@export_range(0.0, 1.5, 0.01) var water_flow_streak_strength: float = 1.0:
+## 【浪脊笔触】离散浪脊法线与波高的总强度。
+@export_range(0.0, 2.0, 0.01) var water_mark_strength: float = 1.0:
 	set(v):
-		water_flow_streak_strength = v
-		_push_water_param(&"water_flow_streak_strength", v)
+		water_mark_strength = v
+		_push_water_param(&"water_mark_strength", v)
+## 【浪脊覆盖率】笔触出现的格子比例。
+@export_range(0.0, 2.0, 0.01) var water_mark_coverage: float = 1.0:
+	set(v):
+		water_mark_coverage = v
+		_push_water_param(&"water_mark_coverage", v)
+## 【浪脊长度】控制非顺流波峰笔触长度。
+@export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
+	set(v):
+		water_mark_length = v
+		_push_water_param(&"water_mark_length", v)
+## 【浪脊速度】只调节浪脊笔触的漂移与更新速度；0 = 静止。
+@export_range(0.0, 4.0, 0.01, "or_greater") var water_mark_speed: float = 1.0:
+	set(v):
+		water_mark_speed = v
+		_push_water_param(&"water_mark_speed", v)
 ## 【法线总强度】海洋波浪法线的整体倍率（同时影响陆地河流水面）。
 @export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
 	set(v):
@@ -550,14 +565,6 @@ var _simulation_speed_multiplier: float = 1.0
 		water_flow_drift_current = v
 		_push_water_param(&"water_flow_drift_current", v)
 
-@export_group("海洋水面 · 洋流丝")
-## 【洋流丝长度】顺流拉长的丝的弧长倍率；觉得丝太长就调小。
-## 浪头笔触已于 2026-11-06 删除，这一组只剩洋流丝。
-@export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
-	set(v):
-		water_mark_length = v
-		_push_water_param(&"water_mark_length", v)
-
 @export_group("海洋水面 · 海况分区")
 ## 【平静海域强度】平静区的法线强度（相对值）。越小，平静区越平。
 @export_range(0.0, 1.0, 0.01) var water_rough_min: float = 0.22:
@@ -581,7 +588,7 @@ var _simulation_speed_multiplier: float = 1.0
 		_push_water_param(&"water_rough_coverage", v)
 
 @export_group("海洋水面 · 洋流")
-## 【洋流影响强度】浪向跟随洋流、洋流丝、洋流染色的总权重。
+## 【洋流影响强度】浪向跟随洋流与洋流染色的总权重。
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88:
 	set(v):
 		ocean_current_strength = v
@@ -920,6 +927,8 @@ var _pixel_world_size: float = 1.0
 var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
 var _climate_anomaly: float = 0.0
 var _world_time: float = 0.0
+var _clock_running: bool = true
+var _clock_speed_multiplier: float = 1.0
 # 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
 var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
 # 阶段 D（vegetation-visual-pcg）：植被 shader 的全局风场。方向由当前天气锋面
@@ -1133,10 +1142,9 @@ func _process(delta: float) -> void:
 		return
 	_sync_cell_lut_dims()
 	_sync_cell_lut_textures()
-	_world_time += delta
+	if _clock_running:
+		_world_time += delta * _clock_speed_multiplier
 	_push_world_uniform("world_time", _world_time)
-	if _water_mat != null:
-		_water_mat.set_shader_parameter("world_time", _world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
@@ -1543,7 +1551,8 @@ const WATER_PARAM_NAMES: Array[StringName] = [
 	&"water_flow_advection",
 	&"water_flow_wave_amplitude",
 	&"water_flow_crest_strength",
-	&"water_flow_streak_strength",
+	&"water_mark_strength",
+	&"water_mark_coverage",
 	&"water_base_normal_strength",
 	&"water_base_normal_scale",
 	&"water_wave_shade_strength",
@@ -1553,6 +1562,7 @@ const WATER_PARAM_NAMES: Array[StringName] = [
 	&"water_flow_drift_base",
 	&"water_flow_drift_current",
 	&"water_mark_length",
+	&"water_mark_speed",
 	&"water_rough_min",
 	&"water_rough_max",
 	&"water_rough_scale",
@@ -1862,7 +1872,6 @@ func _push_water_lighting_uniforms() -> void:
 	if _water_mat == null:
 		return
 	_water_mat.set_shader_parameter("visual_quality", visual_quality)
-	_water_mat.set_shader_parameter("world_time", _world_time)
 	_water_mat.set_shader_parameter("season_phase", _season_phase)
 	_water_mat.set_shader_parameter("day_phase", _day_phase)
 	_water_mat.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
@@ -2079,6 +2088,11 @@ func _sync_detail_and_activity_materials() -> void:
 
 func set_simulation_speed_multiplier(multiplier: float) -> void:
 	_simulation_speed_multiplier = maxf(0.0, multiplier)
+	_clock_speed_multiplier = _simulation_speed_multiplier
+
+
+func set_clock_running(running: bool) -> void:
+	_clock_running = running
 
 
 func _effective_detail_enqueue_coalesce_ms() -> float:
