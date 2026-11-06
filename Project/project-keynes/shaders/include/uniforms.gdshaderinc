@@ -364,26 +364,25 @@ uniform float water_domain_warp_strength : hint_range(0.0, 4.0) = 0.55;
 uniform float water_wave_line_strength   : hint_range(0.0, 1.0) = 0.70;
 
 // ─── 海洋波浪（洋流 + 涟漪 + 浪头笔触）────────────────────────────────────
-// 实现见 water.gdshaderinc 的 water_flow_surface。海面 = 三层叠加：
-//   ① 底层涟漪（连续法线，两相位 flowmap 流动）  ② 离散浪头笔触  ③ 顺流洋流丝（仅「高」画质）
+// 实现见 water.gdshaderinc 的 water_flow_surface。海面 = 底层涟漪 + 两层离散浪脊。
 // 再由「海况强度场」决定哪里平静、哪里风浪大。
-// 画质门：小尺度涟漪与碎浪笔触需要 visual_quality >= 1；洋流丝需要 visual_quality >= 2。
+// 画质门：小尺度涟漪与碎浪笔触需要 visual_quality >= 1。
 //
 // [整体]
 uniform float water_flow_wave_density   : hint_range(0.25, 4.0) = 1.75;   // 浪的疏密：越大笔触 / 涟漪越小越密
 uniform float water_flow_advection      : hint_range(0.0, 3.0)  = 1.15;   // 流动速度倍率（速度 ∝ 该值）
 uniform float water_flow_wave_amplitude : hint_range(0.0, 3.0)  = 1.35;   // 法线与起伏明暗的总幅度
 uniform float water_flow_crest_strength : hint_range(0.0, 1.0)  = 0.38;   // 浪尖碎白强度
-uniform float water_flow_streak_strength : hint_range(0.0, 1.5) = 1.0;    // 洋流丝强度，0 = 关闭整段（省 4 次纹理采样）
 // [底层涟漪]
 uniform float water_ripple_strength     : hint_range(0.0, 3.0)  = 1.0;    // 涟漪法线强度
 uniform float water_ripple_detail_mix   : hint_range(0.0, 1.5)  = 0.5;    // 小尺度涟漪相对大尺度的占比
 uniform float water_ripple_scale        : hint_range(0.3, 3.0)  = 1.0;    // 涟漪格子大小倍率（越大越舒缓）
 uniform float water_flow_drift_base     : hint_range(0.0, 100.0) = 30.0;  // 无洋流时的漂移位移（世界单位 / 周期）
 uniform float water_flow_drift_current  : hint_range(0.0, 300.0) = 100.0; // 洋流带来的额外漂移（× 流速）
-// [洋流丝] 2026-11-06 起浪头笔触（`water_mark_strength` / `water_mark_coverage`）已删除，
-// 只剩顺流洋流丝；它复用同一个格宽倍率参数。
-uniform float water_mark_length         : hint_range(0.3, 3.0)  = 1.0;    // 洋流丝长度倍率
+uniform float water_mark_strength       : hint_range(0.0, 2.0) = 1.0;    // 浪脊法线与波高强度
+uniform float water_mark_coverage       : hint_range(0.0, 2.0) = 1.0;    // 有笔触的格子比例倍率
+uniform float water_mark_length         : hint_range(0.3, 3.0) = 1.0;    // 浪脊长度倍率
+uniform float water_mark_speed          : hint_range(0.0, 4.0) = 1.0;    // 浪脊笔触运动速度倍率
 // [海况强度场：平静 / 风浪分区]
 uniform float water_rough_min           : hint_range(0.0, 1.0)  = 0.22;   // 平静海域的法线强度
 uniform float water_rough_max           : hint_range(0.0, 2.0)  = 1.0;    // 风浪海域的法线强度

@@ -783,7 +783,6 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 	// 现在波形坐标只用 ctx.wpw（连续噪声域扭曲），洋流信息全部交给相位层处理。
 	vec2 wave_wp = ctx.wpw;
 	float wave_h = 0.0;        // 归一化涌浪波高；冰面 / LOW 档恒 0
-	float wave_streak = 0.0;   // 洋流丝 [-1,1]（已含洋流存在度 / 冰剔除）；移动端恒 0
 #ifdef PK_QUALITY_LOW
 	bool waves_on = false;
 #else
@@ -797,7 +796,7 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 	N_out = waves_on
 			? sample_flow_water_normal(wave_wp, world_time, ctx.ocean_current_v,
 				wave_amp_scale, wave_freq_scale, ctx.pixel_noise.g, ice_free,
-				wave_h, wave_streak)
+				wave_h)
 			: vec3(0.0, 0.0, 1.0);
 #endif
 
@@ -852,13 +851,6 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
 		vec3 crest_col = mix(col, vec3(0.72, 0.84, 0.88), 0.80);
 		col = mix(col, crest_col, crest * water_flow_crest_strength);
 
-		// ── [water-flow-directional 2026-11-06] 洋流丝：顺流拉长的明暗丝 ──
-		// wave_streak 已含洋流存在度（停滞区 / 近岸 → 0）与冰剔除，所以只在真正有
-		// 流的海域出现；亮丝是顺流的淡青白线，暗丝让丝的形状更清晰。
-		float streak_w = wave_amp_scale
-				* clamp(1.0 - ww.w_lake * 0.85 - ww.w_kelp * 0.70, 0.0, 1.0);
-		float thread = smoothstep(0.10, 0.50, wave_streak) * streak_w;
-		col = mix(col, vec3(0.70, 0.86, 0.92), thread * 0.45);
 	}
 #endif // PK_WEB_WORLD_MIN
 	return col;

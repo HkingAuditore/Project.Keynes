@@ -1,4 +1,6 @@
 shader_type canvas_item;
+
+uniform float world_time = 0.0;
 // [pk-web-texture-budget] 与 world_map.gdshader 同一理由：光照全部自算、项目从不使用
 // Light2D，缺 unshaded 会让 Godot 额外编译"受光"路径并隐式多占 1-2 个 fragment 纹理
 // 单元。canvas_item 的其它全屏 shader（data_overlay / fog_of_war / country_border /
@@ -106,7 +108,6 @@ uniform int terrain_surface_debug_view = 0;
 // All Web settings share this program. LOW retains the original flat water;
 // MID/HIGH restore physical lighting and a small, wrap-safe wave normal.
 uniform int visual_quality = 0;
-uniform float world_time = 0.0;
 uniform float season_phase = 1.0;
 uniform float day_phase = 0.25;
 uniform float axial_tilt_rad = 0.4091;
@@ -121,13 +122,15 @@ uniform float water_flow_wave_density   : hint_range(0.25, 4.0) = 1.75;
 uniform float water_flow_advection      : hint_range(0.0, 3.0)  = 1.15;
 uniform float water_flow_wave_amplitude : hint_range(0.0, 3.0)  = 1.35;
 uniform float water_flow_crest_strength : hint_range(0.0, 1.0)  = 0.38;
-uniform float water_flow_streak_strength : hint_range(0.0, 1.5) = 1.0;
+uniform float water_mark_strength      : hint_range(0.0, 2.0)  = 1.0;
+uniform float water_mark_coverage      : hint_range(0.0, 2.0)  = 1.0;
 uniform float water_ripple_strength     : hint_range(0.0, 3.0)  = 1.0;
 uniform float water_ripple_detail_mix   : hint_range(0.0, 1.5)  = 0.5;
 uniform float water_ripple_scale        : hint_range(0.3, 3.0)  = 1.0;
 uniform float water_flow_drift_base     : hint_range(0.0, 100.0) = 30.0;
 uniform float water_flow_drift_current  : hint_range(0.0, 300.0) = 100.0;
 uniform float water_mark_length         : hint_range(0.3, 3.0)  = 1.0;
+uniform float water_mark_speed          : hint_range(0.0, 4.0)  = 1.0;
 uniform float water_rough_min           : hint_range(0.0, 1.0)  = 0.22;
 uniform float water_rough_max           : hint_range(0.0, 2.0)  = 1.0;
 uniform float water_rough_scale         : hint_range(0.25, 4.0) = 1.0;
@@ -151,12 +154,8 @@ vec3 web_hash32(vec2 p) {
 	return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-// 一层顺流洋流丝。返回丝的强度 [0,1]（高度剖面 b²）——只参与颜色，不参与法线。
-// （原 web_mark_layer 的浪脊分支 2026-11-06 已删除，与桌面 water_streak_layer 同义。）
-//   cell / shear：格尺寸与斜切系数；dirv：顺流方向（单位向量）；cover：有丝的格子比例；
-//   rate / travel：生命周期频率与生命内的漂移距离（格宽倍数）；width_frac / len_frac：丝厚 / 半长
-//   （格宽倍数）；fp：屏幕像素对应的世界长度（调用方在分支外求值）：比 1 像素细时整体淡出。
-float web_streak_layer(vec2 wp, float cell, float shear, vec2 dirv,
+// 一层离散浪脊笔触，返回法线梯度 / 高度 / 覆盖强度。
+vec4 web_mark_layer(vec2 wp, float cell, float shear, vec2 dirv,
 		float cover, float t, float rate, float travel,
 		float width_frac, float len_frac, float fp, float seed) {
 	bool wrapped = wrap_period_x > 0.0001;
@@ -173,7 +172,7 @@ float web_streak_layer(vec2 wp, float cell, float shear, vec2 dirv,
 	vec3 ha = web_hash32(id + cyc * vec2(7.13, 3.77));
 	float present = smoothstep(cover, cover - 0.10, ha.z);
 	if (present <= 0.0) {
-		return 0.0;
+		return vec4(0.0);
 	}
 	vec3 hb = web_hash32((id + cyc * vec2(7.13, 3.77)) * 1.713 + 31.7);
 	// 平台式包络：生命中段近满强度，前后各 22% 淡入淡出（旧的 (4x(1-x))² 大部分时间很暗）。
@@ -184,14 +183,13 @@ float web_streak_layer(vec2 wp, float cell, float shear, vec2 dirv,
 	vec2 d = vec2(dq.x * cw - shear * dq.y * cell, dq.y * cell);
 	float e = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
 	// 每格方向抖动 ±0.15 rad（小角度近似，不用 sin/cos）：丝基本顺流，只轻微散开。
-	float a = (hb.y - 0.5) * 0.30;
+	float a = (hb.y - 0.5) * 0.80;
 	float ca = 1.0 - 0.5 * a * a;
 	float sa = a - a * a * a * 0.1666667;
 	vec2 dd = vec2(dirv.x * ca - dirv.y * sa, dirv.x * sa + dirv.y * ca);
 	d -= dd * ((life - 0.5) * travel * cell);
-	// 顺流拉长：横截面取「垂直流向」、长度取「沿流向」——旧 streak 分支的 uu/ss 对调。
-	float uu = dot(d, vec2(-dd.y, dd.x));
-	float ss = dot(d, dd);
+	float uu = dot(d, dd);
+	float ss = dot(d, vec2(-dd.y, dd.x));
 	float L = len_frac * cell * (0.65 + 0.7 * hb.z);
 	float w_nom = width_frac * cell;
 	float w = max(w_nom, fp * 1.1);
@@ -203,7 +201,13 @@ float web_streak_layer(vec2 wp, float cell, float shear, vec2 dirv,
 	float lm = clamp(1.0 - abs(ss) / L, 0.0, 1.0);
 	lm = lm * lm * (3.0 - 2.0 * lm);
 	float k = present * env * smoothstep(0.0, 0.14, e) * aa * lm;
-	return b2 * k;
+	float xt = (uu - curve + 1.7 * w) / (1.4 * w);
+	float c = max(1.0 - xt * xt, 0.0);
+	float c2 = c * c;
+	float h = (b2 - 0.40 * c2) * k;
+	float dh = (-4.0 * xu * b / w * (b > 0.0 ? 1.0 : 0.0)
+			+ 0.40 * 4.0 * xt * c / (1.4 * w) * (c > 0.0 ? 1.0 : 0.0)) * k;
+	return vec4(dd * dh, h, b2 * k);
 }
 
 
@@ -239,7 +243,7 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 		flow = textureLod(ocean_current_flow_tex, uv, 2.0).rg * 2.0 - 1.0;
 	}
 	// [water-wave-marks 2026-11-06] 与桌面同构：背景浪向 / 海况分区用整数经向频率的低频正弦
-	// （环绕缝连续、零纹理采样）。浪脊笔触已删，只剩顺流洋流丝（web_streak_layer）。
+	// （环绕缝连续、零纹理采样）。
 	float flow_mag = length(flow);
 	float cur = sqrt(smoothstep(0.015, 0.16, flow_mag)) * clamp(ocean_current_strength * 1.15, 0.0, 1.0);
 	vec2 flow_dir = flow / max(flow_mag, 1e-3);
@@ -258,8 +262,6 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 	float rough_n = web_ripple(v_world, 300.0 * rs, vec2(world_time * 0.0040, -world_time * 0.0027) / rs, 211.0, 0.31).z * 1.0 + 0.5;
 	float rough_c = mix(0.75, 0.25, clamp(water_rough_coverage, 0.0, 1.0));
 	float rough = smoothstep(rough_c - 0.20, rough_c + 0.20, rough_n);
-	// 浪头笔触已删（2026-11-06）；`mlen` 仍被顺流洋流丝使用。
-	float mlen = max(water_mark_length, 0.05);
 	// 格尺寸 / 流速倍率：默认值下均为 1，与桌面一致。
 	float sc = 1.27 / max(water_flow_wave_density * 0.7254, 0.05);
 	float rate_s = water_flow_advection / 1.15;
@@ -290,26 +292,32 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 		slope += r2.xy * rip_k * water_ripple_detail_mix;
 		height += r2.z * 0.45 * water_ripple_strength;
 	}
-	// [water-mark-removed 2026-11-06] 浪头笔触（原 la/lb 两层，权重 0.9 / 0.68）已整段删除，
-	// 与桌面 water.gdshaderinc 同步。Web 海面 = 底层涟漪 + 顺流洋流丝。
-	float wave = water_effect_enabled ? ice_free : 0.0;
-	float streak = 0.0;
+	// 恢复两层非顺流浪脊；细长洋流丝保持关闭。
+	float cov_k = max(water_mark_coverage, 0.0);
+	float mlen = max(water_mark_length, 0.05);
+	float mark_rate = rate_s * water_mark_speed;
+	vec4 la = web_mark_layer(v_world, 66.0 * sc, 0.21, dirv,
+			clamp(mix(0.20, 0.66, zs) * mix(0.25, 1.25, rough) * cov_k, 0.0, 0.95),
+			world_time, 0.07 * mark_rate, 0.50, 0.105, 0.42 * mlen, fp, 3.0);
+	slope += la.xy * (0.9 * water_mark_strength);
+	height += la.z;
 	if (visual_quality >= 1) {
-		if (visual_quality >= 2 && cur > 0.004 && water_flow_streak_strength > 0.001) {
-			streak = web_streak_layer(v_world, 52.0 * sc, 0.17, flow_dir, mix(0.22, 0.65, cur),
-					world_time, 0.09 * rate_s, 1.3, 0.075, 0.62 * mlen, fp, 23.0)
-					* cur * water_flow_streak_strength;
-		}
+		vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
+		vec4 lb = web_mark_layer(v_world, 34.0 * sc, -0.27, dirb,
+				clamp(mix(0.58, 0.18, zs) * mix(0.30, 1.20, rough) * cov_k, 0.0, 0.95),
+				world_time, 0.12 * mark_rate, 0.65, 0.11, 0.36 * mlen, fp, 11.0);
+		slope += lb.xy * (0.68 * water_mark_strength);
+		height += lb.z * 0.80;
 	}
+	float wave = water_effect_enabled ? ice_free : 0.0;
 	// 法线强度：平静区 = water_rough_min，风浪区 = water_rough_max（与桌面同义）。
 	slope *= mix(0.90, 1.20, cur) * 0.70 * water_flow_wave_amplitude * mix(water_rough_min, water_rough_max, rough);
 	vec3 N = normalize(vec3(-slope * wave, 1.0));
-	// 笔触参与着色：浪脊提亮 / 后方压暗 + 浪尖碎白 + 顺流洋流丝；冰面 wave=0 自动无效果。
+	// 波高参与着色：波峰波谷明暗与浪尖碎白；冰面 wave=0 自动无效果。
 	float height_a = clamp(height * mix(0.90, 1.20, cur) * mix(0.35, 1.0, rough), -1.0, 1.0);
 	albedo_srgb *= 1.0 + height_a * 0.34 * wave;
 	float crest = smoothstep(0.30, 0.72, height_a) * wave;
 	albedo_srgb = mix(albedo_srgb, vec3(0.72, 0.84, 0.88), crest * water_flow_crest_strength * 1.6);
-	albedo_srgb = mix(albedo_srgb, vec3(0.70, 0.86, 0.92), smoothstep(0.10, 0.50, streak) * wave * 0.45);
 	vec3 V = vec3(0.0, 0.0, 1.0);
 	vec3 L = ed.local_day >= ed.moon_strength ? ed.sun_dir : ed.moon_dir;
 	vec3 H = normalize(L + V);

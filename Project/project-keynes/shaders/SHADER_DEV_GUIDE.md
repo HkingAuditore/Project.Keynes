@@ -594,24 +594,23 @@ static bake 失败兜底：R=旧 `water_depth_buffer`、GBA=0 → 自动退化�
 
 ### 9.2b 浪头笔触（**2026-11-06 已删除**，留档）
 
-> **现状**：浪头笔触整段删除，不是注释、不是运行期开关。`water_flow_surface()` 里原来的
-> `la` / `lb` 两层、`cov_k` / `cover_a` / `cover_b`、以及 `water_mark_layer()` 的浪脊分支
-> 全部移除。海面 = 底层涟漪 + 顺流洋流丝。
+> **现状**：非顺流浪脊笔触已恢复；细长顺流洋流丝保持删除。`water_flow_surface()` 使用
+> `la` / `lb` 两层、`cov_k` / `cover_a` / `cover_b` 和 `water_mark_layer()` 的浪脊分支。
+> `world_water_web.gdshader` 同样恢复两层浪脊，但两个平台都没有顺流丝分支。
 >
-> 同步删除：`water_mark_strength` / `water_mark_coverage`（uniform + `@export` +
-> `WATER_PARAM_NAMES` + 场景序列化值）。`water_mark_length` 保留——洋流丝复用它。
+> `water_mark_strength` / `water_mark_coverage` / `water_mark_length` 控制浪脊笔触；
+> `water_mark_speed` 单独控制其运动速度，0 为静止，默认 1。
+> `water_flow_streak_strength` 已删除；不要恢复顺流亮丝调用。
 >
-> 连带后果：`wave_height` 只剩涟漪高度，`smoothstep(0.30, 0.72, wave_h)` 的浪尖碎白会明显
-> 变少。要补回来就把阈值下移，别再指望笔触。
+> `wave_height` 同时包含底层涟漪与两层浪脊，用于波峰波谷明暗和浪尖碎白。
 >
 > **Web 紧凑水面（`world_water_web.gdshader`）有独立一份实现**，同样已删（原权重 0.9 / 0.68，
 > 比桌面旧版还强）。改水面时务必 grep 两个 program。
 
 `water.gdshaderinc` 的 `water_flow_surface()` 是海洋波浪唯一入口，输出
-`normal` / `wave_height` / `flow_streak`。洋流丝由 `water_streak_layer()` 生成（`float` 返回值，
-只给颜色用，不参与法线）；Web 侧对应 `web_streak_layer()`。
+`normal` / `wave_height`。桌面和 Web 的浪脊层均不沿洋流方向拉长。
 
-被删的浪脊路径长什么样、当初做过哪些形状修正，见下面的表——只有要从 git 历史里恢复时才需要。
+浪脊轮廓的形状修正见下面的表。
 
 原版的问题是"边缘太硬、形状太规律"：整层共用一条抛物线、固定宽度、格位只抖动 40%、
 弯曲与长度共用一个哈希分量。修正全部是**逐格自由度 + 一个已有噪声**，零新增采样：
@@ -651,9 +650,8 @@ static bake 失败兜底：R=旧 `water_depth_buffer`、GBA=0 → 自动退化�
 （或换世界级贴图 / RT），而不是解析等值线。另：均匀亮的泡沫块 + 只有边缘法线，视觉上会被
 读成"坑"（火山口错觉），这也是当时觉得"法线反了"的来源。
 
-> Web compact 水面（`world_water_web.gdshader`）有一份**独立的** `web_streak_layer`，没有
-> `noise_tex`，参数与桌面 `water_streak_layer` 不完全相同（没有 jit / 逐格粗细）。Web HIGH 走
-> `PK_WEB_WATER_ONLY` 复用本文件，自动同步。
+> Web compact 水面（`world_water_web.gdshader`）是独立实现；仅恢复非顺流浪脊。
+> Web HIGH 走 `PK_WEB_WATER_ONLY` 复用本文件。
 
 ### 9.3 SEA 2 — `apply_water_specials`
 

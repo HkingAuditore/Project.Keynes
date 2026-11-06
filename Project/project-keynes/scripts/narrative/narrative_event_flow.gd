@@ -23,6 +23,10 @@ var _awaiting_outcome_ack: bool = false
 var _restore_pending: bool = false
 var _reopen_pending: bool = false
 var _pending_image_request_offer_id: int = 0
+var _popups_suppressed: bool = false
+
+func set_popups_suppressed(value: bool) -> void:
+	_popups_suppressed = value
 
 
 func configure(controller, runtime_host, clock, ui_manager, service, ai_client = null) -> void:
@@ -195,6 +199,14 @@ func _try_present_impl() -> void:
 		elif _restore_pending:
 			_restore_clock()
 		return
+	if _popups_suppressed:
+		var options: Array = offer.get("options", [])
+		var default_index := clampi(int(offer.get("default_option_index", 0)), 0,
+			maxi(options.size() - 1, 0))
+		if not options.is_empty():
+			on_option_chosen(int(offer.get("offer_id", 0)),
+				int(offer.get("offer_generation", offer.get("generation", 1))), default_index)
+		return
 
 	_reopen_pending = false
 	var was_locked := _locked
@@ -282,7 +294,9 @@ func on_option_chosen(offer_id: int, offer_generation: int, option_index: int) -
 	if not record.is_empty():
 		event_resolved.emit(record)
 
-	if _ui_manager != null and _ui_manager.has_method("show_narrative_event_outcome"):
+	if _popups_suppressed:
+		on_outcome_acknowledged()
+	elif _ui_manager != null and _ui_manager.has_method("show_narrative_event_outcome"):
 		_awaiting_outcome_ack = true
 		_ui_manager.show_narrative_event_outcome(resolution)
 	else:

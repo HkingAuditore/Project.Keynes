@@ -1396,6 +1396,8 @@ func _on_speed_changed(new_speed: float) -> void:
 func _sync_clock_running_to_weather_layer() -> void:
 	if _renderer == null:
 		return
+	if _renderer.has_method("set_clock_running"):
+		_renderer.set_clock_running(not _world_clock.paused)
 	var wl = _renderer.get_node_or_null("WeatherLayer")
 	if wl != null and wl.has_method("set_clock_running"):
 		wl.set_clock_running(not _world_clock.paused)

@@ -16,6 +16,10 @@ var _history_offset: int = 0
 var _catalogs: Dictionary = {}
 var _reopen_pending: bool = false
 var _viewed: Array[int] = []
+var _popups_suppressed: bool = false
+
+func set_popups_suppressed(value: bool) -> void:
+	_popups_suppressed = value
 
 func configure(controller, host, clock, ui) -> void:
 	_controller = controller
@@ -34,6 +38,10 @@ func is_open() -> bool:
 	return _open
 
 func queue_report(id: int) -> void:
+	if _popups_suppressed:
+		if _host != null and _host.has_method("mark_annual_report_presented"):
+			_host.mark_annual_report_presented(id)
+		return
 	_queued = id
 	try_present()
 
