@@ -1,31 +1,32 @@
 # 模拟内核架构
 
-本目录是运行架构的现行入口。按下面顺序阅读：
+本目录是运行架构的入口，按主题组织：
 
-1. [现状](current-state.md)：源码中的写入者、线程、对拍开关及证据；先确定今天是什么。
-2. [目标](design.md)：确定性 tick、模块边界和黄金回放；明确哪些尚未实现。
-3. [模块边界](module-boundaries.md)：数据归属、依赖规则和现存跨域引用。
-4. [开发指南](development-guide.md)：现在可用的接入点和检查命令。
-5. [迁移状态](migration.md)：每阶段实际完成范围、验收证据和缺口。
-6. [S9 后续拆分方案](s9-split-plan.md)：经济头文件安全子集已在S23实施；宿主步骤1、2部分、3及4单项、5部分的实施范围见各轮更新。
+1. [design.md](design.md)：目标架构，标明哪些已落地。
+2. [current-state.md](current-state.md)：今天源码里的十二域、表外推进者、跨模块交接、存档段、哈希与验证范围。
+3. [module-boundaries.md](module-boundaries.md)：数据归属、模块公开接口与宿主端口、依赖棘轮、已提交视图、请求与提交、行数棘轮。
+4. [development-guide.md](development-guide.md)：怎样改模块、加接口/端口/读边/请求/存档字段、搬迁文件、跑检查、维护黄金基线、做性能验证。
+5. [migration.md](migration.md)：迁移目标各项的状态、推迟项和最近一次验证。
 
-7. [目标差距审计](s13-design-gap-audit.md)：能力完成程度及S23证据。
-8. [模块存档段评审](s14-save-sections-review.md)：字节归属、版本和金样；当前ECP2 57、PKSR3、environment适配3，CLM2v9不变。
+规则：
 
-9. [待决定文档处置](document-disposition.md)：S20逐份复核结果与保留级别。
+- 代码与文档不符时，以代码和可复现的运行结果为准。
+- 目标设计、代码接入、实跑验证是三种不同结论；拆文件不等于所有权迁移完成。
+- 改了架构就同步改对应页面，只写现状，不按阶段追加日志。过程记录留在提交信息和 git 历史里。
 
-运行文档与代码不符时，以代码和可复现运行结果为准。目标设计、代码接入、实跑验证是三种不同结论。模块表已接入不代表数据所有权、确定性或存档拆分已经迁移。
+构建和平台说明见 [从源码构建](../build-from-source.md)。实测平台为 macOS arm64、Godot 4.6.3，只做过无界面验证。
 
-`docs/cpp-dots-runtime/` 保留的业务规则、内容和视觉说明不是架构状态入口；其权威/参考/历史级别见S20逐份处置表。旧过程报告已清理，引用改为本目录；这些新入口不为旧报告里的测量数字、段落编号或“已完成”背书。
+## 业务规格文档
 
-构建和平台说明仍读 [从源码构建](../build-from-source.md)。本轮实测平台为 macOS arm64、Godot 4.6.3，仅无画面验证。
+`docs/cpp-dots-runtime/` 和 `docs/plans/` 保存业务规则和玩法设计，不是架构状态入口。引用前核对其中的版本号和接口是否仍与代码一致。
 
+| 级别 | 含义 | 文件 |
+|---|---|---|
+| 参考 | 业务规格；核对所列版本和实现后可用 | `cpp-dots-runtime/` 下的 annual-development-report、canal-runtime、country-ai-runtime、domestic-trade-runtime、family-colonization-runtime、player-controller-runtime |
+| 参考／玩法依据 | 业务规格，其中的玩法取舍改动前要问用户 | `cpp-dots-runtime/` 下的 economy-fixed-point-ledger-formulas、era-advancement-runtime、era-reward-runtime、family-demography-ledger-design、military-recruitment-pipeline、military-runtime、notable-family-runtime、notable-person-runtime、price-v6-validation、satisfaction-runtime、tax-fiscal-runtime |
+| 历史／玩法依据 | 决策来源；不能当完成状态的证明，原始意图保留 | `plans/` 下的 army-pay-contract、army-personnel-contract-2、army-personnel-implementation-contract、military-implementation-contract，以及 `plans/ideology-review/` 的 01、02、03、05、09、22 两份 |
+| 玩法设计 | 原文保留，由用户决定 | `plans/military-system-design.md` |
 
-10. [S22年度读档根因、版本与边界证据](s22-annual-continuation.md)：真实365日及364/366相邻保存已八日全域一致，6条已提交读边；在途保存专用测试的范围与限制。S20的29份文档继续分级保留。
+其他文件未分级，使用前先核对代码。
 
-
-### S23 入口
-
-S23 的实现证据集中在 `/tmp/keynes-arch-phase1/stage23/`：模块存档契约、9 条已提交视图边界、模块描述符扩展、Economy 头文件安全拆分、宿主恢复准备拆分，以及两国续跑矩阵。先读 `current-state.md`，再按 `migration.md` 的验证入口复核。非零军队年度保存已复现分叉；Economy 主 cpp 尚未继续拆分。
-
-- [R2 军事原始索引与年度继续态](s26-military-continuation.md)：撤回过滤、PKMI2/ECP2 59/PKSR5 的因果证据与验证边界。
+已知过时：`plans/army-pay-contract.md` 里的军饷经 `military_collect_cash` 已改为所有者端口，但“国库减多少、lane 加多少”的守恒意图仍有效；`plans/military-implementation-contract.md` 的“无需新经济 opcode”已过时。
