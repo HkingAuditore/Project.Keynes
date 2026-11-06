@@ -23,6 +23,7 @@
 #include "economy_graph_kernels.h"
 #include "annual_development_ledger.h"
 #include "economy_host_port.h"
+#include "country_host_port.h"
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -41,7 +42,7 @@ namespace pk {
 struct RuntimeGoldenSnapshot;
 class NativeEconomyRuntime;
 class CountryAiRuntime;
-class NativeSimulationHost final : public EconomyHostPort {
+class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
     NativeSimulationHost();
     ~NativeSimulationHost();
@@ -521,7 +522,7 @@ public:
     }
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
-    bool country_pod_configured() const {
+    bool country_pod_configured() const override {
         return _country_pod_configured.load(std::memory_order_acquire);
     }
     // Ideology parity, mirroring the country pair above: the main thread publishes
@@ -616,10 +617,10 @@ public:
                                    std::string &error,
                                    const RuntimeCountryPodSnapshot *snapshot = nullptr);
     bool mirror_country_peer_result(const CountryPeerResult &result,
-                                    std::string &error);
+                                    std::string &error) override;
     bool mirror_sync_country_economy_asset(
             const RuntimeEconomyAssetRequest &request,
-            const RuntimeEconomyAssetResult &result, std::string &error);
+            const RuntimeEconomyAssetResult &result, std::string &error) override;
     bool country_shadow_parity_self_test(std::string &error) const;
     bool poll_country_worker_intent(CountryPeerIntent &out);
     bool submit_country_worker_result(const CountryPeerResult &result,
@@ -681,13 +682,13 @@ public:
     // Does NOT update country_economy_audit_snapshot — Economy conservation must
     // not observe uncommitted research spend / purchase credits from preview.
     bool publish_country_plan_preview_snapshot(std::string &error);
-    std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
+    std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const override {
         return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
     }
     // Last sealed / authority-published Country assets for Economy audits.
     // Falls back to country_asset_snapshot when no sealed view exists yet.
     std::shared_ptr<const RuntimeCountryPodSnapshot>
-    country_economy_audit_snapshot() const {
+    country_economy_audit_snapshot() const override {
         auto audit = std::atomic_load_explicit(&_country_economy_audit_snapshot,
                                                std::memory_order_acquire);
         if (audit != nullptr) return audit;
@@ -713,7 +714,7 @@ public:
         return country_authority_handoff_status().owner ==
             CountryAuthorityOwner::WORKER;
     }
-    bool country_authority_handoff_prepare_pending() const {
+    bool country_authority_handoff_prepare_pending() const override {
         return country_authority_handoff_status().prepare_pending;
     }
     bool country_authority_handoff_self_test(std::string &error) const;
@@ -857,18 +858,18 @@ public:
                                  std::string &error);
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
-    int32_t effect_pod_program_id_for_key(const char *key) const;
+    int32_t effect_pod_program_id_for_key(const char *key) const override;
     // M2a: true once a compiled Effect POD catalog is installed. The forwarder
     // must report WORKER_TRANSPORT_NOT_READY rather than "ok" while EFFECT is
     // already worker-authoritative but this is still false -- otherwise every
     // queued instance fails and the batch looks partially accepted.
-    bool effect_pod_transport_ready() const { return _effect_pod_configured; }
+    bool effect_pod_transport_ready() const override { return _effect_pod_configured; }
     // Country ACTIVE peer adapter: technology.<id> instances live on the Effect
     // POD unique-writer. Sync EffectRuntime is writeback-only under F8.
     bool ensure_effect_pod_technology_instance(
             int64_t instance_id, uint32_t generation, int32_t program_id,
             uint64_t target_handle, uint32_t target_generation, int64_t day,
-            std::string &error);
+            std::string &error) override;
     // "Is this instance still in the Effect POD unique-writer's state?"
     //
     // Main-thread owners that keep their own bindings (Economy's family
@@ -888,7 +889,7 @@ public:
     bool effect_pod_instance_exists(int64_t instance_id,
                                     uint32_t generation) const;
     bool effect_pod_instance_fire_acked(int64_t instance_id,
-                                        uint32_t generation) const;
+                                        uint32_t generation) const override;
     // After Effect soft-skip/catchup/ACK, PENDING Country ENSURE/NUDGE peers
     // must become READY without re-queue (re-queue spun the main-thread pump).
     // Removing Country soft-commit made this same-day promote mandatory.
@@ -899,7 +900,7 @@ public:
     std::string describe_effect_pod_technology_state(int64_t instance_id,
                                                      uint32_t generation,
                                                      int32_t program_id,
-                                                     int32_t technology) const;
+                                                     int32_t technology) const override;
     bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
@@ -943,11 +944,11 @@ public:
     // capacity before publishing any packet and assigns submit_order in the
     // same critical section, so transport chunking cannot split a business
     // batch or change its tie-break order.
-    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
+    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets) override;
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
     uint64_t allocate_command_request_id() override;
     void reserve_command_request_ids_through(uint64_t maximum) noexcept;
-    uint64_t allocate_producer_sequence(uint32_t producer_id);
+    uint64_t allocate_producer_sequence(uint32_t producer_id) override;
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     bool poll_commit_generation(uint64_t generation, RuntimeCommit &out);
@@ -958,7 +959,7 @@ public:
     // Point lookup for Effect ACK. Cursor polls skip lower Effect terminals
     // once an unrelated Country commit advances the high-water mark.
     bool try_country_command_terminal(
-            uint64_t request_id, CountryCommandReceipt &out);
+            uint64_t request_id, CountryCommandReceipt &out) override;
     bool country_command_receipt_self_test(std::string &error) const;
     bool country_peer_rejection_self_test(std::string &error) const;
     bool publish_country_economy_asset_requests(
@@ -1046,7 +1047,7 @@ public:
             | runtime_domain_mask(RuntimeDomainId::VISUAL)
             | runtime_domain_mask(RuntimeDomainId::COMMIT);
     }
-    RuntimeWorkerState state() const {
+    RuntimeWorkerState state() const override {
         return _state.load(std::memory_order_acquire);
     }
     // Domains this worker has proven at a barrier and now owns. Zero means the
@@ -1115,7 +1116,7 @@ public:
     // 若照常跑该域，写进 MapData 的结果会被 worker 首日当作种子读走，而它落在首次
     // capture 之前还是之后取决于线程时机。stop/fault 撤销授权时这里同样变 false，
     // 域交还主线程。
-    bool domain_grant_pending(RuntimeDomainId domain) const {
+    bool domain_grant_pending(RuntimeDomainId domain) const override {
         if (domain_is_worker_authoritative(domain) ||
             _mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
             (_requested_authority_mask.load(std::memory_order_acquire) &
@@ -2150,5 +2151,4 @@ private:
     std::vector<RuntimeVisualIntent> _pod_visual_intents;
     std::vector<RuntimeCommandReceipt> _pod_receipts;
 };
-
 } // namespace pk

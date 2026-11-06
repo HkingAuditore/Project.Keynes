@@ -44,5 +44,11 @@
     "world_ext_simulation_host.cpp": "Godot binding layer owns NativeCountryRuntime",
     "world_ext_trigger.cpp": "Godot binding layer owns NativeCountryRuntime"
   },
-  "legacy_includers": []
+  "legacy_includers": [],
+  "forbidden_owner_includes": {
+    "patterns": [
+      "native_simulation_host*.h"
+    ],
+    "allowed": {}
+  }
 }

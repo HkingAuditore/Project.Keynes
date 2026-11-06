@@ -1010,6 +1010,9 @@ struct RuntimeEconomyAssetResult {
     std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
 };
 
+using CountryEconomyAssetRequest = RuntimeEconomyAssetRequest;
+using CountryEconomyAssetResult = RuntimeEconomyAssetResult;
+
 struct RuntimeEconomyAssetProtocolStatus {
     uint32_t protocol_version = RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION;
     uint32_t queued_requests = 0;

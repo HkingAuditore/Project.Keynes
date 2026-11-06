@@ -4,9 +4,9 @@
 // The shared authority-aware instance write. Technology instances are Effect
 // instances, so they take the same worker/legacy door as the family ones.
 #include "economy_effect_forward.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "economy_api.h"
-#include "native_simulation_host.h"
+#include "country_host_port.h"
 
 #include <algorithm>
 #include <array>
@@ -2713,7 +2713,7 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.research_cost_factor.assign(out.country_count, 1.0);
     out.research_efficiency.assign(
         static_cast<size_t>(out.country_count) * 4u, 1.0);
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)) {
         static constexpr const char *EFFICIENCY_STATS[4] = {
             "country.research.agriculture_efficiency",
             "country.research.engineering_efficiency",
@@ -2723,15 +2723,15 @@ bool NativeCountryRuntime::export_pod_snapshot(
         for (uint32_t slot = 0; slot < out.country_count; ++slot) {
             if (_countries.active[slot] == 0) continue;
             const uint64_t handle = make_handle(static_cast<int32_t>(slot));
-            double cost_factor = _modifier_runtime->effective_value(
-                ModifierRuntime::COUNTRY, "country.research.cost_factor",
+            double cost_factor = modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::COUNTRY, "country.research.cost_factor",
                 handle, 0, 1.0);
             if (!(cost_factor > 0.0) || !std::isfinite(cost_factor))
                 cost_factor = 1.0;
             out.research_cost_factor[slot] = cost_factor;
             for (uint32_t domain = 0; domain < 4u; ++domain) {
-                double efficiency = _modifier_runtime->effective_value(
-                    ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                double efficiency = modifier_api::effective_value(*_modifier_runtime,
+                    ModifierApi::COUNTRY, EFFICIENCY_STATS[domain],
                     handle, 0, 1.0);
                 if (!(efficiency > 0.0) || !std::isfinite(efficiency))
                     efficiency = 1.0;
@@ -2768,10 +2768,10 @@ bool NativeCountryRuntime::export_pod_snapshot(
                     effect_acked);
                 if (effect_acked) flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
             }
-            if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+            if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime) &&
                 technology < _technology_modifier_definition_keys.size() &&
                 !_technology_modifier_definition_keys[technology].empty() &&
-                _modifier_runtime->has_technology_effect(
+                modifier_api::has_technology_effect(*_modifier_runtime,
                     make_handle(static_cast<int32_t>(slot)),
                     _technology_modifier_definition_keys[technology],
                     static_cast<int32_t>(technology)))
@@ -5037,11 +5037,10 @@ bool NativeCountryRuntime::restore_core_checkpoint(
     }
 
     NativeCountryRuntime staged(*this);
-    std::unique_ptr<ModifierRuntime> staged_modifier;
+    auto staged_modifier = _modifier_runtime != nullptr ? modifier_api::copy_runtime(*_modifier_runtime) : decltype(modifier_api::copy_runtime(*_modifier_runtime)){};
     if (_modifier_runtime != nullptr) {
-        staged_modifier = std::make_unique<ModifierRuntime>(*_modifier_runtime);
-        staged_modifier->attach_country_runtime(&staged);
-        staged_modifier->attach_economy_runtime(_economy_runtime);
+        modifier_api::attach_country_runtime(*staged_modifier, &staged);
+        modifier_api::attach_economy_runtime(*staged_modifier, _economy_runtime);
         staged._modifier_runtime = staged_modifier.get();
     }
     if (!staged.restore_core_checkpoint_in_place(checkpoint, error))
@@ -5055,9 +5054,9 @@ bool NativeCountryRuntime::restore_core_checkpoint(
     _economy_runtime = live_economy;
     _effect_runtime = live_effect;
     if (live_modifier != nullptr) {
-        *live_modifier = std::move(*staged_modifier);
-        live_modifier->attach_country_runtime(this);
-        live_modifier->attach_economy_runtime(live_economy);
+        modifier_api::replace_runtime(*live_modifier, std::move(*staged_modifier));
+        modifier_api::attach_country_runtime(*live_modifier, this);
+        modifier_api::attach_economy_runtime(*live_modifier, live_economy);
     }
     return true;
 }
@@ -5699,11 +5698,11 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
                 const std::string stat_key = std::string("country.tax.") +
                     kind_key + "." + item_ids[item] + ".rate_bp";
                 const int32_t stat_id =
-                    _modifier_runtime->stat_id_for_key(stat_key);
+                    modifier_api::stat_id_for_key(*_modifier_runtime, stat_key);
                 if (stat_id >= 0) {
                     effective_value = static_cast<int32_t>(std::clamp<int64_t>(
-                        std::lround(_modifier_runtime->effective_value(
-                            ModifierRuntime::COUNTRY, stat_id,
+                        std::lround(modifier_api::effective_value(*_modifier_runtime,
+                            ModifierApi::COUNTRY, stat_id,
                             static_cast<uint64_t>(handle), 0, base_value)),
                         TAX_RATE_MIN_BP, TAX_RATE_MAX_BP));
                 }
@@ -5909,12 +5908,12 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
                     kind_key + "." + ids[static_cast<size_t>(item)] +
                     ".rate_bp";
                 const int32_t stat_id =
-                    _modifier_runtime->stat_id_for_key(stat_key);
+                    modifier_api::stat_id_for_key(*_modifier_runtime, stat_key);
                 if (stat_id >= 0) {
                     effective_value = static_cast<int32_t>(
                         std::clamp<int64_t>(std::lround(
-                            _modifier_runtime->effective_value(
-                                ModifierRuntime::COUNTRY, stat_id, handle,
+                            modifier_api::effective_value(*_modifier_runtime,
+                                ModifierApi::COUNTRY, stat_id, handle,
                                 0, base_value)), TAX_RATE_MIN_BP,
                             TAX_RATE_MAX_BP));
                 }
@@ -6268,8 +6267,8 @@ void NativeCountryRuntime::finish_economy_asset_transaction(
         _economy_asset_transaction_history.pop_front();
     if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
         _simulation_host->country_pod_configured()) {
-        RuntimeEconomyAssetRequest request;
-        RuntimeEconomyAssetResult result;
+        CountryEconomyAssetRequest request;
+        CountryEconomyAssetResult result;
         request.operation = static_cast<RuntimeEconomyAssetOperation>(
             terminal.operation);
         request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
@@ -7639,8 +7638,8 @@ void NativeCountryRuntime::ensure_research_modifier_cache(
     const uint64_t handle = make_handle(slot);
     const uint64_t version = peer_context != nullptr
         ? peer_context->modifier_generation
-        : (_modifier_runtime != nullptr && _modifier_runtime->configured()
-            ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY)
+        : (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)
+            ? modifier_api::domain_snapshot_version(*_modifier_runtime, ModifierApi::COUNTRY)
             : 0);
     if (cache.country_handle == handle && cache.modifier_version == version) {
         ++_research_modifier_cache_hits;
@@ -7666,21 +7665,21 @@ void NativeCountryRuntime::ensure_research_modifier_cache(
         _research_modifier_ms += elapsed_ms(started);
         return;
     }
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)) {
         static const char *EFFICIENCY_STATS[4] = {
             "country.research.agriculture_efficiency",
             "country.research.engineering_efficiency",
             "country.research.science_efficiency",
             "country.research.society_efficiency",
         };
-        cache.cost_factor = _modifier_runtime->effective_value(
-            ModifierRuntime::COUNTRY, "country.research.cost_factor",
+        cache.cost_factor = modifier_api::effective_value(*_modifier_runtime,
+            ModifierApi::COUNTRY, "country.research.cost_factor",
             handle, 0, 1.0);
         ++_research_modifier_queries;
         for (int32_t domain = 0; domain < 4; ++domain) {
             cache.efficiency[static_cast<size_t>(domain)] =
-                _modifier_runtime->effective_value(
-                    ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                modifier_api::effective_value(*_modifier_runtime,
+                    ModifierApi::COUNTRY, EFFICIENCY_STATS[domain],
                     handle, 0, 1.0);
             ++_research_modifier_queries;
         }
@@ -7700,8 +7699,8 @@ int64_t NativeCountryRuntime::max_storable_research_progress(
     // country.research.cost_factor when the ModifierRuntime is not configured.
     constexpr double kResearchCostFactorFallbackMax = 4.0;
     double max_factor = kResearchCostFactorFallbackMax;
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
-        max_factor = _modifier_runtime->stat_clamp_max(
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime)) {
+        max_factor = modifier_api::stat_clamp_max(*_modifier_runtime,
             "country.research.cost_factor", kResearchCostFactorFallbackMax);
     }
     if (!(max_factor > 0.0) || !std::isfinite(max_factor)) {
@@ -7978,8 +7977,8 @@ bool NativeCountryRuntime::capture_peer_context(
     out.session_epoch = _session_epoch;
     out.country_generation = _generation;
     out.modifier_generation = _modifier_runtime != nullptr &&
-            _modifier_runtime->configured()
-        ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY)
+            modifier_api::configured(*_modifier_runtime)
+        ? modifier_api::domain_snapshot_version(*_modifier_runtime, ModifierApi::COUNTRY)
         : 0;
     out.effect_generation = _effect_runtime_enabled && _effect_runtime != nullptr
         ? _effect_runtime->committed_generation() : 0;
@@ -7989,17 +7988,17 @@ bool NativeCountryRuntime::capture_peer_context(
     out.continuation_index = continuation_index;
     out.effect_enabled = _effect_runtime_enabled && _effect_runtime != nullptr ? 1 : 0;
     out.modifier_enabled = _modifier_runtime != nullptr &&
-        _modifier_runtime->configured() ? 1 : 0;
+        modifier_api::configured(*_modifier_runtime) ? 1 : 0;
     out.economy_enabled = _economy_runtime != nullptr ? 1 : 0;
     out.effect_should_run = out.effect_enabled != 0 &&
         _effect_runtime->should_run(day) ? 1 : 0;
     out.modifier_should_run = out.modifier_enabled != 0 &&
-        _modifier_runtime->should_run(day) ? 1 : 0;
+        modifier_api::should_run(*_modifier_runtime, day) ? 1 : 0;
 
     constexpr double kFallbackMaxCostFactor = 4.0;
     out.max_research_cost_factor = kFallbackMaxCostFactor;
     if (out.modifier_enabled != 0) {
-        out.max_research_cost_factor = _modifier_runtime->stat_clamp_max(
+        out.max_research_cost_factor = modifier_api::stat_clamp_max(*_modifier_runtime,
             "country.research.cost_factor", kFallbackMaxCostFactor);
         if (!(out.max_research_cost_factor > 0.0) ||
             !std::isfinite(out.max_research_cost_factor))
@@ -8019,15 +8018,15 @@ bool NativeCountryRuntime::capture_peer_context(
         for (size_t slot = 0; slot < country_count; ++slot) {
             if (_countries.active[slot] == 0) continue;
             const uint64_t handle = make_handle(static_cast<int32_t>(slot));
-            double cost_factor = _modifier_runtime->effective_value(
-                ModifierRuntime::COUNTRY, "country.research.cost_factor",
+            double cost_factor = modifier_api::effective_value(*_modifier_runtime,
+                ModifierApi::COUNTRY, "country.research.cost_factor",
                 handle, 0, 1.0);
             if (!(cost_factor > 0.0) || !std::isfinite(cost_factor))
                 cost_factor = 1.0;
             out.research_cost_factor[slot] = cost_factor;
             for (int32_t domain = 0; domain < 4; ++domain) {
-                double efficiency = _modifier_runtime->effective_value(
-                    ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                double efficiency = modifier_api::effective_value(*_modifier_runtime,
+                    ModifierApi::COUNTRY, EFFICIENCY_STATS[domain],
                     handle, 0, 1.0);
                 if (!(efficiency > 0.0) || !std::isfinite(efficiency))
                     efficiency = 1.0;
@@ -8077,7 +8076,7 @@ bool NativeCountryRuntime::capture_peer_context(
             if (out.modifier_enabled != 0 &&
                 technology < _technology_modifier_definition_keys.size() &&
                 !_technology_modifier_definition_keys[technology].empty() &&
-                _modifier_runtime->has_technology_effect(
+                modifier_api::has_technology_effect(*_modifier_runtime,
                     state.target_handle,
                     _technology_modifier_definition_keys[technology],
                     state.technology))
@@ -8779,8 +8778,8 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
               static_cast<size_t>(intent.technology)]
         : std::string{};
     uint8_t technology_flags = 0;
-    if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
-        !modifier_key.empty() && _modifier_runtime->has_technology_effect(
+    if (_modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime) &&
+        !modifier_key.empty() && modifier_api::has_technology_effect(*_modifier_runtime,
             intent.target_handle, modifier_key, intent.technology))
         technology_flags |= COUNTRY_PEER_MODIFIER_APPLIED;
 
@@ -8952,15 +8951,15 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
         return result;
     }
 
-    if (_modifier_runtime == nullptr || !_modifier_runtime->configured() ||
+    if (_modifier_runtime == nullptr || !modifier_api::configured(*_modifier_runtime) ||
         modifier_key.empty())
         return reject("country_peer_modifier_runtime_unavailable");
-    if (_modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY) <
+    if (modifier_api::domain_snapshot_version(*_modifier_runtime, ModifierApi::COUNTRY) <
         intent.peer_generation)
         return reject("country_peer_adapter_modifier_generation_regressed");
     if ((technology_flags & COUNTRY_PEER_MODIFIER_APPLIED) == 0) {
         std::string peer_error;
-        if (!_modifier_runtime->apply_technology_effect(
+        if (!modifier_api::apply_technology_effect(*_modifier_runtime,
                 intent.target_handle, modifier_key, intent.technology,
                 intent.day, peer_error))
             return reject(peer_error.empty()
@@ -8971,7 +8970,7 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
     result.code = CountryPeerResultCode::APPLIED;
     result.technology_flags = technology_flags;
     result.committed_peer_generation =
-        _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY);
+        modifier_api::domain_snapshot_version(*_modifier_runtime, ModifierApi::COUNTRY);
     ++_peer_results_consumed;
     return result;
 }
@@ -9089,8 +9088,8 @@ bool NativeCountryRuntime::ack_chain_due(
     if (_effect_runtime_enabled && _effect_runtime != nullptr &&
         _effect_runtime->should_run(day_index))
         return true;
-    return _modifier_runtime != nullptr && _modifier_runtime->configured() &&
-        _modifier_runtime->should_run(day_index);
+    return _modifier_runtime != nullptr && modifier_api::configured(*_modifier_runtime) &&
+        modifier_api::should_run(*_modifier_runtime, day_index);
 }
 
 int32_t NativeCountryRuntime::run_research_day(
@@ -10386,7 +10385,7 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
     append_le<int32_t>(out, _era_reward_reference.status);
     std::vector<uint8_t> modifier_bytes;
     if (_modifier_runtime != nullptr &&
-        !_modifier_runtime->serialize_domain(ModifierRuntime::COUNTRY,
+        !modifier_api::serialize_domain(*_modifier_runtime, ModifierApi::COUNTRY,
                                               modifier_bytes, error)) {
         return false;
     }
@@ -10398,11 +10397,10 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
 
 bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::string &error) {
     NativeCountryRuntime staged(*this);
-    std::unique_ptr<ModifierRuntime> staged_modifier;
+    auto staged_modifier = _modifier_runtime != nullptr ? modifier_api::copy_runtime(*_modifier_runtime) : decltype(modifier_api::copy_runtime(*_modifier_runtime)){};
     if (_modifier_runtime != nullptr) {
-        staged_modifier = std::make_unique<ModifierRuntime>(*_modifier_runtime);
-        staged_modifier->attach_country_runtime(&staged);
-        staged_modifier->attach_economy_runtime(_economy_runtime);
+        modifier_api::attach_country_runtime(*staged_modifier, &staged);
+        modifier_api::attach_economy_runtime(*staged_modifier, _economy_runtime);
         staged._modifier_runtime = staged_modifier.get();
     }
     if (!staged.decode_save_in_place(bytes, error)) return false;
@@ -10415,9 +10413,9 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _economy_runtime = live_economy;
     _effect_runtime = live_effect;
     if (live_modifier != nullptr) {
-        *live_modifier = std::move(*staged_modifier);
-        live_modifier->attach_country_runtime(this);
-        live_modifier->attach_economy_runtime(live_economy);
+        modifier_api::replace_runtime(*live_modifier, std::move(*staged_modifier));
+        modifier_api::attach_country_runtime(*live_modifier, this);
+        modifier_api::attach_economy_runtime(*live_modifier, live_economy);
     }
     return true;
 }
@@ -11249,14 +11247,14 @@ bool NativeCountryRuntime::decode_save_in_place(
             error = "country_restore_modifier_runtime_unavailable";
             return false;
         }
-        if (!_modifier_runtime->restore_domain(ModifierRuntime::COUNTRY,
+        if (!modifier_api::restore_domain(*_modifier_runtime, ModifierApi::COUNTRY,
                                                modifier_bytes, error,
                                                version == 3)) {
             error = "country_restore_modifier_failed:" + error;
             return false;
         }
     } else if (_modifier_runtime != nullptr) {
-        _modifier_runtime->clear_domain(ModifierRuntime::COUNTRY);
+        modifier_api::clear_domain(*_modifier_runtime, ModifierApi::COUNTRY);
     }
 
     _countries = std::move(countries);
