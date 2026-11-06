@@ -1,7 +1,6 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime_variant_helpers.h"
 #include "runtime_economy_pod.h"
-#include "native_simulation_host.h"
 #include "runtime_switch_registry.h"
 #include <cmath>
 #include <chrono>
