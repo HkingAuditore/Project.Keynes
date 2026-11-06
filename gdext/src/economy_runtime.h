@@ -71,7 +71,7 @@ class EffectRuntime;
 class EffectInstanceForwarder;
 
 class NativeCountryRuntime;
-class NativeSimulationHost;
+class EconomyHostPort;
 class EconomyCsvRecorder;
 class ModifierRuntime;
 class TriggerRuntime;
@@ -392,7 +392,7 @@ public:
     NativeEconomyRuntime();
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
-    void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
+    void attach_simulation_host(EconomyHostPort *host) { _simulation_host = host; }
     AnnualEconomyFacts capture_annual_facts(uint64_t country_handle, bool flows) const;
     void publish_annual_development_facts();
     bool annual_observes_cell(int32_t cell) const;

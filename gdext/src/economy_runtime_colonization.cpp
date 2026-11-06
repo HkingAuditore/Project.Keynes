@@ -2,7 +2,7 @@
 
 #include "economy_runtime_variant_helpers.h"
 #include "effect_runtime.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 
 #include <algorithm>
 #include <chrono>

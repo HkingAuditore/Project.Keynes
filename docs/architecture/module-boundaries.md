@@ -12,11 +12,11 @@
 
 | 模块 | 接口头 | 待迁移的同级包含者 | 组合根 |
 |---|---|---|---|
-| Economy | `economy_api.h` / `economy_api.cpp` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 39：22 个 `native_simulation_*`、17 个 `world_ext*` |
+| Economy | `economy_api.h` / `economy_api.cpp`；宿主端口 `economy_host_port.h` | 0。Modifier、Effect、Trigger、Ideology（含 `ideology_opinion_bridge.h`）、Country 已迁；`trade_visual_cache.*` 是 Economy 自己的组件，登记为所有者 | 39：22 个 `native_simulation_*`、17 个 `world_ext*` |
 
 共享契约头（`tools/ci/module_api_shared.json`）：`metric_mask.h`、`effect_selector_cap.h`。
 
-已知限制：经济实现文件仍包含 `native_simulation_host.h`（41 个，其中约 10 个真正用到宿主），计划改为窄端口 `economy_host_port.h`。Country 尚无接口头，`country_read_view.h` 是只读视图的前身。
+经济的 11 个宿主调用实现文件已经改用 `economy_host_port.h` 的 24 个纯虚方法；`NativeSimulationHost final` 实现端口并保持原有方法体和调用顺序。经济所有者文件直接包含 `native_simulation_host*.h` 的数量为 0，`forbidden_owner_includes.allowed` 为空。端口指针调用仍是虚调用，未改写热循环。Country 尚无接口头，`country_read_view.h` 是只读视图的前身。
 
 ## 允许方向与现存债务
 

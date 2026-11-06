@@ -8,7 +8,7 @@
 #include "economy_graph_stage_dispatch.h"
 #include "runtime_economy_pod.h"
 #include "economy_runtime_internal_external_types.inc"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
 #include "pk_log.h"

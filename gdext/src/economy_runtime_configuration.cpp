@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "modifier_runtime.h"
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 #include "parallel_dispatcher.h"
 #include "runtime_economy_pod.h"
 
