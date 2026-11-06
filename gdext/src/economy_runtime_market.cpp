@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
 #include "country_runtime.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -76,17 +76,17 @@ void NativeEconomyRuntime::build_demand_basis(
     EconomyCostProbe cost("demand_basis.compute", _current_day.get(), 1);
     static thread_local bool reference_call = false;
     static const bool disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_PREVIEW_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse = !disabled && !reference_call &&
         _preview_need_basis_source.size() == _needs.size();
     static const bool price_basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_prices = reuse && !price_basis_disabled;
@@ -343,17 +343,17 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     std::vector<int64_t> need_saturations(_needs.size(), 0);
     int64_t reused_needs = 0;
     static const bool basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_PREVIEW_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_PREVIEW_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_basis = memo_active && !basis_disabled;
     static const bool workset_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_ACTIVE_WORKSET_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool filter_locked = memo_active && !workset_disabled;
     static const bool price_basis_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_VARIANT_PRICE_BASIS_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_prices = reuse_basis && !price_basis_disabled;
@@ -570,7 +570,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     // Validate the complete actor-specific result, including saturation events,
     // against a fresh basis. This diagnostic does not change production cadence.
     static const bool verify_preview_memo = [] {
-        const char *value = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MEMO_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (memo_active && verify_preview_memo) {
@@ -1297,12 +1297,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         if (best > 0 && (cheapest_food_index_q16 == 0 || best < cheapest_food_index_q16))
             cheapest_food_index_q16 = best;
     }
-    static const bool diag_no_substitute = std::getenv("PK_DIAG_NO_FOOD_SUBSTITUTE") != nullptr;
+    static const bool diag_no_substitute = pk::runtime_switch_value(pk::RuntimeSwitch::PK_DIAG_NO_FOOD_SUBSTITUTE) != nullptr;
     const int64_t food_substitute_cap_q16 = !diag_no_substitute && cheapest_food_index_q16 > 0
         ? mul_div_sat(cheapest_food_index_q16, FOOD_SUBSTITUTE_RATIO_Q16, Q16_ONE, sat)
         : 0;
     static const bool family_good_cache_disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_FAMILY_GOOD_CACHE_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_FAMILY_GOOD_CACHE_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     thread_local std::vector<int32_t> household_family_good_factors;

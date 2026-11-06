@@ -63,6 +63,9 @@ func _init(p_facade, p_world_clock: WorldClock = null, p_generator = null,
 	world_clock = p_world_clock
 	generator = p_generator
 	event_bus = p_event_bus
+	if facade != null and facade.has_method("take_restored_event_progress"):
+		var restored: PackedInt64Array = facade.take_restored_event_progress()
+		if not restored.is_empty(): restore_event_progress(restored)
 
 
 func feature_flag() -> StringName:
@@ -233,3 +236,16 @@ func reset_progress() -> void:
 	_last_day = -1
 	_event_cursor = 0
 	_events_forwarded = 0
+
+
+# This is the forwarding cursor, not simulation state or derived manpower.
+func capture_event_progress() -> PackedInt64Array:
+	return PackedInt64Array([_event_cursor, _last_day, _events_forwarded])
+
+func restore_event_progress(values: PackedInt64Array) -> bool:
+	if values.size() != 3 or values[0] < 0 or values[1] < -1 or values[2] < 0:
+		return false
+	_event_cursor = values[0]
+	_last_day = values[1]
+	_events_forwarded = values[2]
+	return true

@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "restore_order": [
+    "climate",
+    "country",
+    "military",
+    "effect",
+    "economy",
+    "modifier",
+    "trigger",
+    "ideology",
+    "host",
+    "annual"
+  ],
+  "sections": [
+    {
+      "domain": "climate",
+      "owner": "environment",
+      "tag": "CLM2",
+      "version": 9,
+      "source": "gdext/src/runtime_climate_authority.cpp",
+      "tokens": [
+        "CLIMATE_SECTION_ABI",
+        "section_abi > CLIMATE_SECTION_ABI"
+      ],
+      "restore_after": []
+    },
+    {
+      "domain": "country",
+      "owner": "country",
+      "tag": "PKCN",
+      "version": 14,
+      "source": "gdext/src/country_runtime.cpp",
+      "tokens": [
+        "SCHEMA_VERSION",
+        "version != SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "environment"
+      ]
+    },
+    {
+      "domain": "economy",
+      "owner": "economy",
+      "tag": "ECP2",
+      "version": 59,
+      "source": "gdext/src/runtime_economy_ecp2.cpp",
+      "tokens": [
+        "RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION",
+        "schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)"
+      ],
+      "restore_after": [
+        "country",
+        "effect"
+      ]
+    },
+    {
+      "domain": "military",
+      "owner": "country",
+      "tag": "PKMI",
+      "version": 2,
+      "source": "gdext/src/military_core_save.cpp",
+      "tokens": [
+        "PKMI_VERSION",
+        "version != PKMI_VERSION"
+      ],
+      "restore_after": [
+        "country"
+      ]
+    },
+    {
+      "domain": "trigger",
+      "owner": "history",
+      "tag": "PKTR",
+      "version": 6,
+      "source": "gdext/src/trigger_runtime.cpp",
+      "tokens": [
+        "SAVE_SCHEMA_VERSION",
+        "version != SAVE_SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "economy"
+      ]
+    },
+    {
+      "domain": "effect",
+      "owner": "rules",
+      "tag": "PKEF",
+      "version": 14,
+      "source": "gdext/src/effect_runtime.cpp",
+      "tokens": [
+        "SAVE_SCHEMA_VERSION",
+        "schema != SAVE_SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "military"
+      ]
+    },
+    {
+      "domain": "modifier",
+      "owner": "rules",
+      "tag": "PKMD",
+      "version": 3,
+      "source": "gdext/src/modifier_runtime.cpp",
+      "tokens": [
+        "SAVE_SCHEMA_VERSION",
+        "version != SAVE_SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "effect"
+      ]
+    },
+    {
+      "domain": "ideology",
+      "owner": "rules",
+      "tag": "PKID",
+      "version": 14,
+      "source": "gdext/src/ideology_runtime.cpp",
+      "tokens": [
+        "SAVE_SCHEMA_VERSION",
+        "schema != SAVE_SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "trigger",
+        "modifier",
+        "economy"
+      ]
+    },
+    {
+      "domain": "family",
+      "owner": "economy",
+      "tag": "ECP2",
+      "version": 59,
+      "source": "gdext/src/runtime_economy_family_store.cpp",
+      "tokens": [
+        "runtime_economy_family_store"
+      ],
+      "restore_after": [
+        "economy"
+      ],
+      "delegated": true
+    },
+    {
+      "domain": "technology",
+      "owner": "country",
+      "tag": "PKCN",
+      "version": 14,
+      "source": "gdext/src/country_runtime.cpp",
+      "tokens": [
+        "PKCN",
+        "SCHEMA_VERSION"
+      ],
+      "restore_after": [
+        "country"
+      ],
+      "delegated": true
+    },
+    {
+      "domain": "host",
+      "owner": "simulation_runtime",
+      "tag": "PKSR",
+      "version": 5,
+      "source": "gdext/src/native_simulation_host_persistence.cpp",
+      "tokens": [
+        "RUNTIME_SAVE_BUNDLE_VERSION",
+        "version != RUNTIME_SAVE_BUNDLE_VERSION"
+      ],
+      "restore_after": [
+        "environment",
+        "country",
+        "economy"
+      ]
+    },
+    {
+      "domain": "annual",
+      "owner": "history",
+      "tag": "PKAR",
+      "version": 1,
+      "source": "Project/project-keynes/scripts/game/world_state_modules.gd",
+      "tokens": [
+        "pkar",
+        "_restore_annual_provider"
+      ],
+      "restore_after": [
+        "ideology"
+      ],
+      "delegated": true
+    }
+  ]
+}

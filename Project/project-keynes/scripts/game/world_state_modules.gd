@@ -6,7 +6,7 @@ const Bindings = preload("res://scripts/game/world_state_bindings.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
 const OPTIONAL_ARCHIVES := ["pkcm", "pkgp", "pktr", "pkef", "pkid", "pkai", "pkmi", "pkar", "pknr"]
 const READABLE_SCHEMAS := {
-	"environment": [1, 2], "pkfg": [1, 2, 3, 4],
+	"environment": [3], "pkfg": [1, 2, 3, 4],
 	"journal": [1, 2, 3, 4], "pkid": [1, 2],
 }
 const RESTORE_AFTER := {
@@ -15,10 +15,8 @@ const RESTORE_AFTER := {
     "pkcm": ["environment"],
     "world_clock": ["dynamic_world"],
     "simulation_runtime": ["environment", "pkcm", "world_clock"],
-    "pkcn": ["simulation_runtime"],
     "pkmi": ["pkcn"],
     "pkef": ["pkmi"],
-    "ecp2": ["pkcn", "pkmi", "pkef"],
     "pkgp": ["ecp2"],
     "pkfg": ["pkcn", "ecp2", "pkgp"],
     "pkai": ["pkcn", "ecp2"],
@@ -65,7 +63,7 @@ static func builtins(economy_schema: int, military_schema: int) -> Array:
 		_make_provider(adapters["geography"], &"dynamic_world", 1,
 			PackedStringArray(["new_game_config", "dynamic_world"]),
 			"_can_world_provider", "_write_world_provider", "_restore_world_provider"),
-		_make_provider(adapters["geography"], &"environment", 2, PackedStringArray(["environment"]),
+		_make_provider(adapters["geography"], &"environment", 3, PackedStringArray(["environment"]),
 			"_can_environment_provider", "_write_environment_provider",
 			"_restore_environment_provider"),
 		_make_provider(adapters["rules"], &"pkcm", 3, PackedStringArray(["pkcm"]),
@@ -76,8 +74,7 @@ static func builtins(economy_schema: int, military_schema: int) -> Array:
 		_make_provider(adapters["simulation"], &"simulation_runtime", 2, PackedStringArray(["simulation_runtime"]),
 			"_can_simulation_runtime_provider", "_write_simulation_runtime_provider",
 			"_restore_simulation_runtime_provider"),
-		_make_provider(adapters["country"], &"pkcn", 11, PackedStringArray(["pkcn"]),
-			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
+		_owned_provider(adapters["country"], CountryState.archive_contract()),
 		# Military restores right after Country (its digest reads territory) and
 		# before Effect/Economy (design §22: PKMI between PKCN and PKEF/ECP2).
 		_make_provider(adapters["country"], &"pkmi", military_schema, PackedStringArray(["pkmi"]),
@@ -90,8 +87,7 @@ static func builtins(economy_schema: int, military_schema: int) -> Array:
 			"_restore_effect_provider"),
 		# Negotiate with the loaded DLL: an old editor must never stamp a new
 		# manifest on bytes produced by its still-loaded ABI2 extension.
-		_make_provider(adapters["economy"], &"ecp2", economy_schema, PackedStringArray(["ecp2"]),
-			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
+		_owned_provider(adapters["economy"], EconomyState.archive_contract(economy_schema)),
 		_make_provider(adapters["rules"], &"pkgp", 3, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
 			"_restore_gameplay_modifier_provider"),
@@ -139,6 +135,8 @@ static func builtins(economy_schema: int, military_schema: int) -> Array:
 	for provider in providers:
 		var id := String(provider.provider_id())
 		var schemas := PackedInt32Array(READABLE_SCHEMAS.get(id, [provider.schema_version()]))
+		if id == "pkcn": schemas = CountryState.archive_contract().readable_versions
+		elif id == "ecp2": schemas = EconomyState.archive_contract(economy_schema).readable_versions
 		if id == "ecp2" and OS.get_environment("PK_SAVE_MIGRATE") == "1" and 53 not in schemas:
 			schemas.append(53)
 		provider.configure_compatibility(schemas, id in OPTIONAL_ARCHIVES)
@@ -147,7 +145,11 @@ static func builtins(economy_schema: int, military_schema: int) -> Array:
 			provider.configure_restore_reads(PackedStringArray(["ecp2"]))
 		elif id in ["pkmi", "pkai"]:
 			provider.configure_restore_reads(PackedStringArray(["player_context"]))
-		entries.append(Registry.state_entry(provider, PackedStringArray(RESTORE_AFTER[String(provider.provider_id())])))
+		var dependencies: PackedStringArray
+		if id == "pkcn": dependencies = CountryState.archive_contract().restore_after
+		elif id == "ecp2": dependencies = EconomyState.archive_contract(economy_schema).restore_after
+		else: dependencies = PackedStringArray(RESTORE_AFTER[id])
+		entries.append(Registry.state_entry(provider, dependencies))
 	return entries
 
 
@@ -162,4 +164,9 @@ static func _make_provider(owner: Object, provider_id: StringName, schema: int, 
 	owner.configure_provider(provider)
 	if identity_method != &"":
 		provider.configure_manifest_identity(Callable(owner, identity_method))
+	return provider
+
+static func _owned_provider(owner: Object, contract: Dictionary):
+	var provider = _make_provider(owner, contract.id, contract.version, contract.sections,
+		contract.can, contract.write, contract.restore)
 	return provider

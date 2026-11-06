@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
 #include "country_runtime.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -863,7 +863,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 // 因而可直接保留零，不必为未解锁/零偏好项反复查家族 CSR。
                 static_assert(GOODS_SCALE <= INT64_MAX / (4LL * Q16_ONE * Q16_ONE));
                 static const bool full_variant = [] {
-                    const char *value = std::getenv("PK_ECONOMY_ACTIVE_WORKSET_DISABLE");
+                    const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_ACTIVE_WORKSET_DISABLE);
                     return value && std::strcmp(value, "1") == 0;
                 }();
                 if (!full_variant && retention_variant_scores[variant_id] == 0 &&

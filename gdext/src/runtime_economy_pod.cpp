@@ -1,3 +1,4 @@
+#include "runtime_resolve_contract.h"
 #include "economy_cost_probe.h"
 #include "runtime_economy_pod.h"
 #include "economy_hash.h"
@@ -5,7 +6,7 @@
 #include "economy_runtime.h"
 #include "runtime_economy_ecp2.h"
 #include "runtime_economy_population_store.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -589,7 +590,7 @@ bool RuntimeEconomyPodAuthority::import_and_publish_captured_ledger(
     publish_mirror_features();
     probe_lap("mirror.import.blocks");
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_MIRROR_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MIRROR_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (verify) {
@@ -624,10 +625,10 @@ bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
     _state.state_generation = std::max(generation, _state.state_generation);
     if (committed_day >= 0) _state.committed_day = committed_day;
     // Published undigested like the captured mirror; readers hash on demand.
-    const char *full_market = std::getenv("PK_ECONOMY_MARKET_PUBLISH_FULL");
+    const char *full_market = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MARKET_PUBLISH_FULL);
     const bool incremental_market = !(full_market && std::strcmp(full_market, "1") == 0);
     if (!export_committed_ledger_internal(ledger, error, false, incremental_market)) return false;
-    const char *verify = std::getenv("PK_ECONOMY_MIRROR_VERIFY");
+    const char *verify = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_MIRROR_VERIFY);
     if (verify && std::strcmp(verify, "1") == 0) {
         RuntimeEconomyLedgerState reference;
         if (!export_committed_ledger(reference, error, false) ||
@@ -1637,17 +1638,11 @@ bool RuntimeEconomyPodAuthority::queue_command(
         error = "economy_pod_command_identity_invalid";
         return false;
     }
-    for (const RuntimeEconomyPodReceipt &terminal : _terminal_receipts) {
-        if (terminal.request_id == command.request_id) {
-            _receipts.push_back(terminal);
-            return true;
-        }
+    if (const auto *receipt = resolve_find_receipt(_terminal_receipts, command.request_id)) {
+        const auto copy = *receipt; _receipts.push_back(copy); return true;
     }
-    for (const RuntimeEconomyPodReceipt &pending : _receipts) {
-        if (pending.request_id == command.request_id) {
-            _receipts.push_back(pending);
-            return true;
-        }
+    if (const auto *receipt = resolve_find_receipt(_receipts, command.request_id)) {
+        const auto copy = *receipt; _receipts.push_back(copy); return true;
     }
     auto reject_admission = [&](const char *reason) {
         RuntimeEconomyPodReceipt rejected;
@@ -1695,7 +1690,9 @@ bool RuntimeEconomyPodAuthority::queue_command(
         // which made retry/idempotency indistinguishable from packet loss.
         return reject_admission("economy_pod_command_queue_full");
     }
-    _commands.push_back(command);
+    const auto admission = resolve_enqueue<ResolveFlow::EconomyCommand>(
+        _commands, command, RUNTIME_ECONOMY_COMMAND_CAPACITY);
+    if (admission != ResolveResult::Accepted) return reject_admission(resolve_reason(admission));
     RuntimeEconomyPodReceipt accepted;
     accepted.request_id = command.request_id;
     accepted.transaction_id = command.transaction_id;

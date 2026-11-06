@@ -1,5 +1,6 @@
 #include "economy_authority_transfer.h"
 #include "economy_runtime.h"
+#include "runtime_economy_pod.h"
 
 namespace pk {
 namespace {
@@ -44,5 +45,22 @@ bool EconomyAuthorityTransfer::restore_before_country(NativeEconomyRuntime &runt
 bool EconomyAuthorityTransfer::verify_after_country(const NativeEconomyRuntime &runtime,
         std::string &error) {
     return runtime.verify_deferred_country_identity(error);
+}
+
+bool EconomyAuthorityTransfer::bind_restored_owner(NativeEconomyRuntime &runtime,
+        RuntimeEconomyPodAuthority &authority, std::string &error) {
+    // Startup only: no executor is running. Future queued commands must not
+    // prevent restoring the requested owner of the already committed state.
+    if (!runtime.formula_owned_bound()) {
+        RuntimeEconomyLedgerState ledger;
+        runtime.capture_committed_ledger_state(ledger);
+        if (!authority.import_and_publish_committed_ledger(std::move(ledger), error) ||
+            !runtime.bind_formula_owned_state(authority.state(), error)) return false;
+    }
+    runtime.flush_formula_owned_domain_mirrors();
+    if (!authority.publish_owned_committed_mirror(runtime.committed_generation(),
+            runtime.current_day(), error)) return false;
+    authority.set_authority_mode(RuntimeEconomyAuthorityMode::POD_ACTIVE);
+    return true;
 }
 } // namespace pk

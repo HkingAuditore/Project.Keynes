@@ -58,7 +58,7 @@ else                { col = render_water_pipeline(...); }           (:467-487)
 | 陆地管线 | ≈19–25 | material 1 + surface 2 + micro 1 + shore 8 + horizon 4 + GI 3 + 条件 fbm |
 | 水面管线 | ≈50 | water_depth 1 + 3×3 biome 9 + gyre/lake/reef/kelp/ice/currents/plume/wave/shore/foam/caustics/sparkle/horizon/GI… |
 
-移动端 q0 档（`docs/cpp-dots-runtime/performance-diagnostics-playbook.md:1864-1879`）：水面 ≈23、陆地 ≈18 samples；同一文档 `:1799-1812` 的 Adreno 830 实测：地形 shader ON/OFF，非 SUS 帧 24.23 ms → 8.42 ms，即**地形 fragment 占移动端整帧约 65%**。移动端才是 fragment 成本敏感的平台。
+移动端 q0 档（`docs/architecture/development-guide.md:1864-1879`）：水面 ≈23、陆地 ≈18 samples；同一文档 `:1799-1812` 的 Adreno 830 实测：地形 shader ON/OFF，非 SUS 帧 24.23 ms → 8.42 ms，即**地形 fragment 占移动端整帧约 65%**。移动端才是 fragment 成本敏感的平台。
 
 ### 1.3 Web 已经拆过：拆的是 program，不是 mesh
 
@@ -211,7 +211,7 @@ float current_temp = mix(derived_temp, dyn_temp, dyn_valid);
 - wave 级分支的先例（迷雾早退的推理）：`Project/project-keynes/shaders/world_map.gdshader:449-456`
 - insolation 死代码：`world_map.gdshader:363, 435-437`；`shaders/include/climate_season.gdshaderinc:58-65, 77-93, 98-106, 122-129`
 - Web 拆分与实测编译时间：`scripts/rendering/hex_renderer.gd:1084-1090, 1102-1105, 1151-1192, 1204-1248`；`shaders/world_map.gdshader:219-232`；`scripts/rendering/web_shader_warmup.gd:40-46`；`shaders/world_water_web.gdshader:255-305`
-- 每像素采样预算与移动端帧占比：`docs/cpp-dots-runtime/performance-diagnostics-playbook.md:1799-1812, 1864-1883`
+- 每像素采样预算与移动端帧占比：`docs/architecture/development-guide.md:1799-1812, 1864-1883`
 - 几何/相机/视口：`scripts/rendering/hex_renderer.gd:728-736, 4258-4289`；`scripts/rendering/map_camera.gd:29-30`；`scripts/rendering/map_baker.gd:981-991, 1063-1065`；`project.godot:30-35, 106-108`
 - CPU 水掩码/rebuild 数据源：`scripts/geography/world_data.gd:19, 47, 81-83, 266-282`；`scripts/geography/map_data.gd:249, 530-552`
 - dither / AA / 海岸带：`shaders/include/terrain_surface_detail.gdshaderinc:105-165`；`shaders/include/land_pipeline.gdshaderinc:497-504`；`shaders/include/water_pipeline.gdshaderinc:1001-1008`；`materials/world_map_material.tres:164-166`

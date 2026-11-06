@@ -3,11 +3,11 @@
 > Scope: 针对 `tmp/tile_data_record_20260611_205704.csv` 暴露的天气诊断错位、天气/收敛更新稀疏、温度/湿度/TTA ping-pong、洋流物理解算冻结与洋流强度饱和问题，按 P0 到 P3 顺序落地修复。
 >
 > Current-runtime references:
-> - `docs/cpp-dots-runtime/architecture-overview.md`
-> - `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-> - `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-> - `docs/cpp-dots-runtime/computation-pipelines.md`
-> - `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+> - `docs/architecture/current-state.md`
+> - `docs/architecture/development-guide.md`
+> - `docs/architecture/current-state.md`
+> - `docs/architecture/current-state.md`
+> - `docs/architecture/development-guide.md`
 
 ## Grounding Summary
 
@@ -45,7 +45,7 @@
 - `Project/project-keynes/scripts/geography/map_generator.gd`
 - `Project/project-keynes/scripts/weather/field_solver.gd`
 - `gdext/src/world_ext.cpp`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+- `docs/architecture/development-guide.md`
 
 ### 具体步骤
 
@@ -70,7 +70,7 @@
    - `field_solver.gd` fallback 也已经构造同名字段。
    - P0 不动 native weather math。
 5. 更新诊断文档。
-   - 在 `performance-diagnostics-playbook.md` 增加一条：CSV 中 `weather_dirty_count` 必须来自 weather breakdown，不是 climate breakdown。
+   - 在 `docs/architecture/development-guide.md` 增加一条：CSV 中 `weather_dirty_count` 必须来自 weather breakdown，不是 climate breakdown。
 
 ### 验收指标
 
@@ -106,8 +106,8 @@
 - `Project/project-keynes/scripts/rendering/physical_circulation_solver.gd`
 - `Project/project-keynes/scripts/rendering/map_baker.gd`
 - `Project/project-keynes/scripts/data/climate_profile.gd`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
-- `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 
 ### 具体步骤
 
@@ -132,8 +132,8 @@
    - 例如 `_limit_ocean_current(cur: Vector2, max_mag: float) -> Vector2`。
    - C++ 不需要新增 API，只要公式一致。
 6. 更新文档。
-   - `computation-pipelines.md` 的 Ocean currents physical chain 增加“PSI current output uses vector magnitude limit”。
-   - `gdscript-cpp-data-bridge.md` 不需要新增 bridge 规则，但可在 `published_to_slot` 调试段补充 ocean current 输出验证点。
+   - `docs/architecture/current-state.md` 的 Ocean currents physical chain 增加“PSI current output uses vector magnitude limit”。
+   - `docs/architecture/development-guide.md` 不需要新增 bridge 规则，但可在 `published_to_slot` 调试段补充 ocean current 输出验证点。
 
 ### 验收指标
 
@@ -177,9 +177,9 @@
 - `Project/project-keynes/scripts/geography/map_generator.gd`
 - `Project/project-keynes/scripts/rendering/map_baker.gd`
 - `Project/project-keynes/scripts/data/climate_profile.gd`
-- `docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 
 ### 设计原则
 
@@ -232,9 +232,9 @@
    - `ocean_currents_slice_count` 保持当前默认也应不再冻结 physical。
    - 如 visual backlog 仍高，新增 `ocean_visual_rebake_drop_stale: bool = true`，默认 true，跨季节 phase 时丢弃旧 raster round。
 7. 更新 runtime 文档。
-   - `scheduling-and-job-graph.md` 说明 ocean job 内部 physical / visual 双状态。
-   - `computation-pipelines.md` 说明 pixel raster 滞后不会阻塞 physical solve。
-   - `performance-diagnostics-playbook.md` 增加 `visual_lag_ticks` 和相关 skip reason 解释。
+   - `docs/architecture/current-state.md` 说明 ocean job 内部 physical / visual 双状态。
+   - `docs/architecture/current-state.md` 说明 pixel raster 滞后不会阻塞 physical solve。
+   - `docs/architecture/development-guide.md` 增加 `visual_lag_ticks` 和相关 skip reason 解释。
 
 ### 验收指标
 
@@ -279,7 +279,7 @@
 - `Project/project-keynes/scripts/data/climate_profile.gd`
 - `gdext/src/world_ext.cpp`
 - `Project/project-keynes/scripts/data_core/component_schema.gd`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/current-state.md`
 
 ### 前置条件
 
@@ -321,7 +321,7 @@
      - `tta_decay_count`
      - `tta_blend_rate`
 8. 更新文档。
-   - `computation-pipelines.md` 的 Ocean water / land 说明 TTA 是 low-pass state，不是纯 scratch。
+   - `docs/architecture/current-state.md` 的 Ocean water / land 说明 TTA 是 low-pass state，不是纯 scratch。
 
 ### 验收指标
 
@@ -367,7 +367,7 @@
 - `Project/project-keynes/scripts/geography/weather_type.gd`
 - `Project/project-keynes/scripts/data/weather_profile.gd`
 - `Project/project-keynes/scripts/rendering/weather_layer.gd`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/current-state.md`
 
 ### 具体步骤
 
@@ -424,8 +424,8 @@
 - `Project/project-keynes/scripts/data/climate_profile.gd`
 - `gdext/src/world_ext.cpp`
 - `Project/project-keynes/scripts/ui/tile_data_recorder.gd`
-- `docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
-- `docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/development-guide.md`
+- `docs/architecture/current-state.md`
 
 ### 具体步骤
 
@@ -457,8 +457,8 @@
    - 如果 stride=1 太贵，选择 stride=2，并在 P1b 后确保 wind/current 输入不冻结。
    - 如果 convergence array 不该每 tick publish，只更新诊断字段，不强迫 array 变动。
 6. 更新文档。
-   - `performance-diagnostics-playbook.md` 写清楚 `refresh_convergence=false` 时 convergence 不变不是 bug。
-   - `computation-pipelines.md` weather field 段写清楚 convergence 的刷新 cadence。
+   - `docs/architecture/development-guide.md` 写清楚 `refresh_convergence=false` 时 convergence 不变不是 bug。
+   - `docs/architecture/current-state.md` weather field 段写清楚 convergence 的刷新 cadence。
 
 ### 验收指标
 
@@ -543,9 +543,9 @@ scons platform=windows target=template_release dev_build=no -j8
 
 ## 文档维护要求
 
-- P0 改 diagnostics 字段：更新 `performance-diagnostics-playbook.md`。
-- P1a 改 current solve 数值语义：更新 `computation-pipelines.md`。
-- P1b 改 ocean job stage / skip reason：更新 `scheduling-and-job-graph.md` 和 `performance-diagnostics-playbook.md`。
-- P2 改 TTA 语义：更新 `computation-pipelines.md`。
-- P3 改 convergence cadence：更新 `computation-pipelines.md` 和 `performance-diagnostics-playbook.md`。
+- P0 改 diagnostics 字段：更新 `docs/architecture/development-guide.md`。
+- P1a 改 current solve 数值语义：更新 `docs/architecture/current-state.md`。
+- P1b 改 ocean job stage / skip reason：更新 `docs/architecture/current-state.md` 和 `docs/architecture/development-guide.md`。
+- P2 改 TTA 语义：更新 `docs/architecture/current-state.md`。
+- P3 改 convergence cadence：更新 `docs/architecture/current-state.md` 和 `docs/architecture/development-guide.md`。
 

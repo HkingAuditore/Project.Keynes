@@ -47,7 +47,7 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("view_i32", "comp_id"), &DCWorldExt::view_i32);
     ClassDB::bind_method(D_METHOD("view_u8",  "comp_id"), &DCWorldExt::view_u8);
 
-    // Mode-B snapshot API (recommended; see performance-charter.md §12)
+    // Mode-B snapshot API (recommended; see docs/architecture/current-state.md)
     ClassDB::bind_method(D_METHOD("snapshot_f32", "comp_id"), &DCWorldExt::snapshot_f32);
     // B3b：snapshot_i32 / snapshot_u8 给 streak（I32）+ 后续 save/overlay 补齐
     ClassDB::bind_method(D_METHOD("snapshot_i32", "comp_id"), &DCWorldExt::snapshot_i32);
@@ -1534,15 +1534,15 @@ void DCWorldExt::_bind_methods() {
         &DCWorldExt::phys_field_nan_guard);
 
 
-    // Mode-B reference implementation entry point (see performance-charter.md §12)
+    // Mode-B reference implementation entry point (see docs/architecture/current-state.md)
     ClassDB::bind_method(D_METHOD("run_temp_drift_pass", "drift_amount"), &DCWorldExt::run_temp_drift_pass);
 
-    // Pass #2 reference implementation entry point (see performance-charter.md §12.6)
+    // Pass #2 reference implementation entry point (see docs/architecture/current-state.md)
     ClassDB::bind_method(
         D_METHOD("run_thermal_gradient_pass", "grid_w", "grid_h", "elevation_gain", "normalize_k"),
         &DCWorldExt::run_thermal_gradient_pass);
 
-    // Pass #3 reference implementation entry point (see performance-charter.md §12.6.6)
+    // Pass #3 reference implementation entry point (see docs/architecture/current-state.md)
     ClassDB::bind_method(
         D_METHOD("run_demo_complex_pass",
                  "grid_w", "grid_h",

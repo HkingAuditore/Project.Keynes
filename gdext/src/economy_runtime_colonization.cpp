@@ -1,6 +1,5 @@
 #include "economy_runtime.h"
 
-#include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "effect_runtime.h"
 #include "native_simulation_host.h"
@@ -284,7 +283,7 @@ bool NativeEconomyRuntime::colonization_target_owner_allowed(
         uint64_t country_handle, int32_t cell) const {
     if (_country_runtime == nullptr || country_handle == 0 || cell < 0 ||
         cell >= _cell_count.get()) return false;
-    const int64_t owner = _country_runtime->country_handle_for_cell(cell);
+    const int64_t owner = country_reads().country_handle_for_cell(cell);
     return owner == 0 || owner == static_cast<int64_t>(country_handle);
 }
 
@@ -328,7 +327,7 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
         return false;
     }
     if (_country_runtime == nullptr ||
-        _country_runtime->country_handle_for_cell(source_cell) !=
+        country_reads().country_handle_for_cell(source_cell) !=
             static_cast<int64_t>(country_handle) ||
         !colonization_target_owner_allowed(country_handle, target_cell)) {
         error = "colonization_route_territory_invalid";
@@ -375,7 +374,7 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
             const int32_t neighbor = _transport_succ_cells[i];
             if (neighbor < 0 || visible[neighbor] == 0 ||
                 _trade_topology.passable[static_cast<size_t>(neighbor)] == 0) continue;
-            const int64_t owner = _country_runtime->country_handle_for_cell(neighbor);
+            const int64_t owner = country_reads().country_handle_for_cell(neighbor);
             if (owner != 0 && owner != static_cast<int64_t>(country_handle)) continue;
             const int64_t next = distance + std::max(1, _transport_succ_costs[i]);
             const bool unseen = _colonization_distance_stamp[neighbor] != stamp;
@@ -446,7 +445,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     // live/frozen membership so the planner is never blank; start/cancel queue
     // into pending when the epoch is open.
     if (!_bootstrapped || _fatal || _restore.active || _country_runtime == nullptr ||
-        !_country_runtime->valid_handle(country_handle_value)) {
+        !country_reads().valid_handle(country_handle_value)) {
         out["ok"] = false;
         out["code"] = _restore.active ? "economy_busy_retry" :
             _fatal ? "economy_paused" :
@@ -499,13 +498,13 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         fill_colonization_query_flags(out);
         return out;
     }
-    NativeCountryRuntime::EconomySnapshot country_snapshot;
-    if (!_country_runtime->copy_economy_snapshot(country_snapshot)) {
+    CountryReadView::Snapshot country_snapshot;
+    if (!country_reads().copy_economy_snapshot(country_snapshot)) {
         out["ok"] = false; out["code"] = "colonization_country_snapshot_unavailable";
         fill_colonization_query_flags(out);
         return out;
     }
-    const int32_t country_slot = _country_runtime->country_slot_for_cell(
+    const int32_t country_slot = country_reads().country_slot_for_cell(
         source_filter >= 0 ? source_filter : target_cell);
     (void)country_slot;
     const uint64_t vision_hash = trace_hash_mix(
@@ -548,7 +547,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         if (_colonization_distance_stamp[cell] != stamp ||
             _colonization_distance[cell] != distance) continue;
         ++expansions;
-        const int64_t owner = _country_runtime->country_handle_for_cell(cell);
+        const int64_t owner = country_reads().country_handle_for_cell(cell);
         if (owner == country_handle_value && visible[cell] != 0 &&
             (source_filter < 0 || source_filter == cell))
             reached_sources.push_back(cell);
@@ -558,7 +557,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             if (neighbor < 0 || visible[neighbor] == 0 ||
                 _trade_topology.passable[static_cast<size_t>(neighbor)] == 0) continue;
             const int64_t neighbor_owner =
-                _country_runtime->country_handle_for_cell(neighbor);
+                country_reads().country_handle_for_cell(neighbor);
             if (neighbor_owner != 0 && neighbor_owner != country_handle_value)
                 continue;
             const int64_t next = distance + std::max(1, _transport_succ_costs[i]);
@@ -716,7 +715,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     }
     out["ok"] = true; out["target_cell"] = target_cell;
     fill_colonization_query_flags(out);
-    out["kind"] = _country_runtime->country_handle_for_cell(target_cell) == 0
+    out["kind"] = country_reads().country_handle_for_cell(target_cell) == 0
         ? String("colonize") : String("relocate");
     out["family_handles"] = families; out["source_cells"] = sources;
     out["surnames"] = surnames;
@@ -767,7 +766,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
     out["family_handle"] = static_cast<int64_t>(quote.family_handle);
     out["source_cell"] = quote.source_cell; out["target_cell"] = quote.target_cell;
     out["kind"] = _country_runtime != nullptr &&
-        _country_runtime->country_handle_for_cell(quote.target_cell) == 0
+        country_reads().country_handle_for_cell(quote.target_cell) == 0
         ? String("colonize") : String("relocate");
     out["maximum_population"] = quote.maximum_population;
     out["route_cost"] = quote.route_cost; out["travel_days"] = quote.travel_days;
@@ -848,9 +847,9 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
         out["ok"] = false; out["code"] = "colonization_command_invalid";
         return out;
     }
-    NativeCountryRuntime::EconomySnapshot snapshot;
+    CountryReadView::Snapshot snapshot;
     if (_country_runtime == nullptr ||
-        !_country_runtime->copy_economy_snapshot(snapshot)) {
+        !country_reads().copy_economy_snapshot(snapshot)) {
         out["ok"] = false; out["code"] = "colonization_country_snapshot_unavailable";
         return out;
     }
@@ -1116,7 +1115,7 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
             int32_t family = -1;
             if (families_store().valid_handle(cmd.target_handle, family))
                 country = _country_runtime == nullptr ? 0 :
-                    static_cast<uint64_t>(_country_runtime->country_handle_for_cell(
+                    static_cast<uint64_t>(country_reads().country_handle_for_cell(
                         families_store().home_cell[family]));
         }
     } else {
@@ -2201,7 +2200,7 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
     if (family_expeditions_store().state[expedition] != EXPEDITION_SETTLING)
         return true;
     const int64_t owner = _country_runtime == nullptr ? 0 :
-        _country_runtime->country_handle_for_cell(
+        country_reads().country_handle_for_cell(
             family_expeditions_store().target_cell[expedition]);
     bool claimed = cmd.i64_0 != 0;
     if (!claimed && _effect_runtime != nullptr)
@@ -2398,7 +2397,7 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
         }
         if (family_expeditions_store().state[expedition] == EXPEDITION_OUTBOUND) {
             const int64_t owner = _country_runtime == nullptr ? 0 :
-                _country_runtime->country_handle_for_cell(
+                country_reads().country_handle_for_cell(
                     family_expeditions_store().target_cell[expedition]);
             if (_country_runtime == nullptr ||
                 (owner != 0 && owner != static_cast<int64_t>(

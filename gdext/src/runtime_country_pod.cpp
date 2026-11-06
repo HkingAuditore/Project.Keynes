@@ -1,3 +1,4 @@
+#include "runtime_resolve_contract.h"
 #include "runtime_country_pod.h"
 #include "country_core_apply.h"
 #include "country_core.h"
@@ -853,8 +854,7 @@ bool RuntimeCountryPodAuthority::queue_command(
         error = "country_command_day_already_committed";
         return false;
     }
-    _pending.push_back(command);
-    return true;
+    return resolve_enqueue<ResolveFlow::CountryCommand>(_pending, command, COUNTRY_COMMAND_CAPACITY) == ResolveResult::Accepted;
 }
 
 bool RuntimeCountryPodAuthority::run_research_day(
@@ -1251,12 +1251,8 @@ bool RuntimeCountryPodAuthority::plan_day(
         if (command.effective_day <= day) plan.commands.push_back(command);
     std::sort(plan.commands.begin(), plan.commands.end(),
         [](const RuntimeCountryCommand &lhs, const RuntimeCountryCommand &rhs) {
-            if (lhs.effective_day != rhs.effective_day)
-                return lhs.effective_day < rhs.effective_day;
-            if (lhs.sequence != rhs.sequence) return lhs.sequence < rhs.sequence;
-            if (lhs.submit_order != rhs.submit_order)
-                return lhs.submit_order < rhs.submit_order;
-            return lhs.request_id < rhs.request_id;
+            return ResolveOrder{lhs.effective_day, lhs.sequence, lhs.submit_order, lhs.request_id} <
+                ResolveOrder{rhs.effective_day, rhs.sequence, rhs.submit_order, rhs.request_id};
         });
     plan.header.work_units = plan.commands.size();
     for (const RuntimeCountryCommand &command : plan.commands) {

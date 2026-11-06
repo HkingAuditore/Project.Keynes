@@ -1,5 +1,4 @@
 #pragma once
-
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
 #include "runtime_thread_retirement.h"
@@ -7,6 +6,7 @@
 #include "runtime_execution_context.h"
 #include "runtime_day_waterfall.h"
 #include "runtime_snapshot_ring.h"
+#include "runtime_published_view.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
 #include "runtime_domain_pod.h"
@@ -22,7 +22,6 @@
 #include "runtime_economy_pod.h"
 #include "economy_graph_kernels.h"
 #include "annual_development_ledger.h"
-
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -39,7 +38,7 @@
 #include <vector>
 
 namespace pk {
-
+struct RuntimeGoldenSnapshot;
 class NativeEconomyRuntime;
 class CountryAiRuntime;
 class NativeSimulationHost {
@@ -60,37 +59,17 @@ public:
         uint32_t authoritative_domain_mask = 0;
         int64_t committed_day = -1;
     };
-    ControlState control_state() const {
-        ControlState out;
-        out.state = _state.load(std::memory_order_acquire);
-        out.mode = _mode.load(std::memory_order_acquire);
-        const auto authority = _authority_control.snapshot();
-        out.authority_ready = authority.ready;
-        out.interactive = _interactive.load(std::memory_order_acquire);
-        out.authoritative_domain_mask = authority.granted_mask;
-        out.committed_day = _committed_day.load(std::memory_order_acquire);
-        return out;
-    }
+    ControlState control_state() const;
 
     // FAULTED describes a business failure, not thread completion. The token
     // is published by the worker wrapper after all worker_main locals unwind.
-    bool execution_has_stopped() const {
-        const auto state = _state.load(std::memory_order_acquire);
-        return (state == RuntimeWorkerState::STOPPED || state == RuntimeWorkerState::FAULTED) &&
-            _worker_returned->load(std::memory_order_acquire) &&
-            _worker_day_inflight.load(std::memory_order_acquire) == 0u;
-    }
+    bool execution_has_stopped() const;
 
     bool configure_annual_development(uint64_t handle, int64_t length, int64_t day,
         const AnnualDevelopmentProfile &profile, const AnnualEconomyFacts &baseline,
         const AnnualCountryFacts &country, std::string &error);
     bool annual_development_enabled() const { return _annual_enabled.load(std::memory_order_acquire); }
-    bool annual_worker_managed() const {
-        const auto required = runtime_domain_mask(RuntimeDomainId::COUNTRY) | runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
-        return state() != RuntimeWorkerState::STOPPED &&
-            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
-            (_requested_authority_mask.load(std::memory_order_acquire) & required) == required;
-    }
+    bool annual_worker_managed() const;
     uint64_t annual_country_handle() const { return _annual_country.load(std::memory_order_acquire); }
     void publish_annual_economy(const AnnualEconomyFacts &facts);
     void commit_annual_day(int64_t day, const AnnualCountryFacts &country, uint64_t draws);
@@ -1014,8 +993,8 @@ public:
     void record_visual_timings(double ui_input_to_feedback_ms,
                                double visual_apply_ms,
                                double gpu_upload_ms);
-
     RuntimeThreadReport report() const;
+    RuntimeGoldenSnapshot golden_snapshot() const;
     void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
         return _stop_requested.load(std::memory_order_acquire);
@@ -1177,6 +1156,23 @@ public:
     }
 
 private:
+    struct DayExecution;
+    RuntimeDayCommit execute_shadow_day(DayExecution &);
+    void prepare_climate_day(DayExecution &);
+    bool capture_day_input(DayExecution &, const RuntimeEnvironmentSnapshot &);
+    bool run_day_events(DayExecution &, int64_t);
+    bool stage_input_capture(DayExecution &, RuntimeDomainPlan &);
+    bool stage_climate(DayExecution &, RuntimeDomainPlan &);
+    bool stage_country(DayExecution &, RuntimeDomainPlan &);
+    bool stage_trigger_input(DayExecution &, RuntimeDomainPlan &);
+    bool stage_ideology(DayExecution &, RuntimeDomainPlan &);
+    bool stage_effect(DayExecution &, RuntimeDomainPlan &);
+    bool stage_modifier(DayExecution &, RuntimeDomainPlan &);
+    bool stage_gameplay_effect(DayExecution &, RuntimeDomainPlan &);
+    bool stage_economy(DayExecution &, RuntimeDomainPlan &);
+    bool stage_events(DayExecution &, RuntimeDomainPlan &);
+    bool stage_visual(DayExecution &, RuntimeDomainPlan &);
+    bool stage_commit(DayExecution &, RuntimeDomainPlan &);
     static uint64_t now_us();
     static uint64_t mix_hash(uint64_t value, uint64_t input);
     // A worker publishes STOPPED immediately before returning.  Reusing a
@@ -1192,8 +1188,8 @@ private:
                                    std::vector<RuntimeCommandPacket> &day_commands,
                                    std::vector<RuntimeCommandReceipt> &day_receipts,
                                    uint64_t &admitted_submit_order);
-    RuntimeDayPlan build_day_plan(int64_t day, double speed_scale,
-                                  const RuntimeEnvironmentSnapshot *environment) const;
+    RuntimeDayPlan build_day_plan(int64_t day, double speed_scale, const RuntimeEnvironmentSnapshot *environment,
+                                  uint64_t command_watermark = 0) const;
     RuntimeDayCommit execute_day_plan(
             RuntimeDayPlan &plan,
             const RuntimeEnvironmentSnapshot *environment,
@@ -1242,6 +1238,8 @@ private:
     // the ACK barrier settles on the next Trigger visit instead of waiting a
     // frame for the main-thread pump.
     uint32_t ack_trigger_intents_in_worker(int64_t day);
+    std::vector<uint8_t> encode_trigger_transport() const;
+    bool restore_trigger_transport(const std::vector<uint8_t> &, std::string &, bool install);
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
@@ -2076,11 +2074,7 @@ private:
         RUNTIME_EFFECT_INTENT_PROGRAM_REPORT_CAPACITY>
         _effect_pod_intent_program_ids{};
     std::atomic<uint32_t> _effect_pod_transaction_count{0};
-    // Retire requests that found nothing to retire. The main-thread contract
-    // (EffectRuntime::retire_instance_pod) treats a missing instance as success
-    // -- "no Effect instance means no Effect-owned Modifier was committed" --
-    // so the worker must not hard-fail these. Split in two so a superseded
-    // generation stays visible instead of hiding inside the benign case.
+    // Missing instances retire successfully; track absent and stale separately.
     std::atomic<uint64_t> _effect_retire_absent_count{0};
     std::atomic<uint64_t> _effect_retire_stale_count{0};
     std::array<std::atomic<char>, 64> _effect_pod_fallback_reason{};
@@ -2088,6 +2082,7 @@ private:
     RuntimeIdeologyPodAuthority _ideology_pod_authority;
     RuntimeIdeologyPodCatalog _ideology_pod_catalog;
     bool _ideology_pod_configured = false;
+#include "native_simulation_host_view_contracts.h"
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
     std::map<int64_t, std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>>
         _ideology_reference_opinions;

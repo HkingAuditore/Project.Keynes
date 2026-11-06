@@ -35,3 +35,22 @@ func _run_and_finish() -> void:
 	var code := await _run()
 	print("runtime economy worker restart: %d checks, %d failures" % [_checks, _failures])
 	quit(code if code != 0 else (0 if _failures == 0 else 1))
+
+const RestartBoundary = preload("res://tests/runtime/worker_restart_boundary.gd")
+
+func _wait_worker_state(w: Dictionary, wanted: String, timeout_ms: int) -> bool:
+	if wanted == "STOPPED":
+		return RestartBoundary.stopped(w["ext"], timeout_ms)
+	return super._wait_worker_state(w, wanted, timeout_ms)
+
+func _wait_pod_day(w: Dictionary, _before: int, timeout_ms: int) -> void:
+	var ext: Object = w["ext"]
+	ext.set_runtime_clock(false, WORKER_SPEED)
+	RestartBoundary.committed(w, timeout_ms, func() -> void: _service_peers(ext, 1))
+	ext.set_runtime_clock(true, WORKER_SPEED)
+
+func _drive_day(w: Dictionary) -> Dictionary:
+	var result := super._drive_day(w)
+	if bool(result.get("ok", false)) and not bool(w.get("last_suppressed", false)):
+		_wait_pod_day(w, -1, POD_WAIT_MS)
+	return result

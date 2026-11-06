@@ -7,7 +7,7 @@
 // 不得 include godot_cpp。这一条约束就是“worker 可用”的全部含义。
 
 #include "runtime_climate_passes.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -707,7 +707,7 @@ void wind_air_pure(const WindAirKnobs &knobs, const WindAirLanes &lanes,
 // PK_WS_PROBE_CELL 一次性解析；未设或非法时返回 -1（探针整条不触发）。
 static int pk_ws_probe_cell() {
     static const int cached = []() {
-        const char *v = std::getenv("PK_WS_PROBE_CELL");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_WS_PROBE_CELL);
         if (v == nullptr || *v == 0) return -1;
         return std::atoi(v);
     }();
@@ -2049,7 +2049,7 @@ namespace {
 // yet, so on that day every entry here is an input bug.
 bool pk_lane_diag_enabled() {
     static const bool on = [] {
-        const char *v = std::getenv("PK_CLIMATE_LANE_DIAG");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_LANE_DIAG);
         return v != nullptr && v[0] == '1';
     }();
     return on;
@@ -2217,7 +2217,7 @@ namespace {
 // else. Enabled with PK_CLIMATE_SCALAR_DIAG=1 because it prints per round.
 bool pk_scalar_diag_enabled() {
     static const bool on = [] {
-        const char *v = std::getenv("PK_CLIMATE_SCALAR_DIAG");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_SCALAR_DIAG);
         return v != nullptr && v[0] == '1';
     }();
     return on;
@@ -2829,7 +2829,7 @@ void vegetation_dynamics_apply_pure(const VegetationDynamicsKnobs &knobs,
 // 最后一行就是出事的 stage。默认关，开关只读一次。
 static bool pk_stage_trace_enabled() {
     static const bool on = [] {
-        const char *v = std::getenv("PK_CLIMATE_STAGE_TRACE");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_STAGE_TRACE);
         return v != nullptr && v[0] == '1';
     }();
     return on;

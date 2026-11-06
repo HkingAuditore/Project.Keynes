@@ -1464,7 +1464,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 @export_category("调试与演示")
 @export_group("热力梯度演示")
 # These switches drive the C++/GDScript communication-contract reference
-# passes documented in `docs/performance-charter.md` §12.5 (Pass #1) and
+# passes documented in `docs/architecture/current-state.md` §12.5 (Pass #1) and
 # §12.6 (Pass #2). They are **demo-only** — real climate / weather / biome
 # / vegetation / UI tooltip paths must never read the corresponding
 # `cell.demo.*` components. The default is false so that production runs
@@ -1479,7 +1479,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 
 # Pass #2/#3 dispatch path selector — picks how main.gd hands the C++ kernel
 # its work. Used as a reference / benchmark site for the DOTS upgrade tracks
-# documented in `docs/dots-experiment-report.md`. The output written to
+# documented in `docs/architecture/migration.md`. The output written to
 # `cell_demo_thermal_gradient` is bit-equal across LEGACY and ECS; the
 # ECS_ARCHETYPE path zeros out OCEAN cells by design and is therefore not
 # bit-equal — only used for visual / perf comparison.
@@ -1489,7 +1489,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 #                     with zero benefit (verified in
 #                     `bench_thermal_gradient_paths.gd`); the scheduler is
 #                     justified only when J ≥ ~10 with complex deps (see
-#                     `docs/dots-experiment-report.md` §3.6).
+#                     `docs/architecture/migration.md` §3.6).
 #   * ECS           → DCEcsScheduler with one job declaring
 #                     reads=[CELL_TEMP, CELL_ELEVATION] /
 #                     writes=[CELL_DEMO_THERMAL_GRADIENT]. Bit-equal to LEGACY.

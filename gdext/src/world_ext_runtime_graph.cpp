@@ -1,4 +1,5 @@
 #include "world_ext.h"
+#include "world_ext_golden.h"
 
 #include "country_runtime.h"
 #include "economy_runtime.h"
@@ -1873,6 +1874,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["native_executor_fault_count"] =
         static_cast<int64_t>(executor.fault_count);
     if (detail_level > 0) {
+        if (detail_level == 3) append_runtime_golden_report(_runtime_host.get(), out);
         out["next_cursor"] = static_cast<int64_t>(_runtime_graph_next_cursor);
         out["authority"] = String("existing_native_runtimes");
         out["callbacks_in_graph"] = static_cast<int64_t>(_runtime_graph_callback_count);

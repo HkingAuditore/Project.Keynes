@@ -1,6 +1,12 @@
 extends "res://scripts/game/save_modules/state_adapter.gd"
 
 ## Owns country, military, country_ai persistence; receives only declared capabilities.
+# Section contract belongs to the module. The coordinator uses the existing registry.
+static func archive_contract() -> Dictionary:
+	return {"id": &"pkcn", "version": 11, "sections": PackedStringArray(["pkcn"]),
+		"restore_after": PackedStringArray(["simulation_runtime"]),
+		"can": &"_can_country_provider", "write": &"_write_country_provider",
+		"restore": &"_restore_country_provider", "readable_versions": PackedInt32Array([11])}
 
 func _can_country_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("country")
@@ -47,6 +53,13 @@ func _write_military_provider(context: Dictionary) -> Dictionary:
 		# A configured facade that cannot encode is a real failure: writing an
 		# empty section would silently reset every army on the next load.
 		return _result(false, "pkmi_save_failed", "Military state serialization failed")
+	var job = context.get("military_progress")
+	var progress: PackedInt64Array = facade.capture_pending_event_progress() if job == null else PackedInt64Array(job.capture_event_progress())
+	var tail := PackedByteArray()
+	tail.resize(28)
+	tail.encode_u32(0, 0x314a444d) # MDJ1
+	for i in range(3): tail.encode_s64(4 + i * 8, progress[i])
+	bytes.append_array(tail)
 	return {"ok": true, "sections": {"pkmi": bytes}}
 
 func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
@@ -66,10 +79,21 @@ func _restore_military_provider(sections: Dictionary, context: Dictionary) -> Di
 		# Save written before the military runtime: start from an empty military
 		# store rather than refusing the load.
 		return {"ok": true, "restored": false, "reason": "pkmi_absent_migration"}
-	var result: Dictionary = facade.restore_state(bytes)
+	if bytes.size() < 28 or bytes.decode_u32(bytes.size() - 28) != 0x314a444d:
+		return _result(false, "military_forwarder_version_mismatch", "军事事件保存游标版本不匹配，需要 MDJ1。")
+	var progress := PackedInt64Array()
+	for i in range(3): progress.append(bytes.decode_s64(bytes.size() - 24 + i * 8))
+	if progress[0] < 0 or progress[1] < -1 or progress[2] < 0:
+		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
+	var result: Dictionary = facade.restore_state(bytes.slice(0, bytes.size() - 28))
 	if not bool(result.get("ok", false)):
 		return _result(false, "pkmi_restore_failed",
 			String(result.get("reason", "Military PKMI restore failed")))
+	var job = context.get("military_progress")
+	if job == null and not facade.restore_pending_event_progress(progress):
+		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
+	if job != null and not job.restore_event_progress(progress):
+		return _result(false, "military_forwarder_invalid", "军事事件保存游标无效。")
 	# AI arming is part of the military store's meaning: after a restore, every
 	# non-player country must be AI again or the armed forces stop planning.
 	var player_handles: PackedInt64Array = facade.ai_player_handles()

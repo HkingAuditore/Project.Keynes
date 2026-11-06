@@ -1,5 +1,6 @@
 #include "native_simulation_host.h"
 #include <algorithm>
+#include <cassert>
 
 namespace pk {
 bool NativeSimulationHost::configure_annual_development(uint64_t handle,int64_t length,
@@ -25,7 +26,12 @@ void NativeSimulationHost::commit_annual_day(int64_t day,const AnnualCountryFact
 }
 void NativeSimulationHost::commit_annual_worker_day(int64_t day){
     if(!annual_development_enabled()||!domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)||!domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))return;
-    const auto country=country_asset_snapshot();const auto ideology=ideology_pod_snapshot();
+    const auto country_view = copy_annual_country_view();
+    assert(!country_view.data || country_view.observe(_annual_country_view_version));
+    const auto country = country_view.data;
+    const auto ideology_view = copy_annual_ideology_view();
+    assert(!ideology_view.data || ideology_view.observe(_annual_ideology_view_version));
+    const auto ideology = ideology_view.data;
     if(!country)return;
     const uint64_t handle=annual_country_handle();const uint32_t slot=static_cast<uint32_t>(handle);
     if(slot>=country->country_count||slot>=country->country_generation.size()||country->country_generation[slot]!=static_cast<uint32_t>(handle>>32u))return;

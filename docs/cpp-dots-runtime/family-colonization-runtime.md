@@ -315,13 +315,13 @@ Controller 本国权限门控和 UI 恢复／地图安全区。UI 夹具 8／40�
 `kit_building_*`；抽人失败保留托管、次日重试。`abort_preparing_family_expedition`（取消、
 目标易主、源地人口不足）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。若此时
 采购续接还有在途的 Country 请求（`GOOD_FROM_MARKET` 或 `TREASURY_SPEND`），续接转为孤儿结算，
-等终态到达后再补商人入账或把货退回市场，不能直接丢弃（见 `native-economy-runtime.md`）。
+等终态到达后再补商人入账或把货退回市场，不能直接丢弃（见 `docs/architecture/current-state.md`）。
 
 `kit_partial` 的建材位只反映**最终**规划与原始意图的差距，不再被"历史上砍过一栋建筑"永久锁定；
 `missing_good_ids` 同样只收录最后一次 `materials_fit` 的缺口，并与 `plan_construction_materials`
 统一用 `good_market_available` 判定可得（先前用更窄的 `good_production_available`，会写出空清单）。
 开工包的建材组走全库统一的时代分池（`primitive_construction` / `primitive_lashing` 等，
-见 native-economy-runtime.md），所以源地缺某一种具体材料不再等于开不了工；
+见 docs/architecture/current-state.md），所以源地缺某一种具体材料不再等于开不了工；
 `kit_unbuildable` 只在整组候选都不可得时才会触发。
 若某个建造组的全部候选在源地市场都不可得，规划置 `kit_unbuildable`，
 `advance_preparing_family_expedition` 立即 abort 并写 `PREPARING_UNBUILDABLE` 回执、退还托管、

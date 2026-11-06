@@ -5,6 +5,7 @@
 // type, exactly like economy_runtime.cpp.
 #include "native_simulation_host.h"
 
+#include <godot_cpp/variant/variant.hpp>
 #include <algorithm>
 #include <limits>
 
@@ -600,8 +601,7 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // march with the formation, paid into the lane instead of the garrison
         // cell they left behind. Three rules shape this:
         //  1. Never mint. The cash comes from the existing conserved
-        //     "treasury -> non-tax expenditure" path (military_collect_cash does
-        //     reserve + collect through fiscal escrow), so the treasury loses
+        //     treasury debit (one committed fiscal reserve), so the treasury loses
         //     exactly what the lane gains; there is no second issuance path.
         //  2. The command names the lane by ARMY HANDLE (target_cohort), the
         //     same key 30-33 use; `settled` reports the amount actually moved so
@@ -635,9 +635,9 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // Country still accepts synchronous store writes:
         //
         //  * SYNC Country (single-threaded, no worker domination):
-        //    `military_collect_cash` reserves into fiscal escrow and collects into
-        //    Country's expenditure slots in one call, so the debit and the lane
-        //    credit are in the same epoch and the money audit balances.
+        //    Commit one fiscal reserve, then credit the lane in this call.
+        //    FISCAL_COLLECT credits Country; it is not a payment confirmation.
+        //    The legacy deferred-upkeep helper has a separate, unchanged contract.
         //  * WORKER Country (whole-graph ACTIVE): that synchronous escrow refuses
         //    with `country_worker_unique_writer`. The cohort-cash coordinator solves
         //    exactly this problem for cohorts, and it does so SYNCHRONOUSLY on the
@@ -670,7 +670,27 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
                 error = "army_lane_pay_country_unavailable";
                 return false;
             }
-            moved = military_collect_cash(country, requested);
+            // Complete the same debit protocol as the old reserve half. Do not
+            // credit Country back before paying the lane: that would mint cash.
+            const auto debit = [&]() -> int64_t {
+                const auto port = _country_runtime->fiscal_return_port();
+                const auto begun = port.submit_cash(port.reserve_intent(
+                    country, requested, -1, -1));
+                if (!static_cast<bool>(begun.get("ok", false))) return 0;
+                const uint64_t id = static_cast<int64_t>(begun.get("transaction_id", 0));
+                const uint64_t session = static_cast<int64_t>(begun.get("session_epoch", 0));
+                const uint64_t generation = static_cast<int64_t>(begun.get("country_generation", 0));
+                if (id == 0 || session == 0 || generation == 0) return 0;
+                const auto prepared = port.prepared({id, session, generation, id}, true, "");
+                if (!static_cast<bool>(prepared.get("ok", false))) return 0;
+                const auto committed = port.apply(id);
+                if (!static_cast<bool>(committed.get("ok", false))) return 0;
+                const auto applied = port.applied({id, session, generation, id}, true, "");
+                return static_cast<bool>(applied.get("ok", false)) &&
+                        godot::String(applied.get("status_name", "")) == "completed"
+                    ? static_cast<int64_t>(applied.get("committed_quantity", 0)) : 0;
+            };
+            moved = debit();
             if (moved <= 0) {
                 // The treasury could not fund any of it (or Country is unavailable).
                 // Nothing was booked, so the lane must not grow by a single unit.

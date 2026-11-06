@@ -102,7 +102,7 @@ void RuntimeModifierPodAuthority::reset(size_t entry_capacity) {
     _planned_snapshot = RuntimeModifierPodSnapshot{};
     _report = RuntimeModifierPodReport{};
     _configured = false;
-    _plan_ready = false;
+    _plan_ready = false; _view_cursor = {};
 }
 
 uint64_t RuntimeModifierPodAuthority::hash_mix(uint64_t value, uint64_t input) noexcept {
@@ -1093,7 +1093,7 @@ bool RuntimeModifierPodAuthority::restore(const uint8_t *data, size_t size,
     build_snapshot(_current, _snapshot);
     _report.generation = _current.generation;
     _report.state_hash = _snapshot.state_hash;
-    _plan_ready = false;
+    _plan_ready = false; _view_cursor = {};
     return true;
 }
 
@@ -1160,7 +1160,7 @@ bool RuntimeModifierPodAuthority::restore_legacy_entries(
     build_snapshot(_current, _snapshot);
     _report.generation = _current.generation;
     _report.state_hash = _snapshot.state_hash;
-    _plan_ready = false;
+    _plan_ready = false; _view_cursor = {};
     return true;
 }
 
@@ -1336,7 +1336,7 @@ bool RuntimeModifierPodAuthority::self_test(std::string &error) {
     RuntimeModifierPodCommand rejected_intent = stale;
     rejected_intent.request_id = 32; rejected_intent.producer_id = 7;
     rejected_intent.sequence = 2; rejected_intent.entity_handle = 7;
-    error.clear();
+    error.clear(); if (!committed_view_self_test(error)) return false;
     if (semantics.plan_day(3, 1, {valid_before_failure}, {rejected_intent},
             planned, acks, report, error))
         return fail("modifier_pod_failed_plan_self_test_failed");

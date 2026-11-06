@@ -1,6 +1,12 @@
 extends "res://scripts/game/save_modules/state_adapter.gd"
 
 ## Owns economy persistence; receives only declared capabilities.
+# Section contract belongs to the module. The coordinator uses the existing registry.
+static func archive_contract(schema: int) -> Dictionary:
+	return {"id": &"ecp2", "version": schema, "sections": PackedStringArray(["ecp2"]),
+		"restore_after": PackedStringArray(["pkcn", "pkmi", "pkef"]),
+		"can": &"_can_economy_provider", "write": &"_write_economy_provider",
+		"restore": &"_restore_economy_provider", "readable_versions": PackedInt32Array([schema])}
 
 func _can_economy_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("economy")

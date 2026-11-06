@@ -24,7 +24,7 @@ class_name DCWindHeatTransport
 ##     wind_vector / wind_speed 已由 PhysicalCirculationSolver.solve_wind_field 写入
 ##     temp_baseline / temperature 已由 climate_pass_a 写入
 ##
-## - 输出语义：与 ocean.water_pass 对称（参考 docs/dots-master-execution-handbook.md §3.10.5）
+## - 输出语义：与 ocean.water_pass 对称（参考 docs/architecture/development-guide.md）
 ##
 ## ─── 拆分原则 ──────────────────────────────────────────────────
 ## 1. 接收 (map, cfg, season_phase) 三参，不持有 generator 弱引用

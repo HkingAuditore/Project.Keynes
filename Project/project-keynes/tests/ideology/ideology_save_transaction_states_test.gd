@@ -259,6 +259,7 @@ const IdeologyEffectCatalogScript = preload(
 
 var _checks := 0
 var _failures := 0
+var _expected_mismatch := false
 var _catalogs := {}
 ## Negative controls are expected to fail: their per-check lines are still
 ## printed (that IS the evidence) but they are not written to stderr.
@@ -343,10 +344,12 @@ func _negative_controls(reference: Dictionary, save_pending: Dictionary,
 	var n1: Dictionary = _new_world("neg1")
 	_restore_payload(n1["ext"], save_pending, "neg1")
 	var n1_checkpoint := _counters()
+	_expected_mismatch = true
 	_run_steps(n1, 6, steps.size(), "neg1")
 	var n1_state := _capture_state(n1, "neg1-final")
 	var n1_compare := _isolated_compare(reference, n1_state, "NEG1(wrong payload)")
 	_restore_counters(n1_checkpoint)
+	_expected_mismatch = false
 	_expect("NEG1: continuing a PENDING payload with the rejected-state script is "
 		+ "detected by the comparison", int(n1_compare["failures"]) > 0,
 		str(n1_compare))
@@ -378,10 +381,12 @@ func _negative_controls(reference: Dictionary, save_pending: Dictionary,
 	var n2: Dictionary = _new_world("neg2")
 	_restore_payload(n2["ext"], save_pending, "neg2")
 	var n2_checkpoint := _counters()
+	_expected_mismatch = true
 	_run_steps_without_ideology_days(n2, 0, steps.size(), "neg2")
 	var n2_state := _capture_state(n2, "neg2-final")
 	var n2_compare := _isolated_compare(reference, n2_state, "NEG2(no rebuild)")
 	_restore_counters(n2_checkpoint)
+	_expected_mismatch = false
 	_expect("NEG2: a reload that never rebuilds the derived front is detected on "
 		+ "the per-cell columns", int(n2_compare["failures"]) > 0,
 		str(n2_compare))
@@ -1644,7 +1649,7 @@ func _expect(label: String, ok: bool, detail: String = "") -> void:
 		print("  [PASS] %s" % label)
 		return
 	_failures += 1
-	print("  [FAIL] %s %s" % [label, detail])
+	print("  [%s] %s %s" % ["EXPECTED MISMATCH" if _expected_mismatch else "FAIL", label, detail])
 	if not _suppress_stderr:
 		printerr("FAIL %s %s" % [label, detail])
 

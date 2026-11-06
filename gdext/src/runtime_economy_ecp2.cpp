@@ -1,5 +1,5 @@
 #include "runtime_economy_ecp2.h"
-
+#include "runtime_switch_registry.h"
 #include "economy_runtime.h"
 #include "economy_hash.h"
 #include "economy_runtime_binary_codec.h"
@@ -461,7 +461,7 @@ bool encode_ecp2(const RuntimeEconomyEcp2State &state,
     if (!encode_ecp2_impl(state, out, error,
             binary_codec::bulk_little_endian_enabled())) return false;
     static const bool verify = [] {
-        const char *value = std::getenv("PK_SAVE_CODEC_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_SAVE_CODEC_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     if (verify) {
@@ -511,8 +511,8 @@ bool decode_ecp2(const uint8_t *data, size_t size,
         error = "ecp2_abi_version_incompatible";
         return false;
     }
-    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) && !migrating) {
-        error = "ecp2_schema_version_incompatible";
+    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)) {
+        error = "ecp2_schema_version_incompatible_expected_59";
         return false;
     }
     constexpr uint32_t known_domains = ECP2_DOMAIN_FULL_AUTHORITY |
@@ -596,6 +596,17 @@ bool runtime_economy_ecp2_self_test(std::string &error) {
     std::vector<uint8_t> wire;
     if (!encode_ecp2(state, wire, error)) return false;
     RuntimeEconomyEcp2State roundtrip;
+    // Old envelopes cannot certify the mandatory Economy publication state.
+    for (uint32_t old_schema : {53u, 54u, 55u, 56u, 57u, 58u}) {
+        auto old_wire = wire;
+        binary_codec::store_le(old_wire.data() + 8u, old_schema);
+        if (decode_ecp2(old_wire.data(), old_wire.size(), roundtrip, error) ||
+            error != "ecp2_schema_version_incompatible_expected_59") {
+            error = "ecp2_old_publication_schema_not_rejected";
+            return false;
+        }
+    }
+    error.clear();
     if (!decode_ecp2(wire.data(), wire.size(), roundtrip, error)) return false;
     if (roundtrip.envelope.cell_count != 4 ||
         roundtrip.envelope.catalog_hash != 17 ||

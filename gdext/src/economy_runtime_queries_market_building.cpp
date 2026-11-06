@@ -690,7 +690,7 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
         int32_t limit) const {
     Dictionary out;
     if (_country_runtime == nullptr ||
-        !_country_runtime->valid_handle(country_handle)) {
+        !country_reads().valid_handle(country_handle)) {
         out["ok"] = false;
         out["reason"] = "country_handle_invalid";
         return out;
@@ -1764,7 +1764,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
         return out;
     }
     if (cell_idx < 0 || cell_idx >= _cell_count.get() ||
-        !_country_runtime->valid_handle(country_handle)) {
+        !country_reads().valid_handle(country_handle)) {
         out["reason"] = "construction_target_invalid";
         return out;
     }
@@ -1784,15 +1784,15 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     material_offsets.push_back(0);
 
     const int32_t market = market_store().cell_to_market[cell_idx];
-    const bool owned = _country_runtime->country_handle_for_cell(cell_idx) == country_handle;
-    const int32_t country_slot = _country_runtime->country_slot_for_cell(cell_idx);
+    const bool owned = country_reads().country_handle_for_cell(cell_idx) == country_handle;
+    const int32_t country_slot = country_reads().country_slot_for_cell(cell_idx);
     const int32_t cost_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
         ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
     std::vector<int64_t> country_stock(_good_ids.size(), 0);
     for (size_t good = 0; good < country_stock.size(); ++good) {
         country_stock[good] = std::max<int64_t>(0,
-            _country_runtime->good_for_handle(country_handle,
+            country_reads().good_for_handle(country_handle,
                 static_cast<int32_t>(good)));
     }
 
@@ -1871,7 +1871,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
                 const int32_t good_id = quote_good_ids[item_index];
                 const int64_t required = quote_required[item_index];
                 const int64_t treasury = std::min<int64_t>(required,
-                    std::max<int64_t>(0, _country_runtime->good_for_handle(
+                    std::max<int64_t>(0, country_reads().good_for_handle(
                         country_handle, good_id)));
                 const int64_t shortfall = required - treasury;
                 const int64_t local_stock = market >= 0 && market < market_store().market_count.get()
@@ -1902,7 +1902,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
             can_build = false;
             reason = "construction_market_unavailable";
         }
-        if (can_build && _country_runtime->cash_for_handle(country_handle) < quote_cash) {
+        if (can_build && country_reads().cash_for_handle(country_handle) < quote_cash) {
             can_build = false;
             reason = "construction_treasury_cash_insufficient";
         }

@@ -213,7 +213,7 @@ bool NativeEconomyRuntime::capture_trade_visibility(
         std::string &error) {
     _trade_visibility_manual = !from_map;
     _epoch_player_country_slot = _country_runtime != nullptr
-        ? _country_runtime->starting_country_slot() : -1;
+        ? country_reads().starting_country_slot() : -1;
     if (!fog_solved) {
         _epoch_trade_vision_gated = false;
         _epoch_cell_visible.clear();

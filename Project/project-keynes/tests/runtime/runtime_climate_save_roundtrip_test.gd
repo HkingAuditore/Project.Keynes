@@ -170,7 +170,7 @@ func _check_header(bytes: PackedByteArray, polled: Dictionary) -> void:
 		return
 	_expect("bundle is PKSR",
 		bytes.slice(OFFSET_MAGIC, OFFSET_MAGIC + 4).get_string_from_ascii() == "PKSR")
-	_expect("bundle version is 2", int(bytes.decode_u32(OFFSET_VERSION)) == 2)
+	_expect("bundle version is 5", int(bytes.decode_u32(OFFSET_VERSION)) == 5)
 	var abi := int(bytes.decode_u32(OFFSET_DOMAIN_ABI))
 	_expect("runtime domain ABI in the header matches the host report (%d)" % abi,
 		abi == int(polled.get("runtime_domain_abi_version", -1)))
@@ -238,6 +238,8 @@ func _check_coordinator_validator(bytes: PackedByteArray, polled: Dictionary) ->
 	var v1 := bytes.duplicate()
 	v1.encode_u32(OFFSET_VERSION, 1)
 	_expect("the validator rejects PKSR v1", not Header.valid(v1))
+	v1.encode_u32(OFFSET_VERSION, 2)
+	_expect("the validator rejects PKSR v2 missing event cursors", not Header.valid(v1))
 
 	var short_bundle := bytes.slice(0, Header.MIN_BUNDLE_SIZE - 1)
 	_expect("the validator rejects a bundle shorter than the v2 minimum",

@@ -1,5 +1,4 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
 
 #include <algorithm>
 #include <limits>
@@ -277,11 +276,11 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     if (cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
         return reject("unsupported_ownership_policy");
     if (_country_runtime == nullptr ||
-        !_country_runtime->valid_handle(static_cast<int64_t>(cmd.target_handle)) ||
+        !country_reads().valid_handle(static_cast<int64_t>(cmd.target_handle)) ||
         cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 != 1)
         return reject("construction_target_invalid");
-    if (_country_runtime->country_handle_for_cell(cell) !=
+    if (country_reads().country_handle_for_cell(cell) !=
             static_cast<int64_t>(cmd.target_handle))
         return reject("construction_cell_not_owned");
     if (!building_available(cell, type_id, true))
@@ -306,7 +305,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     std::vector<int64_t> country_stock(_good_ids.size(), 0);
     for (size_t good = 0; good < country_stock.size(); ++good) {
         country_stock[good] = std::max<int64_t>(0,
-            _country_runtime->good_for_handle(
+            country_reads().good_for_handle(
                 static_cast<int64_t>(cmd.target_handle),
                 static_cast<int32_t>(good)));
     }
@@ -326,7 +325,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     int64_t market_goods_total = 0;
     for (size_t i = 0; i < good_ids.size(); ++i) {
         treasury_used[i] = std::min<int64_t>(required[i], std::max<int64_t>(0,
-            _country_runtime->good_for_handle(
+            country_reads().good_for_handle(
                 static_cast<int64_t>(cmd.target_handle), good_ids[i])));
         market_used[i] = required[i] - treasury_used[i];
         const int64_t lane = market_store().index(market, good_ids[i]);
@@ -342,7 +341,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
             static_cast<size_t>(_cell_count.get() + 1) ||
             _merchant_offsets[cell] >= _merchant_offsets[cell + 1]))
         return reject("construction_market_unavailable");
-    if (_country_runtime->cash_for_handle(
+    if (country_reads().cash_for_handle(
             static_cast<int64_t>(cmd.target_handle)) < total_cash)
         return reject("construction_treasury_cash_insufficient");
     int64_t committed_cash = 0;

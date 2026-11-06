@@ -3385,8 +3385,6 @@ Dictionary DCWorldExt::get_military_catalog_view() const {
 PackedByteArray DCWorldExt::encode_military_state() const {
     PackedByteArray bytes;
     if (_military_runtime == nullptr) return bytes;
-    // PKMI already carries magic/version/catalog hash; the bridge adds only the
-    // rows the core cannot reconstruct (pending receipts + sequence cursor).
     const std::vector<uint8_t> core_bytes = core_from(_military_runtime)->encode();
     std::vector<uint8_t> out;
     out.reserve(core_bytes.size() + 8 * (_military_pending_intents.size() * 9 + 4) + 64);
@@ -3397,7 +3395,7 @@ PackedByteArray DCWorldExt::encode_military_state() const {
         for (int i = 0; i < 8; ++i) buffer.push_back(static_cast<uint8_t>(value >> (i * 8)));
     };
     append_u32(out, 0x4d494c42u);  // "MILB" bridge wrapper
-    append_u32(out, 2u);           // v2: pending rows carry economy match identity
+    append_u32(out, 3u);
     append_u32(out, static_cast<uint32_t>(core_bytes.size()));
     out.insert(out.end(), core_bytes.begin(), core_bytes.end());
     append_u64(out, static_cast<uint64_t>(std::max<int64_t>(0, _military_sequence)));
@@ -3408,6 +3406,7 @@ PackedByteArray DCWorldExt::encode_military_state() const {
     } else {
         append_u64(out, 0);
     }
+    append_u64(out, _military_pod_request);
     append_u32(out, static_cast<uint32_t>(_military_pending_intents.size()));
     for (const MilitaryPendingIntent &row : _military_pending_intents) {
         append_u32(out, row.kind);
@@ -3451,8 +3450,8 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     };
     uint32_t magic = 0, version = 0, core_size = 0;
     if (!read_u32(magic) || magic != 0x4d494c42u) return military_fail("pkmi_wrapper_magic_invalid");
-    if (!read_u32(version) || (version != 1u && version != 2u))
-        return military_fail("pkmi_wrapper_version_unsupported");
+    if (!read_u32(version) || version != 3u)
+        return military_fail("pkmi_wrapper_version_mismatch_expected_3");
     if (!read_u32(core_size) || size - at < core_size) return military_fail("pkmi_wrapper_truncated");
     std::string error;
     if (!core_from(_military_runtime)->restore(data + at, core_size, error)) {
@@ -3470,6 +3469,7 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
     _military_last_step_day = static_cast<int64_t>(last_day);
     if (!_military_receipts) _military_receipts = std::make_unique<MilitaryReceiptCursor>();
     _military_receipts->after_request_id = static_cast<int64_t>(receipt_cursor);
+    uint64_t request_cursor = 0; if (!read_u64(request_cursor) || request_cursor == 0) return military_fail("pkmi_request_cursor_invalid"); _military_pod_request = request_cursor;
     uint32_t pending_count = 0;
     if (!read_u32(pending_count) || pending_count > (1u << 20))
         return military_fail("pkmi_pending_invalid");

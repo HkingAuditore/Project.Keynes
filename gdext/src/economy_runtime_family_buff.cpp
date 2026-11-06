@@ -1,9 +1,9 @@
 #include "economy_runtime.h"
-
+#include "runtime_switch_registry.h"
 #include <cstdlib>
+#include <cassert>
 #include "selector_cell_cap.h"
 #include "economy_effect_forward.h"
-#include "country_runtime.h"
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
 #include "pk_log.h"
@@ -706,7 +706,7 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
             } else if (metadata.target_domain == 3 && _country_runtime != nullptr) {
                 const int32_t country_cell = target_cell >= 0 ? target_cell : source_cell;
                 target_handle = static_cast<uint64_t>(
-                    _country_runtime->country_handle_for_cell(country_cell));
+                    country_reads().country_handle_for_cell(country_cell));
                 target_generation = static_cast<uint32_t>(target_handle >> 32U);
                 if (target_handle == 0) return;
             } else {
@@ -762,7 +762,7 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
          ++family) {
         if (families_store().active[family] == 0) continue;
         const int32_t home = families_store().home_cell[family];
-        if (static_cast<uint64_t>(_country_runtime->country_handle_for_cell(home)) !=
+        if (static_cast<uint64_t>(country_reads().country_handle_for_cell(home)) !=
             country_handle)
             continue;
         const uint64_t family_handle = families_store().handle_for_index(family);
@@ -1315,7 +1315,7 @@ void NativeEconomyRuntime::rebuild_epoch_tag_snapshot() {
         // with ONE binary. Without a switch the two arms are different builds, and a
         // build-to-build timing comparison confounds the change with the build.
         static const bool force_all_tags = []() {
-            const char *value = std::getenv("PK_TAG_FORCE_ALL");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_TAG_FORCE_ALL);
             return value != nullptr && value[0] == '1';
         }();
         const std::vector<int32_t> *consumed =
@@ -1787,7 +1787,9 @@ bool NativeEconomyRuntime::rebuild_epoch_family_country_metrics() {
 }
 
 void NativeEconomyRuntime::refresh_class_opinion_metrics() {
-    const CountryClassOpinionSnapshot &snapshot = country_class_opinion_snapshot();
+    const auto view = copy_lineage_opinion_view();
+    assert(view.observe(_lineage_opinion_view_version));
+    const auto &snapshot = *view.data;
     const std::vector<int64_t> &source_population =
         _class_opinion_source_override_enabled
         ? _class_opinion_override_population : snapshot.population;
@@ -1831,10 +1833,7 @@ void NativeEconomyRuntime::refresh_class_opinion_metrics() {
         static_cast<size_t>(country_count), 0);
     std::vector<int64_t> worker_values(
         static_cast<size_t>(country_count), 0);
-    // The catalog has four classes (farmer, general, technology, worker) in
-    // sorted order. Each copied row owns its own validity check: a fixture with
-    // fewer classes must still publish the rows it does have instead of
-    // zeroing all three.
+    // Sorted classes are checked per row; smaller fixtures keep their valid rows.
     const int32_t general_class = [&]() {
         const auto found = std::lower_bound(_political_class_ids.begin(),
             _political_class_ids.end(), std::string("general"));

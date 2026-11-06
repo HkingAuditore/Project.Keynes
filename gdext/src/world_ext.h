@@ -2771,7 +2771,7 @@ public:
     //   1. We have a reference C++ writer to copy-paste from.
     //   2. We can bit-precisely cross-check against a GDScript replica
     //      (addition is exact, no FP drift).
-    //   3. `docs/performance-charter.md` §12 documents this exact code as
+    //   3. `docs/architecture/current-state.md` §12 documents this exact code as
     //      the canonical Mode-B template.
     //
     // Safety: if the slot id (looked up by StringName "cell_temp") is not

@@ -1,6 +1,6 @@
 #include "economy_runtime.h"
 #include "economy_cost_probe.h"
-#include "country_runtime.h"
+#include "country_ai_core.h"
 #include "economy_hash.h"
 #include "runtime_economy_family_side_tables.h"
 
@@ -17,6 +17,28 @@
 namespace pk {
 
 using namespace godot;
+
+struct CountryAiShared {
+    std::mutex mutex;
+    std::shared_ptr<const CountryAiEconomyDigest> digest;
+    std::shared_ptr<const std::vector<CountryAiFamilyPreferenceRow>> family_preferences;
+    std::vector<CountryAiColonizationIntent> colonization_inbox;
+    std::vector<NativeEconomyRuntime::CountryAiColonizationStat> colonization_stats; // sorted by handle
+    int64_t receipt_cursor = 0; // last colonization receipt_id scanned
+    uint64_t digest_revision = 0;
+};
+
+NativeEconomyRuntime::NativeEconomyRuntime()
+    : _country_ai(std::make_unique<CountryAiShared>()) {
+    register_builtin_formulas();
+    trade_orders_store().clear();
+}
+
+NativeEconomyRuntime::~NativeEconomyRuntime() = default;
+
+void NativeEconomyRuntime::reset_country_ai_pending() {
+    import_country_ai_pending({}, {}, 0);
+}
 
 std::shared_ptr<const CountryAiEconomyDigest> NativeEconomyRuntime::country_ai_digest() const {
     std::lock_guard<std::mutex> lock(_country_ai->mutex);
@@ -263,7 +285,7 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
     for (const CountryAiColonizationIntent &intent : intents) {
         if (intent.target_cell < 0 || intent.target_cell >= cells ||
             _country_runtime == nullptr ||
-            !_country_runtime->valid_handle(static_cast<int64_t>(intent.country_handle))) {
+            !country_reads().valid_handle(static_cast<int64_t>(intent.country_handle))) {
             note(intent.country_handle, false);
             continue;
         }
@@ -288,7 +310,7 @@ void NativeEconomyRuntime::process_country_ai_colonization_intents(int64_t day_i
         // tiniest) branch. Pick the largest viable party so AI colonies can
         // staff kit buildings instead of founding three-person dead ends.
         const bool reinforce_target =
-            _country_runtime->country_handle_for_cell(intent.target_cell) ==
+            country_reads().country_handle_for_cell(intent.target_cell) ==
             static_cast<int64_t>(intent.country_handle);
         int64_t best_i = -1;
         int64_t best_population = -1;

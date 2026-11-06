@@ -1,7 +1,7 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "economy_cost_probe.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -1080,16 +1080,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     // run no mobility at all; refresh days apply the accumulated multi-day
     // probability, keeping the long-run transition rate close to exact mode.
     static const bool track_b_enabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B);
         return !(value && std::strcmp(value, "0") == 0);
     }();
     static const int32_t track_b_mobility_cadence = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B_MOBILITY_CADENCE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_MOBILITY_CADENCE);
         const int32_t parsed = value ? std::atoi(value) : 0;
         return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
     }();
     static const int32_t track_b_mobility_spread = [] {
-        const char *value = std::getenv("PK_ECONOMY_TRACK_B_MOBILITY_SPREAD");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_MOBILITY_SPREAD);
         const int32_t parsed = value ? std::atoi(value) : 0;
         return parsed > 0 ? std::min<int32_t>(parsed, 32) : 1;
     }();
@@ -1913,18 +1913,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // Track B (user-approved): refresh this slow-moving attribution overlay
         // every N days; stale shares are carried in between.
         static const bool attribution_track_b_enabled = [] {
-            const char *value = std::getenv("PK_ECONOMY_TRACK_B");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B);
             return !(value && std::strcmp(value, "0") == 0);
         }();
         static const int32_t attribution_cadence = [] {
-            const char *value = std::getenv(
-                "PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_CADENCE");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_CADENCE);
             const int32_t parsed = value ? std::atoi(value) : 0;
             return parsed > 0 ? std::min<int32_t>(parsed, 30) : 5;
         }();
         static const int32_t attribution_spread = [] {
-            const char *value = std::getenv(
-                "PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_SPREAD");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_TRACK_B_FAMILY_ATTRIBUTION_SPREAD);
             const int32_t parsed = value ? std::atoi(value) : 0;
             return parsed > 0 ? std::min<int32_t>(parsed, 32) : 1;
         }();
@@ -3166,7 +3164,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // (e.g. a hunted-out camp) must be free to take another job.
             const int32_t incumbent_owner_slot = owner_slot_for_profession(
                 _signatures[group.owner_signature_id].profession_id);
-            static const bool diag_no_starving_release = std::getenv("PK_DIAG_NO_STARVING_RELEASE") != nullptr;
+            static const bool diag_no_starving_release = pk::runtime_switch_value(pk::RuntimeSwitch::PK_DIAG_NO_STARVING_RELEASE) != nullptr;
             const bool incumbent_owners_starving = !diag_no_starving_release && incumbent_owner_slot >= 0 &&
                 population_store().needs_satisfaction[incumbent_owner_slot] <
                     Q16_ONE / 2;
