@@ -66,29 +66,27 @@ CellInspectorViewModel._military_category(cell)
 - 战校在 `military_catalog.json` 里的 `national` / `national_extra` 字段没有被编译器编译，
   所以界面**不显示**它们（不写无法验证的效果）。
 
-### 2.1 建材成本从哪来，以及为什么不做经济侧双写
+### 2.1 建材报价、替代品与结算
 
-成本是**目录里的权威值**，不是按经济目录现算的：译者把 `materials` 折成 dense 的
-`material_goods` / `material_qty`（`military_catalog_compiler.gd`），门面的
-`state_building_materials(index)` 把 dense id 还原成 `{good_id, qty}`（qty 为
-GOODS_SCALE，1000 = 1 单位）。视图模型只做排版，不再回查经济目录。
+官营建筑已在经济目录中注册为 `building_kind == "state"`。军事门面的
+`state_building_economy_id(index)` 把军事目录下标映射到经济类型，视图模型再调用
+`EconomyFacade.construction_quotes`，取得原生 `get_treasury_construction_quotes` 的报价。
+地块军事页与营造窗口共用 `_state_building_economy_quote`，建材方案、现金与可建判定
+均以这份报价为准。
 
-结算边界必须说清楚，否则界面会显示一个不会真正扣掉的价格：
+- 建材采用通用的合并替代组：各行数量合计、候选取并集，原生规划器按效率折算。
+  战士营地配置原木 20、草砖 10，编译后是 30 单位等效建材，可用 30 原木或 30 草砖。
+  当前实际建造每座选一种足量候选，尚不混合多个不足量候选。
+- `materials[].required / treasury / market` 的单位为 GOODS_SCALE（1000 = 1 单位）。
+  `market` 表示国库之外计划市购的数量，**不是缺货量**；不能因其大于零而显示「建材不足」。
+- 是否缺料、缺钱或无法结算由报价的 `eligible / reason_code` 决定。UI 不用另一份现金或市场
+  快照重算；报价失败、为空或未返回可建判定时，显示「暂不可营造」并禁用营造。
+- `state.build` 由桥侧转入经济侧 `queue_treasury_sponsored_build`：优先扣国库物资，剩余从
+  本地商人现货购买并支付现金，结算时再次校验；失败不留部分扣减。军事侧收到经济回执后
+  更新施工缓存，不另扣一次建材或现金。详见 `docs/cpp-dots-runtime/military-runtime.md` §5.3。
 
-- 军事 `state.build` 目前是 **cash-only**（`military_core.cpp` 的 `MCMD_STATE_BUILD`
-  注释写明）：它按 `MILITARY_GOODS_SCALE` 把建材折算成现金估值，经
-  `MILITARY_INTENT_SPEND_CASH` 记账，并记录完成日。
-- 经济侧的真正建材结算走 `TREASURY_SPONSORED_BUILD`，但那条路径要求目标建筑在
-  **经济目录**里有同名类型；当前经济建筑表里没有官营建筑，所以
-  `state_buildings[i].economy_building_id` 恒为 `-1`（`_index_optional` 未命中）。
-- 因此**不能**在发出 `state.build` 后再补一条 `treasury_sponsored_build`：它会在
-  `treasury_build_owner_signature` 处拿不到签名而立即 `construction_*` 拒绝，等于给玩家
-  一个必定失败的二次请求。等经济目录真的定义了 `building_kind == "state"` 的类型，
-  再把 `economy_building_id >= 0` 作为接入条件（门面已提供
-  `state_building_economy_id()` 供这条判断使用）。
-
-界面上的成本就是「这一座要吃掉多少建材」，并按国库可得量与本地市场可得量做卡点判断
-（与营造提示卡同一口径）；现金那一栏显示军事侧此刻的现金估值。
+回归测试：`tests/ui/military_construction_quote_test.gd` 覆盖全市购、替代品、
+真正缺料/缺钱与无可用报价的判定。
 
 ## 3. 交互
 

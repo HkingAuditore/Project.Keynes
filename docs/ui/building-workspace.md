@@ -157,6 +157,10 @@ knowledge / military`，见 `EconomyCatalog.BUILDING_SECTOR_IDS`，顺序即编�
 UI 不重算这些规则，只做展示、排序与细分因由。报价对象是**整个部门**的候选
 （`EconomyFacade.construction_candidates` + `construction_quotes`），排序与分页都在 GD 侧完成。
 
+军事部门同样遵守报价的 `eligible / reason_code`。`materials[].market` 是计划市购量，
+并不表示缺货；原生已规划替代建材，UI 不得因需要市购或另一份现金快照而再次否决。
+例如战士营地可用 30 原木或 30 草砖满足建材需求。报价失败或为空时保持不可建。
+
 其中「自然资源」门 `family_free_building_resources_legal` 只在启用托管采收
 （`resource_safe_harvest_q16 > 0`）时按日可采预算限制同格采集建筑。全时代默认的
 **开放获取**（`= 0`）不设行政预算门：此时 `renewable_safe_harvest()` 按设计返回 0，

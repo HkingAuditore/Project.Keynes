@@ -375,8 +375,8 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 			vec3(0.96, 1.00, 1.04) * cold_w
 			+ vec3(1.10, 0.92, 0.78) * hot_w
 			+ vec3(1.12, 1.04, 0.74) * dry_w
-			+ vec3(0.82, 1.05, 0.88) * wet_w
-			+ vec3(0.82, 1.07, 0.78) * (healthy_w + foliage_w)
+			+ vec3(0.86, 1.02, 0.88) * wet_w
+			+ vec3(0.87, 1.03, 0.82) * (healthy_w + foliage_w)
 			+ vec3(1.10, 0.90, 0.68) * decline_w
 			+ vec3(0.56, 0.50, 0.42) * dieback_w;
 	float total_w = cold_w + hot_w + dry_w + wet_w + healthy_w + foliage_w
@@ -395,12 +395,12 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 	vec3 graded = surface.base_color * mix(vec3(1.0), weighted_tint, coverage);
 
 	// 色相强、明度稳：常温区展开色度，严寒区则转为灰蓝白。
-	float value_shift = dry_w * 0.03 + hot_w * 0.01 + wet_w * 0.02
-			+ (healthy_w + foliage_w) * 0.03 - cold_w * 0.03
+	float value_shift = dry_w * 0.03 + hot_w * 0.01 + wet_w * 0.005
+			+ (healthy_w + foliage_w) * 0.005 - cold_w * 0.03
 			- decline_w * 0.04 - dieback_w * 0.12;
 	value_shift = clamp(value_shift / max(total_w, 0.001), -0.12, 0.12) * coverage;
 	float luma = dot(graded, vec3(0.299, 0.587, 0.114));
-	float saturation_gain = 1.0 + 0.14 * coverage;
+	float saturation_gain = 1.0 + 0.06 * coverage;
 	float warm_chroma_control = clamp(hot_n * 0.85 + dry_n * 0.20, 0.0, 1.0);
 	saturation_gain = mix(saturation_gain, 0.98, warm_chroma_control * 0.78);
 	saturation_gain = mix(saturation_gain, 0.30, cold_n * 0.96);
@@ -409,8 +409,8 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 	float green_axis = max(graded.g - max(graded.r, graded.b), 0.0);
 	float green_chroma_w = smoothstep(0.08, 0.28, green_axis)
 			* clamp((wet_w + healthy_w + foliage_w) / max(total_w, 0.001), 0.0, 1.0);
-	saturation_gain = mix(saturation_gain, min(saturation_gain, 1.02),
-			green_chroma_w * 0.88);
+	saturation_gain = mix(saturation_gain, min(saturation_gain, 0.90),
+			green_chroma_w * 0.92);
 	graded = mix(vec3(luma), graded, saturation_gain);
 	graded *= 1.0 + value_shift;
 	// 乘性色无法从高饱和草地中真正移除绿色，因此极冷区再做一次受控的

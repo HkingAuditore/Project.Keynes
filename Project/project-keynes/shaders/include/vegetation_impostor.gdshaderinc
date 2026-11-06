@@ -88,19 +88,20 @@ uniform int veg_shade_quality = 2;
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309;
 uniform float terrain_horizon_softness = 0.30;
-uniform float terrain_horizon_strength = 0.90;
+uniform float terrain_horizon_strength = 1.20;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0;
 // Sky visibility GI shared with the terrain: plants must use the same horizon
 // and LUT or valley shrubs float brighter than the ground they stand on.
 uniform bool gi_lut_bound = false;
 uniform vec3 gi_horizon_lut[16];
-uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.90;
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.95;
 uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.38;
-uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
-uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
+uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.45;
+uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.80;
 uniform float shading_enabled = 1.0;
-uniform float terrain_normal_influence = 0.65;
+uniform float terrain_normal_influence = 1.0;
+uniform float hillshade_coarse_strength = 2.10;
 uniform float sun_shade_strength = 0.55;
 uniform float ambient_floor = 0.18;
 uniform float contact_ao_strength = 0.42;
@@ -120,6 +121,13 @@ vec4 detail_style_param(float style_id, float slot) {
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 #include "res://shaders/include/vegetation_climate.gdshaderinc"
 #include "res://shaders/include/vegetation_forms.gdshaderinc"
+
+vec2 shrub_macro_normal(vec2 uv) {
+	vec2 macro_xy = (visual_sample_terrain_normal(uv).rg * 2.0 - 1.0)
+			* hillshade_coarse_strength * terrain_normal_influence;
+	float macro_z = sqrt(max(1e-4, 1.0 - clamp(dot(macro_xy, macro_xy), 0.0, 0.998)));
+	return macro_xy / max(macro_z, 0.2);
+}
 
 const float VEG_QUAD_HALF = 0.62;
 
@@ -458,7 +466,7 @@ void vertex() {
 	terrain_shading = veg_shade_quality >= 1;
 #endif
 	if (terrain_shading && terrain_normal_tex_bound && !pixel_terrain) {
-		terrain_n = (visual_sample_terrain_normal(uv).rg * 2.0 - 1.0) * terrain_normal_influence;
+		terrain_n = shrub_macro_normal(uv);
 	}
 	if (terrain_shading && veg_shade_quality >= 2 && terrain_valley_ao_strength > 0.0 && !gi_lut_bound) {
 		vec2 texel = 3.0 / hm_resolution;
@@ -577,7 +585,7 @@ void fragment() {
 	vec2 terrain_n = v_g.zw;
 #ifdef VEG_TERRAIN_SHADING
 	if (veg_shade_quality >= 2 && veg_form_follows_ground(form) && terrain_normal_tex_bound) {
-		terrain_n = (visual_sample_terrain_normal(v_ground_uv).rg * 2.0 - 1.0) * terrain_normal_influence;
+		terrain_n = shrub_macro_normal(v_ground_uv);
 	}
 #endif
 	vec3 N = normalize(vec3(n_loc.x * bx + n_loc.y * by + terrain_n * n_loc.z, n_loc.z));
@@ -592,7 +600,7 @@ void fragment() {
 		// green (autumn gold/red, drought straw, cold grey); s.tone keeps the leaf detail.
 		float leaf_l = dot(leaf, vec3(0.299, 0.587, 0.114));
 		float greenness = smoothstep(0.08, 0.35, (leaf.g - max(leaf.r, leaf.b)) / max(leaf.g, 0.01));
-		leaf = mix(leaf, s.art.rgb * 2.0 * leaf_l, s.art.a * mix(0.15, 1.0, greenness));
+		leaf = mix(leaf, s.art.rgb * 1.45 * leaf_l, s.art.a * mix(0.15, 1.0, greenness));
 	}
 	vec3 albedo = mix(s.tint, leaf, s.leaf_w) * s.tone;
 	float cap = smoothstep(0.35, 0.85, n_loc.z + (fract(s.elem * 5.3 + p.x * 3.1) - 0.5) * 0.16);

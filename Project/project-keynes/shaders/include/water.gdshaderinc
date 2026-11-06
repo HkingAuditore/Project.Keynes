@@ -258,6 +258,35 @@ vec3 sample_water_normal(vec2 wp, float t, float amp_scale, float freq_scale, in
 	return normalize(vec3(-dhx, -dhy, 1.0));
 }
 
+vec2 water_flow_phase_grad(vec2 dir, float k) {
+	if (wrap_period_x <= 0.0001) {
+		return dir * k;
+	}
+	float desired_cycles = dir.x * k * wrap_period_x / WATER_WRAP_TAU;
+	float cycles = floor(abs(desired_cycles) + 0.5);
+	float gx = (cycles > 0.0) ? sign(desired_cycles) * cycles * WATER_WRAP_TAU / wrap_period_x : 0.0;
+	return vec2(gx, dir.y * k);
+}
+
+vec3 sample_flow_water_normal(vec2 wp, float t, vec2 flow, float amp_scale,
+		float freq_scale, float noise_lf) {
+	vec2 d1 = length(flow) > 0.035 ? normalize(flow) : normalize(WATER_WAVE_DIR_A);
+	float k1 = WATER_WAVE_FREQ_A * freq_scale * water_base_normal_scale;
+	float p1 = water_periodic_wave_phase(wp, d1, k1) - t * WATER_WAVE_SPEED_A;
+	float noise_gain = mix(0.78, 1.22, clamp(noise_lf, 0.0, 1.0));
+	vec2 grad = cos(p1) * WATER_WAVE_AMP_A * water_flow_phase_grad(d1, k1);
+	if (visual_quality >= 2) {
+		vec2 side = vec2(-d1.y, d1.x);
+		vec2 d2 = normalize(d1 * 0.58 + side * 0.82);
+		float k2 = WATER_WAVE_FREQ_B * freq_scale * water_base_normal_scale;
+		float p2 = water_periodic_wave_phase(wp, d2, k2) - t * WATER_WAVE_SPEED_B;
+		grad += cos(p2) * WATER_WAVE_AMP_B * water_flow_phase_grad(d2, k2);
+	}
+	// Keep the broad wave set readable without amplifying residual Flowmap cell edges.
+	grad *= 12.0 * water_base_normal_strength * amp_scale * noise_gain;
+	return normalize(vec3(-grad, 1.0));
+}
+
 // ─── ShaderToy 启发：水面域扭曲 ──────────────────────────────────────
 // 参考 https://www.shadertoy.com/view/3tyBRh 中的 "p += fbm(p)*warp" 手法。
 // 在水色采样/条纹采样前，把 wp 沿两个 fbm 方向偏移，让同一片水体的 noise

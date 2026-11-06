@@ -300,9 +300,9 @@ var terrain_materials_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
 
 @export_group("Terrain Horizon Shadow")
-@export_range(0.0, 1.0, 0.01) var terrain_horizon_strength: float = 0.90:
+@export_range(0.0, 1.5, 0.01) var terrain_horizon_strength: float = 1.20:
 	set(value):
-		terrain_horizon_strength = clampf(value, 0.0, 1.0)
+		terrain_horizon_strength = clampf(value, 0.0, 1.5)
 		_push_terrain_horizon_uniforms()
 @export_range(0.01, 1.0, 0.005) var terrain_horizon_softness: float = 0.30:
 	set(value):
@@ -325,7 +325,7 @@ var terrain_materials_enabled: bool = true
 # docs/cpp-dots-runtime/terrain-gi-bake.md。三个强度全部归零即精确回退到接入 GI 之前，
 # 这是视觉回归定位的主要手段。
 @export_group("Terrain GI")
-@export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.90:
+@export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.95:
 	set(value):
 		gi_ao_strength = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
@@ -340,11 +340,11 @@ var terrain_materials_enabled: bool = true
 		gi_ao_smoothing = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
 ## 环境光法线向 bent normal 偏转的比例。1.0 会完全丢弃几何法线，导致块状跳变。
-@export_range(0.0, 1.0, 0.01) var gi_bent_strength: float = 0.35:
+@export_range(0.0, 1.0, 0.01) var gi_bent_strength: float = 0.45:
 	set(value):
 		gi_bent_strength = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
-@export_range(0.0, 1.0, 0.01) var gi_normal_floor: float = 0.85:
+@export_range(0.0, 1.0, 0.01) var gi_normal_floor: float = 0.80:
 	set(value):
 		gi_normal_floor = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
@@ -1474,6 +1474,9 @@ func _apply_water_uniforms() -> void:
 			sm.set_shader_parameter("noise_tex", _world.noise_tex)
 		if not _visual_tiles_active() and _world.water_depth_tex != null:
 			sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+		if _world.ocean_current_flow_tex != null:
+			sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
+			sm.set_shader_parameter("ocean_current_flow_tex_bound", true)
 	var tiled := _visual_tiles_active()
 	var bounds := _world.world_bounds
 	if tiled:
@@ -1523,6 +1526,8 @@ func _apply_water_uniforms() -> void:
 		# uniforms.gdshaderinc 同一个 @export 值）；世界地图水面程序会从主材质整表拷贝。
 		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
 	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
+	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
+	sm.set_shader_parameter("ocean_current_flow_tex_bound", _world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
 	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
 	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
@@ -1550,6 +1555,7 @@ func _push_water_lighting_uniforms() -> void:
 	_water_mat.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
 	_water_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
 	_water_mat.set_shader_parameter("water_effect_enabled", water_effect_enabled)
+	_water_mat.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
 	_water_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
 	_water_mat.set_shader_parameter("tod_exposure", _tod_exposure)
 	_water_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
@@ -3659,7 +3665,8 @@ func _push_terrain_horizon_uniforms() -> void:
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_terrain_horizon_inputs(horizon_tex, horizon_bound,
 			terrain_horizon_strength, terrain_horizon_softness, terrain_horizon_max_angle,
-			terrain_horizon_cast_floor, terrain_horizon_debug_view)
+			terrain_horizon_cast_floor, terrain_horizon_debug_view,
+			float(_shader_mat.get_shader_parameter("hillshade_coarse_strength")))
 		layer.set_terrain_gi_inputs(build_gi_horizon_lut(terrain_horizon_max_angle),
 			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
 	)
@@ -5042,6 +5049,8 @@ func _apply_uniforms() -> void:
 	# water_pipeline 回退旧逐邻域算法。
 	if not tiled:
 		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
+	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
+	sm.set_shader_parameter("ocean_current_flow_tex_bound", _world.ocean_current_flow_tex != null)
 	sm.set_shader_parameter("has_water_depth_tex",
 		visual_tiles.water_depth != null if tiled else _world.water_depth_tex != null)
 	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。

@@ -55,6 +55,8 @@ render_mode blend_mix, unshaded;
 // [baked-surface 2026-11-01] 两端删除"运行期高度差分法线"：hillshade_tod 只剩唯一入口
 //   terrain_baked_normal（法线/细节坡度全部来自生成期烘焙纹理）。Web LOW 由
 //   PK_WEB_HORIZON 真正执行 horizon 解码；上一轮的 Web 运行期细节法线开关整体删除。
+// [macro-relief 2026-11-06] 提升烘焙粗法线、horizon 遮蔽与 GI bent normal 的默认权重；
+//   保留生成期法线/地形 horizon 数据源不变，仅增强运行期宏观起伏的可读性。
 // [packed-surface 2026-11-01 / 方案 A] 非 tiled 的 normal+relief 合并成 1 个 2 层
 //   sampler2DArray `terrain_surface_tex`（layer0=normal、layer1=relief），Web 地形程序
 //   腾出 1 槽恢复 noise_tex（common_noise 回到 1 次纹理采样的预烘包快路径）。Web 陆地
@@ -214,7 +216,7 @@ render_mode blend_mix, unshaded;
 //   PK_TERRAIN_MICRO_ARRAY   — micro 走共享 terrain_material_tex 第 5 层（index 4）；
 //   PK_TERRAIN_PACKED_BOUNCE — GI 弹射 occluder ids 走 terrain_surface_tex 第 4 层
 //                              （index 3），不再采样 bounce_lut（该变体也没声明它）。
-#if defined(PK_WEB_TEXTURE_BUDGET) && !defined(PK_WEB_WATER_ONLY) && !defined(MAP_VISUAL_TILED)
+#if defined(PK_WEB_TEXTURE_BUDGET) && !defined(PK_WEB_WATER_ONLY) && !defined(PK_WATER_ONLY) && !defined(MAP_VISUAL_TILED)
 #define PK_TERRAIN_MICRO_ARRAY
 #define PK_TERRAIN_PACKED_BOUNCE
 #endif
@@ -351,7 +353,6 @@ void fragment() {
 #else
 	scals.r = 1.0;
 #endif
-	vec4 vects = vec4(0.5);  // vector_atlas 退役：洋流/风视觉取中性零向量。
 
 	// map_index 一次采样：R=像素 biome，GB=cell id，A=landform。
 	vec4 map_px = visual_sample_map_index(uv);
@@ -418,12 +419,16 @@ void fragment() {
 	// derived_temp，避免地图边缘出现"温度=0 冷边"。on-map 真实格永远有效。
 	float dyn_valid = (_cell_id < 0) ? 0.0 : 1.0;
 	moist = mix(moist, dyn_wet, dyn_valid);
-	vec2 ocean_current_v = vects.rg * 2.0 - 1.0;
-	vec2 wind_v          = vects.ba * 2.0 - 1.0;
-
 	// flow + river_edge_warp 仅在陆地的 river 分支才用，这里推迟到 _if (!is_water)_ 计算，
 	bool is_water = (biome == B_OCEAN) || (biome == B_COAST) || (biome == B_LAKE)
 			|| (biome == B_REEF) || (biome == B_KELP) || (biome == B_SEA_ICE);
+	vec2 ocean_current_v = vec2(0.0);
+	vec2 wind_v = vec2(0.0);
+#if !defined(PK_LAND_ONLY) && (!defined(PK_WEB_TEXTURE_BUDGET) || defined(PK_WEB_WATER_ONLY))
+	if (is_water && ocean_current_enabled && ocean_current_flow_tex_bound) {
+		ocean_current_v = textureLod(ocean_current_flow_tex, uv, 2.0).rg * 2.0 - 1.0;
+	}
+#endif
 	// [land-water-split 2026-11-02] 水面 program（Web HIGH 与桌面/移动 PK_WATER_ONLY）：
 	// 只画水。陆地像素 discard —— 陆地像素由陆地 program 负责（含混合 block 的陆地像素）；
 	// 未探索的**水**像素不 discard，落到下面的 fog 出口画 fog_unexplored_color（与陆地

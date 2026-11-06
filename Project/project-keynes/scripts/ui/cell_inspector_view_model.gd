@@ -54,10 +54,8 @@ const TRADE_ORDER_NAME_CACHE_LIMIT := 256
 ## 「打开 / 切部门 / 翻页 / 每日刷新」的原生报价调用保持在毫秒级。
 const CONSTRUCTION_PAGE_SIZE := 16
 ## Building kinds are compiled to dense ints; 3 == state-owned (barracks /
-## fortification / war college). They never enter the civilian department loop
-## (the economy catalog has no `state` building type), so they are listed by the
-## construction window's dedicated military department instead, fed from
-## MilitaryCatalog's `state_buildings`.
+## fortification / war college). The dedicated military department lists them
+## from MilitaryCatalog's `state_buildings` and quotes their economy type IDs.
 const STATE_BUILDING_KIND := 3
 ## 军事部门不是经济目录里的部门：条目来自 MilitaryCatalog 的 `state_buildings`，
 ## 命令走军事运行时的 `state.build`，与经济侧的 `construction.build` 是两条通道
@@ -2453,12 +2451,10 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 
 ## 一座官营建筑的建材与工期成本，供行内成本总览与 hover 提示卡使用。
 ##
-## 建材是目录里的权威值（门面 `state_building_materials` 已把 dense id 还原成
-## `{good_id, qty}`，qty 为 GOODS_SCALE），这里只做排版与卡点判断：可得量取国库
-## 现货加本地市场现货，与营造目录同一口径。
+## 建材与替代品由经济侧报价规划，这里只排版并展示权威的可建判定。
 ##
 ## 返回的 `materials` 每项带 `required` / `treasury` / `market`（都是 GOODS_SCALE），
-## 让提示卡能像营造那样写「国库 X / 市购 Y」；`shortfall` 是真正缺的那部分。
+## 让提示卡能像营造那样写「国库 X / 市购 Y」；`market` 是市购量，不是缺货量。
 ##
 ## `building_row` 是**要建的那一档**（升级时是更高一档，不是现有档），工期取它；
 ## `standing_row` 是**现有已建成的那一档**，维护成本取它——升级前后维护是两个数，
@@ -2485,7 +2481,7 @@ func _state_building_cost(facade, building_index: int,
 ## `economy_id` 由军事门面把 dense 索引翻成经济目录类型索引，再喂给经济侧报价。
 func _state_building_economy_quote(facade, building_index: int,
 		building_row: Dictionary, country_handle: int, cell_idx: int,
-		cash_available: int, standing_row: Dictionary = {},
+		_cash_available: int, standing_row: Dictionary = {},
 		held_count: int = 0) -> Dictionary:
 	if building_index < 0 or building_row.is_empty():
 		return _empty_state_building_cost()
@@ -2507,10 +2503,6 @@ func _state_building_economy_quote(facade, building_index: int,
 			var item: Dictionary = items[0] as Dictionary
 			quote = item
 			reason_code = String(item.get("reason_code", ""))
-			# 报价命令本身失败也要亮卡点：桥接通了但不是数据问题就是范围问题，
-			# 静默当成「可建」会让玩家看到一座永远扣不了钱的建筑。
-			if reason_code.is_empty() and not bool(result.get("ok", false)):
-				reason_code = "construction_target_invalid"
 	elif economy == null or economy_id < 0 \
 			or not economy.has_method("construction_quotes"):
 		# economy == null（受限 headless / 旧夹具）或桥接失效：退回本地安全空档。
@@ -2527,19 +2519,13 @@ func _state_building_economy_quote(facade, building_index: int,
 	var materials: Array = quote.get("materials", []) if not quote.is_empty() else []
 	var cash_required := int(quote.get("cash_required", 0)) if not quote.is_empty() \
 		else 0
+	# eligible 已包含替代建材、市场可结算与国库现金检查。市购量可以大于零，
+	# 另一份现金快照也可能已过时，UI 不据此重新否决报价。失败或空报价保持禁用。
+	var eligible := bool(quote.get("eligible", false))
 	var reason := ""
-	if not reason_code.is_empty() and reason_code != "ok":
+	if not eligible:
 		# 用与经济部门同一套文案；这里只是把码变成短因由，长解释交给行内 tooltip。
 		reason = String(CONSTRUCTION_REASON_TEXT.get(reason_code, "暂不可营造"))
-	# 经济侧没给拒绝码但缺口仍在（例如降级路径缺市场现货）时，兜底统一措辞。
-	if reason.is_empty():
-		var shortfall := 0
-		for raw in materials:
-			shortfall += maxi(0, int((raw as Dictionary).get("market", 0)))
-		if shortfall > 0:
-			reason = "建材不足"
-		elif cash_required > 0 and cash_available >= 0 and cash_available < cash_required:
-			reason = "资金不足"
 	return {
 		"materials": materials,
 		"materials_text": _state_building_materials_text(materials),
@@ -2549,7 +2535,7 @@ func _state_building_economy_quote(facade, building_index: int,
 		"cash_text": _money_text(cash_required) if cash_required > 0 else "",
 		"reason_text": reason,
 		"reason_code": reason_code,
-		"blocked": not reason.is_empty(),
+		"blocked": not eligible,
 		"upkeep_text": _state_building_upkeep_text(upkeep_row, effective_held),
 		"upkeep_after_text": _state_building_upkeep_after_text(building_row,
 			upkeep_row, effective_held),

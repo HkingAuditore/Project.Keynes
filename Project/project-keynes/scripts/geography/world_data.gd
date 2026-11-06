@@ -111,6 +111,7 @@ var height_tex: ImageTexture
 var enum_atlas_tex: ImageTexture
 var scalar_atlas_tex: ImageTexture
 var vector_atlas_tex: ImageTexture
+var ocean_current_flow_tex: ImageTexture
 # [river-render-restore 2026-06-19 / height-flow-pack 2026-08-06]
 # Legacy 主地图不再单独上传 flow：flow_buffer 打进 height_tex.B。本字段保留为 null
 #（兼容旧诊断/读档路径）；Tiled 亦已打进 visual_height_tiles.B。

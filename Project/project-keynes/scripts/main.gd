@@ -183,13 +183,8 @@ var test_economy_population_scale: int = 0
 # 恒为 true，此导出值仅保留 Inspector 兼容。
 @export var cell_indirection_enabled: bool = true
 
-# 洋流/风场"逐像素视觉"开关（vector_atlas）。默认 true=保持现状。
-# 关掉 → 跳过 vector_atlas 的逐像素光栅 + encode + GPU 上传，只丢"海面洋流流动感 +
-# 云随风漂"两个纯视觉效果；per-cell 风/洋流求解与气候/天气仿真完全不受影响
-# （仿真读 HexCell.wind_vector，不读本贴图）。省 ~2.4MB 显存 + 偶发光栅 + 主 shader
-# 每帧 1 次 fetch。值在 _generate_and_render 入口推给 DCFeatureFlags，bake / commit /
-# ocean_currents_job / render 统一读 ocean_current_visual_active()。**改勾选后需重新生成地图**。
-@export var ocean_current_visual_enabled: bool = false
+# 洋流 Flowmap 水面视觉。生成 RG8 洋流纹理供水面每像素一次采样；关闭时跳过视觉光栅与上传。
+@export var ocean_current_visual_enabled: bool = true
 
 # 旧 sea_ice_tex（R8）逐像素海冰贴图开关。默认 false=退役（已无任何 shader 采样者，
 # 运行时 upload job 早已不注册，主海冰视觉由 shader 按水温派生）。关时 bake_world 不再

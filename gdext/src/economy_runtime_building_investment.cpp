@@ -1791,6 +1791,22 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         return parsed > 0 ? std::min<int32_t>(parsed, 32) : 0;
     }();
     const int32_t good_count = market_store().good_count.get();
+    // Household demand can exist before the first building of a production
+    // chain is installed.  In that cold-start state the sparse market-signal
+    // CSR is empty for the finished good, so seeding only from signal lanes
+    // would never reach its hard inputs.  Build the sorted producer-output
+    // list once per refresh and use it as a bounded demand seed; the per-cell
+    // `seed_good()` gate still drops goods with no actual deficit.
+    std::vector<int32_t> producer_output_goods;
+    if (good_count > 0 && _investment_good_type_offsets.size() ==
+            static_cast<size_t>(good_count + 1)) {
+        producer_output_goods.reserve(static_cast<size_t>(good_count));
+        for (int32_t good = 0; good < good_count; ++good) {
+            if (_investment_good_type_offsets[good] <
+                    _investment_good_type_offsets[good + 1])
+                producer_output_goods.push_back(good);
+        }
+    }
     const int32_t tasks = (derived_parallel_enabled && use_snapshot &&
             _worker_enabled && cells >= 2 && parallel_has_real_worker_threads())
         ? (derived_forced_tasks > 0
@@ -1908,7 +1924,10 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 has_seed = key != _trade_active_keys.end() &&
                     (*key >> 32) == static_cast<uint32_t>(cell);
             }
-            if (!has_seed) continue;
+            // A market with no installed building signal can still have a
+            // demanded finished good whose catalog producer has hard inputs.
+            // Keep such cells alive for the cold-start output seed below.
+            if (!has_seed && producer_output_goods.empty()) continue;
             // Same arithmetic as the retired parallel household prepare:
             // per-capita previews weighted by cohort population.
             std::fill(household_demand_by_good.begin(),
@@ -1982,6 +2001,15 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                     cell, _epoch_research_good_id);
                 if (research > 0) enqueue(_epoch_research_good_id, research);
             }
+            // Do this after the existing sparse lanes so installed-building
+            // demand keeps its stable ordering.  The producer-output list is
+            // only a candidate set; `seed_good()` checks household demand,
+            // inventory gap, business flow, and procurement before enqueueing.
+            // This is the bridge that lets a demanded but unbuilt product
+            // (for example chipped stone tools) conduct its hard flint input
+            // upstream without manufacturing a producer owner or cashflow.
+            for (const int32_t good : producer_output_goods)
+                seed_good(good);
             if (queue.empty()) continue;
             out.seeded = true;
             out.enqueued_goods = queue.size();
