@@ -97,12 +97,16 @@ int terrain_material_layer(int biome) {
 }
 
 vec4 terrain_material_sample(int biome, vec2 wp) {
+#ifdef PK_WATER_ONLY
+	return vec4(1.0, 0.5, 0.5, 0.5);
+#else
 	int layer = terrain_material_layer(biome);
 	if (layer < 0) {
 		return vec4(1.0, 0.5, 0.5, 0.5);
 	}
 	vec2 material_uv = terrain_periodic_world_uv(wp, terrain_material_world_size);
 	return texture(terrain_material_tex, vec3(material_uv, float(layer)));
+#endif
 }
 
 vec3 terrain_material_albedo_detail(vec4 material) {

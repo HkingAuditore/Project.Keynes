@@ -3314,6 +3314,13 @@ bool NativeSimulationHost::publish_country_worker_snapshot(
     // follows this helper instead of the ordinary commit path, but must cross
     // the same parity boundary or rejected days silently erase D11 evidence.
     record_country_parity_locked(*committed_copy);
+    // Economy may be parked on a cross-domain colonization SETTLE while it
+    // waits for this territory snapshot to expose the preceding CLAIM. The
+    // worker retry predicate watches _country_peer_signal; publishing the
+    // snapshot without advancing that signal leaves the worker asleep until
+    // an unrelated later command happens to wake it.
+    _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+    _control_cv.notify_all();
     return true;
 }
 

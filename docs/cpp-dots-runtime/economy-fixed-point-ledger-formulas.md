@@ -2,6 +2,11 @@
 
 ## 当前实现覆盖说明（2026-09）
 
+2026-11-06 起，Leontief 派生需求的播种不要求下游建筑已经拥有市场信号 lane。只要
+商品有真实的 household/business/inventory 缺口且存在可用的编译生产者，就按该生产者
+的硬投入 BOM 向上游形成 shadow demand。该列只进入价格压力与启动排序，不代表已成交
+订单、库存扣减或现金流；真实投入仍须由建筑生产阶段按商人库存与 owner 现金结算。
+
 本文较早章节中的 cell-level bullion shared quota、冻结发行池和按配额削减贵金属产出属于历史设计记录。当前 native runtime 已退役该机制：贵金属不受铸币配额限制，商人不采购贵金属，产出由 producer support 按 `monetary_issue_value` 结算并计入显式货币发行审计。旧 quota report 字段只为兼容保留并恒为零。
 
 建筑产出统一按“业主自用 -> 商人收购 -> producer support -> 真实 discard”的顺序结算。普通物资的 support 仍受月度 support issuance cap；这不是商品流转分支，而是 support 发行额度耗尽后的最后一层货币约束。

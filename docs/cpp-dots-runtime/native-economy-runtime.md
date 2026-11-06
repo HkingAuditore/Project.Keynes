@@ -1,5 +1,19 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-11-06 下游缺料的冷启动价格传导
+
+派生业务需求刷新不再只从已经存在的建筑市场信号 lane 播种。每个活动市场还会检查
+具有投资生产者的商品输出；当该商品存在真实 household/business/inventory 缺口时，
+它会进入同一 Leontief 队列，按生产计划的硬投入数量向上游展开。该需求仍然是
+**shadow demand**：它只参与上游价格压力、成本锚和启动排序，不创建 owner、不扣现金、
+不虚增库存。这样一个尚未建成的石器工坊也能把打制石器的缺口传导为燧石派生需求，
+同时保留空闲建筑不能凭影子需求凭空生成业主的约束。
+
+该播种集来自编译后的 `investment_good_type_offsets`，按稳定商品 ID 排序；已安装建筑
+信号先处理，冷启动输出候选随后处理，因而不改变既有 lane 的确定性顺序。回归覆盖位于
+`tests/building/building_runtime_test.gd` 的
+`_test_leontief_seeds_without_installed_downstream`。
+
 ## 2026-10-28 城市因子 CSR 现在包含派生层覆盖的格
 
 `refresh_city_output_modifier_factors` 的工作集来自
