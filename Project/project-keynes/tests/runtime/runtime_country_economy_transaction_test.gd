@@ -480,6 +480,34 @@ func _run() -> void:
 			pass
 		var ended_save: Dictionary = country.end_save()
 		_expect("fault test save completes normally", bool(ended_save.get("ok", false)))
+	_test_delayed_peer_ack(compiled, packet)
+
+
+func _test_delayed_peer_ack(compiled: Dictionary, packet: Dictionary) -> void:
+	var ext := DCWorldExt.new()
+	var country = CountryFacadeScript.new()
+	country.configure(ext, 1, 620260909, load("res://data/country/default_country.tres"), compiled)
+	country.bootstrap(PackedByteArray([0]), packet)
+	var handle := int(country.cell_summary(0).get("country_handle", 0))
+	var boundary: Dictionary = ext.run_country_slice({"day_index": 2})
+	_expect("dated transaction has a sealed Country baseline", bool(boundary.get("done", false)))
+	var prepared: Dictionary = ext.begin_country_economy_treasury_spend(
+		handle, PackedInt32Array(), PackedInt64Array(), 10, 33, 7, 88001)
+	var tx_id := int(prepared.get("transaction_id", 0))
+	var session := int(prepared.get("session_epoch", 0))
+	var generation := int(prepared.get("country_generation", 0))
+	ext.ack_country_economy_asset_peer_prepared(tx_id, session, generation, 94, true, "")
+	var committed: Dictionary = ext.commit_country_economy_treasury_spend(tx_id)
+	_expect("treasury decision records its first Country boundary",
+		String(committed.get("status_name", "")) == "awaiting_peer_applied"
+		and int(committed.get("effective_country_day", -1)) == 3)
+	var later: Dictionary = ext.run_country_slice({"day_index": 4})
+	_expect("Country advances while the decided peer ACK is delayed", bool(later.get("done", false)))
+	var completed: Dictionary = ext.ack_country_economy_asset_peer_applied(
+		tx_id, session, generation, 94, true, "")
+	_expect("delayed peer completion preserves the original treasury boundary",
+		String(completed.get("status_name", "")) == "completed"
+		and int(completed.get("effective_country_day", -1)) == 3)
 
 
 func _expect(label: String, condition: bool) -> void:

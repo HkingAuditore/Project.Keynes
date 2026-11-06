@@ -603,12 +603,10 @@ func _run() -> int:
 				and int(recorder.call("row_count")) >= days:
 			break
 
-	# A worker commit can become visible just after the last synchronous
-	# finish_daily_tick() callback.  Give the SceneTree one frame to publish it,
-	# then run the same recorder boundary once more.  The recorder's
-	# authoritative-day gate makes this a no-op when the final row already
-	# exists, and prevents the old one-row-short false failure.
-	if host.runtime_climate_authority_enabled:
+	# Only publish a late callback if a requested sample is still missing.
+	# A pipeline may commit another day during this frame; publishing after the
+	# requested row count was reached used to append a spurious 51st sample.
+	if host.runtime_climate_authority_enabled and int(recorder.call("row_count")) < days:
 		await process_frame
 		host._consume_runtime_commit_if_ready()
 		if host.has_method("_publish_fast_tick_perf_sample"):
@@ -641,6 +639,8 @@ func _run() -> int:
 	var expected_rows := measured_samples if measured_samples > 0 else host.get_fast_tick_count()
 	if fatal:
 		expected_rows = host.get_fast_tick_count()
+	if host.runtime_climate_authority_enabled:
+		expected_rows = days
 	var rows_ok := rows == expected_rows
 	var effective_days := float(maxi(authoritative_measured, 0))
 	var auth_elapsed_ms := 0.0

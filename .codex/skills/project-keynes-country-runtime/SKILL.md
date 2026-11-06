@@ -73,7 +73,7 @@ snapshot must treat an open window as **backpressure**, not as an error.
 authoritative / illegal operation stay `country_worker_cohort_cash_boundary_invalid` and remain
 fatal. Merging the two classes back into one reason is what produced the day-2744 economy stop;
 `country_economy_asset_protocol_self_test()` now guards the split. See
-`docs/cpp-dots-runtime/country-economy-bridge.md`.
+`docs/architecture/development-guide.md`.
 
 ## Research-signal evidence
 
@@ -99,3 +99,11 @@ From the repository root run:
 
 Use `-Build` for debug/release GDExtension builds and `-Godot` when a Godot executable is available.
 Report unrun gates explicitly, including performance gates that need the release benchmark scene.
+
+## Execution ownership versus admission (2026-11-03)
+
+Country treasury reads/transfers during a worker or inline call use the common
+Host predicate backed by `RuntimeExecutionContext`. Live stop admission can be
+zero while that call finishes against the same Country store. Do not substitute
+a raw public grant-mask check inside a fiscal transaction, and do not treat
+stop-request as transfer of the Country store to a stale synchronous mirror.

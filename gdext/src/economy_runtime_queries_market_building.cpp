@@ -1,5 +1,5 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_variant_helpers.h"
 #include "effect_runtime.h"
 #include "trigger_runtime.h"
@@ -588,11 +588,11 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
         kinds.push_back(kind);
     const auto pack = [&](const std::vector<int64_t> &source) {
         PackedInt64Array values;
-        values.resize(NativeCountryRuntime::TAX_KIND_COUNT);
+        values.resize(CountryApi::TAX_KIND_COUNT);
         for (int32_t kind = 0;
-             kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+             kind < CountryApi::TAX_KIND_COUNT; ++kind) {
             const size_t index = static_cast<size_t>(country) *
-                NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                CountryApi::TAX_KIND_COUNT + kind;
             values[kind] = index < source.size() ? source[index] : 0;
         }
         return values;
@@ -605,9 +605,9 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     const PackedInt64Array paid = pack(_fiscal_last_paid);
     const PackedInt64Array unmet = pack(_fiscal_last_unmet);
     PackedInt32Array fulfillment_q16;
-    fulfillment_q16.resize(NativeCountryRuntime::TAX_KIND_COUNT);
+    fulfillment_q16.resize(CountryApi::TAX_KIND_COUNT);
     for (int32_t kind = 0;
-         kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+         kind < CountryApi::TAX_KIND_COUNT; ++kind) {
         fulfillment_q16[kind] = requests[kind] <= 0
             ? (reserved[kind] <= 0 ? 0 : Q16_ONE)
             : static_cast<int32_t>(std::clamp<int64_t>(
@@ -666,9 +666,9 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
     out["non_tax_outflow_kinds"] = non_tax_kinds;
     out["non_tax_outflow"] = non_tax_outflow;
     const size_t import_summary = static_cast<size_t>(country) *
-        NativeCountryRuntime::TAX_KIND_COUNT + NativeCountryRuntime::TAX_IMPORT;
+        CountryApi::TAX_KIND_COUNT + CountryApi::TAX_IMPORT;
     const size_t export_summary = static_cast<size_t>(country) *
-        NativeCountryRuntime::TAX_KIND_COUNT + NativeCountryRuntime::TAX_EXPORT;
+        CountryApi::TAX_KIND_COUNT + CountryApi::TAX_EXPORT;
     const int64_t tariff_events =
         import_summary < _fiscal_last_events.size()
             ? _fiscal_last_events[import_summary] : 0;
@@ -676,9 +676,9 @@ Dictionary NativeEconomyRuntime::fiscal_snapshot(int64_t country_handle) const {
         export_summary < _fiscal_last_events.size()
             ? _fiscal_last_events[export_summary] : 0;
     PackedInt64Array tariff_event_counts;
-    tariff_event_counts.resize(NativeCountryRuntime::TAX_KIND_COUNT);
-    tariff_event_counts[NativeCountryRuntime::TAX_IMPORT] = tariff_events;
-    tariff_event_counts[NativeCountryRuntime::TAX_EXPORT] = export_events;
+    tariff_event_counts.resize(CountryApi::TAX_KIND_COUNT);
+    tariff_event_counts[CountryApi::TAX_IMPORT] = tariff_events;
+    tariff_event_counts[CountryApi::TAX_EXPORT] = export_events;
     out["tariff_event_counts"] = tariff_event_counts;
     out["tariff_events"] = tariff_events + export_events;
     out["tariffs_active"] = tariff_events > 0 || export_events > 0;
@@ -690,7 +690,7 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
         int32_t limit) const {
     Dictionary out;
     if (_country_runtime == nullptr ||
-        !_country_runtime->valid_handle(country_handle)) {
+        !country_reads().valid_handle(country_handle)) {
         out["ok"] = false;
         out["reason"] = "country_handle_invalid";
         return out;
@@ -714,34 +714,34 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
     if (view == "summary") {
         const auto fiscal_value = [&](int32_t kind, const std::vector<int64_t> &values) {
             const size_t index = static_cast<size_t>(country) *
-                NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                CountryApi::TAX_KIND_COUNT + kind;
             return index < values.size() ? values[index] : int64_t{0};
         };
-        const int64_t imports = fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+        const int64_t imports = fiscal_value(CountryApi::TAX_IMPORT,
             _fiscal_last_bases);
-        const int64_t exports = fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+        const int64_t exports = fiscal_value(CountryApi::TAX_EXPORT,
             _fiscal_last_bases);
         const int64_t tariff_income = fiscal_value(
-            NativeCountryRuntime::TAX_IMPORT, _fiscal_last_collected) +
-            fiscal_value(NativeCountryRuntime::TAX_EXPORT, _fiscal_last_collected) -
-            fiscal_value(NativeCountryRuntime::TAX_IMPORT, _fiscal_last_paid) -
-            fiscal_value(NativeCountryRuntime::TAX_EXPORT, _fiscal_last_paid);
+            CountryApi::TAX_IMPORT, _fiscal_last_collected) +
+            fiscal_value(CountryApi::TAX_EXPORT, _fiscal_last_collected) -
+            fiscal_value(CountryApi::TAX_IMPORT, _fiscal_last_paid) -
+            fiscal_value(CountryApi::TAX_EXPORT, _fiscal_last_paid);
         out["previous_import_base"] = imports;
         out["previous_export_base"] = exports;
         out["previous_net_export_base"] = exports - imports;
         out["previous_tariff_net_income"] = tariff_income;
         out["cumulative_import_base"] = fiscal_value(
-            NativeCountryRuntime::TAX_IMPORT, _fiscal_cumulative_bases);
+            CountryApi::TAX_IMPORT, _fiscal_cumulative_bases);
         out["cumulative_export_base"] = fiscal_value(
-            NativeCountryRuntime::TAX_EXPORT, _fiscal_cumulative_bases);
+            CountryApi::TAX_EXPORT, _fiscal_cumulative_bases);
         out["cumulative_tariff_net_income"] =
-            fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+            fiscal_value(CountryApi::TAX_IMPORT,
                 _fiscal_cumulative_collected) +
-            fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+            fiscal_value(CountryApi::TAX_EXPORT,
                 _fiscal_cumulative_collected) -
-            fiscal_value(NativeCountryRuntime::TAX_IMPORT,
+            fiscal_value(CountryApi::TAX_IMPORT,
                 _fiscal_cumulative_paid) -
-            fiscal_value(NativeCountryRuntime::TAX_EXPORT,
+            fiscal_value(CountryApi::TAX_EXPORT,
                 _fiscal_cumulative_paid);
         return out;
     }
@@ -1764,7 +1764,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
         return out;
     }
     if (cell_idx < 0 || cell_idx >= _cell_count.get() ||
-        !_country_runtime->valid_handle(country_handle)) {
+        !country_reads().valid_handle(country_handle)) {
         out["reason"] = "construction_target_invalid";
         return out;
     }
@@ -1784,15 +1784,15 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     material_offsets.push_back(0);
 
     const int32_t market = market_store().cell_to_market[cell_idx];
-    const bool owned = _country_runtime->country_handle_for_cell(cell_idx) == country_handle;
-    const int32_t country_slot = _country_runtime->country_slot_for_cell(cell_idx);
+    const bool owned = country_reads().country_handle_for_cell(cell_idx) == country_handle;
+    const int32_t country_slot = country_reads().country_slot_for_cell(cell_idx);
     const int32_t cost_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
         ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
     std::vector<int64_t> country_stock(_good_ids.size(), 0);
     for (size_t good = 0; good < country_stock.size(); ++good) {
         country_stock[good] = std::max<int64_t>(0,
-            _country_runtime->good_for_handle(country_handle,
+            country_reads().good_for_handle(country_handle,
                 static_cast<int32_t>(good)));
     }
 
@@ -1871,7 +1871,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
                 const int32_t good_id = quote_good_ids[item_index];
                 const int64_t required = quote_required[item_index];
                 const int64_t treasury = std::min<int64_t>(required,
-                    std::max<int64_t>(0, _country_runtime->good_for_handle(
+                    std::max<int64_t>(0, country_reads().good_for_handle(
                         country_handle, good_id)));
                 const int64_t shortfall = required - treasury;
                 const int64_t local_stock = market >= 0 && market < market_store().market_count.get()
@@ -1902,7 +1902,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
             can_build = false;
             reason = "construction_market_unavailable";
         }
-        if (can_build && _country_runtime->cash_for_handle(country_handle) < quote_cash) {
+        if (can_build && country_reads().cash_for_handle(country_handle) < quote_cash) {
             can_build = false;
             reason = "construction_treasury_cash_insufficient";
         }

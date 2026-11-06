@@ -1379,7 +1379,9 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
         ev.payload_i2 = event_i32_at(p2, i, 0);
         ev.payload_i3 = event_i32_at(p3, i, 0);
         _gameplay_events.push_back(ev);
-        if (ev.event_id >= _gameplay_next_event_id) {
+        // In ACTIVE, replay rows use worker IDs while next_event_id is the
+        // independent main-thread ingress cursor. Preserve its saved value.
+        if (!snapshot.has("next_event_id") && ev.event_id >= _gameplay_next_event_id) {
             _gameplay_next_event_id = ev.event_id + 1;
         }
     }

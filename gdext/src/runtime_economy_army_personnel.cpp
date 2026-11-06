@@ -1,10 +1,11 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 // Army pay's worker route drives the Country economy-asset peer synchronously
 // (prepare -> service -> finish in one epoch), which needs the host's concrete
 // type, exactly like economy_runtime.cpp.
-#include "native_simulation_host.h"
+#include "economy_host_port.h"
 
+#include <godot_cpp/variant/variant.hpp>
 #include <algorithm>
 #include <limits>
 
@@ -218,7 +219,7 @@ int64_t ArmyPersonnelStore::total_funds() const {
 int64_t NativeEconomyRuntime::army_lane_country_handle(int32_t cell) const {
     if (_country_runtime == nullptr) return 0;
     if (cell < 0 || cell >= _cell_count.get()) return 0;
-    return _country_runtime->country_handle_for_cell(cell);
+    return country_api::country_handle_for_cell(*_country_runtime, cell);
 }
 
 bool NativeEconomyRuntime::queue_or_commit_army_lane(const StructuralCommand &record,
@@ -600,8 +601,7 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // march with the formation, paid into the lane instead of the garrison
         // cell they left behind. Three rules shape this:
         //  1. Never mint. The cash comes from the existing conserved
-        //     "treasury -> non-tax expenditure" path (military_collect_cash does
-        //     reserve + collect through fiscal escrow), so the treasury loses
+        //     treasury debit (one committed fiscal reserve), so the treasury loses
         //     exactly what the lane gains; there is no second issuance path.
         //  2. The command names the lane by ARMY HANDLE (target_cohort), the
         //     same key 30-33 use; `settled` reports the amount actually moved so
@@ -635,9 +635,9 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // Country still accepts synchronous store writes:
         //
         //  * SYNC Country (single-threaded, no worker domination):
-        //    `military_collect_cash` reserves into fiscal escrow and collects into
-        //    Country's expenditure slots in one call, so the debit and the lane
-        //    credit are in the same epoch and the money audit balances.
+        //    Commit one fiscal reserve, then credit the lane in this call.
+        //    FISCAL_COLLECT credits Country; it is not a payment confirmation.
+        //    The legacy deferred-upkeep helper has a separate, unchanged contract.
         //  * WORKER Country (whole-graph ACTIVE): that synchronous escrow refuses
         //    with `country_worker_unique_writer`. The cohort-cash coordinator solves
         //    exactly this problem for cohorts, and it does so SYNCHRONOUSLY on the
@@ -652,13 +652,13 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
         // `money_conservation_failed`).
         int64_t moved = 0;
         std::string cash_error;
-        if (_country_runtime != nullptr && _country_runtime->economy_available() &&
-            _country_runtime->sync_store_writes_forbidden() &&
+        if (_country_runtime != nullptr && country_api::economy_available(*_country_runtime) &&
+            country_api::sync_store_writes_forbidden(*_country_runtime) &&
             _simulation_host != nullptr &&
             _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
             (_d7_operation_gate_mask &
              (1u << static_cast<uint32_t>(
-                 NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND))) != 0u) {
+                 CountryApi::ECONOMY_ASSET_TREASURY_SPEND))) != 0u) {
             if (!pay_army_lane_from_worker_country(army, country, requested, moved,
                                                    cash_error)) {
                 error = cash_error.empty() ? "army_lane_pay_worker_route_failed"
@@ -666,11 +666,31 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
                 return false;
             }
         } else {
-            if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+            if (_country_runtime == nullptr || !country_api::economy_available(*_country_runtime)) {
                 error = "army_lane_pay_country_unavailable";
                 return false;
             }
-            moved = military_collect_cash(country, requested);
+            // Complete the same debit protocol as the old reserve half. Do not
+            // credit Country back before paying the lane: that would mint cash.
+            const auto debit = [&]() -> int64_t {
+                const auto port = country_api::fiscal_return_port(*_country_runtime);
+                const auto begun = port.submit_cash(port.reserve_intent(
+                    country, requested, -1, -1));
+                if (!static_cast<bool>(begun.get("ok", false))) return 0;
+                const uint64_t id = static_cast<int64_t>(begun.get("transaction_id", 0));
+                const uint64_t session = static_cast<int64_t>(begun.get("session_epoch", 0));
+                const uint64_t generation = static_cast<int64_t>(begun.get("country_generation", 0));
+                if (id == 0 || session == 0 || generation == 0) return 0;
+                const auto prepared = port.prepared({id, session, generation, id}, true, "");
+                if (!static_cast<bool>(prepared.get("ok", false))) return 0;
+                const auto committed = port.apply(id);
+                if (!static_cast<bool>(committed.get("ok", false))) return 0;
+                const auto applied = port.applied({id, session, generation, id}, true, "");
+                return static_cast<bool>(applied.get("ok", false)) &&
+                        godot::String(applied.get("status_name", "")) == "completed"
+                    ? static_cast<int64_t>(applied.get("committed_quantity", 0)) : 0;
+            };
+            moved = debit();
             if (moved <= 0) {
                 // The treasury could not fund any of it (or Country is unavailable).
                 // Nothing was booked, so the lane must not grow by a single unit.
@@ -893,7 +913,7 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
             std::string cohort_cash_error;
             if (!coordinate_country_cohort_cash(
                     source, country_handle,
-                    NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                    CountryApi::ECONOMY_ASSET_CASH_FROM_COHORT,
                     residue, transferred, cohort_cash_error)) {
                 error = cohort_cash_error.empty()
                     ? "country_treasury_residue_transfer_failed"
@@ -940,6 +960,16 @@ bool NativeEconomyRuntime::commit_structural_army_lane(const StructuralCommand &
                      cmd.cell, moved, moved_funds, cmd.cell, cmd.cell,
                      legs.empty() ? nullptr : &legs);
         if (moved_out != nullptr) *moved_out = moved;
+        // Between epochs the structural reconcile is a day away, but the
+        // committed ledger is exported right after this drain. Soldiers who
+        // left a barracks must stop counting as its employees before that
+        // export (cohort employment <= population), so reconcile this cell now;
+        // the deferred pass next epoch then finds nothing left to move.
+        if (!_epoch_active &&
+            !reconcile_building_employment_after_population_change({cmd.cell}, error)) {
+            if (error.empty()) error = "army_embark_employment_reconcile_failed";
+            return false;
+        }
         defer_reconcile_if_idle();
         return true;
     }
@@ -1095,7 +1125,7 @@ bool NativeEconomyRuntime::military_army_lane_pay_supported() const {
     // Two shapes provide that: the synchronous fiscal escrow when Country still
     // accepts sync store writes, and the synchronous worker peer cycle when Country
     // is worker-authoritative. Both need the Country runtime to be usable.
-    return _country_runtime != nullptr && _country_runtime->economy_available();
+    return _country_runtime != nullptr && country_api::economy_available(*_country_runtime);
 }
 
 void NativeEconomyRuntime::set_military_army_ration(uint64_t army_handle,

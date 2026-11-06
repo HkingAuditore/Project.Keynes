@@ -403,7 +403,7 @@ func _build_neighbor_indices(begin: int, end: int) -> void:
 				# 邻居一定已在 _cell_index 内（因为 _cells 是同源）
 				_neighbor_indices[base + d] = int(_cell_index.get(nb, -1))
 
-func build_indices_cooperative() -> void:
+func build_indices_cooperative(frame_gate = null) -> void:
 	if _indices_built:
 		return
 	_cell_array.clear()
@@ -421,12 +421,16 @@ func build_indices_cooperative() -> void:
 		cell.index = i
 		i += 1
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return
 			start = Time.get_ticks_usec()
 	for begin in range(0,n,16):
 		_build_neighbor_indices(begin,mini(begin+16,n))
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return
 			start = Time.get_ticks_usec()
 	_indices_built = true
 
@@ -985,8 +989,10 @@ func _finish_bake_soa() -> void:
 	# 这里仅置为未 bake 状态，bake_world 路径会立即调用 bake_lat_temp_year_lut()。
 	_lat_lut_baked = false
 
-func init_soa_from_bake_cooperative() -> void:
-	await build_indices_cooperative()
+func init_soa_from_bake_cooperative(frame_gate = null) -> void:
+	await build_indices_cooperative(frame_gate)
+	if frame_gate != null and frame_gate.canceled:
+		return
 	var seed := _prepare_bake_soa()
 	var n := _cell_array.size()
 	var tree := Engine.get_main_loop() as SceneTree
@@ -994,7 +1000,9 @@ func init_soa_from_bake_cooperative() -> void:
 	for begin in range(0,n,8):
 		_copy_bake_cells(begin,mini(begin+8,n),seed)
 		if tree != null and Time.get_ticks_usec()-start >= UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return
 			start = Time.get_ticks_usec()
 	_finish_bake_soa()
 	apply_pending_generation_ecology()

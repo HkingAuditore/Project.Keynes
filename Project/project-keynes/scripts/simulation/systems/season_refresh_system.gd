@@ -16,7 +16,6 @@ class_name SeasonRefreshSystem
 
 const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
-var generator = null
 var map: MapData = null
 var world_data: WorldData = null
 var _stage: int = 0

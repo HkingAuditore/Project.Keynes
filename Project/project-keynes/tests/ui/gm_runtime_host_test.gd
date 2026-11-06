@@ -36,6 +36,7 @@ func _run() -> void:
 		"world readiness boundary", failures)
 	var capabilities := host.get_gm_capabilities()
 	var fog_toggle_found := false
+	var suppress_popups_toggle_found := false
 	var click_claim_toggle_found := false
 	var atlas_toggle_found := false
 	var autosave_toggle_found := false
@@ -44,6 +45,8 @@ func _run() -> void:
 	for toggle in capabilities.get("toggles", []):
 		if String(toggle.get("id", "")) == "visual.fog_of_war":
 			fog_toggle_found = true
+		if String(toggle.get("id", "")) == "ui.suppress_popups":
+			suppress_popups_toggle_found = true
 		if String(toggle.get("id", "")) == "simulation.click_claim_territory":
 			click_claim_toggle_found = true
 		if String(toggle.get("id", "")) == "diagnostics.dynamic_visual_atlas_upload":
@@ -57,6 +60,7 @@ func _run() -> void:
 		if String(command.get("id", "")) == "diagnostics.dump_atlas_river_probe":
 			river_probe_command_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
+	_expect(suppress_popups_toggle_found, "popup suppression toggle capability", failures)
 	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
 	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
 	_expect(autosave_toggle_found, "autosave toggle capability", failures)
@@ -72,6 +76,14 @@ func _run() -> void:
 	var fog_toggle := host.set_gm_toggle("visual.fog_of_war", false)
 	_expect(bool(fog_toggle.get("ok", false)) and not bool(fog_toggle.get("enabled", true)),
 		"fog toggle authoritative readback", failures)
+	var popups_on := host.set_gm_toggle("ui.suppress_popups", true)
+	var popups_state: Dictionary = host.get_gm_toggle_state("ui.suppress_popups")
+	_expect(bool(popups_on.get("ok", false)) and bool(popups_on.get("enabled", false))
+		and bool(popups_state.get("enabled", false)),
+		"popup suppression GM toggle readback", failures)
+	var popups_off := host.set_gm_toggle("ui.suppress_popups", false)
+	_expect(bool(popups_off.get("ok", false)) and not bool(popups_off.get("enabled", true)),
+		"popup suppression GM toggle restores", failures)
 	Engine.remove_meta(&"force_disable_dva_upload")
 	var atlas_off := host.set_gm_toggle("diagnostics.dynamic_visual_atlas_upload", false)
 	_expect(bool(atlas_off.get("ok", false)) and not bool(atlas_off.get("enabled", true))
@@ -87,6 +99,7 @@ func _run() -> void:
 	_expect(game_save != null and game_settings != null,
 		"save/settings autoloads available", failures)
 	if game_save != null and game_settings != null:
+		game_save.call("bind_runtime", host, clock, null)
 		var autosave_off := host.set_gm_toggle("system.autosave", false)
 		_expect(bool(autosave_off.get("ok", false)) and not bool(autosave_off.get("enabled", true))
 			and not bool(game_save.call("is_autosave_enabled"))
@@ -111,6 +124,12 @@ func _run() -> void:
 	host.set("day_night_enabled", false)
 	var renderer := HexRenderer.new()
 	host.set("_renderer", renderer)
+	host.on_clock_running_changed(false)
+	_expect(not bool(renderer.get("_clock_running"))
+		and is_equal_approx(float(renderer.get("_simulation_speed_multiplier")), clock.speed_multiplier),
+		"renderer clock pause and speed synchronization", failures)
+	host.on_clock_running_changed(true)
+	_expect(bool(renderer.get("_clock_running")), "renderer clock resume synchronization", failures)
 	var held_before := clock.visual_day_phase
 	var locked := host.set_gm_tod_sun_preview(true, Vector2(0.5, 1.0), 1.0)
 	var locked_uv: Vector2 = locked.get("uv", Vector2.ZERO)
@@ -164,6 +183,8 @@ func _run() -> void:
 	print("[gm-runtime-host] %s" % ("PASS" if failures.is_empty() else "FAIL"))
 	host.queue_free()
 	clock.queue_free()
+	if is_instance_valid(renderer):
+		renderer.free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
 

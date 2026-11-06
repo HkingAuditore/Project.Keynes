@@ -19,7 +19,7 @@ description: >
 > （`HexCell` 对象装配 + `ImageTexture` GPU 上传，都是 Godot 对象层、0 计算、不可迁）。
 
 迁移代号 **dots-total-cpp**。权威设计文档：
-`Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`（改动后必须同步更新）。
+`docs/architecture/current-state.md`（改动后必须同步更新）。
 开始任何生成相关改动前，先读它 + 本 skill，不要凭空假设。
 
 ## 关键文件
@@ -32,7 +32,7 @@ description: >
 | C++ 方法声明 | `Project.Keynes/gdext/src/world_ext.h` |
 | C++ 方法绑定 | `Project.Keynes/gdext/src/world_ext_bind_methods.cpp` |
 | 并行设施 | `Project.Keynes/gdext/src/parallel_dispatcher.h`（`pk::parallel_for_range`） |
-| 设计文档 | `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md` |
+| 设计文档 | `docs/architecture/current-state.md` |
 
 `gdext` 是 GDExtension：**改 C++ 后必须 rebuild DLL + 重启 Godot 才生效**。无法在本机编译时，
 写好 C++ + GDScript wrapper 交用户编译。用户通常会跑一遍地图生成、贴日志/视觉结论来验证。
@@ -142,7 +142,7 @@ terrain-index 并行预计 4–8x。降 `derived_size` 分辨率会让 terrain+e
 1. **grounding**：读对应 GDScript ground-truth 实现 + 现有同范式 C++ pass + 设计文档。
 2. **C++**：在 `world_ext.h` 声明、`world_ext.cpp` 实现（buffer-encoder 范式）、`world_ext_bind_methods.cpp` 绑定。
 3. **GDScript wrapper**：native-first（`has_method` 探测）+ 按任务要求决定是否保留 fallback。
-4. **文档**：更新 `computation-pipelines.md`（状态表 + 专节 + I/O 契约）。
+4. **文档**：更新 `docs/architecture/current-state.md`（状态表 + 专节 + I/O 契约）。
 5. **校验**：`read_lints` 两侧 0 错误；grep 确认方法名跨 `.h`/`.cpp`/bind/GDScript/doc 对齐；交用户编译跑 A/B。
 
 ## 验证清单（交付给用户编译后看日志）

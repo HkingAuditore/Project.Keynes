@@ -24,11 +24,9 @@ Before implementation, read the current code path being changed. Never proceed f
 
 For native daily / system graph work, inspect:
 
-- `Project.Keynes/docs/plans/dots-deepening-roadmap.md`
-- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
-- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/design.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 - `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd`
 - `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
 - `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`

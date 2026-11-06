@@ -90,7 +90,7 @@ static func get_empty_texture() -> ImageTexture:
 #                     GDScript（仅 ~n_cells 次，分支重、含非 schema 字段，留
 #                     GDScript 零 bit-divergence 风险）。ext 缺失 / 旧 DLL /
 #                     SoA 未建 / C++ 返回 fallback 时透明回退到 GDScript fan-out。
-#                     详见 docs/cpp-dots-runtime/computation-pipelines.md。
+#                     详见 docs/architecture/current-state.md。
 # 返回上面注释中的 Dictionary；任一前置缺失都返回一个"空但有效"的结果，
 # 调用方据此把 overlay 退回 NONE 即可，不会污染 shader 参数。
 # 返回额外字段：

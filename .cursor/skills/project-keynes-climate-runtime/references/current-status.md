@@ -90,7 +90,7 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 - C2 曾测到 ACTIVE 整场 `weather_field_init=0`（无 extras 回灌）。现已走 snapshot U8 extras，
   不再进 store。植被/cover/terrain 的主线程 succession 写者仍未回灌，C2 policy 已声明。
 
-证据见 `docs/cpp-dots-runtime/full-authoritative-runtime-status.md` 第 39–42 节与
+证据见 `docs/architecture/migration.md` 第 39–42 节与
 `artifacts/runtime/s4-evidence/`。
 
 ### 主线程 native daily（worker 关闭时的路径）

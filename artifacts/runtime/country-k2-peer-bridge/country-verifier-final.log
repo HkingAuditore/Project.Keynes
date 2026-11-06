@@ -220,7 +220,7 @@ ERROR: 276 resources still in use at exit (run with --verbose for details).
 warning: in the working copy of '.agents/skills/project-keynes-country-runtime/scripts/verify_country_runtime.ps1', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of '.codex/skills/project-keynes-country-runtime/scripts/verify_country_runtime.ps1', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'Project/project-keynes/scripts/game/pksr_bundle_header.gd', CRLF will be replaced by LF the next time Git touches it
-warning: in the working copy of 'docs/cpp-dots-runtime/full-authoritative-runtime-status.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/architecture/migration.md', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'gdext/src/country_core.cpp', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'gdext/src/country_core.h', LF will be replaced by CRLF the next time Git touches it
 warning: in the working copy of 'gdext/src/country_runtime.cpp', LF will be replaced by CRLF the next time Git touches it

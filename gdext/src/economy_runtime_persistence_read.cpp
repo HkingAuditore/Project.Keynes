@@ -1,10 +1,10 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
+#include "country_api.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_persistence_codec.h"
-#include "modifier_runtime.h"
+#include "modifier_api.h"
 #include "pk_log.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
@@ -37,9 +37,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
     // migrates to v58 by starting the research procurement outflow at zero;
     // v58 migrates to v59 by starting with no army personnel lanes (the
     // section is optional, so a pre-59 stream restores zero lanes).
-    // v58 migrates to v59 by zeroing the research procurement outflow; v59
-    // migrates to v60 by starting with no state lanes (the building section is
-    // all kind-0/1/2 rows, so a pre-60 stream restores zero state lanes).
+    // v59 migrates to v60 by starting with no state lanes (the building section
+    // is all kind-0/1/2 rows, so a pre-60 stream restores zero state lanes).
     if (schema != SCHEMA_VERSION && schema != 59 && schema != 58 &&
         schema != 57 && schema != 56) {
         error = "economy_save_price_v6_requires_new_game";
@@ -557,16 +556,16 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const bool country_schema_compatible =
             // PKCN 14 (military Country opcodes) added no Economy-visible
             // fields, so PKEC written against PKCN 13 stays loadable.
-            (country_schema >= 13 && country_schema <= NativeCountryRuntime::SCHEMA_VERSION) ||
+            (country_schema >= 13 && country_schema <= CountryApi::SCHEMA_VERSION) ||
             (schema == 22 && country_schema == 3) ||
             (schema <= 19 && country_schema == 1);
         const uint64_t expected_country_hash =
             schema == 22 && country_schema == 3 &&
                     _country_runtime != nullptr
                 ? static_cast<uint64_t>(
-                    _country_runtime->state_hash_v3_compat())
+                    country_reads().state_hash_v3_compat())
                 : (_country_runtime != nullptr
-                    ? static_cast<uint64_t>(_country_runtime->state_hash())
+                    ? static_cast<uint64_t>(country_reads().state_hash())
                     : 0);
         // LOAD ORDER EXCEPTION (worker start after a save).
         //
@@ -597,27 +596,27 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _deferred_country_state_hash = country_hash;
             _deferred_country_identity_recorded = true;
         }
-        if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
+        if (_country_runtime == nullptr || !country_reads().economy_available() ||
             !country_schema_compatible ||
             (!country_identity_deferred && (
-                country_generation != _country_runtime->generation() ||
+                country_generation != country_reads().generation() ||
                 country_hash != expected_country_hash))) {
-            if (std::getenv("PK_COUNTRY_HASH_PROBE") != nullptr)
+            if (pk::runtime_switch_value(pk::RuntimeSwitch::PK_COUNTRY_HASH_PROBE) != nullptr)
                 pk::log_error("[country-hash] saved_schema=%u live_schema=%d "
                     "saved_gen=%llu live_gen=%llu saved_hash=%llu live_hash=%llu "
                     "compatible=%d economy_available=%d deferred=%d",
                     country_schema,
                     _country_runtime == nullptr ? -1
-                        : NativeCountryRuntime::SCHEMA_VERSION,
+                        : CountryApi::SCHEMA_VERSION,
                     static_cast<unsigned long long>(country_generation),
                     static_cast<unsigned long long>(
                         _country_runtime == nullptr ? 0
-                            : _country_runtime->generation()),
+                            : country_reads().generation()),
                     static_cast<unsigned long long>(country_hash),
                     static_cast<unsigned long long>(expected_country_hash),
                     country_schema_compatible ? 1 : 0,
                     (_country_runtime != nullptr &&
-                     _country_runtime->economy_available()) ? 1 : 0,
+                     country_reads().economy_available()) ? 1 : 0,
                     country_identity_deferred ? 1 : 0);
             error = "economy_country_restore_order_or_hash_mismatch";
             return false;
@@ -1615,16 +1614,16 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         cursor = bytes.size();
         _restore.modifier_seen = true;
     } else if (schema >= 23 && section == SAVE_SECTION_FISCAL) {
-        NativeCountryRuntime::EconomySnapshot country_snapshot;
+        CountryReadView::Snapshot country_snapshot;
         if (_country_runtime == nullptr ||
-            !_country_runtime->copy_economy_snapshot(country_snapshot)) {
+            !country_reads().copy_economy_snapshot(country_snapshot)) {
             error = "save_fiscal_country_snapshot_unavailable";
             return false;
         }
         const int32_t country_count = std::max(0,
             country_snapshot.country_count);
         const size_t summary_count = static_cast<size_t>(country_count) *
-            NativeCountryRuntime::TAX_KIND_COUNT;
+            CountryApi::TAX_KIND_COUNT;
         if (_restore.expected_fiscal < 0) {
             _restore.expected_fiscal = country_count;
             _fiscal_escrow_by_country.assign(
@@ -1656,9 +1655,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const auto read_group = [&](auto &values,
                                     int32_t country) {
             for (int32_t kind = 0;
-                 kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
+                 kind < CountryApi::TAX_KIND_COUNT; ++kind) {
                 const size_t index = static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT + kind;
+                    CountryApi::TAX_KIND_COUNT + kind;
                 if (index >= values.size() ||
                     !read_column_le(bytes, cursor, values, index) ||
                     values[index] < 0)
@@ -1672,7 +1671,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             if (!read_le(bytes, cursor, country) ||
                 country != _restore.restored_fiscal ||
                 country < 0 || static_cast<size_t>(country) *
-                    NativeCountryRuntime::TAX_KIND_COUNT >= summary_count ||
+                    CountryApi::TAX_KIND_COUNT >= summary_count ||
                 !read_group(_fiscal_last_bases, country) ||
                 !read_group(_fiscal_last_assessed, country) ||
                 !read_group(_fiscal_last_collected, country) ||
@@ -2166,7 +2165,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             int32_t family = -1;
             if (active != 0) {
                 if (stable_id <= 0 || country_handle == 0 ||
-                    !_country_runtime->valid_handle(
+                    !country_reads().valid_handle(
                         static_cast<int64_t>(country_handle))) {
                     error = "save_family_expedition_country_identity_invalid";
                     return false;
@@ -2410,8 +2409,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, cumulative_collected) ||
                 !read_le(bytes, cursor, cumulative_requests) ||
                 !read_le(bytes, cursor, cumulative_paid) || country < 0 ||
-                kind < NativeCountryRuntime::TAX_IMPORT ||
-                kind > NativeCountryRuntime::TAX_EXPORT || base < 0 || assessed < 0 ||
+                kind < CountryApi::TAX_IMPORT ||
+                kind > CountryApi::TAX_EXPORT || base < 0 || assessed < 0 ||
                 collected < 0 || requests < 0 || reserved < 0 || paid < 0 ||
                 cumulative_base < 0 || cumulative_collected < 0 ||
                 cumulative_requests < 0 || cumulative_paid < 0) {
@@ -2895,9 +2894,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         if (cursor < bytes.size()) {
             uint64_t generation = 0;
-            if (bytes.size() - cursor != sizeof(uint64_t) ||
-                !read_le(bytes, cursor, generation) || generation == 0 ||
-                _restore.committed_generation_seen) {
+            if (_restore.committed_generation_seen || !read_cadence_footer(
+                    bytes, cursor, _cell_count.get(), generation,
+                    _restore.track_b_investment_cells_pending)) {
                 error = "save_cadence_generation_footer_invalid";
                 return false;
             }

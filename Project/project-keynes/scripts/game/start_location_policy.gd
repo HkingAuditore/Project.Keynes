@@ -882,7 +882,7 @@ static func _error(code: String, message: String) -> Dictionary:
 	return {"ok": false, "code": code, "message": message}
 
 static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed: int, foreign_count: int = 0,
-		player_country_name: String = "新国家") -> Dictionary:
+		player_country_name: String = "新国家", frame_gate = null) -> Dictionary:
 	var tree := Engine.get_main_loop() as SceneTree
 	var slice_start := Time.get_ticks_usec()
 	if map == null or world == null or map.cell_count() <= 0:
@@ -897,7 +897,9 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		return starter_catalog
 	for cell_idx in range(map.cell_count()):
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return _error("loading_canceled", "生成已取消。")
 			slice_start = Time.get_ticks_usec()
 		if not _is_candidate(map, cell_idx, neighbors):
 			continue
@@ -922,7 +924,9 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	var chosen: Dictionary = {}
 	for candidate in candidates:
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return _error("loading_canceled", "生成已取消。")
 			slice_start = Time.get_ticks_usec()
 		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
 			chosen = candidate
@@ -943,18 +947,24 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	var remaining: Array[Dictionary] = []
 	for candidate in candidates:
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return _error("loading_canceled", "生成已取消。")
 			slice_start = Time.get_ticks_usec()
 		if int(candidate.cell) != cell_idx:
 			remaining.append(candidate)
 	for _foreign_index in range(foreign_count):
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return _error("loading_canceled", "生成已取消。")
 			slice_start = Time.get_ticks_usec()
 		var ordered: Array[Dictionary] = []
 		for candidate in remaining:
 			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-				await tree.process_frame
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+				if frame_gate != null and frame_gate.canceled:
+					return _error("loading_canceled", "生成已取消。")
 				slice_start = Time.get_ticks_usec()
 			var candidate_distance := int(nearest_start[int(candidate.cell)])
 			if candidate_distance < minimum_distance:
@@ -968,7 +978,9 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		var best_distance := -1
 		for candidate in ordered:
 			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-				await tree.process_frame
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+				if frame_gate != null and frame_gate.canceled:
+					return _error("loading_canceled", "生成已取消。")
 				slice_start = Time.get_ticks_usec()
 			if not _close_candidate_route(map, world, neighbors, starter_catalog,
 					candidate):
@@ -993,7 +1005,9 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		foreign_routes.append((best.starter_route as Dictionary).duplicate(true))
 		for index in range(remaining.size() - 1, -1, -1):
 			if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-				await tree.process_frame
+				await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+				if frame_gate != null and frame_gate.canceled:
+					return _error("loading_canceled", "生成已取消。")
 				slice_start = Time.get_ticks_usec()
 			if int(remaining[index].cell) == selected_cell:
 				remaining.remove_at(index)
@@ -1028,7 +1042,9 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	country_starts.append(player_start)
 	for foreign_index in range(foreign_count):
 		if tree != null and Time.get_ticks_usec()-slice_start>=UITokens.LOADING_MAIN_SLICE_USEC:
-			await tree.process_frame
+			await (frame_gate.next_frame() if frame_gate != null else tree.process_frame)
+			if frame_gate != null and frame_gate.canceled:
+				return _error("loading_canceled", "生成已取消。")
 			slice_start = Time.get_ticks_usec()
 		var foreign_cell := int(foreign_cells[foreign_index])
 		var foreign_route: Dictionary = foreign_routes[foreign_index]

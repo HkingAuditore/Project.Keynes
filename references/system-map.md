@@ -1,5 +1,20 @@
 # Project.Keynes System Map
 
+架构与扩展入口：[世界运行架构](../docs/architecture/design.md)、
+[开发指南](../docs/architecture/development-guide.md)。现有功能的接入映射和迁移
+顺序在目标设计中维护；下面的路径用于查阅当前实现。
+
+世界会话：`GameFlow → WorldRuntimeHost → WorldSession`；装配位于
+`scripts/game/world_session_modules.gd`。生命周期扩展使用 `register_session_module`，
+保存扩展使用 `GameSave.register_state_module`。前者决定准备/关闭依赖，后者决定数据恢复依赖，
+不能混成同一组顺序。后台计算继续通过既有原生模块接入共享执行上下文。
+
+现有 18 个保存模块由 `scripts/game/world_state_modules.gd` 装配；编码、解析和恢复
+实现在 `scripts/game/save_modules/`。`world_state_bindings.gd` 每次调用才取得所需接口，
+避免国家恢复后仍使用已被替换的经济对象。保存协调者只管理保存时点、整个文件的校验与读写。
+时间控制由 `WorldClock.control_changed → RuntimeClockBinding → 模拟执行者/WorldSession`
+直接连接，绑定随世界创建和释放；界面回调只负责展示，不再承担启动后台的职责。
+
 玩家 UI 字体与辨识度：`UITokens -> player_session/menu_atlas/family_workspace Theme`，
 Muyao 承担手写短标题，完整 Swei Regular/Bold 承担正文与读数；统一字阶与位图尺寸见
 [`docs/ui-readability.md`](../docs/ui-readability.md)。
@@ -17,7 +32,7 @@ Studio 源工程位于 `Audio/ProjectKeynes/`；构建、试听及平台导出�
 external_ecp2=[])` → `NativeSimulationHost`。PKSR 完整保存超过 64 MiB 的 ECP2；
 旧截断段可从同档完整副本严格校验恢复，返回 `recovered_truncated_ecp2`，不改写原档。
 回归入口：`tests/runtime_large_ecp2_save_test.gd`、`tools/runtime/Invoke-SaveReplay.ps1`。
-见 [game-flow-start-save.md](../docs/cpp-dots-runtime/game-flow-start-save.md#large-ecp2-checkpoint-persistence-2026-10-19)。
+见 [docs/architecture/development-guide.md](../docs/architecture/development-guide.md)。
 
 地图贸易载具：`TradeActivityLayer` → `EconomyFacade.trade_visual_snapshot` →
 原生 `TradeVisualCache` 已提交观察视图。路径与上传缓存独立于贸易模拟；
@@ -40,13 +55,13 @@ MapGenerator`; `world_setup.tscn` is a development tool only. New games use
 `country.player` plus `country.foreign.NNN`, and the aggregated
 `StarterSettlementBootstrap`. Complete saves are
 coordinated by `GameSaveCoordinator` and stored by `SaveRepository` as PKSV v1.
-Read [`game-flow-start-save.md`](../docs/cpp-dots-runtime/game-flow-start-save.md)
+Read [`docs/architecture/development-guide.md`](../docs/architecture/development-guide.md)
 before changing session routing, player bootstrap, save boundaries, or restore
 order.
 
 2026-07 性能优化只改变 transient cache、审计策略和 bridge payload，不改变
 系统拓扑；实现契约见
-[`runtime-performance-optimization-2026-07.md`](../docs/cpp-dots-runtime/runtime-performance-optimization-2026-07.md)。
+[`docs/architecture/migration.md`](../docs/architecture/migration.md)。
 
 2026-08 性能治理继续保持同一 authority：Country/Economy/Bio native runtime
 拥有模拟状态，GDScript 只负责 facade、事件 dirty flags、section UI cache 和
@@ -74,20 +89,20 @@ sliced Bio 每次固定 2048 cells，`bio_occupancy_day_barrier` 在最终 publi
 8. `Project/project-keynes/scripts/data_core/component_schema.gd`
 9. `Project/project-keynes/scripts/data_core/world.gd`
 10. `Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
-11. `docs/cpp-dots-runtime/index.md`
+11. `docs/architecture/README.md`
 
 按任务类型加读：
 
 - 地图生成和地形水文：读 `docs/terrain-generation-current.md`、`gdext/src/world_ext_generate.cpp`、`Project/project-keynes/scripts/geography/map_config.gd`、`Project/project-keynes/scripts/data/climate_profile.gd`。
-- C++/DOTS 运行时：读 `docs/cpp-dots-runtime/architecture-overview.md`、`docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`、`docs/cpp-dots-runtime/scheduling-and-job-graph.md`、`gdext/src/world_ext*.cpp`、`gdext/src/sus_scheduler_ext.cpp`、`gdext/src/system_schedule.cpp`。
-- 理念：读 `docs/cpp-dots-runtime/native-ideology-runtime.md`、`gdext/src/ideology_runtime.*`、`Project/project-keynes/scripts/ideology/`、`Project/project-keynes/scripts/ui/components/ideology_workspace.gd`，以及仓库 Skill `project-keynes-ideology-runtime`。理念状态由独立 native runtime 持有；Economy 只发布 committed 国家×阶层事实，Effect 只提交原子后果批，PlayerController 只提交命令，均不接管理念收藏、槽位、民意规则、联动或理解度。
-- 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
+- C++/DOTS 运行时：读 `docs/architecture/current-state.md`、`docs/architecture/development-guide.md`、`docs/architecture/current-state.md`、`gdext/src/world_ext*.cpp`、`gdext/src/sus_scheduler_ext.cpp`、`gdext/src/system_schedule.cpp`。
+- 理念：读 `docs/architecture/current-state.md`、`gdext/src/ideology_runtime.*`、`Project/project-keynes/scripts/ideology/`、`Project/project-keynes/scripts/ui/components/ideology_workspace.gd`，以及仓库 Skill `project-keynes-ideology-runtime`。理念状态由独立 native runtime 持有；Economy 只发布 committed 国家×阶层事实，Effect 只提交原子后果批，PlayerController 只提交命令，均不接管理念收藏、槽位、民意规则、联动或理解度。
+- 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/architecture/current-state.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
 - 开拓、人口及扩建视觉反馈：读 `docs/map-activity-art.md`、`scripts/rendering/map_activity_layer.gd` 与 `colonization_route_layer.gd`；正式回执驱动开拓，近景的有界人口摘要与建筑情报观察驱动日常反馈，不进入模拟或存档。
 - 外国 AI（科研/时代、默认税、立族偏好、开拓）：读 `docs/cpp-dots-runtime/country-ai-runtime.md`、`gdext/src/country_ai_core.*`、`gdext/src/country_ai_runtime.*`、`gdext/src/economy_runtime_country_ai.cpp`、`gdext/src/world_ext_country_ai.cpp`、`Project/project-keynes/scripts/country/country_ai_*.gd`、`data/country/default_country_ai.tres`，以及仓库 Skill `project-keynes-country-ai-runtime`。AI 只经 `COUNTRY_AI_PRODUCER_ID` 提交玩家同款命令；开拓意图在经济周期开启时转成普通远征命令；记忆随 PKSV `pkai` 保存。
-- 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/cpp-dots-runtime/performance-diagnostics-playbook.md`、`Project/project-keynes/tests/*.gd`。
-- 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/cpp-dots-runtime/native-economy-runtime.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/economy-runtime-split.md`。
+- 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/architecture/development-guide.md`、`Project/project-keynes/tests/*.gd`。
+- 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/architecture/current-state.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/module-boundaries.md`。
 
 ## 运行入口
 
@@ -275,7 +290,7 @@ WorldClock.day_changed(day_idx)
 
 这些段由 GDScript 状态机调度，许多 hot loop 已在 `DCWorldExt` 中有 C++ pass。继续迁移时要区分“C++ 加速”和“DOTS 权威”：调用 C++ pass 不等于 native graph 拥有 tick/state/publish 全部权威。
 
-native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-07，`pk::parallel_for_range` 自适应，与 scalar 逐位等价；49k–110k cell 实测 ~4.7–5.6x）。两 pass 经 bench 确认 compute-bound，故未做手写 SIMD / 融合 / SFC（数据驱动 no-go，详见 `docs/cpp-dots-runtime/computation-pipelines.md` 与 `scheduling-and-job-graph.md`）。
+native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-07，`pk::parallel_for_range` 自适应，与 scalar 逐位等价；49k–110k cell 实测 ~4.7–5.6x）。两 pass 经 bench 确认 compute-bound，故未做手写 SIMD / 融合 / SFC（数据驱动 no-go，详见 `docs/architecture/current-state.md` 与 `docs/architecture/current-state.md`）。
 
 `OceanCurrentsJob` 把物理求解和视觉 raster 分离。模拟权威是 per-cell SLP、wind、PSI、ocean current、upwelling 等 SoA/slot；vector atlas、wind field buffer 和 pixel commit 是视觉产物，可以滞后或切片。
 
@@ -285,7 +300,7 @@ native daily 图的 `pass_a` / `pass_b` 现接入多核 `_thread` 变体（2026-
 
 ## Climate modes (monsoon, ENSO, cyclones)
 
-Read the climate-mode section in `docs/cpp-dots-runtime/computation-pipelines.md`
+Read the climate-mode section in `docs/architecture/current-state.md`
 first, then inspect `gdext/src/world_ext_physical.cpp`,
 `gdext/src/world_ext_climate.cpp`, `gdext/src/world_ext_weather.cpp`, and
 `Project/project-keynes/scripts/data/climate_profile.gd`. `DCWorldExt` owns the
@@ -389,7 +404,7 @@ visuals continue through the existing WeatherFront/LUT boundary.
 - `environment_runtime_smoke_test.gd`
 - `tile_data_recorder_test.gd`
 
-文档-only 改动至少做静态检查：用 `rg` 确认文档提到的关键文件和 symbol 仍存在，并运行 `git diff --check`。C++/DOTS 改动按 `docs/cpp-dots-runtime/performance-diagnostics-playbook.md` 和项目技能里的顺序，先静态确认 binding/schema，再 build GDExtension，再做 focused Godot/headless 或 in-editor reproduction。
+文档-only 改动至少做静态检查：用 `rg` 确认文档提到的关键文件和 symbol 仍存在，并运行 `git diff --check`。C++/DOTS 改动按 `docs/architecture/development-guide.md` 和项目技能里的顺序，先静态确认 binding/schema，再 build GDExtension，再做 focused Godot/headless 或 in-editor reproduction。
 
 ## 变更边界规则
 
@@ -400,8 +415,8 @@ visuals continue through the existing WeatherFront/LUT boundary.
 - runtime report 必须可诊断，不要只返回一个总耗时。
 - 修改天气、气候、海洋公式时同步 C++ 和 GDScript fallback/verify 路径。
 - 修改调度时保持 `stage_name`、`substage`、`path`、skip reason 稳定，避免破坏性能诊断。
-- 修改 bridge/publish 行为时同步更新 `docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`。
-- 修改 job graph/budget/report 时同步更新 `docs/cpp-dots-runtime/scheduling-and-job-graph.md` 和 `performance-diagnostics-playbook.md`。
+- 修改 bridge/publish 行为时同步更新 `docs/architecture/development-guide.md`。
+- 修改 job graph/budget/report 时同步更新 `docs/architecture/current-state.md` 和 `docs/architecture/development-guide.md`。
 
 ## 经济运行时
 
@@ -709,3 +724,10 @@ The adaptive music path lives below `scripts/audio/music_situation_aggregator.gd
 It reads committed runtime data and sends normalized `Tension` values to
 `GameAudioService`; it is outside simulation authority and must not introduce
 full-map scans or per-frame economy reads.
+
+## 经济内部边界（2026-11）
+
+- 测试开局：`economy_test_bootstrap.gd` → `bootstrap/test_start_inputs.gd` → 纯规划/资金模块，策略集中在 `test_start_policy.gd`。
+- 状态交接：`EconomyAuthorityTransfer`；总控不直接访问经济私有状态。
+- 记录：`EconomyRecordSource` → 复制的 `Batch` → `EconomyCsvRecorder` 文件线程。
+- 当前扩展与保存边界：`docs/architecture/development-guide.md`；当前验证：`docs/architecture/migration.md`。

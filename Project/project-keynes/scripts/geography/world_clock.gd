@@ -31,6 +31,7 @@ signal visual_day_phase_changed(visual_day_phase: float)
 # Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
 # 实现 stride 自动调档、phase 节流自动调档等。
 signal speed_changed(new_speed: float)
+signal control_changed(paused: bool, speed: float)
 signal simulation_backpressure_changed(active: bool, sources: PackedStringArray)
 signal simulation_backpressure_pulse(day_idx: int)
 
@@ -107,11 +108,23 @@ var current_day: float = 0.0   # 累积浮点天数 = _last_day(已模拟整数�
 # plan/best-effort-sim-stepping：不足 1 天的小数残留。低速（<1 天/帧）时累加到 1
 # 再推进一日，并体现到 current_day 小数部分驱动 day_phase 平滑；过载丢弃整数部分。
 var _day_carry: float = 0.0
-var paused: bool = false
+var paused: bool = false:
+	set(value):
+		var next := value or authority_fault_hold
+		if paused == next:
+			return
+		paused = next
+		control_changed.emit(paused, speed_multiplier)
 ## Latched when the native runtime enters FAULTED. Blocks day advance and
 ## refuses unpause so the calendar cannot drift ahead of a dead Economy.
 var authority_fault_hold: bool = false
-var speed_multiplier: float = 1.0
+var speed_multiplier: float = 1.0:
+	set(value):
+		var next := maxf(value, 0.0)
+		if speed_multiplier == next:
+			return
+		speed_multiplier = next
+		control_changed.emit(paused, speed_multiplier)
 # [cylindrical-earth-daylight] 视觉昼夜相位 ∈ [0,1)：0=日出 0.25=正午 0.5=日落 0.75=午夜。
 # 与 day_phase()(随倍速) 解耦，驱动 shader 的 day_phase uniform、TODProfile 与 UI 小时位。
 var visual_day_phase: float = 0.25

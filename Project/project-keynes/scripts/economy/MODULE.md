@@ -195,8 +195,8 @@ GDScript 不模拟价格，界面将 0.01 以下金额显示为四位小数。
 在 N 日内按 cohort 数错峰，提前完成后等待结算日统一发布；只有结算日仍未完成才开启
 WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入环境 native round。
 
-完整规范见：`native-economy-runtime.md`、`domestic-trade-runtime.md`、`economy-fixed-point-ledger-formulas.md`、
-`economy-graph-scheduling.md` 与 `economy-save-migration-sop.md`。
+完整规范见：`docs/architecture/current-state.md`、`domestic-trade-runtime.md`、`economy-fixed-point-ledger-formulas.md`、
+`docs/architecture/current-state.md` 与 `docs/architecture/development-guide.md`。
 # Building runtime
 
 `BuildingProfile` 位于 `data/economy/buildings/`，由 `EconomyCatalog` 编译进 native catalog。
@@ -655,3 +655,16 @@ whole 2,912-subunit bill with logs, bast fibre, reed bundles, or a mixture.
   always receive a deterministic settlement name. The bit round-trips in current
   PKEC v44 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.
+
+
+## 2026-11-03 internal boundaries
+
+Diagnostic opening composition lives in `economy_test_bootstrap.gd`; copied input,
+policy, pure planning and initial money/stock calculation live in `bootstrap/`.
+Neither calculation module receives a live facade or registry. Formal player
+opening remains `StarterSettlementBootstrap`.
+
+Native Host/save handoff uses `EconomyAuthorityTransfer`, isolated self-checks use
+`EconomyInvariantProbe`, and CSV collection uses `EconomyRecordSource`. The Host
+and CSV writer no longer have economy-runtime friendship. Recorded rows contain
+copied values; the writer owns file I/O and drains before destruction.

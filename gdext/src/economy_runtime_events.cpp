@@ -2,7 +2,6 @@
 #include "economy_cost_probe.h"
 #include "economy_runtime_binary_codec.h"
 #include "economy_runtime_variant_helpers.h"
-#include "country_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -384,12 +383,12 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
         if (aggregate.groups[PRACTICE_AUTOMATION] < 2)
             aggregate.values[PRACTICE_AUTOMATION] = 0;
         if (_bio_maize_signal_id < 0 ||
-            _country_runtime->research_signal_evidence_count(
+            country_reads().research_signal_evidence_count(
                 country, _bio_maize_signal_id) < 3)
             aggregate.values[PRACTICE_MAIZE_SELECTION] = 0;
         bool metal_seen = false;
         for (const int32_t signal : _metal_resource_signal_ids) {
-            if (signal >= 0 && _country_runtime->has_research_signal(country, signal)) {
+            if (signal >= 0 && country_reads().has_research_signal(country, signal)) {
                 metal_seen = true;
                 break;
             }
@@ -419,7 +418,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
                 static_cast<size_t>(signal_slot)];
             const int32_t first_cell = aggregate.first_cells[static_cast<size_t>(rule)];
             if (value <= 0 || signal < 0 || first_cell < 0 ||
-                _country_runtime->has_research_signal(country, signal))
+                country_reads().has_research_signal(country, signal))
                 continue;
             CommittedGameplayFact fact;
             fact.kind = GAMEPLAY_FACT_TECHNOLOGY_PRACTICE;
@@ -976,7 +975,7 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                 value.value = count;
             }
             const int32_t signal = _development_metric_signal_indices[metric];
-            if (signal < 0 || _country_runtime->has_research_signal(country, signal))
+            if (signal < 0 || country_reads().has_research_signal(country, signal))
                 continue;
             // A skipped below-qualifier sample is still a reset for Trigger: the
             // next qualified sample lands after a coverage gap and restarts the

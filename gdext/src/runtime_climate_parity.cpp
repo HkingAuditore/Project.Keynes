@@ -1,5 +1,5 @@
 #include "runtime_climate_parity.h"
-
+#include "runtime_switch_registry.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -352,7 +352,7 @@ namespace {
 // Enabled with PK_CLIMATE_FIELD_DIAG=1 because it prints per compared day.
 bool pk_field_diag_enabled() {
     static const bool on = [] {
-        const char *v = std::getenv("PK_CLIMATE_FIELD_DIAG");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_FIELD_DIAG);
         return v != nullptr && v[0] == '1';
     }();
     return on;

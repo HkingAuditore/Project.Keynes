@@ -10,8 +10,8 @@
 // runtime miscompile.
 //
 // This file is the single C++-side mirror of the GDScript bind_map_data
-// registration. Background and rationale: docs/dots-migration-roadmap.md
-// §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
+// registration. Background and rationale: docs/architecture/design.md
+// §3 (A1 ComponentSchema 单一源) and docs/architecture/development-guide.md.
 //
 // Schema entries: 148
 // (Demo entries are emitted with the same row shape; the GDScript side

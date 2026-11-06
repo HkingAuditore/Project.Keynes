@@ -15,15 +15,9 @@ Do not leave current runtime truth only in chat, temporary notes, test logs, or 
 
 Minimum docs to consider:
 
-- `Project.Keynes/docs/cpp-dots-runtime/index.md`
-- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md`
-- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
-- `Project.Keynes/docs/cpp-dots-runtime/performance-diagnostics-playbook.md`
-- `Project.Keynes/docs/cpp-dots-runtime/game-flow-start-save.md`
+- `docs/architecture/README.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 - `Project.Keynes/docs/cpp-dots-runtime/vision-fog-and-borders.md`
 - `Project.Keynes/references/system-map.md`
 
@@ -34,12 +28,8 @@ Before implementation, read the current code path and current docs. Do not proce
 For runtime architecture work, inspect:
 
 - `Project.Keynes/references/system-map.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-authority-matrix.md`
-- `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md`
-- `Project.Keynes/docs/cpp-dots-runtime/architecture-overview.md`
-- `Project.Keynes/docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`
-- `Project.Keynes/docs/cpp-dots-runtime/scheduling-and-job-graph.md`
-- `Project.Keynes/docs/cpp-dots-runtime/computation-pipelines.md`
+- `docs/architecture/current-state.md`
+- `docs/architecture/development-guide.md`
 - `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd`
 - `Project.Keynes/Project/project-keynes/scripts/data_core/dc_system_scheduler.gd`
 - `Project.Keynes/Project/project-keynes/scripts/simulation/sus/sus_scheduler.gd`
@@ -263,7 +253,7 @@ Stops and stalls must leave an artifact without the player reproducing them a se
 
 ## Deletion And Fallback Rules
 
-Use `Project.Keynes/docs/cpp-dots-runtime/runtime-deletion-inventory.md` before deleting runtime code.
+Use `docs/architecture/current-state.md` before deleting runtime code.
 
 Deletion classes:
 
@@ -311,4 +301,38 @@ When completing runtime architecture work, report:
 - Which docs were updated.
 - Whether fallback remains and how it reports.
 - What static/build/runtime validation was run.
-- Any remaining blockers from `runtime-authority-matrix.md` or `runtime-deletion-inventory.md`.
+- Any remaining blockers from `docs/architecture/current-state.md` or `docs/architecture/current-state.md`.
+
+## Extensible world architecture (2026-11-03)
+
+Start new systems and migrations from `docs/architecture/design.md`
+and `docs/architecture/development-guide.md`. Distinguish the target from actual
+integration. Worker and inline executor identity/data routing now share
+`RuntimeExecutionContext`; closing live admission must not change the data owner
+inside an in-flight call. State-provider registration uses explicit dependencies
+and unique section ownership through `runtime_module_registry.gd`; new providers
+register before binding a world and own their compatibility policy. Do not grow
+coordinator-specific branches for extension formats.
+
+Legacy persistence now delegates to all 18 adapters in `scripts/game/save_modules/`.
+Only `world_state_bindings.gd` sees the host/generator; it resolves narrow capabilities
+at each call so post-Country Economy replacement cannot leave a stale reference.
+Providers own decoding and declare peer-section reads. Keep module-specific restore
+work out of the coordinator. `RuntimeClockBinding` subscribes to WorldClock changes
+after executor creation and detaches before stop; UI refresh and timed retries are
+not clock-control owners. See the development guide for these concrete APIs.
+
+## Economy boundary and regression follow-up (2026-11-03)
+
+Use `EconomyAuthorityTransfer` for executor/save identity handoff and prepared
+Country asset servicing. Do not restore Host friendship or persistent override
+switches. `EconomyInvariantProbe` owns isolated self-test worlds.
+`EconomyRecordSource` freezes committed rows; the CSV writer must not access the
+runtime or duplicate price formulas. Diagnostic opening uses copied inputs,
+explicit policy and separate pure planning/finance modules under `economy/bootstrap`.
+Investment review cursors finish the current frozen epoch; do not reintroduce a
+second cross-epoch pending list. Preserve first post-restore integer resources
+and precipitation history, collectible income, recruit savings on restart and
+cycle-flow expiry accounting. New tests must declare content-dependent premises
+and keep full ledger, worker/scalar and continuation checks. See the current
+architecture development guide and validation record.

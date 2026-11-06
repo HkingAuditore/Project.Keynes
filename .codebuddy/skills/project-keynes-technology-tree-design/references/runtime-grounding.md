@@ -16,7 +16,7 @@ Use the live source as authority. This reference records the current design boun
 - `gdext/src/economy_runtime*`
 - `gdext/src/modifier_runtime.*`
 - `docs/cpp-dots-runtime/technology-tree-runtime.md`
-- `docs/cpp-dots-runtime/native-modifier-runtime.md`
+- `docs/architecture/current-state.md`
 
 ## Authority Boundaries
 

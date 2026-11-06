@@ -6,7 +6,6 @@ const ResourceRegistryScript = preload("res://scripts/data/resource_profile_regi
 
 var facade = null
 var world_clock: WorldClock = null
-var generator = null
 var _last_report: Dictionary = {}
 var _fatal_reported: bool = false
 # 完整 slice 报告是一份 450+ 键的 native Dictionary，每个 slice 都要整份跨语言搬运。

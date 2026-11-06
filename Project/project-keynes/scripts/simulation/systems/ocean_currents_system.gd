@@ -28,7 +28,7 @@ class_name OceanCurrentsSystem
 ##   6. 验收：跑 SUS 30-tick log，avg / p95 与 wrapper 路径 ±3% 一致；
 ##      洋流贴图视觉无 diff（截图像素 < 0.1%）。
 ##
-## 详见 [`docs/dots-wrapper-inline-followup.md`](../../../../docs/dots-wrapper-inline-followup.md)。
+## 详见 [`docs/architecture/migration.md`](../../../../../docs/architecture/migration.md)。
 ##
 ## reads / writes 声明：
 ##   - reads:  仅声明同 tick 拓扑依赖所需的稳定慢层字段。温度/雪冰/上一帧风场与洋流

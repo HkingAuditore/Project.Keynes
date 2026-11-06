@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-
+#include "runtime_switch_registry.h"
 namespace pk {
 // Opt-in worker-only diagnostics: PK_RUNTIME_WATERFALL_CSV=<path>.
 // Segments are contiguous: each mark charges the time since the previous
@@ -63,7 +63,7 @@ private:
     struct Output {
         FILE *file = nullptr;
         Output() {
-            const char *path = std::getenv("PK_RUNTIME_WATERFALL_CSV");
+            const char *path = pk::runtime_switch_value(pk::RuntimeSwitch::PK_RUNTIME_WATERFALL_CSV);
             if (path && *path) file = std::fopen(path, "w");
             if (!file) return;
             static const char *names[COUNT] = {

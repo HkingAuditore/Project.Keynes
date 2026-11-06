@@ -3,6 +3,8 @@ extends Node
 var _failures := PackedStringArray()
 var _game_flow: Node
 var _game_save: Node
+var _saved_paused := true
+var _extension = preload("res://tests/game/fixtures/extension_state_module.gd").new()
 
 
 func _ready() -> void:
@@ -25,6 +27,9 @@ func _run() -> void:
 		_expect("PK_SAVE_DIR points the round-trip away from the player's saves", false)
 		_finish()
 		return
+	var registered: Dictionary = _game_save.register_state_module(
+		_extension.provider(), PackedStringArray(["ecp2"]))
+	_expect("an added module registers without changing the save coordinator", bool(registered.ok))
 	var config := NewGameConfig.new()
 	config.country.name = "Roundtrip Nation"
 	var foreign_count_override := OS.get_environment("PK_GAME_SAVE_FOREIGN_COUNT")
@@ -81,6 +86,7 @@ func _run() -> void:
 	_expect("country state actually changed on the worker before saving",
 		int(country_facade.cell_summary(capital_cell).get("cash", 0)) \
 			!= int(start_capital.get("cash", 0)))
+	_saved_paused = first_clock.paused
 	var expected := _capture_hashes(first_host, first_clock)
 	var expected_environment: Dictionary = \
 		first_host.generator().export_environment_runtime_state()
@@ -100,6 +106,9 @@ func _run() -> void:
 		print("[save-roundtrip] manual save rejected: %s" % JSON.stringify(save_result))
 	_expect("PKSV manual save completed", bool(save_result.get("ok", false)))
 	var save_header: Dictionary = save_result.get("header", {})
+	_expect("save includes the added module's format", _manifest_schema(
+		save_header.get("provider_manifest", []), "test_extension") == 1)
+	_extension.value = PackedByteArray([9])
 	_expect("save header declares technology industry revision 2",
 		int(save_header.get("technology_industry_revision", 0)) == 2)
 	_expect("provider manifest declares technology industry revision 2",
@@ -110,20 +119,44 @@ func _run() -> void:
 	_expect("saved slot is visible and loadable",
 		bool(slot.get("exists", false)) and bool(slot.get("loadable", false)))
 	_expect("save restores request-time pause state",
-		not first_clock.paused and is_zero_approx(first_clock.speed_multiplier))
+		first_clock.paused == _saved_paused and is_zero_approx(first_clock.speed_multiplier))
 	if not bool(save_result.get("ok", false)):
 		_finish()
 		return
 	await _verify_wiped_fog_is_never_persisted(first_host)
 
+	# Compare frozen military bytes at load completion, before the worker starts
+	# its next day. A later live hash can legitimately include new daily work.
+	var saved_container: Dictionary = _game_save.get("_repository").load_slot("manual_3")
+	var saved_military: PackedByteArray = saved_container.section_bytes.pkmi
+	var saved_clock: Dictionary = bytes_to_var(saved_container.section_bytes.world_clock)
+	expected.clock = _hash_variant(saved_clock)
+	_expect("saved clock records the requested pause state and speed",
+		bool(saved_clock.paused) == _saved_paused and is_zero_approx(float(saved_clock.speed_multiplier)))
+	var restored_military: Array[PackedByteArray] = []
+	var restored_clocks: Array[Dictionary] = []
+	_game_save.load_completed.connect(func(_slot_id: String, _result: Dictionary) -> void:
+		var host: WorldRuntimeHost = _game_save.get("_runtime_host")
+		restored_military.append(host.generator().get_military_facade().encode_state())
+		restored_clocks.append((_game_save.get("_world_clock") as WorldClock).export_state()), CONNECT_ONE_SHOT)
+	var previous_session = first_host.get("_runtime_session")
+	var previous_generation: int = previous_session.generation
 	var load_begin: Dictionary = _game_flow.call("begin_load_game", "manual_3")
 	_expect("load request accepted", bool(load_begin.get("ok", false)))
 	var loaded_host: WorldRuntimeHost = await _wait_for_runtime(first_scene)
 	_expect("load reached ready runtime", loaded_host != null)
+	_expect("scene replacement closes the previous world before release", previous_session.report().state == "CLOSED")
 	if loaded_host != null:
+		_expect("loaded world has a distinct session generation",
+			int(loaded_host.session_report().generation) != previous_generation)
+		_expect("military bytes survive restore and terrain refresh exactly",
+			not saved_military.is_empty() and restored_military.size() == 1
+			and restored_military[0] == saved_military)
 		var loaded_scene := loaded_host.get_parent() as PlayerGame
 		var loaded_clock: WorldClock = loaded_scene.get_node("WorldClock")
 		var loaded_generator := loaded_host.generator()
+		_expect("added module restores its own opaque state", _extension.restored
+			and _extension.value == PackedByteArray([3, 1, 4, 1, 5]))
 		_expect("load finalized restore-only country/economy bootstrap",
 			String(loaded_generator.gameplay_start_report().get(
 				"settlement_source", "")) == "save_restore")
@@ -133,6 +166,11 @@ func _run() -> void:
 		_expect("restored economy trade topology is ready",
 			bool(loaded_generator.get_economy_report().get("trade_topology_ready", false)))
 		var actual := _capture_hashes(loaded_host, loaded_clock)
+		# A restored offer may pause the presentation after world_ready. Test
+		# clock restoration at the provider boundary before that UI interaction.
+		_expect("load completion exposes the restored clock", restored_clocks.size() == 1)
+		if not restored_clocks.is_empty():
+			actual.clock = _hash_variant(restored_clocks[0])
 		if str(actual.get("environment", "")) != str(expected.get("environment", "")):
 			# 整份 hash 只能说"不一样"；逐键给出差异才看得出是哪个字段没进存档。
 			print("[save-roundtrip] environment keys differing after load: %s" % [
@@ -179,8 +217,9 @@ func _run() -> void:
 			loaded_host.player_country_slot() >= 0)
 		_expect("load preserves non-empty explored progress",
 			_count_nonzero(loaded_host.current_map().explored_arr) > 0)
-		_expect("loaded clock retains unpaused zero-speed mode",
-			not loaded_clock.paused and is_zero_approx(loaded_clock.speed_multiplier))
+		_expect("loaded clock retains request-time pause state and zero speed",
+			not restored_clocks.is_empty() and bool(restored_clocks[0].paused) == _saved_paused
+			and is_zero_approx(float(restored_clocks[0].speed_multiplier)))
 		await _verify_post_restore_cycle(loaded_host, loaded_clock)
 	_finish()
 
@@ -219,6 +258,9 @@ func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> vo
 	clock.pause(false)
 	for frame in range(1200):
 		await get_tree().process_frame
+		# Presentation offers can pause a real player. This fixture explicitly
+		# advances simulation; pause(false) still respects authority fault holds.
+		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):
 			break
@@ -250,6 +292,9 @@ func _advance_days(host: WorldRuntimeHost, clock: WorldClock, days: int) -> void
 	clock.pause(false)
 	for _frame in range(4800):
 		await get_tree().process_frame
+		# Presentation offers can pause a real player. This fixture explicitly
+		# advances simulation; pause(false) still respects authority fault holds.
+		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):
 			break
@@ -264,6 +309,9 @@ func _advance_to_first_settlement(host: WorldRuntimeHost, clock: WorldClock) -> 
 	clock.pause(false)
 	for _frame in range(2400):
 		await get_tree().process_frame
+		# Presentation offers can pause a real player. This fixture explicitly
+		# advances simulation; pause(false) still respects authority fault holds.
+		clock.pause(false)
 		var economy: Dictionary = generator.get_economy_report()
 		if bool(economy.get("fatal", false)):
 			break
@@ -284,7 +332,11 @@ func _wait_for_runtime(previous_scene) -> WorldRuntimeHost:
 		if scene_ref == null or scene_ref == previous_scene or not scene_ref is PlayerGame:
 			continue
 		var host := scene_ref.get_node_or_null("RuntimeHost") as WorldRuntimeHost
-		if host != null and host.current_map() != null and host.generator() != null \
+		if host != null and not host.last_world_generation_error.is_empty():
+			print("[save-roundtrip] world failed: %s" % JSON.stringify(host.last_world_generation_error))
+			return null
+		if host != null and host.is_runtime_ready_for_ticks() \
+				and host.current_map() != null and host.generator() != null \
 				and bool(host.generator().gameplay_start_report().get("ok", false)):
 			await get_tree().process_frame
 			return host
@@ -360,4 +412,8 @@ func _expect(label: String, condition: bool) -> void:
 
 func _finish() -> void:
 	print("game save round-trip: %d failures" % _failures.size())
-	get_tree().quit(0 if _failures.is_empty() else 1)
+	if not _failures.is_empty() or _game_flow == null:
+		get_tree().quit(1)
+	else:
+		# Exercise the real close + pending-write drain, not only SceneTree disposal.
+		await _game_flow.quit_game()

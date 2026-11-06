@@ -161,7 +161,7 @@ void RuntimeEffectPodAuthority::reset(uint32_t instance_capacity,
     _next.deterministic_state_hash = state_hash(_next);
     _next_transaction_id = 1;
     _active_plan = nullptr;
-    _plan_ready = false;
+    _plan_ready = false; _view_cursor = {};
     _snapshot = RuntimeEffectPodSnapshot{};
     _snapshot.abi_version = RUNTIME_EFFECT_POD_ABI_VERSION;
     _snapshot.catalog_version = RUNTIME_EFFECT_POD_CATALOG_VERSION;
@@ -2326,7 +2326,7 @@ bool RuntimeEffectPodAuthority::restore(const uint8_t *data, size_t size,
     _current = std::move(restored);
     _next = _current;
     build_snapshot(_current, _snapshot);
-    _plan_ready = false;
+    _plan_ready = false; _view_cursor = {};
     _active_plan = nullptr;
     rebuild_report();
     return true;
@@ -2850,7 +2850,7 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
             return fail("effect_managed_pending_remove_compaction_failed");
         }
     }
-    error.clear();
+    error.clear(); if (!committed_view_self_test(error)) return false;
     RuntimeEffectPodCatalog catalog;
     catalog.metric_key_hashes = {hash_text("metric")};
     RuntimeEffectPodDefinition definition;

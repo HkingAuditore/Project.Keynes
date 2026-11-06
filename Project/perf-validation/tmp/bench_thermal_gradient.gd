@@ -28,7 +28,7 @@ extends EditorScript
 #   thermal_gradient_pass_gdscript → 可粘贴到 §12.6 GDScript 模板的实现
 #
 # 参见：
-#   docs/performance-charter.md §12.6 (复制此处代码作为模板 #2)
+#   docs/architecture/current-state.md (复制此处代码作为模板 #2)
 #   .codebuddy/plan/cpp-thermal-gradient-pass/ (本计划)
 # ════════════════════════════════════════════════════════════════════
 

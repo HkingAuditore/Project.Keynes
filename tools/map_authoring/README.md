@@ -38,7 +38,15 @@ def generate(ctx) -> dict:
 
 `ctx` 白名单：`width` `height` `seed` `sea_level`、`index(col,row)`、`nx(col)` `ny(row)`、`cells()`、`fbm` `ridged`、`clamp` `lerp` `smoothstep`、`cyl_dist`。
 
-沙箱：无 `import` / `open` / `eval`；5 秒超时。
+执行前按 Python 语法树逐项检查：允许普通函数、赋值、分支、循环、数值运算、
+列表/字典和推导式；属性只开放上面的 `ctx` 接口及常用容器操作。
+禁止导入、类、装饰器、属性赋值、动态查找属性、对象内部信息、生成器栈、
+字符串 `format` 和未列入许可表的新语法。代码中的注释和普通字符串不按关键词误判。
+不支持任意 Python 库。现有 5 秒执行超时保持不变。
+
+工作进程只通过 JSON 传回数据，不使用 `pickle`，也不接受返回对象或函数。
+这是一门受限的地图编写语言；子进程本身没有操作系统级隔离，也没有内存用量隔离，
+不能把它当成通用的陌生 Python 程序运行服务。
 
 ## 坐标系（与 C++ `index_for_qr` 一致）
 

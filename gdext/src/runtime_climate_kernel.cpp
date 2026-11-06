@@ -5,8 +5,9 @@
 #include "runtime_climate_parity.h"
 #include "runtime_climate_passes.h"
 #include "runtime_climate_pass_math.h"
-
+#include "runtime_switch_registry.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -102,11 +103,11 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     copy_lane(next.terrain, current.terrain);
     copy_lane(next.cover, current.cover);
     static const bool full_history = [] {
-        const char *value = std::getenv("PK_CLIMATE_HISTORY_COPY_FULL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_HISTORY_COPY_FULL);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool verify_history = [] {
-        const char *value = std::getenv("PK_CLIMATE_HISTORY_COPY_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_HISTORY_COPY_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     const uint64_t gap = current.generation >= next.generation
@@ -890,7 +891,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     const std::vector<float> &soil_in =
         !_committed_soil.empty() ? _committed_soil : input.cell_soil_moisture;
     static const bool full_physics = [] {
-        const char *value = std::getenv("PK_CLIMATE_PHYSICS_RESTORE_FULL");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_PHYSICS_RESTORE_FULL);
         return value && std::strcmp(value, "1") == 0;
     }();
     const bool reuse_physics = reuse_committed_history && !full_physics &&
@@ -1062,7 +1063,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         const size_t n = current.cell_count;
         if (wx.n_cells != static_cast<int>(n)) { copy_error(report, "physics_weather_shape"); return false; }
         const auto &nb = input.neighbor_indices;
-        const char *syn_off = std::getenv("PK_CLIMATE_SYNOPTIC_OFF");
+        const char *syn_off = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_SYNOPTIC_OFF);
         if (wx.synoptic_enabled && !(syn_off && syn_off[0] == '1')) {
             if (!_physics.synoptic_seeded) {
                 if (wx.psi.size() == n) _physics.synoptic_psi = wx.psi;
@@ -1077,7 +1078,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 _physics.wind_y.data(), current.temperature.data(), syn,
                 _physics.synoptic_psi, _physics.synoptic_psi_prev);
         }
-        const char *cyc_force = std::getenv("PK_CLIMATE_CYCLONE_FORCE");
+        const char *cyc_force = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_CYCLONE_FORCE);
         if (input.cyclone_enabled || (cyc_force && cyc_force[0] == '1')) {
             // stamp/tag 是当日派生场，每次从空工作区重建，使重试不依赖上次计划。
             _cyclone_force_tag.assign(n, 0); _cyclone_visit_tag.assign(n, 0);
@@ -1258,7 +1259,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     {
         EconomyCostProbe probe("climate.input_hash", day, current.cell_count);
         static const bool full_input_hash = [] {
-            const char *value = std::getenv("PK_CLIMATE_INPUT_HASH_FULL");
+            const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_INPUT_HASH_FULL);
             return value && std::strcmp(value, "1") == 0;
         }();
         // 仅消费 Host 已校验并冻结的副本；公开 kernel/独立对拍仍完整重算。
@@ -1416,7 +1417,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         // TTA 不在 climate store / parity 回写里，ACTIVE 下 capture 给的 slot 永远是
         // 生成时的值；ocean_water 以它为 blend 基值，等于每天从头收敛一步。
         if (input.climate_worker_authoritative && _physics.tta_seeded &&
-            std::getenv("PK_TTA_CARRY_OFF") == nullptr &&
+            pk::runtime_switch_value(pk::RuntimeSwitch::PK_TTA_CARRY_OFF) == nullptr &&
             _physics.temp_transport_anomaly.size() == cells) {
             _round_in.temp_transport_anomaly = _physics.temp_transport_anomaly;
         }
@@ -1550,7 +1551,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 _physics.temp_transport_anomaly = tta_end;
                 _physics.tta_seeded = true;
             }
-            if (std::getenv("PK_TTA_DIAG") != nullptr) {
+            if (pk::runtime_switch_value(pk::RuntimeSwitch::PK_TTA_DIAG) != nullptr) {
                 double a = 0, mx = 0, t = 0, ice = 0;
                 for (size_t i = 0; i < cells; ++i) {
                     const double v = std::fabs(tta_end[i]); a += v; if (v > mx) mx = v;
@@ -2117,7 +2118,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 归因方法：同一 seed/尺寸跑 canonical vs legacy，只翻这一个变量，差值就是
     // "顺序"这一项的贡献，与"输入所有权""节拍""ψ"等其它因子分开。
     static const bool legacy_stage_order = [] {
-        const char *value = std::getenv("PK_CLIMATE_STAGE_ORDER_LEGACY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_STAGE_ORDER_LEGACY);
         return value != nullptr && value[0] == '1';
     }();
     if (legacy_stage_order) {
@@ -2373,7 +2374,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             // 推进已有条目并 stamp 当天的强迫 lane。PK_CLIMATE_CYCLONE_FORCE=1 用于
             // 特性默认关闭时的验证；生产配置走 capture 的 native_tropical_cyclone_enabled。
             static const bool cyclone_force_enabled = [] {
-                const char *value = std::getenv("PK_CLIMATE_CYCLONE_FORCE");
+                const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_CYCLONE_FORCE);
                 return value != nullptr && value[0] == '1';
             }();
             const bool cyclone_enabled_for_day =
@@ -2477,7 +2478,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             // PK_CLIMATE_SYNOPTIC_OFF=1 复现 B8 之前的"无 ψ"路径，只用于 E6 归因
             // A/B（ψ 对降水/云量/水汽的贡献），不参与生产配置。
             static const bool synoptic_disabled = [] {
-                const char *value = std::getenv("PK_CLIMATE_SYNOPTIC_OFF");
+                const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_SYNOPTIC_OFF);
                 return value != nullptr && value[0] == '1';
             }();
             bool worker_psi_ready = physics_owned && _physics.synoptic_seeded && wx.synoptic_enabled && !synoptic_disabled;
@@ -2663,7 +2664,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     // 拿不到"出生→推进→stamp→回灌→持久化"这条链路的实证。
                     static const float genesis_gate_override = [] {
                         const char *value =
-                            std::getenv("PK_CLIMATE_CYCLONE_GENESIS_GATE");
+                            pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_CYCLONE_GENESIS_GATE);
                         return value != nullptr ? std::strtof(value, nullptr) : 0.0f;
                     }();
                     if (genesis_gate_override > 0.0f && genesis_gate_override < 1.0f) {
@@ -3049,7 +3050,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 「进来就已经是两倍」和「这一天变成两倍」是完全不同的两条线索，而分叉矩阵只给
     // 得出后者的结果。
     static const long trace_cell = [] {
-        const char *v = std::getenv("PK_CLIMATE_TRACE_CELL");
+        const char *v = pk::runtime_switch_value(pk::RuntimeSwitch::PK_CLIMATE_TRACE_CELL);
         return v != nullptr ? std::strtol(v, nullptr, 10) : -1L;
     }();
     if (trace_cell >= 0 && static_cast<size_t>(trace_cell) < cells) {

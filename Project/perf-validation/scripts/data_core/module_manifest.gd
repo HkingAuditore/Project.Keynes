@@ -10,7 +10,7 @@ class_name DCModuleManifest
 ##   2. **依赖哪些 pool / archetype**（pools / archetypes）→ 启动期 sanity check；
 ##   3. **挂在哪个 feature flag 下**（feature_flag）→ 与 DCFeatureFlags 对接；
 ##   4. **支持哪些 dispatch path**（legacy / dots_gdscript / dots_cpp / dots_cpp_async）；
-##   5. **owner / 维护团队**（owner）→ dot-graph / module-ownership-map.md 生成。
+##   5. **owner / 维护团队**（owner）→ dot-graph / docs/architecture/module-boundaries.md 生成。
 ##
 ## 调度器（DCSystemScheduler，Phase C.2）在 system register 时读取 manifest，
 ## 把 `declare_reads()` / `declare_writes()` 与 `manifest.reads` / `.writes`
@@ -65,7 +65,7 @@ class_name DCModuleManifest
 #   "dots_cpp_async"   — D-async（cpp-async-experiment-report 验证的 task pool）
 @export var dispatch_paths: PackedStringArray = PackedStringArray(["legacy"])
 
-# 业务 owner / 维护团队（dot-graph、module-ownership-map.md 生成用）。
+# 业务 owner / 维护团队（dot-graph、docs/architecture/module-boundaries.md 生成用）。
 @export var owner: String = ""
 
 # 一句话描述（onboarding 文档 / debug overlay 用）。

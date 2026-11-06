@@ -34,13 +34,8 @@ EPOCH_BEGIN 后转归玩家地块的普通立族等待扶持。`family_founding_
 分家提示、分支人数与专用选择文案。
 '''
 p=Path('docs/cpp-dots-runtime/notable-family-runtime.md'); p.write_text(p.read_text(encoding='utf-8').rstrip()+'\n'+section,encoding='utf-8')
-p=Path('docs/cpp-dots-runtime/economy-save-migration-sop.md'); p.write_text(p.read_text(encoding='utf-8').rstrip()+'''\n\n## PKEC v56 家族分支选择（2026-10-17）
-
-writer=56；reader 显式接受 55/56。v55 -> v56 只补空的分家来源与母子关联，不改变原有家族、
-候选身份和普通待决卡组哈希。section 35 的扩展、交互语义与回归入口见
-[家族运行时：分支立族与领土交互边界](notable-family-runtime.md#分支立族与领土交互边界2026-10-17pkec-v56)。
-实际 v55 DLL 写出的含待决卡组存档已用 v56 reader 验证恢复和 state hash 一致。
-''',encoding='utf-8')
+# Architecture process reports were retired. See docs/architecture/migration.md;
+# do not append historical v56 claims to the current architecture documents.
 for name in ['.agents/skills/project-keynes-family-runtime/SKILL.md','.codex/skills/project-keynes-family-runtime/SKILL.md']:
  p=Path(name)
  p.write_text(p.read_text(encoding='utf-8').rstrip()+'''\n\n## Player-reviewed branch splits (2026-10-17)

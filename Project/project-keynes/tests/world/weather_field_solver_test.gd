@@ -39,6 +39,7 @@ func _test_orographic_rain_shadow() -> void:
 	map.set_cell(_cell(3, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.60, 0.70, Vector2.RIGHT))
 	map.set_cell(_cell(4, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.18, 0.60, 0.70, Vector2.RIGHT))
 	map.rebuild_soa_from_cells()
+	_seed_weather_field(map, 0.68, 0.12)
 	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(180.0, 100.0)))
 	ws.tick_one_day(map, _world(), 1, 0.0, 1.5)
 	var mountain := ws.query_at(HexUtils.cube_to_world(1, 0, HEX_SIZE))
@@ -68,6 +69,7 @@ func _test_warm_convection_prefers_storm() -> void:
 	map.set_cell(_cell(0, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.05, 0.86, 0.92, Vector2.RIGHT, 0.24))
 	map.set_cell(_cell(1, 0, TerrainType.TERRAIN.COAST, LandformType.LF.COAST, 0.08, 0.82, 0.88, Vector2.RIGHT, 0.18))
 	map.rebuild_soa_from_cells()
+	_seed_weather_field(map, 0.68, 0.12)
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(140.0, 100.0)))
 	ws.tick_one_day(map, _world(), 1, 0.04, 1.5)
 	var q := ws.query_at(HexUtils.cube_to_world(0, 0, HEX_SIZE))
@@ -85,6 +87,7 @@ func _test_warm_humid_open_ocean_forms_rain_without_warm_current() -> void:
 	for q in range(5):
 		map.set_cell(_cell(q, 0, TerrainType.TERRAIN.OCEAN, LandformType.LF.OCEAN, 0.04, 0.69, 0.96, Vector2.RIGHT, 0.0))
 	map.rebuild_soa_from_cells()
+	_seed_weather_field(map, 0.68, 0.12)
 	var ws := _weather_system(Rect2(Vector2(-80.0, -40.0), Vector2(220.0, 100.0)))
 	ws.tick_one_day(map, _world(), 1, 0.02, 1.5)
 	var q2 := ws.query_at(HexUtils.cube_to_world(2, 0, HEX_SIZE))
@@ -216,7 +219,9 @@ func _test_snowpack_distribute_budget() -> void:
 func _test_summer_sun_reduces_snow_floor() -> void:
 	var map := MapData.new(2, 1)
 	var summer_low := _cell(0, 0, TerrainType.TERRAIN.PLAIN, LandformType.LF.PLAIN, 0.20, 0.26, 0.45, Vector2.RIGHT)
-	var cold_high := _cell(1, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.82, 0.18, 0.55, Vector2.RIGHT)
+	# 0.10 remains below the current summer-adjusted snow line at full sun;
+	# 0.18 is above it and correctly melts to zero under the current model.
+	var cold_high := _cell(1, 0, TerrainType.TERRAIN.MOUNTAIN, LandformType.LF.MOUNTAIN, 0.82, 0.10, 0.55, Vector2.RIGHT)
 	map.set_cell(summer_low)
 	map.set_cell(cold_high)
 	map.rebuild_soa_from_cells()
@@ -314,6 +319,14 @@ func _mark_weather(cell: HexCell, wt: int, intensity: float, precip: float) -> v
 	cell.weather_type = wt
 	cell.weather_intensity = intensity
 	cell.weather_precip = precip
+
+
+func _seed_weather_field(map: MapData, vapor: float, cloud: float) -> void:
+	for cell: HexCell in map.iter_cells():
+		cell.weather_field_initialized = true
+		cell.weather_vapor = vapor
+		cell.weather_cloud = cloud
+	map.rebuild_soa_from_cells()
 
 
 func _precip_carryover(prev_precip: float, cloud: float, carryover_max: float) -> float:

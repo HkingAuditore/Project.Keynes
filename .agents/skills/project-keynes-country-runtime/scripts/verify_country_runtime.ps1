@@ -21,7 +21,7 @@ try {
         'Project/project-keynes/scripts/simulation/systems/country_daily_system.gd',
         'Project/project-keynes/tests/runtime_country_peer_bridge_test.gd',
         'Project/project-keynes/tests/runtime_country_save_roundtrip_test.gd',
-        'docs/cpp-dots-runtime/native-country-runtime.md'
+        'docs/architecture/current-state.md'
     )
     foreach ($path in $required) {
         if (-not (Test-Path $path)) { throw "Missing required country runtime file: $path" }

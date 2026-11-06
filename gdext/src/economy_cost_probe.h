@@ -7,7 +7,7 @@
 #include <map>
 #include <mutex>
 #include <string>
-
+#include "runtime_switch_registry.h"
 namespace pk {
 // Opt-in worker diagnostics; never reads live state from the main thread.
 //
@@ -33,10 +33,10 @@ class EconomyCostProbe {
         FILE *file = nullptr;
         bool full = false;
         Output() {
-            const char *path = std::getenv("PK_ECONOMY_COST_CSV");
+            const char *path = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_COST_CSV);
             if (path && *path) {
                 file = std::fopen(path, "w");
-                const char *full_env = std::getenv("PK_ECONOMY_COST_CSV_FULL");
+                const char *full_env = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_COST_CSV_FULL);
                 full = full_env && std::string(full_env) == "1";
             }
             if (file) std::fprintf(file, "day,phase,work,ms\n");

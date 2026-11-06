@@ -1,8 +1,7 @@
 #include "economy_runtime.h"
-#include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
-#include "modifier_runtime.h"
-#include "native_simulation_host.h"
+#include "modifier_api.h"
+#include "economy_host_port.h"
 #include "parallel_dispatcher.h"
 #include "runtime_economy_pod.h"
 
@@ -47,7 +46,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             const std::string key = std::string("country.tax.") + kind + "." +
                 item + ".rate_bp";
             const int32_t id = _modifier_runtime != nullptr
-                ? _modifier_runtime->stat_id_for_key(key) : -1;
+                ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1;
             if (id < 0) {
                 error = "modifier_tax_stat_missing:" + key;
                 return false;
@@ -74,16 +73,16 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         return out;
     }
     _city_birth_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("economy.city.birth_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "economy.city.birth_factor") : -1;
     _city_consumption_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("economy.city.consumption_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "economy.city.consumption_factor") : -1;
     _city_need_consumption_stat_ids.clear();
     _city_need_consumption_stat_ids.reserve(_need_ids.size());
     for (const std::string &need_id : _need_ids) {
         const std::string key = "economy.city.need." + need_id +
             ".consumption_factor";
         _city_need_consumption_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(key) : -1);
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
     }
     _city_good_consumption_stat_ids.clear();
     _city_good_consumption_stat_ids.reserve(_good_ids.size());
@@ -93,16 +92,16 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         const std::string key = "economy.city.good." + good_id +
             ".consumption_factor";
         _city_good_consumption_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(key) : -1);
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
         _city_good_output_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "economy.city.good." + good_id + ".output_factor") : -1);
     }
     _city_building_output_stat_ids.clear();
     _city_building_output_stat_ids.reserve(_building_type_ids.size());
     for (const std::string &building_id : _building_type_ids) {
         _city_building_output_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "economy.city.building." + building_id + ".output_factor") : -1);
     }
     if (_modifier_runtime != nullptr && (_city_birth_stat_id < 0 ||
@@ -129,7 +128,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     for (const std::string &family_id : _building_upgrade_family_ids) {
         const std::string key = "country.output.family." + family_id + "_factor";
         _country_family_output_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(key) : -1);
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
     }
     _country_good_output_stat_ids.clear();
     _country_good_input_stat_ids.clear();
@@ -140,22 +139,22 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     for (const std::string &good_id : _good_ids) {
         const std::string key = "country.output.good." + good_id + "_factor";
         _country_good_output_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(key) : -1);
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
         _country_good_input_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.input.good." + good_id + "_factor") : -1);
         _country_good_consumption_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.consumption.good." + good_id + "_factor") : -1);
     }
     _country_resource_use_stat_ids.clear();
     _country_resource_generation_stat_ids.clear();
     for (const std::string &resource_id : _resource_ids) {
         _country_resource_use_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.resource." + resource_id + ".use_factor") : -1);
         _country_resource_generation_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "country.resource." + resource_id +
                 ".managed_generation_factor") : -1);
     }
@@ -169,11 +168,11 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _profession_satisfaction_bp_stat_ids.reserve(_profession_ids.size());
     for (const std::string &profession_id : _profession_ids) {
         _profession_tax_tolerance_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "economy.profession." + profession_id +
                 ".tax_tolerance_factor") : -1);
         _profession_satisfaction_bp_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(
+            ? modifier_api::stat_id_for_key(*_modifier_runtime,
                 "economy.profession." + profession_id +
                 ".satisfaction_bp") : -1);
     }
@@ -185,7 +184,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         for (const std::string &geography_id : geography_ids)
             for (const std::string &sector_id : _modifier_sector_ids)
                 target.push_back(_modifier_runtime != nullptr
-                    ? _modifier_runtime->stat_id_for_key("country.output." + kind +
+                    ? modifier_api::stat_id_for_key(*_modifier_runtime, "country.output." + kind +
                         "." + geography_id + "." + sector_id + "_factor") : -1);
     };
     resolve_geography_stats("terrain", _modifier_terrain_ids,
@@ -193,23 +192,23 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     resolve_geography_stats("landform", _modifier_landform_ids,
                             _country_landform_sector_output_stat_ids);
     _country_production_input_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("country.production.input_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "country.production.input_factor") : -1;
     _country_household_consumption_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key(
+        ? modifier_api::stat_id_for_key(*_modifier_runtime,
             "country.household.consumption_factor") : -1;
     _family_scoped_output_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("economy.city.output_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "economy.city.output_factor") : -1;
     _country_resource_use_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("country.resource.use_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "country.resource.use_factor") : -1;
     _country_population_death_stat_id = _modifier_runtime != nullptr
-        ? _modifier_runtime->stat_id_for_key("country.population.death_factor") : -1;
+        ? modifier_api::stat_id_for_key(*_modifier_runtime, "country.population.death_factor") : -1;
     _country_building_output_stat_ids.clear();
     _country_building_output_stat_ids.reserve(_building_type_ids.size());
     for (const std::string &building_id : _building_type_ids) {
         const std::string key =
             "country.output.building." + building_id + "_factor";
         _country_building_output_stat_ids.push_back(_modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(key) : -1);
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
     }
     static const char *CLIMATE_LOSS_STATS[4] = {
         "country.climate.drought_loss_factor",
@@ -219,7 +218,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     };
     for (size_t i = 0; i < _country_climate_loss_stat_ids.size(); ++i)
         _country_climate_loss_stat_ids[i] = _modifier_runtime != nullptr
-            ? _modifier_runtime->stat_id_for_key(CLIMATE_LOSS_STATS[i]) : -1;
+            ? modifier_api::stat_id_for_key(*_modifier_runtime, CLIMATE_LOSS_STATS[i]) : -1;
     static const char *CLIMATE_HAZARDS[4] = {
         "drought", "flood", "cold_stress", "heat_stress",
     };
@@ -232,7 +231,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
                 "." + hazard + "_loss_factor";
             _country_climate_profile_loss_stat_ids.push_back(
                 _modifier_runtime != nullptr
-                    ? _modifier_runtime->stat_id_for_key(key) : -1);
+                    ? modifier_api::stat_id_for_key(*_modifier_runtime, key) : -1);
         }
     }
     if (_modifier_runtime != nullptr && (std::any_of(
@@ -317,7 +316,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     }
     clear_procurement_runtime_state(true);
     _next_colonization_receipt_id = 1;
-    import_country_ai_pending({}, {}, 0);
+    reset_country_ai_pending();
     _next_family_expedition_stable_id = 1;
     _colonization_quote_cache.clear();
     _colonization_quote_index.clear();
@@ -481,7 +480,6 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_output_signals_scratch.reserve(max_building_outputs);
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
-    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_values.clear();
     _startup_demand_stamps.clear();
@@ -572,7 +570,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _demand_basis_need_composites.resize(cache_cells * _needs.size());
     _demand_basis_need_environment.resize(cache_cells * _needs.size());
     _technology_words = static_cast<int32_t>((_technology_ids.size() + 63) / 64);
-    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+    if (_country_runtime == nullptr || !country_reads().economy_available()) {
         reset("country_runtime_required");
         out["ok"] = false;
         out["reason"] = "country_runtime_required";
@@ -582,7 +580,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     // must not keep reading live Country catalog state across the authority
     // boundary, and the four domain masks are static for the whole session.
     std::vector<int32_t> technology_domains;
-    if (!_country_runtime->copy_technology_domains(technology_domains) ||
+    if (!country_reads().copy_technology_domains(technology_domains) ||
         technology_domains.size() != _technology_ids.size()) {
         reset("country_technology_domains_invalid");
         out["ok"] = false;
@@ -717,7 +715,6 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
-    _track_b_investment_cells_pending.clear();
     _investment_active_goods_scratch.clear();
     _startup_demand_touched_keys.clear();
     _startup_remote_lanes.clear();
@@ -907,6 +904,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     const std::vector<int32_t> building_types = packed_i32(market_packet, "building_type_ids");
     const std::vector<int32_t> building_owners = packed_i32(market_packet, "building_owner_signature_ids");
     const std::vector<int64_t> building_counts = packed_i64(market_packet, "building_counts");
+    const std::vector<int64_t> building_owner_fill = packed_i64(market_packet, "building_owner_fill");
+    const bool has_owner_fill = market_packet.has("building_owner_fill");
     std::vector<int32_t> founder_cells = packed_i32(
         market_packet, "founder_family_cells");
     std::vector<int32_t> founder_types = packed_i32(
@@ -915,7 +914,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         market_packet, "founder_family_owner_signature_ids");
     if (building_cells.size() != building_types.size() ||
         building_cells.size() != building_owners.size() ||
-        building_cells.size() != building_counts.size()) {
+        building_cells.size() != building_counts.size() ||
+        (has_owner_fill && building_owner_fill.size() != building_cells.size())) {
         out["ok"] = false;
         out["reason"] = "building_bootstrap_column_size_mismatch";
         return out;
@@ -985,6 +985,37 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     }
     rebuild_building_role_storage();
     refresh_building_modifier_factors();
+
+    // The opening planner owns staffing intent. Apply its explicit allocation
+    // before automatic matching: catalog/type ordering must not let a non-food
+    // lot consume the same profession reserved for opening food production.
+    if (has_owner_fill) {
+        std::vector<int64_t> reserved(population_store().population.size(), 0);
+        for (size_t i = 0; i < building_cells.size(); ++i) {
+            const int64_t fill = building_owner_fill[i];
+            const int32_t slot = find_cohort_slot(building_cells[i], building_owners[i]);
+            const int64_t capacity = saturating_mul(building_counts[i],
+                _building_types[building_types[i]].owner_slots_per_building, _saturation_count);
+            if (fill < 0 || fill > capacity || (fill > 0 &&
+                (slot < 0 || fill > population_store().population[slot] - reserved[slot]))) {
+                out["ok"] = false;
+                out["reason"] = "building_bootstrap_owner_fill_invalid";
+                return out;
+            }
+            if (fill > 0) reserved[slot] += fill;
+        }
+        for (size_t i = 0; i < building_cells.size(); ++i) {
+            if (building_owner_fill[i] == 0) continue;
+            const int32_t group = find_building_group(
+                building_cells[i], building_types[i], building_owners[i]);
+            buildings_store().filled_owner.write_scalar(group,
+                buildings_store().filled_owner[group] + building_owner_fill[i]);
+        }
+        for (size_t slot = 0; slot < reserved.size(); ++slot) {
+            if (reserved[slot] > 0)
+                population_store().owner_employed.write_scalar(slot, reserved[slot], market_mutation_sink());
+        }
+    }
 
     int32_t founder_family_count = 0;
     int32_t founder_person_count = 0;
@@ -1395,7 +1426,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         if (treasury_demolish &&
             (i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
              _country_runtime == nullptr ||
-             !_country_runtime->valid_handle(handles[i]))) {
+             !country_reads().valid_handle(handles[i]))) {
             out["ok"] = false;
             out["reason"] = i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE
                 ? "unsupported_ownership_policy"
@@ -1407,7 +1438,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             (i64_0[i] != 1 ||
              i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
              _country_runtime == nullptr ||
-             !_country_runtime->valid_handle(handles[i]))) {
+             !country_reads().valid_handle(handles[i]))) {
             out["ok"] = false;
             out["reason"] = i64_1[i] != OWNERSHIP_TREASURY_SPONSORED_PRIVATE
                 ? "unsupported_ownership_policy"

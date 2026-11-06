@@ -1,6 +1,6 @@
 # Block A 写路径下移 — SoakAB Baseline 索引
 
-> SOP：[`docs/soak-ab-baseline-protocol.md`](../../docs/soak-ab-baseline-protocol.md)
+> SOP：[`docs/architecture/current-state.md`](../../docs/architecture/current-state.md)
 > Plan：`.codebuddy/plan/dots-block-a-write-path-sinking/`
 
 每完成一次 SoakAB 录制后，在下表加一行；红线不过则在 verdict 列填 `FAIL` 并在 notes 里链 incident。

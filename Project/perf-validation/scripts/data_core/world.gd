@@ -1147,7 +1147,7 @@ func bind_map_data(map_data, demo_thermal_gradient_enabled: bool = false) -> voi
 	#   - C++ 端 `gdext/src/component_bind_table.gen.h` 由 codegen 脚本
 	#     `tools/codegen/gen_cpp_bind_table.py` 从同一份 schema 生成。
 	# 加新字段：在 component_schema.gd 加一行 → 跑 codegen → rebuild gdext。
-	# 详见 docs/dots-component-schema.md。
+	# 详见 docs/architecture/development-guide.md。
 	#
 	# Demo 条目（cell.demo.*）：仅在 demo_thermal_gradient_enabled=true 时
 	# 才 attach；为 false 时跳过（slot 不注册 → C++ pass component_id() 返回
@@ -1599,7 +1599,7 @@ func pool_count() -> int:
 	return _pools.size()
 
 
-# ─── Phase 4.1：序列化 / 反序列化 API（dots-phase4-followup.md §4.1）─────
+# ─── Phase 4.1：序列化 / 反序列化 API（docs/architecture/migration.md）─────
 #
 # 当前实现：**骨架阶段**——按 component_schema.gd CELL_SCHEMA 自动遍历
 # 生产 cell 字段，把每个 SoA 拷贝到 Dictionary（serialize），或反向写回（deserialize）。

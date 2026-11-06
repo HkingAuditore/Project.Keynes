@@ -49,7 +49,7 @@ Primary files:
 - `gdext/src/economy_runtime.h` (`CountryClassOpinionSnapshot`)
 - `gdext/src/trigger_runtime.cpp` (`IDEOLOGY_COMMAND = 15`)
 - `Project/project-keynes/scripts/ideology/`
-- `docs/cpp-dots-runtime/native-ideology-runtime.md`
+- `docs/architecture/current-state.md`
 
 `configure_effects()` reattaches an already-created ideology authority. Production
 startup configures Country/Ideology before Effect; tests may configure either

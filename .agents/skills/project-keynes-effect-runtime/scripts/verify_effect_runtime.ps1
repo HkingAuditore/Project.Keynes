@@ -16,7 +16,7 @@ $required = @(
     "Project\project-keynes\scripts\effect\effect_catalog.gd",
     "Project\project-keynes\scripts\effect\effect_facade.gd",
     "Project\project-keynes\scripts\simulation\systems\effect_runtime_system.gd",
-    "docs\cpp-dots-runtime\native-effect-runtime.md"
+    "docs\cpp-dots-runtime\docs/architecture/current-state.md"
 )
 foreach ($relative in $required) {
     if (-not (Test-Path (Join-Path $repo $relative))) {

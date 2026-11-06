@@ -1,4 +1,4 @@
-extends RefCounted
+extends "res://scripts/simulation/generator_context.gd"
 class_name SusJob
 
 ## SUS Job — abstract base for any periodic simulation work managed by the
@@ -81,6 +81,12 @@ const FAST_FORWARD_ATLAS_INTERVAL_MSEC: int = 100
 ## queries 字段：仅作 hint —— job 可在初始化时把常用 query 链预 build 好放入此
 ## 数组，运行时直接复用而不必每个 slice 重新 chain。首版无强校验。
 var _world = null    # DCWorld；类型省略以避免循环依赖
+# Public spelling used by generator-owned jobs; the base stores a weak link.
+var generator:
+	get:
+		return _generator
+	set(value):
+		_generator = value
 var queries: Array = []
 
 

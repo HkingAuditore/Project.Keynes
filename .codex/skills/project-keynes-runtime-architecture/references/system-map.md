@@ -15,7 +15,7 @@
 | Save | PKCM v1, PKCN v2, PKEC v20, PKGP v1 | environment -> PKCM -> clock -> PKCN -> PKEC -> PKGP |
 
 Primary documentation:
-`docs/cpp-dots-runtime/native-modifier-runtime.md`.
+`docs/architecture/current-state.md`.
 
 Verification:
 `.codex/skills/project-keynes-modifier-runtime/scripts/verify_modifier_runtime.ps1`.

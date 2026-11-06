@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "给理念系统加第五条道路「水利公社」，装备后灌溉产出 +5%、洪灾损失 −6%，满级翻倍；与学识官署联动「渠堰册籍」。不要新建独立 runtime，效果必须走现有 UniqueSource Country Modifier 和 Effect ACK。",
-      "expected_output": "Agent extends IdeologyCatalog/default catalog and UniqueSource modifiers, keeps NativeIdeologyRuntime as sole ideology owner, routes persistent effects through one Effect batch, updates content tests and native-ideology-runtime.md, and does not write Modifier/Economy stores from ideology C++.",
+      "expected_output": "Agent extends IdeologyCatalog/default catalog and UniqueSource modifiers, keeps NativeIdeologyRuntime as sole ideology owner, routes persistent effects through one Effect batch, updates content tests and docs/architecture/current-state.md, and does not write Modifier/Economy stores from ideology C++.",
       "files": []
     },
     {

@@ -27,7 +27,7 @@ extends EditorScript
 #   demo_complex_pass_gdscript → §12.6.6 GDScript 模板
 #
 # 参见：
-#   docs/performance-charter.md §12.6.6 (本 bench 的输出会粘到这里)
+#   docs/architecture/current-state.md (本 bench 的输出会粘到这里)
 #   .codebuddy/plan/cpp-demo-complex-pass/ (本计划)
 # ════════════════════════════════════════════════════════════════════
 

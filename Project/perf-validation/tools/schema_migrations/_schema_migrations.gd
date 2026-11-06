@@ -1,7 +1,7 @@
 extends RefCounted
 class_name DCSchemaMigrations
 
-## Phase 4.2 — Schema Migration 中央 Dispatcher（dots-phase4-followup.md §4.2）
+## Phase 4.2 — Schema Migration 中央 Dispatcher（docs/architecture/migration.md）
 ##
 ## 当前实现：**骨架阶段** —— 数组结构 + dispatcher 已就位，具体 migration 类
 ## 等 SAVE_VERSION 真正升到 v2+ 时再追加（首版 SAVE_VERSION=1，没有迁移负担）。

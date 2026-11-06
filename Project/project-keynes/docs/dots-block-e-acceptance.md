@@ -1,7 +1,7 @@
 # Block E — Definition of Done 验收清单
 
 > Master 手册 §8（Block E - 整体验收）。
-> 本文档是 28 周完整 DOTS 化方案的最终验收 checklist，用于 dots-framework-status.md 标记"完全 DOTS 化达成"。
+> 本文档是 28 周完整 DOTS 化方案的最终验收 checklist，用于 docs/architecture/migration.md 标记"完全 DOTS 化达成"。
 > 2026-05-14（更新）— "完成全面DOTS化与Block B C++" plan 主体完成（M1-M3 + M4 示范 + M5 文档收口）。
 
 ---
@@ -99,7 +99,7 @@ worst field mean_diff 应低于 stochastic_field_threshold。
 2. ✅ **M2 / PR-2.3b**：HexCell 21 个热字段加 property setter/getter（cid 缓存 + 双写）；ripgrep wind_vector.x= / ocean_current.x= 全仓 0 hit；ReadLints 全绿。
 3. ✅ **M3 / PR-2.4**：删除 `flush_soa_to_cells` 函数定义 + climate_daily_system.gd 调用点；rebuild_soa_from_cells 故意保留（bake-time 初始化路径）。
 4. 🟡 **M4 / Phase 3 巨石拆分**：完成 PR-3.1.1 atlas_encoders + PR-3.3.1 climate_math + PR-3.4.1 dots_bootstrap 共 3 个示范拆分，验证模板可行。
-5. ✅ **M5 / 文档收口**：本文档勾选 + dots-framework-status.md 更新（见下）。
+5. ✅ **M5 / 文档收口**：本文档勾选 + docs/architecture/migration.md 更新（见下）。
 
 ### 3.2 后续会话推进（机械搬迁，风险低；plan §8 风险预案）
 1. **Phase 3.1 PR-3.1.2 ~ 3.1.10**：剩余 8-9 个 baker helper 搬迁（terrain_baker / climate_baker / weather_baker / overlay_baker / baker_context）。
@@ -115,9 +115,9 @@ worst field mean_diff 应低于 stochastic_field_threshold。
 
 ---
 
-## 4. dots-framework-status.md 升级方案
+## 4. docs/architecture/migration.md 升级方案
 
-完成上述 follow-ups 后，dots-framework-status.md 头部加：
+完成上述 follow-ups 后，docs/architecture/migration.md 头部加：
 
 ```
 2026-XX-XX — **完全 DOTS 化达成**：
@@ -136,9 +136,9 @@ worst field mean_diff 应低于 stochastic_field_threshold。
 
 ## 5. 引用
 
-- `docs/dots-master-execution-handbook.md` §8（Block E）
+- `docs/architecture/development-guide.md` §8（Block E）
 - `docs/dots-wind-validation.md`（Block B 验收 protocol）
-- `docs/dots-framework-status.md`（最终升级目标 + §7 dots-monolith-split 收官状态）
+- `docs/architecture/migration.md`（最终升级目标 + §7 dots-monolith-split 收官状态）
 - `.codebuddy/plan/dots-monolith-split/{requirements,task-item}.md`（4 巨石拆分实施计划）
 - `tests/dots_completion/dots_completion_gate.gd`（静态收官门禁脚本）
 - `tests/*` 全套 headless 验收

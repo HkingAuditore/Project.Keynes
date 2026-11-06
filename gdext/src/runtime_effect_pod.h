@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime_pod_protocol.h"
+#include "runtime_committed_view_version.h"
 
 #include <array>
 #include <atomic>
@@ -415,6 +416,14 @@ struct RuntimeEffectPodPlan {
     char error[64]{};
 };
 
+struct RuntimeEffectCommittedView {
+    uint64_t generation = 0;
+    int64_t day = -1;
+    bool committed = false;
+    RuntimeEffectPodInstance instance{};
+    bool found = false;
+};
+
 struct RuntimeEffectPodReport {
     uint64_t catalog_hash = 0;
     uint64_t generation = 0;
@@ -485,6 +494,11 @@ public:
 
     bool snapshot(RuntimeEffectPodSnapshot &out, std::string &error) const;
     const RuntimeEffectPodSnapshot &snapshot() const noexcept { return _snapshot; }
+    RuntimeEffectCommittedView copy_committed_view(uint64_t instance_id) const;
+    bool observe_committed_view(const RuntimeEffectCommittedView &view) const {
+        return _view_cursor.observe(view.generation, view.day, view.committed);
+    }
+    static bool committed_view_self_test(std::string &error);
     const RuntimeEffectPodReport &report() const noexcept { return _report; }
 
     void serialize(std::vector<uint8_t> &out) const;
@@ -644,6 +658,7 @@ private:
     RuntimeEffectPodReport _report{};
     bool _configured = false;
     bool _plan_ready = false;
+    mutable RuntimeCommittedViewVersion _view_cursor;
 };
 
 static_assert(std::is_trivially_copyable_v<RuntimeEffectPodCondition>);

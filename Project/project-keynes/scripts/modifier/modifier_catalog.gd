@@ -845,7 +845,7 @@ static func _describe_stat_key(stat_key: String) -> Dictionary:
 				"satisfaction_bp":
 					return {"label": profession_name,
 						"unit": UNIT_POINTS, "profession_id": parts[2],
-						"profession_metric": "tax_tolerance"}
+						"profession_metric": "satisfaction"}
 			return {}
 		# country.resource.<stable_id>.<use_factor|managed_generation_factor>
 		if parts[0] == "country" and parts[1] == "resource":
@@ -971,7 +971,7 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 	if not profession_id.is_empty():
 		label = _profession_display_name(profession_id)
 		if is_satisfaction and plain_language:
-			label += "满意"
+			label += "满意度"
 		elif is_satisfaction:
 			pass
 		elif plain_language and is_tolerance:
@@ -985,8 +985,8 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			return ""
 		var rate_points := delta * 0.01
 		if plain_language:
-			var plain_label := label.replace(" 所得税", "所得税") \
-				.replace(" 消费", "消费").replace(" 营业税率", "营业税率") \
+			var plain_label := label.replace(" 所得税", "所得税率") \
+				.replace(" 消费", "消费税率").replace(" 营业税率", "营业税率") \
 				.replace(" 进口税率", "进口税率").replace(" 出口税率", "出口税率")
 			return "%s%s %s 个百分点" % [plain_label,
 				"提高" if rate_points > 0.0 else "降低",
@@ -997,10 +997,10 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 			return ""
 		var satisfaction_points := delta * 0.01
 		if plain_language:
-			return "%s%s %s " % [label,
+			return "%s%s %s 点" % [label,
 				"提高" if delta > 0.0 else "降低",
 				_format_decimal(absf(satisfaction_points))]
-		return "%s %+.2f " % [label, satisfaction_points]
+		return "%s %+.2f 点" % [label, satisfaction_points]
 	var percent := int(round(delta * 100.0))
 	if percent == 0:
 		return ""
@@ -1014,7 +1014,7 @@ static func present_stat_delta(stat_key: String, operation: int, value: float,
 		return "%s对税负的承受能力%s %d%%" % [label,
 			"提高" if percent > 0 else "降低", absi(percent)]
 	if plain_language and is_satisfaction:
-		return "%s%s %d " % [label,
+		return "%s%s %d 点" % [label,
 			"提高" if delta > 0.0 else "降低", absi(percent)]
 	return "%s %+d%%" % [label, percent]
 
@@ -1147,16 +1147,16 @@ func present_definition_for_ideology(definition_key: StringName,
 			if int(profession_terms[group_key]) >= _known_profession_count():
 				var split := sample_label.find("对税")
 				if split >= 0:
-					lines.append("全国各职位%s" % sample_label.substr(split))
+					lines.append("全国各职业%s" % sample_label.substr(split))
 				else:
 					var satisfaction := sample_label.rfind("满意")
-					lines.append("全国各职位%s" % sample_label.substr(
+					lines.append("全国各职业%s" % sample_label.substr(
 						satisfaction if satisfaction >= 0 else 0))
 			else:
 				var split := sample_label.find("对税")
 				if split < 0:
 					split = sample_label.rfind("满意")
-				lines.append("%s%s" % ["銆".join(names),
+				lines.append("%s%s" % ["、".join(names),
 					sample_label.substr(split if split >= 0 else 0)])
 		break
 	return lines

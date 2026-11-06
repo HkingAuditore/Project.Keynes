@@ -49,7 +49,7 @@ extends EditorScript
 #   * bit-equal PASS/FAIL 总判定
 #
 # 配套阅读：
-#   docs/dots-experiment-report.md §2.4 / §4 选项丙
+#   docs/architecture/migration.md / §4 选项丙
 #   tmp/bench_archetype_filter.gd（A1，不建议直接跑两份；本 bench 是 B0 阶段）
 # ════════════════════════════════════════════════════════════════════
 

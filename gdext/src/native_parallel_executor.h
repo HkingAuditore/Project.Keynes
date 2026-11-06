@@ -49,6 +49,9 @@ public:
 
     bool has_workers() const;
     void set_interactive(bool interactive);
+    bool interactive() const noexcept {
+        return _interactive.load(std::memory_order_acquire);
+    }
     Report report() const;
     void run_group(uint32_t task_count, TaskFn fn, void *userdata);
 

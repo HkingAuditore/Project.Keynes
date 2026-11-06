@@ -45,7 +45,7 @@ $required = @(
     'Project\project-keynes\tests\ideology\ideology_runtime_test.gd',
     'Project\project-keynes\tests\ideology\ideology_opinion_synergy_test.gd',
     'Project\project-keynes\tests\ideology\ideology_content_test.gd',
-    'docs\cpp-dots-runtime\native-ideology-runtime.md'
+    'docs\cpp-dots-runtime\docs/architecture/current-state.md'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative))) {
@@ -65,7 +65,7 @@ try {
             'gdext/src/ideology_runtime.cpp' `
             'gdext/src/ideology_runtime.h' `
             'Project/project-keynes/scripts/ideology/ideology_catalog.gd' `
-            'docs/cpp-dots-runtime/native-ideology-runtime.md' | Out-Null
+            'docs/architecture/current-state.md' | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Ideology contract symbols not found' }
     }
 } finally {

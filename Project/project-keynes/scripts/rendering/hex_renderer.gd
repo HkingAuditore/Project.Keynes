@@ -3569,7 +3569,11 @@ func get_world_bounds() -> Rect2:
 	return Rect2()
 
 ## 国界线层。领土变更（country_committed）后由 WorldRuntimeHost 调 rebuild()。
-func country_border_layer() -> CountryBorderLayer:
+# Keep this accessor's boundary a native Node type. In Godot 4.6.3, resolving
+# CountryBorderLayer as this return type from WorldRuntimeHost/PlayerGame keeps
+# the callers' script dependency graph alive at shutdown (even without a world).
+# The layer itself and its owned field remain strongly typed.
+func country_border_layer() -> Node2D:
 	return _border_layer
 
 ## 视野迷雾层。迷雾值本身走 enum_lut.a，本层只负责画云。

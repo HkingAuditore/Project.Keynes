@@ -4,7 +4,7 @@
 #include "economy_runtime_binary_codec.h"
 #include <cstddef>
 #include <cstring>
-
+#include "runtime_switch_registry.h"
 namespace pk {
 RuntimeEconomyMarketStore::RuntimeEconomyMarketStore()
     : market_count(changes, {{2, 1001}, "market.market_count", EconomyFieldEncoding::I32, 4}, 0),
@@ -166,7 +166,7 @@ bool RuntimeEconomyResourceStore::load_wire(const uint8_t *data, size_t size,
 
 uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
     static const bool scalar_stock = [] {
-        const char *value = std::getenv("PK_ECONOMY_RESOURCE_WIRE_HASH_SCALAR");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_RESOURCE_WIRE_HASH_SCALAR);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool little_endian = [] {
@@ -174,11 +174,11 @@ uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
         return *reinterpret_cast<const uint8_t *>(&value) == 1;
     }();
     static const bool disabled = [] {
-        const char *value = std::getenv("PK_ECONOMY_RESOURCE_WIRE_CACHE_DISABLE");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_RESOURCE_WIRE_CACHE_DISABLE);
         return value && std::strcmp(value, "1") == 0;
     }();
     static const bool verify = [] {
-        const char *value = std::getenv("PK_ECONOMY_HASH_VERIFY");
+        const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_ECONOMY_HASH_VERIFY);
         return value && std::strcmp(value, "1") == 0;
     }();
     const uint64_t stock_revision = stock.mutation_revision();
