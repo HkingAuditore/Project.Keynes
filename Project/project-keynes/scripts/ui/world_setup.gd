@@ -547,6 +547,7 @@ func _on_reset_pressed() -> void:
 
 
 func _on_start_pressed() -> void:
+	_sync_render_quality_setting()
 	var config := _build_config()
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
@@ -558,6 +559,17 @@ func _on_debug_pressed() -> void:
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
 	get_tree().change_scene_to_file(DEBUG_SCENE_PATH)
+
+
+func _sync_render_quality_setting() -> void:
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null:
+		return
+	var mode := int(_control_value(_render_controls["render_quality_mode"], "option"))
+	var result: Dictionary = settings.apply_render_quality_mode(mode)
+	if not bool(result.get("ok", false)):
+		push_warning("[world-setup] render quality was not persisted: %s"
+			% String(result.get("message", result.get("code", ""))))
 
 
 func _build_config() -> Dictionary:
