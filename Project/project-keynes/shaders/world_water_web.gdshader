@@ -276,7 +276,8 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 	float rough_n = web_ripple(v_world, 300.0 * rs, vec2(world_time * 0.0040, -world_time * 0.0027) / rs, 211.0, 0.31).z * 1.0 + 0.5;
 	float rough_c = mix(0.75, 0.25, clamp(water_rough_coverage, 0.0, 1.0));
 	float rough = smoothstep(rough_c - 0.20, rough_c + 0.20, rough_n);
-	float cov_k = max(water_mark_coverage, 0.0);
+	// [water-mark-off 2026-11-06] 浪头笔触停用，与桌面 water.gdshaderinc 同步。
+	// float cov_k = max(water_mark_coverage, 0.0);
 	float mlen = max(water_mark_length, 0.05);
 	// 格尺寸 / 流速倍率：默认值下均为 1，与桌面一致。
 	float sc = 1.27 / max(water_flow_wave_density * 0.7254, 0.05);
@@ -308,20 +309,22 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 		slope += r2.xy * rip_k * water_ripple_detail_mix;
 		height += r2.z * 0.45 * water_ripple_strength;
 	}
-	vec4 la = web_mark_layer(v_world, 66.0 * sc, 0.21, dirv, false,
-			clamp(mix(0.20, 0.66, zs) * mix(0.25, 1.25, rough) * cov_k, 0.0, 0.95),
-			world_time, 0.07 * rate_s, 0.50, 0.105, 0.42 * mlen, fp, 3.0);
-	slope += la.xy * (0.9 * water_mark_strength);
-	height += la.z;
+	// [water-mark-off] 涌浪脊停用（原权重 0.9，比桌面旧版 0.55 还强）。
+	// vec4 la = web_mark_layer(v_world, 66.0 * sc, 0.21, dirv, false,
+	// 		clamp(mix(0.20, 0.66, zs) * mix(0.25, 1.25, rough) * cov_k, 0.0, 0.95),
+	// 		world_time, 0.07 * rate_s, 0.50, 0.105, 0.42 * mlen, fp, 3.0);
+	// slope += la.xy * (0.9 * water_mark_strength);
+	// height += la.z;
 	float wave = water_effect_enabled ? ice_free : 0.0;
 	float streak = 0.0;
 	if (visual_quality >= 1) {
-		vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
-		vec4 lb = web_mark_layer(v_world, 34.0 * sc, -0.27, dirb, false,
-				clamp(mix(0.58, 0.18, zs) * mix(0.30, 1.20, rough) * cov_k, 0.0, 0.95),
-				world_time, 0.12 * rate_s, 0.65, 0.11, 0.36 * mlen, fp, 11.0);
-		slope += lb.xy * (0.68 * water_mark_strength);
-		height += lb.z * 0.80;
+		// [water-mark-off] 碎浪脊停用（原权重 0.68）。
+		// vec2 dirb = vec2(dirv.x * 0.64 - dirv.y * 0.77, dirv.x * 0.77 + dirv.y * 0.64);
+		// vec4 lb = web_mark_layer(v_world, 34.0 * sc, -0.27, dirb, false,
+		// 		clamp(mix(0.58, 0.18, zs) * mix(0.30, 1.20, rough) * cov_k, 0.0, 0.95),
+		// 		world_time, 0.12 * rate_s, 0.65, 0.11, 0.36 * mlen, fp, 11.0);
+		// slope += lb.xy * (0.68 * water_mark_strength);
+		// height += lb.z * 0.80;
 		if (visual_quality >= 2 && cur > 0.004 && water_flow_streak_strength > 0.001) {
 			vec4 ls = web_mark_layer(v_world, 52.0 * sc, 0.17, flow_dir, true, mix(0.22, 0.65, cur),
 					world_time, 0.09 * rate_s, 1.3, 0.075, 0.62 * mlen, fp, 23.0);
