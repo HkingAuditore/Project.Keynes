@@ -222,30 +222,46 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
 @export_group("Weather (Milestone 3)")
 @export_range(0.0, 1.0, 0.01) var weather_strength: float = 1.0
+## 云层不透明度总控：只影响天上的云，不影响雨幕/风/云影。
+## 1.0 = 原来的实心白云（alpha 上限 0.86）；0.72 让地形能透出来。
+@export_range(0.0, 1.0, 0.01) var weather_cloud_opacity: float = 0.72:
+	set(value):
+		weather_cloud_opacity = clampf(value, 0.0, 1.0)
+		if _weather_layer != null and is_instance_valid(_weather_layer):
+			_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
 
 @export_group("Cloud Shadow")
 ## PC 高画质直接光照路径的最大直射光压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.64:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.85:
 	set(value):
 		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## PC 中画质合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.48:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.62:
 	set(value):
 		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
-@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.36:
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.48:
 	set(value):
 		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## 云量覆盖响应增益。提高后，中低云量天气也会形成连续可见的云影。
-@export_range(0.25, 3.0, 0.05) var cloud_shadow_coverage_gain: float = 1.35:
+@export_range(0.25, 3.0, 0.05) var cloud_shadow_coverage_gain: float = 1.25:
 	set(value):
 		cloud_shadow_coverage_gain = clampf(value, 0.25, 3.0)
 		_push_cloud_shadow_tuning()
+## 厚云时环境光/天光的额外衰减权重（0=只压直射、1=间接光同幅压暗）。
+## [cloud-gi 2026-11-07] 0.35 太狠：云影只是挡住太阳直射，天空散射光基本照旧，
+## 压三成环境光会让阴影里的地面丢失色相、发灰发脏。0.12 只留一点层次感。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_ambient_weight: float = 0.20:
+	set(value):
+		cloud_shadow_ambient_weight = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_material_inputs()
 ## 云影内部噪声的平流速度。0.055 约为几十秒内移动三分之一云团尺度。
-@export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.075:
+## [cloud-shape 2026-11-07] world_scale 翻倍后噪声坐标走得更快，这里同比 ×2
+## （0.075→0.15）才能维持原来的世界空间移动速度。
+@export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.15:
 	set(value):
 		cloud_shadow_motion_speed = clampf(value, 0.0, 0.20)
 		_push_cloud_shadow_tuning()
@@ -255,12 +271,12 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 		cloud_shadow_shape_contrast = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## 主噪声坐标的域扭曲强度。提高后云团边界更破碎、更接近自然云块。
-@export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.28:
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.36:
 	set(value):
 		cloud_shadow_noise_warp = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## LUT 云量 Mask 的起始偏置。提高后只有更高云量区域会出现云影。
-@export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.0:
+@export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.10:
 	set(value):
 		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
 		_push_cloud_shadow_tuning()
@@ -270,9 +286,18 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
 		_push_cloud_shadow_tuning()
 ## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
-@export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0045:
+## [cloud-shape 2026-11-07] 0.0045 → 0.0160：一个噪声单元从约 222 世界单位
+## 压到 62（约 1.6 hex），云团直径从 7~12 hex 降到 3~5 hex，整屏能看到
+## 十来朵彼此分开的云影而不是 3~5 团大色块。
+@export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0130:
 	set(value):
 		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
+		_push_cloud_shadow_tuning()
+## 云缘侵蚀强度：中频噪声把云团边缘啃成絮状、并在云内部掏洞。
+## 0 = 退回单层 value noise 的圆疙瘩；1 = 极碎（云量会明显变少）。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_erosion: float = 0.40:
+	set(value):
+		cloud_shadow_erosion = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## 开启后显示黑白云影 Mask：黑=无云影，白=云影区域。
 @export var cloud_shadow_debug_view: bool = false:
@@ -2060,7 +2085,8 @@ func _configure_cloud_shadow_field() -> void:
 		cloud_shadow_noise_warp,
 		cloud_shadow_mask_bias,
 		cloud_shadow_cell_scale,
-		cloud_shadow_world_scale)
+		cloud_shadow_world_scale,
+		cloud_shadow_erosion)
 	_cloud_shadow_field.configure(
 		_world.world_bounds,
 		_world,
@@ -2087,7 +2113,8 @@ func _push_cloud_shadow_tuning() -> void:
 		cloud_shadow_noise_warp,
 		cloud_shadow_mask_bias,
 		cloud_shadow_cell_scale,
-		cloud_shadow_world_scale)
+		cloud_shadow_world_scale,
+		cloud_shadow_erosion)
 	_push_cloud_shadow_material_inputs()
 
 
@@ -2107,6 +2134,7 @@ func _push_cloud_shadow_material_inputs() -> void:
 				material.set_shader_parameter("cloud_shadow_tex", field_texture)
 			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
 			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
+			material.set_shader_parameter("cloud_shadow_ambient_weight", cloud_shadow_ambient_weight)
 			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
 			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
 	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):
@@ -5684,6 +5712,7 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)
+		_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
 		# [parallax-rain] 俯视雨幕默认参数（可被外部 set_camera_pitch 覆盖）
 		_weather_layer.set_camera_pitch(_camera_pitch)
 		_weather_layer.set_wind(_wind_dir, _wind_strength)

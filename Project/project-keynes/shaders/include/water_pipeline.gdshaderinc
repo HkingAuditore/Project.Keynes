@@ -1226,6 +1226,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 			: compute_global_parallel_sun_dir();
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
 	lc.direct_shadow *= cloud_shadow_direct_visibility(uv, lc.local_day);
+	lc.cloud_ambient = cloud_shadow_ambient_visibility(uv, lc.local_day);
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
 	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
 	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。

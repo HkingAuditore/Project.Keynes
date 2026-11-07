@@ -18,6 +18,11 @@ uniform float cloud_shadow_noise_warp = 0.28;
 uniform float cloud_shadow_mask_bias = 0.0;
 uniform float cloud_shadow_cell_scale = 0.75;
 uniform float cloud_shadow_world_scale = 0.0045;
+uniform float cloud_shadow_erosion = 0.55;
+// [cloud-tex 2026-11-07] 离线烘焙的 Perlin-Worley 无缝噪声（tools/prebake_cloud_shadow_noise.gd）：
+//   R = 主体形状（低频 Perlin-Worley，蓬松连通）G = 中频 Worley 反相（边缘侵蚀）
+//   B = 高频 Worley 反相（细节）        A = 低频 Perlin（域扭曲位移场）
+uniform sampler2D cloud_noise_tex : filter_linear_mipmap, repeat_enable;
 uniform vec2 global_wind = vec2(0.35, 0.12);
 
 #ifdef CLOUD_SHADOW_LOCAL_WIND
@@ -143,45 +148,45 @@ void fragment() {
 		// LUT 云量只定义云影可以出现的范围；形状和运动来自独立噪声场。
 		float masked_coverage = clamp(coverage * cloud_shadow_coverage_gain, 0.0, 1.0);
 		float mask = smoothstep(cloud_shadow_mask_bias,
-			min(cloud_shadow_mask_bias + 0.66, 1.0), masked_coverage);
+			min(cloud_shadow_mask_bias + 0.80, 1.0), masked_coverage);
 		// 反向追踪采样点：纹理中的云团沿风向前进，而不是反向漂移。
-		vec2 noise_offset = -wind * world_time * cloud_shadow_motion_speed;
+		// [cloud-tex 2026-11-07] 不再逐像素算 value noise —— 它在格点取极值、插值
+		// 丢失方向性，阈值化后必然露出格子/枕头伪影（之前那条"接缝"和方块感都是
+		// 它）。改为采样离线烘焙的 Perlin-Worley 纹理，四个通道一次拿到完整多尺度
+		// 结构；纹理本身无缝，且一个周期正好等于世界 wrap 周期，所以 UV 线性映射
+		// 天然连续，连整数周期 floor 对齐都不需要了。
+		float world_wrap = max(wrap_period_x, 1.0);
 		vec2 world_pos = world_origin + mask_uv * world_size;
-		vec2 noise_uv = world_pos * cloud_shadow_world_scale + noise_offset;
-		float noise_period_x = max(wrap_period_x * cloud_shadow_world_scale, 4.0);
-		// 第二级噪声只负责扭曲主噪声坐标，避免出现两层互相独立的贴图感。
-		vec2 warp_uv = noise_uv * 0.42 + vec2(7.1, 3.2);
-		float warp_period_x = max(noise_period_x * 0.42, 4.0);
-		float warp_x = cloud_noise(warp_uv, warp_period_x);
-		float warp_y = cloud_noise(warp_uv + vec2(-4.3, 8.7), warp_period_x);
-		vec2 warped_noise_uv = noise_uv
-			+ (vec2(warp_x, warp_y) - vec2(0.5)) * cloud_shadow_noise_warp * 2.4;
-		float low_frequency = cloud_noise(warped_noise_uv, noise_period_x);
-		float cloud_body = smoothstep(0.34, 0.68, low_frequency);
-		float cloud_cell = cloud_cellular(warped_noise_uv
-			* vec2(cloud_shadow_cell_scale * 0.34, cloud_shadow_cell_scale * 0.26));
-		float cell_breakup = smoothstep(0.22, 0.78, cloud_cell);
-#ifdef CLOUD_SHADOW_DETAIL_HIGH
-		float mid_frequency = cloud_noise(warped_noise_uv * vec2(1.9, 1.7) + vec2(3.0, 9.0), noise_period_x * 1.9);
-		float detail_cell = cloud_cellular(warped_noise_uv
-			* vec2(cloud_shadow_cell_scale * 0.78, cloud_shadow_cell_scale * 0.60)
-			+ vec2(4.0, 7.0));
-		float detail_breakup = smoothstep(0.26, 0.78, detail_cell);
-		float shape = cloud_body * mix(0.78, 1.0, cell_breakup)
-			* mix(0.76, 1.0, mix(low_frequency, mid_frequency, 0.28))
-			* mix(0.88, 1.0, detail_breakup * 0.35);
-#elif defined(CLOUD_SHADOW_DETAIL_MID)
-		float mid_frequency = cloud_noise(warped_noise_uv * vec2(1.55, 1.4) + vec2(3.0, 9.0), noise_period_x * 1.55);
-		float shape = cloud_body * mix(0.80, 1.0, cell_breakup)
-			* mix(0.78, 1.0, mix(low_frequency, mid_frequency, 0.18));
-#else
-		float shape = cloud_body * mix(0.82, 1.0, cell_breakup)
-			* mix(0.80, 1.0, low_frequency);
-#endif
-		float cloud_edge = smoothstep(0.34, 0.64, shape);
-		float cloud_core = smoothstep(0.56, 0.82, shape);
-		float cloud_floor = mix(0.42, 0.06, cloud_shadow_shape_contrast);
-		cloud_shadow = mask * (mix(cloud_floor, 0.82, cloud_edge) + cloud_core * 0.24);
+		vec2 base_uv = vec2(world_pos.x / world_wrap, world_pos.y / world_wrap);
+		float drift_scale = 1.0 / max(world_wrap * cloud_shadow_world_scale, 1.0);
+		vec2 drift = -wind * world_time * cloud_shadow_motion_speed * drift_scale;
+		// 域扭曲用 A 通道（低频 Perlin）做两次错位采样，得到两个独立位移分量。
+		float warp_x = texture(cloud_noise_tex, base_uv + vec2(0.317, 0.113)).a;
+		float warp_y = texture(cloud_noise_tex, base_uv + vec2(0.731, 0.427)).a;
+		vec2 uv_shaped = base_uv + drift
+			+ (vec2(warp_x, warp_y) - vec2(0.5)) * 2.0
+				* cloud_shadow_noise_warp * 0.05;
+		// [cloud-soft 2026-11-07] 采 mip 0.8 而不是 mip 0：云影的真实观感是
+		// "从中心缓慢淡出"，mip0 的高频细节会让边界出现可辨认的硬轮廓（用户反馈
+		// "边界太硬"）。抬高 mip 等于一次免费的低通滤波，过渡带宽度翻几倍。
+		vec4 n = textureLod(cloud_noise_tex, uv_shaped, 0.8);
+		float shape = n.r
+			- (n.g - 0.5) * cloud_shadow_erosion
+			- (n.b - 0.5) * cloud_shadow_erosion * 0.30;
+		// [cloud-shape 2026-11-07] 原来是 edge/core 两级 smoothstep 相加，云内部会
+		// 叠出两三档"台阶"，放大后就是一块块灰斑。改成单条连续密度曲线：shape
+		// 从 0.30 升到 0.78 的过程本身就是云的厚薄，边缘自然羽化、中心连续加深。
+		// 阈值区间按烘焙纹理的实际分布标定：Perlin-Worley 的均值约 0.55，
+		// 取 0.52~0.88 才能让"云体中部"落在曲线上升段，否则整屏都是云。
+		// 区间从 0.44~0.72 拉到 0.28~0.82：过渡带完全展开，云影从中心到边缘
+		// 是一条长坡而不是一道台阶。同时不再乘 1.55（原来是把曲线抬陡，正好
+		// 与"要软"相反）。
+		float cloud_floor = mix(0.24, 0.02, cloud_shadow_shape_contrast);
+		// 乘 1.7 让云心达到满值、形成一段"平台"，但**不缩窄区间** —— 边缘仍走
+		// 0.28~0.82 的长坡。缩窄区间才是"硬边"，抬幅度只是"更浓"。
+		float density = min(smoothstep(0.28, 0.82, shape) * 1.7, 1.0);
+		cloud_shadow = mask * (cloud_floor
+			+ (1.0 - cloud_floor) * density);
 #ifdef CLOUD_SHADOW_DETAIL_LOW
 		cloud_shadow *= 0.92;
 #endif
