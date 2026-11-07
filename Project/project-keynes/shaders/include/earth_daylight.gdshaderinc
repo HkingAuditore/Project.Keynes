@@ -225,4 +225,6 @@ vec3 eval_earth_sky_sh(EarthDaylight ed, vec3 N) {
 	return earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, N);
 }
 
+#include "res://shaders/include/world_sky_lighting.gdshaderinc"
+
 #endif // EARTH_DAYLIGHT_INC

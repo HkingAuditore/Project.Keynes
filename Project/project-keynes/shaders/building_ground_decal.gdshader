@@ -60,6 +60,7 @@ uniform float gi_ao_smoothing = 0.75;
 uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
@@ -117,7 +118,7 @@ void vertex() {
 	v_ground_n = normalize(vec3(ground_slope, 1.0));
 	vec3 sun_term = ed.sun_col * max(dot(v_ground_n, ed.sun_dir), 0.0)
 		* ed.local_day * GROUND_SUN_GAIN;
-	vec3 amb_term = earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, v_ground_n)
+	vec3 amb_term = sky_ambient_srgb(ed.local_day, v_ground_n, ed.amb_col, ed.sun_col, ed.sun_dir)
 		* GROUND_AMBIENT_GAIN + EARTH_MOONLIGHT * ed.moon_strength * 0.20;
 	v_amb = amb_term * tod_exposure;
 	v_sun_l = sun_term * tod_exposure;
@@ -463,7 +464,8 @@ void fragment() {
 			sky = terrain_horizon_apply_normal(hs.sky_visibility, v_ground_n, hs.bent_normal);
 		}
 	}
-	c *= v_amb * sky + v_sun_l * direct;
+	float cloud_visibility = cloud_shadow_direct_visibility(map_uv, 1.0);
+	c *= v_amb * sky + v_sun_l * direct * cloud_visibility;
 	if (live) c += emit * tod_exposure;
 	if (!live) {
 		float gray = dot(c, vec3(0.299, 0.587, 0.114));

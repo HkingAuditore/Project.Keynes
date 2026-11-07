@@ -331,7 +331,7 @@ vec3 shade_water_web(vec3 albedo_srgb, vec2 uv, float ice) {
 		+ srgb_to_linear(ed.moon_col) * ed.moon_strength;
 	vec3 albedo = srgb_to_linear(albedo_srgb);
 	vec3 diffuse = (vec3(1.0) - F) * albedo * INV_PI;
-	vec3 ambient = srgb_to_linear(earth_sky_sh(ed.amb_col, ed.sun_col, L, ed.local_day, N));
+	vec3 ambient = sky_ambient_linear(ed.local_day, N, ed.amb_col, ed.sun_col, L);
 	vec3 reflected_sky = mix(vec3(0.20, 0.37, 0.52), ed.amb_col, clamp(N.z, 0.0, 1.0));
 	vec3 lit = (diffuse + spec) * nl * sun + albedo * ambient
 		+ srgb_to_linear(reflected_sky) * F * (1.0 - ice) * 1.8;

@@ -4,14 +4,13 @@
 # 节点结构：
 #   WeatherLayer (Node2D, z_index=4，挂在 HexRenderer 之下；高于植被/点缀，低于数据 overlay）
 #   ├── _overlay_quad   MeshInstance2D + weather_overlay.gdshader  (z_index=0 in layer)
-#   ├── _shadow_root    Node2D（云阴影 Sprite2D 池，每 front 一个）  (z_index=-2)
 #   ├── _curtain_root   Node2D（cell 级 MultiMesh 雨幕/雪幕）         (z_index=-1)
 #   └── _particles_root Node2D（GPUParticles2D 池，每 front 一个）   (z_index=2)
 #
 # 数据流：
 #   HexRenderer.set_weather_fronts(fronts) → WeatherLayer.set_weather_fronts(fronts)
 #       ├─ 写 overlay shader 的 weather_front_centers / types / count uniform
-#       ├─ 同步 cloud shadow Sprite2D 池（B5 实装）
+#       ├─ 渲染云体与降水特效（共享云影由 CloudShadowField 负责）
 #       └─ 同步 GPUParticles2D 池（B6 实装）
 #
 # 与地形 shader 的分工：
@@ -72,10 +71,6 @@ const _WEATHER_FRONT_MAX_PREDICT_DAYS: float = 2.5
 # "抑制单次 interval 抖动"之间取的折中。
 const _WEATHER_FRONT_BLEND_IIR_ALPHA: float = 0.35
 
-# 云阴影 sprite 的"原始半径"（生成的 ImageTexture 的半径，单位像素）。
-# 实际显示半径 = SHADOW_BASE_RADIUS_PX * sprite.scale，scale 由 front.radius 推算。
-const SHADOW_BASE_RADIUS_PX := 128
-
 # 任务 5：降水粒子密度制。每单位像素²粒子数，与覆盖面积相乘得到 amount。
 # 最小/最大数量 防止小 front 看不见雨 / 巨大 front 暗制 GPU。
 const _RAIN_DENSITY_PER_PX2: float = 0.00040  # 约 1 粒/50000 px²
@@ -113,10 +108,6 @@ const WEATHER_DEBUG_VIEW_NAMES := [
 
 var _overlay_quad: MeshInstance2D
 var _overlay_mat: ShaderMaterial
-var _shadow_root: Node2D
-var _shadow_pool: Array[Sprite2D] = []   # 16 个 Sprite2D，按 front index 复用
-var _shadow_texture: ImageTexture        # 共享的 radial-fade alpha 圆盘
-var _shadow_material: CanvasItemMaterial # 共享的 BLEND_MUL 材质
 var _curtain_root: Node2D
 var _curtain_mesh: ArrayMesh
 # [parallax-rain] 每层独立材质，支持 per-layer layer_depth uniform
@@ -212,12 +203,6 @@ func _ready() -> void:
 	_overlay_quad.z_index = 0
 	add_child(_overlay_quad)
 
-	_shadow_root = Node2D.new()
-	_shadow_root.name = "CloudShadows"
-	_shadow_root.z_as_relative = true
-	_shadow_root.z_index = -2
-	add_child(_shadow_root)
-
 	_curtain_root = Node2D.new()
 	_curtain_root.name = "CellWeatherCurtains"
 	_curtain_root.z_as_relative = true
@@ -233,7 +218,6 @@ func _ready() -> void:
 
 	_load_overlay_shader()
 	_load_curtain_shader()
-	_init_shadow_pool()
 	_init_particles_pool()
 	set_process(true)
 
@@ -329,7 +313,7 @@ func _process(delta: float) -> void:
 					raw_t, str(_front_velocity(v0).round()),
 				])
 	else:
-		# 没有天气时跳过 fronts/particles/shadow 池同步，仅靠推进 world_time
+		# 没有天气时跳过 fronts/particles 同步，仅靠推进 world_time
 		# 让 shader 自己刷云的噪声飘动。
 		_refresh_visibility()
 
@@ -679,7 +663,7 @@ func apply_tod(profile: TODProfile) -> void:
 	# base_color * tod_sun_color * (1 - 0.5 * night_factor)
 	# 具体到每个 slot 仍用 intensity 控制 alpha，这里只保存“当前色因子”
 	# 供 _sync_particles_pool 读取。
-	# 云阴影：modulate.a *= (1 - 0.8 * night_factor)——注意需要在 _sync_shadow_pool 里乘
+	# 云影昼夜淡出由共享 CloudShadowField 接收 _tod_night_factor。
 	# 下，这里不再重制。
 
 # 任务 5：开关——是否提升粒子密度（默认开，关闭后回到上一轮的 amount 下限）
@@ -850,47 +834,6 @@ func _push_weather_profile_uniforms_to_overlay() -> void:
 
 # ─── 池子同步（B5 / B6 实装） ────────────────────────────────────────────
 
-func _sync_shadow_pool(fronts: Array) -> void:
-	if _shadow_pool.is_empty():
-		return
-	# Cloud shadows are now drawn in weather_overlay.gdshader from the same
-	# front coverage field, so the old sprite pool is kept disabled.
-	for sprite in _shadow_pool:
-		sprite.visible = false
-	return
-	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
-	for i in range(MAX_WEATHER_FRONTS):
-		var sprite: Sprite2D = _shadow_pool[i]
-		if i >= n:
-			sprite.visible = false
-			continue
-		var f = fronts[i]
-		var wt: int = _front_type(f)
-		# v-data-driven：是否出云阴影完全来自 profile.has_cloud_shadow，
-		# 不再枚举 DROUGHT/HEATWAVE/FOG/CLEAR。
-		var profile := WeatherProfileRegistry.get_profile(wt)
-		if profile == null or not profile.has_cloud_shadow:
-			sprite.visible = false
-			continue
-		sprite.visible = true
-		sprite.position = _front_center(f)
-		# 显示半径跟随锋面长短轴，圆盘贴图被拉成云影椭圆。
-		var s: float = maxf(_front_radius(f), 1.0) / float(SHADOW_BASE_RADIUS_PX)
-		sprite.rotation = _front_axis(f).angle()
-		sprite.scale = Vector2(s * _front_major_scale(f), s * _front_minor_scale(f))
-		# v-data-driven：颜色与 alpha 缩放全部来自 profile（BLIZZARD 偏白蓝、雨雷暗灰）。
-		# MIX 模式下 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
-		var modulate_col: Color = profile.cloud_shadow_color
-		# TOD：云阴影 modulate.a *= (1 - 0.55 * night_factor)——夜晚略微收敛，
-		# 但不能接近隐形，否则雨雪云影在夜晚几乎看不到。
-		var night_scale: float = 1.0 - _tod_night_factor * 0.55
-		var max_alpha: float = clampf(profile.cloud_shadow_alpha_scale, 0.0, 1.0)
-		var visual_intensity: float = _front_visual_intensity(_front_intensity(f))
-		modulate_col.a = clampf(
-			visual_intensity * max_alpha * _strength * night_scale, 0.0, max_alpha
-		)
-		sprite.modulate = modulate_col
-
 func _sync_particles_pool(fronts: Array) -> void:
 	if _particles_pool.is_empty():
 		return
@@ -1025,7 +968,6 @@ func _reset_front_blend_state() -> void:
 	# ambient-shadow：reset 也走统一可见性判定，启用时仍保持 visible 让影子继续画。
 	_refresh_visibility()
 	_push_empty_fronts_to_overlay()
-	_sync_shadow_pool([])
 	_sync_particles_pool([])
 	visual_fronts_changed.emit([])
 
@@ -1147,7 +1089,6 @@ func _update_weather_front_blend(delta: float) -> void:
 	_active_count = mini(_front_visual_snapshots.size(), MAX_WEATHER_FRONTS)
 	_refresh_visibility()
 	_push_fronts_to_overlay(_front_visual_snapshots)
-	_sync_shadow_pool(_front_visual_snapshots)
 	_sync_particles_pool(_front_visual_snapshots)
 	visual_fronts_changed.emit(_front_visual_snapshots)
 
@@ -1630,93 +1571,6 @@ func _curtain_custom_data(cell_id: int, seed: float, depth: float) -> Color:
 
 func _curtain_seed(idx: int, order: int) -> float:
 	return _hash_noise_2d(idx * 17 + 11, order * 31 + 7)
-
-# ─── 云阴影池初始化 ──────────────────────────────────────────────────────
-# 生成一张共享的 radial-fade alpha 圆盘贴图（白色 RGB + 渐变 alpha），
-# 配合 BLEND_MIX 材质 + per-sprite 的半透明深色 modulate 实现"云投影压暗"效果。
-#
-# 历史坑（已修复）：原先用 BLEND_MODE_MUL。MUL 模式下 src.alpha 不参与混合，
-# Godot 会把 sprite.modulate.rgb 直接乘到纹理 RGB 上再乘底色，即使圆盘贴图四角
-# alpha=0，modulate 的暗色也会把整张 quad 的矩形包围盒范围压暗，
-# 在地图上就表现为醒目的"黑色透明矩形"。
-# 改为 MIX 后，四角 alpha=0 的像素完全不叠加，只有圆内的像素参与混合。
-
-func _init_shadow_pool() -> void:
-	# Fix #7C (2026-06-15): mobile 完全跳过云阴影 Sprite 池。
-	# 注意：_sync_shadow_pool (line 605-612) 已是 dead code（云阴影现在在
-	# weather_overlay shader 内画），所有 sprite 永远 invisible。但
-	# _init_shadow_pool 仍构造 16 个 Sprite2D + 1 张 256x256 alpha 圆盘贴图
-	# （~262KB VRAM）+ 添加到 SceneTree。mobile 跳过这些 setup 省启动 hitch
-	# + 16 个永久不可见节点的 culling 评估开销。
-	# _sync_shadow_pool 入口 'if _shadow_pool.is_empty(): return' 保证空池安全。
-	if OS.has_feature("mobile"):
-		_shadow_pool.clear()
-		return
-	_shadow_texture = _build_radial_fade_texture(SHADOW_BASE_RADIUS_PX)
-	_shadow_material = CanvasItemMaterial.new()
-	_shadow_material.blend_mode = CanvasItemMaterial.BLEND_MODE_MIX
-	_shadow_pool.clear()
-	for i in range(MAX_WEATHER_FRONTS):
-		var sprite := Sprite2D.new()
-		sprite.name = "Shadow_%d" % i
-		sprite.texture = _shadow_texture
-		sprite.material = _shadow_material
-		sprite.centered = true
-		sprite.visible = false
-		sprite.z_as_relative = true
-		sprite.z_index = 0
-		_shadow_root.add_child(sprite)
-		_shadow_pool.append(sprite)
-
-# 生成 (2*radius_px) × (2*radius_px) 的 RGBA8 云影贴图：
-#   - rgb 全白（被 sprite.modulate 染色）
-#   - alpha = 低频团块噪声 × 径向软边，避免没有细节的圆盘阴影
-# v9.perf：用 PackedByteArray + create_from_data 一次性写完，
-# 替换之前 65k 次 Image.set_pixel(Color(...)) 的启动 hitch
-func _build_radial_fade_texture(radius_px: int) -> ImageTexture:
-	var size := radius_px * 2
-	var pixel_count := size * size
-	var data := PackedByteArray()
-	data.resize(pixel_count * 4)  # RGBA8
-	var center: float = float(radius_px) - 0.5
-	var inv_r := 1.0 / float(radius_px)
-	var idx := 0
-	for y in range(size):
-		var dy := float(y) - center
-		var dy2 := dy * dy
-		for x in range(size):
-			var dx := float(x) - center
-			var d := sqrt(dx * dx + dy2) * inv_r
-			var radial: float = smoothstep(1.0, 0.0, d)
-			var nx: float = float(x) / float(size)
-			var ny: float = float(y) / float(size)
-			var n1: float = _value_noise_2d(nx * 5.0 + 13.7, ny * 5.0 - 9.3)
-			var n2: float = _value_noise_2d(nx * 10.0 - 31.1, ny * 10.0 + 27.5)
-			var n3: float = _value_noise_2d(nx * 18.0 + 3.2, ny * 18.0 + 41.0)
-			var cloud: float = n1 * 0.58 + n2 * 0.30 + n3 * 0.12
-			cloud = smoothstep(0.34, 0.78, cloud)
-			var a: float = pow(radial, 1.35) * lerpf(0.34, 1.0, cloud)
-			var ai: int = int(clampf(a, 0.0, 1.0) * 255.0)
-			data[idx]     = 255
-			data[idx + 1] = 255
-			data[idx + 2] = 255
-			data[idx + 3] = ai
-			idx += 4
-	var img := Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, data)
-	return ImageTexture.create_from_image(img)
-
-func _value_noise_2d(x: float, y: float) -> float:
-	var ix: int = floori(x)
-	var iy: int = floori(y)
-	var fx: float = x - float(ix)
-	var fy: float = y - float(iy)
-	var ux: float = fx * fx * (3.0 - 2.0 * fx)
-	var uy: float = fy * fy * (3.0 - 2.0 * fy)
-	var a: float = _hash_noise_2d(ix, iy)
-	var b: float = _hash_noise_2d(ix + 1, iy)
-	var c: float = _hash_noise_2d(ix, iy + 1)
-	var d: float = _hash_noise_2d(ix + 1, iy + 1)
-	return lerpf(lerpf(a, b, ux), lerpf(c, d, ux), uy)
 
 func _hash_noise_2d(ix: int, iy: int) -> float:
 	var n: int = ix * 374761393 + iy * 668265263

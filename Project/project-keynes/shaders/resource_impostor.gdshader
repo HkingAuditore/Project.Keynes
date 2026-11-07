@@ -104,6 +104,7 @@ uniform float gi_normal_floor = 0.85;
 uniform vec2 wind_dir = vec2(1.0, 0.18);
 uniform float weather_wind_boost = 0.0;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 // [web-resource-min] Web/GLES3 精简变体：地形地平线 GI 在 web 上恒为中性值
 // （terrain_horizon_tex_bound 恒 false，见 include 文件头的逐条依据），因此整段
@@ -252,7 +253,7 @@ vec3 rv_ambient_from(vec3 normal, vec3 ambient_color, vec3 direct_color, vec3 su
 	vec3 mixed_n = mix(normal, sky.xyz, gi_bent_strength);
 	vec3 amb_n = dot(mixed_n, mixed_n) > 0.000001 ? normalize(mixed_n) : normal;
 	float ao = terrain_horizon_apply_normal(sky.w, normal, sky.xyz);
-	vec3 directional_sky = earth_sky_sh(ambient_color, direct_color, sun_dir, day.x, amb_n);
+	vec3 directional_sky = sky_ambient_srgb(day.x, amb_n, ambient_color, direct_color, sun_dir);
 	return directional_sky * ao * mix(1.0, 0.70, day.x)
 		+ EARTH_MOONLIGHT * day.z * max(dot(normal, -sun_dir), 0.0) * 0.35 * tod_exposure;
 }
@@ -546,7 +547,10 @@ void fragment() {
 		sky_state = surface_horizon.sky;
 		terrain_normal = rv_terrain_normal_at(surface_uv);
 	}
-	vec3 direct_light = direct_color * day_state.x * horizon_visibility;
+	vec2 cloud_map_uv = visual_static_wrap_uv(
+		(v_world_position - world_origin) / max(world_size, vec2(0.0001)));
+	float cloud_visibility = cloud_shadow_direct_visibility(cloud_map_uv, day_state.x);
+	vec3 direct_light = direct_color * day_state.x * horizon_visibility * cloud_visibility;
 	// Flat-ground lighting shared by decals and submerged cues.
 	float flat_diffuse = max(dot(terrain_normal, light_dir), 0.0);
 	vec3 flat_light = rv_ambient_from(terrain_normal, ambient_color, direct_color,

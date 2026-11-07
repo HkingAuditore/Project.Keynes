@@ -119,6 +119,7 @@ vec4 detail_style_param(float style_id, float slot) {
 #endif
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 #include "res://shaders/include/vegetation_climate.gdshaderinc"
 #include "res://shaders/include/vegetation_forms.gdshaderinc"
 
@@ -560,6 +561,8 @@ void fragment() {
 	vec2 bx = v_g.xy;
 	vec2 by = vec2(-bx.y, bx.x);
 	float local_day = daylight.x;
+	float cloud_visibility = cloud_shadow_direct_visibility(
+		shrub_wrap_map_uv(v_ground_uv), local_day);
 	float sun_vis = 1.0;
 	float floor_shadow = 0.0;
 #ifdef VF_CROWN_ART
@@ -583,7 +586,8 @@ void fragment() {
 
 	float body_a = s.cov * v_f.z;
 	float floor_a = max(s.floor_a * contact_ao_strength * 2.0,
-		floor_shadow * 0.70 * local_day * daylight.w) * v_f.w * (1.0 - s.cov);
+		floor_shadow * 0.70 * local_day * daylight.w * cloud_visibility)
+		* v_f.w * (1.0 - s.cov);
 	if (body_a + floor_a < 0.004) {
 		discard;
 	}
@@ -632,7 +636,7 @@ void fragment() {
 	if (use_shading) {
 		float wrap = 0.30 * s.leaf_w;
 		float diff = clamp((dot(N, L) + wrap) / (1.0 + wrap), 0.0, 1.0);
-		float direct = diff * local_day * daylight.w * sun_vis;
+		float direct = diff * local_day * daylight.w * sun_vis * cloud_visibility;
 		vec3 bent = sky.xyz;
 		vec3 amb_n = N;
 		if (gi_bent_strength > 0.0) {
@@ -640,7 +644,7 @@ void fragment() {
 			amb_n = dot(mixed_n, mixed_n) > 1e-6 ? normalize(mixed_n) : N;
 		}
 		float gi_ao = clamp(sky.w * mix(gi_normal_floor, 1.0, clamp(dot(N, bent), 0.0, 1.0)), 0.0, 1.0);
-		vec3 amb = earth_sky_sh(amb_col, sun_col, L, local_day, amb_n) * gi_ao;
+		vec3 amb = sky_ambient_srgb(local_day, amb_n, amb_col, sun_col, L) * gi_ao;
 		float moon = max(dot(N, -L), 0.0) * daylight.z;
 		vec3 light = max(amb * mix(1.0, 0.70, local_day), vec3(ambient_floor * 0.5))
 			+ sun_col * direct * sun_shade_strength * 1.40
@@ -649,7 +653,8 @@ void fragment() {
 		rgb *= 1.0 - v_h.w * terrain_valley_ao_strength * mix(0.38, 1.0, v_e.a);
 		rgb = max(rgb, albedo * v_b.w * 0.45 * mix(0.35, 1.0, local_day));
 	} else {
-		vec3 light = max(amb_col * sky.w, vec3(ambient_floor)) + sun_col * (local_day * 0.35 * daylight.w);
+		vec3 light = max(amb_col * sky.w, vec3(ambient_floor))
+			+ sun_col * (local_day * 0.35 * daylight.w * cloud_visibility);
 		rgb = albedo * light;
 	}
 	float horizon_cast = clamp((1.0 - daylight.w) * local_day, 0.0, 1.0);

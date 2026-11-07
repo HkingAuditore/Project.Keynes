@@ -47,6 +47,10 @@ var _shadow_batches := 0
 var _wrap_batches := 0
 var _last_rebuild_ms := 0.0
 var _last_visibility_ms := 0.0
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 var _last_assemble_ms := 0.0
 var _last_upload_ms := 0.0
 var _last_wind_dir := Vector2(INF, INF)
@@ -99,6 +103,8 @@ func configure(sources: Array, enabled: bool) -> void:
 	for layer in _sources:
 		if layer != null and is_instance_valid(layer) and layer.has_method("set_family_batch_suppressed"):
 			layer.set_family_batch_suppressed(_enabled)
+	set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
+		_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
 	if _enabled:
 		rebuild_all()
 	_update_visibility()
@@ -112,6 +118,45 @@ func set_enabled(value: bool) -> void:
 	for layer in _sources:
 		if layer != null and is_instance_valid(layer) and layer.has_method("set_family_batch_suppressed"):
 			layer.set_family_batch_suppressed(_enabled)
+
+
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var shader_changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	for raw_family in _materials.keys():
+		var family := int(raw_family)
+		var representative = _representatives.get(family, null)
+		var material: ShaderMaterial = _materials[raw_family]
+		if representative == null or material == null:
+			continue
+		if shader_changed and representative.has_method("detail_family_shader"):
+			material.shader = representative.detail_family_shader(false)
+		_bind_cloud_shadow_uniforms(material)
+	for raw_family in _shadow_materials.keys():
+		var family := int(raw_family)
+		var representative = _shadow_representatives.get(family, null)
+		var material: ShaderMaterial = _shadow_materials[raw_family]
+		if representative == null or material == null:
+			continue
+		if shader_changed and representative.has_method("detail_family_shader"):
+			material.shader = representative.detail_family_shader(true)
+		_bind_cloud_shadow_uniforms(material)
+
+
+func _bind_cloud_shadow_uniforms(material: ShaderMaterial) -> void:
+	if material.shader == null or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+		return
+	if _cloud_shadow_texture != null:
+		material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+	material.set_shader_parameter("cloud_shadow_field_bound",
+		_cloud_shadow_direct and _cloud_shadow_texture != null)
+	material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+	material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
 	if _enabled and _entries.is_empty():
 		rebuild_all()
 	_update_visibility()
@@ -388,6 +433,21 @@ func sync_dynamic_materials() -> void:
 		for param in shadow_params:
 			shadow_target.set_shader_parameter(param,
 				shadow_source._shadow_material.get_shader_parameter(param))
+
+
+func set_world_sky_lighting(source: ShaderMaterial) -> void:
+	if source == null:
+		return
+	var values := {}
+	for name in ["sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
+		var value: Variant = source.get_shader_parameter(name)
+		if value != null:
+			values[name] = value
+	for material in _materials.values():
+		if material == null:
+			continue
+		for name in values:
+			material.set_shader_parameter(name, values[name])
 
 
 func set_frame_state(world_time: float, wind_dir: Vector2, wind_boost: float) -> void:
