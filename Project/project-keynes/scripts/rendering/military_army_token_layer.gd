@@ -398,6 +398,10 @@ func set_terrain_lighting(world: WorldData, source: ShaderMaterial) -> void:
 			"gi_ao_smoothing",
 			"gi_bent_strength",
 			"gi_normal_floor",
+			"sky_ibl_bound",
+			"sky_ambient_strength",
+			"sky_day_sh_l1",
+			"sky_night_sh_l1",
 		]:
 			var value: Variant = source.get_shader_parameter(name)
 			if value != null:

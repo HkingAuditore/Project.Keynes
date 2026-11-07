@@ -15,6 +15,8 @@ const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_
 const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
 const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
 const ResourceVisualLayerScript = preload("res://scripts/rendering/resource_visual_layer.gd")
+const WorldSkyBackgroundScript = preload("res://scripts/rendering/world_sky_background.gd")
+const CloudShadowFieldScript = preload("res://scripts/rendering/cloud_shadow_field.gd")
 var _resource_visual_layer: Node2D
 var _resource_visual_cpu_ms := 0.0
 
@@ -60,6 +62,12 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 			_load_shader()
 			if _map != null and _world != null:
 				_rebuild()
+
+@export var world_lighting_profile: WorldLightingProfile:
+	set(value):
+		world_lighting_profile = value
+		if is_inside_tree():
+			_bind_world_lighting_profile()
 
 @export_group("Shader Hot Reload")
 @export var shader_hot_reload_enabled: bool = true
@@ -214,6 +222,64 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
 @export_group("Weather (Milestone 3)")
 @export_range(0.0, 1.0, 0.01) var weather_strength: float = 1.0
+
+@export_group("Cloud Shadow")
+## PC 高画质直接光照路径的最大直射光压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.64:
+	set(value):
+		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## PC 中画质合成 pass 的压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.48:
+	set(value):
+		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.36:
+	set(value):
+		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 云量覆盖响应增益。提高后，中低云量天气也会形成连续可见的云影。
+@export_range(0.25, 3.0, 0.05) var cloud_shadow_coverage_gain: float = 1.35:
+	set(value):
+		cloud_shadow_coverage_gain = clampf(value, 0.25, 3.0)
+		_push_cloud_shadow_tuning()
+## 云影内部噪声的平流速度。0.055 约为几十秒内移动三分之一云团尺度。
+@export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.075:
+	set(value):
+		cloud_shadow_motion_speed = clampf(value, 0.0, 0.20)
+		_push_cloud_shadow_tuning()
+## LUT 范围内部的云团明暗对比度。越高越能看出斑块形状。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_shape_contrast: float = 1.0:
+	set(value):
+		cloud_shadow_shape_contrast = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 主噪声坐标的域扭曲强度。提高后云团边界更破碎、更接近自然云块。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.28:
+	set(value):
+		cloud_shadow_noise_warp = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## LUT 云量 Mask 的起始偏置。提高后只有更高云量区域会出现云影。
+@export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.0:
+	set(value):
+		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
+		_push_cloud_shadow_tuning()
+## 独立云核密度。提高后同一片 LUT Mask 内会出现更多、更小的云朵。
+@export_range(0.35, 2.5, 0.05) var cloud_shadow_cell_scale: float = 0.75:
+	set(value):
+		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
+		_push_cloud_shadow_tuning()
+## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
+@export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0045:
+	set(value):
+		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
+		_push_cloud_shadow_tuning()
+## 开启后显示黑白云影 Mask：黑=无云影，白=云影区域。
+@export var cloud_shadow_debug_view: bool = false:
+	set(value):
+		cloud_shadow_debug_view = value
+		if _cloud_shadow_field != null:
+			_cloud_shadow_field.set_debug_view(value)
 
 # [parallax-rain] 俯视雨幕参数：camera_pitch 控制雨滴侧投影长度收缩
 @export_range(0.0, 90.0, 1.0, "degrees") var camera_pitch_deg: float = 75.0
@@ -771,6 +837,7 @@ var _simulation_speed_multiplier: float = 1.0
 
 var _world_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
+var _sky_background: Node
 ## [web-water-pass] web/Compatibility/LOW 档的**水面第二 pass** 节点与材质
 ## （见 shaders/world_water_web.gdshader）。桌面、以及 web 的中/高档恒为 null ——
 ## 那些情况下 world_map 自己就把水面画了，再画一遍就是双份水面。
@@ -826,6 +893,7 @@ const PK_WEB_DEFER_VEG_LAYERS := true
 ## web/GLES3 上回读不可靠，会让"过期检测"每帧命中、白白重绑并连带重推迷雾 uniform。
 var _lut_bound := {}
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
+var _cloud_shadow_field: Variant = null
 var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
 var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
 var _fog_enabled: bool = false
@@ -1038,6 +1106,9 @@ func _ready() -> void:
 	_camera_pitch = deg_to_rad(camera_pitch_deg)
 	_wind_dir = wind_dir.normalized() if wind_dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
 	_wind_strength = wind_strength
+	_sky_background = WorldSkyBackgroundScript.new()
+	_sky_background.name = "WorldSkyBackground"
+	add_child(_sky_background)
 	_world_quad = MeshInstance2D.new()
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
@@ -1065,6 +1136,10 @@ func _ready() -> void:
 	_building_visual_layer.set_tod(
 		_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 	_spawn_detail_layers()
+	_cloud_shadow_field = CloudShadowFieldScript.new()
+	_cloud_shadow_field.name = "CloudShadowField"
+	add_child(_cloud_shadow_field)
+	_cloud_shadow_field.process_priority = 1001
 	# v9.split：天气表现层。始终创建；web 侧不再 stub，而是走 weather_layer 内部的
 	# 裁剪变体（`#define PK_WEB_WEATHER_MIN`，见 weather_layer.gd 的 WEB_WEATHER_MIN_DEFINE）。
 	# 历史：完整 weather_overlay.gdshader 首次编译在 ANGLE 上要 45 秒（进世界卡 98%
@@ -1430,6 +1505,13 @@ func _web_pc_high_active() -> bool:
 	return visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false))
 
 
+func _cloud_shadow_direct_active() -> bool:
+	return CloudShadowFieldScript.direct_mode_for_quality(
+		visual_quality,
+		OS.has_feature("mobile") or OS.has_feature("web"),
+		_mobile_quality_tier_define)
+
+
 ## 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」启用裁剪。
 ## 中/高档 web 仍保留 ctx.quality>=1 的水体分支，绝不跟着裁（否则会掉水面细节）；
 ## 宏链万一接错，shader 侧 #ifndef PK_QUALITY_LOW 的 #error 会立刻炸出来。
@@ -1520,8 +1602,12 @@ func _water_program_prefix(kind: String) -> String:
 		return prefix
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	else:
+		prefix += _desktop_sky_quality_prefix()
 	if DCFeatureFlags.is_compatibility_renderer():
 		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
+	if _cloud_shadow_direct_active():
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	prefix += SPLIT_WATER_ONLY_DEFINE
 	return prefix
 
@@ -1538,6 +1624,77 @@ func _push_world_uniform(key: Variant, value: Variant) -> void:
 	if _water_mat != null and not _water_uniform_names.is_empty() \
 			and _water_uniform_names.has(key_name):
 		_water_mat.set_shader_parameter(key_name, value)
+
+
+func _global_sky_day_weight() -> float:
+	if not day_night_enabled:
+		return 1.0
+	return smoothstep(-0.14, 0.14, sin(6.283185307179586 * _day_phase))
+
+
+func _bind_world_lighting_profile() -> void:
+	if _sky_background != null:
+		var bounds := _world.world_bounds if _world != null else Rect2()
+		_sky_background.setup(bounds, world_lighting_profile, _day_phase, day_night_enabled)
+	if _shader_mat != null:
+		_push_world_lighting_profile()
+
+
+func _push_world_lighting_profile() -> void:
+	if _shader_mat == null:
+		return
+	var profile := world_lighting_profile
+	var zero_sh := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
+	var day_sh := profile.day_sh_l1 if profile != null and profile.day_sh_l1.size() == 4 else zero_sh
+	var night_sh := profile.night_sh_l1 if profile != null and profile.night_sh_l1.size() == 4 else zero_sh
+	_push_world_uniform("sky_ibl_bound", profile != null and profile.day_sh_l1.size() == 4
+		and profile.night_sh_l1.size() == 4)
+	_push_world_uniform("sky_ambient_strength", profile.ambient_strength if profile != null else 1.0)
+	_push_world_uniform("sky_day_sh_l1", day_sh)
+	_push_world_uniform("sky_night_sh_l1", night_sh)
+	var needs_irradiance := _shader_declares_uniform(_shader_mat.shader, &"sky_irradiance_array")
+	var needs_reflection := needs_irradiance \
+		or _shader_declares_uniform(_shader_mat.shader, &"sky_specular_array") \
+		or (_water_mat != null and _shader_declares_uniform(_water_mat.shader, &"sky_specular_array"))
+	var irradiance_array := profile.get_irradiance_array() \
+		if profile != null and needs_irradiance else null
+	var specular_array := profile.get_specular_array() \
+		if profile != null and needs_reflection else null
+	_push_world_uniform("sky_irradiance_array", irradiance_array)
+	_push_world_uniform("sky_irradiance_bound", irradiance_array != null)
+	_push_world_uniform("sky_specular_array", specular_array)
+	_push_world_uniform("sky_specular_bound", specular_array != null)
+	_push_world_uniform("sky_specular_level_count", WorldLightingProfile.SPECULAR_LEVELS)
+	_push_world_uniform("sky_reflection_strength", profile.reflection_strength if profile != null else 1.0)
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		var bounds := _world.world_bounds if _world != null else Rect2()
+		_sky_background.setup(bounds, profile, _day_phase, day_night_enabled)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_world_sky_lighting"):
+			layer.set_world_sky_lighting(_shader_mat)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("set_world_sky_lighting"):
+		_detail_family_layer.set_world_sky_lighting(_shader_mat)
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_terrain_lighting(_shader_mat)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_terrain_lighting(_shader_mat)
+	if is_instance_valid(_trade_visual_layer):
+		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
+	if is_instance_valid(_military_visual_layer):
+		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
+
+
+func _shader_declares_uniform(shader: Shader, uniform_name: StringName) -> bool:
+	if shader == null:
+		return false
+	for uniform in shader.get_shader_uniform_list():
+		if StringName(uniform.get("name", "")) == uniform_name:
+			return true
+	return false
+
 
 const WATER_PARAM_NAMES: Array[StringName] = [
 	&"water_effect_enabled",
@@ -1885,6 +2042,90 @@ func _push_water_lighting_uniforms() -> void:
 	_water_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
 
 
+func _configure_cloud_shadow_field() -> void:
+	if _cloud_shadow_field == null:
+		return
+	if _world == null or _map == null:
+		_cloud_shadow_field.clear_inputs()
+		_push_cloud_shadow_material_inputs()
+		return
+	var tiled := _visual_tiles_active()
+	_cloud_shadow_field.set_tuning(
+		cloud_shadow_strength_high,
+		cloud_shadow_strength_mid,
+		cloud_shadow_strength_low,
+		cloud_shadow_coverage_gain,
+		cloud_shadow_motion_speed,
+		cloud_shadow_shape_contrast,
+		cloud_shadow_noise_warp,
+		cloud_shadow_mask_bias,
+		cloud_shadow_cell_scale,
+		cloud_shadow_world_scale)
+	_cloud_shadow_field.configure(
+		_world.world_bounds,
+		_world,
+		_map,
+		_world.visual_tiles if tiled else null,
+		_wrap_period_x(),
+		visual_quality,
+		_mobile_quality_tier_define,
+		_cloud_shadow_direct_active())
+	_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
+	_cloud_shadow_field.set_debug_view(cloud_shadow_debug_view)
+
+
+func _push_cloud_shadow_tuning() -> void:
+	if _cloud_shadow_field == null:
+		return
+	_cloud_shadow_field.set_tuning(
+		cloud_shadow_strength_high,
+		cloud_shadow_strength_mid,
+		cloud_shadow_strength_low,
+		cloud_shadow_coverage_gain,
+		cloud_shadow_motion_speed,
+		cloud_shadow_shape_contrast,
+		cloud_shadow_noise_warp,
+		cloud_shadow_mask_bias,
+		cloud_shadow_cell_scale,
+		cloud_shadow_world_scale)
+	_push_cloud_shadow_material_inputs()
+
+
+func _push_cloud_shadow_material_inputs() -> void:
+	if _cloud_shadow_field == null:
+		return
+	var direct_enabled := _cloud_shadow_direct_active()
+	var has_source: bool = _cloud_shadow_field.has_weather_source()
+	var field_texture: Texture2D = _cloud_shadow_field.get_field_texture() if has_source else null
+	var wrap_origin_uv: float = _cloud_shadow_field.get_wrap_origin_uv()
+	var wrap_period_uv: float = _cloud_shadow_field.get_wrap_period_uv()
+	for material in [_shader_mat, _water_mat]:
+		if material == null or material.shader == null:
+			continue
+		if material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			if field_texture != null:
+				material.set_shader_parameter("cloud_shadow_tex", field_texture)
+			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
+			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
+			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
+			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):
+		_building_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	if _resource_visual_layer != null and _resource_visual_layer.has_method("set_cloud_shadow_field"):
+		_resource_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_cloud_shadow_field"):
+			layer.set_cloud_shadow_field(field_texture, direct_enabled,
+				wrap_origin_uv, wrap_period_uv)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("set_cloud_shadow_field"):
+		_detail_family_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+
+
 ## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，
 ## fog_early_out / fog_gray 的开关也必须是同一份（_push_fog_uniforms 里调用）。
 ## [land-water-split 2026-11-02] fog_unexplored_color 必须推：拆 mesh 后纯水 block
@@ -1907,6 +2148,18 @@ func _is_world_map_shader_path(path: String) -> bool:
 	return not path.is_empty() and path.get_file() == "world_map.gdshader"
 
 
+func _desktop_sky_quality_prefix() -> String:
+	if OS.has_feature("web") or DCFeatureFlags.is_compatibility_renderer() \
+			or not _mobile_quality_tier_define.is_empty():
+		return ""
+	match visual_quality:
+		1:
+			return "#define PK_SKY_QUALITY_MID\n"
+		2:
+			return "#define PK_SKY_QUALITY_HIGH\n"
+	return ""
+
+
 func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
 	if shader == null:
 		return null
@@ -1919,6 +2172,10 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	var prefix := ""
 	if _visual_tiles_active():
 		prefix += "#define MAP_VISUAL_TILED\n"
+	if _is_world_map_shader_path(source_path):
+		prefix += _desktop_sky_quality_prefix()
+	if _cloud_shadow_direct_active() and _is_world_map_shader_path(source_path):
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	# mobile/web 共用 MOBILE_QUALITY_* 编译期档（由 set_mobile_quality_tier 推送）。
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
@@ -1997,6 +2254,8 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
 		if _map != null and _world != null and _shader_mat != null:
 			_apply_uniforms()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 
 func _mobile_quality_tier_from_define(tier_define: String) -> int:
@@ -3345,6 +3604,8 @@ func _spawn_detail_layers() -> void:
 	_detail_family_layer = VegetationFamilyLayerScript.new()
 	_detail_family_layer.name = "VegetationFamilyLayer"
 	add_child(_detail_family_layer)
+	if _cloud_shadow_field != null:
+		_push_cloud_shadow_material_inputs()
 
 
 func _detail_layer_name(prof: Resource, i: int) -> String:
@@ -3406,6 +3667,7 @@ func _poll_shader_hot_reload(delta: float) -> void:
 	_load_shader()
 	if _map != null and _world != null and _shader_mat != null:
 		_apply_uniforms()
+	_push_cloud_shadow_material_inputs()
 	print("[HexRenderer] hot-reloaded world shader/material")
 
 func _refresh_shader_hot_reload_baseline() -> void:
@@ -3428,6 +3690,7 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
+	_bind_world_lighting_profile()
 	# _ready() loads the shader before a generated world exists, so it necessarily
 	# selects the legacy variant. Re-select after world injection; setting array
 	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
@@ -3450,6 +3713,7 @@ func set_map_cooperative(map: MapData, world: WorldData = null) -> void:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
+	_bind_world_lighting_profile()
 	# _ready() loads the shader before a generated world exists, so it necessarily
 	# selects the legacy variant. Re-select after world injection; setting array
 	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
@@ -3483,6 +3747,7 @@ func configure_building_visuals(catalog: Dictionary,
 		_map, _world, hex_size, catalog, intel)
 	# [building-terrain-light 2026-10-18] 高画质建筑与地形共用 horizon/GI 与地表法线。
 	_building_visual_layer.set_terrain_lighting(_shader_mat)
+	_push_cloud_shadow_material_inputs()
 	return building_result
 
 
@@ -3664,6 +3929,9 @@ func set_true_insolation_enabled(v: bool) -> void:
 # 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
 func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		_sky_background.set_global_time(_day_phase, day_night_enabled)
 	_push_water_lighting_uniforms()
 	if _shader_mat != null:
 		_push_world_uniform("day_phase", _day_phase)
@@ -3719,9 +3987,14 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
 func set_visual_quality(q: int) -> void:
-	var was_pc_high := _web_pc_high_active()
+	var was_cloud_direct := _cloud_shadow_direct_active()
+	var was_web_pc_high := _web_pc_high_active()
+	var old_sky_quality_prefix := _desktop_sky_quality_prefix()
 	visual_quality = clampi(q, 0, 2)
-	if was_pc_high != _web_pc_high_active() and _shader_mat != null:
+	var sky_variant_changed := old_sky_quality_prefix != _desktop_sky_quality_prefix()
+	if (was_cloud_direct != _cloud_shadow_direct_active() \
+			or was_web_pc_high != _web_pc_high_active() or sky_variant_changed) \
+			and _shader_mat != null:
 		_load_shader()
 		if _world != null and _map != null:
 			_apply_uniforms()
@@ -3751,6 +4024,8 @@ func set_visual_quality(q: int) -> void:
 	# 画质切换沿用运行期分层下发，避免设置变化再次制造全层同步尖峰。
 	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 
 func set_terrain_materials_enabled(enabled: bool) -> void:
@@ -4510,6 +4785,9 @@ func set_foliage_density_strength(v: float) -> void:
 
 func set_day_night_enabled(v: bool) -> void:
 	day_night_enabled = v
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		_sky_background.set_global_time(_day_phase, day_night_enabled)
 	_push_water_lighting_uniforms()
 	if _shader_mat != null:
 		_push_world_uniform("day_night_enabled", day_night_enabled)
@@ -4524,6 +4802,8 @@ func set_day_night_enabled(v: bool) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
 	)
 	_sync_detail_and_activity_materials()
+	if _cloud_shadow_field != null:
+		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
 
 # 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
@@ -4603,6 +4883,8 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_exposure = profile.exposure
 	_tod_sun_dir = profile.sun_dir.normalized()
 	_tod_valid = true
+	if _cloud_shadow_field != null:
+		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
 	_push_water_lighting_uniforms()
 	if _building_visual_layer != null:
 		_building_visual_layer.set_tod(
@@ -4818,6 +5100,7 @@ func _rebuild() -> void:
 		return
 	if _map == null or _world == null or _map.cell_count() == 0:
 		_set_world_quad_mesh(null)
+		_configure_cloud_shadow_field()
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
@@ -5470,6 +5753,9 @@ func _apply_uniforms() -> void:
 	# [web-water-pass] 水面第二 pass 的建/拆/对齐挂在这里：_apply_uniforms() 是
 	# "材质重建后把全部输入对齐"的唯一收口，画质换档与 set_map 都会经过它。
 	_sync_water_quad()
+	_push_world_lighting_profile()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 # ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
 # 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的

@@ -115,6 +115,7 @@ uniform float tod_exposure = 1.0;
 #define VT_USE_HORIZON
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 
@@ -351,7 +352,8 @@ void fragment() {
 		}
 		vec3 sky = earth_sky_sh(amb_c, sun_c, sun, day, amb_n);
 		sky = mix(sky, vec3(dot(sky, vec3(0.333))), light_neutralize * day) * ao * depth_ao * sky_vis;
-		float direct = day * horizon.direct_visibility;
+		float cloud_visibility = cloud_shadow_direct_visibility(map_uv, day);
+		float direct = day * horizon.direct_visibility * cloud_visibility;
 		// Leaf tips glow a little when backlit/side-lit (thin-leaf transmission).
 		float transmit = day * pow(clamp(hgt, 0.0, 1.0), 2.0) * (1.0 - sun.z * 0.6) * 0.22;
 		// [ground-cover-contrast 2026-10-18] 天光与直射分开增益：天光 0.62、直射 1.00。
@@ -359,7 +361,7 @@ void fragment() {
 		// 现在受光面亮度基本不变（总增益下调补回），被遮处只剩天光 → 谷地/山影明显压暗。
 		vec3 light = (sky * GROUND_COVER_SKY_GAIN
 			+ sun_c * direct * max(dot(n, sun), 0.0) * GROUND_COVER_SUN_GAIN
-			+ sun_c * transmit * horizon.direct_visibility
+			+ sun_c * transmit * horizon.direct_visibility * cloud_visibility
 			+ EARTH_MOONLIGHT * moon * max(n.z, 0.0) * 0.30) * tod_exposure * light_gain;
 		// Shadowed valleys of the terrain dim the meadow like the rest of the ground.
 		float horizon_cast = clamp((1.0 - horizon.direct_visibility) * day, 0.0, 1.0);

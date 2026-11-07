@@ -283,9 +283,9 @@ vec3 gi_ambient_normal(LightingContext lc, vec3 N) {
 // [sky-sh-ambient] 在 BRDF 域内求方向化天光：色板域 earth_sky_sh → 按需转线性。
 //   USE_LINEAR_LIGHTING 时与 albedo 同域（线性）；否则直接色板域，与 legacy 路径一致。
 vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
-	vec3 amb = earth_sky_sh(lc.amb_palette, lc.sun_palette, lc.sun_dir_px, lc.local_day, N);
-	return USE_LINEAR_LIGHTING ? srgb_to_linear(amb) : amb;
-
+	return USE_LINEAR_LIGHTING
+		? sky_ambient_linear(lc.local_day, N, lc.amb_palette, lc.sun_palette, lc.sun_dir_px)
+		: sky_ambient_srgb(lc.local_day, N, lc.amb_palette, lc.sun_palette, lc.sun_dir_px);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -366,14 +366,27 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	// 清晨朝东开口的谷偏暖、被南侧山脊挡住的北坡偏冷。这是本轮 GI 最主要的可读特征。
 	vec3 amb_N = gi_ambient_normal(lc, N);
 	float geo_ao = gi_ambient_occlusion(lc, N);
-	vec3 ambient = max(sky_sh_ambient_brdf(lc, amb_N), vec3(lc.ambient_floor))
+	vec3 sky_ambient = sky_sh_ambient_brdf(lc, amb_N);
+#if defined(PK_SKY_HAS_IRRADIANCE)
+	if (sky_ibl_bound && sky_irradiance_bound) {
+		sky_ambient = sky_sample_irradiance(amb_N, lc.local_day);
+	}
+#endif
+	vec3 ambient = max(sky_ambient, vec3(lc.ambient_floor))
 		* albedo * s.ao * geo_ao;
 
 	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
 	ambient += lc.bounce * albedo * lc.sun_color_linear;
 
 	// ── Night atten + exposure ────────────────────────────────────────
-	vec3 lit = direct + ambient;
+	vec3 indirect_specular = vec3(0.0);
+#if defined(PK_SKY_HAS_REFLECTION) && !defined(PK_WATER_ONLY)
+	if (sky_ibl_bound && sky_specular_bound) {
+		vec3 reflected = sky_sample_prefiltered_reflection(reflect(-V, N), roughness, lc.local_day);
+		indirect_specular = reflected * F * (0.25 + 0.75 * NdotV);
+	}
+#endif
+	vec3 lit = direct + ambient + indirect_specular;
 	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, lc.night_factor);
 	lit *= lc.exposure;
 

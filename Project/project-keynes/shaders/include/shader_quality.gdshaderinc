@@ -47,4 +47,18 @@
 #define PK_SKIP_VEGETATION_SHADING
 #endif
 
+// Environment lookup is compiled only into eligible world-map variants.
+#if !defined(PK_WEB_TEXTURE_BUDGET)
+	#if defined(PK_SKY_QUALITY_HIGH) && defined(PK_QUALITY_DESKTOP) && !defined(PK_WATER_ONLY)
+		#define PK_SKY_HAS_IRRADIANCE
+		#define PK_SKY_HAS_REFLECTION
+	#elif defined(PK_SKY_QUALITY_HIGH) && defined(PK_QUALITY_DESKTOP) && defined(PK_WATER_ONLY)
+		#define PK_SKY_HAS_REFLECTION
+	#elif defined(PK_SKY_QUALITY_MID) && defined(PK_QUALITY_DESKTOP) && defined(PK_WATER_ONLY)
+		#define PK_SKY_HAS_REFLECTION
+	#elif (defined(PK_QUALITY_MID) || defined(PK_QUALITY_HIGH)) && defined(PK_WATER_ONLY)
+		#define PK_SKY_HAS_REFLECTION
+	#endif
+#endif
+
 #endif

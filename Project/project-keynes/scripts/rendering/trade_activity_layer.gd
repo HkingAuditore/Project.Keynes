@@ -243,7 +243,8 @@ func set_terrain_lighting(world: WorldData, source: ShaderMaterial) -> void:
 	if source != null:
 		for name in ["terrain_horizon_strength", "terrain_horizon_softness", "terrain_horizon_max_angle",
 				"terrain_normal_influence", "gi_horizon_lut", "gi_lut_bound", "gi_ao_strength",
-				"gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor"]:
+				"gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor",
+				"sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
 			var value: Variant = source.get_shader_parameter(name)
 			if value != null:
 				_set_parameter(name, value)

@@ -65,19 +65,23 @@ static func web_min_active() -> bool:
 
 ## 运行期真正会交给驱动的那份源码前缀（tiled 只可能出现在桌面）。
 ## 这是 **surface** pass 的前缀；矿物 batch 用 geology_variant_prefix()。
-static func shader_variant_prefix(tiled: bool) -> String:
+static func shader_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
 	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
 	if web_min_active():
 		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_SURFACE_DEFINE
+	if cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix
 
 
 ## 矿物 batch（batch 2）那份程序的前缀。除 pass 宏外与 surface **逐字相同**：
 ## 两份程序共享同一套 uniform，差一个字节驱动就不认缓存。
-static func geology_variant_prefix(tiled: bool) -> String:
+static func geology_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
 	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
 	if web_min_active():
 		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_GEOLOGY_DEFINE
+	if cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix
 
 
@@ -155,6 +159,10 @@ var _shader_tiled := false
 var _shader_prefix := ""
 ## 同上，geology pass 的前缀。
 var _shader_geo_prefix := ""
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 var _mesh: QuadMesh
 var _memory_image: Image
 var _memory_texture: ImageTexture
@@ -235,6 +243,8 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 			_world.wrap_period_x if _world != null else 0.0,
 			_world.enum_atlas_tex if _world != null else null, tiles)
 		_cover.material().set_shader_parameter("memory_lut", _memory_texture)
+		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
+			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
 		_sync_terrain_textures()
 	_refresh_filter_style()
 	_apply_profile()
@@ -249,8 +259,8 @@ func _sync_terrain_textures() -> void:
 		return
 	var tiles = _world.visual_tiles
 	var tiled := tiles != null and bool(tiles.ready) and String(tiles.layout.mode) == "tiled"
-	var prefix := shader_variant_prefix(tiled)
-	var geo_prefix := geology_variant_prefix(tiled)
+	var prefix := shader_variant_prefix(tiled, _cloud_shadow_direct)
+	var geo_prefix := geology_variant_prefix(tiled, _cloud_shadow_direct)
 	if tiled != _shader_tiled or prefix != _shader_prefix or geo_prefix != _shader_geo_prefix:
 		_shader_tiled = tiled
 		_shader_prefix = prefix
@@ -259,6 +269,36 @@ func _sync_terrain_textures() -> void:
 		_assign_variant(_material_geo, geo_prefix)
 	for material in _materials():
 		_bind_terrain_textures(material, tiles, tiled)
+	_push_cloud_shadow_uniforms()
+
+
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	if changed:
+		_sync_terrain_textures()
+	_push_cloud_shadow_uniforms()
+	if _cover != null:
+		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
+			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
+
+
+func _push_cloud_shadow_uniforms() -> void:
+	for material in [_material, _material_geo]:
+		if material == null or material.shader == null \
+				or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			continue
+		if _cloud_shadow_texture != null:
+			material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+		material.set_shader_parameter("cloud_shadow_field_bound",
+			_cloud_shadow_direct and _cloud_shadow_texture != null)
+		material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+		material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
 
 ## 桌面（且未 tiled，prefix 为空）：与改动前逐字相同，直接把源文件资源交给材质，
 ## 不产生任何新的 Shader 实例 ⇒ 桌面走的就是 preload 的那一份。
@@ -329,7 +369,8 @@ func set_terrain_lighting(source: ShaderMaterial) -> void:
 	_sync_terrain_textures()
 	for name in ["terrain_horizon_strength", "terrain_horizon_softness", "terrain_horizon_max_angle",
 		"terrain_horizon_cast_floor", "terrain_horizon_debug_view", "gi_horizon_lut", "gi_lut_bound",
-		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor"]:
+		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor",
+		"sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
 		var value = source.get_shader_parameter(name)
 		if value != null:
 			for material in _materials():

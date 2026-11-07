@@ -1160,7 +1160,15 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 		// [sky-sh-ambient] 天空反射用方向化 L1 球谐天光（按波浪法线 N 取样）：波面朝天顶/朝太阳
 		// 方位会反射不同天色 → 水面浮现随法线变化的光影（这才是球谐补光在水面的体现），
 		// 而非平铺一层 tod_ambient_color。flat 水面(N≈+z)≈原值，故无回归；波纹处显出体积。
-		vec3 sky_tint = earth_sky_sh(tod_ambient_color, tod_sun_color, sun_dir_px, 1.0 - pixel_night, N) * mix(1.0, 0.70, pixel_night);
+		vec3 sky_tint = sky_ambient_srgb(1.0 - pixel_night, N,
+			tod_ambient_color, tod_sun_color, sun_dir_px) * mix(1.0, 0.70, pixel_night);
+#if defined(PK_SKY_HAS_REFLECTION)
+		if (sky_ibl_bound && sky_specular_bound) {
+			vec3 env_reflection = sky_sample_prefiltered_reflection(
+				reflect(-VIEW_DIR_TOP_DOWN, N), surface.roughness, 1.0 - pixel_night);
+			sky_tint = sky_linear_to_srgb(env_reflection) * mix(1.0, 0.70, pixel_night);
+		}
+#endif
 		col = mix(col, sky_tint, F * water_reflection_strength);
 	}
 
@@ -1217,6 +1225,7 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
 			: compute_global_parallel_sun_dir();
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
+	lc.direct_shadow *= cloud_shadow_direct_visibility(uv, lc.local_day);
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
 	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
 	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。

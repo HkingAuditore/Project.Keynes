@@ -55,7 +55,6 @@ uniform float world_time = 0.0;
 // 的 hex 像素尺度发生频率共振导致六边形晶格。
 uniform float hex_world_diameter = 38.0;
 // 云下假阴影沿背光方向的投影偏移（hex 直径倍数）。太阳越低偏移越长 → 悬浮感越强。
-uniform float cloud_shadow_offset : hint_range(0.0, 3.0) = 1.15;
 
 // 昼夜（TOD）：方向光色 / 环境光色 / 晨昏全部走 earth_daylight 唯一真源（见下方 include），
 // 不再由 GDScript 推单一 tod_sun_color/tod_ambient_color/tod_night_factor（那会让全图云统一明暗、
@@ -770,19 +769,6 @@ void fragment() {
 	}
 #endif
 
-	// [cloud-float] 偏移投影假阴影：把云沿背光方向投影到地面（offset = sun_axis*距离；距离 ∝ 云高·tan(天顶角)
-	// = cloud_shadow_offset · sun_horiz/sin(h)）。太阳越低影越长偏移越大 → 云悬浮观感。q0 跳过、夜侧无影。
-	float offset_shadow = 0.0;
-	// [web-weather-min] web 变体把这一段整块编译掉（它要再算 1 处内联云密度）。
-	// 正下方直射云影（w.shadow）仍在，所以「云压地」的观感保留，只丢太阳低角时的悬浮偏移。
-#ifndef PK_WEB_WEATHER_MIN
-	if (q_weather >= 1 && ed.local_day > 0.01 && cumulus_intensity > 0.02) {
-		float sd = hex_world_diameter * cloud_shadow_offset * clamp(sun_horiz / max(sun_up, 0.20), 0.0, 3.2);
-		float dsh = sample_cumulus_density(wp + sun_axis * sd, cumulus_axis, cumulus_intensity);
-		offset_shadow = cloud_density_alpha(dsh) * ed.local_day;
-	}
-#endif
-
 #ifdef PK_WEB_WEATHER_MIN
 	// web-min：层间遮挡纯 ALU（fog/cumulus 密度已在手），按桌面 q2 语义保留，不额外取样。
 	float layer_occlusion = clamp(fog_layer.density * 0.34 + cumulus_layer.density * 0.28, 0.0, 1.0);
@@ -792,7 +778,7 @@ void fragment() {
 		: 0.0;
 #endif
 
-	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001) || (offset_shadow > 0.003);
+	bool has_layer = (cumulus > 0.001) || (cirrus > 0.001) || (low_fog > 0.001) || (w.precip > 0.001);
 	if (!has_layer) {
 		COLOR = vec4(0.0);
 	} else {
@@ -821,14 +807,7 @@ void fragment() {
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));
 
-		// 云下假阴影 = 直接(云正下方,薄) + 偏移投影(沿背光方向偏移的云密度)。整体调弱：薄薄一层暗淡，
-		// 不再挡住下方地表。偏移投影即使本像素头顶无云也能落影 → 阴影与云分离、营造悬浮感；夜侧消隐。
-		float direct_shadow = w.shadow * (0.04 + cloud_core * 0.02);
-		float ground_shadow = clamp((direct_shadow + offset_shadow * 0.14) * weather_strength * precip_alpha_factor * ed.local_day, 0.0, 0.10);
-
-		// 阴影色用偏中性的暗调（非接近纯黑），即便叠满也只是压暗而不遮挡地表。
-		col = mix(vec3(0.20, 0.22, 0.26), col, alpha / max(alpha + ground_shadow, 0.001));
-		alpha = clamp(alpha + ground_shadow, 0.0, 0.94);
+		alpha = clamp(alpha, 0.0, 0.94);
 
 		// 低雾（底层，介于地面与中云之间）。
 		if (fog_layer.density > 0.001) {
