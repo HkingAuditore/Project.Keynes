@@ -364,6 +364,7 @@ func setup(bounds: Rect2, map_index_atlas: ImageTexture, noise_tex: ImageTexture
 		# hex_size = 半径，hex 直径（wp 单位）= 2 * hex_size。
 		_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * hex_size)
 		_overlay_mat.set_shader_parameter("weather_strength", _strength)
+		_overlay_mat.set_shader_parameter("cloud_opacity_scale", _cloud_opacity_scale)
 		_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 		# 进入时把 fronts 数组清空，避免上一张地图的残留
 		_push_empty_fronts_to_overlay()
@@ -446,6 +447,16 @@ func _push_fog_mask_uniforms() -> void:
 		mat.set_shader_parameter("fog_mask_enabled", _fog_mask_enabled and tex != null)
 		if tex != null:
 			mat.set_shader_parameter("enum_lut", tex)
+
+
+# 云层不透明度（只影响云，不影响降水/风）。
+var _cloud_opacity_scale := 0.72
+
+
+func set_cloud_opacity_scale(v: float) -> void:
+	_cloud_opacity_scale = clampf(v, 0.0, 1.0)
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("cloud_opacity_scale", _cloud_opacity_scale)
 
 
 # 全局天气强度（与 HexRenderer.weather_strength 同步）
@@ -1264,6 +1275,7 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("hex_world_diameter", 2.0 * _hex_size)
 	_overlay_mat.set_shader_parameter("world_time", _world_time)
 	_overlay_mat.set_shader_parameter("weather_strength", _strength)
+	_overlay_mat.set_shader_parameter("cloud_opacity_scale", _cloud_opacity_scale)
 	_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
 	_overlay_mat.set_shader_parameter("weather_debug_view", _weather_debug_view)
 	_overlay_mat.set_shader_parameter("day_night_enabled", _day_night_enabled)

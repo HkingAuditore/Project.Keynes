@@ -79,6 +79,9 @@ uniform float axial_tilt_rad : hint_range(0.0, 0.7854) = 0.4101523;
 // 全局
 uniform int weather_overlay_quality : hint_range(0, 2) = 2;
 uniform float weather_strength : hint_range(0.0, 1.0) = 1.0;
+// [cloud-opacity 2026-11-07] 云层不透明度总控（只影响云，不影响雨幕/风）。
+// 原来 cumulus 的 alpha 上限 0.86 ≈ 实心白云，铺满地图会糊住地形。
+uniform float cloud_opacity_scale : hint_range(0.0, 1.0) = 0.72;
 
 // 天气数据源：weather_lut（per-cell LUT，见 sample_field_weather）。旧 weather_front_* uniform 已删。
 
@@ -806,14 +809,13 @@ void fragment() {
 		col *= mix(bright_mul, min(bright_mul, 1.02), dense_core);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
 		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));
-
-		alpha = clamp(alpha, 0.0, 0.94);
+		alpha = clamp(alpha * cloud_opacity_scale, 0.0, 0.94);
 
 		// 低雾（底层，介于地面与中云之间）。
 		if (fog_layer.density > 0.001) {
 			vec3 fog_base = mix(vec3(0.80, 0.84, 0.88), vec3(0.62, 0.68, 0.74), ed.pixel_night);
 			vec3 fog_col = compute_cloud_lighting(fog_layer, fog_base, WT_FOG, 0.0, fog_layer.density * 0.55, 0.08, ed.sun_col, ed.amb_col, ed.local_day);
-			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.95, 0.0);
+			vec4 fog_comp = apply_cloud_layer(col, alpha, fog_layer, fog_col, 0.95 * cloud_opacity_scale, 0.0);
 			col = fog_comp.rgb;
 			alpha = fog_comp.a;
 		}
@@ -823,7 +825,7 @@ void fragment() {
 			vec3 cirrus_base = mix(vec3(0.92, 0.94, 0.98), ed.sun_col, 0.28);
 			cirrus_base = mix(cirrus_base, vec3(0.72, 0.78, 0.88), ed.pixel_night);
 			vec3 cirrus_col = compute_cloud_lighting(cirrus_layer, cirrus_base, w.type, cirrus_layer.edge * 0.18, cirrus_layer.density * 0.28, 0.36, ed.sun_col, ed.amb_col, ed.local_day);
-			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.42, layer_occlusion * 0.45);
+			vec4 cirrus_comp = apply_cloud_layer(col, alpha, cirrus_layer, cirrus_col, 0.42 * cloud_opacity_scale, layer_occlusion * 0.45);
 			col = cirrus_comp.rgb;
 			alpha = min(cirrus_comp.a, 0.94);
 		}

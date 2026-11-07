@@ -6,15 +6,28 @@ const COMPOSITE_SHADER_PATH := "res://shaders/cloud_shadow_composite.gdshader"
 const DEBUG_SHADER_PATH := "res://shaders/cloud_shadow_debug.gdshader"
 ## 云影强度是最终直射光的最大压暗比例。云量遮罩本身已经做了柔化，
 ## 这里提高到可感知范围，避免中等云量只有几个百分点的变化。
-const CLOUD_SHADOW_STRENGTH_HIGH := 0.64
-const CLOUD_SHADOW_STRENGTH_MID := 0.48
-const CLOUD_SHADOW_STRENGTH_LOW := 0.36
-const CLOUD_SHADOW_MOTION_SPEED := 0.075
+const CLOUD_SHADOW_STRENGTH_HIGH := 0.85
+const CLOUD_SHADOW_STRENGTH_MID := 0.62
+const CLOUD_SHADOW_STRENGTH_LOW := 0.48
+## [cloud-tex 2026-11-07] 离线烘焙的 Perlin-Worley 噪声（4 通道多尺度、无缝）。
+## 由 tools/prebake_cloud_shadow_noise.gd 生成；缺失时云影整体关闭而不是画成全黑。
+const CLOUD_NOISE_TEXTURE_PATH := "res://assets/textures/cloud_shadow/cloud_noise_rgba.res"
+const CLOUD_SHADOW_MOTION_SPEED := 0.15
 const CLOUD_SHADOW_SHAPE_CONTRAST := 1.0
-const CLOUD_SHADOW_NOISE_WARP := 0.28
-const CLOUD_SHADOW_MASK_BIAS := 0.0
+const CLOUD_SHADOW_NOISE_WARP := 0.36
+const CLOUD_SHADOW_MASK_BIAS := 0.10
 const CLOUD_SHADOW_CELL_SCALE := 0.75
-const CLOUD_SHADOW_WORLD_SCALE := 0.0045
+## [cloud-shape 2026-11-07] 0.0045 时一个噪声单元≈222 世界单位（约 6 hex），
+## 云团直径 7~12 hex，整屏只有 3~5 团，读起来像"整片明暗不均"。0.0160 把
+## 单元压到约 62 世界单位（1.6 hex），云团直径 3~5 hex，一朵云影在 zoom 0.9
+## 下约 100~180px，既独立可辨又不会碎成斑点。
+const CLOUD_SHADOW_WORLD_SCALE := 0.0130
+## 侵蚀强度：把边缘啃成絮状并在云内部掏洞。0 = 退回单层圆疙瘩。
+## 0.40 只侵蚀边缘、云体保持实心；再高会让云内部碎成迷彩。
+const CLOUD_SHADOW_EROSION := 0.40
+## 遮罩纹理更新频率。云影移动极慢（motion_speed 0.15 → 每次更新位移不足
+## 0.25 texel），60Hz 重绘纯属浪费；20Hz 肉眼无差别。
+const FIELD_UPDATE_HZ := 20.0
 
 var _world: WorldData
 var _map: MapData
@@ -40,14 +53,17 @@ var _mean_wind := Vector3(0.35, 0.12, 0.0)
 var _strength_high := CLOUD_SHADOW_STRENGTH_HIGH
 var _strength_mid := CLOUD_SHADOW_STRENGTH_MID
 var _strength_low := CLOUD_SHADOW_STRENGTH_LOW
-var _coverage_gain := 1.35
+var _coverage_gain := 1.25
 var _motion_speed := CLOUD_SHADOW_MOTION_SPEED
 var _shape_contrast := CLOUD_SHADOW_SHAPE_CONTRAST
 var _noise_warp := CLOUD_SHADOW_NOISE_WARP
 var _mask_bias := CLOUD_SHADOW_MASK_BIAS
 var _cell_scale := CLOUD_SHADOW_CELL_SCALE
 var _world_scale := CLOUD_SHADOW_WORLD_SCALE
+var _erosion := CLOUD_SHADOW_EROSION
+var _field_update_accum := 1.0
 var _has_weather_source := false
+static var _noise_texture_cache: Texture2D = null
 var _dirty := true
 var _configured := false
 var _shader_tiled := false
@@ -66,14 +82,22 @@ var _field_size := Vector2i.ZERO
 static func resolution_for_quality(quality: int, mobile_or_web: bool) -> Vector2i:
 	if mobile_or_web or quality <= 0:
 		return Vector2i(128, 64)
-	if quality == 1:
-		return Vector2i(256, 128)
+	# [cloud-shape 2026-11-07] 中画质 256x128 铺满 1600x900 时一个 texel 6.25px，
+	# 云边缘的絮状细节全被双线性插值抹平，形状算法再好也读不出来。统一到 512x256
+	# 后一个 texel 约 3px；配合 FIELD_UPDATE_HZ 的 20Hz 节流，总开销仍低于原来
+	# 每帧重绘 256x128（每像素 hash 数从 34 降到 20）。
 	return Vector2i(512, 256)
 
 
 static func direct_mode_for_quality(quality: int, mobile_or_web: bool,
 		shader_tier: String) -> bool:
-	return quality >= 2 and not mobile_or_web and shader_tier.is_empty()
+	# [cloud-gi 2026-11-07] 从 quality>=2 下放到 >=1。中画质原来走 composite 的
+	# `blend_mul` 整屏乘法，那会把**最终像素**一起乘暗 —— 直射光、环境光、天光、
+	# bounce 全被压同样比例，暗部（本来就靠环境光照亮）于是发灰发脏。真实云影
+	# 只挡直射阳光，环境光几乎不受影响。direct 路径按层分开算（direct_shadow /
+	# cloud_ambient），才是物理正确的做法；代价只是各层多一次 field 纹理采样，
+	# 反而省掉了一整屏 composite pass。
+	return quality >= 1 and not mobile_or_web and shader_tier.is_empty()
 
 
 static func encode_wind(direction: Vector2, speed: float) -> Color:
@@ -198,7 +222,8 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 		noise_warp: float = CLOUD_SHADOW_NOISE_WARP,
 		mask_bias: float = CLOUD_SHADOW_MASK_BIAS,
 		cell_scale: float = CLOUD_SHADOW_CELL_SCALE,
-		world_scale: float = CLOUD_SHADOW_WORLD_SCALE) -> void:
+		world_scale: float = CLOUD_SHADOW_WORLD_SCALE,
+		erosion: float = CLOUD_SHADOW_EROSION) -> void:
 	_strength_high = clampf(strength_high, 0.0, 1.0)
 	_strength_mid = clampf(strength_mid, 0.0, 1.0)
 	_strength_low = clampf(strength_low, 0.0, 1.0)
@@ -209,6 +234,7 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 	_mask_bias = clampf(mask_bias, 0.0, 0.8)
 	_cell_scale = clampf(cell_scale, 0.35, 2.5)
 	_world_scale = clampf(world_scale, 0.001, 0.05)
+	_erosion = clampf(erosion, 0.0, 1.0)
 	if _field_material != null:
 		_field_material.set_shader_parameter("cloud_shadow_coverage_gain", _coverage_gain)
 		_field_material.set_shader_parameter("cloud_shadow_motion_speed", _motion_speed)
@@ -217,6 +243,7 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 		_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
 		_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
 		_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
+		_field_material.set_shader_parameter("cloud_shadow_erosion", _erosion)
 	_update_visibility()
 
 
@@ -270,8 +297,15 @@ func _process(delta: float) -> void:
 		_mark_dirty()
 	if _field_material != null:
 		_field_material.set_shader_parameter("world_time", _world_time)
+	_field_update_accum += delta
 	if _has_weather_source:
-		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		# [cloud-shape 2026-11-07] 原来这里是 UPDATE_ALWAYS（每帧重绘）。云影移动
+		# 极慢，50ms 内的位移不到 0.25 texel，20Hz 与 60Hz 肉眼无差别，但省掉
+		# 2/3 的 field fragment 开销 —— 用来抵消遮罩分辨率 256x128→512x256 的
+		# 4 倍像素增长。天气 LUT 变化时 _mark_dirty() 仍会立即刷新。
+		if _field_update_accum >= 1.0 / FIELD_UPDATE_HZ:
+			_field_update_accum = 0.0
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	else:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE if _dirty else SubViewport.UPDATE_DISABLED
 		_dirty = false
@@ -326,6 +360,10 @@ func _configure_shaders() -> void:
 		_field_material = ShaderMaterial.new()
 		_field_material.shader = shader
 		_field_quad.material = _field_material
+		var noise_tex := _shared_noise_texture()
+		if noise_tex == null:
+			push_error("[cloud-shadow] noise texture missing: %s" % CLOUD_NOISE_TEXTURE_PATH)
+		_field_material.set_shader_parameter("cloud_noise_tex", noise_tex)
 	var composite_shader := ResourceLoader.load(COMPOSITE_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if composite_shader != null:
 		_composite_material = ShaderMaterial.new()
@@ -347,6 +385,7 @@ func _configure_shaders() -> void:
 			_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
 			_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
 			_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
+			_field_material.set_shader_parameter("cloud_shadow_erosion", _erosion)
 	var debug_shader := ResourceLoader.load(DEBUG_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if debug_shader != null:
 		_debug_material = ShaderMaterial.new()
@@ -356,6 +395,17 @@ func _configure_shaders() -> void:
 		_debug_material.set_shader_parameter("wrap_x_enabled", _wrap_period_x > 0.0001)
 		_debug_material.set_shader_parameter("wrap_origin_uv", get_wrap_origin_uv())
 		_debug_material.set_shader_parameter("wrap_period_uv", get_wrap_period_uv())
+
+
+static func _shared_noise_texture() -> Texture2D:
+	if _noise_texture_cache != null:
+		return _noise_texture_cache
+	var image := load(CLOUD_NOISE_TEXTURE_PATH) as Image
+	if image == null:
+		return null
+	# 烘焙时已经 generate_mipmaps()，这里原样上传，filter_linear_mipmap 才有效。
+	_noise_texture_cache = ImageTexture.create_from_image(image)
+	return _noise_texture_cache
 
 
 func _resize_field() -> void:
