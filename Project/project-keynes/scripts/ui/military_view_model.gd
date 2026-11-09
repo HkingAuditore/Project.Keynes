@@ -986,6 +986,7 @@ func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
 		{"id": "locate", "label": "定位", "enabled": true},
 		{"id": "move", "label": "移动", "enabled": own},
 		{"id": "area", "label": "军事控制", "enabled": own},
+		{"id": "stop", "label": "停止任务", "enabled": own and int(detail.get("mission", 0)) != 0},
 	]
 	var remaining := 0
 	var path = detail.get("path", null)
@@ -1023,6 +1024,9 @@ func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
 		"focus_cell": int(detail.get("cell", -1)),
 		"selected": handle,
 		"army": {
+			"own": own,
+			"stance": int(detail.get("stance", 0)),
+			"mission_text": _mission_text(detail),
 			# 攻 / 防 / 速 是平级战力数据：同一行、同一字号、同一墨色。
 			"peer_stats": [
 				{"label": "攻击", "text": "%.1f" % attack, "color": UITokens.DOSSIER_INK},

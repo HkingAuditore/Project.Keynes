@@ -812,7 +812,7 @@ func _draw_conditions(x: float, w: float) -> void:
 	var strong := UITokens.dossier_font("sans_strong")
 	var sans := UITokens.dossier_font("sans")
 	var numeral := UITokens.dossier_font("numeral")
-	_text(Vector2(x, COND_HEAD_Y), "前提条件 · 任选其二", strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
+	_text(Vector2(x, COND_HEAD_Y), String(_model.get("conditions_heading", "")), strong, SIZE_BODY, UITokens.DOSSIER_INK, w)
 	var rows: Array = m.get("conditions", [])
 	var tile_w := floorf((w - COND_GAP) * 0.5)
 	for i in range(mini(rows.size(), 4)):

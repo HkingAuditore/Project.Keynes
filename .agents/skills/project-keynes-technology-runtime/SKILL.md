@@ -113,6 +113,14 @@ activation remains unchanged and must not re-check a gate.
 
 ## Verify
 
+Player era advancement is owned by `EraAdvancementCatalog` / `EraAdvancementService`, separate from
+researchable technology costs. Technology completion at 80% is mandatory, plus any two of population,
+completed building units and current-era trade orders. Economic gates use base + per-cell × owned
+territory; procurement uses an era multiplier and additive base + per-cell quantities. Preserve frozen
+purchase orders across pause/restore, including orders started under earlier balance values. Run
+`tests/technology/era_advancement_service_test.gd` when changing these rules and synchronize
+`docs/cpp-dots-runtime/era-advancement-runtime.md`.
+
 Full-graph ACTIVE still needs the host Trigger transport pump to hand research signals through
 Effect to Country. Bound delivery, protect in-flight Effect facade transactions from worker
 write-back, retry rejected cursor admission, and service deferred handoff in the existing Economy

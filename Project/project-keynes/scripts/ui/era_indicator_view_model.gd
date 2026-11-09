@@ -2,6 +2,7 @@ extends RefCounted
 class_name EraIndicatorViewModel
 
 const Catalog = preload("res://scripts/economy/technology_catalog.gd")
+const AdvancementCatalog = preload("res://scripts/era/era_advancement_catalog.gd")
 var _eras: Array[Dictionary] = Catalog.public_era_metadata()
 var _catalog: Dictionary = Catalog.compile_native_catalog()
 
@@ -207,11 +208,14 @@ func present_advancement(snapshot: Dictionary) -> Dictionary:
 	var current_name := String(snapshot.get("current_era_name", era_name_for(current_index)))
 	var next_name := String(snapshot.get("next_era_name", era_name_for(next_index)))
 	var conditions: Array[Dictionary] = []
+	var mandatory_met := true
 	for raw in snapshot.get("conditions", []):
 		var row: Dictionary = raw
 		var current := float(row.get("current", 0))
 		var target := float(row.get("target", 0))
 		var key := String(row.get("key", ""))
+		if bool(row.get("mandatory", false)) and not bool(row.get("met", false)):
+			mandatory_met = false
 		var text := String(row.get("text", ""))
 		if text.is_empty():
 			text = "%s / %s" % [UITokens.format_compact_number_cn(current, 1),
@@ -225,11 +229,12 @@ func present_advancement(snapshot: Dictionary) -> Dictionary:
 			"value_text": value_text, "current": current, "target": target,
 			"tooltip": String(row.get("tooltip", "")),
 			"met": bool(row.get("met", false)),
+			"mandatory": bool(row.get("mandatory", false)),
 			"ratio": 1.0 if target <= 0.0 else clampf(current / target, 0.0, 1.0),
 			"icon": CONDITION_ICONS.get(key, &"technology.milestone"),
 		})
 	var met := int(snapshot.get("conditions_met", 0))
-	var required := maxi(1, int(snapshot.get("conditions_required", 2)))
+	var required := maxi(1, int(snapshot.get("conditions_required", AdvancementCatalog.CONDITIONS_REQUIRED)))
 	var costs: Array[Dictionary] = []
 	for raw in snapshot.get("costs", []):
 		var row: Dictionary = raw
@@ -273,7 +278,9 @@ func present_advancement(snapshot: Dictionary) -> Dictionary:
 		"next": {} if next_index < 0 else {"index": next_index, "id": era_id_for(next_index),
 			"name": next_name},
 		"conditions": conditions, "conditions_met": met, "conditions_required": required,
-		"conditions_text": "已满足 %d/%d" % [mini(met, required), required],
+		"conditions_heading": AdvancementCatalog.CONDITIONS_RULE_TEXT,
+		"conditions_text": "已满足 %d/%d" % [mini(met, required), required] \
+			if mandatory_met else "科技未达标",
 		"costs": costs, "territory_note": territory_note,
 		"progress": progress,
 		"budget_enabled": share_bp > 0,
@@ -289,6 +296,11 @@ func present_advancement(snapshot: Dictionary) -> Dictionary:
 static func delta_hint(status: String, conditions: Array, met: int, required: int) -> String:
 	if status != "locked":
 		return ""
+	# A missing mandatory gate cannot be replaced by the three economic gates.
+	for row: Dictionary in conditions:
+		if bool(row.get("mandatory", false)) and not bool(row.get("met", false)):
+			var gap := maxi(1, int(ceil(float(row.get("target", 0)) - float(row.get("current", 0)))))
+			return "科技必达：还差 %s 项" % UITokens.format_compact_number_cn(gap, 1)
 	var missing := required - met
 	if missing > 1:
 		return "还差 %d 项条件" % missing

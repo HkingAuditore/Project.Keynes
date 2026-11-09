@@ -8,13 +8,13 @@
 1. 取消「研究时代里程碑科技才能升时代」。所有时代里程碑科技从玩家科技树/可研究清单/总览中
    移除，玩家不能研究它们；它们原本的效果改为「升级时代后获得的 buff」。
 2. 升时代改为：点击屏幕上方时代 icon → 打开时代晋升面板，显示前提条件与成本。
-   - 前提条件 4 选 2：
-     a. 完成本时代 50% 科技（本时代 = 当前时代，统计 `era_id == 当前时代` 的研究科技，
+   - 前提条件为科技必达，另三项选二（2026-11-08 调整）：
+     a. 必须完成本时代 80% 科技（本时代 = 当前时代，统计 `era_id == 当前时代` 的研究科技，
         排除里程碑节点与 `app.*`；state 5 才算完成，开局科技计入）；
-     b. 人口 ≥ 每时代阈值；
-     c. 建筑数 ≥ 每时代阈值（已落成建筑单位数，`BuildingGroup.count` 之和）；
-     d. 本时代完成的贸易次数 ≥ 每时代阈值（国内 + 跨国贸易订单，国家作为来源或目的地）。
-   - 任意 2 项达成即可「开始晋升」。
+     b. 人口 ≥ 目标时代人口基数 + 每格人口要求 × 当前地块数；
+     c. 建筑数 ≥ 目标时代建筑基数 + 每格建筑要求 × 当前地块数（已落成建筑单位数，`BuildingGroup.count` 之和）；
+     d. 本时代完成的贸易次数 ≥ 目标时代贸易基数 + 每格贸易要求 × 当前地块数（国内 + 跨国贸易订单，国家作为来源或目的地）。
+   - a 必须满足，b/c/d 中至少满足 2 项才可「开始晋升」。
    - 开始后，玩家需「收购」与地块数量相关的大量物资；物资种类与数量随时代不同。
      收购是持续过程，买到的物资进入国库；国库中对应物资全部达标后自动消耗并完成晋升。
    - 晋升过程可随时暂停 / 继续。
@@ -162,7 +162,7 @@ good_indices: PackedInt32Array, required_quantities: PackedInt64Array, effective
 - 时代奖励三选一仍由里程碑激活原生触发。若上一份奖励仍为 OPEN/SELECTED_PENDING/ERROR，
   原生 planner 会拒绝新的里程碑通知，所以物资备齐后也要等奖励领取完再提交
   （`PlayerController.get_era_advancement_blocked_reason()` 给出提示）。
-- 条件口径：tech = `era_id == 当前时代` 的非里程碑科技 state 5 比例 ≥ 50%；人口
+- 条件口径：tech = `era_id == 当前时代` 的非里程碑科技 state 5 比例 ≥ 80%，必须满足；人口
   `country_economy_overview(summary).population`；建筑 `building_units`；贸易 =
   `country_procurement_snapshot.trade_orders_total` 的会话内日差分（缺接口时为 0）。
 - 提交后进入 COMPLETING 并推送 active=false；5 日内里程碑未进入 pending/完成则回到
@@ -174,6 +174,54 @@ good_indices: PackedInt32Array, required_quantities: PackedInt64Array, effective
   `era_advanced(old_index, new_index, buffs: PackedStringArray)`。
 - 校验器：`TechnologyNetworkValidator.effect_summary` 对里程碑输出
   「时代晋升效果：…」，权威作者门禁会保持该前缀。
+
+### 3.2 领土规模与高成本曲线（2026-11-08 已实现）
+
+继续使用 `EraAdvancementCatalog` 作为规则所有者；`EraAdvancementService` 只读取
+Country 已发布的 `territory_count`、Economy 的人口/已落成建筑摘要，以及会话贸易累计数。
+人口要求较初版方案降低，建筑要求大幅提高；三项经济条件均为「基数 + 每格要求 × 当前地块数」，
+至少按 1 格计算。科技固定要求本时代 80%，三个经济条件不能替代必需科技。
+
+| 目标时代 | 人口基数 / 每格 | 建筑基数 / 每格 | 贸易基数 / 每格 | 物资倍率 |
+| --- | --- | --- | --- | --- |
+| 农耕 | 250 / 50 | 1,000 / 200 | 250 / 50 | 50 |
+| 王国 | 750 / 100 | 2,000 / 300 | 750 / 100 | 60 |
+| 帝国 | 2,000 / 200 | 4,000 / 400 | 2,000 / 200 | 75 |
+| 探索 | 5,000 / 375 | 7,000 / 500 | 5,000 / 400 | 90 |
+| 启蒙 | 12,500 / 625 | 12,000 / 600 | 11,000 / 800 | 110 |
+| 蒸汽 | 30,000 / 1,000 | 20,000 / 700 | 22,500 / 1,500 | 135 |
+| 电气 | 75,000 / 1,500 | 32,000 / 800 | 45,000 / 3,000 | 160 |
+| 原子 | 187,500 / 2,250 | 50,000 / 900 | 90,000 / 6,000 | 190 |
+| 信息 | 450,000 / 3,000 | 75,000 / 1,000 | 175,000 / 12,000 | 225 |
+| 智能 | 1,000,000 / 4,500 | 110,000 / 1,200 | 350,000 / 24,000 | 265 |
+
+收购物资仍使用原时代的可生产商品篮子。目录输出时将原始 `floor` 与 `per_cell` 乘以上表倍率，
+总需求为 `floor + per_cell × max(1, frozen_territory)`；固定筹备量与逐格投入相加，单格到双格也会涨价。
+例如首次晋升、10 格领土：人口 750、建筑 3,000、贸易 750；物资为原木 12,000、采集植物 18,000、
+野味 9,000（真实单位，提交原生时乘 `GOODS_SCALE=1000`），均为此前同规模成本的 60 倍。
+
+开始前门槛与费用随当前领土变化；开始后沿用已存在的地块数/物资冻结机制，暂停、扩张与读档
+不重算订单。既有存档中已经启动的旧订单仍履约；新启动的晋升采用新规则。没有新增继续态字段，
+`player_view.era_advancement` 仍为 version 1，原生目录、存档格式和采购结算路径不变。
+UI 从条件行读取 `mandatory` 标记，标题写「科技必达 · 其余三选二」；科技不足时优先显示科技缺口。
+
+验证入口：`tests/technology/era_advancement_service_test.gd`，覆盖十个目标时代的领土增长、物资量级、
+必需科技不可替代、临界门槛、实际收购参数、冻结订单保存恢复，以及差一个定点单位时不完成晋升。
+
+本次验证（Windows，Godot 4.6.2，均使用 `--headless --path Project/project-keynes --script res://…`）：
+
+- `tests/technology/era_advancement_service_test.gd`：PASS。
+- `tests/ui/era_advancement_panel_test.gd`：PASS，包含 1280×720 / 1920×1080 与 125% 缩放的布局检查。
+- `tests/technology/technology_research_runtime_test.gd`：PASS。
+- `tests/technology/technology_procurement_runtime_test.gd`：PASS。
+- `git diff --check`：通过。
+- skill 的 `verify_technology_runtime.ps1 -GodotExe <Godot console>` 未能运行完整门禁：其预检仍引用
+  `tests/technology_catalog_test.gd`，实际测试已迁到 `tests/technology/`。单独运行迁移后的
+  `technology_catalog_test.gd`，在未改动的第 127 行 `modifier_stats.size() == 513` 断言失败，
+  该测试未通过；本轮没有修改科技目录或 Modifier 内容来规避此断言。
+
+没有修改 C++，未重新构建 GDExtension；上述原生回归使用当前工作区已有 DLL。
+未运行完整默认回归、图形截图或长期经济平衡实测；本节的成本与门槛是已实现的规则，尚无长期节奏标定。
 
 ## 4. 科技数据与科技 UI（B1 数据，B3 UI）
 
@@ -230,7 +278,7 @@ good_indices: PackedInt32Array, required_quantities: PackedInt64Array, effective
     `EraRewardDialog` 原流程）。数据来自 `EraIndicatorViewModel.build_overview()`。
   - 右栏「时代晋升」，每项只出现一次：kicker「时代晋升」；时代行「A → B」+ 右侧状态签（收购中 n% /
     条件未满足 / 可开始 / 已暂停 / 已完成 / 已达最高时代）；徽记带（当前 64px、2px 进度轨 + 箭头、
-    下一时代 80px + 同进度金环，徽记下无文字）；「前提条件 · 任选其二」+ 同行「已满足 n/2」；条件 2×2
+    下一时代 80px + 同进度金环，徽记下无文字）；「科技必达 · 其余三选二」；条件 2×2
     （勾选、图标、标签、右对齐「n / m 单位」，无迷你进度条）；「晋升物资」小签最多 4 个（中文名 +
     「n / m」+ 细条，第 5 种起收成「+N 种」，地块计价进小节头提示）；接下来独立一行放预算：预算为 0
     时是可点的（右对齐）「尚未分配预算 · 前往国库设置 ›」，有预算时这一行留白，读数只在国库面板重复；

@@ -731,3 +731,9 @@ full-map scans or per-frame economy reads.
 - 状态交接：`EconomyAuthorityTransfer`；总控不直接访问经济私有状态。
 - 记录：`EconomyRecordSource` → 复制的 `Batch` → `EconomyCsvRecorder` 文件线程。
 - 当前扩展与保存边界：`docs/architecture/development-guide.md`；当前验证：`docs/architecture/migration.md`。
+
+部队指挥：`MilitaryDossier -> InspectorPanel -> GameUIManager -> PlayerController -> MilitaryFacade`。选点草稿通过 `update_military_arm_order` 事件回写固定指挥区；军事快照继续按已提交日补丁更新。见 [部队指挥交互](../docs/ui/military-army-controls.md)。
+
+### 军需市场需求入口（2026-11-08）
+
+`military_core_procurement.inc`（logistics 同 TU 私有实现）发布缺货 intent 17；`world_ext_military_economy_ingress.inc` 复用 legacy/POD D+1 桥；`economy_runtime_military_demand.cpp` 消费 opcode 36，冻结 cell/market 日需求并通过 `epoch_procurement_demand_daily[_for_market]` 接入市场、生产及投资。自测私有实现为 `military_core_procurement_selftest.inc`；集成回归入口在 `tests/runtime/military_procurement_*_test.gd`。

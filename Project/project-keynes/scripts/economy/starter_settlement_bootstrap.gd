@@ -7,6 +7,9 @@ const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
 const STARTER_POPULATION := 40
 const SURVIVAL_DAYS := 15
+## Opening reserve covers roughly four months of the observed starting basket,
+## allowing initially unemployed founders time to enter new jobs.
+const CASH_PER_PERSON := 60 * MONEY_SCALE
 const LOCAL_INPUT_BUFFER_DAYS := 3
 const SURVIVAL_PLAN_PATH := "res://data/economy/consumption_plans/survival_household.tres"
 
@@ -241,7 +244,8 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		"starter_building_offsets": starter_building_offsets,
 		"starter_building_ids": starter_building_ids,
 		"survival_days": SURVIVAL_DAYS,
-		"source": "starter_settlement_bootstrap_v9",
+		"cash_per_person": CASH_PER_PERSON,
+		"source": "starter_settlement_bootstrap_v10",
 	}
 
 
@@ -251,7 +255,7 @@ static func _append_population_row(signature_ids: PackedInt32Array,
 	signature_ids.append(signature)
 	cell_indices.append(cell)
 	populations.append(population)
-	funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
+	funds.append(population * CASH_PER_PERSON)
 
 
 static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:

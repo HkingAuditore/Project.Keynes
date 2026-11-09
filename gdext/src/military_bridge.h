@@ -142,6 +142,10 @@ enum MilitaryIntentKind : uint16_t {
     // report a demolition the ledger did not record.
     // cell, count = state building index, country_a = owner. One unit per row.
     MILITARY_INTENT_STATE_DEMOLISH = 16,
+    // Replacement snapshot of funded, unfilled procurement. cell=-1 clears
+    // the previous snapshot; other rows name a real good (never a category).
+    // count=goods, amount=normalization days. No custody or cash movement.
+    MILITARY_INTENT_PROCUREMENT_DEMAND = 17,
     // Country
     MILITARY_INTENT_TRANSFER_TERRITORY = 20, // cell, to_country (treaty cession)
     MILITARY_INTENT_TRANSFER_CASH = 21,      // from, to, amount (reparations)

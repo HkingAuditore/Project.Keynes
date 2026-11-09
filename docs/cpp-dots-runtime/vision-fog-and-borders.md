@@ -175,6 +175,63 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 结论写在这里免得再走一遍：**全屏俯视云层使用分层 2.5D 密度场 + 少量质量探针，
 不要做低步数体积积分。** 散射模型该给的东西，不积分也拿得到。
 
+### 云影的世界空间连续性
+
+`CloudShadowField` 的云形采样坐标必须由 `world_origin + world_uv * world_size` 得到，
+不能在每个 cell 的局部 UV 上重新起算。云影场仍从当前 cell 的天气 LUT 读取覆盖度，
+但天气 LUT 的云量和水汽不再直接按当前 cell 取整格值，而是根据世界坐标到当前及六个
+hex 中心的距离做连续核插值；天气类型仍使用中心 cell，避免离散天气枚举在边界闪烁。
+这样噪声纹理与云量遮罩都跨 cell 连续，圆柱东西向仍由同一套 wrap 坐标处理。
+
+运行中的 `HexRenderer` 仍允许远程 Inspector 修改数值调参项；运行期会持续变化的材质、
+光照配置和装饰资源引用使用 `@export_storage` 保存但不暴露给 Inspector。Godot Remote
+Inspector 对这类资源内 Packed 数组的序列化存在已知 Variant 解码问题，隐藏资源引用可
+避免调试连接被动态 shader 参数刷坏，同时不影响运行期材质复制和绑定。
+
+水面云影使用独立响应：直射遮蔽和天光遮蔽都按 `cloud_shadow_water_scale` 缩放，当前
+生产默认值为 `0.58`；云影部分不再重复进入水面 `shadow floor`。陆地继续使用完整云影响应，
+避免为了修海面而把陆地云影一起洗淡。
+
+云影 field 的 `world_time` 每帧推进，field 重绘频率保持在显示刷新节奏；如果降到 20Hz，
+形状噪声会出现“停住—跳一下”，即使 mask 数值本身没有刷新问题。
+
+天气云的强弱由三层共同决定：天气场 `w.cloud` 控制云形覆盖和 alpha 增益，
+`CloudLayerSample.density` 控制云体内部厚薄，WeatherProfile 的 `overlay_base_alpha`
+提供天气类型的底幕。三者都经过显示端 remap；强云提高密度增益，弱云保持薄透，
+`clear` 不产生底幕。
+
+云影场的噪声采样和天气量遮罩都使用全局 `world_pos`。天气 LUT 的 cell id 只在由世界
+坐标反算出的候选 hex 中心处读取，用于查表；最终云量由世界距离插值，不把最近 cell 的
+离散边界直接作为云影边界。
+
+云影形状拆成离线底图和运行时动态层：`cloud_shadow_base_rgba.res` 由
+`tools/prebake_cloud_shadow_base.gd` 生成，只保存跨 cell 连续的宏观云团分布；
+`cloud_noise_rgba.res` 作为动态细节，通过 `world_time` 驱动的 UV 平流叠加在底图上。
+运行时不重新烘焙或上传底图，只重绘 field 的合成结果。
+
+噪声相位由独立的 `world_time` 推进，不以 LUT 的 cell id 作为噪声种子；但 field 输出
+仍是 `weather_mask × noise_shape`，所以 LUT 提交时最终云影会随 mask 重新组合。Y 轴噪声
+坐标使用相对 `world_origin.y` 的世界距离，避免绝对世界 Y 穿过 0 时让 repeat UV 在赤道
+折返，形成横向断裂。
+
+`CloudShadowField` 的 `world_time` 由 HexRenderer 统一推送，与地形和天气 shader 共用同一
+时间相位；云影 UV 位移由 field 按每帧 `dt` 累积全局风速，shader 只读取连续的
+`cloud_shadow_uv_offset`。不能用 `wind * world_time` 直接重算，否则天气 tick 更新风场时会把
+整张噪声的历史相位瞬间改掉。暂停/倍速仍与标准时间同步，噪声纹理和 seed 在运行时不变。
+
+噪声 UV 的滚动速度由 `cloud_shadow_motion_speed` 和独立的
+`cloud_shadow_uv_scroll_gain` 共同决定。后者用于抵消世界坐标归一化后过小的 UV 位移，
+避免 field 每帧虽重绘、屏幕上却只在 LUT 提交时看见一次跳变。生产场景的
+`motion_speed=0.03`、`world_scale=0.04` 使用 `uv_scroll_gain=16`，以保证 1× 时仍
+能在几秒内观察到云影平流。
+
+动态细节还会对主形状做实时域扭曲和中高频调制，并复用局地风方向做低幅度连续剪切，
+效果类似洋流的平滑拉伸。边缘羽化参数范围为 `0..2`，超过 1 后仍会继续扩大密度
+过渡区，而不是被归一化截断。
+高画质 field 会额外读取世界空间局地风 LUT，作为低幅度流向修正；主位移仍由 CPU 累积的
+全局风负责，因此风场 tick 更新不会重算历史相位。额外成本只发生在 512×256（移动端
+更低分辨率）的 field 上，不会在地形和水面每个屏幕像素重复执行。
+
 ### deck / body / top 分层模型
 
 `fog_sample_shape()` 从同一个连续宏观场派生三层，避免多张独立噪声贴片互相滑动：

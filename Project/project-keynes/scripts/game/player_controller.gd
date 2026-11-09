@@ -996,6 +996,16 @@ func handle_input(event: InputEvent) -> void:
 
 
 func _dispatch_player_input(event: InputEvent) -> void:
+	if not _military_order_mode.is_empty():
+		var cancel_key := event is InputEventKey and event.is_pressed() \
+			and not event.is_echo() and (event.is_action_pressed(&"player_cancel") \
+			or event.is_action_pressed(&"ui_cancel"))
+		var cancel_mouse: bool = event is InputEventMouseButton and event.is_pressed() \
+			and event.button_index == MOUSE_BUTTON_RIGHT
+		if cancel_key or cancel_mouse:
+			cancel_military_arm_order()
+			get_viewport().set_input_as_handled()
+			return
 	if _annual_report_flow.is_open():
 		if event.is_action_pressed(&"player_cancel") or event.is_action_pressed(&"ui_cancel"):
 			_ui_manager.dismiss_overlay_menu()
@@ -1911,8 +1921,14 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if procurement_bp < 0 or procurement_bp > 10000:
 				return _result(false, "invalid_args", "军需采购份额必须在 0–100% 之间。")
 		COMMAND_MILITARY_ARMY_CREATE:
-			if int(args.get("cell", -1)) < 0:
-				return _result(false, "invalid_args", "编成部队需要所在格。")
+			var cell := int(args.get("cell", -1))
+			var units = args.get("units", {})
+			if cell < 0 or not units is Dictionary or units.is_empty():
+				return _result(false, "invalid_args", "编成部队需要所在格和驻军兵种。")
+			var army_gate := _player_owns_military_cell(cell)
+			if not bool(army_gate.get("ok", false)):
+				return _result(false, String(army_gate.get("code", "not_own_territory")),
+					String(army_gate.get("message", "只能编成本国可控领土上的驻军。")))
 		COMMAND_MILITARY_ARMY_STATION, COMMAND_MILITARY_ARMY_STOP, \
 				COMMAND_MILITARY_ARMY_DISBAND:
 			if int(args.get("army", 0)) <= 0:
@@ -2506,6 +2522,24 @@ func _state_building_gate(cell: int, building: int,
 	return {"ok": true}
 
 
+func _player_owns_military_cell(cell: int) -> Dictionary:
+	var country_facade = _country_facade
+	if country_facade == null or not country_facade.has_method("cell_summary"):
+		return {"ok": false, "code": "country_unavailable", "message": "国家领土数据暂不可读。"}
+	var summary: Dictionary = country_facade.cell_summary(cell)
+	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)) \
+			or int(summary.get("country_handle", 0)) != _player_country_handle:
+		return {"ok": false, "code": "not_own_territory", "message": "只能编成本国可控领土上的驻军。"}
+	var military = _military_facade()
+	if military == null or not military.has_method("cell_snapshot"):
+		return {"ok": false, "code": "military_unavailable", "message": "军事数据暂不可读。"}
+	var snapshot: Dictionary = military.cell_snapshot(cell, _player_country_handle)
+	if not bool(snapshot.get("ok", false)) \
+			or int(snapshot.get("controller_slot", -1)) != int(snapshot.get("owner_slot", -2)):
+		return {"ok": false, "code": "cell_occupied", "message": "被占领的地块不能编成部队。"}
+	return {"ok": true}
+
+
 ## 玩家已完成的科技稳定 id。读不到国家快照时返回 null（调用方据此拒绝而不是放行）。
 func _completed_technology_ids():
 	var country_facade = _country_facade
@@ -2747,6 +2781,8 @@ var _military_order_army := 0
 var _military_order_mode := ""
 var _military_order_radius := 0
 var _military_order_target := -1
+var _military_order_preview: Dictionary = {}
+var _military_order_message := ""
 
 
 func military_last_sequence() -> int:
@@ -2809,8 +2845,7 @@ func _repush_military_budget() -> bool:
 
 # ─── Military army orders on the map (design §14.2) ────────────────────────
 # The workspace only asks for the mode; the targeting loop lives here because
-# this is where a map click becomes a cell. 移动 is a two-click order (preview,
-# then confirm), 军事控制 is centre + radius.
+# this is where a map click becomes a cell. 地图点击只预览，档案上的确认键提交。
 
 ## `mode` is "move" or "area". Returns the same result shape as request_command.
 func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dictionary:
@@ -2825,15 +2860,20 @@ func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dicti
 		return _result(false, "invalid_args", "未知的部队指令。")
 	if mode == "area" and (radius < 1 or radius > 6):
 		return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
+	var detail: Dictionary = facade.army(army)
+	if not bool(detail.get("ok", false)) or int(detail.get("owner_slot", -1)) != \
+			int(_player_country_handle & 0xFFFFFFFF):
+		return _result(false, "not_owner", "只能指挥本国部队。")
+	cancel_military_arm_order()
 	_military_order_army = army
 	_military_order_mode = mode
 	_military_order_radius = radius
 	_military_order_target = -1
-	# 下一次点击是目标格：档案先收起，免得它与路线预览抢同一块地方。
-	if _ui_manager != null and _ui_manager.has_method("close_military_dossier"):
-		_ui_manager.call("close_military_dossier")
+	_military_order_message = "点击地图选择控制中心，再确认区域。" if mode == "area" \
+		else "点击地图预览路线，再确认行军。"
 	_apply_military_render_selection(army)
 	_clear_military_path_preview()
+	_notify_military_arm_order()
 	var armed := _result(true, "ok", "在地图上点目标格。")
 	armed["mode"] = mode
 	armed["radius"] = radius
@@ -2841,16 +2881,63 @@ func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dicti
 
 
 func cancel_military_arm_order() -> void:
+	if _military_order_mode == "area":
+		clear_cell_highlights()
 	_military_order_army = 0
 	_military_order_mode = ""
 	_military_order_radius = 0
 	_military_order_target = -1
+	_military_order_preview.clear()
+	_military_order_message = ""
 	_clear_military_path_preview()
+	_notify_military_arm_order()
 
 
 func military_arm_order() -> Dictionary:
 	return {"army": _military_order_army, "mode": _military_order_mode,
-		"radius": _military_order_radius, "target": _military_order_target}
+		"radius": _military_order_radius, "target": _military_order_target,
+		"ready": _military_order_target >= 0 and not _military_order_preview.is_empty(),
+		"message": _military_order_message,
+		"days": int(_military_order_preview.get("days", 0)),
+		"cell_count": (_military_order_preview.get("area", PackedInt32Array()) as PackedInt32Array).size()}
+
+
+func _notify_military_arm_order() -> void:
+	if _ui_manager != null and _ui_manager.has_method("update_military_arm_order"):
+		_ui_manager.call("update_military_arm_order", military_arm_order())
+
+
+func set_military_arm_order_radius(radius: int) -> void:
+	if _military_order_mode != "area":
+		return
+	_military_order_radius = clampi(radius, 1, 6)
+	if _military_order_target >= 0:
+		military_arm_order_click(_military_order_target)
+	else:
+		_notify_military_arm_order()
+
+
+## 确认时重算路径；快进期间部队位置、领土和通行条件都可能改变。
+func confirm_military_arm_order() -> Dictionary:
+	if _military_order_target < 0 or _military_order_preview.is_empty():
+		return _result(false, "target_required", "先在地图上选择可达的目标。")
+	var target := _military_order_target
+	military_arm_order_click(target)
+	if _military_order_preview.is_empty():
+		return _result(false, "target_unreachable", _military_order_message)
+	var id := COMMAND_MILITARY_AREA_CONTROL if _military_order_mode == "area" \
+		else COMMAND_MILITARY_ARMY_MOVE
+	var args := {"army": _military_order_army, "cell": target}
+	if _military_order_mode == "area":
+		args["cells"] = _military_order_preview.get("area", PackedInt32Array())
+		args["radius"] = _military_order_radius
+	var sent := request_command(id, args)
+	if bool(sent.get("ok", false)):
+		cancel_military_arm_order()
+	else:
+		_military_order_message = String(sent.get("message", "命令未能下达，请重试。"))
+		_notify_military_arm_order()
+	return sent
 
 
 ## Map click while an order is pending. Returns true when the click belonged to
@@ -2858,29 +2945,35 @@ func military_arm_order() -> Dictionary:
 func military_arm_order_click(cell: int) -> bool:
 	if _military_order_mode.is_empty() or cell < 0:
 		return false
-	var army := _military_order_army
-	if _military_order_mode == "area":
-		var cells := _military_area_cells(cell, _military_order_radius)
-		var sent := request_command(COMMAND_MILITARY_AREA_CONTROL,
-			{"army": army, "cells": cells, "radius": _military_order_radius})
-		if bool(sent.get("ok", false)) and cells.size() > 0:
-			highlight_cells(cells)
-		cancel_military_arm_order()
-		return true
 	var facade = _military_facade()
-	var preview: Dictionary = facade.preview_path(army, cell) \
+	var preview: Dictionary = facade.preview_path(_military_order_army, cell) \
 		if facade != null and facade.has_method("preview_path") else {}
+	_military_order_target = -1
+	_military_order_preview.clear()
+	_clear_military_path_preview()
+	if _military_order_mode == "area":
+		clear_cell_highlights()
 	if not bool(preview.get("ok", false)):
 		# Never send a move the pathfinder already refused to draw.
 		_preview_failed(preview, cell)
 		return true
-	if _military_order_target != cell:
-		if not _show_military_path_preview(preview, cell):
-			return true
-		_military_order_target = cell
+	if not _show_military_path_preview(preview, cell):
+		_military_order_message = "路线暂不可显示，请重新选择目标。"
+		_notify_military_arm_order()
 		return true
-	request_command(COMMAND_MILITARY_ARMY_MOVE, {"army": army, "cell": cell})
-	cancel_military_arm_order()
+	_military_order_target = cell
+	_military_order_preview = preview.duplicate()
+	if _military_order_mode == "area":
+		var cells := _military_area_cells(cell, _military_order_radius)
+		_military_order_preview["area"] = cells
+		highlight_cells(cells)
+		if cells.is_empty():
+			_military_order_target = -1
+			_military_order_preview.clear()
+		_military_order_message = "控制范围已标出，确认后部队将执行区域控制。"
+	else:
+		_military_order_message = "路线已标出；可改选目标，或确认行军。"
+	_notify_military_arm_order()
 	return true
 
 
@@ -2889,6 +2982,8 @@ func _preview_failed(preview: Dictionary, cell: int) -> void:
 	var text := "这段路走不通：目标格不可达。"
 	if reason == "military_path_unreachable":
 		text = "这段路走不通：与部队之间没有可通行的路线。"
+	_military_order_message = text
+	_notify_military_arm_order()
 	if _ui_manager != null and _ui_manager.has_method("show_transient_message"):
 		_ui_manager.call("show_transient_message", text)
 	else:
@@ -2968,7 +3063,7 @@ func set_military_render_selection(army_handle: int) -> Dictionary:
 	return result if result is Dictionary else _result(false, "command_rejected", "")
 
 
-## Same preview the second map click uses, for callers outside the controller.
+## Same native preview used by the targeting draft, for other UI callers.
 func preview_military_path(army_handle: int, cell: int) -> Dictionary:
 	var facade = _military_facade()
 	if facade == null or not facade.has_method("preview_path"):

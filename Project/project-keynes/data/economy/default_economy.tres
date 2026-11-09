@@ -4,7 +4,8 @@
 
 [resource]
 script = ExtResource("1")
-building_output_efficiency_q16 = 131072
+building_output_efficiency_q16 = 98304
+building_maintenance_cost_factor_q16 = 131072
 # Keep plan evaluation below the 5 ms native slice target on the production
 # 6400-cell profile. Zero remains available for benchmark/custom auto ranges.
 building_plan_cells_per_slice = 128

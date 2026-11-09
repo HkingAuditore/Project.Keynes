@@ -9,6 +9,6 @@ display_name = "籽棉"
 semantic_tags = PackedStringArray()
 category_id = &"raw_fiber_crop"
 substitution_category_ids = PackedStringArray("raw_fiber_crop")
-technology_tags = PackedStringArray("industry.primary", "tech.wild_cotton_collection", "tech.cotton_gardening", "tech.estate_plantation_management", "tech.precision_agriculture", "tech.automated_agriculture", "tech.customary_tenancy", "tech.motorized_agriculture")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_cotton_collection", "tech.cotton_gardening", "tech.customary_tenancy", "tech.estate_plantation_management", "tech.textile_machinery", "tech.sensor_networks", "tech.autonomous_labor_coordination")
 default_price = 6500
 reference_max_price = 325000

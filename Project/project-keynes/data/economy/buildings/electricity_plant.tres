@@ -53,3 +53,4 @@ condition_signals = PackedInt32Array()
 condition_compares = PackedInt32Array()
 condition_reference_ids = PackedStringArray()
 condition_values = PackedInt64Array()
+terminal_reason = ""

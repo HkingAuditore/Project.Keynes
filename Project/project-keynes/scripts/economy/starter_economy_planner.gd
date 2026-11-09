@@ -6,6 +6,7 @@ const ResourceProfileRegistry = preload(
 	"res://scripts/data/resource_profile_registry.gd")
 
 const BUILDING_DIR := "res://data/economy/buildings"
+const ECONOMY_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const SURVIVAL_PLAN_PATH := \
 	"res://data/economy/consumption_plans/survival_household.tres"
 const CLOTHING_CURVE_PATH := \
@@ -53,8 +54,7 @@ static var _climate_profiles: Dictionary = {}
 static var _active_reserve_overlay: Dictionary = {}
 
 
-## Cold-path, deterministic starter-settlement capacity planner. It only reads
-## authored catalogs and MapData; runtime ownership remains in NativeEconomyRuntime.
+## Read-only deterministic planner; NativeEconomyRuntime owns runtime state.
 static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 		facade = null) -> Dictionary:
 	if map == null or cell_idx < 0 or cell_idx >= map.cell_count():
@@ -71,6 +71,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	if _active_reserve_overlay == null:
 		_active_reserve_overlay = {}
 	_ensure_profiles_loaded()
+	var output_efficiency_q16 := _configured_output_efficiency_q16(facade)
 	var completed := {}
 	for technology_id in technology_ids:
 		completed[String(technology_id)] = true
@@ -107,8 +108,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			continue
 		var resource_cap := _resource_building_count_cap(profile, map, cell_idx)
 		if resource_cap == 0 or not _conditions_met(profile, map, cell_idx):
-			# Optional food producers (especially hunting on a thin reserve) can
-			# drop out; the remaining selected core still has to close food.
+			# Optional producers can drop out; remaining core must still close food.
 			continue
 		var fixed := FIXED_BUILDING_IDS.has(building_id) \
 			or _profile_outputs(profile, "technology_points") \
@@ -118,7 +118,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 		if resource_cap >= 0:
 			maximum = mini(maximum, resource_cap)
 		maximum = mini(maximum, _useful_count_limit(profile, starter_route, map,
-			cell_idx, maximum, is_selected))
+			cell_idx, maximum, is_selected, output_efficiency_q16))
 		if maximum < minimum:
 			return _error("starter_building_capacity_unsatisfied",
 				"当地资源承载力不足以预建：%s" % building_id)
@@ -151,7 +151,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return String(a.id) < String(b.id))
 	var search_context := _compile_search_context(
-		candidates, map, cell_idx, starter_route)
+		candidates, map, cell_idx, starter_route, output_efficiency_q16)
 	if not bool(search_context.get("ok", false)):
 		return search_context
 
@@ -200,7 +200,24 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	best["evaluated_combinations"] = int(search.evaluated)
 	best["starter_treasury_good_id"] = "technology_points"
 	best["starter_treasury_quantity"] = STARTER_TREASURY_TECHNOLOGY_POINTS
+	best["starter_output_efficiency_q16"] = output_efficiency_q16
 	return best
+
+static func _configured_output_efficiency_q16(facade = null) -> int:
+	# Selection happens before an EconomyFacade exists; both paths must use the
+	# same production multiplier rather than silently planning against 1x output.
+	var profile = facade.profile() if facade != null else load(ECONOMY_PROFILE_PATH)
+	if profile == null:
+		return Q16_ONE
+	return clampi(int(profile.building_output_efficiency_q16), Q16_ONE, Q16_ONE * 4)
+
+static func _starter_output_quantity(raw_quantity: int, climate_q16: int,
+		output_efficiency_q16: int) -> int:
+	# Native catalog scales goods first, then production applies climate. Soft
+	# inputs add productivity above this baseline; opening safety never assumes
+	# their stock or funding. Hard inputs remain in the supply-closure constraints.
+	var scaled := raw_quantity * output_efficiency_q16 / Q16_ONE
+	return scaled * climate_q16 / Q16_ONE
 
 
 static func select_pending_knowledge(map: MapData, cell_idx: int,
@@ -686,7 +703,8 @@ static func _search_counts(candidates: Array[Dictionary], index: int,
 
 
 static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
-		cell_idx: int, starter_route: Dictionary) -> Dictionary:
+		cell_idx: int, starter_route: Dictionary,
+		output_efficiency_q16: int = Q16_ONE) -> Dictionary:
 	var food_goods: PackedStringArray = starter_route.get(
 		"starter_food_good_ids", PackedStringArray())
 	var resource_limits := {}
@@ -698,13 +716,12 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		var inputs := {}
 		var resources := {}
 		var food_output := 0
-		var complementary_floor_q16 := _complementary_floor_q16(profile)
 		for output_index in range(mini(profile.output_good_ids.size(),
 				profile.output_quantities_per_day.size())):
 			var good_id := String(profile.output_good_ids[output_index])
-			var quantity := int(profile.output_quantities_per_day[output_index]) * \
-				int(candidate.climate_q16) / Q16_ONE
-			quantity = quantity * complementary_floor_q16 / Q16_ONE
+			var quantity := _starter_output_quantity(
+				int(profile.output_quantities_per_day[output_index]),
+				int(candidate.climate_q16), output_efficiency_q16)
 			outputs[good_id] = int(outputs.get(good_id, 0)) + quantity
 			if food_goods.has(good_id):
 				food_output += quantity
@@ -723,8 +740,6 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 			var resource_key := "%s|%s" % [mode, resource_id]
 			var quantity := float(profile.resource_quantities_per_day[resource_index]) / \
 				float(GOODS_SCALE)
-			if mode != "capacity":
-				quantity = quantity * float(complementary_floor_q16) / float(Q16_ONE)
 			resources[resource_key] = float(resources.get(resource_key, 0.0)) + quantity
 			if not resource_limits.has(resource_key):
 				var reserve := _reserve(map, resource_id, cell_idx)
@@ -766,20 +781,6 @@ static func _slot_is_hard_input(profile, input_index: int) -> bool:
 	if required.is_empty() or input_index >= required.size():
 		return true
 	return int(required[input_index]) >= Q16_ONE
-
-
-static func _complementary_floor_q16(profile) -> int:
-	var floor_q16 := Q16_ONE
-	var slot_count := mini(profile.input_good_ids.size(),
-			profile.input_quantities_per_day.size())
-	var required: PackedInt32Array = profile.input_required_q16
-	for input_index in range(slot_count):
-		var required_q16 := Q16_ONE
-		if not required.is_empty() and input_index < required.size():
-			required_q16 = int(required[input_index])
-		if required_q16 < Q16_ONE:
-			floor_q16 = mini(floor_q16, Q16_ONE - required_q16)
-	return floor_q16
 
 
 static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32Array,
@@ -835,9 +836,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 	weakest_supply_q16 = mini(weakest_supply_q16, int(food.coverage_q16))
 	var clothing_demand := int(context.clothing_demand)
 	var clothing_supply := int(supply.get(String(context.clothing_good_id), 0))
-	# Clothing production is not an opening closure. Cold starts still prebuild
-	# a scraping shelter for later matching, but the 15-day clothing bridge
-	# covers the first days.
+	# Cold starts prebuild scraping capacity; the 15-day clothing bridge covers opening.
 	var clothing_coverage_q16 := Q16_ONE
 	if clothing_supply > 0:
 		clothing_coverage_q16 = clothing_supply * Q16_ONE / maxi(1, clothing_demand)
@@ -902,8 +901,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 
 
 static func _plan_better(candidate: Dictionary, current: Dictionary) -> bool:
-	# Valid plans already meet the 130% food floor. Prefer the smallest core
-	# bundle so leftover population stays in the unemployed pool.
+	# Prefer the smallest core satisfying the 130% food floor.
 	if int(candidate.starter_building_total) != int(current.starter_building_total):
 		return int(candidate.starter_building_total) < int(current.starter_building_total)
 	if int(candidate.overproduction_quantity) != int(current.overproduction_quantity):
@@ -1023,7 +1021,8 @@ static func _profile_outputs(profile, good_id: String) -> bool:
 
 
 static func _useful_count_limit(profile, starter_route: Dictionary, map: MapData,
-		cell_idx: int, maximum: int, selected: bool) -> int:
+		cell_idx: int, maximum: int, selected: bool,
+		output_efficiency_q16: int = Q16_ONE) -> int:
 	if maximum <= 1:
 		return maximum
 	var output_per_building := 0
@@ -1032,8 +1031,9 @@ static func _useful_count_limit(profile, starter_route: Dictionary, map: MapData
 	for index in range(mini(profile.output_good_ids.size(),
 			profile.output_quantities_per_day.size())):
 		if food_goods.has(String(profile.output_good_ids[index])):
-			output_per_building += int(profile.output_quantities_per_day[index]) * \
-				_production_climate_q16(profile, map, cell_idx) / Q16_ONE
+			output_per_building += _starter_output_quantity(
+				int(profile.output_quantities_per_day[index]),
+				_production_climate_q16(profile, map, cell_idx), output_efficiency_q16)
 	if output_per_building > 0:
 		# Leave two buildings above the nominal survival target available to the
 		# integer solver; the objective penalizes unused surplus deterministically.

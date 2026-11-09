@@ -4,6 +4,13 @@
 
 范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
 
+2026-11-08 经济平衡：C++仍为唯一结算权威，生存/生活需求评分寄生于既有市场循环。
+基本生活采用75%需求均值与25%最弱项；适用且职业正权重的舒适/奢侈需求分别提供
+70%→100%与90%→100%的综合分上限。环境需求恰为零时不制造最小需求。
+正式失业计划补齐12类生活需求；开局规划已接入真实全局倍率并纠正软投入语义。
+没有新增保存列、调度阶段、跨模块写边或第二套评分。数值、运行证据及尚未覆盖的全时代
+校准范围见 [经济平衡记录](../cpp-dots-runtime/economy-balance-2026-11-08.md)。
+
 ## 十二域
 
 每日表在 `native_simulation_host.cpp` 的 modules 表，域内函数在 `native_simulation_stage_<domain>.cpp`。表顺序与 `runtime_domain_stage_order()` 由 `static_assert` 核对。
@@ -27,6 +34,7 @@
 
 - 默认请求 `0xFFF` 来自 `world_runtime_host.gd`；Host 的 auto POD 默认 false，正式 PlayerGame 明确设为 true，镜像完整且空闲边界满足后才切换。经济是“原计算实现 + 可切换的数据承载”，不是两份公式二选一。
 - 模块表之前有气候实际提交，之后有 Events 补调用、覆盖检查和日故障点。这不是全域原子提交，COMMIT 完成位也不证明每个域都推进了业务状态。
+- Ideology 的日内续跑门闩由 `DCWorldExt.ideology_needs_daily_continuation(day)` 提供；`map_generator.gd` 和 `IdeologyRuntimeSystem` 在旧版扩展缺少该绑定时探测回退，分别使用 runtime graph 的硬 pending 和当前 slice 的 `done`，避免保存边界因 DLL 与脚本不同步而中止。
 
 ## 十二域以外的推进
 
@@ -105,3 +113,13 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 - 护栏扫描 942 个源码文件；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
 - `world_runtime_host.gd` 2955 行；`map_generator.gd` 22547 行（超限债务，未拆）。
 - `economy_runtime.cpp` 1975 行、`economy_runtime.h` 2359 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2154 行、`.cpp` 480 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
+
+## 部队指挥 UI（2026-11-08）
+
+已接入固定指挥区、路径/区域草稿、显式确认/取消、停止任务与姿态。部队页为 520 设计像素单页，军事权威与存档不变。输入/接线检查及 1280×720、1920×1080 渲染夹具已验证，未完成实战长时间与触摸/手柄验收；扩展检查的失败与具体契约见 [部队指挥交互](../ui/military-army-controls.md)。
+
+## 军需需求接入市场（2026-11-08）
+
+已接通零库存军需报价、受资金约束的未满足采购预测、D+1 替换命令和 Economy 通用采购需求汇总；商人补货目标、生产规划与投资共享该汇总。预测只传递购买意愿，实际货物/现金仍由原采购结算处理。装备成交桥改传真实商品编号。继续态复用现有命令队列，没有新增存档字段。定向回归覆盖提前生效、撤销/重复/替换、零国库、未来需求 ECP2 保存及十日逐日完整经济哈希一致，并运行原生军事自测。
+
+验证证据：Debug/Release GDExtension 均构建成功；军需定向用例（含完整原生军事自测）与整图 ACTIVE POD 用例通过。相同弓箭营地开局五日累计产量：无军需 12,745，有军需 15,895（GOODS_SCALE）。模块 API、C++ 依赖及 Resolve/Apply 检查均为 0 violations。本轮未跑全量性能/长年测试；行数护栏仍有 14 个未触及的既有脚本超限。殖民与科研采购的旧基线字节断言仍失败，但修复前 `dots_ext_equip_v1` DLL 与本次 DLL 的两份测试输出逐字段完全一致，未更新基线。

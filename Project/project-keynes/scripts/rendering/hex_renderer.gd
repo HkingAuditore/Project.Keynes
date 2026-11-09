@@ -55,7 +55,10 @@ const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
 const PK_WEB_ENABLE_WEATHER_LAYER := true
 
 @export var shader_path: String = "res://shaders/world_map.gdshader"
-@export var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
+# 运行期会复制该材质并持续写入大量 Packed* shader uniforms。把资源引用保留在
+# 场景/脚本存储中，但从 Inspector（尤其 Remote Inspector）隐藏，避免编辑器在
+# 运行时序列化材质参数数组时触发 Godot remote debugger 的 Variant 解码问题。
+@export_storage var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
 	set(value):
 		world_material = value
 		if is_inside_tree():
@@ -63,7 +66,7 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 			if _map != null and _world != null:
 				_rebuild()
 
-@export var world_lighting_profile: WorldLightingProfile:
+@export_storage var world_lighting_profile: WorldLightingProfile:
 	set(value):
 		world_lighting_profile = value
 		if is_inside_tree():
@@ -254,17 +257,27 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 ## 厚云时环境光/天光的额外衰减权重（0=只压直射、1=间接光同幅压暗）。
 ## [cloud-gi 2026-11-07] 0.35 太狠：云影只是挡住太阳直射，天空散射光基本照旧，
 ## 压三成环境光会让阴影里的地面丢失色相、发灰发脏。0.12 只留一点层次感。
-@export_range(0.0, 1.0, 0.05) var cloud_shadow_ambient_weight: float = 0.20:
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_ambient_weight: float = 0.12:
 	set(value):
 		cloud_shadow_ambient_weight = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_material_inputs()
-## 云影内部噪声的平流速度。0.055 约为几十秒内移动三分之一云团尺度。
-## [cloud-shape 2026-11-07] world_scale 翻倍后噪声坐标走得更快，这里同比 ×2
-## （0.075→0.15）才能维持原来的世界空间移动速度。
+## 云影内部噪声的世界尺度平流速度；实际 UV 位移还乘 cloud_shadow_uv_scroll_gain。
 @export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.15:
 	set(value):
 		cloud_shadow_motion_speed = clampf(value, 0.0, 0.20)
 		_push_cloud_shadow_tuning()
+## 云影噪声 UV 滚动增益。用于把归一化世界坐标中的微小位移提升到可见的
+## 连续动画速度，不改变 LUT 云量更新节奏。
+
+@export_range(0.0, 32.0, 0.5) var cloud_shadow_uv_scroll_gain: float = 8.0:
+	set(value):
+		cloud_shadow_uv_scroll_gain = clampf(value, 0.0, 32.0)
+		_push_cloud_shadow_tuning()
+## 海面云影响应比例。陆地保持完整云影，海面单独控制以避免过弱或脏黑。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_water_scale: float = 0.58:
+	set(value):
+		cloud_shadow_water_scale = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_material_inputs()
 ## LUT 范围内部的云团明暗对比度。越高越能看出斑块形状。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_shape_contrast: float = 1.0:
 	set(value):
@@ -274,6 +287,26 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.36:
 	set(value):
 		cloud_shadow_noise_warp = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 动态细节噪声对主云形的调制强度。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_dynamic_detail_gain: float = 0.32:
+	set(value):
+		cloud_shadow_dynamic_detail_gain = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 动态域扭曲强度。提高后云团会随滚动产生更明显的形变。
+@export_range(0.0, 2.0, 0.05) var cloud_shadow_dynamic_warp_gain: float = 0.80:
+	set(value):
+		cloud_shadow_dynamic_warp_gain = clampf(value, 0.0, 2.0)
+		_push_cloud_shadow_tuning()
+## 云影边缘羽化宽度。越高边缘越软、核心越不容易形成硬白边。
+@export_range(0.0, 2.0, 0.05) var cloud_shadow_edge_softness: float = 1.10:
+	set(value):
+		cloud_shadow_edge_softness = clampf(value, 0.0, 2.0)
+		_push_cloud_shadow_tuning()
+## 局地风对 field 内动态形变的影响。主平流仍由 CPU 累积的全局风负责。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_wind_influence: float = 0.22:
+	set(value):
+		cloud_shadow_wind_influence = clampf(value, 0.0, 1.0)
 		_push_cloud_shadow_tuning()
 ## LUT 云量 Mask 的起始偏置。提高后只有更高云量区域会出现云影。
 @export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.10:
@@ -464,15 +497,15 @@ var terrain_materials_enabled: bool = true
 		_push_terrain_horizon_uniforms()
 
 @export_group("Visual Overhaul")
-@export var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
+@export_storage var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
 	set(value):
 		shrub_visual_profile = value
 		_rebuild_detail_layers_if_default()
-@export var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
+@export_storage var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
 	set(value):
 		tree_visual_profile = value
 		_rebuild_detail_layers_if_default()
-@export var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
+@export_storage var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
 	set(value):
 		grass_visual_profile = value
 		_rebuild_detail_layers_if_default()
@@ -482,7 +515,7 @@ var terrain_materials_enabled: bool = true
 # 此前默认是 null 而且没有任何场景 / 脚本给它赋值，所以 21 层清单（针叶、棕榈、
 # 季风林、云雾林、红树、芦苇、仙人掌、苔原地衣、海草……）从未被实例化，全图植被
 # 实际上只由 grass/shrub/tree 三层表达，专属生物群系自然长不出对味的植被。
-@export var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
+@export_storage var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
 	set(value):
 		decoration_manifest = value
 		if is_inside_tree():
@@ -1245,6 +1278,9 @@ func _process(delta: float) -> void:
 	if _clock_running:
 		_world_time += delta * _clock_speed_multiplier
 	_push_world_uniform("world_time", _world_time)
+	if _cloud_shadow_field != null and is_instance_valid(_cloud_shadow_field) \
+			and _cloud_shadow_field.has_method("set_world_time"):
+		_cloud_shadow_field.set_world_time(_world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
@@ -2086,7 +2122,12 @@ func _configure_cloud_shadow_field() -> void:
 		cloud_shadow_mask_bias,
 		cloud_shadow_cell_scale,
 		cloud_shadow_world_scale,
-		cloud_shadow_erosion)
+		cloud_shadow_erosion,
+		cloud_shadow_uv_scroll_gain,
+		cloud_shadow_dynamic_detail_gain,
+		cloud_shadow_dynamic_warp_gain,
+		cloud_shadow_edge_softness,
+		cloud_shadow_wind_influence)
 	_cloud_shadow_field.configure(
 		_world.world_bounds,
 		_world,
@@ -2095,7 +2136,9 @@ func _configure_cloud_shadow_field() -> void:
 		_wrap_period_x(),
 		visual_quality,
 		_mobile_quality_tier_define,
-		_cloud_shadow_direct_active())
+		_cloud_shadow_direct_active(),
+		2.0 * hex_size)
+	_cloud_shadow_field.set_world_time(_world_time)
 	_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
 	_cloud_shadow_field.set_debug_view(cloud_shadow_debug_view)
 
@@ -2114,7 +2157,12 @@ func _push_cloud_shadow_tuning() -> void:
 		cloud_shadow_mask_bias,
 		cloud_shadow_cell_scale,
 		cloud_shadow_world_scale,
-		cloud_shadow_erosion)
+		cloud_shadow_erosion,
+		cloud_shadow_uv_scroll_gain,
+		cloud_shadow_dynamic_detail_gain,
+		cloud_shadow_dynamic_warp_gain,
+		cloud_shadow_edge_softness,
+		cloud_shadow_wind_influence)
 	_push_cloud_shadow_material_inputs()
 
 
@@ -2135,6 +2183,7 @@ func _push_cloud_shadow_material_inputs() -> void:
 			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
 			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
 			material.set_shader_parameter("cloud_shadow_ambient_weight", cloud_shadow_ambient_weight)
+			material.set_shader_parameter("cloud_shadow_water_scale", cloud_shadow_water_scale)
 			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
 			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
 	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):

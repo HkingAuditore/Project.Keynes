@@ -12,6 +12,27 @@ import subprocess
 from check_golden_determinism import difference, records
 from run_regression_checks import ROOT, SHUTDOWN_LEAK
 
+EXPECTED_DOMAINS = {"CLIMATE", "TRIGGER_INPUT", "IDEOLOGY", "EFFECT",
+                    "MODIFIER", "ECONOMY", "EVENTS", "COUNTRY"}
+
+
+def coverage_errors(payload, expected_days):
+    """Reject equal-but-empty observations instead of calling them a replay."""
+    if not isinstance(payload, dict):
+        return ["missing replay payload"]
+    rows = payload.get("rows", [])
+    errors = []
+    if [row.get("day") for row in rows] != list(expected_days):
+        errors.append("replay day inventory differs from the requested observation window")
+    for row in rows:
+        domains = row.get("domains", {})
+        if set(domains) != EXPECTED_DOMAINS:
+            errors.append(f"day {row.get('day')}: incomplete golden domain inventory {sorted(domains)}")
+        for name, domain in domains.items():
+            if not isinstance(domain, dict) or not domain.get("hash") or not domain.get("scope") or "state_day" not in domain:
+                errors.append(f"day {row.get('day')}: incomplete {name} summary")
+    return errors
+
 def continuation_scan(expected, actual):
     """Report every observed domain/day; a passing subset never passes the run."""
     if not isinstance(expected, dict) or not isinstance(actual, dict):
@@ -60,6 +81,9 @@ def main():
     results = []
     for mode in modes:
         env = os.environ.copy()
+        # Godot's OS.set_environment does not update the Windows CRT environment
+        # read by the native extension's getenv. Set it before process startup.
+        env["PK_GOLDEN_DOMAINS"] = "1"
         env["PK_COMMITTED_REPLAY_MODE"] = mode
         env["PK_COMMITTED_REPLAY_SCENARIO"] = args.scenario
         env["PK_COMMITTED_REPLAY_SAVE_DAY"] = str(args.save_day)
@@ -85,6 +109,8 @@ def main():
                   line.startswith("ERROR:") or SHUTDOWN_LEAK.search(line)]
         payloads = records(lines, "COMMITTED_REPLAY_RESULT=")
         actual = payloads[0] if len(payloads) == 1 else None
+        expected_days = range(args.save_day + 1 if mode == "resume" else 1, args.days + 1)
+        errors.extend(coverage_errors(actual, expected_days))
         if reference is None: reference = actual
         expected = reference
         if mode == "resume" and reference:

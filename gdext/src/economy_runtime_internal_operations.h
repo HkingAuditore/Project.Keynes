@@ -562,7 +562,9 @@
     uint8_t satisfaction_applicable_mask(int32_t slot) const;
     std::array<int64_t, SAT_DIM_COUNT> satisfaction_effective_weights(
         const Signature &signature, uint8_t applicable_mask) const;
+    int64_t satisfaction_bias_q16(int32_t cell, const Signature &signature) const;
     int64_t satisfaction_ceiling(const int64_t *dims, uint8_t applicable_mask,
+                                const Signature &signature, int32_t &binding_dimension,
                                 int64_t &sat) const;
     int32_t consumption_living_standard_level(int32_t slot) const;
     // `out_pending_city_factors` (optional) is set when the city-factor shard
@@ -726,6 +728,7 @@
                                        const Signature &signature,
                                        const int64_t *tier_weighted_q16,
                                        const int64_t *tier_weight_q16,
+                                       int64_t basic_min_fill_q16,
                                        int64_t &sat);
     int64_t normalize_band_q16(int64_t value, int64_t floor, int64_t ceiling,
                                int64_t &sat) const;
@@ -1099,6 +1102,11 @@
                                                    int32_t good) const;
     void refresh_epoch_research_demand();
     void refresh_epoch_colonization_demand();
+    bool military_procurement_demand_valid(const Command &cmd) const;
+    bool retain_military_procurement_demand(const Command &cmd, std::string &error);
+    void refresh_epoch_military_demand(int64_t day);
+    int64_t epoch_military_demand_daily(int32_t cell, int32_t good) const;
+    int64_t epoch_military_demand_daily_for_market(int32_t market, int32_t good) const;
     int64_t epoch_colonization_demand(int32_t cell, int32_t good) const;
     int64_t epoch_colonization_demand_daily(int32_t cell, int32_t good) const;
     int64_t epoch_procurement_demand_daily(int32_t cell, int32_t good) const;

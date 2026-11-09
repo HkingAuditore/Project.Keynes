@@ -17,42 +17,72 @@ REPORT = ROOT / "tools" / "technology_tree" / "technology_unlock_progression_aud
 # Every same-output relationship requires a semantic review. New relationships
 # deliberately fail until an author classifies them here.
 REVIEWED_RELATIONS = {
+    ("tech.agricultural_improvement", "tech.mechanized_agriculture"): "upgrade",
     ("tech.atmospheric_engine", "tech.steam_power"): "upgrade",
     ("tech.automated_logistics", "tech.autonomous_logistics"): "upgrade",
-    ("tech.blast_furnace", "tech.coke_smelting"): "upgrade",
-    ("tech.commodity_crop_management", "tech.estate_plantation_management"): "upgrade",
+    ("tech.canning", "tech.industrial_canning"): "upgrade",
+    ("tech.coal_adit_mining", "tech.coal_mining"): "upgrade",
     ("tech.deep_geophysics", "tech.mineral_spectral_survey"): "upgrade",
-    ("tech.fiber_twisting", "tech.loom_weaving"): "upgrade",
-    ("tech.fiber_twisting", "tech.weaving"): "alternative_method",
+    ("tech.digital_computing", "tech.software_engineering"): "upgrade",
+    ("tech.digital_control", "tech.robotic_manufacturing"): "upgrade",
+    ("tech.early_knowledge_institution", "tech.flood_calendar_practice"): "specialization",
+    ("tech.early_knowledge_institution", "tech.oral_memory_practice"): "specialization",
+    ("tech.early_knowledge_institution", "tech.pastoral_route_memory"): "specialization",
+    ("tech.early_knowledge_institution", "tech.phenology_observation"): "specialization",
+    ("tech.early_knowledge_institution", "tech.tide_observation"): "specialization",
+    ("tech.electric_generation", "tech.nuclear_energy"): "specialization",
+    ("tech.fiber_twisting", "tech.fur_sewing"): "specialization",
     ("tech.flood_recession_wheat", "tech.dryland_wheat_cultivation"): "specialization",
-    ("tech.hand_pottery", "tech.pottery"): "upgrade",
+    ("tech.ground_stone_tools", "tech.masonry"): "upgrade",
+    ("tech.guild_apprenticeship", "tech.manufactory_system"): "upgrade",
+    ("tech.gunpowder_formulation", "tech.military.corned_powder"): "upgrade",
+    ("tech.gunpowder_formulation", "tech.military.nitre_beds"): "specialization",
+    ("tech.hand_spinning", "tech.weaving"): "upgrade",
+    ("tech.hide_scraping", "tech.fur_sewing"): "specialization",
+    ("tech.hunting", "tech.animal_tracking"): "specialization",
     ("tech.industrial_agronomy", "tech.precision_agriculture"): "upgrade",
     ("tech.industrial_chemistry", "tech.electrochemistry"): "specialization",
-    ("tech.kiln_firing", "tech.pottery"): "alternative_method",
-    ("tech.loom_weaving", "tech.textile_machinery"): "upgrade",
+    ("tech.kiln_firing", "tech.masonry"): "upgrade",
     ("tech.maize_garden_horticulture", "tech.swidden_maize_cultivation"): "specialization",
-    ("tech.mineral_spectral_survey", "tech.autonomous_mining"): "upgrade",
+    ("tech.masonry", "tech.canal_engineering"): "upgrade",
+    ("tech.masonry", "tech.urban_waterworks"): "upgrade",
+    ("tech.mechanized_mining", "tech.autonomous_mining"): "upgrade",
+    ("tech.military.corned_powder", "tech.military.powder_milling"): "upgrade",
+    ("tech.military.smokeless_powder", "tech.military.continuous_nitration"): "upgrade",
+    ("tech.modern_medicine", "tech.biotechnology"): "specialization",
     ("tech.movable_type_printing", "tech.screw_press_printing"): "upgrade",
-    ("tech.nuclear_energy", "tech.nuclear_fuel_cycle"): "upgrade",
-    ("tech.natural_copper_working", "tech.copper_metallurgy"): "upgrade",
     ("tech.petroleum_extraction", "tech.petroleum_drilling"): "upgrade",
     ("tech.plant_fiber_papermaking", "tech.rag_paper_making"): "alternative_method",
+    ("tech.potato_propagation", "tech.ridge_tuber_cultivation"): "specialization",
     ("tech.precision_agriculture", "tech.automated_agriculture"): "upgrade",
-    ("tech.public_education", "tech.national_laboratories"): "specialization",
+    ("tech.precision_irrigation", "tech.adaptive_irrigation"): "upgrade",
     ("tech.rainfed_maize_cultivation", "tech.flood_recession_maize"): "specialization",
     ("tech.rainfed_wheat_cultivation", "tech.flood_recession_wheat"): "specialization",
+    ("tech.ridge_tuber_cultivation", "tech.highland_tuber_farming"): "specialization",
+    ("tech.salt_preservation", "tech.solar_evaporation"): "alternative_method",
+    ("tech.satellite_observation", "tech.autonomous_forestry_operations"): "upgrade",
+    ("tech.scholarly_academies", "tech.chartered_universities"): "upgrade",
+    ("tech.spice_shade_gardening", "tech.spice_cultivation"): "upgrade",
     ("tech.surface_coal_collection", "tech.coal_adit_mining"): "upgrade",
-    ("tech.surface_coal_collection", "tech.coal_mining"): "upgrade",
     ("tech.swidden_maize_cultivation", "tech.rainfed_maize_cultivation"): "alternative_method",
     ("tech.tenant_paddy_management", "tech.estate_paddy_management"): "alternative_method",
     ("tech.textile_machinery", "tech.synthetic_fiber_engineering"): "specialization",
+    ("tech.timber_sawing", "tech.forest_management"): "specialization",
     ("tech.timber_sawing", "tech.steam_sawmilling"): "upgrade",
+    ("tech.timber_sawing", "tech.water_power"): "upgrade",
     ("tech.upland_rice_propagation", "tech.wetland_rice_gardening"): "specialization",
+    ("tech.weaving", "tech.textile_machinery"): "upgrade",
     ("tech.wetland_rice_gardening", "tech.rice_water_control"): "upgrade",
-    ("tech.wild_maize_collection", "tech.maize_garden_horticulture"): "upgrade",
-    ("tech.wild_wheat_collection", "tech.rainfed_wheat_cultivation"): "upgrade",
+    ("tech.wild_cotton_collection", "tech.cotton_gardening"): "specialization",
+    ("tech.wild_spice_collection", "tech.spice_shade_gardening"): "specialization",
+    ("tech.woodblock_printing", "tech.movable_type_printing"): "upgrade",
 }
 ALLOWED_CLASSIFICATIONS = {"upgrade", "specialization", "alternative_method"}
+IDENTIFICATION_STARTER_BUILDINGS = {
+    # Initial shallow tin prospecting is an intentionally primitive first
+    # extractor; the mine is still gated by the completed tool-foundation chain.
+    ("tech.tin_identification", "early_tin_mine"),
+}
 
 
 def packed_strings(text: str, field: str) -> list[str]:
@@ -102,14 +132,30 @@ def main() -> int:
 
     errors: list[str] = []
     identification_violations: list[str] = []
+    seen_identification_starters: set[tuple[str, str]] = set()
     for node in nodes:
         if node.get("node_role") != "identification":
             continue
         for building in direct_by_technology[node["id"]]:
-            identification_violations.append(f"{node['id']} -> {building['id']}")
+            if (node["id"], building["id"]) in IDENTIFICATION_STARTER_BUILDINGS:
+                seen_identification_starters.add((node["id"], building["id"]))
+                continue
+            ancestry = set()
+            frontier = list(node.get("hard_prerequisite_ids", []))
+            while frontier:
+                prerequisite = frontier.pop()
+                if prerequisite in ancestry:
+                    continue
+                ancestry.add(prerequisite)
+                frontier.extend(node_by_id[prerequisite].get("hard_prerequisite_ids", []))
+            independent_support = set(building["required_technology_ids"]) - ancestry
+            if not independent_support:
+                identification_violations.append(f"{node['id']} -> {building['id']}")
     if identification_violations:
         errors.extend(f"identification directly unlocks building: {row}"
                       for row in identification_violations)
+    for relation in sorted(IDENTIFICATION_STARTER_BUILDINGS - seen_identification_starters):
+        errors.append(f"reviewed identification starter no longer exists: {relation[0]} -> {relation[1]}")
 
     relations: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for target in nodes:

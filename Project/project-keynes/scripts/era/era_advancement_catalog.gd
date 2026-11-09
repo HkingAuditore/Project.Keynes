@@ -13,31 +13,39 @@ extends RefCounted
 ## never lost after milestones stopped being researchable.
 ##
 ## Goods quantities are fixed-point GOODS_SCALE units (1 unit = 1000).
-## required = max(floor, per_cell × frozen territory cells).
+## required = floor + per_cell × frozen territory cells.
 
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const ValidatorScript = preload("res://scripts/technology/technology_network_validator.gd")
 
 const GOODS_SCALE := 1000
-const TECH_COMPLETION_RATIO := 0.5
-const CONDITIONS_REQUIRED := 2
+const TECH_COMPLETION_RATIO := 0.8
+const CONDITIONS_REQUIRED := 3
+const CONDITIONS_RULE_TEXT := "科技必达 · 其余三选二"
+const CONDITIONS_HELP_TEXT := "须完成本时代 80% 科技，并满足人口、建筑、贸易中的至少两项。"
 const MIN_TARGET_ERA := 1
 const MAX_ERA_INDEX := 10
 
 const CONDITION_KEYS := ["tech", "population", "buildings", "trade"]
 const CONDITION_LABELS := {
-	"tech": "本时代科技完成",
+	"tech": "本时代科技（必需）",
 	"population": "国家人口",
 	"buildings": "建筑数量",
 	"trade": "本时代贸易次数",
 }
 
 ## Index = target era (0 unused). Population / built units / trade orders.
-const POPULATION_THRESHOLDS := [0, 100, 300, 800, 2000, 5000, 12000, 30000,
-	75000, 180000, 400000]
-const BUILDING_THRESHOLDS := [0, 2, 4, 8, 14, 24, 40, 64, 100, 150, 220]
-const TRADE_ORDER_THRESHOLDS := [0, 5, 15, 40, 100, 220, 450, 900, 1800,
-	3500, 7000]
+const POPULATION_THRESHOLDS := [0, 250, 750, 2000, 5000, 12500, 30000, 75000,
+	187500, 450000, 1000000]
+const BUILDING_THRESHOLDS := [0, 1000, 2000, 4000, 7000, 12000, 20000, 32000, 50000, 75000, 110000]
+const TRADE_ORDER_THRESHOLDS := [0, 250, 750, 2000, 5000, 11000, 22500, 45000, 90000,
+	175000, 350000]
+## Total gate = national base above + per-cell requirement × currently owned cells.
+const POPULATION_PER_CELL := [0, 50, 100, 200, 375, 625, 1000, 1500, 2250, 3000, 4500]
+const BUILDINGS_PER_CELL := [0, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200]
+const TRADE_ORDERS_PER_CELL := [0, 50, 100, 200, 400, 800, 1500, 3000, 6000, 12000, 24000]
+## Scale the authored goods basket by 50× in the first transition up to 265× in the last.
+const PROCUREMENT_MULTIPLIERS := [0, 50, 60, 75, 90, 110, 135, 160, 190, 225, 265]
 
 ## Goods are chosen from what a country can already produce in the era it is
 ## leaving (technology tags of each good resolve to that era or earlier).
@@ -135,27 +143,34 @@ static func is_valid_target(target_era: int) -> bool:
 		and target_era < era_count()
 
 
-static func population_threshold(target_era: int) -> int:
-	return int(POPULATION_THRESHOLDS[target_era]) if is_valid_target(target_era) else 0
+static func population_threshold(target_era: int, territory_count: int = 1) -> int:
+	return int(POPULATION_THRESHOLDS[target_era]) + int(POPULATION_PER_CELL[target_era]) \
+		* maxi(1, territory_count) if is_valid_target(target_era) else 0
 
 
-static func building_threshold(target_era: int) -> int:
-	return int(BUILDING_THRESHOLDS[target_era]) if is_valid_target(target_era) else 0
+static func building_threshold(target_era: int, territory_count: int = 1) -> int:
+	return int(BUILDING_THRESHOLDS[target_era]) + int(BUILDINGS_PER_CELL[target_era]) \
+		* maxi(1, territory_count) if is_valid_target(target_era) else 0
 
 
-static func trade_order_threshold(target_era: int) -> int:
-	return int(TRADE_ORDER_THRESHOLDS[target_era]) if is_valid_target(target_era) else 0
+static func trade_order_threshold(target_era: int, territory_count: int = 1) -> int:
+	return int(TRADE_ORDER_THRESHOLDS[target_era]) + int(TRADE_ORDERS_PER_CELL[target_era]) \
+		* maxi(1, territory_count) if is_valid_target(target_era) else 0
 
 
 static func procurement_goods(target_era: int) -> Array:
-	return (PROCUREMENT[target_era] as Array).duplicate(true) \
-		if is_valid_target(target_era) else []
+	if not is_valid_target(target_era):
+		return []
+	var rows := (PROCUREMENT[target_era] as Array).duplicate(true)
+	for row: Dictionary in rows:
+		row["floor"] = int(row.floor) * int(PROCUREMENT_MULTIPLIERS[target_era])
+		row["per_cell"] = int(row.per_cell) * int(PROCUREMENT_MULTIPLIERS[target_era])
+	return rows
 
 
 ## Required quantity (GOODS_SCALE units) for one procurement row.
 static func required_quantity(row: Dictionary, territory_count: int) -> int:
-	return maxi(int(row.get("floor", 0)),
-		int(row.get("per_cell", 0)) * maxi(0, territory_count))
+	return int(row.get("floor", 0)) + int(row.get("per_cell", 0)) * maxi(1, territory_count)
 
 
 ## Milestones granted before the target milestone when the country lacks them.

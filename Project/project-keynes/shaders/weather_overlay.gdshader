@@ -590,8 +590,6 @@ FrontField sample_field_weather(vec2 wp) {
 	}
 	int wt = int(center.r * 255.0 + 0.5);
 
-	// 性能分区/连续性正解：空间柔化(4-tap+blur)已删——用户要的是时间连续,不是空间边界,且删后采样
-	// 大降(weather_lut 仅 center+prev 2 次)。云形的程序化噪声仍在。逐格值在 baker 端如需柔化另议。
 	float intensity_amount = center.g;
 	float cloud_amount = center.b;
 	float vapor_amount = center.a;
@@ -607,6 +605,49 @@ FrontField sample_field_weather(vec2 wp) {
 		cloud_amount = mix(prev_c.b, cloud_amount, weather_lerp);
 		vapor_amount = mix(prev_c.a, vapor_amount, weather_lerp);
 	}
+	// 噪声坐标是连续的 world position，但 weather_lut 的 cloud/vapor 仍是
+	// per-cell 标量；只采中心 cell 会让同一片噪声在六边形边界被不同阈值硬切。
+	// 用真实 pointy-top 六邻居的世界偏移做低权重空间混合，只混合连续量，
+	// 天气类型仍由中心 cell 决定。这样跨 cell 的云形不会重新起一套阈值。
+#if !defined(PK_MOBILE_ANY) && !defined(PK_WEB_WEATHER_MIN)
+	if (effective_weather_quality() >= 1) {
+		vec2 hex_east = vec2(hex_world_diameter * 0.8660254, 0.0);
+		vec2 hex_diag = vec2(hex_world_diameter * 0.4330127,
+			hex_world_diameter * 0.75);
+		vec2 weather_neighbor_offsets[6] = vec2[6](
+			hex_east, -hex_east,
+			hex_diag, vec2(-hex_diag.x, hex_diag.y),
+			-hex_diag, vec2(hex_diag.x, -hex_diag.y)
+		);
+		vec3 neighbor_sum = vec3(0.0);
+		float neighbor_count = 0.0;
+		for (int ni = 0; ni < 6; ni++) {
+			vec2 neighbor_uv = wx_wrap_uv(
+				(wp + weather_neighbor_offsets[ni] - world_origin) / world_size);
+			int neighbor_id = wx_decode_cell_index(neighbor_uv);
+			if (neighbor_id < 0 || neighbor_id == cid_c) {
+				continue;
+			}
+			vec4 neighbor = wx_sample_lut(neighbor_id);
+			if (weather_lerp < 0.999) {
+				vec4 neighbor_prev = texture(weather_lut_prev, wx_cell_lut_uv(neighbor_id));
+				neighbor.gba = mix(neighbor_prev.gba, neighbor.gba, weather_lerp);
+			}
+			neighbor_sum += neighbor.gba;
+			neighbor_count += 1.0;
+		}
+		if (neighbor_count > 0.0) {
+			vec3 center_weather = vec3(intensity_amount, cloud_amount, vapor_amount);
+			vec3 neighbor_weather = neighbor_sum / neighbor_count;
+			float spatial_blend = (effective_weather_quality() >= 2) ? 0.42 : 0.30;
+			vec3 smoothed_weather = mix(center_weather, neighbor_weather, 0.55);
+			center_weather = mix(center_weather, smoothed_weather, spatial_blend);
+			intensity_amount = center_weather.x;
+			cloud_amount = center_weather.y;
+			vapor_amount = center_weather.z;
+		}
+	}
+#endif
 	float precip_amount = intensity_amount;
 	float visual_cloud_amount = clamp((cloud_amount + 0.6 * vapor_amount), 0.0, 1.0);
 	// 云层以 weather_cloud + weather_vapor 为基础。2026-06-29：水汽先进入可视云量，
@@ -808,7 +849,19 @@ void fragment() {
 #endif
 		col *= mix(bright_mul, min(bright_mul, 1.02), dense_core);
 		float precip_alpha_factor = precip_cloud_opacity_bias(w.precip);
-		float alpha = clamp(cloud_density_alpha(cumulus_layer.density) * mix(1.0, 1.06, dense_core) * precip_alpha_factor * weather_strength * 1.18, 0.0, min(0.86, 0.80 * precip_alpha_factor));
+		// 云量分层：旧公式只看 density，且经过多次上限压缩，弱云/强云最终
+		// 都落在相近的 alpha。这里把天气场的 cloud 强度重新带回显示端：
+		// 弱云保持轻薄，强云获得更高密度增益；WeatherProfile 的 overlay_base_alpha
+		// 作为类型级的薄雾/暴雨底幕，只在确实有云时生效，避免 clear 铺底。
+		float cloud_strength = smoothstep(0.03, 0.72, w.cloud);
+		float cloud_alpha_gain = mix(0.58, 1.30, cloud_strength);
+		float profile_alpha = clamp(w.alpha
+			* smoothstep(0.02, 0.36, w.cloud) * 0.26 * weather_strength, 0.0, 0.26);
+		float alpha = clamp(profile_alpha
+			+ cloud_density_alpha(cumulus_layer.density)
+				* cloud_alpha_gain * mix(1.0, 1.06, dense_core)
+				* precip_alpha_factor * weather_strength * 1.18,
+			0.0, min(0.90, 0.80 * precip_alpha_factor));
 		alpha = clamp(alpha * cloud_opacity_scale, 0.0, 0.94);
 
 		// 低雾（底层，介于地面与中云之间）。

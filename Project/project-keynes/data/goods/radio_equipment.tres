@@ -9,6 +9,6 @@ display_name = "无线电设备"
 semantic_tags = PackedStringArray()
 category_id = &"radio_equipment"
 substitution_category_ids = PackedStringArray("radio_equipment")
-technology_tags = PackedStringArray("tech.distributed_intelligence", "tech.electronic_control")
+technology_tags = PackedStringArray("tech.electronic_control", "tech.distributed_intelligence")
 default_price = 65000
 reference_max_price = 3250000

@@ -176,7 +176,9 @@ void NativeEconomyRuntime::military_read_market(
         if (index >= market.stock.size() || index >= market.price.size()) continue;
         const int64_t stock = std::max<int64_t>(0, market.stock[index]);
         const int64_t sellable = std::max<int64_t>(0, stock - military_view_floor(stock));
-        if (sellable <= 0) continue;
+        if (sellable <= 0 && !good_available(cell, good, false)) continue;
+        // Zero-stock lanes are needed to quote unmet military demand. They
+        // remain unsellable in the real procurement pass.
         out_cells.push_back(cell);
         out_sellable.push_back(sellable);
         out_price.push_back(std::max<int64_t>(0, market.price[index]));
@@ -373,7 +375,8 @@ bool NativeEconomyRuntime::military_command_window_open() const {
 int32_t NativeEconomyRuntime::military_queued_commands_through(int64_t day) const {
     int32_t count = 0;
     for (const Command &command : _pending_commands) {
-        if (command.effective_day <= day) ++count;
+        if (command.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND &&
+            command.effective_day <= day) ++count;
     }
     return count;
 }

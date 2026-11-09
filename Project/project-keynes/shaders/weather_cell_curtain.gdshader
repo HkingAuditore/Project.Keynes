@@ -233,6 +233,7 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	float density_mult  = mix(5.0, 12.0, layer_depth);
 	float sway_amp      = mix(0.20, 0.08, layer_depth);
 	float haze_factor   = mix(0.0, 0.35, layer_depth);
+	float density_jitter = mix(0.84, 1.18, hash21(vec2(seed * 97.3, layer_depth * 31.7)));
 
 	// 俯视投影：放宽指数让俯视时下落仍可见
 	float pitch_cos = cos(camera_pitch);
@@ -248,14 +249,17 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 			+ wind_n.y * wind_strength * t * 0.12
 	);
 
-	vec2 p_raw = wp * density_mult / scale + drift + vec2(seed * 11.3, seed * 5.7);
+	vec2 p_raw = wp * density_mult * density_jitter / scale + drift
+		+ vec2(seed * 31.7 + layer_depth * 7.1, seed * 17.9 - layer_depth * 5.3);
 
 	// [去规律化] 域扭曲：用低频噪声偏移网格坐标，打破均匀排列
 	vec2 warp = vec2(0.0);
 #if !defined(PK_MOBILE_ANY)
+	// 居中的域扭曲避免所有雪花朝同一侧偏移；加入低频时间项，让
+	// 相邻 patch 不会长期保持同一组格线。
 	warp = vec2(
-		value_noise(p_raw * 0.42 + seed * 3.1) * 0.55,
-		value_noise(p_raw * 0.38 - seed * 5.7) * 0.55
+		(value_noise(p_raw * 0.42 + seed * 3.1 + t * 0.035) - 0.5) * 0.95,
+		(value_noise(p_raw * 0.38 - seed * 5.7 - t * 0.028) - 0.5) * 0.95
 	);
 #endif
 	vec2 p = p_raw + warp;
@@ -264,24 +268,39 @@ float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 	vec2 f = fract(p);
 
 	// 每个格子独立的多组随机数（位置/门控/半径各用不同种子）
-	float rnd_pos  = hash21(cell_id);              // 位置随机
-	float rnd_gate = hash21(cell_id + 7.3);         // 门控随机
-	float rnd_r    = hash21(cell_id + 13.1);        // 半径随机
-	float rnd_tilt = hash21(cell_id + 19.7);        // 子格倾斜
+	float rnd_pos   = hash21(cell_id + seed * 17.0);       // 位置随机
+	float rnd_gate  = hash21(cell_id + 7.3 + seed * 23.0); // 门控随机
+	float rnd_r     = hash21(cell_id + 13.1 + seed * 29.0);// 半径随机
+	float rnd_tilt  = hash21(cell_id + 19.7 + seed * 37.0);// 子格倾斜
+	float rnd_phase = hash21(cell_id + 41.9 + seed * 43.0);// 下落相位
+	float rnd_drift = hash21(cell_id + 53.7 + seed * 47.0);// 横向漂移相位
 
 	// [去规律化] 子格随机偏移：每个格子内的 flake 不在中心，
 	// 而是在格子内随机分布（打破"每个格子正中间一颗"的棋盘感）
-	vec2 sub_jitter = vec2(0.0);
-#if !defined(PK_MOBILE_ANY)
-	sub_jitter = vec2(rnd_tilt * 0.37, hash21(cell_id + 31.3) * 0.37);
+	// 只用 hash，不增加移动端纹理采样；移动端也保留相位差。
+	vec2 sub_jitter = vec2(
+		rnd_tilt * 2.0 - 1.0,
+		hash21(cell_id + 31.3 + seed * 59.0) * 2.0 - 1.0
+	) * 0.37;
+#if defined(PK_MOBILE_ANY)
+	sub_jitter *= 0.72;
 #endif
 
-	// 雪花中心：微颤 + 子格偏移
+	// 每个雪花独立的时间相位与漂移速度，避免整块 curtain 同步闪烁/下落。
+	float flake_phase = rnd_phase * 6.2831853;
+	float flake_speed = mix(0.72, 1.34, hash21(cell_id + 67.1 + seed * 61.0));
+	float drift_phase = rnd_drift * 6.2831853;
+	float drift_offset = sin(t * mix(0.22, 0.48, rnd_drift) + drift_phase) * sway_amp;
+	float local_fall = t * fall_speed * fall_visibility * flake_speed;
+
+	// 雪花中心：微颤 + 子格偏移 + 独立横向漂移
 	vec2 center = vec2(
-		0.5 + sin(t * 0.7 + rnd_pos * 6.28) * 0.10,
-		0.5 + cos(t * 0.55 + hash21(cell_id + 4.13) * 4.13) * 0.08
+		0.5 + sin(t * 0.7 + rnd_pos * 6.28 + flake_phase) * 0.10 + drift_offset * 0.18,
+		0.5 + cos(t * 0.55 + hash21(cell_id + 4.13 + seed * 71.0) * 4.13 + flake_phase) * 0.08
+			+ sin(local_fall * 0.55 + flake_phase) * 0.12
 	) + sub_jitter * 0.45;  // 子格偏移量
 
+	// 让每个格子的雪花在不同时间穿过 patch，而不是整层同时换相位。
 	vec2 fp = f - center;
 
 	// 形状：椭圆
