@@ -1,6 +1,6 @@
 # 当前运行状态
 
-核查日期：2026-11-05。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
+核查日期：2026-11-09。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
 
 范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
 
@@ -67,6 +67,10 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 ## 存档
 
 完整存档 PKSV 由 `game_save_coordinator.gd` 统一等待安全边界后保存；脚本侧 provider 登记在 `world_state_modules.gd`，C++ 段契约在 `tools/ci/cpp_save_section_contracts.json`。开发期不兼容旧档：旧版本明确拒绝，不静默填默认值。
+
+后台与原生 inline 共用 `native_simulation_host_executor_boundary.cpp` 的保存服务：冻结已接收的命令，丢弃可重新生成的未来环境帧，构建 PKSR，并明确发布成功或失败。保存请求在后台等待所用的锁内发布标记，防止暂停时漏收通知。后台在日循环的空闲边界调用；inline 在 request/poll 时尝试取得同一把日边界锁，并安装相同的执行上下文。inline 的未完成日标记跨调用保留，整日提交后才清除，因此不能在两次续算调用之间捕获半完成状态。
+
+恢复命令先放入 `_executor_pending_commands`，在执行器启动前补齐原有顺序水位。后台随后接管到本地队列；inline 保留这份列表，合并实时命令后按同一规则排序。未来命令及需要重试的命令留在列表中，不重新挤入实时入口，也不重复分配身份。保存格式仍为 PKSR v5；待执行命令超过该格式原有的 4096 条容量时明确拒绝保存，保留现场全部命令，不能截断后报告成功。
 
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |

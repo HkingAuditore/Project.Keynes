@@ -152,28 +152,30 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     const int64_t restored_environment_day = restore_pending
         ? _pending_restore_bundle.environment_day : start_day;
     if (restore_pending) {
-        _worker_initial_pending_commands =
+        _executor_pending_commands =
             std::move(_pending_restore_bundle.pending_commands);
     } else {
-        _worker_initial_pending_commands.clear();
+        _executor_pending_commands.clear();
     }
     {
         std::lock_guard<std::mutex> lock(_control_mutex);
         if (mode == RuntimeSimulationMode::SHADOW) {
-            if (_worker_initial_pending_commands.size() +
+            if (_executor_pending_commands.size() +
                     _prestart_modifier_commands.size() >
                 RUNTIME_COMMAND_QUEUE_CAPACITY) {
                 set_fault("modifier_prestart_queue_capacity_exceeded");
                 _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
                 return false;
             }
-            _worker_initial_pending_commands.insert(
-                _worker_initial_pending_commands.end(),
+            _executor_pending_commands.insert(
+                _executor_pending_commands.end(),
                 _prestart_modifier_commands.begin(),
                 _prestart_modifier_commands.end());
         }
         _prestart_modifier_commands.clear();
     }
+    seed_executor_command_orders();
+    _inline_day_pending.store(false, std::memory_order_release);
     // The caller's flag is only an eligibility request.  Coverage is proven
     // by the worker after a complete RuntimeDayPlan barrier; accepting an
     // external `true` here must never make the facade report ACTIVE.
@@ -207,7 +209,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _last_commit_produced_at_us.store(0, std::memory_order_release);
     _worker_day_inflight.store(0, std::memory_order_release);
     _economy_inflight_mutations.store(0, std::memory_order_release);
-    _economy_pending_command_count.store(0, std::memory_order_release);
+    _economy_pending_command_count.store(static_cast<uint32_t>(
+        _executor_pending_commands.size()), std::memory_order_release);
     _last_command_admitted_us.store(0, std::memory_order_release);
     _economy_authority_switch_command_latency_us.store(0,
                                                        std::memory_order_release);
@@ -833,7 +836,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     if (restore_pending) {
         uint64_t restored_request_id = _command_request_id.load(
             std::memory_order_relaxed);
-        for (const RuntimeCommandPacket &packet : _worker_initial_pending_commands)
+        for (const RuntimeCommandPacket &packet : _executor_pending_commands)
             restored_request_id = std::max(restored_request_id,
                                            packet.envelope.request_id);
         if (restored_country_checkpoint_valid) {

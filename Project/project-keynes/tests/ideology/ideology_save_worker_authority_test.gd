@@ -961,8 +961,8 @@ func _run_negative_controls(captured: Dictionary, restored: Dictionary) -> void:
 ##     2. real days are driven until the pod has committed, because a fresh worker world
 ##        spends its first days starting the pod up (`pod_day` reading -1) and a
 ##        superseded day (calendar at or below the imported floor) plans nothing;
-##     3. the production write-back is invoked by hand (it lives on the SUS tick,
-##        `world_runtime_host.gd:1422`/`:1102`, which a `-s` fixture does not run) and the
+##     3. the production liveness service consumes worker snapshots while the fixture
+##        waits; its successful-apply cursor proves a real write-back ran, then the
 ##        restored rows, the §9.3 dates and the front are re-read;
 ##     4. a pump at the restored eligibility day then rebuilds the projection from
 ##        whatever the rows are AFTER the write-back -- the step that used to clear the
@@ -997,6 +997,7 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 		"ideology_pod_committed_day", -1))
 	var mask_before := int(target.get_runtime_thread_report().get(
 		"authoritative_domain_mask", -1))
+	var writeback_generation_before := int(w["host"]._ideology_worker_snapshot_generation)
 	w["pump"] = false
 	# A fresh worker world spends its first days starting the pod up (`pod_day` reads -1
 	# and the authority mask is still 0x000), so ONE day says nothing about durability.
@@ -1048,42 +1049,12 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 			% [String(layer_report.get("worker_import_last_code", "?")),
 				str(layer_report.get("worker_import_pending", "?")),
 				str(layer_report.get("worker_import_attempts", "?"))])
-	# ---- 3. the write-back itself, which decides the question ---------------
-	#
-	# The production caller is `world_runtime_host._consume_ideology_worker_snapshot_
-	# if_authoritative()` (`world_runtime_host.gd:1453`), and that lives on the SUS runtime
-	# TICK, not on `run_daily_tick` -- which is why the days above did not move the mirror
-	# on their own. A `-s` fixture has no tick loop, so the facade the host calls is called
-	# here directly with the "latest ready snapshot" cursor. It is retried because a
-	# snapshot published BEFORE the import loses the generation race on purpose
-	# (`ideology_pod_snapshot_superseded`), and because a day the worker holds the boundary
-	# answers `economy_day_inflight`; both are contention, not verdicts.
-	var applied: Dictionary = {}
-	var writeback_attempts := 0
-	var superseded_seen := false
-	for _index in range(AFTER_DAY_LIMIT):
-		if bool(w.get("faulted", false)) or _budget_exhausted:
-			break
-		writeback_attempts += 1
-		applied = w["generator"].apply_runtime_ideology_snapshot(-1)
-		if bool(applied.get("applied", false)):
-			break
-		if bool(applied.get("superseded", false)):
-			superseded_seen = true
-		var code := String(applied.get("code", ""))
-		if code == "ideology_worker_imported" or code == "economy_day_inflight" \
-				or code == "ideology_snapshot_unavailable" \
-				or code == "ideology_pod_snapshot_superseded":
-			OS.delay_msec(4)
-			_drive_day(w)
-			continue
-		break
-	print("[R][AFTER-DAY] write-back apply_runtime_ideology_snapshot(-1) after %d "
-		% writeback_attempts + "attempt(s): ok=%s applied=%s superseded_seen=%s "
-		% [str(applied.get("ok", "?")), str(applied.get("applied", "?")),
-			str(superseded_seen)]
-		+ "generation=%s code='%s'"
-		% [str(applied.get("generation", "?")), String(applied.get("code", ""))])
+	# The production consumer now runs during the day waits. Its cursor only
+	# advances after apply_runtime_ideology_snapshot reports applied=true, so
+	# observe that real handoff instead of forcing an older ring entry with -1.
+	var writeback_generation_after := int(w["host"]._ideology_worker_snapshot_generation)
+	print("[R][AFTER-DAY] production write-back generation %d -> %d" % [
+		writeback_generation_before, writeback_generation_after])
 	var rows_written := _idea_rows(target, handle)
 	var layer_written := _layer_state(target)
 	print("[R][AFTER-DAY] after the write-back: idea_rows %s -> %s | installed %s -> %s "
@@ -1098,10 +1069,8 @@ func _assert_load_durability(captured: Dictionary, restored: Dictionary) -> void
 	_expect("DUR[3/4]: a real worker write-back RAN on the loaded world (a snapshot was "
 		+ "applied, not refused), so the assertions below are about a load that met the "
 		+ "worker's own publish path",
-		writeback_attempts > 0 and bool(applied.get("applied", false)),
-		"attempts=%d ok=%s applied=%s code='%s'"
-			% [writeback_attempts, str(applied.get("ok", "?")),
-				str(applied.get("applied", "?")), String(applied.get("code", ""))])
+		writeback_generation_after > writeback_generation_before,
+		"production generation=%d -> %d" % [writeback_generation_before, writeback_generation_after])
 	# ---- 4. HEADLINE: the payload's rows/dates/front survive that write-back ----
 	_expect("DUR[4/4][HEADLINE]: the restored IDEA ROWS are still the payload's after "
 		+ "the write-back (the worker adopted them instead of publishing over them)",
@@ -1716,17 +1685,19 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.dispatch_effect_native_modifier()
 		ext.run_modifier_daily(day)
 		ext.ack_effect_native_modifier()
+	if bool(ideology.get("suppressed", false)):
+		# Waiting for the worker does not apply its snapshot to the main-thread
+		# mirror. Service the same production handoff that runs each UI frame,
+		# including one final pass after the committed day releases its lock.
+		var before := int(ext.get_runtime_thread_report().get(
+			"ideology_pod_committed_day", -1))
+		_await_pod_day(w, before, _pod_wait_ms)
+		host._service_runtime_liveness(Time.get_ticks_usec(), false)
 	var pump := {}
 	if bool(w.get("pump", false)):
 		pump = _pump_derived(w, day, ATTEMPTS_PER_DAY)
 		w["pumped_days"] = int(w.get("pumped_days", 0)) + 1
 	var drained: Dictionary = ext.drain_derived_cell_layer(day)
-	if bool(ideology.get("suppressed", false)):
-		# Under worker authority the day is committed by the worker; wait for it so the
-		# mirrored basis dates do not fall behind the calendar the pump is using.
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_await_pod_day(w, before, _pod_wait_ms)
 	_record_day(w, day, pump, drained)
 	return {"ok": true, "day": day, "slices": slices, "drained": drained,
 		"pump": pump, "suppressed": bool(ideology.get("suppressed", false))}
@@ -1823,13 +1794,15 @@ func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	var day := before
 	while Time.get_ticks_msec() < deadline:
+		# This fixture drives days synchronously, so _process cannot perform the
+		# normal input/peer/snapshot work while this wait is on the call stack.
+		(w["host"] as WorldRuntimeHost)._service_runtime_liveness(Time.get_ticks_usec(), false)
 		var report: Dictionary = ext.get_runtime_thread_report()
 		day = int(report.get("ideology_pod_committed_day", -1))
 		if day > before:
 			break
 		if String(report.get("simulation_host_state", "")) in ["STOPPED", "FAULTED"]:
 			break
-		_service_peers(ext, 1)
 		OS.delay_msec(2)
 	return day
 
@@ -1935,6 +1908,7 @@ func _equip_card(w: Dictionary, card: String, label: String,
 	_expect("%s: %s grant/discover/understanding accepted" % [label, card],
 		bool(preamble.get("ok", false)), str(preamble))
 	_drive_days(w, 2)
+	var equip_sequence := _next_sequence
 	var equipped: Dictionary = _submit(w, [{"op": OP_EQUIP, "idea": dense}])
 	_expect("%s: %s equip accepted (path from the worker: %s)" % [label, card,
 		String(equipped.get("path", ""))], bool(equipped.get("ok", false)),
@@ -1952,6 +1926,14 @@ func _equip_card(w: Dictionary, card: String, label: String,
 		_location_of(w, card) == 1,
 		"location=%d last_error='%s'" % [_location_of(w, card),
 			String(_snapshot(w).get("last_error", ""))])
+	var receipts: Dictionary = w["ext"].poll_ideology_receipts(0, 100)
+	var settled := false
+	for index in int(receipts.get("count", 0)):
+		if int(receipts.sequences[index]) == equip_sequence \
+				and int(receipts.producer_ids[index]) == 1 \
+				and int(receipts.opcodes[index]) == OP_EQUIP:
+			settled = int(receipts.statuses[index]) == 2
+	_expect("%s: equip has a settled worker receipt" % label, settled, str(receipts))
 	return _location_of(w, card) == 1
 
 

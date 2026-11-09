@@ -65,12 +65,20 @@ bool NativeSimulationHost::request_save(uint64_t request_id) {
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
     // Publish the flag only after the ID.  The worker's acquire exchange then
     // cannot observe a request without its matching identifier.
-    _save_requested.store(true, std::memory_order_release);
+    {
+        // Pair the predicate publication with the paused worker's wait mutex.
+        // An atomic flag alone can lose the notification between its check
+        // and the condition variable entering its wait.
+        std::lock_guard<std::mutex> lock(_control_mutex);
+        _save_requested.store(true, std::memory_order_release);
+    }
     _control_cv.notify_all();
+    service_inline_save_request();
     return true;
 }
 std::shared_ptr<const RuntimeSaveBundle>
-NativeSimulationHost::poll_save(uint64_t request_id) const {
+NativeSimulationHost::poll_save(uint64_t request_id) {
+    service_inline_save_request();
     const auto bundle = std::atomic_load_explicit(&_save_bundle, std::memory_order_acquire);
     if (bundle == nullptr ||
         (request_id != 0 && bundle->request_id != request_id)) {
@@ -930,6 +938,13 @@ void NativeSimulationHost::build_save_bundle(
     if (try_fault_injection("save.barrier.before")) {
         return;
     }
+    // The wire format accepts one protocol-capacity command tail. A live
+    // backlog may also contain commands drained from earlier ingress batches;
+    // reject the save without changing that backlog instead of truncating it.
+    if (pending_commands.size() > RUNTIME_COMMAND_QUEUE_CAPACITY) {
+        record_save_failure("save_pending_command_capacity_exceeded");
+        return;
+    }
     auto bundle = std::make_shared<RuntimeSaveBundle>();
     bundle->request_id = request_id;
     bundle->bundle_version = RUNTIME_SAVE_BUNDLE_VERSION;
@@ -1301,8 +1316,7 @@ void NativeSimulationHost::build_save_bundle(
     append_u32_le(RUNTIME_DOMAIN_ABI_VERSION);
     append_u32_le(bundle->section_mask);
 
-    const uint32_t pending_count = static_cast<uint32_t>(std::min<size_t>(
-        bundle->pending_commands.size(), RUNTIME_COMMAND_QUEUE_CAPACITY));
+    const uint32_t pending_count = static_cast<uint32_t>(bundle->pending_commands.size());
     append_u32_le(pending_count);
     for (uint32_t i = 0; i < pending_count; ++i) {
         const RuntimeCommandPacket &command = bundle->pending_commands[i];
