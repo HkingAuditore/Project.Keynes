@@ -11,7 +11,6 @@ uniform vec2 world_size = vec2(1.0);
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
 uniform float world_time = 0.0;
-uniform vec2 cloud_shadow_uv_offset = vec2(0.0);
 uniform float cloud_shadow_coverage_gain = 1.35;
 uniform float cloud_shadow_motion_speed = 0.075;
 // UV 平流增益。motion_speed 保留为世界尺度调参，单独的增益避免
@@ -36,12 +35,10 @@ uniform float cloud_shadow_hex_world_diameter = 44.0;
 // cloud_shadow_base_tex 是另一张离线底图；它只提供宏观云团覆盖，不在运行时烘焙。
 uniform sampler2D cloud_shadow_base_tex : filter_linear_mipmap, repeat_enable;
 uniform sampler2D cloud_noise_tex : filter_linear_mipmap, repeat_enable;
-uniform vec2 global_wind = vec2(0.35, 0.12);
-
-#ifdef CLOUD_SHADOW_LOCAL_WIND
 uniform sampler2D wind_lut : filter_nearest, repeat_disable;
 uniform bool has_local_wind = false;
-#endif
+uniform sampler2D wind_lut_prev : filter_nearest, repeat_disable;
+uniform bool has_wind_prev = false;
 
 #define VT_USE_MAP_INDEX
 #include "res://shaders/include/visual_tile_sampling.gdshaderinc"
@@ -188,25 +185,29 @@ float cloud_noise(vec2 p, float period_x) {
 	return mix(a, b, f.y);
 }
 
+vec2 decode_wind(vec4 encoded) {
+	vec2 direction = encoded.rg * 2.0 - 1.0;
+	float direction_length = length(direction);
+	return direction_length > 0.01
+		? direction / direction_length * (0.25 + encoded.b) : vec2(0.0);
+}
+
 vec2 sample_wind_cell(int cell_id) {
-#ifdef CLOUD_SHADOW_LOCAL_WIND
 	if (has_local_wind) {
 		if (cell_id >= 0) {
-			vec4 encoded = texture(wind_lut, cell_lut_uv(cell_id));
-			vec2 direction = encoded.rg * 2.0 - 1.0;
-			float speed = encoded.b;
-			float direction_length = length(direction);
-			if (direction_length > 0.01) {
-				return direction / direction_length * (0.25 + speed);
+			vec2 uv = cell_lut_uv(cell_id);
+			vec2 current = decode_wind(texture(wind_lut, uv));
+			if (has_wind_prev) {
+				vec2 previous = decode_wind(texture(wind_lut_prev, uv));
+				return mix(previous, current, clamp(weather_lerp, 0.0, 1.0));
 			}
+			return current;
 		}
 	}
-#endif
 	return vec2(0.0);
 }
 
 vec2 sample_wind(vec2 uv) {
-#ifdef CLOUD_SHADOW_LOCAL_WIND
 	if (has_local_wind) {
 		vec2 world_pos = world_origin + uv * world_size;
 		float radius = max(cloud_shadow_hex_world_diameter * 0.5, 1.0);
@@ -242,8 +243,7 @@ vec2 sample_wind(vec2 uv) {
 			return wind_sum / weight_sum;
 		}
 	}
-#endif
-	return global_wind;
+	return vec2(0.0);
 }
 
 vec2 wrap_field_uv(vec2 uv) {
@@ -256,6 +256,52 @@ vec2 wrap_field_uv(vec2 uv) {
 	}
 	uv.y = clamp(uv.y, 0.0, 1.0);
 	return uv;
+}
+
+float cloud_flow_shape(vec2 base_uv, vec2 drift, vec2 local_wind) {
+	float local_wind_len = length(local_wind);
+	vec2 local_wind_axis = local_wind_len > 0.001
+		? local_wind / local_wind_len : vec2(1.0, 0.0);
+	float local_wind_factor = clamp(local_wind_len * 0.45, 0.0, 1.0);
+	vec2 wind_flow_warp = local_wind_axis * local_wind_factor
+		* cloud_shadow_wind_influence * 0.018;
+	// 底图和动态噪声使用同一套 world-space UV，但速度略慢，形成宏观云团
+	// 带着中高频结构一起平流、内部细节又有相对变化的效果。
+	vec4 base_layer = texture(cloud_shadow_base_tex, base_uv + drift * 0.65);
+	float macro_density = smoothstep(0.20, 0.82, base_layer.r);
+	float macro_edge = smoothstep(0.24, 0.78, base_layer.g);
+	vec2 uv_shaped = base_uv + drift + wind_flow_warp;
+	float dynamic_detail = 0.5;
+#ifndef CLOUD_SHADOW_DETAIL_LOW
+	vec4 dynamic_warp_n = textureLod(cloud_noise_tex,
+		base_uv * 1.35 + drift * 0.85 + vec2(0.217, 0.613), 1.0);
+	uv_shaped += (dynamic_warp_n.ra - vec2(0.5)) * 2.0
+		* cloud_shadow_dynamic_warp_gain * 0.035;
+	vec4 detail_n = textureLod(cloud_noise_tex,
+		uv_shaped * 1.75 + drift * 0.45 + vec2(0.173, 0.391), 1.15);
+	dynamic_detail = detail_n.g * 0.65 + detail_n.b * 0.35;
+#ifdef CLOUD_SHADOW_DETAIL_HIGH
+	// 高档额外域扭曲和风向剪切；低/中档不编译这些采样。
+	float warp_x = texture(cloud_noise_tex,
+		base_uv + drift * 0.75 + vec2(0.317, 0.113)).a;
+	float warp_y = texture(cloud_noise_tex,
+		base_uv + drift * 0.75 + vec2(0.731, 0.427)).a;
+	uv_shaped += (vec2(warp_x, warp_y) - vec2(0.5)) * 2.0 * cloud_shadow_noise_warp * 0.05;
+	float flow_phase = world_time * 0.055 + dynamic_warp_n.a * 6.2831853;
+	vec2 flow_ortho = vec2(-local_wind_axis.y, local_wind_axis.x);
+	uv_shaped += (local_wind_axis * 0.006 + flow_ortho * 0.003)
+		* sin(flow_phase) * clamp(cloud_shadow_dynamic_warp_gain, 0.0, 2.0);
+#endif
+#endif
+	vec4 n = textureLod(cloud_noise_tex, uv_shaped, 0.8);
+	float shape = n.r
+		- (n.g - 0.5) * cloud_shadow_erosion
+		- (n.b - 0.5) * cloud_shadow_erosion * 0.30;
+	// 底图和细节在同一平流相位中合成，然后由两相位交替混合。
+	shape = shape * mix(0.62, 1.18, macro_density)
+		+ (macro_edge - 0.5) * 0.12
+		+ (dynamic_detail - 0.5) * cloud_shadow_dynamic_detail_gain;
+	return shape;
 }
 
 void fragment() {
@@ -288,61 +334,19 @@ void fragment() {
 		vec2 base_uv = vec2(
 			(world_pos.x - wrap_origin_x) / world_wrap,
 			(world_pos.y - world_origin.y) / world_wrap);
-		// 位移由 CPU 按每帧 dt 累积；不能写成 wind * world_time，否则天气
-		// tick 更新风场后会把整张噪声历史相位瞬间重算，表现为形状跳变。
-		vec2 drift = cloud_shadow_uv_offset;
-		// 局地风只做低幅度世界空间方向修正；主位移仍由 CPU 累积，避免
-		// cell 风场更新时重新计算历史相位。高画质 field 额外承担这组采样，
-		// 地形/水面 shader 不重复执行。
 		vec2 local_wind = sample_wind(mask_uv);
-		float local_wind_len = length(local_wind);
-		float global_wind_len = length(global_wind);
-		vec2 global_wind_axis = global_wind_len > 0.001
-			? global_wind / global_wind_len : vec2(1.0, 0.0);
-		vec2 local_wind_axis = local_wind_len > 0.001
-			? local_wind / local_wind_len : global_wind_axis;
-		float local_wind_factor = clamp(local_wind_len * 0.45, 0.0, 1.0);
-		vec2 wind_flow_warp = local_wind_axis * local_wind_factor
-			* cloud_shadow_wind_influence * 0.018;
-		// 底图和动态噪声使用同一套 world-space UV，但速度略慢，形成宏观云团
-		// 带着中高频结构一起平流、内部细节又有相对变化的效果。
-		vec4 base_layer = texture(cloud_shadow_base_tex, base_uv + drift * 0.65);
-		float macro_density = smoothstep(0.20, 0.82, base_layer.r);
-		float macro_edge = smoothstep(0.24, 0.78, base_layer.g);
-		// 域扭曲用 A 通道（低频 Perlin）做两次错位采样，得到两个独立位移分量。
-		float warp_x = texture(cloud_noise_tex,
-			base_uv + drift * 0.75 + vec2(0.317, 0.113)).a;
-		float warp_y = texture(cloud_noise_tex,
-			base_uv + drift * 0.75 + vec2(0.731, 0.427)).a;
-		vec4 dynamic_warp_n = textureLod(cloud_noise_tex,
-			base_uv * 1.35 + drift * 0.85 + vec2(0.217, 0.613), 1.0);
-		vec2 dynamic_warp = (dynamic_warp_n.ra - vec2(0.5)) * 2.0
-			* cloud_shadow_dynamic_warp_gain * 0.035;
-		// 仿洋流的连续剪切：复用动态 warp 的 A 通道作为局部相位，
-		// 用 world_time 平滑改变拉伸方向，不重新生成噪声，也不引入 FBM 循环。
-		float flow_phase = world_time * 0.055 + dynamic_warp_n.a * 6.2831853;
-		vec2 flow_ortho = vec2(-local_wind_axis.y, local_wind_axis.x);
-		vec2 flow_shear = (local_wind_axis * 0.006 + flow_ortho * 0.003)
-			* sin(flow_phase) * clamp(cloud_shadow_dynamic_warp_gain, 0.0, 2.0);
-		vec2 uv_shaped = base_uv + drift
-			+ wind_flow_warp + dynamic_warp + flow_shear
-			+ (vec2(warp_x, warp_y) - vec2(0.5)) * 2.0
-				* cloud_shadow_noise_warp * 0.05;
-		vec2 detail_uv = uv_shaped * 1.75 + drift * 0.45 + vec2(0.173, 0.391);
-		// [cloud-soft 2026-11-07] 采 mip 0.8 而不是 mip 0：云影的真实观感是
-		// "从中心缓慢淡出"，mip0 的高频细节会让边界出现可辨认的硬轮廓（用户反馈
-		// "边界太硬"）。抬高 mip 等于一次免费的低通滤波，过渡带宽度翻几倍。
-		vec4 n = textureLod(cloud_noise_tex, uv_shaped, 0.8);
-		float shape = n.r
-			- (n.g - 0.5) * cloud_shadow_erosion
-			- (n.b - 0.5) * cloud_shadow_erosion * 0.30;
-		vec4 detail_n = textureLod(cloud_noise_tex, detail_uv, 1.15);
-		float dynamic_detail = detail_n.g * 0.65 + detail_n.b * 0.35;
-		// 底图控制宏观覆盖，运行时细节只在底图内部做连续明暗变化；这样
-		// LUT 更新不会重新决定云团轮廓，world_time 也不会重置噪声相位。
-		shape = shape * mix(0.62, 1.18, macro_density)
-			+ (macro_edge - 0.5) * 0.12
-			+ (dynamic_detail - 0.5) * cloud_shadow_dynamic_detail_gain;
+		float drift_scale = cloud_shadow_motion_speed * cloud_shadow_uv_scroll_gain
+			/ max(world_wrap * cloud_shadow_world_scale, 1.0);
+		// 与 water_hash_ripple_flow 相同：双相位错开半周期，重置时权重为零。
+		// 风只乘当前周期的有界时长，避免换风造成与总运行时间成正比的跳变。
+		float cycle_seconds = 24.0;
+		float phase0 = fract(world_time / cycle_seconds);
+		float phase1 = fract(phase0 + 0.5);
+		float weight0 = 1.0 - abs(1.0 - 2.0 * phase0);
+		vec2 adv = -local_wind * drift_scale * cycle_seconds;
+		float shape0 = cloud_flow_shape(base_uv, adv * phase0, local_wind);
+		float shape1 = cloud_flow_shape(base_uv, adv * phase1, local_wind);
+		float shape = mix(shape1, shape0, weight0);
 		// [cloud-shape 2026-11-07] 原来是 edge/core 两级 smoothstep 相加，云内部会
 		// 叠出两三档"台阶"，放大后就是一块块灰斑。改成单条连续密度曲线：shape
 		// 从 0.30 升到 0.78 的过程本身就是云的厚薄，边缘自然羽化、中心连续加深。

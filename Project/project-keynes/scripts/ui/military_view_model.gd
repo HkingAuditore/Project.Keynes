@@ -311,7 +311,7 @@ func technology_name(tech_id: String) -> String:
 			if not id.is_empty():
 				_tech_names[id] = String((definition as Dictionary).get("display_name", ""))
 	var name := String(_tech_names.get(tech_id, ""))
-	return name if not name.is_empty() else tech_id
+	return name if not name.is_empty() else "需要前置科技"
 
 
 func unit_unlocked(index: int) -> bool:
@@ -806,8 +806,15 @@ func armies_model(selected: int) -> Dictionary:
 		"convoys": convoy_rows(_as_array(_snapshot.get("convoys", null))),
 		"spend": spend.segments,
 		"spend_total": _money_text(spend.total_raw),
-		"procurement_text": "军需采购占财政 %s" % _bp(int(_snapshot.get("procurement_share_bp", 2000))),
+		"procurement_text": _procurement_share_text(),
 	}
+
+
+## 快照没有采购占比时留空，由 UI 整行隐藏；不写一个看起来像真读数的缺省值。
+func _procurement_share_text() -> String:
+	if not _snapshot.has("procurement_share_bp"):
+		return ""
+	return "军需占军费 %s" % _bp(int(_snapshot.get("procurement_share_bp", 0)))
 
 
 func army_row(army: Dictionary) -> Dictionary:
@@ -1270,7 +1277,7 @@ func convoy_rows(convoys: Array) -> Array:
 func _good_label(dense_id: int) -> String:
 	var ordered = _model.get("good_ids", PackedStringArray())
 	if not (ordered is PackedStringArray) or dense_id < 0 or dense_id >= ordered.size():
-		return "物资 #%d" % dense_id
+		return "未知物资"
 	var stable_id := String(ordered[dense_id])
 	var profile = GoodProfileRegistry.profile_by_id(stable_id)
 	return String(profile.display_name) if profile != null else stable_id
@@ -1572,7 +1579,7 @@ func declare_candidates() -> Array:
 		# A country without a Country handle cannot be addressed by war.declare;
 		# saying so beats sending a command that the runtime rejects.
 		if handle == 0 and reason.is_empty():
-			reason = "缺少国家句柄"
+			reason = "暂时无法对这个国家宣战"
 		rows.append({
 			"id": handle if handle != 0 else -1 - int(slot),
 			"slot": int(slot),
@@ -1783,7 +1790,7 @@ func _owner_map() -> PackedInt32Array:
 func cession_label(cell: int, owners: PackedInt32Array) -> String:
 	var zone := zone_name(cell)
 	var name := cell_name(cell)
-	if name.begins_with("地块 #"):
+	if name == "未命名地块":
 		return zone
 	if zone.ends_with(name):
 		return zone
@@ -1854,7 +1861,7 @@ func cell_name(cell: int) -> String:
 	if cell < 0:
 		return "—"
 	var name := String(_cell_names.get(cell, ""))
-	return name if not name.is_empty() else "地块 #%d" % cell
+	return name if not name.is_empty() else "未命名地块"
 
 
 func army_name(army: Dictionary) -> String:
@@ -1874,7 +1881,7 @@ func country_name(slot: int) -> String:
 	if not name.is_empty():
 		return name
 	name = _facade_country_name(slot)
-	return name if not name.is_empty() else "第 %d 国" % (slot + 1)
+	return name if not name.is_empty() else "未命名国家"
 
 
 ## Display name straight from Country, cached per slot for this model build so a

@@ -307,7 +307,8 @@ func _test_ui_dialog_and_chronicle_panel() -> void:
 	root.add_child(chron)
 	chron.open_panel(service.get_chronicle())
 	_expect("NarrativeChroniclePanel opens and renders recorded history",
-		chron.is_panel_open() and not chron._empty_label.visible)
+		chron.is_panel_open() and chron._records.size() == service.chronicle_total_count()
+		and chron._list_vbox.get_child_count() > 0)
 	chron.close_panel()
 	chron.free()
 

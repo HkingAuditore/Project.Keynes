@@ -22,6 +22,8 @@ static func build_cell_inputs(map: MapData) -> Dictionary:
 	moist_arr.resize(maxi(n_cells, 0))
 	var terr_arr := PackedByteArray()
 	terr_arr.resize(maxi(n_cells, 0))
+	var landform_arr := PackedByteArray()
+	landform_arr.resize(maxi(n_cells, 0))
 	var veg_arr := PackedByteArray()
 	veg_arr.resize(maxi(n_cells, 0))
 	var cov_arr := PackedByteArray()
@@ -44,6 +46,7 @@ static func build_cell_inputs(map: MapData) -> Dictionary:
 			elev_arr[ci] = cell.elevation
 			moist_arr[ci] = cell.moisture
 			terr_arr[ci] = int(cell.terrain) & 0xFF
+			landform_arr[ci] = int(cell.landform) & 0xFF
 			veg_arr[ci] = int(cell.vegetation) & 0xFF
 			cov_arr[ci] = int(cell.cover) & 0xFF
 			water_depth_arr[ci] = float(cell.water_depth)
@@ -56,6 +59,7 @@ static func build_cell_inputs(map: MapData) -> Dictionary:
 		"cell_elevation": elev_arr,
 		"cell_moisture": moist_arr,
 		"cell_terrain": terr_arr,
+		"cell_landform": landform_arr,
 		"cell_vegetation": veg_arr,
 		"cell_cover": cov_arr,
 		"cell_water_depth": water_depth_arr,
@@ -65,23 +69,26 @@ static func build_cell_inputs(map: MapData) -> Dictionary:
 
 
 # [DEM 地貌 2026-10-09] P0 起伏：山脊网络 + 顺坡沟谷（gdext bake_dem_landform.h）。
-# 两项振幅都 = 邻格最大高差 × *_amp_per_relief，relief 低于 relief_lo 的平原不加；
+# 山地起伏取近邻、区域高差与地貌下限；平原低于 relief_lo 不加，高原内部减弱。
 # 最粗一层间距 *_wavelength_hex，逐层减半，最细层由栅格分辨率截断。
 const DEM_DEFAULTS := {
 	"dem_relief_lo": 0.006,
 	"dem_relief_hi": 0.120,
 	"dem_relief_cap": 0.25,
-	"dem_ridge_amp_per_relief": 0.2,
-	"dem_ridge_wavelength_hex": 1.6,
+	"dem_ridge_amp_per_relief": 0.55,
+	"dem_ridge_wavelength_hex": 2.4,
+	"dem_ridge_crest_exp": 2.2,
+	"dem_mountain_relief_floor": 0.055,
+	"dem_peak_relief_floor": 0.080,
 	"dem_amp_per_relief": 0.1,
 	"dem_base_wavelength_hex": 1.0,
 	"dem_octaves": 4,
 	"dem_gain_wet": 0.48,
 	"dem_gain_dry": 0.62,
-	"dem_ridge_gain": 0.5,
+	"dem_ridge_gain": 0.40,
 	# 汇流刻谷：谷深 = 起伏 × depth_per_relief × smooth(log 汇水面积)，谷壁坡度 = 起伏 × wall_per_relief / 格。
-	"dem_valley_depth_per_relief": 1.2,
-	"dem_valley_wall_per_relief": 3.0,
+	"dem_valley_depth_per_relief": 1.4,
+	"dem_valley_wall_per_relief": 5.0,
 	"dem_valley_area_lo": 8.0,
 	"dem_valley_area_hi": 4000.0,
 	"dem_valley_depth_exp": 0.8,
@@ -121,6 +128,7 @@ static func build_knobs(map: MapData, world: WorldData, hex_size: float,
 		"cell_elevation": inputs["cell_elevation"],
 		"cell_moisture": inputs["cell_moisture"],
 		"cell_terrain": inputs["cell_terrain"],
+		"cell_landform": inputs["cell_landform"],
 		"cell_vegetation": inputs["cell_vegetation"],
 		"cell_cover": inputs["cell_cover"],
 		"cell_water_depth": inputs["cell_water_depth"],

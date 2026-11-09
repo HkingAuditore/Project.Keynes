@@ -20,6 +20,19 @@ var _popups_suppressed: bool = false
 
 func set_popups_suppressed(value: bool) -> void:
 	_popups_suppressed = value
+	if value:
+		# 切换开关时也要清掉已经排队/恢复中的年报；否则下一次 sync_ui
+		# 仍会进入 _show()，在“屏蔽弹窗”状态下把时钟暂停。
+		_queued = 0
+		_reopen_pending = false
+		if _open:
+			if _ui != null and _ui.has_method("is_annual_report_open") \
+					and _ui.is_annual_report_open() and _ui.has_method("close_annual_report"):
+				_ui.close_annual_report()
+			_open = false
+			_restore_pending = true
+			if _clock != null and not _was_paused:
+				_restore_clock()
 
 func configure(controller, host, clock, ui) -> void:
 	_controller = controller

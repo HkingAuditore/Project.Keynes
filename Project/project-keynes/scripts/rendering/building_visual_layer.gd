@@ -436,6 +436,8 @@ func set_tod(_sun_color: Color, _ambient_color: Color,
 	# Colour palettes and local day/night are evaluated by earth_daylight;
 	# TODProfile still owns the common exposure.
 	_tod_exposure = maxf(exposure, 0.0)
+	_set_tod_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_set_tod_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_set_tod_parameter("tod_exposure", _tod_exposure, false)
 
 
@@ -452,6 +454,16 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	_set_tod_parameter("tod_debug_sun_position_enabled",
 		_tod_debug_sun_position_enabled)
 	_set_tod_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+
+
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	_set_tod_parameter("eternal_min_elevation_rad", min_elevation)
+	_set_tod_parameter("eternal_max_hour_angle_rad", max_hour_angle)
 
 
 func set_tod_debug_sun_height_scale(value: float) -> void:
@@ -881,6 +893,8 @@ func _push_material_state() -> void:
 	_set_tod_parameter("tod_debug_sun_height_scale",
 		_tod_debug_sun_height_scale)
 	_set_tod_parameter("tod_sun_dir", _tod_sun_dir)
+	_set_tod_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_set_tod_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_set_tod_parameter("tod_exposure", _tod_exposure, false)
 
 

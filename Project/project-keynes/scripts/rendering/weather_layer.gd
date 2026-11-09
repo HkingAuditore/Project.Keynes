@@ -169,6 +169,9 @@ var _wx_pushed_lerp: float = -1.0
 
 # overlay shader 用它做 per-cell advection 让云沿真实风带流动，不再依赖全局常量 axis。
 var _vector_atlas_tex: Texture2D = null
+var _wind_lut_tex: Texture2D
+var _wind_lut_prev_tex: Texture2D
+var _has_wind_prev := false
 # v9.perf：当前可见 fronts 数量；为 0 时整个 WeatherLayer 隐藏，省一次全屏 pass
 var _active_count: int = 0
 # 每日 WeatherFront 快照的表现层插值状态。这里存 Dictionary 快照，避免改 WeatherSystem 数据。
@@ -525,7 +528,12 @@ var _day_night_enabled: bool = true
 var _extreme_ground_enabled: bool = true
 
 func set_visual_quality(q: int) -> void:
-	_visual_quality = clampi(q, 0, 2)
+	var next_quality := clampi(q, 0, 2)
+	var changed := _visual_quality != next_quality
+	_visual_quality = next_quality
+	if changed and _overlay_quad != null:
+		_load_overlay_shader()
+		_push_overlay_runtime_state()
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("weather_overlay_quality", _visual_quality)
 	for mat in _curtain_mats:
@@ -638,12 +646,30 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+
+
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	for mat in _curtain_mats:
 		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -1262,6 +1288,7 @@ func _particle_tod_tint_component(sun_component: float, ambient_component: float
 func _push_overlay_runtime_state() -> void:
 	if _overlay_mat == null:
 		return
+	_push_wind_luts()
 	if _map_index_atlas_tex != null:
 		_overlay_mat.set_shader_parameter("map_index_atlas", _map_index_atlas_tex)
 	if _weather_lut_tex != null:
@@ -1289,10 +1316,30 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	_overlay_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_push_fog_mask_uniforms()
 	_push_edge_transition_data()
+
+func set_wind_luts(current: Texture2D, previous: Texture2D, has_previous: bool) -> void:
+	# 复用云影场在天气提交边界上传的风场，不重复生成或上传全图。
+	_wind_lut_tex = current
+	_wind_lut_prev_tex = previous
+	_has_wind_prev = has_previous
+	_push_wind_luts()
+
+
+func _push_wind_luts() -> void:
+	if _overlay_mat == null:
+		return
+	_overlay_mat.set_shader_parameter("has_local_wind", _wind_lut_tex != null)
+	_overlay_mat.set_shader_parameter("has_wind_prev", _has_wind_prev)
+	if _wind_lut_tex != null:
+		_overlay_mat.set_shader_parameter("wind_lut", _wind_lut_tex)
+		_overlay_mat.set_shader_parameter("wind_lut_prev", _wind_lut_prev_tex)
+
 
 func _push_curtain_runtime_state() -> void:
 	if _curtain_mats.is_empty():
@@ -1314,6 +1361,8 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		mat.set_shader_parameter("tod_exposure", _tod_exposure)
 		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
 		# [parallax-rain] 俯视投影参数
@@ -1340,7 +1389,8 @@ func _load_overlay_shader() -> void:
 	if shader == null:
 		push_warning("WeatherLayer: shader not found at %s" % OVERLAY_SHADER_PATH)
 		return
-	var prefix := ""
+	var tier_quality := CloudShadowField.quality_for_tier(_visual_quality, _mobile_quality_tier_define)
+	var prefix := "#define %s\n" % ["PK_WEATHER_LOW", "PK_WEATHER_MID", "PK_WEATHER_HIGH"][tier_quality]
 	# 平台裁剪宏必须排在质量档宏之前：web 变体要能压过 MOBILE_QUALITY_* 的分支判断。
 	if OS.has_feature("web"):
 		prefix += WEB_WEATHER_MIN_DEFINE
@@ -1354,6 +1404,10 @@ func _load_overlay_shader() -> void:
 	_overlay_mat = ShaderMaterial.new()
 	_overlay_mat.shader = shader
 	_overlay_quad.material = _overlay_mat
+	# 切档建立新材质，旧材质的提交缓存不能阻止 LUT/插值参数重新绑定。
+	_wx_pushed_weather_lut = null
+	_wx_pushed_weather_prev = null
+	_wx_pushed_lerp = -1.0
 	_push_visual_tile_uniforms()
 	_push_edge_transition_data()
 

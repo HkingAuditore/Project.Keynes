@@ -146,6 +146,9 @@ var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
+var _gm_popups_suppressed := false
+var _gm_all_ui_suppressed := false
+var _gm_saved_ui_visibility: Dictionary = {}
 var _debug_layer: Control
 var _inspector_suppressed_for_country := false
 var _country_runtime_facade = null
@@ -407,6 +410,13 @@ func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
 	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
 	_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "military_commit")
 	_refresh_peace_window()
+
+
+## 行军预览失败等原因的玩家侧回显。PlayerController 只持有 manager 引用，
+## 不知道右栏是否正在显示军务档案，所以这里做一次存在性转发。
+func show_transient_message(text: String) -> void:
+	if _right_panel != null and _right_panel.has_method("set_military_dossier_feedback"):
+		_right_panel.set_military_dossier_feedback(text, false)
 
 
 ## Inspector 军事页签的官营建筑入口：翻成正式命令交给 PlayerController。
@@ -688,6 +698,54 @@ func toggle_gm_panel() -> void:
 
 func is_gm_available() -> bool:
 	return _gm_available and _gm_console != null
+
+
+func set_popups_suppressed(enabled: bool) -> void:
+	_gm_popups_suppressed = enabled
+	if not enabled:
+		return
+	if is_era_ceremony_playing():
+		_era_ceremony.skip()
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("close_offer"):
+		_narrative_event_dialog.close_offer()
+
+
+func set_all_ui_suppressed(enabled: bool) -> void:
+	if _gm_all_ui_suppressed == enabled:
+		return
+	_gm_all_ui_suppressed = enabled
+	var paths := ["UIRoot/HUDLayer", "UIRoot/PanelLayer", "UIRoot/ModalLayer",
+		"UIRoot/EraOverlayLayer"]
+	if enabled:
+		_gm_saved_ui_visibility.clear()
+		for path in paths:
+			var node := get_node_or_null(path) as CanvasItem
+			if node == null:
+				continue
+			_gm_saved_ui_visibility[path] = node.visible
+			node.visible = false
+		# DebugLayer 可能包含旧的诊断控件；只保留 GM 面板可见。
+		if _debug_layer != null:
+			for child in _debug_layer.get_children():
+				if child != _gm_console and child is CanvasItem:
+					var key := String(child.get_path())
+					_gm_saved_ui_visibility[key] = (child as CanvasItem).visible
+					(child as CanvasItem).visible = false
+			if _gm_console != null:
+				_gm_console.visible = true
+	else:
+		for path in paths:
+			if _gm_saved_ui_visibility.has(path):
+				var restore_node := get_node_or_null(path) as CanvasItem
+				if restore_node != null:
+					restore_node.visible = bool(_gm_saved_ui_visibility[path])
+		if _debug_layer != null:
+			for child in _debug_layer.get_children():
+				var key := String(child.get_path())
+				if _gm_saved_ui_visibility.has(key) and child is CanvasItem:
+					(child as CanvasItem).visible = bool(_gm_saved_ui_visibility[key])
+		_gm_saved_ui_visibility.clear()
+	_layout_gm_panel()
 
 
 func toggle_perf_hud() -> void:
@@ -1696,9 +1754,11 @@ func _on_military_dossier_action_requested(action: StringName, payload: Dictiona
 				{"army": handle, "stance": int(payload.get("stance", 0))})
 		_:
 			return
-	if action != &"move" and action != &"area" or not bool(result.get("ok", false)):
-		_right_panel.set_military_dossier_feedback(
-			String(result.get("message", "命令已下达，等待执行。")), bool(result.get("ok", false)))
+	# 行军 / 区域控制成功也要给回执：否则确认键按下后档案毫无变化，玩家以为按钮坏了。
+	var accepted := bool(result.get("ok", false))
+	var fallback := "命令已下达，次日生效。" if accepted else "命令未生效：原因未返回，请重试。"
+	_right_panel.set_military_dossier_feedback(
+		String(result.get("message", fallback)), accepted)
 
 
 func update_military_arm_order(state: Dictionary) -> void:
@@ -2239,6 +2299,11 @@ func is_era_ceremony_playing() -> bool:
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
+	if _gm_popups_suppressed:
+		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
+		_era_celebrated_index = new_index
+		_era_ceremony_index = -1
+		return
 	if is_era_ceremony_playing():
 		_era_ceremony.finish_now()
 	_era_celebrated_index = new_index
@@ -3299,6 +3364,11 @@ func set_annual_history(rows: Array, offset: int, has_more: bool) -> void:
 
 func is_annual_report_open() -> bool:
 	return _annual_report_workspace != null and _annual_report_workspace.visible
+
+
+func close_annual_report() -> void:
+	if _annual_report_workspace != null and _annual_report_workspace.has_method("_close"):
+		_annual_report_workspace.call("_close")
 
 
 func annual_other_modal_open() -> bool:

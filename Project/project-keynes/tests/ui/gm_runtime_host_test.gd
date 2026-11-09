@@ -37,6 +37,7 @@ func _run() -> void:
 	var capabilities := host.get_gm_capabilities()
 	var fog_toggle_found := false
 	var suppress_popups_toggle_found := false
+	var hide_all_ui_toggle_found := false
 	var click_claim_toggle_found := false
 	var atlas_toggle_found := false
 	var autosave_toggle_found := false
@@ -47,6 +48,8 @@ func _run() -> void:
 			fog_toggle_found = true
 		if String(toggle.get("id", "")) == "ui.suppress_popups":
 			suppress_popups_toggle_found = true
+		if String(toggle.get("id", "")) == "ui.hide_all_except_gm":
+			hide_all_ui_toggle_found = true
 		if String(toggle.get("id", "")) == "simulation.click_claim_territory":
 			click_claim_toggle_found = true
 		if String(toggle.get("id", "")) == "diagnostics.dynamic_visual_atlas_upload":
@@ -61,6 +64,7 @@ func _run() -> void:
 			river_probe_command_found = true
 	_expect(fog_toggle_found, "fog toggle capability", failures)
 	_expect(suppress_popups_toggle_found, "popup suppression toggle capability", failures)
+	_expect(hide_all_ui_toggle_found, "hide all UI toggle capability", failures)
 	_expect(click_claim_toggle_found, "click claim toggle capability", failures)
 	_expect(atlas_toggle_found, "dynamic atlas toggle capability", failures)
 	_expect(autosave_toggle_found, "autosave toggle capability", failures)
@@ -84,6 +88,14 @@ func _run() -> void:
 	var popups_off := host.set_gm_toggle("ui.suppress_popups", false)
 	_expect(bool(popups_off.get("ok", false)) and not bool(popups_off.get("enabled", true)),
 		"popup suppression GM toggle restores", failures)
+	var hide_all_on := host.set_gm_toggle("ui.hide_all_except_gm", true)
+	var hide_all_state: Dictionary = host.get_gm_toggle_state("ui.hide_all_except_gm")
+	_expect(bool(hide_all_on.get("ok", false)) and bool(hide_all_state.get("enabled", false)),
+		"hide all UI GM toggle readback", failures)
+	var hide_all_off := host.set_gm_toggle("ui.hide_all_except_gm", false)
+	_expect(bool(hide_all_off.get("ok", false))
+		and not bool(host.get_gm_toggle_state("ui.hide_all_except_gm").get("enabled", true)),
+		"hide all UI GM toggle restores", failures)
 	Engine.remove_meta(&"force_disable_dva_upload")
 	var atlas_off := host.set_gm_toggle("diagnostics.dynamic_visual_atlas_upload", false)
 	_expect(bool(atlas_off.get("ok", false)) and not bool(atlas_off.get("enabled", true))

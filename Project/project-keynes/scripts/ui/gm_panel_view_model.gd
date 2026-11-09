@@ -188,6 +188,8 @@ static func _format_overview(data: Dictionary) -> Array:
 			{"label": "游戏日", "value": str(clock.get("day_index", -1))},
 			{"label": "状态", "value": "暂停" if bool(clock.get("paused", false)) else "运行中"},
 			{"label": "速度", "value": "%sx" % clock.get("speed", 0)},
+			{"label": "暂停来源", "value": String(clock.get("last_pause_source", "未记录"))},
+			{"label": "暂停日 / 故障锁", "value": "%s / %s" % [clock.get("last_pause_day", -1), "是" if bool(clock.get("authority_fault_hold", false)) else "否"]},
 		]},
 		{"title": "运行时", "rows": [
 			{"label": "Fast tick", "value": str(runtime.get("fast_tick", 0))},

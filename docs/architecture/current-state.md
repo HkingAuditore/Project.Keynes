@@ -1,5 +1,52 @@
 # 当前运行状态
 
+## 山地高度与烘焙起伏（2026-11-09）
+
+原生 base 生成在 `world_ext_generate.cpp` 冻结山脊基底，按陆地 p99 分配统一增量比例；
+必要时基底以海平面为锚线性缩放。只有顶部约 1% 使用导数连续的软收尾，
+不再按地图尺寸混入旧的逐点指数压缩。`ridge_budget_scale`、`ridge_base_scale`、
+`ridge_tail_cells`、`ridge_land_cells`、`ridge_elevation_cap` 由 base/full 结果包返回。
+这一步改变权威初始 elevation，后续水文和气候仍在既有生成管线中重算。
+
+terrain-index/fused geometry/visual tile 共同读取可选 `cell_landform` U8 SoA。
+山地/高峰/火山将邻格起伏与两圈区域起伏合并，山地/高峰起伏下限为 0.055/0.080；
+高原内部减弱细纹，陡坎仍由邻格高差驱动。三中心插值保持地貌权重连续。
+主脊振幅系数 0.55、波长 2.4 hex、尖化指数 2.2、倍频增益 0.40；
+汇流谷深/谷壁系数为 1.4/5.0，保留只降不升与陆地不低于水面的约束。
+这些烘焙细节写视觉高度 buffer，不新增 DataCore slot 或存档列。
+缺少 landform 的旧调用可继续按邻格起伏烘焙，非空错误长度明确 fallback。
+
+Windows Debug/Release DLL 为 `dots_ext_relief_v1`，正式项目已切换加载路径。
+定向测试 `tests/world/mountain_relief_bake_test.gd` 61 项通过，覆盖三尺寸、
+三海平面、确定性、软收尾比例、平原/高原保护、经度周期与刻谷约束；
+原生生成接口 32 项、地形边界索引 11 项通过。具体画面待玩家新生成地图验收。
+扩大分块检查的 `visual_tile_native_bake_test.gd` 在地图边界尺寸不变性断言失败，
+旧 `dots_ext_military_demand_v7` 与新 DLL 均为 ref=-0.146431/got=-0.103137，
+未改该既有断言或将完整分块检查计为通过。
+仅在临时夹具跳过上述既有失败后，其余分块测试通过，覆盖载荷、确定性、
+分辨率一致性、边界距离、细节、运河补丁和 horizon 重采样；正式测试文件保持原样。
+
+2026-11-09 天气云方块修复：低/中及移动/Web的廉价值噪声改为无循环的三角格点
+梯度噪声，旋转第二层并取消零线折叠；保留分档/双相位。均匀天气GPU回归：
+旧方格轮廓反例失败，新LOW/MID/Web通过；7天气变体连续性检查通过。证据见
+[云Shader分档验证的后续修复](../cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md#后续天气云方块修复)。
+
+2026-11-09 云 Shader 分档：云影桌面 128×64 / 256×128 / 512×256，移动/Web
+128×64 / 192×96 / 256×128；单相位云形采样2/4/6次。天气云LOW主云、MID加卷云、
+HIGH加低雾；移动/Web均编译掉解析噪声栈，高档光照不再重复计算邻域云密度。
+17个shader变体连续性检查119项与正式节点切档39项通过。RTX4080桌面GL、1600×900
+隔离天气云HIGH GPU平均4.5855→0.6353ms；真机移动和浏览器未验。详见
+[云Shader分档验证](../cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md)。
+
+2026-11-09 云影/天气云视觉平流：删除全图累计位移，改用局地风 + 24 秒双相位有界
+位移和零权重重置；新旧风仅在显示端按天气提交间隔混合。天气云经 HexRenderer 的
+信号连接复用云影已上传风 LUT，中云/卷云/低雾均接入，Web 裁剪卷云移除固定东向漂移。
+Godot 4.6.2 / OpenGL Compatibility 隔离渲染探针：云影、桌面天气云、Web 裁剪天气云
+共 21 项通过，周期边界和 12006 秒换风起点的最大像素变化为 1/255。反例仅恢复
+风乘总时间，12006 秒换风变化达 0.768627，检查按预期失败。三个宿主脚本解析通过；
+尚未覆盖正式会话长时间画面、移动设备性能和浏览器实际渲染。机制见
+[云影的世界空间连续性](../cpp-dots-runtime/vision-fog-and-borders.md#云影的世界空间连续性)。
+
 核查日期：2026-11-05。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
 
 范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
@@ -10,6 +57,14 @@
 正式失业计划补齐12类生活需求；开局规划已接入真实全局倍率并纠正软投入语义。
 没有新增保存列、调度阶段、跨模块写边或第二套评分。数值、运行证据及尚未覆盖的全时代
 校准范围见 [经济平衡记录](../cpp-dots-runtime/economy-balance-2026-11-08.md)。
+
+2026-11-09 永昼视觉：共享日照 shader 按当地纬度与当日赤纬取正午高度
+`max(10°, 90° - abs(latitude - declination))`，日内时角在 ±70° 内浮动，默认一个游戏年完成两个 Shader 日，按实际游戏日历进度映射，水面高光与实例层同源，GM 手动方向优先。
+生产与性能验证项目的日历映射回归各 26 项通过，覆盖 365/360/10 日年历及固定日历时的倍速/帧 delta 独立性。
+Shader 日/游戏年比例也已接入 HexRenderer.shader_days_per_game_year；生产/性能验证项目各42项通过，含小数比例跨年和运行时调参。
+永昼调参已集中到 HexRenderer 的角度 export；实际 renderer/渲染层传参检查和 GPU uniform 调整检查在 Compatibility、D3D12/Mobile 各 43 项通过。
+Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通过；
+地被桌面/移动/分块档回归 28 项通过。详见 [TOD 光照](../cpp-dots-runtime/vision-fog-and-borders.md#tod-光照)。
 
 ## 十二域
 
@@ -50,6 +105,24 @@
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
 这些推进者与日表“同日对齐”的实验开关 `PK_EXPERIMENT_EXTERNAL_DAY_ALIGNMENT` 只供测试子类读取；产品默认未切换，见 [migration.md](migration.md) 的推迟项。
+
+## GM 界面与事件屏蔽
+
+正式玩家 GM 的 `ui.suppress_popups` 在 Host 设置后通过 `gm_toggle_changed` 同步到
+PlayerController 的年度报告、叙事、时代奖励、家族创立和理念抽取流程。所有流程在展示前
+拦截，并在开关运行时切换时清理已排队或已锁定的弹窗，恢复由弹窗持有的时钟暂停，避免
+“屏蔽事件”仍偶发暂停。时代晋升大典也会只同步基线而不创建暂停演出。
+另有 `ui.hide_all_except_gm` 开关，隐藏 HUD、面板、模态层和过场层，只保留 DebugLayer
+中的 GM 面板；关闭后恢复切换前的可见性。
+GM 总览的时钟诊断还显示 `last_pause_source`、`last_pause_day` 和
+`authority_fault_hold`，用于区分 UI 自动暂停与运行时故障保护。
+2026-11-09：修正叙事自动确认未持有暂停锁却恢复默认「暂停 / 1倍速」的问题
+（截图入口 `_restore_clock:125`）。恢复只消费真实弹窗或读档弹窗登记的
+`restore_pending`，并保留其他弹窗忙碌时的延后恢复。验证入口为
+`tests/game/narrative_popup_suppression_test.gd`（24 项通过）、
+`narrative_event_runtime_test.gd`（36 项通过）和 `gm_runtime_host_test.gd`（PASS）。
+GM 屏蔽开关返回补齐实际 `enabled`。未新增时钟或模拟权威；
+扩大检查的 `player_controller_contract_test.gd` 仍有既有的逐帧更新约束及两项殖民派遣文案失败，未计为通过。
 
 ## 跨模块交接
 

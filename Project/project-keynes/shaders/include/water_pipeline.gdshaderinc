@@ -15,7 +15,7 @@
 // 性能（Cost）
 //   LOW 不查副格；MID/HIGH 复用地形边界距离/副格纹理。桌面端另保留
 //   3×3 water-biome 邻域，移动端不执行该 9-tap。海冰来自 fragment 入口的 dyn_lut.a。
-//   apply_water_specials 在 day_night_enabled 关时保留全局平行光永昼。
+//   apply_water_specials 在 day_night_enabled 关时保留当地正午日照。
 // ─────────────────────────────────────────────────────────────────────────
 
 
@@ -1093,7 +1093,7 @@ SurfaceParams apply_water_overlay_surface(
 //                     （BRDF 给的是 albedo×F，这里给的是天空环境光反射）。
 //     - sparkle     : 高频颗粒高光，纯 stylized 风味。
 //
-//   day_night_enabled=false 时保留全局平行光永昼：不再关闭波坡明暗 / 高光等方向性。
+//   day_night_enabled=false 时保留当地正午日照：不再关闭波坡明暗 / 高光等方向性。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, float pixel_night, vec3 sun_dir_px) {
 	vec3 N = normalize(surface.normal);
@@ -1220,10 +1220,10 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
 	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
-	// 昼夜关闭时使用全图一致的季节性平行光，避免关闭 TOD 后水面方向光一起消失。
+	// 昼夜关闭时使用当地正午基线 + 视觉日内方向，避免关闭 TOD 后水面方向光一起消失。
 	vec3 sun_dir_px = day_night_enabled
 			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
-			: compute_global_parallel_sun_dir();
+			: compute_eternal_visual_sun_dir(lat_signed);
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
 	// 开阔海面底色和环境光更暗，不能直接复用陆地同幅云影；否则云区会
 	// 同时被直射、天光和水面 shadow floor 压暗，读成脏黑块。
