@@ -223,106 +223,61 @@ float rain_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, floa
 //   - camera_pitch 控制飘落轨迹的透视收缩
 //   - 近层大而清晰、远层小而模糊
 // ════════════════════════════════════════════════════════════
+// 每个采样格只用于查找雪花身份；中心覆盖全格，不能再缩回格心。
+vec3 snow_hash23(vec2 p) {
+	vec3 h = fract(vec3(p.x, p.y, p.x) * vec3(0.1031, 0.1030, 0.0973));
+	h += dot(h, h.yzx + 33.33);
+	return fract((h.xxy + h.yzz) * h.zyx);
+}
+
 float snow_curtain(vec2 uv, vec2 wp, float seed, float depth, float precip, float strength) {
 	float scale = max(hex_world_diameter, 1.0);
-
-	// ── 视差分层 ──
-	float flake_scale   = mix(2.0, 0.6, layer_depth);
-	float drift_speed   = mix(0.85, 0.28, layer_depth);
-	float fall_speed    = mix(4.5, 1.5, layer_depth);
-	float density_mult  = mix(5.0, 12.0, layer_depth);
-	float sway_amp      = mix(0.20, 0.08, layer_depth);
-	float haze_factor   = mix(0.0, 0.35, layer_depth);
+	float flake_scale = mix(2.0, 0.6, layer_depth);
+	float fall_speed = mix(4.5, 1.5, layer_depth);
+	float density_mult = mix(5.0, 12.0, layer_depth);
+	float sway_amp = mix(0.20, 0.08, layer_depth);
+	float haze_factor = mix(0.0, 0.35, layer_depth);
 	float density_jitter = mix(0.84, 1.18, hash21(vec2(seed * 97.3, layer_depth * 31.7)));
-
-	// 俯视投影：放宽指数让俯视时下落仍可见
-	float pitch_cos = cos(camera_pitch);
-	float fall_visibility = pow(max(pitch_cos, 0.05), 0.7);
-
-	// ── 雪花位置：密集网格 + 域扭曲（打破规律性）──
+	float fall_visibility = pow(max(cos(camera_pitch), 0.05), 0.7);
 	vec2 wind_n = normalize(wind_dir + vec2(0.0001));
 	float t = world_time;
-	vec2 drift = vec2(
-		sin(t * 0.35 + seed * 6.28) * sway_amp
-			+ wind_n.x * wind_strength * t * 0.3,
-		-t * fall_speed * fall_visibility
-			+ wind_n.y * wind_strength * t * 0.12
-	);
-
-	vec2 p_raw = wp * density_mult * density_jitter / scale + drift
+	vec2 drift = vec2(wind_n.x * wind_strength * t * 0.3,
+		-t * fall_speed * fall_visibility + wind_n.y * wind_strength * t * 0.12);
+	vec2 p = wp * density_mult * density_jitter / scale + drift;
+	// 旋转查找格而非飘落方向；每块/每层不再共用屏幕纵列。
+	float angle = 0.35 + seed * 2.4 + layer_depth * 0.73;
+	float ca = cos(angle);
+	float sa = sin(angle);
+	mat2 scatter_to_world = mat2(vec2(ca, -sa), vec2(sa, ca));
+	p = mat2(vec2(ca, sa), vec2(-sa, ca)) * p
 		+ vec2(seed * 31.7 + layer_depth * 7.1, seed * 17.9 - layer_depth * 5.3);
-
-	// [去规律化] 域扭曲：用低频噪声偏移网格坐标，打破均匀排列
-	vec2 warp = vec2(0.0);
-#if !defined(PK_MOBILE_ANY)
-	// 居中的域扭曲避免所有雪花朝同一侧偏移；加入低频时间项，让
-	// 相邻 patch 不会长期保持同一组格线。
-	warp = vec2(
-		(value_noise(p_raw * 0.42 + seed * 3.1 + t * 0.035) - 0.5) * 0.95,
-		(value_noise(p_raw * 0.38 - seed * 5.7 - t * 0.028) - 0.5) * 0.95
-	);
-#endif
-	vec2 p = p_raw + warp;
-
-	vec2 cell_id = floor(p);
+	vec2 base_cell = floor(p);
 	vec2 f = fract(p);
-
-	// 每个格子独立的多组随机数（位置/门控/半径各用不同种子）
-	float rnd_pos   = hash21(cell_id + seed * 17.0);       // 位置随机
-	float rnd_gate  = hash21(cell_id + 7.3 + seed * 23.0); // 门控随机
-	float rnd_r     = hash21(cell_id + 13.1 + seed * 29.0);// 半径随机
-	float rnd_tilt  = hash21(cell_id + 19.7 + seed * 37.0);// 子格倾斜
-	float rnd_phase = hash21(cell_id + 41.9 + seed * 43.0);// 下落相位
-	float rnd_drift = hash21(cell_id + 53.7 + seed * 47.0);// 横向漂移相位
-
-	// [去规律化] 子格随机偏移：每个格子内的 flake 不在中心，
-	// 而是在格子内随机分布（打破"每个格子正中间一颗"的棋盘感）
-	// 只用 hash，不增加移动端纹理采样；移动端也保留相位差。
-	vec2 sub_jitter = vec2(
-		rnd_tilt * 2.0 - 1.0,
-		hash21(cell_id + 31.3 + seed * 59.0) * 2.0 - 1.0
-	) * 0.37;
-#if defined(PK_MOBILE_ANY)
-	sub_jitter *= 0.72;
-#endif
-
-	// 每个雪花独立的时间相位与漂移速度，避免整块 curtain 同步闪烁/下落。
-	float flake_phase = rnd_phase * 6.2831853;
-	float flake_speed = mix(0.72, 1.34, hash21(cell_id + 67.1 + seed * 61.0));
-	float drift_phase = rnd_drift * 6.2831853;
-	float drift_offset = sin(t * mix(0.22, 0.48, rnd_drift) + drift_phase) * sway_amp;
-	float local_fall = t * fall_speed * fall_visibility * flake_speed;
-
-	// 雪花中心：微颤 + 子格偏移 + 独立横向漂移
-	vec2 center = vec2(
-		0.5 + sin(t * 0.7 + rnd_pos * 6.28 + flake_phase) * 0.10 + drift_offset * 0.18,
-		0.5 + cos(t * 0.55 + hash21(cell_id + 4.13 + seed * 71.0) * 4.13 + flake_phase) * 0.08
-			+ sin(local_fall * 0.55 + flake_phase) * 0.12
-	) + sub_jitter * 0.45;  // 子格偏移量
-
-	// 让每个格子的雪花在不同时间穿过 patch，而不是整层同时换相位。
-	vec2 fp = f - center;
-
-	// 形状：椭圆
-	vec2 stretch = vec2(1.0, mix(1.65, 0.85, layer_depth) * (0.6 + fall_visibility * 0.8));
-	fp = fp * stretch;
-	float d = length(fp);
-
-	// 半径：用独立的 rnd_r 打破与位置的相关性
-	float radius = mix(0.07, 0.04, depth) * mix(0.72, 1.28, rnd_r) * flake_scale;
-
-	// 亮核 + 淡晕
-	float core  = 1.0 - smoothstep(radius * 0.36, radius, d);
-	float halo  = 1.0 - smoothstep(radius * 0.85, radius * 2.4, d);
-	float flake = core * 0.62 + halo * 0.12;
-
-	// 门控：用独立 rnd_gate，避免与位置相关联导致成片空白
-	float gate = step(mix(0.40, 0.06, strength), rnd_gate);
-
-	// alpha：整体压暗
-	float alpha = clamp(flake * gate * mix(0.45, 1.15, strength), 0.0, 1.0);
-	alpha *= mix(1.0, 0.55, haze_factor);
-	return alpha;
+	float snow = 0.0;
+	// 全格散点与摆动会跨格，必须补画邻格，避免边缘切半和换格闪烁。
+	// 最大晕圈 + 摆动小于一格，3×3 查找在桌面/移动/Web 均完整。
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			vec2 offset = vec2(float(x), float(y));
+			vec2 id = base_cell + offset;
+			vec3 position_random = snow_hash23(id + seed * 17.0);
+			vec3 shape_random = snow_hash23(id + vec2(13.1, 71.7) + seed * 29.0);
+			float phase = position_random.z * 6.2831853;
+			vec2 center = offset + position_random.xy + vec2(
+				sin(t * mix(0.35, 0.80, shape_random.z) + phase) * sway_amp,
+				cos(t * mix(0.25, 0.60, shape_random.x) + phase) * sway_amp * 0.65);
+			vec2 fp = scatter_to_world * (f - center);
+			fp *= vec2(1.0, mix(1.65, 0.85, layer_depth) * (0.6 + fall_visibility * 0.8));
+			float d = length(fp);
+			float radius = mix(0.07, 0.04, depth) * mix(0.72, 1.28, shape_random.x) * flake_scale;
+			float core = 1.0 - smoothstep(radius * 0.36, radius, d);
+			float halo = 1.0 - smoothstep(radius * 0.85, radius * 2.4, d);
+			float gate = step(mix(0.40, 0.06, strength), shape_random.y);
+			snow = max(snow, (core * 0.62 + halo * 0.12) * gate);
+		}
+	}
+	float alpha = clamp(snow * mix(0.45, 1.15, strength), 0.0, 1.0);
+	return alpha * mix(1.0, 0.55, haze_factor);
 }
 
 float fog_veil(vec2 uv, float seed, float intensity) {
