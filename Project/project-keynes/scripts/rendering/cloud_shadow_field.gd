@@ -12,9 +12,17 @@ const CLOUD_SHADOW_STRENGTH_LOW := 0.48
 ## [cloud-tex 2026-11-07] 离线烘焙的 Perlin-Worley 噪声（4 通道多尺度、无缝）。
 ## 由 tools/prebake_cloud_shadow_noise.gd 生成；缺失时云影整体关闭而不是画成全黑。
 const CLOUD_NOISE_TEXTURE_PATH := "res://assets/textures/cloud_shadow/cloud_noise_rgba.res"
+const CLOUD_BASE_TEXTURE_PATH := "res://assets/textures/cloud_shadow/cloud_shadow_base_rgba.res"
 const CLOUD_SHADOW_MOTION_SPEED := 0.15
+## UV 平流增益：生产场景把 motion_speed 降低、world_scale 提高后，原始 UV
+## 位移只有不到 1 texel/s；8.0 才能稳定看见连续滚动，场景会按自身尺度覆写。
+const CLOUD_SHADOW_UV_SCROLL_GAIN := 8.0
 const CLOUD_SHADOW_SHAPE_CONTRAST := 1.0
 const CLOUD_SHADOW_NOISE_WARP := 0.36
+const CLOUD_SHADOW_DYNAMIC_DETAIL_GAIN := 0.32
+const CLOUD_SHADOW_DYNAMIC_WARP_GAIN := 0.80
+const CLOUD_SHADOW_EDGE_SOFTNESS := 1.10
+const CLOUD_SHADOW_WIND_INFLUENCE := 0.22
 const CLOUD_SHADOW_MASK_BIAS := 0.10
 const CLOUD_SHADOW_CELL_SCALE := 0.75
 ## [cloud-shape 2026-11-07] 0.0045 时一个噪声单元≈222 世界单位（约 6 hex），
@@ -25,14 +33,16 @@ const CLOUD_SHADOW_WORLD_SCALE := 0.0130
 ## 侵蚀强度：把边缘啃成絮状并在云内部掏洞。0 = 退回单层圆疙瘩。
 ## 0.40 只侵蚀边缘、云体保持实心；再高会让云内部碎成迷彩。
 const CLOUD_SHADOW_EROSION := 0.40
-## 遮罩纹理更新频率。云影移动极慢（motion_speed 0.15 → 每次更新位移不足
-## 0.25 texel），60Hz 重绘纯属浪费；20Hz 肉眼无差别。
-const FIELD_UPDATE_HZ := 20.0
+## 形状噪声与天气 mask 共用同一张 field texture。world_time 每帧推进，若这里
+## 仍按 20Hz 重绘，噪声会呈现“停住—跳一下”的节奏；提高到显示刷新节奏后，
+## 云形位移连续，mask 的取值逻辑保持不变。移动/Web 低分辨率场的成本仍很小。
+const FIELD_UPDATE_HZ := 60.0
 
 var _world: WorldData
 var _map: MapData
 var _bounds := Rect2()
 var _wrap_period_x := 0.0
+var _hex_world_diameter := 44.0
 var _visual_tiles
 var _visual_quality := 1
 var _mobile_tier := ""
@@ -40,6 +50,10 @@ var _direct_mode := false
 var _debug_view := false
 var _night_factor := 0.0
 var _world_time := 0.0
+var _world_time_external := false
+var _cloud_shadow_uv_offset := Vector2.ZERO
+var _drift_time_initialized := false
+var _last_drift_time := 0.0
 var _weather_lerp := 1.0
 var _last_lut_update_usec := -1
 var _last_lut_change_usec := 0
@@ -55,8 +69,13 @@ var _strength_mid := CLOUD_SHADOW_STRENGTH_MID
 var _strength_low := CLOUD_SHADOW_STRENGTH_LOW
 var _coverage_gain := 1.25
 var _motion_speed := CLOUD_SHADOW_MOTION_SPEED
+var _uv_scroll_gain := CLOUD_SHADOW_UV_SCROLL_GAIN
 var _shape_contrast := CLOUD_SHADOW_SHAPE_CONTRAST
 var _noise_warp := CLOUD_SHADOW_NOISE_WARP
+var _dynamic_detail_gain := CLOUD_SHADOW_DYNAMIC_DETAIL_GAIN
+var _dynamic_warp_gain := CLOUD_SHADOW_DYNAMIC_WARP_GAIN
+var _edge_softness := CLOUD_SHADOW_EDGE_SOFTNESS
+var _wind_influence := CLOUD_SHADOW_WIND_INFLUENCE
 var _mask_bias := CLOUD_SHADOW_MASK_BIAS
 var _cell_scale := CLOUD_SHADOW_CELL_SCALE
 var _world_scale := CLOUD_SHADOW_WORLD_SCALE
@@ -64,6 +83,7 @@ var _erosion := CLOUD_SHADOW_EROSION
 var _field_update_accum := 1.0
 var _has_weather_source := false
 static var _noise_texture_cache: Texture2D = null
+static var _base_texture_cache: Texture2D = null
 var _dirty := true
 var _configured := false
 var _shader_tiled := false
@@ -84,7 +104,7 @@ static func resolution_for_quality(quality: int, mobile_or_web: bool) -> Vector2
 		return Vector2i(128, 64)
 	# [cloud-shape 2026-11-07] 中画质 256x128 铺满 1600x900 时一个 texel 6.25px，
 	# 云边缘的絮状细节全被双线性插值抹平，形状算法再好也读不出来。统一到 512x256
-	# 后一个 texel 约 3px；配合 FIELD_UPDATE_HZ 的 20Hz 节流，总开销仍低于原来
+	# 后一个 texel 约 3px；配合 FIELD_UPDATE_HZ 的刷新节奏，形状不会停顿，
 	# 每帧重绘 256x128（每像素 hash 数从 34 降到 20）。
 	return Vector2i(512, 256)
 
@@ -126,7 +146,8 @@ func _ready() -> void:
 
 
 func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
-		wrap_period_x: float, quality: int, mobile_tier: String, direct_mode: bool) -> void:
+		wrap_period_x: float, quality: int, mobile_tier: String, direct_mode: bool,
+		hex_world_diameter: float = 44.0) -> void:
 	var world_changed := _world != world
 	var map_changed := _map != map
 	var tiled := visual_tiles != null and bool(visual_tiles.ready) \
@@ -140,6 +161,10 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 	_map = map
 	_bounds = bounds
 	_wrap_period_x = maxf(wrap_period_x, 0.0)
+	_hex_world_diameter = maxf(hex_world_diameter, 1.0)
+	if geometry_changed or world_changed:
+		_cloud_shadow_uv_offset = Vector2.ZERO
+		_drift_time_initialized = false
 	_visual_tiles = visual_tiles
 	_visual_quality = next_quality
 	_mobile_tier = mobile_tier
@@ -188,6 +213,18 @@ func set_night_factor(value: float) -> void:
 	_push_composite_night_visibility()
 
 
+func set_world_time(value: float) -> void:
+	# HexRenderer 的统一 world_time 是所有动态 shader 的时间源；云影不再
+	# 使用自己的 delta 累加器，确保暂停、倍速和其它地形/天气动画同相位。
+	var next_time := maxf(value, 0.0)
+	_advance_drift(next_time)
+	_world_time = next_time
+	_world_time_external = true
+	if _field_material != null:
+		_field_material.set_shader_parameter("world_time", _world_time)
+		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
+
+
 func set_debug_view(enabled: bool) -> void:
 	_debug_view = enabled
 	_push_debug_material_inputs()
@@ -223,14 +260,24 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 		mask_bias: float = CLOUD_SHADOW_MASK_BIAS,
 		cell_scale: float = CLOUD_SHADOW_CELL_SCALE,
 		world_scale: float = CLOUD_SHADOW_WORLD_SCALE,
-		erosion: float = CLOUD_SHADOW_EROSION) -> void:
+		erosion: float = CLOUD_SHADOW_EROSION,
+		uv_scroll_gain: float = CLOUD_SHADOW_UV_SCROLL_GAIN,
+		dynamic_detail_gain: float = CLOUD_SHADOW_DYNAMIC_DETAIL_GAIN,
+		dynamic_warp_gain: float = CLOUD_SHADOW_DYNAMIC_WARP_GAIN,
+		edge_softness: float = CLOUD_SHADOW_EDGE_SOFTNESS,
+		wind_influence: float = CLOUD_SHADOW_WIND_INFLUENCE) -> void:
 	_strength_high = clampf(strength_high, 0.0, 1.0)
 	_strength_mid = clampf(strength_mid, 0.0, 1.0)
 	_strength_low = clampf(strength_low, 0.0, 1.0)
 	_coverage_gain = clampf(coverage_gain, 0.25, 3.0)
 	_motion_speed = clampf(motion_speed, 0.0, 0.20)
+	_uv_scroll_gain = clampf(uv_scroll_gain, 0.0, 32.0)
 	_shape_contrast = clampf(shape_contrast, 0.0, 1.0)
 	_noise_warp = clampf(noise_warp, 0.0, 1.0)
+	_dynamic_detail_gain = clampf(dynamic_detail_gain, 0.0, 1.0)
+	_dynamic_warp_gain = clampf(dynamic_warp_gain, 0.0, 2.0)
+	_edge_softness = clampf(edge_softness, 0.0, 2.0)
+	_wind_influence = clampf(wind_influence, 0.0, 1.0)
 	_mask_bias = clampf(mask_bias, 0.0, 0.8)
 	_cell_scale = clampf(cell_scale, 0.35, 2.5)
 	_world_scale = clampf(world_scale, 0.001, 0.05)
@@ -238,8 +285,13 @@ func set_tuning(strength_high: float, strength_mid: float, strength_low: float,
 	if _field_material != null:
 		_field_material.set_shader_parameter("cloud_shadow_coverage_gain", _coverage_gain)
 		_field_material.set_shader_parameter("cloud_shadow_motion_speed", _motion_speed)
+		_field_material.set_shader_parameter("cloud_shadow_uv_scroll_gain", _uv_scroll_gain)
 		_field_material.set_shader_parameter("cloud_shadow_shape_contrast", _shape_contrast)
 		_field_material.set_shader_parameter("cloud_shadow_noise_warp", _noise_warp)
+		_field_material.set_shader_parameter("cloud_shadow_dynamic_detail_gain", _dynamic_detail_gain)
+		_field_material.set_shader_parameter("cloud_shadow_dynamic_warp_gain", _dynamic_warp_gain)
+		_field_material.set_shader_parameter("cloud_shadow_edge_softness", _edge_softness)
+		_field_material.set_shader_parameter("cloud_shadow_wind_influence", _wind_influence)
 		_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
 		_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
 		_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
@@ -273,7 +325,11 @@ func get_quality_resolution() -> Vector2i:
 func _process(delta: float) -> void:
 	if _world == null:
 		return
-	_world_time += delta
+	if not _world_time_external:
+		# 独立运行 CloudShadowField（没有 HexRenderer host）时保留本地时钟兜底。
+		var next_time := _world_time + maxf(delta, 0.0)
+		_advance_drift(next_time)
+		_world_time = next_time
 	var update_usec := int(_world.weather_lut_update_usec)
 	if update_usec != _last_lut_update_usec:
 		if _last_lut_update_usec >= 0:
@@ -297,18 +353,34 @@ func _process(delta: float) -> void:
 		_mark_dirty()
 	if _field_material != null:
 		_field_material.set_shader_parameter("world_time", _world_time)
+		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
 	_field_update_accum += delta
 	if _has_weather_source:
-		# [cloud-shape 2026-11-07] 原来这里是 UPDATE_ALWAYS（每帧重绘）。云影移动
-		# 极慢，50ms 内的位移不到 0.25 texel，20Hz 与 60Hz 肉眼无差别，但省掉
-		# 2/3 的 field fragment 开销 —— 用来抵消遮罩分辨率 256x128→512x256 的
-		# 4 倍像素增长。天气 LUT 变化时 _mark_dirty() 仍会立即刷新。
+		# [cloud-shape 2026-11-07] 形状噪声依赖 world_time，必须按显示刷新节奏重绘；
+		# 否则会出现明显的“停住—跳一下”。FIELD_UPDATE_HZ 对移动/Web 的低分辨率
+		# 场仍保持较低像素成本，天气 LUT 变化时 _mark_dirty() 仍会立即刷新。
 		if _field_update_accum >= 1.0 / FIELD_UPDATE_HZ:
 			_field_update_accum = 0.0
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	else:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE if _dirty else SubViewport.UPDATE_DISABLED
 		_dirty = false
+
+
+func _advance_drift(next_time: float) -> void:
+	if not _drift_time_initialized:
+		_last_drift_time = next_time
+		_drift_time_initialized = true
+		return
+	var dt := next_time - _last_drift_time
+	_last_drift_time = next_time
+	# 时间倒退/热重载只重置积分起点，不反向拖拽云影，避免调试器改时钟时跳帧。
+	if dt <= 0.0 or dt > 5.0:
+		return
+	var world_wrap := maxf(_wrap_period_x, 1.0)
+	var drift_scale := 1.0 / maxf(world_wrap * _world_scale, 1.0)
+	var wind := Vector2(_mean_wind.x, _mean_wind.y)
+	_cloud_shadow_uv_offset += -wind * dt * _motion_speed * drift_scale * _uv_scroll_gain
 
 
 func _ensure_nodes() -> void:
@@ -363,7 +435,13 @@ func _configure_shaders() -> void:
 		var noise_tex := _shared_noise_texture()
 		if noise_tex == null:
 			push_error("[cloud-shadow] noise texture missing: %s" % CLOUD_NOISE_TEXTURE_PATH)
+		var base_tex := _shared_base_texture()
+		if base_tex == null:
+			push_warning("[cloud-shadow] base texture missing, using dynamic noise as fallback: %s" % CLOUD_BASE_TEXTURE_PATH)
+			base_tex = noise_tex
+		_field_material.set_shader_parameter("cloud_shadow_base_tex", base_tex)
 		_field_material.set_shader_parameter("cloud_noise_tex", noise_tex)
+		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
 	var composite_shader := ResourceLoader.load(COMPOSITE_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if composite_shader != null:
 		_composite_material = ShaderMaterial.new()
@@ -380,8 +458,13 @@ func _configure_shaders() -> void:
 		if _field_material != null:
 			_field_material.set_shader_parameter("cloud_shadow_coverage_gain", _coverage_gain)
 			_field_material.set_shader_parameter("cloud_shadow_motion_speed", _motion_speed)
+			_field_material.set_shader_parameter("cloud_shadow_uv_scroll_gain", _uv_scroll_gain)
 			_field_material.set_shader_parameter("cloud_shadow_shape_contrast", _shape_contrast)
 			_field_material.set_shader_parameter("cloud_shadow_noise_warp", _noise_warp)
+			_field_material.set_shader_parameter("cloud_shadow_dynamic_detail_gain", _dynamic_detail_gain)
+			_field_material.set_shader_parameter("cloud_shadow_dynamic_warp_gain", _dynamic_warp_gain)
+			_field_material.set_shader_parameter("cloud_shadow_edge_softness", _edge_softness)
+			_field_material.set_shader_parameter("cloud_shadow_wind_influence", _wind_influence)
 			_field_material.set_shader_parameter("cloud_shadow_mask_bias", _mask_bias)
 			_field_material.set_shader_parameter("cloud_shadow_cell_scale", _cell_scale)
 			_field_material.set_shader_parameter("cloud_shadow_world_scale", _world_scale)
@@ -406,6 +489,16 @@ static func _shared_noise_texture() -> Texture2D:
 	# 烘焙时已经 generate_mipmaps()，这里原样上传，filter_linear_mipmap 才有效。
 	_noise_texture_cache = ImageTexture.create_from_image(image)
 	return _noise_texture_cache
+
+
+static func _shared_base_texture() -> Texture2D:
+	if _base_texture_cache != null:
+		return _base_texture_cache
+	var image := load(CLOUD_BASE_TEXTURE_PATH) as Image
+	if image == null:
+		return null
+	_base_texture_cache = ImageTexture.create_from_image(image)
+	return _base_texture_cache
 
 
 func _resize_field() -> void:
@@ -465,6 +558,7 @@ func _push_static_inputs() -> void:
 	_field_material.set_shader_parameter("wrap_origin_x", 0.0)
 	_field_material.set_shader_parameter("wrap_period_x", _wrap_period_x)
 	_field_material.set_shader_parameter("lut_dims", Vector2(_world.lut_dims))
+	_field_material.set_shader_parameter("cloud_shadow_hex_world_diameter", _hex_world_diameter)
 	if _visual_tiles != null and bool(_visual_tiles.ready) \
 			and String(_visual_tiles.layout.mode) == "tiled":
 		var layout = _visual_tiles.layout

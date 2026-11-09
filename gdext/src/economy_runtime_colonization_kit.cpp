@@ -49,8 +49,8 @@ int64_t NativeEconomyRuntime::epoch_procurement_demand_daily(
         const int64_t days = std::max(1, _epoch_days.get());
         era_daily = era / days + (era % days != 0);
     }
-    return saturating_add(saturating_add(epoch_research_demand_daily(cell, good),
-        epoch_colonization_demand_daily(cell, good), sat), era_daily, sat);
+    return saturating_add(saturating_add(saturating_add(epoch_research_demand_daily(cell, good),
+        epoch_colonization_demand_daily(cell, good), sat), era_daily, sat), epoch_military_demand_daily(cell, good), sat);
 }
 
 int64_t NativeEconomyRuntime::epoch_procurement_demand_daily_for_market(
@@ -70,7 +70,7 @@ int64_t NativeEconomyRuntime::epoch_procurement_demand_daily_for_market(
         const int64_t days = std::max(1, _epoch_days.get());
         daily = saturating_add(daily, era / days + (era % days != 0), sat);
     }
-    return saturating_add(epoch_research_demand_daily_for_market(market, good), daily, sat);
+    return saturating_add(saturating_add(epoch_research_demand_daily_for_market(market, good), daily, sat), epoch_military_demand_daily_for_market(market, good), sat);
 }
 
 void NativeEconomyRuntime::refresh_epoch_colonization_demand() {

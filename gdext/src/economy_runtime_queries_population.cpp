@@ -79,6 +79,24 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["epoch_id"] = _epoch_id.get();
     append_settlement_fields(out, cell_idx);
     append_population_employment_fields(out, cell_idx);
+    int64_t employed_population = 0;
+    int64_t unemployed_population = 0;
+    int64_t employment_sat = 0;
+    population_store().for_each_in_cell(cell_idx, [&](int32_t slot) {
+        const int64_t population = std::max<int64_t>(0,
+            population_store().population[slot]);
+        const int64_t employed = std::min<int64_t>(population,
+            saturating_add(
+                std::max<int64_t>(0, population_store().owner_employed[slot]),
+                std::max<int64_t>(0, population_store().employee_employed[slot]),
+                employment_sat));
+        employed_population = saturating_add(employed_population, employed,
+            employment_sat);
+        unemployed_population = saturating_add(unemployed_population,
+            population - employed, employment_sat);
+    });
+    out["employed_population"] = employed_population;
+    out["unemployed_population"] = unemployed_population;
     append_carrying_capacity_fields(out, cell_idx);
     return out;
 }

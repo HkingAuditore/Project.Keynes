@@ -308,6 +308,29 @@ func submit(batch: Array) -> Dictionary:
 			rejected.append({"index": index, "reason": "military_command_op_missing"})
 			continue
 		var normalized := command.duplicate(false)
+		if op == "config.set" and command.get("shares") is Dictionary:
+			# 玩家传稳定兵种 id 的局部修改；原生命令是 dense id 的整表替换。
+			var snapshot := country_snapshot(int(command.get("country", 0)))
+			if not bool(snapshot.get("ok", false)):
+				rejected.append({"index": index, "reason": "military_country_snapshot_unavailable"})
+				continue
+			var rows: Array = _catalog.get("units", [])
+			var previous = snapshot.get("config_share_bp", PackedInt32Array())
+			var changes: Dictionary = command["shares"]
+			var remaining := changes.duplicate()
+			var config_pairs := PackedInt32Array()
+			for unit_index in range(rows.size()):
+				var unit_id := String(rows[unit_index].get("id", ""))
+				var bp := int(previous[unit_index]) if unit_index < previous.size() else 0
+				if changes.has(unit_id):
+					bp = int(changes[unit_id])
+					remaining.erase(unit_id)
+				config_pairs.append(unit_index)
+				config_pairs.append(bp)
+			if not remaining.is_empty():
+				rejected.append({"index": index, "reason": "command_bad_unit"})
+				continue
+			normalized["int_pairs"] = config_pairs
 		var units_value = command.get("units", null)
 		if units_value is Dictionary and not normalized.has("int_pairs"):
 			var pairs := PackedInt32Array()
@@ -347,7 +370,7 @@ func set_levy_enabled(country: int, enabled: bool) -> Dictionary:
 
 
 ## `shares` maps dense unit id -> basis points; the native config must sum to at
-## most 10000. Unlisted units keep their previous share.
+## most 10000. This dense-id entry point replaces the whole configuration.
 func set_unit_config(country: int, shares: Dictionary) -> Dictionary:
 	var pairs := PackedInt32Array()
 	var keys := shares.keys()

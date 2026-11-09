@@ -31,10 +31,10 @@ const Q16_ONE := 65536
 const UNEMPLOYED_PROFESSION_ID := "unemployed"
 ## Composite satisfaction dimensions, in native `SAT_DIM_*` order: subsistence,
 ## basic, comfort, luxury, income growth, savings, tax burden, social
-## development. The first four are the need tiers, so every need must classify
-## into `[0, SATISFACTION_TIER_COUNT)`.
+## development. Needs classify into `[0, SATISFACTION_TIER_COUNT)`.
 const SATISFACTION_DIMENSION_COUNT := 8
 const SATISFACTION_TIER_COUNT := 4
+const SATISFACTION_MODEL_VERSION := 2
 ## Dense order of `building_economic_sectors`. The compiled column stores this
 ## index, so the order is a data contract: append only, never reorder. The
 ## construction workspace groups its catalog pages by these sectors.
@@ -371,6 +371,7 @@ static func compile_native_catalog(
 				signature_satisfaction_dimension_weights.append_array(dimension_weights)
 
 	var catalog := {
+		"satisfaction_model_version": SATISFACTION_MODEL_VERSION,
 		"profession_ids": profession_ids,
 		"profession_class_ids": profession_class_ids,
 		"profession_entry_savings_days": profession_entry_savings_days,
@@ -867,8 +868,7 @@ static func compile_native_catalog(
 	catalog_v39["family_catalog_hash"] = family_v39_hash
 	catalog["family_catalog_compat_hash_v39"] = family_v39_hash
 	catalog["catalog_compat_hash_v39"] = _catalog_hash(catalog_v39)
-	# Family trait semantics participate in the final economy identity. The
-	# earlier hash remains useful only for explicit legacy readers.
+	# Final identity includes family traits and the consumption model version.
 	catalog["catalog_hash"] = _catalog_hash(catalog)
 	catalog["ok"] = true
 	return catalog

@@ -944,8 +944,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
         int32_t family = -1;
         int32_t expedition = -1;
-        const bool target_ok = family_reward
-            ? family_ledger_command_preflight(cmd)
+        const bool target_ok = cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
+            : family_reward ? family_ledger_command_preflight(cmd)
             : split_policy
             ? family_split_policy_command_preflight(cmd)
             : treasury_build
@@ -983,7 +983,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool opcode_ok =
             (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
              cmd.opcode <= COMMAND_BUILD_CANAL) ||
-            family_reward || split_policy;
+            family_reward || split_policy || cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND;
         if (!opcode_ok ||
             !target_ok || cmd.effective_day < 0 || cmd.sequence < 0 ||
             (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&

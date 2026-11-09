@@ -22,7 +22,7 @@ extends Resource
 @export_range(0, 65536, 1) var building_finalize_cells_per_slice: int = 0
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
-@export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
+@export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 98304
 ## Longest market interval (1–5). Native locks N for a full cycle from populated
 ## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
 ## a start-of-game fixed period. 0 is ignored and treated as 5; the retired

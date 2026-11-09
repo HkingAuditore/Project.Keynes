@@ -301,6 +301,10 @@
     // not an order, withdrawal, wallet, persistent EMA, or save/hash lane.
     std::vector<std::pair<uint64_t, int64_t>> _epoch_colonization_demand_by_cell;
     std::vector<std::pair<uint64_t, int64_t>> _epoch_colonization_demand_by_market;
+    // Derived daily military demand. The standing snapshot itself reuses the
+    // persisted owner command queue (opcode 36); no second ingress/save lane.
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_military_demand_by_cell;
+    std::vector<std::pair<uint64_t, int64_t>> _epoch_military_demand_by_market;
     int32_t _epoch_research_good_id = -1;
     std::vector<int64_t> _epoch_research_demand_by_cell;
     std::vector<int64_t> _epoch_research_demand_by_market;

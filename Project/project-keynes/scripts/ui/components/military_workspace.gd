@@ -683,6 +683,8 @@ func _on_share_bar_clicked(unit_id: String, ratio: float) -> void:
 	var current := 0
 	var others := 0
 	for unit in _forces.get("units", []):
+		if bool(unit.get("is_militia_row", false)):
+			continue
 		var bp := int(unit.bp)
 		if String(unit.id) == unit_id:
 			current = bp

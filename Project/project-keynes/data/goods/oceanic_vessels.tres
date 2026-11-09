@@ -9,6 +9,6 @@ display_name = "远洋船舶"
 semantic_tags = PackedStringArray()
 category_id = &"oceanic_vessels"
 substitution_category_ids = PackedStringArray("oceanic_vessels")
-technology_tags = PackedStringArray("tech.oceanic_navigation", "tech.electric_motors", "tech.automated_logistics", "tech.autonomous_logistics", "tech.steam_power")
+technology_tags = PackedStringArray("tech.oceanic_navigation", "tech.steam_power", "tech.electric_motors", "tech.automated_logistics", "tech.autonomous_logistics")
 default_price = 120000
 reference_max_price = 6000000
