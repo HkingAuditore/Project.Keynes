@@ -438,9 +438,8 @@ RuntimeDayPlan NativeSimulationHost::build_day_plan(
     return plan;
 }
 
-// 内联日的命令准入：与 worker 日循环逐条同规则（payload 校验 → 域/ opcode
-// 准入 → 收据码），唯一差别是内联模式没有 worker 本地 pending 列表，所以
-// 未来日的命令必须原样回队列，否则会被当成今天执行。
+// Both executors retain accepted future commands and apply the same stable order.
+// Inline keeps the backlog on the Host; worker owns its equivalent local vector.
 void NativeSimulationHost::drain_inline_day_commands(
         int64_t day, std::vector<RuntimeCommandPacket> &day_commands,
         std::vector<RuntimeCommandReceipt> &day_receipts,
@@ -448,18 +447,17 @@ void NativeSimulationHost::drain_inline_day_commands(
     day_commands.clear();
     day_receipts.clear();
     admitted_submit_order = 0;
-    std::vector<RuntimeCommandPacket> future;
-    future.reserve(16u);
     RuntimeCommandPacket incoming;
-    while (pop_command(incoming)) {
+    while (pop_command(incoming)) _executor_pending_commands.push_back(std::move(incoming));
+    std::stable_sort(_executor_pending_commands.begin(), _executor_pending_commands.end(),
+                     command_packet_before);
+    for (const auto &packet : _executor_pending_commands)
+        admitted_submit_order = std::max(admitted_submit_order, packet.submit_order);
+    size_t consumed = 0;
+    for (; consumed < _executor_pending_commands.size(); ++consumed) {
+        const auto &incoming = _executor_pending_commands[consumed];
         const RuntimeCommandEnvelope &envelope = incoming.envelope;
-        // 未来日的命令不是"拒绝"，是"还没到"：留回队列，不产生收据。
-        if (envelope.effective_day > day) {
-            future.push_back(incoming);
-            continue;
-        }
-        admitted_submit_order = std::max(admitted_submit_order,
-                                         incoming.submit_order);
+        if (envelope.effective_day > day) break;
         RuntimeCommandReceipt receipt;
         receipt.request_id = envelope.request_id;
         receipt.producer_id = envelope.producer_id;
@@ -493,13 +491,10 @@ void NativeSimulationHost::drain_inline_day_commands(
         day_receipts.push_back(receipt);
         day_commands.push_back(incoming);
     }
-    if (!future.empty()) {
-        // 回队列失败只会丢命令，不会污染当日语义；能力上限计一次，便于诊断。
-        if (!enqueue_batch(std::move(future))) {
-            _command_queue_capacity_exceeded.fetch_add(1,
-                                                       std::memory_order_relaxed);
-        }
-    }
+    _executor_pending_commands.erase(_executor_pending_commands.begin(),
+        _executor_pending_commands.begin() + static_cast<ptrdiff_t>(consumed));
+    _economy_pending_command_count.store(static_cast<uint32_t>(
+        _executor_pending_commands.size()), std::memory_order_release);
 }
 
 // 内联日单日墙钟预算（微秒）。默认 30s；PK_INLINE_DAY_BUDGET_MS=0 关闭预算。
@@ -538,6 +533,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     std::unique_lock<std::mutex> boundary_lock(_economy_authority_boundary_mutex);
     // Both executors use the same scoped identity and domain routing. Leaving
     // the call (including an early return) restores the caller's context.
+    AtomicCounterScope day_scope(_worker_day_inflight);
     const RuntimeExecutionContext execution_context(this,
         _requested_authority_mask.load(std::memory_order_acquire));
     const int64_t from_day = _committed_day.load(std::memory_order_acquire);
@@ -580,6 +576,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
     out.plan_build_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_build_started).count();
+    _inline_day_pending.store(true, std::memory_order_release);
     const RuntimeDayCommit day_commit = execute_day_plan(
         day_plan, environment.get(), day_commands, day_receipts,
         admitted_submit_order);
@@ -604,12 +601,10 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         runtime_copy_text(out.reason, "inline_daily_day_budget_exceeded");
         out.budget_exceeded = true;
         out.continuation_pending = false;
-        if (!day_commands.empty()) {
-            if (!enqueue_batch(std::move(day_commands))) {
-                _command_queue_capacity_exceeded.fetch_add(1,
-                                                           std::memory_order_relaxed);
-            }
-        }
+        _executor_pending_commands.insert(_executor_pending_commands.begin(),
+            day_commands.begin(), day_commands.end());
+        _economy_pending_command_count.store(static_cast<uint32_t>(
+            _executor_pending_commands.size()), std::memory_order_release);
         _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RECEIPTS);
         _day_waterfall.finish(false, day_commit.completed_domain_mask);
         _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
@@ -617,12 +612,10 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     }
     if (day_commit.preflight_ok == 0) {
         // 没提交：收据与命令都退回，等调用方泵完 peer 再试同一天。
-        if (!day_commands.empty()) {
-            if (!enqueue_batch(std::move(day_commands))) {
-                _command_queue_capacity_exceeded.fetch_add(1,
-                                                           std::memory_order_relaxed);
-            }
-        }
+        _executor_pending_commands.insert(_executor_pending_commands.begin(),
+            day_commands.begin(), day_commands.end());
+        _economy_pending_command_count.store(static_cast<uint32_t>(
+            _executor_pending_commands.size()), std::memory_order_release);
         // 原因链固定顺序：Country peer → Economy → Climate。这三个覆盖了内联
         // 日屏障的全部真实阻塞点，其余域在自己的 stage 里 soft-complete。
         char reason[64]{};
@@ -700,6 +693,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     _committed_day.store(day, std::memory_order_release);
     _completed_days.fetch_add(1, std::memory_order_relaxed);
     publish_day(from_day, day, day_commit, day_receipts);
+    _inline_day_pending.store(false, std::memory_order_release);
     if (_economy_production_runtime != nullptr && economy_worker_owns_execution())
         _economy_production_runtime->serve_read_view();
     _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);

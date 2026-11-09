@@ -1,6 +1,6 @@
 # 迁移状态
 
-核查日期：2026-11-06。本页写迁移目标各项做到哪一步、怎么验收的、还剩什么。今天的源码事实见 [current-state.md](current-state.md)。
+核查日期：2026-11-09。本页写迁移目标各项做到哪一步、怎么验收的、还剩什么。今天的源码事实见 [current-state.md](current-state.md)。
 
 迁移目标：让 AI（和人）改一个模块时只读这个模块和它依赖的接口头，多个模块可以并行改，契约稳定，由护栏机检。约束：不改玩法、数值、调度顺序；五条黄金链不变；开发期不保证旧档兼容。
 
@@ -16,6 +16,8 @@
 | 请求与提交 | 共享入队与顺序键（4 队列）、3 个 Apply 入口检查 | Country 直接写 0 | 全域统一去重、全调用树写集合、全域事务/回滚未做 |
 | 冻结输入 | Climate、Country、Economy 登记 | `RuntimeFrozenInputVersion` | Climate 仍在 day plan 前提交 |
 | 存档段契约 | 12 域登记 | 版本、恢复依赖、旧版拒绝证据 | Family/Technology/Annual 是委托段；候选安装仍分散 |
+| 后台 / inline 保存和命令交接 | 共用保存服务与命令排序，恢复命令接入两种执行方式 | 116 项检查：四种存读档组合、未来命令、重复保存、未完成日、容量拒绝及故障反馈 | 真实浏览器 Web 验证仍未做 |
+| macOS arm64 交付库 | debug、release 均从当前源码重编 | 指定 release 库实载，PKSR v5 与 116 项存读档检查通过；新增独立检查入口 | 完整导出及其他平台未验证 |
 | 保存续跑保真 | 默认 4 场景、full 8、annual 全绿；military-annual（military365）受已知问题影响不稳定，已移出默认集 | 非零军队/战争的 365 日读档 | 其他种子/平台、实际占领、任意日内命令位置 |
 | 宿主与大文件拆分 | `world_runtime_host.gd` 2955 行；`economy_runtime.cpp` 1975 行 | 逐词元证明 | `country_runtime.cpp` 11463、`map_generator.gd` 22547 行仍超限 |
 | 黄金回放 | 迁移提交五条链不变；合并上游 c849f255 后按维护流程重录 v2–v5（v1 不变，见 current-state） | 每次提交前验证 | 投影不是完整十二域状态 |
@@ -29,7 +31,16 @@
 
 ## 最近一次完整验证
 
-每个迁移提交前都跑了：构建、静态护栏全过、黄金五链 `--runs 2` 末日摘要不变、默认回归全过（60 项）。合并上游 `c849f255` 的提交（2026-11-06）另跑了保存续跑矩阵：`--full` 8/8、`--annual` 通过、`--military-annual` 不通过（见已知问题）；并用 ASAN 构建跑过默认回归和 military20，无报告。
+2026-11-09 保存与命令交接修复，macOS arm64 / Godot 4.6.3，无界面验证：
+
+- debug、release 串行构建成功；实际加载 release 库，保存版本为 PKSR v5，116 项针对性检查全过。暂停后台的保存通知与既定存档命令容量的反例也已纳入检查；超容量明确失败，保留全部命令，处理后可以重新保存。
+- 理念用例失败的原因是同步等待时没有接收后台新结果，读到旧显示状态。测试改为运行正式结果接收流程，并核对真实的完成回执；主要用例独立复跑及完整回归均为 91/91，事务状态 320/320、保存基准与生成途中 460/460。原有日期与逐格精确比较保留，未放宽预算或重新生成黄金基线。
+- 11 项静态护栏通过（包含 31 项护栏反例）；黄金五链各重复 3 次，均与现有基线一致。
+- 默认回归 60/60 脚本通过；CLM2 v9 精确往返、10 日保存续跑、默认 4 场景、16 日及真实 365 日自动保存全部通过。扩展保存矩阵 `--full` 8/8，通过场景的 original/replay/checkpoint/resume 四条轨迹均无差异。
+
+证据：`/tmp/keynes-architecture-fix-full-regression`、`/tmp/keynes-architecture-fix-replay-full`、`/tmp/keynes-architecture-fix-golden`、`/tmp/keynes-architecture-fix-golden-external`、`/tmp/keynes-architecture-fix-release-runtime-verified`。本轮未做完整导出、真实 Web 浏览器、其他平台或新的性能对比。
+
+历史验证：各迁移提交曾完成构建、静态护栏、黄金五链 `--runs 2` 和默认回归。合并上游 `c849f255` 的提交（2026-11-06）另跑了保存续跑矩阵：`--full` 8/8、`--annual` 通过、`--military-annual` 不通过（见已知问题）；并用 ASAN 构建跑过默认回归和 military20，无报告。
 
 ### 性能对比（2026-11-05）
 

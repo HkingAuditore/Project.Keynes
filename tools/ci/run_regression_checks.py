@@ -40,6 +40,7 @@ TESTS = (
     "tests/runtime/runtime_worker_stop_lifetime_test.gd",
     "tests/runtime/runtime_resource_lifetime_test.gd",
     "tests/runtime/runtime_loading_exit_test.gd",
+    "tests/runtime/runtime_inline_save_restore_test.gd",
     "tests/runtime/runtime_economy_worker_restart_test.gd",
     "tests/ideology/ideology_execution_contract_manifest_test.gd",
     "tests/ideology/ideology_save_worker_authority_test.gd",

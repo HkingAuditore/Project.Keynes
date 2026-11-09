@@ -978,7 +978,7 @@ public:
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;
     bool request_save(uint64_t request_id);
-    std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id) const;
+    std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id);
     bool save_failed(uint64_t request_id) const {
         return request_id != 0 &&
             _save_failed_request_id.load(std::memory_order_acquire) == request_id;
@@ -1183,8 +1183,7 @@ private:
     // the last instruction of the old worker.
     bool reap_completed_worker_nonblocking();
     void worker_main();
-    // 内联日与 worker 日循环共用同一条命令准入。不同点只有一处：内联模式没有
-    // worker 本地 pending 列表，未来日的命令必须原样回队列，否则会被当成今天执行。
+    // Inline and worker preserve accepted backlogs and share the ordering rule.
     void drain_inline_day_commands(int64_t day,
                                    std::vector<RuntimeCommandPacket> &day_commands,
                                    std::vector<RuntimeCommandReceipt> &day_receipts,
@@ -1316,6 +1315,10 @@ private:
             const uint8_t *bytes, size_t size, std::string &error);
     void build_save_bundle(uint64_t request_id,
                            const std::vector<RuntimeCommandPacket> &pending_commands);
+    bool service_save_request(std::vector<RuntimeCommandPacket> &pending_commands);
+    void service_inline_save_request();
+    void seed_executor_command_orders();
+    static bool command_packet_before(const RuntimeCommandPacket &a, const RuntimeCommandPacket &b);
 
     struct CommandQueueSlot {
         std::atomic<uint64_t> sequence{0};
@@ -1701,22 +1704,17 @@ private:
 
     std::atomic<bool> _save_requested{false};
     std::atomic<uint64_t> _save_request_id{0};
-    // A published bundle is consumed exactly once by the facade.  Keeping the
-    // acknowledgement separate from _save_request_id prevents a completed
-    // request from being returned forever by repeated UI polling.
+    // Separate acknowledgement makes each published bundle consumable once.
     mutable std::atomic<uint64_t> _save_consumed_request_id{0};
     std::atomic<uint64_t> _save_failed_request_id{0};
-    // Why the last save request produced no bundle. Separate from _fault_code
-    // because some rejections (a save before the first economy commit) leave
-    // the runtime healthy and must not fault the worker.
+    // Save rejection may leave a healthy runtime; it is separate from _fault_code.
     std::array<std::atomic<char>, 64> _save_failure_reason{};
     std::shared_ptr<const RuntimeSaveBundle> _save_bundle;
     RuntimeSaveBundle _pending_restore_bundle;
     bool _has_pending_restore = false;
-    // Filled by the main-thread restore boundary before the worker starts;
-    // consumed exactly once at worker entry, then owned by the worker-local
-    // pending command vector.
-    std::vector<RuntimeCommandPacket> _worker_initial_pending_commands;
+    // Restore handoff; retained as the inline backlog, moved to worker-local storage otherwise.
+    std::vector<RuntimeCommandPacket> _executor_pending_commands;
+    std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 
     std::atomic<uint64_t> _command_queue_capacity_exceeded{0};

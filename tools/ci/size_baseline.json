@@ -322,7 +322,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2225,
+      "lines": 2209,
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence_read.cpp": {
@@ -354,7 +354,7 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2154,
+      "lines": 2152,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {
