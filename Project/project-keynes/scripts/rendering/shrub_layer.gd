@@ -405,6 +405,20 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		_shadow_material.set_shader_parameter("tod_debug_sun_uv", p)
 
 
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	if _material != null:
+		_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+
+
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	var scale := clampf(v, 0.2, 1.5)
 	if _material != null:
@@ -2105,6 +2119,8 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("season_phase", 1.0)
 		_material.set_shader_parameter("day_phase", 0.25)
 		_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		_material.set_shader_parameter("day_night_enabled", true)
 		_bind_crown_art(_material)
 		_mmi.material = _material
@@ -2116,6 +2132,8 @@ func _ensure_resources() -> void:
 		_shadow_material.set_shader_parameter("season_phase", 1.0)
 		_shadow_material.set_shader_parameter("day_phase", 0.25)
 		_shadow_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		_shadow_material.set_shader_parameter("day_night_enabled", true)
 	if _shadow_blob_mesh == null:
 		_shadow_blob_mesh = _build_shadow_blob_mesh()

@@ -1,6 +1,8 @@
 class_name CloudShadowField
 extends Node2D
 
+signal wind_lut_changed(current: Texture2D, previous: Texture2D, has_previous: bool)
+
 const FIELD_SHADER_PATH := "res://shaders/cloud_shadow_field.gdshader"
 const COMPOSITE_SHADER_PATH := "res://shaders/cloud_shadow_composite.gdshader"
 const DEBUG_SHADER_PATH := "res://shaders/cloud_shadow_debug.gdshader"
@@ -51,19 +53,15 @@ var _debug_view := false
 var _night_factor := 0.0
 var _world_time := 0.0
 var _world_time_external := false
-var _cloud_shadow_uv_offset := Vector2.ZERO
-var _drift_time_initialized := false
-var _last_drift_time := 0.0
 var _weather_lerp := 1.0
 var _last_lut_update_usec := -1
 var _last_lut_change_usec := 0
 var _commit_interval_usec := 500000.0
 var _last_pushed_lerp := -1.0
 var _last_uploaded_wind_update_usec := -1
-var _last_mean_wind_update_usec := -1
+var _wind_lut_texture: Texture2D
 var _last_composite_strength := -1.0
 var _last_night_visibility := -1.0
-var _mean_wind := Vector3(0.35, 0.12, 0.0)
 var _strength_high := CLOUD_SHADOW_STRENGTH_HIGH
 var _strength_mid := CLOUD_SHADOW_STRENGTH_MID
 var _strength_low := CLOUD_SHADOW_STRENGTH_LOW
@@ -100,13 +98,18 @@ var _field_size := Vector2i.ZERO
 
 
 static func resolution_for_quality(quality: int, mobile_or_web: bool) -> Vector2i:
-	if mobile_or_web or quality <= 0:
-		return Vector2i(128, 64)
-	# [cloud-shape 2026-11-07] 中画质 256x128 铺满 1600x900 时一个 texel 6.25px，
-	# 云边缘的絮状细节全被双线性插值抹平，形状算法再好也读不出来。统一到 512x256
-	# 后一个 texel 约 3px；配合 FIELD_UPDATE_HZ 的刷新节奏，形状不会停顿，
-	# 每帧重绘 256x128（每像素 hash 数从 34 降到 20）。
-	return Vector2i(512, 256)
+	if mobile_or_web:
+		return [Vector2i(128, 64), Vector2i(192, 96), Vector2i(256, 128)][clampi(quality, 0, 2)]
+	return [Vector2i(128, 64), Vector2i(256, 128), Vector2i(512, 256)][clampi(quality, 0, 2)]
+
+
+static func quality_for_tier(quality: int, tier: String) -> int:
+	var cap := 2
+	if tier == "MOBILE_QUALITY_LOW":
+		cap = 0
+	elif tier == "MOBILE_QUALITY_MID":
+		cap = 1
+	return mini(clampi(quality, 0, 2), cap)
 
 
 static func direct_mode_for_quality(quality: int, mobile_or_web: bool,
@@ -152,7 +155,7 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 	var map_changed := _map != map
 	var tiled := visual_tiles != null and bool(visual_tiles.ready) \
 			and String(visual_tiles.layout.mode) == "tiled"
-	var next_quality := clampi(quality, 0, 2)
+	var next_quality := quality_for_tier(quality, mobile_tier)
 	var shader_changed := not _configured or _shader_tiled != tiled \
 			or _direct_mode != direct_mode or _visual_quality != next_quality
 	var geometry_changed := not _configured or _bounds != bounds \
@@ -162,9 +165,6 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 	_bounds = bounds
 	_wrap_period_x = maxf(wrap_period_x, 0.0)
 	_hex_world_diameter = maxf(hex_world_diameter, 1.0)
-	if geometry_changed or world_changed:
-		_cloud_shadow_uv_offset = Vector2.ZERO
-		_drift_time_initialized = false
 	_visual_tiles = visual_tiles
 	_visual_quality = next_quality
 	_mobile_tier = mobile_tier
@@ -181,7 +181,7 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 	if world_changed:
 		_last_lut_update_usec = -1
 		_last_uploaded_wind_update_usec = -1
-		_last_mean_wind_update_usec = -1
+		_wind_lut_texture = null
 		_weather_lerp = 1.0
 		_last_pushed_lerp = -1.0
 	_sync_weather_sources(not _configured or world_changed)
@@ -193,16 +193,20 @@ func configure(bounds: Rect2, world: WorldData, map: MapData, visual_tiles,
 
 
 func set_quality(quality: int, mobile_tier: String, direct_mode: bool) -> void:
-	var changed := _visual_quality != clampi(quality, 0, 2) \
+	var next_quality := quality_for_tier(quality, mobile_tier)
+	var changed := _visual_quality != next_quality \
 			or _mobile_tier != mobile_tier or _direct_mode != direct_mode
 	if not changed:
 		return
-	var shader_changed := _direct_mode != direct_mode
-	_visual_quality = clampi(quality, 0, 2)
+	var shader_changed := changed
+	_visual_quality = next_quality
 	_mobile_tier = mobile_tier
 	_direct_mode = direct_mode
 	if shader_changed:
 		_configure_shaders()
+		_push_static_inputs()
+		_sync_weather_sources(true)
+		_sync_wind_lut(true)
 	_resize_field()
 	_mark_dirty()
 	_update_visibility()
@@ -217,12 +221,10 @@ func set_world_time(value: float) -> void:
 	# HexRenderer 的统一 world_time 是所有动态 shader 的时间源；云影不再
 	# 使用自己的 delta 累加器，确保暂停、倍速和其它地形/天气动画同相位。
 	var next_time := maxf(value, 0.0)
-	_advance_drift(next_time)
 	_world_time = next_time
 	_world_time_external = true
 	if _field_material != null:
 		_field_material.set_shader_parameter("world_time", _world_time)
-		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
 
 
 func set_debug_view(enabled: bool) -> void:
@@ -306,6 +308,8 @@ func has_weather_source() -> bool:
 func clear_inputs() -> void:
 	_world = null
 	_map = null
+	_wind_lut_texture = null
+	wind_lut_changed.emit(null, null, false)
 	_visual_tiles = null
 	_has_weather_source = false
 	_direct_mode = false
@@ -328,7 +332,6 @@ func _process(delta: float) -> void:
 	if not _world_time_external:
 		# 独立运行 CloudShadowField（没有 HexRenderer host）时保留本地时钟兜底。
 		var next_time := _world_time + maxf(delta, 0.0)
-		_advance_drift(next_time)
 		_world_time = next_time
 	var update_usec := int(_world.weather_lut_update_usec)
 	if update_usec != _last_lut_update_usec:
@@ -353,7 +356,6 @@ func _process(delta: float) -> void:
 		_mark_dirty()
 	if _field_material != null:
 		_field_material.set_shader_parameter("world_time", _world_time)
-		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
 	_field_update_accum += delta
 	if _has_weather_source:
 		# [cloud-shape 2026-11-07] 形状噪声依赖 world_time，必须按显示刷新节奏重绘；
@@ -365,22 +367,6 @@ func _process(delta: float) -> void:
 	else:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE if _dirty else SubViewport.UPDATE_DISABLED
 		_dirty = false
-
-
-func _advance_drift(next_time: float) -> void:
-	if not _drift_time_initialized:
-		_last_drift_time = next_time
-		_drift_time_initialized = true
-		return
-	var dt := next_time - _last_drift_time
-	_last_drift_time = next_time
-	# 时间倒退/热重载只重置积分起点，不反向拖拽云影，避免调试器改时钟时跳帧。
-	if dt <= 0.0 or dt > 5.0:
-		return
-	var world_wrap := maxf(_wrap_period_x, 1.0)
-	var drift_scale := 1.0 / maxf(world_wrap * _world_scale, 1.0)
-	var wind := Vector2(_mean_wind.x, _mean_wind.y)
-	_cloud_shadow_uv_offset += -wind * dt * _motion_speed * drift_scale * _uv_scroll_gain
 
 
 func _ensure_nodes() -> void:
@@ -420,10 +406,9 @@ func _configure_shaders() -> void:
 	var shader := ResourceLoader.load(FIELD_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if shader != null:
 		var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
-		if _direct_mode:
-			prefix += "#define CLOUD_SHADOW_DETAIL_HIGH\n#define CLOUD_SHADOW_LOCAL_WIND\n"
-		elif not (OS.has_feature("mobile") or OS.has_feature("web") or not _mobile_tier.is_empty()) \
-				and _visual_quality >= 1:
+		if _visual_quality >= 2:
+			prefix += "#define CLOUD_SHADOW_DETAIL_HIGH\n"
+		elif _visual_quality >= 1:
 			prefix += "#define CLOUD_SHADOW_DETAIL_MID\n"
 		else:
 			prefix += "#define CLOUD_SHADOW_DETAIL_LOW\n"
@@ -441,7 +426,6 @@ func _configure_shaders() -> void:
 			base_tex = noise_tex
 		_field_material.set_shader_parameter("cloud_shadow_base_tex", base_tex)
 		_field_material.set_shader_parameter("cloud_noise_tex", noise_tex)
-		_field_material.set_shader_parameter("cloud_shadow_uv_offset", _cloud_shadow_uv_offset)
 	var composite_shader := ResourceLoader.load(COMPOSITE_SHADER_PATH, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
 	if composite_shader != null:
 		_composite_material = ShaderMaterial.new()
@@ -595,21 +579,20 @@ func _sync_wind_lut(force: bool) -> void:
 	if _field_material == null or _map == null:
 		return
 	var stamp := int(_world.weather_lut_update_usec) if _world != null else 0
-	if force or stamp != _last_mean_wind_update_usec:
-		_mean_wind = _average_wind(_map)
-		_last_mean_wind_update_usec = stamp
-	if _field_material != null:
-		_field_material.set_shader_parameter("global_wind", Vector2(_mean_wind.x, _mean_wind.y))
-	if not _direct_mode:
-		return
 	if not force and stamp == _last_uploaded_wind_update_usec:
 		return
 	var image := _build_wind_lut_image(_map, _world.lut_dims if _world != null else Vector2i.ZERO)
 	if image != null:
-		_field_material.set_shader_parameter("wind_lut", ImageTexture.create_from_image(image))
+		var previous := _wind_lut_texture
+		_wind_lut_texture = ImageTexture.create_from_image(image)
+		_field_material.set_shader_parameter("wind_lut", _wind_lut_texture)
+		_field_material.set_shader_parameter("wind_lut_prev", previous if previous != null else _wind_lut_texture)
+		_field_material.set_shader_parameter("has_wind_prev", previous != null and not force)
 		_field_material.set_shader_parameter("has_local_wind", true)
+		wind_lut_changed.emit(_wind_lut_texture, previous if previous != null else _wind_lut_texture, previous != null and not force)
 	else:
 		_field_material.set_shader_parameter("has_local_wind", false)
+		wind_lut_changed.emit(null, null, false)
 	_last_uploaded_wind_update_usec = stamp
 
 
@@ -620,42 +603,19 @@ func _build_wind_lut_image(map: MapData, dims: Vector2i) -> Image:
 	var n := mini(map.wind_x_arr.size(), dims.x * dims.y)
 	if n <= 0:
 		return null
-	var mean_wind := _average_wind(map)
-	var mean_dir := Vector2(mean_wind.x, mean_wind.y)
-	var mean_speed := mean_wind.z
 	var speed_arr := map.wind_speed_arr
 	var image := Image.create(dims.x, dims.y, false, Image.FORMAT_RGBA8)
 	for i in range(dims.x * dims.y):
-		var wind := mean_dir
-		var speed := mean_speed
+		var wind := Vector2.ZERO
+		var speed := 0.0
 		if i < n:
 			wind = Vector2(map.wind_x_arr[i], map.wind_y_arr[i])
 			if wind.length_squared() > 0.000001:
 				wind = wind.normalized()
-			else:
-				wind = mean_dir
 			if i < speed_arr.size():
 				speed = float(speed_arr[i])
 		image.set_pixel(i % dims.x, int(i / dims.x), encode_wind(wind, speed))
 	return image
-
-
-func _average_wind(map: MapData) -> Vector3:
-	if map == null or map.wind_x_arr.is_empty() or map.wind_y_arr.size() != map.wind_x_arr.size():
-		return Vector3(0.35, 0.12, 0.0)
-	var speed_arr := map.wind_speed_arr
-	var sum := Vector2.ZERO
-	var speed_sum := 0.0
-	var count := map.wind_x_arr.size()
-	for i in range(count):
-		var direction := Vector2(map.wind_x_arr[i], map.wind_y_arr[i])
-		var speed := clampf(float(speed_arr[i]) if i < speed_arr.size() else 1.0, 0.0, 20.0)
-		if direction.length_squared() > 0.000001:
-			sum += direction.normalized() * maxf(speed, 0.05)
-		speed_sum += speed
-	var mean_direction := sum.normalized() if sum.length_squared() > 0.000001 \
-			else Vector2(0.35, 0.12).normalized()
-	return Vector3(mean_direction.x, mean_direction.y, speed_sum / float(maxi(count, 1)))
 
 
 func _strength_for_quality() -> float:

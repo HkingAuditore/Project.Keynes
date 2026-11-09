@@ -1,5 +1,29 @@
 # 开发指南
 
+## 山地起伏调参与验收
+
+生成高程归 `gdext/src/world_ext_generate.cpp`；山脊增量必须读冻结基底，
+先用统一高度预算再收尾尖峰，不恢复按格逐点压缩或读已写邻格。
+预算诊断通过 base/full 结果包的 `ridge_*` 字段检查；正常软收尾应不超过
+陆地约 1%，高海平面也须保留正的山脊预算。初始 elevation 改动必须重新生成地图。
+
+视觉地形参数归 `terrain_index_baker.gd::DEM_DEFAULTS` 与 `world_ext_bake.cpp`
+对应 native 默认值；`project_keynes/rendering/dem/*` 可覆盖。
+主脊振幅、波长、尖化指数分别使用 `ridge_amp_per_relief`、
+`ridge_wavelength_hex`、`ridge_crest_exp`；谷深和谷壁使用
+`valley_depth_per_relief`、`valley_wall_per_relief`，谷壁系数越大则同深度谷壁越窄陡。
+`mountain_relief_floor`/`peak_relief_floor` 只对相应地貌提供最小起伏。
+standalone、fused geometry、visual tile 都传 `cell_landform`，不得只修分块路径。
+镜像项目的脚本和 Windows DLL 加载路径同时维护。
+
+验证运行 `tests/world/mountain_relief_bake_test.gd`、
+`tests/world/terrain_index_edge_bake_test.gd`、
+`tests/runtime/native_generation_equivalence_test.gd`，
+并检查 `tests/ui/visual_tile_native_bake_test.gd`。
+验收需重启 Godot 后新生成地图，检查中远景主脊、近景谷壁、高原内部与海岸。
+DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有编辑器锁定，
+构建完成后再切换 `.gdextension` 的 debug/release 映射；不要结束用户编辑器进程。
+
 先读 [current-state.md](current-state.md) 和 [design.md](design.md)，确定数据所有者、运行线程和真正的提交点；边界规则见 [module-boundaries.md](module-boundaries.md)。目标接口不是已有 API。
 
 所有命令从仓库根目录运行；Python 用 `/Users/herh/.local/bin/python3`，Godot 用 `/opt/homebrew/bin/godot`。日志目录必须是新目录。
@@ -60,6 +84,19 @@
 
 ## 会话与宿主脚本
 
+- 云影和天气云平流沿用局地风 LUT + 双相位有界位移，禁止直接用当前风乘总运行时间。
+  LOW/MID/HIGH 必须编译期裁剪并在切档时重建材质、重绑 LUT；云影按档缩小 field，
+  天气云低/中与移动/Web 使用轻量梯度噪声，高档光照复用屏幕导数，不重复求云密度。
+  修改时运行 `tests/rendering/cloud_weather_quality_test.gd`；预算与 GPU 证据见
+  [云 Shader 分档验证](../cpp-dots-runtime/cloud-weather-shader-quality-2026-11-09.md)。
+  云影场在天气发布边界上传风 LUT，经 `wind_lut_changed` 共享给天气云；新旧风只在
+  显示端按 `weather_lerp` 过渡，不新增仿真状态。机制与验证见
+  [云影的世界空间连续性](../cpp-dots-runtime/vision-fog-and-borders.md#云影的世界空间连续性)。
+
+- 永昼视觉日照统一使用 `earth_daylight.gdshaderinc::compute_eternal_visual_sun_dir`，高度以当地当日正午为基线，日内时角在 ±70° 浮动并保留 10° 下限；默认一个游戏年完成两个 Shader 日，按实际游戏日历进度映射。水面 specials 和各实例层不能另算全局光向。修改时运行 `tests/ui/dynamic_eternal_day_direction_test.gd`（`-- --render-noon` 验证实际 shader）及地被光照测试，GM 覆盖仍优先。
+  Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
+  永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
+
 - 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 80% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；调整后运行 `tests/technology/era_advancement_service_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
 
 - 军事兵种份额：玩家局部修改经 `MilitaryFacade.submit` 将稳定 id 解析为完整 `int_pairs` 后提交；原生 `config.set` 是整表替换。改动此链路时运行 `tests/ui/military_config_command_test.gd`，避免空命令或清除其他兵种配比。
@@ -67,6 +104,8 @@
 
 - 会话扩展用 `WorldRuntimeHost.register_session_module`（`world_session.gd` 管准备、取消、关闭）；保存扩展用 `game_save_coordinator.gd` 的 `register_state_module(provider, restore_after)`。
 - `world_runtime_host.gd` 只保留公开入口、信号和状态转发；生成/恢复、日推进、GM/录制、视觉查询、生命周期在 `world_runtime_generation_adapter.gd`、`world_runtime_daily_adapter*.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_visual_adapter.gd`、`world_runtime_lifecycle.gd`。
+- GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
+- 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
 - 组件只接收窄 Callable/RefCounted 依赖，不持有整个 host，不建立第二个日推进入口。传给信号和存档服务的回调必须是 host 绑定的 Callable，不能是组件自身的未绑定方法。停止顺序：先停执行器、等 `simulation_executor_exited`，再释放资源。
 
 ## 环境开关与故障点

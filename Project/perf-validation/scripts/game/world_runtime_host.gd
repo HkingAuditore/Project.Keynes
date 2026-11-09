@@ -302,6 +302,8 @@ func configure(
 	_renderer = renderer
 	_camera = camera
 	_world_clock = world_clock
+	if _renderer != null and _world_clock != null:
+		_renderer.configure_shader_clock(_world_clock.set_visual_shader_days_per_year)
 	_map_overlay_layer = map_overlay_layer
 	if _world_clock != null:
 		var day_callback := Callable(self, "_on_clock_day_changed")

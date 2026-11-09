@@ -155,6 +155,8 @@ climate_pass_a
 
 ## 数值与物理底线
 
+- 永昼是视觉模式：`earth_daylight.gdshaderinc::compute_eternal_visual_sun_dir` 使用当地正午高度基线，视觉日内时角在 ±70° 浮动（10° 下限），默认每游戏年两个 Shader 日（HexRenderer.shader_days_per_game_year 可调），相位由累计日历映射，GM 显式方向优先；水面 specials 必须复用该方向。时角/高度在 HexRenderer 的 eternal_max_hour_angle_deg / eternal_min_elevation_deg 调整，各层只缓存并消费弧度 uniform。验证用 `tests/ui/dynamic_eternal_day_direction_test.gd -- --render-noon`，不以修改视觉太阳替代气候日均日照公式。
+
 - 把核心温度、湿度、海冰等 normalized 字段按 `[0,1]` 语义处理；`soil_moisture` 是有符号异常，不是绝对湿度。
 - 把 `cell_wind_x/y` 视为单位方向，把 `cell_wind_speed` 视为强度。
 - 把 `cell_temp` 的 daily 唯一合成写者保持为 `wind_surface`；Pass-A 写 baseline，Pass-B 写 local anomaly，ocean 写 ocean anomaly，wind-air 写 air anomaly。

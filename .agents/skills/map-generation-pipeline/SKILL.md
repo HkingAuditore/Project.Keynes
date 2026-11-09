@@ -26,6 +26,15 @@ description: >
 
 ## 关键文件
 
+当前实现已分在 `gdext/src/world_ext_generate.cpp`（base/post_base/full）与
+`gdext/src/world_ext_bake.cpp`（terrain-index/geometry/visual tile/encoder），
+下表的 `world_ext.cpp` 是历史入口，定位 kernel 时须搜索上述文件。
+2026-11-09 山地修复：所有尺寸统一冻结山脊基底与 p99 高度预算，仅顶部约 1%
+软收尾；烘焙增加可选 `cell_landform`、两圈区域起伏与山地/高峰下限。
+主脊/刻谷当前默认值读 `terrain_index_baker.gd::DEM_DEFAULTS`，
+旧 `MapBaker.RELIEF_AMP/K_CREST` 属于历史 fallback，不是 native DEM 参数。
+契约、参数和验证见 `docs/architecture/current-state.md` 的山地高度与烘焙起伏节。
+
 | 角色 | 路径 |
 |---|---|
 | 生成编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd` |

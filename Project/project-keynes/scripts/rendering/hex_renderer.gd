@@ -433,6 +433,26 @@ var terrain_materials_enabled: bool = true
 			_push_world_uniform("terrain_ecotone_noise", terrain_ecotone_noise)
 		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
+@export_group("永昼太阳")
+## 每游戏年包含的 Shader 日数量；2 表示一年两轮，0.5 表示两年一轮。
+@export_range(0.0, 32.0, 0.25, "or_greater") var shader_days_per_game_year: float = 2.0:
+	set(value):
+		shader_days_per_game_year = maxf(value, 0.0)
+		if _apply_shader_clock.is_valid():
+			_apply_shader_clock.call(shader_days_per_game_year)
+var _apply_shader_clock: Callable
+
+## 太阳最低高度（角度）；抬高会缩短最长阴影。
+@export_range(0.0, 45.0, 1.0) var eternal_min_elevation_deg: float = 10.0:
+	set(value):
+		eternal_min_elevation_deg = clampf(value, 0.0, 45.0)
+		_push_eternal_daylight_uniforms()
+## 日内最大时角（角度）；增大会扩大高低浮动并拉长早晚阴影。
+@export_range(0.0, 89.0, 1.0) var eternal_max_hour_angle_deg: float = 70.0:
+	set(value):
+		eternal_max_hour_angle_deg = clampf(value, 0.0, 89.0)
+		_push_eternal_daylight_uniforms()
+@export_group("")
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
 
@@ -1185,6 +1205,7 @@ func _ready() -> void:
 	_building_visual_layer.set_season_phase(_season_phase)
 	_building_visual_layer.set_day_phase(_day_phase)
 	_building_visual_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+	_building_visual_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 	_building_visual_layer.set_day_night_enabled(day_night_enabled)
 	_building_visual_layer.set_tod_debug_sun_position(
 		_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -1300,6 +1321,8 @@ func _process(delta: float) -> void:
 			"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
 			"tod_debug_sun_uv": _tod_debug_sun_uv,
 			"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+			"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
+			"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
 			"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure,
 			"wind_dir": _detail_wind_dir, "weather_wind_boost": wind_boost})
 	_resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
@@ -1691,6 +1714,30 @@ func _global_sky_day_weight() -> float:
 	if not day_night_enabled:
 		return 1.0
 	return smoothstep(-0.14, 0.14, sin(6.283185307179586 * _day_phase))
+
+func configure_shader_clock(apply: Callable) -> void:
+	_apply_shader_clock = apply
+	if _apply_shader_clock.is_valid():
+		_apply_shader_clock.call(shader_days_per_game_year)
+
+
+func _push_eternal_daylight_uniforms() -> void:
+	var min_elevation := deg_to_rad(eternal_min_elevation_deg)
+	var max_hour_angle := deg_to_rad(eternal_max_hour_angle_deg)
+	_push_world_uniform("eternal_min_elevation_rad", min_elevation)
+	_push_world_uniform("eternal_max_hour_angle_rad", max_hour_angle)
+	_push_water_lighting_uniforms()
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_eternal_daylight_parameters"):
+		_building_visual_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	if _weather_layer != null and _weather_layer.has_method("set_eternal_daylight_parameters"):
+		_weather_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	if _fog_layer != null and _fog_layer.has_method("set_eternal_daylight_parameters"):
+		_fog_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	_for_each_vegetation_layer(func(layer) -> void:
+		if layer.has_method("set_eternal_daylight_parameters"):
+			layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	)
+	_sync_detail_and_activity_materials()
 
 
 func _bind_world_lighting_profile() -> void:
@@ -2101,11 +2148,15 @@ func _push_water_lighting_uniforms() -> void:
 	_water_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	_water_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	_water_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	_water_mat.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
+	_water_mat.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
 
 
 func _configure_cloud_shadow_field() -> void:
 	if _cloud_shadow_field == null:
 		return
+	if _weather_layer != null and not _cloud_shadow_field.wind_lut_changed.is_connected(_weather_layer.set_wind_luts):
+		_cloud_shadow_field.wind_lut_changed.connect(_weather_layer.set_wind_luts)
 	if _world == null or _map == null:
 		_cloud_shadow_field.clear_inputs()
 		_push_cloud_shadow_material_inputs()
@@ -2393,6 +2444,8 @@ func _instance_daylight_parameters() -> Dictionary:
 		"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
 		"tod_debug_sun_uv": _tod_debug_sun_uv,
 		"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+		"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
+		"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
 		"tod_sun_dir": _tod_sun_dir,
 		"tod_exposure": _tod_exposure,
 	}
@@ -3664,6 +3717,7 @@ func _spawn_detail_layers() -> void:
 		layer.set_season_phase(_season_phase)
 		layer.set_day_phase(_day_phase)
 		layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		layer.set_day_night_enabled(day_night_enabled)
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -5708,6 +5762,8 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	sm.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	sm.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	sm.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
+	sm.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
 	sm.set_shader_parameter("season_temp_amp", season_temp_amp)
 	# True Insolation-Driven：CPU / GPU 同源的四个参数输出到 shader
 	sm.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
@@ -5754,6 +5810,7 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_season_phase(_season_phase)
 		_weather_layer.set_day_phase(_day_phase)
 		_weather_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		_weather_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		if _weather_layer.has_method("set_tod_debug_sun_position"):
 			_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 		if _weather_layer.has_method("set_tod_debug_sun_height_scale"):
@@ -5777,6 +5834,7 @@ func _apply_uniforms() -> void:
 		_fog_layer.set_season_phase(_season_phase)
 		_fog_layer.set_day_phase(_day_phase)
 		_fog_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		_fog_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		_fog_layer.set_day_night_enabled(day_night_enabled)
 		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)

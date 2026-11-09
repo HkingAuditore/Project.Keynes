@@ -1,8 +1,7 @@
 // weather_overlay_web_min.gdshaderinc
 // ─────────────────────────────────────────────────────────────────────────
 // [web-weather-min] weather_overlay.gdshader 的 web / ANGLE 裁剪变体。
-// 唯一外部开关：weather_overlay.gdshader 里的 `#ifdef PK_WEB_WEATHER_MIN`
-// （由 weather_layer.gd::_load_overlay_shader() 在 web 上 prepend `#define`）。
+// 由 PK_WEATHER_CHEAP_NOISE 接入：桌面低/中档及全部移动/Web 档共用。
 //
 // 为什么需要它（Why）：
 //   桌面版云形来自共享解析 Perlin fbm 栈（cloud_noise.gdshaderinc）。cloud_density_soft
@@ -13,7 +12,7 @@
 //   这些循环体在 ANGLE→HLSL(FXC) 里全部要展开/优化/分配寄存器 —— 首次绘制约 45 秒。
 //
 // 这里做什么（What）：
-//   1) 用「无 sin、无循环」的双 octave 值噪声替换整座 fbm 栈（wx_min_value_noise）。
+//   1) 用「无 sin、无循环」的双 octave 梯度噪声替换整座 fbm 栈（wx_min_simplex_noise）。
 //   2) 逐字照抄桌面版的 coverage → density → opacity 重映射曲线，所以
 //      「云量 ↔ 视觉浓度」的响应关系不变，变的只是云形细节来源。
 //   3) 噪声值域（均值/上下限）与漂移速度对齐桌面版，避免整体亮度或移动速度跳变。
@@ -22,37 +21,48 @@
 #ifndef PK_WEATHER_OVERLAY_WEB_MIN_INC
 #define PK_WEATHER_OVERLAY_WEB_MIN_INC
 
-// 无 sin 的位混合 hash（Dave Hoskins hash12）。桌面 cloud_hash22 用 sin() 造 hash，
-// ANGLE 后端会把每次 sin 展开成多项式近似：既贵在编译期，也贵在每像素。
-float wx_min_hash(vec2 p) {
-	vec3 p3 = fract(vec3(p.x, p.y, p.x) * 0.1031);
+// 无 sin 的梯度 hash，一次得到二维方向。
+vec2 wx_min_gradient(vec2 p) {
+	vec3 p3 = fract(vec3(p.x, p.y, p.x) * vec3(0.1031, 0.1030, 0.0973));
 	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
+	vec2 gradient = fract((p3.xx + p3.yz) * p3.zy) * 2.0 - 1.0;
+	return gradient * inversesqrt(max(dot(gradient, gradient), 0.001));
 }
 
-// 平滑值噪声（单 octave，4 次 hash，无循环、无 mat2 旋转）。
-float wx_min_value_noise(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	float a = wx_min_hash(i);
-	float b = wx_min_hash(i + vec2(1.0, 0.0));
-	float c = wx_min_hash(i + vec2(0.0, 1.0));
-	float d = wx_min_hash(i + vec2(1.0, 1.0));
-	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+// 三角格点梯度噪声：3个梯度、零循环、零纹理，避免梯度噪声的方格平台。
+float wx_min_simplex_noise(vec2 p) {
+	const float F2 = 0.3660254038;
+	const float G2 = 0.2113248654;
+	vec2 lattice = floor(p + dot(p, vec2(F2)));
+	vec2 x0 = p - lattice + dot(lattice, vec2(G2));
+	vec2 corner = x0.x > x0.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+	vec2 x1 = x0 - corner + vec2(G2);
+	vec2 x2 = x0 - vec2(1.0) + vec2(2.0 * G2);
+	vec3 falloff = max(vec3(0.5) - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), vec3(0.0));
+	falloff *= falloff;
+	falloff *= falloff;
+	vec3 gradients = vec3(dot(wx_min_gradient(lattice), x0),
+		dot(wx_min_gradient(lattice + corner), x1),
+		dot(wx_min_gradient(lattice + vec2(1.0)), x2));
+	// 与高档 Perlin 的较窄值域接近，避免重映射后变成满白/满空的硬花纹。
+	return clamp(0.5 + 14.0 * dot(falloff, gradients), 0.0, 1.0);
 }
 
-// 云形：低频团块(n0) + 绝对值折叠出的蓬松核(billow)，共两层值噪声。
+// 云形：低频团块(n0) + 旋转后的细节(n1)，低档一层、中档及以上两层。
 // 两层漂移速度对齐桌面 cloud_fbm_evolve(..., world_time*0.16) / (..., *0.34) 的等价位移
 // （fbm_evolve 内部 sh = vec2(t*0.17, -t*0.13)，乘进去正好是下面这两个量级）。
 float wx_min_cloud_shape(vec2 p, float seed) {
 	vec2 base_p = p * 0.0038 + vec2(seed * 0.37, seed * 0.61);
 	vec2 drift_low = vec2(world_time * 0.027, -world_time * 0.021);
 	vec2 drift_high = vec2(-world_time * 0.058, world_time * 0.045);
-	float n0 = wx_min_value_noise(base_p + drift_low);
-	float n1 = wx_min_value_noise(base_p * 2.35 + vec2(11.7, 4.2) + drift_high);
-	float billow = 1.0 - abs(n1 * 2.0 - 1.0);
-	return clamp(n0 * 0.68 + billow * 0.32, 0.0, 1.0);
+	float n0 = wx_min_simplex_noise(base_p + drift_low);
+#ifdef PK_WEATHER_LOW
+	float n1 = n0;
+#else
+	float n1 = wx_min_simplex_noise(mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * base_p * 2.35 + vec2(11.7, 4.2) + drift_high);
+#endif
+	// 不折叠梯度噪声的零线，否则三角格点会形成一圈圈叶片/星状细纹。
+	return clamp(n0 * 0.75 + n1 * 0.25, 0.0, 1.0);
 }
 
 // cloud_density_soft 的 web 版本。以下 remap 与桌面版逐字一致
@@ -72,7 +82,7 @@ float cloud_density_soft_min(vec2 p, float coverage, float seed) {
 	return clamp(texture_cloud * cloud_mask * opacity, 0.0, 1.0);
 }
 
-// 卷云拉丝：单 octave 值噪声。桌面用 cloud_fbm(sp, 2) = 0.5·n0 + 0.25·n1，
+// 卷云拉丝：单 octave 梯度噪声。桌面用 cloud_fbm(sp, 2) = 0.5·n0 + 0.25·n1，
 // 值域 [0, 0.75]、均值 0.375；这里乘 0.75 把值域/均值对齐 → 下面 smoothstep
 // 阈值语义不变（否则单 octave 的均值 0.5 会让卷云铺满整片天空）。
 float sample_cirrus_band_min(vec2 wp, vec2 axis, float coverage) {
@@ -80,8 +90,8 @@ float sample_cirrus_band_min(vec2 wp, vec2 axis, float coverage) {
 	vec2 side = vec2(-dir.y, dir.x);
 	float u = dot(wp, dir);
 	float v = dot(wp, side);
-	vec2 sp = vec2(u * 0.004 + world_time * 0.9, v * 0.012);
-	float band = wx_min_value_noise(sp) * 0.75;
+	vec2 sp = vec2(u * 0.004, v * 0.012);
+	float band = wx_min_simplex_noise(sp) * 0.75;
 	float streak = smoothstep(mix(0.62, 0.42, coverage), 0.82, band);
 	return clamp(streak * coverage, 0.0, 1.0);
 }

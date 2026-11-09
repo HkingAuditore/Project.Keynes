@@ -14,6 +14,10 @@ var _music_situation = MusicSituationAggregatorScript.new()
 var _narrative_service = NarrativeEventServiceScript.new()
 var _narrative_flow = NarrativeEventFlowScript.new()
 var _narrative_ai_client: Node = null
+## GM 事件屏蔽覆盖所有会自动锁时钟的玩家提示（年报、叙事、时代奖励、
+## 家族创立和理念抽取），避免只屏蔽两类弹窗后仍出现“随机暂停”。
+var _popups_suppressed: bool = false
+var _suppression_resume_running: bool = false
 
 signal selection_changed(cell)
 signal command_completed(id: StringName, result: Dictionary)
@@ -237,6 +241,13 @@ func _apply_camera_view_scale_compensation() -> void:
 
 
 func _process(delta: float) -> void:
+	if _popups_suppressed and _suppression_resume_running and _world_clock != null \
+			and _world_clock.paused and not _world_clock.authority_fault_hold \
+			and _is_suppressed_popup_pause_source(String(_world_clock.last_pause_source)):
+		# 兜底处理竞态：事件可能在同步流程之后才到达，下一帧再申请暂停。
+		# 只释放已知的 UI 自动暂停来源，保留手动暂停、存档暂停和故障保护。
+		_world_clock.pause(false)
+		_sync_clock_visual_state()
 	if _music_situation == null:
 		return
 	var situation: Dictionary = _music_situation.process_audio_update(delta)
@@ -1993,7 +2004,7 @@ func _drain_era_reward_until_settled() -> void:
 
 func open_era_reward_offer() -> void:
 	# 点击纸徽才进入暂停选择；待领奖励本身不锁住会话。
-	if _country_facade == null or _ui_manager == null or _family_founding_locked \
+	if _popups_suppressed or _country_facade == null or _ui_manager == null or _family_founding_locked \
 			or ideology_draw_locked() or _annual_report_flow.is_open():
 		return
 	var offer: Dictionary = _country_facade.era_reward_offer()
@@ -2031,6 +2042,15 @@ func _sync_era_reward_offer() -> void:
 		return
 	var status := String(offer.get("status", "NONE"))
 	_era_reward_last_status = status
+	if _popups_suppressed:
+		if _era_reward_locked:
+			_era_reward_locked = false
+			if _world_clock != null:
+				_world_clock.set_speed(_era_reward_previous_speed)
+				_world_clock.pause(not _era_reward_resume_running)
+			if _ui_manager != null and _ui_manager.has_method("close_era_reward_offer"):
+				_ui_manager.close_era_reward_offer()
+		return
 	if _ui_manager != null:
 		_ui_manager.notify_era_reward_offer(offer)
 	if status in ["OPEN", "ERROR"] and not _era_reward_locked:
@@ -2227,6 +2247,9 @@ func _begin_ideology_draw(phase: String, sequence: int) -> void:
 func _sync_ideology_draw() -> void:
 	if _ideology_draw_phase.is_empty():
 		return
+	if _popups_suppressed:
+		_finish_ideology_draw("popup_suppressed")
+		return
 	var snapshot := _ideology_player_snapshot()
 	if _ideology_draw_phase == "presenting":
 		# Offer resolved elsewhere (load, debug grant): release the saved clock.
@@ -2313,6 +2336,15 @@ func _sync_family_founding_offer() -> void:
 		return
 	var snapshot: Dictionary = _economy_facade.family_founding_offers(0, 64)
 	if not bool(snapshot.get("ok", false)):
+		return
+	if _popups_suppressed:
+		if _family_founding_locked:
+			_family_founding_locked = false
+			if _world_clock != null:
+				_world_clock.set_speed(_family_founding_previous_speed)
+				_world_clock.pause(not _family_founding_resume_running)
+			if _ui_manager != null and _ui_manager.has_method("close_family_founding_offer"):
+				_ui_manager.close_family_founding_offer()
 		return
 	var open_offers: Array = []
 	for offer in snapshot.get("offers", []):
@@ -3209,8 +3241,39 @@ func narrative_event_locked() -> bool:
 	return _narrative_flow != null and _narrative_flow.is_locked()
 
 func set_popups_suppressed(enabled: bool) -> void:
+	if enabled and not _popups_suppressed:
+		_suppression_resume_running = _world_clock != null and not _world_clock.paused
+	_popups_suppressed = enabled
 	_annual_report_flow.set_popups_suppressed(enabled)
 	_narrative_flow.set_popups_suppressed(enabled)
+	if not enabled:
+		return
+	# 已经锁住时钟的提示在开关切换瞬间也必须释放；原生 offer 保留，
+	# 之后可由玩家关闭屏蔽再正常领取。
+	if _era_reward_locked:
+		if _ui_manager != null and _ui_manager.has_method("close_era_reward_offer"):
+			_ui_manager.close_era_reward_offer()
+		_era_reward_locked = false
+		if _world_clock != null:
+			_world_clock.set_speed(_era_reward_previous_speed)
+			_world_clock.pause(not _era_reward_resume_running)
+	if _family_founding_locked:
+		if _ui_manager != null and _ui_manager.has_method("close_family_founding_offer"):
+			_ui_manager.close_family_founding_offer()
+		_family_founding_locked = false
+		if _world_clock != null:
+			_world_clock.set_speed(_family_founding_previous_speed)
+			_world_clock.pause(not _family_founding_resume_running)
+	if not _ideology_draw_phase.is_empty():
+		_finish_ideology_draw("popup_suppressed")
+
+
+func _is_suppressed_popup_pause_source(source: String) -> bool:
+	for marker in ["_pause_clock", "open_era_reward_offer", "_sync_era_reward_offer",
+			"_sync_family_founding_offer", "_sync_ideology_draw", "_pause_clock_for_ceremony"]:
+		if source.find(marker) >= 0:
+			return true
+	return false
 
 
 func export_narrative_state() -> Dictionary:

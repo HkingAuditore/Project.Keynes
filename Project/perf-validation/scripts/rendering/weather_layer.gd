@@ -582,12 +582,30 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	if _overlay_mat != null:
+		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+	for mat in _curtain_mats:
+		mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+
+
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _overlay_mat != null:
 		_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	for mat in _curtain_mats:
 		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 
 # ─── Pass 2（任务 2）：TOD 消费端 ───────────────────────────────────
 # TODProfile 的 6 个字段完整推到 overlay shader，同时让粒子模态 / 云阴影
@@ -1275,6 +1293,8 @@ func _push_overlay_runtime_state() -> void:
 	_overlay_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	_overlay_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	_overlay_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	_overlay_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_overlay_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_push_weather_profile_uniforms_to_overlay()
 	_push_fronts_to_overlay(_front_visual_snapshots)
 	_push_fog_mask_uniforms()
@@ -1300,6 +1320,8 @@ func _push_curtain_runtime_state() -> void:
 		mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 		mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 		mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		mat.set_shader_parameter("tod_exposure", _tod_exposure)
 		mat.set_shader_parameter("weather_profile_flags", _weather_profile_flags())
 		# [parallax-rain] 俯视投影参数

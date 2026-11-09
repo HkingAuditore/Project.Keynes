@@ -241,7 +241,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 			"ratio": 0.0 if top <= 0.0 else attack / top, "color": UITokens.DOSSIER_OXBLOOD},
 		{"label": "防御", "value": defense,
 			"ratio": 0.0 if top <= 0.0 else defense / top, "color": UITokens.DOSSIER_VERDIGRIS},
-		{"label": "机动", "value": speed,
+		{"label": "速度", "value": speed,
 			"ratio": 0.0 if top <= 0.0 else speed / top, "color": UITokens.DOSSIER_BRASS},
 	]
 	for spec in stat_specs:
