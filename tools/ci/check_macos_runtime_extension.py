@@ -21,7 +21,10 @@ from run_regression_checks import SHUTDOWN_LEAK
 from runtime_test_hygiene import trace_environment
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE = ROOT / "Project/project-keynes/tests/runtime/runtime_inline_save_restore_test.gd"
+FIXTURES = ("tests/runtime/runtime_inline_save_restore_test.gd",
+            "tests/runtime/runtime_executor_boundary_test.gd",
+            "tests/runtime/runtime_world_lifecycle_test.gd",
+            "tests/runtime/runtime_inline_coordinator_save_test.gd")
 
 
 def main() -> int:
@@ -39,17 +42,34 @@ def main() -> int:
               "stages": [], "passed": False}
     with tempfile.TemporaryDirectory(prefix="keynes-extension-probe-") as directory:
         project = Path(directory)
-        (project / "project.godot").write_text('config_version=5\n[application]\nconfig/name="Runtime extension probe"\n')
+        source = ROOT / "Project/project-keynes"
+        # Reuse production resources without changing its extension mapping.
+        # Tests are private copies, including the parent fixtures they extend.
+        for entry in source.iterdir():
+            if entry.name in {".godot", "project.godot", "tests"}:
+                continue
+            (project / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
+        shutil.copytree(source / "tests", project / "tests")
+        configuration = (source / "project.godot").read_text().replace(
+            'config/name="ProjectKeynes"', 'config/name="Runtime extension probe"')
+        (project / "project.godot").write_text(configuration)
         (project / "runtime.gdextension").write_text(
             '[configuration]\nentry_symbol="dots_ext_init"\ncompatibility_minimum="4.4"\n'
             '[libraries]\nmacos.debug.arm64=' + json.dumps(str(library)) + '\n')
         # Load through the runtime startup list. An editor import also asks
         # release libraries for editor documentation, which is not their job.
         (project / ".godot").mkdir()
+        for name in ("global_script_class_cache.cfg", "uid_cache.bin"):
+            if (source / ".godot" / name).is_file():
+                shutil.copyfile(source / ".godot" / name, project / ".godot" / name)
+        (project / ".godot/imported").symlink_to(source / ".godot/imported", target_is_directory=True)
         (project / ".godot/extension_list.cfg").write_text("res://runtime.gdextension\n")
-        shutil.copyfile(FIXTURE, project / FIXTURE.name)
-        stages = [("save_restore", ["--script", "res://" + FIXTURE.name])]
-        for name, arguments in stages:
+        stages = []
+        for name, fixture, result_prefix in zip(
+                ("save_restore", "executor_boundaries", "world_lifecycle", "formal_inline_restart"), FIXTURES,
+                ("inline save/restore:", "executor boundaries:", "runtime world lifecycle:", "inline coordinator save:")):
+            stages.append((name, ["--script", "res://" + fixture], result_prefix))
+        for name, arguments, result_prefix in stages:
             command = [args.godot, "--headless", "--path", str(project), *arguments]
             path = logs / (name + ".log")
             environment = trace_environment(os.environ.copy(), logs, name)
@@ -59,16 +79,16 @@ def main() -> int:
             lines = path.read_text(errors="replace").splitlines()
             errors = [line for line in lines if line.startswith("ERROR:") or
                       "SCRIPT ERROR:" in line or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
-            if name == "save_restore" and not any(
-                    line.startswith("inline save/restore:") and line.endswith(", 0 failures")
+            if not any(
+                    line.startswith(result_prefix) and line.endswith(", 0 failures")
                     for line in lines):
-                errors.append("save/restore fixture did not report success")
+                errors.append(name + " fixture did not report success")
             passed = result.returncode == 0 and not errors
             report["stages"].append({"name": name, "exit": result.returncode,
                                       "passed": passed, "errors": errors, "log": str(path)})
             print(f"{'PASS' if passed else 'FAIL'} {name}; library={library}; log={path}", flush=True)
             for line in lines:
-                if line.startswith("inline save/restore:"):
+                if line.startswith(result_prefix):
                     print(line, flush=True)
             if not passed:
                 print("\n".join(errors or lines[-30:]), flush=True)

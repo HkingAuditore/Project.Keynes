@@ -37,6 +37,11 @@ jobs:
           clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
             -Igdext/src gdext/tests/runtime_execution_context_test.cpp -o /tmp/execution-context-test
           /tmp/execution-context-test
+      - name: Control notification at the check-to-wait boundary
+        run: |
+          clang++ -std=c++17 -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+            -Igdext/src gdext/tests/runtime_control_wakeup_test.cpp -o /tmp/control-wakeup-test
+          /tmp/control-wakeup-test
       - name: Standalone climate compilation
         run: |
           printf '#include "runtime_climate_pass_math.h"\n' | g++ -std=c++17 -fsyntax-only -x c++ -Igdext/src -

@@ -43,6 +43,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
                                   double speed_days_per_second,
                                   bool paused,
                                   uint32_t requested_authority_mask) {
+    // Validate before consuming a prepared restore or changing world state.
+    if (inline_daily_mode() && mode == RuntimeSimulationMode::SHADOW) return false;
     if (!_worker_returned->load(std::memory_order_acquire)) return false;
     RuntimeWorkerState expected = RuntimeWorkerState::STOPPED;
     if (!_state.compare_exchange_strong(expected, RuntimeWorkerState::STARTING,
@@ -58,15 +60,6 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
-    // STOPPED proves the previous worker no longer accesses the host; the
-    // independent retirement task may still be joining its OS handle. Reset
-    // the continuation machine here rather than touching its
-    // non-atomic bookkeeping from request_stop while a worker is still live.
-    _stage_ops_day_index = -1;
-    _stage_ops_day_input_generation = 0;
-    _stage_ops_day_phase = StageOpsDayPhase::Done;
-    _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done),
-                                      std::memory_order_release);
     if (mode == RuntimeSimulationMode::OFF) {
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
@@ -106,6 +99,20 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
+    if (!_has_pending_restore && has_started_once() &&
+        mode == RuntimeSimulationMode::ACTIVE &&
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        _requested_authority_mask.load(std::memory_order_acquire) == wanted)
+        return resume_same_world_executor(speed_days_per_second, paused);
+    // STOPPED proves the previous worker no longer accesses the host; the
+    // independent retirement task may still be joining its OS handle. Reset
+    // the continuation machine here rather than touching its
+    // non-atomic bookkeeping from request_stop while a worker is still live.
+    _stage_ops_day_index = -1;
+    _stage_ops_day_input_generation = 0;
+    _stage_ops_day_phase = StageOpsDayPhase::Done;
+    _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done),
+                                      std::memory_order_release);
     const bool restore_pending = _has_pending_restore;
     // A RESTART resumes on THIS host's calendar, not on the caller's.
     //
@@ -155,7 +162,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _executor_pending_commands =
             std::move(_pending_restore_bundle.pending_commands);
     } else {
-        _executor_pending_commands.clear();
+        // Commands still in ingress are accepted work too. Drain before the
+        // transport is reinitialized, preserving their original identities.
+        std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
+        RuntimeCommandPacket queued;
+        while (pop_command(queued)) _executor_pending_commands.push_back(std::move(queued));
     }
     {
         std::lock_guard<std::mutex> lock(_control_mutex);
@@ -175,6 +186,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _prestart_modifier_commands.clear();
     }
     seed_executor_command_orders();
+    _executor_day_environment.reset();
     _inline_day_pending.store(false, std::memory_order_release);
     // The caller's flag is only an eligibility request.  Coverage is proven
     // by the worker after a complete RuntimeDayPlan barrier; accepting an
@@ -403,14 +415,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _receipt_write.store(0, std::memory_order_relaxed);
     _receipt_read.store(0, std::memory_order_relaxed);
     for (size_t i = 0; i < _producer_sequences.size(); ++i) {
-        const uint64_t restored_sequence = restore_pending
-            ? _pending_restore_bundle.producer_sequences[i] : 0;
-        _producer_sequences[i].store(restored_sequence,
-                                     std::memory_order_relaxed);
+        if (restore_pending) _producer_sequences[i].store(
+            _pending_restore_bundle.producer_sequences[i], std::memory_order_relaxed);
     }
-    _fallback_producer_sequence.store(restore_pending
-            ? _pending_restore_bundle.fallback_producer_sequence : 0,
-        std::memory_order_relaxed);
+    if (restore_pending) _fallback_producer_sequence.store(
+        _pending_restore_bundle.fallback_producer_sequence, std::memory_order_relaxed);
     _save_requested.store(false, std::memory_order_release);
     _save_request_id.store(0, std::memory_order_release);
     _save_consumed_request_id.store(0, std::memory_order_release);
@@ -863,8 +872,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     bool country_candidate_ready = false;
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
-        const auto country_snapshot = std::atomic_load_explicit(
-            &_country_snapshot, std::memory_order_acquire);
+        const auto country_snapshot = country_economy_audit_snapshot();
         if (country_snapshot != nullptr && _country_pod_catalog.catalog_hash != 0) {
             std::string country_config_error;
             const RuntimeCountryPodSnapshot *bootstrap_snapshot =
@@ -914,8 +922,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_economy_asset_self_settled.clear();
         _economy_origin_asset_queue.clear();
         _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
-        _country_command_terminals.clear();
-        _country_command_states.clear();
+        if (restore_pending) {
+            _country_command_terminals.clear();
+            _country_command_states.clear();
+        }
         if (restored_country_checkpoint_valid) {
             for (const CountryCommandReceipt &receipt :
                      restored_country_checkpoint.request_states) {
@@ -1083,71 +1093,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
-    // native_daily_inline：不要 worker 线程。日屏障改由调用线程逐日执行
-    // （run_inline_day）。这里必须先把状态发布成 RUNNING —— 命令准入
-    // （enqueue_batch）、`domain_grant_pending()` 的主线程抑制窗口、报告里的
-    // state 都读它；留在 STOPPED 会让内联模式收不到任何命令、也不抑制主线程。
-    //
-    // 内联只对 ACTIVE 有意义：SHADOW 的定义就是"worker 侧影子对拍"，没有线程
-    // 就没有影子可言。请求 inline+SHADOW 是调用方配置错误，按既有习惯用 fault
-    // code 的可观测停止拒绝，而不是把 SHADOW 悄悄升级成 ACTIVE。
-    if (inline_daily_mode()) {
-        if (mode != RuntimeSimulationMode::ACTIVE) {
-            _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
-            _graph_coverage_complete.store(false, std::memory_order_release);
-            _requested_authority_mask.store(0, std::memory_order_release);
-            _authority_control.revoke();
-            const char *fault = "inline_daily_requires_active";
-            size_t fault_size = 0;
-            for (; fault_size + 1 < _fault_code.size() && fault[fault_size] != '\0';
-                 ++fault_size) {
-                _fault_code[fault_size].store(fault[fault_size],
-                                              std::memory_order_relaxed);
-            }
-            for (; fault_size < _fault_code.size(); ++fault_size)
-                _fault_code[fault_size].store('\0', std::memory_order_relaxed);
-            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
-            return false;
-        }
-        _state.store(RuntimeWorkerState::RUNNING, std::memory_order_release);
-        // 与 worker_main 入口对齐：计时区间从这里开始，否则 worker_time_* 恒为 0。
-        _worker_timing.pause(paused);
-        _worker_timing.start();
-        _has_started_once.store(true, std::memory_order_release);
-        return true;
-    }
-    try {
-        _worker_returned = std::make_shared<std::atomic<bool>>(false);
-        const auto returned = _worker_returned;
-        _worker = std::thread([this, returned] {
-            worker_main();
-            // This final signal owns no host reference and performs no further
-            // host access. A caller can now release the world, even on fault.
-            returned->store(true, std::memory_order_release);
-        });
-    } catch (...) {
-        _worker_returned->store(true, std::memory_order_release);
-        // A failed thread creation must leave the host reusable.  Returning
-        // false while keeping STARTING would make every later start look like
-        // a forbidden hot switch and would strand the caller without a
-        // lifecycle completion signal.
-        _worker_fault_count.fetch_add(1, std::memory_order_relaxed);
-        const char *fault = "worker_thread_create_failed";
-        size_t fault_size = 0;
-        for (; fault_size + 1 < _fault_code.size() && fault[fault_size] != '\0';
-             ++fault_size) {
-            _fault_code[fault_size].store(fault[fault_size],
-                                          std::memory_order_relaxed);
-        }
-        for (; fault_size < _fault_code.size(); ++fault_size)
-            _fault_code[fault_size].store('\0', std::memory_order_relaxed);
-        _stop_requested.store(true, std::memory_order_release);
-        _authority_control.revoke();
-        _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
-        return false;
-    }
-    _has_started_once.store(true, std::memory_order_release);
-    return true;
+    return launch_executor(paused);
 }
 
 } // namespace pk

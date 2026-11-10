@@ -58,6 +58,11 @@ bool NativeSimulationHost::enqueue_batch(
     // Serialise producers for the batch path. The consumer remains lock-free
     // and may advance dequeue_pos while this lock is held.
     std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
+    const auto admitted_state = _state.load(std::memory_order_acquire);
+    if (admitted_state == RuntimeWorkerState::STOPPED ||
+        admitted_state == RuntimeWorkerState::STOPPING ||
+        admitted_state == RuntimeWorkerState::FAULTED ||
+        _stop_requested.load(std::memory_order_acquire)) return false;
     const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
     const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
     if (packets.size() > RUNTIME_COMMAND_QUEUE_CAPACITY ||
@@ -540,10 +545,10 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
     const int64_t day = from_day + 1;
     out.from_day = from_day;
     out.day = day;
-    // 环里滞后的帧（典型是世界生成期那一帧：day 落后 committed+1 一天）在这里
-    // 丢掉。内联日没有跨线程重试，"今天等一个正确的帧"只会每天多失败一次。
-    std::shared_ptr<const RuntimeEnvironmentSnapshot> environment;
-    for (uint32_t peek = 0; peek < 4u; ++peek) {
+    // An unfinished day keeps the same frozen frame across executor lifetimes.
+    auto environment = _executor_day_environment;
+    if (environment && environment->day != day) environment.reset();
+    for (uint32_t peek = 0; !environment && peek < 4u; ++peek) {
         environment = environment_input_for_plan();
         if (environment == nullptr || environment->day >= day) break;
         const size_t popped = _environment_ring.pop_while_day_at_most(environment->day);
@@ -562,6 +567,7 @@ NativeSimulationHost::InlineDayOutcome NativeSimulationHost::run_inline_day() {
         return out;
     }
     std::vector<RuntimeCommandPacket> day_commands;
+    _executor_day_environment = environment;
     day_commands.reserve(16u);
     std::vector<RuntimeCommandReceipt> day_receipts;
     uint64_t admitted_submit_order = 0;

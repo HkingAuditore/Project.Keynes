@@ -60,6 +60,12 @@ def source_files(root: Path) -> list[Path]:
     return sorted(p for p in src.rglob("*") if p.suffix in {".cpp", ".h", ".inc"} and ".gen." not in p.name)
 
 
+def system_header(root: Path, kind: str, target: str) -> bool:
+    # gdext/src is an include search path for both delimiter styles. A local
+    # header cannot become a system dependency just by spelling it with <>.
+    return kind == "<" and not (root / "gdext/src" / target).is_file()
+
+
 def check_shared(root: Path, shared: dict) -> list[str]:
     errors: list[str] = []
     src = root / "gdext/src"
@@ -71,7 +77,7 @@ def check_shared(root: Path, shared: dict) -> list[str]:
             errors.append(f"shared contract header {header} is missing")
             continue
         for kind, target in includes(path.read_text(encoding="utf-8")):
-            if kind == "<" or target in shared:
+            if system_header(root, kind, target) or Path(target).as_posix() in shared:
                 continue
             errors.append(f"shared contract header {header} includes non-shared header {target}")
     return errors
@@ -106,13 +112,13 @@ def check_contract(root: Path, contract: dict, shared: dict | None = None) -> li
                                   f"{', '.join(sorted(set(hits)))}")
         if path.name in api:
             for kind, target in incs:
-                if kind == "<" or target.endswith("_api.h") or target in shared:
+                if system_header(root, kind, target) or target.endswith("_api.h") or Path(target).as_posix() in shared:
                     continue
                 errors.append(f"{module}: API header {rel} includes non-API header {target}")
             continue
         if is_owner:
             continue
-        hits = [t for k, t in incs if k == '"' and matches(Path(t).name, internal)]
+        hits = [t for _kind, t in incs if matches(Path(t).name, internal)]
         if not hits:
             continue
         seen.add(rel)

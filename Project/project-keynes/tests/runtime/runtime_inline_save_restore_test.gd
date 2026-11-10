@@ -38,7 +38,7 @@ func _run() -> void:
 	print("inline save/restore: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
-func _config(inline_mode: bool, mask: int = 0x801) -> Dictionary:
+func _config(inline_mode: bool, mask: int = 0x803) -> Dictionary:
 	return {"simulation_thread_mode": "ACTIVE", "graph_coverage_complete": true,
 		"native_daily_inline": inline_mode, "authoritative_domain_mask": mask,
 		"day": 0, "speed_days_per_second": 0.0, "paused": true}
@@ -58,10 +58,14 @@ func _save(ext: Object, request: int) -> Dictionary:
 	return result
 
 func _day(ext: Object, inline_mode: bool, day: int) -> void:
+	# Input-driven days stop at this exact boundary. A free-running clock may
+	# begin the next day before the caller pauses, correctly blocking a save.
 	var generation := int(ext.get_runtime_thread_report().get("simulation_environment_generation", 0)) + 1
 	var captured: Dictionary = ext.capture_runtime_inputs({"generation": generation,
 		"day": day, "terrain": PackedByteArray([1]), "landform": PackedByteArray([0]),
-		"has_river": PackedByteArray([0]), "neighbor_indices": PackedInt32Array([-1, -1, -1, -1, -1, -1])})
+		"has_river": PackedByteArray([0]), "neighbor_indices": PackedInt32Array([-1, -1, -1, -1, -1, -1]),
+		"climate_map_width": 1, "climate_map_height": 1, "climate_catalog_hash": 7,
+		"cell_temp": PackedFloat32Array([15.0]), "cell_moisture": PackedFloat32Array([0.5])})
 	_expect("day input accepted", captured.get("ok", false))
 	if inline_mode:
 		_expect("inline day commits", ext.run_native_daily_inline_day().get("ok", false))

@@ -34,6 +34,7 @@
 #include <windows.h>
 #endif
 #include "native_simulation_host_support.h"
+#include "runtime_control_wakeup.h"
 namespace pk {
 namespace {
 void d7_append_u32(std::vector<uint8_t> &out, uint32_t value) {
@@ -65,14 +66,9 @@ bool NativeSimulationHost::request_save(uint64_t request_id) {
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
     // Publish the flag only after the ID.  The worker's acquire exchange then
     // cannot observe a request without its matching identifier.
-    {
-        // Pair the predicate publication with the paused worker's wait mutex.
-        // An atomic flag alone can lose the notification between its check
-        // and the condition variable entering its wait.
-        std::lock_guard<std::mutex> lock(_control_mutex);
+    runtime_control_wakeup(_control_mutex, _control_cv, [this] {
         _save_requested.store(true, std::memory_order_release);
-    }
-    _control_cv.notify_all();
+    });
     service_inline_save_request();
     return true;
 }

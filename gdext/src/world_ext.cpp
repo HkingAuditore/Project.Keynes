@@ -75,6 +75,71 @@ using namespace godot;
 
 
 DCWorldExt::DCWorldExt() = default;
+
+Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
+                                        const Dictionary &profile,
+                                        int cell_count, int64_t seed) {
+    // Reconfiguration starts a new world; an executor restart uses capture.
+    if (_runtime_host && !_runtime_host->execution_has_stopped()) {
+        Dictionary rejected;
+        rejected["ok"] = false;
+        rejected["code"] = "country_configure_requires_stopped_runtime";
+        return rejected;
+    }
+    // Validate into a private candidate before discarding any old world state.
+    auto candidate = std::make_unique<NativeCountryRuntime>();
+    Dictionary configured = candidate->configure(catalog, profile, cell_count, seed);
+    if (!static_cast<bool>(configured.get("ok", false))) return configured;
+    auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
+    if (_runtime_host && _runtime_host->has_started_once()) {
+        // Detach the borrowed OwnedState before destroying its old Host.
+        if (economy != nullptr) economy->unbind_formula_owned_state();
+        // New stores and queues still need a later protocol identity, so a
+        // delayed reply from the old world cannot match a new request.
+        const auto previous_epoch = _runtime_host->country_worker_protocol_status().session_epoch;
+        _runtime_host = std::make_unique<NativeSimulationHost>(previous_epoch);
+        if (_effect_forwarder)
+            _effect_forwarder->attach(static_cast<EffectRuntime *>(_effect_runtime), _runtime_host.get());
+        attach_country_ai_to_host();
+        _runtime_commit_cache = RuntimeCommit{};
+        _runtime_commit_cache_generation = 0;
+        _runtime_commit_cache_valid = false;
+        _climate_physics_committed.reset();
+        _climate_physics_capture_ready = false;
+        _climate_writeback_applied_generation = 0;
+        _climate_writeback_applied_day = -1;
+        if (economy != nullptr) economy->set_sync_writes_forbidden(false);
+    }
+    delete static_cast<NativeCountryRuntime *>(_country_query_runtime);
+    _country_query_runtime = nullptr;
+    _country_query_snapshot.reset();
+    if (_country_runtime == nullptr) _country_runtime = candidate.release();
+    else {
+        // Retain the object's monotonic session epoch: old peer replies must
+        // never match a newly configured world on this same API object.
+        configured = static_cast<NativeCountryRuntime *>(_country_runtime)->configure(
+            catalog, profile, cell_count, seed);
+    }
+    auto *country = static_cast<NativeCountryRuntime *>(_country_runtime);
+    country->set_sync_store_writes_forbidden(false);
+    country->attach_simulation_host(_runtime_host.get());
+    if (economy != nullptr) {
+        economy->attach_country_runtime(country);
+        economy->attach_simulation_host(_runtime_host.get());
+        country->attach_economy_runtime(economy);
+    }
+    if (_modifier_runtime != nullptr)
+        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(country);
+    if (_effect_runtime != nullptr) {
+        auto *effect = static_cast<EffectRuntime *>(_effect_runtime);
+        effect->attach_country_runtime(country);
+        country->attach_effect_runtime(effect);
+    }
+    country->attach_effect_forwarder(_effect_forwarder.get());
+    country->attach_modifier_runtime(static_cast<ModifierRuntime *>(_modifier_runtime));
+    return configured;
+}
+
 DCWorldExt::~DCWorldExt() {
     if (_runtime_host) {
         _runtime_host->request_stop();
