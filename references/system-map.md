@@ -45,6 +45,8 @@ external_ecp2=[])` → `NativeSimulationHost`。PKSR 完整保存超过 64 MiB �
 
 Source-file ownership and decomposition rules live in
 [`docs/architecture/module-boundaries.md`](../docs/architecture/module-boundaries.md).
+Current helper locations and their input/callback boundaries are mapped in
+[`docs/architecture/source-module-splits.md`](../docs/architecture/source-module-splits.md).
 
 ## Formal game entry (2026-07)
 
@@ -167,7 +169,7 @@ world_setup.tscn
 
 当前初始地形生成已经走 C++ 权威路径。`MapGenerator.generate()` 仍负责流程编排，但真正的 base/post-base 生成在 GDExtension：
 
-- `gdext/src/world_ext_generate.cpp` 和相关 `world_ext*.cpp` 提供 `run_native_world_generate_base_pass()`、`run_native_world_generate_post_base_pass()`、`run_native_world_generate_full_pass()`。
+- `gdext/src/world_ext_generate_base.cpp` 提供 base；`world_ext_generate.cpp` 提供 post-base/full/publish；`world_ext_season_refresh.cpp` 提供季节阶段与继续游标接口。
 - `MapGenerator._generate_cells_native_base()` 调 native base/post-base，`_assemble_native_generation_map()` 装配 `MapData` / `HexCell`。
 - GDScript 旧 `_generate_cells` fallback 已删除。native 失败时 `generate()` 直接中止，不应静默降级。
 - 玩家与 debug 入口必须 `await MapGenerator.generate()`。生成仍在 Godot 主线程执行，因为 `MapData`/`HexCell` 装配、`ImageTexture` 和 DataCore/Godot 对象生命周期不能粗暴迁入 worker；`MapGenerator` 与 `MapBaker` 在大陆、几何、物理、图集编码和模拟装配边界协作式 `await process_frame`，让加载 UI、窗口事件和动画持续推进。直接调用但不 `await` 会在首个让帧点提前返回，是不受支持的调用方式。
@@ -341,12 +343,12 @@ visuals continue through the existing WeatherFront/LUT boundary.
 `gdext/src/world_ext.h` 和 `world_ext_bind_methods.cpp` 是 GDExtension API 面。常见实现分布：
 
 - `world_ext.cpp`：核心 `DCWorldExt`、slot、bind、bridge、部分通用 pass。
-- `world_ext_generate.cpp`：native world generation base/post-base/full。
+- `world_ext_generate_base.cpp`：native base generation；`world_ext_generate.cpp`：post-base/full/publish；`world_ext_season_refresh.cpp`：季节阶段与分片接口。
 - `world_ext_climate.cpp`：climate pass A/B、ocean water/land、wind/thermal 相关 pass。
 - `world_ext_weather.cpp`：weather field solve/commit/distribute/summary/refresh daily。
 - `world_ext_physical.cpp`：SLP、wind field、PSI、physical circulation、raster 等。
 - `world_ext_atlas.cpp`：dynamic/ecology/ice/overlay/cell LUT/atlas pipeline。
-- `world_ext_bake.cpp`：生成期 texture/buffer encoders 和 bake-time geometry fields。
+- `world_ext_bake.cpp`：bake-time geometry fields；`world_ext_bake_encoders.cpp`：texture/buffer encoders；`world_ext_bake_visual_tiles.cpp`：visual tile 与 horizon 重采样。
 - `world_ext_detail.cpp`：vegetation/detail scatter instance encoding。
 - `world_ext_events.cpp`：gameplay event bus。
 - `sus_scheduler_ext.cpp`：C++ SUS scheduler mirror。

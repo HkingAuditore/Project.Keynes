@@ -1,10 +1,14 @@
 class_name ResourceVisualLayer
 extends Node2D
+const ResourceInstancePlan = preload("res://scripts/rendering/resource_instance_plan.gd")
+
+const ResourceShaderVariants = preload("res://scripts/rendering/resource_shader_variants.gd")
+
 
 const Catalog = preload("res://scripts/rendering/resource_visual_catalog.gd")
 const Profile = preload("res://scripts/data/resource_visual_profile.gd")
 const DEFAULT_PROFILE = preload("res://data/visual/resource_default.tres")
-const RESOURCE_SHADER = preload("res://shaders/resource_impostor.gdshader")
+const RESOURCE_SHADER = ResourceShaderVariants.RESOURCE_SHADER
 const GroundCover = preload("res://scripts/rendering/resource_ground_cover.gd")
 const FAMILY_COUNT := 4
 const INSTANCE_SCALE_MIN := 0.82
@@ -15,7 +19,7 @@ const INSTANCE_ASPECT_MAX := 1.28
 # drawn first so props always sit on top of their own scar/soil patch.
 const BATCH_COUNT := 5
 const DECAL_BATCH := 4
-const STRIDE := 16
+const STRIDE = ResourceInstancePlan.STRIDE
 const RESOURCE_Z := 1 # 与植被共用父级：地表(0) < 资源(1) < 树冠(2)。
 # Instance kind lives in COLOR.a: integer part = kind, +0.5 = not the lens badge carrier.
 const KIND_PROP := 1.0
@@ -23,14 +27,14 @@ const KIND_DECAL := 2.0
 const KIND_SUBMERGED := 3.0
 const KIND_BADGE_ONLY := 4.0
 const NON_CARRIER := 0.5
-const PLAN_PROP := 1
-const PLAN_DECAL := 2
-const PLAN_SUBMERGED := 4
-const PLAN_BADGE := 8
+const PLAN_PROP = ResourceInstancePlan.PLAN_PROP
+const PLAN_DECAL = ResourceInstancePlan.PLAN_DECAL
+const PLAN_SUBMERGED = ResourceInstancePlan.PLAN_SUBMERGED
+const PLAN_BADGE = ResourceInstancePlan.PLAN_BADGE
 # clay, sand, soil (fertile/arable/paddy/plantation/pasture), game tracks, land seep, land gas.
-const GROUND_FORMS := [19, 20, 21, 22, 23, 25]
+const GROUND_FORMS = ResourceInstancePlan.GROUND_FORMS
 # rock, vein, crystal: a bare scar decal plus a small pebble prop.
-const DEPOSIT_FORMS := [16, 17, 18]
+const DEPOSIT_FORMS = ResourceInstancePlan.DEPOSIT_FORMS
 
 # ─── Web / Compatibility 编译期精简变体（2026-10-31）────────────────────────
 # 见 shaders/include/resource_impostor_web_min.gdshaderinc。这张 shader 展开后约
@@ -46,79 +50,58 @@ const DEPOSIT_FORMS := [16, 17, 18]
 # 中性值顶替，本 include 链路也不用 PK_MOBILE_ANY），而菜单期预热读不到玩家进游戏后
 # 才会生效的画质设置。若让前缀跟随设置，玩家选「中/高」时运行期就会编出另一份，
 # 缓存必然不命中，27 秒的编译就回到游戏里了。
-const MAP_VISUAL_TILED_DEFINE := "#define MAP_VISUAL_TILED\n"
-const WEB_MIN_QUALITY_DEFINE := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
-const WEB_MIN_DEFINE := "#define PK_WEB_RESOURCE_MIN\n"
+const MAP_VISUAL_TILED_DEFINE = ResourceShaderVariants.MAP_VISUAL_TILED_DEFINE
+const WEB_MIN_QUALITY_DEFINE = ResourceShaderVariants.WEB_MIN_QUALITY_DEFINE
+const WEB_MIN_DEFINE = ResourceShaderVariants.WEB_MIN_DEFINE
 ## [web-two-pass] 同一份 .gdshader 编成两份程序：surface / geology。
 ## 依据与实测见 shaders/resource_impostor.gdshader 的 [web-two-pass] 段与
 ## tmp/next/resource_cliff_IMPL.md。
-const WEB_PASS_SURFACE_DEFINE := "#define PK_RES_WEB_PASS_SURFACE\n"
-const WEB_PASS_GEOLOGY_DEFINE := "#define PK_RES_WEB_PASS_GEOLOGY\n"
+const WEB_PASS_SURFACE_DEFINE = ResourceShaderVariants.WEB_PASS_SURFACE_DEFINE
+const WEB_PASS_GEOLOGY_DEFINE = ResourceShaderVariants.WEB_PASS_GEOLOGY_DEFINE
 ## batch 2 = 矿物道具（form 16/17/18 → rt_geology_solid）。其余 batch 都是 surface。
 const MINERAL_BATCH := 2
 
 ## 本图层是否走 web/GLES3 精简变体。web 上 is_compatibility_renderer() 恒 true
 ## （feature_flags.gd:464-465），桌面 Forward+/Mobile 恒 false → 桌面路径不变。
 static func web_min_active() -> bool:
-	return DCFeatureFlags.is_compatibility_renderer()
+	return ResourceShaderVariants.web_min_active()
 
 
 ## 运行期真正会交给驱动的那份源码前缀（tiled 只可能出现在桌面）。
 ## 这是 **surface** pass 的前缀；矿物 batch 用 geology_variant_prefix()。
 static func shader_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
-	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
-	if web_min_active():
-		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_SURFACE_DEFINE
-	if cloud_shadow_direct:
-		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-	return prefix
+	return ResourceShaderVariants.shader_variant_prefix(tiled, cloud_shadow_direct)
 
 
 ## 矿物 batch（batch 2）那份程序的前缀。除 pass 宏外与 surface **逐字相同**：
 ## 两份程序共享同一套 uniform，差一个字节驱动就不认缓存。
 static func geology_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
-	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
-	if web_min_active():
-		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_GEOLOGY_DEFINE
-	if cloud_shadow_direct:
-		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-	return prefix
+	return ResourceShaderVariants.geology_variant_prefix(tiled, cloud_shadow_direct)
 
 
 ## 菜单期预热用：与运行期首次绘制时的前缀**同源**。非 web 返回空串（预热本身只在
 ## web 上跑，见 WebShaderWarmup.run）。web 上 visual_tiles 恒为 null
 ## （map_baker.gd:1276-1279），所以运行期的 tiled 也是 false，两份前缀逐字相同。
 static func warmup_prefix() -> String:
-	return shader_variant_prefix(false) if web_min_active() else ""
+	return ResourceShaderVariants.warmup_prefix()
 
 
 ## 菜单期预热用：geology 那份的前缀（与运行期 geology_variant_prefix(false) 同源）。
 static func geology_warmup_prefix() -> String:
-	return geology_variant_prefix(false) if web_min_active() else ""
+	return ResourceShaderVariants.geology_warmup_prefix()
 
 
 ## 菜单期预热用：返回运行期真正会交给驱动的那份源码。WebShaderWarmup 只负责调它，
 ## 不自己拼宏串（差一个字节驱动就不认缓存、预热白做）。
 static func compose_shader_code(source: Shader) -> String:
-	if source == null:
-		return ""
-	return warmup_prefix() + source.code
+	return ResourceShaderVariants.compose_shader_code(source)
 
 
 ## 菜单期预热：web 上本图层有**两份**程序，必须各编一遍，否则进世界还会再编一次。
 ## 返回 {label: code}，与 ShrubLayer.web_warmup_shader_codes() 同构，
 ## 让 WebShaderWarmup 只负责遍历、不自己拼宏串。
 static func web_warmup_shader_codes() -> Dictionary:
-	if not web_min_active():
-		return {}
-	var source := RESOURCE_SHADER
-	if source == null:
-		return {}
-	var body := String(source.code)
-	return {
-		"resource_impostor": warmup_prefix() + body,
-		"resource_impostor_geology": geology_warmup_prefix() + body,
-	}
+	return ResourceShaderVariants.web_warmup_shader_codes()
 
 
 @export var profile: Resource = DEFAULT_PROFILE
@@ -752,21 +735,7 @@ func world_presence_allowed(cell: int, style: int, band: int) -> bool:
 # 动物是真实比例的小兽群，水产与水下油气是水下贴花。植物不再是实例：它们是
 # ResourceGroundCover 里跨格连续的野生群落，这里只保留透镜徽章。
 static func visual_plan(entry: Dictionary, source_water: bool) -> int:
-	var family := int(entry.family)
-	var form := int(entry.form)
-	if source_water:
-		return PLAN_SUBMERGED if family == 3 or form == 21 or form == 25 else 0
-	if family == 3:
-		return PLAN_SUBMERGED # River fish: only where the river body itself passes.
-	if form == 26:
-		return PLAN_BADGE # 木材：森林本身就是木材，世界里不再叠原木，只保留透镜徽章。
-	if family == 0:
-		return PLAN_BADGE # 植物群落由地被层绘制。
-	if form in GROUND_FORMS:
-		return PLAN_DECAL
-	if form in DEPOSIT_FORMS:
-		return PLAN_DECAL | PLAN_PROP
-	return PLAN_PROP
+	return ResourceInstancePlan.visual_plan(entry, source_water)
 
 func _append_cell(cell: int, buffers: Array) -> void:
 	var selected := selected_styles(cell)
@@ -990,19 +959,7 @@ func drain_one_upload() -> bool:
 	return true
 
 static func _keep_important_instances(buffer: PackedFloat32Array, count: int) -> PackedFloat32Array:
-	var order: Array[int] = []
-	for i in buffer.size() / STRIDE:
-		order.append(i)
-	order.sort_custom(func(a: int, b: int) -> bool:
-		var av := buffer[a * STRIDE + 10]
-		var bv := buffer[b * STRIDE + 10]
-		return av > bv if av != bv else a < b)
-	var result := PackedFloat32Array()
-	result.resize(count * STRIDE)
-	for i in count:
-		for k in STRIDE:
-			result[i * STRIDE + k] = buffer[order[i] * STRIDE + k]
-	return result
+	return ResourceInstancePlan._keep_important_instances(buffer, count)
 
 func _sync_wrap_visibility(key: Vector2i) -> void:
 	var size := Vector2(_hex * 16.0 * sqrt(3.0), _hex * 24.0)
@@ -1090,6 +1047,4 @@ func diagnostics() -> Dictionary:
 	return result
 
 static func _hash(cell: int, salt: int) -> float:
-	var value := ((cell + 1) * 1103515245 + (salt + 71) * 12345) & 0x7fffffff
-	value = ((value ^ (value >> 13)) * 1274126177) & 0x7fffffff
-	return float(value) / 2147483647.0
+	return ResourceInstancePlan._hash(cell, salt)

@@ -17,7 +17,7 @@ Godot 4.6.2 / RTX4080 隔离 GPU 检查：五种宏变体、三层深度的 15 �
 
 ## 山地高度与烘焙起伏（2026-11-09）
 
-原生 base 生成在 `world_ext_generate.cpp` 冻结山脊基底，按陆地 p99 分配统一增量比例；
+原生 base 生成在 `world_ext_generate_base.cpp` 冻结山脊基底，按陆地 p99 分配统一增量比例；
 必要时基底以海平面为锚线性缩放。只有顶部约 1% 使用导数连续的软收尾，
 不再按地图尺寸混入旧的逐点指数压缩。`ridge_budget_scale`、`ridge_base_scale`、
 `ridge_tail_cells`、`ridge_land_cells`、`ridge_elevation_cap` 由 base/full 结果包返回。
@@ -65,6 +65,12 @@ Godot 4.6.2 / OpenGL Compatibility 隔离渲染探针：云影、桌面天气云
 核查日期：2026-11-10。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
 
 范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
+
+19 处文件增长超限已按职责抽出 22 个脚本助手与 4 个 C++ 文件。
+默认长度限制未修改，已有登记只收紧；新文件没有超限豁免。
+诊断耗时桶与排版诊断标记分别只有 `WorldDayCostProbe`、`GameHudLayout` 持有；
+原生世界、命令序号、保存段、生成算法、编译缓存与日推进所有者不变。
+具体实现位置和回调边界见 [源文件职责拆分](source-module-splits.md)。
 
 2026-11-08 经济平衡：C++仍为唯一结算权威，生存/生活需求评分寄生于既有市场循环。
 基本生活采用75%需求均值与25%最弱项；适用且职业正权重的舒适/奢侈需求分别提供

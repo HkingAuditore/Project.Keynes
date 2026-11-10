@@ -2,7 +2,7 @@
 
 ## 山地起伏调参与验收
 
-生成高程归 `gdext/src/world_ext_generate.cpp`；山脊增量必须读冻结基底，
+生成高程归 `gdext/src/world_ext_generate_base.cpp`；山脊增量必须读冻结基底，
 先用统一高度预算再收尾尖峰，不恢复按格逐点压缩或读已写邻格。
 预算诊断通过 base/full 结果包的 `ridge_*` 字段检查；正常软收尾应不超过
 陆地约 1%，高海平面也须保留正的山脊预算。初始 elevation 改动必须重新生成地图。
@@ -110,7 +110,7 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
   Shader 日/游戏年的比例在 HexRenderer 的 `shader_days_per_game_year` 调整，默认2，允许0和小数；renderer 经窄 Callable 配置 WorldClock，默认相位按累计年进度映射，跨年不重置小数比例。
   永昼最大时角和最低高度在 HexRenderer 的“永昼太阳”分组通过 `eternal_max_hour_angle_deg` / `eternal_min_elevation_deg` 调整（默认 70°/10°）；setter 统一换算弧度并推送各材质，初始化/重建时重放，不随日相位重复推送。
 
-- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 80% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；调整后运行 `tests/technology/era_advancement_service_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
+- 时代晋升规则统一放在 `EraAdvancementCatalog`：科技 80% 必达，人口/已落成建筑/本时代贸易三选二；经济门槛为目标时代基数加每地块要求。物资篮子按时代倍率放大，筹备基数与逐格量相加。`EraAdvancementService` 仅在开始时冻结物资订单，原生采购与 Country 原子消耗保持既有路径；条件投影运行 `tests/game/module_projection_boundaries_test.gd`，玩家界面运行 `tests/game/player_country_ui_smoke_test.gd`。已启动订单（含旧存档）沿用保存的冻结数量。
 
 - 军事兵种份额：玩家局部修改经 `MilitaryFacade.submit` 将稳定 id 解析为完整 `int_pairs` 后提交；原生 `config.set` 是整表替换。改动此链路时运行 `tests/ui/military_config_command_test.gd`，避免空命令或清除其他兵种配比。
 - 军事部队编成：地块军事页从格快照中的本国驻军 lots 形成 `army.create` 请求；PlayerController 复核本国领土与占领状态，GDScript 不直接改写驻军或部队。入口与请求契约见 `docs/ui/military-cell-tab.md`。
@@ -129,6 +129,11 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 4. 文件型诊断开关（如 `PK_SIM_DAY_TRACE`）只接受绝对路径；测试前后会检查新增的非源码文件，有就失败。
 
 ## 机械搬迁与拆分
+
+已接入的脚本助手和原生生成/烘焙文件见 [源文件职责拆分](source-module-splits.md)。
+晋升条件、命令参数检查、显示模型、资源构造、HUD 排版与诊断各有明确入口；
+助手只接收对应输入或原接收者绑定的 Callable。抽出函数时除函数体外还要核对参数名、
+返回类型、默认值及实际传参，逐个脚本做 `--check-only`，不能只依据编辑器导入成功。
 
 - 一组一组做：冻结参照、按成员比较签名与函数体词元（含字面量）、串行构建、主黄金三次。静态缓存、`thread_local` 和有初始化副作用的辅助函数保持单一归属；无状态匿名辅助函数可以复制。
 - 新文件不超过 2000 行，不为新文件开超限豁免。超限文件变短后用 `check_size_ratchet.py` 写候选，确认只有变小的条目变化再收紧。

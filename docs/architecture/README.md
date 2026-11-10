@@ -7,6 +7,7 @@
 3. [module-boundaries.md](module-boundaries.md)：数据归属、模块公开接口与宿主端口、依赖棘轮、已提交视图、请求与提交、行数棘轮。
 4. [development-guide.md](development-guide.md)：怎样改模块、加接口/端口/读边/请求/存档字段、搬迁文件、跑检查、维护黄金基线、做性能验证。
 5. [migration.md](migration.md)：迁移目标各项的状态、推迟项和最近一次验证。
+6. [source-module-splits.md](source-module-splits.md)：19 处增长超限的职责拆分、当前实现位置与输入边界。
 
 规则：
 

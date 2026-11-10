@@ -2,6 +2,16 @@
 # 单一全屏 quad mesh + WorldData 的 4 张高分辨率纹理 + world_map.gdshader v5。
 class_name HexRenderer
 extends Node2D
+const RendererMapAssets = preload("res://scripts/rendering/renderer_map_assets.gd")
+
+const RendererLightingBindings = preload("res://scripts/rendering/renderer_lighting_bindings.gd")
+
+const RendererWeatherInputs = preload("res://scripts/rendering/renderer_weather_inputs.gd")
+
+const DetailProfileSelection = preload("res://scripts/rendering/detail_profile_selection.gd")
+
+const RendererSeaIceDiagnostics = preload("res://scripts/rendering/renderer_sea_ice_diagnostics.gd")
+
 
 ## 加载期逐层构建进度（只用于"正在生成世界"进度条，不改变图层构建逻辑/数量）。
 ## layer_index 从 1 开始计"已完成层数"，layer_count 是本轮总层数。
@@ -1102,7 +1112,7 @@ var _shader_source_mtime: int = 0
 # Milestone 3：天气子系统数组上传
 # 与 shader 端 weather_front_centers[MAX_WEATHER_FRONTS] 长度严格一致；
 # 0 fronts 时仍填满 16 个 zero-vec，避免 shader 端越界采样。
-const MAX_WEATHER_FRONTS := 16
+const MAX_WEATHER_FRONTS = RendererWeatherInputs.MAX_WEATHER_FRONTS
 
 # ─── 任务 1：性能采样器（30 秒窗口内 avg + P95） ───────────────────────
 # 统计窗口通过 ring buffer，不分配；每 REPORT_INTERVAL_SEC 打印一次结果。
@@ -1749,50 +1759,23 @@ func _bind_world_lighting_profile() -> void:
 
 
 func _push_world_lighting_profile() -> void:
-	if _shader_mat == null:
-		return
-	var profile := world_lighting_profile
-	var zero_sh := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
-	var day_sh := profile.day_sh_l1 if profile != null and profile.day_sh_l1.size() == 4 else zero_sh
-	var night_sh := profile.night_sh_l1 if profile != null and profile.night_sh_l1.size() == 4 else zero_sh
-	_push_world_uniform("sky_ibl_bound", profile != null and profile.day_sh_l1.size() == 4
-		and profile.night_sh_l1.size() == 4)
-	_push_world_uniform("sky_ambient_strength", profile.ambient_strength if profile != null else 1.0)
-	_push_world_uniform("sky_day_sh_l1", day_sh)
-	_push_world_uniform("sky_night_sh_l1", night_sh)
-	var needs_irradiance := _shader_declares_uniform(_shader_mat.shader, &"sky_irradiance_array")
-	var needs_reflection := needs_irradiance \
-		or _shader_declares_uniform(_shader_mat.shader, &"sky_specular_array") \
-		or (_water_mat != null and _shader_declares_uniform(_water_mat.shader, &"sky_specular_array"))
-	var irradiance_array := profile.get_irradiance_array() \
-		if profile != null and needs_irradiance else null
-	var specular_array := profile.get_specular_array() \
-		if profile != null and needs_reflection else null
-	_push_world_uniform("sky_irradiance_array", irradiance_array)
-	_push_world_uniform("sky_irradiance_bound", irradiance_array != null)
-	_push_world_uniform("sky_specular_array", specular_array)
-	_push_world_uniform("sky_specular_bound", specular_array != null)
-	_push_world_uniform("sky_specular_level_count", WorldLightingProfile.SPECULAR_LEVELS)
-	_push_world_uniform("sky_reflection_strength", profile.reflection_strength if profile != null else 1.0)
-	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
-	if _sky_background != null:
-		var bounds := _world.world_bounds if _world != null else Rect2()
-		_sky_background.setup(bounds, profile, _day_phase, day_night_enabled)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_world_sky_lighting"):
-			layer.set_world_sky_lighting(_shader_mat)
-	)
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
-			and _detail_family_layer.has_method("set_world_sky_lighting"):
-		_detail_family_layer.set_world_sky_lighting(_shader_mat)
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_terrain_lighting(_shader_mat)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_terrain_lighting(_shader_mat)
-	if is_instance_valid(_trade_visual_layer):
-		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
-	if is_instance_valid(_military_visual_layer):
-		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
+	RendererLightingBindings._push_world_lighting_profile(
+		_building_visual_layer,
+		_day_phase,
+		_detail_family_layer,
+		_military_visual_layer,
+		_resource_visual_layer,
+		_shader_mat,
+		_sky_background,
+		_trade_visual_layer,
+		_water_mat,
+		_world,
+		day_night_enabled,
+		world_lighting_profile,
+		_for_each_vegetation_layer,
+		_global_sky_day_weight,
+		_push_world_uniform,
+		_shader_declares_uniform)
 
 
 func _shader_declares_uniform(shader: Shader, uniform_name: StringName) -> bool:
@@ -2044,93 +2027,21 @@ func _create_water_quad(prefix: String, kind: String) -> void:
 ## _push_cell_lut_dims / _sync_cell_lut_textures / setter），这里负责"材质重建后
 ## 一次性把全部输入对齐"，与 _apply_uniforms() 的职责一一对应。
 func _apply_water_uniforms() -> void:
-	if _water_mat == null or _world == null:
-		return
-	var sm := _water_mat
-	_push_water_params_to(sm)
-	if _water_uses_world_map and _shader_mat != null:
-		# Bind the PC water inputs from the terrain material after its full push.
-		# Shared textures update in place; this loop runs on bind/reconfiguration only.
-		for param in _shader_mat.shader.get_shader_uniform_list():
-			var key := StringName(param.name)
-			var value = _shader_mat.get_shader_parameter(key)
-			if value != null:
-				sm.set_shader_parameter(key, value)
-		# 水面程序是独立材质，主材质绑过的采样器不会自动跟过来：噪声包（波浪细节
-		# 法线）与水深在这里显式补绑，避免材质重建后丢采样器。
-		if _world.noise_tex != null:
-			sm.set_shader_parameter("noise_tex", _world.noise_tex)
-		if not _visual_tiles_active() and _world.water_depth_tex != null:
-			sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-		if _world.ocean_current_flow_tex != null:
-			sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
-			sm.set_shader_parameter("ocean_current_flow_tex_bound", true)
-	var tiled := _visual_tiles_active()
-	var bounds := _world.world_bounds
-	if tiled:
-		var visual_tiles = _world.visual_tiles
-		# 布局 uniform 与主地形共用同一个推送函数，避免两处各写一遍 7 个参数。
-		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
-		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
-		# [land-water-split 2026-11-02] 桌面 tiled 的拆分水面 program 与陆地 program
-		# 用同一套采样预算（VT_USE_* 相同），水深/法线等数组也必须绑，否则采到空白。
-		if _water_uses_world_map:
-			sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
-			sm.set_shader_parameter("visual_terrain_relief_tiles", visual_tiles.terrain_relief)
-			sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
-			sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
-			sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
-			sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
-			if visual_tiles.horizon != null:
-				sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
-			if visual_tiles.gi_occluder != null:
-				sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
-		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
-	else:
-		sm.set_shader_parameter("height_tex", _world.height_tex)
-		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-		# [terrain-web-baked-surface-B 2026-11-01] 水面 depth 纹理：Web 两个水面程序
-		# （HIGH water 走 PC water_pipeline 的 ctx.water_depth_px；compact water 走
-		# visual_sample_water_depth）都在非 tiled 分支消费它。桌面 tiled 走主 pass 的
-		# visual_water_depth_tiles，与本 pass 无关。
-		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-		# [surface-array-edge 2026-11-02] 两个水面程序都与陆地程序共用同一个 6 层
-		# surface array（HIGH water 7→8 槽、compact water 5→6 槽），用来恢复
-		# edge_mix / shore_frac / 次生水格。层数门控与陆地 program 同源：
-		# 不足 6 层时 shader 侧 helper 返回中性值，水色退回 C 回合的硬边行为。
-		var water_surface_layers := 0
-		if _world.terrain_surface_tex != null:
-			water_surface_layers = int(_world.terrain_surface_tex.get_layers())
-		sm.set_shader_parameter("terrain_surface_tex", _world.terrain_surface_tex)
-		sm.set_shader_parameter("terrain_surface_layer_count", water_surface_layers)
-		sm.set_shader_parameter("terrain_edge_layers_bound", water_surface_layers >= 6)
-		# 与 _apply_uniforms 的同名推送同值（世界地图两片必须逐项同值，否则色差）。
-		sm.set_shader_parameter("has_terrain_edge_data",
-			(_world.terrain_edge_neighbor_tex != null
-				and _world.terrain_edge_distance_tex != null)
-			or water_surface_layers >= 6)
-		sm.set_shader_parameter("terrain_static_baked", water_surface_layers >= 6)
-		# [surface-array-edge 2026-11-02] compact 水面自行声明的 ecotone 宽度（与
-		# uniforms.gdshaderinc 同一个 @export 值）；世界地图水面程序会从主材质整表拷贝。
-		sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
-	sm.set_shader_parameter("has_water_depth_tex", _world.water_depth_tex != null)
-	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
-	sm.set_shader_parameter("ocean_current_flow_tex_bound", _world.ocean_current_flow_tex != null)
-	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
-	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-	sm.set_shader_parameter("lut_dims", Vector2(_world.lut_dims.x, _world.lut_dims.y))
-	sm.set_shader_parameter("world_origin", bounds.position)
-	sm.set_shader_parameter("world_size", bounds.size)
-	sm.set_shader_parameter("wrap_origin_x", 0.0)
-	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
-	# 羊皮纸：这两项必须与主地形取同一个属性值（_apply_uniforms 也是从这里推的），
-	# 否则拆成两 pass 后水陆会差一层色调。
-	sm.set_shader_parameter("parchment_tint", parchment_tint)
-	sm.set_shader_parameter("parchment_strength", parchment_strength)
-	# 调试视图让位开关（pass 1 整屏输出诊断色时本 pass 必须整体 discard）。
-	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
-	_push_water_lighting_uniforms()
-	_push_water_fog_uniforms()
+	RendererLightingBindings._apply_water_uniforms(
+		_shader_mat,
+		_water_mat,
+		_water_uses_world_map,
+		_world,
+		parchment_strength,
+		parchment_tint,
+		terrain_ecotone_width,
+		terrain_surface_debug_view,
+		_push_visual_tile_layout_uniforms,
+		_push_water_fog_uniforms,
+		_push_water_lighting_uniforms,
+		_push_water_params_to,
+		_visual_tiles_active,
+		_wrap_period_x)
 
 
 func _push_water_lighting_uniforms() -> void:
@@ -3557,33 +3468,7 @@ func _detail_profiles() -> Array:
 
 # 按"保留价值"裁层，但保持原始绘制顺序（层序是 shader / 家族 mask 的稳定契约）。
 func _select_platform_limited_detail_profiles(layers: Array) -> Array:
-	var total := layers.size()
-	if total <= 1:
-		return layers
-	var keep := maxi(1, int(round(float(total) * _web_mobile_layer_keep_ratio())))
-	if keep >= total:
-		return layers
-	var ranked: Array = []
-	for i in range(total):
-		ranked.append({
-			"index": i,
-			"priority": _detail_profile_keep_priority(layers[i]),
-		})
-	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		var pa := int(a.get("priority", 0))
-		var pb := int(b.get("priority", 0))
-		if pa != pb:
-			return pa > pb
-		return int(a.get("index", 0)) < int(b.get("index", 0))
-	)
-	var keep_indices: Array = []
-	for i in range(keep):
-		keep_indices.append(int(ranked[i].get("index", 0)))
-	keep_indices.sort()
-	var out: Array = []
-	for raw_index in keep_indices:
-		out.append(layers[int(raw_index)])
-	return out
+	return DetailProfileSelection._select_platform_limited_detail_profiles(_web_mobile_layer_keep_ratio(), layers)
 
 
 # 一层的"保留价值"分档（越大越先保留）。判据不是实例数，而是
@@ -3597,54 +3482,6 @@ func _select_platform_limited_detail_profiles(layers: Array) -> Array:
 #   带专属底色的乔木（云雾林 / 季风林）与通用阔叶层同形同 biome，只是多一层配色，
 #   优先级最低——通用阔叶层已经在同一片林子里出树了。
 # 同分时按 manifest 顺序（越靠前越容易保留）。
-func _detail_profile_keep_priority(prof: Resource) -> int:
-	if prof == null:
-		return 0
-	var form := -1
-	if prof.has_method("resolved_visual_form"):
-		form = int(prof.call("resolved_visual_form"))
-	# "额外配色"的乔木变体：与通用阔叶层同形，降档到点缀级。
-	if form == ShrubVisualProfile.FORM_BROADLEAF \
-			and bool(prof.get("base_color_override_enabled")):
-		return 40
-	match form:
-		ShrubVisualProfile.FORM_BROADLEAF:
-			return 100
-		ShrubVisualProfile.FORM_SHRUB:
-			return 98
-		ShrubVisualProfile.FORM_GRASS:
-			return 96
-		ShrubVisualProfile.FORM_CONIFER:
-			return 92
-		ShrubVisualProfile.FORM_PALM:
-			return 88
-		ShrubVisualProfile.FORM_CACTUS:
-			return 84
-		ShrubVisualProfile.FORM_REED:
-			return 80
-		ShrubVisualProfile.FORM_ROCK:
-			return 70
-		ShrubVisualProfile.FORM_SCREE:
-			return 66
-		ShrubVisualProfile.FORM_FLOWER:
-			return 62
-		ShrubVisualProfile.FORM_LICHEN:
-			return 60
-		ShrubVisualProfile.FORM_PEAT_TUFT:
-			return 58
-		ShrubVisualProfile.FORM_MANGROVE:
-			return 56
-		ShrubVisualProfile.FORM_FALLEN_LOG:
-			return 54
-		ShrubVisualProfile.FORM_SNAG:
-			return 52
-		ShrubVisualProfile.FORM_SNOW_MOUND:
-			return 44
-		ShrubVisualProfile.FORM_KELP:
-			return 20
-		ShrubVisualProfile.FORM_CORAL:
-			return 18
-	return 1
 
 
 # 是否当前用的是默认三层（未配置 manifest）。
@@ -4423,14 +4260,7 @@ func _push_terrain_horizon_uniforms() -> void:
 # 8 个方向的天空可见度与 bent normal 时就完全没有三角函数调用。
 # max_angle 是 uniform（可在场景里调），所以这张表不能做成 shader 常量，必须随之重推。
 static func build_gi_horizon_lut(max_angle: float) -> PackedVector3Array:
-	var lut := PackedVector3Array()
-	lut.resize(16)
-	for i in range(16):
-		var h: float = float(i) / 15.0 * max_angle
-		var m: float = (h + PI * 0.5) * 0.5
-		var c: float = cos(h)
-		lut[i] = Vector3(c * c, cos(m), sin(m))
-	return lut
+	return RendererMapAssets.build_gi_horizon_lut(max_angle)
 
 
 func _push_gi_strength_uniforms(sm: ShaderMaterial) -> void:
@@ -5104,42 +4934,11 @@ func _on_weather_layer_visual_fronts_changed(fronts: Array) -> void:
 	_push_weather_fronts_to_shader(fronts)
 
 func _push_weather_fronts_to_shader(fronts: Array) -> void:
-	if _shader_mat == null:
-		return
-	var centers := PackedVector4Array()
-	var shapes := PackedVector4Array()
-	var visuals := PackedVector4Array()
-	var types := PackedFloat32Array()
-	centers.resize(MAX_WEATHER_FRONTS)
-	shapes.resize(MAX_WEATHER_FRONTS)
-	visuals.resize(MAX_WEATHER_FRONTS)
-	types.resize(MAX_WEATHER_FRONTS)
-	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
-	for i in range(MAX_WEATHER_FRONTS):
-		if i < n:
-			var f = fronts[i]
-			var c: Vector2 = _front_center(f)
-			centers[i] = Vector4(c.x, c.y, _front_radius(f), _front_intensity(f))
-			var ax: Vector2 = _front_axis(f)
-			shapes[i] = Vector4(ax.x, ax.y, _front_major_scale(f), _front_minor_scale(f))
-			visuals[i] = Vector4(
-				_front_cloud_amount(f),
-				_front_precip_amount(f),
-				_front_dissolve_amount(f),
-				_front_life_progress(f)
-			)
-			types[i] = float(_front_type(f))
-		else:
-			centers[i] = Vector4.ZERO
-			shapes[i] = Vector4(1.0, 0.0, 1.0, 1.0)
-			visuals[i] = Vector4.ZERO
-			types[i] = -1.0
-	_push_world_uniform("weather_front_centers", centers)
-	_push_world_uniform("weather_front_shapes", shapes)
-	_push_world_uniform("weather_front_visuals", visuals)
-	_push_world_uniform("weather_front_types", types)
-	_push_world_uniform("weather_front_count", n)
-	_update_detail_wind_field(fronts, n)
+	RendererWeatherInputs._push_weather_fronts_to_shader(
+		_shader_mat,
+		_push_world_uniform,
+		_update_detail_wind_field,
+		fronts)
 
 # 阶段 D：由天气锋面聚合出植被风场。方向 = Σ(主轴·强度) 归一化；附加风强 =
 # 各锋面 max(强度, 降水)·强度 的峰值。无锋面（n==0）时退回轻柔常量盛行风。
@@ -5166,65 +4965,22 @@ func _update_detail_wind_field(fronts: Array, n: int) -> void:
 	_detail_wind_dir = dir.normalized() if dir.length() > 0.0001 else Vector2(1.0, 0.18)
 	_detail_wind_boost = clampf(boost, 0.0, 1.0)
 
-func _front_center(front) -> Vector2:
-	if front is Dictionary:
-		return front.get("center", Vector2.ZERO)
-	return front.center
 
-func _front_radius(front) -> float:
-	if front is Dictionary:
-		return float(front.get("radius", 0.0))
-	return float(front.radius)
 
-func _front_type(front) -> int:
-	if front is Dictionary:
-		return int(front.get("type", WeatherType.WT.CLEAR))
-	return int(front.type)
 
 func _front_intensity(front) -> float:
-	if front is Dictionary:
-		return clampf(float(front.get("intensity", 0.0)), 0.0, 1.0)
-	return clampf(float(front.intensity), 0.0, 1.0)
+	return RendererWeatherInputs._front_intensity(front)
 
 func _front_axis(front) -> Vector2:
-	var ax: Vector2 = Vector2.RIGHT
-	if front is Dictionary:
-		ax = front.get("axis", Vector2.RIGHT)
-	elif front.has_method("normalized_axis"):
-		ax = front.normalized_axis()
-	if ax.length_squared() <= 0.0001:
-		return Vector2.RIGHT
-	return ax.normalized()
+	return RendererWeatherInputs._front_axis(front)
 
-func _front_major_scale(front) -> float:
-	if front is Dictionary:
-		return maxf(float(front.get("major_scale", 1.0)), 0.05)
-	return maxf(float(front.major_scale), 0.05)
 
-func _front_minor_scale(front) -> float:
-	if front is Dictionary:
-		return maxf(float(front.get("minor_scale", 1.0)), 0.05)
-	return maxf(float(front.minor_scale), 0.05)
 
-func _front_cloud_amount(front) -> float:
-	if front is Dictionary:
-		return clampf(float(front.get("cloud_amount", _front_intensity(front))), 0.0, 1.0)
-	return clampf(float(front.cloud_amount), 0.0, 1.0)
 
 func _front_precip_amount(front) -> float:
-	if front is Dictionary:
-		return clampf(float(front.get("precip_amount", _front_intensity(front))), 0.0, 1.0)
-	return clampf(float(front.precip_amount), 0.0, 1.0)
+	return RendererWeatherInputs._front_precip_amount(front)
 
-func _front_dissolve_amount(front) -> float:
-	if front is Dictionary:
-		return clampf(float(front.get("dissolve_amount", 0.0)), 0.0, 1.0)
-	return clampf(float(front.dissolve_amount), 0.0, 1.0)
 
-func _front_life_progress(front) -> float:
-	if front is Dictionary:
-		return clampf(float(front.get("life_progress", 0.0)), 0.0, 1.0)
-	return clampf(float(front.life_progress), 0.0, 1.0)
 
 func _rebuild() -> void:
 	if _world_quad == null:
@@ -5517,31 +5273,7 @@ func _build_coverage_meshes(bounds: Rect2, wrap_period_x: float) -> Dictionary:
 
 
 func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
-	var p := bounds.position
-	var s := bounds.size
-	if wrap_period_x > 0.0001:
-		p.x = 0.0
-		s.x = wrap_period_x
-	var verts := PackedVector2Array()
-	var indices := PackedInt32Array()
-	var tile_offsets := PackedFloat32Array([0.0])
-	if wrap_period_x > 0.0001:
-		tile_offsets = PackedFloat32Array([-wrap_period_x, 0.0, wrap_period_x])
-	for ox in tile_offsets:
-		var base := verts.size()
-		var tp := p + Vector2(float(ox), 0.0)
-		verts.append(tp)
-		verts.append(tp + Vector2(s.x, 0.0))
-		verts.append(tp + s)
-		verts.append(tp + Vector2(0.0, s.y))
-		indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return RendererMapAssets._build_world_quad_mesh(bounds, wrap_period_x)
 
 func _push_visual_tile_layout_uniforms(material: ShaderMaterial, layout) -> void:
 	material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
@@ -5902,32 +5634,7 @@ func _apply_uniforms() -> void:
 #   vegetation_anomaly_shift[VEG_COUNT] : 按 [veg] 索引（VEG_COUNT=28）
 # 仅在 setup / _apply_uniforms 调用一次（植被资源不会运行时变化）。
 func _push_vegetation_season_lut() -> void:
-	if _shader_mat == null:
-		return
-	const VEG_COUNT := 28
-	var lut := PackedVector4Array()
-	lut.resize(VEG_COUNT * 4)
-	var shifts := PackedVector4Array()
-	shifts.resize(VEG_COUNT)
-	for veg in range(VEG_COUNT):
-		var profile: VegetationProfile = VegetationProfileRegistry.get_profile(veg)
-		if profile == null:
-			# 未知 veg → 写中性白 / 零偏移，避免 shader 拿到未初始化数据。
-			for s in range(4):
-				lut[veg * 4 + s] = Vector4(1.0, 1.0, 1.0, 1.0)
-			shifts[veg] = Vector4(0.0, 0.0, 0.0, 0.0)
-			continue
-		var profile_lut := profile.season_color_lut
-		for s in range(4):
-			if profile_lut != null and s < profile_lut.size():
-				var c: Color = profile_lut[s]
-				lut[veg * 4 + s] = Vector4(c.r, c.g, c.b, c.a)
-			else:
-				lut[veg * 4 + s] = Vector4(1.0, 1.0, 1.0, 1.0)
-		var shift: Color = profile.anomaly_color_shift
-		shifts[veg] = Vector4(shift.r, shift.g, shift.b, shift.a)
-	_push_world_uniform("vegetation_season_lut", lut)
-	_push_world_uniform("vegetation_anomaly_shift", shifts)
+	RendererMapAssets._push_vegetation_season_lut(_shader_mat, _push_world_uniform)
 
 # ─── Fast-tick perf opt (E)：细粒度纹理重绑接口 ──────────────────────────
 # 背景：原 `set_map` 路径会触发 `_rebuild` → `_build_world_quad_mesh` + `_apply_uniforms`，
@@ -5978,151 +5685,7 @@ func set_vegetation_tex_only(world: WorldData) -> void:
 #
 # biome id 仅作上下文参考——阶段 A 之后 shader 已不依赖 biome 决定海冰渲染。
 func debug_sea_ice_probe(cell) -> Dictionary:
-	var report := {
-		"ok": false,
-		"reason": "",
-		"sea_ice_fraction_cpu": 0.0,
-		"dyn_smooth_a_byte": -1,
-		"dyn_smooth_a_norm": 0.0,
-		"biome": -1,
-		"px_idx": -1,
-	}
-	if cell == null:
-		report.reason = "cell is null"
-		print("[sea-ice/probe] %s" % report.reason)
-		return report
-	if _world == null or _map == null:
-		report.reason = "world/map not bound"
-		print("[sea-ice/probe] %s" % report.reason)
-		return report
-	report.sea_ice_fraction_cpu = float(cell.sea_ice_fraction)
-	if "terrain" in cell:
-		report.biome = int(cell.terrain)
-	report.reason = "sea ice visual source moved to dyn_lut.a; per-pixel probe retired"
-	report.ok = true
-	print("[sea-ice/probe] cell=%s frac_cpu=%.4f biome=%d %s" % [
-		str(cell), report.sea_ice_fraction_cpu, report.biome, report.reason])
-	return report
-	# 取该 cell 第一个 derived 像素的 dyn_atlas_smooth.A 字节
-	var pixels: PackedInt32Array = PackedInt32Array()
-	if not _world.cell_pixel_lists.is_empty() and _world.cell_pixel_lists.has(cell):
-		pixels = _world.cell_pixel_lists[cell]
-	if pixels.size() <= 0:
-		report.reason = "cell has no pixels in cell_pixel_lists"
-		print("[sea-ice/probe] cell=%s frac_cpu=%.4f biome=%d %s" % [
-			str(cell), report.sea_ice_fraction_cpu, report.biome, report.reason])
-		return report
-	var px_idx: int = pixels[0]
-	report.px_idx = px_idx
-	var buf: PackedByteArray = _world.dyn_atlas_smooth_buffer
-	# sea-ice-render-source-unify 阶段 C 探针扩展：
-	# 同时读 dynamic_cell_atlas（未 smooth 的源 buffer）的 A 字节，便于区分
-	# A_byte 错误是发生在 dynamic phase 还是 smooth phase。
-	var raw_buf: PackedByteArray = _world.dynamic_cell_atlas_buffer
-	var W: int = int(_world.derived_size.x)
-	var H: int = int(_world.derived_size.y)
-	var n_pix: int = W * H
-	if buf.size() < n_pix * 4:
-		report.reason = "dyn_atlas_smooth_buffer not ready (size=%d expected=%d)" % [buf.size(), n_pix * 4]
-		print("[sea-ice/probe] %s" % report.reason)
-		return report
-	if px_idx < 0 or px_idx >= n_pix:
-		report.reason = "px_idx out of range (%d not in [0,%d))" % [px_idx, n_pix]
-		print("[sea-ice/probe] %s" % report.reason)
-		return report
-	var a_byte: int = int(buf[px_idx * 4 + 3])
-	var raw_r: int = -1
-	var raw_g: int = -1
-	var raw_b: int = -1
-	var raw_a_byte: int = -1
-	if raw_buf.size() >= n_pix * 4:
-		raw_r = int(raw_buf[px_idx * 4 + 0])
-		raw_g = int(raw_buf[px_idx * 4 + 1])
-		raw_b = int(raw_buf[px_idx * 4 + 2])
-		raw_a_byte = int(raw_buf[px_idx * 4 + 3])
-	report.dyn_smooth_a_byte = a_byte
-	report.dyn_smooth_a_norm = float(a_byte) / 255.0
-	report.ok = true
-	# 同源校验：水格上 a_byte 应 == q01_byte_ice(sea_ice_fraction_cpu)。
-	var expected_byte: int = 0
-	var v: float = report.sea_ice_fraction_cpu
-	if v > 0.0:
-		expected_byte = clampi(maxi(1, int(ceil(clampf(v, 0.0, 1.0) * 255.0))), 1, 255)
-	var passable_sea_str: String = "?"
-	if "passable_sea" in cell:
-		passable_sea_str = "true" if bool(cell.passable_sea) else "false"
-	var passable_land_str: String = "?"
-	if "passable_land" in cell:
-		passable_land_str = "true" if bool(cell.passable_land) else "false"
-	# 双源 SIF 对照：facade getter (cell.sea_ice_fraction) vs cpp read_f32 (cell_sea_ice_frac slot)
-	# 理论上 facade 已直读 cpp slot，这里再调一次 read_f32 直读 cpp，能确认 cpp slot 在探针时刻的真值。
-	var sif_via_facade: float = float(cell.sea_ice_fraction)
-	var sif_via_ext: float = -1.0
-	# 从 cell 里反射拿 _world_ext（HexCell facade 已存有该 ext 引用）
-	var ext = null
-	if "_world_ext" in cell:
-		ext = cell.get("_world_ext")
-	# 同时读 MapData.terrain_arr[idx]（cpp pipeline 用来查 is_water_lut 的源）
-	# 与 cell.terrain（HexCell facade 实时值）对比，验证 SoA 是否陈旧。
-	var terrain_via_facade: int = int(cell.terrain) if "terrain" in cell else -1
-	var terrain_via_soa: int = -1
-	# 探针使用 hex_renderer 已有的 _map 字段（不要走 world.map_data —— world_data.gd
-	# 没有 map_data 字段，会返回 null）。
-	var map_data_ref: MapData = _map
-	if map_data_ref != null and "index" in cell:
-		var tarr: PackedByteArray = map_data_ref.terrain_arr
-		var tidx: int = int(cell.index)
-		if tidx >= 0 and tidx < tarr.size():
-			terrain_via_soa = int(tarr[tidx])
-	var iw_via_lut: int = -1
-	var iw_via_render_lut: int = -1
-	if map_data_ref != null and terrain_via_soa >= 0:
-		var iwlut: PackedByteArray = MapData.is_water_lut()
-		if terrain_via_soa < iwlut.size():
-			iw_via_lut = int(iwlut[terrain_via_soa])
-		var iwlut_render: PackedByteArray = MapData.is_water_render_lut()
-		if terrain_via_soa < iwlut_render.size():
-			iw_via_render_lut = int(iwlut_render[terrain_via_soa])
-	if ext != null and ext.has_method(&"read_f32"):
-		# component_id 反查 cell_sea_ice_frac slot
-		var sif_cid: int = -1
-		if ext.has_method(&"component_id"):
-			sif_cid = int(ext.call(&"component_id", &"cell_sea_ice_frac"))
-		if sif_cid >= 0 and "index" in cell:
-			sif_via_ext = float(ext.call(&"read_f32", sif_cid, int(cell.index)))
-	# RGBA 全字节打印：raw_r/g/b 应是 q01(temp)/q01(moist)/q01(snow)
-	# raw_a 应是 q01_byte_ice(sif) for water cells
-	# 预期 R~q01(temp=0)=0, G~q01(moist≈适中)≈?, B~q01(snow=0)=0, A=q01_byte_ice(1.0)=255
-	print("[sea-ice/probe] cell=%s idx=%s passable_sea=%s passable_land=%s biome=%d" % [
-		str(cell), str(cell.index) if "index" in cell else "?",
-		passable_sea_str, passable_land_str, report.biome])
-	print("  SIF: facade=%.4f  cpp_slot=%.4f  → expected_a=%d" % [
-		sif_via_facade, sif_via_ext, expected_byte])
-	print("  terrain: facade=%d  soa(MapData.terrain_arr)=%d  → is_water_lut[soa]=%d render_lut[soa]=%d (1=water,0=land)" % [
-		terrain_via_facade, terrain_via_soa, iw_via_lut, iw_via_render_lut])
-	print("  raw_dyn RGBA = (%d, %d, %d, %d)  smooth.A = %d (norm=%.4f)  match=%s" % [
-		raw_r, raw_g, raw_b, raw_a_byte, a_byte, report.dyn_smooth_a_norm,
-		"YES" if a_byte == expected_byte else "MISMATCH"])
-	# [TEMP DIAG sea-ice probe-cpp-known]
-	# cpp [PHASE-D-SMO-OA] 已知写过 first_px=8584/4586/4843/5091/719/5245/274/961
-	# 且 oa=255。这里直接读 buf 这些位置的 A 字节，验证 cpp 写入是否真的到达了
-	# world.dyn_atlas_smooth_buffer 这个对象。
-	var _check_pxs: Array = [8584, 4586, 4843, 5091, 719, 5245, 274, 961]
-	var _check_str: String = "  cpp_written_check buf[smo].A @ "
-	for _px in _check_pxs:
-		var _i: int = int(_px)
-		if _i >= 0 and _i < n_pix:
-			_check_str += "%d=%d " % [_i, int(buf[_i * 4 + 3])]
-	print(_check_str)
-	# raw_dyn 同样位置 A 字节（cpp dyn 应该写 sig.A=255）
-	if raw_buf.size() >= n_pix * 4:
-		var _check_raw: String = "  cpp_written_check buf[dyn].A @ "
-		for _px in _check_pxs:
-			var _i: int = int(_px)
-			if _i >= 0 and _i < n_pix:
-				_check_raw += "%d=%d " % [_i, int(raw_buf[_i * 4 + 3])]
-		print(_check_raw)
-	return report
+	return RendererSeaIceDiagnostics.debug_sea_ice_probe(_world, _map, cell)
 
 func _setup_loading_vegetation_layer(layer: ShrubLayer) -> void:
 	layer.set_world_ext(_world_ext)
