@@ -37,6 +37,7 @@
 #endif
 
 #include "native_simulation_host_support.h"
+#include "runtime_control_wakeup.h"
 
 namespace pk {
 
@@ -78,6 +79,7 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 } // namespace
 
 void NativeSimulationHost::request_stop() {
+    std::lock_guard<std::mutex> admission(_command_enqueue_mutex);
     _authority_control.revoke();
     RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
@@ -100,8 +102,9 @@ void NativeSimulationHost::request_stop() {
                 std::memory_order_acq_rel, std::memory_order_acquire)) break;
     }
     if (inline_idle) _worker_timing.stop();
-    _stop_requested.store(true, std::memory_order_release);
-    _control_cv.notify_all();
+    runtime_control_wakeup(_control_mutex, _control_cv, [this] {
+        _stop_requested.store(true, std::memory_order_release);
+    });
 }
 
 void NativeSimulationHost::join_for_destruction() {
@@ -112,11 +115,12 @@ void NativeSimulationHost::join_for_destruction() {
 }
 
 void NativeSimulationHost::set_clock(bool paused, double speed_days_per_second) {
-    _worker_timing.pause(paused);
-    _paused.store(paused, std::memory_order_release);
-    _speed_days_per_second.store(std::max(0.0, speed_days_per_second),
-                                 std::memory_order_release);
-    _control_cv.notify_all();
+    runtime_control_wakeup(_control_mutex, _control_cv, [&] {
+        _worker_timing.pause(paused);
+        _paused.store(paused, std::memory_order_release);
+        _speed_days_per_second.store(std::max(0.0, speed_days_per_second),
+                                     std::memory_order_release);
+    });
 }
 
 void NativeSimulationHost::set_interactive(bool interactive) {
@@ -281,19 +285,15 @@ void NativeSimulationHost::worker_main() {
             ? RuntimeWorkerState::PAUSED : RuntimeWorkerState::RUNNING,
             std::memory_order_release);
     auto last = std::chrono::steady_clock::now();
-    // Allocate the bounded protocol capacity once when the worker starts.
-    // Daily command processing must not grow a vector in the simulation hot
-    // loop when a UI burst happens to exceed the usual batch size.
-    std::vector<RuntimeCommandPacket> pending_commands;
+    // The executor owns this world backlog until it exits. Keep it on Host so
+    // stop/start and switching executors preserve accepted, unconsumed work.
+    auto &pending_commands = _executor_pending_commands;
     pending_commands.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
     int64_t logged_pending_day = -1;
     uint32_t logged_pending_mask = 0;
     int64_t events_failed_wait_day = -1;
     uint64_t events_failed_since_us = 0;
     size_t pending_begin = 0;
-    if (!_executor_pending_commands.empty()) {
-        pending_commands = std::move(_executor_pending_commands);
-    }
     std::vector<RuntimeCommandReceipt> day_receipts;
     day_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     bool pending_commands_dirty = !pending_commands.empty();
@@ -330,7 +330,7 @@ void NativeSimulationHost::worker_main() {
         }
     };
     publish_pending_count();
-    std::shared_ptr<const RuntimeEnvironmentSnapshot> active_environment;
+    auto &active_environment = _executor_day_environment;
     try {
         while (!_stop_requested.load(std::memory_order_acquire) &&
                _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
@@ -416,7 +416,12 @@ void NativeSimulationHost::worker_main() {
                 _worker_timing.set(RuntimeWorkerTiming::CLOCK_WAIT);
                 _control_cv.wait_until(lock, std::chrono::steady_clock::now() +
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                        std::chrono::duration<double>(seconds_until_day)));
+                        std::chrono::duration<double>(seconds_until_day)), [&] {
+                    return _stop_requested.load(std::memory_order_acquire) ||
+                        _save_requested.load(std::memory_order_acquire) ||
+                        _paused.load(std::memory_order_acquire) ||
+                        _speed_days_per_second.load(std::memory_order_acquire) != speed;
+                });
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 continue;
             }
@@ -545,6 +550,7 @@ void NativeSimulationHost::worker_main() {
                     day, speed, environment.get(), admitted_submit_order);
                 _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
                 const auto day_attempt_started = std::chrono::steady_clock::now();
+                _inline_day_pending.store(true, std::memory_order_release);
                 const RuntimeDayCommit day_commit = execute_day_plan(
                     day_plan, environment.get(), day_commands, day_receipts,
                     admitted_submit_order);
@@ -1026,6 +1032,7 @@ void NativeSimulationHost::worker_main() {
                 _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
+                _inline_day_pending.store(false, std::memory_order_release);
                 // Still inside the boundary: the post-command committed state
                 // is stable, so this is where main-thread read demand is served.
                 if (_economy_production_runtime != nullptr &&
@@ -1060,6 +1067,8 @@ void NativeSimulationHost::worker_main() {
     } catch (...) {
         set_fault("unhandled_worker_exception");
     }
+    compact_pending_commands(true);
+    publish_pending_count();
     _worker_timing.stop();
     // STOPPED is the restart handoff: even timing cleanup must precede it,
     // otherwise the retiring worker can stop the next worker's timing state.

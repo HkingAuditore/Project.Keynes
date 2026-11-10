@@ -185,12 +185,15 @@ bool NativeSimulationHost::publish_country_catalog(
     RuntimeCountryPodAuthority validator;
     if (!validator.validate_catalog(catalog, error)) return false;
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
-    if (current != RuntimeWorkerState::STOPPED &&
-        current != RuntimeWorkerState::FAULTED) {
+    if ((current != RuntimeWorkerState::STOPPED &&
+         current != RuntimeWorkerState::FAULTED) || !execution_has_stopped()) {
         error = "country_catalog_publish_while_running";
         return false;
     }
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    // Recapturing an unchanged catalog is not a new world or a new protocol.
+    // Keep accepted requests, unclaimed terminals, and the committed snapshot.
+    if (_country_pod_catalog.catalog_hash == catalog.catalog_hash) return true;
     _country_pod_catalog = catalog;
     _country_pod_configured.store(false, std::memory_order_release);
     _country_pod_plan_active.store(false, std::memory_order_release);

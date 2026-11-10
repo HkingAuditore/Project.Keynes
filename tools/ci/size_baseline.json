@@ -50,7 +50,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
-      "lines": 2955,
+      "lines": 2934,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/hex_cell.gd": {
@@ -354,7 +354,7 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2152,
+      "lines": 2147,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {
@@ -418,7 +418,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_country.cpp": {
-      "lines": 2210,
+      "lines": 2180,
       "limit": 2000
     },
     "gdext/src/world_ext_daily_sim.cpp": {
@@ -442,7 +442,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_simulation_host.cpp": {
-      "lines": 4188,
+      "lines": 4183,
       "limit": 2000
     },
     "gdext/src/world_ext_weather.cpp": {

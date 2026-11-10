@@ -492,7 +492,7 @@ func _run() -> void:
 	_expect("pending research signal command queues before PKCN capture",
 		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v13 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 13)
+	_expect("PKCN v14 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 14)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)

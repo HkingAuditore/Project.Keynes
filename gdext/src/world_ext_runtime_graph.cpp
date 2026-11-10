@@ -720,6 +720,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         NativeParallelExecutor::instance().report();
     Dictionary out;
     out["simulation_executor_exited"] = !_runtime_host || _runtime_host->execution_has_stopped();
+    out["executor_serial_only"] = parallel_serial_only();
     out["process_cpu_us"] = process_cpu_us_now();
     if (_runtime_host) {
         const RuntimeThreadReport host = _runtime_host->report();
@@ -742,6 +743,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
                 NativeSimulationHost::MainBoundaryClient::TRIGGER);
         out["graph_coverage_complete"] = host.graph_coverage_complete;
         out["native_daily_inline"] = host.inline_daily;
+        out["inline_day_pending"] = _runtime_host->inline_day_pending();
         out["state_id"] = static_cast<int>(host.state);
         out["domain_abi_version"] = static_cast<int>(host.domain_abi_version);
         out["graph_coverage_state"] = String(host.graph_coverage_state);
