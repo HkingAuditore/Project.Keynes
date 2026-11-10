@@ -26,9 +26,11 @@ description: >
 
 ## 关键文件
 
-当前实现已分在 `gdext/src/world_ext_generate.cpp`（base/post_base/full）与
-`gdext/src/world_ext_bake.cpp`（terrain-index/geometry/visual tile/encoder），
-下表的 `world_ext.cpp` 是历史入口，定位 kernel 时须搜索上述文件。
+base 归 `world_ext_generate_base.cpp`，post-base/full/publish 归
+`world_ext_generate.cpp`，季节阶段归 `world_ext_season_refresh.cpp`。
+几何编排归 `world_ext_bake.cpp`，编码与分块分别归
+`world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp`。
+脚本助手及输入边界见 `docs/architecture/source-module-splits.md`。
 2026-11-09 山地修复：所有尺寸统一冻结山脊基底与 p99 高度预算，仅顶部约 1%
 软收尾；烘焙增加可选 `cell_landform`、两圈区域起伏与山地/高峰下限。
 主脊/刻谷当前默认值读 `terrain_index_baker.gd::DEM_DEFAULTS`，
@@ -39,7 +41,7 @@ description: >
 |---|---|
 | 生成编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd` |
 | bake 编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/rendering/map_baker.gd` |
-| C++ 权威实现 | `Project.Keynes/gdext/src/world_ext.cpp`（注意：大文件，用 grep 定位，勿整文件重写） |
+| C++ 权威实现 | `gdext/src/world_ext_generate*.cpp`、`world_ext_season_refresh.cpp`、`world_ext_bake*.cpp`，按上述职责定位 |
 | C++ 方法声明 | `Project.Keynes/gdext/src/world_ext.h` |
 | C++ 方法绑定 | `Project.Keynes/gdext/src/world_ext_bind_methods.cpp` |
 | 并行设施 | `Project.Keynes/gdext/src/parallel_dispatcher.h`（`pk::parallel_for_range`） |

@@ -1,5 +1,7 @@
 extends RefCounted
 class_name MilitaryViewModel
+const MilitaryLogisticsProjection = preload("res://scripts/ui/military_logistics_projection.gd")
+
 
 ## Read-only presentation model for MilitaryWorkspace. Every number comes from the
 ## military facade snapshot (fixed-point ints) and is converted here; nothing is
@@ -7,7 +9,7 @@ class_name MilitaryViewModel
 ## shown as fabricated zeros.
 
 const MONEY_SCALE := 10000.0
-const Q16 := 65536.0
+const Q16 = MilitaryLogisticsProjection.Q16
 const BP := 10000.0
 const GOODS_SCALE := 1000.0
 const Q8 := 256.0
@@ -1257,30 +1259,11 @@ func _condition_color(value: float) -> Color:
 
 
 func convoy_rows(convoys: Array) -> Array:
-	var rows: Array = []
-	for raw in convoys:
-		var convoy := _as_dict(raw)
-		var risk := _ratio(convoy.get("risk_q16", 0))
-		rows.append({
-			"id": int(convoy.get("id", 0)),
-			"cell": int(convoy.get("current_cell", -1)),
-			"route": "%s → %s" % [cell_name(int(convoy.get("current_cell", -1))),
-				cell_name(int(convoy.get("dest_cell", -1)))],
-			"goods": _good_label(int(convoy.get("good", -1))),
-			"risk": risk,
-			"eta": maxi(0, int(convoy.get("eta_day", 0)) - _day),
-		})
-	rows.sort_custom(func(a, b): return float(a.risk) > float(b.risk))
-	return rows
+	return MilitaryLogisticsProjection.convoy_rows(_day, _model, cell_name, convoys)
 
 
 func _good_label(dense_id: int) -> String:
-	var ordered = _model.get("good_ids", PackedStringArray())
-	if not (ordered is PackedStringArray) or dense_id < 0 or dense_id >= ordered.size():
-		return "未知物资"
-	var stable_id := String(ordered[dense_id])
-	var profile = GoodProfileRegistry.profile_by_id(stable_id)
-	return String(profile.display_name) if profile != null else stable_id
+	return MilitaryLogisticsProjection._good_label(_model, dense_id)
 
 
 # ── war ──────────────────────────────────────────────────────────────────
@@ -1925,7 +1908,7 @@ static func _era_label(era: int) -> String:
 # ── formatting ───────────────────────────────────────────────────────────
 
 static func _as_dict(value) -> Dictionary:
-	return value if value is Dictionary else {}
+	return MilitaryLogisticsProjection._as_dict(value)
 
 
 static func _as_array(value) -> Array:
@@ -1945,7 +1928,7 @@ static func _count(raw) -> String:
 
 
 static func _ratio(raw) -> float:
-	return clampf(float(raw) / Q16, 0.0, 1.0)
+	return MilitaryLogisticsProjection._ratio(raw)
 
 
 static func _raw_q16(raw) -> float:

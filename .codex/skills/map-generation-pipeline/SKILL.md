@@ -26,11 +26,17 @@ description: >
 
 ## 关键文件
 
+base 归 `world_ext_generate_base.cpp`，post-base/full/publish 归
+`world_ext_generate.cpp`，季节阶段归 `world_ext_season_refresh.cpp`。
+几何编排归 `world_ext_bake.cpp`，编码与分块分别归
+`world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp`。
+脚本助手及输入边界见 `docs/architecture/source-module-splits.md`。
+
 | 角色 | 路径 |
 |---|---|
 | 生成编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/geography/map_generator.gd` |
 | bake 编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/rendering/map_baker.gd` |
-| C++ 权威实现 | `Project.Keynes/gdext/src/world_ext.cpp`（注意：大文件，用 grep 定位，勿整文件重写） |
+| C++ 权威实现 | `gdext/src/world_ext_generate*.cpp`、`world_ext_season_refresh.cpp`、`world_ext_bake*.cpp`，按上述职责定位 |
 | C++ 方法声明 | `Project.Keynes/gdext/src/world_ext.h` |
 | C++ 方法绑定 | `Project.Keynes/gdext/src/world_ext_bind_methods.cpp` |
 | 并行设施 | `Project.Keynes/gdext/src/parallel_dispatcher.h`（`pk::parallel_for_range`） |

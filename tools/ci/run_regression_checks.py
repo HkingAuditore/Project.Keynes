@@ -32,6 +32,7 @@ TESTS = (
     "tests/game/world_runtime_modifier_writeback_test.gd",
     "tests/game/runtime_clock_binding_test.gd",
     "tests/game/state_module_boundary_test.gd",
+    "tests/game/module_projection_boundaries_test.gd",
     "tests/game/world_state_contracts_test.gd",
     "tests/building/bootstrap_owner_allocation_test.gd",
     "tests/game/gameplay_start_runtime_test.gd",
