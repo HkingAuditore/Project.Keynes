@@ -24,7 +24,8 @@ vec3 rs3_yaw(vec3 p, float a) {
 
 RsRay rs3_ray(vec2 p, float seed) {
 	RsRay ray;
-	ray.yaw = (seed - 0.5) * 0.42;
+	// Per-instance azimuth keeps fallback procedural solids from sharing one silhouette.
+	ray.yaw = (seed - 0.5) * 1.65;
 	// Scale p by 0.78 to give subjects a fuller, bolder presence inside the quad while keeping clean margins
 	vec2 sp = p * 0.78;
 	ray.o = rs3_yaw(RS_RIGHT * sp.x + RS_DOWN * (sp.y - 0.24) + RS_VIEW * 2.5, -ray.yaw);

@@ -9,6 +9,6 @@ display_name = "科学仪器"
 semantic_tags = PackedStringArray()
 category_id = &"scientific_instruments"
 substitution_category_ids = PackedStringArray("scientific_instruments")
-technology_tags = PackedStringArray("tech.industrial_research", "tech.electronic_control", "tech.scientific_agents")
+technology_tags = PackedStringArray("tech.precision_instruments", "tech.electronic_control", "tech.scientific_agents")
 default_price = 58000
 reference_max_price = 2900000

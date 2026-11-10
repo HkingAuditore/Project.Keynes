@@ -15,7 +15,7 @@
 // 性能（Cost）
 //   LOW 不查副格；MID/HIGH 复用地形边界距离/副格纹理。桌面端另保留
 //   3×3 water-biome 邻域，移动端不执行该 9-tap。海冰来自 fragment 入口的 dyn_lut.a。
-//   apply_water_specials 在 day_night_enabled 关时保留全局平行光永昼。
+//   apply_water_specials 在 day_night_enabled 关时保留当地正午日照。
 // ─────────────────────────────────────────────────────────────────────────
 
 
@@ -31,7 +31,7 @@ struct WaterStageCtx {
 	float edge_mix;
 	float elev;
 	vec2  wp;            // 原 world position（不带 warp）
-	vec2  wpw;           // 经 water_domain_warp 后的 world position
+	vec2  wpw;           // 经共享像素噪声轻域扭曲后的 world position（波形/水色共用）
 	vec2  uv;
 	vec4  scals;
 	float lat_signed;
@@ -469,9 +469,12 @@ vec3 apply_open_ocean_patch(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 	vec3 ocean_patch = mix(cobalt_patch, teal_patch, gyre_mix);
 	ocean_patch = mix(ocean_patch, violet_patch,
 		smoothstep(0.70, 1.0, ctx.offshore_depth) * (1.0 - gyre_mix) * 0.55);
-	float patch_w = ww.open_ocean_w * water_cartoon_color_strength * mix(0.42, 0.66, gyre_mix);
+	// [water-wave-relief 2026-11-06] 旧权重 0.42~0.66 把远洋染成大块浅蓝/紫灰
+	// 云斑（用户截图「没有海洋的感觉」），喧宾夺主盖过浪形。压到 0.12~0.24，
+	// 保留一点 gyre 色温层次，让海色回到连续深蓝、由波浪纹理主导画面。
+	float patch_w = ww.open_ocean_w * water_cartoon_color_strength * mix(0.12, 0.24, gyre_mix);
 	col = mix(col, ocean_patch, patch_w);
-	col *= 1.0 + (gyre_mix - 0.5) * ww.open_ocean_w * water_cartoon_color_strength * 0.18;
+	col *= 1.0 + (gyre_mix - 0.5) * ww.open_ocean_w * water_cartoon_color_strength * 0.08;
 	return col;
 #endif
 }
@@ -760,37 +763,40 @@ vec3 apply_estuary_plume(vec3 col, WaterStageCtx ctx, WaterWeights ww) {
 // ═══════════════════════════════════════════════════════════════════════
 // SEA 1.14: build_water_normal_and_calm —— 法线 + Water Calm Noise 调色
 // ═══════════════════════════════════════════════════════════════════════
-//   biome 选择波浪幅度档位 → sample_water_normal → near-shore 放大
+//   biome 选择波浪幅度档位（含冰面剔除）→ sample_flow_water_normal → near-shore 放大
 //   → calm noise 亮度+色相微调。
 //   返回最终 col；同时通过 inout vec3 N 输出水面法线。
 // ─────────────────────────────────────────────────────────────────────
-vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, inout vec3 N_out) {
+vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww,
+		inout vec3 N_out) {
 	float ocean_w = clamp(1.0 - ww.w_lake - ww.w_reef - ww.w_kelp, 0.0, 1.0);
-	float wave_amp_scale = ocean_w * 0.78 + ww.w_lake * 0.34
-			+ ww.w_reef * 0.50 + ww.w_kelp * 0.36;
+	// [water-flow-waves 2026-11-06] 冰面剔除：旧版 ocean_w 不扣 w_ice，全冰格仍按
+	// 0.78 幅度跑波浪法线，高光会随浪在冰上起伏。w_ice 是连续的 sea_ice_fraction
+	// 权重，用平滑窗口把波幅与法线一起归零，冰缘渐变而非硬切。
+	float ice_free = 1.0 - smoothstep(0.10, 0.62, clamp(ww.w_ice, 0.0, 1.0));
+	float wave_amp_scale = (ocean_w * 0.78 + ww.w_lake * 0.34
+			+ ww.w_reef * 0.50 + ww.w_kelp * 0.36) * ice_free;
 	float wave_freq_scale = ocean_w * 0.78 + ww.w_lake * 0.92
 			+ ww.w_reef * 0.84 + ww.w_kelp * 0.70;
-	float current_align_w = ocean_w * 0.46 + ww.w_reef * 0.32 + ww.w_kelp * 0.40;
-	int wave_q = (ctx.quality >= 1) ? 1 : 0;
-	vec2 wave_wp = ctx.wp;
-	if (ocean_current_enabled && current_align_w > 0.001) {
-		vec2 current_dir = (length(ctx.ocean_current_v) > 0.05) ? normalize(ctx.ocean_current_v) : vec2(1.0, 0.0);
-		float current_push = current_align_w * mix(0.85, 1.45, ocean_current_strength);
-		wave_wp = ctx.wp + current_dir * current_push + ctx.ocean_current_v * current_align_w * 0.80;
-	}
+	// 旧版按 flow 方向把 wp 静态平移约 1 世界单位（current_push + oc*0.8），
+	// flowmap cell 边界的方向跳变会直接变成相位断层 —— 这就是「Flowmap 变形太重」。
+	// 现在波形坐标只用 ctx.wpw（连续噪声域扭曲），洋流信息全部交给相位层处理。
+	vec2 wave_wp = ctx.wpw;
+	float wave_h = 0.0;        // 归一化涌浪波高；冰面 / LOW 档恒 0
 #ifdef PK_QUALITY_LOW
 	bool waves_on = false;
 #else
 	bool waves_on = water_waves_enabled && wave_amp_scale > 0.001;
 #endif
 #ifdef PK_WEB_WORLD_MIN
-	// PK_QUALITY_LOW ⇒ waves_on 恒 false，sample_water_normal 只会立刻返回 +Z；
+	// PK_QUALITY_LOW ⇒ waves_on 恒 false，sample_flow_water_normal 只会被短路为 +Z；
 	// web 变体直接把这条调用（以及整份 water.gdshaderinc）编译掉。
 	N_out = vec3(0.0, 0.0, 1.0);
 #else
 	N_out = waves_on
 			? sample_flow_water_normal(wave_wp, world_time, ctx.ocean_current_v,
-				wave_amp_scale, wave_freq_scale, ctx.pixel_noise.g)
+				wave_amp_scale, wave_freq_scale, ctx.pixel_noise.g, ice_free,
+				wave_h)
 			: vec3(0.0, 0.0, 1.0);
 #endif
 
@@ -826,6 +832,25 @@ vec3 build_water_normal_and_calm(vec3 col, WaterStageCtx ctx, WaterWeights ww, i
 		vec3 tint = mix(TINT_COLD, TINT_WARM, tint_mix);
 		float tint_amp = water_wave_line_strength * water_calm_noise_tint_strength * calm_amp_mul;
 		col *= mix(vec3(1.0), tint, 0.035 * clamp(tint_amp, 0.0, 1.0));
+	}
+	// ── [water-wave-relief 2026-11-06] 波高参与着色 ──────────────────
+	// 以前只有法线（顶视 + 弱高光时几乎看不见起伏），现在把合成高度直接画成
+	// 波峰波谷明暗，再叠浪头。所有项都吃 wave_amp_scale（含冰剔除）与 wave_h
+	// （冰面为 0），所以冰上不会出现任何浪。
+	if (waves_on) {
+		float relief = clamp(wave_h * wave_amp_scale * water_flow_wave_amplitude, -1.0, 1.0);
+		col *= 1.0 + relief * 0.22;
+		// 浪头在湖 / 海带 / 礁石上让步（礁石仍留一点碎沫）。
+		float crest_w = clamp(1.0 - ww.w_lake * 0.60 - ww.w_kelp * 0.80 - ww.w_reef * 0.30,
+				0.0, 1.0);
+		// [water-mark-shape 2026-11-06] 浪尖等值线先用低频噪声侵蚀：
+		// 旧版直接对解析高度取 smoothstep，等值线在数学上完美光滑 ⇒ 像描上去的白边。
+		// ctx.macro_lf 是入口已经采过的静态噪声（零额外采样），把阈值扰 ±0.16。
+		float crest_jitter = (ctx.macro_lf - 0.5) * 0.32;
+		float crest = smoothstep(0.30, 0.72, wave_h + crest_jitter) * wave_amp_scale * crest_w;
+		vec3 crest_col = mix(col, vec3(0.72, 0.84, 0.88), 0.80);
+		col = mix(col, crest_col, crest * water_flow_crest_strength);
+
 	}
 #endif // PK_WEB_WORLD_MIN
 	return col;
@@ -954,9 +979,15 @@ SurfaceParams apply_water_overlay_surface(
 		vec2 wp,
 		vec2 uv,
 		vec2 wind_v,
-		vec2 shore_frac) {
+		vec2 shore_frac,
+		float dyn_ice_frac) {
 	vec3 col = surface.base_color;
 	float coast_sdf = abs(elev - sea_level);
+	// [water-flow-waves 2026-11-06] 冰面不该有滚动浪花：静态冰 biome 与动态冰量
+	// 取最大，用与法线同口径的连续窗口把 foam 整段压掉（冰缘渐变不硬切）。
+	float foam_ice_free = 1.0 - smoothstep(0.18, 0.60, clamp(max(
+			water_static_type_mix(biome, secondary_biome, edge_mix, B_SEA_ICE),
+			dyn_ice_frac), 0.0, 1.0));
 
 	// 用现有 coast_sdf + 水体地形类型做近岸浅水过渡：B_COAST/KELP/REEF 本身就是近岸语义，
 	// 不能只依赖 elev≈sea_level，否则部分岸边水格会完全没有过渡。
@@ -999,7 +1030,8 @@ SurfaceParams apply_water_overlay_surface(
 	// （礁盘消浪、白沫较碎），与 coast 自然衔接、消除空隙。
 #if !defined(PK_MOBILE_ANY)
 	float ocean_type_w = water_static_type_mix(biome, secondary_biome, edge_mix, B_OCEAN);
-	float foam_domain_w = clamp(coast_type_w + ocean_type_w + reef_type_w + kelp_type_w, 0.0, 1.0);
+	float foam_domain_w = clamp(coast_type_w + ocean_type_w + reef_type_w + kelp_type_w, 0.0, 1.0)
+			* foam_ice_free;
 	if (foam_domain_w > 0.001) {
 		float reef_foam_scale = clamp(
 			coast_type_w + ocean_type_w + reef_type_w * 0.72 + kelp_type_w * 0.50,
@@ -1061,7 +1093,7 @@ SurfaceParams apply_water_overlay_surface(
 //                     （BRDF 给的是 albedo×F，这里给的是天空环境光反射）。
 //     - sparkle     : 高频颗粒高光，纯 stylized 风味。
 //
-//   day_night_enabled=false 时保留全局平行光永昼：不再关闭波坡明暗 / 高光等方向性。
+//   day_night_enabled=false 时保留当地正午日照：不再关闭波坡明暗 / 高光等方向性。
 // ─────────────────────────────────────────────────────────────────────
 vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, float pixel_night, vec3 sun_dir_px) {
 	vec3 N = normalize(surface.normal);
@@ -1128,7 +1160,15 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 		// [sky-sh-ambient] 天空反射用方向化 L1 球谐天光（按波浪法线 N 取样）：波面朝天顶/朝太阳
 		// 方位会反射不同天色 → 水面浮现随法线变化的光影（这才是球谐补光在水面的体现），
 		// 而非平铺一层 tod_ambient_color。flat 水面(N≈+z)≈原值，故无回归；波纹处显出体积。
-		vec3 sky_tint = earth_sky_sh(tod_ambient_color, tod_sun_color, sun_dir_px, 1.0 - pixel_night, N) * mix(1.0, 0.70, pixel_night);
+		vec3 sky_tint = sky_ambient_srgb(1.0 - pixel_night, N,
+			tod_ambient_color, tod_sun_color, sun_dir_px) * mix(1.0, 0.70, pixel_night);
+#if defined(PK_SKY_HAS_REFLECTION)
+		if (sky_ibl_bound && sky_specular_bound) {
+			vec3 env_reflection = sky_sample_prefiltered_reflection(
+				reflect(-VIEW_DIR_TOP_DOWN, N), surface.roughness, 1.0 - pixel_night);
+			sky_tint = sky_linear_to_srgb(env_reflection) * mix(1.0, 0.70, pixel_night);
+		}
+#endif
 		col = mix(col, sky_tint, F * water_reflection_strength);
 	}
 
@@ -1180,11 +1220,16 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
 	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
-	// 昼夜关闭时使用全图一致的季节性平行光，避免关闭 TOD 后水面方向光一起消失。
+	// 昼夜关闭时使用当地正午基线 + 视觉日内方向，避免关闭 TOD 后水面方向光一起消失。
 	vec3 sun_dir_px = day_night_enabled
 			? (tod_latitude_sun_enabled ? compute_sun_dir_enu(uv, lat_signed) : normalize(tod_sun_dir))
-			: compute_global_parallel_sun_dir();
+			: compute_eternal_visual_sun_dir(lat_signed);
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
+	// 开阔海面底色和环境光更暗，不能直接复用陆地同幅云影；否则云区会
+	// 同时被直射、天光和水面 shadow floor 压暗，读成脏黑块。
+	float cloud_direct_visibility = cloud_shadow_water_direct_visibility(uv, lc.local_day);
+	lc.direct_shadow *= cloud_direct_visibility;
+	lc.cloud_ambient = cloud_shadow_water_ambient_visibility(uv, lc.local_day);
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
 	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
 	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。
@@ -1202,6 +1247,8 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 	// [terrain-horizon 2026-07-03] 水面阴影先压 BRDF 结果，再叠加 fresnel/caustics/sparkle，
 	// 让高光与波浪可以覆盖在阴影之上；强度比陆地轻，避免水面变脏。
 	float cast_shadow = clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0);
+	float cloud_cast_shadow = clamp((1.0 - cloud_direct_visibility) * lc.local_day, 0.0, 1.0);
+	cast_shadow = clamp(cast_shadow - cloud_cast_shadow, 0.0, 1.0);
 	if (cast_shadow > 0.001) {
 		float water_floor = mix(1.0, terrain_horizon_cast_floor, 0.38);
 		lit *= mix(1.0, water_floor, cast_shadow);
@@ -1259,7 +1306,8 @@ vec3 render_water_pipeline_raw(
 			clamp(0.20 + (bloom - 0.5) * 0.14, 0.0, 0.34) * bloom_cover_w);
 	}
 	surface = apply_water_overlay_surface(
-		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v, shore_frac);
+		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v, shore_frac,
+		dyn_ice_frac);
 	return shade_water_surface(
 		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed, dyn_ice_frac);
 }

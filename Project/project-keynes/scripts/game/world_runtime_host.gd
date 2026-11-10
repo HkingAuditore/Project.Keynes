@@ -497,6 +497,9 @@ var _country_worker_read_full_snapshot_count: int = 0
 var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
+var _gm_suppress_popups: bool = false
+## GM UI 诊断开关：隐藏所有玩家界面，但保留 GM 面板本身可操作。
+var _gm_hide_all_except_gm: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
 var _gm_tod_preview_enabled: bool = false
 var _gm_tod_sun_uv: Vector2 = Vector2(0.25, 0.5)
@@ -579,6 +582,8 @@ func configure(
 	_renderer = renderer
 	_camera = camera
 	_world_clock = world_clock
+	if _renderer != null and _world_clock != null:
+		_renderer.configure_shader_clock(_world_clock.set_visual_shader_days_per_year)
 	_map_overlay_layer = map_overlay_layer
 	if _world_clock != null:
 		var day_callback := Callable(self, "_on_clock_day_changed")
@@ -2308,6 +2313,10 @@ func on_speed_changed(new_speed: float) -> void:
 func on_clock_running_changed(running: bool) -> void:
 	if _renderer == null:
 		return
+	if _world_clock != null and _renderer.has_method("set_simulation_speed_multiplier"):
+		_renderer.set_simulation_speed_multiplier(_world_clock.speed_multiplier)
+	if _renderer.has_method("set_clock_running"):
+		_renderer.set_clock_running(running)
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 	if weather_layer != null and weather_layer.has_method("set_clock_running"):
 		weather_layer.set_clock_running(running)

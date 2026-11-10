@@ -1358,7 +1358,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         const bool allowed_opcode =
             (opcodes[i] >= COMMAND_TRANSFER_TO_COHORT &&
              opcodes[i] <= COMMAND_TREASURY_SPONSORED_BUILD) ||
-            family_reward || split_policy;
+            family_reward || split_policy || opcodes[i] == COMMAND_MILITARY_PROCUREMENT_DEMAND;
         if (!allowed_opcode || days[i] < 0 || sequences[i] < 0 ||
             (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION &&
              opcodes[i] != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
@@ -1368,6 +1368,22 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             out["index"] = static_cast<int64_t>(i);
             return out;
         }
+        if (opcodes[i] == COMMAND_MILITARY_PROCUREMENT_DEMAND) {
+            Command demand;
+            demand.opcode = opcodes[i];
+            demand.effective_day = days[i];
+            demand.sequence = sequences[i];
+            demand.target_handle = static_cast<uint64_t>(handles[i]);
+            demand.i32_0 = i32_0[i];
+            demand.i32_1 = i32_1[i];
+            demand.i64_0 = i64_0[i];
+            demand.i64_1 = i64_1[i];
+            if (!military_procurement_demand_valid(demand)) {
+                out["ok"] = false;
+                out["reason"] = "military_procurement_demand_invalid";
+                return out;
+            }
+        }
         const bool treasury_build =
             opcodes[i] == COMMAND_TREASURY_SPONSORED_BUILD;
         // The sponsored demolish lane names a country handle in `target_handle`
@@ -1376,6 +1392,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         const bool treasury_demolish =
             opcodes[i] == COMMAND_TREASURY_SPONSORED_DEMOLISH;
         if (!family_reward && !treasury_build && !treasury_demolish && !split_policy &&
+            opcodes[i] != COMMAND_MILITARY_PROCUREMENT_DEMAND &&
             opcodes[i] != COMMAND_ADD_STOCK &&
             opcodes[i] != COMMAND_REMOVE_STOCK &&
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&

@@ -23,6 +23,14 @@ var _awaiting_outcome_ack: bool = false
 var _restore_pending: bool = false
 var _reopen_pending: bool = false
 var _pending_image_request_offer_id: int = 0
+var _popups_suppressed: bool = false
+
+func set_popups_suppressed(value: bool) -> void:
+	_popups_suppressed = value
+	if value and _controller != null and _controller is Node and (_controller as Node).is_inside_tree():
+		# 让当前事件也走自动选择/确认路径，避免开关切换后留下锁定的
+		# 事件弹窗并继续持有暂停状态。
+		(_controller as Node).call_deferred("sync_ui")
 
 
 func configure(controller, runtime_host, clock, ui_manager, service, ai_client = null) -> void:
@@ -107,6 +115,9 @@ func _pause_clock() -> void:
 
 
 func _restore_clock() -> void:
+	# 自动处理的事件没有取得暂停锁，不能恢复未捕获或上一事件的时钟状态。
+	if not _restore_pending:
+		return
 	_restore_pending = false
 	if _clock == null:
 		return
@@ -170,6 +181,26 @@ func try_present() -> void:
 func _try_present_impl() -> void:
 	if _service == null or _clock == null:
 		return
+	# 屏蔽是运行时策略，不应只影响“显示”分支；必须在所有会锁时钟的
+	# busy/outcome 检查之前拦截，覆盖开关切换时已经处于锁定中的事件。
+	if _popups_suppressed:
+		var suppressed_offer := _resolve_active_offer()
+		if not suppressed_offer.is_empty():
+			var options: Array = suppressed_offer.get("options", [])
+			if not options.is_empty():
+				on_option_chosen(int(suppressed_offer.get("offer_id", 0)),
+					int(suppressed_offer.get("offer_generation", suppressed_offer.get("generation", 1))),
+					clampi(int(suppressed_offer.get("default_option_index", 0)), 0, options.size() - 1))
+				return
+		if _locked or _reopen_pending:
+			_locked = false
+			_reopen_pending = false
+			_active_offer_id = 0
+			_active_offer_generation = 0
+			_restore_pending = true
+		if _restore_pending and not _busy():
+			_restore_clock()
+		return
 	if _busy():
 		if _locked and _ui_manager != null and _ui_manager.has_method("close_narrative_event_offer"):
 			_ui_manager.close_narrative_event_offer()
@@ -190,12 +221,12 @@ func _try_present_impl() -> void:
 			_locked = false
 			_active_offer_id = 0
 			_active_offer_generation = 0
+			_restore_pending = true
 			_restore_clock()
 			offer_changed.emit({})
 		elif _restore_pending:
 			_restore_clock()
 		return
-
 	_reopen_pending = false
 	var was_locked := _locked
 	if not _locked:
@@ -282,7 +313,9 @@ func on_option_chosen(offer_id: int, offer_generation: int, option_index: int) -
 	if not record.is_empty():
 		event_resolved.emit(record)
 
-	if _ui_manager != null and _ui_manager.has_method("show_narrative_event_outcome"):
+	if _popups_suppressed:
+		on_outcome_acknowledged()
+	elif _ui_manager != null and _ui_manager.has_method("show_narrative_event_outcome"):
 		_awaiting_outcome_ack = true
 		_ui_manager.show_narrative_event_outcome(resolution)
 	else:
@@ -309,10 +342,11 @@ func on_outcome_acknowledged() -> void:
 			try_present()
 		return
 
+	_restore_pending = _restore_pending or _locked or _reopen_pending
 	_locked = false
+	_reopen_pending = false
 	_active_offer_id = 0
 	_active_offer_generation = 0
-	_restore_pending = true
 	if not _busy():
 		_restore_clock()
 	offer_changed.emit({})

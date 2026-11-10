@@ -19,7 +19,7 @@
 | 后台 / inline 保存和命令交接 | 共用保存服务；相同 ACTIVE 授权范围只替换执行器，保留世界状态及未完成日；新世界隔离命令与确认并递增回复身份；无效配置先拒绝 | 保存 116、执行器 319（含四种重启组合、3000 次停止、CLOCK_WAIT 及半日交接）、世界生命周期 128、正式 inline 流程 44 项检查通过 | 真实浏览器 Web 验证仍未做 |
 | macOS arm64 交付库 | debug、release 均从当前源码重编 | 指定 release 库独立实载上述四组，合计 607 项检查通过 | 完整导出及其他平台未验证 |
 | 保存续跑保真 | 默认 4 场景、full 8、annual 全绿；military-annual（military365）受已知问题影响不稳定，已移出默认集 | 非零军队/战争的 365 日读档 | 其他种子/平台、实际占领、任意日内命令位置 |
-| 宿主与大文件拆分 | `world_runtime_host.gd` 2934 行；`economy_runtime.cpp` 1975 行 | 逐词元证明；执行器启动集中在 `native_simulation_host_lifecycle.cpp` | `country_runtime.cpp` 11463、`map_generator.gd` 22547 行仍超限 |
+| 宿主与大文件拆分 | `world_runtime_host.gd` 2943 行；`economy_runtime.cpp` 2000 行 | 逐词元证明；执行器启动集中在 `native_simulation_host_lifecycle.cpp` | `country_runtime.cpp` 11463、`map_generator.gd` 22563 行仍超限 |
 | 黄金回放 | 迁移提交五条链不变；合并上游 c849f255 后按维护流程重录 v2–v5（v1 不变，见 current-state） | 每次提交前验证 | 投影不是完整十二域状态 |
 
 ## 推迟项（已决定推迟，不是遗漏）
@@ -31,7 +31,7 @@
 
 ## 最近一次完整验证
 
-2026-11-09 第二轮五项问题修复及修后复审，macOS arm64 / Godot 4.6.3，无界面验证：
+2026-11-09 第二轮五项问题修复及修后复审，修复提交 `23b931f5`（整合上游 `5890c4bb` 之前），macOS arm64 / Godot 4.6.3，无界面验证：
 
 - debug、release 从最终源码串行构建成功。指定 release 库独立实载四组：保存恢复 116、执行器边界 319、世界生命周期 128、正式 inline 保存重启 44，合计 607/607；交付库摘要与实载报告一致。
 - 覆盖正式重启后的国家状态及未领取确认、四种后台/inline 替换组合、CLOCK_WAIT 单次停止/保存/暂停/调速、错误启动拒绝后的第 3 日存档恢复、新世界命令隔离、未完成日冻结输入及保存阻止。正式流程在读档后重复应用策略，并与不中断运行的下一日整份经济状态比较。
@@ -41,6 +41,14 @@
 - 最初的三份复现脚本重新执行并核对结果：30 次停止均由一次通知完成，错误启动拒绝后仍在第 3 日且保留未来命令，新世界无旧命令，命令确认保留，正式重启后第 6 日正常提交。修后复审未再发现本轮引入的其他可确认问题。
 
 证据汇总：`/tmp/keynes-round2-fixes/final-evidence.json`；发布库 `release-runtime-complete/report.json`；完整回归 `full-regression-reviewed/`；扩展保存 `replay-full-reviewed/`；黄金 `golden-reviewed/`、`golden-external-reviewed/`；国家检查 `country-focused-complete/`；原始复现 `review-probes/summary.json`，均在上述目录下。本轮未做完整导出、真实 Web 浏览器、其他平台或新的性能对比。
+
+### 提交 PR 前整合上游（2026-11-09）
+
+新修复分支整合 `origin/master@5890c4bb`，保留上游经济、军事、时钟和画面更新，解决架构文档及行数记录冲突；更新四份新增运行测试的 Godot UID。debug/release 已重新构建，指定 release 库的 607 项检查再次全部通过。12 组定向脚本中 10 组通过，涵盖本次全部保存/重启/世界隔离用例、国家交接、经济重启与 GM 宿主。
+
+整合后的两组国家旧测试有 7 条断言失败：`country_runtime_test.gd` 的科技 ACK 元数据断言，以及 `runtime_country_peer_bridge_test.gd` 的六条完成边界/意图断言。用本轮修复前 `bc5ca724` 的原始程序库加载当前内容，逐条复现相同失败（`/tmp/keynes-pr-20261109/country-baseline-comparison.json`），本次未修改这些业务规则或放宽断言。
+
+其余 10 组护栏（含 33 项反例/原生通知测试）通过。行数护栏报告 19 项超限，逐个文件与 `5890c4bb` 比对内容均相同；保留现有上限。整合后未重跑上述完整黄金/年度矩阵，完整结果仅对应 `23b931f5`。最新整合证据在 `/tmp/keynes-pr-20261109/integration.json`、`release-runtime/report.json`、`focused/`、`guards.json` 与 `upstream-size-violations.json`。
 
 历史验证：各迁移提交曾完成构建、静态护栏、黄金五链 `--runs 2` 和默认回归。合并上游 `c849f255` 的提交（2026-11-06）另跑了保存续跑矩阵：`--full` 8/8、`--annual` 通过、`--military-annual` 不通过（见已知问题）；并用 ASAN 构建跑过默认回归和 military20，无报告。
 

@@ -15,6 +15,8 @@ const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_
 const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
 const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
 const ResourceVisualLayerScript = preload("res://scripts/rendering/resource_visual_layer.gd")
+const WorldSkyBackgroundScript = preload("res://scripts/rendering/world_sky_background.gd")
+const CloudShadowFieldScript = preload("res://scripts/rendering/cloud_shadow_field.gd")
 var _resource_visual_layer: Node2D
 var _resource_visual_cpu_ms := 0.0
 
@@ -53,13 +55,22 @@ const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
 const PK_WEB_ENABLE_WEATHER_LAYER := true
 
 @export var shader_path: String = "res://shaders/world_map.gdshader"
-@export var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
+# 运行期会复制该材质并持续写入大量 Packed* shader uniforms。把资源引用保留在
+# 场景/脚本存储中，但从 Inspector（尤其 Remote Inspector）隐藏，避免编辑器在
+# 运行时序列化材质参数数组时触发 Godot remote debugger 的 Variant 解码问题。
+@export_storage var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
 	set(value):
 		world_material = value
 		if is_inside_tree():
 			_load_shader()
 			if _map != null and _world != null:
 				_rebuild()
+
+@export_storage var world_lighting_profile: WorldLightingProfile:
+	set(value):
+		world_lighting_profile = value
+		if is_inside_tree():
+			_bind_world_lighting_profile()
 
 @export_group("Shader Hot Reload")
 @export var shader_hot_reload_enabled: bool = true
@@ -74,10 +85,26 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 # [需求3 2026-06-19午] 缩小浅↔深海色差：原 coast(0.34,0.50,0.56)→deep(0.14,0.22,0.34) 亮度/色相跨度
 # 过大，海岸青绿环与深海深蓝对比太硬。提亮深/中海、略压浅/岸海，让整片海面更协调连续。
 @export_group("Hypsometric Colors")
-@export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43)
-@export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46)
-@export var color_shallow: Color = Color(0.27, 0.40, 0.49)
-@export var color_coast_water: Color = Color(0.30, 0.43, 0.51)
+## 【深海底色】远洋最深处的基础颜色。
+@export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43):
+	set(v):
+		color_deep_ocean = v
+		_push_water_param(&"color_deep_ocean", v)
+## 【中深海底色】
+@export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46):
+	set(v):
+		color_mid_ocean = v
+		_push_water_param(&"color_mid_ocean", v)
+## 【浅海底色】
+@export var color_shallow: Color = Color(0.27, 0.40, 0.49):
+	set(v):
+		color_shallow = v
+		_push_water_param(&"color_shallow", v)
+## 【近岸水色】
+@export var color_coast_water: Color = Color(0.30, 0.43, 0.51):
+	set(v):
+		color_coast_water = v
+		_push_water_param(&"color_coast_water", v)
 # [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
 # 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
 # mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
@@ -163,7 +190,6 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 		if _shader_mat != null:
 			_push_world_uniform("vegetation_season_strength", vegetation_season_strength)
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
-@export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88
 # 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
 # 1=每仿真日上传一次；2（默认）=每 2 仿真日；4=每 4 仿真日。值越大越省 CPU 但雪线/海冰
 # 视觉变化越"卡顿"。运行时改这个值会触发 DynamicVisualAtlasUploadSystem.reconfigure。
@@ -199,6 +225,119 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 # ─── Milestone 3：天气 overlay 总强度（0 关闭，1 全力） ─────────────────
 @export_group("Weather (Milestone 3)")
 @export_range(0.0, 1.0, 0.01) var weather_strength: float = 1.0
+## 云层不透明度总控：只影响天上的云，不影响雨幕/风/云影。
+## 1.0 = 原来的实心白云（alpha 上限 0.86）；0.72 让地形能透出来。
+@export_range(0.0, 1.0, 0.01) var weather_cloud_opacity: float = 0.72:
+	set(value):
+		weather_cloud_opacity = clampf(value, 0.0, 1.0)
+		if _weather_layer != null and is_instance_valid(_weather_layer):
+			_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
+
+@export_group("Cloud Shadow")
+## PC 高画质直接光照路径的最大直射光压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.85:
+	set(value):
+		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## PC 中画质合成 pass 的压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.62:
+	set(value):
+		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
+@export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.48:
+	set(value):
+		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 云量覆盖响应增益。提高后，中低云量天气也会形成连续可见的云影。
+@export_range(0.25, 3.0, 0.05) var cloud_shadow_coverage_gain: float = 1.25:
+	set(value):
+		cloud_shadow_coverage_gain = clampf(value, 0.25, 3.0)
+		_push_cloud_shadow_tuning()
+## 厚云时环境光/天光的额外衰减权重（0=只压直射、1=间接光同幅压暗）。
+## [cloud-gi 2026-11-07] 0.35 太狠：云影只是挡住太阳直射，天空散射光基本照旧，
+## 压三成环境光会让阴影里的地面丢失色相、发灰发脏。0.12 只留一点层次感。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_ambient_weight: float = 0.12:
+	set(value):
+		cloud_shadow_ambient_weight = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_material_inputs()
+## 云影内部噪声的世界尺度平流速度；实际 UV 位移还乘 cloud_shadow_uv_scroll_gain。
+@export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.15:
+	set(value):
+		cloud_shadow_motion_speed = clampf(value, 0.0, 0.20)
+		_push_cloud_shadow_tuning()
+## 云影噪声 UV 滚动增益。用于把归一化世界坐标中的微小位移提升到可见的
+## 连续动画速度，不改变 LUT 云量更新节奏。
+
+@export_range(0.0, 32.0, 0.5) var cloud_shadow_uv_scroll_gain: float = 8.0:
+	set(value):
+		cloud_shadow_uv_scroll_gain = clampf(value, 0.0, 32.0)
+		_push_cloud_shadow_tuning()
+## 海面云影响应比例。陆地保持完整云影，海面单独控制以避免过弱或脏黑。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_water_scale: float = 0.58:
+	set(value):
+		cloud_shadow_water_scale = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_material_inputs()
+## LUT 范围内部的云团明暗对比度。越高越能看出斑块形状。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_shape_contrast: float = 1.0:
+	set(value):
+		cloud_shadow_shape_contrast = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 主噪声坐标的域扭曲强度。提高后云团边界更破碎、更接近自然云块。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.36:
+	set(value):
+		cloud_shadow_noise_warp = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 动态细节噪声对主云形的调制强度。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_dynamic_detail_gain: float = 0.32:
+	set(value):
+		cloud_shadow_dynamic_detail_gain = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 动态域扭曲强度。提高后云团会随滚动产生更明显的形变。
+@export_range(0.0, 2.0, 0.05) var cloud_shadow_dynamic_warp_gain: float = 0.80:
+	set(value):
+		cloud_shadow_dynamic_warp_gain = clampf(value, 0.0, 2.0)
+		_push_cloud_shadow_tuning()
+## 云影边缘羽化宽度。越高边缘越软、核心越不容易形成硬白边。
+@export_range(0.0, 2.0, 0.05) var cloud_shadow_edge_softness: float = 1.10:
+	set(value):
+		cloud_shadow_edge_softness = clampf(value, 0.0, 2.0)
+		_push_cloud_shadow_tuning()
+## 局地风对 field 内动态形变的影响。主平流仍由 CPU 累积的全局风负责。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_wind_influence: float = 0.22:
+	set(value):
+		cloud_shadow_wind_influence = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## LUT 云量 Mask 的起始偏置。提高后只有更高云量区域会出现云影。
+@export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.10:
+	set(value):
+		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
+		_push_cloud_shadow_tuning()
+## 独立云核密度。提高后同一片 LUT Mask 内会出现更多、更小的云朵。
+@export_range(0.35, 2.5, 0.05) var cloud_shadow_cell_scale: float = 0.75:
+	set(value):
+		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
+		_push_cloud_shadow_tuning()
+## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
+## [cloud-shape 2026-11-07] 0.0045 → 0.0160：一个噪声单元从约 222 世界单位
+## 压到 62（约 1.6 hex），云团直径从 7~12 hex 降到 3~5 hex，整屏能看到
+## 十来朵彼此分开的云影而不是 3~5 团大色块。
+@export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0130:
+	set(value):
+		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
+		_push_cloud_shadow_tuning()
+## 云缘侵蚀强度：中频噪声把云团边缘啃成絮状、并在云内部掏洞。
+## 0 = 退回单层 value noise 的圆疙瘩；1 = 极碎（云量会明显变少）。
+@export_range(0.0, 1.0, 0.05) var cloud_shadow_erosion: float = 0.40:
+	set(value):
+		cloud_shadow_erosion = clampf(value, 0.0, 1.0)
+		_push_cloud_shadow_tuning()
+## 开启后显示黑白云影 Mask：黑=无云影，白=云影区域。
+@export var cloud_shadow_debug_view: bool = false:
+	set(value):
+		cloud_shadow_debug_view = value
+		if _cloud_shadow_field != null:
+			_cloud_shadow_field.set_debug_view(value)
 
 # [parallax-rain] 俯视雨幕参数：camera_pitch 控制雨滴侧投影长度收缩
 @export_range(0.0, 90.0, 1.0, "degrees") var camera_pitch_deg: float = 75.0
@@ -294,8 +433,26 @@ var terrain_materials_enabled: bool = true
 			_push_world_uniform("terrain_ecotone_noise", terrain_ecotone_noise)
 		_push_overlay_edge_transition_data()
 @export var day_night_enabled: bool = true
-@export var water_effect_enabled: bool = true
-@export var ocean_current_enabled: bool = true
+@export_group("永昼太阳")
+## 每游戏年包含的 Shader 日数量；2 表示一年两轮，0.5 表示两年一轮。
+@export_range(0.0, 32.0, 0.25, "or_greater") var shader_days_per_game_year: float = 2.0:
+	set(value):
+		shader_days_per_game_year = maxf(value, 0.0)
+		if _apply_shader_clock.is_valid():
+			_apply_shader_clock.call(shader_days_per_game_year)
+var _apply_shader_clock: Callable
+
+## 太阳最低高度（角度）；抬高会缩短最长阴影。
+@export_range(0.0, 45.0, 1.0) var eternal_min_elevation_deg: float = 10.0:
+	set(value):
+		eternal_min_elevation_deg = clampf(value, 0.0, 45.0)
+		_push_eternal_daylight_uniforms()
+## 日内最大时角（角度）；增大会扩大高低浮动并拉长早晚阴影。
+@export_range(0.0, 89.0, 1.0) var eternal_max_hour_angle_deg: float = 70.0:
+	set(value):
+		eternal_max_hour_angle_deg = clampf(value, 0.0, 89.0)
+		_push_eternal_daylight_uniforms()
+@export_group("")
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
 
@@ -360,15 +517,15 @@ var terrain_materials_enabled: bool = true
 		_push_terrain_horizon_uniforms()
 
 @export_group("Visual Overhaul")
-@export var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
+@export_storage var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
 	set(value):
 		shrub_visual_profile = value
 		_rebuild_detail_layers_if_default()
-@export var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
+@export_storage var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
 	set(value):
 		tree_visual_profile = value
 		_rebuild_detail_layers_if_default()
-@export var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
+@export_storage var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
 	set(value):
 		grass_visual_profile = value
 		_rebuild_detail_layers_if_default()
@@ -378,7 +535,7 @@ var terrain_materials_enabled: bool = true
 # 此前默认是 null 而且没有任何场景 / 脚本给它赋值，所以 21 层清单（针叶、棕榈、
 # 季风林、云雾林、红树、芦苇、仙人掌、苔原地衣、海草……）从未被实例化，全图植被
 # 实际上只由 grass/shrub/tree 三层表达，专属生物群系自然长不出对味的植被。
-@export var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
+@export_storage var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
 	set(value):
 		decoration_manifest = value
 		if is_inside_tree():
@@ -419,97 +576,319 @@ var _simulation_speed_multiplier: float = 1.0
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
-# water_sparkle_enabled：水面高频粼光（任务 4）
 # rain_density_boost_enabled：粒子数量提升（任务 5，renderer 仅转发到 WeatherLayer）
 # cloud_tod_tint_enabled：云层 TOD 染色（任务 6）
 @export_group("Pass 2")
-@export var water_sparkle_enabled: bool = true
 @export var rain_density_boost_enabled: bool = true
 @export var cloud_tod_tint_enabled: bool = true
 
-# ─── Water Visual Overhaul（本轮）：水体细分开关与参数 ──────────────────
-# 所有字段直通 shader 同名 uniform；关闭即回退到上一轮（pass2）表现，
-# 总开关 water_effect_enabled=false 时整组子特性被 shader 端短路。
-@export_group("Water Overhaul")
-@export var water_waves_enabled: bool = true
-@export var water_fresnel_enabled: bool = true
-@export var river_flow_enabled: bool = true
-@export var caustics_enabled: bool = true
-@export var shallow_transparency_enabled: bool = true
-@export_range(4.0, 128.0, 0.5) var water_gloss: float = 34.0
-@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32
-@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75
-@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
-@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
-@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
-@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
-# ShaderToy 启发的视觉增强（软边过渡 + 柔和噪声层）
-# 说明：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
-@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 1.45
-@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70
-# 柔和噪声的两个独立细分强度：
-# Open Ocean Color Rebalance：在新 base palette（已去饱和）上，把扰动幅度
-# 从 0.70 抬到 0.95，使原本肉眼难辨的 ±5% 亮度 / ±2% 色相变化更可见，
-# 让外海具备"云影感"色斑变化，而非一片均一。旧值 / 新值：0.70 / 0.95。
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95
-@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15
-@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75
-@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0
-@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65
+# ═══════════════════════════════════════════════════════════════════════════
+# 【水面参数】全部水面参数的唯一来源（main.gd 不再保留副本；以前两处都有、后写的覆盖先写的，
+# 在这里改了没效果）。每个参数都带内联 setter：运行中在检视器里拖动滑条即时刷新画面。
+# 参数名对应着色器 uniform（shaders/include/uniforms.gdshaderinc），悬停可看中文说明。
+# 初值由 _push_water_params_to() 按 WATER_PARAM_NAMES 统一推给主材质与水面材质。
+# ═══════════════════════════════════════════════════════════════════════════
+@export_group("海洋水面 · 效果开关")
+## 【水面效果总开关】关闭后水面退回纯色，下面所有波浪 / 反射 / 洋流效果一并失效。
+@export var water_effect_enabled: bool = true:
+	set(v):
+		water_effect_enabled = v
+		_push_water_param(&"water_effect_enabled", v)
+## 【洋流可视化】关闭后浪向不再跟随洋流，洋流染色也消失。
+@export var ocean_current_enabled: bool = true:
+	set(v):
+		ocean_current_enabled = v
+		_push_water_param(&"ocean_current_enabled", v)
+## 【波浪】关闭后水面法线恒为平面，只剩颜色与高光。
+@export var water_waves_enabled: bool = true:
+	set(v):
+		water_waves_enabled = v
+		_push_water_param(&"water_waves_enabled", v)
+## 【菲涅尔天空反射】
+@export var water_fresnel_enabled: bool = true:
+	set(v):
+		water_fresnel_enabled = v
+		_push_water_param(&"water_fresnel_enabled", v)
+## 【粼光】水面高频颗粒高光（需要画质 ≥ 中）。
+@export var water_sparkle_enabled: bool = true:
+	set(v):
+		water_sparkle_enabled = v
+		_push_water_param(&"water_sparkle_enabled", v)
+## 【焦散】只在珊瑚礁水域、白天生效。
+@export var caustics_enabled: bool = true:
+	set(v):
+		caustics_enabled = v
+		_push_water_param(&"caustics_enabled", v)
+## 【浅水透底】近岸浅水透出海底颜色。
+@export var shallow_transparency_enabled: bool = true:
+	set(v):
+		shallow_transparency_enabled = v
+		_push_water_param(&"shallow_transparency_enabled", v)
 
-# ─── 波浪可读性 / 细节法线（2026-06-29，类 UE 材质实例参数实时调） ──────────
-# 这几个字段用「内联 setter」直接把值推到 _shader_mat：运行时在远程检视器里选中
-# 本节点（WorldRoot/HexRenderer），展开 Inspector 拖动滑条即实时刷新画面，
-# 无需重编 shader / 重启游戏。_shader_mat 尚未创建时（.tscn 反序列化阶段）安全跳过，
-# 由 _apply_*（材质创建后）补推一次初值。
-@export_group("Water Waves (live-tunable)")
-@export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
+@export_group("海洋水面 · 波浪总体")
+## 【浪的疏密】越大，涟漪和笔触越小越密；越小越舒缓。
+@export_range(0.25, 4.0, 0.01, "or_greater") var water_flow_wave_density: float = 1.75:
 	set(v):
-		water_wave_shade_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_shade_strength", v)
-@export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
+		water_flow_wave_density = v
+		_push_water_param(&"water_flow_wave_density", v)
+## 【流动速度倍率】涟漪与笔触的流动速度正比于它；0 = 静止。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_advection: float = 1.15:
 	set(v):
-		water_wave_patch_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_patch_strength", v)
-@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
+		water_flow_advection = v
+		_push_water_param(&"water_flow_advection", v)
+## 【波浪总幅度】同时放大法线与波峰波谷明暗。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_wave_amplitude: float = 1.35:
 	set(v):
-		water_wave_patch_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_wave_patch_scale", v)
+		water_flow_wave_amplitude = v
+		_push_water_param(&"water_flow_wave_amplitude", v)
+## 【浪尖碎白】浪头顶部的浅色高光强度，0 = 无。
+@export_range(0.0, 1.0, 0.01) var water_flow_crest_strength: float = 0.38:
+	set(v):
+		water_flow_crest_strength = v
+		_push_water_param(&"water_flow_crest_strength", v)
+## 【浪脊笔触】离散浪脊法线与波高的总强度。
+@export_range(0.0, 2.0, 0.01) var water_mark_strength: float = 1.0:
+	set(v):
+		water_mark_strength = v
+		_push_water_param(&"water_mark_strength", v)
+## 【浪脊覆盖率】笔触出现的格子比例。
+@export_range(0.0, 2.0, 0.01) var water_mark_coverage: float = 1.0:
+	set(v):
+		water_mark_coverage = v
+		_push_water_param(&"water_mark_coverage", v)
+## 【浪脊长度】控制非顺流波峰笔触长度。
+@export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
+	set(v):
+		water_mark_length = v
+		_push_water_param(&"water_mark_length", v)
+## 【浪脊速度】只调节浪脊笔触的漂移与更新速度；0 = 静止。
+@export_range(0.0, 4.0, 0.01, "or_greater") var water_mark_speed: float = 1.0:
+	set(v):
+		water_mark_speed = v
+		_push_water_param(&"water_mark_speed", v)
+## 【法线总强度】海洋波浪法线的整体倍率（同时影响陆地河流水面）。
 @export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
 	set(v):
 		water_base_normal_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_base_normal_strength", v)
+		_push_water_param(&"water_base_normal_strength", v)
+## 【波浪尺度】越大波越密越短（同时影响陆地河流水面）。
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_base_normal_scale: float = 0.93:
 	set(v):
 		water_base_normal_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_base_normal_scale", v)
-@export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
+		_push_water_param(&"water_base_normal_scale", v)
+## 【波坡明暗】按太阳方向给波浪坡面做明暗，没有直射高光的海域也能看出起伏。
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
 	set(v):
-		water_detail_normal_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_strength", v)
-@export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
+		water_wave_shade_strength = v
+		_push_water_param(&"water_wave_shade_strength", v)
+
+@export_group("海洋水面 · 底层涟漪")
+## 【涟漪强度】连续铺在整片海面下的细涟漪法线；0 = 去掉底层，只剩浪头笔触。
+@export_range(0.0, 3.0, 0.01, "or_greater") var water_ripple_strength: float = 1.0:
 	set(v):
-		water_detail_normal_scale = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_scale", v)
-@export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
+		water_ripple_strength = v
+		_push_water_param(&"water_ripple_strength", v)
+## 【小尺度涟漪占比】小尺度涟漪相对大尺度的强度（需要画质 ≥ 中）。
+@export_range(0.0, 1.5, 0.01) var water_ripple_detail_mix: float = 0.5:
 	set(v):
-		water_detail_normal_warp = v
-		if _shader_mat != null:
-			_push_world_uniform("water_detail_normal_warp", v)
+		water_ripple_detail_mix = v
+		_push_water_param(&"water_ripple_detail_mix", v)
+## 【涟漪大小】越大涟漪越舒缓越粗；越小越细碎。
+@export_range(0.3, 3.0, 0.01, "or_greater") var water_ripple_scale: float = 1.0:
+	set(v):
+		water_ripple_scale = v
+		_push_water_param(&"water_ripple_scale", v)
+## 【无洋流时的漂移】每个流动周期的位移（世界单位）。必须大于涟漪格宽（约 52）才是真正的流动，否则只是原地淡入淡出。
+@export_range(0.0, 100.0, 0.5, "or_greater") var water_flow_drift_base: float = 30.0:
+	set(v):
+		water_flow_drift_base = v
+		_push_water_param(&"water_flow_drift_base", v)
+## 【洋流带来的漂移】位移 += 洋流向量 × 该值。越大，洋流强的海域流得越快。
+@export_range(0.0, 300.0, 1.0, "or_greater") var water_flow_drift_current: float = 100.0:
+	set(v):
+		water_flow_drift_current = v
+		_push_water_param(&"water_flow_drift_current", v)
+
+@export_group("海洋水面 · 海况分区")
+## 【平静海域强度】平静区的法线强度（相对值）。越小，平静区越平。
+@export_range(0.0, 1.0, 0.01) var water_rough_min: float = 0.22:
+	set(v):
+		water_rough_min = v
+		_push_water_param(&"water_rough_min", v)
+## 【风浪海域强度】风浪区的法线强度（相对值）。
+@export_range(0.0, 2.0, 0.01) var water_rough_max: float = 1.0:
+	set(v):
+		water_rough_max = v
+		_push_water_param(&"water_rough_max", v)
+## 【分区大小】平静 / 风浪区块的空间尺度，越大块越大。
+@export_range(0.25, 4.0, 0.01, "or_greater") var water_rough_scale: float = 1.0:
+	set(v):
+		water_rough_scale = v
+		_push_water_param(&"water_rough_scale", v)
+## 【风浪区占比】0 = 几乎整片平静，1 = 几乎整片风浪。
+@export_range(0.0, 1.0, 0.01) var water_rough_coverage: float = 0.5:
+	set(v):
+		water_rough_coverage = v
+		_push_water_param(&"water_rough_coverage", v)
+
+@export_group("海洋水面 · 洋流")
+## 【洋流影响强度】浪向跟随洋流与洋流染色的总权重。
+@export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88:
+	set(v):
+		ocean_current_strength = v
+		_push_water_param(&"ocean_current_strength", v)
+
+@export_group("海洋水面 · 光照与反射")
+## 【天空反射强度】
+@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32:
+	set(v):
+		water_reflection_strength = v
+		_push_water_param(&"water_reflection_strength", v)
+## 【次表面散射强度】低太阳时迎光波坡透出青绿色；0 = 关闭（需要画质 ≥ 中）。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_sss_strength: float = 0.18:
 	set(v):
 		water_sss_strength = v
-		if _shader_mat != null:
-			_push_world_uniform("water_sss_strength", v)
+		_push_water_param(&"water_sss_strength", v)
+## 【次表面散射锐度】越大，只有正对太阳的波坡才透光。
+@export_range(1.0, 8.0, 0.1) var water_sss_power: float = 2.0:
+	set(v):
+		water_sss_power = v
+		_push_water_param(&"water_sss_power", v)
+## 【次表面散射颜色】
+@export var water_sss_color: Color = Color(0.10, 0.52, 0.46):
+	set(v):
+		water_sss_color = v
+		_push_water_param(&"water_sss_color", v)
+## 【焦散强度】仅珊瑚礁水域。
+@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32:
+	set(v):
+		caustics_strength = v
+		_push_water_param(&"caustics_strength", v)
+## 【浅水透底程度】
+@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56:
+	set(v):
+		shallow_transparency_factor = v
+		_push_water_param(&"shallow_transparency_factor", v)
+
+@export_group("海洋水面 · 色彩与过渡")
+## 【深海对比度】
+@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96:
+	set(v):
+		deep_ocean_contrast = v
+		_push_water_param(&"deep_ocean_contrast", v)
+## 【深海色彩层次总量】0 = 回到旧的单色深海，下面四项都乘它。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_color_richness: float = 0.85:
+	set(v):
+		deep_ocean_color_richness = v
+		_push_water_param(&"deep_ocean_color_richness", v)
+## 【暖流 / 寒流色偏】暖流偏暖、寒流偏冷青（需要开启洋流可视化）。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_current_tint_strength: float = 0.60:
+	set(v):
+		deep_ocean_current_tint_strength = v
+		_push_water_param(&"deep_ocean_current_tint_strength", v)
+## 【纬度色温带】热带翠绿 — 温带中性 — 极地冷青。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_latitude_tint_strength: float = 0.85:
+	set(v):
+		deep_ocean_latitude_tint_strength = v
+		_push_water_param(&"deep_ocean_latitude_tint_strength", v)
+## 【深渊幽冷】最深处压暗并偏蓝紫。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_abyss_tint_strength: float = 0.60:
+	set(v):
+		deep_ocean_abyss_tint_strength = v
+		_push_water_param(&"deep_ocean_abyss_tint_strength", v)
+## 【海盆色斑】放大半封闭海与开阔海的色相差。
+@export_range(0.0, 1.0, 0.01) var deep_ocean_patch_boost: float = 0.50:
+	set(v):
+		deep_ocean_patch_boost = v
+		_push_water_param(&"deep_ocean_patch_boost", v)
+## 【开阔海色块】远洋大块冷暖色斑的强度。
+@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75:
+	set(v):
+		water_cartoon_color_strength = v
+		_push_water_param(&"water_cartoon_color_strength", v)
+## 【亮度柔噪声】大尺度云影般的亮度起伏。
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95:
+	set(v):
+		water_calm_noise_brightness = v
+		_push_water_param(&"water_calm_noise_brightness", v)
+## 【色相柔噪声】冷暖色相的缓慢起伏。
+@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95:
+	set(v):
+		water_calm_noise_tint_strength = v
+		_push_water_param(&"water_calm_noise_tint_strength", v)
+## 【柔噪声总强度】乘在上面两项上，同时影响湖面波痕。
+@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70:
+	set(v):
+		water_wave_line_strength = v
+		_push_water_param(&"water_wave_line_strength", v)
+## 【水色边界扭曲】让海 / 湖 / 礁交界不是直线。过大会和洋流叠加撕出折痕。
+@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 0.55:
+	set(v):
+		water_domain_warp_strength = v
+		_push_water_param(&"water_domain_warp_strength", v)
+## 【水体软混合半径】越大过渡带越宽；0 = 硬切。
+@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15:
+	set(v):
+		water_biome_blend_radius = v
+		_push_water_param(&"water_biome_blend_radius", v)
+## 【水色过渡柔和度】
+@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0:
+	set(v):
+		water_transition_softness = v
+		_push_water_param(&"water_transition_softness", v)
+## 【河口羽流】河水入海的扩散色带。
+@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65:
+	set(v):
+		estuary_plume_strength = v
+		_push_water_param(&"estuary_plume_strength", v)
+
+@export_group("湖泊与河流水面")
+## 【湖水颜色】
+@export var lake_water_color: Color = Color(0.18, 0.45, 0.60):
+	set(v):
+		lake_water_color = v
+		_push_water_param(&"lake_water_color", v)
+## 【河流流动条纹】
+@export var river_flow_enabled: bool = true:
+	set(v):
+		river_flow_enabled = v
+		_push_water_param(&"river_flow_enabled", v)
+## 【河流流速】
+@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75:
+	set(v):
+		river_flow_speed = v
+		_push_water_param(&"river_flow_speed", v)
+## 【河流条纹频率】
+@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16:
+	set(v):
+		river_flow_freq = v
+		_push_water_param(&"river_flow_freq", v)
+## 【河流浪带强弱对比】【仅陆地河流水面，不影响海洋】
+@export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
+	set(v):
+		water_wave_patch_strength = v
+		_push_water_param(&"water_wave_patch_strength", v)
+## 【河流浪带尺度】【仅陆地河流水面，不影响海洋】
+@export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
+	set(v):
+		water_wave_patch_scale = v
+		_push_water_param(&"water_wave_patch_scale", v)
+## 【河流细节涟漪强度】【仅陆地河流水面，不影响海洋；需要画质=高】
+@export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
+	set(v):
+		water_detail_normal_strength = v
+		_push_water_param(&"water_detail_normal_strength", v)
+## 【河流细节涟漪尺度】【仅陆地河流水面；需要画质=高】
+@export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
+	set(v):
+		water_detail_normal_scale = v
+		_push_water_param(&"water_detail_normal_scale", v)
+## 【河流细节涟漪扭曲】【仅陆地河流水面；需要画质=高】
+@export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
+	set(v):
+		water_detail_normal_warp = v
+		_push_water_param(&"water_detail_normal_warp", v)
+
 
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
 @export_group("Legacy (Unused)")
@@ -536,6 +915,7 @@ var _simulation_speed_multiplier: float = 1.0
 
 var _world_quad: MeshInstance2D
 var _shader_mat: ShaderMaterial
+var _sky_background: Node
 ## [web-water-pass] web/Compatibility/LOW 档的**水面第二 pass** 节点与材质
 ## （见 shaders/world_water_web.gdshader）。桌面、以及 web 的中/高档恒为 null ——
 ## 那些情况下 world_map 自己就把水面画了，再画一遍就是双份水面。
@@ -591,6 +971,7 @@ const PK_WEB_DEFER_VEG_LAYERS := true
 ## web/GLES3 上回读不可靠，会让"过期检测"每帧命中、白白重绑并连带重推迷雾 uniform。
 var _lut_bound := {}
 var _weather_layer: WeatherLayer = null  # v9.split：天气独立层
+var _cloud_shadow_field: Variant = null
 var _border_layer: CountryBorderLayer = null  # 国界线（几何 ribbon，z=6）
 var _fog_layer: FogOfWarLayer = null  # 视野迷雾（全图 quad，z=12，盖住天气与国界）
 var _fog_enabled: bool = false
@@ -692,6 +1073,8 @@ var _pixel_world_size: float = 1.0
 var _season_phase: float = 1.0   # 0=spring 1=summer 2=autumn 3=winter
 var _climate_anomaly: float = 0.0
 var _world_time: float = 0.0
+var _clock_running: bool = true
+var _clock_speed_multiplier: float = 1.0
 # 任务 2：昼夜相位 ∈ [0,1)，由 WorldClock 节流推送。
 var _day_phase: float = 0.25   # 初始化正午，保证新地图默认白天效果
 # 阶段 D（vegetation-visual-pcg）：植被 shader 的全局风场。方向由当前天气锋面
@@ -801,6 +1184,9 @@ func _ready() -> void:
 	_camera_pitch = deg_to_rad(camera_pitch_deg)
 	_wind_dir = wind_dir.normalized() if wind_dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
 	_wind_strength = wind_strength
+	_sky_background = WorldSkyBackgroundScript.new()
+	_sky_background.name = "WorldSkyBackground"
+	add_child(_sky_background)
 	_world_quad = MeshInstance2D.new()
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
@@ -819,6 +1205,7 @@ func _ready() -> void:
 	_building_visual_layer.set_season_phase(_season_phase)
 	_building_visual_layer.set_day_phase(_day_phase)
 	_building_visual_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+	_building_visual_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 	_building_visual_layer.set_day_night_enabled(day_night_enabled)
 	_building_visual_layer.set_tod_debug_sun_position(
 		_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -828,6 +1215,10 @@ func _ready() -> void:
 	_building_visual_layer.set_tod(
 		_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 	_spawn_detail_layers()
+	_cloud_shadow_field = CloudShadowFieldScript.new()
+	_cloud_shadow_field.name = "CloudShadowField"
+	add_child(_cloud_shadow_field)
+	_cloud_shadow_field.process_priority = 1001
 	# v9.split：天气表现层。始终创建；web 侧不再 stub，而是走 weather_layer 内部的
 	# 裁剪变体（`#define PK_WEB_WEATHER_MIN`，见 weather_layer.gd 的 WEB_WEATHER_MIN_DEFINE）。
 	# 历史：完整 weather_overlay.gdshader 首次编译在 ANGLE 上要 45 秒（进世界卡 98%
@@ -905,10 +1296,12 @@ func _process(delta: float) -> void:
 		return
 	_sync_cell_lut_dims()
 	_sync_cell_lut_textures()
-	_world_time += delta
+	if _clock_running:
+		_world_time += delta * _clock_speed_multiplier
 	_push_world_uniform("world_time", _world_time)
-	if _water_mat != null:
-		_water_mat.set_shader_parameter("world_time", _world_time)
+	if _cloud_shadow_field != null and is_instance_valid(_cloud_shadow_field) \
+			and _cloud_shadow_field.has_method("set_world_time"):
+		_cloud_shadow_field.set_world_time(_world_time)
 	var wind_boost := _detail_wind_boost * weather_strength
 	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
 			and is_instance_valid(_detail_family_layer):
@@ -928,6 +1321,8 @@ func _process(delta: float) -> void:
 			"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
 			"tod_debug_sun_uv": _tod_debug_sun_uv,
 			"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+			"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
+			"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
 			"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure,
 			"wind_dir": _detail_wind_dir, "weather_wind_boost": wind_boost})
 	_resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
@@ -1194,6 +1589,13 @@ func _web_pc_high_active() -> bool:
 	return visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false))
 
 
+func _cloud_shadow_direct_active() -> bool:
+	return CloudShadowFieldScript.direct_mode_for_quality(
+		visual_quality,
+		OS.has_feature("mobile") or OS.has_feature("web"),
+		_mobile_quality_tier_define)
+
+
 ## 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」启用裁剪。
 ## 中/高档 web 仍保留 ctx.quality>=1 的水体分支，绝不跟着裁（否则会掉水面细节）；
 ## 宏链万一接错，shader 侧 #ifndef PK_QUALITY_LOW 的 #error 会立刻炸出来。
@@ -1284,8 +1686,12 @@ func _water_program_prefix(kind: String) -> String:
 		return prefix
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
+	else:
+		prefix += _desktop_sky_quality_prefix()
 	if DCFeatureFlags.is_compatibility_renderer():
 		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
+	if _cloud_shadow_direct_active():
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	prefix += SPLIT_WATER_ONLY_DEFINE
 	return prefix
 
@@ -1302,6 +1708,187 @@ func _push_world_uniform(key: Variant, value: Variant) -> void:
 	if _water_mat != null and not _water_uniform_names.is_empty() \
 			and _water_uniform_names.has(key_name):
 		_water_mat.set_shader_parameter(key_name, value)
+
+
+func _global_sky_day_weight() -> float:
+	if not day_night_enabled:
+		return 1.0
+	return smoothstep(-0.14, 0.14, sin(6.283185307179586 * _day_phase))
+
+func configure_shader_clock(apply: Callable) -> void:
+	_apply_shader_clock = apply
+	if _apply_shader_clock.is_valid():
+		_apply_shader_clock.call(shader_days_per_game_year)
+
+
+func _push_eternal_daylight_uniforms() -> void:
+	var min_elevation := deg_to_rad(eternal_min_elevation_deg)
+	var max_hour_angle := deg_to_rad(eternal_max_hour_angle_deg)
+	_push_world_uniform("eternal_min_elevation_rad", min_elevation)
+	_push_world_uniform("eternal_max_hour_angle_rad", max_hour_angle)
+	_push_water_lighting_uniforms()
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_eternal_daylight_parameters"):
+		_building_visual_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	if _weather_layer != null and _weather_layer.has_method("set_eternal_daylight_parameters"):
+		_weather_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	if _fog_layer != null and _fog_layer.has_method("set_eternal_daylight_parameters"):
+		_fog_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	_for_each_vegetation_layer(func(layer) -> void:
+		if layer.has_method("set_eternal_daylight_parameters"):
+			layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
+	)
+	_sync_detail_and_activity_materials()
+
+
+func _bind_world_lighting_profile() -> void:
+	if _sky_background != null:
+		var bounds := _world.world_bounds if _world != null else Rect2()
+		_sky_background.setup(bounds, world_lighting_profile, _day_phase, day_night_enabled)
+	if _shader_mat != null:
+		_push_world_lighting_profile()
+
+
+func _push_world_lighting_profile() -> void:
+	if _shader_mat == null:
+		return
+	var profile := world_lighting_profile
+	var zero_sh := PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO])
+	var day_sh := profile.day_sh_l1 if profile != null and profile.day_sh_l1.size() == 4 else zero_sh
+	var night_sh := profile.night_sh_l1 if profile != null and profile.night_sh_l1.size() == 4 else zero_sh
+	_push_world_uniform("sky_ibl_bound", profile != null and profile.day_sh_l1.size() == 4
+		and profile.night_sh_l1.size() == 4)
+	_push_world_uniform("sky_ambient_strength", profile.ambient_strength if profile != null else 1.0)
+	_push_world_uniform("sky_day_sh_l1", day_sh)
+	_push_world_uniform("sky_night_sh_l1", night_sh)
+	var needs_irradiance := _shader_declares_uniform(_shader_mat.shader, &"sky_irradiance_array")
+	var needs_reflection := needs_irradiance \
+		or _shader_declares_uniform(_shader_mat.shader, &"sky_specular_array") \
+		or (_water_mat != null and _shader_declares_uniform(_water_mat.shader, &"sky_specular_array"))
+	var irradiance_array := profile.get_irradiance_array() \
+		if profile != null and needs_irradiance else null
+	var specular_array := profile.get_specular_array() \
+		if profile != null and needs_reflection else null
+	_push_world_uniform("sky_irradiance_array", irradiance_array)
+	_push_world_uniform("sky_irradiance_bound", irradiance_array != null)
+	_push_world_uniform("sky_specular_array", specular_array)
+	_push_world_uniform("sky_specular_bound", specular_array != null)
+	_push_world_uniform("sky_specular_level_count", WorldLightingProfile.SPECULAR_LEVELS)
+	_push_world_uniform("sky_reflection_strength", profile.reflection_strength if profile != null else 1.0)
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		var bounds := _world.world_bounds if _world != null else Rect2()
+		_sky_background.setup(bounds, profile, _day_phase, day_night_enabled)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_world_sky_lighting"):
+			layer.set_world_sky_lighting(_shader_mat)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("set_world_sky_lighting"):
+		_detail_family_layer.set_world_sky_lighting(_shader_mat)
+	if _resource_visual_layer != null:
+		_resource_visual_layer.set_terrain_lighting(_shader_mat)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_terrain_lighting(_shader_mat)
+	if is_instance_valid(_trade_visual_layer):
+		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
+	if is_instance_valid(_military_visual_layer):
+		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
+
+
+func _shader_declares_uniform(shader: Shader, uniform_name: StringName) -> bool:
+	if shader == null:
+		return false
+	for uniform in shader.get_shader_uniform_list():
+		if StringName(uniform.get("name", "")) == uniform_name:
+			return true
+	return false
+
+
+const WATER_PARAM_NAMES: Array[StringName] = [
+	&"water_effect_enabled",
+	&"ocean_current_enabled",
+	&"water_waves_enabled",
+	&"water_fresnel_enabled",
+	&"water_sparkle_enabled",
+	&"caustics_enabled",
+	&"shallow_transparency_enabled",
+	&"water_flow_wave_density",
+	&"water_flow_advection",
+	&"water_flow_wave_amplitude",
+	&"water_flow_crest_strength",
+	&"water_mark_strength",
+	&"water_mark_coverage",
+	&"water_base_normal_strength",
+	&"water_base_normal_scale",
+	&"water_wave_shade_strength",
+	&"water_ripple_strength",
+	&"water_ripple_detail_mix",
+	&"water_ripple_scale",
+	&"water_flow_drift_base",
+	&"water_flow_drift_current",
+	&"water_mark_length",
+	&"water_mark_speed",
+	&"water_rough_min",
+	&"water_rough_max",
+	&"water_rough_scale",
+	&"water_rough_coverage",
+	&"ocean_current_strength",
+	&"water_reflection_strength",
+	&"water_sss_strength",
+	&"water_sss_power",
+	&"water_sss_color",
+	&"caustics_strength",
+	&"shallow_transparency_factor",
+	&"deep_ocean_contrast",
+	&"deep_ocean_color_richness",
+	&"deep_ocean_current_tint_strength",
+	&"deep_ocean_latitude_tint_strength",
+	&"deep_ocean_abyss_tint_strength",
+	&"deep_ocean_patch_boost",
+	&"water_cartoon_color_strength",
+	&"water_calm_noise_brightness",
+	&"water_calm_noise_tint_strength",
+	&"water_wave_line_strength",
+	&"water_domain_warp_strength",
+	&"water_biome_blend_radius",
+	&"water_transition_softness",
+	&"estuary_plume_strength",
+	&"lake_water_color",
+	&"river_flow_enabled",
+	&"river_flow_speed",
+	&"river_flow_freq",
+	&"water_wave_patch_strength",
+	&"water_wave_patch_scale",
+	&"water_detail_normal_strength",
+	&"water_detail_normal_scale",
+	&"water_detail_normal_warp",
+]
+
+## 水面参数的运行期推送：_shader_mat 还没创建（场景反序列化阶段）时安全跳过，
+## 之后由 _push_water_params_to() 补推初值。
+func _push_water_param(key: StringName, value: Variant) -> void:
+	if _shader_mat != null:
+		_push_world_uniform(key, value)
+
+
+## 调试控制台 / GM 面板用的两个总开关入口（属性本身已带内联 setter，这里只多刷一次光照 uniform）。
+func set_water_effect_enabled(v: bool) -> void:
+	water_effect_enabled = v
+	_push_water_lighting_uniforms()
+
+
+func set_ocean_current_enabled(v: bool) -> void:
+	ocean_current_enabled = v
+	_push_water_lighting_uniforms()
+
+
+## 把全部水面参数一次推给指定材质（主地形材质 / 独立水面材质）。
+func _push_water_params_to(sm: ShaderMaterial) -> void:
+	if sm == null:
+		return
+	for n in WATER_PARAM_NAMES:
+		sm.set_shader_parameter(n, get(n))
+
 
 
 ## 拆分状态 / 覆盖 mesh 开关翻转后的统一重建入口：重新选 program 变体 + 重铺几何
@@ -1460,6 +2047,7 @@ func _apply_water_uniforms() -> void:
 	if _water_mat == null or _world == null:
 		return
 	var sm := _water_mat
+	_push_water_params_to(sm)
 	if _water_uses_world_map and _shader_mat != null:
 		# Bind the PC water inputs from the terrain material after its full push.
 		# Shared textures update in place; this loop runs on bind/reconfiguration only.
@@ -1549,7 +2137,6 @@ func _push_water_lighting_uniforms() -> void:
 	if _water_mat == null:
 		return
 	_water_mat.set_shader_parameter("visual_quality", visual_quality)
-	_water_mat.set_shader_parameter("world_time", _world_time)
 	_water_mat.set_shader_parameter("season_phase", _season_phase)
 	_water_mat.set_shader_parameter("day_phase", _day_phase)
 	_water_mat.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
@@ -1561,6 +2148,110 @@ func _push_water_lighting_uniforms() -> void:
 	_water_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	_water_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	_water_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	_water_mat.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
+	_water_mat.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
+
+
+func _configure_cloud_shadow_field() -> void:
+	if _cloud_shadow_field == null:
+		return
+	if _weather_layer != null and not _cloud_shadow_field.wind_lut_changed.is_connected(_weather_layer.set_wind_luts):
+		_cloud_shadow_field.wind_lut_changed.connect(_weather_layer.set_wind_luts)
+	if _world == null or _map == null:
+		_cloud_shadow_field.clear_inputs()
+		_push_cloud_shadow_material_inputs()
+		return
+	var tiled := _visual_tiles_active()
+	_cloud_shadow_field.set_tuning(
+		cloud_shadow_strength_high,
+		cloud_shadow_strength_mid,
+		cloud_shadow_strength_low,
+		cloud_shadow_coverage_gain,
+		cloud_shadow_motion_speed,
+		cloud_shadow_shape_contrast,
+		cloud_shadow_noise_warp,
+		cloud_shadow_mask_bias,
+		cloud_shadow_cell_scale,
+		cloud_shadow_world_scale,
+		cloud_shadow_erosion,
+		cloud_shadow_uv_scroll_gain,
+		cloud_shadow_dynamic_detail_gain,
+		cloud_shadow_dynamic_warp_gain,
+		cloud_shadow_edge_softness,
+		cloud_shadow_wind_influence)
+	_cloud_shadow_field.configure(
+		_world.world_bounds,
+		_world,
+		_map,
+		_world.visual_tiles if tiled else null,
+		_wrap_period_x(),
+		visual_quality,
+		_mobile_quality_tier_define,
+		_cloud_shadow_direct_active(),
+		2.0 * hex_size)
+	_cloud_shadow_field.set_world_time(_world_time)
+	_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
+	_cloud_shadow_field.set_debug_view(cloud_shadow_debug_view)
+
+
+func _push_cloud_shadow_tuning() -> void:
+	if _cloud_shadow_field == null:
+		return
+	_cloud_shadow_field.set_tuning(
+		cloud_shadow_strength_high,
+		cloud_shadow_strength_mid,
+		cloud_shadow_strength_low,
+		cloud_shadow_coverage_gain,
+		cloud_shadow_motion_speed,
+		cloud_shadow_shape_contrast,
+		cloud_shadow_noise_warp,
+		cloud_shadow_mask_bias,
+		cloud_shadow_cell_scale,
+		cloud_shadow_world_scale,
+		cloud_shadow_erosion,
+		cloud_shadow_uv_scroll_gain,
+		cloud_shadow_dynamic_detail_gain,
+		cloud_shadow_dynamic_warp_gain,
+		cloud_shadow_edge_softness,
+		cloud_shadow_wind_influence)
+	_push_cloud_shadow_material_inputs()
+
+
+func _push_cloud_shadow_material_inputs() -> void:
+	if _cloud_shadow_field == null:
+		return
+	var direct_enabled := _cloud_shadow_direct_active()
+	var has_source: bool = _cloud_shadow_field.has_weather_source()
+	var field_texture: Texture2D = _cloud_shadow_field.get_field_texture() if has_source else null
+	var wrap_origin_uv: float = _cloud_shadow_field.get_wrap_origin_uv()
+	var wrap_period_uv: float = _cloud_shadow_field.get_wrap_period_uv()
+	for material in [_shader_mat, _water_mat]:
+		if material == null or material.shader == null:
+			continue
+		if material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			if field_texture != null:
+				material.set_shader_parameter("cloud_shadow_tex", field_texture)
+			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
+			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
+			material.set_shader_parameter("cloud_shadow_ambient_weight", cloud_shadow_ambient_weight)
+			material.set_shader_parameter("cloud_shadow_water_scale", cloud_shadow_water_scale)
+			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
+			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):
+		_building_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	if _resource_visual_layer != null and _resource_visual_layer.has_method("set_cloud_shadow_field"):
+		_resource_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_cloud_shadow_field"):
+			layer.set_cloud_shadow_field(field_texture, direct_enabled,
+				wrap_origin_uv, wrap_period_uv)
+	)
+	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
+			and _detail_family_layer.has_method("set_cloud_shadow_field"):
+		_detail_family_layer.set_cloud_shadow_field(field_texture, direct_enabled,
+			wrap_origin_uv, wrap_period_uv)
 
 
 ## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，
@@ -1585,6 +2276,18 @@ func _is_world_map_shader_path(path: String) -> bool:
 	return not path.is_empty() and path.get_file() == "world_map.gdshader"
 
 
+func _desktop_sky_quality_prefix() -> String:
+	if OS.has_feature("web") or DCFeatureFlags.is_compatibility_renderer() \
+			or not _mobile_quality_tier_define.is_empty():
+		return ""
+	match visual_quality:
+		1:
+			return "#define PK_SKY_QUALITY_MID\n"
+		2:
+			return "#define PK_SKY_QUALITY_HIGH\n"
+	return ""
+
+
 func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
 	if shader == null:
 		return null
@@ -1597,6 +2300,10 @@ func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader
 	var prefix := ""
 	if _visual_tiles_active():
 		prefix += "#define MAP_VISUAL_TILED\n"
+	if _is_world_map_shader_path(source_path):
+		prefix += _desktop_sky_quality_prefix()
+	if _cloud_shadow_direct_active() and _is_world_map_shader_path(source_path):
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	# mobile/web 共用 MOBILE_QUALITY_* 编译期档（由 set_mobile_quality_tier 推送）。
 	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
 		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
@@ -1675,6 +2382,8 @@ func set_mobile_quality_tier(tier_define: String) -> void:
 		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
 		if _map != null and _world != null and _shader_mat != null:
 			_apply_uniforms()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 
 func _mobile_quality_tier_from_define(tier_define: String) -> int:
@@ -1735,6 +2444,8 @@ func _instance_daylight_parameters() -> Dictionary:
 		"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
 		"tod_debug_sun_uv": _tod_debug_sun_uv,
 		"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
+		"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
+		"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
 		"tod_sun_dir": _tod_sun_dir,
 		"tod_exposure": _tod_exposure,
 	}
@@ -1766,6 +2477,11 @@ func _sync_detail_and_activity_materials() -> void:
 
 func set_simulation_speed_multiplier(multiplier: float) -> void:
 	_simulation_speed_multiplier = maxf(0.0, multiplier)
+	_clock_speed_multiplier = _simulation_speed_multiplier
+
+
+func set_clock_running(running: bool) -> void:
+	_clock_running = running
 
 
 func _effective_detail_enqueue_coalesce_ms() -> float:
@@ -3001,6 +3717,7 @@ func _spawn_detail_layers() -> void:
 		layer.set_season_phase(_season_phase)
 		layer.set_day_phase(_day_phase)
 		layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		layer.set_day_night_enabled(day_night_enabled)
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -3018,6 +3735,8 @@ func _spawn_detail_layers() -> void:
 	_detail_family_layer = VegetationFamilyLayerScript.new()
 	_detail_family_layer.name = "VegetationFamilyLayer"
 	add_child(_detail_family_layer)
+	if _cloud_shadow_field != null:
+		_push_cloud_shadow_material_inputs()
 
 
 func _detail_layer_name(prof: Resource, i: int) -> String:
@@ -3079,6 +3798,7 @@ func _poll_shader_hot_reload(delta: float) -> void:
 	_load_shader()
 	if _map != null and _world != null and _shader_mat != null:
 		_apply_uniforms()
+	_push_cloud_shadow_material_inputs()
 	print("[HexRenderer] hot-reloaded world shader/material")
 
 func _refresh_shader_hot_reload_baseline() -> void:
@@ -3101,6 +3821,7 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
+	_bind_world_lighting_profile()
 	# _ready() loads the shader before a generated world exists, so it necessarily
 	# selects the legacy variant. Re-select after world injection; setting array
 	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
@@ -3123,6 +3844,7 @@ func set_map_cooperative(map: MapData, world: WorldData = null) -> void:
 		_visual_tile_horizon_baker.cancel()
 	_map = map
 	_world = world
+	_bind_world_lighting_profile()
 	# _ready() loads the shader before a generated world exists, so it necessarily
 	# selects the legacy variant. Re-select after world injection; setting array
 	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
@@ -3156,6 +3878,7 @@ func configure_building_visuals(catalog: Dictionary,
 		_map, _world, hex_size, catalog, intel)
 	# [building-terrain-light 2026-10-18] 高画质建筑与地形共用 horizon/GI 与地表法线。
 	_building_visual_layer.set_terrain_lighting(_shader_mat)
+	_push_cloud_shadow_material_inputs()
 	return building_result
 
 
@@ -3337,6 +4060,9 @@ func set_true_insolation_enabled(v: bool) -> void:
 # 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
 func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		_sky_background.set_global_time(_day_phase, day_night_enabled)
 	_push_water_lighting_uniforms()
 	if _shader_mat != null:
 		_push_world_uniform("day_phase", _day_phase)
@@ -3392,9 +4118,14 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 # ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
 #   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
 func set_visual_quality(q: int) -> void:
-	var was_pc_high := _web_pc_high_active()
+	var was_cloud_direct := _cloud_shadow_direct_active()
+	var was_web_pc_high := _web_pc_high_active()
+	var old_sky_quality_prefix := _desktop_sky_quality_prefix()
 	visual_quality = clampi(q, 0, 2)
-	if was_pc_high != _web_pc_high_active() and _shader_mat != null:
+	var sky_variant_changed := old_sky_quality_prefix != _desktop_sky_quality_prefix()
+	if (was_cloud_direct != _cloud_shadow_direct_active() \
+			or was_web_pc_high != _web_pc_high_active() or sky_variant_changed) \
+			and _shader_mat != null:
 		_load_shader()
 		if _world != null and _map != null:
 			_apply_uniforms()
@@ -3424,6 +4155,8 @@ func set_visual_quality(q: int) -> void:
 	# 画质切换沿用运行期分层下发，避免设置变化再次制造全层同步尖峰。
 	_mark_detail_budget_total_dirty()
 	_apply_detail_global_budget()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 
 func set_terrain_materials_enabled(enabled: bool) -> void:
@@ -4183,6 +4916,9 @@ func set_foliage_density_strength(v: float) -> void:
 
 func set_day_night_enabled(v: bool) -> void:
 	day_night_enabled = v
+	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
+	if _sky_background != null:
+		_sky_background.set_global_time(_day_phase, day_night_enabled)
 	_push_water_lighting_uniforms()
 	if _shader_mat != null:
 		_push_world_uniform("day_night_enabled", day_night_enabled)
@@ -4197,17 +4933,8 @@ func set_day_night_enabled(v: bool) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
 	)
 	_sync_detail_and_activity_materials()
-
-func set_water_effect_enabled(v: bool) -> void:
-	water_effect_enabled = v
-	_push_water_lighting_uniforms()
-	if _shader_mat != null:
-		_push_world_uniform("water_effect_enabled", water_effect_enabled)
-
-func set_ocean_current_enabled(v: bool) -> void:
-	ocean_current_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("ocean_current_enabled", ocean_current_enabled)
+	if _cloud_shadow_field != null:
+		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
 
 # 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
@@ -4287,6 +5014,8 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_exposure = profile.exposure
 	_tod_sun_dir = profile.sun_dir.normalized()
 	_tod_valid = true
+	if _cloud_shadow_field != null:
+		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
 	_push_water_lighting_uniforms()
 	if _building_visual_layer != null:
 		_building_visual_layer.set_tod(
@@ -4298,11 +5027,6 @@ func apply_tod(profile: TODProfile) -> void:
 			layer.set_tod_sun_dir(_tod_sun_dir)
 	)
 	_sync_detail_and_activity_materials()
-
-func set_water_sparkle_enabled(v: bool) -> void:
-	water_sparkle_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_sparkle_enabled", water_sparkle_enabled)
 
 func set_rain_density_boost_enabled(v: bool) -> void:
 	if _weather_layer != null and _weather_layer.has_method("set_rain_density_boost_enabled"):
@@ -4329,147 +5053,6 @@ func set_wind(dir: Vector2, strength: float) -> void:
 	_wind_strength = wind_strength
 	if _weather_layer != null and _weather_layer.has_method("set_wind"):
 		_weather_layer.set_wind(_wind_dir, _wind_strength)
-
-# ─── Water Visual Overhaul：子特性 setter 组 ──────────────────────────
-# 每个 setter 只做"字段写回 + shader uniform 同步"，让 main.gd 能逐个切换。
-func set_water_waves_enabled(v: bool) -> void:
-	water_waves_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_waves_enabled", water_waves_enabled)
-
-func set_water_fresnel_enabled(v: bool) -> void:
-	water_fresnel_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("water_fresnel_enabled", water_fresnel_enabled)
-
-func set_river_flow_enabled(v: bool) -> void:
-	river_flow_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_enabled", river_flow_enabled)
-
-func set_caustics_enabled(v: bool) -> void:
-	caustics_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("caustics_enabled", caustics_enabled)
-
-func set_shallow_transparency_enabled(v: bool) -> void:
-	shallow_transparency_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform(
-			"shallow_transparency_enabled",
-			shallow_transparency_enabled
-		)
-
-func set_water_gloss(v: float) -> void:
-	water_gloss = clampf(v, 4.0, 128.0)
-	if _shader_mat != null:
-		_push_world_uniform("water_gloss", water_gloss)
-
-func set_water_reflection_strength(v: float) -> void:
-	water_reflection_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_reflection_strength",
-			water_reflection_strength
-		)
-
-func set_river_flow_speed(v: float) -> void:
-	river_flow_speed = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_speed", river_flow_speed)
-
-func set_river_flow_freq(v: float) -> void:
-	river_flow_freq = clampf(v, 0.02, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("river_flow_freq", river_flow_freq)
-
-func set_caustics_strength(v: float) -> void:
-	caustics_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("caustics_strength", caustics_strength)
-
-func set_deep_ocean_contrast(v: float) -> void:
-	deep_ocean_contrast = clampf(v, 0.5, 3.0)
-	if _shader_mat != null:
-		_push_world_uniform("deep_ocean_contrast", deep_ocean_contrast)
-
-func set_lake_water_color(c: Color) -> void:
-	lake_water_color = c
-	if _shader_mat != null:
-		_push_world_uniform("lake_water_color", lake_water_color)
-
-func set_shallow_transparency_factor(v: float) -> void:
-	shallow_transparency_factor = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"shallow_transparency_factor",
-			shallow_transparency_factor
-		)
-
-# ShaderToy 启发：三个新视觉 setter（域扭曲 / 风格化波痕 / biome 软混合）
-func set_water_domain_warp_strength(v: float) -> void:
-	water_domain_warp_strength = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_domain_warp_strength",
-			water_domain_warp_strength
-		)
-
-func set_water_wave_line_strength(v: float) -> void:
-	water_wave_line_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_wave_line_strength",
-			water_wave_line_strength
-		)
-
-func set_water_calm_noise_brightness(v: float) -> void:
-	water_calm_noise_brightness = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_calm_noise_brightness",
-			water_calm_noise_brightness
-		)
-
-func set_water_calm_noise_tint_strength(v: float) -> void:
-	water_calm_noise_tint_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_calm_noise_tint_strength",
-			water_calm_noise_tint_strength
-		)
-
-func set_water_biome_blend_radius(v: float) -> void:
-	water_biome_blend_radius = clampf(v, 0.0, 4.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_biome_blend_radius",
-			water_biome_blend_radius
-		)
-
-func set_water_cartoon_color_strength(v: float) -> void:
-	water_cartoon_color_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_cartoon_color_strength",
-			water_cartoon_color_strength
-		)
-
-func set_water_transition_softness(v: float) -> void:
-	water_transition_softness = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"water_transition_softness",
-			water_transition_softness
-		)
-
-func set_estuary_plume_strength(v: float) -> void:
-	estuary_plume_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform(
-			"estuary_plume_strength",
-			estuary_plume_strength
-		)
 
 # Upload active weather fronts to both the terrain shader and the weather layer.
 # Diag log（2026-05-10 引入用于诊断 weather_layer logs 缺失）：本次收尾把
@@ -4648,6 +5231,7 @@ func _rebuild() -> void:
 		return
 	if _map == null or _world == null or _map.cell_count() == 0:
 		_set_world_quad_mesh(null)
+		_configure_cloud_shadow_field()
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.clear()
 		)
@@ -5178,6 +5762,8 @@ func _apply_uniforms() -> void:
 	sm.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	sm.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	sm.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	sm.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
+	sm.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
 	sm.set_shader_parameter("season_temp_amp", season_temp_amp)
 	# True Insolation-Driven：CPU / GPU 同源的四个参数输出到 shader
 	sm.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
@@ -5190,7 +5776,6 @@ func _apply_uniforms() -> void:
 	_push_vegetation_season_lut()
 	sm.set_shader_parameter("dynamic_snow_strength", dynamic_snow_strength)
 	sm.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
-	sm.set_shader_parameter("ocean_current_strength", ocean_current_strength)
 	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
 	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
 	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
@@ -5206,49 +5791,15 @@ func _apply_uniforms() -> void:
 
 	sm.set_shader_parameter("visual_quality", visual_quality)
 	sm.set_shader_parameter("day_night_enabled", day_night_enabled)
-	sm.set_shader_parameter("water_effect_enabled", water_effect_enabled)
-	sm.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
 	sm.set_shader_parameter(
 		"extreme_weather_ground_effect_enabled",
 		extreme_weather_ground_effect_enabled
 	)
-	# Pass 2（任务 2）：把 Pass 2 开关也同步到新建材质上
-	sm.set_shader_parameter("water_sparkle_enabled", water_sparkle_enabled)
+	# Pass 2：云染色开关与洋流调试开关同步到新建材质
 	sm.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
 	sm.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
-
-	# Water Visual Overhaul：首次建材质必须把本轮 uniform 全部初始化，
-	sm.set_shader_parameter("water_waves_enabled", water_waves_enabled)
-	sm.set_shader_parameter("water_fresnel_enabled", water_fresnel_enabled)
-	sm.set_shader_parameter("river_flow_enabled", river_flow_enabled)
-	sm.set_shader_parameter("caustics_enabled", caustics_enabled)
-	sm.set_shader_parameter("shallow_transparency_enabled", shallow_transparency_enabled)
-	sm.set_shader_parameter("water_gloss", water_gloss)
-	sm.set_shader_parameter("water_reflection_strength", water_reflection_strength)
-	sm.set_shader_parameter("river_flow_speed", river_flow_speed)
-	sm.set_shader_parameter("river_flow_freq", river_flow_freq)
-	sm.set_shader_parameter("caustics_strength", caustics_strength)
-	sm.set_shader_parameter("deep_ocean_contrast", deep_ocean_contrast)
-	sm.set_shader_parameter("lake_water_color", lake_water_color)
-	sm.set_shader_parameter("shallow_transparency_factor", shallow_transparency_factor)
-	sm.set_shader_parameter("water_domain_warp_strength", water_domain_warp_strength)
-	sm.set_shader_parameter("water_wave_line_strength", water_wave_line_strength)
-	sm.set_shader_parameter("water_calm_noise_brightness", water_calm_noise_brightness)
-	sm.set_shader_parameter("water_calm_noise_tint_strength", water_calm_noise_tint_strength)
-	sm.set_shader_parameter("water_biome_blend_radius", water_biome_blend_radius)
-	sm.set_shader_parameter("water_cartoon_color_strength", water_cartoon_color_strength)
-	sm.set_shader_parameter("water_transition_softness", water_transition_softness)
-	sm.set_shader_parameter("estuary_plume_strength", estuary_plume_strength)
-	# 波浪可读性 / 细节法线初值（材质创建后补推；之后由内联 setter 实时刷新）
-	sm.set_shader_parameter("water_wave_shade_strength", water_wave_shade_strength)
-	sm.set_shader_parameter("water_wave_patch_strength", water_wave_patch_strength)
-	sm.set_shader_parameter("water_wave_patch_scale", water_wave_patch_scale)
-	sm.set_shader_parameter("water_base_normal_strength", water_base_normal_strength)
-	sm.set_shader_parameter("water_base_normal_scale", water_base_normal_scale)
-	sm.set_shader_parameter("water_detail_normal_strength", water_detail_normal_strength)
-	sm.set_shader_parameter("water_detail_normal_scale", water_detail_normal_scale)
-	sm.set_shader_parameter("water_detail_normal_warp", water_detail_normal_warp)
-	sm.set_shader_parameter("water_sss_strength", water_sss_strength)
+	# 全部水面参数（57 项）统一推送，名单见 WATER_PARAM_NAMES。
+	_push_water_params_to(sm)
 
 	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
 	if _weather_layer != null:
@@ -5259,6 +5810,7 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_season_phase(_season_phase)
 		_weather_layer.set_day_phase(_day_phase)
 		_weather_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		_weather_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		if _weather_layer.has_method("set_tod_debug_sun_position"):
 			_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 		if _weather_layer.has_method("set_tod_debug_sun_height_scale"):
@@ -5266,6 +5818,7 @@ func _apply_uniforms() -> void:
 		_weather_layer.set_weather_field_texture(null)
 		_weather_layer.set_vector_atlas_texture(null)
 		_weather_layer.set_weather_strength(weather_strength)
+		_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
 		# [parallax-rain] 俯视雨幕默认参数（可被外部 set_camera_pitch 覆盖）
 		_weather_layer.set_camera_pitch(_camera_pitch)
 		_weather_layer.set_wind(_wind_dir, _wind_strength)
@@ -5281,6 +5834,7 @@ func _apply_uniforms() -> void:
 		_fog_layer.set_season_phase(_season_phase)
 		_fog_layer.set_day_phase(_day_phase)
 		_fog_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+		_fog_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
 		_fog_layer.set_day_night_enabled(day_night_enabled)
 		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
@@ -5335,6 +5889,9 @@ func _apply_uniforms() -> void:
 	# [web-water-pass] 水面第二 pass 的建/拆/对齐挂在这里：_apply_uniforms() 是
 	# "材质重建后把全部输入对齐"的唯一收口，画质换档与 set_map 都会经过它。
 	_sync_water_quad()
+	_push_world_lighting_profile()
+	_configure_cloud_shadow_field()
+	_push_cloud_shadow_material_inputs()
 
 # ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
 # 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的

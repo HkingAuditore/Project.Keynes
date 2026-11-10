@@ -360,6 +360,8 @@ NativeEconomyRuntime::Command NativeEconomyRuntime::command_from_pod(
     cmd.i64_0 = pod.payload0;
     cmd.i64_1 = pod.payload1;
     cmd.sequence = static_cast<int64_t>(pod.submit_order);
+    if (pod.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND && pod.submit_order == 0)
+        cmd.sequence = static_cast<int64_t>(pod.request_id);
     cmd.submit_order = pod.submit_order;
     cmd.effective_day = _epoch_active ? _sample_day : _current_day.get();
     if (cmd.effective_day < 0) cmd.effective_day = 0;

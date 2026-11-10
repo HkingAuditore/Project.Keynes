@@ -57,6 +57,9 @@ struct LightingContext {
 	vec3 sun_dir_px;         // = ed.sun_dir（逐像素太阳方向，单位向量）
 	float local_day;         // = ed.local_day（白昼系数，驱动方位散射淡入）
 	float direct_shadow;     // terrain horizon direct-light visibility, ambient/emission 不受影响
+	// 云影对间接光（天光/弹射）的遮蔽系数，由 land/water pipeline 采样云影场后填入；
+	// 1.0=无云影。留在 struct 里让 BRDF 核心保持无纹理 fetch 的纯 ALU 契约。
+	float cloud_ambient;
 	// [terrain-gi 2026-07-31] 与 direct_shadow 同一次 horizon 采样派生的全局光照量：
 	//   sky_visibility ：cosine-weighted 天空可见度，只作用于 ambient，不碰 direct
 	//   bent_normal    ：平均可见方向（纯几何量，未与表面法线混合）
@@ -254,6 +257,7 @@ LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_si
 	// 否则同一 uv 会付两遍 horizon 采样成本。
 	TerrainHorizonSample hs = terrain_horizon_evaluate(uv, lc.L);
 	lc.direct_shadow = hs.direct_visibility;
+	lc.cloud_ambient = 1.0;
 	lc.sky_visibility = hs.sky_visibility;
 	lc.bent_normal = hs.bent_normal;
 	lc.bounce = hs.has_data
@@ -283,9 +287,9 @@ vec3 gi_ambient_normal(LightingContext lc, vec3 N) {
 // [sky-sh-ambient] 在 BRDF 域内求方向化天光：色板域 earth_sky_sh → 按需转线性。
 //   USE_LINEAR_LIGHTING 时与 albedo 同域（线性）；否则直接色板域，与 legacy 路径一致。
 vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
-	vec3 amb = earth_sky_sh(lc.amb_palette, lc.sun_palette, lc.sun_dir_px, lc.local_day, N);
-	return USE_LINEAR_LIGHTING ? srgb_to_linear(amb) : amb;
-
+	return USE_LINEAR_LIGHTING
+		? sky_ambient_linear(lc.local_day, N, lc.amb_palette, lc.sun_palette, lc.sun_dir_px)
+		: sky_ambient_srgb(lc.local_day, N, lc.amb_palette, lc.sun_palette, lc.sun_dir_px);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -366,14 +370,27 @@ vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
 	// 清晨朝东开口的谷偏暖、被南侧山脊挡住的北坡偏冷。这是本轮 GI 最主要的可读特征。
 	vec3 amb_N = gi_ambient_normal(lc, N);
 	float geo_ao = gi_ambient_occlusion(lc, N);
-	vec3 ambient = max(sky_sh_ambient_brdf(lc, amb_N), vec3(lc.ambient_floor))
-		* albedo * s.ao * geo_ao;
+	vec3 sky_ambient = sky_sh_ambient_brdf(lc, amb_N);
+#if defined(PK_SKY_HAS_IRRADIANCE)
+	if (sky_ibl_bound && sky_irradiance_bound) {
+		sky_ambient = sky_sample_irradiance(amb_N, lc.local_day);
+	}
+#endif
+	vec3 ambient = max(sky_ambient, vec3(lc.ambient_floor))
+		* albedo * s.ao * geo_ao * lc.cloud_ambient;
 
 	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
-	ambient += lc.bounce * albedo * lc.sun_color_linear;
+	ambient += lc.bounce * albedo * lc.sun_color_linear * lc.cloud_ambient;
 
 	// ── Night atten + exposure ────────────────────────────────────────
-	vec3 lit = direct + ambient;
+	vec3 indirect_specular = vec3(0.0);
+#if defined(PK_SKY_HAS_REFLECTION) && !defined(PK_WATER_ONLY)
+	if (sky_ibl_bound && sky_specular_bound) {
+		vec3 reflected = sky_sample_prefiltered_reflection(reflect(-V, N), roughness, lc.local_day);
+		indirect_specular = reflected * F * (0.25 + 0.75 * NdotV);
+	}
+#endif
+	vec3 lit = direct + ambient + indirect_specular;
 	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, lc.night_factor);
 	lit *= lc.exposure;
 
@@ -404,8 +421,8 @@ vec3 evaluate_brdf_blinn_phong_legacy(
 	// [terrain-gi] 与主路径同源：bent normal 定向 + sky visibility 遮蔽 + 弹射溢出。
 	vec3 amb_dir = sky_sh_ambient_brdf(lc, gi_ambient_normal(lc, N));
 	float geo_ao = gi_ambient_occlusion(lc, N);
-	vec3 diffuse = col * (amb_dir * s.ao * geo_ao * ambient_factor
-						+ lc.bounce * lc.sun_color_linear
+	vec3 diffuse = col * (amb_dir * s.ao * geo_ao * ambient_factor * lc.cloud_ambient
+						+ lc.bounce * lc.sun_color_linear * lc.cloud_ambient
 						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor) * lc.direct_shadow);
 	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp * lc.direct_shadow;
 	vec3 lit = diffuse + specular + s.emission;

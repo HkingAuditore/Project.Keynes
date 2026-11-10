@@ -9,6 +9,6 @@ display_name = "亚麻秆/韧皮原料"
 semantic_tags = PackedStringArray()
 category_id = &"spinnable_fiber"
 substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber", "primitive_lashing")
-technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection", "tech.motorized_agriculture", "tech.precision_agriculture", "tech.automated_agriculture", "tech.flax_retting", "tech.indentured_contracts", "tech.long_term_leases", "tech.rainfed_field_system")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection", "tech.rainfed_field_system", "tech.flax_retting", "tech.indentured_contracts", "tech.long_term_leases", "tech.textile_machinery", "tech.sensor_networks", "tech.autonomous_labor_coordination")
 default_price = 7000
 reference_max_price = 350000

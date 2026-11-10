@@ -35,6 +35,7 @@ const float SHADOW_MAX_REACH = 5.0;
 const float SHADOW_MARGIN = 0.45;
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
 
 varying vec2 v_p;
@@ -43,6 +44,7 @@ varying flat vec2 v_shift;    // local-frame ground shift of the shadow top
 varying flat float v_form;
 varying flat float v_cell;
 varying flat float v_day;
+varying flat float v_cloud_sun_visibility;
 
 vec2 lut_uv(float cell_value) {
 	float cell = clamp(floor(cell_value * max(cell_count - 1.0, 1.0) + 0.5),
@@ -88,6 +90,7 @@ void vertex() {
 	float lat_signed = clamp(map_uv.y, 0.0, 1.0) * 2.0 - 1.0;
 	EarthDaylight ed = eval_earth_daylight(map_uv, lat_signed, day_night_enabled);
 	v_day = ed.local_day;
+	v_cloud_sun_visibility = cloud_shadow_direct_visibility(map_uv, ed.local_day);
 	vec2 off_w = -ed.sun_dir.xy / max(ed.sun_dir.z, 0.22) * shadow_height(form, he, hr);
 	float reach = length(off_w);
 	if (reach > SHADOW_MAX_REACH) {
@@ -129,7 +132,7 @@ void fragment() {
 	vec2 cell_uv = lut_uv(v_cell);
 	float knowledge = texture(enum_lut, cell_uv).a;
 	float live = step(0.88, knowledge);
-	float darkness = cast * shadow_strength * v_day;
+	float darkness = cast * shadow_strength * v_day * v_cloud_sun_visibility;
 
 	// Contact occlusion survives night and overcast: it grounds the volume.
 	float fg = bf_footprint(form, s, v_half);

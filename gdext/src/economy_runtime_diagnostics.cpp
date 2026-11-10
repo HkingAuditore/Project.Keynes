@@ -313,7 +313,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_producer_merchant_sold_current);
     cap(_epoch_producer_discarded_current);
     cap(_epoch_research_demand_by_cell); cap(_epoch_research_demand_by_market);
-    cap(_epoch_colonization_demand_by_cell); cap(_epoch_colonization_demand_by_market);
+    cap(_epoch_colonization_demand_by_cell); cap(_epoch_colonization_demand_by_market); cap(_epoch_military_demand_by_cell); cap(_epoch_military_demand_by_market);
     cap(_epoch_bullion_quota_keys); cap(_epoch_bullion_quota_initial);
     cap(_epoch_bullion_quota_remaining);
     cap(_investment_monetary_units_by_cell);

@@ -169,8 +169,6 @@ var test_economy_population_scale: int = 0
 # 启用后会打开 GPU horizon bake，并把移动端 shader 变体提升到 HIGH。
 @export var mobile_terrain_horizon_enabled: bool = false
 @export var day_night_enabled: bool = true
-@export var water_effect_enabled: bool = true
-@export var ocean_current_enabled: bool = true
 @export var extreme_weather_ground_effect_enabled: bool = true
 # 性能采样日志开关：true 时 HexRenderer 内的 PerfSampler 会每 30 秒打印一次
 # 平均帧时间 + P95，方便基线 / 优化前 / 优化后三次对齐。
@@ -215,46 +213,13 @@ var test_economy_population_scale: int = 0
 @export_range(0.0, 1.0, 0.01) var night_factor_max: float = 0.72
 # 全局曝光（地表+云层+粒子统一生效）
 @export_range(0.2, 2.5, 0.01) var tod_exposure: float = 1.0
-# 水面粼光开关（任务 4 消费）
-@export var water_sparkle_enabled: bool = true
 # 雨雪粒子密度提升（任务 5 消费）
 @export var rain_density_boost_enabled: bool = true
 # 云层 TOD 染色（任务 6 消费，关闭后云层回到上一轮的 day_phase 色温逻辑）
 @export var cloud_tod_tint_enabled: bool = true
 
-# ─── Water Visual Overhaul（本轮）：水体细分开关与参数 ──────────────────
-# 这些字段由 _push_visual_toggles 一次性推给 HexRenderer，再由 renderer 的
-# setter 写到 shader 同名 uniform。默认全开，visual_quality==0 时由 renderer
-# 侧或 shader 内部做降级：低画质优先保留水色渐变和边界柔化，跳过高成本动态细节。
-@export_group("Water Overhaul")
-@export var water_waves_enabled: bool = true
-@export var water_fresnel_enabled: bool = true
-@export var river_flow_enabled: bool = true
-@export var caustics_enabled: bool = true
-@export var shallow_transparency_enabled: bool = true
-@export_range(4.0, 128.0, 0.5) var water_gloss: float = 34.0
-@export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32
-@export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75
-@export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16
-@export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32
-@export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96
-@export var lake_water_color: Color = Color(0.18, 0.45, 0.60)
-@export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56
-# ShaderToy 启发：软边过渡 + 柔和噪声层
-# 注：`water_wave_line_strength` 在 Water Calm Noise 改造后语义变为
-#      "柔和噪声总开关/强度"（0 = 关，1 = 默认柔和层）。默认值刻意低于 1，
-#      避免水面重新出现密集条纹或高对比噪声。
-@export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 1.45
-@export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70
-# Open Ocean Color Rebalance：在新去饱和 base palette 上，把扰动幅度从 0.70
-# 抬到 0.95，让 ±5% 亮度 / ±2% 色相变化更可见，外海呈现"云影感"色斑。
-# 旧值 / 新值：0.70 / 0.95。
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95
-@export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95
-@export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15
-@export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75
-@export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0
-@export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65
+# 水面 / 洋流 / 波浪参数不在这里：全部集中在 HexRenderer 的「海洋水面 · …」分组里，
+# 那里是唯一来源（以前这里有一份副本，启动时覆盖渲染器的值，导致在渲染器上调参无效）。
 
 @onready var _renderer: HexRenderer = $WorldRoot/HexRenderer
 @onready var _camera: MapCamera = $MapCamera
@@ -437,6 +402,7 @@ var _overlay_last_bake_wall_ms: int = 0
 var _overlay_refresh_disabled: bool = false
 
 func _ready() -> void:
+	_renderer.configure_shader_clock(_world_clock.set_visual_shader_days_per_year)
 	# Fix #11 third pass (2026-07-05)：mobile 上 PKLog 默认关。
 	# 根因：PKLog.enabled 静态默认 true，且启动时未按 mobile 置关；同时
 	# slp_field/wind_field STAGE-TOTAL 的 `>=5ms` warn 分支未走 PKLog 守门，
@@ -1431,6 +1397,8 @@ func _on_speed_changed(new_speed: float) -> void:
 func _sync_clock_running_to_weather_layer() -> void:
 	if _renderer == null:
 		return
+	if _renderer.has_method("set_clock_running"):
+		_renderer.set_clock_running(not _world_clock.paused)
 	var wl = _renderer.get_node_or_null("WeatherLayer")
 	if wl != null and wl.has_method("set_clock_running"):
 		wl.set_clock_running(not _world_clock.paused)
@@ -2568,15 +2536,11 @@ func _push_visual_toggles_legacy() -> void:
 		if DCFeatureFlags.uses_shader_quality_tier() and _renderer.has_method("set_ecology_visual_quality"):
 			_renderer.set_ecology_visual_quality(0)
 		_renderer.set_day_night_enabled(day_night_enabled)
-		_renderer.set_water_effect_enabled(water_effect_enabled)
-		_renderer.set_ocean_current_enabled(ocean_current_enabled)
 		_renderer.set_extreme_weather_ground_effect_enabled(
 			extreme_weather_ground_effect_enabled
 		)
 		_renderer.set_perf_sampler_enabled(perf_sampler_enabled)
 		# Pass 2：把 Pass 2 的三个模块开关也一次性推下去
-		if _renderer.has_method("set_water_sparkle_enabled"):
-			_renderer.set_water_sparkle_enabled(water_sparkle_enabled)
 		if _renderer.has_method("set_rain_density_boost_enabled"):
 			_renderer.set_rain_density_boost_enabled(rain_density_boost_enabled)
 		if _renderer.has_method("set_cloud_tod_tint_enabled"):
@@ -2589,48 +2553,6 @@ func _push_visual_toggles_legacy() -> void:
 
 		# Water Visual Overhaul：把本轮的 13 个参数 + 5 个子开关一起推下去。
 		# visual_quality==0 时，各子特性由 renderer/shader 内部做降级，不在这里改值。
-		if _renderer.has_method("set_water_waves_enabled"):
-			_renderer.set_water_waves_enabled(water_waves_enabled)
-		if _renderer.has_method("set_water_fresnel_enabled"):
-			_renderer.set_water_fresnel_enabled(water_fresnel_enabled)
-		if _renderer.has_method("set_river_flow_enabled"):
-			_renderer.set_river_flow_enabled(river_flow_enabled)
-		if _renderer.has_method("set_caustics_enabled"):
-			_renderer.set_caustics_enabled(caustics_enabled)
-		if _renderer.has_method("set_shallow_transparency_enabled"):
-			_renderer.set_shallow_transparency_enabled(shallow_transparency_enabled)
-		if _renderer.has_method("set_water_gloss"):
-			_renderer.set_water_gloss(water_gloss)
-		if _renderer.has_method("set_water_reflection_strength"):
-			_renderer.set_water_reflection_strength(water_reflection_strength)
-		if _renderer.has_method("set_river_flow_speed"):
-			_renderer.set_river_flow_speed(river_flow_speed)
-		if _renderer.has_method("set_river_flow_freq"):
-			_renderer.set_river_flow_freq(river_flow_freq)
-		if _renderer.has_method("set_caustics_strength"):
-			_renderer.set_caustics_strength(caustics_strength)
-		if _renderer.has_method("set_deep_ocean_contrast"):
-			_renderer.set_deep_ocean_contrast(deep_ocean_contrast)
-		if _renderer.has_method("set_lake_water_color"):
-			_renderer.set_lake_water_color(lake_water_color)
-		if _renderer.has_method("set_shallow_transparency_factor"):
-			_renderer.set_shallow_transparency_factor(shallow_transparency_factor)
-		if _renderer.has_method("set_water_domain_warp_strength"):
-			_renderer.set_water_domain_warp_strength(water_domain_warp_strength)
-		if _renderer.has_method("set_water_wave_line_strength"):
-			_renderer.set_water_wave_line_strength(water_wave_line_strength)
-		if _renderer.has_method("set_water_calm_noise_brightness"):
-			_renderer.set_water_calm_noise_brightness(water_calm_noise_brightness)
-		if _renderer.has_method("set_water_calm_noise_tint_strength"):
-			_renderer.set_water_calm_noise_tint_strength(water_calm_noise_tint_strength)
-		if _renderer.has_method("set_water_biome_blend_radius"):
-			_renderer.set_water_biome_blend_radius(water_biome_blend_radius)
-		if _renderer.has_method("set_water_cartoon_color_strength"):
-			_renderer.set_water_cartoon_color_strength(water_cartoon_color_strength)
-		if _renderer.has_method("set_water_transition_softness"):
-			_renderer.set_water_transition_softness(water_transition_softness)
-		if _renderer.has_method("set_estuary_plume_strength"):
-			_renderer.set_estuary_plume_strength(estuary_plume_strength)
 
 # ─── Pass 2：TOD 中枢初始化与广播 ─────────────────────────────────────
 # 唯一一处构造 TODProfile 的地方。@export 参数校验：night_factor_min <0.35

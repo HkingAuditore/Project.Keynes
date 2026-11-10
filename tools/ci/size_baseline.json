@@ -42,7 +42,7 @@
       "limit": 600
     },
     "Project/project-keynes/scripts/game/player_controller.gd": {
-      "lines": 3206,
+      "lines": 3210,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/start_location_policy.gd": {
@@ -50,7 +50,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
-      "lines": 2934,
+      "lines": 2943,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/hex_cell.gd": {
@@ -74,7 +74,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/main.gd": {
-      "lines": 4357,
+      "lines": 4278,
       "limit": 600
     },
     "Project/project-keynes/scripts/military/military_catalog_compiler.gd": {
@@ -102,7 +102,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
-      "lines": 5823,
+      "lines": 5958,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/map_baker.gd": {
@@ -118,7 +118,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
-      "lines": 1025,
+      "lines": 1054,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub_layer.gd": {

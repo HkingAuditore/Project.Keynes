@@ -1,6 +1,6 @@
 # Market V2 / Price V6 定点数、需求曲线与守恒账本
 
-## 当前实现覆盖说明（2026-09）
+## 当前实现覆盖说明（2026-11-08）
 
 2026-11-06 起，Leontief 派生需求的播种不要求下游建筑已经拥有市场信号 lane。只要
 商品有真实的 household/business/inventory 缺口且存在可用的编译生产者，就按该生产者
@@ -9,7 +9,19 @@
 
 本文较早章节中的 cell-level bullion shared quota、冻结发行池和按配额削减贵金属产出属于历史设计记录。当前 native runtime 已退役该机制：贵金属不受铸币配额限制，商人不采购贵金属，产出由 producer support 按 `monetary_issue_value` 结算并计入显式货币发行审计。旧 quota report 字段只为兼容保留并恒为零。
 
-建筑产出统一按“业主自用 -> 商人收购 -> producer support -> 真实 discard”的顺序结算。普通物资的 support 仍受月度 support issuance cap；这不是商品流转分支，而是 support 发行额度耗尽后的最后一层货币约束。
+建筑产出统一按“业主自用 -> 商人收购 -> producer support -> 真实 discard”的顺序结算。
+普通物资的 support 目前也没有执行月度发行上限：`producer_support_monthly_cap_q16`
+只保留配置和存档校验，不参与可卖余量的接受量或付款量计算。普通产出按冻结本地零售价
+的 20% 结算；金银按法定面值结算，两者都记入显式货币发行。只调旧 cap 参数不会改变发行。
+
+本轮正式内容把 `building_output_efficiency_q16` 设为 `98304`（1.5x），只放大商品产出，
+不放大投入、资源用量和工资；黄金 `monetary_issue_value=80000`（每完整商品单位8货币），
+白银为5000（每完整商品单位0.5货币）。默认派生维护成本因子为 `131072`（2x），只影响由建造配方推导的维护，
+不放大显式维护配方。开局现金为每人60货币；40人口、15日食物桥不变。
+这些是内容参数，不能据此推断当前地图的实际利润、工资、开工率或资源可持续性。
+
+软投入当前采用基础100%加额外生产率，而不是缺货减半。开局规划使用相同的产出倍率，
+并以没有软投入加成的基础产量维持130%粮食保障；硬投入仍须闭合，资源消耗不因缺工具打折。
 
 投资报价统一使用 `EconomicOpportunityQuote`，投资触发原因统一封装在 `InvestmentRequestContext`。
 
@@ -126,7 +138,8 @@ affordable_wage_per_employee = daily_wage_pool / employee_slots * wage_income_ca
 `25% * max(0, revenue - input - base_due - target_owner_profit)` 成为员工奖金池。
 基础工资与奖金都是 cohort 间转账，既不改变总资金，也不进入 explicit mint/burn。
 
-企业采购和实际生产使用两个容量：
+企业采购和实际生产使用采购意图与实际活动容量。以下 `input_floor` 公式为历史设计，
+仅用于解释旧记录，不是当前软投入算法：
 
 ```text
 hardness                = input_required_q16 / Q16_ONE
@@ -141,10 +154,22 @@ realized_profit_margin   = (sales - input cost - base wages due)
                            / max(input cost + base wages due, MONEY_SCALE)
 ```
 
-`input_required_q16=65536` 是旧硬互补：缺任一输入则实际产能为 0；软输入把缺货影响限制在该槽位的
-hardness 权重内，例如 `32768` 的工具槽在无库存时仍保留半产能，库存/现金足够时恢复满产。
-本地缺货不把采购意图归零，只把实际产能压到库存瓶颈；无人、无输入资金、资源枯竭或
-`SUSPENDED_LOSS` 则两者均为零。输入购买量使用 fixed-point 比例缩放，但只要完整物理需求为正且购买比例为正，实际购买/成本数量至少为 1；因此硬输入不会在极低产能下被向下截断成零投入免费生产。
+当前 `input_required_q16=65536` 仍表示硬投入，缺料使相应活动容量为零。对于
+`0 < input_required_q16 < 65536`，该值表示额外生产率的最大加成；多个软槽独立相加：
+
+```text
+activity_capacity = owners/employees/hard_inputs/resources/climate allowed activity
+soft_productivity = 1 + sum(soft_slot_bonus * coverage_at_activity)
+actual_output     = globally_scaled_output * activity_capacity * soft_productivity
+```
+
+例如 `32768` 的工具槽在无库存时保留100%基础产量，充足时为150%；叠正式1.5x倍率后
+分别为原配方的1.5x和2.25x。额外生产率只放大产出，不同比例放大活动、资源和工资。
+软输入未采购时不提供加成；其缺货不阻断基础生产。硬输入的采购意图仍可在本地缺货时保留，
+而实际活动受库存、资金、人员、资源和状态约束。输入购买量使用 fixed-point 比例缩放，
+但只要完整物理需求为正且购买比例为正，实际购买/成本数量至少为1；硬输入不会因低产能
+向下截断成零投入免费生产。实现以 `economy_runtime_building_production.cpp` 为准，
+历史的 `input_floor=1-hardness` 不再用于当前软投入和开局资源需求。
 实际有经营成本的利润率连续三周期 `<= -25%` 后停产；无生产且无成本的纯缺货周期不累计。停产期用当前价格、最低有效输入成本和合同工资计算反事实利润，连续
 两周期 `>= +10%` 且业主资金覆盖一栋一周期成本后恢复。
 
@@ -175,12 +200,15 @@ good_budget_share = min(procurement_budget, sum(gap * buy_price))
 
 预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
 
-普通商人采购完成后，对未售出的可卖余量按冻结本地零售价的 20% 托底应收尽收（不再按目标库存缺口截断），直到本格托底发行预算用尽；`cycle_flow` 余货也会在本周期内先获得低价清算/托底机会，但不会跨周期留存在市场库存：
+普通商人采购完成后，对未售出的可卖余量按冻结本地零售价的20%托底应收尽收，
+不再按目标库存缺口截断，也没有当前生效的 support 月度发行预算。`cycle_flow` 余货
+同样在周期内先清算，但不会跨周期留存在市场库存：
 
 ```text
-supported_qty = min(offer_sellable - normal_merchant_purchase,
-                    support_issuance_budget_in_qty)
-support_money = max(1, floor(supported_qty * frozen_retail_price / (GOODS_SCALE * 5)))
+supported_qty = max(0, offer_sellable - normal_merchant_purchase)
+support_unit_value = floor(frozen_retail_price / 5)
+support_money = max(1, floor(supported_qty * support_unit_value / GOODS_SCALE))
+                if supported_qty > 0 else 0
 if storage_mode != cycle_flow:
     market_stock += supported_qty
 owner_funds += support_money
@@ -188,7 +216,9 @@ explicit_money_mint += support_money
 ```
 
 托底不扣商人资金。`production_output_supported` 和 `producer_support_money_issued` 分别报告接受量
-和发行额；托底预算用尽后的普通余量与周期流边界剩余量都进入真实 discard sink。
+和发行额；当前不能用“预算用尽”解释普通商品丢弃。周期流边界剩余量仍进入真实 discard
+sink。金银走全量可卖产出接受与面值发行，`bullion_money_issued` 是
+`producer_support_money_issued` 中的子集，分析时不能把两列相加作为总增发。
 
 每次提交严格校验：
 
@@ -206,8 +236,9 @@ closing_stock      = opening_stock + explicit_stock_delta - consumed_goods
 
 任何误差非零或内部不变量破坏都进入 fatal；不为千万 cohort 创建回滚副本。
 
-不存在按建筑数量无条件发行的商站铸币行为。货币内生发行只能来自市场实际接受的
-金银产出，发行数量受建筑到岗、投入、真实矿藏、产出和接受量共同约束。
+不存在按建筑数量无条件发行的商站铸币行为。金银内生发行来自实际接受的金银产出，
+受建筑到岗、投入、真实矿藏和实际产量约束；普通产出托底也是独立的显式发行来源。
+两者都不能解释为商人支出或政府税收转移。
 
 类别生产投入使用 good-level 效率换算物理消耗：
 

@@ -46,10 +46,13 @@ func set_data(data: Dictionary) -> void:
 	_role.text = String(data.get("role", ""))
 	_days.text = "已战 %d 日" % int(data.get("days", 0))
 	var score := float(data.get("score", 0.0))
-	_score.text = String(data.get("score_text", "0"))
+	_score.text = String(data.get("score_text", ""))
 	_score.add_theme_color_override("font_color",
 		UITokens.DOSSIER_VERDIGRIS if score >= 0.0 else UITokens.DOSSIER_OXBLOOD)
-	_losses.text = String(data.get("losses_text", ""))
+	var losses := String(data.get("losses_text", ""))
+	if bool(data.get("fully_occupied", false)):
+		losses = ("%s · 对方全境沦陷" % losses) if not losses.is_empty() else "对方全境沦陷"
+	_losses.text = losses
 	var parts: Array = data.get("score_parts", [])
 	_parts.visible = not parts.is_empty()
 	_parts.set_rows(parts)

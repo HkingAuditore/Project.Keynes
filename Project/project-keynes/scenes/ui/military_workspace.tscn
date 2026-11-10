@@ -53,7 +53,7 @@ autowrap_mode = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-horizontal_scroll_mode = 0
+horizontal_scroll_mode = 1
 
 [node name="PageColumn" type="VBoxContainer" parent="Root/PageViewport"]
 layout_mode = 2

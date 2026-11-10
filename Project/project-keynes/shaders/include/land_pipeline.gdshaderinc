@@ -590,6 +590,8 @@ SurfaceParams apply_land_material_overlays(
 vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
+	lc.direct_shadow *= cloud_shadow_direct_visibility(uv, lc.local_day);
+	lc.cloud_ambient = cloud_shadow_ambient_visibility(uv, lc.local_day);
 	// 5 = 白模光照：底色换成中性灰、其余光照全保留，只看地形明暗本身。
 	if (gi_debug_view == 5) {
 		surface.base_color = vec3(0.55);

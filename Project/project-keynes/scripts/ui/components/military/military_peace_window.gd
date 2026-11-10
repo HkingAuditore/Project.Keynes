@@ -45,6 +45,7 @@ const CEDE_LIST_MAX := 104.0
 const PEACE_COOLDOWN_DAYS := 30
 
 var _war_id := 0
+var _auto_block_text := ""
 var _model: Dictionary = {}
 var _pvm = PeaceViewModelScript.new()
 var _controller = null
@@ -157,6 +158,7 @@ func open(war_id: int, model: Dictionary) -> void:
 	_cooldown_until = -1
 	_status_text = ""
 	_status_danger = false
+	_auto_block_text = ""
 	visible = true
 	_layout()
 	_refresh_now()
@@ -198,7 +200,7 @@ func set_command_result(result: Dictionary) -> void:
 		_submitted_day = maxi(_submitted_day, _current_day())
 		_set_status("和约已递交，次日答复。", false)
 	else:
-		_set_status(String(result.get("message", "议和命令被拒绝。")), true)
+		_set_status(String(result.get("message", "议和未递交：原因未返回，请稍后重试。")), true)
 	_refresh_now()
 
 
@@ -387,9 +389,10 @@ func _fill_readout(data: Dictionary) -> void:
 	var terms: Dictionary = data.get("terms", {})
 	var price := float(terms.get("price", 0.0))
 	var band := int(terms.get("band", -1))
-	_terms_price.text = "条款总价 %s 分" % _compact(price)
-	if bool(terms.get("estimated", false)):
-		_footer_readout.text = "对方意愿未知（旧桥），递交仍由运行时裁决"
+	var estimated := bool(terms.get("estimated", false))
+	_terms_price.text = "条款总价 %s 分%s" % [_compact(price), "（估算）" if estimated else ""]
+	if estimated:
+		_footer_readout.text = "对方意愿暂不可读，仍可递交，由对方裁断"
 	elif float(terms.get("willing", -1.0)) >= 0.0:
 		_footer_readout.text = "意愿 %s · 分差 %s" % [
 			_compact(float(terms.get("willing", 0.0))),
@@ -404,7 +407,19 @@ func _fill_readout(data: Dictionary) -> void:
 	var blocked := _blocked_reason()
 	_submit.disabled = blocked != ""
 	_submit.tooltip_text = blocked if not blocked.is_empty() else "提交给对方，次日答复"
-	_set_status(_status_text, _status_danger)
+	# 禁用原因常显；只接管自己写过的状态文字，避免盖住「递交中 / 冷却」等回执，
+	# 也避免 _set_status() 回写 _status_text 后旧的禁用原因清不掉。
+	if not blocked.is_empty():
+		if _status_text.is_empty() or _status_text == _auto_block_text:
+			_auto_block_text = blocked
+			_set_status(blocked, true)
+		else:
+			_set_status(_status_text, _status_danger)
+	elif _status_text == _auto_block_text and not _auto_block_text.is_empty():
+		_auto_block_text = ""
+		_set_status("", false)
+	else:
+		_set_status(_status_text, _status_danger)
 
 
 func _track_cooldown(data: Dictionary) -> void:
@@ -429,7 +444,7 @@ func _blocked_reason() -> String:
 	if draft_terms().is_empty():
 		return "先勾选条款（白和平也是一份和约）。"
 	if _controller == null:
-		return "议和需要在正式对局中下达。"
+		return "议和命令暂未接通，请稍后重试。"
 	return ""
 
 

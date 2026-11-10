@@ -1,15 +1,15 @@
 # 综合满意度运行时（Composite Satisfaction Runtime）
 
 本文件是 cohort 与家族分支满意度的当前公式说明。C++ 是唯一评分权威；GDScript 负责
-内容编译、配置和展示，不进行第二套满意度结算。2026-10-18 起采用实际消费方案，替代
-2026-10-16 的舒适/奢侈存款购买力方案。
+内容编译、配置和展示，不进行第二套满意度结算。2026-11-08 消费模型 v2 在实际消费方案上
+加入基本生活短板与舒适/奢侈高分条件；模型版本进入目录身份，保存列布局不变。
 
 ## 八个维度
 
 | id | 枚举 | 语义与输入 |
 | --- | --- | --- |
 | 0 | `SAT_DIM_SUBSISTENCE` | 生存（survival，旧 UI 名「温饱」），既有热量与寒冷衣着生存满足率 |
-| 1 | `SAT_DIM_BASIC` | 基本生活，basic 需求实际消费 / 生活目标量的加权平均 |
+| 1 | `SAT_DIM_BASIC` | 基本生活完整度：75% 的 basic 需求加权均值 + 25% 的适用基本需求最低满足率 |
 | 2 | `SAT_DIM_COMFORT` | 舒适，comfort 需求实际消费 / 生活目标量的加权平均 |
 | 3 | `SAT_DIM_LUXURY` | 奢侈，luxury 需求实际消费 / 生活目标量的加权平均 |
 | 4 | `SAT_DIM_INCOME` | 收入增长，近期人均收入 EMA / 长期基线 EMA |
@@ -30,18 +30,23 @@
 - 奢侈：奢侈消费、身份消费。
 
 生存维度仍由既有生存量独立计算；吃不上偏好的某种食物不直接等同于饥饿。
-一个 need 至少有一种技术允许的消费方案、目标基础量与族群系数为正时，才形成生活目标。
+一个 need 至少有一种技术允许的消费方案，且目标基础量、冻结环境因子、族群系数与需求权重
+均为正时，才形成生活目标。
 目标不看库存，也不看某个高端 variant 的存款激活门槛。权重 0 的 need 不参与满意度。
 
 ```text
 living_target = population × plan.base_qty_per_person × elapsed_days
                 × frozen_environment_factor × ethnicity_need_factor
 living_fill   = clamp(actual_filled_units / living_target, 0, 1)
-tier_score    = Σ(need_weight × living_fill) / Σ(need_weight)
+tier_mean     = Σ(need_weight × living_fill) / Σ(need_weight)
+basic_score   = (3 × basic_mean + min(applicable_positive_weight_basic_fill)) / 4
+comfort_score = comfort_mean
+luxury_score  = luxury_mean
 ```
 
 目标量不乘财富、价格缩量、资金预算和商品偏好系数。正目标的整数下溢保留最小 1 单位；
-环境因子最小取 1/Q16，防止整档因取整消失。购买申请、预算排序、替代与生产者自留逻辑不变；
+环境因子恰为零时不形成目标与适用维度；正因子即使很小也保留最小 1 单位。
+购买申请、预算排序、替代与生产者自留逻辑不变；
 已消费自留品同样计入 actual_filled。由于评价目标独立，买到了全部“缩减后的申请量”仍可能生活不足。
 
 `NeedState.living_target_units` 是市场调用内的临时量，不进入存档。已解锁但没有购买申请的
@@ -64,17 +69,35 @@ need 仍保留零消费的目标记录，因此没钱、缺货、价格缩量都
 零权重时不参与合成；消费类别全部为零时保留生存预算。整数分配用前缀商差，预算总和精确。
 
 ```text
-raw              = Σ(effective_weight × dim) / Σ(effective_weight)
+raw_before_bias  = Σ(effective_weight × dim) / Σ(effective_weight)
+raw              = clamp(raw_before_bias + profession_bias, 0, 1)
 survival_ceiling = subsistence + (1 − subsistence) × survival_slack
-basic_ceiling    = basic + (1 − basic) × basic_slack  // 基本档适用时
-ceiling          = min(survival_ceiling, basic_ceiling)
+basic_ceiling    = basic + (1 − basic) × basic_slack
+comfort_ceiling  = 0.70 + 0.30 × comfort
+luxury_ceiling   = 0.90 + 0.10 × luxury
+ceiling          = min(survival_ceiling, applicable_basic_ceiling,
+                       applicable_positive_weight_comfort_and_luxury_ceilings)
 composite        = min(raw, ceiling)
 ```
 
-默认 survival_slack=6554/Q16（约10%），新增 basic_slack=13107/Q16（约20%）。
+默认 survival_slack=6554/Q16（约10%），basic_slack=13107/Q16（约20%）。
+原生值上界为65535；生存与基本上限准确计算为
+`dim + floor((65535-dim) × slack / 65536)`，舒适与奢侈上限分别为
+`45875 + floor((65535-45875) × comfort / 65535)` 和
+`58982 + floor((65535-58982) × luxury / 65535)`。
+生存门槛始终执行，基本门槛只检查适用性，即使职业给基本维度配置零权重也仍限制综合分。
 例如基本生活75%时，综合分上限约80%；84.2%时，上限约87.4%。
-约束只影响综合分，不伪造其他维度的实际消费结果。存在约束封顶时，worst_dimension_id 指向
-实际施加最严约束的生存或基本维度；否则选 `(1−dim) × effective_weight` 最大项。
+舒适需求适用但完全缺失时上限70%，满足一半时上限85%；奢侈需求适用但缺失时上限90%。
+舒适和奢侈闸门只作用于职业明确给予正维度权重的适用维度，不把未形成需求算成短缺。
+约束只影响综合分，不伪造其他维度的实际消费结果。仅在 `raw_q16 > ceiling_q16` 时认为上限
+实际封顶；二者相等不算封顶。实际封顶时，worst_dimension_id 指向
+实际施加最严约束的维度，平局按生存、基本、舒适、奢侈顺序；否则选
+`(1−dim) × effective_weight` 最大项。
+
+失业者的正式消费计划补齐衣着、居住维护、家庭用品、家用器皿、卫生、医疗和家庭能源，
+与生存计划采用相同的12类需求和规范基础量，保留较保守的财富与存款激活门槛；职业装备
+不在这两个计划中。
+失业不再因计划只包含食物而天然绕过其他生活条件。
 
 ## 配置与其余维度
 
@@ -110,9 +133,13 @@ composite        = min(raw, ceiling)
 `refresh_epoch_development()` 的 epoch 边界缓存、市场周期 N/P/I、发布与调度契约保持不变。
 
 `explain_cohort_satisfaction` 返回八维、归一后的有效权重、缺口贡献、`raw_q16`、
-实际双重约束的 `ceiling_q16`、已存 `composite_q16`、`applicable_mask` 和
-`consumption_semantics=realized_over_living_target_v1`。存款月数仅用于储蓄诊断，
-另返回 `basic_gate_slack_q16`；旧舒适/奢侈月份门槛不再返回。
+实际约束的 `ceiling_q16`、已存 `composite_q16`、`applicable_mask` 和
+`consumption_semantics=realized_over_living_target_basic_completeness_v2`。另返回
+`satisfaction_model_version=2`、`raw_before_bias_q16`、`bias_q16`、
+`basic_average_weight_q16=49152` / `basic_worst_weight_q16=16384`、
+`comfort_gate_floor_q16=45875` / `luxury_gate_floor_q16=58982`、最严上限来源 `ceiling_dimension_id`
+及其是否实际封顶 `ceiling_is_binding`。
+存款月数仅用于储蓄诊断；旧舒适/奢侈月份门槛不再返回。
 查询在原生 slice 之间安全，只对需要展示的人口范围执行。
 
 ## 权威列与存储
@@ -123,7 +150,7 @@ composite        = min(raw, ceiling)
 | --- | --- | --- |
 | `composite_satisfaction` | `uint16` | 权威 composite（Q16） |
 | `satisfaction_dims` | `uint16 × SAT_DIM_COUNT`（stride） | 八个维度值 |
-| `worst_dimension_id` | `uint8` | 缺口贡献最大的维度；`0xFF` 表示未评估 |
+| `worst_dimension_id` | `uint8` | 实际封顶的维度，否则为缺口贡献最大的维度；`0xFF` 表示未评估 |
 | `income_baseline_ema` | `int64` | 慢收入基线 EMA |
 | `epoch_tax_paid` | `int64` | 本期已缴税 |
 | `epoch_subsidy_received` | `int64` | 本期已收补贴 |
@@ -205,12 +232,14 @@ payload 布局：`i0` 新等级、`i1` 最差维度、`i2` 最差需求、`i3` �
   `epoch_tax_paid`(i64)、`epoch_subsidy_received`(i64)。
 - `SAVE_SECTION_FAMILY_INFLUENCES` 追加 `satisfaction_q16`。
 - `SAVE_SECTION_CELLS` 追加已发布的社会压力等级。
-- reader 只接受 v30；v29 及更早返回 `economy_save_v29_or_earlier_unsupported`
-  （与既有 v28 策略一致，本项目不做旧档迁移）。
+- 上述是 v30 的历史布局接入；当前 writer 为 v60，reader 允许 v56～v60，并继续校验目录
+  与内容身份。消费模型 v2 与本轮消费计划修改会改变 catalog hash，不能因保存列未变就认为
+  旧内容存档可以加载。
 - restore 校验维度值与 `worst_dimension_id` 的范围；越界即拒绝整个存档。
 - 全部新权威列进 `state_hash`；need 分档/权重与 signature 权重列进 `catalog_hash`。
 
-`game_save_coordinator.gd` 的 `pkec` provider schema 同步为 30。
+`game_save_coordinator.gd` 通过 `get_economy_checkpoint_format()` 查询当前原生 schema，
+不再固定使用满意度最初接入时的 v30。
 
 ## UI
 
@@ -223,7 +252,8 @@ payload 布局：`i0` 新等级、`i1` 最差维度、`i2` 最差需求、`i3` �
 旧的格级建筑视觉社会分档仍沿用原有 presentation 规则，不在本轮改动范围。
 
 对外 `satisfaction_dims_by_cohort_q16` / `dim_values_q16` 中 -1 表示该消费维度不适用；
-存储列仍为 uint16，未适用的内部值为 0。适用性按职业计划、族群需求系数与冻结科技可用性派生，
+存储列仍为 uint16，未适用的内部值为 0。适用性按职业计划、正需求权重、族群需求系数、
+冻结环境因子与科技可用性派生，
 不依赖库存、资金、价格弹性和维度权重是否为零。尚未形成需求显示“不适用”，缺货显示实际低分。
 适用性是查询时冻结上下文的诊断，维度值是最近已完成的市场结算值。
 人口聚合只对该维度适用的人口取平均；职业页另返回 `satisfaction_dims_population` 作为其分母。
@@ -248,7 +278,9 @@ cell summary 的生存值，并在悬停提示里注明口径。`common_hash` �
 
 ## 性能与验收
 
-计算全部寄生在既有循环与 epoch 边界缓存上：无新增遍历、无字符串、无 Dictionary、无分配。
+计算复用既有 need 归约循环与 epoch 边界缓存，没有新增全世界遍历，评分热循环不使用字符串
+或 Dictionary。基本短板增加每个当前市场 cohort 8 字节的线程临时向量，容量增长时可分配，
+之后复用；不增加保存列。
 
 2026-08-04 验收（60×40、`population_scale=100`、50 天生产路径、debug DLL、
 各跑三次取中位数）：
@@ -264,7 +296,9 @@ cell summary 的生存值，并在悬停提示里注明口径。`common_hash` �
 墙钟在这台机器上的 run-to-run 抖动本身就有 ±20%（基线三次 run_ms 为
 1707 / 2308 / 1774），因此结论以确定性 `scan_steps_*` 计数器为准。
 
-覆盖测试：`tests/satisfaction_runtime_test.gd`（八维度、生存闸门、阶层权重差异、
-explain 与 attractiveness API、PKEC v41 往返与 state_hash）、
-`tests/goods_storage_schema_test.gd` 的 `_test_satisfaction_driven_births`、
-`tests/economy_birth_runtime_test.gd`、`tests/inspector_live_patch_test.gd`。
+2026-11-08 覆盖测试：`tests/economy/satisfaction_runtime_test.gd` 与
+`tests/economy/consumption_satisfaction_runtime_test.gd` 各77项通过，覆盖八维度、基本完整度、
+舒适/奢侈渐进门槛、职业零权重、环境零值/极小正值、失业者冷暖衣物需求、守恒、
+worker/scalar 一致性，以及 PKEC v60 往返；完整入口同时验证次轮完整 state_hash。
+`tests/economy/consumption_satisfaction_ui_test.gd` 覆盖详情行、雷达与不适用人口分母。
+出生与 Inspector 其他回归分别见当前 `tests/` 下对应专项测试。

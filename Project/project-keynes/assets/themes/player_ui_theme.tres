@@ -1,6 +1,6 @@
 [gd_resource type="Theme" format=3 uid="uid://pxjpycs2dsct"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_font"]
+[ext_resource type="FontFile" uid="uid://ob2q0rcuc6oo" path="res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf" id="1_font"]
 [ext_resource type="FontVariation" path="res://assets/fonts/muyao/display_handwritten.tres" id="ui_display"]
 
 [sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
@@ -310,7 +310,6 @@ corner_radius_bottom_left = 3
 color = Color(0.36, 0.29, 0.19, 0.64)
 vertical = true
 
-
 [resource]
 default_font = ExtResource("1_font")
 default_font_size = 18
@@ -394,6 +393,7 @@ PKPrimaryButton/styles/pressed = SubResource("ButtonPressed")
 PKSectionTitle/base_type = &"Label"
 PKSectionTitle/colors/font_color = Color(0.92, 0.72, 0.38, 0.96)
 PKSectionTitle/font_sizes/font_size = 17
+PKSectionTitle/fonts/font = ExtResource("ui_display")
 PKTabButton/base_type = &"Button"
 PKTabButton/styles/disabled = SubResource("ButtonDisabled")
 PKTabButton/styles/focus = SubResource("ButtonFocus")
@@ -403,6 +403,7 @@ PKTabButton/styles/pressed = SubResource("ButtonPressed")
 PKTitle/base_type = &"Label"
 PKTitle/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 PKTitle/font_sizes/font_size = 20
+PKTitle/fonts/font = ExtResource("ui_display")
 PanelContainer/styles/panel = SubResource("StylePanel")
 ProgressBar/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 ProgressBar/styles/background = SubResource("ProgressBackground")
@@ -417,6 +418,3 @@ VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
 VScrollBar/styles/scroll = SubResource("ScrollTrack")
 VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 VSeparator/styles/separator = SubResource("VerticalRule")
-
-PKTitle/fonts/font = ExtResource("ui_display")
-PKSectionTitle/fonts/font = ExtResource("ui_display")

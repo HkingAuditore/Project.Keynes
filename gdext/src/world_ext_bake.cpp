@@ -1541,7 +1541,7 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
     //    水体与河心像素都是出口，支谷因此汇入格子尺度的河流。
     double valley_ms = -1.0;
     {
-        const double depth_per_relief = double(knobs.get("dem_valley_depth_per_relief", 1.2));
+        const double depth_per_relief = double(knobs.get("dem_valley_depth_per_relief", 1.4));
         PackedFloat32Array dem_relief = terr.get("dem_relief_buffer", PackedFloat32Array());
         PackedByteArray biome = terr.get("biome_buffer", PackedByteArray());
         const int np = w * h;
@@ -1575,7 +1575,7 @@ godot::Dictionary DCWorldExt::run_bake_geometry_fields_pass(godot::Dictionary kn
             dp.sea_level = double(knobs.get("sea_level", 0.64));
             dp.hex_px = step_x > 1e-9 ? hex_size * 1.7320508075688772 / step_x : 1.0;
             dp.depth_per_relief = depth_per_relief;
-            dp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 3.0));
+            dp.wall_per_relief = double(knobs.get("dem_valley_wall_per_relief", 5.0));
             dp.area_lo_px = double(knobs.get("dem_valley_area_lo", 8.0));
             dp.area_hi_px = double(knobs.get("dem_valley_area_hi", 4000.0));
             dp.depth_exp = double(knobs.get("dem_valley_depth_exp", 0.8));
@@ -1813,6 +1813,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     PackedFloat32Array elev_in = knobs.get("cell_elevation", PackedFloat32Array());
     PackedFloat32Array moist_in = knobs.get("cell_moisture", PackedFloat32Array());
     PackedByteArray terr_in = knobs.get("cell_terrain", PackedByteArray());
+    PackedByteArray landform_in = knobs.get("cell_landform", PackedByteArray());
     PackedByteArray veg_in = knobs.get("cell_vegetation", PackedByteArray());
     PackedByteArray cov_in = knobs.get("cell_cover", PackedByteArray());
     PackedInt32Array o2i_in = knobs.get("offset_to_index", PackedInt32Array());
@@ -1821,10 +1822,12 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
         return fail("cell SoA size < n_cells");
     }
     if (o2i_in.size() < map_w * map_h) return fail("offset_to_index too small");
+    if (!landform_in.is_empty() && landform_in.size() != n_cells) return fail("cell_landform size != n_cells");
 
     const float * const __restrict E = elev_in.ptr();
     const float * const __restrict M = moist_in.ptr();
     const uint8_t * const __restrict T = terr_in.ptr();
+    const uint8_t * const LF = landform_in.is_empty() ? nullptr : landform_in.ptr();
     const uint8_t * const __restrict VG = veg_in.ptr();
     const uint8_t * const __restrict CV = cov_in.ptr();
     const int32_t * const __restrict O2I = o2i_in.ptr();
@@ -1843,10 +1846,13 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
     const double DEM_RELIEF_LO           = double(knobs.get("dem_relief_lo", 0.006));   // 邻格最大高差门控：below→平原保持平坦
     const double DEM_RELIEF_HI           = double(knobs.get("dem_relief_hi", 0.120));
     const double DEM_RELIEF_CAP          = double(knobs.get("dem_relief_cap", 0.25));
-    const double DEM_RIDGE_AMP_PER_RELIEF = double(knobs.get("dem_ridge_amp_per_relief", 0.2));  // 山脊网络振幅 = 局地起伏 × 该系数
-    const double DEM_RIDGE_WAVELENGTH_HEX = double(knobs.get("dem_ridge_wavelength_hex", 1.6));  // 最粗一层山脊间距
+    const double DEM_RIDGE_AMP_PER_RELIEF = double(knobs.get("dem_ridge_amp_per_relief", 0.55));
+    const double DEM_RIDGE_WAVELENGTH_HEX = double(knobs.get("dem_ridge_wavelength_hex", 2.4));
+    const double DEM_RIDGE_CREST_EXP = std::clamp(double(knobs.get("dem_ridge_crest_exp", 2.2)), 1.0, 4.0);
+    const double DEM_MOUNTAIN_FLOOR = std::max(0.0, double(knobs.get("dem_mountain_relief_floor", 0.055)));
+    const double DEM_PEAK_FLOOR = std::max(0.0, double(knobs.get("dem_peak_relief_floor", 0.080)));
     // 逐层坡度贡献 ∝ 振幅 × 频率 = (2 × gain)^k：gain < 0.5 才是粗层主导、有主脊主谷的层级。
-    const double DEM_RIDGE_GAIN          = double(knobs.get("dem_ridge_gain", 0.5));
+    const double DEM_RIDGE_GAIN          = double(knobs.get("dem_ridge_gain", 0.40));
     const double DEM_AMP_PER_RELIEF      = double(knobs.get("dem_amp_per_relief", 0.1));   // 最粗一层沟谷振幅 = 局地起伏 × 该系数
     const double DEM_BASE_WAVELENGTH_HEX = double(knobs.get("dem_base_wavelength_hex", 1.0));   // 最粗一层沟距
     const int    DEM_OCTAVES             = int(knobs.get("dem_octaves", 4));
@@ -1997,7 +2003,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
 
     // ── [P0] per-cell 高程梯度 + 局地起伏预计算（六邻居有限差分；O(n_cells)）──
     //    grad 方向供各向异性脊线（沿等高线方向拉长山脊）；relief（邻格最大高差）供连续
-    //    振幅门控（平原→趋零、山地→满振幅），均不依赖 hex_size 量纲、不绑 terrain 类别。
+    //    振幅门控（平原→趋零、山地补区域起伏与地貌下限），不依赖 hex_size 量纲。
     std::vector<float> CGX(size_t(n_cells), 0.0f), CGY(size_t(n_cells), 0.0f), CREL(size_t(n_cells), 0.0f);
     for (int r = 0; r < map_h; ++r) {
         const int qbase = -((r - (r & 1)) / 2);          // offset.col → cube.q（cell_at_cube 互逆）
@@ -2029,7 +2035,26 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                 CGX[size_t(self_c)] = float((Syy * Sxz - Sxy * Syz) * inv);
                 CGY[size_t(self_c)] = float((Sxx * Syz - Sxy * Sxz) * inv);
             }
-            CREL[size_t(self_c)] = float(relief);
+            // 两圈的高差折算回一格尺度；只在山地身份中补强区域起伏，避免远山污染平原。
+            double regional_min = e0, regional_max = e0;
+            for (int dq = -2; dq <= 2; ++dq) {
+                for (int dr = std::max(-2, -dq - 2); dr <= std::min(2, -dq + 2); ++dr) {
+                    const int nb = cell_at_cube(q + dq, r + dr);
+                    if (nb < 0 || pk_relief::is_water(T[nb])) continue;
+                    regional_min = std::min(regional_min, double(E[nb]));
+                    regional_max = std::max(regional_max, double(E[nb]));
+                }
+            }
+            const int lf = LF != nullptr ? int(LF[self_c]) : -1;
+            const bool mountain = lf == 7 || lf == 8 || lf == 12;
+            if (mountain) {
+                relief = std::max(relief, (regional_max - regional_min) * 0.35);
+                relief = std::max(relief, lf == 8 ? DEM_PEAK_FLOOR : DEM_MOUNTAIN_FLOOR);
+            } else if (lf == 13) {
+                // 高原内部压低细纹，陡坎仍由实测邻格高差驱动。
+                relief *= 0.35 + 0.65 * smooth01(0.02, 0.10, relief);
+            }
+            CREL[size_t(self_c)] = pk_relief::is_water(T[self_c]) ? 0.0f : float(relief);
         }
     }
 
@@ -2154,7 +2179,7 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
 
                 // 7. [P0] per-pixel relief：山脊网络 + 顺坡沟谷（DEM 地貌）。沟谷走向取 per-cell 高程梯度
                 //    与山脊坡度之和，振幅随局地起伏连续变化（平原趋平、山地满幅），干燥地表细沟更密；
-                //    不绑 terrain 类别。
+                //    地貌已在 per-cell 起伏尺度中连续插值，不对像素做硬类别切换。
                 double elev_final = elev_blend;
                 double dem_relief_px = 0.0;
                 if (terrain_self != TT_OCEAN && terrain_self != TT_COAST) {
@@ -2169,15 +2194,19 @@ godot::Dictionary DCWorldExt::run_bake_terrain_index_pass(godot::Dictionary knob
                     if (gate > 0.0) {
                         const double relief_c = std::min(relief_p, DEM_RELIEF_CAP);
                         dem_relief_px = relief_c * gate;
-                        // 山脊网络：ridged 输出 +1 为脊线，均值约 0.3；前向差分取坡度供沟谷定向。
-                        const double ridge_amp = DEM_RIDGE_AMP_PER_RELIEF * relief_c * gate * 0.5;
+                        // 尖化主脊并抬高峰肩对比；前向差分使用同一塑形曲线供沟谷定向。
+                        const double ridge_amp = DEM_RIDGE_AMP_PER_RELIEF * relief_c * gate;
                         double ridge_off = 0.0, rgx = 0.0, rgy = 0.0;
                         if (ridge_amp > 0.0 && dem_ridge_octaves > 0) {
                             const double e = dem_min_wavelength * 0.25;
-                            const double r0 = dem_ridge_at(wx_base, wy_base);
-                            ridge_off = (r0 - 0.3) * ridge_amp;
-                            rgx = (dem_ridge_at(wx_base + e, wy_base) - r0) / e * ridge_amp;
-                            rgy = (dem_ridge_at(wx_base, wy_base + e) - r0) / e * ridge_amp;
+                            auto crest_at = [&](double x, double y) {
+                                const double u = std::clamp((dem_ridge_at(x, y) + 1.0) * 0.5, 0.0, 1.0);
+                                return (std::pow(u, DEM_RIDGE_CREST_EXP) - 0.40) * 2.0;
+                            };
+                            const double r0 = crest_at(wx_base, wy_base);
+                            ridge_off = r0 * ridge_amp;
+                            rgx = (crest_at(wx_base + e, wy_base) - r0) / e * ridge_amp;
+                            rgy = (crest_at(wx_base, wy_base + e) - r0) / e * ridge_amp;
                         }
                         pk_dem::LandformParams lp = dem_params;
                         lp.gain = DEM_GAIN_WET + (DEM_GAIN_DRY - DEM_GAIN_WET) * (1.0 - moist_blend);

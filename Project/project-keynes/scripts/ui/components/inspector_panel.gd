@@ -41,6 +41,7 @@ signal trade_orders_page_requested(offset: int)
 signal trade_order_locate_requested(cell_idx: int)
 ## 军事页签的官营建筑请求：{cell, role, op, building}。接收方（GameUIManager）翻成正式命令。
 signal military_state_building_requested(request: Dictionary)
+signal military_army_create_requested(request: Dictionary)
 ## 军事页签里点了一支部队：接收方按 handle 打开军务档案。
 signal military_army_selected(handle: int)
 ## 军务档案（部队 / 战线页）的动作与换页请求。接收方是 GameUIManager。
@@ -555,6 +556,8 @@ func _build_military_ledger(host: Control, model: Dictionary) -> void:
 	host.add_child(ledger)
 	ledger.action_requested.connect(func(request: Dictionary) -> void:
 		military_state_building_requested.emit(request))
+	ledger.army_create_requested.connect(func(request: Dictionary) -> void:
+		military_army_create_requested.emit(request))
 	ledger.army_selected.connect(func(handle: int) -> void:
 		military_army_selected.emit(handle))
 	ledger.set_model(model)
@@ -1101,6 +1104,11 @@ func set_military_ledger_feedback(message: String, ok: bool) -> void:
 		_military_ledger.show_feedback(message, ok)
 
 
+func set_military_army_feedback(message: String, ok: bool) -> void:
+	if _military_ledger != null:
+		_military_ledger.show_army_feedback(message, ok)
+
+
 ## 次日结算 / 打开窗口后重发同一张目录页的请求（查询身份由窗口自己记住）。
 func request_construction_refresh() -> void:
 	if _construction_workspace != null and _construction_workspace.visible:
@@ -1134,6 +1142,16 @@ func military_dossier_open() -> bool:
 
 func military_dossier_identity() -> String:
 	return _military_dossier.identity() if _military_dossier != null else ""
+
+
+func update_military_arm_order(state: Dictionary) -> void:
+	if _military_dossier != null:
+		_military_dossier.set_order_state(state)
+
+
+func set_military_dossier_feedback(message: String, ok: bool) -> void:
+	if _military_dossier != null:
+		_military_dossier.show_feedback(message, ok)
 
 
 ## 没有地块档案可看时收起目录列：军务档案独占面板。
@@ -1246,6 +1264,9 @@ func set_compact_detail_mode(compact: bool) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if military_dossier_open() and _military_dossier.handle_order_key(event):
+		get_viewport().set_input_as_handled()
+		return
 	if not visible or not detail_open() or not (event is InputEventKey) \
 			or not event.pressed or event.echo or event.keycode != KEY_ESCAPE:
 		return

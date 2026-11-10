@@ -58,6 +58,17 @@ python tools/audit_technology_unlock_progression.py
 
 ## 产业闭环重平衡
 
+### 科技内容解锁节奏（2026-11-08）
+
+`rebalance_content_pacing.py` 从权威科技网和实际 `.tres` 档案审计时代分布、绑定、建筑全门槛、研究祖先、必需投入、替代物资、自然资源与合并后的建材 OR 池。软投入不作为不可生产门槛，时代描述也不额外建立统一时代锁。工具默认只读并刷新 `technology_content_pacing_audit.md`；迁移需显式提供审查过的 JSON 补丁及可选原始目录快照：
+
+```powershell
+python tools/technology_tree/rebalance_content_pacing.py
+python tools/technology_tree/rebalance_content_pacing.py --apply <reviewed-plan.json> --baseline <before/network.json>
+```
+
+迁移完成后依次运行 `build_technology_network_authoring.gd`、脚本 `run_content_pacing_checks.py` 的目录/设计/绑定/产业闭包检查，再运行 `--refresh-manifest` 更新稳定目录内容指纹，最后生成并检查 HTML/Markdown 科技树报告。逐项决策保存在 `content_pacing_revision.json`。当前目录保留416个研究科技和稳定ID；研究数由石器/农耕时代的75/67调整为56/51，王国/帝国分布为57/43。全目录包含459建筑、167物资、31自然资源；目录理论闭包不替代地图、劳动力、库存、运输或真实日期验证。
+
 `rebalance_industry_closure.mjs` 是确定性迁移与守门工具：统一 Good 的生产科技标签，修复早期
 铜/青铜、铁/煤、纺织、盐/橡胶和建材链，补资本品建设需求，并保持产业步骤、闭包与拓扑顺序；
 它不靠重复建筑填充固定时代配额。

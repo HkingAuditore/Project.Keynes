@@ -3955,8 +3955,16 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 		# The first slice can run through IdeologyRuntimeSystem (which arms its
 		# own barrier), while continuation goes straight to the native graph.
 		# Reconcile that same barrier here after native completion as well.
+		# `ideology_needs_daily_continuation` was added to the native bridge after
+		# older Windows DLLs had already been distributed. Probe the binding before
+		# calling it so an out-of-date extension cannot abort a save boundary. The
+		# graph's hard-pending status is the conservative compatibility fallback: it
+		# keeps the ideology barrier armed until the extension is rebuilt.
+		var ideology_pending := barrier_armed
+		if _data_core_world_ext.has_method("ideology_needs_daily_continuation"):
+			ideology_pending = bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index))
 		_world_clock_ref.request_simulation_backpressure(
-			&"ideology_day_barrier", bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index)))
+			&"ideology_day_barrier", ideology_pending)
 	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
 		_data_core_world_ext.flush_runtime_visuals(token_dirty)
 	# Country slice 已在 pulse 内写入 native + MapData.country_slot_arr，但

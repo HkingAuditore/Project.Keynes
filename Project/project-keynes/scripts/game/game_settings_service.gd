@@ -60,6 +60,20 @@ func update(values_to_apply: Dictionary, persist: bool = true) -> Dictionary:
 	return {"ok": true, "code": "ok", "message": ""}
 
 
+## 世界设置页使用 0/1/2 的画质档；正式游戏统一读取 render_quality 字符串。
+## 在进入场景前转换并持久化，避免两套画质配置长期分叉。
+func apply_render_quality_mode(mode: int, persist: bool = true) -> Dictionary:
+	var quality := "auto"
+	match mode:
+		0:
+			quality = "low"
+		1:
+			quality = "medium"
+		2:
+			quality = "high"
+	return update({"render_quality": quality}, persist)
+
+
 func load_settings() -> Dictionary:
 	var cfg := ConfigFile.new()
 	var error := cfg.load(SETTINGS_PATH)

@@ -182,9 +182,11 @@ uint8_t NativeEconomyRuntime::satisfaction_applicable_mask(int32_t slot) const {
     const Signature &signature = _signatures[population_store().signature_id[slot]];
     const Plan &plan = _plans[signature.plan_id];
     const int32_t cell = population_store().page_cell[slot / COHORT_PAGE_SIZE];
+    const EnvironmentSample environment = environment_sample_for_cell(cell);
     for (int32_t n = 0; n < plan.need_count; ++n) {
         const Need &need = _needs[plan.need_begin + n];
-        if (satisfaction_need_available(need, cell) && _ethnicity_need_factor_q16[
+        if (sample_environment_curve(need.quantity_env_curve, environment) > 0 &&
+                satisfaction_need_available(need, cell) && _ethnicity_need_factor_q16[
                 static_cast<size_t>(signature.ethnicity_id) * _need_ids.size() + need.stable_id] > 0)
             mask |= static_cast<uint8_t>(1U << need.satisfaction_tier);
     }
@@ -222,15 +224,51 @@ NativeEconomyRuntime::satisfaction_effective_weights(
     return weights;
 }
 
+int64_t NativeEconomyRuntime::satisfaction_bias_q16(
+        int32_t cell, const Signature &signature) const {
+    const int32_t country_slot = cell_country_slot(cell);
+    const int32_t profession_id = signature.profession_id;
+    const size_t professions = _profession_ids.size();
+    const size_t index = static_cast<size_t>(std::max(0, country_slot)) *
+        professions + static_cast<size_t>(std::max(0, profession_id));
+    if (professions == 0 || country_slot < 0 || profession_id < 0 ||
+            static_cast<size_t>(profession_id) >= professions ||
+            index >= _epoch_country_profession_satisfaction_bp.size())
+        return 0;
+    return static_cast<int64_t>(
+        _epoch_country_profession_satisfaction_bp[index]) * Q16_ONE / 10000;
+}
+
 int64_t NativeEconomyRuntime::satisfaction_ceiling(
-        const int64_t *dims, uint8_t applicable_mask, int64_t &sat) const {
+        const int64_t *dims, uint8_t applicable_mask, const Signature &signature,
+        int32_t &binding_dimension, int64_t &sat) const {
     const auto gate = [&](int32_t dim, int32_t slack) {
         return saturating_add(dims[dim], mul_div_sat(
             Q16_ONE - 1 - dims[dim], slack, Q16_ONE, sat), sat);
     };
     int64_t ceiling = gate(SAT_DIM_SUBSISTENCE, _satisfaction_subsistence_gate_slack_q16);
+    binding_dimension = SAT_DIM_SUBSISTENCE;
+    const auto tighten = [&](int32_t dim, int64_t candidate) {
+        // Strict comparison preserves the stable survival/basic/comfort/luxury
+        // priority when two gates have exactly the same fixed-point ceiling.
+        if (candidate < ceiling) {
+            ceiling = candidate;
+            binding_dimension = dim;
+        }
+    };
     if ((applicable_mask & (1U << SAT_DIM_BASIC)) != 0)
-        ceiling = std::min(ceiling, gate(SAT_DIM_BASIC, _satisfaction_basic_gate_slack_q16));
+        tighten(SAT_DIM_BASIC, gate(SAT_DIM_BASIC, _satisfaction_basic_gate_slack_q16));
+    const auto high_living_gate = [&](int32_t dim, int64_t floor) {
+        if ((applicable_mask & (1U << dim)) == 0 ||
+                signature.satisfaction_weights_q16[dim] <= 0) return;
+        tighten(dim, saturating_add(floor, mul_div_sat(
+            Q16_ONE - 1 - floor, dims[dim], Q16_ONE - 1, sat), sat));
+    };
+    // Missing applicable comfort precludes high satisfaction; missing luxury
+    // precludes the very top band. Needs a profession does not value must not
+    // become mandatory merely because its plan diagnoses that consumption tier.
+    high_living_gate(SAT_DIM_COMFORT, 45875); // 70% + 30% * comfort
+    high_living_gate(SAT_DIM_LUXURY, 58982);  // 90% + 10% * luxury
     return ceiling;
 }
 
@@ -252,7 +290,7 @@ int32_t NativeEconomyRuntime::consumption_living_standard_level(int32_t slot) co
 int64_t NativeEconomyRuntime::update_cohort_satisfaction(
         int32_t slot, int32_t cell, int64_t subsistence_q16,
         const Signature &signature, const int64_t *tier_weighted_q16,
-        const int64_t *tier_weight_q16, int64_t &sat) {
+        const int64_t *tier_weight_q16, int64_t basic_min_fill_q16, int64_t &sat) {
     std::array<int64_t, SAT_DIM_COUNT> dims{};
     uint8_t applicable_mask = 0xF1;
     for (int32_t tier = SAT_DIM_BASIC; tier < SAT_TIER_COUNT; ++tier) {
@@ -266,6 +304,12 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
             dims[static_cast<size_t>(tier)] = std::clamp<int64_t>(
                 tier_weighted_q16[tier] / weight, 0, Q16_ONE - 1);
         }
+    }
+    if ((applicable_mask & (1U << SAT_DIM_BASIC)) != 0) {
+        // Keep aggregate coverage while recognizing a missing basic condition:
+        // one unmet need is a shortfall, not proof that all basic life is absent.
+        dims[SAT_DIM_BASIC] = (3 * dims[SAT_DIM_BASIC] +
+            std::clamp<int64_t>(basic_min_fill_q16, 0, Q16_ONE - 1)) / 4;
     }
     dims[SAT_DIM_SUBSISTENCE] = std::clamp<int64_t>(subsistence_q16, 0,
                                                     Q16_ONE - 1);
@@ -378,35 +422,19 @@ int64_t NativeEconomyRuntime::update_cohort_satisfaction(
     // positive bias lifts the cohort's own rating but can never buy its way past the
     // needs hierarchy. Applying it after `min(raw, ceiling)` would let a card make a
     // starving city "satisfied", which is the one thing the ceiling exists to prevent.
-    int64_t bias_bp = 0;
-    {
-        const int32_t country_slot = cell_country_slot(cell);
-        const int32_t profession_id = signature.profession_id;
-        const size_t professions = _profession_ids.size();
-        const size_t index = static_cast<size_t>(std::max(0, country_slot)) *
-                professions + static_cast<size_t>(std::max(0, profession_id));
-        if (professions > 0 && country_slot >= 0 && profession_id >= 0 &&
-            static_cast<size_t>(profession_id) < _profession_ids.size() &&
-            index < _epoch_country_profession_satisfaction_bp.size()) {
-            bias_bp = _epoch_country_profession_satisfaction_bp[index];
-        }
-    }
-    const int64_t raw_q16 = bias_bp == 0 ? raw_weighted_q16
-        : std::clamp<int64_t>(raw_weighted_q16 + bias_bp * Q16_ONE / 10000,
-                              0, Q16_ONE - 1);
+    const int64_t raw_q16 = std::clamp<int64_t>(
+        raw_weighted_q16 + satisfaction_bias_q16(cell, signature),
+        0, Q16_ONE - 1);
     // Needs are hierarchical: a cohort that cannot eat may not be rated
     // satisfied because it banked money or lives in a developed city. The
     // ceiling lets the other dimensions lift it only through the configured
     // slack above its subsistence floor.
-    const int64_t ceiling_q16 = satisfaction_ceiling(dims.data(), applicable_mask, sat);
+    int32_t binding_dimension = SAT_DIM_SUBSISTENCE;
+    const int64_t ceiling_q16 = satisfaction_ceiling(
+        dims.data(), applicable_mask, signature, binding_dimension, sat);
     const int64_t composite_q16 = std::clamp<int64_t>(
         std::min(raw_q16, ceiling_q16), 0, Q16_ONE - 1);
-    if (raw_q16 > ceiling_q16) {
-        const int64_t survival_ceiling = dims[SAT_DIM_SUBSISTENCE] + mul_div_sat(
-            Q16_ONE - 1 - dims[SAT_DIM_SUBSISTENCE],
-            _satisfaction_subsistence_gate_slack_q16, Q16_ONE, sat);
-        worst_dimension = ceiling_q16 < survival_ceiling ? SAT_DIM_BASIC : SAT_DIM_SUBSISTENCE;
-    }
+    if (raw_q16 > ceiling_q16) worst_dimension = binding_dimension;
 
     population_store().composite_satisfaction.write_scalar(slot, static_cast<uint16_t>(composite_q16), market_mutation_sink());
     population_store().worst_dimension_id.write_scalar(slot, static_cast<uint8_t>(worst_dimension), market_mutation_sink());
@@ -559,6 +587,125 @@ int32_t NativeEconomyRuntime::city_good_output_factor_q16(
     if (found == last || *found != good_id) return shared;
     return _city_output_factors_q16[static_cast<size_t>(
         std::distance(_city_output_good_indices.begin(), found))];
+}
+
+Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
+        int64_t cohort_handle) const {
+    Dictionary out;
+    int32_t slot = -1;
+    if (!_configured ||
+        !population_store().valid_handle(static_cast<uint64_t>(cohort_handle), slot)) {
+        out["ok"] = false;
+        out["reason"] = !_configured ? "economy_not_configured"
+                                     : "cohort_handle_invalid";
+        return out;
+    }
+    const int32_t cell = population_store().page_cell[slot / COHORT_PAGE_SIZE];
+    const Signature &signature = _signatures[population_store().signature_id[slot]];
+    const size_t base = static_cast<size_t>(slot) *
+        static_cast<size_t>(SAT_DIM_COUNT);
+    PackedInt32Array dim_ids, dim_values, dim_weights, dim_contributions;
+    int64_t weighted_total = 0;
+    int64_t weight_total = 0;
+    int64_t diagnostic_sat = 0;
+    const uint8_t applicable_mask = satisfaction_applicable_mask(slot);
+    const auto effective_weights = satisfaction_effective_weights(signature, applicable_mask);
+    std::array<int64_t, SAT_DIM_COUNT> stored_dims{};
+    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
+        const int64_t value = population_store().satisfaction_dims[
+            base + static_cast<size_t>(dim)];
+        stored_dims[dim] = value;
+        const int64_t weight = effective_weights[dim];
+        dim_ids.push_back(dim);
+        dim_values.push_back((applicable_mask & (1U << dim)) ? static_cast<int32_t>(value) : -1);
+        dim_weights.push_back(static_cast<int32_t>(weight));
+        // The shortfall each dimension contributes to the composite, which is
+        // what makes one of them the worst.
+        dim_contributions.push_back(static_cast<int32_t>(std::clamp<int64_t>(
+            mul_div_sat(Q16_ONE - 1 - value, weight, Q16_ONE, diagnostic_sat),
+            0, Q16_ONE)));
+        if (weight <= 0) continue;
+        weighted_total = saturating_add(weighted_total,
+            saturating_mul(value, weight, diagnostic_sat), diagnostic_sat);
+        weight_total = saturating_add(weight_total, weight, diagnostic_sat);
+    }
+    const int64_t raw_before_bias_q16 = weight_total > 0
+        ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
+        : Q16_ONE - 1;
+    const int64_t bias_q16 = satisfaction_bias_q16(cell, signature);
+    const int64_t raw_q16 = std::clamp<int64_t>(
+        raw_before_bias_q16 + bias_q16, 0, Q16_ONE - 1);
+    int32_t ceiling_dimension = SAT_DIM_SUBSISTENCE;
+    const int64_t ceiling_q16 = satisfaction_ceiling(
+        stored_dims.data(), applicable_mask, signature, ceiling_dimension, diagnostic_sat);
+    out["ok"] = true;
+    out["cohort_handle"] = cohort_handle;
+    out["cell_index"] = cell;
+    out["signature_id"] = static_cast<int32_t>(population_store().signature_id[slot]);
+    out["profession_id"] = signature.profession_id;
+    out["population"] = population_store().population[slot];
+    out["dim_ids"] = dim_ids;
+    out["dim_values_q16"] = dim_values;
+    out["dim_weights_q16"] = dim_weights;
+    out["dim_contributions_q16"] = dim_contributions;
+    out["applicable_mask"] = applicable_mask;
+    out["consumption_semantics"] = "realized_over_living_target_basic_completeness_v2";
+    out["satisfaction_model_version"] = 2;
+    out["basic_average_weight_q16"] = 49152;
+    out["basic_worst_weight_q16"] = 16384;
+    out["comfort_gate_floor_q16"] = 45875;
+    out["luxury_gate_floor_q16"] = 58982;
+    out["raw_before_bias_q16"] = raw_before_bias_q16;
+    out["bias_q16"] = bias_q16;
+    out["raw_q16"] = raw_q16;
+    out["ceiling_q16"] = ceiling_q16;
+    out["ceiling_dimension_id"] = ceiling_dimension;
+    out["ceiling_is_binding"] = raw_q16 > ceiling_q16;
+    out["composite_q16"] =
+        static_cast<int32_t>(population_store().composite_satisfaction[slot]);
+    out["worst_dimension_id"] = population_store().worst_dimension_id[slot] ==
+            std::numeric_limits<uint8_t>::max()
+        ? -1 : static_cast<int32_t>(population_store().worst_dimension_id[slot]);
+    out["worst_need_id"] = population_store().worst_need_id[slot] ==
+            std::numeric_limits<uint16_t>::max()
+        ? -1 : static_cast<int32_t>(population_store().worst_need_id[slot]);
+    out["living_standard_level"] = consumption_living_standard_level(slot);
+    out["social_pressure_level"] = social_pressure_level_for(
+        population_store().composite_satisfaction[slot]);
+    // Raw dimension inputs, so a designer can see why a dimension scored badly
+    // rather than only that it did.
+    out["income_ema"] = population_store().income_ema[slot];
+    out["income_baseline_ema"] = population_store().income_baseline_ema[slot];
+    out["funds"] = population_store().funds[slot];
+    out["epoch_income"] = population_store().epoch_income[slot];
+    out["epoch_in_kind_income"] = population_store().epoch_in_kind_income[slot];
+    out["epoch_tax_paid"] = population_store().epoch_tax_paid[slot];
+    out["epoch_subsidy_received"] = population_store().epoch_subsidy_received[slot];
+    out["living_cost_per_capita"] = cell >= 0 && cell < static_cast<int32_t>(
+            _cell_living_cost_per_capita.size())
+        ? _cell_living_cost_per_capita[cell] : 0;
+    out["settlement_tier"] = cell >= 0 && cell < static_cast<int32_t>(
+            _settlements.tier.size())
+        ? static_cast<int32_t>(_settlements.tier[cell]) : 0;
+    out["development_q16"] = cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_development_q16.size())
+        ? _epoch_cell_development_q16[cell] : 0;
+    out["savings_target_months_q16"] = _satisfaction_savings_target_months_q16;
+    const int64_t daily_cost = out["living_cost_per_capita"];
+    const int64_t monthly_cost = saturating_mul(saturating_mul(
+        std::max<int64_t>(0, daily_cost),
+        std::max<int64_t>(1, population_store().population[slot]), diagnostic_sat),
+        30, diagnostic_sat);
+    out["purchasing_power_basis_valid"] = monthly_cost > 0;
+    out["purchasing_power_months_q16"] = monthly_cost > 0 ? mul_div_sat(
+        std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE,
+        monthly_cost, diagnostic_sat) : 0;
+    out["purchasing_power_reference_days"] = 30;
+    out["basic_gate_slack_q16"] = _satisfaction_basic_gate_slack_q16;
+    out["tax_tolerance_q16"] = _satisfaction_tax_tolerance_q16;
+    out["subsistence_gate_slack_q16"] =
+        _satisfaction_subsistence_gate_slack_q16;
+    return out;
 }
 
 } // namespace pk

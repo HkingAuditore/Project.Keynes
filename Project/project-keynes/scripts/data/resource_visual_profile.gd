@@ -38,6 +38,11 @@ extends Resource
 # 植株/晶体群落的外沿羽化与扰动；实体之间直接露出原地表，不再铺裸土底板。
 @export_range(0.0, 1.0) var area_feather := 0.55
 @export_range(0.0, 1.0) var area_edge_noise := 0.35
+# 生成材质的高度层边缘融合。solid 用于盐矿/矿石露头，decal 用于土壤、
+# 水下渗漏等贴地资源；0 保持原贴图剪影，1 完全按高度场羽化。
+@export_range(0.0, 1.0) var solid_edge_softness := 0.72
+@export_range(0.0, 1.0) var decal_edge_softness := 1.0
+@export_range(0.0, 1.0) var decal_edge_noise := 0.65
 @export var luma_range := Vector2(0.24, 0.64)
 @export_range(0.0, 1.0) var cluster_spread := 0.55
 @export_range(0.0, 1.0) var patch_noise_strength := 0.55

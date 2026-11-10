@@ -4852,6 +4852,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 			"cell_elevation": terrain_inputs.get("cell_elevation", PackedFloat32Array()),
 			"cell_moisture": terrain_inputs.get("cell_moisture", PackedFloat32Array()),
 			"cell_terrain": terrain_inputs.get("cell_terrain", PackedByteArray()),
+			"cell_landform": terrain_inputs.get("cell_landform", PackedByteArray()),
 			"cell_vegetation": terrain_inputs.get("cell_vegetation", PackedByteArray()),
 			"cell_cover": terrain_inputs.get("cell_cover", PackedByteArray()),
 			"cell_water_depth": terrain_inputs.get("cell_water_depth", PackedFloat32Array()),

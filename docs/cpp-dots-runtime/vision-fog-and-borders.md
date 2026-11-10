@@ -175,6 +175,77 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 结论写在这里免得再走一遍：**全屏俯视云层使用分层 2.5D 密度场 + 少量质量探针，
 不要做低步数体积积分。** 散射模型该给的东西，不积分也拿得到。
 
+### 云影的世界空间连续性
+
+`CloudShadowField` 的云形采样坐标必须由 `world_origin + world_uv * world_size` 得到，
+不能在每个 cell 的局部 UV 上重新起算。云影场仍从当前 cell 的天气 LUT 读取覆盖度，
+但天气 LUT 的云量和水汽不再直接按当前 cell 取整格值，而是根据世界坐标到当前及六个
+hex 中心的距离做连续核插值；天气类型仍使用中心 cell，避免离散天气枚举在边界闪烁。
+这样噪声纹理与云量遮罩都跨 cell 连续，圆柱东西向仍由同一套 wrap 坐标处理。
+
+运行中的 `HexRenderer` 仍允许远程 Inspector 修改数值调参项；运行期会持续变化的材质、
+光照配置和装饰资源引用使用 `@export_storage` 保存但不暴露给 Inspector。Godot Remote
+Inspector 对这类资源内 Packed 数组的序列化存在已知 Variant 解码问题，隐藏资源引用可
+避免调试连接被动态 shader 参数刷坏，同时不影响运行期材质复制和绑定。
+
+水面云影使用独立响应：直射遮蔽和天光遮蔽都按 `cloud_shadow_water_scale` 缩放，当前
+生产默认值为 `0.58`；云影部分不再重复进入水面 `shadow floor`。陆地继续使用完整云影响应，
+避免为了修海面而把陆地云影一起洗淡。
+
+云影 field 的 `world_time` 每帧推进，field 重绘频率保持在显示刷新节奏；如果降到 20Hz，
+形状噪声会出现“停住—跳一下”，即使 mask 数值本身没有刷新问题。
+
+天气云的强弱由三层共同决定：天气场 `w.cloud` 控制云形覆盖和 alpha 增益，
+`CloudLayerSample.density` 控制云体内部厚薄，WeatherProfile 的 `overlay_base_alpha`
+提供天气类型的底幕。三者都经过显示端 remap；强云提高密度增益，弱云保持薄透，
+`clear` 不产生底幕。
+
+云影场的噪声采样和天气量遮罩都使用全局 `world_pos`。天气 LUT 的 cell id 只在由世界
+坐标反算出的候选 hex 中心处读取，用于查表；最终云量由世界距离插值，不把最近 cell 的
+离散边界直接作为云影边界。
+
+云影形状拆成离线底图和运行时动态层：`cloud_shadow_base_rgba.res` 由
+`tools/prebake_cloud_shadow_base.gd` 生成，只保存跨 cell 连续的宏观云团分布；
+`cloud_noise_rgba.res` 作为动态细节，通过 `world_time` 驱动的 UV 平流叠加在底图上。
+运行时不重新烘焙或上传底图，只重绘 field 的合成结果。
+
+噪声相位由独立的 `world_time` 推进，不以 LUT 的 cell id 作为噪声种子；但 field 输出
+仍是 `weather_mask × noise_shape`，所以 LUT 提交时最终云影会随 mask 重新组合。Y 轴噪声
+坐标使用相对 `world_origin.y` 的世界距离，避免绝对世界 Y 穿过 0 时让 repeat UV 在赤道
+折返，形成横向断裂。
+
+`CloudShadowField` 的 `world_time` 由 HexRenderer 统一推送，与地形和天气 shader 共用同一
+时间相位；云影 shader 直接按世界空间局地风 LUT 做平流，复用洋流的双相位方法：
+24 秒周期、两相位错开半周期，以三角权重混合密度，在零权重时重置相位。风只乘
+当前周期的有界时长，不能乘总运行时间，否则换风跳变会随运行时间放大。
+不再维护全图共享的累计位移。新旧风 LUT 以 `weather_lerp` 在显示端混合，
+不改变每日仿真的风场。这样不同风带可以显示不同方向，暂停/倍速仍与标准时间同步。
+
+噪声 UV 的滚动速度由 `cloud_shadow_motion_speed` 和独立的
+`cloud_shadow_uv_scroll_gain` 共同决定。后者用于抵消世界坐标归一化后过小的 UV 位移，
+避免 field 每帧虽重绘、屏幕上却只在 LUT 提交时看见一次跳变。生产场景的
+`motion_speed=0.03`、`world_scale=0.04` 使用 `uv_scroll_gain=16`，以保证 1× 时仍
+能在几秒内观察到云影平流。
+
+动态细节还会对主形状做实时域扭曲和中高频调制，并复用局地风方向做低幅度连续剪切，
+效果类似洋流的平滑拉伸。边缘羽化参数范围为 `0..2`，超过 1 后仍会继续扩大密度
+过渡区，而不是被归一化截断。
+field 按质量等级读取世界空间局地风 LUT，并在低分辨率场上完成平流采样；额外成本只发生
+在 512×256（移动端更低分辨率）的 field 上，不会在地形和水面每个屏幕像素重复执行。
+
+天气云的中云、卷云和低雾也使用双相位局地风平流，速度倍率分别为 1.45、2.2、0.8。
+卷云的拉丝方向保持固定，运动方向由局地风决定，避免换风时旋转整张世界坐标。
+`CloudShadowField.wind_lut_changed` 经 HexRenderer 接到 `WeatherLayer.set_wind_luts`，
+共享已上传的当前/上一份风 LUT，不重复扫描 MapData 或创建 GPU 纹理。天气云只读
+当前和边界副格的风，并沿用天气量的显示插值权重；Web 裁剪分支也移除固定总时间漂移。
+两套显示均不拥有仿真继续态或累计位移；仅缓存上一份已发布风纹理用于过渡。
+
+云形和图层按 LOW/MID/HIGH 编译裁剪，切档重建材质并恢复 LUT 绑定。云影桌面
+field 分辨率为128×64、256×128、512×256；移动/Web为128×64、192×96、256×128。
+天气云低档主云、中档主云+卷云、高档三层云；移动/Web始终使用轻量梯度噪声。
+高档光照用已有密度的屏幕导数，避免双相位下再重复四次云密度求值。预算与验证见
+[云Shader分档验证](cloud-weather-shader-quality-2026-11-09.md)。
+
 ### deck / body / top 分层模型
 
 `fog_sample_shape()` 从同一个连续宏观场派生三层，避免多张独立噪声贴片互相滑动：
@@ -408,6 +479,19 @@ detail_grad·cloud_detail_relief), 1))`。高频不是完全删除，而是与�
 走 `earth_daylight.gdshaderinc` 的逐像素太阳/月亮方向和基础色板，与地形 / 水面 /
 植被 / 天气云同源；雾层只针对高空可见性拓宽过渡。正午是冷白顶配蓝灰缝隙，晨昏是
 柔和金橙散射，夜里回到冷蓝月光。
+
+永昼（`day_night_enabled=false`）高度取当地当日正午：时角以 day_phase 驱动，太阳正午高度基线为
+`max(8°, 90° - abs(当地纬度 - 当日赤纬))`，同纬度各经度高度相同，day_phase=0.25 为正午，0.0/0.5 为东西向低太阳；永昼不进入夜晚。
+Shader 日相位默认为 `fract(0.25 + 2 × 年进度)`，每游戏年两轮，随日历倍速与暂停。
+比例由 HexRenderer 的“永昼太阳”分组 `shader_days_per_game_year` 调整（默认2）；时钟使用累计年进度，支持小数比例跨年连续。
+日内时角在 ±70° 内随 `day_phase` 浮动，太阳从偏东低位经过正午到偏西低位；其水平长度为
+`cos(太阳高度)`，因此影子会在每个视觉日内扫过地图，影长仍由当地纬度与季节决定。
+直射纬度上太阳竖直，极夜地区仍由 8° 下限保持永昼。地形、建筑、植被、云层和
+调参入口为 HexRenderer 的“永昼太阳”Inspector 分组：`eternal_max_hour_angle_deg`（0–89°，默认70°）
+和 `eternal_min_elevation_deg`（0–45°，默认10°）。renderer 转为弧度并同步主地形、拆分水面、
+建筑、天气/迷雾、植被及其阴影和活动实例；shader include 内 uniform 默认值仅作未绑定时回退。
+水面高光复用 `compute_eternal_visual_sun_dir`；GM 的显式 `tod_sun_dir` 覆盖优先，
+开启昼夜时继续使用原有逐像素经纬度/时角计算。
 
 include 要求调用方**在 include 之前**声明 `season_phase` / `day_phase` /
 `axial_tilt_rad` / `tod_debug_*` / `tod_sun_dir`。漏掉任何一个都是 shader 编译期

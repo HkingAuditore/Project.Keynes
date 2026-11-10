@@ -85,57 +85,151 @@ size_flags_vertical = 0
 focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
+[node name="CommandDeck" type="VBoxContainer" parent="Sheet/Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Mission" type="Label" parent="Sheet/Margin/Body/CommandDeck"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
+theme_type_variation = &"PKPaperTag"
+size_flags_horizontal = 3
+
+[node name="ArmyActions" type="HFlowContainer" parent="Sheet/Margin/Body/CommandDeck"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+
+[node name="LocateButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+clip_text = false
+text_overrun_behavior = 0
+layout_mode = 2
+size_flags_horizontal = 0
+text = "定位"
+theme_type_variation = &"PKMilitaryCommandButton"
+
+[node name="MoveButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+clip_text = false
+text_overrun_behavior = 0
+layout_mode = 2
+size_flags_horizontal = 0
+text = "行军"
+tooltip_text = "选择目的地并预览行军路线（M）"
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
+[node name="AreaButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+clip_text = false
+text_overrun_behavior = 0
+layout_mode = 2
+size_flags_horizontal = 0
+text = "区域控制"
+tooltip_text = "选择中心与半径，预览控制区域（C）"
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
+[node name="StopButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+clip_text = false
+text_overrun_behavior = 0
+layout_mode = 2
+size_flags_horizontal = 0
+text = "停止任务"
+tooltip_text = "停止行军或区域控制，部队留在当前位置"
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
+[node name="StanceRow" type="HBoxContainer" parent="Sheet/Margin/Body/CommandDeck"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="Sheet/Margin/Body/CommandDeck/StanceRow"]
+layout_mode = 2
+text = "作战姿态"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Stance" type="OptionButton" parent="Sheet/Margin/Body/CommandDeck/StanceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 34)
+theme_type_variation = &"PKMilitaryCommandButton"
+
+[node name="OrderDraft" type="VBoxContainer" parent="Sheet/Margin/Body/CommandDeck"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="OrderSummary" type="Label" parent="Sheet/Margin/Body/CommandDeck/OrderDraft"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierBody"
+autowrap_mode = 2
+
+[node name="RadiusRow" type="HBoxContainer" parent="Sheet/Margin/Body/CommandDeck/OrderDraft"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="Sheet/Margin/Body/CommandDeck/OrderDraft/RadiusRow"]
+layout_mode = 2
+text = "控制半径（格）"
+theme_type_variation = &"PKDossierCaption"
+
+[node name="Radius" type="SpinBox" parent="Sheet/Margin/Body/CommandDeck/OrderDraft/RadiusRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 6.0
+value = 1.0
+editable = false
+custom_minimum_size = Vector2(100, 36)
+
+[node name="ConfirmRow" type="HBoxContainer" parent="Sheet/Margin/Body/CommandDeck/OrderDraft"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ConfirmOrder" parent="Sheet/Margin/Body/CommandDeck/OrderDraft/ConfirmRow" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+layout_mode = 2
+text = "确认行军"
+custom_minimum_size = Vector2(0, 38)
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
+[node name="CancelOrder" parent="Sheet/Margin/Body/CommandDeck/OrderDraft/ConfirmRow" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+layout_mode = 2
+text = "取消 · Esc"
+custom_minimum_size = Vector2(0, 38)
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
+[node name="CommandHint" type="Label" parent="Sheet/Margin/Body/CommandDeck"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKDossierCaption"
+autowrap_mode = 2
+text = "选择任务后在地图上选点。"
+
 [node name="TopRule" type="Control" parent="Sheet/Margin/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("9_rule")
-
-[node name="PeerStats" type="Control" parent="Sheet/Margin/Body"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 60)
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("10_peer")
-
-[node name="StateRule" type="Control" parent="Sheet/Margin/Body"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("9_rule")
-
-[node name="KpiRow" type="HBoxContainer" parent="Sheet/Margin/Body"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 0
-
-[node name="Kpi0" type="Control" parent="Sheet/Margin/Body/KpiRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(72, 66)
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_kpi")
-
-[node name="Kpi1" type="Control" parent="Sheet/Margin/Body/KpiRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(72, 66)
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_kpi")
-
-[node name="Kpi2" type="Control" parent="Sheet/Margin/Body/KpiRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(72, 66)
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_kpi")
-
-[node name="Kpi3" type="Control" parent="Sheet/Margin/Body/KpiRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(72, 66)
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("3_kpi")
 
 [node name="Versus" type="Control" parent="Sheet/Margin/Body"]
 unique_name_in_owner = true
@@ -163,6 +257,52 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
+[node name="PeerStats" type="Control" parent="Sheet/Margin/Body/Scroll/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 60)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("10_peer")
+
+[node name="StateRule" type="Control" parent="Sheet/Margin/Body/Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("9_rule")
+
+[node name="KpiRow" type="HBoxContainer" parent="Sheet/Margin/Body/Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Kpi0" type="Control" parent="Sheet/Margin/Body/Scroll/Content/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi1" type="Control" parent="Sheet/Margin/Body/Scroll/Content/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi2" type="Control" parent="Sheet/Margin/Body/Scroll/Content/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
+[node name="Kpi3" type="Control" parent="Sheet/Margin/Body/Scroll/Content/KpiRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 66)
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("3_kpi")
+
 [node name="ArmyGroup" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -170,6 +310,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
 [node name="CompositionBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
@@ -189,6 +330,7 @@ size_flags_horizontal = 3
 script = ExtResource("4_stacked")
 
 [node name="SupplyBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
@@ -221,29 +363,6 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
-
-[node name="ArmyActions" type="HBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="LocateButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-text = "定位"
-
-[node name="MoveButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-text = "移动"
-
-[node name="AreaButton" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup/ArmyActions" instance=ExtResource("8_action")]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 34)
-layout_mode = 2
-text = "军事控制"
 
 [node name="SameCellBlock" type="VBoxContainer" parent="Sheet/Margin/Body/Scroll/Content/ArmyGroup"]
 unique_name_in_owner = true

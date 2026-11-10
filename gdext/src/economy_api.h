@@ -140,6 +140,10 @@ struct EconomyApi {
         // the treasury lost. No cohort is touched and nothing is minted, so no
         // structural command is needed; deduplicated by `sequence` like 24/30-33.
         COMMAND_ARMY_LANE_PAY = 34,
+        // Standing military demand snapshot, retained in the saved command
+        // queue until a newer reset replaces it. cell=-1 is the reset marker;
+        // payload0=missing goods, payload1=normalization days.
+        COMMAND_MILITARY_PROCUREMENT_DEMAND = 36,
         // END army personnel lane
         // 35: treasury-sponsored DEMOLISH of a state lot. Payload matches
         // opcode 16: i32_0=cell, i32_1=type_id, i64_0=count,
