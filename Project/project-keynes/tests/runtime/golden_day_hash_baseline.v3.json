@@ -2,27 +2,27 @@
   "commands": "formal bootstrap; run_daily_tick/finish_daily_tick days 1..8; no player mutations",
   "days": [
     {
-      "chain": "1bd295551617f2cf9f8c64e64d73fc8f9c7feef0995a920955f0258d5420c1cb",
+      "chain": "17be0499bca66091e1fc6bbce4c7483799cf740fe3ab99c43b68bf7989b3ba7c",
       "day": 1,
-      "domain_chain": "b185b754bb7340ff6d37bc044738390c81ded71d3b8dc0e63552574a673532d3",
+      "domain_chain": "890861222947ead55dc2099ecfa62776328c89dde7d34dfb96711216ba1f0988",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "6002184626155858852",
+          "hash": "6160217788977856640",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 1
         },
         "ECONOMY": {
-          "hash": "268418125763757745",
+          "hash": "1230794852146612612",
           "scope": "committed_population_market_columns_v1",
           "state_day": 1
         },
         "EFFECT": {
-          "hash": "7582332481072829188",
+          "hash": "6151421235669075127",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 1
         },
         "EVENTS": {
-          "hash": "8176609373008900414",
+          "hash": "3972104107980752142",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 1
         },
@@ -32,7 +32,7 @@
           "state_day": -1
         },
         "MODIFIER": {
-          "hash": "1822216647711152869",
+          "hash": "9703302911610278788",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 1
         },
@@ -42,7 +42,7 @@
           "state_day": 1
         }
       },
-      "economy_hash": "67974517288da9008f4b7feba7ccd865e6a7b8c059121760feca248277a681fc",
+      "economy_hash": "f29b22a4d4b1da10bd8a300848edb40f06faa8b63cc09e51e993ba7c0dfee376",
       "values": [
         1,
         247,
@@ -50,10 +50,10 @@
         0,
         0,
         0,
-        48320000,
-        1456481,
-        1136481,
-        3,
+        24007282,
+        696714,
+        689432,
+        4,
         65535,
         [
           0,
@@ -115,12 +115,10 @@
           0,
           0,
           0,
-          2068,
-          0,
-          116499,
-          213411,
           0,
           0,
+          82613,
+          230281,
           0,
           0,
           0,
@@ -143,9 +141,9 @@
           0,
           0,
           0,
-          161210,
           0,
           0,
+          156105,
           0,
           0,
           0,
@@ -181,7 +179,9 @@
           0,
           0,
           0,
-          3000,
+          0,
+          0,
+          896,
           0,
           0,
           0,
@@ -284,7 +284,7 @@
           4000,
           62000,
           24000,
-          23292,
+          24443,
           18000,
           9766,
           4883,
@@ -350,7 +350,7 @@
           52000,
           36000,
           10000,
-          23251,
+          23329,
           10000,
           130000,
           4500,
@@ -394,41 +394,41 @@
           10000
         ]
       ],
-      "whole_economy_chain": "b5f1628a85001c2f439a3d398df1ec156c2aa14de03bc1f6c91ff0b150a5f5a7",
-      "whole_economy_hash": "2564439244133782513"
+      "whole_economy_chain": "d12b0afb1b9a337c54e5a51cef36e8143888258932a263362625cb2d5dec0510",
+      "whole_economy_hash": "4670441765869380861"
     },
     {
-      "chain": "0bebc3f408557e207aac17f02bd36a1a8e33bf7e3f3b7c62d1ae1c715e212696",
+      "chain": "16cba00ff03aa132634874f098949e35d18476e426fe43eff16ab95459b38ab6",
       "day": 2,
-      "domain_chain": "edd22f5a711fdf045c2383e208da50c355c649b11d4ce0e441673af4f6856965",
+      "domain_chain": "21a5447cae2d321545c8e613d93504acdc9ac1714df62f106a2210d2f8c6d809",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "14698647770642115562",
+          "hash": "11273960520872212358",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 2
         },
         "ECONOMY": {
-          "hash": "8801825165972976461",
+          "hash": "856579774417106655",
           "scope": "committed_population_market_columns_v1",
           "state_day": 2
         },
         "EFFECT": {
-          "hash": "9698657642523529724",
+          "hash": "1084642735029430475",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 2
         },
         "EVENTS": {
-          "hash": "12046753282467121710",
+          "hash": "2406974213613227242",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 2
         },
         "IDEOLOGY": {
-          "hash": "10260645703653038666",
+          "hash": "7916682889574215728",
           "scope": "committed_business_projection_v1",
           "state_day": 2
         },
         "MODIFIER": {
-          "hash": "2063544399913993862",
+          "hash": "7022072838138507151",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 2
         },
@@ -438,7 +438,7 @@
           "state_day": 1
         }
       },
-      "economy_hash": "686b4c2d646d4c1919c23995dcb6e0284f1912f9539e36c0d68a84ca233ecf13",
+      "economy_hash": "9049347d1128ee255e8bf3607987fc58a3da20ffdcbd557f59668ce270c6d3c4",
       "values": [
         2,
         247,
@@ -446,9 +446,9 @@
         0,
         0,
         0,
-        48480000,
-        1153677,
-        914436,
+        24007282,
+        352309,
+        352309,
         4,
         65535,
         [
@@ -511,12 +511,10 @@
           0,
           0,
           0,
-          3142,
-          0,
-          131632,
-          194196,
           0,
           0,
+          80029,
+          209577,
           0,
           0,
           0,
@@ -539,9 +537,9 @@
           0,
           0,
           0,
-          157396,
           0,
           0,
+          149039,
           0,
           0,
           0,
@@ -577,7 +575,9 @@
           0,
           0,
           0,
-          4500,
+          0,
+          0,
+          1344,
           0,
           0,
           0,
@@ -680,13 +680,13 @@
           4000,
           62000,
           24000,
-          22876,
+          24674,
           18000,
-          9563,
-          4826,
+          9622,
+          4823,
           22000,
           30000,
-          9999,
+          10000,
           16000,
           168000,
           16000,
@@ -746,7 +746,7 @@
           52000,
           36000,
           10000,
-          22810,
+          22944,
           10000,
           130000,
           4500,
@@ -790,51 +790,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "d8a2cde870ef093a62eefd92b707c02b17721baffe0750171a4a0ae3634ba8d5",
-      "whole_economy_hash": "6986036147266289813"
+      "whole_economy_chain": "426b451ed8ec27043117a23818a2a9af8fe65d2ac60932f68393a7761d9bbe49",
+      "whole_economy_hash": "561270507145648271"
     },
     {
-      "chain": "80cceffd185870e997e5b78b0c0e5296b3dde964bad2fa4665066226c415ca99",
+      "chain": "22256a456af541e23ff081bd9cb09bcaeaf077a205c4d5ea7c76997a806e91a0",
       "day": 3,
-      "domain_chain": "6239d22411488b5b9527f55a37a4cd52f7fe1296627e2e5a519c46dca63dd033",
+      "domain_chain": "3b8a9474a161345d29869914e6b213978cd44415ffef3fb1252ef47d7e150763",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "8506758247628532623",
+          "hash": "1512242159033318382",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 3
         },
         "ECONOMY": {
-          "hash": "16520400265219047597",
+          "hash": "17700695676503166550",
           "scope": "committed_population_market_columns_v1",
           "state_day": 3
         },
         "EFFECT": {
-          "hash": "1027473561786452853",
+          "hash": "13189610120003244546",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 3
         },
         "EVENTS": {
-          "hash": "18146832020541906884",
+          "hash": "5474755425874862405",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 3
         },
         "IDEOLOGY": {
-          "hash": "4115671925783616935",
+          "hash": "2034897987573104565",
           "scope": "committed_business_projection_v1",
           "state_day": 3
         },
         "MODIFIER": {
-          "hash": "10669991622699588191",
+          "hash": "4383690531904543862",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 3
         },
         "TRIGGER_INPUT": {
-          "hash": "12750456484837637467",
+          "hash": "14425073168780944776",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 3
         }
       },
-      "economy_hash": "1731981707fb405f016fd60ad665c5f94499003390f04d733205aeaf64e897a8",
+      "economy_hash": "50efdef4eb117b3812f701f90c1f1d10a2b739d2d3984e08e897d3065dca86b9",
       "values": [
         3,
         247,
@@ -842,9 +842,9 @@
         0,
         0,
         0,
-        48640000,
-        719759,
-        559759,
+        24007282,
+        366705,
+        366705,
         4,
         65535,
         [
@@ -907,12 +907,10 @@
           0,
           0,
           0,
-          4197,
-          0,
-          146288,
-          174750,
           0,
           0,
+          77083,
+          191503,
           0,
           0,
           0,
@@ -935,9 +933,9 @@
           0,
           0,
           0,
-          153514,
           0,
           0,
+          141849,
           0,
           0,
           0,
@@ -973,7 +971,9 @@
           0,
           0,
           0,
-          6000,
+          0,
+          0,
+          1792,
           0,
           0,
           0,
@@ -1076,13 +1076,13 @@
           4000,
           62000,
           24000,
-          22443,
+          24960,
           18000,
-          9362,
-          4768,
+          9477,
+          4764,
           22000,
           30000,
-          9997,
+          10000,
           16000,
           168000,
           16000,
@@ -1142,7 +1142,7 @@
           52000,
           36000,
           10000,
-          22349,
+          22558,
           10000,
           130000,
           4500,
@@ -1186,51 +1186,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "92d4d4787e6bfe55d152110e4d58e43d9e9537e3d29f42a282a92da87d669b77",
-      "whole_economy_hash": "765493009686791277"
+      "whole_economy_chain": "175a3cdc30c42d249011f29e753684f379a55b8c5a8c1d55029be6393ae1b2f0",
+      "whole_economy_hash": "2167999130094908629"
     },
     {
-      "chain": "836affd64e308ea8dd730190fae001648b6b69e6707d1059c8f9706320802352",
+      "chain": "113d4aa1a3c42b08010ca8fabdb366d13f250aa8241b5523e0f67b7d5da57760",
       "day": 4,
-      "domain_chain": "76815960b77b87993a240e8a76e31c03b21b26d5e098bca0aee7bdae9b1788f3",
+      "domain_chain": "bea2cbc5cceb6a55d212966a82b81842a6df55f4b0c2d8236fe78c2cc216c500",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "10230635849912990213",
+          "hash": "6412181456131005961",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 4
         },
         "ECONOMY": {
-          "hash": "49083546733594400",
+          "hash": "14819691950870536301",
           "scope": "committed_population_market_columns_v1",
           "state_day": 4
         },
         "EFFECT": {
-          "hash": "5750135413316912982",
+          "hash": "5891347581498219593",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 4
         },
         "EVENTS": {
-          "hash": "13794924367731999316",
+          "hash": "12744412459048906810",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 4
         },
         "IDEOLOGY": {
-          "hash": "13756188620228036408",
+          "hash": "14072784218710434898",
           "scope": "committed_business_projection_v1",
           "state_day": 4
         },
         "MODIFIER": {
-          "hash": "601496241415328080",
+          "hash": "4198990952659960209",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 4
         },
         "TRIGGER_INPUT": {
-          "hash": "3504397948820131021",
+          "hash": "6041497612931491754",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 4
         }
       },
-      "economy_hash": "7cd6bf9f03adab710da47acbabc30dcfde63a62c2365bf5d822efa2ad9a7bfee",
+      "economy_hash": "2901b0032fb51f3d0208cf95273134279a27fae959a58974921c3cf3cf94fab5",
       "values": [
         4,
         247,
@@ -1238,9 +1238,9 @@
         0,
         0,
         0,
-        48800000,
-        712075,
-        552075,
+        24007282,
+        364415,
+        364415,
         4,
         65535,
         [
@@ -1303,12 +1303,10 @@
           0,
           0,
           0,
-          5223,
-          0,
-          160425,
-          154060,
           0,
           0,
+          73743,
+          172429,
           0,
           0,
           0,
@@ -1331,9 +1329,9 @@
           0,
           0,
           0,
-          149556,
           0,
           0,
+          134554,
           0,
           0,
           0,
@@ -1369,7 +1367,9 @@
           0,
           0,
           0,
-          7500,
+          0,
+          0,
+          2240,
           0,
           0,
           0,
@@ -1472,13 +1472,13 @@
           4000,
           62000,
           24000,
-          21998,
+          25281,
           18000,
-          9164,
-          4710,
+          9331,
+          4705,
           22000,
           30000,
-          9994,
+          10000,
           16000,
           168000,
           16000,
@@ -1538,7 +1538,7 @@
           52000,
           36000,
           10000,
-          21874,
+          22172,
           10000,
           130000,
           4500,
@@ -1582,51 +1582,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "cd93e02e145673b5662ce1a48c1c97fcf55fdd4b673372486335f157a4d5f9be",
-      "whole_economy_hash": "7693979903215935421"
+      "whole_economy_chain": "bc67c131295b0b49dc7953ebdfd33a2b6b90486ef43fb5d794483c16eb36d337",
+      "whole_economy_hash": "3881073353986601273"
     },
     {
-      "chain": "8b0e3f1517b5b2ea980f59514a86eefdebd7da32105a479f47ae006294d78544",
+      "chain": "024ce4a1f2e41888134a1a6d96d773cc3aa678c0fe1325113e543e2212f5663a",
       "day": 5,
-      "domain_chain": "9d209e703964cf66bc038a2501c8662e1e396ecfbe59113708cedb10095c3693",
+      "domain_chain": "3ba74153804525fc95729805e889ea68322a902a06c3b0d8414c818748525281",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "9606514352757369157",
+          "hash": "11635662924259452938",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 5
         },
         "ECONOMY": {
-          "hash": "5374388090026432689",
+          "hash": "8029817669615969332",
           "scope": "committed_population_market_columns_v1",
           "state_day": 5
         },
         "EFFECT": {
-          "hash": "1593952464919322575",
+          "hash": "13668621957158301920",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 5
         },
         "EVENTS": {
-          "hash": "13349504084908466423",
+          "hash": "16647114071951188653",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 5
         },
         "IDEOLOGY": {
-          "hash": "8590819100276943645",
+          "hash": "6085372378504880431",
           "scope": "committed_business_projection_v1",
           "state_day": 5
         },
         "MODIFIER": {
-          "hash": "2763951110370998817",
+          "hash": "12639766254522519744",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 5
         },
         "TRIGGER_INPUT": {
-          "hash": "14469485108673347205",
+          "hash": "2313259225301965987",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 5
         }
       },
-      "economy_hash": "415dd45ceae094e7630ac58267a606f18753a66592135d548c814ed2cbc282a5",
+      "economy_hash": "f82576b14004af274299d63f47319f57aa4c2355aac921ca7268be8d4b575221",
       "values": [
         5,
         247,
@@ -1634,9 +1634,9 @@
         0,
         0,
         0,
-        48960000,
-        805247,
-        666636,
+        24019282,
+        780235,
+        794043,
         5,
         65535,
         [
@@ -1699,12 +1699,10 @@
           0,
           0,
           0,
-          6033,
-          0,
-          172776,
-          130707,
           0,
           0,
+          69231,
+          151164,
           0,
           0,
           0,
@@ -1727,9 +1725,9 @@
           0,
           0,
           0,
-          148022,
           0,
           0,
+          89831,
           0,
           0,
           0,
@@ -1765,7 +1763,9 @@
           0,
           0,
           0,
-          9000,
+          0,
+          0,
+          2688,
           0,
           0,
           0,
@@ -1868,13 +1868,13 @@
           4000,
           62000,
           24000,
-          21552,
+          25721,
           18000,
-          8970,
-          4652,
+          9187,
+          4647,
           22000,
           30000,
-          9991,
+          10000,
           16000,
           168000,
           16000,
@@ -1934,7 +1934,7 @@
           52000,
           36000,
           10000,
-          21390,
+          21787,
           10000,
           130000,
           4500,
@@ -1978,51 +1978,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "14f61ba14728fd65bacce2757f40f28523f4214fb42870ad403838e9ec729f95",
-      "whole_economy_hash": "4677160779210841025"
+      "whole_economy_chain": "4bfd3e8587b2393d27caae60f284d848e3361e97682375aeab34309d9b23d8a8",
+      "whole_economy_hash": "3006175904851351855"
     },
     {
-      "chain": "fcf760e17043b59db265da54053e873c38bbf67c05bf983ca9afce013199165b",
+      "chain": "15f025325478bd334ba70430a85763d93cd36573e01a3b4fa9015c0b7fb91ddd",
       "day": 6,
-      "domain_chain": "d2edad6f75d6c97f0493d37a0f725d0b45c4e94b40c4670464998422b73b51a7",
+      "domain_chain": "c2e60ca4d4f6ab4c5bce01c8e07ae72afb4a55d57c54f0d265ab118b444fdc44",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "10670374861322461417",
+          "hash": "10123957649142177026",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 6
         },
         "ECONOMY": {
-          "hash": "2718045784586466616",
+          "hash": "13712721774861272929",
           "scope": "committed_population_market_columns_v1",
           "state_day": 6
         },
         "EFFECT": {
-          "hash": "478668833082270024",
+          "hash": "18418160213373720135",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 6
         },
         "EVENTS": {
-          "hash": "10071194439550333422",
+          "hash": "7186749614688092931",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 6
         },
         "IDEOLOGY": {
-          "hash": "11424416663486466974",
+          "hash": "15814844029514032464",
           "scope": "committed_business_projection_v1",
           "state_day": 6
         },
         "MODIFIER": {
-          "hash": "14131740666431321538",
+          "hash": "13991556478250218363",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 6
         },
         "TRIGGER_INPUT": {
-          "hash": "4394596931849898004",
+          "hash": "10276176353433448866",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 6
         }
       },
-      "economy_hash": "ef242e7d499f8cbbae420a3e96236d7ba639e31e32090c16a3679b93348aec05",
+      "economy_hash": "37fb3a7e3a8b539b6fb7c6f44a6436d86e7b31d8c392c047791b2912603eeb5d",
       "values": [
         6,
         247,
@@ -2030,9 +2030,9 @@
         0,
         0,
         0,
-        49120000,
-        800246,
-        640246,
+        24031282,
+        434514,
+        422514,
         5,
         65535,
         [
@@ -2095,12 +2095,10 @@
           0,
           0,
           0,
-          6813,
-          0,
-          184510,
-          106691,
           0,
           0,
+          66500,
+          131932,
           0,
           0,
           0,
@@ -2123,9 +2121,9 @@
           0,
           0,
           0,
-          146397,
           0,
           0,
+          88251,
           0,
           0,
           0,
@@ -2161,7 +2159,9 @@
           0,
           0,
           0,
-          10500,
+          0,
+          0,
+          3248,
           0,
           0,
           0,
@@ -2264,13 +2264,13 @@
           4000,
           62000,
           24000,
-          21108,
+          25989,
           18000,
-          8781,
-          4595,
+          9044,
+          4590,
           22000,
           30000,
-          9987,
+          9999,
           16000,
           168000,
           16000,
@@ -2292,7 +2292,7 @@
           22000,
           10000,
           16000,
-          9199,
+          9205,
           30000,
           18000,
           52000,
@@ -2330,7 +2330,7 @@
           52000,
           36000,
           10000,
-          20900,
+          21405,
           10000,
           130000,
           4500,
@@ -2374,51 +2374,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "2a399215d28154ff8943e13c5ce86e871ecc1097dc67fbddb2ec8d0e50fc381d",
-      "whole_economy_hash": "6351461048378385241"
+      "whole_economy_chain": "2889fcee5bd9e717d8c4fa43bb0e5c8695af784fd8a1c138cda790695818781d",
+      "whole_economy_hash": "7181184598013121291"
     },
     {
-      "chain": "18110068a551633e90638ca237f352852789d628642176dffe7acb37cc1d9bb5",
+      "chain": "4193b60848aa21e19131500f96d2471a2b30e1547c1440da444fb0c34ccc94e2",
       "day": 7,
-      "domain_chain": "6d60542d9441ed92ee756fa6cb5506216af2925756ea589e1e454d739f5e67ca",
+      "domain_chain": "418db8d13aa05da501e3542451f38cb948c14678ef1dc7a06c6ed081992f90e4",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "4628079566695992178",
+          "hash": "16126522133593939009",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 7
         },
         "ECONOMY": {
-          "hash": "14543211778562991548",
+          "hash": "1204775636624136645",
           "scope": "committed_population_market_columns_v1",
           "state_day": 7
         },
         "EFFECT": {
-          "hash": "10780879141117061553",
+          "hash": "14120666991430194894",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 7
         },
         "EVENTS": {
-          "hash": "18271146636095172677",
+          "hash": "5808665348631378392",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 7
         },
         "IDEOLOGY": {
-          "hash": "10722126761912852203",
+          "hash": "17363470530621112885",
           "scope": "committed_business_projection_v1",
           "state_day": 7
         },
         "MODIFIER": {
-          "hash": "11031770352111655051",
+          "hash": "5317954982092985458",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 7
         },
         "TRIGGER_INPUT": {
-          "hash": "15272517504514273648",
+          "hash": "7876131754141825527",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 7
         }
       },
-      "economy_hash": "37c4540e9321e0ac9f1403fa58efbce43449e046acb76223bd38fe6db9991ad3",
+      "economy_hash": "45291e72c4302ce76c38c6326d4bb33fe7c50da2b563084f968e3a5677dd6a61",
       "values": [
         7,
         247,
@@ -2426,9 +2426,9 @@
         0,
         0,
         0,
-        49280000,
-        796895,
-        636895,
+        24043282,
+        1038727,
+        1026727,
         5,
         65535,
         [
@@ -2491,12 +2491,10 @@
           0,
           0,
           0,
-          7575,
-          0,
-          195594,
-          82496,
           0,
           0,
+          63401,
+          112604,
           0,
           0,
           0,
@@ -2519,9 +2517,9 @@
           0,
           0,
           0,
-          144672,
           0,
           0,
+          19980,
           0,
           0,
           0,
@@ -2557,7 +2555,9 @@
           0,
           0,
           0,
-          12000,
+          0,
+          0,
+          3808,
           0,
           0,
           0,
@@ -2660,13 +2660,13 @@
           4000,
           62000,
           24000,
-          20667,
+          26265,
           18000,
-          8596,
-          4538,
+          8901,
+          4534,
           22000,
           30000,
-          9983,
+          9998,
           16000,
           168000,
           16000,
@@ -2688,7 +2688,7 @@
           22000,
           10000,
           16000,
-          9076,
+          9087,
           30000,
           18000,
           52000,
@@ -2726,7 +2726,7 @@
           52000,
           36000,
           10000,
-          20407,
+          21024,
           10000,
           130000,
           4500,
@@ -2770,51 +2770,51 @@
           10000
         ]
       ],
-      "whole_economy_chain": "88313a82bebba2d0142dc9df4bed1bbf93f1b6e61f58dbf34744e8294b476a69",
-      "whole_economy_hash": "8869481879026921849"
+      "whole_economy_chain": "d3f7590749dd062db4bb70a982952db9b4cb2f917d29d2453799fa36bf9151d4",
+      "whole_economy_hash": "8342699021513582637"
     },
     {
-      "chain": "2242b25110adb22d74a7ce175f8b6e0dce2ef2442741d3dc2a318efa8c7e28c2",
+      "chain": "54f16f535fb10e91498e10a5df54034abf5c6d92afc40e4ebd00a9e890773c90",
       "day": 8,
-      "domain_chain": "ccccb169b60749ea39833a3763f6d20413cd3a46ab637555ba85cfd27d232291",
+      "domain_chain": "7cc73a300a151ad53df0c8825b97982c8b6aee82879aadff4ad533a254995466",
       "domain_hashes": {
         "CLIMATE": {
-          "hash": "2143057663953480291",
+          "hash": "7569184834105467086",
           "scope": "committed_store_lanes_and_physics_v1",
           "state_day": 8
         },
         "ECONOMY": {
-          "hash": "15913624001454663673",
+          "hash": "10668820279744170994",
           "scope": "committed_population_market_columns_v1",
           "state_day": 8
         },
         "EFFECT": {
-          "hash": "13985633946973569458",
+          "hash": "3742552496201969221",
           "scope": "committed_effect_content_without_instance_ids_v1",
           "state_day": 8
         },
         "EVENTS": {
-          "hash": "16345380742701157888",
+          "hash": "12246335922111990151",
           "scope": "committed_event_log_and_ack_state_v1",
           "state_day": 8
         },
         "IDEOLOGY": {
-          "hash": "8367257940071814236",
+          "hash": "8881793652395185515",
           "scope": "committed_business_projection_v1",
           "state_day": 8
         },
         "MODIFIER": {
-          "hash": "8502234846131254028",
+          "hash": "368087998929685709",
           "scope": "committed_entries_and_buckets_v1",
           "state_day": 8
         },
         "TRIGGER_INPUT": {
-          "hash": "7322398167019189236",
+          "hash": "14628735443494577738",
           "scope": "committed_trigger_snapshot_v1",
           "state_day": 8
         }
       },
-      "economy_hash": "a46419a18b777173944481a3171d086c10da327a76184a358424c01b83357354",
+      "economy_hash": "cc012650492c99c42b7de560e1be08472f4861f554b13eb75b5b0bd5a3ad7985",
       "values": [
         8,
         247,
@@ -2822,9 +2822,9 @@
         0,
         0,
         0,
-        49440000,
-        793777,
-        633777,
+        24055282,
+        423476,
+        411476,
         5,
         65535,
         [
@@ -2887,12 +2887,10 @@
           0,
           0,
           0,
-          8320,
+          149,
           0,
-          205989,
-          58113,
-          0,
-          0,
+          63662,
+          94846,
           0,
           0,
           0,
@@ -2915,9 +2913,9 @@
           0,
           0,
           0,
-          142838,
           0,
           0,
+          27775,
           0,
           0,
           0,
@@ -2953,7 +2951,9 @@
           0,
           0,
           0,
-          13500,
+          0,
+          0,
+          4592,
           0,
           0,
           0,
@@ -3056,13 +3056,13 @@
           4000,
           62000,
           24000,
-          20229,
+          26404,
           18000,
-          8416,
-          4482,
+          8759,
+          4479,
           22000,
           30000,
-          9978,
+          9997,
           16000,
           168000,
           16000,
@@ -3084,7 +3084,7 @@
           22000,
           10000,
           16000,
-          8950,
+          9260,
           30000,
           18000,
           52000,
@@ -3122,7 +3122,7 @@
           52000,
           36000,
           10000,
-          19915,
+          20644,
           10000,
           130000,
           4500,
@@ -3166,8 +3166,8 @@
           10000
         ]
       ],
-      "whole_economy_chain": "1acc7576868557b37bf2bc3025d5f6182d952f81a253bc1b2c58d2ec16e523d1",
-      "whole_economy_hash": "3153676576345708031"
+      "whole_economy_chain": "d9a4fb807ed1be62ed9552a45552b4c714841bb08b68c4c4d5be47488e67a936",
+      "whole_economy_hash": "8642346864409148329"
     }
   ],
   "excluded_domains": [

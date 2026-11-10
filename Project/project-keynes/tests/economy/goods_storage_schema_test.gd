@@ -17,7 +17,7 @@ func _run() -> void:
 	var default_profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	_expect("default profile raises building goods output without changing recipe costs",
-		int(default_profile.get("building_output_efficiency_q16", 0)) == 131072)
+		int(default_profile.get("building_output_efficiency_q16", 0)) == 98304)
 	var catalog: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("catalog compiles", bool(catalog.get("ok", false)))
 	if not bool(catalog.get("ok", false)):

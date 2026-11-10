@@ -37,7 +37,19 @@ trigger_runtime (80)
 
 Ideology never writes Country, Economy, Modifier, Trigger, DataCore, or a
 conserved ledger. Economy COMMIT publishes the next class-opinion revision, so
-same-day ideology commands consume the previous committed snapshot.
+same-day ideology commands consume the previous committed snapshot. In ACTIVE worker/inline,
+`copy_economy_opinion_view` copies the executor-owned Economy commit and pins it by target day
+through `pin_ideology_reference_opinion`. Continuations reuse that exact input; main-thread
+publication timing cannot select a different day. Revision zero remains missing input. SHADOW
+keeps its paired reference source. Explicit test-source overrides follow the same daily pin.
+Complete bundle restore discards pinned daily inputs and generation-to-input records;
+same-world executor resume retains an unfinished day's input. Golden replay asserts the
+consumed opinion day; the lifecycle fixture also checks the revision. Both diagnostic
+values come from the same locked input-use record.
+`runtime_opinion_input_lifecycle_test.gd` covers both executors, absent input, restore,
+controlled sources and stale input-use records. The social-media point probe restores
+real class populations before repeal so synthetic technology-class influence does not
+violate the authored repeal gate; keep actual Effect acknowledgments and term checks.
 
 Primary files:
 

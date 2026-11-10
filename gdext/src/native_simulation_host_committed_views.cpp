@@ -1,5 +1,6 @@
 #include "native_simulation_host.h"
 #include "economy_runtime.h"
+#include "ideology_opinion_bridge.h"
 #include "country_ai_core.h"
 #include <cassert>
 
@@ -8,6 +9,22 @@ RuntimePublishedView<RuntimeIdeologyOpinionSnapshot>
 NativeSimulationHost::copy_economy_opinion_view(int64_t day) {
     auto source = std::atomic_load_explicit(&_ideology_opinion_snapshot,
                                            std::memory_order_acquire);
+    if (_economy_production_runtime != nullptr &&
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        RuntimeExecutionContext::active_for(this) &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+            runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u) {
+        // The executor owns both stages and holds their day boundary. Observe
+        // Economy's last commit directly; a delayed main-thread publication
+        // must not choose which earlier opinion this day settles against.
+        const auto committed = _economy_production_runtime->copy_lineage_opinion_view();
+        auto opinion = ideology_opinion_from_economy(*committed.data);
+        if (_economy_production_runtime->class_opinion_source_override_enabled_for_test())
+            opinion = ideology_opinion_from_economy(
+                _economy_production_runtime->country_class_opinion_source_snapshot());
+        source = pin_ideology_reference_opinion(day, opinion);
+        if (source->revision == 0) source.reset();
+    }
     if (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW &&
         ideology_parity_enabled()) {
         std::lock_guard<std::mutex> lock(_ideology_transport_mutex);

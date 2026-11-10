@@ -27,6 +27,7 @@ FIXTURES = (
     ("world_lifecycle", "tests/runtime/runtime_world_lifecycle_test.gd", "runtime world lifecycle:"),
     ("formal_inline_restart", "tests/runtime/runtime_inline_coordinator_save_test.gd", "inline coordinator save:"),
     ("world_rules", "tests/runtime/runtime_world_rules_rebuild_test.gd", "runtime world rules rebuild:"),
+    ("opinion_inputs", "tests/runtime/runtime_opinion_input_lifecycle_test.gd", "runtime opinion input lifecycle:"),
 )
 
 

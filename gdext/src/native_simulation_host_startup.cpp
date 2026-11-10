@@ -386,7 +386,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _time_debt_days.store(std::clamp(start_time_debt, 0.0, 100.0),
                           std::memory_order_release);
-    const auto existing_environment = environment_snapshot();
+    const auto existing_environment = restore_pending
+        ? std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire)
+        : environment_snapshot();
     if (existing_environment != nullptr) {
         _environment_generation.store(existing_environment->generation, std::memory_order_release);
         _environment_day.store(existing_environment->day, std::memory_order_release);
@@ -442,7 +444,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     clear_climate_parity_divergence();
     reset_climate_parity_fields();
     _state_hash.store(start_state_hash, std::memory_order_release);
-    const auto bootstrap_environment = environment_snapshot();
+    // Restore input is staged outside the stopped timeline's queue. Its queued
+    // future frames must not shadow the replacement snapshot during reseeding.
+    const auto bootstrap_environment = restore_pending
+        ? std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire)
+        : environment_snapshot();
     const auto bootstrap_country = std::atomic_load_explicit(
         &_country_snapshot, std::memory_order_acquire);
     _pod_pipeline.reset(
@@ -989,11 +995,25 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     if (ideology_candidate_ready) {
         _ideology_pod_authority = std::move(ideology_candidate);
+        // Both daily pins and generation-to-input records belong to a timeline.
+        if (restore_pending) {
+            {
+                std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+                _ideology_reference_opinions.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(_ideology_worker_opinion_mutex);
+                _ideology_worker_opinion_ring = {};
+                _ideology_worker_opinion_count = 0;
+            }
+        }
         _ideology_modifier_inflight.clear();
         _ideology_loose_modifier_rows.clear();
         _ideology_day_modifier_batches.clear();
         const RuntimeIdeologyPodSnapshot &initial =
             _ideology_pod_authority.snapshot();
+        _ideology_pod_committed_day.store(initial.committed_day,
+                                         std::memory_order_release);
         if (!initial.countries.empty()) {
             auto copy = std::make_shared<RuntimeIdeologyPodSnapshot>(initial);
             std::atomic_store_explicit(&_ideology_snapshot,

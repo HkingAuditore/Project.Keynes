@@ -51,8 +51,11 @@ TESTS = (
     "tests/ideology/ideology_save_transaction_states_test.gd",
     "tests/ideology/ideology_save_basis_and_midmaterialize_test.gd",
     "tests/runtime/ideology_day_continuation_test.gd",
+    "tests/runtime/runtime_opinion_input_lifecycle_test.gd",
+    "tests/ideology/ideology_social_media_worker_test.gd",
     "tests/building/building_runtime_test.gd",
     "tests/economy/economy_test_bootstrap_test.gd",
+    "tests/economy/bootstrap_catalog_contract_test.gd",
     "tests/economy/goods_storage_schema_test.gd",
     "tests/economy/economy_cadence_runtime_test.gd",
     "tests/economy/economy_worker_restart_day_test.gd",
@@ -81,6 +84,9 @@ TESTS = (
     "tests/runtime/inflight_save_boundary_test.gd",
     "tests/runtime/environment_save_continuation_test.gd",
     "tests/runtime/runtime_event_restore_cursor_test.gd",
+    "tests/country/country_runtime_test.gd",
+    "tests/runtime/runtime_country_peer_bridge_test.gd",
+    "tests/effect/modifier_runtime_test.gd",
 )
 # Leaks may only produce a WARNING and a zero exit code. They still fail the
 # gate, including ObjectDB-only leaks without a Resource or RID error.
@@ -88,6 +94,27 @@ SHUTDOWN_LEAK = re.compile(
     r"ObjectDB instances leaked at exit|resources still in use at exit|"
     r"RID allocations of type .+ were leaked at exit|Leaked instance:"
 )
+
+# This negative fixture deliberately calls the public rejecting builder. The
+# exact diagnostic must occur once; every other error and every leak still fails.
+EXPECTED_ERRORS = {
+    "ideology_effect_override_test": (
+        "ERROR: [effect-catalog] effect_catalog_ideology_effect_parameter_max_stacks_invalid",
+    ),
+}
+
+
+def fixture_errors(name: str, lines: list[str]) -> list[str]:
+    expected = EXPECTED_ERRORS.get(name, ())
+    errors = [line for line in lines if (
+        "SCRIPT ERROR:" in line or "[FAIL]" in line or
+        line.startswith("ERROR:") or SHUTDOWN_LEAK.search(line)
+    ) and line not in expected]
+    for diagnostic in expected:
+        count = lines.count(diagnostic)
+        if count != 1:
+            errors.append(f"expected exactly one diagnostic ({count} found): {diagnostic}")
+    return errors
 
 
 def run_check(godot: str, name: str, arguments: list[str], logs: Path,
@@ -104,10 +131,7 @@ def run_check(godot: str, name: str, arguments: list[str], logs: Path,
         result = subprocess.run(command, cwd=ROOT, env=environment, stdout=output,
                                 stderr=subprocess.STDOUT, check=False)
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    errors = [line for line in lines if (
-        "SCRIPT ERROR:" in line or "[FAIL]" in line or
-        line.startswith("ERROR:") or SHUTDOWN_LEAK.search(line)
-    )]
+    errors = fixture_errors(name, lines)
     artifacts = unexpected_artifacts(before_files, untracked(ROOT))
     errors.extend("unexpected test artifact: " + name for name in artifacts)
     passed = result.returncode == 0 and not errors
@@ -135,7 +159,7 @@ def main() -> int:
     logs = args.log_dir or Path(tempfile.mkdtemp(prefix="keynes-regression-logs-"))
     logs = logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
-    for guard in ("check_size_ratchet.py", "check_cpp_deps.py", "check_cross_domain_inventory.py", "check_runtime_advancers.py", "check_runtime_switches.py", "check_committed_views.py", "check_save_contracts.py", "check_module_contracts.py", "check_resolve_apply.py", "check_module_api.py", "test_architecture_guards.py"):
+    for guard in ("check_size_ratchet.py", "check_cpp_deps.py", "check_cross_domain_inventory.py", "check_runtime_advancers.py", "check_runtime_switches.py", "check_committed_views.py", "check_save_contracts.py", "check_module_contracts.py", "check_resolve_apply.py", "check_module_api.py", "test_architecture_guards.py", "test_regression_evidence.py"):
         result = subprocess.run([sys.executable, str(ROOT / "tools/ci" / guard)], check=False)
         if result.returncode:
             return result.returncode

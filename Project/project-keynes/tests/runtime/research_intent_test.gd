@@ -78,7 +78,7 @@ func _init() -> void:
 	_expect("save evidence complete", not evidence.is_empty())
 	print("RESEARCH_INTENT_RESULT=" + JSON.stringify(evidence))
 	if OS.get_environment("PK_RESEARCH_INTENT_CAPTURE") != "1":
-		_expect("receipts and roundtrip bytes unchanged", JSON.parse_string(JSON.stringify(evidence)) ==
+		_expect("receipts and roundtrip bytes match reviewed content baseline", JSON.parse_string(JSON.stringify(evidence)) ==
 			JSON.parse_string(FileAccess.get_file_as_string("res://tests/runtime/research_intent_baseline.json")))
 	ext = null
 	print("research intent: %d failures" % _failures)

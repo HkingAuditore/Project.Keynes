@@ -89,3 +89,10 @@ Performance gates in release:
 - 100k-cell transfer plus CSR rebuild/publication p95 below 5 ms;
 - existing economy benchmarks regress no more than 10%, with scalar/worker hashes equal and audit
   errors `0/0/0`.
+
+## Research fixture premises (2026-11-10)
+
+Bootstrap the current target prerequisites and settle their initial Effect transactions before
+starting a peer handshake. Keep the missing-prerequisite rejection/control and zero duplicate
+research consumption checks. Unlock-only technologies complete immediately; programs emitting
+Modifiers remain pending until their real ACK.

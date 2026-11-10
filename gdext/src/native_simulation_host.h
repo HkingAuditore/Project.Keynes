@@ -1536,7 +1536,6 @@ private:
     int64_t _ideology_catalog_mismatch_count = 0;
     uint64_t _ideology_last_reference_catalog_hash = 0;
     uint64_t _ideology_last_worker_catalog_hash = 0;
-    std::atomic<uint64_t> _ideology_worker_opinion_revision{0};
     // R9-1: which opinion the worker consumed for which day, as ONE record.
     //
     // Three independent atomics cannot express this: a reader can see plan_day
