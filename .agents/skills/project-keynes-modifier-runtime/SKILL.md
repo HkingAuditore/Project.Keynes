@@ -110,3 +110,10 @@ Composite is capped by both subsistence (10% slack) and applicable basic living
 (20% slack). Cohort living-standard display uses actual consumption. See
 `docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
 layout; updated need tiers change the content catalog hash.
+
+## New-world state reset (2026-11-10)
+
+Rule definitions survive successful Host reconstruction. Modifier instances and observation
+cursors belong to one world and reset through `modifier_runtime_lifecycle.cpp`; preserve
+them for a same-world executor restart. See the scheduling/save reference and run
+`runtime_world_rules_rebuild_test.gd` for both execution modes.

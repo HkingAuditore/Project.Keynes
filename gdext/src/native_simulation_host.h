@@ -49,7 +49,7 @@ public:
     bool has_started_once() const noexcept { return _has_started_once.load(std::memory_order_acquire); }
     NativeSimulationHost(const NativeSimulationHost &) = delete;
     NativeSimulationHost &operator=(const NativeSimulationHost &) = delete;
-
+    std::unique_ptr<NativeSimulationHost> make_new_world_host(std::string &error) const;
     // Hot-path gates need only these atomics. Do not construct the diagnostic
     // report (timers, transport queues and domain snapshots) to read a grant.
     struct ControlState {

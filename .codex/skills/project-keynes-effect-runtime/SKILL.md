@@ -126,3 +126,11 @@ instance-slot reuse, and Trigger handoff. Run
 the headless `tests/effect_runtime_test.gd` and
 `tests/effect_domain_integration_test.gd` fixtures. Do not claim a performance
 regression target without same-machine baseline and after measurements.
+
+## New-world state reset (2026-11-10)
+
+`effect_runtime_lifecycle.cpp` owns Effect state clearing and its POD observation cursor.
+Country world reconstruction preserves compiled definitions but clears old instances,
+transactions, and observation state; a same-world executor restart preserves them. Run
+`runtime_world_rules_rebuild_test.gd` in worker and inline modes, checking actual authored
+Modifier values, Effect instance advancement, and snapshot application with reused definitions.

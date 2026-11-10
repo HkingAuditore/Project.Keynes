@@ -49,3 +49,12 @@ counts, and command/expiry/publish/bucket-update/bucket-rebuild times. A hot con
 query strings or parent stores per output line. Final acceptance also records exact-good
 shared/non-neutral/override counts and cache bytes, and
 requires same-machine 50+ day baseline/after: median regression <= 3 percent and p95 <= 5 percent.
+
+## World reconstruction (2026-11-10)
+
+`modifier_runtime_lifecycle.cpp` resets world stores, pending requests, journals, identities,
+base values, and the POD observation cursor while retaining rule definitions. Both configure
+and successful Country world reconstruction use this reset; same-world executor restart does
+not. The new Host retains validated definitions and the stable-key to dense-ID map, not old
+instances. Run `runtime_world_rules_rebuild_test.gd` for changed and reused definitions in
+worker and inline modes; assert the authored value and successful snapshot application.

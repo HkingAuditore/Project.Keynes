@@ -21,10 +21,13 @@ from run_regression_checks import SHUTDOWN_LEAK
 from runtime_test_hygiene import trace_environment
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURES = ("tests/runtime/runtime_inline_save_restore_test.gd",
-            "tests/runtime/runtime_executor_boundary_test.gd",
-            "tests/runtime/runtime_world_lifecycle_test.gd",
-            "tests/runtime/runtime_inline_coordinator_save_test.gd")
+FIXTURES = (
+    ("save_restore", "tests/runtime/runtime_inline_save_restore_test.gd", "inline save/restore:"),
+    ("executor_boundaries", "tests/runtime/runtime_executor_boundary_test.gd", "executor boundaries:"),
+    ("world_lifecycle", "tests/runtime/runtime_world_lifecycle_test.gd", "runtime world lifecycle:"),
+    ("formal_inline_restart", "tests/runtime/runtime_inline_coordinator_save_test.gd", "inline coordinator save:"),
+    ("world_rules", "tests/runtime/runtime_world_rules_rebuild_test.gd", "runtime world rules rebuild:"),
+)
 
 
 def main() -> int:
@@ -65,9 +68,7 @@ def main() -> int:
         (project / ".godot/imported").symlink_to(source / ".godot/imported", target_is_directory=True)
         (project / ".godot/extension_list.cfg").write_text("res://runtime.gdextension\n")
         stages = []
-        for name, fixture, result_prefix in zip(
-                ("save_restore", "executor_boundaries", "world_lifecycle", "formal_inline_restart"), FIXTURES,
-                ("inline save/restore:", "executor boundaries:", "runtime world lifecycle:", "inline coordinator save:")):
+        for name, fixture, result_prefix in FIXTURES:
             stages.append((name, ["--script", "res://" + fixture], result_prefix))
         for name, arguments, result_prefix in stages:
             command = [args.godot, "--headless", "--path", str(project), *arguments]

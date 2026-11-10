@@ -338,7 +338,7 @@
       "limit": 2000
     },
     "gdext/src/effect_runtime.cpp": {
-      "lines": 8479,
+      "lines": 8395,
       "limit": 2000
     },
     "gdext/src/ideology_runtime.cpp": {
@@ -350,7 +350,7 @@
       "limit": 2000
     },
     "gdext/src/modifier_runtime.cpp": {
-      "lines": 2825,
+      "lines": 2804,
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
