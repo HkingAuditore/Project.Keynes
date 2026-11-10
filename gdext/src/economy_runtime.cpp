@@ -13,7 +13,6 @@
 #include "economy_runtime_variant_helpers.h"
 #include "parallel_dispatcher.h"
 #include "pk_log.h"
-
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -568,10 +567,13 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         error = "country_treasury_peer_unavailable";
         return false;
     }
+    // An empty bill is valid for authored zero-material buildings. The caller
+    // still supplies aligned (empty) treasury/market vectors, and the fast
+    // return below keeps this path out of the Country asset bridge.
     if (country_handle == 0 || market < 0 || market >= market_store().market_count.get() ||
         merchant_cell < 0 || merchant_cell >= _cell_count.get() || cash < 0 ||
         good_ids.size() != treasury_quantities.size() ||
-        good_ids.size() != market_quantities.size() || good_ids.empty()) {
+        good_ids.size() != market_quantities.size()) {
         error = "country_treasury_peer_request_invalid";
         return false;
     }
@@ -1081,6 +1083,8 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
         }
     };
     switch (cmd.opcode) {
+        case COMMAND_MILITARY_PROCUREMENT_DEMAND:
+            return retain_military_procurement_demand(cmd, error);
         case COMMAND_START_FAMILY_EXPEDITION:
         case COMMAND_CANCEL_FAMILY_EXPEDITION:
             return apply_family_expedition_player_command(cmd, error);
@@ -1993,8 +1997,4 @@ void NativeEconomyRuntime::register_person_effect(int32_t person_index) {
         static_cast<uint32_t>(person_handle >> 32U), 0, _current_day.get(), -1,
         true, error);
 }
-
-
-
-
 } // namespace pk

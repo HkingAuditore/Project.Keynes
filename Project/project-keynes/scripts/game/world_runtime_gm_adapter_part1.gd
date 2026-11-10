@@ -199,6 +199,8 @@ func get_gm_capabilities(host) -> Dictionary:
 		"commands": host._gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+			{"id": "ui.suppress_popups", "label": "屏蔽事件与报告弹窗", "group": "界面"},
+			{"id": "ui.hide_all_except_gm", "label": "关闭所有界面（保留 GM）", "group": "界面"},
 			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
@@ -314,6 +316,10 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": host._world_clock.paused}
+		"ui.suppress_popups":
+			return {"ok": true, "enabled": host._gm_suppress_popups}
+		"ui.hide_all_except_gm":
+			return {"ok": true, "enabled": host._gm_hide_all_except_gm}
 		"simulation.climate_worker_authority":
 			return {"ok": true, "enabled": host.runtime_climate_authority_enabled}
 		"simulation.click_claim_territory":
@@ -410,6 +416,16 @@ func get_gm_toggle_state(host, toggle_id: String) -> Dictionary:
 
 func set_gm_toggle(host, toggle_id: String, enabled: bool) -> Dictionary:
 	match toggle_id:
+		"ui.suppress_popups":
+			host._gm_suppress_popups = enabled
+			host.gm_toggle_changed.emit(toggle_id, enabled)
+			var response: Dictionary = host._gm_ok("事件与报告弹窗已%s。" % ("屏蔽" if enabled else "恢复"), false, -1)
+			response["enabled"] = host._gm_suppress_popups
+			return response
+		"ui.hide_all_except_gm":
+			host._gm_hide_all_except_gm = enabled
+			host.gm_toggle_changed.emit(toggle_id, enabled)
+			return host._gm_ok("界面已%s（GM 保留）。" % ("关闭" if enabled else "恢复"), false, -1)
 		"simulation.paused":
 			if host._world_clock == null:
 				return host._gm_error("clock_unavailable", "时钟尚未就绪。")
@@ -569,7 +585,10 @@ func _gm_overview_snapshot(host) -> Dictionary:
 		"clock": {"day_index": host._world_clock.day_index() if host._world_clock != null else -1,
 			"year": int(calendar.get("year", 0)), "month": int(calendar.get("month", 0)),
 			"day": int(calendar.get("day", 0)), "paused": host._world_clock.paused if host._world_clock != null else true,
-			"speed": host._world_clock.speed_multiplier if host._world_clock != null else 0.0},
+			"speed": host._world_clock.speed_multiplier if host._world_clock != null else 0.0,
+			"authority_fault_hold": host._world_clock.authority_fault_hold if host._world_clock != null else true,
+			"last_pause_source": String(host._world_clock.last_pause_source) if host._world_clock != null else "",
+			"last_pause_day": int(host._world_clock.last_pause_day) if host._world_clock != null else -1},
 		"runtime": {"fast_tick": host._fast_tick_count, "last_tick_ms": host._last_fast_tick_ms,
 			"sus": host.get_sus_last_tick_summary(), "timing": host._last_tick_timing.duplicate(false)},
 		"country": country_report,

@@ -48,6 +48,7 @@ uniform float shadow_foot_radius = 0.55;
 uniform float shadow_edge_softness = 0.25;
 
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 
 varying float shadow_alpha_v;
 varying float shadow_r;
@@ -140,7 +141,8 @@ void vertex() {
 	shadow_r = length(p);
 	shadow_alpha_v = strength * lod_alpha * ed.local_day * clamp(presence, 0.0, 1.0) * casts
 		* (sub_form > 1.5 ? 0.55 : (sub_form > 0.5 ? 0.80 : 1.0))
-		* mix(1.0, 0.85, shadow_soft);
+		* mix(1.0, 0.85, shadow_soft)
+		* cloud_shadow_direct_visibility(uv, ed.local_day);
 	if (shadow_alpha_v < 0.003) {
 		VERTEX = vec2(0.0);
 	}

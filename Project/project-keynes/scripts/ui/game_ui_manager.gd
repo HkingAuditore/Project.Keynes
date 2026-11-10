@@ -146,6 +146,9 @@ var _era_ceremony_resume_clock := false
 var _era_advancement_snapshot: Dictionary = {}
 var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
+var _gm_popups_suppressed := false
+var _gm_all_ui_suppressed := false
+var _gm_saved_ui_visibility: Dictionary = {}
 var _debug_layer: Control
 var _inspector_suppressed_for_country := false
 var _country_runtime_facade = null
@@ -409,6 +412,13 @@ func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
 	_refresh_peace_window()
 
 
+## 行军预览失败等原因的玩家侧回显。PlayerController 只持有 manager 引用，
+## 不知道右栏是否正在显示军务档案，所以这里做一次存在性转发。
+func show_transient_message(text: String) -> void:
+	if _right_panel != null and _right_panel.has_method("set_military_dossier_feedback"):
+		_right_panel.set_military_dossier_feedback(text, false)
+
+
 ## Inspector 军事页签的官营建筑入口：翻成正式命令交给 PlayerController。
 ## 请求里的 `building` 已经是军事目录里的 dense 建筑序（由视图模型按科技闸门解析），
 ## 所以这里原样透传，不再把角色名当建筑名送过去。
@@ -434,6 +444,31 @@ func _on_military_state_building_requested(request: Dictionary) -> void:
 		_right_panel.set_military_ledger_feedback(message, ok)
 	if _right_panel != null and _right_panel.has_method("set_construction_feedback"):
 		_right_panel.set_construction_feedback(message, ok)
+
+
+## 地块军事台账把该格本国驻军整编为一支部队；兵种模板直接取自驻军 lots。
+func _on_military_army_create_requested(request: Dictionary) -> void:
+	if _player_controller == null:
+		if _right_panel != null:
+			_right_panel.set_military_army_feedback("玩家控制器尚未就绪。", false)
+			_right_panel.release_military_ledger_busy()
+		return
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_MILITARY_ARMY_CREATE, {
+			"cell": int(request.get("cell", -1)),
+			"units": request.get("units", {}),
+		})
+	var ok := bool(result.get("ok", false))
+	var message := String(result.get("message", ""))
+	if message.is_empty():
+		message = "编成命令已排队，将在下一游戏日生效。" if ok else "部队编成未能排队。"
+	if not ok and _right_panel != null \
+			and _right_panel.has_method("release_military_ledger_busy"):
+		_right_panel.release_military_ledger_busy()
+	if _right_panel != null and _right_panel.has_method("set_military_army_feedback"):
+		_right_panel.set_military_army_feedback(message, ok)
+	if ok:
+		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "army_create")
 
 
 func _country_section_mask(section_id: String) -> int:
@@ -663,6 +698,54 @@ func toggle_gm_panel() -> void:
 
 func is_gm_available() -> bool:
 	return _gm_available and _gm_console != null
+
+
+func set_popups_suppressed(enabled: bool) -> void:
+	_gm_popups_suppressed = enabled
+	if not enabled:
+		return
+	if is_era_ceremony_playing():
+		_era_ceremony.skip()
+	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("close_offer"):
+		_narrative_event_dialog.close_offer()
+
+
+func set_all_ui_suppressed(enabled: bool) -> void:
+	if _gm_all_ui_suppressed == enabled:
+		return
+	_gm_all_ui_suppressed = enabled
+	var paths := ["UIRoot/HUDLayer", "UIRoot/PanelLayer", "UIRoot/ModalLayer",
+		"UIRoot/EraOverlayLayer"]
+	if enabled:
+		_gm_saved_ui_visibility.clear()
+		for path in paths:
+			var node := get_node_or_null(path) as CanvasItem
+			if node == null:
+				continue
+			_gm_saved_ui_visibility[path] = node.visible
+			node.visible = false
+		# DebugLayer 可能包含旧的诊断控件；只保留 GM 面板可见。
+		if _debug_layer != null:
+			for child in _debug_layer.get_children():
+				if child != _gm_console and child is CanvasItem:
+					var key := String(child.get_path())
+					_gm_saved_ui_visibility[key] = (child as CanvasItem).visible
+					(child as CanvasItem).visible = false
+			if _gm_console != null:
+				_gm_console.visible = true
+	else:
+		for path in paths:
+			if _gm_saved_ui_visibility.has(path):
+				var restore_node := get_node_or_null(path) as CanvasItem
+				if restore_node != null:
+					restore_node.visible = bool(_gm_saved_ui_visibility[path])
+		if _debug_layer != null:
+			for child in _debug_layer.get_children():
+				var key := String(child.get_path())
+				if _gm_saved_ui_visibility.has(key) and child is CanvasItem:
+					(child as CanvasItem).visible = bool(_gm_saved_ui_visibility[key])
+		_gm_saved_ui_visibility.clear()
+	_layout_gm_panel()
 
 
 func toggle_perf_hud() -> void:
@@ -924,6 +1007,8 @@ func _on_country_committed(report: Dictionary) -> void:
 ## economy_chapter 非空时直接落到经济卷宗的指定章节（总览 / 阶层民生），
 ## 顶栏纸签点击走这条路；其它调用方保持原来的「记住上次章节」行为。
 func open_country_section(section_id: String, economy_chapter: String = "") -> void:
+	if _player_controller != null:
+		_player_controller.cancel_military_arm_order()
 	if section_id == "annual":
 		close_country_panel()
 		annual_history_requested.emit()
@@ -1504,20 +1589,28 @@ func open_military_dossier(kind: String, id: int, cell: int = -1) -> bool:
 	var payload := _military_dossier_payload(kind, id, cell)
 	if payload.is_empty():
 		return false
-	# 同一实体再点一次 = 收起（地图点击的 toggle 语义）。
+	# 重选同一支部队保留档案、滚动位置和选点草稿；关闭交给 × / Esc。
 	if _right_panel.military_dossier_open() \
 			and _right_panel.military_dossier_identity() == String(payload.get("identity", "")):
-		close_military_dossier()
+		if kind != "army":
+			close_military_dossier()
 		return true
+	_player_controller.cancel_military_arm_order()
+	var was_visible := _right_panel.visible
+	UIAnimation.cancel(_right_panel)
 	_military_dossier_context = {"kind": kind, "id": id, "cell": cell}
 	_last_military_dossier_ms = Time.get_ticks_msec()
 	_military_dossier_pending = false
-	_right_panel.set_directory_available(_selected_cell != null)
+	_right_panel.set_directory_available(kind != "army" and _selected_cell != null)
 	# 只开军务档案、没有地块档案时，面板本身也要出现。
 	if not _right_panel.visible:
 		_right_panel.visible = true
-		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
 	_right_panel.show_military_dossier(payload)
+	_layout_right_panel()
+	UIAnimation.refresh_rest_position(_right_panel)
+	if not was_visible:
+		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
+	update_military_arm_order(_player_controller.military_arm_order())
 	var focus := int(payload.get("focus_cell", -1))
 	if focus >= 0 and _player_controller.has_method("focus_cell"):
 		_player_controller.call("focus_cell", focus)
@@ -1529,6 +1622,8 @@ func close_military_dossier() -> void:
 	# 每次点格都会走到这里：什么都没开时直接返回，别为一次选格多付一次原生调用。
 	if not was_open and _military_dossier_context.is_empty():
 		return
+	if _player_controller != null:
+		_player_controller.cancel_military_arm_order()
 	_military_dossier_context.clear()
 	_military_dossier_pending = false
 	if _right_panel != null:
@@ -1553,6 +1648,11 @@ func _military_dossier_payload(kind: String, id: int, cell: int = -1) -> Diction
 		return {}
 	if kind == "army":
 		var same_cell: Array = []
+		# 行军后同格名录跟随部队当前位置，不继续展示开页时的旧驻地。
+		if _player_controller.has_method("military_army_cell"):
+			var current_cell := int(_player_controller.call("military_army_cell", id))
+			if current_cell >= 0:
+				cell = current_cell
 		if cell >= 0 and _player_controller != null \
 				and _player_controller.has_method("military_armies_at_cell"):
 			same_cell = _player_controller.call("military_armies_at_cell", cell)
@@ -1635,9 +1735,35 @@ func _on_military_dossier_action_requested(action: StringName, payload: Dictiona
 	var handle := int(payload.get("handle", 0))
 	if handle <= 0:
 		return
-	# begin_* 会自己收起档案并进入地图选点模式；下一次点击就是目标格。
-	var mode := "area" if action == &"area" else "move"
-	_player_controller.call("begin_military_arm_order", handle, mode, 1)
+	var result: Dictionary = {}
+	match action:
+		&"move", &"area":
+			result = _player_controller.begin_military_arm_order(handle, String(action), 1)
+		&"cancel_order":
+			_player_controller.cancel_military_arm_order()
+			return
+		&"confirm_order":
+			result = _player_controller.confirm_military_arm_order()
+		&"radius":
+			_player_controller.set_military_arm_order_radius(int(payload.get("radius", 1)))
+			return
+		&"stop", &"stance":
+			_player_controller.cancel_military_arm_order()
+			var command := &"military.army.stop" if action == &"stop" else &"military.army.stance"
+			result = _player_controller.request_command(command,
+				{"army": handle, "stance": int(payload.get("stance", 0))})
+		_:
+			return
+	# 行军 / 区域控制成功也要给回执：否则确认键按下后档案毫无变化，玩家以为按钮坏了。
+	var accepted := bool(result.get("ok", false))
+	var fallback := "命令已下达，次日生效。" if accepted else "命令未生效：原因未返回，请重试。"
+	_right_panel.set_military_dossier_feedback(
+		String(result.get("message", fallback)), accepted)
+
+
+func update_military_arm_order(state: Dictionary) -> void:
+	if _right_panel != null:
+		_right_panel.update_military_arm_order(state)
 
 
 func _on_military_dossier_army_selected(handle: int) -> void:
@@ -1810,6 +1936,10 @@ func _base_map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
+	if _player_controller != null and not String(
+			_player_controller.military_arm_order().get("mode", "")).is_empty():
+		_player_controller.cancel_military_arm_order()
+		return true
 	if _status_card != null and _status_card.is_open():
 		_status_card_generation += 1
 		_status_card_kind = ""
@@ -1859,6 +1989,8 @@ func dismiss_overlay_menu() -> bool:
 
 
 func toggle_pause_menu() -> void:
+	if _player_controller != null:
+		_player_controller.cancel_military_arm_order()
 	if _pause_menu != null and not is_era_reward_modal_open() \
 			and not is_family_founding_modal_open():
 		_pause_menu.toggle()
@@ -2167,6 +2299,11 @@ func is_era_ceremony_playing() -> bool:
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
+	if _gm_popups_suppressed:
+		# GM 屏蔽事件时只同步时代基线，不创建会暂停时钟的大典。
+		_era_celebrated_index = new_index
+		_era_ceremony_index = -1
+		return
 	if is_era_ceremony_playing():
 		_era_ceremony.finish_now()
 	_era_celebrated_index = new_index
@@ -2475,6 +2612,8 @@ func _bind_ui() -> void:
 		_on_trade_order_locate_requested)
 	_right_panel.military_state_building_requested.connect(
 		_on_military_state_building_requested)
+	_right_panel.military_army_create_requested.connect(
+		_on_military_army_create_requested)
 	_right_panel.military_army_selected.connect(
 		_on_military_army_selected)
 	_right_panel.military_dossier_action_requested.connect(
@@ -2807,6 +2946,8 @@ func _on_map_overlay_cleared() -> void:
 
 
 func _on_inspector_visibility_changed() -> void:
+	if _right_panel != null and not _right_panel.visible and _player_controller != null:
+		_player_controller.cancel_military_arm_order()
 	# 地块档案一开，悬停卡就是纯噪音；确定性关掉，不等下一帧轮询。
 	if _right_panel != null and _right_panel.visible and _cell_hover_card != null:
 		_cell_hover_card.dismiss(true)
@@ -2819,6 +2960,12 @@ func _on_inspector_visibility_changed() -> void:
 
 func _on_inspector_detail_visibility_changed(open: bool) -> void:
 	if not open:
+		if _player_controller != null:
+			_player_controller.cancel_military_arm_order()
+			if not _military_dossier_context.is_empty():
+				_player_controller.clear_military_map_selection()
+		if _right_panel != null:
+			_right_panel.set_directory_available(true)
 		_object_detail_context.clear()
 		_pending_object_request.clear()
 		_military_dossier_context.clear()
@@ -3054,6 +3201,13 @@ func _layout_right_panel() -> void:
 	var detail_open := _right_panel.detail_open()
 	var family_open := _right_panel.family_workspace_open()
 	var layout := inspector_layout_for_width(viewport_width, detail_open, family_open)
+	# 部队指挥常驻地图旁；单页不携带地块目录，也不占用整幅地图。
+	var army_open := _right_panel.military_dossier_open() and \
+		String(_military_dossier_context.get("kind", "")) == "army"
+	if army_open:
+		layout["panel_width"] = minf(520.0, viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0)
+		layout["compact"] = true
+		_right_panel.custom_minimum_size.x = 0.0
 	var compact := bool(layout.get("compact", false))
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
@@ -3210,6 +3364,11 @@ func set_annual_history(rows: Array, offset: int, has_more: bool) -> void:
 
 func is_annual_report_open() -> bool:
 	return _annual_report_workspace != null and _annual_report_workspace.visible
+
+
+func close_annual_report() -> void:
+	if _annual_report_workspace != null and _annual_report_workspace.has_method("_close"):
+		_annual_report_workspace.call("_close")
 
 
 func annual_other_modal_open() -> bool:

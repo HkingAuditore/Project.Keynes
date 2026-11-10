@@ -361,7 +361,7 @@ func _refresh_now() -> void:
 		return
 	_apply_layout()
 	if not _vm.available():
-		_show_status(_vm.reason() if not _vm.reason().is_empty() else "军事事务暂不可用。", true)
+		_show_status(_vm.reason() if not _vm.reason().is_empty() else "先在领地建立军事机构，才能查看军情。", true)
 		_kpi_strip.visible = false
 		for page in _pages.values():
 			(page as Control).visible = false
@@ -683,6 +683,8 @@ func _on_share_bar_clicked(unit_id: String, ratio: float) -> void:
 	var current := 0
 	var others := 0
 	for unit in _forces.get("units", []):
+		if bool(unit.get("is_militia_row", false)):
+			continue
 		var bp := int(unit.bp)
 		if String(unit.id) == unit_id:
 			current = bp
@@ -737,7 +739,9 @@ func _refresh_armies() -> void:
 			else "%d 支" % convoys.size()
 	if _changed("convoys", convoys):
 		_apply_convoys(convoys)
-	_procurement_label.text = String(data.get("procurement_text", ""))
+	var procurement_text := String(data.get("procurement_text", ""))
+	_procurement_label.visible = not procurement_text.is_empty()
+	_procurement_label.text = procurement_text
 
 
 func _apply_army_rows(rows: Array) -> void:
@@ -859,7 +863,7 @@ func _refresh_declare(data: Dictionary) -> void:
 	_declare_caption.text = "%d 个邻国" % rows.size() if not rows.is_empty() else ""
 	_declare_empty.visible = rows.is_empty()
 	_declare_empty.text = "邻接领土图上没有其他国家。" if _vm.session_bound() \
-		else "未能读取领土邻接：本面板没有接到世界数据。"
+		else "暂时读不到邻国领土，请稍后重试。"
 	if _changed("declare", rows):
 		var table_rows: Array = []
 		for row in rows:
@@ -926,7 +930,7 @@ func _refresh_fronts(data: Dictionary) -> void:
 	var front_source_missing := not bool(data.get("front_source", true))
 	_front_empty.visible = rows.is_empty() and front_source_missing
 	if front_source_missing:
-		_front_empty.text = "战线需要军事运行时的推送。"
+		_front_empty.text = "暂时读不到战线情报，明日再来看。"
 	if _changed("fronts", rows):
 		var list_rows: Array = []
 		for row in rows:
@@ -934,7 +938,7 @@ func _refresh_fronts(data: Dictionary) -> void:
 			list_rows.append({
 				"id": String(row.id),
 				"label": String(row.zone),
-				"text": String(row.text),
+				"text": "%s · %d 处接触" % [String(row.text), int(row.edges)],
 				"value": progress,
 				"color": UITokens.DOSSIER_OXBLOOD if progress > 0.001
 					else UITokens.DOSSIER_SLATE,
@@ -956,13 +960,13 @@ func _on_front_selected(row_id) -> void:
 
 func _request(id: StringName, args: Dictionary) -> void:
 	if _player_controller == null or not _player_controller.has_method("request_command"):
-		_flash("军事命令需要在正式对局中下达。", true)
+		_flash("命令暂未接通，请稍后重试。", true)
 		return
 	var result: Dictionary = _player_controller.request_command(id, args)
 	if bool(result.get("ok", false)):
 		_flash(String(result.get("message", "已下达，次日生效。")), false)
 	else:
-		_flash(String(result.get("message", "命令被拒绝。")), true)
+		_flash(String(result.get("message", "命令未生效：原因未返回，请重试或查看军情。")), true)
 
 
 func _flash(text: String, danger: bool) -> void:

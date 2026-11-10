@@ -307,7 +307,6 @@ uniform bool  water_fresnel_enabled          = true;
 uniform bool  river_flow_enabled             = true;
 uniform bool  caustics_enabled               = true;
 uniform bool  shallow_transparency_enabled   = true;
-uniform float water_gloss                    : hint_range(4.0, 128.0) = 34.0;
 uniform float water_reflection_strength      : hint_range(0.0, 1.0) = 0.32;
 // [sky-sh-water 2026-06-29] 波浪天光明暗（hillshade）：沿太阳方位对波浪法线坡度做漫反射明暗，
 // 让没有直射高光的水域也能看出波纹起伏（方向化天光/球谐在波浪上的体现）。0=关闭。
@@ -359,8 +358,36 @@ uniform float estuary_plume_strength         : hint_range(0.0, 1.0) = 0.65;
 //    让 "湖/海/礁/藻" 的交界不再是规整直线，而是像水被搅散一样的 wavy edge。
 //  - water_wave_line_strength：原为"横向波痕条纹"总强度；本轮（Water Calm
 //    防止水面重新出现高对比密集纹理）。字段名保留是为了不破坏既有 .tscn 序列化。
-uniform float water_domain_warp_strength : hint_range(0.0, 4.0) = 1.45;
+// [water-flow-waves 2026-11-06] 旧值 1.45 会把水色/法线坐标整个推偏 ~1.5 世界单位，
+// 与 Flowmap 的逐格方向变化叠加后在水面撕出可见折痕。降到 0.55 只保留柔化 biome 边界的作用。
+uniform float water_domain_warp_strength : hint_range(0.0, 4.0) = 0.55;
 uniform float water_wave_line_strength   : hint_range(0.0, 1.0) = 0.70;
+
+// ─── 海洋波浪（洋流 + 涟漪 + 浪头笔触）────────────────────────────────────
+// 实现见 water.gdshaderinc 的 water_flow_surface。海面 = 底层涟漪 + 两层离散浪脊。
+// 再由「海况强度场」决定哪里平静、哪里风浪大。
+// 画质门：小尺度涟漪与碎浪笔触需要 visual_quality >= 1。
+//
+// [整体]
+uniform float water_flow_wave_density   : hint_range(0.25, 4.0) = 1.75;   // 浪的疏密：越大笔触 / 涟漪越小越密
+uniform float water_flow_advection      : hint_range(0.0, 3.0)  = 1.15;   // 流动速度倍率（速度 ∝ 该值）
+uniform float water_flow_wave_amplitude : hint_range(0.0, 3.0)  = 1.35;   // 法线与起伏明暗的总幅度
+uniform float water_flow_crest_strength : hint_range(0.0, 1.0)  = 0.38;   // 浪尖碎白强度
+// [底层涟漪]
+uniform float water_ripple_strength     : hint_range(0.0, 3.0)  = 1.0;    // 涟漪法线强度
+uniform float water_ripple_detail_mix   : hint_range(0.0, 1.5)  = 0.5;    // 小尺度涟漪相对大尺度的占比
+uniform float water_ripple_scale        : hint_range(0.3, 3.0)  = 1.0;    // 涟漪格子大小倍率（越大越舒缓）
+uniform float water_flow_drift_base     : hint_range(0.0, 100.0) = 30.0;  // 无洋流时的漂移位移（世界单位 / 周期）
+uniform float water_flow_drift_current  : hint_range(0.0, 300.0) = 100.0; // 洋流带来的额外漂移（× 流速）
+uniform float water_mark_strength       : hint_range(0.0, 2.0) = 1.0;    // 浪脊法线与波高强度
+uniform float water_mark_coverage       : hint_range(0.0, 2.0) = 1.0;    // 有笔触的格子比例倍率
+uniform float water_mark_length         : hint_range(0.3, 3.0) = 1.0;    // 浪脊长度倍率
+uniform float water_mark_speed          : hint_range(0.0, 4.0) = 1.0;    // 浪脊笔触运动速度倍率
+// [海况强度场：平静 / 风浪分区]
+uniform float water_rough_min           : hint_range(0.0, 1.0)  = 0.22;   // 平静海域的法线强度
+uniform float water_rough_max           : hint_range(0.0, 2.0)  = 1.0;    // 风浪海域的法线强度
+uniform float water_rough_scale         : hint_range(0.25, 4.0) = 1.0;    // 分区块的大小
+uniform float water_rough_coverage      : hint_range(0.0, 1.0)  = 0.5;    // 风浪区占比
 // ─── Water Calm Noise（本轮）：低对比度柔和噪声的两个细分强度 ───────────
 // water_calm_noise_brightness  : 亮度扰动层（大尺度 fbm，默认约 ±5%）的强度系数
 // water_calm_noise_tint_strength: 色相扰动层（更低频 fbm 在冷/暖 tint 之间

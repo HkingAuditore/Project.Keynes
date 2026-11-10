@@ -419,7 +419,7 @@ float vf_floor_patch(vec2 p, float strength) {
 	return strength * (1.0 - smoothstep(0.62, 0.92, length(p)));
 }
 
-// ── Crown bitmaps (resource_art/crown_atlas: 4 layers x 4x2 crowns, alpha) ─────
+// ── Crown / hardscape bitmaps (resource_art/crown_atlas: 5 layers x 4x2, alpha) ─
 // Only the vegetation body shader defines VF_CROWN_ART; other includers keep the
 // procedural crowns and pay no samplers.
 #ifdef VF_CROWN_ART
@@ -1017,6 +1017,57 @@ VegSurf vf_peat(vec2 p, VegCtx ctx, bool cheap) {
 VegSurf vf_rock(vec2 p, VegCtx ctx, bool cheap) {
 	VegSurf s = vf_empty();
 	vec2 so = vf_seed_offset(ctx.seed);
+#ifdef VF_CROWN_ART
+	if (crown_art_bound) {
+		// The atlas replaces the old faceted dome with authored weathered boulders.
+		// Keep a full rotation so the same eight sprites do not form a visible pattern.
+		float ang = fract(ctx.seed * 7.31 + 0.17) * VF_TAU;
+		float ca = cos(ang);
+		float sa = sin(ang);
+		vec2 q = mat2(vec2(ca, sa), vec2(-sa, ca)) * p;
+		if (max(abs(q.x), abs(q.y)) >= 1.0) {
+			return s;
+		}
+		float variant = floor(fract(ctx.seed * 5.731 + 0.29) * 8.0);
+		vec2 cell = vec2(mod(variant, 4.0), floor(variant / 4.0));
+		vec2 uv = (cell + q * 0.5 + 0.5) / vec2(4.0, 2.0);
+		float k = ctx.px / 0.75 / 2.0;
+		vec2 gx = vec2(k * 0.25, 0.0);
+		vec2 gy = vec2(0.0, k * 0.5);
+		vec4 c = textureGrad(crown_art, vec3(uv, 4.0), gx, gy);
+		// Erode the authored silhouette through stable multi-scale noise. The broad
+		// octave breaks up the contact contour; the finer one fades out before it can
+		// alias at overview zoom.
+		float n_broad = vf_vnoise(q * 4.3 + so * 1.7);
+		float n_fine = vf_vnoise(q * 8.6 + so * 3.1) * vf_detail(8.6, ctx.px);
+		float contour = (n_broad - 0.5) * 0.28 + (n_fine - 0.5) * 0.12;
+		s.cov = c.a * smoothstep(0.035, 0.68, c.a + contour);
+		s.h = 0.72 * s.cov;
+		// The bitmap already carries its own cavity shading. A second geometric contact
+		// disc reads as a dark square/blob at map scale, so atlas rocks use no floor pass.
+		s.floor_a = 0.0;
+		s.leaf_w = 0.0;
+		s.tone = 1.0;
+		s.tint = c.rgb * 1.06;
+		s.elem = fract(ctx.seed * 5.173 + 0.41);
+		s.snow_hold = 0.78 * smoothstep(0.10, 0.55, s.cov);
+		if (cheap || s.cov <= 0.0) {
+			return s;
+		}
+		vec4 nm = textureGrad(crown_normal_art, vec3(uv, 4.0), gx, gy);
+		vec2 nxy = (nm.rg * 2.0 - 1.0) * 0.92;
+		nxy = vec2(ca * nxy.x + sa * nxy.y, -sa * nxy.x + ca * nxy.y);
+		float relief = smoothstep(0.04, 0.64, s.cov);
+		vec3 relief_n = normalize(vec3(nxy,
+			max(sqrt(max(1.0 - dot(nxy, nxy), 0.0)), 0.42)));
+		// Flatten normals and lift AO through the feathered edge. Otherwise the baked
+		// side-wall normals turn a transparent contour into a dark painted border.
+		s.n = normalize(mix(vec3(0.0, 0.0, 1.0), relief_n, relief));
+		s.ao = mix(1.0, mix(0.58, 1.0, nm.a), relief);
+		s.h = nm.b;
+		return s;
+	}
+#endif
 	vec2 pe = vec2(p.x * 0.86, p.y * 1.12);
 	float dn = vf_vnoise(p * 1.6 + so) * 0.6 + vf_vnoise(p * 3.7 + so) * 0.4;
 	float r = 0.70;

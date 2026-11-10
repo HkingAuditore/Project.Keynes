@@ -256,6 +256,7 @@ render_mode blend_mix, unshaded;
 // （Web 水面）由 include 内部的中性叶子兜底。terrain_horizon_neutral 不再使用。
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/brdf.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 // [land-water-split 2026-11-02] 水面 program 不 include 陆地管线（与陆地 program
 // 不 include 水面管线对称）。Web HIGH 水面程序（PK_WEB_WATER_ONLY）经上面的别名也是
 // PK_WATER_ONLY，因此同样只编自己那条着色来源；fragment 里陆地分支退化为占位常量，

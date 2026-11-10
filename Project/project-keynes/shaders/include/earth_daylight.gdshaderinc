@@ -31,9 +31,12 @@ const vec3 EARTH_NIGHT_AMBIENT = vec3(0.13, 0.16, 0.25);  // 夜侧冷蓝月光
 const vec3 EARTH_DAY_AMBIENT   = vec3(0.60, 0.66, 0.77);  // 白昼天空环境光
 const vec3 EARTH_MOONLIGHT     = vec3(0.48, 0.58, 0.82);  // 可读性优先的冷蓝月光
 const float EARTH_MOON_GAIN    = 0.72;
-// 永昼没有晨昏线提供运动参照：降低平铺天光、略抬方向光，使光向旋转能投射到坡面/植被/水面。
+// 永昼使用当地正午太阳：降低平铺天光、略抬方向光，保留坡面/植被/水面的方向感。
 const float EARTH_ETERNAL_AMBIENT_GAIN = 0.88;
 const float EARTH_ETERNAL_SUN_GAIN = 1.18;
+// HexRenderer exposes degrees; all daylight consumers share these radian uniforms.
+uniform float eternal_min_elevation_rad = 0.17453293;
+uniform float eternal_max_hour_angle_rad = 1.22173048;
 
 float earth_daylight_longitude_u(vec2 uv) {
 	if (wrap_period_x <= 0.0001) {
@@ -122,24 +125,36 @@ vec3 compute_sun_dir_enu(vec2 uv, float lat_signed) {
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
 
-// 关闭昼夜时使用年度太阳轨迹：season_phase 本身由游戏日期驱动，天然服从倍速与暂停。
-// 方位一年恰好转一圈；高度只由直射点纬度（太阳赤纬）决定，不读取日相位/视觉晨昏线。
-vec3 compute_global_parallel_sun_dir() {
-	// 调试场景的永昼方位/高度滑块沿用既有 tod_sun_dir；正式玩家模式未开启该覆盖，
-	// 因而仍进入下面与游戏日期绑定的年度自动轨迹。
+// 永昼高度以当地当日正午为基线，再叠加一个宽幅视觉日内时角。
+// day_phase=0.0/0.5 分别是偏东/偏西低太阳，0.25 是正午；
+// local_day 仍固定为 1，不会因为视觉时角进入夜晚。
+vec3 compute_eternal_visual_sun_dir(float lat_signed) {
 	if (tod_debug_sun_position_enabled) {
 		float debug_len = length(tod_sun_dir);
 		return (debug_len > 1e-5) ? tod_sun_dir / debug_len : vec3(0.0, 0.0, 1.0);
 	}
-	float year_progress = mod(season_phase, 4.0) * 0.25;
-	// 地形法线/阴影采样使用的是“从受光点指向光源”的方向；年度轨迹此前少了半圈，
-	// 结果正好表现为七月北坡背阴、一月南坡背阴。补上 PI 只翻转永昼水平光向。
-	float azimuth = EARTH_DAYLIGHT_TAU * year_progress + 1.5707963;
-	float declination = earth_daylight_declination();
-	float latitude_ratio = clamp(abs(declination) / max(abs(axial_tilt_rad), 1e-4), 0.0, 1.0);
-	// 春秋分 70°、南北至日 30°：扩大季节阴影长度差，同时避开近地平线的极端投影。
-	float elevation = radians(70.0 - 40.0 * latitude_ratio);
-	vec3 d = vec3(cos(azimuth) * cos(elevation), sin(azimuth) * cos(elevation), sin(elevation));
+	float decl = earth_daylight_declination();
+	float lat_rad = clamp(lat_signed, -1.0, 1.0) * 1.5707963;
+	float hour_angle = eternal_max_hour_angle_rad
+		* sin(EARTH_DAYLIGHT_TAU * (day_phase - 0.25));
+	float sphi = sin(lat_rad);
+	float cphi = cos(lat_rad);
+	float sdec = sin(decl);
+	float cdec = cos(decl);
+	float cH = cos(hour_angle);
+	float sH = sin(hour_angle);
+	float up = sphi * sdec + cphi * cdec * cH;
+	float east = -cdec * sH;
+	float north = cphi * sdec - sphi * cdec * cH;
+	float elevation = max(asin(clamp(up, -1.0, 1.0)), eternal_min_elevation_rad);
+	vec2 horizontal = vec2(east, north);
+	float horizontal_len = length(horizontal);
+	if (horizontal_len <= 1e-5) {
+		horizontal = vec2(1.0, 0.0);
+	} else {
+		horizontal /= horizontal_len;
+	}
+	vec3 d = vec3(horizontal * cos(elevation), sin(elevation));
 	float len = length(d);
 	return (len > 1e-5) ? d / len : vec3(0.0, 0.0, 1.0);
 }
@@ -162,11 +177,11 @@ struct EarthDaylight {
 	vec3 moon_col;
 };
 
-// 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 全局平行光永昼。
+// 给定像素 uv + 纬度，返回昼夜/晨昏统一光照量。enable_day_night=false → 当地正午基线 + 宽幅视觉日内永昼。
 // 各管线（PBR 地形 / 平面植被 / 水面）据此自行组装最终着色（线性 or sRGB、是否 tonemap）。
 // 注：参数名刻意避开 uniform day_night_enabled，否则在已声明该 uniform 的 shader 里会重定义。
 EarthDaylight eval_earth_daylight(vec2 uv, float lat_signed, bool enable_day_night) {
-	vec3 sdir = enable_day_night ? compute_sun_dir_enu(uv, lat_signed) : compute_global_parallel_sun_dir();
+	vec3 sdir = enable_day_night ? compute_sun_dir_enu(uv, lat_signed) : compute_eternal_visual_sun_dir(lat_signed);
 	float sinh = sdir.z;  // = sin(太阳高度角)，与 compute_solar_elevation 等价（同源公式）
 	EarthDaylight ed;
 	ed.sun_dir = sdir;
@@ -224,5 +239,7 @@ vec3 earth_sky_sh(vec3 amb_col, vec3 sun_col, vec3 sun_dir, float local_day, vec
 vec3 eval_earth_sky_sh(EarthDaylight ed, vec3 N) {
 	return earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, N);
 }
+
+#include "res://shaders/include/world_sky_lighting.gdshaderinc"
 
 #endif // EARTH_DAYLIGHT_INC

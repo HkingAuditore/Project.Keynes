@@ -438,6 +438,7 @@ var _overlay_last_bake_wall_ms: int = 0
 var _overlay_refresh_disabled: bool = false
 
 func _ready() -> void:
+	_renderer.configure_shader_clock(_world_clock.set_visual_shader_days_per_year)
 	# Fix #11 third pass (2026-07-05)：mobile 上 PKLog 默认关。
 	# 根因：PKLog.enabled 静态默认 true，且启动时未按 mobile 置关；同时
 	# slp_field/wind_field STAGE-TOTAL 的 `>=5ms` warn 分支未走 PKLog 守门，

@@ -113,6 +113,14 @@ activation remains unchanged and must not re-check a gate.
 
 ## Verify
 
+Player era advancement is owned by `EraAdvancementCatalog` / `EraAdvancementService`, separate from
+researchable technology costs. Technology completion at 80% is mandatory, plus any two of population,
+completed building units and current-era trade orders. Economic gates use base + per-cell × owned
+territory; procurement uses an era multiplier and additive base + per-cell quantities. Preserve frozen
+purchase orders across pause/restore, including orders started under earlier balance values. Run
+`tests/technology/era_advancement_service_test.gd` when changing these rules and synchronize
+`docs/cpp-dots-runtime/era-advancement-runtime.md`.
+
 Full-graph ACTIVE still needs the host Trigger transport pump to hand research signals through
 Effect to Country. Bound delivery, protect in-flight Effect facade transactions from worker
 write-back, retry rejected cursor admission, and service deferred handoff in the existing Economy
@@ -123,8 +131,11 @@ and save layout stay unchanged. Cover congestion/restore with `runtime_trigger_p
 From the repository root run:
 
 ```powershell
-& "C:\Users\hkinghuang\.codex\skills\project-keynes-technology-runtime\scripts\verify_technology_runtime.ps1" -GodotExe "<godot_console.exe>"
+& "<SKILL_DIR>\scripts\verify_technology_runtime.ps1" -GodotExe "<godot_console.exe>"
 ```
+
+`<SKILL_DIR>` is this skill's own directory inside the repo (e.g.
+`.agents\skills\project-keynes-technology-runtime`).
 
 Add `-Build` to compile the debug GDExtension first. Run the 50-day headless performance workflow for
 changes to research or procurement hot loops and compare country/economy/modifier timing plus

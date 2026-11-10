@@ -386,10 +386,23 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		_shader_mat.set_shader_parameter("tod_debug_sun_uv", uv)
 
 
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	if _shader_mat != null:
+		_shader_mat.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_shader_mat.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+
+
 func set_tod_debug_sun_height_scale(v: float) -> void:
 	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+		_shader_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_shader_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 
 
 # --- 内部 -----------------------------------------------------
@@ -409,6 +422,8 @@ func _push_tod() -> void:
 	_shader_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
 	_shader_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
 	_shader_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
+	_shader_mat.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_shader_mat.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 
 
 func _update_visibility() -> void:

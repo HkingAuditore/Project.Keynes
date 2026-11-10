@@ -26,7 +26,7 @@ signal season_phase_changed(season_phase: float)
 # 与年历一致：current_day 的小数部分是一日内时刻。
 signal day_phase_changed(day_phase: float)
 # [cylindrical-earth-daylight] 视觉昼夜相位信号：与游戏倍速解耦的"晨昏线"驱动相位。
-# 默认按真实时间缓慢推进（visual_daylen_seconds 一圈），快进不再闪烁。
+# 默认跟随游戏日相位，玩家加速时太阳与阴影同步加速。
 signal visual_day_phase_changed(visual_day_phase: float)
 # Fast-tick perf opt (D)：速度倍率变更通知，供 MapGenerator / main.gd 等订阅，
 # 实现 stride 自动调档、phase 节流自动调档等。
@@ -56,11 +56,13 @@ signal simulation_backpressure_pulse(day_idx: int)
 @export_range(0.0, 0.05, 0.0005) var season_phase_emit_step: float = 0.0
 
 # [cylindrical-earth-daylight] 视觉昼夜（晨昏线）独立时钟参数。
-# visual_daylen_seconds：解耦模式下一整圈昼夜的真实秒数（越大越慢），默认 120≈2 分钟一圈，
-#   快进时晨昏线移动速度不变 → 杜绝快进闪烁。
-# visual_tod_follow_speed：true 回退旧行为（跟随 day_phase()，随倍速变快）；false（默认）按真实时间匀速推进。
-@export_range(8.0, 1200.0, 1.0) var visual_daylen_seconds: float = 120.0
-@export var visual_tod_follow_speed: bool = false
+# visual_daylen_seconds：仅供不跟随游戏日历的独立真实时间模式使用。
+# visual_tod_follow_speed：true（默认）按游戏日历映射，一个游戏年完成两个 Shader 日；
+#   false 时才按 visual_daylen_seconds 使用独立的真实时间速度。
+@export_range(8.0, 1200.0, 1.0) var visual_daylen_seconds: float = 30.0
+@export var visual_tod_follow_speed: bool = true
+# Resident visual configuration supplied by HexRenderer on session binding.
+var _visual_shader_days_per_year: float = 2.0
 
 # plan/best-effort-sim-stepping（2026-06-17）：best-effort 吞吐模型的每帧闸。
 # 倍速 = "目标天/秒"，而非死锁墙钟的契约。每帧最多推进有限天数（时间盒 +
@@ -361,11 +363,19 @@ func day_phase() -> float:
 	return fposmod(current_day, 1.0)
 
 # [cylindrical-earth-daylight] 推进视觉昼夜相位。
-# 解耦模式（默认）：按真实 delta 匀速绕圈，visual_daylen_seconds 一圈，与倍速无关 → 快进不闪。
-# 跟随模式（visual_tod_follow_speed=true）：取 day_phase()，回退旧的随倍速行为。
+# 跟随模式（默认）：一个游戏年完成两个 Shader 日，开局正午。
+# 使用实际日历进度，自动跟随倍速、暂停和仿真背压，不另积视觉秒数。
+# 解耦模式（visual_tod_follow_speed=false）：按真实 delta 匀速绕圈。
+func set_visual_shader_days_per_year(value: float) -> void:
+	_visual_shader_days_per_year = maxf(value, 0.0)
+	_advance_visual_day_phase(0.0)
+
+
 func _advance_visual_day_phase(delta: float) -> void:
 	if visual_tod_follow_speed:
-		visual_day_phase = day_phase()
+		var year_days := float(days_per_year())
+		var year_progress := current_day / year_days
+		visual_day_phase = fposmod(0.25 + year_progress * _visual_shader_days_per_year, 1.0)
 	else:
 		var period: float = maxf(visual_daylen_seconds, 1.0)
 		visual_day_phase = fposmod(visual_day_phase + delta / period, 1.0)

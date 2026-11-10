@@ -365,6 +365,7 @@ func sync_dynamic_materials() -> void:
 		"world_time", "season_phase", "day_phase", "wind_dir", "weather_wind_boost",
 		"axial_tilt_rad", "day_night_enabled", "tod_sun_dir", "tod_exposure",
 		"tod_debug_sun_position_enabled", "tod_debug_sun_uv", "tod_debug_sun_height_scale",
+		"eternal_min_elevation_rad", "eternal_max_hour_angle_rad",
 	]
 	for raw_family in _materials.keys():
 		var family := int(raw_family)

@@ -19,7 +19,7 @@
       "bypass": [
         "_commands\\s*\\.\\s*(?:push_back|emplace_back|insert)\\s*\\("
       ],
-      "policy": "existing owner ordering, receipts and semantic dedup; no second queue"
+      "policy": "existing owner ordering, receipts and semantic dedup; no second queue; military demand opcode 36 retains replacement snapshots in the existing saved pending queue and creates no purchase settlement"
     },
     {
       "domain": "trigger",

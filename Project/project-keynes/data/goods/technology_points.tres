@@ -9,6 +9,6 @@ display_name = "科技值"
 semantic_tags = PackedStringArray()
 category_id = &"knowledge"
 substitution_category_ids = PackedStringArray("knowledge")
-technology_tags = PackedStringArray("tech.early_knowledge_institution", "tech.oral_tradition", "tech.oral_memory_practice", "tech.flood_calendar_practice", "tech.phenology_observation", "tech.tide_observation", "tech.record_keeping", "tech.scholarly_academies", "tech.chartered_universities", "tech.public_education", "tech.learned_societies", "tech.property_cadastre", "tech.national_laboratories", "tech.software_engineering", "tech.hydrological_remote_sensing", "tech.geographic_information_systems", "tech.machine_learning", "tech.algorithmic_governance", "tech.pastoral_route_memory")
+technology_tags = PackedStringArray("tech.early_knowledge_institution", "tech.oral_tradition", "tech.oral_memory_practice", "tech.phenology_observation", "tech.flood_calendar_practice", "tech.pastoral_route_memory", "tech.tide_observation", "tech.record_keeping", "tech.scholarly_academies", "tech.chartered_universities", "tech.learned_societies", "tech.property_cadastre", "tech.public_education", "tech.national_laboratories", "tech.software_engineering", "tech.geographic_information_systems", "tech.hydrological_remote_sensing", "tech.machine_learning", "tech.adaptive_irrigation")
 transport_load_per_unit_q16 = 8192
 reference_max_price = 1000000

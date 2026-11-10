@@ -16,18 +16,18 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/country_action_bar.tscn" id="18_country_bar"]
 [ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_legend.tscn" id="19_legend"]
 [ext_resource type="PackedScene" path="res://scenes/ui/country_panel.tscn" id="20_country_panel"]
-[ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
+[ext_resource type="PackedScene" uid="uid://dhr1g7bstygc" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
-[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="23_theme"]
+[ext_resource type="Theme" uid="uid://cnjby7mpvii16" path="res://assets/themes/player_session_theme.tres" id="23_theme"]
 [ext_resource type="Script" uid="uid://bbeuvnbhk3s76" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
-[ext_resource type="Script" path="res://scripts/rendering/map_activity_layer.gd" id="29_activity"]
-[ext_resource type="Script" path="res://scripts/rendering/trade_activity_layer.gd" id="30_trade_activity"]
 [ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
-[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
+[ext_resource type="Theme" uid="uid://pxjpycs2dsct" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
 [ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_dialog.tscn" id="28_family_founding"]
-[ext_resource type="Script" path="res://scripts/rendering/cell_highlight_set.gd" id="31_cell_highlight_set"]
-[ext_resource type="Script" path="res://scripts/rendering/cell_situation_layer.gd" id="32_situations"]
+[ext_resource type="Script" uid="uid://du55h0r34m67h" path="res://scripts/rendering/map_activity_layer.gd" id="29_activity"]
+[ext_resource type="Script" uid="uid://daseis1t8gm4q" path="res://scripts/rendering/trade_activity_layer.gd" id="30_trade_activity"]
+[ext_resource type="Script" uid="uid://cmbrjxwloi2go" path="res://scripts/rendering/cell_highlight_set.gd" id="31_cell_highlight_set"]
+[ext_resource type="Script" uid="uid://vxlkcifqptpf" path="res://scripts/rendering/cell_situation_layer.gd" id="32_situations"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_indicator.tscn" id="33_era_indicator"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_transition_flight.tscn" id="34_era_flight"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud_status_card.tscn" id="35_status_card"]
@@ -42,20 +42,71 @@ script = ExtResource("1_player")
 show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
-weather_strength = 0.5
+weather_strength = 0.72
+cloud_shadow_strength_mid = 0.84
+cloud_shadow_strength_low = 0.65
+cloud_shadow_coverage_gain = 2.8
+cloud_shadow_ambient_weight = 0.55
+cloud_shadow_motion_speed = 0.035
+cloud_shadow_uv_scroll_gain = 12.5
+cloud_shadow_water_scale = 0.8
+cloud_shadow_noise_warp = 0.5
+cloud_shadow_dynamic_detail_gain = 0.25
+cloud_shadow_dynamic_warp_gain = 0.4
+cloud_shadow_edge_softness = 1.8
+cloud_shadow_wind_influence = 1.0
+cloud_shadow_mask_bias = 0.54
+cloud_shadow_cell_scale = 1.1
+cloud_shadow_world_scale = 0.035
+cloud_shadow_erosion = 0.55
+camera_pitch_deg = 69.0
+wind_strength = 1.0
 terrain_material_albedo_strength = 0.62
 terrain_material_normal_strength = 0.52
 terrain_material_roughness_strength = 0.69
-terrain_material_world_size = 384.0
+terrain_material_world_size = 256.0
+terrain_ecotone_width = 0.96
+shader_days_per_game_year = 0.5
+eternal_min_elevation_deg = 15.0
+eternal_max_hour_angle_deg = 89.0
+terrain_horizon_softness = 0.85
 terrain_horizon_max_angle = 1.5708
-terrain_horizon_cast_floor = 0.41
+gi_ao_strength = 1.0
+gi_ao_floor = 0.09
+water_flow_wave_density = 1.91
+water_flow_advection = 2.28
+water_flow_wave_amplitude = 1.16
+water_flow_crest_strength = 0.63
+water_mark_strength = 0.46
+water_mark_coverage = 0.42
+water_mark_length = 0.89
+water_base_normal_strength = 1.4
+water_base_normal_scale = 1.18
+water_wave_shade_strength = 0.75
+water_ripple_strength = 0.14
+water_ripple_detail_mix = 0.38
+water_ripple_scale = 0.4
+water_flow_drift_base = 70.5
+water_flow_drift_current = 271.0
+water_rough_min = 0.43
+water_rough_max = 1.93
+water_rough_coverage = 0.53
+ocean_current_strength = 0.75
+water_reflection_strength = 0.2
+water_sss_strength = 0.16
+caustics_strength = 0.44
+shallow_transparency_factor = 0.55
+deep_ocean_contrast = 0.95
+water_domain_warp_strength = 2.4
+water_detail_normal_strength = 1.8
+water_detail_normal_scale = 0.6900000000000001
 
-[node name="CellHighlightSet" type="Node2D" parent="WorldRoot"]
+[node name="CellHighlightSet" type="Node2D" parent="WorldRoot" unique_id=1317655148]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
 
-[node name="PeaceCandidateSet" type="Node2D" parent="WorldRoot"]
+[node name="PeaceCandidateSet" type="Node2D" parent="WorldRoot" unique_id=59170965]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
@@ -63,7 +114,7 @@ line_color = Color(0.5, 0.42, 0.2, 0.9)
 line_width = 1.3
 fill_color = Color(0.5, 0.42, 0.2, 0.1)
 
-[node name="PeaceDraftSet" type="Node2D" parent="WorldRoot"]
+[node name="PeaceDraftSet" type="Node2D" parent="WorldRoot" unique_id=596587059]
 top_level = true
 z_index = 9
 script = ExtResource("31_cell_highlight_set")
@@ -82,12 +133,12 @@ top_level = true
 z_index = 12
 script = ExtResource("24_colonization_route")
 
-[node name="MapActivityLayer" type="Node2D" parent="WorldRoot"]
+[node name="MapActivityLayer" type="Node2D" parent="WorldRoot" unique_id=862143394]
 top_level = true
 z_index = 11
 script = ExtResource("29_activity")
 
-[node name="TradeActivityLayer" type="Node2D" parent="WorldRoot"]
+[node name="TradeActivityLayer" type="Node2D" parent="WorldRoot" unique_id=2046123638]
 top_level = true
 z_index = 9
 script = ExtResource("30_trade_activity")
@@ -123,7 +174,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="CellSituationLayer" type="Control" parent="UI/UIRoot/HUDLayer"]
+[node name="CellSituationLayer" type="Control" parent="UI/UIRoot/HUDLayer" unique_id=1474137598]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -137,8 +188,10 @@ script = ExtResource("32_situations")
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+anchor_right = 0.0
+grow_horizontal = 1
 
-[node name="HudStatusCard" parent="UI/UIRoot/HUDLayer" instance=ExtResource("35_status_card")]
+[node name="HudStatusCard" parent="UI/UIRoot/HUDLayer" unique_id=979539859 instance=ExtResource("35_status_card")]
 unique_name_in_owner = true
 layout_mode = 1
 
@@ -146,6 +199,12 @@ layout_mode = 1
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 360.0
+grow_horizontal = 1
 
 [node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" unique_id=1329221014 instance=ExtResource("17_overlay_toolbar")]
 unique_name_in_owner = true
@@ -155,15 +214,31 @@ anchors_preset = 0
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 86.0
+grow_horizontal = 1
+grow_vertical = 1
 
 [node name="MapOverlayLegend" parent="UI/UIRoot/HUDLayer" unique_id=959612046 instance=ExtResource("19_legend")]
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_right = 198.0
+grow_horizontal = 1
+grow_vertical = 1
 
-[node name="EraIndicator" parent="UI/UIRoot/HUDLayer" instance=ExtResource("33_era_indicator")]
+[node name="EraIndicator" parent="UI/UIRoot/HUDLayer" unique_id=1169938812 instance=ExtResource("33_era_indicator")]
 unique_name_in_owner = true
-layout_mode = 1
+anchors_preset = 5
+grow_horizontal = 2
 
 [node name="PanelLayer" type="Control" parent="UI/UIRoot" unique_id=1843493714]
 layout_mode = 1
@@ -178,12 +253,21 @@ mouse_filter = 2
 unique_name_in_owner = true
 layout_mode = 0
 anchors_preset = 0
+anchor_left = 0.0
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 460.0
+offset_bottom = 0.0
+grow_horizontal = 1
+grow_vertical = 1
 
 [node name="CountryPanel" parent="UI/UIRoot/PanelLayer" unique_id=894348401 instance=ExtResource("20_country_panel")]
 unique_name_in_owner = true
 layout_mode = 1
 
-[node name="EraOverlayLayer" type="Control" parent="UI/UIRoot"]
+[node name="EraOverlayLayer" type="Control" parent="UI/UIRoot" unique_id=622916384]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -192,8 +276,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="EraTransitionFlight" parent="UI/UIRoot/EraOverlayLayer" instance=ExtResource("34_era_flight")]
-layout_mode = 1
+[node name="EraTransitionFlight" parent="UI/UIRoot/EraOverlayLayer" unique_id=207719303 instance=ExtResource("34_era_flight")]
 
 [node name="ModalLayer" type="Control" parent="UI/UIRoot" unique_id=1165939887]
 layout_mode = 1
@@ -207,7 +290,7 @@ mouse_filter = 2
 [node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" unique_id=798826369 instance=ExtResource("25_colonization_panel")]
 unique_name_in_owner = true
 
-[node name="MilitaryPeaceWindow" parent="UI/UIRoot/ModalLayer" instance=ExtResource("36_peace")]
+[node name="MilitaryPeaceWindow" parent="UI/UIRoot/ModalLayer" unique_id=2012236522 instance=ExtResource("36_peace")]
 unique_name_in_owner = true
 layout_mode = 1
 

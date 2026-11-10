@@ -351,6 +351,8 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		int(roundf(_cell_composite_satisfaction(idx) * 1000.0)) if intel_visible else -1,
 		int(population_summary.get("job_capacity", 0)),
 		int(population_summary.get("jobs_filled", 0)),
+		int(population_summary.get("employed_population", 0)),
+		int(population_summary.get("unemployed_population", 0)),
 		int(population_summary.get("carrying_k_eff", 0)),
 		int(population_summary.get("food_access_q16", 0)),
 		int(population_summary.get("prosperity_generation", 0)),
@@ -2174,6 +2176,22 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 	var pending := maxi(0, int(snapshot.get("pending_enlist", 0)))
 	var owner_slot := int(snapshot.get("owner_slot", -1))
 	var controller_slot := int(snapshot.get("controller_slot", -1))
+	var army_units: Dictionary = {}
+	var garrison_lots = snapshot.get("garrison_lots", [])
+	if garrison_lots is Array:
+		for raw in garrison_lots:
+			if not raw is Dictionary:
+				continue
+			var lot: Dictionary = raw
+			if int(lot.get("country_slot", -1)) != owner_slot:
+				continue
+			var unit := int(lot.get("unit", -1))
+			var count := maxi(0, int(lot.get("count", 0)))
+			if unit >= 0 and count > 0:
+				army_units[unit] = int(army_units.get(unit, 0)) + count
+	var army_heads := 0
+	for count in army_units.values():
+		army_heads += int(count)
 	var building_rows: Array = catalog.get("buildings", [])
 	var buildings: Array = []
 	for role_def in STATE_BUILDING_ROLES:
@@ -2199,6 +2217,11 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 		},
 		"troops": _military_troop_rows(snapshot),
 		"training": _military_training_rows(snapshot, catalog.get("units", {})),
+		"army_create": {
+			"enabled": can_build and army_heads > 0,
+			"heads": army_heads,
+			"units": army_units,
+		},
 		"buildings": buildings,
 	}
 
@@ -2995,13 +3018,15 @@ func _kpis(
 		}]
 	var jobs_capacity := int(population_summary.get("job_capacity", 0))
 	var jobs_filled := int(population_summary.get("jobs_filled", 0))
+	var employed_population := int(population_summary.get("employed_population", 0))
+	var unemployed_population := int(population_summary.get("unemployed_population", 0))
 	var openings := int(population_summary.get("job_openings", 0))
-	# 页头与全国经济、阶层、城市、年度报告用同一个口径：人口加权「综合满意度」。
+	# 页头与全国经济、阶层、城市、年度报告用同一个口径：人口就业率。
 	# 综合不可读时才退回 cell summary 的生存值，并在提示里说明口径。
 	var survival_q16 := int(population_summary.get("satisfaction_q16", 0))
 	var composite := _cell_composite_satisfaction(cell_idx)
 	var satisfaction := composite if composite >= 0.0 else float(survival_q16) / 65536.0
-	var satisfaction_tooltip := "综合满意度：生存、基本生活、舒适、奢侈、收入、储蓄、税负、社会发展八维按人口加权，并按生存与基本生活封顶（生存崩了就一定低）。当前生存 %s，分项见「人口」页。" % _q16_percent_text(survival_q16)
+	var satisfaction_tooltip := "综合满意度：生存、基本生活、舒适、奢侈、收入、储蓄、税负、社会发展八维按人口加权。生存与基本生活不足会限制总分；有相应需求的阶层，还需改善舒适和奢侈生活才能获得高分。当前生存 %s，分项见「人口」页。" % _q16_percent_text(survival_q16)
 	if composite < 0.0:
 		satisfaction_tooltip = "生存满意度（综合满意度暂不可读）：口粮与御寒衣着两项里较差的那一项，不含舒适与奢侈需求。"
 	var over_capacity := carrying > 0 and population > carrying
@@ -3024,12 +3049,15 @@ func _kpis(
 		"tooltip": satisfaction_tooltip,
 	}, {
 		"id": "kpi_jobs", "title": "就业率", "icon": &"population.profession.worker",
-		"kind": "percent" if jobs_capacity > 0 else "text",
-		"value": float(jobs_filled) / float(jobs_capacity) if jobs_capacity > 0 else 0.0,
-		"text": "无岗位",
-		"caption": "缺 %s 岗" % UITokens.format_compact_number_cn(float(openings), 1) \
-			if jobs_capacity > 0 and openings > 0 else "",
-		"tooltip": "已到岗 %d / 岗位 %d。空岗招不满受职业门槛与工资吸引力限制。" % [jobs_filled, jobs_capacity],
+		"kind": "percent" if population_summary.get("population", 0) > 0 else "text",
+		"value": float(employed_population) / float(population_summary.get("population", 0)) \
+			if int(population_summary.get("population", 0)) > 0 else 0.0,
+		"text": "无人",
+		"caption": "失业 %s 人" % UITokens.format_compact_number_cn(float(unemployed_population), 1) \
+			if unemployed_population > 0 else "",
+		"tooltip": "已就业 %d / 人口 %d；岗位已到岗 %d / 岗位 %d，空缺 %d。" % [
+			employed_population, int(population_summary.get("population", 0)),
+			jobs_filled, jobs_capacity, openings],
 	}]
 
 
@@ -3057,7 +3085,7 @@ func _gdp_kpi(cell_idx: int) -> Dictionary:
 	}
 
 
-## 格级综合满意度（人口加权八维，已按生存/基本生活封顶）。走原生只读聚合接口，
+## 格级综合满意度（人口加权八维，已按实际适用的生活条件封顶）。走原生只读聚合接口，
 ## 只遍历本格 cohort，且同一已提交状态内由 read view 缓存，页头每日刷新不额外开扫描。
 ## 不可用时返回 -1.0，调用方退回生存口径并在提示里说明。
 func _cell_composite_satisfaction(cell_idx: int) -> float:
@@ -4827,7 +4855,7 @@ func _living_standard_accent(level: int) -> Color:
 ## 与原生 SAT_DIM_* 枚举同序。
 const SATISFACTION_DIMENSION_EXPLANATIONS := [
 	"热量与御寒的生理满足率；不足会限制综合满意度。",
-	"基本生活实际消费相对生活目标的满足率；目标不随本轮预算和物价缩减。",
+	"基本生活实际消费相对生活目标的完整度；综合各项满足率与最短缺的一项，目标不随预算和物价缩减。",
 	"实际享受到的舒适消费相对生活目标的满足率；存款不直接加分。",
 	"实际享受到的奢侈与身份消费相对生活目标的满足率；存款不直接加分。",
 	"近期收入相对长期收入基线的变化。",

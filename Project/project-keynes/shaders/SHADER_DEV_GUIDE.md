@@ -361,7 +361,7 @@ lit     = (direct + ambient) · mix(1, NIGHT_BRIGHTNESS_FLOOR, night_factor) · 
 lit    += emission
 ```
 
-正常昼夜继续完整复用原有 `day_phase → earth_daylight → 日/月/晨昏线` 单一路径，视觉相位仍负责防止高倍速频闪。关闭 `day_night_enabled` 时才进入年度永昼分支：正式玩家模式直接读取 shader 已有的 `season_phase` 与 `earth_daylight_declination()`，方位在一个游戏年内恰好旋转一圈，高度只随直射点纬度在 30°–70° 间变化；调试场景启用手动覆盖时优先沿用现有 `tod_sun_dir`，使方位和高度滑块直接控制同一套地形、水面、天气与植被光线。水平向量按地形法线所用的“受光点指向光源”约定校正，自动路径不读取日相位，也不影响正常昼夜与月光判断。永昼模式把已有地形坡向迎光强度放大 1.45 倍（封顶 0.55），背光坡限制在约 70% 以上；环境光保留 88%、方向光增益 118%，地形投影下限 90%。植被投影不再设置永昼专属衰减，长度、强度、最大长度和柔边参数完整沿用昼夜模式的同一套 profile 配置。
+正常昼夜继续复用 `day_phase → earth_daylight`。关闭 `day_night_enabled` 后使用 `compute_eternal_visual_sun_dir`，按当地纬度、季节赤纬和视觉日内时角计算；一个游戏年完成两个 Shader 日。调参集中在 HexRenderer 的“永昼太阳”分组：`eternal_max_hour_angle_deg` 默认70°，`eternal_min_elevation_deg` 默认10°；setter 转弧度并同步地形、水面、建筑、云层、植被及阴影，GM 显式太阳方向优先覆盖。永昼模式把已有地形坡向迎光强度放大 1.45 倍（封顶 0.55），背光坡限制在约 70% 以上；环境光保留 88%、方向光增益 118%，地形投影下限 90%。植被投影不再设置永昼专属衰减，长度、强度、最大长度和柔边参数完整沿用昼夜模式的同一套 profile 配置。
 
 ### 6.3 旁路：hillshade-only
 
@@ -591,6 +591,67 @@ static bake 失败兜底：R=旧 `water_depth_buffer`、GBA=0 → 自动退化�
 | 1.12 | `apply_ocean_currents` | 表层洋流可视化 |
 | 1.13 | `apply_estuary_plume` | 河口羽流 |
 | 1.14 | `build_water_normal_and_calm` | 法线 + 平静面采样 |
+
+### 9.2b 浪头笔触（**2026-11-06 已删除**，留档）
+
+> **现状**：非顺流浪脊笔触已恢复；细长顺流洋流丝保持删除。`water_flow_surface()` 使用
+> `la` / `lb` 两层、`cov_k` / `cover_a` / `cover_b` 和 `water_mark_layer()` 的浪脊分支。
+> `world_water_web.gdshader` 同样恢复两层浪脊，但两个平台都没有顺流丝分支。
+>
+> `water_mark_strength` / `water_mark_coverage` / `water_mark_length` 控制浪脊笔触；
+> `water_mark_speed` 单独控制其运动速度，0 为静止，默认 1。
+> `water_flow_streak_strength` 已删除；不要恢复顺流亮丝调用。
+>
+> `wave_height` 同时包含底层涟漪与两层浪脊，用于波峰波谷明暗和浪尖碎白。
+>
+> **Web 紧凑水面（`world_water_web.gdshader`）有独立一份实现**，同样已删（原权重 0.9 / 0.68，
+> 比桌面旧版还强）。改水面时务必 grep 两个 program。
+
+`water.gdshaderinc` 的 `water_flow_surface()` 是海洋波浪唯一入口，输出
+`normal` / `wave_height`。桌面和 Web 的浪脊层均不沿洋流方向拉长。
+
+浪脊轮廓的形状修正见下面的表。
+
+原版的问题是"边缘太硬、形状太规律"：整层共用一条抛物线、固定宽度、格位只抖动 40%、
+弯曲与长度共用一个哈希分量。修正全部是**逐格自由度 + 一个已有噪声**，零新增采样：
+
+| 自由度 | 旧 | 新 |
+|---|---|---|
+| 粗细 | 整层常数 `width_frac` | `0.62~1.38 ×`（`hb.x`，旧版未使用的哈希分量） |
+| 长度 | `0.65~1.35` | `0.55~1.45`（`hb.z`） |
+| 弯曲 | 与长度共用 `hb.z` ⇒ 越长越弯 | `fract(hb.x*3.71 + hb.z*1.93)`，与长度解耦 |
+| 截面指数 | 恒 `b²` | `b² ↔ b³` 逐格插值（`hb.x` 再打散），坡肩不再一模一样 |
+| 格位抖动 | 中心 0.30~0.70 | `inset` 随长度自适应：短笔触散到 0.13~0.87，长笔触靠中间站 |
+| 朝向抖动 | ±0.40 rad | ±0.55 rad |
+| 逐笔浓淡 | 无 | `0.70~1.30 ×`（`jit` = 入口 `pixel_noise.g`，零采样） |
+| 弯曲两侧受光 | 只取 `∂h/∂uu` | 补 `∂h/∂ss ≈ -dh·∂curve/∂ss` |
+| 浪尖等值线 | 解析等值面 | 阈值被 `ctx.macro_lf` 扰动 ±0.16 ⇒ 白边被咬碎 |
+| 两层格宽 | 66 / 34（近 2:1，易拍摩尔纹） | 66 / 37 |
+
+`inset = clamp(L/cell*0.5 + 0.06, 0.06, 0.40)`：**长笔触必须居中**，否则两头会被
+`smoothstep(0, 0.14, e)` 的格边淡出切断，留下一条沿格线的直线切口。
+
+**坡向约定**：水面 `N = normalize(vec3(-grad, 1.0))`，与
+`world_ext_bake.cpp::encode_bake_terrain_normal_tex_data` 的 `N = normalize(-sx, -sy, 1)`
+逐位同源（`wp.y` 与高度缓冲行号同向：`wp.y = world_origin.y + uv.y·world_size.y`）。
+水面与地形共用一套坡向，**不要单独给水面翻符号**——那会让海面和陆地互相打反光。
+
+#### 被否掉的尝试：白水覆盖场（2026-11-06，勿重蹈）
+
+曾把浪头整个换成「白水」那套：复用 `rp1.z` 的等值线做形状、三级阈值（核心/蕾丝/飞沫）做
+密度、`noise_lf` + `rp2.z` 侵蚀阈值、三角波刀口做"版画感"，判据用几何陡度
+`|grad|·52·rsc/rip_k`。技术上成立（零新增采样，比笔触更省），**但画面是整片木纹 / 鱼鳞**。
+
+原因是**尺度不匹配**：白水那套（Tessendorf 雅可比 → Crest 泡沫缓冲 → Sea of Thieves 渐进
+模糊）服务于第一人称海面，泡沫碎块是几十厘米级。本项目是整行星顶视，`rp1` 的格子 ≈50 世界
+单位、屏幕上几十像素，等值线一铺开就是布纹，刀口线再乘上去就成了织物。
+
+结论：**在这个尺度上不要做噪声等值线泡沫**。真要做白水，得先把格子尺度压到 ≤10 世界单位
+（或换世界级贴图 / RT），而不是解析等值线。另：均匀亮的泡沫块 + 只有边缘法线，视觉上会被
+读成"坑"（火山口错觉），这也是当时觉得"法线反了"的来源。
+
+> Web compact 水面（`world_water_web.gdshader`）是独立实现；仅恢复非顺流浪脊。
+> Web HIGH 走 `PK_WEB_WATER_ONLY` 复用本文件。
 
 ### 9.3 SEA 2 — `apply_water_specials`
 
@@ -1073,4 +1134,4 @@ Godot 监视器 → Visual → "FPS in Game" 与 "Frame Time"。1920×1080 60FPS
 ---
 
 > 文档维护：每次改动主结构（新加 inc / 改 BRDF 接口 / 改 SurfaceParams 字段）需同步更新本文件。
-> 最后更新：2026-11-02（全平台陆地/水面双 program 拆分 + TerrainCoverageMesh 覆盖几何 + 水面 program 自画迷雾色）
+> 最后更新：2026-11-06（浪头做形状修正 `water-mark-shape`；白水覆盖场方案已否，见 9.2b）

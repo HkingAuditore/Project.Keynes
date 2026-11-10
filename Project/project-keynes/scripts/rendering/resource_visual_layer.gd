@@ -7,6 +7,10 @@ const DEFAULT_PROFILE = preload("res://data/visual/resource_default.tres")
 const RESOURCE_SHADER = preload("res://shaders/resource_impostor.gdshader")
 const GroundCover = preload("res://scripts/rendering/resource_ground_cover.gd")
 const FAMILY_COUNT := 4
+const INSTANCE_SCALE_MIN := 0.82
+const INSTANCE_SCALE_MAX := 1.22
+const INSTANCE_ASPECT_MIN := 0.78
+const INSTANCE_ASPECT_MAX := 1.28
 # Batches 0..3 = prop subjects per family (3 = submerged cues); 4 = ground decals,
 # drawn first so props always sit on top of their own scar/soil patch.
 const BATCH_COUNT := 5
@@ -61,19 +65,23 @@ static func web_min_active() -> bool:
 
 ## 运行期真正会交给驱动的那份源码前缀（tiled 只可能出现在桌面）。
 ## 这是 **surface** pass 的前缀；矿物 batch 用 geology_variant_prefix()。
-static func shader_variant_prefix(tiled: bool) -> String:
+static func shader_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
 	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
 	if web_min_active():
 		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_SURFACE_DEFINE
+	if cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix
 
 
 ## 矿物 batch（batch 2）那份程序的前缀。除 pass 宏外与 surface **逐字相同**：
 ## 两份程序共享同一套 uniform，差一个字节驱动就不认缓存。
-static func geology_variant_prefix(tiled: bool) -> String:
+static func geology_variant_prefix(tiled: bool, cloud_shadow_direct: bool = false) -> String:
 	var prefix := MAP_VISUAL_TILED_DEFINE if tiled else ""
 	if web_min_active():
 		prefix += WEB_MIN_QUALITY_DEFINE + WEB_MIN_DEFINE + WEB_PASS_GEOLOGY_DEFINE
+	if cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix
 
 
@@ -151,6 +159,10 @@ var _shader_tiled := false
 var _shader_prefix := ""
 ## 同上，geology pass 的前缀。
 var _shader_geo_prefix := ""
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 var _mesh: QuadMesh
 var _memory_image: Image
 var _memory_texture: ImageTexture
@@ -231,6 +243,8 @@ func configure(map: MapData, world: WorldData, hex_size: float,
 			_world.wrap_period_x if _world != null else 0.0,
 			_world.enum_atlas_tex if _world != null else null, tiles)
 		_cover.material().set_shader_parameter("memory_lut", _memory_texture)
+		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
+			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
 		_sync_terrain_textures()
 	_refresh_filter_style()
 	_apply_profile()
@@ -245,8 +259,8 @@ func _sync_terrain_textures() -> void:
 		return
 	var tiles = _world.visual_tiles
 	var tiled := tiles != null and bool(tiles.ready) and String(tiles.layout.mode) == "tiled"
-	var prefix := shader_variant_prefix(tiled)
-	var geo_prefix := geology_variant_prefix(tiled)
+	var prefix := shader_variant_prefix(tiled, _cloud_shadow_direct)
+	var geo_prefix := geology_variant_prefix(tiled, _cloud_shadow_direct)
 	if tiled != _shader_tiled or prefix != _shader_prefix or geo_prefix != _shader_geo_prefix:
 		_shader_tiled = tiled
 		_shader_prefix = prefix
@@ -255,6 +269,36 @@ func _sync_terrain_textures() -> void:
 		_assign_variant(_material_geo, geo_prefix)
 	for material in _materials():
 		_bind_terrain_textures(material, tiles, tiled)
+	_push_cloud_shadow_uniforms()
+
+
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	if changed:
+		_sync_terrain_textures()
+	_push_cloud_shadow_uniforms()
+	if _cover != null:
+		_cover.set_cloud_shadow_field(_cloud_shadow_texture, _cloud_shadow_direct,
+			_cloud_shadow_wrap_origin_uv, _cloud_shadow_wrap_period_uv)
+
+
+func _push_cloud_shadow_uniforms() -> void:
+	for material in [_material, _material_geo]:
+		if material == null or material.shader == null \
+				or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			continue
+		if _cloud_shadow_texture != null:
+			material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+		material.set_shader_parameter("cloud_shadow_field_bound",
+			_cloud_shadow_direct and _cloud_shadow_texture != null)
+		material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+		material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
 
 ## 桌面（且未 tiled，prefix 为空）：与改动前逐字相同，直接把源文件资源交给材质，
 ## 不产生任何新的 Shader 实例 ⇒ 桌面走的就是 preload 的那一份。
@@ -325,7 +369,8 @@ func set_terrain_lighting(source: ShaderMaterial) -> void:
 	_sync_terrain_textures()
 	for name in ["terrain_horizon_strength", "terrain_horizon_softness", "terrain_horizon_max_angle",
 		"terrain_horizon_cast_floor", "terrain_horizon_debug_view", "gi_horizon_lut", "gi_lut_bound",
-		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor"]:
+		"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength", "gi_normal_floor",
+		"sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
 		var value = source.get_shader_parameter(name)
 		if value != null:
 			for material in _materials():
@@ -336,7 +381,8 @@ func _apply_profile() -> void:
 		"wind_strength", "animal_motion", "detailed_pixels", "simple_pixels", "fade_pixels",
 		"palette_saturation", "badge_px", "decal_opacity", "submerged_opacity",
 		"outline_strength", "contact_shadow", "cast_shadow", "luma_compress", "luma_range",
-		"area_feather", "area_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
+			"area_feather", "area_edge_noise", "solid_edge_softness", "decal_edge_softness",
+			"decal_edge_noise", "plant_cluster_density", "river_clear_threshold"]:
 		_set_param(name, profile.get(name))
 	for name in ["herd_size_min", "herd_size_max", "animal_length_hex", "animal_min_pixels"]:
 		_set_param(name, profile.get(name))
@@ -745,14 +791,18 @@ func _append_cell(cell: int, buffers: Array) -> void:
 		var size_scale := float(override.get("size_scale", 1.0))
 		var prop_diameter := float(profile.plant_diameter_hex) if render_family == 0 and int(e.form) != 26 else float(profile.patch_diameter_hex)
 		var ground_diameter := float(profile.fertility_diameter_hex) if int(e.form) == 22 else float(profile.decal_diameter_hex)
-		var prop_radius := _hex * prop_diameter * 0.5 * size_scale
+		var variation := _hash(cell, style)
+		var instance_scale := _instance_scale(cell, style, render_family)
+		var prop_radius := Vector2.ONE * _hex * prop_diameter * 0.5 * size_scale * instance_scale
 		if render_family == 1:
 			# Real-scale herd: the quad only has to contain herd_size_max animals.
-			prop_radius = _hex * herd_radius_hex() * size_scale
-		var decal_radius := _hex * ground_diameter * 0.5 * size_scale
+			prop_radius = Vector2.ONE * _hex * herd_radius_hex() * size_scale * instance_scale
+		var decal_radius := Vector2.ONE * _hex * ground_diameter * 0.5 * size_scale * instance_scale
 		var submerged := (plan & PLAN_SUBMERGED) != 0
 		var has_prop := (plan & (PLAN_PROP | PLAN_BADGE)) != 0
-		var foot := prop_radius if has_prop else decal_radius * 0.55
+		var prop_foot := maxf(prop_radius.x, prop_radius.y)
+		var decal_foot := maxf(decal_radius.x, decal_radius.y)
+		var foot := prop_foot if has_prop else decal_foot * 0.55
 		var domain_family := 3 if submerged else render_family
 		var accepted := false
 		var point := cell_center
@@ -779,7 +829,6 @@ func _append_cell(cell: int, buffers: Array) -> void:
 			continue
 		occupied.append(Vector3(point.x, point.y, foot))
 		var importance := (3.0 - float(rank)) * 2.0 + float(bands[style]) * 0.2 + _patch_noise(point)
-		var variation := _hash(cell, style)
 		if submerged:
 			# Fish are everywhere at sea; only a few cells show a shoal.
 			if render_family == 3 and _hash(cell, style + 577) > float(profile.shoal_density):
@@ -794,18 +843,31 @@ func _append_cell(cell: int, buffers: Array) -> void:
 			_emit(buffers[DECAL_BATCH], point, decal_radius, rank, cell, style, variation, bands[style], importance, kind)
 		if (plan & PLAN_PROP) != 0:
 			# Pebbles sit slightly off-centre on their own scar, never dead centre.
-			var offset := Vector2.from_angle(_hash(cell, style + 913) * TAU) * decal_radius * 0.12
+			var offset := Vector2.from_angle(_hash(cell, style + 913) * TAU) * decal_foot * 0.12
 			_emit(buffers[render_family], point + offset, prop_radius, rank, cell, style, variation, bands[style], importance + 0.5, KIND_PROP)
 		elif (plan & PLAN_BADGE) != 0:
 			_emit(buffers[render_family], point, prop_radius, rank, cell, style, variation, bands[style], importance, KIND_BADGE_ONLY)
 
-# Axis-aligned quad; decals and props rotate internally by their static seed.
+# Axis-aligned quad with independent X/Y radii; the shader rotates the material
+# sampling internally so footprints keep no rotated collision corners.
 # COLOR.g carries light transmission through water (1 on land).
-func _emit(buffer: Array, point: Vector2, radius: float, rank: int, cell: int, style: int,
+func _emit(buffer: Array, point: Vector2, radius: Vector2, rank: int, cell: int, style: int,
 		variation: float, band: int, importance: float, kind: float, transmission: float = 1.0) -> void:
-	buffer.append_array([radius, 0.0, 0.0, point.x, 0.0, radius, 0.0, point.y,
+	buffer.append_array([radius.x, 0.0, 0.0, point.x, 0.0, radius.y, 0.0, point.y,
 		float(rank), transmission, importance, kind,
 		float(cell), float(style), variation, float(band)])
+
+# Deterministic silhouette variation. Herds keep a square quad because their bitmap
+# sprites already vary heading and body scale; props/decals use area-preserving aspect.
+func _instance_scale(cell: int, style: int, family: int) -> Vector2:
+	var size_scale := lerpf(INSTANCE_SCALE_MIN, INSTANCE_SCALE_MAX,
+		_hash(cell, style * 457 + 1223))
+	if family == 1:
+		return Vector2.ONE * size_scale
+	var aspect := lerpf(INSTANCE_ASPECT_MIN, INSTANCE_ASPECT_MAX,
+		_hash(cell, style * 719 + 1571))
+	var axis := sqrt(aspect)
+	return Vector2(size_scale * axis, size_scale / axis)
 
 # Deep water hides the seabed: same falloff the old terrain-shader path used.
 func _water_transmission(cell: int) -> float:
@@ -990,6 +1052,12 @@ func _build_style_texture() -> void:
 		var e := _styles[i]
 		var override: Dictionary = profile.style_overrides.get(e.id, {})
 		_max_style_scale = maxf(_max_style_scale, float(override.get("size_scale", 1.0)))
+		var art := ResourceArtLibrary.shared()
+		var material_cell := art.material_cell(e.id)
+		# X=0.125采样（像素0）：specular、材质图集格+1、是否绑定位图、metallic。
+		image.set_pixel(0, i, Color(float(e.get("specular", 0.0)),
+			float(material_cell + 1), 1.0 if material_cell >= 0 else 0.0,
+			float(e.get("metallic", 0.0))))
 		# X=0.25采样（像素1）：颜色数据
 		var color_val = override.get("color", e.color) if override.has("color") else e.color
 		image.set_pixel(1, i, color_val)
@@ -997,7 +1065,6 @@ func _build_style_texture() -> void:
 		image.set_pixel(3, i, Color(float(e.form), float(e.family), float(e.get("sub_style", i % 4)), float(e.get("metallic", 0.0))))
 		# X=0.625采样（像素2）：动物/鱼位图（-, 图集层+1, 图集精灵数, -）；0 = 无位图。
 		# 植物位图由 ResourceGroundCover 自己的 LUT 映射。
-		var art := ResourceArtLibrary.shared()
 		var fauna_layer := art.fauna_layer(e.id)
 		image.set_pixel(2, i, Color(0.0, float(fauna_layer + 1),
 			float(art.fauna_count) if fauna_layer >= 0 else 0.0, 0.0))
@@ -1009,6 +1076,9 @@ func _bind_art() -> void:
 	_set_param("art_fauna_bound", art.fauna != null)
 	if art.fauna != null:
 		_set_param("art_fauna", art.fauna)
+	_set_param("art_material_bound", art.material != null)
+	if art.material != null:
+		_set_param("art_material", art.material)
 
 func diagnostics() -> Dictionary:
 	var result := _stats.duplicate()

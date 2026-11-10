@@ -77,7 +77,6 @@ shader_parameter/water_fresnel_enabled = true
 shader_parameter/river_flow_enabled = true
 shader_parameter/caustics_enabled = true
 shader_parameter/shallow_transparency_enabled = true
-shader_parameter/water_gloss = 34.0
 shader_parameter/water_reflection_strength = 0.32
 shader_parameter/water_wave_shade_strength = 1.5
 shader_parameter/water_wave_patch_strength = 1.58

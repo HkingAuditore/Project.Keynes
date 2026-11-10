@@ -48,6 +48,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedInt64Array demand_ema;
     PackedInt64Array business_demand_ema;
     PackedInt64Array colonization_pending_demand, colonization_demand_daily;
+    PackedInt64Array military_demand_daily;
     PackedInt64Array derived_business_demand;
     PackedInt64Array desired_business_demand;
     PackedInt64Array funded_business_demand;
@@ -123,6 +124,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     }
     for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
         colonization_pending_demand.push_back(epoch_colonization_demand(cell_idx, g));
+        military_demand_daily.push_back(epoch_military_demand_daily(cell_idx, g));
         colonization_demand_daily.push_back(epoch_colonization_demand_daily(cell_idx, g));
         const int64_t market_index = market_store().index(market, g);
         const int64_t retail_value = mul_div_sat(
@@ -285,6 +287,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["demand_ema"] = demand_ema;
     out["business_demand_ema"] = business_demand_ema;
     out["colonization_pending_demand"] = colonization_pending_demand;
+    out["military_demand_daily"] = military_demand_daily;
     out["colonization_demand_daily"] = colonization_demand_daily;
     out["derived_business_demand"] = derived_business_demand;
     out["desired_business_demand"] = desired_business_demand;
@@ -399,111 +402,6 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     return out;
 }
 
-
-Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
-        int64_t cohort_handle) const {
-    Dictionary out;
-    int32_t slot = -1;
-    if (!_configured ||
-        !population_store().valid_handle(static_cast<uint64_t>(cohort_handle), slot)) {
-        out["ok"] = false;
-        out["reason"] = !_configured ? "economy_not_configured"
-                                     : "cohort_handle_invalid";
-        return out;
-    }
-    const int32_t cell = population_store().page_cell[slot / COHORT_PAGE_SIZE];
-    const Signature &signature = _signatures[population_store().signature_id[slot]];
-    const size_t base = static_cast<size_t>(slot) *
-        static_cast<size_t>(SAT_DIM_COUNT);
-    PackedInt32Array dim_ids, dim_values, dim_weights, dim_contributions;
-    int64_t weighted_total = 0;
-    int64_t weight_total = 0;
-    int64_t diagnostic_sat = 0;
-    const uint8_t applicable_mask = satisfaction_applicable_mask(slot);
-    const auto effective_weights = satisfaction_effective_weights(signature, applicable_mask);
-    std::array<int64_t, SAT_DIM_COUNT> stored_dims{};
-    for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
-        const int64_t value = population_store().satisfaction_dims[
-            base + static_cast<size_t>(dim)];
-        stored_dims[dim] = value;
-        const int64_t weight = effective_weights[dim];
-        dim_ids.push_back(dim);
-        dim_values.push_back((applicable_mask & (1U << dim)) ? static_cast<int32_t>(value) : -1);
-        dim_weights.push_back(static_cast<int32_t>(weight));
-        // The shortfall each dimension contributes to the composite, which is
-        // what makes one of them the worst.
-        dim_contributions.push_back(static_cast<int32_t>(std::clamp<int64_t>(
-            mul_div_sat(Q16_ONE - 1 - value, weight, Q16_ONE, diagnostic_sat),
-            0, Q16_ONE)));
-        if (weight <= 0) continue;
-        weighted_total = saturating_add(weighted_total,
-            saturating_mul(value, weight, diagnostic_sat), diagnostic_sat);
-        weight_total = saturating_add(weight_total, weight, diagnostic_sat);
-    }
-    const int64_t raw_q16 = weight_total > 0
-        ? std::clamp<int64_t>(weighted_total / weight_total, 0, Q16_ONE - 1)
-        : Q16_ONE - 1;
-    const int64_t ceiling_q16 = satisfaction_ceiling(stored_dims.data(), applicable_mask, diagnostic_sat);
-    out["ok"] = true;
-    out["cohort_handle"] = cohort_handle;
-    out["cell_index"] = cell;
-    out["signature_id"] = static_cast<int32_t>(population_store().signature_id[slot]);
-    out["profession_id"] = signature.profession_id;
-    out["population"] = population_store().population[slot];
-    out["dim_ids"] = dim_ids;
-    out["dim_values_q16"] = dim_values;
-    out["dim_weights_q16"] = dim_weights;
-    out["dim_contributions_q16"] = dim_contributions;
-    out["applicable_mask"] = applicable_mask;
-    out["consumption_semantics"] = "realized_over_living_target_v1";
-    out["raw_q16"] = raw_q16;
-    out["ceiling_q16"] = ceiling_q16;
-    out["composite_q16"] =
-        static_cast<int32_t>(population_store().composite_satisfaction[slot]);
-    out["worst_dimension_id"] = population_store().worst_dimension_id[slot] ==
-            std::numeric_limits<uint8_t>::max()
-        ? -1 : static_cast<int32_t>(population_store().worst_dimension_id[slot]);
-    out["worst_need_id"] = population_store().worst_need_id[slot] ==
-            std::numeric_limits<uint16_t>::max()
-        ? -1 : static_cast<int32_t>(population_store().worst_need_id[slot]);
-    out["living_standard_level"] = consumption_living_standard_level(slot);
-    out["social_pressure_level"] = social_pressure_level_for(
-        population_store().composite_satisfaction[slot]);
-    // Raw dimension inputs, so a designer can see why a dimension scored badly
-    // rather than only that it did.
-    out["income_ema"] = population_store().income_ema[slot];
-    out["income_baseline_ema"] = population_store().income_baseline_ema[slot];
-    out["funds"] = population_store().funds[slot];
-    out["epoch_income"] = population_store().epoch_income[slot];
-    out["epoch_in_kind_income"] = population_store().epoch_in_kind_income[slot];
-    out["epoch_tax_paid"] = population_store().epoch_tax_paid[slot];
-    out["epoch_subsidy_received"] = population_store().epoch_subsidy_received[slot];
-    out["living_cost_per_capita"] = cell >= 0 && cell < static_cast<int32_t>(
-            _cell_living_cost_per_capita.size())
-        ? _cell_living_cost_per_capita[cell] : 0;
-    out["settlement_tier"] = cell >= 0 && cell < static_cast<int32_t>(
-            _settlements.tier.size())
-        ? static_cast<int32_t>(_settlements.tier[cell]) : 0;
-    out["development_q16"] = cell >= 0 && cell < static_cast<int32_t>(
-            _epoch_cell_development_q16.size())
-        ? _epoch_cell_development_q16[cell] : 0;
-    out["savings_target_months_q16"] = _satisfaction_savings_target_months_q16;
-    const int64_t daily_cost = out["living_cost_per_capita"];
-    const int64_t monthly_cost = saturating_mul(saturating_mul(
-        std::max<int64_t>(0, daily_cost),
-        std::max<int64_t>(1, population_store().population[slot]), diagnostic_sat),
-        30, diagnostic_sat);
-    out["purchasing_power_basis_valid"] = monthly_cost > 0;
-    out["purchasing_power_months_q16"] = monthly_cost > 0 ? mul_div_sat(
-        std::max<int64_t>(0, population_store().funds[slot]), Q16_ONE,
-        monthly_cost, diagnostic_sat) : 0;
-    out["purchasing_power_reference_days"] = 30;
-    out["basic_gate_slack_q16"] = _satisfaction_basic_gate_slack_q16;
-    out["tax_tolerance_q16"] = _satisfaction_tax_tolerance_q16;
-    out["subsistence_gate_slack_q16"] =
-        _satisfaction_subsistence_gate_slack_q16;
-    return out;
-}
 
 Dictionary NativeEconomyRuntime::cell_satisfaction_attractiveness(
         int32_t cell_idx) const {

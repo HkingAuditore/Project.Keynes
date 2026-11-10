@@ -15,6 +15,10 @@ const SETTINGS_PATH := "user://world_setup_settings.json"
 const WORLD_SETUP_META := &"world_setup_config"
 const SetupFieldRowScene := preload("res://scenes/ui/setup_field_row.tscn")
 const MOBILE_LAYOUT_MAX_WIDTH := 900.0
+## 双栏并排时，每栏至少要放下「标签列 + 间隔 + 控件最宽最小宽」。
+## 标签 320 + 间隔 14 + 滑杆组 220 = 554；两栏再各加一次这就是整页的最小宽度。
+const INLINE_ROW_MIN_WIDTH := SetupFieldRow.LABEL_COLUMN_WIDTH \
+	+ SetupFieldRow.INLINE_SEPARATION + 220.0
 const TOUCH_CONTROL_HEIGHT := 56.0
 const TOUCH_BUTTON_HEIGHT := 60.0
 const DESKTOP_CONTROL_HEIGHT := 34.0
@@ -104,6 +108,9 @@ var _render_controls: Dictionary = {}
 var _climate_controls: Dictionary = {}
 var _syncing := false
 var _mobile_layout := false
+## 标签与控件上下排（视口放不下并排时），与 _mobile_layout 是两件事：
+## 1366×768@125% 这类「桌面但窄」的视口要上下排，却不需要触屏那套大字号/高按钮。
+var _rows_stacked := false
 
 const RENDER_FIELDS := [
 	{
@@ -142,6 +149,22 @@ func _is_mobile_layout() -> bool:
 	return OS.has_feature("mobile") or get_viewport_rect().size.x <= MOBILE_LAYOUT_MAX_WIDTH
 
 
+## 双栏并排是否还放得下。宽度不够时必须把每行的「标签列 + 控件」改成上下排，
+## 而不是让 LabelBox 的 320 最小宽度去撑父级：MarginContainer 的 grow 是双向的，
+## 一旦整页最小宽度超过视口，它会往左右两侧一起长，左边缘落到负坐标 ——
+## 表现就是每行参数名的最前面几个字被切在屏幕外（1366×768 @125% 即复现）。
+func _rows_need_stacking() -> bool:
+	if _is_mobile_layout():
+		return true
+	# 视口宽度减去左右外边距与两栏间隔后，每栏还能分到多少。
+	var per_column := (get_viewport_rect().size.x - _outer_margin() * 2.0 - 12.0) * 0.5
+	return per_column < INLINE_ROW_MIN_WIDTH
+
+
+func _outer_margin() -> float:
+	return 10.0 if _mobile_layout else 18.0
+
+
 func _button_min_size(base_width: float) -> Vector2:
 	if _mobile_layout:
 		return Vector2(base_width, TOUCH_BUTTON_HEIGHT)
@@ -162,10 +185,9 @@ func _control_min_size(base_width: float, desktop_height: float) -> Vector2:
 
 func _build_ui() -> void:
 	_mobile_layout = _is_mobile_layout()
+	_rows_stacked = _rows_need_stacking()
 	var margin := %Margin as MarginContainer
-	var outer_margin: int = 18
-	if _mobile_layout:
-		outer_margin = 10
+	var outer_margin: int = int(_outer_margin())
 	margin.add_theme_constant_override("margin_left", outer_margin)
 	margin.add_theme_constant_override("margin_top", outer_margin)
 	margin.add_theme_constant_override("margin_right", outer_margin)
@@ -202,10 +224,11 @@ func _build_ui() -> void:
 func _apply_responsive_layout() -> void:
 	var mobile := _is_mobile_layout()
 	_mobile_layout = mobile
+	_rows_stacked = _rows_need_stacking()
 	(%Header as BoxContainer).vertical = mobile
 	(%ResponsiveBody as BoxContainer).vertical = mobile
 	%HeaderSpacer.visible = not mobile
-	var outer_margin := 10 if mobile else 18
+	var outer_margin := int(_outer_margin())
 	for side in ["left", "top", "right", "bottom"]:
 		(%Margin as MarginContainer).add_theme_constant_override(
 			"margin_%s" % side, outer_margin)
@@ -214,7 +237,7 @@ func _apply_responsive_layout() -> void:
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_SHRINK_CENTER
 	for row in get_tree().get_nodes_in_group("world_setup_field_rows"):
 		if row is SetupFieldRow and is_ancestor_of(row):
-			row.set_mobile_layout(mobile)
+			row.set_mobile_layout(mobile, _rows_stacked)
 
 
 func _build_base_panel(parent: VBoxContainer) -> void:
@@ -288,7 +311,7 @@ func _create_foldout(title: String) -> Dictionary:
 
 func _row_with_label(label_text: String, control: Control, hint_text: String = "") -> BoxContainer:
 	var row := SetupFieldRowScene.instantiate() as SetupFieldRow
-	row.configure(label_text, hint_text, control, _mobile_layout)
+	row.configure(label_text, hint_text, control, _mobile_layout, _rows_stacked)
 	return row
 
 
@@ -524,6 +547,7 @@ func _on_reset_pressed() -> void:
 
 
 func _on_start_pressed() -> void:
+	_sync_render_quality_setting()
 	var config := _build_config()
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
@@ -535,6 +559,17 @@ func _on_debug_pressed() -> void:
 	Engine.set_meta(WORLD_SETUP_META, config)
 	_save_settings(config)
 	get_tree().change_scene_to_file(DEBUG_SCENE_PATH)
+
+
+func _sync_render_quality_setting() -> void:
+	var settings := get_node_or_null("/root/GameSettings")
+	if settings == null:
+		return
+	var mode := int(_control_value(_render_controls["render_quality_mode"], "option"))
+	var result: Dictionary = settings.apply_render_quality_mode(mode)
+	if not bool(result.get("ok", false)):
+		push_warning("[world-setup] render quality was not persisted: %s"
+			% String(result.get("message", result.get("code", ""))))
 
 
 func _build_config() -> Dictionary:

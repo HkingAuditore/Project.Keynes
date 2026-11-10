@@ -101,13 +101,8 @@ TerrainInstanceLight eval_terrain_instance_lighting(vec2 world_center) {
 	float sky = hs.has_data
 		? terrain_horizon_apply_normal(hs.sky_visibility, n, hs.bent_normal)
 		: 1.0;
-	vec3 amb = earth_sky_sh(
-		ed.amb_col,
-		ed.sun_col,
-		ed.sun_dir,
-		ed.local_day,
-		amb_n
-	);
+	vec3 amb = sky_ambient_srgb(
+		ed.local_day, amb_n, ed.amb_col, ed.sun_col, ed.sun_dir);
 	float ndl = max(dot(n, ed.sun_dir), 0.0)
 		* ed.local_day * hs.direct_visibility;
 	float mdl = max(dot(n, -ed.sun_dir), 0.0) * ed.moon_strength;

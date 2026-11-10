@@ -29,6 +29,12 @@
 
 ## 2. 权威边界
 
+兵种编制 UI 的 ± 每次调整 500 bp（5 个百分点），民兵自动占剩余份额。
+`PlayerController` 发出的 `config.set.shares` 是稳定兵种 id 的局部修改；
+`MilitaryFacade.submit` 从国家快照保留其余份额，转换为 dense id 的完整 `int_pairs`。
+原生 `MCMD_CONFIG_SET` **替换整张配置表**，不能直接把局部修改当整表提交；原生桥不读取 `shares` 字段。
+回归：`res://tests/ui/military_config_command_test.gd` 覆盖 ±、其他兵种份额保留与民兵余量。
+
 | 状态 | 权威 | 其他域如何影响 |
 | --- | --- | --- |
 | 兵员登记批次（lots）、训练订单、部队、路径、模板、区域任务 | `MilitaryCore` | 仅 `submit_military_commands`（玩家/AI） |
@@ -131,6 +137,7 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
 | 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执。维护费是终端现金 sink，实收额登记为 Economy 的 `explicit_money_burn`；官营建造已改走经济侧结算（§5.3） |
 | 15 `STATE_BUILD` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_build` | 军事建筑索引经 `economy_building_id` 翻成经济类型；经济受理后回送 `MCMD_STATE_BUILD` 仅记排期，`economy_building_id < 0` 或经济拒绝则该 lot 不建 |
 | 16 `STATE_DEMOLISH` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_demolish`（economy opcode 35） | 15 的镜像：`cell` + `count` = 军事建筑索引，`country_a` = 属主国句柄。经济侧先减座数，受理后才回送 `MCMD_STATE_DEMOLISH`；该命令在核心里是 no-op（§6.2） |
+| 17 `PROCUREMENT_DEMAND` | Economy（无采购回执） | 36 `MILITARY_PROCUREMENT_DEMAND` | D+1 全量替换缺货需求；reset 行 `cell=-1/country=0/qty=0`，其余行携带真实商品、市场格、缺口数量及 10 天归一化窗口 |
 | 20 `TRANSFER_TERRITORY` | Country | 3 | target = 接收国，`cell` |
 | 21 `TRANSFER_CASH` | Country | 23 `TRANSFER_CASH_BETWEEN_COUNTRIES` | target = 付款国，`cell`/`aux` = 收款国 slot/generation，`value` = 金额 |
 | 22 `TRANSFER_GOODS` | Country | 24 `TRANSFER_GOODS_BETWEEN_COUNTRIES` | 同上，`domain` = good |
@@ -236,6 +243,11 @@ Military 只读（§6.2）。军事侧不再按建材估价折现金自己扣款
 tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `role+tier`，任一同档下标等价。
 `fort_tier` / `college_tier` / `barracks_tiers` 都是 §6.2 的派生缓存，本查询只读它们。
 
+玩家编成入口在地块档案「军事」页：`CellInspectorViewModel` 从 `garrison_lots` 汇总本国兵种，
+仅对本国且未被占领、存在驻军的格启用「编成部队」。命令经 `PlayerController` 校验归属后提交
+`army.create`；原生按请求总人数搬入本地驻军，并把这些兵种人数保存为该部队的补员模板。UI 契约见
+`docs/ui/military-cell-tab.md`。这不改变 MilitaryCore 的状态权威或跨域写入边界。
+
 ### 6.2 官营建筑缓存（派生，非权威）
 
 `MilitaryCellState::barracks_count[8]` / `fort_tier` / `college_tier` **不是权威状态**，只是可重建缓存，
@@ -274,6 +286,7 @@ tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `rol
 | 3 格采购（§9.3） | `MarketDayScope`：拓扑变化时 `build_rings()`（每格 19 格环、BFS 顺序），当日首次需要时才 `build_market_csr()`（O(市场行)），作用域结束时丢弃。需求者只查自己的环；**无全国最近市场场**（已删除 `build_supply_fields` / `_near_market` / `_near_cost` / `_supply_dirty_country` / `FieldIndex` / 回退扫描） |
 | 采购需求者 | 驻军格（`_lot_cell_head` 非空）、部队、训练订单各检查一次；只有**低于再订货点**（库存 < 5 天，目标 10 天）的持有者参与，库存经 `military_stock_row` 索引查询，不走全表 |
 | 采购撮合 | 每个需求按环内市场行的（每需求单位价格, 行号）排序；按"第 k 便宜"轮转买入，单市场 ≤ 当日可售 50%，单一需求 ≤ 8 个市场；同格当日入库，其余生成路程=环距离的车队；环内无货 → `unmet_procurement_*` 计数（无全局回退） |
+| 军需市场信号 | 零库存且科技已解锁的商品仍提供报价；未满足缺口扣除在途货物后，选择可达的最低单位价替代品，装备满足最低品质，并受现金/采购配额约束。intent 17→Economy 36 在下一冻结边界进入通用采购需求汇总，供定价、商人补货、生产和投资使用；预测不成交、不扣款、不生成库存。实际装备采购意图必须携带真实商品编号，军事库存内的负类别编号不得跨经济桥 |
 | 供应连通 | `military_supply_connected`：环内是否存在本国拥有且控制的市场格，O(19)；`military_connectivity_connected`：仅在需要时（征发 / last_stand）按国做一次控制格 BFS |
 | 批发索引 | `sum_lot_value` / `army_fort_ignore_q16` / `garrison_heads_at` / 批量转移 / 采购买方全部走侵入链（`military_for_each_lot`），不再全表扫描 lot |
 | 威胁/护卫场 | 每日 O(部队 × 7)，`_threat_stamp` 免清零；拦截概率 = threat/(threat+guard+escort) × cap |
@@ -537,3 +550,7 @@ godot --headless --path Project/project-keynes -s res://tests/military/military_
 17. opcode 35 只走专用 `queue_treasury_sponsored_demolish` 入口，**不在** `submit_commands` 的批量白名单里
     （白名单上界仍是 `COMMAND_TREASURY_SPONSORED_BUILD`，与 opcode 16 同构地走专用入口）。
     `submit_commands` 若收到 35 会被拒为 `unsupported_opcode`，这是刻意的：拆除必须先在经济侧落实。
+
+## 部队指挥 UI 接线（2026-11-08）
+
+部队档案固定提供行军、区域控制、停止任务、姿态，地图点击只做预览；确认前重新调用 `preview_military_path`，随后仍提交现有军事命令。`PlayerController` 只保存不入存档的输入草稿，`GameUIManager` 通过 `update_military_arm_order` 更新显示，不改 MilitaryCore 权威、每日调度或 PKMI。详见 [部队指挥交互与验证](../ui/military-army-controls.md)。

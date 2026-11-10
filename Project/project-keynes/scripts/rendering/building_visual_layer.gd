@@ -36,7 +36,8 @@ const TERRAIN_LIGHTING_PARAMS := [
 	"terrain_horizon_strength", "terrain_horizon_softness",
 	"terrain_horizon_max_angle", "gi_horizon_lut", "gi_lut_bound",
 	"gi_ao_strength", "gi_ao_floor", "gi_ao_smoothing", "gi_bent_strength",
-	"gi_normal_floor",
+	"gi_normal_floor", "sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1",
+	"sky_night_sh_l1",
 ]
 
 # Settlement layout (lots, streets, plaza, era-specific building volumes) is
@@ -88,6 +89,10 @@ var _shadow_shader_source: Shader
 var _decal_shader_source: Shader
 var _macro_shader_source: Shader
 var _shader_tiled := false
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 var _macro_quad: MeshInstance2D
 var _macro_image: Image
 var _macro_texture: ImageTexture
@@ -431,6 +436,8 @@ func set_tod(_sun_color: Color, _ambient_color: Color,
 	# Colour palettes and local day/night are evaluated by earth_daylight;
 	# TODProfile still owns the common exposure.
 	_tod_exposure = maxf(exposure, 0.0)
+	_set_tod_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_set_tod_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_set_tod_parameter("tod_exposure", _tod_exposure, false)
 
 
@@ -447,6 +454,16 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	_set_tod_parameter("tod_debug_sun_position_enabled",
 		_tod_debug_sun_position_enabled)
 	_set_tod_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
+
+
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	_set_tod_parameter("eternal_min_elevation_rad", min_elevation)
+	_set_tod_parameter("eternal_max_hour_angle_rad", max_hour_angle)
 
 
 func set_tod_debug_sun_height_scale(value: float) -> void:
@@ -846,8 +863,11 @@ func _rebind_world_textures() -> void:
 			maxf(bounds.size.x, 0.0001), maxf(bounds.size.y, 0.0001)))
 		material.set_shader_parameter("wrap_origin_x", 0.0)
 		material.set_shader_parameter("wrap_period_x", _world.wrap_period_x)
+	_cloud_shadow_wrap_origin_uv = (0.0 - bounds.position.x) / maxf(bounds.size.x, 0.0001)
+	_cloud_shadow_wrap_period_uv = _world.wrap_period_x / maxf(bounds.size.x, 0.0001)
 	_sync_terrain_textures()
 	_push_material_state()
+	_push_cloud_shadow_uniforms()
 
 
 func _push_material_state() -> void:
@@ -873,6 +893,8 @@ func _push_material_state() -> void:
 	_set_tod_parameter("tod_debug_sun_height_scale",
 		_tod_debug_sun_height_scale)
 	_set_tod_parameter("tod_sun_dir", _tod_sun_dir)
+	_set_tod_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+	_set_tod_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 	_set_tod_parameter("tod_exposure", _tod_exposure, false)
 
 
@@ -892,6 +914,40 @@ func set_terrain_lighting(source: ShaderMaterial) -> void:
 		for material in [_body_material, _decal_material, _macro_material]:
 			if material != null:
 				material.set_shader_parameter(name, value)
+
+
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var variant_changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	if variant_changed:
+		_apply_cloud_shadow_shader_variants()
+	_push_cloud_shadow_uniforms()
+
+
+func _apply_cloud_shadow_shader_variants() -> void:
+	for entry in [[_body_material, _body_shader_source],
+			[_shadow_material, _shadow_shader_source],
+			[_decal_material, _decal_shader_source],
+			[_macro_material, _macro_shader_source]]:
+		_assign_shader_variant(entry[0], entry[1])
+
+
+func _push_cloud_shadow_uniforms() -> void:
+	for material in [_body_material, _shadow_material, _decal_material, _macro_material]:
+		if material == null or material.shader == null \
+				or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+			continue
+		if _cloud_shadow_texture != null:
+			material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+		material.set_shader_parameter("cloud_shadow_field_bound",
+			_cloud_shadow_direct and _cloud_shadow_texture != null)
+		material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+		material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
 
 
 func _sync_terrain_textures() -> void:
@@ -1017,7 +1073,8 @@ static func web_building_min_active() -> bool:
 		return false
 	return not DCFeatureFlags.terrain_horizon_gpu_bake_active()
 
-static func compose_shader_code(source: Shader, tiled: bool) -> String:
+static func compose_shader_code(source: Shader, tiled: bool,
+		cloud_shadow_direct: bool = false) -> String:
 	if source == null:
 		return ""
 	var prefix := ""
@@ -1025,6 +1082,8 @@ static func compose_shader_code(source: Shader, tiled: bool) -> String:
 		prefix += PK_WEB_BUILDING_MIN_PREFIX
 	if tiled:
 		prefix += "#define MAP_VISUAL_TILED\n"
+	if cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix + source.code
 
 
@@ -1042,8 +1101,9 @@ func _assign_shader_variant(material: ShaderMaterial, source: Shader) -> void:
 	if material == null or source == null:
 		return
 	var variant := Shader.new()
-	variant.code = compose_shader_code(source, _shader_tiled)
+	variant.code = compose_shader_code(source, _shader_tiled, _cloud_shadow_direct)
 	material.shader = variant
+	_push_cloud_shadow_uniforms()
 	WebTelemetry.note_variant(
 		String(source.resource_path).get_file().get_basename(), variant.code)
 

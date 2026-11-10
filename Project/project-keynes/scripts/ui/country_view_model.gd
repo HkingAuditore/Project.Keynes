@@ -632,7 +632,7 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 		facade = _generator.get_military_facade()
 	var section := {
 		"available": false,
-		"reason": "军事机构尚未接通：本局没有可用的军事运行时。",
+		"reason": "先在领地建立军事机构，才能查看军情。",
 		"facade": facade,
 		"country_handle": country_handle,
 		# 视图模型按国家槽位反查邻国/句柄/名称都要经过会话世界（领土镜像 + Country

@@ -81,6 +81,7 @@ uniform float gi_ao_smoothing = 0.75;
 uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 #include "res://shaders/include/building_form.gdshaderinc"
@@ -98,6 +99,7 @@ varying flat vec3 v_sun_dir;
 varying flat vec3 v_sun_col;
 varying flat vec3 v_amb_col;
 varying flat vec3 v_day;      // local_day, pixel_night, moon_strength
+varying flat float v_cloud_sun_visibility;
 
 vec2 lut_uv(float cell_value) {
 	float cell = clamp(floor(cell_value * max(cell_count - 1.0, 1.0) + 0.5),
@@ -146,6 +148,7 @@ void vertex() {
 	v_sun_col = ed.sun_col;
 	v_amb_col = ed.amb_col;
 	v_day = vec3(ed.local_day, ed.pixel_night, ed.moon_strength);
+	v_cloud_sun_visibility = cloud_shadow_direct_visibility(v_map_uv, ed.local_day);
 
 	// 地形法线每实例只采一次：坡度在 fragment 里作为整栋建筑的基面倾角，
 	// 不随像素变化（建筑是刚体，屋面起伏由自身高度场给出）。
@@ -204,7 +207,8 @@ TerrainHorizonSample building_horizon(vec2 map_uv, bool covered) {
 // 一个 fragment 里最多会叠 3 层（屋面 + 墙面 + 窗/内院），但地面位置相同，所以 horizon
 // 采样在 fragment 顶部做一次、按值传进来——每多一次调用就多 4 次 tap。
 vec3 light_at(vec3 n, TerrainHorizonSample hs) {
-	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x * hs.direct_visibility;
+	float ndl = max(dot(n, v_sun_dir), 0.0) * v_day.x * hs.direct_visibility
+		* v_cloud_sun_visibility;
 	float mdl = max(dot(n, -v_sun_dir), 0.0) * v_day.z;
 	vec3 amb_n = n;
 	float sky = 1.0;
@@ -214,7 +218,7 @@ vec3 light_at(vec3 n, TerrainHorizonSample hs) {
 		amb_n = normalize(mix(n, hs.bent_normal, gi_bent_strength));
 		sky = terrain_horizon_apply_normal(hs.sky_visibility, n, hs.bent_normal);
 	}
-	vec3 amb = earth_sky_sh(v_amb_col, v_sun_col, v_sun_dir, v_day.x, amb_n);
+	vec3 amb = sky_ambient_srgb(v_day.x, amb_n, v_amb_col, v_sun_col, v_sun_dir);
 	// The reduced ambient gain balances roofs against direct sun; at night the
 	// sky is the only light the terrain gets, so roofs must match it.
 	float amb_gain = mix(1.0, BUILDING_AMBIENT_GAIN, v_day.x);

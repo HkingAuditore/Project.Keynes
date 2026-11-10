@@ -95,6 +95,8 @@ Dictionary DCWorldExt::run_native_world_generate_full_pass(int seed,
             "zonal_moist_min_subtrop",
             "zonal_land_cells_eq", "zonal_land_cells_subtrop",
             "zonal_land_cells_midlat", "zonal_land_cells_polar",
+            "ridge_budget_scale", "ridge_base_scale", "ridge_tail_cells",
+            "ridge_land_cells", "ridge_elevation_cap",
         };
         for (const char *key : kZonalKeys) {
             if (base_res.has(key) && !post_res.has(key)) {
@@ -1379,19 +1381,16 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
         if (!changed) break;
     }
 
-    // ── 5. mountain ridges —— 镜像 _apply_mountain_ridges（就地，slope 读当前 E）──
+    // ── 5. 山脊高度预算：先冻结基底，再按同一比例分配增量，最后只收尾极少数尖峰。──
     if (ridge_boost_amp > 0.0) {
         const double denom_lf = std::max(1.0 - sea_level, 0.001);
-        const double land_elev_cap = 0.93;
-        // 软上限起点随海平面上移（sea=0.5 时为 0.78）；固定 0.78 会让高海平面地图的
-        // 大半陆地落进指数压缩段，格间高差被压到约 1/10。
-        const double soft_max = std::max(0.78, sea_level + (land_elev_cap - sea_level) * (0.28 / 0.43));
-        // 大图内陆 E 已接近上限，再叠最多 ridge_boost_amp 的山脊后只能靠软上限整体压缩，
-        // 高海拔带格间高差被压到约 1/10 → 整片平顶高原。大图按 w=1-1/s 混入"全局缩小山脊
-        // 增量 g，使 p99(E+g·add) 落在上限内"，保留 SPL 起伏；N <= ridge_cap_ref_cells 逐位不变。
-        const double ridge_cap_ref = std::max(100.0, getd(profile, "ridge_cap_ref_cells", 2400.0));
-        const double ridge_cap_w = 1.0 - 1.0 / std::max(1.0, std::sqrt(double(n) / ridge_cap_ref));
-        std::vector<float> ridge_pre(ridge_cap_w > 0.0 ? size_t(n) : 0u, -1.0f);
+        const double land_elev_cap = std::max(0.93, sea_level + (1.0 - sea_level) * 0.94);
+        // 顶部只预留 6% 高度空间作 C1 收尾；99% 陆地使用线性预算，不压缩峰肩高差。
+        const double soft_max = land_elev_cap - (land_elev_cap - sea_level) * 0.06;
+        // 所有尺寸统一使用冻结输入，避免按扫描顺序读到已抬升邻格。
+        std::vector<float> ridge_pre(size_t(n), -1.0f);
+        std::vector<float> ridge_frozen(size_t(n), 0.0f);
+        std::copy(E, E + n, ridge_frozen.begin());
         std::vector<float> ridge_add(ridge_pre.size(), 0.0f);
         for (int row = 0; row < height; ++row) {
             for (int col = 0; col < width; ++col) {
@@ -1406,30 +1405,20 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                 const double ridge_a = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 180.0 * feature_scale, 71.3, -33.7, 0.0));
                 const double ridge_b = 1.0 - std::fabs(cyl_noise(detail_noise.ptr(), ct2, st2, ny2, 220.0 * feature_scale, -50.7, 91.1, 0.0));
                 const double ridge_signal = std::pow(std::max(ridge_a, ridge_b), 1.4);
-                double lowest = double(E[idx]);
+                double lowest = double(ridge_frozen[size_t(idx)]);
                 for (int d = 0; d < 6; ++d) {
                     const int ni = index_for_qr(Q[idx] + DQ[d], R[idx] + DR[d]);
-                    if (ni >= 0 && double(E[ni]) < lowest) lowest = double(E[ni]);
+                    if (ni >= 0 && double(ridge_frozen[size_t(ni)]) < lowest) lowest = double(ridge_frozen[size_t(ni)]);
                 }
-                const double slope = double(E[idx]) - lowest;
+                const double slope = double(ridge_frozen[size_t(idx)]) - lowest;
                 double slope_gate = slope * 8.0;
                 if (slope_gate < 0.30) slope_gate = 0.30;
                 else if (slope_gate > 1.0) slope_gate = 1.0;
                 double land_factor = (double(E[idx]) - sea_level) / denom_lf;
                 land_factor = std::pow(land_factor, 1.5);
                 const double addition = ridge_signal * land_factor * slope_gate * ridge_boost_amp;
-                double raw_post = double(E[idx]) + addition;
-                if (!ridge_pre.empty()) {
-                    ridge_pre[size_t(idx)] = E[idx];
-                    ridge_add[size_t(idx)] = float(addition);
-                }
-                if (raw_post > soft_max) {
-                    const double excess = raw_post - soft_max;
-                    raw_post = soft_max + (land_elev_cap - soft_max) * (1.0 - std::exp(-excess * 3.0));
-                }
-                if (raw_post < 0.0) raw_post = 0.0;
-                else if (raw_post > land_elev_cap) raw_post = land_elev_cap;
-                E[idx] = float(raw_post);
+                ridge_pre[size_t(idx)] = E[idx];
+                ridge_add[size_t(idx)] = float(addition);
             }
         }
         if (!ridge_pre.empty()) {
@@ -1441,6 +1430,15 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
             if (!land_idx.empty()) {
                 std::vector<float> scratch(land_idx.size());
                 const size_t k99 = std::min(land_idx.size() - 1, size_t(double(land_idx.size()) * 0.99));
+                // 极端配置中基底先按海平面锚定的统一比例留出空间，保留高程序。
+                for (size_t j = 0; j < land_idx.size(); ++j) scratch[j] = ridge_pre[size_t(land_idx[j])];
+                std::nth_element(scratch.begin(), scratch.begin() + std::ptrdiff_t(k99), scratch.end());
+                const double base_p99 = double(scratch[k99]);
+                const double base_target = sea_level + (soft_max - sea_level) * 0.94;
+                const double base_scale = base_p99 > base_target
+                    ? (base_target - sea_level) / std::max(base_p99 - sea_level, 1e-6) : 1.0;
+                for (int i : land_idx) ridge_pre[size_t(i)] = float(sea_level +
+                    (double(ridge_pre[size_t(i)]) - sea_level) * base_scale);
                 auto p99_at = [&](double g) -> double {
                     for (size_t j = 0; j < land_idx.size(); ++j) {
                         const size_t i = size_t(land_idx[j]);
@@ -1450,19 +1448,29 @@ godot::Dictionary DCWorldExt::run_native_world_generate_base_pass(
                     return double(scratch[k99]);
                 };
                 double g = 1.0;
-                if (p99_at(1.0) > land_elev_cap) {
+                if (p99_at(1.0) > soft_max) {
                     double lo = 0.0, hi = 1.0;
                     for (int it = 0; it < 24; ++it) {
                         const double mid = 0.5 * (lo + hi);
-                        if (p99_at(mid) > land_elev_cap) hi = mid; else lo = mid;
+                        if (p99_at(mid) > soft_max) hi = mid; else lo = mid;
                     }
                     g = lo;
                 }
+                int tail_count = 0;
                 for (const int i : land_idx) {
-                    const double lin = std::clamp(double(ridge_pre[size_t(i)]) + g * double(ridge_add[size_t(i)]),
-                                                  0.0, land_elev_cap);
-                    E[i] = float(double(E[i]) + (lin - double(E[i])) * ridge_cap_w);
+                    double h = double(ridge_pre[size_t(i)]) + g * double(ridge_add[size_t(i)]);
+                    if (h > soft_max) {
+                        const double span = land_elev_cap - soft_max;
+                        h = soft_max + span * (1.0 - std::exp(-(h - soft_max) / span));
+                        ++tail_count;
+                    }
+                    E[i] = float(h);
                 }
+                out["ridge_budget_scale"] = g;
+                out["ridge_base_scale"] = base_scale;
+                out["ridge_tail_cells"] = tail_count;
+                out["ridge_land_cells"] = int(land_idx.size());
+                out["ridge_elevation_cap"] = land_elev_cap;
             }
         }
     }

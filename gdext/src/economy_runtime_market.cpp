@@ -613,11 +613,6 @@ int64_t NativeEconomyRuntime::survival_required_units(
     return std::max<int64_t>(0, required);
 }
 
-// ─── Fixed point / formula registry ────────────────────────────────────
-
-// Fixed-point and pure formula implementations live in
-// economy_runtime_math.cpp. This file keeps orchestration and stateful stages.
-
 bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &result,
                                               std::string &error) {
     MarketResult *previous_market_sink = _market_result_sink;
@@ -695,11 +690,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int8_t> satisfaction_need_available_cache;
     thread_local std::vector<int64_t> cohort_worst_q16;
     thread_local std::vector<uint16_t> cohort_worst_need;
-    // Need-tier reduction, strided by SAT_TIER_COUNT per local cohort. A tier the
-    // cohort's plan never mentions keeps a zero weight and is dropped from the
-    // composite denominator, so a plan without luxuries is not penalized.
+    // Applicable need-tier reductions, strided by SAT_TIER_COUNT per cohort.
     thread_local std::vector<int64_t> cohort_tier_weighted_q16;
     thread_local std::vector<int64_t> cohort_tier_weight_q16;
+    thread_local std::vector<int64_t> cohort_basic_min_fill_q16;
     thread_local std::vector<int64_t> expected_births_q32_by_ethnicity;
     thread_local std::vector<int64_t> cohort_rescale_sat_q16;
     thread_local std::array<int64_t, 3> food_family_filled{};
@@ -777,6 +771,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
     cohort_tier_weight_q16.assign(
         static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
+    cohort_basic_min_fill_q16.assign(cohort_count, Q16_ONE - 1);
     expected_births_q32_by_ethnicity.assign(_ethnicity_ids.size(), 0);
     cohort_rescale_sat_q16.assign(cohort_count, Q16_ONE);
     food_family_filled.fill(0);
@@ -1348,7 +1343,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 if (ration_available < 0)
                     ration_available = satisfaction_need_available(need, market) ? 1 : 0;
                 int64_t ration_target = 0;
-                if (ration_available != 0) {
+                if (ration_available != 0 && need_environment_cache[need_index] > 0) {
                     const int64_t ethnicity_factor = _ethnicity_need_factor_q16[
                         static_cast<size_t>(signature.ethnicity_id) *
                             _need_ids.size() + need.stable_id];
@@ -1357,7 +1352,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                             population, need.base_qty_per_person, sat),
                             std::max(1, _epoch_days.get()), sat);
                         ration_target = mul_div_sat(ration_target,
-                            std::max<int64_t>(1, need_environment_cache[need_index]),
+                            need_environment_cache[need_index],
                             Q16_ONE, sat);
                         ration_target = std::max<int64_t>(1, mul_div_sat(
                             ration_target, ethnicity_factor, Q16_ONE, sat));
@@ -1423,14 +1418,14 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             int8_t &living_available = satisfaction_need_available_cache[need_index];
             if (living_available < 0)
                 living_available = satisfaction_need_available(need, market) ? 1 : 0;
-            if (living_available != 0) {
+            if (living_available != 0 && need_environment_cache[need_index] > 0) {
                 const int64_t ethnicity_factor = _ethnicity_need_factor_q16[
                     static_cast<size_t>(signature.ethnicity_id) * _need_ids.size() + need.stable_id];
                 if (ethnicity_factor > 0) {
                     living_target = saturating_mul(saturating_mul(
                         population, need.base_qty_per_person, sat), std::max(1, _epoch_days.get()), sat);
                     living_target = mul_div_sat(living_target,
-                        std::max<int64_t>(1, need_environment_cache[need_index]), Q16_ONE, sat);
+                        need_environment_cache[need_index], Q16_ONE, sat);
                     living_target = std::max<int64_t>(1, mul_div_sat(
                         living_target, ethnicity_factor, Q16_ONE, sat));
                 }
@@ -2325,12 +2320,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 saturating_mul(living_satisfaction, tier_weight, sat), sat);
             cohort_tier_weight_q16[tier_index] = saturating_add(
                 cohort_tier_weight_q16[tier_index], tier_weight, sat);
+            if (need.satisfaction_tier == SAT_DIM_BASIC)
+                cohort_basic_min_fill_q16[local] = std::min(
+                    cohort_basic_min_fill_q16[local], living_satisfaction);
         }
         if (trace_detail) {
             CohortWelfareEntry &entry = result.welfare_entries[local];
             entry.need_ids.push_back(stable_need);
             entry.need_satisfaction_q16.push_back(static_cast<int32_t>(living_satisfaction));
-            entry.need_weight_q16.push_back(static_cast<int32_t>(tier_weight));
+            entry.need_weight_q16.push_back(state.living_target_units > 0 ? static_cast<int32_t>(tier_weight) : 0);
             entry.need_tiers.push_back(static_cast<int32_t>(need.satisfaction_tier));
         }
         if (satisfaction < cohort_worst_q16[local]) {
@@ -2489,6 +2487,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             slot, cell, survival_q16, signature,
             &cohort_tier_weighted_q16[static_cast<size_t>(local) * SAT_TIER_COUNT],
             &cohort_tier_weight_q16[static_cast<size_t>(local) * SAT_TIER_COUNT],
+            cohort_basic_min_fill_q16[local],
             sat);
         if (trace_detail && local < static_cast<int32_t>(
                 result.welfare_entries.size())) {

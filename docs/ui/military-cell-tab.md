@@ -1,12 +1,12 @@
 # 地块档案 · 军事页（驻军 / 部队 / 训练 / 官营建筑）
 
 右栏地块档案的「军事」页签。整页是**一张撕纸台账**（`PKPaperNote`），自上而下读：
-驻军条 → 当地部队 → 本地训练 → 手绘分隔 → 三行官营建筑。**页面上不写解释性句子**：
-没有部队、没有训练、没有兵额时整组隐藏，只有快照读不到时留一行错误态。
+驻军条 → 编成部队 → 当地部队 → 本地训练 → 手绘分隔 → 三行官营建筑。**页面上不写解释性句子**：
+驻军读数照实显示，编成按钮无可用驻军或领土不可用时禁用；只有快照读不到时留一行错误态。
 
 ```
 CellInspectorViewModel._military_category(cell)
-  → category = { "military_cell": { garrison, troops, training, buildings[3] } }
+  → category = { "military_cell": { garrison, army_create, troops, training, buildings[3] } }
   → InspectorPanel._build_military_ledger()      （建一次节点）
   → MilitaryCellLedger.set_model()               （每日只写值）
 ```
@@ -19,6 +19,7 @@ CellInspectorViewModel._military_category(cell)
 | 区块 | 读什么 | 画法 |
 | --- | --- | --- |
 | 驻军数据带 | `present` / `post_count` / `pending_enlist` / `barracks_tiers` / `college_tier`→训练速度 / `paused` / `disrepair` / owner≠controller | 手绘容量条（`在驻 12 / 兵额 50`）+ 第二行四格读数 `空额 / 征召 / 军营 / 训练 ×1.5`；状态只在成立时贴小签（暂停/失修/占领） |
+| 编成部队 | `garrison_lots[]` 按本格属国筛选并按 dense unit id 汇总 | `编成部队 · N 人`；仅本国、未被占领且有本国驻军时可用，一次把该格本国驻军整编成一支部队 |
 | 部队 | `armies[]`（handle、headcount、foreign） | 一行一支：番号 + 兵力；点行开军务档案 |
 | 训练 | `training[]`（from/to、count、days_done、days_total） | 一行一单：目标兵种纸贴 + `目标兵种 ← 来源兵种` + 人数 + 进度条 + 剩 N 日 |
 | 官营建筑 | `barracks_tiers` / `fort_tier` / `college_tier` / `construction_*` + 目录 | 三行：纸贴图标 + 名称（×座数）+ 效果 + 成本段 + 右侧主键（悬停时另显拆除键，见 §2、§3） |
@@ -147,6 +148,7 @@ OXBLOOD 色，主键禁用；完整的建材明细仍留在 `materials_text` 与
 
 | 事件 | 结果 |
 | --- | --- |
+| 点「编成部队」 | `military_army_create_requested` → `PlayerController.request_command(military.army.create)`；`units` 取本格实际驻军 lots 的兵种/人数，原生按总人数登船并将该组合写入补员模板。玩家领土与占领状态在命令入口复核；已排队/拒绝理由显示在按钮旁 |
 | 点部队行 | `GameUIManager.open_military_dossier("army", handle, 当前格)`，右栏变宽、地块目录列保留 |
 | 点主键 | 发 `military_state_building_requested` → `PlayerController.request_command`；回执（已排队 / 被拒理由）写回**刚按下的那一行**的状态行，3.5 秒后恢复成本或效果数字 |
 | 按下主键 | 按钮先禁用，等下一次模型落地再解锁（防同日重复下单） |
@@ -169,7 +171,7 @@ OXBLOOD 色，主键禁用；完整的建材明细仍留在 `materials_text` 与
   facade 身份变化时缓存重排。
 - 绘制全是 `_draw()`：驻军条、部队行、训练行、三行建筑都自绘；按钮只有每行的主键 +
   拆除键（最多 3×2 = 6 颗，且拆除键常驻隐藏，不参与排版占位）。同一模型重复 `set_model`
-  节点数不变（`military_cell_ledger_test` 断言）。
+  节点数不变（`military_cell_ledger_test` 断言）。编成按钮只提交请求、不创建节点；模型从快照汇总本国驻军 lot。
 - 触摸档行高取 `TouchUI.dense_units()`，桌面保持 27/36/46px 原值。
 
 ## 5. 验证

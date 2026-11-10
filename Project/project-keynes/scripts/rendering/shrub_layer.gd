@@ -99,6 +99,10 @@ var _bounds: Rect2 = Rect2()
 var _hex_size: float = 22.0
 var _visual_quality: int = 1
 var _mobile_quality_tier: int = 1
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 # C++ DCWorldExt（由 hex_renderer.set_world_ext 注入）。null 或缺 encode_detail_scatter
 # 方法时，散布生成走 GDScript fallback；二者结果是同一确定性 PCG 场的等价实现。
 var _world_ext = null
@@ -372,6 +376,15 @@ func set_tod(_sun_color: Color, _ambient_color: Color, _night_factor: float, exp
 	_material.set_shader_parameter("tod_exposure", exposure)
 
 
+func set_world_sky_lighting(source: ShaderMaterial) -> void:
+	if _material == null or source == null:
+		return
+	for name in ["sky_ibl_bound", "sky_ambient_strength", "sky_day_sh_l1", "sky_night_sh_l1"]:
+		var value: Variant = source.get_shader_parameter(name)
+		if value != null:
+			_material.set_shader_parameter(name, value)
+
+
 func set_tod_sun_dir(dir: Vector3) -> void:
 	var d := dir.normalized()
 	if d.length_squared() <= 0.000001:
@@ -390,6 +403,20 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 	if _shadow_material != null:
 		_shadow_material.set_shader_parameter("tod_debug_sun_position_enabled", enabled)
 		_shadow_material.set_shader_parameter("tod_debug_sun_uv", p)
+
+
+var _eternal_min_elevation_rad: float = deg_to_rad(10.0)
+var _eternal_max_hour_angle_rad: float = deg_to_rad(70.0)
+
+func set_eternal_daylight_parameters(min_elevation: float, max_hour_angle: float) -> void:
+	_eternal_min_elevation_rad = min_elevation
+	_eternal_max_hour_angle_rad = max_hour_angle
+	if _material != null:
+		_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
+	if _shadow_material != null:
+		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", min_elevation)
+		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", max_hour_angle)
 
 
 func set_tod_debug_sun_height_scale(v: float) -> void:
@@ -770,12 +797,22 @@ func detail_family_material(style_lut: Texture2D) -> ShaderMaterial:
 	if _material == null:
 		_ensure_resources()
 	var out := _material.duplicate(true) as ShaderMaterial
-	out.shader = _compiled_shader(
-		_family_batch_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
+	out.shader = detail_family_shader(false)
 	out.set_shader_parameter("detail_style_lut", style_lut)
 	out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
 	_track_family_material(out)
+	_push_cloud_shadow_uniforms_to(out)
 	return out
+
+
+func detail_family_shader(shadow_pass: bool) -> Shader:
+	if shadow_pass:
+		return _compiled_shader(
+			_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE,
+			"shadow")
+	return _compiled_shader(
+		_family_batch_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE,
+		"family")
 
 
 # 家族批次材质的 define 前缀。家族批次没在画时（_family_batch_suppressed=false，
@@ -826,12 +863,10 @@ func detail_family_shadow_material(style_lut: Texture2D = null) -> ShaderMateria
 		_ensure_resources()
 	var out := _shadow_material.duplicate(true) as ShaderMaterial
 	if style_lut != null:
-		var shader := _compiled_shader(
-			_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADOW_SHADER_CODE,
-			"shadow")
-		out.shader = shader
+		out.shader = detail_family_shader(true)
 		out.set_shader_parameter("detail_style_lut", style_lut)
 		out.set_shader_parameter("detail_style_lut_size", Vector2(16.0, 32.0))
+	_push_cloud_shadow_uniforms_to(out)
 	return out
 
 
@@ -2030,6 +2065,39 @@ func set_mobile_quality_tier(q: int) -> void:
 		_rebuild_or_defer()
 
 
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var shader_changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	if shader_changed:
+		_refresh_shader_variants()
+	else:
+		_push_cloud_shadow_uniforms()
+	for raw_material in _family_materials:
+		_push_cloud_shadow_uniforms_to(raw_material as ShaderMaterial)
+
+
+func _push_cloud_shadow_uniforms() -> void:
+	_push_cloud_shadow_uniforms_to(_material)
+	_push_cloud_shadow_uniforms_to(_shadow_material)
+
+
+func _push_cloud_shadow_uniforms_to(material: ShaderMaterial) -> void:
+	if material == null or material.shader == null \
+			or not material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+		return
+	if _cloud_shadow_texture != null:
+		material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+	material.set_shader_parameter("cloud_shadow_field_bound",
+		_cloud_shadow_direct and _cloud_shadow_texture != null)
+	material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+	material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
+
+
 func _rebuild_or_defer() -> void:
 	if _defer_initial_rebuild and _chunked_multimesh_enabled:
 		clear()
@@ -2051,6 +2119,8 @@ func _ensure_resources() -> void:
 		_material.set_shader_parameter("season_phase", 1.0)
 		_material.set_shader_parameter("day_phase", 0.25)
 		_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		_material.set_shader_parameter("day_night_enabled", true)
 		_bind_crown_art(_material)
 		_mmi.material = _material
@@ -2062,6 +2132,8 @@ func _ensure_resources() -> void:
 		_shadow_material.set_shader_parameter("season_phase", 1.0)
 		_shadow_material.set_shader_parameter("day_phase", 0.25)
 		_shadow_material.set_shader_parameter("axial_tilt_rad", 0.41)
+		_shadow_material.set_shader_parameter("eternal_min_elevation_rad", _eternal_min_elevation_rad)
+		_shadow_material.set_shader_parameter("eternal_max_hour_angle_rad", _eternal_max_hour_angle_rad)
 		_shadow_material.set_shader_parameter("day_night_enabled", true)
 	if _shadow_blob_mesh == null:
 		_shadow_blob_mesh = _build_shadow_blob_mesh()
@@ -2084,6 +2156,7 @@ func _ensure_resources() -> void:
 		add_child(_shadow_mmi)
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
+	_push_cloud_shadow_uniforms()
 
 
 # ─── web 近景 vegetation form 开关（2026-10-31）──────────────────────────────
@@ -2177,14 +2250,22 @@ static func web_define_prefix(tier: int, tiled: bool, world_known: bool,
 func _shader_quality_define_prefix(force_far_only: bool = false) -> String:
 	var tiled := _visual_tiles_active()
 	if OS.has_feature("web"):
-		return web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only,
+		var web_prefix := web_define_prefix(WEB_SHADER_QUALITY_TIER, tiled, _world != null, force_far_only,
 			_visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false)))
+		if _cloud_shadow_direct:
+			web_prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
+		return web_prefix
 	# 非 web：桌面只有 tiled 前缀，与改动前逐字节相同；mobile 与 web 同属受限平台，
 	# 但档位来自推送值、form 档在非 web 上恒为空串（也逐字节同改动前）。
 	if not OS.has_feature("mobile"):
-		return "#define MAP_VISUAL_TILED\n" if tiled else ""
+		var desktop_prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
+		if _cloud_shadow_direct:
+			desktop_prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
+		return desktop_prefix
 	var prefix := "#define MAP_VISUAL_TILED\n" if tiled else ""
 	prefix += quality_tier_defines(_mobile_quality_tier)
+	if _cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	return prefix
 
 
@@ -2211,6 +2292,9 @@ func _refresh_shader_variants() -> void:
 			_shadow_mmi.material = _shadow_material
 	_apply_profile_uniforms()
 	_sync_world_material_inputs(false)
+	_push_cloud_shadow_uniforms()
+	for raw_material in _family_materials:
+		_push_cloud_shadow_uniforms_to(raw_material as ShaderMaterial)
 	# 运行期换档（tier / tiled）也要能看到编译成本；_map 为空说明还没进世界，
 	# 等 setup() 那次统一上报。
 	if _map != null:
@@ -5581,8 +5665,8 @@ func _shader_share_layer_count() -> int:
 	return maxi(count, 1)
 
 
-# Generated single-tree crown sprites (resource_art/crown_atlas); the body shader
-# falls back to procedural crowns when the art is missing.
+# Generated single-tree crown and hardscape-rock sprites (resource_art/crown_atlas);
+# the body shader falls back to procedural forms when the art is missing.
 static func _bind_crown_art(mat: ShaderMaterial) -> void:
 	var art := ResourceArtLibrary.shared()
 	var bound := art.crown != null and art.crown_normal != null

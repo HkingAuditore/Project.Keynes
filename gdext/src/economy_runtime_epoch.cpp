@@ -101,6 +101,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_research_good_id = -1;
     _epoch_colonization_demand_by_cell.clear();
     _epoch_colonization_demand_by_market.clear();
+    _epoch_military_demand_by_cell.clear();
+    _epoch_military_demand_by_market.clear();
     _epoch_research_demand_by_cell.clear();
     _epoch_research_demand_by_market.clear();
     _epoch_bullion_quota_keys.clear();
@@ -1239,6 +1241,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     refresh_epoch_colonization_demand();
     refresh_epoch_era_demand();
+    drain_worker_command_inbox();
+    refresh_epoch_military_demand(day_index);
     refresh_derived_business_demand();
     _epoch_substitute_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
@@ -1358,7 +1362,9 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     process_country_ai_colonization_intents(day_index);
     drain_worker_command_inbox();
     auto due_end = _pending_commands.stable_partition(
-                                         [&](const Command &c) { return c.effective_day <= day_index; });
+                                         [&](const Command &c) {
+        return c.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND && c.effective_day <= day_index;
+    });
     _epoch_commands.assign(_pending_commands.begin(), due_end);
     _pending_commands.erase(_pending_commands.begin(), due_end);
     _epoch_commands.stable_sort( [](const Command &a, const Command &b) {

@@ -319,8 +319,18 @@ func _on_day_night_toggled(enabled: bool) -> void:
 
 
 func _on_gm_runtime_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "simulation.paused":
+	if toggle_id == "ui.suppress_popups":
+		if _player_controller != null:
+			_player_controller.set_popups_suppressed(enabled)
+		if _ui_manager != null and _ui_manager.has_method("set_popups_suppressed"):
+			_ui_manager.set_popups_suppressed(enabled)
+	elif toggle_id == "simulation.paused":
 		_player_controller.sync_ui()
+	elif toggle_id == "ui.hide_all_except_gm":
+		if enabled and _player_controller != null:
+			_player_controller.set_popups_suppressed(true)
+		if _ui_manager != null and _ui_manager.has_method("set_all_ui_suppressed"):
+			_ui_manager.set_all_ui_suppressed(enabled)
 	elif toggle_id == "visual.day_night":
 		day_night_enabled = enabled
 

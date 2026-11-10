@@ -2,7 +2,7 @@ extends PanelContainer
 
 ## 地块档案「军事」页的一整张撕纸台账（见 docs/ui/military-cell-tab.md）。
 ##
-## 自上而下：驻军条 → 当地部队（点行开军务档案）→ 本地训练 → 手绘分隔 → 三行官营建筑。
+## 自上而下：驻军条 → 编成部队 → 当地部队（点行开军务档案）→ 本地训练 → 建筑行。
 ## 数据全部由 CellInspectorViewModel 组好（`military_cell`），这里只画和发请求：
 ## 不查原生、不做规则判断、不写解释性文案。
 ##
@@ -10,6 +10,7 @@ extends PanelContainer
 ## set_model 不改变节点数（地块档案每日补丁因为结构未变走这条路径）。
 
 signal army_selected(handle: int)
+signal army_create_requested(request: Dictionary)
 signal action_requested(request: Dictionary)
 
 const RosterListScript := preload("res://scripts/ui/components/military/military_roster_list.gd")
@@ -26,6 +27,8 @@ const ACTION_OPS := {
 @onready var _garrison: Control = %GarrisonStrip
 @onready var _troops: Control = %TroopList
 @onready var _training: Control = %TrainingList
+@onready var _create_army: Button = %CreateArmy
+@onready var _army_feedback: Label = %ArmyFeedback
 @onready var _rows_box: VBoxContainer = %Rows
 
 var _model: Dictionary = {}
@@ -43,6 +46,8 @@ func _ready() -> void:
 	_build_rows()
 	_troops.army_selected.connect(func(handle: int) -> void:
 		army_selected.emit(handle))
+	if _create_army != null:
+		_create_army.pressed.connect(_on_create_army_pressed)
 	if not _model.is_empty():
 		_apply_model()
 
@@ -70,6 +75,11 @@ func set_model(model: Dictionary) -> void:
 func _apply_model() -> void:
 	if _garrison != null:
 		_garrison.set_data(_model.get("garrison", {}))
+	var army_create: Dictionary = _model.get("army_create", {})
+	if _create_army != null:
+		_create_army.disabled = not bool(army_create.get("enabled", false))
+		_create_army.text = "编成部队 · %s 人" % UITokens.format_compact_number_cn(
+			float(army_create.get("heads", 0)), 1)
 	if _troops != null:
 		_troops.set_rows(_model.get("troops", []))
 	if _training != null:
@@ -90,10 +100,13 @@ func building_rows() -> Array:
 	return _rows
 
 
-## 命令被拒（科技/领土/资金）时解锁动作键：成功的命令保留禁用，直到模型画出「在建」。
+## 命令被拒时解锁对应动作键：成功的建筑命令保留禁用，直到模型画出「在建」。
 func release_busy() -> void:
 	for row in _rows:
 		(row as Control).set_busy(false)
+	if _create_army != null:
+		var army_create: Dictionary = _model.get("army_create", {})
+		_create_army.disabled = not bool(army_create.get("enabled", false))
 
 
 ## 命令回执（成功=已排队 / 失败=被拒的理由）写在刚按下的那一行上。
@@ -102,6 +115,15 @@ func show_feedback(message: String, ok: bool) -> void:
 	if _action_index < 0 or _action_index >= _rows.size():
 		return
 	(_rows[_action_index] as Control).flash_notice(message, ok)
+
+
+func show_army_feedback(message: String, ok: bool) -> void:
+	if _army_feedback == null:
+		return
+	_army_feedback.text = message
+	_army_feedback.add_theme_color_override("font_color",
+		UITokens.DOSSIER_VERDIGRIS if ok else UITokens.DOSSIER_OXBLOOD)
+	_army_feedback.visible = not message.is_empty()
 
 
 func feedback_text() -> String:
@@ -151,4 +173,15 @@ func _on_row_demolish(index: int) -> void:
 		"role": String(entry.get("role", "")),
 		"op": String(ACTION_OPS.get("demolish", "state.demolish")),
 		"building": target,
+	})
+
+
+func _on_create_army_pressed() -> void:
+	var army_create: Dictionary = _model.get("army_create", {})
+	if not bool(army_create.get("enabled", false)):
+		return
+	_create_army.disabled = true
+	army_create_requested.emit({
+		"cell": _cell,
+		"units": army_create.get("units", {}),
 	})

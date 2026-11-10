@@ -65,6 +65,7 @@ uniform float gi_ao_smoothing = 0.75;
 uniform float gi_bent_strength = 0.35;
 uniform float gi_normal_floor = 0.85;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
+#include "res://shaders/include/cloud_shadow.gdshaderinc"
 vec2 wrap_map_uv(vec2 uv) { return visual_static_wrap_uv(uv); }
 #include "res://shaders/include/terrain_horizon.gdshaderinc"
 
@@ -121,6 +122,7 @@ void fragment() {
 			* terrain_normal_influence;
 	}
 	TerrainHorizonSample hs = macro_horizon(UV, ed.sun_dir);
+	float cloud_visibility = cloud_shadow_direct_visibility(UV, ed.local_day);
 
 	// The macro mark is a tiny house glyph rather than a flat occupancy blob:
 	// dark foundation, warm wall band, pitched roof and a cast shadow that follows
@@ -160,7 +162,7 @@ void fragment() {
 	float shadow = (1.0 - smoothstep(0.045, 0.075, across))
 		* smoothstep(-0.02, 0.03, along)
 		* (1.0 - smoothstep(cast_len * 0.70, cast_len, along));
-	shadow *= clamp(ed.local_day, 0.0, 1.0) * hs.direct_visibility;
+	shadow *= clamp(ed.local_day, 0.0, 1.0) * hs.direct_visibility * cloud_visibility;
 	float glyph = max(max(body, roof), max(foundation, door));
 	if (archetype < 1.5) glyph *= step(length(q * vec2(1.0, 1.15)), 0.46);
 	if (archetype > 1.5 && archetype < 3.5) glyph *= step(abs(q.x), 0.43 + density * 0.08);
@@ -185,9 +187,10 @@ void fragment() {
 		amb_n = normalize(mix(N, hs.bent_normal, gi_bent_strength));
 		sky = terrain_horizon_apply_normal(hs.sky_visibility, N, hs.bent_normal);
 	}
-	vec3 amb = earth_sky_sh(ed.amb_col, ed.sun_col, ed.sun_dir, ed.local_day, amb_n);
+	vec3 amb = sky_ambient_srgb(ed.local_day, amb_n, ed.amb_col, ed.sun_col, ed.sun_dir);
 	float amb_gain = mix(1.0, BUILDING_MACRO_AMBIENT_GAIN, ed.local_day);
-	float ndl = max(dot(N, ed.sun_dir), 0.0) * ed.local_day * hs.direct_visibility;
+	float ndl = max(dot(N, ed.sun_dir), 0.0) * ed.local_day * hs.direct_visibility
+		* cloud_visibility;
 	float mdl = max(dot(N, -ed.sun_dir), 0.0) * ed.moon_strength;
 	vec3 building_light = (amb * amb_gain * sky
 		+ ed.sun_col * ndl * BUILDING_MACRO_SUN_GAIN

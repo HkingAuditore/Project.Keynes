@@ -24,6 +24,10 @@ var _mesh_inst: MeshInstance2D
 var _shader_key := ""
 var _tiled := false
 var _mobile_tier := -1
+var _cloud_shadow_direct := false
+var _cloud_shadow_texture: Texture2D
+var _cloud_shadow_wrap_origin_uv := 0.0
+var _cloud_shadow_wrap_period_uv := 0.0
 var _image: Image
 var _texture: ImageTexture
 var _dirty := false
@@ -57,6 +61,31 @@ func _ensure_nodes() -> void:
 func material() -> ShaderMaterial:
 	_ensure_nodes()
 	return _material
+
+
+func set_cloud_shadow_field(texture: Texture2D, direct_enabled: bool,
+		wrap_origin_uv: float, wrap_period_uv: float) -> void:
+	var shader_changed := _cloud_shadow_direct != direct_enabled
+	_cloud_shadow_direct = direct_enabled
+	if texture != null:
+		_cloud_shadow_texture = texture
+	_cloud_shadow_wrap_origin_uv = wrap_origin_uv
+	_cloud_shadow_wrap_period_uv = maxf(wrap_period_uv, 0.0)
+	if shader_changed:
+		_select_shader()
+	_push_cloud_shadow_uniforms()
+
+
+func _push_cloud_shadow_uniforms() -> void:
+	if _material == null or _material.shader == null \
+			or not _material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
+		return
+	if _cloud_shadow_texture != null:
+		_material.set_shader_parameter("cloud_shadow_tex", _cloud_shadow_texture)
+	_material.set_shader_parameter("cloud_shadow_field_bound",
+		_cloud_shadow_direct and _cloud_shadow_texture != null)
+	_material.set_shader_parameter("cloud_shadow_wrap_origin_uv", _cloud_shadow_wrap_origin_uv)
+	_material.set_shader_parameter("cloud_shadow_wrap_period_uv", _cloud_shadow_wrap_period_uv)
 
 ## styles: ResourceVisualCatalog entries (layer order). lut_dims must match dyn/enum LUTs.
 func configure(styles: Array[Dictionary], hex_size: float, lut_dims: Vector2i,
@@ -104,19 +133,22 @@ func configure(styles: Array[Dictionary], hex_size: float, lut_dims: Vector2i,
 
 ## Compile-time variants: tiled map addressing and the mobile quality tier.
 func _select_shader() -> void:
-	var key := "%s|%d" % [_tiled, _mobile_tier]
+	var key := "%s|%d|%s" % [_tiled, _mobile_tier, _cloud_shadow_direct]
 	if key == _shader_key:
 		return
 	_shader_key = key
 	var prefix := "#define MAP_VISUAL_TILED\n" if _tiled else ""
 	if _mobile_tier >= 0:
 		prefix += ["#define MOBILE_QUALITY_LOW\n", "#define MOBILE_QUALITY_MID\n", "#define MOBILE_QUALITY_HIGH\n"][clampi(_mobile_tier, 0, 2)]
+	if _cloud_shadow_direct:
+		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
 	if prefix.is_empty():
 		_material.shader = SHADER
 	else:
 		var shader := Shader.new()
 		shader.code = prefix + SHADER.code
 		_material.shader = shader
+	_push_cloud_shadow_uniforms()
 
 func set_quality(quality: int, mobile_tier: int) -> void:
 	_ensure_nodes()

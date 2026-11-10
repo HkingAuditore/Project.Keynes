@@ -304,3 +304,7 @@ architecture development guide and validation record.
   rejection without mutation, unchanged continuation, and committed roundtrip.
 - Compact/StageOps epoch preparation must observe the same current day before
   spread/cache selection; retain the optimization when checking daily parity.
+
+## Military procurement demand (2026-11-08)
+
+Economy opcode 36 retains a complete Military shortage-demand snapshot in the existing persisted pending-command queue. Reset is cell=-1/country=0/qty=0; rows name real SKU, owned market cell, quantity and normalization days. At epoch freeze recheck current treasury and other public procurement commitments; add the derived daily amounts through the generic procurement demand helpers. Do not count forecasts as sales, withdrawals, cash transfers or new stock. Derived demand vectors are rebuilt, not serialized.
