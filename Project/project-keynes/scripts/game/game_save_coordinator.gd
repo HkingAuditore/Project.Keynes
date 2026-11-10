@@ -658,14 +658,14 @@ func _can_save() -> Dictionary:
 	return _result(true, "ok", "")
 
 
-## `_can_save()` 里三段 worker 空闲判定的唯一实现：返回导致"不空闲"的那一条，
-## 空串表示空闲（可存档）。抽成函数是为了让判定顺序只存在一份，同时给每个分支
-## 一个可 grep 的短码 —— 三条以前都只报 save_requires_idle_worker。
-##
-## 判定顺序与原内联写法逐条等价：先在 STARTING/RUNNING/SAVE_PENDING 时短路，
-## 再判"已经停稳之外还留着待消费的环境帧"，最后判"一天正飞"。
+## 返回阻塞原因或空串。inline 没有后台循环更新 RUNNING，按真实日边界判断；
+## 尚未消费的未来环境帧交给 native 保存服务清空。
 func _worker_idle_blocker(thread: Dictionary) -> String:
 	var host_state := String(thread.get("simulation_host_state", "STOPPED"))
+	if bool(thread.get("native_daily_inline", false)) and host_state in ["RUNNING", "PAUSED"]:
+		if int(thread.get("worker_day_inflight", 0)) > 0:
+			return "worker_day_inflight"
+		return "inline_day_pending" if bool(thread.get("inline_day_pending", false)) else ""
 	if host_state in ["STARTING", "RUNNING", "SAVE_PENDING"]:
 		return "state_%s" % host_state.to_lower()
 	if host_state != "STOPPED" and int(thread.get("environment_ring_pending", 0)) > 0:

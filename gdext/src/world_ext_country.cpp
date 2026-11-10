@@ -203,46 +203,6 @@ Dictionary enqueue_country_host_command_batch(
 }
 } // namespace
 
-Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
-                                         const Dictionary &profile,
-                                         int cell_count, int64_t seed) {
-    delete country_runtime_from(_country_query_runtime);
-    _country_query_runtime = nullptr;
-    _country_query_snapshot.reset();
-    if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
-    if (_modifier_runtime != nullptr)
-        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
-            country_runtime_from(_country_runtime));
-    if (_effect_runtime != nullptr) {
-        static_cast<EffectRuntime *>(_effect_runtime)->attach_country_runtime(
-            country_runtime_from(_country_runtime));
-        country_runtime_from(_country_runtime)->attach_effect_runtime(
-            static_cast<EffectRuntime *>(_effect_runtime));
-    }
-    // Attach unconditionally: configure_country can run before the Effect
-    // catalog exists (bootstrap_economy creates the country runtime first), and
-    // a null forwarder simply leaves the legacy door in charge. The Effect
-    // configure path re-attaches once the forwarder is real.
-    country_runtime_from(_country_runtime)->attach_effect_forwarder(
-        _effect_forwarder.get());
-    country_runtime_from(_country_runtime)->attach_modifier_runtime(
-        static_cast<ModifierRuntime *>(_modifier_runtime));
-    Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);
-        if (_economy_runtime != nullptr) {
-            static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_country_runtime(
-                country_runtime_from(_country_runtime));
-            country_runtime_from(_country_runtime)->attach_economy_runtime(
-                static_cast<NativeEconomyRuntime *>(_economy_runtime));
-            if (_runtime_host != nullptr)
-                static_cast<NativeEconomyRuntime *>(_economy_runtime)
-                    ->attach_simulation_host(_runtime_host.get());
-        }
-    if (_runtime_host != nullptr)
-        country_runtime_from(_country_runtime)->attach_simulation_host(
-            _runtime_host.get());
-    return out;
-}
-
 Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
                                          const PackedByteArray &is_water) {
     if (_country_runtime == nullptr) return country_unavailable();
@@ -1034,13 +994,23 @@ Dictionary DCWorldExt::capture_country_runtime_snapshot() {
     }
     RuntimeCountryPodSnapshot snapshot;
     std::string error;
-    if (!country_runtime_from(_country_runtime)->export_pod_snapshot(snapshot, error)) {
+    std::shared_ptr<const RuntimeCountryPodSnapshot> committed;
+    if (_runtime_host && _runtime_host->execution_has_stopped()) {
+        const auto previous = _runtime_host->report();
+        const auto country = runtime_domain_mask(RuntimeDomainId::COUNTRY);
+        if (_runtime_host->country_authority_owner_is_worker() ||
+            (previous.mode == RuntimeSimulationMode::ACTIVE && _runtime_host->has_started_once() &&
+             (previous.requested_authority_mask & country) != 0u))
+            committed = _runtime_host->country_economy_audit_snapshot();
+    }
+    if (committed) snapshot = *committed;
+    else if (!country_runtime_from(_country_runtime)->export_pod_snapshot(snapshot, error)) {
         out["ok"] = false;
         out["code"] = error.empty() ? "country_snapshot_capture_failed" : error.c_str();
         return out;
     }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
-    if (!_runtime_host->publish_country_snapshot(snapshot)) {
+    if (!committed && !_runtime_host->publish_country_snapshot(snapshot)) {
         out["ok"] = false;
         out["code"] = "country_snapshot_validation_failed";
         return out;

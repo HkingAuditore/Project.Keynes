@@ -94,13 +94,43 @@ func _run() -> void:
 
 	# M6: paused/idle boundary accepts the switch and publishes a full audit.
 	var idle: Dictionary = _ext.start_runtime_worker({
-		"simulation_thread_mode": "SHADOW",
+		"simulation_thread_mode": "ACTIVE",
 		"graph_coverage_complete": true,
+		"authoritative_domain_mask": 0x801,
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
 	})
 	_expect("M6 idle worker starts", bool(idle.get("ok", false)))
+	var retained: Dictionary = _ext.get_runtime_thread_report()
+	_expect("M6 restart retains the admitted mutation",
+		int(retained.get("economy_pending_command_count", -1)) == 1)
+	var still_pending: Dictionary = _ext.switch_economy_authority(
+		"POD_ACTIVE_WITH_LEGACY_PARITY")
+	_expect("M6 restart cannot bypass the pending-command gate",
+		not bool(still_pending.get("ok", true))
+		and String(still_pending.get("code", "")).contains("epoch_boundary"))
+	# A restart preserves accepted work. Reach the boundary by actually settling
+	# the command, rather than relying on the former stop/start queue loss.
+	_expect("M6 command execution receives a sealed input", _ext.capture_runtime_inputs({
+		"generation": 1, "day": 1, "terrain": PackedByteArray([1]),
+		"landform": PackedByteArray([0]), "has_river": PackedByteArray([0]),
+		"neighbor_indices": PackedInt32Array([-1, -1, -1, -1, -1, -1])}).get("ok", false))
+	_ext.set_runtime_clock(false, 100.0)
+	var settled := false
+	var deadline := Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline and not settled:
+		for receipt in _ext.poll_runtime_receipts(16).get("receipts", []):
+			if int(receipt.get("request_id", 0)) == 7001:
+				settled = true
+		await process_frame
+	_ext.set_runtime_clock(true, 0.0)
+	while Time.get_ticks_msec() < deadline:
+		var report: Dictionary = _ext.get_runtime_thread_report()
+		if report.get("simulation_host_state", "") == "PAUSED" and int(report.get("worker_day_inflight", 1)) == 0:
+			break
+		await process_frame
+	_expect("M6 retained mutation settles before the idle switch", settled)
 	var switched: Dictionary = _ext.switch_economy_authority(
 		"POD_ACTIVE_WITH_LEGACY_PARITY")
 	_expect("M6 accepts epoch-boundary switch", bool(switched.get("ok", false)))

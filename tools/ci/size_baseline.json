@@ -1,178 +1,6 @@
 {
   "version": 1,
   "files": {
-    "gdext/src/country_runtime.cpp": {
-      "lines": 11463,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime.h": {
-      "lines": 2408,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_building_employment.cpp": {
-      "lines": 3802,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_building_investment.cpp": {
-      "lines": 5738,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_building_production.cpp": {
-      "lines": 3813,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_catalog.cpp": {
-      "lines": 3020,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_colonization.cpp": {
-      "lines": 2738,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_colonization_kit.cpp": {
-      "lines": 2060,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_diagnostics.cpp": {
-      "lines": 2976,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_family_buff.cpp": {
-      "lines": 3119,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_market.cpp": {
-      "lines": 3005,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2209,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_persistence_read.cpp": {
-      "lines": 3107,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_queries_market_building.cpp": {
-      "lines": 3008,
-      "limit": 2000
-    },
-    "gdext/src/economy_runtime_trade.cpp": {
-      "lines": 3018,
-      "limit": 2000
-    },
-    "gdext/src/effect_runtime.cpp": {
-      "lines": 8479,
-      "limit": 2000
-    },
-    "gdext/src/ideology_runtime.cpp": {
-      "lines": 8302,
-      "limit": 2000
-    },
-    "gdext/src/military_core.cpp": {
-      "lines": 3990,
-      "limit": 2000
-    },
-    "gdext/src/modifier_runtime.cpp": {
-      "lines": 2825,
-      "limit": 2000
-    },
-    "gdext/src/native_simulation_host.h": {
-      "lines": 2154,
-      "limit": 600
-    },
-    "gdext/src/runtime_climate_kernel.cpp": {
-      "lines": 3422,
-      "limit": 2000
-    },
-    "gdext/src/runtime_climate_passes.cpp": {
-      "lines": 5615,
-      "limit": 2000
-    },
-    "gdext/src/runtime_climate_passes.h": {
-      "lines": 2021,
-      "limit": 2000
-    },
-    "gdext/src/runtime_climate_physics.cpp": {
-      "lines": 2296,
-      "limit": 2000
-    },
-    "gdext/src/runtime_country_pod.cpp": {
-      "lines": 2048,
-      "limit": 2000
-    },
-    "gdext/src/runtime_economy_pod.cpp": {
-      "lines": 3388,
-      "limit": 2000
-    },
-    "gdext/src/runtime_effect_pod.cpp": {
-      "lines": 3389,
-      "limit": 2000
-    },
-    "gdext/src/runtime_ideology_pod.cpp": {
-      "lines": 2679,
-      "limit": 2000
-    },
-    "gdext/src/trigger_runtime.cpp": {
-      "lines": 2102,
-      "limit": 2000
-    },
-    "gdext/src/world_ext.h": {
-      "lines": 4117,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_atlas.cpp": {
-      "lines": 2741,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_bake.cpp": {
-      "lines": 3262,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_bio.cpp": {
-      "lines": 2035,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_building_visual.cpp": {
-      "lines": 3026,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_climate.cpp": {
-      "lines": 6951,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_country.cpp": {
-      "lines": 2210,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_daily_sim.cpp": {
-      "lines": 3407,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_economy.cpp": {
-      "lines": 2860,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_generate.cpp": {
-      "lines": 6303,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_military.cpp": {
-      "lines": 3785,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_physical.cpp": {
-      "lines": 2433,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_simulation_host.cpp": {
-      "lines": 4188,
-      "limit": 2000
-    },
-    "gdext/src/world_ext_weather.cpp": {
-      "lines": 3559,
-      "limit": 2000
-    },
     "Project/project-keynes/scripts/audio/game_audio_service.gd": {
       "lines": 1294,
       "limit": 800
@@ -222,7 +50,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
-      "lines": 2960,
+      "lines": 2943,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/hex_cell.gd": {
@@ -448,6 +276,178 @@
     "Project/project-keynes/tools/migrate_technology_industry_v2.gd": {
       "lines": 1269,
       "limit": 800
+    },
+    "gdext/src/country_runtime.cpp": {
+      "lines": 11463,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime.h": {
+      "lines": 2408,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_employment.cpp": {
+      "lines": 3802,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_investment.cpp": {
+      "lines": 5738,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_building_production.cpp": {
+      "lines": 3813,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_catalog.cpp": {
+      "lines": 3020,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_colonization.cpp": {
+      "lines": 2738,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_colonization_kit.cpp": {
+      "lines": 2060,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_diagnostics.cpp": {
+      "lines": 2976,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_family_buff.cpp": {
+      "lines": 3119,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_market.cpp": {
+      "lines": 3005,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_persistence.cpp": {
+      "lines": 2209,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_persistence_read.cpp": {
+      "lines": 3107,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_queries_market_building.cpp": {
+      "lines": 3008,
+      "limit": 2000
+    },
+    "gdext/src/economy_runtime_trade.cpp": {
+      "lines": 3018,
+      "limit": 2000
+    },
+    "gdext/src/effect_runtime.cpp": {
+      "lines": 8395,
+      "limit": 2000
+    },
+    "gdext/src/ideology_runtime.cpp": {
+      "lines": 8302,
+      "limit": 2000
+    },
+    "gdext/src/military_core.cpp": {
+      "lines": 3990,
+      "limit": 2000
+    },
+    "gdext/src/modifier_runtime.cpp": {
+      "lines": 2804,
+      "limit": 2000
+    },
+    "gdext/src/native_simulation_host.h": {
+      "lines": 2147,
+      "limit": 600
+    },
+    "gdext/src/runtime_climate_kernel.cpp": {
+      "lines": 3422,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_passes.cpp": {
+      "lines": 5615,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_passes.h": {
+      "lines": 2021,
+      "limit": 2000
+    },
+    "gdext/src/runtime_climate_physics.cpp": {
+      "lines": 2296,
+      "limit": 2000
+    },
+    "gdext/src/runtime_country_pod.cpp": {
+      "lines": 2048,
+      "limit": 2000
+    },
+    "gdext/src/runtime_economy_pod.cpp": {
+      "lines": 3388,
+      "limit": 2000
+    },
+    "gdext/src/runtime_effect_pod.cpp": {
+      "lines": 3389,
+      "limit": 2000
+    },
+    "gdext/src/runtime_ideology_pod.cpp": {
+      "lines": 2679,
+      "limit": 2000
+    },
+    "gdext/src/trigger_runtime.cpp": {
+      "lines": 2102,
+      "limit": 2000
+    },
+    "gdext/src/world_ext.h": {
+      "lines": 4117,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_atlas.cpp": {
+      "lines": 2741,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_bake.cpp": {
+      "lines": 3262,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_bio.cpp": {
+      "lines": 2035,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_building_visual.cpp": {
+      "lines": 3026,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_climate.cpp": {
+      "lines": 6951,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_country.cpp": {
+      "lines": 2180,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_daily_sim.cpp": {
+      "lines": 3407,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_economy.cpp": {
+      "lines": 2860,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_generate.cpp": {
+      "lines": 6303,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_military.cpp": {
+      "lines": 3785,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_physical.cpp": {
+      "lines": 2433,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_simulation_host.cpp": {
+      "lines": 4183,
+      "limit": 2000
+    },
+    "gdext/src/world_ext_weather.cpp": {
+      "lines": 3559,
+      "limit": 2000
     }
   }
 }

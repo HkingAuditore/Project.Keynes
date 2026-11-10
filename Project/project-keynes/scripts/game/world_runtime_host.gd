@@ -1610,28 +1610,7 @@ func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 
 
 func _restart_worker_with_current_policy() -> Dictionary:
-	if _generator == null or not _generator.has_method("request_runtime_stop"):
-		return climate_authority_diagnostics()
-	_generator.request_runtime_stop()
-	var deadline := Time.get_ticks_msec() + 5000
-	while Time.get_ticks_msec() < deadline:
-		var stop_report: Dictionary = _generator.get_runtime_thread_report() \
-			if _generator.has_method("get_runtime_thread_report") else {}
-		var state := String(stop_report.get(
-			"simulation_host_state", stop_report.get("state", "STOPPED")))
-		if state in ["STOPPED", "FAULTED"]:
-			break
-		# ACTIVE Country parks on peer intents. Blocking here without pumping
-		# peer service deadlocks stop() against the worker day barrier.
-		_service_country_worker_transport()
-		_consume_country_worker_read_view_if_authoritative()
-		OS.delay_msec(1)
-	var policy: Dictionary = _resolve_climate_authority_policy()
-	if bool(policy.get("enabled", false)) \
-			and _generator.has_method("capture_country_worker_inputs"):
-		_country_worker_transport_capture = _generator.capture_country_worker_inputs()
-	_start_production_shadow_worker()
-	return climate_authority_diagnostics()
+	return _lifecycle.restart_worker_with_current_policy(self)
 
 
 ## B8-4：三态策略入口。auto 交给实测阈值，force_on/force_off 覆盖它。
@@ -1643,8 +1622,8 @@ func set_climate_authority_override(mode: String) -> Dictionary:
 	# 生效"）。重启路径自己会重新解析策略，避免半状态。
 	var restarted: Dictionary = _restart_worker_with_current_policy()
 	return {
-		"ok": true,
-		"code": "ok",
+		"ok": bool(restarted.get("ok", true)),
+		"code": String(restarted.get("code", "ok")),
 		"override": mode,
 		"policy": _resolve_climate_authority_policy(),
 		"diagnostics": restarted,
