@@ -460,28 +460,22 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
 }
 
 Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
-    if (!_runtime_host || _runtime_host->state() == RuntimeWorkerState::STOPPED) {
-        _climate_physics_committed.reset();
-        _climate_writeback_applied_generation = 0;
-        _climate_writeback_applied_day = -1;
+    // Reject before touching executor selection, parallelism or peer bindings.
+    if (_runtime_host && (_runtime_host->state() != RuntimeWorkerState::STOPPED ||
+                          !_runtime_host->execution_has_stopped())) {
+        Dictionary rejected;
+        rejected["ok"] = false;
+        rejected["pending"] = false;
+        rejected["code"] = "runtime_thread_mode_hot_switch_forbidden";
+        rejected["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        return rejected;
     }
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     // native_daily_inline：必须在 start() 之前落到 host 上，start() 读它决定
     // "起不起 worker 线程"。缺省 false —— 桌面端路径逐字节不变。
     const bool native_daily_inline = static_cast<bool>(
         config.get("native_daily_inline", false));
-    _runtime_host->set_inline_daily_mode(native_daily_inline);
-    // 内联日 = 单线程日：把 pk::parallel_for_range 的固定线程池切成串行。
-    //
-    // 不这么做，内联日里的 pk_economy_* 并行分块仍会往 NativeParallelExecutor
-    // 的 worker 派活，而 group barrier 用 `_done_cv.wait` 等它们。浏览器主线程
-    // 既不允许真阻塞（Emscripten 主线程禁 Atomics.wait，"等"只能退化成忙等或
-    // 抛异常），又可能永远等不到（wasm pthread 池已被 Godot 自己的
-    // WorkerThreadPool 占满，起不来的 worker 不会去减 _remaining_tasks）。
-    // 这两种形态都表现为"主线程再也不返回"，即页面完全挂死。
-    // 关掉内联日（桌面默认）时不改任何行为。
-    // 诊断旁路：PK_INLINE_PARALLEL=1 时即使内联日也保留线程池，用来 A/B 量
-    // "内联日 + 固定线程池" 到底多贵（浏览器挂死的现场复现/复测）。
+    // Inline uses serial dispatch; PK_INLINE_PARALLEL is the diagnostic override.
     static const bool inline_parallel_override = [] {
         const char *value = pk::runtime_switch_value(pk::RuntimeSwitch::PK_INLINE_PARALLEL);
         return value != nullptr && std::strcmp(value, "1") == 0;
@@ -508,13 +502,6 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
 #else
     const bool web_serial_only = false;
 #endif
-    set_parallel_serial_only(
-        (native_daily_inline && !inline_parallel_override) || web_serial_only);
-    if (_country_runtime != nullptr) {
-        static_cast<NativeCountryRuntime *>(_country_runtime)
-            ->attach_simulation_host(_runtime_host.get());
-    }
-    attach_country_ai_to_host();
     RuntimeSimulationMode mode = RuntimeSimulationMode::ACTIVE;
     String mode_error;
     Dictionary out;
@@ -641,12 +628,11 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
-    const RuntimeWorkerState before = _runtime_host->state();
-    if (before != RuntimeWorkerState::STOPPED) {
+    if (native_daily_inline && mode == RuntimeSimulationMode::SHADOW) {
         out["ok"] = false;
         out["pending"] = false;
-        out["code"] = "runtime_thread_mode_hot_switch_forbidden";
-        out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+        out["code"] = "runtime_worker_config_invalid";
+        out["message"] = "inline_daily_requires_active";
         return out;
     }
     // per-domain 权威：调用方点名它要 worker 拥有哪些域，缺省才是整图。
@@ -706,8 +692,6 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
-    _runtime_host->set_events_probe_enabled(events_probe_enabled);
-    _runtime_host->set_economy_execution_mode(economy_execution_mode);
     if (economy_execution_mode == EconomyExecutionMode::LEGACY_ONLY) {
         // Keep sync ECONOMY_GRAPH as the sole writer; do not grant worker ECONOMY.
         requested_authority_mask &=
@@ -769,6 +753,19 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
             return out;
         }
     }
+    _climate_physics_committed.reset();
+    _climate_writeback_applied_generation = 0;
+    _climate_writeback_applied_day = -1;
+    _runtime_host->set_inline_daily_mode(native_daily_inline);
+    set_parallel_serial_only(
+        (native_daily_inline && !inline_parallel_override) || web_serial_only);
+    if (_country_runtime != nullptr) {
+        static_cast<NativeCountryRuntime *>(_country_runtime)
+            ->attach_simulation_host(_runtime_host.get());
+    }
+    attach_country_ai_to_host();
+    _runtime_host->set_events_probe_enabled(events_probe_enabled);
+    _runtime_host->set_economy_execution_mode(economy_execution_mode);
     _runtime_host->set_economy_stage_ops_soak_experiment(
         economy_stage_ops_soak_experiment);
     _runtime_host->set_economy_production_writer(economy_production_writer);
@@ -853,13 +850,8 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
 
 // ===== native_daily_inline：单线程内联日 =====
 //
-// 背景（web/wasm 实测）：ACTIVE 请求在浏览器里会被降级成 OFF；即便强行起
-// worker，Country 域的日屏障也要等主线程把 CountryPeerIntent 泵进
-// Effect/Economy 再回传 result，而那条泵链在浏览器里不跑，于是 5s 后
-// `day_wait_peer_stall_timeout` → FAULTED，日历停在第 1 天。
-//
-// 这里去掉"两个线程"这个前提：调用线程既执行 12 域日屏障，也当 peer。所以
-// 缺 peer 时不做 CV 等待，而是当场把 Country peer 适配器推一轮再重试同一天。
+// 调用线程执行同一份十二域计划，并在重试之间服务 Country peer。
+// 不等待后台线程；主线程的同步写入口必须随已提交的归属一并更新。
 Dictionary DCWorldExt::run_native_daily_inline_day() {
     Dictionary out;
     if (!_runtime_host) {
@@ -950,6 +942,9 @@ Dictionary DCWorldExt::run_native_daily_inline_day() {
         // 再试同一天只会原样失败。
         if (peer_report.inspected == 0u) break;
     }
+    // Inline earns its first grants inside the call. Deliver them before the
+    // main-thread save/should_run gates can advance a stale sync facade.
+    sync_runtime_domain_ownership();
     const double elapsed_ms = ms_since(started);
     const RuntimeThreadReport report = _runtime_host->report();
     out["ok"] = outcome.committed;

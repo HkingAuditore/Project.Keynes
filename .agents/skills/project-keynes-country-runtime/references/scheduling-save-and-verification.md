@@ -1,5 +1,33 @@
 # Scheduling, save, and verification
 
+## Executor lifecycle (2026-11-09)
+
+Country has separate world and executor lifetimes. A stopped ACTIVE executor with the same
+requested domains resumes its existing stores, pending commands, frozen day input, and unclaimed
+receipts through `native_simulation_host_lifecycle.cpp`. Country recapture uses the last sealed
+native snapshot; publishing an identical catalog preserves its request and terminal ledgers.
+
+`DCWorldExt::configure_country` on an already-started object begins a new world and requires
+`simulation_executor_exited`. It validates a private candidate before reconfiguring the original
+Country object, preserving its address and advancing its session epoch. A new Host seeds its
+Country protocol epoch from the old Host before startup advances it; a same-world restart keeps it.
+Before detaching anything, `make_new_world_host` validates a candidate containing the current
+Modifier, Effect, Trigger, and Ideology definitions plus Modifier stable-key bindings. It copies
+no instances, queues, receipts, frozen inputs, opinions, snapshots, or observation cursors.
+It detaches Economy's borrowed OwnedState before replacing Host, clears world state in the
+rule facades, then reconnects the adapters. Effect/Modifier observation cursors reset with
+module state; same-world executor restart does not reset them. Other world modules retain
+their existing setup paths. Formal policy restart waits for actual executor return
+and propagates errors through `world_runtime_lifecycle.gd`.
+
+Validate `runtime_world_rules_rebuild_test.gd` (actual Effect/Modifier values and Trigger
+outputs across three worlds, including reused definitions, in both worker and inline),
+`runtime_world_lifecycle_test.gd`, `runtime_executor_boundary_test.gd`, and
+`runtime_inline_coordinator_save_test.gd`; the formal test compares the entire next-day economy
+after save/load and repeated restart, and checks populated stores across owner replacement.
+Current schema numbers and evidence live in `docs/architecture/current-state.md` and
+`docs/architecture/migration.md`; the older schema description below is historical.
+
 As of 2026-09-08, the exact schemas are PKCN v13, PKEF v11, PKTR v6, and PKEC v51. PKCN restores
 before PKEC; incompatible Country, Effect, Trigger, technology, signal, recipe, or content-binding
 identity is rejected explicitly. Version numbers here describe the current tree, not a compatibility

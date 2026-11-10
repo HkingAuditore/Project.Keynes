@@ -44,12 +44,12 @@ class NativeEconomyRuntime;
 class CountryAiRuntime;
 class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort {
 public:
-    NativeSimulationHost();
+    explicit NativeSimulationHost(uint64_t previous_country_session_epoch = 1);
     ~NativeSimulationHost();
-
+    bool has_started_once() const noexcept { return _has_started_once.load(std::memory_order_acquire); }
     NativeSimulationHost(const NativeSimulationHost &) = delete;
     NativeSimulationHost &operator=(const NativeSimulationHost &) = delete;
-
+    std::unique_ptr<NativeSimulationHost> make_new_world_host(std::string &error) const;
     // Hot-path gates need only these atomics. Do not construct the diagnostic
     // report (timers, transport queues and domain snapshots) to read a grant.
     struct ControlState {
@@ -107,17 +107,7 @@ public:
     void set_interactive(bool interactive);
     // ===== native_daily_inline（单线程内联日） =====
     //
-    // Web/wasm 上没有可用的 worker 线程：
-    //   * ACTIVE 请求会被 per-domain 门降级成 OFF（报告里 "OFF" 配 requested
-    //     "ACTIVE"），日历不推进；
-    //   * 即使强行起线程，Country 域的日屏障要等主线程把 `CountryPeerIntent`
-    //     泵进 Effect/Economy 再回传 result，浏览器里这条泵链不跑，5s 后
-    //     `day_wait_peer_stall_timeout` → FAULTED。
-    //
-    // 打开这个开关后 `start()` 不再 spawn pthread，`run_inline_day()` 由调用线程
-    // （主线程）逐日把同一个 RuntimeDayPlan 屏障走完：build_day_plan →
-    // execute_day_plan → 日尾 publish_day。peer 就是本线程，所以日屏障里所有
-    // "等人"的分支都不会进入，也不需要 5s 超时兜底。
+    // 打开后由调用线程执行同一份 RuntimeDayPlan，并在重试间服务 peer。
     //
     // 关掉时行为与之前逐字节相同：`start()` 照旧 spawn worker，`run_inline_day()`
     // 直接拒绝。桌面端默认关闭。
@@ -126,6 +116,9 @@ public:
     }
     bool inline_daily_mode() const noexcept {
         return _inline_daily_mode.load(std::memory_order_acquire);
+    }
+    bool inline_day_pending() const noexcept {
+        return _inline_day_pending.load(std::memory_order_acquire);
     }
     // P2：Country peer 由 worker 自己发起（deferred）。默认 false ⇒ 今天的行为
     // 逐字节不变：intent 只入 `_country_worker_intent_queue`，由主线程泵执行。
@@ -978,7 +971,7 @@ public:
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;
     bool request_save(uint64_t request_id);
-    std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id) const;
+    std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id);
     bool save_failed(uint64_t request_id) const {
         return request_id != 0 &&
             _save_failed_request_id.load(std::memory_order_acquire) == request_id;
@@ -1064,8 +1057,7 @@ public:
     // that earned the grant are still installed and a restart resumes on exactly
     // that state. A restart re-publishes `lifetime_granted_mask() & requested`.
     //
-    // A FRESH start reads zero here and therefore keeps the deferred
-    // 0x000-until-first-commit behaviour: no day has ever proven the handlers.
+    // Fresh worlds keep zero until their first committed day.
     uint32_t lifetime_granted_mask() const {
         return _authority_control.snapshot().proven_mask;
     }
@@ -1183,8 +1175,7 @@ private:
     // the last instruction of the old worker.
     bool reap_completed_worker_nonblocking();
     void worker_main();
-    // 内联日与 worker 日循环共用同一条命令准入。不同点只有一处：内联模式没有
-    // worker 本地 pending 列表，未来日的命令必须原样回队列，否则会被当成今天执行。
+    // Inline and worker preserve accepted backlogs and share the ordering rule.
     void drain_inline_day_commands(int64_t day,
                                    std::vector<RuntimeCommandPacket> &day_commands,
                                    std::vector<RuntimeCommandReceipt> &day_receipts,
@@ -1284,6 +1275,8 @@ private:
             const char *reason, bool include_superseded_ai = false);
     void retire_country_ai_ingress(const std::vector<RuntimeCommandPacket> &packets);
     bool pop_command(RuntimeCommandPacket &out);
+    bool launch_executor(bool paused);
+    bool resume_same_world_executor(double speed, bool paused);
     bool push_receipt(const RuntimeCommandReceipt &receipt);
     void publish_day(int64_t from_day, int64_t day,
                      const RuntimeDayCommit &day_commit,
@@ -1316,6 +1309,10 @@ private:
             const uint8_t *bytes, size_t size, std::string &error);
     void build_save_bundle(uint64_t request_id,
                            const std::vector<RuntimeCommandPacket> &pending_commands);
+    bool service_save_request(std::vector<RuntimeCommandPacket> &pending_commands);
+    void service_inline_save_request();
+    void seed_executor_command_orders();
+    static bool command_packet_before(const RuntimeCommandPacket &a, const RuntimeCommandPacket &b);
 
     struct CommandQueueSlot {
         std::atomic<uint64_t> sequence{0};
@@ -1701,22 +1698,18 @@ private:
 
     std::atomic<bool> _save_requested{false};
     std::atomic<uint64_t> _save_request_id{0};
-    // A published bundle is consumed exactly once by the facade.  Keeping the
-    // acknowledgement separate from _save_request_id prevents a completed
-    // request from being returned forever by repeated UI polling.
+    // Separate acknowledgement makes each published bundle consumable once.
     mutable std::atomic<uint64_t> _save_consumed_request_id{0};
     std::atomic<uint64_t> _save_failed_request_id{0};
-    // Why the last save request produced no bundle. Separate from _fault_code
-    // because some rejections (a save before the first economy commit) leave
-    // the runtime healthy and must not fault the worker.
+    // Save rejection may leave a healthy runtime; it is separate from _fault_code.
     std::array<std::atomic<char>, 64> _save_failure_reason{};
     std::shared_ptr<const RuntimeSaveBundle> _save_bundle;
     RuntimeSaveBundle _pending_restore_bundle;
     bool _has_pending_restore = false;
-    // Filled by the main-thread restore boundary before the worker starts;
-    // consumed exactly once at worker entry, then owned by the worker-local
-    // pending command vector.
-    std::vector<RuntimeCommandPacket> _worker_initial_pending_commands;
+    // Accepted world backlog; the active executor has exclusive access.
+    std::vector<RuntimeCommandPacket> _executor_pending_commands;
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> _executor_day_environment;
+    std::atomic<bool> _inline_day_pending{false};
     std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 
     std::atomic<uint64_t> _command_queue_capacity_exceeded{0};

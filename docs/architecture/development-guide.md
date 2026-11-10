@@ -81,6 +81,13 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 - 新增影响后续日推进的状态（包括小数余量、逐格日期、发布记忆、被实际读取的兼容副本、请求/ACK 游标、编号游标）：先确定所有者，在原 commit 边界冻结副本，升段内版本，严格校验长度、有限性、内容身份，完整解码后才安装，旧版本以明确错误拒绝。能由 catalog 无副作用重建的缓存在恢复时重建。
 - 验证：新段逐字节往返、其他业务段逐字节不变、非空字段往返、旧版拒绝测试、checkpoint 逐日比较读档后至少八日。不能用整数投影或落后的显示镜像代替所有者继续态，不能改哈希算法来让回放通过，不能删字段或放宽比较。
 - 保存只在已提交安全边界进行（`GameSaveCoordinator._save()` 统一等待；`inflight_save_boundary_test` 覆盖），不从 provider 直接捕获 Plan 中间状态。读档失败不能换新世界或继续半恢复的会话。
+- 修改执行器保存或命令交接时，复用 `native_simulation_host_executor_boundary.cpp` 的共同服务与排序规则。inline 的保存处理也必须取得日边界锁，并检查跨调用的未完成日标记；不能仅以当前没有 C++ 调用正在执行来认定可保存。运行 `runtime_inline_save_restore_test.gd`，覆盖后台/inline 四种存读档组合、未来命令、一次性回执、重复保存、未完成日和保存失败。命令超出 PKSR 既定容量时要明确失败并保留全部命令，检查处理完命令后可再次保存，不能静默截断。
+- 正式 inline 保存还必须运行 `runtime_inline_coordinator_save_test.gd`，覆盖运行中/暂停时保存、读档后继续及经济状态比较。协调器按 `inline_day_pending` 和真实调用边界判断，不能要求 inline 的 RUNNING 自动变成 PAUSED。
+- 停止、保存及时钟控制条件统一经 `runtime_control_wakeup` 在等待锁内发布。`runtime_control_wakeup_test.cpp` 固定检查与等待之间的窗口；`runtime_executor_boundary_test.gd` 验证实际停止通知、四种执行器重启组合、入口及待执行命令、编号连续、一次性结算，以及启动拒绝后原会话可继续。待执行列表归世界，停止不能销毁，重启不能清空；重复或无效启动必须先拒绝再修改配置。
+- CLOCK_WAIT 必须带停止、保存、暂停与速度变化的条件检查；仅把通知放在锁内仍不能保护无条件的计时等待。执行器测试覆盖单次控制通知、inline+SHADOW 拒绝后的存档恢复，以及未完成日跨后台/inline 替换后的冻结输入和保存阻止。
+- `runtime_world_lifecycle_test.gd` 区分同一世界重启与复用对象创建新世界，检查已提交国家状态、未领取确认、连续日期、新世界命令隔离及运行中拒绝重配；新世界身份编号必须递增，无效配置（包括后段校验失败）保留旧世界及其编号。正式 inline 用例还在保存恢复后重复应用策略，并逐项比较国家状态及下一日整份经济哈希。保留这些比较，不能只检查重启成功或名称未变。`runtime_world_rules_rebuild_test.gd` 另在后台和 inline 各覆盖三代新世界：规则在 Country 前配置、规则内容变化、直接复用定义、无效配置后旧世界续跑。检查实际 Effect 执行与 Modifier 数值、Trigger 输出及规则快照接收，并确认旧实例/事件没有混入；仅有日期推进或 ready=true 不算规则生效。
+- 相同 ACTIVE 授权范围的重启走 `native_simulation_host_lifecycle.cpp`，只替换执行器，世界状态与日内继续位置不重建。新世界由停止后的 `configure_country` 建立：先在私有候选中验证，成功后再配置原 Country 对象，保持地址稳定及 session epoch 递增。新 Host 从旧 Host 带入回复协议编号作为起点，首次启动再递增，不能让旧回复与新请求复用身份；同一世界重启保持原编号。替换前用 `make_new_world_host` 把当前已验证的 Modifier、Effect、Trigger、Ideology 规则定义及 Modifier 稳定键映射安装到私有候选中，任何失败都保留旧世界。规则定义与世界状态分开：不复制旧实例、请求、回执、输入、意见、快照或读取进度。替换成功时清理规则主线程对象中的旧世界状态，Effect/Modifier 的快照读取进度必须随状态清理重置，不能保留成新世界首份结果的拒收门槛。替换 Host 前必须解除经济对其 OwnedState 的借用，并重新连接 Country/Economy/Effect 适配层。重复捕获相同 Country 目录不能清掉终态确认；新世界和读档才更换相应记录。
+- 手动推进后台日的测试必须同时运行生产的结果接收步骤。`ideology_save_worker_authority_test.gd` 在等待中调用宿主的 `_service_runtime_liveness`，日提交后再接收一次结果，然后重建逐格效果。只等待后台日期变大、不接收新快照，会把旧的主线程显示状态误判为业务失败；不能靠增加天数或放宽比较掩盖。
 
 ## 会话与宿主脚本
 
@@ -109,7 +116,7 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 - 军事部队编成：地块军事页从格快照中的本国驻军 lots 形成 `army.create` 请求；PlayerController 复核本国领土与占领状态，GDScript 不直接改写驻军或部队。入口与请求契约见 `docs/ui/military-cell-tab.md`。
 
 - 会话扩展用 `WorldRuntimeHost.register_session_module`（`world_session.gd` 管准备、取消、关闭）；保存扩展用 `game_save_coordinator.gd` 的 `register_state_module(provider, restore_after)`。
-- `world_runtime_host.gd` 只保留公开入口、信号和状态转发；生成/恢复、日推进、GM/录制、视觉查询、生命周期在 `world_runtime_generation_adapter.gd`、`world_runtime_daily_adapter*.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_visual_adapter.gd`、`world_runtime_lifecycle.gd`。
+- `world_runtime_host.gd` 只保留公开入口、信号和状态转发；生成/恢复、日推进、GM/录制、视觉查询、生命周期在 `world_runtime_generation_adapter.gd`、`world_runtime_daily_adapter*.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_visual_adapter.gd`、`world_runtime_lifecycle.gd`。策略重启也由生命周期组件执行，必须等执行器真实退出，并传回捕获或启动失败。
 - GM 的 `ui.suppress_popups` 必须同时阻止事件/年报/时代奖励/家族创立/理念抽取流程进入暂停展示路径，并在运行时切换时清理已锁定弹窗；新增 UI 屏蔽开关应经 `gm_toggle_changed` 接入 PlayerGame，由 `GameUIManager` 保存并恢复层可见性，GM 面板保持可用。
 - 叙事自动选择/确认未取得弹窗暂停锁时不得恢复 `_was_paused` / `_previous_speed`：它们可能是默认值或上一事件的快照。`NarrativeEventFlow` 仅在持有 `locked` / `reopen_pending` 时登记恢复，`restore_pending` 消费一次；其他弹窗忙碌时延后释放。回归入口：`tests/game/narrative_popup_suppression_test.gd`，覆盖连续事件、手动暂停、倍速、运行中切换屏蔽、读档弹窗和故障锁。
 - 组件只接收窄 Callable/RefCounted 依赖，不持有整个 host，不建立第二个日推进入口。传给信号和存档服务的回调必须是 host 绑定的 Callable，不能是组件自身的未绑定方法。停止顺序：先停执行器、等 `simulation_executor_exited`，再释放资源。
@@ -150,7 +157,10 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 
 ```bash
 /Users/herh/.local/bin/scons -C gdext platform=macos target=template_debug arch=arm64 dev_build=no -j8
+/Users/herh/.local/bin/scons -C gdext platform=macos target=template_release arch=arm64 dev_build=no -j8
 ```
+
+交付已追踪的 macOS arm64 程序库时，两种配置都要重编。编辑器默认只加载 debug，不能据此判定 release 可用。运行 `check_macos_runtime_extension.py --godot … --library <程序库绝对路径> --log-dir <新>`，它在临时小项目中加载指定库，复用完整的 inline/后台存读档用例并核对 PKSR v5；不会改正式项目的扩展映射。
 
 | 检查 | 命令要点 | 何时必须跑 |
 |---|---|---|

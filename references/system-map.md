@@ -609,12 +609,19 @@ debug recording is Economy CSV v22.
 - TriggerRuntime: `gdext/src/trigger_runtime.{h,cpp}`, `world_ext_trigger.cpp`,
   `scripts/trigger/trigger_facade.gd`, `trigger_daily_system.gd`; PKTR provider in
   `game_save_coordinator.gd`.
-- EffectRuntime: `gdext/src/effect_runtime.{h,cpp}`, `world_ext_effect.cpp`,
+- EffectRuntime: `gdext/src/effect_runtime.{h,cpp}`, `effect_runtime_lifecycle.cpp`, `world_ext_effect.cpp`,
   `scripts/effect/`, `effect_runtime_system.gd`; PKEF provider in
   `game_save_coordinator.gd`. It owns packed effect programs, instances,
   frozen snapshots, plans, transactions, durable external bindings and ACK
   cursors. Native adapters stage Country/Economy POD commands and journal
   `PUBLISH_EVENT`; domain owners retain every authoritative mutation.
+- Rule world lifecycle: `native_simulation_host_lifecycle.cpp::make_new_world_host`
+  installs only validated Modifier/Effect/Trigger/Ideology definitions and Modifier
+  stable-key bindings into a new Host before the old one is detached. Rule facades
+  clear old world state; `modifier_runtime_lifecycle.cpp` and
+  `effect_runtime_lifecycle.cpp` reset their observation cursors with that state.
+  A same-world executor restart preserves it. The worker and inline functional
+  checks are in `tests/runtime/runtime_world_rules_rebuild_test.gd`.
 
 - Economy trade implementation: `gdext/src/economy_runtime_trade.cpp`; the root
   `economy_runtime.cpp` retains only trade stage orchestration and cross-stage

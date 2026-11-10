@@ -24,6 +24,17 @@ import shutil
 
 
 class GuardsTest(unittest.TestCase):
+    def test_control_wakeup_check_to_wait_transition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            exe = Path(directory) / 'control-wakeup-test'
+            compiler = shutil.which('clang++') or shutil.which('g++')
+            self.assertIsNotNone(compiler)
+            subprocess.run([compiler, '-std=c++17', '-pthread',
+                            '-I' + str(resolve_apply.ROOT / 'gdext/src'),
+                            str(resolve_apply.ROOT / 'gdext/tests/runtime_control_wakeup_test.cpp'),
+                            '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True, timeout=10)
+
     def test_resolve_apply_actual_source_negatives(self):
         data=json.loads((resolve_apply.ROOT/resolve_apply.REGISTRY).read_text())
         with tempfile.TemporaryDirectory(dir='/tmp/keynes-arch-phase1') as directory:
@@ -524,6 +535,32 @@ class GuardsTest(unittest.TestCase):
             # Reasons are mandatory and entries must exist.
             self.assertEqual(len(module_api.check_shared(root, {"metric_mask.h": " "})), 1)
             self.assertEqual(len(module_api.check_shared(root, {"missing.h": "x"})), 1)
+
+    def test_module_api_angle_brackets_do_not_hide_project_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (src / "economy_api.h").write_text('#include <cstdint>\n')
+            (src / "economy_runtime.h").write_text('#pragma once\n')
+            (src / "country_runtime.h").write_text('#pragma once\n')
+            peer = src / "world_runtime_query.cpp"
+            contract = {"module": "economy", "api_headers": ["economy_api.h"],
+                        "internal_header_patterns": ["economy_runtime*.h"],
+                        "owner_file_patterns": ["economy_*"],
+                        "composition_roots": {}, "legacy_includers": []}
+            for include in ['"economy_runtime.h"', '<economy_runtime.h>',
+                            '<./economy_runtime.h>']:
+                peer.write_text('#include ' + include + '\n')
+                self.assertTrue(module_api.check_contract(root, contract), include)
+            peer.write_text('#include <economy_api.h>\n')
+            self.assertEqual(module_api.check_contract(root, contract), [])
+            (src / "economy_api.h").write_text('#include <country_runtime.h>\n')
+            self.assertTrue(module_api.check_contract(root, contract))
+            (src / "metric_mask.h").write_text('#include <country_runtime.h>\n')
+            self.assertTrue(module_api.check_shared(root, {"metric_mask.h": "value contract"}))
+            (src / "metric_mask.h").write_text('#include <cstdint>\n')
+            self.assertEqual(module_api.check_shared(root, {"metric_mask.h": "value contract"}), [])
 
     def test_api_header_references_are_contracts_but_forward_handles_are_not(self):
         with tempfile.TemporaryDirectory() as directory:

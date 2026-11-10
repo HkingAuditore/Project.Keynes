@@ -27,6 +27,7 @@
 | Military | `military_bridge.h`（纯 C++ 契约） | 0 | 2：`world_ext.cpp`、`world_ext_military.cpp` | — |
 
 - **接口头**只放 POD、枚举、常量、前向声明和 `<module>_api::` 自由函数；能包含系统头、其他模块的 `*_api.h` 和登记过的共享契约头。`struct XApi` 是运行时类的基类，运行时内部写法不变；外部写 `XApi::CONST`。
+- 引号和尖括号引用都检查模块内部头。`gdext/src` 搜索路径中实际存在的头不因使用尖括号而变成系统头；接口和共享契约也适用此规则。
 - **转发函数** `pk::x_api::fn(const Runtime&, ...)` 每个只转发一个成员，按调用方分组（`// ---- <调用方> (<文件>)`）。需要完整类型的操作（复制、移动、析构）也用转发：`modifier_api::copy_runtime` 返回带自定义删除器的 `ModifierRuntimeCopy`，`replace_runtime` 移动赋值；`attach_country_runtime/attach_economy_runtime` 的参数是 `void*`，因为在接口头里写对方的类名会给依赖棘轮新增 header 引用。
 - **共享契约头**（`tools/ci/module_api_shared.json`，6 个）：`metric_mask.h`、`effect_selector_cap.h`、`country_read_view.h`、`derived_cell_layer.h`、`country_fiscal_return_intent.h`、`country_procurement_intent.h`。它们只能包含系统头或其他共享头。
 - **组合根**：构造或拥有运行时的宿主（`native_simulation_*`）和绑定层（`world_ext*`），只减不增，每项写原因。

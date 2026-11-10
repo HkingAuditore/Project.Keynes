@@ -91,7 +91,8 @@ const char *runtime_domain_fault_tag(RuntimeDomainId domain) noexcept {
 
 }
 
-NativeSimulationHost::NativeSimulationHost() {
+NativeSimulationHost::NativeSimulationHost(uint64_t previous_country_session_epoch)
+    : _country_worker_session_epoch(std::max<uint64_t>(1u, previous_country_session_epoch)) {
     _pod_visual_intents.reserve(RUNTIME_DOMAIN_INTENT_CAPACITY);
     _pod_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     for (auto &sequence : _producer_sequences) {

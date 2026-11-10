@@ -62,7 +62,7 @@ Godot 4.6.2 / OpenGL Compatibility 隔离渲染探针：云影、桌面天气云
 尚未覆盖正式会话长时间画面、移动设备性能和浏览器实际渲染。机制见
 [云影的世界空间连续性](../cpp-dots-runtime/vision-fog-and-borders.md#云影的世界空间连续性)。
 
-核查日期：2026-11-05。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
+核查日期：2026-11-09。本页只写今天源码里是什么样，以及有哪些运行证据；目标方向见 [design.md](design.md)，迁移进度和待办见 [migration.md](migration.md)。代码与本页不符时以代码和可复现的运行结果为准。
 
 范围：正式玩家会话请求 ACTIVE、十二域掩码 `0xFFF`。“请求 ACTIVE”“实际授权”“POD_ACTIVE”是三件不同的事。
 
@@ -164,6 +164,16 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 
 完整存档 PKSV 由 `game_save_coordinator.gd` 统一等待安全边界后保存；脚本侧 provider 登记在 `world_state_modules.gd`，C++ 段契约在 `tools/ci/cpp_save_section_contracts.json`。开发期不兼容旧档：旧版本明确拒绝，不静默填默认值。
 
+后台与原生 inline 共用 `native_simulation_host_executor_boundary.cpp` 的保存服务：冻结已接收的命令，丢弃可重新生成的未来环境帧，构建 PKSR，并明确发布成功或失败。保存、停止和时钟控制通过 `runtime_control_wakeup.h` 在后台等待所用的锁内发布条件，防止检查条件与进入等待之间漏收通知。后台在日循环的空闲边界保存；inline 在 request/poll 时尝试取得同一把日边界锁，并安装相同的执行上下文。inline 的未完成日标记跨调用保留，整日提交后才清除，因此不能在两次续算调用之间捕获半完成状态。
+
+`_executor_pending_commands` 与未完成日的 `_executor_day_environment` 属于世界，由当前执行器独占访问。后台和 inline 共用待执行列表及冻结输入；停止不销毁它们。`native_simulation_host_lifecycle.cpp` 负责执行器启动：同一世界保持 ACTIVE 且授权范围不变时，只更换执行器，保留业务状态、日期、编号、确认结果、发布游标和日内继续位置；不重新初始化已提交的域。未完成日标记也随后台/inline 交接，不能在替换执行器后保存半日状态。
+
+新世界与重启分开：已启动过的 `DCWorldExt` 再 `configure_country` 时，先要求执行器确实退出，并在私有候选对象中验证配置；失败保留旧世界。成功后解除经济对旧 OwnedState 的借用，替换 Host 并重新连接适配层，Country 对象地址保持稳定，区分新旧世界的 session epoch 继续递增，新的 Host 回复协议编号也从旧值继续增加；同一世界重启则保持编号。`make_new_world_host` 在替换前重新验证并安装已配置的 Modifier、Effect、Trigger、Ideology 规则定义，以及 Modifier 稳定键到内部编号的映射；不复制旧实例、命令、确认记录、输入、意见、快照或读取进度。主线程的规则对象也清理旧实例和读取进度，使新世界从较小编号发布的结果可立即接收；同一世界重启不执行这项清理。Effect 与 Modifier 的状态清理分别集中在 `effect_runtime_lifecycle.cpp` 和 `modifier_runtime_lifecycle.cpp`。旧世界日期及授权证明不会进入新世界。读档则安装存档中的世界状态。未来命令及需要重试的命令不重新挤入实时入口。保存格式仍为 PKSR v5；待执行命令超过原有 4096 条容量时明确拒绝保存并保留现场全部命令。
+
+同一世界重新捕获 Country 输入时，已由原生运行时接管的国家状态取自最近一次已提交副本，不覆盖成冻结的旧同步副本；重复发布同一内容身份的目录不清除请求及确认记录。新的国家配置会经过上述新世界入口。CLOCK_WAIT 在等待锁内复查停止、保存、暂停和速度变化；通知早于实际等待也不会遗失。
+
+正式保存入口按 `worker_day_inflight` 和 `inline_day_pending` 判断 inline 的真实日边界，不能把无后台线程更新的 RUNNING 状态当成仍在计算。inline 返回前同步首次提交授予的归属，关闭 Country/Economy 的旧同步写入口。正式策略重启由 `world_runtime_lifecycle.gd` 等待 `simulation_executor_exited` 后再捕获并启动，失败会传回设置入口。`get_runtime_thread_report` 提供 `executor_serial_only` 检查调用线程的并行配置。重复启动及 inline+SHADOW 冲突在修改执行方式、并行设置、绑定或消耗待恢复存档之前拒绝。
+
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
@@ -196,11 +206,11 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 - 保存续跑（`check_committed_replay.py --checkpoint --trace`、`check_replay_matrix.py`）：不中断、重放、保存不中断、另进程读档四条轨迹逐日比较，读档后至少八日。默认矩阵 4 个场景：save1、calendar5、multicountry5、military20；`--military-annual` 单跑 military365（真实年度自动存档，受时序影响不稳定，见 migration 已知问题）；`--full` 另加 save2/5/9 与 mixed5；`--annual` 保存第 365 日；`--annual-neighbors` 保存 364/366（手动档）。
 - 未覆盖：其他种子与平台、实际占领与战斗（测试地图路径不可达，只有合成占领自测）、任意 worker 日内命令位置、真实浏览器 Web 导出、图形长跑。
 
-## 规模（2026-11-05）
+## 规模（2026-11-09）
 
-- 护栏扫描 942 个源码文件；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
-- `world_runtime_host.gd` 2955 行；`map_generator.gd` 22547 行（超限债务，未拆）。
-- `economy_runtime.cpp` 1975 行、`economy_runtime.h` 2359 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2154 行、`.cpp` 480 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
+- 护栏扫描 967 个源码文件；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
+- `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
+- `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2147 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
 
 ## 部队指挥 UI（2026-11-08）
 
