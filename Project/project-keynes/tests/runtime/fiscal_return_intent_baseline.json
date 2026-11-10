@@ -1,9 +1,9 @@
 {
-  "country_sha256": "8c09a6c58b93b2c2f16d5a6d54ce12773bab13242bac59680614be736c205d45",
-  "economy_sha256": "e552f614cfb9477752417c261ade4703291f19a08e44e4b3a3c94b8c0990961e",
-  "economy_state_hash": "4157541357484050381",
-  "restored_economy_sha256": "3167a85ca709aefc06e9a664885656c17c4ffdddd6ea9dca12992cd4517e0f6a",
-  "restored_economy_state_hash": "4157541357484050381",
+  "country_sha256": "cb2ad0d2da2df3bef72e7fe9c948bf83374f8dcc89acf8fe986831e6d264d01e",
+  "economy_sha256": "87a4aa04b70fe1d4864f9111206c9853520cb764c034a75c6ea9cea50983998c",
+  "economy_state_hash": "5548852349840275503",
+  "restored_economy_sha256": "e2fd4c0a385e57072099f6a26405454cb9c64893278119f8a804efafacafa67b",
+  "restored_economy_state_hash": "5548852349840275503",
   "returns": [
     {
       "all_or_nothing": false,

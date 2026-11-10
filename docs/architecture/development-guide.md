@@ -174,11 +174,25 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 
 测试必须用固定经济周期：黄金、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败；生产仍按真实耗时自适应。
 
+## 运行回归与内容变化
+
+诊断开局使用 `bootstrap/test_start_policy.gd` 明确声明的建筑和科技；商人根使用早期商栈，主科技满足任一项、辅助科技必须全部满足。`building_placement_catalog.gd` 只投影目录，校验辅助科技列长度/范围，不读取运行状态；`bootstrap_catalog_contract_test.gd` 覆盖主/辅助要求和后期建筑拒绝。对诊断开局的长跑须按该政策配置国家，授予全科技会让未列入开局方案的产业参与后续投资。
+
+技术交接测试须提供当前目录里的研究前置，并先处理初始科技效果；同时保留缺前置拒绝、不消耗科研点、无交接请求的反例。经营用例区分业主生活费与真实维护成本，成对检查零成本不凭空亏损、真实维护记入经营支出，保留守恒检查。
+
+思想输入变动须运行 `runtime_opinion_input_lifecycle_test.gd`，检查后台/inline 的缺输入、复用对象读档后的实际意见日期和版本、受控输入，以及再次读档时旧接收记录清理。`ideology_social_media_worker_test.gd` 保留低意见下限、1.4 倍人口点数和真实 Effect 确认后的撤销检查；人口探针给所有阶级加过人口，撤销前须恢复实际阶级分布，满足当前内容的撤销支持条件。手动推进测试用 `wait_for_runtime_day` 等待已提交的实际日期，并接收宿主的后台请求和结果；不能用观测后的“再下一天”作完成条件。
+
+复用已有对象读档，须先准备有效 PKSR、恢复各所有者和地图输入，再启动执行器。停止后的恢复输入按存档日期暂存，不进入旧世界队列；启动从暂存副本重建队列，不能让旧队列的较新输入遮住它。上述用例覆盖无存档时拒绝旧日期、旧队列满、恢复后第一次继续及重复读档。
+
+内容和公式更新后的保存字节、整份经济及回放对照不能直接沿用旧值。`check_intent_baselines.py --capture-candidate --runs 5` 只收集候选并逐字段比较重复结果，保留原断言、完整回执、保存前后字节摘要与继续状态；`test_regression_evidence.py` 拒绝脚本错误、零退出码失败、泄漏、丢记录及重复记录。审查差异并安装候选后，去掉捕获开关重新核查。
+
+负例主动调用会打印错误的公开拒绝入口时，只能在 `EXPECTED_ERRORS` 按夹具登记完整且唯一的错误行；遗漏、重复、其他错误和泄漏仍失败。参数覆盖夹具的无效堆叠上限用例保留其原始拒绝调用，证据测试覆盖这条例外的边界。
+
 ## 黄金基线维护
 
 - `tests/runtime/golden_day_hash_test.gd`：seed=20260727、40×28、无外国、正式开局，固定日序 1..8，无玩家命令。每次等同日提交（worker 无在途日任务、Modifier 已消费相同 generation）后取值，不靠睡眠。
-- 正常运行读 v4 `golden_day_hash_baseline.json`，同时核对原样保留的 v1/v2/v3；v5 在 `golden_external_advancers_baseline.v5.json`。
-- 更新基线：先保留旧结果并解释业务变化，用同一二进制 `--capture-candidate` 连续至少 5 次逐日逐域比较，人工审查新旧取值，建立后跑 `--runs 10`。不能删字段、改种子或删失败样本拼连续次数。架构迁移不允许改变五条链。
+- 正常运行读 v4 `golden_day_hash_baseline.json`，同时核对当前内容的 v2/v3；v5 在 `golden_external_advancers_baseline.v5.json`。v1 文件保留作历史记录。
+- 更新基线：先保留旧结果并解释业务变化，用同一二进制 `--capture-candidate` 连续至少 5 次逐日逐域比较，人工审查新旧取值，建立后跑 `--runs 10`。不能删字段、改种子或删失败样本拼连续次数。捕获模式允许暂不核对旧 v2/v3/v4 内容；普通运行仍逐项核对全部投影。既有内容/数值变化必须单独登记，架构迁移不允许改变五条链。
 - 诊断开关：`PK_GOLDEN_CAPTURE=1` 只打印结果；`PK_GOLDEN_DIAGNOSTICS=1` 打印初始化资源列与每日完整经济哈希；`PK_GOLDEN_COUNTRY_TRACE=<绝对路径>` 记录 Country 原始列。
 
 ## 性能验证

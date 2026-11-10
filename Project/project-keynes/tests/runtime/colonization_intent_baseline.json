@@ -6,9 +6,9 @@
       3
     ]
   ],
-  "country_sha256": "0c089bf1dea82b702f3a66b22d8feb160fd55c28a279dc28614f0bf195baba11",
-  "economy_sha256": "326759c3cd2948d22b9ef76415dc721cd84a06fc263892c7a29cb457cb7c2159",
-  "economy_state_hash": "552420137032510475",
+  "country_sha256": "4a2732cfee888817df64e0c7e06558bf63dd2c474c35a3cbc45e162086d4e90e",
+  "economy_sha256": "88426d5594a807ff9c1440ae585584a72bad8c82b26f671ab5dc0b4dddac79a9",
+  "economy_state_hash": "5003905067986849595",
   "receipts": [
     {
       "all_or_nothing": false,
@@ -471,6 +471,6 @@
       "transaction_id": 10
     }
   ],
-  "restored_country_sha256": "598001ce0a2637e02744f10b69d10cf5f43730c28dd3e594005e122d42d5930f",
-  "restored_economy_sha256": "558f93bd725441fa71d7da8312abcb5ecdf584e23e3b5eea74fddd839c457b03"
+  "restored_country_sha256": "2a9589147ce80a2883073a0f4fd95abb45afa81c9624b7e5b175bde807a25c48",
+  "restored_economy_sha256": "44eed1a834f0f6341aaedfc72c6d950657dd8466c603894c495f019988de963f"
 }

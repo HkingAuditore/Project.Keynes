@@ -1,14 +1,14 @@
 {
   "days": [
     {
-      "chain": "03530fb171842d1642ec6f8e2cc3a2b6cfcb9a2df341a6378e2d42333a5b1ce3",
+      "chain": "e4c27c7853e1caa59f8849bfcbde87b36417623394ebc08356dcd74390ec342c",
       "day": 1,
       "families": 1,
       "hashes": {
-        "FAMILY": "948ceca1137f4b363dd84c6a66163d348929e6c895ec3715cc313c5bfbe065d7",
+        "FAMILY": "9bd46371743d3fd5eb094684f758677ef07481fa510bbbd7e4e82d6c214513de",
         "MILITARY": "3552a9d6d1471b5e82aad51bca3e502b18224ec0014e174ab16d6116d1216c2f",
-        "NATURAL_RESOURCE": "12553f9ad93d9bf3beb36da68010229bfd2af1ca6982e0ffd9a7d33d86adf94e",
-        "PERSON": "12bc3ba9aeaecaec7b48aef3ed2dd77c0c20694bdac8446599bece94032dcdbf",
+        "NATURAL_RESOURCE": "ea98cff94774d0fe2ddd476656d467f47a590c953244e2a97d2706f09f577a94",
+        "PERSON": "f3be6869a0cf25c1e4dec22020115e6659892d8d508c35e50f637f8b0dd54f16",
         "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
       },
       "military_target": 2,
@@ -17,51 +17,51 @@
       "soldiers": 0
     },
     {
-      "chain": "4bb383f1e0064f5459fc6c8b3192aa69f24886bb94e94366d0b95ec79d4af669",
+      "chain": "5e4962e1f4b439529deb04eb1ea794455003d4ed845e4d2b55b2c8d801f06263",
       "day": 2,
       "families": 1,
       "hashes": {
-        "FAMILY": "733dc8607e9326829793f64255121c133268a27e110dbae7e9f19f096a48a95d",
+        "FAMILY": "469f86982b6b798fb1ebe0e4f259a49c92f3e69d9176235864d9fa5e0ea07052",
         "MILITARY": "56b36ed06d0ef1685a1e79bbb6d38949598b2f18cb486444ec8147706e7a7673",
-        "NATURAL_RESOURCE": "c5624c1cce8c5a3ac9e080bb4bcf5771a53f8e52ef88504bb4bd7744746dbc51",
-        "PERSON": "6db3c2db1fda781d2dc72b4e37b4b45ee5d1cc67ef753cf5b0767549d0ba3602",
+        "NATURAL_RESOURCE": "a2c0b14486ccd39ecfdb9193a78188198cd543a706b77e137210808bcc971866",
+        "PERSON": "ac444366dfa795c2722ab191da07ac0240fe0b69d6f5dbfa05dbb9f7e00fa8e6",
         "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
       },
       "military_target": 3,
       "people": 1,
-      "recovered_cells": 119,
+      "recovered_cells": 120,
       "soldiers": 0
     },
     {
-      "chain": "9ada8cbb9ba390aef1e7ac211789f3d1bfe5c0dbf9e7a18e710b07e70a91f19e",
+      "chain": "dec28198114f807fc2fec944c91a370c1bf037d0b9a3bc43aee0f05165eadc6e",
       "day": 3,
       "families": 1,
       "hashes": {
-        "FAMILY": "8ecd344c11fbbe831313d36264ba7a63eb2f8660bfff0e218ee8277470fbbb9b",
+        "FAMILY": "c86273f636745f36fc5d20aad48edc45c202ed644ce944d04b5fcf7d7246a00f",
         "MILITARY": "1493763348d4b4e6676b8b5ea77c0e973d8bc7670b06cec04f6072f18b4bdf60",
-        "NATURAL_RESOURCE": "d0bee4c4c73b090eb2375d375d21d2567131850c2693b79a5b5d8b8f65d45278",
-        "PERSON": "7a266f626ed4ca4368aad6cf043c96d2747528f0f43c4edb808ef5690cc5e068",
+        "NATURAL_RESOURCE": "7c2a5c9405e1a872683b11239c4f54393a133ca5ecc9c1bfb4dcaba991e4abbc",
+        "PERSON": "dcee7fc9e022394c372a87d69cf81aff06b67e8773914715eb013ef221600a4a",
         "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
       },
       "military_target": 4,
       "people": 1,
-      "recovered_cells": 195,
+      "recovered_cells": 196,
       "soldiers": 0
     },
     {
-      "chain": "fd6eb266bd6029243f7de37c1224857f1faed40fceed7b487bb751a82ab6c467",
+      "chain": "1f306847abccb3ed92d273d76b49df68b35f64a5e429453f8d10a44454879687",
       "day": 4,
       "families": 1,
       "hashes": {
-        "FAMILY": "ca9d9733492ba4031efe5e6a6e9063c6d589873113305eee06c1d40a1ae9c691",
+        "FAMILY": "56940bb335f2b94114ae2b6e15629571e006510d0c2cfb2fcb9b297647aabefe",
         "MILITARY": "c8e93cf14cd93d71e39f7771f605fc9bae23ae3c742c9662ea5983e24618a88a",
-        "NATURAL_RESOURCE": "83b1e00784c268bdae2a833a660734f7ceab9a249bae190eed017b4889293e00",
-        "PERSON": "6e790cc34338cea8f10e5cba6a52acb9cfa11d77abf9d4e47bb323b776d7d7a6",
+        "NATURAL_RESOURCE": "2824f4e39861c4b42b4ff011e24d34e386d1a252cdc1df17cd827e6873a8e579",
+        "PERSON": "7037a2d948a88c26e84c97a305c9d76751d7b7183c05ff22ce746d2649a5a4fd",
         "VISION": "2b470956530c4cb6dab765c5875c6a63d75764272921f03d0018f0fd72f3f8ea"
       },
       "military_target": 5,
       "people": 1,
-      "recovered_cells": 265,
+      "recovered_cells": 266,
       "soldiers": 0
     }
   ],

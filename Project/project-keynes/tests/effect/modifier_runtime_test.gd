@@ -111,6 +111,14 @@ func _test_city_stat_aggregation_guard() -> void:
 	_expect("the rejection names the aggregation rule",
 		String(outcome.get("reason", "")).begins_with(
 			"modifier_city_stat_requires_sum"))
+	_expect("the aggregation error identifies the affected stat",
+		String(outcome.get("reason", "")).ends_with(String(target.key)))
+	target.aggregate_policy = 2  # TopNSources has the same cell-scope constraint.
+	target.source_cap = 2
+	var capped: Dictionary = catalog.compile_native_catalog()
+	_expect("capping city sources rejects with the same specific rule",
+		not capped.get("ok", true) and String(capped.get("reason", "")).begins_with(
+			"modifier_city_stat_requires_sum:"))
 
 
 func _run() -> void:

@@ -128,8 +128,7 @@ def main() -> int:
         environment = os.environ.copy()
         environment.pop("PK_GOLDEN_CAPTURE", None)
         environment["PK_GOLDEN_LEGACY_ONLY"] = "1" if args.legacy_only else "0"
-        if args.capture_candidate:
-            environment["PK_GOLDEN_CAPTURE"] = "1"
+        environment["PK_GOLDEN_CAPTURE"] = "1" if args.capture_candidate else "0"
         environment["PK_GOLDEN_DIAGNOSTICS"] = "1"
         environment["PK_SIM_DAY_TRACE"] = str((logs / f"trace-{index}.log").resolve())
         log = logs / f"run-{index}.log"

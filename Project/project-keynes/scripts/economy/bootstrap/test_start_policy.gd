@@ -2,8 +2,9 @@ extends RefCounted
 
 # Authored test-world capabilities; never grants all production technologies.
 # Keep the authored diagnostic settlement stable when unrelated recipes are added.
+const MERCHANT_BUILDING_ID := "early_merchant_post"
 const BUILDING_IDS = [
-	"gathering_ground", "timber_collector", "stone_collector", "merchant_post",
+	"gathering_ground", "timber_collector", "stone_collector", MERCHANT_BUILDING_ID,
 	"communal_hearth", "flint_quarry", "lumber_plant", "stone_age_hunting_camp",
 	"placer_gold_working", "surface_silver_working", "household_weaving_shelter",
 	"knapping_workshop",
@@ -14,6 +15,9 @@ const TECHNOLOGY_IDS := [
 	"tech.deadwood_collection", "tech.ground_stone_tools",
 	"tech.communal_specialization", "tech.timber_sawing", "tech.gold_panning",
 	"tech.surface_silver_collection", "tech.weaving",
+	"tech.early_trade",
+	"tech.household_production", "tech.hand_spinning",
+	"tech.masonry",
 ]
 
 const GOODS_SCALE := 1000
@@ -84,3 +88,12 @@ static func technology_available(tags: PackedStringArray) -> bool:
 		if TECHNOLOGY_IDS.has(stable_id):
 			return true
 	return not has_technology_gate
+
+
+static func building_available(spec: Dictionary) -> bool:
+	if not technology_available(spec.get("technology_tags", PackedStringArray())):
+		return false
+	for tag in spec.get("required_technology_tags", PackedStringArray()):
+		if not TECHNOLOGY_IDS.has(String(tag)):
+			return false
+	return true

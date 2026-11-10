@@ -46,7 +46,7 @@ func _run() -> void:
 		_expect("all fiscal operations exercised: %d" % operation, returns.any(func(receipt: Dictionary) -> bool: return int(receipt.operation) == operation))
 	var saved_country := _save_country(ext)
 	var saved_economy := _save(ext)
-	_expect("both pre-intent save streams complete", bool(saved_country.get("ok", false)) and bool(saved_economy.get("ok", false)))
+	_expect("both current save streams complete", bool(saved_country.get("ok", false)) and bool(saved_economy.get("ok", false)))
 	var country_bytes := _joined(saved_country.chunks)
 	var economy_bytes := _joined(saved_economy.chunks)
 	var evidence := {"returns": returns, "country_sha256": _sha(country_bytes),
@@ -59,7 +59,7 @@ func _run() -> void:
 	_expect("Economy restore", bool(loaded.get("ok", false)))
 	_expect("Country roundtrip preserves bytes", _save_bytes(restored, "country") == country_bytes)
 	# PKEC re-encoding already differs from its input before this prototype.
-	# Compare both outputs with the pre-intent run and check logical equality.
+	# Compare both outputs with the reviewed content baseline and check logical equality.
 	evidence["restored_economy_sha256"] = _sha(_save_bytes(restored, "economy"))
 	evidence["economy_state_hash"] = str(ext.get_economy_state_hash())
 	evidence["restored_economy_state_hash"] = str(restored.get_economy_state_hash())
@@ -67,5 +67,5 @@ func _run() -> void:
 	print("FISCAL_CASH_RESULT=" + JSON.stringify(evidence))
 	if OS.get_environment("PK_FISCAL_CASH_CAPTURE") != "1":
 		var expected: Variant = JSON.parse_string(FileAccess.get_file_as_string(GROUP_BASELINE))
-		_expect("receipts and save bytes match pre-intent baseline",
+		_expect("receipts and save bytes match reviewed content baseline",
 			JSON.parse_string(JSON.stringify(evidence)) == expected)

@@ -337,7 +337,7 @@ func _run() -> void:
 		int(start.get("founder_family_count", 0)) == country_starts.size()
 		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v9")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v10")
 	# This fixture owns an unattached Node; dropping a local does not free it.
 	clock.free()
 	_finish()

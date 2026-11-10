@@ -41,5 +41,24 @@ static func wait_until(
 	return bool(predicate.call())
 
 
+static func wait_for_runtime_day(host: WorldRuntimeHost, ext: Object,
+		day: int, hang_guard_ms: int = 120000) -> bool:
+	# Wait for the submitted date, even if it committed before observation.
+	# Process the same input requests and replies as the production host.
+	wait_until(
+		func() -> bool:
+			var report: Dictionary = ext.get_runtime_thread_report()
+			return (int(report.get("simulation_committed_day", -1)) >= day
+				and int(report.get("worker_day_inflight", 1)) == 0) \
+				or String(report.get("simulation_host_state", "")) in ["STOPPED", "FAULTED"],
+		hang_guard_ms,
+		func() -> void: host._service_runtime_liveness(Time.get_ticks_usec(), false))
+	host._service_runtime_liveness(Time.get_ticks_usec(), false)
+	var report: Dictionary = ext.get_runtime_thread_report()
+	return int(report.get("simulation_committed_day", -1)) == day \
+		and int(report.get("worker_day_inflight", 1)) == 0 \
+		and String(report.get("fault_code", "")).is_empty()
+
+
 static func _now_msec() -> int:
 	return Time.get_ticks_msec()

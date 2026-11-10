@@ -166,9 +166,10 @@ func _run() -> void:
 	_expect("rename and country technology commit", bool(ext.run_country_slice({"day_index": 2}).get("ok", false)))
 	var beta_after: Dictionary = ext.get_country_snapshot(beta.country_handle)
 	var beta_research: Dictionary = ext.get_country_research_snapshot(beta.country_handle)
-	_expect("country-wide metadata query reflects ACK-gated commit",
+	_expect("unlock-only technology completes without a Modifier ACK",
 		String(beta_after.country_name) == "贝塔共和国" and
-		int((beta_research.technology_states as PackedInt32Array)[autonomous_systems]) == 4)
+		int((beta_research.technology_states as PackedInt32Array)[autonomous_systems]) == 5
+		and (beta_after.technology_ids as PackedStringArray).has("tech.autonomous_systems"))
 	var artisan := (compiled.profession_ids as PackedStringArray).find("artisan")
 	var tax_commands := _commands([
 		{"opcode": 11, "day": 3, "sequence": 1, "handle": beta.country_handle,

@@ -567,7 +567,7 @@ func compile_native_catalog() -> Dictionary:
 				if scope_key.begins_with("city.") \
 						or scope_key.begins_with("economy.city."):
 					return {"ok": false,
-						"reason": "modifier_stat_key_invalid_or_duplicate" + scope_key}
+						"reason": "modifier_city_stat_requires_sum:" + scope_key}
 			out.stat_aggregate_policies.append(policy)
 			out.stat_source_caps.append(cap)
 	var definition_keys := {}

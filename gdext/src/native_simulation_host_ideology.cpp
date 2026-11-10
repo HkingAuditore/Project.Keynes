@@ -342,8 +342,6 @@ NativeSimulationHost::ideology_parity_report() const {
         static_cast<int64_t>(_ideology_last_reference_catalog_hash);
     out.last_worker_catalog_hash =
         static_cast<int64_t>(_ideology_last_worker_catalog_hash);
-    out.worker_opinion_revision = static_cast<int64_t>(
-        _ideology_worker_opinion_revision.load(std::memory_order_acquire));
     // R9-1: the three independent atomics are gone; the last published (day,
     // opinion) pair is read from the locked ring instead, so the day and the
     // commit printed here always belong to the same plan.
@@ -358,6 +356,7 @@ NativeSimulationHost::ideology_parity_report() const {
                     IDEOLOGY_WORKER_OPINION_RING];
             out.worker_opinion_period_index = last.period_index;
             out.worker_opinion_committed_day = last.committed_day;
+            out.worker_opinion_revision = static_cast<int64_t>(last.revision);
         }
     }
     out.worker_committed_ideology_day = _ideology_pod_committed_day.load(

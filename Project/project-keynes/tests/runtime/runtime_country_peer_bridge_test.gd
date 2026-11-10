@@ -42,6 +42,7 @@ func _run() -> void:
 	_run_valid_ack_flow(compiled)
 	_run_real_adapter_flow(compiled)
 	_run_rejection_retry_flow(compiled)
+	_run_missing_prerequisite(compiled)
 
 
 func _run_valid_ack_flow(compiled: Dictionary) -> void:
@@ -448,7 +449,8 @@ func _run_real_adapter_flow(compiled: Dictionary) -> void:
 		bool(ext.capture_country_reference_checkpoint().get("ok", false)))
 
 
-func _make_fixture(compiled: Dictionary, seed: int, suffix: String) -> Dictionary:
+func _make_fixture(compiled: Dictionary, seed: int, suffix: String,
+		include_prerequisites: bool = true) -> Dictionary:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	_expect("%s DCWorldExt instantiates" % suffix, ext != null)
 	if ext == null:
@@ -482,14 +484,23 @@ func _make_fixture(compiled: Dictionary, seed: int, suffix: String) -> Dictionar
 			or animal_husbandry < 0:
 		return {}
 
+	var completed := PackedInt32Array([hunting, early_knowledge])
+	var offsets: PackedInt32Array = compiled.technology_prerequisite_offsets
+	var prerequisites: PackedInt32Array = compiled.technology_prerequisites
+	_expect("%s target has real prerequisites" % suffix,
+		offsets[animal_husbandry + 1] > offsets[animal_husbandry])
+	if include_prerequisites:
+		for edge in range(offsets[animal_husbandry], offsets[animal_husbandry + 1]):
+			if not completed.has(prerequisites[edge]):
+				completed.append(prerequisites[edge])
 	var packet := {
 		"country_ids": PackedStringArray(["country.%s" % suffix]),
 		"country_names": PackedStringArray([suffix]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 2]),
-		"technology_indices": PackedInt32Array([hunting, early_knowledge]),
+		"technology_offsets": PackedInt32Array([0, completed.size()]),
+		"technology_indices": completed,
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -498,6 +509,20 @@ func _make_fixture(compiled: Dictionary, seed: int, suffix: String) -> Dictionar
 	_expect("%s country bootstraps" % suffix, bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return {}
+	# The current prerequisites have their own Effect programs. Finish those
+	# initial transactions before the test begins its single research handshake.
+	for _step in range(8):
+		ext.run_effect_daily(0)
+		ext.dispatch_effect_native_modifier()
+		ext.run_modifier_daily(0)
+		ext.ack_effect_native_modifier()
+		ext.dispatch_effect_native_gameplay()
+		ext.run_gameplay_effects(0)
+		ext.ack_effect_native_gameplay()
+		if not ext.effect_should_run(0):
+			break
+	_expect("%s initial technology effects settle before research" % suffix,
+		not ext.effect_should_run(0))
 	var handle := int(country.cell_summary(0).get("country_handle", 0))
 	_expect("%s exposes a valid Country handle" % suffix, handle != 0)
 	if handle == 0:
@@ -543,6 +568,26 @@ func _prepare_async_pending(fixture: Dictionary, label: String) -> Dictionary:
 		"intent": polled,
 		"research": country.research_snapshot(handle),
 	}
+
+
+func _run_missing_prerequisite(compiled: Dictionary) -> void:
+	var fixture := _make_fixture(compiled, 9047, "peer-missing-prerequisite", false)
+	if fixture.is_empty():
+		return
+	var country: Object = fixture.country
+	var ext: Object = fixture.ext
+	country.discover_research_signal(fixture.handle, &"bio.sheep", 0, 1, 0, 1)
+	_expect("missing-prerequisite evidence commits", ext.run_country_slice({"day_index": 0}).get("ok", false))
+	ext.set_country_peer_async_mode(true)
+	var before: Dictionary = country.research_snapshot(fixture.handle)
+	country.enqueue_research(fixture.handle, &"tech.animal_husbandry", 0, -1, 1, 11)
+	var rejected: Dictionary = ext.run_country_slice({"day_index": 1})
+	_expect("missing prerequisites reject before any peer request",
+		not rejected.get("ok", true)
+		and rejected.get("fatal_reason", "") == "country_research_requirements_incomplete"
+		and not ext.poll_country_peer_intent().get("available", true))
+	_expect("rejected research preserves consumed points",
+		country.research_snapshot(fixture.handle).get("consumed_total", -1) == before.get("consumed_total", -2))
 
 
 func _result_for(intent: Dictionary, code: int) -> Dictionary:

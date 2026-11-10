@@ -73,7 +73,7 @@ static func capture(map: MapData, facade: EconomyFacade) -> Dictionary:
 		for key in placement_spec:
 			job_spec[key] = placement_spec[key]
 		building_specs[StringName(building_id)] = job_spec.duplicate(true)
-		if String(building_id) in Policy.BUILDING_IDS and Policy.technology_available(placement_spec.technology_tags):
+		if String(building_id) in Policy.BUILDING_IDS and Policy.building_available(placement_spec):
 			eligible_building_ids.append(building_id)
 	for required in Policy.BUILDING_IDS:
 		if not building_ids.has(required):

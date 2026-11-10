@@ -22,7 +22,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/economy_facade.gd": {
-      "lines": 2301,
+      "lines": 2140,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/starter_economy_planner.gd": {
@@ -354,7 +354,7 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2147,
+      "lines": 2146,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {

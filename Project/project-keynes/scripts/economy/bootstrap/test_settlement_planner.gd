@@ -163,9 +163,9 @@ static func build(map: Inputs, population_scale: int = 1) -> Dictionary:
 	# tools and construction roots live on different cells.
 	var regional_groups_fallback: Dictionary = groups_by_cell.duplicate(true)
 
-	var merchant_post_spec: Dictionary = building_specs.get(&"merchant_post", {})
+	var merchant_post_spec: Dictionary = building_specs.get(StringName(Policy.MERCHANT_BUILDING_ID), {})
 	var merchant_post_available := not merchant_post_spec.is_empty() \
-		and Policy.technology_available(merchant_post_spec.get("technology_tags", PackedStringArray()))
+		and Policy.building_available(merchant_post_spec)
 	if not merchant_post_available:
 		return {"ok": false, "reason": "bootstrap_merchant_root_missing"}
 	var basic_capacity_initial_buildings := 0
@@ -533,7 +533,7 @@ static func build(map: Inputs, population_scale: int = 1) -> Dictionary:
 		"initial_building_input_stock_days": INITIAL_BUILDING_INPUT_STOCK_DAYS,
 		"bootstrap_bridge_stock_per_market": BOOTSTRAP_BRIDGE_STOCK.duplicate(),
 		"bootstrap_root_building_counts": {
-			"merchant_post": populated_cells.size(),
+			Policy.MERCHANT_BUILDING_ID: populated_cells.size(),
 			"gathering_ground": _count_buildings(
 				groups_by_cell, &"gathering_ground"),
 			"timber_collector": _count_buildings(
@@ -1207,7 +1207,7 @@ static func _ensure_construction_source_roots(passable_cells: PackedInt32Array,
 	var added := {"timber_collector": 0, "stone_collector": 0}
 	for stable_id in [&"timber_collector", &"stone_collector"]:
 		var spec: Dictionary = building_specs.get(stable_id, {})
-		if spec.is_empty():
+		if spec.is_empty() or not Policy.building_available(spec):
 			continue
 		for cell_idx_raw in passable_cells:
 			var cell_idx := int(cell_idx_raw)
