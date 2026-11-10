@@ -92,12 +92,28 @@ Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
     if (!static_cast<bool>(configured.get("ok", false))) return configured;
     auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
     if (_runtime_host && _runtime_host->has_started_once()) {
+        std::string rebuild_error;
+        auto next = _runtime_host->make_new_world_host(rebuild_error);
+        if (!next) {
+            configured["ok"] = false;
+            configured["code"] = "runtime_world_catalog_rebuild_failed";
+            configured["reason"] = String(rebuild_error.c_str());
+            return configured;
+        }
         // Detach the borrowed OwnedState before destroying its old Host.
         if (economy != nullptr) economy->unbind_formula_owned_state();
-        // New stores and queues still need a later protocol identity, so a
-        // delayed reply from the old world cannot match a new request.
-        const auto previous_epoch = _runtime_host->country_worker_protocol_status().session_epoch;
-        _runtime_host = std::make_unique<NativeSimulationHost>(previous_epoch);
+        // Facades observe world-local generations too. Their instances and
+        // cursors must match the fresh authorities, even when catalogs are reused.
+        if (_modifier_runtime != nullptr)
+            static_cast<ModifierRuntime *>(_modifier_runtime)->reset_runtime_state(cell_count);
+        if (_effect_runtime != nullptr)
+            static_cast<EffectRuntime *>(_effect_runtime)->clear_state();
+        if (_trigger_runtime != nullptr)
+            static_cast<TriggerRuntime *>(_trigger_runtime)->clear_state();
+        if (_ideology_runtime != nullptr)
+            static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->clear_state();
+        _ideology_opinion_published_revision = 0;
+        _runtime_host = std::move(next);
         if (_effect_forwarder)
             _effect_forwarder->attach(static_cast<EffectRuntime *>(_effect_runtime), _runtime_host.get());
         attach_country_ai_to_host();

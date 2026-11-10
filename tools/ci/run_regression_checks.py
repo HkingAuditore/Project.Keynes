@@ -43,6 +43,7 @@ TESTS = (
     "tests/runtime/runtime_inline_save_restore_test.gd",
     "tests/runtime/runtime_executor_boundary_test.gd",
     "tests/runtime/runtime_world_lifecycle_test.gd",
+    "tests/runtime/runtime_world_rules_rebuild_test.gd",
     "tests/runtime/runtime_inline_coordinator_save_test.gd",
     "tests/runtime/runtime_economy_worker_restart_test.gd",
     "tests/ideology/ideology_execution_contract_manifest_test.gd",

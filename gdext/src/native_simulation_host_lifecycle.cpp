@@ -4,6 +4,31 @@
 
 namespace pk {
 
+std::unique_ptr<NativeSimulationHost> NativeSimulationHost::make_new_world_host(
+        std::string &error) const {
+    error.clear();
+    if (!execution_has_stopped()) {
+        error = "runtime_world_rebuild_requires_stopped_executor";
+        return nullptr;
+    }
+    auto next = std::make_unique<NativeSimulationHost>(
+        country_worker_protocol_status().session_epoch);
+    // These are validated rule definitions, not world state. Reconfigure fresh
+    // authorities so instances, commands, receipts and input cursors stay empty.
+    if (_modifier_pod_configured) {
+        if (!next->configure_modifier_pod(_modifier_pod_catalog, error)) return nullptr;
+        next->_modifier_definition_id_by_key_hash = _modifier_definition_id_by_key_hash;
+    }
+    if (_effect_pod_configured &&
+        !next->configure_effect_pod(_effect_pod_catalog, error)) return nullptr;
+    if (_domain_authority_runner.trigger_pod_configured() &&
+        !next->configure_trigger_pod(_domain_authority_runner.trigger_catalog(), error))
+        return nullptr;
+    if (_ideology_pod_configured &&
+        !next->configure_ideology_pod(_ideology_pod_catalog, error)) return nullptr;
+    return next;
+}
+
 bool NativeSimulationHost::resume_same_world_executor(double speed, bool paused) {
     // Only the executor is being replaced. Stores, clocks, cursors, receipts,
     // and the current day's frozen input belong to the same world.

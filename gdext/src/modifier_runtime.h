@@ -213,6 +213,8 @@ public:
                         std::string &error,
                         bool allow_tax_catalog_extension = false);
     void clear_domain(int32_t domain);
+    // Retain definitions, but discard the previous world's stores and cursors.
+    void reset_runtime_state(int32_t cell_count);
     uint64_t catalog_hash() const { return _catalog_hash; }
     int32_t definition_id_for_key(const std::string &key) const {
         return definition_id(key);
