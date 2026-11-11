@@ -16,6 +16,7 @@
 | 加环境开关或故障点 | `gdext/src/runtime_switch_registry.h` | `tools/ci/check_runtime_switches.py` |
 | 改地形、天气、光照、时代、军事界面等具体功能 | [feature-guides.md](feature-guides.md) 的对应小节 | 该小节列出的测试 |
 | 拆分超限文件 | [development-guide.md](development-guide.md) 的“机械搬迁与拆分”，[source-module-splits.md](source-module-splits.md) | `tools/ci/check_size_ratchet.py`、`tools/ci/check_cpp_deps.py` |
+| 新增脚本接口 | `tools/ci/world_ext_binding_modules.json`（按定义文件确定模块）、`gdext/src/world_ext_bind_*.cpp`（每模块一个绑定文件）、`gdext/src/world_ext.h`（按模块分段声明）；入口 `gdext/src/world_ext_bind_methods.cpp` 只调用各模块 | `tools/ci/world_ext_bindings.py`、`tools/ci/check_world_ext_bindings.py`；Godot 方法列表比较 |
 | 改 skill | `.agents/skills` 下的权威副本，再 `tools/ci/check_skill_mirrors.py --sync <skill>` | `tools/ci/check_skill_mirrors.py` |
 
 全部静态护栏的命令和回归、黄金、回放的用法在 [development-guide.md](development-guide.md) 的“护栏与检查”。PR 上由 `.github/workflows/runtime-checks.yml` 的 `architecture-guards` 自动运行静态护栏。

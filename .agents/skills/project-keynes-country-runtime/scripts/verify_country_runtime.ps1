@@ -27,7 +27,7 @@ try {
         if (-not (Test-Path $path)) { throw "Missing required country runtime file: $path" }
     }
 
-    $bindings = Select-String -CaseSensitive -Path 'gdext/src/world_ext_bind_methods.cpp' -Pattern 'configure_country|bootstrap_country|submit_country_commands|run_country_slice|get_country_state_hash|restore_country_runtime_checkpoint'
+    $bindings = Select-String -CaseSensitive -Path 'gdext/src/world_ext_bind_*.cpp' -Pattern 'configure_country|bootstrap_country|submit_country_commands|run_country_slice|get_country_state_hash|restore_country_runtime_checkpoint'
     if (-not $bindings) { throw 'Country DCWorldExt bindings are missing.' }
     $checkpoint = Select-String -CaseSensitive -Path @('gdext/src/country_core.h', 'gdext/src/runtime_pod_protocol.h', 'Project/project-keynes/scripts/game/pksr_bundle_header.gd') -Pattern 'COUNTRY_CHECKPOINT_ABI_VERSION = 2|RUNTIME_SAVE_SECTION_COUNTRY|SECTION_COUNTRY := 8'
     if (-not $checkpoint) { throw 'Country CPD2/PKSR section contract is missing.' }

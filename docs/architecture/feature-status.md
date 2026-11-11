@@ -3,6 +3,16 @@
 按功能记录最近一次改动后的现状、验证证据和未覆盖范围；带日期的条目写在这里。
 运行架构的现状（十二域、跨模块交接、存档、哈希）在 [current-state.md](current-state.md)，本页不是它的替代。
 
+## DCWorldExt 模块绑定拆分（2026-11-11）
+
+阶段 1 已将 646 条绑定按定义文件归属搬到 15 个 `world_ext_bind_*.cpp`：core 49、runtime 81、climate 75、economy 112、country 94、military 32、effect 37、modifier 37、ideology 30、trigger 24、events 13、generation 18、bake_encoders 7、visual 21、demo 16。绑定语句和模块内顺序逐字核对不变，说明注释随绑定移动。入口按该顺序调用模块函数，仅保留原来的 `using namespace godot;`，没有常量、枚举或信号等其他登记。绑定声明全部在原 public 区按模块分段，没有跳过项；非绑定声明、数据成员、访问级别及实现代码不变。清理搬移留下的空行后，头文件 4080 → 4050 行。
+
+清单新增 `bind_file`，定义扫描排除绑定文件；新护栏检查文件归属、入口调用次数及缺失/多余文件，已加入本地回归和 PR 检查。8 个权威 skill 及镜像同步了绑定位置，country/modifier 的 PowerShell 检查改为扫描所有模块绑定文件。正式 `--sync` 同步也消除了这些 skill 的既有镜像差异，随后用 `check_skill_mirrors.py --write-baseline` 删除 23 条过期记录（49 → 26）；只收紧镜像基线，没有修改长度、依赖、游戏结果或方法列表基线。
+
+已验证：macOS arm64 debug、release 串行构建成功；两份日志各有 14 条未修改文件的警告，没有本次改动文件的警告。16 个静态脚本逐个运行全部通过（架构测试 37 项、回归证据测试 9 项），清单默认及 `--audit` 均为 646 条、0 problems；`--json --refs` 输出与原清单除新增字段外一致。Godot 4.6.3 导出 646 个方法，`cmp` 与指定拆分前基线逐字节相同，SHA-256 为 `dab184126aadbd58fd5e2659397fd89729de581bf1583022b07bb874996c39a8`。构建生成的两个已追踪 macOS 程序库保留在工作区；运行检查日志在 `/tmp/keynes-binding-split-validation`。
+
+额外检查：release 程序库的 8 项实际加载/运行检查全过；黄金主链与表外链各重复 3 轮，全部与既有基线一致，没有首个差异。默认回归 exit=0：86 个脚本、固定气候存档、10 日保存续跑、save1/calendar5/multicountry5/military20 回放矩阵、自动保存和真实第 365 日保存均通过，所有继续轨迹没有首个差异。未验证 Windows、Web、其他架构及图形界面，两个 PowerShell 脚本未在 Windows 实跑；未实施阶段 2/3，也没有改变数据归属或脚本接口。
+
 ## 降雪散点显示（2026-11-09）
 
 逐地块雪幕仍由 WeatherLayer 的 MultiMesh 和已发布 weather_lut 驱动。

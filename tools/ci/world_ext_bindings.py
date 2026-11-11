@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inventory of the script-facing DCWorldExt bindings.
 
-Parses ``ClassDB::bind_method`` calls in the bind file, finds the file that
+Parses ``ClassDB::bind_method`` calls in the module bind files, finds the file that
 defines each bound member function, and assigns it a module through
 ``world_ext_binding_modules.json`` (definition file -> module).
 
@@ -55,9 +55,14 @@ def _balanced(text: str, start: int) -> int:
     return i
 
 
+def strip_comments(text: str) -> str:
+    # Preserve quoted names/defaults (including URLs containing //).
+    return re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*[\s\S]*?\*/',
+                  lambda m: m[0] if m[0][0] in "\"'" else " ", text)
+
+
 def parse_bindings(root: Path, bind_file: str) -> list[dict]:
-    text = (root / bind_file).read_text(encoding="utf-8")
-    text = re.sub(r"//[^\n]*", "", text)
+    text = strip_comments((root / bind_file).read_text(encoding="utf-8"))
     result = []
     for match in BIND.finditer(text):
         end = _balanced(text, match.end())
@@ -71,6 +76,7 @@ def parse_bindings(root: Path, bind_file: str) -> list[dict]:
             "args": strings[1:],
             "defaults": len(re.findall(r"\bDEFVAL\s*\(", rest)),
             "member": member.group(1) if member else None,
+            "bind_file": bind_file,
         })
     return result
 
@@ -78,6 +84,8 @@ def parse_bindings(root: Path, bind_file: str) -> list[dict]:
 def definition_files(root: Path, members: set[str]) -> dict[str, str]:
     where: dict[str, str] = {}
     for path in sorted((root / SRC).glob("world_ext*.cpp")):
+        if path.name.startswith("world_ext_bind_"):
+            continue
         text = path.read_text(encoding="utf-8")
         for m in re.finditer(r"^[^\n&;]*?\bDCWorldExt::(\w+)\s*\(", text, re.MULTILINE):
             if m.group(1) in members:
@@ -104,7 +112,15 @@ def inventory(root: Path) -> tuple[list[dict], list[str]]:
             file_module[name] = module
             if not (root / SRC / name).is_file():
                 problems.append(f"module {module} lists missing file {SRC}/{name}")
-    bindings = parse_bindings(root, table["bind_file"])
+    bindings = []
+    # Include unexpected bind files too, so misplaced/duplicate bindings cannot
+    # disappear from the inventory just because the table does not name them.
+    for path in sorted((root / SRC).glob("world_ext_bind_*.cpp")):
+        bindings.extend(parse_bindings(root, path.relative_to(root).as_posix()))
+    for module in table["modules"]:
+        expected = table["bind_file_pattern"].format(module=module)
+        if not (root / expected).is_file():
+            problems.append(f"module {module} is missing binding file {expected}")
     where = definition_files(root, {b["member"] for b in bindings if b["member"]})
     seen: Counter[str] = Counter(b["name"] for b in bindings)
     for name, count in seen.items():

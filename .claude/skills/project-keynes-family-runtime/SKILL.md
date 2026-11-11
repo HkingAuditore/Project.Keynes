@@ -26,7 +26,7 @@ Read the current source before editing:
   25/35/40 prestige formula stays untouched.
 - Read `gdext/src/economy_runtime.{h,cpp}` for `FamilyStore`, trait rolls, cell influence,
   relationship edges, employment, lifecycle, queries, hashing, and PKEC.
-- Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_methods.cpp` for the
+- Read `gdext/src/world_ext_economy.cpp`, `world_ext.h`, and `world_ext_bind_<模块>.cpp` for the
   public bridge.
 - Read `Project/project-keynes/scripts/economy/economy_catalog.gd`, `economy_facade.gd`,
   `scripts/family/family_trait_catalog.gd`, trait definition/effect resources,
@@ -135,22 +135,11 @@ contract from roadmap text or a previous chat.
 
 Keep formation deterministic and based on realized economy state:
 
-1. Found at most one family per crossed `family_milestone_populations` entry (default
-   100/200/500/1000/2000/5000/10000/20000; `_family_milestones_reached[cell]` advances only on a
-   successful founding). New families need `family_min_founder_people` (default 30); only the
-   opening capital starter is exempt. `FAMILY_MIN_ACTIVE_PEOPLE=20` is the lifecycle floor only.
-2. Require an active building with stable identity, an anonymously owned unit, and actual filled
-   owner slots. Margin/revenue are ranking inputs, not gates.
-3. `build_family_founding_candidates` produces 3 cards from up to 3 distinct
-   `(building type, owner signature)` industries, each with an independent stable_id, surname
-   (deduped per culture group), core traits (`roll_core_family_traits`) and random-pool effect
-   (`roll_random_pool_family_effect`, deduped across cards). Player-country cells in PLAYER mode
-   store a `FamilyFoundingOffer` and wait for `submit_family_founding_choice`; AI/unowned cells
-   and AUTO mode pick deterministically and found immediately. Never let unchosen cards leak into
-   FamilyStore; the chosen card's effect goes through the sorted `_family_founding_effects` side
-   table. Offers, choices, milestones and that table are PKEC v55 section 35 and state-hash inputs.
-4. Resolve a chosen card on the offered building, rebind to the best eligible building if it
-   vanished, and void after `FAMILY_FOUNDING_MAX_FAILED_REVIEWS` failed reviews.
+1. Require the configured settlement tier and population threshold.
+2. Require an active building with stable identity and an anonymously owned unit.
+3. Require actual filled owner slots, target realized margin, sufficient projected owner income,
+   and the founders' living-reserve cash.
+4. Choose candidates with stable economic and ID tie-breaks.
 5. Move one building unit, its actual owner operators, and a conserved household of
    owner-signature dependents (`owner_slots in the cell * family_household_people_per_owner_slot`,
    capped by `family_household_max_people`; defaults 256 per slot, 1024 cap, 8 families per
@@ -166,11 +155,10 @@ The formal `StarterSettlementBootstrap v3` path is the only opening exception: i
 founder building per capital so native bootstrap immediately creates one conserved founder family
 and promotes one already-filled owner as its notable representative. Keep this declaration sparse,
 validate exact cell/type/owner-signature columns, rebuild the normal family/person CSR, and never
-lower the ordinary milestone/founder thresholds to simulate an opening guarantee.
+lower the ordinary tier/population/profit/reserve thresholds to simulate an opening guarantee.
 Treat `forced_named_cells` plus an actually bootstrapped `gathering_ground` as the native v2-packet
-compatibility signature when explicit founder columns are absent. Repair an empty forced capital only
-during days 0..30 and only after its exact owner posts are occupied; use authoritative membership edges
-for idempotence and let the normal PERSON_COMMIT promotion path create and bind the representative.
+compatibility signature when explicit founder columns are absent. Opening creation belongs to bootstrap only. Do not repair an empty capital during daily commit:
+a starter may have migrated or dissolved, so a replacement must follow the ordinary player choice gate.
 
 Spread reviews by stable family/cell phase. Rebase `home_cell` to the largest branch. Dissolve zero-
 population families immediately and apply configured consecutive decline reviews to weak families.
@@ -355,3 +343,34 @@ fatal state, and the largest changed stage. Require population, money, and goods
 Report native/GDScript authority, trait/prestige/effect and family/person semantics,
 PKEC/PKTR/Modifier compatibility, conservation and deterministic-hash evidence, query/UI changes,
 sparse work counts, avg/p95/max, and intentional non-goals.
+
+## Satisfaction realized consumption (2026-10-18)
+
+Basic, comfort and luxury score realized consumption against an authored living
+target (population × base quantity × elapsed days × environment × ethnicity),
+independent of wealth, price-elastic request shrinkage and budget. Missing stock
+keeps the target; technology-inapplicable tiers return -1 in queries (internal
+stored value 0). Native group budgets are consumption 70%, finance 20%, tax 5%,
+development 5%; redistribute missing tiers inside consumption only. Savings alone
+uses cash purchasing power. Missing cost basis scores savings zero, never full.
+Composite is capped by both subsistence (10% slack) and applicable basic living
+(20% slack). Cohort living-standard display uses actual consumption. See
+`docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
+layout; updated need tiers change the content catalog hash.
+
+## Player-reviewed branch splits (2026-10-17)
+
+Player-owned off-origin branches do not split silently. Freeze three surname-preserving trait/effect
+proposals in the existing FamilyFoundingOffer queue, wait for the player's choice, then transfer the
+whole local membership, cash attribution, ownership and people to the selected child. Keep the parent
+elsewhere. Persist the source generation-safe handle and child/parent stable-ID lineage in PKEC v56;
+explicit v55 decoding supplies zero/empty fields without inventing historical lineage. Later arrivals
+from the parent retain the parent's identity. Parent A and independent child A1 may coexist in the same
+cell; later A arrivals may independently qualify for another player-reviewed split. Lineage is metadata
+only and never routes migration or merges families, including related houses sharing a surname.
+Only the choice gate may consult committed Country ownership in addition to the frozen epoch, so
+territory acquired mid-epoch cannot automatically found a player family. Economic inputs stay frozen.
+Validate family_split_choice_runtime_test.gd and family_founding_dialog_ui_test.gd, conservation,
+pending/resolved save hashes, and v55 compatibility. See the authoritative notable-family-runtime.md.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

@@ -18,6 +18,7 @@ import check_resolve_apply as resolve_apply
 import check_module_api as module_api
 import check_skill_mirrors as skill_mirrors
 import world_ext_bindings
+import check_world_ext_bindings as binding_guard
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -756,6 +757,55 @@ class GuardsTest(unittest.TestCase):
         self.assertTrue(skill_mirrors.violations({}, {"s/SKILL.md": 3}))
         self.assertTrue(skill_mirrors.violations({"s/SKILL.md": 2}, {"s/SKILL.md": 3}))
 
+    def test_world_ext_binding_guard_repository(self):
+        self.assertEqual(binding_guard.violations(world_ext_bindings.ROOT), [])
+
+    def test_world_ext_binding_guard_rejects_misplaced_and_entry_bindings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "gdext/src"
+            src.mkdir(parents=True)
+            (root / "tools/ci").mkdir(parents=True)
+            (root / world_ext_bindings.TABLE).write_text(json.dumps({
+                "bind_entry": "gdext/src/world_ext_bind_methods.cpp",
+                "bind_file_pattern": "gdext/src/world_ext_bind_{module}.cpp",
+                "modules": {"core": ["world_ext.h"], "a": ["world_ext_a.cpp"]}}))
+            (src / "world_ext.h").write_text("class DCWorldExt {};\n")
+            (src / "world_ext_a.cpp").write_text("int DCWorldExt::alpha(int x) { return x; }\n")
+            entry = src / "world_ext_bind_methods.cpp"
+            original = ("void DCWorldExt::_bind_methods() {\n"
+                        "    _bind_core_methods();\n    _bind_a_methods();\n}\n")
+            entry.write_text(original)
+            binding = '    ClassDB::bind_method(D_METHOD("alpha", "x"), &DCWorldExt::alpha, DEFVAL(0));\n'
+            core, a = src / "world_ext_bind_core.cpp", src / "world_ext_bind_a.cpp"
+            core.write_text("void DCWorldExt::_bind_core_methods() {}\n")
+            a.write_text("void DCWorldExt::_bind_a_methods() {\n" + binding + "}\n")
+            self.assertEqual(binding_guard.violations(root), [])
+            self.assertEqual(world_ext_bindings.inventory(root)[0][0]["bind_file"],
+                             "gdext/src/world_ext_bind_a.cpp")
+            # Move rather than copy it: uniqueness alone cannot catch this error.
+            a.write_text("void DCWorldExt::_bind_a_methods() {}\n")
+            core.write_text("void DCWorldExt::_bind_core_methods() {\n" + binding + "}\n")
+            self.assertTrue(any("belongs to module a" in p for p in binding_guard.violations(root)))
+            core.write_text("void DCWorldExt::_bind_core_methods() {}\n")
+            entry.write_text(original.replace("    _bind_core_methods();", binding + "    _bind_core_methods();"))
+            self.assertTrue(any("bind_method must only" in p for p in binding_guard.violations(root)))
+            # Exercise the CLI's nonzero exit and actionable diagnostic too.
+            result = subprocess.run([sys.executable, str(world_ext_bindings.ROOT / "tools/ci/check_world_ext_bindings.py"),
+                                     "--root", str(root)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bind_method must only", result.stderr)
+            entry.write_text(original.replace("    _bind_a_methods();", "    // _bind_a_methods();"))
+            self.assertTrue(any("called 0 times" in p for p in binding_guard.violations(root)))
+            entry.write_text(original.replace("    _bind_a_methods();", "    _bind_a_methods(); _bind_a_methods();"))
+            self.assertTrue(any("called 2 times" in p for p in binding_guard.violations(root)))
+            entry.write_text(original)
+            a.unlink()
+            self.assertTrue(any("missing module binding file" in p for p in binding_guard.violations(root)))
+            a.write_text("void DCWorldExt::_bind_a_methods() {}\n")
+            (src / "world_ext_bind_extra.cpp").write_text("// no bindings\n")
+            self.assertTrue(any("unexpected module binding file" in p for p in binding_guard.violations(root)))
+
     def test_world_ext_binding_inventory_maps_every_binding(self):
         def tree(table_modules, extra_cpp=""):
             tmp = tempfile.TemporaryDirectory()
@@ -765,13 +815,15 @@ class GuardsTest(unittest.TestCase):
             (root / "gdext/src/world_ext.h").write_text("class DCWorldExt { int inline_one() const { return 1; } };\n")
             (root / "gdext/src/world_ext_a.cpp").write_text(
                 "int DCWorldExt::alpha(int x) {\n    return x;\n}\n" + extra_cpp)
-            (root / "gdext/src/world_ext_bind_methods.cpp").write_text(
-                'void DCWorldExt::_bind_methods() {\n'
+            (root / "gdext/src/world_ext_bind_a.cpp").write_text(
+                'void DCWorldExt::_bind_a_methods() {\n'
                 '    ClassDB::bind_method(D_METHOD("alpha", "x"), &DCWorldExt::alpha, DEFVAL(0));\n'
                 '    ClassDB::bind_method(\n        D_METHOD("inline_one"),\n        &DCWorldExt::inline_one);\n}\n')
             (root / "tools/ci/world_ext_binding_modules.json").write_text(json.dumps({
-                "bind_file": "gdext/src/world_ext_bind_methods.cpp", "modules": table_modules,
+                "bind_entry": "gdext/src/world_ext_bind_methods.cpp",
+                "bind_file_pattern": "gdext/src/world_ext_bind_{module}.cpp", "modules": table_modules,
                 "test_only": [], "keep_unreferenced": {}}))
+            (root / "gdext/src/world_ext_bind_core.cpp").write_text('void DCWorldExt::_bind_core_methods() {}\n')
             return tmp, root
 
         tmp, root = tree({"core": ["world_ext.h"], "a": ["world_ext_a.cpp"]})

@@ -31,6 +31,11 @@ base 归 `world_ext_generate_base.cpp`，post-base/full/publish 归
 几何编排归 `world_ext_bake.cpp`，编码与分块分别归
 `world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp`。
 脚本助手及输入边界见 `docs/architecture/source-module-splits.md`。
+2026-11-09 山地修复：所有尺寸统一冻结山脊基底与 p99 高度预算，仅顶部约 1%
+软收尾；烘焙增加可选 `cell_landform`、两圈区域起伏与山地/高峰下限。
+主脊/刻谷当前默认值读 `terrain_index_baker.gd::DEM_DEFAULTS`，
+旧 `MapBaker.RELIEF_AMP/K_CREST` 属于历史 fallback，不是 native DEM 参数。
+契约、参数和验证见 `docs/architecture/current-state.md` 的山地高度与烘焙起伏节。
 
 | 角色 | 路径 |
 |---|---|
@@ -38,7 +43,7 @@ base 归 `world_ext_generate_base.cpp`，post-base/full/publish 归
 | bake 编排（GDScript） | `Project.Keynes/Project/project-keynes/scripts/rendering/map_baker.gd` |
 | C++ 权威实现 | `gdext/src/world_ext_generate*.cpp`、`world_ext_season_refresh.cpp`、`world_ext_bake*.cpp`，按上述职责定位 |
 | C++ 方法声明 | `Project.Keynes/gdext/src/world_ext.h` |
-| C++ 方法绑定 | `Project.Keynes/gdext/src/world_ext_bind_methods.cpp` |
+| C++ 方法绑定 | `gdext/src/world_ext_bind_<模块>.cpp` |
 | 并行设施 | `Project.Keynes/gdext/src/parallel_dispatcher.h`（`pk::parallel_for_range`） |
 | 设计文档 | `docs/architecture/current-state.md` |
 
@@ -127,7 +132,7 @@ display metadata; seeding does not read it.
 - **fallback 纪律**：用户要求"全 C++、不降级"时，wrapper 在 ext/方法缺失或返回 fallback 时
   `push_error` 返回空 buffer（不静默退回 GDScript 计算）；但**融合 pass 通常保留"融合优先 + 旧路径回退"**，
   让 DLL 未 rebuild 时仍能跑。两者区别按任务要求定。
-- **三处必须同步**：`world_ext.h`（声明）+ `world_ext.cpp`（实现）+ `world_ext_bind_methods.cpp`（`ClassDB::bind_method`）。
+- **三处必须同步**：`world_ext.h`（声明）+ `world_ext.cpp`（实现）+ `world_ext_bind_<模块>.cpp`（`ClassDB::bind_method`）。
   漏 bind → GDScript `has_method` 探测不到 → 走 fallback。
 - **knobs 键名唯一**：同一 Dictionary 里键不能重名（踩过坑：`height` 既当维度又当 buffer → 用 `height_buffer`）。
 - **bit-equal 不强求**：用户一般迁完自己验证；几何用 float 复刻 Godot `Vector2` real_t、scalar 用 double，
@@ -148,7 +153,7 @@ terrain-index 并行预计 4–8x。降 `derived_size` 分辨率会让 terrain+e
 ## SOP：新增一个生成期 bake pass
 
 1. **grounding**：读对应 GDScript ground-truth 实现 + 现有同范式 C++ pass + 设计文档。
-2. **C++**：在 `world_ext.h` 声明、`world_ext.cpp` 实现（buffer-encoder 范式）、`world_ext_bind_methods.cpp` 绑定。
+2. **C++**：在 `world_ext.h` 声明、`world_ext.cpp` 实现（buffer-encoder 范式）、`world_ext_bind_<模块>.cpp` 绑定。
 3. **GDScript wrapper**：native-first（`has_method` 探测）+ 按任务要求决定是否保留 fallback。
 4. **文档**：更新 `docs/architecture/current-state.md`（状态表 + 专节 + I/O 契约）。
 5. **校验**：`read_lints` 两侧 0 错误；grep 确认方法名跨 `.h`/`.cpp`/bind/GDScript/doc 对齐；交用户编译跑 A/B。
@@ -160,3 +165,5 @@ terrain-index 并行预计 4–8x。降 `derived_size` 分辨率会让 terrain+e
 - `[native_generation/base|post_base] path=gdext ...`
 - 无 `fallback` / `push_error` / `phys_field_nan_guard>0`
 - 视觉：地形/河流/火山辉光/海岸/洋流方向与迁移前一致
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

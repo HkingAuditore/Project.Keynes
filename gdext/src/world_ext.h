@@ -126,16 +126,326 @@ class DCWorldExt : public godot::RefCounted {
 public:
     DCWorldExt();
     ~DCWorldExt() override;
-    // Cold loading tasks use an isolated, unbound compute context. No live slots
-    // or renderer objects cross this boundary. Handles are single-use generations.
-    int64_t begin_loading_task(const godot::String &operation, const godot::Dictionary &input);
-    godot::Dictionary poll_loading_task(int64_t handle);
-    godot::Dictionary take_loading_task(int64_t handle);
-    void cancel_loading_task(int64_t handle);
-    void cancel_all_loading_tasks();
     static void shutdown_loading_tasks();
-    godot::Dictionary encode_bake_height_flow_tex_data(const godot::Dictionary &input);
 
+    void sync_runtime_domain_ownership();
+    bool economy_worker_owns_natural_resources() const;
+    // PK_SIM_DAY_TRACE: one "[main-write]" line with climate slot hashes.
+    void sim_trace_main_write(const char *tag);
+    struct SimTraceWriteGuard {
+        DCWorldExt *self;
+        const char *tag;
+        ~SimTraceWriteGuard() { self->sim_trace_main_write(tag); }
+    };
+    // B8 P2：把"生产当前可用"的 wind traj 表导出给 capture。判定与 weather
+    // field solve 的消费端同一契约：表已建 + knob 允许消费 + 指纹仍然匹配当前
+    // 风场。返回 false 表示这次不该消费 traj（worker 与生产一起走 hopping 回退），
+    // 而不是"没有这张表"。
+    bool runtime_weather_traj_snapshot(int n_cells,
+                                       std::vector<int32_t> &out_idx,
+                                       std::vector<float> &out_w) const;
+    // B8-2：把生产 cyclone 条目表编码成 worker/存档共用的 blob。空 blob = 当前没有
+    // 活跃气旋（仍然是一次有效播种：worker 会接管空表并自行推进）。
+    std::vector<uint8_t> runtime_cyclone_state_blob() const;
+
+    void publish_restored_country_territory(godot::Dictionary &out);
+
+    // Monotonic request id for the Economy POD queue (whole-graph ACTIVE).
+    uint64_t _military_pod_request = 1;
+    // ---- end Military
+
+    // ---- end Military cell stats
+
+    NativeSimulationHost *trigger_pod_host() const { return _runtime_host.get(); }
+
+    // SPLIT AUTHORITY settle (mask 0xFEF: IDEOLOGY on the main thread, EFFECT and
+    // MODIFIER on the worker). In that configuration the main thread has no
+    // Effect settler -- `run_effect_daily`, both Modifier adapter halves and
+    // `run_modifier_daily` all report `path=EFFECT_WORKER` -- so an ideology
+    // equip's batch is planned here and never drained. This submits those rows
+    // into the worker's Modifier lane and completes the Effect transaction once
+    // the worker has committed them.
+    //
+    // INERT unless the worker is authoritative for EFFECT *and* MODIFIER, tested
+    // with the same `domain_is_worker_authoritative` predicate `run_effect_daily`
+    // uses to decide it has nothing to do. Anything weaker double-applies rows
+    // the local adapter already applied (1.03 -> 1.0609).
+    godot::Dictionary settle_split_authority_effects(int64_t day_index);
+    struct EffectGameplayCommand {
+        int32_t action = 0;
+        int32_t domain = -1;
+        int32_t opcode = 0;
+        int64_t effective_day = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        int64_t value_i64 = 0;
+        std::array<int64_t, 4> payload{};
+        uint64_t idempotency_key = 0;
+        int64_t request_id = 0;
+    };
+    // Native gameplay/event Effect ingress. The event journal remains the
+    // authority; this queue only preserves the Effect safe-boundary ACK.
+    bool submit_effect_gameplay_commands_pod(const EffectGameplayCommand *commands,
+                                             size_t count,
+                                             std::vector<int64_t> &request_ids,
+                                             std::string &error);
+    bool effect_gameplay_command_result_pod(int64_t request_id, bool &complete,
+                                            bool &ok, std::string &reason) const;
+    bool commit_canal_effect(uint64_t project_handle,
+                             uint32_t project_generation,
+                             uint64_t idempotency_key,
+                             std::string &error);
+
+    // §2.0 of the round-1 review: the plane is OFF by default. Until generation,
+    // double-application, selector semantics, coefficient semantics and thread
+    // ownership are fixed, it must not touch shipped numbers. Tests turn it on
+    // explicitly.
+    // Inject a table directly. The generator has no DSL for columns yet, so the
+    // only way to exercise `NEIGHBOR_COUNT` is to hand-build one.
+    bool set_ideology_cell_program_entry_for_test(
+        int32_t stat_id, int32_t filter_tag, int32_t operation,
+        int32_t coef_q16, int32_t column_kind, int32_t column_tag,
+        int32_t cap_units);
+
+    // Native-only hot-path helpers. They resolve no strings in the consumer loop.
+    float modifier_climate_radiative_target(int cell, float base_value) const;
+    double modifier_country_output_factor(int64_t country_handle) const;
+    double modifier_building_output_factor(int64_t building_handle,
+                                           int64_t settlement_cell) const;
+
+    void append_economy_read_view_perf(godot::Dictionary &out) const;
+
+    godot::Dictionary poll_runtime_events_snapshot_opts(
+        const godot::Dictionary &opts);
+
+    // Returns a pointer to the per-cell annual-mean insolation cache (size n),
+    // rebuilding it iff the (n, lat-array, axial_tilt, daylen) fingerprint changed.
+    // Shared by run_climate_pass_a and run_climate_pass_a_thread. Bit-equal to the
+    // inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...) it replaces.
+    const float *ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
+                                                float axial_tilt_deg, float daylen_amp);
+
+    // ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ scaffolding ──
+    //
+    // 6 个待 C++ 化的 hot pass，本提交为 **stub**——每个函数 sig 已就位、
+    // _bind_methods 已注册、ClimateProfile 配套 use_gdext_<name> flag 已加，
+    // 函数体当前 return -1.0 → GDScript caller 走 fallback。
+    //
+    // 后续 PR 按 charter §12.4 七步 SOP + tools/migration_harness/template_bench.gd
+    // 逐个填充实际算法 + bit-equal 验收。每个 pass 顶部注释列出对应 GDScript
+    // 源文件 + 性能目标（charter §7）。
+    //
+    // 加入顺序按 charter §7 收益优先级：F.1 (P0) → F.2 (P1) → ... → F.6 (P3)。
+
+    // run_bake_coast_sdf_pass（water-bodies systemic）：海/湖统一"离岸像素距离场"。
+    //   从 per-pixel terrain(biome_buffer) 的 land-water 边界做 chamfer 3-4 双通距离变换，
+    //   产出每像素到最近水体的像素距离（水体=0，向内陆递增，clamp 于 coast_sdf_max_dist_px）。
+    //   水集合 = {0,1,18,19,20,21}（与 terrain_index is_water / pk_is_water_terrain 对齐）。
+    //   输入 width/height/biome_buffer/coast_sdf_max_dist_px/coast_sdf_wrap_x。
+    //   输出 out_buf(F32 PackedFloat32Array)。供 geometry_fields 在 river carve 后刻连续岸坡。
+    godot::Dictionary run_bake_coast_sdf_pass(godot::Dictionary knobs);
+
+    // ─── Phase C.1（dots-total-cpp roadmap）：System schedule graph 节点 ──
+    //
+    // 这组 _exec_node_* 是 system_schedule.h 内 SystemNode.exec_fn 的成员函数
+    // 指针目标。public 仅是为了让 `&DCWorldExt::_exec_node_xxx` 能在 cpp
+    // 全局静态表 SCHEDULE_GRAPH 中取地址；**不**对外提供调用语义——只能由
+    // system_schedule.cpp 的 dispatch_system_schedule loop 调用。
+    //
+    // 每个节点直接镜像 run_native_daily_tick line 960-1063 内对应 if-bundle
+    // 块的语义：读 bundle key → 调 run_<X>_pass → 累加 breakdown（含 climate_ms
+    // / ocean_ms / stage_b_ms 跨 pass 累加）→ 写节点级 side-effect（stage_b 的
+    // 4 个 breakdown 回填、weather 的 _native_fronts_snapshot 写入）。
+    // 返回 true=成功；false=fallback 触发，dispatch loop 走 finish_with_failure。
+    bool _exec_node_climate_pass_a     (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_ocean_water        (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_ocean_land         (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_climate_pass_b     (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_wind_air           (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_wind_surface       (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_sea_ice            (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_transpiration      (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_albedo             (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_vegetation_dynamics(godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_climate_feedback   (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_stage_b            (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_stage_b_after_hydrology(godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_weather            (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+    bool _exec_node_runtime_hydrology  (godot::Dictionary& bundle,
+                                        const godot::Dictionary& tick_knobs,
+                                        godot::Dictionary& breakdown);
+
+    // ─── perf 2026-07-08, Item 1：phys pass 每调用固定开销缓存 ───────────
+    // 解析四个 phys pass 共用的 cell_* slot id + 重建 is_water_lut，按
+    // FNV-1a(n_cells, water_terrain_ids) 指纹失效。命中后各 pass 直接读
+    // _phys_sid_* / _phys_is_water_lut 成员，省掉重复 component_id(StringName)
+    // 与 256 字节 LUT 重建。邻居索引仍由 knob 传入（保留 fallback）。
+    // 仅在指纹失配时重算（地图 regen / 水掩膜变化），主线程同步调用。
+    void _phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids);
+    // cell_lat_norm slot 的只读指针；slot 缺失或尺寸不符返回 nullptr（调用方退化为
+    // 用 cell_pos_y 自归一化）。需先调用 _phys_resolve_static()。
+    const float *_phys_lat_norm_ptr(int n_cells);
+    // 缓存 WIND coast/sea BFS 结果（coast_dist/sea_dist 等）到成员；指纹失配才重建。
+    // TR/NB/water_ids 来自当前 pass 已解析的 slot/knob（调用方传入）。
+    void _phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
+                                 const bool *is_water_lut, const godot::PackedByteArray &water_ids);
+    // NS 化 Phase 0：在 wind pass 末尾由最终风槽构建半拉格朗日回溯轨迹表
+    // （每 cell 3×i32 邻居索引 + 3×f32 权重），供动量自平流与 weather/wind_air
+    // SL 平流消费。内部用 pk::parallel_for_range，只读 slots、写 own-row。
+    void _phys_build_wind_traj(int n_cells, const float *POSX, const float *POSY,
+                               const int32_t *NB, const float *WX, const float *WY,
+                               const float *WSP, double wrap_period_x,
+                               double traj_pos_scale, double traj_dt_days);
+
+    void async_climate_shutdown_all();
+
+    // ───────────────────────────────────────────────────────────────────
+    // Async Climate Round（plan §async-stage-1，2026-06-14）
+    //
+    // Goal：把整个 climate daily round（pass_a → pass_b → ocean_water →
+    // ocean_land → wind_air → wind_surface → sea_ice → transp 8 个 pass）
+    // 整体扔给 worker thread 跑，主线程只做 kick/poll 和短暂 memcpy。
+    // 主线程目标：每帧 climate 相关工作 < 1.5ms（kick + poll + flush）。
+    //
+    // 本阶段（Stage 1）：
+    //   - 搭好 round-level async 框架（input/output/work buf + 单 worker
+    //     thread + std::condition_variable wake/wait）
+    //   - 8 pass 中只有 transpiration 实现 pure std::vector kernel；
+    //     其它 7 pass 留 stub（input → output 直传，不修改）
+    //   - GDScript 端用一个隔离的测试入口（cp.use_climate_round_async = true
+    //     时 climate_daily_system 走 async 路径，否则走原 sync 路径）
+    //
+    // 线程安全契约（与 demo async 完全一致，不重复说明）：worker 全程只碰
+    // std::vector / atomic / mutex / cv，绝不调任何 Godot API。
+    //
+    // 单例语义：本机制只支持一个 async climate round 任务（不需要 task_id
+    // 多路），全局状态指针 _async_climate_round_state 由 lazy alloc 维护。
+    // 析构时由 ~DCWorldExt 调 async_climate_round_shutdown 安全 join。
+
+    // S3：Dictionary → ClimateInputBuf 的唯一提取实现。async_climate_round_kick
+    // 与 capture_runtime_inputs（SHADOW worker 的输入边界）都调它，保证两条驱动
+    // 路径拿到逐位相同的输入缓冲。调用方负责并发保护。
+    // prefer_slot_lanes=true 时，pass_a 读的 per-cell lane 改从 _slots 取而不是从
+    // Dictionary（即 MapData 镜像）取。SHADOW capture 必须用它：生产 pass_a 读的是
+    // _slots，MapData 镜像只在部分 pass 末尾 flush，两者在同一日起点未必相等——
+    // 那种差异会以"同一份内核算出不同结果"的形式出现在对拍里，极难归因。
+    void fill_climate_round_input(const godot::Dictionary &input, int n_cells,
+                                  pk_async_climate::ClimateInputBuf &buf,
+                                  bool prefer_slot_lanes = false);
+
+    // 记下生产 pass_b 用的海冰浓度 lane。它不是 slot，也不在 pass_a 留存的 kin 里。
+    void record_production_pass_b_input(int n_cells, const float *sea_ice_frac,
+                                       const float *temp_transport_anomaly);
+
+    // 同理，sea_ice 的温度 lane：生产刻意从 GDScript 的 cell.temperature 打包传入，
+    // 不是 SoA cell_temp。两者差一整段 ocean_land 修正，读错会多算冰。
+    void record_production_sea_ice_input(
+        const pk_async_climate::SeaIceLanes &lanes, int n_cells);
+
+    // 记下生产 wind_surface 真正读到的 oanom。它由跳过 round 的分片 ocean stage
+    // 写，worker 补不出来 —— 见 pk_async_climate::WindSurfaceInput 的注释。
+    void record_production_wind_surface_input(int n_cells, const float *ocean_anomaly);
+
+    // 记下生产 ocean_water 真正用的 baseline / temp_before——两者都是非 slot 的
+    // 派生量，见 pk_async_climate::OceanWaterInput 的注释。
+    void record_production_ocean_water_input(int n_cells, const float *baseline,
+                                            const float *temp_before);
+
+    // 从一个 sync pass 的 knobs Dictionary 里抽出它那段 round 标量，记进
+    // _production_round_scalars。pass_bit 用 passes_mask 的位（0x02 pass_b /
+    // 0x04 ocean_water / 0x08 ocean_land / 0x10 wind_air / 0x20 wind_surface /
+    // 0x40 sea_ice）。在每个 pass 的标量拉取之后调用，读的就是那个 pass 自己用的
+    // Dictionary —— 所以不会产生第二个取值来源。
+    // pass_a 的 25 个标量没有对应的 knobs Dictionary 记录点（生产在 pass 内部就把
+    // 它们组装成 ClimateRoundScalars 了）。直接抄那一份，而不是再解析一次字典。
+    void record_production_pass_a_scalars(
+        const pk_async_climate::ClimateRoundScalars &src);
+    void record_production_round_scalars(int pass_bit,
+                                        const godot::Dictionary &knobs);
+
+    // stage 10（climate_feedback）：把生产这一次真正读到的输入 lane 连同标量整份留存。
+    // 为什么不能让 worker 用 environment 快照的同名 lane：feedback 跑在 stage_b 段、
+    // 也就是 weather 之后，而快照是 tick 起始拍的；weather_type / weather_intensity 在
+    // 这两个时刻之间正好被 weather pass 整场重写过。
+    void record_production_feedback_input(
+            const pk_async_climate::ClimateFeedbackKnobs &knobs, int n_cells,
+            const uint8_t *is_water, const uint8_t *weather_type,
+            const float *weather_intensity, const uint8_t *weather_field_init,
+            const float *temp_transport_anomaly, const float *base_moisture,
+            const float *soil_moisture);
+
+    // stage 9（vegetation_dynamics）同理，但它读的东西更多：8 张查表 + 11 条输入
+    // lane，其中 terrain / landform / vegetation 三条会被上一天的演替后处理（GDScript
+    // 侧写 cell.vegetation）改动，而那次写入不属于任何 climate stage —— 拿快照那份等于
+    // 用演替前的植被算演替后的活力。
+    void record_production_vegetation_input(
+            const pk_async_climate::VegetationDynamicsKnobs &knobs,
+            const pk_async_climate::VegetationDynamicsTables &tables,
+            const pk_async_climate::VegetationDynamicsLanes &lanes,
+            int n_cells);
+
+    // stage 11（weather field solve）同理，但它还要记七组跨 tick 状态的初值。
+    // 那七组都不是 RuntimeClimateStore 的成员，worker 若从零起步，ψ 与对流抑制要好
+    // 几天才与生产收敛，而这几天会被分叉矩阵记成算法分叉。
+    void record_production_weather_input(
+            const pk_async_climate::WeatherFieldKnobs &knobs,
+            const pk_async_climate::SynopticAdvanceKnobs &synoptic,
+            bool synoptic_enabled,
+            const pk_async_climate::WeatherFieldLanes &lanes,
+            const pk_async_climate::WeatherFieldState &state,
+            int n_cells,
+            const uint8_t *field_init = nullptr);
+
+    // weather distribute（stage 11 后段）同理。cover 与两条积雪计数都是没有 store
+    // 成员承接的 in/out，记初值、worker 用 scratch。
+    void record_production_weather_distribute_input(
+            const pk_async_climate::WeatherDistributeKnobs &knobs,
+            const pk_async_climate::WeatherDistributeLanes &lanes,
+            const pk_async_climate::WeatherDistributeState &state,
+            int n_cells);
+
+    // stage 12（runtime hydrology）同理。运河拓扑代号也跟着过去：worker 侧的
+    // 编译缓存按它失效，对不上就会在运河变更的那一天潜默用旧拓扑。
+    void record_production_hydrology_input(
+            const pk_async_climate::HydrologyKnobs &knobs,
+            const pk_async_climate::HydrologyLanes &lanes,
+            bool has_neighbors, uint64_t canal_topology_generation,
+            int n_cells);
+
+    // 把 pass_a 读的 slot-backed lane 覆盖进 buf。返回 false 表示 slot 不完整
+    // （未 bind / 尺寸不符），此时 buf 保持调用方给的内容。
+    bool override_climate_round_input_from_slots(int n_cells,
+                                                pk_async_climate::ClimateInputBuf &buf);
+
+    // ---- bindings: core ----
     // ─── Diag log toggle (Fix #11 second pass, 2026-06-16) ──────────────
     // Mirror of GDScript PKLog.enabled. Pass kernels themselves don't print
     // hot-loop（all hot path are scalar tight loops），but a few startup-time
@@ -143,23 +453,19 @@ public:
     // this flag. Hot kernels never log inside the tight loop regardless.
     void set_diag_logs_enabled(bool v) { _diag_logs_enabled = v; }
     bool get_diag_logs_enabled() const { return _diag_logs_enabled; }
-
     // ─── Component registry ──────────────────────────────────────────────
     int register_component(const godot::StringName &name, int dtype, int stride = 1, bool track_prev = false);
     int component_id(const godot::StringName &name) const;
     int component_count() const { return _slots.size(); }
     bool has_component(const godot::StringName &name) const { return _slot_by_name.has(name); }
-
     // ─── Entity / Pool API (mirrors I2.A in GDScript) ────────────────────
     int  create_entities(int count);                 // grow _entity_count, returns first new idx
     int  entity_count() const { return _entity_count; }
-
     int           create_pool(const godot::StringName &name, int capacity);
     godot::Vector2i pool_range(int pool_id) const;
     int           pool_id(const godot::StringName &name) const;
     int           pool_count() const { return _pools.size(); }
     int           pool_free_count(int pool_id) const;
-
     // ─── Hot-path data views (READ-ONLY snapshot under DCWorldExt) ───────
     // Under GDExtension the returned PackedArray is a CoW *copy*, not an
     // alias to internal storage. Mutating it does NOT write back. For
@@ -177,7 +483,6 @@ public:
     godot::PackedFloat32Array view_f32(int comp_id);
     godot::PackedInt32Array   view_i32(int comp_id);
     godot::PackedByteArray    view_u8(int comp_id);
-
     // ─── Mode-B snapshot API (recommended) ──────────────────────────────
     // Returns a value-copy (Godot PackedArray COW) of `_slots[comp_id].arr_*`.
     // The caller is free to mutate the returned array — those mutations
@@ -192,7 +497,6 @@ public:
     // I32 snapshot；后续序列化 / save / overlay 也需要 U8 snapshot 补齐。
     godot::PackedInt32Array   snapshot_i32(int comp_id);
     godot::PackedByteArray    snapshot_u8(int comp_id);
-
     // ─── Mode-B per-cell read API（plan/3b-single-read-source）─────────
     // 单元素直读：从 _slots[comp_id].arr_*.ptr() 直接索引，无 Variant 装箱、
     // 无 PackedArray 拷贝。供 HexCell facade 21 个 hot getter 切换 read 源
@@ -206,7 +510,6 @@ public:
     float   read_f32(int comp_id, int idx) const;
     int32_t read_i32(int comp_id, int idx) const;
     int     read_u8 (int comp_id, int idx) const; // 返回 int（与 write_u8 对称）
-
     // ─── Hot-path writes (replaces `view_xxx(c)[i] = v` pattern) ─────────
     // Single-element writes; bounds-checked, no-op on invalid args.
     void write_f32(int comp_id, int idx, float v);
@@ -216,7 +519,6 @@ public:
     void write_f32_range(int comp_id, int start, const godot::PackedFloat32Array &src);
     void write_i32_range(int comp_id, int start, const godot::PackedInt32Array   &src);
     void write_u8_range (int comp_id, int start, const godot::PackedByteArray    &src);
-
     // Sparse / indexed writes; for each k in [0, indices.size()), do
     //   arr[indices[k]] = values[k]
     // Designed for Pass-B / dirty-only systems where the dirty cell list is
@@ -227,23 +529,63 @@ public:
     void write_f32_indexed(int comp_id, const godot::PackedInt32Array &indices, const godot::PackedFloat32Array &values);
     void write_i32_indexed(int comp_id, const godot::PackedInt32Array &indices, const godot::PackedInt32Array   &values);
     void write_u8_indexed (int comp_id, const godot::PackedInt32Array &indices, const godot::PackedByteArray    &values);
-
     // ─── Bind to MapData (GDScript instance) ─────────────────────────────
     // Reflectively reads the GDScript `MapData` properties (e.g. `temp_arr`)
     // and assigns them into the matching slots. Buffers are shared via COW —
     // no copy. Returns false on any property mismatch / type mismatch.
     bool bind_map_data(godot::Object *map_data);
     bool is_bound() const { return _bound; }
-
     // GDScript 在 bind_map_data 后注入 DCWorld 句柄。native flush 会对比提交前后
     // 的视觉槽，只把真实变化的 cell 传给 dirty mask；`nullptr` 关闭自动 mark。
     void bind_dirty_world(godot::Object *dirty_world);
-
     // Top-level native orchestration scaffold. These APIs are intentionally
     // coarse-grained: GDScript configures once after bind_map_data(), then a
     // daily tick passes only scalar clock values. Kernels can be fused behind
     // this surface without changing GDScript orchestration again.
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
+    bool is_native_daily_visual_commit_pending() const;
+    void complete_native_daily_visual_commit();
+    // Compatibility alias for callers predating the full visual-snapshot barrier.
+    void complete_native_daily_moisture_commit();
+    // Native country authority. Only cell.country_slot is mirrored into the
+    // DataCore/MapData bridge; identity, technology, treasury, and territory
+    // CSR remain native-only.
+    godot::Dictionary configure_country(const godot::Dictionary &catalog,
+                                        const godot::Dictionary &profile,
+                                        int cell_count, int64_t seed);
+    // ─── CoW flush / refresh (performance-charter §11.2) ─────────────────
+    // After any C++ pass calls ptrw() on a slot, CoW detaches the buffer.
+    // flush_slots_to_map() pushes the (possibly-detached) C++ buffer back
+    // to the GDScript MapData property via obj->set() — O(1) ref-swap each.
+    // refresh_slots_from_map() does the reverse: pulls GDScript-side
+    // arrays back into the C++ slots (needed when GDScript code writes
+    // map.*_arr between C++ passes).
+    void flush_slots_to_map();
+    void flush_slots_to_map_keys(const godot::PackedStringArray &slot_names);
+    void refresh_slots_from_map();
+    void refresh_slots_from_map_keys(const godot::PackedStringArray &slot_names);
+    // 把 native flush 累积的精确 dirty indices 一次性 emit 到 _dirty_world。
+    // 保留旧方法名以兼容 GDScript 调用点；多次调用幂等。
+    void flush_pending_mark_dirty_all();
+    // ─── Archetype system (mirrors I2.B in GDScript) ─────────────────────
+    int  create_archetype(const godot::StringName &name, const godot::Array &comp_ids);
+    void assign_archetype(int idx, int arch_id);
+    int  archetype_count() const { return _archetypes.size(); }
+    godot::PackedInt32Array entity_archetype_array() const { return _entity_archetype; }
+    // Wind heat transport, split to match ClimateDailySystem ordering:
+    // air mass writes only cell_air_mass_temp_anomaly; surface reads that
+    // anomaly and is the sole wind-air stage that injects heat into cell_temp.
+    bool supports_wind_air_slot_temp() { return true; }
+
+    // ---- bindings: runtime ----
+    // Cold loading tasks use an isolated, unbound compute context. No live slots
+    // or renderer objects cross this boundary. Handles are single-use generations.
+    int64_t begin_loading_task(const godot::String &operation, const godot::Dictionary &input);
+    godot::Dictionary poll_loading_task(int64_t handle);
+    godot::Dictionary take_loading_task(int64_t handle);
+    void cancel_loading_task(int64_t handle);
+    void cancel_all_loading_tasks();
+    godot::Dictionary encode_bake_height_flow_tex_data(const godot::Dictionary &input);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
     // Coarse-grained native scheduler boundary. Configuration is cold-path;
@@ -252,14 +594,12 @@ public:
     int configure_runtime_graph(const godot::Dictionary &boot_config);
     int64_t advance_runtime_pulse(int64_t day, double season_phase,
                                   double speed_scale, int budget_us, int flags = 0);
-    void sync_runtime_domain_ownership();
     void flush_runtime_visuals(uint32_t dirty_mask = 0);
     void set_runtime_qos(bool interactive);
     godot::Dictionary get_runtime_thread_report() const;
     godot::Dictionary get_runtime_control_state() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
-    godot::Dictionary get_economy_checkpoint_format() const;
     godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
                                                     double visual_apply_ms,
                                                     double gpu_upload_ms);
@@ -311,6 +651,1370 @@ public:
     // Ideology parity reference capture. Off by default: it exports and stores a
     // full ideological snapshot per day, which production must not pay for.
     godot::Dictionary set_runtime_ideology_parity_enabled(bool enabled);
+    godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
+    godot::Dictionary poll_runtime_receipts(int max_items = 128);
+    godot::Dictionary set_runtime_qos_threaded(bool interactive);
+    godot::Dictionary poll_runtime_commit(int64_t after_generation);
+    godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
+                                                    int cursor, int max_items);
+    godot::Dictionary request_runtime_save(int64_t request_id);
+    godot::Dictionary poll_runtime_save(int64_t request_id);
+    godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes,
+                                             const godot::PackedByteArray &external_ecp2 = godot::PackedByteArray());
+    godot::Dictionary request_runtime_stop();
+    // True while the worker holds ACTIVE authority over the Climate domain, so
+    // the main-thread Climate schedule must not run. Read straight off the host
+    // rather than from a bundle field: a value injected by GDScript is a frame
+    // stale, and a stale `false` would run a duplicate Climate day while the
+    // worker is already producing one.
+    bool climate_worker_authoritative() const;
+    // The main-thread Climate schedule gate: authoritative, or ACTIVE Climate
+    // requested and the worker's first day not yet committed.
+    bool climate_main_thread_suppressed() const;
+    bool climate_physics_authoritative() const;
+    godot::Dictionary get_climate_physics_read_view() const;
+    // Applies the newest worker-committed Climate day into the DataCore slots
+    // and flushes them to MapData. This is the main-thread half of ACTIVE
+    // Climate: without it the worker would own the domain while MapData stayed
+    // frozen at the day authority was granted.
+    //
+    // `after_generation` is the caller's cursor; pass the value returned in
+    // "generation" by the previous successful call. Non-blocking, and a no-op
+    // when the worker has not committed a newer day.
+    godot::Dictionary apply_runtime_climate_writeback(int64_t after_generation);
+    // B8 P3: block until the worker has evaluated environment generation
+    // `after_environment_generation` (plan attempt, not necessarily a commit).
+    // timeout_ms < 0 waits until the condition or a terminal worker state;
+    // >= 0 is one bounded slice that the caller loops over while pumping
+    // main-thread peer transport between slices.
+    godot::Dictionary wait_climate_consumed(
+        int64_t after_environment_generation, int64_t timeout_ms = -1);
+    // P1：环境帧预发布器用的只读探测（"现在还能不能再塞一帧"）。**不加锁、不阻塞**
+    // —— 内部 ring 的 has_capacity() 临界区只有一次 deque::size()。返回 false 表示
+    // 调用方本帧应当放弃发布，下一帧再试，绝不等待。
+    bool environment_ring_has_capacity() const;
+    // P1：worker 已提交日。预发布器的上界要按"已提交"算，而不是"已发布"——
+    // 环里未消费的帧只是内存，不是事实。
+    int64_t runtime_committed_day() const;
+    bool runtime_climate_writeback_self_test() const;
+    bool runtime_snapshot_ring_self_test() const;
+    bool runtime_domain_pod_self_test() const;
+    bool runtime_authoritative_domains_self_test() const;
+    bool runtime_climate_authority_self_test() const;
+    bool runtime_climate_trace_self_test() const;
+    // Returns a Dictionary rather than a bool: a parity failure needs its
+    // reason to be actionable, and a bare false is what let earlier gaps sit
+    // behind a green light.
+    godot::Dictionary runtime_climate_parity_contract_test() const;
+    // B8 P0: proves the worker kernel's canonical stage order and the
+    // production native-daily graph order are the same contract. A single
+    // reorder on either side fails here instead of surfacing as a numerical
+    // divergence weeks later.
+    godot::Dictionary runtime_climate_stage_order_contract_test() const;
+    bool runtime_country_pod_authority_self_test() const;
+    bool runtime_protocol_guard_self_test() const;
+    bool runtime_trigger_pod_self_test() const;
+    bool runtime_effect_pod_self_test() const;
+    bool runtime_effect_host_stage_self_test();
+    // M2b G-1: pins the Effect-intent -> Modifier-POD adapter mapping (TRIGGER,
+    // FAMILY_EFFECT, GENERIC) against EffectRuntime::dispatch_native_modifier.
+    bool runtime_effect_adapter_parity_self_test();
+    bool runtime_ideology_pod_self_test() const;
+    bool runtime_events_authority_self_test() const;
+    bool runtime_economy_pod_self_test() const;
+    godot::Dictionary switch_economy_authority(const godot::String &mode);
+    bool runtime_economy_authority_fault_gate_self_test() const;
+    // Exercises the shared effect target selector on a synthetic hex grid so
+    // target selection is verifiable without a live map_data / epoch run.
+    bool runtime_economy_target_selector_self_test() const;
+    // MetricMask (infra item L0-1) capacity self check: proves ids past the
+    // old 64 ceiling are addressable. Pure value-type assertions, no world
+    // state, so it can run before any catalog is configured.
+    bool runtime_metric_mask_self_test() const;
+    bool arm_runtime_fault_injection(const godot::String &point);
+    void clear_runtime_fault_injection();
+    godot::Dictionary runtime_economy_stage_order_contract_test() const;
+    // ② Native finalizer kernel for the round-complete delta-cap + thermal-init loops.
+    godot::Dictionary run_native_daily_finalizer(godot::Dictionary knobs);
+    godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
+    godot::Dictionary get_native_daily_report() const;
+    godot::Dictionary get_native_shadow_diff_report() const;
+    godot::Dictionary native_ocean_physical_begin(const godot::Dictionary &ctx);
+    godot::Dictionary native_ocean_physical_step(const godot::Dictionary &ctx);
+    godot::Dictionary native_ocean_physical_finish(const godot::Dictionary &ctx);
+    godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
+    godot::Dictionary get_native_ocean_physical_state_report() const;
+    godot::Dictionary get_native_ocean_physical_hot_state() const;
+    // 生成收尾 facade 引导链融合（dots-boot-facade-2026-10）：一次调用完成
+    // habitat 掩码 → 河口羽流 → 矿藏储量 → 资源研究信号 CSR → 生态 province+播种
+    // → 诊断聚合。子 pass 全部复用已验收实现，中间量不出 C++。
+    // 输入/输出契约见 world_ext_boot_facade.cpp 顶部注释。
+    godot::Dictionary run_boot_facade_pass(const godot::Dictionary &knobs);
+    godot::Dictionary get_native_dirty_report() const;
+
+    // ---- bindings: climate ----
+    // Landmass/province topology, origin-habitat fill + niche pack, and daily occupancy.
+    // Knobs in / packed arrays out; occupancy is the persisted presence bitset.
+    godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);
+    godot::Dictionary run_bio_seed_pass(const godot::Dictionary &knobs);
+    godot::Dictionary run_bio_bootstrap_pass(const godot::Dictionary &knobs);
+    godot::Dictionary configure_bio_occupancy(const godot::Dictionary &config);
+    godot::Dictionary run_bio_occupancy_pass(const godot::Dictionary &knobs);
+    // Deterministic cursor continuation.  The opaque state is transient and
+    // is published only after the final fixed cell range completes.
+    godot::Dictionary run_bio_occupancy_slice(const godot::Dictionary &knobs);
+    // ─── Hot-loop entry points (stubs; filled in I3.B/C) ─────────────────
+    // Returning -1.0 indicates "not implemented yet, fall back to GDScript".
+    // GDScript-side caller checks `< 0` and routes to the legacy path.
+    double run_climate_pass_a(const godot::Dictionary &cp_struct, double phase, double season_phase);
+    // [Phase C.3c] climate_pass_a 的 WorkerThreadPool 并行变体。
+    // 主循环纯 cell-local map（无 race），按 cell range 拆 n_tasks 段并行；
+    // n_tasks=0 时自适应（ceil(n/1024) 截 [1,16]，与 ocean_water/land_thread 一致）。
+    // 算法与 run_climate_pass_a 严格 1:1（共用 prelude 与 main loop body）；返回值同语义。
+    double run_climate_pass_a_thread(const godot::Dictionary &cp_struct, double phase, double season_phase, int n_tasks);
+    // F.1 (P0): weather field solve (vapor / cloud / precip / instability /
+    //           intensity / convergence / type) — single-shot full pass.
+    //
+    //   GDScript 源：scripts/weather/weather_system.gd::run_weather_field_solve_slice
+    //                 (line 641+, "B-full Step-2" SoA-aware fast path)
+    //   ClimateProfile flag：use_gdext_weather_field
+    //   性能目标：13ms → < 2ms（charter §7 第一优先级）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包）：
+    //     标量： start_idx, end_idx, n_cells, season_idx (int)
+    //            climate_anomaly, season_phase (float)
+    //            world_bounds_pos_y, world_bounds_size_y (float)
+    //            field_advect_steps (int)
+    //            field_diffusion, field_condensation_gain,
+    //            field_orographic_lift_gain, field_convergence_gain,
+    //            field_ocean_evap_gain, field_precip_decay (float)
+    //            refresh_convergence (bool)
+    //     PackedArray（zero-copy read）：
+    //            cell_pos          : PackedVector2Array  (n_cells)
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            prev_vapor        : PackedFloat32Array  (n_cells)
+    //            prev_precip       : PackedFloat32Array  (n_cells)
+    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+    //              ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly
+    //                按 i 顺序提取（该字段尚未在 schema 中作 SoA 镜像；
+    //                F.x phase II 数据所有权下移 PR 中再迁移到 schema）
+    //
+    //   写：直接写到 cell_weather_{vapor/cloud/precip/instability/intensity/
+    //       convergence/type/field_init} slot 数组（=GDScript map.weather_*_arr
+    //       的 CoW alias）。GDScript 调用方在调用后再把这些 SoA 拷回
+    //       _field_slice_next_* 即可保持 commit_weather_field_solve() 不变。
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    //
+    //   bit-equal 容差：1e-4（含 sqrt + clamp + lerp 链）。
+    //   切片限制：本实现要求 start_idx == 0 且 end_idx == n_cells（即"全量"）。
+    //             因为多 slice 共享 SoA 写会污染下一 slice 的读，单元格预算 < n
+    //             一律 fallback。F.x 后续 PR 可加 dirty-flag 双缓冲解锁。
+    double run_weather_field_solve_pass(const godot::Dictionary &knobs);
+    // 独立全场 ψ 推进 pass（每 weather 轮一次、不切片、半拉格朗日平流）。让天气随风成片移动。
+    double run_synoptic_advance_pass(const godot::Dictionary &knobs);
+    godot::Dictionary run_weather_field_commit_pass(godot::Dictionary knobs);
+    // F.2 (P1): ocean water + land 两个独立 pass
+    //   GDScript 源：map_generator.gd::_ocean_water_pass_soa (line 4679+) +
+    //                ::_ocean_land_pass_soa (line 4762+)
+    //   ClimateProfile flag：use_gdext_ocean_water / use_gdext_ocean_land
+    //   性能目标：6.8ms → < 1ms (两个 pass 各 ~0.5ms)
+    //   依赖序：land_pass 必须在 water_pass 之后跑（land 读 water 写过的 anomaly）
+    //
+    //   入参 `knobs` Dictionary（与 F.1/F.3/F.5 同模板）：
+    //
+    //   --- run_ocean_water_pass(knobs) 字段 ---
+    //     标量： n_cells (int), advect_steps (int), heat_mix (float)
+    //     PackedArray（read-only 输入）：
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            baseline_arr      : PackedFloat32Array  (n_cells)
+    //                ↑ GDScript 预算：if ema_init[i]: temp_baseline[i],
+    //                                  else: _compute_temperature(_cube_row_norm, elev[i])
+    //            temp_before_arr   : PackedFloat32Array  (n_cells)
+    //                ↑ GDScript 预算：if temp[i] > 0: temp[i], else: baseline[i]
+    //            ocean_current_x_arr : PackedFloat32Array (n_cells)
+    //            ocean_current_y_arr : PackedFloat32Array (n_cells)
+    //                ↑ 必须！由 GDScript 从 cells[i].ocean_current.x/y 提取。
+    //                  schema 里的 cell_ocean_current_x/y SoA 镜像由
+    //                  rebuild_soa_from_cells 仅在世界生成时填一次；
+    //                  physical_circulation_solver 之后改的是 HexCell，
+    //                  从不回写 SoA。如果直接读 C++ slot，advect 方向用的
+    //                  是初始 (近 0) 值，cascading 全图温度雪崩。
+    //                  （Demo Complex Pass 类同问题，2026-05-13 用户验收时
+    //                   F.2 land 正反馈 + ocean_current stale 双重 bug 暴露。）
+    //     PackedArray（write 输出）：
+    //            anomaly_out      : PackedFloat32Array  (n_cells)
+    //                ↑ C++ 写每个 water cell 的 anomaly = temp_mixed - baseline
+    //                  （非 water cell 由 land pass 后续覆盖；初始可全 0）
+    //
+    //   --- run_ocean_land_pass(knobs) 字段 ---
+    //     标量： n_cells (int), effective_leak (float)
+    //     PackedArray（read-only 输入）：
+    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+    //            fallback_baseline_arr  : PackedFloat32Array  (n_cells)
+    //                ↑ 必填！runtime baseline 非有限值时的兜底值。
+    //            ocean_current_x_arr    : PackedFloat32Array  (n_cells)
+    //            ocean_current_y_arr    : PackedFloat32Array  (n_cells)
+    //                ↑ 必填！同 water pass 一样从 cells 提取（SoA stale 问题）
+    //     PackedArray（in/out）：
+    //            anomaly_inout    : PackedFloat32Array  (n_cells)
+    //                ↑ 既读（water 邻居的 anomaly，由 water pass 写入），
+    //                  也写（land cell 自身的 anomaly）
+    //
+    //   读：cell_temp, cell_is_water, cell_pos_x, cell_pos_y,
+    //       cell_ocean_current_x, cell_ocean_current_y
+    //   写：cell_temp（mix 后）+ knobs["anomaly_inout"]
+    //
+    //   返回：≥ 0.0 → 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-4（含 sqrt + lerp + dot product 链）
+    double run_ocean_water_pass(godot::Dictionary knobs);
+    double run_ocean_land_pass (godot::Dictionary knobs);
+    double run_wind_air_mass_pass(godot::Dictionary knobs);
+    double run_wind_surface_pass(godot::Dictionary knobs);
+    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for ocean passes.
+    //
+    // run_ocean_water_pass_simd:
+    //   与原 scalar 版同签名 / 同输出语义；内部走 water-cell / land-cell 预筛
+    //   + 直线 hot kernel，消除主循环外层 if(IW[i]==0|!=0) 分支让编译器自由
+    //   auto-vectorize。CoW fix（anomaly_out / anomaly_inout 仍走 duplicate）
+    //   保持不变。ulp ≤ 4 容差（charter §risk=B 已批）。
+    //   仅在 ClimateProfile.use_gdext_ocean_water_simd / use_gdext_ocean_land_simd
+    //   = true 时由调用方派发。
+    //
+    // run_ocean_water_pass_thread / run_ocean_land_pass_thread:
+    //   预筛 idx 按 n_tasks 切 WorkerThreadPool；n_water / n_land < 256 时
+    //   降级单线程；wtp == nullptr 时 in-thread fallback。n_tasks <= 0 时
+    //   按 ~1024 cells/task 自适应（cap 至 16）。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 不达
+    //   预算时由调用方派发。
+    double run_ocean_water_pass_simd  (godot::Dictionary knobs);
+    double run_ocean_water_pass_thread(godot::Dictionary knobs, int n_tasks);
+    double run_ocean_land_pass_thread (godot::Dictionary knobs, int n_tasks);
+    // F.3 (P1): climate Pass-B (local climate coupling)
+    //   GDScript 源：scripts/geography/map_generator.gd::_climate_pass_b_soa
+    //                 (line 4311+, SoA-aware fast path)
+    //   ClimateProfile flag：use_gdext_climate_pass_b
+    //   性能目标：5.2ms → < 0.5ms（charter §7 P1）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1/F.5 同模板）：
+    //     标量： n_cells (int)
+    //            winter_boost, snow_cool, veg_cool, diurnal_amp, evap_gain,
+    //            rs_threshold, rs_factor, t_freeze, coupling_gain, coast_leak,
+    //            season_phase (float, orbital/year phase only)
+    //            rs_lookback (int)
+    //            go_sparse (bool；本实现不支持稀疏路径，go_sparse=true 时
+    //                       直接 return -1.0 fallback；后续 PR 加 dirty mask
+    //                       处理后再启用)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices         : PackedInt32Array    (n_cells * 6)
+    //            temp_transport_anomaly   : PackedFloat32Array  (n_cells)
+    //                ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly 提取
+    //                  （schema 尚未为该字段建 SoA 镜像；同 F.1）
+    //            foliage_table            : PackedFloat32Array  (按 VegetationType.VEG
+    //                ↑ enum 顺序的 _vegetation_foliage_density 值，~24 个 float)
+    //
+    //   读：cell_temp, cell_moisture, cell_snow_cover, cell_is_water,
+    //       cell_landform, cell_vegetation, cell_elevation, cell_lat_norm,
+    //       cell_pos_x, cell_pos_y, cell_insolation_dev
+    //   写：cell_temp, cell_moisture
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)
+    //          < 0.0 → 任意先决条件不满足 / go_sparse=true，调用方走 GDScript
+    //
+    //   bit-equal 容差：1e-4（含 sqrt + sin + smoothstep + cos 链）
+    //   未支持的特性：
+    //     - go_sparse=true 时的稀疏路径 → fallback
+    //     - cell.temperature_breakdown UI 调试 dict 写入 → 不写入（GDScript
+    //       fallback 会写；F.3 ON 时 inspector 看选中 cell 的 breakdown 会空，
+    //       后续 PR 用 dirty selection list 单独补回 < 100 cells 的写入即可）
+    //     - [DIAG pass_b_end] 末尾统计 print（GDScript caller 在 C++ pass 之后
+    //       自己 dump SoA 即可，本 C++ 不打日志）
+    double run_climate_pass_b(const godot::Dictionary &knobs);
+    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for hot pass-B.
+    //
+    // run_climate_pass_b_simd:
+    //   与 run_climate_pass_b 同签名 / 同输出语义；内部走 land-cell 预筛 +
+    //   直线 hot kernel（albedo / coastal / landform / write）+ scalar
+    //   rain-shadow 子段。MSVC /O2 /arch:AVX2 在直线 land-only 循环上能自
+    //   动向量化；显式 AVX2 8-lane block 包在 PK_HAVE_AVX2 内对最 SIMD-
+    //   friendly 段（albedo）做强制向量化。
+    //   ulp 容差：≤ 4（plan §验收 §B）。
+    //   仅在 ClimateProfile.use_gdext_pass_b_simd = true 时由调用方派发。
+    //
+    // run_climate_pass_b_thread:
+    //   land-cell 主段按 n_tasks 切 WorkerThreadPool；rain-shadow 子段仍
+    //   单线程跑（其内含的串行 probe + 邻居最佳方向 search 无可分发性）。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 路径
+    //   未达预算时由调用方派发；wtp == nullptr 时 in-thread fallback。
+    double run_climate_pass_b_simd  (const godot::Dictionary &knobs);
+    double run_climate_pass_b_thread(const godot::Dictionary &knobs, int n_tasks);
+    // F.4 (P2): sea ice daily pass
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_sea_ice_daily_pass
+    //                 (line 3856+, 2-phase 算法)
+    //   ClimateProfile flag：use_gdext_sea_ice
+    //   性能目标：5.1ms → < 0.5ms（charter §7 P2）
+    //
+    //   算法结构（与 GDScript 1:1 镜像）：
+    //     Phase A — has_cold_neighbor 快照（用前一日 sea_ice_fraction）：
+    //       for each water cell：
+    //         如果任一邻居是 water 且 sea_ice_fraction >= 0.6 → has_cold_neighbor[i] = 1
+    //     Phase B — 主循环（fraction 增量更新 + 翻转候选收集）：
+    //       for each cell：
+    //         非 water → fraction = 0；continue
+    //         LAKE → fraction = 0；continue
+    //         t_eff = clamp(temp + ice_delay * max(0, transport_anomaly) -
+    //                       (upwelling > 0.3 ? 0.5 * upwelling : 0), 0, 1)
+    //         k_freeze_eff = k_freeze * (has_cold_neighbor ? 1 + contagion : 1)
+    //         delta = k_freeze_eff * max(0, t_form - t_eff) - k_melt * max(0, t_eff - t_melt)
+    //         new_frac = clamp(prev_frac + delta, 0, 1)
+    //         写 cell_sea_ice_frac[i] = new_frac
+    //         判断翻转候选：
+    //           prev terrain != SEA_ICE && new_frac >= threshold → flip_to_ice
+    //           prev terrain == SEA_ICE && new_frac < threshold - hysteresis →
+    //               flip_to_base（保留 base_terrain，base==SEA_ICE 时回退到 OCEAN）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，F.5 同模板）：
+    //     标量： n_cells (int)
+    //            k_freeze, k_melt, t_form, t_melt, contagion (float)
+    //            threshold, hysteresis (float)
+    //            ice_delay (float)
+    //            enable_ocean_heat_transport (bool)
+    //            terrain_lake_id, terrain_sea_ice_id, terrain_ocean_id (int)
+    //                ↑ TerrainType.LAKE / SEA_ICE / OCEAN 的 enum 值（C++ 不持有 enum）
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+    //            base_terrain_arr       : PackedByteArray     (n_cells)
+    //                ↑ cells[i].base_terrain；翻回时知道目标 terrain
+    //            water_terrain_ids      : PackedByteArray     (~6 entries)
+    //                ↑ 与 GDScript map_generator.gd::_is_water 1:1 对齐：
+    //                  OCEAN / COAST / LAKE / REEF / KELP / SEA_ICE 共 6 种 enum 值。
+    //                  C++ 端用作 256-entry is_water LUT，避免硬编码 enum。
+    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+    //                ↑ 必填（schema 尚未为该字段建 SoA 镜像，与 F.2 同问题）
+    //            upwelling_strength     : PackedFloat32Array  (n_cells)
+    //                ↑ 必填（同上）
+    //
+    //   读：cell_terrain (U8), cell_sea_ice_frac (F32, prev), cell_temp (F32)
+    //       + 入参 PackedArray（含 insolation_now_arr 当前辐照）
+    //   写：cell_sea_ice_frac slot；**不**写 cell_terrain slot（terrain 翻转走
+    //       GDScript 端 apply_terrain，保持 multi-axis 同步语义；charter §2.5
+    //       STRUCT-001 反模式规避）
+    //
+    //   knobs 输出回填（C++ 写 PackedInt32Array / PackedByteArray 进 knobs）：
+    //     flip_to_ice_list      : PackedInt32Array  — 当日跨过 threshold 的 cell idx
+    //     flip_to_base_list     : PackedInt32Array  — 当日跌回 threshold-hysteresis 的 cell idx
+    //     flip_to_base_terrain  : PackedByteArray   — 与 flip_to_base_list 同长，
+    //                                                 每项 = base_terrain（base==SEA_ICE 时 = OCEAN_id）
+    //     stat_water_count      : int  (写到 knobs，用 Variant int 存)
+    //     stat_flipped_count    : int  (写到 knobs)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-6（fraction 是简单 muladd / clamp，无 sqrt）
+    //
+    //   sig 设计：knobs 走 by-value（非 const&），让 C++ 端能写回 flip lists
+    //             给 GDScript caller。Godot Dictionary 是 RefCounted，by-value
+    //             实际是 ref 共享，写回是合法行为（与 F.2 ocean_water/land 同模式）。
+    double run_sea_ice_daily_pass(godot::Dictionary knobs, float season_phase);
+    // [Phase C.3d] sea_ice 并行变体
+    //   行为 = run_sea_ice_daily_pass，但 Phase A (cold_neighbor 快照) +
+    //   Phase B (主循环 + flip emit) 都走 WorkerThreadPool 并行。
+    //   emit lists (flip_to_ice / flip_to_base / flip_to_base_terrain) 通过
+    //   thread-local Emit + 串行 reduce (按 task_idx 升序) 保持与 scalar
+    //   bit-equal（任务内部 cell idx 升序 + 任务顺序合并 = 整体升序）。
+    //   counters (water_count / flipped_count) 同模式 reduce。
+    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 时调用。
+    double run_sea_ice_daily_pass_thread(godot::Dictionary knobs, float season_phase, int n_tasks);
+    // F.5 (P2): transpiration pass
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_transpiration_pass (line 4938+)
+    //   ClimateProfile flag：use_gdext_transpiration
+    //   性能目标：3.2ms → < 0.3ms
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1 同模板）：
+    //     标量： n_cells (int)
+    //            outflow_rate, self_rate (float)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
+    //            donor_table       : PackedFloat32Array  (按 VegetationType.VEG enum 顺序，
+    //                                ~24 个 float；每项 = transpiration[VEG_id]，避免
+    //                                hot loop 反射 VegetationProfile)
+    //
+    //   读：cell_landform / cell_vegetation / cell_moisture
+    //   写：cell_moisture (clamp(m + delta, 0, 1))
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    double run_transpiration_pass(godot::Dictionary knobs);
+    // Runtime hydrology: daily local water balance + parent-graph routing.
+    // Optional knob: neighbor_indices (n_cells * 6) lets river discharge maintain
+    // narrow river/riparian moisture floors and boost adjacent soil/water balance.
+    godot::Dictionary run_runtime_hydrology_pass(const godot::Dictionary &knobs);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
+    //   ClimateProfile flag：use_gdext_albedo
+    //   性能目标：~3.6ms → < 0.5ms
+    //
+    //   算法（与 GDScript 1:1 镜像）：
+    //     for each cell i:
+    //       if is_water[i]: continue
+    //       alb = albedo_table[veg[i]]
+    //       if cover[i] == CV.SNOW (=1) || cover[i] == CV.GLACIER (=2):
+    //         alb = max(alb, 0.75)
+    //       dt = (reference_albedo - alb) * albedo_temp_gain
+    //       temp[i] = clamp(temp[i] + dt, 0, 1)
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            reference_albedo (float)         — ClimateProfile.reference_albedo
+    //            albedo_temp_gain (float)          — ClimateProfile.albedo_temp_gain
+    //            snow_cover_albedo (float, =0.75) — SNOW/GLACIER cover 的反照率下限
+    //            cover_snow_id (int, =1)          — CoverType.CV.SNOW 枚举值
+    //            cover_glacier_id (int, =2)       — CoverType.CV.GLACIER 枚举值
+    //     PackedArray（zero-copy read）：
+    //            albedo_table : PackedFloat32Array — 按 VegetationType.VEG enum 顺序
+    //
+    //   读：cell_is_water (U8) / cell_vegetation (U8) / cell_cover (U8) / cell_temp (F32)
+    //   写：cell_temp (F32)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    double run_albedo_pass(const godot::Dictionary &knobs);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）：vegetation dynamics ─
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_vegetation_dynamics
+    //   ClimateProfile flag：use_gdext_vegetation_dynamics
+    //   性能目标：~9.2ms → < 1.0ms
+    //
+    //   算法分工（与 GDScript 1:1 镜像，但演替触发由 GDScript 后处理）：
+    //     C++ 主循环（每 cell 独立）：
+    //       if is_water[i]: continue
+    //       compat = exp(-0.5 * ((t - ideal_t[v])/tol_t[v])² + ((m - ideal_m[v])/tol_m[v])²)
+    //       dv = 0
+    //       if v != NONE:
+    //         if compat >= 0.6: dv = (compat - 0.5) * 2 * rate
+    //         elif compat <= 0.4: dv = -(0.5 - compat) * 2 * rate * harshness
+    //       wt = (weather_field_init[i] != 0) ? weather_type[i] : WT.CLEAR
+    //       wi = (weather_field_init[i] != 0) ? weather_intensity[i] : 0
+    //       base_pen = weather_penalty[wt]
+    //       resist  = resistance_lut[v * n_wt + wt]
+    //       dv -= base_pen * wi * (1 - resist)
+    //       vitality[i] = clamp(vitality[i] + dv * scale, 0, 1)
+    //       streak update（sticky in [low, high]）
+    //       if low_streak[i] >= degrade_days && next_down[v] != v：候选 succession
+    //       elif high_streak[i] >= upgrade_days && next_up[v] != v：候选 succession
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            day_scale (float)                 — max(day_scale, 1.0)
+    //            streak_days (int)                 — round(scale)
+    //            vitality_change_rate (float)
+    //            compat_harshness (float)
+    //            plant_water_balance_weight / plant_soil_buffer_weight (float)
+    //            plant_drought_penalty / succession_min_compat_gain (float)
+    //            low_threshold (float)
+    //            high_threshold (float)
+    //            succession_degrade_days (int)
+    //            succession_upgrade_days (int)
+    //            n_wt (int)                         — WeatherType.WT.size()
+    //            wt_clear_id (int)                  — WeatherType.WT.CLEAR 枚举值
+    //            veg_none_id (int)                  — VegetationType.VEG.NONE 枚举值
+    //     PackedArray（zero-copy read）：
+    //            ideal_temp_table  : PackedFloat32Array  (n_veg)
+    //            ideal_moist_table : PackedFloat32Array  (n_veg)
+    //            temp_tol_table    : PackedFloat32Array  (n_veg)
+    //            moist_tol_table   : PackedFloat32Array  (n_veg)
+    //            weather_penalty_table : PackedFloat32Array  (n_wt)
+    //            resistance_table  : PackedFloat32Array  (n_veg * n_wt) — sparse 0.0 default
+    //            next_up_table     : PackedByteArray     (n_veg)         — VEG.next_richer
+    //            next_down_table   : PackedByteArray     (n_veg)         — VEG.next_harsher
+	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 3 个字段已下沉到
+	//     SoA schema：cell.vegetation_vitality / vitality_low_streak /
+	//     vitality_high_streak。stage_b_pass 走 use_soa=true 时直读 _slots ptrw。
+	//     该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
+	//            vitality_arr      : PackedFloat32Array  (n_cells)
+	//            low_streak_arr    : PackedInt32Array    (n_cells)
+	//            high_streak_arr   : PackedInt32Array    (n_cells)
+	//
+	//   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp_30d (F32) /
+	//       cell_moisture / water_balance_30d / soil_moisture (F32) / cell_weather_type (U8) /
+	//       cell_weather_intensity (F32) / cell_weather_field_init (U8)
+	//   写：vitality_arr / low_streak_arr / high_streak_arr (in/out) /
+	//       cell_vegetation_growth_pressure (target - previous vitality)
+    //
+    //   knobs 输出回填（C++ 写进 knobs）：
+    //     succession_indices : PackedInt32Array  — 触发演替的 cell idx
+    //     succession_to_veg  : PackedByteArray   — 与 indices 同长，目标新 veg id
+    //                          上家：next_up[v]； 下家：next_down[v]（区分由 caller 看 streak 判断）
+    //     stat_succession_count : int (写到 knobs)
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    //   knobs 走 by-value（非 const&），让 C++ 端能写回 succession lists（与 sea_ice 同模式）。
+    double run_vegetation_dynamics_pass(godot::Dictionary knobs);
+    // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）：climate feedback ─
+    //   GDScript 源：scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass
+    //   ClimateProfile flag：use_gdext_climate_feedback
+    //   性能目标：~6.1ms → < 0.5ms
+    //
+    //   算法（与 GDScript 1:1 镜像，每日小权重累加 ≤ 0.5%）：
+    //     for each cell i:
+    //       if is_water[i]: continue
+    //       if ocean_drift_gain > 0:
+    //         sum_an + n_water = sum/count(nb_water_anomaly)
+    //         if n_water > 0 && |avg_an| > 0.005:
+    //           coastal_ratio = clamp(n_water/6, 0, 1)
+    //           d_base = clamp(ocean_drift_gain * avg_an * coastal_ratio * scale, -clamp, clamp)
+    //           base_moisture[i] = clamp(base_moisture[i] + d_base, 0, 1)
+    //       wt = init ? weather_type[i] : WT.CLEAR
+    //       wi = init ? weather_intensity[i] : 0
+    //       if wi < 0.01: continue
+    //       precip = match(wt) {RAIN: wi, STORM: 0.8wi, MONSOON: 1.2wi,
+    //                          BLIZZARD: 0.3wi, DROUGHT: -0.6wi, HEATWAVE: -0.4wi, _: 0}
+    //       d_soil = clamp(soil_gain * precip * scale, -clamp, clamp)
+    //       soil_moisture[i] = clamp(soil_moisture[i] + d_soil, -0.5, 0.5)
+    //       d_veg = clamp(veg_gain * precip * scale, -clamp, clamp)
+    //       vg_pressure[i] = clamp(vg_pressure[i] + d_veg, -0.5, 0.5)
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            soil_gain (float)
+    //            veg_gain (float)
+    //            write_weather_veg_pressure (bool, optional, default true)
+    //            scale (float)              — max(day_scale, 1.0)
+    //            per_day_clamp (float)      — feedback_per_day_clamp * scale
+    //            ocean_drift_gain (float)   — 0 表示禁用 ocean→base 漂移
+    //            wt_clear_id (int)          — WeatherType.WT.CLEAR
+    //            wt_rain_id / wt_storm_id / wt_monsoon_id / wt_blizzard_id /
+    //            wt_drought_id / wt_heatwave_id (int) — 6 个 WT 枚举值
+	//     PackedArray（zero-copy read — 仅老 caller 路径需要；B3b 后已下沉到 SoA：
+	//     cell.temperature_transport_anomaly。stage_b_pass 走 use_soa=true 时直读 _slots）：
+	//            neighbor_indices       : PackedInt32Array    (n_cells * 6)
+	//            temp_transport_anomaly : PackedFloat32Array  (n_cells)
+	//                ↑ 与 climate_pass_b 同字段
+	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 2 个字段已下沉到 SoA：
+	//     cell.soil_moisture / cell.vegetation_growth_pressure。stage_b_pass 走
+	//     use_soa=true 时直读 _slots ptrw。该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
+	//            soil_moisture_arr    : PackedFloat32Array  (n_cells)
+	//            veg_growth_pressure_arr : PackedFloat32Array (n_cells)
+    //
+    //   读：cell_is_water (U8) / cell_weather_type (U8) /
+    //       cell_weather_intensity (F32) / cell_weather_field_init (U8) /
+    //       cell_base_moisture (F32) — direct write
+    //       + 入参 PackedArray
+    //   写：cell_base_moisture (F32) / soil_moisture_arr / veg_growth_pressure_arr (in/out)
+    //       write_weather_veg_pressure=false 时保留 vegetation_dynamics 当 tick 写入的
+    //       target-vitality 生态压力信号。
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
+    double run_climate_feedback_pass(godot::Dictionary knobs);
+    // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine） ──────────────────
+    //   GDScript 源：scripts/geography/map_generator.gd::refresh_daily_stage_b
+    //   ClimateProfile flag：use_gdext_stage_b_combined
+    //   性能目标：stage_b 累加 6–15ms → ≤ 1.5ms（消除 GDScript 端 3 次 pack/unpack
+    //   围栏：vit/lo/hi、soil/vg/tta、albedo_table/8 LUT 一次性入参）
+    //
+	//   行为 = run_albedo_pass + run_vegetation_dynamics_pass +
+	//         run_climate_feedback_pass 的顺序内联，**算法完全 1:1 复制**：
+	//     ① albedo（写 cell_temp）→ 仅当 run_albedo=true
+	//     ② veg_dyn（读最新 cell_temp + 写 vitality/streak/演替候选）→ 仅当 run_veg_dyn=true
+	//     ③ feedback（写 cell_base_moisture / soil/vg in/out）→ 仅当 run_feedback=true
+	//   cross-pass 依赖：albedo 写 cell_temp、veg_dyn 读 cell_temp，合并版本里
+	//   两段共享同一份 SoA ptrw，**无需中间 _flush_slot_to_map**（对比现状 GDScript
+	//   三段间需要 _flush_slot_to_map → MapData → refresh_slots_from_map 来回拷贝）。
+	//
+	//   B3b 数据所有权下沉（plan/b3b-data-ownership-lowering）：
+	//     新增 `use_soa` 开关（bool，默认 false 兼容旧路径）。当 use_soa=true 时：
+	//       - vit/streak/soil/vg/tta 五字段全部走 _slots[sid].arr_* ptrw 直读直写
+	//       - knobs 中 vitality_arr / low_streak_arr / high_streak_arr /
+	//         soil_moisture_arr / veg_growth_pressure_arr / temp_transport_anomaly
+	//         可省略（即使存在也不读不写）
+	//       - 末尾批量 flush 6 个 slot（vit/low_streak/high_streak/soil/vg）回 MapData
+	//       - 消除 GDScript 端 6 段 pack/unpack hot loop（实测 ~6.5ms wall 节省）
+    //
+    //   入参 `knobs` Dictionary（合并版本，knobs key 命名空间用前缀避免冲突）：
+	//     总开关：
+	//       n_cells (int)
+	//       run_albedo / run_veg_dyn / run_feedback (bool)  — stride 语义保留
+	//       use_soa (bool, optional, default false)         — B3b 数据所有权下沉开关
+    //
+    //     albedo 段（仅 run_albedo=true 时读，其它情况可省略）：
+    //       reference_albedo / albedo_temp_gain (float)
+    //       snow_cover_albedo (float, =0.75)
+    //       cover_snow_id / cover_glacier_id (int, =1, 2)
+    //       albedo_table : PackedFloat32Array (n_veg)
+    //
+    //     veg_dyn 段（仅 run_veg_dyn=true 时读）：
+    //       day_scale (float)
+    //       streak_days (int)
+    //       vitality_change_rate / compat_harshness (float)
+    //       plant_water_balance_weight / plant_soil_buffer_weight (float)
+    //       plant_drought_penalty / succession_min_compat_gain (float)
+    //       low_threshold / high_threshold (float)
+    //       succession_degrade_days / succession_upgrade_days (int)
+    //       n_wt (int)
+    //       wt_clear_id / veg_none_id (int)
+    //       ideal_temp_table / ideal_moist_table / temp_tol_table /
+    //       moist_tol_table : PackedFloat32Array (n_veg)
+    //       weather_penalty_table : PackedFloat32Array (n_wt)
+    //       resistance_table : PackedFloat32Array (n_veg * n_wt)
+	//       next_up_table / next_down_table : PackedByteArray (n_veg)
+	//       vitality_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+	//       low_streak_arr / high_streak_arr : PackedInt32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+    //
+    //     feedback 段（仅 run_feedback=true 时读）：
+    //       soil_gain / veg_gain / scale / per_day_clamp / ocean_drift_gain (float)
+    //       write_weather_veg_pressure (bool, optional, default true)
+    //       wt_rain_id / wt_storm_id / wt_monsoon_id /
+    //       wt_blizzard_id / wt_drought_id / wt_heatwave_id (int)
+	//       neighbor_indices : PackedInt32Array (n_cells * 6)
+	//       temp_transport_anomaly : PackedFloat32Array (n_cells) — 仅 use_soa=false 时必填
+	//       soil_moisture_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+	//       veg_growth_pressure_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
+    //
+    //   读：cell_is_water / cell_vegetation / cell_cover / cell_temp /
+    //       cell_moisture / cell_weather_type / cell_weather_intensity /
+    //       cell_weather_field_init / cell_base_moisture
+    //   写：cell_temp（albedo）、cell_base_moisture（feedback）；in/out arrays
+    //
+	//   knobs 输出回填（C++ 写进 knobs）：
+	//     albedo_ms / veg_dyn_ms / feedback_ms (float) — 每段单独 ms，供 caller 计时
+	//     succession_indices : PackedInt32Array
+	//     succession_to_veg  : PackedByteArray
+	//     stat_succession_count : int
+	//     vitality_arr / low_streak_arr / high_streak_arr (in/out 写回) — 仅 use_soa=false
+	//     soil_moisture_arr / veg_growth_pressure_arr (in/out 写回) — 仅 use_soa=false
+	//     注：use_soa=true 时这些字段直接 flush 到 SoA + MapData，无需 PackedArray 回写
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms 合计)；< 0.0 → fallback。
+    //   knobs 走 by-value（非 const&），让 C++ 能写回 succession + ms breakdown。
+    double run_stage_b_pass(godot::Dictionary knobs);
+    // F.6 (P3): weather front advect (含 front pool 批量提取模式)
+    //   GDScript 源：scripts/weather/weather_front.gd::advance_one_day +
+    //                refresh_visual_lifecycle (line 74-127)
+    //   ClimateProfile flag：use_gdext_weather_front
+    //   性能目标：3.0ms → < 0.5ms（charter §7 P3）
+    //   N=16 fronts，单线程足够
+    //
+    //   设计：fronts batch-extract 模式（Phase 1.2 / dots-full-migration §F.6）
+    //     - WeatherFront.pack_into_dict(_active_fronts) 输出 SoA Dictionary
+    //     - C++ pass(batch) 直接读写 batch 内 PackedArray
+    //     - WeatherFront.apply_dict_to_fronts(batch, _active_fronts) 写回 OOP
+    //     - emergent_coupling 的 decay_mul / precip_bonus 在 GDScript 端预算（map 查询），
+    //       caller 在 pack 之前已经把 decay_per_day 改过；C++ 只看修改后的 decay。
+    //     - wind 采样在 GDScript 端预算（一次 batch wind_per_front Vector2Array），
+    //       Vector2.ZERO 表示该 front 无风（C++ 跳过旋转）。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_fronts (int)
+    //            max_axis_turn_rad (float, =0.383972 = 22°/day)
+    //     PackedArray（in/out — read 旧值，write 新值）：
+    //            front_center_x / .._y       : F32 (n)  — write velocity 应用后
+    //            front_velocity_x / .._y     : F32 (n)  — write 重算后
+    //            front_axis_x / .._y         : F32 (n)  — write 旋转后
+    //            front_stable_axis_x / .._y  : F32 (n)  — write 旋转后
+    //            front_radius                : F32 (n)  — read only
+    //            front_intensity             : F32 (n)  — write decay 后
+    //            front_decay_per_day         : F32 (n)  — read（已含 emergent decay_mul）
+    //            front_age_days              : I32 (n)  — write age++
+    //            front_type                  : I32 (n)  — read only (refresh_visual_lifecycle 用)
+    //            front_ttl_days              : I32 (n)  — read only (refresh_visual_lifecycle 用)
+    //            front_life_progress         : F32 (n)  — write
+    //            front_cloud_amount          : F32 (n)  — write
+    //            front_precip_amount         : F32 (n)  — write
+    //            front_dissolve_amount       : F32 (n)  — write
+    //            front_alive                 : U8  (n)  — write (intensity > 0.01 && age < ttl)
+    //            wind_per_front              : PackedVector2Array (n)
+    //                ↑ caller 用 wind_fn(front.center) 预算；ZERO 表示无风
+    //
+    //   读：knobs 内的 PackedArray（CoW share with GDScript）
+    //   写：knobs 内的 PackedArray（in-place via ptrw）；不动任何 _slots[]
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
+    //   bit-equal 容差：1e-5（含 sin / cos / smoothstep 链）
+    //
+    //   sig 设计：knobs 走 by-value（非 const&），与 F.4 同模式（让 C++
+    //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
+    double run_weather_front_advect_pass(godot::Dictionary knobs);
+    godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
+    godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
+    // ─── Phase B+：season refresh round 一次跨界整 round 切片调度 ──────────
+    // 与 run_season_refresh_stage 协作（B+ 路径下 run_season_round_slice 内部
+    // 直接复用 run_season_refresh_stage 的 stage dispatch，零算法复制）。
+    //
+    // 用法（GDScript caller）：
+    //   handle = ext.start_season_round(round_knobs)         # round 起始（一次烘焙 row tables / jitter / donor）
+    //   while not done:
+    //       slice = ext.run_season_round_slice(handle, max_usec)  # 每 SUS slot 调一次，b1=stage 边界粒度
+    //       done = slice.done
+    //   fin = ext.finish_season_round(handle)                # GDScript 拿 fin 后做一次 facade sync + history push
+    //
+    // round_knobs（一次塞齐 12 个 stage 所需的全部字段，B+ 内部按 stage 取用）：
+    //   "season"               : int    (0..3)
+    //   "n_cells"              : int
+    //   "height"               : int
+    //   "sea_level"            : float
+    //   "moist_scale"          : float                       # stage 0
+    //   "rain_shadow_lookback" : int                         # stage 1
+    //   "rain_shadow_threshold": float                       # stage 1
+    //   "rain_shadow_factor"   : float                       # stage 1
+    //   "season_phase"         : float                       # stage 1
+    //   "elev_decay"           : float                       # stage 4
+    //   "decay"                : float                       # stage 11 (=feedback decay)
+    //   "lat_temp_rows"        : PackedFloat32Array          # stage 2/4/9
+    //   "season_offset_rows"   : PackedFloat32Array          # stage 2/9 (=sync_state)
+    //   "row_indices"          : PackedInt32Array            # stage 2/3/4/5/6/7/swamp
+    //   "neighbor_indices"     : PackedInt32Array            # stage 1/4/5/6/7/swamp
+    //   "jitter_arr"           : PackedFloat32Array          # stage 1
+    //   "donor_table"          : PackedFloat32Array          # stage 4
+    //   "soil_moisture_arr"    : PackedFloat32Array (in/out) # stage 11
+    //   "veg_growth_pressure_arr": PackedFloat32Array (in/out) # stage 11
+    //
+    // start_season_round 返回：
+    //   { "handle": int (>=0 成功，<0 fallback), "fallback": bool, "reason": String }
+    // run_season_round_slice 返回：
+    //   { "done": bool, "stage": int (当前 round_stage 0..11),
+    //     "stages_done_this_slice": int, "elapsed_ms": float,
+    //     "fallback": bool, "reason": String }
+    // finish_season_round 返回：
+    //   { "total_native_ms": float, "slices_used": int, "stages_done": int,
+    //     "soil_moisture_arr": PackedFloat32Array (decayed, write-back to map),
+    //     "veg_growth_pressure_arr": PackedFloat32Array (decayed, write-back to map) }
+    // abort_season_round：清 round state，让 generation +=1 让悬挂 handle 失效。
+    godot::Dictionary start_season_round(godot::Dictionary round_knobs);
+    godot::Dictionary run_season_round_slice(int handle, int max_usec);
+    godot::Dictionary finish_season_round(int handle);
+    void abort_season_round();
+    // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
+    // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_ocean_current_slice_from_hex
+    //               + _rasterize_upwelling_slice_from_hex
+    //
+    // ClimateProfile flag：use_gdext_ocean_currents_pixel（默认 false，需求 8.5 验收后开）
+    //
+    // 性能目标：消除 ocean_currents 17 个 GDScript pixel slice（25ms slow slice），
+    //           620544 像素一次性 C++ loop ≤ 5ms。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
+    //     可选标量：start_idx (int, 默认 0), end_idx (int, 默认 W*H)
+    //               — 像素区间 [start_idx, end_idx)，用于 sub-tick 切片
+    //                 把 4.7ms 整图 raster 拆成 N 片 ~1.2ms（每像素独立无依赖）
+    //     PackedArray：
+    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
+    //           dst_currents      : PackedByteArray  (W*H*2)，输出 R+G byte
+    //           dst_upwelling     : PackedByteArray  (W*H*1)，输出 byte
+    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步更新
+    //   读：cell_terrain / cell_ocean_current_x / cell_ocean_current_y /
+    //       cell_upwelling_strength SoA
+    //   写：dst_currents / dst_upwelling / atlas_data（in/out via knobs ptrw）
+    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels",
+    //                     "atlas_updated", "start_idx", "end_idx" }
+    godot::Dictionary run_ocean_field_rasterize(godot::Dictionary knobs);
+    // ─── DOTS-Total-CPP（A 方案 / wind raster 孪生）─────────────────────
+    // run_wind_field_rasterize：wind_x / wind_y SoA → hex→pixel byte 直出。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_wind_slice_from_hex
+    //               (Stage 7 _PHYS_STAGE_WIND_RASTER 内部循环)
+    //
+    // ClimateProfile flag：复用 use_gdext_ocean_currents_pixel（孪生场景：
+    //                       同样的 hex→pixel byte rasterize，无需新 flag）
+    //
+    // 性能目标：消除 ocean_currents 21 片 × 87ms 的 wind raster GDScript 循环。
+    //           620544 像素一次性 C++ loop ≤ 5ms。
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
+    //     PackedArray：
+    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
+    //           dst_wind          : PackedByteArray  (W*H*2)，输出 wx/wy byte
+    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步写 [+2]/[+3]
+    //   读：cell_wind_x / cell_wind_y SoA
+    //   写：dst_wind / atlas_data[i*4+2..+3]（in/out via knobs ptrw）
+    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels", "atlas_updated" }
+    //
+    //   ⚠️ 与 ocean 行为差异：cell idx 无效（lookup 缺失或 -1）时，wx 默认 1.0、wy 默认 0.0
+    //                          （与 GDScript _rasterize_wind_slice_from_hex 严格 1:1）。
+    godot::Dictionary run_wind_field_rasterize(godot::Dictionary knobs);
+    // ─── DOTS-Total-CPP（A 方案 / phys nan_guard 孪生）─────────────────────
+    // phys_field_nan_guard：扫 cell_wind_{x,y,speed} / cell_ocean_current_{x,y}
+    // / cell_upwelling_strength 这 6 个 SoA，统计 NaN/Inf 数量。
+    //
+    // GDScript 源：scripts/rendering/map_baker.gd::_physical_solve_step_one
+    //   _PHYS_STAGE_WIND_RASTER 第一帧的 `for c in map.all_cells(): is_finite()`
+    //   循环（2400 cell × 6 字段 ≈ 22ms），是 phys_wind_raster slice 的最大头。
+    //
+    // 这里直接读 _slots 里的 PackedFloat32Array.ptr() 顺序扫，编译器
+    // 会自动向量化成 AVX2 SIMD（_mm256_cmp_ps NaN+Inf 检测），目标
+    // < 0.1ms（2400 cell × 6 ≈ 56KB 顺序读）。
+    //
+    // 返回 int：bad cell 数（任一字段 NaN/Inf 即 +1，不重复计数）。
+    // -1 表示 SoA size mismatch / slot 缺失（GDScript 应回落到原慢路径）。
+    int phys_field_nan_guard();
+    // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
+    //
+    // dist：_distribute_weather_field_to_cells C++ 化
+    //   GDScript 源：scripts/weather/weather_system.gd::_distribute_weather_field_to_cells
+    //                 (line 1290+)
+    //   ClimateProfile flag：use_gdext_weather_distribute（默认 true）
+    //   性能目标：~11.6ms → < 1.5ms（n_cells = 2400 基线）
+    //
+    //   入参 `knobs` Dictionary（GDScript 一次打包）：
+    //     标量：n_cells (int)
+    //           snow_threshold_temp, snow_min_intensity, flood_heavy_intensity,
+    //           flood_heavy_precip, flood_lowland_intensity, flood_lowland_elev,
+    //           flood_lowland_moisture (float)
+    //     PackedArray（zero-copy read-write via SoA view）：
+    //           weather_type, weather_intensity, weather_precip,
+    //           weather_field_initialized,
+    //           moisture_arr, temp_arr, cover_arr, accumulated_snow_days_arr,
+    //           landform_arr, terrain_arr （详见 cpp 实装）
+    //
+    //   写：moisture / temperature / cover / current_state["cover"]（通过 schema
+    //       回写） / accumulated_snow_days；并通过 out 字段返回 cover_dirty bool。
+    //   返回：≥ 0.0 → 接管完成（=elapsed_ms）；< 0.0 → fallback。
+    //
+    //   sig 设计：返回 Dictionary 而非 double，包含 { "elapsed_ms", "cover_dirty" }。
+    //             elapsed_ms < 0 表示 precondition 失败。
+    godot::Dictionary run_weather_distribute_pass(const godot::Dictionary &knobs);
+    // summary：_build_field_summary_fronts C++ 化
+    //   GDScript 源：scripts/weather/weather_system.gd::_build_field_summary_fronts
+    //                 (line 1322+)
+    //   ClimateProfile flag：use_gdext_weather_summary（默认 true）
+    //   性能目标：~17.8ms → < 3.0ms（n_cells = 2400, field_summary_limit = 16）
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量：n_cells (int), field_summary_limit (int), hex_size (float)
+    //           summary_intensity_enter (float, =0.10),
+    //           summary_intensity_hold  (float, =0.06),
+    //           merge_ratio (float, =0.65), max_merge_rounds (int, =4)
+    //           day_counter (int, 仅 debug 用)
+    //     PackedArray（zero-copy read，SoA view）：
+    //           cell_pos, neighbor_indices,
+    //           weather_type, weather_intensity, weather_field_initialized,
+    //           weather_cloud, weather_precip, wind_x, wind_y
+    //     fallback：avg_wind_x, avg_wind_y (float, 新生 cluster 用)
+    //
+    //   读：上述 SoA + 持久化的 _prev_summary_seeds / _prev_summary_membership
+    //       （C++ 内部维护，跨 tick 存活）
+    //   写：返回 Dictionary { "elapsed_ms": float, "fronts": Array[Dictionary] }。
+    //       每个 front Dictionary 字段：type/center/intensity/radius/axis/
+    //       stable_axis/velocity/major_scale/minor_scale/age_days/ttl_days/
+    //       life_progress/edge_seed/cloud_amount/precip_amount。
+    //
+    //   sig 设计：返回 Dictionary，字段 elapsed_ms < 0 表示 precondition 失败；
+    //             此时 fronts 字段为空 Array，调用方 fallback 到 GDScript。
+    godot::Dictionary run_weather_summary_fronts_pass(const godot::Dictionary &knobs);
+    // 清空 C++ 端持久化的 summary 状态（_prev_summary_seeds / _prev_summary_membership）。
+    // 在 GDScript 切换 use_gdext_weather_summary flag、或开关 verify mode 时调用，
+    // 避免新旧实现互相污染。无副作用、O(1) 清空（vector::clear）。
+    void reset_weather_summary_state();
+    // verify 协议辅助：snapshot / restore 持久化状态。set_summary_verify_mode 在 dev
+    // 模式下要求"先跑 C++ 再跑 GDScript"两遍，跑 GDScript 之前必须把 C++ 写脏的状态
+    // 还原到本 tick 入口；这两个接口配合 GDScript 端的 prev_seeds shadow 完成往返。
+    void snapshot_weather_summary_state();
+    void restore_weather_summary_state();
+    // ─── plan/weather-refresh-cpp-all: 顶层一体化 weather refresh ────────
+    //
+    // 单 C++ 调用内顺序执行 5 段：
+    //   ① run_weather_field_solve_pass(knobs)
+    //   ② run_weather_distribute_pass(knobs)
+    //   ③ run_weather_summary_fronts_pass(knobs)   ← 产 fronts Array
+    //   ④ cyclone_wake_step(knobs, fronts)         ← 新增（front_advect.gd::tick_cyclone_wake 1:1 移植）
+    //   ⑤ run_stage_b_pass(knobs)
+    //
+    // 设计原则（方案 X）：内部**直接复用已有 4 个 run_*_pass 公开 API**，
+    // 不抽 *_inline，不动现有 pass 函数体。代价是顶层 pass 内会重复解析同一
+    // Dictionary 4 次（每次 ~10-50μs），与节省的 4 次 GD↔CPP round-trip
+    // (~0.3-0.8ms) 相比仍净赚。
+    //
+    // ClimateProfile flag：use_gdext_weather_refresh_daily（默认 true）
+    //
+    // knobs 入参：所有子 pass 的 knobs 字段合并到同一 Dictionary，
+    //             各子 pass 各自只读自己需要的 key。本顶层 pass 额外要求：
+    //   标量： hex_size (float, cyclone_wake 用)
+    //          cyclone_wake_days (int, cyclone wake 持续天数)
+    //          cyclone_storm_type_id (int, WeatherType.WT.STORM 枚举值)
+    //          water_terrain_ids 已在 summary pass knobs 中存在，cyclone 复用
+    //   summary pass knobs 中已含 cell q/r 反查能力（_summary_qr_to_idx），
+    //     cyclone 通过 cell_q/cell_r SoA 反查注入点。
+    //
+    // 返回 Dictionary：
+    //   { rc: 0/-1, fail_stage: String?, weather_tick_ms,
+    //     advance_ms, distribute_ms, cyclone_ms, fronts_count,
+    //     albedo_ms, veg_dyn_ms, feedback_ms, total_ms, fronts: Array }
+    //   任一子段 rc<0 时 { rc:-1, fail_stage:"field_solve|distribute|summary|stage_b" }
+    //   立即短路返回，caller 走 GDScript fallback。
+    //
+    // 副作用：除子 pass 自身的副作用外，本顶层 pass 维护
+    //   _cyclone_perturbations (std::vector<CycloneWakeEntry>) 跨 tick 存活。
+    //   GDScript 端通过 get_cyclone_perturbations_dict() 取镜像，落到
+    //   weather_system.ocean_current_perturbation Dictionary。
+    godot::Dictionary run_weather_refresh_daily_pass(const godot::Dictionary &knobs);
+    // 镜像 API：把 C++ 端 _cyclone_perturbations 导出成 GDScript Dictionary，
+    // 结构与 weather_system.ocean_current_perturbation 1:1（key = cell.q*10000+cell.r 的
+    // 64-bit int hash；value = Dictionary{ vec: Vector2, vec_init: Vector2,
+    // days_left: int, init_days: int }）。
+    //
+    // 调用时机：refresh_weather_daily 在 ext call 成功后立即调一次，把结果
+    // 回灌 weather_system.ocean_current_perturbation，下游消费方（航运 AI、
+    // shader overlay、soak dump）零感知 C++ 切换。
+    godot::Dictionary get_cyclone_perturbations_dict() const;
+    godot::Dictionary get_active_cyclone_snapshot() const;
+    godot::Dictionary get_climate_modes_report() const;
+    godot::Dictionary capture_climate_modes_state() const;
+    godot::Dictionary restore_climate_modes_state(const godot::Dictionary &state);
+    // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
+    //
+    //   GDScript 源：scripts/rendering/physical_circulation_solver.gd::solve_wind_field
+    //                 (line 246-454, 195 行)
+    //   ClimateProfile flag：use_gdext_wind_field（默认 false；本 PR 完成 +
+    //                        SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后切 true）
+    //   性能目标：35.55ms p95 → < 5ms（charter §7 / dots-wind-validation.md）
+    //
+    //   算法结构（与 GDScript 1:1 镜像）：
+    //     Pass 0 — 海岸 BFS（≤ _WIND_COAST_THERMAL_MAX_DIST=5 步）：
+    //       识别每个陆地 cell 距海岸的格数，用作沿海热力压差权重
+    //     主循环 — 每 cell：
+    //       (a) 纬度基线 v_base = wind_belt_at(ny shifted by solar declination)
+    //       (b) 6 邻域离散梯度 grad_slp = (1/3)*Σ(slp_nb-slp_self)*d_unit
+    //       (d) 科氏偏转：仅对 -grad_slp 做（北半球右偏 / 南半球左偏）
+    //       (c) 沿海权重只放大 SLP 梯度项；方向由 pressure gradient 决定
+    //       合成 v_sum = w_lat*v_base + w_grad*v_grad + synoptic perturbation
+    //       (e) 地形/摩擦衰减 + 山脉绕流（mountain neighbor 切向偏转）
+    //       写 wind_x_arr[i], wind_y_arr[i], wind_speed_out[i]
+    //
+    //   入参 `knobs` Dictionary：
+    //     标量： n_cells (int)
+    //            hex_size (float)
+    //            season_phase (float, orbital/year phase only)
+    //            terrain_aware (int 0/1)  — 见 ClimateProfile.enable_terrain_aware_wind
+    //            world_bounds_pos_y (float)
+    //            world_bounds_size_y (float)
+    //     PackedArray（zero-copy read）：
+    //            neighbor_indices : PackedInt32Array (n_cells * 6)
+    //                ↑ 顺序与 HexUtils.CUBE_DIRECTIONS 一致
+    //                  (0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE)
+    //            slp_arr          : PackedFloat32Array (n_cells)
+    //                ↑ 必填！由 GDScript 从 cell.slp 提取
+    //                  （cell.slp 不在 schema 中）
+    //            water_terrain_ids: PackedByteArray (~4 entries)
+    //                ↑ TerrainType 枚举 OCEAN/COAST/REEF/KELP，
+    //                  与 _is_water_terrain 1:1 对齐
+    //            land_lf_mountain : int (knobs scalar) = LandformType.LF.MOUNTAIN
+    //            land_lf_peak     : int (knobs scalar) = LandformType.LF.PEAK
+    //            land_lf_hill     : int (knobs scalar) = LandformType.LF.HILL
+    //
+    //   读：cell_pos_y (lat 推导), cell_terrain (U8), cell_landform (U8) +
+    //       knobs["slp_arr"] + knobs["neighbor_indices"]
+    //   写：cell_wind_x slot (F32), cell_wind_y slot (F32) + flush_slot_to_map
+    //   knobs 输出：
+    //     wind_speed_out : PackedFloat32Array (n_cells)
+    //         ↑ caller 拿这个数组写每 cell.wind_speed
+    //         （cell.wind_speed 不在 schema）
+    //
+    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
+    //         < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
+    //
+    //   bit-equal 容差：1e-4（含 sin/cos/sqrt/normalize 链）
+    //   未支持的特性：none（与 GDScript 算法 1:1 镜像）
+    double run_wind_field_pass(godot::Dictionary knobs);
+    godot::Dictionary run_physical_circulation_pass(godot::Dictionary knobs);
+    // ─── plan/dots-slp-psi-cpp: SLP field solver (stage 1) ───────────────
+    // Native SLP authority:
+    //   Pass A: latitude pressure belts + insolation-driven land/sea thermal
+    //           pressure + closed-loop thermal/ice/snow/moist terms.
+    //   Pass B: smooth_passes-round 6-neighbor Jacobi smoothing
+    //
+    // knobs in:   n_cells, hex_size, season_phase, smooth_passes,
+    //             world_bounds_pos_y, world_bounds_size_y,
+    //             neighbor_indices, water_terrain_ids,
+    //             slp_lat_amp, slp_land_amp, slp_water_damp,
+    //             slp_interior_boost, slp_coast_damp,
+    //             axial_tilt_deg, insolation_daylen_amp
+    // knobs out:  slp_out (PackedFloat32Array, length n_cells)
+    //
+    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
+    //   elapsed_ms < 0 -> caller falls back to GDScript path.
+    godot::Dictionary run_slp_field_pass(godot::Dictionary knobs);
+    // ─── plan/dots-slp-psi-cpp: PSI ocean stream-function solver ─────────
+    // Fused stage 3 + 4 + 5 (init + SOR iters + finalize) in one C++ call:
+    //   init     : enumerate water cells in cell-index order (1:1 with
+    //              GDScript), build nb_idx, compute wind_stress_curl,
+    //              compute beta_abs / r_factor / source per water cell.
+    //   iters    : SOR Gauss-Seidel in-place iterations (psi_total_iters
+    //              default 24), bit-equal to GDScript step_psi_solver.
+    //   finalize : 6-neighbor gradient -> ocean_current, +/- 90 deg
+    //              rotate, thermohaline high-lat overlay, clamp [-1,1].
+    //
+    // knobs in:   n_cells, hex_size, world_bounds_pos_y/size_y,
+    //             neighbor_indices, cell_q, cell_r, water_terrain_ids,
+    //             wind_x_arr, wind_y_arr, wind_speed_arr,
+    //             psi_total_iters, psi_sor_omega, psi_r_base,
+    //             psi_beta_floor, psi_source_scale, ocean_current_scale,
+    //             thermohaline_weight, upwelling_highlat_abs,
+    //             cold_sink_temp
+    // knobs out:  wind_stress_curl_out, ocean_psi_out,
+    //             ocean_current_x_out, ocean_current_y_out
+    //             (each PackedFloat32Array of length n_cells; land cells
+    //              filled with 0)
+    //
+    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
+    godot::Dictionary run_psi_solver_pass(godot::Dictionary knobs);
+    // ─── dots-total-cpp step3（2026-06-25）：物理环流编排下沉（仅生成期一次性路径）──
+    // run_physical_solve_pass：单次驱动，在 C++ 进程内按序串起 SLP → wind → PSI →
+    //   upwelling 四个已验证 kernel（均读 bound slot + publish_to_slot），中间量
+    //   （slp→wind 经 slp_arr、wind→psi 经 wind_*_arr）在 C++ 内从返回值/slot 串联，
+    //   不跨语言往返。GDScript 一次请求（combined knobs = 4 stage 输入并集，含
+    //   neighbor_indices/water_terrain_ids/prev_slp_arr + 全部标量/profile 参数 +
+    //   heat_transport/solve_ocean/terrain_aware 标志），C++ 自动注入 chained 键
+    //   （slp_arr/wind_x_arr/wind_y_arr/wind_speed_arr/stage）。仅 `_bake_initial_*` /
+    //   `rebake_ocean_currents` 等**已经是原子完成**的路径用它（运行期逐帧分摊路径
+    //   `_physical_solve_step_one` 不受影响）。任一 sub-pass fallback → 整体 fallback，
+    //   GDScript 回退到原 step_one loop。NaN 守门 + 风场 RG8 光栅化仍在 GDScript
+    //   （wrapper 调 phys_field_nan_guard + _bake_initial_vector_buffers）。
+    //   输出 { fallback, reason, slp_ms, wind_ms, psi_ms, upwelling_ms, psi_ran,
+    //   elapsed_ms }。前置：ext 必须 bind_map_data。
+    godot::Dictionary run_physical_solve_pass(godot::Dictionary knobs);
+    // ───────────────────────────────────────────────────────────────────
+    // EXPERIMENTAL: D-async — long-lived worker thread + double buffering
+    // ───────────────────────────────────────────────────────────────────
+    // Goal: probe whether a "request → background compute → poll" pattern
+    // gives the main thread sub-50µs dispatch cost while keeping the
+    // demo_complex algorithm bit-equivalent to the synchronous path.
+    //
+    // Contract (CRITICAL — read before touching any of these methods):
+    //   1. Worker threads NEVER call any Godot API (no Variant, no
+    //      push_warning, no Object::get/set). They only read/write their
+    //      own std::vector<float> buffers.
+    //   2. Inputs (temp / elev) are SNAPSHOT-COPIED into worker-private
+    //      buffers in `async_climate_set_inputs` — caller-side mutation
+    //      after the call cannot race with the worker.
+    //   3. Outputs land in a worker-private std::vector<float>; the main
+    //      thread copies them into _slots[CELL_DEMO_THERMAL_GRADIENT] only
+    //      inside `async_climate_poll()` (which returns true on success).
+    //   4. `async_climate_shutdown_*` joins the worker(s); ~DCWorldExt
+    //      calls shutdown_all() defensively.
+    //   5. NEVER share an AsyncTask across DCWorldExt instances.
+    //
+    // Output slot: re-uses "cell_demo_thermal_gradient" so existing data
+    // overlay machinery / GDScript snapshot code keeps working unchanged.
+    //
+    // See `.codebuddy/plan/cpp-async-experiment/requirements.md` for the
+    // experiment design and 7-criteria success matrix.
+    void async_climate_register_task(int task_id, int n_workers);
+    void async_climate_set_inputs(int task_id,
+                                  const godot::PackedFloat32Array &temp,
+                                  const godot::PackedFloat32Array &elev);
+    void async_climate_request(int task_id,
+                               int grid_w, int grid_h,
+                               int iterations, int kernel_radius,
+                               float coriolis_strength,
+                               float terrain_drag,
+                               float elevation_gain,
+                               float normalize_k);
+    bool async_climate_poll(int task_id);
+    godot::Dictionary async_climate_stats(int task_id);
+    void async_climate_shutdown_task(int task_id);
+    // 注册并启动 worker thread。重复调用是幂等的（已 register 直接 return）。
+    void async_climate_round_register();
+    // 在 bind_map_data 之后 / 第一次 kick 之前调一次。把 round-invariant 的
+    // 静态数据（neighbor_indices / donor_table / foliage_table）从 GDScript
+    // 提取到 worker buffer。round 间复用，不在每次 kick 时重序列化。
+    void async_climate_round_set_static_knobs(const godot::Dictionary &knobs);
+    // 主线程入口：把当前 _slots[] 内容快照到 input_buf，传入 round-level
+    // scalars（season_phase / cp 字段），唤醒 worker。返回 false 表示
+    // worker 还没消费上一次 request（total_reused++），主线程应继续用
+    // 上一次 result_buf。
+    bool async_climate_round_kick(const godot::Dictionary &input);
+    // 主线程出口：检查 worker 是否完成；完成则把 output_buf 反序列化回
+    // _slots[]，并调 _flush_slot_to_map 系列推到 MapData。返回包含
+    // sea_ice flip events / dirty_count / per-pass timing 的报告。
+    // result_ready=false 时返回 {} 空字典。
+    godot::Dictionary async_climate_round_poll();
+    // 调试 / 验收用：返回 worker 计数 + 上次耗时。
+    godot::Dictionary async_climate_round_stats();
+    // Thin native facade over register/static/kick/poll. GDScript still owns
+    // production scheduling state; these methods centralize native worker
+    // lifecycle and return a structured state report.
+    godot::Dictionary native_climate_round_begin(const godot::Dictionary &static_knobs);
+    godot::Dictionary native_climate_round_begin_round(const godot::Dictionary &ctx);
+    godot::Dictionary native_climate_round_kick(const godot::Dictionary &input);
+    godot::Dictionary native_climate_round_poll();
+    godot::Dictionary native_climate_round_finish_round(const godot::Dictionary &ctx);
+    // Native climate round state report/reset scaffold. This is not production
+    // authority yet; it exposes the native worker lifecycle so GDScript can
+    // compare against its retained _round_active/_pass_cursor state.
+    godot::Dictionary get_native_climate_round_state_report();
+    godot::Dictionary get_native_climate_round_hot_state();
+    godot::Dictionary reset_native_climate_round_state(const godot::String &reason = godot::String());
+    // 析构 hook + GDScript 主动调用入口。安全 join worker。
+    void async_climate_round_shutdown();
+
+    // ---- bindings: economy ----
+    godot::Dictionary get_economy_checkpoint_format() const;
+    // Diagnoses ONE `get_family_colonization_quotes` rejection (plan 22 M3-6/M3-7).
+    //
+    // The public quotes call collapses six distinct gates into
+    // `colonization_target_invalid` (`economy_runtime_colonization.cpp:448-490`), so
+    // a caller cannot tell "not visible" from "already owned" from
+    // "topology not ready". Two rounds were spent guessing between them.
+    //
+    // This reports each gate separately for one cell. Read-only; no runtime state
+    // is touched.
+    godot::Dictionary diagnose_colonization_target(
+        int64_t country_handle, int target_cell) const;
+    godot::Dictionary flush_runtime_economy_resource_writeback();
+    godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_trade_snapshot(
+        int64_t handle, const godot::String &view = "summary",
+        int offset = 0, int limit = 32) const;
+    godot::Dictionary get_country_economy_overview(
+        int64_t handle, const godot::String &view = "summary",
+        int scope_cell = -1, int filter_id = -1, int offset = 0,
+        int limit = 0) const;
+    // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
+    // Economy owns dynamic PopulationCohort pages, local-market matrices,
+    // deterministic formula execution and committed publication. It is
+    // deliberately independent from the per-cell component slots above.
+    godot::Dictionary configure_economy(const godot::Dictionary &catalog,
+                                        const godot::Dictionary &profile,
+                                        int cell_count,
+                                        int64_t seed);
+    // Hands ResourceProfileRegistry.build_pass_knobs() to the economy so a
+    // worker-owned economy regenerates its own reserves.
+    godot::Dictionary configure_economy_natural_resources(const godot::Dictionary &knobs);
+    godot::Dictionary bootstrap_economy(const godot::Dictionary &population_packet,
+                                        const godot::Dictionary &market_packet);
+    godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
+    // Phase 4: Host POD command queue scaffolding (admission/receipt). Production
+    // opcode apply remains submit_economy_commands → NativeEconomyRuntime.
+    godot::Dictionary submit_economy_pod_commands(
+        const godot::Dictionary &packed_batch);
+    godot::Dictionary poll_economy_pod_receipts(int max_items = 128);
+    godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
+    godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
+    // Phase-2.4.5: sync StageOps mutate day for dual-path soak parity tests.
+    godot::Dictionary run_economy_stage_ops_day(int64_t day_index);
+    void set_economy_stage_ops_soak_parity_ok(bool ok);
+    bool get_economy_stage_ops_soak_parity_ok() const;
+    // Main-thread Godot/MapData → NativeEconomyRuntime frozen input lanes.
+    // Does not run economy mutation stages. Safe to call when ECONOMY is
+    // worker-authoritative so compact slices can start_epoch without fatal.
+    godot::Dictionary capture_economy_day_inputs(int64_t day_index);
+    // Generation-aware input boundary. The day-only entry point above remains
+    // available for existing callers and delegates with an empty generation.
+    godot::Dictionary begin_or_reuse_economy_input_epoch(
+        int64_t day_index, const godot::Dictionary &generation);
+    bool economy_should_run(int64_t day_index) const;
+    bool economy_deadline_critical(int64_t day_index) const;
+    godot::PackedInt32Array get_economy_live_cells();
+    // ---- end Economy military hooks ----
+    godot::Dictionary get_economy_report() const;
+    // Review §3: the effect-input digest buckets each metric by this quantum, so
+    // sub-quantum drift stops re-signing every card. 0 keeps the old exact
+    // behaviour, which is the default until the numbers are chosen.
+    // The three-way split from review §3, as numbers: global (union), territory,
+    // tag, and the per-metric array. A test can then assert that a metric no card
+    // reads stays at 0, which is the whole point of splitting.
+    godot::Dictionary get_effect_input_revisions() const;
+    // Force one digest pass. Without this the gate tests can pass vacuously when
+    // the fixture never commits a day.
+    godot::Dictionary refresh_effect_input_digest_for_test();
+    // Forces one metric to a chosen value for every cell; `has_value == false`
+    // clears it. See the member comment: this exists so threshold crossings can be
+    // tested exactly instead of approximated through the simulation.
+    godot::Dictionary set_effect_metric_override_for_test(int32_t metric,
+                                                          int64_t value,
+                                                          bool has_value);
+    // X9-b worker fixture: relax the authored family-target branch floor.
+    godot::Dictionary set_family_target_min_branches_override_for_test(
+        int32_t min_branches);
+    // Force one catalog tag on or off for one cell while the economy samples
+    // effect metrics. Test-only; add/remove semantics are immutable swaps.
+    godot::Dictionary set_cell_tag_override_for_test(
+        const godot::String &tag_key, int32_t cell, bool on);
+    godot::Dictionary clear_cell_tag_overrides_for_test();
+    // X14: the committed source revision/epoch and content hash the current
+    // class-metric copy was taken from, plus the exact ids the copy used.
+    godot::Dictionary get_class_metric_source_for_test() const;
+    // Test-only: capture the current committed snapshot now, without waiting
+    // for the next economy epoch boundary.
+    godot::Dictionary capture_class_metric_source_for_test();
+    godot::Dictionary set_class_opinion_source_override_for_test(
+        godot::PackedInt64Array population,
+        godot::PackedInt32Array satisfaction_q16,
+        godot::PackedInt64Array satisfaction_weighted);
+    godot::Dictionary clear_class_opinion_source_override_for_test();
+    // X10 test-only bridge: replace the frozen country technology words with an
+    // exact bitset, then run the same hash-gated metric refresh as epoch capture.
+    godot::Dictionary set_country_technology_metric_input_for_test(
+        int32_t country_slot, godot::PackedInt64Array words);
+    godot::Dictionary clear_country_technology_metric_input_for_test();
+    // R-4 X16: the frozen per-profession tax tolerance / satisfaction bias the
+    // satisfaction loop will read, indexed by `profession_id`. Takes a COUNTRY SLOT
+    // (from `get_country_cell_summary(...).country_slot`), not a handle.
+    //
+    // Modifier-side reads would answer a different question: a card can declare the
+    // stat and still never reach a cohort if the epoch freeze does not pick it up.
+    godot::Dictionary get_epoch_profession_report(int64_t country_slot) const;
+    // R-4: sample ONE effect metric for ONE cell through the real sampling path,
+    // without `set_effect_metric_override_for_test`. Used by the metric 68/69 tests,
+    // which are about the live epoch accounting rather than about thresholds.
+    godot::Dictionary sample_effect_metric_probe(int64_t metric, int64_t cell,
+                                                 int64_t country_handle) const;
+    godot::Dictionary get_economy_committed_audit_report() const;
+    godot::Dictionary get_country_class_opinion_snapshot() const;
+    godot::Dictionary get_population_cell_summary(int cell_idx) const;
+    godot::Dictionary get_named_settlement_snapshot() const;
+    godot::Dictionary get_settlement_delta(int64_t since_revision) const;
+    godot::Dictionary get_population_cell_snapshot(
+        int cell_idx, bool include_details = true) const;
+    godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
+    godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
+    godot::Dictionary get_cell_satisfaction_attractiveness(int cell_idx) const;
+    godot::Dictionary get_trade_orders_for_cell(int cell_idx, int offset = 0,
+                                                int limit = 64,
+                                                int good_index = -1) const;
+    godot::Dictionary capture_economy_trade_topology(
+        const godot::PackedInt32Array &neighbor_indices,
+        const godot::PackedByteArray &terrain,
+        const godot::PackedByteArray &trade_passable_lut,
+        const godot::PackedInt32Array &trade_move_cost_lut,
+        int64_t generation = 0,
+        const godot::PackedByteArray &landform = godot::PackedByteArray(),
+        const godot::PackedByteArray &has_river = godot::PackedByteArray());
+    godot::Dictionary get_trade_visual_snapshot(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedByteArray &visible, int64_t vision_revision,
+        int selected_cell = -1, bool enabled = true) const;
+    godot::Dictionary capture_economy_trade_visibility(
+        const godot::PackedByteArray &visible, bool fog_solved);
+    godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_cell_situation_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
+    godot::Dictionary get_building_visual_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
+    godot::Dictionary consume_building_visual_dirty_cells();
+    godot::Dictionary get_treasury_construction_quotes(
+        int64_t country_handle, int cell_idx,
+        const godot::PackedInt32Array &type_ids) const;
+    godot::Dictionary get_construction_command_receipts(
+        int64_t after_receipt_id, int limit = 64) const;
+    // Formal player construction ingress. `submit_economy_commands` is
+    // fail-closed while StageOps owns production, so the build request is
+    // queued on the economy epoch boundary instead (canal lane contract).
+    godot::Dictionary queue_treasury_sponsored_build(
+        int64_t country_handle, int cell_idx, int type_id,
+        int64_t effective_day, int64_t sequence);
+    // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
+    // economy ledger on the epoch boundary and the military bookkeeping command
+    // is only forwarded afterwards (requirement 6.5).
+    godot::Dictionary queue_treasury_sponsored_demolish(
+        int64_t country_handle, int cell_idx, int type_id, int64_t count,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary get_canal_route_quote(
+        int64_t country_handle, int start_cell, int end_cell,
+        const godot::PackedInt32Array &waypoints);
+    godot::Dictionary get_canal_route_quote_detail(
+        int64_t country_handle, int64_t quote_token) const;
+    godot::Dictionary queue_canal_construction(
+        int64_t country_handle, int64_t quote_token,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary get_canal_construction_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int limit = 64) const;
+    godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
+                                                int limit = 64) const;
+    godot::Dictionary get_family_snapshot(int64_t family_handle) const;
+    godot::Dictionary get_family_traits(int64_t family_handle) const;
+    godot::Dictionary get_family_branches(int64_t family_handle, int offset = 0,
+                                           int limit = 64) const;
+    godot::Dictionary get_family_colonization_quotes(
+        int64_t country_handle, int target_cell, int64_t family_filter = 0,
+        int source_filter = -1, int offset = 0, int limit = 64);
+    godot::Dictionary get_family_colonization_quote_detail(
+        int64_t quote_token, int64_t population = -1) const;
+    godot::Dictionary start_family_colonization(
+        int64_t country_handle, int64_t family_handle, int source_cell,
+        int target_cell, int64_t population, int64_t quote_token,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary cancel_family_colonization(
+        int64_t country_handle, int64_t expedition_handle,
+        int64_t effective_day, int64_t sequence);
+    // Era advancement / national procurement budget (transient economy).
+    godot::Dictionary set_country_procurement_policy(
+        int64_t country_handle, bool enabled, int treasury_share_bp,
+        int research_share_bp, int64_t effective_day, int64_t sequence,
+        int era_share_bp = -1, int colonization_share_bp = -1);
+    godot::Dictionary set_era_procurement_target(
+        int64_t country_handle, bool active,
+        const godot::PackedInt32Array &good_indices,
+        const godot::PackedInt64Array &required_quantities,
+        int64_t effective_day, int64_t sequence);
+    godot::Dictionary country_procurement_snapshot(int64_t country_handle) const;
+    godot::Dictionary get_family_expeditions(
+        int64_t country_handle, int offset = 0, int limit = 64) const;
+    godot::Dictionary get_family_expedition_snapshot(
+        int64_t country_handle, int64_t expedition_handle) const;
+    godot::Dictionary get_family_colonization_receipts(
+        int64_t country_handle, int64_t after_receipt_id,
+        int limit = 64) const;
+    godot::Dictionary get_family_branch_effects(int64_t family_handle,
+                                                int cell_idx) const;
+    godot::Dictionary submit_family_trait_commands(
+        const godot::Dictionary &packed_batch);
+    godot::Dictionary get_family_founding_offers(int offset = 0,
+                                                 int limit = 16) const;
+    godot::Dictionary submit_family_founding_choice(int64_t offer_id,
+                                                    int64_t generation,
+                                                    int choice_index,
+                                                    int64_t effective_day,
+                                                    int64_t sequence);
+    godot::Dictionary get_family_industries(int64_t family_handle,
+                                            int offset = 0,
+                                            int limit = 64) const;
+    godot::Dictionary get_family_notable_people(int64_t family_handle,
+                                                int offset = 0,
+                                                int limit = 64) const;
+    godot::Dictionary get_notable_person_snapshot(int64_t person_handle) const;
+    godot::Dictionary get_notable_person_needs(int64_t person_handle,
+                                               int offset = 0,
+                                               int limit = 32) const;
+    godot::Dictionary get_building_notable_people(int64_t building_handle,
+                                                  int offset = 0,
+                                                  int limit = 64) const;
+    godot::Dictionary get_economy_read_view_status() const;
+    godot::Dictionary run_economy_production_climate_math_probe(
+        const godot::Dictionary &vectors) const;
+    int64_t get_economy_state_hash() const;
+    godot::Dictionary inject_economy_cadence_timing(double market_cycle_ms,
+                                                    double slow_cycle_ms,
+                                                    double investment_cycle_ms = -1.0);
+    godot::Dictionary reset_economy(const godot::String &reason);
+    godot::Dictionary start_economy_csv_recording(const godot::Dictionary &config);
+    godot::Dictionary request_stop_economy_csv_recording();
+    godot::Dictionary get_economy_csv_recording_status() const;
+    godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::Dictionary begin_economy_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
+    godot::Dictionary end_economy_save();
+    godot::Dictionary capture_economy_ecp2(int flags = 0) const;
+    godot::Dictionary restore_economy_ecp2(const godot::PackedByteArray &bytes);
+    godot::Dictionary begin_economy_restore();
+    godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
+    godot::Dictionary end_economy_restore();
+    godot::String get_economy_restore_rejected_reason() const;
+    godot::Dictionary get_economy_event_schema() const;
+    godot::Dictionary set_economy_trace_filter(const godot::Dictionary &filter);
+    godot::Dictionary set_economy_inspector_trace_cell(int cell_idx);
+    godot::Dictionary poll_economy_events(const godot::Dictionary &opts) const;
+    godot::Dictionary ack_economy_events(godot::StringName consumer_id,
+                                         int64_t up_to_event_id);
+    godot::Dictionary get_economy_trace_report() const;
+    godot::Dictionary begin_economy_event_archive(int chunk_bytes = 4 * 1024 * 1024);
+    godot::PackedByteArray read_economy_event_archive_chunk(
+        int max_bytes = 4 * 1024 * 1024);
+    godot::Dictionary end_economy_event_archive();
+
+    // ---- bindings: country ----
     godot::Dictionary capture_country_runtime_snapshot();
     // Per-country owned-cell counts from the CURRENT epoch snapshot, plus the
     // widest territory. Exists because the cell-layer migration's whole premise is
@@ -324,17 +2028,6 @@ public:
     // count the selector returns ZERO targets, which looks exactly like "the card
     // matched nothing" -- so a probe needs to see this number directly.
     godot::Dictionary get_economy_territory_plane() const;
-    // Diagnoses ONE `get_family_colonization_quotes` rejection (plan 22 M3-6/M3-7).
-    //
-    // The public quotes call collapses six distinct gates into
-    // `colonization_target_invalid` (`economy_runtime_colonization.cpp:448-490`), so
-    // a caller cannot tell "not visible" from "already owned" from
-    // "topology not ready". Two rounds were spent guessing between them.
-    //
-    // This reports each gate separately for one cell. Read-only; no runtime state
-    // is touched.
-    godot::Dictionary diagnose_colonization_target(
-        int64_t country_handle, int target_cell) const;
     godot::Dictionary capture_country_pod_catalog();
     godot::Dictionary get_country_worker_protocol_status() const;
     godot::Dictionary get_country_worker_read_view(
@@ -414,132 +2107,8 @@ public:
         const godot::String &reason = {});
     godot::Dictionary get_country_economy_asset_transaction(
         int64_t transaction_id) const;
-    godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
-    godot::Dictionary poll_runtime_receipts(int max_items = 128);
-    godot::Dictionary set_runtime_qos_threaded(bool interactive);
-    godot::Dictionary poll_runtime_commit(int64_t after_generation);
-    godot::Dictionary flush_runtime_economy_resource_writeback();
-    bool economy_worker_owns_natural_resources() const;
-    // PK_SIM_DAY_TRACE: one "[main-write]" line with climate slot hashes.
-    void sim_trace_main_write(const char *tag);
-    struct SimTraceWriteGuard {
-        DCWorldExt *self;
-        const char *tag;
-        ~SimTraceWriteGuard() { self->sim_trace_main_write(tag); }
-    };
-    godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
-                                                    int cursor, int max_items);
-    godot::Dictionary request_runtime_save(int64_t request_id);
-    godot::Dictionary poll_runtime_save(int64_t request_id);
-    godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes,
-                                             const godot::PackedByteArray &external_ecp2 = godot::PackedByteArray());
-    godot::Dictionary request_runtime_stop();
-    // True while the worker holds ACTIVE authority over the Climate domain, so
-    // the main-thread Climate schedule must not run. Read straight off the host
-    // rather than from a bundle field: a value injected by GDScript is a frame
-    // stale, and a stale `false` would run a duplicate Climate day while the
-    // worker is already producing one.
-    bool climate_worker_authoritative() const;
-    // The main-thread Climate schedule gate: authoritative, or ACTIVE Climate
-    // requested and the worker's first day not yet committed.
-    bool climate_main_thread_suppressed() const;
-    bool climate_physics_authoritative() const;
-    godot::Dictionary get_climate_physics_read_view() const;
-    // Applies the newest worker-committed Climate day into the DataCore slots
-    // and flushes them to MapData. This is the main-thread half of ACTIVE
-    // Climate: without it the worker would own the domain while MapData stayed
-    // frozen at the day authority was granted.
-    //
-    // `after_generation` is the caller's cursor; pass the value returned in
-    // "generation" by the previous successful call. Non-blocking, and a no-op
-    // when the worker has not committed a newer day.
-    godot::Dictionary apply_runtime_climate_writeback(int64_t after_generation);
-    // B8 P3: block until the worker has evaluated environment generation
-    // `after_environment_generation` (plan attempt, not necessarily a commit).
-    // timeout_ms < 0 waits until the condition or a terminal worker state;
-    // >= 0 is one bounded slice that the caller loops over while pumping
-    // main-thread peer transport between slices.
-    godot::Dictionary wait_climate_consumed(
-        int64_t after_environment_generation, int64_t timeout_ms = -1);
-    // P1：环境帧预发布器用的只读探测（"现在还能不能再塞一帧"）。**不加锁、不阻塞**
-    // —— 内部 ring 的 has_capacity() 临界区只有一次 deque::size()。返回 false 表示
-    // 调用方本帧应当放弃发布，下一帧再试，绝不等待。
-    bool environment_ring_has_capacity() const;
-    // P1：worker 已提交日。预发布器的上界要按"已提交"算，而不是"已发布"——
-    // 环里未消费的帧只是内存，不是事实。
-    int64_t runtime_committed_day() const;
-    bool runtime_climate_writeback_self_test() const;
-    // B8 P2：把"生产当前可用"的 wind traj 表导出给 capture。判定与 weather
-    // field solve 的消费端同一契约：表已建 + knob 允许消费 + 指纹仍然匹配当前
-    // 风场。返回 false 表示这次不该消费 traj（worker 与生产一起走 hopping 回退），
-    // 而不是"没有这张表"。
-    bool runtime_weather_traj_snapshot(int n_cells,
-                                       std::vector<int32_t> &out_idx,
-                                       std::vector<float> &out_w) const;
-    // B8-2：把生产 cyclone 条目表编码成 worker/存档共用的 blob。空 blob = 当前没有
-    // 活跃气旋（仍然是一次有效播种：worker 会接管空表并自行推进）。
-    std::vector<uint8_t> runtime_cyclone_state_blob() const;
-    bool runtime_snapshot_ring_self_test() const;
-    bool runtime_domain_pod_self_test() const;
-    bool runtime_authoritative_domains_self_test() const;
-    bool runtime_climate_authority_self_test() const;
-    bool runtime_climate_trace_self_test() const;
-    // Returns a Dictionary rather than a bool: a parity failure needs its
-    // reason to be actionable, and a bare false is what let earlier gaps sit
-    // behind a green light.
-    godot::Dictionary runtime_climate_parity_contract_test() const;
-    // B8 P0: proves the worker kernel's canonical stage order and the
-    // production native-daily graph order are the same contract. A single
-    // reorder on either side fails here instead of surfacing as a numerical
-    // divergence weeks later.
-    godot::Dictionary runtime_climate_stage_order_contract_test() const;
-    bool runtime_country_pod_authority_self_test() const;
     bool runtime_country_core_protocol_self_test();
     bool runtime_country_peer_protocol_self_test();
-    bool runtime_protocol_guard_self_test() const;
-    bool runtime_trigger_pod_self_test() const;
-    bool runtime_effect_pod_self_test() const;
-    bool runtime_effect_host_stage_self_test();
-    // M2b G-1: pins the Effect-intent -> Modifier-POD adapter mapping (TRIGGER,
-    // FAMILY_EFFECT, GENERIC) against EffectRuntime::dispatch_native_modifier.
-    bool runtime_effect_adapter_parity_self_test();
-    bool runtime_ideology_pod_self_test() const;
-    bool runtime_events_authority_self_test() const;
-    bool runtime_economy_pod_self_test() const;
-    godot::Dictionary switch_economy_authority(const godot::String &mode);
-    bool runtime_economy_authority_fault_gate_self_test() const;
-    // Exercises the shared effect target selector on a synthetic hex grid so
-    // target selection is verifiable without a live map_data / epoch run.
-    bool runtime_economy_target_selector_self_test() const;
-    // MetricMask (infra item L0-1) capacity self check: proves ids past the
-    // old 64 ceiling are addressable. Pure value-type assertions, no world
-    // state, so it can run before any catalog is configured.
-    bool runtime_metric_mask_self_test() const;
-    bool arm_runtime_fault_injection(const godot::String &point);
-    void clear_runtime_fault_injection();
-    godot::Dictionary runtime_economy_stage_order_contract_test() const;
-    bool is_native_daily_visual_commit_pending() const;
-    void complete_native_daily_visual_commit();
-    // Compatibility alias for callers predating the full visual-snapshot barrier.
-    void complete_native_daily_moisture_commit();
-    // ② Native finalizer kernel for the round-complete delta-cap + thermal-init loops.
-    godot::Dictionary run_native_daily_finalizer(godot::Dictionary knobs);
-    godot::Dictionary run_native_sim_tick(const godot::Dictionary &ctx);
-    godot::Dictionary get_native_daily_report() const;
-    godot::Dictionary get_native_shadow_diff_report() const;
-    godot::Dictionary native_ocean_physical_begin(const godot::Dictionary &ctx);
-    godot::Dictionary native_ocean_physical_step(const godot::Dictionary &ctx);
-    godot::Dictionary native_ocean_physical_finish(const godot::Dictionary &ctx);
-    godot::Dictionary reset_native_ocean_physical_state(godot::String reason);
-    godot::Dictionary get_native_ocean_physical_state_report() const;
-    godot::Dictionary get_native_ocean_physical_hot_state() const;
-
-    // Native country authority. Only cell.country_slot is mirrored into the
-    // DataCore/MapData bridge; identity, technology, treasury, and territory
-    // CSR remain native-only.
-    godot::Dictionary configure_country(const godot::Dictionary &catalog,
-                                        const godot::Dictionary &profile,
-                                        int cell_count, int64_t seed);
     godot::Dictionary bootstrap_country(const godot::Dictionary &packet,
                                         const godot::PackedByteArray &is_water);
     godot::Dictionary submit_country_commands(const godot::Dictionary &packed_batch);
@@ -578,14 +2147,6 @@ public:
     godot::Dictionary get_country_cell_tax_policy_snapshot(int cell_idx) const;
     godot::Dictionary get_country_ui_snapshot(int64_t handle,
                                               int section_mask) const;
-    godot::Dictionary get_country_fiscal_snapshot(int64_t handle) const;
-    godot::Dictionary get_country_trade_snapshot(
-        int64_t handle, const godot::String &view = "summary",
-        int offset = 0, int limit = 32) const;
-    godot::Dictionary get_country_economy_overview(
-        int64_t handle, const godot::String &view = "summary",
-        int scope_cell = -1, int filter_id = -1, int offset = 0,
-        int limit = 0) const;
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);
@@ -595,8 +2156,6 @@ public:
     godot::Dictionary begin_country_restore();
     godot::Dictionary feed_country_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_country_restore();
-    void publish_restored_country_territory(godot::Dictionary &out);
-
     // Country AI (foreign countries only). Plans typed Country commands on the
     // worker (ACTIVE) or through the synchronous adapter in run_country_slice.
     godot::Dictionary configure_country_ai(const godot::Dictionary &catalog);
@@ -612,14 +2171,13 @@ public:
     godot::Dictionary restore_country_ai_state(const godot::PackedByteArray &bytes);
     bool runtime_country_ai_self_test() const;
 
+    // ---- bindings: military ----
     // ---- Military
     // Main-thread synchronous military runtime (contract §0.1). DCWorldExt owns
     // a pk::MilitaryCore; the Godot-facing surface is exactly contract §2. All
     // Country/Economy mutations go through their existing command batch entry
     // points with effective day D+1, so Military only ever writes its own store.
     godot::Dictionary configure_military(const godot::Dictionary &catalog, int64_t seed);
-    // Monotonic request id for the Economy POD queue (whole-graph ACTIVE).
-    uint64_t _military_pod_request = 1;
     godot::Dictionary set_military_terrain(const godot::Dictionary &terrain);
     godot::Dictionary submit_military_commands(const godot::Array &batch);
     bool military_should_run(int64_t day) const;
@@ -648,8 +2206,6 @@ public:
     // and falls back to per-slot arming.
     godot::Dictionary set_military_ai_player_handles(const godot::PackedInt64Array &handles);
     godot::Dictionary set_military_ai_country(int64_t slot, int64_t ai);
-    // ---- end Military
-
     // ---- Military cell stats
     // Feed for the ideology channel A/C cards (design §17.1). Military owns the
     // facts; these entry points PUBLISH them so the existing tag dictionary and
@@ -674,8 +2230,75 @@ public:
                                                  int64_t cell,
                                                  int64_t entity_handle,
                                                  int64_t base_value_q16) const;
-    // ---- end Military cell stats
+    // ---- Economy military hooks ----
+    // Military v1 (design §5.1). Publishes the per-cell ration satisfaction
+    // Military owns. Needs listed in a profession's state_supplied_need_ids are
+    // never purchased on the market; their satisfaction is read from here, so a
+    // ration shortfall hits the survival dimension (and thus morale and
+    // starvation deaths). Cells absent from `cells` keep their previous value;
+    // the initial value is 1.0, so a world without soldiers is unchanged.
+    // Returns {ok, written, reason?}.
+    godot::Dictionary set_military_ration_satisfaction(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &q16);
 
+    // ---- bindings: effect ----
+    godot::Dictionary apply_runtime_effect_snapshot(int64_t after_generation);
+    // Generic Effect Runtime. It owns immutable effect programs, active
+    // instances, plans and cross-domain ACK state; domain runtimes own all
+    // authoritative mutations.
+    godot::Dictionary configure_effects(const godot::Dictionary &catalog);
+    godot::Dictionary submit_effect_instances(const godot::Dictionary &batch);
+    godot::Dictionary retire_effect_instance(int64_t instance_id, int64_t generation,
+                                             int64_t effective_day);
+    // Test seam for the M2a effect-authority split. mode: -1 = live host
+    // authority (production), 0 = force legacy EffectRuntime writes,
+    // 1 = force the worker transport. See EffectInstanceForwarder's declaration
+    // for why the real grant cannot be produced by a headless fixture.
+    godot::Dictionary set_effect_forwarder_authority_for_test(int32_t mode);
+    godot::Dictionary queue_effect_pod_instance(const godot::Dictionary &input);
+    godot::Dictionary queue_effect_pod_metric(const godot::Dictionary &input);
+    godot::Dictionary queue_effect_pod_remove(int64_t instance_id, int64_t generation);
+    godot::Dictionary poll_effect_worker_intent();
+    godot::Dictionary submit_effect_worker_ack(const godot::Dictionary &ack);
+    bool effect_instance_fire_acked(int64_t instance_id, int64_t generation) const;
+    // `{ok, value, present}` for one published Effect metric. Presence is
+    // reported separately from the value so "published 0" and "never published"
+    // stay distinguishable -- the whole point of the ideology metric publisher.
+    godot::Dictionary query_effect_instance_metric(int64_t instance_id,
+                                                   int32_t metric_id) const;
+    godot::Dictionary submit_effect_snapshots(const godot::Dictionary &batch);
+    godot::Dictionary run_effect_daily(int64_t day_index);
+    godot::Dictionary dispatch_effect_native_modifier();
+    godot::Dictionary ack_effect_native_modifier();
+    godot::Dictionary dispatch_effect_native_country();
+    godot::Dictionary ack_effect_native_country();
+    godot::Dictionary settle_orphaned_effect_native_country_acks();
+    godot::Dictionary dispatch_effect_native_economy();
+    godot::Dictionary ack_effect_native_economy();
+    godot::Dictionary dispatch_effect_native_gameplay();
+    godot::Dictionary ack_effect_native_gameplay();
+    // Read-only state of native Effect ingress queues.  Save coordination
+    // uses this to reject a cross-section snapshot before a domain ACK.
+    godot::Dictionary get_effect_native_adapter_report() const;
+    bool effect_should_run(int64_t day_index) const;
+    godot::Dictionary poll_effect_transactions(int64_t after_transaction_id,
+                                               int limit = 128) const;
+    godot::Dictionary preflight_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary commit_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary ack_effect_transactions(const godot::Dictionary &batch);
+    godot::Dictionary explain_effect(int64_t instance_id) const;
+    godot::Dictionary get_effect_report() const;
+    godot::PackedByteArray capture_effect_state() const;
+    godot::Dictionary restore_effect_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_effect_state();
+    godot::Dictionary bind_era_reward_player_country(int64_t country_handle);
+    godot::Dictionary get_era_reward_offer();
+    godot::Dictionary choose_era_reward(int64_t offer_generation,
+                                        int choice_index,
+                                        int64_t effective_day);
+
+    // ---- bindings: modifier ----
     // Shared data-oriented Modifier runtime. Four domain stores are isolated;
     // this facade is the only GDScript mutation boundary.
     godot::Dictionary configure_modifiers(const godot::Dictionary &catalog,
@@ -836,9 +2459,70 @@ public:
                                                  const godot::PackedInt32Array &stat_ids) const;
     godot::Dictionary collect_modifier_scope_stat_entries(
         int domain, int scope, const godot::PackedInt32Array &stat_ids) const;
-    godot::Dictionary apply_runtime_effect_snapshot(int64_t after_generation);
     godot::Dictionary runtime_modifier_pod_self_test() const;
+    int64_t ensure_modifier_building_handle(int cell, int type_id,
+                                            int owner_signature_id);
 
+    // ---- bindings: ideology ----
+    // Native ideology authority.  It owns only country-scoped ideology
+    // collection/progression state and delegates domain effects elsewhere.
+    godot::Dictionary configure_ideologies(const godot::Dictionary &catalog);
+    godot::Dictionary submit_ideology_commands(const godot::Dictionary &batch);
+    godot::Dictionary poll_ideology_receipts(int64_t after_receipt_id,
+                                             int32_t limit) const;
+    godot::Dictionary run_ideology_daily(int64_t day_index);
+    bool ideology_should_run(int64_t day_index) const;
+    bool ideology_needs_daily_continuation(int64_t day_index) const;
+    godot::Dictionary step_ideology_instance_refresh(int64_t day_index);
+    // Worker-authority pump for the DERIVED half, symmetric to the instance refresh.
+    // Needed because `run_ideology_daily` is suppressed when the worker owns IDEOLOGY.
+    // Throttling is the CALLER's job -- see the comment on the definition.
+    godot::Dictionary step_ideology_derived_rebuild(int64_t day_index);
+    godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
+    godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
+    // Diagnostic: reconciled Effect instances owned by each held idea, with a
+    // `present` flag proving the EffectRuntime still holds them. Read-only.
+    godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
+    // Per-cell output factor after the Modifier rows AND the Ideology plane have
+    // been folded in. Test/diagnostic seam for the coefficient plane.
+    godot::Dictionary get_city_output_factor_q16(int32_t cell, int32_t good_id) const;
+    godot::Dictionary resolve_effect_program_modifier_commands(
+        const godot::String &program_key) const;
+    godot::Dictionary reconcile_ideology_effects_for_test(int64_t country_handle);
+    godot::Dictionary apply_ideology_self_snapshot_for_test(int64_t generation);
+    // Read-only query over the shared target-cell resolver. Content tooling and
+    // tests use it to prove a selector is deterministic and bounded before a
+    // card is authored against it. Never mutates state.
+    godot::PackedInt32Array query_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind, int32_t param0,
+        int32_t param1) const;
+    // Lowest cell owned by `country_slot`, or -1. Anchors cell-scoped ideology
+    // effects until a capital/city concept exists.
+    int32_t query_country_anchor_cell(int32_t country_slot) const;
+    // True when the compiled Effect catalog declares `program_key` as a managed
+    // program. Lets tests and tooling assert that a card row is routed through
+    // the reconciliation path instead of the legacy Modifier batch.
+    bool effect_program_is_managed(const godot::String &program_key) const;
+    godot::Dictionary preview_ideology_offer_eligibility(int64_t country_handle) const;
+    godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
+    godot::Dictionary explain_ideologies(
+        int64_t country_handle,
+        const godot::PackedInt32Array &ideology_ids);
+    godot::Dictionary get_ideology_report() const;
+    // Business-only state (no transport fields), for comparing two worlds or a
+    // main thread against a worker. Same sections and hash the parity report uses.
+    godot::Dictionary get_ideology_business_state() const;
+    int64_t compute_idea_activation_signature_for_test(int64_t handle,
+                                                      int32_t ideology_id);
+    godot::PackedByteArray capture_ideology_state() const;
+    godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
+    godot::Dictionary clear_ideology_state();
+    godot::Dictionary publish_ideology_worker_inputs();
+    godot::Dictionary poll_ideology_worker_intent();
+    godot::Dictionary submit_ideology_worker_ack(
+        const godot::Dictionary &ack);
+
+    // ---- bindings: trigger ----
     // Generic trigger runtime. It only ingests committed facts/snapshots and
     // emits typed effects; domain stores apply those effects at their own
     // safe boundary.
@@ -882,439 +2566,11 @@ public:
     // (signal, cell), which makes repeated replay idempotent.
     godot::Dictionary replay_completed_research_signal(int64_t trigger_id,
         int64_t target, int64_t cell, int64_t day);
-    NativeSimulationHost *trigger_pod_host() const { return _runtime_host.get(); }
 
-    // Generic Effect Runtime. It owns immutable effect programs, active
-    // instances, plans and cross-domain ACK state; domain runtimes own all
-    // authoritative mutations.
-    godot::Dictionary configure_effects(const godot::Dictionary &catalog);
-    godot::Dictionary submit_effect_instances(const godot::Dictionary &batch);
-    godot::Dictionary retire_effect_instance(int64_t instance_id, int64_t generation,
-                                             int64_t effective_day);
-    // Test seam for the M2a effect-authority split. mode: -1 = live host
-    // authority (production), 0 = force legacy EffectRuntime writes,
-    // 1 = force the worker transport. See EffectInstanceForwarder's declaration
-    // for why the real grant cannot be produced by a headless fixture.
-    godot::Dictionary set_effect_forwarder_authority_for_test(int32_t mode);
-    godot::Dictionary queue_effect_pod_instance(const godot::Dictionary &input);
-    godot::Dictionary queue_effect_pod_metric(const godot::Dictionary &input);
-    godot::Dictionary queue_effect_pod_remove(int64_t instance_id, int64_t generation);
-    godot::Dictionary poll_effect_worker_intent();
-    godot::Dictionary submit_effect_worker_ack(const godot::Dictionary &ack);
-    bool effect_instance_fire_acked(int64_t instance_id, int64_t generation) const;
-    // `{ok, value, present}` for one published Effect metric. Presence is
-    // reported separately from the value so "published 0" and "never published"
-    // stay distinguishable -- the whole point of the ideology metric publisher.
-    godot::Dictionary query_effect_instance_metric(int64_t instance_id,
-                                                   int32_t metric_id) const;
-    godot::Dictionary submit_effect_snapshots(const godot::Dictionary &batch);
-    godot::Dictionary run_effect_daily(int64_t day_index);
-    godot::Dictionary dispatch_effect_native_modifier();
-    godot::Dictionary ack_effect_native_modifier();
-    // SPLIT AUTHORITY settle (mask 0xFEF: IDEOLOGY on the main thread, EFFECT and
-    // MODIFIER on the worker). In that configuration the main thread has no
-    // Effect settler -- `run_effect_daily`, both Modifier adapter halves and
-    // `run_modifier_daily` all report `path=EFFECT_WORKER` -- so an ideology
-    // equip's batch is planned here and never drained. This submits those rows
-    // into the worker's Modifier lane and completes the Effect transaction once
-    // the worker has committed them.
-    //
-    // INERT unless the worker is authoritative for EFFECT *and* MODIFIER, tested
-    // with the same `domain_is_worker_authoritative` predicate `run_effect_daily`
-    // uses to decide it has nothing to do. Anything weaker double-applies rows
-    // the local adapter already applied (1.03 -> 1.0609).
-    godot::Dictionary settle_split_authority_effects(int64_t day_index);
-    godot::Dictionary dispatch_effect_native_country();
-    godot::Dictionary ack_effect_native_country();
-    godot::Dictionary settle_orphaned_effect_native_country_acks();
-    godot::Dictionary dispatch_effect_native_economy();
-    godot::Dictionary ack_effect_native_economy();
-    struct EffectGameplayCommand {
-        int32_t action = 0;
-        int32_t domain = -1;
-        int32_t opcode = 0;
-        int64_t effective_day = 0;
-        uint64_t target_handle = 0;
-        uint32_t target_generation = 0;
-        int64_t value_i64 = 0;
-        std::array<int64_t, 4> payload{};
-        uint64_t idempotency_key = 0;
-        int64_t request_id = 0;
-    };
-    // Native gameplay/event Effect ingress. The event journal remains the
-    // authority; this queue only preserves the Effect safe-boundary ACK.
-    bool submit_effect_gameplay_commands_pod(const EffectGameplayCommand *commands,
-                                             size_t count,
-                                             std::vector<int64_t> &request_ids,
-                                             std::string &error);
-    bool effect_gameplay_command_result_pod(int64_t request_id, bool &complete,
-                                            bool &ok, std::string &reason) const;
+    // ---- bindings: events ----
     bool gameplay_effect_should_run(int64_t day_index) const;
     godot::Dictionary run_gameplay_effects(int64_t day_index);
-    godot::Dictionary dispatch_effect_native_gameplay();
-    godot::Dictionary ack_effect_native_gameplay();
-    // Read-only state of native Effect ingress queues.  Save coordination
-    // uses this to reject a cross-section snapshot before a domain ACK.
-    godot::Dictionary get_effect_native_adapter_report() const;
-    bool effect_should_run(int64_t day_index) const;
-    godot::Dictionary poll_effect_transactions(int64_t after_transaction_id,
-                                               int limit = 128) const;
-    godot::Dictionary preflight_effect_transactions(const godot::Dictionary &batch);
-    godot::Dictionary commit_effect_transactions(const godot::Dictionary &batch);
-    godot::Dictionary ack_effect_transactions(const godot::Dictionary &batch);
-    godot::Dictionary explain_effect(int64_t instance_id) const;
-    godot::Dictionary get_effect_report() const;
-    godot::PackedByteArray capture_effect_state() const;
-    godot::Dictionary restore_effect_state(const godot::PackedByteArray &bytes);
-    godot::Dictionary clear_effect_state();
-    bool commit_canal_effect(uint64_t project_handle,
-                             uint32_t project_generation,
-                             uint64_t idempotency_key,
-                             std::string &error);
     godot::PackedInt32Array consume_canal_visual_dirty_cells();
-    godot::Dictionary bind_era_reward_player_country(int64_t country_handle);
-    godot::Dictionary get_era_reward_offer();
-    godot::Dictionary choose_era_reward(int64_t offer_generation,
-                                        int choice_index,
-                                        int64_t effective_day);
-
-    // Native ideology authority.  It owns only country-scoped ideology
-    // collection/progression state and delegates domain effects elsewhere.
-    godot::Dictionary configure_ideologies(const godot::Dictionary &catalog);
-    godot::Dictionary submit_ideology_commands(const godot::Dictionary &batch);
-    godot::Dictionary poll_ideology_receipts(int64_t after_receipt_id,
-                                             int32_t limit) const;
-    godot::Dictionary run_ideology_daily(int64_t day_index);
-    bool ideology_should_run(int64_t day_index) const;
-    bool ideology_needs_daily_continuation(int64_t day_index) const;
-    godot::Dictionary step_ideology_instance_refresh(int64_t day_index);
-    // Worker-authority pump for the DERIVED half, symmetric to the instance refresh.
-    // Needed because `run_ideology_daily` is suppressed when the worker owns IDEOLOGY.
-    // Throttling is the CALLER's job -- see the comment on the definition.
-    godot::Dictionary step_ideology_derived_rebuild(int64_t day_index);
-    godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
-    godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
-    // Diagnostic: reconciled Effect instances owned by each held idea, with a
-    // `present` flag proving the EffectRuntime still holds them. Read-only.
-    godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
-    // Per-cell output factor after the Modifier rows AND the Ideology plane have
-    // been folded in. Test/diagnostic seam for the coefficient plane.
-    godot::Dictionary get_city_output_factor_q16(int32_t cell, int32_t good_id) const;
-    // §2.0 of the round-1 review: the plane is OFF by default. Until generation,
-    // double-application, selector semantics, coefficient semantics and thread
-    // ownership are fixed, it must not touch shipped numbers. Tests turn it on
-    // explicitly.
-    // Inject a table directly. The generator has no DSL for columns yet, so the
-    // only way to exercise `NEIGHBOR_COUNT` is to hand-build one.
-    bool set_ideology_cell_program_entry_for_test(
-        int32_t stat_id, int32_t filter_tag, int32_t operation,
-        int32_t coef_q16, int32_t column_kind, int32_t column_tag,
-        int32_t cap_units);
-    godot::Dictionary resolve_effect_program_modifier_commands(
-        const godot::String &program_key) const;
-    godot::Dictionary reconcile_ideology_effects_for_test(int64_t country_handle);
-    godot::Dictionary apply_ideology_self_snapshot_for_test(int64_t generation);
-    // Read-only query over the shared target-cell resolver. Content tooling and
-    // tests use it to prove a selector is deterministic and bounded before a
-    // card is authored against it. Never mutates state.
-    godot::PackedInt32Array query_effect_target_cells(
-        int32_t source_cell, int32_t selector_kind, int32_t param0,
-        int32_t param1) const;
-    // Lowest cell owned by `country_slot`, or -1. Anchors cell-scoped ideology
-    // effects until a capital/city concept exists.
-    int32_t query_country_anchor_cell(int32_t country_slot) const;
-    // True when the compiled Effect catalog declares `program_key` as a managed
-    // program. Lets tests and tooling assert that a card row is routed through
-    // the reconciliation path instead of the legacy Modifier batch.
-    bool effect_program_is_managed(const godot::String &program_key) const;
-    godot::Dictionary preview_ideology_offer_eligibility(int64_t country_handle) const;
-    godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
-    godot::Dictionary explain_ideologies(
-        int64_t country_handle,
-        const godot::PackedInt32Array &ideology_ids);
-    godot::Dictionary get_ideology_report() const;
-    // Business-only state (no transport fields), for comparing two worlds or a
-    // main thread against a worker. Same sections and hash the parity report uses.
-    godot::Dictionary get_ideology_business_state() const;
-    int64_t compute_idea_activation_signature_for_test(int64_t handle,
-                                                      int32_t ideology_id);
-    godot::PackedByteArray capture_ideology_state() const;
-    godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
-    godot::Dictionary clear_ideology_state();
-    godot::Dictionary publish_ideology_worker_inputs();
-    godot::Dictionary poll_ideology_worker_intent();
-    godot::Dictionary submit_ideology_worker_ack(
-        const godot::Dictionary &ack);
-
-    // Native-only hot-path helpers. They resolve no strings in the consumer loop.
-    float modifier_climate_radiative_target(int cell, float base_value) const;
-    double modifier_country_output_factor(int64_t country_handle) const;
-    int64_t ensure_modifier_building_handle(int cell, int type_id,
-                                            int owner_signature_id);
-    double modifier_building_output_factor(int64_t building_handle,
-                                           int64_t settlement_cell) const;
-
-    // ─── Native economy runtime / ECONOMY_GRAPH ────────────────────────
-    // Economy owns dynamic PopulationCohort pages, local-market matrices,
-    // deterministic formula execution and committed publication. It is
-    // deliberately independent from the per-cell component slots above.
-    godot::Dictionary configure_economy(const godot::Dictionary &catalog,
-                                        const godot::Dictionary &profile,
-                                        int cell_count,
-                                        int64_t seed);
-    // Hands ResourceProfileRegistry.build_pass_knobs() to the economy so a
-    // worker-owned economy regenerates its own reserves.
-    godot::Dictionary configure_economy_natural_resources(const godot::Dictionary &knobs);
-    godot::Dictionary bootstrap_economy(const godot::Dictionary &population_packet,
-                                        const godot::Dictionary &market_packet);
-    godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
-    // Phase 4: Host POD command queue scaffolding (admission/receipt). Production
-    // opcode apply remains submit_economy_commands → NativeEconomyRuntime.
-    godot::Dictionary submit_economy_pod_commands(
-        const godot::Dictionary &packed_batch);
-    godot::Dictionary poll_economy_pod_receipts(int max_items = 128);
-    godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
-    godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
-    // Phase-2.4.5: sync StageOps mutate day for dual-path soak parity tests.
-    godot::Dictionary run_economy_stage_ops_day(int64_t day_index);
-    void set_economy_stage_ops_soak_parity_ok(bool ok);
-    bool get_economy_stage_ops_soak_parity_ok() const;
-    // Main-thread Godot/MapData → NativeEconomyRuntime frozen input lanes.
-    // Does not run economy mutation stages. Safe to call when ECONOMY is
-    // worker-authoritative so compact slices can start_epoch without fatal.
-    godot::Dictionary capture_economy_day_inputs(int64_t day_index);
-    // Generation-aware input boundary. The day-only entry point above remains
-    // available for existing callers and delegates with an empty generation.
-    godot::Dictionary begin_or_reuse_economy_input_epoch(
-        int64_t day_index, const godot::Dictionary &generation);
-    bool economy_should_run(int64_t day_index) const;
-    bool economy_deadline_critical(int64_t day_index) const;
-    godot::PackedInt32Array get_economy_live_cells();
-    // ---- Economy military hooks ----
-    // Military v1 (design §5.1). Publishes the per-cell ration satisfaction
-    // Military owns. Needs listed in a profession's state_supplied_need_ids are
-    // never purchased on the market; their satisfaction is read from here, so a
-    // ration shortfall hits the survival dimension (and thus morale and
-    // starvation deaths). Cells absent from `cells` keep their previous value;
-    // the initial value is 1.0, so a world without soldiers is unchanged.
-    // Returns {ok, written, reason?}.
-    godot::Dictionary set_military_ration_satisfaction(
-        const godot::PackedInt32Array &cells,
-        const godot::PackedInt32Array &q16);
-    // ---- end Economy military hooks ----
-    godot::Dictionary get_economy_report() const;
-    // Review §3: the effect-input digest buckets each metric by this quantum, so
-    // sub-quantum drift stops re-signing every card. 0 keeps the old exact
-    // behaviour, which is the default until the numbers are chosen.
-    // The three-way split from review §3, as numbers: global (union), territory,
-    // tag, and the per-metric array. A test can then assert that a metric no card
-    // reads stays at 0, which is the whole point of splitting.
-    godot::Dictionary get_effect_input_revisions() const;
-    // Force one digest pass. Without this the gate tests can pass vacuously when
-    // the fixture never commits a day.
-    godot::Dictionary refresh_effect_input_digest_for_test();
-    // Forces one metric to a chosen value for every cell; `has_value == false`
-    // clears it. See the member comment: this exists so threshold crossings can be
-    // tested exactly instead of approximated through the simulation.
-    godot::Dictionary set_effect_metric_override_for_test(int32_t metric,
-                                                          int64_t value,
-                                                          bool has_value);
-    // X9-b worker fixture: relax the authored family-target branch floor.
-    godot::Dictionary set_family_target_min_branches_override_for_test(
-        int32_t min_branches);
-    // Force one catalog tag on or off for one cell while the economy samples
-    // effect metrics. Test-only; add/remove semantics are immutable swaps.
-    godot::Dictionary set_cell_tag_override_for_test(
-        const godot::String &tag_key, int32_t cell, bool on);
-    godot::Dictionary clear_cell_tag_overrides_for_test();
-    // X14: the committed source revision/epoch and content hash the current
-    // class-metric copy was taken from, plus the exact ids the copy used.
-    godot::Dictionary get_class_metric_source_for_test() const;
-    // Test-only: capture the current committed snapshot now, without waiting
-    // for the next economy epoch boundary.
-    godot::Dictionary capture_class_metric_source_for_test();
-    godot::Dictionary set_class_opinion_source_override_for_test(
-        godot::PackedInt64Array population,
-        godot::PackedInt32Array satisfaction_q16,
-        godot::PackedInt64Array satisfaction_weighted);
-    godot::Dictionary clear_class_opinion_source_override_for_test();
-    // X10 test-only bridge: replace the frozen country technology words with an
-    // exact bitset, then run the same hash-gated metric refresh as epoch capture.
-    godot::Dictionary set_country_technology_metric_input_for_test(
-        int32_t country_slot, godot::PackedInt64Array words);
-    godot::Dictionary clear_country_technology_metric_input_for_test();
-    // R-4 X16: the frozen per-profession tax tolerance / satisfaction bias the
-    // satisfaction loop will read, indexed by `profession_id`. Takes a COUNTRY SLOT
-    // (from `get_country_cell_summary(...).country_slot`), not a handle.
-    //
-    // Modifier-side reads would answer a different question: a card can declare the
-    // stat and still never reach a cohort if the epoch freeze does not pick it up.
-    godot::Dictionary get_epoch_profession_report(int64_t country_slot) const;
-    // R-4: sample ONE effect metric for ONE cell through the real sampling path,
-    // without `set_effect_metric_override_for_test`. Used by the metric 68/69 tests,
-    // which are about the live epoch accounting rather than about thresholds.
-    godot::Dictionary sample_effect_metric_probe(int64_t metric, int64_t cell,
-                                                 int64_t country_handle) const;
-    godot::Dictionary get_economy_committed_audit_report() const;
-    godot::Dictionary get_country_class_opinion_snapshot() const;
-    godot::Dictionary get_population_cell_summary(int cell_idx) const;
-    godot::Dictionary get_named_settlement_snapshot() const;
-    godot::Dictionary get_settlement_delta(int64_t since_revision) const;
-    godot::Dictionary get_population_cell_snapshot(
-        int cell_idx, bool include_details = true) const;
-    godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
-    godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
-    godot::Dictionary get_cell_satisfaction_attractiveness(int cell_idx) const;
-    godot::Dictionary get_trade_orders_for_cell(int cell_idx, int offset = 0,
-                                                int limit = 64,
-                                                int good_index = -1) const;
-    godot::Dictionary capture_economy_trade_topology(
-        const godot::PackedInt32Array &neighbor_indices,
-        const godot::PackedByteArray &terrain,
-        const godot::PackedByteArray &trade_passable_lut,
-        const godot::PackedInt32Array &trade_move_cost_lut,
-        int64_t generation = 0,
-        const godot::PackedByteArray &landform = godot::PackedByteArray(),
-        const godot::PackedByteArray &has_river = godot::PackedByteArray());
-    godot::Dictionary get_trade_visual_snapshot(
-        const godot::PackedInt32Array &cells,
-        const godot::PackedByteArray &visible, int64_t vision_revision,
-        int selected_cell = -1, bool enabled = true) const;
-    godot::Dictionary bake_trade_visual_paths(const godot::Dictionary &snapshot,
-                                              int map_width, double hex_size) const;
-    godot::Dictionary capture_economy_trade_visibility(
-        const godot::PackedByteArray &visible, bool fog_solved);
-    godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
-    godot::Dictionary get_cell_situation_snapshot(
-        const godot::PackedInt32Array &requested_cells) const;
-    godot::Dictionary get_building_visual_snapshot(
-        const godot::PackedInt32Array &requested_cells) const;
-    godot::Dictionary consume_building_visual_dirty_cells();
-    // Numeric 2.5D building chunk baker. The Godot side supplies only flat
-    // chunk-local PackedArrays; C++ returns MultiMesh-ready 16-float buffers.
-    godot::Dictionary bake_building_visual_chunk(godot::Dictionary knobs);
-    godot::Dictionary get_treasury_construction_quotes(
-        int64_t country_handle, int cell_idx,
-        const godot::PackedInt32Array &type_ids) const;
-    godot::Dictionary get_construction_command_receipts(
-        int64_t after_receipt_id, int limit = 64) const;
-    // Formal player construction ingress. `submit_economy_commands` is
-    // fail-closed while StageOps owns production, so the build request is
-    // queued on the economy epoch boundary instead (canal lane contract).
-    godot::Dictionary queue_treasury_sponsored_build(
-        int64_t country_handle, int cell_idx, int type_id,
-        int64_t effective_day, int64_t sequence);
-    // Removal mirror of `queue_treasury_sponsored_build`: a state lot leaves the
-    // economy ledger on the epoch boundary and the military bookkeeping command
-    // is only forwarded afterwards (requirement 6.5).
-    godot::Dictionary queue_treasury_sponsored_demolish(
-        int64_t country_handle, int cell_idx, int type_id, int64_t count,
-        int64_t effective_day, int64_t sequence);
-    godot::Dictionary get_canal_route_quote(
-        int64_t country_handle, int start_cell, int end_cell,
-        const godot::PackedInt32Array &waypoints);
-    godot::Dictionary get_canal_route_quote_detail(
-        int64_t country_handle, int64_t quote_token) const;
-    godot::Dictionary queue_canal_construction(
-        int64_t country_handle, int64_t quote_token,
-        int64_t effective_day, int64_t sequence);
-    godot::Dictionary get_canal_construction_receipts(
-        int64_t country_handle, int64_t after_receipt_id,
-        int limit = 64) const;
-    godot::Dictionary get_family_cell_snapshot(int cell_idx, int offset = 0,
-                                                int limit = 64) const;
-    godot::Dictionary get_family_snapshot(int64_t family_handle) const;
-    godot::Dictionary get_family_traits(int64_t family_handle) const;
-    godot::Dictionary get_family_branches(int64_t family_handle, int offset = 0,
-                                           int limit = 64) const;
-    godot::Dictionary get_family_colonization_quotes(
-        int64_t country_handle, int target_cell, int64_t family_filter = 0,
-        int source_filter = -1, int offset = 0, int limit = 64);
-    godot::Dictionary get_family_colonization_quote_detail(
-        int64_t quote_token, int64_t population = -1) const;
-    godot::Dictionary start_family_colonization(
-        int64_t country_handle, int64_t family_handle, int source_cell,
-        int target_cell, int64_t population, int64_t quote_token,
-        int64_t effective_day, int64_t sequence);
-    godot::Dictionary cancel_family_colonization(
-        int64_t country_handle, int64_t expedition_handle,
-        int64_t effective_day, int64_t sequence);
-    // Era advancement / national procurement budget (transient economy).
-    godot::Dictionary set_country_procurement_policy(
-        int64_t country_handle, bool enabled, int treasury_share_bp,
-        int research_share_bp, int64_t effective_day, int64_t sequence,
-        int era_share_bp = -1, int colonization_share_bp = -1);
-    godot::Dictionary set_era_procurement_target(
-        int64_t country_handle, bool active,
-        const godot::PackedInt32Array &good_indices,
-        const godot::PackedInt64Array &required_quantities,
-        int64_t effective_day, int64_t sequence);
-    godot::Dictionary country_procurement_snapshot(int64_t country_handle) const;
-    godot::Dictionary get_family_expeditions(
-        int64_t country_handle, int offset = 0, int limit = 64) const;
-    godot::Dictionary get_family_expedition_snapshot(
-        int64_t country_handle, int64_t expedition_handle) const;
-    godot::Dictionary get_family_colonization_receipts(
-        int64_t country_handle, int64_t after_receipt_id,
-        int limit = 64) const;
-    godot::Dictionary get_family_branch_effects(int64_t family_handle,
-                                                int cell_idx) const;
-    godot::Dictionary submit_family_trait_commands(
-        const godot::Dictionary &packed_batch);
-    godot::Dictionary get_family_founding_offers(int offset = 0,
-                                                 int limit = 16) const;
-    godot::Dictionary submit_family_founding_choice(int64_t offer_id,
-                                                    int64_t generation,
-                                                    int choice_index,
-                                                    int64_t effective_day,
-                                                    int64_t sequence);
-    godot::Dictionary get_family_industries(int64_t family_handle,
-                                            int offset = 0,
-                                            int limit = 64) const;
-    godot::Dictionary get_family_notable_people(int64_t family_handle,
-                                                int offset = 0,
-                                                int limit = 64) const;
-    godot::Dictionary get_notable_person_snapshot(int64_t person_handle) const;
-    godot::Dictionary get_notable_person_needs(int64_t person_handle,
-                                               int offset = 0,
-                                               int limit = 32) const;
-    godot::Dictionary get_building_notable_people(int64_t building_handle,
-                                                  int offset = 0,
-                                                  int limit = 64) const;
-    godot::Dictionary get_economy_read_view_status() const;
-    void append_economy_read_view_perf(godot::Dictionary &out) const;
-    godot::Dictionary run_economy_production_climate_math_probe(
-        const godot::Dictionary &vectors) const;
-    int64_t get_economy_state_hash() const;
-    godot::Dictionary inject_economy_cadence_timing(double market_cycle_ms,
-                                                    double slow_cycle_ms,
-                                                    double investment_cycle_ms = -1.0);
-    godot::Dictionary reset_economy(const godot::String &reason);
-    godot::Dictionary start_economy_csv_recording(const godot::Dictionary &config);
-    godot::Dictionary request_stop_economy_csv_recording();
-    godot::Dictionary get_economy_csv_recording_status() const;
-    godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
-    godot::Dictionary begin_economy_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
-    godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
-    godot::Dictionary end_economy_save();
-    godot::Dictionary capture_economy_ecp2(int flags = 0) const;
-    godot::Dictionary restore_economy_ecp2(const godot::PackedByteArray &bytes);
-    godot::Dictionary begin_economy_restore();
-    godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
-    godot::Dictionary end_economy_restore();
-    godot::String get_economy_restore_rejected_reason() const;
-    godot::Dictionary get_economy_event_schema() const;
-    godot::Dictionary set_economy_trace_filter(const godot::Dictionary &filter);
-    godot::Dictionary set_economy_inspector_trace_cell(int cell_idx);
-    godot::Dictionary poll_economy_events(const godot::Dictionary &opts) const;
-    godot::Dictionary ack_economy_events(godot::StringName consumer_id,
-                                         int64_t up_to_event_id);
-    godot::Dictionary get_economy_trace_report() const;
-    godot::Dictionary begin_economy_event_archive(int chunk_bytes = 4 * 1024 * 1024);
-    godot::PackedByteArray read_economy_event_archive_chunk(
-        int max_bytes = 4 * 1024 * 1024);
-    godot::Dictionary end_economy_event_archive();
-
     // ─── Gameplay event bus（2026-06-26）────────────────────────────────
     // 通用、可持久化/可回放的 gameplay event log。C++ pass 和 GDScript 都通过
     // 同一 columnar schema 发布事件；消费者用独立 cursor poll/ack，避免视觉、
@@ -1330,9 +2586,8 @@ public:
     godot::Dictionary clear_gameplay_events(godot::Dictionary opts);
     godot::Dictionary get_gameplay_event_bus_report() const;
     godot::Dictionary poll_runtime_events_snapshot(int64_t after_generation = 0);
-    godot::Dictionary poll_runtime_events_snapshot_opts(
-        const godot::Dictionary &opts);
 
+    // ---- bindings: generation ----
     godot::Dictionary run_native_world_generate_base_pass(int seed,
                                                           const godot::Dictionary &cfg,
                                                           const godot::Dictionary &profile);
@@ -1360,379 +2615,14 @@ public:
     // 输入是 cell SoA + 每种资源的参数表，输出每种资源一条 reserve Float32 列。
     // 噪声用 GDScript 建好的 Ref<Noise> 传入，保证与旧路径同值。
     godot::Dictionary run_resource_deposit_pass(const godot::Dictionary &knobs);
-    // Landmass/province topology, origin-habitat fill + niche pack, and daily occupancy.
-    // Knobs in / packed arrays out; occupancy is the persisted presence bitset.
-    godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);
-    godot::Dictionary run_bio_seed_pass(const godot::Dictionary &knobs);
-    godot::Dictionary run_bio_bootstrap_pass(const godot::Dictionary &knobs);
-    // 生成收尾 facade 引导链融合（dots-boot-facade-2026-10）：一次调用完成
-    // habitat 掩码 → 河口羽流 → 矿藏储量 → 资源研究信号 CSR → 生态 province+播种
-    // → 诊断聚合。子 pass 全部复用已验收实现，中间量不出 C++。
-    // 输入/输出契约见 world_ext_boot_facade.cpp 顶部注释。
-    godot::Dictionary run_boot_facade_pass(const godot::Dictionary &knobs);
-    godot::Dictionary configure_bio_occupancy(const godot::Dictionary &config);
-    godot::Dictionary run_bio_occupancy_pass(const godot::Dictionary &knobs);
-    // Deterministic cursor continuation.  The opaque state is transient and
-    // is published only after the final fixed cell range completes.
-    godot::Dictionary run_bio_occupancy_slice(const godot::Dictionary &knobs);
-    godot::Dictionary configure_vision_research(const godot::Dictionary &config);
-    godot::Dictionary run_vision_research_pass(const godot::Dictionary &knobs);
-    godot::Dictionary filter_bio_research_observations(
-        const godot::PackedInt32Array &cells,
-        const godot::PackedInt32Array &signals) const;
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
-    godot::Dictionary get_native_dirty_report() const;
     godot::Dictionary start_native_generation(int seed,
                                               const godot::Dictionary &cfg,
                                               const godot::Dictionary &profile);
     godot::Dictionary run_native_generation_slice(const godot::Dictionary &budget);
     godot::Dictionary finish_native_generation();
-
-    // ─── CoW flush / refresh (performance-charter §11.2) ─────────────────
-    // After any C++ pass calls ptrw() on a slot, CoW detaches the buffer.
-    // flush_slots_to_map() pushes the (possibly-detached) C++ buffer back
-    // to the GDScript MapData property via obj->set() — O(1) ref-swap each.
-    // refresh_slots_from_map() does the reverse: pulls GDScript-side
-    // arrays back into the C++ slots (needed when GDScript code writes
-    // map.*_arr between C++ passes).
-    void flush_slots_to_map();
-    void flush_slots_to_map_keys(const godot::PackedStringArray &slot_names);
-    void refresh_slots_from_map();
-    void refresh_slots_from_map_keys(const godot::PackedStringArray &slot_names);
-    // 把 native flush 累积的精确 dirty indices 一次性 emit 到 _dirty_world。
-    // 保留旧方法名以兼容 GDScript 调用点；多次调用幂等。
-    void flush_pending_mark_dirty_all();
-
-    // ─── Archetype system (mirrors I2.B in GDScript) ─────────────────────
-    int  create_archetype(const godot::StringName &name, const godot::Array &comp_ids);
-    void assign_archetype(int idx, int arch_id);
-    int  archetype_count() const { return _archetypes.size(); }
-    godot::PackedInt32Array entity_archetype_array() const { return _entity_archetype; }
-
-    // ─── Hot-loop entry points (stubs; filled in I3.B/C) ─────────────────
-    // Returning -1.0 indicates "not implemented yet, fall back to GDScript".
-    // GDScript-side caller checks `< 0` and routes to the legacy path.
-    double run_climate_pass_a(const godot::Dictionary &cp_struct, double phase, double season_phase);
-
-    // Returns a pointer to the per-cell annual-mean insolation cache (size n),
-    // rebuilding it iff the (n, lat-array, axial_tilt, daylen) fingerprint changed.
-    // Shared by run_climate_pass_a and run_climate_pass_a_thread. Bit-equal to the
-    // inline dc_insolation_annual_mean(dc_clamp01f(lat[i]), ...) it replaces.
-    const float *ensure_insol_annual_mean_cache(const float *lat_ptr, int n,
-                                                float axial_tilt_deg, float daylen_amp);
-
-    // [Phase C.3c] climate_pass_a 的 WorkerThreadPool 并行变体。
-    // 主循环纯 cell-local map（无 race），按 cell range 拆 n_tasks 段并行；
-    // n_tasks=0 时自适应（ceil(n/1024) 截 [1,16]，与 ocean_water/land_thread 一致）。
-    // 算法与 run_climate_pass_a 严格 1:1（共用 prelude 与 main loop body）；返回值同语义。
-    double run_climate_pass_a_thread(const godot::Dictionary &cp_struct, double phase, double season_phase, int n_tasks);
-
-    // ─── Phase F / dots-full-migration §F.1-F.6 hot pass C++ scaffolding ──
-    //
-    // 6 个待 C++ 化的 hot pass，本提交为 **stub**——每个函数 sig 已就位、
-    // _bind_methods 已注册、ClimateProfile 配套 use_gdext_<name> flag 已加，
-    // 函数体当前 return -1.0 → GDScript caller 走 fallback。
-    //
-    // 后续 PR 按 charter §12.4 七步 SOP + tools/migration_harness/template_bench.gd
-    // 逐个填充实际算法 + bit-equal 验收。每个 pass 顶部注释列出对应 GDScript
-    // 源文件 + 性能目标（charter §7）。
-    //
-    // 加入顺序按 charter §7 收益优先级：F.1 (P0) → F.2 (P1) → ... → F.6 (P3)。
-
-    // F.1 (P0): weather field solve (vapor / cloud / precip / instability /
-    //           intensity / convergence / type) — single-shot full pass.
-    //
-    //   GDScript 源：scripts/weather/weather_system.gd::run_weather_field_solve_slice
-    //                 (line 641+, "B-full Step-2" SoA-aware fast path)
-    //   ClimateProfile flag：use_gdext_weather_field
-    //   性能目标：13ms → < 2ms（charter §7 第一优先级）
-    //
-    //   入参 `knobs` Dictionary（GDScript 一次打包）：
-    //     标量： start_idx, end_idx, n_cells, season_idx (int)
-    //            climate_anomaly, season_phase (float)
-    //            world_bounds_pos_y, world_bounds_size_y (float)
-    //            field_advect_steps (int)
-    //            field_diffusion, field_condensation_gain,
-    //            field_orographic_lift_gain, field_convergence_gain,
-    //            field_ocean_evap_gain, field_precip_decay (float)
-    //            refresh_convergence (bool)
-    //     PackedArray（zero-copy read）：
-    //            cell_pos          : PackedVector2Array  (n_cells)
-    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
-    //            prev_vapor        : PackedFloat32Array  (n_cells)
-    //            prev_precip       : PackedFloat32Array  (n_cells)
-    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
-    //              ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly
-    //                按 i 顺序提取（该字段尚未在 schema 中作 SoA 镜像；
-    //                F.x phase II 数据所有权下移 PR 中再迁移到 schema）
-    //
-    //   写：直接写到 cell_weather_{vapor/cloud/precip/instability/intensity/
-    //       convergence/type/field_init} slot 数组（=GDScript map.weather_*_arr
-    //       的 CoW alias）。GDScript 调用方在调用后再把这些 SoA 拷回
-    //       _field_slice_next_* 即可保持 commit_weather_field_solve() 不变。
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
-    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
-    //
-    //   bit-equal 容差：1e-4（含 sqrt + clamp + lerp 链）。
-    //   切片限制：本实现要求 start_idx == 0 且 end_idx == n_cells（即"全量"）。
-    //             因为多 slice 共享 SoA 写会污染下一 slice 的读，单元格预算 < n
-    //             一律 fallback。F.x 后续 PR 可加 dirty-flag 双缓冲解锁。
-    double run_weather_field_solve_pass(const godot::Dictionary &knobs);
-    // 独立全场 ψ 推进 pass（每 weather 轮一次、不切片、半拉格朗日平流）。让天气随风成片移动。
-    double run_synoptic_advance_pass(const godot::Dictionary &knobs);
-    godot::Dictionary run_weather_field_commit_pass(godot::Dictionary knobs);
-
-    // F.2 (P1): ocean water + land 两个独立 pass
-    //   GDScript 源：map_generator.gd::_ocean_water_pass_soa (line 4679+) +
-    //                ::_ocean_land_pass_soa (line 4762+)
-    //   ClimateProfile flag：use_gdext_ocean_water / use_gdext_ocean_land
-    //   性能目标：6.8ms → < 1ms (两个 pass 各 ~0.5ms)
-    //   依赖序：land_pass 必须在 water_pass 之后跑（land 读 water 写过的 anomaly）
-    //
-    //   入参 `knobs` Dictionary（与 F.1/F.3/F.5 同模板）：
-    //
-    //   --- run_ocean_water_pass(knobs) 字段 ---
-    //     标量： n_cells (int), advect_steps (int), heat_mix (float)
-    //     PackedArray（read-only 输入）：
-    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
-    //            baseline_arr      : PackedFloat32Array  (n_cells)
-    //                ↑ GDScript 预算：if ema_init[i]: temp_baseline[i],
-    //                                  else: _compute_temperature(_cube_row_norm, elev[i])
-    //            temp_before_arr   : PackedFloat32Array  (n_cells)
-    //                ↑ GDScript 预算：if temp[i] > 0: temp[i], else: baseline[i]
-    //            ocean_current_x_arr : PackedFloat32Array (n_cells)
-    //            ocean_current_y_arr : PackedFloat32Array (n_cells)
-    //                ↑ 必须！由 GDScript 从 cells[i].ocean_current.x/y 提取。
-    //                  schema 里的 cell_ocean_current_x/y SoA 镜像由
-    //                  rebuild_soa_from_cells 仅在世界生成时填一次；
-    //                  physical_circulation_solver 之后改的是 HexCell，
-    //                  从不回写 SoA。如果直接读 C++ slot，advect 方向用的
-    //                  是初始 (近 0) 值，cascading 全图温度雪崩。
-    //                  （Demo Complex Pass 类同问题，2026-05-13 用户验收时
-    //                   F.2 land 正反馈 + ocean_current stale 双重 bug 暴露。）
-    //     PackedArray（write 输出）：
-    //            anomaly_out      : PackedFloat32Array  (n_cells)
-    //                ↑ C++ 写每个 water cell 的 anomaly = temp_mixed - baseline
-    //                  （非 water cell 由 land pass 后续覆盖；初始可全 0）
-    //
-    //   --- run_ocean_land_pass(knobs) 字段 ---
-    //     标量： n_cells (int), effective_leak (float)
-    //     PackedArray（read-only 输入）：
-    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
-    //            fallback_baseline_arr  : PackedFloat32Array  (n_cells)
-    //                ↑ 必填！runtime baseline 非有限值时的兜底值。
-    //            ocean_current_x_arr    : PackedFloat32Array  (n_cells)
-    //            ocean_current_y_arr    : PackedFloat32Array  (n_cells)
-    //                ↑ 必填！同 water pass 一样从 cells 提取（SoA stale 问题）
-    //     PackedArray（in/out）：
-    //            anomaly_inout    : PackedFloat32Array  (n_cells)
-    //                ↑ 既读（water 邻居的 anomaly，由 water pass 写入），
-    //                  也写（land cell 自身的 anomaly）
-    //
-    //   读：cell_temp, cell_is_water, cell_pos_x, cell_pos_y,
-    //       cell_ocean_current_x, cell_ocean_current_y
-    //   写：cell_temp（mix 后）+ knobs["anomaly_inout"]
-    //
-    //   返回：≥ 0.0 → 接管完成 (=elapsed_ms)；< 0.0 → fallback
-    //   bit-equal 容差：1e-4（含 sqrt + lerp + dot product 链）
-    double run_ocean_water_pass(godot::Dictionary knobs);
-    double run_ocean_land_pass (godot::Dictionary knobs);
-
-    // Wind heat transport, split to match ClimateDailySystem ordering:
-    // air mass writes only cell_air_mass_temp_anomaly; surface reads that
-    // anomaly and is the sole wind-air stage that injects heat into cell_temp.
-    bool supports_wind_air_slot_temp() { return true; }
-    double run_wind_air_mass_pass(godot::Dictionary knobs);
-    double run_wind_surface_pass(godot::Dictionary knobs);
-
-    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for ocean passes.
-    //
-    // run_ocean_water_pass_simd:
-    //   与原 scalar 版同签名 / 同输出语义；内部走 water-cell / land-cell 预筛
-    //   + 直线 hot kernel，消除主循环外层 if(IW[i]==0|!=0) 分支让编译器自由
-    //   auto-vectorize。CoW fix（anomaly_out / anomaly_inout 仍走 duplicate）
-    //   保持不变。ulp ≤ 4 容差（charter §risk=B 已批）。
-    //   仅在 ClimateProfile.use_gdext_ocean_water_simd / use_gdext_ocean_land_simd
-    //   = true 时由调用方派发。
-    //
-    // run_ocean_water_pass_thread / run_ocean_land_pass_thread:
-    //   预筛 idx 按 n_tasks 切 WorkerThreadPool；n_water / n_land < 256 时
-    //   降级单线程；wtp == nullptr 时 in-thread fallback。n_tasks <= 0 时
-    //   按 ~1024 cells/task 自适应（cap 至 16）。
-    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 不达
-    //   预算时由调用方派发。
-    double run_ocean_water_pass_simd  (godot::Dictionary knobs);
-    double run_ocean_water_pass_thread(godot::Dictionary knobs, int n_tasks);
-    double run_ocean_land_pass_thread (godot::Dictionary knobs, int n_tasks);
-
-    // F.3 (P1): climate Pass-B (local climate coupling)
-    //   GDScript 源：scripts/geography/map_generator.gd::_climate_pass_b_soa
-    //                 (line 4311+, SoA-aware fast path)
-    //   ClimateProfile flag：use_gdext_climate_pass_b
-    //   性能目标：5.2ms → < 0.5ms（charter §7 P1）
-    //
-    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1/F.5 同模板）：
-    //     标量： n_cells (int)
-    //            winter_boost, snow_cool, veg_cool, diurnal_amp, evap_gain,
-    //            rs_threshold, rs_factor, t_freeze, coupling_gain, coast_leak,
-    //            season_phase (float, orbital/year phase only)
-    //            rs_lookback (int)
-    //            go_sparse (bool；本实现不支持稀疏路径，go_sparse=true 时
-    //                       直接 return -1.0 fallback；后续 PR 加 dirty mask
-    //                       处理后再启用)
-    //     PackedArray（zero-copy read）：
-    //            neighbor_indices         : PackedInt32Array    (n_cells * 6)
-    //            temp_transport_anomaly   : PackedFloat32Array  (n_cells)
-    //                ↑ 由 GDScript 从 cells[i].temperature_transport_anomaly 提取
-    //                  （schema 尚未为该字段建 SoA 镜像；同 F.1）
-    //            foliage_table            : PackedFloat32Array  (按 VegetationType.VEG
-    //                ↑ enum 顺序的 _vegetation_foliage_density 值，~24 个 float)
-    //
-    //   读：cell_temp, cell_moisture, cell_snow_cover, cell_is_water,
-    //       cell_landform, cell_vegetation, cell_elevation, cell_lat_norm,
-    //       cell_pos_x, cell_pos_y, cell_insolation_dev
-    //   写：cell_temp, cell_moisture
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)
-    //          < 0.0 → 任意先决条件不满足 / go_sparse=true，调用方走 GDScript
-    //
-    //   bit-equal 容差：1e-4（含 sqrt + sin + smoothstep + cos 链）
-    //   未支持的特性：
-    //     - go_sparse=true 时的稀疏路径 → fallback
-    //     - cell.temperature_breakdown UI 调试 dict 写入 → 不写入（GDScript
-    //       fallback 会写；F.3 ON 时 inspector 看选中 cell 的 breakdown 会空，
-    //       后续 PR 用 dirty selection list 单独补回 < 100 cells 的写入即可）
-    //     - [DIAG pass_b_end] 末尾统计 print（GDScript caller 在 C++ pass 之后
-    //       自己 dump SoA 即可，本 C++ 不打日志）
-    double run_climate_pass_b(const godot::Dictionary &knobs);
-
-    // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for hot pass-B.
-    //
-    // run_climate_pass_b_simd:
-    //   与 run_climate_pass_b 同签名 / 同输出语义；内部走 land-cell 预筛 +
-    //   直线 hot kernel（albedo / coastal / landform / write）+ scalar
-    //   rain-shadow 子段。MSVC /O2 /arch:AVX2 在直线 land-only 循环上能自
-    //   动向量化；显式 AVX2 8-lane block 包在 PK_HAVE_AVX2 内对最 SIMD-
-    //   friendly 段（albedo）做强制向量化。
-    //   ulp 容差：≤ 4（plan §验收 §B）。
-    //   仅在 ClimateProfile.use_gdext_pass_b_simd = true 时由调用方派发。
-    //
-    // run_climate_pass_b_thread:
-    //   land-cell 主段按 n_tasks 切 WorkerThreadPool；rain-shadow 子段仍
-    //   单线程跑（其内含的串行 probe + 邻居最佳方向 search 无可分发性）。
-    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 且 SIMD 路径
-    //   未达预算时由调用方派发；wtp == nullptr 时 in-thread fallback。
-    double run_climate_pass_b_simd  (const godot::Dictionary &knobs);
-    double run_climate_pass_b_thread(const godot::Dictionary &knobs, int n_tasks);
-
-
-    // F.4 (P2): sea ice daily pass
-    //   GDScript 源：scripts/geography/map_generator.gd::_apply_sea_ice_daily_pass
-    //                 (line 3856+, 2-phase 算法)
-    //   ClimateProfile flag：use_gdext_sea_ice
-    //   性能目标：5.1ms → < 0.5ms（charter §7 P2）
-    //
-    //   算法结构（与 GDScript 1:1 镜像）：
-    //     Phase A — has_cold_neighbor 快照（用前一日 sea_ice_fraction）：
-    //       for each water cell：
-    //         如果任一邻居是 water 且 sea_ice_fraction >= 0.6 → has_cold_neighbor[i] = 1
-    //     Phase B — 主循环（fraction 增量更新 + 翻转候选收集）：
-    //       for each cell：
-    //         非 water → fraction = 0；continue
-    //         LAKE → fraction = 0；continue
-    //         t_eff = clamp(temp + ice_delay * max(0, transport_anomaly) -
-    //                       (upwelling > 0.3 ? 0.5 * upwelling : 0), 0, 1)
-    //         k_freeze_eff = k_freeze * (has_cold_neighbor ? 1 + contagion : 1)
-    //         delta = k_freeze_eff * max(0, t_form - t_eff) - k_melt * max(0, t_eff - t_melt)
-    //         new_frac = clamp(prev_frac + delta, 0, 1)
-    //         写 cell_sea_ice_frac[i] = new_frac
-    //         判断翻转候选：
-    //           prev terrain != SEA_ICE && new_frac >= threshold → flip_to_ice
-    //           prev terrain == SEA_ICE && new_frac < threshold - hysteresis →
-    //               flip_to_base（保留 base_terrain，base==SEA_ICE 时回退到 OCEAN）
-    //
-    //   入参 `knobs` Dictionary（GDScript 一次打包，F.5 同模板）：
-    //     标量： n_cells (int)
-    //            k_freeze, k_melt, t_form, t_melt, contagion (float)
-    //            threshold, hysteresis (float)
-    //            ice_delay (float)
-    //            enable_ocean_heat_transport (bool)
-    //            terrain_lake_id, terrain_sea_ice_id, terrain_ocean_id (int)
-    //                ↑ TerrainType.LAKE / SEA_ICE / OCEAN 的 enum 值（C++ 不持有 enum）
-    //     PackedArray（zero-copy read）：
-    //            neighbor_indices       : PackedInt32Array    (n_cells * 6)
-    //            base_terrain_arr       : PackedByteArray     (n_cells)
-    //                ↑ cells[i].base_terrain；翻回时知道目标 terrain
-    //            water_terrain_ids      : PackedByteArray     (~6 entries)
-    //                ↑ 与 GDScript map_generator.gd::_is_water 1:1 对齐：
-    //                  OCEAN / COAST / LAKE / REEF / KELP / SEA_ICE 共 6 种 enum 值。
-    //                  C++ 端用作 256-entry is_water LUT，避免硬编码 enum。
-    //            temp_transport_anomaly : PackedFloat32Array  (n_cells)
-    //                ↑ 必填（schema 尚未为该字段建 SoA 镜像，与 F.2 同问题）
-    //            upwelling_strength     : PackedFloat32Array  (n_cells)
-    //                ↑ 必填（同上）
-    //
-    //   读：cell_terrain (U8), cell_sea_ice_frac (F32, prev), cell_temp (F32)
-    //       + 入参 PackedArray（含 insolation_now_arr 当前辐照）
-    //   写：cell_sea_ice_frac slot；**不**写 cell_terrain slot（terrain 翻转走
-    //       GDScript 端 apply_terrain，保持 multi-axis 同步语义；charter §2.5
-    //       STRUCT-001 反模式规避）
-    //
-    //   knobs 输出回填（C++ 写 PackedInt32Array / PackedByteArray 进 knobs）：
-    //     flip_to_ice_list      : PackedInt32Array  — 当日跨过 threshold 的 cell idx
-    //     flip_to_base_list     : PackedInt32Array  — 当日跌回 threshold-hysteresis 的 cell idx
-    //     flip_to_base_terrain  : PackedByteArray   — 与 flip_to_base_list 同长，
-    //                                                 每项 = base_terrain（base==SEA_ICE 时 = OCEAN_id）
-    //     stat_water_count      : int  (写到 knobs，用 Variant int 存)
-    //     stat_flipped_count    : int  (写到 knobs)
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
-    //   bit-equal 容差：1e-6（fraction 是简单 muladd / clamp，无 sqrt）
-    //
-    //   sig 设计：knobs 走 by-value（非 const&），让 C++ 端能写回 flip lists
-    //             给 GDScript caller。Godot Dictionary 是 RefCounted，by-value
-    //             实际是 ref 共享，写回是合法行为（与 F.2 ocean_water/land 同模式）。
-    double run_sea_ice_daily_pass(godot::Dictionary knobs, float season_phase);
-
-    // [Phase C.3d] sea_ice 并行变体
-    //   行为 = run_sea_ice_daily_pass，但 Phase A (cold_neighbor 快照) +
-    //   Phase B (主循环 + flip emit) 都走 WorkerThreadPool 并行。
-    //   emit lists (flip_to_ice / flip_to_base / flip_to_base_terrain) 通过
-    //   thread-local Emit + 串行 reduce (按 task_idx 升序) 保持与 scalar
-    //   bit-equal（任务内部 cell idx 升序 + 任务顺序合并 = 整体升序）。
-    //   counters (water_count / flipped_count) 同模式 reduce。
-    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 时调用。
-    double run_sea_ice_daily_pass_thread(godot::Dictionary knobs, float season_phase, int n_tasks);
-
-    // F.5 (P2): transpiration pass
-    //   GDScript 源：scripts/geography/map_generator.gd::_apply_transpiration_pass (line 4938+)
-    //   ClimateProfile flag：use_gdext_transpiration
-    //   性能目标：3.2ms → < 0.3ms
-    //
-    //   入参 `knobs` Dictionary（GDScript 一次打包，与 F.1 同模板）：
-    //     标量： n_cells (int)
-    //            outflow_rate, self_rate (float)
-    //     PackedArray（zero-copy read）：
-    //            neighbor_indices  : PackedInt32Array    (n_cells * 6)
-    //            donor_table       : PackedFloat32Array  (按 VegetationType.VEG enum 顺序，
-    //                                ~24 个 float；每项 = transpiration[VEG_id]，避免
-    //                                hot loop 反射 VegetationProfile)
-    //
-    //   读：cell_landform / cell_vegetation / cell_moisture
-    //   写：cell_moisture (clamp(m + delta, 0, 1))
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
-    //          < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
-    double run_transpiration_pass(godot::Dictionary knobs);
-
-    // Runtime hydrology: daily local water balance + parent-graph routing.
-    // Optional knob: neighbor_indices (n_cells * 6) lets river discharge maintain
-    // narrow river/riparian moisture floors and boost adjacent soil/water balance.
-    godot::Dictionary run_runtime_hydrology_pass(const godot::Dictionary &knobs);
-
     // ─── Natural resources（economy.resources）──────────────────────────
     //   GDScript wrapper：MapGenerator.run_natural_resource_pass_native
     //   System：NaturalResourceDailySystem（每日，priority 排在 climate 之后）
@@ -1768,367 +2658,16 @@ public:
     godot::Dictionary run_natural_resource_pass(const godot::Dictionary &knobs);
     godot::Dictionary get_natural_resource_regen_factors(
         const godot::PackedStringArray &resource_ids, int32_t n_cells);
-
-    // ─── DOTS-Final-Push（plan/dots-final-push 任务 2）：albedo pass ─────
-    //   GDScript 源：scripts/geography/map_generator.gd::_apply_albedo_pass
-    //   ClimateProfile flag：use_gdext_albedo
-    //   性能目标：~3.6ms → < 0.5ms
-    //
-    //   算法（与 GDScript 1:1 镜像）：
-    //     for each cell i:
-    //       if is_water[i]: continue
-    //       alb = albedo_table[veg[i]]
-    //       if cover[i] == CV.SNOW (=1) || cover[i] == CV.GLACIER (=2):
-    //         alb = max(alb, 0.75)
-    //       dt = (reference_albedo - alb) * albedo_temp_gain
-    //       temp[i] = clamp(temp[i] + dt, 0, 1)
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量： n_cells (int)
-    //            reference_albedo (float)         — ClimateProfile.reference_albedo
-    //            albedo_temp_gain (float)          — ClimateProfile.albedo_temp_gain
-    //            snow_cover_albedo (float, =0.75) — SNOW/GLACIER cover 的反照率下限
-    //            cover_snow_id (int, =1)          — CoverType.CV.SNOW 枚举值
-    //            cover_glacier_id (int, =2)       — CoverType.CV.GLACIER 枚举值
-    //     PackedArray（zero-copy read）：
-    //            albedo_table : PackedFloat32Array — 按 VegetationType.VEG enum 顺序
-    //
-    //   读：cell_is_water (U8) / cell_vegetation (U8) / cell_cover (U8) / cell_temp (F32)
-    //   写：cell_temp (F32)
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
-    double run_albedo_pass(const godot::Dictionary &knobs);
-
-    // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）：vegetation dynamics ─
-    //   GDScript 源：scripts/geography/map_generator.gd::_apply_vegetation_dynamics
-    //   ClimateProfile flag：use_gdext_vegetation_dynamics
-    //   性能目标：~9.2ms → < 1.0ms
-    //
-    //   算法分工（与 GDScript 1:1 镜像，但演替触发由 GDScript 后处理）：
-    //     C++ 主循环（每 cell 独立）：
-    //       if is_water[i]: continue
-    //       compat = exp(-0.5 * ((t - ideal_t[v])/tol_t[v])² + ((m - ideal_m[v])/tol_m[v])²)
-    //       dv = 0
-    //       if v != NONE:
-    //         if compat >= 0.6: dv = (compat - 0.5) * 2 * rate
-    //         elif compat <= 0.4: dv = -(0.5 - compat) * 2 * rate * harshness
-    //       wt = (weather_field_init[i] != 0) ? weather_type[i] : WT.CLEAR
-    //       wi = (weather_field_init[i] != 0) ? weather_intensity[i] : 0
-    //       base_pen = weather_penalty[wt]
-    //       resist  = resistance_lut[v * n_wt + wt]
-    //       dv -= base_pen * wi * (1 - resist)
-    //       vitality[i] = clamp(vitality[i] + dv * scale, 0, 1)
-    //       streak update（sticky in [low, high]）
-    //       if low_streak[i] >= degrade_days && next_down[v] != v：候选 succession
-    //       elif high_streak[i] >= upgrade_days && next_up[v] != v：候选 succession
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量： n_cells (int)
-    //            day_scale (float)                 — max(day_scale, 1.0)
-    //            streak_days (int)                 — round(scale)
-    //            vitality_change_rate (float)
-    //            compat_harshness (float)
-    //            plant_water_balance_weight / plant_soil_buffer_weight (float)
-    //            plant_drought_penalty / succession_min_compat_gain (float)
-    //            low_threshold (float)
-    //            high_threshold (float)
-    //            succession_degrade_days (int)
-    //            succession_upgrade_days (int)
-    //            n_wt (int)                         — WeatherType.WT.size()
-    //            wt_clear_id (int)                  — WeatherType.WT.CLEAR 枚举值
-    //            veg_none_id (int)                  — VegetationType.VEG.NONE 枚举值
-    //     PackedArray（zero-copy read）：
-    //            ideal_temp_table  : PackedFloat32Array  (n_veg)
-    //            ideal_moist_table : PackedFloat32Array  (n_veg)
-    //            temp_tol_table    : PackedFloat32Array  (n_veg)
-    //            moist_tol_table   : PackedFloat32Array  (n_veg)
-    //            weather_penalty_table : PackedFloat32Array  (n_wt)
-    //            resistance_table  : PackedFloat32Array  (n_veg * n_wt) — sparse 0.0 default
-    //            next_up_table     : PackedByteArray     (n_veg)         — VEG.next_richer
-    //            next_down_table   : PackedByteArray     (n_veg)         — VEG.next_harsher
-	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 3 个字段已下沉到
-	//     SoA schema：cell.vegetation_vitality / vitality_low_streak /
-	//     vitality_high_streak。stage_b_pass 走 use_soa=true 时直读 _slots ptrw。
-	//     该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
-	//            vitality_arr      : PackedFloat32Array  (n_cells)
-	//            low_streak_arr    : PackedInt32Array    (n_cells)
-	//            high_streak_arr   : PackedInt32Array    (n_cells)
-	//
-	//   读：cell_is_water (U8) / cell_vegetation (U8) / cell_temp_30d (F32) /
-	//       cell_moisture / water_balance_30d / soil_moisture (F32) / cell_weather_type (U8) /
-	//       cell_weather_intensity (F32) / cell_weather_field_init (U8)
-	//   写：vitality_arr / low_streak_arr / high_streak_arr (in/out) /
-	//       cell_vegetation_growth_pressure (target - previous vitality)
-    //
-    //   knobs 输出回填（C++ 写进 knobs）：
-    //     succession_indices : PackedInt32Array  — 触发演替的 cell idx
-    //     succession_to_veg  : PackedByteArray   — 与 indices 同长，目标新 veg id
-    //                          上家：next_up[v]； 下家：next_down[v]（区分由 caller 看 streak 判断）
-    //     stat_succession_count : int (写到 knobs)
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
-    //   knobs 走 by-value（非 const&），让 C++ 端能写回 succession lists（与 sea_ice 同模式）。
-    double run_vegetation_dynamics_pass(godot::Dictionary knobs);
-
-    // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）：climate feedback ─
-    //   GDScript 源：scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass
-    //   ClimateProfile flag：use_gdext_climate_feedback
-    //   性能目标：~6.1ms → < 0.5ms
-    //
-    //   算法（与 GDScript 1:1 镜像，每日小权重累加 ≤ 0.5%）：
-    //     for each cell i:
-    //       if is_water[i]: continue
-    //       if ocean_drift_gain > 0:
-    //         sum_an + n_water = sum/count(nb_water_anomaly)
-    //         if n_water > 0 && |avg_an| > 0.005:
-    //           coastal_ratio = clamp(n_water/6, 0, 1)
-    //           d_base = clamp(ocean_drift_gain * avg_an * coastal_ratio * scale, -clamp, clamp)
-    //           base_moisture[i] = clamp(base_moisture[i] + d_base, 0, 1)
-    //       wt = init ? weather_type[i] : WT.CLEAR
-    //       wi = init ? weather_intensity[i] : 0
-    //       if wi < 0.01: continue
-    //       precip = match(wt) {RAIN: wi, STORM: 0.8wi, MONSOON: 1.2wi,
-    //                          BLIZZARD: 0.3wi, DROUGHT: -0.6wi, HEATWAVE: -0.4wi, _: 0}
-    //       d_soil = clamp(soil_gain * precip * scale, -clamp, clamp)
-    //       soil_moisture[i] = clamp(soil_moisture[i] + d_soil, -0.5, 0.5)
-    //       d_veg = clamp(veg_gain * precip * scale, -clamp, clamp)
-    //       vg_pressure[i] = clamp(vg_pressure[i] + d_veg, -0.5, 0.5)
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量： n_cells (int)
-    //            soil_gain (float)
-    //            veg_gain (float)
-    //            write_weather_veg_pressure (bool, optional, default true)
-    //            scale (float)              — max(day_scale, 1.0)
-    //            per_day_clamp (float)      — feedback_per_day_clamp * scale
-    //            ocean_drift_gain (float)   — 0 表示禁用 ocean→base 漂移
-    //            wt_clear_id (int)          — WeatherType.WT.CLEAR
-    //            wt_rain_id / wt_storm_id / wt_monsoon_id / wt_blizzard_id /
-    //            wt_drought_id / wt_heatwave_id (int) — 6 个 WT 枚举值
-	//     PackedArray（zero-copy read — 仅老 caller 路径需要；B3b 后已下沉到 SoA：
-	//     cell.temperature_transport_anomaly。stage_b_pass 走 use_soa=true 时直读 _slots）：
-	//            neighbor_indices       : PackedInt32Array    (n_cells * 6)
-	//            temp_transport_anomaly : PackedFloat32Array  (n_cells)
-	//                ↑ 与 climate_pass_b 同字段
-	//     PackedArray（in/out — 仅老 caller 路径需要；B3b 后这 2 个字段已下沉到 SoA：
-	//     cell.soil_moisture / cell.vegetation_growth_pressure。stage_b_pass 走
-	//     use_soa=true 时直读 _slots ptrw。该独立 wrapper 保留 PackedArray in/out 以保持向后兼容）：
-	//            soil_moisture_arr    : PackedFloat32Array  (n_cells)
-	//            veg_growth_pressure_arr : PackedFloat32Array (n_cells)
-    //
-    //   读：cell_is_water (U8) / cell_weather_type (U8) /
-    //       cell_weather_intensity (F32) / cell_weather_field_init (U8) /
-    //       cell_base_moisture (F32) — direct write
-    //       + 入参 PackedArray
-    //   写：cell_base_moisture (F32) / soil_moisture_arr / veg_growth_pressure_arr (in/out)
-    //       write_weather_veg_pressure=false 时保留 vegetation_dynamics 当 tick 写入的
-    //       target-vitality 生态压力信号。
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
-    double run_climate_feedback_pass(godot::Dictionary knobs);
-
-    // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine） ──────────────────
-    //   GDScript 源：scripts/geography/map_generator.gd::refresh_daily_stage_b
-    //   ClimateProfile flag：use_gdext_stage_b_combined
-    //   性能目标：stage_b 累加 6–15ms → ≤ 1.5ms（消除 GDScript 端 3 次 pack/unpack
-    //   围栏：vit/lo/hi、soil/vg/tta、albedo_table/8 LUT 一次性入参）
-    //
-	//   行为 = run_albedo_pass + run_vegetation_dynamics_pass +
-	//         run_climate_feedback_pass 的顺序内联，**算法完全 1:1 复制**：
-	//     ① albedo（写 cell_temp）→ 仅当 run_albedo=true
-	//     ② veg_dyn（读最新 cell_temp + 写 vitality/streak/演替候选）→ 仅当 run_veg_dyn=true
-	//     ③ feedback（写 cell_base_moisture / soil/vg in/out）→ 仅当 run_feedback=true
-	//   cross-pass 依赖：albedo 写 cell_temp、veg_dyn 读 cell_temp，合并版本里
-	//   两段共享同一份 SoA ptrw，**无需中间 _flush_slot_to_map**（对比现状 GDScript
-	//   三段间需要 _flush_slot_to_map → MapData → refresh_slots_from_map 来回拷贝）。
-	//
-	//   B3b 数据所有权下沉（plan/b3b-data-ownership-lowering）：
-	//     新增 `use_soa` 开关（bool，默认 false 兼容旧路径）。当 use_soa=true 时：
-	//       - vit/streak/soil/vg/tta 五字段全部走 _slots[sid].arr_* ptrw 直读直写
-	//       - knobs 中 vitality_arr / low_streak_arr / high_streak_arr /
-	//         soil_moisture_arr / veg_growth_pressure_arr / temp_transport_anomaly
-	//         可省略（即使存在也不读不写）
-	//       - 末尾批量 flush 6 个 slot（vit/low_streak/high_streak/soil/vg）回 MapData
-	//       - 消除 GDScript 端 6 段 pack/unpack hot loop（实测 ~6.5ms wall 节省）
-    //
-    //   入参 `knobs` Dictionary（合并版本，knobs key 命名空间用前缀避免冲突）：
-	//     总开关：
-	//       n_cells (int)
-	//       run_albedo / run_veg_dyn / run_feedback (bool)  — stride 语义保留
-	//       use_soa (bool, optional, default false)         — B3b 数据所有权下沉开关
-    //
-    //     albedo 段（仅 run_albedo=true 时读，其它情况可省略）：
-    //       reference_albedo / albedo_temp_gain (float)
-    //       snow_cover_albedo (float, =0.75)
-    //       cover_snow_id / cover_glacier_id (int, =1, 2)
-    //       albedo_table : PackedFloat32Array (n_veg)
-    //
-    //     veg_dyn 段（仅 run_veg_dyn=true 时读）：
-    //       day_scale (float)
-    //       streak_days (int)
-    //       vitality_change_rate / compat_harshness (float)
-    //       plant_water_balance_weight / plant_soil_buffer_weight (float)
-    //       plant_drought_penalty / succession_min_compat_gain (float)
-    //       low_threshold / high_threshold (float)
-    //       succession_degrade_days / succession_upgrade_days (int)
-    //       n_wt (int)
-    //       wt_clear_id / veg_none_id (int)
-    //       ideal_temp_table / ideal_moist_table / temp_tol_table /
-    //       moist_tol_table : PackedFloat32Array (n_veg)
-    //       weather_penalty_table : PackedFloat32Array (n_wt)
-    //       resistance_table : PackedFloat32Array (n_veg * n_wt)
-	//       next_up_table / next_down_table : PackedByteArray (n_veg)
-	//       vitality_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
-	//       low_streak_arr / high_streak_arr : PackedInt32Array (n_cells, in/out) — 仅 use_soa=false 时必填
-    //
-    //     feedback 段（仅 run_feedback=true 时读）：
-    //       soil_gain / veg_gain / scale / per_day_clamp / ocean_drift_gain (float)
-    //       write_weather_veg_pressure (bool, optional, default true)
-    //       wt_rain_id / wt_storm_id / wt_monsoon_id /
-    //       wt_blizzard_id / wt_drought_id / wt_heatwave_id (int)
-	//       neighbor_indices : PackedInt32Array (n_cells * 6)
-	//       temp_transport_anomaly : PackedFloat32Array (n_cells) — 仅 use_soa=false 时必填
-	//       soil_moisture_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
-	//       veg_growth_pressure_arr : PackedFloat32Array (n_cells, in/out) — 仅 use_soa=false 时必填
-    //
-    //   读：cell_is_water / cell_vegetation / cell_cover / cell_temp /
-    //       cell_moisture / cell_weather_type / cell_weather_intensity /
-    //       cell_weather_field_init / cell_base_moisture
-    //   写：cell_temp（albedo）、cell_base_moisture（feedback）；in/out arrays
-    //
-	//   knobs 输出回填（C++ 写进 knobs）：
-	//     albedo_ms / veg_dyn_ms / feedback_ms (float) — 每段单独 ms，供 caller 计时
-	//     succession_indices : PackedInt32Array
-	//     succession_to_veg  : PackedByteArray
-	//     stat_succession_count : int
-	//     vitality_arr / low_streak_arr / high_streak_arr (in/out 写回) — 仅 use_soa=false
-	//     soil_moisture_arr / veg_growth_pressure_arr (in/out 写回) — 仅 use_soa=false
-	//     注：use_soa=true 时这些字段直接 flush 到 SoA + MapData，无需 PackedArray 回写
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms 合计)；< 0.0 → fallback。
-    //   knobs 走 by-value（非 const&），让 C++ 能写回 succession + ms breakdown。
-    double run_stage_b_pass(godot::Dictionary knobs);
-
-    // F.6 (P3): weather front advect (含 front pool 批量提取模式)
-    //   GDScript 源：scripts/weather/weather_front.gd::advance_one_day +
-    //                refresh_visual_lifecycle (line 74-127)
-    //   ClimateProfile flag：use_gdext_weather_front
-    //   性能目标：3.0ms → < 0.5ms（charter §7 P3）
-    //   N=16 fronts，单线程足够
-    //
-    //   设计：fronts batch-extract 模式（Phase 1.2 / dots-full-migration §F.6）
-    //     - WeatherFront.pack_into_dict(_active_fronts) 输出 SoA Dictionary
-    //     - C++ pass(batch) 直接读写 batch 内 PackedArray
-    //     - WeatherFront.apply_dict_to_fronts(batch, _active_fronts) 写回 OOP
-    //     - emergent_coupling 的 decay_mul / precip_bonus 在 GDScript 端预算（map 查询），
-    //       caller 在 pack 之前已经把 decay_per_day 改过；C++ 只看修改后的 decay。
-    //     - wind 采样在 GDScript 端预算（一次 batch wind_per_front Vector2Array），
-    //       Vector2.ZERO 表示该 front 无风（C++ 跳过旋转）。
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量： n_fronts (int)
-    //            max_axis_turn_rad (float, =0.383972 = 22°/day)
-    //     PackedArray（in/out — read 旧值，write 新值）：
-    //            front_center_x / .._y       : F32 (n)  — write velocity 应用后
-    //            front_velocity_x / .._y     : F32 (n)  — write 重算后
-    //            front_axis_x / .._y         : F32 (n)  — write 旋转后
-    //            front_stable_axis_x / .._y  : F32 (n)  — write 旋转后
-    //            front_radius                : F32 (n)  — read only
-    //            front_intensity             : F32 (n)  — write decay 后
-    //            front_decay_per_day         : F32 (n)  — read（已含 emergent decay_mul）
-    //            front_age_days              : I32 (n)  — write age++
-    //            front_type                  : I32 (n)  — read only (refresh_visual_lifecycle 用)
-    //            front_ttl_days              : I32 (n)  — read only (refresh_visual_lifecycle 用)
-    //            front_life_progress         : F32 (n)  — write
-    //            front_cloud_amount          : F32 (n)  — write
-    //            front_precip_amount         : F32 (n)  — write
-    //            front_dissolve_amount       : F32 (n)  — write
-    //            front_alive                 : U8  (n)  — write (intensity > 0.01 && age < ttl)
-    //            wind_per_front              : PackedVector2Array (n)
-    //                ↑ caller 用 wind_fn(front.center) 预算；ZERO 表示无风
-    //
-    //   读：knobs 内的 PackedArray（CoW share with GDScript）
-    //   写：knobs 内的 PackedArray（in-place via ptrw）；不动任何 _slots[]
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback
-    //   bit-equal 容差：1e-5（含 sin / cos / smoothstep 链）
-    //
-    //   sig 设计：knobs 走 by-value（非 const&），与 F.4 同模式（让 C++
-    //             直接修改 PackedArray ptrw，借 Dictionary refcount 共享）。
-    double run_weather_front_advect_pass(godot::Dictionary knobs);
     // cpp-dots（temp-baseline-authority-2026-06）：cell_temp_baseline_year 的权威 C++ 烘焙。
     // 海冰 + 显示温度的运行期 baseline 原由 GDScript map_data.bake_lat_temp_year_lut 就地
     // pow(cos,..) 烤出来再推给 slot——仿真量权威落在 GDScript。本 pass 用唯一 C++ 实现
     // pk_lat_temp_bell 从 knobs["lat_norm"]（ny∈[0,1] 几何量）算 baseline，写
     // cell_temp_baseline_year slot 并 _flush_slot_to_map 回 MapData。GDScript 自烤改为 fallback。
     godot::Dictionary run_temp_baseline_year_bake(godot::Dictionary knobs);
-    godot::Dictionary run_season_refresh_stage(godot::Dictionary knobs);
-    godot::Dictionary run_season_refresh_micro_pass(godot::Dictionary knobs);
-    // ─── Phase B+：season refresh round 一次跨界整 round 切片调度 ──────────
-    // 与 run_season_refresh_stage 协作（B+ 路径下 run_season_round_slice 内部
-    // 直接复用 run_season_refresh_stage 的 stage dispatch，零算法复制）。
-    //
-    // 用法（GDScript caller）：
-    //   handle = ext.start_season_round(round_knobs)         # round 起始（一次烘焙 row tables / jitter / donor）
-    //   while not done:
-    //       slice = ext.run_season_round_slice(handle, max_usec)  # 每 SUS slot 调一次，b1=stage 边界粒度
-    //       done = slice.done
-    //   fin = ext.finish_season_round(handle)                # GDScript 拿 fin 后做一次 facade sync + history push
-    //
-    // round_knobs（一次塞齐 12 个 stage 所需的全部字段，B+ 内部按 stage 取用）：
-    //   "season"               : int    (0..3)
-    //   "n_cells"              : int
-    //   "height"               : int
-    //   "sea_level"            : float
-    //   "moist_scale"          : float                       # stage 0
-    //   "rain_shadow_lookback" : int                         # stage 1
-    //   "rain_shadow_threshold": float                       # stage 1
-    //   "rain_shadow_factor"   : float                       # stage 1
-    //   "season_phase"         : float                       # stage 1
-    //   "elev_decay"           : float                       # stage 4
-    //   "decay"                : float                       # stage 11 (=feedback decay)
-    //   "lat_temp_rows"        : PackedFloat32Array          # stage 2/4/9
-    //   "season_offset_rows"   : PackedFloat32Array          # stage 2/9 (=sync_state)
-    //   "row_indices"          : PackedInt32Array            # stage 2/3/4/5/6/7/swamp
-    //   "neighbor_indices"     : PackedInt32Array            # stage 1/4/5/6/7/swamp
-    //   "jitter_arr"           : PackedFloat32Array          # stage 1
-    //   "donor_table"          : PackedFloat32Array          # stage 4
-    //   "soil_moisture_arr"    : PackedFloat32Array (in/out) # stage 11
-    //   "veg_growth_pressure_arr": PackedFloat32Array (in/out) # stage 11
-    //
-    // start_season_round 返回：
-    //   { "handle": int (>=0 成功，<0 fallback), "fallback": bool, "reason": String }
-    // run_season_round_slice 返回：
-    //   { "done": bool, "stage": int (当前 round_stage 0..11),
-    //     "stages_done_this_slice": int, "elapsed_ms": float,
-    //     "fallback": bool, "reason": String }
-    // finish_season_round 返回：
-    //   { "total_native_ms": float, "slices_used": int, "stages_done": int,
-    //     "soil_moisture_arr": PackedFloat32Array (decayed, write-back to map),
-    //     "veg_growth_pressure_arr": PackedFloat32Array (decayed, write-back to map) }
-    // abort_season_round：清 round state，让 generation +=1 让悬挂 handle 失效。
-    godot::Dictionary start_season_round(godot::Dictionary round_knobs);
-    godot::Dictionary run_season_round_slice(int handle, int max_usec);
-    godot::Dictionary finish_season_round(int handle);
-    void abort_season_round();
-    godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
-    godot::Dictionary patch_enum_atlas_axes(godot::Dictionary knobs);
-
-    // ─── Bake-time static texture encoders（map encoder C++ 迁移）──────────
-    // GDScript 仍负责 Image/ImageTexture 创建与 update；C++ 只做逐像素 byte payload。
-    // 返回统一 Dictionary：{ fallback, reason, path, elapsed_ms, data, width, height, format }。
-    godot::Dictionary encode_bake_height_tex_data(godot::Dictionary knobs);      // F32 [0,1] → RG8
-    godot::Dictionary encode_bake_terrain_normal_tex_data(godot::Dictionary knobs); // F32 height → RG8 粗法线(nx,ny)
-    godot::Dictionary encode_bake_horizon_tex_data(godot::Dictionary knobs);      // F32 height → RGBA8 packed 8-dir horizon
-    godot::Dictionary encode_bake_r8_tex_data(godot::Dictionary knobs);          // U8 → L8，default_byte 可选
-    godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
-    godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
-    godot::Dictionary encode_bake_upwelling_tex_data(godot::Dictionary knobs);   // SoA upwelling → L8
     // 生成期 height/biome/moisture/veg/cover 逐像素烘焙。
     // 离散数据使用硬主 cell；另产出副 cell RG8 + 边界距离 R8 供屏幕空间边缘混合。
     // 复刻 map_baker.gd::_bake_height_biome_moisture；产出 7 buffer + CSR + pixel_to_cell_index。
     godot::Dictionary run_bake_terrain_index_pass(godot::Dictionary knobs);
-
     // ─── 生成期 per-pixel 几何场 buffer-encoder（dots-total-cpp 续，2026-06-25）────
     // 纯 buffer-encoder：不读 _slots / 不要求 _bound，全部输入由 knobs PackedArray 喂入
     // （同 encode_bake_* / run_bake_terrain_index_pass 范式，bake 期 bind 时机不定）。
@@ -2146,20 +2685,12 @@ public:
     //   输入 w/h/origin_x/origin_y/inv_world_x/inv_world_y/hex_size/seed/base_radius_px/
     //   sdf_max_dist_px/cr_step/wrap_period_x。输出 out_buf(F32 PackedFloat32Array，= world.flow_buffer)。
     godot::Dictionary run_bake_river_sdf_pass(godot::Dictionary knobs);
-    // run_bake_coast_sdf_pass（water-bodies systemic）：海/湖统一"离岸像素距离场"。
-    //   从 per-pixel terrain(biome_buffer) 的 land-water 边界做 chamfer 3-4 双通距离变换，
-    //   产出每像素到最近水体的像素距离（水体=0，向内陆递增，clamp 于 coast_sdf_max_dist_px）。
-    //   水集合 = {0,1,18,19,20,21}（与 terrain_index is_water / pk_is_water_terrain 对齐）。
-    //   输入 width/height/biome_buffer/coast_sdf_max_dist_px/coast_sdf_wrap_x。
-    //   输出 out_buf(F32 PackedFloat32Array)。供 geometry_fields 在 river carve 后刻连续岸坡。
-    godot::Dictionary run_bake_coast_sdf_pass(godot::Dictionary knobs);
     // run_bake_erosion_pass：复刻 map_baker.gd::_hydraulic_erosion。droplet 水力侵蚀，
     //   用 Ref<RandomNumberGenerator>（同 seed 复刻 baker _rng PCG）逐滴随机起点/方向。
     //   in/out height buffer，内部 clamp [0,1]。输入 w/h/height_buffer（PackedFloat32Array）/seed +
     //   num_drops/max_steps/inertia/capacity_factor/min_capacity/deposit_speed/erode_speed/
     //   evaporation/gravity/brush_radius。输出 height_out(F32 PackedFloat32Array)。
     godot::Dictionary run_bake_erosion_pass(godot::Dictionary knobs);
-
     // run_bake_geometry_fields_pass（dots-total-cpp step2，2026-06-25）：bake 期几何场编排
     //   下沉 C++ 的单次驱动。GDScript 只发一次请求（一个 knobs Dictionary 含 terrain-index
     //   所需 cell SoA + 几何参数 + erosion 常量），C++ 在进程内依次串起已验证的
@@ -2173,6 +2704,32 @@ public:
     //   terrain sub-pass 失败 → 整体 fallback=true（caller 回退旧 per-pass / GDScript 路径）；
     //   erosion sub-pass 失败 → 用未侵蚀 height 续算（非致命），不令整体 fallback。
     godot::Dictionary run_bake_geometry_fields_pass(godot::Dictionary knobs);
+
+    // ---- bindings: bake_encoders ----
+    // ─── Bake-time static texture encoders（map encoder C++ 迁移）──────────
+    // GDScript 仍负责 Image/ImageTexture 创建与 update；C++ 只做逐像素 byte payload。
+    // 返回统一 Dictionary：{ fallback, reason, path, elapsed_ms, data, width, height, format }。
+    godot::Dictionary encode_bake_height_tex_data(godot::Dictionary knobs);      // F32 [0,1] → RG8
+    godot::Dictionary encode_bake_terrain_normal_tex_data(godot::Dictionary knobs); // F32 height → RG8 粗法线(nx,ny)
+    godot::Dictionary encode_bake_horizon_tex_data(godot::Dictionary knobs);      // F32 height → RGBA8 packed 8-dir horizon
+    godot::Dictionary encode_bake_r8_tex_data(godot::Dictionary knobs);          // U8 → L8，default_byte 可选
+    godot::Dictionary encode_bake_flow_tex_data(godot::Dictionary knobs);        // F32 [0,1] → L8
+    godot::Dictionary encode_bake_enum_atlas_payload(godot::Dictionary knobs);   // map_index RGBA8
+    godot::Dictionary encode_bake_upwelling_tex_data(godot::Dictionary knobs);   // SoA upwelling → L8
+
+    // ---- bindings: visual ----
+    godot::Dictionary bake_trade_visual_paths(const godot::Dictionary &snapshot,
+                                              int map_width, double hex_size) const;
+    // Numeric 2.5D building chunk baker. The Godot side supplies only flat
+    // chunk-local PackedArrays; C++ returns MultiMesh-ready 16-float buffers.
+    godot::Dictionary bake_building_visual_chunk(godot::Dictionary knobs);
+    godot::Dictionary configure_vision_research(const godot::Dictionary &config);
+    godot::Dictionary run_vision_research_pass(const godot::Dictionary &knobs);
+    godot::Dictionary filter_bio_research_observations(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &signals) const;
+    godot::Dictionary run_sea_ice_atlas_prepare(godot::Dictionary knobs);
+    godot::Dictionary patch_enum_atlas_axes(godot::Dictionary knobs);
     // High-resolution visual-only tile. The low-resolution geometry remains
     // authoritative; this pass never creates high-resolution pixel CSR data.
     godot::Dictionary run_bake_visual_tile_layer_pass(godot::Dictionary knobs);
@@ -2180,7 +2737,6 @@ public:
     // tile (including gutters) from the authoritative low-resolution RGBA8
     // horizon without introducing a GDScript per-pixel loop.
     godot::Dictionary run_resample_visual_horizon_layer_pass(godot::Dictionary knobs);
-
     // ─── Dirty-Push Atlas Encode (plan/dirty-push-atlas-encode 阶段 F) ────
     // 4 张运行期 atlas baker 的 byte-fill 阶段下沉 C++/SIMD：
     //   encode_dynamic_cell_atlas：RGBA8。R=q01(temp), G=q01(moist),
@@ -2238,7 +2794,6 @@ public:
     godot::Dictionary encode_ecology_visual_atlas(godot::Dictionary knobs);
     godot::Dictionary encode_dyn_smooth_atlas(godot::Dictionary knobs);
     godot::Dictionary encode_ice_state_atlas(godot::Dictionary knobs);
-
     // ─── Debug Data Overlay Atlas Encode (plan/debug-overlay-perf v2, 2026-06-12) ──
     // data_overlay_baker.gd 的 O(n_pixels) pixel fan-out 下沉 C++（debug 模式
     // 温度/天气等 overlay 卡顿主因之一）。GDScript 端仍负责 18 个 overlay mode
@@ -2274,15 +2829,6 @@ public:
     //   "pixels_written" : int
     //   "atlas_buffer"   : PackedByteArray（直写后的 buffer，调用方取回上传纹理）
     godot::Dictionary encode_overlay_atlas(godot::Dictionary knobs);
-
-    // Tile data recorder CSV encoder. GDScript remains the authority for
-    // selecting MapData SoA arrays and fixed diagnostic columns; C++ only
-    // formats one full tick worth of numeric rows into UTF-8 CSV bytes.
-    //
-    // Returns an empty PackedByteArray on invalid input so the GDScript caller
-    // can fall back to the reference formatter.
-    godot::PackedByteArray encode_tile_csv_rows(godot::Dictionary knobs);
-
     // ─── plan/atlas-pipeline-cpp（2026-05-20）：4 张 atlas 全管线主入口 ─────
     // dynamic_visual_atlas_upload_system 每帧热路径整套搬到 C++：dirty 消费 →
     // 4 张 atlas value-diff（per-atlas prev_sigs snapshot 兜底 dirty 语义 bug）
@@ -2308,12 +2854,10 @@ public:
     // 与现有 encode_* 关系：本方法在内部直接复用 4 个 encode_* 函数体，prev_sigs
     // 从 AtlasPipelineState::prev_sigs_* 读取，无需 GD 端来回传 snapshot。
     godot::Dictionary run_atlas_pipeline_step(godot::Dictionary opts);
-
     // 地图重生成 / map_regenerate 时调，使 AtlasPipelineState::csr_cache 与
     // prev_sigs 失效；下一次 run_atlas_pipeline_step 会按 dirty 全集重建。
     // 无副作用、O(1) 清空 PackedArray。
     void invalidate_atlas_csr_cache();
-
     // 一次性把 GD 端 ecology 持久状态（map_baker.gd _eco_foliage/_eco_stress/
     // _eco_transition_age_bytes / _eco_growth_damage / _eco_active_decay_set）
     // 迁移到 C++ 端 AtlasPipelineState。init 阶段调一次，之后完全由 C++ 维护。
@@ -2327,7 +2871,6 @@ public:
     //
     // 容错：缺失字段以默认 0 填充；长度不匹配以 n_cells 截断/补 0。
     void migrate_eco_persistent_from_gd(godot::Dictionary state);
-
     // ─── Cell-index 间接寻址（province-ID indirection）─────────────────────
     // encode_cell_luts：per-cell（n_cells texel）enum/dyn/eco LUT 编码。与 4-phase
     //   fan-out pipeline 共用 pk_atlas_sig_dynamic / pk_atlas_sig_ecology 公式，
@@ -2337,7 +2880,6 @@ public:
     //   而全量 refresh_slots_from_map() 覆盖 native-only 槽。
     //   SAME_SOURCE: map_baker.gd::bake_cell_luts / _bake_cell_luts_gd。
     godot::Dictionary encode_cell_luts(godot::Dictionary opts);
-
     // ─── Detail scatter（vegetation-visual-pcg 阶段 A）────────────────────
     //   encode_detail_scatter：植被/点缀散布的 per-instance 热循环 + MultiMesh
     //   buffer 组装下沉 C++。纯 buffer-encoder：只读 knobs 内的 flat PackedArray，
@@ -2354,391 +2896,14 @@ public:
     // no per-instance Variant marshalling is introduced.
     godot::Dictionary encode_detail_scatter_family_cells(godot::Dictionary knobs);
 
-    // ─── DOTS-Total-CPP（plan/dots-total-cpp 任务 4）─────────────────────
-    // run_ocean_field_rasterize：ocean current + upwelling 一次性 hex→pixel byte 直出。
+    // ---- bindings: demo ----
+    // Tile data recorder CSV encoder. GDScript remains the authority for
+    // selecting MapData SoA arrays and fixed diagnostic columns; C++ only
+    // formats one full tick worth of numeric rows into UTF-8 CSV bytes.
     //
-    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_ocean_current_slice_from_hex
-    //               + _rasterize_upwelling_slice_from_hex
-    //
-    // ClimateProfile flag：use_gdext_ocean_currents_pixel（默认 false，需求 8.5 验收后开）
-    //
-    // 性能目标：消除 ocean_currents 17 个 GDScript pixel slice（25ms slow slice），
-    //           620544 像素一次性 C++ loop ≤ 5ms。
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
-    //     可选标量：start_idx (int, 默认 0), end_idx (int, 默认 W*H)
-    //               — 像素区间 [start_idx, end_idx)，用于 sub-tick 切片
-    //                 把 4.7ms 整图 raster 拆成 N 片 ~1.2ms（每像素独立无依赖）
-    //     PackedArray：
-    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
-    //           dst_currents      : PackedByteArray  (W*H*2)，输出 R+G byte
-    //           dst_upwelling     : PackedByteArray  (W*H*1)，输出 byte
-    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步更新
-    //   读：cell_terrain / cell_ocean_current_x / cell_ocean_current_y /
-    //       cell_upwelling_strength SoA
-    //   写：dst_currents / dst_upwelling / atlas_data（in/out via knobs ptrw）
-    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels",
-    //                     "atlas_updated", "start_idx", "end_idx" }
-    godot::Dictionary run_ocean_field_rasterize(godot::Dictionary knobs);
-
-    // ─── DOTS-Total-CPP（A 方案 / wind raster 孪生）─────────────────────
-    // run_wind_field_rasterize：wind_x / wind_y SoA → hex→pixel byte 直出。
-    //
-    // GDScript 源：scripts/rendering/map_baker.gd::_rasterize_wind_slice_from_hex
-    //               (Stage 7 _PHYS_STAGE_WIND_RASTER 内部循环)
-    //
-    // ClimateProfile flag：复用 use_gdext_ocean_currents_pixel（孪生场景：
-    //                       同样的 hex→pixel byte rasterize，无需新 flag）
-    //
-    // 性能目标：消除 ocean_currents 21 片 × 87ms 的 wind raster GDScript 循环。
-    //           620544 像素一次性 C++ loop ≤ 5ms。
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量：n_cells (int), w (int), h (int), update_atlas_data (bool)
-    //     PackedArray：
-    //           pixel_to_cell_idx : PackedInt32Array (W*H)，每像素对应 cell index 或 -1
-    //           dst_wind          : PackedByteArray  (W*H*2)，输出 wx/wy byte
-    //           atlas_data        : PackedByteArray  (W*H*4)，可选；若 size 匹配则同步写 [+2]/[+3]
-    //   读：cell_wind_x / cell_wind_y SoA
-    //   写：dst_wind / atlas_data[i*4+2..+3]（in/out via knobs ptrw）
-    //   返回 Dictionary：{ "elapsed_ms", "fallback", "reason", "pixels", "atlas_updated" }
-    //
-    //   ⚠️ 与 ocean 行为差异：cell idx 无效（lookup 缺失或 -1）时，wx 默认 1.0、wy 默认 0.0
-    //                          （与 GDScript _rasterize_wind_slice_from_hex 严格 1:1）。
-    godot::Dictionary run_wind_field_rasterize(godot::Dictionary knobs);
-
-    // ─── DOTS-Total-CPP（A 方案 / phys nan_guard 孪生）─────────────────────
-    // phys_field_nan_guard：扫 cell_wind_{x,y,speed} / cell_ocean_current_{x,y}
-    // / cell_upwelling_strength 这 6 个 SoA，统计 NaN/Inf 数量。
-    //
-    // GDScript 源：scripts/rendering/map_baker.gd::_physical_solve_step_one
-    //   _PHYS_STAGE_WIND_RASTER 第一帧的 `for c in map.all_cells(): is_finite()`
-    //   循环（2400 cell × 6 字段 ≈ 22ms），是 phys_wind_raster slice 的最大头。
-    //
-    // 这里直接读 _slots 里的 PackedFloat32Array.ptr() 顺序扫，编译器
-    // 会自动向量化成 AVX2 SIMD（_mm256_cmp_ps NaN+Inf 检测），目标
-    // < 0.1ms（2400 cell × 6 ≈ 56KB 顺序读）。
-    //
-    // 返回 int：bad cell 数（任一字段 NaN/Inf 即 +1，不重复计数）。
-    // -1 表示 SoA size mismatch / slot 缺失（GDScript 应回落到原慢路径）。
-    int phys_field_nan_guard();
-
-    // ─── Weather Hot-Path C++ 化（plan/weather-hotpath-cpp）───────────────
-    //
-    // dist：_distribute_weather_field_to_cells C++ 化
-    //   GDScript 源：scripts/weather/weather_system.gd::_distribute_weather_field_to_cells
-    //                 (line 1290+)
-    //   ClimateProfile flag：use_gdext_weather_distribute（默认 true）
-    //   性能目标：~11.6ms → < 1.5ms（n_cells = 2400 基线）
-    //
-    //   入参 `knobs` Dictionary（GDScript 一次打包）：
-    //     标量：n_cells (int)
-    //           snow_threshold_temp, snow_min_intensity, flood_heavy_intensity,
-    //           flood_heavy_precip, flood_lowland_intensity, flood_lowland_elev,
-    //           flood_lowland_moisture (float)
-    //     PackedArray（zero-copy read-write via SoA view）：
-    //           weather_type, weather_intensity, weather_precip,
-    //           weather_field_initialized,
-    //           moisture_arr, temp_arr, cover_arr, accumulated_snow_days_arr,
-    //           landform_arr, terrain_arr （详见 cpp 实装）
-    //
-    //   写：moisture / temperature / cover / current_state["cover"]（通过 schema
-    //       回写） / accumulated_snow_days；并通过 out 字段返回 cover_dirty bool。
-    //   返回：≥ 0.0 → 接管完成（=elapsed_ms）；< 0.0 → fallback。
-    //
-    //   sig 设计：返回 Dictionary 而非 double，包含 { "elapsed_ms", "cover_dirty" }。
-    //             elapsed_ms < 0 表示 precondition 失败。
-    godot::Dictionary run_weather_distribute_pass(const godot::Dictionary &knobs);
-
-    // summary：_build_field_summary_fronts C++ 化
-    //   GDScript 源：scripts/weather/weather_system.gd::_build_field_summary_fronts
-    //                 (line 1322+)
-    //   ClimateProfile flag：use_gdext_weather_summary（默认 true）
-    //   性能目标：~17.8ms → < 3.0ms（n_cells = 2400, field_summary_limit = 16）
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量：n_cells (int), field_summary_limit (int), hex_size (float)
-    //           summary_intensity_enter (float, =0.10),
-    //           summary_intensity_hold  (float, =0.06),
-    //           merge_ratio (float, =0.65), max_merge_rounds (int, =4)
-    //           day_counter (int, 仅 debug 用)
-    //     PackedArray（zero-copy read，SoA view）：
-    //           cell_pos, neighbor_indices,
-    //           weather_type, weather_intensity, weather_field_initialized,
-    //           weather_cloud, weather_precip, wind_x, wind_y
-    //     fallback：avg_wind_x, avg_wind_y (float, 新生 cluster 用)
-    //
-    //   读：上述 SoA + 持久化的 _prev_summary_seeds / _prev_summary_membership
-    //       （C++ 内部维护，跨 tick 存活）
-    //   写：返回 Dictionary { "elapsed_ms": float, "fronts": Array[Dictionary] }。
-    //       每个 front Dictionary 字段：type/center/intensity/radius/axis/
-    //       stable_axis/velocity/major_scale/minor_scale/age_days/ttl_days/
-    //       life_progress/edge_seed/cloud_amount/precip_amount。
-    //
-    //   sig 设计：返回 Dictionary，字段 elapsed_ms < 0 表示 precondition 失败；
-    //             此时 fronts 字段为空 Array，调用方 fallback 到 GDScript。
-    godot::Dictionary run_weather_summary_fronts_pass(const godot::Dictionary &knobs);
-
-    // 清空 C++ 端持久化的 summary 状态（_prev_summary_seeds / _prev_summary_membership）。
-    // 在 GDScript 切换 use_gdext_weather_summary flag、或开关 verify mode 时调用，
-    // 避免新旧实现互相污染。无副作用、O(1) 清空（vector::clear）。
-    void reset_weather_summary_state();
-
-    // verify 协议辅助：snapshot / restore 持久化状态。set_summary_verify_mode 在 dev
-    // 模式下要求"先跑 C++ 再跑 GDScript"两遍，跑 GDScript 之前必须把 C++ 写脏的状态
-    // 还原到本 tick 入口；这两个接口配合 GDScript 端的 prev_seeds shadow 完成往返。
-    void snapshot_weather_summary_state();
-    void restore_weather_summary_state();
-
-    // ─── plan/weather-refresh-cpp-all: 顶层一体化 weather refresh ────────
-    //
-    // 单 C++ 调用内顺序执行 5 段：
-    //   ① run_weather_field_solve_pass(knobs)
-    //   ② run_weather_distribute_pass(knobs)
-    //   ③ run_weather_summary_fronts_pass(knobs)   ← 产 fronts Array
-    //   ④ cyclone_wake_step(knobs, fronts)         ← 新增（front_advect.gd::tick_cyclone_wake 1:1 移植）
-    //   ⑤ run_stage_b_pass(knobs)
-    //
-    // 设计原则（方案 X）：内部**直接复用已有 4 个 run_*_pass 公开 API**，
-    // 不抽 *_inline，不动现有 pass 函数体。代价是顶层 pass 内会重复解析同一
-    // Dictionary 4 次（每次 ~10-50μs），与节省的 4 次 GD↔CPP round-trip
-    // (~0.3-0.8ms) 相比仍净赚。
-    //
-    // ClimateProfile flag：use_gdext_weather_refresh_daily（默认 true）
-    //
-    // knobs 入参：所有子 pass 的 knobs 字段合并到同一 Dictionary，
-    //             各子 pass 各自只读自己需要的 key。本顶层 pass 额外要求：
-    //   标量： hex_size (float, cyclone_wake 用)
-    //          cyclone_wake_days (int, cyclone wake 持续天数)
-    //          cyclone_storm_type_id (int, WeatherType.WT.STORM 枚举值)
-    //          water_terrain_ids 已在 summary pass knobs 中存在，cyclone 复用
-    //   summary pass knobs 中已含 cell q/r 反查能力（_summary_qr_to_idx），
-    //     cyclone 通过 cell_q/cell_r SoA 反查注入点。
-    //
-    // 返回 Dictionary：
-    //   { rc: 0/-1, fail_stage: String?, weather_tick_ms,
-    //     advance_ms, distribute_ms, cyclone_ms, fronts_count,
-    //     albedo_ms, veg_dyn_ms, feedback_ms, total_ms, fronts: Array }
-    //   任一子段 rc<0 时 { rc:-1, fail_stage:"field_solve|distribute|summary|stage_b" }
-    //   立即短路返回，caller 走 GDScript fallback。
-    //
-    // 副作用：除子 pass 自身的副作用外，本顶层 pass 维护
-    //   _cyclone_perturbations (std::vector<CycloneWakeEntry>) 跨 tick 存活。
-    //   GDScript 端通过 get_cyclone_perturbations_dict() 取镜像，落到
-    //   weather_system.ocean_current_perturbation Dictionary。
-    godot::Dictionary run_weather_refresh_daily_pass(const godot::Dictionary &knobs);
-
-    // ─── Phase C.1（dots-total-cpp roadmap）：System schedule graph 节点 ──
-    //
-    // 这组 _exec_node_* 是 system_schedule.h 内 SystemNode.exec_fn 的成员函数
-    // 指针目标。public 仅是为了让 `&DCWorldExt::_exec_node_xxx` 能在 cpp
-    // 全局静态表 SCHEDULE_GRAPH 中取地址；**不**对外提供调用语义——只能由
-    // system_schedule.cpp 的 dispatch_system_schedule loop 调用。
-    //
-    // 每个节点直接镜像 run_native_daily_tick line 960-1063 内对应 if-bundle
-    // 块的语义：读 bundle key → 调 run_<X>_pass → 累加 breakdown（含 climate_ms
-    // / ocean_ms / stage_b_ms 跨 pass 累加）→ 写节点级 side-effect（stage_b 的
-    // 4 个 breakdown 回填、weather 的 _native_fronts_snapshot 写入）。
-    // 返回 true=成功；false=fallback 触发，dispatch loop 走 finish_with_failure。
-    bool _exec_node_climate_pass_a     (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_ocean_water        (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_ocean_land         (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_climate_pass_b     (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_wind_air           (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_wind_surface       (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_sea_ice            (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_transpiration      (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_albedo             (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_vegetation_dynamics(godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_climate_feedback   (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_stage_b            (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_stage_b_after_hydrology(godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_weather            (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-    bool _exec_node_runtime_hydrology  (godot::Dictionary& bundle,
-                                        const godot::Dictionary& tick_knobs,
-                                        godot::Dictionary& breakdown);
-
-    // 镜像 API：把 C++ 端 _cyclone_perturbations 导出成 GDScript Dictionary，
-    // 结构与 weather_system.ocean_current_perturbation 1:1（key = cell.q*10000+cell.r 的
-    // 64-bit int hash；value = Dictionary{ vec: Vector2, vec_init: Vector2,
-    // days_left: int, init_days: int }）。
-    //
-    // 调用时机：refresh_weather_daily 在 ext call 成功后立即调一次，把结果
-    // 回灌 weather_system.ocean_current_perturbation，下游消费方（航运 AI、
-    // shader overlay、soak dump）零感知 C++ 切换。
-    godot::Dictionary get_cyclone_perturbations_dict() const;
-    godot::Dictionary get_active_cyclone_snapshot() const;
-    godot::Dictionary get_climate_modes_report() const;
-    godot::Dictionary capture_climate_modes_state() const;
-    godot::Dictionary restore_climate_modes_state(const godot::Dictionary &state);
-
-    // ─── Block B: ocean_currents wind solver C++ pass ─────────────────────
-    //
-    //   GDScript 源：scripts/rendering/physical_circulation_solver.gd::solve_wind_field
-    //                 (line 246-454, 195 行)
-    //   ClimateProfile flag：use_gdext_wind_field（默认 false；本 PR 完成 +
-    //                        SAME_SOURCE A/B 通过 + p95 ≤ 5ms 后切 true）
-    //   性能目标：35.55ms p95 → < 5ms（charter §7 / dots-wind-validation.md）
-    //
-    //   算法结构（与 GDScript 1:1 镜像）：
-    //     Pass 0 — 海岸 BFS（≤ _WIND_COAST_THERMAL_MAX_DIST=5 步）：
-    //       识别每个陆地 cell 距海岸的格数，用作沿海热力压差权重
-    //     主循环 — 每 cell：
-    //       (a) 纬度基线 v_base = wind_belt_at(ny shifted by solar declination)
-    //       (b) 6 邻域离散梯度 grad_slp = (1/3)*Σ(slp_nb-slp_self)*d_unit
-    //       (d) 科氏偏转：仅对 -grad_slp 做（北半球右偏 / 南半球左偏）
-    //       (c) 沿海权重只放大 SLP 梯度项；方向由 pressure gradient 决定
-    //       合成 v_sum = w_lat*v_base + w_grad*v_grad + synoptic perturbation
-    //       (e) 地形/摩擦衰减 + 山脉绕流（mountain neighbor 切向偏转）
-    //       写 wind_x_arr[i], wind_y_arr[i], wind_speed_out[i]
-    //
-    //   入参 `knobs` Dictionary：
-    //     标量： n_cells (int)
-    //            hex_size (float)
-    //            season_phase (float, orbital/year phase only)
-    //            terrain_aware (int 0/1)  — 见 ClimateProfile.enable_terrain_aware_wind
-    //            world_bounds_pos_y (float)
-    //            world_bounds_size_y (float)
-    //     PackedArray（zero-copy read）：
-    //            neighbor_indices : PackedInt32Array (n_cells * 6)
-    //                ↑ 顺序与 HexUtils.CUBE_DIRECTIONS 一致
-    //                  (0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE)
-    //            slp_arr          : PackedFloat32Array (n_cells)
-    //                ↑ 必填！由 GDScript 从 cell.slp 提取
-    //                  （cell.slp 不在 schema 中）
-    //            water_terrain_ids: PackedByteArray (~4 entries)
-    //                ↑ TerrainType 枚举 OCEAN/COAST/REEF/KELP，
-    //                  与 _is_water_terrain 1:1 对齐
-    //            land_lf_mountain : int (knobs scalar) = LandformType.LF.MOUNTAIN
-    //            land_lf_peak     : int (knobs scalar) = LandformType.LF.PEAK
-    //            land_lf_hill     : int (knobs scalar) = LandformType.LF.HILL
-    //
-    //   读：cell_pos_y (lat 推导), cell_terrain (U8), cell_landform (U8) +
-    //       knobs["slp_arr"] + knobs["neighbor_indices"]
-    //   写：cell_wind_x slot (F32), cell_wind_y slot (F32) + flush_slot_to_map
-    //   knobs 输出：
-    //     wind_speed_out : PackedFloat32Array (n_cells)
-    //         ↑ caller 拿这个数组写每 cell.wind_speed
-    //         （cell.wind_speed 不在 schema）
-    //
-    //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；
-    //         < 0.0 → 任意先决条件不满足，调用方走 GDScript 回退。
-    //
-    //   bit-equal 容差：1e-4（含 sin/cos/sqrt/normalize 链）
-    //   未支持的特性：none（与 GDScript 算法 1:1 镜像）
-    double run_wind_field_pass(godot::Dictionary knobs);
-    godot::Dictionary run_physical_circulation_pass(godot::Dictionary knobs);
-
-    // ─── plan/dots-slp-psi-cpp: SLP field solver (stage 1) ───────────────
-    // Native SLP authority:
-    //   Pass A: latitude pressure belts + insolation-driven land/sea thermal
-    //           pressure + closed-loop thermal/ice/snow/moist terms.
-    //   Pass B: smooth_passes-round 6-neighbor Jacobi smoothing
-    //
-    // knobs in:   n_cells, hex_size, season_phase, smooth_passes,
-    //             world_bounds_pos_y, world_bounds_size_y,
-    //             neighbor_indices, water_terrain_ids,
-    //             slp_lat_amp, slp_land_amp, slp_water_damp,
-    //             slp_interior_boost, slp_coast_damp,
-    //             axial_tilt_deg, insolation_daylen_amp
-    // knobs out:  slp_out (PackedFloat32Array, length n_cells)
-    //
-    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
-    //   elapsed_ms < 0 -> caller falls back to GDScript path.
-    godot::Dictionary run_slp_field_pass(godot::Dictionary knobs);
-
-    // ─── perf 2026-07-08, Item 1：phys pass 每调用固定开销缓存 ───────────
-    // 解析四个 phys pass 共用的 cell_* slot id + 重建 is_water_lut，按
-    // FNV-1a(n_cells, water_terrain_ids) 指纹失效。命中后各 pass 直接读
-    // _phys_sid_* / _phys_is_water_lut 成员，省掉重复 component_id(StringName)
-    // 与 256 字节 LUT 重建。邻居索引仍由 knob 传入（保留 fallback）。
-    // 仅在指纹失配时重算（地图 regen / 水掩膜变化），主线程同步调用。
-    void _phys_resolve_static(int n_cells, const godot::PackedByteArray &water_ids);
-    // cell_lat_norm slot 的只读指针；slot 缺失或尺寸不符返回 nullptr（调用方退化为
-    // 用 cell_pos_y 自归一化）。需先调用 _phys_resolve_static()。
-    const float *_phys_lat_norm_ptr(int n_cells);
-    // 缓存 WIND coast/sea BFS 结果（coast_dist/sea_dist 等）到成员；指纹失配才重建。
-    // TR/NB/water_ids 来自当前 pass 已解析的 slot/knob（调用方传入）。
-    void _phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const int32_t *NB,
-                                 const bool *is_water_lut, const godot::PackedByteArray &water_ids);
-    // NS 化 Phase 0：在 wind pass 末尾由最终风槽构建半拉格朗日回溯轨迹表
-    // （每 cell 3×i32 邻居索引 + 3×f32 权重），供动量自平流与 weather/wind_air
-    // SL 平流消费。内部用 pk::parallel_for_range，只读 slots、写 own-row。
-    void _phys_build_wind_traj(int n_cells, const float *POSX, const float *POSY,
-                               const int32_t *NB, const float *WX, const float *WY,
-                               const float *WSP, double wrap_period_x,
-                               double traj_pos_scale, double traj_dt_days);
-
-    // ─── plan/dots-slp-psi-cpp: PSI ocean stream-function solver ─────────
-    // Fused stage 3 + 4 + 5 (init + SOR iters + finalize) in one C++ call:
-    //   init     : enumerate water cells in cell-index order (1:1 with
-    //              GDScript), build nb_idx, compute wind_stress_curl,
-    //              compute beta_abs / r_factor / source per water cell.
-    //   iters    : SOR Gauss-Seidel in-place iterations (psi_total_iters
-    //              default 24), bit-equal to GDScript step_psi_solver.
-    //   finalize : 6-neighbor gradient -> ocean_current, +/- 90 deg
-    //              rotate, thermohaline high-lat overlay, clamp [-1,1].
-    //
-    // knobs in:   n_cells, hex_size, world_bounds_pos_y/size_y,
-    //             neighbor_indices, cell_q, cell_r, water_terrain_ids,
-    //             wind_x_arr, wind_y_arr, wind_speed_arr,
-    //             psi_total_iters, psi_sor_omega, psi_r_base,
-    //             psi_beta_floor, psi_source_scale, ocean_current_scale,
-    //             thermohaline_weight, upwelling_highlat_abs,
-    //             cold_sink_temp
-    // knobs out:  wind_stress_curl_out, ocean_psi_out,
-    //             ocean_current_x_out, ocean_current_y_out
-    //             (each PackedFloat32Array of length n_cells; land cells
-    //              filled with 0)
-    //
-    // Dictionary out: { elapsed_ms, fallback (bool), reason (String) }
-    godot::Dictionary run_psi_solver_pass(godot::Dictionary knobs);
-
-    // ─── dots-total-cpp step3（2026-06-25）：物理环流编排下沉（仅生成期一次性路径）──
-    // run_physical_solve_pass：单次驱动，在 C++ 进程内按序串起 SLP → wind → PSI →
-    //   upwelling 四个已验证 kernel（均读 bound slot + publish_to_slot），中间量
-    //   （slp→wind 经 slp_arr、wind→psi 经 wind_*_arr）在 C++ 内从返回值/slot 串联，
-    //   不跨语言往返。GDScript 一次请求（combined knobs = 4 stage 输入并集，含
-    //   neighbor_indices/water_terrain_ids/prev_slp_arr + 全部标量/profile 参数 +
-    //   heat_transport/solve_ocean/terrain_aware 标志），C++ 自动注入 chained 键
-    //   （slp_arr/wind_x_arr/wind_y_arr/wind_speed_arr/stage）。仅 `_bake_initial_*` /
-    //   `rebake_ocean_currents` 等**已经是原子完成**的路径用它（运行期逐帧分摊路径
-    //   `_physical_solve_step_one` 不受影响）。任一 sub-pass fallback → 整体 fallback，
-    //   GDScript 回退到原 step_one loop。NaN 守门 + 风场 RG8 光栅化仍在 GDScript
-    //   （wrapper 调 phys_field_nan_guard + _bake_initial_vector_buffers）。
-    //   输出 { fallback, reason, slp_ms, wind_ms, psi_ms, upwelling_ms, psi_ran,
-    //   elapsed_ms }。前置：ext 必须 bind_map_data。
-    godot::Dictionary run_physical_solve_pass(godot::Dictionary knobs);
-
+    // Returns an empty PackedByteArray on invalid input so the GDScript caller
+    // can fall back to the reference formatter.
+    godot::PackedByteArray encode_tile_csv_rows(godot::Dictionary knobs);
     // ─── Mode-B reference implementation: temp_drift_pass ────────────────
     // The minimal "hello world" pass that validates the full Owned-by-C++
     // communication contract end-to-end. Adds `drift_amount` to every
@@ -2755,7 +2920,6 @@ public:
     // Safety: if the slot id (looked up by StringName "cell_temp") is not
     // registered, the call is a no-op (no crash, no error spam).
     void run_temp_drift_pass(float drift_amount);
-
     // ─── Mode-B reference implementation: thermal_gradient_pass (Pass #2) ─
     // Pass #2 stresses the four real-business complexities that Pass #1
     // intentionally skipped:
@@ -2787,7 +2951,6 @@ public:
                                    int grid_h,
                                    float elevation_gain,
                                    float normalize_k);
-
     // ─── Mode-B reference implementation: demo_complex_pass (Pass #3) ─────
     // Pass #3 keeps every piece of Pass #2's communication scaffolding
     // (component slot, overlay mode, climate switch, baker, tick hook,
@@ -2837,7 +3000,6 @@ public:
                                float terrain_drag,
                                float elevation_gain,
                                float normalize_k);
-
     // ─── DOTS-A1 EXPERIMENT: archetype-filtered demo_complex_pass ─────────
     // Identical algorithm to `run_demo_complex_pass` (same kernel, same
     // bit-equal contract), with ONE additional discipline: cells whose
@@ -2871,7 +3033,6 @@ public:
                                           float elevation_gain,
                                           float normalize_k,
                                           int target_archetype);
-
     // ─── Phase 3a Step 0: alias spike (TEMPORARY — to be removed) ─────────
     // Three variants probe whether `obj.set(prop, arr)` followed by
     // `arr.ptrw()[i] = v` keeps the buffer aliased between obj.<prop> and
@@ -2886,7 +3047,6 @@ public:
     float _spike_alias_v1_naive          (godot::Object *obj, const godot::StringName &prop, int idx, float sentinel);
     float _spike_alias_v2_release        (godot::Object *obj, const godot::StringName &prop, int idx, float sentinel);
     float _spike_alias_v3_write_then_set (godot::Object *obj, const godot::StringName &prop, int idx, float sentinel);
-
     // ─── Phase 3a Step 1: alias verification helper (TEMPORARY) ──────────
     // Writes `sentinel` into _slots[comp_id].arr_f32[idx] via ptrw() — the
     // same path that hot loops will use. The companion test reads back via
@@ -2896,7 +3056,6 @@ public:
     // share the buffer, no per-write set needed.
     // Removed once Step 1 validation is signed off (along with the spike).
     float _debug_poke_f32(int comp_id, int idx, float sentinel);
-
     // T1b: same as _debug_poke_f32, but performs map_data->set(prop_name,
     // s.arr_f32) immediately after the ptrw() write to push the (possibly
     // detached) buffer back to the GDScript side. Probes whether
@@ -2905,7 +3064,6 @@ public:
     // insufficient and every C++ hot pass must re-set on exit.
     // Looks up comp_id → property_name via the BIND_TABLE.
     float _debug_poke_f32_with_flush(int comp_id, int idx, float sentinel);
-
     // ─── Phase-3 micro-bench API ────────────────────────────────────────
     // These are NOT production paths; they exist solely so tmp/bench_*.gd
     // can compare three optimisation strategies head-to-head:
@@ -2938,7 +3096,6 @@ public:
                                   const godot::PackedInt32Array   &neighbors,
                                   float k1, float k2, float base, float season,
                                   int n_tasks);
-
     void bench_pass_a_indexed_scalar(int comp_id,
                                      const godot::PackedInt32Array   &dirty,
                                      const godot::PackedFloat32Array &lat,
@@ -2959,210 +3116,23 @@ public:
                                      float k1, float k2, float base, float season,
                                      int n_tasks);
 
-    // ───────────────────────────────────────────────────────────────────
-    // EXPERIMENTAL: D-async — long-lived worker thread + double buffering
-    // ───────────────────────────────────────────────────────────────────
-    // Goal: probe whether a "request → background compute → poll" pattern
-    // gives the main thread sub-50µs dispatch cost while keeping the
-    // demo_complex algorithm bit-equivalent to the synchronous path.
-    //
-    // Contract (CRITICAL — read before touching any of these methods):
-    //   1. Worker threads NEVER call any Godot API (no Variant, no
-    //      push_warning, no Object::get/set). They only read/write their
-    //      own std::vector<float> buffers.
-    //   2. Inputs (temp / elev) are SNAPSHOT-COPIED into worker-private
-    //      buffers in `async_climate_set_inputs` — caller-side mutation
-    //      after the call cannot race with the worker.
-    //   3. Outputs land in a worker-private std::vector<float>; the main
-    //      thread copies them into _slots[CELL_DEMO_THERMAL_GRADIENT] only
-    //      inside `async_climate_poll()` (which returns true on success).
-    //   4. `async_climate_shutdown_*` joins the worker(s); ~DCWorldExt
-    //      calls shutdown_all() defensively.
-    //   5. NEVER share an AsyncTask across DCWorldExt instances.
-    //
-    // Output slot: re-uses "cell_demo_thermal_gradient" so existing data
-    // overlay machinery / GDScript snapshot code keeps working unchanged.
-    //
-    // See `.codebuddy/plan/cpp-async-experiment/requirements.md` for the
-    // experiment design and 7-criteria success matrix.
-    void async_climate_register_task(int task_id, int n_workers);
-    void async_climate_set_inputs(int task_id,
-                                  const godot::PackedFloat32Array &temp,
-                                  const godot::PackedFloat32Array &elev);
-    void async_climate_request(int task_id,
-                               int grid_w, int grid_h,
-                               int iterations, int kernel_radius,
-                               float coriolis_strength,
-                               float terrain_drag,
-                               float elevation_gain,
-                               float normalize_k);
-    bool async_climate_poll(int task_id);
-    godot::Dictionary async_climate_stats(int task_id);
-    void async_climate_shutdown_task(int task_id);
-    void async_climate_shutdown_all();
-
-    // ───────────────────────────────────────────────────────────────────
-    // Async Climate Round（plan §async-stage-1，2026-06-14）
-    //
-    // Goal：把整个 climate daily round（pass_a → pass_b → ocean_water →
-    // ocean_land → wind_air → wind_surface → sea_ice → transp 8 个 pass）
-    // 整体扔给 worker thread 跑，主线程只做 kick/poll 和短暂 memcpy。
-    // 主线程目标：每帧 climate 相关工作 < 1.5ms（kick + poll + flush）。
-    //
-    // 本阶段（Stage 1）：
-    //   - 搭好 round-level async 框架（input/output/work buf + 单 worker
-    //     thread + std::condition_variable wake/wait）
-    //   - 8 pass 中只有 transpiration 实现 pure std::vector kernel；
-    //     其它 7 pass 留 stub（input → output 直传，不修改）
-    //   - GDScript 端用一个隔离的测试入口（cp.use_climate_round_async = true
-    //     时 climate_daily_system 走 async 路径，否则走原 sync 路径）
-    //
-    // 线程安全契约（与 demo async 完全一致，不重复说明）：worker 全程只碰
-    // std::vector / atomic / mutex / cv，绝不调任何 Godot API。
-    //
-    // 单例语义：本机制只支持一个 async climate round 任务（不需要 task_id
-    // 多路），全局状态指针 _async_climate_round_state 由 lazy alloc 维护。
-    // 析构时由 ~DCWorldExt 调 async_climate_round_shutdown 安全 join。
-
-    // 注册并启动 worker thread。重复调用是幂等的（已 register 直接 return）。
-    void async_climate_round_register();
-
-    // 在 bind_map_data 之后 / 第一次 kick 之前调一次。把 round-invariant 的
-    // 静态数据（neighbor_indices / donor_table / foliage_table）从 GDScript
-    // 提取到 worker buffer。round 间复用，不在每次 kick 时重序列化。
-    void async_climate_round_set_static_knobs(const godot::Dictionary &knobs);
-
-    // S3：Dictionary → ClimateInputBuf 的唯一提取实现。async_climate_round_kick
-    // 与 capture_runtime_inputs（SHADOW worker 的输入边界）都调它，保证两条驱动
-    // 路径拿到逐位相同的输入缓冲。调用方负责并发保护。
-    // prefer_slot_lanes=true 时，pass_a 读的 per-cell lane 改从 _slots 取而不是从
-    // Dictionary（即 MapData 镜像）取。SHADOW capture 必须用它：生产 pass_a 读的是
-    // _slots，MapData 镜像只在部分 pass 末尾 flush，两者在同一日起点未必相等——
-    // 那种差异会以"同一份内核算出不同结果"的形式出现在对拍里，极难归因。
-    void fill_climate_round_input(const godot::Dictionary &input, int n_cells,
-                                  pk_async_climate::ClimateInputBuf &buf,
-                                  bool prefer_slot_lanes = false);
-
-    // 记下生产 pass_b 用的海冰浓度 lane。它不是 slot，也不在 pass_a 留存的 kin 里。
-    void record_production_pass_b_input(int n_cells, const float *sea_ice_frac,
-                                       const float *temp_transport_anomaly);
-
-    // 同理，sea_ice 的温度 lane：生产刻意从 GDScript 的 cell.temperature 打包传入，
-    // 不是 SoA cell_temp。两者差一整段 ocean_land 修正，读错会多算冰。
-    void record_production_sea_ice_input(
-        const pk_async_climate::SeaIceLanes &lanes, int n_cells);
-
-    // 记下生产 wind_surface 真正读到的 oanom。它由跳过 round 的分片 ocean stage
-    // 写，worker 补不出来 —— 见 pk_async_climate::WindSurfaceInput 的注释。
-    void record_production_wind_surface_input(int n_cells, const float *ocean_anomaly);
-
-    // 记下生产 ocean_water 真正用的 baseline / temp_before——两者都是非 slot 的
-    // 派生量，见 pk_async_climate::OceanWaterInput 的注释。
-    void record_production_ocean_water_input(int n_cells, const float *baseline,
-                                            const float *temp_before);
-
-    // 从一个 sync pass 的 knobs Dictionary 里抽出它那段 round 标量，记进
-    // _production_round_scalars。pass_bit 用 passes_mask 的位（0x02 pass_b /
-    // 0x04 ocean_water / 0x08 ocean_land / 0x10 wind_air / 0x20 wind_surface /
-    // 0x40 sea_ice）。在每个 pass 的标量拉取之后调用，读的就是那个 pass 自己用的
-    // Dictionary —— 所以不会产生第二个取值来源。
-    // pass_a 的 25 个标量没有对应的 knobs Dictionary 记录点（生产在 pass 内部就把
-    // 它们组装成 ClimateRoundScalars 了）。直接抄那一份，而不是再解析一次字典。
-    void record_production_pass_a_scalars(
-        const pk_async_climate::ClimateRoundScalars &src);
-    void record_production_round_scalars(int pass_bit,
-                                        const godot::Dictionary &knobs);
-
-    // stage 10（climate_feedback）：把生产这一次真正读到的输入 lane 连同标量整份留存。
-    // 为什么不能让 worker 用 environment 快照的同名 lane：feedback 跑在 stage_b 段、
-    // 也就是 weather 之后，而快照是 tick 起始拍的；weather_type / weather_intensity 在
-    // 这两个时刻之间正好被 weather pass 整场重写过。
-    void record_production_feedback_input(
-            const pk_async_climate::ClimateFeedbackKnobs &knobs, int n_cells,
-            const uint8_t *is_water, const uint8_t *weather_type,
-            const float *weather_intensity, const uint8_t *weather_field_init,
-            const float *temp_transport_anomaly, const float *base_moisture,
-            const float *soil_moisture);
-
-    // stage 9（vegetation_dynamics）同理，但它读的东西更多：8 张查表 + 11 条输入
-    // lane，其中 terrain / landform / vegetation 三条会被上一天的演替后处理（GDScript
-    // 侧写 cell.vegetation）改动，而那次写入不属于任何 climate stage —— 拿快照那份等于
-    // 用演替前的植被算演替后的活力。
-    void record_production_vegetation_input(
-            const pk_async_climate::VegetationDynamicsKnobs &knobs,
-            const pk_async_climate::VegetationDynamicsTables &tables,
-            const pk_async_climate::VegetationDynamicsLanes &lanes,
-            int n_cells);
-
-    // stage 11（weather field solve）同理，但它还要记七组跨 tick 状态的初值。
-    // 那七组都不是 RuntimeClimateStore 的成员，worker 若从零起步，ψ 与对流抑制要好
-    // 几天才与生产收敛，而这几天会被分叉矩阵记成算法分叉。
-    void record_production_weather_input(
-            const pk_async_climate::WeatherFieldKnobs &knobs,
-            const pk_async_climate::SynopticAdvanceKnobs &synoptic,
-            bool synoptic_enabled,
-            const pk_async_climate::WeatherFieldLanes &lanes,
-            const pk_async_climate::WeatherFieldState &state,
-            int n_cells,
-            const uint8_t *field_init = nullptr);
-
-    // weather distribute（stage 11 后段）同理。cover 与两条积雪计数都是没有 store
-    // 成员承接的 in/out，记初值、worker 用 scratch。
-    void record_production_weather_distribute_input(
-            const pk_async_climate::WeatherDistributeKnobs &knobs,
-            const pk_async_climate::WeatherDistributeLanes &lanes,
-            const pk_async_climate::WeatherDistributeState &state,
-            int n_cells);
-
-    // stage 12（runtime hydrology）同理。运河拓扑代号也跟着过去：worker 侧的
-    // 编译缓存按它失效，对不上就会在运河变更的那一天潜默用旧拓扑。
-    void record_production_hydrology_input(
-            const pk_async_climate::HydrologyKnobs &knobs,
-            const pk_async_climate::HydrologyLanes &lanes,
-            bool has_neighbors, uint64_t canal_topology_generation,
-            int n_cells);
-
-    // 把 pass_a 读的 slot-backed lane 覆盖进 buf。返回 false 表示 slot 不完整
-    // （未 bind / 尺寸不符），此时 buf 保持调用方给的内容。
-    bool override_climate_round_input_from_slots(int n_cells,
-                                                pk_async_climate::ClimateInputBuf &buf);
-
-    // 主线程入口：把当前 _slots[] 内容快照到 input_buf，传入 round-level
-    // scalars（season_phase / cp 字段），唤醒 worker。返回 false 表示
-    // worker 还没消费上一次 request（total_reused++），主线程应继续用
-    // 上一次 result_buf。
-    bool async_climate_round_kick(const godot::Dictionary &input);
-
-    // 主线程出口：检查 worker 是否完成；完成则把 output_buf 反序列化回
-    // _slots[]，并调 _flush_slot_to_map 系列推到 MapData。返回包含
-    // sea_ice flip events / dirty_count / per-pass timing 的报告。
-    // result_ready=false 时返回 {} 空字典。
-    godot::Dictionary async_climate_round_poll();
-
-    // 调试 / 验收用：返回 worker 计数 + 上次耗时。
-    godot::Dictionary async_climate_round_stats();
-
-    // Thin native facade over register/static/kick/poll. GDScript still owns
-    // production scheduling state; these methods centralize native worker
-    // lifecycle and return a structured state report.
-    godot::Dictionary native_climate_round_begin(const godot::Dictionary &static_knobs);
-    godot::Dictionary native_climate_round_begin_round(const godot::Dictionary &ctx);
-    godot::Dictionary native_climate_round_kick(const godot::Dictionary &input);
-    godot::Dictionary native_climate_round_poll();
-    godot::Dictionary native_climate_round_finish_round(const godot::Dictionary &ctx);
-
-    // Native climate round state report/reset scaffold. This is not production
-    // authority yet; it exposes the native worker lifecycle so GDScript can
-    // compare against its retained _round_active/_pass_cursor state.
-    godot::Dictionary get_native_climate_round_state_report();
-    godot::Dictionary get_native_climate_round_hot_state();
-    godot::Dictionary reset_native_climate_round_state(const godot::String &reason = godot::String());
-
-    // 析构 hook + GDScript 主动调用入口。安全 join worker。
-    void async_climate_round_shutdown();
-
 protected:
     static void _bind_methods();
+    static void _bind_core_methods();
+    static void _bind_runtime_methods();
+    static void _bind_climate_methods();
+    static void _bind_economy_methods();
+    static void _bind_country_methods();
+    static void _bind_military_methods();
+    static void _bind_effect_methods();
+    static void _bind_modifier_methods();
+    static void _bind_ideology_methods();
+    static void _bind_trigger_methods();
+    static void _bind_events_methods();
+    static void _bind_generation_methods();
+    static void _bind_bake_encoders_methods();
+    static void _bind_visual_methods();
+    static void _bind_demo_methods();
 
 private:
     godot::Dictionary run_economy_slice_internal(const godot::Dictionary &ctx,

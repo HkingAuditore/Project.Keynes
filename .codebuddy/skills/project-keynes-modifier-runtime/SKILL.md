@@ -29,7 +29,7 @@ Inspect current code before editing:
 - `gdext/src/modifier_runtime.*`
 - `gdext/src/world_ext_modifier.cpp`
 - `gdext/src/world_ext.h`
-- `gdext/src/world_ext_bind_methods.cpp`
+- `gdext/src/world_ext_bind_<模块>.cpp`
 - `Project/project-keynes/scripts/modifier/`
 - `Project/project-keynes/scripts/simulation/systems/modifier_daily_system.gd`
 - the affected domain consumer and save provider
@@ -96,3 +96,26 @@ Do not claim completion unless code, focused tests, docs, and this skill agree. 
 the 3 percent median / 5 percent p95 target without same-machine baseline and after data.
 Run `quick_validate.py` after editing this skill. Forward-test in isolated context when agent
 delegation is available; otherwise report that gate as not executed.
+
+## Satisfaction realized consumption (2026-10-18)
+
+Basic, comfort and luxury score realized consumption against an authored living
+target (population × base quantity × elapsed days × environment × ethnicity),
+independent of wealth, price-elastic request shrinkage and budget. Missing stock
+keeps the target; technology-inapplicable tiers return -1 in queries (internal
+stored value 0). Native group budgets are consumption 70%, finance 20%, tax 5%,
+development 5%; redistribute missing tiers inside consumption only. Savings alone
+uses cash purchasing power. Missing cost basis scores savings zero, never full.
+Composite is capped by both subsistence (10% slack) and applicable basic living
+(20% slack). Cohort living-standard display uses actual consumption. See
+`docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
+layout; updated need tiers change the content catalog hash.
+
+## New-world state reset (2026-11-10)
+
+Rule definitions survive successful Host reconstruction. Modifier instances and observation
+cursors belong to one world and reset through `modifier_runtime_lifecycle.cpp`; preserve
+them for a same-world executor restart. See the scheduling/save reference and run
+`runtime_world_rules_rebuild_test.gd` for both execution modes.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

@@ -133,8 +133,10 @@ pk::parallel_for_range("pk_bake_terrain", h, [&](int y0, int y1) {
 
 ## 常见坑
 
-- **漏 bind**：新方法只声明实现没在 `world_ext_bind_methods.cpp` 绑定 → GDScript `has_method` 永远 false → 静默走 fallback、没提速。
+- **漏 bind**：新方法只声明实现没在 `world_ext_bind_<模块>.cpp` 绑定 → GDScript `has_method` 永远 false → 静默走 fallback、没提速。
 - **knobs 键重名**：同一 Dictionary 键唯一（`height` 维度 vs `height_buffer` 缓冲）。
 - **大文件编辑**：`world_ext.cpp` 很大，用 grep/search 定位精确替换，**绝不整文件重写**。
 - **GDScript 三元 + or 优先级**：复杂条件拆成显式 `var ok: bool = ...` 再判断，别堆在一行三元里。
 - **改 C++ 必 rebuild**：否则 `has_method` 探测不到新方法。交付时明确告知用户。
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

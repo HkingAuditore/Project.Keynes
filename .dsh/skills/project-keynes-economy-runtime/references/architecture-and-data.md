@@ -1,5 +1,10 @@
 # Economy Runtime Architecture and Data
 
+Cell-tax addendum: per-cell tax policy is an epoch-only compiled cache made of
+short sorted exact slices, shared local-default effective rows, per-cell compiled
+IDs and active masks. Do not allocate a cell×catalog matrix or access
+ModifierStore/Country objects in worker loops.
+
 ## Contents
 
 1. Authority and layering
@@ -28,6 +33,13 @@ WorldClock / EconomyDailySystem
 DataCore contributes only the sample-day environment columns: temperature, moisture, snow cover,
 and weather intensity. `world_ext_economy.cpp` reads raw F32 slot pointers once and quantizes them
 to Q16. No per-cell cross-language calls occur.
+
+Production-climate loss adaptation is epoch-derived, not persisted authority. Configuration resolves
+the four global country hazard stats plus the six production profiles × four hazards. Epoch capture
+freezes both dense Q16 tables. `production_climate_capacity_q16()` selects the limiting hazard,
+computes `clamp(global_factor × profile_factor, 0.20, 1.00)`, and applies that value in the sole
+capacity formula. Actual production, investment forecasts, recovery, and liquidation therefore share
+one climate result; PKEC byte schema does not change.
 
 ## 2. Population storage
 
@@ -228,7 +240,7 @@ silently erase the whole dossier.
 
 - Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`
 - Environment capture/API forwarding: `gdext/src/world_ext_economy.cpp`
-- GDExtension binding: `world_ext.h`, `world_ext_bind_methods.cpp`
+- GDExtension binding: `world_ext.h`, `world_ext_bind_<模块>.cpp`
 - Catalog/facade: `scripts/economy/economy_catalog.gd`, `economy_facade.gd`
 - Profiles: `scripts/data/{economy,good,need,profession,ethnicity,consumption_plan,environment_demand_curve}_profile.gd`
 - Content: `data/economy/`, `data/goods/`
@@ -268,17 +280,32 @@ candidate selection remains technology-gated, deterministic, and native-owned. M
 may not own ordinary production. The only merchant-owner profiles are the two early bullion
 collectors described above; both GDScript and native catalog validation enforce their exact recipe.
 
-Building upgrade families compile stable family IDs and per-type tiers. Construction checks the
-highest technology-available tier and rejects an older BUILD with
-`building_tier_obsolete_for_construction`; production checks only the building's own technology, so
-existing older assets continue operating. Building snapshots expose family indices, tiers, highest
-available tiers, and construction availability. These catalog additions change the catalog hash but
-not the PKEC v11 byte layout.
+Building upgrade families compile stable family IDs and per-type tiers. Construction keeps every
+technology-available tier buildable; production checks only the building's own technology, so
+existing older assets continue operating without automatic conversion. Building snapshots expose
+family indices, tiers, highest available tiers, and construction availability. These catalog additions
+change the catalog hash but not the PKEC v11 byte layout.
 
 At `building_commit`, endogenous owner investment may create one industrial building per cell only
-when a 30-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
+when a 180-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
 Expansion requires the configured target margin, at least 75% planned utilization, persistent
 demand pressure, enough local construction stock, and an entrepreneur whose per-capita funds cover
 materials plus 30 living-cost days. The entrepreneur moves one person and proportional funds into
 the owner signature before the normal BUILD transaction pays local merchants. Collectors and
 services are excluded so price signals alone cannot expand natural-resource extraction.
+
+## Derived cell layer 对经济侧的影响
+
+`refresh_city_output_modifier_factors` 的工作集来自
+`collect_scope_stat_entries(ECONOMY, GROUP, ...)`，该函数**已并入派生层**
+(`modifier_runtime.cpp:1571-1584`)。逐格取值走
+`effective_value(ECONOMY, stat, 0, cell, 1.0)` (`economy_runtime.cpp:7327`)，与派生层合并
+是同一次调用。
+
+因此：**只有派生贡献、没有 legacy GROUP 桶的格也会进工作集**，逐格因子照常被记录。
+不要为此再加第二条路径。
+
+删除理念旧 v1 平面时（plan 22 §15.7）唯一需要确认的就是这条并集仍然存在——它存在。
+
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

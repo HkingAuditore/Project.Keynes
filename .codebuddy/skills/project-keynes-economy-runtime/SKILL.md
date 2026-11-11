@@ -17,7 +17,7 @@ Read the files relevant to the requested change before editing:
 - Native population, market, and building state/algorithms: `gdext/src/economy_runtime.{h,cpp}`.
 - Country technology/treasury bridge: `gdext/src/country_runtime.{h,cpp}` and `world_ext_country.cpp`.
 - DataCore environment/resource bridge: `gdext/src/world_ext_economy.cpp`.
-- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_methods.cpp`.
+- GDExtension API binding: `gdext/src/world_ext.h`, `world_ext_bind_<模块>.cpp`.
 - Catalog/facade: `Project/project-keynes/scripts/economy/`.
 - Scheduler shell: `scripts/simulation/systems/economy_daily_system.gd`.
 - Clock continuation: `scripts/geography/map_generator.gd`, `world_clock.gd`.
@@ -90,6 +90,43 @@ treasury cap. Do not invent a family wallet or a second market-price exception a
 - Keep generic production, employment, wages, and transport outside household Market V2. The native
   building graph and PKEC v11 domestic trade graph are explicit staged exceptions. Keep tax,
   cross-country trade/tariffs, politics, and natural demography outside this runtime until designed.
+
+## Never turn Country-peer backpressure into a fatal
+
+This is the single failure mode that has reached players as a mid-game stop
+(day 2744, `country_worker_cohort_cash_boundary_invalid`). Treat it as a hard rule.
+
+- `runtime_country_asset_pending_reason()` in `gdext/src/runtime_pod_protocol.h` is the
+  **one** definition of Country/Economy asset backpressure reasons. Never re-inline the
+  string list at a call site; add new reasons there so every consumer picks them up.
+- Every reason in that set means no store was mutated. The caller must yield the slice
+  and retry on a later pulse. Calling `fail()` on one leaves a half-open epoch, and the
+  next report shows staged mints without their committed owner funds.
+- Classify a cross-boundary rejection by **whether a retry can succeed**, not by where the
+  check happens to be written. Contract violations (wrong thread, domain not authoritative,
+  illegal operation) stay fatal. Timing windows (`_country_pod_plan_active`, drain-idle)
+  are backpressure.
+- A cursor-driven stage (`LEDGER_APPLY`, `STRUCTURAL_COMMIT`) parks by simply not advancing
+  its cursor; the same command replays next pulse with no new continuation state. Call
+  `park_on_country_asset_pending()` so the peer queue still drains — otherwise Economy waits
+  for Country to close its plan window while Country waits for Economy to land a terminal.
+- When adding a sync fast path, list every failure exit and answer "does this exit have a
+  fallback?" for each one. `coordinate_country_cohort_cash`'s fast path could not reach the
+  `block_or_enqueue_country_worker_asset` fallback sitting directly below it.
+
+Details: `docs/architecture/current-state.md`, section
+「2026-09-22 Country asset backpressure 与 fatal 取证」.
+
+## Keep fatal diagnostics honest
+
+- `fail()` must capture `FatalContext` (stage, substage, command cursor/opcode/handles, D7
+  gate mask, Country authority bits). A bare reason string is not a diagnosis.
+- `population_error / money_error / goods_error` are only meaningful once
+  `PublishPhase::VERIFY` recomputed the closing totals. `fail()` sets `_epoch_active = false`,
+  so gating on that alone reports the previous epoch's snapshot as a live imbalance. Gate on
+  `_closing_totals_valid` and surface `audit_incomplete` + `audit_incomplete_reason` instead.
+- Generally: when a metric is only valid in some states, make the other states report
+  "unknown" explicitly. Do not let it decay into a stale value that reads like a real defect.
 
 ## Preserve the building graph contract
 
@@ -187,3 +224,89 @@ Include:
 - Release avg/p95/max and memory when performance can change.
 - Whether locked N/S or a historical auto/fixed-five path was benchmarked.
 - Remaining blockers and intentionally excluded systems.
+
+## Colonization procurement demand (2026-10-17)
+
+PREPARING kit shortages now have an epoch-frozen, sparse cash-backed forecast.
+Use `epoch_procurement_demand_daily[_for_market]` for generic non-household
+price, inventory, production and investment consumers; keep research-only
+bootstrap/policy checks on the research helper. Full-kit forecasts choose one
+reachable substitute per residual group, subtract custody/in-flight goods and
+share a Country cash cap after fiscal/research budgeting. Do not credit sales,
+withdrawal EMA or real cargo from a forecast. One-shot balances normalize over
+inventory days and rebuild after cancellation/departure/restore. No new schema.
+See `docs/cpp-dots-runtime/family-colonization-runtime.md` and
+`tests/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
+each propagation entry: runtime-local visit generations can collide across
+worlds in the same process.
+
+## Satisfaction realized consumption (2026-10-18)
+
+Basic, comfort and luxury score realized consumption against an authored living
+target (population × base quantity × elapsed days × environment × ethnicity),
+independent of wealth, price-elastic request shrinkage and budget. Missing stock
+keeps the target; technology-inapplicable tiers return -1 in queries (internal
+stored value 0). Native group budgets are consumption 70%, finance 20%, tax 5%,
+development 5%; redistribute missing tiers inside consumption only. Savings alone
+uses cash purchasing power. Missing cost basis scores savings zero, never full.
+Composite is capped by both subsistence (10% slack) and applicable basic living
+(20% slack). Cohort living-standard display uses actual consumption. See
+`docs/cpp-dots-runtime/satisfaction-runtime.md`. No new persistent lane or save
+layout; updated need tiers change the content catalog hash.
+
+## Worker replacement and unfinished epochs (2026-11-03)
+
+Resume from `NativeEconomyRuntime::next_stage_ops_stage_index()` through the
+mutating StageOps adapter; a new worker is not a new economy epoch. Fiscal
+settlement maps to BUILDING_COMMIT. Keep the frozen sample day and never replay
+completed mutating stages or invent their historical hashes/timings. Read-only
+probes start at zero. Preserve archive captured flags, including absent blocks
+in older ECP1 ABIs. Validate runtime_economy_worker_restart_test, StageOps/compact
+parity, ECP1 compatibility and ECP2 round trips.
+
+## Stop during an in-flight fiscal transaction (2026-11-03)
+
+The executor installs `RuntimeExecutionContext` for both worker and inline calls.
+A concurrent stop revokes live admission but must not change Country routing
+inside the call: reading the stale synchronous treasury during closing audit
+caused money/goods drift. Keep all module routing on the common Host predicate;
+do not use the public live report mask to choose a data source inside execution.
+Validate the standalone execution-context races and production restart test.
+The target architecture and future extension workflow are in
+`docs/architecture/design.md` and
+`docs/architecture/development-guide.md`.
+
+Opening allocation: `StarterSettlementBootstrap` sends optional `building_owner_fill`
+per building packet row. Native bootstrap validates all fills against lot capacity
+and cohort totals, then applies them before generic matching. This reserves food
+operators even when a wood lot shares the same profession and sorts earlier.
+Preserve 40 people per formal start, regional founder identity, and conservation;
+test both input orders and invalid allocations with `bootstrap_owner_allocation_test.gd`.
+
+## Economy boundary and regression follow-up (2026-11-03)
+
+Use `EconomyAuthorityTransfer` for executor/save identity handoff and prepared
+Country asset servicing. Do not restore Host friendship or persistent override
+switches. `EconomyInvariantProbe` owns isolated self-test worlds.
+`EconomyRecordSource` freezes committed rows; the CSV writer must not access the
+runtime or duplicate price formulas. Diagnostic opening uses copied inputs,
+explicit policy and separate pure planning/finance modules under `economy/bootstrap`.
+Investment review cursors finish the current frozen epoch; do not reintroduce a
+second cross-epoch pending list. Preserve first post-restore integer resources
+and precipitation history, collectible income, recruit savings on restart and
+cycle-flow expiry accounting. New tests must declare content-dependent premises
+and keep full ledger, worker/scalar and continuation checks. See the current
+architecture development guide and validation record.
+
+- Current ECP2 capture and restore require a committed boundary. Legacy resume
+  carries cursors without frozen inputs/partial results and is rejected before
+  installation; do not enable its old flag to claim mid-epoch support. Test
+  rejection without mutation, unchanged continuation, and committed roundtrip.
+- Compact/StageOps epoch preparation must observe the same current day before
+  spread/cache selection; retain the optimization when checking daily parity.
+
+## Military procurement demand (2026-11-08)
+
+Economy opcode 36 retains a complete Military shortage-demand snapshot in the existing persisted pending-command queue. Reset is cell=-1/country=0/qty=0; rows name real SKU, owned market cell, quantity and normalization days. At epoch freeze recheck current treasury and other public procurement commitments; add the derived daily amounts through the generic procurement demand helpers. Do not count forecasts as sales, withdrawals, cash transfers or new stock. Derived demand vectors are rebuilt, not serialized.
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。

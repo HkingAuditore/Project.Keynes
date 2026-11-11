@@ -240,7 +240,7 @@ silently erase the whole dossier.
 
 - Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`
 - Environment capture/API forwarding: `gdext/src/world_ext_economy.cpp`
-- GDExtension binding: `world_ext.h`, `world_ext_bind_methods.cpp`
+- GDExtension binding: `world_ext.h`, `world_ext_bind_<模块>.cpp`
 - Catalog/facade: `scripts/economy/economy_catalog.gd`, `economy_facade.gd`
 - Profiles: `scripts/data/{economy,good,need,profession,ethnicity,consumption_plan,environment_demand_curve}_profile.gd`
 - Content: `data/economy/`, `data/goods/`
@@ -307,3 +307,5 @@ services are excluded so price signals alone cannot expand natural-resource extr
 
 删除理念旧 v1 平面时（plan 22 §15.7）唯一需要确认的就是这条并集仍然存在——它存在。
 
+
+脚本方法在所属模块的 `gdext/src/world_ext_bind_<模块>.cpp` 绑定；模块由定义文件决定，见 `tools/ci/world_ext_binding_modules.json`。
