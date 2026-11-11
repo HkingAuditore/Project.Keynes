@@ -1,0 +1,202 @@
+{
+  "Project/project-keynes/scripts/country/country_facade.gd": {
+    "core": 2,
+    "economy": 2,
+    "effect": 6
+  },
+  "Project/project-keynes/scripts/data_core/gameplay_event_bus.gd": {
+    "events": 20
+  },
+  "Project/project-keynes/scripts/economy/economy_facade.gd": {
+    "visual": 2
+  },
+  "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
+    "country": 11,
+    "economy": 2,
+    "effect": 7,
+    "ideology": 3
+  },
+  "Project/project-keynes/scripts/game/runtime_forensics.gd": {
+    "country": 3,
+    "economy": 3
+  },
+  "Project/project-keynes/scripts/game/save_modules/country_state.gd": {
+    "country": 2
+  },
+  "Project/project-keynes/scripts/game/save_modules/history_state.gd": {
+    "country": 4
+  },
+  "Project/project-keynes/scripts/game/save_modules/rules_state.gd": {
+    "effect": 6,
+    "ideology": 6,
+    "modifier": 6,
+    "trigger": 6
+  },
+  "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
+    "economy": 2
+  },
+  "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd": {
+    "effect": 20,
+    "ideology": 4,
+    "trigger": 11
+  },
+  "Project/project-keynes/scripts/game/world_runtime_generation_adapter.gd": {
+    "ideology": 2
+  },
+  "Project/project-keynes/scripts/game/world_runtime_presentation.gd": {
+    "country": 2,
+    "economy": 3
+  },
+  "Project/project-keynes/scripts/game/world_runtime_visual_adapter.gd": {
+    "country": 2,
+    "visual": 3
+  },
+  "Project/project-keynes/scripts/geography/hex_cell.gd": {
+    "core": 40
+  },
+  "Project/project-keynes/scripts/geography/map_generator.gd": {
+    "climate": 131,
+    "core": 109,
+    "country": 24,
+    "economy": 10,
+    "effect": 12,
+    "events": 10,
+    "ideology": 10,
+    "military": 1,
+    "modifier": 6,
+    "runtime": 87,
+    "trigger": 3
+  },
+  "Project/project-keynes/scripts/geography/native_loading_tasks.gd": {
+    "bake_encoders": 1,
+    "runtime": 10,
+    "visual": 2
+  },
+  "Project/project-keynes/scripts/main.gd": {
+    "core": 24
+  },
+  "Project/project-keynes/scripts/military/military_facade.gd": {
+    "country": 1
+  },
+  "Project/project-keynes/scripts/rendering/bakers/atlas_encoders.gd": {
+    "runtime": 2
+  },
+  "Project/project-keynes/scripts/rendering/bakers/climate_baker.gd": {
+    "generation": 2
+  },
+  "Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd": {
+    "generation": 4
+  },
+  "Project/project-keynes/scripts/rendering/bakers/terrain_index_baker.gd": {
+    "generation": 2
+  },
+  "Project/project-keynes/scripts/rendering/building_visual_intel_cache.gd": {
+    "economy": 2
+  },
+  "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
+    "bake_encoders": 2
+  },
+  "Project/project-keynes/scripts/rendering/map_baker.gd": {
+    "bake_encoders": 2,
+    "climate": 28,
+    "core": 20,
+    "generation": 2,
+    "runtime": 2
+  },
+  "Project/project-keynes/scripts/rendering/military_map_layers.gd": {
+    "military": 2
+  },
+  "Project/project-keynes/scripts/rendering/military_render_feed.gd": {
+    "military": 2
+  },
+  "Project/project-keynes/scripts/rendering/renderer_sea_ice_diagnostics.gd": {
+    "core": 4
+  },
+  "Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd": {
+    "visual": 2
+  },
+  "Project/project-keynes/scripts/simulation/systems/country_daily_system.gd": {
+    "country": 2,
+    "effect": 2
+  },
+  "Project/project-keynes/scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd": {
+    "visual": 8
+  },
+  "Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd": {
+    "economy": 7,
+    "effect": 4
+  },
+  "Project/project-keynes/scripts/simulation/systems/effect_runtime_system.gd": {
+    "effect": 22
+  },
+  "Project/project-keynes/scripts/simulation/systems/gameplay_effect_system.gd": {
+    "effect": 2,
+    "events": 3
+  },
+  "Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd": {
+    "ideology": 4
+  },
+  "Project/project-keynes/scripts/simulation/systems/modifier_daily_system.gd": {
+    "effect": 2,
+    "modifier": 2
+  },
+  "Project/project-keynes/scripts/simulation/systems/trigger_daily_system.gd": {
+    "trigger": 4
+  },
+  "Project/project-keynes/scripts/ui/economy_data_recorder.gd": {
+    "core": 2,
+    "economy": 7
+  },
+  "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
+    "country": 2,
+    "demo": 3
+  },
+  "Project/project-keynes/scripts/util/pk_log.gd": {
+    "core": 4
+  },
+  "Project/project-keynes/tmp/colonization_save_probe.gd": {
+    "economy": 6
+  },
+  "Project/project-keynes/tmp/effect_load_probe.gd": {
+    "effect": 5
+  },
+  "Project/project-keynes/tmp/family_baseline_test.gd": {
+    "core": 10,
+    "country": 1,
+    "economy": 61,
+    "events": 1,
+    "modifier": 1
+  },
+  "Project/project-keynes/tmp/manual2_research_audit.gd": {
+    "core": 1,
+    "country": 3,
+    "effect": 2,
+    "trigger": 6
+  },
+  "Project/project-keynes/tmp/manual2_research_replay.gd": {
+    "country": 3,
+    "economy": 2,
+    "effect": 2,
+    "runtime": 3,
+    "trigger": 2
+  },
+  "Project/project-keynes/tmp/modifier_catalog_probe.gd": {
+    "modifier": 1
+  },
+  "Project/project-keynes/tmp/preview_reference_both.gd": {
+    "economy": 7
+  },
+  "Project/project-keynes/tmp/technology_delivery_replay.gd": {
+    "country": 3,
+    "economy": 1,
+    "effect": 2,
+    "runtime": 1,
+    "trigger": 2
+  },
+  "Project/project-keynes/tmp/technology_save_audit.gd": {
+    "core": 1,
+    "country": 3,
+    "effect": 2,
+    "trigger": 7
+  }
+}

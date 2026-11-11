@@ -72,6 +72,23 @@
       "world_ext_demo.cpp"
     ]
   },
+  "script_dirs": {
+    "core": ["scripts/data_core", "scripts/ecs", "scripts/simulation", "scripts/game"],
+    "runtime": ["scripts/game", "scripts/simulation", "scripts/bootstrap"],
+    "climate": ["scripts/weather", "scripts/simulation"],
+    "economy": ["scripts/economy", "scripts/family"],
+    "country": ["scripts/country", "scripts/annual"],
+    "military": ["scripts/military"],
+    "effect": ["scripts/effect"],
+    "modifier": ["scripts/modifier"],
+    "ideology": ["scripts/ideology"],
+    "trigger": ["scripts/trigger"],
+    "events": ["scripts/narrative"],
+    "generation": ["scripts/geography"],
+    "bake_encoders": ["scripts/rendering/bakers"],
+    "visual": ["scripts/rendering"],
+    "demo": ["scripts/main.gd"]
+  },
   "test_only": [
     "abort_country_authority_handoff",
     "ack_country_economy_asset_peer_applied",
