@@ -310,7 +310,7 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	# 多一层 GDScript 转发只是白开销。
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("apply_runtime_climate_writeback"):
+	if ext == null:
 		return
 	var applied: Dictionary = ext.apply_runtime_climate_writeback(
 		host._runtime_climate_writeback_generation)
@@ -360,7 +360,7 @@ func wait_for_climate_consumed(host, after_environment_generation: int) -> Dicti
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator != null and host._generator.has_method("get_data_core_world_ext") \
 		else null
-	if ext == null or not ext.has_method("wait_climate_consumed"):
+	if ext == null:
 		# 旧 DLL / 未接线：不阻塞，也不假装等过。调用方（day 边界）继续走原路径。
 		return {"ok": false, "code": "climate_wait_api_missing", "waited_ms": 0.0}
 	if after_environment_generation == 0:

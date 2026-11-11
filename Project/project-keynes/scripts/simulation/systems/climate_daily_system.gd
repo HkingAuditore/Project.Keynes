@@ -421,8 +421,7 @@ func _execute_reset_boundary_intents(intents: Array, native_reset_report: Dictio
 func reset_progress() -> void:
 	super.reset_progress()
 	var native_reset_report: Dictionary = {}
-	if generator != null and generator.get("_data_core_world_ext") != null \
-			and generator._data_core_world_ext.has_method("reset_native_climate_round_state"):
+	if generator != null and generator.get("_data_core_world_ext") != null :
 		native_reset_report = generator._data_core_world_ext.reset_native_climate_round_state("ClimateDailySystem.reset_progress")
 	var reset_intents: Array = native_reset_report.get("reset_boundary_intents", [])
 	if reset_intents.is_empty():
@@ -1356,7 +1355,7 @@ func _debug_climate_integrity(stage_name: String, force: bool = false) -> void:
 # 跑完整 round）。breakdown 字段仍照 sync 路径填好以便 main.gd fast tick WARN
 # 解析无差异。
 func _native_climate_lifecycle_state(ext: Object) -> Dictionary:
-	if ext != null and ext.has_method("get_native_climate_round_state_report"):
+	if ext != null:
 		var state: Dictionary = ext.get_native_climate_round_state_report()
 		if str(state.get("lifecycle_owner", "")) == "native_probe_lifecycle":
 			return state
@@ -1617,8 +1616,7 @@ func _execute_finalize_tail_boundary_intents(
 				_round_active = false
 				_pass_cursor = 0
 			"flush_pending_mark_dirty_all":
-				if generator != null and generator._data_core_world_ext != null \
-						and generator._data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
+				if generator != null and generator._data_core_world_ext != null :
 					generator._data_core_world_ext.flush_pending_mark_dirty_all()
 				_last_finalize_diag["finalize_flush_dirty_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"mark_round_slots_stale":
@@ -1675,7 +1673,7 @@ func _execute_async_round_finish_boundary_intents(intents: Array, poll_result: D
 				_finalize_round(poll_result, native_poll_report.get("finalize_tail_boundary_intents", []))
 				diag["finalize_ms"] = float(Time.get_ticks_usec() - t_intent_us) / 1000.0
 			"finish_native_lifecycle":
-				if ext != null and ext.has_method("native_climate_round_finish_round"):
+				if ext != null:
 					var native_finish_report: Dictionary = ext.native_climate_round_finish_round({
 						"pass_cursor": _PASS_COUNT,
 						"stage": "round_done",
@@ -1701,11 +1699,7 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		_async_first_round_logged = true
 		# 静态 knobs 推一次（neighbor_indices + donor_table + foliage_table）
 		var static_knobs: Dictionary = _build_async_static_knobs()
-		if ext.has_method("native_climate_round_begin"):
-			ext.native_climate_round_begin(static_knobs)
-		else:
-			ext.async_climate_round_register()
-			ext.async_climate_round_set_static_knobs(static_knobs)
+		ext.native_climate_round_begin(static_knobs)
 		print("[climate/async] worker registered + static knobs set (n_cells=%d)" % map.cell_count())
 
 	var native_lifecycle_state: Dictionary = _native_climate_lifecycle_state(ext)
@@ -1739,26 +1733,18 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		_round_t_sea_ice_ms = 0.0
 		_round_t_transp_ms = 0.0
 		_round_t_round_start_ms = Time.get_ticks_msec()
-		if ext.has_method("native_climate_round_begin_round"):
-			var native_begin_round: Dictionary = ext.native_climate_round_begin_round({
-				"phase_locked": phase_candidate,
-				"tick_index": ctx.tick_index,
-				"pass_cursor": 0,
-				"mode": "async",
-			})
-			var native_begin_state: Dictionary = native_begin_round.get("state", {})
-			_sync_async_lifecycle_from_native(native_begin_state)
-			native_lifecycle_state = native_begin_state
-			_last_round_start_diag["native_lifecycle_begin"] = native_begin_round
-			_last_round_start_diag["round_start_state_source"] = "native_probe_lifecycle"
-			_last_round_start_diag["round_start_state_intents"] = native_begin_round.get("start_state_intents", [])
-		else:
-			_pass_cursor = 0
-			_phase_locked = phase_candidate
-			_round_active = true
-			_async_round_kicked = false
-			_async_round_poll_attempts = 0
-			_async_round_kick_tick = ctx.tick_index
+		var native_begin_round: Dictionary = ext.native_climate_round_begin_round({
+			"phase_locked": phase_candidate,
+			"tick_index": ctx.tick_index,
+			"pass_cursor": 0,
+			"mode": "async",
+		})
+		var native_begin_state: Dictionary = native_begin_round.get("state", {})
+		_sync_async_lifecycle_from_native(native_begin_state)
+		native_lifecycle_state = native_begin_state
+		_last_round_start_diag["native_lifecycle_begin"] = native_begin_round
+		_last_round_start_diag["round_start_state_source"] = "native_probe_lifecycle"
+		_last_round_start_diag["round_start_state_intents"] = native_begin_round.get("start_state_intents", [])
 		var boundary_intents: Array = []
 		if not native_lifecycle_state.is_empty():
 			boundary_intents = native_lifecycle_state.get("boundary_intents", [])
@@ -1778,14 +1764,9 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 		var input: Dictionary = _build_async_kick_input(_phase_locked)
 		var kicked: bool = false
 		var kick_report: Dictionary = {}
-		if ext.has_method("native_climate_round_kick"):
-			kick_report = ext.native_climate_round_kick(input)
-			kicked = bool(kick_report.get("kicked", false))
-			_sync_async_lifecycle_from_native(kick_report.get("state", {}))
-		else:
-			kicked = bool(ext.async_climate_round_kick(input))
-			if kicked:
-				_async_round_kicked = true
+		kick_report = ext.native_climate_round_kick(input)
+		kicked = bool(kick_report.get("kicked", false))
+		_sync_async_lifecycle_from_native(kick_report.get("state", {}))
 		var kick_ms: float = (Time.get_ticks_usec() - kick_t0) / 1000.0
 		if not kicked:
 			# Worker busy 处理上一 round → 本 tick 继续等。下个 tick 还可以 poll。
@@ -1811,14 +1792,10 @@ func _run_slice_async(ctx: SusTickContext) -> Dictionary:
 	var poll_t0: int = Time.get_ticks_usec()
 	var poll_result: Dictionary = {}
 	var native_poll_report: Dictionary = {}
-	if ext.has_method("native_climate_round_poll"):
-		native_poll_report = ext.native_climate_round_poll()
-		_sync_async_lifecycle_from_native(native_poll_report.get("state", {}))
-		if bool(native_poll_report.get("done", false)):
-			poll_result = native_poll_report.get("result", {})
-	else:
-		_async_round_poll_attempts += 1
-		poll_result = ext.async_climate_round_poll()
+	native_poll_report = ext.native_climate_round_poll()
+	_sync_async_lifecycle_from_native(native_poll_report.get("state", {}))
+	if bool(native_poll_report.get("done", false)):
+		poll_result = native_poll_report.get("result", {})
 	var poll_ms: float = (Time.get_ticks_usec() - poll_t0) / 1000.0
 	if poll_result.is_empty():
 		# Worker 还没完成 → 报 done=true 让出 budget。下一 tick 再 poll。
@@ -2900,10 +2877,9 @@ func climate_round_state_snapshot() -> Dictionary:
 			and bool(cp_owner.native_daily_compact_state_capsule_enabled)
 	var native_state: Dictionary = {}
 	var native_ext = generator._data_core_world_ext if generator != null else null
-	if native_ext != null and active_owner_requested and compact_capsule_enabled \
-			and native_ext.has_method("get_native_climate_round_hot_state"):
+	if native_ext != null and active_owner_requested and compact_capsule_enabled:
 		native_state = native_ext.get_native_climate_round_hot_state()
-	elif native_ext != null and native_ext.has_method("get_native_climate_round_state_report"):
+	elif native_ext != null:
 		native_state = native_ext.get_native_climate_round_state_report()
 	var compact_capsule: bool = bool(native_state.get("compact_state_capsule", false))
 	var native_state_for_snapshot: Dictionary = native_state.duplicate(

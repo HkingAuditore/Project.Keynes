@@ -72,8 +72,7 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 				"reason", "building_visual_catalog_not_ready"))}
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("get_building_visual_snapshot") \
-			or not ext.has_method("consume_building_visual_dirty_cells"):
+	if ext == null :
 		return {"ok": false, "reason": "building_visual_native_api_unavailable"}
 	var requested := PackedInt32Array(
 		vision_report.get("newly_visible_cells", PackedInt32Array()))
@@ -87,20 +86,19 @@ func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
 	var building_dirty: Dictionary = ext.consume_building_visual_dirty_cells()
 	requested.append_array(PackedInt32Array(
 		building_dirty.get("dirty_cells", PackedInt32Array())))
-	if ext.has_method("consume_country_visual_era_dirty_slots"):
-		var era_dirty: Dictionary = ext.consume_country_visual_era_dirty_slots()
-		var dirty_slots := {}
-		for slot in PackedInt32Array(era_dirty.get("country_slots", PackedInt32Array())):
-			dirty_slots[int(slot)] = true
-		if not dirty_slots.is_empty():
-			for cell in _building_visual_intel.known_cells():
-				var cell_visible := not _fog_of_war_enabled or (
-					cell < _current_map.visible_arr.size()
-					and _current_map.visible_arr[cell] != 0)
-				if cell_visible \
-						and cell < _current_map.country_slot_arr.size() \
-						and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
-					requested.append(cell)
+	var era_dirty: Dictionary = ext.consume_country_visual_era_dirty_slots()
+	var dirty_slots := {}
+	for slot in PackedInt32Array(era_dirty.get("country_slots", PackedInt32Array())):
+		dirty_slots[int(slot)] = true
+	if not dirty_slots.is_empty():
+		for cell in _building_visual_intel.known_cells():
+			var cell_visible := not _fog_of_war_enabled or (
+				cell < _current_map.visible_arr.size()
+				and _current_map.visible_arr[cell] != 0)
+			if cell_visible \
+					and cell < _current_map.country_slot_arr.size() \
+					and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
+				requested.append(cell)
 	if _building_visual_force_full_refresh:
 		for cell in _current_map.cell_count():
 			requested.append(cell)

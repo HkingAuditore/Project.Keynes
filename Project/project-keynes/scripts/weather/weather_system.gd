@@ -1036,8 +1036,6 @@ func _try_run_weather_field_solve_gdext(map: MapData, world: WorldData, n_cells:
 func run_synoptic_advance_pass(map: MapData, world: WorldData) -> float:
 	if _data_core_world_ext == null or not _use_gdext_weather_field:
 		return -1.0
-	if not _data_core_world_ext.has_method("run_synoptic_advance_pass"):
-		return -1.0
 	var knobs: Dictionary = _field_solver._field_slice_native_knobs
 	if knobs.is_empty():
 		# native_knobs 未就绪 → 自建一份(合并/切片路径 begin 已设 _field_slice_* 状态)。
@@ -1052,7 +1050,7 @@ func run_synoptic_advance_pass(map: MapData, world: WorldData) -> float:
 
 
 func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_weather_field_commit_pass"):
+	if _data_core_world_ext == null:
 		return { "elapsed_ms": -1.0, "reason": "native_unavailable" }
 	var knobs: Dictionary = _field_solver._field_slice_native_knobs
 	if knobs.is_empty():
@@ -1093,8 +1091,6 @@ func _try_run_weather_field_commit_gdext(map: MapData, n_cells: int) -> Dictiona
 func _validate_weather_distribute_signature(ext: RefCounted) -> bool:
 	if ext == null:
 		return false
-	if not ext.has_method("run_weather_distribute_pass"):
-		return false
 	var ml: Array = ext.get_method_list()
 	for m: Dictionary in ml:
 		if String(m.get("name", "")) == "run_weather_distribute_pass":
@@ -1107,8 +1103,6 @@ func _validate_weather_distribute_signature(ext: RefCounted) -> bool:
 
 func _validate_weather_summary_signature(ext: RefCounted) -> bool:
 	if ext == null:
-		return false
-	if not ext.has_method("run_weather_summary_fronts_pass"):
 		return false
 	var ml: Array = ext.get_method_list()
 	for m: Dictionary in ml:
@@ -1884,8 +1878,6 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 	}
 	if _data_core_world_ext == null:
 		return ret
-	if not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
-		return ret
 	if map == null or world == null:
 		return ret
 	var n_cells: int = map.cell_count()
@@ -1960,10 +1952,9 @@ func try_run_refresh_daily_combined_gdext(map: MapData, world: WorldData,
 
 	# Step 6：cyclone_wake 镜像（cpp 端维护 _cyclone_perturbations 内部
 	# vector，GDScript 端 ocean_current_perturbation 用于航运 AI 直读）。
-	if _data_core_world_ext.has_method("get_cyclone_perturbations_dict"):
-		var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
-		# 替换式同步而非 merge：cpp 是 source of truth（已经做了衰减 + 注入）。
-		ocean_current_perturbation = cyclone_mirror
+	var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
+	# 替换式同步而非 merge：cpp 是 source of truth（已经做了衰减 + 注入）。
+	ocean_current_perturbation = cyclone_mirror
 
 	# Step 7：清理 slice state（cpp 已直写 SoA，_field_slice_* buffer 不再需要）。
 	_clear_weather_field_slice_state()
@@ -2037,8 +2028,6 @@ func build_unified_fast_tick_weather_knobs(map: MapData, world: WorldData,
 		stage_b_knobs: Dictionary) -> Dictionary:
 	if _data_core_world_ext == null:
 		return {}
-	if not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
-		return {}
 	if map == null or world == null:
 		return {}
 	var n_cells: int = map.cell_count()
@@ -2103,9 +2092,8 @@ func apply_unified_fast_tick_result(weather_rc: Dictionary) -> Array[WeatherFron
 	_cover_dirty = bool(weather_rc.get("cover_dirty", false)) or _cover_dirty
 
 	# Step 6：cyclone_wake 镜像。
-	if _data_core_world_ext.has_method("get_cyclone_perturbations_dict"):
-		var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
-		ocean_current_perturbation = cyclone_mirror
+	var cyclone_mirror: Dictionary = _data_core_world_ext.get_cyclone_perturbations_dict()
+	ocean_current_perturbation = cyclone_mirror
 
 	# Step 7：清理 slice state。
 	_clear_weather_field_slice_state()
@@ -3518,7 +3506,7 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 	_gdext_dist_warned_fallback = false
 	_gdext_summary_warned_fallback = false
 	# Flag 切换时清空 C++ 端持久化 summary 状态，避免新旧实现互相污染。
-	if ext != null and ext.has_method("reset_weather_summary_state"):
+	if ext != null:
 		ext.reset_weather_summary_state()
 
 	if _use_gdext_weather_distribute:
@@ -3567,8 +3555,6 @@ func configure_gdext_acceleration(ext: RefCounted, enabled: bool, cp: Resource =
 func _validate_weather_field_signature(ext: RefCounted) -> bool:
 	if ext == null:
 		return false
-	if not ext.has_method("run_weather_field_solve_pass"):
-		return false
 	var ml: Array = ext.get_method_list()
 	for m: Dictionary in ml:
 		if String(m.get("name", "")) == "run_weather_field_solve_pass":
@@ -3582,8 +3568,6 @@ func _validate_weather_field_signature(ext: RefCounted) -> bool:
 
 func _validate_weather_field_commit_signature(ext: RefCounted) -> bool:
 	if ext == null:
-		return false
-	if not ext.has_method("run_weather_field_commit_pass"):
 		return false
 	var ml: Array = ext.get_method_list()
 	for m: Dictionary in ml:
@@ -3632,7 +3616,7 @@ func set_summary_verify_mode(enabled: bool,
 	_summary_verify_first_divergence_logged = false
 	# 切换 verify 时清空 C++ 端持久化 summary 状态，避免新旧实现相互污染（与
 	# flag 切换走同一通路）。
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("reset_weather_summary_state"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.reset_weather_summary_state()
 	if enabled:
 		print("[weather] summary A/B verify ON (pos=%.2f intensity=%.1e velocity=%.2f)" % [
@@ -3761,8 +3745,7 @@ func _verify_gdext_summary_against_gdscript(map: MapData, world: WorldData,
 		return
 	# Step 1：C++ 端把 prev_seeds/membership restore 到本 tick 入口状态。
 	# 调用方应已在 fast-path 调度入口调用 snapshot_weather_summary_state()。
-	if _data_core_world_ext.has_method("restore_weather_summary_state"):
-		_data_core_world_ext.restore_weather_summary_state()
+	_data_core_world_ext.restore_weather_summary_state()
 	# Step 2：GDScript 复跑（注意 GDScript prev_seeds/membership 也会被改，
 	# 见函数说明）。
 	var fronts_gd: Array[WeatherFront] = _build_field_summary_fronts(map, world)

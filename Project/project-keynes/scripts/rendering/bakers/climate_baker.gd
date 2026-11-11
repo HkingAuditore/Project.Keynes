@@ -33,7 +33,7 @@ static func bake_latitude_buffer(_bounds: Rect2, size: Vector2i, world_ext: Obje
 	empty.resize(maxi(W * H, 0))
 	if W <= 0 or H <= 0:
 		return empty
-	if world_ext == null or not world_ext.has_method("run_bake_latitude_field_pass"):
+	if world_ext == null:
 		push_error("[bake_latitude_buffer] native latitude pass unavailable")
 		return empty
 	var rep: Dictionary = world_ext.run_bake_latitude_field_pass({"width": W, "height": H})

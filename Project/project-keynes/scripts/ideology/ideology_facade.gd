@@ -27,7 +27,7 @@ func configure(world_ext: DCWorldExt, country_catalog: Dictionary,
 	_country_catalog = country_catalog.duplicate(false)
 	_economy_catalog = economy_catalog.duplicate(false)
 	_catalog = catalog if catalog != null else IdeologyCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_ideologies"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt ideology API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "IdeologyCatalog unavailable"}
@@ -71,7 +71,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 	return _world_ext.submit_ideology_commands(batch)
 
 func drain_receipts(limit: int = 256) -> Dictionary:
-	if not _configured or not _world_ext.has_method("poll_ideology_receipts"):
+	if not _configured:
 		return {"ok": false, "reason": "ideology_receipts_unavailable"}
 	var result: Dictionary = _world_ext.poll_ideology_receipts(_receipt_cursor, limit)
 	if not bool(result.get("ok", false)):
@@ -116,7 +116,7 @@ func reroll_offer(handle: int, offer_generation: int, effective_day: int, sequen
 ## Read-only draw gate: can_draw/can_reroll, cost_q16, reroll_cost_q16,
 ## pool_size, points_q16 and a stable reason key. Never mutates state.
 func preview_offer_eligibility(handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("preview_ideology_offer_eligibility"):
+	if not _configured:
 		return {"ok": false, "can_draw": false, "can_reroll": false,
 			"reason": "ideology_runtime_unconfigured"}
 	return _world_ext.preview_ideology_offer_eligibility(handle)
@@ -141,7 +141,7 @@ func snapshot(handle: int) -> Dictionary: return _world_ext.get_ideology_snapsho
 func explain_ideology(handle: int, ideology_id) -> Dictionary: return _world_ext.explain_ideology(handle, _idea_id(ideology_id)) if _configured else {"ok": false, "reason": "ideology_runtime_unconfigured"}
 func explain_ideologies(handle: int, ideology_ids: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	return _world_ext.explain_ideologies(handle, ideology_ids) \
-		if _configured and _world_ext.has_method("explain_ideologies") \
+		if _configured \
 		else {"ok": false, "reason": "ideology_batch_explain_unavailable"}
 func report() -> Dictionary: return _world_ext.get_ideology_report() if _configured else {"configured": false}
 ## Raw per-instance rows of this country's reconciled effect instances.
@@ -152,7 +152,7 @@ func report() -> Dictionary: return _world_ext.get_ideology_report() if _configu
 ## columns into per-card totals; nothing else should read the raw shape.
 func effect_instances(handle: int) -> Dictionary:
 	return _world_ext.get_ideology_effect_instance_report(handle) \
-		if _configured and _world_ext.has_method("get_ideology_effect_instance_report") \
+		if _configured \
 		else {"ok": false, "reason": "ideology_effect_instance_report_unavailable"}
 func catalog_view() -> Dictionary: return _catalog.catalog_view(_country_catalog, _economy_catalog) if _catalog != null else {"ok": false}
 func native_catalog() -> Dictionary: return _native_catalog.duplicate(false)

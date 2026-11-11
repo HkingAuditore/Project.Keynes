@@ -485,7 +485,7 @@ func _resolve_player_start_cell(host) -> int:
 func _sync_country_territory_to_map(host) -> Dictionary:
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null \
 		and host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("sync_country_territory_to_map"):
+	if ext == null:
 		return {"ok": false, "reason": "sync_country_territory_unavailable"}
 	return ext.sync_country_territory_to_map()
 

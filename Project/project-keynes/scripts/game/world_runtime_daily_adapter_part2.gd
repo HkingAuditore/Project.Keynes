@@ -187,7 +187,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 		return
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("poll_effect_worker_intent"):
+	if ext == null:
 		return
 	# Bounded pump: never block the sim on an unbounded intent backlog.
 	for _i in range(64):
@@ -211,8 +211,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 			"producer_id": int(intent.get("producer_id", 0)),
 			"sequence": int(intent.get("sequence", 0)),
 		}
-		if ext.has_method("submit_effect_worker_ack"):
-			ext.submit_effect_worker_ack(ack)
+		ext.submit_effect_worker_ack(ack)
 	# Economy-owned family expeditions enqueue their CLAIM/SETTLE transaction
 	# onto the legacy EffectRuntime while the Effect domain itself is worker
 	# authoritative. The worker intent queue above does not contain these
@@ -220,22 +219,16 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 	# thread. Keep the order explicit: Country CLAIM -> Country ACK -> Economy
 	# SETTLE -> Economy ACK. The native adapters are idempotent and retain
 	# incomplete bindings until the worker publishes their terminal receipts.
-	if ext.has_method("get_effect_native_adapter_report"):
-		var adapter_report: Dictionary = ext.get_effect_native_adapter_report()
-		if bool(adapter_report.get("idle", true)):
-			return
-	if ext.has_method("dispatch_effect_native_country"):
-		ext.dispatch_effect_native_country()
-	if ext.has_method("ack_effect_native_country"):
-		ext.ack_effect_native_country()
+	var adapter_report: Dictionary = ext.get_effect_native_adapter_report()
+	if bool(adapter_report.get("idle", true)):
+		return
+	ext.dispatch_effect_native_country()
+	ext.ack_effect_native_country()
 	# Drain only non-mixed orphaned Country bindings. The native helper keeps
 	# CLAIM+SETTLE transactions pending until the claim is truly acknowledged.
-	if ext.has_method("settle_orphaned_effect_native_country_acks"):
-		ext.settle_orphaned_effect_native_country_acks()
-	if ext.has_method("dispatch_effect_native_economy"):
-		ext.dispatch_effect_native_economy()
-	if ext.has_method("ack_effect_native_economy"):
-		ext.ack_effect_native_economy()
+	ext.settle_orphaned_effect_native_country_acks()
+	ext.dispatch_effect_native_economy()
+	ext.ack_effect_native_economy()
 
 
 ## P1-A: under IDEOLOGY worker authority the main-thread daily job is
@@ -363,9 +356,7 @@ func _service_ideology_worker_intents_if_authoritative(host) -> void:
 		return
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("poll_ideology_worker_intent"):
-		return
-	if not ext.has_method("submit_ideology_worker_ack"):
+	if ext == null:
 		return
 	# Bounded pump: never block the sim on an unbounded intent backlog.
 	for _i in range(64):
@@ -439,11 +430,9 @@ func _service_trigger_worker_intents_if_authoritative(host) -> void:
 		return
 	var ext = host._generator.get_data_core_world_ext() \
 		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("poll_trigger_worker_intent"):
+	if ext == null:
 		return
 	host._service_trigger_country_delivery(ext, report)
-	if not ext.has_method("submit_trigger_worker_ack"):
-		return
 	# Bounded pump: never block the sim on an unbounded intent backlog.
 	for _i in range(64):
 		var intent: Dictionary = ext.poll_trigger_worker_intent()
@@ -477,8 +466,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 		return
 	if not host._trigger_country_delivery_waiting and host._world_clock != null and host._world_clock.paused:
 		return
-	if not host._completed_research_signals_reconciled \
-			and ext.has_method("reconcile_completed_research_signals"):
+	if not host._completed_research_signals_reconciled :
 		var recovery: Dictionary = ext.reconcile_completed_research_signals(64)
 		host._completed_research_signals_reconciled = bool(recovery.get("ok", false)) \
 			and bool(recovery.get("complete", false))
@@ -524,8 +512,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 
 
 func _ack_trigger_delivery_ids(host, ext: Object) -> Dictionary:
-	if not host._trigger_country_delivery_ids.is_empty() \
-			and ext.has_method("ack_trigger_effect_ids"):
+	if not host._trigger_country_delivery_ids.is_empty() :
 		return ext.ack_trigger_effect_ids(host._trigger_country_delivery_ids)
 	return ext.ack_trigger_effects(host._trigger_country_delivery_id)
 

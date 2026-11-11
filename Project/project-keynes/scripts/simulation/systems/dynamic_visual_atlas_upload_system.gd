@@ -196,7 +196,7 @@ var _dvas_diag_phase_ms_accum: Dictionary = {
 # `_pending_burnin = true` 时触发）。
 var _eco_burnin_done: bool = false
 var _pending_burnin: bool = false
-var _cpp_pipeline_warned_missing_method: bool = false  # 一次性 push_warning
+var _cpp_pipeline_warned_no_world: bool = false  # 一次性 push_warning
 # plan/atlas-phase-slicing 诊断（2026-05-21）：cpp_pipeline 返回 fallback=true 时
 # 暂存 reason，在 _tick_oneshot 写进 report，让 perf CSV 直接看出原因。
 var _pending_fallback_reason: String = ""
@@ -394,24 +394,23 @@ func _native_visual_commit_pending() -> bool:
 	var ext = _get_world_ext()
 	if ext == null:
 		return false
-	if ext.has_method(&"is_native_daily_visual_commit_pending") \
+	if true \
 			and bool(ext.call(&"is_native_daily_visual_commit_pending")):
 		return true
 	# ACTIVE climate worker 仍在提交日事务时，SoA slot 可能处于写入中。
 	# LUT 编码读取的是 slot 的裸数组；50x 下这个窗口更容易与渲染帧重叠，
 	# 造成 dyn_lut 的整批内容在新旧快照之间跳变。等本日事务完全提交后，
 	# 下一 tick 的 catch-up 会用同一份稳定 slot 编码。
-	if ext.has_method(&"get_runtime_thread_report"):
-		var tr: Dictionary = ext.call(&"get_runtime_thread_report")
-		if bool(tr.get("climate_worker_authoritative", false)) \
-				and int(tr.get("worker_day_inflight", 0)) != 0:
-			return true
+	var tr: Dictionary = ext.call(&"get_runtime_thread_report")
+	if bool(tr.get("climate_worker_authoritative", false)) \
+			and int(tr.get("worker_day_inflight", 0)) != 0:
+		return true
 	return false
 
 
 func _runtime_environment_generation() -> int:
 	var ext = _get_world_ext()
-	if ext == null or not ext.has_method(&"get_runtime_thread_report"):
+	if ext == null:
 		return -1
 	var tr: Dictionary = ext.call(&"get_runtime_thread_report")
 	return int(tr.get("simulation_environment_generation",
@@ -602,16 +601,16 @@ func tick(ctx) -> Dictionary:
 		return _tick_oneshot(t_start_us)
 
 	# ── plan/atlas-pipeline-cpp：薄壳路径分流 ────────────────────────────
-	# flag=true 且 ext 实现了 run_atlas_pipeline_step → 走全量 DOTS C++ 路径，
+	# 原生世界可用时走全量 DOTS C++ 路径，
 	# 一次性完成 4 atlas 计算并返回 atlas_buffers，GD 端只做 ImageTexture.update。
-	# 任一前置条件不满足则自动 fallback 到旧 4-phase 状态机。
+	# 未绑定原生世界时沿用 4-phase 状态机。
 	if _is_cpp_atlas_pipeline_enabled():
 		var ext = _get_world_ext()
-		if ext != null and ext.has_method(&"run_atlas_pipeline_step"):
+		if ext != null:
 			return _tick_cpp_pipeline(t_start_us, ext)
-		elif not _cpp_pipeline_warned_missing_method:
-			_cpp_pipeline_warned_missing_method = true
-			push_warning("[atlas-pipeline-cpp] flag=on 但 ext 缺少 run_atlas_pipeline_step；fallback 到旧 4-phase 路径")
+		elif not _cpp_pipeline_warned_no_world:
+			_cpp_pipeline_warned_no_world = true
+			push_warning("[atlas-pipeline-cpp] 未绑定原生世界；fallback 到旧 4-phase 路径")
 
 	# Soft budget：单 tick 不应超过这个数值；用作 phase 推进的让出阈值。
 	var soft_budget_us: int = maxi(50, int(slice_budget_ms * SOFT_BUDGET_MULTIPLIER * 1000.0))
@@ -1315,11 +1314,8 @@ func _clear_cpp_commit_queue() -> void:
 
 # ─── plan/atlas-pipeline-cpp 薄壳路径 ─────────────────────────────────────
 
-# 是否启用 cpp_atlas_pipeline 全量 DOTS 路径。要求：
-#   1. climate_profile 不为空（默认 ResourceLoader 注入）
-# dots-flag-prune-pr1 round 2: cpp_atlas_pipeline_enabled flag 已删除——恒走 ext +
-# has_method(run_atlas_pipeline_step) 探测分支（ext 缺失时透明 fallback 到旧 4-phase 状态机）。
-# 本 helper 作为后兼容保留，恒返 true。
+# cpp_atlas_pipeline_enabled 已移除；原生管线在 world_ext 非空时使用。
+# 此查询入口保留给既有调用者。
 func _is_cpp_atlas_pipeline_enabled() -> bool:
 	return true
 
@@ -1387,8 +1383,7 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 		dirty_reason = "flag_disabled"
 
 	# ── Step 2：burn-in ecology 持久状态（首次 / 地图重生时；mid-stride 不做）──
-	if not is_mid_stride and (not _eco_burnin_done or _pending_burnin) \
-			and ext.has_method(&"migrate_eco_persistent_from_gd"):
+	if not is_mid_stride and (not _eco_burnin_done or _pending_burnin) :
 		_burn_in_eco_state(ext)
 		_eco_burnin_done = true
 		_pending_burnin = false
@@ -1442,8 +1437,8 @@ func _tick_cpp_pipeline(t_start_us: int, ext: Object) -> Dictionary:
 
 	if bool(res.get("fallback", true)):
 		# C++ 端在前置校验失败时会返回 fallback=true。退化为旧路径以保安全。
-		if not _cpp_pipeline_warned_missing_method:
-			_cpp_pipeline_warned_missing_method = true
+		if not _cpp_pipeline_warned_no_world:
+			_cpp_pipeline_warned_no_world = true
 			push_warning("[atlas-pipeline-cpp] run_atlas_pipeline_step fallback=true reason=",
 					String(res.get("reason", "")), "; 本 stride fallback 到旧 4-phase 路径")
 		# 软回退：重置 mid-stride 状态，让下一 tick 重启。

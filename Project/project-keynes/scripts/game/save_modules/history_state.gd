@@ -22,7 +22,7 @@ func _restore_journal_provider(sections: Dictionary, context: Dictionary) -> Dic
 
 func _can_annual_provider(context: Dictionary) -> Dictionary:
 	var ext = context.get("annual")
-	return _result(ext != null and ext.has_method("capture_annual_report_state"),
+	return _result(ext != null,
 		"ok" if ext != null else "annual_provider_missing", "")
 
 func _write_annual_provider(context: Dictionary) -> Dictionary:

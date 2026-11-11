@@ -696,7 +696,7 @@ func _service_runtime_liveness(host, frame_usec: int, _capacity_pending: bool) -
 	var segment_usec = frame_usec
 	if host._runtime_ready_for_ticks and host._generator != null:
 		var ext = host._generator.get_data_core_world_ext()
-		if ext != null and ext.has_method("capture_economy_day_inputs"):
+		if ext != null:
 			# -1 只服务 worker 请求的同日输入，不推进经济公式。
 			ext.capture_economy_day_inputs(-1)
 		# 营造回执不能只等经济 pulse：worker PAUSED / 日历冻结时 pulse 不来，

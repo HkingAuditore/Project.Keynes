@@ -305,14 +305,10 @@ func reset_progress() -> void:
 	_daily_wind_due_seq = 0
 	_worker_physics_active = false
 	_sync_legacy_round_state()
-	if _native_ocean_facade_available("reset_native_ocean_physical_state"):
+	if data_core_world_ext != null:
 		_native_ocean_state = data_core_world_ext.reset_native_ocean_physical_state("ocean_job_reset")
 	if baker != null and baker.has_method("discard_ocean_buffers"):
 		baker.discard_ocean_buffers()
-
-
-func _native_ocean_facade_available(method_name: String) -> bool:
-	return data_core_world_ext != null and data_core_world_ext.has_method(method_name)
 
 
 func _native_ocean_base_ctx(ctx: SusTickContext) -> Dictionary:
@@ -334,7 +330,7 @@ func _native_ocean_base_ctx(ctx: SusTickContext) -> Dictionary:
 
 
 func _native_ocean_physical_begin(ctx: SusTickContext) -> void:
-	if not _native_ocean_facade_available("native_ocean_physical_begin"):
+	if data_core_world_ext == null:
 		return
 	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
 	native_ctx["stage"] = _baker_phys_stage_id()
@@ -343,7 +339,7 @@ func _native_ocean_physical_begin(ctx: SusTickContext) -> void:
 
 
 func _native_ocean_physical_step(ctx: SusTickContext, report: Dictionary) -> void:
-	if not _native_ocean_facade_available("native_ocean_physical_step"):
+	if data_core_world_ext == null:
 		return
 	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
 	for key in report.keys():
@@ -352,7 +348,7 @@ func _native_ocean_physical_step(ctx: SusTickContext, report: Dictionary) -> voi
 
 
 func _native_ocean_physical_finish(ctx: SusTickContext, report: Dictionary) -> void:
-	if not _native_ocean_facade_available("native_ocean_physical_finish"):
+	if data_core_world_ext == null:
 		return
 	var native_ctx: Dictionary = _native_ocean_base_ctx(ctx)
 	for key in report.keys():
@@ -426,9 +422,9 @@ func ocean_physical_state_snapshot() -> Dictionary:
 			and cp.get("native_daily_compact_state_capsule_enabled") != null \
 			and bool(cp.native_daily_compact_state_capsule_enabled)
 	if active_owner_requested and compact_capsule_enabled \
-			and _native_ocean_facade_available("get_native_ocean_physical_hot_state"):
+			and data_core_world_ext != null:
 		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_hot_state()
-	elif _native_ocean_facade_available("get_native_ocean_physical_state_report"):
+	elif data_core_world_ext != null:
 		_native_ocean_state = data_core_world_ext.get_native_ocean_physical_state_report()
 	var compact_capsule: bool = bool(_native_ocean_state.get(
 			"compact_state_capsule", false))
@@ -1142,10 +1138,8 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 			"path": "missing_refs",
 		}, true)
 
-	# 物理 grant 必须来自已提交且已写回的快照；旧 DLL／缺配置照常走下面的输入源。
+	# 物理 grant 必须来自已提交且已写回的快照；未授权时使用下面的输入源。
 	var physics_granted: bool = data_core_world_ext != null \
-			and data_core_world_ext.has_method("climate_physics_authoritative") \
-			and data_core_world_ext.has_method("get_climate_physics_read_view") \
 			and bool(data_core_world_ext.climate_physics_authoritative())
 	if physics_granted:
 		var view: Dictionary = data_core_world_ext.get_climate_physics_read_view()

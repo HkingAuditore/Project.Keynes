@@ -63,10 +63,7 @@ func configure(world_ext: Object, facade: Object) -> void:
 
 
 func is_available() -> bool:
-	return _world_ext != null \
-		and _world_ext.has_method("set_military_cell_tags") \
-		and _world_ext.has_method("set_military_country_metrics") \
-		and _facade != null
+	return _world_ext != null and _facade != null
 
 
 func last_report() -> Dictionary:
@@ -77,7 +74,7 @@ func last_report() -> Dictionary:
 ## rebuilt: a tag on a rebuilt grid names different cells.
 func clear() -> void:
 	_last_report = {}
-	if _world_ext != null and _world_ext.has_method("clear_military_cell_stats"):
+	if _world_ext != null:
 		_world_ext.clear_military_cell_stats()
 
 

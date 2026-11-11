@@ -2157,8 +2157,6 @@ func rebake_vegetation_tex_only(map: MapData, world: WorldData, hex_size: float)
 func _enum_atlas_cpp_pack_disabled_reason() -> String:
 	if _world_ext == null:
 		return "cpp_gate_no_world_ext"
-	if not _world_ext.has_method("patch_enum_atlas_axes"):
-		return "cpp_gate_method_missing"
 	return ""
 
 
@@ -4231,10 +4229,9 @@ func rebake_upwelling_tex_for_debug(world: WorldData) -> bool:
 	var n: int = W * H
 	if n <= 0:
 		return false
-	if _world_ext != null and _world_ext.has_method("encode_bake_upwelling_tex_data") and _last_bake_map != null:
+	if _world_ext != null and _last_bake_map != null:
 		_ensure_ocean_pixel_to_cell_index(_last_bake_map, world)
-		if _world_ext.has_method("refresh_slots_from_map"):
-			_world_ext.refresh_slots_from_map()
+		_world_ext.refresh_slots_from_map()
 		var ret: Dictionary = _world_ext.encode_bake_upwelling_tex_data({
 			"n_cells": _last_bake_map.cell_count(),
 			"width": W,
@@ -4732,7 +4729,7 @@ func _init_noise(seed_val: int) -> void:
 func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldData, seed_val: int) -> bool:
 	if map == null or world == null:
 		return false
-	if _world_ext == null or not _world_ext.has_method("run_bake_geometry_fields_pass"):
+	if _world_ext == null:
 		return false
 	if not TerrainIndexBakerScript.native_active(_world_ext):
 		return false
@@ -5405,7 +5402,7 @@ func bake_cell_luts(map: MapData, world: WorldData, cache_valid: bool = false,
 		else PackedByteArray()
 	report["lut_fog_source"] = "map_fog_k_arr" if not fog_k_override.is_empty() else "none"
 	# C++ 优先路径：scalar tight loop（即便 n_cells≈2400 也在 CPP 做，含 transition tracking）。
-	if _world_ext != null and _world_ext.has_method("encode_cell_luts"):
+	if _world_ext != null:
 		# Do not call refresh_slots_from_map() here: several native climate fields can be
 		# newer in C++ slots than in MapData. Snow is different because weather/climate
 		# already flush it for gameplay and diagnostics, so pass that one field explicitly.
@@ -8376,7 +8373,7 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 	if world == null or map == null:
 		out["reason"] = "missing world/map"
 		return out
-	if _world_ext == null or not _world_ext.has_method("run_ocean_field_rasterize"):
+	if _world_ext == null:
 		out["reason"] = "ext/method missing"
 		return out
 	# 必须先把 hex 求解推到 DONE — caller 已通过 _physical_solve_step_one 完成。
@@ -8402,7 +8399,7 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 
 	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
 	# 仅首片做：sub-slice 中途 SoA 不应再变（_phase_locked 已固定，hex 求解已 DONE）
-	if is_first_subslice and _world_ext.has_method("refresh_slots_from_map"):
+	if is_first_subslice:
 		_world_ext.refresh_slots_from_map()
 
 	# atlas_data fast path：若 _vector_atlas_data 已就位，让 C++ 同步写入
@@ -8453,7 +8450,7 @@ func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConf
 	if world == null or map == null:
 		out["reason"] = "missing world/map"
 		return out
-	if _world_ext == null or not _world_ext.has_method("run_wind_field_rasterize"):
+	if _world_ext == null:
 		out["reason"] = "ext/method missing"
 		return out
 	# pending_wind 缓冲就绪
@@ -8462,8 +8459,7 @@ func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConf
 	_ensure_ocean_pixel_to_cell_index(map, world)
 
 	# 同步 DataCoreWorld slots（HexCell facade 已直写 SoA，但保险起见 refresh）
-	if _world_ext.has_method("refresh_slots_from_map"):
-		_world_ext.refresh_slots_from_map()
+	_world_ext.refresh_slots_from_map()
 
 	var W := int(world.derived_size.x)
 	var H := int(world.derived_size.y)
@@ -8500,5 +8496,5 @@ func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConf
 
 func cancel_loading_work() -> void:
 	_visual_tile_generation_id += 1
-	if _world_ext != null and _world_ext.has_method("cancel_all_loading_tasks"):
+	if _world_ext != null:
 		_world_ext.cancel_all_loading_tasks()
