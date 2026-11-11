@@ -41,7 +41,7 @@ const SPEC_COMMON := {
 const PEACE_TERM_KINDS := [
 	"white", "cede", "annex", "lump_sum", "installments", "goods", "return"]
 
-var _world_ext: Object = null
+var _world_ext: DCWorldExt = null
 var _configured := false
 var _catalog: Dictionary = {}
 var _catalog_hash := 0
@@ -67,7 +67,7 @@ var _restored_event_progress := PackedInt64Array()
 ## is `TechnologyCatalog.compile_native_catalog()`. Both are required because
 ## dense good / profession / technology ids come from those authorities.
 ## `military_catalog_data` overrides the JSON path (tests, authored overrides).
-func configure(world_ext: Object, economy_catalog: Dictionary,
+func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 		technology_catalog: Dictionary, world_seed: int,
 		military_catalog_data: Dictionary = {}) -> Dictionary:
 	_world_ext = world_ext

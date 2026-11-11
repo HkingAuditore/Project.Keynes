@@ -5,6 +5,7 @@ signal request_changed(kind: String)
 const MAIN_MENU_SCENE := "res://scenes/main_menu.tscn"
 const PLAYER_GAME_SCENE := "res://scenes/player_game.tscn"
 const TransitionFrames = preload("res://scripts/geography/loading_frame_gate.gd")
+const NativeWorld = preload("res://scripts/data_core/native_world.gd")
 
 var _pending_request: Dictionary = {}
 var _session: Dictionary = {}
@@ -188,7 +189,18 @@ func _finish_player_scene_transition(id: int, overlay: WorldLoadingOverlay, fram
 		_transition_active = false
 		return
 	overlay.set_progress("preparing", 0.15)
-	var ext: RefCounted = ClassDB.instantiate("DCWorldExt")
+	var ext: DCWorldExt = NativeWorld.create()
+	if ClassDB.class_exists("DCWorldExt") and ext == null:
+		var native_error := NativeWorld.last_error()
+		var missing: PackedStringArray = native_error.get("missing", PackedStringArray())
+		var preview := PackedStringArray()
+		for i in mini(missing.size(), 20):
+			preview.append(String(missing[i]))
+		var suffix := ", …" if missing.size() > preview.size() else ""
+		overlay.show_failure("原生扩展版本与脚本不一致，缺少 %d 个方法（%s%s）" % [
+			missing.size(), ", ".join(preview), suffix])
+		_transition_active = false
+		return
 	await LoadingCatalogCache.prepare(ext, frames)
 	if id!=_transition_id:return
 	var closed := await _close_world_sessions()

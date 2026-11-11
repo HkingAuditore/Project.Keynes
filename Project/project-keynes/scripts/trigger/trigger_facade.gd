@@ -11,7 +11,7 @@ enum Action { MODIFIER_APPLY = 1, MODIFIER_REMOVE = 2, MODIFIER_REFRESH = 3,
 	GAMEPLAY_COMMAND = 12, PUBLISH_EVENT = 13, CUSTOM_DOMAIN_COMMAND = 14,
 	IDEOLOGY_COMMAND = 15 }
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _clock: WorldClock
 var _event_bus: GameplayEventBus
 var _modifier_facade: ModifierFacade
@@ -27,7 +27,7 @@ const DEVELOPMENT_ERA_IDS := [
 	"steam", "electrical", "atomic", "information", "intelligent",
 ]
 
-func configure(world_ext: Object, event_bus: GameplayEventBus, clock: WorldClock = null,
+func configure(world_ext: DCWorldExt, event_bus: GameplayEventBus, clock: WorldClock = null,
 		modifier_facade: ModifierFacade = null, catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext; _event_bus = event_bus; _clock = clock
 	_modifier_facade = modifier_facade

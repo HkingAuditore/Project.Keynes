@@ -10,7 +10,7 @@ enum Opcode { DISCOVER_IDEOLOGY = 1, GRANT_IDEOLOGY_POINTS = 2, OPEN_IDEOLOGY_OF
 	PROMOTE_NATIONAL_SPIRIT = 7, ADD_UNDERSTANDING = 8, SET_IDEOLOGY_GATE = 9,
 	REROLL_IDEOLOGY_OFFER = 10, BAN_IDEOLOGY_CARD = 11, GRANT_FREE_DRAW = 12 }
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _catalog: Resource
 var _native_catalog: Dictionary = {}
 var _world_seed := 0
@@ -19,7 +19,7 @@ var _economy_catalog: Dictionary = {}
 var _configured := false
 var _receipt_cursor := 0
 
-func configure(world_ext: Object, country_catalog: Dictionary,
+func configure(world_ext: DCWorldExt, country_catalog: Dictionary,
 		catalog: Resource = null, economy_catalog: Dictionary = {},
 		world_seed: int = 0) -> Dictionary:
 	_world_seed = world_seed

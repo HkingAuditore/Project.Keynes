@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -42,6 +43,28 @@ def violations(root: Path) -> list[str]:
                                body[1] if body else ""))
         if count != 1:
             problems.append(f"{entry}: _bind_{module}_methods() called {count} times; expected once")
+    manifest_path = root / inventory.MANIFEST
+    if not manifest_path.is_file():
+        if (root / "Project/project-keynes").is_dir():
+            problems.append(f"missing native binding manifest: {inventory.MANIFEST}; run "
+                            "world_ext_bindings.py --write-manifest")
+    else:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_names = manifest.get("methods") if isinstance(manifest, dict) else None
+            static_names = sorted({binding["name"] for binding in bindings})
+            if not isinstance(manifest_names, list) or sorted(manifest_names) != static_names:
+                problems.append(f"native binding manifest methods differ from static inventory; run "
+                                "world_ext_bindings.py --write-manifest")
+            elif int(manifest.get("count", -1)) != len(static_names):
+                problems.append(f"native binding manifest count differs from methods; run "
+                                "world_ext_bindings.py --write-manifest")
+            if manifest.get("class") != "DCWorldExt":
+                problems.append(f"native binding manifest class must be DCWorldExt; run "
+                                "world_ext_bindings.py --write-manifest")
+        except (OSError, ValueError, TypeError, AttributeError):
+            problems.append(f"invalid native binding manifest: {inventory.MANIFEST}; run "
+                            "world_ext_bindings.py --write-manifest")
     return problems
 
 

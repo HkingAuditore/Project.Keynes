@@ -18,7 +18,7 @@
 
 ### 新增脚本接口
 
-脚本接口仍由 `DCWorldExt` 提供：在 `world_ext.h` 对应 `// ---- bindings: 模块 ----` 段声明，在所属模块的实现文件定义，再在 `gdext/src/world_ext_bind_*.cpp` 中对应模块的文件绑定。模块由定义文件决定，查 `tools/ci/world_ext_binding_modules.json`；`world_ext_bind_methods.cpp` 只依次调用各模块的绑定函数。跑 `world_ext_bindings.py` 和 `check_world_ext_bindings.py` 核对归属，接口改动还要比较 Godot 导出的方法列表。
+脚本接口仍由 `DCWorldExt` 提供：在 `world_ext.h` 对应 `// ---- bindings: 模块 ----` 段声明，在所属模块的实现文件定义，再在 `gdext/src/world_ext_bind_*.cpp` 中对应模块的文件绑定。模块由定义文件决定，查 `tools/ci/world_ext_binding_modules.json`；`world_ext_bind_methods.cpp` 只依次调用各模块的绑定函数。跑 `world_ext_bindings.py` 和 `check_world_ext_bindings.py` 核对归属，接口改动还要比较 Godot 导出的方法列表，并重新运行 `world_ext_bindings.py --write-manifest` 更新清单。
 
 脚本直接访问的允许目录登记、facade 约束与只减不增的基线规则见 [feature-guides.md](feature-guides.md) 的“脚本原生访问边界”；改调用点后运行 `check_script_native_access.py --report`。
 

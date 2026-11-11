@@ -17,6 +17,12 @@
 
 这是按词法和局部变量线索检查，不追踪跨文件返回类型、变量别名、运行时拼接或从变量传入的方法名，也不按作用域区分同名变量；同名脚本函数新增或删除会影响 b 的判定。计数不等于精确的运行时调用图，迁移前用 `--audit` 与实际代码复核。
 
+## 原生扩展握手
+
+`Project/project-keynes/data/native_binding_manifest.json` 是提交到仓库的 `DCWorldExt` 方法清单。绑定新增或删除后，在仓库根目录运行 `python3 tools/ci/world_ext_bindings.py --write-manifest` 重新生成；`check_world_ext_bindings.py` 会检查清单与静态绑定解析结果完全一致。启动会话时由 `NativeWorld.create()` 一次性把清单与 Godot 的 `ClassDB` 方法列表比较；类不存在时仍沿用没有扩展的回退行为，类已注册但握手失败时会明确报错并阻止进入会话。
+
+Windows 编辑器锁住 DLL 时，可以用新文件名构建并切换加载映射，但切换前仍要先更新并提交这份清单，避免脚本与新 DLL 的接口版本不一致。
+
 ## 山地起伏调参与验收
 
 生成高程归 `gdext/src/world_ext_generate_base.cpp`；山脊增量必须读冻结基底，

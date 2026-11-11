@@ -55,6 +55,7 @@ TESTS = (
     "tests/runtime/runtime_loading_exit_test.gd",
     "tests/runtime/runtime_inline_save_restore_test.gd",
     "tests/runtime/runtime_executor_boundary_test.gd",
+    "tests/runtime/native_world_handshake_test.gd",
     "tests/runtime/runtime_world_lifecycle_test.gd",
     "tests/runtime/runtime_world_rules_rebuild_test.gd",
     "tests/runtime/runtime_inline_coordinator_save_test.gd",
