@@ -131,3 +131,124 @@ GM 屏蔽开关返回补齐实际 `enabled`。未新增时钟或模拟权威；
 已接通零库存军需报价、受资金约束的未满足采购预测、D+1 替换命令和 Economy 通用采购需求汇总；商人补货目标、生产规划与投资共享该汇总。预测只传递购买意愿，实际货物/现金仍由原采购结算处理。装备成交桥改传真实商品编号。继续态复用现有命令队列，没有新增存档字段。定向回归覆盖提前生效、撤销/重复/替换、零国库、未来需求 ECP2 保存及十日逐日完整经济哈希一致，并运行原生军事自测。
 
 验证证据：Debug/Release GDExtension 均构建成功；军需定向用例（含完整原生军事自测）与整图 ACTIVE POD 用例通过。相同弓箭营地开局五日累计产量：无军需 12,745，有军需 15,895（GOODS_SCALE）。模块 API、C++ 依赖及 Resolve/Apply 检查均为 0 violations。本轮未跑全量性能/长年测试；行数护栏仍有 14 个未触及的既有脚本超限。殖民与科研采购的旧基线字节断言仍失败，但修复前 `dots_ext_equip_v1` DLL 与本次 DLL 的两份测试输出逐字段完全一致，未更新基线。
+
+## 脚本侧原生访问护栏（2026-11-11）
+
+阶段 2 第 1–2 步完成。核实 `Project/project-keynes/scripts/` 下登记目录全部存在；`events` 继续使用 `scripts/narrative`，依据是模块地图的 Events 脚本入口与该目录内的 narrative 服务/流程文件。`script_dirs` 使用相对 `Project/project-keynes` 的路径（因此写成 `scripts/...`），`demo` 登记为单文件 `scripts/main.gd`。本轮未改任何 `.gd`、C++ 或 `Project/perf-validation` 文件，也未迁移调用点。
+
+新增 `check_script_native_access.py`，复用 `world_ext_bindings.py` 的绑定清单；扫描正式项目中的全部 `.gd`，排除 `tests/`、`addons/`、`.godot/`，并冻结 `tmp/` 中已跟踪脚本的现状。候选包括点调用和 `has_method`/`call`/`callv`/`call_deferred`/`Callable` 的绑定名字符串。最终接收者规则、facade 规则和词法限制见 [feature-guides.md](feature-guides.md) 的“脚本原生访问边界”。
+
+首次基线为 49 个文件、102 个文件—模块组合、918 处越界。`--write-baseline` 只在首次生成或减少时写入；已有基线遇到增加仍失败。报告如下：
+
+```text
+script native access report (cross-module references):
+core: 11 files, 217 references
+   109 Project/project-keynes/scripts/geography/map_generator.gd
+    40 Project/project-keynes/scripts/geography/hex_cell.gd
+    24 Project/project-keynes/scripts/main.gd
+    20 Project/project-keynes/scripts/rendering/map_baker.gd
+    10 Project/project-keynes/tmp/family_baseline_test.gd
+runtime: 6 files, 105 references
+    87 Project/project-keynes/scripts/geography/map_generator.gd
+    10 Project/project-keynes/scripts/geography/native_loading_tasks.gd
+     3 Project/project-keynes/tmp/manual2_research_replay.gd
+     2 Project/project-keynes/scripts/rendering/bakers/atlas_encoders.gd
+     2 Project/project-keynes/scripts/rendering/map_baker.gd
+climate: 2 files, 159 references
+   131 Project/project-keynes/scripts/geography/map_generator.gd
+    28 Project/project-keynes/scripts/rendering/map_baker.gd
+economy: 14 files, 115 references
+    61 Project/project-keynes/tmp/family_baseline_test.gd
+    10 Project/project-keynes/scripts/geography/map_generator.gd
+     7 Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd
+     7 Project/project-keynes/scripts/ui/economy_data_recorder.gd
+     7 Project/project-keynes/tmp/preview_reference_both.gd
+country: 15 files, 66 references
+    24 Project/project-keynes/scripts/geography/map_generator.gd
+    11 Project/project-keynes/scripts/game/game_save_coordinator.gd
+     4 Project/project-keynes/scripts/game/save_modules/history_state.gd
+     3 Project/project-keynes/scripts/game/runtime_forensics.gd
+     3 Project/project-keynes/tmp/manual2_research_audit.gd
+military: 3 files, 5 references
+     2 Project/project-keynes/scripts/rendering/military_map_layers.gd
+     2 Project/project-keynes/scripts/rendering/military_render_feed.gd
+     1 Project/project-keynes/scripts/geography/map_generator.gd
+effect: 15 files, 96 references
+    22 Project/project-keynes/scripts/simulation/systems/effect_runtime_system.gd
+    20 Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd
+    12 Project/project-keynes/scripts/geography/map_generator.gd
+     7 Project/project-keynes/scripts/game/game_save_coordinator.gd
+     6 Project/project-keynes/scripts/country/country_facade.gd
+modifier: 5 files, 16 references
+     6 Project/project-keynes/scripts/game/save_modules/rules_state.gd
+     6 Project/project-keynes/scripts/geography/map_generator.gd
+     2 Project/project-keynes/scripts/simulation/systems/modifier_daily_system.gd
+     1 Project/project-keynes/tmp/family_baseline_test.gd
+     1 Project/project-keynes/tmp/modifier_catalog_probe.gd
+ideology: 6 files, 29 references
+    10 Project/project-keynes/scripts/geography/map_generator.gd
+     6 Project/project-keynes/scripts/game/save_modules/rules_state.gd
+     4 Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd
+     4 Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd
+     3 Project/project-keynes/scripts/game/game_save_coordinator.gd
+trigger: 8 files, 41 references
+    11 Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd
+     7 Project/project-keynes/tmp/technology_save_audit.gd
+     6 Project/project-keynes/scripts/game/save_modules/rules_state.gd
+     6 Project/project-keynes/tmp/manual2_research_audit.gd
+     4 Project/project-keynes/scripts/simulation/systems/trigger_daily_system.gd
+events: 4 files, 34 references
+    20 Project/project-keynes/scripts/data_core/gameplay_event_bus.gd
+    10 Project/project-keynes/scripts/geography/map_generator.gd
+     3 Project/project-keynes/scripts/simulation/systems/gameplay_effect_system.gd
+     1 Project/project-keynes/tmp/family_baseline_test.gd
+generation: 4 files, 10 references
+     4 Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd
+     2 Project/project-keynes/scripts/rendering/bakers/climate_baker.gd
+     2 Project/project-keynes/scripts/rendering/bakers/terrain_index_baker.gd
+     2 Project/project-keynes/scripts/rendering/map_baker.gd
+bake_encoders: 3 files, 5 references
+     2 Project/project-keynes/scripts/rendering/hex_renderer.gd
+     2 Project/project-keynes/scripts/rendering/map_baker.gd
+     1 Project/project-keynes/scripts/geography/native_loading_tasks.gd
+visual: 5 files, 17 references
+     8 Project/project-keynes/scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd
+     3 Project/project-keynes/scripts/game/world_runtime_visual_adapter.gd
+     2 Project/project-keynes/scripts/economy/economy_facade.gd
+     2 Project/project-keynes/scripts/geography/native_loading_tasks.gd
+     2 Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd
+demo: 1 files, 3 references
+     3 Project/project-keynes/scripts/ui/tile_data_recorder.gd
+script native access guard: 603 scripts; 1408 native references; 49 files / 102 file-module pairs / 918 cross-module references; 0 problems
+```
+
+`--audit` 的精度统计为：2018 个候选；规则 a 命中 1216、未命中 802；规则 b 命中 1113、未命中 905；a-only 295、b-only 192、两者均命中 921、两者均未命中 610；计入样例和排除样例各 10 条已由命令完整打印。该统计是词法护栏的精度参考，不是运行时调用图。
+
+验证：`check_script_native_access.py`、`world_ext_bindings.py`、`check_world_ext_bindings.py` 均通过；`test_architecture_guards.py` 为 43 项全过；其余现有架构护栏通过。除 `check_skill_mirrors.py` 仍报告既有的 1 条可收紧 baseline（`project-keynes-ideology-runtime/references/pitfalls-and-build.md`）外，其余现有架构护栏通过；本轮未修改其他护栏 baseline。
+
+精度样例（`--audit` 原样抽取）：
+
+```text
+counted samples (10):
+  Project/project-keynes/scripts/annual/annual_report_session.gd:90 [country/call; receiver=_ext; a=1 b=0; outside=0] _ext.mark_annual_report_presented(report_id)
+  Project/project-keynes/scripts/game/game_save_coordinator.gd:552 [country/string; receiver=country_ext; a=0 b=1; outside=1] if country_ext != null and country_ext.has_method("get_country_peer_protocol_status"):
+  Project/project-keynes/scripts/annual/annual_report_session.gd:21 [country/string; receiver=_ext; a=1 b=1; outside=0] if _ext == null or not _ext.has_method("configure_annual_reports") or handle == 0:
+  Project/project-keynes/scripts/country/country_facade.gd:627 [effect/call; receiver=_world_ext; a=1 b=0; outside=1] return _world_ext.bind_era_reward_player_country(handle) if _configured \
+  Project/project-keynes/scripts/game/game_save_coordinator.gd:553 [country/call; receiver=country_ext; a=0 b=1; outside=1] out["country_peer"] = country_ext.get_country_peer_protocol_status()
+  Project/project-keynes/scripts/annual/annual_report_session.gd:27 [country/call; receiver=_ext; a=1 b=1; outside=0] var result: Dictionary = _ext.configure_annual_reports(handle, clock.days_per_year(),
+  Project/project-keynes/scripts/country/country_facade.gd:628 [effect/string; receiver=_world_ext; a=1 b=0; outside=1] and _world_ext.has_method("bind_era_reward_player_country") else {
+  Project/project-keynes/scripts/game/game_save_coordinator.gd:555 [country/string; receiver=None; a=0 b=1; outside=1] out["country_should_run"] = bool(country_ext.country_should_run(int(out["day"])))
+  Project/project-keynes/scripts/country/country_ai_facade.gd:26 [country/string; receiver=_world_ext; a=1 b=1; outside=0] if _world_ext == null or not _world_ext.has_method("configure_country_ai"):
+  Project/project-keynes/scripts/country/country_facade.gd:646 [country/call; receiver=_world_ext; a=1 b=0; outside=0] return _world_ext.get_country_report() if _configured else {"configured": false}
+excluded samples (10):
+  Project/project-keynes/scripts/annual/annual_report_flow.gd:55 [country/string; receiver=_host; a=0 b=0; outside=0] if _host != null and _host.has_method("mark_annual_report_presented"):
+  Project/project-keynes/scripts/annual/annual_report_flow.gd:56 [country/call; receiver=_host; a=0 b=0; outside=0] _host.mark_annual_report_presented(id)
+  Project/project-keynes/scripts/data_core/command_buffer.gd:63 [core/call; receiver=_world; a=0 b=0; outside=0] var occupied_idx: int = _world.entity_count() + _pending_create_count
+  Project/project-keynes/scripts/data_core/dc_system.gd:98 [core/call; receiver=w; a=0 b=0; outside=0] var c: int = int(w.component_id(comp_name))
+  Project/project-keynes/scripts/data_core/view_adapter.gd:252 [core/string; receiver=_world; a=0 b=0; outside=0] if _world.has_method("entity_count"):
+  Project/project-keynes/scripts/data_core/world.gd:217 [core/string; receiver=None; a=0 b=0; outside=0] "entity_count": _entity_count,
+  Project/project-keynes/scripts/diagnostics/daily_simulation_breakdown.gd:95 [core/call; receiver=_dcc_w; a=0 b=0; outside=1] if _dcc_w != null and _dcc_w.is_bound():
+  Project/project-keynes/scripts/diagnostics/daily_simulation_breakdown.gd:265 [core/call; receiver=_dc_w; a=0 b=0; outside=1] if _dc_w != null and _dc_w.is_bound():
+  Project/project-keynes/scripts/era/era_advancement_service.gd:178 [economy/string; receiver=_economy; a=0 b=0; outside=1] or not _economy.has_method("set_country_procurement_policy"):
+  Project/project-keynes/scripts/era/era_advancement_service.gd:181 [economy/call; receiver=_economy; a=0 b=0; outside=1] var result: Dictionary = _economy.set_country_procurement_policy(_handle, true,
+```

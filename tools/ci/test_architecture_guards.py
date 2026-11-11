@@ -19,6 +19,7 @@ import check_module_api as module_api
 import check_skill_mirrors as skill_mirrors
 import world_ext_bindings
 import check_world_ext_bindings as binding_guard
+import check_script_native_access as script_access
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -756,6 +757,169 @@ class GuardsTest(unittest.TestCase):
         self.assertEqual(skill_mirrors.violations(current, {"s/SKILL.md": 3}), [])
         self.assertTrue(skill_mirrors.violations({}, {"s/SKILL.md": 3}))
         self.assertTrue(skill_mirrors.violations({"s/SKILL.md": 2}, {"s/SKILL.md": 3}))
+
+    def script_access_tree(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        src = root / "gdext/src"
+        src.mkdir(parents=True)
+        (root / "tools/ci").mkdir(parents=True)
+        (src / "world_ext.h").write_text("class DCWorldExt {};\n")
+        modules = {"economy": ["world_ext_economy.cpp"], "country": ["world_ext_country.cpp"]}
+        for module, names in (("economy", ["alpha", "native_only"]), ("country", ["beta"])):
+            (src / f"world_ext_{module}.cpp").write_text(
+                "\n".join(f"int DCWorldExt::{name}() {{ return 0; }}" for name in names))
+            (src / f"world_ext_bind_{module}.cpp").write_text(
+                "\n".join(f'ClassDB::bind_method(D_METHOD("{name}"), &DCWorldExt::{name});' for name in names))
+            (root / script_access.PROJECT / f"scripts/{module}").mkdir(parents=True)
+        (root / world_ext_bindings.TABLE).write_text(json.dumps({
+            "bind_file_pattern": "gdext/src/world_ext_bind_{module}.cpp", "modules": modules,
+            "script_dirs": {m: [f"scripts/{m}"] for m in modules}}))
+        (root / script_access.BASELINE).write_text("{}\n")
+        return root
+
+    def write_access_script(self, root, file, source):
+        path = root / script_access.PROJECT / file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+        return path
+
+    def access_cli(self, root, *args):
+        return subprocess.run([sys.executable, str(world_ext_bindings.ROOT / "tools/ci/check_script_native_access.py"),
+                               "--root", str(root), *args], capture_output=True, text=True)
+
+    def test_script_native_access_repository_baseline(self):
+        result = self.access_cli(world_ext_bindings.ROOT)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 problems", result.stdout)
+
+    def test_script_native_access_ratchet_and_write_cannot_increase(self):
+        root = self.script_access_tree()
+        path = self.write_access_script(root, "scripts/ui/probe.gd", "ext.alpha()\n")
+        file = path.relative_to(root).as_posix()
+        baseline_path = root / script_access.BASELINE
+        baseline_path.write_text(json.dumps({file: {"economy": 1}}))
+        self.assertEqual(self.access_cli(root).returncode, 0)
+        frozen = baseline_path.read_text()
+        path.write_text('ext.alpha()\next.call("alpha")\n')
+        for args in ((), ("--write-baseline",)):
+            result = self.access_cli(root, *args)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("economy: 2 > baseline 1", result.stderr)
+            self.assertEqual(baseline_path.read_text(), frozen)
+        path.write_text("ext.beta()\n")
+        result = self.access_cli(root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("country: 1 > baseline 0", result.stderr)
+        path.write_text("")
+        result = self.access_cli(root)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("can tighten baseline", result.stdout)
+        self.assertEqual(self.access_cli(root, "--write-baseline").returncode, 0)
+        self.assertEqual(json.loads(baseline_path.read_text()), {})
+        path.write_text("ext.alpha()\n")
+        baseline_path.unlink()
+        self.assertEqual(self.access_cli(root).returncode, 1)
+        self.assertEqual(self.access_cli(root, "--write-baseline").returncode, 0)
+        self.assertEqual(json.loads(baseline_path.read_text()), {file: {"economy": 1}})
+        other = self.write_access_script(root, "scripts/ui/new.gd", "ext.alpha()\n")
+        self.assertIn(other.relative_to(root).as_posix(), self.access_cli(root).stderr)
+
+    def test_script_native_access_allowed_directory_and_facade_boundary(self):
+        root = self.script_access_tree()
+        self.write_access_script(root, "scripts/economy/nested/client.gd", 'ext.alpha()\next.callv("alpha", [])\n')
+        self.assertEqual(self.access_cli(root).returncode, 0)
+        self.write_access_script(root, "scripts/economy/economy_facade.gd", 'ext.alpha()\next.has_method("beta")\n')
+        refs, problems, _ = script_access.inspect(root)
+        self.assertEqual(problems, [])
+        self.assertEqual(script_access.measure(refs), {
+            script_access.PROJECT + "/scripts/economy/economy_facade.gd": {"country": 1}})
+        self.assertEqual(self.access_cli(root).returncode, 1)
+        dirs = {"visual": ["scripts/rendering"], "bake_encoders": ["scripts/rendering/bakers"]}
+        self.assertTrue(script_access.allowed("scripts/rendering/bakers/client.gd", "visual", dirs))
+        self.assertFalse(script_access.allowed("scripts/rendering/bakers/atlas_facade.gd", "visual", dirs))
+        self.assertTrue(script_access.allowed("scripts/rendering/bakers/atlas_facade.gd", "bake_encoders", dirs))
+        self.assertFalse(script_access.allowed("scripts/rendering_extra/client.gd", "visual", dirs))
+        self.assertTrue(script_access.allowed("scripts/main.gd", "demo", {"demo": ["scripts/main.gd"]}))
+        self.assertFalse(script_access.allowed("scripts/main_other.gd", "demo", {"demo": ["scripts/main.gd"]}))
+        shared = {"core": ["scripts/game"], "runtime": ["scripts/game"]}
+        self.assertTrue(script_access.allowed("scripts/game/runtime_facade.gd", "runtime", shared))
+        self.assertFalse(script_access.allowed("scripts/game/runtime_facade.gd", "core", shared))
+        self.assertFalse(script_access.allowed("scripts/game/unknown_facade.gd", "core", shared))
+
+    def test_script_native_access_receiver_rules_and_all_literal_forms(self):
+        root = self.script_access_tree()
+        source = '''func alpha(): pass
+func beta(): pass
+var created := ClassDB.instantiate("DCWorldExt")
+var typed: DCWorldExt
+func check(param: DCWorldExt):
+    created.alpha()
+    typed.alpha()
+    param.alpha()
+    self._data_core_world_ext.alpha()
+    host.world_ext.alpha()
+    _ext.alpha()
+    world.alpha()
+    dc.alpha()
+    ext_obj.alpha()
+    ext.has_method("alpha")
+    ext.call('alpha', 1)
+    ext.callv(&"alpha", [])
+    Callable(self.world_ext, "alpha")
+    Callable(
+        created,
+        &"alpha"
+    )
+    created.call_deferred("alpha")
+    facade.alpha()
+    facade.call("alpha")
+    Callable(facade, "alpha")
+    var named = "alpha"
+    facade.native_only()
+    facade.call("native_only")
+    var deferred_name = "native_only"
+'''
+        self.write_access_script(root, "scripts/ui/client.gd", source)
+        refs, problems, _ = script_access.inspect(root)
+        self.assertEqual(problems, [])
+        self.assertEqual(len(refs), 22)
+        self.assertEqual(sum(r.a for r in refs), 15)
+        self.assertEqual(sum(r.b for r in refs), 3)
+        self.assertEqual(sum(not r.counted for r in refs), 4)
+        self.assertEqual(sum(r.counted for r in refs), 18)
+        self.assertEqual(sum(r.kind == "string" and r.a for r in refs), 6)
+
+    def test_script_native_access_excludes_comments_quoted_code_and_test_definitions(self):
+        root = self.script_access_tree()
+        for folder in ("tests", "addons", ".godot", "scripts/nested/tests"):
+            self.write_access_script(root, folder + "/ignored.gd", "func native_only(): pass\next.alpha()\n")
+        self.write_access_script(root, "scripts/ui/client.gd", '''# ext.alpha() and "native_only"
+var code = "facade.alpha() and func native_only():"
+var doc = """ext.beta()
+func native_only(): pass
+"""
+var escaped = "a \\" native_only" # ext.beta()
+facade.native_only()
+''')
+        refs, problems, files = script_access.inspect(root)
+        self.assertEqual(problems, [])
+        self.assertEqual(files, 1)
+        self.assertEqual([(r.name, r.a, r.b) for r in refs], [("native_only", False, True)])
+
+    def test_script_native_access_rejects_bad_directory_registration(self):
+        root = self.script_access_tree()
+        path = root / world_ext_bindings.TABLE
+        table = json.loads(path.read_text())
+        for entries in (None, [], ["scripts/missing"], ["../outside"], ["/absolute"]):
+            with self.subTest(entries=entries):
+                table["script_dirs"]["economy"] = entries
+                path.write_text(json.dumps(table))
+                self.assertEqual(self.access_cli(root).returncode, 1)
+        self.assertTrue(script_access.baseline_errors({"file": {"economy": -1}}))
+        self.assertTrue(script_access.baseline_errors({"file": {"economy": True}}))
+        self.assertTrue(script_access.baseline_errors([]))
 
     def test_world_ext_binding_guard_repository(self):
         self.assertEqual(binding_guard.violations(world_ext_bindings.ROOT), [])

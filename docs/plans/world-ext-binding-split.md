@@ -1,6 +1,6 @@
 # DCWorldExt 绑定面按模块拆分方案
 
-状态：阶段 0 已完成（2026-11-10），阶段 1 已实现（2026-11-11，验证见 `docs/architecture/feature-status.md`），阶段 2–3 未实施。本页保留目标与步骤；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
+状态：阶段 0 已完成（2026-11-10），阶段 1 已实现（2026-11-11），阶段 2 第 1–2 步已实现（目录登记、护栏和基线），第 3–5 步及阶段 3 未实施。验证见 `docs/architecture/feature-status.md`。本页保留目标与步骤；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
 
 ## 要解决的问题
 

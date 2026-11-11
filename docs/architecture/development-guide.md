@@ -20,6 +20,8 @@
 
 脚本接口仍由 `DCWorldExt` 提供：在 `world_ext.h` 对应 `// ---- bindings: 模块 ----` 段声明，在所属模块的实现文件定义，再在 `gdext/src/world_ext_bind_*.cpp` 中对应模块的文件绑定。模块由定义文件决定，查 `tools/ci/world_ext_binding_modules.json`；`world_ext_bind_methods.cpp` 只依次调用各模块的绑定函数。跑 `world_ext_bindings.py` 和 `check_world_ext_bindings.py` 核对归属，接口改动还要比较 Godot 导出的方法列表。
 
+脚本直接访问的允许目录登记、facade 约束与只减不增的基线规则见 [feature-guides.md](feature-guides.md) 的“脚本原生访问边界”；改调用点后运行 `check_script_native_access.py --report`。
+
 ### 把一个外部文件迁到接口
 
 `#include "x_runtime.h"` 换成 `#include "x_api.h"`；`Runtime::CONST` 改成 `XApi::CONST`；`x->m(a)` 改成 `x_api::m(*x, a)`；然后从 `tools/ci/module_api/<module>.json` 的 `legacy_includers` 删掉这个文件，不删会报“过期条目”。指针和引用在不完整类型上照常可用；需要完整类型的地方（按值成员、`sizeof`、`unique_ptr` 析构、复制）用接口里的工厂/析构转发，例如 `modifier_api::copy_runtime` / `replace_runtime`。
@@ -113,7 +115,7 @@
 静态护栏（默认回归会先跑；PR 上由 `runtime-checks.yml` 的 `architecture-guards` 自动运行）：
 
 ```bash
-cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_domain_inventory.py check_runtime_advancers.py check_runtime_switches.py check_committed_views.py check_save_contracts.py check_module_contracts.py check_resolve_apply.py check_module_api.py check_skill_mirrors.py check_module_map.py world_ext_bindings.py check_world_ext_bindings.py test_architecture_guards.py test_regression_evidence.py; do /Users/herh/.local/bin/python3 $g >/dev/null 2>&1; echo "$g exit=$?"; done
+cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_domain_inventory.py check_runtime_advancers.py check_runtime_switches.py check_committed_views.py check_save_contracts.py check_module_contracts.py check_resolve_apply.py check_module_api.py check_skill_mirrors.py check_module_map.py world_ext_bindings.py check_world_ext_bindings.py check_script_native_access.py test_architecture_guards.py test_regression_evidence.py; do /Users/herh/.local/bin/python3 $g >/dev/null 2>&1; echo "$g exit=$?"; done
 ```
 
 构建（不同 SCons 配置共用中间文件，必须串行；跑带墙钟故障门槛的检查时不要并行编译）：
