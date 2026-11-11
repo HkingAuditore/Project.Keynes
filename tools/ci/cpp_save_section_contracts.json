@@ -58,7 +58,7 @@
       "domain": "military",
       "owner": "country",
       "tag": "PKMI",
-      "version": 3,
+      "version": 6,
       "source": "gdext/src/military_core_save.cpp",
       "tokens": [
         "PKMI_VERSION",

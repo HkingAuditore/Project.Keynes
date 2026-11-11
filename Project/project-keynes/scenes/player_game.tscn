@@ -32,6 +32,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/era_transition_flight.tscn" id="34_era_flight"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud_status_card.tscn" id="35_status_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/military_peace_window.tscn" id="36_peace"]
+[ext_resource type="PackedScene" path="res://scenes/ui/military_map_toolbar.tscn" id="37_military_map"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -209,6 +210,10 @@ grow_horizontal = 1
 [node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" unique_id=1329221014 instance=ExtResource("17_overlay_toolbar")]
 unique_name_in_owner = true
 anchors_preset = 0
+
+[node name="MilitaryMapToolbar" parent="UI/UIRoot/HUDLayer" unique_id=1329221015 instance=ExtResource("37_military_map")]
+unique_name_in_owner = true
+layout_mode = 0
 
 [node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" unique_id=416698945 instance=ExtResource("18_country_bar")]
 unique_name_in_owner = true

@@ -73,6 +73,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <climits>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -94,6 +95,8 @@ constexpr int32_t MILITARY_Q = MILITARY_Q16;
 constexpr int64_t MILITARY_MONEY = MILITARY_MONEY_SCALE;
 constexpr int64_t MILITARY_GOODS = MILITARY_GOODS_SCALE;
 constexpr int32_t MILITARY_SUPPLY_CLASSES = MILITARY_MAX_SUPPLY_CLASSES;
+constexpr uint32_t kMilitaryBridgeMagic = 0x4d494c42u;  // "MILB"
+constexpr uint32_t kMilitaryBridgeWrapperVersion = 4u;
 
 int32_t q16_from_float(double value) {
     if (!std::isfinite(value)) return 0;
@@ -260,6 +263,7 @@ const MilitaryOpName kMilitaryOps[] = {
     {"army.stance", MCMD_ARMY_STANCE},
     {"army.rename", MCMD_ARMY_RENAME},
     {"army.disband", MCMD_ARMY_DISBAND},
+    {"army.explore", MCMD_ARMY_EXPLORE},
     {"war.declare", MCMD_WAR_DECLARE},
     {"peace.propose", MCMD_PEACE_PROPOSE},
     {"peace.respond", MCMD_PEACE_RESPOND},
@@ -416,6 +420,24 @@ bool parse_unit(const Dictionary &row, MilitaryUnitType &unit, std::string &erro
     };
     read_supply("supply_idle", unit.idle_per_100_day);
     read_supply("supply_combat", unit.combat_per_100_day);
+    // Physical repair recipe (design §2): rate_q32 is q32 of one milli-good per
+    // 100 heads per day. Militia authors an empty recipe, which is the explicit
+    // "zero maintenance" rule, not a missing table.
+    {
+        const std::vector<int32_t> repair_goods = dict_i32_array(row, "repair_goods");
+        const std::vector<int64_t> repair_rates = dict_i64_array(row, "repair_rate_q32");
+        const size_t repair_count = std::min<size_t>(
+            {repair_goods.size(), repair_rates.size(), (size_t)MILITARY_MAX_REPAIR_MATERIALS});
+        unit.repair_materials.clear();
+        unit.repair_materials.reserve(repair_count);
+        for (size_t m = 0; m < repair_count; ++m) {
+            MilitaryRepairMaterial mat;
+            mat.good = repair_goods[m];
+            mat.rate_q32 = std::max<int64_t>(0, repair_rates[m]);
+            if (mat.good < 0 || mat.rate_q32 <= 0) continue;
+            unit.repair_materials.push_back(mat);
+        }
+    }
     return true;
 }
 
@@ -514,6 +536,24 @@ bool parse_catalog(const Dictionary &catalog, MilitaryCatalog &out, std::string 
             building.material_qty = dict_i64_array(row, "material_qty");
             if (building.material_qty.size() < building.material_goods.size())
                 building.material_qty.resize(building.material_goods.size(), 0);
+            // Physical repair recipe (design §2): parallel (good, rate_q32)
+            // columns, at most 4 components. `rate_q32` is q32 of ONE
+            // milli-good per day per building, so the runtime only accumulates
+            // and shifts - it never re-derives consumption from cash or from the
+            // construction bill.
+            const std::vector<int32_t> repair_goods = dict_i32_array(row, "repair_goods");
+            const std::vector<int64_t> repair_rates = dict_i64_array(row, "repair_rate_q32");
+            const size_t repair_count = std::min<size_t>(
+                {repair_goods.size(), repair_rates.size(), (size_t)MILITARY_MAX_REPAIR_MATERIALS});
+            building.repair_materials.clear();
+            building.repair_materials.reserve(repair_count);
+            for (size_t m = 0; m < repair_count; ++m) {
+                MilitaryRepairMaterial mat;
+                mat.good = repair_goods[m];
+                mat.rate_q32 = std::max<int64_t>(0, repair_rates[m]);
+                if (mat.good < 0 || mat.rate_q32 <= 0) continue;
+                building.repair_materials.push_back(mat);
+            }
             out.state_buildings.push_back(std::move(building));
         }
     }
@@ -892,14 +932,34 @@ void DCWorldExt::capture_military_digest(MilitaryWorldDigest &digest,
             scratch.cell_soldiers[cell] = view.soldiers[cell];
             scratch.cell_has_merchant[cell] = view.has_merchant[cell];
         }
-        // Only the military supply goods are quoted; a good shared by several
-        // classes is captured once.
+        // Supply goods plus every repair material; a good shared by several
+        // classes or recipes is captured once.
         std::vector<int32_t> goods;
         for (int32_t cls = 0; cls < MILITARY_SUPPLY_CLASSES; ++cls) {
             for (const int32_t good : catalog.supply_goods[static_cast<size_t>(cls)]) {
                 if (good < 0) continue;
                 if (std::find(goods.begin(), goods.end(), good) == goods.end())
                     goods.push_back(good);
+            }
+        }
+        // ---- physical maintenance materials (design D3 / R1) ----------------
+        // Repair materials are ordinary goods that belong to NO supply class, so
+        // a digest built only from `supply_goods` never quotes them and the
+        // maintenance buy pass can never see a market row for them. The palette is
+        // small (the 17 buildings and 24 units share ~20 distinct goods), so this
+        // roughly doubles the quoted set rather than exploding it.
+        for (const MilitaryUnitType &unit : catalog.units) {
+            for (const MilitaryRepairMaterial &mat : unit.repair_materials) {
+                if (mat.good < 0) continue;
+                if (std::find(goods.begin(), goods.end(), mat.good) == goods.end())
+                    goods.push_back(mat.good);
+            }
+        }
+        for (const MilitaryStateBuilding &building : catalog.state_buildings) {
+            for (const MilitaryRepairMaterial &mat : building.repair_materials) {
+                if (mat.good < 0) continue;
+                if (std::find(goods.begin(), goods.end(), mat.good) == goods.end())
+                    goods.push_back(mat.good);
             }
         }
         std::sort(goods.begin(), goods.end());
@@ -1166,6 +1226,14 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     std::vector<MilitaryEconomyCommand> economy_commands;
     std::vector<MilitaryPendingIntent> pending;
     pending.reserve(intents.size());
+    for (const auto &receipt : receipts) {
+        if (receipt.kind != MILITARY_INTENT_PROCURE_GOOD || receipt.request_sequence <= 0) continue;
+        MilitaryEconomyCommand ack;
+        ack.opcode = EconomyApi::COMMAND_MILITARY_PURCHASE_ACK;
+        ack.effective_day = effective_day; ack.sequence = ++_military_sequence;
+        ack.i64_0 = receipt.request_sequence;
+        economy_commands.push_back(ack);
+    }
     int32_t unsequenced = 0;
     for (const MilitaryIntent &intent : intents) {
         translate_military_intent(intent, effective_day, digest, country_commands,
@@ -1182,7 +1250,7 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
         out["submit_error"] = String(submit_error.c_str());
         for (MilitaryPendingIntent &row : pending) {
             const bool refused = (row.authority == 1 && !country_ok) ||
-                                 (row.authority == 2 && !economy_ok);
+                                 ((row.authority == 2 || row.authority == 4) && !economy_ok);
             if (!refused) continue;
             // No receipt will arrive for a batch the authority refused.
             row.receipt_pending = 0;
@@ -1228,6 +1296,17 @@ Dictionary DCWorldExt::run_military_daily(const Dictionary &ctx) {
     out["payroll_garrison"] = report.payroll_garrison;
     out["payroll_army"] = report.payroll_army;
     out["intents_emitted"] = static_cast<int64_t>(report.intents_emitted);
+    // Physical maintenance (design §5): settled spend, recipe demand and the
+    // consumed part, the paid-but-undelivered backlog, and how many maintenance
+    // objects the pass walked (a sparse pass reports a small row count).
+    out["maintenance_spend"] = report.maintenance_spend;
+    out["maintenance_need_goods"] = report.maintenance_need_goods;
+    out["maintenance_met_goods"] = report.maintenance_met_goods;
+    out["maintenance_backlog"] = report.maintenance_backlog;
+    out["maintenance_rows"] = static_cast<int64_t>(report.maintenance_rows);
+    out["maintenance_disrepair_rows"] =
+        static_cast<int64_t>(report.maintenance_disrepair_rows);
+    out["maintenance_ms"] = report.maintenance_ms;
     out["intents_submitted"] = static_cast<int64_t>(pending.size());
     out["receipts_folded"] = static_cast<int64_t>(receipts.size());
     out["country_ops"] = country_ops;
@@ -1456,6 +1535,11 @@ namespace {
 // A row whose authority never reported back is failed after this many days
 // past its effective day (Economy epochs are daily; Country commits are D+1).
 constexpr int64_t kMilitaryReceiptTimeoutDays = 8;
+// Numeric range of the core's stable purchase request ids (physical-maintenance
+// design D6). Economy keys POD admission and receipt rows on `sequence` alone,
+// so purchase identities live above the bridge counter's range and can never
+// alias an unrelated command.
+constexpr int64_t kMilitaryPurchaseSequenceBase = 1ll << 40;
 } // namespace
 
 void DCWorldExt::collect_military_receipts(int64_t day,
@@ -1519,15 +1603,25 @@ void DCWorldExt::collect_military_receipts(int64_t day,
     size_t write = 0;
     for (size_t i = 0; i < _military_pending_intents.size(); ++i) {
         MilitaryPendingIntent row = _military_pending_intents[i];
+        // Authority 4 rows used to be excluded from the timeout, which meant a
+        // lost purchase receipt kept the row (and the core's in-flight order)
+        // open forever: a good could never be re-ordered for that holder and
+        // the day never looked idle again. A paid purchase is still bounded by
+        // the same window; the core settles it as an unmet fill and releases
+        // the order.
         if (row.receipt_pending == 1 &&
             day > row.effective_day + kMilitaryReceiptTimeoutDays)
             row.receipt_pending = 3;
         if (row.receipt_pending == 2) {
-            out.push_back(military_receipt_from(row, true, row.count, row.amount));
+            auto receipt = military_receipt_from(row, true, row.count, row.amount);
+            receipt.request_sequence = row.sequence;
+            out.push_back(receipt);
             continue;
         }
         if (row.receipt_pending == 3 || row.receipt_pending == 0) {
-            out.push_back(military_receipt_from(row, false, 0, 0));
+            auto receipt = military_receipt_from(row, false, 0, 0);
+            receipt.request_sequence = row.sequence;
+            out.push_back(receipt);
             continue;
         }
         _military_pending_intents[write++] = row;
@@ -1536,12 +1630,9 @@ void DCWorldExt::collect_military_receipts(int64_t day,
 }
 
 void DCWorldExt::apply_military_deferred_cash(int64_t day) {
-    // SPEND_CASH rows emitted on day D are debited here, at the start of
-    // military day D+1, through the conserved fiscal escrow (reserve+collect
-    // into Country's non-tax expenditure slots). Country has no "debit
-    // treasury cash" command opcode, so this stays a bridge-side call, but it
-    // now follows the D+1 rule and always produces a receipt with the
-    // actually collected amount.
+    // SPEND_CASH rows settle on military day D+1. The compatibility helper's
+    // reserve/collect pair debits then credits the same treasury. Its receipt
+    // is not a terminal cash sink and must not register an Economy burn.
     if (_military_pending_intents.empty()) return;
     NativeEconomyRuntime *economy = _economy_runtime == nullptr ? nullptr
         : static_cast<NativeEconomyRuntime *>(_economy_runtime);
@@ -1554,8 +1645,6 @@ void DCWorldExt::apply_military_deferred_cash(int64_t day) {
         }
         const int64_t collected = economy_api::military_collect_cash(*economy,
             static_cast<int64_t>(row.country_handle), row.amount);
-        if (collected > 0)
-            economy_api::military_record_cash_burn(*economy, collected);
         row.amount = collected;
         row.count = collected > 0 ? 1 : 0;
         row.receipt_pending = collected > 0 ? 2 : 3;
@@ -1760,16 +1849,26 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
         if (economy_runtime == nullptr || (!forecast && (intent.cell < 0 ||
             intent.good < 0 || intent.count <= 0 || intent.country_a == 0))) return;
         MilitaryEconomyCommand command;
-        command.opcode = forecast ? EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND : MECONOMY_MARKET_GOOD_TO_COUNTRY;
+        command.opcode = forecast ? EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND : EconomyApi::COMMAND_MILITARY_PURCHASE;
         command.effective_day = effective_day;
-        command.sequence = next_sequence();
+        // A paid purchase carries the core's STABLE request id in `source_id`
+        // (physical-maintenance design D6). Reusing it as the economy sequence
+        // makes the identity survive a save/restore and lets Economy answer a
+        // repeated submission with the same receipt instead of buying twice;
+        // the forecast row has no such identity and keeps the bridge counter.
+        // The offset keeps purchase identities in their own numeric range: the
+        // bridge counter also starts at 1 and Economy keys POD admission and
+        // receipt rows on `sequence` alone, so the two must never collide.
+        command.sequence = (!forecast && intent.source_id > 0)
+                               ? (kMilitaryPurchaseSequenceBase + static_cast<int64_t>(intent.source_id))
+                               : next_sequence();
         command.target_handle = static_cast<int64_t>(intent.country_a);
         command.i32_0 = intent.cell;
         command.i32_1 = intent.good;
         command.i64_0 = intent.count;
-        command.i64_1 = forecast ? intent.amount : 0;
-        if (!forecast) { // A forecast carries no purchase receipt or settlement.
-            row.authority = 2;
+        command.i64_1 = intent.amount;
+        if (!forecast) { // Paid purchases require a real terminal; never optimistic.
+            row.authority = 4;
             row.sequence = command.sequence;
             row.receipt_pending = 1;
             row.opcode = command.opcode;
@@ -1819,8 +1918,7 @@ void DCWorldExt::translate_military_intent(const MilitaryIntent &intent,
     }
     case MILITARY_INTENT_SPEND_CASH: {
         // Military upkeep / building cash. Country has no "debit cash" opcode,
-        // so this uses the conserved fiscal escrow (reserve + collect), which
-        // books the amount into the country's non-tax expenditure slots. It is
+        // so this retains the cash-neutral fiscal reserve/collect adapter. It is
         // deferred to D+1 (apply_military_deferred_cash at the start of the
         // next military day) so it reads the same committed treasury the rest
         // of the D+1 batch does; the receipt carries the collected amount, and
@@ -2315,6 +2413,17 @@ Dictionary DCWorldExt::get_military_report() {
     out["vision_patch_cells"] = static_cast<int64_t>(report.vision_patch_cells);
     out["event_coalesced"] = static_cast<int64_t>(report.event_coalesced);
     out["reconcile_delta"] = report.reconcile_delta;
+    // Physical maintenance (design §5). These were exported only on the DAILY
+    // return dict, so every reader of `get_military_report()` - the panel, the
+    // long-run probe - saw nothing and could not tell "the channel is idle" from
+    // "the numbers are not published".
+    out["maintenance_spend"] = report.maintenance_spend;
+    out["maintenance_need_goods"] = report.maintenance_need_goods;
+    out["maintenance_met_goods"] = report.maintenance_met_goods;
+    out["maintenance_backlog"] = report.maintenance_backlog;
+    out["maintenance_rows"] = static_cast<int64_t>(report.maintenance_rows);
+    out["maintenance_disrepair_rows"] = static_cast<int64_t>(report.maintenance_disrepair_rows);
+    out["maintenance_ms"] = report.maintenance_ms;
     out["intents_emitted"] = static_cast<int64_t>(report.intents_emitted);
     out["wars_active"] = static_cast<int64_t>(report.wars_active);
     out["soldiers_total"] = report.soldiers_total;
@@ -2338,6 +2447,106 @@ Dictionary DCWorldExt::get_military_report() {
     out["cell_count"] = static_cast<int64_t>(core->terrain().cell_count);
     out["state_hash"] = static_cast<int64_t>(core->state_hash() & 0x7fffffffffffffffll);
     out["render_revision"] = _military_render_revision;
+    return out;
+}
+
+// Physical maintenance view (design §4 / D7). Read-only: it never mutates the
+// core, never books a purchase and never touches the ledger. Everything is a
+// Packed array of the same length so the panel can render a table from one poll.
+Dictionary DCWorldExt::get_military_maintenance_snapshot(int64_t country) const {
+    if (_military_runtime == nullptr) return military_unavailable();
+    const MilitaryCore *core = core_from(_military_runtime);
+    PackedInt32Array out_country, out_cell, out_kind, out_object, out_ratio,
+        out_days, out_disrepair, out_reason;
+    PackedInt64Array out_units, out_need, out_stock, out_inbound;
+    // `country` follows the facade contract: 0 or -1 means "every country", a
+    // positive handle filters to that payer. The GDScript facade probes this
+    // method's arity and passes -1 for "all", so both spellings must work.
+    const int32_t only_slot = country <= 0
+        ? -1 : core->country_slot_for_handle(static_cast<uint64_t>(country));
+    const std::vector<MilitaryMaintenanceRow> &rows = core->maintenance_rows();
+    for (size_t row_index = 0; row_index < rows.size(); ++row_index) {
+        const MilitaryMaintenanceRow &row = rows[row_index];
+        if (only_slot >= 0 && row.country_slot != only_slot) continue;
+        const std::vector<MilitaryRepairMaterial> *recipe = nullptr;
+        if (row.kind == 0) {
+            if (row.object_id >= 0 && row.object_id < (int32_t)core->catalog().state_buildings.size())
+                recipe = &core->catalog().state_buildings[(size_t)row.object_id].repair_materials;
+        } else if (row.object_id >= 0 && row.object_id < (int32_t)core->catalog().units.size()) {
+            recipe = &core->catalog().units[(size_t)row.object_id].repair_materials;
+        }
+        int64_t daily = 0, stock = 0, inbound = 0;
+        if (recipe != nullptr) {
+            for (const MilitaryRepairMaterial &mat : *recipe) {
+                if (mat.good < 0 || mat.rate_q32 <= 0) continue;
+                const int64_t per_day = row.kind == 0
+                                            ? mat.rate_q32 * (int64_t)std::max(0, row.units)
+                                            : (mat.rate_q32 * (int64_t)std::max(0, row.units)) / 100;
+                daily += per_day >> 32;
+                stock += std::max<int64_t>(0, core->stock_get(row.holder_kind, row.holder,
+                                                              row.country_slot, mat.good));
+                for (const MilitaryShipment &shipment : core->shipments()) {
+                    if (shipment.dest_kind != row.holder_kind || shipment.dest != row.holder ||
+                        shipment.country_slot != row.country_slot || shipment.good != mat.good)
+                        continue;
+                    inbound += std::max<int64_t>(0, shipment.qty);
+                }
+                for (const MilitaryPurchaseOrder &order : core->purchase_orders()) {
+                    if (order.channel != 1 || order.dest_kind != row.holder_kind ||
+                        order.dest != row.holder || order.stock_good != mat.good)
+                        continue;
+                    inbound += std::max<int64_t>(0, order.intent.count);
+                }
+            }
+        }
+        int32_t reason = 0;
+        if (daily > 0 && stock <= 0) reason = inbound > 0 ? 3 : 1;
+        // Diagnostic only (design R1): when the buy pass also refused this row,
+        // report WHY. 4 = no spendable cash, 5 = no reachable market row,
+        // 6 = an order was queued (so the failure is downstream, at settlement).
+        if (daily > 0 && stock <= 0) {
+            const std::vector<uint8_t> &buy = core->maintenance_buy_state();
+            if (row_index < buy.size()) {
+                // Folded back into the PUBLISHED 0..3 contract (design D7) so the
+                // panel never sees an undocumented code: 1 = no stock/market,
+                // 2 = budget, 3 = transport. The finer internal states (1 no cash,
+                // 4 no reachable market row, 5 ordered but unsettled) are what the
+                // comment above records.
+                const uint8_t state = buy[row_index];
+                if (state == 1) reason = 2;
+                else if (state == 4) reason = 1;
+                else if (state == 5) reason = 3;
+            }
+        }
+        out_country.push_back(row.country_slot);
+        out_cell.push_back(row.cell);
+        out_kind.push_back((int32_t)row.kind);
+        out_object.push_back(row.object_id);
+        out_units.push_back((int64_t)row.units);
+        out_need.push_back(daily);
+        out_stock.push_back(stock);
+        out_inbound.push_back(inbound);
+        out_ratio.push_back(row.ratio_bp);
+        out_days.push_back(daily > 0 ? (int32_t)std::min<int64_t>(INT32_MAX,
+                                                                 (stock + inbound) * 10 / daily)
+                                     : -1);
+        out_disrepair.push_back(row.disrepair ? 1 : 0);
+        out_reason.push_back(reason);
+    }
+    Dictionary out;
+    out["ok"] = true;
+    out["country_slot"] = out_country;
+    out["cell"] = out_cell;
+    out["kind"] = out_kind;
+    out["object_id"] = out_object;
+    out["units"] = out_units;
+    out["daily_need_goods"] = out_need;
+    out["stock_goods"] = out_stock;
+    out["inbound_goods"] = out_inbound;
+    out["ratio_bp"] = out_ratio;
+    out["days_cover_x10"] = out_days;
+    out["disrepair"] = out_disrepair;
+    out["shortage_reason"] = out_reason;
     return out;
 }
 
@@ -2680,7 +2889,98 @@ Dictionary DCWorldExt::get_military_army(int64_t army) {
         path.push_back(core->_path_cells[static_cast<size_t>(offset)]);
     }
     out["path"] = path;
+    // ---- player auto-exploration (counts only; never the 256-cell selection)
+    Dictionary exploration;
+    const MilitaryExplorationTask *explore_task =
+        core->exploration_task_for_army(slot);
+    if (explore_task != nullptr) {
+        int32_t seen = 0, visited = 0, blocked = 0, resolved = 0;
+        for (int32_t i = 0; i < explore_task->selected_count; ++i) {
+            const size_t word = static_cast<size_t>(i >> 6);
+            const uint64_t bit = 1ull << static_cast<uint32_t>(i & 63);
+            const bool is_seen = (explore_task->seen_mask[word] & bit) != 0;
+            const bool is_visited = (explore_task->visited_mask[word] & bit) != 0;
+            const bool is_blocked = (explore_task->blocked_mask[word] & bit) != 0;
+            if (is_seen) ++seen;
+            if (is_visited) ++visited;
+            if (is_blocked) ++blocked;
+            if (is_seen || is_visited || is_blocked) ++resolved;
+        }
+        exploration["phase"] = static_cast<int64_t>(explore_task->phase);
+        exploration["result"] = static_cast<int64_t>(explore_task->result);
+        exploration["pause_reason"] = static_cast<int64_t>(explore_task->pause_reason);
+        exploration["selected"] = static_cast<int64_t>(explore_task->selected_count);
+        exploration["resolved"] = static_cast<int64_t>(resolved);
+        exploration["seen"] = static_cast<int64_t>(seen);
+        exploration["visited"] = static_cast<int64_t>(visited);
+        exploration["blocked"] = static_cast<int64_t>(blocked);
+        exploration["origin"] = static_cast<int64_t>(explore_task->origin_cell);
+        exploration["return"] = static_cast<int64_t>(explore_task->return_cell);
+        exploration["started_day"] = explore_task->started_day;
+        exploration["last_progress_day"] = explore_task->last_progress_day;
+        exploration["complete_day"] = explore_task->complete_day;
+        exploration["return_fallback"] =
+            static_cast<int64_t>(explore_task->return_fallback);
+    }
+    out["exploration"] = exploration;
     return out;
+}
+
+Dictionary DCWorldExt::set_military_exploration_observer(int64_t observer_slot) {
+    if (_military_runtime == nullptr) return military_unavailable();
+    if (observer_slot < -1) return military_fail("military_observer_invalid");
+    core_from(_military_runtime)->set_exploration_observer(
+        static_cast<int32_t>(observer_slot));
+    Dictionary out;
+    out["ok"] = true;
+    out["observer_slot"] = observer_slot;
+    return out;
+}
+
+Dictionary DCWorldExt::set_military_exploration_view(
+        int64_t observer_slot, const PackedByteArray &explored,
+        int64_t day, int64_t revision) {
+    if (_military_runtime == nullptr) return military_unavailable();
+    if (observer_slot < -1 || day < -1 || revision < 0)
+        return military_fail("military_exploration_view_invalid");
+    const int32_t observer = static_cast<int32_t>(observer_slot);
+    const uint8_t *data = explored.is_empty() ? nullptr : explored.ptr();
+    core_from(_military_runtime)->set_exploration_view(
+        observer, data, static_cast<size_t>(explored.size()), day,
+        static_cast<uint64_t>(revision));
+    Dictionary out;
+    out["ok"] = true;
+    out["observer_slot"] = observer_slot;
+    out["cells"] = static_cast<int64_t>(explored.size());
+    out["day"] = day;
+    out["revision"] = revision;
+    return out;
+}
+
+PackedInt32Array DCWorldExt::get_military_vision_trail(int64_t observer_slot) const {
+    PackedInt32Array out;
+    if (_military_runtime == nullptr) return out;
+    const std::vector<int32_t> &trail = core_from(_military_runtime)->exploration_trail(
+        static_cast<int32_t>(observer_slot));
+    out.resize(static_cast<int64_t>(trail.size()));
+    for (size_t i = 0; i < trail.size(); ++i)
+        out[static_cast<int64_t>(i)] = trail[i];
+    return out;
+}
+
+Dictionary DCWorldExt::clear_military_vision_trail(int64_t observer_slot) {
+    if (_military_runtime == nullptr) return military_unavailable();
+    core_from(_military_runtime)->clear_exploration_trail(
+        static_cast<int32_t>(observer_slot));
+    Dictionary out;
+    out["ok"] = true;
+    out["observer_slot"] = observer_slot;
+    return out;
+}
+
+bool DCWorldExt::has_military_exploration_work() const {
+    if (_military_runtime == nullptr) return false;
+    return core_from(_military_runtime)->has_exploration_work();
 }
 
 Dictionary DCWorldExt::get_military_cell_snapshot(int64_t cell, int64_t observer) const {
@@ -3304,8 +3604,8 @@ PackedByteArray DCWorldExt::encode_military_state() const {
     const auto append_u64 = [](std::vector<uint8_t> &buffer, uint64_t value) {
         for (int i = 0; i < 8; ++i) buffer.push_back(static_cast<uint8_t>(value >> (i * 8)));
     };
-    append_u32(out, 0x4d494c42u);  // "MILB" bridge wrapper
-    append_u32(out, 3u);
+    append_u32(out, kMilitaryBridgeMagic);
+    append_u32(out, kMilitaryBridgeWrapperVersion);
     append_u32(out, static_cast<uint32_t>(core_bytes.size()));
     out.insert(out.end(), core_bytes.begin(), core_bytes.end());
     append_u64(out, static_cast<uint64_t>(std::max<int64_t>(0, _military_sequence)));
@@ -3359,9 +3659,10 @@ Dictionary DCWorldExt::restore_military_state(const PackedByteArray &bytes) {
         return true;
     };
     uint32_t magic = 0, version = 0, core_size = 0;
-    if (!read_u32(magic) || magic != 0x4d494c42u) return military_fail("pkmi_wrapper_magic_invalid");
-    if (!read_u32(version) || version != 3u)
-        return military_fail("pkmi_wrapper_version_mismatch_expected_3");
+    if (!read_u32(magic) || magic != kMilitaryBridgeMagic)
+        return military_fail("pkmi_wrapper_magic_invalid");
+    if (!read_u32(version) || version != kMilitaryBridgeWrapperVersion)
+        return military_fail("pkmi_wrapper_version_mismatch_expected_4");
     if (!read_u32(core_size) || size - at < core_size) return military_fail("pkmi_wrapper_truncated");
     std::string error;
     if (!core_from(_military_runtime)->restore(data + at, core_size, error)) {

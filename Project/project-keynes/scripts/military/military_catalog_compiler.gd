@@ -76,6 +76,16 @@ const UNEMPLOYED_PROFESSION_ID := "unemployed"
 const RATION_NEED_IDS: Array[String] = ["staple_food", "protein"]
 const MAX_UNITS := 64
 const MAX_EQUIP_SLOTS := 4
+## Native repair recipe slot cap: `MilitaryUnitType::repair_materials` and the
+## `MilitaryStateBuilding` equivalent hold four entries each.
+const MAX_REPAIR_SLOTS := 4
+## `repair_rate_q32` is q32 of ONE MILLI-GOOD per day. The native side
+## accumulates `rate_q32 * units`, emits `>> 32` milli-goods and keeps the
+## remainder, so a rate below one milli-good per day is a legitimate value.
+const REPAIR_Q32_ONE := 4294967296.0
+const REPAIR_MILLI_GOODS := 1000.0
+## `default_price` is authored in money subunits per 1.0 good (MONEY_SCALE).
+const REPAIR_MONEY_SCALE := 10000.0
 
 ## Authoring magnitude ceilings, not gameplay caps. Every float column in the
 ## catalog is authored human-readable and scaled exactly once (compiler ->
@@ -121,6 +131,23 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 	if profession_ids.is_empty():
 		return _fail("military_economy_profession_catalog_unavailable")
 	var good_index := _index_of(good_ids)
+	# Dense `default_price` column, same index as `good_ids`
+	# (`good_profile_registry.gd:214`). Physical repair recipes for state lots
+	# convert the authored cash upkeep through it; a row that cannot resolve a
+	# positive price fails the compile instead of shipping a zero rate.
+	var good_default_price: PackedInt32Array = economy_catalog.get(
+		"good_default_price", PackedInt32Array())
+	if good_default_price.is_empty() or good_default_price.size() < good_ids.size():
+		# `EconomyFacade.native_catalog()` publishes the dense good ids but not the
+		# price column; the registry owns it. Without this fallback every state
+		# building recipe would fail `military_repair_price_missing` and the whole
+		# catalog would refuse to compile - which reads downstream as "no barracks
+		# at all" rather than as a price problem.
+		var price_columns: Dictionary = GoodProfileRegistry.compile_native_columns()
+		var registry_prices: PackedInt32Array = price_columns.get(
+			"good_default_price", PackedInt32Array())
+		if registry_prices.size() >= good_ids.size():
+			good_default_price = registry_prices
 	var tech_ids: PackedStringArray = technology_catalog.get(
 		"technology_ids", PackedStringArray())
 	var tech_index := _index_of(tech_ids)
@@ -142,7 +169,7 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 		category_index[String((categories[i] as Dictionary).get("id", ""))] = i
 
 	var unit_result := _compile_units(data.get("units", []), category_index,
-		tech_index, unlock_tech_ids, unlock_bits)
+		good_index, good_default_price, tech_index, unlock_tech_ids, unlock_bits)
 	if not bool(unit_result.get("ok", false)):
 		return unit_result
 	var units: Array = unit_result.get("units", [])
@@ -163,8 +190,8 @@ static func compile_from_data(data: Dictionary, economy_catalog: Dictionary,
 			and building_type_ids.is_empty():
 		return _fail("military_economy_building_catalog_unavailable")
 	var building_result := _compile_state_buildings(
-		data.get("state_buildings", []), good_index, building_type_ids,
-		tech_index, unlock_tech_ids, unlock_bits,
+		data.get("state_buildings", []), good_index, good_default_price,
+		building_type_ids, tech_index, unlock_tech_ids, unlock_bits,
 		economy_tag_offsets, economy_tags, economy_kinds)
 	if not bool(building_result.get("ok", false)):
 		return building_result
@@ -366,6 +393,7 @@ static func _quality_order(qualities: PackedInt32Array) -> PackedInt32Array:
 
 
 static func _compile_units(raw_units, category_index: Dictionary,
+		good_index: Dictionary, good_default_price: PackedInt32Array,
 		tech_index: Dictionary, unlock_tech_ids: PackedInt32Array,
 		unlock_bits: Dictionary) -> Dictionary:
 	if raw_units is not Array or (raw_units as Array).is_empty():
@@ -434,6 +462,14 @@ static func _compile_units(raw_units, category_index: Dictionary,
 		var combat := _supply_vector(raw.get("supply_combat", {}), unit_id)
 		if idle.is_empty() or combat.is_empty():
 			return _fail("military_unit_supply_invalid: %s" % unit_id)
+		# Physical repair materials (cash maintenance is being replaced by
+		# goods). The IDLE intensity is the maintenance baseline: `upkeep` is
+		# authored in goods units per 100 heads per day, so a unit with no idle
+		# upkeep (militia) ships empty columns instead of zero-rate rows.
+		var repair := _compile_repair(raw.get("repair", {}), good_index, unit_id,
+			good_default_price, float(idle[SUPPLY_UPKEEP]), false)
+		if not bool(repair.get("ok", false)):
+			return repair
 		# Same scale check as the state buildings: attack / defense / speed /
 		# per_100 / weight are authored human-readable and scaled once by the
 		# native bridge. An out-of-range value means the column was baked in q16.
@@ -484,6 +520,13 @@ static func _compile_units(raw_units, category_index: Dictionary,
 			"equipment": equipment,
 			"supply_idle": idle,
 			"supply_combat": combat_extra,
+			# Dense repair goods and their per-day physical rate, parallel and
+			# in authored order. Frozen content: never re-derived from cash or
+			# from the equipment slots at runtime.
+			"repair_goods": PackedInt32Array(
+				repair.get("goods", PackedInt32Array())),
+			"repair_rate_q32": PackedInt64Array(
+				repair.get("rate_q32", PackedInt64Array())),
 		})
 	if militia_count != 1:
 		return _fail("military_militia_unit_count_invalid: %d" % militia_count)
@@ -571,6 +614,7 @@ static func _compile_naval_unlocks(raw_ids, tech_index: Dictionary,
 
 
 static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
+		good_default_price: PackedInt32Array,
 		building_type_ids: PackedStringArray, tech_index: Dictionary,
 		unlock_tech_ids: PackedInt32Array, unlock_bits: Dictionary,
 		economy_tag_offsets: PackedInt32Array = PackedInt32Array(),
@@ -695,6 +739,14 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 					% [building_id, String(good_key), str(material_units)])
 			material_goods.append(good)
 			material_qty.append(maxi(0, int(round(material_units * 1000.0))))
+		# Physical repair materials. The IDLE building upkeep (money units per
+		# day) is converted into goods through each good's `default_price`;
+		# `upkeep` itself stays authored because the legacy cash path still
+		# settles it until the follow-up stage removes it.
+		var repair := _compile_repair(raw.get("repair", {}), good_index,
+			building_id, good_default_price, upkeep, true)
+		if not bool(repair.get("ok", false)):
+			return repair
 		out.append({
 			"id": building_id,
 			"name": String(raw.get("name", "")).strip_edges(),
@@ -713,6 +765,12 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 			"build_days": maxi(0, int(raw.get("build_days", 0))),
 			"material_goods": material_goods,
 			"material_qty": material_qty,
+			# Dense repair goods and their per-day physical rate, parallel and
+			# in authored order (same q32-of-milli-goods unit as the units).
+			"repair_goods": PackedInt32Array(
+				repair.get("goods", PackedInt32Array())),
+			"repair_rate_q32": PackedInt64Array(
+				repair.get("rate_q32", PackedInt64Array())),
 		})
 	return {
 		"ok": true,
@@ -720,6 +778,95 @@ static func _compile_state_buildings(raw_buildings, good_index: Dictionary,
 		"unlock_tech_ids": ordered_unlock_tech,
 		"unlock_bits": ordered_bits,
 	}
+
+
+## Resolves one authored `"repair": { "goods": [{good, weight}, ...] }` recipe
+## into the two parallel packed columns the native runtime reads
+## (`repair_goods` / `repair_rate_q32`), in authored order.
+##
+## `intensity` is the authored daily service level of the owner:
+##   - state building: cash `upkeep` in money units per day, converted to goods
+##     through the good's `default_price` (`scale_by_price = true`):
+##       daily_goods = upkeep * w / sum_w * 10000 / default_price
+##   - unit: `supply_idle.upkeep`, already authored in goods units per 100
+##     heads per day, so the ratio is used as-is (`scale_by_price = false`):
+##       daily_goods = idle_upkeep * w / sum_w
+## Both land in the same unit: `rate_q32` is q32 of ONE MILLI-GOOD per day,
+## i.e. `round(daily_goods * 1000 * 2^32)`. A positive weight whose rate rounds
+## to zero is intentionally allowed - the native side accumulates a fractional
+## remainder, so a tiny lot is not forced to consume a whole item per day. A
+## zero service level (militia) ships empty columns instead of zero-rate rows.
+static func _compile_repair(raw_repair, good_index: Dictionary, owner_id: String,
+		good_default_price: PackedInt32Array, intensity: float,
+		scale_by_price: bool) -> Dictionary:
+	var goods := PackedInt32Array()
+	var rate_q32 := PackedInt64Array()
+	if raw_repair == null:
+		return {"ok": true, "goods": goods, "rate_q32": rate_q32}
+	if not raw_repair is Dictionary:
+		return _fail("military_repair_not_object: %s" % owner_id)
+	var recipe: Dictionary = raw_repair
+	var raw_rows = recipe.get("goods", [])
+	if not raw_rows is Array:
+		return _fail("military_repair_goods_not_array: %s" % owner_id)
+	var rows: Array = raw_rows
+	# The native slots are fixed at four entries per owner.
+	if rows.size() > MAX_REPAIR_SLOTS:
+		return _fail("military_repair_overflow: %s (%d)"
+			% [owner_id, rows.size()])
+	if rows.is_empty():
+		return {"ok": true, "goods": goods, "rate_q32": rate_q32}
+	var weights := PackedFloat64Array()
+	var resolved_ids: Array[String] = []
+	var seen := {}
+	var weight_sum := 0.0
+	for row_value in rows:
+		if not row_value is Dictionary:
+			return _fail("military_repair_good_not_object: %s" % owner_id)
+		var row: Dictionary = row_value
+		var good_id := String(row.get("good", "")).strip_edges()
+		var good := _index_optional(good_index, good_id)
+		if good < 0:
+			return _fail("military_repair_good_unknown: %s:%s"
+				% [owner_id, good_id])
+		if seen.has(good):
+			return _fail("military_repair_good_duplicate: %s:%s"
+				% [owner_id, good_id])
+		seen[good] = true
+		var weight := float(row.get("weight", 0.0))
+		if weight <= 0.0:
+			return _fail("military_repair_weight_invalid: %s:%s (%s)"
+				% [owner_id, good_id, str(weight)])
+		goods.append(good)
+		weights.append(weight)
+		resolved_ids.append(good_id)
+		weight_sum += weight
+	# A zero price would make the cash -> goods conversion undefined; the native
+	# side has no fallback, so a bad row must never reach it.
+	var prices := PackedInt64Array()
+	for k in range(goods.size()):
+		var good := int(goods[k])
+		if good >= good_default_price.size():
+			return _fail("military_repair_price_missing: %s:%s"
+				% [owner_id, resolved_ids[k]])
+		var price := int(good_default_price[good])
+		if price <= 0:
+			return _fail("military_repair_price_missing: %s:%s (%d)"
+				% [owner_id, resolved_ids[k], price])
+		prices.append(price)
+	# Zero service level: nothing to maintain. Checked after validation so a
+	# broken recipe still fails loudly even on a free lot.
+	if intensity <= 0.0:
+		return {"ok": true, "goods": PackedInt32Array(),
+			"rate_q32": PackedInt64Array()}
+	for k in range(goods.size()):
+		var daily_goods := intensity * float(weights[k]) / weight_sum
+		if scale_by_price:
+			daily_goods = daily_goods * REPAIR_MONEY_SCALE \
+				/ float(prices[k])
+		rate_q32.append(maxi(0, int(round(
+			daily_goods * REPAIR_MILLI_GOODS * REPAIR_Q32_ONE))))
+	return {"ok": true, "goods": goods, "rate_q32": rate_q32}
 
 
 ## Ration candidates come straight from the `soldier_household` consumption plan
@@ -949,6 +1096,17 @@ static func _catalog_hash(compiled: Dictionary, good_ids: PackedStringArray,
 			hash_mix(hasher, "i%.6f" % float(idle[k]))
 		for k in range(mini(SUPPLY_CLASS_COUNT, combat.size())):
 			hash_mix(hasher, "c%.6f" % float(combat[k]))
+		# Physical repair recipe: size first (so an empty row and a row of
+		# zero-rate entries hash differently), then every dense good id with
+		# its frozen rate.
+		var repair_goods: PackedInt32Array = unit.get("repair_goods",
+			PackedInt32Array())
+		var repair_rate: PackedInt64Array = unit.get("repair_rate_q32",
+			PackedInt64Array())
+		hash_mix(hasher, "r%d" % repair_goods.size())
+		for k in range(repair_goods.size()):
+			hash_mix(hasher, "%d:%d" % [int(repair_goods[k]),
+				int(repair_rate[k]) if k < repair_rate.size() else 0])
 	for category_value in compiled.get("categories", []):
 		var category: Dictionary = category_value
 		hash_mix(hasher, String(category.get("id", "")))
@@ -968,6 +1126,14 @@ static func _catalog_hash(compiled: Dictionary, good_ids: PackedStringArray,
 		# this column too: leaving it out here would let a bridge-only edit look
 		# content-identical on this side while PKMI loads keep failing.
 		hash_mix(hasher, str(int(building.get("economy_building_id", -1))))
+		var repair_goods: PackedInt32Array = building.get("repair_goods",
+			PackedInt32Array())
+		var repair_rate: PackedInt64Array = building.get("repair_rate_q32",
+			PackedInt64Array())
+		hash_mix(hasher, "r%d" % repair_goods.size())
+		for k in range(repair_goods.size()):
+			hash_mix(hasher, "%d:%d" % [int(repair_goods[k]),
+				int(repair_rate[k]) if k < repair_rate.size() else 0])
 	var unlock: PackedInt32Array = compiled.get("unlock_tech_ids", PackedInt32Array())
 	for dense in unlock:
 		hash_mix(hasher, "%d:%s" % [int(dense),

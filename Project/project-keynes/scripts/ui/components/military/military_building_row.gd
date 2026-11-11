@@ -452,6 +452,8 @@ func _draw() -> void:
 
 
 ## 第二行：回执优先，其次效果，最后成本。成本段用黄铜，缺料因由用胭脂。
+## 右端另有一小段实物维护读数（满足率 / 可用天数 / 失修）：这条链路没接通时
+## `maintenance_text` 是空串，整段不画，布局与旧版逐字一致。
 func _draw_status_line(origin: Vector2, text_x: float, text_width: float) -> void:
 	if not _notice.is_empty():
 		_text(origin + Vector2(text_x, 36.0),
@@ -466,22 +468,47 @@ func _draw_status_line(origin: Vector2, text_x: float, text_width: float) -> voi
 		_text(origin + Vector2(text_x, 36.0), fitted, EFFECT_SIZE,
 			UITokens.DOSSIER_VERDIGRIS, "sans_strong")
 		effect_width = _text_width(fitted, EFFECT_SIZE, "sans_strong")
+	var maintenance := _maintenance_line(text_width)
+	var maintenance_width := 0.0
+	if not maintenance.is_empty():
+		maintenance_width = _text_width(maintenance, COST_SIZE, "sans_strong") + 8.0
 	var cost_text := _cost_line()
 	if cost_text.is_empty():
+		_draw_maintenance(origin, text_x, text_width, maintenance, maintenance_width)
 		_draw_value_ink(origin, text_x, effect_width)
 		return
 	var gap := 8.0 if effect_width > 0.0 else 0.0
 	var cost_x := text_x + effect_width + gap
-	var room := text_width - effect_width - gap
+	var room := text_width - effect_width - gap - maintenance_width
 	if room < 24.0:
 		# 太窄就把效果行让给成本：成本是玩家下单前必须看到的，效果可以靠提示卡补。
 		cost_x = text_x
-		room = text_width
+		room = maxf(24.0, text_width - maintenance_width)
 	var reason := String(_entry.get("cost_reason", ""))
 	_text(origin + Vector2(cost_x, 36.0), _fit_text(cost_text, COST_SIZE, room),
 		COST_SIZE, UITokens.DOSSIER_OXBLOOD if not reason.is_empty()
 		else UITokens.DOSSIER_BRASS, "sans_strong")
+	_draw_maintenance(origin, text_x, text_width, maintenance, maintenance_width)
 	_draw_value_ink(origin, text_x, effect_width)
+
+
+## 第二行右端的实物维护读数。空串 = 这条链路没接通（旧 DLL / 未建成），
+## 直接不画；失修时整段换胭脂色。
+func _maintenance_line(text_width: float) -> String:
+	var text := String(_entry.get("maintenance_text", ""))
+	if text.is_empty():
+		return ""
+	return _fit_text(text, COST_SIZE, maxf(0.0, text_width * 0.6))
+
+
+func _draw_maintenance(origin: Vector2, text_x: float, text_width: float,
+		text: String, width: float) -> void:
+	if text.is_empty() or width <= 0.0:
+		return
+	var colour := UITokens.DOSSIER_OXBLOOD if bool(_entry.get("disrepair", false)) \
+		else UITokens.DOSSIER_INK_MUTED
+	_text(origin + Vector2(text_x + text_width - width + 8.0, 36.0), text,
+		COST_SIZE, colour, "sans_strong")
 
 
 ## 成本总览：「建材 · 工期」，缺料/缺钱时改写成短因由（需求 1.1 / 1.5）。

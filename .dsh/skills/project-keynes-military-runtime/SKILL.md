@@ -298,6 +298,39 @@ command silently no-ops. `PlayerController` re-checks `unlock_tech_id` against
 and the selftest. `barracks_tiers` is indexed by tier with tier 8 clamped to 7, so demolish only
 needs `role+tier`.
 
+## Physical maintenance (PKMI v6)
+
+Buildings and equipment are maintained by BUYING AND CONSUMING GOODS, never by paying cash.
+The chain is `need -> treasury pays the merchant -> goods delivered/transported -> stock
+consumed -> repair satisfaction -> equipment condition or building disrepair`.
+`SPEND_CASH` no longer carries building upkeep (only the legacy adapter remains, retired).
+
+Where things live:
+
+| piece | file | what to know |
+| --- | --- | --- |
+| recipes | `data/military/military_catalog.json` `repair.goods[{good, weight}]` -> compiler -> `repair_goods` / `repair_rate_q32` | `rate_q32` is q32 of ONE MILLI-GOOD per day (buildings per building, units per 100 heads). Buildings derive it as `upkeep x weight / default_price`; units use the supply `upkeep` intensity x ratio. Never re-derive at runtime. |
+| rows + engine | `military_core_maintenance.inc` | `run_maintenance` = REBUILD (from the committed economy ledger + live lots) -> DEMAND (`acc_q32 += rate x units`, `need = acc >> 32`) -> CONSUME (ratio = MIN over components, draw `need x ratio`, book `_ledger_consumed`) -> EFFECT (5-day window for buildings, daily ratio for equipment condition) -> BUY (coverage-ordered, 5/10-day policy, maintenance share of the envelope). |
+| stock holder | `MILITARY_LOT_MAINTENANCE = 3`, `holder = cell * 64 + catalog index` | Each building group owns its inventory, so two building types on one cell are judged separately. Quoted only because `capture_military_digest` now includes every repair material in the market read - omitting that makes the buy pass silently unable to see any market row. |
+| purchase | `queue_purchase` / `settle_purchase` | `queue_purchase` only records an order with a STABLE `request_id` (PKMI section 24). `settle_purchase` is the only place stock/convoy/ledger moves, and only the real filled quantity/amount counts. A receipt naming an unknown id is a duplicate. |
+| bridge | opcode 37/38/39 | The purchase sequence is `2^40 + request_id` and the POD lane must preserve it (`command_from_pod` maps `request_id -> sequence` for 36 AND 37); otherwise Economy stores the receipt under 0, the bridge never matches it, and every purchase silently times out after 8 days. |
+| budget | `wage_planned_today` / `maintenance_planned_today` | Payroll is planned FIRST, then maintenance, then general procurement, all against one frozen treasury snapshot. Procurement also cash-fits every take (channel quota alone is not enough). |
+| report/snapshot | `get_military_report()` + `get_military_maintenance_snapshot(country)` | 0 or -1 = all countries. Published columns are `*_goods` spellings plus `shortage_reason` in 0..3. `maintenance_disrepair_rows` counts objects CURRENTLY in disrepair, not today's flips. |
+
+Invariants that took real debugging:
+
+- **`_ledger_received` moves only at handover**; clearing a holder's stock (army destroyed, garrison
+  disbanded, training order dropped) must add the cleared quantity to `_ledger_returned`, or a long
+  run drifts. Two measured leaks came from exactly this: a purchase refunded to a dead formation
+  booked only `returned` (missing `received`), and `stock_clear_holder` booked nothing at all.
+- **No market row, no repair**: the digest only quotes goods it collects. Repair materials belong to
+  no supply class, so they must be added explicitly or every maintenance purchase reports
+  "no reachable market" forever.
+- **Cash is one pool**: after payroll reserves its plan, maintenance and procurement each subtract
+  what was already promised; a country whose payroll equals its treasury legitimately buys nothing.
+- The selftests that prove this: `test_maintenance` (carry: 1/3 milli-good/day must sum to
+  `floor(days/3)`; trade: buy -> consume -> `reconcile_delta == 0` -> `ratio_bp == 10000`).
+
 ## Verification
 
 1. Static: `rg` for changed op names/intents/fields across C++, GDScript and docs; `git diff --check`.

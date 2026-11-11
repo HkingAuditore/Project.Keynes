@@ -26,6 +26,8 @@ class_name MilitaryArmyTokenLayer
 ## 自己的部队永远显示。
 
 const SHADER_PATH: String = "res://shaders/military_paper_sticker.gdshader"
+const PAPER_DECAL_PATH: String = \
+	"res://assets/military/map/military_army_banner_token_v1.png"
 const FORMATION_SHADER_PATH: String = "res://shaders/military_formation_sprite.gdshader"
 const FORMATION_ATLAS_PATH: String = \
 	"res://assets/military/formations/prototype/military_formation_prototype_v4.png"
@@ -174,6 +176,9 @@ func _ensure_nodes() -> void:
 			return
 		_material = ShaderMaterial.new()
 		_material.shader = shader
+		var paper_decal := load(PAPER_DECAL_PATH) as Texture2D
+		if paper_decal != null:
+			_material.set_shader_parameter("paper_decal", paper_decal)
 		var quad := QuadMesh.new()
 		quad.size = Vector2.ONE
 		var mm := MultiMesh.new()

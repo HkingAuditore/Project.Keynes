@@ -932,7 +932,6 @@
     EconomyTrackedScalar<int64_t> _last_committed_day{_metadata_changes, {{15, 18}, "metadata.last_committed_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
-    int64_t _pending_military_cash_burn = 0;
     int64_t _external_population_delta = 0;
     int64_t _explicit_stock_delta = 0;
     int64_t _country_research_consumed_opening = 0;

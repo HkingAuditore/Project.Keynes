@@ -71,6 +71,7 @@ python tools/ui/build_military_codex_icons.py
 | `military.unit.militia` | 0, 0, 256, 256 |
 | `military.unit.musketeer` | 1792, 0, 256, 256 |
 | `military.unit.rifleman` | 256, 256, 256, 256 |
+| `military.unit.shield_bearers` | 0, 1792, 256, 256 |
 | `military.unit.siege_train` | 1024, 256, 256, 256 |
 | `military.unit.spearmen` | 512, 0, 256, 256 |
 | `military.unit.tank` | 1536, 256, 256, 256 |

@@ -42,7 +42,17 @@ const QUALITY_NAMES: Array[String] = ["", "Q1", "Q2", "Q3", "Q4", "Q5"]
 ## Combat multiplier per quality tier (design §4.2).
 const QUALITY_MULT: Array[float] = [1.0, 1.0, 1.2, 1.45, 1.75, 2.1]
 const STANCE_LABELS := {0: "固守", 1: "推进", 2: "强攻", 3: "撤退", 4: "海运"}
-const MISSION_LABELS := {0: "待命", 1: "行军", 2: "军事控制"}
+const MISSION_LABELS := {0: "待命", 1: "行军", 2: "军事控制", 3: "探路"}
+const EXPLORATION_PHASE_ACTIVE := 0
+const EXPLORATION_PHASE_RETURNING := 1
+const EXPLORATION_PHASE_PAUSED_BATTLE := 2
+const EXPLORATION_PHASE_COMPLETE := 3
+const EXPLORATION_PHASE_FAILED_NO_RETURN := 4
+const EXPLORATION_RESULT_NONE := 0
+const EXPLORATION_RESULT_ALL_SEEN := 1
+const EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE := 2
+const EXPLORATION_RESULT_FAILED_NO_RETURN := 3
+const EXPLORATION_RESULT_CANCELLED := 4
 const BAND_LABELS: Array[String] = ["低", "中", "高"]
 const SHARE_STEP_BP := 500
 const SUPPLY_HORIZON_DAYS := 30.0
@@ -898,9 +908,63 @@ func army_detail(army: Dictionary, prefetched: Dictionary = {}) -> Dictionary:
 
 
 func _mission_text(army: Dictionary) -> String:
-	var label := String(MISSION_LABELS.get(int(army.get("mission", 0)), "待命"))
+	var exploration_text := _exploration_status_text(army)
+	if not exploration_text.is_empty():
+		return exploration_text
+	var mission := int(army.get("mission", 0))
+	# A cancelled row can still be attached to the snapshot until the next
+	# order retires it. Never let that history row masquerade as a live mission.
+	if mission == 3:
+		return "待命"
+	var label := String(MISSION_LABELS.get(mission, "待命"))
 	var target := int(army.get("target_cell", -1))
 	return "%s → %s" % [label, cell_name(target)] if target >= 0 else label
+
+
+## A cancelled/replaced task is history, not a mission state. Completed and
+## failed rows remain visible until the next player order retires them.
+func _exploration_state(army: Dictionary) -> Dictionary:
+	var raw = army.get("exploration", null)
+	if not raw is Dictionary or (raw as Dictionary).is_empty():
+		return {}
+	var data := raw as Dictionary
+	if int(data.get("result", EXPLORATION_RESULT_NONE)) == EXPLORATION_RESULT_CANCELLED:
+		return {}
+	return data
+
+
+func _exploration_status_text(army: Dictionary) -> String:
+	var data := _exploration_state(army)
+	if data.is_empty():
+		return ""
+	var selected := maxi(0, int(data.get("selected", 0)))
+	var resolved := clampi(int(data.get("resolved", 0)), 0, selected)
+	var blocked := maxi(0, int(data.get("blocked", 0)))
+	var phase := int(data.get("phase", EXPLORATION_PHASE_ACTIVE))
+	var result := int(data.get("result", EXPLORATION_RESULT_NONE))
+	match phase:
+		EXPLORATION_PHASE_ACTIVE:
+			return "探路 %d/%d" % [resolved, selected]
+		EXPLORATION_PHASE_RETURNING:
+			return "探路 %d/%d · 返程中" % [resolved, selected]
+		EXPLORATION_PHASE_PAUSED_BATTLE:
+			return "探路暂停 · 交战中"
+		EXPLORATION_PHASE_COMPLETE:
+			if result == EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE and blocked > 0:
+				return "探查结束 · %d 格无法探明 · 已返回" % blocked
+			return "探路完成 · 已返回"
+		EXPLORATION_PHASE_FAILED_NO_RETURN:
+			return "探路完成 · 无法返回 · 原地待命"
+	return ""
+
+
+func _exploration_has_live_order(army: Dictionary) -> bool:
+	var data := _exploration_state(army)
+	if data.is_empty():
+		return false
+	var phase := int(data.get("phase", EXPLORATION_PHASE_ACTIVE))
+	return phase == EXPLORATION_PHASE_ACTIVE or phase == EXPLORATION_PHASE_RETURNING \
+		or phase == EXPLORATION_PHASE_PAUSED_BATTLE
 
 
 ## ── 军务档案（右栏页面，见 docs/ui/military-dossier.md）─────────────────
@@ -989,18 +1053,27 @@ func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
 			},
 		})
 	var own := owner_slot >= 0 and owner_slot == player_slot
+	var exploration := _exploration_state(detail)
+	var explore_live := _exploration_has_live_order(detail)
+	var engaged := int(detail.get("engagement", -1)) >= 0
+	var explore_reason := ""
+	if engaged:
+		explore_reason = "交战中无法开始探路。"
 	var actions := [
 		{"id": "locate", "label": "定位", "enabled": true},
 		{"id": "move", "label": "移动", "enabled": own},
 		{"id": "area", "label": "军事控制", "enabled": own},
-		{"id": "stop", "label": "停止任务", "enabled": own and int(detail.get("mission", 0)) != 0},
+		{"id": "explore", "label": "探路", "enabled": own and not engaged,
+			"reason": explore_reason},
+		{"id": "stop", "label": "停止任务",
+			"enabled": own and (int(detail.get("mission", 0)) != 0 or explore_live)},
 	]
 	var remaining := 0
 	var path = detail.get("path", null)
 	if path is PackedInt32Array or path is Array:
 		remaining = path.size()
 	var note := ""
-	if remaining > 0:
+	if remaining > 0 and int(detail.get("mission", 0)) != 3:
 		note = "%s · 剩 %d 格" % [
 			String(MISSION_LABELS.get(int(detail.get("mission", 0)), "行军")), remaining]
 	var dominant_unit := -1
@@ -1046,6 +1119,7 @@ func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
 			"badges": badges,
 			"note": note,
 			"actions": actions,
+			"exploration": exploration.duplicate(),
 			"same_cell_rows": same_rows,
 		},
 	}

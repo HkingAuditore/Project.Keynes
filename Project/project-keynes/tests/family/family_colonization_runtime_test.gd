@@ -8,6 +8,15 @@ var _failures := 0
 
 
 func _init() -> void:
+	if OS.get_cmdline_user_args().has("--population-shrink-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			compiled.erase("ok")
+			_run_preparing_population_shrink(compiled)
+		print("=== family colonization population shrink: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
 	if OS.get_cmdline_user_args().has("--soft-tools-only"):
 		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
@@ -305,6 +314,7 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_optional_tool_bridge(catalog.duplicate(true))
 	_run_zero_stock_partial_kit(catalog.duplicate(true))
 	_run_preparing_stock_accumulation(catalog.duplicate(true))
+	_run_preparing_population_shrink(catalog.duplicate(true))
 	_run_material_topup_departs(catalog.duplicate(true))
 	_run_construction_category_substitute(catalog.duplicate(true))
 	_run_unreachable_material_aborts(catalog.duplicate(true))
@@ -1231,6 +1241,68 @@ func _add_market_stock(ext: Object, day: int, sequence: int, cell: int,
 		"i64_1": zeros,
 	})
 	return bool(result.get("ok", false))
+
+
+func _run_preparing_population_shrink(catalog: Dictionary) -> void:
+	var fixture := _make_fixture(catalog, 261110, 0, {},
+		PackedStringArray(), 1, 1000000000000)
+	var ext: Object = fixture.ext
+	var country := int(fixture.country_handle)
+	if ext == null or country == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	var family := int((families.family_handles as PackedInt64Array)[0])
+	var quotes: Dictionary = ext.get_family_colonization_quotes(country, 2, family, 0, 0, 64)
+	var requested := int((quotes.maximum_populations as PackedInt64Array)[0])
+	var day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country, family, 0, 2,
+		requested, int((quotes.quote_tokens as PackedInt64Array)[0]), day, 26111001)
+	_expect("population shrink fixture starts preparing the quoted branch", bool(started.get("ok", false))
+		and String(started.get("code", "")) == "colonization_preparing" and requested > 4)
+	if not bool(started.get("ok", false)):
+		return
+	var handle := int(started.get("expedition_handle", 0))
+	var before: Dictionary = ext.get_family_expedition_snapshot(country, handle)
+	# 另一支小队先出发，真实减少同一源地的族人，不直接改测试账本。
+	quotes = ext.get_family_colonization_quotes(country, 1, family, 0, 0, 64)
+	var other: Dictionary = ext.start_family_colonization(country, family, 0, 1,
+		2, int((quotes.quote_tokens as PackedInt64Array)[0]), day, 26111002)
+	_expect("another departure reduces the preparing family's source population",
+		bool(other.get("ok", false)) and String(other.get("code", "")) != "colonization_preparing")
+	var source_before := int(ext.get_population_cell_snapshot(0).population)
+	var snap: Dictionary
+	for step in range(1, 5):
+		_run_day(ext, day + step)
+		snap = ext.get_family_expedition_snapshot(country, handle)
+		if int(snap.get("population", requested)) < requested:
+			break
+	_expect("preparation shrinks to the remaining local dispatch capacity instead of aborting",
+		bool(snap.get("ok", false)) and int(snap.get("state", 0)) == 4
+		and int(snap.get("population", 0)) == requested - 2
+		and int(ext.get_population_cell_snapshot(0).population) == source_before)
+	_expect("procurement target is recalculated for the smaller party",
+		int(snap.get("kit_bridge_required_units", 0)) > 0
+		and int(snap.get("kit_bridge_required_units", 0)) < int(before.get("kit_bridge_required_units", 0)))
+	var goods := PackedInt32Array()
+	for good in range((catalog.good_ids as PackedStringArray).size()):
+		goods.append(good)
+	day += 5
+	_expect("shrunken preparation can restock through ordinary market commands",
+		_add_market_stock(ext, day, 26111100, 0, goods, 1000000000))
+	var departed := false
+	for step in range(8):
+		_run_day(ext, day + step)
+		snap = ext.get_family_expedition_snapshot(country, handle)
+		if bool(snap.get("ok", false)) and int(snap.get("state", 0)) == 1:
+			departed = true
+			break
+	var report: Dictionary = ext.get_economy_report()
+	_expect("the reduced party departs with actual payload and conserved ledgers",
+		departed and int(snap.get("population", 0)) == requested - 2
+		and not bool(report.get("fatal", false))
+		and int(report.get("population_error", -1)) == 0
+		and int(report.get("money_error", -1)) == 0
+		and int(report.get("goods_error", -1)) == 0)
 
 
 func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:

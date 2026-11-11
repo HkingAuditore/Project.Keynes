@@ -1672,7 +1672,9 @@ bool RuntimeEconomyPodAuthority::queue_command(
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_MERGE_LANES ||
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_SPLIT_LANES ||
         command.opcode == NativeEconomyRuntime::COMMAND_ARMY_LANE_PAY;
-    if (!military_convert && !army_personnel_lane && command.opcode != NativeEconomyRuntime::COMMAND_MILITARY_PROCUREMENT_DEMAND && command.opcode != NativeEconomyRuntime::COMMAND_TREASURY_SPONSORED_DEMOLISH &&
+    if (!military_convert && !army_personnel_lane && command.opcode != NativeEconomyRuntime::COMMAND_MILITARY_PROCUREMENT_DEMAND &&
+        command.opcode != NativeEconomyRuntime::COMMAND_MILITARY_PURCHASE &&
+        command.opcode != NativeEconomyRuntime::COMMAND_MILITARY_PURCHASE_ACK && command.opcode != NativeEconomyRuntime::COMMAND_TREASURY_SPONSORED_DEMOLISH &&
         (command.opcode < 1 || command.opcode > 23)) {
         return reject_admission("economy_command_opcode_out_of_range");
     }

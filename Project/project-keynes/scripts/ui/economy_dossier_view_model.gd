@@ -7,6 +7,9 @@ class_name EconomyDossierViewModel
 
 const MONEY_SCALE := 10000.0
 const Q16 := 65536.0
+const DEFAULT_CASHFLOW_WINDOW_DAYS := 30
+const CASHFLOW_WINDOW_OPTIONS := [7, 30]
+const OTHER_TREASURY_CHANGE_LABEL := "其他国库变动"
 
 const CHAPTERS: Array[Dictionary] = [
 	{"id": "overview", "label": "总览", "icon": &"summary.overview", "question": ""},
@@ -332,14 +335,14 @@ func _kpi(id: String, title: String, value: float, kind: String, positive_good: 
 
 # ── 总览 ────────────────────────────────────────────────────────────────
 
-func overview_model() -> Dictionary:
+func overview_model(window_days: int = DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
 	var summary := query("summary")
 	if not bool(summary.get("ok", false)):
 		return {"ok": false, "reason": _reason(summary)}
 	var goods := query("goods")
 	return {
 		"ok": true,
-		"cashflow": cashflow_model(),
+		"cashflow": cashflow_model(window_days),
 		"price": price_model(summary),
 		"living": living_standard_model(summary),
 		"per_capita": per_capita_model(),
@@ -414,17 +417,106 @@ func per_capita_model() -> Dictionary:
 		"population": _gdp_ledger.national_population()}
 
 
-## 当日国库收支：堆叠条看结构（谁交的、补给谁），折线看方向（总量怎么变）。
+## 国库收支：堆叠条看结构（谁交的、补给谁），折线看方向（总量怎么变）。
+## 有逐日国库历史时优先展示滑动窗口日均；历史还不足以形成一段现金区间时，
+## 回退到当天/最近一次结算，避免用单点伪造整月均值。
 ## 数据只来自 shell 模型里的财政快照与国库日序列，不额外发起原生查询。
-func cashflow_model() -> Dictionary:
+func cashflow_model(window_days: int = DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
 	var history = _model.get("fiscal_history", null)
 	var fiscal: Dictionary = _model.get("fiscal", {})
 	if history is EconomyFiscalHistory:
-		fiscal = history.display_snapshot(fiscal)
-	var flow := build_cashflow(fiscal)
-	if history is EconomyFiscalHistory:
-		flow["income_series"] = _series_money(history.income_series())
-		flow["expense_series"] = _series_money(history.expense_series())
+		return cashflow_from_history(history, fiscal, window_days)
+	return build_cashflow(fiscal)
+
+
+static func cashflow_from_history(history: EconomyFiscalHistory, fiscal: Dictionary,
+		window_days: int = DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
+	var rolling := history.rolling_snapshot(window_days)
+	var flow: Dictionary
+	if bool(rolling.get("ok", false)):
+		flow = build_rolling_cashflow(rolling)
+	else:
+		flow = build_cashflow(history.display_snapshot(fiscal))
+	flow["history_available"] = history.size() > 0 or history.latest_cash_day() >= 0
+	flow["can_roll"] = history.cash_size() >= 2
+	flow["income_series"] = _series_money(history.income_series())
+	flow["expense_series"] = _series_money(history.expense_series())
+	return flow
+
+
+## 把窗口内去重后的结算事件折算成日均，再用国库现金首尾差补齐未细分项目。
+## `rolling` 来自 `EconomyFiscalHistory.rolling_snapshot()`，金额仍是原生
+## 1/10000 货币单位。
+static func build_rolling_cashflow(rolling: Dictionary) -> Dictionary:
+	var days := maxi(1, int(rolling.get("covered_days", 1)))
+	var daily := {
+		"ok": true,
+		"has_settlement": true,
+		"sample_day": int(rolling.get("sample_day", -1)),
+		"tax_kinds": rolling.get("tax_kinds", PackedStringArray()),
+		"tax_base": _average_values(rolling.get("tax_base", PackedInt64Array()), days),
+		"collected": _average_values(rolling.get("collected", PackedInt64Array()), days),
+		"subsidy_requested": _average_values(
+			rolling.get("subsidy_requested", PackedInt64Array()), days),
+		"subsidy_paid": _average_values(
+			rolling.get("subsidy_paid", PackedInt64Array()), days),
+		"non_tax_outflow_kinds": rolling.get(
+			"non_tax_outflow_kinds", PackedStringArray()),
+		"non_tax_outflow": _average_values(
+			rolling.get("non_tax_outflow", PackedInt64Array()), days),
+	}
+	var flow := build_cashflow(daily)
+	if not bool(flow.get("ok", false)):
+		flow["history_available"] = true
+		return flow
+	var other_change := float(rolling.get("unclassified_change", 0)) / float(days)
+	if absf(other_change) > 0.000001:
+		if other_change > 0.0:
+			var income_segment: Dictionary = _flow_segments([{
+				"label": OTHER_TREASURY_CHANGE_LABEL,
+				"value": other_change,
+			}], UITokens.DOSSIER_BRASS)[0]
+			(flow["income_segments"] as Array).append(income_segment)
+			flow["income_total"] = float(flow.get("income_total", 0.0)) \
+				+ other_change / MONEY_SCALE
+			(flow["detail_rows"] as Array).append(
+				_other_treasury_change_row(other_change, true))
+		else:
+			var expense_segment: Dictionary = _flow_segments([{
+				"label": OTHER_TREASURY_CHANGE_LABEL,
+				"value": -other_change,
+			}], UITokens.DOSSIER_OXBLOOD)[0]
+			(flow["expense_segments"] as Array).append(expense_segment)
+			flow["expense_total"] = float(flow.get("expense_total", 0.0)) \
+				+ (-other_change) / MONEY_SCALE
+			(flow["detail_rows"] as Array).append(
+				_other_treasury_change_row(-other_change, false))
+	var income := float(flow.get("income_total", 0.0))
+	var expense := float(flow.get("expense_total", 0.0))
+	var net := income - expense
+	var window := int(rolling.get("window_days", days))
+	var covered := int(rolling.get("covered_days", days))
+	var partial := covered < window
+	var label := "近 %d 日 · 日均" % window
+	flow["rolling"] = true
+	flow["window_days"] = window
+	flow["covered_days"] = covered
+	flow["event_days"] = int(rolling.get("event_days", 0))
+	flow["is_partial"] = partial
+	flow["window_label"] = label
+	flow["window_text"] = label + (" · 实际 %d 日" % covered if partial else "")
+	flow["coverage_text"] = "实际 %d 日" % covered if partial else ""
+	flow["cash_change"] = float(rolling.get("cash_change", 0)) / MONEY_SCALE
+	flow["classified_net"] = float(rolling.get("classified_net", 0)) / MONEY_SCALE
+	flow["other_change"] = other_change / MONEY_SCALE
+	flow["income_text"] = _money_text(income * MONEY_SCALE)
+	flow["expense_text"] = _money_text(expense * MONEY_SCALE)
+	flow["net"] = net
+	flow["net_text"] = ("+" if net >= 0.0 else "−") \
+		+ _money_text(absf(net) * MONEY_SCALE)
+	flow["net_positive"] = net >= 0.0
+	flow["day_text"] = String(flow.get("window_text", label))
+	flow["series_is_settlement"] = true
 	return flow
 
 
@@ -434,6 +526,32 @@ static func _series_money(values: PackedFloat32Array) -> PackedFloat32Array:
 	for index in range(values.size()):
 		out[index] = values[index] / MONEY_SCALE
 	return out
+
+
+static func _average_values(values, days: int) -> PackedFloat64Array:
+	var divisor := maxf(1.0, float(days))
+	var out := PackedFloat64Array()
+	if values == null:
+		return out
+	out.resize(values.size())
+	for index in range(values.size()):
+		out[index] = float(values[index]) / divisor
+	return out
+
+
+static func _other_treasury_change_row(amount: float, positive: bool) -> Dictionary:
+	var money := _cashflow_cell(amount, UITokens.DOSSIER_BRASS if positive \
+		else UITokens.DOSSIER_OXBLOOD)
+	return {
+		"id": EconomyFiscalHistory.OTHER_TREASURY_CHANGE_ID,
+		"cells": {
+			"name": {"text": OTHER_TREASURY_CHANGE_LABEL},
+			"base": _cashflow_cell(0.0),
+			"collected": money if positive else _cashflow_cell(0.0),
+			"requested": _cashflow_cell(0.0),
+			"paid": _cashflow_cell(0.0) if positive else money,
+		},
+	}
 
 
 ## 财政快照 → 两侧堆叠段、逐税种明细行与当日合计。

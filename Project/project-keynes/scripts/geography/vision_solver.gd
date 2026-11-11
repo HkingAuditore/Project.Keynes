@@ -38,6 +38,9 @@ enum { FOG_UNEXPLORED = 0, FOG_EXPLORED = 1, FOG_VISIBLE = 2 }
 
 ## 基础视野预算。平原 view_block = 10，所以平地上大约看 4 格。
 const BASE_BUDGET: int = 42
+## 部队是移动观察点，但观察能力低于城市/领土源。即使在最高地形上，
+## `MILITARY_BASE_BUDGET + view_height / 2` 仍低于城市源的预算。
+const MILITARY_BASE_BUDGET: int = 24
 ## 单格 view_height 的上限，用于 bucket 数组定尺。
 const MAX_VIEW_HEIGHT: int = 32
 ## 知识度 blur 迭代次数。必须 ≥ 2：迷雾 shader 的噪声域扭曲最多位移 1 个 hex，
@@ -149,7 +152,8 @@ static func bake_static_fields(map: MapData, world: WorldData) -> Dictionary:
 ## 重算可见性并累积 explored。player_slot < 0（尚未建国）时全图不可见，
 ## 但已探索区保持不变——不能因为暂时没有领土就抹掉玩家进度。
 ## 返回统计信息，供诊断与测试断言。
-static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionary:
+static func solve(map: MapData, world: WorldData, player_slot: int,
+		military_source_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	var report := {
 		"ok": false, "reason": "", "visible": 0, "explored": 0,
 		"sources": 0, "cells": 0, "elapsed_ms": 0.0,
@@ -178,7 +182,8 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 		for i in range(n):
 			if map.country_slot_arr[i] == player_slot:
 				source_cells.append(i)
-	var visible_report := compute_visible_for_sources(map, world, source_cells)
+	var visible_report := compute_visible_for_sources(
+		map, world, source_cells, military_source_cells)
 	if not bool(visible_report.get("ok", false)):
 		report.reason = String(visible_report.get("reason", "visible_probe_failed"))
 		return report
@@ -213,6 +218,7 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	report.visible = visible_count
 	report.explored = explored_count
 	report.sources = source_count
+	report.military_sources = military_source_cells.size()
 	report.cells = n
 	report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 	report.visibility_changed_cells = visibility_changed_cells
@@ -225,7 +231,8 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 ## 纯只读视野探针。出生点求解与正式首帧共用同一传播算法，且不受“关闭迷雾”
 ## 的全图直通开关影响。
 static func compute_visible_for_sources(map: MapData, world: WorldData,
-		source_cells: PackedInt32Array) -> Dictionary:
+		source_cells: PackedInt32Array,
+		military_source_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	if map == null or world == null:
 		return {"ok": false, "reason": "missing_map_or_world"}
 	var n := map.cell_count()
@@ -239,10 +246,15 @@ static func compute_visible_for_sources(map: MapData, world: WorldData,
 	for cell in source_cells:
 		if cell < 0 or cell >= n:
 			return {"ok": false, "reason": "source_cell_invalid", "cell": cell}
+	for cell in military_source_cells:
+		if cell < 0 or cell >= n:
+			return {"ok": false, "reason": "military_source_cell_invalid", "cell": cell}
 	return {
 		"ok": true,
-		"visible": _solve_visible_from_sources(map, world, source_cells, n),
+		"visible": _solve_visible_from_sources(
+			map, world, source_cells, military_source_cells, n),
 		"sources": source_cells.size(),
+		"military_sources": military_source_cells.size(),
 	}
 
 
@@ -304,13 +316,14 @@ static func _ensure_arrays(map: MapData, n: int) -> void:
 
 
 static func _solve_visible_from_sources(
-	map: MapData, world: WorldData, source_cells: PackedInt32Array, n: int
+	map: MapData, world: WorldData, source_cells: PackedInt32Array,
+	military_source_cells: PackedInt32Array, n: int
 ) -> PackedByteArray:
 	var visible := PackedByteArray()
 	visible.resize(n)
 	for i in range(n):
 		visible[i] = 0
-	if source_cells.is_empty():
+	if source_cells.is_empty() and military_source_cells.is_empty():
 		return visible
 
 	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
@@ -333,6 +346,14 @@ static func _solve_visible_from_sources(
 
 	for source in source_cells:
 		var budget: int = clampi(BASE_BUDGET + int(view_height[source]), 0, max_budget)
+		if budget > best[source]:
+			best[source] = budget
+			buckets[budget].append(source)
+	for source in military_source_cells:
+		if source < 0 or source >= n:
+			continue
+		var budget: int = clampi(
+			MILITARY_BASE_BUDGET + int(view_height[source]) / 2, 0, max_budget)
 		if budget > best[source]:
 			best[source] = budget
 			buckets[budget].append(source)

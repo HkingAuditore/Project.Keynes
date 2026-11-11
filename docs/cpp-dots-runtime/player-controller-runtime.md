@@ -180,6 +180,10 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 `PK_AI_LLM_API_KEY` / `PK_AI_IMAGE_API_KEY` 只为尚未保存的字段提供初始值。
 凭据回归测试使用独立文件及虚构密钥，不发送网络请求。
 
+AI 生成配置的入口在**游戏设置**：暂停菜单（顶栏齿轮）→ 设置 → AI 生成设置
+（`pause_menu.gd::_show_ai_settings`，自动化见 `tests/ui/pause_menu_ai_settings_test.gd`）。
+事件弹窗与史册面板不再提供入口，玩家在没有任何事件时也能配置模型与密钥。
+
 ### 弹窗节奏（Pacing，2026-11）
 
 旧节奏约为「每 8 天一次弹窗」（x5 速度下约 1.6 秒），实测过密，已整体下调一个数量级。
@@ -190,7 +194,7 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 | `DEFAULT_PULSE_INTERVAL_DAYS` | 5 | 20 | 脉冲采样间隔 |
 | `DEFAULT_MIN_POPUP_GAP_DAYS` | 15 | 60 | 全局弹窗间隔闸门 |
 | `pulse_trigger_chance_q16` | ~60% | ~25% | 单次脉冲放行概率 |
-| `ai_slot_chance_q16` | ~25% | ~4% | AI 事件预热概率 |
+| `ai_slot_chance_q16` | ~25% | ~4% | AI 事件预热**基础**概率（局势拉满抬到 `ai_max_chance_q16`） |
 
 要点：
 - `popup_pacing_blocked(day)` 是唯一闸门，对**脉冲采样、事实驱动、AI 生成**三条通道无条件生效，不再只在「弹窗未关闭」时才拦；`days_until_next_allowed_popup(day)` 供诊断/UI 查询。
@@ -201,16 +205,53 @@ Inspector；工作区覆盖计入地图安全区，关闭恢复原来 Inspector�
 - 要再调紧/放松只改头部四个参数，不必动触发逻辑。
 - 回归入口：`tests/game/narrative_event_runtime_test.gd`（内部直连 `enqueue_event_offer` 时均已传 `bypass_gap = true`，不受闸门影响）。
 
+### AI 事件入口与时效（2026-11）
+
+AI 事件不再只靠 20 天一次的脉冲抽签，共三个入口，全部收在
+`NarrativeEventService` 的同一条请求出口 `_request_ai_generation()`：
+
+| 入口 | 触发条件 | 基础概率 |
+| --- | --- | --- |
+| 脉冲预热 | 过了脉冲闸门与 AI 节流 | `ai_slot_chance_q16`（4%） |
+| 事实驱动 | `GameplayEventBus` 事实类型命中 `AI_FACT_HINTS` | `ai_fact_chance_q16`（20%） |
+| 状态探针 | 持续状态成立且维持 `dwell_days` | 不掷骰，按节流放行（见下节） |
+| 定时后续预取 | 定时事件带 `ai_prompt_hint` 且无 event id | 不掷骰，按节流放行 |
+
+要点：
+
+- **事实白名单**：`AI_FACT_HINTS` 覆盖天气锋面、营造完工、商队抵达、民生压力、科研线索、地貌发现、技术采纳（3/6/7/8/9/10/13）与军事事实 40–45；未列出的类型（视觉脏标记、epoch 提交、天气观测等）不触发 AI。军事事实的 `cell = -1` 由 `_resolve_valid_player_cell()` 兜到首都格。
+- **局势加权**：`situation_pressure_score()` 把即时快照折成 0..100（紧缺 ≤30、价格溢价 ≤25、满意度缺口 ≤25、极端气温 ≤20、积雪 ≤10），`_ai_chance_q16()` 在 `[基础概率, ai_max_chance_q16=40%]` 间线性抬升。掷骰仍只依赖 `(world_seed, day, country, cell, salt)`，同一节流状态下存读档不会换结果。
+- **节流**：两条硬闸门 —— `ai_min_request_gap_days`（默认 60 游戏日，与弹窗间隔同档）与 `AI_MAX_IN_FLIGHT = 1`。一次战争或一次饥荒最多换来一条请求，不会刷出十几条 LLM 调用，也不会挤占静态事件的展示预算。
+- **请求/回执事务**：`_request_ai_generation()` 分配 `ai_request_seq` 并登记 `_pending_ai_requests`；控制器只把回执与到达日转给 `accept_ai_generation()`，由服务层判时效、判归属、走 `enqueue_event_offer()` 的全局闸门与年度额度。
+- **时效**：快照在请求日采样，回执超过 `ai_max_staleness_days`（默认 60 游戏日，x5 速度下约 12 现实秒，正好覆盖一次 LLM 往返）按 `ai_result_stale` 丢弃；落地时重新采样地块上下文，只有 `body_text` 仍出自请求日。读档会清空在途请求，迟到响应按 `ai_request_unknown` 丢弃；`_prune_expired()` 同时回收迟迟不回的登记项，避免永久占住在途名额。
+- **持久化**：`pknr` 增补可选字段 `last_ai_request_day` / `next_ai_request_seq`，旧档按默认值恢复，`SCHEMA_VERSION` 仍为 1；`_pending_ai_requests` 不跨存档。
+- **提示词**：事实入口通过 `fact_hint` 注入「本次触发事实」段，AI 被要求直接回应这条事实，而不是另起场景。
+- 回归入口：`tests/game/narrative_event_runtime_test.gd` 覆盖事实即时触发、超时丢弃、读档丢弃、到达日重新采样与局势评分区间。
+
+### 状态探针与 AI 事件池（2026-11）
+
+事实是一次性的，状态是持续处境。状态探针让 AI 按「长期局势」预写事件，并把写好的稿子缓存到状态再次出现时才用：
+
+- **定义**：`NarrativeStateProbe`（`state_id` / `display_name` / `prompt_hint` / `dwell_days` / `cooldown_days` / `conditions`）。首批三条见 `narrative_state_probe_catalog.gd`：粮食紧缺（粮价比 ≥ 1.35）、民生不满（满意度 ≤ 0.45）、连旱（湿度 ≤ 0.28 且气温 ≥ 28）。条件只能是 `NarrativeCondition` 支持的算子，**AI 不参与状态定义**。
+- **判定**：`_poll_state_probes()` 每 `state_probe_interval_days`（默认 7 日）在最多 8 个领土地块上求值；已入状态的格子强制继续采样，避免随机抽样打断 dwell 计数。`situation_pressure_score()` 之外的 `_state_tracking` 记录 `since_day`、期间最高价格比、期间最低满意度。
+- **预取**：`dwell_days` 满足、无同状态在途请求、且过了 `cooldown_days` 才发一次请求，`state_hint` 把状态、持续天数与期间极值写进 prompt 的「当前长期状态」段。
+- **池化**：回执在 `accept_ai_generation()` 里用引擎条件复核「到达这一刻」的状态。成立 → 正常入队；不成立或闸门/年度额度拦住 → `_stash_pooled_event()` 进池，返回 `ai_event_pooled`（不是失败）。
+- **出池**：`_flush_ai_pool()` 每天在弹窗闸门打开时尝试（每次最多 4 条，避免热路径采样），状态成立才 `enqueue_event_offer()`；池子上限 24 条、每状态 2 条、TTL 730 日，读档保留（`pknr` 可选字段 `ai_event_pool` / `next_pool_id` / `state_tracking` / `state_last_seed`）。
+- **文案不写读数**：状态事件会被缓存数月，因此 `title` / `body_text` / 选项 / 结果标题只写处境与后果，不写气温、价格、库存、人口、百分比、日期等读数（prompt 第 5 条）。数字本身不是禁忌：「三人」「三成」「第 3 条」照常写。validator 只做一件无损修补：把 `34.2℃` / `34.2 °C` 改写成 `{temperature}`，由引擎在入队时填充当前气温；`custom_label` 例外，仍写「对象 + 幅度 + 时长」。
+- 回归入口：`tests/game/narrative_event_runtime_test.gd` 覆盖 dwell 未满不请求、状态破裂入池、同状态复现出池（不再耗 API）、每状态 2 条上限、池子存读档、温度读数改写为占位符与「不写读数」规则入 prompt。
+
 ### 事件文案规范（2026-11）
 
 事件 UI 只放可决策的信息，不写场景描写与修辞：
 
-- 标题 `地点·事件`；题头 `第 N 日 · 地貌 · 气温`，标题已含地名时不再重复。
+- 标题 `地点·事件`；题头只放日历 `第 N 年 · M 月 D 日`，不再堆聚落、地貌与气温（地名在标题里，气温属读数）。
+  `NarrativeEventService` 在入队时按发生日算好 `date_text`，弹窗与史册共用；无 `WorldClock` 时退回 `第 N 日`。
 - 正文 ≤ 2 短句，只写触发条件与影响。
+- 叙事文本不写数据读数：气温、价格、库存、人口、百分比、金额、日期天数一律不写，需要指代气温时用 `{temperature}` 占位符（状态事件会缓存复用，读数必然过期）。叙述用的泛指数量照常写（三人、数十户、三成）。这条靠 prompt 约束；validator 只把 `34.2℃` 这类温度读数改写成 `{temperature}`，不删句子。
 - 选项 = 动作（4-12 字）；`tooltip_hint` 留空，界面不显示重复说明。
 - 结果只有标题 + 效果行；`outcome_narrative` 不再渲染，AI 也不再生成。
 - 效果行统一「对象 + 幅度 + 时长」，如 `本地农业产出 +15%，90 日`；`NarrativeEffectSpec.describe()` 是唯一兜底。
-- 只有映射到 `TAG_CN_LABELS` 的标签才显示（最多 3 个），内部 id 不进 UI。
+- 分类标签不再上题头（`气候` / `干旱` / `农业` 这类信息由标题与正文承担）；题头右侧只保留 `定位` / `记录` 两个动作，AI 事件额外挂一枚「AI 生成」纸签。
 - `NarrativeAiPromptBuilder` 要求模型按同一规范输出，`NarrativeAiValidator` 对正文做 160 字截断兜底。
 
 ## Clock control and modal regression coverage (2026-11-04)

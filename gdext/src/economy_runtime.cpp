@@ -1223,6 +1223,72 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                     before, market_store().stock[index]);
             break;
         }
+        case COMMAND_MILITARY_PURCHASE_ACK:
+            _pending_commands.erase_if([&](const Command &r) {
+                return r.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT && r.sequence == cmd.i64_0;
+            });
+            return true;
+        case COMMAND_MILITARY_PURCHASE: {
+            for (const Command &r : _pending_commands)
+                if (r.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT && r.sequence == cmd.sequence) return true;
+            // A purchase that already settled must never buy twice. The pending
+            // receipt row only guards the window before its ACK; after the ACK a
+            // replayed row (save taken between drain and commit, or a duplicate
+            // batch) would otherwise charge the treasury and take market stock a
+            // second time (physical-maintenance design D6). The ring is transient
+            // by design: a restore replays the queue, not past settlements.
+            static thread_local int64_t settled_purchases[256] = {};
+            static thread_local int32_t settled_purchase_cursor = 0;
+            for (int32_t i = 0; i < 256; ++i) {
+                if (settled_purchases[i] == cmd.sequence) return true;
+            }
+            Command receipt = cmd;
+            receipt.opcode = COMMAND_MILITARY_PURCHASE_RECEIPT;
+            receipt.effective_day = _sample_day;
+            receipt.i64_0 = receipt.i64_1 = 0;
+            const int32_t cell = cmd.i32_0, good = cmd.i32_1;
+            if (cell >= 0 && cell < _cell_count.get() && good >= 0 && good < market_store().good_count.get() &&
+                _country_runtime && country_reads().valid_handle(cmd.target_handle) &&
+                country_reads().country_handle_for_cell(cell) == static_cast<int64_t>(cmd.target_handle) &&
+                local_merchants_can_receive(cell) && cmd.i64_0 > 0 && cmd.i64_1 > 0) {
+                const int32_t market = market_store().cell_to_market[cell];
+                const size_t lane = market_store().index(market, good);
+                const int64_t price = std::max<int64_t>(1, market_store().price[lane]);
+                const int32_t country = country_reads().country_slot_for_cell(cell);
+                const int64_t wallet = std::min(cmd.i64_1, std::max<int64_t>(0, country_reads().cash_for_slot(country)));
+                const int64_t quantity = std::min({cmd.i64_0, std::max<int64_t>(0, market_store().stock[lane]),
+                    mul_div_sat(wallet, GOODS_SCALE, price, _saturation_count)});
+                const int64_t cost = goods_cost(quantity, price, _saturation_count);
+                if (quantity > 0 && cost > 0) {
+                    int64_t paid = 0;
+                    if (!coordinate_country_treasury_spend(cell, market, cmd.target_handle,
+                            {good}, {0}, {quantity}, cost, paid, error)) {
+                        // A merchant lane nobody lives on cannot receive the money.
+                        // That is "no counterparty", i.e. a zero-fill refusal, not
+                        // an economy fault: failing the command here would pause
+                        // the clock for a whole-country treasury because one cell
+                        // lost its merchant (physical-maintenance design S5-4).
+                        if (error == "country_treasury_peer_merchant_missing") {
+                            error.clear();
+                            receipt.i64_0 = 0;
+                            receipt.i64_1 = 0;
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        _explicit_stock_delta = saturating_sub(_explicit_stock_delta, quantity, _saturation_count);
+                        receipt.i64_0 = quantity; receipt.i64_1 = paid;
+                        const int32_t signal = ensure_market_signal_index(cell, good);
+                        if (signal >= 0 && signal < static_cast<int32_t>(_epoch_nonhousehold_withdrawals.size()))
+                            _epoch_nonhousehold_withdrawals[signal] += quantity;
+                        settled_purchases[settled_purchase_cursor & 255] = cmd.sequence;
+                        ++settled_purchase_cursor;
+                    }
+                }
+            }
+            _pending_commands.push_back(receipt);
+            return true;
+        }
         case COMMAND_MARKET_GOOD_TO_COUNTRY: {
             event_cell = cmd.i32_0;
             if (_country_runtime == nullptr ||

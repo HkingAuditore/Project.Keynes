@@ -539,7 +539,9 @@ func _section_signature(section_id: String) -> String:
 			1 if _procurement_enabled() else 0]
 	if section_id == SECTION_MILITARY:
 		var military: Dictionary = _military_model()
-		return "m:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+		# 维护明细单独占一位：实物读数（需求/库存/在途/满足率）天天变，
+		# 不把它算进签名的话板块的明细会停在开面板那一帧。
+		return "m:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
 			int(military.get("wage_paid_last_period", 0)),
 			int(military.get("maintenance_paid_last_period", 0)),
 			int(military.get("procurement_paid_last_period", 0)),
@@ -556,7 +558,9 @@ func _section_signature(section_id: String) -> String:
 			int(military.get("upkeep_overspend", 0)),
 			int(military.get("wage_demand", 0)),
 			int(military.get("upkeep_demand", 0)),
-			int(military.get("procurement_deferred_units", 0))]
+			int(military.get("procurement_deferred_units", 0)),
+			1 if bool(military.get("maintenance_supported", false)) else 0,
+			int(military.get("maintenance_signature", 0))]
 	return ""
 
 ## 顶部纸带：滚动分区时它不动，所以每次刷新都要按最新政策重画。

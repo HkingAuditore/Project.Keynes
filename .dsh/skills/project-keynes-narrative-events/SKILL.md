@@ -24,6 +24,13 @@ DataCore / DCWorldExt (Climate/Ocean/Geography) + CountryFacade + EconomyFacade 
    ▼
 NarrativeEventService (scripts/narrative/narrative_event_service.gd)
    │  - Dual-channel trigger engine (Fact-Driven + Periodic Pulse Sampler)
+   │  - AI ingress: pulse slot / fact-driven (`AI_FACT_HINTS`) / state probe / scheduled prefetch,
+   │    situation-weighted chance, 60-day throttle, single in-flight request
+   │  - `accept_ai_generation()`: staleness window + re-sample at arrival, else drop
+   │  - State probes (`NarrativeStateProbe`, dwell-gated) + `_ai_event_pool` cache:
+   │    re-validate the state on arrival, fire from pool when it returns
+   │  - Narrative text avoids data readings (prompt-enforced); validator only rewrites
+   │    `34.2℃` into `{temperature}` — numbers as narrative quantities are allowed
    │  - Event chains: story_flags, weight_biases, scheduled_events
    │  - Chronicle history log & PKSV `pknr` section persistence
    ├─► NarrativeAiClient (scripts/narrative/ai/narrative_ai_client.gd)
@@ -64,10 +71,11 @@ NarrativeEffectAdapter (scripts/narrative/narrative_effect_adapter.gd)
   - `narrative_outcome.gd` & `narrative_option.gd`: Option requirements (`require_treasury_cash`, `require_good_id`, `require_technology`) and Q16 probability normalization.
   - `narrative_event_definition.gd`: Event schema, `{settlement_name}` / `{landform_name}` / `{temperature}` / `{good_name}` interpolation, and `to_dict()` / `from_dict()`.
   - `narrative_event_catalog.gd`: Authored event registry and `build_default_catalog()`.
+  - `narrative_state_probe.gd` + `narrative_state_probe_catalog.gd`: Engine-judged standing states (id, conditions, `dwell_days`, cooldown) that gate AI prefetch. AI never authors these conditions.
 - **Runtime Service & Flow (`Project/project-keynes/scripts/narrative/`)**:
   - `narrative_context_sampler.gd`: Samples `MapData` / `DCViewAdapter` (including adjacent coastal water cells for `ocean_current_speed` and `ocean_upwelling`), `CountryFacade`, and `EconomyFacade` into a `NarrativeCellContext` dictionary.
   - `narrative_effect_adapter.gd`: Dispatches `NarrativeEffectSpec` to `ModifierFacade`, `EconomyFacade`, `CountryFacade`, and `NarrativeEventService`.
-  - `narrative_event_service.gd`: Dual-channel trigger engine, cooldowns, one-shots, `story_flags`, `weight_biases`, `scheduled_events`, Chronicle log, and `pknr` serialization.
+  - `narrative_event_service.gd`: Dual-channel trigger engine, AI ingress (`_request_ai_generation` / `accept_ai_generation`, situation weighting, fact whitelist), cooldowns, one-shots, `story_flags`, `weight_biases`, `scheduled_events`, Chronicle log, and `pknr` serialization.
   - `narrative_event_flow.gd`: Modal arbitration against `EraReward`, `FamilyFounding`, `IdeologyDraw`, and `AnnualReport`, plus `WorldClock` pause/restore sync.
 - **AI Generation Pipeline (`Project/project-keynes/scripts/narrative/ai/`)**:
   - `narrative_ai_prompt_builder.gd`: Builds LLM system/user prompts and era-specific illustration prompts.
@@ -75,7 +83,7 @@ NarrativeEffectAdapter (scripts/narrative/narrative_effect_adapter.gd)
   - `narrative_ai_client.gd`: Async `HTTPRequest` for LLM and image generation, `user://ai_credentials.cfg` key storage, and `user://narrative_cache/images/` PNG texture caching.
 - **Archival UI (`Project/project-keynes/scripts/ui/components/`)**:
   - `narrative_event_dialog.gd`: Hand-drawn/papercut/torn-paper event dialog.
-  - `narrative_chronicle_panel.gd`: Chronicle history scroll and AI configuration drawer.
+  - `narrative_chronicle_panel.gd`: Chronicle history scroll only. AI configuration lives in **game settings** (pause menu → 设置 → AI 生成设置, `pause_menu.gd::_show_ai_settings`); never put a config entry back into the event/chronicle UI.
 
 ---
 
@@ -193,6 +201,30 @@ There are three complementary ways to link Event A to Event B:
 3. **Timed Follow-up Scheduling (`Kind.SCHEDULE_FOLLOWUP_EVENT`)**:
    - In Event A's option outcome: emit `Kind.SCHEDULE_FOLLOWUP_EVENT` with `"target_key": "evt.chain.step2"`, `"duration_days": 15`. Event B will automatically fire on that cell 15 days later.
 
+### 3.3 Authoring a State Probe (AI prefetch by standing condition)
+
+Add to `NarrativeStateProbeCatalog.build_default_probes()` when the trigger is a **sustained situation** rather than a one-off fact:
+
+```gdscript
+NarrativeStateProbeScript.from_dict({
+	"state_id": "state.market.food_shortage",
+	"display_name": "粮食紧缺",
+	"prompt_hint": "本地粮价持续高于常年，居民抢购囤积",   # 输入给模型的状态描述，不含数值
+	"dwell_days": 10,      # 连续维持多少游戏日才预取
+	"cooldown_days": 240,  # 同格同状态两次预取的最小间隔
+	"conditions": [
+		{"op": Op.MARKET_GOOD_PRICE_RATIO_GTE, "target_key": "grain", "float_value": 1.35},
+		{"op": Op.POPULATION_GTE, "int_value": 5},
+	],
+})
+```
+
+Rules:
+- Conditions are engine-judged only; the AI still cannot author `conditions`.
+- Only pick states that **persist for weeks** (shortage, discontent, drought). A one-day cold snap would always fail the recheck and waste a call.
+- Written events go to `_ai_event_pool` when the state has lapsed or the popup gate is closed, and fire from the pool when the same state returns — no second API call.
+- Narrative text must avoid **data readings** (temperature, price, stock, population, percentages, dates) because pooled events are reused months later. That rule lives in the prompt; narrative quantities ("三人", "三成") are fine. The validator only rewrites `34.2℃` into `{temperature}`; it never deletes clauses. `custom_label` still carries the numbers.
+
 ---
 
 ## 4. UI Art Direction Rules for Narrative UI
@@ -219,10 +251,13 @@ Run both the headless contract test and the visual screenshot QA script after an
 # 1. Headless unit, chain, save/restore round-trip, and AI sandbox test (expect 0 failures)
 & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe" --headless --path Project/project-keynes --script tests/game/narrative_event_runtime_test.gd --quit
 
-# 2. Visual screenshot QA (renders 4 PNGs into Project/project-keynes/tmp/narrative_ui_qa/)
+# 2. Visual screenshot QA (renders 5 PNGs: event offer / outcome / chronicle / pause settings / AI settings)
 & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe" --rendering-driver opengl3 --path Project/project-keynes --script tests/qa/narrative_ui_screenshot_qa.gd
 
 # 3. Settings & SaveRepository regression tests
 & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe" --headless --path Project/project-keynes --script tests/game/game_settings_service_test.gd --quit
 & "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe" --headless --path Project/project-keynes --script tests/game/save_repository_test.gd --quit
+
+# 4. AI configuration entry lives in game settings, not the event folio
+& "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe" --headless --path Project/project-keynes --script tests/ui/pause_menu_ai_settings_test.gd --quit
 ```

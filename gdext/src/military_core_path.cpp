@@ -270,6 +270,27 @@ bool MilitaryCore::passable_for(int32_t cell, int32_t country_slot, const Milita
     return at_war(country_slot, effective);      // enemy land only while at war
 }
 
+// Player auto-exploration never crosses a foreign controller, even while at
+// war. Water keeps the ordinary naval gate; the source-cell exception is
+// implicit because a search never re-checks its start cell.
+bool MilitaryCore::exploration_passable_for(int32_t cell, int32_t country_slot,
+                                            const MilitaryWorldDigest &digest) const {
+    if (cell < 0 || cell >= _terrain.cell_count) return false;
+    if (_terrain.is_water[(size_t)cell]) return passable_for(cell, country_slot, digest);
+    const uint8_t lf = _terrain.landform[(size_t)cell];
+    const uint8_t passable = (size_t)lf < _catalog.landform_passable.size()
+                                 ? _catalog.landform_passable[(size_t)lf]
+                                 : (uint8_t)((lf == 8 || lf == 12 || lf <= 3) ? 0 : 1);
+    if (!passable) return false;
+    if (country_slot < 0) return true;
+    const int32_t owner = (size_t)cell < digest.cell_owner_slot.size()
+                              ? digest.cell_owner_slot[(size_t)cell]
+                              : -1;
+    const int32_t ctrl = controller_of(cell);
+    const int32_t effective = ctrl >= 0 ? ctrl : owner;
+    return effective < 0 || effective == country_slot;
+}
+
 int32_t MilitaryCore::step_cost_q16(int32_t from, int32_t to, int32_t country_slot,
                                     const MilitaryWorldDigest &digest) const {
     if (from < 0 || to < 0 || from >= _terrain.cell_count || to >= _terrain.cell_count) return -1;
@@ -455,6 +476,123 @@ bool MilitaryCore::find_path(int32_t army_slot, int32_t target, const MilitaryWo
     }
     std::reverse(out.begin(), out.end());
     return true;
+}
+
+MilitaryExplorationPathResult MilitaryCore::find_exploration_path(
+        int32_t army_slot, int32_t target, const MilitaryWorldDigest &digest,
+        std::vector<int32_t> &out) {
+    out.clear();
+    if (!army_alive(_armies, army_slot)) return MILITARY_EXPLORATION_PATH_INVALID;
+    if (target < 0 || target >= _terrain.cell_count)
+        return MILITARY_EXPLORATION_PATH_INVALID;
+    const int32_t owner = _armies.owner_slot[(size_t)army_slot];
+    if (owner < 0) return MILITARY_EXPLORATION_PATH_INVALID;
+    const int32_t src = _armies.cell[(size_t)army_slot];
+    if (src < 0 || src >= _terrain.cell_count)
+        return MILITARY_EXPLORATION_PATH_INVALID;
+    if (src == target) return MILITARY_EXPLORATION_PATH_OK;
+
+    const size_t slot_index = (size_t)owner;
+    if (_path_daily_requests.size() <= slot_index)
+        _path_daily_requests.resize(slot_index + 1, 0);
+    if (_exploration_daily_path_requests.size() <= slot_index)
+        _exploration_daily_path_requests.resize(slot_index + 1, 0);
+    // Exploration is planned before area control. Never spend the last 16
+    // shared requests: those remain available for the 5-day area evaluation.
+    if (_exploration_daily_path_requests[slot_index] >=
+            MILITARY_EXPLORATION_PATH_REQUESTS_PER_COUNTRY_DAY ||
+        _path_daily_requests[slot_index] >=
+            MILITARY_PATH_REQUESTS_PER_COUNTRY_DAY - 16) {
+        return MILITARY_EXPLORATION_PATH_DAILY_BUDGET_EXHAUSTED;
+    }
+    if (!exploration_passable_for(target, owner, digest))
+        return MILITARY_EXPLORATION_PATH_UNREACHABLE;
+    ++_path_daily_requests[slot_index];
+    ++_exploration_daily_path_requests[slot_index];
+
+    const int32_t n = _terrain.cell_count;
+    const MilitaryWorldDigest &view = has_unlock_view(digest) ? digest : _last_digest;
+    const int32_t sea_level = sea_transport_level(_catalog, view, owner);
+    const int32_t run_states = sea_level == 1 ? kSeaRunStates : 1;
+    PathScratch &s = scratch();
+    s.ensure((size_t)n * (size_t)run_states);
+    auto heuristic = [this, target](int32_t cell) -> int32_t {
+        const int32_t dist = cell_distance(cell, target);
+        return dist > kMaxPathNodes ? 0x07FFFFF0 : dist * kOne;
+    };
+    const int32_t src_state = src * run_states;
+    s.dist[(size_t)src_state] = 0;
+    s.parent[(size_t)src_state] = -1;
+    s.stamp[(size_t)src_state] = s.gen;
+    s.closed[(size_t)src_state] = 0;
+    heap_push(s.heap, HeapEntry{heuristic(src), src_state});
+    int32_t expansions = 0;
+    bool found = false;
+    int32_t target_state = -1;
+    while (!s.heap.empty()) {
+        if (expansions >= kMaxPathNodes) {
+            _report.astar_expansions += expansions;
+            // Expansion exhaustion is a temporary budget failure, not a proof
+            // that no observer can ever be reached.
+            return MILITARY_EXPLORATION_PATH_DAILY_BUDGET_EXHAUSTED;
+        }
+        const HeapEntry e = heap_pop(s.heap);
+        if (s.closed[(size_t)e.node]) continue;
+        s.closed[(size_t)e.node] = 1;
+        ++expansions;
+        const int32_t cell = e.node / run_states;
+        if (cell == target) {
+            found = true;
+            target_state = e.node;
+            break;
+        }
+        const int32_t run = e.node - cell * run_states;
+        const int32_t base = cell * 6;
+        for (int32_t d = 0; d < 6; ++d) {
+            const int32_t nb = _terrain.neighbors[(size_t)(base + d)];
+            if (nb < 0) continue;
+            if (!exploration_passable_for(nb, owner, digest)) continue;
+            const int32_t cost = step_cost_q16(cell, nb, owner, digest);
+            if (cost < 0) continue;
+            int32_t next_run = 0;
+            if (run_states > 1 && cell_is_water(_terrain, nb)) {
+                next_run = run + 1;
+                if (next_run > kSeaRunMax) continue;
+            }
+            const int32_t nb_state = nb * run_states + next_run;
+            if (s.stamp[(size_t)nb_state] == s.gen && s.closed[(size_t)nb_state]) continue;
+            const int32_t cand = s.dist[(size_t)e.node] + cost;
+            if (s.stamp[(size_t)nb_state] == s.gen && s.dist[(size_t)nb_state] <= cand)
+                continue;
+            if (s.stamp[(size_t)nb_state] != s.gen) s.closed[(size_t)nb_state] = 0;
+            s.stamp[(size_t)nb_state] = s.gen;
+            s.dist[(size_t)nb_state] = cand;
+            s.parent[(size_t)nb_state] = e.node;
+            heap_push(s.heap, HeapEntry{cand + heuristic(nb), nb_state});
+        }
+    }
+    _report.astar_expansions += expansions;
+    if (!found) return MILITARY_EXPLORATION_PATH_UNREACHABLE;
+    int32_t cursor = target_state;
+    while (cursor >= 0 && cursor != src_state) {
+        out.push_back(cursor / run_states);
+        cursor = s.parent[(size_t)cursor];
+        if (out.size() > (size_t)kMaxPathNodes) {
+            out.clear();
+            return MILITARY_EXPLORATION_PATH_DAILY_BUDGET_EXHAUSTED;
+        }
+    }
+    std::reverse(out.begin(), out.end());
+    return MILITARY_EXPLORATION_PATH_OK;
+}
+
+int32_t MilitaryCore::path_cell_at(int32_t army_slot, int32_t cursor) const {
+    if (army_slot < 0 || (size_t)army_slot >= _armies.active.size()) return -1;
+    const size_t s = (size_t)army_slot;
+    if (cursor < 0 || cursor >= _armies.path_len[s]) return -1;
+    const int64_t at = (int64_t)_armies.path_offset[s] + cursor;
+    if (at < 0 || (size_t)at >= _path_cells.size()) return -1;
+    return _path_cells[(size_t)at];
 }
 
 bool MilitaryCore::preview_path(uint64_t army, int32_t target_cell, std::vector<int32_t> &out_cells,
@@ -651,11 +789,23 @@ void MilitaryCore::run_movement(const MilitaryWorldDigest &digest) {
         const int64_t mp_cap = (int64_t)MILITARY_Q16 * 8;
         if (mp > mp_cap) mp = mp_cap;
         const bool engaged = a.engagement[s] >= 0;
+        const bool exploring = exploration_is_live_for_army(slot);
         while (a.path_cursor[s] < a.path_len[s]) {
             const int32_t idx = a.path_offset[s] + a.path_cursor[s];
             if (idx < 0 || (size_t)idx >= _path_cells.size()) break;
             const int32_t next = _path_cells[(size_t)idx];
             const int32_t cur = a.cell[s];
+            if (exploring &&
+                !exploration_passable_for(next, owner, digest)) {
+                // Exploration never crosses a foreign controller. A route can
+                // become stale when control changes between days; stop here and
+                // let the next prepare replan instead of opening an engagement.
+                a.path_len[s] = 0;
+                a.path_cursor[s] = 0;
+                a.target_cell[s] = -1;
+                a.move_points_q16[s] = 0;
+                break;
+            }
             const int32_t cost = step_cost_q16(cur, next, owner, digest);
             if (cost < 0) break;                        // lost access: wait
             if (mp < cost) break;                       // out of move points
@@ -676,7 +826,15 @@ void MilitaryCore::run_movement(const MilitaryWorldDigest &digest) {
                     int32_t defender = has_hostile_adjacent_army(next, owner) ? effective : effective;
                     open_engagement(cur, next, slot, defender);
                     a.path_cursor[s] = a.path_len[s];
-                    a.mission[s] = (uint8_t)MILITARY_MISSION_NONE;
+                    if (exploration_row_for_army(slot) >= 0) {
+                        // Automatic exploration keeps its mission while the
+                        // engagement resolves so the next day can resume the
+                        // planned phase instead of silently becoming a manual
+                        // idle formation.
+                        pause_exploration_for_battle(slot);
+                    } else {
+                        a.mission[s] = (uint8_t)MILITARY_MISSION_NONE;
+                    }
                     mp = 0;
                     break;
                 }
@@ -687,6 +845,10 @@ void MilitaryCore::run_movement(const MilitaryWorldDigest &digest) {
             a.cell[s] = next;
             a.moved_day[s] = _last_day;
             index_insert(slot, next);
+            // Every actually entered cell feeds the explored-only trail. The
+            // final cell remains the ordinary vision source; this is the extra
+            // history for multi-cell days.
+            record_exploration_trail(slot, owner, next);
             if ((size_t)next < touched.size()) touched[(size_t)next] = 1;
             moved_any = true;
             mp -= cost;

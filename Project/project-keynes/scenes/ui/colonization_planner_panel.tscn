@@ -58,9 +58,9 @@ size_flags_horizontal = 3
 
 [node name="CloseButton" type="Button" parent="Margin/Root/Header"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(44, 44)
 layout_mode = 2
-focus_mode = 0
+focus_mode = 2
 theme_type_variation = &"PKIconButton"
 
 [node name="Subtitle" type="Label" parent="Margin/Root"]
@@ -671,17 +671,26 @@ allow_greater = false
 
 [node name="MaxPopButton" type="Button" parent="Margin/Root/Footer/PopulationRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-focus_mode = 0
+focus_mode = 2
 text = "满员"
 theme_type_variation = &"PKDossierChip"
 
 [node name="StartButton" type="Button" parent="Margin/Root/Footer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 disabled = true
 text = "确认派遣"
+theme_type_variation = &"PKPrimaryButton"
+
+[node name="ExpeditionCancelButton" type="Button" parent="Margin/Root/Footer"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "取消筹备"
 theme_type_variation = &"PKPrimaryButton"

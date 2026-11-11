@@ -501,8 +501,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _event_detail_ms = 0.0;
     _event_publish_ms = 0.0;
     _explicit_money_mint = 0;
-    _explicit_money_burn = _pending_military_cash_burn;
-    _pending_military_cash_burn = 0;
+    _explicit_money_burn = 0;
     _external_population_delta = 0;
     _explicit_stock_delta = 0;
     _country_research_consumed_opening = 0;
@@ -1363,7 +1362,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     drain_worker_command_inbox();
     auto due_end = _pending_commands.stable_partition(
                                          [&](const Command &c) {
-        return c.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND && c.effective_day <= day_index;
+        return c.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND && c.opcode != COMMAND_MILITARY_PURCHASE_RECEIPT && c.effective_day <= day_index;
     });
     _epoch_commands.assign(_pending_commands.begin(), due_end);
     _pending_commands.erase(_pending_commands.begin(), due_end);
@@ -1402,6 +1401,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         // command, left the Effect request incomplete, and froze the
         // expedition in SETTLING.
         const bool targets_cohort = !family_reward && !expedition_command &&
+                                    cmd.opcode != COMMAND_MILITARY_PURCHASE &&
+                                    cmd.opcode != COMMAND_MILITARY_PURCHASE_ACK &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_DEMOLISH &&
                                     cmd.opcode != COMMAND_BUILD_CANAL &&

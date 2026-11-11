@@ -406,6 +406,8 @@
                                                 std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,
                                       int32_t cell) const;
+    int64_t family_dispatchable_population_in_cell(uint64_t family_handle,
+        int32_t cell) const;
     bool colonization_target_owner_allowed(uint64_t country_handle,
                                            int32_t cell) const;
     bool colonization_destination_family_allowed(uint64_t family_handle,

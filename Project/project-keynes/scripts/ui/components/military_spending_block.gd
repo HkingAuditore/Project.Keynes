@@ -58,6 +58,16 @@ const CHANNELS := [
 const NOTE_TEXT := "招募本身不拨款：只把同格人口转为士兵，费用落在军饷与装备给养上。"
 const ENVELOPE_OFF_TEXT := "军事预算未启用：军饷、维护与采购按现金与需求直接结算，不设上限。"
 
+## 维护实物化（S4-6）：维护通道下面挂一张至多 8 行的实物明细。
+## 行数固定、读数原地改写，同一身份刷新不新增节点。
+const MAINTENANCE_ROW_LIMIT := 8
+const MAINTENANCE_UNSUPPORTED_TEXT := "实物维护未接通"
+const MAINTENANCE_EMPTY_TEXT := "暂无维护对象"
+## 明细列宽：对象名占剩余宽度，四个读数等宽右对齐，424px 页宽也放得下。
+const MAINT_STAT_WIDTH := 54.0
+const MAINT_DAYS_WIDTH := 58.0
+const MAINT_UNITS_WIDTH := 50.0
+
 var _envelope = null
 var _envelope_row: HBoxContainer = null
 var _envelope_value: Label = null
@@ -70,6 +80,12 @@ var _channels: Dictionary = {}
 var _rows: Dictionary = {}
 var _built := false
 var _model: Dictionary = {}
+## 维护明细段（只挂在维护通道下）：表头一行 + 固定 8 行 + 一句状态占位。
+var _maintenance_box: VBoxContainer = null
+var _maintenance_head: Label = null
+var _maintenance_note: Label = null
+var _maintenance_header: HBoxContainer = null
+var _maintenance_rows: Array = []
 ## 上一次渲染时的告警签名：只有跨越阈值才脉冲一次，之后保持静态。
 var _alert_signature := ""
 
@@ -108,6 +124,7 @@ func set_state(model: Dictionary, editable := true) -> void:
 		_refresh_channel(spec, can_edit, enabled, envelope_daily)
 	_refresh_rows()
 	_refresh_summary(enabled)
+	_refresh_maintenance_detail()
 	# 阈值跨越：从"平衡"进入"超支/待购"（或反向）时脉冲一次，之后保持静态。
 	_alert_signature = _compute_alert_signature()
 	if not previous_alert.is_empty() and _alert_signature != previous_alert:
@@ -172,6 +189,157 @@ func empty_text() -> String:
 
 func summary_text() -> String:
 	return _summary.text if _summary != null else ""
+
+
+## 维护明细的一句话摘要（「N 项失修 · 加权满足率 X%」，或「实物维护未接通」）。
+func maintenance_summary_text() -> String:
+	if _maintenance_head != null and _maintenance_head.visible:
+		return _maintenance_head.text
+	return _maintenance_note.text if _maintenance_note != null else ""
+
+
+## 当前可见的维护明细行（每行是「名 / 座人 / 满足 / 可用 / 在途」的字符串数组）。
+## 测试与截图 harness 读这里，不必去翻子节点顺序。
+func maintenance_row_texts() -> Array:
+	var out: Array = []
+	for entry in _maintenance_rows:
+		var row := (entry as Dictionary).get("row") as Control
+		if row == null or not row.visible:
+			continue
+		var cells: Array = []
+		for key in ["name", "units", "ratio", "days", "inbound"]:
+			var label := ((entry as Dictionary).get(key) as Label)
+			cells.append(label.text if label != null else "")
+		out.append(cells)
+	return out
+
+
+## 维护通道下的实物明细：表头 + 固定 8 行 + 一句占位。节点只建一次。
+func _build_maintenance_detail(channel: VBoxContainer) -> void:
+	_maintenance_box = VBoxContainer.new()
+	_maintenance_box.name = "MaintenanceDetail"
+	_maintenance_box.mouse_filter = Control.MOUSE_FILTER_PASS
+	_maintenance_box.add_theme_constant_override("separation", 1)
+	channel.add_child(_maintenance_box)
+	_maintenance_head = _make_caption("")
+	_maintenance_head.name = "MaintenanceHead"
+	_maintenance_head.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_maintenance_box.add_child(_maintenance_head)
+	_maintenance_header = _make_maintenance_row(true)
+	_maintenance_box.add_child(_maintenance_header)
+	for index in range(MAINTENANCE_ROW_LIMIT):
+		var row := _make_maintenance_row(false)
+		row.name = "MaintenanceRow%d" % index
+		_maintenance_box.add_child(row)
+		var cells := {}
+		for child in row.get_children():
+			cells[String(child.name)] = child
+		_maintenance_rows.append({
+			"row": row,
+			"name": cells.get("Name"),
+			"units": cells.get("Units"),
+			"ratio": cells.get("Ratio"),
+			"days": cells.get("Days"),
+			"inbound": cells.get("Inbound"),
+		})
+	_maintenance_note = Label.new()
+	_maintenance_note.name = "MaintenanceNote"
+	_maintenance_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_maintenance_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_maintenance_note.add_theme_font_override("font", UITokens.dossier_font("sans"))
+	_maintenance_note.add_theme_font_size_override("font_size", 12)
+	_maintenance_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
+	_maintenance_box.add_child(_maintenance_note)
+
+
+## 一行明细：对象名（吃掉剩余宽度）+ 规模 / 满足率 / 可用天数 / 在途。
+## `header` 只换文案与墨色，尺寸与列宽完全一致，表头与数据行不会错位。
+func _make_maintenance_row(header: bool) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "MaintenanceHeader" if header else "MaintenanceRow"
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 6)
+	var name_label := Label.new()
+	name_label.name = "Name"
+	name_label.text = "对象" if header else ""
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.add_theme_font_override("font", UITokens.dossier_font(
+		"sans_strong" if header else "sans"))
+	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_color_override("font_color",
+		UITokens.DOSSIER_INK_MUTED if header else UITokens.DOSSIER_INK_SOFT)
+	row.add_child(name_label)
+	for spec in [["Units", "规模", MAINT_UNITS_WIDTH], ["Ratio", "满足", MAINT_STAT_WIDTH],
+			["Days", "可用", MAINT_DAYS_WIDTH], ["Inbound", "在途", MAINT_STAT_WIDTH]]:
+		var value := Label.new()
+		value.name = String(spec[0])
+		value.text = String(spec[1]) if header else "—"
+		value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		value.custom_minimum_size = Vector2(float(spec[2]), 0.0)
+		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		value.add_theme_font_override("font", UITokens.dossier_font(
+			"sans" if header else "numeral"))
+		value.add_theme_font_size_override("font_size", 11 if header else 12)
+		value.add_theme_color_override("font_color",
+			UITokens.DOSSIER_INK_MUTED if header else UITokens.DOSSIER_INK)
+		row.add_child(value)
+	return row
+
+
+## 维护明细刷新。不支持（旧 DLL）时只有一句「实物维护未接通」；
+## 支持但没有对象时写「暂无维护对象」——两者都不是 0 值行堆出来的空白。
+func _refresh_maintenance_detail() -> void:
+	if _maintenance_box == null or _maintenance_head == null:
+		return
+	var supported := bool(_model.get("maintenance_supported", false))
+	var rows: Array = _model.get("maintenance_rows", [])
+	var shown := mini(rows.size(), MAINTENANCE_ROW_LIMIT)
+	var has_rows := supported and shown > 0
+	_maintenance_head.visible = has_rows
+	_maintenance_header.visible = has_rows
+	if has_rows:
+		var disrepair := maxi(0, int(_model.get("maintenance_disrepair_rows", 0)))
+		var ratio_bp := clampi(int(_model.get("maintenance_ratio_bp", 0)), 0, 10000)
+		_maintenance_head.text = "%d 项失修 · 加权满足率 %d%%" % [
+			disrepair, ratio_bp / 100]
+		_maintenance_head.add_theme_color_override("font_color",
+			UITokens.DOSSIER_OXBLOOD if disrepair > 0 else UITokens.DOSSIER_INK_MUTED)
+	for index in range(_maintenance_rows.size()):
+		var entry: Dictionary = _maintenance_rows[index]
+		var row := entry.get("row") as Control
+		var name_label := entry.get("name") as Label
+		var units_label := entry.get("units") as Label
+		var ratio_label := entry.get("ratio") as Label
+		var days_label := entry.get("days") as Label
+		var inbound_label := entry.get("inbound") as Label
+		if row == null or name_label == null or units_label == null \
+				or ratio_label == null or days_label == null or inbound_label == null:
+			continue
+		var visible := index < shown
+		row.visible = visible
+		if not visible:
+			continue
+		var data = rows[index]
+		if not data is Dictionary:
+			row.visible = false
+			continue
+		var is_building := int((data as Dictionary).get("kind", 0)) == 0
+		var units := maxi(0, int((data as Dictionary).get("units", 0)))
+		name_label.text = String((data as Dictionary).get("name", ""))
+		units_label.text = ("%d 座" if is_building else "%d 人") % units
+		var ratio_bp := clampi(int((data as Dictionary).get("ratio", 0)), 0, 10000)
+		ratio_label.text = "%d%%" % (ratio_bp / 100)
+		ratio_label.add_theme_color_override("font_color",
+			UITokens.DOSSIER_VERDIGRIS if ratio_bp >= 8000
+			else (UITokens.DOSSIER_BRASS if ratio_bp >= 5000 else UITokens.DOSSIER_OXBLOOD))
+		days_label.text = String((data as Dictionary).get("days_text", "—"))
+		inbound_label.text = String((data as Dictionary).get("inbound_text", "—"))
+	_maintenance_note.visible = not has_rows
+	_maintenance_note.text = MAINTENANCE_EMPTY_TEXT if supported \
+		else MAINTENANCE_UNSUPPORTED_TEXT
 
 
 ## 三行实付的日均合计（MONEY_SCALE），与板块头右上角的读数同源。
@@ -260,6 +428,8 @@ func _build() -> void:
 		note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 		note.visible = false
 		channel.add_child(note)
+		if String(spec.id) == KIND_UPKEEP:
+			_build_maintenance_detail(channel)
 		_channels[String(spec.id)] = {"slider": slider, "note": note}
 
 	_summary = Label.new()

@@ -14,6 +14,8 @@ const NarrativeEventDefinitionScript = preload("res://scripts/narrative/narrativ
 const NarrativeOptionScript = preload("res://scripts/narrative/narrative_option.gd")
 const NarrativeOutcomeScript = preload("res://scripts/narrative/narrative_outcome.gd")
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
+const NarrativeStateProbeScript = preload("res://scripts/narrative/narrative_state_probe.gd")
+const NarrativeStateProbeCatalogScript = preload("res://scripts/narrative/narrative_state_probe_catalog.gd")
 
 const SCHEMA_NAME := "PKNarrativeRuntime"
 const SCHEMA_VERSION := 1
@@ -35,10 +37,54 @@ const AI_PREFETCH_LEAD_DAYS := 3
 const CONSUMER_ID := &"narrative_event_service"
 const NEVER_POPPED_DAY := -999
 
+# ─── AI 生成入口（Ingress）────────────────────────────────────────────────────
+# AI 事件现在有三个入口：脉冲预热（局势加权）、事实驱动（GameplayEventBus）、
+# 定时后续预取。三个入口共用 _last_ai_request_day 节流与「同时只允许一条在途请求」，
+# 避免一次战斗刷出十几条 LLM 调用。数值全部是 Q16 / 游戏日。
+const AI_MAX_IN_FLIGHT := 1
+## 事实类型 → 事件切入点。军事事实的 cell 可能为 -1，由 _resolve_valid_player_cell
+## 兜到首都格；未列出的类型（视觉脏标记、epoch 提交、天气观测等）不触发 AI。
+const AI_FACT_HINTS := {
+	3: "天气锋面过境",        # EVENT_WEATHER_FRONT_CHANGED
+	6: "营造完工",            # EVENT_ECONOMY_CONSTRUCTION_COMPLETED
+	7: "商队抵达",            # EVENT_ECONOMY_TRADE_ARRIVED
+	8: "民生压力上升",        # EVENT_ECONOMY_SOCIAL_PRESSURE
+	9: "科研线索被发现",      # EVENT_RESEARCH_SIGNAL_DISCOVERED
+	10: "地图地貌新发现",     # EVENT_MAP_FEATURE_DISCOVERED
+	13: "技术被采纳",         # EVENT_TECHNOLOGY_ADOPTED
+	40: "战事爆发",           # EVENT_MILITARY_WAR_DECLARED
+	41: "战事结束",           # EVENT_MILITARY_WAR_ENDED
+	42: "会战分出胜负",       # EVENT_MILITARY_BATTLE_RESOLVED
+	43: "城池易手",           # EVENT_MILITARY_CELL_CONTROL_CHANGED
+	44: "部队被歼",           # EVENT_MILITARY_ARMY_DESTROYED
+	45: "国家被吞并",         # EVENT_MILITARY_COUNTRY_ANNEXED
+}
+
+# ─── 状态探针与 AI 事件池 ─────────────────────────────────────────────────────
+# 状态成立且维持 dwell_days 后才预取；写好的事件先在池子里等着，
+# 状态再次成立时才出池。池子就是「下次出现时再触发」的实现，不需要额外调度器。
+const STATE_PROBE_INTERVAL_DAYS := 7
+const MAX_STATE_PROBE_CELLS := 8
+const AI_POOL_MAX_ENTRIES := 24
+const AI_POOL_MAX_PER_STATE := 2
+const AI_POOL_TTL_DAYS := 730
+const AI_POOL_FLUSH_LIMIT := 4
+
 var pulse_interval_days: int = DEFAULT_PULSE_INTERVAL_DAYS
 var min_popup_gap_days: int = DEFAULT_MIN_POPUP_GAP_DAYS
 var pulse_trigger_chance_q16: int = 16384 # ~25% per pulse when eligible events exist
-var ai_slot_chance_q16: int = 2621 # ~4% chance to also pre-warm an AI event when AI is enabled
+## 脉冲预热的基础概率；真实概率由 _ai_chance_q16() 按局势在 [base, ai_max_chance_q16] 间抬升。
+var ai_slot_chance_q16: int = 2621 # ~4% baseline
+## 单条事实触发 AI 的基础概率；同样吃局势加权。
+var ai_fact_chance_q16: int = 13107 # ~20% baseline
+## 局势拉满（紧缺/不满/极端气候同时出现）时的概率上限。
+var ai_max_chance_q16: int = 26214 # ~40% ceiling
+## 两次 AI 请求的最小间隔，防止一次战争/一次饥荒把 API 打爆。
+## 与全局弹窗间隔同档（60 日）：AI 事件不允许挤占静态事件的展示预算。
+var ai_min_request_gap_days: int = 60
+## 结果到达时允许的最大滞后（游戏日）。快照是请求日采的，超过窗口直接丢弃，
+## 宁可不弹也不再展示「三十天前的天气」。0 或负数表示不设窗口。
+var ai_max_staleness_days: int = 60
 
 var _generator = null
 var _map = null
@@ -58,6 +104,26 @@ var _last_pulse_day: int = 0
 var _last_popup_day: int = NEVER_POPPED_DAY
 var _last_fact_event_id: int = -1
 var _cell_year_event_counts: Dictionary = {}
+
+var _last_ai_request_day: int = NEVER_POPPED_DAY
+var _next_ai_request_seq: int = 1
+## seq → {request_day, cell_idx, chain_id, scheduled_followup, due_day, state_id}。
+## 在途请求只活在本次会话；读档后清空，迟到的响应因找不到 seq 被 accept_ai_generation 丢弃。
+var _pending_ai_requests: Dictionary = {}
+
+## 状态探针：条件由引擎判定，AI 只写文案。
+var state_probe_interval_days: int = STATE_PROBE_INTERVAL_DAYS
+var _state_probes: Array = []
+var _last_state_probe_day: int = NEVER_POPPED_DAY
+## "<state>:<cell>" → {since_day, peak_price_ratio, min_satisfaction}
+var _state_tracking: Dictionary = {}
+## "<state>:<cell>" → 最近一次预取/出池的日，用于 cooldown。
+var _state_last_seed: Dictionary = {}
+
+## 已写好但状态不成立（或被闸门拦住）的 AI 事件。出池时用引擎条件重新校验。
+## 每条：{pool_id, state_id, cell_idx, created_day, def_dict}
+var _ai_event_pool: Array[Dictionary] = []
+var _next_pool_id: int = 1
 
 var _active_offer: Dictionary = {}
 var _ready_queue: Array[Dictionary] = []
@@ -86,6 +152,32 @@ func configure(
 	_player_country_handle = player_country_handle
 	_world_seed = maxi(1, world_seed)
 	_catalog = catalog if catalog != null else NarrativeEventCatalogScript.build_default_catalog()
+	if _state_probes.is_empty():
+		_state_probes = NarrativeStateProbeCatalogScript.build_default_probes()
+
+
+func set_state_probes(probes: Array) -> void:
+	_state_probes = probes.duplicate()
+	_state_tracking.clear()
+	_state_last_seed.clear()
+
+
+func state_probes() -> Array:
+	return _state_probes.duplicate()
+
+
+func state_probe_by_id(state_id: StringName):
+	var key_str := String(state_id)
+	if key_str.is_empty():
+		return null
+	for probe in _state_probes:
+		if probe != null and String(probe.state_id) == key_str:
+			return probe
+	return null
+
+
+func ai_event_pool() -> Array[Dictionary]:
+	return _ai_event_pool.duplicate(true)
 
 
 func set_player_country_handle(handle: int) -> void:
@@ -242,7 +334,9 @@ func resolve_definition(event_id: StringName) -> NarrativeEventDefinition:
 func on_day_committed(day: int, ai_enabled: bool = false) -> void:
 	_prune_expired(day)
 	_process_scheduled_events(day, ai_enabled)
-	_poll_fact_events(day)
+	_poll_fact_events(day, ai_enabled)
+	_poll_state_probes(day, ai_enabled)
+	_flush_ai_pool(day)
 	if day - _last_pulse_day >= pulse_interval_days:
 		_last_pulse_day = day
 		run_pulse_sample(day, ai_enabled)
@@ -273,6 +367,34 @@ func _prune_expired(day: int) -> void:
 	for k in expired_cd:
 		_cooldowns.erase(k)
 
+	# 迟迟不回的请求不能永久占住「同时在途」名额：超过时效窗口即视为作废。
+	# 它对应的迟到响应本来就该被 accept_ai_generation 丢掉。
+	if ai_max_staleness_days > 0 and not _pending_ai_requests.is_empty():
+		var abandoned: Array = []
+		for seq in _pending_ai_requests:
+			var req_day := int((_pending_ai_requests[seq] as Dictionary).get("request_day", day))
+			if day - req_day > ai_max_staleness_days:
+				abandoned.append(seq)
+		for seq in abandoned:
+			_pending_ai_requests.erase(seq)
+
+	# 失去采样的状态跟踪与过期的 cooldown 记录同样要回收，否则长期存档会慢慢膨胀。
+	if not _state_tracking.is_empty():
+		var stale_tracking: Array = []
+		for key in _state_tracking:
+			var tracked: Dictionary = _state_tracking[key]
+			if day - int(tracked.get("last_seen_day", day)) > 60:
+				stale_tracking.append(key)
+		for key in stale_tracking:
+			_state_tracking.erase(key)
+	if not _state_last_seed.is_empty():
+		var stale_seed: Array = []
+		for key in _state_last_seed:
+			if day - int(_state_last_seed[key]) > 730:
+				stale_seed.append(key)
+		for key in stale_seed:
+			_state_last_seed.erase(key)
+
 
 func _process_scheduled_events(day: int, ai_enabled: bool) -> void:
 	if _scheduled_events.is_empty():
@@ -286,20 +408,16 @@ func _process_scheduled_events(day: int, ai_enabled: bool) -> void:
 		if not ai_hint.is_empty() and event_id_str.is_empty() and ai_enabled \
 				and not bool(item.get("ai_requested", false)) \
 				and day >= due_day - AI_PREFETCH_LEAD_DAYS:
-			item["ai_requested"] = true
 			var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 				_map, _generator, _player_country_handle, day, _story_flags)
 			var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
 				cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
-			ai_generation_requested.emit({
-				"day": day,
-				"due_day": due_day,
-				"cell_idx": cell_idx,
-				"chain_id": String(item.get("chain_id", "")),
-				"ai_prompt_hint": ai_hint,
-				"cell_ctx": cell_ctx,
-				"recent_chronicle": get_chronicle(0, 3),
-			})
+			var seq := _request_ai_generation(
+				day, cell_idx, String(item.get("chain_id", "")), ai_hint, "",
+				due_day, true, cell_ctx)
+			# 被节流/在途占满时不打标，下一天继续试，直到 due_day 前仍有机会预热。
+			if seq >= 0:
+				item["ai_requested"] = true
 		if day >= due_day:
 			if not event_id_str.is_empty():
 				var def := resolve_definition(StringName(event_id_str))
@@ -310,7 +428,7 @@ func _process_scheduled_events(day: int, ai_enabled: bool) -> void:
 	_scheduled_events = remaining
 
 
-func _poll_fact_events(day: int) -> void:
+func _poll_fact_events(day: int, ai_enabled: bool = false) -> void:
 	if _generator == null or not _generator.has_method("get_gameplay_event_bus"):
 		return
 	var bus = _generator.get_gameplay_event_bus()
@@ -329,7 +447,8 @@ func _poll_fact_events(day: int) -> void:
 	if popup_pacing_blocked(day):
 		return
 	var fact_defs := catalog().events_for_channel(NarrativeEventDefinitionScript.TriggerChannel.FACT_DRIVEN)
-	if fact_defs.is_empty():
+	# AI 关闭且没有静态事实事件时，这批事实没有任何消费者，不必再采样上下文。
+	if fact_defs.is_empty() and not ai_enabled:
 		return
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, day, _story_flags)
@@ -344,6 +463,9 @@ func _poll_fact_events(day: int) -> void:
 		var resolved_cell := _resolve_valid_player_cell(cell_idx, territory)
 		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
 			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
+		# AI 事实通道先跑：它不回退队列，也不会因为静态事实事件命中而 return 掉。
+		if ai_enabled:
+			_maybe_request_fact_ai(day, ev_type, resolved_cell, cell_ctx)
 		for def in fact_defs:
 			if def.fact_event_type != 0 and def.fact_event_type != ev_type:
 				continue
@@ -355,6 +477,417 @@ func _poll_fact_events(day: int) -> void:
 			if roll < def.trigger_chance_q16:
 				enqueue_event_offer(def, resolved_cell, day)
 				return
+
+
+# ─── AI 生成入口：局势加权、事实触发、请求/回执事务 ──────────────────────────
+# 设计约束：
+# 1) 概率吃局势，但掷骰仍是确定性的（只依赖 world_seed/day/country/cell/salt）；
+# 2) 三条入口共用一个节流与一个在途名额，避免一次战事把 API 打爆；
+# 3) 请求记录 request_day，回执在 ai_max_staleness_days 内才落地，落地时重新采样，
+#    保证「文案里的天气」与「真正结算时的地块状态」不会差出季节。
+
+## 0..100 的局势紧迫度。只读即时快照，不引入历史依赖，便于测试与解释。
+static func situation_pressure_score(cell_ctx: Dictionary) -> int:
+	if cell_ctx.is_empty():
+		return 0
+	var score := 0
+	# 市场紧缺（最多 30）：每条紧缺 15 分。
+	var shortages: Variant = cell_ctx.get("shortage_good_ids",
+		cell_ctx.get("shortage_goods", PackedStringArray()))
+	var shortage_count := 0
+	if shortages is PackedStringArray:
+		shortage_count = (shortages as PackedStringArray).size()
+	elif shortages is Array:
+		shortage_count = (shortages as Array).size()
+	score += mini(30, shortage_count * 15)
+	# 价格溢价（最多 25）：以 1.30 为紧缺线起算。
+	var ratios: Variant = cell_ctx.get("market_price_ratios_by_id",
+		cell_ctx.get("market_price_ratios", {}))
+	if ratios is Dictionary:
+		var worst := 1.0
+		for key in (ratios as Dictionary).keys():
+			worst = maxf(worst, float((ratios as Dictionary)[key]))
+		score += clampi(int(round((worst - 1.3) * 50.0)), 0, 25)
+	# 满意度缺口（最多 25）：0.60 以下开始计分。
+	var satisfaction := clampf(float(cell_ctx.get("satisfaction_norm",
+		cell_ctx.get("satisfaction", 0.65))), 0.0, 1.0)
+	score += clampi(int(round((0.6 - satisfaction) * 100.0)), 0, 25)
+	# 气候极端（最多 20）：30℃ 以上或 0℃ 以下。
+	var temp_c := float(cell_ctx.get("temperature_c", cell_ctx.get("temperature", 15.0)))
+	var temp_stress := 0.0
+	if temp_c >= 30.0:
+		temp_stress = (temp_c - 30.0) / 10.0
+	elif temp_c <= 0.0:
+		temp_stress = (0.0 - temp_c) / 15.0
+	score += clampi(int(round(temp_stress * 20.0)), 0, 20)
+	# 积雪（最多 10）。
+	var snow := maxf(0.0, float(cell_ctx.get("snow_cover", 0.0)))
+	score += clampi(int(round((snow - 0.35) * 40.0)), 0, 10)
+	return clampi(score, 0, 100)
+
+
+## 把基础概率按局势抬到 [base, ai_max_chance_q16]。
+func _ai_chance_q16(base_q16: int, cell_ctx: Dictionary) -> int:
+	var base := clampi(base_q16, 0, Q16_ONE)
+	var cap := clampi(maxi(ai_max_chance_q16, base), 0, Q16_ONE)
+	if cap <= base:
+		return base
+	var score := situation_pressure_score(cell_ctx)
+	return clampi(base + int((cap - base) * score / 100), 0, Q16_ONE)
+
+
+func _ai_request_allowed(day: int) -> bool:
+	if _pending_ai_requests.size() >= AI_MAX_IN_FLIGHT:
+		return false
+	if ai_min_request_gap_days > 0 and _last_ai_request_day > NEVER_POPPED_DAY \
+			and day - _last_ai_request_day < ai_min_request_gap_days:
+		return false
+	return true
+
+
+## 唯一的 AI 请求出口：分配 seq、登记在途、发信号。返回 -1 表示被节流挡下。
+func _request_ai_generation(
+		day: int,
+		cell_idx: int,
+		chain_id: String,
+		chain_hint: String,
+		fact_hint: String,
+		due_day: int,
+		scheduled_followup: bool,
+		cell_ctx: Dictionary = {},
+		state_id: String = "",
+		state_hint: String = ""
+) -> int:
+	if not _ai_request_allowed(day):
+		return -1
+	var seq := _next_ai_request_seq
+	_next_ai_request_seq += 1
+	_last_ai_request_day = day
+	_pending_ai_requests[seq] = {
+		"request_day": day,
+		"cell_idx": cell_idx,
+		"chain_id": chain_id,
+		"scheduled_followup": scheduled_followup,
+		"due_day": due_day,
+		"state_id": state_id,
+	}
+	var ctx := cell_ctx
+	if ctx.is_empty():
+		var country_ctx := NarrativeContextSamplerScript.sample_country_context(
+			_map, _generator, _player_country_handle, day, _story_flags)
+		ctx = NarrativeContextSamplerScript.sample_cell_context(
+			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+	ai_generation_requested.emit({
+		"ai_request_seq": seq,
+		"day": day,
+		"due_day": due_day,
+		"scheduled_followup": scheduled_followup,
+		"cell_idx": cell_idx,
+		"chain_id": chain_id,
+		"ai_prompt_hint": chain_hint,
+		"fact_hint": fact_hint,
+		"state_id": state_id,
+		"state_hint": state_hint,
+		"cell_ctx": ctx,
+		"recent_chronicle": get_chronicle(0, 3),
+	})
+	return seq
+
+
+func _maybe_request_fact_ai(day: int, ev_type: int, cell_idx: int, cell_ctx: Dictionary) -> void:
+	if cell_idx < 0 or not AI_FACT_HINTS.has(ev_type):
+		return
+	if not _ai_request_allowed(day):
+		return
+	var chance := _ai_chance_q16(ai_fact_chance_q16, cell_ctx)
+	var roll := NarrativeRngScript.roll_q16(
+		_world_seed, day, _player_country_handle, cell_idx, 0x464149 + ev_type)
+	if roll >= chance:
+		return
+	var fact_name := String(AI_FACT_HINTS[ev_type])
+	var settlement := String(cell_ctx.get("settlement_name", "本地")).strip_edges()
+	var fact_hint := "%s（%s，第 %d 日）" % [fact_name, settlement, day]
+	_request_ai_generation(day, cell_idx, "", "", fact_hint, day + 1, false, cell_ctx)
+
+
+# ─── 状态探针：条件成立并维持 dwell_days 天后才预取 ──────────────────────────
+# 状态由引擎判定；AI 只写文案。预取结果先不进弹窗队列：
+# 状态仍成立 → 立即入队；状态已破/闸门关 → 进池子，等状态下次成立再出池。
+
+func _poll_state_probes(day: int, ai_enabled: bool) -> void:
+	if _state_probes.is_empty():
+		return
+	if state_probe_interval_days > 0 and _last_state_probe_day > NEVER_POPPED_DAY \
+			and day - _last_state_probe_day < state_probe_interval_days:
+		return
+	_last_state_probe_day = day
+	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
+		_map, _generator, _player_country_handle, day, _story_flags)
+	var territory: PackedInt32Array = country_ctx.get("territory_cells", PackedInt32Array())
+	if territory.is_empty():
+		return
+	var cells := _pick_sampled_cells(territory, day)
+	# 已在状态里的格子必须继续采样，否则随机抽样会把 dwell 计数打断。
+	for key in _state_tracking.keys():
+		var tracked: Dictionary = _state_tracking[key]
+		var tracked_cell := int(tracked.get("cell", -1))
+		if tracked_cell >= 0 and not cells.has(tracked_cell) \
+				and cells.size() < MAX_STATE_PROBE_CELLS * 2:
+			cells.append(tracked_cell)
+	for cell_idx in cells:
+		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
+			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+		for probe in _state_probes:
+			if probe != null and probe.has_method("matches"):
+				_evaluate_probe_state(probe, cell_idx, cell_ctx, day, ai_enabled)
+
+
+func _evaluate_probe_state(
+		probe,
+		cell_idx: int,
+		cell_ctx: Dictionary,
+		day: int,
+		ai_enabled: bool
+) -> void:
+	var key := "%s:%d" % [String(probe.state_id), cell_idx]
+	if not probe.matches(cell_ctx):
+		_state_tracking.erase(key)
+		return
+	var price_ratio := _max_price_ratio(cell_ctx)
+	var satisfaction := clampf(float(cell_ctx.get("satisfaction_norm", 0.65)), 0.0, 1.0)
+	var entry: Dictionary = _state_tracking.get(key, {})
+	if entry.is_empty():
+		entry = {
+			"cell": cell_idx,
+			"since_day": day,
+			"last_seen_day": day,
+			"peak_price_ratio": price_ratio,
+			"min_satisfaction": satisfaction,
+		}
+	else:
+		entry["last_seen_day"] = day
+		entry["peak_price_ratio"] = maxf(
+			float(entry.get("peak_price_ratio", price_ratio)), price_ratio)
+		entry["min_satisfaction"] = minf(
+			float(entry.get("min_satisfaction", satisfaction)), satisfaction)
+	_state_tracking[key] = entry
+	if not ai_enabled:
+		return
+	var held_days := day - int(entry.get("since_day", day))
+	if held_days < probe.dwell_days:
+		return
+	if _has_state_request_in_flight(probe.state_id):
+		return
+	if day - int(_state_last_seed.get(key, NEVER_POPPED_DAY)) < probe.cooldown_days:
+		return
+	# 池子里已有同状态的稿子：先出池，不花 API。
+	if _pool_has_state(probe.state_id):
+		if _try_fire_pooled_event(probe.state_id, cell_idx, day):
+			_state_last_seed[key] = day
+		return
+	var hint := _build_state_hint(probe, cell_ctx, held_days, entry)
+	var seq := _request_ai_generation(
+		day, cell_idx, "", "", "", day + 1, false, cell_ctx,
+		String(probe.state_id), hint)
+	if seq >= 0:
+		_state_last_seed[key] = day
+
+
+func _build_state_hint(
+		probe,
+		cell_ctx: Dictionary,
+		held_days: int,
+		entry: Dictionary
+) -> String:
+	var parts := PackedStringArray()
+	parts.append("状态：%s" % probe.display_name)
+	if not probe.prompt_hint.strip_edges().is_empty():
+		parts.append(probe.prompt_hint.strip_edges())
+	parts.append("已持续 %d 日" % held_days)
+	parts.append("本地人口 %d，当前满意度 %.0f%%" % [
+		int(cell_ctx.get("population", 0)),
+		clampf(float(cell_ctx.get("satisfaction_norm", 0.65)), 0.0, 1.0) * 100.0,
+	])
+	var shortages: Variant = cell_ctx.get("shortage_good_ids",
+		cell_ctx.get("shortage_goods", PackedStringArray()))
+	if shortages is PackedStringArray and (shortages as PackedStringArray).size() > 0:
+		parts.append("市场紧缺：%s" % ", ".join(shortages as PackedStringArray))
+	parts.append("期间最高价格比 %.2f" % float(entry.get("peak_price_ratio", 1.0)))
+	parts.append("期间最低满意度 %.0f%%" % (
+		clampf(float(entry.get("min_satisfaction", 0.65)), 0.0, 1.0) * 100.0))
+	return "；".join(parts)
+
+
+func _max_price_ratio(cell_ctx: Dictionary) -> float:
+	var ratios: Variant = cell_ctx.get("market_price_ratios_by_id", {})
+	if ratios is Dictionary:
+		var worst := 1.0
+		for value in (ratios as Dictionary).values():
+			worst = maxf(worst, float(value))
+		return worst
+	return 1.0
+
+
+func _has_state_request_in_flight(state_id: StringName) -> bool:
+	var key_str := String(state_id)
+	for seq in _pending_ai_requests:
+		if String((_pending_ai_requests[seq] as Dictionary).get("state_id", "")) == key_str:
+			return true
+	return false
+
+
+func _sample_cell_ctx(cell_idx: int, day: int) -> Dictionary:
+	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
+		_map, _generator, _player_country_handle, day, _story_flags)
+	return NarrativeContextSamplerScript.sample_cell_context(
+		cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+
+
+# ─── AI 事件池：写好但此刻不能弹的事件 ──────────────────────────────────────
+
+func _pool_has_state(state_id: StringName) -> bool:
+	var key_str := String(state_id)
+	for entry in _ai_event_pool:
+		if String(entry.get("state_id", "")) == key_str:
+			return true
+	return false
+
+
+func _try_fire_pooled_event(state_id: StringName, cell_idx: int, day: int) -> bool:
+	var key_str := String(state_id)
+	var index := 0
+	while index < _ai_event_pool.size():
+		var entry: Dictionary = _ai_event_pool[index]
+		if String(entry.get("state_id", "")) != key_str:
+			index += 1
+			continue
+		var def = NarrativeEventDefinitionScript.from_dict(entry.get("def_dict", {}))
+		if def == null or def.event_id == &"":
+			_ai_event_pool.remove_at(index)
+			continue
+		# 出池同样要过全局闸门与年度额度；被拦住就留在池里，改天再试。
+		if enqueue_event_offer(def, cell_idx, day, &"", false).is_empty():
+			return false
+		_ai_event_pool.remove_at(index)
+		return true
+	return false
+
+
+func _flush_ai_pool(day: int) -> void:
+	if _ai_event_pool.is_empty() or popup_pacing_blocked(day):
+		return
+	var attempts := 0
+	var index := 0
+	while index < _ai_event_pool.size() and attempts < AI_POOL_FLUSH_LIMIT:
+		var entry: Dictionary = _ai_event_pool[index]
+		if day - int(entry.get("created_day", day)) > AI_POOL_TTL_DAYS:
+			_ai_event_pool.remove_at(index)
+			continue
+		var probe = state_probe_by_id(StringName(String(entry.get("state_id", ""))))
+		if probe == null:
+			_ai_event_pool.remove_at(index)
+			continue
+		attempts += 1
+		var cell_idx := _resolve_valid_player_cell(int(entry.get("cell_idx", -1)))
+		if cell_idx < 0:
+			index += 1
+			continue
+		if not probe.matches(_sample_cell_ctx(cell_idx, day)):
+			index += 1
+			continue
+		var def = NarrativeEventDefinitionScript.from_dict(entry.get("def_dict", {}))
+		if def == null or def.event_id == &"":
+			_ai_event_pool.remove_at(index)
+			continue
+		if enqueue_event_offer(def, cell_idx, day, &"", false).is_empty():
+			index += 1
+			continue
+		_ai_event_pool.remove_at(index)
+		_state_last_seed["%s:%d" % [String(probe.state_id), cell_idx]] = day
+
+
+func _stash_pooled_event(
+		state_id: String,
+		def: NarrativeEventDefinition,
+		cell_idx: int,
+		day: int
+) -> void:
+	if def == null or def.event_id == &"":
+		return
+	var same: Array[Dictionary] = []
+	var others: Array[Dictionary] = []
+	for entry in _ai_event_pool:
+		if String(entry.get("state_id", "")) == state_id:
+			same.append(entry)
+		else:
+			others.append(entry)
+	while same.size() >= AI_POOL_MAX_PER_STATE:
+		same.remove_at(0)
+	same.append({
+		"pool_id": _next_pool_id,
+		"state_id": state_id,
+		"cell_idx": cell_idx,
+		"created_day": day,
+		"def_dict": def.to_dict(),
+	})
+	_next_pool_id += 1
+	_ai_event_pool.clear()
+	for entry in others:
+		_ai_event_pool.append(entry)
+	for entry in same:
+		_ai_event_pool.append(entry)
+	while _ai_event_pool.size() > AI_POOL_MAX_ENTRIES:
+		_ai_event_pool.remove_at(0)
+
+
+## 回执事务：按 seq 找到请求 → 判时效 → 重新采样 → 入队/改约。控制器只负责转发。
+func accept_ai_generation(result: Dictionary, current_day: int = -1) -> Dictionary:
+	if result.is_empty():
+		return {"ok": false, "code": "ai_result_empty"}
+	var seq := int(result.get("ai_request_seq", -1))
+	if not _pending_ai_requests.has(seq):
+		# 读档清空在途、或请求已被 prune：迟到响应直接丢弃，不污染新世界。
+		return {"ok": false, "code": "ai_request_unknown", "ai_request_seq": seq}
+	var pending: Dictionary = _pending_ai_requests[seq]
+	_pending_ai_requests.erase(seq)
+	if not bool(result.get("ok", false)):
+		return {"ok": false, "code": String(result.get("code", "ai_generation_failed"))}
+	var def = result.get("definition", null)
+	if def == null:
+		return {"ok": false, "code": "ai_definition_missing"}
+	var arrival_day := current_day
+	if arrival_day < 0 and _world_clock != null and _world_clock.has_method("day_index"):
+		arrival_day = int(_world_clock.day_index())
+	if arrival_day < 0:
+		arrival_day = int(pending.get("request_day", 0))
+	var stale_days := arrival_day - int(pending.get("request_day", arrival_day))
+	if ai_max_staleness_days > 0 and stale_days > ai_max_staleness_days:
+		return {"ok": false, "code": "ai_result_stale", "stale_days": stale_days}
+	var cell_idx := _resolve_valid_player_cell(int(pending.get("cell_idx", -1)))
+	var chain_id := StringName(String(pending.get("chain_id", "")))
+	if bool(pending.get("scheduled_followup", false)):
+		register_dynamic_event(def)
+		schedule_followup_event(
+			def.event_id, cell_idx,
+			maxi(arrival_day, int(pending.get("due_day", arrival_day))), chain_id)
+		return {"ok": true, "code": "ok", "scheduled": true, "stale_days": stale_days}
+	# 状态探针请求：先复核「到达这一刻」状态是否仍成立，不成立就入池等下次。
+	var state_id := String(pending.get("state_id", ""))
+	if not state_id.is_empty():
+		var probe = state_probe_by_id(StringName(state_id))
+		if probe == null or not probe.matches(_sample_cell_ctx(cell_idx, arrival_day)):
+			_stash_pooled_event(state_id, def, cell_idx, arrival_day)
+			return {"ok": true, "code": "ai_event_pooled", "stale_days": stale_days}
+	# 重新采样发生在 enqueue_event_offer 内部：落地用的是「到达这一刻」的地块状态，
+	# 只有 body_text 仍出自请求日快照 —— 时效窗口就是它的保质期。
+	var offer := enqueue_event_offer(def, cell_idx, arrival_day, chain_id)
+	if offer.is_empty():
+		if not state_id.is_empty():
+			# 闸门或年度额度拦住：稿子不丢，回池等下一次。
+			_stash_pooled_event(state_id, def, cell_idx, arrival_day)
+			return {"ok": true, "code": "ai_event_pooled", "stale_days": stale_days}
+		return {"ok": false, "code": "ai_paced_out", "stale_days": stale_days}
+	return {"ok": true, "code": "ok", "offer": offer, "stale_days": stale_days}
 
 
 # ─── Popup Pacing Gate ───────────────────────────────────────────────────────
@@ -376,6 +909,25 @@ func _days_per_year() -> int:
 	if _world_clock != null and _world_clock.has_method("days_per_year"):
 		return maxi(1, int(_world_clock.days_per_year()))
 	return 365
+
+
+## 事件弹窗与史册只显示日历（第 N 年 · M 月 D 日），不显示第几天、地貌与气温。
+## 没有时钟时退回「第 N 日」，只出现在无会话的测试/诊断路径。
+func _format_calendar_date(day: int) -> String:
+	if _world_clock != null and _world_clock.has_method("calendar_date_for_day"):
+		var cal: Dictionary = _world_clock.calendar_date_for_day(day)
+		var year_no := 1
+		if _world_clock.has_method("year_index_for_day"):
+			year_no = int(_world_clock.year_index_for_day(day)) + 1
+		return "第%d年 · %d月%d日" % [
+			year_no, int(cal.get("month", 1)), int(cal.get("day_of_month", 1))]
+	if _world_clock != null and _world_clock.has_method("calendar_date"):
+		var cal_now: Dictionary = _world_clock.calendar_date()
+		var year_now := int(_world_clock.year_index()) + 1 \
+			if _world_clock.has_method("year_index") else 1
+		return "第%d年 · %d月%d日" % [
+			year_now, int(cal_now.get("month", 1)), int(cal_now.get("day_of_month", 1))]
+	return "第 %d 日" % day
 
 
 func _cell_year_key(cell_idx: int, day: int) -> String:
@@ -414,22 +966,18 @@ func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 	if sampled_cells.is_empty():
 		sampled_cells.append(-1)
 
-	# Optional AI pre-warm slot
+	# 脉冲预热槽：概率吃局势（紧缺/不满/极端气候会把 4% 抬到 40% 上限），
+	# 掷骰仍只依赖 (seed, day, country, cell, salt)：同一状态下存读档不会换结果。
 	if ai_enabled:
-		var ai_roll := NarrativeRngScript.roll_q16(_world_seed, day, _player_country_handle, sampled_cells[0], 0x4149)
-		if ai_roll < ai_slot_chance_q16:
-			var target_cell := int(sampled_cells[0])
+		var target_cell := int(sampled_cells[0])
+		if target_cell >= 0 and _ai_request_allowed(day):
 			var ai_cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
 				target_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
-			ai_generation_requested.emit({
-				"day": day,
-				"due_day": day + 1,
-				"cell_idx": target_cell,
-				"chain_id": "",
-				"ai_prompt_hint": "",
-				"cell_ctx": ai_cell_ctx,
-				"recent_chronicle": get_chronicle(0, 3),
-			})
+			var ai_chance := _ai_chance_q16(ai_slot_chance_q16, ai_cell_ctx)
+			var ai_roll := NarrativeRngScript.roll_q16(
+				_world_seed, day, _player_country_handle, target_cell, 0x4149)
+			if ai_roll < ai_chance:
+				_request_ai_generation(day, target_cell, "", "", "", day + 1, false, ai_cell_ctx)
 
 	var pulse_defs := catalog().events_for_channel(NarrativeEventDefinitionScript.TriggerChannel.PULSE_SAMPLED)
 	if pulse_defs.is_empty():
@@ -654,6 +1202,7 @@ func enqueue_event_offer(
 		"offer_generation": offer_gen,
 		"event_id": ev_id_str,
 		"day": day,
+		"date_text": _format_calendar_date(day),
 		"cell_idx": cell_idx,
 		"settlement_name": String(cell_ctx.get("settlement_name", "本地")),
 		"terrain_name": String(cell_ctx.get("terrain_name", "")),
@@ -681,12 +1230,25 @@ func enqueue_event_offer(
 func _promote_next_ready_offer(day: int) -> void:
 	if not _active_offer.is_empty() or _ready_queue.is_empty():
 		return
-	var next_offer: Dictionary = _ready_queue.pop_front()
-	_active_offer = next_offer.duplicate(true)
-	_last_popup_day = day
-	if not bool(_active_offer.get("bypass_pacing", false)):
-		_record_cell_year_event(int(_active_offer.get("cell_idx", -1)), day)
-	offer_ready.emit(_active_offer.duplicate(true))
+	var index := 0
+	while index < _ready_queue.size():
+		var next_offer: Dictionary = _ready_queue[index]
+		var scheduled_followup := bool(next_offer.get("bypass_pacing", false))
+		if not scheduled_followup:
+			# 旧档与异步入队也必须在真正展示时复核额度，不能积压后连弹。
+			if cell_year_pacing_blocked(int(next_offer.get("cell_idx", -1)), day):
+				_ready_queue.remove_at(index)
+				continue
+			if popup_pacing_blocked(day):
+				index += 1
+				continue
+		_ready_queue.remove_at(index)
+		_active_offer = next_offer.duplicate(true)
+		_last_popup_day = day
+		if not scheduled_followup:
+			_record_cell_year_event(int(_active_offer.get("cell_idx", -1)), day)
+		offer_ready.emit(_active_offer.duplicate(true))
+		return
 
 
 func choose_option(
@@ -716,7 +1278,7 @@ func choose_option(
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, effective_day, _story_flags)
 	var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-		cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+		cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 
 	var outcomes: Array = chosen_opt.get("outcomes", [])
 	var outcome_idx := 0
@@ -750,10 +1312,15 @@ func choose_option(
 	var year_idx: int = int(_world_clock.year_index()) if _world_clock != null and _world_clock.has_method("year_index") else 1
 	var record_id := _next_record_id
 	_next_record_id += 1
+	var record_day := int(_active_offer.get("day", effective_day))
+	var record_date_text := String(_active_offer.get("date_text", "")).strip_edges()
+	if record_date_text.is_empty():
+		record_date_text = _format_calendar_date(record_day)
 	var record := {
 		"record_id": record_id,
 		"offer_id": offer_id,
-		"day": int(_active_offer.get("day", effective_day)),
+		"day": record_day,
+		"date_text": record_date_text,
 		"resolved_day": effective_day,
 		"year": year_idx,
 		"cell_idx": cell_idx,
@@ -846,6 +1413,13 @@ func export_state() -> Dictionary:
 		"last_pulse_day": _last_pulse_day,
 		"last_popup_day": _last_popup_day,
 		"last_fact_event_id": _last_fact_event_id,
+		# 可选字段：旧档没有这两个键时按默认值恢复，因此 SCHEMA_VERSION 不需要 bump。
+		"last_ai_request_day": _last_ai_request_day,
+		"next_ai_request_seq": _next_ai_request_seq,
+		"ai_event_pool": _ai_event_pool.duplicate(true),
+		"next_pool_id": _next_pool_id,
+		"state_tracking": _state_tracking.duplicate(true),
+		"state_last_seed": _state_last_seed.duplicate(true),
 		"cell_year_event_counts": _cell_year_event_counts.duplicate(true),
 		"active_offer": _active_offer.duplicate(true),
 		"ready_queue": _ready_queue.duplicate(true),
@@ -880,6 +1454,24 @@ func restore_state(state: Dictionary) -> Dictionary:
 	_last_pulse_day = int(state.get("last_pulse_day", 0))
 	_last_popup_day = int(state.get("last_popup_day", NEVER_POPPED_DAY))
 	_last_fact_event_id = int(state.get("last_fact_event_id", -1))
+	_last_ai_request_day = int(state.get("last_ai_request_day", NEVER_POPPED_DAY))
+	_next_ai_request_seq = maxi(1, int(state.get("next_ai_request_seq", 1)))
+	# 在途请求不跨存档：seq 不会恢复，迟到的响应找不到登记项，由 accept_ai_generation 丢弃。
+	_pending_ai_requests.clear()
+	# 池子与状态跟踪跨档保留：写好的稿子不该因为读档而丢；dwell 计数继续。
+	_ai_event_pool.clear()
+	for raw_pool in state.get("ai_event_pool", []):
+		if raw_pool is Dictionary and not (raw_pool as Dictionary).is_empty():
+			_ai_event_pool.append((raw_pool as Dictionary).duplicate(true))
+	while _ai_event_pool.size() > AI_POOL_MAX_ENTRIES:
+		_ai_event_pool.remove_at(0)
+	_next_pool_id = maxi(1, int(state.get("next_pool_id", 1)))
+	var raw_tracking = state.get("state_tracking", {})
+	_state_tracking = (raw_tracking as Dictionary).duplicate(true) if raw_tracking is Dictionary else {}
+	var raw_seed_day = state.get("state_last_seed", {})
+	_state_last_seed = (raw_seed_day as Dictionary).duplicate(true) if raw_seed_day is Dictionary else {}
+	# 读档后立即重探一次，旧档里没有这些字段时也能自愈。
+	_last_state_probe_day = NEVER_POPPED_DAY
 	var raw_cell_counts = state.get("cell_year_event_counts", {})
 	_cell_year_event_counts = (raw_cell_counts as Dictionary).duplicate(true) if raw_cell_counts is Dictionary else {}
 
@@ -933,6 +1525,14 @@ func _reset_empty() -> void:
 	_last_pulse_day = 0
 	_last_popup_day = NEVER_POPPED_DAY
 	_last_fact_event_id = -1
+	_last_ai_request_day = NEVER_POPPED_DAY
+	_next_ai_request_seq = 1
+	_pending_ai_requests.clear()
+	_ai_event_pool.clear()
+	_next_pool_id = 1
+	_state_tracking.clear()
+	_state_last_seed.clear()
+	_last_state_probe_day = NEVER_POPPED_DAY
 	_cell_year_event_counts.clear()
 	_active_offer.clear()
 	_ready_queue.clear()

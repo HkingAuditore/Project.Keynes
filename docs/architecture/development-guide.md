@@ -1,5 +1,65 @@
 # 开发指南
 
+派遣面板以 `(source_cell, family_handle)` 标识来源行，目标已选时直接按地点分组展示
+当地家族。全国进行中入口与详情都复用 PlayerController 查询，按日事件和回执更新；
+不新增轮询或显示侧人口修改。筹备人数由 Economy 在推进时取计划人数与实际可派人数
+的较小值，随后重新规划采购与进度分母；军人、最后族人及最后商人的限制共用同一计算。
+已成交物资及在途采购沿用原托管/续接，不从 UI 退货或补账。回归用
+`tests/country/colonization_planner_context_test.gd`、`colonization_workbench_ui_test.gd`
+及 `tests/family/family_colonization_runtime_test.gd -- --population-shrink-only`。
+旧套件基线限制见 current-state；机制契约见家族开拓运行时文档。
+
+## 国库收支展示
+
+玩家看到的国库收支默认是近 30 日日均，总览页可切换近 7 日/近 30 日。数据入口仍是
+`CountryViewModel.sample_fiscal_history()`，每已提交日同时采样财政快照与国家摘要里的
+国库现金；不要从 `EconomyFiscalHistory` 的逐日展示序列直接求和，未结算日会沿用上次
+结算值。滚动窗口只汇总去重后的真实结算事件，并用现金首尾差校准净额，未细分差额
+进入「其他国库变动」。历史不足时按实际覆盖天数折算，少于两个现金样本则回退到最近
+一次结算。顶栏悬停与总览共用 `EconomyDossierViewModel.cashflow_from_history()`。
+定向回归运行 `tests/economy/economy_fiscal_history_rolling_test.gd`、
+`tests/ui/hud_status_card_test.gd` 和 `tests/economy/economy_dossier_view_model_test.gd`。
+
+军事 D+1 `SPEND_CASH` 的现有 reserve/collect 适配器是现金中性的：reserve 扣国库，
+collect 将同额加回国库，不能因回执非零就登记 Economy `explicit_money_burn`。
+军事维护真实终端支出尚未接入。审计窗口外已完成的资产变化也不能直接搬成下一
+epoch 的 mint/burn；先判断 opening snapshot 是否已包含该变化。回归运行
+`tests/economy/military_deferred_cash_conservation_test.gd`，同时验证真实待回执行恢复、
+防重、后续经济结算与三项守恒；只观察军事回执成功不足以证明账目正确。
+
+叙事事件额度统一为每格每游戏年两次：周期抽样、事实触发、普通 AI 事件共用
+`NarrativeEventService` 的入队检查和展示检查。队列出队时丢弃当年已超额的普通事件，
+全局弹窗间隔未到则等待；定时后续事件可以越过等待项，且不消耗年度额度。
+AI 定时后续请求携带 `scheduled_followup`，生成结果重新进入定时队列，
+不得提前展示，也不得将普通 AI 预热结果当作定时后续豁免。
+
+AI 事件有三个入口：脉冲预热、事实驱动（`GameplayEventBus` 白名单 `AI_FACT_HINTS`）
+和定时后续预取，共用 `ai_min_request_gap_days`（默认 60 日）节流与单条在途；概率按
+`situation_pressure_score()` 从基础值抬到上限。回执统一走
+`NarrativeEventService.accept_ai_generation()`：超过 `ai_max_staleness_days` 或读档后
+迟到一律丢弃，落地时重新采样地块上下文，避免文案与到达时的世界状态错位。
+状态探针（`NarrativeStateProbe`，首批粮食紧缺/民生不满/连旱）在条件维持 `dwell_days`
+后预取，回执复核失败则入 `_ai_event_pool`，等同一状态复现时出池；池子随 `pknr` 存读档。
+AI 叙事文本只写处境与后果，不写气温/价格/库存/人口/百分比/日期这类读数（prompt 明确约束；
+「三人」「三成」这类数量词照常写），validator 仅把温度读数改写成 `{temperature}` 占位符，不删句子；
+`custom_label` 例外，仍写幅度与时长。
+回归同上。
+
+叙事事件触发扫描保留居民汇总查询；`NarrativeEventService.choose_option` 执行选项时，
+须通过 `sample_cell_context(..., include_cohort_details=true)` 取得真实居民句柄，
+现金效果经 EconomyFacade 向原生经济/国家权威提交守恒转账，在后续结算边界生效。
+回归见 `tests/game/narrative_event_runtime_test.gd` 的寒潮 3% 国库援助用例；
+汇总快照没有 `handles/populations`，不能据此选择转账收款人。
+
+科技前置修改只写 `data/technology/technology_network.json`，同步知识基础、前置理由和静态连线；
+开局赠送的生存技能除外，正式研究须依赖早期知识机构。资源或发展信号不能绕过这一基础，
+也不能替代取样工具、用火、窑烧、繁育等不可替代知识；新增硬边后保留原有时代与稳定 ID，
+只按真实前置做最小拓扑重排，不能以时代标签充当普通科技的统一研究锁。
+运行 `tests/technology/technology_knowledge_foundation_test.gd` 验证铁矿辨识、露头煤辨识和市场制度的
+锁定及入队；权威与内容身份规则见 [科技运行时](../cpp-dots-runtime/technology-tree-runtime.md)。
+全树知识闭包、静态连线及玉米实践领域回归运行
+`python tools/technology_tree/test_prerequisite_foundations.py`。
+
 ## 山地起伏调参与验收
 
 生成高程归 `gdext/src/world_ext_generate.cpp`；山脊增量必须读冻结基底，
@@ -29,6 +89,16 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 所有命令从仓库根目录运行；Python 用 `/Users/herh/.local/bin/python3`，Godot 用 `/opt/homebrew/bin/godot`。日志目录必须是新目录。
 
 ## 改一个模块
+
+上游经济需求修复须运行
+`tests/building/building_runtime_test.gd -- --supply-chain-only`。
+派生计算实现归 `gdext/src/economy_runtime_derived_demand.cpp`，仍是同一个
+`NativeEconomyRuntime` 成员；派生需求必须继续展开投入队列并阻止已访问回边。
+工具等替代品的临时列在 epoch
+取样前会清空，须由已提交的企业需求 EMA 和原投入槽活动上限重建冻结种子，
+不能将预测写成真实销量、提款或资金。保留资源、库存、利润与业主生计门槛，
+验证缺少下游与上游建筑时仍能形成原料价格和首座生产者机会；细节见
+[经济公式](../cpp-dots-runtime/economy-fixed-point-ledger-formulas.md)。
 
 经济平衡调整先用 `tests/economy/economy_balance_soak.gd` 跑固定种子的正式多国开局，
 用 `tools/analysis/compare_economy_balance.py` 对齐同种子、同日和各国/职业分布。
@@ -114,6 +184,8 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 
 - 军事兵种份额：玩家局部修改经 `MilitaryFacade.submit` 将稳定 id 解析为完整 `int_pairs` 后提交；原生 `config.set` 是整表替换。改动此链路时运行 `tests/ui/military_config_command_test.gd`，避免空命令或清除其他兵种配比。
 - 军事部队编成：地块军事页从格快照中的本国驻军 lots 形成 `army.create` 请求；PlayerController 复核本国领土与占领状态，GDScript 不直接改写驻军或部队。入口与请求契约见 `docs/ui/military-cell-tab.md`。
+- 军事部队视野：玩家部队的位置从已提交的 `get_military_render_snapshot()` 读取，作为低预算移动源交给 `VisionSolver`；城市/领土源仍拥有更高预算。军事 `render_revision` 变化时由 Host 合并触发一次视野刷新，不在 Military 内写 `MapData.visible_arr`，也不新增存档段。验证用 `tests/ui/vision_solver_test.gd` 的部队源覆盖，并在真实运行时检查部队移动后的 `vision_revision`。
+- 玩家自动探路：任务、观察点、返程和战斗暂停归 `MilitaryCore`（`military_core_explore.cpp`，PKMI v4 section 23）；`army.explore` 只接受 Host 安装的玩家 observer。探路 passability 独立于普通 `find_path()`，战争状态也不进入他国控制格；每国每日 8 个规划槽、16 次 A*，并保留至少 16 次共享路径预算给区域控制。`run_movement()` 逐实际进入格产生 trail，Host 在 `_prepare_military_exploration_day()` 只合并 `MapData.explored_arr`，visible/fog 仍由既有 `_refresh_vision()` 生成；保存前必须 flush trail，失败拒绝保存。验证入口：`tests/military/military_auto_exploration_test.gd`、`tests/military/military_dossier_test.gd`、`tests/runtime/military_index_continuation_test.gd`、`tests/qa/military_dossier_screenshot_qa.gd`。
 
 - 会话扩展用 `WorldRuntimeHost.register_session_module`（`world_session.gd` 管准备、取消、关闭）；保存扩展用 `game_save_coordinator.gd` 的 `register_state_module(provider, restore_after)`。
 - `world_runtime_host.gd` 只保留公开入口、信号和状态转发；生成/恢复、日推进、GM/录制、视觉查询、生命周期在 `world_runtime_generation_adapter.gd`、`world_runtime_daily_adapter*.gd`、`world_runtime_gm_adapter*.gd`、`world_runtime_visual_adapter.gd`、`world_runtime_lifecycle.gd`。策略重启也由生命周期组件执行，必须等执行器真实退出，并传回捕获或启动失败。
@@ -200,9 +272,23 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 
 核查顺序：Godot `build_technology_network_authoring.gd` 规范化；`run_content_pacing_checks.py` 串行运行 design、binding、closure、construction、industry、catalog、research、activation、application 测试；运行离线9个负例测试；成功后用 `--refresh-manifest` 刷新稳定目录指纹，生成并 `--check` 科技树报告。每次修改科技绑定后都重做全量闭包；逐时代同代假设不足以证明直接先修祖先可达。
 
-## 部队指挥 UI（2026-11-08）
+## 部队指挥 UI（2026-11-10）
 
-预览草稿归 `PlayerController`，命令仍走军事 facade；`MilitaryDossier` 固定指挥区通过 `GameUIManager.update_military_arm_order` 事件更新。确认前重验路径，失败保留草稿，每日只写值。交互与验证边界见 `docs/ui/military-army-controls.md`。
+预览草稿归 `PlayerController`，命令仍走军事 facade；`MilitaryDossier` 固定指挥区通过
+`GameUIManager.update_military_arm_order` 事件更新。move/area 确认前重验路径，失败保留草稿；
+探路草稿只生成中心 + 半径的 `cells`，不调用 `preview_path()`，中心不可直达仍可提交。每日只写值，
+同身份刷新不重建节点。交互与验证边界见 `docs/ui/military-army-controls.md`。
+
+军事 UI 的显示层改动保持同一边界：主军事卷宗、地块军事页、部队/战线档案只读
+`MilitaryViewModel` / `CellInspectorViewModel`；地图工具条只切换 `MilitaryMapLayers` 的
+单层可见性，不直接查询或写入 MilitaryCore。按钮使用语义纸贴图标、44px 以上热区和显式
+焦点链；训练行只展示目标兵种、人数、进度和剩余天数，不把“源自某职业”当成玩家决策字段。
+
+地图军事视觉也只在表现层扩展：部队纸旗、交战纸章和 frontier grain 位图由
+`MilitaryArmyTokenLayer` / `MilitaryBattleLayer` / `MilitaryFrontLayer` /
+`MilitaryOccupationLayer` 的 shader 消费，不改变快照字段、军事状态、迷雾判定或存档。
+真实渲染必须用 `military_formation_map_visual_harness.gd` 验证；仅通过 headless 不代表 shader
+在图形后端可用。
 
 ## 军需市场需求（2026-11-08）
 

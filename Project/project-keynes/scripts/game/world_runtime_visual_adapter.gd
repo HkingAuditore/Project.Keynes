@@ -491,11 +491,14 @@ func _sync_country_territory_to_map(host) -> Dictionary:
 
 
 func _refresh_vision(host) -> Dictionary:
+	if host._military_vision_render_revision < 0:
+		poll_military_vision_revision(host)
 	var ext = host._generator.get_data_core_world_ext() if host._generator != null \
 		and host._generator.has_method("get_data_core_world_ext") else null
 	if ext == null or not ext.has_method("run_vision_research_pass") \
 			or not _ensure_native_vision_configured(host, ext):
-		var fallback = VisionSolver.solve(host._current_map, host._world_data, host._player_country_slot)
+		var fallback = VisionSolver.solve(host._current_map, host._world_data,
+			host._player_country_slot, host._military_vision_source_cells)
 		host._physical_visible_arr = host._current_map.visible_arr.duplicate()
 		host._vision_dirty_indices.resize(host._current_map.cell_count())
 		for cell in host._current_map.cell_count():
@@ -507,13 +510,15 @@ func _refresh_vision(host) -> Dictionary:
 		"player_slot": host._player_country_slot,
 		"remote_observation": host._remote_observation_capability,
 		"country_slots": host._current_map.country_slot_arr,
+		"military_source_cells": host._military_vision_source_cells,
 		"visible": host._physical_visible_arr,
 		"explored": host._current_map.explored_arr,
 		"fog_k": host._current_map.fog_k_arr,
 		"bio_occupancy_bits": host._current_map.bio_occupancy_bits_arr,
 	})
 	if not bool(result.get("ok", false)):
-		return VisionSolver.solve(host._current_map, host._world_data, host._player_country_slot)
+		return VisionSolver.solve(host._current_map, host._world_data,
+			host._player_country_slot, host._military_vision_source_cells)
 	host._physical_visible_arr = result.get("physical_visible", PackedByteArray())
 	host._current_map.explored_arr = result.get("explored_arr", PackedByteArray())
 	host._current_map.fog_k_arr = result.get("fog_k_arr", PackedByteArray())
@@ -530,6 +535,90 @@ func _refresh_vision(host) -> Dictionary:
 	host._current_map.vision_revision += 1
 	_submit_native_observations(host, facade, result)
 	return result
+
+
+## Poll the military render revision once per frame. The snapshot is a committed
+## read-only projection, so this is safe for both legacy SUS and whole-graph
+## ACTIVE. When a player's army moves, queue the same coalesced visual refresh
+## used by territory changes; no second visibility state is introduced.
+func poll_military_vision_revision(host) -> void:
+	# On graphical sessions MilitaryMapLayers already owns the one native
+	# render-snapshot poll for the frame; it forwards the frozen feed below.
+	if host.military_map_layers != null \
+			and host._military_vision_render_revision >= 0:
+		return
+	if host._generator == null or not host._generator.has_method("get_military_facade"):
+		return
+	var facade = host._generator.get_military_facade()
+	if facade == null or not facade.is_configured() or not facade.has_method("render_snapshot"):
+		return
+	var source_slot_changed: bool = host._military_vision_source_slot != host._player_country_slot
+	var after_revision: int = host._military_vision_render_revision
+	if source_slot_changed:
+		after_revision = -1
+	var snapshot: Variant = facade.render_snapshot(after_revision)
+	if not snapshot is Dictionary or not bool(snapshot.get("ok", false)):
+		return
+	var revision := int(snapshot.get("revision", host._military_vision_render_revision))
+	var fresh: bool = revision != host._military_vision_render_revision or source_slot_changed
+	if fresh:
+		host._military_vision_render_revision = revision
+		host._military_vision_source_slot = host._player_country_slot
+		var sources_changed := _update_military_vision_sources(host, snapshot)
+		if host._military_vision_render_revision >= 0 \
+				and (source_slot_changed or sources_changed):
+			host._country_visual_refresh_pending = true
+			host._country_visual_refresh_reason = "military_vision_committed"
+
+
+## Graphical path hook from MilitaryMapLayers after its single native poll.
+## Headless/mobile sessions use poll_military_vision_revision() directly.
+func observe_military_render_feed(host, feed) -> void:
+	if feed == null or not bool(feed.ok) or host._current_map == null:
+		return
+	var source_slot_changed: bool = host._military_vision_source_slot != host._player_country_slot
+	var revision: int = int(feed.revision)
+	if not source_slot_changed and revision == host._military_vision_render_revision:
+		return
+	var previous: PackedInt32Array = host._military_vision_source_cells
+	var out := PackedInt32Array()
+	for index in feed.army_count:
+		if int(feed.army_owner[index]) != host._player_country_slot:
+			continue
+		var cell := int(feed.army_cell[index])
+		if cell >= 0 and cell < host._current_map.cell_count():
+			out.append(cell)
+	host._military_vision_render_revision = revision
+	host._military_vision_source_slot = host._player_country_slot
+	host._military_vision_source_cells = out
+	if source_slot_changed or previous != out:
+		host._country_visual_refresh_pending = true
+		host._country_visual_refresh_reason = "military_vision_committed"
+
+
+func _update_military_vision_sources(host, snapshot: Dictionary) -> bool:
+	var previous: PackedInt32Array = host._military_vision_source_cells
+	if host._current_map == null:
+		host._military_vision_source_cells = PackedInt32Array()
+		return previous != host._military_vision_source_cells
+	var rows: Variant = snapshot.get("armies", {})
+	if not rows is Dictionary:
+		host._military_vision_source_cells = PackedInt32Array()
+		return previous != host._military_vision_source_cells
+	var cells: Variant = rows.get("cell", PackedInt32Array())
+	var owners: Variant = rows.get("owner_slot", PackedInt32Array())
+	if not cells is PackedInt32Array or not owners is PackedInt32Array:
+		host._military_vision_source_cells = PackedInt32Array()
+		return previous != host._military_vision_source_cells
+	var out := PackedInt32Array()
+	var count := mini(cells.size(), owners.size())
+	for index in count:
+		if int(owners[index]) == host._player_country_slot:
+			var cell := int(cells[index])
+			if cell >= 0 and cell < host._current_map.cell_count():
+				out.append(cell)
+	host._military_vision_source_cells = out
+	return previous != out
 
 
 func _ensure_native_vision_configured(host, ext: Object) -> bool:

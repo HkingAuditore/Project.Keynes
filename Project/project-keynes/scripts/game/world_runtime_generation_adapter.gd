@@ -26,6 +26,9 @@ func _prepare_world_data(host) -> Dictionary:
 	host._runtime_military_pending_target_day = -1
 	host._runtime_military_last_result.clear()
 	host._runtime_military_ms = 0.0
+	host._military_vision_render_revision = -1
+	host._military_vision_source_slot = -2
+	host._military_vision_source_cells = PackedInt32Array()
 	host._military_terrain_season_index = -1
 	host._country_worker_read_generation = 0
 	host._country_worker_read_last_day = -1
@@ -199,7 +202,14 @@ func _prepare_world_simulation(host) -> Dictionary:
 			return host._session_preparation_failure()
 	WebTelemetry.emit("bind_step", {"s": "post_worker_frame"})
 	var annual_handle: int = host._resolve_player_country_handle()
-	if annual_handle != 0:
+	# Annual reports depend on the Country + Economy + Ideology catalogs.  A
+	# failed economy bootstrap leaves those providers intentionally absent; keep
+	# the session diagnostic at its original failure point and do not emit a
+	# second initialization error from this optional report module.
+	var annual_ideology_ready: bool = host._generator != null \
+		and host._generator.has_method("get_ideology_facade") \
+		and host._generator.get_ideology_facade() != null
+	if annual_handle != 0 and annual_ideology_ready:
 		var annual_result: Dictionary = host._annual_reports.configure(host._generator, host._world_clock, annual_handle)
 		WebTelemetry.emit("bind_step", {"s": "annual_configured"})
 		if not bool(annual_result.get("ok", false)):
@@ -523,4 +533,3 @@ func _environment_prefetch_capable(host) -> bool:
 func _stop_previous_runtime_worker(host) -> Dictionary:
 	return await preload("res://scripts/game/world_runtime_preparation.gd").stop_worker(
 		host._generator, host._preparation_process_frame)
-

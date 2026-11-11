@@ -199,7 +199,16 @@ int64_t local_defence(const MilitaryCore &core, const MilitaryWorldDigest &diges
         if (type.defense_q16 > best_defence_q16) best_defence_q16 = type.defense_q16;
     }
     const int64_t base = mul_div(population, kLocalDefenceBp, 10000);
-    return mul_q(mul_q(base, best_defence_q16), fort_q16(core, cell));
+    // v5: 民兵训练与筑城科技此前对城防毫无影响（两个 stat 从未被读取）。
+    // 现在按控制国的 MSTAT_MILITIA / MSTAT_FORTIFICATION 各乘一次；
+    // 没有相关科技时 stat_q16 返回 1.0，行为与改造前一致。
+    const int32_t militia_q16 =
+        (controller >= 0) ? stat_q16(digest, controller, MSTAT_MILITIA) : MILITARY_Q16;
+    const int32_t fort_stat_q16 =
+        (controller >= 0) ? stat_q16(digest, controller, MSTAT_FORTIFICATION) : MILITARY_Q16;
+    return mul_q(mul_q(mul_q(mul_q(base, best_defence_q16), fort_q16(core, cell)),
+                       militia_q16),
+                 fort_stat_q16);
 }
 
 // Deterministic gaussian sample (Box-Muller on two keyed uniforms).
@@ -599,14 +608,22 @@ void MilitaryCore::run_engagements(const MilitaryWorldDigest &digest,
                 evaluate_rules(*this, digest, other, far_cell, other_owner, true, true,
                                other_connected, e.start_day, digest.day);
             defender_heads += _armies.cached_headcount[(size_t)other];
-            defender_attack += mul_q(mul_q(sum_lot_value(*this, (size_t)other, true), cohesion),
-                                     rules.attack_q16);
-            defender_defence += mul_q(mul_q(sum_lot_value(*this, (size_t)other, false), cohesion),
-                                      rules.defense_q16);
+            // v5: 攻/防科技加成此前从未参与结算（MSTAT_ATTACK/DEFENSE 无读取点）。
+            // 每支守军按自己的国家乘一次，避免与 rules.attack_q16 重复相乘。
+            defender_attack += mul_q(
+                mul_q(mul_q(sum_lot_value(*this, (size_t)other, true), cohesion),
+                      rules.attack_q16),
+                stat_q16(digest, other_owner, MSTAT_ATTACK));
+            defender_defence += mul_q(
+                mul_q(mul_q(sum_lot_value(*this, (size_t)other, false), cohesion),
+                      rules.defense_q16),
+                stat_q16(digest, other_owner, MSTAT_DEFENSE));
         }
         const int32_t attacker_cohesion = cohesion_q16(_armies, (size_t)e.attacker_slot);
         int64_t attacker_attack = mul_q(sum_lot_value(*this, (size_t)e.attacker_slot, true),
                                         attacker_cohesion);
+        // v5: 攻/防科技加成（同 defenders 侧，只乘这一次）。
+        attacker_attack = mul_q(attacker_attack, stat_q16(digest, attacker, MSTAT_ATTACK));
         // Channel-B rules (sec 17.1): the attacker fights from its own cell, the
         // defender holds the contested one.
         const bool attacker_connected = supply_connected(*this, digest, attacker, from_cell);
@@ -928,7 +945,12 @@ void MilitaryCore::capture_cell(int32_t index, const MilitaryWorldDigest &digest
         _armies.moved_day[(size_t)best] = digest.day;
         _armies.path_len[(size_t)best] = 0;
         _armies.path_cursor[(size_t)best] = 0;
-        _armies.mission[(size_t)best] = (uint8_t)MILITARY_MISSION_NONE;
+        if (exploration_is_live_for_army(best)) {
+            record_exploration_trail(best, _armies.owner_slot[(size_t)best], target);
+            pause_exploration_for_battle(best);
+        } else {
+            _armies.mission[(size_t)best] = (uint8_t)MILITARY_MISSION_NONE;
+        }
         index_insert(best, target);
     }
     // Garrison soldiers of the previous owner fall back with the retreating
@@ -1043,9 +1065,14 @@ void MilitaryCore::retreat_or_annihilate(int32_t army, int32_t from_cell, int32_
     _armies.cell[(size_t)army] = refuge;
     _armies.moved_day[(size_t)army] = digest.day;
     _armies.stance[(size_t)army] = (uint8_t)MILITARY_STANCE_RETREAT;
-    _armies.mission[(size_t)army] = (uint8_t)MILITARY_MISSION_NONE;
     _armies.path_len[(size_t)army] = 0;
     _armies.path_cursor[(size_t)army] = 0;
+    if (exploration_is_live_for_army(army)) {
+        record_exploration_trail(army, _armies.owner_slot[(size_t)army], refuge);
+        pause_exploration_for_battle(army);
+    } else {
+        _armies.mission[(size_t)army] = (uint8_t)MILITARY_MISSION_NONE;
+    }
     _armies.organization_q16[(size_t)army] = clamp_q16_i32(
         (int64_t)_armies.organization_q16[(size_t)army] - kOrgLossCaptureQ16, 0, MILITARY_Q16);
     index_insert(army, refuge);

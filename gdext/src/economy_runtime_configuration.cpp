@@ -1358,7 +1358,8 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         const bool allowed_opcode =
             (opcodes[i] >= COMMAND_TRANSFER_TO_COHORT &&
              opcodes[i] <= COMMAND_TREASURY_SPONSORED_BUILD) ||
-            family_reward || split_policy || opcodes[i] == COMMAND_MILITARY_PROCUREMENT_DEMAND;
+            family_reward || split_policy || opcodes[i] == COMMAND_MILITARY_PROCUREMENT_DEMAND ||
+            opcodes[i] == COMMAND_MILITARY_PURCHASE || opcodes[i] == COMMAND_MILITARY_PURCHASE_ACK;
         if (!allowed_opcode || days[i] < 0 || sequences[i] < 0 ||
             (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION &&
              opcodes[i] != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
@@ -1393,6 +1394,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             opcodes[i] == COMMAND_TREASURY_SPONSORED_DEMOLISH;
         if (!family_reward && !treasury_build && !treasury_demolish && !split_policy &&
             opcodes[i] != COMMAND_MILITARY_PROCUREMENT_DEMAND &&
+            opcodes[i] != COMMAND_MILITARY_PURCHASE && opcodes[i] != COMMAND_MILITARY_PURCHASE_ACK &&
             opcodes[i] != COMMAND_ADD_STOCK &&
             opcodes[i] != COMMAND_REMOVE_STOCK &&
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&

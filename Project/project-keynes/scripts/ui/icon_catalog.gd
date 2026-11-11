@@ -64,6 +64,8 @@ const PAPER_TEXTURES := {
 	&"good.advanced_chips": preload("res://assets/icons/paper/good_advanced_chips.tres"),
 	&"good.agricultural_machinery": preload("res://assets/icons/paper/good_agricultural_machinery.tres"),
 	&"good.aluminum": preload("res://assets/icons/paper/good_aluminum.tres"),
+	&"good.ammonia": preload("res://assets/icons/paper/good_ammonia.tres"),
+	&"good.antibiotics": preload("res://assets/icons/paper/good_antibiotics.tres"),
 	&"good.automobiles": preload("res://assets/icons/paper/good_automobiles.tres"),
 	&"good.autonomous_systems": preload("res://assets/icons/paper/good_autonomous_systems.tres"),
 	&"good.bast_fiber": preload("res://assets/icons/paper/good_bast_fiber.tres"),
@@ -94,6 +96,7 @@ const PAPER_TEXTURES := {
 	&"good.crude_oil": preload("res://assets/icons/paper/good_crude_oil.tres"),
 	&"good.dairy_products": preload("res://assets/icons/paper/good_dairy_products.tres"),
 	&"good.detergent": preload("res://assets/icons/paper/good_detergent.tres"),
+	&"good.dyestuff": preload("res://assets/icons/paper/good_dyestuff.tres"),
 	&"good.edible_oil": preload("res://assets/icons/paper/good_edible_oil.tres"),
 	&"good.electric_motor": preload("res://assets/icons/paper/good_electric_motor.tres"),
 	&"good.electrical_equipment": preload("res://assets/icons/paper/good_electrical_equipment.tres"),
@@ -108,6 +111,7 @@ const PAPER_TEXTURES := {
 	&"good.flax_fiber": preload("res://assets/icons/paper/good_flax_fiber.tres"),
 	&"good.flint": preload("res://assets/icons/paper/good_flint.tres"),
 	&"good.footwear": preload("res://assets/icons/paper/good_footwear.tres"),
+	&"good.frozen_food": preload("res://assets/icons/paper/good_frozen_food.tres"),
 	&"good.fur": preload("res://assets/icons/paper/good_fur.tres"),
 	&"good.furniture": preload("res://assets/icons/paper/good_furniture.tres"),
 	&"good.game_meat": preload("res://assets/icons/paper/good_game_meat.tres"),
@@ -178,6 +182,7 @@ const PAPER_TEXTURES := {
 	&"good.stainless_steel": preload("res://assets/icons/paper/good_stainless_steel.tres"),
 	&"good.steam_engines": preload("res://assets/icons/paper/good_steam_engines.tres"),
 	&"good.steel": preload("res://assets/icons/paper/good_steel.tres"),
+	&"good.structural_steel": preload("res://assets/icons/paper/good_structural_steel.tres"),
 	&"good.sulfur": preload("res://assets/icons/paper/good_sulfur.tres"),
 	&"good.synthetic_fiber": preload("res://assets/icons/paper/good_synthetic_fiber.tres"),
 	&"good.synthetic_rubber": preload("res://assets/icons/paper/good_synthetic_rubber.tres"),
@@ -195,14 +200,17 @@ const PAPER_TEXTURES := {
 	&"good.zinc": preload("res://assets/icons/paper/good_zinc.tres"),
 	&"good.zinc_ore": preload("res://assets/icons/paper/good_zinc_ore.tres"),
 	&"profession.agricultural_worker": preload("res://assets/icons/paper/profession_agricultural_worker.tres"),
+	&"profession.agronomist": preload("res://assets/icons/paper/profession_agronomist.tres"),
 	&"profession.ai_researcher": preload("res://assets/icons/paper/profession_ai_researcher.tres"),
 	&"profession.apprentice": preload("res://assets/icons/paper/profession_apprentice.tres"),
+	&"profession.aquaculturist": preload("res://assets/icons/paper/profession_aquaculturist.tres"),
 	&"profession.artisan": preload("res://assets/icons/paper/profession_artisan.tres"),
 	&"profession.chemist": preload("res://assets/icons/paper/profession_chemist.tres"),
 	&"profession.construction_worker": preload("res://assets/icons/paper/profession_construction_worker.tres"),
 	&"profession.cooperative_member": preload("res://assets/icons/paper/profession_cooperative_member.tres"),
 	&"profession.corvee_worker": preload("res://assets/icons/paper/profession_corvee_worker.tres"),
 	&"profession.data_scientist": preload("res://assets/icons/paper/profession_data_scientist.tres"),
+	&"profession.dyer": preload("res://assets/icons/paper/profession_dyer.tres"),
 	&"profession.electrician": preload("res://assets/icons/paper/profession_electrician.tres"),
 	&"profession.engineer": preload("res://assets/icons/paper/profession_engineer.tres"),
 	&"profession.enslaved_laborer": preload("res://assets/icons/paper/profession_enslaved_laborer.tres"),
@@ -233,6 +241,7 @@ const PAPER_TEXTURES := {
 	&"profession.scribe": preload("res://assets/icons/paper/profession_scribe.tres"),
 	&"profession.serf": preload("res://assets/icons/paper/profession_serf.tres"),
 	&"profession.sharecropper": preload("res://assets/icons/paper/profession_sharecropper.tres"),
+	&"profession.ship_officer": preload("res://assets/icons/paper/profession_ship_officer.tres"),
 	&"profession.subsistence_farmer": preload("res://assets/icons/paper/profession_subsistence_farmer.tres"),
 	&"profession.technician": preload("res://assets/icons/paper/profession_technician.tres"),
 	&"profession.tenant_farmer": preload("res://assets/icons/paper/profession_tenant_farmer.tres"),
@@ -446,6 +455,7 @@ const MILITARY_PAPER_TEXTURES := {
 	&"military.unit.militia": preload("res://assets/military/codex/military_unit_militia.tres"),
 	&"military.unit.musketeer": preload("res://assets/military/codex/military_unit_musketeer.tres"),
 	&"military.unit.rifleman": preload("res://assets/military/codex/military_unit_rifleman.tres"),
+	&"military.unit.shield_bearers": preload("res://assets/military/codex/military_unit_shield_bearers.tres"),
 	&"military.unit.siege_train": preload("res://assets/military/codex/military_unit_siege_train.tres"),
 	&"military.unit.spearmen": preload("res://assets/military/codex/military_unit_spearmen.tres"),
 	&"military.unit.tank": preload("res://assets/military/codex/military_unit_tank.tres"),
@@ -498,6 +508,7 @@ const MILITARY_UNIT_ICONS := {
 	&"musketeers": &"military.unit.musketeer",
 	&"line_infantry": &"military.unit.line_infantry",
 	&"riflemen": &"military.unit.rifleman",
+	&"shield_bearers": &"military.unit.shield_bearers",
 	&"machine_gunners": &"military.unit.machine_gunner",
 	&"field_artillery": &"military.unit.field_artillery",
 	&"heavy_artillery": &"military.unit.field_artillery",
@@ -586,6 +597,8 @@ const GOOD_IDS := {
 	&"advanced_chips": true,
 	&"agricultural_machinery": true,
 	&"aluminum": true,
+	&"ammonia": true,
+	&"antibiotics": true,
 	&"armor_plate": true,
 	&"automobiles": true,
 	&"automatic_rifles": true,
@@ -625,6 +638,7 @@ const GOOD_IDS := {
 	&"crude_oil": true,
 	&"dairy_products": true,
 	&"detergent": true,
+	&"dyestuff": true,
 	&"early_tanks": true,
 	&"edible_oil": true,
 	&"electric_motor": true,
@@ -641,6 +655,7 @@ const GOOD_IDS := {
 	&"flint": true,
 	&"flintlocks": true,
 	&"footwear": true,
+	&"frozen_food": true,
 	&"fur": true,
 	&"furniture": true,
 	&"game_meat": true,
@@ -732,6 +747,7 @@ const GOOD_IDS := {
 	&"steel_artillery": true,
 	&"steel_blades": true,
 	&"stone_spears": true,
+	&"structural_steel": true,
 	&"sulfur": true,
 	&"synthetic_fiber": true,
 	&"synthetic_rubber": true,
@@ -753,14 +769,17 @@ const GOOD_IDS := {
 
 const PROFESSION_IDS := {
 	&"agricultural_worker": true,
+	&"agronomist": true,
 	&"ai_researcher": true,
 	&"apprentice": true,
+	&"aquaculturist": true,
 	&"artisan": true,
 	&"chemist": true,
 	&"construction_worker": true,
 	&"cooperative_member": true,
 	&"corvee_worker": true,
 	&"data_scientist": true,
+	&"dyer": true,
 	&"electrician": true,
 	&"engineer": true,
 	&"enslaved_laborer": true,
@@ -791,6 +810,7 @@ const PROFESSION_IDS := {
 	&"scribe": true,
 	&"serf": true,
 	&"sharecropper": true,
+	&"ship_officer": true,
 	&"soldier": true,
 	&"subsistence_farmer": true,
 	&"technician": true,
@@ -1149,14 +1169,27 @@ static func spec_for(key: StringName) -> Dictionary:
 	if raw.begins_with("building."):
 		var product_id := _building_product_id(raw)
 		var kind := raw.trim_prefix("building.").get_slice(".", 0)
-		var base_key := _paper_building_base(kind, product_id)
+		var stable_id := _building_stable_id(raw)
+		var base_key := _paper_building_base(kind, product_id, stable_id)
 		return {"family": FAMILY_PAPER,
 			"texture": _paper_building_texture(kind, product_id, base_key),
-			"identity": "building.%s@%s" % [kind, product_id]}
+			"identity": "building.%s@%s@%s" % [kind, product_id, base_key]}
 	return {"family": FAMILY_PAPER, "texture": PAPER_TEXTURES[&"system.unknown"]}
 
 
-static func _paper_building_base(kind: String, product_id: StringName) -> StringName:
+const BUILDING_BASE_OVERRIDES := {
+	&"fish_farm": &"economy.building.fishing",
+	&"cold_storage": &"economy.building.transport",
+	&"logistics_hub": &"economy.building.transport",
+	&"public_health_center": &"economy.building.service",
+}
+
+
+static func _paper_building_base(kind: String, product_id: StringName,
+		stable_id: StringName = &"") -> StringName:
+	var override_key: StringName = BUILDING_BASE_OVERRIDES.get(stable_id, &"")
+	if not override_key.is_empty():
+		return override_key
 	var product := String(product_id)
 	if product.ends_with("_ore") or product in ["coal", "crude_oil", "natural_gas",
 			"raw_stone", "clay", "flint", "limestone", "silica_sand", "salt", "saltpeter", "sulfur", "bauxite", "phosphate_rock"]:
@@ -1189,7 +1222,7 @@ static func _paper_building_base(kind: String, product_id: StringName) -> String
 
 static func _paper_building_texture(kind: String, product_id: StringName,
 		base_key: StringName) -> Texture2D:
-	var cache_key := "%s@%s" % [kind, product_id]
+	var cache_key := "%s@%s@%s" % [kind, product_id, base_key]
 	if _paper_building_textures.has(cache_key):
 		return _paper_building_textures[cache_key] as Texture2D
 	# 只在首次显示时合成纸贴；按建筑类型和产物缓存，不进入每日刷新热路径。
@@ -1373,6 +1406,15 @@ static func _building_product_id(raw: String) -> StringName:
 		return &""
 	var product_id := StringName(raw.substr(separator + 1))
 	return product_id if GOOD_IDS.has(product_id) else &""
+
+
+static func _building_stable_id(raw: String) -> StringName:
+	var prefix := raw.trim_prefix("building.")
+	var separator := prefix.rfind("@")
+	if separator < 0:
+		return &""
+	var segments := prefix.substr(0, separator).split(".", false)
+	return StringName(segments[1]) if segments.size() > 1 else &""
 
 
 static func implementation_signature(key: StringName) -> String:

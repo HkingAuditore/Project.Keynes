@@ -356,15 +356,14 @@ int64_t NativeEconomyRuntime::military_collect_cash(int64_t country_handle,
     return port.resolve_cash(port.collect_intent(country_handle, reserved, -1, -1));
 }
 
-void NativeEconomyRuntime::military_record_cash_burn(int64_t amount) {
-    if (amount <= 0) return;
-    if (_epoch_active) {
-        _explicit_money_burn = saturating_add(
-            _explicit_money_burn, amount, _saturation_count);
-        return;
+bool NativeEconomyRuntime::military_purchase_receipt(int64_t sequence, int64_t &quantity, int64_t &cash) const {
+    for (const Command &row : _pending_commands) {
+        if (row.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT && row.sequence == sequence &&
+            row.effective_day <= _last_committed_day.get()) {
+            quantity = row.i64_0; cash = row.i64_1; return true;
+        }
     }
-    _pending_military_cash_burn = saturating_add(
-        _pending_military_cash_burn, amount, _saturation_count);
+    return false;
 }
 
 bool NativeEconomyRuntime::military_command_window_open() const {
@@ -375,7 +374,7 @@ bool NativeEconomyRuntime::military_command_window_open() const {
 int32_t NativeEconomyRuntime::military_queued_commands_through(int64_t day) const {
     int32_t count = 0;
     for (const Command &command : _pending_commands) {
-        if (command.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND &&
+        if (command.opcode != COMMAND_MILITARY_PROCUREMENT_DEMAND && command.opcode != COMMAND_MILITARY_PURCHASE_RECEIPT &&
             command.effective_day <= day) ++count;
     }
     return count;

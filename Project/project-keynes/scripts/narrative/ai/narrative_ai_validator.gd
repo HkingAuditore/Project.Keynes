@@ -108,15 +108,19 @@ static func validate_and_sanitize(
 			"event_dict": {},
 		}
 
-	var title := String(parsed_dict.get("title", "")).strip_edges()
-	var body_text := String(parsed_dict.get("body_text", parsed_dict.get("narrative", ""))).strip_edges()
-	if title.is_empty() or body_text.is_empty():
+	var raw_title := String(parsed_dict.get("title", "")).strip_edges()
+	var raw_body_text := String(parsed_dict.get("body_text", parsed_dict.get("narrative", ""))).strip_edges()
+	if raw_title.is_empty() or raw_body_text.is_empty():
 		return {
 			"ok": false,
 			"code": "missing_title_or_body",
 			"reason": "AI 事件缺少 title 或 body_text。",
 			"event_dict": {},
 		}
+	# 数字不一定是数据：数量词、年份、序号都该保留。只有「温度读数」有现成占位符，
+	# 就地改写成 `{temperature}` 交给引擎填充，其余文本原样放行。
+	var title := normalize_temperature_readings(raw_title)
+	var body_text := normalize_temperature_readings(raw_body_text)
 
 	var raw_options: Variant = parsed_dict.get("options", [])
 	if not (raw_options is Array) or (raw_options as Array).is_empty():
@@ -238,16 +242,58 @@ static func _extract_outer_json_object(s: String) -> String:
 	return ""
 
 
+## 数字不一定是数据：「三人」「三成」「第 3 条」都是叙述，不能因为出现数字就删句子。
+## 唯一能在不丢信息的前提下修掉的是「温度读数」——它有 `{temperature}` 这个现成占位符，
+## 因此把 `34.2℃` / `34.2 °C` 就地改写成占位符，由引擎在入队时填当前气温。
+## 价格、库存、百分比等没有对应占位符，交给 prompt 约束，不在这里做文本手术。
+static func normalize_temperature_readings(text: String) -> String:
+	if text.is_empty():
+		return text
+	var out := ""
+	var index := 0
+	var length := text.length()
+	while index < length:
+		var code := text.unicode_at(index)
+		if code < 48 or code > 57:
+			out += char(code)
+			index += 1
+			continue
+		var number_start := index
+		while index < length:
+			var digit := text.unicode_at(index)
+			if (digit >= 48 and digit <= 57) or digit == 46:
+				index += 1
+			else:
+				break
+		# 数字与单位之间允许一个空格（"34.2 ℃"）。
+		var unit_index := index
+		while unit_index < length and text.unicode_at(unit_index) == 32:
+			unit_index += 1
+		var unit_length := 0
+		if unit_index < length and text.unicode_at(unit_index) == 8451:  # ℃
+			unit_length = 1
+		elif unit_index + 1 < length and text.unicode_at(unit_index) == 176 \
+				and text.unicode_at(unit_index + 1) == 67:  # °C
+			unit_length = 2
+		if unit_length == 0:
+			out += text.substr(number_start, index - number_start)
+			continue
+		out += "{temperature}"
+		index = unit_index + unit_length
+	return out
+
+
 static func _sanitize_option(
 		raw_opt: Dictionary,
 		opt_idx: int,
 		available_cash: int,
 		goods_set: Dictionary
 ) -> Dictionary:
-	var text := String(raw_opt.get("text", "")).strip_edges()
+	var text := normalize_temperature_readings(String(raw_opt.get("text", "")).strip_edges())
 	if text.is_empty():
 		text = "选项 %d" % (opt_idx + 1)
-	var tooltip_hint := String(raw_opt.get("tooltip_hint", "")).strip_edges()
+	var tooltip_hint := normalize_temperature_readings(
+		String(raw_opt.get("tooltip_hint", "")).strip_edges())
 	var req_cash := clampi(int(raw_opt.get("require_treasury_cash", 0)), 0, maxi(0, available_cash))
 	var opt_id := String(raw_opt.get("option_id", "")).strip_edges()
 	if opt_id.is_empty():
@@ -264,7 +310,8 @@ static func _sanitize_option(
 			if not (item is Dictionary):
 				continue
 			var od: Dictionary = item as Dictionary
-			var out_title := String(od.get("outcome_title", od.get("title", "结果"))).strip_edges()
+			var out_title := normalize_temperature_readings(
+				String(od.get("outcome_title", od.get("title", "结果"))).strip_edges())
 			if out_title.is_empty():
 				out_title = "结果"
 			var out_narrative := String(od.get("outcome_narrative", od.get("narrative", text))).strip_edges()
@@ -280,9 +327,13 @@ static func _sanitize_option(
 	else:
 		# Allow flat option with direct effects if LLM omitted outcomes wrapper
 		var direct_effs := _sanitize_effects_array(raw_opt.get("effects", []), available_cash, goods_set)
+		var flat_title := normalize_temperature_readings(
+			String(raw_opt.get("outcome_title", "已执行")).strip_edges())
+		if flat_title.is_empty():
+			flat_title = "已执行"
 		sanitized_outcomes.append({
 			"probability_q16": Q16_ONE,
-			"outcome_title": String(raw_opt.get("outcome_title", "已执行")).left(32),
+			"outcome_title": flat_title.left(32),
 			"outcome_narrative": String(raw_opt.get("outcome_narrative", text)).left(600),
 			"effects": direct_effs,
 		})

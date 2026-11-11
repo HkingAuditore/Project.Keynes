@@ -44,6 +44,8 @@ uniform vec4 tear_color : source_color = vec4(1.0, 0.988, 0.945, 1.0);
 uniform vec4 select_color : source_color = vec4(0.72, 0.19, 0.13, 1.0);
 uniform float grain_strength : hint_range(0.0, 1.0) = 0.45;
 uniform float outline_strength : hint_range(0.0, 1.0) = 0.85;
+uniform sampler2D paper_decal : filter_linear, repeat_disable;
+uniform float paper_decal_strength : hint_range(0.0, 1.0) = 0.58;
 
 varying flat vec4 v_style;   // x=owner slot, y=unit class, z=headcount, w=flags
 varying vec2 v_world;
@@ -207,6 +209,15 @@ void fragment() {
 	float hatch = smoothstep(0.42, 0.58, sin((lp.x + lp.y) * 44.0 - seed * 6.0) * 0.5 + 0.5);
 	vec3 crest_col = owner * (0.86 + hatch * 0.22 * detail_lod);
 	vec3 col = mix(paper, crest_col, crest * 0.92);
+	// A real paper emblem sits above the procedural crest.  It is intentionally
+	// small and translucent so owner colour, unit glyph and headcount remain
+	// readable at every LOD.
+	vec2 decal_uv = vec2(0.5) + (lp - vec2(0.0, 0.30)) * 0.34;
+	if (!aggregate_mode) {
+		vec4 decal = texture(paper_decal, decal_uv);
+		float decal_mask = decal.a * paper_decal_strength * detail_lod;
+		col = mix(col, decal.rgb, decal_mask);
+	}
 
 	// 铅笔轮廓
 	float pencil = smoothstep(aa, -aa, abs(body) - 0.026);

@@ -1,0 +1,15 @@
+[remap]
+
+importer="godot.fmod.bank"
+type="FmodBank"
+uid="uid://990ru6trf9sk1"
+path="res://.godot/imported/Music_kingdom.bank-772c3ac3f55aac70d49c21eb58f74f17.bank"
+
+[deps]
+
+source_file="res://assets/audio/banks/Desktop/Music_kingdom.bank"
+dest_files=["res://.godot/imported/Music_kingdom.bank-772c3ac3f55aac70d49c21eb58f74f17.bank"]
+
+[params]
+
+

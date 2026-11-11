@@ -80,9 +80,12 @@ EXTRA_MIME_TYPES = {
 
 # Extensions worth compressing. Everything here is text or wasm; PNG/JPEG/woff2
 # are already compressed and must stay untouched.
+# `.bank` 是例外里唯一值得压的二进制：FMOD bank = Vorbis 采样 + 未压缩的元数据/
+# 事件表，实测 brotli q9 到 77%（Music_stone 8.84 -> 6.82 MB），比 PNG 那种几乎
+# 压不动的东西划算得多。
 COMPRESSIBLE = {
     ".wasm", ".js", ".mjs", ".pck", ".json", ".html", ".css", ".svg", ".txt",
-    ".xml", ".map", ".webmanifest",
+    ".xml", ".map", ".webmanifest", ".bank",
 }
 
 SIDECAR_SUFFIX = {"br": ".br", "gzip": ".gz"}

@@ -15,6 +15,7 @@ var _failures := 0
 
 func _init() -> void:
 	_test_flat_terrain_radius()
+	_test_military_source_is_smaller_than_city()
 	_test_terrain_awareness()
 	_test_source_probe_matches_solve()
 	_test_explored_is_monotonic()
@@ -95,6 +96,22 @@ func _test_native_vision_research_boundary() -> void:
 		PackedByteArray(owned_only.physical_visible) == reference.visible_arr)
 	_expect("native fog blur matches GDScript fallback",
 		PackedByteArray(owned_only.fog_k_arr) == reference.fog_k_arr)
+	# The native pass requires the full owner/explored shapes; use a separate
+	# all-unowned map for the mobile-source parity check.
+	var mobile_map := _make_map(LF.PLAIN, VEG.NONE)
+	var mobile_reference := VisionSolver.solve(mobile_map, WorldData.new(), 0,
+		PackedInt32Array([source]))
+	var mobile_native: Dictionary = ext.run_vision_research_pass({
+		"player_slot": 0, "remote_observation": false,
+		"country_slots": mobile_map.country_slot_arr,
+		"military_source_cells": PackedInt32Array([source]),
+		"visible": PackedByteArray(), "explored": mobile_map.explored_arr,
+		"fog_k": mobile_map.fog_k_arr, "bio_occupancy_bits": occupancy,
+	})
+	_expect("native military vision source succeeds", bool(mobile_native.get("ok", false)))
+	_expect("native military vision matches fallback",
+		PackedByteArray(mobile_native.get("physical_visible", PackedByteArray())) ==
+		mobile_map.visible_arr)
 	var remote: Dictionary = ext.run_vision_research_pass({
 		"player_slot": 0, "remote_observation": true,
 		"country_slots": map.country_slot_arr,
@@ -145,6 +162,22 @@ func _test_flat_terrain_radius() -> void:
 		int(report.get("explored", 0)) == visible)
 	_expect("k is saturated at the source", map.fog_k_arr[src] >= 200)
 	_expect("k is zero far from the source", map.fog_k_arr[_far_index(map, src)] == 0)
+
+
+## 移动部队也是视野源，但其预算必须低于同一格的城市/领土源。
+func _test_military_source_is_smaller_than_city() -> void:
+	var src := _center_index(_make_map(LF.PLAIN, VEG.NONE))
+	var city_map := _make_map(LF.PLAIN, VEG.NONE)
+	city_map.country_slot_arr[src] = 0
+	var city := VisionSolver.solve(city_map, WorldData.new(), 0)
+	var army_map := _make_map(LF.PLAIN, VEG.NONE)
+	var army := VisionSolver.solve(army_map, WorldData.new(), 0,
+		PackedInt32Array([src]))
+	_expect("military source solve succeeds", bool(army.get("ok", false)))
+	_expect("military source cell is visible", army_map.visible_arr[src] == 1)
+	_expect("military source is reported", int(army.get("military_sources", 0)) == 1)
+	_expect("military vision is smaller than city vision",
+		int(army.get("visible", 0)) < int(city.get("visible", 0)))
 
 
 ## 山顶看得远、雨林里看得近。这是「地形感知」这条设计成立与否的唯一硬指标。

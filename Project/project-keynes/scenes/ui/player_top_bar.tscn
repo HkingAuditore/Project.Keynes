@@ -159,6 +159,15 @@ mouse_filter = 2
 vertical_alignment = 1
 text_overrun_behavior = 3
 
+[node name="DispatchButton" type="Button" parent="Margin/Row"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(104, 48)
+layout_mode = 2
+theme_type_variation = &"PKHUDButton"
+text = "派遣"
+theme_override_constants/icon_max_width = 24
+
 [node name="Spacer" type="Control" parent="Margin/Row"]
 layout_mode = 2
 size_flags_horizontal = 3

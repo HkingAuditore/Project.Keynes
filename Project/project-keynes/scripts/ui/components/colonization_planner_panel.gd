@@ -40,7 +40,10 @@ var _preview_cache: Dictionary = {}
 var _quote_preview_cache: Dictionary = {}
 var _local_families: Dictionary = {}
 var _display_order: Array = []
-var _hover_family := 0
+var _hover_family := ""
+var _directory_mode := false
+var _source_headers: Dictionary = {}
+var _selected_expedition := 0
 var _preview_family := 0
 var _hover_timer: Timer
 var _target_picking := false
@@ -72,6 +75,7 @@ var _population: SpinBox
 var _population_slider: HSlider
 var _feedback: Label
 var _start: Button
+var _expedition_cancel: Button
 var _header_icon: IconBadge
 var _route_stepper: Control
 var _source_pick_button: Button
@@ -130,6 +134,10 @@ func _ready() -> void:
 	_population = get_node_or_null("%PopulationSpin") as SpinBox
 	_feedback = get_node_or_null("%FeedbackLabel") as Label
 	_start = get_node_or_null("%StartButton") as Button
+	_expedition_cancel = get_node("%ExpeditionCancelButton") as Button
+	_expedition_cancel.pressed.connect(func() -> void:
+		if _selected_expedition != 0:
+			cancel_requested.emit(_selected_expedition))
 	_source_city = get_node_or_null("%SourceCity") as OptionButton
 	_search = get_node("%FamilySearch") as LineEdit
 	_sort = get_node("%FamilySort") as OptionButton
@@ -168,13 +176,13 @@ func _ready() -> void:
 	_tabs.set_tabs([
 		{"id": "quotes", "label": "可派遣", "icon": "family.house",
 			"tooltip": "可派往此地的家族", "accent": UITokens.ACCENT},
-		{"id": "expeditions", "label": "在途", "icon": "action.history",
+		{"id": "expeditions", "label": "进行中", "icon": "action.history",
 			"tooltip": "筹备中和已出发的开拓队", "accent": UITokens.CLIMATE},
 	], "quotes", true)
 	_tabs.tab_selected.connect(_on_tab_selected)
 	_population.value_changed.connect(func(_value: float) -> void:
 		_refresh_selected_kit()
-		if _hover_family == 0 and not _selected_quote.is_empty() and _preview_family > 0:
+		if _hover_family.is_empty() and not _selected_quote.is_empty() and _preview_family > 0:
 			_show_family_preview(_selected_quote))
 	_start.pressed.connect(_submit_selected)
 	_source_city.item_selected.connect(_on_source_city_selected)
@@ -197,12 +205,14 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_target_picking = false
 	_source_picking = false
 	_source_first = target_cell < 0
+	_directory_mode = target_cell >= 0 and source_filter < 0
+	_selected_expedition = 0
 	_detail_valid = false
 	_preview_cache.clear()
 	_quote_preview_cache.clear()
 	_local_families.clear()
 	_display_order.clear()
-	_hover_family = 0
+	_hover_family = ""
 	_hover_timer.stop()
 	_search.clear()
 	_show_family_preview({})
@@ -220,7 +230,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_family_view_cache.clear()
 	_economy_busy = false
 	_title.text = "开拓"
-	_subtitle.text = "先选出发城市，再选当地家族"
+	_subtitle.text = "按出发地选择当地家族"
 	_feedback.text = ""
 	visible = true
 	if is_inside_tree():
@@ -230,12 +240,16 @@ func open_target(target_cell: int, family_filter: int = 0,
 	# 不能因为本国还有在途队伍就先把「在途」页签顶上来，否则被锁的家族行还不存在，
 	# 面板会停在选不了任何东西的状态。
 	if _controller != null and source_filter < 0:
-		var page := _filter_expedition_page(_controller.get_family_expeditions(0, 128))
+		var page := _filter_expedition_page(_expedition_page())
 		if bool(page.get("ok", false)) and int(page.get("total", 0)) > 0:
 			_show_expeditions()
 			return
 	_show_quotes()
 	_update_workflow()
+	if _search.is_visible_in_tree():
+		_search.grab_focus()
+	else:
+		(get_node("%CloseButton") as Button).grab_focus()
 
 
 func _layout_left_panel() -> void:
@@ -246,6 +260,9 @@ func _layout_left_panel() -> void:
 	position = Vector2(UITokens.ARCHIVE_EDGE_INSET, PlayerTopBar.BAR_HEIGHT + 4.0)
 	var ratio := 0.56 if TouchUI.is_touch() else 0.45
 	var target_w := roundf(viewport_size.x * ratio)
+	var compact_viewport := viewport_size.x < UITokens.ARCHIVE_BREAKPOINT_COMPACT
+	if compact_viewport:
+		target_w = minf(maxf(target_w, 560.0), viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0)
 	if TouchUI.is_touch():
 		target_w = clampf(target_w, 560.0, maxf(320.0, viewport_size.x - UITokens.ARCHIVE_EDGE_INSET * 2.0))
 	size = Vector2(target_w, maxf(0.0,
@@ -256,7 +273,7 @@ func _layout_left_panel() -> void:
 	# The footer already carries a population pictogram; the label only repeats it.
 	_population_label.visible = false
 	_population_row.add_theme_constant_override("separation", 4 if narrow else 6)
-	_apply_narrow_density(narrow)
+	_apply_narrow_density(compact_viewport)
 	var list_pane := get_node("%ListPane") as Control
 	var preview_scroll := get_node("%PreviewScroll") as Control
 	# At 125% the stacked layout has little vertical room. Let the dossier keep
@@ -357,7 +374,7 @@ func refresh_visible() -> void:
 					and bool(probe.get("busy", false)):
 				return
 		_show_quotes()
-		if _hover_family == 0:
+		if _hover_family.is_empty():
 			_show_family_preview(_selected_quote)
 		else:
 			_show_hover_preview()
@@ -374,21 +391,14 @@ func _on_tab_selected(tab_id: String) -> void:
 
 func _load_source_cities() -> Dictionary:
 	var cities := {}
-	var offset := 0
-	var page: Dictionary
-	while true:
-		page = _controller.get_family_colonization_quotes(
-			_target_cell, _family_filter, -1, offset, 256)
-		if not bool(page.get("ok", false)):
-			return page
-		var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
-		var names: PackedStringArray = page.get("source_settlement_names", PackedStringArray())
-		for index in range(sources.size()):
-			var cell := int(sources[index])
-			cities[cell] = String(names[index]) if index < names.size() else "聚落 %d" % (cell + 1)
-		if not bool(page.get("has_more", false)) or sources.is_empty():
-			break
-		offset += sources.size()
+	var page := _get_source_quotes()
+	if not bool(page.get("ok", false)):
+		return page
+	var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
+	var names: PackedStringArray = page.get("source_settlement_names", PackedStringArray())
+	for index in range(sources.size()):
+		var cell := int(sources[index])
+		cities[cell] = String(names[index]) if index < names.size() else _cell_name(cell)
 	var cells: Array = cities.keys()
 	cells.sort()
 	var parts := PackedStringArray()
@@ -403,6 +413,11 @@ func _load_source_cities() -> Dictionary:
 			_source_city.add_item(String(cities[cell]), int(cell))
 	_source_city.disabled = cells.is_empty()
 	_sources_loaded = true
+	if _directory_mode:
+		if cells.size() == 1 and _selected_quote.is_empty():
+			_source_filter = int(cells[0])
+			_source_city.select(1)
+		return page
 	if _source_filter >= 0:
 		var selected := _source_city.get_item_index(_source_filter)
 		if selected > 0:
@@ -426,6 +441,15 @@ func _on_source_city_selected(index: int) -> void:
 		_update_start_enabled()
 		return
 	_source_filter = source
+	if _directory_mode:
+		_selected_quote.clear()
+		_detail_valid = false
+		for row in _quote_row_refs.values():
+			row.set_pressed_no_signal(false)
+		_source_city.select(index)
+		_show_family_preview({})
+		_update_start_enabled()
+		return
 	_source_city.select(index)
 	_local_families.clear()
 	_preview_cache.clear()
@@ -455,7 +479,7 @@ func _show_quotes() -> void:
 		_show_source_families()
 		return
 	var page: Dictionary
-	if not _sources_loaded or _source_filter < 0:
+	if not _sources_loaded or _directory_mode or _source_filter < 0:
 		page = _load_source_cities()
 	else:
 		page = _get_source_quotes()
@@ -480,7 +504,7 @@ func _show_quotes() -> void:
 		_add_note(_reason_text(code), UITokens.RISK)
 		_update_start_enabled()
 		return
-	if _source_filter < 0:
+	if _source_filter < 0 and not _directory_mode:
 		_clear_list()
 		_selected_quote.clear()
 		_apply_kind(String(page.get("kind", "colonize")))
@@ -498,7 +522,12 @@ func _show_quotes() -> void:
 			_add_note("可派遣城市：无", UITokens.WARN)
 		_update_start_enabled()
 		return
-	_load_local_families()
+	_local_families.clear()
+	if _directory_mode:
+		for index in range(1, _source_city.item_count):
+			_load_local_families(_source_city.get_item_id(index))
+	else:
+		_load_local_families()
 	var identity := _quotes_identity_of(page) + str(_local_families.hash())
 	if identity == _quotes_identity and _has_quote_rows():
 		_apply_kind(String(page.get("kind", "colonize")))
@@ -539,16 +568,17 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 	for quote_value in quotes:
 		var quote: Dictionary = quote_value.duplicate(true)
 		var handle := int(quote.get("family_handle", 0))
-		keep[handle] = true
-		var local: Dictionary = _local_families.get(handle, {})
+		var key := _quote_key(quote)
+		keep[key] = true
+		var local: Dictionary = _local_families.get(key, {})
 		for field in ["display_name", "population", "cash_claim", "owned_buildings", "prestige_level"]:
 			if local.has(field):
 				quote[field] = local[field]
-		if not _local_families.has(handle) and _controller.has_method("get_family_snapshot"):
+		if not _local_families.has(key) and _controller.has_method("get_family_snapshot"):
 			var identity: Dictionary = _controller.get_family_snapshot(handle)
 			quote["display_name"] = identity.get("family_name", quote.get("display_name", "家族"))
 		var maximum := int(quote.get("maximum_population", 0))
-		var row := _quote_row_refs.get(handle) as Button
+		var row := _quote_row_refs.get(key) as Button
 		if row == null or not is_instance_valid(row):
 			row = FamilyRowScene.instantiate() as Button
 			row.pressed.connect(_on_reusable_quote_pressed.bind(row))
@@ -556,7 +586,7 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 			row.mouse_exited.connect(_on_row_preview_exited.bind(row))
 			row.focus_entered.connect(_on_row_preview_entered.bind(row))
 			_list.add_child(row)
-			_quote_row_refs[handle] = row
+			_quote_row_refs[key] = row
 		row.set_meta("quote", quote)
 		var local_people := int(quote.get("population", maximum + 1))
 		var prestige_level := int(quote.get("prestige_level", 0))
@@ -569,16 +599,16 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 			"accent": UITokens.DOSSIER_OXBLOOD if prestige_level >= 3 else UITokens.DOSSIER_BRASS,
 			"bar_ratio": clampf(float(maximum) / float(maxi(local_people, 1)), 0.0, 1.0),
 			"bar_color": UITokens.DOSSIER_VERDIGRIS if maximum > 0 else UITokens.DOSSIER_OXBLOOD,
-			"effect": "%s  ·  %s  ·  %s" % [
-				UITokens.format_compact_number_cn(float(maximum), 0),
-				_prestige_roman(prestige_level),
-				str(quote.get("owned_buildings", "—"))],
+			"effect": "可派 %s 人" % UITokens.format_compact_number_cn(float(maximum), 0),
 		})
 		row.disabled = maximum <= 0
-		var selected := int(_selected_quote.get("family_handle", 0)) == handle
+		var selected := not _selected_quote.is_empty() and _quote_key(_selected_quote) == key
 		row.set_pressed_no_signal(selected)
 		if selected:
 			_selected_quote = quote.duplicate(true)
+			var source_index := _source_city.get_item_index(int(quote.get("source_cell", -1)))
+			if source_index >= 0:
+				_source_city.select(source_index)
 			var editor := _population.get_line_edit()
 			if not _population.has_focus() and not editor.has_focus():
 				_population.max_value = maxi(1, maximum)
@@ -610,10 +640,14 @@ func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
 
 
 func _select_quote(quote: Dictionary) -> void:
-	_hover_family = 0
+	_hover_family = ""
 	_hover_timer.stop()
 	_feedback.text = ""
 	_selected_quote = quote.duplicate(true)
+	_source_filter = int(quote.get("source_cell", _source_filter))
+	var source_index := _source_city.get_item_index(_source_filter)
+	if source_index >= 0:
+		_source_city.select(source_index)
 	_detail_valid = false
 	var maximum := maxi(1, int(quote.get("maximum_population", 1)))
 	_population.max_value = maximum
@@ -636,17 +670,11 @@ func _submit_selected() -> void:
 
 func _show_expeditions() -> void:
 	_current_tab = "expeditions"
+	_title.text = "派遣进展"
 	if _tabs != null:
 		_tabs.select_tab("expeditions")
 	_hover_timer.stop()
-	_hover_family = 0
-	_preview_title.text = "在途队伍"
-	_preview_metrics.text = "筹备和返程中的队伍可在列表中取消。"
-	_preview_traits.text = ""
-	_preview_preferences.text = ""
-	_preview_effects.text = ""
-	_preview_route.text = ""
-	_paint_expedition_card("在途队伍", _preview_metrics.text, "", "")
+	_hover_family = ""
 	_discard_quote_rows()
 	_update_start_enabled()
 	if _controller == null:
@@ -654,7 +682,7 @@ func _show_expeditions() -> void:
 		_expeditions_identity = ""
 		_set_busy_status(false)
 		return
-	var page: Dictionary = _controller.get_family_expeditions(0, 128)
+	var page := _expedition_page()
 	page = _filter_expedition_page(page)
 	_economy_busy = bool(page.get("busy", false))
 	if not bool(page.get("ok", false)):
@@ -676,18 +704,27 @@ func _show_expeditions() -> void:
 	var identity := _expeditions_identity_of(page)
 	if identity == _expeditions_identity and _has_expedition_rows():
 		_set_busy_status(_economy_busy)
+		_refresh_expedition_detail()
 		return
 	_expeditions_identity = identity
 	_set_busy_status(_economy_busy)
 	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
 	if handles.is_empty():
 		_clear_list()
+		_selected_expedition = 0
+		_expedition_cancel.visible = false
+		_show_preview_cards(false, false, false, false, false)
 		if _economy_busy:
 			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
 		else:
 			_add_note("活动开拓队：无", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_sync_expedition_rows(page)
+	if not _expedition_row_refs.has(_selected_expedition):
+		_selected_expedition = int(handles[0])
+	_refresh_expedition_detail()
+	if is_inside_tree() and not get_viewport().gui_get_focus_owner():
+		(_expedition_row_refs[_selected_expedition].get_child(0) as Button).grab_focus()
 
 
 func _filter_expedition_page(page: Dictionary) -> Dictionary:
@@ -743,32 +780,27 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 		var returning := state == 3
 		var row_wrap := _expedition_row_refs.get(expedition_handle) as HBoxContainer
 		var row: Button
-		var cancel: Button
 		if row_wrap == null or not is_instance_valid(row_wrap):
 			row_wrap = HBoxContainer.new()
 			row_wrap.add_theme_constant_override("separation", UITokens.SPACE_SM)
 			row = FamilyRowScene.instantiate() as Button
 			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.toggle_mode = false
+			row.toggle_mode = true
 			row.pressed.connect(_on_reusable_expedition_pressed.bind(row))
 			row_wrap.add_child(row)
-			cancel = Button.new()
-			cancel.text = "取消"
-			cancel.focus_mode = Control.FOCUS_NONE
-			cancel.theme_type_variation = &"PKTabButton"
-			cancel.custom_minimum_size = Vector2(64.0, 36.0)
-			cancel.pressed.connect(_on_reusable_cancel_pressed.bind(cancel))
-			row_wrap.add_child(cancel)
 			_list.add_child(row_wrap)
 			_expedition_row_refs[expedition_handle] = row_wrap
 		else:
 			row = row_wrap.get_child(0) as Button
-			cancel = row_wrap.get_child(1) as Button
 		row.set_meta("expedition_handle", expedition_handle)
-		cancel.set_meta("expedition_handle", expedition_handle)
+		row.focus_neighbor_right = row.get_path_to(_expedition_cancel)
 		var party_people := int(populations[index]) if index < populations.size() else 0
 		var state_label := _state_text(state)
-		var missing_line := _preparing_missing_text(expedition_handle, state).get_slice("\n", 0)
+		var sources: PackedInt32Array = page.get("source_cells", PackedInt32Array())
+		var targets: PackedInt32Array = page.get("target_cells", PackedInt32Array())
+		var route_text := "%s 至 %s" % [
+			_cell_name(int(sources[index])) if index < sources.size() else "出发地",
+			_cell_name(int(targets[index])) if index < targets.size() else "目的地"]
 		row.set_compact_summary({
 			"name": String(view.get("display_name", "家族")),
 			"population": party_people,
@@ -777,24 +809,19 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 			"tag_text": state_label,
 			"tag_color": UITokens.DOSSIER_OXBLOOD if returning else (
 				UITokens.DOSSIER_BRASS if state == 4 else UITokens.DOSSIER_VERDIGRIS),
-			"bar_ratio": 0.35 if state == 4 else (1.0 if state == 2 else 0.62),
+			"bar_ratio": 0.0,
 			"bar_color": UITokens.DOSSIER_BRASS if state == 4 else UITokens.DOSSIER_VERDIGRIS,
 			"badges": [{
 				"text": state_label,
 				"accent": UITokens.WARN if returning else UITokens.ACCENT,
 			}],
-			"effect": missing_line if not missing_line.is_empty() else state_label,
+			"effect": "%s  %s" % [state_label, route_text],
 			"tooltip": _expedition_row_tooltip(expedition_handle, state,
 				int(dues[index]) if index < dues.size() else -1),
 		})
 		row.set_meta("expedition_view", {"name": String(view.get("display_name", "家族")),
 			"population": int(populations[index]) if index < populations.size() else 0,
 			"state": state, "due_day": int(dues[index]) if index < dues.size() else -1})
-		cancel.disabled = returning
-		if returning:
-			cancel.tooltip_text = "返程中的队伍不能重复取消"
-		else:
-			cancel.tooltip_text = "按当前进度返程；结算中会先排队，提交完成后执行"
 	var stale: Array = []
 	for handle_value in _expedition_row_refs.keys():
 		if not keep.has(handle_value):
@@ -804,32 +831,104 @@ func _sync_expedition_rows(page: Dictionary) -> void:
 		_expedition_row_refs.erase(handle_value)
 		if stale_wrap != null and is_instance_valid(stale_wrap):
 			stale_wrap.queue_free()
+	var focus_rows: Array[Button] = []
+	for handle in handles:
+		focus_rows.append(_expedition_row_refs[int(handle)].get_child(0) as Button)
+	_wire_row_focus(focus_rows)
 
 
 func _on_reusable_expedition_pressed(row: Button) -> void:
-	var handle := int(row.get_meta("expedition_handle", 0))
+	_selected_expedition = int(row.get_meta("expedition_handle", 0))
+	_refresh_expedition_detail()
+	expedition_selected.emit(_selected_expedition)
+
+
+func open_expeditions() -> void:
+	open_target(-1)
+	_show_expeditions()
+
+
+func _expedition_page() -> Dictionary:
+	var page: Dictionary = _controller.get_family_expeditions(0, 128)
+	var offset := (page.get("expedition_handles", PackedInt64Array()) as PackedInt64Array).size()
+	while bool(page.get("ok", false)) and bool(page.get("has_more", false)) and offset > 0:
+		var next: Dictionary = _controller.get_family_expeditions(offset, 128)
+		if not bool(next.get("ok", false)):
+			return next
+		var handles: PackedInt64Array = next.get("expedition_handles", PackedInt64Array())
+		if handles.is_empty():
+			break
+		for key in ["expedition_handles", "family_handles", "source_cells", "target_cells",
+				"populations", "departure_days", "due_days", "route_costs", "states", "kit_missing_stock_identities"]:
+			if page.has(key) and next.has(key):
+				var values: Variant = page[key]
+				values.append_array(next[key])
+				page[key] = values
+		offset += handles.size()
+		page["has_more"] = bool(next.get("has_more", false))
+	return page
+
+
+func _refresh_expedition_detail() -> void:
+	if not _expedition_row_refs.has(_selected_expedition):
+		return
+	for handle in _expedition_row_refs:
+		(_expedition_row_refs[handle].get_child(0) as Button).set_pressed_no_signal(handle == _selected_expedition)
+	var row := _expedition_row_refs[_selected_expedition].get_child(0) as Button
 	var view: Dictionary = row.get_meta("expedition_view", {})
-	_preview_title.text = "队伍 · " + String(view.get("name", "家族"))
-	_preview_metrics.text = "%s · %s 人" % [_state_text(int(view.get("state", 0))),
-		UITokens.format_compact_number_cn(float(view.get("population", 0)), 0)]
-	_preview_traits.text = ""
-	_preview_preferences.text = ""
-	_preview_effects.text = _preparing_missing_text(handle, int(view.get("state", 0)))
-	_preview_route.text = "第 %d 日抵达" % int(view.get("due_day", -1)) \
-		if int(view.get("due_day", -1)) >= 0 else ""
+	var snap: Dictionary = {}
+	if _controller.has_method("get_family_expedition_snapshot"):
+		snap = _controller.get_family_expedition_snapshot(_selected_expedition)
+	var state := int(snap.get("state", view.get("state", 0)))
+	var people := int(snap.get("population", view.get("population", 0)))
+	_expedition_cancel.visible = true
+	_expedition_cancel.disabled = state == 3
+	_expedition_cancel.text = "取消筹备" if state == 4 else "召回队伍"
+	_expedition_cancel.tooltip_text = "队伍已在返程" if state == 3 else (
+		"取消筹备，退回已购物资" if state == 4 else "队伍将按当前行程返程")
+	_expedition_cancel.focus_neighbor_top = _expedition_cancel.get_path_to(row)
+	_preview_title.text = String(view.get("name", "家族"))
+	_preview_metrics.text = "派遣 %s 人" % UITokens.format_compact_number_cn(float(people), 0)
+	_preview_effects.text = _preparing_missing_text(_selected_expedition, state, snap, false)
+	var due := int(snap.get("due_day", view.get("due_day", -1)))
+	_preview_route.text = "第 %d 日抵达" % due if state != 4 and due >= 0 else ""
 	_paint_expedition_card(_preview_title.text, _preview_metrics.text,
 		_preview_effects.text, _preview_route.text)
-	expedition_selected.emit(handle)
-
-
-func _on_reusable_cancel_pressed(cancel: Button) -> void:
-	cancel_requested.emit(int(cancel.get_meta("expedition_handle", 0)))
+	_preview_state_pill.text = _state_text(state)
+	_route_ready_pill.text = _state_text(state)
+	_route_ready_pill.visible = false
+	(get_node("%RouteCardTitle") as Label).text = "筹备进展" if state == 4 else "行程状态"
+	var facts: Array = []
+	if snap.has("source_cell"):
+		facts.append({"id": "source", "title": "出发地", "value": _cell_name(int(snap.source_cell)), "icon": "metric.territory"})
+	if snap.has("target_cell"):
+		facts.append({"id": "target", "title": "目的地", "value": _cell_name(int(snap.target_cell)), "icon": "system.target"})
+	if not _preview_route.text.is_empty():
+		facts.append({"id": "due", "title": "预计抵达", "value": _preview_route.text, "icon": "family.metric.time"})
+	_route_facts.set_facts(facts)
+	_route_facts.visible = not facts.is_empty()
+	var meters: Array = []
+	if state == 4:
+		var bridge := int(snap.get("kit_bridge_required_units", 0))
+		var materials := int(snap.get("kit_material_required_units", 0))
+		var missing_bridge := int(snap.get("kit_bridge_missing_units", 0))
+		var missing_materials := int(snap.get("kit_material_missing_units", 0))
+		for data in [["total", "总进度", bridge + materials, missing_bridge + missing_materials],
+				["bridge", "旅途补给", bridge, missing_bridge], ["materials", "开工建材", materials, missing_materials]]:
+			if int(data[2]) > 0:
+				var percent := _stock_percent(int(data[2]), int(data[3]))
+				meters.append({"id": data[0], "label": data[1], "value": float(percent) / 100.0,
+					"value_text": "%d%%" % percent, "accent": UITokens.DOSSIER_BRASS})
+	_preview_meters.visible = not meters.is_empty()
+	_preview_meters.set_meters(meters)
 
 
 func _clear_list() -> void:
-	_hover_family = 0
+	_hover_family = ""
 	_hover_timer.stop()
 	_quote_row_refs.clear()
+	_source_headers.clear()
+	_display_order.clear()
 	_expedition_row_refs.clear()
 	for child in _list.get_children():
 		_list.remove_child(child)
@@ -843,6 +942,10 @@ func _discard_quote_rows() -> void:
 			_list.remove_child(row)
 			row.queue_free()
 	_quote_row_refs.clear()
+	_display_order.clear()
+	for header in _source_headers.values():
+		header.queue_free()
+	_source_headers.clear()
 
 
 func _discard_expedition_rows() -> void:
@@ -858,7 +961,7 @@ func _remove_note_children() -> void:
 	if _list == null:
 		return
 	for child in _list.get_children():
-		if child is Label:
+		if child is Label and not child.has_meta("source_header"):
 			_list.remove_child(child)
 			child.queue_free()
 
@@ -987,7 +1090,7 @@ func _refresh_selected_kit() -> void:
 	_detail_valid = true
 	_selected_quote.merge(detail, true)
 	_update_start_enabled()
-	if _hover_family == 0:
+	if _hover_family.is_empty():
 		_update_preview_route(_selected_quote)
 	route_requested.emit(detail)
 
@@ -996,6 +1099,7 @@ func _update_start_enabled() -> void:
 	if _start == null:
 		return
 	var on_quotes := _current_tab == "quotes"
+	_expedition_cancel.visible = not on_quotes and _expedition_row_refs.has(_selected_expedition)
 	_footer_selection.visible = false
 	_source_city.get_parent().visible = false
 	_search.get_parent().visible = on_quotes
@@ -1100,11 +1204,13 @@ static func _expeditions_identity_of(page: Dictionary) -> String:
 
 
 
-func _preparing_missing_text(handle: int, state: int) -> String:
+func _preparing_missing_text(handle: int, state: int, snapshot: Dictionary = {}, include_progress: bool = true) -> String:
 	if state != 4 or _controller == null or not _controller.has_method(
 			"get_family_expedition_snapshot"):
 		return ""
-	var snap: Dictionary = _controller.get_family_expedition_snapshot(handle)
+	var snap := snapshot
+	if snap.is_empty():
+		snap = _controller.get_family_expedition_snapshot(handle)
 	if not bool(snap.get("ok", false)):
 		return ""
 	var lines := PackedStringArray()
@@ -1117,7 +1223,7 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 	var material_missing := int(snap.get("kit_material_missing_units", 0))
 	var required := bridge_required + material_required
 	var missing := bridge_missing + material_missing
-	if required > 0:
+	if required > 0 and include_progress:
 		lines.append("已囤积 %d%%（补给 %d%% / 建材 %d%%），每日自动收进源地可用现货" % [
 			clampi(required - missing, 0, required) * 100 / required,
 			_stock_percent(bridge_required, bridge_missing),
@@ -1149,9 +1255,9 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 			var good_name := "物资#%d" % int(ids[i])
 			if _controller.has_method("good_display_name"):
 				good_name = String(_controller.good_display_name(int(ids[i])))
-			parts.append("%s %s" % [good_name,
+			parts.append("%s %s 件" % [good_name,
 				UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
-		lines.append("下列物资任选其一即可顶替，源地现货：" + "，".join(parts))
+		lines.append("可用替代物资与源地现货：" + "，".join(parts))
 	return "\n".join(lines)
 
 
@@ -1159,10 +1265,9 @@ func _procurement_status_text(snap: Dictionary) -> String:
 	if bool(snap.get("kit_procurement_blocked_by_peer", false)):
 		return "等待另一支开拓队的国库采购完成"
 	if bool(snap.get("kit_procurement_pending", false)):
-		return "正在用国库采购%s（第 %d 日起，阶段 %d）" % [
+		return "正在用国库采购%s（第 %d 日开始）" % [
 			_good_name(int(snap.get("kit_procurement_good_id", -1))),
-			int(snap.get("kit_procurement_started_day", -1)),
-			int(snap.get("kit_procurement_phase", 0))]
+			int(snap.get("kit_procurement_started_day", -1))]
 	var reason := String(snap.get("kit_procurement_rejection", ""))
 	if reason.is_empty():
 		return ""
@@ -1219,7 +1324,7 @@ func _quotes_for_source(page: Dictionary) -> Array:
 		"surname_disambiguators", PackedInt32Array())
 	var quotes: Array = []
 	for index in range(families.size()):
-		if index >= sources.size() or int(sources[index]) != _source_filter:
+		if index >= sources.size() or (not _directory_mode and int(sources[index]) != _source_filter):
 			continue
 		var handle := int(families[index])
 		var surname := String(surnames[index]) if index < surnames.size() else "家族"
@@ -1390,7 +1495,7 @@ static func _effect_text(traits: Dictionary) -> String:
 
 func open_source(source_cell: int, family_handle: int) -> void:
 	open_target(-1, 0, source_cell)
-	var row := _quote_row_refs.get(family_handle) as Button
+	var row := _quote_row_refs.get(_quote_key({"source_cell": source_cell, "family_handle": family_handle})) as Button
 	if row != null and not row.disabled:
 		_on_reusable_quote_pressed(row)
 		_scroll_to_pinned_family()
@@ -1404,7 +1509,7 @@ func _scroll_to_pinned_family() -> void:
 	if not is_inside_tree():
 		return
 	await get_tree().process_frame
-	var row := _quote_row_refs.get(int(_selected_quote.get("family_handle", 0))) as Control
+	var row := _quote_row_refs.get(_quote_key(_selected_quote)) as Control
 	if visible and row != null:
 		(get_node("%RowsScroll") as ScrollContainer).ensure_control_visible(row)
 
@@ -1577,26 +1682,30 @@ func _stage_hint() -> String:
 		return "点地图上任意地块选目的地 · Esc 退出选点"
 	if _source_first:
 		return "直接点地图上任意地块选目的地"
+	if _directory_mode and _selected_quote.is_empty():
+		return "从左侧按出发地选择家族，再确定派遣人数"
 	if _source_filter < 0:
-		return "直接点地图上的青绿环选出发城，点其他地块改目的地"
+		return "点地图上的青绿环选出发城"
 	if _selected_quote.is_empty():
 		return "直接点地图上任意地块改目的地，再从左侧挑选家族"
 	return "出发城与家族已就绪：直接点地图上任意地块改目的地"
 
 
 
-func _load_local_families() -> Dictionary:
-	if _source_filter < 0 or _controller == null or not _controller.has_method("get_family_dispatch_candidates"):
+func _load_local_families(source_cell: int = -1) -> Dictionary:
+	if source_cell < 0:
+		source_cell = _source_filter
+	if source_cell < 0 or _controller == null or not _controller.has_method("get_family_dispatch_candidates"):
 		return {"ok": true}
 	var rebuilt := {}
 	var offset := 0
 	while true:
-		var page: Dictionary = _controller.get_family_dispatch_candidates(_source_filter, offset, 256)
+		var page: Dictionary = _controller.get_family_dispatch_candidates(source_cell, offset, 256)
 		if not bool(page.get("ok", false)):
 			return page
 		var handles: PackedInt64Array = page.get("family_handles", PackedInt64Array())
 		for index in range(handles.size()):
-			var data := {"family_handle": int(handles[index]), "source_cell": _source_filter,
+			var data := {"family_handle": int(handles[index]), "source_cell": source_cell,
 				"target_cell": _target_cell, "quote_token": 0}
 			for pair in [["family_names", "display_name"], ["populations", "population"],
 					["cash_claims", "cash_claim"], ["owned_buildings", "owned_buildings"], ["prestige_levels", "prestige_level"]]:
@@ -1604,21 +1713,25 @@ func _load_local_families() -> Dictionary:
 				if index < values.size():
 					data[pair[1]] = values[index]
 			data["maximum_population"] = maxi(0, int(data.get("population", 0)) - 1)
-			rebuilt[int(handles[index])] = data
+			rebuilt[_quote_key(data)] = data
 		if not bool(page.get("has_more", false)) or handles.is_empty():
 			break
 		offset += handles.size()
-	_local_families = rebuilt
+	for key in _local_families.keys():
+		if int(_local_families[key].get("source_cell", -1)) == source_cell:
+			_local_families.erase(key)
+	_local_families.merge(rebuilt, true)
 	return {"ok": true}
 
 
 func _get_source_quotes() -> Dictionary:
+	var source := -1 if _directory_mode else _source_filter
 	var page: Dictionary = _controller.get_family_colonization_quotes(
-		_target_cell, _family_filter, _source_filter, 0, 256)
+		_target_cell, _family_filter, source, 0, 256)
 	var offset := (page.get("family_handles", PackedInt64Array()) as PackedInt64Array).size()
 	while bool(page.get("ok", false)) and bool(page.get("has_more", false)) and offset > 0:
 		var next: Dictionary = _controller.get_family_colonization_quotes(
-			_target_cell, _family_filter, _source_filter, offset, 256)
+			_target_cell, _family_filter, source, offset, 256)
 		if not bool(next.get("ok", false)):
 			return next
 		var handles: PackedInt64Array = next.get("family_handles", PackedInt64Array())
@@ -1654,53 +1767,97 @@ func _show_source_families() -> void:
 	_update_start_enabled()
 
 
+static func _quote_key(quote: Dictionary) -> String:
+	return "%d:%d" % [int(quote.get("source_cell", -1)), int(quote.get("family_handle", 0))]
+
+
 func _apply_list_filter_sort() -> void:
 	if _current_tab != "quotes":
 		return
 	var added: Array = []
-	for handle in _quote_row_refs:
-		if not _display_order.has(handle):
-			added.append(handle)
+	for key in _quote_row_refs:
+		if not _display_order.has(key):
+			added.append(key)
 	added.sort_custom(func(a, b) -> bool:
 		var left: Dictionary = _quote_row_refs[a].get_meta("quote", {})
 		var right: Dictionary = _quote_row_refs[b].get_meta("quote", {})
 		var field := "prestige_level" if _sort.selected == 1 else "maximum_population"
 		if _sort.selected < 2 and int(left.get(field, 0)) != int(right.get(field, 0)):
 			return int(left.get(field, 0)) > int(right.get(field, 0))
-		var ln := String(left.get("display_name", ""))
-		var rn := String(right.get("display_name", ""))
-		return ln < rn if ln != rn else int(a) < int(b))
+		return String(left.get("display_name", "")) < String(right.get("display_name", "")))
 	_display_order.append_array(added)
 	var query := _search.text.strip_edges().to_lower()
+	var sources: Array = []
+	for key in _display_order:
+		if _quote_row_refs.has(key):
+			var quote: Dictionary = _quote_row_refs[key].get_meta("quote", {})
+			var source := int(quote.get("source_cell", -1))
+			if not sources.has(source):
+				sources.append(source)
+	sources.sort()
 	var child_index := 0
-	for handle in _display_order:
-		if not _quote_row_refs.has(handle):
-			continue
-		var row := _quote_row_refs[handle] as Button
-		var quote: Dictionary = row.get_meta("quote", {})
-		row.visible = query.is_empty() or String(quote.get("display_name", "")).to_lower().contains(query)
-		_list.move_child(row, child_index)
+	for header in _source_headers.values():
+		header.visible = false
+	for source in sources:
+		var source_index := _source_city.get_item_index(source)
+		var city := _source_city.get_item_text(source_index) if source_index >= 0 else _cell_name(source)
+		var header := _source_headers.get(source) as Label
+		if header == null:
+			header = Label.new()
+			header.set_meta("source_header", true)
+			header.theme_type_variation = &"PKDossierSectionTitle"
+			header.autowrap_mode = TextServer.AUTOWRAP_OFF
+			header.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			_list.add_child(header)
+			_source_headers[source] = header
+		header.text = city
+		_list.move_child(header, child_index)
 		child_index += 1
-	if _hover_family != 0:
+		for key in _display_order:
+			if not _quote_row_refs.has(key):
+				continue
+			var row := _quote_row_refs[key] as Button
+			var quote: Dictionary = row.get_meta("quote", {})
+			if int(quote.get("source_cell", -1)) != source:
+				continue
+			row.visible = query.is_empty() or (city + String(quote.get("display_name", ""))).to_lower().contains(query)
+			header.visible = header.visible or row.visible
+			_list.move_child(row, child_index)
+			child_index += 1
+	var focus_rows: Array[Button] = []
+	for child in _list.get_children():
+		if child is Button and child.visible and not child.disabled:
+			focus_rows.append(child)
+	_wire_row_focus(focus_rows)
+	if not _hover_family.is_empty():
 		var hovered := _quote_row_refs.get(_hover_family) as Control
 		if hovered == null or not hovered.visible:
-			_hover_family = 0
+			_hover_family = ""
 			_hover_timer.stop()
 			_show_family_preview(_selected_quote)
+
+
+func _wire_row_focus(rows: Array[Button]) -> void:
+	var close := get_node("%CloseButton") as Button
+	for index in range(rows.size()):
+		rows[index].focus_neighbor_top = rows[index].get_path_to(rows[index - 1] if index > 0 else close)
+		rows[index].focus_neighbor_bottom = rows[index].get_path_to(rows[index + 1] if index + 1 < rows.size() else close)
+	if not rows.is_empty():
+		close.focus_neighbor_bottom = close.get_path_to(rows[0])
 
 
 func _on_row_preview_entered(row: Button) -> void:
 	if TouchUI.is_touch():
 		return
-	_hover_family = int(row.get_meta("quote", {}).get("family_handle", 0))
+	_hover_family = _quote_key(row.get_meta("quote", {}))
 	_hover_timer.start()
 
 
 func _on_row_preview_exited(row: Button) -> void:
 	if TouchUI.is_touch():
 		return
-	if _hover_family == int(row.get_meta("quote", {}).get("family_handle", 0)):
-		_hover_family = 0
+	if _hover_family == _quote_key(row.get_meta("quote", {})):
+		_hover_family = ""
 		_hover_timer.stop()
 		_show_family_preview(_selected_quote)
 
@@ -1716,6 +1873,11 @@ func _show_hover_preview() -> void:
 func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 	if _preview_title == null:
 		return
+	(get_node("%RouteCardTitle") as Label).text = "路线与家风"
+	(get_node("%PreviewQuickRead") as Control).visible = true
+	_route_facts.visible = true
+	_preview_facts.visible = true
+	_route_ready_pill.visible = true
 	_preview_family = int(quote.get("family_handle", 0))
 	if quote.is_empty():
 		_preview_title.text = ""
@@ -1734,11 +1896,12 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 	var meters := get_node_or_null("%PreviewMeters") as Control
 	if meters != null:
 		meters.visible = false
-	var key := "%d:%d" % [_source_filter, _preview_family]
+	var preview_source := int(quote.get("source_cell", _source_filter))
+	var key := _quote_key(quote)
 	var preview: Dictionary = _preview_cache.get(key, {})
 	if preview.is_empty():
 		if _controller != null and _controller.has_method("get_family_dispatch_preview"):
-			preview = _controller.get_family_dispatch_preview(_preview_family, _source_filter)
+			preview = _controller.get_family_dispatch_preview(_preview_family, preview_source)
 		else:
 			preview = {"ok": true, "traits": {}}
 			if _controller != null and _controller.has_method("get_family_traits"):
@@ -1770,7 +1933,7 @@ func _show_family_preview(quote: Dictionary, hovering: bool = false) -> void:
 		visible_preferences.append(String(behavior.get("name", "")))
 	traits["behavior_selector_display_names"] = visible_preferences
 	var effects: Dictionary = preview.get("effects", traits)
-	var row := _quote_row_refs.get(_preview_family) as ColonizationFamilyRow
+	var row := _quote_row_refs.get(_quote_key(quote)) as ColonizationFamilyRow
 	if row != null:
 		row.apply_preview_summary(traits, effects)
 	var names: PackedStringArray = traits.get("display_names", PackedStringArray())
@@ -1946,7 +2109,7 @@ func _refresh_route_stepper(source_name: String, family_name: String) -> void:
 	elif _source_picking:
 		_source_pick_button.text = "正在选出发城"
 	else:
-		_source_pick_button.text = "点地图选出发城"
+		_source_pick_button.text = "从左侧选择出发地" if _directory_mode else "点地图选出发城"
 	_source_pick_button.tooltip_text = "出发城已锁定" if _source_first \
 		else "也可直接点地图上的青绿环"
 	if _family_step_label != null:
@@ -1978,7 +2141,7 @@ func _tint_step(button: Button, active: bool, chosen: bool) -> void:
 func _refresh_city_cards() -> void:
 	if _city_cards_box == null or _source_city == null:
 		return
-	var show_picker := _current_tab == "quotes" and not _source_first \
+	var show_picker := _current_tab == "quotes" and not _source_first and not _directory_mode \
 		and _source_city.item_count > 1 and (_source_filter < 0 or _source_picking)
 	if _city_picker != null:
 		_city_picker.visible = show_picker
@@ -2073,10 +2236,22 @@ func _show_preview_cards(guide: bool, identity: bool, route: bool,
 		_traits_block.visible = traits
 	if _effects_block != null:
 		_effects_block.visible = effects
+	if _route_block != null:
+		var body := _route_block.get_parent()
+		(body.get_node("RouteHead") as Control).visible = route
+		(body.get_node("TraitsHead") as Control).visible = traits
+		(body.get_node("EffectsHead") as Control).visible = effects
 
 
 func _paint_waiting_guide() -> void:
 	_show_preview_cards(true, false, false, false, false)
+	if _directory_mode and _target_cell >= 0:
+		_guide_title.text = "目的地"
+		_guide_facts.set_facts([{"id": "target", "title": "前往", "value": _cell_name(_target_cell),
+			"icon": "system.target", "accent": UITokens.DOSSIER_BRASS}])
+		_guide_notes.set_notes([])
+		_guide_notes.visible = false
+		return
 	if _guide_title != null:
 		_guide_title.text = "开拓"
 	if _guide_facts != null:
@@ -2108,7 +2283,8 @@ func _paint_identity_card(quote: Dictionary, branch: Dictionary, hovering: bool,
 	var prestige_number := float(prestige_value) if typeof(prestige_value) in [TYPE_INT, TYPE_FLOAT] else 0.0
 	var buildings := str(branch.get("owned_buildings", quote.get("owned_buildings", "—")))
 	var cash := float(branch.get("cash_claims", quote.get("cash_claim", 0))) / 10000.0
-	var city_name := _source_city.text if _source_city != null and _source_filter >= 0 else "待选城市"
+	var city_index := _source_city.get_item_index(int(quote.get("source_cell", _source_filter)))
+	var city_name := _source_city.get_item_text(city_index) if city_index >= 0 else _cell_name(int(quote.get("source_cell", -1)))
 	if _preview_crest != null:
 		_preview_crest.set_semantic(
 			&"family.workspace.crest" if prestige_number >= 1.0 else &"family.house",
@@ -2359,6 +2535,9 @@ func _kit_badge_items(quote: Dictionary) -> Array:
 
 func _paint_expedition_card(title: String, metrics: String, effects: String, route: String) -> void:
 	_show_preview_cards(false, true, true, false, false)
+	_preview_title.text = title
+	_preview_route.text = route
+	(get_node("%PreviewQuickRead") as Control).visible = false
 	if _preview_origin != null:
 		_preview_origin.text = metrics
 	if _preview_state_pill != null:
@@ -2367,21 +2546,9 @@ func _paint_expedition_card(title: String, metrics: String, effects: String, rou
 	if _preview_crest != null:
 		_preview_crest.set_semantic(&"action.history", UITokens.DOSSIER_BRASS)
 	if _preview_facts != null:
-		_preview_facts.set_facts([
-			{"id": "party", "title": "队伍", "value": title,
-				"subtitle": "", "icon": "action.history",
-				"accent": UITokens.DOSSIER_BRASS},
-		])
-	if _preview_meters != null:
-		_preview_meters.set_meters([])
+		_preview_facts.visible = false
 	if _route_ready_pill != null:
 		_route_ready_pill.text = "在途"
-	if _route_facts != null:
-		_route_facts.set_facts([
-			{"id": "due", "title": "抵达", "value": route if not route.is_empty() else "筹备中",
-				"subtitle": "", "icon": "family.metric.time",
-				"accent": UITokens.DOSSIER_UMBER},
-		])
 	if _route_notes != null:
 		if effects.is_empty():
 			_route_notes.set_notes([])
