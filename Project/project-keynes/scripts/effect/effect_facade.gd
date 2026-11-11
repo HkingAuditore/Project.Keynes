@@ -24,7 +24,7 @@ func configure(world_ext: DCWorldExt, clock: WorldClock = null,
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else EffectCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_effects"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt effect API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "EffectCatalog unavailable"}

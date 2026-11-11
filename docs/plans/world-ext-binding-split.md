@@ -96,6 +96,55 @@
 
 外包方式：第 3 步的调用点改写和第 4 步的探测删除按模块成批外包；第 5 步的分类由我做。
 
+### 阶段 2 进展（2026-11-11）
+
+- 原生扩展握手已接入：`NativeWorld.create()` 将 `ClassDB` 方法列表与 `data/native_binding_manifest.json` 比对，缺方法时拒绝创建世界对象。
+- 本轮重新扫描 HEAD 与工作区：范围为 `Project/project-keynes/**/*.gd`，排除 `tests/`、`addons/`、`.godot/`；复用原生访问护栏的词法分析，逐个计实际 `has_method(...)` 调用（含显式接收者和省略 self 的调用），不计注释、字符串内的示例，也不按一行或方法名去重。`&"方法名"` 和换行后的字符串均计为字面量；变量参数的一个调用只计一次，不按可能取值展开。HEAD 为本轮开始时的 `5aa8c42a`，数字包括上一轮尚未提交的修改。
+
+| 统计范围 | HEAD | 删除数（净减少） | 剩余 |
+|---|---:|---:|---:|
+| 全部实际探测（字面量和变量参数） | 2104 | 443 | 1661 |
+| 字面量参数，任意方法名 | 2080 | 437 | 1643 |
+| 其中：646 项清单内的字面量名称，任意接收者 | 616 | 436 | 180 |
+| 变量参数（单列，不并入上一行） | 24 | 6 | 18 |
+
+本轮修复相对接手工作区另删 43 个实际调用（37 个字面量、6 个变量参数），恢复 7 个误删调用（平台 2、GDScript `DCWorld` 1、四个保留 pass 内的 refresh 4）。清单外旧名 `military_map_snapshot` 的 1 处删除包含在 437 中，未算进 436。
+
+剩余全部探测分类如下；“非 DCWorldExt”包含 facade、宿主、节点、GDScript `DCWorld` 等，不能把同名方法探测算成原生世界探测。
+
+| 类别 | 字面量 | 变量参数 | 合计 | 其中清单内字面量 |
+|---|---:|---:|---:|---:|
+| P 平台 | 22 | 0 | 22 | 22 |
+| GDScript 双实现及明确保留的同步/读取回退 | 65 | 3 | 68 | 65 |
+| 非 DCWorldExt 接收者 | 1553 | 15 | 1568 | 93 |
+| 其他 | 3 | 0 | 3 | 0 |
+| 合计 | 1643 | 18 | 1661 | 180 |
+
+原生世界相关的剩余项按文件列出（括号内为变量参数调用数）：
+
+| 文件（相对 scripts/） | P 平台 | GDScript 双实现/明确保留回退 | 其他 |
+|---|---:|---:|---:|
+| `economy/economy_facade.gd` | 0 | 1 | 0 |
+| `game/world_runtime_daily_adapter_part1.gd` | 4 | 0 | 0 |
+| `game/world_runtime_generation_adapter.gd` | 2 | 0 | 0 |
+| `game/world_runtime_host.gd` | 1 | 0 | 0 |
+| `game/world_runtime_visual_adapter.gd` | 0 | 1 | 0 |
+| `geography/map_generator.gd` | 5 | 33 | 0 |
+| `geography/native_loading_tasks.gd` | 4 | 0 | 0 |
+| `military/military_facade.gd` | 0 | 0 | 2 |
+| `rendering/bakers/atlas_encoders.gd` | 0 | 2（1） | 0 |
+| `rendering/map_baker.gd` | 2 | 25（1） | 0 |
+| `simulation/systems/climate_daily_system.gd` | 4 | 0 | 0 |
+| `simulation/systems/dynamic_visual_atlas_upload_system.gd` | 0 | 1（1） | 0 |
+| `ui/country_map_query.gd` | 0 | 0 | 1 |
+| `weather/weather_system.gd` | 0 | 5 | 0 |
+| 合计 | 22 | 68（3） | 3 |
+
+- 平台类包含 Web 预发布/inline、无线程加载、海冰/海洋线程入口、Climate B 的 SIMD 选择、移动端 async climate，以及分块烘焙能力判断；均按本批规则保留。
+- 双实现/明确保留回退包含海冰、Climate B、海洋、climate feedback、transpiration、albedo、vegetation、烘焙/编码/天气/视野/人口读取，以及规则 4 点名的 control-state 回读、snapshot 失败 flush 和按字段刷新失败后全量刷新。三个变量参数调用分别为 atlas 编码器 `_native_data`、MapBaker `_cpp_atlas_encode_disabled_reason`、动态 atlas `_should_use_ext_encode`，共同服务保留的 GDScript 编码路径。
+- “其他”逐条原因：`military_facade.gd::annual_war_section` 的 `get_military_annual_section`、`player_tension` 的 `get_military_tension` 均不在 646 项绑定清单中，握手不保证，保留可选接口探测；`country_map_query.gd::owner_map` 的 `get_country_cell_snapshot` 也不在清单中，只由旧桥/截图替身提供，保留其 MapData → 替身 → 模型的读取顺序。
+- `check_script_native_access.py` 越界基线相对 HEAD 从 918 条收紧到 645 条，文件/模块组合从 102 个降到 100 个。恢复 GDScript `component_id` 后 map_generator/core 的正确计数为 68（HEAD 109）；上一轮工作区曾误收紧为 67，本轮以 HEAD 基线验证并重新生成收紧结果，没有放宽 HEAD 的任何文件/模块项。
+
 ## 阶段 3：原生侧拆类（按模块逐个立项）
 
 只在一个模块满足下面三条时才做：

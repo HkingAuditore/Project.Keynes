@@ -32,7 +32,7 @@ static func bake_river_sdf(map: MapData, hex_size: float, bounds: Rect2, res: Ve
 	empty.resize(maxi(W * H, 0))
 	if W <= 0 or H <= 0:
 		return empty
-	if world_ext == null or not world_ext.has_method("run_bake_river_sdf_pass"):
+	if world_ext == null:
 		push_error("[bake_river_sdf] native river SDF pass unavailable")
 		return empty
 	var size: Vector2 = bounds.size
@@ -69,7 +69,7 @@ static func bake_hydraulic_erosion(height: PackedFloat32Array, size: Vector2i,
 	if height.size() != width * height_px:
 		push_error("[hydraulic_erosion] input height size invalid")
 		return height
-	if world_ext == null or not world_ext.has_method("run_bake_erosion_pass"):
+	if world_ext == null:
 		push_error("[hydraulic_erosion] native erosion pass unavailable")
 		return height
 	var knobs := erosion_knobs.duplicate(false)

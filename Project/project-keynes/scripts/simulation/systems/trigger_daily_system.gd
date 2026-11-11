@@ -28,7 +28,7 @@ func should_run(ctx: SusTickContext) -> bool:
 
 func _worker_authoritative() -> bool:
 	var ext: Object = facade.world_ext() if facade != null else null
-	if ext == null or not ext.has_method("trigger_worker_authoritative"):
+	if ext == null:
 		return false
 	return bool(ext.trigger_worker_authoritative())
 

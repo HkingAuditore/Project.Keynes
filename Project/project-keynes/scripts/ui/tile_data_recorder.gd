@@ -811,7 +811,7 @@ func _capture_country_evidence(tick_idx: int, map_data) -> void:
 
 	var worker_view: Dictionary = {}
 	var world_ext = facade.world_ext() if facade.has_method("world_ext") else null
-	if world_ext != null and world_ext.has_method("get_country_worker_read_view"):
+	if world_ext != null:
 		worker_view = world_ext.get_country_worker_read_view(0)
 	_country_samples.append({
 		"tick_idx": tick_idx,
@@ -896,16 +896,13 @@ func _discover_csv_encoder_ext():
 	if gen == null or not gen.has_method("get_data_core_world_ext"):
 		return null
 	var ext = gen.get_data_core_world_ext()
-	if ext != null and ext.has_method("encode_tile_csv_rows"):
+	if ext != null:
 		return ext
 	return null
 
 
 func _try_write_native_csv_rows(fixed_suffix: String, arrays: Array) -> bool:
 	if _csv_encoder_ext == null or _file == null:
-		return false
-	if not _csv_encoder_ext.has_method("encode_tile_csv_rows"):
-		_csv_encoder_ext = null
 		return false
 	var rows: int = int(ceil(float(_cell_count) / float(_cell_stride)))
 	if rows <= 0:

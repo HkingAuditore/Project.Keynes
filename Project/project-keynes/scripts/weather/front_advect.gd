@@ -188,8 +188,7 @@ func tick_advance_fronts(map, wind_fn: Callable) -> float:
 	var f6_did_fast_path: bool = false
 	var f6_active_fronts_size: int = ws._active_fronts.size()
 	if f6_active_fronts_size > 0 \
-			and ws._data_core_world_ext != null \
-			and ws._data_core_world_ext.has_method("run_weather_front_advect_pass"):
+			and ws._data_core_world_ext != null :
 		# 一次性诊断
 		if not ws._gdext_front_first_attempt_logged:
 			ws._gdext_front_first_attempt_logged = true

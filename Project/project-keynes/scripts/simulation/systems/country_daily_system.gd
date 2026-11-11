@@ -59,9 +59,7 @@ func tick(ctx) -> Dictionary:
 		"day_index": int(ctx.day_index) if ctx != null else 0,
 		"tick_index": int(ctx.tick_index) if ctx != null else 0,
 	})
-	var effect_ack: Dictionary = {}
-	if facade.world_ext().has_method("ack_effect_native_country"):
-		effect_ack = facade.world_ext().ack_effect_native_country()
+	var effect_ack: Dictionary = facade.world_ext().ack_effect_native_country()
 	# native 每 slice 返回新分配的 Dictionary，跨过这个边界后不再被 native 改写。
 	# 深拷贝等于把整份报告重建一遍，而 last_report() 出口本来就自带拷贝。
 	_last_report = result

@@ -36,7 +36,7 @@ static func set_enabled(new_enabled: bool, world_ext = null, sus_ext = null) -> 
 	enabled = new_enabled
 	# 用户每按一次 F10 必打一行（即使关掉也告知现在状态），所以不走 `if enabled:` 守门。
 	print("[PKLog] enabled=%s (toggle via F10)" % str(new_enabled))
-	if world_ext != null and world_ext.has_method("set_diag_logs_enabled"):
+	if world_ext != null:
 		world_ext.set_diag_logs_enabled(new_enabled)
 	if sus_ext != null and sus_ext.has_method("set_diag_logs_enabled"):
 		sus_ext.set_diag_logs_enabled(new_enabled)

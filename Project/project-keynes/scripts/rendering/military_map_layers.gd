@@ -248,7 +248,7 @@ func _configure_token_formation_visuals() -> void:
 	if token_layer == null:
 		return
 	var view: Dictionary = {}
-	if _ext != null and _ext.has_method("get_military_catalog_view"):
+	if _ext != null:
 		var native_view: Variant = _ext.get_military_catalog_view()
 		if native_view is Dictionary:
 			view = native_view

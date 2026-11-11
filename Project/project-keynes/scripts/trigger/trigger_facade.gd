@@ -32,7 +32,7 @@ func configure(world_ext: DCWorldExt, event_bus: GameplayEventBus, clock: WorldC
 	_world_ext = world_ext; _event_bus = event_bus; _clock = clock
 	_modifier_facade = modifier_facade
 	_catalog = catalog if catalog != null else TriggerCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_triggers"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt trigger API unavailable"}
 	if _catalog == null or not _catalog.has_method("compile_native_catalog"):
 		return {"ok": false, "reason": "TriggerCatalog unavailable"}
@@ -57,7 +57,7 @@ func world_ext() -> Object: return _world_ext
 func report() -> Dictionary: return _world_ext.get_trigger_report() if _configured else {"configured": false}
 
 func development_progress(country_handle: int, era_id: String) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_development_progress"):
+	if not _configured:
 		return {"ok": false, "reason": "trigger_development_progress_unavailable"}
 	var era_index := DEVELOPMENT_ERA_IDS.find(era_id)
 	if era_index < 0:
@@ -116,11 +116,10 @@ func dispatch_effects(max_effects: int = 512) -> Dictionary:
 	# Native Modifier effects are handed to EffectRuntime first. TriggerRuntime
 	# remains the state owner; the handoff already ACKs exactly the ids it
 	# delivered, so nothing below may replay that numeric cursor.
-	if _world_ext.has_method("handoff_trigger_effects"):
-		var native_handoff: Dictionary = _world_ext.handoff_trigger_effects(max_effects)
-		if bool(native_handoff.get("native_supported", false)):
-			var native_last := int(native_handoff.get("last_effect_id", _last_effect_id))
-			_last_effect_id = maxi(_last_effect_id, native_last)
+	var native_handoff: Dictionary = _world_ext.handoff_trigger_effects(max_effects)
+	if bool(native_handoff.get("native_supported", false)):
+		var native_last := int(native_handoff.get("last_effect_id", _last_effect_id))
+		_last_effect_id = maxi(_last_effect_id, native_last)
 	# Ids are ingress-allocated but delivery is canonical, so the numeric cursor
 	# is not a valid poll offset: poll every still-pending effect instead.
 	var batch: Dictionary = _world_ext.poll_trigger_effects(0, max_effects)
@@ -135,10 +134,7 @@ func dispatch_effects(max_effects: int = 512) -> Dictionary:
 		dispatched_ids.append(int(ids[i]))
 		_last_effect_id = maxi(_last_effect_id, int(ids[i]))
 	if dispatched > 0:
-		if _world_ext.has_method("ack_trigger_effect_ids"):
-			_world_ext.ack_trigger_effect_ids(dispatched_ids)
-		else:
-			_world_ext.ack_trigger_effects(_last_effect_id)
+		_world_ext.ack_trigger_effect_ids(dispatched_ids)
 	var out := {"ok": dispatched == ids.size(), "dispatched": dispatched, "pending": ids.size() - dispatched}
 	effects_available.emit(batch)
 	return out

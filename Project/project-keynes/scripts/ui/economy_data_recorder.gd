@@ -114,9 +114,6 @@ func start() -> void:
 	if world == null or map == null:
 		push_warning("[economy-record] start failed: world/map unavailable")
 		return
-	if not world.has_method("start_economy_csv_recording"):
-		push_error("[economy-record] native CSV v23 API unavailable; rebuild dots_ext")
-		return
 	if not map.has_method("cell_count") or not map.has_method("cell_at"):
 		push_error("[economy-record] MapData coordinate API unavailable")
 		return
@@ -153,12 +150,11 @@ func start() -> void:
 
 	var resource_slot_ids := PackedInt32Array()
 	var resource_ids := PackedStringArray()
-	if world.has_method("component_id"):
-		for middle_name in RESOURCE_MIDDLE_NAMES:
-			var sid: int = int(world.component_id("cell_res_" + middle_name + "_reserve"))
-			if sid >= 0:
-				resource_slot_ids.append(sid)
-				resource_ids.append(middle_name)
+	for middle_name in RESOURCE_MIDDLE_NAMES:
+		var sid: int = int(world.component_id("cell_res_" + middle_name + "_reserve"))
+		if sid >= 0:
+			resource_slot_ids.append(sid)
+			resource_ids.append(middle_name)
 
 	var export_dir: String = _export_dir_absolute()
 	var err: Error = DirAccess.make_dir_recursive_absolute(export_dir)
@@ -221,7 +217,7 @@ func start() -> void:
 func stop_and_export() -> Array:
 	_pending_start_config.clear()
 	var world = _get_world()
-	if world != null and world.has_method("request_stop_economy_csv_recording"):
+	if world != null:
 		_status = world.call("request_stop_economy_csv_recording")
 		_paths.clear()
 		for path in _status.get("paths", []):
@@ -248,7 +244,7 @@ func _poll_status() -> void:
 	if _local_start_error:
 		return
 	var world = _get_world()
-	if world == null or not world.has_method("get_economy_csv_recording_status"):
+	if world == null:
 		return
 	if not _pending_start_config.is_empty():
 		var started: Dictionary = world.call("start_economy_csv_recording", _pending_start_config)

@@ -24,7 +24,7 @@ func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
 	_world_ext = world_ext
 	_clock = clock
 	_catalog = catalog if catalog != null else ModifierCatalogScript.load_default()
-	if _world_ext == null or not _world_ext.has_method("configure_modifiers"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt modifier API unavailable"}
 	if _catalog == null:
 		return {"ok": false, "reason": "ModifierCatalog unavailable"}

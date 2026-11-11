@@ -3309,8 +3309,8 @@ func refresh_chunk_for_succession(
 func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap: int = 0) -> Dictionary:
 	var t0_us := Time.get_ticks_usec()
 	var out := {"ok": false, "valid_indices": PackedInt32Array(), "res": {}}
-	if _world_ext == null or (not _world_ext.has_method("encode_detail_scatter_delta") \
-			and not _world_ext.has_method("encode_detail_scatter_family_cells")):
+	if _world_ext == null or (false \
+			and false):
 		out["reason"] = "missing_detail_scatter_cell_encoder"
 		return out
 	if _map == null:
@@ -3330,16 +3330,15 @@ func _encode_native_payload_for_indices(indices: PackedInt32Array, instance_cap:
 	var native_t0_us := Time.get_ticks_usec()
 	var res
 	var native_path := "gdext_event_cells"
-	if _world_ext.has_method("encode_detail_scatter_family_cells"):
-		var family_res = _world_ext.call("encode_detail_scatter_family_cells", {
-			"requests": [knobs],
-		})
-		if family_res is Dictionary:
-			var payloads: Array = family_res.get("payloads", [])
-			if not payloads.is_empty():
-				res = payloads[0]
-				native_path = "gdext_family_cells"
-	if res == null and _world_ext.has_method("encode_detail_scatter_delta"):
+	var family_res = _world_ext.call("encode_detail_scatter_family_cells", {
+		"requests": [knobs],
+	})
+	if family_res is Dictionary:
+		var payloads: Array = family_res.get("payloads", [])
+		if not payloads.is_empty():
+			res = payloads[0]
+			native_path = "gdext_family_cells"
+	if res == null:
 		res = _world_ext.call("encode_detail_scatter_delta", knobs)
 	_last_native_call_ms = float(Time.get_ticks_usec() - native_t0_us) / 1000.0
 	if not (res is Dictionary):
@@ -3715,7 +3714,7 @@ func _rebuild_via_native(
 		cell_suitabilities: PackedFloat32Array,
 		cell_attempts: PackedInt32Array,
 		cell_accepts: PackedFloat32Array) -> bool:
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
+	if _world_ext == null:
 		return false
 	if _map == null:
 		return false
@@ -5724,7 +5723,7 @@ func _rebuild_via_native_cooperative(
 		cell_suitabilities: PackedFloat32Array,
 		cell_attempts: PackedInt32Array,
 		cell_accepts: PackedFloat32Array) -> bool:
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter"):
+	if _world_ext == null:
 		return false
 	if _map == null:
 		return false

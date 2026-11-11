@@ -1579,7 +1579,7 @@ func _try_promote_economy_pod_active() -> void:
 	if _generator == null or not _generator.has_method("get_data_core_world_ext"):
 		return
 	var ext = _generator.get_data_core_world_ext()
-	if ext == null or not ext.has_method("switch_economy_authority"):
+	if ext == null:
 		return
 	var report: Dictionary = _generator.get_runtime_thread_report() \
 		if _generator.has_method("get_runtime_thread_report") else {}

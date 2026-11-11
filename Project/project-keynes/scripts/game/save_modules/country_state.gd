@@ -26,7 +26,7 @@ func _write_country_provider(context: Dictionary) -> Dictionary:
 func _restore_country_state(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var facade = context.country
 	var ext = facade.world_ext() if facade != null else null
-	if ext != null and ext.has_method("restore_country_runtime_checkpoint"):
+	if ext != null:
 		var checkpoint_result: Dictionary = ext.restore_country_runtime_checkpoint(
 			sections.pkcn)
 		if bool(checkpoint_result.get("available", false)):

@@ -3,10 +3,9 @@ extends RefCounted
 
 ## Cold-path GDScript wrapper around the native military bindings on DCWorldExt.
 ##
-## Every native entry point is guarded with `has_method` so the game keeps
-## running against an older DLL: when the military API is absent the facade
-## reports `configured == false`, the daily system never registers, and
-## `MilitaryDailySystem.should_run()` stays false (zero cost, zero errors).
+## NativeWorld.create() verifies all methods in the binding manifest before use.
+## Without a native world the facade remains unconfigured and its daily system
+## stays idle.
 ##
 ## Ownership: this file only forwards. Dense ids, catalog resolution and
 ## ration candidates live in MilitaryCatalogCompiler; simulation authority is
@@ -79,7 +78,7 @@ func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 		else PackedStringArray()
 	_world_seed = int(world_seed)
 	_missing_api_reason = ""
-	if _world_ext == null or not _world_ext.has_method("configure_military"):
+	if _world_ext == null:
 		_missing_api_reason = "military_api_unavailable"
 		_last_configure_result = _fail("military_api_unavailable")
 		return _last_configure_result
@@ -149,8 +148,6 @@ func set_terrain(map, day: int = -1, force: bool = false,
 		return _fail("military_not_configured")
 	if map == null:
 		return _fail("military_terrain_map_unavailable")
-	if not _world_ext.has_method("set_military_terrain"):
-		return _fail("military_terrain_api_unavailable")
 	var cover: PackedByteArray = map.cover_arr
 	var signature := hash(cover)
 	if not force and signature == _terrain_signature \
@@ -169,9 +166,7 @@ func set_terrain(map, day: int = -1, force: bool = false,
 	# must keep military state, so snapshot it through PKMI and restore it onto
 	# the new terrain (same shape, so the transactional restore validates).
 	var preserved := PackedByteArray()
-	if terrain_ready() and _terrain_cells == int(map.cell_count()) \
-			and _world_ext.has_method("encode_military_state") \
-			and _world_ext.has_method("restore_military_state"):
+	if terrain_ready() and _terrain_cells == int(map.cell_count()):
 		var encoded = _world_ext.encode_military_state()
 		if encoded is PackedByteArray:
 			preserved = encoded
@@ -228,8 +223,6 @@ static func _settlement_tiers_from_map(map, cell_count: int) -> PackedByteArray:
 func should_run(day: int) -> bool:
 	if not _configured:
 		return false
-	if not _world_ext.has_method("military_should_run"):
-		return false
 	return bool(_world_ext.military_should_run(int(day)))
 
 
@@ -239,8 +232,6 @@ func should_run(day: int) -> bool:
 func run_daily(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	if not _world_ext.has_method("run_military_daily"):
-		return _fail("military_daily_api_unavailable")
 	var result: Dictionary = _world_ext.run_military_daily({"day_index": int(day)})
 	_last_daily_report = result if result is Dictionary else {}
 	return _last_daily_report
@@ -254,15 +245,13 @@ func run_daily(day: int) -> Dictionary:
 func catch_up(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	if _world_ext.has_method("run_military_catch_up"):
-		return _world_ext.run_military_catch_up({"day_index": int(day)})
-	return run_daily(day)
+	return _world_ext.run_military_catch_up({"day_index": int(day)})
 
 
 ## Render selection (army handle, 0 = none). The native render snapshot returns
 ## the selected army's area cells and remaining path cells.
 func set_render_selection(army_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("set_military_render_selection"):
+	if not _configured:
 		return _fail("military_render_selection_api_unavailable")
 	return _world_ext.set_military_render_selection(int(army_handle))
 
@@ -274,8 +263,6 @@ func last_daily_report() -> Dictionary:
 func report() -> Dictionary:
 	if not _configured:
 		return {"ok": false, "configured": false, "reason": _missing_api_reason}
-	if not _world_ext.has_method("get_military_report"):
-		return {"ok": false, "configured": true, "reason": "military_report_api_unavailable"}
 	var result: Dictionary = _world_ext.get_military_report()
 	result["configured"] = true
 	result["catalog_hash"] = _catalog_hash
@@ -292,8 +279,6 @@ func report() -> Dictionary:
 func submit(batch: Array) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	if not _world_ext.has_method("submit_military_commands"):
-		return _fail("military_command_api_unavailable")
 	var accepted := 0
 	var rejected: Array = []
 	var encoded: Array = []
@@ -427,62 +412,58 @@ func respond_peace(country: int, war: int, accept: bool) -> Dictionary:
 # ------------------------------------------------------------- queries
 
 func country_snapshot(country: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_military_country_snapshot"):
+	if not _configured:
 		return _fail("military_country_snapshot_unavailable")
 	return _world_ext.get_military_country_snapshot(int(country))
 
 
 func armies(country: int) -> Array:
-	if not _configured or not _world_ext.has_method("get_military_armies"):
+	if not _configured:
 		return []
 	var result = _world_ext.get_military_armies(int(country))
 	return result if result is Array else []
 
 
 func army(army_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_military_army"):
+	if not _configured:
 		return _fail("military_army_api_unavailable")
 	return _world_ext.get_military_army(int(army_handle))
 
 
 func cell_snapshot(cell: int, observer: int = 0) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_military_cell_snapshot"):
+	if not _configured:
 		return _fail("military_cell_snapshot_unavailable")
 	return _world_ext.get_military_cell_snapshot(int(cell), int(observer))
 
 
 func render_snapshot(after_revision: int = 0) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_military_render_snapshot"):
+	if not _configured:
 		return {"ok": false, "available": false,
 			"reason": "military_render_api_unavailable"}
 	return _world_ext.get_military_render_snapshot(int(after_revision))
 
 
 func control_snapshot() -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_military_control_snapshot"):
+	if not _configured:
 		return {"ok": false, "available": false,
 			"reason": "military_control_api_unavailable"}
 	return _world_ext.get_military_control_snapshot()
 
 
 func preview_path(army_handle: int, cell: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("preview_military_path"):
+	if not _configured:
 		return _fail("military_path_api_unavailable")
 	return _world_ext.preview_military_path(int(army_handle), int(cell))
 
 
 func evaluate_peace(war: int, proposer: int, terms: Array) -> Dictionary:
-	if not _configured or not _world_ext.has_method("evaluate_military_peace"):
+	if not _configured:
 		return _fail("military_peace_api_unavailable")
 	return _world_ext.evaluate_military_peace(int(war), int(proposer), terms)
 
 
 func catalog_view() -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_military_catalog_view"):
+	if not _configured:
 		return _fail("military_catalog_view_api_unavailable")
 	return _world_ext.get_military_catalog_view()
 
@@ -527,7 +508,7 @@ func state_building_economy_id(building_index: int) -> int:
 ## Drain the native event ring into GameplayEventBus-compatible batches.
 ## `cursor` is advanced in place by the caller (MilitaryDailySystem owns it).
 func poll_events(after_id: int, limit: int = 256) -> Array:
-	if not _configured or not _world_ext.has_method("poll_military_events"):
+	if not _configured:
 		return []
 	var result = _world_ext.poll_military_events(int(after_id), int(limit))
 	return result if result is Array else []
@@ -536,7 +517,7 @@ func poll_events(after_id: int, limit: int = 256) -> Array:
 # ------------------------------------------------------------- persistence
 
 func encode_state() -> PackedByteArray:
-	if not _configured or not _world_ext.has_method("encode_military_state"):
+	if not _configured:
 		return PackedByteArray()
 	var result = _world_ext.encode_military_state()
 	return result if result is PackedByteArray else PackedByteArray()
@@ -545,8 +526,6 @@ func encode_state() -> PackedByteArray:
 func restore_state(bytes: PackedByteArray) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	if not _world_ext.has_method("restore_military_state"):
-		return _fail("military_restore_api_unavailable")
 	if bytes.is_empty():
 		return _fail("pkmi_empty")
 	var result: Dictionary = _world_ext.restore_military_state(bytes)
@@ -558,7 +537,7 @@ func restore_state(bytes: PackedByteArray) -> Dictionary:
 
 
 func state_hash() -> int:
-	if not _configured or not _world_ext.has_method("get_military_report"):
+	if not _configured:
 		return 0
 	return int((_world_ext.get_military_report() as Dictionary).get(
 		"state_hash", 0))
@@ -578,25 +557,7 @@ func arm_ai(player_handles: PackedInt64Array) -> Dictionary:
 func _apply_ai_arming() -> Dictionary:
 	if not _configured or _world_ext == null:
 		return _fail("military_not_configured")
-	if _world_ext.has_method("set_military_ai_player_handles"):
-		return _world_ext.set_military_ai_player_handles(_ai_player_handles)
-	# Older bridge: one set_ai_country(slot, ai) call per country slot. Country
-	# slots are dense, so iterating them is a cold-path cost only.
-	if not _world_ext.has_method("set_military_ai_country"):
-		return {"ok": true, "path": "unsupported", "reason":
-			"military_ai_api_unavailable"}
-	var applied := 0
-	var player_slots := {}
-	if _world_ext.has_method("get_country_cell_summary") and not _ai_player_handles.is_empty():
-		# Handle -> slot is only resolvable through the country authority; the
-		# native side owns that mapping, so let it decide when available.
-		pass
-	for slot in range(32):
-		var result: Dictionary = _world_ext.set_military_ai_country(slot,
-			0 if player_slots.has(slot) else 1)
-		if bool(result.get("ok", false)):
-			applied += 1
-	return {"ok": true, "path": "per_slot", "applied": applied}
+	return _world_ext.set_military_ai_player_handles(_ai_player_handles)
 
 
 func ai_player_handles() -> PackedInt64Array:
@@ -606,7 +567,7 @@ func ai_player_handles() -> PackedInt64Array:
 ## Annual-report war section (design §19.2). Null when the native report has no
 ## war counters yet, so the caller can omit the section instead of showing 0.
 func annual_war_section(year: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_military_report"):
+	if not _configured:
 		return {}
 	if _world_ext.has_method("get_military_annual_section"):
 		return _world_ext.get_military_annual_section(int(year))
@@ -614,7 +575,7 @@ func annual_war_section(year: int) -> Dictionary:
 
 
 func player_tension(handle: int) -> float:
-	if not _configured or not _world_ext.has_method("get_military_report"):
+	if not _configured:
 		return 0.0
 	if _world_ext.has_method("get_military_tension"):
 		return clampf(float(_world_ext.get_military_tension(int(handle))), 0.0, 1.0)

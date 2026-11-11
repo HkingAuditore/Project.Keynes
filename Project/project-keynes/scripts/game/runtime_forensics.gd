@@ -329,9 +329,6 @@ static func _write_native_save_stream(ext, domain: String, path: String,
 		else "read_economy_save_chunk"
 	var end_method := "end_country_save" if domain == "country" \
 		else "end_economy_save"
-	if not ext.has_method(begin_method) or not ext.has_method(read_method) \
-			or not ext.has_method(end_method):
-		return {"ok": false, "reason": "native_forensics_save_api_unavailable"}
 	var begun: Dictionary = ext.call(begin_method, chunk_bytes)
 	if not bool(begun.get("ok", false)):
 		return {"ok": false, "reason": String(begun.get("reason", "begin_failed"))}

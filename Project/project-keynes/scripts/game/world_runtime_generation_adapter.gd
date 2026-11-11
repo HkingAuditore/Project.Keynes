@@ -314,8 +314,7 @@ func _start_production_shadow_worker(host) -> void:
 		host._web_worker_inline_fallback = true
 		web_wants_worker = false
 		web_wants_inline = true
-	if ext != null and host.runtime_parity_forcing \
-			and ext.has_method("set_runtime_climate_parity_forcing"):
+	if ext != null and host.runtime_parity_forcing:
 		ext.set_runtime_climate_parity_forcing(true)
 	host._runtime_climate_writeback_generation = 0
 	host._runtime_climate_writeback_days = 0
@@ -374,7 +373,7 @@ func _start_production_shadow_worker(host) -> void:
 			return
 		# G8: best-effort Economy opinion publish before ACTIVE so Ideology
 		# stage is not cold-started with a null opinion snapshot.
-		if ext != null and ext.has_method("publish_ideology_worker_inputs"):
+		if ext != null:
 			var opinion_pub: Dictionary = ext.publish_ideology_worker_inputs()
 			if not bool(opinion_pub.get("ok", false)):
 				push_warning("[runtime-worker] Ideology opinion publish deferred: %s" % [

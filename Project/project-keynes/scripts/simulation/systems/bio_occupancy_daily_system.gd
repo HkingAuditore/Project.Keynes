@@ -179,7 +179,7 @@ func _submit_occupancy_discoveries(res: Dictionary, day_index: int) -> void:
 		return
 	var ext = generator.get_data_core_world_ext() if generator.has_method(
 		"get_data_core_world_ext") else null
-	if ext == null or not ext.has_method("filter_bio_research_observations"):
+	if ext == null:
 		return
 	var filtered: Dictionary = ext.filter_bio_research_observations(cells, signals)
 	if not bool(filtered.get("ok", false)):

@@ -78,7 +78,7 @@ func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 	_profile = profile
 	if _profile == null:
 		_profile = ResourceLoader.load(DEFAULT_PROFILE_PATH, "Resource")
-	if _world_ext == null or not _world_ext.has_method("configure_country"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt country API unavailable"}
 	if _profile == null:
 		return {"ok": false, "reason": "CountryProfile unavailable"}
@@ -155,8 +155,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 ## generic runtime receipt queue used by other domains.
 func poll_worker_command_receipts(after_request_id: int = 0,
 		limit: int = 128) -> Dictionary:
-	if _world_ext == null or not _world_ext.has_method(
-			"poll_country_command_receipts"):
+	if _world_ext == null:
 		return {"ok": false, "code": "country_worker_receipt_api_missing"}
 	return _world_ext.poll_country_command_receipts(maxi(after_request_id, 0),
 		clampi(limit, 1, 4096))
@@ -539,13 +538,11 @@ func clear_cell_tax_policy(handle: int, cell: int, effective_day: int,
 
 func cell_tax_policy_snapshot(cell: int) -> Dictionary:
 	return _world_ext.get_country_cell_tax_policy_snapshot(cell) \
-		if _configured and _world_ext.has_method( \
-			"get_country_cell_tax_policy_snapshot") else {}
+		if _configured else {}
 
 
 func fiscal_snapshot(handle: int) -> Dictionary:
-	return _world_ext.get_country_fiscal_snapshot(handle) if _configured \
-			and _world_ext.has_method("get_country_fiscal_snapshot") else {}
+	return _world_ext.get_country_fiscal_snapshot(handle) if _configured  else {}
 
 
 func _tax_item_index(kind: int, item_id: StringName) -> int:
@@ -601,12 +598,11 @@ static func era_milestone_indices() -> PackedInt32Array:
 
 
 func research_signal_snapshot(handle: int) -> Dictionary:
-	return _world_ext.get_country_research_signal_snapshot(handle) if _configured \
-			and _world_ext.has_method("get_country_research_signal_snapshot") else {}
+	return _world_ext.get_country_research_signal_snapshot(handle) if _configured  else {}
 
 
 func has_completed_technology(handle: int, dense_id: int) -> bool:
-	return _configured and _world_ext.has_method("has_completed_country_technology") \
+	return _configured \
 		and _world_ext.has_completed_country_technology(handle, dense_id)
 
 func _technology_index(technology_id: StringName) -> int:
@@ -624,22 +620,19 @@ func treasury_snapshot(handle: int) -> Dictionary:
 
 
 func bind_era_reward_player_country(handle: int) -> Dictionary:
-	return _world_ext.bind_era_reward_player_country(handle) if _configured \
-		and _world_ext.has_method("bind_era_reward_player_country") else {
+	return _world_ext.bind_era_reward_player_country(handle) if _configured  else {
 			"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 
 func era_reward_offer() -> Dictionary:
-	return _world_ext.get_era_reward_offer() if _configured \
-		and _world_ext.has_method("get_era_reward_offer") else {
+	return _world_ext.get_era_reward_offer() if _configured  else {
 			"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 
 func choose_era_reward(offer_generation: int, choice_index: int,
 		effective_day: int) -> Dictionary:
 	return _world_ext.choose_era_reward(offer_generation, choice_index,
-		effective_day) if _configured and _world_ext.has_method(
-			"choose_era_reward") else {
+		effective_day) if _configured else {
 				"ok": false, "reason": "era_reward_runtime_unavailable"}
 
 func report() -> Dictionary:
@@ -647,8 +640,7 @@ func report() -> Dictionary:
 
 
 func ui_snapshot(handle: int, section_mask: int) -> Dictionary:
-	return _world_ext.get_country_ui_snapshot(handle, section_mask) if _configured \
-		and _world_ext.has_method("get_country_ui_snapshot") else {
+	return _world_ext.get_country_ui_snapshot(handle, section_mask) if _configured  else {
 			"ok": false, "reason": "country_ui_snapshot_unavailable"}
 
 func dispatch_committed_events(result: Dictionary) -> void:

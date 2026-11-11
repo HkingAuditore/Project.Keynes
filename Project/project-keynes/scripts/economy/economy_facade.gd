@@ -98,7 +98,7 @@ func configure(world_ext: DCWorldExt, cell_count: int, seed: int, profile = null
 	_profile = profile
 	if _profile == null:
 		_profile = ResourceLoader.load(DEFAULT_PROFILE_PATH, "Resource")
-	if _world_ext == null or not _world_ext.has_method("configure_economy"):
+	if _world_ext == null:
 		return {"ok": false, "reason": "DCWorldExt economy API unavailable"}
 	if _profile == null:
 		return {"ok": false, "reason": "EconomyProfile unavailable"}
@@ -124,7 +124,7 @@ func configure(world_ext: DCWorldExt, cell_count: int, seed: int, profile = null
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, native_profile, cell_count, seed)
 	_configured = bool(result.get("ok", false))
-	if _configured and _world_ext.has_method("configure_economy_natural_resources"):
+	if _configured:
 		var natural: Dictionary = _world_ext.configure_economy_natural_resources(
 			ResourceProfileRegistry.build_pass_knobs())
 		if not bool(natural.get("ok", false)):
@@ -287,13 +287,12 @@ func population_cell_summary(cell_idx: int) -> Dictionary:
 	return _world_ext.get_population_cell_snapshot(cell_idx)
 
 func named_settlement_snapshot() -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_named_settlement_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "native settlement runtime unavailable"}
 	return _world_ext.get_named_settlement_snapshot()
 
 func settlement_delta(since_revision: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_settlement_delta"):
+	if not _configured:
 		return {"ok": false, "reason": "native settlement runtime unavailable"}
 	return _world_ext.get_settlement_delta(since_revision)
 
@@ -329,15 +328,14 @@ func market_cell_snapshot(cell_idx: int) -> Dictionary:
 ## 有界地图状况视图。NativeEconomyRuntime 只返回请求地块的定点严重度，
 ## 不把市场/人口/建筑矩阵复制进 MapData。
 func cell_situation_snapshot(requested_cells: PackedInt32Array) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_cell_situation_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "economy_situation_visual_api_unavailable"}
 	return _world_ext.get_cell_situation_snapshot(
 		requested_cells)
 
 ## 冷路径满意度溯源。只读且只在原生 slice 之间安全，Inspector 打开时才调用。
 func explain_cohort_satisfaction(cohort_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("explain_cohort_satisfaction"):
+	if not _configured:
 		return {"ok": false, "reason": "satisfaction explain API unavailable"}
 	var explained: Dictionary = _world_ext.explain_cohort_satisfaction(cohort_handle)
 	if bool(explained.get("ok", false)):
@@ -346,8 +344,7 @@ func explain_cohort_satisfaction(cohort_handle: int) -> Dictionary:
 
 
 func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
-	if not _configured \
-			or not _world_ext.has_method("get_cell_satisfaction_attractiveness"):
+	if not _configured :
 		return {"ok": false, "reason": "satisfaction attractiveness API unavailable"}
 	var attractiveness: Dictionary = \
 		_world_ext.get_cell_satisfaction_attractiveness(cell_idx)
@@ -358,7 +355,7 @@ func cell_satisfaction_attractiveness(cell_idx: int) -> Dictionary:
 
 func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64,
 		good_index: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_trade_orders_for_cell"):
+	if not _configured:
 		return {"ok": false, "reason": "trade order API unavailable", "total": 0}
 	var page: Dictionary = _world_ext.get_trade_orders_for_cell(
 		cell_idx, offset, limit, good_index)
@@ -369,21 +366,21 @@ func trade_orders_for_cell(cell_idx: int, offset: int = 0, limit: int = 64,
 ## Optional, bounded visual observer. The native bridge never waits for a worker.
 func trade_visual_snapshot(cells: PackedInt32Array, visible: PackedByteArray,
         vision_revision: int, selected_cell: int = -1, enabled: bool = true) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_trade_visual_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "trade_visual_unavailable"}
 	return _world_ext.get_trade_visual_snapshot(cells, visible,
 		vision_revision, selected_cell, enabled)
 
 
 func bake_trade_visual_paths(snapshot: Dictionary, map_width: int, hex_size: float) -> Dictionary:
-	if not _configured or not _world_ext.has_method("bake_trade_visual_paths"):
+	if not _configured:
 		return {"ok": false}
 	return _world_ext.bake_trade_visual_paths(snapshot, map_width, hex_size)
 
 
 func country_trade_snapshot(country_handle: int, view: String = "summary",
 		offset: int = 0, limit: int = 32) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_country_trade_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "country trade API unavailable",
 			"view": view, "total": 0}
 	var page: Dictionary = _world_ext.get_country_trade_snapshot(
@@ -396,7 +393,7 @@ func country_trade_snapshot(country_handle: int, view: String = "summary",
 func country_economy_overview(country_handle: int, view: String = "summary",
 		scope_cell: int = -1, filter_id: int = -1, offset: int = 0,
 		limit: int = 0) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_country_economy_overview"):
+	if not _configured:
 		return {"ok": false, "reason": "country economy overview API unavailable",
 			"view": view}
 	var page: Dictionary = _world_ext.get_country_economy_overview(
@@ -521,7 +518,7 @@ func construction_catalog(search: String = "", offset: int = 0,
 ## workspace never has to re-derive the catalog page it just displayed.
 func construction_quotes(country_handle: int, cell_idx: int,
 		type_ids: PackedInt32Array) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
+	if not _configured:
 		return {"ok": false, "reason": "construction_quote_api_unavailable"}
 	var quotes: Dictionary = _world_ext.get_treasury_construction_quotes(
 		country_handle, cell_idx, type_ids)
@@ -586,7 +583,7 @@ func construction_quotes(country_handle: int, cell_idx: int,
 func treasury_construction_options(country_handle: int, cell_idx: int,
 		search: String = "", offset: int = 0, limit: int = 32,
 		sector: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
+	if not _configured:
 		return {"ok": false, "reason": "construction_quote_api_unavailable"}
 	var building_snapshot: Dictionary = building_cell_snapshot(cell_idx)
 	var stable_ids: PackedStringArray = _catalog.get(
@@ -629,7 +626,7 @@ func treasury_sponsored_build(country_handle: int, cell_idx: int,
 			"reason": "construction_target_invalid",
 			"message": _construction_result_message("construction_target_invalid"),
 			"effective_day": effective_day, "sequence": sequence}
-	if _configured and _world_ext.has_method("queue_treasury_sponsored_build"):
+	if _configured:
 		var queued: Dictionary = _world_ext.queue_treasury_sponsored_build(
 			country_handle, cell_idx, type_id, effective_day, sequence)
 		if not bool(queued.get("ok", false)):
@@ -664,7 +661,7 @@ func treasury_sponsored_demolish(country_handle: int, cell_idx: int,
 			"reason": "demolish_target_invalid",
 			"message": _demolish_result_message("demolish_target_invalid"),
 			"effective_day": effective_day, "sequence": sequence}
-	if _configured and _world_ext.has_method("queue_treasury_sponsored_demolish"):
+	if _configured:
 		var queued: Dictionary = _world_ext.queue_treasury_sponsored_demolish(
 			country_handle, cell_idx, type_id, count, effective_day, sequence)
 		if not bool(queued.get("ok", false)):
@@ -697,8 +694,7 @@ static func _demolish_result_message(code: String) -> String:
 
 
 func dispatch_construction_command_receipts() -> void:
-	if not _configured or not _world_ext.has_method(
-			"get_construction_command_receipts"):
+	if not _configured:
 		return
 	var page: Dictionary = _world_ext.get_construction_command_receipts(
 		_construction_receipt_cursor, 64)
@@ -725,7 +721,7 @@ func dispatch_construction_command_receipts() -> void:
 
 func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
 		waypoints: PackedInt32Array = PackedInt32Array()) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_canal_route_quote"):
+	if not _configured:
 		return {"ok": false, "code": "canal_runtime_unavailable",
 			"message": "canal_runtime_unavailable"}
 	return _world_ext.get_canal_route_quote(
@@ -734,8 +730,7 @@ func get_canal_route_quote(country_handle: int, start_cell: int, end_cell: int,
 
 func get_canal_route_quote_detail(country_handle: int,
 		quote_token: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_canal_route_quote_detail"):
+	if not _configured:
 		return {"ok": false, "code": "canal_runtime_unavailable",
 			"message": "canal_runtime_unavailable"}
 	return _world_ext.get_canal_route_quote_detail(country_handle, quote_token)
@@ -743,7 +738,7 @@ func get_canal_route_quote_detail(country_handle: int,
 
 func queue_canal_construction(country_handle: int, quote_token: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("queue_canal_construction"):
+	if not _configured:
 		return {"ok": false, "code": "canal_runtime_unavailable",
 			"message": "canal_runtime_unavailable",
 			"effective_day": effective_day, "sequence": sequence}
@@ -752,8 +747,7 @@ func queue_canal_construction(country_handle: int, quote_token: int,
 
 
 func dispatch_canal_construction_receipts(country_handle: int) -> void:
-	if not _configured or not _world_ext.has_method(
-			"get_canal_construction_receipts"):
+	if not _configured:
 		return
 	var cursor := int(_canal_receipt_cursors.get(country_handle, 0))
 	var page: Dictionary = _world_ext.get_canal_construction_receipts(
@@ -770,7 +764,7 @@ func dispatch_canal_construction_receipts(country_handle: int) -> void:
 func family_colonization_quotes(country_handle: int, target_cell: int,
 		family_filter: int = 0, source_filter: int = -1,
 		offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_colonization_quotes"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	var page: Dictionary = _world_ext.get_family_colonization_quotes(country_handle, target_cell,
 		family_filter, source_filter, offset, limit)
@@ -787,8 +781,7 @@ func family_colonization_quotes(country_handle: int, target_cell: int,
 
 func family_colonization_quote_detail(quote_token: int,
 		population: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_family_colonization_quote_detail"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	var detail: Dictionary = _world_ext.get_family_colonization_quote_detail(
 		quote_token, population)
@@ -819,7 +812,7 @@ func family_colonization_quote_detail(quote_token: int,
 func start_family_colonization(country_handle: int, family_handle: int,
 		source_cell: int, target_cell: int, population: int, quote_token: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("start_family_colonization"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	return _world_ext.start_family_colonization(country_handle, family_handle,
 		source_cell, target_cell, population, quote_token, effective_day, sequence)
@@ -827,7 +820,7 @@ func start_family_colonization(country_handle: int, family_handle: int,
 
 func cancel_family_colonization(country_handle: int, expedition_handle: int,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("cancel_family_colonization"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	return _world_ext.cancel_family_colonization(country_handle,
 		expedition_handle, effective_day, sequence)
@@ -840,7 +833,7 @@ func set_country_procurement_policy(country_handle: int, enabled: bool,
 		treasury_share_bp: int, research_share_bp: int,
 		effective_day: int, sequence: int,
 		era_share_bp: int = -1, colonization_share_bp: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method("set_country_procurement_policy"):
+	if not _configured:
 		return {"ok": false, "code": "procurement_policy_unavailable"}
 	return _world_ext.set_country_procurement_policy(country_handle, enabled,
 		clampi(treasury_share_bp, 0, 10000), clampi(research_share_bp, 0, 10000),
@@ -854,7 +847,7 @@ func set_country_procurement_policy(country_handle: int, enabled: bool,
 func set_era_procurement_target(country_handle: int, active: bool,
 		good_indices: PackedInt32Array, required_quantities: PackedInt64Array,
 		effective_day: int, sequence: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("set_era_procurement_target"):
+	if not _configured:
 		return {"ok": false, "code": "era_procurement_unavailable"}
 	return _world_ext.set_era_procurement_target(country_handle, active,
 		good_indices, required_quantities, effective_day, sequence)
@@ -862,30 +855,28 @@ func set_era_procurement_target(country_handle: int, active: bool,
 
 ## §2.4 快照：policy/预算分配/时代收购进度/trade_orders_total。
 func country_procurement_snapshot(country_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("country_procurement_snapshot"):
+	if not _configured:
 		return {"ok": false, "code": "procurement_snapshot_unavailable"}
 	return _world_ext.country_procurement_snapshot(country_handle)
 
 
 func family_expeditions(country_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_expeditions"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	return _world_ext.get_family_expeditions(country_handle, offset, limit)
 
 
 func family_expedition_snapshot(country_handle: int,
 		expedition_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method(
-			"get_family_expedition_snapshot"):
+	if not _configured:
 		return {"ok": false, "code": "family_colonization_unavailable"}
 	return _world_ext.get_family_expedition_snapshot(country_handle,
 		expedition_handle)
 
 
 func dispatch_family_colonization_receipts(country_handle: int) -> void:
-	if not _configured or country_handle == 0 or not _world_ext.has_method(
-			"get_family_colonization_receipts"):
+	if not _configured or country_handle == 0:
 		return
 	var cursor := int(_colonization_receipt_cursors.get(country_handle, 0))
 	var page: Dictionary = _world_ext.get_family_colonization_receipts(
@@ -942,7 +933,7 @@ static func _construction_result_message(code: String) -> String:
 
 
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_cell_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "family_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_cell_snapshot(
 		cell_idx, offset, limit)
@@ -952,7 +943,7 @@ func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Di
 
 
 func family_snapshot(family_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "family_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_snapshot(family_handle)
 	if not bool(snapshot.get("ok", false)):
@@ -1067,7 +1058,7 @@ func _attach_family_display_names(snapshot: Dictionary) -> void:
 
 
 func get_family_traits(family_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_traits"):
+	if not _configured:
 		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_traits(family_handle)
 	if not bool(snapshot.get("ok", false)):
@@ -1125,7 +1116,7 @@ func get_family_traits(family_handle: int) -> Dictionary:
 
 
 func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_branches"):
+	if not _configured:
 		return {"ok": false, "reason": "family_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_branches(family_handle, offset, limit)
 	if not bool(snapshot.get("ok", false)):
@@ -1140,7 +1131,7 @@ func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Di
 
 
 func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_branch_effects"):
+	if not _configured:
 		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_branch_effects(
 		family_handle, cell_idx)
@@ -1176,7 +1167,7 @@ func queue_family_trait_mutation(family_handle: int, operation: Variant,
 		trait_key: StringName, strength_q16: int = 65536,
 		effective_day: int = 0, priority: int = 100,
 		sequence: int = -1) -> int:
-	if not _configured or not _world_ext.has_method("submit_family_trait_commands"):
+	if not _configured:
 		return 0
 	var opcode: int = int(operation) if typeof(operation) == TYPE_INT else {
 		"grant": 1, "remove": 2, "set_strength": 3,
@@ -1200,7 +1191,7 @@ func queue_family_trait_mutation(family_handle: int, operation: Variant,
 
 ## Pending 1-of-3 family founding offers with player-facing card copy.
 func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_founding_offers"):
+	if not _configured:
 		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
 	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
 	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
@@ -1227,7 +1218,7 @@ func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
 
 func submit_family_founding_choice(offer_id: int, generation: int,
 		choice_index: int, effective_day: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("submit_family_founding_choice"):
+	if not _configured:
 		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
 	_family_founding_sequence += 1
 	return _world_ext.submit_family_founding_choice(offer_id, generation,
@@ -1383,7 +1374,7 @@ func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
 
 
 func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_industries"):
+	if not _configured:
 		return {"ok": false, "reason": "family_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_family_industries(
 		family_handle, offset, limit)
@@ -1402,7 +1393,7 @@ func family_industries(family_handle: int, offset: int = 0, limit: int = 64) -> 
 
 func family_notable_people(family_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_family_notable_people"):
+	if not _configured:
 		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
 	var page: Dictionary = _world_ext.get_family_notable_people(
 		family_handle, offset, limit)
@@ -1414,7 +1405,7 @@ func family_notable_people(family_handle: int, offset: int = 0,
 
 
 func notable_person_snapshot(person_handle: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_notable_person_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
 	var snapshot: Dictionary = _world_ext.get_notable_person_snapshot(person_handle)
 	if not bool(snapshot.get("ok", false)):
@@ -1444,7 +1435,7 @@ func notable_person_snapshot(person_handle: int) -> Dictionary:
 
 func notable_person_needs(person_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_notable_person_needs"):
+	if not _configured:
 		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
 	var page: Dictionary = _world_ext.get_notable_person_needs(
 		person_handle, offset, limit)
@@ -1467,7 +1458,7 @@ func notable_person_needs(person_handle: int, offset: int = 0,
 
 func building_notable_people(building_handle: int, offset: int = 0,
 		limit: int = 64) -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_building_notable_people"):
+	if not _configured:
 		return {"ok": false, "reason": "notable_person_runtime_unavailable"}
 	var page: Dictionary = _world_ext.get_building_notable_people(
 		building_handle, offset, limit)
@@ -1640,7 +1631,7 @@ func report() -> Dictionary:
 ## This is a committed read and is intentionally separate from the full economy
 ## diagnostic report, which can contain large transient counters.
 func country_class_opinion_snapshot() -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_country_class_opinion_snapshot"):
+	if not _configured:
 		return {"ok": false, "reason": "country class opinion snapshot unavailable"}
 	return _world_ext.get_country_class_opinion_snapshot()
 
@@ -1992,9 +1983,6 @@ func restore_ecp2(bytes: PackedByteArray) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "not configured",
 			"restore_rejected_reason": "not configured"}
-	if not _world_ext.has_method("restore_economy_ecp2"):
-		return {"ok": false, "reason": "economy_ecp2_api_unavailable",
-			"restore_rejected_reason": "economy_ecp2_api_unavailable"}
 	var result: Dictionary = _world_ext.restore_economy_ecp2(bytes)
 	if not bool(result.get("ok", false)) and not result.has("restore_rejected_reason"):
 		result["restore_rejected_reason"] = String(result.get("reason", ""))
@@ -2004,36 +1992,33 @@ func restore_ecp2(bytes: PackedByteArray) -> Dictionary:
 func capture_ecp2(flags: int = 0) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "not configured"}
-	if not _world_ext.has_method("capture_economy_ecp2"):
-		return {"ok": false, "reason": "economy_ecp2_api_unavailable"}
 	return _world_ext.capture_economy_ecp2(flags)
 
 
 func restore_rejected_reason() -> String:
-	if not _configured or not _world_ext.has_method(
-			"get_economy_restore_rejected_reason"):
+	if not _configured:
 		return ""
 	return String(_world_ext.get_economy_restore_rejected_reason())
 
 
 func event_schema() -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_economy_event_schema"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event API unavailable"}
 	return _world_ext.get_economy_event_schema()
 
 func set_trace_cells(cells: PackedInt32Array) -> Dictionary:
-	if not _configured or not _world_ext.has_method("set_economy_trace_filter"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event API unavailable"}
 	return _world_ext.set_economy_trace_filter({"cells": cells})
 
 func set_inspector_trace_cell(cell_idx: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("set_economy_inspector_trace_cell"):
+	if not _configured:
 		return {"ok": false, "reason": "economy inspector trace API unavailable"}
 	return _world_ext.set_economy_inspector_trace_cell(cell_idx)
 
 func poll_events(consumer_id: StringName, max_events: int = -1,
 		kind: int = 0, cell: int = -1, after_event_id: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method("poll_economy_events"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event API unavailable", "count": 0}
 	var opts := {
 		"consumer_id": consumer_id,
@@ -2046,12 +2031,12 @@ func poll_events(consumer_id: StringName, max_events: int = -1,
 	return _world_ext.poll_economy_events(opts)
 
 func ack_events(consumer_id: StringName, up_to_event_id: int) -> Dictionary:
-	if not _configured or not _world_ext.has_method("ack_economy_events"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event API unavailable"}
 	return _world_ext.ack_economy_events(consumer_id, up_to_event_id)
 
 func trace_report() -> Dictionary:
-	if not _configured or not _world_ext.has_method("get_economy_trace_report"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event API unavailable"}
 	return _world_ext.get_economy_trace_report()
 
@@ -2085,19 +2070,19 @@ func dispatch_committed_events(meta: Dictionary) -> Dictionary:
 	}
 
 func begin_event_archive(chunk_bytes: int = -1) -> Dictionary:
-	if not _configured or not _world_ext.has_method("begin_economy_event_archive"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event archive API unavailable"}
 	return _world_ext.begin_economy_event_archive(
 		_profile.save_chunk_bytes if chunk_bytes < 0 else chunk_bytes)
 
 func read_event_archive_chunk(max_bytes: int = -1) -> PackedByteArray:
-	if not _configured or not _world_ext.has_method("read_economy_event_archive_chunk"):
+	if not _configured:
 		return PackedByteArray()
 	return _world_ext.read_economy_event_archive_chunk(
 		_profile.save_chunk_bytes if max_bytes < 0 else max_bytes)
 
 func end_event_archive() -> Dictionary:
-	if not _configured or not _world_ext.has_method("end_economy_event_archive"):
+	if not _configured:
 		return {"ok": false, "reason": "economy event archive API unavailable"}
 	return _world_ext.end_economy_event_archive()
 

@@ -108,11 +108,10 @@ static func debug_sea_ice_probe(_world: WorldData, _map: MapData, cell) -> Dicti
 		var iwlut_render: PackedByteArray = MapData.is_water_render_lut()
 		if terrain_via_soa < iwlut_render.size():
 			iw_via_render_lut = int(iwlut_render[terrain_via_soa])
-	if ext != null and ext.has_method(&"read_f32"):
+	if ext != null:
 		# component_id 反查 cell_sea_ice_frac slot
 		var sif_cid: int = -1
-		if ext.has_method(&"component_id"):
-			sif_cid = int(ext.call(&"component_id", &"cell_sea_ice_frac"))
+		sif_cid = int(ext.call(&"component_id", &"cell_sea_ice_frac"))
 		if sif_cid >= 0 and "index" in cell:
 			sif_via_ext = float(ext.call(&"read_f32", sif_cid, int(cell.index)))
 	# RGBA 全字节打印：raw_r/g/b 应是 q01(temp)/q01(moist)/q01(snow)

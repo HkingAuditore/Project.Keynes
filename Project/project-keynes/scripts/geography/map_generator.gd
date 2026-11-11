@@ -1319,7 +1319,7 @@ var _mapgen_started_usec: int = 0
 # generate() 当前所处阶段。被新一轮 generate() 取代时（_loading_epoch 变化），
 # 失败记录要说明"中止在哪一步"，否则只能看到一句无信息的 abort。
 var _mapgen_stage: String = "preparing"
-# 生成必需的原生方法：缺任意一个都必然失败，preflight 会点名。
+# 生成诊断列出的必需方法；完整接口由 NativeWorld.create() 统一核验。
 const MAPGEN_REQUIRED_NATIVE_METHODS := [
 	"run_native_world_generate_full_pass",
 	"run_native_world_generate_base_pass",
@@ -1802,7 +1802,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_economy_daily_job = null
 	_country_facade = null
 	_country_ai_facade = null
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("set_country_ai_mode"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.set_country_ai_mode("OFF")
 	_country_daily_job = null
 	_modifier_facade = null
@@ -1813,9 +1813,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_trigger_daily_job = null
 	_ideology_facade = null
 	_ideology_daily_job = null
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_modifiers") \
-			or not _data_core_world_ext.has_method("configure_country") \
-			or not _data_core_world_ext.has_method("configure_economy"):
+	if _data_core_world_ext == null:
 		# No large GDScript fallback: an unavailable native authority leaves the
 		# economy explicitly disabled while environmental simulation continues.
 		print("[economy] native DCWorldExt economy API unavailable; economy disabled")
@@ -1839,7 +1837,7 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	var modifier_events_callback := Callable(self, "_on_modifier_events_available")
 	if not _modifier_facade.modifier_events_available.is_connected(modifier_events_callback):
 		_modifier_facade.modifier_events_available.connect(modifier_events_callback)
-	if _data_core_world_ext.has_method("configure_triggers") and _gameplay_event_bus != null:
+	if true and _gameplay_event_bus != null:
 		_trigger_facade = TriggerFacadeScript.new()
 		await _yield_generation_frame()
 		_loading_profile_step("_trigger_facade.configure(")
@@ -1896,18 +1894,17 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] configure failed: %s" % String(
 			economy_configured.get("reason", "unknown")))
 		return
-	if _data_core_world_ext.has_method("configure_ideologies"):
-		var ideology_facade := IdeologyFacadeScript.new()
-		await _yield_generation_frame()
-		_loading_profile_step("ideology_facade.configure(")
-		var ideology_configured: Dictionary = ideology_facade.configure(
-			_data_core_world_ext, _country_facade.native_catalog(), null,
-			_economy_facade.native_catalog(), seed_value)
-		if bool(ideology_configured.get("ok", false)):
-			_ideology_facade = ideology_facade
-		else:
-			push_error("[ideology] configure failed: %s" % String(
-				ideology_configured.get("reason", "unknown")))
+	var ideology_facade := IdeologyFacadeScript.new()
+	await _yield_generation_frame()
+	_loading_profile_step("ideology_facade.configure(")
+	var ideology_configured: Dictionary = ideology_facade.configure(
+		_data_core_world_ext, _country_facade.native_catalog(), null,
+		_economy_facade.native_catalog(), seed_value)
+	if bool(ideology_configured.get("ok", false)):
+		_ideology_facade = ideology_facade
+	else:
+		push_error("[ideology] configure failed: %s" % String(
+			ideology_configured.get("reason", "unknown")))
 	if not _gameplay_start_context.is_empty():
 		await _yield_generation_frame()
 		_loading_profile_step("country_ai_init")
@@ -2061,8 +2058,6 @@ func _capture_economy_trade_topology(map: MapData) -> Dictionary:
 	var trade_runtime_mode := String(economy_config_report.get("trade_runtime_mode", "OFF"))
 	if trade_runtime_mode == "OFF":
 		return {"ok": true}
-	if not _data_core_world_ext.has_method("capture_economy_trade_topology"):
-		return {"ok": false, "reason": "economy_trade_topology_api_unavailable"}
 	var trade_topology: Dictionary = _data_core_world_ext.capture_economy_trade_topology(
 		map.neighbor_indices_packed(),
 		map.base_terrain_arr,
@@ -2139,9 +2134,6 @@ func _configure_military_runtime(map: MapData, cfg: MapConfig, seed_value: int) 
 		return {"ok": false, "reason": "military_world_unavailable"}
 	if _country_facade == null or _economy_facade == null:
 		return {"ok": false, "reason": "military_requires_country_and_economy"}
-	if not _data_core_world_ext.has_method("configure_military"):
-		print("[military] DCWorldExt military API unavailable; military runtime disabled")
-		return {"ok": false, "reason": "military_api_unavailable"}
 	var technology_catalog: Dictionary = {}
 	if _country_facade != null and _country_facade.has_method("native_catalog"):
 		technology_catalog = _country_facade.native_catalog()
@@ -2294,7 +2286,7 @@ func get_country_ai_facade():
 
 func _configure_country_ai(map, seed_value: int, player_handles: PackedInt64Array) -> void:
 	_country_ai_facade = null
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_country_ai"):
+	if _data_core_world_ext == null:
 		return
 	var facade := CountryAiFacadeScript.new()
 	var configured: Dictionary = facade.configure(_data_core_world_ext, seed_value, map, player_handles)
@@ -2363,8 +2355,7 @@ func get_economy_perf_report() -> Dictionary:
 	# has no report to offer (it is intentionally policy-gated). Prefer the
 	# graph's compact native result, while retaining the legacy report for OFF /
 	# SHADOW and older DLLs that do not expose the graph accessor.
-	if _runtime_graph_active and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("get_runtime_graph_last_economy_report"):
+	if _runtime_graph_active and _data_core_world_ext is DCWorldExt:
 		var graph_report: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
 		if not graph_report.is_empty():
 			return graph_report
@@ -2374,7 +2365,7 @@ func get_economy_perf_report() -> Dictionary:
 
 
 func get_runtime_perf_snapshot(detail_level: int = 0) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_perf_snapshot"):
+	if _data_core_world_ext == null:
 		return {}
 	var snapshot: Dictionary = _data_core_world_ext.get_runtime_perf_snapshot(detail_level)
 	snapshot["country_territory_sync_ms"] = _runtime_graph_country_territory_sync_ms
@@ -2398,19 +2389,18 @@ func runtime_graph_active() -> bool:
 func set_runtime_interactive(interactive: bool) -> void:
 	# QoS is a native executor hint only. It never changes simulation order or
 	# authority; the next native group observes the reduced permit count.
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("set_runtime_qos"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.set_runtime_qos(interactive)
 
 
 func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"set_runtime_qos_threaded"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.set_runtime_qos_threaded(interactive)
 
 
 func get_runtime_thread_report() -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_thread_report"):
+	if _data_core_world_ext == null:
 		return {}
 	return _data_core_world_ext.get_runtime_thread_report()
 
@@ -2445,8 +2435,7 @@ func apply_runtime_ideology_snapshot(after_generation: int) -> Dictionary:
 ## so the host pumps the sliced instance refresh itself. One call = at most one
 ## country budget; `done == false` means "call again".
 func step_ideology_instance_refresh(day_index: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"step_ideology_instance_refresh"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.step_ideology_instance_refresh(day_index)
 
@@ -2464,8 +2453,7 @@ func step_ideology_instance_refresh(day_index: int) -> Dictionary:
 ## `economy_day_inflight` means the boundary was busy and the call should be retried on a
 ## later tick -- normal contention, not a failure.
 func step_ideology_derived_rebuild(day_index: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"step_ideology_derived_rebuild"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.step_ideology_derived_rebuild(day_index)
 
@@ -2479,42 +2467,40 @@ func apply_runtime_effect_snapshot(after_generation: int) -> Dictionary:
 
 
 func _forward_runtime_snapshot_apply(method: StringName, after_generation: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(method):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.call(method, after_generation)
 
 
 func record_runtime_visual_timings(ui_input_to_feedback_ms: float,
 		visual_apply_ms: float, gpu_upload_ms: float) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"record_runtime_visual_timings"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.record_runtime_visual_timings(
 		ui_input_to_feedback_ms, visual_apply_ms, gpu_upload_ms)
 
 
 func start_runtime_worker(config: Dictionary) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("start_runtime_worker"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.start_runtime_worker(config)
 
 
 func poll_runtime_events_snapshot(after_generation: int = 0) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"poll_runtime_events_snapshot"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "available": false, "fallback": true,
 			"reason": "runtime_events_snapshot_api_missing"}
 	return _data_core_world_ext.poll_runtime_events_snapshot(after_generation)
 
 
 func set_runtime_clock_threaded(paused: bool, speed_days_per_second: float) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("set_runtime_clock"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.set_runtime_clock(paused, speed_days_per_second)
 
 
 func capture_runtime_inputs(inputs: Dictionary) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.capture_runtime_inputs(inputs)
 
@@ -2525,9 +2511,6 @@ func capture_runtime_inputs(inputs: Dictionary) -> Dictionary:
 func capture_country_worker_inputs() -> Dictionary:
 	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
-	if not _data_core_world_ext.has_method("capture_country_runtime_snapshot") \
-			or not _data_core_world_ext.has_method("capture_country_pod_catalog"):
-		return {"ok": false, "code": "country_worker_capture_api_missing"}
 	if _country_facade == null or not _country_facade.is_configured():
 		return {"ok": false, "code": "country_runtime_unavailable"}
 	var catalog: Dictionary = _data_core_world_ext.capture_country_pod_catalog()
@@ -2547,16 +2530,14 @@ func capture_country_worker_inputs() -> Dictionary:
 ## applies the returned sparse territory patch; this wrapper deliberately does
 ## not expose the worker store or retain references to native vectors.
 func get_country_worker_read_view(after_generation: int = 0) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"get_country_worker_read_view"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "country_worker_read_view_api_missing"}
 	return _data_core_world_ext.get_country_worker_read_view(maxi(after_generation, 0))
 
 
 func service_country_worker_peer_adapter(max_intents: int = 64,
 		shadow_replay: bool = true) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"service_country_worker_peer_adapter"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "country_worker_adapter_api_missing"}
 	return _data_core_world_ext.service_country_worker_peer_adapter(
 		clampi(max_intents, 1, 4096), shadow_replay)
@@ -2568,22 +2549,19 @@ func service_country_worker_peer_adapter(max_intents: int = 64,
 ## later K2-B continuation and must use this queue rather than a direct store
 ## call when Country eventually becomes ACTIVE.
 func get_country_economy_asset_protocol_status() -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"get_country_economy_asset_protocol_status"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
 	return _data_core_world_ext.get_country_economy_asset_protocol_status()
 
 
 func poll_country_economy_asset_request() -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"poll_country_economy_asset_request"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
 	return _data_core_world_ext.poll_country_economy_asset_request()
 
 
 func submit_country_economy_asset_result(result: Dictionary) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"submit_country_economy_asset_result"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
 	return _data_core_world_ext.submit_country_economy_asset_result(result)
 
@@ -2758,7 +2736,7 @@ func _runtime_environment_publish_allowed(callsite: int, day: int) -> bool:
 ## reference is retained by the worker.
 func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 		callsite: int = 0) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
+	if _data_core_world_ext == null:
 		return _runtime_climate_failure("runtime_worker_api_missing", "runtime worker input API is unavailable", day)
 	var map: MapData = _sus_map
 	if map == null:
@@ -2805,8 +2783,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 	# Hoisted: the same report also says whether Climate is worker-authoritative,
 	# which decides whether this capture has to carry the per-stage knobs below.
 	var thread_report: Dictionary = {}
-	if _data_core_world_ext != null and _data_core_world_ext.has_method(
-			"get_runtime_thread_report"):
+	if _data_core_world_ext != null:
 		thread_report = get_runtime_thread_report()
 		# The thread report names this key simulation_environment_generation.
 		# Reading the bare name always returned 0, so the counter never synced
@@ -3030,8 +3007,7 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0,
 func _collect_runtime_climate_parity_fields(map: MapData) -> Dictionary:
 	if map == null:
 		return {"ok": false, "code": "climate_parity_reference_input_invalid"}
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"get_runtime_climate_parity_fields"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "climate_parity_field_table_missing"}
 	var fields := {}
 	fields["cell_count"] = int(map.cell_count())
@@ -3145,8 +3121,7 @@ func _publish_runtime_climate_reference(day: int, map: MapData = null) -> Dictio
 	if not bool(fields.get("ok", false)):
 		var field_code := String(fields.get("code", "climate_parity_fields_unavailable"))
 		return _runtime_climate_failure(field_code, field_code, day)
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"publish_runtime_climate_reference_state"):
+	if _data_core_world_ext == null:
 		return _runtime_climate_failure("runtime_worker_api_missing",
 			"runtime climate reference API is unavailable", day)
 	# Publish state and hash in one call: the hash is derived from the state on
@@ -3238,34 +3213,33 @@ func runtime_climate_trace_report() -> Dictionary:
 
 
 func submit_runtime_command(command: Dictionary) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("submit_runtime_command"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.submit_runtime_command(command)
 
 
 func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("poll_runtime_commit"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.poll_runtime_commit(after_generation)
 
 
 func flush_runtime_economy_resource_writeback() -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"flush_runtime_economy_resource_writeback"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.flush_runtime_economy_resource_writeback()
 
 
 func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
 		max_items: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("consume_runtime_visual_patch"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.consume_runtime_visual_patch(
 		generation, family, cursor, max_items)
 
 
 func request_runtime_save(request_id: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("request_runtime_save"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	# P1：存盘准入要求 ring 排空（`!has_pending_climate_input()`），而预发布会让
 	# ring 长期非空。先让 host 把 K 降到 0、停掉新帧；环里的未来帧由 worker 侧
@@ -3275,20 +3249,20 @@ func request_runtime_save(request_id: int) -> Dictionary:
 
 
 func poll_runtime_save(request_id: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("poll_runtime_save"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.poll_runtime_save(request_id)
 
 
 func restore_runtime_bundle(bytes: PackedByteArray,
 		external_ecp2: PackedByteArray = PackedByteArray()) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("restore_runtime_bundle"):
+	if _data_core_world_ext == null:
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.restore_runtime_bundle(bytes, external_ecp2)
 
 
 func request_runtime_stop() -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("request_runtime_stop"):
+	if _data_core_world_ext == null:
 		return {"ok": true, "state": "STOPPED"}
 	return _data_core_world_ext.request_runtime_stop()
 
@@ -3323,14 +3297,13 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 		return {"ok": false, "reason": "economy_restore_already_prepared"}
 	var configured := _configure_economy_runtime(_sus_map, _save_restore_seed)
 	if bool(configured.get("ok", false)):
-		if _data_core_world_ext.has_method("configure_ideologies"):
-			var ideology_facade := IdeologyFacadeScript.new()
-			var ideology_configured: Dictionary = ideology_facade.configure(
-				_data_core_world_ext, _country_facade.native_catalog(), null,
-				_economy_facade.native_catalog(), _save_restore_seed)
-			if not bool(ideology_configured.get("ok", false)):
-				return ideology_configured
-			_ideology_facade = ideology_facade
+		var ideology_facade := IdeologyFacadeScript.new()
+		var ideology_configured: Dictionary = ideology_facade.configure(
+			_data_core_world_ext, _country_facade.native_catalog(), null,
+			_economy_facade.native_catalog(), _save_restore_seed)
+		if not bool(ideology_configured.get("ok", false)):
+			return ideology_configured
+		_ideology_facade = ideology_facade
 		# Player handles arrive with PKSV pkai (or the legacy fallback); until
 		# then the native AI stays unarmed.
 		_configure_country_ai(_sus_map, _save_restore_seed, PackedInt64Array())
@@ -3556,7 +3529,7 @@ func _ensure_continuation_perf_pending() -> void:
 		"last_substage": "",
 		"last_path": "",
 		"done": false,
-		
+
 		"stage_counts": {},
 		"stage_wall_ms": {},
 		"stage_max_slice_ms": {},
@@ -3702,7 +3675,6 @@ func _continue_economy_inflight_impl(day_index: int) -> void:
 	if _sus == null:
 		return
 	if _runtime_graph_active and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("advance_runtime_pulse") \
 			and not native_daily_round_active() and not bio_occupancy_round_active():
 		_advance_runtime_graph_pulse(day_index)
 		return
@@ -3890,8 +3862,7 @@ func _continue_economy_inflight_impl(day_index: int) -> void:
 
 
 func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"advance_runtime_pulse"):
+	if _data_core_world_ext == null:
 		return {}
 	var speed_graph := float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
 	var season_graph := float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
@@ -3917,17 +3888,16 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 		# graph's hard-pending status is the conservative compatibility fallback: it
 		# keeps the ideology barrier armed until the extension is rebuilt.
 		var ideology_pending := barrier_armed
-		if _data_core_world_ext.has_method("ideology_needs_daily_continuation"):
-			ideology_pending = bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index))
+		ideology_pending = bool(_data_core_world_ext.ideology_needs_daily_continuation(day_index))
 		_world_clock_ref.request_simulation_backpressure(
 			&"ideology_day_barrier", ideology_pending)
-	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
+	if token_dirty != 0:
 		_data_core_world_ext.flush_runtime_visuals(token_dirty)
 	# Country slice 已在 pulse 内写入 native + MapData.country_slot_arr，但
 	# CountryDailySystem.dispatch_committed_events 被 graph 短路跳过；这里按
 	# generation watermark 补发，驱动 WorldRuntimeHost.refresh_country_visuals。
 	_dispatch_runtime_graph_country_committed()
-	if _data_core_world_ext.has_method("get_runtime_graph_last_economy_report"):
+	if _data_core_world_ext is DCWorldExt:
 		var economy_result: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
 		if bool(economy_result.get("fatal", false)):
 			_halt_on_economy_fatal(day_index, economy_result)
@@ -4017,8 +3987,7 @@ func _dispatch_runtime_graph_country_committed() -> void:
 	# refresh_country_visuals；若此时 country_slot_arr 仍是 CoW 旧镜像，
 	# 视野源集会缺新 CLAIM 格，邻格只被迷雾柔边照亮却保持未探索。
 	if territory_generation != _runtime_graph_last_country_territory_generation \
-			and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("sync_country_territory_to_map"):
+			and _data_core_world_ext != null :
 		var sync_started_us := Time.get_ticks_usec()
 		_data_core_world_ext.sync_country_territory_to_map()
 		_runtime_graph_country_territory_sync_ms = \
@@ -4062,8 +4031,7 @@ func _track_runtime_graph_stall(day_index: int, token_status: int) -> bool:
 
 func _log_stalled_runtime_graph(day: int) -> void:
 	var snapshot: Dictionary = {}
-	if _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("get_runtime_perf_snapshot"):
+	if _data_core_world_ext != null :
 		snapshot = _data_core_world_ext.get_runtime_perf_snapshot(1)
 	var pinned := PackedStringArray()
 	for key in ["country_pending", "trigger_pending", "ideology_pending",
@@ -4226,7 +4194,7 @@ func _log_stalled_runtime_graph_authority(day: int) -> void:
 
 
 func _native_daily_slice_available() -> bool:
-	return _data_core_world_ext != null and _data_core_world_ext.has_method("run_native_daily_slice")
+	return _data_core_world_ext != null
 
 
 func _native_daily_missing_slice_report() -> Dictionary:
@@ -4338,8 +4306,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 				_data_core_world_ext = ext_obj
 				# C++ _diag_logs_enabled 默认 true；创建/复用时同步 PKLog 状态，
 				# 避免 PKLog 默认关闭下原生 diag print 仍然刷屏。
-				if _data_core_world_ext.has_method("set_diag_logs_enabled"):
-					_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
+				_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
 				_loading_profile_step("native_world_bind")
 				var ext_bound: bool = bool(_data_core_world_ext.bind_map_data(map))
 				await _yield_generation_frame()
@@ -4356,7 +4323,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					# `_flush_slot_to_map` 末尾会 call("mark_dirty_all")，让 atlas pipeline
 					# 在下个 stride 通过 `read_and_clear_dirty_mask` 拿到信号。修复 wind_surface
 					# / pass_b / ocean_* 写 slot 后 atlas 不知道脏 → 视觉冻结。
-					if _data_core_world != null and _data_core_world_ext.has_method("bind_dirty_world"):
+					if _data_core_world != null:
 						_data_core_world_ext.bind_dirty_world(_data_core_world)
 					# Block B（master 手册 §4）：把 DCWorldExt 注入 MapBaker，
 					# 让 _PHYS_STAGE_WIND 等 C++ hook 在启用 use_gdext_wind_field 时使用。
@@ -4510,7 +4477,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_effect_facade = null
 	_effect_daily_job = null
 	_gameplay_effect_job = null
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("configure_effects"):
+	if _data_core_world_ext != null:
 		var effect_facade := EffectFacadeScript.new()
 		await _yield_generation_frame()
 		_loading_profile_step("effect_catalog")
@@ -4789,7 +4756,7 @@ func export_environment_runtime_state() -> Dictionary:
 	if rt == null or not rt.has_method("export_runtime_state"):
 		return {}
 	var state: Dictionary = rt.call("export_runtime_state")
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("capture_climate_modes_state"):
+	if _data_core_world_ext != null:
 		state["climate_modes"] = _data_core_world_ext.capture_climate_modes_state()
 	return state
 
@@ -4807,8 +4774,7 @@ func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 	if not bool(result.get("ok", false)):
 		return result
 	var climate_modes = state.get("climate_modes", null)
-	if climate_modes is Dictionary and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("restore_climate_modes_state"):
+	if climate_modes is Dictionary and _data_core_world_ext != null :
 		var climate_result: Dictionary = _data_core_world_ext.restore_climate_modes_state(climate_modes)
 		if not bool(climate_result.get("ok", false)):
 			return climate_result
@@ -4827,7 +4793,6 @@ func _hard_effect_ack_chain_due(day: int) -> bool:
 			bool(_modifier_facade.world_ext().modifier_should_run(day)):
 		return true
 	if _gameplay_effect_job != null and _effect_facade != null and \
-			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
 			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
 		return true
 	return false
@@ -4836,19 +4801,19 @@ func _hard_effect_ack_chain_due(day: int) -> bool:
 func _ack_native_effect_domain_bindings() -> void:
 	if _modifier_facade != null:
 		var modifier_ext: Object = _modifier_facade.world_ext()
-		if modifier_ext != null and modifier_ext.has_method("ack_effect_native_modifier"):
+		if modifier_ext != null:
 			modifier_ext.ack_effect_native_modifier()
 	if _country_facade != null:
 		var country_ext: Object = _country_facade.world_ext()
-		if country_ext != null and country_ext.has_method("ack_effect_native_country"):
+		if country_ext != null:
 			country_ext.ack_effect_native_country()
 	if _economy_facade != null:
 		var economy_ext: Object = _economy_facade.world_ext()
-		if economy_ext != null and economy_ext.has_method("ack_effect_native_economy"):
+		if economy_ext != null:
 			economy_ext.ack_effect_native_economy()
 	if _effect_facade != null:
 		var effect_ext: Object = _effect_facade.world_ext()
-		if effect_ext != null and effect_ext.has_method("ack_effect_native_gameplay"):
+		if effect_ext != null:
 			effect_ext.ack_effect_native_gameplay()
 
 
@@ -4871,7 +4836,6 @@ func _log_stuck_day_barrier(day: int, economy_inflight: bool) -> void:
 			and bool(_modifier_facade.world_ext().modifier_should_run(day)):
 		hard_flags.append("modifier")
 	if _gameplay_effect_job != null and _effect_facade != null \
-			and _effect_facade.world_ext().has_method("gameplay_effect_should_run") \
 			and bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
 		hard_flags.append("gameplay")
 	print("[sim/barrier] day=%d pulse=%d economy_inflight=%s hard_ack=%s extra=%s"
@@ -4901,7 +4865,6 @@ func _drain_native_effect_ack_chain(ctx: SusTickContext) -> int:
 		_sus.continue_system(&"modifier_daily", ctx)
 		drained += 1
 	if _gameplay_effect_job != null and _effect_facade != null and \
-			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
 			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
 		_sus.continue_system(&"gameplay_effect", ctx)
 		drained += 1
@@ -4927,8 +4890,7 @@ func advance_save_boundary() -> void:
 	#   * runtime graph 拥有 country -> 直接 pulse 一次（与正常帧同一条链路）；
 	#   * GDScript country_daily 拥有 country -> continue_system 切片。
 	# 两者都幂等：country 已经空闲时循环一次都不会进。
-	if _runtime_graph_active and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("advance_runtime_pulse"):
+	if _runtime_graph_active and _data_core_world_ext != null :
 		if not native_daily_round_active() and not bio_occupancy_round_active():
 			_advance_runtime_graph_pulse(day)
 	elif _country_daily_job != null and _country_facade != null \
@@ -5079,9 +5041,7 @@ func _native_mode_is_shadow(cp, field_name: String) -> bool:
 # runtime baseline (ocean heat transport) must read the live slot instead.
 func _native_daily_live_f32(slot_name: String, fallback: PackedFloat32Array,
 		n: int) -> PackedFloat32Array:
-	if _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("component_id") \
-			or not _data_core_world_ext.has_method("snapshot_f32"):
+	if _data_core_world_ext == null:
 		return fallback
 	var sid: int = int(_data_core_world_ext.component_id(slot_name))
 	if sid < 0:
@@ -5092,9 +5052,7 @@ func _native_daily_live_f32(slot_name: String, fallback: PackedFloat32Array,
 
 func _native_daily_live_u8(slot_name: String, fallback: PackedByteArray,
 		n: int) -> PackedByteArray:
-	if _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("component_id") \
-			or not _data_core_world_ext.has_method("snapshot_u8"):
+	if _data_core_world_ext == null:
 		return fallback
 	var sid: int = int(_data_core_world_ext.component_id(slot_name))
 	if sid < 0:
@@ -6157,7 +6115,7 @@ func _build_native_daily_runtime_hydrology_knobs(map: MapData, cp_now,
 	if cp_now.get("runtime_hydrology_enabled") == null \
 			or not bool(cp_now.runtime_hydrology_enabled):
 		return {}
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_runtime_hydrology_pass"):
+	if _data_core_world_ext == null:
 		return {}
 	return {
 		"n_cells": map.cell_count(),
@@ -7043,8 +7001,7 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 			if cp_now.get("native_daily_finalizer_native_publish_enabled") != null else false
 	var use_native_finalizer: bool = native_daily_finalizer_native_enabled \
 			and not heavy_diag and not mirror_temperature_cells and not mirror_tta_cells \
-			and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("run_native_daily_finalizer")
+			and _data_core_world_ext != null
 	if use_native_finalizer:
 		var fr: Dictionary = _data_core_world_ext.run_native_daily_finalizer({
 			"cell_count": n,
@@ -7204,7 +7161,7 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		diag["finalizer_dense_components"] = PackedStringArray()
 		diag["finalizer_sparse_components"] = PackedStringArray()
 		var t_native_mark_us: int = Time.get_ticks_usec()
-		if _data_core_world_ext != null and _data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
+		if _data_core_world_ext != null:
 			_data_core_world_ext.flush_pending_mark_dirty_all()
 		diag["finalizer_native_dirty_mark_ms"] = float(Time.get_ticks_usec() - t_native_mark_us) / 1000.0
 	elif _data_core_world != null:
@@ -7379,9 +7336,7 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 	var moisture_committed: bool = false
 	var moisture_commit_path: String = "unavailable"
 	var moisture_commit_slot_size: int = 0
-	if _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("component_id") \
-			and _data_core_world_ext.has_method("snapshot_f32"):
+	if _data_core_world_ext != null:
 		var moisture_sid: int = int(_data_core_world_ext.component_id("cell_moisture"))
 		if moisture_sid >= 0:
 			var moisture_snapshot: PackedFloat32Array = _data_core_world_ext.snapshot_f32(moisture_sid)
@@ -7397,12 +7352,8 @@ func _native_daily_apply_finalizer(map: MapData) -> Dictionary:
 		moisture_committed = true
 		moisture_commit_path = "bound_map_flush_fallback"
 	# Release the visual snapshot transaction only after the completed values are visible.
-	if _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("complete_native_daily_visual_commit"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.complete_native_daily_visual_commit()
-	elif _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("complete_native_daily_moisture_commit"):
-		_data_core_world_ext.complete_native_daily_moisture_commit()
 	diag["moisture_committed"] = moisture_committed
 	diag["moisture_commit_path"] = moisture_commit_path
 	diag["moisture_commit_slot_size"] = moisture_commit_slot_size
@@ -7450,7 +7401,7 @@ func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: Wo
 	var cp := _c()
 	if not _native_mode_is_shadow(cp, "native_daily_sim_mode"):
 		return
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
+	if _data_core_world_ext == null:
 		_native_daily_last_result = { "rc": -1, "mode": "shadow_probe", "fail_stage": "gdext_unavailable" }
 		return
 	# SHADOW probe 同样是 readiness 探测，强制纳入 weather/stage_b 探完整图。
@@ -7476,7 +7427,7 @@ func _run_native_daily_shadow_probe(ctx: SusTickContext, map: MapData, world: Wo
 
 func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float) -> void:
 	_native_daily_configured = false
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("configure_native_world"):
+	if _data_core_world_ext == null:
 		return
 	var cp := _c()
 	var knobs: Dictionary = {
@@ -7541,15 +7492,14 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	_runtime_graph_last_country_territory_generation = -1
 	_runtime_graph_country_territory_sync_ms = 0.0
 	_runtime_graph_country_event_dispatch_ms = 0.0
-	if _data_core_world_ext.has_method("configure_runtime_graph"):
-		var graph_mode := int(cp.native_runtime_graph_mode) if cp != null and cp.get("native_runtime_graph_mode") != null else 0
-		var graph_rc := int(_data_core_world_ext.configure_runtime_graph({
-			"enabled": graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE,
-			"mode": graph_mode,
-			"day": int(_world_clock_ref.day_index()) if _world_clock_ref != null else 0,
-			"generation": 0,
-		}))
-		_runtime_graph_active = graph_rc == 0 and graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE
+	var graph_mode := int(cp.native_runtime_graph_mode) if cp != null and cp.get("native_runtime_graph_mode") != null else 0
+	var graph_rc := int(_data_core_world_ext.configure_runtime_graph({
+		"enabled": graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE,
+		"mode": graph_mode,
+		"day": int(_world_clock_ref.day_index()) if _world_clock_ref != null else 0,
+		"generation": 0,
+	}))
+	_runtime_graph_active = graph_rc == 0 and graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE
 	if OS.is_debug_build():
 		# wrap_period_x 回显：0 表示 climate/weather 平流内核退化为裸 cell_pos_x 差分，
 		# 东西接缝会重新出现方向恒定的风场/洋流经线伪影。
@@ -7587,9 +7537,6 @@ func _try_register_native_daily_sim_job(map: MapData, world: WorldData) -> bool:
 		return false
 	if not _native_daily_slice_available():
 		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_slice; falling back to legacy SUS jobs")
-		return false
-	if not _data_core_world_ext.has_method("run_native_daily_tick"):
-		push_warning("[native_daily] ACTIVE requested but gdext lacks run_native_daily_tick; falling back to legacy SUS jobs")
 		return false
 	var probe_ctx: SusTickContext = SusTickContext.make(0, 0, 0.0, 1.0, &"native_daily_probe")
 	# probe 是 readiness 探测（“weather 到期时能否跑”），强制纳入 weather/stage_b，
@@ -7851,8 +7798,7 @@ func _apply_vegetation_succession_candidates(map: MapData,
 			_data_core_world.mark_dirty_indexed(applied_indices)
 	# The native vegetation pass already owns DCWorldExt slots. The indexed
 	# DCWorld write above is the single retained mirror update.
-	if not sparse_visual_publish and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("write_u8_indexed"):
+	if not sparse_visual_publish and _data_core_world_ext != null :
 		var vegetation_ext_cid: int = _world_ext_u8_component_id(DCComponentIds.CELL_VEGETATION)
 		if vegetation_ext_cid >= 0:
 			_data_core_world_ext.write_u8_indexed(vegetation_ext_cid, applied_indices, applied_vegetation)
@@ -7910,7 +7856,6 @@ func _apply_native_daily_visual_intents(res: Dictionary, breakdown: Dictionary,
 
 	if _baker != null:
 		if _data_core_world_ext != null \
-				and _data_core_world_ext.has_method("consume_canal_visual_dirty_cells") \
 				and world != null and world.visual_tiles != null \
 				and world.visual_tiles.ready:
 			var canal_dirty: PackedInt32Array = \
@@ -7989,8 +7934,7 @@ func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Di
 	# This record is overwriting, not merging, so it must carry the authority
 	# state itself. Without it the key set by the schedule path disappears here
 	# and readers see a suppressed main thread as having resumed (or vice versa).
-	if _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("climate_main_thread_suppressed"):
+	if _data_core_world_ext != null :
 		diag["climate_authority_suppressed"] = \
 			_data_core_world_ext.climate_main_thread_suppressed()
 	_diagnostics_bus.record_climate_breakdown(diag)
@@ -8489,7 +8433,7 @@ func run_native_daily_slice_from_job(ctx: SusTickContext, _map: MapData, _world:
 
 
 func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_native_daily_tick"):
+	if _data_core_world_ext == null:
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
 	var wall_t0: int = Time.get_ticks_usec()
 	var bundle_t0: int = wall_t0
@@ -8554,8 +8498,6 @@ func run_native_daily_tick_from_job(ctx: SusTickContext, _map: MapData, _world: 
 func run_native_sim_tick_from_job(ctx: SusTickContext, _map: MapData, _world: WorldData) -> Dictionary:
 	if _data_core_world_ext == null:
 		return { "rc": -1, "fail_stage": "gdext_unavailable" }
-	if not _data_core_world_ext.has_method("run_native_sim_tick"):
-		return run_native_daily_tick_from_job(ctx, _map, _world)
 	var wall_t0: int = Time.get_ticks_usec()
 	var bundle_t0: int = wall_t0
 	if _map != null and _map.has_soa() and _map.has_method("soa_begin_climate_transaction"):
@@ -8744,8 +8686,7 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		fronts_diff = native_res.get("fronts_diff", {})
 	if weather_ran and _sus_map != null:
 		var cyclone_snapshot: Dictionary = {}
-		if _data_core_world_ext != null \
-				and _data_core_world_ext.has_method("get_active_cyclone_snapshot"):
+		if _data_core_world_ext != null :
 			cyclone_snapshot = _data_core_world_ext.get_active_cyclone_snapshot()
 		WeatherResearchSignalPublisherScript.publish(
 			_sus_map, _country_facade, _gameplay_event_bus, di, cyclone_snapshot)
@@ -9156,7 +9097,7 @@ func run_season_refresh_stage(map: MapData, world: WorldData, season_idx: int, s
 		var ext_v: String = "null" if _data_core_world_ext == null else "ok"
 		var method_v: String = "n/a"
 		if _data_core_world_ext != null:
-			method_v = str(_data_core_world_ext.has_method("run_season_refresh_stage"))
+			method_v = str(true)
 		print("[season_refresh] startup banner: ext=%s has_run_season_refresh_stage=%s"
 				% [ext_v, method_v])
 	# dots-total-cpp（2026-06-18）：stage 0–8 已在上方（season<=8）early-return 走
@@ -9233,8 +9174,7 @@ func run_season_refresh_stage_micro(map: MapData, _world: WorldData, season_idx:
 	# 这里沿用同 helper，stage_key 用 "stage1_micro" 区分主 switch 的 "stage1"。
 	# dots-flag-prune-pr1 round 2: use_gdext_season_refresh flag 已删除——恒走 ext +
 	# has_method 探测分支。
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_micro_pass"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage1_micro", "gdscript_fallback", "ext/method/map/cfg unavailable (no run_season_refresh_micro_pass)")
 		return out
 	if not map.has_indices():
@@ -9669,7 +9609,7 @@ func _wait_climate_authority_grant() -> Dictionary:
 				% _runtime_last_capture_day)
 			break
 		service_country_worker_peer_adapter(64, false)
-		if ext != null and ext.has_method("wait_climate_consumed"):
+		if ext != null:
 			ext.wait_climate_consumed(_runtime_input_generation, 10)
 		OS.delay_usec(200)
 		report = get_runtime_thread_report()
@@ -9677,7 +9617,7 @@ func _wait_climate_authority_grant() -> Dictionary:
 
 
 func season_refresh_defers_to_capture() -> bool:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_thread_report"):
+	if _data_core_world_ext == null:
 		return false
 	return bool(get_runtime_thread_report().get("climate_worker_authoritative", false))
 
@@ -9697,9 +9637,7 @@ func _drain_climate_writeback_for_season_refresh(thread_report: Dictionary = {},
 	var ext = _data_core_world_ext
 	if not allow_blocking:
 		return
-	if ext == null or _runtime_last_capture_day < 0 \
-			or not ext.has_method("apply_runtime_climate_writeback") \
-			or not ext.has_method("wait_climate_consumed"):
+	if ext == null or _runtime_last_capture_day < 0:
 		return
 	if bool(thread_report.get("native_daily_inline", false)):
 		return
@@ -9835,8 +9773,6 @@ func _season_log_path_once(stage_key: String, path: String, detail: String) -> v
 func _ensure_season_round_slots_fresh() -> void:
 	if _data_core_world_ext == null:
 		return
-	if not _data_core_world_ext.has_method("refresh_slots_from_map"):
-		return
 	if _season_round_slots_fresh:
 		_season_round_slots_skip_count += 1
 		return
@@ -9857,8 +9793,6 @@ func _ensure_season_round_slots_fresh() -> void:
 # 替换原 refresh_slots_from_map()。守门员逻辑与 season 版完全对称。
 func _ensure_climate_daily_round_slots_fresh() -> void:
 	if _data_core_world_ext == null:
-		return
-	if not _data_core_world_ext.has_method("refresh_slots_from_map"):
 		return
 	if _climate_daily_round_slots_fresh:
 		_climate_daily_round_slots_skip_count += 1
@@ -9906,8 +9840,7 @@ func _on_modifier_events_available(batch: Dictionary) -> void:
 
 
 func _prime_natural_resource_regen_factors(n_cells: int) -> Dictionary:
-	if n_cells <= 0 or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("get_natural_resource_regen_factors"):
+	if n_cells <= 0 or _data_core_world_ext == null :
 		return {"ok": false, "reason": "regen_factor_api_unavailable"}
 	_ensure_natural_resource_knobs()
 	var factor_started: int = Time.get_ticks_usec()
@@ -10418,8 +10351,6 @@ func _try_bootstrap_natural_resources_native(map_ref, cfg,
 		habitat_arr: PackedByteArray, estuary_strength_arr: PackedFloat32Array) -> bool:
 	if map_ref == null or _data_core_world_ext == null:
 		return false
-	if not _data_core_world_ext.has_method("run_resource_deposit_pass"):
-		return false
 	var n_cells: int = map_ref.cell_count()
 	if n_cells <= 0 or habitat_arr.size() < n_cells:
 		return false
@@ -10639,8 +10570,6 @@ func _boot_facade_disabled_for_ab() -> bool:
 func _bootstrap_world_facades(map_ref, cfg) -> bool:
 	if map_ref == null or _data_core_world_ext == null:
 		return false
-	if not _data_core_world_ext.has_method("run_boot_facade_pass"):
-		return false
 	if _boot_facade_disabled_for_ab():
 		return false
 	var n_cells: int = map_ref.cell_count()
@@ -10732,9 +10661,6 @@ func run_boot_facade_ab_probe(map_ref, cfg, fused_report: Dictionary = {}) -> Di
 	var out := {"ok": false, "reason": ""}
 	if map_ref == null or _data_core_world_ext == null:
 		out["reason"] = "native_world_unavailable"
-		return out
-	if not _data_core_world_ext.has_method("run_boot_facade_pass"):
-		out["reason"] = "missing_run_boot_facade_pass"
 		return out
 	var n_cells: int = map_ref.cell_count()
 	var deposit_knobs: Dictionary = _build_resource_deposit_knobs(map_ref, cfg)
@@ -11018,8 +10944,7 @@ func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> voi
 		if habitat_cid >= 0:
 			_data_core_world.write_u8_range(
 				habitat_cid, 0, map_ref.resource_habitat_mask_arr)
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
-			and _data_core_world_ext.has_method("write_u8_range"):
+	if _data_core_world_ext != null :
 		var habitat_cid_ext := int(_data_core_world_ext.component_id(&"cell_resource_habitat_mask"))
 		if habitat_cid_ext >= 0:
 			_data_core_world_ext.write_u8_range(
@@ -11034,8 +10959,7 @@ func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> voi
 			var cid := int(_data_core_world.component_id(profile.reserve_component))
 			if cid >= 0:
 				_data_core_world.write_f32_range(cid, 0, values)
-		if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
-				and _data_core_world_ext.has_method("write_f32_range"):
+		if _data_core_world_ext != null :
 			# Native slots use schema cpp_name, not the dotted GDScript name.
 			var cid_ext := int(_data_core_world_ext.component_id(
 				ResourceProfileRegistry.reserve_cpp_name(profile)))
@@ -11076,17 +11000,12 @@ func run_natural_resource_pass_native(
 			_natural_resource_pass_knobs["active_regen_factor_count"] = 0
 			_natural_resource_regen_factors_valid = true
 
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("run_natural_resource_pass"):
+	if _data_core_world_ext != null:
 		var refresh_ms: float = 0.0
 		var refresh_started: int = 0
-		if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
-			refresh_started = Time.get_ticks_usec()
-			_data_core_world_ext.refresh_slots_from_map_keys(_natural_resource_refresh_keys)
-			refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
-		elif _data_core_world_ext.has_method("refresh_slots_from_map"):
-			refresh_started = Time.get_ticks_usec()
-			_data_core_world_ext.refresh_slots_from_map()
-			refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
+		refresh_started = Time.get_ticks_usec()
+		_data_core_world_ext.refresh_slots_from_map_keys(_natural_resource_refresh_keys)
+		refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		_natural_resource_pass_knobs["n_cells"] = n_cells
 		_natural_resource_pass_knobs["dt_days"] = dt_days
 		if cell_indices.is_empty():
@@ -11129,7 +11048,7 @@ func run_natural_resource_pass_native(
 
 
 func economy_live_cells() -> PackedInt32Array:
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("get_economy_live_cells"):
+	if _data_core_world_ext != null:
 		return _data_core_world_ext.get_economy_live_cells()
 	return PackedInt32Array()
 
@@ -11424,8 +11343,7 @@ func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: i
 	if cp == null:
 		_season_log_path_once("stage8", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage8", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	_ensure_season_round_slots_fresh()
@@ -11462,8 +11380,7 @@ func _run_season_refresh_stage11_gdext(map: MapData, _world: WorldData, _season:
 	if cp == null:
 		_season_log_path_once("stage11", "gdscript_fallback", "cp null")
 		return false
-	if map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage11", "gdscript_fallback", "ext/method/map unavailable")
 		return false
 	var n_cells: int = map.cell_count()
@@ -11516,8 +11433,7 @@ func _run_season_refresh_stage0_gdext(map: MapData, _world: WorldData, season: i
 	if cp == null:
 		_season_log_path_once("stage0", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage0", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	_ensure_season_round_slots_fresh()
@@ -11709,7 +11625,7 @@ func _write_runtime_enum_axes_dense(map: MapData) -> int:
 
 
 func _world_ext_u8_component_id(gd_name: StringName) -> int:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("component_id"):
+	if _data_core_world_ext == null:
 		return -1
 	var cid_ext: int = int(_data_core_world_ext.component_id(gd_name))
 	if cid_ext < 0:
@@ -11780,7 +11696,7 @@ func _apply_sea_ice_terrain_flips_indexed(map: MapData, indices: PackedInt32Arra
 			diag["dc_written"] = true
 	if _data_core_world != null and _data_core_world.has_method("mark_dirty_indexed"):
 		_data_core_world.mark_dirty_indexed(apply_idx)
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("write_u8_indexed"):
+	if _data_core_world_ext != null:
 		var cid_terr_ext: int = _world_ext_u8_component_id(DCComponentIds.CELL_TERRAIN)
 		if cid_terr_ext >= 0:
 			_data_core_world_ext.write_u8_indexed(cid_terr_ext, apply_idx, apply_terrain)
@@ -11872,8 +11788,7 @@ func _run_season_refresh_stage1_gdext(map: MapData, _world: WorldData, season: i
 	if cp == null:
 		_season_log_path_once("stage1", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage1", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -11916,8 +11831,7 @@ func _run_season_refresh_stage2_gdext(map: MapData, _world: WorldData, season: i
 	if cp == null:
 		_season_log_path_once("stage2", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage2", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	var n_cells: int = map.cell_count()
@@ -11965,8 +11879,7 @@ func _run_season_refresh_stage3_gdext(map: MapData, _world: WorldData, _season: 
 	if cp == null:
 		_season_log_path_once("stage3", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage3", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	var n_cells: int = map.cell_count()
@@ -12003,8 +11916,7 @@ func _run_season_refresh_stage4_gdext(map: MapData, _world: WorldData, season: i
 	if cp == null:
 		_season_log_path_once("stage4", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage4", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -12056,8 +11968,7 @@ func _run_season_refresh_stage5_gdext(map: MapData, _world: WorldData, _season: 
 	if cp == null:
 		_season_log_path_once("stage5", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage5", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -12097,8 +12008,7 @@ func _run_season_refresh_stage6_gdext(map: MapData, _world: WorldData, _season: 
 	if cp == null:
 		_season_log_path_once("stage6", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage6", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -12138,8 +12048,7 @@ func _run_season_refresh_stage7_gdext(map: MapData, _world: WorldData, _season: 
 	if cp == null:
 		_season_log_path_once("stage7", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage7", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -12180,8 +12089,7 @@ func _run_season_refresh_swamp_gdext(map: MapData, _world: WorldData, season: in
 	if cp == null:
 		_season_log_path_once("stage_swamp", "gdscript_fallback", "cp null")
 		return false
-	if _last_cfg == null or map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
+	if _last_cfg == null or map == null or _data_core_world_ext == null :
 		_season_log_path_once("stage_swamp", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
 	if not map.has_indices():
@@ -12253,12 +12161,6 @@ func _run_season_refresh_swamp_gdext(map: MapData, _world: WorldData, season: in
 # 上层 caller（SUS Job / DCSystem）拿到 false 后回退到 12-stage scheduler。
 func season_round_b_plus_available() -> bool:
 	if _data_core_world_ext == null:
-		return false
-	if not _data_core_world_ext.has_method("start_season_round"):
-		return false
-	if not _data_core_world_ext.has_method("run_season_round_slice"):
-		return false
-	if not _data_core_world_ext.has_method("finish_season_round"):
 		return false
 	return true
 
@@ -12412,7 +12314,7 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 		out["done"] = true
 		_season_log_path_once("b_plus_slice", "gdscript_fallback", "no active handle")
 		return out
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_season_round_slice"):
+	if _data_core_world_ext == null:
 		out["fallback"] = true
 		out["done"] = true
 		_season_log_path_once("b_plus_slice", "gdscript_fallback", "ext/method missing mid-round")
@@ -12459,7 +12361,7 @@ func begin_finish_season_round_b_plus(map: MapData, _world: WorldData, _season: 
 	if _season_round_b_plus_handle <= 0:
 		_season_log_path_once("b_plus_finish", "gdscript_fallback", "no active handle to finish")
 		return
-	var ext_ok: bool = _data_core_world_ext != null and _data_core_world_ext.has_method("finish_season_round")
+	var ext_ok: bool = _data_core_world_ext != null
 	if not ext_ok:
 		_season_log_path_once("b_plus_finish", "gdscript_fallback", "finish_season_round method missing")
 		_season_round_b_plus_handle = 0
@@ -12632,7 +12534,7 @@ func pop_b_plus_round_samples() -> Dictionary:
 # 用于：start 前发现旧 round 残留 / slice 中途 fallback 后清场 / 外部主动放弃。
 # 不抛异常；ext 缺失时仅清本地 handle。
 func _abort_season_round_b_plus_safe() -> void:
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("abort_season_round"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.abort_season_round()
 	_season_round_b_plus_handle = 0
 	_season_round_b_plus_native_ms = 0.0
@@ -12884,8 +12786,7 @@ func _ensure_generation_world_ext() -> RefCounted:
 	if ext_obj == null or not (ext_obj is RefCounted):
 		return null
 	_data_core_world_ext = ext_obj
-	if _data_core_world_ext.has_method("set_diag_logs_enabled"):
-		_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
+	_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
 	return _data_core_world_ext
 
 
@@ -13153,18 +13054,8 @@ func generation_preflight() -> Dictionary:
 			"code": "native_generation_mode_inactive",
 			"message": "ClimateProfile.native_generation_mode=%d，不是 ACTIVE(2)；地图生成只保留 C++ 单路径。" % native_mode,
 		})
-	if ext != null:
-		for method_name in MAPGEN_REQUIRED_NATIVE_METHODS:
-			if not ext.has_method(method_name):
-				missing.append(method_name)
-		if not missing.is_empty():
-			issues.append({
-				"code": "missing_native_methods",
-				"message": "DCWorldExt 缺少 %d 个生成必需方法：%s。原生库比 GDScript 旧，需重建该平台库。"
-					% [missing.size(), ", ".join(missing)],
-			})
 	var bound := false
-	if ext != null and ext.has_method("is_bound"):
+	if ext != null:
 		bound = bool(ext.is_bound())
 	return {
 		"ok": issues.is_empty(),
@@ -13292,7 +13183,7 @@ func native_generation_base_report() -> Dictionary:
 ## 自检 CLI 的核心证据——比"方法存在"强得多。
 func _mapgen_native_smoke(w: int = 16, h: int = 12) -> Dictionary:
 	var ext := _ensure_generation_world_ext()
-	if ext == null or not ext.has_method("run_native_world_generate_base_pass"):
+	if ext == null:
 		return {"ok": false, "reason": "world_ext_or_method_unavailable"}
 	var cfg := MapConfig.make(w, h)
 	cfg.seed = 12345
@@ -13402,7 +13293,7 @@ func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
 		}
 		return null
 	var ext := _ensure_generation_world_ext()
-	if ext == null or not ext.has_method("restuff_generation_river_cache"):
+	if ext == null:
 		push_error("[native_generation/pkmap] 缺 restuff_generation_river_cache（DLL 未 rebuild?）；中止")
 		_native_generation_base_report = {
 			"rc": -1,
@@ -13467,7 +13358,7 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 		}
 		return null
 	var ext := _ensure_generation_world_ext()
-	if ext == null or not ext.has_method("run_native_world_generate_base_pass"):
+	if ext == null:
 		_native_generation_base_report = {
 			"rc": -1,
 			"path": "gdscript",
@@ -13485,72 +13376,27 @@ func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
 	var res: Dictionary
 	var final_res: Dictionary
 	var n: int
-	if ext.has_method("run_native_world_generate_full_pass"):
-		final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict}, _loading_frames)
-		if bool(final_res.get("canceled", false)):
-			return null
-		_native_generation_base_report = final_res.duplicate(true)
-		if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
-			var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
-			var stage_f := "post_base" if bool(final_res.get("fused_base_post", false)) else "base"
-			push_warning("[native_generation/full] %s 失败 (%s)；GDScript 生成已移除，中止生成" % [stage_f, reason_f])
-			return null
-		n = int(final_res.get("n_cells", 0))
-		if n <= 0 or n != expected_n:
-			push_warning("[native_generation/full] bad n_cells=%d expected=%d; 中止" % [n, expected_n])
-			return null
-		# 合成 base 诊断 dict，供下方 base-path 打印零改动复用（值来自 full_pass 合并键）。
-		res = {
-			"native_algorithm": final_res.get("native_algorithm", "unknown"),
-			"native_ms": final_res.get("base_native_ms", final_res.get("native_ms", 0.0)),
-			"water_count": final_res.get("base_water_count", 0),
-			"land_count": final_res.get("base_land_count", 0),
-			"n_cells": n,
-		}
-	else:
-		res = ext.run_native_world_generate_base_pass(seed, cfg_dict, profile_dict)
-		_native_generation_base_report = res.duplicate(true)
-		if int(res.get("rc", -1)) != 0 or bool(res.get("fallback", true)):
-			var reason := String(res.get("fallback_reason", res.get("reason", "unknown")))
-			push_warning("[native_generation/base] 失败 (%s)；GDScript _generate_cells 已移除，中止生成" % reason)
-			return null
-		n = int(res.get("n_cells", 0))
-		if n <= 0 or n != expected_n:
-			push_warning("[native_generation/base] bad n_cells=%d expected=%d; fallback" % [n, expected_n])
-			return null
-		var required := {
-			"q_arr": TYPE_PACKED_INT32_ARRAY,
-			"r_arr": TYPE_PACKED_INT32_ARRAY,
-			"elevation_arr": TYPE_PACKED_FLOAT32_ARRAY,
-			"moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-			"base_moisture_arr": TYPE_PACKED_FLOAT32_ARRAY,
-			"temp_arr": TYPE_PACKED_FLOAT32_ARRAY,
-			"terrain_arr": TYPE_PACKED_BYTE_ARRAY,
-			"landform_arr": TYPE_PACKED_BYTE_ARRAY,
-			"vegetation_arr": TYPE_PACKED_BYTE_ARRAY,
-			"cover_arr": TYPE_PACKED_BYTE_ARRAY,
-		}
-		for key in required.keys():
-			if not TerrainGeneratorScript.native_generation_array_ok(res, key, n, int(required[key])):
-				push_warning("[native_generation/base] bad array %s; fallback" % key)
-				return null
-
-		# dots-total-cpp（2026-06-18）：post_base 也已 C++ 化并 parity PASS。GDScript
-		# 后处理 fallback（_run_post_base_generation_passes）已删除——post_base 缺失/失败
-		# 即返回 null，由上层 generate() 硬中止。
-		if not ext.has_method("run_native_world_generate_post_base_pass"):
-			push_warning("[native_generation/post_base] 缺 run_native_world_generate_post_base_pass（DLL 未 rebuild?）；中止")
-			return null
-		var post_res: Dictionary = ext.run_native_world_generate_post_base_pass(seed, cfg_dict, profile_dict, res)
-		var report := res.duplicate(true)
-		report["post_base"] = post_res.duplicate(true)
-		_native_generation_base_report = report
-		if int(post_res.get("rc", -1)) != 0 or bool(post_res.get("fallback", true)):
-			var reason := String(post_res.get("fallback_reason", post_res.get("reason", "unknown")))
-			push_warning("[native_generation/post_base] 失败 (%s)；GDScript 后处理已移除，中止生成" % reason)
-			return null
-		final_res = post_res
-
+	final_res = await NativeLoadingTasks.compute(ext,"generate", {"seed":seed,"cfg":cfg_dict,"profile":profile_dict}, _loading_frames)
+	if bool(final_res.get("canceled", false)):
+		return null
+	_native_generation_base_report = final_res.duplicate(true)
+	if int(final_res.get("rc", -1)) != 0 or bool(final_res.get("fallback", true)):
+		var reason_f := String(final_res.get("fallback_reason", final_res.get("reason", "unknown")))
+		var stage_f := "post_base" if bool(final_res.get("fused_base_post", false)) else "base"
+		push_warning("[native_generation/full] %s 失败 (%s)；GDScript 生成已移除，中止生成" % [stage_f, reason_f])
+		return null
+	n = int(final_res.get("n_cells", 0))
+	if n <= 0 or n != expected_n:
+		push_warning("[native_generation/full] bad n_cells=%d expected=%d; 中止" % [n, expected_n])
+		return null
+	# 合成 base 诊断 dict，供下方 base-path 打印零改动复用（值来自 full_pass 合并键）。
+	res = {
+		"native_algorithm": final_res.get("native_algorithm", "unknown"),
+		"native_ms": final_res.get("base_native_ms", final_res.get("native_ms", 0.0)),
+		"water_count": final_res.get("base_water_count", 0),
+		"land_count": final_res.get("base_land_count", 0),
+		"n_cells": n,
+	}
 	if _terrain_generator == null:
 		_terrain_generator = TerrainGeneratorScript.new(self)
 	var map: MapData = await _terrain_generator.assemble_native_result(final_res, cfg)
@@ -14420,8 +14266,7 @@ static func _is_water(t: int) -> bool:
 ## resulting data is intentionally map-owned, never country-owned: discovery is
 ## later submitted through NativeCountryRuntime at the country command boundary.
 func _generate_static_research_signals(map: MapData) -> void:
-	if map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_research_signal_generation_pass"):
+	if map == null or _data_core_world_ext == null :
 		push_error("[research-signals] native generation pass unavailable")
 		return
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
@@ -14482,8 +14327,7 @@ func _generate_static_research_signals(map: MapData) -> void:
 ## Natural-resource deposits do not exist when the static geography signal pass
 ## runs. This second native pass appends resource.* facts to the same sorted CSR.
 func _append_natural_resource_research_signals(map: MapData) -> void:
-	if map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_research_signal_generation_pass"):
+	if map == null or _data_core_world_ext == null :
 		return
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	if not bool(catalog.get("ok", false)):
@@ -14607,8 +14451,7 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		_bio_occupancy_knob_cache_version = _BIO_OCCUPANCY_KNOB_CACHE_VERSION
 	var static_knobs: Dictionary = _bio_occupancy_knob_cache
 	if _bio_occupancy_native_configured_map_id != map_id \
-			and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("configure_bio_occupancy"):
+			and _data_core_world_ext != null :
 		var configured: Dictionary = _data_core_world_ext.configure_bio_occupancy(static_knobs)
 		if bool(configured.get("ok", false)):
 			_bio_occupancy_native_configured_map_id = map_id
@@ -14691,17 +14534,14 @@ func _publish_bio_occupancy_to_runtime(map_ref: MapData) -> void:
 			var cid := int(_data_core_world.component_id(component))
 			if cid >= 0:
 				_data_core_world.write_i32_range(cid, 0, values)
-		if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
-				and _data_core_world_ext.has_method("write_i32_range"):
+		if _data_core_world_ext != null :
 			var cid_ext := int(_data_core_world_ext.component_id(component))
 			if cid_ext >= 0:
 				_data_core_world_ext.write_i32_range(cid_ext, 0, values)
 
 
 func _seed_bio_occupancy(map_ref: MapData) -> void:
-	if map_ref == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_bio_province_pass") \
-			or not _data_core_world_ext.has_method("run_bio_seed_pass"):
+	if map_ref == null or _data_core_world_ext == null:
 		push_error("[bio-occupancy] native province/seed pass unavailable")
 		return
 	var knobs := _bio_occupancy_base_knobs(map_ref)
@@ -14710,19 +14550,12 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 		return
 	var province_res: Dictionary = {}
 	var seed_res: Dictionary = {}
-	if _data_core_world_ext.has_method("run_bio_bootstrap_pass"):
-		seed_res = _data_core_world_ext.run_bio_bootstrap_pass(knobs)
-		if not bool(seed_res.get("ok", false)):
-			push_error("[bio-occupancy] bootstrap pass failed: %s" % String(
-				seed_res.get("reason", "unknown")))
-			return
-		province_res = seed_res
-	else:
-		province_res = _data_core_world_ext.run_bio_province_pass(knobs)
-		if not bool(province_res.get("ok", false)):
-			push_error("[bio-occupancy] province pass failed: %s" % String(
-				province_res.get("reason", "unknown")))
-			return
+	seed_res = _data_core_world_ext.run_bio_bootstrap_pass(knobs)
+	if not bool(seed_res.get("ok", false)):
+		push_error("[bio-occupancy] bootstrap pass failed: %s" % String(
+			seed_res.get("reason", "unknown")))
+		return
+	province_res = seed_res
 	var n := map_ref.cell_count()
 	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
 	var provinces: PackedInt32Array = province_res.get("province_ids", PackedInt32Array())
@@ -14866,8 +14699,7 @@ func _bio_landmass_summary_gdscript(occupancy: PackedInt32Array,
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 		day_index: int = 0, slice_enabled: bool = false,
 		bio_slice_cells: int = BIO_OCCUPANCY_SLICE_CELLS) -> Dictionary:
-	if map_ref == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_bio_occupancy_pass"):
+	if map_ref == null or _data_core_world_ext == null :
 		return {"ok": false, "path": "skip", "reason": "native_unavailable"}
 	var knobs := _bio_occupancy_daily_knobs(map_ref)
 	if not bool(knobs.get("ok", false)):
@@ -14894,7 +14726,7 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 	# The first sliced call captures the full input snapshot.  Subsequent fixed
 	# cursor calls reuse native staging and must not refresh/copy MapData again.
 	var refresh_inputs := not slice_enabled or not _bio_occupancy_slice_inflight
-	if refresh_inputs and _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
+	if refresh_inputs:
 		var refresh_keys := PackedStringArray([
 			"cell_bio_occupancy_bits",
 			"cell_temp_30d",
@@ -14907,7 +14739,7 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
 				refresh_keys.append(slot_name)
 		_data_core_world_ext.refresh_slots_from_map_keys(refresh_keys)
 	var sliced_call := slice_enabled and \
-			_data_core_world_ext.has_method("run_bio_occupancy_slice")
+			true
 	var res: Dictionary = _data_core_world_ext.run_bio_occupancy_slice(knobs) \
 			if sliced_call else _data_core_world_ext.run_bio_occupancy_pass(knobs)
 	res["bio_knob_cache_hit"] = bool(knobs.get("_knob_cache_hit", false))
@@ -14980,8 +14812,6 @@ func public_cube_row_norm(cell: HexCell) -> float:
 func _publish_native_generation_from_slots(map: MapData, cfg: MapConfig) -> bool:
 	if map == null or cfg == null or _data_core_world_ext == null:
 		return false
-	if not _data_core_world_ext.has_method("run_native_world_generate_pass"):
-		return false
 	var cp := _c()
 	var cfg_dict: Dictionary = {
 		"cell_count": map.cell_count(),
@@ -15003,8 +14833,7 @@ func _publish_native_generation_from_slots(map: MapData, cfg: MapConfig) -> bool
 			_data_core_world.rebind_map_data(map, demo_tg_on)
 			if _sus != null and _sus.has_method("bind_world"):
 				_sus.bind_world(_data_core_world)
-		if _data_core_world_ext.has_method("flush_pending_mark_dirty_all"):
-			_data_core_world_ext.flush_pending_mark_dirty_all()
+		_data_core_world_ext.flush_pending_mark_dirty_all()
 		var published: Array = res.get("published_slots", [])
 		print("[native_generation] path=gdext n=%d published=%d native_ms=%.3f compute_ms=%.3f flush_ms=%.3f"
 			% [
@@ -15025,8 +14854,7 @@ func _publish_native_generation_from_slots(map: MapData, cfg: MapConfig) -> bool
 # slot 并 flush 回 MapData.temp_baseline_year_arr。本函数在 DCWorldExt bind 完成后调用一次。
 # ext 未编译 / 未 bind / 缺方法 → 静默保留 bake_lat_temp_year_lut 已填的 GDScript fallback 值。
 func _bake_temp_baseline_year_native(map: MapData) -> void:
-	if map == null or _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_temp_baseline_year_bake"):
+	if map == null or _data_core_world_ext == null :
 		return
 	if int(_data_core_world_ext.component_id("cell_temp_baseline_year")) < 0:
 		return
@@ -17748,7 +17576,7 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 		# 冷侧软压缩（v2）：极向热输送/海洋热库托底，防中纬冬季无限过冷。与 legacy/C++ 同源。
 		var season_offset: float = DCClimateMath.compress_season_cooling(insol_amp_gain * absorb_factor * dev_today)
 		var radiative_target: float = temp_year + season_offset
-		if _data_core_world_ext != null and _data_core_world_ext.has_method("evaluate_modifier_stat"):
+		if _data_core_world_ext != null:
 			radiative_target = float(_data_core_world_ext.evaluate_modifier_stat(
 				0, i, 0, &"climate.cell.radiative_target", radiative_target))
 		radiative_target = clampf(radiative_target, 0.0, 1.0)
@@ -18973,8 +18801,7 @@ func _begin_ocean_heat_transport_sliced(map: MapData, season_phase: float, cp: C
 		"water_knobs": water_knobs,
 		"land_knobs": land_knobs,
 	}
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 	return true
 
 
@@ -19321,8 +19148,7 @@ func refresh_weather_daily(map: MapData, world: WorldData, season_idx: int,
 	# dots-flag-prune-pr1 round 2: use_gdext_weather_refresh_daily flag 已删除——
 	# 恒走 ext + has_method(run_weather_refresh_daily_pass) + weather_system has_method
 	# 探测分支（任一缺失透明 fallback 到老链 stage_a + stage_b）。
-	if _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("run_weather_refresh_daily_pass"):
+	if _data_core_world_ext == null :
 		var fb: Array[WeatherFront] = refresh_daily_stage_a(map, world, season_idx, climate_anomaly, season_phase)
 		refresh_daily_stage_b(map, world)
 		return fb
@@ -19428,8 +19254,8 @@ func weather_native_daily_readiness_report() -> Dictionary:
 		"field_commit_publish_reason": str(_diagnostics_bus.get_weather_breakdown().get("field_commit_publish_reason", "")),
 	}
 	if _data_core_world_ext != null:
-		report["has_combined_method"] = _data_core_world_ext.has_method("run_weather_refresh_daily_pass")
-		report["has_commit_method"] = _data_core_world_ext.has_method("run_weather_field_commit_pass")
+		report["has_combined_method"] = true
+		report["has_commit_method"] = true
 	if _weather_system != null:
 		report["has_knobs_builder"] = _weather_system.has_method("build_unified_fast_tick_weather_knobs")
 		report["has_result_apply"] = _weather_system.has_method("apply_unified_fast_tick_result")
@@ -19516,7 +19342,6 @@ func weather_field_slice_cells() -> int:
 	var n_cells: int = _sus_map.cell_count() if _sus_map != null else 0
 	if n_cells > 0 and n_cells <= 6400 \
 			and _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("run_weather_field_solve_pass") \
 			and _weather_system != null \
 			and _weather_system.has_method("uses_weather_field") \
 			and bool(_weather_system.uses_weather_field()):
@@ -19673,7 +19498,7 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 			"published_to_slot": false,
 			"fallback_reason": "missing_map_or_world",
 		}
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_runtime_hydrology_pass"):
+	if _data_core_world_ext == null:
 		return {
 			"done": true,
 			"elapsed_ms": 0.0,
@@ -19686,8 +19511,7 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 			"fallback_reason": "missing_run_runtime_hydrology_pass",
 		}
 	var t_refresh_us: int = Time.get_ticks_usec()
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 	var refresh_ms: float = (Time.get_ticks_usec() - t_refresh_us) / 1000.0
 	var knobs: Dictionary = {
 		"n_cells": map.cell_count(),
@@ -19796,8 +19620,7 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 	# has_method(run_stage_b_pass) 探测分支。DIAG 块保留原状，stage_b_flag_on 恒 true
 	# 仅作为诊断记录。
 	var stage_b_flag_on: bool = true  # 已折叠：flag 字段已删
-	var stage_b_ext_ok: bool = _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("run_stage_b_pass")
+	var stage_b_ext_ok: bool = _data_core_world_ext != null
 	if not _gdext_stage_b_first_attempt_logged:
 		_gdext_stage_b_first_attempt_logged = true
 		var cp_path: String = "<in-memory ClimateProfile>"
@@ -19933,8 +19756,7 @@ func refresh_daily_stage_b(map: MapData, world: WorldData) -> void:
 			_dbg_t0 = Time.get_ticks_usec()
 
 		# 单次 refresh_slots_from_map（替代旧三段各自一次共三次）
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		_data_core_world_ext.refresh_slots_from_map()
 		if _dbg_combined_first3:
 			t_refresh_us = Time.get_ticks_usec() - _dbg_t0
 			_dbg_t0 = Time.get_ticks_usec()
@@ -21616,7 +21438,6 @@ func _build_native_wind_baseline(map: MapData) -> PackedFloat32Array:
 
 func _supports_wind_air_slot_temp() -> bool:
 	return _data_core_world_ext != null \
-			and _data_core_world_ext.has_method("supports_wind_air_slot_temp") \
 			and bool(_data_core_world_ext.supports_wind_air_slot_temp())
 
 
@@ -21654,7 +21475,7 @@ func run_wind_air_mass_pass_native(map: MapData, season_phase: float) -> Diction
 				_CLIMATE_PASS_STATUS_DONE, 0, "oneshot_noop", "missing_context")
 		result_missing["path"] = "noop"
 		return result_missing
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_wind_air_mass_pass"):
+	if _data_core_world_ext == null:
 		return _fallback_wind_air_mass_pass_result(map, season_phase, "native_unavailable")
 	var n: int = map.soa_size()
 	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
@@ -21699,7 +21520,7 @@ func run_wind_surface_pass_native(map: MapData, season_phase: float) -> Dictiona
 				_CLIMATE_PASS_STATUS_DONE, 0, "oneshot_noop", "missing_context")
 		result_missing["path"] = "noop"
 		return result_missing
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method("run_wind_surface_pass"):
+	if _data_core_world_ext == null:
 		return _fallback_wind_surface_pass_result(map, season_phase, "native_unavailable")
 	var n: int = map.soa_size()
 	var nb_idx: PackedInt32Array = map.neighbor_indices_packed()
@@ -21736,7 +21557,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 		return
 	var advect_steps: int = max(0, _last_cfg.WIND_HEAT_ADVECT_STEPS)
 	var heat_mix: float = clampf(_last_cfg.WIND_HEAT_MIX, 0.0, 1.0)
-	
+
 	# 基线温度缓存（per-cell 的 temp_year_at_cell，用于算 anomaly）
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
@@ -21745,7 +21566,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
-	
+
 	# 先把所有 cell 的当前 temperature 拷贝出来（避免半途被覆盖）
 	var temp_before: Dictionary = {}
 	for cell: HexCell in map.all_cells():
@@ -21753,7 +21574,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		temp_before[cell] = _valid_runtime_temp_or_baseline(cell.temperature, float(baseline[cell]))
-	
+
 	# [perf] 累积输出，循环结束后批量 commit
 	var n_cells_air: int = map.iter_cells().size() if map.has_indices() else map.all_cells().size()
 	var anom_out_arr: PackedFloat32Array = PackedFloat32Array()
@@ -21765,7 +21586,7 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 			await _yield_generation_frame()
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		anom_out_arr[ic] = 0.0
-	
+
 	# climate-loop-closure 修复：直接读 SoA 风场（wind_x_arr/wind_y_arr，与 weather
 	# field solver 同源）。此前读 cell.wind_vector facade（经 _world_ext.read_f32），
 	# 在 native_environment_runtime 路径下返回 0 → 风温平流整段 no-op（air_mass≡0）。
@@ -21785,16 +21606,16 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 		if wind.length_squared() < 1e-6 or advect_steps == 0:
 			# anom = 0（默认）；temp 保持原值（默认）
 			continue
-		
+
 		# 沿 -wind 方向回溯 advect_steps 步，每步选最对齐的邻居
 		var upstream: HexCell = cell
 		var upstream_dir: Vector2 = -wind.normalized()
-		
+
 		for step in range(advect_steps):
 			var best_nb: HexCell = null
 			var best_dot: float = 0.1  # 需要最低对齐阈值，避免反向邻居被选
 			var self_wp: Vector2 = HexUtils.cube_to_world(upstream.q, upstream.r, _last_hex_size)
-			
+
 			for nb: HexCell in map.get_neighbors(upstream):
 				if nb == null:
 					continue
@@ -21806,19 +21627,19 @@ func _wind_air_mass_pass(map: MapData, season_phase: float, cooperative: bool = 
 				if dot_v > best_dot:
 					best_dot = dot_v
 					best_nb = nb
-			
+
 			if best_nb == null:
 				break
 			upstream = best_nb
-		
+
 		var temp_self: float = temp_before.get(cell, baseline[cell])
 		var temp_up: float = temp_before.get(upstream, baseline.get(upstream, temp_self))
 		var temp_mixed: float = lerpf(temp_self, temp_up, heat_mix)
-		
+
 		var idx_cell: int = int(cell.index)
 		if idx_cell >= 0 and idx_cell < n_cells_air:
 			anom_out_arr[idx_cell] = temp_mixed - float(baseline[cell])
-	
+
 	# climate-loop-closure 修复 v2：直接写 map SoA（property 原地索引，与 weather
 	# distribute 的 snowpack 写法同源，recorder/下游已验证可见）。此前 write_f32_dense
 	# 在本路径未反映到 map.air_mass_temp_anomaly_arr → air_mass 恒 0。
@@ -21852,7 +21673,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 	if _last_cfg == null:
 		return
 	var air_leak: float = _last_cfg.AIR_MASS_HEAT_LEAK
-	
+
 	# baseline 在表面段也需要——用 cell.elevation + _cube_row_norm 重算
 	var baseline: Dictionary = {}
 	for cell: HexCell in map.all_cells():
@@ -21861,7 +21682,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 			_generation_slice_start_usec = Time.get_ticks_usec()
 		var ny: float = _cube_row_norm(cell, _last_cfg)
 		baseline[cell] = _compute_temperature(ny, cell.elevation)
-	
+
 	# [perf] 累积 anom + temp 输出
 	var iter_cells_s: Array = map.iter_cells() if map.has_indices() else map.all_cells()
 	var n_cells_s: int = iter_cells_s.size()
@@ -21877,7 +21698,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 		var c0: HexCell = iter_cells_s[ic]
 		anom_out_s[ic] = 0.0
 		temp_out_s[ic] = c0.temperature
-	
+
 	# climate-loop-closure 修复：邻居风向同样直接读 SoA（理由见 _wind_air_mass_pass）。
 	var wind_x_arr_s: PackedFloat32Array = map.wind_x_arr
 	var wind_y_arr_s: PackedFloat32Array = map.wind_y_arr
@@ -21899,7 +21720,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 		var self_wp: Vector2 = HexUtils.cube_to_world(cell.q, cell.r, _last_hex_size)
 		var weighted_sum: float = 0.0
 		var weight_total: float = 0.0
-		
+
 		for nb: HexCell in map.get_neighbors(cell):
 			if nb == null:
 				continue
@@ -21911,25 +21732,25 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 				wind_nb = nb.wind_vector
 			if wind_nb.length_squared() < 1e-6:
 				continue
-			
+
 			var nb_wp: Vector2 = HexUtils.cube_to_world(nb.q, nb.r, _last_hex_size)
 			# 邻居 → 本 cell 方向（迎流判断：若邻 cell 的风正是流向本 cell，权重最大）
 			var dir_nb_to_self: Vector2 = (self_wp - nb_wp)
 			if dir_nb_to_self.length_squared() < 1e-6:
 				continue
-			
+
 			var w_nb: float = maxf(0.0, dir_nb_to_self.normalized().dot(wind_nb))
 			if w_nb <= 0.0:
 				continue
-			
+
 			var nb_anomaly: float = air_anom_arr_s[nb_ci] if has_air_anom_soa_s and nb_ci >= 0 and nb_ci < n_cells_s else nb.air_mass_temp_anomaly
 			weighted_sum += nb_anomaly * w_nb
 			weight_total += w_nb
-		
+
 		var anomaly_in: float = 0.0
 		if weight_total > 0.0:
 			anomaly_in = (weighted_sum / weight_total) * air_leak
-		
+
 		var idx_cell_s: int = int(cell.index)
 		if idx_cell_s < 0 or idx_cell_s >= n_cells_s:
 			continue
@@ -21937,7 +21758,7 @@ func _wind_surface_pass(map: MapData, season_phase: float, cooperative: bool = f
 		if absf(anomaly_in) > 1e-5:
 			var t_prev: float = _valid_runtime_temp_or_baseline(temp_out_s[idx_cell_s], float(baseline[cell]))
 			temp_out_s[idx_cell_s] = clampf(t_prev + anomaly_in, 0.0, 1.0)
-	
+
 	# climate-loop-closure 修复 v2：直接写 map SoA（property 原地索引，见 air pass 同注释）。
 	var _temp_ok_s: bool = map.temp_arr.size() == n_cells_s
 	var _anom_ok_s: bool = map.air_mass_temp_anomaly_arr.size() == n_cells_s
@@ -22015,10 +21836,6 @@ func run_async_climate_round_bench(pass_name: String = "transp") -> Dictionary:
 	}
 	if _data_core_world_ext == null:
 		report["reason"] = "DCWorldExt unavailable"
-		print("[async/bench] FAIL: ", report["reason"])
-		return report
-	if not _data_core_world_ext.has_method("async_climate_round_register"):
-		report["reason"] = "ext lacks async_climate_round_* methods (rebuild dots_ext)"
 		print("[async/bench] FAIL: ", report["reason"])
 		return report
 	var map: MapData = _sus_map
@@ -22105,15 +21922,13 @@ func _bench_async_transp(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		report["reason"] = "sync path failed (path=%s)" % sync_path
 		print("[async/bench transp] FAIL: ", report["reason"])
 		map.moisture_arr = moisture_snap
-		if _data_core_world_ext.has_method("refresh_slots_from_map"):
-			_data_core_world_ext.refresh_slots_from_map()
+		_data_core_world_ext.refresh_slots_from_map()
 		return report
 	var ref_moisture: PackedFloat32Array = map.moisture_arr.duplicate()
 
 	# 把 moisture 还原，让 async 跑同一 input
 	map.moisture_arr = moisture_snap
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 
 	# 3) async kick（passes_mask=0x80 仅 transp）
 	var input: Dictionary = {
@@ -22146,8 +21961,7 @@ func _bench_async_transp(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 
 	# 6) 恢复
 	map.moisture_arr = moisture_snap
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 
 	# 7) 报告
 	report["ok"] = (diff["diff_count"] == 0)
@@ -22215,8 +22029,7 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		map.set(f, (snap_f32[f] as PackedFloat32Array).duplicate())
 	for f in u8_fields:
 		map.set(f, (snap_u8[f] as PackedByteArray).duplicate())
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 
 	# 4) async kick（passes_mask=0x01 仅 pass_a）+ 完整 pass_a 输入
 	var input: Dictionary = {
@@ -22305,8 +22118,7 @@ func _bench_async_pass_a(map: MapData, n_cells: int, cp_f5: ClimateProfile, repo
 		map.set(f, (snap_f32[f] as PackedFloat32Array).duplicate())
 	for f in u8_fields:
 		map.set(f, (snap_u8[f] as PackedByteArray).duplicate())
-	if _data_core_world_ext.has_method("refresh_slots_from_map"):
-		_data_core_world_ext.refresh_slots_from_map()
+	_data_core_world_ext.refresh_slots_from_map()
 
 	# 8) 报告
 	report["ok"] = (total_diff_count == 0 and u8_diff_count == 0)
@@ -22377,7 +22189,7 @@ func _diff_f32_arrays(a: PackedFloat32Array, b: PackedFloat32Array, n: int) -> D
 
 func cancel_loading_work() -> void:
 	_loading_epoch += 1
-	if _data_core_world_ext != null and _data_core_world_ext.has_method("cancel_all_loading_tasks"):
+	if _data_core_world_ext != null:
 		_data_core_world_ext.cancel_all_loading_tasks()
 	if _baker != null:
 		_baker.cancel_loading_work()

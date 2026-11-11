@@ -18,7 +18,7 @@ func configure(generator, clock: WorldClock, handle: int) -> Dictionary:
 	_generator = generator
 	_clock = clock
 	_ext = generator.get_data_core_world_ext() if generator != null else null
-	if _ext == null or not _ext.has_method("configure_annual_reports") or handle == 0:
+	if _ext == null or false or handle == 0:
 		return {"ok": false, "reason": "annual_api_unavailable"}
 	var profile = load("res://data/annual/default_annual_report.tres")
 	var country: Dictionary = generator.get_country_facade().native_catalog()

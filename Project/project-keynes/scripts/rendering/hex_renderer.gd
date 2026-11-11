@@ -4354,8 +4354,7 @@ func _on_visual_tile_horizon_completed(world: WorldData, generation_id: int,
 func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 		compute_report: Dictionary) -> void:
 	var tiles = world.visual_tiles
-	if _world_ext == null or not _world_ext.has_method("encode_bake_horizon_tex_data") \
-			or not _world_ext.has_method("run_resample_visual_horizon_layer_pass"):
+	if _world_ext == null :
 		_record_visual_tile_horizon_failure(world, "native_fallback_method_missing", compute_report)
 		return
 	var params := world.terrain_horizon_gpu_params

@@ -125,10 +125,7 @@ func poll(ext, after_revision: int, player_slot_value: int) -> void:
 		_poll_usec = Time.get_ticks_usec() - started
 		return
 	var snap: Variant = {}
-	if ext.has_method("get_military_render_snapshot"):
-		snap = ext.get_military_render_snapshot(after_revision)
-	elif ext.has_method("military_map_snapshot"):
-		snap = ext.military_map_snapshot(after_revision)
+	snap = ext.get_military_render_snapshot(after_revision)
 	if snap is Dictionary and not (snap as Dictionary).is_empty():
 		_apply(snap as Dictionary, after_revision)
 	else:

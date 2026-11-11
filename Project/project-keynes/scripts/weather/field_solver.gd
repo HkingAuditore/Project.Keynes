@@ -1293,7 +1293,7 @@ func commit() -> Array[WeatherFront]:
 				map.cell_count(), str(_weather_system._data_core_world_ext != null)
 			])
 		var summary_verify_on: bool = _weather_system._summary_verify_enabled
-		if summary_verify_on and _weather_system._data_core_world_ext.has_method("snapshot_weather_summary_state"):
+		if summary_verify_on:
 			_weather_system._data_core_world_ext.snapshot_weather_summary_state()
 		var fronts_v: Variant = _weather_system._try_run_weather_summary_fronts_gdext(map, world)
 		if fronts_v != null:

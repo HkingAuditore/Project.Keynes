@@ -20,7 +20,6 @@ func _init(p_facade) -> void:
 
 func should_run(ctx: SusTickContext) -> bool:
 	return facade != null and facade.is_configured() and ctx != null \
-		and facade.world_ext().has_method("gameplay_effect_should_run") \
 		and bool(facade.world_ext().gameplay_effect_should_run(ctx.day_index))
 
 func is_deadline_critical(ctx: SusTickContext) -> bool:
@@ -33,8 +32,7 @@ func tick(ctx) -> Dictionary:
 	var ext: Object = facade.world_ext()
 	var day := int(ctx.day_index) if ctx != null else 0
 	var result: Dictionary = ext.run_gameplay_effects(day)
-	var effect_ack: Dictionary = ext.ack_effect_native_gameplay() \
-		if ext.has_method("ack_effect_native_gameplay") else {}
+	var effect_ack: Dictionary = ext.ack_effect_native_gameplay()
 	_last_report = result.duplicate(true)
 	return {
 		"done": bool(result.get("done", true)),

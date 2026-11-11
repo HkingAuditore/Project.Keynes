@@ -2611,12 +2611,6 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 	if ext == null:
 		_demo_tg_diag_once("DCWorldExt is null (gdext not loaded)")
 		return  # gdext 未加载（fallback 到纯 GDScript）；此 demo 无 GDScript fallback
-	# Pass #3：优先调用 run_demo_complex_pass；旧 .dll 不带新方法时回退到 Pass #2 老入口。
-	var has_complex: bool = ext.has_method("run_demo_complex_pass")
-	if not has_complex and not ext.has_method("run_thermal_gradient_pass"):
-		# C++ 端两条 pass 都不存在（极旧构建产物），静默跳过避免噪音
-		_demo_tg_diag_once("DCWorldExt missing both run_demo_complex_pass and run_thermal_gradient_pass (stale .dll)")
-		return
 	var cp = _generator._c()
 	var gain: float = float(cp.demo_thermal_gradient_elevation_gain) if cp != null else 1.5
 	var k: float = float(cp.demo_thermal_gradient_normalize_k) if cp != null else 0.5
@@ -2640,13 +2634,12 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 	# map.temp_arr / elevation_arr 不再共享；按 docs/performance-charter §11
 	# 的官方契约，GDScript→C++ 必须用 write_f32_range 显式 push。
 	# 否则 C++ 永远读到 bind 那一瞬的初值（很可能全 0），输出也就全 0。
-	if ext.has_method("component_id") and ext.has_method("write_f32_range"):
-		var cid_t: int = int(ext.component_id(&"cell_temp"))
-		var cid_e: int = int(ext.component_id(&"cell_elevation"))
-		if cid_t >= 0:
-			ext.write_f32_range(cid_t, 0, _current_map.temp_arr)
-		if cid_e >= 0:
-			ext.write_f32_range(cid_e, 0, _current_map.elevation_arr)
+	var cid_t: int = int(ext.component_id(&"cell_temp"))
+	var cid_e: int = int(ext.component_id(&"cell_elevation"))
+	if cid_t >= 0:
+		ext.write_f32_range(cid_t, 0, _current_map.temp_arr)
+	if cid_e >= 0:
+		ext.write_f32_range(cid_e, 0, _current_map.elevation_arr)
 	# C++ 端读 cell_temp / cell_elevation slot（已由上面的 write_f32_range 同步），
 	# 写 cell_demo_thermal_gradient slot，pass 末尾通过 snapshot_f32 取回。
 	# Pass #3 测时用 Time.get_ticks_usec()，含 pass 主体 + 不含 snapshot 的两段。
@@ -2666,13 +2659,10 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 		path_id = int(cp.demo_thermal_gradient_path)
 	var path_label: String = "legacy"
 	var t0_cpp: int = Time.get_ticks_usec()
-	if path_id == 0 or not has_complex:
-		# LEGACY (also used as fallback when run_demo_complex_pass is missing).
+	if path_id == 0:
+		# LEGACY directly runs the same kernel used by the ECS configurations.
 		path_label = "legacy"
-		if has_complex:
-			ext.run_demo_complex_pass(w, h, iter, kr, coriolis, drag, gain, k)
-		else:
-			ext.run_thermal_gradient_pass(w, h, gain, k)
+		ext.run_demo_complex_pass(w, h, iter, kr, coriolis, drag, gain, k)
 	else:
 		# ECS / ECS_ARCHETYPE — both go through DCEcsScheduler.
 		path_label = "ecs" if path_id == 1 else "ecs_archetype"
@@ -2684,9 +2674,6 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 		print("[demo_thermal_gradient] dispatch path=%s (path_id=%d)" % [path_label, path_id])
 	# CoW 共享下 ptrw 已就地写入；再 snapshot 一次确保 GDScript 侧 detach 安全
 	# （避免 CoW 在被 GDScript mutate 后引用别处的副本）。开销 ~ 一次 memcpy。
-	if not ext.has_method("snapshot_f32") or not ext.has_method("component_id"):
-		_demo_tg_diag_once("DCWorldExt missing snapshot_f32 / component_id")
-		return
 	var cid: int = int(ext.component_id(&"cell_demo_thermal_gradient"))
 	if cid < 0:
 		_demo_tg_diag_once("component_id(cell_demo_thermal_gradient) < 0 — slot not registered")
@@ -2706,7 +2693,7 @@ func _run_demo_thermal_gradient_pass_if_enabled() -> void:
 		if v > s_max: s_max = v
 		s_sum += v
 	var s_mean: float = (s_sum / float(s_n)) if s_n > 0 else 0.0
-	var kernel_label: String = "demo_complex" if has_complex else "demo_thermal_gradient"
+	var kernel_label: String = "demo_complex"
 	var pass_label: String = kernel_label + "/" + path_label
 	print("[" + pass_label + "] tick=#" + str(_demo_complex_tick_counter)
 		+ " w=" + str(w) + " h=" + str(h)
@@ -2772,17 +2759,10 @@ func _run_demo_tg_via_ecs(ext: Object, w: int, h: int, iter_count: int, kr: int,
 	# `_dc_ecs_archetype_dirty` is set externally on regenerate).
 	var land_arch_id: int = -1
 	if path_id == 2:
-		if not (ext.has_method("create_archetype") and ext.has_method("assign_archetype")):
-			_demo_tg_diag_once("ECS_ARCHETYPE: DCWorldExt missing create_archetype / assign_archetype — falling back to ECS")
-			path_id = 1
-		elif not ext.has_method("run_demo_complex_pass_archetyped"):
-			_demo_tg_diag_once("ECS_ARCHETYPE: DCWorldExt missing run_demo_complex_pass_archetyped — falling back to ECS")
-			path_id = 1
-		else:
-			if _dc_ecs_archetype_dirty or _dc_ecs_land_archetype_id < 0:
-				_dc_ecs_land_archetype_id = _dc_ecs_sync_archetypes(ext)
-				_dc_ecs_archetype_dirty = false
-			land_arch_id = _dc_ecs_land_archetype_id
+		if _dc_ecs_archetype_dirty or _dc_ecs_land_archetype_id < 0:
+			_dc_ecs_land_archetype_id = _dc_ecs_sync_archetypes(ext)
+			_dc_ecs_archetype_dirty = false
+		land_arch_id = _dc_ecs_land_archetype_id
 
 	# Build the single-job graph each tick: comp_ids are stable across ticks
 	# but cheap to look up; this keeps the path resilient to mid-game
@@ -2846,7 +2826,7 @@ func _dc_ecs_sync_archetypes(ext: Object) -> int:
 	# all-zero. Top up entity_count to n here. `create_entities` is additive,
 	# so guard against the rare case where front-pool or future systems already
 	# pushed it past n.
-	var ec: int = int(ext.entity_count()) if ext.has_method("entity_count") else 0
+	var ec: int = int(ext.entity_count())
 	if ec < n:
 		ext.create_entities(n - ec)
 	for i in range(n):
@@ -2857,7 +2837,7 @@ func _dc_ecs_sync_archetypes(ext: Object) -> int:
 	print("[demo_thermal_gradient/ecs_archetype] archetypes synced — "
 		+ "n=" + str(n)
 		+ " entity_count_before=" + str(ec)
-		+ " entity_count_after=" + str(ext.entity_count() if ext.has_method("entity_count") else -1)
+		+ " entity_count_after=" + str(ext.entity_count())
 		+ " land_id=" + str(land_id) + " ocean_id=" + str(ocean_id))
 	return land_id
 

@@ -23,7 +23,7 @@ func configure(world_ext: DCWorldExt, seed: int, map = null,
 	_world_ext = world_ext
 	_configured = false
 	_last_decision_id = 0
-	if _world_ext == null or not _world_ext.has_method("configure_country_ai"):
+	if _world_ext == null:
 		_configure_result = {"ok": false, "reason": "country_ai_api_unavailable"}
 		return _configure_result
 	var resource = catalog_resource

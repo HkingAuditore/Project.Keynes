@@ -7,9 +7,8 @@ const EXECUTION_CONTRACT_KEY := "execution_contract_hash"
 func _can_modifier_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("modifier")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_modifier_domain") \
-		and ext.has_method("restore_modifier_domain") \
-		and ext.has_method("clear_modifier_domain")
+	var available: bool = ext != null
+
 	return _result(available, "ok" if available else "save_provider_missing",
 		"" if available else "Modifier provider 不可用。")
 
@@ -52,8 +51,7 @@ func _restore_gameplay_modifier_provider(sections: Dictionary,
 func _can_trigger_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("trigger")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_trigger_state") \
-		and ext.has_method("restore_trigger_state") and ext.has_method("clear_trigger_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Trigger provider unavailable" if not available else "")
 
@@ -75,8 +73,7 @@ func _restore_trigger_provider(sections: Dictionary, context: Dictionary) -> Dic
 func _can_effect_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("effect")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_effect_state") \
-		and ext.has_method("restore_effect_state") and ext.has_method("clear_effect_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Effect provider unavailable" if not available else "")
 
@@ -98,8 +95,7 @@ func _restore_effect_provider(sections: Dictionary, context: Dictionary) -> Dict
 func _can_ideology_provider(context: Dictionary) -> Dictionary:
 	var facade = context.get("ideology")
 	var ext = facade.world_ext() if facade != null and facade.is_configured() else null
-	var available: bool = ext != null and ext.has_method("capture_ideology_state") \
-		and ext.has_method("restore_ideology_state") and ext.has_method("clear_ideology_state")
+	var available: bool = ext != null
 	return _result(available, "ok" if available else "save_provider_missing",
 		"Ideology provider unavailable" if not available else "")
 
