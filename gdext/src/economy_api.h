@@ -562,7 +562,6 @@ bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vec
 void military_record_cash_burn(NativeEconomyRuntime &economy, int64_t amount);
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
-godot::Dictionary migrate_legacy_state_buildings(NativeEconomyRuntime &economy, const godot::Array &states);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);
 bool trade_topology_ready_for_test(const NativeEconomyRuntime &economy);
 bool trade_passable_for_test(const NativeEconomyRuntime &economy, int32_t cell);

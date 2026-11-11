@@ -835,7 +835,6 @@ public:
     godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
     godot::Dictionary cell_satisfaction_attractiveness(int32_t cell_idx) const;
     godot::Dictionary fiscal_snapshot(int64_t country_handle) const;
-    godot::Dictionary fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary production_climate_math_probe(
         const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
@@ -858,16 +857,6 @@ public:
     const std::string &restore_rejected_reason() const noexcept {
         return _restore_rejected_reason;
     }
-    // Explicit one-shot PKEC migrate helper: arms restore and clears into a
-    // candidate scratch. Production coordinator/facade must not call this.
-    godot::Dictionary begin_restore_pkec_migrate();
-    // Legacy state-buildings fold (PKMI v1 saves counted barracks/fort/college
-    // cumulatively on the military side). Folding them into the kind-3 ledger
-    // makes the economy side the single authority. Bookkeeping only: charges no
-    // cash or goods, and never invents a lot that has no economy profile.
-    // Repeated calls are idempotent (an existing (cell,type) group accumulates).
-    godot::Dictionary migrate_legacy_state_buildings(
-        const godot::Array &states);
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.

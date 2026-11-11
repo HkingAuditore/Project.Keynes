@@ -56,75 +56,7 @@ using namespace godot;
 
 
 
-Array DCWorldExt::get_native_fronts_snapshot() const {
-    return _native_fronts_snapshot.duplicate();
-}
 
-Dictionary DCWorldExt::get_native_fronts_snapshot_packed() const {
-    PackedFloat32Array center_x;
-    PackedFloat32Array center_y;
-    PackedFloat32Array intensity;
-    PackedFloat32Array radius;
-    PackedFloat32Array axis_x;
-    PackedFloat32Array axis_y;
-    PackedFloat32Array cloud_amount;
-    PackedFloat32Array precip_amount;
-    PackedInt32Array type;
-
-    const int n = _native_fronts_snapshot.size();
-    center_x.resize(n);
-    center_y.resize(n);
-    intensity.resize(n);
-    radius.resize(n);
-    axis_x.resize(n);
-    axis_y.resize(n);
-    cloud_amount.resize(n);
-    precip_amount.resize(n);
-    type.resize(n);
-
-    int packed_count = 0;
-    for (int i = 0; i < n; ++i) {
-        if (Variant(_native_fronts_snapshot[i]).get_type() != Variant::DICTIONARY) {
-            continue;
-        }
-        Dictionary f = _native_fronts_snapshot[i];
-        Vector2 c = f.get("center", Vector2());
-        Vector2 axis = f.get("axis", Vector2(1.0, 0.0));
-        center_x.set(packed_count, c.x);
-        center_y.set(packed_count, c.y);
-        intensity.set(packed_count, float(f.get("intensity", 0.0)));
-        radius.set(packed_count, float(f.get("radius", 0.0)));
-        axis_x.set(packed_count, axis.x);
-        axis_y.set(packed_count, axis.y);
-        cloud_amount.set(packed_count, float(f.get("cloud_amount", 0.0)));
-        precip_amount.set(packed_count, float(f.get("precip_amount", 0.0)));
-        type.set(packed_count, int(f.get("type", 0)));
-        ++packed_count;
-    }
-    center_x.resize(packed_count);
-    center_y.resize(packed_count);
-    intensity.resize(packed_count);
-    radius.resize(packed_count);
-    axis_x.resize(packed_count);
-    axis_y.resize(packed_count);
-    cloud_amount.resize(packed_count);
-    precip_amount.resize(packed_count);
-    type.resize(packed_count);
-
-    Dictionary out;
-    out["count"] = packed_count;
-    out["source_count"] = n;
-    out["center_x"] = center_x;
-    out["center_y"] = center_y;
-    out["intensity"] = intensity;
-    out["radius"] = radius;
-    out["axis_x"] = axis_x;
-    out["axis_y"] = axis_y;
-    out["cloud_amount"] = cloud_amount;
-    out["precip_amount"] = precip_amount;
-    out["type"] = type;
-    return out;
-}
 
 // ─── 独立全场 ψ(synoptic eddy)推进 pass ──────────────────────────────────────
 //

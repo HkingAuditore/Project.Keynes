@@ -1258,47 +1258,6 @@ Dictionary DCWorldExt::poll_country_worker_intent() {
     return out;
 }
 
-Dictionary DCWorldExt::submit_country_worker_result(const Dictionary &input) {
-    if (_runtime_host == nullptr) {
-        Dictionary out;
-        out["ok"] = false;
-        out["code"] = "runtime_worker_not_started";
-        return out;
-    }
-    CountryPeerResult result;
-    result.protocol_version = country_peer_u32(
-        input, "protocol_version", COUNTRY_PEER_PROTOCOL_VERSION);
-    result.code = static_cast<CountryPeerResultCode>(country_peer_u32(input, "code"));
-    result.opcode = static_cast<CountryPeerIntentCode>(country_peer_u32(input, "opcode"));
-    result.request_id = country_peer_u64(input, "request_id");
-    result.session_epoch = country_peer_u64(input, "session_epoch");
-    result.country_generation = country_peer_u64(input, "country_generation");
-    result.committed_peer_generation = country_peer_u64(
-        input, "committed_peer_generation");
-    result.peer_generation = country_peer_u64(input, "peer_generation");
-    result.day = country_peer_i64(input, "day", -1);
-    result.continuation_index = country_peer_u32(input, "continuation_index");
-    result.country_slot = country_peer_i32(input, "country_slot");
-    result.technology = country_peer_i32(input, "technology");
-    result.target_handle = country_peer_u64(input, "target_handle");
-    result.technology_flags = static_cast<uint8_t>(country_peer_u32(
-        input, "technology_flags"));
-    const std::string reason = country_peer_string(input, "reason").utf8().get_data();
-    country_peer_copy_reason(result.reason, reason.c_str());
-    std::string error;
-    if (!_runtime_host->submit_country_worker_result(result, error)) {
-        Dictionary out = get_country_worker_protocol_status();
-        out["ok"] = false;
-        out["code"] = error.empty()
-            ? "country_worker_result_rejected" : error.c_str();
-        return out;
-    }
-    Dictionary out = get_country_worker_protocol_status();
-    out["ok"] = true;
-    out["code"] = "ok";
-    out["request_id"] = static_cast<int64_t>(result.request_id);
-    return out;
-}
 
 Dictionary DCWorldExt::get_country_economy_asset_protocol_status() const {
     if (_runtime_host == nullptr) {

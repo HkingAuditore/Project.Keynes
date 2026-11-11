@@ -353,15 +353,6 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     return out;
 }
 
-Dictionary NativeEconomyRuntime::begin_restore_pkec_migrate() {
-    Dictionary out = begin_restore();
-    if (!static_cast<bool>(out.get("ok", false))) return out;
-    prepare_restore_candidate_scratch();
-    out["scratch_prepared"] = true;
-    out["migrate_path"] = true;
-    out["requires_ecp2"] = false;
-    return out;
-}
 
 void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     // Candidate rebuild surface only. Callers must already hold a validated

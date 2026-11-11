@@ -597,54 +597,8 @@ void DCWorldExt::write_u8_indexed(int comp_id,
     }
 }
 
-void DCWorldExt::write_f32_scalar_indexed(int comp_id,
-                                          const PackedInt32Array &indices,
-                                          float v) {
-    ERR_FAIL_INDEX(comp_id, _slots.size());
-    Slot &s = _slots.write[comp_id];
-    const int n   = indices.size();
-    const int cap = s.arr_f32.size();
-    const int32_t *idx_ptr = indices.ptr();
-    for (int k = 0; k < n; ++k) {
-        const int i = idx_ptr[k];
-        if (i >= 0 && i < cap) {
-            s.arr_f32.set(i, v);
-        }
-    }
-}
 
-void DCWorldExt::write_i32_scalar_indexed(int comp_id,
-                                          const PackedInt32Array &indices,
-                                          int32_t v) {
-    ERR_FAIL_INDEX(comp_id, _slots.size());
-    Slot &s = _slots.write[comp_id];
-    const int n   = indices.size();
-    const int cap = s.arr_i32.size();
-    const int32_t *idx_ptr = indices.ptr();
-    for (int k = 0; k < n; ++k) {
-        const int i = idx_ptr[k];
-        if (i >= 0 && i < cap) {
-            s.arr_i32.set(i, v);
-        }
-    }
-}
 
-void DCWorldExt::write_u8_scalar_indexed(int comp_id,
-                                         const PackedInt32Array &indices,
-                                         int v) {
-    ERR_FAIL_INDEX(comp_id, _slots.size());
-    Slot &s = _slots.write[comp_id];
-    const uint8_t  vu8 = static_cast<uint8_t>(v & 0xFF);
-    const int      n   = indices.size();
-    const int      cap = s.arr_u8.size();
-    const int32_t *idx_ptr = indices.ptr();
-    for (int k = 0; k < n; ++k) {
-        const int i = idx_ptr[k];
-        if (i >= 0 && i < cap) {
-            s.arr_u8.set(i, vu8);
-        }
-    }
-}
 
 bool DCWorldExt::bind_map_data(Object *map_data) {
     if (map_data == nullptr) {

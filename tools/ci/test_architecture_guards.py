@@ -16,6 +16,8 @@ import check_save_contracts as saves
 import check_module_contracts as modules
 import check_resolve_apply as resolve_apply
 import check_module_api as module_api
+import check_skill_mirrors as skill_mirrors
+import world_ext_bindings
 import runtime_test_hygiene as hygiene
 import subprocess
 import os
@@ -37,7 +39,7 @@ class GuardsTest(unittest.TestCase):
 
     def test_resolve_apply_actual_source_negatives(self):
         data=json.loads((resolve_apply.ROOT/resolve_apply.REGISTRY).read_text())
-        with tempfile.TemporaryDirectory(dir='/tmp/keynes-arch-phase1') as directory:
+        with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             paths={x['source'] for x in data['resolve']+data['apply']+data['retained_soft_paths']} | {'gdext/src/native_simulation_host.cpp'}
             for path in paths:
@@ -68,9 +70,9 @@ class GuardsTest(unittest.TestCase):
         env=hygiene.trace_environment({'PK_SIM_DAY_TRACE':'1'},Path('/tmp/keynes-arch-phase1'),'test')
         self.assertTrue(Path(env['PK_SIM_DAY_TRACE']).is_absolute())
         self.assertEqual(hygiene.unexpected_artifacts({'old.bin'},{'old.bin','1','1.continuation','new.cpp'}),['1','1.continuation'])
-        with tempfile.TemporaryDirectory(dir='/tmp/keynes-arch-phase1') as directory:
+        with tempfile.TemporaryDirectory() as directory:
             exe=Path(directory)/'contract-test'
-            subprocess.run(['/usr/bin/clang++','-std=c++17','-I'+str(resolve_apply.ROOT/'gdext/src'),
+            subprocess.run([shutil.which('clang++') or shutil.which('g++'),'-std=c++17','-I'+str(resolve_apply.ROOT/'gdext/src'),
                 str(resolve_apply.ROOT/'gdext/tests/runtime_resolve_contract_test.cpp'),
                 str(resolve_apply.ROOT/'gdext/src/runtime_switch_registry.cpp'),'-o',str(exe)],check=True)
             subprocess.run([str(exe)],check=True)
@@ -719,7 +721,7 @@ class GuardsTest(unittest.TestCase):
     def test_save_section_contract_rejects_missing_guard_and_order(self):
         registry_path = saves.ROOT / "tools/ci/cpp_save_section_contracts.json"
         registry = json.loads(registry_path.read_text())
-        with tempfile.TemporaryDirectory(dir='/tmp/keynes-arch-phase1') as directory:
+        with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "tools/ci").mkdir(parents=True)
             (root / "tools/ci/cpp_save_section_contracts.json").write_text(
@@ -740,6 +742,53 @@ class GuardsTest(unittest.TestCase):
                 json.dumps(broken))
             self.assertTrue(saves.cpp_section_violations(root))
 
+
+    def test_skill_mirror_ratchet_rejects_new_and_worse_drift(self):
+        same = {".agents": {"SKILL.md": "a"}, ".claude": {"SKILL.md": "a"}}
+        self.assertEqual(skill_mirrors.drift({"s": same}), {})
+        self.assertEqual(skill_mirrors.drift({"s": {".agents": {"SKILL.md": "a"}}}), {})
+        forked = {".agents": {"SKILL.md": "a"}, ".claude": {"SKILL.md": "b"}, ".codex": {}}
+        current = skill_mirrors.drift({"s": forked})
+        self.assertEqual(current, {"s/SKILL.md": 3})
+        self.assertTrue(skill_mirrors.violations(current, {}))
+        self.assertTrue(skill_mirrors.violations(current, {"s/SKILL.md": 2}))
+        self.assertEqual(skill_mirrors.violations(current, {"s/SKILL.md": 3}), [])
+        self.assertTrue(skill_mirrors.violations({}, {"s/SKILL.md": 3}))
+        self.assertTrue(skill_mirrors.violations({"s/SKILL.md": 2}, {"s/SKILL.md": 3}))
+
+    def test_world_ext_binding_inventory_maps_every_binding(self):
+        def tree(table_modules, extra_cpp=""):
+            tmp = tempfile.TemporaryDirectory()
+            root = Path(tmp.name)
+            (root / "gdext/src").mkdir(parents=True)
+            (root / "tools/ci").mkdir(parents=True)
+            (root / "gdext/src/world_ext.h").write_text("class DCWorldExt { int inline_one() const { return 1; } };\n")
+            (root / "gdext/src/world_ext_a.cpp").write_text(
+                "int DCWorldExt::alpha(int x) {\n    return x;\n}\n" + extra_cpp)
+            (root / "gdext/src/world_ext_bind_methods.cpp").write_text(
+                'void DCWorldExt::_bind_methods() {\n'
+                '    ClassDB::bind_method(D_METHOD("alpha", "x"), &DCWorldExt::alpha, DEFVAL(0));\n'
+                '    ClassDB::bind_method(\n        D_METHOD("inline_one"),\n        &DCWorldExt::inline_one);\n}\n')
+            (root / "tools/ci/world_ext_binding_modules.json").write_text(json.dumps({
+                "bind_file": "gdext/src/world_ext_bind_methods.cpp", "modules": table_modules,
+                "test_only": [], "keep_unreferenced": {}}))
+            return tmp, root
+
+        tmp, root = tree({"core": ["world_ext.h"], "a": ["world_ext_a.cpp"]})
+        with tmp:
+            bindings, problems = world_ext_bindings.inventory(root)
+            self.assertEqual(problems, [])
+            by_name = {b["name"]: b for b in bindings}
+            self.assertEqual(by_name["alpha"]["module"], "a")
+            self.assertEqual(by_name["alpha"]["args"], ["x"])
+            self.assertEqual(by_name["alpha"]["defaults"], 1)
+            self.assertEqual(by_name["inline_one"]["file"], "world_ext.h")
+        tmp, root = tree({"core": ["world_ext.h"]})
+        with tmp:
+            self.assertTrue(any("not assigned" in p for p in world_ext_bindings.inventory(root)[1]))
+        tmp, root = tree({"core": ["world_ext.h"], "a": ["world_ext_a.cpp", "world_ext_gone.cpp"]})
+        with tmp:
+            self.assertTrue(any("missing file" in p for p in world_ext_bindings.inventory(root)[1]))
 
 if __name__ == "__main__":
     unittest.main()

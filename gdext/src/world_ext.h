@@ -228,12 +228,6 @@ public:
     void write_i32_indexed(int comp_id, const godot::PackedInt32Array &indices, const godot::PackedInt32Array   &values);
     void write_u8_indexed (int comp_id, const godot::PackedInt32Array &indices, const godot::PackedByteArray    &values);
 
-    // Scalar variant: all dirty cells get the same value (e.g. clear flag).
-    // Saves the caller from materialising a values array of constants.
-    void write_f32_scalar_indexed(int comp_id, const godot::PackedInt32Array &indices, float v);
-    void write_i32_scalar_indexed(int comp_id, const godot::PackedInt32Array &indices, int32_t v);
-    void write_u8_scalar_indexed (int comp_id, const godot::PackedInt32Array &indices, int v);
-
     // ─── Bind to MapData (GDScript instance) ─────────────────────────────
     // Reflectively reads the GDScript `MapData` properties (e.g. `temp_arr`)
     // and assigns them into the matching slots. Buffers are shared via COW —
@@ -295,8 +289,6 @@ public:
     godot::Dictionary set_runtime_clock(bool paused, double speed_days_per_second);
     void profile_runtime_save_window(bool active);
       godot::Dictionary capture_runtime_inputs(const godot::Dictionary &inputs);
-    godot::Dictionary publish_runtime_climate_reference(int64_t day,
-                                                        int64_t state_hash);
     // Reduces a production Climate state to the canonical parity hash. The
     // main thread passes the MapData arrays; the same C++ function the worker
     // uses produces the value, so the two sides are comparable by
@@ -348,8 +340,6 @@ public:
     godot::Dictionary get_country_worker_read_view(
             int64_t after_generation = 0) const;
     godot::Dictionary poll_country_worker_intent();
-    godot::Dictionary submit_country_worker_result(
-        const godot::Dictionary &result);
     godot::Dictionary get_country_economy_asset_protocol_status() const;
     godot::Dictionary poll_country_economy_asset_request();
     godot::Dictionary submit_country_economy_asset_result(
@@ -1211,8 +1201,6 @@ public:
     // Formal player construction ingress. `submit_economy_commands` is
     // fail-closed while StageOps owns production, so the build request is
     // queued on the economy epoch boundary instead (canal lane contract).
-    godot::Dictionary migrate_legacy_state_buildings(
-        const godot::Array &states);
     godot::Dictionary queue_treasury_sponsored_build(
         int64_t country_handle, int cell_idx, int type_id,
         int64_t effective_day, int64_t sequence);
@@ -1295,7 +1283,6 @@ public:
                                                   int limit = 64) const;
     godot::Dictionary get_economy_read_view_status() const;
     void append_economy_read_view_perf(godot::Dictionary &out) const;
-    godot::Dictionary run_economy_fixed_math_probe(const godot::Dictionary &vectors) const;
     godot::Dictionary run_economy_production_climate_math_probe(
         const godot::Dictionary &vectors) const;
     int64_t get_economy_state_hash() const;
@@ -1313,9 +1300,6 @@ public:
     godot::Dictionary capture_economy_ecp2(int flags = 0) const;
     godot::Dictionary restore_economy_ecp2(const godot::PackedByteArray &bytes);
     godot::Dictionary begin_economy_restore();
-    // Explicit one-shot PKEC→scratch migrate helper. Production save/load must
-    // use restore_economy_ecp2 instead.
-    godot::Dictionary begin_economy_restore_pkec_migrate();
     godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_economy_restore();
     godot::String get_economy_restore_rejected_reason() const;
@@ -1399,8 +1383,6 @@ public:
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
-    godot::Array get_native_fronts_snapshot() const;
-    godot::Dictionary get_native_fronts_snapshot_packed() const;
     godot::Dictionary get_native_dirty_report() const;
     godot::Dictionary start_native_generation(int seed,
                                               const godot::Dictionary &cfg,
@@ -1568,7 +1550,7 @@ public:
 
     // plan/sim-2ms-simd-dirty-budget — SIMD/Thread variants for ocean passes.
     //
-    // run_ocean_water_pass_simd / run_ocean_land_pass_simd:
+    // run_ocean_water_pass_simd:
     //   与原 scalar 版同签名 / 同输出语义；内部走 water-cell / land-cell 预筛
     //   + 直线 hot kernel，消除主循环外层 if(IW[i]==0|!=0) 分支让编译器自由
     //   auto-vectorize。CoW fix（anomaly_out / anomaly_inout 仍走 duplicate）
@@ -1584,7 +1566,6 @@ public:
     //   预算时由调用方派发。
     double run_ocean_water_pass_simd  (godot::Dictionary knobs);
     double run_ocean_water_pass_thread(godot::Dictionary knobs, int n_tasks);
-    double run_ocean_land_pass_simd   (godot::Dictionary knobs);
     double run_ocean_land_pass_thread (godot::Dictionary knobs, int n_tasks);
 
     // F.3 (P1): climate Pass-B (local climate coupling)
@@ -1818,11 +1799,6 @@ public:
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_albedo_pass(const godot::Dictionary &knobs);
 
-    // [Phase C.3c] albedo 的 WorkerThreadPool 并行变体。
-    // 主循环纯 cell-local map（IW 跳水 + 自身写 T[i]），按 cell range 拆 n_tasks 段并行；
-    // n_tasks=0 时自适应。算法与 run_albedo_pass 严格 1:1。
-    double run_albedo_pass_thread(const godot::Dictionary &knobs, int n_tasks);
-
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）：vegetation dynamics ─
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_vegetation_dynamics
     //   ClimateProfile flag：use_gdext_vegetation_dynamics
@@ -1894,13 +1870,6 @@ public:
     //   knobs 走 by-value（非 const&），让 C++ 端能写回 succession lists（与 sea_ice 同模式）。
     double run_vegetation_dynamics_pass(godot::Dictionary knobs);
 
-    // [Phase C.3d] vegetation_dynamics 并行变体
-    //   行为 = run_vegetation_dynamics_pass，主循环走 WorkerThreadPool 并行。
-    //   thread-local emit (succession_indices / succession_to_veg) 通过
-    //   Emit + 串行 reduce 保持 bit-equal。
-    //   仅在 ClimateProfile.use_gdext_thread_fallback = true 时调用。
-    double run_vegetation_dynamics_pass_thread(godot::Dictionary knobs, int n_tasks);
-
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）：climate feedback ─
     //   GDScript 源：scripts/geography/map_generator.gd::_apply_weather_to_map_feedback_pass
     //   ClimateProfile flag：use_gdext_climate_feedback
@@ -1957,12 +1926,6 @@ public:
     //
     //   返回：≥ 0.0 → C++ 接管完成 (=elapsed_ms)；< 0.0 → fallback。
     double run_climate_feedback_pass(godot::Dictionary knobs);
-
-    // [Phase C.3c] climate_feedback 的 WorkerThreadPool 并行变体。
-    // 主循环：read NB+TTA+IW+WTT+WTI+WTIN，仅 write self（BM[i]+SOIL[i]+VG[i]），
-    // gather neighbor 但不 scatter，无 race；按 cell range 拆 n_tasks 段并行；
-    // n_tasks=0 时自适应。算法与 run_climate_feedback_pass 严格 1:1。
-    double run_climate_feedback_pass_thread(godot::Dictionary knobs, int n_tasks);
 
     // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine） ──────────────────
     //   GDScript 源：scripts/geography/map_generator.gd::refresh_daily_stage_b

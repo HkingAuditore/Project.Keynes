@@ -2447,111 +2447,6 @@ inline void ocean_land_run_land_range(const OceanLandCtx &c,
 
 } // anonymous namespace (ocean land helpers)
 
-double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
-    using godot::StringName;
-    using godot::PackedFloat32Array;
-    using godot::PackedInt32Array;
-
-    auto diag = [&](const char *why) {
-        UtilityFunctions::push_warning(
-            "[DCWorldExt] run_ocean_land_pass_simd: ", why,
-            " — fallback to GDScript");
-    };
-
-    if (!_bound) { diag("not _bound"); return -1.0; }
-
-    const int sid_temp     = component_id(StringName("cell_temp"));
-    const int sid_iswater  = component_id(StringName("cell_is_water"));
-    const int sid_pos_x    = component_id(StringName("cell_pos_x"));
-    const int sid_pos_y    = component_id(StringName("cell_pos_y"));
-    // A 修复（2026-06）：ocean_land SIMD 改累加 ocean thermal anomaly slot。
-    const int sid_oanom    = component_id(StringName("cell_ocean_thermal_anomaly"));
-    if (sid_temp < 0 || sid_iswater < 0 || sid_pos_x < 0 || sid_pos_y < 0 || sid_oanom < 0) {
-        diag("missing slot id"); return -1.0;
-    }
-
-    if (!knobs.has("n_cells") || !knobs.has("effective_leak") ||
-        !knobs.has("neighbor_indices") || !knobs.has("anomaly_inout") ||
-        !knobs.has("fallback_baseline_arr") ||
-        !knobs.has("ocean_current_x_arr") || !knobs.has("ocean_current_y_arr")) {
-        diag("knobs missing"); return -1.0;
-    }
-    const int   n_cells        = int(knobs["n_cells"]);
-    const float effective_leak = float(knobs["effective_leak"]);
-    // seam-advection-fix：经度环绕周期，缺省取 configure_native_world 常驻值。
-    const float wrap_period_x = knobs.has("wrap_period_x")
-        ? float(knobs["wrap_period_x"]) : float(_native_wrap_period_x);
-    float tta_source_cap = knobs.has("tta_source_cap") ? float(knobs["tta_source_cap"]) : 0.22f;
-    float tta_blend_rate = knobs.has("tta_blend_rate") ? float(knobs["tta_blend_rate"]) : 0.70f;
-    float tta_decay_rate = knobs.has("tta_decay_rate") ? float(knobs["tta_decay_rate"]) : 0.04f;
-    tta_source_cap = dc_clampf(tta_source_cap, 0.0f, 0.5f);
-    tta_blend_rate = dc_clampf(tta_blend_rate, 0.0f, 1.0f);
-    tta_decay_rate = dc_clampf(tta_decay_rate, 0.0f, 1.0f);
-    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
-
-    PackedInt32Array nb_arr = knobs["neighbor_indices"];
-    PackedFloat32Array fallback_baseline = knobs["fallback_baseline_arr"];
-    PackedFloat32Array ocx_arr = knobs["ocean_current_x_arr"];
-    PackedFloat32Array ocy_arr = knobs["ocean_current_y_arr"];
-    if (nb_arr.size() < n_cells * 6)         { diag("nb size"); return -1.0; }
-    if (fallback_baseline.size() != n_cells) { diag("fbl size"); return -1.0; }
-    if (ocx_arr.size()       != n_cells)     { diag("ocx size"); return -1.0; }
-    if (ocy_arr.size()       != n_cells)     { diag("ocy size"); return -1.0; }
-
-    // CoW fix: duplicate anomaly_inout 以独占 ptrw（同 scalar 路径）
-    PackedFloat32Array anomaly_src = knobs["anomaly_inout"];
-    if (anomaly_src.size() != n_cells) { diag("anomaly size"); return -1.0; }
-    PackedFloat32Array anomaly_inout = anomaly_src.duplicate();
-
-    Slot &s_temp    = _slots.write[sid_temp];
-    Slot &s_iswater = _slots.write[sid_iswater];
-    Slot &s_pos_x   = _slots.write[sid_pos_x];
-    Slot &s_pos_y   = _slots.write[sid_pos_y];
-    Slot &s_oanom   = _slots.write[sid_oanom];
-    if (s_temp.arr_f32.size()  != n_cells || s_iswater.arr_u8.size() != n_cells ||
-        s_pos_x.arr_f32.size() != n_cells || s_pos_y.arr_f32.size()  != n_cells ||
-        s_oanom.arr_f32.size() != n_cells) {
-        diag("slot size"); return -1.0;
-    }
-
-    OceanLandCtx ctx{};
-    ctx.n_cells        = n_cells;
-    ctx.effective_leak = effective_leak;
-    ctx.wrap_period_x  = wrap_period_x;
-    ctx.tta_source_cap = tta_source_cap;
-    ctx.tta_blend_rate = tta_blend_rate;
-    ctx.tta_decay_rate = tta_decay_rate;
-    ctx.NB             = nb_arr.ptr();
-    ctx.IW             = s_iswater.arr_u8.ptr();
-    ctx.POSX           = s_pos_x.arr_f32.ptr();
-    ctx.POSY           = s_pos_y.arr_f32.ptr();
-    ctx.OCX            = ocx_arr.ptr();
-    ctx.OCY            = ocy_arr.ptr();
-    ctx.FBL            = fallback_baseline.ptr();
-    ctx.T_RO           = s_temp.arr_f32.ptr();
-    ctx.OANOM_SLOT     = s_oanom.arr_f32.ptrw();
-    ctx.A              = anomaly_inout.ptrw();
-
-    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
-    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
-    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
-    record_production_round_scalars(0x08, knobs);
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    pk_run_ocean_land_pure(
-        n_cells, effective_leak, wrap_period_x,
-        tta_source_cap, tta_blend_rate, tta_decay_rate,
-        ctx.IW, ctx.POSX, ctx.POSY, ctx.OCX, ctx.OCY, ctx.NB,
-        ctx.A, ctx.OANOM_SLOT);
-
-    knobs["anomaly_inout"] = anomaly_inout;
-    // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
-    _flush_slot_to_map(sid_oanom);
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
-}
 
 double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     using godot::StringName;
@@ -3595,26 +3490,6 @@ double DCWorldExt::run_albedo_pass(const Dictionary &knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
-// ─── [Phase C.3c] run_albedo_pass_thread ─────────────────────────────────
-//
-// run_albedo_pass 的 WorkerThreadPool 并行版本。
-// 主循环纯 cell-local map（IW 跳水后只 read VG/CV/ALB，write 自身 T[i]）→ 完美 Tier-1，
-// 无 race，可直接拆 cell range 并行。
-//
-// 与 run_ocean_water_pass_thread (line 4511) / run_ocean_land_pass_thread (line 4776)
-// 模板严格一致：完整复制 prelude + 仅末段主循环改 pk::parallel_for_range。
-// n_tasks=0 → 自适应（ceil(n/1024) 截 [1,16]）；n_cells < 256 || n_tasks==1 → 直接顺序。
-double DCWorldExt::run_albedo_pass_thread(const Dictionary &knobs, int n_tasks) {
-    // S3：这里原本是 albedo 的第二份实现（prelude 全量复制 + 主循环走
-    // pk::parallel_for_range）。与 run_climate_pass_a_thread 同理：albedo 主循环在
-    // N=2400 时是微秒级，并行收益不足以换一份必须永久手工同步的副本，
-    // 而 parity_hash 是逐位归约——同形的 float 循环在不同向量化下会差 1 ULP。
-    //
-    // 现在统一转发到 run_albedo_pass，由它调共享纯内核
-    // pk_async_climate::albedo_apply_pure。
-    (void)n_tasks;
-    return run_albedo_pass(knobs);
-}
 
 // ─── DOTS-Final-Push 任务 3：run_vegetation_dynamics_pass ────────────────
 //
@@ -3903,16 +3778,6 @@ static const char *required_scalars[] = {
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
-// ─── [Phase C.3d] vegetation_dynamics 并行变体 ───────────────────────
-double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_tasks) {
-    // S3：这里原本是 vegetation_dynamics 的第二份实现（prelude 全量复制 +
-    // 主循环走 pk::parallel_for_range_with_emit）。与 run_albedo_pass_thread /
-    // run_climate_feedback_pass_thread 同理：共享纯内核已经支持 [begin, end)
-    // 分段，但 parity_hash 是逐位归约 —— 同形的 float 循环在不同向量化下会差
-    // 1 ULP，而 N=2400 时并行收益不足以换一份必须永久手工同步的副本。
-    (void)n_tasks;
-    return run_vegetation_dynamics_pass(knobs);
-}
 
 // ─── DOTS-Final-Push 任务 4：run_climate_feedback_pass ───────────────────
 //
@@ -4050,22 +3915,6 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
-// ─── [Phase C.3c] run_climate_feedback_pass_thread ───────────────────────
-//
-// run_climate_feedback_pass 的 WorkerThreadPool 并行版本。
-// 主循环：read NB+TTA+IW+WTT+WTI+WTIN，gather 邻居 TTA，但**只 write self**
-// （BM[i]+SOIL[i]+VG[i]）→ 无 race，可直接拆 cell range 并行。
-//
-// 与 run_albedo_pass_thread 模板严格一致：完整复制 prelude + 主循环走 parallel_for_range。
-// n_tasks=0 → 自适应；n_cells < 256 || n_tasks==1 → 直接顺序。
-double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_tasks) {
-    // S3：这里原本是 feedback 的第二份实现（prelude 全量复制 + 主循环走
-    // pk::parallel_for_range）。与 run_albedo_pass_thread / run_climate_pass_a_thread 同理：
-    // N=2400 时这个循环是微秒级，并行收益不足以换一份必须永久手工同步的
-    // 副本；而 parity_hash 是逐位归约 —— 同形的 float 循环在不同向量化下会差 1 ULP。
-    (void)n_tasks;
-    return run_climate_feedback_pass(knobs);
-}
 
 // ─── 方案 B：stage_b 三段合并 run_stage_b_pass ────────────────────────────
 //

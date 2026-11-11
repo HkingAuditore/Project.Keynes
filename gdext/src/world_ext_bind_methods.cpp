@@ -71,9 +71,6 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("write_f32_indexed", "comp_id", "indices", "values"), &DCWorldExt::write_f32_indexed);
     ClassDB::bind_method(D_METHOD("write_i32_indexed", "comp_id", "indices", "values"), &DCWorldExt::write_i32_indexed);
     ClassDB::bind_method(D_METHOD("write_u8_indexed",  "comp_id", "indices", "values"), &DCWorldExt::write_u8_indexed);
-    ClassDB::bind_method(D_METHOD("write_f32_scalar_indexed", "comp_id", "indices", "v"), &DCWorldExt::write_f32_scalar_indexed);
-    ClassDB::bind_method(D_METHOD("write_i32_scalar_indexed", "comp_id", "indices", "v"), &DCWorldExt::write_i32_scalar_indexed);
-    ClassDB::bind_method(D_METHOD("write_u8_scalar_indexed",  "comp_id", "indices", "v"), &DCWorldExt::write_u8_scalar_indexed);
 
     ClassDB::bind_method(D_METHOD("bind_map_data", "map_data"), &DCWorldExt::bind_map_data);
     // sea-ice-snow-visual-fix-2026-06：bind 后注入 DCWorld 句柄，让 C++ 自动 mark dirty。
@@ -119,8 +116,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::set_runtime_qos_threaded);
      ClassDB::bind_method(D_METHOD("capture_runtime_inputs", "inputs"),
                           &DCWorldExt::capture_runtime_inputs);
-     ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference", "day", "state_hash"),
-                          &DCWorldExt::publish_runtime_climate_reference);
      ClassDB::bind_method(D_METHOD("compute_runtime_climate_parity_hash", "fields"),
                           &DCWorldExt::compute_runtime_climate_parity_hash);
      ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference_state", "day", "fields"),
@@ -151,8 +146,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_worker_read_view);
     ClassDB::bind_method(D_METHOD("poll_country_worker_intent"),
                          &DCWorldExt::poll_country_worker_intent);
-    ClassDB::bind_method(D_METHOD("submit_country_worker_result", "result"),
-                         &DCWorldExt::submit_country_worker_result);
     ClassDB::bind_method(D_METHOD("get_country_economy_asset_protocol_status"),
                          &DCWorldExt::get_country_economy_asset_protocol_status);
     ClassDB::bind_method(D_METHOD("poll_country_economy_asset_request"),
@@ -713,8 +706,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::dispatch_effect_native_modifier);
     ClassDB::bind_method(D_METHOD("ack_effect_native_modifier"),
                          &DCWorldExt::ack_effect_native_modifier);
-    ClassDB::bind_method(D_METHOD("settle_split_authority_effects", "day_index"),
-                         &DCWorldExt::settle_split_authority_effects);
     ClassDB::bind_method(D_METHOD("dispatch_effect_native_country"),
                          &DCWorldExt::dispatch_effect_native_country);
     ClassDB::bind_method(D_METHOD("ack_effect_native_country"),
@@ -971,8 +962,6 @@ void DCWorldExt::_bind_methods() {
                                   "after_receipt_id", "limit"),
                          &DCWorldExt::get_construction_command_receipts,
                          DEFVAL(64));
-    ClassDB::bind_method(D_METHOD("migrate_legacy_state_buildings", "states"),
-                         &DCWorldExt::migrate_legacy_state_buildings);
     ClassDB::bind_method(D_METHOD("queue_treasury_sponsored_build",
                                   "country_handle", "cell_idx", "type_id",
                                   "effective_day", "sequence"),
@@ -1084,8 +1073,6 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(64));
     ClassDB::bind_method(D_METHOD("get_economy_read_view_status"),
                          &DCWorldExt::get_economy_read_view_status);
-    ClassDB::bind_method(D_METHOD("run_economy_fixed_math_probe", "vectors"),
-                         &DCWorldExt::run_economy_fixed_math_probe);
     ClassDB::bind_method(D_METHOD(
         "run_economy_production_climate_math_probe", "vectors"),
         &DCWorldExt::run_economy_production_climate_math_probe);
@@ -1118,8 +1105,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_economy_ecp2);
     ClassDB::bind_method(D_METHOD("begin_economy_restore"),
                          &DCWorldExt::begin_economy_restore);
-    ClassDB::bind_method(D_METHOD("begin_economy_restore_pkec_migrate"),
-                         &DCWorldExt::begin_economy_restore_pkec_migrate);
     ClassDB::bind_method(D_METHOD("get_economy_restore_rejected_reason"),
                          &DCWorldExt::get_economy_restore_rejected_reason);
     ClassDB::bind_method(D_METHOD("feed_economy_restore_chunk", "chunk"),
@@ -1201,10 +1186,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::filter_bio_research_observations);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
-    ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),
-                         &DCWorldExt::get_native_fronts_snapshot);
-    ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot_packed"),
-                         &DCWorldExt::get_native_fronts_snapshot_packed);
     ClassDB::bind_method(D_METHOD("get_native_dirty_report"),
                          &DCWorldExt::get_native_dirty_report);
     ClassDB::bind_method(D_METHOD("start_native_generation", "seed", "cfg", "profile"),
@@ -1276,9 +1257,6 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_ocean_water_pass_thread", "knobs", "n_tasks"),
         &DCWorldExt::run_ocean_water_pass_thread);
     ClassDB::bind_method(
-        D_METHOD("run_ocean_land_pass_simd", "knobs"),
-        &DCWorldExt::run_ocean_land_pass_simd);
-    ClassDB::bind_method(
         D_METHOD("run_ocean_land_pass_thread", "knobs", "n_tasks"),
         &DCWorldExt::run_ocean_land_pass_thread);
     ClassDB::bind_method(
@@ -1319,25 +1297,16 @@ void DCWorldExt::_bind_methods() {
         D_METHOD("run_albedo_pass", "knobs"),
         &DCWorldExt::run_albedo_pass);
     // [Phase C.3c] albedo WorkerThreadPool 并行变体
-    ClassDB::bind_method(
-        D_METHOD("run_albedo_pass_thread", "knobs", "n_tasks"),
-        &DCWorldExt::run_albedo_pass_thread);
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 3）─────────────────
     ClassDB::bind_method(
         D_METHOD("run_vegetation_dynamics_pass", "knobs"),
         &DCWorldExt::run_vegetation_dynamics_pass);
     // [Phase C.3d] vegetation_dynamics WorkerThreadPool 并行变体（emit reduce）
-    ClassDB::bind_method(
-        D_METHOD("run_vegetation_dynamics_pass_thread", "knobs", "n_tasks"),
-        &DCWorldExt::run_vegetation_dynamics_pass_thread);
     // ─── DOTS-Final-Push（plan/dots-final-push 任务 4）─────────────────
     ClassDB::bind_method(
         D_METHOD("run_climate_feedback_pass", "knobs"),
         &DCWorldExt::run_climate_feedback_pass);
     // [Phase C.3c] climate_feedback WorkerThreadPool 并行变体
-    ClassDB::bind_method(
-        D_METHOD("run_climate_feedback_pass_thread", "knobs", "n_tasks"),
-        &DCWorldExt::run_climate_feedback_pass_thread);
     // ─── 方案 B：stage_b 三段合并（plan/stage-b-combine）──────────────────
     //   合并 albedo + veg_dyn + feedback 单 cpp call，消除 GDScript 端
     //   pack/unpack 围栏；目标 stage_b 6–15ms → ≤ 1.5ms
@@ -1461,9 +1430,6 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("run_bake_river_sdf_pass", "knobs"),
         &DCWorldExt::run_bake_river_sdf_pass);
-    ClassDB::bind_method(
-        D_METHOD("run_bake_coast_sdf_pass", "knobs"),
-        &DCWorldExt::run_bake_coast_sdf_pass);
     ClassDB::bind_method(
         D_METHOD("run_bake_erosion_pass", "knobs"),
         &DCWorldExt::run_bake_erosion_pass);
@@ -1614,8 +1580,6 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::async_climate_stats);
     ClassDB::bind_method(D_METHOD("async_climate_shutdown_task", "task_id"),
                          &DCWorldExt::async_climate_shutdown_task);
-    ClassDB::bind_method(D_METHOD("async_climate_shutdown_all"),
-                         &DCWorldExt::async_climate_shutdown_all);
 
     // Async Climate Round（plan §async-stage-1，2026-06-14）
     ClassDB::bind_method(D_METHOD("async_climate_round_register"),
