@@ -95,7 +95,7 @@ static func apply_to_label(
 	var artwork := label.get_node_or_null("SemanticArtwork") as TextureRect
 	if texture != null:
 		if artwork == null:
-			artwork = TextureRect.new()
+			artwork = UIControlParts.texture_rect()
 			artwork.name = "SemanticArtwork"
 			artwork.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			artwork.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

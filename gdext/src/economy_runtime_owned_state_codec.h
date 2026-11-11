@@ -6,7 +6,7 @@
 
 namespace pk::persistence_codec {
 constexpr uint32_t OWNED_STATE_MAGIC = 0x414F534Fu; // "OSOA"
-constexpr uint32_t OWNED_STATE_VERSION = 3u;
+constexpr uint32_t OWNED_STATE_VERSION = 4u;
 
 inline void owned_put_u32(std::vector<uint8_t> &out, uint32_t value) {
     for (int i = 0; i < 4; ++i)
@@ -156,14 +156,14 @@ inline bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
         wire.data() + hash_at + 8u, wire.size() - hash_at - 8u);
     if (actual_hash != expected_hash) return false;
     uint32_t seen = 0;
-    // Sections 1..6, 8, 9 and 10 are required. Section 7 is the optional epoch cursor.
+    // Sections 1..6 and 8..13 are required. Section 7 is the optional epoch cursor.
     // Journal / market-signal payloads live in ECP2 domain blobs, not OSOA.
     // Reject unknown ids fail-closed.
     while (cursor < wire.size()) {
         uint32_t id = 0, payload_size = 0;
         if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
             !read_owned_u32(wire.data(), wire.size(), cursor, payload_size) ||
-            id < 1u || id > 12u || (seen & (1u << id)) != 0u ||
+            id < 1u || id > 13u || (seen & (1u << id)) != 0u ||
             payload_size > wire.size() - cursor) return false;
         seen |= 1u << id;
         // Sections 1..4 may legitimately be empty (e.g. no trade escrow /
@@ -224,8 +224,7 @@ inline bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
         cursor += payload_size;
     }
     (void)ledger_hash;
-    // Require core sections 1..6 and publication state 8 and resource state 9; section 7 is optional.
-    return cursor == wire.size() && (seen & 0x37Eu) == 0x37Eu;
+    return cursor == wire.size() && (seen & 0x3F7Eu) == 0x3F7Eu;
 }
 inline void append_publication_block(std::vector<uint8_t> &wire,
                                      const std::vector<uint8_t> &payload, uint32_t id = 8u) {

@@ -106,7 +106,7 @@ func _ready() -> void:
 func _build() -> void:
 	_built = true
 	mouse_filter = Control.MOUSE_FILTER_PASS
-	_root = VBoxContainer.new()
+	_root = UIControlParts.v_box_container()
 	_root.name = "Root"
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -115,14 +115,14 @@ func _build() -> void:
 	_ribbon = BudgetRibbonScript.new() as Control
 	_ribbon.name = "Ribbon"
 	_root.add_child(_ribbon)
-	_scroll = ScrollContainer.new()
+	_scroll = UIControlParts.scroll_container()
 	_scroll.name = "Scroll"
 	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	# 横向滚动关掉：撕边纸在任何宽度下都按容器宽度重画。
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_root.add_child(_scroll)
-	var pad := MarginContainer.new()
+	var pad := UIControlParts.margin_container()
 	pad.name = "Pad"
 	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pad.add_theme_constant_override("margin_left", int(PAD_X))
@@ -130,7 +130,7 @@ func _build() -> void:
 	pad.add_theme_constant_override("margin_right", int(PAD_X))
 	pad.add_theme_constant_override("margin_bottom", int(PAD_BOTTOM))
 	_scroll.add_child(pad)
-	_columns = HBoxContainer.new()
+	_columns = UIControlParts.h_box_container()
 	_columns.name = "Columns"
 	_columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_columns.add_theme_constant_override("separation", int(COLUMN_SEPARATION))
@@ -297,7 +297,7 @@ func _rebuild_sections() -> void:
 
 func _make_group(name: String, tag_text: String, tone: Color,
 		with_grid: bool) -> VBoxContainer:
-	var group := VBoxContainer.new()
+	var group := UIControlParts.v_box_container()
 	group.name = name
 	group.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	group.add_theme_constant_override("separation", 8)
@@ -308,7 +308,7 @@ func _make_group(name: String, tag_text: String, tone: Color,
 	tag.configure(tag_text, tone)
 	group.add_child(tag)
 	if with_grid:
-		_pool_grid = GridContainer.new()
+		_pool_grid = UIControlParts.grid_container()
 		_pool_grid.name = "PoolGrid"
 		_pool_grid.columns = 2
 		_pool_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -413,7 +413,7 @@ func _build_military_block(body: VBoxContainer, entry: Dictionary) -> void:
 
 
 func _add_detail_label(body: VBoxContainer, entry: Dictionary) -> void:
-	var line := Label.new()
+	var line := UIControlParts.label()
 	line.name = "Detail"
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

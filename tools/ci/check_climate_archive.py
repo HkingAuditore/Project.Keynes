@@ -11,6 +11,7 @@ import subprocess
 from check_committed_replay import continuation_scan
 from check_golden_determinism import records
 from run_regression_checks import ROOT, SHUTDOWN_LEAK
+from runtime_test_hygiene import trace_environment
 
 FIXTURE = ROOT / "Project/project-keynes/tests/runtime/fixtures/climate_save_v9"
 
@@ -50,7 +51,7 @@ def publication_section(data, wanted=8):
             owned = data[offset:offset + size]
         offset += size
     assert offset == len(data) and owned is not None
-    assert owned[:4] == b"OSOA" and struct.unpack_from("<I", owned, 4)[0] == 3
+    assert owned[:4] == b"OSOA" and struct.unpack_from("<I", owned, 4)[0] == 4
     offset, publication = 40, None
     while offset < len(owned):
         block, size = struct.unpack_from("<II", owned, offset)
@@ -132,14 +133,35 @@ def military_index(data):
     raise AssertionError("PKMI index continuation missing")
 
 
+def replay_environment(logs, mode, saves):
+    environment = trace_environment(os.environ.copy(), logs, mode)
+    # Fixture generation and verification use the same explicit scenario.
+    # Inherited exploratory replay settings must not redefine its inputs.
+    for key in tuple(environment):
+        if key.startswith(("PK_COMMITTED_REPLAY_", "PK_REPLAY_")):
+            environment.pop(key)
+    environment.pop("PK_NATIVE_DAILY_INLINE", None)
+    environment.pop("PK_GAME_SAVE_ROUNDTRIP_TEST", None)
+    environment.update(PK_COMMITTED_REPLAY_MODE=mode, PK_COMMITTED_REPLAY_DAYS="10",
+                       PK_COMMITTED_REPLAY_SCENARIO="standard", PK_COMMITTED_REPLAY_SAVE_DAY="2",
+                       PK_COMMITTED_REPLAY_ROUNDTRIP="1", PK_COMMITTED_REPLAY_EXPORT="1",
+                       PK_COMMITTED_REPLAY_AUTOSAVE="0", PK_SAVE_DIR=str(saves))
+    return environment
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", required=True)
     parser.add_argument("--log-dir", type=Path, required=True)
+    parser.add_argument("--fixture", type=Path, default=FIXTURE)
     args = parser.parse_args()
     args.log_dir.mkdir(parents=True, exist_ok=False)
-    metadata = json.loads((FIXTURE / "manifest.json").read_text())
-    archive = FIXTURE / "day2.pksv"
+    metadata = json.loads((args.fixture / "manifest.json").read_text())
+    assert metadata["osoa_version"] == 4
+    legacy = (args.fixture / "legacy_catalog.pkcm").read_bytes()
+    assert len(legacy) == metadata["legacy_catalog_bytes"]
+    assert hashlib.sha256(legacy).hexdigest() == metadata["legacy_catalog_sha256"]
+    archive = args.fixture / "day2.pksv"
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == metadata["archive_sha256"]
     saves = args.log_dir.resolve() / "saves"
     payloads = []
@@ -150,16 +172,14 @@ def main():
     mobility = []
     cadence = []
     population = []
+    rain = []
     transport = []
     military = []
     forwarder = []
     for mode, slot in (("checkpoint", "manual_3"), ("resume", "manual_2")):
         if mode == "resume":
             shutil.copyfile(archive, saves / "manual_3.pksv")
-        environment = os.environ.copy()
-        environment.update(PK_COMMITTED_REPLAY_MODE=mode, PK_COMMITTED_REPLAY_DAYS="10",
-                           PK_COMMITTED_REPLAY_ROUNDTRIP="1", PK_COMMITTED_REPLAY_EXPORT="1",
-                           PK_SAVE_DIR=str(saves))
+        environment = replay_environment(args.log_dir, mode, saves)
         log = args.log_dir / (mode + ".log")
         command = [args.godot, "--headless", "--path", str(ROOT / "Project/project-keynes"),
                    "--script", "res://tests/runtime/committed_view_replay_test.gd"]
@@ -179,6 +199,7 @@ def main():
         resources.append(publication_section((saves / (slot + "-sections/ecp2.bin")).read_bytes(), 9))
         mobility.append(publication_section((saves / (slot + "-sections/ecp2.bin")).read_bytes(), 10))
         cadence.append(publication_section((saves / (slot + "-sections/ecp2.bin")).read_bytes(), 11))
+        rain.append(publication_section((saves / (slot + "-sections/ecp2.bin")).read_bytes(), 13))
         population.append(publication_section((saves / (slot + "-sections/ecp2.bin")).read_bytes(), 12))
         transport.append(host_transport((saves / (slot + "-sections/simulation_runtime.bin")).read_bytes()))
         forwarder_wire = (saves / (slot + "-sections/pkmi.bin")).read_bytes()[-28:]
@@ -186,7 +207,7 @@ def main():
         forwarder.append(forwarder_wire)
         military.append(military_index((saves / (slot + "-sections/pkmi.bin")).read_bytes()))
         compatibility.append(compatibility_section((saves / (slot + "-sections/simulation_runtime.bin")).read_bytes()))
-    for name, values in (("resources", resources), ("compatibility", compatibility), ("mobility", mobility), ("population", population), ("transport", transport), ("military_index", military), ("military_forwarder", forwarder)):
+    for name, values in (("resources", resources), ("compatibility", compatibility), ("mobility", mobility), ("population", population), ("rain", rain), ("transport", transport), ("military_index", military), ("military_forwarder", forwarder)):
         assert values[0] == values[1], f"{name} checkpoint bytes changed on roundtrip"
         assert len(values[0]) == metadata[name + "_bytes"]
         assert hashlib.sha256(values[0]).hexdigest() == metadata[name + "_sha256"]
@@ -198,6 +219,7 @@ def main():
     assert len(publications[0]) == metadata["publication_bytes"]
     assert hashlib.sha256(publications[0]).hexdigest() == metadata["publication_sha256"]
     assert sections[0] == sections[1], "CLM2 fixture roundtrip bytes changed"
+    assert len(sections[0]) == metadata["climate_bytes"]
     assert hashlib.sha256(sections[0]).hexdigest() == metadata["climate_sha256"]
     scan = continuation_scan(payloads[0], payloads[1])
     (args.log_dir / "all-domain-scan.json").write_text(json.dumps(scan, indent=2) + "\n")

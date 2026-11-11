@@ -25,7 +25,7 @@ func setup(data: Dictionary) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_theme_stylebox_override("panel", Art.paper_style(24.0))
 	Art.attach_panel_shadow(self, 0.24, 24)
-	_column = VBoxContainer.new()
+	_column = UIControlParts.v_box_container()
 	_column.custom_minimum_size.x = WIDTH
 	_column.add_theme_constant_override("separation", 6)
 	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -52,7 +52,7 @@ func setup(data: Dictionary) -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	var viewport_height := tree.root.get_visible_rect().size.y if tree != null else 720.0
 	var cap := maxf(240.0, viewport_height - 64.0)
-	_scroll = ScrollContainer.new()
+	_scroll = UIControlParts.scroll_container()
 	_scroll.name = "DetailScroll"
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.custom_minimum_size = Vector2(WIDTH + 16, minf(cap - 48, _estimate_height(data)))
@@ -103,18 +103,18 @@ func _estimate_height(data: Dictionary) -> float:
 
 
 func _header(data: Dictionary) -> void:
-	var head := HBoxContainer.new()
+	var head := UIControlParts.h_box_container()
 	head.add_theme_constant_override("separation", 12)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_child(head)
-	var emblem := TextureRect.new()
+	var emblem := UIControlParts.texture_rect()
 	emblem.texture = Art.emblem_for(String(data.get("school_id", "")))
 	emblem.custom_minimum_size = Vector2(42, 42)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	emblem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(emblem)
-	var identity := VBoxContainer.new()
+	var identity := UIControlParts.v_box_container()
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	identity.add_theme_constant_override("separation", 3)
 	head.add_child(identity)
@@ -135,7 +135,7 @@ func _header(data: Dictionary) -> void:
 
 
 func _progress(data: Dictionary, accent: Color) -> void:
-	var line := HBoxContainer.new()
+	var line := UIControlParts.h_box_container()
 	line.add_child(Art.label("境界 · %s" % String(data.get("level_label", "")),
 		15, Art.INK, HORIZONTAL_ALIGNMENT_LEFT))
 	var amount := Art.label("已完成" if bool(data.get("maxed", false)) else "%s / %s" % [
@@ -144,7 +144,7 @@ func _progress(data: Dictionary, accent: Color) -> void:
 	amount.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_child(amount)
 	_column.add_child(line)
-	var bar := ProgressBar.new()
+	var bar := UIControlParts.progress_bar()
 	bar.name = "UnderstandingProgress"
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.show_percentage = false
@@ -165,20 +165,20 @@ func _effects(title: String, lines: PackedStringArray, future: bool) -> void:
 		return
 	_rule()
 	_caption(title)
-	var rows := VBoxContainer.new()
+	var rows := UIControlParts.v_box_container()
 	rows.name = "NextEffects" if future else "CurrentEffects"
 	rows.add_theme_constant_override("separation", 7)
 	_column.add_child(rows)
 	for text in lines:
-		var row := HBoxContainer.new()
+		var row := UIControlParts.h_box_container()
 		row.add_theme_constant_override("separation", 9)
-		var mark := ColorRect.new()
+		var mark := UIControlParts.color_rect()
 		mark.custom_minimum_size = Vector2(3, 16)
 		mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		mark.color = Color(Art.INK_MUTED, 0.28) if future else Art.school_color("learning")
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(mark)
-		var copy := RichTextLabel.new()
+		var copy := UIControlParts.rich_text_label()
 		copy.bbcode_enabled = true
 		copy.fit_content = true
 		copy.scroll_active = false
@@ -199,7 +199,7 @@ func _support(data: Dictionary) -> void:
 	var available := bool(data.get("available", false))
 	var passed := bool(data.get("allowed", false))
 	var accent := Art.school_color("harmony") if passed else Art.VERMILION
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.name = "SupportRow"
 	var action := Art.label(String(data.get("action", "")), 15, Art.INK,
 		HORIZONTAL_ALIGNMENT_LEFT)
@@ -215,7 +215,7 @@ func _support(data: Dictionary) -> void:
 	_column.add_child(row)
 	if not available:
 		return
-	var metrics := HBoxContainer.new()
+	var metrics := UIControlParts.h_box_container()
 	metrics.add_theme_constant_override("separation", 16)
 	var score := int(data.get("support_q16", 0))
 	var threshold := int(data.get("threshold_q16", 0))

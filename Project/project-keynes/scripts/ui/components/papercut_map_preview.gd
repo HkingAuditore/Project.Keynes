@@ -50,7 +50,7 @@ func _ready() -> void:
 	_climate_val = get_node_or_null("Margin/Column/SummaryGrid/ClimateBox/Value") as Label
 	_polity_val = get_node_or_null("Margin/Column/SummaryGrid/PolityBox/Value") as Label
 	if _canvas != null:
-		_sea_rect = ColorRect.new()
+		_sea_rect = UIControlParts.color_rect()
 		_sea_rect.mouse_filter = MOUSE_FILTER_IGNORE
 		_sea_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		_sea_mat = ShaderMaterial.new()

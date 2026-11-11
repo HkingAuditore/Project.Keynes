@@ -3,76 +3,81 @@
   "clock_rng_seed": 150015,
   "committed_day": 2,
   "climate_version": 9,
-  "archive_sha256": "bf2fba7eed4a37b3e6f10292e332cddd631af0bbe95b7818d4a7943026616014",
-  "climate_sha256": "92f6c434755317c58a1f4bd65c46d41ec05313926440766e5c2c5a6cde0b56c6",
+  "archive_sha256": "a94cf4ef8689799ed171b3df06f6b7e95e5f77469f82604f8c9009e8b23ae4b1",
+  "climate_sha256": "cc139603fdd5cb8c3560592ce18c7e667e6e2fa0424bca030464b1f907959b81",
   "climate_bytes": 1901228,
   "climate_days_3_to_10": [
     {
-      "hash": "8506758247628532623",
+      "hash": "1512242159033318382",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 3
     },
     {
-      "hash": "10230635849912990213",
+      "hash": "6412181456131005961",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 4
     },
     {
-      "hash": "9606514352757369157",
+      "hash": "11635662924259452938",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 5
     },
     {
-      "hash": "10670374861322461417",
+      "hash": "10123957649142177026",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 6
     },
     {
-      "hash": "4628079566695992178",
+      "hash": "16126522133593939009",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 7
     },
     {
-      "hash": "2143057663953480291",
+      "hash": "7569184834105467086",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 8
     },
     {
-      "hash": "11965448605660975429",
+      "hash": "2174799344794831627",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 9
     },
     {
-      "hash": "7290533636034341428",
+      "hash": "12087277588759653282",
       "scope": "committed_store_lanes_and_physics_v1",
       "state_day": 10
     }
   ],
-  "note": "Merged upstream state-building and military equipment/transport fields: ECP2 60 and PKMI3, strict old-version rejection. Preserves existing OSOA3 income/publication lanes, PKMI index continuation, PKSR5 transport and MDJ1 forwarding cursor.",
-  "validated_library_sha256": "efbc45268e69ba2cb0707d714a1cee07dbd40f76e0ee606b98d3096ee0c4e578",
+  "note": "Current content; ECP2 60 / OSOA4 requires sampled rain edges and frozen rain thresholds. Candidate passed full eight-domain continuation before installation.",
+  "validated_library_sha256": "5dc6005c344e60c24595094f61f8ccf2edc10c84ae7e3954527b1931656e52fd",
   "ecp2_schema": 60,
-  "publication_bytes": 1167,
-  "publication_sha256": "5932ccac9ffd61ed95e6a203085c5593a1a2e099d220619df035dc5fb35fca87",
-  "osoa_version": 3,
+  "osoa_version": 4,
   "cpd2_payload_revision": 1,
-  "resources_bytes": 283412,
-  "resources_sha256": "048f7dac886a86b781cf9bdb605d3366ac07b1b29979470aa6fcf1623ae8fc9c",
-  "compatibility_bytes": 51003,
-  "compatibility_sha256": "6e09ab89bd4b828d7275f80461d7b2971a75e38cdfc501589dca01d1ad422462",
-  "mobility_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
-  "mobility_bytes": 4,
   "pksr_version": 5,
   "environment_adapter_version": 3,
   "pkmi_version": 3,
+  "military_forwarder_version": 1,
+  "publication_bytes": 1167,
+  "publication_sha256": "adbfa7db2faf991c9aaa91cbb0c1b1927dd05b7958d62dd2b8e1f12f991ff0c4",
+  "resources_bytes": 283412,
+  "resources_sha256": "e46841e96d73a5de6b7fab86d8fafbe5295a3dc8d8a50bafe6cc169e8b307db4",
+  "compatibility_bytes": 50987,
+  "compatibility_sha256": "7f51b30f215cee396862e4f459beb00c2769af7e43e7e0bd34770426ca7d8746",
+  "mobility_bytes": 4,
+  "mobility_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+  "cadence_bytes": 48,
+  "cadence_sha256": "9075385fc918197c8380660d43b837c7b0d26bc6dbefcb648df8b5f03acc0d44",
   "population_bytes": 516,
-  "population_sha256": "9e87d72695e560711f5162369547994a786f9a32185ebbe726f0df97413b2a44",
+  "population_sha256": "ded4e28462fe76300d222c7fbbbaf7b37f7ac5f3786973678ba8397e32887985",
+  "rain_bytes": 8968,
+  "rain_sha256": "1c4d5e6d5280d5056b4c2083fc5fedb15b58d13a486563ed77cd9b055364f3ba",
   "transport_bytes": 134,
   "transport_sha256": "df71e40ead83ce2ca122260e5cb8abd0deaad177e9cb08c032aca543dccc3698",
   "military_index_bytes": 32833,
   "military_index_sha256": "ff4bad74aead7d7decaf24afef6d44c8f979d96b714c222b457bfe6bcc799955",
-  "cadence_bytes": 48,
-  "cadence_sha256": "c7cf19944ef831b9fef0d35e96723ae73075bea0bb8d90560c9056eae4ad6c3c",
   "military_forwarder_bytes": 28,
   "military_forwarder_sha256": "20976a4a65e4b16bb41002b84a7cd04e75ec4d971a52468f058e19228454f808",
-  "military_forwarder_version": 1
+  "legacy_catalog_bytes": 56,
+  "legacy_catalog_sha256": "e56ea617c2cfa80e6b3a846b7699a580a3083606c88e7e8d47703710b9d64322",
+  "supersedes_archive_sha256": "bf2fba7eed4a37b3e6f10292e332cddd631af0bbe95b7818d4a7943026616014"
 }

@@ -180,7 +180,7 @@ func _make_custom_tooltip(for_text: String) -> Object:
 
 
 func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String) -> Control:
-	var panel := PanelContainer.new()
+	var panel := UIControlParts.panel_container()
 	panel.name = "MilitaryUnitTooltip"
 	# 纸片皮肤由主题的 PKPaperPopup（StyleBoxTexture / torn_note）提供。
 	# 绝不能再 add_theme_stylebox_override("panel", ...)：那会把撕纸边顶成
@@ -194,7 +194,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 	# Theme 的 PaperPopup 自带 10/8 内容边距，不再叠一层 MarginContainer。
-	var column := VBoxContainer.new()
+	var column := UIControlParts.v_box_container()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_theme_constant_override("separation", 5)
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -202,7 +202,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 
 	# 页头一行给全身份。原来页头一个「编制 25%」徽章、成本带又一个
 	# 「当前编制 25%」，同一个数重复两次，还各占一行。
-	var header := HBoxContainer.new()
+	var header := UIControlParts.h_box_container()
 	header.add_theme_constant_override("separation", 9)
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(header)
@@ -212,7 +212,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 	emblem.set_icon(String(row.get("icon", "military.unit.line")),
 		row.get("color", UITokens.DOSSIER_BRASS))
 	header.add_child(emblem)
-	var identity := VBoxContainer.new()
+	var identity := UIControlParts.v_box_container()
 	identity.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	identity.add_theme_constant_override("separation", 1)
 	header.add_child(identity)
@@ -232,7 +232,7 @@ func _build_unit_tooltip(row: Dictionary, fallback_text: String, action: String)
 	var defense := float(row.get("defense", 0.0))
 	var speed := float(row.get("speed", 0.0))
 	var top := maxf(attack, maxf(defense, speed))
-	var stats := HBoxContainer.new()
+	var stats := UIControlParts.h_box_container()
 	stats.add_theme_constant_override("separation", 6)
 	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(stats)
@@ -300,7 +300,7 @@ static func _per_person(per_100_value: float) -> String:
 ## 成本行：左边名称、右边数值，一行说清，不再用两个 24px 徽章占一整行。
 static func _tooltip_cost_row(label_text: String, value_text: String,
 		accent: Color) -> HBoxContainer:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 6)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -323,7 +323,7 @@ static func _tooltip_cost_row(label_text: String, value_text: String,
 static func _tooltip_label(text: String, size: int, color: Color,
 		font_kind: String = "sans",
 		wrap: TextServer.AutowrapMode = TextServer.AUTOWRAP_WORD_SMART) -> Label:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.add_theme_font_override("font", UITokens.dossier_font(font_kind))
 	label.add_theme_font_size_override("font_size", size)
@@ -349,22 +349,22 @@ static func _tooltip_surface_style(accent: Color) -> StyleBoxFlat:
 
 
 static func _tooltip_stat(spec: Dictionary) -> PanelContainer:
-	var card := PanelContainer.new()
+	var card := UIControlParts.panel_container()
 	card.custom_minimum_size = Vector2(TOOLTIP_STAT_WIDTH, TOOLTIP_STAT_HEIGHT)
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_theme_stylebox_override("panel", _tooltip_surface_style(spec.color))
-	var column := VBoxContainer.new()
+	var column := UIControlParts.v_box_container()
 	column.add_theme_constant_override("separation", 1)
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(column)
 	column.add_child(_tooltip_label(String(spec.label), 11,
 		UITokens.DOSSIER_INK_MUTED, "sans", TextServer.AUTOWRAP_OFF))
-	var value_line := HBoxContainer.new()
+	var value_line := UIControlParts.h_box_container()
 	value_line.add_theme_constant_override("separation", 5)
 	value_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	value_line.add_child(_tooltip_label("%.1f" % float(spec.value), 17,
 		UITokens.DOSSIER_INK, "sans_strong", TextServer.AUTOWRAP_OFF))
-	var bar := ProgressBar.new()
+	var bar := UIControlParts.progress_bar()
 	bar.show_percentage = false
 	bar.max_value = 1.0
 	bar.value = clampf(float(spec.ratio), 0.0, 1.0)
@@ -385,7 +385,7 @@ static func _tooltip_stat(spec: Dictionary) -> PanelContainer:
 
 
 static func _tooltip_section_title(text: String, icon_key: StringName) -> HBoxContainer:
-	var line := HBoxContainer.new()
+	var line := UIControlParts.h_box_container()
 	line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line.add_theme_constant_override("separation", 6)
 	var icon := IconBadge.new()
@@ -402,7 +402,7 @@ static func _tooltip_section_title(text: String, icon_key: StringName) -> HBoxCo
 
 static func _tooltip_resource_row(label_text: String, value_text: String,
 		icon_key: String, accent: Color) -> HBoxContainer:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_theme_constant_override("separation", 7)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE

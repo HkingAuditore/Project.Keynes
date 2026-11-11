@@ -4,6 +4,27 @@ const CHECKPOINT_DAYS := [60, 730, 3650]
 const DEFAULT_SOAK_DAYS := 3650
 const MAX_SLICES_PER_DAY := 2048
 
+
+class OpeningSnapshotHost extends WorldRuntimeHost:
+	var opening: Dictionary = {}
+
+	func _start_production_shadow_worker() -> void:
+		if opening.is_empty() and _generator != null:
+			var start: Dictionary = _generator.gameplay_start_report()
+			var cell := int(start.get("cell", -1))
+			var economy = _generator.get_economy_facade()
+			if cell >= 0 and economy != null and economy.is_configured():
+				# World ready can arrive while the first settlement owns the read
+				# boundary. Capture the actual opening state before starting it.
+				var families: Dictionary = economy.family_cell_snapshot(cell, 0, 64)
+				var handles: PackedInt64Array = families.get("family_handles", PackedInt64Array())
+				opening = {"cell": cell, "committed_day": economy.report().get("last_committed_day", -2),
+					"population": economy.population_cell_snapshot(cell),
+					"buildings": economy.building_cell_snapshot(cell), "families": families,
+					"people": economy.family_notable_people(int(handles[0]), 0, 64) if handles.size() == 1 else {}}
+		super._start_production_shadow_worker()
+
+
 var _checks := 0
 var _failures := 0
 
@@ -27,7 +48,7 @@ func _run() -> void:
 	clock.auto_start = false
 	root.add_child(clock)
 	clock.set_process(false)
-	var host := WorldRuntimeHost.new()
+	var host := OpeningSnapshotHost.new()
 	host.runtime_economy_auto_pod_active = true
 	root.add_child(host)
 	host.configure(null, null, clock)
@@ -73,20 +94,23 @@ func _run() -> void:
 		clock.free()
 		_finish()
 		return
+	var opening := host.opening
+	_expect("opening snapshots belong to the capital before the first settlement",
+		opening.get("cell", -1) == start_cell and opening.get("committed_day", -2) == -1)
+	var opening_population: Dictionary = opening.get("population", {})
 	_expect("starter population begins at exactly 40",
-		int(economy.population_cell_snapshot(start_cell).get("population", 0)) == 40)
-	var opening_buildings: Dictionary = economy.building_cell_snapshot(start_cell)
+		int(opening_population.get("population", 0)) == 40)
+	var opening_buildings: Dictionary = opening.get("buildings", {})
 	_expect("opening food lots operate without leftover construction techs",
 		_food_lots_operable(opening_buildings,
 			player_start.get("starter_building_ids", PackedStringArray())))
-	var opening_families: Dictionary = economy.family_cell_snapshot(start_cell, 0, 64)
+	var opening_families: Dictionary = opening.get("families", {})
 	var opening_family_handles: PackedInt64Array = opening_families.get(
 		"family_handles", PackedInt64Array())
 	_expect("starter capital begins with one founder family",
 		opening_family_handles.size() == 1)
 	if opening_family_handles.size() == 1:
-		var opening_people: Dictionary = economy.family_notable_people(
-			int(opening_family_handles[0]), 0, 64)
+		var opening_people: Dictionary = opening.get("people", {})
 		_expect("starter capital begins with one notable founder",
 			int(opening_people.get("total", 0)) == 1)
 
@@ -228,4 +252,6 @@ func _expect(label: String, condition: bool) -> void:
 
 func _finish() -> void:
 	print("starter settlement soak: %d checks, %d failures" % [_checks, _failures])
-	quit(0 if _failures == 0 else 1)
+	# Release the fixture's local facades and completed coroutine frames before
+	# SceneTree tears down ObjectDB. Real leaked owners still fail the outer gate.
+	call_deferred("quit", 0 if _failures == 0 else 1)

@@ -8,11 +8,13 @@ const PlayerCommandValidation = preload("res://scripts/game/player_command_valid
 
 const AnnualReportFlowScript = preload("res://scripts/annual/annual_report_flow.gd")
 const MusicSituationAggregatorScript = preload("res://scripts/audio/music_situation_aggregator.gd")
+const MusicSituationPlaybackScript = preload("res://scripts/audio/music_situation_playback.gd")
 const NarrativeEventServiceScript = preload("res://scripts/narrative/narrative_event_service.gd")
 const NarrativeEventFlowScript = preload("res://scripts/narrative/narrative_event_flow.gd")
 const NarrativeAiClientScript = preload("res://scripts/narrative/ai/narrative_ai_client.gd")
 var _annual_report_flow = AnnualReportFlowScript.new()
 var _music_situation = MusicSituationAggregatorScript.new()
+var _music_playback: Node
 var _narrative_service = NarrativeEventServiceScript.new()
 var _narrative_flow = NarrativeEventFlowScript.new()
 var _narrative_ai_client: Node = null
@@ -100,6 +102,12 @@ const COMMAND_MILITARY_PEACE_RESPOND = PlayerCommandValidation.COMMAND_MILITARY_
 ## A draw/choose/reroll that has not settled after this many simulated days
 ## releases the lock and restores the clock.
 const IDEOLOGY_DRAW_TIMEOUT_DAYS := 3
+
+const CLOCK_CALLBACKS := {
+	&"day_changed": &"_on_day_changed", &"season_changed": &"_on_season_changed",
+	&"year_changed": &"_on_year_changed", &"visual_day_phase_changed": &"_on_visual_day_phase_changed",
+	&"speed_changed": &"_on_speed_changed", &"control_changed": &"_on_clock_control_changed",
+}
 
 const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_SET_WEIGHTS: true,
@@ -201,6 +209,11 @@ func configure(
 		world_clock,
 		ui_manager
 ) -> void:
+	if is_instance_valid(_world_clock):
+		for signal_name in CLOCK_CALLBACKS:
+			var callback := Callable(self, CLOCK_CALLBACKS[signal_name])
+			if _world_clock.is_connected(signal_name, callback):
+				_world_clock.disconnect(signal_name, callback)
 	_camera = camera
 	_highlight = highlight
 	_runtime_host = runtime_host
@@ -211,7 +224,10 @@ func configure(
 	_connect_ui()
 	_annual_report_flow.configure(self, _runtime_host, _world_clock, _ui_manager)
 	_configure_narrative_runtime()
-	set_process(true)
+	if _music_playback == null:
+		_music_playback = MusicSituationPlaybackScript.new()
+		_music_playback.situation = _music_situation
+		add_child(_music_playback)
 	sync_ui()
 
 
@@ -242,25 +258,14 @@ func _apply_camera_view_scale_compensation() -> void:
 	_camera.set_view_scale_compensation(total_scale)
 
 
-func _process(delta: float) -> void:
+func _on_clock_control_changed(_paused: bool, _speed: float) -> void:
 	if _popups_suppressed and _suppression_resume_running and _world_clock != null \
 			and _world_clock.paused and not _world_clock.authority_fault_hold \
 			and _is_suppressed_popup_pause_source(String(_world_clock.last_pause_source)):
-		# 兜底处理竞态：事件可能在同步流程之后才到达，下一帧再申请暂停。
+		# 等这次时钟通知完成后释放被屏蔽提示申请的暂停。
 		# 只释放已知的 UI 自动暂停来源，保留手动暂停、存档暂停和故障保护。
 		_world_clock.pause(false)
 		_sync_clock_visual_state()
-	if _music_situation == null:
-		return
-	var situation: Dictionary = _music_situation.process_audio_update(delta)
-	if not bool(situation.get("tension_write_due", false)):
-		return
-	var audio := get_node_or_null("/root/GameAudio")
-	if audio == null or not audio.has_method("set_active_suite_emotion"):
-		return
-	if bool(audio.set_active_suite_emotion(
-			float(situation.get("tension", 0.0)), 0.0, 0.0, false)):
-		_music_situation.consume_tension_write()
 
 
 func music_situation_diagnostics() -> Dictionary:
@@ -1090,16 +1095,11 @@ func _connect_runtime() -> void:
 		_runtime_host.country_peer_serviced.connect(_on_country_peer_serviced)
 	if _world_clock == null:
 		return
-	if not _world_clock.day_changed.is_connected(_on_day_changed):
-		_world_clock.day_changed.connect(_on_day_changed)
-	if not _world_clock.season_changed.is_connected(_on_season_changed):
-		_world_clock.season_changed.connect(_on_season_changed)
-	if not _world_clock.year_changed.is_connected(_on_year_changed):
-		_world_clock.year_changed.connect(_on_year_changed)
-	if not _world_clock.visual_day_phase_changed.is_connected(_on_visual_day_phase_changed):
-		_world_clock.visual_day_phase_changed.connect(_on_visual_day_phase_changed)
-	if not _world_clock.speed_changed.is_connected(_on_speed_changed):
-		_world_clock.speed_changed.connect(_on_speed_changed)
+	for signal_name in CLOCK_CALLBACKS:
+		var callback := Callable(self, CLOCK_CALLBACKS[signal_name])
+		if not _world_clock.is_connected(signal_name, callback):
+			_world_clock.connect(signal_name, callback,
+				CONNECT_DEFERRED if signal_name == &"control_changed" else 0)
 
 
 func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:

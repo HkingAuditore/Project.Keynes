@@ -226,8 +226,12 @@ func _init() -> void:
 		restored.ideology_draw_phase().is_empty()
 		and is_equal_approx(restored_clock.speed_multiplier, 4.0))
 
+	_expect("an invalid draw configuration also has a readable rejection",
+		not CountryViewModel.ideology_player_reason("ideology_offer_weight_invalid").is_empty())
+	controller.free()
+	restored.free()
 	print("ideology draw flow: %d checks, %d failures" % [_checks, _failures])
-	quit(0 if _failures == 0 else 1)
+	call_deferred("quit", 0 if _failures == 0 else 1)
 
 
 func _fixture() -> Dictionary:

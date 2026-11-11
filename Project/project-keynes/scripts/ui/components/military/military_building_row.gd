@@ -102,10 +102,10 @@ func _make_chip(width: float) -> Button:
 static func build_tooltip_card(text: String) -> Control:
 	if text.strip_edges().is_empty():
 		return null
-	var panel := PanelContainer.new()
+	var panel := UIControlParts.panel_container()
 	panel.theme_type_variation = &"PKPaperPopup"
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var copy := Label.new()
+	var copy := UIControlParts.label()
 	copy.text = text
 	copy.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	copy.add_theme_font_override("font", UITokens.dossier_font("sans"))

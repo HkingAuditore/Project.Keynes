@@ -19,41 +19,41 @@ var _suppress := false
 
 func _ready() -> void:
 	add_theme_constant_override("separation", UITokens.SPACE_XS)
-	var header := Label.new()
+	var header := UIControlParts.label()
 	header.text = "太阳位置"
 	header.add_theme_font_size_override("font_size", UITokens.FONT_SECTION)
 	header.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	add_child(header)
-	_map_drag_checkbox = CheckBox.new()
+	_map_drag_checkbox = UIControlParts.check_box()
 	_map_drag_checkbox.text = "在地图上拖动太阳"
 	_map_drag_checkbox.focus_mode = Control.FOCUS_NONE
 	_map_drag_checkbox.toggled.connect(_on_map_drag_toggled)
 	add_child(_map_drag_checkbox)
-	_status = Label.new()
+	_status = UIControlParts.label()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.add_theme_color_override("font_color", UITokens.TEXT_MAIN)
 	_status.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
 	add_child(_status)
-	var hint := Label.new()
+	var hint := UIControlParts.label()
 	hint.text = "勾选后可拖动太阳标记；关闭面板后仍可继续拖动。昼夜循环开启时，拖动会调整时刻和纬度；永昼模式下，太阳位置决定光线方向和高度。选择「恢复跟随」后由时钟控制。"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 	hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 	add_child(hint)
-	_follow_button = Button.new()
+	_follow_button = UIControlParts.button()
 	_follow_button.text = "恢复跟随"
 	_follow_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_follow_button.focus_mode = Control.FOCUS_NONE
 	_follow_button.disabled = true
 	_follow_button.pressed.connect(_on_follow_pressed)
 	add_child(_follow_button)
-	var height_row := HBoxContainer.new()
+	var height_row := UIControlParts.h_box_container()
 	height_row.add_theme_constant_override("separation", UITokens.SPACE_SM)
-	var height_label := Label.new()
+	var height_label := UIControlParts.label()
 	height_label.text = "太阳高度"
 	height_label.custom_minimum_size.x = 72.0
 	height_row.add_child(height_label)
-	_height_slider = HSlider.new()
+	_height_slider = UIControlParts.h_slider()
 	_height_slider.min_value = 0.2
 	_height_slider.max_value = 1.5
 	_height_slider.step = 0.01

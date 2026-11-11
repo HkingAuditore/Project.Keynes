@@ -8,8 +8,14 @@ var _checks := 0
 var _failures := 0
 
 
-func _init() -> void:
+func _initialize() -> void:
+	call_deferred("_run_and_finish")
+
+
+func _run_and_finish() -> void:
 	_run()
+	# Chunk replacement queues detached rendering nodes for end-of-frame release.
+	await process_frame
 	quit(0 if _failures == 0 else 1)
 
 
@@ -37,6 +43,7 @@ func _run() -> void:
 		int(round(canopy_lut.get_pixel(3, 0).r)) == ProfileScript.FORM_BROADLEAF
 		and int(round(canopy_lut.get_pixel(3, 1).r)) == ProfileScript.FORM_CONIFER
 		and canopy_lut.get_pixel(3, 1).g < canopy_lut.get_pixel(3, 0).g)
+	var detached_source: MultiMeshInstance2D = tree._chunk_nodes[7]
 	_expect("source profile draw nodes are suppressed", not tree._chunk_nodes[7].visible and not conifer._chunk_nodes[7].visible)
 	_expect("style LUT is bound to the family material", bool(family.diagnostics().get("style_lut_bound", false)))
 
@@ -100,6 +107,7 @@ func _run() -> void:
 	family._sources.clear()
 	family.free()
 	tree.free()
+	_expect("freeing a source immediately releases its detached draw nodes", not is_instance_valid(detached_source))
 	conifer.free()
 	cache_source.free()
 	upright_family._sources.clear()

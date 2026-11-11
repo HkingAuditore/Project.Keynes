@@ -941,6 +941,14 @@ void NativeSimulationHost::build_save_bundle(
         record_save_failure("save_pending_command_capacity_exceeded");
         return;
     }
+    // Check this before cross-domain checkpoint identities: bootstrap Country
+    // legitimately has no committed day either. Report the actionable cause.
+    if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
+        _economy_production_runtime != nullptr &&
+        _economy_production_runtime->last_committed_day() < 0) {
+        record_save_failure("save_requires_first_settlement");
+        return;
+    }
     auto bundle = std::make_shared<RuntimeSaveBundle>();
     bundle->request_id = request_id;
     bundle->bundle_version = RUNTIME_SAVE_BUNDLE_VERSION;
@@ -1186,14 +1194,6 @@ void NativeSimulationHost::build_save_bundle(
     if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
         _economy_production_runtime != nullptr) {
         EconomyCostProbe economy_probe("save.ecp2", bundle->committed_day);
-        // The committed-ledger contract (capture and restore alike) needs at
-        // least one economy commit. Before that there is nothing restorable
-        // to write; reject the request and keep the runtime running instead
-        // of faulting a healthy worker over a premature save.
-        if (_economy_production_runtime->last_committed_day() < 0) {
-            record_save_failure("save_requires_first_settlement");
-            return;
-        }
         uint32_t capture_flags = 0;
         if (_economy_ecp2_mid_epoch_save.load(std::memory_order_acquire))
             capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
@@ -1213,24 +1213,22 @@ void NativeSimulationHost::build_save_bundle(
             country_identity = {country_checkpoint->generation,
                                 country_checkpoint->business_state_hash};
         }
-        const bool ecp2_captured = EconomyAuthorityTransfer::capture(
-            *_economy_production_runtime, ecp2_state, ecp2_capture_error,
-            capture_flags, stamp_worker_country ? &country_identity : nullptr);
-        if (ecp2_captured) {
-            std::string ecp2_encode_error;
-            if (encode_ecp2(ecp2_state, bundle->economy_ecp2_bytes,
-                            ecp2_encode_error) &&
-                !bundle->economy_ecp2_bytes.empty()) {
-                bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
-            } else if (!ecp2_encode_error.empty()) {
-                set_fault(ecp2_encode_error.c_str());
-                return;
-            }
-        } else if (!ecp2_capture_error.empty() &&
-                   ecp2_capture_error != "save_requires_committed_boundary") {
-            set_fault(ecp2_capture_error.c_str());
+        if (!EconomyAuthorityTransfer::capture(*_economy_production_runtime,
+                ecp2_state, ecp2_capture_error, capture_flags,
+                stamp_worker_country ? &country_identity : nullptr)) {
+            // A rejected capture must not publish a bundle missing its Economy section.
+            record_save_failure(ecp2_capture_error.empty() ? "economy_ecp2_capture_failed" :
+                ecp2_capture_error.c_str());
             return;
         }
+        std::string ecp2_encode_error;
+        if (!encode_ecp2(ecp2_state, bundle->economy_ecp2_bytes, ecp2_encode_error) ||
+                bundle->economy_ecp2_bytes.empty()) {
+            set_fault(ecp2_encode_error.empty() ? "economy_ecp2_encode_failed" :
+                ecp2_encode_error.c_str());
+            return;
+        }
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
     }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header

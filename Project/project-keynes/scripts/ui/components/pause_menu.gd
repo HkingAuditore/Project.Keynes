@@ -52,7 +52,7 @@ func _apply_touch_layout() -> void:
 	_frame.offset_top = 14.0
 	_frame.offset_bottom = -14.0
 	_frame.custom_minimum_size = Vector2(320.0, 240.0)
-	_rows_scroll = ScrollContainer.new()
+	_rows_scroll = UIControlParts.scroll_container()
 	_rows_scroll.name = "RowsScroll"
 	_rows_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_rows_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL

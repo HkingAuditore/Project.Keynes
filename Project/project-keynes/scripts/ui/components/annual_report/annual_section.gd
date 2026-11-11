@@ -41,7 +41,7 @@ func build(p_index: int, chapter: Dictionary, model: Dictionary, layout: Diction
 	add_theme_constant_override("margin_top", 0)
 	add_theme_constant_override("margin_bottom", 0)
 
-	_column = VBoxContainer.new()
+	_column = UIControlParts.v_box_container()
 	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_theme_constant_override("separation", 0)
 	add_child(_column)
@@ -104,7 +104,7 @@ func _build_header() -> void:
 		mini(AnnualReportTokens.chapter_number_size(_viewport), int(_measure * 0.30)))
 	var baseline: float = height - 6.0
 
-	_header = Control.new()
+	_header = UIControlParts.control()
 	_header.custom_minimum_size = Vector2(0.0, height)
 	_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var mark := _ChapterMark.new()
@@ -145,13 +145,13 @@ func _build_header() -> void:
 		_place(lead, Vector2(0.0, lead_top), Vector2(_measure, lead_height))
 		_header.add_child(lead)
 	_column.add_child(_header)
-	var pencil_rule := ColorRect.new()
+	var pencil_rule := UIControlParts.color_rect()
 	_pencil_rule(pencil_rule)
 	_column.add_child(pencil_rule)
 
 
 func _spacer(height: float) -> void:
-	var gap := Control.new()
+	var gap := UIControlParts.control()
 	gap.custom_minimum_size = Vector2(0.0, height)
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_child(gap)
@@ -253,7 +253,7 @@ func _month_chart(visual: Dictionary) -> Control:
 		_binds.append(func() -> void:
 			if not strip.set_data(population, observed):
 				strip.visible = false)
-		var row := VBoxContainer.new()
+		var row := UIControlParts.v_box_container()
 		row.add_theme_constant_override("separation", 6)
 		row.add_child(area)
 		var caption := _text_label("各月末人口", 13, UITokens.CHRONICLE_MUTED, true)
@@ -383,7 +383,7 @@ func _build_tail() -> void:
 	if details.is_empty():
 		return
 	for detail in details:
-		var label := RichTextLabel.new()
+		var label := UIControlParts.rich_text_label()
 		label.bbcode_enabled = false
 		label.fit_content = true
 		label.scroll_active = false
@@ -398,7 +398,7 @@ func _build_tail() -> void:
 		label.add_theme_constant_override("line_separation", 5)
 		_column.add_child(label)
 		_spacer(6.0)
-	var tail := ColorRect.new()
+	var tail := UIControlParts.color_rect()
 	tail.color = Color(UITokens.CHRONICLE_INK.r, UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.28)
 	tail.custom_minimum_size = Vector2(48.0, 1.0)
 	tail.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -409,7 +409,7 @@ func _build_tail() -> void:
 # ── 工具 ────────────────────────────────────────────────────────────────────
 
 func _text_label(text: String, size_px: int, color: Color, tracked: bool) -> Label:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_override("font", UITokens.annual_font("label" if tracked else "display"))

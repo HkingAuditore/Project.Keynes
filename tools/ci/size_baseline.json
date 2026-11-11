@@ -122,11 +122,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/shrub_layer.gd": {
-      "lines": 5936,
+      "lines": 5913,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/weather_layer.gd": {
-      "lines": 1857,
+      "lines": 1777,
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd": {
@@ -218,7 +218,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/country_view_model.gd": {
-      "lines": 1549,
+      "lines": 1348,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/debug_console.gd": {
@@ -318,11 +318,11 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_market.cpp": {
-      "lines": 3005,
+      "lines": 3004,
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2209,
+      "lines": 2204,
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence_read.cpp": {
@@ -330,7 +330,7 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_queries_market_building.cpp": {
-      "lines": 3008,
+      "lines": 2906,
       "limit": 2000
     },
     "gdext/src/economy_runtime_trade.cpp": {
@@ -422,7 +422,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_economy.cpp": {
-      "lines": 2860,
+      "lines": 2820,
       "limit": 2000
     },
     "gdext/src/world_ext_generate.cpp": {
@@ -430,7 +430,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_military.cpp": {
-      "lines": 3785,
+      "lines": 3575,
       "limit": 2000
     },
     "gdext/src/world_ext_physical.cpp": {

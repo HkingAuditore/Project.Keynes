@@ -6,6 +6,21 @@
 namespace pk {
 namespace economy_api {
 
+godot::Dictionary detail_report(const NativeEconomyRuntime &economy) {
+    return economy.report();
+}
+bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
+    const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
+    const uint8_t *passable, const int32_t *move_cost, int32_t count,
+    uint64_t generation, std::string &error, const uint8_t *landform, const uint8_t *river) {
+    return economy.capture_trade_topology(neighbors, terrain, canal_mask, canal_water,
+        passable, move_cost, count, generation, error, landform, river);
+}
+bool capture_trade_visibility(NativeEconomyRuntime &economy, const uint8_t *visible,
+    int32_t count, bool solved, bool from_map, std::string &error) {
+    return economy.capture_trade_visibility(visible, count, solved, from_map, error);
+}
+
 bool valid_family_effect_entity_handle(const NativeEconomyRuntime &economy,
                                        uint64_t handle) {
     return economy.valid_family_effect_entity_handle(handle);

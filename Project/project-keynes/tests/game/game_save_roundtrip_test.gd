@@ -62,12 +62,16 @@ func _run() -> void:
 		first_host.player_country_slot() >= 0)
 	_expect("new game has non-empty explored progress",
 		_count_nonzero(first_host.current_map().explored_arr) > 0)
-	# 首次结算之前没有可恢复的已提交账本。过去这种存档会在 worker 里 set_fault、
-	# 再被状态覆盖藏起来，表现为 1800 帧后 runtime_save_timeout 且 worker 失去全部权威。
+	# 生成结束可能已完成第1日；根据真实账本验证保存结果，不能把 ready 当作尚未结算。
+	# 未结算的拒绝另由 runtime 夹具在受控开局中覆盖。
 	var early: Dictionary = await _game_save.call("request_manual_save", "manual_1")
-	_expect("save before first settlement is rejected with its own code",
-		String(early.get("code", "")) == "save_requires_first_settlement")
-	_expect("rejected early save leaves the worker healthy",
+	if String(early.get("code", "")) == "save_requires_first_settlement":
+		_expect("save before first settlement is rejected with its own code",
+			not bool(early.get("ok", false)))
+	else:
+		_expect("a committed startup world can be saved immediately", bool(early.get("ok", false))
+			and int(first_host.generator().get_economy_report().get("last_committed_day", -1)) >= 0)
+	_expect("startup save leaves the worker healthy",
 		String(first_host.generator().get_runtime_thread_report().get(
 			"simulation_host_state", "")) != "FAULTED")
 	_expect("new game reaches its first economy settlement",
@@ -137,7 +141,12 @@ func _run() -> void:
 	var restored_clocks: Array[Dictionary] = []
 	_game_save.load_completed.connect(func(_slot_id: String, _result: Dictionary) -> void:
 		var host: WorldRuntimeHost = _game_save.get("_runtime_host")
-		restored_military.append(host.generator().get_military_facade().encode_state())
+		# The provider owns the MDJ1 event-forwarding tail as well as PKMI.
+		var provider = preload("res://scripts/game/save_modules/country_state.gd").new()
+		var captured: Dictionary = provider._write_military_provider({
+			"military": host.generator().get_military_facade(),
+			"military_progress": host.generator()._military_daily_job})
+		restored_military.append(captured.get("sections", {}).get("pkmi", PackedByteArray()))
 		restored_clocks.append((_game_save.get("_world_clock") as WorldClock).export_state()), CONNECT_ONE_SHOT)
 	var previous_session = first_host.get("_runtime_session")
 	var previous_generation: int = previous_session.generation

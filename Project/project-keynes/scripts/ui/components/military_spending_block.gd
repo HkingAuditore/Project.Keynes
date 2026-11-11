@@ -196,7 +196,7 @@ func budget_total() -> int:
 
 func _build() -> void:
 	_built = true
-	_empty = Label.new()
+	_empty = UIControlParts.label()
 	_empty.name = "Empty"
 	_empty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -207,7 +207,7 @@ func _build() -> void:
 	add_child(_empty)
 
 	# ---- 预算段 -----------------------------------------------------------
-	_envelope_row = HBoxContainer.new()
+	_envelope_row = UIControlParts.h_box_container()
 	_envelope_row.name = "EnvelopeHead"
 	_envelope_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_envelope_row.add_theme_constant_override("separation", 8)
@@ -228,7 +228,7 @@ func _build() -> void:
 
 	# 结算段与三条通道统一挂在 _content 下：空态整块不渲染，
 	# 不再留下空滑条、表头、破折号占位与假零读数。
-	_content = VBoxContainer.new()
+	_content = UIControlParts.v_box_container()
 	_content.name = "Content"
 	_content.mouse_filter = Control.MOUSE_FILTER_PASS
 	_content.add_theme_constant_override("separation", 6)
@@ -238,7 +238,7 @@ func _build() -> void:
 	# 三条通道各占一个纵向小块：滑条 + 状态脚注。滑条自带份额与日额读数，
 	# 脚注只写"为什么这条通道现在这样"。
 	for spec in CHANNELS:
-		var channel := VBoxContainer.new()
+		var channel := UIControlParts.v_box_container()
 		channel.name = "Channel_%s" % String(spec.id)
 		channel.mouse_filter = Control.MOUSE_FILTER_PASS
 		channel.add_theme_constant_override("separation", 1)
@@ -251,7 +251,7 @@ func _build() -> void:
 			String(spec.id))
 		slider.share_committed.connect(_on_channel_committed.bind(String(spec.id)))
 		channel.add_child(slider)
-		var note := Label.new()
+		var note := UIControlParts.label()
 		note.name = "Note"
 		note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -262,7 +262,7 @@ func _build() -> void:
 		channel.add_child(note)
 		_channels[String(spec.id)] = {"slider": slider, "note": note}
 
-	_summary = Label.new()
+	_summary = UIControlParts.label()
 	_summary.name = "Summary"
 	_summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -276,7 +276,7 @@ func _build() -> void:
 	divider.name = "Divider"
 	_content.add_child(divider)
 
-	var head := HBoxContainer.new()
+	var head := UIControlParts.h_box_container()
 	head.name = "Head"
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_theme_constant_override("separation", 8)
@@ -304,7 +304,7 @@ func _build() -> void:
 	_train_value.text = "在训 0 人 · 待装备 0 件"
 	_content.add_child(train.row as Control)
 
-	_note = Label.new()
+	_note = UIControlParts.label()
 	_note.name = "Note"
 	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -486,7 +486,7 @@ func _total_share_bp() -> int:
 
 
 func _make_caption(text: String) -> Label:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -498,11 +498,11 @@ func _make_caption(text: String) -> Label:
 
 ## 一行账目：通道名、引导虚线、右对齐读数。
 func _make_row(title: String) -> Dictionary:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.name = "Row_%s" % title
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 8)
-	var title_label := Label.new()
+	var title_label := UIControlParts.label()
 	title_label.name = "Title"
 	title_label.text = title
 	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -512,7 +512,7 @@ func _make_row(title: String) -> Dictionary:
 	title_label.add_theme_color_override("font_color", UITokens.DOSSIER_INK_SOFT)
 	row.add_child(title_label)
 	row.add_child(DottedLeader.new())
-	var value := Label.new()
+	var value := UIControlParts.label()
 	value.name = "Value"
 	value.text = "—"
 	value.mouse_filter = Control.MOUSE_FILTER_IGNORE

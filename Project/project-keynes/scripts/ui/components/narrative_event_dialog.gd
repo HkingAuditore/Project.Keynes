@@ -143,7 +143,7 @@ func _build_ui() -> void:
 		return
 
 	# 1. Atmospheric vignette desk backdrop
-	_backdrop = ColorRect.new()
+	_backdrop = UIControlParts.color_rect()
 	_backdrop.name = "Backdrop"
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop.color = Color(0.08, 0.065, 0.05, 0.72)
@@ -157,13 +157,13 @@ func _build_ui() -> void:
 	add_child(_backdrop)
 
 	# 2. Centered floating multi-layered torn paper folio
-	var center := CenterContainer.new()
+	var center := UIControlParts.center_container()
 	center.name = "Center"
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(center)
 
-	_main_sheet = PanelContainer.new()
+	_main_sheet = UIControlParts.panel_container()
 	_main_sheet.name = "MainSheet"
 	_main_sheet.custom_minimum_size = Vector2(740.0, 500.0)
 	var sheet_style := EraNoteStyle.duplicate() as StyleBoxTexture
@@ -175,7 +175,7 @@ func _build_ui() -> void:
 	center.add_child(_main_sheet)
 	_sheet_wrap = _main_sheet
 
-	var underlay := Control.new()
+	var underlay := UIControlParts.control()
 	underlay.name = "Underlay"
 	underlay.show_behind_parent = true
 	underlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -214,23 +214,23 @@ func _build_ui() -> void:
 	_underlay_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	underlay.add_child(_underlay_page)
 
-	var col := VBoxContainer.new()
+	var col := UIControlParts.v_box_container()
 	col.add_theme_constant_override("separation", 8)
 	_main_sheet.add_child(col)
 
 	# Top Bar: Kicker + Cut-Paper Tags + Action Links
-	var top_bar := HBoxContainer.new()
+	var top_bar := UIControlParts.h_box_container()
 	top_bar.add_theme_constant_override("separation", 8)
 	col.add_child(top_bar)
 
-	_kicker_label = Label.new()
+	_kicker_label = UIControlParts.label()
 	_kicker_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_kicker_label.add_theme_font_override("font", UITokensScript.annual_font("label"))
 	_kicker_label.add_theme_font_size_override("font_size", 15)
 	_kicker_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
 	top_bar.add_child(_kicker_label)
 
-	_tags_row = HBoxContainer.new()
+	_tags_row = UIControlParts.h_box_container()
 	_tags_row.add_theme_constant_override("separation", 4)
 	top_bar.add_child(_tags_row)
 
@@ -248,42 +248,42 @@ func _build_ui() -> void:
 	top_bar.add_child(_chronicle_button)
 
 	# Title Row with Handwritten Brush Font + Coloured-Pencil Chapter Emblem
-	var header_row := HBoxContainer.new()
+	var header_row := UIControlParts.h_box_container()
 	header_row.add_theme_constant_override("separation", 12)
 	col.add_child(header_row)
 
-	_emblem_badge = TextureRect.new()
+	_emblem_badge = UIControlParts.texture_rect()
 	_emblem_badge.custom_minimum_size = Vector2(54.0, 54.0)
 	_emblem_badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_emblem_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_emblem_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header_row.add_child(_emblem_badge)
 
-	var title_col := VBoxContainer.new()
+	var title_col := UIControlParts.v_box_container()
 	title_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_col.add_theme_constant_override("separation", 4)
 	header_row.add_child(title_col)
 
-	_title_label = Label.new()
+	_title_label = UIControlParts.label()
 	_title_label.name = "TitleLabel"
 	_title_label.add_theme_font_override("font", UITokensScript.annual_font("display"))
 	_title_label.add_theme_font_size_override("font_size", 34)
 	_title_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	title_col.add_child(_title_label)
 
-	var title_rule := ColorRect.new()
+	var title_rule := UIControlParts.color_rect()
 	title_rule.custom_minimum_size = Vector2(0.0, 1.5)
 	title_rule.color = UITokensScript.DOSSIER_RULE_STRONG
 	title_col.add_child(title_rule)
 
 	# Colored-Pencil Papercut Illustration Stage (no rectangular dark box! Blends into paper)
-	_art_clip = Control.new()
+	_art_clip = UIControlParts.control()
 	_art_clip.custom_minimum_size = Vector2(640.0, 134.0)
 	_art_clip.clip_contents = true
 	_art_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_art_clip)
 
-	_art_rect = TextureRect.new()
+	_art_rect = UIControlParts.texture_rect()
 	_art_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_art_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_art_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -300,7 +300,7 @@ func _build_ui() -> void:
 	_art_clip.add_child(_art_rect)
 
 	# Feathered wash at the bottom of the illustration so it melts into the parchment
-	_wash_rect = ColorRect.new()
+	_wash_rect = UIControlParts.color_rect()
 	_wash_rect.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_wash_rect.offset_top = -54.0
 	_wash_rect.offset_bottom = 0.0
@@ -316,7 +316,7 @@ func _build_ui() -> void:
 	_art_clip.add_child(_wash_rect)
 
 	# Narrative Story Body in classical serif/brush body font
-	_body_label = Label.new()
+	_body_label = UIControlParts.label()
 	_body_label.name = "BodyLabel"
 	_body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_body_label.add_theme_font_override("font", UITokensScript.DOSSIER_SERIF)
@@ -326,31 +326,31 @@ func _build_ui() -> void:
 	col.add_child(_body_label)
 
 	# Optional on-trigger omen slip (cut-paper strip)
-	_trigger_slip = PanelContainer.new()
+	_trigger_slip = UIControlParts.panel_container()
 	_trigger_slip.visible = false
 	_trigger_slip.add_theme_stylebox_override("panel", _make_cut_tag_style(Color(0.96, 0.89, 0.74, 0.95)))
 	col.add_child(_trigger_slip)
 
-	_trigger_notes_label = Label.new()
+	_trigger_notes_label = UIControlParts.label()
 	_trigger_notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_trigger_notes_label.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	_trigger_notes_label.add_theme_font_size_override("font_size", 13)
 	_trigger_notes_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
 	_trigger_slip.add_child(_trigger_notes_label)
 
-	var mid_rule := ColorRect.new()
+	var mid_rule := UIControlParts.color_rect()
 	mid_rule.custom_minimum_size = Vector2(0.0, 1.0)
 	mid_rule.color = UITokensScript.DOSSIER_RULE
 	col.add_child(mid_rule)
 
 	# Options Stack (each option is a tactile torn-paper decree note)
-	_options_vbox = VBoxContainer.new()
+	_options_vbox = UIControlParts.v_box_container()
 	_options_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_options_vbox.add_theme_constant_override("separation", 10)
 	col.add_child(_options_vbox)
 
 	# Outcome Resolution View (with Cinnabar Red Seal & Torn Note)
-	_outcome_panel = PanelContainer.new()
+	_outcome_panel = UIControlParts.panel_container()
 	_outcome_panel.visible = false
 	var out_note_style := EraNoteStyle.duplicate() as StyleBoxTexture
 	out_note_style.content_margin_left = 22.0
@@ -361,11 +361,11 @@ func _build_ui() -> void:
 	_outcome_panel.add_theme_stylebox_override("panel", out_note_style)
 	col.add_child(_outcome_panel)
 
-	var out_hbox := HBoxContainer.new()
+	var out_hbox := UIControlParts.h_box_container()
 	out_hbox.add_theme_constant_override("separation", 16)
 	_outcome_panel.add_child(out_hbox)
 
-	_outcome_seal = TextureRect.new()
+	_outcome_seal = UIControlParts.texture_rect()
 	_outcome_seal.texture = SealBadgeTexture
 	_outcome_seal.custom_minimum_size = Vector2(68.0, 68.0)
 	_outcome_seal.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -373,32 +373,32 @@ func _build_ui() -> void:
 	_outcome_seal.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	out_hbox.add_child(_outcome_seal)
 
-	var out_vbox := VBoxContainer.new()
+	var out_vbox := UIControlParts.v_box_container()
 	out_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	out_vbox.add_theme_constant_override("separation", 8)
 	out_hbox.add_child(out_vbox)
 
-	_outcome_kicker_label = Label.new()
+	_outcome_kicker_label = UIControlParts.label()
 	_outcome_kicker_label.add_theme_font_override("font", UITokensScript.annual_font("label"))
 	_outcome_kicker_label.add_theme_font_size_override("font_size", 13)
 	_outcome_kicker_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
 	out_vbox.add_child(_outcome_kicker_label)
 
-	_outcome_title_label = Label.new()
+	_outcome_title_label = UIControlParts.label()
 	_outcome_title_label.add_theme_font_override("font", UITokensScript.annual_font("display"))
 	_outcome_title_label.add_theme_font_size_override("font_size", 26)
 	_outcome_title_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	out_vbox.add_child(_outcome_title_label)
 
-	_outcome_effects_vbox = VBoxContainer.new()
+	_outcome_effects_vbox = UIControlParts.v_box_container()
 	_outcome_effects_vbox.add_theme_constant_override("separation", 4)
 	out_vbox.add_child(_outcome_effects_vbox)
 
-	var ack_row := HBoxContainer.new()
+	var ack_row := UIControlParts.h_box_container()
 	ack_row.alignment = BoxContainer.ALIGNMENT_END
 	out_vbox.add_child(ack_row)
 
-	_ack_button = Button.new()
+	_ack_button = UIControlParts.button()
 	_ack_button.text = "确认"
 	_ack_button.custom_minimum_size = Vector2(188.0, 38.0)
 	_ack_button.theme_type_variation = &"PKSealPrimaryButton"
@@ -410,7 +410,7 @@ func _build_ui() -> void:
 	)
 	ack_row.add_child(_ack_button)
 
-	_error_label = Label.new()
+	_error_label = UIControlParts.label()
 	_error_label.visible = false
 	_error_label.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	_error_label.add_theme_font_size_override("font_size", 14)
@@ -434,7 +434,7 @@ func _make_cut_tag_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
 
 
 func _make_cut_tag_button(label_text: String) -> Button:
-	var btn := Button.new()
+	var btn := UIControlParts.button()
 	btn.text = label_text
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -450,7 +450,7 @@ func _make_cut_tag_button(label_text: String) -> Button:
 
 
 func _make_tag_pill(tag_raw: String) -> Label:
-	var lbl := Label.new()
+	var lbl := UIControlParts.label()
 	var cn := String(TAG_CN_LABELS.get(tag_raw.to_lower(), tag_raw))
 	lbl.text = cn
 	lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -557,7 +557,7 @@ func present_offer(offer: Dictionary) -> void:
 
 
 func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
-	var card := PanelContainer.new()
+	var card := UIControlParts.panel_container()
 	var normal_paper := EraNoteStyle.duplicate() as StyleBoxTexture
 	normal_paper.content_margin_left = 18.0
 	normal_paper.content_margin_right = 18.0
@@ -569,28 +569,28 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 	hover_paper.modulate_color = Color(1.03, 1.0, 0.92, 1.0)
 	card.add_theme_stylebox_override("panel", normal_paper)
 
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.add_theme_constant_override("separation", 14)
 	card.add_child(row)
 
 	# Left accent wax/ink bar
 	var outcomes: Array = opt_dict.get("outcomes", [])
 	var is_probabilistic := outcomes.size() > 1
-	var bar := ColorRect.new()
+	var bar := UIControlParts.color_rect()
 	bar.custom_minimum_size = Vector2(3.5, 0.0)
 	bar.color = UITokensScript.DOSSIER_BRASS if is_probabilistic else UITokensScript.DOSSIER_OXBLOOD
 	row.add_child(bar)
 
-	var content_col := VBoxContainer.new()
+	var content_col := UIControlParts.v_box_container()
 	content_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_col.add_theme_constant_override("separation", 5)
 	row.add_child(content_col)
 
-	var title_row := HBoxContainer.new()
+	var title_row := UIControlParts.h_box_container()
 	title_row.add_theme_constant_override("separation", 8)
 	content_col.add_child(title_row)
 
-	var opt_title := Label.new()
+	var opt_title := UIControlParts.label()
 	opt_title.text = String(opt_dict.get("text", "选项"))
 	opt_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opt_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -601,7 +601,7 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 
 	var eligible := bool(opt_dict.get("eligible", true))
 	if not eligible:
-		var reason_lbl := Label.new()
+		var reason_lbl := UIControlParts.label()
 		reason_lbl.text = "不可选：" + String(opt_dict.get("ineligible_reason", "条件未满足"))
 		reason_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans"))
 		reason_lbl.add_theme_font_size_override("font_size", 13)
@@ -615,7 +615,7 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 		var od: Dictionary = outcomes[0]
 		var eff_lines: PackedStringArray = PackedStringArray(od.get("effect_summaries", []))
 		var eff_text := "  ·  ".join(eff_lines) if not eff_lines.is_empty() else String(od.get("outcome_title", "无效果"))
-		var eff_lbl := Label.new()
+		var eff_lbl := UIControlParts.label()
 		eff_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		eff_lbl.text = eff_text
 		eff_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans"))
@@ -632,11 +632,11 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 			var eff_lines: PackedStringArray = PackedStringArray(od.get("effect_summaries", []))
 			var eff_joined := "；".join(eff_lines) if not eff_lines.is_empty() else "无效果"
 
-			var branch_row := HBoxContainer.new()
+			var branch_row := UIControlParts.h_box_container()
 			branch_row.add_theme_constant_override("separation", 6)
 			content_col.add_child(branch_row)
 
-			var pct_badge := Label.new()
+			var pct_badge := UIControlParts.label()
 			pct_badge.text = "%d%% %s" % [prob_pct, out_title]
 			pct_badge.custom_minimum_size = Vector2(124.0, 0.0)
 			pct_badge.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -645,7 +645,7 @@ func _build_option_card(opt_dict: Dictionary, index: int) -> PanelContainer:
 				UITokensScript.DOSSIER_VERDIGRIS if prob_pct >= 50 else UITokensScript.DOSSIER_UMBER)
 			branch_row.add_child(pct_badge)
 
-			var branch_eff := Label.new()
+			var branch_eff := UIControlParts.label()
 			branch_eff.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			branch_eff.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			branch_eff.text = eff_joined
@@ -730,7 +730,7 @@ func show_outcome(resolution: Dictionary) -> void:
 		resolution.get("applied_summaries", record.get("applied_effects_summary", []))
 	)
 	for line in summaries:
-		var chip := Label.new()
+		var chip := UIControlParts.label()
 		chip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		chip.text = String(line)
 		chip.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))

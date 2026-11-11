@@ -610,7 +610,7 @@ func _can_save() -> Dictionary:
 				"等待理念/Effect Gameplay 事件写入 journal", "effect_gameplay_pending")
 	# 已提交账本契约（写档和读档都一样）要求经济至少结算过一次；开局到首次结算
 	# 之间没有可恢复的状态。这里不进重试列表：时钟为存档暂停，等下去也不会到。
-	if int(economy_report.get("last_committed_day", 0)) < 0:
+	if int(economy_report.get("last_committed_day", -1)) < 0:
 		return _result(false, "save_requires_first_settlement",
 			"经济尚未完成第一次结算，暂时无法存档。请让游戏运行几天后再保存。")
 	var economy_busy := bool(economy_report.get("busy",

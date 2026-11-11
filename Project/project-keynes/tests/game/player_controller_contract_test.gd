@@ -156,6 +156,7 @@ func _init() -> void:
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/EraRewardDialog") is EraRewardDialog)
 	if scene != null:
 		scene.free()
+	controller.free()
 	print("=== player controller contract: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
 
@@ -300,7 +301,7 @@ func _run_colonization_planner_family_cards() -> void:
 		and panel.anchor_left == 0.0 and panel.offset_left == 16.0)
 	_expect("dispatch summary shows canonical family name and local population",
 		rows.size() == 1 and String(rows[0].display_name()) == "长安王氏"
-		and visible.find("13 人") >= 0 and visible.find("40 人") < 0
+		and visible.find("13") >= 0 and visible.find("40") < 0
 		and visible.find("采集传统") < 0)
 	if rows.size() == 1:
 		var row := rows[0] as Control
@@ -311,8 +312,9 @@ func _run_colonization_planner_family_cards() -> void:
 			row.custom_minimum_size.y == 48.0 and not badges.visible
 			and effect.max_lines_visible == 1)
 		_expect("local population remains explicit and readable",
-			population.text.ends_with(" 人") and population.get_theme_font_size("font_size") >= 14
-			and population.get_theme_color("font_color") == UITokens.ARCHIVE_INK)
+			population.text == "13" and row.get_node("Margin/Line/PopulationIcon").visible
+			and population.get_theme_font_size("font_size") >= 14
+			and population.get_theme_color("font_color") == UITokens.DOSSIER_OXBLOOD)
 		rows[0].pressed.emit()
 	_expect("fixed preview shows traits and Chinese mechanism descriptions",
 		panel._preview_traits.text.find("采集传统") >= 0
@@ -546,6 +548,7 @@ func _military_facade_from_host_generator():
 	var host := _RuntimeHostStub.new()
 	controller.set("_runtime_host", host)
 	var resolved = controller.call("_military_facade")
+	controller.free()
 	return resolved if resolved == host.generated.facade else null
 
 

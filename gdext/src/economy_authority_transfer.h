@@ -53,6 +53,16 @@ public:
         const RuntimeEconomyEcp2State &state, std::string &error);
     static bool restore_population_continuation(NativeEconomyRuntime &runtime,
         const RuntimeEconomyEcp2State &state, std::string &error);
+    static std::vector<uint8_t> capture_climate_continuation(const NativeEconomyRuntime &runtime);
+    static bool validate_climate_continuation(const NativeEconomyRuntime &runtime,
+        const RuntimeEconomyEcp2State &state, std::string &error);
+    static bool restore_climate_continuation(NativeEconomyRuntime &runtime,
+        const RuntimeEconomyEcp2State &state, std::string &error);
+    static void append_continuations(const NativeEconomyRuntime &runtime, std::vector<uint8_t> &wire);
+    static bool validate_continuations(const NativeEconomyRuntime &runtime,
+        const RuntimeEconomyEcp2State &state, std::string &error);
+    static bool restore_continuations(NativeEconomyRuntime &runtime,
+        const RuntimeEconomyEcp2State &state, std::string &error);
     static bool verify_after_country(const NativeEconomyRuntime &runtime,
                                      std::string &error);
 };

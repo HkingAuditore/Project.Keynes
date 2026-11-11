@@ -12,7 +12,7 @@ var _loading := false
 
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_IGNORE
-	_sea_chart = ColorRect.new()
+	_sea_chart = UIControlParts.color_rect()
 	_sea_chart.mouse_filter = MOUSE_FILTER_IGNORE
 	_sea_chart.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_sea_mat = ShaderMaterial.new()

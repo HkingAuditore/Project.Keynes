@@ -545,6 +545,13 @@ bool military_army_lane_pay_supported(const NativeEconomyRuntime &economy);
 int32_t profession_count(const NativeEconomyRuntime &economy);
 int64_t last_committed_day(const NativeEconomyRuntime &economy);
 bool epoch_active(const NativeEconomyRuntime &economy);
+godot::Dictionary detail_report(const NativeEconomyRuntime &economy);
+bool capture_trade_topology(NativeEconomyRuntime &economy, const int32_t *neighbors,
+    const uint8_t *terrain, const uint8_t *canal_mask, const float *canal_water,
+    const uint8_t *passable, const int32_t *move_cost, int32_t count,
+    uint64_t generation, std::string &error, const uint8_t *landform, const uint8_t *river);
+bool capture_trade_visibility(NativeEconomyRuntime &economy, const uint8_t *visible,
+    int32_t count, bool solved, bool from_map, std::string &error);
 godot::Dictionary poll_events(const NativeEconomyRuntime &economy, const godot::Dictionary &opts);
 godot::Dictionary trace_report(const NativeEconomyRuntime &economy);
 bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::string &tag_key, int32_t cell, bool on);
