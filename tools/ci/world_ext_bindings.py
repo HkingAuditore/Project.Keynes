@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TABLE = "tools/ci/world_ext_binding_modules.json"
 SRC = "gdext/src"
+MANIFEST = "Project/project-keynes/data/native_binding_manifest.json"
 BIND = re.compile(r"ClassDB::bind_method\s*\(\s*D_METHOD\s*\(")
 REF = re.compile(r"""\.(\w+)\s*\(|&?["'](\w+)["']""")
 REF_ROOTS = {
@@ -171,8 +172,18 @@ def main() -> int:
     parser.add_argument("--refs", action="store_true", help="include reference counts by caller kind")
     parser.add_argument("--audit", action="store_true",
                         help="also require test_only / keep_unreferenced to match the current references")
+    parser.add_argument("--write-manifest", action="store_true",
+                        help=f"write the sorted script-facing method manifest to {MANIFEST}")
     args = parser.parse_args()
     bindings, problems = inventory(args.root)
+    if args.write_manifest and not problems:
+        names = sorted({binding["name"] for binding in bindings})
+        path = args.root / MANIFEST
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"class": "DCWorldExt", "count": len(names),
+                                    "methods": names}, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8")
+        print(f"wrote native binding manifest: {path} ({len(names)} methods)")
     if args.audit:
         table = load_table(args.root)
         refs = references(args.root, {b["name"] for b in bindings})

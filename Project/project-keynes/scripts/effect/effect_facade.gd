@@ -5,7 +5,7 @@ signal transactions_available(batch: Dictionary)
 
 const EffectCatalogScript = preload("res://scripts/effect/effect_catalog.gd")
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _clock: WorldClock
 var _catalog: Resource
 var _configured := false
@@ -19,7 +19,7 @@ var _native_claimed_transactions_skipped := 0
 func _adapter_ack_bit(action: int) -> int:
 	return (1 << (action - 1)) if action >= 1 and action <= 6 else 0
 
-func configure(world_ext: Object, clock: WorldClock = null,
+func configure(world_ext: DCWorldExt, clock: WorldClock = null,
 		catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock

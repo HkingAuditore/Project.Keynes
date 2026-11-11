@@ -72,7 +72,7 @@ var _catalog: Dictionary = {}
 var _configured: bool = false
 var _last_event_id: int = 0
 
-func configure(world_ext: Object, cell_count: int, seed: int,
+func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 		profile = null, compiled_catalog: Dictionary = {}) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile

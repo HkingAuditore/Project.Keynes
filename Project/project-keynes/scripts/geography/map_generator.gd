@@ -170,7 +170,6 @@ const TerrainGeneratorScript = preload("res://scripts/geography/map_generation/t
 const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
-
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
@@ -180,6 +179,7 @@ const NativeDailySimJobScript = preload("res://scripts/simulation/sus/jobs/nativ
 # DCSystemScheduler 与运行期 DCSystem wrapper 的 preload。
 const DCSystemSchedulerScript = preload("res://scripts/data_core/dc_system_scheduler.gd")
 const GameplayEventBusScript = preload("res://scripts/data_core/gameplay_event_bus.gd")
+const NativeWorld = preload("res://scripts/data_core/native_world.gd")
 const WeatherResearchSignalPublisherScript = preload(
 	"res://scripts/research/weather_research_signal_publisher.gd")
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
@@ -862,7 +862,7 @@ var _data_core_world: DCWorld = null
 # - use_data_core=true 时创建并 bind_map_data；否则保持 null
 # - climate Pass-A 入口检查 _data_core_world_ext != null && run_climate_pass_a()>=0
 #   决定是否走 C++ 加速；任何失败一律 fallback 到 DataCore-GDScript 路径
-# - ClassDB.instantiate("DCWorldExt") 由 gdext/src/register_types.cpp 注册
+# - DCWorldExt 由 gdext/src/register_types.cpp 注册，统一经 NativeWorld.create() 创建（含接口握手）
 var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 GDScript class_name）
 var _gameplay_event_bus: GameplayEventBus = GameplayEventBusScript.new()
 const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
@@ -4327,13 +4327,13 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	# Phase 3a Step 2.0 验证：两侧 view_f32 看到同一块底层 buffer；C++ Pass 写完后
 	# 调一次 map.set("temp_arr", arr) 推回（snapshot contract，详见 world_ext.cpp）。
 	# - 仅 use_data_core=true 时创建（与主 World 一致门控）
-	# - ClassDB.instantiate 失败（GDExtension 未加载）→ 保持 null，climate Pass-A
+	# - NativeWorld.create 失败（GDExtension 未加载）→ 保持 null，climate Pass-A
 	#   走 GDScript 路径，不报 error（dev 机器上不一定每次都构建过 gdext）
 	# - 不注入 SUS.bind_world：weather / sus 子系统对此实例零感知，避免 weather
 	#   迁移连锁（接口集差异详见 plan/dots-roadmap-to-gdextension/architecture.md §7）
 	if dc_enabled:
 		if ClassDB.class_exists("DCWorldExt"):
-			var ext_obj: Object = _data_core_world_ext if _data_core_world_ext != null else ClassDB.instantiate("DCWorldExt")
+			var ext_obj: Object = _data_core_world_ext if _data_core_world_ext != null else NativeWorld.create()
 			if ext_obj != null and ext_obj is RefCounted:
 				_data_core_world_ext = ext_obj
 				# C++ _diag_logs_enabled 默认 true；创建/复用时同步 PKLog 状态，
@@ -4375,7 +4375,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 						# pk_lat_temp_bell 权威重算并 flush 回 MapData（ext 未就绪则保留 GDScript 值）。
 						_bake_temp_baseline_year_native(map)
 			else:
-				push_warning("[DataCore] ClassDB.instantiate(\"DCWorldExt\") returned null/non-RefCounted; gdext likely not loaded — climate C++ accel disabled")
+				push_warning("[DataCore] NativeWorld.create() returned null/non-RefCounted; gdext likely not loaded — climate C++ accel disabled")
 		else:
 			# GDExtension 没加载（开发机没编译 gdext / 平台不支持等），完全降级。
 			# 不打 error 避免噪声，main.gd 的 [DataCore] flags 那行已能体现整体路径。
@@ -12880,7 +12880,7 @@ func _ensure_generation_world_ext() -> RefCounted:
 		return _data_core_world_ext
 	if not ClassDB.class_exists("DCWorldExt"):
 		return null
-	var ext_obj: Object = ClassDB.instantiate("DCWorldExt")
+	var ext_obj: Object = NativeWorld.create()
 	if ext_obj == null or not (ext_obj is RefCounted):
 		return null
 	_data_core_world_ext = ext_obj
@@ -13146,7 +13146,7 @@ func generation_preflight() -> Dictionary:
 		if ext == null:
 			issues.append({
 				"code": "world_ext_uninstantiable",
-				"message": "DCWorldExt 已注册但无法实例化（ClassDB.instantiate 返回空或类型不符）。",
+				"message": "DCWorldExt 已注册但无法实例化（NativeWorld.create 返回空或类型不符）。",
 			})
 	if native_mode != 2:
 		issues.append({

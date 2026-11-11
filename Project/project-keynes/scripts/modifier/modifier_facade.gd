@@ -11,7 +11,7 @@ const PROTOCOL_VERSION := 2
 const Q16_ONE := 65536
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
-var _world_ext: Object
+var _world_ext: DCWorldExt
 var _clock: WorldClock
 var _catalog: Resource
 var _configured := false
@@ -19,7 +19,7 @@ var _producer_sequence := 0
 var _last_event_id := 0
 
 
-func configure(world_ext: Object, cell_count: int, clock: WorldClock = null,
+func configure(world_ext: DCWorldExt, cell_count: int, clock: WorldClock = null,
 		catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_clock = clock

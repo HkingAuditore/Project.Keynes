@@ -93,7 +93,7 @@ func building_visual_catalog() -> Dictionary:
 			out[key] = _catalog[key]
 	return out
 
-func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
+func configure(world_ext: DCWorldExt, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile
 	if _profile == null:

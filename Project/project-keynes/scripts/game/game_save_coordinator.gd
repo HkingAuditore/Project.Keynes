@@ -1,5 +1,5 @@
 extends Node
-
+const NativeWorld = preload("res://scripts/data_core/native_world.gd")
 signal save_completed(slot_id: String, result: Dictionary)
 signal load_completed(slot_id: String, result: Dictionary)
 signal _slot_verification_completed(slots: Array)
@@ -738,7 +738,7 @@ func _economy_checkpoint_format() -> Dictionary:
 		return _economy_format
 	_economy_format = {"schema_version": 53, "abi_version": 2, "hash_version": 1}
 	if ClassDB.class_exists("DCWorldExt"):
-		var probe = ClassDB.instantiate("DCWorldExt")
+		var probe: DCWorldExt = NativeWorld.create()
 		if probe != null and probe.has_method("get_economy_checkpoint_format"):
 			_economy_format = probe.get_economy_checkpoint_format()
 	return _economy_format
