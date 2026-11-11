@@ -22,7 +22,7 @@ var _button: Button = null
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	custom_minimum_size = Vector2(0.0, NOTICE_HEIGHT)
-	_button = Button.new()
+	_button = UIControlParts.button()
 	_button.name = "OpenBudget"
 	_button.text = "前往预算调配"
 	_button.focus_mode = Control.FOCUS_ALL

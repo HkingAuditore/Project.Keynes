@@ -1747,46 +1747,6 @@ Dictionary DCWorldExt::get_trade_visual_snapshot(
     return out;
 }
 
-Dictionary DCWorldExt::capture_economy_trade_topology(
-        const PackedInt32Array &neighbor_indices, const PackedByteArray &terrain,
-        const PackedByteArray &trade_passable_lut,
-        const PackedInt32Array &trade_move_cost_lut, int64_t generation,
-        const PackedByteArray &landform, const PackedByteArray &has_river) {
-    if (_economy_runtime == nullptr) return unavailable();
-    Dictionary out;
-    if (neighbor_indices.size() != terrain.size() * 6 ||
-        trade_passable_lut.size() != 256 || trade_move_cost_lut.size() != 256) {
-        out["ok"] = false;
-        out["reason"] = "trade_topology_column_size_mismatch";
-        return out;
-    }
-    std::string error;
-    std::vector<uint8_t> empty_canal(static_cast<size_t>(terrain.size()), 0);
-    std::vector<float> empty_water(static_cast<size_t>(terrain.size()), 0.0f);
-    const uint8_t *landform_ptr = landform.size() == terrain.size() ? landform.ptr() : nullptr;
-    const uint8_t *river_ptr = has_river.size() == terrain.size() ? has_river.ptr() : nullptr;
-    const bool ok = runtime_from(_economy_runtime)->capture_trade_topology(
-        neighbor_indices.ptr(), terrain.ptr(), empty_canal.data(), empty_water.data(),
-        trade_passable_lut.ptr(),
-        trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation),
-        error, landform_ptr, river_ptr);
-    out["ok"] = ok;
-    if (!ok) out["reason"] = String(error.c_str());
-    return out;
-}
-
-Dictionary DCWorldExt::capture_economy_trade_visibility(
-        const PackedByteArray &visible, bool fog_solved) {
-    if (_economy_runtime == nullptr) return unavailable();
-    Dictionary out;
-    std::string error;
-    const bool ok = runtime_from(_economy_runtime)->capture_trade_visibility(
-        visible.ptr(), visible.size(), fog_solved, false, error);
-    out["ok"] = ok;
-    if (!ok) out["reason"] = String(error.c_str());
-    return out;
-}
-
 Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) return unavailable();
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);

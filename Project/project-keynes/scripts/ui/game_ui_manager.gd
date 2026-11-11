@@ -603,7 +603,7 @@ func _on_gm_sun_camera_moved(_world_rect: Rect2, _center: Vector2, _zoom_value: 
 func _ensure_gm_sun_handle() -> void:
 	if _gm_sun_handle != null and is_instance_valid(_gm_sun_handle):
 		return
-	_gm_sun_handle = Button.new()
+	_gm_sun_handle = UIControlParts.button()
 	_gm_sun_handle.name = "GMTODSunHandle"
 	_gm_sun_handle.text = "☀"
 	_gm_sun_handle.tooltip_text = "拖动太阳位置"

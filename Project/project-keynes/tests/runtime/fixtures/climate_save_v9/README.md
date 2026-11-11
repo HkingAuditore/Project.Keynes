@@ -1,19 +1,20 @@
-# 保存续跑样本（CLM2 v9 / ECP2 60 / PKSR5 / PKMI3）
+# 保存续跑样本（CLM2 v9 / ECP2 60 / OSOA4 / PKSR5 / PKMI3）
 
 固定 ACTIVE worker，seed=20260727、40×28、clock RNG=150015，非空军事 target 命令，第2日保存。目录保留原名，实际格式以 manifest 为准。
 
-本次合并用当前实现重建样本：上游增加国有建筑和军事装备、运输继续态，ECP2 从59升到60，PKMI从2升到3。沿用原有格式校验，未新增旧版拒绝检查或迁移代码；经济内部 PKEC 原有迁移路径保留。原分支已有的 OSOA3 块12、PKMI section22、PKSR5 TCQ1 和 MDJ1 保留；它们不是本次新增。CLM2 v9、CPD2 revision1、MILB3 版本不变。
+当前样本使用 OSOA4。新增的块 13 保存本日已经采样的降雨标记和冻结门槛，避免读档后重复采样或丢失结果。旧 OSOA3 存档会被拒绝。`legacy_catalog.pkcm` 来自前一个固定档，仍用于验证旧规则内容被拒绝且不会改变当前状态。
 
-本次生成命令：
+在 macOS arm64 上运行以下命令生成候选，候选目录和日志目录都应为新目录。
 
 ```sh
-HOME=/tmp/keynes-merge/merge/home /Users/herh/.local/bin/python3 tools/ci/check_climate_archive.py --godot /opt/homebrew/bin/godot --log-dir /tmp/keynes-merge/merge/climate-archive-1
+/Users/herh/.local/bin/python3 tools/ci/capture_climate_archive.py \
+  --godot /opt/homebrew/bin/godot \
+  --candidate /tmp/keynes-climate-candidate \
+  --log-dir /tmp/keynes-climate-candidate-logs
 ```
 
-该次运行因旧样本版本被拒绝而失败，但已完成新的 checkpoint 捕获。将其 `saves/manual_3.pksv` 复制为 `day2.pksv`，从保存的各段字节重算 manifest 后，在新目录 `climate-archive-3` 运行同一检查并通过。manifest 保留生成时库的 SHA、存档 SHA、版本、各继续态长度和 SHA。
+候选先通过八域继续比较和固定样本校验，再由维护者审查并安装。`manifest.json` 记录生成时程序库、存档和各段的版本、长度及摘要。使用当前内容对照，修复前后第 1 至 10 日的气候逻辑结果一致。
 
-对比合并前样本，publication、resources、mobility、population、military-index、military-forwarder 的字节哈希不变；兼容快照、Host 传输、CLM2完整字节和周期测量值改变。第3至10日的气候逻辑哈希不变。完整字节和逻辑投影是不同的检查，不能互相代替。
+`check_climate_archive.py` 验证 CLM2 的 1,901,228 字节精确往返，以及第 3 至 10 日的八域、完整经济、军事和资源继续结果。它也核对发布、资源、兼容 Country、就业冷却、实物收入、降雨、Host 传输、军事索引和转发游标的字节。完整 PKSV/ECP2 仍有既存 AUDIT/Modifier 重编码差异。
 
-`check_climate_archive.py` 验证加载后 CLM2 的1,901,228字节精确往返，以及第3至10日的八域、完整经济、军事和资源继续结果。它也核对发布、资源、兼容Country、就业冷却、实物收入、Host传输、军事索引和转发游标的字节。完整PKSV/ECP2仍有既存AUDIT/Modifier重编码差异，不能称整档幂等。
-
-此短例零士兵；不能代替非零军事与年度矩阵。五条黄金基线未修改。
+非零部队与年度自动存档由各自的矩阵用例验证。

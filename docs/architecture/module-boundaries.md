@@ -33,6 +33,7 @@
 - **组合根**：构造或拥有运行时的宿主（`native_simulation_*`）和绑定层（`world_ext*`），只减不增，每项写原因。
 - **所有者文件**：`owner_file_patterns` 内的文件是模块自身组件（例如 `trade_visual_cache.*` 属 Economy）。`forbidden_owner_includes` 禁止所有者文件包含宿主头 `native_simulation_host*.h`（引号和尖括号都查），例外必须写原因。
 - **宿主端口**：纯虚方法，签名与宿主原方法完全一致。`class NativeSimulationHost final : public EconomyHostPort, public CountryHostPort`；两个端口都有的方法（如 `domain_is_worker_authoritative`、`allocate_command_request_id`）由宿主的一个 override 同时实现。模块内成员仍叫 `_simulation_host`，类型是端口指针。端口调用是虚调用，都在命令/队列边界或循环外，没有进逐格热循环。Economy 端口 24 个方法，Country 端口 18 个。
+- **交易地图绑定**：`world_ext_economy_topology.cpp` 只包含 `economy_api.h`，通过薄转发接入地形与可见性。完整报告 `detail_report` 属于组合层在停止执行或持有日边界时使用的兼容接口，不能代替已提交视图。存档执行器接管只保留该世界已经绑定的交易图，并清空派生国家分组标记。
 - **军事**：核心只依赖 `military_bridge.h` 与系统头，`military.json` 禁止核心包含其他模块、宿主与 Godot 头。三个适配文件经 Economy/Country/Modifier 的接口头调用对方，宿主和 `MilitaryCore` 由适配层拥有。
 
 Country 的 `country_core*.h`、`country_ai_*.h` 尚未锁进契约（只锁 `country_runtime*.h`）；其中跨模块调用是否全部走接口，靠依赖基线和跨域清单约束。

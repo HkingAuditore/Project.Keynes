@@ -37,7 +37,7 @@ func _init() -> void:
 
 
 func _build() -> void:
-	var pad := MarginContainer.new()
+	var pad := UIControlParts.margin_container()
 	pad.name = "Pad"
 	pad.mouse_filter = Control.MOUSE_FILTER_PASS
 	pad.add_theme_constant_override("margin_left", int(PAD_LEFT))
@@ -45,17 +45,17 @@ func _build() -> void:
 	pad.add_theme_constant_override("margin_right", int(PAD_RIGHT))
 	pad.add_theme_constant_override("margin_bottom", int(PAD_BOTTOM))
 	add_child(pad)
-	var column := VBoxContainer.new()
+	var column := UIControlParts.v_box_container()
 	column.name = "Content"
 	column.mouse_filter = Control.MOUSE_FILTER_PASS
 	column.add_theme_constant_override("separation", 9)
 	pad.add_child(column)
-	var head := HBoxContainer.new()
+	var head := UIControlParts.h_box_container()
 	head.name = "Head"
 	head.mouse_filter = Control.MOUSE_FILTER_PASS
 	head.add_theme_constant_override("separation", 8)
 	column.add_child(head)
-	var badge_host := Control.new()
+	var badge_host := UIControlParts.control()
 	badge_host.name = "IconHost"
 	badge_host.custom_minimum_size = Vector2(24.0, 24.0)
 	badge_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -65,7 +65,7 @@ func _build() -> void:
 	_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge_host.add_child(_icon)
-	_title = Label.new()
+	_title = UIControlParts.label()
 	_title.name = "Title"
 	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -73,7 +73,7 @@ func _build() -> void:
 	_title.add_theme_font_size_override("font_size", 17)
 	_title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	head.add_child(_title)
-	_note = Label.new()
+	_note = UIControlParts.label()
 	_note.name = "Note"
 	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -82,12 +82,12 @@ func _build() -> void:
 	_note.add_theme_font_size_override("font_size", 13)
 	_note.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
 	head.add_child(_note)
-	var spacer := Control.new()
+	var spacer := UIControlParts.control()
 	spacer.name = "Spacer"
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	head.add_child(spacer)
-	_value = Label.new()
+	_value = UIControlParts.label()
 	_value.name = "Value"
 	_value.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -96,7 +96,7 @@ func _build() -> void:
 	_value.add_theme_font_size_override("font_size", 18)
 	_value.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
 	head.add_child(_value)
-	_body = VBoxContainer.new()
+	_body = UIControlParts.v_box_container()
 	_body.name = "Body"
 	_body.mouse_filter = Control.MOUSE_FILTER_PASS
 	_body.add_theme_constant_override("separation", 8)

@@ -17,6 +17,18 @@ from runtime_test_hygiene import trace_environment, untracked, unexpected_artifa
 
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = (
+    "tests/ui/era_advancement_panel_test.gd",
+    "tests/technology/era_advancement_service_test.gd",
+    "tests/ideology/ideology_draw_flow_test.gd",
+    "tests/game/player_controller_contract_test.gd",
+    "tests/ui/inspector_live_patch_test.gd",
+    "tests/building/building_visual_catalog_test.gd",
+    "tests/world/vegetation_family_layer_test.gd",
+    "tests/rendering/veg_variant_parity_probe.gd",
+    "tests/ui/visual_tile_native_bake_test.gd",
+    "tests/world/web_water_pass_node_test.gd",
+    "tests/family/family_workspace_ui_test.gd",
+    "tests/ui/ui_scene_structure_test.gd",
     "tests/game/save_repository_test.gd",
     "tests/game/save_container_validation_test.gd",
     "tests/game/game_save_session_test.gd",
@@ -46,6 +58,9 @@ TESTS = (
     "tests/runtime/runtime_world_lifecycle_test.gd",
     "tests/runtime/runtime_world_rules_rebuild_test.gd",
     "tests/runtime/runtime_inline_coordinator_save_test.gd",
+    "tests/runtime/startup_save_boundary_test.gd",
+    "tests/runtime/economy_settlement_save_boundary_test.gd",
+    "tests/game/player_clock_event_test.gd",
     "tests/runtime/runtime_economy_worker_restart_test.gd",
     "tests/ideology/ideology_execution_contract_manifest_test.gd",
     "tests/ideology/ideology_save_worker_authority_test.gd",

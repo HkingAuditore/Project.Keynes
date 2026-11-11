@@ -22,6 +22,8 @@ from runtime_test_hygiene import trace_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = (
+    ("startup_boundary", "tests/runtime/startup_save_boundary_test.gd", "startup save boundary:"),
+    ("settlement_boundary", "tests/runtime/economy_settlement_save_boundary_test.gd", "economy settlement save boundary:"),
     ("save_restore", "tests/runtime/runtime_inline_save_restore_test.gd", "inline save/restore:"),
     ("executor_boundaries", "tests/runtime/runtime_executor_boundary_test.gd", "executor boundaries:"),
     ("world_lifecycle", "tests/runtime/runtime_world_lifecycle_test.gd", "runtime world lifecycle:"),

@@ -71,6 +71,10 @@ Godot 4.6.2 / OpenGL Compatibility 隔离渲染探针：云影、桌面天气云
 诊断耗时桶与排版诊断标记分别只有 `WorldDayCostProbe`、`GameHudLayout` 持有；
 原生世界、命令序号、保存段、生成算法、编译缓存与日推进所有者不变。
 具体实现位置和回调边界见 [源文件职责拆分](source-module-splits.md)。
+后续修复补齐后台/内联开局保存、未完成经济结算时的保存拒绝、正式读档继续、军事完整段比较、
+军事建筑外观与植被节点释放。十组显示检查、时代推进服务与理念抽取流程已纳入默认回归。
+固定气候样本以当前内容重建，保留旧内容拒绝测试。
+OSOA4 块 13 保存已采样降雨标记与冻结门槛；旧 OSOA3 不兼容。
 
 2026-11-08 经济平衡：C++仍为唯一结算权威，生存/生活需求评分寄生于既有市场循环。
 基本生活采用75%需求均值与25%最弱项；适用且职业正权重的舒适/奢侈需求分别提供
@@ -202,7 +206,7 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 继续态里容易漏的字段（每项都曾造成读档后分叉，已修复）：
 
-- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
+- ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、采样降雨边沿与冻结门槛（OSOA4 块 13）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
 - PKMI2：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行。`military_for_each_lot_ordered` 不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
 - PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1）、军事事件转发进度（MDJ1）。
 - CLM2 v9：权威 extras 与天气初始化状态。
@@ -218,7 +222,7 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 ## 规模（2026-11-10）
 
-- 护栏扫描 970 个源码文件；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
+- 长度检查扫描 1003 个源码文件，0 违规；C++ 依赖 522 引用键（399 债务键），`header_exposed=519`、`total=2181`；域对 30。
 - `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
 - `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2146 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
 

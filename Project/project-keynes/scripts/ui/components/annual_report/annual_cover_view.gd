@@ -67,11 +67,11 @@ func _build() -> void:
 	# 版画必须被纸缘裁掉，否则会画到桌面上。
 	# 注意用 Control.clip_contents 而不是 CanvasItem.clip_children —— 后者只对
 	# 自绘节点（贴图/多边形）生效，Control 自己不绘制时裁剪矩形是空的。
-	_art_clip = Control.new()
+	_art_clip = UIControlParts.control()
 	_art_clip.clip_contents = true
 	_art_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_art_clip)
-	_art = TextureRect.new()
+	_art = UIControlParts.texture_rect()
 	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -89,7 +89,7 @@ func _build() -> void:
 	# 只在开场时才挂上去的话，关掉动效或开场结束就会露出一条硬直的下沿。
 	_art.material = _art_material
 
-	_wash = ColorRect.new()
+	_wash = UIControlParts.color_rect()
 	_wash.color = Color(1, 1, 1, 1)
 	_wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_wash_material = ShaderMaterial.new()
@@ -121,7 +121,7 @@ func _build() -> void:
 	_title_material.set_shader_parameter("noise_amount", 0.1)
 	_title.material = _title_material
 
-	_rule = ColorRect.new()
+	_rule = UIControlParts.color_rect()
 	_rule.color = Color(UITokens.CHRONICLE_INK.r, UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.5)
 	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_rule)
@@ -132,10 +132,10 @@ func _build() -> void:
 	_country.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	add_child(_country)
 
-	_seal = Control.new()
+	_seal = UIControlParts.control()
 	_seal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_seal)
-	_seal_art = TextureRect.new()
+	_seal_art = UIControlParts.texture_rect()
 	_seal_art.texture = SealTexture
 	_seal_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_seal_art.stretch_mode = TextureRect.STRETCH_SCALE
@@ -191,7 +191,7 @@ func _build() -> void:
 
 
 func _label(text: String, size_px: int, color: Color, kind: String) -> Label:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_override("font", UITokens.annual_font(kind))

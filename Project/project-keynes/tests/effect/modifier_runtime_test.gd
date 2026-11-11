@@ -297,6 +297,15 @@ func _run() -> void:
 		_expect("domain %d save restores" % domain, bool(ext_restored.restore_modifier_domain(
 			domain, domain_save).get("ok", false)))
 
+	var legacy := FileAccess.get_file_as_bytes("res://tests/runtime/fixtures/climate_save_v9/legacy_catalog.pkcm")
+	var before_legacy: PackedByteArray = ext_restored.capture_modifier_domain(0)
+	var legacy_rejected: Dictionary = ext_restored.restore_modifier_domain(0, legacy)
+	_expect("the historical climate fixture's old content is rejected explicitly",
+		not legacy.is_empty() and not legacy_rejected.get("ok", true)
+		and legacy_rejected.get("reason", "") == "modifier_restore_catalog_mismatch")
+	_expect("old content rejection leaves the installed climate modifiers intact",
+		ext_restored.capture_modifier_domain(0) == before_legacy)
+
 	var zero_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
 	zero_catalog.erase("ok")
 	var definition_keys: PackedStringArray = zero_catalog.definition_keys

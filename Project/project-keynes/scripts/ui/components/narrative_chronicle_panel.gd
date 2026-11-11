@@ -59,7 +59,7 @@ func _build_ui() -> void:
 	if _card != null:
 		return
 
-	_backdrop = ColorRect.new()
+	_backdrop = UIControlParts.color_rect()
 	_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop.color = Color(0.08, 0.065, 0.05, 0.72)
 	_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -71,13 +71,13 @@ func _build_ui() -> void:
 	_backdrop.material = desk_mat
 	add_child(_backdrop)
 
-	var center := CenterContainer.new()
+	var center := UIControlParts.center_container()
 	center.name = "Center"
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(center)
 
-	_card = PanelContainer.new()
+	_card = UIControlParts.panel_container()
 	_card.custom_minimum_size = Vector2(740.0, 520.0)
 	var sheet_style := EraNoteStyle.duplicate() as StyleBoxTexture
 	sheet_style.content_margin_left = 30.0
@@ -88,7 +88,7 @@ func _build_ui() -> void:
 	center.add_child(_card)
 	_sheet_wrap = _card
 
-	var underlay := Control.new()
+	var underlay := UIControlParts.control()
 	underlay.name = "Underlay"
 	underlay.show_behind_parent = true
 	underlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -125,16 +125,16 @@ func _build_ui() -> void:
 	_underlay_page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	underlay.add_child(_underlay_page)
 
-	var main_vbox := VBoxContainer.new()
+	var main_vbox := UIControlParts.v_box_container()
 	main_vbox.add_theme_constant_override("separation", 10)
 	_card.add_child(main_vbox)
 
 	# Header Row
-	var header_hbox := HBoxContainer.new()
+	var header_hbox := UIControlParts.h_box_container()
 	header_hbox.add_theme_constant_override("separation", 12)
 	main_vbox.add_child(header_hbox)
 
-	var seal_icon := TextureRect.new()
+	var seal_icon := UIControlParts.texture_rect()
 	seal_icon.texture = SealBadgeTexture
 	seal_icon.custom_minimum_size = Vector2(52.0, 52.0)
 	seal_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -142,12 +142,12 @@ func _build_ui() -> void:
 	seal_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header_hbox.add_child(seal_icon)
 
-	var title_col := VBoxContainer.new()
+	var title_col := UIControlParts.v_box_container()
 	title_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_col.add_theme_constant_override("separation", 2)
 	header_hbox.add_child(title_col)
 
-	_title_label = Label.new()
+	_title_label = UIControlParts.label()
 	_title_label.text = "事件记录"
 	_title_label.add_theme_font_override("font", UITokensScript.annual_font("display"))
 	_title_label.add_theme_font_size_override("font_size", 32)
@@ -167,24 +167,24 @@ func _build_ui() -> void:
 	)
 	header_hbox.add_child(close_btn)
 
-	var rule := ColorRect.new()
+	var rule := UIControlParts.color_rect()
 	rule.custom_minimum_size = Vector2(0.0, 1.5)
 	rule.color = UITokensScript.DOSSIER_RULE_STRONG
 	main_vbox.add_child(rule)
 
 	# Chronicle Scroll List
-	_list_scroll = ScrollContainer.new()
+	_list_scroll = UIControlParts.scroll_container()
 	_list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	main_vbox.add_child(_list_scroll)
 
-	_list_vbox = VBoxContainer.new()
+	_list_vbox = UIControlParts.v_box_container()
 	_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_vbox.add_theme_constant_override("separation", 12)
 	_list_scroll.add_child(_list_vbox)
 
 	# AI Configuration Drawer (styled as an inserted torn-paper dossier leaf)
-	_ai_config_panel = PanelContainer.new()
+	_ai_config_panel = UIControlParts.panel_container()
 	_ai_config_panel.visible = false
 	_ai_config_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var cfg_style := EraNoteStyle.duplicate() as StyleBoxTexture
@@ -196,11 +196,11 @@ func _build_ui() -> void:
 	_ai_config_panel.add_theme_stylebox_override("panel", cfg_style)
 	main_vbox.add_child(_ai_config_panel)
 
-	var cfg_vbox := VBoxContainer.new()
+	var cfg_vbox := UIControlParts.v_box_container()
 	cfg_vbox.add_theme_constant_override("separation", 10)
 	_ai_config_panel.add_child(cfg_vbox)
 
-	var llm_sec_lbl := Label.new()
+	var llm_sec_lbl := UIControlParts.label()
 	llm_sec_lbl.text = "文本生成（LLM）"
 	llm_sec_lbl.add_theme_font_override("font", UITokensScript.annual_font("display_soft"))
 	llm_sec_lbl.add_theme_font_size_override("font_size", 18)
@@ -214,12 +214,12 @@ func _build_ui() -> void:
 	_llm_model_edit = _add_labeled_line_edit(cfg_vbox, "模型名称 (Model)", "deepseek-chat")
 	_llm_key_edit = _add_labeled_line_edit(cfg_vbox, "API 密钥 (仅存本地)", "sk-...", true)
 
-	var sec_rule := ColorRect.new()
+	var sec_rule := UIControlParts.color_rect()
 	sec_rule.custom_minimum_size = Vector2(0.0, 1.0)
 	sec_rule.color = UITokensScript.DOSSIER_RULE
 	cfg_vbox.add_child(sec_rule)
 
-	var img_sec_lbl := Label.new()
+	var img_sec_lbl := UIControlParts.label()
 	img_sec_lbl.text = "插画生成（Image API）"
 	img_sec_lbl.add_theme_font_override("font", UITokensScript.annual_font("display_soft"))
 	img_sec_lbl.add_theme_font_size_override("font_size", 18)
@@ -233,11 +233,11 @@ func _build_ui() -> void:
 	_img_model_edit = _add_labeled_line_edit(cfg_vbox, "生图模型 (Image Model)", "dall-e-3")
 	_img_key_edit = _add_labeled_line_edit(cfg_vbox, "生图密钥 (留空复用上项)", "sk-...", true)
 
-	var save_row := HBoxContainer.new()
+	var save_row := UIControlParts.h_box_container()
 	save_row.add_theme_constant_override("separation", 14)
 	cfg_vbox.add_child(save_row)
 
-	var save_btn := Button.new()
+	var save_btn := UIControlParts.button()
 	save_btn.text = "保存配置"
 	save_btn.custom_minimum_size = Vector2(180.0, 36.0)
 	save_btn.theme_type_variation = &"PKSealPrimaryButton"
@@ -247,7 +247,7 @@ func _build_ui() -> void:
 	save_btn.pressed.connect(_save_ai_settings)
 	save_row.add_child(save_btn)
 
-	_save_status_label = Label.new()
+	_save_status_label = UIControlParts.label()
 	_save_status_label.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	_save_status_label.add_theme_font_size_override("font_size", 14)
 	_save_status_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_VERDIGRIS)
@@ -270,7 +270,7 @@ func _make_cut_tag_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
 
 
 func _make_toggle_button(label_text: String) -> CheckButton:
-	var btn := CheckButton.new()
+	var btn := UIControlParts.check_button()
 	btn.text = label_text
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -289,7 +289,7 @@ func _make_toggle_button(label_text: String) -> CheckButton:
 
 
 func _make_cut_tag_button(label_text: String) -> Button:
-	var btn := Button.new()
+	var btn := UIControlParts.button()
 	btn.text = label_text
 	btn.focus_mode = Control.FOCUS_ALL
 	btn.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -305,11 +305,11 @@ func _make_cut_tag_button(label_text: String) -> Button:
 
 
 func _add_labeled_line_edit(parent: VBoxContainer, label_text: String, placeholder: String, secret: bool = false) -> LineEdit:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.add_theme_constant_override("separation", 10)
 	parent.add_child(row)
 
-	var lbl := Label.new()
+	var lbl := UIControlParts.label()
 	lbl.text = label_text
 	lbl.custom_minimum_size = Vector2(180.0, 32.0)
 	lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
@@ -317,7 +317,7 @@ func _add_labeled_line_edit(parent: VBoxContainer, label_text: String, placehold
 	lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_SOFT)
 	row.add_child(lbl)
 
-	var edit := LineEdit.new()
+	var edit := UIControlParts.line_edit()
 	edit.placeholder_text = placeholder
 	edit.secret = secret
 	edit.custom_minimum_size = Vector2(0.0, 34.0)
@@ -413,7 +413,7 @@ func set_records(records: Array) -> void:
 
 
 func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
-	var note := PanelContainer.new()
+	var note := UIControlParts.panel_container()
 	var style := EraNoteStyle.duplicate() as StyleBoxTexture
 	style.content_margin_left = 18.0
 	style.content_margin_right = 18.0
@@ -422,12 +422,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	style.modulate_color = Color(0.99, 0.96, 0.88, 1.0)
 	note.add_theme_stylebox_override("panel", style)
 
-	var hbox := HBoxContainer.new()
+	var hbox := UIControlParts.h_box_container()
 	hbox.add_theme_constant_override("separation", 14)
 	note.add_child(hbox)
 
 	# Colored-pencil chapter emblem on the left
-	var emblem := TextureRect.new()
+	var emblem := UIControlParts.texture_rect()
 	emblem.custom_minimum_size = Vector2(44.0, 44.0)
 	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -439,12 +439,12 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	emblem.texture = atlas
 	hbox.add_child(emblem)
 
-	var vbox := VBoxContainer.new()
+	var vbox := UIControlParts.v_box_container()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 4)
 	hbox.add_child(vbox)
 
-	var top_hbox := HBoxContainer.new()
+	var top_hbox := UIControlParts.h_box_container()
 	top_hbox.add_theme_constant_override("separation", 8)
 	vbox.add_child(top_hbox)
 
@@ -455,14 +455,14 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	var date_parts := PackedStringArray(["第 %d 日" % day])
 	if not settlement.is_empty() and not title_text.contains(settlement):
 		date_parts.append(settlement)
-	var date_tag := Label.new()
+	var date_tag := UIControlParts.label()
 	date_tag.text = "  ·  ".join(date_parts)
 	date_tag.add_theme_font_override("font", UITokensScript.annual_font("label"))
 	date_tag.add_theme_font_size_override("font_size", 13)
 	date_tag.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
 	top_hbox.add_child(date_tag)
 
-	var title_lbl := Label.new()
+	var title_lbl := UIControlParts.label()
 	title_lbl.text = title_text
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_lbl.add_theme_font_override("font", UITokensScript.annual_font("display_soft"))
@@ -470,7 +470,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 	title_lbl.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	vbox.add_child(title_lbl)
 
-	var choice_lbl := Label.new()
+	var choice_lbl := UIControlParts.label()
 	choice_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var prob_pct := int(rec.get("outcome_probability_percent", 100))
 	var outcome_str := String(rec.get("outcome_title", ""))
@@ -487,7 +487,7 @@ func _build_record_card(rec: Dictionary, idx: int) -> PanelContainer:
 
 	var effects: PackedStringArray = PackedStringArray(rec.get("applied_effects_summary", []))
 	if not effects.is_empty():
-		var eff_lbl := Label.new()
+		var eff_lbl := UIControlParts.label()
 		eff_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		eff_lbl.text = "  ·  ".join(effects)
 		eff_lbl.add_theme_font_override("font", UITokensScript.dossier_font("sans"))

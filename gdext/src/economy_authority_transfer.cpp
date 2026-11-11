@@ -39,7 +39,15 @@ bool EconomyAuthorityTransfer::capture(NativeEconomyRuntime &runtime,
 bool EconomyAuthorityTransfer::restore_before_country(NativeEconomyRuntime &runtime,
         const RuntimeEconomyEcp2State &state, std::string &error) {
     RestoreValue<bool> defer(runtime._accept_stale_country_identity, true);
-    return runtime.apply_ecp2_authority(state, error);
+    // The session already rebound the regenerated map before executor startup.
+    // Applying the same archive again clears that derived graph. Preserve this
+    // same-world binding across the owner handoff; a plain archive restore still
+    // clears it and must bind its own map explicitly.
+    auto topology = runtime._trade_topology;
+    const bool restored = runtime.apply_ecp2_authority(state, error);
+    runtime._trade_topology = std::move(topology);
+    if (restored) runtime._trade_topology.component_country_hash = 0;
+    return restored;
 }
 
 bool EconomyAuthorityTransfer::verify_after_country(const NativeEconomyRuntime &runtime,

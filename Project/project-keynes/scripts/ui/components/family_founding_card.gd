@@ -324,10 +324,10 @@ func _clear_rows(container: Container) -> void:
 
 
 func _add_trait_row(item: Dictionary) -> void:
-	var row := VBoxContainer.new()
+	var row := UIControlParts.v_box_container()
 	row.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	_traits_list.add_child(row)
-	var heading := HBoxContainer.new()
+	var heading := UIControlParts.h_box_container()
 	heading.add_theme_constant_override("separation", UITokens.SPACE_XS)
 	row.add_child(heading)
 	_add_icon(heading, &"family.workspace.preferences", UITokens.DOSSIER_SLATE)
@@ -336,7 +336,7 @@ func _add_trait_row(item: Dictionary) -> void:
 	heading.add_child(title)
 	var factor := float(item.get("factor_percent", 0.0))
 	if factor > 0.0:
-		var factor_label := Label.new()
+		var factor_label := UIControlParts.label()
 		factor_label.text = "倾向 %d%%" % int(round(factor))
 		factor_label.add_theme_font_override("font", _bold_font)
 		factor_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
@@ -344,7 +344,7 @@ func _add_trait_row(item: Dictionary) -> void:
 		heading.add_child(factor_label)
 	var axis_label := String(item.get("axis_label", "")).strip_edges()
 	if not axis_label.is_empty():
-		var axis := Label.new()
+		var axis := UIControlParts.label()
 		axis.text = axis_label
 		axis.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		axis.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
@@ -358,7 +358,7 @@ func _add_trait_row(item: Dictionary) -> void:
 
 
 func _add_effect_row(data: Dictionary) -> void:
-	var band := PanelContainer.new()
+	var band := UIControlParts.panel_container()
 	var paper := StyleBoxFlat.new()
 	paper.bg_color = UITokens.DOSSIER_PAPER_SHADE
 	paper.border_color = UITokens.DOSSIER_RULE
@@ -370,24 +370,24 @@ func _add_effect_row(data: Dictionary) -> void:
 	band.add_theme_stylebox_override("panel", paper)
 	band.tooltip_text = String(data.get("original", ""))
 	_effect_tiers_box.add_child(band)
-	var line := HBoxContainer.new()
+	var line := UIControlParts.h_box_container()
 	line.add_theme_constant_override("separation", UITokens.SPACE_MD)
 	band.add_child(line)
 	var level := int(data.get("level", 1))
-	var rank := VBoxContainer.new()
+	var rank := UIControlParts.v_box_container()
 	rank.custom_minimum_size.x = 62
 	line.add_child(rank)
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = "威望 %s" % _prestige_roman(level)
 	label.add_theme_color_override("font_color", UITokens.DOSSIER_OXBLOOD)
 	label.add_theme_font_override("font", _bold_font)
 	label.add_theme_font_size_override("font_size", UITokens.FONT_BODY)
 	rank.add_child(label)
-	var marks := HBoxContainer.new()
+	var marks := UIControlParts.h_box_container()
 	marks.add_theme_constant_override("separation", 3)
 	rank.add_child(marks)
 	for index in 5:
-		var mark := ColorRect.new()
+		var mark := UIControlParts.color_rect()
 		mark.custom_minimum_size = Vector2(9, 3)
 		mark.color = UITokens.DOSSIER_BRASS if index < level else UITokens.DOSSIER_TRACK
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -405,7 +405,7 @@ func _add_icon(parent: Node, key: StringName, color: Color, size: float = 24.0) 
 
 
 func _rich_copy() -> RichTextLabel:
-	var copy := RichTextLabel.new()
+	var copy := UIControlParts.rich_text_label()
 	_style_copy(copy)
 	return copy
 
@@ -536,7 +536,7 @@ func _show_dossier_popup() -> void:
 	_poll_mouse = get_viewport().get_mouse_position()
 	_dossier_popup_revision += 1
 	var revision := _dossier_popup_revision
-	_dossier_popup = PanelContainer.new()
+	_dossier_popup = UIControlParts.panel_container()
 	_dossier_popup.name = "FamilyDossierPopup"
 	# 同名浮窗在同一帧里换新时引擎会把新节点改名，查找请认这个标记而不是名字。
 	_dossier_popup.set_meta("family_dossier_popup", true)
@@ -572,27 +572,27 @@ func _show_dossier_popup() -> void:
 	frame.add_theme_stylebox_override("panel", _tooltip_style())
 	_dossier_popup.add_child(frame)
 	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var margin := MarginContainer.new()
+	var margin := UIControlParts.margin_container()
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_theme_constant_override("margin_left", 20)
 	margin.add_theme_constant_override("margin_top", 15)
 	margin.add_theme_constant_override("margin_right", 20)
 	margin.add_theme_constant_override("margin_bottom", 15)
 	_dossier_popup.add_child(margin)
-	var stack := VBoxContainer.new()
+	var stack := UIControlParts.v_box_container()
 	stack.mouse_filter = Control.MOUSE_FILTER_STOP
 	stack.add_theme_constant_override("separation", 7)
 	margin.add_child(stack)
 	_add_tooltip_header(stack)
 	_add_tooltip_rule(stack)
-	var body_scroll := ScrollContainer.new()
+	var body_scroll := UIControlParts.scroll_container()
 	body_scroll.name = "DossierBodyScroll"
 	body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	body_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	body_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
 	stack.add_child(body_scroll)
-	var body_stack := VBoxContainer.new()
+	var body_stack := UIControlParts.v_box_container()
 	body_stack.custom_minimum_size.x = DOSSIER_BODY_WIDTH
 	body_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body_stack.add_theme_constant_override("separation", 7)
@@ -803,7 +803,7 @@ func _tooltip_style() -> StyleBox:
 
 
 func _add_tooltip_header(column: VBoxContainer) -> void:
-	var header := HBoxContainer.new()
+	var header := UIControlParts.h_box_container()
 	header.add_theme_constant_override("separation", 8)
 	column.add_child(header)
 	var icon := IconScene.instantiate() as IconBadge
@@ -811,18 +811,18 @@ func _add_tooltip_header(column: VBoxContainer) -> void:
 	icon.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	header.add_child(icon)
 	icon.set_semantic(&"family.workspace.crest", UITokens.DOSSIER_OXBLOOD)
-	var title_column := VBoxContainer.new()
+	var title_column := UIControlParts.v_box_container()
 	title_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_column.add_theme_constant_override("separation", 0)
 	header.add_child(title_column)
-	var title := Label.new()
+	var title := UIControlParts.label()
 	title.text = String(_candidate.get("family_name", "家族"))
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_override("font", UITokens.dossier_font("display"))
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	title_column.add_child(title)
-	var origin := Label.new()
+	var origin := UIControlParts.label()
 	origin.text = _origin_text(_candidate)
 	origin.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	origin.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
@@ -836,7 +836,7 @@ func _add_tooltip_rule(column: VBoxContainer) -> void:
 
 
 func _add_tooltip_metrics(column: VBoxContainer) -> void:
-	var grid := GridContainer.new()
+	var grid := UIControlParts.grid_container()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 2)
@@ -856,24 +856,24 @@ func _add_tooltip_metrics(column: VBoxContainer) -> void:
 				else UITokens.DOSSIER_BRASS],
 	]
 	for metric in metrics:
-		var cell := VBoxContainer.new()
+		var cell := UIControlParts.v_box_container()
 		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cell.add_theme_constant_override("separation", 0)
 		grid.add_child(cell)
-		var heading := HBoxContainer.new()
+		var heading := UIControlParts.h_box_container()
 		heading.add_theme_constant_override("separation", 3)
 		cell.add_child(heading)
 		_add_icon(heading, StringName(metric[0]), metric[3] as Color, 16.0)
-		var value_row := HBoxContainer.new()
+		var value_row := UIControlParts.h_box_container()
 		value_row.add_theme_constant_override("separation", 2)
 		cell.add_child(value_row)
-		var value := Label.new()
+		var value := UIControlParts.label()
 		value.text = String(metric[1])
 		value.add_theme_font_override("font", _bold_font)
 		value.add_theme_font_size_override("font_size", 20)
 		value.add_theme_color_override("font_color", metric[3] as Color)
 		value_row.add_child(value)
-		var unit := Label.new()
+		var unit := UIControlParts.label()
 		unit.text = String(metric[2])
 		unit.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		unit.add_theme_color_override("font_color", UITokens.DOSSIER_INK_MUTED)
@@ -882,12 +882,12 @@ func _add_tooltip_metrics(column: VBoxContainer) -> void:
 
 
 func _add_tooltip_section(column: VBoxContainer, text: String) -> void:
-	var row := HBoxContainer.new()
+	var row := UIControlParts.h_box_container()
 	row.add_theme_constant_override("separation", 5)
 	column.add_child(row)
 	var key := &"family.workspace.effects" if text.contains("效果") else &"family.workspace.prestige"
 	_add_icon(row, key, UITokens.DOSSIER_OXBLOOD, 18.0)
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_font_override("font", _bold_font)
@@ -908,21 +908,21 @@ func _add_tooltip_traits(column: VBoxContainer) -> void:
 		return
 	for raw in items:
 		var item: Dictionary = raw
-		var row := VBoxContainer.new()
+		var row := UIControlParts.v_box_container()
 		row.add_theme_constant_override("separation", 1)
 		column.add_child(row)
-		var heading := HBoxContainer.new()
+		var heading := UIControlParts.h_box_container()
 		heading.add_theme_constant_override("separation", 4)
 		row.add_child(heading)
 		_add_icon(heading, &"family.workspace.preferences", UITokens.DOSSIER_OXBLOOD, 16.0)
-		var name := Label.new()
+		var name := UIControlParts.label()
 		name.text = String(item.get("name", "家风"))
 		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name.add_theme_font_override("font", _bold_font)
 		name.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
 		name.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 		heading.add_child(name)
-		var description := RichTextLabel.new()
+		var description := UIControlParts.rich_text_label()
 		description.bbcode_enabled = true
 		description.fit_content = true
 		description.scroll_active = false
@@ -949,11 +949,11 @@ func _add_tooltip_effects(column: VBoxContainer) -> void:
 	var title_text := effect_title
 	if current_level > 0:
 		title_text += "  ·  %s" % _prestige_roman(current_level)
-	var effect_header := HBoxContainer.new()
+	var effect_header := UIControlParts.h_box_container()
 	effect_header.add_theme_constant_override("separation", 6)
 	column.add_child(effect_header)
 	_add_icon(effect_header, &"family.workspace.effects", UITokens.DOSSIER_VERDIGRIS, 20.0)
-	var name := Label.new()
+	var name := UIControlParts.label()
 	name.text = title_text
 	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name.add_theme_font_override("font", UITokens.dossier_font("display"))
@@ -961,7 +961,7 @@ func _add_tooltip_effects(column: VBoxContainer) -> void:
 	name.add_theme_color_override("font_color", UITokens.DOSSIER_INK)
 	effect_header.add_child(name)
 	if not context.is_empty():
-		var context_label := Label.new()
+		var context_label := UIControlParts.label()
 		context_label.text = context
 		context_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		context_label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
@@ -990,15 +990,15 @@ func _add_tooltip_prestige_ladder(column: VBoxContainer) -> void:
 		return
 	var presentation := FamilyBuffCopyScript.founding_effect_rows(tiers)
 	var current_level := maxi(0, int(_candidate.get("prestige_level", 0)))
-	var rows := VBoxContainer.new()
+	var rows := UIControlParts.v_box_container()
 	rows.add_theme_constant_override("separation", 3)
 	column.add_child(rows)
 	for raw in presentation.get("rows", []):
 		var row: Dictionary = raw
-		var line := HBoxContainer.new()
+		var line := UIControlParts.h_box_container()
 		line.add_theme_constant_override("separation", 6)
 		rows.add_child(line)
-		var rank := PanelContainer.new()
+		var rank := UIControlParts.panel_container()
 		rank.custom_minimum_size = Vector2(34.0, 24.0)
 		rank.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		rank.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1022,7 +1022,7 @@ func _add_tooltip_prestige_ladder(column: VBoxContainer) -> void:
 		rank_paper.content_margin_bottom = 1.0
 		rank.add_theme_stylebox_override("panel", rank_paper)
 		line.add_child(rank)
-		var level := Label.new()
+		var level := UIControlParts.label()
 		level.text = _prestige_roman(int(row.get("level", 1)))
 		level.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		level.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1039,7 +1039,7 @@ func _add_tooltip_prestige_ladder(column: VBoxContainer) -> void:
 
 
 func _rich_tooltip_copy() -> RichTextLabel:
-	var copy := RichTextLabel.new()
+	var copy := UIControlParts.rich_text_label()
 	copy.bbcode_enabled = true
 	copy.fit_content = true
 	copy.scroll_active = false
@@ -1053,7 +1053,7 @@ func _rich_tooltip_copy() -> RichTextLabel:
 
 
 func _add_tooltip_muted(column: VBoxContainer, text: String) -> void:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)

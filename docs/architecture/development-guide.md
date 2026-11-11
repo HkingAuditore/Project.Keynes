@@ -87,6 +87,11 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 - CLOCK_WAIT 必须带停止、保存、暂停与速度变化的条件检查；仅把通知放在锁内仍不能保护无条件的计时等待。执行器测试覆盖单次控制通知、inline+SHADOW 拒绝后的存档恢复，以及未完成日跨后台/inline 替换后的冻结输入和保存阻止。
 - `runtime_world_lifecycle_test.gd` 区分同一世界重启与复用对象创建新世界，检查已提交国家状态、未领取确认、连续日期、新世界命令隔离及运行中拒绝重配；新世界身份编号必须递增，无效配置（包括后段校验失败）保留旧世界及其编号。正式 inline 用例还在保存恢复后重复应用策略，并逐项比较国家状态及下一日整份经济哈希。保留这些比较，不能只检查重启成功或名称未变。`runtime_world_rules_rebuild_test.gd` 另在后台和 inline 各覆盖三代新世界：规则在 Country 前配置、规则内容变化、直接复用定义、无效配置后旧世界续跑。检查实际 Effect 执行与 Modifier 数值、Trigger 输出及规则快照接收，并确认旧实例/事件没有混入；仅有日期推进或 ready=true 不算规则生效。
 - 相同 ACTIVE 授权范围的重启走 `native_simulation_host_lifecycle.cpp`，只替换执行器，世界状态与日内继续位置不重建。新世界由停止后的 `configure_country` 建立：先在私有候选中验证，成功后再配置原 Country 对象，保持地址稳定及 session epoch 递增。新 Host 从旧 Host 带入回复协议编号作为起点，首次启动再递增，不能让旧回复与新请求复用身份；同一世界重启保持原编号。替换前用 `make_new_world_host` 把当前已验证的 Modifier、Effect、Trigger、Ideology 规则定义及 Modifier 稳定键映射安装到私有候选中，任何失败都保留旧世界。规则定义与世界状态分开：不复制旧实例、请求、回执、输入、意见、快照或读取进度。替换成功时清理规则主线程对象中的旧世界状态，Effect/Modifier 的快照读取进度必须随状态清理重置，不能保留成新世界首份结果的拒收门槛。替换 Host 前必须解除经济对其 OwnedState 的借用，并重新连接 Country/Economy/Effect 适配层。重复捕获相同 Country 目录不能清掉终态确认；新世界和读档才更换相应记录。
+- 首次结算前的保存拒绝不能终止执行器。`startup_save_boundary_test.gd` 固定首次输入尚未送入的开局，分别验证后台和内联的两次拒绝、八日继续和之后的正常保存。正式场景 ready 可能已完成首次结算，不能用 ready 信号推断尚未结算。
+- 已开启 ECP2 捕获时，整份保存要求经济段捕获并编码成功。`economy_settlement_save_boundary_test.gd` 在首次成功结算后停在下一轮计算中，验证原生请求返回 `save_requires_committed_boundary`，原执行器和经济状态保留，结算完成后可重试并获得完整存档。
+- ECP2 60 的内部 OSOA4 块 13 保存 `_cell_rain_event_q16` 和 `_epoch_cell_rain_event_threshold_q16`；已采样但尚未开算的当天也可能是合法边界，恢复不能以零值代替。`economy_cadence_runtime_test.gd` 检查完整块、旧版本/未知块/非法值/形状及失败原子性；正式读档检查后续完整结算。
+- 固定气候档候选用 `capture_climate_archive.py --godot … --candidate <新目录> --log-dir <新目录>` 生成并验证，再审查安装；默认回归只读固定样本，不自动更新。旧内容拒绝用 `legacy_catalog.pkcm` 覆盖。不得把候选的通过与真实旧版兼容混为一谈。
+- `PlayerController` 订阅时钟通知并在重新配置时解除旧订阅；音乐的逐帧平滑归 `audio/music_situation_playback.gd`。弹窗屏蔽只释放已知来源的自动暂停；手动、保存和故障暂停继续生效，见 `player_clock_event_test.gd`。
 - 手动推进后台日的测试必须同时运行生产的结果接收步骤。`ideology_save_worker_authority_test.gd` 在等待中调用宿主的 `_service_runtime_liveness`，日提交后再接收一次结果，然后重建逐格效果。只等待后台日期变大、不接收新快照，会把旧的主线程显示状态误判为业务失败；不能靠增加天数或放宽比较掩盖。
 
 ## 会话与宿主脚本

@@ -60,7 +60,7 @@ func _ready() -> void:
 # ── 骨架 ────────────────────────────────────────────────────────────────────
 
 func _build_chrome() -> void:
-	_scroll = ScrollContainer.new()
+	_scroll = UIControlParts.scroll_container()
 	_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	# 滚动条不出现：它会从内容宽度里偷走十几像素，纸的右侧留白就和左侧对不上。
@@ -69,7 +69,7 @@ func _build_chrome() -> void:
 	_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_scroll)
 
-	_body = VBoxContainer.new()
+	_body = UIControlParts.v_box_container()
 	_body.size_flags_horizontal = Control.SIZE_FILL
 	_body.add_theme_constant_override("separation", 0)
 	_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -91,7 +91,7 @@ func _build_chrome() -> void:
 	_rail.chapter_requested.connect(func(index: int) -> void: chapter_entered.emit(index))
 	add_child(_rail)
 
-	_footer = HBoxContainer.new()
+	_footer = UIControlParts.h_box_container()
 	_footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_footer.custom_minimum_size.y = AnnualReportTokens.FOOTER_HEIGHT
 	_footer.add_theme_constant_override("separation", 14)
@@ -102,13 +102,13 @@ func _build_chrome() -> void:
 	_page_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_footer.add_child(_page_label)
 
-	_progress_track = ColorRect.new()
+	_progress_track = UIControlParts.color_rect()
 	_progress_track.color = Color(UITokens.CHRONICLE_INK.r, UITokens.CHRONICLE_INK.g, UITokens.CHRONICLE_INK.b, 0.12)
 	_progress_track.custom_minimum_size = Vector2(120.0, 1.0)
 	_progress_track.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_footer.add_child(_progress_track)
 
-	_progress_fill = ColorRect.new()
+	_progress_fill = UIControlParts.color_rect()
 	_progress_fill.color = Color(UITokens.CHRONICLE_RED.r, UITokens.CHRONICLE_RED.g, UITokens.CHRONICLE_RED.b, 0.9)
 	_progress_fill.custom_minimum_size = Vector2(0.0, 1.0)
 	_progress_fill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -117,12 +117,12 @@ func _build_chrome() -> void:
 	_progress_fill.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
 	_progress_fill.offset_right = 0.0
 
-	var spacer := Control.new()
+	var spacer := UIControlParts.control()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_footer.add_child(spacer)
 
-	_history = OptionButton.new()
+	_history = UIControlParts.option_button()
 	_history.focus_mode = Control.FOCUS_ALL
 	_history.custom_minimum_size.x = 92.0
 	_history.tooltip_text = "切换历年年度报告"
@@ -140,7 +140,7 @@ func _build_chrome() -> void:
 
 
 func _link_button(text: String, callback: Callable, cue: StringName = &"page") -> Button:
-	var button := Button.new()
+	var button := UIControlParts.button()
 	button.set_meta(&"ui_sound", cue)
 	button.text = text
 	button.focus_mode = Control.FOCUS_ALL
@@ -152,7 +152,7 @@ func _link_button(text: String, callback: Callable, cue: StringName = &"page") -
 
 
 func _label(text: String, size_px: int, color: Color) -> Label:
-	var label := Label.new()
+	var label := UIControlParts.label()
 	label.text = text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_override("font", UITokens.annual_font("label"))
@@ -228,7 +228,7 @@ func present(model: Dictionary) -> void:
 
 ## 桌面留白：一段透明的空档，露出底下那张桌子。
 func _desk_gap(node_name: String, height: float) -> Control:
-	var gap := Control.new()
+	var gap := UIControlParts.control()
 	gap.name = node_name
 	gap.custom_minimum_size.y = height
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -355,7 +355,7 @@ func _append_section(index: int) -> void:
 	# 章间距只插在章与章之间。用 _sections 判空而不是数 _body 的孩子 ——
 	# 卷首/卷末那两段桌面留白也算孩子，数出来会把第一章前面也塞一道间距。
 	if not _sections.is_empty():
-		var lead := Control.new()
+		var lead := UIControlParts.control()
 		lead.custom_minimum_size.y = float(_layout.get("gap", AnnualReportTokens.GAP_CHAPTER))
 		lead.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_body.add_child(lead)

@@ -1,11 +1,12 @@
 extends SceneTree
 
 const THEME_PATH := "res://assets/themes/player_ui_theme.tres"
+const MENU_THEME_PATH := "res://assets/themes/menu_atlas_theme.tres"
 const PLAYER_THEME_PATH := "res://assets/themes/player_session_theme.tres"
 const CONTROL_TYPES := ["Control", "PanelContainer", "VBoxContainer", "HBoxContainer",
 	"GridContainer", "MarginContainer", "ScrollContainer", "Label", "Button",
 	"TextureRect", "ColorRect", "ProgressBar", "LineEdit", "TextEdit",
-	"OptionButton", "CheckBox", "HSlider", "VSlider", "SpinBox",
+	"OptionButton", "CheckBox", "CheckButton", "HSlider", "VSlider", "SpinBox",
 	"TabContainer", "CenterContainer", "AspectRatioContainer", "RichTextLabel"]
 # These screens intentionally materialize bounded, data-shaped rows at runtime:
 # expedition entries and the optional .pkmap path field. The ideology deck
@@ -110,19 +111,26 @@ func _check_theme_contract() -> void:
 		hud_button != null and hud_button.texture != null
 		and hud_button.texture.get_width() <= 128
 		and hud_button.texture != session_theme.get_stylebox("panel", "PKArchivePanel").texture)
-	_expect("pressed material is distinct and has less projection",
+	_expect("pressed material is distinct and preserves content geometry",
 		hud_pressed != null and hud_pressed.texture != hud_button.texture
-		and hud_pressed.expand_margin_bottom < hud_button.expand_margin_bottom)
-	for variation in ["PKArchivePanel", "PKHUDPanel", "PKHUDInset"]:
+		and hud_pressed.get_content_margin(SIDE_LEFT) == hud_button.get_content_margin(SIDE_LEFT)
+		and hud_pressed.get_content_margin(SIDE_BOTTOM) == hud_button.get_content_margin(SIDE_BOTTOM))
+	for variation in ["PKArchivePanel", "PKHUDInset"]:
 		var shell := session_theme.get_stylebox("panel", variation) as StyleBoxTexture
 		_expect("%s projection does not consume content space" % variation,
 			shell != null and shell.expand_margin_left > 0.0
 			and shell.expand_margin_bottom > shell.expand_margin_top)
 
+	var hud_panel := session_theme.get_stylebox("panel", "PKHUDPanel") as StyleBoxTexture
+	_expect("HUD paper stays within its layout box with usable padding",
+		hud_panel != null and is_zero_approx(hud_panel.expand_margin_left)
+		and is_zero_approx(hud_panel.expand_margin_bottom)
+		and hud_panel.content_margin_left >= 8.0 and hud_panel.content_margin_top >= 5.0)
+
 
 func _check_main_menu() -> void:
 	var scene := (load("res://scenes/main_menu.tscn") as PackedScene).instantiate()
-	_expect("main menu inherits formal session theme", _uses_theme(scene, PLAYER_THEME_PATH))
+	_expect("main menu inherits its atlas theme", _uses_theme(scene, MENU_THEME_PATH))
 	_expect("main menu has papercut atlas backdrop", scene.has_node("Backdrop"))
 	_expect("main menu has static page stack", scene.has_node("PageMargin/PageStack"))
 	for page_name in ["HomePage", "NewGamePage", "LoadGamePage", "SettingsPage"]:
@@ -241,8 +249,8 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/object_good_dossier.tscn": "OperationsPage/OrdersCard/Box/TradeOrdersTable",
 		"res://scenes/ui/family_workspace.tscn": "SafeMargin/Main/PageArea/PageViewport/PageScroll/PageHost",
 		"res://scenes/ui/archival_surface.tscn": "Frame/Margin/Column/Body",
-		"res://scenes/ui/era_reward_dialog.tscn": "ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid",
-		"res://scenes/ui/era_reward_choice.tscn": "Margin/Column/Choose",
+		"res://scenes/ui/era_reward_dialog.tscn": "Popup/Rewards/Margin/Column/CardsScroll/CardGrid",
+		"res://scenes/ui/era_reward_choice.tscn": "Margin/Row/Choose",
 		"res://scenes/ui/world_loading_overlay.tscn": "Center/Card/Content/Progress",
 		"res://scenes/ui/map_overlay_toolbar.tscn": "SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox",
 		"res://scenes/ui/map_overlay_legend.tscn": "Margin/Root/Vector/Wheel",
@@ -307,11 +315,11 @@ func _check_component_scenes() -> void:
 			_expect("economy workspace has treasury insights", scene.has_node("Viewport/Column/Insights"))
 		if scene_path.ends_with("era_reward_dialog.tscn"):
 			_expect("era reward dialog has three stable choices",
-				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0")
-				and scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card1")
-				and scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card2"))
+				scene.has_node("Popup/Rewards/Margin/Column/CardsScroll/CardGrid/Card0")
+				and scene.has_node("Popup/Rewards/Margin/Column/CardsScroll/CardGrid/Card1")
+				and scene.has_node("Popup/Rewards/Margin/Column/CardsScroll/CardGrid/Card2"))
 			_expect("era reward dialog keeps a bottom status line",
-				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/Status"))
+				scene.has_node("Popup/Rewards/Margin/Column/Status"))
 		scene.free()
 
 
@@ -461,8 +469,9 @@ func _check_no_runtime_control_new() -> void:
 			continue
 		var source := FileAccess.get_file_as_string(path)
 		for type_name in CONTROL_TYPES:
+			var constructor := RegEx.create_from_string("\\b%s\\s*\\.\\s*new\\s*\\(" % type_name)
 			_expect("%s does not construct %s at runtime" % [path, type_name],
-				source.find("%s.new(" % type_name) < 0)
+				constructor.search(source) == null)
 
 
 func _collect_scripts(path: String, output: PackedStringArray) -> void:

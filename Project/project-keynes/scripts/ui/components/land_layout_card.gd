@@ -15,7 +15,7 @@ func _ready() -> void:
 	_emblem = get_node_or_null("Margin/VBox/Emblem") as Control
 	_caption = get_node_or_null("Margin/VBox/Caption") as Label
 	if _emblem != null:
-		_sea_rect = ColorRect.new()
+		_sea_rect = UIControlParts.color_rect()
 		_sea_rect.mouse_filter = MOUSE_FILTER_IGNORE
 		_sea_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		_sea_mat = ShaderMaterial.new()

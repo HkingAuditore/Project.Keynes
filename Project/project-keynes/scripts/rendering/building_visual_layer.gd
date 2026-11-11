@@ -261,7 +261,7 @@ func configure_catalog(catalog: Dictionary) -> Dictionary:
 		"building_construction_offsets", PackedInt32Array()))
 	var construction_goods := PackedInt32Array(catalog.get(
 		"building_construction_good_ids", PackedInt32Array()))
-	var sector_names := ["agriculture", "extractive", "manufacturing", "energy", "knowledge"]
+	var sector_names := ["agriculture", "extractive", "manufacturing", "energy", "knowledge", "service"]
 	var sources := {}
 	var family_counts := PackedInt32Array()
 	family_counts.resize(FAMILY_NAMES.size())

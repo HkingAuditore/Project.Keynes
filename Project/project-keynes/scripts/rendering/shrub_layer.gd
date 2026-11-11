@@ -1,5 +1,6 @@
 class_name ShrubLayer
 extends Node2D
+const VegetationNodeLifecycle = preload("res://scripts/rendering/vegetation_node_lifecycle.gd")
 const VegetationShaderVariants = preload("res://scripts/rendering/vegetation_shader_variants.gd")
 
 
@@ -810,15 +811,9 @@ func detail_family_shader(shadow_pass: bool) -> Shader:
 # 同样大小的近景 shader，把首次编译耗时翻倍。真要画家族批次时由
 # set_family_batch_suppressed(true) 换回真实档位（见 _restore_family_material_near_forms）。
 func _family_batch_define_prefix() -> String:
-	if OS.has_feature("web") and PK_WEB_ENABLE_VEG_NEAR_FORMS and not _family_batch_suppressed:
-		var prefix := _shader_quality_define_prefix(true)
-		# Family batches add the style LUT. On Web HIGH, release the horizon
-		# sampler there; body instances retain horizon lighting and the family
-		# batch still uses PC forms, ground normals and soft shadows.
-		if _visual_quality >= 2:
-			prefix += "#define PK_SKIP_HORIZON_SHADOWS\n"
-		return prefix
-	return _shader_quality_define_prefix()
+	var force_far := OS.has_feature("web") and PK_WEB_ENABLE_VEG_NEAR_FORMS \
+		and not _family_batch_suppressed
+	return VegetationShaderVariants.family_prefix(_shader_quality_define_prefix(force_far))
 
 
 # 家族批次材质引用（只记 web；上限 16 个，超了先丢掉旧的引用，避免多次 configure
@@ -838,7 +833,7 @@ func _restore_family_material_near_forms() -> void:
 	if _family_materials.is_empty():
 		return
 	var shader := _compiled_shader(
-		_shader_quality_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
+		_family_batch_define_prefix() + "#define DETAIL_FAMILY_BATCH\n" + _SHADER_CODE, "family")
 	for raw_mat in _family_materials:
 		var mat := raw_mat as ShaderMaterial
 		if mat == null or mat.shader == shader:
@@ -2262,35 +2257,17 @@ func _refresh_shader_variants() -> void:
 		_report_veg_shader_cost()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		VegetationNodeLifecycle.release(self)
+
+
 func _clear_chunk_nodes() -> void:
-	for node in _chunk_nodes.values():
-		if node != null and is_instance_valid(node):
-			node.queue_free()
-	_chunk_nodes.clear()
-	_chunk_cell_payloads.clear()
-	_chunk_assembled_payloads.clear()
-	_chunk_dormant_since_msec.clear()
-	_clear_wrap_node_groups(_chunk_wrap_nodes)
-	_chunk_instance_counts.clear()
-	_chunk_far_instance_counts.clear()
-	_active_instance_count_cache = 0
-	_active_instance_count_valid = false
-	invalidate_viewport_budget_cache()
-	for snode in _shadow_chunk_nodes.values():
-		if snode != null and is_instance_valid(snode):
-			snode.queue_free()
-	_shadow_chunk_nodes.clear()
-	_clear_wrap_node_groups(_shadow_chunk_wrap_nodes)
+	VegetationNodeLifecycle.clear_chunks(self)
 
 
 func _clear_wrap_node_groups(groups: Dictionary) -> void:
-	for nodes_value in groups.values():
-		var nodes: Array = nodes_value
-		for node_value in nodes:
-			var node := node_value as MultiMeshInstance2D
-			if node != null and is_instance_valid(node):
-				node.queue_free()
-	groups.clear()
+	VegetationNodeLifecycle.clear_wrap_nodes(groups)
 
 
 func _wrap_period_x() -> float:

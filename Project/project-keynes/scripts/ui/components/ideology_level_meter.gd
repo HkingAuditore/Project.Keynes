@@ -43,12 +43,12 @@ func _init() -> void:
 	_seal_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_seal_text.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_seal.add_child(_seal_text)
-	_text_column = VBoxContainer.new()
+	_text_column = UIControlParts.v_box_container()
 	_text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_text_column.add_theme_constant_override("separation", 2)
 	_text_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_text_column)
-	_top_line = HBoxContainer.new()
+	_top_line = UIControlParts.h_box_container()
 	_top_line.add_theme_constant_override("separation", 4)
 	_top_line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text_column.add_child(_top_line)
