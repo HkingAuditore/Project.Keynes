@@ -35,6 +35,10 @@
 
 **已落地**：9 条已提交视图；Economy→Country 全部写入走所有者端口（直接写为 0）；30 个域对逐项登记。
 
+**已落地**：Military 的玩家自动探路任务留在 `MilitaryCore`，只接收 Host 冻结的玩家 explored
+副本并返回实际进入格的 trail；Host 合并 `MapData.explored_arr`，`VisionSolver` 仍是
+`visible/fog` 的唯一生成者。探路不宣战、不占领、不改变控制权，也不建立第二套视野算法。
+
 **目标，尚未实现**：剩余读边（见 current-state）改为已提交视图；25 个待核查域对的逐函数语义审查。依赖棘轮冻结的现有债务不是永久许可。
 
 ## 模块描述符

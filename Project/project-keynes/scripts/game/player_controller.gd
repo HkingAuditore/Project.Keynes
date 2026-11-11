@@ -89,6 +89,7 @@ const COMMAND_MILITARY_ARMY_CREATE := &"military.army.create"
 const COMMAND_MILITARY_ARMY_STATION := &"military.army.station"
 const COMMAND_MILITARY_ARMY_MOVE := &"military.army.move"
 const COMMAND_MILITARY_AREA_CONTROL := &"military.army.area_control"
+const COMMAND_MILITARY_ARMY_EXPLORE := &"military.army.explore"
 const COMMAND_MILITARY_ARMY_STOP := &"military.army.stop"
 const COMMAND_MILITARY_ARMY_STANCE := &"military.army.stance"
 const COMMAND_MILITARY_ARMY_DISBAND := &"military.army.disband"
@@ -145,6 +146,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_MILITARY_ARMY_STATION: true,
 	COMMAND_MILITARY_ARMY_MOVE: true,
 	COMMAND_MILITARY_AREA_CONTROL: true,
+	COMMAND_MILITARY_ARMY_EXPLORE: true,
 	COMMAND_MILITARY_ARMY_STOP: true,
 	COMMAND_MILITARY_ARMY_STANCE: true,
 	COMMAND_MILITARY_ARMY_DISBAND: true,
@@ -886,6 +888,8 @@ func get_family_expeditions(offset: int = 0, limit: int = 64) -> Dictionary:
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):
 		return ready
+	if _economy_facade == null or not _economy_facade.has_method("family_expeditions"):
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_expeditions(_player_country_handle,
 		offset, limit)
 
@@ -894,6 +898,8 @@ func get_family_expedition_snapshot(expedition_handle: int) -> Dictionary:
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):
 		return ready
+	if _economy_facade == null or not _economy_facade.has_method("family_expedition_snapshot"):
+		return _result(false, "runtime_unavailable", "经济系统尚未就绪，请稍后再试。")
 	return _economy_facade.family_expedition_snapshot(_player_country_handle,
 		expedition_handle)
 
@@ -1959,6 +1965,17 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 				return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
 			if area_cells is PackedInt32Array and (area_cells as PackedInt32Array).size() > 256:
 				return _result(false, "invalid_args", "军事控制区域上限为 256 格。")
+		COMMAND_MILITARY_ARMY_EXPLORE:
+			if int(args.get("army", 0)) <= 0 or int(args.get("cell", -1)) < 0:
+				return _result(false, "invalid_args", "探路命令缺少部队或中心格。")
+			var explore_radius := int(args.get("radius", 0))
+			if explore_radius < 1 or explore_radius > 6:
+				return _result(false, "invalid_args", "探查半径必须在 1–6 格之间。")
+			var explore_cells = args.get("cells", PackedInt32Array())
+			if not explore_cells is PackedInt32Array \
+					or (explore_cells as PackedInt32Array).is_empty() \
+					or (explore_cells as PackedInt32Array).size() > 256:
+				return _result(false, "invalid_args", "探查范围必须为 1–256 格。")
 		COMMAND_MILITARY_ARMY_STANCE:
 			var stance := int(args.get("stance", -1))
 			if stance < 0 or stance > 4:
@@ -2478,6 +2495,7 @@ const MILITARY_COMMANDS := {
 	COMMAND_MILITARY_ARMY_STATION: "army.station",
 	COMMAND_MILITARY_ARMY_MOVE: "army.move",
 	COMMAND_MILITARY_AREA_CONTROL: "army.area_control",
+	COMMAND_MILITARY_ARMY_EXPLORE: "army.explore",
 	COMMAND_MILITARY_ARMY_STOP: "army.stop",
 	COMMAND_MILITARY_ARMY_STANCE: "army.stance",
 	COMMAND_MILITARY_ARMY_DISBAND: "army.disband",
@@ -2637,6 +2655,11 @@ static func _military_command_entry(id: StringName, args: Dictionary) -> Diction
 			entry["cell"] = int(args.get("cell", -1))
 		COMMAND_MILITARY_AREA_CONTROL:
 			entry["army"] = int(args.get("army", 0))
+			entry["cells"] = args.get("cells", PackedInt32Array())
+			entry["radius"] = int(args.get("radius", 0))
+		COMMAND_MILITARY_ARMY_EXPLORE:
+			entry["army"] = int(args.get("army", 0))
+			entry["cell"] = int(args.get("cell", -1))
 			entry["cells"] = args.get("cells", PackedInt32Array())
 			entry["radius"] = int(args.get("radius", 0))
 		COMMAND_MILITARY_ARMY_STANCE:
@@ -2879,30 +2902,37 @@ func _repush_military_budget() -> bool:
 # The workspace only asks for the mode; the targeting loop lives here because
 # this is where a map click becomes a cell. 地图点击只预览，档案上的确认键提交。
 
-## `mode` is "move" or "area". Returns the same result shape as request_command.
+## `mode` is "move", "area" or "explore". Returns the same result shape as
+## request_command.
 func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dictionary:
 	var facade = _military_facade()
 	if facade == null:
 		return _result(false, "runtime_unavailable", "军事机构尚未接通。")
-	if not facade.has_method("preview_path"):
+	if mode == "move" and not facade.has_method("preview_path"):
 		return _result(false, "runtime_unavailable", "军事机构尚未接通：缺少路径预览入口。")
 	if army <= 0:
 		return _result(false, "invalid_args", "先选一支自己的部队。")
-	if mode != "move" and mode != "area":
+	if mode != "move" and mode != "area" and mode != "explore":
 		return _result(false, "invalid_args", "未知的部队指令。")
-	if mode == "area" and (radius < 1 or radius > 6):
-		return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
+	if (mode == "area" or mode == "explore") and (radius < 1 or radius > 6):
+		return _result(false, "invalid_args", "选定半径必须在 1–6 格之间。")
 	var detail: Dictionary = facade.army(army)
 	if not bool(detail.get("ok", false)) or int(detail.get("owner_slot", -1)) != \
 			int(_player_country_handle & 0xFFFFFFFF):
 		return _result(false, "not_owner", "只能指挥本国部队。")
+	if mode == "explore" and int(detail.get("engagement", -1)) >= 0:
+		return _result(false, "army_in_engagement", "交战中无法开始探路。")
 	cancel_military_arm_order()
 	_military_order_army = army
 	_military_order_mode = mode
 	_military_order_radius = radius
 	_military_order_target = -1
-	_military_order_message = "点击地图选择控制中心，再确认区域。" if mode == "area" \
-		else "点击地图预览路线，再确认行军。"
+	if mode == "area":
+		_military_order_message = "点击地图选择控制中心，再确认区域。"
+	elif mode == "explore":
+		_military_order_message = "点击地图选择探查中心，再确认探查半径。"
+	else:
+		_military_order_message = "点击地图预览路线，再确认行军。"
 	_apply_military_render_selection(army)
 	_clear_military_path_preview()
 	_notify_military_arm_order()
@@ -2913,7 +2943,7 @@ func begin_military_arm_order(army: int, mode: String, radius: int = 1) -> Dicti
 
 
 func cancel_military_arm_order() -> void:
-	if _military_order_mode == "area":
+	if _military_order_mode == "area" or _military_order_mode == "explore":
 		clear_cell_highlights()
 	_military_order_army = 0
 	_military_order_mode = ""
@@ -2926,12 +2956,19 @@ func cancel_military_arm_order() -> void:
 
 
 func military_arm_order() -> Dictionary:
+	var selected_count := 0
+	var area_cells = _military_order_preview.get("area", PackedInt32Array())
+	if area_cells is PackedInt32Array:
+		selected_count = (area_cells as PackedInt32Array).size()
+	var ready := _military_order_target >= 0 and (
+		selected_count > 0 if _military_order_mode == "explore" \
+		else not _military_order_preview.is_empty())
 	return {"army": _military_order_army, "mode": _military_order_mode,
 		"radius": _military_order_radius, "target": _military_order_target,
-		"ready": _military_order_target >= 0 and not _military_order_preview.is_empty(),
+		"ready": ready,
 		"message": _military_order_message,
 		"days": int(_military_order_preview.get("days", 0)),
-		"cell_count": (_military_order_preview.get("area", PackedInt32Array()) as PackedInt32Array).size()}
+		"cell_count": selected_count}
 
 
 func _notify_military_arm_order() -> void:
@@ -2940,7 +2977,7 @@ func _notify_military_arm_order() -> void:
 
 
 func set_military_arm_order_radius(radius: int) -> void:
-	if _military_order_mode != "area":
+	if _military_order_mode != "area" and _military_order_mode != "explore":
 		return
 	_military_order_radius = clampi(radius, 1, 6)
 	if _military_order_target >= 0:
@@ -2951,12 +2988,42 @@ func set_military_arm_order_radius(radius: int) -> void:
 
 ## 确认时重算路径；快进期间部队位置、领土和通行条件都可能改变。
 func confirm_military_arm_order() -> Dictionary:
-	if _military_order_target < 0 or _military_order_preview.is_empty():
+	if _military_order_target < 0:
+		return _result(false, "target_required", "先在地图上选择目标。")
+	if _military_order_mode != "explore" and _military_order_preview.is_empty():
 		return _result(false, "target_required", "先在地图上选择可达的目标。")
 	var target := _military_order_target
 	military_arm_order_click(target)
 	if _military_order_preview.is_empty():
 		return _result(false, "target_unreachable", _military_order_message)
+	if _military_order_mode == "explore":
+		var explore_cells = _military_order_preview.get("area", PackedInt32Array())
+		if not explore_cells is PackedInt32Array \
+				or (explore_cells as PackedInt32Array).is_empty() \
+				or (explore_cells as PackedInt32Array).size() > 256:
+			return _result(false, "area_required", "探查范围为空，请重新选择中心。")
+		var facade = _military_facade()
+		if facade == null:
+			return _result(false, "runtime_unavailable", "军事机构尚未接通。")
+		var detail: Dictionary = facade.army(_military_order_army)
+		if not bool(detail.get("ok", false)) or int(detail.get("owner_slot", -1)) != \
+				int(_player_country_handle & 0xFFFFFFFF):
+			return _result(false, "not_owner", "部队已不属于本国，探路命令未下达。")
+		if int(detail.get("engagement", -1)) >= 0:
+			return _result(false, "army_in_engagement", "部队已进入交战，探路命令未下达。")
+		var explore_sent := request_command(COMMAND_MILITARY_ARMY_EXPLORE, {
+			"army": _military_order_army,
+			"cell": target,
+			"cells": explore_cells,
+			"radius": _military_order_radius,
+		})
+		if bool(explore_sent.get("ok", false)):
+			cancel_military_arm_order()
+		else:
+			_military_order_message = String(explore_sent.get("message",
+				"命令未能下达，请重试。"))
+			_notify_military_arm_order()
+		return explore_sent
 	var id := COMMAND_MILITARY_AREA_CONTROL if _military_order_mode == "area" \
 		else COMMAND_MILITARY_ARMY_MOVE
 	var args := {"army": _military_order_army, "cell": target}
@@ -2977,6 +3044,23 @@ func confirm_military_arm_order() -> Dictionary:
 func military_arm_order_click(cell: int) -> bool:
 	if _military_order_mode.is_empty() or cell < 0:
 		return false
+	if _military_order_mode == "explore":
+		_military_order_target = -1
+		_military_order_preview.clear()
+		_clear_military_path_preview()
+		clear_cell_highlights()
+		var explore_cells := _military_area_cells(cell, _military_order_radius)
+		if explore_cells.is_empty():
+			_military_order_message = "探查范围为空，请重新选择中心。"
+			_notify_military_arm_order()
+			return true
+		_military_order_target = cell
+		_military_order_preview = {"area": explore_cells, "days": 0,
+			"cells": PackedInt32Array()}
+		highlight_cells(explore_cells)
+		_military_order_message = "探查范围已标出，确认后部队将自动探路并返回出发点。"
+		_notify_military_arm_order()
+		return true
 	var facade = _military_facade()
 	var preview: Dictionary = facade.preview_path(_military_order_army, cell) \
 		if facade != null and facade.has_method("preview_path") else {}
@@ -3355,14 +3439,10 @@ func _on_narrative_ai_generation_requested(request_spec: Dictionary) -> void:
 	if _narrative_ai_client == null or _narrative_service == null:
 		return
 	_narrative_ai_client.request_event_generation(request_spec, func(res: Dictionary) -> void:
-		if not bool(res.get("ok", false)):
+		if _narrative_service == null:
 			return
-		var def = res.get("definition", null)
-		if def == null:
-			return
-		var cell_idx := int(res.get("cell_idx", -1))
-		var chain_id := StringName(res.get("chain_id", ""))
-		var day: int = int(_world_clock.day_index()) if _world_clock != null else int(request_spec.get("day", 1))
-		_narrative_service.enqueue_event_offer(def, cell_idx, day, chain_id)
+		# 回执的落地判定（时效、归属、节奏）归服务层：控制器只转发传输结果。
+		var arrival_day: int = int(_world_clock.day_index()) if _world_clock != null else -1
+		_narrative_service.accept_ai_generation(res, arrival_day)
 		_narrative_flow.try_present()
 	)

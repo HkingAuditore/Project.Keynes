@@ -637,6 +637,10 @@ public:
     godot::Dictionary run_military_catch_up(const godot::Dictionary &ctx);
     godot::Dictionary get_military_report();
     godot::Dictionary get_military_country_snapshot(int64_t country) const;
+    // Physical maintenance read-only view (design §4 / D7). One row per live
+    // maintenance object, packed as parallel arrays so the panel pays for one
+    // poll instead of one call per building.
+    godot::Dictionary get_military_maintenance_snapshot(int64_t country) const;
     godot::Array get_military_armies(int64_t country) const;
     godot::Dictionary get_military_army(int64_t army);
     godot::Dictionary get_military_cell_snapshot(int64_t cell, int64_t observer) const;
@@ -649,6 +653,16 @@ public:
     godot::Dictionary evaluate_military_peace(int64_t war_id, int64_t proposer,
                                               const godot::Array &terms) const;
     godot::Dictionary get_military_catalog_view() const;
+    // Player auto-exploration narrow boundary. The host owns MapData.explored;
+    // Military only receives a frozen copy and returns the cells its player
+    // formations actually entered.
+    godot::Dictionary set_military_exploration_observer(int64_t observer_slot);
+    godot::Dictionary set_military_exploration_view(
+        int64_t observer_slot, const godot::PackedByteArray &explored,
+        int64_t day, int64_t revision);
+    godot::PackedInt32Array get_military_vision_trail(int64_t observer_slot) const;
+    godot::Dictionary clear_military_vision_trail(int64_t observer_slot);
+    bool has_military_exploration_work() const;
     godot::PackedByteArray encode_military_state() const;
     godot::Dictionary restore_military_state(const godot::PackedByteArray &bytes);
     godot::Dictionary runtime_military_self_test();

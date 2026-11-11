@@ -323,13 +323,15 @@ func _tooltip_for(item_index: int, part: String) -> String:
 		"tree":
 			return "在科技树中定位"
 	var definition: Dictionary = _definitions[technology]
-	# 摘要走共用模块：effect_summary 为空时由结构化效果拼出来，否则
-	# 「天文导航」这类只靠运行时航道的科技在列表里悬停时是一片空白。
+	# 悬停提示也只讲效果：一条一行，不再追加"单击/双击"的操作说明。
 	var summary := TechnologyEffectTextScript.summary_text(definition)
-	var hint := "单击查看详情 · 双击%s" % ("加入队列" if state == 2 else "移出队列") \
-		if state in [2, 3] else "单击查看详情"
-	return "%s\n%s\n%s" % [String(definition.get("display_name", "")), summary, hint] \
-		if not summary.is_empty() else "%s\n%s" % [String(definition.get("display_name", "")), hint]
+	var lines := PackedStringArray()
+	for chunk in summary.replace("。", "；").split("；", false):
+		var text := String(chunk).strip_edges()
+		if not text.is_empty():
+			lines.append("· " + text)
+	var head := String(definition.get("display_name", ""))
+	return "%s\n%s" % [head, "\n".join(lines)] if not lines.is_empty() else head
 
 
 func _visible_rect() -> Rect2:
@@ -498,36 +500,41 @@ func _fraction(technology: int, definition: Dictionary) -> float:
 
 
 func _meta_text(technology: int, definition: Dictionary, state: int, fraction: float) -> String:
-	var cost_scaled := maxf(1.0, float(definition.get("cost_points_scaled",
-		int(definition.get("cost_points", 1)) * POINT_SCALE)))
-	var cost_text := UITokens.format_compact_number_cn(cost_scaled / POINT_SCALE, 1)
+	# 卡片正文只讲效果：不加时代、成本、路线标签，也不加"作为必要支撑"之类的说明。
+	# 成本与路线留在详情面板；这里的空间只够一行，堆得越多截断越难看。
 	var summary := TechnologyEffectTextScript.summary_text(definition)
+	var parts := PackedStringArray()
 	match state:
 		3:
 			var position := int(_queue_order.get(technology, -1))
 			var eta := String(_eta.get(technology, ""))
-			var head := "%s · 第 %d 位" % [_domain_name(_domain_index(definition)), position + 1] \
-				if position >= 0 else _domain_name(_domain_index(definition))
-			var parts := PackedStringArray([head, "%d%%" % int(floor(fraction * 100.0))])
+			if position >= 0:
+				parts.append("队列第 %d 位" % (position + 1))
+			parts.append("%d%%" % int(floor(fraction * 100.0)))
 			if not eta.is_empty():
 				parts.append(eta)
-			if not summary.is_empty():
-				parts.append(summary)
-			return " · ".join(parts)
 		4:
-			return "研究完成 · 次日生效 · %s" % summary if not summary.is_empty() \
-				else "研究完成 · 次日生效"
-	var era := String(_era_names.get(String(definition.get("era_id", "")),
-		String(definition.get("era_id", ""))))
-	var routes: PackedStringArray = definition.get("route_display_names", PackedStringArray())
-	var parts := PackedStringArray([era, "需 %s 科技值" % cost_text])
-	if fraction > 0.0:
-		parts.append("已投入 %d%%" % int(floor(fraction * 100.0)))
-	if not routes.is_empty():
-		parts.append(String(routes[0]))
+			parts.append("已完成")
 	if not summary.is_empty():
-		parts.append(summary)
+		parts.append(_compact_effects(summary))
 	return " · ".join(parts)
+
+
+## 卡片只有一行；效果多于两条时只显示前两条，其余交给悬停提示与详情面板。
+func _compact_effects(summary: String) -> String:
+	var chunks := summary.replace("。", "；").split("；", false)
+	var kept := PackedStringArray()
+	for chunk in chunks:
+		var text := String(chunk).strip_edges()
+		if text.is_empty():
+			continue
+		kept.append(text)
+		if kept.size() >= 2:
+			break
+	var text := "；".join(kept)
+	if chunks.size() > kept.size():
+		text += "…"
+	return text
 
 
 func _domain_index(definition: Dictionary) -> int:

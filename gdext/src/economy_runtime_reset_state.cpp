@@ -129,7 +129,6 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _closing_audit_mismatch_ledger = "none";
     _closing_audit_mismatch_lane = -1;
     _deferred_population_reconcile_cells.clear();
-    _pending_military_cash_burn = 0;
     clear_epoch_metrics();
     _epoch_previous_producer_sellable.clear();
     _epoch_previous_producer_merchant_sold.clear();

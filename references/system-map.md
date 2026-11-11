@@ -102,7 +102,7 @@ sliced Bio 每次固定 2048 cells，`bio_occupancy_day_barrier` 在最终 publi
 - 开拓、人口及扩建视觉反馈：读 `docs/map-activity-art.md`、`scripts/rendering/map_activity_layer.gd` 与 `colonization_route_layer.gd`；正式回执驱动开拓，近景的有界人口摘要与建筑情报观察驱动日常反馈，不进入模拟或存档。
 - 外国 AI（科研/时代、默认税、立族偏好、开拓）：读 `docs/cpp-dots-runtime/country-ai-runtime.md`、`gdext/src/country_ai_core.*`、`gdext/src/country_ai_runtime.*`、`gdext/src/economy_runtime_country_ai.cpp`、`gdext/src/world_ext_country_ai.cpp`、`Project/project-keynes/scripts/country/country_ai_*.gd`、`data/country/default_country_ai.tres`，以及仓库 Skill `project-keynes-country-ai-runtime`。AI 只经 `COUNTRY_AI_PRODUCER_ID` 提交玩家同款命令；开拓意图在经济周期开启时转成普通远征命令；记忆随 PKSV `pkai` 保存。
 - 调试、记录和验收：读 `Project/project-keynes/scripts/ui/debug_console.gd`、`Project/project-keynes/scripts/ui/tile_data_recorder.gd`、`Project/project-keynes/scripts/ui/perf_recorder.gd`、`docs/architecture/development-guide.md`、`Project/project-keynes/tests/*.gd`。
-- 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/architecture/current-state.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/module-boundaries.md`。
+- 阶层、市场、财政、建筑、就业、投资、资源、显赫家族与重要人物：读 `gdext/src/economy_runtime.{h,cpp}`、`gdext/src/economy_runtime_storage.cpp`、`gdext/src/economy_runtime_math.cpp`、`gdext/src/economy_runtime_fiscal.cpp`、`gdext/src/economy_runtime_building_storage.cpp`、`gdext/src/economy_runtime_building_employment.cpp`、`gdext/src/economy_runtime_building_resources.cpp`、`gdext/src/economy_runtime_building_production.cpp`、`gdext/src/economy_runtime_building_investment.cpp`、`gdext/src/economy_runtime_derived_demand.cpp`、`gdext/src/economy_runtime_building_construction.cpp`、`gdext/src/economy_runtime_building_commit.cpp`、`gdext/src/economy_runtime_market.cpp`、`Project/project-keynes/scripts/economy/`、`Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd`、`docs/architecture/current-state.md`、`docs/cpp-dots-runtime/tax-fiscal-runtime.md`、`docs/cpp-dots-runtime/notable-family-runtime.md` 和 `docs/cpp-dots-runtime/notable-person-runtime.md`。拆分依赖矩阵见 `docs/architecture/module-boundaries.md`。
 
 ## 运行入口
 
@@ -198,7 +198,7 @@ world_setup.tscn
 - `_cell_array`、`_cell_index`、`_neighbor_indices`，用于 hot path 的稳定索引和六邻表。
 - 大量 PackedArray SoA 字段，例如 `temp_arr`、`moisture_arr`、`weather_precip_arr`、`terrain_arr`、`ocean_current_x_arr`、`vegetation_vitality_arr`、`river_discharge_arr`。
 - `climate_dirty_mask` 和 `weather_dirty_mask`，给 atlas upload、debug 和增量路径消费。
-- 视野三件套：`visible_arr`、`explored_arr`（两者是 `owner="vision"` 的 schema 组件）和派生的 `fog_k_arr`（不进 schema，只喂 `enum_lut.a`）。
+- 视野三件套：`visible_arr`、`explored_arr`（两者是 `owner="vision"` 的 schema 组件）和派生的 `fog_k_arr`（不进 schema，只喂 `enum_lut.a`）。玩家部队从已提交 Military render snapshot 作为低预算移动源加入 `VisionSolver`；军事 revision 变化时由 Host 合并触发刷新，Military 不直接写这些数组。
 
 `component_schema.gd` 是 cell component 的单一源。新增持久 cell 字段时按它的 SOP：
 
@@ -511,7 +511,7 @@ DataCore 或 MapData。
   因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。生产者收购系数现为 good-specific 硬上限（默认 95%），短缺只影响采购量/优先级；国内贸易复用同一 12.5% 营运底线，并以目的地冻结余额统一完成预检与扣款。新增商人流动性指标只进入 report、选中格快照和 Economy CSV v19，不进入 PKEC v16 或 hash。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.
-- Visual/vision hook: `country_committed` → `WorldRuntimeHost.refresh_country_visuals()` →
+- Visual/vision hook: `country_committed` 或玩家 Military `render_revision` → `WorldRuntimeHost.refresh_country_visuals()` →
   `VisionSolver` re-solve → `enum_lut.a` rebake → `CountryBorderLayer` rebuild.
   Native runtime-graph 按 country generation 转发时必须先消费原生 country
   event stream；不得用 pulse 最后 report 中可能被后续 slice 覆盖的
@@ -701,13 +701,19 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
 
 - C++ 核心（无 Godot 类型）：`gdext/src/military_bridge.h`（冻结 POD）、`military_core.h`、
   `military_core_internal.h`、`military_core.cpp`（命令/招募/训练/军饷/`step_day`）、`military_core_path.cpp`、
-  `military_core_logistics.cpp`、`military_core_war.cpp`、`military_core_ai.cpp`、`military_core_save.cpp`（PKMI v1）、
+  `military_core_explore.cpp`（玩家自动探路/观察点/返程/trail）、`military_core_logistics.cpp`
+  （补给/护送/消耗/`military_core_procurement.inc`/`military_core_maintenance.inc` 实物维护）、
+  `military_core_war.cpp`、`military_core_ai.cpp`、`military_core_budget.cpp`（三段预算信封）、
+  `military_core_save.cpp`（PKMI v6：section 23 探路 / 24 采购订单 / 25 维护行）、
   `military_core_selftest.cpp`。
-- 桥：`world_ext_military.cpp`（digest 采集、意图→Country/Economy D+1 命令、回执、查询、渲染快照、MILB 包装）、
-  `world_ext_economy_military.cpp`（口粮满足率）。
+- 桥：`world_ext_military.cpp`（digest 采集——含维修材料报价、意图→Country/Economy D+1 命令、
+  opcode 37 采购+POD 稳定序列、回执、`get_military_maintenance_snapshot`、渲染快照、MILB 包装）、
+  `world_ext_economy_military.cpp`（口粮满足率与采购回执折账）、
+  `world_ext_military_economy_ingress.inc`（37 进 POD 车道的字段编码）。
 - GDScript：`scripts/military/military_facade.gd`、`military_catalog_compiler.gd`（`data/military/military_catalog.json`）、
   `scripts/simulation/systems/military_daily_system.gd`；接线在 `map_generator.gd`（配置/注册/季节地形）、
-  `world_runtime_host.gd`（整图补跑、图层节点）、`game_save_coordinator.gd`（`pkmi`）、`player_controller.gd`（`military.*` 命令）。
+  `world_runtime_host.gd`（整图补跑、图层节点、探路 trail/explored 日边界）、
+  `game_save_coordinator.gd`（`pkmi`、保存前 trail flush）、`player_controller.gd`（`military.*` 命令与探路草稿）。
 - 视觉：`scripts/rendering/military_render_feed.gd`、`military_map_layers.gd` 与 z5–11 的 `military_*_layer.gd`，
   `shaders/military_*.gdshader`；全部低于迷雾 z12。`military_army_token_layer.gd` 内含纸片/formation
   双 backend，`military_formation_catalog.gd` 只做 dense unit→生图动作原型的冷路径映射；
@@ -722,6 +728,8 @@ EconomyFacade 同批铸币及国库转账，两条连续 sequence 在下一有�
   挂 `player_game.tscn` 的 `ModalLayer/MilitaryPeaceWindow`，地图候选/草稿高亮在
   `WorldRoot/PeaceCandidateSet`、`WorldRoot/PeaceDraftSet`（`docs/ui/military-peace-window.md`）。
 - 测试：`tests/military/military_native_binding_test.gd`（`runtime_military_self_test`、`run_military_bench`）、
+  `tests/military/military_auto_exploration_test.gd`（facade/草稿/trail/catch-up/save flush）、
+  `tests/qa/military_dossier_screenshot_qa.gd`（探路四布局真实渲染）、
   `military_formation_render_feed_test.gd`（旧 DLL/CSR/签名）与 `military_formation_token_layer_test.gd`
   （1–5 成员、三档 LOD、玩家灰度、迷雾、移动、cue 增量）。
 

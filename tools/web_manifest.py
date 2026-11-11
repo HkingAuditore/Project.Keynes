@@ -36,7 +36,10 @@ MANIFEST_NAME = "manifest.json"
 
 # Artifacts that define "this build". Everything else in the folder (sidecars,
 # logs, the pck dump) is ignored so the manifest stays stable across re-runs.
-ARTIFACT_SUFFIXES = (".html", ".js", ".pck", ".wasm", ".png", ".json")
+# `.bank` 要算进来：四个 era bank 是运行期按时代 fetch 的独立下载项，不在 pck 里，
+# 清单漏了它们，部署工具就不知道这份构建还依赖哪些大文件（见
+# tools/web_bank_downgrade.py 的 publish）。
+ARTIFACT_SUFFIXES = (".html", ".js", ".pck", ".wasm", ".png", ".json", ".bank")
 IGNORED_NAMES = {MANIFEST_NAME}
 IGNORED_SUFFIXES = (".br", ".gz", ".log", ".jsonl")
 

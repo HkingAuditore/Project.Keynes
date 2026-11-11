@@ -75,6 +75,18 @@ var _last_front := -1
 var _last_army_sig := -1
 var _selected_army := 0
 var _feed_unavailable := false
+## Per-layer visibility is presentation state only.  The military runtime keeps
+## producing one authoritative feed; the map palette decides which paper layers
+## are visible for the current camera reading task.
+var _layer_visibility := {
+	"occupation": true,
+	"area": true,
+	"front": true,
+	"battle": true,
+	"convoy": true,
+	"armies": true,
+	"route": true,
+}
 ## 战线边集合（key -> 在 feed.front_edge_key 里的下标）。只在
 ## front_snapshot_revision 变化、且军务档案正在看战线时重建。
 var _front_edge_set: Dictionary = {}
@@ -158,12 +170,27 @@ func set_layers_enabled(enabled: bool) -> void:
 	_apply_visibility()
 
 
+func set_layer_visibility(layer_id: StringName, enabled: bool) -> void:
+	var key := String(layer_id)
+	if not _layer_visibility.has(key):
+		return
+	_layer_visibility[key] = enabled
+	_apply_visibility()
+
+
+func layer_visibility() -> Dictionary:
+	return _layer_visibility.duplicate()
+
+
 func _apply_visibility() -> void:
 	var on := _enabled and _layers_enabled \
 		and _feed != null and bool(_feed.ok)
-	for layer in _all_layers():
+	var ids := ["occupation", "area", "front", "battle", "convoy", "armies", "route"]
+	var layers := _all_layers()
+	for index in range(layers.size()):
+		var layer = layers[index]
 		if layer != null and layer.has_method("set_enabled"):
-			layer.set_enabled(on)
+			layer.set_enabled(on and bool(_layer_visibility.get(ids[index], true)))
 
 
 func _all_layers() -> Array:
@@ -297,6 +324,8 @@ func _poll() -> void:
 	_feed.set_clock(_clock)
 	_refresh_player_slot_binding()
 	_feed.poll(_ext, int(_feed.revision), _player_slot)
+	if _host != null and _host.has_method("_observe_military_render_feed"):
+		_host._observe_military_render_feed(_feed)
 	_last_poll_usec = Time.get_ticks_usec() - started
 	_poll_accum_usec += _last_poll_usec
 	_poll_frames += 1

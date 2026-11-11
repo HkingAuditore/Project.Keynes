@@ -41,7 +41,8 @@ const CONDITION_NOT := 13
 const ROUTE_CATEGORY_NAMES_ZH := {
 	"ai": "人工智能", "animal": "动物", "climate": "气候", "craft": "工艺",
 	"crop": "作物", "ecology": "生态", "energy": "能源", "geography": "地理",
-	"institution": "制度", "material": "材料", "resource": "资源", "trade": "贸易",
+	"institution": "制度", "material": "材料", "military": "军事",
+	"resource": "资源", "trade": "贸易",
 }
 
 const ROUTE_VALUE_NAMES_ZH := {
@@ -69,6 +70,11 @@ const ROUTE_VALUE_NAMES_ZH := {
 	"tropical": "热带作物", "tuber": "块茎作物", "university": "大学", "urban": "城市",
 	"consumer": "消费品",
 	"water": "水力", "wheat": "小麦", "wind": "风力", "writing": "文字",
+	# v5：补齐编译器已能产出、但界面词表缺失的路线取值，否则路线会退化成显示裸标签。
+	"bureaucracy": "行政编制", "thoroughfare": "交通干线", "ocean": "远洋",
+	"granary": "粮储", "ordnance": "火炮", "firearms": "枪械", "cotton": "棉纺",
+	"vehicles": "载具", "telecom": "电信", "nitrogen": "氮肥",
+	"propellant": "发射药", "defense": "国防",
 }
 
 static func _network_payload() -> Dictionary:

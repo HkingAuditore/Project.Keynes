@@ -366,6 +366,21 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 			and trend != null and trend.visible)
 	_expect("cashflow stacks the levied kinds and the paid subsidies",
 		income_bar.segment_count() == 3 and expense_bar.segment_count() == 1)
+	var cashflow_window := overview_page.get_node("%CashflowWindow") as OptionButton
+	var cashflow_day := overview_page.get_node("%CashflowDay") as Label
+	_expect("cashflow offers seven- and thirty-day rolling averages",
+		cashflow_window != null and cashflow_window.visible
+			and cashflow_window.item_count == 2
+			and cashflow_window.get_item_text(0) == "近 7 日"
+			and cashflow_window.get_item_text(1) == "近 30 日"
+			and cashflow_day.text.contains("近 30 日 · 日均"))
+	cashflow_window.select(0)
+	cashflow_window.item_selected.emit(0)
+	await process_frame
+	_expect("switching the cashflow window updates the daily-average label",
+		cashflow_day.text.contains("近 7 日 · 日均"))
+	cashflow_window.select(1)
+	cashflow_window.item_selected.emit(1)
 	var detail := overview_page.get_node("%CashflowDetail") as DossierLedgerTable
 	_expect("cashflow detail starts collapsed with all five tax lanes",
 		detail != null and not detail.visible and detail.row_count() == 5)
@@ -649,15 +664,21 @@ func _check_runtime_models() -> void:
 		and String(vm.kpis()[4].title).contains("产值"))
 	_expect("scope label resolves", not vm.scope_label().is_empty())
 	vm.scope_cell = -1
+	var scene_fiscal := {"ok": true, "sample_day": 6,
+		"tax_kinds": PackedStringArray([
+			"income", "consumption", "business", "import", "export"]),
+		"collected": PackedInt64Array([420000, 90000, 20000, 0, 0]),
+		"subsidy_paid": PackedInt64Array([0, 0, 60000, 0, 0]),
+		"subsidy_requested": PackedInt64Array([0, 0, 80000, 0, 0]),
+		"tax_base": PackedInt64Array([4200000, 1800000, 600000, 0, 0])}
+	var rolling_history := EconomyFiscalHistory.new()
+	rolling_history.sample(handle, {
+		"ok": true, "sample_day": 5, "has_settlement": false,
+	}, 1000000, 5)
+	rolling_history.sample(handle, scene_fiscal, 1470000, 6)
 	_scene_args = [{"available": true, "economy_facade": facade, "country_handle": handle,
 		"treasury": {"cash": 50000}, "trade_summary": {"ok": false}, "economy_history": history,
-		"fiscal": {"ok": true, "sample_day": 6,
-			"tax_kinds": PackedStringArray([
-				"income", "consumption", "business", "import", "export"]),
-			"collected": PackedInt64Array([420000, 90000, 20000, 0, 0]),
-			"subsidy_paid": PackedInt64Array([0, 0, 60000, 0, 0]),
-			"subsidy_requested": PackedInt64Array([0, 0, 80000, 0, 0]),
-			"tax_base": PackedInt64Array([4200000, 1800000, 600000, 0, 0])}},
+		"fiscal": scene_fiscal, "fiscal_history": rolling_history},
 		first_cell]
 	vm.configure({"available": false, "reason": "测试不可用"})
 	_expect("unavailable reason surfaces", not vm.available()

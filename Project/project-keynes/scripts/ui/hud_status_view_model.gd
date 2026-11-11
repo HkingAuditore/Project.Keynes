@@ -1,11 +1,11 @@
 extends RefCounted
 class_name HudStatusViewModel
 
-## 顶栏纸签的悬浮卡模型：国库看「当日收支结构」，人口看「职业构成与各职业福祉」。
+## 顶栏纸签的悬浮卡模型：国库看「近期日均收支」，人口看「职业构成与各职业福祉」。
 ##
 ## 数据只读已提交快照，不新增原生查询口径：
-## - 收支复用 `EconomyDossierViewModel.build_cashflow()`，与「国家经济 · 总览」的
-##   构成条/明细是同一份口径，玩家点进去看到的数字与悬浮卡一致；
+## - 收支复用 `EconomyDossierViewModel.cashflow_from_history()`，与「国家经济 · 总览」的
+##   滚动窗口和构成段一致；历史不足时才回退到最近一次结算；
 ## - 人口按「职业」逐项列出（采集者、矿工、工匠、猎人……）而不是先并成少数社会
 ##   阶层：顶栏要回答的是「谁、有多少人、过得如何」，粒度粗到「产业工人」就丢掉
 ##   了玩家真正会去关心的职业差异。排序按人口降序，尾部并为「其他职业」；
@@ -36,8 +36,13 @@ const OTHER_ROW_COLOR := Color(0.47, 0.37, 0.27, 1.0)
 const OTHER_ROW_NAME := "其他职业"
 
 
-static func build_treasury(cash_valid: bool, cash: int, fiscal: Dictionary) -> Dictionary:
-	var flow: Dictionary = EconomyDossierViewModel.build_cashflow(fiscal)
+static func build_treasury(cash_valid: bool, cash: int, fiscal: Dictionary,
+		history = null, window_days: int = EconomyDossierViewModel.DEFAULT_CASHFLOW_WINDOW_DAYS) -> Dictionary:
+	var flow: Dictionary
+	if history is EconomyFiscalHistory:
+		flow = EconomyDossierViewModel.cashflow_from_history(history, fiscal, window_days)
+	else:
+		flow = EconomyDossierViewModel.build_cashflow(fiscal)
 	var model := {
 		"kind": "treasury",
 		"title": "国库",
@@ -58,20 +63,32 @@ static func build_treasury(cash_valid: bool, cash: int, fiscal: Dictionary) -> D
 		model["note"] = "本日结算尚未发布，收支明细稍后可见。"
 		return model
 	model["ok"] = true
-	model["meta"] = String(flow.get("day_text", ""))
+	var rolling := bool(flow.get("rolling", false))
+	model["meta"] = String(flow.get("window_label", flow.get("day_text", ""))) \
+		if rolling else String(flow.get("day_text", ""))
+	model["window_text"] = String(flow.get("window_text", model["meta"]))
 	var income_segments: Array = flow.get("income_segments", [])
 	var expense_segments: Array = flow.get("expense_segments", [])
 	if income_segments.is_empty() and expense_segments.is_empty():
-		model["note"] = "本日没有税收入账，也没有补贴或科研采购支出。"
+		model["note"] = "近 %d 日没有税收入账，也没有补贴或科研采购支出。" \
+			% int(flow.get("covered_days", 0)) if rolling \
+			else "本日没有税收入账，也没有补贴或科研采购支出。"
+	elif rolling:
+		model["note"] = "按最近 %d 日国库现金变化折算；多日结算不会堆在一天。" \
+			% int(flow.get("covered_days", 0))
 	model["income_bar"] = {
-		"title": "收入构成", "total": String(flow.get("income_text", "0")),
+		"title": "收入 · 日均" if rolling else "收入构成",
+		"total": String(flow.get("income_text", "0")),
 		"segments": _money_segments(income_segments),
 	}
 	model["expense_bar"] = {
-		"title": "支出构成", "total": String(flow.get("expense_text", "0")),
+		"title": "支出 · 日均" if rolling else "支出构成",
+		"total": String(flow.get("expense_text", "0")),
 		"segments": _money_segments(expense_segments),
 	}
 	model["net_text"] = MoneyDisplay.strip_unit(String(flow.get("net_text", "0")))
+	model["net_caption"] = "近 %d 日净收 · 日均" % int(flow.get("window_days", 0)) \
+		if rolling else "最近结算净收"
 	model["net_positive"] = bool(flow.get("net_positive", true))
 	return model
 

@@ -370,6 +370,18 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return boundary
+	# The exploration trail is explored-only state that still belongs to the
+	# world. Drain it inside the safe boundary, before any provider snapshot;
+	# refusing the save is safer than writing a PKFG with lost explored cells.
+	if _runtime_host != null and _runtime_host.has_method(
+			"flush_military_exploration_trail_for_save"):
+		var explored_flush: Dictionary = _runtime_host.flush_military_exploration_trail_for_save()
+		if not bool(explored_flush.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, String(explored_flush.get("reason",
+				"military_exploration_trail_flush_failed")),
+				"探索轨迹未能写入地图，已取消保存。")
 	var runtime_bundle := await _capture_native_runtime_bundle(generation)
 	if not bool(runtime_bundle.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)

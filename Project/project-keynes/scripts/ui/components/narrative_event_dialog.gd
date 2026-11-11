@@ -490,39 +490,22 @@ func present_offer(offer: Dictionary) -> void:
 	_offer_generation = int(offer.get("offer_generation", 1))
 	_cell_idx = int(offer.get("cell_idx", -1))
 
-	var settlement := String(offer.get("settlement_name", "")).strip_edges()
-	var landform := String(offer.get("landform_name", "")).strip_edges()
-	var temp := float(offer.get("temperature", 18.0))
-	var day := int(offer.get("day", 1))
-	var ai_flag := "AI 生成" if bool(offer.get("is_ai_generated", false)) else ""
-
 	_title_label.text = String(offer.get("title", "事件"))
 	_locate_button.visible = _cell_idx >= 0
 
-	# 题头只补标题里没有的定位信息：日、聚落、地貌、气温、来源。
-	var kicker_parts := PackedStringArray(["第 %d 日" % day])
-	if not settlement.is_empty() and not _title_label.text.contains(settlement):
-		kicker_parts.append(settlement)
-	if not landform.is_empty():
-		kicker_parts.append(landform)
-	kicker_parts.append("%.1f°C" % temp)
-	if not ai_flag.is_empty():
-		kicker_parts.append(ai_flag)
-	_kicker_label.text = "  ·  ".join(kicker_parts)
+	# 题头只留日历：第 N 年 · M 月 D 日。地名在标题里，地貌/气温不再上题头。
+	var date_text := String(offer.get("date_text", "")).strip_edges()
+	if date_text.is_empty():
+		date_text = "第 %d 日" % int(offer.get("day", 1))
+	_kicker_label.text = date_text
 
 	for child in _tags_row.get_children():
 		child.queue_free()
 	var tags: Array = offer.get("tags", [])
-	# 只有映射到中文分类的标签才显示；内部 id（如 ai_narrative）不进界面。
-	var shown_tags := 0
-	for i in range(tags.size()):
-		var tag_raw := String(tags[i]).to_lower()
-		if not TAG_CN_LABELS.has(tag_raw):
-			continue
-		_tags_row.add_child(_make_tag_pill(tag_raw))
-		shown_tags += 1
-		if shown_tags >= 3:
-			break
+	# 分类标签不再上题头：气候/干旱/农业这类信息由标题与正文承担。
+	# 只保留 AI 来源纸签，避免与手写事件混淆。
+	if bool(offer.get("is_ai_generated", false)):
+		_tags_row.add_child(_make_tag_pill("AI 生成"))
 
 	_emblem_badge.texture = _chapter_emblem_for_tags(tags)
 	_body_label.text = String(offer.get("body_text", "")).strip_edges()

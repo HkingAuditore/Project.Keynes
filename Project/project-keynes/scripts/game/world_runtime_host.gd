@@ -356,6 +356,15 @@ var _player_country_slot: int = -1
 var _player_country_handle: int = 0
 var _physical_visible_arr: PackedByteArray = PackedByteArray()
 var _vision_dirty_indices: PackedInt32Array = PackedInt32Array()
+## Committed military positions used as low-budget vision sources. The source
+## list is refreshed only when the military render revision changes.
+var _military_vision_render_revision: int = -1
+var _military_vision_source_slot: int = -2
+var _military_vision_source_cells: PackedInt32Array = PackedInt32Array()
+## Auto-exploration freezes the player's explored map once per military day.
+## The trail is explored-only; visible/fog remain owned by `_refresh_vision`.
+var _military_exploration_last_view_day: int = -1
+var _military_exploration_last_trail_cells: int = 0
 var _building_visual_intel: BuildingVisualIntelCache:
 	get: return _presentation._building_visual_intel
 	set(value): _presentation._building_visual_intel = value
@@ -647,6 +656,7 @@ func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionar
 		"ms": int(_sched_elapsed_ms(segment_usec))})
 	# 探针：native 调用本身的独立 epoch（桌面 _dcp_on() 为假时连计时都不做）。
 	var _dcp_native_usec: int = Time.get_ticks_usec() if _dcp_on() else 0
+	_prepare_military_exploration_day(next_day)
 	var result: Dictionary = ext.run_native_daily_inline_day()
 	_runtime_native_daily_inline_last = result
 	if _dcp_native_usec > 0:
@@ -929,6 +939,7 @@ func _clock_day_changed_impl(day_idx: int) -> void:
 	# 单日单推进声明：今天由本 host 的 GDScript SUS tick 推进。若 main.gd 也挂在
 	# 同一场景（当前不会），它的 sus_tick_daily 会看到这条声明并让位。
 	_claim_day_for_native(day_idx, &"host_sus")
+	_prepare_military_exploration_day(day_idx)
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 	_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 
@@ -1553,6 +1564,10 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 	_daily_adapter._consume_country_worker_read_view_if_authoritative(self)
 func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
 	_daily_adapter._service_country_visual_refresh_budgeted(self, frame_started_usec)
+func _poll_military_vision_revision() -> void:
+	_visual_adapter.poll_military_vision_revision(self)
+func _observe_military_render_feed(feed) -> void:
+	_visual_adapter.observe_military_render_feed(self, feed)
 func _consume_runtime_commit_if_ready(report_override: Dictionary = {}) -> void:
 	_daily_adapter._consume_runtime_commit_if_ready(self, report_override)
 func _queue_runtime_natural_resource_commit(day: int) -> void:
@@ -2625,6 +2640,123 @@ func _sync_country_territory_to_map() -> Dictionary:
 	return _visual_adapter._sync_country_territory_to_map(self)
 func _refresh_vision() -> Dictionary:
 	return _visual_adapter._refresh_vision(self)
+
+
+## Military auto-exploration owns a frozen explored snapshot, never visible or
+## fog. This hook is the single host-side daily boundary:
+##   trail -> MapData.explored_arr -> existing _refresh_vision() -> native view.
+## It early-outs to a couple of null checks when no exploration work exists.
+func _military_exploration_facade():
+	if _generator == null or not _generator.has_method("get_military_facade"):
+		return null
+	return _generator.get_military_facade()
+
+
+func _drain_military_exploration_trail(facade) -> Dictionary:
+	if _current_map == null or _player_country_slot < 0:
+		return {"ok": true, "cells": 0, "skipped": true}
+	if facade == null or not facade.has_method("get_military_vision_trail"):
+		return {"ok": true, "cells": 0, "skipped": true}
+	var trail: PackedInt32Array = facade.get_military_vision_trail(_player_country_slot)
+	if trail.is_empty():
+		return {"ok": true, "cells": 0}
+	var cell_count: int = _current_map.cell_count()
+	if _current_map.explored_arr.size() != cell_count:
+		return {"ok": false, "reason": "military_exploration_explored_size_mismatch"}
+	var explored: PackedByteArray = _current_map.explored_arr.duplicate()
+	var changed := 0
+	for raw_cell in trail:
+		var cell := int(raw_cell)
+		if cell < 0 or cell >= cell_count:
+			return {"ok": false, "reason": "military_exploration_trail_cell_invalid",
+				"cell": cell}
+		if explored[cell] == 0:
+			explored[cell] = 1
+			changed += 1
+	_current_map.explored_arr = explored
+	if not facade.has_method("clear_military_vision_trail"):
+		return {"ok": false, "reason": "military_exploration_trail_clear_missing"}
+	var cleared: Dictionary = facade.clear_military_vision_trail(_player_country_slot)
+	if not bool(cleared.get("ok", false)):
+		return {"ok": false, "reason": String(cleared.get("reason",
+			"military_exploration_trail_clear_failed"))}
+	return {"ok": true, "cells": trail.size(), "changed": changed}
+
+
+func _prepare_military_exploration_day(day: int) -> Dictionary:
+	if _current_map == null or _player_country_slot < 0:
+		return {"ok": true, "skipped": true}
+	var facade = _military_exploration_facade()
+	if facade == null or not facade.has_method("is_configured") \
+			or not facade.is_configured():
+		return {"ok": true, "skipped": true}
+	if not facade.has_method("has_military_exploration_work") \
+			or not facade.has_method("set_military_exploration_observer") \
+			or not facade.has_method("set_military_exploration_view"):
+		return {"ok": true, "skipped": true}
+	if not bool(facade.has_military_exploration_work()):
+		return {"ok": true, "skipped": true}
+	var observer: Dictionary = facade.set_military_exploration_observer(
+		_player_country_slot)
+	if not bool(observer.get("ok", false)):
+		return {"ok": false, "reason": String(observer.get("reason",
+			"military_exploration_observer_failed"))}
+	# Refresh the committed army positions before the vision pass.  The
+	# exploration trail covers visited cells, while the final occupied cell is
+	# still the ordinary low-budget vision source.
+	_poll_military_vision_revision()
+	var drained := _drain_military_exploration_trail(facade)
+	if not bool(drained.get("ok", false)):
+		return drained
+	# A new explored cell or an unsolved map needs the existing vision pass to
+	# refresh fog/LUT/dirty indices. Reusing that pass is mandatory: no second
+	# visibility algorithm exists here.
+	if int(drained.get("changed", 0)) > 0 or not _current_map.fog_solved \
+			or _country_visual_refresh_pending:
+		var vision := _refresh_vision()
+		if not bool(vision.get("ok", false)):
+			return {"ok": false, "reason": String(vision.get("reason",
+				"military_exploration_vision_refresh_failed"))}
+		# Do not consume the general visual-refresh latch here. _refresh_vision
+		# only refreshes visible/fog/LUT inputs; territory, borders, building
+		# intel and the final LUT publish still belong to the budgeted
+		# refresh_country_visuals() path.
+	if _current_map.explored_arr.size() != _current_map.cell_count():
+		return {"ok": false, "reason": "military_exploration_explored_unavailable"}
+	var pushed: Dictionary = facade.set_military_exploration_view(
+		_player_country_slot, _current_map.explored_arr, day,
+		_current_map.vision_revision)
+	if not bool(pushed.get("ok", false)):
+		return {"ok": false, "reason": String(pushed.get("reason",
+			"military_exploration_view_failed"))}
+	_military_exploration_last_view_day = day
+	_military_exploration_last_trail_cells = int(drained.get("cells", 0))
+	return {"ok": true, "day": day, "trail_cells": int(drained.get("cells", 0)),
+		"new_explored": int(drained.get("changed", 0))}
+
+
+## Called inside GameSaveCoordinator's safe boundary, after the world clock is
+## paused and before provider collection. A failure must reject the save: a
+## PKFG that silently drops explored cells is worse than no file.
+func flush_military_exploration_trail_for_save() -> Dictionary:
+	if _current_map == null or _player_country_slot < 0:
+		return {"ok": true, "cells": 0, "skipped": true}
+	var facade = _military_exploration_facade()
+	if facade == null or not facade.has_method("is_configured") \
+			or not facade.is_configured():
+		return {"ok": true, "cells": 0, "skipped": true}
+	if not facade.has_method("get_military_vision_trail"):
+		return {"ok": true, "cells": 0, "skipped": true}
+	if facade.has_method("set_military_exploration_observer"):
+		var observer: Dictionary = facade.set_military_exploration_observer(
+			_player_country_slot)
+		if not bool(observer.get("ok", false)):
+			return {"ok": false, "reason": String(observer.get("reason",
+				"military_exploration_observer_failed"))}
+	var drained := _drain_military_exploration_trail(facade)
+	if not bool(drained.get("ok", false)):
+		return drained
+	return {"ok": true, "cells": int(drained.get("cells", 0))}
 func _ensure_native_vision_configured(ext: Object) -> bool:
 	return _visual_adapter._ensure_native_vision_configured(self, ext)
 func _has_remote_observation_capability() -> bool:

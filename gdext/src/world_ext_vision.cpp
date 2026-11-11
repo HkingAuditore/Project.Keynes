@@ -14,6 +14,10 @@ using namespace godot;
 namespace {
 
 constexpr int32_t kBaseBudget = 42;
+// Mobile military formations contribute a smaller observation budget than a
+// city/territory source. Keep the highest military budget below the lowest
+// city budget so a unit can never out-see an equivalent urban source.
+constexpr int32_t kMilitaryBaseBudget = 24;
 constexpr int32_t kMaxViewHeight = 32;
 constexpr int32_t kBlurIterations = 2;
 
@@ -161,6 +165,8 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
     const PackedByteArray previous_explored = knobs.get("explored", PackedByteArray());
     const PackedByteArray previous_fog = knobs.get("fog_k", PackedByteArray());
     const PackedInt32Array occupancy = knobs.get("bio_occupancy_bits", PackedInt32Array());
+    const PackedInt32Array military_sources = knobs.get(
+        "military_source_cells", PackedInt32Array());
     if (owners.size() != n || previous_explored.size() != n || occupancy.size() != n) {
         out["reason"] = "vision_research_input_shape_invalid";
         return out;
@@ -177,6 +183,19 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
         ++source_count;
         const int32_t budget = std::clamp(kBaseBudget + int32_t(height[cell]),
                                           0, kBaseBudget + kMaxViewHeight);
+        if (budget > best[size_t(cell)]) {
+            best[size_t(cell)] = budget;
+            buckets[size_t(budget)].push_back(cell);
+        }
+    }
+    int32_t military_source_count = 0;
+    for (int32_t i = 0; i < military_sources.size(); ++i) {
+        const int32_t cell = military_sources[i];
+        if (cell < 0 || cell >= n) continue;
+        ++military_source_count;
+        const int32_t budget = std::clamp(
+            kMilitaryBaseBudget + int32_t(height[cell]) / 2,
+            0, kBaseBudget + kMaxViewHeight);
         if (budget > best[size_t(cell)]) {
             best[size_t(cell)] = budget;
             buckets[size_t(budget)].push_back(cell);
@@ -273,6 +292,7 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
     out["visible"] = visible_count;
     out["explored"] = explored_count;
     out["sources"] = source_count;
+    out["military_sources"] = military_source_count;
     out["cells"] = n;
     unpack_observations(observations, out);
     out["elapsed_ms"] = std::chrono::duration<double, std::milli>(

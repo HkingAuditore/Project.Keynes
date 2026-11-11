@@ -20,8 +20,8 @@ const TouchHitButtonScript = preload("res://scripts/ui/components/touch_hit_butt
 ## 手写体标题字用带随包 fallback 的 display_handwritten：Muyao 只收 6890 字形，
 ## 缺 "·" 等字符时 web 导出没有系统字体兜底，会渲染成方块。
 const TITLE_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
-const BODY_FONT: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
-const UI_FONT: FontFile = preload("res://assets/fonts/source_han/SourceHanSansCN-VF.woff2")
+const BODY_FONT: FontFile = UITokens.UI_FONT
+const UI_FONT: FontFile = UITokens.UI_FONT
 
 const CARD_SIZE := Vector2(196.0, 260.0)
 const CARD_SIZE_COMPACT := Vector2(146.0, 194.0)

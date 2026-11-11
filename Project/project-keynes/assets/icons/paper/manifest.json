@@ -2615,6 +2615,101 @@
           279
         ]
       }
+    },
+    {
+      "name": "goods_05",
+      "columns": 3,
+      "rows": 2,
+      "semantics": [
+        "good.ammonia",
+        "good.antibiotics",
+        "good.dyestuff",
+        "good.frozen_food",
+        "good.structural_steel"
+      ],
+      "prompt": "Use case: stylized-concept. Production game UI sprite atlas. Match the existing Project.Keynes thick graphite contours, waxy colored-pencil grain, angular off-white scissor-cut paper stickers and muted ochre/brick/blue/green palette. Exactly 3 columns by 2 rows, five centered stickers and one empty transparent final cell. Row 1: synthetic ammonia in a pale steel pressurized cylinder with dusty blue band and icy vapor; antibiotics in an amber medicine bottle with capsule and mold culture dish; dyestuff in a wooden vat with deep indigo pigment and folded violet cloth. Row 2: frozen food in a frost-covered insulated crate with snowflake, frozen fish tail and peas; structural steel as stacked gray I-beams and an angle profile with rivets and bolts; final cell empty. No text, labels, numbers, grid lines, glossy 3D or rectangular cards. True transparent alpha outside each close-cut white paper sticker.",
+      "actual_rows": 2,
+      "row_edges_px": [
+        0,
+        627,
+        1254
+      ],
+      "regions": {
+        "good.ammonia": [
+          50,
+          95,
+          351,
+          487
+        ],
+        "good.antibiotics": [
+          407,
+          99,
+          394,
+          483
+        ],
+        "good.dyestuff": [
+          833,
+          123,
+          402,
+          446
+        ],
+        "good.frozen_food": [
+          8,
+          692,
+          394,
+          484
+        ],
+        "good.structural_steel": [
+          414,
+          697,
+          418,
+          470
+        ]
+      }
+    },
+    {
+      "name": "professions_03",
+      "columns": 2,
+      "rows": 2,
+      "semantics": [
+        "profession.agronomist",
+        "profession.aquaculturist",
+        "profession.dyer",
+        "profession.ship_officer"
+      ],
+      "prompt": "Use case: stylized-concept. Production game UI profession portrait atlas. Match the existing Project.Keynes thick graphite contours, waxy colored-pencil grain, angular off-white scissor-cut paper busts and muted earthy clothing. Exactly 2 columns by 2 rows. Row 1: agronomist in straw hat and round glasses holding a soil tray with a young seedling; aquaculturist in waterproof green overalls with a hand net and bucket containing a fish. Row 2: dyer in apron and indigo-stained gloves holding a deep-blue cloth swatch beside violet pigment; ship officer in navy coat and peaked captain cap holding a brass spyglass and rolled chart. No text, labels, numbers, grid lines, glossy 3D or rectangular cards. True transparent alpha outside each close-cut white paper sticker.",
+      "actual_rows": 2,
+      "row_edges_px": [
+        0,
+        627,
+        1254
+      ],
+      "regions": {
+        "profession.agronomist": [
+          65,
+          17,
+          542,
+          593
+        ],
+        "profession.aquaculturist": [
+          630,
+          20,
+          566,
+          591
+        ],
+        "profession.dyer": [
+          45,
+          641,
+          540,
+          600
+        ],
+        "profession.ship_officer": [
+          611,
+          629,
+          605,
+          612
+        ]
+      }
     }
   ]
 }

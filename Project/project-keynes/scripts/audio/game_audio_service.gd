@@ -13,6 +13,9 @@ const EXTENSION := "res://addons/FmodGodot/FmodGodot.gdextension"
 ## Android 专用：在加载 FmodGodot 之前把 FMOD 的 JNI_OnLoad 跑起来。
 const BOOTSTRAP_EXTENSION := "res://addons/0_fmod_bootstrap/fmod_bootstrap.gdextension"
 const BANK_ROOT := "res://assets/audio/banks/Desktop/"
+## 四个时代各一个 bank（拆包见 tools/audio/split_music_banks.py）。
+## 它们不进 web 的 boot pck：每个 8~10 MB，而一局只会用到其中一个。
+const ERA_BANK_NAMES: Array[String] = ["Music_stone", "Music_agrarian", "Music_kingdom", "Music_empire"]
 const MUSIC_EVENT := "event:/Music/Prototype"
 const CLICK_EVENT := "event:/UI/Click"
 const UIFeedback := preload("res://scripts/ui/ui_audio_feedback.gd")
@@ -110,6 +113,12 @@ var _system := 0
 var _master := 0
 var _music := 0
 var _banks: Array[int] = []
+## era -> StudioBank 句柄。加载后不卸载：切时代时旧 bank 里可能还有正在收尾的
+## 事件，卸早了 FMOD 会报 invalid handle；四个加起来约 38 MB，wasm 堆吃得下。
+var _era_banks: Dictionary = {}
+var _era_bank_pending: Dictionary = {}
+var _era_bank_failed: Dictionary = {}
+var _web_bank_stream: RefCounted = null
 var _ui_descriptions: Dictionary = {}
 var _ui_next_ms: Dictionary = {}
 var _music_key := &""
@@ -191,10 +200,17 @@ func _ready() -> void:
 		_banks.append(bank)
 	_master = int(ClassDB.class_call_static("StudioSystem", "get_bus", _system, "bus:/"))
 	status = "ready"
-	for suite_path in [STONE_AGE_SUITE_EVENT, AGRARIAN_AGE_SUITE_EVENT, KINGDOM_AGE_SUITE_EVENT, EMPIRE_AGE_SUITE_EVENT]:
-		_music_description(suite_path)
+	# 四个 Suite 事件**不再**在这里预热：它们住在 Music_<era>.bank 里，而 era bank
+	# 是进游戏后按时代懒加载的（web 还要先下载）。预热会拿到 0 并缓存成"查过但没
+	# 有"，反而拖慢第一次真正能取到事件的时机。改为在 play_*_age_suite 里先
+	# _ensure_era_bank()，事件解析自然发生在 bank 到位之后。
 	print("[audio] backend=fmod platform=%s banks=%d status=ready" % [OS.get_name(), _banks.size()])
 	_connect_settings_and_feedback()
+	if OS.has_feature("web"):
+		# 主菜单放的是石器组曲（main_menu 只调一次 play_stone_age_suite，没有重试），
+		# 而新开局的第一个时代也是石器。所以在扩展就绪时就先把这份 bank 拉起来，
+		# 菜单音乐和开场配乐都不用等下载。异步，不阻塞页面。
+		_request_web_era_bank(0)
 
 
 ## FMOD 的 Android 运行库把 JavaVM 缓存在 `JNI_OnLoad` 里，而只有 Java 的
@@ -698,6 +714,68 @@ func _play_one_shot(event_path: String) -> bool:
 	return result == 0
 
 
+## 确保某个时代的 bank 已加载。返回 false 表示"现在还不能播"，调用方直接放弃这一次。
+##
+## 为什么返回 false 是可接受的：`set_era()` 由 `player_controller._sync_era_music()`
+## 在每个 committed day 重调，所以 web 上下载完成后的下一个游戏日就会自然补播，
+## 不需要在这里排队重放（那会引入一套额外的状态机）。
+##
+## 桌面/Android：四个 era bank 都在 pck 里，同步 load_bank_file，当场出结果。
+## Web：boot pck 只带 Master/Master.strings/Music/UI，era bank 是独立文件，要先
+##      fetch 到 emscripten FS 才能 load_bank_file。
+func _ensure_era_bank(era: int) -> bool:
+	if status != "ready":
+		return false
+	if era < 0 or era >= ERA_BANK_NAMES.size():
+		return false
+	if _era_banks.has(era):
+		return true
+	if OS.has_feature("web"):
+		_request_web_era_bank(era)
+		return false
+	var name := ERA_BANK_NAMES[era]
+	var bank := int(ClassDB.class_call_static("StudioSystem", "load_bank_file", _system,
+		BANK_ROOT + name + ".bank", 0))
+	if bank == 0:
+		_era_bank_failed[era] = "load_failed"
+		push_warning("[audio] era bank load failed: %s" % name)
+		return false
+	_era_banks[era] = bank
+	print("[audio] era bank loaded: %s" % name)
+	return true
+
+
+func _request_web_era_bank(era: int) -> void:
+	if _era_bank_pending.has(era) or _era_bank_failed.has(era):
+		return
+	if _web_bank_stream == null:
+		_web_bank_stream = load("res://scripts/audio/web_bank_stream.gd").new()
+		if _web_bank_stream == null or not bool(_web_bank_stream.call("is_supported")):
+			_era_bank_failed[era] = "no_javascriptbridge"
+			push_warning("[audio] era bank loader unavailable; suite music stays silent")
+			return
+	_era_bank_pending[era] = true
+	var name := ERA_BANK_NAMES[era]
+	_web_bank_stream.call("ensure", name, func(path: String) -> void:
+		_on_web_era_bank_ready(era, path))
+
+
+func _on_web_era_bank_ready(era: int, fs_path: String) -> void:
+	_era_bank_pending.erase(era)
+	var name := ERA_BANK_NAMES[era] if era >= 0 and era < ERA_BANK_NAMES.size() else "?"
+	if fs_path.is_empty():
+		_era_bank_failed[era] = "fetch_failed"
+		push_warning("[audio] era bank fetch failed, suite music stays silent: %s" % name)
+		return
+	var bank := int(ClassDB.class_call_static("StudioSystem", "load_bank_file", _system, fs_path, 0))
+	if bank == 0:
+		_era_bank_failed[era] = "load_failed"
+		push_warning("[audio] era bank load failed (web): %s" % name)
+		return
+	_era_banks[era] = bank
+	print("[audio] era bank ready(web): %s" % name)
+
+
 func _music_description(event_path: String) -> int:
 	var cached := int(_music_descriptions.get(event_path, 0))
 	if cached != 0:
@@ -739,6 +817,8 @@ func play_stone_age_suite(from_intro: bool = true, population_ratio: float = 0.0
 	if _native != null:
 		return _play_native_suite(0, from_intro, loop_section)
 	if status != "ready":
+		return false
+	if not _ensure_era_bank(0):
 		return false
 	var description := _music_description(STONE_AGE_SUITE_EVENT)
 	if description == 0:
@@ -857,6 +937,8 @@ func play_agrarian_age_suite(from_intro: bool = true, population_ratio: float = 
 	if _native != null:
 		return _play_native_suite(1, from_intro, loop_section)
 	if status != "ready":
+		return false
+	if not _ensure_era_bank(1):
 		return false
 	var description := _music_description(AGRARIAN_AGE_SUITE_EVENT)
 	if description == 0:
@@ -990,6 +1072,8 @@ func play_kingdom_age_suite(from_intro: bool = true, population_ratio: float = 0
 		return _play_native_suite(2, from_intro, loop_section)
 	if status != "ready":
 		return false
+	if not _ensure_era_bank(2):
+		return false
 	var description := _music_description(KINGDOM_AGE_SUITE_EVENT)
 	if description == 0:
 		return false
@@ -1109,6 +1193,8 @@ func play_empire_age_suite(from_intro: bool = true, population_ratio: float = 0.
 	if _native != null:
 		return _play_native_suite(3, from_intro, loop_section)
 	if status != "ready":
+		return false
+	if not _ensure_era_bank(3):
 		return false
 	var description := _music_description(EMPIRE_AGE_SUITE_EVENT)
 	if description == 0:
@@ -1263,7 +1349,8 @@ func diagnostics() -> Dictionary:
 			active_pop_tier = _kingdom_age_pop_tier
 		&"empire_age_suite":
 			active_pop_tier = _empire_age_pop_tier
-	return {"status": status, "backend": backend, "banks": _banks.size(), "music_playing": _music != 0,
+	return {"status": status, "backend": backend, "banks": _banks.size() + _era_banks.size(),
+		"era_banks": _era_banks.size(), "music_playing": _music != 0,
 		"music_key": _music_key,
 		"ui_voices": ui_voices,
 		"spatial": _spatial_enabled,
@@ -1284,6 +1371,10 @@ func diagnostics() -> Dictionary:
 
 
 func _release_banks() -> void:
+	for era in _era_banks.keys():
+		ClassDB.class_call_static("StudioBank", "unload", _era_banks[era])
+	_era_banks.clear()
+	_era_bank_pending.clear()
 	for index in range(_banks.size() - 1, -1, -1):
 		ClassDB.class_call_static("StudioBank", "unload", _banks[index])
 	_banks.clear()

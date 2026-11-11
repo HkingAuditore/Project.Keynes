@@ -240,10 +240,6 @@ func _process(host, _delta: float) -> void:
 	host._service_runtime_progress(frame_usec)
 	host._web_mark("progress_end")
 	host._sched_proc_last_total_ms = host._sched_elapsed_ms(frame_usec)
-	# ---- Military layers
-	if host.military_map_layers != null and host.military_map_layers.has_method("poll_snapshot"):
-		host.military_map_layers.poll_snapshot()
-	# ---- Military layers
 
 
 ## P1 + P3：worker 领先量报告 与 环境帧预发布。
@@ -736,6 +732,15 @@ func _service_runtime_progress(host, frame_usec: int) -> void:
 	host._observe_runtime_worker_fault()
 	host._poll_runtime_health()
 	segment_usec = Time.get_ticks_usec()
+	# Army movement is a committed Military projection rather than a Country
+	# territory event. On graphical sessions this is the one map-layer snapshot
+	# poll; its feed callback runs before the coalesced visual refresh so mobile
+	# units become vision sources on the same frame as their new position.
+	if host.military_map_layers != null \
+			and host.military_map_layers.has_method("poll_snapshot"):
+		host.military_map_layers.poll_snapshot()
+	else:
+		host._poll_military_vision_revision()
 	host._service_country_visual_refresh_budgeted(frame_usec)
 	host._sched_proc_country_visual_ms += host._sched_elapsed_ms(segment_usec)
 	segment_usec = Time.get_ticks_usec()

@@ -198,6 +198,7 @@ struct MilitaryIntentReceipt {
     uint64_t source_id = 0;
     int64_t committed_count = 0;
     int64_t committed_amount = 0;
+    int64_t request_sequence = 0;
 };
 
 } // namespace pk

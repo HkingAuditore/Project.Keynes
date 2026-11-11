@@ -120,6 +120,7 @@ var _gm_sun_dragging := false
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
 var _map_overlay_toolbar: MapOverlayToolbar
+var _military_map_toolbar: MilitaryMapToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _era_reward_dialog: EraRewardDialog
@@ -367,10 +368,11 @@ func notify_committed_day() -> void:
 	_queue_era_indicator_refresh()
 	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
 	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
-	_gdp_ledger.sample(int(_world_clock.day_index()) if _world_clock != null else -1)
+	var committed_day := int(_world_clock.day_index()) if _world_clock != null else -1
+	_gdp_ledger.sample(committed_day)
 	# 国库收支序列与产值账本同一节拍：面板关闭时也要连续，否则中途打开只有一点。
 	if _country_view_model != null:
-		_country_view_model.sample_fiscal_history()
+		_country_view_model.sample_fiscal_history(committed_day)
 	if _country_panel != null and _country_panel.is_panel_open() \
 			and _country_panel.current_section() == "economy":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
@@ -565,6 +567,31 @@ func set_diagnostics_source(source: Node) -> void:
 		_gm_console.set_main(source)
 	if _perf_hud != null:
 		_perf_hud.set_main(source)
+	_sync_military_map_toolbar()
+
+
+func _sync_military_map_toolbar() -> void:
+	if _military_map_toolbar == null:
+		return
+	if _diagnostics_source == null:
+		_military_map_toolbar.set_available(false)
+		return
+	var layers = _diagnostics_source.get("military_map_layers")
+	if layers == null or not layers.has_method("layer_visibility"):
+		_military_map_toolbar.set_available(false)
+		return
+	_military_map_toolbar.set_available(true)
+	var state: Dictionary = layers.layer_visibility()
+	for key in state:
+		_military_map_toolbar.set_layer_visibility(StringName(key), bool(state[key]))
+
+
+func _on_military_layer_toggled(layer_id: StringName, enabled: bool) -> void:
+	if _diagnostics_source == null:
+		return
+	var layers = _diagnostics_source.get("military_map_layers")
+	if layers != null and layers.has_method("set_layer_visibility"):
+		layers.set_layer_visibility(layer_id, enabled)
 
 
 func set_colonization_route_layer(layer: ColonizationRouteLayer) -> void:
@@ -848,6 +875,7 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		"live_patch_build_ms": 0.0,
 		"live_patch_apply_ms": 0.0,
 	}
+	_refresh_dispatch_status()
 	if _colonization_panel != null and _colonization_panel.visible:
 		_colonization_panel.refresh_visible()
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
@@ -1306,6 +1334,40 @@ func _open_colonization_target(target_cell: int, family_handle: int = 0,
 		_player_controller.ensure_selected_visible()
 
 
+func _open_dispatch_progress() -> void:
+	if _colonization_panel == null:
+		return
+	_close_object_detail_dialog()
+	_suppress_ui_for_dispatch()
+	_colonization_panel.open_expeditions()
+
+
+func _refresh_dispatch_status() -> void:
+	if _top_bar == null:
+		return
+	if _player_controller == null:
+		_top_bar.set_dispatch_status(0, 0, 0)
+		return
+	var counts := [0, 0, 0]
+	var offset := 0
+	while true:
+		var page: Dictionary = _player_controller.get_family_expeditions(offset, 128)
+		if not bool(page.get("ok", false)):
+			return
+		var states: PackedInt32Array = page.get("states", PackedInt32Array())
+		for state in states:
+			if state == 4:
+				counts[0] += 1
+			elif state == 3:
+				counts[2] += 1
+			else:
+				counts[1] += 1
+		if not bool(page.get("has_more", false)) or states.is_empty():
+			break
+		offset += states.size()
+	_top_bar.set_dispatch_status(counts[0], counts[1], counts[2])
+
+
 func _on_colonization_requested(request: Dictionary) -> void:
 	_open_colonization_target(int(request.get("target_cell", -1)))
 
@@ -1434,6 +1496,7 @@ func _on_colonization_start_requested(args: Dictionary) -> void:
 	var result: Dictionary = _player_controller.request_command(
 		&"family.colonization.start", args)
 	_colonization_panel.set_command_result(result)
+	_refresh_dispatch_status()
 	if bool(result.get("ok", false)) and result.has("expedition_handle"):
 		_on_expedition_selected(int(result.expedition_handle))
 
@@ -1444,6 +1507,7 @@ func _on_colonization_cancel_requested(expedition_handle: int) -> void:
 	var result: Dictionary = _player_controller.request_command(
 		&"family.colonization.cancel", {"expedition_handle": expedition_handle})
 	_colonization_panel.set_command_result(result)
+	_refresh_dispatch_status()
 	if bool(result.get("ok", false)):
 		_on_expedition_selected(expedition_handle)
 
@@ -1487,6 +1551,7 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 				result["message"] = "开拓队状态已更新。"
 			_colonization_panel.set_command_result(result)
 			_colonization_panel.refresh_expeditions_if_visible()
+		_refresh_dispatch_status()
 		if _selected_cell != null and String(result.get("code", "")) == "CLAIMED":
 			refresh_selected_panel()
 		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "colonization_settled")
@@ -1737,7 +1802,7 @@ func _on_military_dossier_action_requested(action: StringName, payload: Dictiona
 		return
 	var result: Dictionary = {}
 	match action:
-		&"move", &"area":
+		&"move", &"area", &"explore":
 			result = _player_controller.begin_military_arm_order(handle, String(action), 1)
 		&"cancel_order":
 			_player_controller.cancel_military_arm_order()
@@ -2180,7 +2245,7 @@ func _refresh_player_country_status(country_facade, economy_facade, handle: int)
 	_refresh_status_card()
 
 
-# ── 顶栏纸签悬浮卡：国库看当日收支，人口看阶层构成 ──────────────────────
+# ── 顶栏纸签悬浮卡：国库看近期日均收支，人口看阶层构成 ────────────────────
 ## hover 先延迟再查询：指针扫过顶栏时不会连发原生 professions 查询；
 ## 移开时同样延迟收卡，避免纸签之间来回移动导致卡片闪烁。
 ## 点击纸签直接进入对应章节，卡片立即收掉。
@@ -2250,8 +2315,9 @@ func _build_status_card_model(kind: String) -> Dictionary:
 		var fiscal: Dictionary = country_facade.fiscal_snapshot(handle) \
 			if country_facade != null and country_facade.has_method("fiscal_snapshot") else {}
 		var cash_valid := bool(treasury.get("ok", false)) and treasury.has("cash")
+		var history = _country_view_model.fiscal_history() if _country_view_model != null else null
 		return HudStatusViewModel.build_treasury(
-			cash_valid, int(treasury.get("cash", 0)), fiscal)
+			cash_valid, int(treasury.get("cash", 0)), fiscal, history)
 	if economy_facade == null or not economy_facade.has_method("country_economy_overview"):
 		return HudStatusViewModel.build_population({}, {})
 	var professions: Dictionary = economy_facade.country_economy_overview(
@@ -2541,6 +2607,7 @@ func set_player_controller(controller) -> void:
 		_right_panel.set_player_controller(controller)
 	if _colonization_panel != null:
 		_colonization_panel.set_player_controller(controller)
+	_refresh_dispatch_status()
 	if _player_controller != null and _player_controller.has_signal("country_committed"):
 		var callback := Callable(self, "_on_country_committed")
 		if not _player_controller.country_committed.is_connected(callback):
@@ -2586,6 +2653,7 @@ func _bind_ui() -> void:
 	_top_bar.setup_requested.connect(toggle_pause_menu)
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	_top_bar.annual_history_requested.connect(func() -> void: annual_history_requested.emit())
+	_top_bar.dispatch_requested.connect(_open_dispatch_progress)
 	_top_bar.set_gm_available(false)
 	_layout_top_bar()
 	_status_card = get_node_or_null("UIRoot/HUDLayer/HudStatusCard") as HudStatusCard
@@ -2642,6 +2710,7 @@ func _bind_ui() -> void:
 	_colonization_panel.start_requested.connect(_on_colonization_start_requested)
 	_colonization_panel.cancel_requested.connect(_on_colonization_cancel_requested)
 	_colonization_panel.expedition_selected.connect(_on_expedition_selected)
+	_refresh_dispatch_status()
 	# 议和窗口：与开拓面板同一条「地图作业面」通道，但它的草案是交割地块。
 	_peace_window = get_node_or_null("UIRoot/ModalLayer/MilitaryPeaceWindow")
 	if _peace_window != null:
@@ -2669,6 +2738,9 @@ func _bind_ui() -> void:
 	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
 	_layout_map_overlay_toolbar()
+	_military_map_toolbar = get_node_or_null("UIRoot/HUDLayer/MilitaryMapToolbar") as MilitaryMapToolbar
+	if _military_map_toolbar != null:
+		_military_map_toolbar.layer_toggled.connect(_on_military_layer_toggled)
 
 	_country_action_bar = get_node("UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
@@ -3207,7 +3279,6 @@ func _layout_right_panel() -> void:
 	if army_open:
 		layout["panel_width"] = minf(520.0, viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0)
 		layout["compact"] = true
-		_right_panel.custom_minimum_size.x = 0.0
 	var compact := bool(layout.get("compact", false))
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
@@ -3215,12 +3286,8 @@ func _layout_right_panel() -> void:
 	# RIGHT_PANEL_WIDTH（真机 2670x1200@520dpi 实测：右侧详情面板的页签行被挤出屏幕，
 	# 关闭按钮直接看不见）。这里让面板按"内容最小宽度"兜底，并限制在视口 55% 以内，
 	# 保证永远贴右且完整可见。
-	var content_min_width := 0.0
-	var min_size := _right_panel.get_combined_minimum_size()
-	if min_size != null:
-		content_min_width = float(min_size.x)
-	if content_min_width > panel_width:
-		panel_width = minf(content_min_width, maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH))
+	panel_width = resolve_panel_content_width(
+		viewport_width, panel_width, panel_content_min_width(_right_panel))
 	# [panel-width-touch 2026-11-02] 触摸档的页签/KPI 行比桌面宽（页签 44dp 起），
 	# 460 装不下：真机 2670x1200@520dpi 上右侧面板的"市场"页签与"就业率"读数会被
 	# 屏幕右缘切掉。这里在触摸档给面板加宽 72 设计像素（视口 2053 宽，完全放得下）。
@@ -3263,6 +3330,27 @@ func _layout_right_panel() -> void:
 	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
 	# 之后每次开合面板都会被带回那个错误坐标——这正是"详情框缩在左上角"的成因。
 	UIAnimation.refresh_rest_position(_right_panel)
+
+
+## 右栏"内容最小宽度"：量之前先把本函数上一轮写进 custom_minimum_size 的宽度清零。
+## get_combined_minimum_size() 会把 custom_minimum_size 本身算进结果，直接读它就会
+## 把上一帧为详情撑开的宽面板当成"内容最小宽度"再写回去——面板只增不减，详情关闭后
+## 再也回不到 460px。清零后重新取最小值，得到的才是子节点真正需要的宽度。
+static func panel_content_min_width(panel: Control) -> float:
+	if panel == null:
+		return 0.0
+	panel.custom_minimum_size.x = 0.0
+	return panel.get_combined_minimum_size().x
+
+
+## 内容比请求宽度更宽时按内容兜底，但上限压在视口 55%（至少 RIGHT_PANEL_WIDTH），
+## 避免宽面板把地图挤没。请求宽度已经够宽时原样返回，保证关闭详情能回到窄档。
+static func resolve_panel_content_width(viewport_width: float,
+		requested_width: float, content_min_width: float) -> float:
+	if content_min_width <= requested_width:
+		return requested_width
+	return minf(content_min_width,
+		maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH))
 
 
 static func inspector_layout_for_width(viewport_width: float,

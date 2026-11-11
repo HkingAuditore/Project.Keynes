@@ -3044,6 +3044,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 view.operating_state == 1 ||
                 !building_available(cell, view.type_id, true) ||
                 _building_types[view.type_id].maintenance_count <= 0) continue;
+            // Military state lots (kind 3) are maintained by the MILITARY runtime
+            // as a physical repair purchase (design §1 / plan S4-5). Their upkeep
+            // is settled from the military budget against repair materials, so the
+            // generic private-building maintenance must never buy for them too:
+            // that would be two buyers and two consumers for one building. The
+            // catalog already forbids `maintenance_*` on state kinds
+            // (economy_catalog.gd), so this is the explicit second line of
+            // defence - a catalog edit must not silently create a double bill.
+            if (_building_types[view.type_id].kind == 3) continue;
         }
         auto group = building_at(static_cast<size_t>(g));
         const BuildingType &type = _building_types[group.type_id];

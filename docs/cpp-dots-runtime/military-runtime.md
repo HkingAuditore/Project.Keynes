@@ -1,8 +1,8 @@
-# Military Runtime（v1，PKMI v1）
+# Military Runtime（PKMI v6）
 
 本文描述**当前代码**中的军事运行时。设计依据 `docs/plans/military-system-design.md` v1.3，
 跨模块接口冻结于 `docs/plans/military-implementation-contract.md`。两者与代码不一致时以代码为准，
-差异在 §12「已知缺口」显式列出。仓库 Skill：`.dsh/skills/project-keynes-military-runtime/`。
+差异在 §12「已知缺口」显式列出。仓库 Skill：`.codex/skills/project-keynes-military-runtime/`。
 
 ## 1. 文件地图
 
@@ -11,13 +11,14 @@
 | 冻结 POD | `gdext/src/military_bridge.h` | `MilitaryTerrainInput`、`MilitaryWorldDigest`（D 日已提交视图）、`MilitaryIntent`（D+1 意图）、`MilitaryEvent`（40–47）、`MilitaryIntentReceipt` |
 | 核心状态 | `gdext/src/military_core.h` | `MilitaryCore` SoA store、命令 opcode、阶段函数签名、`MilitaryReport` |
 | 私有 helper | `gdext/src/military_core_internal.h` | `mul_div`（128 位中间量）、`rng(seed,key,day)`（SplitMix64）、Modifier stat 读取、unlock 位、民兵时代系数 |
-| 核心实现 | `military_core.cpp` | 生命周期、命令、招募/训练/补员、士气组织、军饷/维护、`step_day` 编排、`state_hash` |
+| 核心实现 | `military_core.cpp` | 生命周期、命令、招募/训练/补员、士气组织、军饷、`step_day` 编排、`state_hash` |
 | | `military_core_path.cpp` | 地形步进成本、A\*、有界 Dijkstra、移动/ZOC/环境损耗、格→部队索引 |
+| | `military_core_explore.cpp` | 玩家自动探路任务、观察点、返程、战斗暂停/恢复、取消与 explored-only trail |
 | | `military_core_logistics.cpp` | 3 格采购（§9.3）、威胁/护卫场、车队与拦截、消耗、征发、物资账本 |
 | | `military_core_war.cpp` | 战争、交战段（plan→replay）、会战、夺格/撤退/歼灭、战争分、区域任务、和议/赔款/吞并、增量战线、controller |
 | | `military_core_ai.cpp` | AI 军事议程（每国错峰 30 日主决策） |
-| | `military_core_save.cpp` | PKMI v1 编解码（事务式 restore） |
-| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`（A3 负责；见 §12） |
+| | `military_core_save.cpp` | PKMI v6 编解码（事务式 restore；section 23 探路、24 采购订单、25 维护行） |
+| | `military_core_selftest.cpp` | `MilitaryCore::self_test` / `bench`；含自动探路、维护定点余量与采购闭环、PKMI v6 覆盖 |
 | Godot 桥 | `gdext/src/world_ext_military.cpp` | 目录解析、digest 采集、意图→Country/Economy 命令翻译、回执、查询、渲染快照、PKMI 外层包装 |
 | | `gdext/src/world_ext_economy_military.cpp` | `set_military_ration_satisfaction`（口粮满足率推给 Economy）、`collect_military_economy_receipts`（Economy 结算 trace → 回执） |
 | GDScript | `scripts/military/military_facade.gd` | 冷路径 facade，全部 `has_method` 守卫（旧 DLL 零成本降级） |
@@ -62,7 +63,7 @@
 
 1. `day <= _military_last_step_day` → `skipped=true, reason=military_day_already_stepped`（防止 D+1 意图双发）。
 2. `capture_military_digest` 采集 D 日视图（同时为每个活跃国家 `ensure_country_slot`）。
-3. `apply_military_deferred_cash` 执行前一日的 `SPEND_CASH`（D+1 财政托管扣款）；
+3. `apply_military_deferred_cash` 执行前一日的 `SPEND_CASH`（D+1 财政预留/收回适配）；
    `collect_military_receipts` 折叠所有已到终态的待回执行（Country 回执游标 + Economy 结算事件，§5.1）。
 4. `MilitaryCore::step_day(day, digest, receipts, intents)`。
 5. `publish_military_ration_satisfaction` → Economy（真实驻军口粮满足率，§5.2）。
@@ -82,18 +83,18 @@
 | 5 | (无) | ~~`build_supply_fields`~~ 已删除：市场索引由采购/征发按需构建（`MarketDayScope`），无每日供应场阶段 |
 | 6 | `build_threat_fields` | 威胁/护卫场 |
 | 7 | `run_recruitment` | 每 5 日采样：配额、入伍、缺员征召（事件 47）、自动退伍、欠饷逃兵 |
-| 8 | `run_training` / `run_reinforcement` | |
-| 9 | `run_movement` | 行军、ZOC、遇敌开交战段、环境损耗（CASUALTY 意图） |
+| 8 | `run_training` / `run_reinforcement` / `prepare_exploration_day` | 探路先读冻结 explored、解析目标、选观察点并安装路线；每国 8 个规划槽、16 次探路 A* |
+| 9 | `run_movement` | 行军、ZOC、遇敌开交战段、环境损耗（CASUALTY 意图）；玩家部队逐进入格记录 explored-only trail |
 | 10 | 排空 attrition 意图 / 官营营造请求 | 建造（kind 15）与拆除（kind 16）由桥侧分别转成 `queue_treasury_sponsored_build` / `queue_treasury_sponsored_demolish`，见 §5.3 |
 | 11 | `run_area_missions` | 每日最多 32 次区域评估 |
 | 12 | `run_engagements` | plan → 按边键升序 replay → 夺格 |
-| 13 | `run_wars` | 冲刷和约意图批、战争分、全境沦陷跟踪、战线清理、过期停战 |
+| 13 | `run_wars` / `settle_exploration_day` | 战争收束后恢复已结束交战的探路任务；仍在交战、撤退或海运中的任务保持暂停 |
 | 14 | `run_procurement` / `run_convoys` / `run_consumption` / `run_requisition` | |
-| 15 | `update_morale_org` / `run_wages_and_upkeep` / `run_reparations` | |
+| 15 | `update_morale_org` / `run_reparations`（军饷已在 lap 11 前预占，见 §5.4） | |
 | 16 | `run_country_ai`（`ai_decision_due` 时） | AI 命令走 `submit()`，D+1 生效 |
 | 17 | 汇总 report、`reconcile_ledger`、`idle` 判定 | |
 
-`should_run(day)`（`military_core.cpp:2615`）：存在待发命令、活跃部队/交战/战争/车队/训练/赔款/兵员、
+`should_run(day)`：存在待发命令、非终态探路任务、pending trail、活跃部队/交战/战争/车队/训练/赔款/兵员、
 目标兵力>0、招募采样日、维护日或 AI 到期日时为 true；和平空世界返回 false（零 slice）。
 桥侧 `military_should_run` 另外拒绝 `day <= _military_last_step_day`；`submit_military_commands` 接受命令后
 记录 `_military_forced_run_day`，该日（及之后首个未步进日）强制返回 true，保证排队命令一定被应用。
@@ -116,7 +117,8 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
   `WorldRuntimeHost._consume_runtime_commit_if_ready` 每观察到一个已提交日调用
   `_queue_runtime_military_commit(day)`，同帧 `_drain_runtime_military_commits()` 每帧最多补跑
   `RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME = 4` 日：`facade.should_run(day)` 为真则 `facade.run_daily(day)`，
-  否则只推进游标；每日后调用 job 的 `forward_military_events()`。首次观察只回补最近 4 日。
+  否则只推进游标；每个补跑日之前先调用 `_prepare_military_exploration_day(day)`，每日后调用 job 的
+  `forward_military_events()`。首次观察只回补最近 4 日。
   worker **从不**推进 Military；`facade.catch_up` / `run_military_catch_up` 只是带同一防重入守卫的主线程
   `run_military_daily` 别名。
   耗时记入 `_dcp_military_ms`（日成本键 `mil`）。
@@ -134,7 +136,14 @@ Country 认可该句柄）通过 `ensure_military_country_slots` 打开，不再
 | 6 `PROCURE_GOOD` | Economy | 13 `MARKET_GOOD_TO_COUNTRY` | target = 国家句柄，`i32_0` = 市场格，`i32_1` = good，`i64_0` = 数量 |
 | 7 `CONSUME_TREASURY_GOOD` | Country | 21 `CONSUME_TREASURY_GOODS` | `aux` = good，`value` = 数量 |
 | 8 `REQUISITION` | Economy | 5 `REMOVE_STOCK` | `i32_0` = 格，`i32_1` = good，无付款 |
-| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash` 走财政托管；回执 `committed_amount` = 实收额，0 → 失败回执。维护费是终端现金 sink，实收额登记为 Economy 的 `explicit_money_burn`；官营建造已改走经济侧结算（§5.3） |
+| 9 `SPEND_CASH` | 桥侧 D+1（authority 3） | 无 opcode（Country 无扣现金命令） | 次日 `apply_military_deferred_cash` 调 `military_collect_cash`；回执 `committed_amount` = 适配器返回额，0 → 失败回执。当前 reserve 扣国库、collect 加回同一国库，现金净变化为零，不得登记 `explicit_money_burn`。维护费真实终端支出仍未接入；官营建造走经济侧结算（§5.3） |
+
+`tests/economy/military_deferred_cash_conservation_test.gd` 恢复一条非零 1000 单位的
+D+1 待结算维护回执，验证 PKMI v4 往返、同日防重、国库现金中性，以及后续九日
+经济人口/货币/物资守恒，并在第十日验证真实 cohort burn 仍正常入账。
+旧版将该中性操作记为销毁，在下一经济 epoch 稳定触发
+`money_conservation_failed / money_error=1000`。删除的跨 epoch burn 暂存不是存档字段；
+本次不改变 PKMI/PKEC 布局、税率、军饷或结算周期。
 | 15 `STATE_BUILD` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_build` | 军事建筑索引经 `economy_building_id` 翻成经济类型；经济受理后回送 `MCMD_STATE_BUILD` 仅记排期，`economy_building_id < 0` 或经济拒绝则该 lot 不建 |
 | 16 `STATE_DEMOLISH` | 桥侧同步（无 pending 行） | `queue_treasury_sponsored_demolish`（economy opcode 35） | 15 的镜像：`cell` + `count` = 军事建筑索引，`country_a` = 属主国句柄。经济侧先减座数，受理后才回送 `MCMD_STATE_DEMOLISH`；该命令在核心里是 no-op（§6.2） |
 | 17 `PROCUREMENT_DEMAND` | Economy（无采购回执） | 36 `MILITARY_PROCUREMENT_DEMAND` | D+1 全量替换缺货需求；reset 行 `cell=-1/country=0/qty=0`，其余行携带真实商品、市场格、缺口数量及 10 天归一化窗口 |
@@ -194,22 +203,34 @@ Military 只读（§6.2）。军事侧不再按建材估价折现金自己扣款
   军事侧那份完成日只是它的缓存）；`MCMD_STATE_DEMOLISH` 在核心里是 no-op。两侧各改一次会让同一座
   建筑被算两遍，并让 §6.2 的漂移探针每天误报一次。
 
-### 5.4 维护与失修
+### 5.4 维护与失修（实物采购与消耗，PKMI v6）
 
-官营建筑只有一张账单：**现金维护在 Military，物资维护不存在**。
+官营建筑与装备的维护**只有一条链**：需求 → 国库付款给商人 → 物资交付与运输 → 库存消耗 →
+维护满足率 → 装备完好度或建筑失修。现金 `SPEND_CASH` 维护已退役（`run_wages_and_upkeep`
+只剩军饷），旧的“预留现金 → 收回现金”是货币中性模拟，不再代表任何真实支出。
 
 | 环节 | 归属 | 行为 |
 | --- | --- | --- |
-| 维护物资 | Economy | 17 份档案的 `maintenance_good_ids` 全为空；`resolve_building_maintenance_csr` 也不会为 `kind == 3` 从建造 BOM 推导日耗，所以 `maintenance_count == 0`，经济侧维护循环直接跳过该组 |
-| 现金维护 | Military | `run_wages_and_upkeep` 每 `kUpkeepPeriod = 5` 日按 `barracks_count[tier] × upkeep_per_day × 5`（兵营）与单座 `upkeep`（城防 / 军校）汇总每国账单，经 `MILITARY_INTENT_SPEND_CASH` 走 D+1 财政托管 |
-| 岗位工资 | Economy | `state_payroll_group = (type.kind == 3)` 时 `wage_due = wage_paid = 0`，不产生欠薪、不停发工资、不抽业主现金；士兵的饷银由 Military 经 `COMMAND_TRANSFER_TO_COHORT` 直接转入 soldier cohort |
-| 失修标记 | Military 唯一产者 | `afford * 2 < upkeep` 时置位。**只写在本次结算所属国自己拥有的格上**：账单按 `digest.cell_owner_slot[cell] == s` 汇总，写入也必须按同一条边界过滤，否则 A 国的欠费会盖到 B 国的格上（并让 `state_hash` 变化）。无账单的分支同样按国家清除自己的标记 |
-| `operating_state` | Economy | `kind == 3` 在 `build_economic_plan` 里于 9636 行提前 `continue`，绝不会进入私营亏损 / 停业 / 清算状态机；`operating_state` 恒 0 |
+| 维护物资 | Economy | 17 份官营建筑档案仍**禁止**声明 `maintenance_*`；私营维护循环另有显式 `kind == 3 → continue` 作为第二道防线（`economy_runtime_building_production.cpp`），军事建筑只由 Military 维护 |
+| 维修配方 | Military 目录 | 每个建筑/兵种带 `repair.goods[{good, weight}]`；编译器折算成整数稀疏表 `repair_goods` + `repair_rate_q32`（q32 的**毫商品/日**）。建筑由 `原现金维护费 × 权重 ÷ default_price` 一次性算定，运行时**禁止**再按现金或建材反推 |
+| 需求与余量 | Military | `run_maintenance` 每行 `acc_q32 += rate × units`（兵种 ÷100 人头），`需求 = acc >> 32`，余量持久化；1 人不会被截断为零，也不强制造出每日一件 |
+| 消耗 | Military | 完成比例取各材料满足率的**最小值**（互为必要组件），只扣 `need × 比例`，余料留库；扣减计入 `_ledger_consumed` |
+| 采购 | Military → Economy | `queue_purchase` 只登记订单（稳定 `request_id`，进 PKMI section 24）；成交回执到达后 `settle_purchase` 才是唯一入库/建车队/记账点。请求身份经 opcode 37 的 POD 车道保序，回执按同一 sequence 匹配 |
+| 预算 | Military | 顺序固定：**军饷预占 → 维护份额 → 一般采购**，三者共用同一份冻结国库快照；维护另受 `budget_upkeep_bp` 硬约束；缺口扣库存 + 已成交待交付 + 在途，`<5 日补到 10 日`，按可维持天数升序补货 |
+| 失修 | Military 唯一产者 | 建筑按 **5 日窗口**结算，`窗口满足率 < 50%` 置 `disrepair`；按 `(国家, 地块, 建筑类型)` 分组独立判定，同格不同类型互不影响。计数器报“当前失修对象数”（不是当日翻转数） |
+| 装备完好度 | Military | 只看**维修配方**的真实满足率：`<50%` 每日 −0.5%，否则 +1%，范围 50%–100%。口粮/燃料/弹药充足**不能**抵消维修短缺（旧的“补给合计满足率”已删除） |
+| 未成交需求 | Military → Economy | 维护买不到的缺口作为预测行进入 `PROCUREMENT_DEMAND`（opcode 36），影响市场/贸易/生产投资，但不产生托管、不付款、不计销量 |
 
-失修的**作用范围严格限定**为两处：`cell_training_speed_q16`（军校训练速度减半，即 `MILITARY_Q16 + (speed - MILITARY_Q16) / 2`）与
-`fort_q16`（工事加成减半 `best /= 2`）。它**不影响**兵额 `posts_for_cell`、不影响招募判定
-（`run_recruitment` 只看 `paused`、兵额、在场与待征），也不改变士兵 cohort 的 `state_service_only` 语义：
-该职业不服兵役时回流失业池、不主动转职、不参与普通劳动报价，经济侧的就业恒等式审计对它直接放行。
+失修的**作用范围严格限定**为两处：`cell_training_speed_q16`（军校训练速度减半）与
+`fort_q16`（工事加成减半）。它**不影响**兵额 `posts_for_cell`、不影响招募判定，也不改变
+soldier cohort 的 `state_service_only` 语义。
+
+维护库存留在 Military 自己的 `_stocks` 里，持有者 `MILITARY_LOT_MAINTENANCE = 3`，
+`holder = cell × 64 + 目录索引`，因此同格不同建筑类型各有独立仓库与独立满足率。
+实物三段账的唯一所有者：交接前归 Economy 的待交付，交接后归 Military 的库存或车队；
+`_ledger_received` 只在交接点记账，恒等式 `received = stock + transit + consumed +
+intercepted_out − intercepted_in + returned` 必须逐日为 0（清除持有者库存也要计入
+`returned`，否则长跑会漂移）。
 
 ## 6. 数据结构
 
@@ -307,21 +328,58 @@ tier 7 与 tier 8 两行；UI 显示取该档容量较大者，拆除只看 `rol
 
 100k 尚未达到 2 ms：剩余大头是 `consumption`（~2.1 ms，每持有者 × 每兵种 × 6 类的需求/消耗计算）、采购第 1 日的 ~23 ms（`build_market_csr` + 首次接触全量数组的冷缓存，之后每日约 1 ms）、以及缓存未热时的 `engagements` / `wars`。
 
-## 8. 存档：PKMI v1
+## 7.1 玩家部队自动探路（PKMI section 23）
 
-外层（桥）`MILB` 包装：`u32 magic 0x4d494c42, u32 version 2, u32 core_size, core bytes,
-u64 sequence, u64 last_step_day, u64 receipt_cursor, u32 n, n × pending intent 行`；v2 行尾追加
-`u64 target_handle, u32 target_signature, u32 opcode`（Economy 回执匹配用）。v1 仍可读（无 opcode 的 Economy 行
-靠超时失败）。Economy 事件游标、强制步进日、渲染选择不保存，恢复后重置。
+`army.explore`（opcode 33）只在玩家 observer 国家通过门禁后创建任务。目标是“探索并返程”，
+不是“自动战争”：
 
-核心 PKMI（`military_core_save.cpp`）：小端定宽字段；头 `magic "PKMI", version 1, catalog_hash, seed,
+- 任务表最多 256 行，每军最多一个；`selected_cells[256]`、seen/visited/blocked 位图和
+  `_exploration_by_army` 派生索引都在 `MilitaryCore`，Host 只提供冻结 explored 和收回 trail。
+- 每日在 `run_movement()` 前规划：已探索目标直接 resolved；否则选最近未解决目标，并在半径
+  0..2 的候选观察点中按稳定次序尝试。每军最多实际到达 3 个观察点。
+- 探路 passability 与普通 `find_path()` 分离：陆地只允许无主/本国控制，战争状态也不进入
+  他国控制格；水域继续遵守海运科技和连续水格限制。
+- 每任务每日 ≤2 次 A*，每国每日 ≤8 个规划槽、≤16 次探路 A*；共享全国 32 次路径预算中
+  保留至少 16 次给区域控制。预算耗尽返回 `DAILY_BUDGET_EXHAUSTED` 并在次日重试。
+- 全部目标解决后返回 origin；origin 失效时用 `nearest_friendly_cell()`；无安全路线则
+  `FAILED_NO_RETURN` 原地待命。
+- 意外进入他国控制格会开交战并暂停任务；engagement 关闭后恢复 `resume_phase`。显式
+  move/area/stop/stance/station/disband/merge/split/transfer/destroy 取消探路。
+- `run_movement()` 对玩家部队实际进入的每一格记录 dense-stamp 去重 trail；Host 只把 trail
+  合并进 `MapData.explored_arr`，visible/fog 仍由 `_refresh_vision()` 生成。
+
+Host 日边界入口：`WorldRuntimeHost._prepare_military_exploration_day(day)`。inline、legacy SUS
+和 whole-graph 补跑（每个补跑日）都调用；保存前 `GameSaveCoordinator` 先
+`flush_military_exploration_trail_for_save()`，失败拒绝保存。
+
+快照只在 `get_military_army()` 的 `exploration` 字典中返回 phase/result/pause、seen/visited/
+blocked 计数、origin/return 和日期；不返回 256 格数组。UI 文案和操作见
+`docs/ui/military-army-controls.md`。
+
+## 8. 存档：PKMI v4
+
+外层（桥）`MILB` 包装：`u32 magic 0x4d494c42, u32 version 4, u32 core_size, core bytes,
+u64 sequence, u64 last_step_day, u64 receipt_cursor, u32 n, n × pending intent 行`；每个 pending
+行带 `target_handle / target_signature / opcode`。v4 是当前唯一可读版本；PKMI/MILB v3 明确拒绝。
+Economy 事件游标、强制步进日、渲染选择不保存，恢复后重置。
+
+核心 PKMI（`military_core_save.cpp`）：小端定宽字段；头 `magic "PKMI", version 4, catalog_hash, seed,
 cell_count, width, height, last_day`；随后 `(u16 id, u32 len)` 分段：Counters 1、Pending 2、Lots 3、
 Training 4、Armies 5、PathArena 6（压缩）、Templates 7、Stocks 8、Shipments 9、Engagements 10、Wars 11、
 Truces 12、Reparations 13、BattleLog 14、Areas 15、Policies 16、CellStates 17、Controller 18（稀疏）、
-Ledger 19、Events 20、Ai 21、End 0xFFFF。未知段跳过。
+Ledger 19、Events 20、Ai 21、Exploration 23、End 0xFFFF。section 23 必须存在，空任务表也写
+`count=0`。未知段跳过。
 
 Restore 先解到临时实例并校验（catalog hash、地形尺寸、lot/army 引用），全部通过才交换；派生结构
-（格索引、威胁场、市场场、cell_state 索引、free list、army cache）在恢复后重建。
+（格索引、威胁场、市场场、cell_state 索引、free list、army cache、`_exploration_by_army`）在恢复后重建。
+
+section 23 校验：任务数 ≤256、row 唯一、army 可解析且 owner 一致、一军一任务、selected
+1..256 严格升序无重复、mask 不越出 selected、seen/visited/blocked 互斥、phase/result/pause/
+resume 组合合法、日期有序、观察点唯一且在候选集合内、活动 path 最后格与当前目标一致。
+错误码包括 `pkmi_version_mismatch_expected_4`、`pkmi_wrapper_version_mismatch_expected_4`、
+`pkmi_exploration_section_missing`、`pkmi_exploration_duplicate_army`、`pkmi_exploration_bad_cells`、
+`pkmi_exploration_bad_masks`、`pkmi_exploration_bad_phase`、`pkmi_exploration_army_missing`。
+空任务表不混入 state hash；非空表按持久字段与行序完整混合。
 
 Catalog identity 与官营建筑桥接：`MilitaryCore::catalog_hash()`（`military_core.cpp`）把
 `state_buildings[]` 的 `id / economy_building_id / role / tier / unlock_bit / capacity /
@@ -344,6 +402,10 @@ pknr → player_session`。`pkmi` 在 `REQUIRED_SECTIONS` 与 `OPTIONAL_PROVIDER
 目录配置完成后配置军事系统并推地形，随后 provider 恢复 PKMI（仍在 ECP2 之前）。
 `finalize_save_restore_runtime()` 在 ECP2 恢复后更新聚落地形，通过 facade 的 PKMI
 保留/恢复路径保存军队和命令；此时不能再次 configure，否则会抹掉刚恢复的状态。
+在 `_save()` 的安全边界之后、任何 provider 采集之前，`GameSaveCoordinator` 调用
+`WorldRuntimeHost.flush_military_exploration_trail_for_save()`：把 native trail 合并进
+`MapData.explored_arr` 并清空 trail；合并或清空失败直接拒绝保存。PKFG 只保存 explored，
+fog 在读档后仍由既有视野管线重算。
 该顺序由完整存读档测试覆盖。
 
 ## 9. 渲染契约
@@ -373,6 +435,20 @@ pknr → player_session`。`pkmi` 在 `REQUIRED_SECTIONS` 与 `OPTIONAL_PROVIDER
 token/区域/战线/交战/车队/占领/路线几何，并隐藏全部军事层。
 `MilitaryMapLayers` 由 host 在 renderer bind 后创建（headless/mobile 不创建），
 `PlayerGame` 在 world_ready 时 `configure()`。
+
+### 部队视野
+
+玩家自己的活动部队会作为 `VisionSolver` 的移动观察源。源格来自同一个已提交的
+`get_military_render_snapshot()` SoA 快照；Host 只筛选 `owner_slot == player_slot` 的
+部队格，不把 Military store 或渲染层写回视野。部队源使用
+`MILITARY_BASE_BUDGET = 24 + floor(view_height / 2)`，城市/领土源仍为
+`BASE_BUDGET = 42 + view_height`，因此部队在同一地形上的覆盖始终更小；地形阻挡、
+`explored` 单调累积、fog blur 与远程科研资格沿用同一套 pass。
+
+军事 `render_revision` 变化时，`WorldRuntimeHost` 在帧预算内排队一次合并的
+`refresh_country_visuals("military_vision_committed")`；移动部队因此在新格发布后
+更新视野，静止日不重复 O(n) 解算。图形会话复用 `MilitaryMapLayers` 的单次快照轮询，
+headless/mobile 才走 Host 的轻量轮询；没有第二份迷雾状态，PKFG 仍只保存 `explored`。
 
 | z | 层 | shader |
 | --- | --- | --- |
@@ -477,6 +553,32 @@ ribbon 的线宽是 shader uniform，per-edge 加宽会被裁掉。
 验证：`tests/military/military_peace_window_test.gd`（视图模型 + 窗口 + 启动卡 + 控制器高亮契约）、
 `tests/qa/military_peace_window_screenshot_qa.gd`（1280/1920 两种 UI 宽 × 白和平/已点选）。
 
+### 9.3 地图军事图层工具条
+
+地图上的军事视觉由 `MilitaryMapLayers` 继续统一读取 `MilitaryRenderFeed`；
+`scenes/ui/military_map_toolbar.tscn` 只是一个纸片图标工具条，不拥有军事状态。
+工具条在有图层实例的图形会话中显示，提供部队、战线、交战、占领、控制区、车队和行军路线
+七个独立开关。点击只调用 `MilitaryMapLayers.set_layer_visibility()`，不会暂停模拟、改变
+迷雾门控或写回 MilitaryCore。按钮故意位于地图覆盖层边界并保持 `FOCUS_NONE`，避免吞掉地图
+滚轮和拖拽；每个图标都有可见语义和 tooltip，触控目标为 48px。
+
+地图图层总开关（GM / 设置）仍由 `set_layers_enabled()` 控制；单层开关是其下的显示过滤，
+两者合取后才决定图层 `visible`。图层状态只属于当前会话显示，不进入 PKMI，也不参与回放哈希。
+
+### 9.4 地图位图与压印材质
+
+地图军事图层的纸片素材归 `assets/military/map/`：
+
+- `military_army_banner_token_v1.png`：部队纸旗徽记，叠在程序化兵种/兵力信息之上；
+- `military_battle_seal_v1.png`：交战纸章，叠在双色进度环中心；
+- `assets/vfx/frontier_grain.png`：战线和占领斜纹共用的手绘压印颗粒。
+
+位图只改变显示，不进入 MilitaryRenderFeed 或军事快照。部队和交战 shader 在缩放到聚合
+LOD 时关闭位图叠印，避免小尺寸摩尔纹；战线与占领 shader 通过重复采样 frontier grain
+增加纸纤维变化，但仍保留原有进度、迷雾和占领者颜色语义。新增或替换位图后必须运行
+`tests/military/military_formation_map_visual_harness.gd` 的真实渲染路径；headless 只能
+验证资源加载和图层契约，不能替代 shader 编译检查。
+
 ## 10. 事件 40–47 与 report 计数
 
 | type | 名称 | payload schema | 字段（当前代码） |
@@ -505,23 +607,48 @@ Report（`get_military_report` / `run_military_daily`）：`military_day_ms(day_
 后三个 `state_*` 是 §6.2 的缓存诊断：`state_cache_repairs` 只在缓存与昨日账本不符时增加，
 因此一个正常推进的日子应当恒为 0。
 
+`armies_moving` 也统计当前有活动路线的 `MILITARY_MISSION_EXPLORE` 部队，避免探路部队在
+工作日内被误报为静止。
+
 ## 11. 验证
 
 ```text
 godot --headless --path Project/project-keynes -s res://tests/military/military_native_binding_test.gd
+godot --headless --path Project/project-keynes -s res://tests/military/military_auto_exploration_test.gd
+godot --headless --path Project/project-keynes -s res://tests/military/military_dossier_test.gd
+godot --headless --path Project/project-keynes -s res://tests/ui/vision_solver_test.gd
+godot --headless --path Project/project-keynes -s res://tests/runtime/military_index_continuation_test.gd
+python tools/ci/check_save_contracts.py
 ```
 
 - `runtime_military_self_test()`：`MilitaryCore::self_test` + 桥侧目录缩放、op 表、和议条款编码。
-- `run_military_bench({cells, armies, engagements, days})` → `avg_ms / p95_ms / max_ms`；测试断言
-  2400 格/400 部队 p95 ≤ 0.5 ms、100k/2048/4096 p95 ≤ 2 ms。
+  2026-11-10 v14 selftest 全绿；探路覆盖 D+1 创建、mission 保持、已探索、战争禁入、3 观察点、
+  预算耗尽、返程 fallback、无返程、取消/销毁、v4 section 23、malformed 拒绝和 8 日续跑。
+- `run_military_bench({cells, armies, engagements, days})` → `avg_ms / p95_ms / max_ms`；
+  2400 格/400 部队/64 交战/60 日：avg 0.2198 ms、p95 0.3053 ms；100k/2048/4096/30 日：
+  avg 8.6256 ms、p95 20.1618 ms。标准图通过 0.5 ms，100k **未通过** 2 ms。
+- `military_auto_exploration_test.gd`：0 failures，覆盖 facade、草稿无 preview、trail-only、
+  multi-cell trail、4 日 catch-up、save flush 失败保留 trail、外军拒绝、节点稳定。
+- `military_dossier_test.gd`：0 failures；`vision_solver_test.gd`：53 checks / 0 failures；
+  `military_index_continuation_test.gd`：pass；`check_save_contracts.py`：0 violations。
+- `military_runtime_smoke_test.gd` 当前 8 个征兆兵/军饷断言失败：fixture 假设存在
+  “tech-free barracks”，当前目录所有兵营带科技门槛。失败不在探路代码路径；
+  探路 PKMI round-trip/state hash 与 120 日推进仍通过，未以改断言掩盖。
 - 改 C++ 后需重建 GDExtension；shader 改动 headless 无法验证。
-- 目前 `tests/military/` 只有上面一个文件；设计稿 §24 的 `tests/military_runtime_bench.gd`、守恒/吞并/AI soak
-  测试尚不存在。
 
-## 12. 已知缺口 / v1 简化
+## 12. 已知缺口 / 简化
 
-1. **`military_core_selftest.cpp` 尚未落地**（A3 编写中）：`self_test` / `bench` 在 `military_core.h:554-556`
-   声明、`world_ext_military.cpp:2550/2617` 调用，提交前必须存在，否则链接失败。
+0. **实物维护（PKMI v6）剩余缺口**：
+   - Economy 侧“已结算采购序列”的防重环仍是 `thread_local`（进程内），尚未进 PKEC；
+     读档后重放窗口理论上仍可二次成交，需要把它做成持久表；
+   - 维护采购的预测行用**需求对象所在格**作为市场键，若该格没有市场则信号只落在
+     生产/投资侧、不落市场侧；
+   - `bench big`（100k 格）p95 仍超 2 ms 预算（改造前 19.1 ms，现 19.2 ms，与维护无关）；
+   - 长跑世界（种子 1812289715）里首都市场不出售一级兵营的维修物资，
+     因此该世界 5500 日全程 0 满足率、建筑持续失修——这是设计要的缺货结果，
+     但说明“生成世界的早期市场是否覆盖维修材料”值得内容侧再评估一次。
+
+1. ~~`military_core_selftest.cpp` 尚未落地~~：已落地并在 v14 全绿；100k bench 仍超预算。
 2. ~~Economy 回执不回流~~（已修复，§5.1）。剩余近似：trace OFF 时按请求量视为成功；trace 被驱逐/读边界长期
    繁忙时行靠 8 日超时失败（可能低估入伍）。
 3. ~~`SPEND_CASH` 同步收取~~（已改为 D+1，§5）；仍是桥侧财政托管调用而非 Country 命令（Country 无扣现金
@@ -531,15 +658,18 @@ godot --headless --path Project/project-keynes -s res://tests/military/military_
 5. ~~选择/战线进度恒空~~（已修复，§9）；`risk_q16` 仍是路线成本代理而非拦截概率。`MilitaryAreaLayer` 需由
    UI 调 `set_render_selection` 才显示。
 6. 恢复后 `_front_edges` 清空，直到下一次控制/交战变化才逐格重建（`military_core_save.cpp:1462`）。
-7. 交战 Plan 阶段未并行；部队视野补丁未实现（`vision_patch_cells` 恒 0，部队不是视野源）。
+7. 交战 Plan 阶段未并行；`vision_patch_cells` 仍是军事 report 的兼容计数，部队视野
+   已由 Host 的已提交 render snapshot 接入统一 `VisionSolver`，不单独维护军事迷雾补丁。
 8. `get_military_cell_snapshot` 的 `observer` 被忽略（未按迷雾过滤）；统帅恒为空位。
 9. 占领不切换 Economy 税收/补贴归属；controller 只在 Military。
 10. 人员模型：士兵不随部队移动，无随军/客籍消费、无 `ArmyPersonnelStore`（设计 §5.7、PKEC v59 未实现）。
-11. 海运只有 `EMBARKED` stance 的损耗豁免，无运兵科技门控与航行逻辑。
+11. ~~海运只有 `EMBARKED` 损耗豁免~~：已接入 coastal/ocean transport 科技、连续水格限制、
+    海运运力成本与上岸姿态恢复；仍无独立海军单位与封锁。
 12. ~~注释漂移（worker 推进 military）~~：已更正为主线程 `run_military_daily` + host 整图补跑。
 13. ~~`GameplayEventBus` payload 注释不一致~~：已按 §10 原生字段更正。LEVY 原生事件未填
     `payload_schema`（=0），由 `GameplayEventBus.military_payload_schema()` 回填 25。
-14. 设计稿 §22 写 PKCN v14 承载 `cell_controller` 与 PKEC v59；当前 controller 在 PKMI，PKCN/PKEC 未为军事升版。
+14. 设计稿 §22 写 PKCN v14 承载 `cell_controller` 与 PKEC v59；当前 controller 在 PKMI v4，
+    PKCN/PKEC 未为军事升版。
 15. 部队编队视觉 M1/M2 源码已接入：快照提供前三兵种 CSR、`heading_q16`、`attack_seq/hit_seq`，
     `MilitaryArmyTokenLayer` 已支持纸片/formation 双 backend、1–5 成员和三档 LOD。当前明确缺口是：
     工作区 DLL 尚未重建、M2 尚未做真实世界视口裁剪/长时间 soak、cue 生产者仍未实现（M3）。
@@ -550,7 +680,16 @@ godot --headless --path Project/project-keynes -s res://tests/military/military_
 17. opcode 35 只走专用 `queue_treasury_sponsored_demolish` 入口，**不在** `submit_commands` 的批量白名单里
     （白名单上界仍是 `COMMAND_TREASURY_SPONSORED_BUILD`，与 opcode 16 同构地走专用入口）。
     `submit_commands` 若收到 35 会被拒为 `unsupported_opcode`，这是刻意的：拆除必须先在经济侧落实。
+18. 玩家自动探路只负责探索/返程：不自动宣战、不占中立格、不连续追击。区域任务仍约 5 日评估且只
+    处理战争中的敌控格；完整“甩手征服”需要独立的自动战争设计。
+19. `military_runtime_bench` 的 100k/2048 p95 仍高于 2 ms；这是全军事日基线缺口，不是探路新增
+    工作，不能以探路预算有界替代整体性能验收。
 
-## 部队指挥 UI 接线（2026-11-08）
+## 部队指挥 UI 接线（2026-11-10）
 
-部队档案固定提供行军、区域控制、停止任务、姿态，地图点击只做预览；确认前重新调用 `preview_military_path`，随后仍提交现有军事命令。`PlayerController` 只保存不入存档的输入草稿，`GameUIManager` 通过 `update_military_arm_order` 更新显示，不改 MilitaryCore 权威、每日调度或 PKMI。详见 [部队指挥交互与验证](../ui/military-army-controls.md)。
+部队档案固定提供定位、行军、区域控制、探路、停止任务和姿态。行军/区域控制仍在地图点击后预览，
+确认前重验 `preview_military_path`；探路草稿只计算中心 + 半径的高亮与 `cells`，**不调用**
+`preview_path()`，中心不可直达仍允许提交 `army.explore`。`PlayerController` 只保存不入存档的输入草稿，
+`GameUIManager` 通过 `update_military_arm_order` 更新显示，不改 MilitaryCore 权威、每日调度或 PKMI。
+探路按钮、半径行、`E/Enter/Esc/右键`、44dp 热区和焦点链见
+[部队指挥交互与验证](../ui/military-army-controls.md)。

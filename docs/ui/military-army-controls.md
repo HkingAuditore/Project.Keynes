@@ -18,10 +18,13 @@
 
 | 状态 | 反馈与下一步 |
 | --- | --- |
-| 浏览己方部队 | 定位、行军、区域控制、停止任务、姿态；没有正在执行的任务时停止禁用 |
+| 浏览己方部队 | 定位、行军、区域控制、探路、停止任务、姿态；没有正在执行的任务时停止禁用 |
 | 浏览其他国家部队 | 保留定位和只读战备信息，不显示指挥控件 |
 | 行军选点 | 地图点击只更新路线，档案保留；显示预计天数与明确确认键 |
 | 区域选点 | 选择中心，显示 1–6 格半径、覆盖格数、中心行军时间和范围高亮 |
+| 探路选点 | 选择中心，显示 1–6 格半径、选格数与“完成后返回出发点”；只画范围高亮，不预览路径 |
+| 探路提交 | 中心不可直达仍可提交；外军隐藏、交战禁用；成功提示次日开始规划 |
+| 探路运行 | 显示已解决/总数、返程、交战中暂停、完成、受阻或无法返回；不显示 ETA |
 | 目标不可达 | 撤销旧预览、禁用确认，显示原因；继续选点 |
 | 确认 | 再调用同一个原生路径预览，校验快进期间的新位置/通行条件，然后提交既有命令 |
 | 提交拒绝 | 保留草稿与目标，显示原因，允许改选或重试 |
@@ -30,9 +33,22 @@
 | 再点同一部队 | 保留档案、滚动位置与草稿 |
 | 换部队、关闭详情、隐藏档案、打开国家页或暂停菜单 | 取消未提交草稿，避免隐藏状态继续吞地图点击 |
 
-快捷键：M 行军、C 区域控制、X 停止任务；目标可用后确认键获得焦点，Enter 确认；
+快捷键：M 行军、C 区域控制、E 探路、X 停止任务；目标可用后确认键获得焦点，Enter 确认；
 右键/Esc 取消草稿，再按 Esc 返回地块档案。文本输入与弹出菜单保留自己的输入优先级。
 半径同时支持可点击的增减按钮，不要求玩家输入格数。
+
+探路状态只读快照计数，文案固定为：
+
+```text
+探路 12/31
+探路 12/31 · 返程中
+探路暂停 · 交战中
+探路完成 · 已返回
+探查结束 · 3 格无法探明 · 已返回
+探路完成 · 无法返回 · 原地待命
+```
+
+取消后的任务显示“待命”，不伪装成活动任务；无探路任务不渲染空占位。
 
 ## 数据与命令契约
 
@@ -45,32 +61,34 @@ MilitaryDossier.action_requested
   → InspectorPanel.military_dossier_action_requested
   → GameUIManager（动作路由、反馈、面板生命周期）
   → PlayerController.begin / click / radius / confirm / cancel
-      → MilitaryFacade.preview_path（预览及确认前重验）
-      → request_command（既有 army.move / area_control / stop / stance）
+      → MilitaryFacade.preview_path（仅 move/area 的预览及确认前重验）
+      → request_command（army.move / area_control / explore / stop / stance）
   → update_military_arm_order → InspectorPanel → MilitaryDossier.set_order_state
 ```
 
-地图重复点同一格不再提交命令。确认前原生预览失败时禁止提交；命令被拒绝时不清空草稿。
-半径变化重新生成预览区域，最多沿用既有 256 格上限。
+探路草稿**不调用** `preview_path()`，只由中心 + 半径生成 `cells`；提交参数为
+`{army, cell, cells, radius}`，`cells` 升序去重且 1..256。中心不可直达不是失败条件。
+地图重复点同一格不再提交命令。move/area 确认前原生预览失败时禁止提交；命令被拒绝时不清空草稿。
+半径变化重新生成预览/高亮区域，最多沿用既有 256 格上限。
 同格名录跟随渲染快照中的部队当前位置；每日补丁只写值，不改变节点数、焦点或草稿。
 打开档案时先取消旧位移动画并完成布局，再刷新静止坐标、播放入场，避免动画把收窄后的
 面板送回旧坐标而裁掉右缘。
 
-## 验证（2026-11-08）
+指挥区现在用语义纸贴图标配短标签：定位、行军、控区、停止、执行、返回均保留 44px
+以上热区和键盘焦点链；完整后果说明放在 tooltip，地图上不再堆成长句按钮。档案打开时
+优先把焦点落到可执行的第一个动作，外军档案则落到定位。
 
-使用 Windows Godot 4.6.2（项目实际版本），本轮无 C++、军事目录、存档或模拟规则修改。
+## 验证（2026-11-10）
 
-- `tests/ui/military_arm_order_test.gd`：路径重验、重复点击不提交、拒绝重试、外军限制、
-  半径、取消、快捷取消、每日节点数、完整管理器/档案接线、面板宽度和焦点。
-- `-- --visual`：Compatibility 渲染器，1280×720 / 1920×1080 的浏览、行军、区域、外军
-  四种状态，另检查嵌入 Inspector 的实际外壳。输出 `tmp/military_order_qa/`。
-- 最终编辑器导入未报告脚本解析/编译错误；`git diff --check` 通过。
-  本轮完整日志保留于 `tmp/military_order_qa/validation/`。
-- `inspector_responsive_layout_test.gd`、`military_config_command_test.gd`：通过。
-- 扩展检查没有全绿：`military_cell_ledger_test.gd` 28 个失败（建筑报价/可建造动作），
-  `ui_scene_structure_test.gd` 101 个失败（主题、时代奖励树、年度报告动态节点等），
-  `player_controller_contract_test.gd` 3 个失败（已有帧轮询与开拓队摘要约束）。
-  这些失败位置没有在本轮修改；未以改断言或扩大本轮范围处理。
-- 渲染/无界面退出仍有资源释放警告，图形运行还有 FMOD 未连接调试器提示。
-- 本轮验证是输入状态与 UI 接线、真实渲染的模型夹具；未声称完成实战长时间运行、
-  50× 真实战争、手柄地图指针或触摸真机验收。
+使用 Windows Godot 4.6.2、D3D12 Forward Mobile 与 v14 debug/release DLL。
+
+- `tests/military/military_dossier_test.gd`：0 failures；覆盖探路按钮、半径标签、确认文案、
+  焦点链、`E/Enter/Esc/右键`、外军隐藏、交战禁用、无 ETA、同身份节点稳定、状态文案。
+- `tests/military/military_auto_exploration_test.gd`：0 failures；覆盖草稿不调用
+  `preview_path()`、中心不可直达仍 ready、256 格上限、命令参数与取消。
+- `tests/qa/military_dossier_screenshot_qa.gd`：0 failures；1280、1920、520px 窄栏、21:9
+  四种布局，浏览/探路草稿/active/paused/completed/blocked 与战线，本次生成 28 PNG。
+  输出 `Project/project-keynes/tmp/military_dossier_qa/`。
+- headless editor import 无 Parse/Script Error；存档契约 0 violations。
+- 渲染退出仍有 FMOD 未连接调试器与资源释放警告；截图脚本退出码仍为 0。
+- 未完成真实战局长时间运行、手柄地图指针或触摸真机验收。

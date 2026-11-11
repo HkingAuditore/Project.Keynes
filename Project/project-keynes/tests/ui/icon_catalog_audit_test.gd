@@ -255,6 +255,17 @@ func _audit_semantic_contracts() -> void:
 	if mine_texture != null and mine_texture.get_image().get_data() == \
 			IconCatalog.texture_for_key(copper_plant).get_image().get_data():
 		_failures.append("building kinds must produce visually different composites")
+	for pair in [
+		["public_health_center", "pharmaceuticals", "pharmaceuticals_plant"],
+		["logistics_hub", "packaging", "method_packaging_plant_r7"],
+	]:
+		var overridden := IconCatalog.texture_for_key(
+			IconCatalog.building_semantic(pair[0], pair[1], 1))
+		var plain := IconCatalog.texture_for_key(
+			IconCatalog.building_semantic(pair[2], pair[1], 1))
+		if overridden == null or plain == null or overridden.get_image().get_data() == \
+				plain.get_image().get_data():
+			_failures.append("building base override must survive the composite cache: %s" % pair[0])
 
 
 func _audit_unique_identity(domain: String, stable_id: String, semantic: StringName,
@@ -312,6 +323,15 @@ func _audit_paper_controls() -> void:
 
 
 func _audit_military_paper_cutouts() -> void:
+	var military_catalog: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/military/military_catalog.json"))
+	if not military_catalog is Dictionary:
+		_failures.append("could not parse military catalog for icon audit")
+	else:
+		for unit in military_catalog.get("units", []):
+			var unit_id := String(unit.get("id", ""))
+			if not IconCatalog.MILITARY_UNIT_ICONS.has(StringName(unit_id)):
+				_failures.append("military unit has no dedicated icon mapping: %s" % unit_id)
 	var unique_textures := {}
 	for key in IconCatalog.MILITARY_PAPER_TEXTURES:
 		var texture := IconCatalog.MILITARY_PAPER_TEXTURES[key] as Texture2D
@@ -330,8 +350,8 @@ func _audit_military_paper_cutouts() -> void:
 		if used.position.x < 8 or used.position.y < 8 \
 				or used.end.x > size.x - 8 or used.end.y > size.y - 8:
 			_failures.append("military paper icon is clipped at its cell edge: %s" % key)
-	if unique_textures.size() != 56:
-		_failures.append("military paper atlas must expose 56 unique stickers, got %d" % \
+	if unique_textures.size() != 57:
+		_failures.append("military paper atlas must expose 57 unique stickers, got %d" % \
 			unique_textures.size())
 
 

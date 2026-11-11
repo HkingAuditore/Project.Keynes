@@ -120,6 +120,34 @@ func _ready() -> void:
 	_refresh_timer.one_shot = true
 	add_child(_refresh_timer)
 	_refresh_timer.timeout.connect(_flush_pending_refresh)
+	# Keep the index page compact: every action has a semantic paper icon, and
+	# the caption is short enough to scan without turning the page into a manual.
+	IconButton.apply_with_text(_overview_war_link, &"military.war.front", "战线",
+		IconButton.MEDIUM, "打开战争与战线")
+	IconButton.apply_with_text(_mode_headcount, &"military.plan.target", "人数",
+		IconButton.MEDIUM, "按目标兵力设置")
+	IconButton.apply_with_text(_mode_budget, &"metric.treasury", "预算",
+		IconButton.MEDIUM, "按每日军费设置")
+	IconButton.apply_with_text(_quality_best, &"military.plan.quality", "优先",
+		IconButton.MEDIUM, "优先采购更高品质装备", true)
+	IconButton.apply_with_text(_quality_cheap, &"metric.treasury", "节省",
+		IconButton.MEDIUM, "优先采购价格较低的合格装备", true)
+	IconButton.apply_with_text(_toggle_auto_retrain, &"military.plan.training", "换装",
+		IconButton.MEDIUM, "装备过时时自动改训", true)
+	IconButton.apply_with_text(_toggle_levy, &"military.plan.target", "征召",
+		IconButton.MEDIUM, "兵营缺员时强制征召", true)
+	IconButton.apply_with_text(_toggle_auto_discharge, &"action.back", "退伍",
+		IconButton.MEDIUM, "超过目标时自动退伍", true)
+	for button in [_overview_war_link, _mode_headcount, _mode_budget, _quality_best,
+			_quality_cheap, _toggle_auto_retrain, _toggle_levy, _toggle_auto_discharge]:
+		button.focus_mode = Control.FOCUS_ALL
+		button.custom_minimum_size = Vector2(button.custom_minimum_size.x,
+			maxf(button.custom_minimum_size.y, 44.0))
+		UIAnimation.bind_tactile_button(button)
+	_mode_headcount.focus_neighbor_right = _mode_headcount.get_path_to(_mode_budget)
+	_mode_budget.focus_neighbor_left = _mode_budget.get_path_to(_mode_headcount)
+	_quality_best.focus_neighbor_right = _quality_best.get_path_to(_quality_cheap)
+	_quality_cheap.focus_neighbor_left = _quality_cheap.get_path_to(_quality_best)
 	_overview_war_link.pressed.connect(select_chapter.bind("war"))
 	for card in _war_cards:
 		# 战争卡片只负责“这是个什么战争”，条款编辑器在议和面板里。

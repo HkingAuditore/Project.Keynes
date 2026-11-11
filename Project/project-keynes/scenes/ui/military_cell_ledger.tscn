@@ -26,7 +26,7 @@ theme_override_constants/separation = 8
 
 [node name="CreateArmy" type="Button" parent="Body/ArmyActions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "编成部队"
 

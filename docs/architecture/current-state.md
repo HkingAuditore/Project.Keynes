@@ -1,5 +1,90 @@
 # 当前运行状态
 
+## 国库收支滚动窗口（2026-11-10）
+
+国库顶栏悬停卡与经济卷宗总览不再把「最近一次结算」冒充当天流水。
+`EconomyFiscalHistory` 现在同时保存逐已提交日国库现金与按财政 `sample_day`
+去重的结算事件；展示层默认显示近 30 日日均，总览可切换近 7 日/近 30 日。
+窗口内税种、补贴和非税支出先按真实结算事件汇总，净额再用国库现金首尾差校准，
+差额单列为「其他国库变动」。历史不足时按实际覆盖天数折算；不足两个现金样本时
+回退到最近一次结算，不补零、不伪造整月。折线保留逐日结算读数（未结算日沿用上次），
+用于观察波动；
+顶栏悬停与经济卷宗共用 `EconomyDossierViewModel.cashflow_from_history()`。
+
+验证：`tests/economy/economy_fiscal_history_rolling_test.gd` 覆盖结算去重、无结算日、
+7/30 日边界、历史不足、未归类现金变化和净额与国库差一致；`tests/ui/hud_status_card_test.gd`
+通过。`tests/economy/economy_dossier_view_model_test.gd` 的滚动窗口与切换断言通过，
+整页套件仍有一项既有的跨章区段滚动断言失败：断言硬编码要求滚动量大于 100，
+而本次空产业台账下页面最多只能滚到 74；跨章跳转本身已落到产业章投资段。
+C++、存档格式与存档字段未改。
+
+## 派遣来源目录、进度与筹备缩编（2026-11-10）
+
+已实现：目标入口直接按出发地分组列当地家族，使用地点与家族的组合身份；
+顶部派遣按钮打开全国进行中队伍，按日事件、控制器绑定与命令回执刷新。
+筹备详情保留当前队伍并显示三项实际物资进度、状态和采购阻碍；取消/召回放在
+详情底部。紧凑视口保留两栏，极窄视口才上下排列；顶部空间不足时缩紧留白与字号，
+派遣按钮保留文字入口，时代名回到宽视口显示。没有增加逐帧轮询或 UI 模拟权威。
+
+Economy 筹备重验取 `min(计划人数, 当前当地可派人数)`，保留最后族人/商人与军人
+排除规则；缩编后重算采购目标及进度分母。已有成交托管与在途采购续接保留，
+后续只补实际缺口。状态沿用既有远征列，存档布局、跨域财政契约和 cadence 不变。
+契约与回归入口见 [家族开拓运行时](../cpp-dots-runtime/family-colonization-runtime.md)。
+
+验证：Windows/Godot 4.6.2，Debug `dots_ext_dispatch_v3` 与 Release
+`dots_ext_dispatch_v2` 完成构建，人数缩减定向回归均零失败，实际出发后人口/货币/物资
+误差均为零。来源目录/刷新/取消/顶部入口及 workbench 回归通过；1280×720、
+2560×1080、1024×600 与移动 QA 档执行带渲染检查，含 125% UI 缩放和 10 倍速度。
+全项目编辑器脚本编译无 Parse Error / Failed to load script / SCRIPT ERROR。
+模块 API 与 C++ 依赖检查零违规。
+
+共享工作区随后将正式 Debug 库切到 `dots_ext_supply_chain_v4`，在该映射下复跑人数
+缩减专项仍为零失败。全项目编译时遇到同时新增经济历史脚本的两处数组元素类型推断
+错误，只补 `Dictionary` 注解后编译通过；其视图模型测试的章节跳转断言仍失败，未改
+相关导航逻辑，不把该测试报告为通过。
+
+完整家族旧套件仍有 12 项失败；修改前 `dots_ext_army_explore_v14` 在同一内容与脚本下
+也有全部这 12 项，另加本次新增缩编用例的 3 项失败；修复后这 3 项通过，没有新增失败。
+旧失败涉及 worker authority、旧存档断言、开工包内容/落成、效果奖励等，不能宣称完整套件
+已通过。PlayerController 旧契约测试仍有未改动的 `no frame polling` 失败。
+渲染进程另有既有 FMOD 调试器注册/退出日志；截图与 UI 断言正常完成。
+日志、基线对照与截图在 `.codex-temp/dispatch-20261110/`；UI 反模式扫描已人工复核
+本次新增行，未将全库机械命中数当作本次缺陷数。
+
+## 军事维护实物化（PKMI v6，2026-11-11）
+
+军事维护从“现金账单”改为“实物采购与消耗”：需求 → 国库付款给商人 → 物资交付与运输 →
+库存消耗 → 维修满足率 → 装备完好度或建筑失修。详见
+`docs/cpp-dots-runtime/military-runtime.md` §5.4 与 `docs/plans/military-physical-maintenance.md`。
+
+- Military 新增 `MilitaryMaintenanceRow`（按国家/地块/建筑类型与持有者/兵种分组）、
+  `run_maintenance`、`get_military_maintenance_snapshot`；固定点余量 `acc_q32` 与 5 日窗口进存档。
+- 采购走 opcode 37（`COMMAND_MILITARY_PURCHASE`）与 38/39 回执；`queue_purchase` 只登记订单，
+  `settle_purchase` 才入库/建车队/记账，订单身份进 PKMI section 24。
+- 预算顺序固定为 军饷预占 → 维护份额 → 一般采购，三者共用同一份冻结国库快照。
+- 经济侧新增 `kind == 3` 显式跳过（私营建筑维护不得为军事建筑买单）。
+- 验证：原生自检全绿（1500 日 AI soak `reconcile_max=0`）；三份维护验收用例
+  （snapshot / flow / conservation）均 0 failures；种子 1812289715 的 60×40 世界跑到第 5500 日
+  零错误、账目恒等式为 0。
+
+## 军事维护回执与经济审计（2026-11-10）
+
+`SPEND_CASH` 的 D+1 兼容路径仍调用 Country 财政 reserve/collect：先扣后加，
+国库现金净变化为零。军事桥不再将返回额登记为货币销毁，经济也不再暂存这类
+跨 epoch burn；正式 cohort burn 命令和零误差守恒故障保护保留。维护费真实终端
+支出尚未接入，不能把回执金额当作已销毁现金。C++ 权威、周期和存档布局不变。
+定向回归见 `tests/economy/military_deferred_cash_conservation_test.gd`。
+Windows/Godot 4.6.2：旧 DLL 稳定复现 `money_error=1000`；修复后 Debug/Release
+各通过 37 项检查，含待回执恢复、九日续跑和第十日真实 cohort burn。
+正式 Debug 加载的 `dots_ext_supply_chain_v2` 亦通过该回归；Release 加载
+`dots_ext_cash_audit_v1`。经济 cadence、parity（26 项）、merchant debt 回归通过；
+市场综合测试 246 项中唯一失败为旧的 2x 产出断言与当前 1.5x 配置不符，
+旧 DLL 同样失败。未宣称已恢复玩家当前被 fatal 锁住的进程或完整重放第 5447 日。
+模块 API 检查与定向 diff 检查通过；UTF-8 模式的依赖检查在并行修改的
+`economy_runtime_colonization.cpp` 报 FamilyMembershipEdge 7>6、总量 2182>2181，
+本次未修改该文件或放宽基线。验证日志在 `.codex-temp/military_deferred_*.log`、
+`.codex-temp/cash_audit_*.log`，构建日志在 `.codex-temp/military_cash_build_*.log`。
+
 ## 降雪散点显示（2026-11-09）
 
 逐地块雪幕仍由 WeatherLayer 的 MultiMesh 和已发布 weather_lut 驱动。
@@ -83,6 +168,13 @@ Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通
 
 ## 十二域
 
+经济上游冷启动仍在 `NativeEconomyRuntime` 内实现：多层派生投入进入同一格的
+确定性队列，访问标记阻止循环回边；取样时由企业需求 EMA 重建空货架替代品的
+冻结种子，并按真实投入槽活动约束数量。没有增加脚本模拟、持久列、API 或调度阶段。
+定向回归覆盖零工坊/零采掘场、多层需求、首座实际产出、三账守恒及 scalar/worker
+逐日全哈希。运行证据与完整回归限制见
+[上游冷启动验证](../cpp-dots-runtime/upstream-demand-cold-start-2026-11-10.md)。
+
 每日表在 `native_simulation_host.cpp` 的 modules 表，域内函数在 `native_simulation_stage_<domain>.cpp`。表顺序与 `runtime_domain_stage_order()` 由 `static_assert` 核对。
 
 | 域 | 真正写入者与边界 | 对拍情况 |
@@ -115,7 +207,7 @@ Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通
 | military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1 |
 | natural_resource_recovery | 主线程 | 追赶已提交日期，写资源 slot 与 MapData；与经济自身消耗资源是两个入口 |
 | family / person | 执行线程 | 在经济 FAMILY_COMMIT / PERSON_COMMIT 内运行，没有独立日域 |
-| vision | 主线程 | 读地形/领地/研究信号，写可见性，并提交 Country 观察意图 |
+| vision | 主线程 | 读地形/领地/研究信号与已提交的玩家部队位置，写可见性，并提交 Country 观察意图；部队使用低于城市的移动视野预算 |
 | visual_delivery | 主线程 | 消费已发布的脏类别补丁，写显示与 MapData |
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
@@ -178,7 +270,7 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
 | country | PKCN v14 | country | environment |
-| military | PKMI v2 | country | country |
+| military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
 | economy | ECP2 schema 60 | economy | country、effect |
 | family | 在 ECP2 内 | economy | economy |
@@ -194,7 +286,10 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 继续态里容易漏的字段（每项都曾造成读档后分叉，已修复）：
 
 - ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
-- PKMI2：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行。`military_for_each_lot_ordered` 不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
+- PKMI4：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行；
+  section 23 保存玩家自动探路任务（任务行、选点、seen/visited/blocked、观察点、日期、返程）。
+  trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
+  不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
 - PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1）、军事事件转发进度（MDJ1）。
 - CLM2 v9：权威 extras 与天气初始化状态。
 
@@ -212,9 +307,15 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 - `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
 - `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2147 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
 
-## 部队指挥 UI（2026-11-08）
+## 部队指挥 UI（2026-11-10）
 
-已接入固定指挥区、路径/区域草稿、显式确认/取消、停止任务与姿态。部队页为 520 设计像素单页，军事权威与存档不变。输入/接线检查及 1280×720、1920×1080 渲染夹具已验证，未完成实战长时间与触摸/手柄验收；扩展检查的失败与具体契约见 [部队指挥交互](../ui/military-army-controls.md)。
+已接入固定指挥区、路径/区域/探路草稿、显式确认/取消、停止任务与姿态。探路只生成中心 +
+半径的选点并提交 `army.explore`，不调用路径预览；Native 任务、战斗暂停/恢复、返程与
+PKMI v6 已落地（section 23 探路 / 24 采购订单 / 25 维护行），Host 只合并 explored-only trail。部队页为 520 设计像素单页，
+军事权威与存档边界不变。输入/接线、原生探路集成、视野、存档契约及 1280/1920/520/21:9
+真实渲染夹具已验证；100k 军事日 p95 与征兵 smoke fixture 仍未达标，详见
+[部队自动探路计划](../plans/army-auto-exploration-plan.md) 与
+[部队指挥交互](../ui/military-army-controls.md)。
 
 ## 军需需求接入市场（2026-11-08）
 

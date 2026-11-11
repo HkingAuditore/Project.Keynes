@@ -63,17 +63,27 @@ func fiscal_history() -> EconomyFiscalHistory:
 	return _fiscal_history
 
 
-## 每个已提交日推进一次国库收支序列。只读一次财政快照，不做逐格聚合，
-## 与产值账本一样在面板关闭时也继续累加。
-func sample_fiscal_history() -> bool:
+## 每个已提交日推进一次国库收支序列。财政快照用来拆分税种，国库现金用来
+## 校准多日结算造成的真实净变化；两者都不做逐格聚合，面板关闭时也继续采样。
+func sample_fiscal_history(committed_day: int = -1) -> bool:
 	var context := _country_context()
 	if not bool(context.get("ok", false)):
 		return false
 	var facade = context.facade
-	if facade == null or not facade.has_method("fiscal_snapshot"):
+	if facade == null:
 		return false
 	var handle := int(context.country_handle)
-	return _fiscal_history.sample(handle, facade.fiscal_snapshot(handle))
+	var fiscal: Dictionary = {}
+	if facade.has_method("fiscal_snapshot"):
+		fiscal = facade.fiscal_snapshot(handle)
+	# 国家摘要已经带同一份权威国库现金；只有旧快照缺字段时才查一次国库，
+	# 避免为了一个标量每日搬运整份物资清单。
+	var treasury_cash := int(context.summary.get("cash", -1))
+	if treasury_cash < 0 and facade.has_method("treasury_snapshot"):
+		var treasury: Dictionary = facade.treasury_snapshot(handle)
+		if bool(treasury.get("ok", false)) and treasury.has("cash"):
+			treasury_cash = int(treasury.get("cash", 0))
+	return _fiscal_history.sample(handle, fiscal, treasury_cash, committed_day)
 
 
 func strata_table() -> SocialStrataTable:
@@ -707,17 +717,42 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 	}
 	# 财政页的军事只读实付板块。原生只给 30 日滑窗累计，这里统一折成日均，
 	# 三个通道口径相同（否则玩家会把 30 日总额当成一天的花销）。
-	section.merge(military_spending_model(snapshot), true)
+	section.merge(military_spending_model(snapshot,
+		_military_maintenance_model(facade, country_handle)), true)
 	model["military"] = section
 	return section
+
+
+## 维护实物化（docs/plans/military-physical-maintenance.md D7 / S4-6）的模型入口。
+##
+## 两次门面调用（`maintenance_summary()` + `maintenance_snapshot()`）共享 facade 的
+## 整形缓存，同一刷新里原生只读一次。旧 DLL 没有这个方法 → `supported = false`，
+## 面板写「实物维护未接通」，不再拿现金口径冒充维护。
+func _military_maintenance_model(facade, country_handle: int) -> Dictionary:
+	if facade == null or not facade.has_method("maintenance_supported"):
+		return {"supported": false}
+	if not bool(facade.call("maintenance_supported")):
+		return {"supported": false}
+	var summary = facade.call("maintenance_summary", country_handle)
+	var rows = facade.call("maintenance_snapshot", country_handle)
+	return {
+		"supported": true,
+		"summary": summary if summary is Dictionary else {},
+		"rows": rows if rows is Array else [],
+	}
 
 
 ## 军事支出视图（财政页只读板块用）。输入 `get_military_country_snapshot` 的
 ## 原始快照，输出三个通道的日均实付与招募集训的等待装备计数。
 ##
+## `maintenance` 是维护实物化的模型（见 `_military_maintenance_model`）：`supported`、
+## `summary`（聚合整数）与 `rows`（逐对象明细）。缺省 `{}` 表示「旧 DLL，没有实物维护」，
+## 此时只多一个 `maintenance_is_physical = true` 的语义标记，其余维护键全 0/空。
+##
 ## 招募本身不拨预算：这一点由 `recruitment_funded = false` 明确表达，
 ## 面板据此把招募行标成「不拨款」，而不是显示 0。
-static func military_spending_model(snapshot: Dictionary) -> Dictionary:
+static func military_spending_model(snapshot: Dictionary,
+		maintenance: Dictionary = {}) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"available": false}
 	if not bool(snapshot.get("has_policy", false)):
@@ -737,6 +772,11 @@ static func military_spending_model(snapshot: Dictionary) -> Dictionary:
 			if bool(row.get("equipment_ready", false)):
 				continue
 			waiting_equipment += maxi(0, int(row.get("count", 0)))
+	# ---- 维护实物化：满足率/失修/短缺由原生按 (国家, 地块, 类型) 判定 ----
+	var maintenance_supported := bool(maintenance.get("supported", false))
+	var summary: Dictionary = maintenance.get("summary", {}) \
+		if maintenance.get("summary", null) is Dictionary else {}
+	var maintenance_rows := maintenance_detail_rows(maintenance.get("rows", []))
 	return {
 		"available": true,
 		"wage_paid_last_period": payroll_30 / 30,
@@ -778,7 +818,97 @@ static func military_spending_model(snapshot: Dictionary) -> Dictionary:
 		"procurement_used": maxi(0, int(snapshot.get("budget_procurement_used", 0))),
 		"procurement_deferred_units": maxi(0,
 			int(snapshot.get("budget_procurement_deferred_units", 0))),
+		# ---- 维护实物化（D7 / S4-6）----
+		# 「维护」通道从此描述**实物维修采购**：国库付给商人换维修材料，材料到货后
+		# 才计入满足率。`maintenance_paid_last_period` 仍是「实际结算的维护花费」
+		# （30 日窗口 ÷ 30），来源不变；下面这组键描述的是这笔钱买到的实物结果。
+		"maintenance_is_physical": true,
+		"maintenance_supported": maintenance_supported,
+		"maintenance_ratio_bp": clampi(
+			int(summary.get("weighted_ratio_bp", 0)), 0, 10000),
+		"maintenance_disrepair_rows": maxi(0, int(summary.get("disrepair_rows", 0))),
+		"maintenance_shortage_rows": maxi(0, int(summary.get("shortage_rows", 0))),
+		"maintenance_object_rows": maxi(0, int(summary.get("rows", 0))),
+		"maintenance_need_goods": maxi(0, int(summary.get("need_goods", 0))),
+		"maintenance_stock_goods": maxi(0, int(summary.get("stock_goods", 0))),
+		"maintenance_inbound_goods": maxi(0, int(summary.get("inbound_goods", 0))),
+		# 逐对象明细（已按短缺优先排序）。面板只画前 N 条，但整表留在这里，
+		# 「为什么是 0 座失修」这类追问不用再去查原生。
+		"maintenance_rows": maintenance_rows,
+		# 一行摘要的变更签名：维护读数天天变，财政页的节流比较需要它。
+		"maintenance_signature": maintenance_signature(maintenance_rows, summary),
 	}
+
+
+## 逐对象明细的展示投影。原生行保留 `*_goods` / `*_bp` / `*_x10` 后缀（毫单位、
+## 万分比、十分之一日），这里改成面板读得懂的短键，并附上整数换算好的文本。
+## 口径不变：`need` / `stock` / `inbound` 仍是 GOODS_SCALE，`ratio` 仍是万分比，
+## `days_cover` 仍是「十分之一日」（-1 = 无需求）。
+static func maintenance_detail_rows(rows) -> Array:
+	var out: Array = []
+	if not rows is Array:
+		return out
+	for row_value in (rows as Array):
+		if not row_value is Dictionary:
+			continue
+		var row: Dictionary = row_value
+		var days_cover := int(row.get("days_cover_x10", -1))
+		out.append({
+			"id": String(row.get("id", "")),
+			"name": String(row.get("name", "")),
+			"kind": int(row.get("kind", 0)),
+			"kind_name": String(row.get("kind_name", "")),
+			"cell": int(row.get("cell", -1)),
+			"units": maxi(0, int(row.get("units", 0))),
+			"need": maxi(0, int(row.get("daily_need_goods", 0))),
+			"stock": maxi(0, int(row.get("stock_goods", 0))),
+			"inbound": maxi(0, int(row.get("inbound_goods", 0))),
+			"ratio": clampi(int(row.get("ratio_bp", 0)), 0, 10000),
+			"days_cover": days_cover,
+			"days_text": cover_days_text(days_cover),
+			"disrepair": int(row.get("disrepair", 0)) != 0,
+			"shortage_reason": int(row.get("shortage_reason", 0)),
+			"reason_text": String(row.get("reason_text", "—")),
+			"need_text": goods_text(int(row.get("daily_need_goods", 0))),
+			"inbound_text": goods_text(int(row.get("inbound_goods", 0))),
+		})
+	return out
+
+
+## GOODS_SCALE（1000）毫单位 → 一位小数的纯整数文本。「—」表示没有量，
+## 不是 0：维护行里 0 和「没有需求」是两件事。
+static func goods_text(milli: int) -> String:
+	var value := maxi(0, milli)
+	if value <= 0:
+		return "—"
+	if value >= 10000000:
+		return "%d" % (value / 1000)
+	return "%d.%d" % [value / 1000, (value % 1000) / 100]
+
+
+## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不用浮点。
+static func cover_days_text(days_cover_x10: int) -> String:
+	if days_cover_x10 < 0:
+		return "—"
+	if days_cover_x10 % 10 == 0:
+		return "%d 日" % (days_cover_x10 / 10)
+	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
+
+
+## 明细 + 汇总的变更签名。只取整数与短串，不给每帧比较造大字符串。
+static func maintenance_signature(rows: Array, summary: Dictionary) -> int:
+	var signature := 17
+	for row in rows:
+		var entry: Dictionary = row
+		signature = signature * 31 + int(entry.get("need", 0))
+		signature = signature * 31 + int(entry.get("stock", 0))
+		signature = signature * 31 + int(entry.get("inbound", 0))
+		signature = signature * 31 + int(entry.get("ratio", 0))
+		signature = signature * 31 + int(entry.get("days_cover", -1))
+		signature = signature * 31 + (1 if bool(entry.get("disrepair", false)) else 0)
+		signature = signature * 31 + int(entry.get("shortage_reason", 0))
+	signature = signature * 31 + int(summary.get("weighted_ratio_bp", 0))
+	return signature
 
 
 

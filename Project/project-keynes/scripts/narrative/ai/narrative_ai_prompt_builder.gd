@@ -84,12 +84,15 @@ static func build_messages(
 		recent_chronicle: Array = [],
 		chain_hint: String = "",
 		allowed_goods: PackedStringArray = PackedStringArray(),
-		allowed_buildings: PackedStringArray = PackedStringArray()
+		allowed_buildings: PackedStringArray = PackedStringArray(),
+		fact_hint: String = "",
+		state_hint: String = ""
 ) -> Array[Dictionary]:
 	var goods_list := _resolve_goods_list(allowed_goods, cell_ctx)
 	var buildings_list := _resolve_buildings_list(allowed_buildings, cell_ctx)
 	var system_content := _build_system_prompt(goods_list, buildings_list)
-	var user_content := _build_user_prompt(cell_ctx, recent_chronicle, chain_hint, goods_list, buildings_list)
+	var user_content := _build_user_prompt(
+		cell_ctx, recent_chronicle, chain_hint, goods_list, buildings_list, fact_hint, state_hint)
 	var messages: Array[Dictionary] = [
 		{
 			"role": "system",
@@ -224,7 +227,8 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"   - `ADD_EVENT_WEIGHT_BIAS`（调整后续同类事件触发权重）：设置 `tag_key`（如 `famine`, `trade`, `unrest`, `harvest`, `plague`, `climate`）、`int_value`（-200..400）及 `duration_days`（30..365）。",
 		"   - `SCHEDULE_FOLLOWUP_EVENT`（预约多阶段后续事件链）：设置 `target_key`（后续事件标识或链条名）、`duration_days`（多少日后触发，15..180）以及 `ai_followup_prompt`（后续事件的走向要点）。",
 		"4. 可参考的建筑类型列表：[%s]。" % buildings_note,
-		"5. 文风要求：只写事实与后果，用最短句子；不得使用修辞、比喻、典故、感叹、场景铺陈与人物对白；不得出现超越当前时代的现代词汇；严禁输出 JSON 之外的任何文本。",
+		"5. **叙事文本只写处境与后果，不写可测的数据读数**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里禁止写气温、降水量、价格、库存、人口、满意度、百分比起伏、金额、具体日期或持续天数这类读取值——这些事件会被缓存数月后复用，读数一定过期。叙述需要的泛指数量照常写：三人、数十户、三成、半数都可以。确实要指代气温时写占位符 `{temperature}`（已含单位，不要再补 ℃ 或「度」）。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
+		"6. 文风要求：只写事实与后果，用最短句子；不得使用修辞、比喻、典故、感叹、场景铺陈与人物对白；不得出现超越当前时代的现代词汇；严禁输出 JSON 之外的任何文本。",
 	])
 	return "\n".join(lines)
 
@@ -234,7 +238,9 @@ static func _build_user_prompt(
 		recent_chronicle: Array,
 		chain_hint: String,
 		goods_list: PackedStringArray,
-		buildings_list: PackedStringArray
+		buildings_list: PackedStringArray,
+		fact_hint: String = "",
+		state_hint: String = ""
 ) -> String:
 	var day := int(cell_ctx.get("day", 1))
 	var country_name := String(cell_ctx.get("country_name", "我国"))
@@ -332,6 +338,17 @@ static func _build_user_prompt(
 				lines.append("  * 第 %d 日：《%s》 -> %s" % [r_day, r_title, r_outcome])
 			else:
 				lines.append("  * %s" % String(rec))
+
+	if not state_hint.strip_edges().is_empty():
+		lines.append("")
+		lines.append("【当前长期状态（事件必须回应这个状态，不要写成一次性偶发）】")
+		lines.append(state_hint.strip_edges())
+		lines.append("这类事件会被缓存、在该状态再次出现时才展示：只写处境与后果，不写当日读数（数量词可用）。")
+
+	if not fact_hint.strip_edges().is_empty():
+		lines.append("")
+		lines.append("【本次触发事实（事件必须直接回应该事实，不要另起场景）】")
+		lines.append(fact_hint.strip_edges())
 
 	if not chain_hint.strip_edges().is_empty():
 		lines.append("")

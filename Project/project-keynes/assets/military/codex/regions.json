@@ -281,6 +281,12 @@
   256,
   256
  ],
+ "military.unit.shield_bearers": [
+  0,
+  1792,
+  256,
+  256
+ ],
  "military.unit.siege_train": [
   1024,
   256,

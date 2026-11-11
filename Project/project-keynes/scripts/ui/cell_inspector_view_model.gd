@@ -70,6 +70,11 @@ const STATE_BUILDING_ROLES: Array[Dictionary] = [
 ]
 ## Same order as MilitaryUnitClass (military_core.h), used for unit icon keys.
 const MILITARY_UNIT_CLASS_IDS: Array[String] = ["line", "mobile", "artillery"]
+## 维护快照的 `kind`：0 = 建筑组，1 = 装备组（D7 契约）。地块档案只读建筑组。
+## `object_id` 是目录 `state_buildings` 的稠密下标，与 `state_building_materials()`
+## 用的是同一套下标。
+const MAINTENANCE_KIND_BUILDING := 0
+const MAINTENANCE_REASON_TEXT: Array[String] = ["—", "缺货", "预算不足", "运输未到"]
 const CONSTRUCTION_SECTOR_LABELS := {
 	"agriculture": "农业",
 	"extractive": "采掘",
@@ -2193,10 +2198,14 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 	for count in army_units.values():
 		army_heads += int(count)
 	var building_rows: Array = catalog.get("buildings", [])
+	# 本格的建筑维护行（D7）：有实物快照就按建筑类型各读各的满足率/可用天数/失修，
+	# 没有（旧 DLL / 未接通）就退回国家级 `disrepair` 旗标，行为与旧版一致。
+	var maintenance_by_index := _military_maintenance_rows(facade, cell_idx)
 	var buildings: Array = []
 	for role_def in STATE_BUILDING_ROLES:
 		buildings.append(_state_building_entry(role_def, snapshot,
-			building_rows, researched, gate_known, can_build, facade, cell_idx))
+			building_rows, researched, gate_known, can_build, facade, cell_idx,
+			maintenance_by_index))
 	# 驻军条上的读数一律照实给（包括 0）：玩家要靠这些数字判断"这一格能养多少兵、
 	# 还差多少、征召排了多少、训练快不快"，所以没有部队时也要显示 0 而不是整条消失。
 	return {
@@ -2224,6 +2233,33 @@ func _military_cell_model(facade, snapshot: Dictionary, country: Dictionary,
 		},
 		"buildings": buildings,
 	}
+
+
+## 本格建筑维护行（D7）：`maintenance_snapshot()` 按 (kind = 建筑, cell) 过滤，
+## 键是目录稠密下标 —— 原生行的 `object_id` 与 `state_building_materials()` 用同一套
+## 下标，所以这里可以直接按 `state_building_role_rows()` 的 `index` 取。
+##
+## 快照不可用（旧 DLL、未配置、门面是测试夹具）时返回空表，调用方据此回落到国家级的
+## `disrepair` 旗标。只读一次：facade 侧按军事日缓存，不逐行查原生。
+func _military_maintenance_rows(facade, cell_idx: int) -> Dictionary:
+	var out := {}
+	if facade == null or not facade.has_method("maintenance_snapshot"):
+		return out
+	var rows = facade.maintenance_snapshot()
+	if not rows is Array:
+		return out
+	for raw in rows:
+		if not raw is Dictionary:
+			continue
+		var row: Dictionary = raw
+		if int(row.get("kind", -1)) != MAINTENANCE_KIND_BUILDING:
+			continue
+		if int(row.get("cell", -1)) != cell_idx:
+			continue
+		var index := int(row.get("object_id", -1))
+		if index >= 0 and not out.has(index):
+			out[index] = row
+	return out
 
 
 ## 本格兵营座数：逐档座数求和（旧 DLL 没有分档表时退回兵额>0 ? 1 : 0 由调用方处理）。
@@ -2323,7 +2359,8 @@ func _military_training_rows(snapshot: Dictionary, units: Dictionary) -> Array:
 ## 动作由这里判定，控件只负责画和发请求，避免同一套规则散在渲染层。
 func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 		catalog_rows: Array, researched: PackedStringArray, gate_known: bool,
-		can_build: bool, facade = null, cell_idx: int = -1) -> Dictionary:
+		can_build: bool, facade = null, cell_idx: int = -1,
+		maintenance_by_index: Dictionary = {}) -> Dictionary:
 	var role := int(role_def.get("role", -1))
 	var role_id := String(role_def.get("id", ""))
 	var label := String(role_def.get("label", ""))
@@ -2405,7 +2442,14 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 			action = "rebuild"
 			action_label = "再建"
 			primary_action = "rebuild"
-	var disrepair := bool(snapshot.get("disrepair", false))
+	# 失修按「这一行实际建成的那一档」判定（D7 / S3-2：同格不同建筑各自独立）。
+	# 没有该档的维护行（未建成 / 旧 DLL / 快照为空）时才退回国家级旗标。
+	var built_index := int(current.index) if not current.is_empty() else -1
+	var maintenance: Dictionary = maintenance_by_index.get(built_index, {}) \
+		if built_index >= 0 else {}
+	var disrepair := bool(int(maintenance.get("disrepair", 0)) != 0) \
+		if not maintenance.is_empty() else bool(snapshot.get("disrepair", false))
+	var maintenance_text := _state_building_maintenance_text(maintenance)
 	var effect := ""
 	if not display_row.is_empty():
 		effect = _state_building_effect(role_id, display_row, disrepair)
@@ -2443,6 +2487,12 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 			_state_building_standing_cost(display_row, count))
 	elif action == "locked":
 		tooltip = _state_building_lock_tooltip(role_rows, researched, gate_known)
+	# 实物维护不是「成本」而是「这座建筑现在被养得怎么样」：单独一行，附在提示卡尾部。
+	# 没有维护行（未接通 / 未建成）时整行为空，提示卡与本改动前逐字一致。
+	if not maintenance_text.is_empty():
+		var maintenance_line := "实物维护：%s（5 日结算）" % maintenance_text
+		tooltip = maintenance_line if tooltip.is_empty() \
+			else "%s\n%s" % [tooltip, maintenance_line]
 	return {
 		"role": role_id,
 		"label": label,
@@ -2469,6 +2519,15 @@ func _state_building_entry(role_def: Dictionary, snapshot: Dictionary,
 		"cost_cash_text": String(cost.get("cash_text", "")),
 		"cost_reason": String(cost.get("reason_text", "")),
 		"tooltip": tooltip,
+		# ---- 实物维护（D7 / S4-6）：这一类型自己的满足率 / 可用天数 / 失修 ----
+		# `disrepair` 已按建筑类型判定（无维护行时等于国家级旗标），
+		# `satisfaction_bp` / `cover_days_x10` 是原生整数口径：万分比与十分之一日。
+		"disrepair": disrepair,
+		"maintenance": maintenance,
+		"satisfaction_bp": clampi(int(maintenance.get("ratio_bp", 0)), 0, 10000),
+		"cover_days_x10": int(maintenance.get("days_cover_x10", -1)),
+		"shortage_reason": int(maintenance.get("shortage_reason", 0)),
+		"maintenance_text": maintenance_text,
 	}
 
 
@@ -2822,8 +2881,38 @@ func _state_building_unlocked(row: Dictionary, researched: PackedStringArray,
 	return tech.is_empty() or researched.has(tech)
 
 
+## 一行建筑的实物维护读数：「满足 73% · 可用 3.5 日 · 失修 · 缺货」。
+## 没有维护行（旧 DLL / 未建成 / 快照为空）时返回空串，控件据此保持旧版布局，
+## 而不是画一段「满足 0%」把「读不到」说成「没维护」。
+static func _state_building_maintenance_text(row: Dictionary) -> String:
+	if row.is_empty():
+		return ""
+	var parts := PackedStringArray()
+	parts.append("满足 %d%%" % (clampi(int(row.get("ratio_bp", 0)), 0, 10000) / 100))
+	var days := int(row.get("days_cover_x10", -1))
+	if days >= 0:
+		parts.append("可用 %s" % _maintenance_days_text(days))
+	if int(row.get("disrepair", 0)) != 0:
+		parts.append("失修")
+	var reason := int(row.get("shortage_reason", 0))
+	if reason > 0 and reason < MAINTENANCE_REASON_TEXT.size():
+		parts.append(MAINTENANCE_REASON_TEXT[reason])
+	return " · ".join(parts)
+
+
+## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不经过浮点。
+static func _maintenance_days_text(days_cover_x10: int) -> String:
+	if days_cover_x10 < 0:
+		return "—"
+	if days_cover_x10 % 10 == 0:
+		return "%d 日" % (days_cover_x10 / 10)
+	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
+
+
 ## 一行建筑的效果：兵营=兵额贡献，城防=守备加成（失修折半，与原生一致），
 ## 军校=训练天数倍数。单位只写百分比/倍数，不写货币记号。
+## `disrepair` 由调用方按「建筑类型」判定（D7：同格不同建筑各判各的），
+## 不再是一个国家的单一旗标。
 func _state_building_effect(role_id: String, row: Dictionary,
 		disrepair: bool) -> String:
 	match role_id:

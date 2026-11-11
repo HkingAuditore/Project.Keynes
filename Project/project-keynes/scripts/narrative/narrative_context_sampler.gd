@@ -85,7 +85,8 @@ static func sample_cell_context(
 		map,
 		generator,
 		view_adapter = null,
-		story_flags: Dictionary = {}
+		story_flags: Dictionary = {},
+		include_cohort_details: bool = false
 ) -> Dictionary:
 	var ctx := country_ctx.duplicate(true)
 	ctx["cell_idx"] = cell_idx
@@ -235,7 +236,8 @@ static func sample_cell_context(
 				ctx["satisfaction_norm"] = ctx["satisfaction"]
 
 	if economy_facade.has_method("population_cell_snapshot"):
-		var pop_snap: Dictionary = economy_facade.population_cell_snapshot(cell_idx, false)
+		# 触发扫描只读汇总；执行选项时需取明细，才能找到守恒转账的居民收款人。
+		var pop_snap: Dictionary = economy_facade.population_cell_snapshot(cell_idx, include_cohort_details)
 		# [snapshot-type-guard 2026-11-02] include_details=false 时 native 只回标量汇总，
 		# `funds` 可能是 int 而不是 PackedInt64Array（真机每天一条
 		# "Trying to assign value of type 'int' to PackedInt64Array"）。

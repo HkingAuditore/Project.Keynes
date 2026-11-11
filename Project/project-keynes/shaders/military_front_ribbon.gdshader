@@ -32,6 +32,7 @@ uniform vec4 pencil_color : source_color = vec4(0.15, 0.12, 0.09, 1.0);
 uniform float zigzag_amplitude = 0.42;   // 占线宽比例
 uniform float zigzag_frequency = 9.0;    // 每世界单位的三角波数
 uniform float bead_speed = 0.55;
+uniform sampler2D frontier_grain : repeat_enable, filter_linear_mipmap;
 
 varying vec2 v_data;      // x = 沿边世界距离, y = 垂距
 varying vec4 v_color;     // rgb = 进度色, a = seed
@@ -67,6 +68,9 @@ void fragment() {
 	float fiber = (1.0 - smoothstep(aa, aa * 2.2, abs(dn) - aa * 0.6)) * 0.35;
 
 	vec3 col = v_color.rgb;
+	vec3 stamp = texture(frontier_grain, fract(vec2(v_data.x * 0.035 + seed * 7.0,
+		d * 0.09 + seed * 3.0))).rgb;
+	col *= 0.91 + stamp * 0.16;
 	col = mix(col, pencil_color.rgb, ink_edge);
 	col = mix(col, vec3(1.0, 0.95, 0.82), fiber * 0.45);
 

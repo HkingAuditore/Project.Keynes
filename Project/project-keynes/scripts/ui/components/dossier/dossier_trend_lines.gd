@@ -30,8 +30,8 @@ func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 
-## income / expense 是逐日合计（货币单位），末尾是最近一天；
-## net_text 是当日净额，压在折线右端——那里正好是「今天」。
+## income / expense 是逐日结算读数（货币单位，未结算日沿用上次），末尾是最近一天；
+## net_text 是当前展示窗口的净额（滚动展示时为日均），压在折线右端。
 ## 净额只留数字，单位由右上角那枚金币图标负责（见 MoneyDisplay）。
 func set_series(income: PackedFloat32Array, expense: PackedFloat32Array,
 		net_text: String = "0", net_positive: bool = true) -> void:

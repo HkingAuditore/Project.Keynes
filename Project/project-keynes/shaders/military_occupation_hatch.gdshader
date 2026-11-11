@@ -35,6 +35,7 @@ uniform float hatch_opacity : hint_range(0.0, 1.0) = 0.55;
 uniform vec4 paper_tint : source_color = vec4(0.96, 0.93, 0.86, 1.0);
 uniform float player_slot = -1.0;
 uniform vec4 player_color : source_color = vec4(0.90, 0.73, 0.38, 1.0);
+uniform sampler2D frontier_grain : repeat_enable, filter_linear_mipmap;
 
 varying vec2 v_uv;
 
@@ -104,9 +105,11 @@ void fragment() {
 			// 足迹收细：条纹密到 pixel 以下时退成均匀淡色，避免摩尔纹。
 			float fine = 1.0 - smoothstep(0.20, 0.55, aa);
 			float blotch = pk_paper_blotch(world, lod);
+			vec3 stamp = texture(frontier_grain, fract(world * 0.018)).rgb;
 			float strength = float(lut.g) / 255.0;
 			vec3 base = mix(paper_tint.rgb, ink, 0.25 + strength * 0.35);
 			vec3 col = mix(base, ink, band * fine);
+			col *= 0.93 + stamp * 0.12;
 			float alpha = (0.20 + 0.26 * band * fine + strength * 0.16) * hatch_opacity;
 			alpha *= 0.82 + blotch * 0.5;
 			alpha += strength * 0.20;

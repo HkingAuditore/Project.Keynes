@@ -16,6 +16,8 @@ class_name MilitaryBattleLayer
 ## 交战段进度在一天内大幅变化也触发一次（会战结算的 Δp 跳变）。
 
 const SHADER_PATH: String = "res://shaders/military_battle_ring.gdshader"
+const BATTLE_DECAL_PATH: String = \
+	"res://assets/military/map/military_battle_seal_v1.png"
 const Z_INDEX := 9
 const INSTANCE_CAP := 256
 const BATTLE_PULSE_SECONDS := 0.9
@@ -65,6 +67,9 @@ func _ensure_batch() -> void:
 		return
 	_material = ShaderMaterial.new()
 	_material.shader = shader
+	var battle_decal := load(BATTLE_DECAL_PATH) as Texture2D
+	if battle_decal != null:
+		_material.set_shader_parameter("battle_decal", battle_decal)
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
 	var mm := MultiMesh.new()

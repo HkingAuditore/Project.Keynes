@@ -46,7 +46,23 @@ func _check_models() -> void:
 		and String(treasury.expense_bar.title) == "支出构成")
 	_check("国库卡给出净额且方向正确",
 		String(treasury.get("net_text", "")).begins_with("+")
-		and bool(treasury.get("net_positive", false)))
+		and bool(treasury.get("net_positive", false))
+		and String(treasury.get("net_caption", "")) == "最近结算净收")
+	var history := EconomyFiscalHistory.new()
+	history.sample(7, {
+		"ok": true, "sample_day": 40, "has_settlement": false,
+	}, 1000000, 40)
+	history.sample(7, _fiscal_stub(), 9000000, 41)
+	var rolling_treasury := HudStatusViewModel.build_treasury(
+		true, 9000000, _fiscal_stub(), history, 7)
+	_check("国库卡默认改用滚动日均而非单日结算",
+		bool(rolling_treasury.get("ok", false))
+		and String(rolling_treasury.get("meta", "")) == "近 7 日 · 日均"
+		and String(rolling_treasury.get("window_text", "")).contains("实际 1 日")
+		and String(rolling_treasury.get("note", "")).contains("最近 1 日")
+		and String(rolling_treasury.get("net_caption", "")) == "近 7 日净收 · 日均"
+		and String(rolling_treasury.income_bar.title) == "收入 · 日均"
+		and String(rolling_treasury.expense_bar.title) == "支出 · 日均")
 	var empty_treasury := HudStatusViewModel.build_treasury(false, 0, {})
 	_check("没有结算快照时国库卡给说明而不是空白",
 		not bool(empty_treasury.get("ok", true))
@@ -108,6 +124,7 @@ func _check_card_scene() -> void:
 	_check("国库卡页头与页脚文案正确",
 		(card.get_node("%ValueLabel") as Label).text
 			== UITokens.format_compact_number_cn(123456.0, 2)
+		and (card.get_node("%NetCaption") as Label).text == "最近结算净收"
 		and not (card.get_node("%ValueLabel") as Label).text.contains("¥")
 		and (card.get_node("%ValueIcon") as TextureRect).visible
 		and (card.get_node("%ValueIcon") as TextureRect).texture == MoneyDisplay.ICON
