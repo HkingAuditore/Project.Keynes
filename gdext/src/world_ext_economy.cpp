@@ -1917,17 +1917,6 @@ Dictionary DCWorldExt::get_construction_command_receipts(
         [&] { return runtime->construction_command_receipts(after_receipt_id, limit); });
 }
 
-// Player construction cannot ride `submit_economy_commands`: that batch is
-// fail-closed as soon as StageOps is the effective production writer, which is
-// the shipping configuration. Queue the formal command on the economy owner's
-// inbox instead and let the next epoch apply it (same contract as the canal and
-// family-colonization lanes).
-Dictionary DCWorldExt::migrate_legacy_state_buildings(
-        const Array &states) {
-    if (_economy_runtime == nullptr) return unavailable();
-    return economy_api::migrate_legacy_state_buildings(*runtime_from(_economy_runtime),
-        states);
-}
 
 Dictionary DCWorldExt::queue_treasury_sponsored_build(
         int64_t country_handle, int cell_idx, int type_id,
@@ -2351,10 +2340,6 @@ Dictionary DCWorldExt::get_economy_read_view_status() const {
     return out;
 }
 
-Dictionary DCWorldExt::run_economy_fixed_math_probe(const Dictionary &vectors) const {
-    if (_economy_runtime == nullptr) return unavailable();
-    return runtime_from(_economy_runtime)->fixed_math_probe(vectors);
-}
 
 Dictionary DCWorldExt::run_economy_production_climate_math_probe(
         const Dictionary &vectors) const {
@@ -2710,16 +2695,6 @@ Dictionary DCWorldExt::begin_economy_restore() {
     return out;
 }
 
-Dictionary DCWorldExt::begin_economy_restore_pkec_migrate() {
-    if (_economy_runtime == nullptr) {
-        return unavailable();
-    }
-    Dictionary out =
-        runtime_from(_economy_runtime)->begin_restore_pkec_migrate();
-    if (static_cast<bool>(out.get("ok", false)))
-        invalidate_economy_input_capture_cache(true);
-    return out;
-}
 
 String DCWorldExt::get_economy_restore_rejected_reason() const {
     if (_economy_runtime == nullptr) return String();

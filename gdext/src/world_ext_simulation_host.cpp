@@ -2484,33 +2484,6 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     return out;
 }
 
-Dictionary DCWorldExt::publish_runtime_climate_reference(
-        int64_t day, int64_t state_hash) {
-    Dictionary out;
-    if (!_runtime_host) {
-        out["ok"] = false;
-        out["code"] = "runtime_worker_not_started";
-        return out;
-    }
-    if (day < 0 || state_hash <= 0) {
-        out["ok"] = false;
-        out["code"] = "climate_trace_reference_invalid";
-        return out;
-    }
-    std::string error;
-    if (!_runtime_host->publish_climate_reference(
-            day, static_cast<uint64_t>(state_hash), error)) {
-        out["ok"] = false;
-        out["code"] = String(error.c_str());
-        return out;
-    }
-    out["ok"] = true;
-    out["pending"] = false;
-    out["code"] = "ok";
-    out["day"] = day;
-    out["state_hash"] = state_hash;
-    return out;
-}
 
 Dictionary DCWorldExt::submit_runtime_command(const Dictionary &command) {
     Dictionary out;

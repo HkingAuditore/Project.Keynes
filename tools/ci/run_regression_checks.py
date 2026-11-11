@@ -175,7 +175,7 @@ def main() -> int:
     logs = args.log_dir or Path(tempfile.mkdtemp(prefix="keynes-regression-logs-"))
     logs = logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
-    for guard in ("check_size_ratchet.py", "check_cpp_deps.py", "check_cross_domain_inventory.py", "check_runtime_advancers.py", "check_runtime_switches.py", "check_committed_views.py", "check_save_contracts.py", "check_module_contracts.py", "check_resolve_apply.py", "check_module_api.py", "test_architecture_guards.py", "test_regression_evidence.py"):
+    for guard in ("check_size_ratchet.py", "check_cpp_deps.py", "check_cross_domain_inventory.py", "check_runtime_advancers.py", "check_runtime_switches.py", "check_committed_views.py", "check_save_contracts.py", "check_module_contracts.py", "check_resolve_apply.py", "check_module_api.py", "check_skill_mirrors.py", "check_module_map.py", "world_ext_bindings.py", "test_architecture_guards.py", "test_regression_evidence.py"):
         result = subprocess.run([sys.executable, str(ROOT / "tools/ci" / guard)], check=False)
         if result.returncode:
             return result.returncode

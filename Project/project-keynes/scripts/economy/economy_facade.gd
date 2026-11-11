@@ -1974,8 +1974,7 @@ func end_save() -> Dictionary:
 
 func restore_bytes(bytes: PackedByteArray, _chunk_bytes: int = -1) -> Dictionary:
 	# Production restore is ECP2-only. Bare PKEC streaming is rejected here;
-	# use restore_ecp2() or the explicit begin_economy_restore_pkec_migrate
-	# migrate helper on WorldExt.
+	# use restore_ecp2().
 	if not _configured:
 		return {"ok": false, "reason": "not configured",
 			"restore_rejected_reason": "not configured"}
