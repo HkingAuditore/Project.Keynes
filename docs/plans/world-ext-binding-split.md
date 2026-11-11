@@ -1,6 +1,6 @@
 # DCWorldExt 绑定面按模块拆分方案
 
-状态：阶段 0 已完成（2026-11-10），阶段 1–3 未实施。本页是目标与步骤，不是现状；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
+状态：阶段 0 已完成（2026-11-10），阶段 1 已实现（2026-11-11，验证见 `docs/architecture/feature-status.md`），阶段 2–3 未实施。本页保留目标与步骤；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
 
 ## 要解决的问题
 
@@ -12,7 +12,7 @@
 
 ## 现状度量
 
-统计方法：解析 `world_ext_bind_methods.cpp` 的 `D_METHOD`，按成员函数的定义文件归组；脚本侧按 `.方法名(` 和 `"方法名"` 匹配 `Project/project-keynes` 下的 `scripts`、`tests`、`addons`。按名字匹配会有少量同名误计，量级可信。
+以下为拆分前度量：当时解析 `world_ext_bind_methods.cpp` 的 `D_METHOD`，按成员函数的定义文件归组；脚本侧按 `.方法名(` 和 `"方法名"` 匹配 `Project/project-keynes` 下的 `scripts`、`tests`、`addons`。按名字匹配会有少量同名误计，量级可信。
 
 | 项 | 数值 |
 |---|---|

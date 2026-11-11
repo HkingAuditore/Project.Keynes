@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "bind_file": "gdext/src/world_ext_bind_methods.cpp",
+  "bind_entry": "gdext/src/world_ext_bind_methods.cpp",
+  "bind_file_pattern": "gdext/src/world_ext_bind_{module}.cpp",
   "modules": {
     "core": [
       "world_ext.cpp",
