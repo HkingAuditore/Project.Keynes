@@ -251,6 +251,37 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _technology_era_reward_pool_ids = packed_strings(
         catalog, "technology_era_reward_pool_ids");
     _research_signal_ids = research_signals;
+    _political_regime_ids = packed_strings(catalog, "political_regime_ids");
+    std::vector<int32_t> authored_regime_caps = packed_i32(
+        catalog, "political_regime_capability_bits");
+    if (_political_regime_ids.empty()) {
+        _political_regime_ids = {"local_council", "early_clan"};
+        authored_regime_caps = {0, static_cast<int32_t>(CAP_TREASURY_CONSTRUCTION)};
+    }
+    if (authored_regime_caps.size() != _political_regime_ids.size())
+        return fail("political_regime_catalog_shape_invalid");
+    _political_regime_index.clear();
+    _political_regime_capability_bits.clear();
+    for (size_t i = 0; i < _political_regime_ids.size(); ++i) {
+        if (_political_regime_ids[i].empty() ||
+            !_political_regime_index.emplace(_political_regime_ids[i],
+                                              static_cast<int32_t>(i)).second ||
+            authored_regime_caps[i] < 0)
+            return fail("political_regime_catalog_invalid");
+        _political_regime_capability_bits.push_back(
+            static_cast<uint32_t>(authored_regime_caps[i]));
+    }
+    _political_regime_catalog_hash = static_cast<uint64_t>(dict_num<int64_t>(
+        catalog, "political_regime_catalog_hash", 0));
+    if (_political_regime_catalog_hash == 0) {
+        uint64_t hash = FNV_OFFSET;
+        for (size_t i = 0; i < _political_regime_ids.size(); ++i) {
+            hash_string(hash, _political_regime_ids[i]);
+            hash_bytes(hash, &_political_regime_capability_bits[i],
+                       sizeof(uint32_t));
+        }
+        _political_regime_catalog_hash = hash;
+    }
     _good_index.clear();
     _technology_index.clear();
     for (int32_t i = 0; i < static_cast<int32_t>(_good_ids.size()); ++i) _good_index[_good_ids[i]] = i;
@@ -523,6 +554,15 @@ int32_t NativeCountryRuntime::append_country(const std::string &stable_id,
     _countries.territory_count.push_back(0);
     _countries.cash.push_back(cash);
     _countries.state_version.push_back(1);
+    const auto early = _political_regime_index.find("early_clan");
+    const int32_t default_regime = early == _political_regime_index.end()
+        ? 0 : early->second;
+    _countries.political_regime_id.push_back(default_regime);
+    _countries.political_regime_capability_bits.push_back(
+        default_regime >= 0 && static_cast<size_t>(default_regime) <
+            _political_regime_capability_bits.size()
+            ? _political_regime_capability_bits[static_cast<size_t>(default_regime)]
+            : 0u);
     _economy_asset_reserved_cash.resize(_countries.active.size(), 0);
     _economy_asset_reserved_goods.resize(
         _countries.active.size() * _good_ids.size(), 0);
@@ -1037,6 +1077,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
 
     const std::vector<std::string> ids = packed_strings(packet, "country_ids");
     const std::vector<std::string> names = packed_strings(packet, "country_names");
+    const std::vector<std::string> regime_ids = packed_strings(packet, "regime_ids");
     const std::vector<int64_t> cash = packed_i64(packet, "country_cash");
     const std::vector<int32_t> territory_offsets = packed_i32(packet, "territory_offsets");
     const std::vector<int32_t> territory_cells = packed_i32(packet, "territory_cells");
@@ -1145,6 +1186,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
         _starting_country_slot = slot;
     } else {
         if (names.size() != ids.size() || (!cash.empty() && cash.size() != ids.size()) ||
+            (!regime_ids.empty() && regime_ids.size() != ids.size()) ||
             territory_offsets.size() != ids.size() + 1 || territory_offsets.front() != 0 ||
             territory_offsets.back() != static_cast<int32_t>(territory_cells.size()))
             return fail("country_bootstrap_shape_invalid");
@@ -1167,6 +1209,11 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
             (!research_auto_purchase.empty() &&
              research_auto_purchase.size() != ids.size()))
             return fail("country_bootstrap_research_shape_invalid");
+		if (!regime_ids.empty()) {
+			for (const std::string &regime_key : regime_ids)
+				if (_political_regime_index.find(regime_key) == _political_regime_index.end())
+					return fail("country_bootstrap_political_regime_invalid");
+		}
 
         std::unordered_set<std::string> stable_ids;
         for (size_t i = 0; i < ids.size(); ++i) {
@@ -1174,6 +1221,16 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                 return fail("country_bootstrap_identity_invalid");
             if (territory_offsets[i] == territory_offsets[i + 1]) return fail("country_bootstrap_zero_territory");
             append_country(ids[i], names[i], cash.empty() ? 0 : cash[i]);
+            if (!regime_ids.empty()) {
+                const auto found = _political_regime_index.find(regime_ids[i]);
+                if (found == _political_regime_index.end())
+                    return fail("country_bootstrap_political_regime_invalid");
+                const int32_t regime = found->second;
+                _countries.political_regime_id[i] = regime;
+                _countries.political_regime_capability_bits[i] =
+                    static_cast<size_t>(regime) < _political_regime_capability_bits.size()
+                    ? _political_regime_capability_bits[static_cast<size_t>(regime)] : 0u;
+            }
         }
         for (size_t slot = 0; slot < ids.size(); ++slot) {
             for (int32_t edge = territory_offsets[slot]; edge < territory_offsets[slot + 1]; ++edge) {
@@ -1395,6 +1452,14 @@ bool NativeCountryRuntime::validate_admission_command(
     if (command.effective_day < 0 || command.sequence < 0) {
         error = "country_command_order_invalid";
         return false;
+    }
+    if (command.opcode == COMMAND_SET_POLITICAL_REGIME) {
+        if (command.stable_id.empty() ||
+            _political_regime_index.find(command.stable_id) ==
+                _political_regime_index.end()) {
+            error = "political_regime_invalid";
+            return false;
+        }
     }
     if (command.observed_generation != 0 &&
         command.observed_generation != _generation) {
@@ -2089,7 +2154,7 @@ bool NativeCountryRuntime::military_opcode_self_test(std::string &error) {
         error = "country_military_test_stale_handle_accepted";
         return false;
     }
-    // PKCN v14 round-trip with an inactive country record.
+    // PKCN v15 round-trip with an inactive country record and political regime.
     std::vector<uint8_t> saved;
     if (!encode_save(saved, error)) return false;
     const uint64_t expected_hash = compute_state_hash();
@@ -2616,11 +2681,14 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.building_type_count = static_cast<uint32_t>(_building_type_ids.size());
     out.research_signal_words = static_cast<uint32_t>(std::max(0, _research_signal_words));
     out.research_signal_count = static_cast<uint32_t>(_research_signal_ids.size());
-    out.catalog_hash = _technology_catalog_identity_hash;
+    out.catalog_hash = _technology_catalog_identity_hash ^ _political_regime_catalog_hash;
     out.bootstrapped = true;
     out.research_active_index_valid = true;
     out.country_active = _countries.active;
     out.country_generation = _countries.generation;
+    out.country_political_regime_ids = _countries.political_regime_id;
+    out.country_political_regime_capabilities =
+        _countries.political_regime_capability_bits;
     out.country_stable_ids = _countries.stable_id;
     out.country_display_names = _countries.display_name;
     out.research_active_country_slots = _research_active_country_slots;
@@ -2785,6 +2853,8 @@ bool NativeCountryRuntime::export_pod_snapshot(
         out.country_count != out.country_generation.size() ||
         out.country_count != out.country_active.size() ||
         out.country_count != out.country_state_version.size() ||
+        out.country_count != out.country_political_regime_ids.size() ||
+        out.country_count != out.country_political_regime_capabilities.size() ||
         out.country_count * out.good_count != out.country_goods.size() ||
         out.research_cost_factor.size() != out.country_count ||
         out.research_efficiency.size() != out.country_count * 4u ||
@@ -2815,7 +2885,7 @@ bool NativeCountryRuntime::export_pod_catalog(
         error = "country_not_bootstrapped";
         return false;
     }
-    out.catalog_hash = _technology_catalog_identity_hash;
+    out.catalog_hash = _technology_catalog_identity_hash ^ _political_regime_catalog_hash;
     out.technology_count = static_cast<uint32_t>(_technology_ids.size());
     out.technology_words = static_cast<uint32_t>(std::max(0, _technology_words));
     out.technology_points_good_id = _technology_points_good_id;
@@ -2842,6 +2912,9 @@ bool NativeCountryRuntime::export_pod_catalog(
     out.reveal_condition_refs = _technology_reveal_condition_refs;
     out.reveal_condition_values = _technology_reveal_condition_values;
     out.starting_technologies = _starting_technologies;
+    out.political_regime_ids = _political_regime_ids;
+    out.political_regime_capability_bits = _political_regime_capability_bits;
+    out.political_regime_catalog_hash = _political_regime_catalog_hash;
     out.research_conditions_complete =
         out.research_condition_offsets.size() ==
             static_cast<size_t>(out.technology_count) + 1u &&
@@ -3398,6 +3471,15 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             batch.countries.territory_count.push_back(1);
             batch.countries.cash.push_back(0);
             batch.countries.state_version.push_back(1);
+            const auto early_regime = _political_regime_index.find("early_clan");
+            const int32_t default_regime = early_regime == _political_regime_index.end()
+                ? 0 : early_regime->second;
+            batch.countries.political_regime_id.push_back(default_regime);
+            batch.countries.political_regime_capability_bits.push_back(
+                default_regime >= 0 && static_cast<size_t>(default_regime) <
+                    _political_regime_capability_bits.size()
+                    ? _political_regime_capability_bits[static_cast<size_t>(default_regime)]
+                    : 0u);
             batch.technologies.resize(static_cast<size_t>(new_slot + 1) * _technology_words, 0);
             batch.goods.resize(static_cast<size_t>(new_slot + 1) * _good_ids.size(), 0);
             batch.discovered.resize(static_cast<size_t>(new_slot + 1) * _technology_words, 0);
@@ -3538,6 +3620,25 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
                 ++batch.countries.state_version[static_cast<size_t>(slot)];
                 mark_country(slot);
             }
+            event_country_handle = command.target_handle;
+            event_new_country_slot = slot;
+        } else if (command.opcode == COMMAND_SET_POLITICAL_REGIME) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) {
+                error = "country_handle_invalid"; break;
+            }
+            const auto found = _political_regime_index.find(command.stable_id);
+            if (found == _political_regime_index.end()) {
+                error = "political_regime_invalid"; break;
+            }
+            const int32_t regime = found->second;
+            batch.countries.political_regime_id[static_cast<size_t>(slot)] = regime;
+            batch.countries.political_regime_capability_bits[static_cast<size_t>(slot)] =
+                regime >= 0 && static_cast<size_t>(regime) <
+                    _political_regime_capability_bits.size()
+                    ? _political_regime_capability_bits[static_cast<size_t>(regime)] : 0u;
+            ++batch.countries.state_version[static_cast<size_t>(slot)];
+            mark_country(slot);
             event_country_handle = command.target_handle;
             event_new_country_slot = slot;
         } else if (command.opcode == COMMAND_CONSUME_TREASURY_GOODS) {
@@ -5226,6 +5327,10 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
         repaired.research_purchased_total.assign(country_count, 0);
     if (repaired.research_consumed_total.size() != country_count)
         repaired.research_consumed_total.assign(country_count, 0);
+    if (repaired.country_political_regime_ids.size() != country_count)
+        repaired.country_political_regime_ids.assign(country_count, 0);
+    if (repaired.country_political_regime_capabilities.size() != country_count)
+        repaired.country_political_regime_capabilities.assign(country_count, 0);
     const auto repair_signal_csr = [&](std::vector<int32_t> &offsets,
                                        size_t payload_size) {
         if (offsets.size() == country_count + 1u &&
@@ -5257,6 +5362,8 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
         repaired.country_display_names.size() == country_count &&
         repaired.territory_count.size() == country_count &&
         repaired.country_state_version.size() == country_count &&
+        repaired.country_political_regime_ids.size() == country_count &&
+        repaired.country_political_regime_capabilities.size() == country_count &&
         repaired.country_cash.size() == country_count &&
         repaired.country_goods.size() == country_count *
             static_cast<size_t>(repaired.good_count) &&
@@ -5361,6 +5468,9 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     _research_active_country_slots = repaired.research_active_country_slots;
     _countries.territory_count = repaired.territory_count;
     _countries.state_version = repaired.country_state_version;
+    _countries.political_regime_id = repaired.country_political_regime_ids;
+    _countries.political_regime_capability_bits =
+        repaired.country_political_regime_capabilities;
     _countries.cash = repaired.country_cash;
     _country_goods = repaired.country_goods;
     _cell_country_slot = repaired.cell_country_slot;
@@ -5492,6 +5602,68 @@ Dictionary NativeCountryRuntime::country_summary(int64_t handle) const {
     out["cash"] = _countries.cash[static_cast<size_t>(slot)];
     out["nonzero_good_count"] = nonzero_goods;
     out["technology_count"] = technologies;
+    out["state_version"] = static_cast<int64_t>(
+        _countries.state_version[static_cast<size_t>(slot)]);
+    out["political_regime_id"] = _countries.political_regime_id[
+        static_cast<size_t>(slot)];
+    const int32_t regime = _countries.political_regime_id[
+        static_cast<size_t>(slot)];
+    out["political_regime_key"] = regime >= 0 &&
+            static_cast<size_t>(regime) < _political_regime_ids.size()
+        ? String::utf8(_political_regime_ids[static_cast<size_t>(regime)].c_str())
+        : String();
+    out["political_regime_capability_bits"] = static_cast<int64_t>(
+        _countries.political_regime_capability_bits[static_cast<size_t>(slot)]);
+    Dictionary politics;
+    politics["regime_id"] = _countries.political_regime_id[static_cast<size_t>(slot)];
+    politics["regime_key"] = out["political_regime_key"];
+    politics["capability_bits"] = out["political_regime_capability_bits"];
+    politics["can_treasury_construction"] =
+        (_countries.political_regime_capability_bits[static_cast<size_t>(slot)] &
+         CAP_TREASURY_CONSTRUCTION) != 0;
+    politics["state_version"] = out["state_version"];
+    out["politics"] = politics;
+    out["capability_bits"] = out["political_regime_capability_bits"];
+    out["can_treasury_construction"] = politics["can_treasury_construction"];
+    out["generation"] = static_cast<int64_t>(_generation);
+    return out;
+}
+
+int32_t NativeCountryRuntime::political_regime_id_for_slot(int32_t slot) const {
+    if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size()) ||
+        _countries.active[static_cast<size_t>(slot)] == 0 ||
+        static_cast<size_t>(slot) >= _countries.political_regime_id.size())
+        return -1;
+    return _countries.political_regime_id[static_cast<size_t>(slot)];
+}
+
+uint32_t NativeCountryRuntime::political_regime_capabilities_for_slot(
+        int32_t slot) const {
+    if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size()) ||
+        _countries.active[static_cast<size_t>(slot)] == 0 ||
+        static_cast<size_t>(slot) >= _countries.political_regime_capability_bits.size())
+        return 0;
+    return _countries.political_regime_capability_bits[static_cast<size_t>(slot)];
+}
+
+Dictionary NativeCountryRuntime::political_regime_snapshot(int64_t handle) const {
+    int32_t slot = -1;
+    if (!validate_handle(static_cast<uint64_t>(handle), slot))
+        return fail("country_handle_invalid");
+    const int32_t regime = political_regime_id_for_slot(slot);
+    Dictionary out;
+    out["ok"] = true;
+    out["country_handle"] = handle;
+    out["regime_id"] = regime;
+    out["regime_key"] = regime >= 0 && static_cast<size_t>(regime) <
+            _political_regime_ids.size()
+        ? String::utf8(_political_regime_ids[static_cast<size_t>(regime)].c_str())
+        : String();
+    out["capability_bits"] = static_cast<int64_t>(
+        political_regime_capabilities_for_slot(slot));
+    out["can_treasury_construction"] =
+        (political_regime_capabilities_for_slot(slot) & CAP_TREASURY_CONSTRUCTION) != 0;
+    out["catalog_hash"] = static_cast<int64_t>(_political_regime_catalog_hash);
     out["state_version"] = static_cast<int64_t>(
         _countries.state_version[static_cast<size_t>(slot)]);
     out["generation"] = static_cast<int64_t>(_generation);
@@ -9802,10 +9974,14 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
     out.cell_country_slot = _cell_country_slot;
     const auto &active = worker ? worker->country_active : _countries.active;
     const auto &generations = worker ? worker->country_generation : _countries.generation;
+    const auto &regime_ids = worker ? worker->country_political_regime_ids : _countries.political_regime_id;
+    const auto &regime_caps = worker ? worker->country_political_regime_capabilities : _countries.political_regime_capability_bits;
     out.country_handles.resize(active.size());
     for (size_t slot = 0; slot < active.size(); ++slot)
         out.country_handles[slot] = active[slot] != 0
             ? (uint64_t{generations[slot]} << 32u) | static_cast<uint32_t>(slot) : 0;
+    out.country_political_regime_ids = regime_ids;
+    out.country_political_regime_capabilities = regime_caps;
     out.country_technologies = _country_technologies;
     out.country_research_signals = _country_research_signals;
     out.country_count = static_cast<int32_t>(active.size());
@@ -9898,6 +10074,10 @@ uint64_t NativeCountryRuntime::catalog_hash() const {
     for (const std::string &id : _technology_era_reward_pool_ids)
         hash_string(hash, id);
     for (const std::string &id : _research_signal_ids) hash_string(hash, id);
+    for (const std::string &id : _political_regime_ids) hash_string(hash, id);
+    if (!_political_regime_capability_bits.empty())
+        hash_bytes(hash, _political_regime_capability_bits.data(),
+                   _political_regime_capability_bits.size() * sizeof(uint32_t));
     if (!_technology_domains.empty())
         hash_bytes(hash, _technology_domains.data(), _technology_domains.size() * sizeof(int32_t));
     if (!_technology_costs.empty())
@@ -9958,6 +10138,8 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
         hash_bytes(hash, &_countries.territory_count[slot], sizeof(int32_t));
         hash_bytes(hash, &_countries.cash[slot], sizeof(int64_t));
         hash_bytes(hash, &_countries.state_version[slot], sizeof(uint64_t));
+        hash_bytes(hash, &_countries.political_regime_id[slot], sizeof(int32_t));
+        hash_bytes(hash, &_countries.political_regime_capability_bits[slot], sizeof(uint32_t));
     }
     if (!_cell_country_slot.empty()) hash_bytes(hash, _cell_country_slot.data(), _cell_country_slot.size() * sizeof(int32_t));
     if (!_country_technologies.empty()) hash_bytes(hash, _country_technologies.data(), _country_technologies.size() * sizeof(uint64_t));
@@ -10283,6 +10465,8 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         append_le<int32_t>(out, _countries.territory_count[slot]);
         append_le<int64_t>(out, _countries.cash[slot]);
         append_le<uint64_t>(out, _countries.state_version[slot]);
+        append_le<int32_t>(out, _countries.political_regime_id[slot]);
+        append_le<uint32_t>(out, _countries.political_regime_capability_bits[slot]);
     }
     append_vector(out, _cell_country_slot);
     append_vector(out, _country_technologies);
@@ -10431,7 +10615,7 @@ bool NativeCountryRuntime::decode_save_in_place(
     int32_t tech_count = 0, tech_words = 0, signal_count = 0, signal_words = 0;
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
-    if (version != SCHEMA_VERSION && version != 13 && version != 12 && version != 11) {
+    if (version != SCHEMA_VERSION && version != 14 && version != 13 && version != 12 && version != 11) {
         error = "catalog_hash_mismatch";
         return false;
     }
@@ -10498,12 +10682,35 @@ bool NativeCountryRuntime::decode_save_in_place(
     countries.territory_count.resize(country_count);
     countries.cash.resize(country_count);
     countries.state_version.resize(country_count);
+    countries.political_regime_id.resize(country_count, 0);
+    countries.political_regime_capability_bits.resize(country_count, 0);
     std::unordered_set<std::string> stable_ids;
     for (int32_t slot = 0; slot < country_count; ++slot) {
         if (!read_le(bytes, cursor, countries.active[slot]) || !read_le(bytes, cursor, countries.generation[slot]) ||
             !read_string(bytes, cursor, countries.stable_id[slot]) || !read_string(bytes, cursor, countries.display_name[slot]) ||
             !read_le(bytes, cursor, countries.territory_count[slot]) || !read_le(bytes, cursor, countries.cash[slot]) ||
             !read_le(bytes, cursor, countries.state_version[slot])) { error = "country_save_country_record_truncated"; return false; }
+        if (version >= 15) {
+            if (!read_le(bytes, cursor, countries.political_regime_id[slot]) ||
+                !read_le(bytes, cursor, countries.political_regime_capability_bits[slot])) {
+                error = "country_save_country_record_truncated";
+                return false;
+            }
+            if (countries.political_regime_id[slot] < 0 ||
+                static_cast<size_t>(countries.political_regime_id[slot]) >= _political_regime_ids.size() ||
+                countries.political_regime_capability_bits[slot] !=
+                    _political_regime_capability_bits[static_cast<size_t>(countries.political_regime_id[slot])]) {
+                error = "country_save_political_regime_invalid";
+                return false;
+            }
+        } else {
+            const auto legacy = _political_regime_index.find("local_council");
+            countries.political_regime_id[slot] = legacy == _political_regime_index.end() ? 0 : legacy->second;
+            countries.political_regime_capability_bits[slot] =
+                countries.political_regime_id[slot] >= 0 &&
+                static_cast<size_t>(countries.political_regime_id[slot]) < _political_regime_capability_bits.size()
+                ? _political_regime_capability_bits[static_cast<size_t>(countries.political_regime_id[slot])] : 0u;
+        }
         // v14 admits annexed (inactive) records: they keep their identity and
         // bumped generation, own no territory and hold no treasury.
         const bool inactive_record = countries.active[slot] == 0;

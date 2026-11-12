@@ -67,9 +67,9 @@ func _run() -> int:
 	var saved_report: Dictionary = ext.get_country_report()
 	var saved_generation := int(saved_report.get("generation", -1))
 	var saved_day := int(saved_report.get("last_committed_day", -2))
-	_expect("direct checkpoint is canonical PKCN v14",
+	_expect("direct checkpoint is canonical PKCN v15",
 		bool(expected_checkpoint.get("ok", false))
-		and int(expected_checkpoint.get("schema_version", 0)) == 14
+		and int(expected_checkpoint.get("schema_version", 0)) == 15
 		and _ascii_magic(expected_pkcn) == "PKCN")
 
 	var started: Dictionary = ext.start_runtime_worker({
@@ -197,7 +197,7 @@ func _check_bundle(bundle: PackedByteArray, saved: Dictionary,
 		Header.has_country_section(bundle))
 	_expect("Country section payload is non-empty",
 		int(saved.get("country_bytes", 0)) > 0)
-	_expect("Country provider returns PKCN v14",
+	_expect("Country provider returns PKCN v15",
 		provider_pkcn.size() > 32 and _ascii_magic(provider_pkcn) == "PKCN"
 		and int(provider_pkcn.decode_u32(4)) == 14)
 	_expect("save provider reuses the exact canonical PKCN capture",

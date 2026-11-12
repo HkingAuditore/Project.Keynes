@@ -6,35 +6,213 @@
 
 | 项目 | 数量 |
 | --- | ---: |
-| 研究科技 (`tech.*`) | 416 |
+| 研究科技 (`tech.*`) | 433 |
 | 自动应用 (`app.*`) | 301 |
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 642 |
+| 硬前置边 | 751 |
 | 应用交汇边 | 831 |
-| 替代说明边 | 526 |
-| 分支关系边 | 8 |
+| 替代说明边 | 555 |
+| 分支关系边 | 15 |
 | 里程碑候选边 | 143 |
 
 ## 时代目录
 
-- [石器时代](#era-1)（56 项科技、4 项自动应用，科技成本 0-5000）
-- [农耕时代](#era-2)（51 项科技、23 项自动应用，科技成本 3400-12000）
-- [王国时代](#era-3)（57 项科技、34 项自动应用，科技成本 3900-30000）
-- [帝国时代](#era-4)（43 项科技、32 项自动应用，科技成本 28300-70000）
-- [探索时代](#era-5)（35 项科技、18 项自动应用，科技成本 44200-160000）
-- [启蒙时代](#era-6)（31 项科技、12 项自动应用，科技成本 192000-360000）
-- [蒸汽时代](#era-7)（33 项科技、44 项自动应用，科技成本 320000-800000）
-- [电气时代](#era-8)（30 项科技、29 项自动应用，科技成本 640000-1800000）
-- [原子时代](#era-9)（30 项科技、24 项自动应用，科技成本 1152000-4000000）
-- [信息时代](#era-10)（26 项科技、35 项自动应用，科技成本 2048000-9000000）
-- [智能时代](#era-11)（24 项科技、46 项自动应用，科技成本 3200000-20000000）
+- [石器时代](#era-1)（55 项科技、4 项自动应用，科技成本 0-6800）
+- [农耕时代](#era-2)（52 项科技、23 项自动应用，科技成本 4600-15000）
+- [王国时代](#era-3)（53 项科技、34 项自动应用，科技成本 11000-36000）
+- [帝国时代](#era-4)（45 项科技、32 项自动应用，科技成本 25000-82000）
+- [探索时代](#era-5)（38 项科技、18 项自动应用，科技成本 60000-196000）
+- [启蒙时代](#era-6)（33 项科技、12 项自动应用，科技成本 141000-461000）
+- [蒸汽时代](#era-7)（37 项科技、44 项自动应用，科技成本 296000-968000）
+- [电气时代](#era-8)（35 项科技、29 项自动应用，科技成本 674000-2210000）
+- [原子时代](#era-9)（30 项科技、24 项自动应用，科技成本 1480000-4830000）
+- [信息时代](#era-10)（31 项科技、35 项自动应用，科技成本 3420000-11180000）
+- [智能时代](#era-11)（24 项科技、46 项自动应用，科技成本 7250000-23740000）
 
 <a id="era-1"></a>
 ## 石器时代
 
-共 56 项研究科技、4 项自动应用，科技研究成本范围 0-5000；时代里程碑：定居知识 (`tech.settled_knowledge`)。
+共 55 项研究科技、4 项自动应用，科技研究成本范围 0-6800；时代里程碑：定居知识 (`tech.settled_knowledge`)。
+
+### 思考 (`tech.early_knowledge_institution`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.early_knowledge_institution` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 0 科技点（`technology_points`） |
+| 节点标记 | 开局科技、区域开局候选 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | backbone.knowledge\_computation |
+| 主要路线 | 制度 · 知识 (\`route.institution.knowledge\`) |
+| 全部路线 | 制度 · 知识 (\`route.institution.knowledge\`)；地理 · 沿海 (\`route.geography.coast\`) |
+| 开局能力标签 | \`starter.food\`；\`starter.knowledge\` |
+| 效果配置 | starter |
+
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：科技值；解锁建筑：早期知识机构
+
+#### 机会成本
+
+统一知识机构占用早期建材与劳动力，但为后续区域知识分支提供入口。
+
+#### 内容解锁
+
+- **物资：** 科技值 (`technology_points`)
+- **建筑 / 生产方式：** 早期知识机构 (`early_knowledge_institution`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 书记学校 (`scribal_school`)
+
+#### 结构化内容效果
+
+- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
+- **早期知识机构**（`building`）：`building.early_knowledge_institution` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 自然观察 (`tech.natural_observation`)：该科技需要先掌握 「早期知识机构」。
+- 狩猎 (`tech.hunting`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 采集 (`tech.gathering`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 早期贸易 (`tech.early_trade`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 枯枝采集 (`tech.deadwood_collection`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 黏土辨识 (`tech.clay_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 香料植物辨识 (`tech.spice_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 砂金辨识 (`tech.gold_placer_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 地表银脉辨识 (`tech.silver_vein_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 淡水岸捕 (`tech.freshwater_fishing`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 潮间带采集 (`tech.coastal_fishing`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 芦苇收割 (`tech.reed_harvesting`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 口述记忆实践 (`tech.oral_memory_practice`)：该科技需要先掌握 「早期知识机构」。
+- 物候观察实践 (`tech.phenology_observation`)：该科技需要先掌握 「早期知识机构」。
+- 潮汐与航向记忆 (`tech.tide_observation`)：该科技需要先掌握 「早期知识机构」。
+- 燧石辨识 (`tech.flint_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 定居知识 (`tech.settled_knowledge`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 洪水历法实践 (`tech.flood_calendar_practice`)：该科技需要先掌握 「早期知识机构」。
+- 牧群路线记忆 (`tech.pastoral_route_memory`)：该科技需要先掌握 「早期知识机构」。
+- 自然铜辨识 (`tech.natural_copper_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 农耕社会 (`tech.agrarian_society`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 市场制度 (`tech.market_institutions`)：早期知识机构提供记录与传承基础；贸易发展信号不能替代这一共同研究起点。
+- 铁矿辨识 (`tech.iron_ore_identification`)：资源目击只揭示研究对象；须先掌握早期知识机构，才能系统记录和传承辨识知识。
+- 露头煤辨识 (`tech.coal_outcrop_identification`)：资源目击只揭示研究对象；须先掌握早期知识机构，才能系统记录和传承辨识知识。
+- 王国体系 (`tech.kingdom_administration`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 帝国网络 (`tech.imperial_integration`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 橡胶树辨识 (`tech.rubber_identification`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 洲际网络 (`tech.global_exchange`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 启蒙制度 (`tech.enlightenment_institutions`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 工业化 (`tech.industrialization`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 电气社会 (`tech.electrical_society`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 原子现代化 (`tech.atomic_modernity`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+- 信息社会 (`tech.information_society`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 自然观察 (`tech.natural_observation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.natural_observation` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 2100 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | handling |
+| 布局路线 | branch.natural\_history |
+| 主要路线 | 制度 · 观察 (\`route.institution.observation\`) |
+| 全部路线 | 制度 · 观察 (\`route.institution.observation\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
+
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+农业领域研究效率 +8%；商品「采集植物」产量 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 硅砂矿坑 (`classical_silica_pit`)；硝石矿 (`saltpeter_collector`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+- 采集植物：`country.output.good.gathered_plants_factor`：+15%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：会观察季相与生境的人，能采到更多可食植物。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 种子与繁育观察 (`tech.crop_domestication`)：该科技需要先掌握 「自然观察」。
+- 玉米辨识 (`tech.maize_identification`)：该科技需要先掌握 「自然观察」。
+- 小麦辨识 (`tech.wheat_identification`)：该科技需要先掌握 「自然观察」。
+- 稻类辨识 (`tech.rice_identification`)：该科技需要先掌握 「自然观察」。
+- 块茎辨识 (`tech.potato_identification`)：该科技需要先掌握 「自然观察」。
+- 棉花辨识 (`tech.cotton_identification`)：该科技需要先掌握 「自然观察」。
+- 亚麻辨识 (`tech.flax_identification`)：该科技需要先掌握 「自然观察」。
+- 野生药草辨识 (`tech.medicinal_herb_identification`)：该科技需要先掌握 「自然观察」。
+- 口述传统 (`tech.oral_tradition`)：该科技需要先掌握 「自然观察」。
+- 天文历法 (`tech.celestial_calendars`)：该科技需要先掌握 「自然观察」。
+- 铁矿辨识 (`tech.iron_ore_identification`)：自然观察提供系统比较矿物性质的知识。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 狩猎 (`tech.hunting`)
 
@@ -56,7 +234,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -64,7 +242,7 @@
 
 #### 效果摘要
 
-解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物；作为必要支撑：宫廷裁缝坊
+解锁物资：毛皮、野味、生皮；解锁建筑：狩猎营地；可利用资源：野生动物
 
 #### 机会成本
 
@@ -128,7 +306,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -136,7 +314,7 @@
 
 #### 效果摘要
 
-解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤；作为必要支撑：日晒土坯场、野生香料林
+解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤
 
 #### 机会成本
 
@@ -161,11 +339,18 @@
 
 #### 被以下科技作为硬前置
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「采集」。
 - 季节性采集 (`tech.seasonal_foraging`)：该科技需要先掌握 「采集」。
 - 火种控制 (`tech.fire_control`)：该科技需要先掌握 「采集」。
+- 野生玉米采集 (`tech.wild_maize_collection`)：fertile\_soil 是这条生产链的物质前提。
+- 野生谷穗采集 (`tech.wild_wheat_collection`)：fertile\_soil 是这条生产链的物质前提。
+- 野生块茎挖掘 (`tech.wild_tuber_collection`)：fertile\_soil 是这条生产链的物质前提。
+- 野生棉铃采集 (`tech.wild_cotton_collection`)：fertile\_soil 是这条生产链的物质前提。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：fertile\_soil 是这条生产链的物质前提。
+- 野生药草采集 (`tech.wild_medicinal_herb_collection`)：fertile\_soil 是这条生产链的物质前提。
 - 卤水采集 (`tech.brine_collection`)：该科技需要先掌握 「采集」。
 - 打制石器 (`tech.stone_knapping`)：该科技需要先掌握 「采集」。
+- 块茎繁育 (`tech.potato_propagation`)：fertile\_soil 是这条生产链的物质前提。
+- 文字 (`tech.writing`)：采集植物食物 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -199,7 +384,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -209,7 +394,7 @@
 
 #### 效果摘要
 
-解锁建筑：早期商栈；作为必要支撑：商栈
+解锁建筑：早期商栈
 
 #### 机会成本
 
@@ -267,7 +452,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -275,7 +460,7 @@
 
 #### 效果摘要
 
-解锁物资：原木；解锁建筑：枯枝采集营地；可利用资源：木材；作为必要支撑：煮盐灶、卤水采集池、地表铁矿采集场、商栈、行会陶窑、野生割胶营地、小型陷阱线、野生香料林
+解锁物资：原木；解锁建筑：枯枝采集营地；可利用资源：木材
 
 #### 机会成本
 
@@ -300,81 +485,8 @@
 
 #### 被以下科技作为硬前置
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「枯枝采集」。
 - 火种控制 (`tech.fire_control`)：该科技需要先掌握 「枯枝采集」。
 - 打制石器 (`tech.stone_knapping`)：该科技需要先掌握 「枯枝采集」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 早期知识机构 (`tech.early_knowledge_institution`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.early_knowledge_institution` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone |
-| 节点角色 | institution |
-| 布局路线 | backbone.knowledge\_computation |
-| 主要路线 | 制度 · 知识 (\`route.institution.knowledge\`) |
-| 全部路线 | 制度 · 知识 (\`route.institution.knowledge\`)；地理 · 沿海 (\`route.geography.coast\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | starter |
-
-#### 硬前置（决定研发资格）
-
-- 采集 (`tech.gathering`)：该科技需要先掌握 「采集」。
-- 枯枝采集 (`tech.deadwood_collection`)：该科技需要先掌握 「枯枝采集」。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁物资：科技值；解锁建筑：早期知识机构；作为必要支撑：书记学校
-
-#### 机会成本
-
-统一知识机构占用早期建材与劳动力，但为后续区域知识分支提供入口。
-
-#### 内容解锁
-
-- **物资：** 科技值 (`technology_points`)
-- **建筑 / 生产方式：** 早期知识机构 (`early_knowledge_institution`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 书记学校 (`scribal_school`)
-
-#### 结构化内容效果
-
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
-- **早期知识机构**（`building`）：`building.early_knowledge_institution` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 自然观察 (`tech.natural_observation`)：该科技需要先掌握 「早期知识机构」。
-- 口述记忆实践 (`tech.oral_memory_practice`)：该科技需要先掌握 「早期知识机构」。
-- 物候观察实践 (`tech.phenology_observation`)：该科技需要先掌握 「早期知识机构」。
-- 潮汐与航向记忆 (`tech.tide_observation`)：该科技需要先掌握 「早期知识机构」。
-- 洪水历法实践 (`tech.flood_calendar_practice`)：该科技需要先掌握 「早期知识机构」。
-- 牧群路线记忆 (`tech.pastoral_route_memory`)：该科技需要先掌握 「早期知识机构」。
 
 #### 主题路线后继
 
@@ -395,7 +507,7 @@
 | 稳定 ID | `tech.seasonal_foraging` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -462,7 +574,7 @@
 | 稳定 ID | `tech.clay_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -475,7 +587,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -529,7 +641,7 @@
 | 稳定 ID | `tech.food_storage` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -553,7 +665,7 @@
 
 #### 效果摘要
 
-商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%；人口自然死亡率 -8%
+商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +33.6%；人口自然死亡率 -2.9%
 
 #### 机会成本
 
@@ -573,8 +685,8 @@
 #### 永久 Modifier 条款
 
 - 加工主食：`country.output.good.prepared_staples_factor`：+12%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
-- 人口自然死亡率：`country.population.death_factor`：+8%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+33.6%
+- 人口自然死亡率：`country.population.death_factor`：+2.9%
   - 效果机制：食物储藏减少储藏损耗，提高加工主食有效供给。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：食物储藏提高主粮加工与仓储相关建筑产出。
@@ -606,7 +718,7 @@
 | 稳定 ID | `tech.animal_tracking` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -627,7 +739,7 @@
 
 #### 效果摘要
 
-解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：小型陷阱线；可利用资源：野生动物；「狩猎」生产家族建筑产出 +28%；作为必要支撑：商业狩猎与毛皮站、修道院抄写室
+解锁建筑：小型陷阱线；「狩猎」生产家族建筑产出 +84%
 
 #### 机会成本
 
@@ -642,15 +754,11 @@
 
 #### 结构化内容效果
 
-- **毛皮**（`good`）：`good.fur` → `production_access` `unlock` `1.0`；`existing_binding`
-- **野味**（`good`）：`good.game_meat` → `production_access` `unlock` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **小型陷阱线**（`building`）：`building.small_game_trapline` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **野生动物**（`resource`）：`resource.wild_game` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 狩猎：`country.output.family.hunting_factor`：+28%
+- 狩猎：`country.output.family.hunting_factor`：+84%
   - 效果机制：动物追踪提高狩猎建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -678,7 +786,7 @@
 | 稳定 ID | `tech.earth_building` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -699,7 +807,7 @@
 
 #### 效果摘要
 
-解锁物资：黏土；解锁建筑：土料挖掘坑；解锁建筑：原始黏土坑；可利用资源：黏土；作为必要支撑：行会陶窑、露天陶器烧造
+解锁物资：黏土；解锁建筑：土料挖掘坑、原始黏土坑
 
 #### 机会成本
 
@@ -717,7 +825,6 @@
 - **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土料挖掘坑**（`building`）：`building.earth_digging_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **原始黏土坑**（`building`）：`building.primitive_clay_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **黏土**（`resource`）：`resource.clay` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -742,73 +849,6 @@
 
 无
 
-### 炉火保存 (`tech.hearth_preservation`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.hearth_preservation` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone |
-| 节点角色 | handling |
-| 布局路线 | backbone.food\_storage |
-| 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
-| 全部路线 | 制度 · 储藏 (\`route.institution.storage\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 食物储藏 (`tech.food_storage`)：该科技需要先掌握 「食物储藏」。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-「主粮加工」生产家族建筑产出 +25%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
-  - 效果机制：炉火保存提高主粮加工建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-- 发酵保存 (`tech.fermentation`)：该科技需要先掌握 「炉火保存」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
 ### 香料植物辨识 (`tech.spice_identification`)
 
 | 字段 | 内容 |
@@ -816,7 +856,7 @@
 | 稳定 ID | `tech.spice_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -829,7 +869,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -839,7 +879,7 @@
 
 #### 效果摘要
 
-「专用商品作物」生产家族建筑产出 +12%
+「专用商品作物」生产家族建筑产出 +26.4%；资源利用 -3%
 
 #### 机会成本
 
@@ -858,9 +898,12 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+26.4%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：香料植物辨识提高专用商品作物建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -885,7 +928,7 @@
 | 稳定 ID | `tech.wild_spice_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -906,7 +949,7 @@
 
 #### 效果摘要
 
-解锁物资：香料；解锁建筑：野生香料林；「专用商品作物」生产家族建筑产出 +12%；作为必要支撑：专用商品作物种植园、机械化香料种植园、商业香料种植园、香料种植园
+解锁物资：香料；解锁建筑：野生香料林；地理专长「热带雨林」产出 +14.8%
 
 #### 机会成本
 
@@ -926,9 +969,9 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
-  - 效果机制：野生香料采集提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+14.8%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -953,7 +996,7 @@
 | 稳定 ID | `tech.gold_placer_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -966,7 +1009,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -974,7 +1017,7 @@
 
 #### 效果摘要
 
-「金矿采掘」生产家族建筑产出 +12%
+「金矿采掘」生产家族建筑产出 +36%；资源利用 -3%
 
 #### 机会成本
 
@@ -993,9 +1036,12 @@
 
 #### 永久 Modifier 条款
 
-- 金矿采掘：`country.output.family.gold_extraction_factor`：+12%
+- 金矿采掘：`country.output.family.gold_extraction_factor`：+36%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：砂金辨识提高金矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -1041,7 +1087,7 @@
 
 #### 效果摘要
 
-解锁物资：黄金；解锁建筑：河滩淘金场；可利用资源：金矿；作为必要支撑：金矿、金银器工坊、珠宝厂、木槽溜洗场
+解锁物资：黄金；解锁建筑：河滩淘金场；可利用资源：金矿
 
 #### 机会成本
 
@@ -1087,7 +1133,7 @@
 | 稳定 ID | `tech.silver_vein_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | backbone |
@@ -1100,7 +1146,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -1108,7 +1154,7 @@
 
 #### 效果摘要
 
-「银矿采掘」生产家族建筑产出 +12%
+「银矿采掘」生产家族建筑产出 +36%；资源利用 -3%
 
 #### 机会成本
 
@@ -1127,9 +1173,12 @@
 
 #### 永久 Modifier 条款
 
-- 银矿采掘：`country.output.family.silver_extraction_factor`：+12%
+- 银矿采掘：`country.output.family.silver_extraction_factor`：+36%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：地表银脉辨识提高银矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -1175,7 +1224,7 @@
 
 #### 效果摘要
 
-解锁物资：白银；解锁建筑：露天银矿；可利用资源：银矿；作为必要支撑：浅坑银矿作业、银矿
+解锁物资：白银；解锁建筑：露天银矿；可利用资源：银矿
 
 #### 机会成本
 
@@ -1221,7 +1270,7 @@
 | 稳定 ID | `tech.fire_control` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1244,7 +1293,7 @@
 
 #### 效果摘要
 
-解锁物资：熟制主食；解锁建筑：公共火塘；人口自然死亡率 -8%；作为必要支撑：露天陶器烧造、主食厨房
+解锁物资：熟制主食；解锁建筑：公共火塘；人口自然死亡率 -2.9%
 
 #### 机会成本
 
@@ -1264,18 +1313,21 @@
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+8%
+- 人口自然死亡率：`country.population.death_factor`：+2.9%
   - 效果机制：熟食降低肠道感染与寄生虫致死。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
 
 #### 被以下科技作为硬前置
 
+- 炉火保存 (`tech.hearth_preservation`)：保存炉火必须先掌握火种控制，食物储藏不能替代用火知识。
 - 控制性用火 (`tech.controlled_burning`)：该科技需要先掌握 「火种控制」。
 - 手制陶器 (`tech.hand_pottery`)：露烧手捏陶是石器入门工艺，不以农耕专业黏土调制为前提。；所需知识为「火种控制」。
 - 木炭烧制 (`tech.charcoal_burning`)：该科技需要先掌握 「火种控制」。
+- 铜退火 (`tech.copper_annealing`)：铜退火需要可控制的加热，冷锤经验不能替代用火知识。
 - 窑烧控制 (`tech.kiln_firing`)：该科技需要先掌握 「火种控制」。
 - 谷物烘焙 (`tech.grain_baking`)：农耕保留家庭园圃、原始耕作与基础处理；专业选育、定型田制、畜力军用、专业食品和公共制度分期到王国。；烘焙不应被后移王国的旱作小麦专门路线封锁。；所需知识为「火种控制」。
 - 太阳蒸发制盐 (`tech.solar_evaporation`)：该科技需要先掌握 「火种控制」。
+- 露头煤辨识 (`tech.coal_outcrop_identification`)：火种控制使煤样的燃烧特征和燃料价值能够被验证。
 - 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：该科技需要先掌握 「火种控制」。
 
 #### 主题路线后继
@@ -1290,27 +1342,28 @@
 
 - 定居知识 (`tech.settled_knowledge`)
 
-### 自然观察 (`tech.natural_observation`)
+### 炉火保存 (`tech.hearth_preservation`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.natural_observation` |
+| 稳定 ID | `tech.hearth_preservation` |
 | 时代 | 石器时代 (`stone`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | era\_candidate |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 2100 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
-| 布局路线 | branch.natural\_history |
-| 主要路线 | 制度 · 观察 (\`route.institution.observation\`) |
-| 全部路线 | 制度 · 观察 (\`route.institution.observation\`) |
+| 布局路线 | backbone.food\_storage |
+| 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
+| 全部路线 | 制度 · 储藏 (\`route.institution.storage\`) |
 | 开局能力标签 | 无 |
-| 效果配置 | observation |
+| 效果配置 | craft |
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 食物储藏 (`tech.food_storage`)：该科技需要先掌握 「食物储藏」。
+- 火种控制 (`tech.fire_control`)：保存炉火必须先掌握火种控制，食物储藏不能替代用火知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -1318,7 +1371,7 @@
 
 #### 效果摘要
 
-可利用资源：硝石；可利用资源：硅砂；农业领域研究效率 +8%；作为必要支撑：硅砂矿坑、硝石矿
+地理专长「泛滥平原」产出 +14.9%
 
 #### 机会成本
 
@@ -1328,32 +1381,22 @@
 
 - **物资：** 无
 - **建筑 / 生产方式：** 无
-- **自然资源：** 硝石 (`saltpeter`)；硅砂 (`silica_sand`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 硅砂矿坑 (`classical_silica_pit`)；硝石矿 (`saltpeter_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **硝石**（`resource`）：`resource.saltpeter` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-- **硅砂**（`resource`）：`resource.silica_sand` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
-  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
-  - 运行时消费者：`NativeCountryRuntime::process_research_day`
+- 泛滥平原：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
+  - 效果机制：该产业在泛滥平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
-- 种子与繁育观察 (`tech.crop_domestication`)：该科技需要先掌握 「自然观察」。
-- 玉米辨识 (`tech.maize_identification`)：该科技需要先掌握 「自然观察」。
-- 小麦辨识 (`tech.wheat_identification`)：该科技需要先掌握 「自然观察」。
-- 稻类辨识 (`tech.rice_identification`)：该科技需要先掌握 「自然观察」。
-- 块茎辨识 (`tech.potato_identification`)：该科技需要先掌握 「自然观察」。
-- 棉花辨识 (`tech.cotton_identification`)：该科技需要先掌握 「自然观察」。
-- 亚麻辨识 (`tech.flax_identification`)：该科技需要先掌握 「自然观察」。
-- 野生药草辨识 (`tech.medicinal_herb_identification`)：该科技需要先掌握 「自然观察」。
-- 口述传统 (`tech.oral_tradition`)：该科技需要先掌握 「自然观察」。
-- 天文历法 (`tech.celestial_calendars`)：该科技需要先掌握 「自然观察」。
+- 发酵保存 (`tech.fermentation`)：该科技需要先掌握 「炉火保存」。
 
 #### 主题路线后继
 
@@ -1365,7 +1408,7 @@
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 控制性用火 (`tech.controlled_burning`)
 
@@ -1374,7 +1417,7 @@
 | 稳定 ID | `tech.controlled_burning` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1397,7 +1440,7 @@
 
 #### 效果摘要
 
-木材 -8%
+木材 -8%；「狩猎」生产家族建筑产出 +20%
 
 #### 机会成本
 
@@ -1417,8 +1460,11 @@
 #### 永久 Modifier 条款
 
 - 木材：`country.resource.timber.managed_generation_factor`：+8%
+- 狩猎：`country.output.family.hunting_factor`：+20%
   - 效果机制：控制燃烧短期损失木本存量。
   - 运行时消费者：`NativeEconomyRuntime::effective_managed_resource_generation`
+  - 效果机制：烧荒更新草场，食草动物回流，狩猎产出提高。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -1443,7 +1489,7 @@
 | 稳定 ID | `tech.crop_domestication` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -1468,7 +1514,7 @@
 
 #### 效果摘要
 
-农业部门产出 +4%
+农业部门产出 +3.8%；投入因子 -3%
 
 #### 机会成本
 
@@ -1487,9 +1533,12 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+4%
+- 农业部门产出：`country.output.agriculture_factor`：+3.8%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：种子与繁育观察提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -1517,7 +1566,7 @@
 | 稳定 ID | `tech.maize_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1586,7 +1635,7 @@
 | 稳定 ID | `tech.wild_maize_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -1600,6 +1649,7 @@
 #### 硬前置（决定研发资格）
 
 - 玉米辨识 (`tech.maize_identification`)：该科技需要先掌握 「玉米辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -1607,7 +1657,7 @@
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：野生玉米采集地；作为必要支撑：酿造厂、面包厂、酿酒坊、蒸馏酒坊、榨油坊、玉米庄园、机械化玉米农场、佃作雨养玉米田
+解锁物资：玉米；解锁建筑：野生玉米采集地
 
 #### 机会成本
 
@@ -1633,6 +1683,7 @@
 
 - 玉米留种 (`tech.maize_seed_saving`)：该科技需要先掌握 「野生玉米采集」。
 - 玉米选育 (`tech.maize_selection`)：该科技需要先掌握 「野生玉米采集」。
+- 流水线组织 (`tech.assembly_line`)：混合谷物 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -1653,7 +1704,7 @@
 | 稳定 ID | `tech.wheat_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1722,7 +1773,7 @@
 | 稳定 ID | `tech.wild_wheat_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1736,6 +1787,7 @@
 #### 硬前置（决定研发资格）
 
 - 小麦辨识 (`tech.wheat_identification`)：该科技需要先掌握 「小麦辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -1743,7 +1795,7 @@
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：野生谷穗采集地；作为必要支撑：佃作小麦庄园、改良轮作小麦庄园、机械化小麦农场、佃作雨养小麦田
+解锁物资：小麦；解锁建筑：野生谷穗采集地
 
 #### 机会成本
 
@@ -1789,7 +1841,7 @@
 | 稳定 ID | `tech.rice_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1858,7 +1910,7 @@
 | 稳定 ID | `tech.potato_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1927,7 +1979,7 @@
 | 稳定 ID | `tech.wild_tuber_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -1941,6 +1993,7 @@
 #### 硬前置（决定研发资格）
 
 - 块茎辨识 (`tech.potato_identification`)：该科技需要先掌握 「块茎辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -1993,7 +2046,7 @@
 | 稳定 ID | `tech.tuber_storage` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2014,7 +2067,7 @@
 
 #### 效果摘要
 
-商品「马铃薯」产量 +12%；商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%
+商品「马铃薯」产量 +12%；商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +33.6%
 
 #### 机会成本
 
@@ -2035,7 +2088,7 @@
 
 - 马铃薯：`country.output.good.potatoes_factor`：+12%
 - 加工主食：`country.output.good.prepared_staples_factor`：+12%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+33.6%
   - 效果机制：块茎保存提高马铃薯产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：块茎保存减少储藏损耗，提高加工主食有效供给。
@@ -2067,7 +2120,7 @@
 | 稳定 ID | `tech.cotton_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2090,7 +2143,7 @@
 
 #### 效果摘要
 
-「专用商品作物」生产家族建筑产出 +12%
+「专用商品作物」生产家族建筑产出 +26.4%；资源利用 -3%
 
 #### 机会成本
 
@@ -2109,9 +2162,12 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+26.4%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：棉花辨识提高专用商品作物建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -2136,7 +2192,7 @@
 | 稳定 ID | `tech.wild_cotton_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2150,6 +2206,7 @@
 #### 硬前置（决定研发资格）
 
 - 棉花辨识 (`tech.cotton_identification`)：该科技需要先掌握 「棉花辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -2157,7 +2214,7 @@
 
 #### 效果摘要
 
-解锁物资：籽棉；解锁建筑：野生棉丛；「专用商品作物」生产家族建筑产出 +12%；作为必要支撑：佃作棉花田、机械轧棉厂、机械化棉花农场
+解锁物资：籽棉；解锁建筑：野生棉丛；地理专长「热带雨林」产出 +14.8%
 
 #### 机会成本
 
@@ -2177,9 +2234,9 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
-  - 效果机制：野生棉铃采集提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+14.8%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2205,7 +2262,7 @@
 | 稳定 ID | `tech.flax_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2228,7 +2285,7 @@
 
 #### 效果摘要
 
-「布匹织造」生产家族建筑产出 +12%；「专用商品作物」生产家族建筑产出 +12%
+地理专长「草原」产出 +14.8%；地理专长「平原」产出 +54%
 
 #### 机会成本
 
@@ -2247,12 +2304,12 @@
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
-  - 效果机制：亚麻辨识提高麻纤维织造相关建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：亚麻辨识提高亚麻等专用作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+14.8%
+- 平原：`country.output.landform.plain.manufacturing_factor`：+54%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2278,7 +2335,7 @@
 | 稳定 ID | `tech.wild_flax_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2292,6 +2349,7 @@
 #### 硬前置（决定研发资格）
 
 - 亚麻辨识 (`tech.flax_identification`)：该科技需要先掌握 「亚麻辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -2299,7 +2357,7 @@
 
 #### 效果摘要
 
-解锁物资：亚麻秆/韧皮原料；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、家庭亚麻试种圃、亚麻庄园、改良亚麻庄园、机械化亚麻农场
+解锁物资：亚麻秆/韧皮原料；解锁建筑：野生韧皮纤维营地
 
 #### 机会成本
 
@@ -2324,8 +2382,6 @@
 #### 被以下科技作为硬前置
 
 - 纤维捻制 (`tech.fiber_twisting`)：该科技需要先掌握 「野生韧皮采集」。
-- 淡水岸捕 (`tech.freshwater_fishing`)：该科技需要先掌握 「野生韧皮采集」。
-- 潮间带采集 (`tech.coastal_fishing`)：该科技需要先掌握 「野生韧皮采集」。
 
 #### 主题路线后继
 
@@ -2346,7 +2402,7 @@
 | 稳定 ID | `tech.fiber_twisting` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2371,7 +2427,7 @@
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：韧皮裹衣棚；「布匹织造」生产家族建筑产出 +12%；作为必要支撑：裁缝铺
+解锁物资：衣物；解锁建筑：韧皮裹衣棚；「布匹织造」生产家族建筑产出 +28.8%
 
 #### 机会成本
 
@@ -2391,7 +2447,7 @@
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+28.8%
   - 效果机制：纤维捻制提高布匹织造建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -2419,7 +2475,7 @@
 | 稳定 ID | `tech.freshwater_fishing` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2432,7 +2488,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 野生韧皮采集 (`tech.wild_flax_collection`)：该科技需要先掌握 「野生韧皮采集」。
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -2440,7 +2496,7 @@
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：淡水捕鱼营地；可利用资源：淡水鱼群；农业部门产出 +10%；作为必要支撑：鱼类罐头厂、罐头工坊
+解锁物资：鱼类；解锁建筑：淡水捕鱼营地；可利用资源：淡水鱼群；农业部门产出 +9.4%
 
 #### 机会成本
 
@@ -2461,7 +2517,7 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+10%
+- 农业部门产出：`country.output.agriculture_factor`：+9.4%
   - 效果机制：淡水岸捕提高淡水渔获相关产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -2488,7 +2544,7 @@
 | 稳定 ID | `tech.coastal_fishing` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2501,7 +2557,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 野生韧皮采集 (`tech.wild_flax_collection`)：该科技需要先掌握 「野生韧皮采集」。
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -2509,7 +2565,7 @@
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：潮间带采集地；可利用资源：海洋鱼类；「海上作业」生产家族建筑产出 +10%；农业部门产出 +10%；作为必要支撑：帆船渔场、远洋渔场
+解锁建筑：潮间带采集地；可利用资源：海洋鱼类；「海上作业」生产家族建筑产出 +30%；农业部门产出 +9.4%
 
 #### 机会成本
 
@@ -2524,14 +2580,13 @@
 
 #### 结构化内容效果
 
-- **鱼类**（`good`）：`good.fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **潮间带采集地**（`building`）：`building.marine_fish_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **海洋鱼类**（`resource`）：`resource.marine_fish` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+10%
-- 农业部门产出：`country.output.agriculture_factor`：+10%
+- 海上作业：`country.output.family.maritime_operations_factor`：+30%
+- 农业部门产出：`country.output.agriculture_factor`：+9.4%
   - 效果机制：潮间带采集提高海上作业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：潮间带采集提高渔业相关农业产出。
@@ -2560,7 +2615,7 @@
 | 稳定 ID | `tech.medicinal_herb_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2583,7 +2638,7 @@
 
 #### 效果摘要
 
-人口自然死亡率 -8%
+人口自然死亡率 -2.9%
 
 #### 机会成本
 
@@ -2602,7 +2657,7 @@
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+8%
+- 人口自然死亡率：`country.population.death_factor`：+2.9%
   - 效果机制：辨识草药缓解常见病痛。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
 
@@ -2629,7 +2684,7 @@
 | 稳定 ID | `tech.wild_medicinal_herb_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2643,6 +2698,7 @@
 #### 硬前置（决定研发资格）
 
 - 野生药草辨识 (`tech.medicinal_herb_identification`)：该科技需要先掌握 「野生药草辨识」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -2650,7 +2706,7 @@
 
 #### 效果摘要
 
-解锁物资：药材；解锁建筑：野生药草采集地；作为必要支撑：药材商品园、药草园、药材种植园、受控环境药材农场、精准药材农场
+解锁物资：药材；解锁建筑：野生药草采集地
 
 #### 机会成本
 
@@ -2688,71 +2744,6 @@
 
 无
 
-### 芦苇辨识 (`tech.reed_identification`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.reed_identification` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | identification |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 硬前置（决定研发资格）
-
-无
-
-#### 发现启发（仅用于揭示）
-
-- 已发现信号「芦苇」（bio.reed）
-
-#### 效果摘要
-
-无
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 芦苇收割 (`tech.reed_harvesting`)：该科技需要先掌握 「芦苇辨识」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
 ### 芦苇收割 (`tech.reed_harvesting`)
 
 | 字段 | 内容 |
@@ -2760,7 +2751,7 @@
 | 稳定 ID | `tech.reed_harvesting` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2773,15 +2764,15 @@
 
 #### 硬前置（决定研发资格）
 
-- 芦苇辨识 (`tech.reed_identification`)：该科技需要先掌握 「芦苇辨识」。
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「芦苇」（bio.reed）
 
 #### 效果摘要
 
-解锁物资：芦苇束；解锁建筑：芦苇收割营地；可利用资源：水田承载力；作为必要支撑：精耕稻庄、机械化稻作农场
+解锁物资：芦苇束；解锁建筑：芦苇收割营地；可利用资源：水田承载力；地理专长「沼泽」产出 +45%
 
 #### 机会成本
 
@@ -2802,11 +2793,16 @@
 
 #### 永久 Modifier 条款
 
-无
+- 沼泽：`country.output.terrain.swamp.extractive_factor`：+45%
+  - 效果机制：芦苇与湿地采集在沼泽地带显著增产。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
-- 野生稻采集 (`tech.wild_rice_collection`)：该科技需要先掌握 「芦苇收割」。
+- 野生稻采集 (`tech.wild_rice_collection`)：paddy\_land 是这条生产链的物质前提。
+- 湿地稻园 (`tech.wetland_rice_gardening`)：paddy\_land 是这条生产链的物质前提。
+- 稻田水位控制 (`tech.rice_water_control`)：paddy\_land 是这条生产链的物质前提。
+- 精准灌溉 (`tech.precision_irrigation`)：paddy\_land 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -2827,7 +2823,7 @@
 | 稳定 ID | `tech.wild_rice_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2841,7 +2837,7 @@
 #### 硬前置（决定研发资格）
 
 - 稻类辨识 (`tech.rice_identification`)：该科技需要先掌握 「稻类辨识」。
-- 芦苇收割 (`tech.reed_harvesting`)：该科技需要先掌握 「芦苇收割」。
+- 芦苇收割 (`tech.reed_harvesting`)：paddy\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -2849,7 +2845,7 @@
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：野生稻沼泽；作为必要支撑：精耕稻庄、机械化稻作农场
+解锁物资：稻米；解锁建筑：野生稻沼泽
 
 #### 机会成本
 
@@ -2918,7 +2914,7 @@
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：生皮刮制棚
+解锁建筑：生皮刮制棚
 
 #### 机会成本
 
@@ -2933,7 +2929,6 @@
 
 #### 结构化内容效果
 
-- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **生皮刮制棚**（`building`）：`building.hide_scraping_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -2964,7 +2959,7 @@
 | 稳定 ID | `tech.fur_sewing` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -2988,7 +2983,7 @@
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：毛皮缝制棚；「布匹织造」生产家族建筑产出 +5%
+解锁建筑：毛皮缝制棚；「布匹织造」生产家族建筑产出 +12%
 
 #### 机会成本
 
@@ -3003,12 +2998,11 @@
 
 #### 结构化内容效果
 
-- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毛皮缝制棚**（`building`）：`building.fur_sewing_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+5%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
   - 效果机制：毛皮缝制提高布匹织造建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -3035,7 +3029,7 @@
 | 稳定 ID | `tech.oral_memory_practice` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -3048,7 +3042,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
 
 #### 发现启发（仅用于揭示）
 
@@ -3056,7 +3050,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：口述记忆圈；社会领域研究效率 +3%；「研究机构」生产家族建筑产出 +12%；知识部门产出 +12%
+解锁建筑：口述记忆圈；社会领域研究效率 +2.7%；「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%
 
 #### 机会成本
 
@@ -3071,14 +3065,13 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **口述记忆圈**（`building`）：`building.oral_memory_circle` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+3%
-- 研究机构：`country.output.family.research_institution_factor`：+12%
-- 知识部门产出：`country.output.knowledge_factor`：+12%
+- 社会领域研究效率：`country.research.society_efficiency`：+2.7%
+- 研究机构：`country.output.family.research_institution_factor`：+36%
+- 知识部门产出：`country.output.knowledge_factor`：+24%
   - 效果机制：口述复核与代际传承提高社会知识积累效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：口述记忆实践提高研究与知识机构产出。
@@ -3109,7 +3102,7 @@
 | 稳定 ID | `tech.phenology_observation` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3122,7 +3115,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
 
 #### 发现启发（仅用于揭示）
 
@@ -3130,7 +3123,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：物候观察棚；农业领域研究效率 +3%
+解锁建筑：物候观察棚；农业领域研究效率 +3%
 
 #### 机会成本
 
@@ -3145,7 +3138,6 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **物候观察棚**（`building`）：`building.seasonal_observation_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -3177,7 +3169,7 @@
 | 稳定 ID | `tech.tide_observation` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3190,7 +3182,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
 
 #### 发现启发（仅用于揭示）
 
@@ -3198,7 +3190,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：潮汐观察屋；全社会贸易运输速度 +3%
+解锁建筑：潮汐观察屋；全社会贸易运输速度 +3%
 
 #### 机会成本
 
@@ -3213,7 +3205,6 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **潮汐观察屋**（`building`）：`building.tide_observation_hut` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -3245,7 +3236,7 @@
 | 稳定 ID | `tech.brine_collection` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3266,7 +3257,7 @@
 
 #### 效果摘要
 
-解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐；「制盐」生产家族建筑产出 +12%；作为必要支撑：深井盐矿
+解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐；「制盐」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -3287,7 +3278,7 @@
 
 #### 永久 Modifier 条款
 
-- 制盐：`country.output.family.salt_extraction_factor`：+12%
+- 制盐：`country.output.family.salt_extraction_factor`：+36%
   - 效果机制：卤水采集提高制盐建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -3314,7 +3305,7 @@
 | 稳定 ID | `tech.flint_identification` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3327,7 +3318,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -3359,6 +3350,7 @@
 #### 被以下科技作为硬前置
 
 - 打制石器 (`tech.stone_knapping`)：该科技需要先掌握 「燧石辨识」。
+- 永久聚落 (`tech.permanent_settlements`)：燧石原料 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -3379,7 +3371,7 @@
 | 稳定 ID | `tech.stone_knapping` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3402,7 +3394,7 @@
 
 #### 效果摘要
 
-解锁物资：打制石器；解锁物资：燧石原料；解锁物资：石矛；解锁建筑：燧石采掘场；解锁建筑：石器打制工坊；解锁建筑：石矛作坊；作为必要支撑：改良燧石矿坑
+解锁物资：打制石器、燧石原料、石矛；解锁建筑：燧石采掘场、石器打制工坊、石矛作坊
 
 #### 机会成本
 
@@ -3434,6 +3426,9 @@
 - 磨制石器 (`tech.ground_stone_tools`)：该科技需要先掌握 「打制石器」。
 - 草皮切割 (`tech.turf_cutting`)：该科技需要先掌握 「打制石器」。
 - 木炭烧制 (`tech.charcoal_burning`)：该科技需要先掌握 「打制石器」。
+- 独木舟与桨舟 (`tech.fishing_boats`)：独木舟船体与桨的加工需要基础石器工具，捕鱼经验不能替代加工能力。
+- 铁矿辨识 (`tech.iron_ore_identification`)：打制石器提供取样、敲击和比较矿石的基础工具。
+- 露头煤辨识 (`tech.coal_outcrop_identification`)：打制石器提供剥取、破碎和比较露头煤样的基础工具。
 
 #### 主题路线后继
 
@@ -3454,7 +3449,7 @@
 | 稳定 ID | `tech.composite_tools` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -3477,7 +3472,7 @@
 
 #### 效果摘要
 
-解锁物资：弓箭；解锁建筑：弓箭营地；全社会经济产出 +4%
+解锁物资：弓箭；解锁建筑：弓箭营地；生产投入 -5%
 
 #### 机会成本
 
@@ -3497,9 +3492,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-  - 效果机制：复合工具提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 生产投入：`country.production.input_factor`：+5%
+  - 效果机制：该科技的组织与工艺收益通过生产投入体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -3509,7 +3504,6 @@
 - 铜锡配比与铸造 (`tech.bronze_casting`)：复合工具带来的制弓工艺是青铜时代军队远程装备的前提。
 - 谷物脱粒 (`tech.grain_threshing`)：基础脱粒承接实际雨养麦作与工具，不依赖王国的旱作保水专业分支。；所需知识为「复合工具」。
 - 手工锯木 (`tech.timber_sawing`)：该科技需要先掌握 「复合工具」。
-- 木版印刷 (`tech.woodblock_printing`)：该科技需要先掌握 「复合工具」。
 
 #### 主题路线后继
 
@@ -3530,7 +3524,7 @@
 | 稳定 ID | `tech.ground_stone_tools` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3551,7 +3545,7 @@
 
 #### 效果摘要
 
-解锁物资：原石；解锁建筑：毛石整理场；可利用资源：石料；「营造方法」生产家族建筑产出 +12%；作为必要支撑：浅层锡矿、石灰石采石场、改良燧石矿坑、规模化采石场、采石场
+解锁物资：原石；解锁建筑：毛石整理场；可利用资源：石料；「营造方法」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -3572,7 +3566,7 @@
 
 #### 永久 Modifier 条款
 
-- 营造方法：`country.output.family.construction_methods_factor`：+12%
+- 营造方法：`country.output.family.construction_methods_factor`：+36%
   - 效果机制：磨制石器提高石器与营造相关建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -3580,6 +3574,7 @@
 
 - 自然铜冷锤 (`tech.natural_copper_working`)：该科技需要先掌握 「磨制石器」。
 - 灌溉 (`tech.irrigation`)：该科技需要先掌握 「磨制石器」。
+- 采石与琢石 (`tech.stone_quarrying`)：琢石是把磨制石器的打击与研磨经验放大到建材尺度，工具知识是它的直接前身。
 - 马匹驯化 (`tech.horse_domestication`)：该科技需要先掌握 「磨制石器」。
 - 梯田农业 (`tech.terrace_farming`)：该科技需要先掌握 「磨制石器」。
 - 铜矿井开采 (`tech.copper_mine_engineering`)：该科技需要先掌握 「磨制石器」。
@@ -3605,7 +3600,7 @@
 | 稳定 ID | `tech.turf_cutting` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3000 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3626,7 +3621,7 @@
 
 #### 效果摘要
 
-解锁物资：草皮块；解锁建筑：草皮切割场；可利用资源：牧场承载力；作为必要支撑：夯土城垣
+解锁物资：草皮块；解锁建筑：草皮切割场；可利用资源：牧场承载力
 
 #### 机会成本
 
@@ -3651,7 +3646,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 智能育种 (`tech.intelligent_breeding`)：pasture 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -3672,7 +3667,7 @@
 | 稳定 ID | `tech.hand_pottery` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 3800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -3694,7 +3689,7 @@
 
 #### 效果摘要
 
-解锁物资：陶器；解锁建筑：露天陶器烧造；「营造方法」生产家族建筑产出 +12%；作为必要支撑：行会陶窑、升焰陶窑、书记学校
+解锁物资：陶器；解锁建筑：露天陶器烧造；地理专长「丘陵」产出 +50%
 
 #### 机会成本
 
@@ -3705,7 +3700,7 @@
 - **物资：** 陶器 (`pottery`)
 - **建筑 / 生产方式：** 露天陶器烧造 (`open_pottery_hearth`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 行会陶窑 (`method_pottery_kiln_r3`)；升焰陶窑 (`pottery_kiln`)；书记学校 (`scribal_school`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 黏土坑 (`clay_collector`)；行会陶窑 (`method_pottery_kiln_r3`)；升焰陶窑 (`pottery_kiln`)；书记学校 (`scribal_school`)
 
 #### 结构化内容效果
 
@@ -3714,15 +3709,17 @@
 
 #### 永久 Modifier 条款
 
-- 营造方法：`country.output.family.construction_methods_factor`：+12%
-  - 效果机制：手制陶器提高窑作与营造相关建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 丘陵：`country.output.landform.hill.extractive_factor`：+50%
+  - 效果机制：该产业在丘陵上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 发酵保存 (`tech.fermentation`)：该科技需要先掌握 「手制陶器」。
-- 陶器容器体系 (`tech.pottery`)：该科技需要先掌握 「手制陶器」。
 - 皮革鞣制 (`tech.hide_tanning`)：将专业地形工程、成体系的精加工和城市行业移至王国，防止把石器拥挤转移到农耕。；鞣革的必需知识是皮料、加热及容器，不是不可替代的青铜铸造。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「手制陶器」。
+- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
+- 坩埚钢 (`tech.crucible_steel`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
+- 活字印刷 (`tech.movable_type_printing`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
 
 #### 主题路线后继
 
@@ -3743,7 +3740,7 @@
 | 稳定 ID | `tech.settled_knowledge` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 5000 科技点（`technology_points`） |
+| 研究成本 | 6800 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -3756,7 +3753,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -3764,7 +3761,7 @@
 
 #### 效果摘要
 
-时代晋升效果：农业部门产出 +4%；人口自然死亡率 -4%；社会领域研究效率 +5%
+时代晋升效果：全社会经济产出 +7%；社会领域研究效率 +4.6%；农业部门产出 +3.8%
 
 #### 机会成本
 
@@ -3795,15 +3792,15 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+4%
-- 人口自然死亡率：`country.population.death_factor`：+4%
-- 社会领域研究效率：`country.research.society_efficiency`：+5%
-  - 效果机制：定居生活稳定了农耕与采集的季节节律。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：定居聚落改善了庇护与食物储备。
-  - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+- 全社会经济产出：`country.economy_output_factor`：+7%
+- 社会领域研究效率：`country.research.society_efficiency`：+4.6%
+- 农业部门产出：`country.output.agriculture_factor`：+3.8%
+  - 效果机制：时代晋升带来跨行业的组织与分工效率。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：定居知识让经验得以在聚落中积累传承。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：定居生活稳定了农耕与采集的季节节律。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3828,7 +3825,7 @@
 | 稳定 ID | `tech.military.war_bands` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 4800 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3850,7 +3847,7 @@
 
 #### 效果摘要
 
-解锁建筑：战士营地；兵额 +25%；民兵战力 +20%
+解锁建筑：战士营地；兵额 +25%；民兵战力 +20%；友军互援 +8%
 
 #### 机会成本
 
@@ -3871,10 +3868,13 @@
 
 - 兵额：`country.military.barracks_capacity_factor`：+25%
 - 民兵战力：`country.military.militia_factor`：+20%
+- 友军互援：`country.military.rule.mutual_support`：+8%
   - 效果机制：战团组织让一处营地能容纳更多战士。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
   - 效果机制：部落战团的协同让临时召集的民兵更有战斗力。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：战团以血缘与誓言维系，相邻部队互相支撑时防线更稳。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -3899,7 +3899,7 @@
 | 稳定 ID | `tech.military.ambush_tactics` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 4800 科技点（`technology_points`） |
+| 研究成本 | 2100 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -3920,7 +3920,7 @@
 
 #### 效果摘要
 
-全国部队防御 +8%
+全国部队防御 +8%；本土作战 +8%
 
 #### 机会成本
 
@@ -3940,8 +3940,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队防御：`country.military.defense_factor`：+8%
+- 本土作战：`country.military.rule.home_ground`：+8%
   - 效果机制：伏击战术提高部队在复杂地形中的整体防御。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：伏击依赖对本地林泽的熟悉，在本土作战时效力最大。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -4228,7 +4231,7 @@
 <a id="era-2"></a>
 ## 农耕时代
 
-共 51 项研究科技、23 项自动应用，科技研究成本范围 3400-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
+共 52 项研究科技、23 项自动应用，科技研究成本范围 4600-15000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
 
 ### 畜牧驯养 (`tech.animal_husbandry`)
 
@@ -4237,7 +4240,7 @@
 | 稳定 ID | `tech.animal_husbandry` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4262,7 +4265,7 @@
 
 #### 效果摘要
 
-「畜牧业」生产家族建筑产出 +12%
+「畜牧业」生产家族建筑产出 +21.3%；投入因子 -3%
 
 #### 机会成本
 
@@ -4281,9 +4284,12 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+21.3%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：畜牧驯养提高畜牧业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -4309,7 +4315,7 @@
 | 稳定 ID | `tech.herd_management` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 7500 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4333,7 +4339,7 @@
 
 #### 效果摘要
 
-解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力；「畜牧业」生产家族建筑产出 +12%；作为必要支撑：堆肥场、乳制品厂、工业屠宰场、羊毛行会作坊、精梳羊毛作坊、硝田、制皂工坊
+解锁物资：畜牧产品；解锁建筑：游牧营地；地理专长「草原」产出 +18.6%
 
 #### 机会成本
 
@@ -4350,13 +4356,12 @@
 
 - **畜牧产品**（`good`）：`good.livestock_products` → `production_access` `unlock` `1.0`；`existing_binding`
 - **游牧营地**（`building`）：`building.pastoral_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **牧场承载力**（`resource`）：`resource.pasture` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
-  - 效果机制：畜群管理提高畜牧业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.agriculture_factor`：+18.6%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -4386,7 +4391,7 @@
 | 稳定 ID | `tech.oral_tradition` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -4407,7 +4412,7 @@
 
 #### 效果摘要
 
-解锁建筑：传知者议事圈；「研究机构」生产家族建筑产出 +12%；知识部门产出 +12%
+解锁建筑：传知者议事圈；「研究机构」生产家族建筑产出 +36%；知识部门产出 +24%
 
 #### 机会成本
 
@@ -4422,13 +4427,12 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **传知者议事圈**（`building`）：`building.lorekeeper_circle` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 研究机构：`country.output.family.research_institution_factor`：+12%
-- 知识部门产出：`country.output.knowledge_factor`：+12%
+- 研究机构：`country.output.family.research_institution_factor`：+36%
+- 知识部门产出：`country.output.knowledge_factor`：+24%
   - 效果机制：口述传统提高研究与知识机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：口述传统提高知识部门产出。
@@ -4457,7 +4461,7 @@
 | 稳定 ID | `tech.seasonal_calendar` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -4531,7 +4535,7 @@
 | 稳定 ID | `tech.maize_seed_saving` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4598,7 +4602,7 @@
 | 稳定 ID | `tech.maize_propagation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4619,7 +4623,7 @@
 
 #### 效果摘要
 
-商品「玉米」产量 +25%；作为必要支撑：佃作雨养玉米田
+商品「玉米」产量 +25%
 
 #### 机会成本
 
@@ -4645,6 +4649,7 @@
 #### 被以下科技作为硬前置
 
 - 玉米园圃 (`tech.maize_garden_horticulture`)：该科技需要先掌握 「玉米繁育」。
+- 玉米选育 (`tech.maize_selection`)：玉米选育需要先掌握留种繁育，野生采集不能替代连续种植与繁殖经验。
 
 #### 主题路线后继
 
@@ -4665,7 +4670,7 @@
 | 稳定 ID | `tech.wheat_seed_saving` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4732,7 +4737,7 @@
 | 稳定 ID | `tech.wheat_propagation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4753,7 +4758,7 @@
 
 #### 效果摘要
 
-商品「小麦」产量 +28%；作为必要支撑：佃作小麦庄园、改良轮作小麦庄园
+商品「小麦」产量 +28%
 
 #### 机会成本
 
@@ -4799,7 +4804,7 @@
 | 稳定 ID | `tech.potato_propagation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4813,6 +4818,7 @@
 #### 硬前置（决定研发资格）
 
 - 块茎保存 (`tech.tuber_storage`)：该科技需要先掌握 「块茎保存」。
+- 采集 (`tech.gathering`)：fertile\_soil 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -4820,7 +4826,7 @@
 
 #### 效果摘要
 
-解锁建筑：家庭块茎试种圃；作为必要支撑：冷凉高地块茎田、马铃薯庄园、佃作马铃薯田
+解锁建筑：家庭块茎试种圃
 
 #### 机会成本
 
@@ -4835,7 +4841,6 @@
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭块茎试种圃**（`building`）：`building.household_tuber_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -4865,7 +4870,7 @@
 | 稳定 ID | `tech.rice_seed_saving` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4932,7 +4937,7 @@
 | 稳定 ID | `tech.flood_calendar_practice` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6600 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -4945,7 +4950,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
 
 #### 发现启发（仅用于揭示）
 
@@ -4968,7 +4973,6 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **洪水历法祭所**（`building`）：`building.flood_calendar_shrine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -5000,7 +5004,7 @@
 | 稳定 ID | `tech.pastoral_route_memory` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 6600 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5013,7 +5017,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 早期知识机构 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
+- 思考 (`tech.early_knowledge_institution`)：该科技需要先掌握 「早期知识机构」。
 - 畜群管理 (`tech.herd_management`)：石器只保留目击、自然采集与入门手工；稳定繁育、专门化生产和制度化知识进入农耕。；牧群路线记忆随实际牧业建立。；所需知识为「畜群管理」。
 
 #### 发现启发（仅用于揭示）
@@ -5022,7 +5026,7 @@
 
 #### 效果摘要
 
-解锁建筑：牧群路线议事帐；农业领域研究效率 +3%；「畜牧业」生产家族建筑产出 +12%
+解锁建筑：牧群路线议事帐；农业领域研究效率 +3%；「畜牧业」生产家族建筑产出 +21.3%
 
 #### 机会成本
 
@@ -5037,13 +5041,12 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **牧群路线议事帐**（`building`）：`building.pastoral_council_tent` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+3%
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+21.3%
   - 效果机制：牧道、季节与水草记忆提高农业知识积累效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：牧群路线记忆提高畜牧业建筑产出。
@@ -5072,7 +5075,7 @@
 | 稳定 ID | `tech.communal_specialization` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 6600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -5093,7 +5096,7 @@
 
 #### 效果摘要
 
-社会领域研究效率 +8%
+社会领域研究效率 +7.3%
 
 #### 机会成本
 
@@ -5112,7 +5115,7 @@
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -5139,7 +5142,7 @@
 | 稳定 ID | `tech.household_production` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -5160,7 +5163,7 @@
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家庭织造棚；社会领域研究效率 +20%
+解锁物资：布料；解锁建筑：家庭织造棚；社会领域研究效率 +18.3%
 
 #### 机会成本
 
@@ -5180,7 +5183,7 @@
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+20%
+- 社会领域研究效率：`country.research.society_efficiency`：+18.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -5208,7 +5211,7 @@
 | 稳定 ID | `tech.charcoal_burning` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 7500 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5230,7 +5233,7 @@
 
 #### 效果摘要
 
-解锁物资：木炭；解锁建筑：覆土木炭窑；木材 -8%；作为必要支撑：烧砖窑、露天青铜作坊、升焰陶窑
+解锁物资：木炭；解锁建筑：覆土木炭窑；木材 -8%
 
 #### 机会成本
 
@@ -5260,6 +5263,7 @@
 - 木炭坩埚炼铜 (`tech.copper_metallurgy`)：该科技需要先掌握 「木炭烧制」。
 - 块炼铁 (`tech.iron_smelting`)：块炼炉以木炭为燃料与还原剂。
 - 火药配制 (`tech.gunpowder_formulation`)：木炭是火药三组分之一。
+- 木材化学 (`tech.timber_chemical_industry`)：炭化是木材热解的第一种工业形态，木材化学由它放大而来。
 
 #### 主题路线后继
 
@@ -5280,7 +5284,7 @@
 | 稳定 ID | `tech.clay_preparation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5303,7 +5307,7 @@
 
 #### 效果摘要
 
-「营造方法」生产家族建筑产出 +12%；作为必要支撑：露天黏土坑
+「营造方法」生产家族建筑产出 +36%；建造成本 -3%
 
 #### 机会成本
 
@@ -5322,9 +5326,12 @@
 
 #### 永久 Modifier 条款
 
-- 营造方法：`country.output.family.construction_methods_factor`：+12%
+- 营造方法：`country.output.family.construction_methods_factor`：+36%
+- 建造成本：`country.construction.cost_factor`：+3%
   - 效果机制：黏土调制提高营造方法建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -5349,7 +5356,7 @@
 | 稳定 ID | `tech.fishing_boats` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5362,7 +5369,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 打制石器 (`tech.stone_knapping`)：独木舟船体与桨的加工需要基础石器工具，捕鱼经验不能替代加工能力。
 
 #### 发现启发（仅用于揭示）
 
@@ -5372,7 +5379,7 @@
 
 #### 效果摘要
 
-「海上作业」生产家族建筑产出 +28%；作为必要支撑：帆船渔场
+地理专长「海岸」产出 +36.8%
 
 #### 机会成本
 
@@ -5391,9 +5398,9 @@
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+28%
-  - 效果机制：渔舟提高海上渔获与作业产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 海岸：`country.output.terrain.coast.extractive_factor`：+36.8%
+  - 效果机制：该产业在海岸上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -5420,7 +5427,7 @@
 | 稳定 ID | `tech.natural_copper_identification` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5433,7 +5440,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -5441,7 +5448,7 @@
 
 #### 效果摘要
 
-可利用资源：铜矿；「铜矿采掘」生产家族建筑产出 +12%；作为必要支撑：浅层铜矿
+可利用资源：铜矿；「铜矿采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -5460,7 +5467,7 @@
 
 #### 永久 Modifier 条款
 
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+36%
   - 效果机制：自然铜辨识提高铜矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -5488,7 +5495,7 @@
 | 稳定 ID | `tech.natural_copper_working` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5510,7 +5517,7 @@
 
 #### 效果摘要
 
-解锁物资：铜；解锁建筑：自然铜冷锤工坊；「铜矿采掘」生产家族建筑产出 +12%；作为必要支撑：大气式蒸汽机工坊、早期半导体厂、炼铜厂、早期计算机工场、电动机厂、电子元件厂、智能化电动机厂、智能化电子元件厂、电气化造船厂、智能仪器厂、精密仪器厂、智能化线材厂、远洋造船厂、科学仪器工坊、线材厂
+解锁物资：铜；解锁建筑：自然铜冷锤工坊；地理专长「山地」产出 +16.2%
 
 #### 机会成本
 
@@ -5530,13 +5537,14 @@
 
 #### 永久 Modifier 条款
 
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
-  - 效果机制：自然铜冷锤提高铜矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 山地：`country.output.landform.mountain.extractive_factor`：+16.2%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 铜退火 (`tech.copper_annealing`)：该科技需要先掌握 「自然铜冷锤」。
+- 度量衡 (`tech.weights_and_measures`)：铜 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -5557,7 +5565,7 @@
 | 稳定 ID | `tech.copper_annealing` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5571,6 +5579,7 @@
 #### 硬前置（决定研发资格）
 
 - 自然铜冷锤 (`tech.natural_copper_working`)：该科技需要先掌握 「自然铜冷锤」。
+- 火种控制 (`tech.fire_control`)：铜退火需要可控制的加热，冷锤经验不能替代用火知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -5578,7 +5587,7 @@
 
 #### 效果摘要
 
-解锁物资：铜工具；解锁建筑：铜器工坊；「铜矿采掘」生产家族建筑产出 +12%；作为必要支撑：露天青铜作坊
+解锁物资：铜工具；解锁建筑：铜器工坊；「铜矿采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -5598,14 +5607,13 @@
 
 #### 永久 Modifier 条款
 
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+36%
   - 效果机制：铜退火提高铜矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 锡矿辨识 (`tech.tin_identification`)：该科技需要先掌握 「铜退火」。
-- 铜矿焙烧 (`tech.copper_ore_roasting`)：该科技需要先掌握 「铜退火」。
 
 #### 主题路线后继
 
@@ -5626,7 +5634,7 @@
 | 稳定 ID | `tech.tin_identification` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5649,7 +5657,7 @@
 
 #### 效果摘要
 
-解锁物资：锡矿石；解锁建筑：浅层锡矿；可利用资源：锡矿；「锡矿采掘」生产家族建筑产出 +12%；作为必要支撑：土法炼锡炉、锡矿
+解锁物资：锡矿石；解锁建筑：浅层锡矿；可利用资源：锡矿；「锡矿采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -5670,7 +5678,7 @@
 
 #### 永久 Modifier 条款
 
-- 锡矿采掘：`country.output.family.tin_extraction_factor`：+12%
+- 锡矿采掘：`country.output.family.tin_extraction_factor`：+36%
   - 效果机制：锡矿辨识提高锡矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -5697,7 +5705,7 @@
 | 稳定 ID | `tech.seed_selection` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -5718,7 +5726,7 @@
 
 #### 效果摘要
 
-解锁建筑：药草园；农业部门产出 +12%
+解锁建筑：药草园；农业部门产出 +11.3%
 
 #### 机会成本
 
@@ -5733,12 +5741,11 @@
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **药草园**（`building`）：`building.medicinal_herb_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+12%
+- 农业部门产出：`country.output.agriculture_factor`：+11.3%
   - 效果机制：留种选育提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -5767,7 +5774,7 @@
 | 稳定 ID | `tech.permanent_settlements` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 7200 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -5782,6 +5789,7 @@
 
 - 食物储藏 (`tech.food_storage`)：定居主干依赖储藏与土建，不强迫专业分工分支。；所需知识为「食物储藏」。
 - 土建筑 (`tech.earth_building`)：定居主干依赖储藏与土建，不强迫专业分工分支。；所需知识为「土建筑」。
+- 燧石辨识 (`tech.flint_identification`)：燧石原料 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -5789,7 +5797,7 @@
 
 #### 效果摘要
 
-解锁建筑：改良燧石矿坑；解锁建筑：定居采集营地；全社会经济产出 +4%；人口自然死亡率 -6%
+解锁建筑：改良燧石矿坑、定居采集营地；社会研究效率 +9.2%；人口自然死亡率 -2.2%
 
 #### 机会成本
 
@@ -5804,17 +5812,15 @@
 
 #### 结构化内容效果
 
-- **燧石原料**（`good`）：`good.flint` → `production_access` `unlock` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良燧石矿坑**（`building`）：`building.method_flint_quarry_r1` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **定居采集营地**（`building`）：`building.method_gathering_ground_r1` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-- 人口自然死亡率：`country.population.death_factor`：+6%
-  - 效果机制：永久聚落提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+- 人口自然死亡率：`country.population.death_factor`：+2.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：定居减少迁徙途中的伤亡。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
 
@@ -5845,7 +5851,7 @@
 | 稳定 ID | `tech.irrigation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -5870,7 +5876,7 @@
 
 #### 效果摘要
 
-水田生产·旱灾损失 -10%；商品「稻米」产量 +14%；农业部门产出 +14%
+水田生产·旱灾损失 -10%；商品「稻米」产量 +14%；农业部门产出 +13.2%
 
 #### 机会成本
 
@@ -5891,7 +5897,7 @@
 
 - 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+10%
 - 稻米：`country.output.good.rice_grain_factor`：+14%
-- 农业部门产出：`country.output.agriculture_factor`：+14%
+- 农业部门产出：`country.output.agriculture_factor`：+13.2%
   - 效果机制：灌溉降低水田生产建筑的旱灾损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：灌溉提高稻米产量。
@@ -5902,7 +5908,8 @@
 #### 被以下科技作为硬前置
 
 - 湿地稻园 (`tech.wetland_rice_gardening`)：该科技需要先掌握 「灌溉」。
-- 灌溉测量 (`tech.irrigation_surveying`)：该科技需要先掌握 「灌溉」。
+- 退水玉米地 (`tech.flood_recession_maize`)：该工序的知识由「灌溉」承载：灌溉测量零效果；测量并入灌溉，粮作入口改为 irrigation。
+- 退水小麦地 (`tech.flood_recession_wheat`)：该工序的知识由「灌溉」承载：灌溉测量零效果；测量并入灌溉，粮作入口改为 irrigation。
 - 运河工程 (`tech.canal_engineering`)：该科技需要先掌握 「灌溉」。
 - 水力机械 (`tech.water_power`)：水车最早用于提水灌溉，随后才转为磨坊与鼓风动力。
 
@@ -5925,7 +5932,7 @@
 | 稳定 ID | `tech.plough_agriculture` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 7200 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -5946,7 +5953,7 @@
 
 #### 效果摘要
 
-商品「小麦」产量 +18%；商品「玉米」产量 +18%；商品「谷物」产量 +18%；农业部门产出 +18%
+商品「小麦」产量 +18%；商品「玉米」产量 +18%；商品「谷物」产量 +18%；农业部门产出 +17%
 
 #### 机会成本
 
@@ -5957,7 +5964,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 梯田农场 (`terrace_farm`)
 
 #### 结构化内容效果
 
@@ -5968,7 +5975,7 @@
 - 小麦：`country.output.good.wheat_grain_factor`：+18%
 - 玉米：`country.output.good.corn_grain_factor`：+18%
 - 谷物：`country.output.good.grain_factor`：+18%
-- 农业部门产出：`country.output.agriculture_factor`：+18%
+- 农业部门产出：`country.output.agriculture_factor`：+17%
   - 效果机制：犁耕农业提高小麦产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：犁耕农业提高玉米产量。
@@ -5994,83 +6001,6 @@
 
 - 农耕社会 (`tech.agrarian_society`)
 
-### 铜锡配比与铸造 (`tech.bronze_casting`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.bronze_casting` |
-| 时代 | 农耕时代 (`agrarian`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | era\_candidate |
-| 节点角色 | production\_system |
-| 布局路线 | branch.nonferrous\_metals |
-| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 全部路线 | 资源 · 铜 (\`route.resource.copper\`)；资源 · 锡 (\`route.resource.tin\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | metallurgy |
-
-#### 硬前置（决定研发资格）
-
-- 锡矿辨识 (`tech.tin_identification`)：该科技需要先掌握 「锡矿辨识」。
-- 复合工具 (`tech.composite_tools`)：复合工具带来的制弓工艺是青铜时代军队远程装备的前提。
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「锡矿」（resource.tin\_ore）
-  - 已发现信号「锡矿贸易接触」（contact.tin）
-
-#### 效果摘要
-
-解锁物资：青铜工具；解锁物资：青铜兵器；解锁建筑：青铜兵器坊；解锁建筑：露天青铜作坊；「铜矿采掘」生产家族建筑产出 +12%；「锡矿采掘」生产家族建筑产出 +12%；作为必要支撑：专业青铜工具工坊
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 青铜工具 (`bronze_tools`)；青铜兵器 (`bronze_weapons`)
-- **建筑 / 生产方式：** 青铜兵器坊 (`bronze_armory`)；露天青铜作坊 (`ore_bronzesmith_camp`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 专业青铜工具工坊 (`bronze_tool_workshop`)
-
-#### 结构化内容效果
-
-- **青铜工具**（`good`）：`good.bronze_tools` → `production_access` `unlock` `1.0`；`existing_binding`
-- **青铜兵器**（`good`）：`good.bronze_weapons` → `production_access` `unlock` `1.0`；`existing_binding`
-- **青铜兵器坊**（`building`）：`building.bronze_armory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **露天青铜作坊**（`building`）：`building.ore_bronzesmith_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
-- 锡矿采掘：`country.output.family.tin_extraction_factor`：+12%
-  - 效果机制：铜锡配比与铸造提高铜矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：铜锡配比与铸造提高锡矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-- 战车战法 (`tech.military.chariot_warfare`)：战车兵的青铜兵器需先掌握青铜铸造。
-- 火药武器 (`tech.gunpowder_weapons`)：早期火炮以青铜铸造炮管。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-- 农耕社会 (`tech.agrarian_society`)
-
 ### 记事制度 (`tech.record_keeping`)
 
 | 字段 | 内容 |
@@ -6078,7 +6008,7 @@
 | 稳定 ID | `tech.record_keeping` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -6101,7 +6031,7 @@
 
 #### 效果摘要
 
-解锁建筑：书记学校；社会领域研究效率 +8%
+解锁建筑：书记学校；社会领域研究效率 +7.3%
 
 #### 机会成本
 
@@ -6116,12 +6046,11 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **书记学校**（`building`）：`building.scribal_school` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -6148,7 +6077,7 @@
 | 稳定 ID | `tech.rainfed_field_system` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -6172,7 +6101,7 @@
 
 #### 效果摘要
 
-解锁建筑：家庭亚麻试种圃；可利用资源：旱地承载力；可利用资源：肥沃土壤；农业部门产出 +12%；作为必要支撑：自动化农场、家庭纺织坊、棉花农场、家庭棉花园圃、佃作棉花田、菜蔬农场、亚麻农场、冷凉高地块茎田、改良家用织机、改良小农场、电气化集约农场、玉米庄园、家庭玉米园圃、机械化农场、药草园、药材种植园、自动化棉花农场、机械化棉花农场、精准棉花农场、自动化亚麻农场、亚麻庄园、改良亚麻庄园、机械化亚麻农场、精准亚麻农场、高地精准块茎农业、机械化玉米农场、自动化玉米农场、精准玉米农场、自动化药材农场、受控环境药材农场、精准药材农场、机械化马铃薯农场、自动化马铃薯农场、改良轮作马铃薯庄园、精准马铃薯农场、自动化小麦农场、佃作小麦庄园、改良轮作小麦庄园、机械化小麦农场、精准小麦农场、垄作马铃薯田、马铃薯庄园、精准农场、自给农庄、三圃制小农场
+解锁建筑：家庭亚麻试种圃；可利用资源：旱地承载力；农业部门产出 +11.3%
 
 #### 机会成本
 
@@ -6187,14 +6116,12 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭亚麻试种圃**（`building`）：`building.household_flax_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **旱地承载力**（`resource`）：`resource.arable_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-- **肥沃土壤**（`resource`）：`resource.fertile_soil` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+12%
+- 农业部门产出：`country.output.agriculture_factor`：+11.3%
   - 效果机制：雨养田体系提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -6202,6 +6129,7 @@
 
 - 雨养小麦田 (`tech.rainfed_wheat_cultivation`)：该科技需要先掌握 「雨养田体系」。
 - 旱稻繁育 (`tech.upland_rice_propagation`)：该科技需要先掌握 「雨养田体系」。
+- 梯田农业 (`tech.terrace_farming`)：arable\_land 是这条生产链的物质前提。
 - 公共仓储 (`tech.public_storehouses`)：该科技需要先掌握 「雨养田体系」。
 - 雨养玉米田 (`tech.rainfed_maize_cultivation`)：该科技需要先掌握 「雨养田体系」。
 - 佃作谷物 (`tech.tenant_cereal_farming`)：佃户耕作的是成片雨养田。
@@ -6225,7 +6153,7 @@
 | 稳定 ID | `tech.paddy_bunding` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6297,7 +6225,7 @@
 | 稳定 ID | `tech.kiln_firing` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6321,7 +6249,7 @@
 
 #### 效果摘要
 
-解锁物资：砖块；解锁物资：锡；解锁建筑：露天黏土坑；解锁建筑：土法炼锡炉；解锁建筑：烧砖窑；解锁建筑：升焰陶窑；「锡矿采掘」生产家族建筑产出 +12%；作为必要支撑：弓弩坊、制砖厂、专业青铜工具工坊、特许大学、铁甲坊、石灰厂、武学馆、露天青铜作坊、印刷学社
+解锁物资：砖块、锡；解锁建筑：露天黏土坑、土法炼锡炉、烧砖窑、升焰陶窑；地理专长「火山」产出 +33.3%
 
 #### 机会成本
 
@@ -6337,8 +6265,6 @@
 #### 结构化内容效果
 
 - **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锡**（`good`）：`good.tin` → `production_access` `unlock` `1.0`；`existing_binding`
 - **露天黏土坑**（`building`）：`building.early_clay_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **土法炼锡炉**（`building`）：`building.early_tin_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -6347,13 +6273,13 @@
 
 #### 永久 Modifier 条款
 
-- 锡矿采掘：`country.output.family.tin_extraction_factor`：+12%
-  - 效果机制：窑烧控制提高锡矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 火山：`country.output.landform.volcano.extractive_factor`：+33.3%
+  - 效果机制：该产业在火山上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
-- 陶器容器体系 (`tech.pottery`)：该科技需要先掌握 「窑烧控制」。
+- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡熔融与铸造需要受控高温，人口和机构规模不能替代窑烧知识。
 - 早期玻璃烧制 (`tech.early_glassmaking`)：该科技需要先掌握 「窑烧控制」。
 - 砌体建筑 (`tech.masonry`)：砌体承接土坯、石料和窑烧，明确采石场的知识归属。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「窑烧控制」。
 - 地表煤利用 (`tech.surface_coal_use`)：窑炉控温经验让煤的高温燃烧可控。
@@ -6371,6 +6297,84 @@
 
 无
 
+### 铜锡配比与铸造 (`tech.bronze_casting`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.bronze_casting` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 15000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | production\_system |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
+| 全部路线 | 资源 · 铜 (\`route.resource.copper\`)；资源 · 锡 (\`route.resource.tin\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | metallurgy |
+
+#### 硬前置（决定研发资格）
+
+- 锡矿辨识 (`tech.tin_identification`)：该科技需要先掌握 「锡矿辨识」。
+- 复合工具 (`tech.composite_tools`)：复合工具带来的制弓工艺是青铜时代军队远程装备的前提。
+- 窑烧控制 (`tech.kiln_firing`)：铜锡熔融与铸造需要受控高温，人口和机构规模不能替代窑烧知识。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「锡矿」（resource.tin\_ore）
+  - 已发现信号「锡矿贸易接触」（contact.tin）
+
+#### 效果摘要
+
+解锁物资：青铜工具、青铜兵器；解锁建筑：青铜兵器坊、露天青铜作坊；地理专长「山地」产出 +16.2%；地理专长「火山」产出 +33.3%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 青铜工具 (`bronze_tools`)；青铜兵器 (`bronze_weapons`)
+- **建筑 / 生产方式：** 青铜兵器坊 (`bronze_armory`)；露天青铜作坊 (`ore_bronzesmith_camp`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 专业青铜工具工坊 (`bronze_tool_workshop`)
+
+#### 结构化内容效果
+
+- **青铜工具**（`good`）：`good.bronze_tools` → `production_access` `unlock` `1.0`；`existing_binding`
+- **青铜兵器**（`good`）：`good.bronze_weapons` → `production_access` `unlock` `1.0`；`existing_binding`
+- **青铜兵器坊**（`building`）：`building.bronze_armory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **露天青铜作坊**（`building`）：`building.ore_bronzesmith_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- 山地：`country.output.landform.mountain.extractive_factor`：+16.2%
+- 火山：`country.output.landform.volcano.extractive_factor`：+33.3%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在火山上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+- 战车战法 (`tech.military.chariot_warfare`)：战车兵的青铜兵器需先掌握青铜铸造。
+- 火药武器 (`tech.gunpowder_weapons`)：早期火炮以青铜铸造炮管。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 农耕社会 (`tech.agrarian_society`)
+
 ### 畜力牵引 (`tech.animal_traction`)
 
 | 字段 | 内容 |
@@ -6378,7 +6382,7 @@
 | 稳定 ID | `tech.animal_traction` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6402,7 +6406,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+生产投入 -5%
 
 #### 机会成本
 
@@ -6421,9 +6425,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：畜力牵引提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 生产投入：`country.production.input_factor`：+5%
+  - 效果机制：该科技的组织与工艺收益通过生产投入体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -6448,7 +6452,7 @@
 | 稳定 ID | `tech.household_landholding` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6471,7 +6475,7 @@
 
 #### 效果摘要
 
-解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：菜蔬农场；解锁建筑：自给农庄；作为必要支撑：综合食品厂、主食厨房、三圃制小农场
+解锁物资：混合谷物、蔬菜；解锁建筑：菜蔬农场、自给农庄
 
 #### 机会成本
 
@@ -6519,7 +6523,7 @@
 | 稳定 ID | `tech.adobe_making` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6540,7 +6544,7 @@
 
 #### 效果摘要
 
-解锁物资：日晒土坯；解锁建筑：日晒土坯场；「营造方法」生产家族建筑产出 +12%；作为必要支撑：公共营造场
+解锁物资：日晒土坯；解锁建筑：日晒土坯场；地理专长「丘陵」产出 +50%
 
 #### 机会成本
 
@@ -6560,9 +6564,9 @@
 
 #### 永久 Modifier 条款
 
-- 营造方法：`country.output.family.construction_methods_factor`：+12%
-  - 效果机制：日晒土坯提高营造方法建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 丘陵：`country.output.landform.hill.extractive_factor`：+50%
+  - 效果机制：该产业在丘陵上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -6587,7 +6591,7 @@
 | 稳定 ID | `tech.maize_garden_horticulture` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6611,7 +6615,7 @@
 
 #### 效果摘要
 
-解锁建筑：家庭玉米园圃；作为必要支撑：工业榨油厂
+解锁建筑：家庭玉米园圃
 
 #### 机会成本
 
@@ -6626,7 +6630,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭玉米园圃**（`building`）：`building.maize_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -6656,7 +6659,7 @@
 | 稳定 ID | `tech.swidden_maize_cultivation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6674,8 +6677,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「森林」（landform.forest）
+- 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
@@ -6694,7 +6696,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **刀耕火种玉米地**（`building`）：`building.swidden_maize_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -6724,7 +6725,7 @@
 | 稳定 ID | `tech.rainfed_wheat_cultivation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6748,7 +6749,7 @@
 
 #### 效果摘要
 
-解锁建筑：雨养小麦地；作为必要支撑：小麦农场
+解锁建筑：雨养小麦地
 
 #### 机会成本
 
@@ -6763,7 +6764,6 @@
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **雨养小麦地**（`building`）：`building.rainfed_wheat_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -6773,6 +6773,7 @@
 #### 被以下科技作为硬前置
 
 - 谷物脱粒 (`tech.grain_threshing`)：基础脱粒承接实际雨养麦作与工具，不依赖王国的旱作保水专业分支。；所需知识为「雨养小麦田」。
+- 旱作农业 (`tech.dryland_farming`)：旱作农业必须以已有雨养种植经验为基础，不能从野生采集直接跳入成熟耕作。
 - 退水小麦地 (`tech.flood_recession_wheat`)：该科技需要先掌握 「雨养小麦田」。
 - 谷物烘焙 (`tech.grain_baking`)：农耕保留家庭园圃、原始耕作与基础处理；专业选育、定型田制、畜力军用、专业食品和公共制度分期到王国。；烘焙不应被后移王国的旱作小麦专门路线封锁。；所需知识为「雨养小麦田」。
 
@@ -6795,7 +6796,7 @@
 | 稳定 ID | `tech.grain_threshing` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6820,7 +6821,7 @@
 
 #### 效果摘要
 
-解锁建筑：主食厨房；商品「小麦」产量 +18%；商品「稻米」产量 +18%；商品「玉米」产量 +18%；「主粮加工」生产家族建筑产出 +18%；作为必要支撑：主食加工厂
+解锁建筑：主食厨房；商品「小麦」产量 +18%；商品「稻米」产量 +18%；商品「玉米」产量 +18%；地理专长「泛滥平原」产出 +14.9%
 
 #### 机会成本
 
@@ -6835,7 +6836,6 @@
 
 #### 结构化内容效果
 
-- **熟制主食**（`good`）：`good.prepared_staples` → `production_access` `unlock` `1.0`；`existing_binding`
 - **主食厨房**（`building`）：`building.staple_kitchen` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -6843,15 +6843,15 @@
 - 小麦：`country.output.good.wheat_grain_factor`：+18%
 - 稻米：`country.output.good.rice_grain_factor`：+18%
 - 玉米：`country.output.good.corn_grain_factor`：+18%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+18%
+- 泛滥平原：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
   - 效果机制：谷物脱粒提高小麦产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：谷物脱粒提高稻米产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：谷物脱粒提高玉米产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
-  - 效果机制：谷物脱粒提高主粮加工建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在泛滥平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -6876,7 +6876,7 @@
 | 稳定 ID | `tech.upland_rice_propagation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6916,7 +6916,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **旱稻田**（`building`）：`building.upland_rice_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -6946,7 +6945,7 @@
 | 稳定 ID | `tech.wetland_rice_gardening` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -6961,6 +6960,7 @@
 
 - 旱稻繁育 (`tech.upland_rice_propagation`)：该科技需要先掌握 「旱稻繁育」。
 - 灌溉 (`tech.irrigation`)：该科技需要先掌握 「灌溉」。
+- 芦苇收割 (`tech.reed_harvesting`)：paddy\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -6985,7 +6985,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **湿地稻园**（`building`）：`building.wetland_rice_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -7016,7 +7015,7 @@
 | 稳定 ID | `tech.ridge_tuber_cultivation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7054,7 +7053,6 @@
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
 - **垄作马铃薯田**（`building`）：`building.potato_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -7085,7 +7083,7 @@
 | 稳定 ID | `tech.flax_retting` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7108,7 +7106,7 @@
 
 #### 效果摘要
 
-解锁物资：亚麻纤维；解锁建筑：亚麻农场；解锁建筑：沤麻池；「布匹织造」生产家族建筑产出 +12%；「专用商品作物」生产家族建筑产出 +12%；作为必要支撑：行会织造坊、自动化亚麻农场、精准亚麻农场
+解锁物资：亚麻纤维；解锁建筑：亚麻农场、沤麻池；「布匹织造」生产家族建筑产出 +28.8%；「专用商品作物」生产家族建筑产出 +26.4%
 
 #### 机会成本
 
@@ -7123,15 +7121,14 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻纤维**（`good`）：`good.flax_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻农场**（`building`）：`building.flax_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **沤麻池**（`building`）：`building.flax_retting_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+28.8%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+26.4%
   - 效果机制：沤麻提高麻纤维织造相关建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：沤麻提高亚麻等专用作物建筑产出。
@@ -7160,7 +7157,7 @@
 | 稳定 ID | `tech.hand_spinning` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7185,7 +7182,7 @@
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家庭纺织坊；「布匹织造」生产家族建筑产出 +25%；作为必要支撑：细木家具工坊、宫廷裁缝坊、家庭织造棚、电气化造船厂、远洋造船厂、裁缝铺
+解锁建筑：家庭纺织坊；地理专长「草原」产出 +20.5%
 
 #### 机会成本
 
@@ -7200,19 +7197,17 @@
 
 #### 结构化内容效果
 
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭纺织坊**（`building`）：`building.cottage_weaving` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
-  - 效果机制：手工纺纱提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+20.5%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 织造 (`tech.weaving`)：该科技需要先掌握 「手工纺纱」。
-- 织机织造 (`tech.loom_weaving`)：将专业地形工程、成体系的精加工和城市行业移至王国，防止把石器拥挤转移到农耕。；专业织机必须晚于手纺与家用织造，修正原先只需捻纤维即可直达行会织机。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「手工纺纱」。
 
 #### 主题路线后继
 
@@ -7233,7 +7228,7 @@
 | 稳定 ID | `tech.cotton_ginning` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7256,7 +7251,7 @@
 
 #### 效果摘要
 
-解锁物资：棉纤维；解锁建筑：手工轧棉棚；「专用商品作物」生产家族建筑产出 +25%；作为必要支撑：连续硝化火药厂、机械轧棉厂、无烟火药厂
+解锁物资：棉纤维；解锁建筑：手工轧棉棚；「专用商品作物」生产家族建筑产出 +54.9%
 
 #### 机会成本
 
@@ -7276,7 +7271,7 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+25%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+54.9%
   - 效果机制：棉花去籽提高专用商品作物建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -7303,7 +7298,7 @@
 | 稳定 ID | `tech.cotton_gardening` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7327,7 +7322,7 @@
 
 #### 效果摘要
 
-解锁建筑：家庭棉花园圃；可利用资源：种植园承载力；「专用商品作物」生产家族建筑产出 +12%；作为必要支撑：自动化棉花农场、精准棉花农场
+解锁建筑：家庭棉花园圃；可利用资源：种植园承载力；地理专长「热带雨林」产出 +14.8%
 
 #### 机会成本
 
@@ -7342,19 +7337,21 @@
 
 #### 结构化内容效果
 
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭棉花园圃**（`building`）：`building.cotton_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
-  - 效果机制：棉花园圃提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+14.8%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 商品作物管理 (`tech.commodity_crop_management`)：棉花是最早规模化的商品作物之一。
+- 机动农业 (`tech.motorized_agriculture`)：plantation\_land 是这条生产链的物质前提。
+- 作物遥感 (`tech.crop_remote_sensing`)：plantation\_land 是这条生产链的物质前提。
+- 智能育种 (`tech.intelligent_breeding`)：plantation\_land 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -7375,7 +7372,7 @@
 | 稳定 ID | `tech.spice_shade_gardening` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7400,7 +7397,7 @@
 
 #### 效果摘要
 
-解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；种植园生产·热害损失 -12%；「专用商品作物」生产家族建筑产出 +24%；作为必要支撑：药材商品园、商品香料园
+解锁建筑：林下遮阴香料园；种植园生产·热害损失 -12%；「专用商品作物」生产家族建筑产出 +52.8%
 
 #### 机会成本
 
@@ -7415,14 +7412,12 @@
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **林下遮阴香料园**（`building`）：`building.spice_shade_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 种植园生产·热害损失：`country.climate.profile.plantation_crop.heat_stress_loss_factor`：+12%
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+24%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+52.8%
   - 效果机制：遮阴香料园降低种植园生产建筑的热害损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：遮阴香料园提高专用商品作物建筑产出。
@@ -7451,7 +7446,7 @@
 | 稳定 ID | `tech.timber_sawing` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7472,7 +7467,7 @@
 
 #### 效果摘要
 
-解锁物资：木材；解锁建筑：锯木场；解锁建筑：伐木场；木材 -10%；作为必要支撑：酿酒坊、细木家具工坊、地籍管理局、古典学院、鞋匠铺、堆肥场、家庭纺织坊、棉花农场、宫廷裁缝坊、蒸馏酒坊、榨油坊、家具厂、家具行会工坊、行会织造坊、改良小农场、玉米庄园、庄园牧场、药材种植园、亚麻庄园、改良亚麻庄园、改良锯木场、水力锯木场、帆船渔场、改良轮作马铃薯庄园、行会陶窑、精耕稻庄、商业狩猎与毛皮站、组织化伐木场、佃作小麦庄园、改良轮作小麦庄园、羊毛行会作坊、修道院抄写室、远洋造船厂、木栅兵营、马铃薯庄园、碎布造纸工坊、机械化牧场、橡胶种植园、书记学校、商业香料种植园、香料种植园、裁缝铺、三圃制小农场、钢制工具厂
+解锁物资：木材；解锁建筑：锯木场、伐木场；木材 -10%
 
 #### 机会成本
 
@@ -7487,7 +7482,6 @@
 
 #### 结构化内容效果
 
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **木材**（`good`）：`good.lumber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锯木场**（`building`）：`building.lumber_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **伐木场**（`building`）：`building.timber_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -7525,7 +7519,7 @@
 | 稳定 ID | `tech.wool_husbandry` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7546,7 +7540,7 @@
 
 #### 效果摘要
 
-解锁物资：羊毛；解锁建筑：羊毛棚；「畜牧业」生产家族建筑产出 +28%；作为必要支撑：毡制帐篷、羊毛行会作坊、精梳羊毛作坊
+解锁物资：羊毛；解锁建筑：羊毛棚；地理专长「草原」产出 +25.7%
 
 #### 机会成本
 
@@ -7566,9 +7560,9 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
-  - 效果机制：毛用畜牧提高畜牧业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.agriculture_factor`：+25.7%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7593,7 +7587,7 @@
 | 稳定 ID | `tech.felt_making` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6600 科技点（`technology_points`） |
+| 研究成本 | 4600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7614,7 +7608,7 @@
 
 #### 效果摘要
 
-解锁建筑：毡制帐篷；「布匹织造」生产家族建筑产出 +4%
+解锁建筑：毡制帐篷；地理专长「草原」产出 +4.8%
 
 #### 机会成本
 
@@ -7629,14 +7623,13 @@
 
 #### 结构化内容效果
 
-- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毡制帐篷**（`building`）：`building.felt_making_tent` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+4%
-  - 效果机制：羊毛毡制提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+4.8%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7661,7 +7654,7 @@
 | 稳定 ID | `tech.fermentation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 7200 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -7686,7 +7679,7 @@
 
 #### 效果摘要
 
-解锁物资：酒饮；解锁建筑：酿酒坊；「主粮加工」生产家族建筑产出 +25%；作为必要支撑：蒸馏酒坊
+解锁物资：酒饮；解锁建筑：酿酒坊；「主粮加工」生产家族建筑产出 +69.9%
 
 #### 机会成本
 
@@ -7706,7 +7699,7 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+69.9%
   - 效果机制：发酵保存提高主粮加工建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -7733,7 +7726,7 @@
 | 稳定 ID | `tech.salt_preservation` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 8400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -7754,7 +7747,7 @@
 
 #### 效果摘要
 
-解锁物资：食盐；解锁建筑：煮盐灶；商品「加工食品」家庭消费 -8%；「制盐」生产家族建筑产出 +12%；作为必要支撑：深井盐矿、工业制皂厂、盐场、制皂工坊
+解锁物资：食盐；解锁建筑：煮盐灶；商品「加工食品」家庭消费 -8%；地理专长「盐沼」产出 +42.9%
 
 #### 机会成本
 
@@ -7775,11 +7768,11 @@
 #### 永久 Modifier 条款
 
 - 加工食品：`country.consumption.good.processed_food_factor`：+8%
-- 制盐：`country.output.family.salt_extraction_factor`：+12%
+- 盐沼：`country.output.terrain.salt_flat.extractive_factor`：+42.9%
   - 效果机制：盐藏减少加工食品的腐败损失。
   - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
-  - 效果机制：盐渍保存提高制盐建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在盐沼上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7806,7 +7799,7 @@
 | 稳定 ID | `tech.agrarian_society` |
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 12000 科技点（`technology_points`） |
+| 研究成本 | 15000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -7819,7 +7812,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -7827,7 +7820,7 @@
 
 #### 效果摘要
 
-时代晋升效果：农业部门产出 +8%；人口自然死亡率 -5%；国内贸易容量 +5%
+时代晋升效果：农业部门产出 +7.5%；全社会经济产出 +7%；国内贸易容量 +5%
 
 #### 机会成本
 
@@ -7859,13 +7852,13 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
-- 人口自然死亡率：`country.population.death_factor`：+5%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
+- 全社会经济产出：`country.economy_output_factor`：+7%
 - 国内贸易容量：`country.trade.capacity_factor`：+5%
   - 效果机制：进入农耕时代，田地制度与农时组织全面推广。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：稳定的粮食盈余降低了饥荒死亡。
-  - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+  - 效果机制：时代晋升带来跨行业的组织与分工效率。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：农耕聚落之间形成固定的交换网络。
   - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
@@ -7876,6 +7869,78 @@
 #### 主题路线后继
 
 无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 采石与琢石 (`tech.stone_quarrying`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.stone_quarrying` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 8400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
+| 全部路线 | 材料 · 石材 (\`route.material.stone\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | construction |
+
+#### 硬前置（决定研发资格）
+
+- 磨制石器 (`tech.ground_stone_tools`)：琢石是把磨制石器的打击与研磨经验放大到建材尺度，工具知识是它的直接前身。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「山地」（landform.mountain）
+  - 已发现信号「石料」（resource.stone）
+
+#### 效果摘要
+
+「营造方法」生产家族建筑产出 +30%；建造成本 -3%
+
+#### 机会成本
+
+占用农耕时代的通用研究预算，延后同代的作物与灌溉锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 营造方法：`country.output.family.construction_methods_factor`：+30%
+- 建造成本：`country.construction.cost_factor`：+3%
+  - 效果机制：有稳定的石料供应与琢石工序，砌筑才不再受限于随手可捡的毛石。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 砌体建筑 (`tech.masonry`)：砌体需要先有采石与琢石：没有石作环节，砌筑只能停留在土坯。
+
+#### 主题路线后继
+
+- 砌体建筑 (`tech.masonry`)：砌体直接把采石与琢石的产品变成墙体，是同一建材支线的下一步。
 
 #### 跨领域应用
 
@@ -8306,7 +8371,7 @@
 #### 所需科技（ALL，决定自动应用）
 
 - 记事制度 (`tech.record_keeping`)：该知识是此产业交汇自动生效的必要条件。
-- 早期知识机构 (`tech.early_knowledge_institution`)：该知识是此产业交汇自动生效的必要条件。
+- 思考 (`tech.early_knowledge_institution`)：该知识是此产业交汇自动生效的必要条件。
 - 手制陶器 (`tech.hand_pottery`)：该知识是此产业交汇自动生效的必要条件。
 - 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
 
@@ -9417,72 +9482,7 @@
 <a id="era-3"></a>
 ## 王国时代
 
-共 57 项研究科技、34 项自动应用，科技研究成本范围 3900-30000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
-
-### 铜矿焙烧 (`tech.copper_ore_roasting`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.copper_ore_roasting` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 7400 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | production\_system |
-| 布局路线 | branch.heavy\_industry |
-| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 全部路线 | 资源 · 铜 (\`route.resource.copper\`)；能源 · 火 (\`route.energy.fire\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | metallurgy |
-
-#### 硬前置（决定研发资格）
-
-- 铜退火 (`tech.copper_annealing`)：该科技需要先掌握 「铜退火」。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-无
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：该科技需要先掌握 「铜矿焙烧」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
+共 53 项研究科技、34 项自动应用，科技研究成本范围 11000-36000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
 
 ### 游牧放牧 (`tech.pastoralism`)
 
@@ -9491,7 +9491,7 @@
 | 稳定 ID | `tech.pastoralism` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9515,7 +9515,7 @@
 
 #### 效果摘要
 
-「畜牧业」生产家族建筑产出 +28%
+「畜牧业」生产家族建筑产出 +49.5%；投入因子 -3%
 
 #### 机会成本
 
@@ -9534,9 +9534,12 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+49.5%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：游牧放牧提高畜牧业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -9562,7 +9565,7 @@
 | 稳定 ID | `tech.horse_domestication` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9584,7 +9587,7 @@
 
 #### 效果摘要
 
-解锁物资：马匹；解锁建筑：马匹繁育营地；「畜牧业」生产家族建筑产出 +12%；作为必要支撑：养马场
+解锁物资：马匹；解锁建筑：马匹繁育营地；地理专长「草原」产出 +18.6%
 
 #### 机会成本
 
@@ -9604,9 +9607,9 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
-  - 效果机制：马匹驯化提高畜牧业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.agriculture_factor`：+18.6%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -9615,7 +9618,6 @@
 - 重骑兵 (`tech.military.heavy_cavalry`)：具装骑兵的坐骑来自驯马。
 - 野战火炮 (`tech.military.field_artillery`)：野战炮兵的驮马来自驯马。
 - 操典 (`tech.military.drill_regulations`)：龙骑兵的坐骑来自驯马。
-- 机械化 (`tech.military.mechanization`)：机械化部队编制仍保留少量役用马匹，需以驯马为前提。
 
 #### 主题路线后继
 
@@ -9636,7 +9638,7 @@
 | 稳定 ID | `tech.maize_selection` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9650,15 +9652,15 @@
 #### 硬前置（决定研发资格）
 
 - 野生玉米采集 (`tech.wild_maize_collection`)：该科技需要先掌握 「野生玉米采集」。
+- 玉米繁育 (`tech.maize_propagation`)：玉米选育需要先掌握留种繁育，野生采集不能替代连续种植与繁殖经验。
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+- 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-商品「玉米」产量 +18%；作为必要支撑：精准玉米农场
+商品「玉米」产量 +18%
 
 #### 机会成本
 
@@ -9704,7 +9706,7 @@
 | 稳定 ID | `tech.dryland_farming` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9718,6 +9720,7 @@
 #### 硬前置（决定研发资格）
 
 - 野生谷穗采集 (`tech.wild_wheat_collection`)：该科技需要先掌握 「野生谷穗采集」。
+- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)：旱作农业必须以已有雨养种植经验为基础，不能从野生采集直接跳入成熟耕作。
 
 #### 发现启发（仅用于揭示）
 
@@ -9728,7 +9731,7 @@
 
 #### 效果摘要
 
-农业部门产出 +8%；旱作生产·旱灾损失 -12%
+农业部门产出 +7.5%；旱作生产·旱灾损失 -12%
 
 #### 机会成本
 
@@ -9747,7 +9750,7 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+12%
   - 效果机制：旱作农业提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
@@ -9777,7 +9780,7 @@
 | 稳定 ID | `tech.terrace_farming` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9792,6 +9795,7 @@
 
 - 块茎保存 (`tech.tuber_storage`)：该科技需要先掌握 「块茎保存」。
 - 磨制石器 (`tech.ground_stone_tools`)：该科技需要先掌握 「磨制石器」。
+- 雨养田体系 (`tech.rainfed_field_system`)：arable\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -9802,7 +9806,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+解锁建筑：梯田农场；洪水损失 -8%；高寒作物 -12%
 
 #### 机会成本
 
@@ -9811,19 +9815,22 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 梯田农场 (`terrace_farm`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **梯田农场**（`building`）：`building.terrace_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：梯田农业提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 洪水损失：`country.climate.flood_loss_factor`：+8%
+- 高寒作物：`country.climate.profile.highland_crop.cold_stress_loss_factor`：+12%
+  - 效果机制：该科技的组织与工艺收益通过洪水损失体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
+  - 效果机制：梯田的挡风与昼暖夜冷的排水安排，让高寒作物少受霜冻损失。
+  - 运行时消费者：`NativeEconomyRuntime country climate loss freeze`
 
 #### 被以下科技作为硬前置
 
@@ -9848,7 +9855,7 @@
 | 稳定 ID | `tech.spice_cultivation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -9872,7 +9879,7 @@
 
 #### 效果摘要
 
-解锁建筑：商品香料园；「专用商品作物」生产家族建筑产出 +28%；作为必要支撑：自动化香料种植园、机械化香料种植园、精准香料种植园
+解锁建筑：商品香料园；地理专长「热带雨林」产出 +20.5%
 
 #### 机会成本
 
@@ -9887,14 +9894,13 @@
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **商品香料园**（`building`）：`building.spice_managed_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
-  - 效果机制：香料栽培提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+20.5%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -9919,7 +9925,7 @@
 | 稳定 ID | `tech.celestial_calendars` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 15700 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -9996,7 +10002,7 @@
 | 稳定 ID | `tech.dryland_water_retention` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10019,7 +10025,7 @@
 
 #### 效果摘要
 
-农业部门产出 +8%
+农业部门产出 +7.5%；投入因子 -3%
 
 #### 机会成本
 
@@ -10038,153 +10044,16 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：旱作保水提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
 - 旱作小麦田 (`tech.dryland_wheat_cultivation`)：该科技需要先掌握 「旱作保水」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 灌溉测量 (`tech.irrigation_surveying`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.irrigation_surveying` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | era\_candidate |
-| 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 硬前置（决定研发资格）
-
-- 灌溉 (`tech.irrigation`)：该科技需要先掌握 「灌溉」。
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「三角洲」（landform.delta）
-  - 已发现信号「聚落等级 1」（development.settlement.tier\_1\_90d）
-
-#### 效果摘要
-
-无
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 退水玉米地 (`tech.flood_recession_maize`)：该科技需要先掌握 「灌溉测量」。
-- 退水小麦地 (`tech.flood_recession_wheat`)：该科技需要先掌握 「灌溉测量」。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 陶器容器体系 (`tech.pottery`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.pottery` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | handling |
-| 布局路线 | branch.construction\_materials |
-| 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
-| 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；制度 · 储藏 (\`route.institution.storage\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 手制陶器 (`tech.hand_pottery`)：该科技需要先掌握 「手制陶器」。
-- 窑烧控制 (`tech.kiln_firing`)：该科技需要先掌握 「窑烧控制」。
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-
-#### 效果摘要
-
-「营造方法」生产家族建筑产出 +12%；作为必要支撑：黏土坑
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 黏土坑 (`clay_collector`)
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 营造方法：`country.output.family.construction_methods_factor`：+12%
-  - 效果机制：陶器容器体系提高窑作与营造相关建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：该科技需要先掌握 「陶器容器体系」。
-- 坩埚钢 (`tech.crucible_steel`)：耐高温的陶质坩埚来自成熟的陶器容器工艺。
-- 活字印刷 (`tech.movable_type_printing`)：泥活字需要烧制稳定的陶字。
 
 #### 主题路线后继
 
@@ -10205,7 +10074,7 @@
 | 稳定 ID | `tech.communal_field_coordination` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10228,7 +10097,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -10247,9 +10116,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：共同田协调提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -10274,7 +10143,7 @@
 | 稳定 ID | `tech.public_storehouses` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -10298,7 +10167,7 @@
 
 #### 效果摘要
 
-商品「加工主食」产量 +25%；「主粮加工」生产家族建筑产出 +25%；人口自然死亡率 -10%
+商品「加工主食」产量 +25%；地理专长「泛滥平原」产出 +14.9%；人口自然死亡率 -3.6%
 
 #### 机会成本
 
@@ -10318,12 +10187,12 @@
 #### 永久 Modifier 条款
 
 - 加工主食：`country.output.good.prepared_staples_factor`：+25%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
-- 人口自然死亡率：`country.population.death_factor`：+10%
+- 泛滥平原：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
+- 人口自然死亡率：`country.population.death_factor`：+3.6%
   - 效果机制：公共仓储减少储藏损耗，提高加工主食有效供给。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
-  - 效果机制：公共仓储提高主粮加工与仓储相关建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在泛滥平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：公共仓储在歉收年提供口粮。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
 
@@ -10350,7 +10219,7 @@
 | 稳定 ID | `tech.rainfed_maize_cultivation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10368,8 +10237,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
@@ -10388,7 +10256,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **雨养玉米田**（`building`）：`building.rainfed_maize_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -10418,7 +10285,7 @@
 | 稳定 ID | `tech.flood_recession_maize` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10432,7 +10299,7 @@
 #### 硬前置（决定研发资格）
 
 - 雨养玉米田 (`tech.rainfed_maize_cultivation`)：该科技需要先掌握 「雨养玉米田」。
-- 灌溉测量 (`tech.irrigation_surveying`)：该科技需要先掌握 「灌溉测量」。
+- 灌溉 (`tech.irrigation`)：该工序的知识由「灌溉」承载：灌溉测量零效果；测量并入灌溉，粮作入口改为 irrigation。
 
 #### 发现启发（仅用于揭示）
 
@@ -10442,7 +10309,7 @@
 
 #### 效果摘要
 
-解锁建筑：退水玉米地；地理专长「terrain.floodplain.agriculture」产出 +25%
+解锁建筑：退水玉米地；地理专长「terrain.floodplain.agriculture」产出 +14.9%
 
 #### 机会成本
 
@@ -10457,12 +10324,11 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **退水玉米地**（`building`）：`building.floodplain_maize_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+25%
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
   - 效果机制：退水玉米利用洪泛水肥。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -10489,7 +10355,7 @@
 | 稳定 ID | `tech.flood_recession_wheat` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10503,7 +10369,7 @@
 #### 硬前置（决定研发资格）
 
 - 雨养小麦田 (`tech.rainfed_wheat_cultivation`)：该科技需要先掌握 「雨养小麦田」。
-- 灌溉测量 (`tech.irrigation_surveying`)：该科技需要先掌握 「灌溉测量」。
+- 灌溉 (`tech.irrigation`)：该工序的知识由「灌溉」承载：灌溉测量零效果；测量并入灌溉，粮作入口改为 irrigation。
 
 #### 发现启发（仅用于揭示）
 
@@ -10513,7 +10379,7 @@
 
 #### 效果摘要
 
-解锁建筑：退水小麦地；地理专长「terrain.floodplain.agriculture」产出 +25%
+解锁建筑：退水小麦地；地理专长「terrain.floodplain.agriculture」产出 +14.9%
 
 #### 机会成本
 
@@ -10528,12 +10394,11 @@
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **退水小麦地**（`building`）：`building.floodplain_wheat_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+25%
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
   - 效果机制：退水播种利用洪泛沉积。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -10560,7 +10425,7 @@
 | 稳定 ID | `tech.dryland_wheat_cultivation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10578,8 +10443,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黄土平原」（landform.loess\_plain）
+- 已发现信号「黄土平原」（landform.loess\_plain）
 
 #### 效果摘要
 
@@ -10598,7 +10462,6 @@
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **旱作保水小麦田**（`building`）：`building.dryland_wheat_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -10628,7 +10491,7 @@
 | 稳定 ID | `tech.rice_water_control` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10642,6 +10505,7 @@
 #### 硬前置（决定研发资格）
 
 - 湿地稻园 (`tech.wetland_rice_gardening`)：该科技需要先掌握 「湿地稻园」。
+- 芦苇收割 (`tech.reed_harvesting`)：paddy\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -10651,7 +10515,7 @@
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田；水田生产·洪灾损失 -10%；作为必要支撑：庄园水田、精准稻作农场、佃作水田
+解锁建筑：畦埂水稻田；水田生产·洪灾损失 -10%
 
 #### 机会成本
 
@@ -10666,7 +10530,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **畦埂水稻田**（`building`）：`building.bunded_rice_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -10698,7 +10561,7 @@
 | 稳定 ID | `tech.rice_paddy_cultivation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -10722,7 +10585,7 @@
 
 #### 效果摘要
 
-可利用资源：水田承载力；商品「稻米」产量 +25%；作为必要支撑：自动化稻作农场、稻作农场
+商品「稻米」产量 +25%
 
 #### 机会成本
 
@@ -10737,7 +10600,7 @@
 
 #### 结构化内容效果
 
-- **水田承载力**（`resource`）：`resource.paddy_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
@@ -10768,7 +10631,7 @@
 | 稳定 ID | `tech.frost_protected_storage` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10791,7 +10654,7 @@
 
 #### 效果摘要
 
-旱作生产·寒冷损失 -10%；商品「加工主食」产量 +25%；「主粮加工」生产家族建筑产出 +25%
+旱作生产·寒冷损失 -10%；商品「加工主食」产量 +25%；「主粮加工」生产家族建筑产出 +69.9%
 
 #### 机会成本
 
@@ -10812,7 +10675,7 @@
 
 - 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+10%
 - 加工主食：`country.output.good.prepared_staples_factor`：+25%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+69.9%
   - 效果机制：防霜窖藏降低旱作生产建筑的寒冷损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：防霜窖藏减少储藏损耗，提高加工主食有效供给。
@@ -10843,7 +10706,7 @@
 | 稳定 ID | `tech.highland_tuber_farming` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10867,7 +10730,7 @@
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；地理专长「landform.plateau.agriculture」产出 +32%；地理专长「landform.mountain.agriculture」产出 +24%；作为必要支撑：高地精准块茎农业、精准马铃薯农场
+解锁建筑：冷凉高地块茎田；地理专长「landform.plateau.agriculture」产出 +61.4%；地理专长「landform.mountain.agriculture」产出 +72%
 
 #### 机会成本
 
@@ -10882,13 +10745,12 @@
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
 - **冷凉高地块茎田**（`building`）：`building.highland_tuber_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- landform.plateau.agriculture：`country.output.landform.plateau.agriculture_factor`：+32%
-- landform.mountain.agriculture：`country.output.landform.mountain.agriculture_factor`：+24%
+- landform.plateau.agriculture：`country.output.landform.plateau.agriculture_factor`：+61.4%
+- landform.mountain.agriculture：`country.output.landform.mountain.agriculture_factor`：+72%
   - 效果机制：块茎体系适应高原短季。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：畦作稳定山地农业。
@@ -10896,7 +10758,8 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 山地灌溉 (`tech.mountain_irrigation`)：高山块茎体系的畦作与梯田经验，是山地引水的前身。
+- 梯田机械化 (`tech.terrace_mechanization`)：梯田的畦作与坡面经验是机械化改造的对象。
 
 #### 主题路线后继
 
@@ -10917,7 +10780,7 @@
 | 稳定 ID | `tech.weaving` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -10941,7 +10804,7 @@
 
 #### 效果摘要
 
-解锁建筑：家用织机；「布匹织造」生产家族建筑产出 +25%
+解锁建筑：家用织机；「布匹织造」生产家族建筑产出 +60%
 
 #### 机会成本
 
@@ -10952,95 +10815,23 @@
 - **物资：** 布料 (`cloth`)
 - **建筑 / 生产方式：** 家用织机 (`household_loom`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；家具厂 (`furniture_plant`)；行会织造坊 (`guild_weaving_house`)
 
 #### 结构化内容效果
 
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家用织机**（`building`）：`building.household_loom` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+60%
   - 效果机制：织造提高布匹织造建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-- 织机织造 (`tech.loom_weaving`)：将专业地形工程、成体系的精加工和城市行业移至王国，防止把石器拥挤转移到农耕。；专业织机必须晚于手纺与家用织造，修正原先只需捻纤维即可直达行会织机。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「织造」。
+- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：该工序的知识由「织造」承载：织机织造与纺织/手纺重复；并入纺织，纸与行会改接纺织。
+- 行业组织 (`tech.guild_organization`)：该工序的知识由「织造」承载：织机织造与纺织/手纺重复；并入纺织，纸与行会改接纺织。
 - 纺织机械 (`tech.textile_machinery`)：纺织机械把手工纺纱与织造的动作机械化（动力织机 ← 飞梭）。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 织机织造 (`tech.loom_weaving`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.loom_weaving` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | handling |
-| 布局路线 | branch.textile\_fibers |
-| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
-| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | manufacturing |
-
-#### 硬前置（决定研发资格）
-
-- 织造 (`tech.weaving`)：将专业地形工程、成体系的精加工和城市行业移至王国，防止把石器拥挤转移到农耕。；专业织机必须晚于手纺与家用织造，修正原先只需捻纤维即可直达行会织机。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「织造」。
-- 手工纺纱 (`tech.hand_spinning`)：将专业地形工程、成体系的精加工和城市行业移至王国，防止把石器拥挤转移到农耕。；专业织机必须晚于手纺与家用织造，修正原先只需捻纤维即可直达行会织机。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「手工纺纱」。
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
-
-#### 效果摘要
-
-「布匹织造」生产家族建筑产出 +12%；作为必要支撑：电力纺织厂、家具厂、行会织造坊
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；家具厂 (`furniture_plant`)；行会织造坊 (`guild_weaving_house`)
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
-  - 效果机制：织机织造提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：该科技需要先掌握 「织机织造」。
-- 行业组织 (`tech.guild_organization`)：行业组织有真实城市市场和专业手工业支撑。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「织机织造」。
 
 #### 主题路线后继
 
@@ -11061,7 +10852,7 @@
 | 稳定 ID | `tech.dairy_processing` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11085,7 +10876,7 @@
 
 #### 效果摘要
 
-解锁物资：乳制品；解锁建筑：乳品工坊；「畜牧业」生产家族建筑产出 +28%；作为必要支撑：乳制品厂
+解锁物资：乳制品；解锁建筑：乳品工坊；「畜牧业」生产家族建筑产出 +49.5%
 
 #### 机会成本
 
@@ -11105,7 +10896,7 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+49.5%
   - 效果机制：乳品加工提高畜牧业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -11132,7 +10923,7 @@
 | 稳定 ID | `tech.hide_tanning` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11157,7 +10948,7 @@
 
 #### 效果摘要
 
-解锁物资：皮甲；解锁物资：皮革；解锁建筑：皮甲作坊；解锁建筑：制革工坊；制造部门产出 +28%；作为必要支撑：鞋匠铺、制鞋厂、皮革制品工厂、皮革制品工场、皮革制品小作坊、制革厂、智能皮革制品工厂
+解锁物资：皮甲、皮革；解锁建筑：皮甲作坊、制革工坊；制造部门产出 +56%
 
 #### 机会成本
 
@@ -11179,7 +10970,7 @@
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+28%
+- 制造部门产出：`country.output.manufacturing_factor`：+56%
   - 效果机制：皮革鞣制提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -11207,7 +10998,7 @@
 | 稳定 ID | `tech.meat_processing` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11230,7 +11021,7 @@
 
 #### 效果摘要
 
-解锁物资：肉类；解锁建筑：屠宰场；作为必要支撑：工业屠宰场
+解锁物资：肉类；解锁建筑：屠宰场
 
 #### 机会成本
 
@@ -11246,7 +11037,6 @@
 #### 结构化内容效果
 
 - **肉类**（`good`）：`good.meat` → `production_access` `unlock` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **屠宰场**（`building`）：`building.slaughterhouse` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -11276,7 +11066,7 @@
 | 稳定 ID | `tech.grain_baking` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11295,12 +11085,11 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「人口规模 100」（development.population.100\_90d）
+- 已发现信号「人口规模 100」（development.population.100\_90d）
 
 #### 效果摘要
 
-解锁物资：面包；解锁建筑：面包坊；商品「小麦」产量 +28%；商品「稻米」产量 +28%；商品「玉米」产量 +28%；「主粮加工」生产家族建筑产出 +28%；作为必要支撑：面包厂
+解锁物资：面包；解锁建筑：面包坊；商品「小麦」产量 +28%；商品「稻米」产量 +28%；商品「玉米」产量 +28%；地理专长「泛滥平原」产出 +14.9%
 
 #### 机会成本
 
@@ -11323,15 +11112,15 @@
 - 小麦：`country.output.good.wheat_grain_factor`：+28%
 - 稻米：`country.output.good.rice_grain_factor`：+28%
 - 玉米：`country.output.good.corn_grain_factor`：+28%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+28%
+- 泛滥平原：`country.output.terrain.floodplain.agriculture_factor`：+14.9%
   - 效果机制：谷物烘焙提高小麦产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：谷物烘焙提高稻米产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：谷物烘焙提高玉米产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
-  - 效果机制：谷物烘焙提高主粮加工建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在泛滥平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -11356,7 +11145,7 @@
 | 稳定 ID | `tech.early_glassmaking` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11379,7 +11168,7 @@
 
 #### 效果摘要
 
-解锁物资：玻璃；解锁物资：玻璃器皿；解锁物资：硅砂；解锁建筑：玻璃窑；解锁建筑：硅砂矿坑；解锁建筑：玻璃器皿小作坊；制造部门产出 +25%；作为必要支撑：早期电气设备厂、早期半导体厂、建筑构件厂、玻璃厂、玻璃器皿工厂、玻璃器皿工场、电气化造船厂、智能仪器厂、精密仪器厂、远洋造船厂、包装材料厂、科学仪器工坊、半导体厂、硅砂矿、智能玻璃器皿工厂
+解锁物资：玻璃、玻璃器皿、硅砂；解锁建筑：玻璃窑、硅砂矿坑、玻璃器皿小作坊；可利用资源：silica\_sand；制造部门产出 +50%
 
 #### 机会成本
 
@@ -11389,7 +11178,7 @@
 
 - **物资：** 玻璃 (`glass`)；玻璃器皿 (`glassware`)；硅砂 (`silica_sand`)
 - **建筑 / 生产方式：** 玻璃窑 (`classical_glass_kiln`)；硅砂矿坑 (`classical_silica_pit`)；玻璃器皿小作坊 (`glassware_workshop`)
-- **自然资源：** 无
+- **自然资源：** 硅砂 (`silica_sand`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 早期电气设备厂 (`basic_electrical_equipment_works`)；早期半导体厂 (`basic_semiconductor_fab`)；建筑构件厂 (`construction_components_plant`)；玻璃厂 (`glass_plant`)；玻璃器皿工厂 (`glassware_factory`)；玻璃器皿工场 (`glassware_manufactory`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；远洋造船厂 (`oceanic_shipyard`)；包装材料厂 (`packaging_plant`)；科学仪器工坊 (`scientific_instrument_works`)；半导体厂 (`semiconductors_plant`)；硅砂矿 (`silica_sand_collector`)；智能玻璃器皿工厂 (`smart_glassware_factory`)
 
 #### 结构化内容效果
@@ -11400,16 +11189,17 @@
 - **玻璃窑**（`building`）：`building.classical_glass_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **硅砂矿坑**（`building`）：`building.classical_silica_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃器皿小作坊**（`building`）：`building.glassware_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **silica\_sand**（`resource`）：`resource.silica_sand` → `discovery_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+25%
+- 制造部门产出：`country.output.manufacturing_factor`：+50%
   - 效果机制：早期玻璃烧制提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-无
+- 分子生物学 (`tech.molecular_biology`)：培养与分装离不开玻璃器皿。
 
 #### 主题路线后继
 
@@ -11430,7 +11220,7 @@
 | 稳定 ID | `tech.commodity_money` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11498,7 +11288,7 @@
 | 稳定 ID | `tech.copper_mine_engineering` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11520,7 +11310,7 @@
 
 #### 效果摘要
 
-解锁物资：铜矿石；解锁建筑：铜矿；解锁建筑：浅坑银矿作业；作为必要支撑：浅层铜矿、土法炼铜炉
+解锁物资：铜矿石；解锁建筑：铜矿、浅坑银矿作业
 
 #### 机会成本
 
@@ -11536,7 +11326,6 @@
 #### 结构化内容效果
 
 - **铜矿石**（`good`）：`good.copper_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铜矿**（`building`）：`building.copper_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -11567,7 +11356,7 @@
 | 稳定 ID | `tech.copper_metallurgy` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11580,18 +11369,16 @@
 
 #### 硬前置（决定研发资格）
 
-- 铜矿焙烧 (`tech.copper_ore_roasting`)：该科技需要先掌握 「铜矿焙烧」。
 - 木炭烧制 (`tech.charcoal_burning`)：该科技需要先掌握 「木炭烧制」。
-- 陶器容器体系 (`tech.pottery`)：该科技需要先掌握 「陶器容器体系」。
+- 手制陶器 (`tech.hand_pottery`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁建筑：土法炼铜炉；「铜矿采掘」生产家族建筑产出 +28%
+解锁建筑：土法炼铜炉；「铜矿采掘」生产家族建筑产出 +84%
 
 #### 机会成本
 
@@ -11606,12 +11393,11 @@
 
 #### 结构化内容效果
 
-- **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土法炼铜炉**（`building`）：`building.early_copper_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+28%
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+84%
   - 效果机制：木炭坩埚炼铜提高铜矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -11638,7 +11424,7 @@
 | 稳定 ID | `tech.solar_evaporation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11660,7 +11446,7 @@
 
 #### 效果摘要
 
-解锁建筑：盐场；解锁建筑：日晒盐田；「制盐」生产家族建筑产出 +18%
+解锁建筑：盐场、日晒盐田；「制盐」生产家族建筑产出 +54%
 
 #### 机会成本
 
@@ -11675,13 +11461,12 @@
 
 #### 结构化内容效果
 
-- **食盐**（`good`）：`good.salt` → `production_access` `unlock` `1.0`；`existing_binding`
 - **盐场**（`building`）：`building.salt_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **日晒盐田**（`building`）：`building.solar_salt_pan` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制盐：`country.output.family.salt_extraction_factor`：+18%
+- 制盐：`country.output.family.salt_extraction_factor`：+54%
   - 效果机制：太阳蒸发制盐提高制盐建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -11708,7 +11493,7 @@
 | 稳定 ID | `tech.writing` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 18000 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -11722,6 +11507,7 @@
 #### 硬前置（决定研发资格）
 
 - 天文历法 (`tech.celestial_calendars`)：该科技需要先掌握 「天文历法」。
+- 采集 (`tech.gathering`)：采集植物食物 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -11729,7 +11515,7 @@
 
 #### 效果摘要
 
-解锁物资：手抄本；解锁建筑：城邦抄写室；「研究机构」生产家族建筑产出 +4%；知识部门产出 +4%
+解锁物资：手抄本；解锁建筑：城邦抄写室；「研究机构」生产家族建筑产出 +12%；知识部门产出 +8%
 
 #### 机会成本
 
@@ -11749,8 +11535,8 @@
 
 #### 永久 Modifier 条款
 
-- 研究机构：`country.output.family.research_institution_factor`：+4%
-- 知识部门产出：`country.output.knowledge_factor`：+4%
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+- 知识部门产出：`country.output.knowledge_factor`：+8%
   - 效果机制：文字提高研究与知识机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：文字提高知识部门产出。
@@ -11787,7 +11573,7 @@
 | 稳定 ID | `tech.masonry` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11803,6 +11589,7 @@
 - 日晒土坯 (`tech.adobe_making`)：该科技需要先掌握 「日晒土坯」。
 - 磨制石器 (`tech.ground_stone_tools`)：砌体承接土坯、石料和窑烧，明确采石场的知识归属。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「磨制石器」。
 - 窑烧控制 (`tech.kiln_firing`)：砌体承接土坯、石料和窑烧，明确采石场的知识归属。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「窑烧控制」。
+- 采石与琢石 (`tech.stone_quarrying`)：砌体需要先有采石与琢石：没有石作环节，砌筑只能停留在土坯。
 
 #### 发现启发（仅用于揭示）
 
@@ -11810,7 +11597,7 @@
 
 #### 效果摘要
 
-解锁物资：石灰；解锁物资：石灰岩；解锁建筑：制砖厂；解锁建筑：黏土坑；解锁建筑：石灰厂；解锁建筑：石灰石采石场；解锁建筑：采石场；解锁建筑：石砌城墙；可利用资源：石灰岩；作为必要支撑：公共营造场、工业砖厂、改良锯木场
+解锁物资：石灰、石灰岩；解锁建筑：制砖厂、黏土坑、石灰厂、石灰石采石场、采石场、石砌城墙；可利用资源：石灰岩
 
 #### 机会成本
 
@@ -11825,11 +11612,8 @@
 
 #### 结构化内容效果
 
-- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石灰**（`good`）：`good.lime` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石灰岩**（`good`）：`good.limestone` → `production_access` `unlock` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `production_access` `unlock` `1.0`；`existing_binding`
 - **制砖厂**（`building`）：`building.bricks_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **黏土坑**（`building`）：`building.clay_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **石灰厂**（`building`）：`building.lime_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -11870,7 +11654,7 @@
 | 稳定 ID | `tech.weights_and_measures` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 18000 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -11884,6 +11668,7 @@
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：该科技需要先掌握 「文字」。
+- 自然铜冷锤 (`tech.natural_copper_working`)：铜 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -11891,7 +11676,7 @@
 
 #### 效果摘要
 
-解锁建筑：专业青铜工具工坊；解锁建筑：木槽溜洗场
+解锁建筑：专业青铜工具工坊、木槽溜洗场
 
 #### 机会成本
 
@@ -11906,8 +11691,6 @@
 
 #### 结构化内容效果
 
-- **青铜工具**（`good`）：`good.bronze_tools` → `production_access` `unlock` `1.0`；`existing_binding`
-- **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
 - **专业青铜工具工坊**（`building`）：`building.bronze_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -11919,6 +11702,8 @@
 
 - 货币 (`tech.currency`)：该科技需要先掌握 「度量衡」。
 - 地图学 (`tech.cartography`)：按比例绘图依赖统一的长度度量与测量。
+- 精密测量 (`tech.precision_measurement`)：度量衡给出单位与换算规则，没有统一单位就谈不上精密。
+- 土地测量 (`tech.land_surveying`)：没有统一单位，面积与距离无法被记录、比较与征收。
 
 #### 主题路线后继
 
@@ -11939,7 +11724,7 @@
 | 稳定 ID | `tech.market_institutions` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -11953,6 +11738,7 @@
 #### 硬前置（决定研发资格）
 
 - 早期贸易 (`tech.early_trade`)：该科技需要先掌握 「早期贸易」。
+- 思考 (`tech.early_knowledge_institution`)：早期知识机构提供记录与传承基础；贸易发展信号不能替代这一共同研究起点。
 
 #### 发现启发（仅用于揭示）
 
@@ -12010,7 +11796,7 @@
 | 稳定 ID | `tech.currency` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12082,7 +11868,7 @@
 | 稳定 ID | `tech.road_engineering` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -12106,7 +11892,7 @@
 
 #### 效果摘要
 
-解锁物资：建筑构件；解锁建筑：石作工场；解锁建筑：组织化伐木场；全社会贸易运输速度 +4%；作为必要支撑：规模化采石场
+解锁物资：建筑构件；解锁建筑：石作工场、组织化伐木场；全社会贸易运输速度 +4%
 
 #### 机会成本
 
@@ -12122,7 +11908,6 @@
 #### 结构化内容效果
 
 - **建筑构件**（`good`）：`good.construction_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石作工场**（`building`）：`building.classical_masonry_yard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **组织化伐木场**（`building`）：`building.method_timber_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -12157,7 +11942,7 @@
 | 稳定 ID | `tech.river_transport` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12180,7 +11965,7 @@
 
 #### 效果摘要
 
-解锁建筑：帆船渔场
+开启航道：河运与湖泊走廊；解锁建筑：帆船渔场
 
 #### 机会成本
 
@@ -12196,7 +11981,6 @@
 #### 结构化内容效果
 
 - **河运与湖泊走廊**（`runtime`）：`NativeEconomyRuntime.water_capability` → `river_and_lake_corridor` `unlock` `1.0`；`runtime_consumed`
-- **鱼类**（`good`）：`good.fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **帆船渔场**（`building`）：`building.method_marine_fish_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -12226,7 +12010,7 @@
 | 稳定 ID | `tech.crop_rotation` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -12249,7 +12033,7 @@
 
 #### 效果摘要
 
-解锁物资：食用油；解锁物资：肥料；解锁建筑：堆肥场；解锁建筑：榨油坊；农业部门产出 +18%；作为必要支撑：工业榨油厂、工业制皂厂、综合食品厂
+解锁物资：食用油、肥料；解锁建筑：堆肥场、榨油坊；农业部门产出 +17%
 
 #### 机会成本
 
@@ -12271,7 +12055,7 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+18%
+- 农业部门产出：`country.output.agriculture_factor`：+17%
   - 效果机制：轮作提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -12298,7 +12082,7 @@
 | 稳定 ID | `tech.scholarly_academies` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -12319,7 +12103,7 @@
 
 #### 效果摘要
 
-解锁建筑：古典学院；「研究机构」生产家族建筑产出 +12%
+解锁建筑：古典学院；「研究机构」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -12334,12 +12118,11 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **古典学院**（`building`）：`building.classical_academy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 研究机构：`country.output.family.research_institution_factor`：+12%
+- 研究机构：`country.output.family.research_institution_factor`：+36%
   - 效果机制：学术机构提高研究机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -12368,7 +12151,7 @@
 | 稳定 ID | `tech.plant_fiber_papermaking` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12381,7 +12164,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 织机织造 (`tech.loom_weaving`)：该科技需要先掌握 「织机织造」。
+- 织造 (`tech.weaving`)：该工序的知识由「织造」承载：织机织造与纺织/手纺重复；并入纺织，纸与行会改接纺织。
 - 文字 (`tech.writing`)：该科技需要先掌握 「文字」。
 
 #### 发现启发（仅用于揭示）
@@ -12393,7 +12176,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：植物纤维抄纸坊；「造纸」生产家族建筑产出 +12%；作为必要支撑：电气印刷厂、活字印刷坊、造纸厂、印刷厂、木版印刷坊
+解锁物资：纸张；解锁建筑：植物纤维抄纸坊；「造纸」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -12413,7 +12196,7 @@
 
 #### 永久 Modifier 条款
 
-- 造纸：`country.output.family.paper_making_factor`：+12%
+- 造纸：`country.output.family.paper_making_factor`：+36%
   - 效果机制：植物纤维抄纸提高造纸建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -12441,7 +12224,7 @@
 | 稳定 ID | `tech.bark_paper_making` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12463,7 +12246,7 @@
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：树皮纸工坊；「造纸」生产家族建筑产出 +12%
+解锁建筑：树皮纸工坊；地理专长「森林」产出 +50%
 
 #### 机会成本
 
@@ -12478,14 +12261,13 @@
 
 #### 结构化内容效果
 
-- **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **树皮纸工坊**（`building`）：`building.bark_paper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 造纸：`country.output.family.paper_making_factor`：+12%
-  - 效果机制：树皮纸提高造纸建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 森林：`country.output.terrain.forest.manufacturing_factor`：+50%
+  - 效果机制：该产业在森林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -12510,7 +12292,7 @@
 | 稳定 ID | `tech.state_bureaucracy` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 18000 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -12533,7 +12315,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +4%
+社会研究效率 +9.2%；学者 +3%
 
 #### 机会成本
 
@@ -12552,9 +12334,12 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-  - 效果机制：官僚行政提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+- 学者：`country.tax.income.scholar.rate_bp`：+30000%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
+  - 效果机制：官僚行政把俸禄与文书体系纳入可征税的编制。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -12584,7 +12369,7 @@
 | 稳定 ID | `tech.customary_tenancy` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12607,7 +12392,7 @@
 
 #### 效果摘要
 
-解锁建筑：佃作棉花田；解锁建筑：药材商品园
+解锁建筑：佃作棉花田、药材商品园
 
 #### 机会成本
 
@@ -12622,8 +12407,6 @@
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
 - **佃作棉花田**（`building`）：`building.cotton_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **药材商品园**（`building`）：`building.medicinal_herb_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -12637,6 +12420,7 @@
 - 佃作水田 (`tech.tenant_paddy_management`)：水田的租佃分配依赖习惯佃作。
 - 分成租佃 (`tech.sharecropping`)：分成租佃是在习惯佃作上约定产量分配的租佃形式。
 - 商业租佃 (`tech.commercial_tenancy`)：商业租佃由习惯佃作契约化而来。
+- 土地改革 (`tech.land_reform`)：习惯租佃界定了既有佃权，改革必须先知道自己要改什么。
 
 #### 主题路线后继
 
@@ -12657,7 +12441,7 @@
 | 稳定 ID | `tech.tenant_cereal_farming` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -12681,7 +12465,7 @@
 
 #### 效果摘要
 
-解锁建筑：佃作马铃薯田；解锁建筑：佃作雨养玉米田；解锁建筑：佃作雨养小麦田；解锁建筑：小麦农场；农业部门产出 +8%
+解锁建筑：佃作马铃薯田、佃作雨养玉米田、佃作雨养小麦田、小麦农场；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -12696,9 +12480,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **佃作马铃薯田**（`building`）：`building.tenant_potato_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作雨养玉米田**（`building`）：`building.tenant_rainfed_maize_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作雨养小麦田**（`building`）：`building.tenant_rainfed_wheat_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -12706,7 +12487,7 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：佃作谷物提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -12733,7 +12514,7 @@
 | 稳定 ID | `tech.tenant_paddy_management` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -12757,7 +12538,7 @@
 
 #### 效果摘要
 
-解锁建筑：佃作稻庄；解锁建筑：稻作农场；解锁建筑：分成水田；解锁建筑：佃作水田
+解锁建筑：佃作稻庄、稻作农场、分成水田、佃作水田
 
 #### 机会成本
 
@@ -12772,7 +12553,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **稻作农场**（`building`）：`building.rice_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **分成水田**（`building`）：`building.sharecrop_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -12805,7 +12585,7 @@
 | 稳定 ID | `tech.iron_ore_identification` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12818,7 +12598,9 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：资源目击只揭示研究对象；须先掌握早期知识机构，才能系统记录和传承辨识知识。
+- 打制石器 (`tech.stone_knapping`)：打制石器提供取样、敲击和比较矿石的基础工具。
+- 自然观察 (`tech.natural_observation`)：自然观察提供系统比较矿物性质的知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -12826,7 +12608,7 @@
 
 #### 效果摘要
 
-可利用资源：铁矿；「铁矿采掘」生产家族建筑产出 +12%；作为必要支撑：浅层铁矿、蒸汽动力铁矿
+可利用资源：铁矿；地理专长「山地」产出 +16.2%
 
 #### 机会成本
 
@@ -12845,9 +12627,9 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+12%
-  - 效果机制：铁矿辨识提高铁矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 山地：`country.output.landform.mountain.extractive_factor`：+16.2%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -12872,7 +12654,7 @@
 | 稳定 ID | `tech.surface_iron_collection` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -12895,7 +12677,7 @@
 
 #### 效果摘要
 
-解锁物资：铁矿石；解锁建筑：地表铁矿采集场；「铁矿采掘」生产家族建筑产出 +12%；作为必要支撑：浅层铁矿
+解锁物资：铁矿石；解锁建筑：地表铁矿采集场；「铁矿采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -12915,7 +12697,7 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+12%
+- 铁矿采掘：`country.output.family.iron_extraction_factor`：+36%
   - 效果机制：地表铁矿采集提高铁矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -12942,7 +12724,7 @@
 | 稳定 ID | `tech.iron_smelting` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -12966,7 +12748,7 @@
 
 #### 效果摘要
 
-解锁物资：铁制兵器；解锁物资：金属家用器皿；解锁物资：金属工具；解锁物资：锻铁；解锁建筑：兵器坊；解锁建筑：块炼炉；解锁建筑：铁制工具工坊；解锁建筑：金属家用器皿小作坊；「铁矿采掘」生产家族建筑产出 +12%；「金属工具」生产家族建筑产出 +12%；作为必要支撑：燧发枪工场、金属家用器皿工厂、金属家用器皿工场、智能金属家用器皿工厂、钢制工具厂
+解锁物资：铁制兵器、金属家用器皿、金属工具、锻铁；解锁建筑：兵器坊、块炼炉、铁制工具工坊、金属家用器皿小作坊；「铁矿采掘」生产家族建筑产出 +36%；「金属工具」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -12977,7 +12759,7 @@
 - **物资：** 铁制兵器 (`iron_weapons`)；金属家用器皿 (`metal_housewares`)；金属工具 (`tools`)；锻铁 (`wrought_iron`)
 - **建筑 / 生产方式：** 兵器坊 (`armory`)；块炼炉 (`bloomery`)；铁制工具工坊 (`iron_tool_workshop`)；金属家用器皿小作坊 (`metal_housewares_workshop`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 燧发枪工场 (`flintlock_works`)；金属家用器皿工厂 (`metal_housewares_factory`)；金属家用器皿工场 (`metal_housewares_manufactory`)；智能金属家用器皿工厂 (`smart_metal_housewares_factory`)；钢制工具厂 (`tools_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高炉厂 (`blast_furnace_works`)；燧发枪工场 (`flintlock_works`)；金属家用器皿工厂 (`metal_housewares_factory`)；金属家用器皿工场 (`metal_housewares_manufactory`)；智能金属家用器皿工厂 (`smart_metal_housewares_factory`)；钢制工具厂 (`tools_plant`)
 
 #### 结构化内容效果
 
@@ -12992,8 +12774,8 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+12%
-- 金属工具：`country.output.family.metal_toolmaking_factor`：+12%
+- 铁矿采掘：`country.output.family.iron_extraction_factor`：+36%
+- 金属工具：`country.output.family.metal_toolmaking_factor`：+36%
   - 效果机制：块炼铁提高铁矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：块炼铁提高金属工具建筑产出。
@@ -13008,6 +12790,7 @@
 - 骑兵战术 (`tech.military.mounted_warfare`)：骑兵的铁制兵器需先具备冶铁产能。
 - 军需体系 (`tech.military.legion_logistics`)：军团步兵的铁制兵器需以冶铁为前提。
 - 火药武器 (`tech.gunpowder_weapons`)：火枪兵仍配铁制兵器，火器列装前需具备冶铁产能。
+- 线膛枪炮 (`tech.military.rifled_weapons`)：铁甲舰体的铆接装甲板来自熟铁与钢，冶炼是造船的物质前提。
 
 #### 主题路线后继
 
@@ -13028,7 +12811,7 @@
 | 稳定 ID | `tech.coal_outcrop_identification` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -13041,7 +12824,9 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：资源目击只揭示研究对象；须先掌握早期知识机构，才能系统记录和传承辨识知识。
+- 打制石器 (`tech.stone_knapping`)：打制石器提供剥取、破碎和比较露头煤样的基础工具。
+- 火种控制 (`tech.fire_control`)：火种控制使煤样的燃烧特征和燃料价值能够被验证。
 
 #### 发现启发（仅用于揭示）
 
@@ -13093,7 +12878,7 @@
 | 稳定 ID | `tech.surface_coal_collection` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -13161,7 +12946,7 @@
 | 稳定 ID | `tech.surface_coal_use` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -13183,7 +12968,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+资源消耗 -6%
 
 #### 机会成本
 
@@ -13202,9 +12987,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：地表煤利用提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 资源消耗：`country.resource.use_factor`：+6%
+  - 效果机制：该科技的组织与工艺收益通过资源消耗体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -13229,7 +13014,7 @@
 | 稳定 ID | `tech.kingdom_administration` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 30000 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -13242,7 +13027,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -13250,7 +13035,7 @@
 
 #### 效果摘要
 
-时代晋升效果：全社会经济产出 +4%；社会领域研究效率 +8%；国内贸易容量 +8%
+时代晋升效果：全社会经济产出 +7%；社会领域研究效率 +7.3%；国内贸易容量 +8%
 
 #### 机会成本
 
@@ -13283,8 +13068,8 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
+- 全社会经济产出：`country.economy_output_factor`：+7%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
 - 国内贸易容量：`country.trade.capacity_factor`：+8%
   - 效果机制：王国行政统一了度量与赋役组织。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
@@ -13316,7 +13101,7 @@
 | 稳定 ID | `tech.military.chariot_warfare` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
+| 研究成本 | 11000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -13339,7 +13124,7 @@
 
 #### 效果摘要
 
-解锁物资：战车；解锁建筑：战车作坊
+解锁物资：战车；解锁建筑：战车作坊；闪击 +10%
 
 #### 机会成本
 
@@ -13359,7 +13144,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 闪击：`country.military.rule.blitz`：+10%
+  - 效果机制：战车在接战初期的冲击力最强，五日之内决定战场。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -13384,7 +13171,7 @@
 | 稳定 ID | `tech.military.earthen_ramparts` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 17800 科技点（`technology_points`） |
+| 研究成本 | 20000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -13406,7 +13193,7 @@
 
 #### 效果摘要
 
-解锁建筑：夯土城垣；解锁建筑：木栅兵营；本国工事强度 +10%
+解锁建筑：夯土城垣、木栅兵营；本国工事强度 +10%；友军互援 +6%
 
 #### 机会成本
 
@@ -13427,8 +13214,11 @@
 #### 永久 Modifier 条款
 
 - 本国工事强度：`country.military.fortification_factor`：+10%
+- 友军互援：`country.military.rule.mutual_support`：+6%
   - 效果机制：夯土筑垣让临时营垒具备稳定的工事结构。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：夯土城垣让守军可以靠近支援，形成连续防线。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -13453,14 +13243,14 @@
 | 稳定 ID | `tech.military.standing_army` |
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 16000 科技点（`technology_points`） |
+| 研究成本 | 36000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.labor\_management |
-| 主要路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
-| 全部路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
+| 主要路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
+| 全部路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -13475,7 +13265,7 @@
 
 #### 效果摘要
 
-解锁物资：铁甲；解锁建筑：弓弩坊；解锁建筑：戍卫营；解锁建筑：铁甲坊；解锁建筑：武学馆；兵额 +20%；训练时长 -10%
+解锁物资：铁甲；解锁建筑：弓弩坊、戍卫营、铁甲坊、武学馆；兵额 +20%；训练时长 -10%；友军互援 +8%
 
 #### 机会成本
 
@@ -13490,7 +13280,6 @@
 
 #### 结构化内容效果
 
-- **弓箭**（`good`）：`good.bows` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铁甲**（`good`）：`good.iron_armor` → `production_access` `unlock` `1.0`；`existing_binding`
 - **弓弩坊**（`building`）：`building.bow_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **戍卫营**（`building`）：`building.garrison_barracks` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -13501,10 +13290,13 @@
 
 - 兵额：`country.military.barracks_capacity_factor`：+20%
 - 训练时长：`country.military.training_time_factor`：×0.9
+- 友军互援：`country.military.rule.mutual_support`：+8%
   - 效果机制：常备军的编制让同一座兵营容纳更多在册士兵。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
   - 效果机制：常备军的日常操练缩短新兵形成战斗力的时间。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：常备军按队形训练，相邻部队的支撑是操典的核心。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -14336,7 +14128,7 @@
 #### 所需科技（ALL，决定自动应用）
 
 - 砌体建筑 (`tech.masonry`)：该知识是此产业交汇自动生效的必要条件。
-- 陶器容器体系 (`tech.pottery`)：该知识是此产业交汇自动生效的必要条件。
+- 手制陶器 (`tech.hand_pottery`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -15779,7 +15571,7 @@
 <a id="era-4"></a>
 ## 帝国时代
 
-共 43 项研究科技、32 项自动应用，科技研究成本范围 28300-70000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
+共 45 项研究科技、32 项自动应用，科技研究成本范围 25000-82000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
 
 ### 运河工程 (`tech.canal_engineering`)
 
@@ -15788,7 +15580,7 @@
 | 稳定 ID | `tech.canal_engineering` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 36100 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -15813,7 +15605,7 @@
 
 #### 效果摘要
 
-解锁建筑：石料场；洪灾损失 -8%；作为必要支撑：工业石灰厂、工业石灰岩矿场
+解锁建筑：石料场；洪灾损失 -8%
 
 #### 机会成本
 
@@ -15828,7 +15620,6 @@
 
 #### 结构化内容效果
 
-- **原石**（`good`）：`good.raw_stone` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石料场**（`building`）：`building.method_stone_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -15839,7 +15630,9 @@
 
 #### 被以下科技作为硬前置
 
+- 山地灌溉 (`tech.mountain_irrigation`)：渠道工程提供坡面输水、分水与溢流的工程方法。
 - 水利工程 (`tech.hydraulic_engineering`)：该科技需要先掌握 「运河工程」。
+- 圩田与海岸工程 (`tech.polder_engineering`)：运河工程提供土方、堤线与水位的控制方法。
 
 #### 主题路线后继
 
@@ -15860,7 +15653,7 @@
 | 稳定 ID | `tech.natural_philosophy` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 36100 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -15931,7 +15724,7 @@
 | 稳定 ID | `tech.parchment_making` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 36100 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -15956,7 +15749,7 @@
 
 #### 效果摘要
 
-解锁建筑：皮纸工坊；「造纸」生产家族建筑产出 +12%
+解锁建筑：皮纸工坊；「造纸」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -15971,12 +15764,11 @@
 
 #### 结构化内容效果
 
-- **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **皮纸工坊**（`building`）：`building.parchment_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 造纸：`country.output.family.paper_making_factor`：+12%
+- 造纸：`country.output.family.paper_making_factor`：+36%
   - 效果机制：皮纸制作提高造纸建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -16003,7 +15795,7 @@
 | 稳定 ID | `tech.manuscript_culture` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 41400 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -16024,7 +15816,7 @@
 
 #### 效果摘要
 
-解锁建筑：修道院抄写室；全社会经济产出 +8%
+解锁建筑：修道院抄写室；研究成本 -8%
 
 #### 机会成本
 
@@ -16039,14 +15831,13 @@
 
 #### 结构化内容效果
 
-- **手抄本**（`good`）：`good.manuscripts` → `production_access` `unlock` `1.0`；`existing_binding`
 - **修道院抄写室**（`building`）：`building.monastic_scriptorium` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：手稿文化提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 研究成本：`country.research.cost_factor`：+8%
+  - 效果机制：该科技的组织与工艺收益通过研究成本体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -16071,7 +15862,7 @@
 | 稳定 ID | `tech.sharecropping` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 36100 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16092,7 +15883,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -16111,9 +15902,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：分成租佃提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -16138,7 +15929,7 @@
 | 稳定 ID | `tech.estate_accounting` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 41400 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16159,7 +15950,7 @@
 
 #### 效果摘要
 
-「地籍制度」生产家族建筑产出 +12%；作为必要支撑：改良轮作小麦庄园
+「地籍制度」生产家族建筑产出 +36%；贸易容量 +4%
 
 #### 机会成本
 
@@ -16178,9 +15969,12 @@
 
 #### 永久 Modifier 条款
 
-- 地籍制度：`country.output.family.cadastral_institution_factor`：+12%
+- 地籍制度：`country.output.family.cadastral_institution_factor`：+36%
+- 贸易容量：`country.trade.capacity_factor`：+4%
   - 效果机制：庄园核算提高地籍制度建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更有效的制度安排扩大了可承载的市场规模。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -16209,7 +16003,7 @@
 | 稳定 ID | `tech.urban_food_supply` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 31900 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -16233,7 +16027,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -16252,9 +16046,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：城市食物供应提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -16279,7 +16073,7 @@
 | 稳定 ID | `tech.forest_management` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -16302,7 +16096,7 @@
 
 #### 效果摘要
 
-解锁建筑：改良锯木场；解锁建筑：商营伐木场；农业部门产出 +8%；木材 +28%；作为必要支撑：自主林业经营站、森林遥感经营站、水力锯木场
+解锁建筑：改良锯木场、商营伐木场；农业部门产出 +7.5%；木材 +28%
 
 #### 机会成本
 
@@ -16317,14 +16111,12 @@
 
 #### 结构化内容效果
 
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良锯木场**（`building`）：`building.method_lumber_plant_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **商营伐木场**（`building`）：`building.method_timber_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 木材：`country.resource.timber.managed_generation_factor`：+28%
   - 效果机制：森林管理提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
@@ -16333,7 +16125,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 木材化学 (`tech.timber_chemical_industry`)：森林管理提供可持续的木材与树皮供给，木材化学不能建立在掠夺式采伐上。
 
 #### 主题路线后继
 
@@ -16354,7 +16146,7 @@
 | 稳定 ID | `tech.pastoral_networks` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16378,7 +16170,7 @@
 
 #### 效果摘要
 
-解锁建筑：养马场；解锁建筑：庄园牧场；解锁建筑：商业狩猎与毛皮站；「畜牧业」生产家族建筑产出 +12%
+解锁建筑：养马场、庄园牧场、商业狩猎与毛皮站；地理专长「草原」产出 +18.6%
 
 #### 机会成本
 
@@ -16393,20 +16185,15 @@
 
 #### 结构化内容效果
 
-- **毛皮**（`good`）：`good.fur` → `production_access` `unlock` `1.0`；`existing_binding`
-- **野味**（`good`）：`good.game_meat` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马匹**（`good`）：`good.horses` → `production_access` `unlock` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `production_access` `unlock` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **养马场**（`building`）：`building.horse_breeder` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **庄园牧场**（`building`）：`building.manorial_pasture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **商业狩猎与毛皮站**（`building`）：`building.method_stone_age_hunting_camp_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
-  - 效果机制：牧业网络提高畜牧业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.agriculture_factor`：+18.6%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16431,7 +16218,7 @@
 | 稳定 ID | `tech.intensive_crop_rotation` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -16454,7 +16241,7 @@
 
 #### 效果摘要
 
-解锁建筑：马铃薯庄园；解锁建筑：三圃制小农场；农业部门产出 +22%；作为必要支撑：佃作小麦庄园
+解锁建筑：马铃薯庄园、三圃制小农场；农业部门产出 +20.8%
 
 #### 机会成本
 
@@ -16469,15 +16256,12 @@
 
 #### 结构化内容效果
 
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
 - **马铃薯庄园**（`building`）：`building.potato_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **三圃制小农场**（`building`）：`building.three_field_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+22%
+- 农业部门产出：`country.output.agriculture_factor`：+20.8%
   - 效果机制：集约轮作提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -16506,7 +16290,7 @@
 | 稳定 ID | `tech.water_power` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16531,7 +16315,7 @@
 
 #### 效果摘要
 
-解锁建筑：水力锯木场；商品「电力」产量 +20%；能源部门产出 +20%
+解锁建筑：水力锯木场；商品「电力」产量 +20%；能源部门产出 +40%
 
 #### 机会成本
 
@@ -16546,13 +16330,12 @@
 
 #### 结构化内容效果
 
-- **木材**（`good`）：`good.lumber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **水力锯木场**（`building`）：`building.method_lumber_plant_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 电力：`country.output.good.electricity_factor`：+20%
-- 能源部门产出：`country.output.energy_factor`：+20%
+- 能源部门产出：`country.output.energy_factor`：+40%
   - 效果机制：水力机械提高电力产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：水力机械提高能源部门产出。
@@ -16562,6 +16345,7 @@
 
 - 风力机械 (`tech.wind_power`)：风车沿用水磨的齿轮传动与磨盘机构（风车晚于水车出现）。
 - 高炉冶炼 (`tech.blast_furnace`)：高炉持续高温依赖水力鼓风。
+- 磨坊网络 (`tech.mill_network`)：水磨提供全年稳定的回转动力，是磨坊网络的骨干。
 - 机械计时 (`tech.mechanical_timekeeping`)：机械钟沿用水力机械的齿轮系与擒纵思想。
 - 矿井排水 (`tech.mine_drainage`)：早期排水泵由水轮驱动。
 - 粒状火药 (`tech.military.corned_powder`)：造粒与筛分需要稳定的水力驱动。
@@ -16585,7 +16369,7 @@
 | 稳定 ID | `tech.wind_power` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16609,7 +16393,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+能源产出 +16%；建造成本 -3%
 
 #### 机会成本
 
@@ -16628,13 +16412,16 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：风力机械提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 能源产出：`country.output.energy_factor`：+16%
+- 建造成本：`country.construction.cost_factor`：+3%
+  - 效果机制：该科技的组织与工艺收益通过能源产出体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
-无
+- 磨坊网络 (`tech.mill_network`)：风磨补上枯水季与缺河地区的动力空档，两者共同构成网络。
 
 #### 主题路线后继
 
@@ -16655,7 +16442,7 @@
 | 稳定 ID | `tech.guild_organization` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 42000 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -16669,7 +16456,7 @@
 #### 硬前置（决定研发资格）
 
 - 市场制度 (`tech.market_institutions`)：行会是城市手工业者在市场制度中的自我组织。
-- 织机织造 (`tech.loom_weaving`)：行业组织有真实城市市场和专业手工业支撑。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「织机织造」。
+- 织造 (`tech.weaving`)：该工序的知识由「织造」承载：织机织造与纺织/手纺重复；并入纺织，纸与行会改接纺织。
 
 #### 发现启发（仅用于揭示）
 
@@ -16677,7 +16464,7 @@
 
 #### 效果摘要
 
-解锁物资：鞋履；解锁物资：家具；解锁建筑：鞋匠铺；解锁建筑：蒸馏酒坊；解锁建筑：家具行会工坊；解锁建筑：行会织造坊；解锁建筑：行会陶窑；解锁建筑：羊毛行会作坊；解锁建筑：裁缝铺；「布匹织造」生产家族建筑产出 +8%
+解锁物资：鞋履、家具；解锁建筑：鞋匠铺、蒸馏酒坊、家具行会工坊、行会织造坊、行会陶窑、羊毛行会作坊、裁缝铺；地理专长「草原」产出 +9.7%
 
 #### 机会成本
 
@@ -16692,13 +16479,8 @@
 
 #### 结构化内容效果
 
-- **酒饮**（`good`）：`good.beverages` → `production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **鞋履**（`good`）：`good.footwear` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家具**（`good`）：`good.furniture` → `production_access` `unlock` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **羊毛**（`good`）：`good.wool` → `production_access` `unlock` `1.0`；`existing_binding`
 - **鞋匠铺**（`building`）：`building.cobbler_shop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **蒸馏酒坊**（`building`）：`building.distillery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **家具行会工坊**（`building`）：`building.guild_hall` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -16709,9 +16491,9 @@
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+8%
-  - 效果机制：行业组织提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+9.7%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16737,7 +16519,7 @@
 | 稳定 ID | `tech.blast_furnace` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -16761,7 +16543,7 @@
 
 #### 效果摘要
 
-「炼钢」生产家族建筑产出 +12%
+解锁建筑：高炉厂；「炼钢」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -16770,17 +16552,17 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 高炉厂 (`blast_furnace_works`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **高炉厂**（`building`）：`building.blast_furnace_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 炼钢：`country.output.family.steelmaking_factor`：+12%
+- 炼钢：`country.output.family.steelmaking_factor`：+36%
   - 效果机制：高炉冶炼提高炼钢建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -16808,7 +16590,7 @@
 | 稳定 ID | `tech.crucible_steel` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16822,7 +16604,7 @@
 #### 硬前置（决定研发资格）
 
 - 块炼铁 (`tech.iron_smelting`)：坩埚钢以块炼铁为原料再行渗碳熔炼。
-- 陶器容器体系 (`tech.pottery`)：耐高温的陶质坩埚来自成熟的陶器容器工艺。
+- 手制陶器 (`tech.hand_pottery`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
 
 #### 发现启发（仅用于揭示）
 
@@ -16832,7 +16614,7 @@
 
 #### 效果摘要
 
-解锁物资：板甲；解锁物资：钢刃；解锁建筑：坩埚钢刃坊；解锁建筑：板甲坊；「炼钢」生产家族建筑产出 +12%
+解锁物资：板甲、钢刃；解锁建筑：坩埚钢刃坊、板甲坊；地理专长「丘陵」产出 +42%
 
 #### 机会成本
 
@@ -16854,9 +16636,9 @@
 
 #### 永久 Modifier 条款
 
-- 炼钢：`country.output.family.steelmaking_factor`：+12%
-  - 效果机制：坩埚钢提高炼钢建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 丘陵：`country.output.landform.hill.manufacturing_factor`：+42%
+  - 效果机制：该产业在丘陵上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16882,7 +16664,7 @@
 | 稳定 ID | `tech.gunpowder_formulation` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -16906,7 +16688,7 @@
 
 #### 效果摘要
 
-解锁物资：黑火药；解锁物资：硝石；解锁物资：硫磺；解锁建筑：火药坊；解锁建筑：硝石矿；解锁建筑：硫矿；可利用资源：硫磺矿；采掘部门产出 +12%；作为必要支撑：子弹厂、化学工场、自动化炸药厂、现代炸药厂、智能硝石矿、现代硝石矿、智能硫矿、现代硫矿、智能化合成橡胶厂、合成橡胶厂
+解锁物资：黑火药、硝石、硫磺；解锁建筑：火药坊、硝石矿、硫矿；可利用资源：硫磺矿、saltpeter；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -16916,7 +16698,7 @@
 
 - **物资：** 黑火药 (`black_powder`)；硝石 (`saltpeter`)；硫磺 (`sulfur`)
 - **建筑 / 生产方式：** 火药坊 (`powder_mill`)；硝石矿 (`saltpeter_collector`)；硫矿 (`sulfur_collector`)
-- **自然资源：** 硫磺矿 (`sulfur`)
+- **自然资源：** 硝石 (`saltpeter`)；硫磺矿 (`sulfur`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 子弹厂 (`cartridge_works`)；化学工场 (`industrial_chemicals_plant`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；智能硫矿 (`method_sulfur_collector_r10`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；合成橡胶厂 (`synthetic_rubber_plant`)
 
 #### 结构化内容效果
@@ -16928,10 +16710,11 @@
 - **硝石矿**（`building`）：`building.saltpeter_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **硫矿**（`building`）：`building.sulfur_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **硫磺矿**（`resource`）：`resource.sulfur` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+- **saltpeter**（`resource`）：`resource.saltpeter` → `discovery_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：火药配制提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -16940,6 +16723,7 @@
 - 火药武器 (`tech.gunpowder_weapons`)：火器以稳定配方的火药为推进剂。
 - 粒状火药 (`tech.military.corned_powder`)：粒状火药以火药配方的成分配比为基础。
 - 硝田制硝 (`tech.military.nitre_beds`)：制硝以火药的成分需求为目标。
+- 机械制药 (`tech.military.powder_milling`)：硝石 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -16960,7 +16744,7 @@
 | 稳定 ID | `tech.chartered_universities` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -16982,7 +16766,7 @@
 
 #### 效果摘要
 
-解锁建筑：特许大学；解锁建筑：印刷学社；社会领域研究效率 +8%；「研究机构」生产家族建筑产出 +12%
+解锁建筑：特许大学、印刷学社；社会领域研究效率 +7.3%；「研究机构」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -16997,14 +16781,13 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **特许大学**（`building`）：`building.chartered_university` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **印刷学社**（`building`）：`building.printing_academy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
-- 研究机构：`country.output.family.research_institution_factor`：+12%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
+- 研究机构：`country.output.family.research_institution_factor`：+36%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：特许大学提高研究机构产出。
@@ -17033,7 +16816,7 @@
 | 稳定 ID | `tech.manorial_jurisdiction` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17056,7 +16839,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -17075,13 +16858,14 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：庄园司法提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
 - 农奴义务 (`tech.serf_obligations`)：农奴劳役由庄园司法强制执行。
+- 土地改革 (`tech.land_reform`)：庄园司法提供了土地权利的可裁判形态，改革是把裁判权收归统一法。
 
 #### 主题路线后继
 
@@ -17102,7 +16886,7 @@
 | 稳定 ID | `tech.guild_apprenticeship` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17123,7 +16907,7 @@
 
 #### 效果摘要
 
-解锁物资：华服；解锁物资：精美家具；解锁物资：皮革制品；解锁建筑：细木家具工坊；解锁建筑：宫廷裁缝坊；解锁建筑：皮革制品小作坊；商品「衣物」产量 +22%；「布匹织造」生产家族建筑产出 +22%；作为必要支撑：高级成衣厂、高级家具厂
+解锁物资：华服、精美家具、皮革制品；解锁建筑：细木家具工坊、宫廷裁缝坊、皮革制品小作坊；商品「衣物」产量 +22%；「布匹织造」生产家族建筑产出 +52.8%
 
 #### 机会成本
 
@@ -17148,7 +16932,7 @@
 #### 永久 Modifier 条款
 
 - 衣物：`country.output.good.clothing_factor`：+22%
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+22%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+52.8%
   - 效果机制：行会学徒制提高衣物产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：行会学徒制提高布匹织造建筑产出。
@@ -17178,7 +16962,7 @@
 | 稳定 ID | `tech.rag_paper_making` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17199,7 +16983,7 @@
 
 #### 效果摘要
 
-解锁建筑：碎布造纸工坊；「造纸」生产家族建筑产出 +12%
+解锁建筑：碎布造纸工坊；地理专长「森林」产出 +50%
 
 #### 机会成本
 
@@ -17214,14 +16998,13 @@
 
 #### 结构化内容效果
 
-- **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **碎布造纸工坊**（`building`）：`building.rag_paper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 造纸：`country.output.family.paper_making_factor`：+12%
-  - 效果机制：破布纸提高造纸建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 森林：`country.output.terrain.forest.manufacturing_factor`：+50%
+  - 效果机制：该产业在森林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17246,7 +17029,7 @@
 | 稳定 ID | `tech.woodblock_printing` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -17261,7 +17044,6 @@
 
 - 文字 (`tech.writing`)：木版印刷依赖文字、纸张与刻制工具，避免强迫手稿高级行业。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「文字」。
 - 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：木版印刷依赖文字、纸张与刻制工具，避免强迫手稿高级行业。；删除原先按模板轮转的无关专业路线，替换为与本行业直接关联的知识与经营能力。；所需知识为「植物纤维抄纸」。
-- 复合工具 (`tech.composite_tools`)：该科技需要先掌握 「复合工具」。
 
 #### 发现启发（仅用于揭示）
 
@@ -17269,7 +17051,7 @@
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：木版印刷坊；全社会经济产出 +8%；作为必要支撑：地籍管理局、印刷学社
+解锁物资：印刷品；解锁建筑：木版印刷坊；研究成本 -8%
 
 #### 机会成本
 
@@ -17289,9 +17071,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：木版印刷提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 研究成本：`country.research.cost_factor`：+8%
+  - 效果机制：该科技的组织与工艺收益通过研究成本体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -17316,7 +17098,7 @@
 | 稳定 ID | `tech.movable_type_printing` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 42000 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -17329,7 +17111,7 @@
 
 #### 硬前置（决定研发资格）
 
-- 陶器容器体系 (`tech.pottery`)：泥活字需要烧制稳定的陶字。
+- 手制陶器 (`tech.hand_pottery`)：该工序的知识由「手制陶器」承载：陶器与手工陶器效果重复（同为营造方法加成）；并入手工陶器。
 - 木版印刷 (`tech.woodblock_printing`)：活字印刷继承雕版的刷墨、覆纸与版面工艺（金属活字 ← 雕版印刷）。
 
 #### 发现启发（仅用于揭示）
@@ -17338,7 +17120,7 @@
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：活字印刷坊；全社会经济产出 +6%
+解锁建筑：活字印刷坊；研究成本 -8%
 
 #### 机会成本
 
@@ -17353,14 +17135,13 @@
 
 #### 结构化内容效果
 
-- **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
 - **活字印刷坊**（`building`）：`building.movable_type_print_shop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+6%
-  - 效果机制：活字印刷提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 研究成本：`country.research.cost_factor`：+8%
+  - 效果机制：该科技的组织与工艺收益通过研究成本体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -17385,7 +17166,7 @@
 | 稳定 ID | `tech.magnetic_navigation` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -17409,7 +17190,7 @@
 
 #### 效果摘要
 
-无
+贸易速度 +5%
 
 #### 机会成本
 
@@ -17428,7 +17209,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 贸易速度：`country.trade.speed_factor`：+5%
+  - 效果机制：磁针让船不必沿岸航行，同一段航程更短。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -17453,7 +17236,7 @@
 | 稳定 ID | `tech.urban_waterworks` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17477,7 +17260,7 @@
 
 #### 效果摘要
 
-解锁建筑：公共营造场；解锁建筑：规模化采石场；人口自然死亡率 -10%；作为必要支撑：智能水网控制中心
+解锁建筑：公共营造场、规模化采石场；人口自然死亡率 -3.6%
 
 #### 机会成本
 
@@ -17492,14 +17275,12 @@
 
 #### 结构化内容效果
 
-- **建筑构件**（`good`）：`good.construction_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `production_access` `unlock` `1.0`；`existing_binding`
 - **公共营造场**（`building`）：`building.classical_public_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **规模化采石场**（`building`）：`building.method_stone_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+10%
+- 人口自然死亡率：`country.population.death_factor`：+3.6%
   - 效果机制：城市供水提供洁净饮水。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
 
@@ -17526,7 +17307,7 @@
 | 稳定 ID | `tech.urban_sanitation` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 36100 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17550,7 +17331,7 @@
 
 #### 效果摘要
 
-解锁物资：肥皂；解锁建筑：制皂工坊；人口自然死亡率 -10%；作为必要支撑：工业制皂厂
+解锁物资：肥皂；解锁建筑：制皂工坊；人口自然死亡率 -3.6%；工人 +1.2%
 
 #### 机会成本
 
@@ -17570,9 +17351,12 @@
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+10%
+- 人口自然死亡率：`country.population.death_factor`：+3.6%
+- 工人：`economy.profession.worker.satisfaction_bp`：+12000%
   - 效果机制：城市排污减少水源性疾病。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+  - 效果机制：城市卫生设施减少疫病与恶臭，密集居住变得可忍受。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -17597,7 +17381,7 @@
 | 稳定 ID | `tech.scholastic_method` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 42000 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -17619,7 +17403,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+科学研究效率 +10%
 
 #### 机会成本
 
@@ -17638,9 +17422,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：经院研究法提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 科学研究效率：`country.research.science_efficiency`：+10%
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -17665,7 +17449,7 @@
 | 稳定 ID | `tech.serf_obligations` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17686,7 +17470,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%；作为必要支撑：庄园水田
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -17705,9 +17489,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：农奴义务提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -17732,7 +17516,7 @@
 | 稳定 ID | `tech.manorial_cereal_farming` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17754,7 +17538,7 @@
 
 #### 效果摘要
 
-农业部门产出 +8%
+农业部门产出 +7.5%；投入因子 -3%
 
 #### 机会成本
 
@@ -17773,9 +17557,12 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：庄园谷物经营提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -17800,7 +17587,7 @@
 | 稳定 ID | `tech.regional_granaries` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 42000 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -17822,7 +17609,7 @@
 
 #### 效果摘要
 
-商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +12%；人口自然死亡率 -8%
+商品「加工主食」产量 +12%；「主粮加工」生产家族建筑产出 +33.6%；人口自然死亡率 -2.9%
 
 #### 机会成本
 
@@ -17842,8 +17629,8 @@
 #### 永久 Modifier 条款
 
 - 加工主食：`country.output.good.prepared_staples_factor`：+12%
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
-- 人口自然死亡率：`country.population.death_factor`：+8%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+33.6%
+- 人口自然死亡率：`country.population.death_factor`：+2.9%
   - 效果机制：区域粮仓减少储藏损耗，提高加工主食有效供给。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：区域粮仓提高主粮加工与仓储相关建筑产出。
@@ -17874,7 +17661,7 @@
 | 稳定 ID | `tech.coal_adit_mining` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17896,7 +17683,7 @@
 
 #### 效果摘要
 
-解锁建筑：煤层平硐；煤 -8%；采掘部门产出 +20%
+解锁建筑：煤层平硐；煤 -8%；采掘部门产出 +19.3%
 
 #### 机会成本
 
@@ -17911,13 +17698,12 @@
 
 #### 结构化内容效果
 
-- **煤炭**（`good`）：`good.coal` → `production_access` `unlock` `1.0`；`existing_binding`
 - **煤层平硐**（`building`）：`building.coal_adit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 煤：`country.resource.coal.use_factor`：+8%
-- 采掘部门产出：`country.output.extractive_factor`：+20%
+- 采掘部门产出：`country.output.extractive_factor`：+19.3%
   - 效果机制：平硐提高煤层回收率。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：煤矿平硐提高采掘部门产出。
@@ -17947,7 +17733,7 @@
 | 稳定 ID | `tech.coal_mining` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -17968,7 +17754,7 @@
 
 #### 效果摘要
 
-解锁建筑：煤矿；煤 -8%；采掘部门产出 +12%
+解锁建筑：煤矿；煤 -8%；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -17983,13 +17769,12 @@
 
 #### 结构化内容效果
 
-- **煤炭**（`good`）：`good.coal` → `production_access` `unlock` `1.0`；`existing_binding`
 - **煤矿**（`building`）：`building.coal_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 煤：`country.resource.coal.use_factor`：+8%
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：系统采煤减少煤层损失。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：煤矿开采提高采掘部门产出。
@@ -17999,6 +17784,7 @@
 
 - 焦炭冶炼 (`tech.coke_smelting`)：炼焦需要稳定供应的矿井煤。
 - 工业采煤 (`tech.industrial_coal_mining`)：工业采煤是竖井煤矿的规模化。
+- 工业化学 (`tech.industrial_chemistry`)：没有稳定出煤与煤焦油，工业化学的原料链就断在起点；煤的开采是它的物质前提。
 
 #### 主题路线后继
 
@@ -18019,7 +17805,7 @@
 | 稳定 ID | `tech.mine_timbering` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18043,7 +17829,7 @@
 
 #### 效果摘要
 
-解锁建筑：浅层铜矿；解锁建筑：浅层铁矿；「铁矿采掘」生产家族建筑产出 +14%
+解锁建筑：浅层铜矿、浅层铁矿；地理专长「山地」产出 +18.8%
 
 #### 机会成本
 
@@ -18058,16 +17844,14 @@
 
 #### 结构化内容效果
 
-- **铜矿石**（`good`）：`good.copper_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **浅层铜矿**（`building`）：`building.early_copper_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **浅层铁矿**（`building`）：`building.early_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+14%
-  - 效果机制：矿井木支护提高铁矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 山地：`country.output.landform.mountain.extractive_factor`：+18.8%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -18092,7 +17876,7 @@
 | 稳定 ID | `tech.mine_ventilation` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 54600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18116,7 +17900,7 @@
 
 #### 效果摘要
 
-可利用资源：铅矿；可利用资源：锌矿；采掘部门产出 +14%
+可利用资源：铅矿、锌矿；采掘部门产出 +13.5%
 
 #### 机会成本
 
@@ -18136,7 +17920,7 @@
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+14%
+- 采掘部门产出：`country.output.extractive_factor`：+13.5%
   - 效果机制：矿井通风提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -18163,7 +17947,7 @@
 | 稳定 ID | `tech.estate_cereal_management` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18185,7 +17969,7 @@
 
 #### 效果摘要
 
-解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园
+解锁建筑：玉米庄园、佃作小麦庄园
 
 #### 机会成本
 
@@ -18200,8 +17984,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玉米庄园**（`building`）：`building.landed_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作小麦庄园**（`building`）：`building.method_wheat_farm_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -18232,7 +18014,7 @@
 | 稳定 ID | `tech.estate_paddy_management` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18271,7 +18053,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **庄园水田**（`building`）：`building.estate_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -18301,7 +18082,7 @@
 | 稳定 ID | `tech.bills_of_exchange` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 47600 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18371,7 +18152,7 @@
 | 稳定 ID | `tech.imperial_integration` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 70000 科技点（`technology_points`） |
+| 研究成本 | 82000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -18384,7 +18165,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -18392,7 +18173,7 @@
 
 #### 效果摘要
 
-时代晋升效果：全社会经济产出 +5%；全社会贸易运输速度 +6%；制造部门产出 +6%
+时代晋升效果：全社会经济产出 +7%；全社会贸易运输速度 +6%；制造部门产出 +12%
 
 #### 机会成本
 
@@ -18426,9 +18207,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+5%
+- 全社会经济产出：`country.economy_output_factor`：+7%
 - 全社会贸易运输速度：`country.trade.speed_factor`：+6%
-- 制造部门产出：`country.output.manufacturing_factor`：+6%
+- 制造部门产出：`country.output.manufacturing_factor`：+12%
   - 效果机制：帝国整合打通了跨区域的生产分工。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：驿道与漕运体系加快了贸易运输。
@@ -18459,7 +18240,7 @@
 | 稳定 ID | `tech.military.mounted_warfare` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 28300 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18483,7 +18264,7 @@
 
 #### 效果摘要
 
-部队速度 +10%
+部队速度 +10%；闪击 +12%
 
 #### 机会成本
 
@@ -18503,8 +18284,11 @@
 #### 永久 Modifier 条款
 
 - 部队速度：`country.military.speed_factor`：+10%
+- 闪击：`country.military.rule.blitz`：+12%
   - 效果机制：骑兵战术提高全军机动性。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：骑兵机动速度达到闪击门槛，开战初期即可撕开缺口。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -18529,14 +18313,14 @@
 | 稳定 ID | `tech.military.military_roads` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 28300 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
-| 主要路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
-| 全部路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
+| 主要路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
+| 全部路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -18599,14 +18383,14 @@
 | 稳定 ID | `tech.military.coastal_transport` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 28300 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
-| 主要路线 | 制度 · ocean (\`route.institution.ocean\`) |
-| 全部路线 | 制度 · ocean (\`route.institution.ocean\`) |
+| 主要路线 | 制度 · 远洋 (\`route.institution.ocean\`) |
+| 全部路线 | 制度 · 远洋 (\`route.institution.ocean\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -18620,7 +18404,7 @@
 
 #### 效果摘要
 
-无
+开放能力：水路通行与沿岸登陆
 
 #### 机会成本
 
@@ -18635,7 +18419,7 @@
 
 #### 结构化内容效果
 
-无
+- **水路通行与沿岸登陆**（`runtime`）：`MilitaryCatalog.coastal_transport_bit` → `coastal_embarkation` `unlock` `1.0`；`runtime_consumed`
 
 #### 永久 Modifier 条款
 
@@ -18664,14 +18448,14 @@
 | 稳定 ID | `tech.military.legion_logistics` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 30720 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.labor\_management |
-| 主要路线 | 制度 · granary (\`route.institution.granary\`) |
-| 全部路线 | 制度 · granary (\`route.institution.granary\`) |
+| 主要路线 | 制度 · 粮储 (\`route.institution.granary\`) |
+| 全部路线 | 制度 · 粮储 (\`route.institution.granary\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -18687,7 +18471,7 @@
 
 #### 效果摘要
 
-解锁建筑：军械工场；解锁建筑：军团营寨；补给消耗 -15%
+解锁建筑：军械工场、军团营寨；补给消耗 -30%；死守 +8%
 
 #### 机会成本
 
@@ -18702,15 +18486,17 @@
 
 #### 结构化内容效果
 
-- **弓箭**（`good`）：`good.bows` → `production_access` `unlock` `1.0`；`existing_binding`
 - **军械工场**（`building`）：`building.arsenal_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **军团营寨**（`building`）：`building.legion_fort` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 补给消耗：`country.military.supply_consumption_factor`：×0.85
-  - 效果机制：军需体系用标准化配额减少浪费。
+- 补给消耗：`country.military.supply_consumption_factor`：×0.7
+- 死守：`country.military.rule.last_stand`：+8%
+  - 效果机制：军需体系用标准化配额减少浪费，同等兵力吃更少的补给。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：军需体系让被切断补给的军团仍能维持建制继续抵抗。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -18735,7 +18521,7 @@
 | 稳定 ID | `tech.military.heavy_cavalry` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 30720 科技点（`technology_points`） |
+| 研究成本 | 25000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -18757,7 +18543,7 @@
 
 #### 效果摘要
 
-全国部队攻击 +8%
+全国部队攻击 +8%；合围 +10%
 
 #### 机会成本
 
@@ -18777,8 +18563,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队攻击：`country.military.attack_factor`：+8%
+- 合围：`country.military.rule.encirclement`：+10%
   - 效果机制：重骑兵的冲击力提高全军攻击。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：重骑兵用于封口，把敌军压进已合围的格子。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -18803,14 +18592,14 @@
 | 稳定 ID | `tech.military.siegecraft` |
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 30720 科技点（`technology_points`） |
+| 研究成本 | 46000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
-| 主要路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
-| 全部路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
+| 主要路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
+| 全部路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -18825,7 +18614,7 @@
 
 #### 效果摘要
 
-解锁物资：攻城器械；解锁建筑：城堡要塞；解锁建筑：攻城器械坊；本国工事强度 +15%
+解锁物资：攻城器械；解锁建筑：城堡要塞、攻城器械坊；本国工事强度 +15%；合围 +10%
 
 #### 机会成本
 
@@ -18847,8 +18636,11 @@
 #### 永久 Modifier 条款
 
 - 本国工事强度：`country.military.fortification_factor`：+15%
+- 合围：`country.military.rule.encirclement`：+10%
   - 效果机制：攻城术同时带来对己方工事的改进。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：攻城术让围城部队能够封锁全部邻格并持续压制。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -18857,6 +18649,146 @@
 #### 主题路线后继
 
 无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 山地灌溉 (`tech.mountain_irrigation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.mountain_irrigation` |
+| 时代 | 帝国时代 (`empire`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 46000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 生态 · 高地 (\`route.ecology.highland\`) |
+| 全部路线 | 生态 · 高地 (\`route.ecology.highland\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | hydraulic |
+
+#### 硬前置（决定研发资格）
+
+- 高地块茎农业 (`tech.highland_tuber_farming`)：高山块茎体系的畦作与梯田经验，是山地引水的前身。
+- 运河工程 (`tech.canal_engineering`)：渠道工程提供坡面输水、分水与溢流的工程方法。
+
+#### 发现启发（仅用于揭示）
+
+- 全部满足：
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+  - 已发现信号「高原」（landform.high\_plateau）
+
+#### 效果摘要
+
+地理专长「山地」产出 +45%
+
+#### 机会成本
+
+占用帝国时代的通用研究预算，延后同代的水利与粮储锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 山地：`country.output.terrain.mountain.agriculture_factor`：+45%
+  - 效果机制：把坡面径流引入梯田后，山地农业第一次摆脱看天吃饭。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 磨坊网络 (`tech.mill_network`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.mill_network` |
+| 时代 | 帝国时代 (`empire`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 46000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.water\_wind |
+| 主要路线 | 能源 · 水力 (\`route.energy.water\`) |
+| 全部路线 | 能源 · 水力 (\`route.energy.water\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | power |
+
+#### 硬前置（决定研发资格）
+
+- 水力机械 (`tech.water_power`)：水磨提供全年稳定的回转动力，是磨坊网络的骨干。
+- 风力机械 (`tech.wind_power`)：风磨补上枯水季与缺河地区的动力空档，两者共同构成网络。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
+
+#### 效果摘要
+
+地理专长「平原」产出 +30%
+
+#### 机会成本
+
+占用帝国时代的通用研究预算，延后同代的水利与筑城锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 平原：`country.output.landform.plain.manufacturing_factor`：+30%
+  - 效果机制：平原上成网的磨坊把谷物加工从家庭副业变成可计量的产业。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+- 圩田与海岸工程 (`tech.polder_engineering`)：圩田需要成网的排水动力，磨坊网络提供抽排与闸门的驱动经验。
+
+#### 主题路线后继
+
+- 圩田与海岸工程 (`tech.polder_engineering`)：圩田工程把磨坊网络积累的水工经验扩展到海岸与沼泽，是同一支线的下一步。
 
 #### 跨领域应用
 
@@ -19691,7 +19623,7 @@
 #### 所需科技（ALL，决定自动应用）
 
 - 行业组织 (`tech.guild_organization`)：该知识是此产业交汇自动生效的必要条件。
-- 织机织造 (`tech.loom_weaving`)：该知识是此产业交汇自动生效的必要条件。
+- 织造 (`tech.weaving`)：该知识是此产业交汇自动生效的必要条件。
 - 沤麻 (`tech.flax_retting`)：该知识是此产业交汇自动生效的必要条件。
 - 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
 
@@ -21017,7 +20949,7 @@
 <a id="era-5"></a>
 ## 探索时代
 
-共 35 项研究科技、18 项自动应用，科技研究成本范围 44200-160000；时代里程碑：洲际网络 (`tech.global_exchange`)。
+共 38 项研究科技、18 项自动应用，科技研究成本范围 60000-196000；时代里程碑：洲际网络 (`tech.global_exchange`)。
 
 ### 橡胶树辨识 (`tech.rubber_identification`)
 
@@ -21026,7 +20958,7 @@
 | 稳定 ID | `tech.rubber_identification` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 50700 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21039,7 +20971,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -21049,7 +20981,7 @@
 
 #### 效果摘要
 
-「专用商品作物」生产家族建筑产出 +12%
+「专用商品作物」生产家族建筑产出 +26.4%；资源利用 -3%
 
 #### 机会成本
 
@@ -21068,9 +21000,12 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+26.4%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：橡胶树辨识提高专用商品作物建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -21095,7 +21030,7 @@
 | 稳定 ID | `tech.wild_latex_tapping` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 44200 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21116,7 +21051,7 @@
 
 #### 效果摘要
 
-「专用商品作物」生产家族建筑产出 +12%
+地理专长「热带雨林」产出 +14.8%
 
 #### 机会成本
 
@@ -21135,9 +21070,9 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
-  - 效果机制：野生割胶提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+14.8%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21162,7 +21097,7 @@
 | 稳定 ID | `tech.rubber_working` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 48200 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21185,7 +21120,7 @@
 
 #### 效果摘要
 
-解锁物资：天然乳胶；解锁建筑：野生割胶营地；「专用商品作物」生产家族建筑产出 +12%；作为必要支撑：制鞋厂、自动化橡胶种植园、机械化橡胶种植园、精准橡胶种植园、专用商品作物种植园、橡胶种植园
+解锁物资：天然乳胶；解锁建筑：野生割胶营地；「专用商品作物」生产家族建筑产出 +26.4%
 
 #### 机会成本
 
@@ -21205,7 +21140,7 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+26.4%
   - 效果机制：天然橡胶加工提高专用商品作物建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -21232,7 +21167,7 @@
 | 稳定 ID | `tech.latex_smoke_coagulation` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 55300 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21256,7 +21191,7 @@
 
 #### 效果摘要
 
-解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；可利用资源：种植园承载力；「专用商品作物」生产家族建筑产出 +28%；作为必要支撑：汽车厂、智能化汽车厂、自动化橡胶种植园、机械化橡胶种植园、精准橡胶种植园
+解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；地理专长「热带雨林」产出 +20.5%
 
 #### 机会成本
 
@@ -21273,13 +21208,12 @@
 
 - **凝固天然橡胶**（`good`）：`good.natural_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **乳胶烟熏凝固棚**（`building`）：`building.latex_smoking_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
-  - 效果机制：乳胶烟熏凝固提高专用商品作物建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 热带雨林：`country.output.terrain.jungle.agriculture_factor`：+20.5%
+  - 效果机制：该产业在热带雨林上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21304,7 +21238,7 @@
 | 稳定 ID | `tech.cartography` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -21326,7 +21260,7 @@
 
 #### 效果摘要
 
-无
+贸易速度 +12%；贸易容量 +6%
 
 #### 机会成本
 
@@ -21345,11 +21279,17 @@
 
 #### 永久 Modifier 条款
 
-无
+- 贸易速度：`country.trade.speed_factor`：+12%
+- 贸易容量：`country.trade.capacity_factor`：+6%
+  - 效果机制：海图让航路可复用，船队周转更快。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
+  - 效果机制：标准化海图降低远洋交易的信息成本。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航行依赖航海图。
+- 土地测量 (`tech.land_surveying`)：测量要先把地物画到图上，地图学提供投影与记号的约定。
 - 地产测绘 (`tech.property_cadastre`)：该科技需要先掌握 「地图学」。
 - 军事测绘 (`tech.military.military_cartography`)：军事测绘以地图制作为基础。
 - 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统把地图学的空间表达数字化。
@@ -21373,7 +21313,7 @@
 | 稳定 ID | `tech.celestial_navigation` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21399,7 +21339,7 @@
 
 #### 效果摘要
 
-无
+开启航道：浅海运输走廊
 
 #### 机会成本
 
@@ -21443,7 +21383,7 @@
 | 稳定 ID | `tech.screw_press_printing` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | branch |
@@ -21464,7 +21404,7 @@
 
 #### 效果摘要
 
-解锁物资：包装材料；解锁建筑：包装材料厂；解锁建筑：印刷厂；全社会经济产出 +8%；作为必要支撑：面包厂、主食加工厂
+解锁物资：包装材料；解锁建筑：包装材料厂、印刷厂；研究成本 -8%
 
 #### 机会成本
 
@@ -21480,15 +21420,14 @@
 #### 结构化内容效果
 
 - **包装材料**（`good`）：`good.packaging` → `production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
 - **包装材料厂**（`building`）：`building.packaging_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **印刷厂**（`building`）：`building.printed_materials_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：螺旋压印提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 研究成本：`country.research.cost_factor`：+8%
+  - 效果机制：该科技的组织与工艺收益通过研究成本体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -21514,7 +21453,7 @@
 | 稳定 ID | `tech.gunpowder_weapons` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21540,7 +21479,7 @@
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：火绳枪；解锁物资：火药弹丸；解锁建筑：炸药厂；解锁建筑：火枪坊；解锁建筑：弹丸作坊；作为必要支撑：铝土矿、深井盐矿、铅矿、锰矿、自动化铝土矿、自动化炸药厂、现代炸药厂、自动化铅矿、智能锰矿、自动化磷矿、智能战略矿山、自动化锌矿、磷矿、战略矿山、锌矿
+解锁物资：炸药、火绳枪、火药弹丸；解锁建筑：炸药厂、火枪坊、弹丸作坊
 
 #### 机会成本
 
@@ -21570,8 +21509,6 @@
 
 - 野战火炮 (`tech.military.field_artillery`)：野战火炮以火药武器与青铜炮管为基础。
 - 棱堡 (`tech.military.star_forts`)：棱堡是对火炮的工程回应。
-- 网络中心战 (`tech.military.network_centric`)：合成部队的基础弹药链来自火药武器。
-- 自主作战 (`tech.military.autonomous_warfare`)：外骨骼步兵的弹药链来自火药武器。
 
 #### 主题路线后继
 
@@ -21592,7 +21529,7 @@
 | 稳定 ID | `tech.deep_mining` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21618,7 +21555,7 @@
 
 #### 效果摘要
 
-铁矿石 -8%；采掘部门产出 +24%
+铁矿石 -8%；采掘部门产出 +23.2%
 
 #### 机会成本
 
@@ -21638,7 +21575,7 @@
 #### 永久 Modifier 条款
 
 - 铁矿石：`country.resource.iron_ore.use_factor`：+8%
-- 采掘部门产出：`country.output.extractive_factor`：+24%
+- 采掘部门产出：`country.output.extractive_factor`：+23.2%
   - 效果机制：深井开拓提高铁矿回采率。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：深井采矿提高采掘部门产出。
@@ -21669,7 +21606,7 @@
 | 稳定 ID | `tech.double_entry_bookkeeping` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -21739,7 +21676,7 @@
 | 稳定 ID | `tech.mercantile_networks` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21809,7 +21746,7 @@
 | 稳定 ID | `tech.oceanic_navigation` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21835,7 +21772,7 @@
 
 #### 效果摘要
 
-解锁物资：远洋船舶；解锁建筑：远洋造船厂；「海上作业」生产家族建筑产出 +16%；作为必要支撑：蒸汽航运船坞
+开启航道：远海运输走廊；解锁物资：远洋船舶；解锁建筑：远洋造船厂；「海上作业」生产家族建筑产出 +48%
 
 #### 机会成本
 
@@ -21856,7 +21793,7 @@
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+16%
+- 海上作业：`country.output.family.maritime_operations_factor`：+48%
   - 效果机制：远洋航海提高海上作业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -21886,7 +21823,7 @@
 | 稳定 ID | `tech.oceanic_ship_design` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -21907,7 +21844,7 @@
 
 #### 效果摘要
 
-「海上作业」生产家族建筑产出 +12%；作为必要支撑：电气化造船厂
+开启航道：深海运输走廊；地理专长「海岸」产出 +26.5%
 
 #### 机会成本
 
@@ -21926,13 +21863,14 @@
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+12%
-  - 效果机制：远洋船舶设计提高海上作业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 海岸：`country.output.terrain.coast.extractive_factor`：+26.5%
+  - 效果机制：该产业在海岸上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 海岸船厂 (`tech.coastal_shipyards`)：该科技需要先掌握 「远洋船舶设计」。
+- 水产养殖 (`tech.aquaculture`)：远洋船设计给出网箱、浮架与系泊的工程经验，池塘与海上养殖都由它放大而来。
 
 #### 主题路线后继
 
@@ -21953,7 +21891,7 @@
 | 稳定 ID | `tech.coastal_shipyards` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -21977,7 +21915,7 @@
 
 #### 效果摘要
 
-「海上作业」生产家族建筑产出 +28%；作为必要支撑：电气化造船厂、蒸汽航运船坞
+「海上作业」生产家族建筑产出 +84%；建造成本 -3%
 
 #### 机会成本
 
@@ -21996,9 +21934,12 @@
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+28%
+- 海上作业：`country.output.family.maritime_operations_factor`：+84%
+- 建造成本：`country.construction.cost_factor`：+3%
   - 效果机制：海岸船厂提高海上作业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -22023,7 +21964,7 @@
 | 稳定 ID | `tech.commercial_estates` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22060,7 +22001,6 @@
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **药材种植园**（`building`）：`building.medicinal_herbs_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -22092,7 +22032,7 @@
 | 稳定 ID | `tech.mechanical_timekeeping` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -22141,6 +22081,7 @@
 
 #### 被以下科技作为硬前置
 
+- 精密测量 (`tech.precision_measurement`)：机械计时提供可复现的时间基准，是测量从定性走向定量的前提。
 - 精密工程 (`tech.precision_engineering`)：该科技需要先掌握 「机械计时」。
 
 #### 主题路线后继
@@ -22162,7 +22103,7 @@
 | 稳定 ID | `tech.shaft_sinking` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22186,7 +22127,7 @@
 
 #### 效果摘要
 
-解锁建筑：金矿；解锁建筑：银矿；「金矿采掘」生产家族建筑产出 +12%；「银矿采掘」生产家族建筑产出 +12%
+解锁建筑：金矿、银矿；地理专长「裂谷」产出 +54%；地理专长「荒原」产出 +54%
 
 #### 机会成本
 
@@ -22201,19 +22142,17 @@
 
 #### 结构化内容效果
 
-- **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
-- **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
 - **金矿**（`building`）：`building.gold_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **银矿**（`building`）：`building.silver_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 金矿采掘：`country.output.family.gold_extraction_factor`：+12%
-- 银矿采掘：`country.output.family.silver_extraction_factor`：+12%
-  - 效果机制：井筒开掘提高金矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：井筒开掘提高银矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 裂谷：`country.output.landform.rift_valley.extractive_factor`：+54%
+- 荒原：`country.output.terrain.badlands.extractive_factor`：+54%
+  - 效果机制：该产业在裂谷上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在荒原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -22238,7 +22177,7 @@
 | 稳定 ID | `tech.mine_drainage` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22260,7 +22199,7 @@
 
 #### 效果摘要
 
-解锁建筑：锡矿；「制盐」生产家族建筑产出 +16%；「锡矿采掘」生产家族建筑产出 +16%
+解锁建筑：锡矿；地理专长「盐沼」产出 +57.1%；地理专长「沙漠」产出 +40%
 
 #### 机会成本
 
@@ -22275,17 +22214,16 @@
 
 #### 结构化内容效果
 
-- **锡矿石**（`good`）：`good.tin_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锡矿**（`building`）：`building.tin_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制盐：`country.output.family.salt_extraction_factor`：+16%
-- 锡矿采掘：`country.output.family.tin_extraction_factor`：+16%
-  - 效果机制：矿井排水提高制盐建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：矿井排水提高锡矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 盐沼：`country.output.terrain.salt_flat.extractive_factor`：+57.1%
+- 沙漠：`country.output.terrain.desert.extractive_factor`：+40%
+  - 效果机制：该产业在盐沼上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在沙漠上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -22311,7 +22249,7 @@
 | 稳定 ID | `tech.commercial_tenancy` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22333,7 +22271,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -22352,9 +22290,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：商业租佃提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -22380,7 +22318,7 @@
 | 稳定 ID | `tech.chartered_companies` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -22448,7 +22386,7 @@
 | 稳定 ID | `tech.commodity_crop_management` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22470,7 +22408,7 @@
 
 #### 效果摘要
 
-解锁物资：天然乳胶；解锁建筑：橡胶种植园；农业部门产出 +8%
+解锁建筑：橡胶种植园；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -22485,12 +22423,11 @@
 
 #### 结构化内容效果
 
-- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
 - **橡胶种植园**（`building`）：`building.rubber_tree_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：商品作物管理提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -22518,7 +22455,7 @@
 | 稳定 ID | `tech.oceanic_provisioning` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -22540,7 +22477,7 @@
 
 #### 效果摘要
 
-解锁建筑：远洋渔场；「海上作业」生产家族建筑产出 +25%
+解锁建筑：远洋渔场；地理专长「海岸」产出 +36.8%
 
 #### 机会成本
 
@@ -22555,14 +22492,13 @@
 
 #### 结构化内容效果
 
-- **鱼类**（`good`）：`good.fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **远洋渔场**（`building`）：`building.method_marine_fish_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 海上作业：`country.output.family.maritime_operations_factor`：+25%
-  - 效果机制：远洋补给提高海上作业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 海岸：`country.output.terrain.coast.extractive_factor`：+36.8%
+  - 效果机制：该产业在海岸上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -22587,7 +22523,7 @@
 | 稳定 ID | `tech.interregional_botany` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -22656,7 +22592,7 @@
 | 稳定 ID | `tech.agronomic_exchange` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -22678,7 +22614,7 @@
 
 #### 效果摘要
 
-农业部门产出 +12%
+农业部门产出 +11.3%；投入因子 -3%
 
 #### 机会成本
 
@@ -22697,9 +22633,12 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+12%
+- 农业部门产出：`country.output.agriculture_factor`：+11.3%
+- 投入因子：`country.production.input_factor`：+3%
   - 效果机制：农艺交换提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -22726,7 +22665,7 @@
 | 稳定 ID | `tech.crop_transplantation` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22747,7 +22686,7 @@
 
 #### 效果摘要
 
-农业部门产出 +8%；农业领域研究效率 +8%；种植园生产·寒冷损失 -10%；种植园生产·热害损失 -10%
+农业部门产出 +7.5%；农业领域研究效率 +8%；种植园生产·寒冷损失 -10%；种植园生产·热害损失 -10%
 
 #### 机会成本
 
@@ -22766,7 +22705,7 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
 - 种植园生产·寒冷损失：`country.climate.profile.plantation_crop.cold_stress_loss_factor`：+10%
 - 种植园生产·热害损失：`country.climate.profile.plantation_crop.heat_stress_loss_factor`：+10%
@@ -22802,7 +22741,7 @@
 | 稳定 ID | `tech.crop_acclimatization` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -22825,7 +22764,7 @@
 
 #### 效果摘要
 
-可利用资源：种植园承载力；农业领域研究效率 +22%；旱作生产·旱灾损失 -8%；旱作生产·寒冷损失 -8%；旱作生产·热害损失 -8%；作为必要支撑：专用商品作物种植园
+农业领域研究效率 +22%；旱作生产·旱灾损失 -8%；旱作生产·寒冷损失 -8%；旱作生产·热害损失 -8%
 
 #### 机会成本
 
@@ -22840,7 +22779,7 @@
 
 #### 结构化内容效果
 
-- **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
@@ -22880,7 +22819,7 @@
 | 稳定 ID | `tech.indentured_contracts` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -22902,7 +22841,7 @@
 
 #### 效果摘要
 
-解锁建筑：亚麻庄园；社会领域研究效率 +20%
+解锁建筑：亚麻庄园；社会领域研究效率 +18.3%
 
 #### 机会成本
 
@@ -22917,12 +22856,11 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+20%
+- 社会领域研究效率：`country.research.society_efficiency`：+18.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -22949,7 +22887,7 @@
 | 稳定 ID | `tech.estate_plantation_management` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -22972,7 +22910,7 @@
 
 #### 效果摘要
 
-解锁建筑：棉花农场；解锁建筑：商业香料种植园；解锁建筑：香料种植园
+解锁建筑：棉花农场、商业香料种植园、香料种植园
 
 #### 机会成本
 
@@ -22987,8 +22925,6 @@
 
 #### 结构化内容效果
 
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **商业香料种植园**（`building`）：`building.spice_commercial_plantation` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -22999,7 +22935,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 种植园加工 (`tech.plantation_processing`)：庄园化的种植园管理提供了稳定原料批量，加工才有意义。
 
 #### 主题路线后继
 
@@ -23020,7 +22956,7 @@
 | 稳定 ID | `tech.manufactory_system` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -23042,7 +22978,7 @@
 
 #### 效果摘要
 
-解锁建筑：玻璃器皿工场；解锁建筑：皮革制品工场；解锁建筑：金属家用器皿工场
+解锁建筑：玻璃器皿工场、皮革制品工场、金属家用器皿工场
 
 #### 机会成本
 
@@ -23057,9 +22993,6 @@
 
 #### 结构化内容效果
 
-- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃器皿工场**（`building`）：`building.glassware_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **皮革制品工场**（`building`）：`building.leather_goods_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **金属家用器皿工场**（`building`）：`building.metal_housewares_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -23091,7 +23024,7 @@
 | 稳定 ID | `tech.global_exchange` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 160000 科技点（`technology_points`） |
+| 研究成本 | 196000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | branch |
 | 锚点类型 | milestone |
@@ -23104,7 +23037,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -23112,7 +23045,7 @@
 
 #### 效果摘要
 
-时代晋升效果：国内贸易容量 +12%；全社会贸易运输速度 +8%；全社会经济产出 +5%
+时代晋升效果：国内贸易容量 +12%；全社会贸易运输速度 +8%；全社会经济产出 +7%
 
 #### 机会成本
 
@@ -23149,7 +23082,7 @@
 
 - 国内贸易容量：`country.trade.capacity_factor`：+12%
 - 全社会贸易运输速度：`country.trade.speed_factor`：+8%
-- 全社会经济产出：`country.economy_output_factor`：+5%
+- 全社会经济产出：`country.economy_output_factor`：+7%
   - 效果机制：远洋交换网络大幅扩展了贸易容量。
   - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
   - 效果机制：航海与商路知识缩短了运输周期。
@@ -23180,14 +23113,14 @@
 | 稳定 ID | `tech.military.field_artillery` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
-| 主要路线 | military · ordnance (\`route.military.ordnance\`) |
-| 全部路线 | military · ordnance (\`route.military.ordnance\`) |
+| 主要路线 | 军事 · 火炮 (\`route.military.ordnance\`) |
+| 全部路线 | 军事 · 火炮 (\`route.military.ordnance\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -23249,14 +23182,14 @@
 | 稳定 ID | `tech.military.star_forts` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
-| 主要路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
-| 全部路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
+| 主要路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
+| 全部路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -23271,7 +23204,7 @@
 
 #### 效果摘要
 
-解锁建筑：棱堡；本国工事强度 +20%
+解锁建筑：棱堡；本国工事强度 +20%；坚守 +10%
 
 #### 机会成本
 
@@ -23291,8 +23224,11 @@
 #### 永久 Modifier 条款
 
 - 本国工事强度：`country.military.fortification_factor`：+20%
+- 坚守：`country.military.rule.hold_the_line`：+10%
   - 效果机制：棱堡的低矮多边形轮廓让己方工事更难被攻破。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：棱堡的交叉火力让守军在坚守姿态下获得更大优势。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -23317,14 +23253,14 @@
 | 稳定 ID | `tech.military.naval_transport` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 60000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
-| 主要路线 | 制度 · ocean (\`route.institution.ocean\`) |
-| 全部路线 | 制度 · ocean (\`route.institution.ocean\`) |
+| 主要路线 | 制度 · 远洋 (\`route.institution.ocean\`) |
+| 全部路线 | 制度 · 远洋 (\`route.institution.ocean\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -23385,7 +23321,7 @@
 | 稳定 ID | `tech.military.corned_powder` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -23422,7 +23358,6 @@
 
 #### 结构化内容效果
 
-- **黑火药**（`good`）：`good.black_powder` → `production_access` `unlock` `1.0`；`existing_binding`
 - **火药局**（`building`）：`building.powder_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -23432,6 +23367,7 @@
 #### 被以下科技作为硬前置
 
 - 机械制药 (`tech.military.powder_milling`)：机械制药是粒状火药生产的连续化。
+- 操典 (`tech.military.drill_regulations`)：燧发枪的操典建立在粒化火药之上：粉状火药无法在队列里稳定装填。
 
 #### 主题路线后继
 
@@ -23452,7 +23388,7 @@
 | 稳定 ID | `tech.military.nitre_beds` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 109000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -23489,7 +23425,6 @@
 
 #### 结构化内容效果
 
-- **硝石**（`good`）：`good.saltpeter` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硝田**（`building`）：`building.nitre_beds` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -23503,6 +23438,219 @@
 #### 主题路线后继
 
 无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 精密测量 (`tech.precision_measurement`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.precision_measurement` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 109000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | backbone.tools\_machinery |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | tools |
+
+#### 硬前置（决定研发资格）
+
+- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供可复现的时间基准，是测量从定性走向定量的前提。
+- 度量衡 (`tech.weights_and_measures`)：度量衡给出单位与换算规则，没有统一单位就谈不上精密。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「制造就业 50」（development.employment.manufacturing.50\_180d）
+  - 已发现信号「知识产出规模 1000」（development.output.knowledge.1000\_360d）
+
+#### 效果摘要
+
+「金属工具制造」生产家族建筑产出 +30%；建造成本 -3%
+
+#### 机会成本
+
+占用探索时代的通用研究预算，延后同代的航海与种植园锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+30%
+- 建造成本：`country.construction.cost_factor`：+3%
+  - 效果机制：可复现的测量让零件第一次能按尺寸互换，工具与量具的成品率同步上升。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 精密工程 (`tech.precision_engineering`)：精密工程建立在精密测量建立的尺寸与公差体系之上。
+
+#### 主题路线后继
+
+- 精密工程 (`tech.precision_engineering`)：精密工程直接使用精密测量建立的尺寸与公差体系，是它在同一条主干的下一步。
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 土地测量 (`tech.land_surveying`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.land_surveying` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 109000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.measurement\_instruments |
+| 主要路线 | 制度 · 记录 (\`route.institution.records\`) |
+| 全部路线 | 制度 · 记录 (\`route.institution.records\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 地图学 (`tech.cartography`)：测量要先把地物画到图上，地图学提供投影与记号的约定。
+- 度量衡 (`tech.weights_and_measures`)：没有统一单位，面积与距离无法被记录、比较与征收。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「聚落等级 2」（development.settlement.tier\_2\_180d）
+
+#### 效果摘要
+
+「地籍机构」生产家族建筑产出 +45%；建造成本 -3%
+
+#### 机会成本
+
+占用帝国时代的通用研究预算，延后同代的官僚与军政锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+45%
+- 建造成本：`country.construction.cost_factor`：+3%
+  - 效果机制：可复核的地籍让土地登记、买卖与征税第一次有共同依据。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 种植园加工 (`tech.plantation_processing`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.plantation_processing` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 109000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 种植园庄园管理 (`tech.estate_plantation_management`)：庄园化的种植园管理提供了稳定原料批量，加工才有意义。
+
+#### 发现启发（仅用于揭示）
+
+- 全部满足：
+  - 已发现信号「森林」（landform.forest）
+  - 已发现信号「农业产出规模 1000」（development.output.agriculture.1000\_360d）
+
+#### 效果摘要
+
+地理专长「热带雨林」产出 +45%
+
+#### 机会成本
+
+占用探索时代的通用研究预算，延后同代的航海与种植园扩张锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 热带雨林：`country.output.terrain.jungle.manufacturing_factor`：+45%
+  - 效果机制：在产地就地初加工，让易腐的热带原料第一次能承受长途运输。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+- 热带农产工业 (`tech.tropical_agroindustry`)：初加工给出可运输的半成品，是成品工业的原料基础。
+
+#### 主题路线后继
+
+- 热带农产工业 (`tech.tropical_agroindustry`)：热带农产工业把初加工扩成糖、油与纤维的成品工业，是同一支线的下一步。
 
 #### 跨领域应用
 
@@ -24714,7 +24862,7 @@
 <a id="era-6"></a>
 ## 启蒙时代
 
-共 31 项研究科技、12 项自动应用，科技研究成本范围 192000-360000；时代里程碑：启蒙制度 (`tech.enlightenment_institutions`)。
+共 33 项研究科技、12 项自动应用，科技研究成本范围 141000-461000；时代里程碑：启蒙制度 (`tech.enlightenment_institutions`)。
 
 ### 科学分类 (`tech.scientific_classification`)
 
@@ -24723,7 +24871,7 @@
 | 稳定 ID | `tech.scientific_classification` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -24792,7 +24940,7 @@
 | 稳定 ID | `tech.political_economy` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 280800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -24813,7 +24961,7 @@
 
 #### 效果摘要
 
-社会领域研究效率 +8%
+社会领域研究效率 +7.3%
 
 #### 机会成本
 
@@ -24832,7 +24980,7 @@
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -24861,7 +25009,7 @@
 | 稳定 ID | `tech.long_term_leases` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 280800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -24883,7 +25031,7 @@
 
 #### 效果摘要
 
-解锁建筑：改良亚麻庄园；作为必要支撑：改良轮作小麦庄园
+解锁建筑：改良亚麻庄园
 
 #### 机会成本
 
@@ -24898,7 +25046,6 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -24928,7 +25075,7 @@
 | 稳定 ID | `tech.agricultural_improvement` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -24949,7 +25096,7 @@
 
 #### 效果摘要
 
-解锁建筑：改良小农场；解锁建筑：改良轮作马铃薯庄园；农业部门产出 +8%
+解锁建筑：改良小农场、改良轮作马铃薯庄园；农业部门产出 +7.5%；佃农 +1.5%
 
 #### 机会成本
 
@@ -24964,17 +25111,17 @@
 
 #### 结构化内容效果
 
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良小农场**（`building`）：`building.improved_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **改良轮作马铃薯庄园**（`building`）：`building.method_potato_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
+- 佃农：`economy.profession.tenant_farmer.satisfaction_bp`：+15000%
   - 效果机制：农业改良提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：改良农法提高佃农的收成分成与议价能力。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25002,7 +25149,7 @@
 | 稳定 ID | `tech.precision_engineering` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 280800 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -25016,6 +25163,7 @@
 #### 硬前置（决定研发资格）
 
 - 机械计时 (`tech.mechanical_timekeeping`)：该科技需要先掌握 「机械计时」。
+- 精密测量 (`tech.precision_measurement`)：精密工程建立在精密测量建立的尺寸与公差体系之上。
 
 #### 发现启发（仅用于揭示）
 
@@ -25023,7 +25171,7 @@
 
 #### 效果摘要
 
-解锁物资：精密工具；解锁建筑：精密工具工坊；全社会经济产出 +8%
+解锁物资：精密工具；解锁建筑：精密工具工坊；生产投入 -5%
 
 #### 机会成本
 
@@ -25043,9 +25191,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：精密工程提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 生产投入：`country.production.input_factor`：+5%
+  - 效果机制：该科技的组织与工艺收益通过生产投入体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25072,7 +25220,7 @@
 | 稳定 ID | `tech.experimental_science` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 216000 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -25094,7 +25242,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +6%
+科学研究效率 +10%
 
 #### 机会成本
 
@@ -25113,9 +25261,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+6%
-  - 效果机制：实验科学提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 科学研究效率：`country.research.science_efficiency`：+10%
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25149,7 +25297,7 @@
 | 稳定 ID | `tech.probability_statistics` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 280800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25220,7 +25368,7 @@
 | 稳定 ID | `tech.standardization` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 216000 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -25241,7 +25389,7 @@
 
 #### 效果摘要
 
-全社会生产投入 -4%
+全社会生产投入 -4%；建造成本 -8%；建造工期 -8%
 
 #### 机会成本
 
@@ -25261,8 +25409,14 @@
 #### 永久 Modifier 条款
 
 - 全社会生产投入：`country.production.input_factor`：+4%
+- 建造成本：`country.construction.cost_factor`：+8%
+- 建造工期：`country.construction.time_factor`：+8%
   - 效果机制：统一规格减少返工和材料浪费。
   - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
+  - 效果机制：标准化构件降低非标加工与返工。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
+  - 效果机制：标准化构件让现场装配替代现场制作。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25289,7 +25443,7 @@
 | 稳定 ID | `tech.public_health` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25311,7 +25465,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +4%；人口自然死亡率 -12%
+社会研究效率 +7.3%；人口自然死亡率 -4.3%；工人 +1.5%
 
 #### 机会成本
 
@@ -25330,12 +25484,15 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-- 人口自然死亡率：`country.population.death_factor`：+12%
-  - 效果机制：公共卫生提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+7.3%
+- 人口自然死亡率：`country.population.death_factor`：+4.3%
+- 工人：`economy.profession.worker.satisfaction_bp`：+15000%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：公共卫生制度控制传染病。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+  - 效果机制：公共卫生降低城市疾病负担，工人生活质量上升。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25361,7 +25518,7 @@
 | 稳定 ID | `tech.hydraulic_engineering` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25385,7 +25542,7 @@
 
 #### 效果摘要
 
-解锁物资：水泥；解锁建筑：水泥厂；旱灾损失 -10%；洪灾损失 -10%；作为必要支撑：河流水力发电站、自动化水泥厂、自动化混凝土厂、流域治理中心
+解锁物资：水泥；解锁建筑：水泥厂；旱灾损失 -10%；洪灾损失 -10%
 
 #### 机会成本
 
@@ -25416,6 +25573,7 @@
 
 - 钢筋混凝土 (`tech.reinforced_concrete`)：钢筋混凝土以水硬性水泥为胶结料（钢筋混凝土 1867 ← 波特兰水泥）。
 - 精准灌溉 (`tech.precision_irrigation`)：精准灌溉沿用水利工程的输配水系统。
+- 含水层管理 (`tech.aquifer_management`)：水利工程给出流域尺度的取水与配水方法。
 
 #### 主题路线后继
 
@@ -25437,7 +25595,7 @@
 | 稳定 ID | `tech.mechanical_workshops` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 280800 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -25458,7 +25616,7 @@
 
 #### 效果摘要
 
-解锁建筑：精梳羊毛作坊；「布匹织造」生产家族建筑产出 +12%
+解锁建筑：精梳羊毛作坊；地理专长「草原」产出 +14.8%
 
 #### 机会成本
 
@@ -25473,14 +25631,13 @@
 
 #### 结构化内容效果
 
-- **羊毛**（`good`）：`good.wool` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精梳羊毛作坊**（`building`）：`building.method_wool_shed_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
-  - 效果机制：机械工坊提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+14.8%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -25507,7 +25664,7 @@
 | 稳定 ID | `tech.geological_prospecting` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25529,7 +25686,7 @@
 
 #### 效果摘要
 
-解锁建筑：硅砂矿；采掘部门产出 +18%
+解锁建筑：硅砂矿；采掘部门产出 +17.4%
 
 #### 机会成本
 
@@ -25544,12 +25701,11 @@
 
 #### 结构化内容效果
 
-- **硅砂**（`good`）：`good.silica_sand` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硅砂矿**（`building`）：`building.silica_sand_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+18%
+- 采掘部门产出：`country.output.extractive_factor`：+17.4%
   - 效果机制：地质勘探提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -25577,7 +25733,7 @@
 | 稳定 ID | `tech.atmospheric_engine` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -25598,7 +25754,7 @@
 
 #### 效果摘要
 
-解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊
+解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊；煤炭单耗 -8%
 
 #### 机会成本
 
@@ -25618,7 +25774,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 煤炭单耗：`country.resource.coal.use_factor`：+8%
+  - 效果机制：大气机把燃烧→扬程的转换效率第一次写进工艺，单位抽水量耗煤下降。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25644,7 +25802,7 @@
 | 稳定 ID | `tech.learned_societies` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25665,7 +25823,7 @@
 
 #### 效果摘要
 
-解锁建筑：博学学会；农业领域研究效率 +8%
+解锁建筑：博学学会；农业领域研究效率 +8%；科研机构产出 +12%
 
 #### 机会成本
 
@@ -25680,14 +25838,16 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **博学学会**（`building`）：`building.learned_society` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+- 科研机构产出：`country.research.institution_output_factor`：+12%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：博学学会把私人通信变成可协作的研究网络。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25713,7 +25873,7 @@
 | 稳定 ID | `tech.soil_experimentation` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25737,7 +25897,7 @@
 
 #### 效果摘要
 
-可利用资源：磷矿石；农业领域研究效率 +8%；旱作生产·旱灾损失 -6%；水田生产·洪灾损失 -6%；采掘部门产出 +14%；作为必要支撑：自动化磷矿
+可利用资源：磷矿石；农业领域研究效率 +8%；旱作生产·旱灾损失 -6%；水田生产·洪灾损失 -6%；采掘部门产出 +13.5%
 
 #### 机会成本
 
@@ -25759,7 +25919,7 @@
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
 - 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+6%
 - 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+6%
-- 采掘部门产出：`country.output.extractive_factor`：+14%
+- 采掘部门产出：`country.output.extractive_factor`：+13.5%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：土壤实验降低旱作生产建筑的旱灾损失。
@@ -25792,7 +25952,7 @@
 | 稳定 ID | `tech.livestock_breeding` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25814,7 +25974,7 @@
 
 #### 效果摘要
 
-牧业生产·寒冷损失 -10%；牧业生产·热害损失 -10%；「畜牧业」生产家族建筑产出 +28%
+牧业生产·寒冷损失 -10%；牧业生产·热害损失 -10%；「畜牧业」生产家族建筑产出 +49.5%
 
 #### 机会成本
 
@@ -25835,7 +25995,7 @@
 
 - 牧业生产·寒冷损失：`country.climate.profile.pasture_livestock.cold_stress_loss_factor`：+10%
 - 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+10%
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+49.5%
   - 效果机制：畜种改良降低牧业生产建筑的寒冷损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：畜种改良降低牧业生产建筑的热害损失。
@@ -25866,7 +26026,7 @@
 | 稳定 ID | `tech.wage_contracts` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -25888,7 +26048,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -25907,9 +26067,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：工资契约提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -25934,7 +26094,7 @@
 | 稳定 ID | `tech.crop_breeding` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -25971,7 +26131,6 @@
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良轮作小麦庄园**（`building`）：`building.method_wheat_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -26016,7 +26175,7 @@
 | 稳定 ID | `tech.cooperative_association` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 216000 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -26037,7 +26196,7 @@
 
 #### 效果摘要
 
-制造部门产出 +4%
+制造部门产出 +8%；贸易容量 +4%
 
 #### 机会成本
 
@@ -26056,9 +26215,12 @@
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+4%
+- 制造部门产出：`country.output.manufacturing_factor`：+8%
+- 贸易容量：`country.trade.capacity_factor`：+4%
   - 效果机制：合作社组织提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更有效的制度安排扩大了可承载的市场规模。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -26084,7 +26246,7 @@
 | 稳定 ID | `tech.agricultural_cooperatives` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26106,7 +26268,7 @@
 
 #### 效果摘要
 
-解锁建筑：精耕稻庄；农业部门产出 +8%
+解锁建筑：精耕稻庄；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -26121,12 +26283,11 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精耕稻庄**（`building`）：`building.method_rice_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：农业合作社提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -26153,7 +26314,7 @@
 | 稳定 ID | `tech.precision_instruments` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26222,7 +26383,7 @@
 | 稳定 ID | `tech.property_cadastre` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -26245,7 +26406,7 @@
 
 #### 效果摘要
 
-解锁建筑：地籍管理局；「地籍制度」生产家族建筑产出 +25%；「地理分析机构」生产家族建筑产出 +25%
+解锁建筑：地籍管理局；「地籍制度」生产家族建筑产出 +75%；「地理分析机构」生产家族建筑产出 +75%；地主 +4%
 
 #### 机会成本
 
@@ -26260,17 +26421,19 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **地籍管理局**（`building`）：`building.cadastral_office` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 地籍制度：`country.output.family.cadastral_institution_factor`：+25%
-- 地理分析机构：`country.output.family.geospatial_analysis_institution_factor`：+25%
+- 地籍制度：`country.output.family.cadastral_institution_factor`：+75%
+- 地理分析机构：`country.output.family.geospatial_analysis_institution_factor`：+75%
+- 地主：`country.tax.income.landlord.rate_bp`：+40000%
   - 效果机制：地产测绘提高地籍制度建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：地产测绘提高地理分析机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：地籍册让土地收益第一次可以被准确核定与征收。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -26295,7 +26458,7 @@
 | 稳定 ID | `tech.coal_geology` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26362,7 +26525,7 @@
 | 稳定 ID | `tech.steam_sealing` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26430,7 +26593,7 @@
 | 稳定 ID | `tech.canning` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 216000 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -26499,7 +26662,7 @@
 | 稳定 ID | `tech.actuarial_insurance` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26567,7 +26730,7 @@
 | 稳定 ID | `tech.enlightenment_institutions` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 360000 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -26580,7 +26743,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -26588,7 +26751,7 @@
 
 #### 效果摘要
 
-时代晋升效果：科学领域研究效率 +12%；知识部门产出 +10%；工程领域研究效率 +8%
+时代晋升效果：科学领域研究效率 +12%；知识部门产出 +20%；全社会经济产出 +7%
 
 #### 机会成本
 
@@ -26625,14 +26788,14 @@
 #### 永久 Modifier 条款
 
 - 科学领域研究效率：`country.research.science_efficiency`：+12%
-- 知识部门产出：`country.output.knowledge_factor`：+10%
-- 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+- 知识部门产出：`country.output.knowledge_factor`：+20%
+- 全社会经济产出：`country.economy_output_factor`：+7%
   - 效果机制：启蒙学会与实验方法提高科学研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：公共学术机构提升知识部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：理性测量与工程学校加快工程研究。
-  - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：时代晋升带来跨行业的组织与分工效率。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -26657,7 +26820,7 @@
 | 稳定 ID | `tech.military.powder_milling` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 192000 科技点（`technology_points`） |
+| 研究成本 | 256000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26672,6 +26835,7 @@
 
 - 粒状火药 (`tech.military.corned_powder`)：机械制药是粒状火药生产的连续化。
 - 标准化 (`tech.standardization`)：配比与工艺需要可复现的标准。
+- 火药配制 (`tech.gunpowder_formulation`)：硝石 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -26679,7 +26843,7 @@
 
 #### 效果摘要
 
-解锁建筑：水力火药厂；作为必要支撑：蒸汽火药厂
+解锁建筑：水力火药厂、火药工场
 
 #### 机会成本
 
@@ -26688,14 +26852,14 @@
 #### 内容解锁
 
 - **物资：** 黑火药 (`black_powder`)
-- **建筑 / 生产方式：** 水力火药厂 (`water_powder_mill`)
+- **建筑 / 生产方式：** 蒸汽火药厂 (`steam_powder_works`)；水力火药厂 (`water_powder_mill`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 蒸汽火药厂 (`steam_powder_works`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **黑火药**（`good`）：`good.black_powder` → `production_access` `unlock` `1.0`；`existing_binding`
 - **水力火药厂**（`building`）：`building.water_powder_mill` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **火药工场**（`building`）：`building.steam_powder_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -26703,7 +26867,8 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 线膛枪炮 (`tech.military.rifled_weapons`)：线膛武器使用定装弹药，而定装弹药依赖机械研磨出的标准化火药。
+- 无烟火药 (`tech.military.smokeless_powder`)：无烟火药是粒化火药的化学延续：先有可控粒度，才有可控硝化。
 
 #### 主题路线后继
 
@@ -26724,14 +26889,14 @@
 | 稳定 ID | `tech.military.drill_regulations` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 192000 科技点（`technology_points`） |
+| 研究成本 | 461000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.labor\_management |
-| 主要路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
-| 全部路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
+| 主要路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
+| 全部路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -26739,6 +26904,7 @@
 
 - 标准化 (`tech.standardization`)：操典是把散乱的操练统一成可复制的条文。
 - 马匹驯化 (`tech.horse_domestication`)：龙骑兵的坐骑来自驯马。
+- 粒状火药 (`tech.military.corned_powder`)：燧发枪的操典建立在粒化火药之上：粉状火药无法在队列里稳定装填。
 
 #### 发现启发（仅用于揭示）
 
@@ -26746,7 +26912,7 @@
 
 #### 效果摘要
 
-解锁物资：燧发枪；解锁建筑：操练营；解锁建筑：燧发枪工场；解锁建筑：军事学院；训练时长 -20%
+解锁物资：燧发枪；解锁建筑：操练营、燧发枪工场、军事学院；训练时长 -20%；坚守 +12%
 
 #### 机会成本
 
@@ -26769,8 +26935,11 @@
 #### 永久 Modifier 条款
 
 - 训练时长：`country.military.training_time_factor`：×0.8
+- 坚守：`country.military.rule.hold_the_line`：+12%
   - 效果机制：操典让新兵以更短时间达到可战状态。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：操典把坚守姿态标准化，队列在受攻时不再溃散。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -26795,14 +26964,14 @@
 | 稳定 ID | `tech.military.military_cartography` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 192000 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.geoscience\_gis |
-| 主要路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
-| 全部路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
+| 主要路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
+| 全部路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -26840,7 +27009,7 @@
 - 恶劣环境减员：`country.military.attrition_factor`：×0.7
   - 效果机制：军事测绘扩大部队的视野范围。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
-  - 效果机制：军事测绘让部队避开难以通行的地带。
+  - 效果机制：军事测绘让部队避开难以通行的地带，行军损耗下降。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
 
 #### 被以下科技作为硬前置
@@ -26866,7 +27035,7 @@
 | 稳定 ID | `tech.military.military_medicine` |
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 192000 科技点（`technology_points`） |
+| 研究成本 | 141000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -26887,7 +27056,7 @@
 
 #### 效果摘要
 
-伤亡 -15%
+伤亡 -30%；士兵 +2%
 
 #### 机会成本
 
@@ -26906,9 +27075,12 @@
 
 #### 永久 Modifier 条款
 
-- 伤亡：`country.military.casualty_factor`：×0.85
+- 伤亡：`country.military.casualty_factor`：×0.7
+- 士兵：`economy.profession.soldier.satisfaction_bp`：+20000%
   - 效果机制：军医制度减少战伤死亡与疾病减员。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：军医制度让伤兵有存活预期，士兵对军旅生活的评价上升。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -26917,6 +27089,147 @@
 #### 主题路线后继
 
 无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 圩田与海岸工程 (`tech.polder_engineering`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.polder_engineering` |
+| 时代 | 启蒙时代 (`enlightenment`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 256000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.water\_wind |
+| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | hydraulic |
+
+#### 硬前置（决定研发资格）
+
+- 磨坊网络 (`tech.mill_network`)：圩田需要成网的排水动力，磨坊网络提供抽排与闸门的驱动经验。
+- 运河工程 (`tech.canal_engineering`)：运河工程提供土方、堤线与水位的控制方法。
+
+#### 发现启发（仅用于揭示）
+
+- 全部满足：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「洪水经验」（weather.major\_flood）
+
+#### 效果摘要
+
+地理专长「沼泽」产出 +45%
+
+#### 机会成本
+
+占用启蒙时代的通用研究预算，延后同代的水利与农业改良锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 沼泽：`country.output.terrain.swamp.agriculture_factor`：+45%
+  - 效果机制：筑堤排水之后，此前无法耕作的沼泽与滩涂变成可耕地。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 木材化学 (`tech.timber_chemical_industry`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.timber_chemical_industry` |
+| 时代 | 启蒙时代 (`enlightenment`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 256000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.forest\_biomass |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | chemistry |
+
+#### 硬前置（决定研发资格）
+
+- 森林管理 (`tech.forest_management`)：森林管理提供可持续的木材与树皮供给，木材化学不能建立在掠夺式采伐上。
+- 木炭烧制 (`tech.charcoal_burning`)：炭化是木材热解的第一种工业形态，木材化学由它放大而来。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
+#### 效果摘要
+
+「化工」生产家族建筑产出 +45%；建造成本 -3%
+
+#### 机会成本
+
+占用启蒙时代的通用研究预算，延后同代的农业改良与公共卫生活锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 化工：`country.output.family.chemical_industry_factor`：+45%
+- 建造成本：`country.construction.cost_factor`：+3%
+  - 效果机制：木材热解给出有机碳源，让化工在煤与石油之外多了一条原料路线。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：更成熟的工程做法让同样的建筑花更少的料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 林产工业 (`tech.forest_products_industry`)：木材化学提供树脂与胶黏剂，没有胶就没有人造板。
+
+#### 主题路线后继
+
+- 林产工业 (`tech.forest_products_industry`)：林产工业把木材化学的产品扩成板材、纸浆与树脂，是同一条支线的下一步。
 
 #### 跨领域应用
 
@@ -27735,7 +28048,7 @@
 <a id="era-7"></a>
 ## 蒸汽时代
 
-共 33 项研究科技、44 项自动应用，科技研究成本范围 320000-800000；时代里程碑：工业化 (`tech.industrialization`)。
+共 37 项研究科技、44 项自动应用，科技研究成本范围 296000-968000；时代里程碑：工业化 (`tech.industrialization`)。
 
 ### 蒸汽动力 (`tech.steam_power`)
 
@@ -27744,7 +28057,7 @@
 | 稳定 ID | `tech.steam_power` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -27768,7 +28081,7 @@
 
 #### 效果摘要
 
-解锁建筑：蒸汽航运船坞；解锁建筑：蒸汽机工厂；解锁建筑：蒸汽火药厂；制造部门产出 +12%；作为必要支撑：工业机械厂
+解锁建筑：蒸汽航运船坞、蒸汽机工厂、蒸汽火药厂；制造部门产出 +24%
 
 #### 机会成本
 
@@ -27776,23 +28089,20 @@
 
 #### 内容解锁
 
-- **物资：** 黑火药 (`black_powder`)；远洋船舶 (`oceanic_vessels`)；蒸汽机 (`steam_engines`)
-- **建筑 / 生产方式：** 蒸汽航运船坞 (`method_steam_shipping`)；蒸汽机工厂 (`steam_engine_works`)；蒸汽火药厂 (`steam_powder_works`)
+- **物资：** 远洋船舶 (`oceanic_vessels`)；蒸汽机 (`steam_engines`)
+- **建筑 / 生产方式：** 蒸汽航运船坞 (`method_steam_shipping`)；蒸汽机工厂 (`steam_engine_works`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)；型钢轧机 (`steel_rolling_mill`)
 
 #### 结构化内容效果
 
-- **黑火药**（`good`）：`good.black_powder` → `production_access` `unlock` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`existing_binding`
 - **蒸汽航运船坞**（`building`）：`building.method_steam_shipping` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **蒸汽机工厂**（`building`）：`building.steam_engine_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **蒸汽火药厂**（`building`）：`building.steam_powder_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+12%
+- 制造部门产出：`country.output.manufacturing_factor`：+24%
   - 效果机制：蒸汽动力提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -27825,7 +28135,7 @@
 | 稳定 ID | `tech.thermodynamics` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -27894,7 +28204,7 @@
 | 稳定 ID | `tech.industrial_canning` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -27931,7 +28241,6 @@
 
 #### 结构化内容效果
 
-- **鱼罐头**（`good`）：`good.canned_fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **鱼类罐头厂**（`building`）：`building.canned_fish_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -27940,7 +28249,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 食品工业保存 (`tech.industrial_food_preservation`)：罐头工艺证明密封与灭菌可行，食品工业保存是它的规模化。
 
 #### 主题路线后继
 
@@ -27961,7 +28270,7 @@
 | 稳定 ID | `tech.industrial_organization` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -27983,7 +28292,7 @@
 
 #### 效果摘要
 
-制造部门产出 +8%；作为必要支撑：鱼类罐头厂、乳制品厂
+制造部门产出 +16%；贸易容量 +4%
 
 #### 机会成本
 
@@ -28002,9 +28311,12 @@
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+8%
+- 制造部门产出：`country.output.manufacturing_factor`：+16%
+- 贸易容量：`country.trade.capacity_factor`：+4%
   - 效果机制：工业组织提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更有效的制度安排扩大了可承载的市场规模。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -28031,7 +28343,7 @@
 | 稳定 ID | `tech.coke_smelting` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28053,7 +28365,7 @@
 
 #### 效果摘要
 
-解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：焦炭炼钢厂；「炼钢」生产家族建筑产出 +12%；作为必要支撑：装甲钢板厂、兵站、建筑构件厂、蒸汽钻井场、发动机厂、家用电器厂、机械零件厂、自动化焦化厂、蒸汽航运船坞、步枪厂、蒸汽机工厂、钢炮厂、电弧炉炼钢厂、钢制工具厂
+解锁物资：焦炭、钢材、结构钢；解锁建筑：焦化厂、焦炭炼钢厂、型钢轧机；「炼钢」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -28061,8 +28373,8 @@
 
 #### 内容解锁
 
-- **物资：** 焦炭 (`coke`)；钢材 (`steel`)
-- **建筑 / 生产方式：** 焦化厂 (`coke_ovens`)；焦炭炼钢厂 (`steam_steel_works`)
+- **物资：** 焦炭 (`coke`)；钢材 (`steel`)；结构钢 (`structural_steel`)
+- **建筑 / 生产方式：** 焦化厂 (`coke_ovens`)；焦炭炼钢厂 (`steam_steel_works`)；型钢轧机 (`steel_rolling_mill`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 装甲钢板厂 (`armor_plate_mill`)；兵站 (`army_depot`)；建筑构件厂 (`construction_components_plant`)；蒸汽钻井场 (`early_oil_well`)；发动机厂 (`engines_plant`)；家用电器厂 (`household_appliances_plant`)；机械零件厂 (`machine_parts_plant`)；自动化焦化厂 (`method_coke_ovens_r9`)；蒸汽航运船坞 (`method_steam_shipping`)；步枪厂 (`rifle_works`)；蒸汽机工厂 (`steam_engine_works`)；钢炮厂 (`steel_ordnance_works`)；电弧炉炼钢厂 (`steel_plant`)；钢制工具厂 (`tools_plant`)
 
@@ -28072,10 +28384,12 @@
 - **钢材**（`good`）：`good.steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **焦化厂**（`building`）：`building.coke_ovens` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **焦炭炼钢厂**（`building`）：`building.steam_steel_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **型钢轧机**（`building`）：`building.steel_rolling_mill` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **结构钢**（`good`）：`good.structural_steel` → `production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 炼钢：`country.output.family.steelmaking_factor`：+12%
+- 炼钢：`country.output.family.steelmaking_factor`：+36%
   - 效果机制：焦炭冶炼提高炼钢建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28083,6 +28397,7 @@
 
 - 钢筋混凝土 (`tech.reinforced_concrete`)：受拉钢筋来自焦炭冶炼提供的廉价钢材。
 - 铁路物流 (`tech.rail_logistics`)：铁轨与车轮需要焦炭冶炼提供的大量钢铁。
+- 内燃机 (`tech.internal_combustion`)：内燃机与汽车的缸体、曲轴都要用钢，炼钢是它绕不开的物质前提。
 - 先进冶金 (`tech.advanced_metallurgy`)：先进冶金建立在大规模钢铁冶炼之上。
 
 #### 主题路线后继
@@ -28104,7 +28419,7 @@
 | 稳定 ID | `tech.reinforced_concrete` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28126,7 +28441,7 @@
 
 #### 效果摘要
 
-解锁物资：混凝土；解锁建筑：混凝土厂；解锁建筑：建筑构件厂；解锁建筑：工业砖厂；解锁建筑：工业石灰厂；作为必要支撑：自动化混凝土厂
+解锁物资：混凝土；解锁建筑：混凝土厂、建筑构件厂、工业砖厂、工业石灰厂、水泥厂；建造工期 -8%
 
 #### 机会成本
 
@@ -28135,28 +28450,28 @@
 #### 内容解锁
 
 - **物资：** 砖块 (`bricks`)；混凝土 (`concrete`)；建筑构件 (`construction_components`)；石灰 (`lime`)
-- **建筑 / 生产方式：** 混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；工业砖厂 (`method_bricks_plant_r6`)；工业石灰厂 (`method_lime_plant_r6`)
+- **建筑 / 生产方式：** 水泥厂 (`cement_works`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；工业砖厂 (`method_bricks_plant_r6`)；工业石灰厂 (`method_lime_plant_r6`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化混凝土厂 (`method_concrete_plant_r9`)
 
 #### 结构化内容效果
 
-- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
 - **混凝土**（`good`）：`good.concrete` → `production_access` `unlock` `1.0`；`existing_binding`
-- **建筑构件**（`good`）：`good.construction_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **石灰**（`good`）：`good.lime` → `production_access` `unlock` `1.0`；`existing_binding`
 - **混凝土厂**（`building`）：`building.concrete_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **建筑构件厂**（`building`）：`building.construction_components_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **工业砖厂**（`building`）：`building.method_bricks_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **工业石灰厂**（`building`）：`building.method_lime_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **水泥厂**（`building`）：`building.cement_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 建造工期：`country.construction.time_factor`：+8%
+  - 效果机制：钢筋混凝土让高层与跨度施工不再依赖长周期石作。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
-无
+- 预制装配 (`tech.prefabricated_construction`)：钢筋混凝土给出可标准化浇制的构件，是预制的前提。
 
 #### 主题路线后继
 
@@ -28177,7 +28492,7 @@
 | 稳定 ID | `tech.steam_pumping` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28199,7 +28514,7 @@
 
 #### 效果摘要
 
-解锁物资：铅矿石；解锁物资：锌矿石；解锁建筑：铅矿；解锁建筑：蒸汽动力煤矿；解锁建筑：蒸汽动力铁矿；解锁建筑：锌矿；「铁矿采掘」生产家族建筑产出 +12%；作为必要支撑：炼铅厂、自动化铅矿、自动化炼铅厂、自动化锌矿、自动化炼锌厂、炼锌厂
+解锁物资：铅矿石、锌矿石；解锁建筑：铅矿、蒸汽动力煤矿、蒸汽动力铁矿、锌矿；「铁矿采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -28214,8 +28529,6 @@
 
 #### 结构化内容效果
 
-- **煤炭**（`good`）：`good.coal` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铅矿石**（`good`）：`good.lead_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锌矿石**（`good`）：`good.zinc_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铅矿**（`building`）：`building.lead_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -28225,7 +28538,7 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+12%
+- 铁矿采掘：`country.output.family.iron_extraction_factor`：+36%
   - 效果机制：蒸汽抽水提高铁矿采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28253,7 +28566,7 @@
 | 稳定 ID | `tech.industrial_coal_mining` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28275,7 +28588,7 @@
 
 #### 效果摘要
 
-煤 -12%；商品「工具」生产投入 +5%；采掘部门产出 +18%
+煤 -12%；商品「工具」生产投入 +5%；采掘部门产出 +17.4%
 
 #### 机会成本
 
@@ -28296,7 +28609,7 @@
 
 - 煤：`country.resource.coal.use_factor`：+12%
 - 工具：`country.input.good.tools_factor`：+5%
-- 采掘部门产出：`country.output.extractive_factor`：+18%
+- 采掘部门产出：`country.output.extractive_factor`：+17.4%
   - 效果机制：工业矿井降低煤层损失。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：工业矿井增加工具维护负担。
@@ -28328,7 +28641,7 @@
 | 稳定 ID | `tech.textile_machinery` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28355,7 +28668,7 @@
 
 #### 效果摘要
 
-解锁建筑：制衣厂；解锁建筑：改良家用织机；解锁建筑：机械轧棉厂；解锁建筑：机械化棉花农场；解锁建筑：机械化亚麻农场；解锁建筑：蒸汽纺织厂；商品「煤」生产投入 +4%；「布匹织造」生产家族建筑产出 +20%
+解锁建筑：制衣厂、改良家用织机、机械轧棉厂、机械化棉花农场、机械化亚麻农场、蒸汽纺织厂；商品「煤」生产投入 +4%；「布匹织造」生产家族建筑产出 +48%
 
 #### 机会成本
 
@@ -28370,11 +28683,6 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
-- **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
 - **制衣厂**（`building`）：`building.clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **改良家用织机**（`building`）：`building.improved_domestic_loom` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械轧棉厂**（`building`）：`building.mechanized_cotton_gin` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -28385,7 +28693,7 @@
 #### 永久 Modifier 条款
 
 - 煤：`country.input.good.coal_factor`：+4%
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+20%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+48%
   - 效果机制：早期纺机增加煤动力需求。
   - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
   - 效果机制：纺织机械提高布匹织造建筑产出。
@@ -28395,6 +28703,7 @@
 
 - 工厂制 (`tech.factory_system`)：最早的工厂是集中安装纺织机械的纺纱厂。
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：合成纤维沿用纺织机械纺丝织造。
+- 技术纺织品 (`tech.technical_textiles`)：纺织机械提供高密度织造与非织造的能力。
 
 #### 主题路线后继
 
@@ -28415,7 +28724,7 @@
 | 稳定 ID | `tech.factory_system` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -28437,7 +28746,7 @@
 
 #### 效果摘要
 
-解锁建筑：玻璃器皿工厂；解锁建筑：皮革制品工厂；解锁建筑：制革厂；解锁建筑：工业屠宰场；解锁建筑：金属家用器皿工厂；制造部门产出 +6%
+解锁建筑：玻璃器皿工厂、皮革制品工厂、制革厂、工业屠宰场、金属家用器皿工厂；制造部门产出 +12%
 
 #### 机会成本
 
@@ -28452,12 +28761,6 @@
 
 #### 结构化内容效果
 
-- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **皮革**（`good`）：`good.leather` → `production_access` `unlock` `1.0`；`existing_binding`
-- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **肉类**（`good`）：`good.meat` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃器皿工厂**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **皮革制品工厂**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **制革厂**（`building`）：`building.leather_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -28466,7 +28769,7 @@
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+6%
+- 制造部门产出：`country.output.manufacturing_factor`：+12%
   - 效果机制：工厂制提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28496,7 +28799,7 @@
 | 稳定 ID | `tech.machine_tools` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -28517,7 +28820,7 @@
 
 #### 效果摘要
 
-解锁物资：机器零件；解锁建筑：机械零件厂；解锁建筑：钢制工具厂；「金属工具」生产家族建筑产出 +12%；作为必要支撑：工业机械厂
+解锁物资：机器零件；解锁建筑：机械零件厂、钢制工具厂；「金属工具」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -28533,13 +28836,12 @@
 #### 结构化内容效果
 
 - **机器零件**（`good`）：`good.machine_parts` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **机械零件厂**（`building`）：`building.machine_parts_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **钢制工具厂**（`building`）：`building.tools_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 金属工具：`country.output.family.metal_toolmaking_factor`：+12%
+- 金属工具：`country.output.family.metal_toolmaking_factor`：+36%
   - 效果机制：机床提高金属工具建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28571,7 +28873,7 @@
 | 稳定 ID | `tech.mechanized_agriculture` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -28595,7 +28897,7 @@
 
 #### 效果摘要
 
-解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化农场；解锁建筑：机械化马铃薯农场；农业部门产出 +8%；作为必要支撑：机械化棉花农场、机械化亚麻农场、机械化玉米农场、机械化稻作农场、机械化小麦农场
+解锁物资：农业机械；解锁建筑：农业机械厂、机械化农场、机械化马铃薯农场；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -28611,16 +28913,13 @@
 #### 结构化内容效果
 
 - **农业机械**（`good`）：`good.agricultural_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
 - **农业机械厂**（`building`）：`building.agricultural_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化农场**（`building`）：`building.mechanized_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：机械化农业提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28628,6 +28927,7 @@
 
 - 机械收割 (`tech.mechanical_reaping`)：该科技需要先掌握 「机械化农业」。
 - 机械脱粒 (`tech.mechanical_threshing`)：机械脱粒是农业机械化的一部分。
+- 梯田机械化 (`tech.terrace_mechanization`)：机械化农业提供小型动力与机具，梯田的机械化只是把它缩尺适配坡地。
 
 #### 主题路线后继
 
@@ -28648,7 +28948,7 @@
 | 稳定 ID | `tech.rail_logistics` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28670,7 +28970,7 @@
 
 #### 效果摘要
 
-解锁物资：铁路设备；解锁建筑：铁路设备工场；「铁矿采掘」生产家族建筑产出 +12%；作为必要支撑：铁路设备厂
+解锁物资：铁路设备；解锁建筑：铁路设备工场；地理专长「山地」产出 +16.2%
 
 #### 机会成本
 
@@ -28681,7 +28981,7 @@
 - **物资：** 铁路设备 (`railway_equipment`)
 - **建筑 / 生产方式：** 铁路设备工场 (`steam_rail_works`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 铁路设备厂 (`railway_equipment_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 物流枢纽 (`logistics_hub`)；铁路设备厂 (`railway_equipment_plant`)
 
 #### 结构化内容效果
 
@@ -28690,9 +28990,9 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿采掘：`country.output.family.iron_extraction_factor`：+12%
-  - 效果机制：铁路物流提高铁矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 山地：`country.output.landform.mountain.extractive_factor`：+16.2%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -28719,7 +29019,7 @@
 | 稳定 ID | `tech.industrial_chemistry` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -28733,6 +29033,7 @@
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：该科技需要先掌握 「实验科学」。
+- 煤矿开采 (`tech.coal_mining`)：没有稳定出煤与煤焦油，工业化学的原料链就断在起点；煤的开采是它的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -28740,7 +29041,7 @@
 
 #### 效果摘要
 
-解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；解锁建筑：深井盐矿；解锁建筑：工业制皂厂；可利用资源：硫磺矿；采掘部门产出 +12%；作为必要支撑：高端芯片厂、早期半导体厂、电池厂、高级成衣厂、高级家具厂、制革厂、智能化电池厂、造纸厂、制药厂、半导体厂
+解锁物资：工业化学品、染料；解锁建筑：玻璃厂、化学工场、深井盐矿、工业制皂厂、染坊；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -28748,36 +29049,40 @@
 
 #### 内容解锁
 
-- **物资：** 玻璃 (`glass`)；工业化学品 (`industrial_chemicals`)；食盐 (`salt`)；肥皂 (`soap`)
-- **建筑 / 生产方式：** 玻璃厂 (`glass_plant`)；化学工场 (`industrial_chemicals_plant`)；深井盐矿 (`industrial_salt_mine`)；工业制皂厂 (`method_soap_plant_r6`)
+- **物资：** 染料 (`dyestuff`)；玻璃 (`glass`)；工业化学品 (`industrial_chemicals`)；食盐 (`salt`)；肥皂 (`soap`)
+- **建筑 / 生产方式：** 染坊 (`dye_works`)；玻璃厂 (`glass_plant`)；化学工场 (`industrial_chemicals_plant`)；深井盐矿 (`industrial_salt_mine`)；工业制皂厂 (`method_soap_plant_r6`)
 - **自然资源：** 硫磺矿 (`sulfur`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高端芯片厂 (`advanced_chip_fab`)；早期半导体厂 (`basic_semiconductor_fab`)；电池厂 (`batteries_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；制革厂 (`leather_plant`)；智能化电池厂 (`method_batteries_plant_r10`)；造纸厂 (`paper_plant`)；制药厂 (`pharmaceuticals_plant`)；半导体厂 (`semiconductors_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高端芯片厂 (`advanced_chip_fab`)；早期半导体厂 (`basic_semiconductor_fab`)；电池厂 (`batteries_plant`)；水泥厂 (`cement_works`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；制革厂 (`leather_plant`)；智能化电池厂 (`method_batteries_plant_r10`)；造纸厂 (`paper_plant`)；制药厂 (`pharmaceuticals_plant`)；半导体厂 (`semiconductors_plant`)
 
 #### 结构化内容效果
 
-- **玻璃**（`good`）：`good.glass` → `production_access` `unlock` `1.0`；`existing_binding`
 - **工业化学品**（`good`）：`good.industrial_chemicals` → `production_access` `unlock` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `production_access` `unlock` `1.0`；`existing_binding`
-- **肥皂**（`good`）：`good.soap` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃厂**（`building`）：`building.glass_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **化学工场**（`building`）：`building.industrial_chemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **深井盐矿**（`building`）：`building.industrial_salt_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **工业制皂厂**（`building`）：`building.method_soap_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺矿**（`resource`）：`resource.sulfur` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+- **染坊**（`building`）：`building.dye_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **染料**（`good`）：`good.dyestuff` → `production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：工业化学提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 无烟火药 (`tech.military.smokeless_powder`)：无烟火药依赖工业化学的硝化工艺。
+- 食品工业保存 (`tech.industrial_food_preservation`)：防腐、酸度与杀菌需要工业化学给出的可控试剂与检测。
+- 热带农产工业 (`tech.tropical_agroindustry`)：制糖、榨油与漂白都依赖工业化学给出的试剂与工艺控制。
 - 合成肥料 (`tech.synthetic_fertilizer`)：合成氨需要高温高压的工业化学工艺（哈伯法 1909）。
 - 电化学 (`tech.electrochemistry`)：该科技需要先掌握 「工业化学」。
 - 石油化工 (`tech.petrochemical_industry`)：裂解、合成等单元操作来自工业化学。
+- 公共卫生体系 (`tech.public_health_systems`)：大众药品的规模化生产依赖工业化学给出的试剂与工艺。
 - 工业生态 (`tech.industrial_ecology`)：该科技需要先掌握 「工业化学」。
+- 分子生物学 (`tech.molecular_biology`)：抗生素是化学工业的产物，先有试剂与工艺控制。
+- 稀土分离 (`tech.rare_earth_processing`)：分离依赖溶剂萃取与离子交换，二者都属于工业化学的方法谱系。
+- 算法管理 (`tech.algorithmic_management`)：工业化学品 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -28800,7 +29105,7 @@
 | 稳定 ID | `tech.fertilizer_processing` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -28821,7 +29126,7 @@
 
 #### 效果摘要
 
-解锁物资：磷矿石；解锁建筑：磷矿；采掘部门产出 +12%；作为必要支撑：自动化磷矿
+解锁物资：磷矿石；解锁建筑：磷矿；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -28841,7 +29146,7 @@
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：肥料加工提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -28868,7 +29173,7 @@
 | 稳定 ID | `tech.mechanical_reaping` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -28890,7 +29195,7 @@
 
 #### 效果摘要
 
-解锁建筑：机械化玉米农场；解锁建筑：机械化小麦农场
+解锁建筑：机械化玉米农场、机械化小麦农场
 
 #### 机会成本
 
@@ -28905,8 +29210,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **机械化玉米农场**（`building`）：`building.method_landed_estate_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化小麦农场**（`building`）：`building.method_wheat_farm_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -28937,7 +29240,7 @@
 | 稳定 ID | `tech.mechanized_printing` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 624000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -28961,7 +29264,7 @@
 
 #### 效果摘要
 
-解锁建筑：造纸厂；「造纸」生产家族建筑产出 +22%
+解锁建筑：造纸厂；「造纸」生产家族建筑产出 +66%
 
 #### 机会成本
 
@@ -28976,12 +29279,11 @@
 
 #### 结构化内容效果
 
-- **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **造纸厂**（`building`）：`building.paper_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 造纸：`country.output.family.paper_making_factor`：+22%
+- 造纸：`country.output.family.paper_making_factor`：+66%
   - 效果机制：机械印刷提高造纸建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -29008,7 +29310,7 @@
 | 稳定 ID | `tech.mechanical_threshing` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29029,7 +29331,7 @@
 
 #### 效果摘要
 
-解锁建筑：工业榨油厂；解锁建筑：机械化稻作农场；商品「煤」生产投入 +4%；商品「小麦」产量 +20%；商品「玉米」产量 +20%
+解锁建筑：工业榨油厂、机械化稻作农场；商品「煤」生产投入 +4%；商品「小麦」产量 +20%；商品「玉米」产量 +20%
 
 #### 机会成本
 
@@ -29044,8 +29346,6 @@
 
 #### 结构化内容效果
 
-- **食用油**（`good`）：`good.edible_oil` → `production_access` `unlock` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **工业榨油厂**（`building`）：`building.method_edible_oil_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化稻作农场**（`building`）：`building.method_rice_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -29084,7 +29384,7 @@
 | 稳定 ID | `tech.managerial_hierarchy` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29120,7 +29420,6 @@
 
 #### 结构化内容效果
 
-- **家具**（`good`）：`good.furniture` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家具厂**（`building`）：`building.furniture_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -29151,7 +29450,7 @@
 | 稳定 ID | `tech.industrial_statistics` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 624000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29220,7 +29519,7 @@
 | 稳定 ID | `tech.interchangeable_parts` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29241,7 +29540,7 @@
 
 #### 效果摘要
 
-解锁物资：工业机械；解锁建筑：工业机械厂；全社会生产投入 -5%；作为必要支撑：农业机械厂、发动机厂
+解锁物资：工业机械；解锁建筑：工业机械厂；全社会生产投入 -5%
 
 #### 机会成本
 
@@ -29289,7 +29588,7 @@
 | 稳定 ID | `tech.labor_organization` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -29311,7 +29610,7 @@
 
 #### 效果摘要
 
-解锁建筑：制鞋厂；制造部门产出 +8%
+解锁建筑：制鞋厂；制造部门产出 +16%；产业工人 +1.8%
 
 #### 机会成本
 
@@ -29326,14 +29625,16 @@
 
 #### 结构化内容效果
 
-- **鞋履**（`good`）：`good.footwear` → `production_access` `unlock` `1.0`；`existing_binding`
 - **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+8%
+- 制造部门产出：`country.output.manufacturing_factor`：+16%
+- 产业工人：`economy.profession.industrial_worker.satisfaction_bp`：+18000%
   - 效果机制：劳工组织提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：工会与劳工组织改善工厂劳动条件。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -29358,7 +29659,7 @@
 | 稳定 ID | `tech.assembly_line` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29373,6 +29674,7 @@
 
 - 互换零件 (`tech.interchangeable_parts`)：流水线依赖可直接装配的互换零件。
 - 工厂制 (`tech.factory_system`)：流水线是工厂内部工序的重新排布。
+- 野生玉米采集 (`tech.wild_maize_collection`)：混合谷物 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -29380,7 +29682,7 @@
 
 #### 效果摘要
 
-解锁建筑：面包厂；解锁建筑：主食加工厂；制造部门产出 +22%；作为必要支撑：乳制品厂
+解锁建筑：面包厂、主食加工厂；制造部门产出 +44%
 
 #### 机会成本
 
@@ -29395,20 +29697,19 @@
 
 #### 结构化内容效果
 
-- **面包**（`good`）：`good.bread` → `production_access` `unlock` `1.0`；`existing_binding`
-- **熟制主食**（`good`）：`good.prepared_staples` → `production_access` `unlock` `1.0`；`existing_binding`
 - **面包厂**（`building`）：`building.bread_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **主食加工厂**（`building`）：`building.staple_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+22%
+- 制造部门产出：`country.output.manufacturing_factor`：+44%
   - 效果机制：流水线组织提高制造部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 大规模生产 (`tech.mass_production`)：大规模生产以流水线组织为核心。
+- 预制装配 (`tech.prefabricated_construction`)：流水线组织提供把构件在工厂里成批生产、再运到现场装配的组织方法。
 
 #### 主题路线后继
 
@@ -29429,7 +29730,7 @@
 | 稳定 ID | `tech.steam_sawmilling` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29469,7 +29770,6 @@
 
 #### 结构化内容效果
 
-- **木材**（`good`）：`good.lumber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **蒸汽锯木厂**（`building`）：`building.method_lumber_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -29483,7 +29783,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 林产工业 (`tech.forest_products_industry`)：蒸汽锯木给出规模化制材的能力，是板材与纸浆工业的直接前身。
 
 #### 主题路线后继
 
@@ -29504,7 +29804,7 @@
 | 稳定 ID | `tech.corporate_mining` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 624000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29525,7 +29825,7 @@
 
 #### 效果摘要
 
-采掘部门产出 +28%
+采掘部门产出 +27%；贸易容量 +4%
 
 #### 机会成本
 
@@ -29544,9 +29844,12 @@
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+28%
+- 采掘部门产出：`country.output.extractive_factor`：+27%
+- 贸易容量：`country.trade.capacity_factor`：+4%
   - 效果机制：公司矿山提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：更有效的制度安排扩大了可承载的市场规模。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -29571,7 +29874,7 @@
 | 稳定 ID | `tech.worker_cooperatives` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 624000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29593,7 +29896,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -29612,9 +29915,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：工人合作工场提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -29639,7 +29942,7 @@
 | 稳定 ID | `tech.limited_liability` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29707,7 +30010,7 @@
 | 稳定 ID | `tech.microbiology` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -29729,7 +30032,7 @@
 
 #### 效果摘要
 
-「主粮加工」生产家族建筑产出 +12%
+地理专长「泛滥平原」产出 +10.6%
 
 #### 机会成本
 
@@ -29748,9 +30051,9 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
-  - 效果机制：控制发酵与杀菌减少了主粮加工中的腐败损耗。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 泛滥平原：`country.output.terrain.floodplain.agriculture_factor`：+10.6%
+  - 效果机制：该产业在泛滥平原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -29776,7 +30079,7 @@
 | 稳定 ID | `tech.industrialization` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 800000 科技点（`technology_points`） |
+| 研究成本 | 968000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -29789,7 +30092,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -29797,7 +30100,7 @@
 
 #### 效果摘要
 
-时代晋升效果：制造部门产出 +12%；能源部门产出 +10%；全社会生产投入 -3%
+时代晋升效果：制造部门产出 +24%；能源部门产出 +20%；全社会经济产出 +7%
 
 #### 机会成本
 
@@ -29834,15 +30137,15 @@
 
 #### 永久 Modifier 条款
 
-- 制造部门产出：`country.output.manufacturing_factor`：+12%
-- 能源部门产出：`country.output.energy_factor`：+10%
-- 全社会生产投入：`country.production.input_factor`：+3%
+- 制造部门产出：`country.output.manufacturing_factor`：+24%
+- 能源部门产出：`country.output.energy_factor`：+20%
+- 全社会经济产出：`country.economy_output_factor`：+7%
   - 效果机制：工厂制度与机械化大幅提升制造产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：蒸汽动力普及提高能源部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：规模化生产降低了单位投入损耗。
-  - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
+  - 效果机制：时代晋升带来跨行业的组织与分工效率。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -29867,14 +30170,14 @@
 | 稳定 ID | `tech.military.rifled_weapons` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 320000 科技点（`technology_points`） |
+| 研究成本 | 538000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
-| 主要路线 | military · firearms (\`route.military.firearms\`) |
-| 全部路线 | military · firearms (\`route.military.firearms\`) |
+| 主要路线 | 军事 · 枪械 (\`route.military.firearms\`) |
+| 全部路线 | 军事 · 枪械 (\`route.military.firearms\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -29882,6 +30185,8 @@
 
 - 互换零件 (`tech.interchangeable_parts`)：线膛加工需要可互换的零件与加工基准。
 - 机床 (`tech.machine_tools`)：来复线要用机床切削。
+- 机械制药 (`tech.military.powder_milling`)：线膛武器使用定装弹药，而定装弹药依赖机械研磨出的标准化火药。
+- 块炼铁 (`tech.iron_smelting`)：铁甲舰体的铆接装甲板来自熟铁与钢，冶炼是造船的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -29889,7 +30194,7 @@
 
 #### 效果摘要
 
-解锁物资：定装弹药；解锁物资：步枪；解锁物资：钢炮；解锁建筑：子弹厂；解锁建筑：步枪厂；解锁建筑：钢炮厂
+解锁物资：定装弹药、步枪、钢炮；解锁建筑：子弹厂、步枪厂、钢炮厂；坚守 +10%
 
 #### 机会成本
 
@@ -29913,7 +30218,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 坚守：`country.military.rule.hold_the_line`：+10%
+  - 效果机制：线膛枪让坚守阵地的射程优势转化为实际杀伤。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -29938,14 +30245,14 @@
 | 稳定 ID | `tech.military.rail_mobilization` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 320000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
-| 主要路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
-| 全部路线 | 制度 · thoroughfare (\`route.institution.thoroughfare\`) |
+| 主要路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
+| 全部路线 | 制度 · 交通干线 (\`route.institution.thoroughfare\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -29959,7 +30266,7 @@
 
 #### 效果摘要
 
-本土行军 +50%；车队速度 +100%
+本土行军 +50%；车队速度 +100%；闪击 +10%
 
 #### 机会成本
 
@@ -29980,10 +30287,13 @@
 
 - 本土行军：`country.military.logistics_move_factor`：+50%
 - 车队速度：`country.military.supply_transport_factor`：×2
+- 闪击：`country.military.rule.blitz`：+10%
   - 效果机制：铁路让大部队在本土快速集中。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
   - 效果机制：铁路承担了车队的大部分长途运输。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：铁路动员把兵力集中窗口压缩到数日之内。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -30008,14 +30318,14 @@
 | 稳定 ID | `tech.military.general_staff` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 320000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.labor\_management |
-| 主要路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
-| 全部路线 | 制度 · bureaucracy (\`route.institution.bureaucracy\`) |
+| 主要路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
+| 全部路线 | 制度 · 行政编制 (\`route.institution.bureaucracy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -30078,20 +30388,21 @@
 | 稳定 ID | `tech.military.smokeless_powder` |
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 320000 科技点（`technology_points`） |
+| 研究成本 | 296000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
-| 主要路线 | 资源 · cotton (\`route.resource.cotton\`) |
-| 全部路线 | 资源 · cotton (\`route.resource.cotton\`) |
+| 主要路线 | 资源 · 棉纺 (\`route.resource.cotton\`) |
+| 全部路线 | 资源 · 棉纺 (\`route.resource.cotton\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：无烟火药依赖工业化学的硝化工艺。
+- 机械制药 (`tech.military.powder_milling`)：无烟火药是粒化火药的化学延续：先有可控粒度，才有可控硝化。
 
 #### 发现启发（仅用于揭示）
 
@@ -30123,7 +30434,288 @@
 
 #### 被以下科技作为硬前置
 
+- 机枪 (`tech.military.machine_guns`)：自动武器依赖无烟火药：黑火药残渣会在连续射击中迅速堵塞机件。
 - 连续硝化 (`tech.military.continuous_nitration`)：连续硝化是无烟火药生产的连续化。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 食品工业保存 (`tech.industrial_food_preservation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.industrial_food_preservation` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 538000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | production\_system |
+| 布局路线 | backbone.food\_storage |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | food |
+
+#### 硬前置（决定研发资格）
+
+- 罐头工业化 (`tech.industrial_canning`)：罐头工艺证明密封与灭菌可行，食品工业保存是它的规模化。
+- 工业化学 (`tech.industrial_chemistry`)：防腐、酸度与杀菌需要工业化学给出的可控试剂与检测。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
+#### 效果摘要
+
+地理专长「泛滥平原」产出 +30%
+
+#### 机会成本
+
+占用蒸汽时代的通用研究预算，延后同代的铁路与机械锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 泛滥平原：`country.output.terrain.floodplain.manufacturing_factor`：+30%
+  - 效果机制：冲积平原产粮区就近建厂，把易腐粮食转成可长期储运的成品。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+- 冷链 (`tech.cold_chain_industry`)：食品工业保存给出灭菌与包装规范，控温与灭菌必须并存才成立。
+
+#### 主题路线后继
+
+- 冷链 (`tech.cold_chain_industry`)：冷链把保存从灭菌推进到控温，是同一主干在电气代的下一步。
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 热带农产工业 (`tech.tropical_agroindustry`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.tropical_agroindustry` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 538000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | chemistry |
+
+#### 硬前置（决定研发资格）
+
+- 种植园加工 (`tech.plantation_processing`)：初加工给出可运输的半成品，是成品工业的原料基础。
+- 工业化学 (`tech.industrial_chemistry`)：制糖、榨油与漂白都依赖工业化学给出的试剂与工艺控制。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
+#### 效果摘要
+
+「化工」生产家族建筑产出 +36%；投入因子 -3%
+
+#### 机会成本
+
+占用蒸汽时代的通用研究预算，延后同代的铁路与机械锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 化工：`country.output.family.chemical_industry_factor`：+36%
+- 投入因子：`country.production.input_factor`：+3%
+  - 效果机制：热带作物成为化工的有机原料来源，糖蜜、油脂与纤维都进入工业流程。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：更精细的农艺让同样的投入产出更多，损耗下降。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 土地改革 (`tech.land_reform`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.land_reform` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 538000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.land\_institutions |
+| 主要路线 | 制度 · 记录 (\`route.institution.records\`) |
+| 全部路线 | 制度 · 记录 (\`route.institution.records\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 习惯佃作 (`tech.customary_tenancy`)：习惯租佃界定了既有佃权，改革必须先知道自己要改什么。
+- 庄园司法 (`tech.manorial_jurisdiction`)：庄园司法提供了土地权利的可裁判形态，改革是把裁判权收归统一法。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「人口规模 12500」（development.population.12500\_360d）
+  - 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
+
+#### 效果摘要
+
+「地籍机构」生产家族建筑产出 +45%；地主 +2%
+
+#### 机会成本
+
+占用蒸汽时代的通用研究预算，延后同代的工业与铁路锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+45%
+- 地主：`country.tax.income.landlord.rate_bp`：+20000%
+  - 效果机制：统一登记与清丈让土地权利可查、可交易、可征税，地籍机构的能力被真正用上。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：土地清丈让地租税基可核定，征收效率提高。
+  - 运行时消费者：`NativeCountryRuntime tax policy snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 梯田机械化 (`tech.terrace_mechanization`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.terrace_mechanization` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 538000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 生态 · 高地 (\`route.ecology.highland\`) |
+| 全部路线 | 生态 · 高地 (\`route.ecology.highland\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 高地块茎农业 (`tech.highland_tuber_farming`)：梯田的畦作与坡面经验是机械化改造的对象。
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供小型动力与机具，梯田的机械化只是把它缩尺适配坡地。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「自动化突破」（breakthrough.automation）
+
+#### 效果摘要
+
+地理专长「高原」产出 +38.6%
+
+#### 机会成本
+
+占用蒸汽时代的通用研究预算，延后同代的工业与铁路锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 高原：`country.output.landform.plateau.agriculture_factor`：+38.6%
+  - 效果机制：小型机具能上田，高原与山地梯田的耕作强度第一次被机械抬起。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
 
 #### 主题路线后继
 
@@ -32824,7 +33416,7 @@
 #### 所需科技（ALL，决定自动应用）
 
 - 管理层级 (`tech.managerial_hierarchy`)：该知识是此产业交汇自动生效的必要条件。
-- 织机织造 (`tech.loom_weaving`)：该知识是此产业交汇自动生效的必要条件。
+- 织造 (`tech.weaving`)：该知识是此产业交汇自动生效的必要条件。
 - 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
@@ -33075,7 +33667,7 @@
 <a id="era-8"></a>
 ## 电气时代
 
-共 30 项研究科技、29 项自动应用，科技研究成本范围 640000-1800000；时代里程碑：电气社会 (`tech.electrical_society`)。
+共 35 项研究科技、29 项自动应用，科技研究成本范围 674000-2210000；时代里程碑：电气社会 (`tech.electrical_society`)。
 
 ### 合成肥料 (`tech.synthetic_fertilizer`)
 
@@ -33084,7 +33676,7 @@
 | 稳定 ID | `tech.synthetic_fertilizer` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33108,7 +33700,7 @@
 
 #### 效果摘要
 
-解锁物资：硝酸；解锁建筑：化肥厂；解锁建筑：合成硝酸厂；农业部门产出 +8%；作为必要支撑：自动化炸药厂、现代炸药厂、智能发射药厂、数控发射药厂、现代发射药厂
+解锁物资：硝酸、合成氨；解锁建筑：化肥厂、合成硝酸厂、合成氨厂；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -33116,21 +33708,22 @@
 
 #### 内容解锁
 
-- **物资：** 肥料 (`fertilizer`)；硝酸 (`nitric_acid`)
-- **建筑 / 生产方式：** 化肥厂 (`fertilizer_plant`)；合成硝酸厂 (`nitric_acid_plant`)
+- **物资：** 合成氨 (`ammonia`)；肥料 (`fertilizer`)；硝酸 (`nitric_acid`)
+- **建筑 / 生产方式：** 合成氨厂 (`ammonia_plant`)；化肥厂 (`fertilizer_plant`)；合成硝酸厂 (`nitric_acid_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能发射药厂 (`method_propellant_plant_r10`)；数控发射药厂 (`method_propellant_plant_r9`)；现代发射药厂 (`propellant_plant`)
 
 #### 结构化内容效果
 
-- **肥料**（`good`）：`good.fertilizer` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硝酸**（`good`）：`good.nitric_acid` → `production_access` `unlock` `1.0`；`existing_binding`
 - **化肥厂**（`building`）：`building.fertilizer_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **合成硝酸厂**（`building`）：`building.nitric_acid_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **合成氨厂**（`building`）：`building.ammonia_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **合成氨**（`good`）：`good.ammonia` → `production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：合成肥料提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -33157,7 +33750,7 @@
 | 稳定 ID | `tech.public_education` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 1080000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -33179,7 +33772,7 @@
 
 #### 效果摘要
 
-解锁建筑：工业研究实验室；解锁建筑：综合工学院；「研究机构」生产家族建筑产出 +4%
+解锁建筑：工业研究实验室、综合工学院；「研究机构」生产家族建筑产出 +12%；科研机构产出 +10%
 
 #### 机会成本
 
@@ -33194,15 +33787,17 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **工业研究实验室**（`building`）：`building.industrial_research_laboratory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **综合工学院**（`building`）：`building.polytechnic_institute` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 研究机构：`country.output.family.research_institution_factor`：+4%
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+- 科研机构产出：`country.research.institution_output_factor`：+10%
   - 效果机制：公共教育提高研究机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：公共教育与工学院为研究机构持续供给技术人才。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -33229,7 +33824,7 @@
 | 稳定 ID | `tech.petroleum_extraction` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1404000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33253,7 +33848,7 @@
 
 #### 效果摘要
 
-解锁物资：原油；解锁建筑：蒸汽钻井场；可利用资源：石油；「石油采掘」生产家族建筑产出 +12%；作为必要支撑：润滑油厂
+解锁物资：原油；解锁建筑：蒸汽钻井场；可利用资源：石油；「石油采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -33274,7 +33869,7 @@
 
 #### 永久 Modifier 条款
 
-- 石油采掘：`country.output.family.oil_extraction_factor`：+12%
+- 石油采掘：`country.output.family.oil_extraction_factor`：+36%
   - 效果机制：石油开采提高石油采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -33302,7 +33897,7 @@
 | 稳定 ID | `tech.petroleum_refining` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1404000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33323,7 +33918,7 @@
 
 #### 效果摘要
 
-解锁物资：润滑剂；解锁物资：精炼燃料；解锁建筑：润滑油厂；解锁建筑：炼油厂；「石油采掘」生产家族建筑产出 +12%；作为必要支撑：发动机厂、智能炼油厂
+解锁物资：润滑剂、精炼燃料；解锁建筑：润滑油厂、炼油厂；地理专长「沙漠」产出 +30%
 
 #### 机会成本
 
@@ -33345,9 +33940,9 @@
 
 #### 永久 Modifier 条款
 
-- 石油采掘：`country.output.family.oil_extraction_factor`：+12%
-  - 效果机制：石油炼制提高石油采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 沙漠：`country.output.terrain.desert.extractive_factor`：+30%
+  - 效果机制：该产业在沙漠上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -33374,7 +33969,7 @@
 | 稳定 ID | `tech.internal_combustion` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33389,6 +33984,7 @@
 
 - 石油炼制 (`tech.petroleum_refining`)：内燃机以石油炼制的轻质燃料为能源。
 - 机床 (`tech.machine_tools`)：汽缸、曲轴需要机床精密加工。
+- 焦炭冶炼 (`tech.coke_smelting`)：内燃机与汽车的缸体、曲轴都要用钢，炼钢是它绕不开的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -33396,7 +33992,7 @@
 
 #### 效果摘要
 
-解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂
+解锁物资：汽车、发动机；解锁建筑：汽车厂、发动机厂
 
 #### 机会成本
 
@@ -33445,7 +34041,7 @@
 | 稳定 ID | `tech.modern_medicine` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -33467,7 +34063,7 @@
 
 #### 效果摘要
 
-解锁物资：药品；解锁建筑：受控环境药材农场；解锁建筑：制药厂；人口自然死亡率 -12%；作为必要支撑：核医学制药中心
+解锁物资：药品；解锁建筑：受控环境药材农场、制药厂；人口自然死亡率 -4.3%；工人 +1.2%
 
 #### 机会成本
 
@@ -33478,20 +34074,22 @@
 - **物资：** 药材 (`medicinal_herbs`)；药品 (`pharmaceuticals`)
 - **建筑 / 生产方式：** 受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；制药厂 (`pharmaceuticals_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 核医学制药中心 (`nuclear_medicine_center`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 核医学制药中心 (`nuclear_medicine_center`)；公共卫生中心 (`public_health_center`)
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **药品**（`good`）：`good.pharmaceuticals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **受控环境药材农场**（`building`）：`building.method_medicinal_herbs_collector_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **制药厂**（`building`）：`building.pharmaceuticals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+12%
+- 人口自然死亡率：`country.population.death_factor`：+4.3%
+- 工人：`economy.profession.worker.satisfaction_bp`：+12000%
   - 效果机制：现代医学显著降低疾病死亡。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+  - 效果机制：现代医学降低常见病的致死与致残。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -33517,7 +34115,7 @@
 | 稳定 ID | `tech.electromagnetic_induction` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33538,7 +34136,7 @@
 
 #### 效果摘要
 
-解锁物资：金属线材；解锁建筑：线材厂；作为必要支撑：绝缘电缆厂
+解锁物资：金属线材；解锁建筑：线材厂
 
 #### 机会成本
 
@@ -33586,7 +34184,7 @@
 | 稳定 ID | `tech.electric_generation` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33608,7 +34206,7 @@
 
 #### 效果摘要
 
-解锁物资：电力；解锁建筑：燃煤发电厂；解锁建筑：河流水力发电站；能源部门产出 +10%
+解锁物资：电力；解锁建筑：燃煤发电厂、河流水力发电站；能源部门产出 +20%
 
 #### 机会成本
 
@@ -33629,7 +34227,7 @@
 
 #### 永久 Modifier 条款
 
-- 能源部门产出：`country.output.energy_factor`：+10%
+- 能源部门产出：`country.output.energy_factor`：+20%
   - 效果机制：发电机提高能源部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -33637,6 +34235,7 @@
 
 - 电气化 (`tech.electrification`)：电气化以发电机稳定供电为前提。
 - 电网 (`tech.electric_grid`)：该科技需要先掌握 「发电机」。
+- 机械制冷 (`tech.refrigeration`)：冷库靠电驱动压缩机组，发电是它的物质前提。
 - 核能 (`tech.nuclear_energy`)：核电站以汽轮发电机组输出电力。
 
 #### 主题路线后继
@@ -33658,7 +34257,7 @@
 | 稳定 ID | `tech.electrification` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -33679,7 +34278,7 @@
 
 #### 效果摘要
 
-解锁物资：电气设备；解锁建筑：早期电气设备厂；解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；解锁建筑：电弧炉炼钢厂；商品「铜」生产投入 +5%
+解锁物资：电气设备；解锁建筑：早期电气设备厂、电气化包装厂、电气印刷厂、电弧炉炼钢厂；商品「铜」生产投入 +5%
 
 #### 机会成本
 
@@ -33690,14 +34289,11 @@
 - **物资：** 电气设备 (`electrical_equipment`)；包装材料 (`packaging`)；印刷品 (`printed_materials`)；钢材 (`steel`)
 - **建筑 / 生产方式：** 早期电气设备厂 (`basic_electrical_equipment_works`)；电气化包装厂 (`method_packaging_plant_r7`)；电气印刷厂 (`method_printed_materials_plant_r7`)；电弧炉炼钢厂 (`steel_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 冷库 (`cold_storage`)
 
 #### 结构化内容效果
 
 - **电气设备**（`good`）：`good.electrical_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **早期电气设备厂**（`building`）：`building.basic_electrical_equipment_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电气化包装厂**（`building`）：`building.method_packaging_plant_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电气印刷厂**（`building`）：`building.method_printed_materials_plant_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -33715,6 +34311,10 @@
 - 无线电 (`tech.radio`)：电子管与发射机需要稳定的电力供应（真空管 ← 白炽灯、发电机）。
 - 电网 (`tech.electric_grid`)：该科技需要先掌握 「电气化」。
 - 电动机 (`tech.electric_motors`)：该科技需要先掌握 「电气化」。
+- 机械制冷 (`tech.refrigeration`)：包装、分拣与温控记录都建立在电气化之上。
+- 公共卫生体系 (`tech.public_health_systems`)：冷链、消毒与检验设备都要电，公共卫生体系建立在电网之上。
+- 全球物流 (`tech.global_logistics`)：集装箱吊装、冷链与全球调度都建立在电气化之上，没有电网就没有现代物流。
+- 分子生物学 (`tech.molecular_biology`)：无菌灌装、培养温控与检测设备都要电。
 
 #### 主题路线后继
 
@@ -33735,7 +34335,7 @@
 | 稳定 ID | `tech.electrochemistry` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -33757,7 +34357,7 @@
 
 #### 效果摘要
 
-解锁物资：电池；解锁物资：铅；解锁物资：锌；解锁建筑：电池厂；解锁建筑：电化工厂；解锁建筑：炼铅厂；解锁建筑：炼锌厂；「化学工业」生产家族建筑产出 +12%；作为必要支撑：汽车厂、电子元件厂、智能化电池厂、智能化电子元件厂、自动化炼铅厂、自动化炼锌厂
+解锁物资：电池、铅、锌；解锁建筑：电池厂、电化工厂、炼铅厂、炼锌厂；「化学工业」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -33773,7 +34373,6 @@
 #### 结构化内容效果
 
 - **电池**（`good`）：`good.batteries` → `production_access` `unlock` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铅**（`good`）：`good.lead` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -33783,7 +34382,7 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+- 化学工业：`country.output.family.chemical_industry_factor`：+36%
   - 效果机制：电化学提高化学工业建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -33793,6 +34392,9 @@
 - 合成材料 (`tech.synthetic_materials`)：该科技需要先掌握 「电化学」。
 - 先进冶金 (`tech.advanced_metallurgy`)：电解精炼与合金成分控制来自电化学。
 - 核裂变 (`tech.nuclear_fission`)：铀的提纯与分离依赖电化学工艺。
+- 网络计算 (`tech.networked_computing`)：电池 是这条生产链的物质前提。
+- 自主系统 (`tech.autonomous_systems`)：电池 是这条生产链的物质前提。
+- 机器人制造 (`tech.robotic_manufacturing`)：电池 是这条生产链的物质前提。
 
 #### 主题路线后继
 
@@ -33814,7 +34416,7 @@
 | 稳定 ID | `tech.radio` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1404000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | backbone |
@@ -33884,7 +34486,7 @@
 | 稳定 ID | `tech.electric_grid` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -33921,7 +34523,6 @@
 
 #### 结构化内容效果
 
-- **铁路设备**（`good`）：`good.railway_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铁路设备厂**（`building`）：`building.railway_equipment_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -33951,7 +34552,7 @@
 | 稳定 ID | `tech.telecommunications` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34022,7 +34623,7 @@
 | 稳定 ID | `tech.electric_motors` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34044,7 +34645,7 @@
 
 #### 效果摘要
 
-解锁物资：电动机；解锁建筑：电力纺织厂；解锁建筑：电动机厂；解锁建筑：电气化造船厂；商品「煤」生产投入 -4%；作为必要支撑：智能化电动机厂、铁路设备厂
+解锁物资：电动机；解锁建筑：电力纺织厂、电动机厂、电气化造船厂；商品「煤」生产投入 -4%
 
 #### 机会成本
 
@@ -34059,9 +34660,7 @@
 
 #### 结构化内容效果
 
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电动机**（`good`）：`good.electric_motor` → `production_access` `unlock` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电力纺织厂**（`building`）：`building.cloth_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电动机厂**（`building`）：`building.electric_motor_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电气化造船厂**（`building`）：`building.method_oceanic_shipyard_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -34075,6 +34674,7 @@
 #### 被以下科技作为硬前置
 
 - 大规模生产 (`tech.mass_production`)：单机电动机驱动使流水线可以灵活布置（流水线 ← 输送带、发电机）。
+- 伺服机构 (`tech.servomechanism`)：伺服需要可反向控制的电动机：没有电机就没有被控的执行机构。
 - 机械化采矿 (`tech.mechanized_mining`)：截煤机、电铲与运输机由电动机驱动。
 
 #### 主题路线后继
@@ -34096,7 +34696,7 @@
 | 稳定 ID | `tech.mass_production` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1080000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | backbone |
@@ -34118,7 +34718,7 @@
 
 #### 效果摘要
 
-全社会家庭消费 +3%；「布匹织造」生产家族建筑产出 +12%；作为必要支撑：数字化农业机械厂、数字化工业机械厂、自动化机械零件厂
+全社会家庭消费 +3%；地理专长「草原」产出 +14.8%
 
 #### 机会成本
 
@@ -34138,11 +34738,11 @@
 #### 永久 Modifier 条款
 
 - 全社会家庭消费：`country.household.consumption_factor`：+3%
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+- 草原：`country.output.terrain.grassland.extractive_factor`：+14.8%
   - 效果机制：廉价标准品诱发消费反弹。
   - 运行时消费者：`NativeEconomyRuntime::family_consumption_factor_q16`
-  - 效果机制：大规模生产提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -34168,7 +34768,7 @@
 | 稳定 ID | `tech.motorized_agriculture` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -34183,6 +34783,7 @@
 
 - 机械收割 (`tech.mechanical_reaping`)：机动农业把机械收割机改由拖拉机牵引。
 - 内燃机 (`tech.internal_combustion`)：拖拉机以内燃机为动力。
+- 棉花园圃 (`tech.cotton_gardening`)：plantation\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -34190,7 +34791,7 @@
 
 #### 效果摘要
 
-解锁建筑：机械化橡胶种植园；解锁建筑：机械化香料种植园；农业部门产出 +8%
+解锁建筑：机械化橡胶种植园、机械化香料种植园；农业部门产出 +7.5%
 
 #### 机会成本
 
@@ -34205,14 +34806,12 @@
 
 #### 结构化内容效果
 
-- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **机械化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化香料种植园**（`building`）：`building.method_spice_plants_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
   - 效果机制：机动农业提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -34239,7 +34838,7 @@
 | 稳定 ID | `tech.modern_husbandry` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -34261,7 +34860,7 @@
 
 #### 效果摘要
 
-解锁建筑：机械化牧场；牧业生产·寒冷损失 -14%；牧业生产·热害损失 -14%；「畜牧业」生产家族建筑产出 +28%；作为必要支撑：智能牧业站
+解锁建筑：机械化牧场；牧业生产·寒冷损失 -14%；牧业生产·热害损失 -14%；「畜牧业」生产家族建筑产出 +49.5%
 
 #### 机会成本
 
@@ -34276,14 +34875,13 @@
 
 #### 结构化内容效果
 
-- **畜牧产品**（`good`）：`good.livestock_products` → `production_access` `unlock` `1.0`；`existing_binding`
 - **机械化牧场**（`building`）：`building.ranching_station` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 牧业生产·寒冷损失：`country.climate.profile.pasture_livestock.cold_stress_loss_factor`：+14%
 - 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+14%
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+49.5%
   - 效果机制：现代畜牧降低牧业生产建筑的寒冷损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：现代畜牧降低牧业生产建筑的热害损失。
@@ -34293,7 +34891,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 机械制冷 (`tech.refrigeration`)：冷冻肉品来自规模化畜牧，要先有稳定的牲畜产出。
 
 #### 主题路线后继
 
@@ -34314,7 +34912,7 @@
 | 稳定 ID | `tech.corporate_management` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -34336,7 +34934,7 @@
 
 #### 效果摘要
 
-解锁建筑：酿造厂；解锁建筑：高级成衣厂；商品「衣物」产量 +4%；「布匹织造」生产家族建筑产出 +4%
+解锁建筑：酿造厂、高级成衣厂；商品「衣物」产量 +4%；「布匹织造」生产家族建筑产出 +9.6%
 
 #### 机会成本
 
@@ -34351,15 +34949,13 @@
 
 #### 结构化内容效果
 
-- **酒饮**（`good`）：`good.beverages` → `production_access` `unlock` `1.0`；`existing_binding`
-- **华服**（`good`）：`good.fine_clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **酿造厂**（`building`）：`building.beverages_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 衣物：`country.output.good.clothing_factor`：+4%
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+4%
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+9.6%
   - 效果机制：公司管理提高衣物产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：公司管理提高布匹织造建筑产出。
@@ -34390,7 +34986,7 @@
 | 稳定 ID | `tech.industrial_research` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1080000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -34412,7 +35008,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +6%；作为必要支撑：精密仪器厂
+科学研究效率 +10%
 
 #### 机会成本
 
@@ -34431,9 +35027,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+6%
-  - 效果机制：工业研究提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 科学研究效率：`country.research.science_efficiency`：+10%
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -34461,7 +35057,7 @@
 | 稳定 ID | `tech.petroleum_drilling` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34484,7 +35080,7 @@
 
 #### 效果摘要
 
-解锁物资：原油；解锁物资：电力；解锁建筑：油田；解锁建筑：燃油发电厂；oil -10%；「石油采掘」生产家族建筑产出 +12%；作为必要支撑：燃气发电厂
+解锁建筑：油田、燃油发电厂；oil -10%；「石油采掘」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -34499,15 +35095,13 @@
 
 #### 结构化内容效果
 
-- **原油**（`good`）：`good.crude_oil` → `production_access` `unlock` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `production_access` `unlock` `1.0`；`existing_binding`
 - **油田**（`building`）：`building.oil_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **燃油发电厂**（`building`）：`building.oil_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - oil：`country.resource.oil.use_factor`：+10%
-- 石油采掘：`country.output.family.oil_extraction_factor`：+12%
+- 石油采掘：`country.output.family.oil_extraction_factor`：+36%
   - 效果机制：井控提高可采原油比例。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：石油钻探提高石油采掘建筑产出。
@@ -34536,7 +35130,7 @@
 | 稳定 ID | `tech.industrial_quality_control` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1080000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34558,7 +35152,7 @@
 
 #### 效果摘要
 
-解锁建筑：高级家具厂；解锁建筑：珠宝厂；全社会生产投入 -4%
+解锁建筑：高级家具厂、珠宝厂；全社会生产投入 -4%
 
 #### 机会成本
 
@@ -34573,8 +35167,6 @@
 
 #### 结构化内容效果
 
-- **精美家具**（`good`）：`good.fine_furniture` → `production_access` `unlock` `1.0`；`existing_binding`
-- **珠宝**（`good`）：`good.jewelry` → `production_access` `unlock` `1.0`；`existing_binding`
 - **高级家具厂**（`building`）：`building.fine_furniture_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -34586,6 +35178,7 @@
 
 #### 被以下科技作为硬前置
 
+- 伺服机构 (`tech.servomechanism`)：伺服靠反馈纠偏，而反馈只有在质量可测、可判定的前提下才有意义。
 - 运筹学 (`tech.operations_research`)：运筹学由工业质量控制中的统计优化发展而来。
 
 #### 主题路线后继
@@ -34607,7 +35200,7 @@
 | 稳定 ID | `tech.refrigeration` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34621,6 +35214,9 @@
 #### 硬前置（决定研发资格）
 
 - 热力学 (`tech.thermodynamics`)：该科技需要先掌握 「热力学」。
+- 发电机 (`tech.electric_generation`)：冷库靠电驱动压缩机组，发电是它的物质前提。
+- 现代畜牧 (`tech.modern_husbandry`)：冷冻肉品来自规模化畜牧，要先有稳定的牲畜产出。
+- 电气化 (`tech.electrification`)：包装、分拣与温控记录都建立在电气化之上。
 
 #### 发现启发（仅用于揭示）
 
@@ -34630,7 +35226,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%；商品「肉类」家庭消费 -8%；牧业生产·热害损失 -8%；人口自然死亡率 -4%
+解锁建筑：冷库；解锁物资：冷冻食品；能源产出 +16%；商品「肉类」家庭消费 -8%；牧业生产·热害损失 -8%；人口自然死亡率 -1.4%
 
 #### 机会成本
 
@@ -34638,23 +35234,24 @@
 
 #### 内容解锁
 
-- **物资：** 无
-- **建筑 / 生产方式：** 无
+- **物资：** 冷冻食品 (`frozen_food`)
+- **建筑 / 生产方式：** 冷库 (`cold_storage`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 养鱼场 (`fish_farm`)
 
 #### 结构化内容效果
 
-无
+- **冷库**（`building`）：`building.cold_storage` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **冷冻食品**（`good`）：`good.frozen_food` → `production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
+- 能源产出：`country.output.energy_factor`：+16%
 - 肉类：`country.consumption.good.meat_factor`：+8%
 - 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+8%
-- 人口自然死亡率：`country.population.death_factor`：+4%
-  - 效果机制：机械制冷提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 人口自然死亡率：`country.population.death_factor`：+1.4%
+  - 效果机制：该科技的组织与工艺收益通过能源产出体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：冷藏减少家庭肉类腐败。
   - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
   - 效果机制：机械制冷降低牧业生产建筑的热害损失。
@@ -34665,6 +35262,8 @@
 #### 被以下科技作为硬前置
 
 - 冷链 (`tech.cold_chain`)：冷链以机械制冷为核心设备。
+- 冷链 (`tech.cold_chain_industry`)：机械制冷提供可控低温，冷链只是把制冷机搬到仓储与运输上。
+- 水产养殖 (`tech.aquaculture`)：养殖要控温与保险，机械制冷提供鱼苗与成鱼运输的存活条件。
 
 #### 主题路线后继
 
@@ -34685,7 +35284,7 @@
 | 稳定 ID | `tech.cold_chain` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34707,7 +35306,7 @@
 
 #### 效果摘要
 
-解锁物资：加工食品；解锁建筑：乳制品厂；解锁建筑：综合食品厂；商品「鱼」家庭消费 -10%；商品「肉类」家庭消费 -10%；「畜牧业」生产家族建筑产出 +12%
+解锁物资：加工食品；解锁建筑：乳制品厂、综合食品厂；商品「鱼」家庭消费 -10%；商品「肉类」家庭消费 -10%；地理专长「草原」产出 +18.6%
 
 #### 机会成本
 
@@ -34722,7 +35321,6 @@
 
 #### 结构化内容效果
 
-- **乳制品**（`good`）：`good.dairy_products` → `production_access` `unlock` `1.0`；`existing_binding`
 - **加工食品**（`good`）：`good.processed_food` → `production_access` `unlock` `1.0`；`existing_binding`
 - **乳制品厂**（`building`）：`building.dairy_products_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **综合食品厂**（`building`）：`building.processed_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -34731,13 +35329,13 @@
 
 - 鱼：`country.consumption.good.fish_factor`：+10%
 - 肉类：`country.consumption.good.meat_factor`：+10%
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+- 草原：`country.output.terrain.grassland.agriculture_factor`：+18.6%
   - 效果机制：冷链减少鱼类运输和家庭损耗。
   - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
   - 效果机制：冷链减少肉类运输和家庭损耗。
   - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
-  - 效果机制：冷链提高畜牧业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -34762,7 +35360,7 @@
 | 稳定 ID | `tech.central_banking` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34784,7 +35382,7 @@
 
 #### 效果摘要
 
-全社会贸易运输速度 +6%
+全社会贸易运输速度 +6%；商人 +4%
 
 #### 机会成本
 
@@ -34804,8 +35402,11 @@
 #### 永久 Modifier 条款
 
 - 全社会贸易运输速度：`country.trade.speed_factor`：+6%
+- 商人：`country.tax.income.merchant.rate_bp`：+40000%
   - 效果机制：统一清算与最后贷款人减少了结算延误与挤兑。
   - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
+  - 效果机制：中央银行让商业利润与信贷规模变得可观测、可征税。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -34830,7 +35431,7 @@
 | 稳定 ID | `tech.genetics` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -34852,7 +35453,7 @@
 
 #### 效果摘要
 
-农业部门产出 +6%
+农业部门产出 +5.7%；资源利用 -3%
 
 #### 机会成本
 
@@ -34871,9 +35472,12 @@
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+6%
+- 农业部门产出：`country.output.agriculture_factor`：+5.7%
+- 资源利用：`country.resource.use_factor`：+3%
   - 效果机制：按遗传规律选配亲本提高了作物与牲畜的产量。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：识别与观察让采收更有针对性，同样矿脉能取出更多可用料。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
 
 #### 被以下科技作为硬前置
 
@@ -34898,7 +35502,7 @@
 | 稳定 ID | `tech.electrical_society` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 1800000 科技点（`technology_points`） |
+| 研究成本 | 2210000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | branch |
 | 锚点类型 | milestone |
@@ -34911,7 +35515,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -34919,7 +35523,7 @@
 
 #### 效果摘要
 
-时代晋升效果：能源部门产出 +15%；全社会经济产出 +6%；工程领域研究效率 +10%
+时代晋升效果：能源部门产出 +30%；全社会经济产出 +7%；工程领域研究效率 +10%
 
 #### 机会成本
 
@@ -34957,8 +35561,8 @@
 
 #### 永久 Modifier 条款
 
-- 能源部门产出：`country.output.energy_factor`：+15%
-- 全社会经济产出：`country.economy_output_factor`：+6%
+- 能源部门产出：`country.output.energy_factor`：+30%
+- 全社会经济产出：`country.economy_output_factor`：+7%
 - 工程领域研究效率：`country.research.engineering_efficiency`：+10%
   - 效果机制：电网与发电体系提高能源部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
@@ -34990,20 +35594,21 @@
 | 稳定 ID | `tech.military.machine_guns` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 640000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
-| 主要路线 | military · firearms (\`route.military.firearms\`) |
-| 全部路线 | military · firearms (\`route.military.firearms\`) |
+| 主要路线 | 军事 · 枪械 (\`route.military.firearms\`) |
+| 全部路线 | 军事 · 枪械 (\`route.military.firearms\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
 #### 硬前置（决定研发资格）
 
 - 大规模生产 (`tech.mass_production`)：机枪的自动机构依赖大量可互换零件。
+- 无烟火药 (`tech.military.smokeless_powder`)：自动武器依赖无烟火药：黑火药残渣会在连续射击中迅速堵塞机件。
 
 #### 发现启发（仅用于揭示）
 
@@ -35011,7 +35616,7 @@
 
 #### 效果摘要
 
-解锁物资：自动步枪；解锁建筑：自动武器厂；解锁建筑：碉堡防线；全国部队攻击 +10%
+解锁物资：自动步枪；解锁建筑：自动武器厂、碉堡防线；全国部队攻击 +10%；坚守 +12%
 
 #### 机会成本
 
@@ -35033,8 +35638,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队攻击：`country.military.attack_factor`：+10%
+- 坚守：`country.military.rule.hold_the_line`：+12%
   - 效果机制：机枪大幅提高部队的压制火力。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：机枪把坚守姿态变成不可正面突破的防线。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -35060,14 +35668,14 @@
 | 稳定 ID | `tech.military.armored_warfare` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 640000 科技点（`technology_points`） |
+| 研究成本 | 1230000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.petroleum\_materials |
-| 主要路线 | military · vehicles (\`route.military.vehicles\`) |
-| 全部路线 | military · vehicles (\`route.military.vehicles\`) |
+| 主要路线 | 军事 · 载具 (\`route.military.vehicles\`) |
+| 全部路线 | 军事 · 载具 (\`route.military.vehicles\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -35081,7 +35689,7 @@
 
 #### 效果摘要
 
-解锁物资：装甲钢板；解锁物资：早期坦克；解锁建筑：装甲钢板厂；解锁建筑：坦克厂；全国部队攻击 +8%；作为必要支撑：主战坦克厂
+解锁物资：装甲钢板、早期坦克；解锁建筑：装甲钢板厂、坦克厂；全国部队攻击 +8%；闪击 +12%
 
 #### 机会成本
 
@@ -35104,8 +35712,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队攻击：`country.military.attack_factor`：+8%
+- 闪击：`country.military.rule.blitz`：+12%
   - 效果机制：装甲部队突破能力提高全军攻击。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：装甲部队以速度换取开战初期的突破窗口。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -35130,14 +35741,14 @@
 | 稳定 ID | `tech.military.radio_command` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 640000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.computation\_control |
-| 主要路线 | 制度 · telecom (\`route.institution.telecom\`) |
-| 全部路线 | 制度 · telecom (\`route.institution.telecom\`) |
+| 主要路线 | 制度 · 电信 (\`route.institution.telecom\`) |
+| 全部路线 | 制度 · 电信 (\`route.institution.telecom\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -35200,14 +35811,14 @@
 | 稳定 ID | `tech.military.continuous_nitration` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 640000 科技点（`technology_points`） |
+| 研究成本 | 674000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
-| 主要路线 | 资源 · nitrogen (\`route.resource.nitrogen\`) |
-| 全部路线 | 资源 · nitrogen (\`route.resource.nitrogen\`) |
+| 主要路线 | 资源 · 氮肥 (\`route.resource.nitrogen\`) |
+| 全部路线 | 资源 · 氮肥 (\`route.resource.nitrogen\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -35237,12 +35848,363 @@
 
 #### 结构化内容效果
 
-- **无烟火药**（`good`）：`good.smokeless_powder` → `production_access` `unlock` `1.0`；`existing_binding`
 - **连续硝化火药厂**（`building`）：`building.continuous_nitration_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
+
+#### 被以下科技作为硬前置
+
+- 机械化 (`tech.military.mechanization`)：现代弹药需要连续硝化提供的稳定发射药批量。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 伺服机构 (`tech.servomechanism`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.servomechanism` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1230000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | power\_scale |
+| 布局路线 | backbone.tools\_machinery |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | automation |
+
+#### 硬前置（决定研发资格）
+
+- 电动机 (`tech.electric_motors`)：伺服需要可反向控制的电动机：没有电机就没有被控的执行机构。
+- 工业质量控制 (`tech.industrial_quality_control`)：伺服靠反馈纠偏，而反馈只有在质量可测、可判定的前提下才有意义。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
+
+#### 效果摘要
+
+「金属工具制造」生产家族建筑产出 +36%；工程研究效率 +6%
+
+#### 机会成本
+
+占用电气时代的通用研究预算，延后同代的电气化与化工锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+36%
+- 工程研究效率：`country.research.engineering_efficiency`：+6%
+  - 效果机制：伺服让机床按指令自动进给，同一台设备能加工更复杂的形状。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：伺服控制把实验装置自动化，工程研究更快。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 电子控制 (`tech.electronic_control`)：电子控制的对象是伺服执行机构；没有伺服，“控制”没有可驱动的末端。
+- 机器人控制 (`tech.robotic_control`)：机器人是多轴伺服的协同，没有伺服机构就没有可编程的执行端。
+
+#### 主题路线后继
+
+- 机器人控制 (`tech.robotic_control`)：机器人控制把伺服从单轴执行扩展到多轴协同，是同一主干的下一步。
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 林产工业 (`tech.forest_products_industry`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.forest_products_industry` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1230000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.forest\_biomass |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | materials |
+
+#### 硬前置（决定研发资格）
+
+- 蒸汽锯木 (`tech.steam_sawmilling`)：蒸汽锯木给出规模化制材的能力，是板材与纸浆工业的直接前身。
+- 木材化学 (`tech.timber_chemical_industry`)：木材化学提供树脂与胶黏剂，没有胶就没有人造板。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「林业经营突破」（breakthrough.forest\_management）
+
+#### 效果摘要
+
+「造纸」生产家族建筑产出 +45%；投入因子 -5%
+
+#### 机会成本
+
+占用电气时代的通用研究预算，延后同代的化工与电力锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 造纸：`country.output.family.paper_making_factor`：+45%
+- 投入因子：`country.production.input_factor`：+5%
+  - 效果机制：木浆取代破布与树皮成为造纸主原料，纸的供给量级随之改变。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：林产工业把边角料变成纸浆与板材，原料利用率上升。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 冷链 (`tech.cold_chain_industry`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.cold_chain_industry` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 1230000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | production\_system |
+| 布局路线 | backbone.food\_storage |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | food |
+
+#### 硬前置（决定研发资格）
+
+- 机械制冷 (`tech.refrigeration`)：机械制冷提供可控低温，冷链只是把制冷机搬到仓储与运输上。
+- 食品工业保存 (`tech.industrial_food_preservation`)：食品工业保存给出灭菌与包装规范，控温与灭菌必须并存才成立。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「累计贸易量 1000」（development.trade.quantity\_1000）
+
+#### 效果摘要
+
+商品「鱼类」产量 +12%
+
+#### 机会成本
+
+占用电气时代的通用研究预算，延后同代的电网与化工锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 鱼类：`country.output.good.fish_factor`：+12%
+  - 效果机制：全程控温把易腐水产的可用比例大幅提高，等于增产。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 预制装配 (`tech.prefabricated_construction`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.prefabricated_construction` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1230000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | construction |
+
+#### 硬前置（决定研发资格）
+
+- 钢筋混凝土 (`tech.reinforced_concrete`)：钢筋混凝土给出可标准化浇制的构件，是预制的前提。
+- 流水线组织 (`tech.assembly_line`)：流水线组织提供把构件在工厂里成批生产、再运到现场装配的组织方法。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+
+#### 效果摘要
+
+「营造方法」生产家族建筑产出 +45%；建造工期 -6%
+
+#### 机会成本
+
+占用电气时代的通用研究预算，延后同代的电网与化工锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 营造方法：`country.output.family.construction_methods_factor`：+45%
+- 建造工期：`country.construction.time_factor`：+6%
+  - 效果机制：把湿作业搬回工厂后，工期与质量不再被天气和现场手艺决定。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：构件在工厂预制，现场只装配，工期显著缩短。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 水产养殖 (`tech.aquaculture`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.aquaculture` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 1230000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.maritime\_logistics |
+| 主要路线 | 生态 · 沿海 (\`route.ecology.coast\`) |
+| 全部路线 | 生态 · 沿海 (\`route.ecology.coast\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | fishing |
+
+#### 硬前置（决定研发资格）
+
+- 机械制冷 (`tech.refrigeration`)：养殖要控温与保险，机械制冷提供鱼苗与成鱼运输的存活条件。
+- 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋船设计给出网箱、浮架与系泊的工程经验，池塘与海上养殖都由它放大而来。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海洋鱼类」（resource.marine\_fish）
+  - 已发现信号「农业产出规模 1000」（development.output.agriculture.1000\_360d）
+
+#### 效果摘要
+
+解锁建筑：养鱼场；「海运作业」生产家族建筑产出 +36%
+
+#### 机会成本
+
+占用电气时代的通用研究预算，延后同代的电网与化工锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 养鱼场 (`fish_farm`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **养鱼场**（`building`）：`building.fish_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- 海运作业：`country.output.family.maritime_operations_factor`：+36%
+  - 效果机制：养殖把靠天吃饭的捕捞变成可计划的水产供给，海运作业家族的产品结构随之改变。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -36544,7 +37506,7 @@
 #### 所需科技（ALL，决定自动应用）
 
 - 电动机 (`tech.electric_motors`)：该知识是此产业交汇自动生效的必要条件。
-- 织机织造 (`tech.loom_weaving`)：该知识是此产业交汇自动生效的必要条件。
+- 织造 (`tech.weaving`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -37194,7 +38156,7 @@
 <a id="era-9"></a>
 ## 原子时代
 
-共 30 项研究科技、24 项自动应用，科技研究成本范围 1152000-4000000；时代里程碑：原子现代化 (`tech.atomic_modernity`)。
+共 30 项研究科技、24 项自动应用，科技研究成本范围 1480000-4830000；时代里程碑：原子现代化 (`tech.atomic_modernity`)。
 
 ### 合成材料 (`tech.synthetic_materials`)
 
@@ -37203,7 +38165,7 @@
 | 稳定 ID | `tech.synthetic_materials` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37227,7 +38189,7 @@
 
 #### 效果摘要
 
-解锁物资：合成橡胶；解锁建筑：合成橡胶厂；作为必要支撑：智能化绝缘电缆厂、智能化合成橡胶厂
+解锁物资：合成橡胶；解锁建筑：合成橡胶厂
 
 #### 机会成本
 
@@ -37273,7 +38235,7 @@
 | 稳定 ID | `tech.industrial_agronomy` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -37301,7 +38263,7 @@
 
 #### 效果摘要
 
-解锁建筑：电气化集约农场；农业部门产出 +8%；旱作生产·旱灾损失 -8%；旱作生产·热害损失 -8%
+解锁建筑：电气化集约农场；农业部门产出 +7.5%；旱作生产·旱灾损失 -8%；旱作生产·热害损失 -8%
 
 #### 机会成本
 
@@ -37316,13 +38278,11 @@
 
 #### 结构化内容效果
 
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电气化集约农场**（`building`）：`building.intensive_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+8%
 - 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+8%
   - 效果机制：工业农学提高农业部门产出。
@@ -37356,7 +38316,7 @@
 | 稳定 ID | `tech.advanced_metallurgy` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3120000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37384,7 +38344,7 @@
 
 #### 效果摘要
 
-解锁建筑：炼铜厂；解锁建筑：炼锡厂；「铜矿采掘」生产家族建筑产出 +12%；「锡矿采掘」生产家族建筑产出 +12%；作为必要支撑：自主控制系统厂、智能化汽车厂、智能化电池厂、通信设备厂
+解锁建筑：炼铜厂、炼锡厂；地理专长「山地」产出 +16.2%；地理专长「火山」产出 +33.3%
 
 #### 机会成本
 
@@ -37399,19 +38359,17 @@
 
 #### 结构化内容效果
 
-- **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `production_access` `unlock` `1.0`；`existing_binding`
 - **炼铜厂**（`building`）：`building.copper_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **炼锡厂**（`building`）：`building.tin_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
-- 锡矿采掘：`country.output.family.tin_extraction_factor`：+12%
-  - 效果机制：先进冶金提高铜矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：先进冶金提高锡矿采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 山地：`country.output.landform.mountain.extractive_factor`：+16.2%
+- 火山：`country.output.landform.volcano.extractive_factor`：+33.3%
+  - 效果机制：该产业在山地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在火山上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -37437,7 +38395,7 @@
 | 稳定 ID | `tech.nuclear_fission` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3120000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37461,7 +38419,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+科学研究效率 +10%
 
 #### 机会成本
 
@@ -37480,9 +38438,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：核裂变提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 科学研究效率：`country.research.science_efficiency`：+10%
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -37508,7 +38466,7 @@
 | 稳定 ID | `tech.deep_geophysics` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -37536,7 +38494,7 @@
 
 #### 效果摘要
 
-解锁物资：铝土矿；解锁物资：战略矿石；解锁建筑：铝土矿；解锁建筑：战略矿山；可利用资源：铝土矿；可利用资源：锰矿；可利用资源：稀土；采掘部门产出 +18%；作为必要支撑：电解铝厂、锰矿、智能冶铝厂、智能锰矿、智能战略矿山、智能战略金属冶炼厂、战略金属冶炼厂
+解锁物资：铝土矿、战略矿石；解锁建筑：铝土矿、战略矿山；可利用资源：铝土矿、锰矿、稀土；采掘部门产出 +17.4%
 
 #### 机会成本
 
@@ -37561,13 +38519,14 @@
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+18%
+- 采掘部门产出：`country.output.extractive_factor`：+17.4%
   - 效果机制：深层地球物理提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 矿物光谱遥感 (`tech.mineral_spectral_survey`)：矿物光谱判读需要地球物理的成矿认识。
+- 稀土分离 (`tech.rare_earth_processing`)：深层地球物理给出稀土矿体的定位能力，找不到矿就谈不上分离。
 
 #### 主题路线后继
 
@@ -37588,7 +38547,7 @@
 | 稳定 ID | `tech.operations_research` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2400000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -37611,7 +38570,7 @@
 
 #### 效果摘要
 
-社会领域研究效率 +8%
+社会领域研究效率 +7.3%
 
 #### 机会成本
 
@@ -37630,7 +38589,7 @@
 
 #### 永久 Modifier 条款
 
-- 社会领域研究效率：`country.research.society_efficiency`：+8%
+- 社会领域研究效率：`country.research.society_efficiency`：+7.3%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
@@ -37657,7 +38616,7 @@
 | 稳定 ID | `tech.petrochemical_industry` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37684,7 +38643,7 @@
 
 #### 效果摘要
 
-解锁物资：洗涤剂；解锁物资：石化产品；解锁建筑：洗涤剂厂；解锁建筑：现代炸药厂；解锁建筑：石油化工厂；「石油采掘」生产家族建筑产出 +12%；「化学工业」生产家族建筑产出 +12%；作为必要支撑：智能化洗涤剂厂、智能石油化工厂、合成纤维厂、合成橡胶厂
+解锁物资：洗涤剂、石化产品；解锁建筑：洗涤剂厂、现代炸药厂、石油化工厂；地理专长「沙漠」产出 +30%；地理专长「低地」产出 +54%
 
 #### 机会成本
 
@@ -37700,7 +38659,6 @@
 #### 结构化内容效果
 
 - **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **现代炸药厂**（`building`）：`building.method_explosives_plant_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -37708,12 +38666,12 @@
 
 #### 永久 Modifier 条款
 
-- 石油采掘：`country.output.family.oil_extraction_factor`：+12%
-- 化学工业：`country.output.family.chemical_industry_factor`：+12%
-  - 效果机制：石油化工提高石油采掘建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-  - 效果机制：石油化工提高化学工业建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 沙漠：`country.output.terrain.desert.extractive_factor`：+30%
+- 低地：`country.output.landform.lowland.extractive_factor`：+54%
+  - 效果机制：该产业在沙漠上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：该产业在低地上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -37740,7 +38698,7 @@
 | 稳定 ID | `tech.national_laboratories` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2400000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -37764,7 +38722,7 @@
 
 #### 效果摘要
 
-解锁建筑：国家实验室；「研究机构」生产家族建筑产出 +7%
+解锁建筑：国家实验室；「研究机构」生产家族建筑产出 +21%；科研机构产出 +15%
 
 #### 机会成本
 
@@ -37779,14 +38737,16 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **国家实验室**（`building`）：`building.national_laboratory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 研究机构：`country.output.family.research_institution_factor`：+7%
+- 研究机构：`country.output.family.research_institution_factor`：+21%
+- 科研机构产出：`country.research.institution_output_factor`：+15%
   - 效果机制：国家实验室提高研究机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：国家实验室提供跨学科的大型实验设施。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -37811,7 +38771,7 @@
 | 稳定 ID | `tech.mechanized_mining` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37835,7 +38795,7 @@
 
 #### 效果摘要
 
-解锁物资：锰矿石；解锁建筑：锰矿；铁矿石 -10%；煤 -10%；采掘部门产出 +18%；作为必要支撑：智能化不锈钢厂、不锈钢厂
+解锁物资：锰矿石；解锁建筑：锰矿；铁矿石 -10%；煤 -10%；采掘部门产出 +17.4%
 
 #### 机会成本
 
@@ -37857,7 +38817,7 @@
 
 - 铁矿石：`country.resource.iron_ore.use_factor`：+10%
 - 煤：`country.resource.coal.use_factor`：+10%
-- 采掘部门产出：`country.output.extractive_factor`：+18%
+- 采掘部门产出：`country.output.extractive_factor`：+17.4%
   - 效果机制：机械采矿提高铁矿回采。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：机械采矿提高煤层回采。
@@ -37888,7 +38848,7 @@
 | 稳定 ID | `tech.public_health_systems` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -37903,6 +38863,8 @@
 
 - 现代医学 (`tech.modern_medicine`)：该科技需要先掌握 「现代医学」。
 - 公共教育 (`tech.public_education`)：该科技需要先掌握 「公共教育」。
+- 电气化 (`tech.electrification`)：冷链、消毒与检验设备都要电，公共卫生体系建立在电网之上。
+- 工业化学 (`tech.industrial_chemistry`)：大众药品的规模化生产依赖工业化学给出的试剂与工艺。
 
 #### 发现启发（仅用于揭示）
 
@@ -37914,7 +38876,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%；人口自然死亡率 -10%
+社会研究效率 +7.3%；人口自然死亡率 -3.6%；工人 +2%；矿工 +1.5%
 
 #### 机会成本
 
@@ -37923,9 +38885,9 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 公共卫生中心 (`public_health_center`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 抗生素厂 (`antibiotics_plant`)
 
 #### 结构化内容效果
 
@@ -37933,12 +38895,18 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-- 人口自然死亡率：`country.population.death_factor`：+10%
-  - 效果机制：公共卫生体系提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+7.3%
+- 人口自然死亡率：`country.population.death_factor`：+3.6%
+- 工人：`economy.profession.worker.satisfaction_bp`：+20000%
+- 矿工：`economy.profession.miner.satisfaction_bp`：+15000%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：全民卫生体系覆盖基本医疗。
   - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+  - 效果机制：公共医疗体系覆盖城市劳动者。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
+  - 效果机制：职业病与矿难救治被纳入公共体系。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -37963,7 +38931,7 @@
 | 稳定 ID | `tech.nuclear_energy` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -37987,7 +38955,7 @@
 
 #### 效果摘要
 
-解锁物资：反应堆部件；解锁建筑：核电站；解锁建筑：核反应堆设备厂；能源部门产出 +10%；作为必要支撑：智能化核反应堆设备厂、核医学制药中心
+解锁物资：反应堆部件；解锁建筑：核电站、核反应堆设备厂；能源部门产出 +20%
 
 #### 机会成本
 
@@ -38002,14 +38970,13 @@
 
 #### 结构化内容效果
 
-- **电力**（`good`）：`good.electricity` → `production_access` `unlock` `1.0`；`existing_binding`
 - **反应堆部件**（`good`）：`good.reactor_components` → `production_access` `unlock` `1.0`；`existing_binding`
 - **核电站**（`building`）：`building.nuclear_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **核反应堆设备厂**（`building`）：`building.reactor_component_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 能源部门产出：`country.output.energy_factor`：+10%
+- 能源部门产出：`country.output.energy_factor`：+20%
   - 效果机制：核能提高能源部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -38036,7 +39003,7 @@
 | 稳定 ID | `tech.electronic_control` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2400000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -38050,6 +39017,7 @@
 #### 硬前置（决定研发资格）
 
 - 无线电 (`tech.radio`)：电子控制以电子管/晶体管放大与反馈电路为核心。
+- 伺服机构 (`tech.servomechanism`)：电子控制的对象是伺服执行机构；没有伺服，“控制”没有可驱动的末端。
 
 #### 发现启发（仅用于揭示）
 
@@ -38059,7 +39027,7 @@
 
 #### 效果摘要
 
-解锁物资：电子元件；解锁物资：无线电设备；解锁建筑：电气设备厂；解锁建筑：电子元件厂；解锁建筑：精密工具厂；解锁建筑：精密仪器厂；解锁建筑：无线电设备厂；全社会经济产出 +8%
+解锁物资：电子元件、无线电设备；解锁建筑：电气设备厂、电子元件厂、精密工具厂、精密仪器厂、无线电设备厂；生产投入 -6%
 
 #### 机会成本
 
@@ -38074,11 +39042,8 @@
 
 #### 结构化内容效果
 
-- **电气设备**（`good`）：`good.electrical_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电子元件**（`good`）：`good.electronic_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **无线电设备**（`good`）：`good.radio_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电气设备厂**（`building`）：`building.electrical_equipment_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电子元件厂**（`building`）：`building.electronic_components_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精密工具厂**（`building`）：`building.method_precision_tool_workshop_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -38087,9 +39052,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：电子控制提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 生产投入：`country.production.input_factor`：+6%
+  - 效果机制：该科技的组织与工艺收益通过生产投入体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -38118,7 +39083,7 @@
 | 稳定 ID | `tech.global_logistics` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -38133,6 +39098,7 @@
 
 - 铁路物流 (`tech.rail_logistics`)：全球物流把铁路与港口联运组织起来。
 - 内燃机 (`tech.internal_combustion`)：卡车与柴油船使集装箱联运成为可能（集装箱运输 1956）。
+- 电气化 (`tech.electrification`)：集装箱吊装、冷链与全球调度都建立在电气化之上，没有电网就没有现代物流。
 
 #### 发现启发（仅用于揭示）
 
@@ -38144,7 +39110,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+贸易容量 +10%
 
 #### 机会成本
 
@@ -38153,7 +39119,7 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 物流枢纽 (`logistics_hub`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -38163,9 +39129,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：全球物流提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 贸易容量：`country.trade.capacity_factor`：+10%
+  - 效果机制：该科技的组织与工艺收益通过贸易容量体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -38192,7 +39158,7 @@
 | 稳定 ID | `tech.specialty_alloys` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38219,7 +39185,7 @@
 
 #### 效果摘要
 
-解锁物资：铝；解锁物资：战略矿物材料；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：战略金属冶炼厂；解锁建筑：不锈钢厂；「炼钢」生产家族建筑产出 +28%；作为必要支撑：高端芯片厂、智能冶铝厂、智能化发动机厂、智能化核燃料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能化不锈钢厂、核反应堆设备厂
+解锁物资：铝、战略矿物材料、不锈钢；解锁建筑：电解铝厂、战略金属冶炼厂、不锈钢厂；地理专长「丘陵」产出 +58%
 
 #### 机会成本
 
@@ -38243,9 +39209,9 @@
 
 #### 永久 Modifier 条款
 
-- 炼钢：`country.output.family.steelmaking_factor`：+28%
-  - 效果机制：特种合金提高炼钢建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 丘陵：`country.output.landform.hill.manufacturing_factor`：+58%
+  - 效果机制：该产业在丘陵上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -38270,7 +39236,7 @@
 | 稳定 ID | `tech.petrochemical_cracking` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38296,7 +39262,7 @@
 
 #### 效果摘要
 
-解锁物资：天然气；解锁建筑：燃气发电厂；解锁建筑：天然气田；可利用资源：天然气；商品「原油」生产投入 +6%；作为必要支撑：智能天然气田
+解锁物资：天然气；解锁建筑：燃气发电厂、天然气田；可利用资源：天然气；商品「原油」生产投入 +6%
 
 #### 机会成本
 
@@ -38307,11 +39273,10 @@
 - **物资：** 电力 (`electricity`)；天然气 (`natural_gas`)
 - **建筑 / 生产方式：** 燃气发电厂 (`gas_power_plant`)；天然气田 (`natural_gas_collector`)
 - **自然资源：** 天然气 (`natural_gas`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能天然气田 (`method_natural_gas_collector_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 合成氨厂 (`ammonia_plant`)；智能天然气田 (`method_natural_gas_collector_r10`)
 
 #### 结构化内容效果
 
-- **电力**（`good`）：`good.electricity` → `production_access` `unlock` `1.0`；`existing_binding`
 - **天然气**（`good`）：`good.natural_gas` → `production_access` `unlock` `1.0`；`existing_binding`
 - **燃气发电厂**（`building`）：`building.gas_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **天然气田**（`building`）：`building.natural_gas_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -38346,7 +39311,7 @@
 | 稳定 ID | `tech.plastics_engineering` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38369,7 +39334,7 @@
 
 #### 效果摘要
 
-解锁物资：家用电器；解锁物资：绝缘电缆；解锁物资：塑料；解锁建筑：家用电器厂；解锁建筑：绝缘电缆厂；解锁建筑：塑料厂；作为必要支撑：计算机厂、电气设备厂、电子元件厂、智能化电子元件厂、智能化家用电器厂、智能化绝缘电缆厂、智能化塑料厂、智能化无线电设备厂、无线电设备厂、通信设备厂
+解锁物资：家用电器、绝缘电缆、塑料；解锁建筑：家用电器厂、绝缘电缆厂、塑料厂
 
 #### 机会成本
 
@@ -38397,7 +39362,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 高分子复合材料 (`tech.polymer_composites`)：复合材料以聚合物基体为前提：没有可控的塑料，就没有可设计的基体。
 
 #### 主题路线后继
 
@@ -38418,7 +39383,7 @@
 | 稳定 ID | `tech.corporate_agribusiness` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -38442,7 +39407,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -38461,9 +39426,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：公司农业提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -38488,7 +39453,7 @@
 | 稳定 ID | `tech.state_enterprises` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -38514,7 +39479,7 @@
 
 #### 效果摘要
 
-解锁建筑：现代硝石矿；解锁建筑：现代硫矿；采掘部门产出 +8%
+解锁建筑：现代硝石矿、现代硫矿；采掘部门产出 +7.7%
 
 #### 机会成本
 
@@ -38529,14 +39494,12 @@
 
 #### 结构化内容效果
 
-- **硝石**（`good`）：`good.saltpeter` → `production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `production_access` `unlock` `1.0`；`existing_binding`
 - **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+8%
+- 采掘部门产出：`country.output.extractive_factor`：+7.7%
   - 效果机制：国营企业提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -38563,7 +39526,7 @@
 | 稳定 ID | `tech.collective_agriculture` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38587,7 +39550,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -38606,9 +39569,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：集体农业提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -38633,7 +39596,7 @@
 | 稳定 ID | `tech.nuclear_fuel_cycle` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3120000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38657,7 +39620,7 @@
 
 #### 效果摘要
 
-解锁物资：核燃料；解锁建筑：核燃料厂；解锁建筑：核医学制药中心；作为必要支撑：智能化核燃料厂
+解锁物资：核燃料；解锁建筑：核燃料厂、核医学制药中心
 
 #### 机会成本
 
@@ -38673,7 +39636,6 @@
 #### 结构化内容效果
 
 - **核燃料**（`good`）：`good.nuclear_fuel` → `production_access` `unlock` `1.0`；`existing_binding`
-- **药品**（`good`）：`good.pharmaceuticals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **核燃料厂**（`building`）：`building.nuclear_fuel_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **核医学制药中心**（`building`）：`building.nuclear_medicine_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -38704,7 +39666,7 @@
 | 稳定 ID | `tech.synthetic_fiber_engineering` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38728,7 +39690,7 @@
 
 #### 效果摘要
 
-解锁物资：防弹护具；解锁物资：合成纤维；解锁建筑：防弹护具厂；解锁建筑：合成纤维厂；解锁建筑：合成纤维织造厂；「布匹织造」生产家族建筑产出 +25%；作为必要支撑：智能化合成纤维厂
+解锁物资：防弹护具、合成纤维；解锁建筑：防弹护具厂、合成纤维厂、合成纤维织造厂；地理专长「草原」产出 +20.5%
 
 #### 机会成本
 
@@ -38744,7 +39706,6 @@
 #### 结构化内容效果
 
 - **防弹护具**（`good`）：`good.ballistic_armor` → `production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **合成纤维**（`good`）：`good.synthetic_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **防弹护具厂**（`building`）：`building.body_armor_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **合成纤维厂**（`building`）：`building.synthetic_fiber_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -38752,13 +39713,14 @@
 
 #### 永久 Modifier 条款
 
-- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
-  - 效果机制：合成纤维工程提高布匹织造建筑产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 草原：`country.output.terrain.grassland.extractive_factor`：+20.5%
+  - 效果机制：该产业在草原上的表现显著优于其他地形；换一片地就没有这份收益。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
 - 机械化 (`tech.military.mechanization`)：机械化步兵的防弹护具依赖合成纤维工程。
+- 技术纺织品 (`tech.technical_textiles`)：合成纤维工程给出可按性能设计的纤维，是技术纺织品的前提。
 - 自主作战 (`tech.military.autonomous_warfare`)：外骨骼步兵的防弹护具依赖合成纤维工程。
 
 #### 主题路线后继
@@ -38780,7 +39742,7 @@
 | 稳定 ID | `tech.industrial_ecology` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2400000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | backbone |
@@ -38803,7 +39765,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +4%；全社会自然资源耗用 -8%
+科学研究效率 +10%；全社会自然资源耗用 -8%
 
 #### 机会成本
 
@@ -38822,10 +39784,10 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
+- 科学研究效率：`country.research.science_efficiency`：+10%
 - 全社会自然资源耗用：`country.resource.use_factor`：+8%
-  - 效果机制：工业生态提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
   - 效果机制：闭环利用降低原生资源耗用。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
@@ -38852,7 +39814,7 @@
 | 稳定 ID | `tech.systems_engineering` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38876,7 +39838,7 @@
 
 #### 效果摘要
 
-全社会生产投入 -3%；采掘部门产出 +12%
+全社会生产投入 -3%；采掘部门产出 +11.6%；建造工期 -8%
 
 #### 机会成本
 
@@ -38896,11 +39858,14 @@
 #### 永久 Modifier 条款
 
 - 全社会生产投入：`country.production.input_factor`：+3%
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
+- 建造工期：`country.construction.time_factor`：+8%
   - 效果机制：接口管理减少复杂工程浪费。
   - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
   - 效果机制：系统工程提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：系统工程把大型工程拆成可并行的子项。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -38926,7 +39891,7 @@
 | 稳定 ID | `tech.consumer_credit` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -38998,7 +39963,7 @@
 | 稳定 ID | `tech.molecular_biology` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -39013,6 +39978,9 @@
 
 - 遗传学 (`tech.genetics`)：分子生物学寻找遗传因子的化学实体。
 - 工业研究 (`tech.industrial_research`)：X 射线衍射等大型实验依赖工业研究体系（DNA 双螺旋 1953）。
+- 工业化学 (`tech.industrial_chemistry`)：抗生素是化学工业的产物，先有试剂与工艺控制。
+- 电气化 (`tech.electrification`)：无菌灌装、培养温控与检测设备都要电。
+- 早期玻璃烧制 (`tech.early_glassmaking`)：培养与分装离不开玻璃器皿。
 
 #### 发现启发（仅用于揭示）
 
@@ -39026,7 +39994,7 @@
 
 #### 效果摘要
 
-农业领域研究效率 +6%
+解锁建筑：抗生素厂；解锁物资：抗生素；农业领域研究效率 +6%
 
 #### 机会成本
 
@@ -39034,14 +40002,15 @@
 
 #### 内容解锁
 
-- **物资：** 无
-- **建筑 / 生产方式：** 无
+- **物资：** 抗生素 (`antibiotics`)
+- **建筑 / 生产方式：** 抗生素厂 (`antibiotics_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **抗生素厂**（`building`）：`building.antibiotics_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **抗生素**（`good`）：`good.antibiotics` → `production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -39072,7 +40041,7 @@
 | 稳定 ID | `tech.atomic_modernity` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 4000000 科技点（`technology_points`） |
+| 研究成本 | 4830000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -39085,7 +40054,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -39093,7 +40062,7 @@
 
 #### 效果摘要
 
-时代晋升效果：人口自然死亡率 -10%；科学领域研究效率 +15%；能源部门产出 +12%
+时代晋升效果：科学领域研究效率 +15%；能源部门产出 +24%；全社会经济产出 +7%
 
 #### 机会成本
 
@@ -39132,15 +40101,15 @@
 
 #### 永久 Modifier 条款
 
-- 人口自然死亡率：`country.population.death_factor`：+10%
 - 科学领域研究效率：`country.research.science_efficiency`：+15%
-- 能源部门产出：`country.output.energy_factor`：+12%
-  - 效果机制：现代医学与公共卫生显著降低自然死亡率。
-  - 运行时消费者：`NativeEconomyRuntime::process_market_cell`
+- 能源部门产出：`country.output.energy_factor`：+24%
+- 全社会经济产出：`country.economy_output_factor`：+7%
   - 效果机制：大科学体制提高科学研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：原子能与现代电力提高能源部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：时代晋升带来跨行业的组织与分工效率。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -39165,23 +40134,23 @@
 | 稳定 ID | `tech.military.mechanization` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1152000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.petroleum\_materials |
-| 主要路线 | military · vehicles (\`route.military.vehicles\`) |
-| 全部路线 | military · vehicles (\`route.military.vehicles\`) |
+| 主要路线 | 军事 · 载具 (\`route.military.vehicles\`) |
+| 全部路线 | 军事 · 载具 (\`route.military.vehicles\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
 #### 硬前置（决定研发资格）
 
 - 全球物流 (`tech.global_logistics`)：机械化依赖全球物流体系保障油料与备件。
-- 马匹驯化 (`tech.horse_domestication`)：机械化部队编制仍保留少量役用马匹，需以驯马为前提。
 - 机枪 (`tech.military.machine_guns`)：机械化步兵的自动火器来自机枪工艺。
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：机械化步兵的防弹护具依赖合成纤维工程。
+- 连续硝化 (`tech.military.continuous_nitration`)：现代弹药需要连续硝化提供的稳定发射药批量。
 
 #### 发现启发（仅用于揭示）
 
@@ -39191,7 +40160,7 @@
 
 #### 效果摘要
 
-解锁物资：榴弹炮；解锁物资：现代弹药；解锁建筑：榴弹炮厂；解锁建筑：军事基地；解锁建筑：现代弹药厂；部队速度 +15%
+解锁物资：榴弹炮、现代弹药；解锁建筑：榴弹炮厂、军事基地、现代弹药厂；部队速度 +15%
 
 #### 机会成本
 
@@ -39241,14 +40210,14 @@
 | 稳定 ID | `tech.military.main_battle_tanks` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 1152000 科技点（`technology_points`） |
+| 研究成本 | 2690000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
-| 主要路线 | military · vehicles (\`route.military.vehicles\`) |
-| 全部路线 | military · vehicles (\`route.military.vehicles\`) |
+| 主要路线 | 军事 · 载具 (\`route.military.vehicles\`) |
+| 全部路线 | 军事 · 载具 (\`route.military.vehicles\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -39265,7 +40234,7 @@
 
 #### 效果摘要
 
-解锁物资：军用电子设备；解锁物资：现代坦克；解锁建筑：军用电子厂；解锁建筑：主战坦克厂；全国部队防御 +10%；作为必要支撑：导弹系统厂
+解锁物资：军用电子设备、现代坦克；解锁建筑：军用电子厂、主战坦克厂；全国部队防御 +10%
 
 #### 机会成本
 
@@ -39314,7 +40283,7 @@
 | 稳定 ID | `tech.military.combat_medicine` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1152000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -39337,7 +40306,7 @@
 
 #### 效果摘要
 
-伤亡 -15%
+伤亡 -30%；士兵 +2%
 
 #### 机会成本
 
@@ -39356,9 +40325,12 @@
 
 #### 永久 Modifier 条款
 
-- 伤亡：`country.military.casualty_factor`：×0.85
+- 伤亡：`country.military.casualty_factor`：×0.7
+- 士兵：`economy.profession.soldier.satisfaction_bp`：+20000%
   - 效果机制：战地医疗体系缩短后送并提高救治率。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：战地医疗体系把伤亡转化为可恢复的伤病。
+  - 运行时消费者：`NativeEconomyRuntime / NativeCountryRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -39383,14 +40355,14 @@
 | 稳定 ID | `tech.military.modern_propellants` |
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 1152000 科技点（`technology_points`） |
+| 研究成本 | 1480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
-| 主要路线 | military · propellant (\`route.military.propellant\`) |
-| 全部路线 | military · propellant (\`route.military.propellant\`) |
+| 主要路线 | 军事 · 发射药 (\`route.military.propellant\`) |
+| 全部路线 | 军事 · 发射药 (\`route.military.propellant\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -39407,7 +40379,7 @@
 
 #### 效果摘要
 
-解锁物资：现代发射药；解锁建筑：现代发射药厂；作为必要支撑：智能发射药厂、数控发射药厂
+解锁物资：现代发射药；解锁建筑：现代发射药厂
 
 #### 机会成本
 
@@ -39431,7 +40403,7 @@
 
 #### 被以下科技作为硬前置
 
-无
+- 精确制导 (`tech.military.precision_guidance`)：制导弹药的推力曲线由现代发射药决定，不是黑火药可以替代的。
 
 #### 主题路线后继
 
@@ -41041,7 +42013,7 @@
 <a id="era-10"></a>
 ## 信息时代
 
-共 26 项研究科技、35 项自动应用，科技研究成本范围 2048000-9000000；时代里程碑：信息社会 (`tech.information_society`)。
+共 31 项研究科技、35 项自动应用，科技研究成本范围 3420000-11180000；时代里程碑：信息社会 (`tech.information_society`)。
 
 ### 精准农业 (`tech.precision_agriculture`)
 
@@ -41050,7 +42022,7 @@
 | 稳定 ID | `tech.precision_agriculture` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -41078,7 +42050,7 @@
 
 #### 效果摘要
 
-解锁建筑：精准小麦农场；解锁建筑：精准农场；农业部门产出 +8%；旱作生产·旱灾损失 -10%；旱作生产·热害损失 -10%；作为必要支撑：精准棉花农场、精准亚麻农场、精准玉米农场、精准药材农场、精准马铃薯农场、精准稻作农场、精准橡胶种植园、精准香料种植园
+解锁建筑：精准小麦农场、精准农场；农业部门产出 +7.5%；旱作生产·旱灾损失 -10%；旱作生产·热害损失 -10%
 
 #### 机会成本
 
@@ -41093,15 +42065,12 @@
 
 #### 结构化内容效果
 
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精准小麦农场**（`building`）：`building.method_wheat_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准农场**（`building`）：`building.precision_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+10%
 - 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+10%
   - 效果机制：精准农业提高农业部门产出。
@@ -41135,7 +42104,7 @@
 | 稳定 ID | `tech.digital_computing` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 5400000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -41158,7 +42127,7 @@
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：早期计算机工场；作为必要支撑：计算机厂
+解锁物资：计算机；解锁建筑：早期计算机工场
 
 #### 机会成本
 
@@ -41210,7 +42179,7 @@
 | 稳定 ID | `tech.information_theory` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -41281,7 +42250,7 @@
 | 稳定 ID | `tech.knowledge_economy` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 5400000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -41305,7 +42274,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +4%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -41324,9 +42293,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-  - 效果机制：知识经济提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -41353,7 +42322,7 @@
 | 稳定 ID | `tech.software_engineering` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -41377,7 +42346,7 @@
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：计算研究中心
+解锁建筑：计算机厂、计算研究中心
 
 #### 机会成本
 
@@ -41392,8 +42361,6 @@
 
 #### 结构化内容效果
 
-- **计算机**（`good`）：`good.computers` → `production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **计算机厂**（`building`）：`building.computers_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **计算研究中心**（`building`）：`building.computing_research_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -41425,7 +42392,7 @@
 | 稳定 ID | `tech.semiconductor_manufacturing` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -41451,7 +42418,7 @@
 
 #### 效果摘要
 
-解锁物资：半导体；解锁建筑：早期半导体厂；作为必要支撑：半导体厂
+解锁物资：半导体；解锁建筑：早期半导体厂
 
 #### 机会成本
 
@@ -41497,7 +42464,7 @@
 | 稳定 ID | `tech.networked_computing` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -41513,6 +42480,7 @@
 - 软件工程 (`tech.software_engineering`)：网络协议与服务需要软件工程。
 - 电信 (`tech.telecommunications`)：计算机网络以电信线路为物理通道。
 - 半导体制造 (`tech.semiconductor_manufacturing`)：路由与终端设备依赖半导体芯片。
+- 电化学 (`tech.electrochemistry`)：电池 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -41524,7 +42492,7 @@
 
 #### 效果摘要
 
-解锁物资：通信设备；解锁建筑：通信设备厂；作为必要支撑：地理空间分析中心
+解锁物资：通信设备；解锁建筑：通信设备厂
 
 #### 机会成本
 
@@ -41576,7 +42544,7 @@
 | 稳定 ID | `tech.digital_control` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 5400000 科技点（`technology_points`） |
+| 研究成本 | 11180000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -41602,7 +42570,7 @@
 
 #### 效果摘要
 
-解锁物资：半导体；解锁建筑：数字化农业机械厂；解锁建筑：自动化水泥厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化润滑油厂；解锁建筑：自动化机械零件厂；解锁建筑：数控发射药厂；解锁建筑：自动化蒸汽机厂；解锁建筑：半导体厂；科学领域研究效率 +8%
+解锁建筑：数字化农业机械厂、自动化水泥厂、自动化炼铅厂、自动化润滑油厂、自动化机械零件厂、数控发射药厂、自动化蒸汽机厂、半导体厂；科学领域研究效率 +8%
 
 #### 机会成本
 
@@ -41617,14 +42585,6 @@
 
 #### 结构化内容效果
 
-- **农业机械**（`good`）：`good.agricultural_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **水泥**（`good`）：`good.cement` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铅**（`good`）：`good.lead` → `production_access` `unlock` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `production_access` `unlock` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `production_access` `unlock` `1.0`；`existing_binding`
-- **现代发射药**（`good`）：`good.modern_propellant` → `production_access` `unlock` `1.0`；`existing_binding`
-- **半导体**（`good`）：`good.semiconductors` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`existing_binding`
 - **数字化农业机械厂**（`building`）：`building.method_agricultural_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化水泥厂**（`building`）：`building.method_cement_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化炼铅厂**（`building`）：`building.method_lead_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -41644,6 +42604,7 @@
 
 - 自动化物流 (`tech.automated_logistics`)：自动化港口与仓储依赖数字控制。
 - 精确制导 (`tech.military.precision_guidance`)：精确制导依赖数字控制的制导回路。
+- 机器人控制 (`tech.robotic_control`)：数字控制提供把动作写成程序的能力，是柔性与刚性的分界。
 - 自主系统 (`tech.autonomous_systems`)：该科技需要先掌握 「数字控制」。
 - 机器人制造 (`tech.robotic_manufacturing`)：工业机器人以数字控制为运动基础（工业机器人 ← 数值控制）。
 
@@ -41666,7 +42627,7 @@
 | 稳定 ID | `tech.automated_logistics` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -41707,7 +42668,6 @@
 
 #### 结构化内容效果
 
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化港口船舶中心**（`building`）：`building.method_automated_port` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -41737,7 +42697,7 @@
 | 稳定 ID | `tech.biotechnology` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -41765,7 +42725,7 @@
 
 #### 效果摘要
 
-解锁建筑：精准药材农场；解锁建筑：专用商品作物种植园；农业领域研究效率 +8%；作为必要支撑：自动化药材农场
+解锁建筑：精准药材农场、专用商品作物种植园；农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -41780,9 +42740,6 @@
 
 #### 结构化内容效果
 
-- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精准药材农场**（`building`）：`building.method_medicinal_herbs_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **专用商品作物种植园**（`building`）：`building.method_specialty_commodity_plantation` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -41815,7 +42772,7 @@
 | 稳定 ID | `tech.open_science_networks` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 7020000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
 | 锚点类型 | backbone |
@@ -41840,7 +42797,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +6%
+科学研究效率 +10%
 
 #### 机会成本
 
@@ -41859,9 +42816,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+6%
-  - 效果机制：开放科学网络提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 科学研究效率：`country.research.science_efficiency`：+10%
+  - 效果机制：该科技的组织与工艺收益通过科学研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -41887,7 +42844,7 @@
 | 稳定 ID | `tech.platform_coordination` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 5400000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -41910,7 +42867,7 @@
 
 #### 效果摘要
 
-解锁建筑：数字化工业机械厂；「石油采掘」生产家族建筑产出 +8%；「化学工业」生产家族建筑产出 +8%
+解锁建筑：数字化工业机械厂；「石油采掘」生产家族建筑产出 +24%；「化学工业」生产家族建筑产出 +24%
 
 #### 机会成本
 
@@ -41925,13 +42882,12 @@
 
 #### 结构化内容效果
 
-- **工业机械**（`good`）：`good.industrial_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 石油采掘：`country.output.family.oil_extraction_factor`：+8%
-- 化学工业：`country.output.family.chemical_industry_factor`：+8%
+- 石油采掘：`country.output.family.oil_extraction_factor`：+24%
+- 化学工业：`country.output.family.chemical_industry_factor`：+24%
   - 效果机制：平台协调提高石油采掘建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：平台协调提高化学工业建筑产出。
@@ -41960,7 +42916,7 @@
 | 稳定 ID | `tech.digital_marketplaces` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 7020000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42030,7 +42986,7 @@
 | 稳定 ID | `tech.geographic_information_systems` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42058,7 +43014,7 @@
 
 #### 效果摘要
 
-解锁建筑：地理空间分析中心；解锁建筑：工业石灰岩矿场；「地理分析机构」生产家族建筑产出 +12%；作为必要支撑：森林遥感经营站、流域治理中心
+解锁建筑：地理空间分析中心、工业石灰岩矿场；「地理分析机构」生产家族建筑产出 +36%
 
 #### 机会成本
 
@@ -42073,14 +43029,12 @@
 
 #### 结构化内容效果
 
-- **石灰岩**（`good`）：`good.limestone` → `production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **地理空间分析中心**（`building`）：`building.geospatial_analysis_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 地理分析机构：`country.output.family.geospatial_analysis_institution_factor`：+12%
+- 地理分析机构：`country.output.family.geospatial_analysis_institution_factor`：+36%
   - 效果机制：地理信息系统提高地理分析机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -42109,7 +43063,7 @@
 | 稳定 ID | `tech.highland_precision_agriculture` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42136,7 +43090,7 @@
 
 #### 效果摘要
 
-解锁建筑：高地精准块茎农业；解锁建筑：精准马铃薯农场；旱作生产·寒冷损失 -16%；作为必要支撑：自动化马铃薯农场
+解锁建筑：高地精准块茎农业、精准马铃薯农场；旱作生产·寒冷损失 -16%
 
 #### 机会成本
 
@@ -42151,7 +43105,6 @@
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
 - **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准马铃薯农场**（`building`）：`building.method_potato_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -42184,7 +43137,7 @@
 | 稳定 ID | `tech.satellite_observation` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -42227,7 +43180,6 @@
 
 #### 结构化内容效果
 
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **森林遥感经营站**（`building`）：`building.method_forest_remote_sensing` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -42261,7 +43213,7 @@
 | 稳定 ID | `tech.numerical_weather_prediction` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42344,7 +43296,7 @@
 | 稳定 ID | `tech.mineral_spectral_survey` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 11180000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42371,7 +43323,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿；解锁建筑：自动化铅矿；解锁建筑：自动化磷矿；解锁建筑：自动化锌矿；可利用资源：锰矿；可利用资源：稀土；采掘部门产出 +25%
+解锁建筑：自动化铝土矿、自动化铅矿、自动化磷矿、自动化锌矿；采掘部门产出 +24.1%
 
 #### 机会成本
 
@@ -42386,20 +43338,14 @@
 
 #### 结构化内容效果
 
-- **铝土矿**（`good`）：`good.bauxite` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铅矿石**（`good`）：`good.lead_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **磷矿石**（`good`）：`good.phosphate_rock` → `production_access` `unlock` `1.0`；`existing_binding`
-- **锌矿石**（`good`）：`good.zinc_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化铝土矿**（`building`）：`building.method_bauxite_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化铅矿**（`building`）：`building.method_lead_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锰矿**（`resource`）：`resource.manganese_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-- **稀土**（`resource`）：`resource.rare_earth` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 采掘部门产出：`country.output.extractive_factor`：+25%
+- 采掘部门产出：`country.output.extractive_factor`：+24.1%
   - 效果机制：矿物光谱遥感提高采掘部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -42426,7 +43372,7 @@
 | 稳定 ID | `tech.crop_remote_sensing` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 11180000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42440,6 +43386,7 @@
 #### 硬前置（决定研发资格）
 
 - 卫星观测 (`tech.satellite_observation`)：该科技需要先掌握 「卫星观测」。
+- 棉花园圃 (`tech.cotton_gardening`)：plantation\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -42452,7 +43399,7 @@
 
 #### 效果摘要
 
-解锁建筑：精准玉米农场；解锁建筑：精准橡胶种植园；解锁建筑：精准香料种植园；旱作生产·旱灾损失 -10%；种植园生产·热害损失 -12%
+解锁建筑：精准玉米农场、精准橡胶种植园、精准香料种植园；旱作生产·旱灾损失 -10%；种植园生产·热害损失 -12%
 
 #### 机会成本
 
@@ -42467,9 +43414,6 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精准玉米农场**（`building`）：`building.method_maize_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准香料种植园**（`building`）：`building.method_spice_plants_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -42506,7 +43450,7 @@
 | 稳定 ID | `tech.hydrological_remote_sensing` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42533,7 +43477,7 @@
 
 #### 效果摘要
 
-解锁建筑：流域治理中心；旱灾损失 -12%；洪灾损失 -12%；作为必要支撑：智能水网控制中心
+解锁建筑：流域治理中心；旱灾损失 -12%；洪灾损失 -12%
 
 #### 机会成本
 
@@ -42548,7 +43492,6 @@
 
 #### 结构化内容效果
 
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **流域治理中心**（`building`）：`building.watershed_governance_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -42583,7 +43526,7 @@
 | 稳定 ID | `tech.sensor_networks` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 11180000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42609,7 +43552,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂；解锁建筑：自动化混凝土厂；解锁建筑：精准棉花农场；解锁建筑：精准亚麻农场；解锁建筑：自动化炼锌厂；科学领域研究效率 +8%
+解锁建筑：自动化焦化厂、自动化混凝土厂、精准棉花农场、精准亚麻农场、自动化炼锌厂；科学领域研究效率 +8%
 
 #### 机会成本
 
@@ -42624,11 +43567,6 @@
 
 #### 结构化内容效果
 
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **焦炭**（`good`）：`good.coke` → `production_access` `unlock` `1.0`；`existing_binding`
-- **混凝土**（`good`）：`good.concrete` → `production_access` `unlock` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
-- **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化焦化厂**（`building`）：`building.method_coke_ovens_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准棉花农场**（`building`）：`building.method_cotton_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -42665,7 +43603,7 @@
 | 稳定 ID | `tech.precision_irrigation` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -42680,6 +43618,7 @@
 
 - 水利工程 (`tech.hydraulic_engineering`)：精准灌溉沿用水利工程的输配水系统。
 - 传感器网络 (`tech.sensor_networks`)：按墒情精确配水依赖土壤传感器网络。
+- 芦苇收割 (`tech.reed_harvesting`)：paddy\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -42692,7 +43631,7 @@
 
 #### 效果摘要
 
-解锁建筑：精准稻作农场；水田生产·旱灾损失 -14%；水田生产·洪灾损失 -14%；农业部门产出 +20%；作为必要支撑：自动化稻作农场
+解锁建筑：精准稻作农场；水田生产·旱灾损失 -14%；水田生产·洪灾损失 -14%；农业部门产出 +18.9%
 
 #### 机会成本
 
@@ -42707,14 +43646,13 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精准稻作农场**（`building`）：`building.method_rice_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+14%
 - 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+14%
-- 农业部门产出：`country.output.agriculture_factor`：+20%
+- 农业部门产出：`country.output.agriculture_factor`：+18.9%
   - 效果机制：精准灌溉降低水田生产建筑的旱灾损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：精准灌溉降低水田生产建筑的洪灾损失。
@@ -42724,6 +43662,7 @@
 
 #### 被以下科技作为硬前置
 
+- 含水层管理 (`tech.aquifer_management`)：精准灌溉提供可计量的用水数据，没有计量就谈不上管理含水层。
 - 自适应灌溉 (`tech.adaptive_irrigation`)：自适应灌溉在精准灌溉上实现闭环自调。
 
 #### 主题路线后继
@@ -42745,7 +43684,7 @@
 | 稳定 ID | `tech.bioinformatics` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
+| 研究成本 | 3420000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -42816,7 +43755,7 @@
 | 稳定 ID | `tech.information_society` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 9000000 科技点（`technology_points`） |
+| 研究成本 | 11180000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -42829,7 +43768,7 @@
 
 #### 硬前置（决定研发资格）
 
-无
+- 思考 (`tech.early_knowledge_institution`)：没有“思考”就不存在可积累的经验：识别、命名、比较与推演是任何后续知识的先决条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -42837,7 +43776,7 @@
 
 #### 效果摘要
 
-时代晋升效果：知识部门产出 +15%；全社会生产投入 -4%；全社会经济产出 +8%
+时代晋升效果：知识部门产出 +30%；全社会生产投入 -4%；全社会经济产出 +7%
 
 #### 机会成本
 
@@ -42877,9 +43816,9 @@
 
 #### 永久 Modifier 条款
 
-- 知识部门产出：`country.output.knowledge_factor`：+15%
+- 知识部门产出：`country.output.knowledge_factor`：+30%
 - 全社会生产投入：`country.production.input_factor`：+4%
-- 全社会经济产出：`country.economy_output_factor`：+8%
+- 全社会经济产出：`country.economy_output_factor`：+7%
   - 效果机制：信息网络提升知识部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：信息化管理压缩了生产投入浪费。
@@ -42910,21 +43849,20 @@
 | 稳定 ID | `tech.military.network_centric` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 2048000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.computation\_control |
-| 主要路线 | 制度 · telecom (\`route.institution.telecom\`) |
-| 全部路线 | 制度 · telecom (\`route.institution.telecom\`) |
+| 主要路线 | 制度 · 电信 (\`route.institution.telecom\`) |
+| 全部路线 | 制度 · 电信 (\`route.institution.telecom\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络中心战以网络化计算为基础。
-- 火药武器 (`tech.gunpowder_weapons`)：合成部队的基础弹药链来自火药武器。
 - 机枪 (`tech.military.machine_guns`)：合成部队的自动火器来自机枪工艺。
 - 主战坦克 (`tech.military.main_battle_tanks`)：合成部队的装甲车辆来自主战坦克制造。
 
@@ -42936,7 +43874,7 @@
 
 #### 效果摘要
 
-解锁建筑：联合训练中心；解锁建筑：兵棋推演中心；组织度恢复 +20%；战斗宽度 +15%
+解锁建筑：联合训练中心、兵棋推演中心；组织度恢复 +20%；战斗宽度 +15%；友军互援 +12%
 
 #### 机会成本
 
@@ -42958,10 +43896,13 @@
 
 - 组织度恢复：`country.military.organization_recovery_factor`：+20%
 - 战斗宽度：`country.military.frontage_factor`：+15%
+- 友军互援：`country.military.rule.mutual_support`：+12%
   - 效果机制：共享态势让部队更快重建组织度。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
   - 效果机制：网络化协调让更多部队能协同展开。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：网络化指挥让多支部队的火力真正叠加。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -42986,14 +43927,14 @@
 | 稳定 ID | `tech.military.precision_guidance` |
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 2048000 科技点（`technology_points`） |
+| 研究成本 | 6210000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.computation\_control |
-| 主要路线 | military · ordnance (\`route.military.ordnance\`) |
-| 全部路线 | military · ordnance (\`route.military.ordnance\`) |
+| 主要路线 | 军事 · 火炮 (\`route.military.ordnance\`) |
+| 全部路线 | 军事 · 火炮 (\`route.military.ordnance\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -43001,6 +43942,7 @@
 
 - 数字控制 (`tech.digital_control`)：精确制导依赖数字控制的制导回路。
 - 卫星观测 (`tech.satellite_observation`)：精确制导依赖卫星定位与观测。
+- 现代发射药 (`tech.military.modern_propellants`)：制导弹药的推力曲线由现代发射药决定，不是黑火药可以替代的。
 
 #### 发现启发（仅用于揭示）
 
@@ -43010,7 +43952,7 @@
 
 #### 效果摘要
 
-解锁物资：制导弹药；解锁物资：导弹发射系统；解锁建筑：制导弹药厂；解锁建筑：导弹系统厂；全国部队攻击 +12%
+解锁物资：制导弹药、导弹发射系统；解锁建筑：制导弹药厂、导弹系统厂；全国部队攻击 +12%；合围 +12%
 
 #### 机会成本
 
@@ -43033,8 +43975,361 @@
 #### 永久 Modifier 条款
 
 - 全国部队攻击：`country.military.attack_factor`：+12%
+- 合围：`country.military.rule.encirclement`：+12%
   - 效果机制：精确制导让少量弹药取得更大效果。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：精确制导让封锁部队无需密集兵力即可封住退路。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 机器人控制 (`tech.robotic_control`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.robotic_control` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | backbone.tools\_machinery |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | automation |
+
+#### 硬前置（决定研发资格）
+
+- 伺服机构 (`tech.servomechanism`)：机器人是多轴伺服的协同，没有伺服机构就没有可编程的执行端。
+- 数字控制 (`tech.digital_control`)：数字控制提供把动作写成程序的能力，是柔性与刚性的分界。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「自动化突破」（breakthrough.automation）
+
+#### 效果摘要
+
+「金属工具制造」生产家族建筑产出 +45%；工程研究效率 +8%
+
+#### 机会成本
+
+占用信息时代的通用研究预算，延后同代的计算与传感锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+45%
+- 工程研究效率：`country.research.engineering_efficiency`：+8%
+  - 效果机制：可编程工装让小批量、多品种的生产第一次具备经济性。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：机器人控制让工程试验可并行、可复现。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业依赖可编程的整机控制来完成播种、除草与采收。
+- 机器人制造 (`tech.robotic_manufacturing`)：机器人制造是机器人控制在生产线上的直接部署。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 技术纺织品 (`tech.technical_textiles`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.technical_textiles` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | manufacturing |
+
+#### 硬前置（决定研发资格）
+
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：合成纤维工程给出可按性能设计的纤维，是技术纺织品的前提。
+- 纺织机械 (`tech.textile_machinery`)：纺织机械提供高密度织造与非织造的能力。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
+  - 已发现信号「海岸」（landform.coast）
+
+#### 效果摘要
+
+商品「服装」产量 +15%
+
+#### 机会成本
+
+占用信息时代的通用研究预算，延后同代的计算与传感锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 服装：`country.output.good.clothing_factor`：+15%
+  - 效果机制：同一套纤维工程既做服装也做土工布、缆绳与过滤材料，服装产线的效率被摊薄。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 高分子复合材料 (`tech.polymer_composites`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.polymer_composites` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.petroleum\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | chemistry |
+
+#### 硬前置（决定研发资格）
+
+- 塑料工程 (`tech.plastics_engineering`)：复合材料以聚合物基体为前提：没有可控的塑料，就没有可设计的基体。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
+  - 已发现信号「稀土」（resource.rare\_earth）
+
+#### 效果摘要
+
+「化工」生产家族建筑产出 +36%；投入因子 -4%
+
+#### 机会成本
+
+占用信息时代的通用研究预算，延后同代的计算与传感锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 化工：`country.output.family.chemical_industry_factor`：+36%
+- 投入因子：`country.production.input_factor`：+4%
+  - 效果机制：复合材料把低价树脂与增强纤维组合成高性能件，化工的产品结构被抬高。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：复合材料按需增强，同等强度用的料更少。
+  - 运行时消费者：`NativeCountryRuntime modifier snapshot`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 含水层管理 (`tech.aquifer_management`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.aquifer_management` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.water\_wind |
+| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | hydraulic |
+
+#### 硬前置（决定研发资格）
+
+- 水利工程 (`tech.hydraulic_engineering`)：水利工程给出流域尺度的取水与配水方法。
+- 精准灌溉 (`tech.precision_irrigation`)：精准灌溉提供可计量的用水数据，没有计量就谈不上管理含水层。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+
+#### 效果摘要
+
+干旱 +10%
+
+#### 机会成本
+
+占用信息时代的通用研究预算，延后同代的传感与计算锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 干旱：`country.climate.drought_loss_factor`：+10%
+  - 效果机制：可采补平衡的含水层让干旱年的产量损失显著下降。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 稀土分离 (`tech.rare_earth_processing`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.rare_earth_processing` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | metallurgy |
+
+#### 硬前置（决定研发资格）
+
+- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理给出稀土矿体的定位能力，找不到矿就谈不上分离。
+- 工业化学 (`tech.industrial_chemistry`)：分离依赖溶剂萃取与离子交换，二者都属于工业化学的方法谱系。
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「稀土」（resource.rare\_earth）
+
+#### 效果摘要
+
+稀土 +15%
+
+#### 机会成本
+
+占用信息时代的通用研究预算，延后同代的半导体与传感锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 稀土：`country.resource.rare_earth.use_factor`：+15%
+  - 效果机制：逐级萃取把混合稀土分成单一元素，同一吨矿的可用产出成倍提升。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -45398,7 +46693,7 @@
 <a id="era-11"></a>
 ## 智能时代
 
-共 24 项研究科技、46 项自动应用，科技研究成本范围 3200000-20000000；时代里程碑：认知自动化 (`tech.cognitive_automation`)。
+共 24 项研究科技、46 项自动应用，科技研究成本范围 7250000-23740000；时代里程碑：认知自动化 (`tech.cognitive_automation`)。
 
 ### 机器学习 (`tech.machine_learning`)
 
@@ -45407,7 +46702,7 @@
 | 稳定 ID | `tech.machine_learning` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 12000000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -45433,7 +46728,7 @@
 
 #### 效果摘要
 
-解锁物资：先进芯片；解锁建筑：高端芯片厂；解锁建筑：智能研究院
+解锁物资：先进芯片；解锁建筑：高端芯片厂、智能研究院
 
 #### 机会成本
 
@@ -45449,7 +46744,6 @@
 #### 结构化内容效果
 
 - **先进芯片**（`good`）：`good.advanced_chips` → `production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **高端芯片厂**（`building`）：`building.advanced_chip_fab` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能研究院**（`building`）：`building.machine_intelligence_institute` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -45491,7 +46785,7 @@
 | 稳定 ID | `tech.autonomous_systems` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 12000000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -45506,6 +46800,7 @@
 
 - 数字控制 (`tech.digital_control`)：该科技需要先掌握 「数字控制」。
 - 机器学习 (`tech.machine_learning`)：该科技需要先掌握 「机器学习」。
+- 电化学 (`tech.electrochemistry`)：电池 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -45568,7 +46863,7 @@
 | 稳定 ID | `tech.automated_agriculture` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 12000000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | backbone |
 | 锚点类型 | era\_candidate |
@@ -45583,6 +46878,7 @@
 
 - 精准农业 (`tech.precision_agriculture`)：自动化农业在精准农业的数据与作业体系上运行。
 - 自主系统 (`tech.autonomous_systems`)：无人农机依赖自主系统。
+- 机器人控制 (`tech.robotic_control`)：自动化农业依赖可编程的整机控制来完成播种、除草与采收。
 
 #### 发现启发（仅用于揭示）
 
@@ -45594,7 +46890,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化农场；解锁建筑：自动化玉米农场；解锁建筑：自动化小麦农场；农业部门产出 +8%；旱作生产·旱灾损失 -10%；旱作生产·洪灾损失 -10%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；作为必要支撑：自动化棉花农场、自动化亚麻农场、自动化药材农场、自动化马铃薯农场、自动化稻作农场、自动化橡胶种植园、智能牧业站、自动化香料种植园
+解锁建筑：自动化农场、自动化玉米农场、自动化小麦农场；农业部门产出 +7.5%；旱作生产·旱灾损失 -10%；旱作生产·洪灾损失 -10%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；可控环境 -12%
 
 #### 机会成本
 
@@ -45609,21 +46905,18 @@
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化农场**（`building`）：`building.automated_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化玉米农场**（`building`）：`building.method_maize_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化小麦农场**（`building`）：`building.method_wheat_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 农业部门产出：`country.output.agriculture_factor`：+8%
+- 农业部门产出：`country.output.agriculture_factor`：+7.5%
 - 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+10%
 - 旱作生产·洪灾损失：`country.climate.profile.dryland_crop.flood_loss_factor`：+10%
 - 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+10%
 - 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+10%
+- 可控环境：`country.climate.profile.controlled_environment.heat_stress_loss_factor`：+12%
   - 效果机制：自动化农业提高农业部门产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：自动化农业降低旱作生产建筑的旱灾损失。
@@ -45634,6 +46927,8 @@
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：自动化农业降低旱作生产建筑的热害损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：温室与环控把高温挡在棚外，热害损失显著下降。
+  - 运行时消费者：`NativeEconomyRuntime country climate loss heat`
 
 #### 被以下科技作为硬前置
 
@@ -45658,7 +46953,7 @@
 | 稳定 ID | `tech.neural_networks` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -45681,7 +46976,7 @@
 
 #### 效果摘要
 
-科学领域研究效率 +22%；采掘部门产出 +12%；作为必要支撑：自主控制系统厂
+科学领域研究效率 +22%；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -45701,7 +46996,7 @@
 #### 永久 Modifier 条款
 
 - 科学领域研究效率：`country.research.science_efficiency`：+22%
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：通信、计算与控制方法提高科学研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：神经网络提高采掘部门产出。
@@ -45730,7 +47025,7 @@
 | 稳定 ID | `tech.human_machine_collaboration` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -45756,7 +47051,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化家用电器厂；解锁建筑：智能工具厂
+解锁建筑：智能化家用电器厂、智能工具厂
 
 #### 机会成本
 
@@ -45771,8 +47066,6 @@
 
 #### 结构化内容效果
 
-- **家用电器**（`good`）：`good.household_appliances` → `production_access` `unlock` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化家用电器厂**（`building`）：`building.method_household_appliances_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能工具厂**（`building`）：`building.method_precision_tool_workshop_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -45803,7 +47096,7 @@
 | 稳定 ID | `tech.robotic_manufacturing` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 23740000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -45818,6 +47111,8 @@
 
 - 数字控制 (`tech.digital_control`)：工业机器人以数字控制为运动基础（工业机器人 ← 数值控制）。
 - 人机协作 (`tech.human_machine_collaboration`)：智能工厂中的机器人与工人协作作业。
+- 电化学 (`tech.electrochemistry`)：电池 是这条生产链的物质前提。
+- 机器人控制 (`tech.robotic_control`)：机器人制造是机器人控制在生产线上的直接部署。
 
 #### 发现启发（仅用于揭示）
 
@@ -45829,7 +47124,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：自动化炸药厂；解锁建筑：智能化核燃料厂；解锁建筑：智能发射药厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能玻璃器皿工厂；解锁建筑：智能皮革制品工厂；解锁建筑：智能金属家用器皿工厂
+解锁建筑：智能化汽车厂、智能化发动机厂、自动化炸药厂、智能化核燃料厂、智能发射药厂、智能化核反应堆设备厂、智能玻璃器皿工厂、智能皮革制品工厂、智能金属家用器皿工厂
 
 #### 机会成本
 
@@ -45844,15 +47139,6 @@
 
 #### 结构化内容效果
 
-- **汽车**（`good`）：`good.automobiles` → `production_access` `unlock` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `production_access` `unlock` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `production_access` `unlock` `1.0`；`existing_binding`
-- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **现代发射药**（`good`）：`good.modern_propellant` → `production_access` `unlock` `1.0`；`existing_binding`
-- **核燃料**（`good`）：`good.nuclear_fuel` → `production_access` `unlock` `1.0`；`existing_binding`
-- **反应堆部件**（`good`）：`good.reactor_components` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化汽车厂**（`building`）：`building.method_automobiles_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化发动机厂**（`building`）：`building.method_engines_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化炸药厂**（`building`）：`building.method_explosives_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -45890,7 +47176,7 @@
 | 稳定 ID | `tech.autonomous_mining` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 23740000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -45916,7 +47202,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能锰矿；解锁建筑：智能天然气田；解锁建筑：智能战略矿山；解锁建筑：智能硝石矿；解锁建筑：智能硫矿；铁矿石 -12%；采掘部门产出 +22%
+解锁建筑：智能锰矿、智能天然气田、智能战略矿山、智能硝石矿、智能硫矿；铁矿石 -12%；采掘部门产出 +21.2%
 
 #### 机会成本
 
@@ -45931,11 +47217,6 @@
 
 #### 结构化内容效果
 
-- **锰矿石**（`good`）：`good.manganese_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **天然气**（`good`）：`good.natural_gas` → `production_access` `unlock` `1.0`；`existing_binding`
-- **战略矿石**（`good`）：`good.rare_earth_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能锰矿**（`building`）：`building.method_manganese_ore_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能天然气田**（`building`）：`building.method_natural_gas_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -45945,7 +47226,7 @@
 #### 永久 Modifier 条款
 
 - 铁矿石：`country.resource.iron_ore.use_factor`：+12%
-- 采掘部门产出：`country.output.extractive_factor`：+22%
+- 采掘部门产出：`country.output.extractive_factor`：+21.2%
   - 效果机制：传感调度减少贫化遗漏。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：自主采矿提高采掘部门产出。
@@ -45974,7 +47255,7 @@
 | 稳定 ID | `tech.computational_biology` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46017,7 +47298,6 @@
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化药材农场**（`building`）：`building.method_medicinal_herbs_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -46049,7 +47329,7 @@
 | 稳定 ID | `tech.climate_modeling` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -46131,7 +47411,7 @@
 | 稳定 ID | `tech.smart_grid` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46157,7 +47437,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；解锁建筑：智能化电动机厂；解锁建筑：智能化绝缘电缆厂；解锁建筑：智能化线材厂
+解锁建筑：智能化电池厂、智能化电动机厂、智能化绝缘电缆厂、智能化线材厂
 
 #### 机会成本
 
@@ -46172,10 +47452,6 @@
 
 #### 结构化内容效果
 
-- **电池**（`good`）：`good.batteries` → `production_access` `unlock` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `production_access` `unlock` `1.0`；`existing_binding`
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金属线材**（`good`）：`good.wire` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化电池厂**（`building`）：`building.method_batteries_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化电动机厂**（`building`）：`building.method_electric_motor_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化绝缘电缆厂**（`building`）：`building.method_insulated_cable_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -46208,7 +47484,7 @@
 | 稳定 ID | `tech.algorithmic_governance` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -46280,7 +47556,7 @@
 | 稳定 ID | `tech.distributed_intelligence` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46306,7 +47582,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂；科学领域研究效率 +22%
+解锁建筑：智能化电子元件厂、智能化无线电设备厂；科学领域研究效率 +22%
 
 #### 机会成本
 
@@ -46321,8 +47597,6 @@
 
 #### 结构化内容效果
 
-- **电子元件**（`good`）：`good.electronic_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **无线电设备**（`good`）：`good.radio_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化电子元件厂**（`building`）：`building.method_electronic_components_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化无线电设备厂**（`building`）：`building.method_radio_equipment_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -46355,7 +47629,7 @@
 | 稳定 ID | `tech.intelligent_breeding` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -46370,6 +47644,8 @@
 
 - 生物信息学 (`tech.bioinformatics`)：智能育种依赖基因组数据分析。
 - 机器学习 (`tech.machine_learning`)：基因组选择模型来自机器学习。
+- 草皮切割 (`tech.turf_cutting`)：pasture 是这条生产链的物质前提。
+- 棉花园圃 (`tech.cotton_gardening`)：plantation\_land 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -46381,7 +47657,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化马铃薯农场；解锁建筑：自动化橡胶种植园；解锁建筑：智能牧业站；解锁建筑：自动化香料种植园；农业领域研究效率 +22%；旱作生产·寒冷损失 -16%；旱作生产·热害损失 -16%；牧业生产·寒冷损失 -16%；牧业生产·热害损失 -16%；商品「小麦」产量 +12%
+解锁建筑：自动化马铃薯农场、自动化橡胶种植园、智能牧业站、自动化香料种植园；农业领域研究效率 +22%；旱作生产·寒冷损失 -16%；旱作生产·热害损失 -16%；牧业生产·寒冷损失 -16%；牧业生产·热害损失 -16%；商品「小麦」产量 +12%
 
 #### 机会成本
 
@@ -46396,10 +47672,6 @@
 
 #### 结构化内容效果
 
-- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化马铃薯农场**（`building`）：`building.method_potato_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能牧业站**（`building`）：`building.method_smart_husbandry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -46449,7 +47721,7 @@
 | 稳定 ID | `tech.autonomous_logistics` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46488,7 +47760,6 @@
 
 #### 结构化内容效果
 
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自主航运调度港**（`building`）：`building.method_autonomous_shipping` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -46518,7 +47789,7 @@
 | 稳定 ID | `tech.scientific_agents` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46544,7 +47815,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能仪器厂；科学领域研究效率 +22%；采掘部门产出 +12%
+解锁建筑：智能仪器厂；科学领域研究效率 +22%；采掘部门产出 +11.6%
 
 #### 机会成本
 
@@ -46559,13 +47830,12 @@
 
 #### 结构化内容效果
 
-- **科学仪器**（`good`）：`good.scientific_instruments` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能仪器厂**（`building`）：`building.method_scientific_instrument_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 - 科学领域研究效率：`country.research.science_efficiency`：+22%
-- 采掘部门产出：`country.output.extractive_factor`：+12%
+- 采掘部门产出：`country.output.extractive_factor`：+11.6%
   - 效果机制：通信、计算与控制方法提高科学研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
   - 效果机制：智能科学代理提高采掘部门产出。
@@ -46594,7 +47864,7 @@
 | 稳定 ID | `tech.autonomous_forestry_operations` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 12000000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46636,7 +47906,6 @@
 
 #### 结构化内容效果
 
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自主林业经营站**（`building`）：`building.method_autonomous_forestry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -46666,7 +47935,7 @@
 | 稳定 ID | `tech.human_machine_cogovernance` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 12000000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | era\_candidate |
@@ -46692,7 +47961,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +4%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -46711,9 +47980,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+4%
-  - 效果机制：人机共治提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -46738,7 +48007,7 @@
 | 稳定 ID | `tech.algorithmic_management` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 23740000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46753,6 +48022,7 @@
 
 - 网络计算 (`tech.networked_computing`)：该科技需要先掌握 「网络计算」。
 - 机器学习 (`tech.machine_learning`)：该科技需要先掌握 「机器学习」。
+- 工业化学 (`tech.industrial_chemistry`)：工业化学品 是这条生产链的物质前提。
 
 #### 发现启发（仅用于揭示）
 
@@ -46762,7 +48032,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能化洗涤剂厂；解锁建筑：智能石油化工厂；解锁建筑：智能化塑料厂；解锁建筑：智能炼油厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂
+解锁建筑：智能化洗涤剂厂、智能石油化工厂、智能化塑料厂、智能炼油厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -46777,12 +48047,6 @@
 
 #### 结构化内容效果
 
-- **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `production_access` `unlock` `1.0`；`existing_binding`
-- **精炼燃料**（`good`）：`good.refined_fuel` → `production_access` `unlock` `1.0`；`existing_binding`
-- **合成纤维**（`good`）：`good.synthetic_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **合成橡胶**（`good`）：`good.synthetic_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化塑料厂**（`building`）：`building.method_plastics_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -46817,7 +48081,7 @@
 | 稳定 ID | `tech.adaptive_irrigation` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46844,7 +48108,7 @@
 
 #### 效果摘要
 
-解锁建筑：自动化稻作农场；解锁建筑：智能水网控制中心；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；农业部门产出 +28%
+解锁建筑：自动化稻作农场、智能水网控制中心；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；农业部门产出 +26.5%
 
 #### 机会成本
 
@@ -46859,8 +48123,6 @@
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化稻作农场**（`building`）：`building.method_rice_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能水网控制中心**（`building`）：`building.smart_water_network` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -46868,7 +48130,7 @@
 
 - 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+20%
 - 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+20%
-- 农业部门产出：`country.output.agriculture_factor`：+28%
+- 农业部门产出：`country.output.agriculture_factor`：+26.5%
   - 效果机制：自适应灌溉降低水田生产建筑的旱灾损失。
   - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
   - 效果机制：自适应灌溉降低水田生产建筑的洪灾损失。
@@ -46899,7 +48161,7 @@
 | 稳定 ID | `tech.knowledge_cooperatives` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46923,7 +48185,7 @@
 
 #### 效果摘要
 
-全社会经济产出 +8%
+社会研究效率 +9.2%
 
 #### 机会成本
 
@@ -46942,9 +48204,9 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+8%
-  - 效果机制：知识合作社提高全社会经济产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+- 社会研究效率：`country.research.society_efficiency`：+9.2%
+  - 效果机制：该科技的组织与工艺收益通过社会研究效率体现，而不是全社会产出加成。
+  - 运行时消费者：`NativeCountryRuntime / NativeEconomyRuntime epoch freeze`
 
 #### 被以下科技作为硬前置
 
@@ -46969,7 +48231,7 @@
 | 稳定 ID | `tech.autonomous_labor_coordination` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 13600000 科技点（`technology_points`） |
+| 研究成本 | 23740000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
@@ -46995,7 +48257,7 @@
 
 #### 效果摘要
 
-解锁建筑：智能冶铝厂；解锁建筑：自动化棉花农场；解锁建筑：自动化亚麻农场；解锁建筑：智能战略金属冶炼厂；解锁建筑：智能化不锈钢厂；「炼钢」生产家族建筑产出 +22%
+解锁建筑：智能冶铝厂、自动化棉花农场、自动化亚麻农场、智能战略金属冶炼厂、智能化不锈钢厂；「炼钢」生产家族建筑产出 +66%
 
 #### 机会成本
 
@@ -47010,11 +48272,6 @@
 
 #### 结构化内容效果
 
-- **铝**（`good`）：`good.aluminum` → `production_access` `unlock` `1.0`；`existing_binding`
-- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `production_access` `unlock` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
-- **不锈钢**（`good`）：`good.stainless_steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化棉花农场**（`building`）：`building.method_cotton_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化亚麻农场**（`building`）：`building.method_flax_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
@@ -47023,7 +48280,7 @@
 
 #### 永久 Modifier 条款
 
-- 炼钢：`country.output.family.steelmaking_factor`：+22%
+- 炼钢：`country.output.family.steelmaking_factor`：+66%
   - 效果机制：自主劳动协调提高炼钢建筑产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
@@ -47050,7 +48307,7 @@
 | 稳定 ID | `tech.cognitive_automation` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
-| 研究成本 | 20000000 科技点（`technology_points`） |
+| 研究成本 | 23740000 科技点（`technology_points`） |
 | 节点标记 | 时代里程碑 |
 | 网络角色 | backbone |
 | 锚点类型 | milestone |
@@ -47072,7 +48329,7 @@
 
 #### 效果摘要
 
-时代晋升效果：全社会经济产出 +10%；全社会生产投入 -5%；科学领域研究效率 +20%
+时代晋升效果：全社会经济产出 +7%；全社会生产投入 -5%；科学领域研究效率 +20%
 
 #### 机会成本
 
@@ -47113,7 +48370,7 @@
 
 #### 永久 Modifier 条款
 
-- 全社会经济产出：`country.economy_output_factor`：+10%
+- 全社会经济产出：`country.economy_output_factor`：+7%
 - 全社会生产投入：`country.production.input_factor`：+5%
 - 科学领域研究效率：`country.research.science_efficiency`：+20%
   - 效果机制：认知自动化让全社会生产效率跃升。
@@ -47146,21 +48403,20 @@
 | 稳定 ID | `tech.military.autonomous_warfare` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 3200000 科技点（`technology_points`） |
+| 研究成本 | 13190000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.computation\_control |
-| 主要路线 | military · vehicles (\`route.military.vehicles\`) |
-| 全部路线 | military · vehicles (\`route.military.vehicles\`) |
+| 主要路线 | 军事 · 载具 (\`route.military.vehicles\`) |
+| 全部路线 | 军事 · 载具 (\`route.military.vehicles\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
 #### 硬前置（决定研发资格）
 
 - 自主系统 (`tech.autonomous_systems`)：自主作战以自主系统为基础。
-- 火药武器 (`tech.gunpowder_weapons`)：外骨骼步兵的弹药链来自火药武器。
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：外骨骼步兵的防弹护具依赖合成纤维工程。
 
 #### 发现启发（仅用于揭示）
@@ -47171,7 +48427,7 @@
 
 #### 效果摘要
 
-解锁物资：作战无人机；解锁物资：智能单兵武器；解锁建筑：无人机工厂；解锁建筑：智能单兵武器厂；全国部队攻击 +10%
+解锁物资：作战无人机、智能单兵武器；解锁建筑：无人机工厂、智能单兵武器厂；全国部队攻击 +10%；死守 +12%
 
 #### 机会成本
 
@@ -47194,8 +48450,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队攻击：`country.military.attack_factor`：+10%
+- 死守：`country.military.rule.last_stand`：+12%
   - 效果机制：自主平台提高了持续作战与协同突击的能力。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：无人平台在断补给时不会因士气崩溃而退出战斗。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 
@@ -47220,14 +48479,14 @@
 | 稳定 ID | `tech.military.ai_defense_grid` |
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
-| 研究成本 | 3200000 科技点（`technology_points`） |
+| 研究成本 | 7250000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.computation\_control |
-| 主要路线 | 制度 · defense (\`route.institution.defense\`) |
-| 全部路线 | 制度 · defense (\`route.institution.defense\`) |
+| 主要路线 | 制度 · 国防 (\`route.institution.defense\`) |
+| 全部路线 | 制度 · 国防 (\`route.institution.defense\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | military |
 
@@ -47244,7 +48503,7 @@
 
 #### 效果摘要
 
-解锁建筑：加固防御网；全国部队防御 +10%
+解锁建筑：加固防御网；全国部队防御 +10%；本土作战 +12%
 
 #### 机会成本
 
@@ -47264,8 +48523,11 @@
 #### 永久 Modifier 条款
 
 - 全国部队防御：`country.military.defense_factor`：+10%
+- 本土作战：`country.military.rule.home_ground`：+12%
   - 效果机制：智能防御网提高部队的整体防御。
   - 运行时消费者：`NativeMilitaryRuntime::refresh_country_military_stats`
+  - 效果机制：智能防御网把本土每一格的传感器都变成火力校正点。
+  - 运行时消费者：`MilitaryCore::evaluate_rules`
 
 #### 被以下科技作为硬前置
 

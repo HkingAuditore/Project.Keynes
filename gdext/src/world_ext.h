@@ -568,6 +568,7 @@ public:
     int64_t get_country_state_hash() const;
     godot::Dictionary get_country_cell_summary(int cell_idx) const;
     godot::Dictionary get_country_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_political_regime_snapshot(int64_t handle) const;
     godot::Dictionary configure_annual_reports(int64_t handle, int64_t days_per_year,
         int64_t initial_day, const godot::Dictionary &profile);
     godot::Dictionary commit_annual_reports(int64_t day);

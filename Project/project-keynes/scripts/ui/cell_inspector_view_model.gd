@@ -106,6 +106,7 @@ const CONSTRUCTION_REASON_TEXT := {
 	"construction_market_unavailable": "市场不可结算",
 	"construction_owner_signature_unavailable": "无合适业主",
 	"construction_target_invalid": "目标无效",
+	"political_regime_lacks_treasury_construction": "当前体制不开放国库建造",
 }
 ## one-tick memo for the (large) cell building snapshot: the buildings tab and
 ## the construction window share one read per cell per committed day.
@@ -5948,6 +5949,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 func build_construction_entry(cell_idx: int) -> Dictionary:
 	var entry := {
 		"available": false,
+		"visible": true,
 		"message": "只能在玩家领土内营造。",
 		"title": "营造新建筑",
 		"hint": "按部门浏览，国库物资优先",
@@ -5963,6 +5965,11 @@ func build_construction_entry(cell_idx: int) -> Dictionary:
 	var summary: Dictionary = country.cell_summary(cell_idx)
 	if player_handle <= 0 or not bool(summary.get("owned", false)) \
 			or int(summary.get("country_handle", 0)) != player_handle:
+		return entry
+	if not _country_allows_treasury_construction(summary):
+		entry["visible"] = false
+		entry["message"] = "当前体制不开放国库建造。"
+		entry["hint"] = ""
 		return entry
 	entry["available"] = true
 	entry["message"] = ""
@@ -6025,6 +6032,10 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 	if player_handle <= 0 or not bool(target_summary.get("owned", false)) \
 			or int(target_summary.get("country_handle", 0)) != player_handle:
 		model["message"] = "只能在本国领土内营造。"
+		return model
+	if not _country_allows_treasury_construction(target_summary):
+		model["visible"] = false
+		model["message"] = "当前体制不开放国库建造。"
 		return model
 	var snapshot := _construction_building_snapshot(cell_idx)
 	if snapshot.is_empty():
@@ -6152,6 +6163,23 @@ func build_construction_model(cell_idx: int, sector_id: String = "",
 	model["available"] = true
 	model["message"] = ""
 	return model
+
+
+## Capability is published by Country and copied into cell_summary. UI treats
+## the value as a read-only hint only; PlayerController and Economy apply the
+## same gate again at their command boundaries.
+func _country_allows_treasury_construction(summary: Dictionary) -> bool:
+	var politics := summary.get("politics", {})
+	if politics is Dictionary:
+		if politics.has("can_treasury_construction"):
+			return bool(politics.get("can_treasury_construction", false))
+		if politics.has("capability_bits"):
+			return (int(politics.get("capability_bits", 0)) & 1) != 0
+	if summary.has("can_treasury_construction"):
+		return bool(summary.get("can_treasury_construction", false))
+	if summary.has("capability_bits"):
+		return (int(summary.get("capability_bits", 0)) & 1) != 0
+	return false
 
 
 func _construction_header(cell_idx: int) -> Dictionary:

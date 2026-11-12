@@ -3458,6 +3458,7 @@ func _build_gameplay_country_packet() -> Dictionary:
 	var catalog: Dictionary = _country_facade.native_catalog()
 	var country_ids := PackedStringArray()
 	var country_names := PackedStringArray()
+	var regime_ids := PackedStringArray()
 	var country_cash := PackedInt64Array()
 	var territory_offsets := PackedInt32Array([0])
 	var territory_cells := PackedInt32Array()
@@ -3490,6 +3491,8 @@ func _build_gameplay_country_packet() -> Dictionary:
 			return {}
 		country_ids.append(country_id)
 		country_names.append(country_name)
+		regime_ids.append(String(start.get("regime_id",
+			catalog.get("political_regime_default_id", "early_clan"))))
 		country_cash.append(int(research_config.get(
 			"starting_country_cash", 100000000)))
 		territory_cells.append(cell)
@@ -3550,6 +3553,7 @@ func _build_gameplay_country_packet() -> Dictionary:
 	return {
 		"country_ids": country_ids,
 		"country_names": country_names,
+		"regime_ids": regime_ids,
 		"country_cash": country_cash,
 		"territory_offsets": territory_offsets,
 		"territory_cells": territory_cells,

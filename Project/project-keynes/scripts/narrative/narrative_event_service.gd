@@ -462,7 +462,7 @@ func _poll_fact_events(day: int, ai_enabled: bool = false) -> void:
 			continue
 		var resolved_cell := _resolve_valid_player_cell(cell_idx, territory)
 		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags)
+			resolved_cell, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 		# AI 事实通道先跑：它不回退队列，也不会因为静态事实事件命中而 return 掉。
 		if ai_enabled:
 			_maybe_request_fact_ai(day, ev_type, resolved_cell, cell_ctx)
@@ -523,6 +523,14 @@ static func situation_pressure_score(cell_ctx: Dictionary) -> int:
 	# 积雪（最多 10）。
 	var snow := maxf(0.0, float(cell_ctx.get("snow_cover", 0.0)))
 	score += clampi(int(round((snow - 0.35) * 40.0)), 0, 10)
+	# 战时与强族：AI 事件应更愿意写这两类处境，而不是只盯着物价与满意度。
+	if bool(cell_ctx.get("at_war", false)):
+		score += 15
+		if int(cell_ctx.get("war_score_min_q16", 0)) <= -32768:
+			score += 10
+	if bool(cell_ctx.get("family_available", false)) \
+			and int(cell_ctx.get("primary_family_prestige", 0)) >= 3:
+		score += 8
 	return clampi(score, 0, 100)
 
 
@@ -636,7 +644,7 @@ func _poll_state_probes(day: int, ai_enabled: bool) -> void:
 			cells.append(tracked_cell)
 	for cell_idx in cells:
 		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+			cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 		for probe in _state_probes:
 			if probe != null and probe.has_method("matches"):
 				_evaluate_probe_state(probe, cell_idx, cell_ctx, day, ai_enabled)
@@ -740,7 +748,7 @@ func _sample_cell_ctx(cell_idx: int, day: int) -> Dictionary:
 	var country_ctx := NarrativeContextSamplerScript.sample_country_context(
 		_map, _generator, _player_country_handle, day, _story_flags)
 	return NarrativeContextSamplerScript.sample_cell_context(
-		cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+		cell_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 
 
 # ─── AI 事件池：写好但此刻不能弹的事件 ──────────────────────────────────────
@@ -995,7 +1003,7 @@ func run_pulse_sample(day: int, ai_enabled: bool = false) -> Dictionary:
 
 	for c_idx in sampled_cells:
 		var cell_ctx := NarrativeContextSamplerScript.sample_cell_context(
-			c_idx, country_ctx, _map, _generator, _view_adapter, _story_flags)
+			c_idx, country_ctx, _map, _generator, _view_adapter, _story_flags, true)
 		for def in pulse_defs:
 			var w := evaluate_event_weight(def, cell_ctx, day)
 			if w > 0:
@@ -1178,7 +1186,8 @@ func enqueue_event_offer(
 			var eff_lines := PackedStringArray()
 			for eff in out_res.effects:
 				if eff != null and eff.has_method("describe"):
-					eff_lines.append(String(eff.describe()))
+					eff_lines.append(NarrativeEffectSpecScript.format_label(
+						String(eff.describe()), cell_ctx))
 			outcomes_payload.append({
 				"probability_q16": prob_q16,
 				"probability_percent": prob_pct,
@@ -1210,6 +1219,8 @@ func enqueue_event_offer(
 		"temperature": float(cell_ctx.get("temperature", 18.0)),
 		"title": formatted_title,
 		"body_text": formatted_body,
+		"speaker": NarrativeEventDefinitionScript.format_text(def.speaker, cell_ctx),
+		"quote_text": NarrativeEventDefinitionScript.format_text(def.quote_text, cell_ctx),
 		"image_key": String(def.image_key),
 		"image_path": def.image_path,
 		"ai_visual_prompt": def.ai_visual_prompt,
@@ -1328,6 +1339,8 @@ func choose_option(
 		"event_id": ev_id_str,
 		"title": String(_active_offer.get("title", "")),
 		"body_text": String(_active_offer.get("body_text", "")),
+		"speaker": String(_active_offer.get("speaker", "")),
+		"quote_text": String(_active_offer.get("quote_text", "")),
 		"image_key": String(_active_offer.get("image_key", "")),
 		"image_path": String(_active_offer.get("image_path", "")),
 		"tags": _active_offer.get("tags", []),

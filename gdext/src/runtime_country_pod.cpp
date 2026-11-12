@@ -2,6 +2,7 @@
 #include "runtime_country_pod.h"
 #include "country_core_apply.h"
 #include "country_core.h"
+#include "country_api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@ namespace pk {
 
 namespace {
 constexpr uint32_t COUNTRY_SECTION_MARKER = 0x32445043u; // CPD2
-constexpr uint32_t COUNTRY_SECTION_ABI = 2u;
+constexpr uint32_t COUNTRY_SECTION_ABI = 3u;
 constexpr uint32_t COUNTRY_QUEUE_SLOTS = 8u;
 constexpr uint32_t COUNTRY_COMMAND_CAPACITY = RUNTIME_COMMAND_QUEUE_CAPACITY;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
@@ -335,8 +336,14 @@ bool RuntimeCountryPodAdapter::validate_snapshot(
         error = "country_pod_identity_or_tax_catalog_missing";
         return false;
     }
+    const bool political_state_absent =
+        snapshot.country_political_regime_ids.empty() &&
+        snapshot.country_political_regime_capabilities.empty();
     if (snapshot.country_active.size() != countries ||
         snapshot.country_generation.size() != countries ||
+        (!political_state_absent &&
+         (snapshot.country_political_regime_ids.size() != countries ||
+          snapshot.country_political_regime_capabilities.size() != countries)) ||
         snapshot.territory_count.size() != countries ||
         snapshot.country_cash.size() != countries ||
         snapshot.cell_country_slot.size() != cells ||
@@ -665,6 +672,11 @@ bool RuntimeCountryPodAuthority::validate_catalog(
         error = "country_catalog_shape_invalid";
         return false;
     }
+    if (catalog.political_regime_ids.size() !=
+            catalog.political_regime_capability_bits.size()) {
+        error = "country_catalog_political_regime_shape_invalid";
+        return false;
+    }
     const size_t count = catalog.technology_count;
     if (catalog.technology_count == 0 || catalog.technology_costs.size() != count ||
         catalog.technology_domains.size() != count ||
@@ -778,6 +790,18 @@ bool RuntimeCountryPodAuthority::validate_state(
             static_cast<int32_t>(snapshot.territory_cells.size())) {
         error = "country_pod_territory_csr_invalid";
         return false;
+    }
+    if (!_catalog.political_regime_ids.empty() &&
+        !snapshot.country_political_regime_ids.empty()) {
+        for (size_t slot = 0; slot < snapshot.country_count; ++slot) {
+            const int32_t regime = snapshot.country_political_regime_ids[slot];
+            if (regime < 0 || static_cast<size_t>(regime) >= _catalog.political_regime_ids.size() ||
+                snapshot.country_political_regime_capabilities[slot] !=
+                    _catalog.political_regime_capability_bits[static_cast<size_t>(regime)]) {
+                error = "country_pod_political_regime_invalid";
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -1532,6 +1556,8 @@ bool RuntimeCountryPodAuthority::encode_save(
     append_vector(payload, _state.country_active);
     append_vector(payload, _state.country_generation);
     append_vector(payload, _state.country_state_version);
+    append_vector(payload, _state.country_political_regime_ids);
+    append_vector(payload, _state.country_political_regime_capabilities);
     append_vector(payload, _state.research_active_country_slots);
     append_vector(payload, _state.territory_count);
     append_vector(payload, _state.country_cash);
@@ -1650,6 +1676,8 @@ bool RuntimeCountryPodAuthority::restore_save(
     if (!reader.vector(restored.country_active, max_countries) ||
         !reader.vector(restored.country_generation, max_countries) ||
         !reader.vector(restored.country_state_version, max_countries) ||
+        !reader.vector(restored.country_political_regime_ids, max_countries) ||
+        !reader.vector(restored.country_political_regime_capabilities, max_countries) ||
         !reader.vector(restored.research_active_country_slots, max_countries) ||
         !reader.vector(restored.territory_count, max_countries) ||
         !reader.vector(restored.country_cash, max_countries) ||
@@ -1772,6 +1800,9 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     catalog.research_condition_offsets.assign(5, 0);
     catalog.reveal_condition_offsets.assign(5, 0);
     catalog.research_conditions_complete = true;
+    catalog.political_regime_ids = {"local_council", "early_clan"};
+    catalog.political_regime_capability_bits = {0u, CountryApi::CAP_TREASURY_CONSTRUCTION};
+    catalog.political_regime_catalog_hash = 1;
 
     RuntimeCountryPodSnapshot state;
     state.session_epoch = 1;
@@ -1795,6 +1826,8 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     state.country_active = {1, 1};
     state.country_generation = {1, 1};
     state.country_state_version = {0, 0};
+    state.country_political_regime_ids = {0, 0};
+    state.country_political_regime_capabilities = {0u, 0u};
     state.research_active_country_slots = {0, 1};
     state.territory_count = {2, 2};
     state.country_cash = {0, 0};

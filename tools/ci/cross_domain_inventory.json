@@ -3,7 +3,7 @@
   "pairs": [
     {"pair": "climate->economy", "status": "待逐函数核查", "note": "Climate committed view 已覆盖主要输入；其余调用仍需逐函数核查"},
     {"pair": "climate->modifier", "status": "待逐函数核查", "note": "只读/回写混合，保留原位置"},
-    {"pair": "country->economy", "status": "待逐函数核查", "note": "Country owner 方向保留"},
+    {"pair": "country->economy", "status": "已迁移", "note": "Economy epoch 读取 CountryReadView 的 regime capability snapshot；国库建造 quote/apply 使用冻结能力位"},
     {"pair": "country->effect", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "country->modifier", "status": "待逐函数核查", "note": "未统一视图"},
     {"pair": "economy->country", "status": "明确不迁移", "note": "写入/命令仍走 intent；两处 reserve/collect 白名单待后续两阶段设计"},

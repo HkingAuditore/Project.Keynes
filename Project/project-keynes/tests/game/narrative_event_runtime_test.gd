@@ -427,8 +427,8 @@ func _test_ai_sandbox_and_image_cache() -> void:
 		probs.size() == 2 and probs[0] + probs[1] == 65536)
 	var out0: NarrativeOutcome = opt0.outcomes[0] as NarrativeOutcome
 	var eff0: NarrativeEffectSpec = out0.effects[0] as NarrativeEffectSpec
-	_expect("Hallucinated modifier key is safely mapped to whitelisted fallback and clamped",
-		eff0.target_key == &"family.city.production_boost"
+	_expect("Hallucinated modifier key is safely mapped to a live ADD key and clamped",
+		eff0.target_key == &"economy.city.building.manufacturing_output_factor"
 		and eff0.duration_days <= 365)
 
 	# Test malformed JSON rejection
@@ -567,7 +567,9 @@ func _test_ai_fact_trigger_and_staleness() -> void:
 
 func _test_state_probe_and_ai_pool() -> void:
 	var probes := NarrativeStateProbeCatalogScript.build_default_probes()
-	_expect("default state probes cover shortage, discontent and drought", probes.size() == 3)
+	_expect("default state probes cover shortage, discontent and drought",
+		probes.size() >= 3
+		and String(probes[0].state_id) == "state.market.food_shortage")
 	if probes.is_empty():
 		return
 	var shortage_probe = probes[0]

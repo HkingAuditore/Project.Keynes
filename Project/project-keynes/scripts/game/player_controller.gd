@@ -55,6 +55,7 @@ const COMMAND_CELL_TAX_SET_OVERRIDE := &"country.tax.cell.set_override"
 const COMMAND_CELL_TAX_CLEAR_OVERRIDE := &"country.tax.cell.clear_override"
 const COMMAND_CELL_TAX_CLEAR_ALL := &"country.tax.cell.clear_all"
 const COMMAND_CONSTRUCTION_BUILD := &"construction.build"
+const COMMAND_POLITICAL_REGIME_SET := &"politics.regime.set"
 const COMMAND_FAMILY_COLONIZATION_START := &"family.colonization.start"
 const COMMAND_FAMILY_COLONIZATION_CANCEL := &"family.colonization.cancel"
 const COMMAND_ERA_REWARD_CHOOSE := &"era_reward.choose"
@@ -115,6 +116,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_CELL_TAX_CLEAR_OVERRIDE: true,
 	COMMAND_CELL_TAX_CLEAR_ALL: true,
 	COMMAND_CONSTRUCTION_BUILD: true,
+	COMMAND_POLITICAL_REGIME_SET: true,
 	COMMAND_FAMILY_COLONIZATION_START: true,
 	COMMAND_FAMILY_COLONIZATION_CANCEL: true,
 	COMMAND_ERA_REWARD_CHOOSE: true,
@@ -681,6 +683,11 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 					_player_country_handle, int(args.get("cell_idx", -1)),
 					StringName(args.get("building_id", &"")), effective_day, sequence,
 					StringName(args.get("ownership_policy", &"")))
+		COMMAND_POLITICAL_REGIME_SET:
+			result = facade.set_political_regime(_player_country_handle,
+				StringName(args.get("regime_id", &"")), effective_day, sequence) \
+				if facade.has_method("set_political_regime") else _result(false,
+				"runtime_unavailable", "体制系统尚未就绪，请稍后再试。")
 		COMMAND_FAMILY_COLONIZATION_START:
 			result = _economy_facade.start_family_colonization(
 				_player_country_handle, int(args.get("family_handle", 0)),
@@ -769,6 +776,9 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	if id == COMMAND_CONSTRUCTION_BUILD and bool(result.get("ok", false)):
 		result["code"] = "queued"
 		result["message"] = "修建命令已排队，将在下一个经济结算边界执行。"
+	if id == COMMAND_POLITICAL_REGIME_SET and bool(result.get("ok", false)):
+		result["code"] = String(result.get("code", "queued"))
+		result["message"] = "体制调整已排队，将在下一次国家结算后生效。"
 	if (id == COMMAND_FAMILY_COLONIZATION_START or \
 			id == COMMAND_FAMILY_COLONIZATION_CANCEL) \
 			and bool(result.get("ok", false)):
@@ -1777,6 +1787,27 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 			if not bool(owned.ok):
 				return _result(false, "construction_cell_not_owned",
 					"只能在玩家领土内修建建筑。")
+			if facade != null and facade.has_method("has_political_capability") \
+				and not facade.has_political_capability(_player_country_handle,
+					&"treasury_construction"):
+				return _result(false, "political_regime_lacks_treasury_construction",
+					"当前体制不开放国库建造。")
+		COMMAND_POLITICAL_REGIME_SET:
+			var regime_id := StringName(args.get("regime_id", &""))
+			if regime_id.is_empty() or facade == null \
+				or not facade.has_method("political_regime_catalog_view"):
+				return _result(false, "invalid_regime", "体制标识无效。")
+			var regime_catalog: Dictionary = facade.political_regime_catalog_view()
+			if not bool(regime_catalog.get("ok", false)):
+				return _result(false, "political_regime_unavailable",
+					"体制目录尚未就绪，请稍后再试。")
+			var found := false
+			for raw_definition in regime_catalog.get("definitions", []):
+				if String((raw_definition as Dictionary).get("id", "")) == String(regime_id):
+					found = true
+					break
+			if not found:
+				return _result(false, "invalid_regime", "体制标识无效。")
 		COMMAND_FAMILY_COLONIZATION_START:
 			if int(args.get("family_handle", 0)) == 0 or \
 					int(args.get("source_cell", -1)) < 0 or \

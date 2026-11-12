@@ -21,6 +21,11 @@ enum Scope {
 @export var version: int = 1
 @export var title: String = ""
 @export_multiline var body_text: String = ""
+## 场外音装置（可选）：一段原话 + 说话人。当前两个内容包**不使用**它——
+## 对白一律揉进 body_text 的叙述里，避免「某某说」的引语块；字段保留给未来的特殊用途。
+## 这个世界是架空的：人物、国名、地名、职官、引文全部自造，不借用真实历史。
+@export var speaker: String = ""
+@export_multiline var quote_text: String = ""
 @export var image_key: StringName = &""
 @export var image_path: String = ""
 @export var ai_visual_prompt: String = ""
@@ -60,6 +65,8 @@ static func format_text(raw: String, ctx: Dictionary) -> String:
 	out = out.replace("{era_name}", String(ctx.get("era_name", "当前时代")))
 	var good_str: String = String(ctx.get("good_name", ctx.get("highlight_good_name", "民生商品")))
 	out = out.replace("{good_name}", good_str)
+	var family_name := String(ctx.get("primary_family_name", "")).strip_edges()
+	out = out.replace("{family_name}", family_name if not family_name.is_empty() else "本地大族")
 	return out
 
 
@@ -85,6 +92,8 @@ func to_dict() -> Dictionary:
 		"version": version,
 		"title": title,
 		"body_text": body_text,
+		"speaker": speaker,
+		"quote_text": quote_text,
 		"image_key": String(image_key),
 		"image_path": image_path,
 		"ai_visual_prompt": ai_visual_prompt,
@@ -117,6 +126,8 @@ static func from_dict(d: Dictionary) -> NarrativeEventDefinition:
 	def.version = int(d.get("version", 1))
 	def.title = String(d.get("title", "未命名事件"))
 	def.body_text = String(d.get("body_text", ""))
+	def.speaker = String(d.get("speaker", ""))
+	def.quote_text = String(d.get("quote_text", ""))
 	def.image_key = StringName(d.get("image_key", ""))
 	def.image_path = String(d.get("image_path", ""))
 	def.ai_visual_prompt = String(d.get("ai_visual_prompt", ""))

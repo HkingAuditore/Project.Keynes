@@ -22,6 +22,8 @@ var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
 var _ideology_catalog_cache: Dictionary = {}
 var _ideology_catalog_facade = null
+var _political_regime_catalog_cache: Dictionary = {}
+var _political_regime_catalog_facade = null
 var _military_catalog_cache: Dictionary = {}
 var _military_catalog_facade = null
 var _economy_history := EconomyHistoryBuffer.new()
@@ -40,6 +42,8 @@ func set_context(generator, map = null) -> void:
 	_section_cache_revisions.clear()
 	_ideology_catalog_cache.clear()
 	_ideology_catalog_facade = null
+	_political_regime_catalog_cache.clear()
+	_political_regime_catalog_facade = null
 	_military_catalog_cache.clear()
 	_military_catalog_facade = null
 	_economy_history.reset()
@@ -114,8 +118,8 @@ func invalidate_cache(domains: int = -1) -> void:
 		_section_cache.erase("economy")
 		_section_cache_revisions.erase("economy")
 	if (domains & 4) != 0:
-		_section_cache.erase("ideology")
-		_section_cache_revisions.erase("ideology")
+		_section_cache.erase("politics")
+		_section_cache_revisions.erase("politics")
 	if (domains & 8) != 0:
 		_section_cache.erase("military")
 		_section_cache_revisions.erase("military")
@@ -307,8 +311,9 @@ func player_research_states() -> PackedInt32Array:
 
 
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
-	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
+	var normalized_section := "politics" if section_id == "ideology" else section_id
+	if normalized_section not in ["technology", "economy", "politics", "military", "diplomacy"]:
+		normalized_section = "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	# Keep the pre-snapshot path intentionally verbose for debug/A-B comparison.
@@ -339,6 +344,10 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 		if facade.has_method("snapshot") else {}
 	var tax_availability := _tax_availability(economy_facade, start_cell)
 	var ideology := _ideology_model(country_handle)
+	var politics_snapshot := facade.political_regime_snapshot(country_handle) \
+		if facade.has_method("political_regime_snapshot") else {}
+	var politics := build_politics_snapshot(country_handle,
+		{"politics": politics_snapshot})
 	var treasury := _treasury_model(facade, country_handle)
 	var treasury_available := bool(treasury.get("available", false))
 	var cash := int(treasury.get("cash", 0)) if treasury_available \
@@ -380,6 +389,7 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 		"research": research,
 		"development": development,
 		"ideology": ideology,
+		"politics": politics.get("politics", {}),
 		"procurement": procurement_model(economy_facade, country_handle),
 	}
 	if normalized_section == "technology":
@@ -424,7 +434,7 @@ func _section_mask(section_id: String) -> int:
 	# 军事没有原生 country_ui_snapshot 分片（它走自己的 facade），给 0 表示
 	# 「不需要国家快照」，国家壳数据仍由 summary 提供。外交同理：它读的是
 	# 领土镜像 + 军事快照，不读国家快照分片。
-	return int({"technology": 1, "economy": 2, "ideology": 4, "military": 0,
+	return int({"technology": 1, "economy": 2, "politics": 12, "ideology": 12, "military": 0,
 		"diplomacy": 0}.get(section_id, 1))
 
 
@@ -541,9 +551,96 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 	return {"ideology": _ideology_model(country_handle)}
 
 
+func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Dictionary:
+	var ideology := build_ideology_snapshot(country_handle, ui_snapshot)
+	var country_facade = _generator.get_country_facade() \
+		if _generator != null and _generator.has_method("get_country_facade") else null
+	var native: Dictionary = ui_snapshot.get("politics", {})
+	if native.is_empty() and country_facade != null and \
+		country_facade.has_method("political_regime_snapshot"):
+		native = country_facade.political_regime_snapshot(country_handle)
+	var catalog := _political_regime_catalog_cache
+	if country_facade != null and country_facade != _political_regime_catalog_facade:
+		_political_regime_catalog_facade = country_facade
+		_political_regime_catalog_cache = {}
+		catalog = {}
+	if catalog.is_empty() and country_facade != null and \
+		country_facade.has_method("political_regime_catalog_view"):
+		catalog = country_facade.political_regime_catalog_view()
+		if bool(catalog.get("ok", false)):
+			_political_regime_catalog_cache = catalog
+	var regime := _present_political_regime(native, catalog)
+	return {
+		"politics": {"available": bool(regime.get("available", false)),
+			"regime": regime, "ideology": ideology.get("ideology", {})},
+		# Existing IdeologyWorkspace consumes this top-level row. Keeping the
+		# child payload here avoids rebuilding or duplicating the ideology UI.
+		"ideology": ideology.get("ideology", {}),
+	}
+
+
+static func _present_political_regime(snapshot: Dictionary,
+		catalog: Dictionary) -> Dictionary:
+	if not bool(catalog.get("ok", false)):
+		return {"available": false, "reason": "体制目录尚未就绪。"}
+	var definitions: Array = catalog.get("definitions", [])
+	var raw_regime_key = snapshot.get("regime_key",
+		snapshot.get("regime_stable_id", ""))
+	var regime_id := String(raw_regime_key)
+	if regime_id.is_empty() or raw_regime_key is int:
+		var dense := int(snapshot.get("regime_index", snapshot.get("regime_id_index", -1)))
+		if dense >= 0 and dense < definitions.size():
+			regime_id = String((definitions[dense] as Dictionary).get("id", ""))
+	if regime_id.is_empty():
+		regime_id = "local_council"
+	var current: Dictionary = {}
+	for raw_definition in definitions:
+		var definition: Dictionary = raw_definition
+		if String(definition.get("id", "")) == regime_id:
+			current = definition.duplicate(true)
+			break
+	if current.is_empty():
+		return {"available": false, "reason": "当前体制不在本局目录中。"}
+	var capability_keys := PackedStringArray(current.get("capability_keys", PackedStringArray()))
+	var capability_bits := int(snapshot.get("capability_bits", 0))
+	var can_build := capability_keys.has("treasury_construction") \
+		or (capability_bits & 1) != 0
+	var current_capabilities: Array = []
+	if can_build:
+		current_capabilities.append({"label": "国库建造"})
+	var gates := {}
+	for raw_definition in definitions:
+		var definition: Dictionary = raw_definition
+		var id := String(definition.get("id", ""))
+		var keys := PackedStringArray(definition.get("capability_keys", PackedStringArray()))
+		var has_build := keys.has("treasury_construction")
+		if id == regime_id and capability_bits != 0:
+			has_build = (capability_bits & 1) != 0
+		gates[id] = {"treasury_construction": has_build}
+	return {
+		"available": true,
+		"regime_id": regime_id,
+		"display_name": String(current.get("display_name", regime_id)),
+		"detail": String(current.get("detail", "")),
+		"icon_key": current.get("icon_key", &"country.politics"),
+		"capability_keys": capability_keys,
+		"capability_bits": capability_bits,
+		"can_treasury_construction": can_build,
+		"current_id": regime_id,
+		"current_name": String(current.get("display_name", regime_id)),
+		"current_detail": String(current.get("detail", "")),
+		"current_capabilities": current_capabilities,
+		"options": definitions,
+		"definitions": definitions,
+		"feature_gates": gates,
+		"revision": int(snapshot.get("revision", snapshot.get("state_version", 0))),
+	}
+
+
 func build(section_id: String = "technology") -> Dictionary:
-	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
+	var normalized_section := "politics" if section_id == "ideology" else section_id
+	if normalized_section not in ["technology", "economy", "politics", "military", "diplomacy"]:
+		normalized_section = "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	var context := _country_context()
@@ -573,8 +670,8 @@ func build(section_id: String = "technology") -> Dictionary:
 		"economy":
 			section_snapshot = build_economy_snapshot(country_handle, facade,
 				economy_facade, ui_snapshot, int(context.start_cell))
-		"ideology":
-			section_snapshot = build_ideology_snapshot(country_handle, ui_snapshot)
+		"politics":
+			section_snapshot = build_politics_snapshot(country_handle, ui_snapshot)
 		"military":
 			# 军事自成一个模型源：CountryViewModel 只负责装配，军事自己的展示
 			# 逻辑在 MilitaryViewModel 里。这里先把模型占位放好，装配在

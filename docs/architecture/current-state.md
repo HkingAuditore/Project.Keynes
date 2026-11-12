@@ -181,7 +181,7 @@ Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通
 | --- | --- | --- |
 | INPUT_CAPTURE | Host 冻结输入清单与哈希 | 无双算 |
 | CLIMATE | RuntimeClimateAuthority；plan/commit 在模块循环**之前**完成，表内只登记结果 | ACTIVE 关闭完整输出哈希 |
-| COUNTRY | RuntimeCountryPodAuthority；`NativeCountryRuntime` 保留初始化、查询和适配 | parity 钩子仍被调用；缺同日参考时报 uncompared |
+| COUNTRY | RuntimeCountryPodAuthority；`NativeCountryRuntime` 保留初始化、查询和适配，国家 dense 状态包含政治体制与能力位 | parity 钩子仍被调用；缺同日参考时报 uncompared |
 | TRIGGER_INPUT | Trigger POD；ACK 等待等列出的原因可软完成 | ACTIVE 抑制旧 run_daily |
 | IDEOLOGY | Ideology POD；首次快照未发布等列出的原因可软完成 | parity 默认关闭 |
 | EFFECT | Effect POD 与 intent/ACK；同日重访幂等 | 影子推进只在 SHADOW 分支 |
@@ -191,6 +191,11 @@ Godot 4.6.2 的 Compatibility 与 D3D12/Mobile 实际 shader 检查各 23 项通
 | EVENTS | RuntimeEventsAuthority 写事件日志与消费者游标 | 沿用 `events_probe_enabled`，名称含 probe 但用于生产 |
 | VISUAL | Host 产生刷新意图，`publish_day` 排序去重；实际显示归 Godot | 无双算 |
 | COMMIT | 记完成位，检查请求域全部完成，由外层发布 | 无双算 |
+
+政治体制不增加新的每日域。`NativeCountryRuntime` 保存 `regime_id` 与
+`capability_bits`，`CountryReadView` 将能力位冻结进 Economy epoch；政治页面只聚合
+Country 体制快照与现有 Ideology 快照。`treasury_construction` 在报价和结算两处均由
+Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 非直观的地方：
 
@@ -269,7 +274,7 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
-| country | PKCN v14 | country | environment |
+| country | PKCN v15 | country | environment |
 | military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
 | economy | ECP2 schema 60 | economy | country、effect |

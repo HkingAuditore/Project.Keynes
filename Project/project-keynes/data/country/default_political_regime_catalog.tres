@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="PoliticalRegimeCatalog" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/country/political_regime_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/country/political_regime_definition.gd" id="2_definition"]
+
+[sub_resource type="Resource" id="RegimeEarlyClan"]
+script = ExtResource("2_definition")
+id = &"early_clan"
+display_name = "早期氏族"
+detail = "氏族议事决定国库用途，允许以国库资源发起营造。"
+icon_key = &"country.politics"
+capability_keys = PackedStringArray("treasury_construction")
+
+[sub_resource type="Resource" id="RegimeLocalCouncil"]
+script = ExtResource("2_definition")
+id = &"local_council"
+display_name = "地方议会"
+detail = "地方议会尚未建立统一的国库营造权。"
+icon_key = &"country.politics"
+
+[resource]
+script = ExtResource("1_catalog")
+catalog_version = 1
+definitions = Array[Resource]([SubResource("RegimeEarlyClan"), SubResource("RegimeLocalCouncil")])

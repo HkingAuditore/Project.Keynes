@@ -1155,6 +1155,8 @@ struct RuntimeCountryPodSnapshot {
     bool research_active_index_valid = false;
     std::vector<uint8_t> country_active;
     std::vector<uint32_t> country_generation;
+    std::vector<int32_t> country_political_regime_ids;
+    std::vector<uint32_t> country_political_regime_capabilities;
     // Identity strings are copied once at the command/snapshot boundary. They
     // never participate in the numeric hot loop, but CREATE/RENAME must still
     // have the same durable semantics as the synchronous core.
@@ -1306,6 +1308,9 @@ struct RuntimeCountryPodCatalog {
     std::vector<int32_t> reveal_condition_refs;
     std::vector<int64_t> reveal_condition_values;
     std::vector<int32_t> starting_technologies;
+    std::vector<std::string> political_regime_ids;
+    std::vector<uint32_t> political_regime_capability_bits;
+    uint64_t political_regime_catalog_hash = 0;
 };
 
 struct RuntimeCountryPodDiagnostics {

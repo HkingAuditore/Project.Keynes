@@ -27,6 +27,10 @@
 
 **已落地**：Economy、Country、Modifier、Military 的接口契约；Economy、Country 的宿主端口；军事核心只依赖 `military_bridge.h`。见 [module-boundaries.md](module-boundaries.md#模块公开接口)。
 
+Country 的国家级政治体制沿用上述接口：体制 stable id 与 capability bit 由 Country
+拥有，Economy 只读取已提交并冻结的 `CountryReadView`。政治 UI 是 Country 体制快照与
+Ideology 快照的组合视图，不形成新的每日调度域。
+
 **目标，尚未实现**：Effect、Trigger、Ideology、Climate 的接口头；其余模块的宿主端口；组合根数量继续收缩。
 
 ## 跨模块规则

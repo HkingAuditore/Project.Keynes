@@ -53,4 +53,31 @@ static func build_default_probes() -> Array:
 		],
 	}))
 
+	probes.append(NarrativeStateProbeScript.from_dict({
+		"state_id": "state.war.homefront",
+		"display_name": "战时后方",
+		"prompt_hint": "仗在别处打，粮、丁、钱都从本地抽；市面还开着，但家家都在算还能撑多久",
+		"dwell_days": 10,
+		"cooldown_days": 180,
+		"min_era_index": 2,
+		"conditions": [
+			{"op": Op.AT_WAR, "bool_value": true},
+			{"op": Op.COHORT_SATISFACTION_LTE, "float_value": 0.50},
+			{"op": Op.POPULATION_GTE, "int_value": 8},
+		],
+	}))
+
+	probes.append(NarrativeStateProbeScript.from_dict({
+		"state_id": "state.war.defeat",
+		"display_name": "战败阴影",
+		"prompt_hint": "前线传来的都是坏消息，逃兵与难民开始出现，官府说话没人信",
+		"dwell_days": 7,
+		"cooldown_days": 180,
+		"min_era_index": 2,
+		"conditions": [
+			{"op": Op.WAR_GOING_BADLY, "bool_value": true},
+			{"op": Op.POPULATION_GTE, "int_value": 5},
+		],
+	}))
+
 	return probes
