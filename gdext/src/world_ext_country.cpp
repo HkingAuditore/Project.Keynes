@@ -1980,6 +1980,11 @@ Dictionary DCWorldExt::get_country_snapshot(int64_t handle) const {
         : country_query_runtime()->country_snapshot(handle);
 }
 
+Dictionary DCWorldExt::get_country_political_regime_snapshot(int64_t handle) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_query_runtime()->political_regime_snapshot(handle);
+}
+
 Dictionary DCWorldExt::get_country_treasury_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
         : country_query_runtime()->treasury_snapshot(handle);
@@ -2087,6 +2092,14 @@ Dictionary DCWorldExt::get_country_ui_snapshot(int64_t handle,
             "support_revision", int64_t{0});
         out["ideology_support_revision"] = support_revision;
         revisions["ideology_support_revision"] = support_revision;
+    }
+    if ((section_mask & 8) != 0) {
+        Dictionary politics = runtime->political_regime_snapshot(handle);
+        out["politics"] = politics;
+        revisions["politics_state_version"] = politics.get(
+            "state_version", int64_t{0});
+        revisions["politics_catalog_hash"] = politics.get(
+            "catalog_hash", int64_t{0});
     }
     out["revision_components"] = revisions;
     return out;

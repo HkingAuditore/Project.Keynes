@@ -29,7 +29,7 @@
       "domain": "country",
       "owner": "country",
       "tag": "PKCN",
-      "version": 14,
+      "version": 15,
       "source": "gdext/src/country_runtime.cpp",
       "tokens": [
         "SCHEMA_VERSION",

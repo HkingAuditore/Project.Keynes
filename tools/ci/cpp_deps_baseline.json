@@ -2,8 +2,8 @@
   "version": 2,
   "metrics": {
     "header_exposed": 519,
-    "total": 2181,
-    "keys": 522,
+    "total": 2184,
+    "keys": 524,
     "domain_pairs": [
       "climate->economy",
       "climate->modifier",
@@ -457,6 +457,8 @@
     "gdext/src/economy_runtime.cpp|economy->country|include:country_api.h": 1,
     "gdext/src/economy_runtime.cpp|economy->country|type:CountryApi": 33,
     "gdext/src/economy_runtime.cpp|economy->country|type:CountryReadView": 1,
+    "gdext/src/economy_runtime_building_construction.cpp|economy->country|include:country_api.h": 1,
+    "gdext/src/economy_runtime_building_construction.cpp|economy->country|type:CountryApi": 1,
     "gdext/src/economy_runtime.h|economy->country|include:country_read_view.h": 1,
     "gdext/src/economy_runtime.h|economy->country|type:CountryAiColonizationStat": 2,
     "gdext/src/economy_runtime.h|economy->country|type:CountryClassOpinionSnapshot": 2,
@@ -525,7 +527,7 @@
     "gdext/src/economy_runtime_procurement.cpp|economy->country|include:country_api.h": 1,
     "gdext/src/economy_runtime_procurement.cpp|economy->country|type:CountryApi": 6,
     "gdext/src/economy_runtime_queries_market_building.cpp|economy->country|include:country_api.h": 1,
-    "gdext/src/economy_runtime_queries_market_building.cpp|economy->country|type:CountryApi": 25,
+    "gdext/src/economy_runtime_queries_market_building.cpp|economy->country|type:CountryApi": 26,
     "gdext/src/economy_runtime_state_hash.cpp|economy->country|include:country_api.h": 1,
     "gdext/src/economy_runtime_state_hash.cpp|economy->country|type:CountryApi": 4,
     "gdext/src/economy_runtime_state_hash.cpp|economy->country|type:CountryReadView": 1,

@@ -166,13 +166,14 @@ var _country_ui_perf_pending: Dictionary = {}
 
 const COUNTRY_DIRTY_TECHNOLOGY := 1
 const COUNTRY_DIRTY_ECONOMY := 2
-const COUNTRY_DIRTY_IDEOLOGY := 4
+const COUNTRY_DIRTY_POLITICS := 4
+const COUNTRY_DIRTY_IDEOLOGY := COUNTRY_DIRTY_POLITICS
 ## 军事：自己的 facade，不参与国家 ui_snapshot 分段，但仍然共用同一个脏位管道。
 const COUNTRY_DIRTY_MILITARY := 8
 ## 外交：读的是领土镜像 + 军事快照 + 视野，没有自己的原生分片，同样只借脏位管道。
 const COUNTRY_DIRTY_DIPLOMACY := 16
 const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY \
-	| COUNTRY_DIRTY_IDEOLOGY | COUNTRY_DIRTY_MILITARY | COUNTRY_DIRTY_DIPLOMACY
+	| COUNTRY_DIRTY_POLITICS | COUNTRY_DIRTY_MILITARY | COUNTRY_DIRTY_DIPLOMACY
 # Native RUNTIME_DIRTY_COUNTRY_* bits from runtime_pod_protocol.h.
 const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
 const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
@@ -380,8 +381,8 @@ func notify_committed_day() -> void:
 	# snapshot write-back without a command receipt. Invalidate the cached
 	# section every day so reopening never shows a stale point scroll.
 	elif _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "ideology":
-		_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_day")
+		and _country_panel.current_section() == "politics":
+		_mark_country_panel_dirty(COUNTRY_DIRTY_POLITICS, "politics_day")
 	# 军事快照每日变化（兵力、士气、补给天数、战争分），打开时同样每个已提交日
 	# 推进一次；节流仍由 _flush_country_panel_refresh 的墙钟窗口负责。
 	elif _country_panel != null and _country_panel.is_panel_open() \
@@ -392,7 +393,7 @@ func notify_committed_day() -> void:
 			and _country_panel.current_section() == "diplomacy":
 		_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "diplomacy_day")
 	elif _country_view_model != null:
-		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
+		_country_view_model.invalidate_cache(COUNTRY_DIRTY_POLITICS)
 	# 军务档案也随已提交日推进；合并窗口由 _refresh_military_dossier 负责。
 	_refresh_military_dossier()
 	# 营造窗口开着时，国库现金、市场库存与仓库每天都会变；节流由这里负责。
@@ -402,7 +403,7 @@ func notify_committed_day() -> void:
 
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
-	_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_commit")
+	_mark_country_panel_dirty(COUNTRY_DIRTY_POLITICS, "ideology_commit")
 
 
 ## 军事命令的下一个游戏日才生效，所以只在日推进时刷新；这里额外在玩家刚下达
@@ -477,8 +478,8 @@ func _country_section_mask(section_id: String) -> int:
 	match section_id:
 		"economy":
 			return COUNTRY_DIRTY_ECONOMY
-		"ideology":
-			return COUNTRY_DIRTY_IDEOLOGY
+		"politics", "ideology":
+			return COUNTRY_DIRTY_POLITICS
 		"military":
 			return COUNTRY_DIRTY_MILITARY
 		"diplomacy":
@@ -989,6 +990,8 @@ func _on_country_committed(report: Dictionary) -> void:
 	if territory_changed or state_dirty \
 			or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
 		domains |= COUNTRY_DIRTY_ECONOMY
+	if state_dirty:
+		domains |= COUNTRY_DIRTY_POLITICS
 	# 归属变了，「已发现国家」清单、接壤面数与占领格都会变；外交页必须同一瞬间重算，
 	# 否则名录会停在上一张地图上。
 	if territory_changed or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
@@ -1024,7 +1027,7 @@ func _on_country_committed(report: Dictionary) -> void:
 				RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC
 			domains |= COUNTRY_DIRTY_TECHNOLOGY
 	if (dirty_families & NATIVE_DIRTY_COUNTRY_VISUAL_ERA) != 0:
-		domains |= COUNTRY_DIRTY_IDEOLOGY
+		domains |= COUNTRY_DIRTY_POLITICS
 	if domains == 0:
 		domains = COUNTRY_DIRTY_ECONOMY
 	_mark_country_panel_dirty(domains, "country_committed")
@@ -1035,6 +1038,8 @@ func _on_country_committed(report: Dictionary) -> void:
 ## economy_chapter 非空时直接落到经济卷宗的指定章节（总览 / 阶层民生），
 ## 顶栏纸签点击走这条路；其它调用方保持原来的「记住上次章节」行为。
 func open_country_section(section_id: String, economy_chapter: String = "") -> void:
+	if section_id == "ideology":
+		section_id = "politics"
 	if _player_controller != null:
 		_player_controller.cancel_military_arm_order()
 	if section_id == "annual":

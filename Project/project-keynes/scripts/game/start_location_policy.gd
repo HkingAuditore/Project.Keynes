@@ -134,6 +134,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 	var player_precious := String(chosen.starter_route.get("precious_resource", ""))
 	var player_start := {
 		"country_id": "country.player",
+		"regime_id": "early_clan",
 		"country_name": player_country_name,
 		"name_id": "",
 		"cell": cell_idx,
@@ -149,6 +150,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		var foreign_route: Dictionary = foreign_routes[foreign_index]
 		var foreign_start := {
 			"country_id": "country.foreign.%03d" % (foreign_index + 1),
+			"regime_id": "early_clan",
 			"country_name": String(foreign_names[foreign_index]),
 			"name_id": String(foreign_name_ids[foreign_index]),
 			"cell": foreign_cell,
@@ -1030,6 +1032,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 	var player_precious := String(chosen.starter_route.get("precious_resource", ""))
 	var player_start := {
 		"country_id": "country.player",
+		"regime_id": "early_clan",
 		"country_name": player_country_name,
 		"name_id": "",
 		"cell": cell_idx,
@@ -1050,6 +1053,7 @@ static func select_and_prepare_cooperative(map: MapData, world: WorldData, seed:
 		var foreign_route: Dictionary = foreign_routes[foreign_index]
 		var foreign_start := {
 			"country_id": "country.foreign.%03d" % (foreign_index + 1),
+			"regime_id": "early_clan",
 			"country_name": String(foreign_names[foreign_index]),
 			"name_id": String(foreign_name_ids[foreign_index]),
 			"cell": foreign_cell,

@@ -29,19 +29,16 @@ const DEFAULT_ALLOWED_GOODS := [
 ]
 
 const CITY_MODIFIER_KEYS := [
-	"family.city.production_boost",
-	"family.city.agriculture_output_boost",
-	"family.city.extractive_output_boost",
-	"family.city.manufacturing_output_boost",
-	"family.city.energy_output_boost",
-	"family.city.knowledge_output_boost",
-	"family.city.birth_boost",
-	"family.city.birth_cut",
-	"family.city.trade_output_boost",
+	"economy.city.building.agriculture_output_factor",
+	"economy.city.building.extractive_output_factor",
+	"economy.city.building.manufacturing_output_factor",
+	"economy.city.building.energy_output_factor",
+	"economy.city.building.knowledge_output_factor",
+	"economy.city.birth_factor",
+	"economy.city.birth_factor.cut",
 ]
 
 const COUNTRY_MODIFIER_KEYS := [
-	"country.economic_mobilization",
 	"ideology.country.output.agriculture_factor.gain",
 	"ideology.country.output.extractive_factor.gain",
 	"ideology.country.output.manufacturing_factor.gain",
@@ -196,10 +193,10 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
           "effects": [
             {
               "kind": "CITY_MODIFIER",
-              "target_key": "family.city.production_boost",
+              "target_key": "economy.city.building.manufacturing_output_factor",
               "magnitude_percent": 15,
               "duration_days": 90,
-              "custom_label": "本地综合生产效率 +15%，90 日"
+              "custom_label": "本地制造产出 +15%，90 日"
             }
           ]
         }
@@ -213,8 +210,8 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"2. 所有 `custom_label` 必须是「对象 + 幅度 + 时长」的短句，例如：`本地农业产出 +15%，90 日`、`国库转出 4% 资金给本地居民`、`标记「凛冬考验」，90 日`。不得写文学化描述。",
 		"3. 允许使用的 `effects[].kind` 及其合法 `target_key` 白名单如下：",
 		"   - `CITY_MODIFIER`（本地城市修正）：",
-		"     允许的 `target_key`：%s, `family.city.Birth_cut`（或 `family.city.birth_cut`），或者单品产出修正 `economy.city.good.<good_id>.output_factor` 与减益 `economy.city.good.<good_id>.output_factor.cut`（其中 `<good_id>` 必须来自允许商品列表）。" % city_mods_joined,
-		"     参数：`magnitude_percent`（5 到 50 之间的整数，代表增减百分比）和 `duration_days`（15 到 365 之间的整数）。",
+		"     允许的 `target_key`：%s，或者单品产出修正 `economy.city.good.<good_id>.output_factor` 与减益 `economy.city.good.<good_id>.output_factor.cut`（其中 `<good_id>` 必须来自允许商品列表）。减益一律用 `.cut` 键，不要写负的 `magnitude_percent`。" % city_mods_joined,
+		"     参数：`magnitude_percent`（5 到 50 之间的整数，代表增减百分比）和 `duration_days`（15 到 365 之间的整数）。可选 `radius_cells` 0..2 与 `falloff` 0/1，影响当前格与周边己方地块。",
 		"   - `COUNTRY_MODIFIER`（全国修正）：",
 		"     允许的 `target_key`：%s。" % country_mods_joined,
 		"     参数：`magnitude_percent`（5 到 50）和 `duration_days`（15 到 365）。",
@@ -229,6 +226,7 @@ static func _build_system_prompt(goods_list: PackedStringArray, buildings_list: 
 		"4. 可参考的建筑类型列表：[%s]。" % buildings_note,
 		"5. **叙事文本只写处境与后果，不写可测的数据读数**：`title`、`body_text`、`options[].text`、`outcomes[].outcome_title` 里禁止写气温、降水量、价格、库存、人口、满意度、百分比起伏、金额、具体日期或持续天数这类读取值——这些事件会被缓存数月后复用，读数一定过期。叙述需要的泛指数量照常写：三人、数十户、三成、半数都可以。确实要指代气温时写占位符 `{temperature}`（已含单位，不要再补 ℃ 或「度」）。`custom_label` 是唯一例外，按第 2 条写「对象 + 幅度 + 时长」。",
 		"6. 文风要求：只写事实与后果，用最短句子；不得使用修辞、比喻、典故、感叹、场景铺陈与人物对白；不得出现超越当前时代的现代词汇；严禁输出 JSON 之外的任何文本。",
+		"7. 若状态快照给出「本地最大族」或「战事」，事件必须落到具体的人与具体的代价上：写族里谁在争、谁在出钱、谁在等消息；写仗打到哪里、谁家少了人。不要只写“民心不稳”这类空泛判断。",
 	])
 	return "\n".join(lines)
 
@@ -313,6 +311,42 @@ static func _build_user_prompt(
 		for k in (nat_res as Dictionary).keys():
 			r_parts.append("%s:%d" % [String(k), int((nat_res as Dictionary)[k])])
 		lines.append("- 自然资源储量：%s" % ", ".join(r_parts))
+
+	# 家族/战事/科技：让生成的事件能落到具体的人与具体的事，而不是空泛的“民心”。
+	if bool(cell_ctx.get("family_available", false)):
+		var family_name := String(cell_ctx.get("primary_family_name", "")).strip_edges()
+		if not family_name.is_empty():
+			var trait_names: PackedStringArray = cell_ctx.get(
+				"primary_family_trait_names", PackedStringArray())
+			var trait_text := "无记载"
+			if trait_names.size() > 0:
+				trait_text = "、".join(trait_names.slice(0, mini(4, trait_names.size())))
+			lines.append("- 本地最大族：%s（人口占比 %.0f%%，威望档 %d，拥有建筑 %d 处，名人 %d 位，门风：%s）" % [
+				family_name,
+				float(cell_ctx.get("primary_family_population_share", 0.0)) * 100.0,
+				int(cell_ctx.get("primary_family_prestige", 0)),
+				int(cell_ctx.get("primary_family_owned_buildings", 0)),
+				int(cell_ctx.get("primary_family_notable_people", 0)),
+				trait_text,
+			])
+
+	if bool(cell_ctx.get("military_available", false)):
+		lines.append("- 战事：%s（战争 %d 场，兵员 %d，随军 %d，最差战果 %.2f，累计损失 %d）" % [
+			"在战" if bool(cell_ctx.get("at_war", false)) else "未战",
+			int(cell_ctx.get("war_count", 0)),
+			int(cell_ctx.get("soldiers_total", 0)),
+			int(cell_ctx.get("soldiers_in_armies", 0)),
+			float(cell_ctx.get("war_score_min_q16", 0)) / 65536.0,
+			int(cell_ctx.get("war_losses_total", 0)),
+		])
+
+	var technologies: Variant = cell_ctx.get("technologies", PackedStringArray())
+	if (technologies is PackedStringArray or technologies is Array) and technologies.size() > 0:
+		var t_parts := PackedStringArray()
+		var t_limit := mini(10, technologies.size())
+		for i in range(t_limit):
+			t_parts.append(String(technologies[i]))
+		lines.append("- 已掌握科技（节选）：%s" % ", ".join(t_parts))
 
 	var flags: Variant = cell_ctx.get("story_flags", {})
 	if flags is Dictionary and not (flags as Dictionary).is_empty():

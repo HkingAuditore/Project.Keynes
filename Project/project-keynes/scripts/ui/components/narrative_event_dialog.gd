@@ -114,7 +114,12 @@ var _title_label: Label
 var _tags_row: HBoxContainer
 var _locate_button: Button
 var _chronicle_button: Button
+var _content_scroll: ScrollContainer
+var _content_col: VBoxContainer
 var _body_label: Label
+var _quote_block: HBoxContainer
+var _quote_speaker_label: Label
+var _quote_text_label: Label
 var _trigger_slip: PanelContainer
 var _trigger_notes_label: Label
 var _options_vbox: VBoxContainer
@@ -122,7 +127,9 @@ var _outcome_panel: PanelContainer
 var _outcome_seal: TextureRect
 var _outcome_kicker_label: Label
 var _outcome_title_label: Label
+var _outcome_narrative_label: Label
 var _outcome_effects_vbox: VBoxContainer
+var _ack_row: HBoxContainer
 var _ack_button: Button
 var _error_label: Label
 var _open_tween: Tween
@@ -315,6 +322,23 @@ func _build_ui() -> void:
 	_wash_rect.material = wash_mat
 	_art_clip.add_child(_wash_rect)
 
+	# 正文以下放进可滚动区：P 社式文本比旧规范长，矮窗口下不能让选项掉出纸面。
+	# 纸面本身保持固定高度（_layout_sheet 按视口高度收敛），滚动条只在真的放不下时出现。
+	_content_scroll = ScrollContainer.new()
+	_content_scroll.name = "ContentScroll"
+	_content_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_content_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_content_scroll.follow_focus = true
+	col.add_child(_content_scroll)
+
+	_content_col = VBoxContainer.new()
+	_content_col.name = "ContentCol"
+	_content_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content_col.add_theme_constant_override("separation", 8)
+	_content_scroll.add_child(_content_col)
+
 	# Narrative Story Body in classical serif/brush body font
 	_body_label = Label.new()
 	_body_label.name = "BodyLabel"
@@ -323,13 +347,45 @@ func _build_ui() -> void:
 	_body_label.add_theme_font_size_override("font_size", 17)
 	_body_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	_body_label.add_theme_constant_override("line_spacing", 5)
-	col.add_child(_body_label)
+	_content_col.add_child(_body_label)
+
+	# 引语块：左侧一道朱线 + 说话人 + 原话。P 社式事件的「具体的人」就在这里。
+	# 不用 StyleBoxFlat 底板，保持档案纸的留白与手绘气质。
+	_quote_block = HBoxContainer.new()
+	_quote_block.visible = false
+	_quote_block.add_theme_constant_override("separation", 10)
+	_content_col.add_child(_quote_block)
+
+	var quote_rule := ColorRect.new()
+	quote_rule.custom_minimum_size = Vector2(2.0, 0.0)
+	quote_rule.color = Color(UITokensScript.DOSSIER_OXBLOOD.r, UITokensScript.DOSSIER_OXBLOOD.g,
+		UITokensScript.DOSSIER_OXBLOOD.b, 0.65)
+	_quote_block.add_child(quote_rule)
+
+	var quote_col := VBoxContainer.new()
+	quote_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quote_col.add_theme_constant_override("separation", 3)
+	_quote_block.add_child(quote_col)
+
+	_quote_speaker_label = Label.new()
+	_quote_speaker_label.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
+	_quote_speaker_label.add_theme_font_size_override("font_size", 12)
+	_quote_speaker_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
+	quote_col.add_child(_quote_speaker_label)
+
+	_quote_text_label = Label.new()
+	_quote_text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_quote_text_label.add_theme_font_override("font", UITokensScript.DOSSIER_SERIF)
+	_quote_text_label.add_theme_font_size_override("font_size", 16)
+	_quote_text_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_SOFT)
+	_quote_text_label.add_theme_constant_override("line_spacing", 4)
+	quote_col.add_child(_quote_text_label)
 
 	# Optional on-trigger omen slip (cut-paper strip)
 	_trigger_slip = PanelContainer.new()
 	_trigger_slip.visible = false
 	_trigger_slip.add_theme_stylebox_override("panel", _make_cut_tag_style(Color(0.96, 0.89, 0.74, 0.95)))
-	col.add_child(_trigger_slip)
+	_content_col.add_child(_trigger_slip)
 
 	_trigger_notes_label = Label.new()
 	_trigger_notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -341,13 +397,13 @@ func _build_ui() -> void:
 	var mid_rule := ColorRect.new()
 	mid_rule.custom_minimum_size = Vector2(0.0, 1.0)
 	mid_rule.color = UITokensScript.DOSSIER_RULE
-	col.add_child(mid_rule)
+	_content_col.add_child(mid_rule)
 
 	# Options Stack (each option is a tactile torn-paper decree note)
 	_options_vbox = VBoxContainer.new()
 	_options_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_options_vbox.add_theme_constant_override("separation", 10)
-	col.add_child(_options_vbox)
+	_content_col.add_child(_options_vbox)
 
 	# Outcome Resolution View (with Cinnabar Red Seal & Torn Note)
 	_outcome_panel = PanelContainer.new()
@@ -359,7 +415,7 @@ func _build_ui() -> void:
 	out_note_style.content_margin_bottom = 18.0
 	out_note_style.modulate_color = Color(0.99, 0.96, 0.89, 1.0)
 	_outcome_panel.add_theme_stylebox_override("panel", out_note_style)
-	col.add_child(_outcome_panel)
+	_content_col.add_child(_outcome_panel)
 
 	var out_hbox := HBoxContainer.new()
 	out_hbox.add_theme_constant_override("separation", 16)
@@ -390,13 +446,25 @@ func _build_ui() -> void:
 	_outcome_title_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK)
 	out_vbox.add_child(_outcome_title_label)
 
+	# 结果段落：谁怎么了。P 社式事件在结算后一定会交代人的下场，而不是只给一串修正。
+	_outcome_narrative_label = Label.new()
+	_outcome_narrative_label.visible = false
+	_outcome_narrative_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_outcome_narrative_label.add_theme_font_override("font", UITokensScript.DOSSIER_SERIF)
+	_outcome_narrative_label.add_theme_font_size_override("font_size", 16)
+	_outcome_narrative_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_INK_SOFT)
+	_outcome_narrative_label.add_theme_constant_override("line_spacing", 5)
+	out_vbox.add_child(_outcome_narrative_label)
+
 	_outcome_effects_vbox = VBoxContainer.new()
 	_outcome_effects_vbox.add_theme_constant_override("separation", 4)
 	out_vbox.add_child(_outcome_effects_vbox)
 
-	var ack_row := HBoxContainer.new()
-	ack_row.alignment = BoxContainer.ALIGNMENT_END
-	out_vbox.add_child(ack_row)
+	# 确认按钮固定在纸面底部，不进滚动区：结果再长，玩家也总能一眼看到怎么关掉它。
+	_ack_row = HBoxContainer.new()
+	_ack_row.alignment = BoxContainer.ALIGNMENT_END
+	_ack_row.visible = false
+	col.add_child(_ack_row)
 
 	_ack_button = Button.new()
 	_ack_button.text = "确认"
@@ -408,14 +476,14 @@ func _build_ui() -> void:
 	_ack_button.pressed.connect(func() -> void:
 		outcome_acknowledged.emit()
 	)
-	ack_row.add_child(_ack_button)
+	_ack_row.add_child(_ack_button)
 
 	_error_label = Label.new()
 	_error_label.visible = false
 	_error_label.add_theme_font_override("font", UITokensScript.dossier_font("sans_strong"))
 	_error_label.add_theme_font_size_override("font_size", 14)
 	_error_label.add_theme_color_override("font_color", UITokensScript.DOSSIER_OXBLOOD)
-	col.add_child(_error_label)
+	_content_col.add_child(_error_label)
 
 
 func _make_cut_tag_style(tint: Color = Color.WHITE) -> StyleBoxTexture:
@@ -511,6 +579,13 @@ func present_offer(offer: Dictionary) -> void:
 	_body_label.text = String(offer.get("body_text", "")).strip_edges()
 	_body_label.visible = not _body_label.text.is_empty()
 
+	var speaker_text := String(offer.get("speaker", "")).strip_edges()
+	var quote_text := String(offer.get("quote_text", "")).strip_edges()
+	_quote_block.visible = not quote_text.is_empty()
+	_quote_speaker_label.text = speaker_text
+	_quote_speaker_label.visible = not speaker_text.is_empty()
+	_quote_text_label.text = quote_text
+
 	var trig_notes: Array = offer.get("on_trigger_summaries", [])
 	if not trig_notes.is_empty():
 		_trigger_notes_label.text = "已生效：" + "；".join(PackedStringArray(trig_notes))
@@ -522,6 +597,7 @@ func present_offer(offer: Dictionary) -> void:
 
 	_options_vbox.visible = true
 	_outcome_panel.visible = false
+	_ack_row.visible = false
 	_error_label.visible = false
 
 	for child in _options_vbox.get_children():
@@ -696,6 +772,10 @@ func show_outcome(resolution: Dictionary) -> void:
 	_options_vbox.visible = false
 	_error_label.visible = false
 	_outcome_panel.visible = true
+	_ack_row.visible = true
+	# 结算页让正文与引语退场：把版面留给「谁怎么了」和效果行，长正文不再挤压结果。
+	_body_label.visible = false
+	_quote_block.visible = false
 
 	var outcome: Dictionary = resolution.get("outcome", {})
 	var record: Dictionary = resolution.get("record", {})
@@ -705,6 +785,11 @@ func show_outcome(resolution: Dictionary) -> void:
 	_outcome_kicker_label.visible = prob_pct < 100
 	_outcome_kicker_label.text = "概率 %d%%" % prob_pct
 	_outcome_title_label.text = out_title
+
+	var outcome_text := String(outcome.get("outcome_narrative", record.get(
+		"outcome_narrative", ""))).strip_edges()
+	_outcome_narrative_label.text = outcome_text
+	_outcome_narrative_label.visible = not outcome_text.is_empty()
 
 	for child in _outcome_effects_vbox.get_children():
 		child.queue_free()
@@ -728,6 +813,60 @@ func _layout_sheet() -> void:
 	if _main_sheet == null:
 		return
 	_main_sheet.pivot_offset = _main_sheet.size * 0.5
+	_fit_after_layout()
+
+
+## 等布局稳定再量：自动换行的 Label 只有在拿到实际宽度后才报出真实最小高度，
+## 入队当帧就量会把长正文当成一行，结果「看起来放得下」而实际溢出。
+## 用 SceneTree 计时器而不是协程：call_deferred 调起的协程没人持有会被回收，
+## 计时器的 timeout 连接由树保活，回调一定能跑到。
+func _fit_after_layout() -> void:
+	if not is_inside_tree():
+		return
+	var timer := get_tree().create_timer(0.06)
+	timer.timeout.connect(_fit_content_scroll, CONNECT_ONE_SHOT)
+
+
+## 纸面高度自适应：内容放得下就保持「一张便笺」的短小；放不下时先让插图让位，
+## 再放不下才把正文区压到视口以内并出现滚动条（P 社式长文本在矮窗口下不能把选项顶出纸外）。
+func _fit_content_scroll() -> void:
+	if _content_scroll == null or _content_col == null or _art_clip == null:
+		return
+	if not is_inside_tree():
+		return
+	var view_h := get_viewport_rect().size.y
+	if view_h <= 1.0:
+		return
+	_art_clip.custom_minimum_size.y = 134.0
+	_content_scroll.custom_minimum_size.y = 0.0
+	if _content_fits(view_h):
+		# 放得下就把滚动区撑到内容高度：否则纸面的 500 下限会把正文压进一个更矮的滚动区，
+		# 明明放得下也挤出滚动条。
+		_content_scroll.custom_minimum_size.y = _content_col.get_combined_minimum_size().y
+		return
+	_art_clip.custom_minimum_size.y = 84.0
+	_content_scroll.custom_minimum_size.y = 0.0
+	if _content_fits(view_h):
+		_content_scroll.custom_minimum_size.y = _content_col.get_combined_minimum_size().y
+		return
+	var natural := _content_col.get_combined_minimum_size().y
+	var chrome := _chrome_height()
+	_content_scroll.custom_minimum_size.y = maxf(180.0, view_h - 48.0 - chrome)
+
+
+func _content_fits(view_h: float) -> bool:
+	var natural := _content_col.get_combined_minimum_size().y
+	return natural <= view_h - 48.0 - _chrome_height()
+
+
+## 纸面在「滚动区下限为 0」时的最小高度，就是页眉 + 插图 + 页边 + 间距的总和。
+## 纸面的 custom_minimum_size 会把内容不足 500 高的情况抬到 500，量之前先摘掉 y 下限。
+func _chrome_height() -> float:
+	var saved := _main_sheet.custom_minimum_size
+	_main_sheet.custom_minimum_size = Vector2(saved.x, 0.0)
+	var sheet_min := _main_sheet.get_combined_minimum_size().y
+	_main_sheet.custom_minimum_size = saved
+	return maxf(0.0, sheet_min)
 
 
 func _play_sheet_entrance() -> void:
@@ -760,6 +899,8 @@ func close_offer() -> void:
 	_showing_outcome = false
 	_offer.clear()
 	visible = false
+	if _ack_row != null:
+		_ack_row.visible = false
 
 
 func is_offer_open() -> bool:

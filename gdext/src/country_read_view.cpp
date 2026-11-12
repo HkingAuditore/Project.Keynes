@@ -46,6 +46,12 @@ CountryReadView NativeCountryRuntime::read_view() const {
         [](const void *owner, int32_t slot, int32_t technology) {
             return static_cast<const NativeCountryRuntime *>(owner)->has_technology(slot, technology);
         },
+        [](const void *owner, int32_t slot) {
+            return static_cast<const NativeCountryRuntime *>(owner)->political_regime_id_for_slot(slot);
+        },
+        [](const void *owner, int32_t slot) {
+            return static_cast<const NativeCountryRuntime *>(owner)->political_regime_capabilities_for_slot(slot);
+        },
         [](const void *owner) {
             return static_cast<const NativeCountryRuntime *>(owner)->good_count();
         },

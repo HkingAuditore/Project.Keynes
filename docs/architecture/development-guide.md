@@ -86,6 +86,20 @@ DLL 可通过 `DOTS_EXT_OUTPUT_BASENAME` 使用新文件名构建，避开现有
 
 先读 [current-state.md](current-state.md) 和 [design.md](design.md)，确定数据所有者、运行线程和真正的提交点；边界规则见 [module-boundaries.md](module-boundaries.md)。目标接口不是已有 API。
 
+### 政治体制与国库建造权限
+
+政治入口的 canonical section id 是 `politics`，页面内保留 `regime` 与 `ideology` 两个
+子页；旧的 `ideology` 打开调用只作为迁移别名。体制状态属于 Country，不能写入
+`HexCell`、DataCore 或 Ideology POD。Country 命令 `SET_POLITICAL_REGIME` 在下一次
+Country 边界提交，`CountryReadView` 的 `capability_bits` 在 Economy epoch capture 时
+冻结；Economy 的 construction quote/apply 必须都拒绝缺少
+`CountryApi::CAP_TREASURY_CONSTRUCTION` 的请求。
+
+PKCN native payload 当前为 v15，新增 `regime_id` 与能力位并进入 state hash、worker
+POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧版本恢复不能默认开放国库
+建造。UI 使用 `CountryViewModel.build("politics")`，沿用 CountryPanel 的 dirty/cache
+合并刷新，不在每日 tick 重建政治子树。
+
 所有命令从仓库根目录运行；Python 用 `/Users/herh/.local/bin/python3`，Godot 用 `/opt/homebrew/bin/godot`。日志目录必须是新目录。
 
 ## 改一个模块

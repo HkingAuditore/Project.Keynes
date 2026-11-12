@@ -33,8 +33,9 @@ struct CountryEffectCommand {
     const char *display_name = nullptr;
 };
 struct CountryApi {
-    // v14: inactive (annexed) country records with zero territory.
-    static constexpr int32_t SCHEMA_VERSION = 14;
+    // v15: inactive records plus persistent political regime state.
+    static constexpr int32_t SCHEMA_VERSION = 15;
+    static constexpr uint32_t CAP_TREASURY_CONSTRUCTION = 1u << 0u;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
@@ -113,7 +114,8 @@ struct CountryApi {
         // with generation + 1, so later commands holding the old handle are
         // rejected as country_handle_invalid.
         COMMAND_ANNEX_COUNTRY = 27,
-        COMMAND_OPCODE_MAX = COMMAND_ANNEX_COUNTRY,
+        COMMAND_SET_POLITICAL_REGIME = 28,
+        COMMAND_OPCODE_MAX = COMMAND_SET_POLITICAL_REGIME,
     };
 
     enum AssetOperation : int32_t {
@@ -160,6 +162,8 @@ namespace country_api {
 bool copy_economy_snapshot(const NativeCountryRuntime &country, CountryEconomySnapshot &out);
 int64_t cash_for_slot(const NativeCountryRuntime &country, int32_t country_slot);
 bool has_technology(const NativeCountryRuntime &country, int32_t country_slot, int32_t technology_id);
+uint32_t political_regime_capabilities(const NativeCountryRuntime &country, int32_t country_slot);
+int32_t political_regime_id(const NativeCountryRuntime &country, int32_t country_slot);
 int32_t country_slot_for_cell(const NativeCountryRuntime &country, int32_t cell);
 bool valid_handle(const NativeCountryRuntime &country, int64_t handle);
 int64_t last_committed_day(const NativeCountryRuntime &country);

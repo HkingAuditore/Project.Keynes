@@ -59,6 +59,9 @@ Godot UI / unhandled input
 控制器在分配 sequence 前校验税种、stable item ID、`[-100,100]`、cell 和玩家领土
 所有权。建设命令在 sequence 分配前验证玩家领土、stable building ID 与
 `treasury_sponsored_private`，但价格、库存、科技和放置规则仍在执行边界重新验证。
+政治体制切换使用 `politics.regime.set`，同样在 Country 下一提交边界生效；建设命令
+还会在 PlayerController 入口检查 `treasury_construction` 能力，但最终权限由 Economy
+epoch 冻结的 Country capability snapshot 再次校验。
 未知命令返回 `unsupported_command`，GM 命令永远不从这里透传。
 
 每次调用 `request_command(id, args)` 的顺序是：
@@ -240,19 +243,92 @@ AI 事件不再只靠 20 天一次的脉冲抽签，共三个入口，全部收�
 - **文案不写读数**：状态事件会被缓存数月，因此 `title` / `body_text` / 选项 / 结果标题只写处境与后果，不写气温、价格、库存、人口、百分比、日期等读数（prompt 第 5 条）。数字本身不是禁忌：「三人」「三成」「第 3 条」照常写。validator 只做一件无损修补：把 `34.2℃` / `34.2 °C` 改写成 `{temperature}`，由引擎在入队时填充当前气温；`custom_label` 例外，仍写「对象 + 幅度 + 时长」。
 - 回归入口：`tests/game/narrative_event_runtime_test.gd` 覆盖 dwell 未满不请求、状态破裂入池、同状态复现出池（不再耗 API）、每状态 2 条上限、池子存读档、温度读数改写为占位符与「不写读数」规则入 prompt。
 
-### 事件文案规范（2026-11）
+### 事件文案规范（2026-11，2026-11-11 修订）
 
-事件 UI 只放可决策的信息，不写场景描写与修辞：
+文案分两条轨道，不要混用：
 
-- 标题 `地点·事件`；题头只放日历 `第 N 年 · M 月 D 日`，不再堆聚落、地貌与气温（地名在标题里，气温属读数）。
+**A. 手写静态事件（P 社式）** —— 目标是「让玩家看见地块上的人」：
+
+- 标题 `地点·事件`；题头只放日历 `第 N 年 · M 月 D 日`，不堆聚落、地貌与气温。
   `NarrativeEventService` 在入队时按发生日算好 `date_text`，弹窗与史册共用；无 `WorldClock` 时退回 `第 N 日`。
-- 正文 ≤ 2 短句，只写触发条件与影响。
-- 叙事文本不写数据读数：气温、价格、库存、人口、百分比、金额、日期天数一律不写，需要指代气温时用 `{temperature}` 占位符（状态事件会缓存复用，读数必然过期）。叙述用的泛指数量照常写（三人、数十户、三成）。这条靠 prompt 约束；validator 只把 `34.2℃` 这类温度读数改写成 `{temperature}`，不删句子。
-- 选项 = 动作（4-12 字）；`tooltip_hint` 留空，界面不显示重复说明。
-- 结果只有标题 + 效果行；`outcome_narrative` 不再渲染，AI 也不再生成。
-- 效果行统一「对象 + 幅度 + 时长」，如 `本地农业产出 +15%，90 日`；`NarrativeEffectSpec.describe()` 是唯一兜底。
-- 分类标签不再上题头（`气候` / `干旱` / `农业` 这类信息由标题与正文承担）；题头右侧只保留 `定位` / `记录` 两个动作，AI 事件额外挂一枚「AI 生成」纸签。
-- `NarrativeAiPromptBuilder` 要求模型按同一规范输出，`NarrativeAiValidator` 对正文做 160 字截断兜底。
+- 正文 5~8 句：写一个具体场景——谁在做什么小动作，桌上有什么，光从哪儿来；让细节承担判断，
+  最后落在必须决断的点。视角贴着一个在场的人写，结尾落在一个画面上，不要用总结句收尾。
+- **白话**：不写「之乎者也」「臣」「府库」「廷议」这类仿古腔，不堆四字成语。
+  半文不白比纯白话更伤沉浸感；要的是小说式的叙述（参考茨威格：决定性瞬间、心理张力、克制的悲悯），不是公文。
+- **不要引语块**：不写「某某说：『……』」的独立引语。需要说话时把话揉进叙述
+  （「他说，去凿吧」），或者干脆不写。`speaker` / `quote_text` 字段保留给未来的特殊装置，
+  这两个内容包一律留空，弹窗因此不显示引语区。
+- **架空世界**：人物、国名、地名、职官、引文全部自造（`水工 沈渠` / `渠工 王三` / `城门吏 王顺`），
+  不借用任何真实历史人物、朝代、地名或典籍原文——真实制度只能当机制骨架。
+- 选项 = 动作 + 对象（4~16 字）；`tooltip_hint` 留空，界面不显示重复说明。
+- 结果 = 标题 + **结果段落** + 效果行。`outcome_narrative` 重新渲染（1~3 句，写「谁怎么了」）；
+  效果行仍是「对象 + 幅度 + 时长」，`custom_label` 手写。
+- 效果行必须写清对象：现金转移的收款人是「本地人数最多的那一群」，标签用
+  `{primary_profession}` 占位，由 `NarrativeEffectSpec.format_label()` 在入队/结算时填成真实职业名；
+  物资名走 `GoodProfileRegistry`（`wheat_grain` = 小麦），不要手写非游戏名。
+- 不写数据读数：温度、价格、库存、人口、百分比、日期天数一律不写；剧情确实需要气温时用 `{temperature}`。
+  叙述性数量（三百人、三成、两亩、两本册子）可以写——那是人话，不是读数。
+- **不要写引擎没有的效果**：没有「物资直接发给人群」（只能往本地市场增补库存）、没有直接改价、
+  没有减税/抵扣赋税。数量用比例或「至多」，不要写死「6 单位」。
+- 注意国库存货：玩家不能手动收购物资，国库物资只在开局生成、之后被建造与时代晋升消耗，
+  所以 `COUNTRY_GOOD_TO_MARKET` 在正常游戏里通常空转；要写「官府出粮」用
+  `MARKET_ADD_STOCK`（凭空增补本地市场，确定发生，但**该格必须有商人**，否则整批拒绝；
+  数量按人口口粮算，每人每日主食约 0.44 单位）。
+- 后果要落地到人：优先用 `TREASURY_CASH_TO_COHORT`（标签写职业）/ 本地市场增补 /
+  消费与出生修正 / 标记 + 定时回声。
+
+**B. AI 生成事件（缓存复用）** —— 仍然从严：
+
+- 正文 ≤ 2 短句，只写处境与后果，不写场景与修辞；不写任何读数（事件会在池子里躺数月）。
+- 不用 `speaker/quote_text`：模型不知道几个月后这块地上还有谁。
+- `NarrativeAiPromptBuilder` / `NarrativeAiValidator` 的既有约束不变；人群向的现金转移
+  没有加入 AI 效果白名单，AI 也不会写效果标签里的职业占位符。
+- **AI 修正器白名单已改到 ADD 族**：`economy.city.building.<sector>_output_factor[.cut]`、
+  `economy.city.good.<good>.output_factor[.cut]`、`economy.city.birth_factor[.cut]`；
+  `magnitude_percent` 就是幅度（15 = +15%）。不要再映射到 `family.city.*`（弱化 2~8 倍，
+  `trade_output_boost` 还是零读取点的死键）。
+
+**UI 配套**：正文以下包在自适应滚动区里（`_content_scroll`）。内容放得下时纸面保持短小便笺；
+放不下时先把插图从 134 压到 84，再放不下才出现滚动条；`确认` 按钮固定在纸面底部，永不被滚出视野。
+
+### 内容扩展与效果标定（2026-11-11）
+
+静态事件库从 10 条扩到 16 条，分两个内容包：
+
+| 内容包 | 文件 | 事件 |
+| --- | --- | --- |
+| 水利工程链（4） | `scripts/narrative/narrative_event_catalog_waterworks.gd` | 开渠 → 通水 / 半条渠 → 渠田丰收 |
+| 地块上的人（2） | `scripts/narrative/narrative_event_catalog_people.gd` | 城门外的人 → 粥棚撤了 |
+
+由 `NarrativeEventCatalog.build_default_catalog()` 末尾分别调用 `append_waterworks_events()` /
+`append_people_events()` 注册。
+
+- **人群采样**：`NarrativeContextSampler` 在 `include_cohort_details=true` 时额外产出
+  `neediest_cohort_*`、`subsistence_shortfall_ratio`、`unemployment_ratio`、`profession_share_by_id`、
+  `dominant_profession_*`；无论是否取明细，都会带上 `primary_cohort_profession_id/name`
+  （人数最多的 cohort 的职业，供效果标签填 `{primary_profession}`）。脉冲 / 事实 / 状态探针扫描
+  都传 `true`；`enqueue_event_offer` 仍走汇总，保持原来的「入队不取明细」契约。
+- **人群条件**：`SUBSISTENCE_SHORTFALL_GTE`(36) / `UNEMPLOYMENT_GTE`(37) /
+  `PROFESSION_SHARE_GTE`(38) / `COHORT_SATISFACTION_LTE`(39)，追加在枚举尾部，旧 id 不变。
+- **效果语义**：`economy.city.good|building.*` 是 ADD 项（`magnitude_q16` = 幅度本身），
+  `family.city.*` 是 MULTIPLY 1.02~1.05 项（只放大那 2~5%）。新内容用前者 + `.cut` 孪生并手写
+  `custom_label`；`describe()` 的兜底百分比已按定义族换算（ADD 族、`.gain` 族、模板 `.cut`），但卡面数字仍以
+  `custom_label` 为准。
+- **范围效果**：`CITY_MODIFIER` 可带 `radius_cells`（0–2）与 `falloff`（0 均等 / 1 逐环 100%/60%/30%）；
+  采样器写入 `nearby_owned_cells_r1/r2`（己方领土、排除水面、去重升序），适配器对每格各发一条同定义修正。
+  标签应写「本地及周边 N 环……」，不要写「N 格」。
+- **军队补给**：`narrative.military.supply_cut` 是叙事专用定义（`country.military.supply_consumption_factor` ×0.9），
+  Military 后勤结算直接读这个国家 stat；`magnitude_q16 = 1.0` 即补给消耗 −10%。
+- **效果标签格式化**：`NarrativeEffectSpec.format_label(label, ctx)` 解析
+  `{settlement_name}` / `{primary_profession}` / `{dominant_profession}`；服务入队与适配器结算
+  两处都会调用，史册与弹窗里的标签不会残留占位符。
+- **标记 vs 排程**：`SCHEDULE_FOLLOWUP_EVENT` 的定时事件直接入队、不复核条件与标记，
+  分支必须排不同的 `event_id`；`required_story_flags` 只对脉冲通道生效。
+- **回归入口**：`tests/game/narrative_event_waterworks_chain_test.gd`（333 项）、
+  `tests/game/narrative_effect_radius_test.gd`（47 项，覆盖 range/falloff/序列化/采样）、
+  `tests/game/narrative_event_people_test.gd`（38 项，覆盖人群采样/人群条件/现金转移与职业标签/饥民链/弹窗渲染）、
+  `tests/game/narrative_event_runtime_test.gd`（79 项）；标定探针
+  `tests/probes/probe_narrative_modifier_calibration.gd` 可复查任意一批定义键的真实效果。
 
 ## Clock control and modal regression coverage (2026-11-04)
 

@@ -1222,6 +1222,7 @@
     bool _trade_visibility_manual = false;
     std::vector<uint64_t> _epoch_country_technologies;
     EconomyOwnedColumn<uint64_t> _epoch_country_handles{{{16, 18}, "native_columns.epoch_country_handles", EconomyFieldEncoding::U64, 8}};
+    std::vector<uint32_t> _epoch_country_political_regime_capabilities;
     // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
     // Only configure/capture touches ModifierRuntime; workers read these dense arrays.
     std::vector<int32_t> _income_tax_stat_ids;

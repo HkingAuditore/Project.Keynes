@@ -932,6 +932,7 @@ static func _construction_result_message(code: String) -> String:
 		"construction_market_unavailable": "当地市场没有可结算的商人。",
 		"construction_owner_signature_unavailable": "本地没有合适的业主人口。",
 		"construction_target_invalid": "目标建筑无效。",
+		"political_regime_lacks_treasury_construction": "当前体制不开放国库建造。",
 		"construction_treasury_preflight_drift": "国库结算与营造报价不一致，请重试。",
 		"country_economy_asset_host_pending": "国库结算尚未完成，请稍后重试。",
 		"economy_not_bootstrapped": "经济系统尚未就绪，请稍后再试。",

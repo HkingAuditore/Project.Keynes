@@ -1,6 +1,6 @@
 """Build the dedicated Project.Keynes military codex icon atlas.
 
-The four source sheets are original hand-drawn military vignettes generated for
+The five source sheets are original hand-drawn military vignettes generated for
 this project. They borrow only the material language of the supplied ToyEmpires
 reference: waxy colored-pencil grain, wobbling graphite contours, muted earthy
 colors, and a rough off-white scissor-cut paper border.
@@ -141,6 +141,14 @@ SHEETS = [
         "rows": 3,
         "keys": STATUS,
         "audience": "军队状态与战争外交",
+    },
+    {
+        "id": "units_supplement",
+        "source": "units_sheet_v2_shield_bearers.png",
+        "columns": 1,
+        "rows": 1,
+        "keys": ["unit.shield_bearers"],
+        "audience": "兵种补充",
     },
 ]
 

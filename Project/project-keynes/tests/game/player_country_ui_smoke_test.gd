@@ -172,14 +172,18 @@ func _run() -> void:
 		panel.current_section() == "technology")
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
-	ui.open_country_section("ideology")
+	ui.open_country_section("politics")
 	await process_frame
 	await process_frame
-	var ideology_workspace := panel.get("_ideology_workspace") as Control
-	var ideology_model: Dictionary = panel.get("_model").get("ideology", {})
-	_expect("ideology workspace opens for the ideology action",
-		ideology_workspace != null and ideology_workspace.visible \
-			and panel.current_section() == "ideology")
+	var politics_workspace := panel.get("_politics_workspace") as Control
+	if politics_workspace != null and politics_workspace.has_method("select_tab"):
+		politics_workspace.select_tab("ideology")
+	var ideology_workspace := politics_workspace.get_node_or_null("Root/Ideology") as Control \
+		if politics_workspace != null else null
+	var ideology_model: Dictionary = panel.get("_model").get("politics", {}).get("ideology", {})
+	_expect("politics workspace opens for the politics action",
+		politics_workspace != null and ideology_workspace != null and ideology_workspace.visible \
+			and panel.current_section() == "politics")
 	_expect("ideology section snapshot is available",
 		bool(ideology_model.get("available", false)))
 	_expect("ideology empty collection still shows catalog slot capacity",
