@@ -60,25 +60,9 @@
 - `ideology_cell_layer_e2e_realworld_test` 的 B 项：开局是一格国家，没有国家超过 32 格，测试前提不成立（与理念代码无关）
 - golden 主路径偶发 COUNTRY 分叉（2026-11-14，4 次中 1 次）：主线程提交的第 17 条 Country 命令，一次由第 4 天的边界封口收进，另一次晚一天（输入清单 `command_watermark` 17 → 0），之后各天 COUNTRY 都不同，ECONOMY/IDEOLOGY/EFFECT/MODIFIER 不变。封口收的是"已到达"的命令，不按生效日，违反第 12 项规则 1。提交者疑为视野观测批（`submit_observation_batch`），未证实。该世界派生层无活动（`active=0`），与第 9e 项无关
 
-### 玩法待定（2026-11-13 用户确认有问题，涉及玩法改动，先记录，代码和测试都不改）
+### 玩法待定
 
-- `runtime_country_ai_test`：外国 AI 三个模块都运行且指令未被拒，但 60 天后研究队列为空；该国现金充足、研究预算为 0、科技点库存为 0。待定：AI 是否应自己设研究预算并排队。
-- `map_activity_runtime_integration_test`：50 倍速 20 秒走到第 100 天，建筑完工表现正常，初始聚落的人口增长表现一次未触发。待定：开局人口增长速度。
-- `water_transport_runtime_test`：有浅海科技后水路连通（6 个港口节点、6 条连线，无路线被拒），但两岸供给信号和需求信号都是 0，没有国内订单。待定：两岸市场是否应自然产生贸易信号。
-
-- `military_unit_unlock_consistency_test`：17 个装备槽的科技、生产建筑和解锁闭包不一致（21 条）。待定：补齐军事目录/生产建筑/科技前置，还是允许"兵种已解锁、装备稍后补齐"。
-
-- `era_reward_notification_regression_test`（3 条）：测试（2026-10-30）要求时代奖励只提醒、由玩家点徽章打开；代码（上游 2026-11-03）改为晋升后直接弹出三选一。两者矛盾，待定以哪个为准。
-- `technology_eligibility_v2_test`（王国时代节点能否在没有农业里程碑时研究并入队）、`technology_topology_audit_test`（`tech.composite_tools` 标为 support_only 却有直接绑定）、`technology_content_binding_audit_test`（专门化生产方法缺科技基础绑定）、`technology_industry_chain_balance_test`（39 项产业链时代/产率/消费不一致）、`technology_refresh_latency_test`（科技工作台是否仍要求每次提交立即显示、600ms 预算，5 条）。
-- `modern_economy_catalog_test`、`modern_economy_runtime_test`：现代经济的材料/替代品、subsistence tier 和账本守恒的目标内容未定。
-
-- 经济/家族内容与规则（B 组，2026-11-13）：历史采矿效率的层级比例、纺织厂是否需要 fiber/power/tools 输入（`building_resource_chain_test`）；工具锁定时初始殖民包立即出发还是保持准备中（`colonization_starter_regression_test`）；土豆气候、药草土地资源表（`crop_technology_parity_test`）；172 个商品无可达生产者、469 个建筑不可达（`economy_goods_lifecycle_audit_test`）；地图开局的桥接库存、全体失业、石器时代专业化（`economy_map_generation_test`）；贸易能否经过中立地和第三国（`economy_trade_runtime_test`、`trade_visual_runtime_test`）；国库建造的分组材料替代和 50% 结构效率（`treasury_construction_runtime_test`）；家族殖民包的建筑组合、N=3 方案、奖励时点（`family_colonization_runtime_test`）。
-- **矿产储量被放大 100 倍（疑似 bug，改动影响数值平衡；用户 2026-11-13 决定先记录不改，调资源平衡时再修）**：`world_ext_resource_deposits.cpp` 第 401–408 行解码时已乘 `kCellAreaResourceScale`（100），第 582–586 行又乘一次，目标储量密度、平均储量、微型矿下限都被重复放大。修掉会让所有矿产初始储量降到约 1/100，并改变 `NATURAL_RESOURCE` 哈希；`natural_resource_distribution_capacity_test` 因此保持失败。补丁在 `/private/tmp/keynes-par/fxB`。
-
-这几条测试保持失败，不计入第 9 项的修复范围。
-
-- 补贴发不出去（`economy_rolling_runtime_test` 剩余 3 条）：财政预留前先扣一轮科研预算（`economy_runtime_fiscal.cpp` 的 `research_floor`），而开局默认科研日预算 1000 万、自动采购开启（`map_country_initializer.gd`），国库低于这个数时可用于补贴的钱恒为 0。科研预留与补贴谁优先属于玩法，2026-11-13 只记录不改。
-- `building_resource_chain_test` 剩余 4 条：金矿/银矿产出与资源消耗已被 `a746c3d50` 调整，测试仍按旧效率期待；纺织厂被 `f4d833abb` 加了第 4 个输入 `dyestuff`；两条渔业属于上面的储量放大。都是内容/数值变动，2026-11-13 只记录不改。
+各条的测试、2026-11-14 重跑结果、代码位置和可选做法见 `gameplay-pending-decisions.md`。这些测试保持失败，不计入第 9 项的修复范围。
 
 ### 运行时待修（非玩法，B/D/E 组定位到根因但未修）
 
@@ -87,6 +71,7 @@
 - Country 财政请求未完成并写回 worker 读视图（`economy_fiscal_reservation_continuation_test`，2 条）。
 - `trade_activity_runtime_integration_test` 访问 nil 的 `visual_tiles` 后一直等待。
 - `military_runtime_smoke_test` 剩 1 条：登船前基线 14 人、登船 13 人后本格剩 0，基线到登船之间经济侧少了 1 名士兵；疑似自然死亡，未实测证实。`military_native_binding_test` 自测里 army pay 一条断言失败。
+- `technology_refresh_latency_test` 剩 1 条：面板关闭的 6 天里研究进度没变，疑似排队的 3 项科技在测量阶段已研究完，未证实（2026-11-14 从玩法待定移来，原来的延迟问题已通过）。
 - `runtime_country_parity_test`：第 2 天起 `research_deferred_points` 在 Country POD 与主线程科研队列之间不一致，之后屏障超时。2026-11-14 复跑剩 2 条（生产调度没有封住每个推进日；D11 soak 没有产出可比的 Country 帧）。
 - 性能门槛：`military_native_binding_test`（10 万单位 p95 22ms / 门槛 2ms）、`resource_visual_perf_test`（p95 2.4ms / 1ms）、`cooperative_world_generation_test`（帧峰值 2.65s / 100ms）。
 
