@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <deque>
@@ -204,6 +205,9 @@ public:
     godot::Dictionary cell_summary(int32_t cell) const;
     godot::Dictionary country_summary(int64_t handle) const;
     godot::Dictionary country_snapshot(int64_t handle) const;
+    int32_t political_regime_id_for_slot(int32_t slot) const;
+    uint32_t political_regime_capabilities_for_slot(int32_t slot) const;
+    godot::Dictionary political_regime_snapshot(int64_t handle) const;
     godot::PackedStringArray completed_technology_ids(int64_t handle) const;
     bool has_completed_technology(int64_t handle, int32_t technology_id) const;
     int32_t visual_era_index_for_slot(int32_t slot) const;
@@ -478,6 +482,8 @@ private:
         std::vector<int32_t> territory_count;
         std::vector<int64_t> cash;
         std::vector<uint64_t> state_version;
+        std::vector<int32_t> political_regime_id;
+        std::vector<uint32_t> political_regime_capability_bits;
     };
 
     struct Command {
@@ -628,6 +634,18 @@ private:
         std::vector<std::pair<int32_t, int64_t>> treasury_consumed;
     };
 
+    // Per-call orchestration state for the country command pipeline. The
+    // mutable batch remains the sole owner of staged country data; this only
+    // carries the timing and result values across the three execution phases.
+    struct CoreSliceContext {
+        int64_t requested_day = -1;
+        int64_t day = -1;
+        size_t cursor_start = 0;
+        size_t cursor_limit = 0;
+        std::chrono::steady_clock::time_point start;
+        CountryCoreStepResult result;
+    };
+
     bool validate_handle(uint64_t handle, int32_t &slot) const;
     bool validate_admission_command(const Command &command,
                                     std::string &error) const;
@@ -637,6 +655,10 @@ private:
     CountryBoundarySeal open_implicit_boundary(int64_t day);
     void close_boundary_seal();
     CountryCoreStepResult run_slice_core(int64_t requested_day);
+    bool prepare_country_slice(CoreSliceContext &context);
+    bool preflight_country_slice(CoreSliceContext &context);
+    bool commit_country_slice(CoreSliceContext &context);
+    bool report_peer_rejection(int64_t day, CountryCoreStepResult &result);
     uint64_t make_handle(int32_t slot) const;
     int64_t debit_country_cash(int64_t country_handle, int64_t requested,
                                 const char *trace_stage);
@@ -883,6 +905,10 @@ private:
     std::vector<std::string> _technology_ids;
     std::vector<std::string> _technology_era_reward_pool_ids;
     std::vector<std::string> _research_signal_ids;
+    std::vector<std::string> _political_regime_ids;
+    std::vector<uint32_t> _political_regime_capability_bits;
+    std::unordered_map<std::string, int32_t> _political_regime_index;
+    uint64_t _political_regime_catalog_hash = 0;
     std::unordered_map<std::string, int32_t> _good_index;
     std::unordered_map<std::string, int32_t> _technology_index;
     std::vector<int32_t> _starting_technologies;

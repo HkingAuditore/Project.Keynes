@@ -288,7 +288,7 @@ per-suite `[FAIL]` count.
 ```powershell
 $ErrorActionPreference='Continue'
 & $exe --headless --path "Project\project-keynes" `
-  --script "res://tests/headless_perf_record.gd" -- `
+  --script "res://tests/game/headless_perf_record.gd" -- `
   days=50 speed=50 seed=20260718 width=96 height=64 `
   population_scale=0 use_saved_setup=false label=probe *> tmp\hp.log
 Select-String tmp\hp.log -Pattern 'headless-perf/result'

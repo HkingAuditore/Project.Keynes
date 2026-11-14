@@ -39,7 +39,7 @@ ordering, explain recomputation, journal events, domain isolation, climate inser
 actual/forecast parity, Family/Branch stale-handle rejection, exact-good sparse overrides,
 Gameplay base/effective separation, and all four save round-trips.
 
-Use `Project/project-keynes/tests/modifier_runtime_test.gd` as the focused entry. Also run country,
+Use `Project/project-keynes/tests/effect/modifier_runtime_test.gd` as the focused entry. Also run country,
 building/economy save tests and a Godot project parse.
 
 ## Performance

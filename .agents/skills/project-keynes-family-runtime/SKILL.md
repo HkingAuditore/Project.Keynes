@@ -35,7 +35,7 @@ Read the current source before editing:
   boundaries.
 - Read `Project/project-keynes/scripts/ui/cell_inspector_view_model.gd` and
   `scripts/game/world_runtime_host.gd` for player-visible read paths.
-- Read `Project/project-keynes/tests/family_runtime_test.gd` before changing behavior or schemas.
+- Read `Project/project-keynes/tests/family/family_runtime_test.gd` before changing behavior or schemas.
 - Read `docs/architecture/development-guide.md` before changing persistence.
 
 Use `rg` to locate all family policy, query, report, and schema call sites. Do not infer the current

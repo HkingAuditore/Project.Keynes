@@ -18,8 +18,7 @@ const LevelMeterScript = preload(
 ## 手写体标题字用带随包 fallback 的 display_handwritten（web 无系统字体兜底）。
 const TITLE_FONT: Font = preload(
 	"res://assets/fonts/muyao/display_handwritten.tres")
-const BODY_FONT: FontFile = preload(
-	"res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+const BODY_FONT: FontFile = UITokens.UI_FONT
 
 var kind := 1
 var empty := true

@@ -56,6 +56,8 @@ public:
     struct Snapshot {
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
+        std::vector<int32_t> country_political_regime_ids;
+        std::vector<uint32_t> country_political_regime_capabilities;
         std::vector<uint64_t> country_technologies;
         std::vector<uint64_t> country_research_signals;
         std::vector<int32_t> income_tax_rates;
@@ -96,6 +98,8 @@ public:
         int32_t (*technology_points_good_id)(const void *);
         int32_t (*country_slot_for_cell)(const void *, int32_t);
         bool (*has_technology)(const void *, int32_t, int32_t);
+        int32_t (*political_regime_id)(const void *, int32_t);
+        uint32_t (*political_regime_capabilities)(const void *, int32_t);
         int32_t (*good_count)(const void *);
         int32_t (*technology_count)(const void *);
         int32_t (*starting_country_slot)(const void *);
@@ -147,6 +151,12 @@ public:
     }
     bool has_technology(int32_t slot, int32_t technology) const {
         return _queries.has_technology(_owner, slot, technology);
+    }
+    int32_t political_regime_id(int32_t slot) const {
+        return _queries.political_regime_id(_owner, slot);
+    }
+    uint32_t political_regime_capabilities(int32_t slot) const {
+        return _queries.political_regime_capabilities(_owner, slot);
     }
     int32_t good_count() const {
         return _queries.good_count(_owner);

@@ -270,7 +270,7 @@ Worker 权威路径（Climate ACTIVE）：
 - `gdext/src/runtime_climate_passes.{h,cpp}`：九个 pass 的共享纯内核，生产与 worker 同一份。
   两侧数值不同时先排除输入差异，不要先怀疑这里。
 - `gdext/src/runtime_pod_protocol.h`：`RuntimeEnvironmentSnapshot` 与各 stage Input 结构的契约。
-- `Project/project-keynes/tests/climate_parity_probe.gd`：SHADOW 对拍 harness。
+- `Project/project-keynes/tests/world/climate_parity_probe.gd`：SHADOW 对拍 harness。
 - `docs/architecture/migration.md` §39–§42：落地过程、四类缺陷
   与方法论积累。
 

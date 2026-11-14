@@ -166,7 +166,7 @@ void DCWorldExt::collect_military_economy_receipts(
     if (_economy_runtime == nullptr) return;
     bool any_open = false;
     for (const MilitaryPendingIntent &row : _military_pending_intents) {
-        if (row.authority == 2 && row.receipt_pending == 1) {
+        if ((row.authority == 2 || row.authority == 4) && row.receipt_pending == 1) {
             any_open = true;
             break;
         }
@@ -179,6 +179,13 @@ void DCWorldExt::collect_military_economy_receipts(
     if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
         boundary = _runtime_host->try_lock_economy_read_boundary();
         if (!boundary.owns_lock() || economy_api::epoch_active(*economy)) return;
+    }
+    for (auto &row : _military_pending_intents) {
+        if (row.authority != 4 || row.receipt_pending != 1) continue;
+        int64_t quantity = 0, cash = 0;
+        if (!economy_api::military_purchase_receipt(*economy, row.sequence, quantity, cash)) continue;
+        row.count = quantity; row.amount = cash;
+        row.receipt_pending = 2; // A zero-fill terminal is still acknowledged.
     }
     const Dictionary report = economy_api::trace_report(*economy);
     if (String(report.get("mode", "SELECTIVE")) == String("OFF")) {

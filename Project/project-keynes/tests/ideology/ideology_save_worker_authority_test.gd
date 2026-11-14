@@ -1654,10 +1654,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	# Production settle handshake only on the main-thread side; under worker authority
 	# the worker's own graph owns it and a second handshake here would double-apply.
 	var ideology: Dictionary = {}
@@ -1805,11 +1801,6 @@ func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
 			break
 		OS.delay_msec(2)
 	return day
-
-
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _worker_fault(ext: Object) -> String:

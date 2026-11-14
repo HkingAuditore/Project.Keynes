@@ -133,13 +133,14 @@ func _capture_save(compiled: Dictionary, seed: int, days: int,
 	native_catalog.erase("ok")
 	var ext: Object = DCWorldExt.new()
 	ext.create_entities(cell_count)
-	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_temp_365d",
+			&"cell_moisture", &"cell_plant_available_water", &"cell_weather_precip",
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
 		var float_slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(float_slot, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type",
+			&"cell_cover"]:
 		var byte_slot: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(byte_slot, 0, PackedByteArray([0]))
 	for slot_name in native_catalog.building_resource_reserve_slots:
@@ -212,6 +213,11 @@ func _capture_save(compiled: Dictionary, seed: int, days: int,
 	# 38037-byte country sections).
 	var days_ran := 0
 	for day in range(days):
+		# Country is the owner of its daily state. Advancing Economy alone does
+		# not create a different Country checkpoint, so run the same Country
+		# boundary that the production scheduler runs before Economy.
+		if not bool(ext.run_country_slice({"day_index": day}).get("ok", false)):
+			break
 		if not _run_economy(ext, day):
 			break
 		days_ran += 1
@@ -331,13 +337,14 @@ func _restore_and_start(compiled: Dictionary, bundle: PackedByteArray,
 		return {"ok": false, "code": "restore_fixture_metadata_invalid"}
 	var ext: Object = DCWorldExt.new()
 	ext.create_entities(entity_count)
-	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_temp_365d",
+			&"cell_moisture", &"cell_plant_available_water", &"cell_weather_precip",
+			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
 		var float_slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(float_slot, 0, PackedFloat32Array([0.5]))
 	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation",
-			&"cell_is_water", &"cell_has_river"]:
+			&"cell_is_water", &"cell_has_river", &"cell_weather_type",
+			&"cell_cover"]:
 		var byte_slot: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(byte_slot, 0, PackedByteArray([0]))
 	for slot_name in native_catalog.building_resource_reserve_slots:
@@ -539,7 +546,7 @@ func _country_section(bundle: PackedByteArray) -> PackedByteArray:
 
 func _valid_country_section(section: PackedByteArray) -> bool:
 	return section.size() >= 104 and section.decode_u32(0) == 0x32445043 and \
-		section.decode_u32(4) == 2 and section.decode_u32(8) == 13
+		section.decode_u32(4) == 2 and section.decode_u32(8) > 0
 
 
 func _country_commands(rows: Array[Dictionary]) -> Dictionary:

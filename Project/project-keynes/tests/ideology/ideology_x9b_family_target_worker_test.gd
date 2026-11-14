@@ -52,6 +52,8 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# This fixture isolates its worker/effect contract from political support gates.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -87,13 +89,16 @@ func _test_family_target_apply_and_reuse() -> bool:
 				and int(selected.get("total", 0)) > 0,
 			str(selected)):
 		return false
+	# The family digest hashes target eligibility (families, branches, ownership and
+	# this floor override), not whether a card applies, so the baseline is the
+	# revision before the floor is relaxed.
+	var before_revision := int(_ext.get_effect_input_revisions().get(
+		"family", 0))
 	var override: Dictionary = _ext.set_family_target_min_branches_override_for_test(1)
 	if not _require("X9-b test hook relaxes the authored branch floor",
 			bool(override.get("ok", false)), str(override)):
 		return false
 	_tick = _drive_days(1)
-	var before_revision := int(_ext.get_effect_input_revisions().get(
-		"family", 0))
 	if not _install_family_office_draw_gates():
 		return false
 	if not _equip_card():
@@ -107,17 +112,23 @@ func _test_family_target_apply_and_reuse() -> bool:
 		_is_close(target_stat, 1.06), "%.5f" % target_stat)
 	var after_apply := int(_ext.get_effect_input_revisions().get(
 		"family", 0))
-	_expect("applying the family target advances the family revision",
+	_expect("enabling the family target advances the family revision",
 		after_apply > before_revision, "%d -> %d" % [
 			before_revision, after_apply])
+	# The economy keeps running: a family can buy a building on an idle day, and
+	# then the digest must move. Reuse is only owed while the family rows hold.
 	var idle_before := int(_ext.get_effect_input_revisions().get(
 		"family", 0))
+	var rows_before := _family_rows()
 	for _index in range(5):
 		_tick = _drive_days(1)
 	var idle_after := int(_ext.get_effect_input_revisions().get(
 		"family", 0))
-	_expect("five unchanged committed days reuse the family digest",
-		idle_after == idle_before, "%d -> %d" % [idle_before, idle_after])
+	var rows_after := _family_rows()
+	_expect("committed days with unchanged family rows reuse the family digest",
+		idle_after == idle_before or rows_after != rows_before,
+		"%d -> %d rows %s -> %s" % [idle_before, idle_after, rows_before,
+			rows_after])
 	var snapshot: Dictionary = _ext.get_ideology_snapshot(_handle)
 	_expect("family_office occupies an ideology slot",
 		int(snapshot.get("ideology_slots_used", -1)) >= 1, str(snapshot))
@@ -241,11 +252,8 @@ func _family_stat() -> float:
 
 
 func _wait_family_output(expected: float) -> float:
-	var value := _family_stat()
 	await WorkerWaitHelper.wait_for(
-		func() -> bool:
-			value = _family_stat()
-			return _is_close(value, expected),
+		func() -> bool: return _is_close(_family_stat(), expected),
 		8, 120000,
 		func() -> void: _tick = _drive_days(1))
 	return _family_stat()
@@ -379,54 +387,23 @@ func _world_day(ext: Object) -> int:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_require("the worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
-func _wait_pod_day(before: int, timeout_ms: int) -> void:
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = _ext.get_runtime_thread_report()
-			return int(report.get("ideology_pod_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_ms,
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	return String(_ext.get_runtime_thread_report().get("fault_code", ""))
+## Per-cell family handles and owned-building counts: the rows the family digest
+## reads that an idle day can still change.
+func _family_rows() -> String:
+	var rows := PackedStringArray()
+	for cell in range(WIDTH * HEIGHT):
+		var page: Dictionary = _ext.get_family_cell_snapshot(cell, 0, 64)
+		if bool(page.get("ok", false)) and int(page.get("total", 0)) > 0:
+			rows.append("%d:%s/%s" % [cell, str(page.get("family_handles")),
+				str(page.get("owned_buildings"))])
+	return ",".join(rows)
 
 
 func _teardown() -> void:

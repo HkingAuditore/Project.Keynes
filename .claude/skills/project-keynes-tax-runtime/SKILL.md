@@ -118,7 +118,7 @@ not purchase/employment/investment value is incomplete unless explicitly documen
 At minimum run:
 
 - `tests/country_runtime_test.gd`
-- `tests/modifier_runtime_test.gd`
+- `tests/effect/modifier_runtime_test.gd`
 - `tests/economy_rolling_runtime_test.gd`
 - `tests/economy_trade_runtime_test.gd`
 - relevant building/goods/technology/save suites

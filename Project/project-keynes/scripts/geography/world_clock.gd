@@ -761,8 +761,13 @@ func season_name_cn(idx: int) -> String:
 		_: return "秋"
 
 func calendar_date() -> Dictionary:
-	var day0: int = day_in_year()
+	return calendar_date_for_day(day_index())
+
+## 按任意日索引反推日历。事件弹窗按「发生日」显示年月日，
+## 不能用 calendar_date()（那是「现在」）。
+func calendar_date_for_day(day_idx: int) -> Dictionary:
 	var dpy: int = days_per_year()
+	var day0: int = int(fposmod(float(day_idx), float(dpy)))
 	var display_days: int = 0
 	for ml_display in _MONTH_LENGTHS:
 		display_days += int(ml_display)

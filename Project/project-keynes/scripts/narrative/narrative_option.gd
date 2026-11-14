@@ -6,6 +6,7 @@ const MONEY_SCALE: float = 10000.0
 const GOODS_SCALE: float = 1000.0
 const NarrativeOutcomeScript = preload("res://scripts/narrative/narrative_outcome.gd")
 const NarrativeConditionScript = preload("res://scripts/narrative/narrative_condition.gd")
+const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 
 @export var option_id: StringName = &""
 @export var text: String = ""
@@ -64,7 +65,9 @@ func check_eligibility(ctx: Dictionary) -> Dictionary:
 		if available < require_good_qty:
 			return {
 				"ok": false,
-				"reason": "缺少 %s（需 %.1f 单位）" % [key_str, float(require_good_qty) / GOODS_SCALE],
+				"reason": "缺少 %s（需 %.1f 单位）" % [
+					NarrativeEffectSpecScript._friendly_good_name(require_good_id),
+					float(require_good_qty) / GOODS_SCALE],
 			}
 	if not String(require_technology).is_empty():
 		var has_tech: bool = NarrativeConditionScript._has_key_in_collection(

@@ -1,0 +1,15 @@
+[remap]
+
+importer="godot.fmod.bank"
+type="FmodBank"
+uid="uid://bso2i4fdl0gqg"
+path="res://.godot/imported/Music_agrarian.bank-d9f0330da03f0762e9e57e2547d50d6c.bank"
+
+[deps]
+
+source_file="res://assets/audio/banks/Desktop/Music_agrarian.bank"
+dest_files=["res://.godot/imported/Music_agrarian.bank-d9f0330da03f0762e9e57e2547d50d6c.bank"]
+
+[params]
+
+

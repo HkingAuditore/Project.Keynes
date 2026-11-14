@@ -19,10 +19,12 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 const ValidatorScript = preload("res://scripts/technology/technology_network_validator.gd")
 
 const GOODS_SCALE := 1000
-const TECH_COMPLETION_RATIO := 0.8
+## v5：门槛从 0.8 降到 0.6。0.8 时全树必修 328/416（79%），玩家无法放弃任何支线；
+## 0.6 时必修约 60%，每代留下 20–40% 的可放弃空间，构筑才真正存在。
+const TECH_COMPLETION_RATIO := 0.6
 const CONDITIONS_REQUIRED := 3
 const CONDITIONS_RULE_TEXT := "科技必达 · 其余三选二"
-const CONDITIONS_HELP_TEXT := "须完成本时代 80% 科技，并满足人口、建筑、贸易中的至少两项。"
+const CONDITIONS_HELP_TEXT := "须完成本时代 60% 科技，并满足人口、建筑、贸易中的至少两项。"
 const MIN_TARGET_ERA := 1
 const MAX_ERA_INDEX := 10
 

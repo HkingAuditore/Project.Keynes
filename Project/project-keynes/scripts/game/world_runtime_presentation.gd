@@ -150,3 +150,53 @@ func _bind_settlement_labels() -> void:
 	_settlement_label_layer.configure(
 		_current_map, _camera, _generator.get_economy_facade(), hex_size,
 		map_wrap_period_x(), _fog_of_war_enabled)
+
+
+## G4 moved host responsibilities
+func on_season_changed(host, season_idx: int) -> void:
+	if host._generator == null or host._current_map == null or host._world_data == null:
+		return
+	var cp = host._generator._c() if host._generator.has_method("_c") else null
+	host.mark_map_overlay_dirty(&"season_changed")
+	var use_legacy = false
+	if cp != null and "season_refresh_legacy_signal" in cp:
+		use_legacy = bool(cp.season_refresh_legacy_signal)
+	if not use_legacy:
+		return
+	if host._generator.has_method("queue_season_refresh"):
+		host._generator.queue_season_refresh(season_idx)
+	else:
+		host._generator.refresh_seasonal(host._current_map, host._world_data, season_idx)
+
+
+func on_year_changed(host, _year_idx: int) -> void:
+	if host._generator != null and host._current_map != null and host._world_data != null:
+		host._generator.refresh_yearly(host._current_map, host._world_data)
+		host.mark_map_overlay_dirty(&"year_changed")
+
+
+func fit_camera(host, safe_area: Rect2 = Rect2()) -> void:
+	if host._camera != null:
+		host._camera.fit_to_viewport(1.0, safe_area, true)
+
+
+func cell_display_centers(host, cells: PackedInt32Array, ref_x: float) -> PackedVector2Array:
+	var out = PackedVector2Array()
+	if host._current_map == null or cells.is_empty():
+		return out
+	var wrap_period = host.map_wrap_period_x()
+	out.resize(cells.size())
+	var kept = 0
+	for index in range(cells.size()):
+		var cell = host._current_map.cell_at(int(cells[index]))
+		if cell == null:
+			continue
+		var canonical = HexUtils.cube_to_world(cell.q, cell.r, host.hex_size)
+		out[kept] = HexUtils.nearest_display_world(canonical, ref_x, wrap_period)
+		kept += 1
+	if kept != out.size():
+		out.resize(kept)
+	return out
+
+
+# Visual/vision methods delegate to the passive adapter.

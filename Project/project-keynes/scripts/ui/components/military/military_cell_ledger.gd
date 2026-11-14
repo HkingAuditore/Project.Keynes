@@ -44,6 +44,11 @@ func _ready() -> void:
 		push_error("MilitaryCellLedger 必须通过 military_cell_ledger.tscn 实例化。")
 		return
 	_build_rows()
+	IconButton.apply_with_text(_create_army, &"military.banner", "编成部队",
+		IconButton.SMALL, "把本格驻军编成一支野战部队")
+	_create_army.focus_mode = Control.FOCUS_ALL
+	_create_army.custom_minimum_size = Vector2(_create_army.custom_minimum_size.x, 44.0)
+	UIAnimation.bind_tactile_button(_create_army)
 	_troops.army_selected.connect(func(handle: int) -> void:
 		army_selected.emit(handle))
 	if _create_army != null:

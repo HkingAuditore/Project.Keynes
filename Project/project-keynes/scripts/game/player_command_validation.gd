@@ -29,6 +29,7 @@ const COMMAND_CELL_TAX_CLEAR_OVERRIDE := &"country.tax.cell.clear_override"
 const COMMAND_CELL_TAX_CLEAR_ALL := &"country.tax.cell.clear_all"
 
 const COMMAND_CONSTRUCTION_BUILD := &"construction.build"
+const COMMAND_POLITICAL_REGIME_SET := &"politics.regime.set"
 
 const COMMAND_FAMILY_COLONIZATION_START := &"family.colonization.start"
 
@@ -94,6 +95,8 @@ const COMMAND_MILITARY_ARMY_MOVE := &"military.army.move"
 
 const COMMAND_MILITARY_AREA_CONTROL := &"military.army.area_control"
 
+const COMMAND_MILITARY_ARMY_EXPLORE := &"military.army.explore"
+
 const COMMAND_MILITARY_ARMY_STOP := &"military.army.stop"
 
 const COMMAND_MILITARY_ARMY_STANCE := &"military.army.stance"
@@ -122,6 +125,7 @@ static func _validate_command_args(
 		_completed_technology_ids: Callable,
 		_state_building_gate: Callable,
 		_player_owns_military_cell: Callable,
+		_player_country_handle: int,
 		id: StringName,
 		args: Dictionary,
 		facade = null) -> Dictionary:
@@ -214,6 +218,27 @@ static func _validate_command_args(
 			if not bool(owned.ok):
 				return _result(false, "construction_cell_not_owned",
 					"只能在玩家领土内修建建筑。")
+			if facade != null and facade.has_method("has_political_capability") \
+				and not facade.has_political_capability(_player_country_handle,
+					&"treasury_construction"):
+				return _result(false, "political_regime_lacks_treasury_construction",
+					"当前体制不开放国库建造。")
+		COMMAND_POLITICAL_REGIME_SET:
+			var regime_id := StringName(args.get("regime_id", &""))
+			if regime_id.is_empty() or facade == null \
+				or not facade.has_method("political_regime_catalog_view"):
+				return _result(false, "invalid_regime", "体制标识无效。")
+			var regime_catalog: Dictionary = facade.political_regime_catalog_view()
+			if not bool(regime_catalog.get("ok", false)):
+				return _result(false, "political_regime_unavailable",
+					"体制目录尚未就绪，请稍后再试。")
+			var found := false
+			for raw_definition in regime_catalog.get("definitions", []):
+				if String((raw_definition as Dictionary).get("id", "")) == String(regime_id):
+					found = true
+					break
+			if not found:
+				return _result(false, "invalid_regime", "体制标识无效。")
 		COMMAND_FAMILY_COLONIZATION_START:
 			if int(args.get("family_handle", 0)) == 0 or \
 					int(args.get("source_cell", -1)) < 0 or \
@@ -402,6 +427,17 @@ static func _validate_command_args(
 				return _result(false, "invalid_args", "军事控制半径上限为 6 格。")
 			if area_cells is PackedInt32Array and (area_cells as PackedInt32Array).size() > 256:
 				return _result(false, "invalid_args", "军事控制区域上限为 256 格。")
+		COMMAND_MILITARY_ARMY_EXPLORE:
+			if int(args.get("army", 0)) <= 0 or int(args.get("cell", -1)) < 0:
+				return _result(false, "invalid_args", "探路命令缺少部队或中心格。")
+			var explore_radius := int(args.get("radius", 0))
+			if explore_radius < 1 or explore_radius > 6:
+				return _result(false, "invalid_args", "探查半径必须在 1–6 格之间。")
+			var explore_cells = args.get("cells", PackedInt32Array())
+			if not explore_cells is PackedInt32Array \
+					or (explore_cells as PackedInt32Array).is_empty() \
+					or (explore_cells as PackedInt32Array).size() > 256:
+				return _result(false, "invalid_args", "探查范围必须为 1–256 格。")
 		COMMAND_MILITARY_ARMY_STANCE:
 			var stance := int(args.get("stance", -1))
 			if stance < 0 or stance > 4:

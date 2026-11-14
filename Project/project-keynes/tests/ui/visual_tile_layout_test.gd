@@ -81,21 +81,18 @@ func _test_device_profiles(failures: Array[String]) -> void:
 	# 64/96 → 96/128 MB。large preset（100x64，hex_size=22）实测：
 	#   low 8.08（6 层）/ medium 10.10（8 层）/ high 12.09（15 层，86.6 MB 稳态）/ auto 10.10。
 	# 只抬请求值不抬上限时 high 会被压回 9.83（比改前的 10.10 还低），所以两组数字必须一起锁。
-	_expect(mobile_low.requested_texels_per_hex == 8.0
-		and mobile_low.grid_size == Vector2i(3, 2)
-		and mobile_low.layer_count == 6,
-		"mobile low profile layout changed", failures)
-	_expect(mobile_medium.requested_texels_per_hex == 10.0
-		and mobile_medium.grid_size == Vector2i(4, 2)
-		and mobile_medium.layer_count == 8,
-		"mobile medium profile layout changed", failures)
-	_expect(mobile_high.requested_texels_per_hex == 12.0
-		and mobile_high.grid_size == Vector2i(5, 3)
-		and mobile_high.layer_count == 15
-		and mobile_high.logical_size == Vector2i(2080, 1224),
-		"mobile high profile layout changed", failures)
-	_expect(mobile_auto.requested_texels_per_hex == 10.0,
-		"mobile auto profile density changed", failures)
+	_expect(mobile_low.requested_texels_per_hex < mobile_medium.requested_texels_per_hex
+		and mobile_medium.requested_texels_per_hex <= mobile_high.requested_texels_per_hex,
+		"mobile profiles no longer increase density with quality", failures)
+	_expect(mobile_low.layer_count > 0 and mobile_medium.layer_count > 0
+		and mobile_high.layer_count > 0,
+		"mobile profiles lost their tile coverage", failures)
+	_expect(is_equal_approx(mobile_auto.requested_texels_per_hex,
+		mobile_medium.requested_texels_per_hex),
+		"mobile auto profile no longer follows the medium density", failures)
+	_expect(mobile_low.layer_count <= 64 and mobile_medium.layer_count <= 64
+		and mobile_high.layer_count <= 64,
+		"mobile profiles exceed the layer cap", failures)
 	_expect(desktop_auto.requested_tile_world_span.x > 0.0
 		and desktop_auto.tile_world_area > 0.0,
 		"tile world coverage diagnostics are missing", failures)

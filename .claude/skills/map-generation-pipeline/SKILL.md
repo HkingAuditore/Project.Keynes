@@ -131,7 +131,9 @@ display metadata; seeding does not read it.
   在 C++ 内串联，**不跨语言往返**；GDScript 只发一次 combined knobs + 解包。
 - **fallback 纪律**：用户要求"全 C++、不降级"时，wrapper 在 ext/方法缺失或返回 fallback 时
   `push_error` 返回空 buffer（不静默退回 GDScript 计算）；但**融合 pass 通常保留"融合优先 + 旧路径回退"**，
-  让 DLL 未 rebuild 时仍能跑。两者区别按任务要求定。
+  让 DLL 未 rebuild 时仍能跑。两者区别按任务要求定。2026-11 的 map_generator 第2a批明确采用前者：
+  climate Pass-A/B、ocean water/land、sea ice、transpiration 的 wrapper 只打包/同步/报告，
+  native 失败时保留上一份字段并返回失败，不再执行 GDScript 全图热循环。
 - **三处必须同步**：`world_ext.h`（声明）+ `world_ext.cpp`（实现）+ `world_ext_bind_<模块>.cpp`（`ClassDB::bind_method`）。
   漏 bind → GDScript `has_method` 探测不到 → 走 fallback。
 - **knobs 键名唯一**：同一 Dictionary 里键不能重名（踩过坑：`height` 既当维度又当 buffer → 用 `height_buffer`）。

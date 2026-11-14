@@ -43,14 +43,13 @@ func _wait_worker_state(w: Dictionary, wanted: String, timeout_ms: int) -> bool:
 		return RestartBoundary.stopped(w["ext"], timeout_ms)
 	return super._wait_worker_state(w, wanted, timeout_ms)
 
-func _wait_pod_day(w: Dictionary, _before: int, timeout_ms: int) -> void:
-	var ext: Object = w["ext"]
-	ext.set_runtime_clock(false, WORKER_SPEED)
-	RestartBoundary.committed(w, timeout_ms, func() -> void: _service_peers(ext, 1))
-	ext.set_runtime_clock(true, WORKER_SPEED)
-
+## The parent waits for the worker only on suppressed days; Economy authority
+## here also needs the commit on the main-thread-ideology days.
 func _drive_day(w: Dictionary) -> Dictionary:
 	var result := super._drive_day(w)
 	if bool(result.get("ok", false)) and not bool(w.get("last_suppressed", false)):
-		_wait_pod_day(w, -1, POD_WAIT_MS)
+		var ext: Object = w["ext"]
+		ext.set_runtime_clock(false, WORKER_SPEED)
+		RestartBoundary.committed(w, 5000, func() -> void: _service_peers(ext, 1))
+		ext.set_runtime_clock(true, WORKER_SPEED)
 	return result

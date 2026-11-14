@@ -246,6 +246,10 @@ constexpr int32_t MIL_KIND_GOOD = 0;
 constexpr int32_t MIL_KIND_EQUIP_CATEGORY = 1;
 // Internal holder kind of a training order's equipment delivery.
 constexpr uint8_t MILITARY_LOT_TRAINING = 2;
+// Internal holder kind of a state building group's repair inventory (physical
+// maintenance design D2). Buildings keep their own stock so two building types
+// on one cell can be judged separately; `holder` encodes (cell, catalog index).
+constexpr uint8_t MILITARY_LOT_MAINTENANCE = 3;
 
 // ------------------------------------------------------------ supply access
 // Design decision (user, overrides §9.3 fields): a demander sources only from

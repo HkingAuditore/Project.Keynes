@@ -144,6 +144,9 @@ struct EconomyApi {
         // queue until a newer reset replaces it. cell=-1 is the reset marker;
         // payload0=missing goods, payload1=normalization days.
         COMMAND_MILITARY_PROCUREMENT_DEMAND = 36,
+        COMMAND_MILITARY_PURCHASE = 37,
+        COMMAND_MILITARY_PURCHASE_RECEIPT = 38,
+        COMMAND_MILITARY_PURCHASE_ACK = 39,
         // END army personnel lane
         // 35: treasury-sponsored DEMOLISH of a state lot. Payload matches
         // opcode 16: i32_0=cell, i32_1=type_id, i64_0=count,
@@ -558,8 +561,8 @@ bool set_cell_tag_override_for_test(NativeEconomyRuntime &economy, const std::st
 void clear_cell_tag_overrides_for_test(NativeEconomyRuntime &economy);
 
 // ---- State building and procurement bindings (world_ext_economy.cpp, world_ext_military.cpp)
+bool military_purchase_receipt(const NativeEconomyRuntime &economy, int64_t sequence, int64_t &quantity, int64_t &cash);
 bool military_read_state_buildings(const NativeEconomyRuntime &economy, std::vector<int32_t> &out_cells, std::vector<int32_t> &out_type_ids, std::vector<int32_t> &out_state_roles, std::vector<int64_t> &out_units);
-void military_record_cash_burn(NativeEconomyRuntime &economy, int64_t amount);
 godot::Dictionary queue_treasury_sponsored_build(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t effective_day, int64_t sequence, bool queue_for_worker);
 godot::Dictionary queue_treasury_sponsored_demolish(NativeEconomyRuntime &economy, int64_t country_handle, int32_t cell_idx, int32_t type_id, int64_t count, int64_t effective_day, int64_t sequence, bool queue_for_worker);
 godot::Dictionary set_country_procurement_policy(NativeEconomyRuntime &economy, int64_t country_handle, bool enabled, int32_t treasury_share_bp, int32_t research_share_bp, int64_t effective_day, int64_t sequence, int32_t era_share_bp, int32_t colonization_share_bp);

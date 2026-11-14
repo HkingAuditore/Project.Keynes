@@ -47,6 +47,8 @@ const CountryCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyDrawGateHelper = preload(
 	"res://tests/ideology/ideology_draw_gate_helper.gd")
+const Expectations = preload("res://tests/ideology/ideology_expectations.gd")
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 
 const WIDTH := 16
 const HEIGHT := 12
@@ -114,16 +116,6 @@ var _next_sequence := 1
 var _only_card := OS.get_environment("C0_ONLY_CARD").strip_edges()
 ## Last day the pod actually committed, written by `_drive_days`.
 var _last_driven_day := -1
-## Wall time spent inside `_wait_pod_day`, and how many waits ran. Printed at the end
-## so the R-3d "wait on a real field" fix is measurable (milliseconds per wait) instead
-## of being asserted from memory.
-var _wait_ms_total := 0
-var _wait_calls := 0
-## Waits that ended without the pod advancing. Expected > 0: the pod calendar and the
-## driver tick are different coordinates (measured 16 misses in one card's 18 waits),
-## and a driver tick that lands between two commits legitimately sees no change.
-## Reported so the number is visible instead of being mistaken for a broken wait.
-var _wait_timeouts := 0
 
 
 func _init() -> void:
@@ -132,11 +124,6 @@ func _init() -> void:
 
 func _run_and_finish() -> void:
 	var code := await _run()
-	print("[wait] calls=%d total_ms=%d avg_ms=%.1f misses=%d key=%s" % [
-		_wait_calls, _wait_ms_total,
-		float(_wait_ms_total) / float(maxi(1, _wait_calls)), _wait_timeouts,
-		"LEGACY(missing)" if OS.get_environment("C0_LEGACY_WAIT") == "1"
-			else "ideology_pod_committed_day"])
 	print("=== ideology card content worker: %d checks, %d failures ===" % [
 		_checks, _failures])
 	# Reaching this line at all is the signal that the process was NOT killed mid-run.
@@ -152,6 +139,9 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# This fixture isolates worker card delivery from the political support gate;
+	# support/repeal behavior is covered by the opinion fixtures.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_printerr_stage("DCWorldExt unavailable")
 		_fail("DCWorldExt unavailable")
@@ -199,7 +189,10 @@ func _run_worker_card_acceptance() -> int:
 	# is the one the run actually needs -- the card under test.
 	var chosen := _only_card
 	if chosen.is_empty():
-		chosen = String((CARDS[0] as Dictionary)["key"])
+		# The first historical row is terrain-gated and is not discoverable on the
+		# small generated map. Use the ungated card already in this table for a
+		# standalone invocation; the batch runner can still select every row.
+		chosen = "pit_dwelling"
 		printerr("[stage] C0_ONLY_CARD unset; defaulting to %s" % chosen)
 	var chosen_row: Dictionary = {}
 	for row_value in CARDS:
@@ -318,7 +311,8 @@ func _run_worker_card_acceptance() -> int:
 		_expect("%s applied a national modifier row on the worker path" % key,
 			not applied.is_empty(), "rows=%s" % str(applied))
 		var after := _read(ext, handle, String(row["stat"]), 0.0 if additive else 1.0)
-		var expected := float(row["value"])
+		var expected := Expectations.value(key, String(row["stat"]), 1,
+			float(row["value"]))
 		var ratio := after - before if additive else (
 			after / before if not is_zero_approx(before) else 0.0)
 		_expect("%s/%s equals the design value %.4f on the worker path"
@@ -524,7 +518,7 @@ func _test_save_roundtrip(host: WorldRuntimeHost, clock: WorldClock, ext: Object
 	if not _require("%s: row present before save (rows=%s)" % [key, str(keys_before)],
 			keys_before.has("ideology.%s.l1" % key)):
 		return
-	var saved: Dictionary = _request_save(ext, 2026102301)
+	var saved: Dictionary = WorkerWaitHelper.request_worker_save(host, ext, 2026102301)
 	if not _require("%s: PKSR writes the bundle (ready=%s bytes=%d)" % [
 			key, str(saved.get("ready", false)),
 			int(saved.get("bytes", PackedByteArray()).size())],
@@ -577,35 +571,14 @@ func _test_save_roundtrip(host: WorldRuntimeHost, clock: WorldClock, ext: Object
 	var day_before_restart := int(ext.get_runtime_thread_report().get(
 		"ideology_pod_committed_day", -1))
 	ext.set_runtime_clock(true, WORKER_SPEED)
-	# The POD only plans a day when the CLIMATE stage hands it one, and that stage is
-	# driven by the main-thread daily tick in this fixture (`run_daily_tick`), exactly
-	# like every other day this file drives. Waiting on the worker clock alone leaves the
-	# pod parked at the restored day forever -- measured `pod day 17 -> 17`.
+	# The POD only plans a day when the main-thread daily tick hands it one, so
+	# drive days rather than waiting on the worker clock alone.
 	var advanced := false
 	var probe_tick := _world_day(ext)
 	for _settle_day in range(4):
-		probe_tick += 1
-		clock.current_day = float(probe_tick)
-		host.run_daily_tick(probe_tick, clock.season_phase_for_day(probe_tick))
-		host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier(clock) and pulses < 400:
-			clock.simulation_backpressure_pulse.emit(probe_tick)
-			pulses += 1
-		if ext.has_method("service_country_worker_peer_adapter"):
-			ext.service_country_worker_peer_adapter(64, true)
-		if ext.has_method("publish_ideology_worker_inputs"):
-			ext.publish_ideology_worker_inputs()
-		var restart_deadline := Time.get_ticks_msec() + 8000
-		while Time.get_ticks_msec() < restart_deadline:
-			if ext.has_method("service_country_worker_peer_adapter"):
-				ext.service_country_worker_peer_adapter(64, true)
-			OS.delay_msec(4)
-			if int(ext.get_runtime_thread_report().get(
-					"ideology_pod_committed_day", -1)) > day_before_restart:
-				advanced = true
-				break
-		if advanced:
+		probe_tick = _drive_days(host, clock, ext, probe_tick, 1)
+		if _last_driven_day > day_before_restart:
+			advanced = true
 			break
 	var day_after_restart := int(ext.get_runtime_thread_report().get(
 		"ideology_pod_committed_day", -1))
@@ -649,22 +622,6 @@ func _test_save_roundtrip(host: WorldRuntimeHost, clock: WorldClock, ext: Object
 func _world_day(ext: Object) -> int:
 	var report: Dictionary = ext.get_economy_report()
 	return int(report.get("current_day", 0))
-
-
-## Requests a PKSR bundle and polls until it is ready. Same two-step contract as
-## `runtime_ideology_save_roundtrip_test._request_save`.
-func _request_save(ext: Object, request_id: int) -> Dictionary:
-	var request: Dictionary = ext.request_runtime_save(request_id)
-	if not bool(request.get("pending", false)):
-		return request
-	var saved: Dictionary = {}
-	var deadline := Time.get_ticks_msec() + 6000
-	while Time.get_ticks_msec() < deadline:
-		saved = ext.poll_runtime_save(request_id)
-		if bool(saved.get("ready", false)):
-			return saved
-		OS.delay_msec(5)
-	return saved
 
 
 ## Builds one world exactly like the PRODUCTION player session
@@ -768,91 +725,17 @@ func _build_world() -> Dictionary:
 ## DISCOVER return `ideology_discovery_not_allowed` -- which reaches GDScript as the
 ## generic `ideology_worker_rejected`. That is a fixture gap, not a content defect:
 ## in a real game the player's territory provides the signal.
-## Drives `days` worker days exactly like the parity driver: pulse the clock, drain
-## the hard barriers, service the country worker peer, publish opinion inputs before
-## stepping, then WAIT FOR THE POD TO COMMIT that day.
-##
-## The wait used to poll `ideology_pod_committed_day`, a key the report did not
-## contain, so every single day burned the full 8 s timeout and then asserted on
-## whatever snapshot happened to exist. The field is now exported (it is
-## `RuntimeThreadReport::worker_committed_ideology_day`, the POD's own committed day).
-##
-## Returns the day the pod actually reached. `_last_driven_day` records it so the
-## caller can assert monotonic progress instead of trusting the loop.
+## Drives `days` worker days through the shared lockstep driver. `_last_driven_day`
+## records the day the ideology pod reached, so callers can assert progress.
 func _drive_days(host: WorldRuntimeHost, clock: WorldClock, ext: Object,
 		first_tick: int, days: int) -> int:
-	var tick := first_tick
-	for _day in range(days):
-		tick += 1
-		clock.current_day = float(tick)
-		host.run_daily_tick(tick, clock.season_phase_for_day(tick))
-		host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier(clock) and pulses < 400:
-			clock.simulation_backpressure_pulse.emit(tick)
-			pulses += 1
-		if ext.has_method("service_country_worker_peer_adapter"):
-			ext.service_country_worker_peer_adapter(64, true)
-		if ext.has_method("publish_ideology_worker_inputs"):
-			ext.publish_ideology_worker_inputs()
-		ext.set_runtime_clock(false, WORKER_SPEED)
-		var before_day := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		var reached := _wait_pod_day(ext, before_day, 8000)
-		ext.set_runtime_clock(true, WORKER_SPEED)
-		_wait_worker_paused(ext)
-		OS.delay_msec(2)
-		_last_driven_day = reached
-	return tick
-
-
-## Blocks until the pod's committed day is at least `target`, and returns the day it
-## actually reached (or the last observed one on timeout).
-##
-## `timeout_msec` is a *safety net*, not the expected cost: with the field present the
-## loop returns as soon as the day commits.
-## Blocks until the pod's committed day ADVANCES past `baseline`, and returns the day
-## it reached (or the last observed one on timeout).
-##
-## The target is "it moved", not "it reached my tick". The driver's tick and the pod's
-## calendar are NOT the same coordinate: measured with `[daydbg]`, the pod is still at
-## day -1 while the driver is on tick 1..3 (it cannot plan a day before its first
-## opinion snapshot), and from then on it trails the tick by a variable amount. Waiting
-## for `pod_day >= tick` therefore sat out the full timeout on every early day -- 144 s
-## of pure waiting per card -- while the pod had in fact committed.
-##
-## `baseline` is the day the pod was at before this call.
-func _wait_pod_day(ext: Object, baseline: int, timeout_msec: int) -> int:
-	# `C0_LEGACY_WAIT=1` reproduces the pre-R-3d behaviour on purpose: poll a key the
-	# report never contained. It exists so the timing difference can be measured on the
-	# same machine and DLL instead of being asserted from memory.
-	var key := "ideology_pod_committed_day"
-	if OS.get_environment("C0_LEGACY_WAIT") == "1":
-		key = "ideology_pod_committed_day_DOES_NOT_EXIST"
-	var deadline := Time.get_ticks_msec() + timeout_msec
-	var last := baseline
-	var started := Time.get_ticks_msec()
-	var timed_out := true
-	while Time.get_ticks_msec() < deadline:
-		if ext.has_method("service_country_worker_peer_adapter"):
-			ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = ext.get_runtime_thread_report()
-		last = int(report.get(key, -1))
-		if last > baseline:
-			timed_out = false
-			break
-		if String(report.get("simulation_host_state", "")) in ["STOPPED", "FAULTED"]:
-			timed_out = false
-			break
-	_wait_ms_total += Time.get_ticks_msec() - started
-	_wait_calls += 1
-	if timed_out:
-		_wait_timeouts += 1
-	if OS.get_environment("C0_WAIT_TRACE") == "1":
-		printerr("[waittrace] baseline=%d reached=%d took=%dms timeout=%s" % [
-			baseline, last, Time.get_ticks_msec() - started, str(timed_out)])
-	return last
+	var driven := WorkerWaitHelper.drive_worker_days(
+		host, clock, ext, first_tick + 1, days, WORKER_SPEED)
+	_expect("worker commits day %d" % int(driven["day"]), bool(driven["ok"]),
+		str(driven))
+	_last_driven_day = int(ext.get_runtime_thread_report().get(
+		"ideology_pod_committed_day", -1))
+	return int(driven["day"])
 
 
 ## R-3d item 0c: level-up on the WORKER path must retire the old tier's row.
@@ -967,15 +850,6 @@ func _wait_for_modifier_row(ext: Object, handle: int, definition_key: String,
 ## (消费税制) is measured: its design value is "+300 bp", not a ratio.
 func _read(ext: Object, handle: int, stat: String, base: float = 1.0) -> float:
 	return float(ext.evaluate_modifier_stat(MODIFIER_DOMAIN_COUNTRY, handle, 0, stat, base))
-
-
-func _has_hard_barrier(clock: WorldClock) -> bool:
-	for source in [&"economy_day_barrier", &"country_day_barrier",
-			&"ideology_day_barrier", &"bio_occupancy_day_barrier",
-			&"native_daily_day_barrier"]:
-		if clock._simulation_backpressure_sources.has(source):
-			return true
-	return false
 
 
 func _wait_worker_paused(ext, timeout_msec: int = 2500) -> bool:

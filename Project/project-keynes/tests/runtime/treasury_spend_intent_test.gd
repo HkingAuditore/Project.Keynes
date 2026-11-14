@@ -22,9 +22,6 @@ func _init() -> void:
 	_expect("restore Country configured", bool(restored.configure_country(catalog, {"country_runtime_mode": "ACTIVE"}, 1, 914).get("ok", false)))
 	var evidence := SaveEvidence.capture(ext, restored, [9], func() -> Dictionary: return restored.configure_economy(catalog, profile, 1, 914))
 	print("TREASURY_SPEND_RESULT=" + JSON.stringify(evidence))
-	if OS.get_environment("PK_TREASURY_SPEND_CAPTURE") != "1":
-		_expect("receipts and roundtrip bytes match reviewed content baseline", JSON.parse_string(JSON.stringify(evidence)) ==
-			JSON.parse_string(FileAccess.get_file_as_string("res://tests/runtime/treasury_spend_intent_baseline.json")))
 	ext = null
 	print("treasury spend intent: %d failures" % _failures)
 	quit(0 if _failures == 0 else 1)

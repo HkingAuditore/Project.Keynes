@@ -1,6 +1,7 @@
 extends Control
 class_name EconomyWorkspace
 
+const TradePresentation = preload("res://scripts/ui/components/economy_workspace_trade.gd")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
 const NationalProcurementSliderScript = preload("res://scripts/ui/components/national_procurement_slider.gd")
 const FiscalBudgetPageScript = preload("res://scripts/ui/components/fiscal_budget_page.gd")
@@ -670,219 +671,27 @@ func _trade_next_page() -> void:
 
 
 func _trade_cache_key() -> String:
-	return "%s:%d" % [_trade_view, _trade_offset]
+	return TradePresentation._trade_cache_key(self)
 
 
 func _trade_good_name(good_index: int) -> String:
-	var economy = _model.get("economy_facade", null)
-	if economy != null and economy.has_method("good_display_name"):
-		return String(economy.good_display_name(good_index))
-	var good_ids: PackedStringArray = _model.get("trade_summary", {}).get(
-		"good_ids", PackedStringArray())
-	return String(good_ids[good_index]) if good_index >= 0 and good_index < good_ids.size() \
-		else "物资 %d" % good_index
+	return TradePresentation._trade_good_name(self, good_index)
 
 
 func _trade_partner_name(handle: int, slot: int) -> String:
-	if handle > 0 and _partner_name_cache.has(handle):
-		return String(_partner_name_cache[handle])
-	var facade = _model.get("country_facade", null)
-	if facade != null and handle > 0 and facade.has_method("snapshot"):
-		var snapshot: Dictionary = facade.snapshot(handle)
-		if bool(snapshot.get("ok", false)):
-			var name := String(snapshot.get("country_name",
-				snapshot.get("display_name", "")))
-			if not name.is_empty():
-				_partner_name_cache[handle] = name
-				return name
-	return "国家 %d" % slot
+	return TradePresentation._trade_partner_name(self, handle, slot)
 
 
 func _refresh_trade_page(wanted: Dictionary) -> void:
-	_apply_trade_summary_cards()
-	var economy = _model.get("economy_facade", null)
-	var country_handle := int(_model.get("country_handle", 0))
-	if economy == null or country_handle <= 0 or not economy.has_method(
-			"country_trade_snapshot"):
-		_empty_label.text = "贸易数据暂不可用"
-		_empty_label.visible = true
-		_set_status("国家贸易查询暂不可用", true)
-		return
-	var summary: Dictionary = _model.get("trade_summary", {})
-	var revision := int(summary.get("revision", -1))
-	if revision != _trade_revision:
-		_trade_revision = revision
-		_trade_cache.clear()
-	var cache_key := _trade_cache_key()
-	var page: Dictionary = _trade_cache.get(cache_key, {})
-	if page.is_empty():
-		page = economy.country_trade_snapshot(country_handle, _trade_view,
-			_trade_offset, 32)
-		if bool(page.get("ok", false)):
-			_trade_cache[cache_key] = page
-	if not bool(page.get("ok", false)):
-		_empty_label.text = String(page.get("reason", "贸易数据暂不可用"))
-		_empty_label.visible = true
-		_set_status("", false)
-		return
-	var total := int(page.get("total", 0))
-	var begin := int(page.get("offset", _trade_offset))
-	var has_more := bool(page.get("has_more", false))
-	_trade_offset = begin
-	_trade_page_label.text = "%d-%d / %d" % [
-		begin + 1 if total > 0 else 0,
-		mini(begin + 32, total), total]
-	_trade_prev.disabled = begin <= 0
-	_trade_next.disabled = not has_more
-	var row_count := 0
-	if _trade_view == "goods":
-		var goods: PackedInt32Array = page.get("goods", PackedInt32Array())
-		var imports: PackedInt64Array = page.get("import_quantity", PackedInt64Array())
-		var exports: PackedInt64Array = page.get("export_quantity", PackedInt64Array())
-		var import_base: PackedInt64Array = page.get("import_base", PackedInt64Array())
-		var export_base: PackedInt64Array = page.get("export_base", PackedInt64Array())
-		var import_tariff: PackedInt64Array = page.get("import_tariff", PackedInt64Array())
-		var export_tariff: PackedInt64Array = page.get("export_tariff", PackedInt64Array())
-		var cumulative_imports: PackedInt64Array = page.get(
-			"cumulative_import_quantity", PackedInt64Array())
-		var cumulative_exports: PackedInt64Array = page.get(
-			"cumulative_export_quantity", PackedInt64Array())
-		var cumulative_import_base: PackedInt64Array = page.get(
-			"cumulative_import_base", PackedInt64Array())
-		var cumulative_export_base: PackedInt64Array = page.get(
-			"cumulative_export_base", PackedInt64Array())
-		var cumulative_import_tariff: PackedInt64Array = page.get(
-			"cumulative_import_tariff", PackedInt64Array())
-		var cumulative_export_tariff: PackedInt64Array = page.get(
-			"cumulative_export_tariff", PackedInt64Array())
-		for index in range(goods.size()):
-			var key := "goods:%d" % int(goods[index])
-			var row := _ensure_trade_row(key)
-			var imported := int(imports[index]) if index < imports.size() else 0
-			var exported := int(exports[index]) if index < exports.size() else 0
-			var import_value := int(import_base[index]) if index < import_base.size() else 0
-			var export_value := int(export_base[index]) if index < export_base.size() else 0
-			var tariff := int(import_tariff[index]) if index < import_tariff.size() else 0
-			tariff += int(export_tariff[index]) if index < export_tariff.size() else 0
-			var all_imported := int(cumulative_imports[index]) \
-				if index < cumulative_imports.size() else 0
-			var all_exported := int(cumulative_exports[index]) \
-				if index < cumulative_exports.size() else 0
-			var all_import_value := int(cumulative_import_base[index]) \
-				if index < cumulative_import_base.size() else 0
-			var all_export_value := int(cumulative_export_base[index]) \
-				if index < cumulative_export_base.size() else 0
-			var all_tariff := int(cumulative_import_tariff[index]) \
-				if index < cumulative_import_tariff.size() else 0
-			all_tariff += int(cumulative_export_tariff[index]) \
-				if index < cumulative_export_tariff.size() else 0
-			(row.name as Label).text = _trade_good_name(int(goods[index]))
-			(row.detail as Label).text = "累计 %s / %s" % [
-				_money(all_import_value), _money(all_export_value)]
-			(row.quantity as Label).text = "%d / %d" % [imported, exported]
-			(row.base as Label).text = _money(import_value + export_value)
-			(row.tariff as Label).text = _money(tariff)
-			(row.control as Control).tooltip_text = \
-				"上一批：进口 %s，出口 %s，关税净额 %s\n累计：进口 %s（%d），出口 %s（%d），关税净额 %s" % [
-					_money(import_value), _money(export_value), _money(tariff),
-					_money(all_import_value), all_imported,
-					_money(all_export_value), all_exported, _money(all_tariff)]
-			wanted[key] = true
-			row_count += 1
-	else:
-		var partners: PackedInt32Array = page.get("partners", PackedInt32Array())
-		var handles: PackedInt64Array = page.get("partner_handles", PackedInt64Array())
-		var imports: PackedInt64Array = page.get("import_quantity", PackedInt64Array())
-		var exports: PackedInt64Array = page.get("export_quantity", PackedInt64Array())
-		var import_base: PackedInt64Array = page.get("import_base", PackedInt64Array())
-		var export_base: PackedInt64Array = page.get("export_base", PackedInt64Array())
-		var orders: PackedInt64Array = page.get("order_count", PackedInt64Array())
-		var cumulative_imports: PackedInt64Array = page.get(
-			"cumulative_import_quantity", PackedInt64Array())
-		var cumulative_exports: PackedInt64Array = page.get(
-			"cumulative_export_quantity", PackedInt64Array())
-		var cumulative_import_base: PackedInt64Array = page.get(
-			"cumulative_import_base", PackedInt64Array())
-		var cumulative_export_base: PackedInt64Array = page.get(
-			"cumulative_export_base", PackedInt64Array())
-		var cumulative_orders: PackedInt64Array = page.get(
-			"cumulative_order_count", PackedInt64Array())
-		for index in range(partners.size()):
-			var slot := int(partners[index])
-			var handle := int(handles[index]) if index < handles.size() else 0
-			var key := "partners:%d" % handle if handle > 0 else "partners:slot:%d" % slot
-			var row := _ensure_trade_row(key)
-			var imported := int(imports[index]) if index < imports.size() else 0
-			var exported := int(exports[index]) if index < exports.size() else 0
-			var import_value := int(import_base[index]) if index < import_base.size() else 0
-			var export_value := int(export_base[index]) if index < export_base.size() else 0
-			var all_imported := int(cumulative_imports[index]) \
-				if index < cumulative_imports.size() else 0
-			var all_exported := int(cumulative_exports[index]) \
-				if index < cumulative_exports.size() else 0
-			var all_import_value := int(cumulative_import_base[index]) \
-				if index < cumulative_import_base.size() else 0
-			var all_export_value := int(cumulative_export_base[index]) \
-				if index < cumulative_export_base.size() else 0
-			var all_orders := int(cumulative_orders[index]) \
-				if index < cumulative_orders.size() else 0
-			(row.name as Label).text = _trade_partner_name(handle, slot)
-			(row.detail as Label).text = "订单 %d · 累计 %d" % [
-				int(orders[index]) if index < orders.size() else 0, all_orders]
-			(row.quantity as Label).text = "%d / %d" % [imported, exported]
-			(row.base as Label).text = _money(import_value + export_value)
-			(row.tariff as Label).text = "净额 %s" % _money(export_value - import_value)
-			(row.control as Control).tooltip_text = \
-				"上一批：进口 %s，出口 %s\n累计：进口 %s（%d），出口 %s（%d），净出口 %s" % [
-					_money(import_value), _money(export_value),
-					_money(all_import_value), all_imported,
-					_money(all_export_value), all_exported,
-					_money(all_export_value - all_import_value)]
-			wanted[key] = true
-			row_count += 1
-	_empty_label.visible = false
-	_set_status("")
+	TradePresentation._refresh_trade_page(self, wanted)
 
 
 func _ensure_trade_row(key: String) -> Dictionary:
-	if _trade_rows.has(key):
-		return _trade_rows[key]
-	var panel := TradeRowScene.instantiate() as PanelContainer
-	panel.name = "Trade_%s" % key.replace(":", "_")
-	var badge := panel.get_node("Body/Icon") as IconBadge
-	badge.set_semantic(&"metric.trade", UITokens.ACCENT)
-	_flow.add_child(panel)
-	_watch_card_hover(panel)
-	var result := {"control": panel,
-		"name": panel.get_node("Body/Name") as Label,
-		"detail": panel.get_node("Body/Detail") as Label,
-		"quantity": panel.get_node("Body/Quantity") as Label,
-		"base": panel.get_node("Body/Base") as Label,
-		"tariff": panel.get_node("Body/Tariff") as Label,
-		"page": "trade", "item_id": key}
-	_trade_rows[key] = result
-	return result
+	return TradePresentation._ensure_trade_row(self, key)
 
 
 func _apply_trade_summary_cards() -> void:
-	var summary: Dictionary = _model.get("trade_summary", {})
-	var available := bool(summary.get("ok", false))
-	var imports := int(summary.get("previous_import_base", 0))
-	var exports := int(summary.get("previous_export_base", 0))
-	var net := int(summary.get("previous_net_export_base", exports - imports))
-	var tariff := int(summary.get("previous_tariff_net_income", 0))
-	var cumulative_imports := int(summary.get("cumulative_import_base", 0))
-	var cumulative_exports := int(summary.get("cumulative_export_base", 0))
-	var cumulative_tariff := int(summary.get("cumulative_tariff_net_income", 0))
-	_tax_card.set_data("昨日进口额", _money(imports), "累计 %s" % _money(cumulative_imports),
-		UITokens.GOOD, "", "metric.trade", true)
-	_subsidy_card.set_data("昨日出口额", _money(exports), "累计 %s" % _money(cumulative_exports),
-		UITokens.RESOURCE, "", "metric.trade", true)
-	_fulfillment_card.set_data("昨日净出口", _money(net), "累计 %s" % _money(
-		cumulative_exports - cumulative_imports),
-		UITokens.ACCENT, "", "metric.trade", true)
-	_cash_card.set_data("关税净收入", _money(tariff) if available else "—",
-		"累计 %s" % _money(cumulative_tariff), UITokens.BRASS_HIGHLIGHT, "", "tax.tariff", true)
+	TradePresentation._apply_trade_summary_cards(self)
 
 
 func _apply_default_summary_cards() -> void:

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 from check_golden_determinism import difference, records
-from run_regression_checks import ROOT, SHUTDOWN_LEAK
+from run_regression_checks import ROOT, SHUTDOWN_LEAK, is_engine_error
 
 def projection(trace):
     native = next(row["result"] for row in trace if row["stage"] == "native_production_methods")
@@ -38,7 +38,7 @@ def main():
                 stdout=stream, stderr=subprocess.STDOUT)
         lines = log.read_text().splitlines()
         errors = [line for line in lines if "SCRIPT ERROR:" in line or "[FAIL]" in line
-                  or line.startswith("ERROR:") or SHUTDOWN_LEAK.search(line)]
+                  or is_engine_error(line) or SHUTDOWN_LEAK.search(line)]
         traces = records(lines, "MILITARY_FISCAL_TRACE=")
         actual = projection(traces[0]) if len(traces) == 1 else None
         if reference is None: reference = actual

@@ -25,6 +25,7 @@ const NEIGHBOR_THRESHOLD := 800
 const AGRICULTURE_STAT := "economy.city.building.agriculture_output_factor"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const DrawGateHelper = preload("res://tests/ideology/ideology_draw_gate_helper.gd")
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 
 var _host: WorldRuntimeHost
@@ -51,6 +52,9 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# The lifecycle fixture measures Effect instance publication; class-opinion
+	# support is exercised by its dedicated opinion tests.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -111,6 +115,8 @@ func _exercise_lifecycle() -> bool:
 	# DISCOVER and EQUIP are separate plans: the pod requires known_bits, which
 	# only the first plan commits.
 	_grant_draw_gates("village_compact", _tick)
+	# Country gates land in the frozen worker snapshot at the next committed day.
+	_tick = _drive_days(1)
 	var discover: Dictionary = _submit([
 		{"op": 1, "day": _tick, "handle": _handle, "idea": dense}])
 	if not _require("worker accepts village_compact DISCOVER",
@@ -118,6 +124,7 @@ func _exercise_lifecycle() -> bool:
 		return false
 	_tick = _drive_days(2)
 	_grant_draw_gates("village_compact", _tick)
+	_tick = _drive_days(1)
 	var equip: Dictionary = _submit([
 		{"op": 5, "day": _tick, "handle": _handle, "idea": dense}])
 	if not _require("worker accepts village_compact EQUIP",
@@ -125,45 +132,33 @@ func _exercise_lifecycle() -> bool:
 		return false
 	_tick = _drive_days(3)
 
-	var instance_report := PackedInt64Array()
-	var instance_deadline := Time.get_ticks_msec() + 20000
-	while Time.get_ticks_msec() < instance_deadline:
-		var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
-		instance_report = report.get("instance_ids", PackedInt64Array())
-		if not instance_report.is_empty():
+	# The target report covers both backends: Effect instances and the cells a
+	# derived-layer program serves.
+	var target_report: Dictionary = {}
+	var target_handles := PackedInt64Array()
+	var report_deadline := Time.get_ticks_msec() + 20000
+	while Time.get_ticks_msec() < report_deadline:
+		target_report = _ext.get_ideology_effect_target_report(_handle)
+		target_handles = target_report.get("target_handles", PackedInt64Array())
+		if not target_handles.is_empty():
 			break
 		_tick = _drive_days(1)
-	if not _require("managed card publishes an Effect instance report",
-			not instance_report.is_empty(), str(instance_report)):
+	if not _require("managed card publishes a target report",
+			not target_handles.is_empty(), str(target_report)):
 		var receipts: Dictionary = _ext.poll_ideology_receipts(0, 32)
 		printerr("[lifecycle] receipts=%s snapshot=%s" % [
 			str(receipts), str(_ext.get_ideology_snapshot(_handle))])
 		return false
 
-	var instance_ids: PackedInt64Array = instance_report
-	var target_handles := PackedInt64Array()
-	var target_domains := PackedInt32Array()
-	var instance_report_data: Dictionary = _ext.get_ideology_effect_instance_report(
-		_handle)
-	target_handles = instance_report_data.get(
-		"target_handles", PackedInt64Array())
-	target_domains = instance_report_data.get(
+	var target_domains: PackedInt32Array = target_report.get(
 		"target_domains", PackedInt32Array())
-	var cell := _owned_agriculture_cell(instance_ids, target_handles,
-		target_domains)
+	var cell := _owned_agriculture_cell(target_handles, target_domains)
 	if not _require("an owned agriculture cell exists for the card", cell >= 0):
 		return false
 	var installed_snapshot: Dictionary = _ext.get_ideology_snapshot(_handle)
-	var installed_report: Dictionary = _ext.get_ideology_effect_instance_report(
-		_handle)
 	_require("village_compact occupies an ideology slot",
 		int(installed_snapshot.get("ideology_slots_used", 0)) >= 1,
 		str(installed_snapshot.get("ideology_slots_used", -1)))
-	_require("village_compact publishes a non-empty instance report",
-		int(installed_report.get("count", 0)) >= 1,
-		str(installed_report.get("count", -1)))
-	_require("village_compact instance targets an owned cell",
-		cell >= 0, str(cell))
 	var above := NEIGHBOR_THRESHOLD + 1
 	var below := NEIGHBOR_THRESHOLD - 1
 	if not _set_metric(above):
@@ -194,7 +189,7 @@ func _exercise_lifecycle() -> bool:
 
 	# Save while the row is retired. The restored main-thread mirror must carry
 	# effect_applied=0 so it cannot resurrect a row that the worker removed.
-	var saved: Dictionary = _request_save(2026102304)
+	var saved: Dictionary = WorkerWaitHelper.request_worker_save(_host, _ext, 2026102304)
 	var bundle: PackedByteArray = saved.get("bytes", PackedByteArray())
 	if not _require("PKSR captures the retired lifecycle state",
 			bool(saved.get("ready", false)) and not bundle.is_empty(),
@@ -312,7 +307,7 @@ func _exercise_lifecycle() -> bool:
 	var retired_again := _wait_for_retirement(cell, 3)
 	_expect("below threshold retires again before save (got %.5f)" % retired_again,
 		_is_close(retired_again, 1.00, 0.0005), "%.5f" % retired_again)
-	var save_second: Dictionary = _request_save(2026102305)
+	var save_second: Dictionary = WorkerWaitHelper.request_worker_save(_host, _ext, 2026102305)
 	bundle = save_second.get("bytes", PackedByteArray())
 	if not _require("PKSR captures the second retired state",
 			bool(save_second.get("ready", false)) and not bundle.is_empty(),
@@ -415,34 +410,20 @@ func _build_world() -> Dictionary:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
-func _owned_agriculture_cell(instance_ids: PackedInt64Array,
-		target_handles: PackedInt64Array, target_domains: PackedInt32Array) -> int:
+func _owned_agriculture_cell(target_handles: PackedInt64Array,
+		target_domains: PackedInt32Array) -> int:
 	# Prefer the cell the activated program actually selected. `target_handles`
 	# from the ideology report is authoritative for that program; scanning all
 	# owned cells can pick a different agriculture cell and silently measure a
 	# row the program never targeted.
-	for index in range(mini(instance_ids.size(), target_handles.size())):
+	for index in range(target_handles.size()):
 		if index >= target_domains.size() or int(target_domains[index]) != 2:
 			continue
 		var target := int(target_handles[index])
@@ -552,68 +533,11 @@ func _factor(cell: int) -> float:
 func _effect_bytes() -> int:
 	var request_id := 300000 + _tick * 17 + _next_sequence
 	_next_sequence += 1
-	var saved: Dictionary = _request_save(request_id)
+	var saved: Dictionary = WorkerWaitHelper.request_worker_save(_host, _ext, request_id)
 	var bytes := int(saved.get("effect_bytes", -1))
 	if bool(saved.get("ready", false)) and bytes >= 0:
 		return bytes
 	return -1
-
-
-func _request_save(request_id: int) -> Dictionary:
-	var request: Dictionary = _ext.request_runtime_save(request_id)
-	var accepted := String(request.get("code", "")) == "ok" \
-		and bool(request.get("pending", false))
-	var deadline := Time.get_ticks_msec() + 120000
-	for _iteration in range(2000):
-		if accepted:
-			break
-		if Time.get_ticks_msec() >= deadline:
-			break
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		_ext.poll_runtime_save(request_id)
-		request = _ext.request_runtime_save(request_id)
-		accepted = String(request.get("code", "")) == "ok" \
-			and bool(request.get("pending", false))
-		if not accepted and String(request.get("code", "")) \
-				!= "save_request_busy":
-			return request
-		OS.delay_msec(2)
-	if not accepted:
-		return {"pending": false, "ready": false, "code": "save_request_timeout",
-			"request_id": request_id}
-	# The worker barrier can take several committed days under load. A measured
-	# EFP1 plateau must not advance the world just to obtain a save sample.
-	deadline = Time.get_ticks_msec() + 120000
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		var saved: Dictionary = _ext.poll_runtime_save(request_id)
-		if bool(saved.get("ready", false)):
-			return saved
-		# Bundle and Country checkpoint can land on adjacent committed days.
-		# Retry the failed request at the next committed boundary instead of
-		# treating the transient mismatch as a terminal save error.
-		if String(saved.get("reason", "")).begins_with(
-				"save_country_checkpoint_day_mismatch:"):
-			_tick = _drive_days(1)
-			request_id += 1000000
-			request = _ext.request_runtime_save(request_id)
-			accepted = String(request.get("code", "")) == "ok" \
-				and bool(request.get("pending", false))
-			if not accepted and String(request.get("code", "")) \
-					== "save_request_busy":
-				continue
-			if not accepted:
-				return request
-			continue
-		if not bool(saved.get("pending", true)) \
-				and String(saved.get("code", "")) != "save_pending":
-			return saved
-		OS.delay_msec(2)
-	return {"pending": true, "ready": false, "code": "save_poll_timeout",
-		"request_id": request_id,
-		"report": _ext.get_runtime_thread_report()}
 
 
 func _metric_revision() -> int:
@@ -697,28 +621,6 @@ func _world_day(ext: Object) -> int:
 	if ext == null or not ext.has_method("get_economy_report"):
 		return 0
 	return int(ext.get_economy_report().get("current_day", 0))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method("has_hard_barrier") \
-		else false
-
-
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var deadline := Time.get_ticks_msec() + timeout_msec
-	var reached := baseline
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		reached = int(report.get("ideology_pod_committed_day", -1))
-		if reached > baseline:
-			return reached
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return reached
-	return reached
 
 
 func _wait_worker_paused(ext: Object) -> bool:

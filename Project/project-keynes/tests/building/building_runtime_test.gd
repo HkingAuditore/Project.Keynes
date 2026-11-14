@@ -56,6 +56,14 @@ func _run() -> void:
 	profile.economy_cadence_force_investment_days = 10
 	# Keep focused lifecycle/investment fixtures fast; production default is 30 days.
 	profile.investment_review_days = 10
+	if OS.get_cmdline_user_args().has("--supply-chain-only"):
+		_test_unbuilt_multilevel_input_chain(catalog, profile)
+		var scalar_chain := _test_empty_tool_substitute_chain(catalog, profile, false)
+		var worker_chain := _test_empty_tool_substitute_chain(catalog, profile, true)
+		_expect("cold-start chain has identical daily scalar/worker hashes",
+			not scalar_chain.is_empty() and scalar_chain == worker_chain)
+		print("supply-chain failures=%d" % failures)
+		return
 	if OS.get_cmdline_user_args().has("--materials-only"):
 		_test_endogenous_owner_investment(catalog, profile, true)
 		_test_endogenous_owner_investment(catalog, profile, true, true)
@@ -90,6 +98,11 @@ func _run() -> void:
 	_test_business_demand_recovers_industrial_utilization(catalog, profile)
 	_test_input_shortage_propagates_to_upstream(catalog, profile)
 	_test_leontief_derived_demand_cold_start(catalog, profile)
+	_test_unbuilt_multilevel_input_chain(catalog, profile)
+	var scalar_chain := _test_empty_tool_substitute_chain(catalog, profile, false)
+	var worker_chain := _test_empty_tool_substitute_chain(catalog, profile, true)
+	_expect("cold-start chain has identical daily scalar/worker hashes",
+		not scalar_chain.is_empty() and scalar_chain == worker_chain)
 	_test_production_input_hard_reserve(catalog, profile)
 	_test_production_input_soft_shortage(catalog, profile)
 	_test_producer_support_issuance(catalog, profile)
@@ -211,7 +224,8 @@ func _run() -> void:
 	_expect("production cycle conserves money", int(day1.get("money_error", 1)) == 0)
 	_expect("production cycle conserves market goods", int(day1.get("goods_error", 1)) == 0)
 	buildings = ext.get_building_cell_snapshot(0)
-	_expect("building snapshot reports five-day production period", int(buildings.get("period_days", 0)) == 5)
+	_expect("building snapshot reports the configured production period",
+		int(buildings.get("period_days", 0)) == int(profile.market_cycle_days))
 	var filled_owner: PackedInt64Array = buildings.get("filled_owner", PackedInt64Array())
 	print("  all-tech day1 debug=", {"types": buildings.get("group_type_ids"), "counts": buildings.get("group_counts"), "owners": buildings.get("owner_signature_ids"), "filled": buildings.get("filled_owner"), "required": buildings.get("owner_required"), "openings": buildings.get("owner_openings"), "planned": buildings.get("planned_utilization_q16"), "funded": buildings.get("funded_capacity_q16"), "capacity": buildings.get("capacity_q16"), "state": buildings.get("operating_state"), "pop": ext.get_population_cell_snapshot(0).get("populations"), "owner_pop": ext.get_population_cell_snapshot(0).get("owner_employed_by_cohort"), "unemp": ext.get_population_cell_snapshot(0).get("unemployed_by_cohort")})
 	_expect("owner job filled", filled_owner.size() > 0 and int(filled_owner[0]) == 1)
@@ -4864,6 +4878,233 @@ func _test_leontief_derived_demand_cold_start(source_catalog: Dictionary,
 	_expect("derived demand diagnostics are published",
 		int(final_report.get("derived_business_demand_lanes", 0)) >= 0 and
 		final_report.has("derived_business_demand_weight_q16"))
+
+func _supply_chain_catalog(source_catalog: Dictionary, single_tool: bool) -> Dictionary:
+	var catalog := source_catalog.duplicate(true)
+	var ids: PackedStringArray = catalog.building_type_ids
+	var goods: PackedStringArray = catalog.good_ids
+	_block_construction_except(catalog, PackedInt32Array([
+		ids.find("gathering_ground"), ids.find("knapping_workshop"),
+		ids.find("flint_quarry")]), 0)
+	if single_tool:
+		for stable_id in ["gathering_ground", "flint_quarry"]:
+			_pin_building_input_candidates(catalog, ids.find(stable_id),
+				goods.find("chipped_stone_tools"))
+	return catalog
+
+
+func _supply_chain_profile(source_profile: Dictionary, worker: bool) -> Dictionary:
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.startup_demand_runtime_mode = "ACTIVE"
+	profile.economy_cadence_force_market_days = 1
+	profile.economy_cadence_force_slow_days = 5
+	profile.economy_cadence_force_investment_days = 10
+	profile.worker_enabled = worker
+	profile.worker_market_threshold = 1
+	return profile
+
+
+func _supply_chain_stock(catalog: Dictionary, cells: int) -> PackedInt64Array:
+	var goods: PackedStringArray = catalog.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size() * cells)
+	stock.fill(10000000)
+	# Keep the authored food/tool/flint recipes and prices. Only these shelves
+	# are empty; unrelated survival and construction goods cannot bind the test.
+	var one_market := PackedInt64Array()
+	one_market.resize(goods.size())
+	one_market.fill(10000000)
+	_zero_tool_good_stock(catalog, one_market)
+	one_market[goods.find("flint")] = 0
+	one_market[goods.find("gathered_plants")] = 0
+	for cell in cells:
+		for good in goods.size():
+			stock[cell * goods.size() + good] = one_market[good]
+	return stock
+
+
+func _supply_chain_day(ext: Object, day: int) -> Dictionary:
+	var report: Dictionary = {}
+	for slice in 2048:
+		report = ext.run_economy_slice({
+			"day_index": day, "tick_index": day * 10000 + slice})
+		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
+			break
+	return report
+
+
+func _test_unbuilt_multilevel_input_chain(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := _supply_chain_catalog(source_catalog, true)
+	var profile := _supply_chain_profile(source_profile, false)
+	var ext := _new_ext(catalog)
+	_expect("unbuilt chain country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 203))
+	_expect("unbuilt chain economy configures",
+		bool(ext.configure_economy(catalog, profile, 1, 203).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	_expect("unbuilt chain has no initial producers", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([
+			signatures.find("forager|default"), signatures.find("merchant|default")]),
+		"population": PackedInt64Array([39, 1]),
+		"funds": PackedInt64Array([23400000, 600000]),
+	}, {"stock": _supply_chain_stock(catalog, 1)}).get("ok", false)))
+	var report := _supply_chain_day(ext, 0)
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("food shortage conducts through unbuilt tools to unbuilt flint",
+		_good_value(market, "derived_business_demand", "chipped_stone_tools") > 0
+		and _good_value(market, "derived_business_demand", "flint") > 0)
+	_expect("upstream forecast raises flint price before the first purchase",
+		_good_value(market, "price", "flint") > int(catalog.good_default_price[
+			(catalog.good_ids as PackedStringArray).find("flint")])
+		and _good_value(market, "business_demand_ema", "flint") == 0)
+	_expect("cyclic tool/flint recipes stay bounded and create no goods",
+		_good_value(market, "derived_business_demand", "flint") < 100000
+		and _good_value(market, "stock", "flint") == 0
+		and _good_value(market, "stock", "chipped_stone_tools") == 0
+		and (ext.get_building_cell_snapshot(0).group_type_ids as PackedInt32Array).is_empty())
+	_expect("unbuilt chain forecast conserves all ledgers",
+		not bool(report.get("fatal", false)) and bool(report.get("done", false))
+		and int(report.get("population_error", 1)) == 0
+		and int(report.get("money_error", 1)) == 0
+		and int(report.get("goods_error", 1)) == 0)
+	for day in range(1, 4):
+		_supply_chain_day(ext, day)
+	var restored := _new_ext(catalog)
+	var restore_ok := CountryTestHelper.configure_all_technologies(restored, catalog, 1, 203)
+	var country_chunks: Array[PackedByteArray] = []
+	restore_ok = restore_ok and bool(ext.begin_country_save(4096).get("ok", false))
+	while true:
+		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
+		if chunk.is_empty():
+			break
+		country_chunks.append(chunk)
+	restore_ok = restore_ok and bool(ext.end_country_save().get("ok", false))
+	restore_ok = restore_ok and bool(restored.begin_country_restore().get("ok", false))
+	for chunk in country_chunks:
+		restore_ok = restore_ok and bool(restored.feed_country_restore_chunk(chunk).get("ok", false))
+	restore_ok = restore_ok and bool(restored.end_country_restore().get("ok", false))
+	restore_ok = restore_ok and bool(restored.configure_economy(catalog, profile, 1, 203).get("ok", false))
+	for slot_name in catalog.building_resource_reserve_slots:
+		restored.write_f32_range(restored.component_id(StringName(slot_name)), 0,
+			ext.snapshot_f32(ext.component_id(StringName(slot_name))))
+	var saved: Dictionary = ext.capture_economy_ecp2(0)
+	restore_ok = restore_ok and bool(saved.get("ok", false))
+	restore_ok = restore_ok and bool(restored.restore_economy_ecp2(
+		saved.get("bytes", PackedByteArray())).get("ok", false))
+	_expect("unbuilt upstream chain ECP2 round trip preserves full state",
+		restore_ok and ext.get_economy_state_hash() == restored.get_economy_state_hash())
+	var continuation_ok := restore_ok
+	if restore_ok:
+		# Day four refreshes the single live cell in the default four-day spread.
+		# Both worlds then continue with the same frozen-input/cache sequence.
+		for day in range(4, 16):
+			_supply_chain_day(ext, day)
+			_supply_chain_day(restored, day)
+			continuation_ok = continuation_ok and \
+				ext.get_economy_state_hash() == restored.get_economy_state_hash()
+	_expect("restored upstream chain retains twelve daily full hashes", continuation_ok)
+
+
+func _test_empty_tool_substitute_chain(source_catalog: Dictionary,
+		source_profile: Dictionary, worker: bool) -> PackedInt64Array:
+	# All tool substitutes start empty. The primary SKU can have no buildable
+	# producer here; its real business EMA must still conduct through a viable
+	# knapping substitute. At 240 residents the authored demand can support a
+	# whole quarry owner. The 220 occupied lots keep unemployment below 25%, so
+	# employment catch-up cannot bypass the missing market signal. Keep normal
+	# recipes/prices and 60 currency/person; do not insert either producer.
+	var catalog := _supply_chain_catalog(source_catalog, false)
+	var profile := _supply_chain_profile(source_profile, worker)
+	var cells := 1024 if OS.get_cmdline_user_args().has("--supply-chain-sparse") else 2
+	var ext := _new_ext(catalog, cells)
+	_expect("substitute chain country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, cells, 203))
+	_expect("substitute chain economy configures",
+		bool(ext.configure_economy(catalog, profile, cells, 203).get("ok", false)))
+	var resource := (catalog.building_resource_ids as PackedStringArray).find("flint")
+	ext.write_f32_range(ext.component_id(StringName(
+		catalog.building_resource_reserve_slots[resource])), 0,
+		PackedFloat32Array([1000000000.0, 1000000000.0]))
+	var ids: PackedStringArray = catalog.building_type_ids
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager := signatures.find("forager|default")
+	var merchant := signatures.find("merchant|default")
+	_expect("substitute chain starts without quarry or workshop", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 1, 1]),
+		"signature_ids": PackedInt32Array([forager, merchant, forager, merchant]),
+		"population": PackedInt64Array([239, 1, 239, 1]),
+		"funds": PackedInt64Array([143400000, 600000, 143400000, 600000]),
+	}, {
+		"stock": _supply_chain_stock(catalog, cells),
+		"building_cells": PackedInt32Array([0, 1]),
+		"building_type_ids": PackedInt32Array([
+			ids.find("gathering_ground"), ids.find("gathering_ground")]),
+		"building_owner_signature_ids": PackedInt32Array([forager, forager]),
+		"building_counts": PackedInt64Array([220, 220]),
+	}).get("ok", false)))
+	var hashes := PackedInt64Array()
+	var ledgers_ok := true
+	var derived_seen := false
+	var flint_produced := false
+	var tools_produced := false
+	var flint_price_up := false
+	var first_flint_day := -1
+	var first_tools_day := -1
+	var elapsed_samples := PackedFloat64Array()
+	var elapsed_sum := 0.0
+	var peak_memory := 0
+	for day in range(121):
+		var started := Time.get_ticks_usec()
+		var report := _supply_chain_day(ext, day)
+		if day >= 4:
+			var elapsed := float(Time.get_ticks_usec() - started) / 1000.0
+			elapsed_samples.append(elapsed)
+			elapsed_sum += elapsed
+		peak_memory = maxi(peak_memory, int(report.get("memory_bytes", 0)))
+		ledgers_ok = ledgers_ok and bool(report.get("done", false)) \
+			and not bool(report.get("fatal", false)) \
+			and int(report.get("population_error", 1)) == 0 \
+			and int(report.get("money_error", 1)) == 0 \
+			and int(report.get("goods_error", 1)) == 0
+		hashes.append(ext.get_economy_state_hash())
+		var market: Dictionary = ext.get_market_cell_snapshot(0)
+		var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		derived_seen = derived_seen or _good_value(market, "derived_business_demand", "flint") > 0
+		flint_price_up = flint_price_up or _good_value(market, "price", "flint") > \
+			int(catalog.good_default_price[(catalog.good_ids as PackedStringArray).find("flint")])
+		var groups: PackedInt32Array = buildings.group_type_ids
+		var quarry := groups.find(ids.find("flint_quarry"))
+		var workshop := groups.find(ids.find("knapping_workshop"))
+		flint_produced = flint_produced or (quarry >= 0 and
+			_snapshot_i64(buildings, "last_output", quarry) > 0)
+		tools_produced = tools_produced or (workshop >= 0 and
+			_snapshot_i64(buildings, "last_output", workshop) > 0)
+		if flint_produced and first_flint_day < 0:
+			first_flint_day = day
+		if tools_produced and first_tools_day < 0:
+			first_tools_day = day
+	_expect("empty substitute demand reaches flint and raises its price", derived_seen and flint_price_up)
+	_expect("residents finance and operate the first flint quarry", flint_produced)
+	_expect("residents build the first workshop and produce tools", tools_produced)
+	_expect("every cold-start chain day conserves population, money and goods", ledgers_ok)
+	var final_market: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("recovered flint inventory can lower price despite shadow demand",
+		_good_value(final_market, "stock", "flint") > 0 and
+		_good_value(final_market, "price", "flint") < int(catalog.good_default_price[
+			(catalog.good_ids as PackedStringArray).find("flint")]))
+	_expect("empty wilderness does not enter the supply-chain live workset",
+		int(ext.get_economy_report().get("economy_live_cells", -1)) == 2)
+	elapsed_samples.sort()
+	print("[cold_start_chain] cells=%d live=2 worker=%s first_flint_day=%d first_tools_day=%d N=1 P=5 I=10 samples=%d avg=%.3fms p95=%.3fms max=%.3fms memory=%.3fMiB" % [
+		cells, str(worker), first_flint_day, first_tools_day, elapsed_samples.size(),
+		elapsed_sum / elapsed_samples.size(), elapsed_samples[
+			int(ceil(elapsed_samples.size() * 0.95)) - 1], elapsed_samples[-1],
+		float(peak_memory) / 1048576.0])
+	return hashes
+
 
 func _test_production_input_hard_reserve(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:

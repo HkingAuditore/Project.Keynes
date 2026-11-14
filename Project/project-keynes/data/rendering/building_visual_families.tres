@@ -8,6 +8,7 @@ families = Array[Dictionary]([{
 "archetype": 0,
 "climate_profiles": PackedStringArray("dryland_crop"),
 "id": "field",
+"type_ids": PackedStringArray("automated_farm", "highland_tuber_plot", "terrace_farm"),
 "keywords": PackedStringArray(),
 "resources": PackedStringArray()
 }, {
@@ -81,6 +82,7 @@ families = Array[Dictionary]([{
 "archetype": 2,
 "climate_profiles": PackedStringArray(),
 "id": "food",
+"type_ids": PackedStringArray("cold_storage"),
 "keywords": PackedStringArray("bread", "bak", "beverage", "brew", "distill", "staple", "communal_hearth", "canned", "canning", "dairy", "cream", "meat", "slaughter", "edible_oil", "processed_food", "kitchen"),
 "resources": PackedStringArray()
 }, {

@@ -73,14 +73,14 @@ exists. Do not fall back to an arbitrary tile.
 ## Enforce the Settlement Contract
 
 Use `StarterSettlementBootstrap`; never call `EconomyTestBootstrap` from the
-formal path. Require exactly 20 people. Self-operated job slots follow the
-survival-core buildings and stay at or below 20 per opening country. Remaining
+formal path. Require exactly 40 people. Self-operated job slots follow the
+survival-core buildings and stay at or below 40 per opening country. Remaining
 people enter the unemployed pool for native job matching. Prefill owner operators
 on opening food buildings (`gathering_ground` and `stone_age_hunting_camp`) so the
 food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies. Formal starts always top up timber and grant/prebuild exactly one `deadwood_gathering_camp`; leftover construction-material techs (bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
 and `surface_silver_working` (2 miners); do not prefill those slots. Other
 Stone-Age starter buildings must remain owner-only. Require gathering and hunting
-camps when local reserves exist, the matching precious-metal work site,
+camps when local reserves exist, one deadwood camp, the matching precious-metal work site,
 `early_merchant_post`, and hide scraping only on cold highland. Do not prebuild any
 knowledge shed; reveal one geographically operable knowledge-practice technology,
 seed its construction materials, and deposit 3000 authored technology points in
@@ -88,8 +88,8 @@ the treasury so the pending knowledge practice can complete without covering lat
 queued techs. Do not prebuild leftover fishing or bast camps. Aggregate all starts through EconomyFacade
 catalog helpers and fixed-point packets, provide the 15-day local food bridge, and retain population/money/goods
 conservation checks.
-Require one native founder family per capital, conserving the gathering ground's two occupied
-forager owners as its membership and ownership, and immediately promote exactly one of them as the
+Require one native founder family per capital on the declared regional primary food producer,
+conserving its occupied owner jobs as membership and ownership, and immediately promote one as the
 named notable founder with a traceable owner job and building handle. Do not lower ordinary family
 formation thresholds to satisfy this opening contract.
 Keep the explicit v3 founder columns, but require native fallback recognition from a forced-named
@@ -121,6 +121,44 @@ bounded to days 0..30, requires filled matching owner posts, and must be idempot
   recomputed through `WorldRuntimeHost.refresh_country_visuals()` on restore,
   never saved. Reject a cell-count mismatch or truncation rather than padding.
 
+## Headless Save Replay and Known Save/Restore Blockers (2026-09-22)
+
+Reproduce a player-reported stop with
+`tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60` (or `-SavePath <file.pksv>`).
+It drives `tests/headless_save_replay.gd` through the production
+`GameFlow.begin_load_game` restore path and writes a forensics JSON on fatal, stall, or
+failed restore. `SaveRepository` honours `PK_SAVE_DIR` in debug builds, so an arbitrary
+`.pksv` can be staged into a scratch directory without overwriting the player's slots.
+
+A replay that reaches the target day is not a pass on its own: also assert country/economy
+are bootstrapped, the host is not STOPPED/FAULTED, and `newest_state_day` advanced. A failed
+PKSR restore lets the clock free-run with nothing simulating.
+
+Save/load under worker authority was repaired end to end on 2026-09-23; the full chain
+is in `docs/architecture/development-guide.md` ("Save/load under worker
+authority"). The rules that fell out of it:
+
+- Under worker Country authority the main-thread `NativeCountryRuntime` is stale (never
+  written after bootstrap). Anything that persists or reports Country state must read
+  `country_query_runtime()`; saves use `capture_worker_committed_checkpoint()`, and Economy
+  save headers are stamped with that checkpoint's identity (`set_save_country_identity`).
+- A restore start is granted its requested domain mask immediately, and
+  `sync_runtime_domain_ownership()` mirrors the grant to the main-thread peers. Do not
+  reintroduce a path where a loaded game's first day runs before the grant.
+- Every restore path must end in `publish_restored_country_territory()`; restore must size
+  every per-country lane (including Economy asset reservations) to the restored count.
+- Validate cross-section references (e.g. fiscal peer `country_slot`) in `end_restore`,
+  after the epoch they refer to is captured, not while parsing the section.
+- New PKEC sections need an ECP2 domain mapping **and** must fall inside the restore section
+  loop, or they are dropped silently while the header still counts them.
+- `build_save_bundle` failures must publish a save failure (`_save_failed_request_id`,
+  `_save_failure_reason`) and must not be overwritten back to PAUSED/RUNNING.
+
+Test it with `PK_SAVE_DIR=<scratch> PK_GAME_SAVE_ROUNDTRIP_TEST=1` (the test refuses to run
+against `user://saves` because it writes `manual_1..3`). It enables a tax and advances 20
+days before saving so the Country state really changes on the worker; keep that property if
+you edit it, otherwise a stale-state save passes by coincidence.
+
 ## Validate Proportionally
 
 Run at minimum:
@@ -128,7 +166,7 @@ Run at minimum:
 - Headless project startup.
 - `new_game_config_test.gd` and `save_repository_test.gd`.
 - `gameplay_start_runtime_test.gd` for deterministic starts, pairwise distance,
-  unique identity, one-cell ownership, 20 population per country, buildings,
+  unique identity, one-cell ownership, 40 population per country, buildings,
   and production-bootstrap source.
 - `environment_runtime_smoke_test.gd` for byte-exact native state round-trip.
 - `game_save_roundtrip_test.gd`, which hashes `explored_arr` across save/load.
@@ -144,3 +182,24 @@ conservation error. Update `docs/architecture/development-guide.md`, the authori
 the system map whenever ownership, ordering, sections, or compatibility changes.
 When a change touches the vision/fog provider, also update
 `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
+
+## World session lifecycle (2026-11-03)
+
+Read `docs/architecture/design.md` and `development-guide.md`.
+`WorldSession` orders preparation/cancellation/release through
+`world_session_modules.gd`. New lifecycle adapters register before generation;
+persisted state registers separately through `GameSave.register_state_module`.
+GameFlow awaits `close_world()` before scene replacement and pending repository
+I/O before application quit. `simulation_executor_exited` is the native release
+acknowledgement; neither a stop request nor FAULTED alone proves completion.
+Keep partial-prepare cleanup, concurrent-close sharing, generation-token checks
+and the real scene/save/quit round-trip tests. Do not place new business logic
+in the host's compatibility adapters.
+
+Legacy save implementations live in `scripts/game/save_modules/`; composition and per-call
+capability binding live in `world_state_modules.gd` / `world_state_bindings.gd`.
+Declare decoding and peer reads on providers; do not put module-specific branches back
+in GameSave. Clock control belongs to `RuntimeClockBinding`, attached after the executor
+exists and detached before stop; UI refresh does not synchronize native pause state.
+Opening packets declare `building_owner_fill` so shared professions cannot steal the
+food operators through catalog ordering. Preserve regional founder choice and 40 people.

@@ -16,7 +16,7 @@ if ($Out -eq "") { $Out = Join-Path $artifacts "$Label-d$Days-s$Seed.log" }
 New-Item -ItemType Directory -Force -Path (Split-Path $Out) | Out-Null
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
-& $godot --headless --path $project --script res://tests/climate_parity_probe.gd -- `
+& $godot --headless --path $project --script res://tests/world/climate_parity_probe.gd -- `
     "--days=$Days" "--seed=$Seed" "--label=$Label" *> $Out
 $code = $LASTEXITCODE
 Write-Host "[probe] exit=$code elapsed_s=$([int]$sw.Elapsed.TotalSeconds) log=$Out"

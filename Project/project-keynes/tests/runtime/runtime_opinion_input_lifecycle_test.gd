@@ -176,7 +176,10 @@ func _opinion_world(catalog: Dictionary, initial_opinion: bool) -> Object:
 	return ext
 
 func _opinion_day(ext: Object, inline_mode: bool, day: int) -> bool:
-	_capture_input(ext, day)
+	# Climate authority accepts only the next frame day; a restored or
+	# pre-seeded host may already hold this day.
+	for input_day in range(int(ext.runtime_next_environment_day()), day + 1):
+		_capture_input(ext, input_day)
 	if not inline_mode:
 		ext.set_runtime_clock(false, 1.0)
 	var deadline := Time.get_ticks_msec() + 5000

@@ -88,6 +88,11 @@
     std::vector<int32_t> _family_birth_factor_q16;
     std::vector<int32_t> _family_absorb_bonus_q16;
     std::vector<int32_t> _family_colonization_population_reward;
+    // A population reward frozen by family.population_reward must survive
+    // policy recomputation until the next successful SETTLE ACK. It is stored
+    // in PKEC family records and the economy state hash, separately from the
+    // per-epoch expansionism effect scalar.
+    std::vector<int32_t> _family_colonization_population_reward_pending;
     EconomyTrackedRecords<FamilyTraitCommand> _family_trait_commands{{{14, 4}, "commands.family_trait_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     // Milestone founding: per-cell count of population milestones that have
     // produced a family, offers awaiting a player choice, queued choices, and
@@ -1222,6 +1227,7 @@
     bool _trade_visibility_manual = false;
     std::vector<uint64_t> _epoch_country_technologies;
     EconomyOwnedColumn<uint64_t> _epoch_country_handles{{{16, 18}, "native_columns.epoch_country_handles", EconomyFieldEncoding::U64, 8}};
+    std::vector<uint32_t> _epoch_country_political_regime_capabilities;
     // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
     // Only configure/capture touches ModifierRuntime; workers read these dense arrays.
     std::vector<int32_t> _income_tax_stat_ids;

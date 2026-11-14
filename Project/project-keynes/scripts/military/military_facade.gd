@@ -1,4 +1,4 @@
-class_name MilitaryFacade
+﻿class_name MilitaryFacade
 extends RefCounted
 
 ## Cold-path GDScript wrapper around the native military bindings on DCWorldExt.
@@ -32,7 +32,7 @@ const SPEC_COMMON := {
 		"army.create", "army.station", "army.transfer", "army.merge",
 		"army.split", "army.set_template", "army.reinforce", "army.move",
 		"army.area_control", "army.stop", "army.stance", "army.rename",
-		"army.disband",
+		"army.disband", "army.explore",
 	],
 	diplomacy_ops = ["war.declare", "peace.propose", "peace.respond"],
 }
@@ -40,7 +40,38 @@ const SPEC_COMMON := {
 const PEACE_TERM_KINDS := [
 	"white", "cede", "annex", "lump_sum", "installments", "goods", "return"]
 
-var _world_ext: DCWorldExt = null
+# ---- 实物维护（docs/plans/military-physical-maintenance.md D7 / S4-6）----
+## 维护对象的两类：建筑组（`object_id` = 目录 `state_buildings` 稠密下标）
+## 与装备组（`object_id` = 兵种稠密下标）。
+const MAINTENANCE_KIND_BUILDING := 0
+const MAINTENANCE_KIND_EQUIPMENT := 1
+const MAINTENANCE_KIND_NAMES := {0: "建筑", 1: "装备"}
+## `shortage_reason`：0 无 / 1 缺货 / 2 预算不足 / 3 运输未到。
+const MAINTENANCE_REASON_TEXT := ["—", "缺货", "预算不足", "运输未到"]
+## `days_cover_x10 == -1`：该行没有需求，可用天数无意义。
+const MAINTENANCE_NO_DEMAND := -1
+## 排序用的「无需求」哨兵：比任何真实天数都大，保证短缺行排在最前。
+const MAINTENANCE_NO_DEMAND_SORT := 0x7FFFFFFF
+## 维护缓存的槽：无参原生方法一次回全表，所有国家共用这一份。
+const MAINTENANCE_ALL_COUNTRIES := -1
+## 原生字段名在 D7 契约与任务书里各写了一次（`daily_need` vs `daily_need_goods`
+## 等），两条都认。这是本次 UI 侧唯一的字段名假设，已列进交付说明请原生侧核对。
+const MAINTENANCE_FIELD_ALIASES := {
+	"country_slot": ["country_slot"],
+	"cell": ["cell"],
+	"kind": ["kind"],
+	"object_id": ["object_id"],
+	"units": ["units"],
+	"daily_need_goods": ["daily_need_goods", "daily_need"],
+	"stock_goods": ["stock_goods", "stock"],
+	"inbound_goods": ["inbound_goods", "inbound"],
+	"ratio_bp": ["ratio_bp"],
+	"days_cover_x10": ["days_cover_x10"],
+	"disrepair": ["disrepair"],
+	"shortage_reason": ["shortage_reason", "reason"],
+}
+
+var _world_ext: Object = null # configure() still requires DCWorldExt.
 var _configured := false
 var _catalog: Dictionary = {}
 var _catalog_hash := 0
@@ -60,6 +91,13 @@ var _ai_player_handles := PackedInt64Array()
 var _missing_api_reason := ""
 var _event_cursor := 0
 var _restored_event_progress := PackedInt64Array()
+## 维护快照的整形结果：一次原生读取服务同一刷新里的明细表与汇总，跨日/命令/
+## 读档才失效（见 `invalidate_maintenance_cache`）。UI 每天最多读一次。
+## 键是缓存槽（见 `_maintenance_view`），不是国家槽。
+var _maintenance_cache: Dictionary = {}
+## 原生方法声明的参数个数（-1 = 未探测）。D7 写作无参「一次轮询」，但带国家槽
+## 的实现也认：多一个参数不影响语义，只影响调用形状。
+var _maintenance_native_args := -1
 
 
 ## `economy_catalog` is `EconomyFacade.native_catalog()`; `technology_catalog`
@@ -73,6 +111,8 @@ func configure(world_ext: DCWorldExt, economy_catalog: Dictionary,
 	_configured = false
 	_catalog = {}
 	_catalog_hash = 0
+	_maintenance_native_args = -1
+	invalidate_maintenance_cache()
 	_good_ids = economy_catalog.get("good_ids", PackedStringArray()) \
 		if economy_catalog.get("good_ids", null) is PackedStringArray \
 		else PackedStringArray()
@@ -186,6 +226,7 @@ func set_terrain(map, day: int = -1, force: bool = false,
 		_terrain_signature = signature
 		_terrain_cells = int(map.cell_count())
 		_terrain_set_day = day
+		invalidate_maintenance_cache()
 		if not preserved.is_empty():
 			# Native call on purpose: restore_state() rewinds the event cursor,
 			# but the restored ring keeps its ids, so forwarding must continue.
@@ -234,6 +275,7 @@ func run_daily(day: int) -> Dictionary:
 		return _fail("military_not_configured")
 	var result: Dictionary = _world_ext.run_military_daily({"day_index": int(day)})
 	_last_daily_report = result if result is Dictionary else {}
+	invalidate_maintenance_cache()
 	return _last_daily_report
 
 
@@ -245,7 +287,9 @@ func run_daily(day: int) -> Dictionary:
 func catch_up(day: int) -> Dictionary:
 	if not _configured:
 		return _fail("military_not_configured")
-	return _world_ext.run_military_catch_up({"day_index": int(day)})
+	var caught: Dictionary = _world_ext.run_military_catch_up({"day_index": int(day)})
+	invalidate_maintenance_cache()
+	return caught
 
 
 ## Render selection (army handle, 0 = none). The native render snapshot returns
@@ -326,6 +370,7 @@ func submit(batch: Array) -> Dictionary:
 		encoded.append(normalized)
 		accepted += 1
 	var result: Dictionary = _world_ext.submit_military_commands(encoded)
+	invalidate_maintenance_cache()
 	if rejected.size() > 0:
 		var native_rejected: Array = result.get("rejected", [])
 		result["rejected"] = native_rejected + rejected
@@ -392,6 +437,48 @@ func area_control(army: int, cell: int, radius: int,
 	if not cells.is_empty():
 		command["cells"] = cells
 	return submit([command])
+
+
+func explore_army(army: int, cell: int, cells: PackedInt32Array,
+		radius: int) -> Dictionary:
+	return submit([{"op": "army.explore", "army": army, "cell": int(cell),
+		"cells": cells, "radius": int(radius)}])
+
+
+func set_military_exploration_observer(observer_slot: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"set_military_exploration_observer"):
+		return _fail("military_exploration_observer_unavailable")
+	return _world_ext.set_military_exploration_observer(int(observer_slot))
+
+
+func set_military_exploration_view(observer_slot: int, explored: PackedByteArray,
+		day: int, revision: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method(
+			"set_military_exploration_view"):
+		return _fail("military_exploration_view_unavailable")
+	return _world_ext.set_military_exploration_view(
+		int(observer_slot), explored, int(day), int(revision))
+
+
+func get_military_vision_trail(observer_slot: int) -> PackedInt32Array:
+	if not _configured or not _world_ext.has_method("get_military_vision_trail"):
+		return PackedInt32Array()
+	var trail = _world_ext.get_military_vision_trail(int(observer_slot))
+	return trail if trail is PackedInt32Array else PackedInt32Array()
+
+
+func clear_military_vision_trail(observer_slot: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("clear_military_vision_trail"):
+		return _fail("military_exploration_trail_unavailable")
+	return _world_ext.clear_military_vision_trail(int(observer_slot))
+
+
+func has_military_exploration_work() -> bool:
+	if not _configured or not _world_ext.has_method(
+			"has_military_exploration_work"):
+		return false
+	return bool(_world_ext.has_military_exploration_work())
 
 
 func declare_war(country: int, target_country: int) -> Dictionary:
@@ -505,6 +592,281 @@ func state_building_economy_id(building_index: int) -> int:
 	return int((rows[building_index] as Dictionary).get("economy_building_id", -1))
 
 
+## 军事目录 `state_buildings` 的「稠密下标 → 稳定 id」表。维护快照的
+## `object_id`（kind 0）就是这条表的下标，`state_building_materials()` 用的是
+## 同一套下标。只读缓存好的编译目录，不碰原生。
+func state_building_ids() -> PackedStringArray:
+	return _catalog_ids("state_buildings")
+
+
+## 兵种稠密下标 → 稳定 id（维护快照 kind 1 的 `object_id` 走这条表）。
+func unit_ids() -> PackedStringArray:
+	return _catalog_ids("units")
+
+
+func _catalog_ids(key: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var table = _catalog.get(key, null)
+	if table is Array:
+		for raw in (table as Array):
+			out.append(String((raw as Dictionary).get("id", "")) if raw is Dictionary else "")
+	return out
+
+
+# ------------------------------------------------------------- maintenance
+
+## 原生是否提供维护快照。旧 DLL 没有 `get_military_maintenance_snapshot()`：
+## 面板据此写「实物维护未接通」，而不是把空表读成「没有维护对象」。
+func maintenance_supported() -> bool:
+	return _world_ext != null \
+		and _world_ext.has_method("get_military_maintenance_snapshot")
+
+
+## 丢弃整形缓存。军事日推进、命令、读档、地形重置后必须调用，否则面板会读到
+## 上一日的库存/满足率。UI 不必手动调：这些入口都在本类里。
+func invalidate_maintenance_cache() -> void:
+	_maintenance_cache.clear()
+
+
+## 逐对象的维护明细（稳定 id + 名字 + 原始整数），已按短缺优先排序。
+## `country_slot < 0` = 全部国家。原生缺席时返回空数组，永不返回 null。
+func maintenance_snapshot(country_slot := -1) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var view := _maintenance_view(int(country_slot))
+	var rows: Array = view.get("rows", [])
+	for row_value in rows:
+		if row_value is Dictionary:
+			out.append(row_value)
+	return out
+
+
+## 面板聚合读数：`rows` / `need_goods` / `stock_goods` / `inbound_goods` /
+## `weighted_ratio_bp` / `disrepair_rows` / `shortage_rows`，全部整数。
+func maintenance_summary(country_slot := -1) -> Dictionary:
+	var view := _maintenance_view(int(country_slot))
+	var summary: Dictionary = view.get("summary", {})
+	return summary.duplicate(false)
+
+
+## 一次原生读取 + 一次整形，然后按国家过滤并汇总。整形结果缓存在
+## `_maintenance_cache` 上（无参原生方法只读全表一次），所以「明细 + 汇总」
+## 在同一刷新里只跨桥一次。
+func _maintenance_view(country_slot: int) -> Dictionary:
+	var rows: Array = []
+	for row_value in _shaped_maintenance(country_slot):
+		var row: Dictionary = row_value
+		if country_slot >= 0 and int(row.get("country_slot", -1)) != country_slot:
+			continue
+		rows.append(row)
+	return {"rows": rows, "summary": _summarize_maintenance(rows)}
+
+
+## 缓存槽：无参原生方法一次回全表，所有国家共用一份（`MAINTENANCE_ALL_COUNTRIES`）；
+## 带国家槽的实现各存各的。
+func _shaped_maintenance(country_slot: int) -> Array:
+	var native_args := _maintenance_native_arg_count()
+	var cache_key := MAINTENANCE_ALL_COUNTRIES if native_args <= 0 else country_slot
+	if _maintenance_cache.has(cache_key):
+		return _maintenance_cache[cache_key] as Array
+	if not _configured or not maintenance_supported():
+		return []
+	var raw = _world_ext.call("get_military_maintenance_snapshot") if native_args <= 0 \
+		else _world_ext.get_military_maintenance_snapshot(int(country_slot))
+	var shaped: Array = shape_maintenance(raw, _catalog).get("rows", [])
+	_maintenance_cache[cache_key] = shaped
+	return shaped
+
+
+## 原生签名的参数个数，只在第一次读快照时探测一次。契约写的是无参
+## `get_military_maintenance_snapshot()`；如果实现加了国家槽参数，这里也能对上，
+## 不让 UI 因为「多了一个可选参数」整块失联。
+func _maintenance_native_arg_count() -> int:
+	if _maintenance_native_args >= 0:
+		return _maintenance_native_args
+	_maintenance_native_args = 0
+	if _world_ext == null:
+		return _maintenance_native_args
+	for method in _world_ext.get_method_list():
+		if String(method.get("name", "")) != "get_military_maintenance_snapshot":
+			continue
+		var arg_list = method.get("args", [])
+		_maintenance_native_args = (arg_list as Array).size() if arg_list is Array else 0
+		break
+	return _maintenance_native_args
+
+
+## 纯函数：把维护快照整形为 `{rows: [...], summary: {...}}`，不碰原生、不留状态，
+## 所以测试可以直接喂合成字典（tests/military/military_maintenance_view_model_test.gd）。
+##
+## `rows` 接受两种形状：
+##   1. 原生发布的平行字典：`{country_slot: PackedInt32Array, ...}`（或带 `rows` 数组）；
+##   2. 已解码的行数组：`[{country_slot: 1, kind: 0, object_id: 3, ...}, ...]`。
+##
+## `catalog` 是编译后的军事目录（`state_buildings` / `units`）。`object_id` 是稠密
+## 下标，这里解析成稳定 id + 显示名；越界时 id 留空、名字写「建筑 · #n」。
+##
+## 排序：可用天数升序（短缺在前），再按稳定 id、国家、地块（后两项只为确定性，
+## 同一 id 可能出现在多个地块）。`days_cover_x10 == -1`（无需求）不是短缺，排最后。
+static func shape_maintenance(rows, catalog: Dictionary) -> Dictionary:
+	var shaped: Array = []
+	for raw in _decode_maintenance_rows(rows):
+		shaped.append(_shape_maintenance_row(raw, catalog))
+	shaped.sort_custom(func(a, b) -> bool:
+		var days_a := _maintenance_sort_days(int(a.get("days_cover_x10",
+			MAINTENANCE_NO_DEMAND)))
+		var days_b := _maintenance_sort_days(int(b.get("days_cover_x10",
+			MAINTENANCE_NO_DEMAND)))
+		if days_a != days_b:
+			return days_a < days_b
+		var id_a := String(a.get("id", ""))
+		var id_b := String(b.get("id", ""))
+		if id_a != id_b:
+			return id_a < id_b
+		if int(a.get("country_slot", -1)) != int(b.get("country_slot", -1)):
+			return int(a.get("country_slot", -1)) < int(b.get("country_slot", -1))
+		return int(a.get("cell", -1)) < int(b.get("cell", -1)))
+	return {"rows": shaped, "summary": _summarize_maintenance(shaped)}
+
+
+## `shortage_reason` → 展示文案（0 — / 1 缺货 / 2 预算不足 / 3 运输未到）。
+static func maintenance_reason_text(reason: int) -> String:
+	if reason < 0 or reason >= MAINTENANCE_REASON_TEXT.size():
+		return String(MAINTENANCE_REASON_TEXT[0])
+	return String(MAINTENANCE_REASON_TEXT[reason])
+
+
+## 需求加权满足率：`Σ(need × ratio) / Σneed`，整数除法；没有需求时为 0。
+static func _summarize_maintenance(rows: Array) -> Dictionary:
+	var need := 0
+	var stock := 0
+	var inbound := 0
+	var weighted := 0
+	var disrepair_rows := 0
+	var shortage_rows := 0
+	for raw in rows:
+		var row: Dictionary = raw
+		var row_need := maxi(0, int(row.get("daily_need_goods", 0)))
+		need += row_need
+		stock += maxi(0, int(row.get("stock_goods", 0)))
+		inbound += maxi(0, int(row.get("inbound_goods", 0)))
+		weighted += row_need * clampi(int(row.get("ratio_bp", 0)), 0, 10000)
+		if int(row.get("disrepair", 0)) != 0:
+			disrepair_rows += 1
+		if int(row.get("shortage_reason", 0)) != 0:
+			shortage_rows += 1
+	return {
+		"rows": rows.size(),
+		"need_goods": need,
+		"stock_goods": stock,
+		"inbound_goods": inbound,
+		"weighted_ratio_bp": clampi(weighted / need, 0, 10000) if need > 0 else 0,
+		"disrepair_rows": disrepair_rows,
+		"shortage_rows": shortage_rows,
+	}
+
+
+static func _maintenance_sort_days(days_cover_x10: int) -> int:
+	return MAINTENANCE_NO_DEMAND_SORT if days_cover_x10 < 0 else days_cover_x10
+
+
+static func _decode_maintenance_rows(rows) -> Array:
+	if rows is Array:
+		var decoded: Array = []
+		for raw in (rows as Array):
+			if raw is Dictionary:
+				decoded.append(raw)
+		return decoded
+	if not rows is Dictionary:
+		return []
+	var raw_rows = (rows as Dictionary).get("rows", null)
+	if raw_rows is Array:
+		return _decode_maintenance_rows(raw_rows)
+	if (rows as Dictionary).is_empty():
+		return []
+	return _decode_parallel_maintenance(rows as Dictionary)
+
+
+## 平行数组 → 行字典。取各数组长度的最大值：缺一条数组不该把整张表截断。
+static func _decode_parallel_maintenance(raw: Dictionary) -> Array:
+	var columns := {}
+	var count := 0
+	for field in MAINTENANCE_FIELD_ALIASES:
+		var values = _first_present(raw, MAINTENANCE_FIELD_ALIASES[field])
+		columns[field] = values
+		if values is Array:
+			count = maxi(count, (values as Array).size())
+		elif values is PackedInt32Array:
+			count = maxi(count, (values as PackedInt32Array).size())
+		elif values is PackedInt64Array:
+			count = maxi(count, (values as PackedInt64Array).size())
+		elif values is PackedByteArray:
+			count = maxi(count, (values as PackedByteArray).size())
+	var out: Array = []
+	for index in range(count):
+		var row := {}
+		for field in columns:
+			var values = columns[field]
+			row[field] = int(values[index]) \
+				if values != null and index < values.size() else 0
+		out.append(row)
+	return out
+
+
+static func _first_present(raw: Dictionary, keys: Array):
+	for key in keys:
+		if raw.has(key):
+			return raw[key]
+	return null
+
+
+static func _shape_maintenance_row(raw: Dictionary, catalog: Dictionary) -> Dictionary:
+	var kind := int(raw.get("kind", MAINTENANCE_KIND_BUILDING))
+	var object_id := int(raw.get("object_id", -1))
+	var kind_name := String(MAINTENANCE_KIND_NAMES.get(kind, ""))
+	var identity := _maintenance_identity(catalog, kind, object_id)
+	var name := String(identity.get("name", ""))
+	if name.is_empty():
+		name = "%s · #%d" % [kind_name if not kind_name.is_empty() else "对象", object_id]
+	var reason := int(raw.get("shortage_reason", 0))
+	return {
+		"country_slot": int(raw.get("country_slot", -1)),
+		"cell": int(raw.get("cell", -1)),
+		"kind": kind,
+		"kind_name": kind_name,
+		"object_id": object_id,
+		"id": String(identity.get("id", "")),
+		"name": name,
+		"units": maxi(0, int(raw.get("units", 0))),
+		"daily_need_goods": maxi(0, int(raw.get("daily_need_goods", 0))),
+		"stock_goods": maxi(0, int(raw.get("stock_goods", 0))),
+		"inbound_goods": maxi(0, int(raw.get("inbound_goods", 0))),
+		"ratio_bp": clampi(int(raw.get("ratio_bp", 0)), 0, 10000),
+		"days_cover_x10": int(raw.get("days_cover_x10", MAINTENANCE_NO_DEMAND)),
+		"disrepair": 1 if int(raw.get("disrepair", 0)) != 0 else 0,
+		"shortage_reason": reason,
+		"reason_text": maintenance_reason_text(reason),
+	}
+
+
+## 稠密下标 → `{id, name}`。`units` 在编译目录里是数组；地块档案那边缓存的是
+## 「下标 → 行」字典，两种都认，免得同一份解析写两遍。
+static func _maintenance_identity(catalog: Dictionary, kind: int,
+		object_id: int) -> Dictionary:
+	var key := "state_buildings" if kind == MAINTENANCE_KIND_BUILDING else "units"
+	var table = catalog.get(key, null)
+	var row = null
+	if table is Array:
+		if object_id >= 0 and object_id < (table as Array).size():
+			row = (table as Array)[object_id]
+	elif table is Dictionary:
+		row = (table as Dictionary).get(object_id, null)
+	if not row is Dictionary:
+		return {"id": "", "name": ""}
+	var id := String((row as Dictionary).get("id", "")).strip_edges()
+	var name := String((row as Dictionary).get("name", "")).strip_edges()
+	return {"id": id, "name": name if not name.is_empty() else id}
+
+
 ## Drain the native event ring into GameplayEventBus-compatible batches.
 ## `cursor` is advanced in place by the caller (MilitaryDailySystem owns it).
 func poll_events(after_id: int, limit: int = 256) -> Array:
@@ -533,6 +895,7 @@ func restore_state(bytes: PackedByteArray) -> Dictionary:
 		# The restored state carries its own event ids; restart the cursor so a
 		# reload does not replay the previous session's ring.
 		_event_cursor = 0
+	invalidate_maintenance_cache()
 	return result
 
 

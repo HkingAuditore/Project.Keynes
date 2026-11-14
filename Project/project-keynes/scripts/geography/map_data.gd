@@ -13,7 +13,7 @@ var _cells: Dictionary = {}
 # ─── Daily-Sim SoA Refactor 阶段 2：邻居索引 SoA ──────────────────────
 # 由 _build_indices() 一次性预计算（在 MapGenerator.generate 完成所有 cell
 # 入库 + terrain 定型后调用）。fast-tick 热路径（_apply_sea_ice_daily_pass /
-# _apply_ocean_heat_transport_pass / _apply_local_climate_coupling_pass）
+# ocean water/land native dispatch / climate Pass-B native dispatch）
 # 通过这些索引避开每帧创建 6-元 Array 的 GC 压力。
 #
 # 不变量：
@@ -190,8 +190,7 @@ var water_balance_30d_arr:     PackedFloat32Array = PackedFloat32Array()
 # `_slots[].arr_f32/.arr_i32`；GDScript 端 hot pass 不再做 cells[i].<field>
 # pack/unpack（原先 ~7ms wall 的 95%）。
 # 启动期 bake 时从 HexCell 镜像初值（rebuild_soa_from_cells），阶段 2 末尾
-# 保留"slot → HexCell 回灌"兼容 _trigger_succession / GDScript legacy fallback /
-# baker/UI 读取点（阶段 3 全部迁完后可删）。
+# 保留"slot → HexCell 回灌"兼容 baker/UI 读取点。
 var vegetation_vitality_arr:           PackedFloat32Array = PackedFloat32Array()
 var vitality_low_streak_arr:           PackedInt32Array   = PackedInt32Array()
 var vitality_high_streak_arr:          PackedInt32Array   = PackedInt32Array()

@@ -209,9 +209,8 @@ extends Resource
 @export_range(1, 8, 1) var sea_ice_atlas_upload_stride: int = 2
 
 # Fast-tick perf opt (A): stride for the weather / feedback chain in
-# MapGenerator.refresh_daily (_apply_transpiration_pass / _apply_albedo_pass /
-# _apply_vegetation_dynamics / _apply_weather_to_map_feedback_pass + GPU
-# rebakes). 1 = run every day (legacy), N>1 = run every N days and on skip
+# MapGenerator.refresh_daily 的 native stage_b/weather 链。1 = run every day,
+# N>1 = run every N days and on skip
 # days reuse the last active fronts snapshot. Auto-adjusted by main.gd on
 # speed change (x1→1, x5→4, x20→8). Manual override via Inspector is allowed.
 # Used by SUS WeatherRefreshJob via StridePolicy.

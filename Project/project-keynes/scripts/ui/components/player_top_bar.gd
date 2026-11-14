@@ -7,6 +7,7 @@ signal day_night_toggled(enabled: bool)
 signal setup_requested()
 signal gm_requested()
 signal annual_history_requested()
+signal dispatch_requested()
 ## 国库/人口纸签：hover 出明细悬浮卡，点击进入对应的国家经济分页。
 signal status_hovered(kind: String, entered: bool)
 signal status_pressed(kind: String)
@@ -60,6 +61,7 @@ var _speed_button: Button
 var _day_night_button: Button
 var _gm_button: Button
 var _setup_button: Button
+var _dispatch_button: Button
 var _current_speed := 1.0
 var _is_paused := false
 var _gm_available := false
@@ -69,6 +71,8 @@ var _fitting_calendar := false
 var _applied_date_font_size := DATE_FONT_SIZE
 var _applied_era_font_size := ERA_FONT_SIZE
 var _applied_block_width := -1.0
+var _compact_dispatch_hud := false
+var _dispatch_count := 0
 
 
 func _ready() -> void:
@@ -97,6 +101,8 @@ func _ready() -> void:
 	_population_value = %PopulationValue
 	_date_row.minimum_size_changed.connect(_update_date_block_width)
 	resized.connect(_update_date_block_width)
+	if is_inside_tree():
+		get_viewport().size_changed.connect(_update_date_block_width)
 	_date_button.tooltip_text = "查阅历年发展报告"
 	_date_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_date_button.focus_mode = Control.FOCUS_ALL
@@ -108,6 +114,12 @@ func _ready() -> void:
 	_day_night_button = %DayNightButton
 	_gm_button = %GMButton
 	_setup_button = %SetupButton
+	_dispatch_button = %DispatchButton
+	IconButton.apply_with_text(_dispatch_button, &"map.expedition", "派遣", 24)
+	_dispatch_button.focus_mode = Control.FOCUS_ALL
+	_dispatch_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_dispatch_button.pressed.connect(func() -> void: dispatch_requested.emit())
+	UIAnimation.bind_tactile_button(_dispatch_button)
 
 	if _calendar_icon != null:
 		_calendar_icon.texture = IconCatalog.texture_for_key(&"hud.clock.calendar")
@@ -168,6 +180,32 @@ func _ready() -> void:
 	_speed_button.pressed.connect(cycle_speed_forward)
 	_speed_button.gui_input.connect(_on_speed_button_gui_input)
 	set_gm_available(false)
+
+
+func set_dispatch_status(preparing: int, travelling: int, returning: int) -> void:
+	if _dispatch_button == null:
+		return
+	var total := preparing + travelling + returning
+	_dispatch_count = total
+	_dispatch_button.visible = total > 0
+	_dispatch_button.text = "派遣 %s 队" % UITokens.format_compact_number_cn(float(total), 0)
+	_fit_dispatch_button()
+	var parts := PackedStringArray()
+	for status in [["筹备中", preparing], ["前往中", travelling], ["返程中", returning]]:
+		if int(status[1]) > 0:
+			parts.append("%s %d 队" % [status[0], status[1]])
+	_dispatch_button.tooltip_text = "查看派遣进展\n" + "，".join(parts)
+	_update_date_block_width()
+
+
+func _fit_dispatch_button() -> void:
+	_dispatch_button.text = "派遣" if _compact_dispatch_hud else (
+		"派遣 %s 队" % UITokens.format_compact_number_cn(float(_dispatch_count), 0))
+	var font := _dispatch_button.get_theme_font("font")
+	var font_size := _dispatch_button.get_theme_font_size("font_size")
+	var chrome := _dispatch_button.get_theme_stylebox("normal").get_minimum_size().x
+	_dispatch_button.custom_minimum_size.x = maxf(80.0 if _compact_dispatch_hud else 104.0,
+		ceilf(font.get_string_size(_dispatch_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x) + chrome + 44.0)
 
 
 func set_world_summary(_width: int, _height: int, _cells: int, _seed: int) -> void:
@@ -305,6 +343,24 @@ func _update_date_block_width() -> void:
 	if _fitting_calendar:
 		return
 	_fitting_calendar = true
+	var compact := _dispatch_button != null and _dispatch_button.visible \
+		and get_viewport_rect().size.x < UITokens.DETAIL_BREAKPOINT_COMPACT * 0.8
+	if compact != _compact_dispatch_hud:
+		_compact_dispatch_hud = compact
+		_era_name.visible = not compact
+		var margin := get_node("Margin") as MarginContainer
+		margin.add_theme_constant_override("margin_left", 8 if compact else 16)
+		margin.add_theme_constant_override("margin_right", 8 if compact else 16)
+		(get_node("Margin/Row") as HBoxContainer).add_theme_constant_override("separation", 4 if compact else 8)
+		for value in [_treasury_value, _population_value]:
+			if value != null:
+				value.add_theme_font_size_override("font_size", 18 if compact else STATUS_FONT_SIZE)
+		if compact:
+			_dispatch_button.add_theme_font_size_override("font_size", 18)
+		else:
+			_dispatch_button.remove_theme_font_size_override("font_size")
+		_fit_dispatch_button()
+		_update_status_plates()
 	var chrome := _calendar_chrome_width()
 	var limit := clampf(_calendar_block_free_width(), DATE_BLOCK_MIN_WIDTH, DATE_BLOCK_MAX_WIDTH)
 	var reserved_date := _reserved_date_text()
@@ -336,7 +392,7 @@ func _update_date_block_width() -> void:
 
 func _calendar_text_width(date_text: String, date_size: int, era_size: int) -> float:
 	return _text_width(_date_label, date_text, date_size) \
-		+ _text_width(_era_name, _era_name.text, era_size) \
+		+ (_text_width(_era_name, _era_name.text, era_size) if _era_name.visible else 0.0) \
 		+ DATE_BLOCK_TEXT_SLACK * 2.0
 
 

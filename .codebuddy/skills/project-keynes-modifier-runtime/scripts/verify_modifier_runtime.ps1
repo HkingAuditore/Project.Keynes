@@ -108,7 +108,7 @@ if ($Godot) {
         throw "Godot not found: $GodotPath"
     }
     $project = Join-Path $repoRoot "Project\project-keynes"
-    & $GodotPath --headless --path $project --script res://tests/modifier_runtime_test.gd
+    & $GodotPath --headless --path $project --script res://tests/effect/modifier_runtime_test.gd
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

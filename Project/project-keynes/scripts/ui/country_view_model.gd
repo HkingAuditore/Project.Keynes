@@ -24,6 +24,8 @@ var _section_cache_revisions: Dictionary = {}
 var _static_catalog_cache: Dictionary = {}
 var _ideology_catalog_cache: Dictionary = {}
 var _ideology_catalog_facade = null
+var _political_regime_catalog_cache: Dictionary = {}
+var _political_regime_catalog_facade = null
 var _military_catalog_cache: Dictionary = {}
 var _military_catalog_facade = null
 var _economy_history := EconomyHistoryBuffer.new()
@@ -42,6 +44,8 @@ func set_context(generator, map = null) -> void:
 	_section_cache_revisions.clear()
 	_ideology_catalog_cache.clear()
 	_ideology_catalog_facade = null
+	_political_regime_catalog_cache.clear()
+	_political_regime_catalog_facade = null
 	_military_catalog_cache.clear()
 	_military_catalog_facade = null
 	_economy_history.reset()
@@ -65,17 +69,27 @@ func fiscal_history() -> EconomyFiscalHistory:
 	return _fiscal_history
 
 
-## 每个已提交日推进一次国库收支序列。只读一次财政快照，不做逐格聚合，
-## 与产值账本一样在面板关闭时也继续累加。
-func sample_fiscal_history() -> bool:
+## 每个已提交日推进一次国库收支序列。财政快照用来拆分税种，国库现金用来
+## 校准多日结算造成的真实净变化；两者都不做逐格聚合，面板关闭时也继续采样。
+func sample_fiscal_history(committed_day: int = -1) -> bool:
 	var context := _country_context()
 	if not bool(context.get("ok", false)):
 		return false
 	var facade = context.facade
-	if facade == null or not facade.has_method("fiscal_snapshot"):
+	if facade == null:
 		return false
 	var handle := int(context.country_handle)
-	return _fiscal_history.sample(handle, facade.fiscal_snapshot(handle))
+	var fiscal: Dictionary = {}
+	if facade.has_method("fiscal_snapshot"):
+		fiscal = facade.fiscal_snapshot(handle)
+	# 国家摘要已经带同一份权威国库现金；只有旧快照缺字段时才查一次国库，
+	# 避免为了一个标量每日搬运整份物资清单。
+	var treasury_cash := int(context.summary.get("cash", -1))
+	if treasury_cash < 0 and facade.has_method("treasury_snapshot"):
+		var treasury: Dictionary = facade.treasury_snapshot(handle)
+		if bool(treasury.get("ok", false)) and treasury.has("cash"):
+			treasury_cash = int(treasury.get("cash", 0))
+	return _fiscal_history.sample(handle, fiscal, treasury_cash, committed_day)
 
 
 func strata_table() -> SocialStrataTable:
@@ -106,8 +120,8 @@ func invalidate_cache(domains: int = -1) -> void:
 		_section_cache.erase("economy")
 		_section_cache_revisions.erase("economy")
 	if (domains & 4) != 0:
-		_section_cache.erase("ideology")
-		_section_cache_revisions.erase("ideology")
+		_section_cache.erase("politics")
+		_section_cache_revisions.erase("politics")
 	if (domains & 8) != 0:
 		_section_cache.erase("military")
 		_section_cache_revisions.erase("military")
@@ -299,8 +313,9 @@ func player_research_states() -> PackedInt32Array:
 
 
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
-	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
+	var normalized_section := "politics" if section_id == "ideology" else section_id
+	if normalized_section not in ["technology", "economy", "politics", "military", "diplomacy"]:
+		normalized_section = "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	# Keep the pre-snapshot path intentionally verbose for debug/A-B comparison.
@@ -331,6 +346,10 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 		if facade.has_method("snapshot") else {}
 	var tax_availability := _tax_availability(economy_facade, start_cell)
 	var ideology := _ideology_model(country_handle)
+	var politics_snapshot: Dictionary = facade.political_regime_snapshot(country_handle) \
+		if facade.has_method("political_regime_snapshot") else {}
+	var politics := build_politics_snapshot(country_handle,
+		{"politics": politics_snapshot})
 	var treasury := _treasury_model(facade, country_handle)
 	var treasury_available := bool(treasury.get("available", false))
 	var cash := int(treasury.get("cash", 0)) if treasury_available \
@@ -372,6 +391,7 @@ func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 		"research": research,
 		"development": development,
 		"ideology": ideology,
+		"politics": politics.get("politics", {}),
 		"procurement": procurement_model(economy_facade, country_handle),
 	}
 	if normalized_section == "technology":
@@ -416,7 +436,7 @@ func _section_mask(section_id: String) -> int:
 	# 军事没有原生 country_ui_snapshot 分片（它走自己的 facade），给 0 表示
 	# 「不需要国家快照」，国家壳数据仍由 summary 提供。外交同理：它读的是
 	# 领土镜像 + 军事快照，不读国家快照分片。
-	return int({"technology": 1, "economy": 2, "ideology": 4, "military": 0,
+	return int({"technology": 1, "economy": 2, "politics": 12, "ideology": 12, "military": 0,
 		"diplomacy": 0}.get(section_id, 1))
 
 
@@ -533,9 +553,96 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 	return {"ideology": _ideology_model(country_handle)}
 
 
+func build_politics_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Dictionary:
+	var ideology := build_ideology_snapshot(country_handle, ui_snapshot)
+	var country_facade = _generator.get_country_facade() \
+		if _generator != null and _generator.has_method("get_country_facade") else null
+	var native: Dictionary = ui_snapshot.get("politics", {})
+	if native.is_empty() and country_facade != null and \
+		country_facade.has_method("political_regime_snapshot"):
+		native = country_facade.political_regime_snapshot(country_handle)
+	var catalog := _political_regime_catalog_cache
+	if country_facade != null and country_facade != _political_regime_catalog_facade:
+		_political_regime_catalog_facade = country_facade
+		_political_regime_catalog_cache = {}
+		catalog = {}
+	if catalog.is_empty() and country_facade != null and \
+		country_facade.has_method("political_regime_catalog_view"):
+		catalog = country_facade.political_regime_catalog_view()
+		if bool(catalog.get("ok", false)):
+			_political_regime_catalog_cache = catalog
+	var regime := _present_political_regime(native, catalog)
+	return {
+		"politics": {"available": bool(regime.get("available", false)),
+			"regime": regime, "ideology": ideology.get("ideology", {})},
+		# Existing IdeologyWorkspace consumes this top-level row. Keeping the
+		# child payload here avoids rebuilding or duplicating the ideology UI.
+		"ideology": ideology.get("ideology", {}),
+	}
+
+
+static func _present_political_regime(snapshot: Dictionary,
+		catalog: Dictionary) -> Dictionary:
+	if not bool(catalog.get("ok", false)):
+		return {"available": false, "reason": "体制目录尚未就绪。"}
+	var definitions: Array = catalog.get("definitions", [])
+	var raw_regime_key = snapshot.get("regime_key",
+		snapshot.get("regime_stable_id", ""))
+	var regime_id := String(raw_regime_key)
+	if regime_id.is_empty() or raw_regime_key is int:
+		var dense := int(snapshot.get("regime_index", snapshot.get("regime_id_index", -1)))
+		if dense >= 0 and dense < definitions.size():
+			regime_id = String((definitions[dense] as Dictionary).get("id", ""))
+	if regime_id.is_empty():
+		regime_id = "local_council"
+	var current: Dictionary = {}
+	for raw_definition in definitions:
+		var definition: Dictionary = raw_definition
+		if String(definition.get("id", "")) == regime_id:
+			current = definition.duplicate(true)
+			break
+	if current.is_empty():
+		return {"available": false, "reason": "当前体制不在本局目录中。"}
+	var capability_keys := PackedStringArray(current.get("capability_keys", PackedStringArray()))
+	var capability_bits := int(snapshot.get("capability_bits", 0))
+	var can_build := capability_keys.has("treasury_construction") \
+		or (capability_bits & 1) != 0
+	var current_capabilities: Array = []
+	if can_build:
+		current_capabilities.append({"label": "国库建造"})
+	var gates := {}
+	for raw_definition in definitions:
+		var definition: Dictionary = raw_definition
+		var id := String(definition.get("id", ""))
+		var keys := PackedStringArray(definition.get("capability_keys", PackedStringArray()))
+		var has_build := keys.has("treasury_construction")
+		if id == regime_id and capability_bits != 0:
+			has_build = (capability_bits & 1) != 0
+		gates[id] = {"treasury_construction": has_build}
+	return {
+		"available": true,
+		"regime_id": regime_id,
+		"display_name": String(current.get("display_name", regime_id)),
+		"detail": String(current.get("detail", "")),
+		"icon_key": current.get("icon_key", &"country.politics"),
+		"capability_keys": capability_keys,
+		"capability_bits": capability_bits,
+		"can_treasury_construction": can_build,
+		"current_id": regime_id,
+		"current_name": String(current.get("display_name", regime_id)),
+		"current_detail": String(current.get("detail", "")),
+		"current_capabilities": current_capabilities,
+		"options": definitions,
+		"definitions": definitions,
+		"feature_gates": gates,
+		"revision": int(snapshot.get("revision", snapshot.get("state_version", 0))),
+	}
+
+
 func build(section_id: String = "technology") -> Dictionary:
-	var normalized_section := section_id if section_id in [
-		"technology", "economy", "ideology", "military", "diplomacy"] else "technology"
+	var normalized_section := "politics" if section_id == "ideology" else section_id
+	if normalized_section not in ["technology", "economy", "politics", "military", "diplomacy"]:
+		normalized_section = "technology"
 	if _section_cache.has(normalized_section):
 		return _section_cache[normalized_section]
 	var context := _country_context()
@@ -565,8 +672,8 @@ func build(section_id: String = "technology") -> Dictionary:
 		"economy":
 			section_snapshot = build_economy_snapshot(country_handle, facade,
 				economy_facade, ui_snapshot, int(context.start_cell))
-		"ideology":
-			section_snapshot = build_ideology_snapshot(country_handle, ui_snapshot)
+		"politics":
+			section_snapshot = build_politics_snapshot(country_handle, ui_snapshot)
 		"military":
 			# 军事自成一个模型源：CountryViewModel 只负责装配，军事自己的展示
 			# 逻辑在 MilitaryViewModel 里。这里先把模型占位放好，装配在
@@ -709,17 +816,42 @@ func build_military_model(country_handle: int, model: Dictionary) -> Dictionary:
 	}
 	# 财政页的军事只读实付板块。原生只给 30 日滑窗累计，这里统一折成日均，
 	# 三个通道口径相同（否则玩家会把 30 日总额当成一天的花销）。
-	section.merge(military_spending_model(snapshot), true)
+	section.merge(military_spending_model(snapshot,
+		_military_maintenance_model(facade, country_handle)), true)
 	model["military"] = section
 	return section
+
+
+## 维护实物化（docs/plans/military-physical-maintenance.md D7 / S4-6）的模型入口。
+##
+## 两次门面调用（`maintenance_summary()` + `maintenance_snapshot()`）共享 facade 的
+## 整形缓存，同一刷新里原生只读一次。旧 DLL 没有这个方法 → `supported = false`，
+## 面板写「实物维护未接通」，不再拿现金口径冒充维护。
+func _military_maintenance_model(facade, country_handle: int) -> Dictionary:
+	if facade == null or not facade.has_method("maintenance_supported"):
+		return {"supported": false}
+	if not bool(facade.call("maintenance_supported")):
+		return {"supported": false}
+	var summary = facade.call("maintenance_summary", country_handle)
+	var rows = facade.call("maintenance_snapshot", country_handle)
+	return {
+		"supported": true,
+		"summary": summary if summary is Dictionary else {},
+		"rows": rows if rows is Array else [],
+	}
 
 
 ## 军事支出视图（财政页只读板块用）。输入 `get_military_country_snapshot` 的
 ## 原始快照，输出三个通道的日均实付与招募集训的等待装备计数。
 ##
+## `maintenance` 是维护实物化的模型（见 `_military_maintenance_model`）：`supported`、
+## `summary`（聚合整数）与 `rows`（逐对象明细）。缺省 `{}` 表示「旧 DLL，没有实物维护」，
+## 此时只多一个 `maintenance_is_physical = true` 的语义标记，其余维护键全 0/空。
+##
 ## 招募本身不拨预算：这一点由 `recruitment_funded = false` 明确表达，
 ## 面板据此把招募行标成「不拨款」，而不是显示 0。
-static func military_spending_model(snapshot: Dictionary) -> Dictionary:
+static func military_spending_model(snapshot: Dictionary,
+		maintenance: Dictionary = {}) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"available": false}
 	if not bool(snapshot.get("has_policy", false)):
@@ -739,6 +871,11 @@ static func military_spending_model(snapshot: Dictionary) -> Dictionary:
 			if bool(row.get("equipment_ready", false)):
 				continue
 			waiting_equipment += maxi(0, int(row.get("count", 0)))
+	# ---- 维护实物化：满足率/失修/短缺由原生按 (国家, 地块, 类型) 判定 ----
+	var maintenance_supported := bool(maintenance.get("supported", false))
+	var summary: Dictionary = maintenance.get("summary", {}) \
+		if maintenance.get("summary", null) is Dictionary else {}
+	var maintenance_rows := maintenance_detail_rows(maintenance.get("rows", []))
 	return {
 		"available": true,
 		"wage_paid_last_period": payroll_30 / 30,
@@ -780,7 +917,97 @@ static func military_spending_model(snapshot: Dictionary) -> Dictionary:
 		"procurement_used": maxi(0, int(snapshot.get("budget_procurement_used", 0))),
 		"procurement_deferred_units": maxi(0,
 			int(snapshot.get("budget_procurement_deferred_units", 0))),
+		# ---- 维护实物化（D7 / S4-6）----
+		# 「维护」通道从此描述**实物维修采购**：国库付给商人换维修材料，材料到货后
+		# 才计入满足率。`maintenance_paid_last_period` 仍是「实际结算的维护花费」
+		# （30 日窗口 ÷ 30），来源不变；下面这组键描述的是这笔钱买到的实物结果。
+		"maintenance_is_physical": true,
+		"maintenance_supported": maintenance_supported,
+		"maintenance_ratio_bp": clampi(
+			int(summary.get("weighted_ratio_bp", 0)), 0, 10000),
+		"maintenance_disrepair_rows": maxi(0, int(summary.get("disrepair_rows", 0))),
+		"maintenance_shortage_rows": maxi(0, int(summary.get("shortage_rows", 0))),
+		"maintenance_object_rows": maxi(0, int(summary.get("rows", 0))),
+		"maintenance_need_goods": maxi(0, int(summary.get("need_goods", 0))),
+		"maintenance_stock_goods": maxi(0, int(summary.get("stock_goods", 0))),
+		"maintenance_inbound_goods": maxi(0, int(summary.get("inbound_goods", 0))),
+		# 逐对象明细（已按短缺优先排序）。面板只画前 N 条，但整表留在这里，
+		# 「为什么是 0 座失修」这类追问不用再去查原生。
+		"maintenance_rows": maintenance_rows,
+		# 一行摘要的变更签名：维护读数天天变，财政页的节流比较需要它。
+		"maintenance_signature": maintenance_signature(maintenance_rows, summary),
 	}
+
+
+## 逐对象明细的展示投影。原生行保留 `*_goods` / `*_bp` / `*_x10` 后缀（毫单位、
+## 万分比、十分之一日），这里改成面板读得懂的短键，并附上整数换算好的文本。
+## 口径不变：`need` / `stock` / `inbound` 仍是 GOODS_SCALE，`ratio` 仍是万分比，
+## `days_cover` 仍是「十分之一日」（-1 = 无需求）。
+static func maintenance_detail_rows(rows) -> Array:
+	var out: Array = []
+	if not rows is Array:
+		return out
+	for row_value in (rows as Array):
+		if not row_value is Dictionary:
+			continue
+		var row: Dictionary = row_value
+		var days_cover := int(row.get("days_cover_x10", -1))
+		out.append({
+			"id": String(row.get("id", "")),
+			"name": String(row.get("name", "")),
+			"kind": int(row.get("kind", 0)),
+			"kind_name": String(row.get("kind_name", "")),
+			"cell": int(row.get("cell", -1)),
+			"units": maxi(0, int(row.get("units", 0))),
+			"need": maxi(0, int(row.get("daily_need_goods", 0))),
+			"stock": maxi(0, int(row.get("stock_goods", 0))),
+			"inbound": maxi(0, int(row.get("inbound_goods", 0))),
+			"ratio": clampi(int(row.get("ratio_bp", 0)), 0, 10000),
+			"days_cover": days_cover,
+			"days_text": cover_days_text(days_cover),
+			"disrepair": int(row.get("disrepair", 0)) != 0,
+			"shortage_reason": int(row.get("shortage_reason", 0)),
+			"reason_text": String(row.get("reason_text", "—")),
+			"need_text": goods_text(int(row.get("daily_need_goods", 0))),
+			"inbound_text": goods_text(int(row.get("inbound_goods", 0))),
+		})
+	return out
+
+
+## GOODS_SCALE（1000）毫单位 → 一位小数的纯整数文本。「—」表示没有量，
+## 不是 0：维护行里 0 和「没有需求」是两件事。
+static func goods_text(milli: int) -> String:
+	var value := maxi(0, milli)
+	if value <= 0:
+		return "—"
+	if value >= 10000000:
+		return "%d" % (value / 1000)
+	return "%d.%d" % [value / 1000, (value % 1000) / 100]
+
+
+## 可用天数（十分之一日，-1 = 无需求）→ 「3.5 日」。整数运算，不用浮点。
+static func cover_days_text(days_cover_x10: int) -> String:
+	if days_cover_x10 < 0:
+		return "—"
+	if days_cover_x10 % 10 == 0:
+		return "%d 日" % (days_cover_x10 / 10)
+	return "%d.%d 日" % [days_cover_x10 / 10, days_cover_x10 % 10]
+
+
+## 明细 + 汇总的变更签名。只取整数与短串，不给每帧比较造大字符串。
+static func maintenance_signature(rows: Array, summary: Dictionary) -> int:
+	var signature := 17
+	for row in rows:
+		var entry: Dictionary = row
+		signature = signature * 31 + int(entry.get("need", 0))
+		signature = signature * 31 + int(entry.get("stock", 0))
+		signature = signature * 31 + int(entry.get("inbound", 0))
+		signature = signature * 31 + int(entry.get("ratio", 0))
+		signature = signature * 31 + int(entry.get("days_cover", -1))
+		signature = signature * 31 + (1 if bool(entry.get("disrepair", false)) else 0)
+		signature = signature * 31 + int(entry.get("shortage_reason", 0))
+	signature = signature * 31 + int(summary.get("weighted_ratio_bp", 0))
+	return signature
 
 
 

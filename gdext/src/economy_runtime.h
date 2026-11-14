@@ -213,7 +213,9 @@ public:
     //     ledger; a v59 stream restores them as empty lanes and the military
     //     side folds its cumulative barracks/fort/college cache into the
     //     ledger on the first step (see military_core_save.cpp).
-    static constexpr int32_t SCHEMA_VERSION = 60;
+    // 61: military purchase receipts and the state building cash boundary.
+    // 62: pending family colonization population rewards in family records.
+    static constexpr int32_t SCHEMA_VERSION = 62;
     // Dense order of the compiled `building_economic_sectors` column. It mirrors
     // `BUILDING_SECTOR_IDS` in economy_catalog.gd: agriculture, extractive,
     // manufacturing, energy, knowledge, then the appended `military` sector. The
@@ -1671,19 +1673,15 @@ public:
     int32_t military_signature_for(int32_t profession_id, int32_t ethnicity_id) const {
         return signature_for_profession_ethnicity(profession_id, ethnicity_id);
     }
-    // Conserved Military -> treasury cash spend: reserve then collect through
-    // the country fiscal escrow so the amount lands in the non-tax expenditure
-    // slots. Returns the amount actually collected.
+    // Cash-neutral compatibility receipt: fiscal reserve debits the treasury
+    // and collect credits it back. Returns the amount processed, not burned.
     int64_t military_collect_cash(int64_t country_handle, int64_t amount);
-    // Military maintenance is a terminal cash sink: unlike army pay it has no
-    // Economy-owned recipient. Record it in the current epoch, or carry it
-    // across the idle-day boundary until the next epoch opens.
-    void military_record_cash_burn(int64_t amount);
     // True while Economy can queue near-cash commands (no open epoch, not
     // saving/restoring, not faulted).
     bool military_command_window_open() const;
     // Queued economy commands with `effective_day <= day`. Lets the bridge tell
     // "not executed yet" apart from "rejected at execution".
+    bool military_purchase_receipt(int64_t sequence, int64_t &quantity, int64_t &cash) const;
     int32_t military_queued_commands_through(int64_t day) const;
 private:
     // ---- NativeEconomyRuntime military read view (state)

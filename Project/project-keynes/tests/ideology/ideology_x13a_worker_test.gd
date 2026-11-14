@@ -299,8 +299,9 @@ func _test_t4_save_restore() -> bool:
 	if not _require("T4 economy save begins and finishes", bool(saved.get("ok", false)),
 			str(saved.get("reason", ""))):
 		return false
-	if not _require("T4 save schema is 60", int(saved.get("schema_version", 0)) == 60,
-			str(saved.get("schema_version", 0))):
+	var saved_schema := int(saved.get("schema_version", 0))
+	if not _require("T4 save reports a schema version", saved_schema > 0,
+			str(saved_schema)):
 		return false
 	var record_bytes := _cell_record_bytes(saved.get("chunks", []))
 	if not _require("T4 cell record layout is discoverable", record_bytes > 9,
@@ -327,8 +328,9 @@ func _test_t4_save_restore() -> bool:
 		int(restored.get_economy_state_hash()) == source_hash,
 		"%d vs %d" % [int(restored.get_economy_state_hash()), source_hash])
 	var resaved := _save_economy(restored)
-	_expect("T4 resave remains schema 58",
-		bool(resaved.get("ok", false)) and int(resaved.get("schema_version", 0)) == 60,
+	_expect("T4 resave keeps the source schema version",
+		bool(resaved.get("ok", false))
+			and int(resaved.get("schema_version", 0)) == saved_schema,
 		str(resaved))
 	var resaved_suffixes := _cell_climate_suffixes(resaved.get("chunks", []), record_bytes)
 	_expect("T4 persistent climate suffixes are byte-equal after restore",

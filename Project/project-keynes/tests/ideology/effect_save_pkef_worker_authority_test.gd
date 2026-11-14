@@ -732,10 +732,6 @@ func _drive_day(w: Dictionary) -> void:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	for _slice in range(MAX_SLICES_PER_DAY):
 		var ideology: Dictionary = ext.run_ideology_daily(day)
 		if not bool(ideology.get("ok", true)):
@@ -782,10 +778,6 @@ func _settle_worker(ext: Object, timeout_ms: int) -> int:
 		_service_peers(ext, 1)
 		OS.delay_msec(15)
 	return applied
-
-
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method("has_hard_barrier") else false
 
 
 # =========================================================================

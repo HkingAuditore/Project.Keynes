@@ -122,6 +122,8 @@ func _run() -> int:
 	if not bool(save_mode_worker.get("ok", false)):
 		_teardown(host, clock)
 		return 6
+	# The restart reseeds the generation-time frame and keeps the trace whose
+	# front day is the restart's first day, so day 1 is already queued.
 
 	# generate_world already started SHADOW. Reconfigure cadence and keep forcing.
 	ext.set_runtime_climate_parity_forcing(true)
@@ -418,8 +420,11 @@ func _await_stopped(ext) -> bool:
 
 
 func _has_hard_barrier(clock: WorldClock) -> bool:
-	return clock._simulation_backpressure_sources.has(&"country_day_barrier") \
-		or clock._simulation_backpressure_sources.has(&"economy_day_barrier")
+	# The continuation path now owns native daily, biology, and ideology
+	# same-day work as well as the original country/economy barriers.  Keep the
+	# climate-input-capacity barrier out: that source is retried by the host's
+	# capacity loop, not by a continuation pulse.
+	return clock.needs_continuation_pulse()
 
 
 func _teardown(host: WorldRuntimeHost, clock: WorldClock) -> void:

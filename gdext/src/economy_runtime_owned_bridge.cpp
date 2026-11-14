@@ -360,7 +360,15 @@ NativeEconomyRuntime::Command NativeEconomyRuntime::command_from_pod(
     cmd.i64_0 = pod.payload0;
     cmd.i64_1 = pod.payload1;
     cmd.sequence = static_cast<int64_t>(pod.submit_order);
-    if (pod.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND && pod.submit_order == 0)
+    // A row without an explicit submit order is identified by its POD request id.
+    // A PAID PURCHASE must keep that identity too: Economy answers the fill under
+    // this sequence and the military bridge matches the receipt back on it, so a
+    // sequence of 0 loses every receipt and the purchase only ever times out
+    // (measured: maintenance purchases sat at a 300-milli backlog and were failed
+    // by the 8-day timeout instead of settling).
+    if (pod.submit_order == 0 &&
+        (pod.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ||
+         pod.opcode == COMMAND_MILITARY_PURCHASE))
         cmd.sequence = static_cast<int64_t>(pod.request_id);
     cmd.submit_order = pod.submit_order;
     cmd.effective_day = _epoch_active ? _sample_day : _current_day.get();

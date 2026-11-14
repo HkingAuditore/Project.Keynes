@@ -23,12 +23,6 @@
 | `country.tax.cell.set_override/clear_override` | `cell`, `kind`, `item_id`, optional rate | cell override facade | stable item、所有权、范围先验证 |
 | `country.tax.cell.clear_all` | `cell` | `clear_cell_tax_policy` | 恢复完整全国继承 |
 | `construction.build` | `cell_idx`, `building_id`, `ownership_policy` | `treasury_sponsored_build` | 仅玩家领土；首版只接受 `treasury_sponsored_private` 且固定一栋 |
-| `era.advance.start` | — | `EraAdvancementService.start` → `EconomyFacade.set_era_procurement_target` | 状态须为 `ready`（4 选 2）；冻结地块数与物资需求 |
-| `era.advance.pause` / `era.advance.resume` | — | 推送 active=false / 重推目标 | 仅 `purchasing` / `paused` |
-| `procurement.set_policy` | `treasury_share_bp`, `research_share_bp` | `EconomyFacade.set_country_procurement_policy` | 均 0..10000；持久于 `player_view.era_advancement` |
-
-`research.enqueue/move` 对时代里程碑返回 `technology_milestone_retired`（见
-`docs/cpp-dots-runtime/era-advancement-runtime.md`）。
 
 其余 `country.*`、`economy.*` 可以作为协议命名空间，但未逐项登记前必须返回
 `unsupported_command`。GM、作弊、诊断和调试开关不属于这张表。
@@ -84,12 +78,19 @@ sequence      = PlayerController 的单调递增整数
 `handle_input()` 直接分发。HUD 图层/顶栏/国家栏按钮使用 `FOCUS_NONE`；空地图
 指针事件会释放残留的普通 UI 焦点。
 
-镜头平移是**硬边界**：`_clamped_position()` 要求视口完整落在
-`set_world_bounds()` 的世界矩形内，任何输入路径都不许把地图推出边界（越界露出的
-是 Viewport clear color 灰底）。低倍率仍然能拖，靠的是最小倍率地板：`fit_to_viewport(
-fill_safe_area=true)` 把地板抬到 `_cover_zoom()`（铺满整块视口，不是更小的 safe_area），
-窗口尺寸变化时 `_refresh_cover_floor()` 重算。回归测试
-`tests/ui/map_camera_pan_bounds_test.gd`。
+## 时代奖励入口与时钟
+
+展示为中央纸徽下的国家概况 + 三张奖励纸片，无全屏暗幕。hover 仅轻探；点击才完整展开。
+Esc/收起/窗外点击发相同 dismiss 意图；事务提交后不可取消，时钟按钮和暂停快捷键不能绕过锁。
+ACK 后移除奖励纸片、恢复原时钟，概况可继续查看。方法名 `is_era_reward_modal_open` 为兼容接口。
+
+`GameUIManager.era_reward_open_requested/dismiss_requested` 是视图意图，不分配模拟命令序号。
+原生 `OPEN/ERROR` 只点亮顶部纸徽；点击才暂停并打开三选一，未选择时 Esc 可恢复原速度与
+运行状态。选择继续走既有 `era_reward.choose`，`SELECTED_PENDING` 必须完成 ACK，不能取消。
+`player_view` 复用现有时代奖励时钟字段；恢复旧 `OPEN/ERROR` 弹窗锁时改为待领提醒，
+恢复已提交事务时保留锁和原时钟恢复意图。不得把待领状态变成自动弹窗或命令锁。
+验证 `tests/technology/era_reward_notification_regression_test.gd` 和
+`tests/ui/era_indicator_ui_test.gd`，详见运行时文档「时代纸徽与待领奖励」。
 
 ## 视图存档
 

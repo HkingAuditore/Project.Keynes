@@ -88,6 +88,14 @@
         "military.war.truce",
         "military.ledger.secure_convoy"
       ]
+    },
+    "units_sheet_v2_shield_bearers.png": {
+      "audience": "兵种补充",
+      "columns": 1,
+      "rows": 1,
+      "semantics": [
+        "military.unit.shield_bearers"
+      ]
     }
   }
 }

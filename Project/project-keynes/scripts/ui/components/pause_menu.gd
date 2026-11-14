@@ -4,6 +4,7 @@ extends Control
 const MenuButtonScene := preload("res://scenes/ui/pause_menu_button.tscn")
 const SettingsFormScene := preload("res://scenes/ui/pause_settings_form.tscn")
 const TouchUI = preload("res://scripts/ui/touch_ui.gd")
+const NarrativeAiClientScript = preload("res://scripts/narrative/ai/narrative_ai_client.gd")
 
 signal continue_requested()
 signal return_menu_requested()
@@ -192,6 +193,8 @@ func _show_settings() -> void:
 	mute.button_pressed = bool(current.master_muted)
 	var reduce_motion := form.get_node("ReduceMotion") as CheckBox
 	reduce_motion.button_pressed = bool(current.get("reduce_motion",false))
+	# AI 生成配置从这里进入：它是玩法设置，必须能在没有任何事件时打开。
+	_add_button("AI 生成设置", "settings", _show_ai_settings)
 	_add_button("应用", "confirm", func() -> void:
 		if settings_service != null:
 			settings_service.update({"render_quality": quality.get_selected_metadata(),
@@ -199,6 +202,115 @@ func _show_settings() -> void:
 				"master_muted": mute.button_pressed,"reduce_motion":reduce_motion.button_pressed})
 		_show_main())
 	_add_button("返回", "back", _show_main)
+
+
+## AI 生成设置：文本与插画两段，密钥与接口都存本机，不依赖任何事件入口。
+func _show_ai_settings() -> void:
+	_clear_panel()
+	_title("AI 生成")
+	if _frame != null:
+		_frame.custom_minimum_size.x = 540.0
+	var settings_service := get_node_or_null("/root/GameSettings")
+	var current: Dictionary = settings_service.values() \
+		if settings_service != null and settings_service.has_method("values") else {}
+	var keys := NarrativeAiClientScript.load_api_keys()
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0.0, 380.0)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_rows.add_child(scroll)
+
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 6)
+	scroll.add_child(col)
+
+	var enabled := _add_ai_toggle(col, "启用 AI 生成事件", bool(current.get("ai_narrative_enabled", false)))
+	var llm_url := _add_ai_field(col, "接口地址", "https://api.deepseek.com/v1/chat/completions",
+		String(current.get("ai_llm_base_url", "")))
+	var llm_model := _add_ai_field(col, "模型", "deepseek-chat",
+		String(current.get("ai_llm_model", "")))
+	var llm_key := _add_ai_field(col, "API 密钥", "sk-...",
+		String(keys.get("llm_api_key", "")), true)
+
+	col.add_child(HSeparator.new())
+
+	var image_enabled := _add_ai_toggle(col, "启用 AI 插画（失败时用内置题图）",
+		bool(current.get("ai_image_enabled", false)))
+	var img_url := _add_ai_field(col, "生图接口", "https://api.openai.com/v1/images/generations",
+		String(current.get("ai_image_base_url", "")))
+	var img_model := _add_ai_field(col, "生图模型", "dall-e-3",
+		String(current.get("ai_image_model", "")))
+	var img_key := _add_ai_field(col, "生图密钥", "sk-...",
+		String(keys.get("image_api_key", "")), true)
+
+	var note := Label.new()
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.text = "密钥只保存在本机 user://ai_credentials.cfg，不会写进存档。"
+	note.theme_type_variation = &"PKMutedLabel"
+	col.add_child(note)
+
+	var status := Label.new()
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.visible = false
+	status.theme_type_variation = &"PKMutedLabel"
+	col.add_child(status)
+
+	_add_button("保存", "confirm", func() -> void:
+		var payload := {
+			"ai_narrative_enabled": enabled.button_pressed,
+			"ai_llm_base_url": llm_url.text.strip_edges(),
+			"ai_llm_model": llm_model.text.strip_edges(),
+			"ai_image_enabled": image_enabled.button_pressed,
+			"ai_image_base_url": img_url.text.strip_edges(),
+			"ai_image_model": img_model.text.strip_edges(),
+		}
+		var settings_result: Dictionary = {"ok": true}
+		if settings_service != null and settings_service.has_method("update"):
+			settings_result = settings_service.update(payload, true)
+		var keys_result: Dictionary = NarrativeAiClientScript.save_api_keys(
+			llm_key.text.strip_edges(), img_key.text.strip_edges())
+		var saved_ok := bool(settings_result.get("ok", true)) and bool(keys_result.get("ok", false))
+		status.text = "已保存。" if saved_ok else "保存失败，请检查设置文件权限。"
+		status.visible = true
+	)
+	_add_button("返回", "back", _show_settings)
+
+
+func _add_ai_toggle(parent: VBoxContainer, label_text: String, pressed: bool) -> CheckButton:
+	var check := CheckButton.new()
+	check.text = label_text
+	check.button_pressed = pressed
+	check.focus_mode = Control.FOCUS_ALL
+	parent.add_child(check)
+	return check
+
+
+func _add_ai_field(
+		parent: VBoxContainer,
+		label_text: String,
+		placeholder: String,
+		value: String,
+		secret: bool = false
+) -> LineEdit:
+	# 一行一个字段：标签与输入框横排，九个控件才能一屏放下（本页会把面板加宽到 540）。
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size = Vector2(92.0, 0.0)
+	label.theme_type_variation = &"PKMutedLabel"
+	row.add_child(label)
+	var edit := LineEdit.new()
+	edit.placeholder_text = placeholder
+	edit.text = value
+	edit.secret = secret
+	edit.custom_minimum_size = Vector2(0.0, 32.0)
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(edit)
+	return edit
 
 
 func _save_slot(slot_id: String) -> void:
@@ -227,6 +339,9 @@ func _clear_panel() -> void:
 	for child in _rows.get_children():
 		child.queue_free()
 	_status.visible = false
+	# AI 设置页需要更宽的字段区；回到其他页面时恢复原宽度。
+	if _frame != null:
+		_frame.custom_minimum_size.x = 390.0
 
 
 func _title(text_value: String) -> void:

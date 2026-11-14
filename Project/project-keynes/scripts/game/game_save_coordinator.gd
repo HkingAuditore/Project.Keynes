@@ -370,6 +370,18 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed, generation)
 		_busy = false
 		return boundary
+	# The exploration trail is explored-only state that still belongs to the
+	# world. Drain it inside the safe boundary, before any provider snapshot;
+	# refusing the save is safer than writing a PKFG with lost explored cells.
+	if _runtime_host != null and _runtime_host.has_method(
+			"flush_military_exploration_trail_for_save"):
+		var explored_flush: Dictionary = _runtime_host.flush_military_exploration_trail_for_save()
+		if not bool(explored_flush.get("ok", false)):
+			_restore_clock_mode(was_paused, previous_speed, generation)
+			_busy = false
+			return _result(false, String(explored_flush.get("reason",
+				"military_exploration_trail_flush_failed")),
+				"探索轨迹未能写入地图，已取消保存。")
 	var runtime_bundle := await _capture_native_runtime_bundle(generation)
 	if not bool(runtime_bundle.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed, generation)
@@ -539,7 +551,6 @@ func _boundary_diagnostics() -> Dictionary:
 			"committed": report.get("committed", null),
 			"last_committed_day": report.get("last_committed_day", null)}
 	var country = generator.get_country_facade()
-	var country_ext = country.world_ext() if country != null else null
 	# 存档边界最常卡的就是 country：把「谁在拥有 country」和「country_should_run
 	# 为什么还是 true」一起记下来，否则只有一句 save_requires_idle_country
 	# 根本定位不了（web 的 pause 期间没有任何日推进者）。
@@ -549,10 +560,9 @@ func _boundary_diagnostics() -> Dictionary:
 		out["country_stage"] = String(country_report.get("stage", ""))
 	if generator.has_method("runtime_graph_active"):
 		out["runtime_graph_active"] = bool(generator.runtime_graph_active())
-	if country_ext != null:
-		out["country_peer"] = country_ext.get_country_peer_protocol_status()
-	if country_ext != null:
-		out["country_should_run"] = bool(country_ext.country_should_run(int(out["day"])))
+	if country != null and country.world_ext() != null:
+		out["country_peer"] = country.peer_protocol_status()
+		out["country_should_run"] = country.should_run(int(out["day"]))
 	if generator.has_method("get_runtime_thread_report"):
 		var thread: Dictionary = generator.get_runtime_thread_report()
 		for key in ["simulation_host_state", "simulation_committed_day", "environment_ring_pending",
@@ -560,9 +570,8 @@ func _boundary_diagnostics() -> Dictionary:
 				"country_worker_plan_active", "country_worker_waiting_for_peer"]:
 			out[key] = thread.get(key, null)
 	var effect = generator.get_effect_facade()
-	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
-	if effect_ext != null:
-		out["effect_adapters"] = effect_ext.get_effect_native_adapter_report()
+	if effect != null and effect.world_ext() != null:
+		out["effect_adapters"] = effect.native_adapter_report()
 	return out
 
 
@@ -593,12 +602,11 @@ func _can_save() -> Dictionary:
 	var country_report: Dictionary = country.report()
 	var economy_report: Dictionary = economy.report()
 	var effect = generator.get_effect_facade()
-	var effect_ext = effect.world_ext() if effect != null and effect.has_method("world_ext") else null
 	# The Effect owner is persisted independently from the domain owners.  Do
 	# not capture PKEF/PKCN/PKEC/journal while a native POD request has crossed
 	# Effect preflight but has not received the owning domain's durable ACK.
-	if effect_ext != null:
-		var adapters: Dictionary = effect_ext.get_effect_native_adapter_report()
+	if effect != null and effect.world_ext() != null:
+		var adapters: Dictionary = effect.native_adapter_report()
 		if bool(adapters.get("country_pending", false)):
 			return _blocked_result("save_requires_idle_effect_country",
 				"等待理念/Effect Country 命令提交", "effect_country_pending")
@@ -620,16 +628,16 @@ func _can_save() -> Dictionary:
 			"经济尚未到达联合提交边界。",
 			"economy_busy" if economy_busy else "economy_not_committed")
 	var country_busy := bool(country_report.get("busy", false))
-	var country_ext = country.world_ext()
-	if country_ext != null:
-		var peer_status: Dictionary = country_ext.get_country_peer_protocol_status()
+	var country_ext_available := country.world_ext() != null
+	if country_ext_available:
+		var peer_status: Dictionary = country.peer_protocol_status()
 		if int(peer_status.get("pending_intents", 0)) > 0 \
 			or int(peer_status.get("queued_intents", 0)) > 0 \
 			or int(peer_status.get("rejected_intents", 0)) > 0:
 			return _blocked_result("save_requires_idle_country_peer",
 				"Country peer continuation 尚未到达可保存边界。", "country_peer_intents")
-	if country_ext != null:
-		country_busy = country_busy or bool(country_ext.country_should_run(_world_clock.day_index()))
+	if country_ext_available:
+		country_busy = country_busy or country.should_run(_world_clock.day_index())
 	else:
 		country_busy = country_busy or String(country_report.get("stage", "idle")) == "command_preflight"
 	if country_busy:
@@ -637,21 +645,21 @@ func _can_save() -> Dictionary:
 		# command_preflight。日志里必须能分开，否则又是一句"国家没空闲"。
 		var country_condition := "country_busy"
 		if not bool(country_report.get("busy", false)):
-			if country_ext != null:
+			if country_ext_available:
 				country_condition = "country_should_run"
 			else:
 				country_condition = "country_command_preflight"
 		return _blocked_result("save_requires_idle_country", "国家命令图尚未空闲。",
 			country_condition)
-	if effect_ext != null \
-			and bool(effect_ext.effect_should_run(_world_clock.day_index())):
+	if effect != null and effect.world_ext() != null \
+			and effect.should_run(_world_clock.day_index()):
 		return _blocked_result("save_requires_idle_effect",
 			"Effect transaction has not reached a safe commit boundary",
 			"effect_should_run")
 	var ideology = generator.get_ideology_facade() if generator.has_method("get_ideology_facade") else null
-	var ideology_ext = ideology.world_ext() if ideology != null and ideology.has_method("world_ext") else null
-	if ideology_ext != null \
-			and bool(ideology_ext.ideology_should_run(_world_clock.day_index())):
+	var ideology_ext_available := ideology != null and ideology.world_ext() != null
+	if ideology_ext_available \
+			and ideology.should_run(_world_clock.day_index()):
 		return _blocked_result("save_requires_idle_ideology",
 			"Ideology commands have not reached their safe boundary",
 			"ideology_should_run")

@@ -15,14 +15,24 @@ var _generator
 var _boundary_input_sent: bool = false
 
 func configure(generator, clock: WorldClock, handle: int) -> Dictionary:
+	_configured = false
 	_generator = generator
 	_clock = clock
 	_ext = generator.get_data_core_world_ext() if generator != null else null
 	if _ext == null or false or handle == 0:
 		return {"ok": false, "reason": "annual_api_unavailable"}
+	# Economy/Country setup can fail before the simulation module is prepared.  In
+	# that case the facades are intentionally left null; report configuration must
+	# preserve the original setup error instead of turning it into a Nil call.
+	var country_facade = generator.get_country_facade() if generator.has_method("get_country_facade") else null
+	if country_facade == null or not country_facade.has_method("native_catalog"):
+		return {"ok": false, "reason": "annual_country_catalog_unavailable"}
+	var ideology_facade = generator.get_ideology_facade() if generator.has_method("get_ideology_facade") else null
+	if ideology_facade == null or not ideology_facade.has_method("native_catalog"):
+		return {"ok": false, "reason": "annual_ideology_catalog_unavailable"}
 	var profile = load("res://data/annual/default_annual_report.tres")
-	var country: Dictionary = generator.get_country_facade().native_catalog()
-	var ideology: Dictionary = generator.get_ideology_facade().native_catalog()
+	var country: Dictionary = country_facade.native_catalog()
+	var ideology: Dictionary = ideology_facade.native_catalog()
 	var compiled: Dictionary = profile.compile_native(country, ideology)
 	var result: Dictionary = _ext.configure_annual_reports(handle, clock.days_per_year(),
 		clock.day_index(), compiled)
@@ -56,7 +66,7 @@ func poll() -> void:
 	if _boundary_day >= 0 and bool(state.get("worker_managed", false)) \
 			and int(state.get("last_day", -1)) >= _boundary_day - 1 \
 			and int(state.get("last_day", -1)) < _boundary_day and not _boundary_input_sent:
-		var captured: Dictionary = _generator.capture_runtime_inputs_for_worker(
+		var captured: Dictionary = _generator.publish_environment_through(
 			_boundary_day, _clock.season_phase_for_day(_boundary_day))
 		_boundary_input_sent = bool(captured.get("ok", false))
 	if _boundary_day >= 0 and int(state.get("last_day", -1)) >= _boundary_day \

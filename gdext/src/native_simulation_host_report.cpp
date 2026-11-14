@@ -727,6 +727,8 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _ideology_pod_pending_transition_count.load(std::memory_order_acquire);
     out.ideology_pod_intent_count = _ideology_pod_intent_count.load(
         std::memory_order_acquire);
+    out.ideology_opinion_wait_days = _ideology_opinion_wait_days.load(
+        std::memory_order_relaxed);
     out.ideology_pod_committed_day = _ideology_pod_committed_day.load(
         std::memory_order_acquire);
     for (size_t i = 0; i + 1 < sizeof(out.ideology_pod_fallback_reason); ++i) {

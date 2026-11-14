@@ -1,0 +1,79 @@
+[gd_scene load_steps=1 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/regime_workspace.gd" id="1_script"]
+
+[node name="RegimeWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Kicker" type="Label" parent="Root"]
+layout_mode = 2
+text = "当前体制"
+theme_type_variation = &"PKPaperTag"
+
+[node name="Current" type="PanelContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 112)
+layout_mode = 2
+theme_type_variation = &"PKPaperCard"
+
+[node name="Body" type="MarginContainer" parent="Root/Current"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Root/Current/Body"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Title" type="Label" parent="Root/Current/Body/Column"]
+layout_mode = 2
+text = "未定体制"
+theme_type_variation = &"PKWorkspaceTitle"
+
+[node name="Detail" type="Label" parent="Root/Current/Body/Column"]
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+theme_type_variation = &"PKWorkspaceLabel"
+
+[node name="Capabilities" type="Label" parent="Root/Current/Body/Column"]
+layout_mode = 2
+text = ""
+theme_type_variation = &"PKPaperTag"
+
+[node name="OptionsHeading" type="Label" parent="Root"]
+layout_mode = 2
+text = "可用体制"
+theme_type_variation = &"PKPaperTag"
+
+[node name="OptionsScroll" type="ScrollContainer" parent="Root"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Options" type="VBoxContainer" parent="Root/OptionsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Status" type="Label" parent="Root"]
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+theme_type_variation = &"PKWorkspaceLabel"

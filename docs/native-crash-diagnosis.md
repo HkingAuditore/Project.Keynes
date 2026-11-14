@@ -83,7 +83,7 @@ Invoke-WebRequest "https://go.microsoft.com/fwlink/?linkid=2196241" -OutFile win
 
 ```powershell
 $exe = "<Godot>\Godot_v4.6.2-stable_win64_console.exe"
-& $exe --headless --path <项目路径> --script res://tests/headless_perf_record.gd -- `
+& $exe --headless --path <项目路径> --script res://tests/game/headless_perf_record.gd -- `
     days=10 speed=20 seed=20260719 width=50 height=40 `
     population_scale=0 use_saved_setup=false label=repro
 ```

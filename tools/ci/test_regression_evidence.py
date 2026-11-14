@@ -1,13 +1,55 @@
 #!/usr/bin/env python3
-"""Candidate capture must never accept a broken or incomplete fixture."""
+"""Repeat and refactor checks must reject broken or incomplete evidence."""
+import argparse
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
-from check_golden_determinism import difference
+from check_golden_determinism import candidate_path, difference, load_comparison, read_result
 from check_intent_baselines import read_evidence
 from run_regression_checks import EXPECTED_ERRORS, fixture_errors
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_candidate_requires_absolute_external_path(self):
+        from run_regression_checks import ROOT
+        with self.assertRaises(argparse.ArgumentTypeError):
+            candidate_path("relative.json")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            candidate_path(str(ROOT / "candidate.json"))
+        with tempfile.TemporaryDirectory() as directory:
+            outside = Path(directory).resolve()
+            self.assertEqual(candidate_path(str(outside / "candidate.json")), outside / "candidate.json")
+            (outside / "alias").symlink_to(ROOT, target_is_directory=True)
+            with self.assertRaises(argparse.ArgumentTypeError):
+                candidate_path(str(outside / "alias/candidate.json"))
+
+    def test_missing_or_malformed_comparison_is_rejected_before_running(self):
+        parser = argparse.ArgumentParser()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            for content in (None, "{", "[]", "{}", "null"):
+                if content is not None:
+                    path.write_text(content)
+                with self.subTest(content=content), patch("sys.stderr"), self.assertRaises(SystemExit):
+                    load_comparison(parser, path)
+
+    def test_first_difference_identifies_day_domain_and_field(self):
+        expected = {"days": [{"day": 1, "domain_hashes": {"COUNTRY": {"hash": "abc"}}}]}
+        actual = {"days": [{"day": 1, "domain_hashes": {"COUNTRY": {"hash": "abd"}}}]}
+        self.assertEqual(difference(expected, actual), {
+            "path": "result.days[0].domain_hashes.COUNTRY.hash", "expected": "abc", "actual": "abd"})
+
+    def test_golden_result_rejects_failed_missing_duplicate_and_malformed_evidence(self):
+        for lines, code in [([], 0), (["GOLDEN_RESULT={}"], 0),
+                            (["GOLDEN_RESULT={"], 0),
+                            (["GOLDEN_RESULT={\"days\": []}"] * 2, 0),
+                            (["GOLDEN_RESULT={\"days\": []}", "[FAIL] invariant"], 0),
+                            (["GOLDEN_RESULT={\"days\": []}"], 1)]:
+            with self.subTest(lines=lines, code=code):
+                self.assertTrue(read_result(lines, "GOLDEN_RESULT=", code)[1])
+
     def test_declared_negative_builder_diagnostic(self):
         name = "ideology_effect_override_test"
         diagnostic = EXPECTED_ERRORS[name][0]

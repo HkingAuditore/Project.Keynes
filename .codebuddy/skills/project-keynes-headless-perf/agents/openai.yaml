@@ -1,4 +1,4 @@
 interface:
   display_name: "Project Keynes Headless Perf"
-  short_description: "ÎŞ½çÃæÔËĞĞ²¢ÑéÖ¤ Project.Keynes ĞÔÄÜ CSV"
-  default_prompt: "Ê¹ÓÃ $project-keynes-headless-perf ÎŞ½çÃæÔËĞĞ 50 ÈÕĞÔÄÜÂ¼ÖÆ²¢ÑéÖ¤ CSV¡£"
+  short_description: "æ— ç•Œé¢è¿è¡Œå¹¶éªŒè¯ Project.Keynes æ€§èƒ½ CSV"
+  default_prompt: "ä½¿ç”¨ $project-keynes-headless-perf æ— ç•Œé¢è¿è¡Œ 50 æ—¥æ€§èƒ½å½•åˆ¶å¹¶éªŒè¯ CSVã€‚"

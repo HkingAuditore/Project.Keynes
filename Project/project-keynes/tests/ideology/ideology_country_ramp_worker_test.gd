@@ -2,10 +2,9 @@ extends SceneTree
 
 ## R-7 item G: a country-domain RampTerm carrier on the WORKER path.
 ##
-## `progressive_tax` L1 ramps `country.population.death_factor` from metric 69
-## (treasury reserve ratio, in percentage-point bands): -1% per band, capped at -6%.
-## This fixture drives the same production worker refresh as the game, overrides only
-## metric 69, and reads the resulting national Modifier row.
+## Country-metric cards (treasury_reserve, silver_standard, subsidy_state) on the
+## production worker refresh: the fixture overrides metrics 68/69 and reads the
+## resulting ideology Modifier rows.
 ##
 ## Run from the lane root:
 ##   godot --headless --path Project/project-keynes \
@@ -25,8 +24,6 @@ const BUILD_COST_STAT := "country.construction.cost_factor"
 const TRADE_CAPACITY_STAT := "country.trade.capacity_factor"
 const CONSUMPTION_STAT := "country.household.consumption_factor"
 const POINT_GAIN_STAT := "country.ideology.point_gain_factor"
-const AGRICULTURE_STAT := "country.output.agriculture_factor"
-const MANUFACTURING_STAT := "country.output.manufacturing_factor"
 const CELL_OUTPUT_STATS := [
 	"economy.city.building.agriculture_output_factor",
 	"economy.city.building.extractive_output_factor",
@@ -61,6 +58,7 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -84,63 +82,34 @@ func _test_country_ramp() -> bool:
 	var baseline := _read_death_factor()
 	if not _expect_close("baseline death factor is 1.00", baseline, 1.0):
 		return false
-	if not await _exercise_progressive_tax():
-		return false
+	# progressive_tax and sovereign_fund are holdouts (09-content-status) and are
+	# absent from the shipped catalog.
 	if not await _exercise_treasury_reserve():
 		return false
 	if not await _exercise_silver_standard():
 		return false
 	if not await _exercise_subsidy_state():
 		return false
-	if not await _exercise_sovereign_fund():
-		return false
 	return true
 
 
-func _exercise_progressive_tax() -> bool:
-	if not _equip("progressive_tax"):
-		return false
-	if not _unequip("progressive_tax"):
-		return false
-	var rows_after: Dictionary = _ext.list_modifiers(1, _handle, "")
-	var keys_after := PackedStringArray(rows_after.get(
-		"definition_keys", PackedStringArray()))
-	_expect("unequipping progressive_tax removes its country row (rows=%s)"
-		% str(keys_after), keys_after.is_empty(), str(keys_after))
-	if not _expect_close("unequipping progressive_tax restores 1.00",
-			_read_death_factor(), 1.0):
-		return false
-
-	if not _equip("progressive_tax"):
-		return false
-	for case in [
-			{"reserve": 0, "expected": 1.00, "label": "0 bands"},
-			{"reserve": 3, "expected": 0.97, "label": "3 bands"},
-			{"reserve": 20, "expected": 0.94, "label": "20 bands (L1 cap 6)"},
-		]:
-		if not await _set_reserve_and_refresh(int(case["reserve"])):
-			return false
-		var actual := _wait_for_stat(
-			DEATH_FACTOR_STAT, float(case["expected"]), 6)
-		if not _expect_close("progressive_tax L1 at %s reads %.2f"
-			% [case["label"], float(case["expected"])],
-			actual, float(case["expected"])):
-			return false
-	if not _unequip("progressive_tax"):
-		return false
-	return _expect_close("progressive_tax: unequip restores death factor",
-		_read_death_factor(), 1.0)
-
-
 func _exercise_treasury_reserve() -> bool:
+	_ext.set_effect_metric_override_for_test(
+		METRIC_TREASURY_RESERVE, 3 * Q16_ONE, true)
+	_ext.refresh_effect_input_digest_for_test()
+	var trade_capacity_before := _read_country_stat(TRADE_CAPACITY_STAT)
 	if not _equip("treasury_reserve"):
 		return false
 	if not await _set_reserve_and_refresh(3):
 		return false
-	for stat in [DEATH_FACTOR_STAT, BUILD_COST_STAT, TRADE_CAPACITY_STAT]:
+	for stat in [DEATH_FACTOR_STAT, BUILD_COST_STAT]:
 		if not _expect_close("treasury_reserve L1 at 3 bands: %s" % stat,
 				_wait_for_stat(stat, 0.97, 3), 0.97):
 			return false
+	var trade_capacity := _read_country_stat(TRADE_CAPACITY_STAT)
+	_expect("treasury_reserve keeps its trade-capacity price below the baseline",
+		trade_capacity < trade_capacity_before,
+		"before=%.5f after=%.5f" % [trade_capacity_before, trade_capacity])
 	if not await _set_reserve_and_refresh(20):
 		return false
 	for stat in [DEATH_FACTOR_STAT, BUILD_COST_STAT]:
@@ -184,8 +153,8 @@ func _exercise_subsidy_state() -> bool:
 	if not _equip("subsidy_state"):
 		return false
 	var target := _first_reported_cell_target()
-	if not _require("subsidy_state: instance report selects an owned cell",
-			target >= 0, str(_ext.get_ideology_effect_instance_report(_handle))):
+	if not _require("subsidy_state: target report selects an owned cell",
+			target >= 0, str(_ext.get_ideology_effect_target_report(_handle))):
 		return false
 	for stat in CELL_OUTPUT_STATS:
 		if not _expect_close(
@@ -208,32 +177,6 @@ func _exercise_subsidy_state() -> bool:
 	return _expect_close(
 		"subsidy_state: unequip restores construction cost",
 		_read_country_stat(BUILD_COST_STAT), 1.0)
-
-
-func _exercise_sovereign_fund() -> bool:
-	if not _equip("sovereign_fund"):
-		return false
-	if not await _set_reserve_and_refresh(10):
-		return false
-	for stat in [AGRICULTURE_STAT, MANUFACTURING_STAT]:
-		if not _expect_close(
-				"sovereign_fund L1: sector output at 10 bands: %s" % stat,
-				_wait_for_stat(stat, 1.04, 3), 1.04):
-			return false
-	if not _expect_close("sovereign_fund L1: trade capacity price",
-			_read_country_stat(TRADE_CAPACITY_STAT), 0.97):
-		return false
-	if not await _set_reserve_and_refresh(100):
-		return false
-	for stat in [AGRICULTURE_STAT, MANUFACTURING_STAT]:
-		if not _expect_close(
-				"sovereign_fund L1: sector output cap: %s" % stat,
-				_wait_for_stat(stat, 1.10, 3), 1.10):
-			return false
-	if not _unequip("sovereign_fund"):
-		return false
-	return _expect_close("sovereign_fund: unequip restores agriculture",
-		_read_country_stat(AGRICULTURE_STAT), 1.0)
 
 
 func _wait_for_stat(stat: String, expected: float, days: int) -> float:
@@ -261,9 +204,29 @@ func _wait_for_cell_stat(cell_id: int, stat: String, expected: float,
 	return value
 
 
+## The country stat as the ideology rows alone set it. `_equip` grants each
+## card's draw-gate technologies, and their own modifier rows land on some of
+## the same stats (trade capacity), so the whole-stat value is not the card's.
 func _read_country_stat(stat: String) -> float:
-	return float(_ext.evaluate_modifier_stat(
-		1, _handle, 0, stat, 1.0))
+	var explained: Dictionary = _ext.explain_modifier_stat(1, _handle, 0, stat, 1.0)
+	var keys := PackedStringArray(explained.get("definition_keys", PackedStringArray()))
+	var adds := PackedFloat64Array(explained.get("adds", PackedFloat64Array()))
+	var factors := PackedFloat64Array(explained.get("factors", PackedFloat64Array()))
+	var add := 0.0
+	var factor := 1.0
+	for index in range(mini(keys.size(), mini(adds.size(), factors.size()))):
+		if keys[index].begins_with("ideology."):
+			add += adds[index]
+			factor *= factors[index]
+	return (1.0 + add) * factor
+
+
+func _ideology_rows(listed: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray()
+	for key in PackedStringArray(listed.get("definition_keys", PackedStringArray())):
+		if key.begins_with("ideology."):
+			out.append(key)
+	return out
 
 
 func _read_cell_stat(cell_id: int, stat: String) -> float:
@@ -272,7 +235,7 @@ func _read_cell_stat(cell_id: int, stat: String) -> float:
 
 
 func _first_reported_cell_target() -> int:
-	var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	var domains := PackedInt32Array(report.get(
 		"target_domains", PackedInt32Array()))
 	var targets := PackedInt64Array(report.get(
@@ -314,14 +277,16 @@ func _set_metric_and_refresh(metric: int, value_q16: int,
 				and int(probe.get("value", -1)) == value_q16, str(probe)):
 		return false
 	_tick = _drive_days(1)
-	var refresh: Dictionary = {}
+	# Lambdas capture locals by value; the holder carries the last refresh out.
+	var last: Array = [{}]
 	var completed: bool = await WorkerWaitHelper.wait_for(
 		func() -> bool:
-			refresh = _ext.step_ideology_instance_refresh(_tick)
-			return bool(refresh.get("ok", false)) \
-				and bool(refresh.get("done", false)),
+			last[0] = _ext.step_ideology_instance_refresh(_tick)
+			return bool(last[0].get("ok", false)) \
+				and bool(last[0].get("done", false)),
 		3, 120000,
 		func() -> void: _tick = _drive_days(1))
+	var refresh: Dictionary = last[0]
 	if not completed:
 		if not bool(refresh.get("ok", false)):
 			return _require("%s ideology instance refresh succeeds" % label,
@@ -399,40 +364,10 @@ func _teardown() -> void:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_require("worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		var deadline := Time.get_ticks_msec() + 2000
-		while Time.get_ticks_msec() < deadline:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true)
-			OS.delay_msec(2)
-			if int(_ext.get_runtime_thread_report().get(
-					"ideology_pod_committed_day", -1)) > before:
-				break
-		fault = _worker_fault()
-		if not fault.is_empty():
-			_require("worker stays healthy after day %d" % _tick, false, fault)
-			break
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -448,6 +383,9 @@ func _equip(card: String) -> bool:
 		return false
 	_next_sequence = maxi(_next_sequence, int(gates.get(
 		"next_sequence", _next_sequence)))
+	# The worker checks the frozen Country technology snapshot, so let the grant
+	# commit before submitting DISCOVER.
+	_drive_days(1)
 	var discovered: Dictionary = _submit([{
 		"op": 1, "day": _tick, "handle": _handle, "idea": dense}])
 	if not _require("%s: worker accepts discover" % card,
@@ -477,14 +415,14 @@ func _equip(card: String) -> bool:
 		var listed: Dictionary = _ext.list_modifiers(1, _handle, "")
 		rows = PackedStringArray(listed.get(
 			"definition_keys", PackedStringArray()))
-		var instances: Dictionary = _ext.get_ideology_effect_instance_report(
+		var instances: Dictionary = _ext.get_ideology_effect_target_report(
 			_handle)
 		if not rows.is_empty() and int(instances.get("count", 0)) > 0:
 			break
 		_drive_days(1)
-	var instances: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var instances: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	return _require(
-		"%s: the card published its managed instance (count=%d rows=%s)"
+		"%s: the card published its targets (count=%d rows=%s)"
 			% [card, int(instances.get("count", -1)), str(rows)],
 		int(instances.get("count", 0)) > 0, str(instances))
 
@@ -504,8 +442,7 @@ func _unequip(card: String) -> bool:
 		var snapshot: Dictionary = _ext.get_ideology_snapshot(_handle)
 		var rows: Dictionary = _ext.list_modifiers(1, _handle, "")
 		if int(snapshot.get("ideology_slots_used", -1)) == 0 and \
-				PackedStringArray(rows.get(
-					"definition_keys", PackedStringArray())).is_empty():
+				_ideology_rows(rows).is_empty():
 			break
 		_drive_days(1)
 	var final_snapshot: Dictionary = _ext.get_ideology_snapshot(_handle)
@@ -515,20 +452,12 @@ func _unequip(card: String) -> bool:
 			% [card, int(final_snapshot.get("ideology_slots_used", -1)),
 				str(final_rows.get("definition_keys", PackedStringArray()))],
 		int(final_snapshot.get("ideology_slots_used", -1)) == 0 and
-			PackedStringArray(final_rows.get(
-				"definition_keys", PackedStringArray())).is_empty(),
+			_ideology_rows(final_rows).is_empty(),
 		str(final_rows))
 
 
 func _read_death_factor() -> float:
 	return _read_country_stat(DEATH_FACTOR_STAT)
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	var report: Dictionary = _ext.get_runtime_thread_report()
-	return String(report.get("fault_code", ""))
 
 
 func _submit(rows: Array) -> Dictionary:
@@ -582,11 +511,6 @@ func _dense_id(card: String) -> int:
 	var ids := PackedStringArray(native.get(
 		"ideology_ids", PackedStringArray()))
 	return ids.find("idea.%s" % card)
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _world_day(ext: Object) -> int:

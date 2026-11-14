@@ -42,6 +42,9 @@
     "world_ext_modifier.cpp": "Godot binding layer owns NativeCountryRuntime",
     "world_ext_runtime_graph.cpp": "Godot binding layer owns NativeCountryRuntime",
     "world_ext_simulation_host.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_simulation_host_climate.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_simulation_host_save.cpp": "Godot binding layer owns NativeCountryRuntime",
+    "world_ext_simulation_host_self_tests.cpp": "Godot binding layer owns NativeCountryRuntime",
     "world_ext_trigger.cpp": "Godot binding layer owns NativeCountryRuntime"
   },
   "legacy_includers": [],

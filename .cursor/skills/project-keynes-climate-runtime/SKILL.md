@@ -148,9 +148,9 @@ climate_pass_a
 
 ### 5. 维护 fallback
 
-- 保留明确的 PROBE/A-B/stale-DLL/failure fallback，直到有 parity 和 soak 证据。
-- 报告 `fallback_reason`，不要只打印日志。
-- 证明 fallback 仍在生产可达前，保持公式镜像；若只作隔离测试，明确标记并从 hot path 移出。
+- 对仍支持的 PROBE/A-B/stale-DLL 和视觉/对象边界保留明确的 failure handling，并报告 `fallback_reason`。
+- 2026-11 的 map_generator 第 2a 批已退休 Pass-A、Pass-B、ocean water/land、sea-ice、transpiration 的 GDScript 全图计算回退：扩展、方法探测或 native 返回失败时 `push_error`、保留上一份字段并返回失败。SHADOW/PROBE/A-B 仍保留，但不再用 GDScript 热循环推进状态。
+- 删除或恢复其他 fallback 前，仍要用 `rg` 证明生产调用边界并完成 parity/soak。
 - 删除前更新 `docs/architecture/current-state.md`，用 `rg` 证明无生产调用。
 
 ## 数值与物理底线

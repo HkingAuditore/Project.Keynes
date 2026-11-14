@@ -286,25 +286,25 @@ func _run_colonization_planner_family_cards() -> void:
 	var panel := _make_planner_panel()
 	panel.set_player_controller(stub)
 	panel.open_target(22)
-	_expect("dispatch requires choosing a city before a family",
-		not panel._has_quote_rows() and panel._start.disabled
-		and panel._source_city.item_count == 3)
-	panel._on_source_city_selected(panel._source_city.get_item_index(8))
+	_expect("dispatch immediately lists separate branches under each city",
+		panel._quote_row_refs.size() == 2 and panel._start.disabled
+		and panel._source_headers.size() == 2)
 	var rows := []
 	for child in panel._list.get_children():
 		if child.has_method("display_name"):
 			rows.append(child)
 	var visible := _visible_text(panel._list)
-	_expect("selected city shows one local family card", rows.size() == 1)
+	_expect("the same family has a selectable card for each city", rows.size() == 2)
 	_expect("colonization planner provides a separate fixed preview",
 		panel.get_node_or_null("%PreviewScroll") != null
 		and panel.anchor_left == 0.0 and panel.offset_left == 16.0)
 	_expect("dispatch summary shows canonical family name and local population",
-		rows.size() == 1 and String(rows[0].display_name()) == "长安王氏"
-		and visible.find("13") >= 0 and visible.find("40") < 0
+		rows.size() == 2 and String(rows[0].display_name()) == "长安王氏"
+		and panel._quote_row_refs["8:11"].get_node("Margin/Line/Population").text == "13"
+		and visible.find("40 人") < 0
 		and visible.find("采集传统") < 0)
-	if rows.size() == 1:
-		var row := rows[0] as Control
+	if rows.size() == 2:
+		var row := panel._quote_row_refs["8:11"] as Control
 		var effect := row.get_node("Margin/Line/Info/Effect") as Label
 		var badges := row.get_node("Margin/Line/Info/Badges") as BadgeRow
 		var population := row.get_node("Margin/Line/Population") as Label
@@ -312,10 +312,10 @@ func _run_colonization_planner_family_cards() -> void:
 			row.custom_minimum_size.y == 48.0 and not badges.visible
 			and effect.max_lines_visible == 1)
 		_expect("local population remains explicit and readable",
-			population.text == "13" and row.get_node("Margin/Line/PopulationIcon").visible
+			population.text == "13" and row.get_node("Margin/Line/PopulationIcon") is IconBadge
 			and population.get_theme_font_size("font_size") >= 14
 			and population.get_theme_color("font_color") == UITokens.DOSSIER_OXBLOOD)
-		rows[0].pressed.emit()
+		(row as Button).pressed.emit()
 	_expect("fixed preview shows traits and Chinese mechanism descriptions",
 		panel._preview_traits.text.find("采集传统") >= 0
 		and panel._preview_traits.text.find("更倾向投资采集建筑，并随威望提高本城总体产出。") >= 0
@@ -431,7 +431,7 @@ func _run_colonization_planner_effect_fallback() -> void:
 	panel.set_player_controller(stub)
 	panel.open_target(22)
 	panel._on_source_city_selected(panel._source_city.get_item_index(8))
-	var row: Button = panel._quote_row_refs.get(11)
+	var row: Button = panel._quote_row_refs.get("8:11")
 	if row != null:
 		row.pressed.emit()
 	var visible := _visible_text(panel)

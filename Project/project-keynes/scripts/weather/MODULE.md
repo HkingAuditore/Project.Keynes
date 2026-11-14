@@ -39,6 +39,11 @@ cell.cloud / .precip / .vapor / .instability
 cell.snow_cover            # [0,1]，给 shader 用
 ```
 
+`weather_system.gd` 只保留编排、配置、公开查询和状态所有权。场分发在
+`feedback.gd`，摘要前沿聚类在 `summary_builder.gd`，前沿生成与类型选择在
+`front_spawn.gd`，原生天气桥接、knob、解包和验证在 `native_bridge.gd`；
+协作者通过宿主参数读写状态，不自行保存天气状态。
+
 ## 不要直接调用的内部方法
 
 - `_solve_weather_field()` — 主求解循环

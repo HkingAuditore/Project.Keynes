@@ -27,6 +27,10 @@
 
 **已落地**：Economy、Country、Modifier、Military 的接口契约；Economy、Country 的宿主端口；军事核心只依赖 `military_bridge.h`。见 [module-boundaries.md](module-boundaries.md#模块公开接口)。
 
+Country 的国家级政治体制沿用上述接口：体制 stable id 与 capability bit 由 Country
+拥有，Economy 只读取已提交并冻结的 `CountryReadView`。政治 UI 是 Country 体制快照与
+Ideology 快照的组合视图，不形成新的每日调度域。
+
 **目标，尚未实现**：Effect、Trigger、Ideology、Climate 的接口头；其余模块的宿主端口；组合根数量继续收缩。
 
 ## 跨模块规则
@@ -34,6 +38,10 @@
 只允许两种交接：读取所有者发布的不可变视图；向所有者提交有明确结果的业务请求（intent）。请求包含稳定身份、目标、日期和去重信息，所有者决定接受、等待或拒绝。消费者不能持有另一模块的可写容器，不能绕过所有者补钱、改人口或发布伪成功。
 
 **已落地**：9 条已提交视图；Economy→Country 全部写入走所有者端口（直接写为 0）；30 个域对逐项登记。
+
+**已落地**：Military 的玩家自动探路任务留在 `MilitaryCore`，只接收 Host 冻结的玩家 explored
+副本并返回实际进入格的 trail；Host 合并 `MapData.explored_arr`，`VisionSolver` 仍是
+`visible/fog` 的唯一生成者。探路不宣战、不占领、不改变控制权，也不建立第二套视野算法。
 
 **目标，尚未实现**：剩余读边（见 current-state）改为已提交视图；25 个待核查域对的逐函数语义审查。依赖棘轮冻结的现有债务不是永久许可。
 

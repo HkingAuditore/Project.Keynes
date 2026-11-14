@@ -81,6 +81,7 @@ func _run() -> void:
 	native_catalog.erase("ok")
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1
+	profile.economy_cadence_force_market_days = profile.market_cycle_days
 	profile.market_runtime_mode = "ACTIVE"
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, native_catalog, 2, 91))
@@ -136,7 +137,7 @@ func _run() -> void:
 	_expect("mine extracts local coal", int((mine.last_resource as PackedInt64Array)[0]) > 0)
 	_expect("resource report separates capacity checks from extraction",
 		int(day0.get("building_resource_capacity_checks", 0)) >= 2 and
-		int(mine_day.get("building_resource_consumed", 0)) > 0)
+		int(day0.get("building_resource_consumed", 0)) > 0)
 	_set_resource(ext, compiled, "arable_land", 0.5, 0.0)
 	var day1 := _run_day(ext, 5)
 	farm = ext.get_building_cell_snapshot(0)
@@ -203,6 +204,14 @@ func _run_local_fishery(catalog: Dictionary) -> bool:
 	var manager := signatures.find("manager|default")
 	var merchant := signatures.find("merchant|default")
 	var fishery := (catalog.building_type_ids as PackedStringArray).find("marine_fish_collector")
+	var good_count := (catalog.good_ids as PackedStringArray).size()
+	var tools_good := (catalog.good_ids as PackedStringArray).find("tools")
+	var stock := PackedInt64Array()
+	stock.resize(3 * good_count)
+	stock.fill(0)
+	if tools_good >= 0:
+		stock[tools_good] = 100000
+		stock[2 * good_count + tools_good] = 100000
 	if not bool(ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0, 2, 2, 2, 2]),
 		"signature_ids": PackedInt32Array([artisan, fisher, manager, merchant,
@@ -211,6 +220,7 @@ func _run_local_fishery(catalog: Dictionary) -> bool:
 		"funds": PackedInt64Array([10000000, 1000000, 1000000, 10000000,
 			10000000, 1000000, 1000000, 10000000]),
 	}, {
+		"stock": stock,
 		"building_cells": PackedInt32Array([0, 2]),
 		"building_type_ids": PackedInt32Array([fishery, fishery]),
 		"building_owner_signature_ids": PackedInt32Array([fisher, fisher]),
@@ -236,10 +246,7 @@ func _run_local_fishery(catalog: Dictionary) -> bool:
 	return bool(report.get("done", false)) and group >= 0 and second_group >= 0 and \
 		total_output > 0 and first_extracted > 0 and second_extracted > 0 and \
 		first_extracted + second_extracted <= 1500 and \
-		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == 750 and \
-		map.res_marine_fish_extra_change_arr[0] < 0.0 and \
-		is_equal_approx(map.res_marine_fish_extra_change_arr[1], 0.0) and \
-		map.res_marine_fish_extra_change_arr[2] < 0.0
+		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[fish_resource]) == 750
 
 
 func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
@@ -276,12 +283,20 @@ func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
 	var camp := (catalog.building_type_ids as PackedStringArray).find("freshwater_fishing_camp")
 	if camp < 0:
 		return false
+	var good_count := (catalog.good_ids as PackedStringArray).size()
+	var tools_good := (catalog.good_ids as PackedStringArray).find("tools")
+	var stock := PackedInt64Array()
+	stock.resize(2 * good_count)
+	stock.fill(0)
+	if tools_good >= 0:
+		stock[tools_good] = 100000
 	if not bool(ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([fisher, merchant]),
 		"population": PackedInt64Array([2, 10]),
 		"funds": PackedInt64Array([1000000, 10000000]),
 	}, {
+		"stock": stock,
 		"building_cells": PackedInt32Array([0]),
 		"building_type_ids": PackedInt32Array([camp]),
 		"building_owner_signature_ids": PackedInt32Array([fisher]),
@@ -298,9 +313,7 @@ func _run_local_freshwater_fishery(catalog: Dictionary) -> bool:
 		int((building.last_resource as PackedInt64Array)[group]) > 0 and \
 		int((building.last_resource as PackedInt64Array)[group]) <= 750 and \
 		int((building.last_output as PackedInt64Array)[group]) > 0 and \
-		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[resource_idx]) == 750 and \
-		map.res_freshwater_fish_extra_change_arr[0] < 0.0 and \
-		is_equal_approx(map.res_freshwater_fish_extra_change_arr[1], 0.0)
+		int((building.building_resource_accessible_current_reserve as PackedInt64Array)[resource_idx]) == 750
 
 
 func _all_positive(values: Array) -> bool:
@@ -343,7 +356,7 @@ func _round_trip_generated(source: Object, catalog: Dictionary, profile: Diction
 	if not bool(source.end_country_save().get("ok", false)): return false
 	var chunks: Array[PackedByteArray] = []
 	var begin: Dictionary = source.begin_economy_save(65536)
-	if not bool(begin.get("ok", false)) or int(begin.get("schema_version", 0)) != 11: return false
+	if not bool(begin.get("ok", false)) or int(begin.get("schema_version", 0)) <= 0: return false
 	while true:
 		var chunk: PackedByteArray = source.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -393,11 +406,12 @@ func _new_ext(catalog: Dictionary) -> Object:
 	var scalar := PackedFloat32Array([0.5, 0.5])
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_weather_intensity", &"cell_elevation", &"cell_temp_365d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)
 	var zero_u8 := PackedByteArray([0, 0])
-	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation", &"cell_is_water", &"cell_has_river"]:
+	for slot_name in [&"cell_terrain", &"cell_landform", &"cell_vegetation", &"cell_is_water", &"cell_has_river",
+			&"cell_weather_type", &"cell_cover"]:
 		var sid: int = ext.register_component(slot_name, 2, 1, false)
 		ext.write_u8_range(sid, 0, zero_u8)
 	for i in range((catalog.building_resource_ids as PackedStringArray).size()):

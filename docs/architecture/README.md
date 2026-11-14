@@ -6,7 +6,7 @@
 2. [design.md](design.md)：目标架构，标明哪些已落地。
 3. [current-state.md](current-state.md)：今天源码里的十二域、表外推进者、跨模块交接、存档段、哈希与验证范围。
 4. [module-boundaries.md](module-boundaries.md)：数据归属、模块公开接口与宿主端口、依赖棘轮、已提交视图、请求与提交、行数棘轮。
-5. [development-guide.md](development-guide.md)：怎样改模块、加接口/端口/读边/请求/存档字段、搬迁文件、跑检查、维护黄金基线、做性能验证。
+5. [development-guide.md](development-guide.md)：怎样改模块、加接口/端口/读边/请求/存档字段、搬迁文件、跑检查、检查重复运行一致与临时重构对照、做性能验证。
 6. [migration.md](migration.md)：迁移目标各项的状态、推迟项和最近一次验证。
 7. [source-module-splits.md](source-module-splits.md)：19 处增长超限的职责拆分、当前实现位置与输入边界。
 8. [feature-guides.md](feature-guides.md)：单个功能的专项约束与验证入口，改到该功能时才读。

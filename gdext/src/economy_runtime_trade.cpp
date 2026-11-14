@@ -1755,7 +1755,9 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 else if (good_id == "potatoes") contact_rule = 3;
                 else if (good_id == "seed_cotton" || good_id == "cotton_fiber")
                     contact_rule = 4;
-                else if (good_id == "bast_fiber" || good_id == "flax_fiber")
+                // bast_fiber 走规则 10（见下方分支）；这里只处理 flax_fiber。
+                // 修复前两者共用 5，导致下面的 bast_fiber = 10 成为死代码。
+                else if (good_id == "flax_fiber")
                     contact_rule = 5;
                 else if (good_id == "spices") contact_rule = 6;
                 else if (good_id == "latex") contact_rule = 7;

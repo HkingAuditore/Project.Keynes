@@ -101,12 +101,22 @@ func request_event_generation(
 	var cell_ctx: Dictionary = request_spec.get("cell_ctx", request_spec)
 	var chronicle: Array = request_spec.get("recent_chronicle", [])
 	var chain_hint := String(request_spec.get("ai_prompt_hint", request_spec.get("chain_hint", "")))
+	var fact_hint := String(request_spec.get("fact_hint", ""))
+	var state_hint := String(request_spec.get("state_hint", ""))
 	var allowed_goods: PackedStringArray = request_spec.get("allowed_goods", PackedStringArray())
 	var allowed_buildings: PackedStringArray = request_spec.get("allowed_buildings", PackedStringArray())
 	var messages := NarrativeAiPromptBuilderScript.build_messages(
-		cell_ctx, chronicle, chain_hint, allowed_goods, allowed_buildings
+		cell_ctx, chronicle, chain_hint, allowed_goods, allowed_buildings, fact_hint, state_hint
 	)
 	var custom_event_id := "evt.ai.%d_%d" % [int(request_spec.get("day", cell_ctx.get("day", 1))), req_id]
+	# 服务层用 ai_request_seq 认领回执；client 只负责原样回带，不解释它。
+	var routing := {
+		"request_id": req_id,
+		"ai_request_seq": int(request_spec.get("ai_request_seq", -1)),
+		"cell_idx": int(request_spec.get("cell_idx", cell_ctx.get("cell_idx", -1))),
+		"chain_id": String(request_spec.get("chain_id", "")),
+		"state_id": String(request_spec.get("state_id", "")),
+	}
 
 	# Test / Mock path
 	var active_mock := _mock_llm_responder if _mock_llm_responder.is_valid() else _mock_responder
@@ -117,9 +127,7 @@ func request_event_generation(
 		)
 		if bool(validated.get("ok", false)):
 			validated["definition"] = NarrativeEventDefinitionScript.from_dict(validated.get("event_dict", {}))
-		validated["request_id"] = req_id
-		validated["cell_idx"] = int(request_spec.get("cell_idx", cell_ctx.get("cell_idx", -1)))
-		validated["chain_id"] = String(request_spec.get("chain_id", ""))
+		validated.merge(routing, true)
 		if on_complete.is_valid():
 			on_complete.call(validated)
 		event_generated.emit(req_id, validated)
@@ -132,8 +140,8 @@ func request_event_generation(
 			"ok": false,
 			"code": "ai_key_missing",
 			"reason": "未配置 AI API Key，已自动回退至内置静态事件库。",
-			"request_id": req_id,
 		}
+		fail.merge(routing, true)
 		if on_complete.is_valid():
 			on_complete.call(fail)
 		event_generated.emit(req_id, fail)
@@ -165,8 +173,8 @@ func request_event_generation(
 				"ok": false,
 				"code": "ai_http_error",
 				"reason": "LLM 请求失败 (HTTP %d)" % response_code,
-				"request_id": req_id,
 			}
+			http_fail.merge(routing, true)
 			if on_complete.is_valid():
 				on_complete.call(http_fail)
 			event_generated.emit(req_id, http_fail)
@@ -187,9 +195,7 @@ func request_event_generation(
 		)
 		if bool(validated.get("ok", false)):
 			validated["definition"] = NarrativeEventDefinitionScript.from_dict(validated.get("event_dict", {}))
-		validated["request_id"] = req_id
-		validated["cell_idx"] = int(request_spec.get("cell_idx", cell_ctx.get("cell_idx", -1)))
-		validated["chain_id"] = String(request_spec.get("chain_id", ""))
+		validated.merge(routing, true)
 		if on_complete.is_valid():
 			on_complete.call(validated)
 		event_generated.emit(req_id, validated)
@@ -202,8 +208,8 @@ func request_event_generation(
 			"ok": false,
 			"code": "ai_request_start_failed",
 			"reason": "无法发起 HTTP 请求。",
-			"request_id": req_id,
 		}
+		start_fail.merge(routing, true)
 		if on_complete.is_valid():
 			on_complete.call(start_fail)
 		event_generated.emit(req_id, start_fail)

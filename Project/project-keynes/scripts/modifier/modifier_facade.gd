@@ -121,6 +121,20 @@ func report() -> Dictionary:
 	return _world_ext.get_modifier_report() if _configured else {"configured": false}
 
 
+func capture_domain_state(domain: int) -> PackedByteArray:
+	return _world_ext.capture_modifier_domain(domain) if _world_ext != null else PackedByteArray()
+
+
+func clear_domain_state(domain: int) -> Dictionary:
+	return _world_ext.clear_modifier_domain(domain) if _world_ext != null else {
+		"ok": false, "reason": "modifier_provider_missing"}
+
+
+func restore_domain_state(domain: int, bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_modifier_domain(domain, bytes) if _world_ext != null else {
+		"ok": false, "reason": "modifier_provider_missing"}
+
+
 func dispatch_events() -> void:
 	if not _configured:
 		return

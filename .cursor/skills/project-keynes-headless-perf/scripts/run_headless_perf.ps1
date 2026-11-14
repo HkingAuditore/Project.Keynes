@@ -60,7 +60,7 @@ $logPath = Join-Path $tmp "headless_perf_${stamp}_${safeLabel}.log"
 $godotArgs = @(
     '--headless',
     '--path', $project,
-    '--script', 'res://tests/headless_perf_record.gd',
+    '--script', 'res://tests/game/headless_perf_record.gd',
     '--',
     "days=$Days",
     "speed=$Speed",

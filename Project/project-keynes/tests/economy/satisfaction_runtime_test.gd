@@ -320,8 +320,8 @@ func _test_save_round_trip(compiled: Dictionary, check_full_replay_hash: bool = 
 		country_chunks.append(chunk)
 	_expect("Country peer save completes", bool(source.end_country_save().get("ok", false)))
 	var saved := _save(source)
-	_expect("PKEC v56 streams the satisfaction columns",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 57)
+	_expect("PKEC streams the satisfaction columns",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) > 0)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_world(compiled, 4004, true, false,

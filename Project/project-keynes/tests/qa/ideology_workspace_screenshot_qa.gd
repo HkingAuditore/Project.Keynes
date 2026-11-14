@@ -30,7 +30,7 @@ func _run() -> void:
 	var handle := int(controller.get_player_country_handle())
 	for viewport_size in SIZES:
 		_resize(viewport_size)
-		ui.open_country_section("ideology")
+		await _open_ideology(ui)
 		await _capture("empty", viewport_size)
 	if facade == null or handle == 0:
 		_failures.append("ideology facade or player country missing")
@@ -75,7 +75,7 @@ func _run() -> void:
 		_failures.append("offer never presented (phase=%s)" % controller.ideology_draw_phase())
 	for viewport_size in SIZES:
 		_resize(viewport_size)
-		ui.open_country_section("ideology")
+		await _open_ideology(ui)
 		await create_timer(1.6).timeout
 		await _capture("offer", viewport_size)
 	var snap: Dictionary = facade.snapshot(handle)
@@ -88,7 +88,7 @@ func _run() -> void:
 		await process_frame
 	for viewport_size in SIZES:
 		_resize(viewport_size)
-		ui.open_country_section("ideology")
+		await _open_ideology(ui)
 		await create_timer(1.2).timeout
 		await _capture("collection", viewport_size)
 	_finish()
@@ -98,6 +98,15 @@ func _resize(viewport_size: Vector2i) -> void:
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(viewport_size)
 	root.size = viewport_size
+
+
+func _open_ideology(ui: GameUIManager) -> void:
+	ui.open_country_section("politics")
+	await process_frame
+	var panel := ui.get("_country_panel") as Control
+	var politics := panel.get("_politics_workspace") as Control if panel != null else null
+	if politics != null and politics.has_method("select_tab"):
+		politics.select_tab("ideology")
 
 
 func _advance_days(clock: WorldClock, days: int) -> void:

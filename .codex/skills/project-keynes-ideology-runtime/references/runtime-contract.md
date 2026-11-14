@@ -272,11 +272,18 @@ contract; the reasoning lives in `docs/plans/ideology-review/22-*` and the evide
 
 `cell_program_eligibility.h` is the ONLY place that decides. `decide_cell_program_backend()`
 answers `DerivedCell` or a named reason (`not_cell_domain` / `unsupported_selector` /
-`not_permanent` / `non_constant_value_mode` / `stacked` / `unresolved_definition`).
+`not_permanent` / `dead_duration_field` / `state_dependent` / `non_constant_value_mode` /
+`stacked` / `unresolved_definition`). The instance path therefore stays: it carries every
+program the derived layer cannot express. A condition that reads a STATE latch is
+`state_dependent`; other program conditions are evaluated per target cell by the derived
+collector against the same metric slab the instance path builds (economy sample plus
+ideology scalars, `evaluate_program_conditions_for_metrics`). Before 2026-11-14 the collector skipped them,
+so 41 conditioned OWN_TERRITORY programs applied to every candidate cell.
 
 The production path and the legacy plane both call it; there is no second rule. Measured
 coverage: **265 of 265** in-scope programs (kinds 12/14/15/16) go derived, and 23 stay on
-the instance path for a stated reason (16 non-cell domains + 7 unsupported selectors).
+the instance path for a stated reason (16 non-cell domains + 7 unsupported selectors),
+measured before the `state_dependent` rule existed.
 
 There is **no rollout switch**. Supported selectors go derived, full stop.
 
@@ -297,6 +304,12 @@ the first step.
 
 Collection and folding are **separate steps**: collecting 6400 cells alone costs 0.68 ms,
 so folding in the same step pushed the first slice to 1.03 ms.
+
+Under the worker, `DCWorldExt::step_ideology_derived_rebuild` (`world_ext_ideology.cpp`)
+is pumped once per day boundary and the job is keyed by day, so a new day discards a
+half-built job. It therefore drives the job to completion inside ONE lock hold. Sliced
+across pumps, the frontier froze at the last install whenever days advanced as fast as
+frames, and separately locked slices could fold two economy epochs into one layer.
 
 ### Ownership scope for fan-outs (kinds 14/15/16)
 
@@ -344,6 +357,7 @@ stream that is exactly `EMIT metric` at unit scale, and no shipped ramp card is.
 | `get_effective_stat_value(stat_key, cell, entity, base)` | merged value + `derived_add` / `derived_factor` / `derived_zero_factor_count` / `derived_contributors` / `derived_present` |
 | `get_derived_materialize_report()` | seen / derived / skipped_legacy / cells_visited / rows_emitted / truncated |
 | `get_derived_multi_country_report()` | `multi_country_cells` / `max_contributors` / `countries` |
+| `get_ideology_effect_target_report(handle)` | backend-agnostic "which cells does this card act on": the instance report's columns (`idea_ids` / `idea_levels` / `program_hashes` / `target_handles` / `target_domains`) plus derived rows once the frontier is installed, and a `backends` column. The ideology panel and tests read this, not the instance report |
 
 `get_effective_stat_value` calls the same `effective_value` the hot path calls — it reports
 what the game would see, not a re-derivation.

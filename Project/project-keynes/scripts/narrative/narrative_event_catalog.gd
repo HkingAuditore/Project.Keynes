@@ -1,4 +1,4 @@
-class_name NarrativeEventCatalog
+﻿class_name NarrativeEventCatalog
 extends Resource
 
 ## 默认事件库。所有玩家可见文本只写事实与数值：
@@ -11,6 +11,9 @@ const NarrativeWeightRuleScript = preload("res://scripts/narrative/narrative_wei
 const NarrativeEffectSpecScript = preload("res://scripts/narrative/narrative_effect_spec.gd")
 const NarrativeOutcomeScript = preload("res://scripts/narrative/narrative_outcome.gd")
 const NarrativeOptionScript = preload("res://scripts/narrative/narrative_option.gd")
+const NarrativeEventCatalogWaterworksScript = preload("res://scripts/narrative/narrative_event_catalog_waterworks.gd")
+const NarrativeEventCatalogPeopleScript = preload("res://scripts/narrative/narrative_event_catalog_people.gd")
+const NarrativeEventRegistryScript = preload("res://scripts/narrative/narrative_event_registry.gd")
 
 @export var events: Array[Resource] = []
 
@@ -91,7 +94,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.climate.severe_drought",
 		"title": "{settlement_name}·旱灾",
-		"body_text": "长期高温少雨，土壤干裂，本地农业面临减产。",
+		"body_text": "一个多月没下透雨，田里的土裂成一块一块，脚踩上去发脆。村口的水塘见了底，塘底的泥上留着几道鱼印。里正蹲在田埂上，把一棵旱死的苗连根拔起来，根上没带土。",
+		"min_era_index": 1,
 		"image_key": "climate.sun",
 		"ai_visual_prompt": "Parched cracked farmland under a scorching sun in an ancient agrarian settlement, villagers digging irrigation ditches",
 		"tags": ["climate", "drought", "agriculture", "crisis"],
@@ -123,12 +127,12 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 400,
-								"custom_label": "国库转出 4% 资金给本地居民",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 4%",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.agriculture_output_boost",
-								"magnitude_q16": 75366,
+								"target_key": "economy.city.building.agriculture_output_factor",
+								"magnitude_q16": 9830,
 								"duration_days": 90,
 								"custom_label": "本地农业产出 +15%，90 日",
 							},
@@ -146,8 +150,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.birth_cut",
-								"magnitude_q16": 52429,
+								"target_key": "economy.city.birth_factor.cut",
+								"magnitude_q16": 13107,
 								"duration_days": 60,
 								"custom_label": "本地人口出生率 -20%，60 日",
 							},
@@ -165,8 +169,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.agriculture_output_boost",
-								"magnitude_q16": 81920,
+								"target_key": "economy.city.building.agriculture_output_factor",
+								"magnitude_q16": 16384,
 								"duration_days": 120,
 								"custom_label": "本地农业产出 +25%，120 日",
 							},
@@ -179,10 +183,10 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.ADD_EVENT_WEIGHT_BIAS,
 								"tag_key": "unrest",
-								"int_value": 60,
+								"int_value": 0,
 								"magnitude_q16": 98304,
 								"duration_days": 180,
-								"custom_label": "动荡类事件概率 +50%，180 日",
+								"custom_label": "动荡类事件权重 ×1.5，180 日",
 							},
 						],
 					},
@@ -195,7 +199,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.climate.bitter_frost",
 		"title": "{settlement_name}·寒潮",
-		"body_text": "气温骤降，霜冻覆盖地表，御寒物资需求上升。",
+		"body_text": "夜里起了北风，天亮时草叶上全是白霜。井台结了一层薄冰，打水的人先用石头把冰砸开。街上卖炭的车还没进城，柴铺门口已经排了人，有人把身上的旧袄又裹紧一层。",
+		"min_era_index": 0,
 		"image_key": "climate.weather",
 		"ai_visual_prompt": "Snowstorm hitting a settlement in winter, warm bonfires burning in the town square",
 		"tags": ["climate", "cold", "winter"],
@@ -218,14 +223,14 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 300,
-								"custom_label": "国库转出 3% 资金给本地居民",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 3%",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
 								"target_key": "family.city.production_boost",
 								"magnitude_q16": 72090,
 								"duration_days": 75,
-								"custom_label": "本地综合生产效率 +10%，75 日",
+								"custom_label": "本地综合生产效率 +2.2%，75 日",
 							},
 						],
 					},
@@ -256,7 +261,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.ocean.upwelling_bonanza",
 		"title": "{settlement_name}·大渔汛",
-		"body_text": "近海上升流增强，鱼群聚集于外海浅滩。",
+		"body_text": "海面上起了一层细密的泡，水色比往常深。老渔人把船撑到外海的浅滩，看见水里黑压压一片，鱼群挤着往上游。他回头朝岸上喊了一声，声音被风刮散，岸上的人只看见他挥手。",
+		"min_era_index": 0,
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Abundant coastal fishing fleet hauling overflowing nets in a vibrant bay with ocean currents",
 		"tags": ["ocean", "maritime", "prosperity", "harvest"],
@@ -294,14 +300,14 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 								"kind": Kind.MARKET_ADD_STOCK,
 								"target_key": "fish",
 								"int_value": 8000,
-								"custom_label": "本地市场新增鱼获 8 单位",
+								"custom_label": "本地市场新增鱼类 8 单位",
 							},
 							{
-								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.trade_output_boost",
-								"magnitude_q16": 78643,
+								"kind": Kind.COUNTRY_MODIFIER,
+								"target_key": "family.country.trade_capacity",
+								"magnitude_q16": 65536,
 								"duration_days": 120,
-								"custom_label": "本地贸易产出 +20%，120 日",
+								"custom_label": "全国贸易容量 +6%，120 日",
 							},
 						],
 					},
@@ -317,8 +323,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.agriculture_output_boost",
-								"magnitude_q16": 73400,
+								"target_key": "economy.city.building.agriculture_output_factor",
+								"magnitude_q16": 7864,
 								"duration_days": 180,
 								"custom_label": "本地农业产出 +12%，180 日",
 							},
@@ -333,7 +339,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.geography.river_flood",
 		"title": "{settlement_name}·春汛",
-		"body_text": "上游融雪入河，水位上涨；洪水带来泥沙淤积。",
+		"body_text": "上游的雪化了，河水一天涨一尺。渡口的木桩先被淹了，接着是低处的田。水退下去以后，田里盖了一层黄泥，踩上去陷到脚踝。老农蹲下去抓了一把泥，说这泥肥，可今年的苗没了。",
+		"min_era_index": 1,
 		"image_key": "hydrology.water",
 		"ai_visual_prompt": "Swollen river flooding fertile alluvial plains near a settlement, workers building embankments",
 		"tags": ["geography", "flood", "agriculture"],
@@ -355,8 +362,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.agriculture_output_boost",
-								"magnitude_q16": 78643,
+								"target_key": "economy.city.building.agriculture_output_factor",
+								"magnitude_q16": 13107,
 								"duration_days": 150,
 								"custom_label": "本地农业产出 +20%，150 日",
 							},
@@ -369,7 +376,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 300,
-								"custom_label": "国库转出 3% 资金抢修堤防",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 3%",
 							},
 						],
 					},
@@ -388,7 +395,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 								"target_key": "family.city.production_boost",
 								"magnitude_q16": 68813,
 								"duration_days": 45,
-								"custom_label": "本地综合生产效率 +5%，45 日",
+								"custom_label": "本地综合生产效率 +2.1%，45 日",
 							},
 						],
 					},
@@ -401,7 +408,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.market.grain_panic",
 		"title": "{settlement_name}·物资短缺",
-		"body_text": "{good_name}供不应求，价格上涨，出现囤积。",
+		"body_text": "粮行的门开得比往常早，队伍已经排到街角。{good_name}的价牌一天换两回，掌柜说仓库里也没多少了。有人一次买走三袋，后面的人伸手去拦，被伙计挡开。",
+		"min_era_index": 1,
 		"image_key": "country.economy",
 		"ai_visual_prompt": "Bustling historical marketplace with merchants arguing over grain sacks and price boards",
 		"tags": ["market", "commerce", "unrest"],
@@ -424,14 +432,14 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 350,
-								"custom_label": "国库转出 3.5% 资金发放平准补贴",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 3.5%",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
 								"target_key": "family.city.production_boost",
 								"magnitude_q16": 72090,
 								"duration_days": 60,
-								"custom_label": "本地综合生产效率 +10%，60 日",
+								"custom_label": "本地综合生产效率 +2.2%，60 日",
 							},
 						],
 					},
@@ -448,14 +456,14 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
 								"ratio_bp": 250,
-								"custom_label": "地方资金 2.5% 上缴国库",
+								"custom_label": "向本地人数最多的{primary_profession}征收其现金的 2.5%",
 							},
 							{
-								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.trade_output_boost",
-								"magnitude_q16": 75366,
+								"kind": Kind.COUNTRY_MODIFIER,
+								"target_key": "family.country.trade_capacity",
+								"magnitude_q16": 65536,
 								"duration_days": 90,
-								"custom_label": "本地贸易产出 +15%，90 日",
+								"custom_label": "全国贸易容量 +6%，90 日",
 							},
 						],
 					},
@@ -466,10 +474,10 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.ADD_EVENT_WEIGHT_BIAS,
 								"tag_key": "unrest",
-								"int_value": 50,
+								"int_value": 0,
 								"magnitude_q16": 91750,
 								"duration_days": 120,
-								"custom_label": "动荡类事件概率 +40%，120 日",
+								"custom_label": "动荡类事件权重 ×1.4，120 日",
 							},
 						],
 					},
@@ -482,7 +490,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.industry.artisan_innovation",
 		"title": "{settlement_name}·工匠改良",
-		"body_text": "匠人改良工序与夹具，可减少原料损耗。",
+		"body_text": "老匠把凿子的角度改了改，又用一块硬木做了个卡子，把料卡住。同样的铁，他多打出一把锄头，刃口还更直。徒弟在旁边看，学着做了第二个卡子，做得歪，老匠没骂，拿过来重新削。",
+		"min_era_index": 2,
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Master craftsmen in a historical workshop demonstrating a new tool jig and pulley mechanism",
 		"tags": ["industry", "innovation", "prosperity"],
@@ -505,19 +514,19 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 200,
-								"custom_label": "国库转出 2% 资金犒赏匠人",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 2%",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.manufacturing_output_boost",
-								"magnitude_q16": 78643,
+								"target_key": "economy.city.building.manufacturing_output_factor",
+								"magnitude_q16": 13107,
 								"duration_days": 150,
 								"custom_label": "本地制造产出 +20%，150 日",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.knowledge_output_boost",
-								"magnitude_q16": 75366,
+								"target_key": "economy.city.building.knowledge_output_factor",
+								"magnitude_q16": 9830,
 								"duration_days": 150,
 								"custom_label": "本地知识产出 +15%，150 日",
 							},
@@ -536,7 +545,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.COHORT_CASH_TO_TREASURY,
 								"ratio_bp": 300,
-								"custom_label": "地方资金 3% 上缴国库",
+								"custom_label": "向本地人数最多的{primary_profession}征收其现金的 3%",
 							},
 						],
 					},
@@ -549,7 +558,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.society.livelihood_petition",
 		"title": "{settlement_name}·民生请愿",
-		"body_text": "生计压力下，居民代表联名请愿，要求减负。",
+		"body_text": "二十来个人堵在衙门口，为首的手里捧着一只空碗。碗里没有粮，碗底沾着几粒去年的陈米。韦顺出来问话，人群里有人说，税再这么收，锅就揭不开了。后面的人跟着应，声音不高，也没人往前挤。",
+		"min_era_index": 1,
 		"image_key": "family.house",
 		"ai_visual_prompt": "Town elders and workers presenting a scroll petition at the steps of a civic hall",
 		"tags": ["society", "unrest", "livelihood"],
@@ -573,14 +583,14 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 350,
-								"custom_label": "国库转出 3.5% 资金给本地居民",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 3.5%",
 							},
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.production_boost",
-								"magnitude_q16": 73400,
+								"target_key": "economy.city.building.manufacturing_output_factor",
+								"magnitude_q16": 1311,
 								"duration_days": 90,
-								"custom_label": "本地综合生产效率 +12%，90 日",
+								"custom_label": "本地制造产出 +2%，90 日",
 							},
 						],
 					},
@@ -611,7 +621,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.strange_outcrop",
 		"title": "{settlement_name}·矿脉露头（1/3）",
-		"body_text": "民夫在{landform_name}断崖发现金属矿脉露头。",
+		"body_text": "民夫在{landform_name}的断崖下歇脚，有人拿石块敲着玩，敲下一块发绿的石头。石头上有一道一道的纹，压手。领工的接过去看了看，又敲了两下，把石头揣进怀里，让民夫把这一段崖壁都清出来。",
+		"min_era_index": 2,
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Ancient prospectors discovering a glowing metallic ore vein on a rocky cliffside",
 		"tags": ["chain", "prospecting", "discovery", "extractive"],
@@ -626,10 +637,10 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 			{
 				"kind": Kind.ADD_EVENT_WEIGHT_BIAS,
 				"tag_key": "prospecting",
-				"int_value": 50,
+				"int_value": 0,
 				"magnitude_q16": 98304,
 				"duration_days": 365,
-				"custom_label": "勘探类事件概率 +50%，365 日",
+				"custom_label": "勘探类事件权重 ×1.5，365 日",
 			},
 		],
 		"options": [
@@ -644,7 +655,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.TREASURY_CASH_TO_COHORT,
 								"ratio_bp": 250,
-								"custom_label": "国库转出 2.5% 资金资助勘探",
+								"custom_label": "国库拨付本地人数最多的{primary_profession}，占国库现金 2.5%",
 							},
 							{
 								"kind": Kind.SET_STORY_FLAG,
@@ -652,14 +663,6 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 								"duration_days": 365,
 								"scope_to_cell": false,
 								"custom_label": "标记「深层勘探」，365 日",
-							},
-							{
-								"kind": Kind.ADD_EVENT_WEIGHT_BIAS,
-								"target_key": "evt.chain.subterranean_cavern",
-								"int_value": 200,
-								"magnitude_q16": 131072,
-								"duration_days": 365,
-								"custom_label": "后续事件「地底矿洞」概率 +100%，365 日",
 							},
 							{
 								"kind": Kind.SCHEDULE_FOLLOWUP_EVENT,
@@ -682,8 +685,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.extractive_output_boost",
-								"magnitude_q16": 75366,
+								"target_key": "economy.city.building.extractive_output_factor",
+								"magnitude_q16": 9830,
 								"duration_days": 90,
 								"custom_label": "本地采掘产出 +15%，90 日",
 							},
@@ -698,7 +701,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.subterranean_cavern",
 		"title": "{settlement_name}·地底矿洞（2/3）",
-		"body_text": "勘探队凿通岩壁，发现富矿带与地下暗河。",
+		"body_text": "凿到第七天，岩壁透了，一股凉风从缝里出来。火把伸进去，照见一条暗河，水声在洞子里转。河边的石壁上全是黑亮的矿脉，有人伸手去摸，被领队的喝住。",
 		"image_key": "economy.resource",
 		"ai_visual_prompt": "Underground cavern with glowing mineral veins and a subterranean river, ancient miners holding torches",
 		"tags": ["chain", "prospecting", "discovery", "extractive"],
@@ -719,8 +722,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.extractive_output_boost",
-								"magnitude_q16": 81920,
+								"target_key": "economy.city.building.extractive_output_factor",
+								"magnitude_q16": 16384,
 								"duration_days": 180,
 								"custom_label": "本地采掘产出 +25%，180 日",
 							},
@@ -746,8 +749,8 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.extractive_output_boost",
-								"magnitude_q16": 75366,
+								"target_key": "economy.city.building.extractive_output_factor",
+								"magnitude_q16": 9830,
 								"duration_days": 120,
 								"custom_label": "本地采掘产出 +15%，120 日",
 							},
@@ -766,7 +769,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 							{
 								"kind": Kind.COUNTRY_MODIFIER,
 								"target_key": "ideology.country.output.knowledge_factor.gain",
-								"magnitude_q16": 75366,
+								"magnitude_q16": 9830,
 								"duration_days": 180,
 								"custom_label": "全国知识部门产出 +15%，180 日",
 							},
@@ -781,7 +784,7 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 	catalog.events.append(NarrativeEventDefinitionScript.from_dict({
 		"event_id": "evt.chain.ancient_foundry_legacy",
 		"title": "{settlement_name}·矿冶重镇（3/3）",
-		"body_text": "地底富矿与水力工坊已投产，本地矿冶产出提升。",
+		"body_text": "水渠引到坡下，木轮带着风箱一进一出，炉火比从前旺。矿石从地底一筐一筐运上来，倒进炉口，铁水顺着槽流进范里。老匠用铁钩拨了拨浮渣，说这一炉能出三件家伙。",
 		"image_key": "map.construction",
 		"ai_visual_prompt": "Grand prosperous foundry town with waterwheels, glowing furnaces and trade caravans",
 		"tags": ["chain", "prospecting", "industry", "prosperity"],
@@ -801,15 +804,15 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 						"effects": [
 							{
 								"kind": Kind.CITY_MODIFIER,
-								"target_key": "family.city.manufacturing_output_boost",
-								"magnitude_q16": 81920,
+								"target_key": "economy.city.building.manufacturing_output_factor",
+								"magnitude_q16": 16384,
 								"duration_days": 365,
 								"custom_label": "本地制造产出 +25%，365 日",
 							},
 							{
 								"kind": Kind.COUNTRY_MODIFIER,
 								"target_key": "ideology.country.output.extractive_factor.gain",
-								"magnitude_q16": 75366,
+								"magnitude_q16": 9830,
 								"duration_days": 365,
 								"custom_label": "全国采掘部门产出 +15%，365 日",
 							},
@@ -819,6 +822,18 @@ static func build_default_catalog() -> NarrativeEventCatalog:
 			},
 		],
 	}))
+
+	# 11. 水利工程链（渠议 → 渠成 / 中辍 → 渠田连岁）
+	# 架空世界内的地方志式内容；写法说明见 narrative_event_catalog_waterworks.gd 文件头。
+	NarrativeEventCatalogWaterworksScript.append_waterworks_events(catalog)
+
+	# 12. 「地块上的人」事件包（饥民叩关 → 粥棚之后）
+	# 使用人群条件（入不敷出/失业/职业占比）与「国库→贫户」守恒转账。
+	NarrativeEventCatalogPeopleScript.append_people_events(catalog)
+
+	# 13. 主题事件网（8 个内容包，见 narrative_event_registry.gd）
+	# 注册顺序即抽样顺序：先局势（宫廷/边镇/信仰），再产业（财政/工业），最后风物（高时代/人与家/地块）。
+	NarrativeEventRegistryScript.append_all(catalog)
 
 	catalog.rebuild_index()
 	return catalog

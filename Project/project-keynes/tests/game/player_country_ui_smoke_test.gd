@@ -51,8 +51,8 @@ func _run() -> void:
 	_expect("country action bar has five sections", buttons.size() == 5)
 	_expect("economy replaces taxation in country actions",
 		buttons.has("economy") and not buttons.has("taxation"))
-	_expect("ideology replaces politics in country actions",
-		buttons.has("ideology") and not buttons.has("politics"))
+	_expect("politics hosts ideology in country actions",
+		buttons.has("politics") and not buttons.has("ideology"))
 	for button_value in buttons.values():
 		var action := button_value as Button
 		var action_icons := action.find_children("*", "TextureRect", true, false) \
@@ -68,7 +68,7 @@ func _run() -> void:
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
 	_expect("country action bar is compact", bar.size.x <= 422.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "ideology", "economy", "military"]:
+	for section_id in ["technology", "politics", "economy", "military"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:
@@ -172,14 +172,18 @@ func _run() -> void:
 		panel.current_section() == "technology")
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
-	ui.open_country_section("ideology")
+	ui.open_country_section("politics")
 	await process_frame
 	await process_frame
-	var ideology_workspace := panel.get("_ideology_workspace") as Control
-	var ideology_model: Dictionary = panel.get("_model").get("ideology", {})
-	_expect("ideology workspace opens for the ideology action",
-		ideology_workspace != null and ideology_workspace.visible \
-			and panel.current_section() == "ideology")
+	var politics_workspace := panel.get("_politics_workspace") as Control
+	if politics_workspace != null and politics_workspace.has_method("select_tab"):
+		politics_workspace.select_tab("ideology")
+	var ideology_workspace := politics_workspace.get_node_or_null("Root/Ideology") as Control \
+		if politics_workspace != null else null
+	var ideology_model: Dictionary = panel.get("_model").get("politics", {}).get("ideology", {})
+	_expect("politics workspace opens for the politics action",
+		politics_workspace != null and ideology_workspace != null and ideology_workspace.visible \
+			and panel.current_section() == "politics")
 	_expect("ideology section snapshot is available",
 		bool(ideology_model.get("available", false)))
 	_expect("ideology empty collection still shows catalog slot capacity",

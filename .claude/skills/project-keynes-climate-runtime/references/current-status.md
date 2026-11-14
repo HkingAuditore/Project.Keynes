@@ -110,9 +110,9 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 | --- | --- | --- |
 | Pass-A | C++ scalar/thread，native graph使用thread；annual-insolation cache | 内部timing历史可能低报；knob镜像与dt |
 | Pass-B | C++ scalar/SIMD/thread，native graph使用thread | 海冰尾循环/knob漏镜像历史风险；顺序不可回退 |
-| Ocean heat | C++ water/land，支持node-range/thread配置 | PackedArray JIT patch、半发布、fallback旧语义 |
+| Ocean heat | C++ water/land，支持node-range/thread配置；map_generator 第2a批已删除 GDScript water/land 计算回退 | PackedArray JIT patch、半发布、native failure report、slice 可见性 |
 | Wind heat | C++ air/surface；surface唯一写最终temp | 单位方向/速度混用、旧DLL temp packing |
-| Sea ice | C++ graph与独立fallback；dt-aware、迟滞、edge mix | terrain flip/visual sync、cadence台阶 |
+| Sea ice | C++ graph；map_generator 第2a批删除 GDScript 热循环，保留 native state-machine/terrain flip 同步 | terrain flip/visual sync、cadence台阶、native failure report |
 | Transpiration | C++与async pure kernel | compute通常低，边界sync/dirty可能主导 |
 | Albedo/vegetation/feedback | C++ stage-b子pass | succession object/visual apply仍在GDScript |
 | Weather | native field/commit/distribute/summary/split交易可ACTIVE | Front object、LUT/upload、repair/readiness |
@@ -147,7 +147,7 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 - OceanCurrents wrapper内部legacy job保留physical/visual状态与fallback。
 - Sea-ice独立system在async climate启用时必须避免与worker重复执行。
 - 旧DLL通过`has_method()`和能力探针回退；源码有方法不证明当前加载DLL已更新。
-- GDScript weather/ocean fallback部分仍可能使用旧合成语义；不要在无A/B时随意“顺手修齐”，也不要让其静默命中生产。
+- map_generator 的 climate/ocean/sea-ice/transpiration GDScript 计算回退已退休；wrapper 只做探测、打包、同步和失败报告。weather、stage-b 等其他 GDScript fallback 仍按各自边界处理，不要混为同一条路径。
 
 ## 已知风险
 

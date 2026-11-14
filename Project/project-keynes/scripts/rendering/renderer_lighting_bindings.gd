@@ -167,3 +167,25 @@ static func _push_world_lighting_profile(
 		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
 	if is_instance_valid(_military_visual_layer):
 		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
+
+
+
+static func push_world_lighting_profile(host) -> void:
+
+	_push_world_lighting_profile(
+		host._building_visual_layer,
+		host._day_phase,
+		host._detail_family_layer,
+		host._military_visual_layer,
+		host._resource_visual_layer,
+		host._shader_mat,
+		host._sky_background,
+		host._trade_visual_layer,
+		host._water_mat,
+		host._world,
+		host.day_night_enabled,
+		host.world_lighting_profile,
+		host._for_each_vegetation_layer,
+		host._global_sky_day_weight,
+		host._push_world_uniform,
+		host._shader_declares_uniform)

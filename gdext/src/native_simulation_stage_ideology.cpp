@@ -22,9 +22,12 @@ bool NativeSimulationHost::stage_ideology(DayExecution &day, RuntimeDomainPlan &
             stage.completed = 0;
             return true;
         }
+        using Outcome = IdeologyStageOutcome;
         std::string ideology_error;
-        const bool ideology_ok = execute_ideology_worker_stage(
+        const Outcome outcome = execute_ideology_worker_stage(
             plan.context.day, commit, ideology_error);
+        const bool ideology_ok = outcome == Outcome::COMMITTED ||
+                                 outcome == Outcome::ALREADY_COMMITTED;
         _ideology_pod_ready.store(ideology_ok, std::memory_order_release);
         const char *ideology_reason = ideology_ok ? "" :
             (ideology_error.empty() ? "ideology_pod_plan_failed"
@@ -44,31 +47,33 @@ bool NativeSimulationHost::stage_ideology(DayExecution &day, RuntimeDomainPlan &
             _ideology_pod_fallback_reason[ideology_reason_index].store(
                 '\0', std::memory_order_release);
         }
-        // Soft-complete input-not-ready failures so Climate|Country|
-        // Effect|Modifier grant is not held hostage by Ideology's
-        // Economy-opinion dependency (revision stays 0 until the first
-        // Economy COMMIT after generate). ready stays false; fallback
-        // reason keeps the diagnosis. Hard plan failures still isolate.
-        const bool ideology_soft =
-            !ideology_ok &&
-            (ideology_error == "ideology_opinion_snapshot_missing" ||
-             ideology_error == "ideology_country_snapshot_missing" ||
-             ideology_error == "ideology_pod_not_configured" ||
-             ideology_error == "ideology_day_not_monotonic");
-        if (!ideology_ok)
+        switch (outcome) {
+        case Outcome::COMMITTED:
+            stage.dirty_families = RUNTIME_DIRTY_COUNTRY_STATE;
+            commit.dirty_families |= stage.dirty_families;
+            break;
+        case Outcome::ALREADY_COMMITTED:
+            break;
+        case Outcome::AWAITING_OPINION:
+            // Ideology runs before Economy, so no opinion exists until
+            // Economy's first commit. Skip the day (counted) rather than hold
+            // the other domains' grant; ready stays false with the reason.
+            _ideology_opinion_wait_days.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case Outcome::PARKED:
             note_day_park(runtime_domain_mask(RuntimeDomainId::IDEOLOGY), ideology_reason);
-        if (ideology_ok || ideology_soft) {
-            if (ideology_ok) {
-                stage.dirty_families = RUNTIME_DIRTY_COUNTRY_STATE;
-                commit.dirty_families |= stage.dirty_families;
-            }
-            stage.completed = 1;
-            commit.completed_domain_mask |=
-                runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
-            ++commit.completed_stage_count;
-        } else {
             stage.completed = 0;
+            return true;
+        case Outcome::FAULT:
+            set_fault(ideology_reason);
+            stage.completed = 0;
+            commit.preflight_ok = 0;
+            return true;
         }
+        stage.completed = 1;
+        commit.completed_domain_mask |=
+            runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
+        ++commit.completed_stage_count;
         return true;
     }
     return true;

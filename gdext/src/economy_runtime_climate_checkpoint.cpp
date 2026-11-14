@@ -48,6 +48,11 @@ std::vector<uint8_t> EconomyAuthorityTransfer::capture_climate_continuation(
     // cannot be reconstructed from the latest precipitation observation.
     auto rain = runtime._cell_rain_event_q16;
     auto threshold = runtime._epoch_cell_rain_event_threshold_q16;
+    const size_t cells = static_cast<size_t>(std::max(0, runtime._cell_count.get()));
+    if (rain.size() != cells)
+        rain.assign(cells, 0);
+    if (!threshold.empty() && threshold.size() != cells)
+        threshold.assign(cells, NativeEconomyRuntime::Q16_ONE / 4);
     out.lanes(rain);
     out.lanes(threshold);
     return std::move(out.bytes);

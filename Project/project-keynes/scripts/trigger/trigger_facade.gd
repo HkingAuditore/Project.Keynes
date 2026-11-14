@@ -56,6 +56,45 @@ func is_configured() -> bool: return _configured
 func world_ext() -> Object: return _world_ext
 func report() -> Dictionary: return _world_ext.get_trigger_report() if _configured else {"configured": false}
 
+func poll_worker_intent() -> Dictionary:
+	return _world_ext.poll_trigger_worker_intent() if _world_ext != null else {
+		"ok": false, "available": false}
+
+func submit_worker_ack(ack: Dictionary) -> Dictionary:
+	return _world_ext.submit_trigger_worker_ack(ack) if _world_ext != null else {
+		"ok": false, "reason": "trigger_worker_api_missing"}
+
+func reconcile_research_signals(max_items: int = 64) -> Dictionary:
+	return _world_ext.reconcile_completed_research_signals(max_items) if _world_ext != null else {
+		"ok": false, "complete": false}
+
+func poll_effect_batch(after_id: int, limit: int = 64) -> Dictionary:
+	return _world_ext.poll_trigger_effects(after_id, limit) if _world_ext != null else {
+		"ok": false, "count": 0}
+
+func handoff_effect_batch(max_effects: int) -> Dictionary:
+	return _world_ext.handoff_trigger_effects(max_effects) if _world_ext != null else {
+		"ok": false, "handed_off": 0}
+
+func ack_effect_id_batch(ids: PackedInt64Array) -> Dictionary:
+	return _world_ext.ack_trigger_effect_ids(ids) if _world_ext != null else {
+		"ok": false, "reason": "trigger_effect_api_missing"}
+
+func ack_effect_cursor(effect_id: int) -> Dictionary:
+	return _world_ext.ack_trigger_effects(effect_id) if _world_ext != null else {
+		"ok": false, "reason": "trigger_effect_api_missing"}
+
+func capture_state() -> PackedByteArray:
+	return _world_ext.capture_trigger_state() if _world_ext != null else PackedByteArray()
+
+func restore_state(bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_trigger_state(bytes) if _world_ext != null else {
+		"ok": false, "reason": "trigger_provider_missing"}
+
+func clear_state() -> Dictionary:
+	return _world_ext.clear_trigger_state() if _world_ext != null else {
+		"ok": false, "reason": "trigger_provider_missing"}
+
 func development_progress(country_handle: int, era_id: String) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "trigger_development_progress_unavailable"}

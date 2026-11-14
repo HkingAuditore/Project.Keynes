@@ -82,7 +82,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
 size_flags_vertical = 0
-focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
 [node name="CommandDeck" type="VBoxContainer" parent="Sheet/Margin/Body"]
@@ -106,7 +105,7 @@ theme_override_constants/v_separation = 6
 
 [node name="LocateButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 clip_text = false
 text_overrun_behavior = 0
 layout_mode = 2
@@ -116,7 +115,7 @@ theme_type_variation = &"PKMilitaryCommandButton"
 
 [node name="MoveButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 clip_text = false
 text_overrun_behavior = 0
 layout_mode = 2
@@ -128,7 +127,7 @@ theme_type_variation = &"PKMilitaryCommandButton"
 
 [node name="AreaButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 clip_text = false
 text_overrun_behavior = 0
 layout_mode = 2
@@ -138,9 +137,21 @@ tooltip_text = "选择中心与半径，预览控制区域（C）"
 theme_type_variation = &"PKMilitaryCommandButton"
 
 
+[node name="ExploreButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+clip_text = false
+text_overrun_behavior = 0
+layout_mode = 2
+size_flags_horizontal = 0
+text = "探路"
+tooltip_text = "选择探查范围，部队自动探索后返回出发点（E）"
+theme_type_variation = &"PKMilitaryCommandButton"
+
+
 [node name="StopButton" parent="Sheet/Margin/Body/CommandDeck/ArmyActions" instance=ExtResource("8_action")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 clip_text = false
 text_overrun_behavior = 0
 layout_mode = 2
@@ -185,6 +196,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Label" type="Label" parent="Sheet/Margin/Body/CommandDeck/OrderDraft/RadiusRow"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "控制半径（格）"
 theme_type_variation = &"PKDossierCaption"
@@ -206,7 +218,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 text = "确认行军"
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 theme_type_variation = &"PKMilitaryCommandButton"
 
 
@@ -214,7 +226,7 @@ theme_type_variation = &"PKMilitaryCommandButton"
 unique_name_in_owner = true
 layout_mode = 2
 text = "取消 · Esc"
-custom_minimum_size = Vector2(0, 38)
+custom_minimum_size = Vector2(0, 44)
 theme_type_variation = &"PKMilitaryCommandButton"
 
 
@@ -442,7 +454,7 @@ theme_override_constants/separation = 6
 
 [node name="FrontLocateButton" parent="Sheet/Margin/Body/Scroll/Content/FrontGroup/FrontActions" instance=ExtResource("8_action")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(96, 34)
+custom_minimum_size = Vector2(112, 44)
 layout_mode = 2
 size_flags_horizontal = 0
 text = "定位"

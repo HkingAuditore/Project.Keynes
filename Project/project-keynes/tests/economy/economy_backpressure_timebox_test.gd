@@ -18,6 +18,12 @@ class FakeRuntime extends RefCounted:
 	func trigger_should_run(_day_index: int) -> bool:
 		return remaining > 0
 
+	func ack_effect_native_country() -> Dictionary:
+		return {"ok": true}
+
+	func ack_effect_native_economy() -> Dictionary:
+		return {"ok": true}
+
 	func report() -> Dictionary:
 		return {"epoch_active": remaining > 0, "fatal": fatal}
 

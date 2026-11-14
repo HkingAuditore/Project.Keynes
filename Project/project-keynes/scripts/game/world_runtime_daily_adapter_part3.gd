@@ -223,6 +223,10 @@ func _drain_runtime_military_commits(host) -> void:
 		first_day = mini(target_day, maxi(0, target_day - host.RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME))
 	var day = first_day
 	while day <= target_day and processed < host.RUNTIME_MILITARY_CATCHUP_DAYS_PER_FRAME:
+		# Every replay day gets its own frozen explored view. Calling this once
+		# for the whole batch would make days 2..N plan against day 1.
+		if host.has_method("_prepare_military_exploration_day"):
+			host._prepare_military_exploration_day(day)
 		var result: Dictionary
 		if facade.should_run(day):
 			result = facade.run_daily(day)

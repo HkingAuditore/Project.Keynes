@@ -43,9 +43,10 @@ func _run() -> void:
 	var controller := FakePlayerController.new()
 	root.add_child(controller)
 	inspector.set_player_controller(controller)
-	var detail_requests := 0
+	# Lambdas capture locals by value; count through a shared array.
+	var detail_requests: Array[int] = [0]
 	inspector.object_details_requested.connect(func(_request: Dictionary) -> void:
-		detail_requests += 1)
+		detail_requests[0] += 1)
 	inspector.set_model_for_selection(_model(5))
 	inspector.select_tab("population")
 
@@ -96,7 +97,7 @@ func _run() -> void:
 			TaxLaneEditor.basis_points_to_percent(base_rate)) \
 			or not (inspector.get("_pending_tax") as Dictionary).is_empty():
 		failures.append("failed override did not restore the authoritative row rate")
-	if detail_requests != 0 or not inspector.detail_open():
+	if detail_requests[0] != 0 or not inspector.detail_open():
 		failures.append("tax editor input did not remain in the left detail workspace")
 
 	controller.succeed = true

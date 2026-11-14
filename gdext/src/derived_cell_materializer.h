@@ -54,6 +54,12 @@ class ModifierRuntime;
 struct DerivedProgramContribution {
     // Stable identity for diagnostics and for the per-source bookkeeping M2 adds.
     uint64_t source_country = 0;
+    // Which card, level and program produced this row. The fold ignores them; they
+    // let `effect_target_report` answer "where does this card act" for the derived
+    // backend the same way instance refs answer it for the instance backend.
+    int32_t ideology_id = -1;
+    int32_t level = -1;
+    uint64_t program_hash = 0;
     // The eligibility verdict. A program that is not DerivedCell must be skipped
     // by the caller, not coerced here -- `I01` forbids one program having two
     // backends in the same configuration.

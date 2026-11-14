@@ -54,13 +54,13 @@ horizontal_alignment = 1
 text = "科技"
 theme_type_variation = &"PKHUDLabel"
 
-[node name="Ideology" type="Button" parent="Sections"]
+[node name="Politics" type="Button" parent="Sections"]
 custom_minimum_size = Vector2(72, 66)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKHUDTab"
 
-[node name="Column" type="VBoxContainer" parent="Sections/Ideology"]
+[node name="Column" type="VBoxContainer" parent="Sections/Politics"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -71,7 +71,7 @@ mouse_filter = 2
 alignment = 1
 theme_override_constants/separation = 0
 
-[node name="Icon" type="TextureRect" parent="Sections/Ideology/Column"]
+[node name="Icon" type="TextureRect" parent="Sections/Politics/Column"]
 custom_minimum_size = Vector2(56, 56)
 layout_mode = 2
 size_flags_horizontal = 4
@@ -80,11 +80,11 @@ mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Caption" type="Label" parent="Sections/Ideology/Column"]
+[node name="Caption" type="Label" parent="Sections/Politics/Column"]
 visible = false
 layout_mode = 2
 horizontal_alignment = 1
-text = "理念"
+text = "政治"
 theme_type_variation = &"PKHUDLabel"
 
 [node name="Economy" type="Button" parent="Sections"]

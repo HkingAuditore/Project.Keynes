@@ -202,6 +202,8 @@ void NativeEconomyRuntime::ensure_family_policy_factors() {
         _family_absorb_bonus_q16.resize(n, 0);
     if (_family_colonization_population_reward.size() < n)
         _family_colonization_population_reward.resize(n, 0);
+    if (_family_colonization_population_reward_pending.size() < n)
+        _family_colonization_population_reward_pending.resize(n, 0);
 }
 
 void NativeEconomyRuntime::reset_family_policy_factors(int32_t family_index) {
@@ -219,6 +221,10 @@ void NativeEconomyRuntime::reset_family_policy_factors(int32_t family_index) {
     if (family_index < static_cast<int32_t>(
             _family_colonization_population_reward.size()))
         _family_colonization_population_reward[static_cast<size_t>(family_index)] = 0;
+    if (family_index < static_cast<int32_t>(
+            _family_colonization_population_reward_pending.size()))
+        _family_colonization_population_reward_pending[
+            static_cast<size_t>(family_index)] = 0;
 }
 
 int32_t NativeEconomyRuntime::family_colonization_population_reward_amount(
@@ -227,8 +233,13 @@ int32_t NativeEconomyRuntime::family_colonization_population_reward_amount(
     if (!families_store().valid_handle(family_handle, family) || family < 0 ||
         family >= static_cast<int32_t>(_family_colonization_population_reward.size()))
         return 0;
-    return std::max(0, _family_colonization_population_reward[
-        static_cast<size_t>(family)]);
+    const int32_t dynamic_reward = _family_colonization_population_reward[
+        static_cast<size_t>(family)];
+    const int32_t pending_reward = family < static_cast<int32_t>(
+        _family_colonization_population_reward_pending.size())
+        ? _family_colonization_population_reward_pending[
+            static_cast<size_t>(family)] : 0;
+    return std::max(0, std::max(dynamic_reward, pending_reward));
 }
 
 bool NativeEconomyRuntime::family_trait_technology_unlocked(

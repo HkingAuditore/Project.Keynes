@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from run_regression_checks import SHUTDOWN_LEAK
+from run_regression_checks import SHUTDOWN_LEAK, is_engine_error
 from runtime_test_hygiene import trace_environment
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,7 +81,7 @@ def main() -> int:
                 result = subprocess.run(command, cwd=ROOT, env=environment,
                                         stdout=output, stderr=subprocess.STDOUT, check=False)
             lines = path.read_text(errors="replace").splitlines()
-            errors = [line for line in lines if line.startswith("ERROR:") or
+            errors = [line for line in lines if is_engine_error(line) or
                       "SCRIPT ERROR:" in line or "[FAIL]" in line or SHUTDOWN_LEAK.search(line)]
             if not any(
                     line.startswith(result_prefix) and line.endswith(", 0 failures")

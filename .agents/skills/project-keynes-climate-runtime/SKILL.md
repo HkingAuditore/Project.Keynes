@@ -148,14 +148,12 @@ climate_pass_a
 
 ### 5. 维护 fallback
 
-- 保留明确的 PROBE/A-B/stale-DLL/failure fallback，直到有 parity 和 soak 证据。
-- 报告 `fallback_reason`，不要只打印日志。
-- 证明 fallback 仍在生产可达前，保持公式镜像；若只作隔离测试，明确标记并从 hot path 移出。
+- 对仍支持的 PROBE/A-B/stale-DLL 和视觉/对象边界保留明确的 failure handling，并报告 `fallback_reason`。
+- 2026-11 的 map_generator 第 2a 批已退休 Pass-A、Pass-B、ocean water/land、sea-ice、transpiration 的 GDScript 全图计算回退：扩展、方法探测或 native 返回失败时 `push_error`、保留上一份字段并返回失败。SHADOW/PROBE/A-B 仍保留，但不再用 GDScript 热循环推进状态。
+- 删除或恢复其他 fallback 前，仍要用 `rg` 证明生产调用边界并完成 parity/soak。
 - 删除前更新 `docs/architecture/current-state.md`，用 `rg` 证明无生产调用。
 
 ## 数值与物理底线
-
-- 永昼是视觉模式：`earth_daylight.gdshaderinc::compute_eternal_visual_sun_dir` 使用当地正午高度基线，视觉日内时角在 ±70° 浮动（10° 下限），默认每游戏年两个 Shader 日（HexRenderer.shader_days_per_game_year 可调），相位由累计日历映射，GM 显式方向优先；水面 specials 必须复用该方向。时角/高度在 HexRenderer 的 eternal_max_hour_angle_deg / eternal_min_elevation_deg 调整，各层只缓存并消费弧度 uniform。验证用 `tests/ui/dynamic_eternal_day_direction_test.gd -- --render-noon`，不以修改视觉太阳替代气候日均日照公式。
 
 - 把核心温度、湿度、海冰等 normalized 字段按 `[0,1]` 语义处理；`soil_moisture` 是有符号异常，不是绝对湿度。
 - 把 `cell_wind_x/y` 视为单位方向，把 `cell_wind_speed` 视为强度。

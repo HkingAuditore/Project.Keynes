@@ -215,8 +215,8 @@ func _run_native_daily_inline_day(day_idx: int, report: Dictionary) -> Dictionar
 		report.get("committed_day", -1)))
 	var next_day := host_day + 1
 	segment_usec = Time.get_ticks_usec()
-	if _generator.has_method("capture_runtime_inputs_for_worker"):
-		_generator.capture_runtime_inputs_for_worker(
+	if _generator.has_method("publish_environment_through"):
+		_generator.publish_environment_through(
 			maxi(0, next_day), _world_clock.season_phase_for_day(day_idx),
 			MapGenerator.ENV_CALLSITE_INLINE_DAY)
 	_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)

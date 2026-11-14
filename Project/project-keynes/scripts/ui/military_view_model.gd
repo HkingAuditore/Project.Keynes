@@ -1,5 +1,6 @@
 extends RefCounted
 class_name MilitaryViewModel
+const MilitaryDossiers = preload("res://scripts/ui/military_dossier_projection.gd")
 const MilitaryLogisticsProjection = preload("res://scripts/ui/military_logistics_projection.gd")
 
 
@@ -44,7 +45,17 @@ const QUALITY_NAMES: Array[String] = ["", "Q1", "Q2", "Q3", "Q4", "Q5"]
 ## Combat multiplier per quality tier (design §4.2).
 const QUALITY_MULT: Array[float] = [1.0, 1.0, 1.2, 1.45, 1.75, 2.1]
 const STANCE_LABELS := {0: "固守", 1: "推进", 2: "强攻", 3: "撤退", 4: "海运"}
-const MISSION_LABELS := {0: "待命", 1: "行军", 2: "军事控制"}
+const MISSION_LABELS := {0: "待命", 1: "行军", 2: "军事控制", 3: "探路"}
+const EXPLORATION_PHASE_ACTIVE := 0
+const EXPLORATION_PHASE_RETURNING := 1
+const EXPLORATION_PHASE_PAUSED_BATTLE := 2
+const EXPLORATION_PHASE_COMPLETE := 3
+const EXPLORATION_PHASE_FAILED_NO_RETURN := 4
+const EXPLORATION_RESULT_NONE := 0
+const EXPLORATION_RESULT_ALL_SEEN := 1
+const EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE := 2
+const EXPLORATION_RESULT_FAILED_NO_RETURN := 3
+const EXPLORATION_RESULT_CANCELLED := 4
 const BAND_LABELS: Array[String] = ["低", "中", "高"]
 const SHARE_STEP_BP := 500
 const SUPPLY_HORIZON_DAYS := 30.0
@@ -140,12 +151,6 @@ func configure(model: Dictionary) -> void:
 
 ## Drop every cached world read; the next build re-queries names, neighbours and
 ## the event ring. Called when the committed day or the selection changes.
-func invalidate_session() -> void:
-	_neighbor_cache.clear()
-	_event_rows = []
-	_front_queried = false
-
-
 ## False when the model was assembled without a live generator/controller
 ## (screenshot fixture, unit tests). Production callers must check this.
 func session_bound() -> bool:
@@ -900,316 +905,87 @@ func army_detail(army: Dictionary, prefetched: Dictionary = {}) -> Dictionary:
 
 
 func _mission_text(army: Dictionary) -> String:
-	var label := String(MISSION_LABELS.get(int(army.get("mission", 0)), "待命"))
+	var exploration_text := _exploration_status_text(army)
+	if not exploration_text.is_empty():
+		return exploration_text
+	var mission := int(army.get("mission", 0))
+	# A cancelled row can still be attached to the snapshot until the next
+	# order retires it. Never let that history row masquerade as a live mission.
+	if mission == 3:
+		return "待命"
+	var label := String(MISSION_LABELS.get(mission, "待命"))
 	var target := int(army.get("target_cell", -1))
 	return "%s → %s" % [label, cell_name(target)] if target >= 0 else label
+
+
+## A cancelled/replaced task is history, not a mission state. Completed and
+## failed rows remain visible until the next player order retires them.
+func _exploration_state(army: Dictionary) -> Dictionary:
+	var raw = army.get("exploration", null)
+	if not raw is Dictionary or (raw as Dictionary).is_empty():
+		return {}
+	var data := raw as Dictionary
+	if int(data.get("result", EXPLORATION_RESULT_NONE)) == EXPLORATION_RESULT_CANCELLED:
+		return {}
+	return data
+
+
+func _exploration_status_text(army: Dictionary) -> String:
+	var data := _exploration_state(army)
+	if data.is_empty():
+		return ""
+	var selected := maxi(0, int(data.get("selected", 0)))
+	var resolved := clampi(int(data.get("resolved", 0)), 0, selected)
+	var blocked := maxi(0, int(data.get("blocked", 0)))
+	var phase := int(data.get("phase", EXPLORATION_PHASE_ACTIVE))
+	var result := int(data.get("result", EXPLORATION_RESULT_NONE))
+	match phase:
+		EXPLORATION_PHASE_ACTIVE:
+			return "探路 %d/%d" % [resolved, selected]
+		EXPLORATION_PHASE_RETURNING:
+			return "探路 %d/%d · 返程中" % [resolved, selected]
+		EXPLORATION_PHASE_PAUSED_BATTLE:
+			return "探路暂停 · 交战中"
+		EXPLORATION_PHASE_COMPLETE:
+			if result == EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE and blocked > 0:
+				return "探查结束 · %d 格无法探明 · 已返回" % blocked
+			return "探路完成 · 已返回"
+		EXPLORATION_PHASE_FAILED_NO_RETURN:
+			return "探路完成 · 无法返回 · 原地待命"
+	return ""
+
+
+func _exploration_has_live_order(army: Dictionary) -> bool:
+	var data := _exploration_state(army)
+	if data.is_empty():
+		return false
+	var phase := int(data.get("phase", EXPLORATION_PHASE_ACTIVE))
+	return phase == EXPLORATION_PHASE_ACTIVE or phase == EXPLORATION_PHASE_RETURNING \
+		or phase == EXPLORATION_PHASE_PAUSED_BATTLE
 
 
 ## ── 军务档案（右栏页面，见 docs/ui/military-dossier.md）─────────────────
 ## 部队档案：KPI 4 格 + 编成 + 补给 + 战备环 + 徽记 + 同格名录。
 ## `same_cell` 是渲染快照里同格的部队行（{handle, owner_slot, headcount}）。
 func army_dossier(handle: int, same_cell: Array = []) -> Dictionary:
-	if handle == 0:
-		return {"ok": false, "reason": "military_army_unknown"}
-	var detail: Dictionary = {}
-	if _facade != null and _facade.has_method("army"):
-		var fetched = _facade.call("army", handle)
-		if fetched is Dictionary and bool((fetched as Dictionary).get("ok", false)):
-			detail = fetched
-	if detail.is_empty():
-		return {"ok": false, "reason": "military_army_unknown"}
-	var info := army_detail(detail, detail)
-	var owner_slot := int(detail.get("owner_slot", -1))
-	var player_slot := int(_snapshot.get("country_slot", -1))
-	var heads := maxi(0, int(detail.get("headcount", 0)))
-	var morale := _ratio(detail.get("morale_q16", Q16))
-	var pay := _ratio(detail.get("pay_ratio_q16", Q16))
-	var supply := _ratio(detail.get("supply_ratio_q16", Q16))
-	var ration := _ratio(detail.get("ration_ratio_q16", Q16))
-	var attack := _raw_q16(detail.get("attack_q16", 0))
-	var defense := _raw_q16(detail.get("defense_q16", 0))
-	var speed := _raw_q16(detail.get("speed_q16", Q16))
-	# 编成条按「兵种 + 品阶」分段（最多 6 段，其余归入"其他"）：
-	# 一条比例带 + 一份图例就够读出编成，不再另开一张重复的名录表。
-	var lots: Array = []
-	for raw in _as_array(detail.get("composition", null)):
-		var lot := _as_dict(raw)
-		var unit := int(lot.get("unit", -1))
-		var quality := clampi(int(round(float(lot.get("quality_q8", 256)) / Q8)), 1, 5)
-		var count := maxi(0, int(lot.get("count", 0)))
-		if count <= 0:
-			continue
-		lots.append({
-			"label": "%s %s" % [unit_name(unit), String(QUALITY_NAMES[quality])],
-			"count": count,
-			"color": class_color(unit),
-		})
-	lots.sort_custom(func(a, b) -> bool: return int(a.count) > int(b.count))
-	var segments: Array = []
-	var divisor := maxf(1.0, float(heads))
-	var rest := 0
-	for i in lots.size():
-		var lot: Dictionary = lots[i]
-		if i >= 5:
-			rest += int(lot.count)
-			continue
-		segments.append({
-			"label": String(lot.label),
-			"text": _count(lot.count),
-			"value": float(lot.count) / divisor,
-			"color": lot.color,
-		})
-	if rest > 0:
-		segments.append({
-			"label": "其他",
-			"text": _count(rest),
-			"value": float(rest) / divisor,
-			"color": UITokens.DOSSIER_UMBER,
-		})
-	var badges: Array = []
-	for warning in info.get("warnings", []):
-		var entry := _as_dict(warning)
-		badges.append({
-			"text": String(entry.get("label", "")),
-			"accent": UITokens.DOSSIER_OXBLOOD if String(entry.get("tone", "")) == "risk" \
-				else UITokens.DOSSIER_BRASS,
-		})
-	var same_rows: Array = []
-	for raw in same_cell:
-		var other := _as_dict(raw)
-		var other_handle := int(other.get("handle", 0))
-		if other_handle == 0 or other_handle == handle:
-			continue
-		same_rows.append({
-			"id": other_handle,
-			"cells": {
-				"name": {"text": army_name(other), "icon": "military.banner",
-					"sub": cell_name(int(other.get("cell", -1)))},
-				"heads": {"text": _count(other.get("headcount", 0)),
-					"sort": float(other.get("headcount", 0))},
-				"owner": {"text": country_name(int(other.get("owner_slot", -1)))},
-			},
-		})
-	var own := owner_slot >= 0 and owner_slot == player_slot
-	var actions := [
-		{"id": "locate", "label": "定位", "enabled": true},
-		{"id": "move", "label": "移动", "enabled": own},
-		{"id": "area", "label": "军事控制", "enabled": own},
-		{"id": "stop", "label": "停止任务", "enabled": own and int(detail.get("mission", 0)) != 0},
-	]
-	var remaining := 0
-	var path = detail.get("path", null)
-	if path is PackedInt32Array or path is Array:
-		remaining = path.size()
-	var note := ""
-	if remaining > 0:
-		note = "%s · 剩 %d 格" % [
-			String(MISSION_LABELS.get(int(detail.get("mission", 0)), "行军")), remaining]
-	var dominant_unit := -1
-	if not _as_array(detail.get("composition", null)).is_empty():
-		dominant_unit = int(_as_dict(_as_array(detail.get("composition", null))[0]).get("unit", -1))
-	return {
-		"ok": true, "kind": "army", "identity": "army:%d" % handle,
-		"kicker": "部队档案", "title": String(info.get("name", "部队")),
-		"subtitle": "%s · %s · %s" % [
-			cell_name(int(detail.get("cell", -1))), country_name(owner_slot),
-			String(STANCE_LABELS.get(int(detail.get("stance", 0)), "固守"))],
-		"icon": unit_icon(dominant_unit) if dominant_unit >= 0 else &"military.banner",
-		"accent": CountryBorderLayer.country_color(owner_slot, player_slot,
-			UITokens.DOSSIER_OXBLOOD),
-		"kpis": [
-			{"id": "heads", "title": "兵力", "value": float(heads), "kind": "count",
-				"icon": &"military.unit.line", "caption": "%d 类兵种" % segments.size()},
-			{"id": "morale", "title": "士气", "value": morale, "kind": "percent",
-				"icon": &"military.army.morale", "caption": "",
-				"tone": "risk" if morale < 0.4 else ("warn" if morale < 0.6 else "")},
-			{"id": "supply", "title": "补给", "value": supply, "kind": "percent",
-				"icon": &"military.army.supply", "caption": "口粮 %s" % _percent(ration),
-				"tone": "risk" if supply < 0.5 else ("warn" if supply < 0.8 else "")},
-			{"id": "pay", "title": "军饷", "value": pay, "kind": "percent",
-				"icon": &"military.army.pay", "caption": "",
-				"tone": "risk" if pay < 0.6 else ("warn" if pay < 0.85 else "")},
-		],
-		"focus_cell": int(detail.get("cell", -1)),
-		"selected": handle,
-		"army": {
-			"own": own,
-			"stance": int(detail.get("stance", 0)),
-			"mission_text": _mission_text(detail),
-			# 攻 / 防 / 速 是平级战力数据：同一行、同一字号、同一墨色。
-			"peer_stats": [
-				{"label": "攻击", "text": "%.1f" % attack, "color": UITokens.DOSSIER_INK},
-				{"label": "防御", "text": "%.1f" % defense, "color": UITokens.DOSSIER_INK},
-				{"label": "速度", "text": "%.1f" % speed, "color": UITokens.DOSSIER_INK},
-			],
-			"composition": {"title": "", "total": "%s 人" % _count(heads),
-				"segments": segments},
-			"supply_rows": info.get("supply", []),
-			"badges": badges,
-			"note": note,
-			"actions": actions,
-			"same_cell_rows": same_rows,
-		},
-	}
+	return MilitaryDossiers.army_dossier(self, handle, same_cell)
 
 
 ## 战线档案：双方在同一组指标上并排对比 + 交战段名录。
 ## 扇区由 MilitaryMapLayers.front_sector() 聚合；每侧的攻击/防御/士气/补给由
 ## 扇区内**可见**部队的 facade.army() 汇总（攻防求和，士气/补给按兵力加权）。
 func front_dossier(sector: Dictionary) -> Dictionary:
-	if not bool(sector.get("ok", false)):
-		return {}
-	var player_slot := int(sector.get("player_slot", -1))
-	var edge_key := int(sector.get("edge_key", -1))
-	var side_rows: Array = _as_array(sector.get("sides", null))
-	var owners = sector.get("owners", PackedInt32Array())
-	# 两个交战方：扇区内地块的归属。一侧此刻没有部队时也要能写出国名。
-	var belligerents: Array = []
-	if owners is PackedInt32Array:
-		for slot in owners:
-			if int(slot) >= 0 and not belligerents.has(int(slot)):
-				belligerents.append(int(slot))
-	belligerents.sort()
-	var own_slot := -1
-	var enemy_slot := -1
-	if belligerents.has(player_slot):
-		own_slot = player_slot
-		for slot in belligerents:
-			if int(slot) != player_slot:
-				enemy_slot = int(slot)
-				break
-	elif not belligerents.is_empty():
-		own_slot = int(belligerents[0])
-		if belligerents.size() > 1:
-			enemy_slot = int(belligerents[1])
-	_dossier_army_cache.clear()
-	var own := _side_totals(side_rows, own_slot)
-	var enemy := _side_totals(side_rows, enemy_slot)
-	var advance := float(sector.get("advance", -1.0))
-	var active_count := int(sector.get("active_count", 0))
-	var edge_count := int(sector.get("edge_count", 0))
-	var focused := int(sector.get("focus_cell", -1))
-	var versus_rows := [
-		_versus_row("兵力", float(own.heads), float(enemy.heads),
-			_count(own.heads), _count(enemy.heads)),
-		_versus_row("攻击", float(own.attack), float(enemy.attack),
-			"%.1f" % float(own.attack), "%.1f" % float(enemy.attack)),
-		_versus_row("防御", float(own.defense), float(enemy.defense),
-			"%.1f" % float(own.defense), "%.1f" % float(enemy.defense)),
-		_versus_row("士气", float(own.morale), float(enemy.morale),
-			_percent(own.morale), _percent(enemy.morale)),
-		_versus_row("补给", float(own.supply), float(enemy.supply),
-			_percent(own.supply), _percent(enemy.supply)),
-	]
-	var footnote_parts := PackedStringArray()
-	if advance >= 0.0:
-		footnote_parts.append("推进 %s" % _percent(advance))
-	footnote_parts.append("交战 %d 段" % active_count)
-	footnote_parts.append("接触 %d 边" % edge_count)
-	var army_rows: Array = []
-	_append_side_army_rows(army_rows, side_rows, own_slot)
-	_append_side_army_rows(army_rows, side_rows, enemy_slot)
-	army_rows.sort_custom(func(a, b) -> bool:
-		return float(a.cells.heads.sort) > float(b.cells.heads.sort))
-	var engagements: Array = _as_array(sector.get("engagements", null))
-	var rows: Array = []
-	for raw in engagements:
-		var engagement := _as_dict(raw)
-		var progress := clampf(float(engagement.get("progress", 0.0)), 0.0, 1.0)
-		var attacker := int(engagement.get("attacker", -1))
-		rows.append({
-			"id": int(_pair_key_for(
-				int(engagement.get("cell_a", -1)), int(engagement.get("cell_b", -1)))),
-			"tooltip": "%s ↔ %s" % [
-				cell_name(int(engagement.get("cell_a", -1))),
-				cell_name(int(engagement.get("cell_b", -1)))],
-			"cells": {
-				"zone": {"text": zone_name(int(engagement.get("cell_a", -1)))},
-				"progress": {"text": _percent(progress), "value": progress,
-					"bar_color": UITokens.DOSSIER_VERDIGRIS \
-						if attacker == player_slot else UITokens.DOSSIER_OXBLOOD},
-				"attacker": {"text": country_name(attacker)},
-			},
-		})
-	rows.sort_custom(func(a, b) -> bool:
-		return float(a.cells.progress.value) > float(b.cells.progress.value))
-	var left_name := "—" if own_slot < 0 else country_name(own_slot)
-	var right_name := "—" if enemy_slot < 0 else country_name(enemy_slot)
-	return {
-		"ok": true, "kind": "front", "identity": "front:%d" % edge_key,
-		"kicker": "战线档案",
-		"title": zone_name(focused) if focused >= 0 else "战线",
-		"subtitle": "%s ↔ %s" % [left_name, right_name],
-		"icon": &"military.war.front",
-		"accent": CountryBorderLayer.country_color(
-			own_slot if own_slot >= 0 else player_slot, player_slot,
-			UITokens.DOSSIER_BRASS),
-		"focus_cell": focused,
-		"selected": edge_key,
-		"front": {
-			"versus": {
-				"rows": versus_rows,
-				"own_color": CountryBorderLayer.country_color(own_slot, player_slot,
-					UITokens.DOSSIER_VERDIGRIS),
-				"enemy_color": CountryBorderLayer.country_color(enemy_slot, player_slot,
-					UITokens.DOSSIER_OXBLOOD),
-				"own_label": "我方" if own_slot == player_slot else left_name,
-				"enemy_label": "敌方" if enemy_slot != player_slot else right_name,
-			},
-			"footnote": " · ".join(footnote_parts),
-			"army_rows": army_rows.slice(0, 8),
-			"army_visible": not army_rows.is_empty(),
-			"engagement_rows": rows.slice(0, 8),
-			"engagement_visible": not rows.is_empty(),
-		},
-	}
+	return MilitaryDossiers.front_dossier(self, sector)
 
 
 ## 一侧的汇总：兵力来自渲染快照（受迷雾门控），攻防/士气/补给来自每支部队的
 ## facade.army()。单侧最多读 12 支部队，其余只计入兵力，避免一次刷新打爆原生调用。
 func _side_totals(sides: Array, slot: int) -> Dictionary:
-	var out := {"heads": 0, "attack": 0.0, "defense": 0.0, "morale": 0.0, "supply": 0.0}
-	if slot < 0:
-		return out
-	var weight := 0.0
-	for raw in sides:
-		var side := _as_dict(raw)
-		if int(side.get("slot", -1)) != slot:
-			continue
-		out["heads"] = int(out["heads"]) + int(side.get("heads", 0))
-		var handles = side.get("handles", null)
-		if not (handles is Array or handles is PackedInt64Array):
-			continue
-		var limit := mini(handles.size(), DOSSIER_SIDE_ARMY_CAP)
-		for i in limit:
-			var detail := _dossier_army(int(handles[i]))
-			if detail.is_empty():
-				continue
-			out["attack"] = float(out["attack"]) + _raw_q16(detail.get("attack_q16", 0))
-			out["defense"] = float(out["defense"]) + _raw_q16(detail.get("defense_q16", 0))
-			var heads := float(maxi(1, int(detail.get("headcount", 0))))
-			out["morale"] = float(out["morale"]) \
-				+ _ratio(detail.get("morale_q16", Q16)) * heads
-			out["supply"] = float(out["supply"]) \
-				+ _ratio(detail.get("supply_ratio_q16", Q16)) * heads
-			weight += heads
-	if weight > 0.0:
-		out["morale"] = float(out["morale"]) / weight
-		out["supply"] = float(out["supply"]) / weight
-	return out
+	return MilitaryDossiers._side_totals(self, sides, slot)
 
 
 func _dossier_army(handle: int) -> Dictionary:
-	if _dossier_army_cache.has(handle):
-		return _dossier_army_cache[handle]
-	var detail: Dictionary = {}
-	if _facade != null and _facade.has_method("army"):
-		var fetched = _facade.call("army", handle)
-		if fetched is Dictionary and bool((fetched as Dictionary).get("ok", false)):
-			detail = fetched
-	if _dossier_army_cache.size() < 64:
-		_dossier_army_cache[handle] = detail
-	return detail
+	return MilitaryDossiers._dossier_army(self, handle)
 
 
 static func _versus_row(label: String, own_value: float, enemy_value: float,
@@ -1221,41 +997,11 @@ static func _versus_row(label: String, own_value: float, enemy_value: float,
 ## 「在场部队」名录：把一侧的可见部队逐支列出（番号 / 兵力 / 攻击 / 归属）。
 ## 详情来自 front_dossier 已经读过的缓存，不会为名录再多打一次原生调用。
 func _append_side_army_rows(out: Array, sides: Array, slot: int) -> void:
-	if slot < 0:
-		return
-	for raw in sides:
-		var side := _as_dict(raw)
-		if int(side.get("slot", -1)) != slot:
-			continue
-		var handles = side.get("handles", null)
-		if not (handles is Array or handles is PackedInt64Array):
-			continue
-		for i in mini(handles.size(), DOSSIER_SIDE_ARMY_CAP):
-			var detail := _dossier_army(int(handles[i]))
-			if detail.is_empty():
-				continue
-			out.append({
-				"id": int(handles[i]),
-				"cells": {
-					"name": {"text": army_name(detail)},
-					"heads": {"text": _count(detail.get("headcount", 0)),
-						"sort": float(detail.get("headcount", 0))},
-					"attack": {"text": "%.1f" % _raw_q16(detail.get("attack_q16", 0))},
-					"owner": {"text": country_name(slot)},
-				},
-			})
+	MilitaryDossiers._append_side_army_rows(self, out, sides, slot)
 
 
 static func _pair_key_for(cell_a: int, cell_b: int) -> int:
 	return mini(cell_a, cell_b) * 131072 + maxi(cell_a, cell_b)
-
-
-func _condition_color(value: float) -> Color:
-	if value < 0.4:
-		return UITokens.DOSSIER_OXBLOOD
-	if value < 0.7:
-		return UITokens.DOSSIER_BRASS
-	return UITokens.DOSSIER_VERDIGRIS
 
 
 func convoy_rows(convoys: Array) -> Array:
@@ -1461,23 +1207,9 @@ func war_log() -> Array:
 
 ## True when the native military event ring (types 40-47) can be read at all. The
 ## workspace says "战报需要军事运行时的事件流" only when this is false.
-func event_log_available() -> bool:
-	if _facade != null and _facade.has_method("poll_events"):
-		return true
-	return _player_controller != null \
-		and _player_controller.has_method("military_events_probe")
-
-
 ## True when the core's scored battle log (MilitaryBattleLogRow, saved in PKMI) is
 ## readable. The bridge exports no accessor yet, so this reports false and the
 ## event ring carries the log.
-func scored_log_available() -> bool:
-	if _player_controller == null or not _player_controller.has_method("battle_log_probe"):
-		return false
-	var probe = _player_controller.call("battle_log_probe")
-	return probe is Dictionary and bool((probe as Dictionary).get("available", false))
-
-
 func _read_events() -> Array:
 	var batch = null
 	if _facade != null and _facade.has_method("poll_events"):

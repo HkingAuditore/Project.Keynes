@@ -7,6 +7,7 @@ extends SceneTree
 ## stages -> `magnitude_scale_q16` -> the cell Modifier table.
 
 const WIDTH := 16
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const HEIGHT := 12
 const SEED := 20261023
 const WORKER_SPEED := 10.0
@@ -18,6 +19,7 @@ const STAT_KEY := "economy.city.building.manufacturing_output_factor"
 const SOURCE_TAG := "cell.produces.iron_ore"
 const PER_SOURCE := 0.10
 const COUNT_CAP := 3
+const TERRITORY_BOUNDARY_DAYS := 8
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
@@ -46,6 +48,9 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# X1-b measures source-count publication; support thresholds have their own
+	# fixtures and must not reject the card before the worker path is exercised.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -400,26 +405,15 @@ func _claim_neighboring_cell(generator: MapGenerator, ext: Object,
 
 
 func _wait_for_country_commit(ext: Object, cell: int, handle: int) -> bool:
-	var deadline := Time.get_ticks_msec() + 12000
-	while Time.get_ticks_msec() < deadline:
+	for _day in range(TERRITORY_BOUNDARY_DAYS):
+		var driven := WorkerWaitHelper.drive_worker_day(
+			_host, _clock, ext, _tick + 1, WORKER_SPEED)
 		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if ext.has_method("service_country_worker_peer_adapter"):
-			ext.service_country_worker_peer_adapter(64, true)
+		if not bool(driven["ok"]):
+			return false
 		if int(ext.get_country_cell_summary(cell).get(
 				"country_handle", 0)) == handle:
 			return true
-		var report: Dictionary = ext.get_runtime_thread_report()
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return false
-		OS.delay_msec(2)
 	return false
 
 
@@ -434,6 +428,9 @@ func _equip() -> bool:
 		_fail("T9 iron_smelting is absent from the compiled catalog")
 		return false
 	_grant_draw_gates("iron_smelting", _tick)
+	# DISCOVER reads the frozen Country gate snapshot, so publish the grant before
+	# submitting the worker command.
+	_tick = _drive_days(1)
 	var discovered: Dictionary = _submit([{"op": 1, "day": _tick, "handle": _handle,
 		"idea": dense}])
 	if not _require("T9 worker accepts discover", bool(discovered.get("ok", false)),
@@ -485,32 +482,10 @@ func _unequip() -> bool:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		var deadline := Time.get_ticks_msec() + 2000
-		while Time.get_ticks_msec() < deadline:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true)
-			OS.delay_msec(2)
-			if int(_ext.get_runtime_thread_report().get(
-					"ideology_pod_committed_day", -1)) > before:
-				break
-		_ext.set_runtime_clock(true, WORKER_SPEED)
-		_wait_worker_paused(_ext)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -604,11 +579,6 @@ func _grant_draw_gates(card_id: String, day: int) -> void:
 func _read_cell(cell: int) -> float:
 	return float(_ext.evaluate_modifier_stat(
 		MODIFIER_DOMAIN_ECONOMY, 0, cell, STAT_KEY, 1.0))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method("has_hard_barrier") \
-		else false
 
 
 func _wait_worker_paused(ext: Object) -> void:

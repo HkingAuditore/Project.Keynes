@@ -221,7 +221,14 @@ INVISIBLE_CHARS.update(chr(cp) for cp in range(0xFE00, 0xFE10))  # VS1..VS16
 #   ✗ U+2717  scripts/simulation/climate/climate_math.gd 注释
 #   ↟ U+219F  scripts/ui/icon_catalog.gd 的旧图标 key（"\u219f"），只做查表不做绘制
 #   ☼ U+263C  同上（"\u263c"），只做查表不做绘制
-KNOWN_UNCOVERED_CHARS = "▴▾▸⌈⌉►✅✗❌↟☼⏳⏸⏹⏺📸"
+#   ∘ U+2218  scripts/rendering/cell_situation_layer.gd 注释里的"变换复合"记号
+#   ▬ U+25AC  scripts/ui/components/military/military_unit_roster.gd 注释里的示意条
+#   ── 会渲染，但当前没有任何字体覆盖（2026-11-11 登记）──────────────────────
+#   ♟ U+265F  scripts/ui/components/building/building_hover_card.gd 的分区图标
+#             （"♟  岗位配置"）。**这一条是真问题**：现有 7 套字体都没有这个字形，
+#             玩家看到的是豆腐块。要么换成字体覆盖的图标，要么加一套符号字体。
+#             登记在这里只是为了让字体子集不被它卡住，不代表观感可以接受。
+KNOWN_UNCOVERED_CHARS = "▴▾▸⌈⌉►✅✗❌↟☼⏳⏸⏹⏺📸∘▬♟"
 
 # 迷你工程里让 Godot 复核子集产物的探针脚本（临时写在缓存目录，不进仓库）。
 GODOT_PROBE_SCRIPT = r"""extends SceneTree

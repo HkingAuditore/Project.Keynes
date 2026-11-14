@@ -696,23 +696,38 @@ bool NativeSimulationHost::ideology_pod_self_test(std::string *out_error) const 
     return true;
 }
 
-bool NativeSimulationHost::execute_ideology_worker_stage(
+NativeSimulationHost::IdeologyStageOutcome
+NativeSimulationHost::execute_ideology_worker_stage(
         int64_t day, RuntimeDayCommit &commit, std::string &error) {
+    using Outcome = IdeologyStageOutcome;
     (void)commit;
     error.clear();
     if (!_ideology_pod_configured) {
         error = "ideology_pod_not_configured";
-        return false;
+        return Outcome::FAULT;
+    }
+    // Every stage runs again when another domain parks the day, and the POD
+    // committed it on the first attempt. Earlier days are a regression; a
+    // restore that put the POD ahead of the calendar is plan_day's own case.
+    const RuntimeIdeologyPodSnapshot &current = _ideology_pod_authority.snapshot();
+    if (current.round_day < 0 && day <= current.committed_day &&
+        !_ideology_pod_authority.import_supersedes_calendar()) {
+        if (day == current.committed_day) return Outcome::ALREADY_COMMITTED;
+        error = "ideology_day_not_monotonic";
+        return Outcome::FAULT;
     }
     const auto country = std::atomic_load_explicit(
         &_country_snapshot, std::memory_order_acquire);
+    if (country == nullptr) {
+        error = "ideology_country_snapshot_missing";
+        return Outcome::FAULT;
+    }
     const auto opinion_view = copy_economy_opinion_view(day);
     assert(!opinion_view.data || opinion_view.observe(_opinion_view_version));
     auto opinion = opinion_view.data;
-    if (country == nullptr || opinion == nullptr) {
-        error = country == nullptr ? "ideology_country_snapshot_missing" :
-            "ideology_opinion_snapshot_missing";
-        return false;
+    if (opinion == nullptr) {
+        error = "ideology_opinion_snapshot_missing";
+        return Outcome::AWAITING_OPINION;
     }
     // Freeze the country.ideology.* multipliers from the last committed Modifier
     // snapshot (Modifier runs after Ideology, so this is the previous day's
@@ -870,7 +885,7 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     // ring, so the main thread can consume it after this stage returns.
     if (_ideology_pod_authority.snapshot().countries.empty()) {
         if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
-            return false;
+            return Outcome::PARKED;
     }
     if (domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY))
         queue_annual_worker_reward(day);
@@ -892,7 +907,7 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
                 _ideology_commands.push_front(commands.back());
                 commands.pop_back();
             }
-            return false;
+            return Outcome::PARKED;
         }
     }
 
@@ -908,7 +923,7 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
         if (!_ideology_pod_authority.plan_day(
                 day, *country, *opinion, effective_acks, plan, error)) {
             _ideology_pod_authority.discard_plan();
-            return false;
+            return Outcome::PARKED;
         }
         if (ideology_modifier_bridge_active()) {
             // Worker owns MODIFIER: keep the transition in-worker until the
@@ -940,20 +955,20 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
                 if (_ideology_intents.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
                     _ideology_pod_authority.discard_plan();
                     error = "ideology_intent_capacity_exceeded";
-                    return false;
+                    return Outcome::PARKED;
                 }
                 _ideology_intents.push_back(intent);
                 ++emitted;
             }
         }
         const auto replay_started = std::chrono::steady_clock::now();
-        if (!_ideology_pod_authority.commit_day(plan, error)) return false;
+        if (!_ideology_pod_authority.commit_day(plan, error)) return Outcome::PARKED;
         replay_ms += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - replay_started).count();
         if (plan.completed_day != 0) break;
         if (slice + 1u == RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) {
             error = "ideology_same_day_continuation_limit_exceeded";
-            return false;
+            return Outcome::PARKED;
         }
     }
     const RuntimeIdeologyPodSnapshot &snapshot =
@@ -992,7 +1007,7 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
         static_cast<uint32_t>(snapshot.pending_transitions.size()),
         std::memory_order_release);
     _ideology_pod_intent_count.store(emitted, std::memory_order_release);
-    return true;
+    return Outcome::COMMITTED;
 }
 
 bool NativeSimulationHost::ideology_modifier_bridge_active() const {

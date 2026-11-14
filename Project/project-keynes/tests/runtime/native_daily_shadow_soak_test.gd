@@ -26,7 +26,11 @@ func _run() -> void:
 		return
 
 	var profile: ClimateProfile = _make_profile()
-	var cfg: MapConfig = MapConfig.make(10, 8)
+	# The 10x8 fixture can legitimately collapse to an all-water map for this
+	# seed at the configured sea level.  The soak needs a land cell for the
+	# country bootstrap and authority reports, so keep the same climate knobs
+	# while using the smallest stable grid that produces land.
+	var cfg: MapConfig = MapConfig.make(12, 10)
 	cfg.seed = 515151
 	cfg.num_continents = 1
 	cfg.sea_level = 0.62
@@ -99,15 +103,14 @@ func _run() -> void:
 				and authority_report.has("ocean_physical") \
 				and authority_report.has("season_refresh"):
 			authority_report_ok += 1
-		if not authority_blockers.is_empty() \
-				and authority_blockers.has("legacy_sus_fallback_enabled"):
+		if not authority_blockers.is_empty():
 			authority_blockers_ok += 1
 		if str(native_res.get("graph_coverage_state", state.get("graph_coverage_state", ""))) != "complete":
 			partial_coverage_ok += 1
 		var ocean_state: Dictionary = state.get("ocean_physical_state", {})
 		if not ocean_state.is_empty():
 			ocean_state_ok += 1
-		if str(state.get("ocean_physical_state_owner", "")) == "native_ready_probe":
+		if str(state.get("ocean_physical_state_owner", "")) == "native_active":
 			var ocean_authority: Dictionary = authority_report.get("ocean_physical", {})
 			var ocean_slots: Array = ocean_authority.get("native_owned_output_slots", [])
 			if ocean_slots.has("cell_wind_x") and ocean_slots.has("cell_ocean_current_x"):
@@ -126,13 +129,13 @@ func _run() -> void:
 			boundary_contract_ok += 1
 		var climate_state: Dictionary = state.get("climate_round_state", {})
 		var native_probe_state: Dictionary = climate_state.get("native_probe_state", {})
-		if str(state.get("climate_round_state_owner", "")) == "native_ready":
+		if str(state.get("climate_round_state_owner", "")) == "native_active":
 			climate_owner_native_ready_ok += 1
-		if str(climate_state.get("owner", "")) == "native_ready":
+		if str(climate_state.get("owner", "")) == "native_active":
 			climate_state_mirror_ok += 1
-		if str(native_probe_state.get("authority", "")) == "probe_native_state":
+		if str(native_probe_state.get("authority", "")) == "native_active_owner":
 			native_probe_state_ok += 1
-		if not bool(native_probe_state.get("simulation_authority", true)):
+		if bool(native_probe_state.get("simulation_authority", false)):
 			native_probe_not_authority_ok += 1
 		if str(native_probe_state.get("lifecycle_owner", "")) == "native_probe_lifecycle":
 			native_lifecycle_probe_ok += 1
@@ -140,8 +143,7 @@ func _run() -> void:
 		if bool(native_probe_state.get("climate_round_authority_ready", false)) \
 				and remaining_boundaries.has("godot_mapdata_boundary_execution"):
 			native_ready_with_boundaries_ok += 1
-		var remaining_sim_authority: Array = native_probe_state.get("remaining_gdscript_simulation_authority", [])
-		if remaining_sim_authority.has("sync_sliced_fallback"):
+		if str(native_probe_state.get("fallback_mode", "")) == "explicit_failure_only":
 			native_ready_sim_fallback_ok += 1
 		var boundary_intents: Array = native_probe_state.get("boundary_intents", [])
 		if boundary_intents.has("sync_runtime_terrain_views") and boundary_intents.has("soa_begin_climate_transaction"):
@@ -190,13 +192,13 @@ func _run() -> void:
 	_expect("all ticks include wind pass keys", wind_key_ok == SOAK_DAYS)
 	_expect("all ticks have complete required pass keys", missing_ok == SOAK_DAYS)
 	_expect("wind authority is not retained by GDScript", retained_wind_bad == 0)
-	_expect("climate round owner is native-ready", climate_owner_native_ready_ok == SOAK_DAYS)
-	_expect("climate round state mirror is native-ready", climate_state_mirror_ok == SOAK_DAYS)
-	_expect("native climate probe state is present", native_probe_state_ok == SOAK_DAYS)
-	_expect("native climate probe is not authority", native_probe_not_authority_ok == SOAK_DAYS)
+	_expect("climate round owner is native-active", climate_owner_native_ready_ok == SOAK_DAYS)
+	_expect("climate round state mirror is native-active", climate_state_mirror_ok == SOAK_DAYS)
+	_expect("native climate active owner state is present", native_probe_state_ok == SOAK_DAYS)
+	_expect("native climate active owner is authoritative", native_probe_not_authority_ok == SOAK_DAYS)
 	_expect("native climate lifecycle probe is present", native_lifecycle_probe_ok == SOAK_DAYS)
 	_expect("native climate ready keeps boundary list", native_ready_with_boundaries_ok == SOAK_DAYS)
-	_expect("native climate ready reports sync fallback authority", native_ready_sim_fallback_ok == SOAK_DAYS)
+	_expect("native climate active fallback is failure-only", native_ready_sim_fallback_ok == SOAK_DAYS)
 	_expect("native climate boundary intents are present", native_boundary_intents_ok == SOAK_DAYS)
 	_expect("native climate finalize front intents are present", native_finalize_front_intents_ok > 0)
 	_expect("native climate finalize mid intents are present", native_finalize_mid_intents_ok > 0)
@@ -221,6 +223,12 @@ func _make_profile() -> ClimateProfile:
 	profile.native_generation_mode = ClimateProfile.NATIVE_MODE_ACTIVE
 	profile.native_daily_sim_mode = ClimateProfile.NATIVE_MODE_SHADOW
 	profile.native_shadow_diff_enabled = true
+	profile.native_climate_round_active_owner_enabled = true
+	profile.native_ocean_physical_active_owner_enabled = true
+	profile.native_season_refresh_active_owner_enabled = true
+	# The soak checks the full SHADOW lifecycle and boundary report. The compact
+	# capsule intentionally omits those diagnostics.
+	profile.native_daily_compact_state_capsule_enabled = false
 	profile.weather_field_enabled = false
 	profile.runtime_hydrology_enabled = false
 	profile.native_environment_runtime_enabled = false

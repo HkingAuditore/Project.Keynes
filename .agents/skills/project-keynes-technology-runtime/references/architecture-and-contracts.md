@@ -223,7 +223,7 @@ Key files:
 - `Project/project-keynes/scripts/ui/technology_tree_layout.gd`
 - `Project/project-keynes/scripts/ui/components/technology_workspace.gd`
 - `Project/project-keynes/scripts/ui/components/technology_tree_view.gd`
-- `Project/project-keynes/scripts/ui/components/research_weight_dial.gd`
+- `Project/project-keynes/scripts/ui/components/research_allocation_bars.gd`
 - `Project/project-keynes/scripts/ui/components/procurement_budget_slider.gd`
 - `Project/project-keynes/scripts/ui/components/technology_detail_card.gd`
 - `Project/project-keynes/scripts/ui/components/technology_queue_row.gd`

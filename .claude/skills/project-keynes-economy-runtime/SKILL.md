@@ -236,7 +236,7 @@ share a Country cash cap after fiscal/research budgeting. Do not credit sales,
 withdrawal EMA or real cargo from a forecast. One-shot balances normalize over
 inventory days and rebuild after cancellation/departure/restore. No new schema.
 See `docs/cpp-dots-runtime/family-colonization-runtime.md` and
-`tests/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
+`tests/country/colonization_demand_runtime_test.gd`. Clear thread-local seed stamps at
 each propagation entry: runtime-local visit generations can collide across
 worlds in the same process.
 

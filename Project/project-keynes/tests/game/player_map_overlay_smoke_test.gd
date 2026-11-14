@@ -139,12 +139,11 @@ func _assert_opening_discovery_filters(toolbar: MapOverlayToolbar) -> void:
 			named_ids[String(profile.id)] = true
 	_expect("opening overlay names fertile soil and wild game",
 		named_ids.has("fertile_soil") and named_ids.has("wild_game"))
-	_expect("opening overlay does not name unidentified minerals or timber",
+	_expect("opening overlay does not name unidentified minerals",
 		not named_ids.has("iron_ore")
 		and not named_ids.has("copper_ore")
 		and not named_ids.has("coal")
-		and not named_ids.has("flint")
-		and not named_ids.has("timber"))
+		and not named_ids.has("flint"))
 	_expect("resource buttons match discovery-visible deposits",
 		(toolbar.get("_mode_buttons") as Array).size() == named_ids.size())
 

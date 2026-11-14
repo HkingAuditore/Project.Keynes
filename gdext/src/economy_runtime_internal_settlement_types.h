@@ -576,10 +576,13 @@
         bool committed_generation_seen = false;
         uint64_t restored_committed_generation = 0;
         std::vector<int32_t> track_b_investment_cells_pending;
+        int64_t track_b_derived_cell_cache_day = -1000000;
+        std::vector<TrackBDerivedCellWork> track_b_derived_cell_cache;
         bool settlement_names_seen = false;
         int32_t restored_families = 0;
         int32_t restored_family_memberships = 0;
         int32_t restored_family_ownerships = 0;
+        std::vector<int32_t> family_colonization_population_reward_pending;
         bool family_records_seen = false;
         bool family_membership_seen = false;
         bool family_ownership_seen = false;
@@ -932,7 +935,6 @@
     EconomyTrackedScalar<int64_t> _last_committed_day{_metadata_changes, {{15, 18}, "metadata.last_committed_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
-    int64_t _pending_military_cash_burn = 0;
     int64_t _external_population_delta = 0;
     int64_t _explicit_stock_delta = 0;
     int64_t _country_research_consumed_opening = 0;

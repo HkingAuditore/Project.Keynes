@@ -434,7 +434,16 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     // can release it after the synchronous day boundary. A trace belonging to
     // another start/day is discarded explicitly.
     int64_t trace_front_day = -1;
-    if (_climate_trace.front_day(trace_front_day) && trace_front_day != start_day) {
+    // A fresh world captures the first worker input for the next simulation
+    // day before the worker starts: the Host clock is at day N while the
+    // first comparable Climate frame is day N+1. Restarts and restores already
+    // have an unfinished frame for their exact committed day, so keep their
+    // strict start-day match.
+    const int64_t expected_trace_day =
+        (!restore_pending && !resuming_previous_lifetime)
+            ? start_day + 1 : start_day;
+    if (_climate_trace.front_day(trace_front_day) &&
+        trace_front_day != expected_trace_day) {
         _climate_trace.reset();
     }
     _climate_trace_consumed.store(0, std::memory_order_release);

@@ -186,6 +186,7 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	_run_started_ms = Time.get_ticks_msec()
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
@@ -268,7 +269,9 @@ func _run_worker_leg() -> Dictionary:
 				== "IDEOLOGY_WORKER",
 		str(w["last_ideology"]))
 	_report_host_path(w)
-	await _equip_card(w, CARD, "W", 10)
+	# Worker authority publishes the derived front through its own POD; the
+	# main-thread facade snapshot may intentionally lag until the next mirror.
+	await _equip_card(w, CARD, "W", 10, false)
 	# ---- the pump, day by day, with the retry accounting ----------------
 	var first_day := int(w["tick"])
 	for _index in range(PUMP_DAYS):
@@ -782,10 +785,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	# Production settle handshake (`dispatch -> run_modifier_daily -> ack`) only on the
 	# main-thread side; under worker authority the worker's own graph owns it and a
 	# second handshake here would double-apply.
@@ -826,6 +825,10 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		var before := int(ext.get_runtime_thread_report().get(
 			"ideology_pod_committed_day", -1))
 		_await_pod_day(w, before, POD_WAIT_MS)
+		# Production retries the snapshot write-back every frame; the consume inside
+		# run_daily_tick lands in the worker's day transaction (economy_day_inflight),
+		# so without a frame the mirror never takes a snapshot.
+		host._process(0.0)
 	_record_day(w, day, pump, drained)
 	return {"ok": true, "day": day, "slices": slices, "drained": drained,
 		"pump": pump, "suppressed": bool(ideology.get("suppressed", false))}
@@ -945,11 +948,6 @@ func _await_pod_day(w: Dictionary, before: int, timeout_ms: int) -> int:
 	return day
 
 
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method(
-		"has_hard_barrier") else false
-
-
 func _worker_fault(ext: Object) -> String:
 	if ext == null or not ext.has_method("get_runtime_thread_report"):
 		return ""
@@ -1035,7 +1033,13 @@ func _equip_card(w: Dictionary, card: String, label: String,
 		return false
 	_next_sequence = maxi(_next_sequence, int(gate.get(
 		"next_sequence", _next_sequence)))
-	_drive_day(w)
+	# The gate grant is a queued Country command; DISCOVER before it lands is refused.
+	await WorkerWaitHelper.wait_for(
+		func() -> bool:
+			return DrawGateHelper.draw_gates_landed(w["host"], card, int(w["handle"])),
+		10, DAY_WAIT_MS * 2,
+		func() -> void:
+			_drive_day(w))
 	# The same three-step preamble B1 uses for every card: one point grant, the
 	# discover, and a zero-value understanding row. Skipping a step the runtime expects
 	# is how "the card was never equipped" gets misread as "the layer does nothing".

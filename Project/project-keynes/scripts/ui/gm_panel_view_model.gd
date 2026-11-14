@@ -333,13 +333,17 @@ static func _append_scalar_report(sections: Array, title: String, report,
 		row_limit = MAX_FATAL_MONEY_REPORT_ROWS
 		# 落盘由 WorldRuntimeHost._observe_economy_fatal 统一负责：它不依赖
 		# GM 面板是否打开，且写的是完整现场而不是钱的分桶。
-	_append_scalar_rows(rows, report, row_limit, pin_keys)
+	# Fatal reports are a bounded incident record. Do not append unrelated
+	# tuning/diagnostic scalars after the pinned fields: those can fill the
+	# visible budget before the conservation context is readable.
+	_append_scalar_rows(rows, report, row_limit, pin_keys,
+		title == "经济运行时" and bool(report.get("fatal", false)))
 	if not rows.is_empty():
 		sections.append({"title": title, "rows": rows})
 
 
 static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int,
-		pinned: PackedStringArray = PackedStringArray()) -> void:
+		pinned: PackedStringArray = PackedStringArray(), pinned_only: bool = false) -> void:
 	var seen := {}
 	for raw_key in pinned:
 		var pinned_key := String(raw_key)
@@ -349,6 +353,8 @@ static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int,
 			seen[pinned_key] = true
 		if rows.size() >= limit:
 			return
+	if pinned_only:
+		return
 	var keys := data.keys()
 	keys.sort()
 	for key in keys:

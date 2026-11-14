@@ -2,6 +2,20 @@
 
 先读 [current-state.md](current-state.md) 和 [design.md](design.md)，确定数据所有者、运行线程和真正的提交点；边界规则见 [module-boundaries.md](module-boundaries.md)。目标接口不是已有 API。
 
+### 政治体制与国库建造权限
+
+政治入口的 canonical section id 是 `politics`，页面内保留 `regime` 与 `ideology` 两个
+子页；旧的 `ideology` 打开调用只作为迁移别名。体制状态属于 Country，不能写入
+`HexCell`、DataCore 或 Ideology POD。Country 命令 `SET_POLITICAL_REGIME` 在下一次
+Country 边界提交，`CountryReadView` 的 `capability_bits` 在 Economy epoch capture 时
+冻结；Economy 的 construction quote/apply 必须都拒绝缺少
+`CountryApi::CAP_TREASURY_CONSTRUCTION` 的请求。
+
+PKCN native payload 当前为 v15，新增 `regime_id` 与能力位并进入 state hash、worker
+POD 与 checkpoint。政治目录内容身份必须与保存内容匹配；旧版本恢复不能默认开放国库
+建造。UI 使用 `CountryViewModel.build("politics")`，沿用 CountryPanel 的 dirty/cache
+合并刷新，不在每日 tick 重建政治子树。
+
 所有命令从仓库根目录运行；Python 用 `/Users/herh/.local/bin/python3`，Godot 用 `/opt/homebrew/bin/godot`。日志目录必须是新目录。
 
 改到具体功能（地形起伏、经济平衡、天气/光照 Shader、时代晋升、军事界面、GM 屏蔽、科技节奏、军需市场）时，另读 [专项开发约束](feature-guides.md) 的对应小节。
@@ -65,7 +79,7 @@
 - 首次结算前的保存拒绝不能终止执行器。`startup_save_boundary_test.gd` 固定首次输入尚未送入的开局，分别验证后台和内联的两次拒绝、八日继续和之后的正常保存。正式场景 ready 可能已完成首次结算，不能用 ready 信号推断尚未结算。
 - 已开启 ECP2 捕获时，整份保存要求经济段捕获并编码成功。`economy_settlement_save_boundary_test.gd` 在首次成功结算后停在下一轮计算中，验证原生请求返回 `save_requires_committed_boundary`，原执行器和经济状态保留，结算完成后可重试并获得完整存档。
 - ECP2 60 的内部 OSOA4 块 13 保存 `_cell_rain_event_q16` 和 `_epoch_cell_rain_event_threshold_q16`；已采样但尚未开算的当天也可能是合法边界，恢复不能以零值代替。`economy_cadence_runtime_test.gd` 检查完整块、旧版本/未知块/非法值/形状及失败原子性；正式读档检查后续完整结算。
-- 固定气候档候选用 `capture_climate_archive.py --godot … --candidate <新目录> --log-dir <新目录>` 生成并验证，再审查安装；默认回归只读固定样本，不自动更新。旧内容拒绝用 `legacy_catalog.pkcm` 覆盖。不得把候选的通过与真实旧版兼容混为一谈。
+- 不保留提交的固定气候存档样本（2026-11-11 撤销）。CLM2 与经济发布块的存读档续跑由 `check_committed_replay.py` 与 `check_replay_matrix.py` 当场生成存档验证。
 - `PlayerController` 订阅时钟通知并在重新配置时解除旧订阅；音乐的逐帧平滑归 `audio/music_situation_playback.gd`。弹窗屏蔽只释放已知来源的自动暂停；手动、保存和故障暂停继续生效，见 `player_clock_event_test.gd`。
 - 手动推进后台日的测试必须同时运行生产的结果接收步骤。`ideology_save_worker_authority_test.gd` 在等待中调用宿主的 `_service_runtime_liveness`，日提交后再接收一次结果，然后重建逐格效果。只等待后台日期变大、不接收新快照，会把旧的主线程显示状态误判为业务失败；不能靠增加天数或放宽比较掩盖。
 
@@ -95,11 +109,17 @@
 助手只接收对应输入或原接收者绑定的 Callable。抽出函数时除函数体外还要核对参数名、
 返回类型、默认值及实际传参，逐个脚本做 `--check-only`，不能只依据编辑器导入成功。
 
-- 一组一组做：冻结参照、按成员比较签名与函数体词元（含字面量）、串行构建、主黄金三次。静态缓存、`thread_local` 和有初始化副作用的辅助函数保持单一归属；无状态匿名辅助函数可以复制。
-- 新文件不超过 2000 行，不为新文件开超限豁免。超限文件变短后用 `check_size_ratchet.py` 写候选，确认只有变小的条目变化再收紧。
+- 一组一组做：冻结参照、按成员比较签名与函数体词元（含字面量）、串行构建、与改动前临时候选逐字段对照（各重复三次）。静态缓存、`thread_local` 和有初始化副作用的辅助函数保持单一归属；无状态匿名辅助函数可以复制。
+- GDScript 拆分：公开方法和信号留在原文件做薄转发，职责搬到 `RefCounted` 协作者，纯转换用静态工具类，不用 `extends` 链。C++ 拆分：同一个类的成员定义分到多个 `.cpp`，不抽新运行时类；多处使用的匿名命名空间工具搬到 `*_internal.h`。
+- 新文件放进所属模块目录（以 `tools/ci/world_ext_binding_modules.json` 的 `script_dirs` 为准），新增 `world_ext_*.cpp` 登记到该清单，C++ 文件名保持模块前缀；不为清零跨模块计数制造循环 `preload`。不建第二个组合根或调度器，不按 opcode 或单个 pass 一文件，不把超长函数原样搬到另一个同样长的文件。
+- 原文件目标不超过 1700 行，新文件不超过 2000 行，不为新文件开超限豁免；不靠删空行或解释当前逻辑的注释凑行数。超限文件变短后用 `check_size_ratchet.py` 写候选，确认只有变小的条目变化再收紧。剩余 3000 行以上的 C++ 文件改到哪个拆哪个。
 - 依赖基线只能用 `check_cpp_deps.py --write-baseline` 收紧；位移用 `--moves <json>`（“目标完整键 → 原文件”）。绝不手改；若总量或域对增加，说明有新债务，停下来处理。改文件名前确认不会改变域归属（见 `_family_` 规则）。
 - 跨域完整类型若因拆分需要聚合，只能放在私有实现 `.inc` 里并在基线登记来源。
 - GDScript 拆分给调用加 `host.` 前缀时，不能碰字符串字面量和注释。拆分后要与拆分前源码比对：带 `host.` 的字面量若在原文件里不存在、去掉前缀后存在，就是误改。还要检查 `Callable(self, …)` 和以方法名当值传递的地方，它们应该指向宿主，而不是适配器里多一个 `host` 参数的同名方法。
+
+### 气候每日 native-only 边界
+
+`map_generator.gd` 的 Pass-A、Pass-B、ocean water/land、sea ice 和 transpiration 入口只负责 native 探测、输入打包、结果同步、slice/状态机和诊断。扩展缺失、方法探测失败或 C++ 返回失败时必须 `push_error`，保留上一份字段并返回失败；不能再进入 GDScript 全图计算，也不能返回成功的空结果。保留 `ClimateDailySystem` 的 SHADOW/PROBE/A-B 调度、slice API、海冰 terrain flip 和可见性同步边界。修改这些入口后，按模块图运行对应 climate/world 测试并核对 native 对照。
 
 ## 内存错误排查（ASAN，macOS）
 
@@ -129,15 +149,17 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 
 | 检查 | 命令要点 | 何时必须跑 |
 |---|---|---|
-| 黄金五链 | `check_golden_determinism.py --godot … --log-dir <新> --runs 3`；`--external-only` 只跑 v5 | 每次改 C++ |
-| 默认回归 | `run_regression_checks.py --godot … --log-dir <新>`（约 15–20 分钟；首次导入加 `--import`） | 每次提交前 |
+| 重复运行一致 | `python3 tools/ci/check_golden_determinism.py --godot $(which godot) --log-dir /tmp/keynes-repeat --runs 3`；加 `--external-only` 跑表外场景 | 改 C++ 后；捕捉不确定性 |
+| 重构前后对照 | 改前 `python3 tools/ci/check_golden_determinism.py --godot $(which godot) --log-dir /tmp/keynes-before --runs 3 --write-candidate /tmp/keynes-before.json`；改后用新日志目录和 `--compare-to /tmp/keynes-before.json` | 不改行为的重构；表外场景同样加 `--external-only` 并用另一候选文件 |
+| 默认回归 | `run_regression_checks.py --godot … --log-dir <新>`（4 路并行，约 4 分钟；`--jobs N` 调并行数；首次导入加 `--import`） | 每次提交前 |
+| 完整回归 | 上面的命令加 `--full`：再跑真实 365 天年度和标准场景的 checkpoint 续跑 | 推送前 |
 | 保存续跑矩阵 | `check_replay_matrix.py --godot … --log-dir <新>`；`--full`、`--annual`、`--annual-neighbors`、`--military`、`--military-annual` | 改继续态、事件/ACK 游标、军事 lot、军饷、累计收入、编号恢复 |
 | 单场景续跑 | `check_committed_replay.py --checkpoint --trace --days 10` | 定位首个差异 |
-| 气候存档 | `check_climate_archive.py --godot … --log-dir <新>` | 改 CLM2 或经济发布块 |
+| 气候存档 | `check_committed_replay.py --godot … --checkpoint --trace --days 10 --log-dir <新>` | 改 CLM2 或经济发布块 |
 | 军费专用库 | 用 `gdext/tests/SConstruct.military_fiscal_probe` 构建，回归加 `--military-fiscal-probe <绝对路径>` | 改军饷、财政端口 |
 | 外围同日对齐实验 | `check_external_day_alignment.py --runs 3`（不进默认回归，不写基线） | 只在评估对齐方案时 |
 
-测试必须用固定经济周期：黄金、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败；生产仍按真实耗时自适应。
+测试必须用固定经济周期：黄金场景、回放、矩阵入口都安装 `tests/runtime/replay_cadence.gd`，检查器发现缺失即失败；生产仍按真实耗时自适应。
 
 ## 运行回归与内容变化
 
@@ -149,16 +171,25 @@ cd tools/ci && for g in check_size_ratchet.py check_cpp_deps.py check_cross_doma
 
 复用已有对象读档，须先准备有效 PKSR、恢复各所有者和地图输入，再启动执行器。停止后的恢复输入按存档日期暂存，不进入旧世界队列；启动从暂存副本重建队列，不能让旧队列的较新输入遮住它。上述用例覆盖无存档时拒绝旧日期、旧队列满、恢复后第一次继续及重复读档。
 
-内容和公式更新后的保存字节、整份经济及回放对照不能直接沿用旧值。`check_intent_baselines.py --capture-candidate --runs 5` 只收集候选并逐字段比较重复结果，保留原断言、完整回执、保存前后字节摘要与继续状态；`test_regression_evidence.py` 拒绝脚本错误、零退出码失败、泄漏、丢记录及重复记录。审查差异并安装候选后，去掉捕获开关重新核查。
+内容和公式更新后不再维护提交的交易快照。`python3 tools/ci/check_intent_baselines.py --godot $(which godot) --log-dir /tmp/keynes-intents-repeat --runs 2` 逐字段比较七个场景的重复结果，保留原断言、完整回执、保存前后字节摘要与继续状态。重构时改前加 `--write-candidate /tmp/keynes-intents-before.json`，改后用新日志目录并加 `--compare-to /tmp/keynes-intents-before.json`；不安装候选。`test_regression_evidence.py` 拒绝脚本错误、零退出码失败、泄漏、丢记录及重复记录。
 
 负例主动调用会打印错误的公开拒绝入口时，只能在 `EXPECTED_ERRORS` 按夹具登记完整且唯一的错误行；遗漏、重复、其他错误和泄漏仍失败。参数覆盖夹具的无效堆叠上限用例保留其原始拒绝调用，证据测试覆盖这条例外的边界。
 
-## 黄金基线维护
+## 确定性与重构对照
 
-- `tests/runtime/golden_day_hash_test.gd`：seed=20260727、40×28、无外国、正式开局，固定日序 1..8，无玩家命令。每次等同日提交（worker 无在途日任务、Modifier 已消费相同 generation）后取值，不靠睡眠。
-- 正常运行读 v4 `golden_day_hash_baseline.json`，同时核对当前内容的 v2/v3；v5 在 `golden_external_advancers_baseline.v5.json`。v1 文件保留作历史记录。
-- 更新基线：先保留旧结果并解释业务变化，用同一二进制 `--capture-candidate` 连续至少 5 次逐日逐域比较，人工审查新旧取值，建立后跑 `--runs 10`。不能删字段、改种子或删失败样本拼连续次数。捕获模式允许暂不核对旧 v2/v3/v4 内容；普通运行仍逐项核对全部投影。既有内容/数值变化必须单独登记，架构迁移不允许改变五条链。
-- 诊断开关：`PK_GOLDEN_CAPTURE=1` 只打印结果；`PK_GOLDEN_DIAGNOSTICS=1` 打印初始化资源列与每日完整经济哈希；`PK_GOLDEN_COUNTRY_TRACE=<绝对路径>` 记录 Country 原始列。
+2026-11-11 用户决定：玩法会频繁快速调参，不再维护或提交黄金和 intent 基线，避免每次调参都重录快照。测试内的守恒、全有或全无、存读档一致和同日提交边界检查继续保留；调参后无需做任何基线工作。
+
+- 重复运行一致：同一个二进制连续运行至少两次，逐日逐域逐字段与第一次比较。命令见上表；七个 intent 场景使用 `check_intent_baselines.py`，参数相同。
+- 不改行为的重构：修改之前，用 HEAD 的源码和对应二进制在独立检出中构建，先运行 `--runs 3 --write-candidate /tmp/keynes-before.json`；外部 scratchpad 的绝对路径也可。改后构建新二进制，用新日志目录运行 `--runs 3 --compare-to /tmp/keynes-before.json`。主场景、表外场景和 intent 各用独立文件。路径必须在仓库外，候选不提交、不安装；检查器报告第一处差异。不能用改后结果倒录“改前”候选。
+- `tests/runtime/golden_day_hash_test.gd`：seed=20260727、40×28、无外国、正式开局，固定日序 1..8，无玩家命令。每次等同日提交（worker 无在途日任务、Modifier 已消费相同 generation）后取值，不靠睡眠。表外场景覆盖军事、资源恢复、家族、人物和视野。结果行无条件输出，两个黄金场景仍在默认单次回归中执行断言。
+- 诊断开关：`PK_GOLDEN_DIAGNOSTICS=1` 打印初始化资源列与每日完整经济哈希；`PK_GOLDEN_COUNTRY_TRACE=<绝对路径>` 记录 Country 原始列。不要把耗时、重试次数等诊断字段当作确定性结果。
+
+```bash
+# 改前，在 HEAD 的独立检出中构建对应二进制，再录制
+python3 tools/ci/check_golden_determinism.py --godot $(which godot) --log-dir /tmp/keynes-before --runs 3 --write-candidate /tmp/keynes-before.json
+# 改后，构建新二进制，再对照
+python3 tools/ci/check_golden_determinism.py --godot $(which godot) --log-dir /tmp/keynes-after --runs 3 --compare-to /tmp/keynes-before.json
+```
 
 ## 性能验证
 

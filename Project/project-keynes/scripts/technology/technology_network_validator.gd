@@ -114,6 +114,10 @@ static func normalize_effect_summaries(payload: Dictionary) -> bool:
 static func effect_summary(node: Dictionary) -> String:
 	var parts := PackedStringArray()
 	var seen := {}
+	# 同类解锁合并成一句：三个物资写成「解锁物资：毛皮、野味、生皮」，
+	# 而不是把「解锁物资：」重复三遍。
+	var grouped := {}
+	var group_order := PackedStringArray()
 	for effect_value in node.get("content_effects", []):
 		var effect: Dictionary = effect_value
 		# Goods already permitted by a hard ancestor keep their binding but are
@@ -127,8 +131,23 @@ static func effect_summary(node: Dictionary) -> String:
 			"building": prefix = "解锁建筑"
 			"good": prefix = "解锁物资"
 			"resource": prefix = "可利用资源"
+			# 运行时能力（例如水运航道）没有建筑/物资载体，但玩家需要知道它开了什么。
+			"runtime":
+				prefix = "开启航道" if String(effect.get("id", "")).begins_with("water.") \
+					else "开放能力"
 			_: continue
-		var text := "%s：%s" % [prefix, display_name]
+		if not grouped.has(prefix):
+			grouped[prefix] = []
+			group_order.append(prefix)
+		var names: Array = grouped[prefix]
+		if not names.has(display_name):
+			names.append(display_name)
+		grouped[prefix] = names
+	for prefix in group_order:
+		var names: Array = grouped[prefix]
+		if names.is_empty():
+			continue
+		var text := "%s：%s" % [prefix, "、".join(PackedStringArray(names))]
 		if not seen.has(text):
 			seen[text] = true
 			parts.append(text)
@@ -138,14 +157,8 @@ static func effect_summary(node: Dictionary) -> String:
 		if not seen.has(text):
 			seen[text] = true
 			parts.append(text)
-	var support_names := PackedStringArray()
-	for support_value in node.get("support_buildings", []):
-		var support: Dictionary = support_value
-		var support_name := String(support.get("name", support.get("id", "")))
-		if not support_name.is_empty() and not support_names.has(support_name):
-			support_names.append(support_name)
-	if not support_names.is_empty():
-		parts.append("作为必要支撑：" + "、".join(support_names))
+	# 「作为必要支撑：…」这类说明对玩家没有信息量，已移除；
+	# support_buildings 仍保留在数据里，供审计与详情面板使用。
 	if parts.is_empty():
 		return "完成时代里程碑并开放下一时代" if bool(node.get(
 			"is_milestone", false)) else ""
@@ -180,6 +193,7 @@ static func modifier_effect_subject(term: Dictionary) -> String:
 
 
 static func modifier_delta(term: Dictionary) -> String:
+	var stat := String(term.get("stat", ""))
 	var operation := int(term.get("operation", 0))
 	var value := float(term.get("value", 0.0))
 	var delta := value
@@ -188,6 +202,12 @@ static func modifier_delta(term: Dictionary) -> String:
 		2: delta = value - 1.0
 		3: delta = 1.0 / value - 1.0 if not is_zero_approx(value) else 0.0
 	var percent := delta * 100.0
+	# 基准点（_bp）类统计：值的单位是 0.01%，直接乘 100 会变成 +20000% 这种胡话。
+	if stat.ends_with("_bp"):
+		# 基准点：100 bp = 1%。玩家看得懂的是百分比，不是 bp。
+		percent = delta / 100.0
+		var points := ("%.2f" % absf(percent)).rstrip("0").rstrip(".")
+		return "%s%s%%" % ["+" if percent >= 0.0 else "-", points]
 	var amount := ("%.1f" % absf(percent)).rstrip("0").rstrip(".")
 	return "%s%s%%" % ["+" if percent >= 0.0 else "-", amount]
 

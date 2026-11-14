@@ -39,8 +39,37 @@ lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
 不做 Tile 空间采样。这样改变 Tile 数只改变静态边界采样精度，不改变知识度、天气状态或存档。
 详见 [Visual Tile Rendering](./visual-tile-rendering.md)。
 
-触发点只有两个：country bootstrap 后一次（`world_ready`），以及每次
-`country_committed`。**不进每日 tick**——领土变更极少，全量重算比增量维护便宜。
+触发点是 country bootstrap 后一次（`world_ready`）、每次 `country_committed`，以及
+玩家军事 `render_revision` 变化（部队移动/合并/解散）。军事变化只排队一次合并的
+视觉刷新，不在每个静止日重复 O(n) 解算；领土与部队仍共用同一份物理视野数组。
+
+## 军事探路 trail 与日边界（2026-11-10）
+
+玩家自动探路需要记录“一日内实际走过、但不再是最终落点”的格。Military 只返回
+explored-only trail，Host 拥有 explored 的写入权：
+
+```text
+MilitaryCore.run_movement
+  -> 玩家部队每实际进入一格
+  -> dense uint32 stamp 去重
+  -> get_military_vision_trail(player_slot)
+  -> WorldRuntimeHost._drain_military_exploration_trail()
+  -> MapData.explored_arr |= trail
+  -> clear_military_vision_trail()
+  -> 既有 _refresh_vision()（只有此时才重算 visible/fog/LUT）
+```
+
+- trail **不写** `visible_arr`、`fog_k_arr`、fog dirty 或 LUT，也不入 PKMI。
+- 无新增 explored 且地图已解算时不运行 O(n) vision；仅把当前 explored 冻结副本推给
+  Military 用于下一次目标判定。
+- 多格日行军会记录全部实际进入格；最终落点仍是普通 `military_source_cells` 低预算源。
+- `GameSaveCoordinator._save()` 在安全边界后 flush trail；合并/清空失败拒绝保存，
+  避免 PKFG 静默丢失已探索格。
+- inline、legacy SUS、whole-graph 补跑都使用同一 hook；whole-graph 每个补跑日各自
+  冻结一次 explored，不能整批共用第一天视图。
+
+自动探路永远不主动进入他国控制格；它不会改变控制者、宣战或占领，也不会在 Military
+内另写迷雾。
 
 ## 静态预烘焙
 
@@ -66,6 +95,9 @@ lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
 
 - 源 = 玩家国家的全部领土格（`country_slot_arr[i] == player_slot`），初始预算
   `BASE_BUDGET(42) + cell_view_height[src]`。
+- 源还包括玩家自己的活动部队格（来自已提交的 Military render snapshot），初始预算
+  `MILITARY_BASE_BUDGET(24) + floor(cell_view_height[src] / 2)`。该预算上限低于城市源，
+  所以部队能提供移动的小范围视野，却不会替代城市的远距观察。
 - 扩散到邻格扣 `cell_view_block[nb]`，预算仍 ≥ 0 则该格可见。取「剩余预算最大」
   的路径，于是站在山上看得远、穿密林看得近。平原 `view_block = 10`，所以平地上
   大约看 4 格。
@@ -162,7 +194,8 @@ solve 的 LUT 重烘都会把整张地图刷成未探索。LUT 首烘推迟到 `
 `CellHighlight` 同 z）、11 `MilitaryRouteLayer`。迷雾门控在 `MilitaryRenderFeed.apply_fog()` 与各层：迷雾开启
 （`is_fog_of_war_enabled()` 且 `visible_arr` 非空）时外国部队、交战标记、车队只在 `visible` 格显示，己方部队
 总显示；占领斜纹与战线不按迷雾过滤。军事图层只消费 `get_military_render_snapshot`，不写视野数组；
-部队目前不是视野源。详见 [military-runtime.md](./military-runtime.md) §9。
+玩家自己的活动部队格已作为低预算移动源进入 `VisionSolver`。详见
+[military-runtime.md](./military-runtime.md) §9 与 §7.1。
 
 ## 迷雾云的着色模型
 

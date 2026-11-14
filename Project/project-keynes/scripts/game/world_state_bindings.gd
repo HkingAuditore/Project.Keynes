@@ -60,7 +60,7 @@ static func for_module(source: Dictionary, id: String) -> Dictionary:
 		"journal":
 			return {"event_bus": source.get("event_bus")}
 		"pkar":
-			return {"annual": generator.get_data_core_world_ext() if generator != null else null}
+			return {"annual": _facade(generator, "country")}
 		"pknr":
 			return {"player": source.get("player")}
 		"player_session":

@@ -1,7 +1,7 @@
 extends Control
 class_name HudStatusCard
 
-## 顶栏纸签的悬浮卡：国库页给当日收支结构，人口页给阶层构成与各阶层福祉。
+## 顶栏纸签的悬浮卡：国库页给近期日均收支结构，人口页给阶层构成与各阶层福祉。
 ##
 ## 排版规则：
 ## - 卡宽固定，高度由内容撑开（构成条 + 若干行 + 页脚），不写死像素；
@@ -29,6 +29,7 @@ const SLIDE_PX := 6.0
 @onready var _income_bar: DossierStackedBar = %IncomeBar
 @onready var _expense_bar: DossierStackedBar = %ExpenseBar
 @onready var _net_row: HBoxContainer = %NetRow
+@onready var _net_caption: Label = %NetCaption
 @onready var _net_icon: TextureRect = %NetIcon
 @onready var _net_value: Label = %NetValue
 @onready var _treasury_note: Label = %TreasuryNote
@@ -184,6 +185,7 @@ func _apply_treasury(model: Dictionary) -> void:
 	var has_net := not String(model.get("net_text", "")).is_empty()
 	_net_row.visible = has_net
 	_net_icon.visible = has_net
+	_net_caption.text = String(model.get("net_caption", "净收"))
 	_net_value.text = String(model.get("net_text", ""))
 	_net_value.add_theme_color_override("font_color",
 		UITokens.DOSSIER_VERDIGRIS if bool(model.get("net_positive", true))

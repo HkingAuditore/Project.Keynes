@@ -915,12 +915,6 @@ func _add_overview_heading(host: VBoxContainer, page_id: String,
 	header_row.add_child(heading)
 
 
-func _overview_item_text(item: Dictionary) -> String:
-	var value := String(item.get("value", ""))
-	return "• %s%s" % [String(item.get("name", item.get("title", "记录"))),
-		("  " + value) if not value.is_empty() else ""]
-
-
 # ── 五个专项子页（对齐 Dossier 账本规范） ─────────────────────────────────
 
 func _build_trait_page(page: VBoxContainer, rows: Array) -> void:
