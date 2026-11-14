@@ -58,7 +58,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 size_flags_vertical = 4
-focus_mode = 0
 theme_type_variation = &"PKIconButton"
 
 [node name="Subtitle" type="Label" parent="Frame/Box"]
@@ -205,7 +204,6 @@ theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
 theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
 theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
-focus_mode = 0
 text = "白和平：双方维持现状"
 
 [node name="CedeRow" type="HBoxContainer" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox"]
@@ -252,7 +250,6 @@ theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
 theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
 theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
-focus_mode = 0
 text = "一次性赔款"
 
 [node name="LumpIcon" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/LumpRow" instance=ExtResource("4_money")]
@@ -277,7 +274,6 @@ theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
 theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
 theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
-focus_mode = 0
 text = "分期赔款"
 
 [node name="InstallIcon" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/InstallRow" instance=ExtResource("4_money")]
@@ -327,7 +323,6 @@ theme_override_colors/font_color = Color(0.27, 0.19, 0.12, 1)
 theme_override_colors/font_pressed_color = Color(0.12, 0.075, 0.04, 1)
 theme_override_colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 theme_override_colors/font_hover_pressed_color = Color(0.48, 0.19, 0.12, 1)
-focus_mode = 0
 text = "吞并：割让其全部剩余领土"
 
 [node name="AnnexHint" type="Label" parent="Frame/Box/Scroll/Body/TermsNote/TermsBox/AnnexRow"]
@@ -368,6 +363,5 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(128, 34)
 layout_mode = 2
 size_flags_vertical = 4
-focus_mode = 0
 theme_type_variation = &"PKSealPrimaryButton"
 text = "用印递交"

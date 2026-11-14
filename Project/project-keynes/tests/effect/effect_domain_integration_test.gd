@@ -29,24 +29,22 @@ func _init() -> void:
 
 	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
 	_require(handle != 0, "country handle missing")
-	var technology_ids: PackedStringArray = country.native_catalog().get(
-		"technology_ids", PackedStringArray())
-	var technology_index := technology_ids.find("tech.autonomous_systems")
+	var technology_fixture := _find_modifier_technology(country.native_catalog())
+	var technology_id := String(technology_fixture.get("id", ""))
+	var technology_index := int(technology_fixture.get("index", -1))
 	_require(technology_index >= 0, "integration technology missing")
-	var modifier_keys: PackedStringArray = country.native_catalog().get(
-		"technology_modifier_definition_keys", PackedStringArray())
-	var modifier_key := String(modifier_keys[technology_index])
+	var modifier_key := String(technology_fixture.get("modifier_key", ""))
 	_require(not modifier_key.is_empty(), "integration technology modifier missing")
 
 	# Grant queues the technology. The country must remain pending until the
 	# Effect transaction has reached Modifier Runtime and been acknowledged.
-	_assert_ok(country.grant_technology(handle, &"tech.autonomous_systems", 0, 1),
+	_assert_ok(country.grant_technology(handle, StringName(technology_id), 0, 1),
 		"grant technology command")
 	var country_day0: Dictionary = ext.run_country_slice({"day_index": 0})
 	_assert_ok(country_day0, "country day 0")
 	var snapshot0: Dictionary = country.snapshot(handle)
 	_require(not (snapshot0.get("technology_ids", PackedStringArray()) as PackedStringArray).has(
-		"tech.autonomous_systems"), "technology exposed before effect ACK")
+		technology_id), "technology exposed before effect ACK")
 
 	_assert_ok(ext.run_effect_daily(0), "effect day 0")
 	var modifier_dispatch: Dictionary = ext.dispatch_effect_native_modifier()
@@ -87,7 +85,7 @@ func _init() -> void:
 	_assert_ok(ext.run_country_slice({"day_index": 1}), "country day 1")
 	var snapshot1: Dictionary = country.snapshot(handle)
 	_require((snapshot1.get("technology_ids", PackedStringArray()) as PackedStringArray).has(
-		"tech.autonomous_systems"), "technology did not activate after ACK")
+		technology_id), "technology did not activate after ACK")
 
 	# The instance cadence is preserved: the country retry must not reset it and
 	# create a second Modifier stack on the following Effect evaluation.
@@ -100,6 +98,23 @@ func _init() -> void:
 		"technology.adopted event is idempotent")
 	print("effect_domain_integration_test: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
+
+func _find_modifier_technology(catalog: Dictionary) -> Dictionary:
+	var technology_ids: PackedStringArray = catalog.get(
+		"technology_ids", PackedStringArray())
+	var modifier_keys: PackedStringArray = catalog.get(
+		"technology_modifier_definition_keys", PackedStringArray())
+	var recipe_ids: PackedStringArray = catalog.get(
+		"technology_effect_recipe_ids", PackedStringArray())
+	for index in range(technology_ids.size()):
+		if index >= modifier_keys.size() or index >= recipe_ids.size():
+			continue
+		var modifier_key := String(modifier_keys[index])
+		if modifier_key.is_empty() or String(recipe_ids[index]).is_empty():
+			continue
+		return {"id": String(technology_ids[index]), "index": index,
+			"modifier_key": modifier_key}
+	return {}
 
 func _assert_ok(result: Dictionary, label: String) -> void:
 	_require(bool(result.get("ok", false)), "%s: %s" % [label, str(result)])

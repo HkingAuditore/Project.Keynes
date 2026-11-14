@@ -2,15 +2,19 @@
   "version": 1,
   "files": {
     "Project/project-keynes/scripts/audio/game_audio_service.gd": {
-      "lines": 1294,
+      "lines": 1385,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/country/country_facade.gd": {
+      "lines": 897,
       "limit": 800
     },
     "Project/project-keynes/scripts/data/climate_profile.gd": {
-      "lines": 1544,
+      "lines": 1543,
       "limit": 800
     },
     "Project/project-keynes/scripts/data_core/world.gd": {
-      "lines": 1729,
+      "lines": 1687,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/bootstrap/test_settlement_planner.gd": {
@@ -18,11 +22,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/economy_catalog.gd": {
-      "lines": 2396,
+      "lines": 1425,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/economy_facade.gd": {
-      "lines": 2140,
+      "lines": 1678,
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/starter_economy_planner.gd": {
@@ -30,7 +34,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/economy/technology_catalog.gd": {
-      "lines": 1176,
+      "lines": 1182,
       "limit": 800
     },
     "Project/project-keynes/scripts/effect/effect_domain_catalog.gd": {
@@ -38,19 +42,35 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
-      "lines": 1133,
+      "lines": 1141,
       "limit": 600
     },
+    "Project/project-keynes/scripts/game/map_runtime_bridge.gd": {
+      "lines": 1776,
+      "limit": 800
+    },
     "Project/project-keynes/scripts/game/player_controller.gd": {
-      "lines": 3081,
+      "lines": 1695,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/start_location_policy.gd": {
-      "lines": 1080,
+      "lines": 1084,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
+      "lines": 1646,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/world_runtime_generation_adapter.gd": {
+      "lines": 1035,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/game/world_runtime_gm_adapter_part1.gd": {
+      "lines": 900,
       "limit": 800
     },
     "Project/project-keynes/scripts/game/world_runtime_host.gd": {
-      "lines": 2943,
+      "lines": 1599,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/hex_cell.gd": {
@@ -58,27 +78,47 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_data.gd": {
-      "lines": 1227,
+      "lines": 1226,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
+      "lines": 1143,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd": {
+      "lines": 1537,
       "limit": 800
     },
     "Project/project-keynes/scripts/geography/map_generator.gd": {
-      "lines": 22519,
+      "lines": 1672,
       "limit": 600
     },
     "Project/project-keynes/scripts/geography/world_clock.gd": {
-      "lines": 1091,
+      "lines": 1096,
       "limit": 800
     },
     "Project/project-keynes/scripts/ideology/ideology_catalog.gd": {
-      "lines": 1787,
+      "lines": 1664,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/main/debug_tools.gd": {
+      "lines": 924,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/main/diagnostics.gd": {
+      "lines": 809,
       "limit": 800
     },
     "Project/project-keynes/scripts/main.gd": {
-      "lines": 3914,
+      "lines": 1668,
       "limit": 600
     },
     "Project/project-keynes/scripts/military/military_catalog_compiler.gd": {
-      "lines": 1020,
+      "lines": 1186,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/military/military_facade.gd": {
+      "lines": 965,
       "limit": 800
     },
     "Project/project-keynes/scripts/modifier/modifier_catalog.gd": {
@@ -86,11 +126,39 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/narrative/narrative_event_catalog.gd": {
-      "lines": 824,
+      "lines": 839,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/narrative/narrative_event_catalog_family3.gd": {
+      "lines": 802,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/narrative/narrative_event_catalog_war.gd": {
+      "lines": 930,
       "limit": 800
     },
     "Project/project-keynes/scripts/narrative/narrative_event_service.gd": {
-      "lines": 966,
+      "lines": 1579,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/dynamic_atlas_baker.gd": {
+      "lines": 1712,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/ocean_current_baker.gd": {
+      "lines": 1117,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/physical_circulation_baker.gd": {
+      "lines": 1075,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/physical_solve_baker.gd": {
+      "lines": 1274,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd": {
+      "lines": 881,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/building_visual_layer.gd": {
@@ -98,39 +166,99 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/data_overlay_baker.gd": {
-      "lines": 895,
+      "lines": 894,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
-      "lines": 5943,
+      "lines": 1700,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/map_baker.gd": {
-      "lines": 8504,
+      "lines": 1688,
       "limit": 600
     },
     "Project/project-keynes/scripts/rendering/military_army_token_layer.gd": {
-      "lines": 1309,
+      "lines": 1314,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/physical_circulation_solver.gd": {
       "lines": 1245,
       "limit": 800
     },
+    "Project/project-keynes/scripts/rendering/renderer_detail_scatter.gd": {
+      "lines": 1089,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/renderer_scene_services.gd": {
+      "lines": 821,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/renderer_shader_water.gd": {
+      "lines": 1127,
+      "limit": 800
+    },
     "Project/project-keynes/scripts/rendering/resource_visual_layer.gd": {
       "lines": 1050,
       "limit": 800
     },
+    "Project/project-keynes/scripts/rendering/shrub/chunk_refresh.gd": {
+      "lines": 1081,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/rendering/shrub/scatter.gd": {
+      "lines": 1380,
+      "limit": 800
+    },
     "Project/project-keynes/scripts/rendering/shrub_layer.gd": {
-      "lines": 5913,
+      "lines": 1663,
       "limit": 800
     },
     "Project/project-keynes/scripts/rendering/weather_layer.gd": {
-      "lines": 1777,
+      "lines": 1664,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/climate_daily_runtime.gd": {
+      "lines": 1569,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/mapgen_climate_passes_a.gd": {
+      "lines": 1117,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/mapgen_native_daily_runtime.gd": {
+      "lines": 1536,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/native_daily_bundle_builder.gd": {
+      "lines": 1316,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/native_daily_publish.gd": {
+      "lines": 832,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/pass_b.gd": {
+      "lines": 1001,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/runtime_climate_capture.gd": {
+      "lines": 936,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/season_refresh_coordinator.gd": {
+      "lines": 1534,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/climate/wind_heat_transport.gd": {
+      "lines": 1231,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/simulation/economy/map_resource_initializer.gd": {
+      "lines": 1135,
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd": {
-      "lines": 1386,
+      "lines": 1380,
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/sus/jobs/weather_refresh_job.gd": {
@@ -142,11 +270,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd": {
-      "lines": 2982,
+      "lines": 1463,
       "limit": 800
     },
     "Project/project-keynes/scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd": {
-      "lines": 2069,
+      "lines": 1617,
       "limit": 800
     },
     "Project/project-keynes/scripts/technology/technology_authoring_model.gd": {
@@ -154,27 +282,51 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/technology/technology_network_validator.gd": {
-      "lines": 834,
+      "lines": 854,
       "limit": 800
     },
     "Project/project-keynes/scripts/tools/technology_authoring/technology_authoring_editor.gd": {
-      "lines": 1704,
+      "lines": 1700,
       "limit": 800
     },
     "Project/project-keynes/scripts/tools/technology_authoring/technology_authoring_inspector.gd": {
       "lines": 890,
       "limit": 800
     },
+    "Project/project-keynes/scripts/ui/cell_inspector/construction.gd": {
+      "lines": 1531,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/cell_inspector/military.gd": {
+      "lines": 1029,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/cell_inspector/object_dossiers.gd": {
+      "lines": 1598,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/cell_inspector/overview.gd": {
+      "lines": 1519,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/cell_inspector/population_market.gd": {
+      "lines": 1393,
+      "limit": 800
+    },
     "Project/project-keynes/scripts/ui/cell_inspector_view_model.gd": {
-      "lines": 7434,
+      "lines": 1682,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/colonization_planner_panel.gd": {
-      "lines": 2398,
+      "lines": 1656,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/colonization_planner_presentation.gd": {
+      "lines": 922,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/economy_workspace.gd": {
-      "lines": 1837,
+      "lines": 1646,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/era_advancement_panel.gd": {
@@ -186,7 +338,11 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/family_workspace.gd": {
-      "lines": 1706,
+      "lines": 1700,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/fiscal_budget_page.gd": {
+      "lines": 804,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/ideology_card.gd": {
@@ -194,15 +350,23 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/ideology_workspace.gd": {
-      "lines": 3156,
+      "lines": 1645,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/ideology_workspace_presentation.gd": {
+      "lines": 1782,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/inspector_panel.gd": {
-      "lines": 1418,
+      "lines": 1420,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/military_workspace.gd": {
-      "lines": 917,
+      "lines": 945,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/components/narrative_event_dialog.gd": {
+      "lines": 907,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/object_detail_dialog.gd": {
@@ -214,27 +378,31 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/components/technology_workspace.gd": {
-      "lines": 2087,
+      "lines": 1678,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/country_view_model.gd": {
-      "lines": 1348,
+      "lines": 1575,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/debug_console.gd": {
-      "lines": 2355,
+      "lines": 1698,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/economy_dossier_view_model.gd": {
-      "lines": 1411,
+      "lines": 1529,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/ui/game_ui/country_routes.gd": {
+      "lines": 1297,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/game_ui_manager.gd": {
-      "lines": 3175,
+      "lines": 1698,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/icon_catalog.gd": {
-      "lines": 1394,
+      "lines": 1436,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/main_menu.gd": {
@@ -242,7 +410,7 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/military_view_model.gd": {
-      "lines": 1943,
+      "lines": 1675,
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/perf_recorder.gd": {
@@ -250,15 +418,19 @@
       "limit": 800
     },
     "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
-      "lines": 1448,
+      "lines": 1445,
       "limit": 800
     },
     "Project/project-keynes/scripts/weather/field_solver.gd": {
-      "lines": 1855,
+      "lines": 1695,
+      "limit": 800
+    },
+    "Project/project-keynes/scripts/weather/native_bridge.gd": {
+      "lines": 1401,
       "limit": 800
     },
     "Project/project-keynes/scripts/weather/weather_system.gd": {
-      "lines": 4327,
+      "lines": 1699,
       "limit": 800
     },
     "Project/project-keynes/tmp/family_baseline_test.gd": {
@@ -277,24 +449,20 @@
       "lines": 1269,
       "limit": 800
     },
-    "gdext/src/country_runtime.cpp": {
-      "lines": 11463,
+    "gdext/src/economy_runtime.cpp": {
+      "lines": 2066,
       "limit": 2000
     },
     "gdext/src/economy_runtime.h": {
-      "lines": 2408,
+      "lines": 2395,
       "limit": 2000
     },
     "gdext/src/economy_runtime_building_employment.cpp": {
       "lines": 3802,
       "limit": 2000
     },
-    "gdext/src/economy_runtime_building_investment.cpp": {
-      "lines": 5738,
-      "limit": 2000
-    },
     "gdext/src/economy_runtime_building_production.cpp": {
-      "lines": 3813,
+      "lines": 3822,
       "limit": 2000
     },
     "gdext/src/economy_runtime_catalog.cpp": {
@@ -302,11 +470,11 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_colonization.cpp": {
-      "lines": 2738,
+      "lines": 2781,
       "limit": 2000
     },
     "gdext/src/economy_runtime_colonization_kit.cpp": {
-      "lines": 2060,
+      "lines": 2064,
       "limit": 2000
     },
     "gdext/src/economy_runtime_diagnostics.cpp": {
@@ -322,31 +490,31 @@
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence.cpp": {
-      "lines": 2204,
+      "lines": 2202,
       "limit": 2000
     },
     "gdext/src/economy_runtime_persistence_read.cpp": {
-      "lines": 3107,
+      "lines": 3113,
       "limit": 2000
     },
     "gdext/src/economy_runtime_queries_market_building.cpp": {
-      "lines": 2906,
+      "lines": 2911,
       "limit": 2000
     },
     "gdext/src/economy_runtime_trade.cpp": {
-      "lines": 3018,
-      "limit": 2000
-    },
-    "gdext/src/effect_runtime.cpp": {
-      "lines": 8395,
-      "limit": 2000
-    },
-    "gdext/src/ideology_runtime.cpp": {
-      "lines": 8302,
+      "lines": 3020,
       "limit": 2000
     },
     "gdext/src/military_core.cpp": {
-      "lines": 3990,
+      "lines": 4199,
+      "limit": 2000
+    },
+    "gdext/src/military_core_save.cpp": {
+      "lines": 2163,
+      "limit": 2000
+    },
+    "gdext/src/military_core_selftest.cpp": {
+      "lines": 2746,
       "limit": 2000
     },
     "gdext/src/modifier_runtime.cpp": {
@@ -354,15 +522,11 @@
       "limit": 2000
     },
     "gdext/src/native_simulation_host.h": {
-      "lines": 2146,
+      "lines": 2162,
       "limit": 600
     },
     "gdext/src/runtime_climate_kernel.cpp": {
       "lines": 3422,
-      "limit": 2000
-    },
-    "gdext/src/runtime_climate_passes.cpp": {
-      "lines": 5615,
       "limit": 2000
     },
     "gdext/src/runtime_climate_passes.h": {
@@ -374,11 +538,11 @@
       "limit": 2000
     },
     "gdext/src/runtime_country_pod.cpp": {
-      "lines": 2048,
+      "lines": 2081,
       "limit": 2000
     },
     "gdext/src/runtime_economy_pod.cpp": {
-      "lines": 3388,
+      "lines": 3390,
       "limit": 2000
     },
     "gdext/src/runtime_effect_pod.cpp": {
@@ -389,12 +553,16 @@
       "lines": 2679,
       "limit": 2000
     },
+    "gdext/src/runtime_pod_protocol.h": {
+      "lines": 2003,
+      "limit": 2000
+    },
     "gdext/src/trigger_runtime.cpp": {
       "lines": 2102,
       "limit": 2000
     },
     "gdext/src/world_ext.h": {
-      "lines": 4117,
+      "lines": 4069,
       "limit": 2000
     },
     "gdext/src/world_ext_atlas.cpp": {
@@ -409,12 +577,8 @@
       "lines": 3026,
       "limit": 2000
     },
-    "gdext/src/world_ext_climate.cpp": {
-      "lines": 6951,
-      "limit": 2000
-    },
     "gdext/src/world_ext_country.cpp": {
-      "lines": 2180,
+      "lines": 2152,
       "limit": 2000
     },
     "gdext/src/world_ext_daily_sim.cpp": {
@@ -422,7 +586,7 @@
       "limit": 2000
     },
     "gdext/src/world_ext_economy.cpp": {
-      "lines": 2820,
+      "lines": 2795,
       "limit": 2000
     },
     "gdext/src/world_ext_generate.cpp": {
@@ -430,19 +594,15 @@
       "limit": 2000
     },
     "gdext/src/world_ext_military.cpp": {
-      "lines": 3575,
+      "lines": 3925,
       "limit": 2000
     },
     "gdext/src/world_ext_physical.cpp": {
       "lines": 2433,
       "limit": 2000
     },
-    "gdext/src/world_ext_simulation_host.cpp": {
-      "lines": 4183,
-      "limit": 2000
-    },
     "gdext/src/world_ext_weather.cpp": {
-      "lines": 3559,
+      "lines": 3491,
       "limit": 2000
     }
   }

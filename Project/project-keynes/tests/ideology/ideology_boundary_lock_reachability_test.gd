@@ -85,7 +85,7 @@ extends SceneTree
 ## `_step_day()` is the production handshake copied from
 ## `ideology_worker_authority_parity_test.gd:_drive_day` (same construction, same
 ## world, same card): clock day -> `_service_peers` -> `publish_ideology_worker_inputs`
-## -> `run_daily_tick` -> `finish_daily_tick` -> backpressure pulses ->
+## -> `run_daily_tick` -> `finish_daily_tick` ->
 ## `run_ideology_daily` -> (only when NOT suppressed) `run_effect_daily` ->
 ## `dispatch_effect_native_modifier` -> `run_modifier_daily` ->
 ## `ack_effect_native_modifier` -> `drain_derived_cell_layer(CURRENT day)`.
@@ -810,10 +810,6 @@ func _step_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(w) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	var ideology: Dictionary = {}
 	var slices := 0
 	for _slice in range(MAX_SLICES_PER_DAY):
@@ -840,22 +836,15 @@ func _step_day(w: Dictionary) -> Dictionary:
 	# THE CURRENT DAY, never 0: `drain_derived_cell_layer(0)` is a silent no-op once
 	# anything confirmed.
 	var drained: Dictionary = ext.drain_derived_cell_layer(day)
-	print("[DAY/%s] day=%d suppressed=%s path=%-16s mask=0x%03X pod_day=%d pulses=%d "
+	print("[DAY/%s] day=%d suppressed=%s path=%-16s mask=0x%03X pod_day=%d "
 		% [String(w["leg"]), day, str(w["last_suppressed"]),
-			String(ideology.get("path", "")), _mask(w), _pod_day(w), pulses]
+			String(ideology.get("path", "")), _mask(w), _pod_day(w)]
 		+ "drain_steps=%d boundary_reqs=%d worker_state=%s completed_days=%d"
 		% [int(drained.get("steps", 0)), _boundary_requests(w),
 			String(_thread(w).get("simulation_host_state", "?")),
 			int(_thread(w).get("completed_days", -1))])
 	return {"ok": true, "day": day, "suppressed": bool(w["last_suppressed"]),
 		"slices": slices, "drained": drained}
-
-
-func _has_hard_barrier(w: Dictionary) -> bool:
-	var clock: Object = w.get("clock", null)
-	if clock == null or not clock.has_method("has_hard_barrier"):
-		return false
-	return bool(clock.has_hard_barrier())
 
 
 # =========================================================================

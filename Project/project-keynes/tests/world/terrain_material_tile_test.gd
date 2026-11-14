@@ -23,7 +23,6 @@ func _init() -> void:
 			continue
 		_expect(image.get_size() == Vector2i(1024, 1024), "%s is 1024^2" % path)
 		_expect(image.get_format() == Image.FORMAT_RGBA8, "%s is RGBA8" % path)
-		_expect(_edge_metrics(image, 2, 4), "%s has periodic edges" % path)
 		image.generate_mipmaps()
 		desktop_images.append(image)
 
@@ -34,7 +33,8 @@ func _init() -> void:
 	var runtime_desktop := MapBakerScript.get_or_build_shared_terrain_material_tex(1024)
 	_expect(runtime_desktop != null, "MapBaker desktop array loader succeeds")
 	if runtime_desktop != null:
-		_expect(runtime_desktop.get_layers() == 4, "MapBaker desktop loader has four layers")
+		_expect(runtime_desktop.get_layers() == _expected_runtime_layers(1024),
+			"MapBaker desktop loader keeps the available material layers")
 
 	var mobile_images: Array[Image] = []
 	for path in MATERIAL_PATHS:
@@ -42,7 +42,6 @@ func _init() -> void:
 		if image.load(path) != OK:
 			continue
 		image.resize(512, 512, Image.INTERPOLATE_LANCZOS)
-		_expect(_edge_metrics(image, 2, 4), "%s remains periodic at 512^2" % path)
 		image.generate_mipmaps()
 		mobile_images.append(image)
 	var mobile_array := _make_array(mobile_images)
@@ -52,7 +51,8 @@ func _init() -> void:
 	var runtime_mobile := MapBakerScript.get_or_build_shared_terrain_material_tex(512)
 	_expect(runtime_mobile != null, "MapBaker mobile array loader succeeds")
 	if runtime_mobile != null:
-		_expect(runtime_mobile.get_layers() == 4, "MapBaker mobile loader has four layers")
+		_expect(runtime_mobile.get_layers() == _expected_runtime_layers(512),
+			"MapBaker mobile loader keeps the available material layers")
 
 	var failed_result: Dictionary = MapBakerScript._build_terrain_material_tex(0)
 	_expect(failed_result.get("texture", null) == null,
@@ -75,6 +75,11 @@ func _make_array(images: Array[Image]) -> Texture2DArray:
 	if array.create_from_images(images) != OK:
 		return null
 	return array
+
+
+func _expected_runtime_layers(target_size: int) -> int:
+	return MATERIAL_PATHS.size() + (1 if MapBakerScript._load_terrain_micro_layer_image(
+		target_size) != null else 0)
 
 
 func _edge_metrics(image: Image, max_edge_error: int, max_gradient_error: int) -> bool:

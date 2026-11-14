@@ -95,8 +95,7 @@ func _test_factor_lifecycle() -> bool:
 	_tick = _drive_days(1)
 	# The Ideology POD needs a committed Economy day input, not just a published
 	# opinion revision. Keep capturing the main-thread slot copy while waiting;
-	# under load the first plan can otherwise stay parked on
-	# ideology_opinion_snapshot_missing for the whole hang guard.
+	# otherwise the stage keeps skipping days awaiting the opinion.
 	var ready := await WorkerWaitHelper.wait_for(
 		func() -> bool:
 			if _ext.has_method("service_country_worker_peer_adapter"):
@@ -298,25 +297,23 @@ func _capture_controlled_opinion() -> bool:
 
 
 func _wait_point_baseline() -> bool:
-	var snapshot := {}
 	var ready := await WorkerWaitHelper.wait_for(
 		func() -> bool:
-			snapshot = _snapshot()
-			return bool(snapshot.get("point_baseline_ready", false)),
+			return bool(_snapshot().get("point_baseline_ready", false)),
 		16, 120000,
 		func() -> void: _tick = _drive_days(1))
 	return _require("the worker establishes the point baseline", ready,
-		str(snapshot))
+		str(_snapshot()))
 
 
 func _wait_committed_opinion(label: String) -> Dictionary:
-	var source := {}
 	var ready := await WorkerWaitHelper.wait_for(
 		func() -> bool:
-			source = _ext.get_country_class_opinion_snapshot()
-			return bool(source.get("ok", false)),
+			return bool(_ext.get_country_class_opinion_snapshot().get(
+				"ok", false)),
 		16, 120000,
 		func() -> void: _tick = _drive_days(1))
+	var source: Dictionary = _ext.get_country_class_opinion_snapshot()
 	if ready:
 		return source
 	_require("%s reads a committed opinion view" % label, false,
@@ -402,28 +399,20 @@ func _submit_modifier(opcode: int, sequence: int, modifier_handle: int,
 	})
 
 
+## Read the main-thread Modifier mirror. The snapshot ring is consume-once:
+## the production frame service (host._process / run_daily_tick) applies and
+## releases each READY slot, so a test reading the ring afterwards sees nothing.
 func _factor_entry(expected_final_factor: float = NAN) -> Dictionary:
-	var snapshot: Dictionary = _ext.get_runtime_modifier_snapshot(-1)
-	if not bool(snapshot.get("available", false)):
+	var rows: Dictionary = _ext.list_modifiers(MODIFIER_DOMAIN_COUNTRY, _handle, "")
+	if not bool(rows.get("ok", false)):
 		return {}
-	var domains: PackedInt32Array = snapshot.get(
-		"entry_domains", PackedInt32Array())
-	var scopes: PackedInt32Array = snapshot.get(
-		"entry_scopes", PackedInt32Array())
-	var entities: PackedInt64Array = snapshot.get(
-		"entry_entity_handles", PackedInt64Array())
-	var source_types: PackedInt64Array = snapshot.get(
-		"entry_source_types", PackedInt64Array())
-	var source_ids: PackedInt64Array = snapshot.get(
-		"entry_source_ids", PackedInt64Array())
-	var handles: PackedInt64Array = snapshot.get(
-		"entry_handles", PackedInt64Array())
-	var magnitudes: PackedInt32Array = snapshot.get(
-		"entry_magnitude_q16", PackedInt32Array())
+	var scopes: PackedInt32Array = rows.get("scopes", PackedInt32Array())
+	var source_types: PackedInt64Array = rows.get("source_types", PackedInt64Array())
+	var source_ids: PackedInt64Array = rows.get("source_ids", PackedInt64Array())
+	var handles: PackedInt64Array = rows.get("handles", PackedInt64Array())
+	var magnitudes: PackedInt32Array = rows.get("magnitude_q16", PackedInt32Array())
 	for index in range(handles.size()):
-		if domains[index] != MODIFIER_DOMAIN_COUNTRY or \
-				scopes[index] != MODIFIER_SCOPE_ENTITY or \
-				entities[index] != _handle or \
+		if scopes[index] != MODIFIER_SCOPE_ENTITY or \
 				source_types[index] != TEST_SOURCE_TYPE or \
 				source_ids[index] != 2:
 			continue
@@ -597,48 +586,11 @@ func _find_population_cohort() -> Dictionary:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_require("the worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		# Publish AFTER the Economy advance: publishing before it only replays the
-		# prior revision and the worker Ideology stage stays parked on
-		# ideology_opinion_snapshot_missing.
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		# Match X14: the pod/day wait is a waypoint, not the test's day budget.
-		# Wall-clock day budgets here multiplied the fixture warmup under load.
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
-
-
-func _wait_pod_day(before: int, timeout_msec: int = 120000) -> void:
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = _ext.get_runtime_thread_report()
-			return int(report.get("ideology_pod_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_msec,
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
 
 
 func _wait_worker_idle(iterations: int = 200) -> void:
@@ -651,17 +603,6 @@ func _wait_worker_idle(iterations: int = 200) -> void:
 		func() -> void:
 			if _ext.has_method("service_country_worker_peer_adapter"):
 				_ext.service_country_worker_peer_adapter(64, true))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	return String(_ext.get_runtime_thread_report().get("fault_code", ""))
 
 
 func _wait_worker_paused() -> bool:
@@ -708,42 +649,6 @@ func _wait_opinion_revision() -> bool:
 		return true
 	return String(_ext.get_runtime_thread_report().get(
 		"fault_code", "")) == ""
-
-
-func _request_save(request_id: int) -> Dictionary:
-	var request: Dictionary = {}
-	var last_code := ""
-	for _attempt in range(24):
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		request = _ext.request_runtime_save(request_id)
-		last_code = String(request.get("code", ""))
-		if bool(request.get("pending", false)):
-			break
-		if last_code != "save_request_busy":
-			return request
-		_ext.poll_runtime_save(request_id)
-		OS.delay_msec(5)
-	if bool(request.get("pending", false)):
-		var saved := {}
-		var ready := WorkerWaitHelper.wait_until(
-			func() -> bool:
-				saved = _ext.poll_runtime_save(request_id)
-				last_code = String(saved.get("code", ""))
-				if bool(saved.get("ready", false)):
-					return true
-				return not bool(saved.get("pending", false)) \
-					and last_code != "save_pending",
-			120000,
-			func() -> void:
-				if _ext.has_method("service_country_worker_peer_adapter"):
-					_ext.service_country_worker_peer_adapter(64, true))
-		if ready:
-			return saved
-	return {"code": "save_timeout_%s" % last_code,
-		"report": _ext.get_runtime_thread_report(),
-		"failure": String(_ext.get_runtime_thread_report().get(
-			"save_failure_reason", ""))}
 
 
 func _teardown() -> void:

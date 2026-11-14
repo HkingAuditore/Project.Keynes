@@ -10,10 +10,10 @@ C++ 路径相对于 `gdext/src/`。
 | 入口 | 抽出的职责与实现 | 输入、状态和回调边界 |
 |---|---|---|
 | `era/era_advancement_service.gd` | `era/era_advancement_conditions.gd`：晋升条件与文字 | 只读科技、经济、领土和贸易数；订单冻结、收购及保存仍归 service |
-| `game/player_controller.gd` | `game/player_command_validation.gd`：命令标识、参数检查、税率解析与结果结构；`audio/music_situation_playback.gd`：显示用音乐平滑 | 每次传当前代际和指定查询回调；序号分配、提交和结算仍归 controller |
-| `geography/map_generator.gd` | `simulation/runtime_climate_hash.gd`：气候摘要编码 | 只抽出字节编码和摘要转换；目录/地图缓存与发布时点不变 |
+| `game/player_controller.gd` | `game/player_command_validation.gd`：命令标识、参数检查、税率解析与结果结构；`audio/music_situation_playback.gd`：显示用音乐平滑；`game/player_controller/{military,progression,selection,narrative}.gd`：军事、时代/理念、地图选择和叙事职责 | 每次传当前代际和指定查询回调；序号分配、提交和结算仍归 controller；G5 协作者每次接收宿主，不保存宿主或可变会话状态 |
+| `geography/map_generator.gd` | `simulation/runtime_climate_hash.gd`：气候摘要编码；`geography/map_generation/native_generation_bridge.gd`：生成请求、检查与 PKMAP 读取；`terrain_gen.gd`：结果校验、装配与基线快照 | 生成助手仅借用 generator_context 的弱引用；原生实例、报告字典、装配器与加载状态仍归 generator；异步入口保留 return await，装配让帧与调用时点不变 |
 | `geography/world_clock.gd` | `diagnostics/world_day_cost_probe.gd`：日耗时桶与报告 | 探针独占诊断状态，原入口和属性转发；不推进或暂停时间 |
-| `main.gd` | `diagnostics/daily_simulation_breakdown.gd`：每日报告格式 | 保留既有只读诊断查询，不保存 generator，不增加推进入口 |
+| `main.gd` | `diagnostics/daily_simulation_breakdown.gd`：每日报告格式；`main/{debug_tools,setup_controls,diagnostics,overlay,mobile_overlay}.gd`：调试开关、设置/速度控件、性能报告、覆盖层和移动调试层 | 保留生命周期、每日编排、只读入口和状态所有权；协作者每次接收 main，不保存 generator，不增加推进入口 |
 | `rendering/building_visual_layer.gd` | `building_visual_assets.gd`：网格、材质与宏观索引字节 | 无场景/仿真状态；原生建筑缓存、上传顺序和可见性仍归原层 |
 | `rendering/hex_renderer.gd` | `detail_profile_selection.gd`、`renderer_weather_inputs.gd`、`renderer_lighting_bindings.gd`、`renderer_map_assets.gd`、`renderer_sea_ice_diagnostics.gd` | 分别负责档位选层、天气数组、光照绑定、共享资源和诊断；只接收对应数据、节点或绑定到 renderer 的回调 |
 | `rendering/map_baker.gd` | `map_material_assets.gd`：共享地形材质和噪声资源 | 无世界继续态；烘焙、运行期缓冲、纹理上传时点不变 |
@@ -25,7 +25,8 @@ C++ 路径相对于 `gdext/src/`。
 | `ui/country_view_model.gd` | `ui/country_ideology_presentation.gd`：理念面板、卡牌及失败提示 | 只整理显示数据；保留原来三个调用入口 |
 | `ui/components/inspector_panel.gd` | `inspector_category_patch.gd`：对现有控件写值 | 接收指定控件和宿主绑定回调；建节点、信号接收者和对象生命周期不变 |
 | `ui/components/military_workspace.gd` | `military_table_rows.gd`：兵营、训练、部队、运输表格 | 只接收对应表格和显示行；选择、信号和命令操作仍归 workspace |
-| `ui/game_ui_manager.gd` | `ui/game_hud_layout.gd`：HUD 排版和地图安全区 | 每次刷新借用的独立控件；仅独占排版诊断标记，不持有整个 manager |
+| `ui/game_ui_manager.gd` | `ui/game_hud_layout.gd`：HUD 排版和地图安全区；`ui/game_ui/{country_routes,era_progression,overlays}.gd`：国家卷宗路由、时代/奖励和覆盖层流程 | 每次刷新借用的独立控件；协作者接收 manager，不持有整个 manager；信号和动态节点仍绑定宿主 |
+| `ui/components/ideology_workspace.gd` | `ui/components/ideology_workspace_presentation.gd`：工作区节点构造、布局、模型索引和牌面刷新 | 宿主保留引擎回调、动画/命令入口和可变状态；显示协作者每次接收 workspace，动态回调仍绑定宿主 |
 | `ui/military_view_model.gd` | `ui/military_logistics_projection.gd`：运输显示 | 只读已提交模型、日期及名称查询；不保留世界引用 |
 | `world_ext_bake.cpp` | `world_ext_bake_encoders.cpp`、`world_ext_bake_visual_tiles.cpp` | 成员函数原样迁移；声明、绑定、slot、对象所有者不变；无状态局部 helper 可复制 |
 | `economy_runtime_persistence.cpp` | `economy_runtime_continuation_checkpoint.cpp` 汇集已有继续段；`economy_runtime_climate_checkpoint.cpp` 独占降雨继续段 | 只通过 `EconomyAuthorityTransfer` 访问 Economy 状态，解码和验证后再安装 |
@@ -42,9 +43,9 @@ C++ 路径相对于 `gdext/src/`。
 - `module_projection_boundaries_test.gd` 覆盖必达条件、当前代际、回调接收者、
   不消耗命令序号、显示副本隔离，以及天气数组和风场的发布顺序与旧值清理。
 - 原生函数以原源码逐段字节对照；脚本以显式输入/回调替换后的函数体对照。
-  同时运行长度与依赖检查、默认回归、黄金回放、保存恢复和相关显示测试。
+  同时运行长度与依赖检查、默认回归、重复运行一致与改前临时候选对照、保存恢复和相关显示测试。
   测试和审查已经发现的问题必须在更新 PR 前本地修好；与修改前对照只用于定位，
-  不能作为留下失败的理由。不放宽检查、不删掉错误，也不重录稳定业务基线来掩盖问题。
+  不能作为留下失败的理由。不放宽检查、不删掉错误，也不用改后结果覆盖改前临时候选来掩盖问题。
 
 ## 扩大检查后的修复
 
@@ -87,10 +88,7 @@ C++ 路径相对于 `gdext/src/`。
 3650 日开局测试在启动后台前采集开局数据。场景就绪时后台可能已在结算，不能用此刻的查询
 验证初始 40 人、食物建筑与创始家族。日后检查仍在实际结算提交后进行。
 
-固定气候档已按当前内容重新生成，生成入口是 `tools/ci/capture_climate_archive.py`：
-只输出到新的候选目录，候选必须先通过完整八域续跑，再运行固定样本字节校验。
-本次新样本的第 1..10 日气候摘要与本地修复前的当前内容回放完全相同；原固定档因
-较旧内容不兼容。原档的 PKCM 保留为 `legacy_catalog.pkcm`，默认测试验证其被明确拒绝且不改动现有状态。
+固定气候档 `climate_save_v9` 及其生成、校验脚本已于 2026-11-11 删除，原因是不再保留提交的快照基线；CLM2 续跑改由当场存读档的回放检查覆盖。
 没有修改主黄金链、交易基线或放宽兼容检查。
 
 ## 本轮验证

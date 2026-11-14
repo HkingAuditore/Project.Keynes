@@ -2,6 +2,12 @@ extends CanvasLayer
 class_name GameUIManager
 
 const GameHudLayout = preload("res://scripts/ui/game_hud_layout.gd")
+const GameUICountryRoutesScript = preload("res://scripts/ui/game_ui/country_routes.gd")
+const GameUIEraProgressionScript = preload("res://scripts/ui/game_ui/era_progression.gd")
+const GameUIOverlaysScript = preload("res://scripts/ui/game_ui/overlays.gd")
+var _country_component = GameUICountryRoutesScript.new()
+var _era_component = GameUIEraProgressionScript.new()
+var _overlay_component = GameUIOverlaysScript.new()
 var _hud_layout_component = GameHudLayout.new()
 
 signal pause_toggled(paused: bool)
@@ -123,6 +129,7 @@ var _gm_sun_dragging := false
 var _perf_hud: PerfMiniHUD
 var _diagnostics_source: Node = null
 var _map_overlay_toolbar: MapOverlayToolbar
+var _military_map_toolbar: MilitaryMapToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _era_reward_dialog: EraRewardDialog
@@ -168,13 +175,14 @@ var _country_ui_perf_pending: Dictionary = {}
 
 const COUNTRY_DIRTY_TECHNOLOGY := 1
 const COUNTRY_DIRTY_ECONOMY := 2
-const COUNTRY_DIRTY_IDEOLOGY := 4
+const COUNTRY_DIRTY_POLITICS := 4
+const COUNTRY_DIRTY_IDEOLOGY := COUNTRY_DIRTY_POLITICS
 ## 军事：自己的 facade，不参与国家 ui_snapshot 分段，但仍然共用同一个脏位管道。
 const COUNTRY_DIRTY_MILITARY := 8
 ## 外交：读的是领土镜像 + 军事快照 + 视野，没有自己的原生分片，同样只借脏位管道。
 const COUNTRY_DIRTY_DIPLOMACY := 16
 const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY \
-	| COUNTRY_DIRTY_IDEOLOGY | COUNTRY_DIRTY_MILITARY | COUNTRY_DIRTY_DIPLOMACY
+	| COUNTRY_DIRTY_POLITICS | COUNTRY_DIRTY_MILITARY | COUNTRY_DIRTY_DIPLOMACY
 # Native RUNTIME_DIRTY_COUNTRY_* bits from runtime_pod_protocol.h.
 const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
 const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
@@ -233,72 +241,7 @@ func set_world_context(
 		sea_level: float,
 		hex_size: float
 ) -> void:
-	if _inspector_view_model == null:
-		_inspector_view_model = CellInspectorViewModel.new()
-	_cancel_inspector_retry()
-	_map = map
-	_world_clock = world_clock
-	_gdp_ledger.configure(generator, world_clock, map)
-	if _colonization_route != null:
-		var wrap_period := float(_diagnostics_source.map_wrap_period_x()) \
-			if _diagnostics_source != null and _diagnostics_source.has_method(
-				"map_wrap_period_x") else 0.0
-		_colonization_route.set_context(map, world_clock, hex_size, wrap_period)
-	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
-	_inspector_view_model.set_gdp_ledger(_gdp_ledger)
-	_hover_hex_size = hex_size
-	if _cell_hover_view_model == null:
-		_cell_hover_view_model = CellHoverViewModel.new()
-	_cell_hover_view_model.set_context(map, generator, _inspector_view_model, world_clock)
-	if _cell_hover_card != null:
-		_cell_hover_card.reset_for_world()
-		_configure_cell_hover_card()
-	_object_detail_context.clear()
-	_selection_context = ""
-	_invalidate_live_revision()
-	if _country_view_model == null:
-		_country_view_model = CountryViewModel.new()
-	# 地图必须一起交出去：军事/外交视图模型要读领土镜像、邻接与视野，而 MapGenerator
-	# 没有公开的 map getter（它的 `current_map()` 只在截图 fixture 里存在）。
-	_country_view_model.set_context(generator, map)
-	_country_view_model.set_gdp_ledger(_gdp_ledger)
-	_bind_country_runtime_events(generator)
-	if _era_reward_dialog != null:
-		_era_reward_dialog.close_offer()
-		_era_reward_dialog.close_overview(true)
-	if _era_indicator != null:
-		_era_indicator.reset_for_world()
-		# refresh_country_binding 已同步新世界候选；重置动画后保留待领提示。
-		_era_indicator.set_offer_available(String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
-	if _era_flight != null:
-		_era_flight.cancel()
-	_era_transfer_name = ""
-	# 新世界/读档：撤掉进行中的大典（不补发落地，不恢复旧世界的时钟），只建立显示基线。
-	_abort_era_ceremony()
-	_era_celebrated_index = -1
-	_era_advancement_snapshot = {}
-	if _era_panel != null:
-		_era_panel.close(true)
-	_refresh_era_indicator()
-	_refresh_player_discovery_context()
-	if _right_panel != null:
-		_right_panel.reset_for_world()
-	if _country_panel != null and _country_panel.has_method("set_player_controller"):
-		_country_panel.set_player_controller(_player_controller)
-	if _map_overlay_toolbar != null:
-		_map_overlay_toolbar.reset_for_world()
-	if _map_overlay_legend != null:
-		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
-	if _right_panel != null:
-		_right_panel.close_detail(false)
-	if _colonization_panel != null:
-		_colonization_panel.close_panel()
-	if _gm_console != null:
-		_gm_console.refresh_gm_capabilities()
-	if _country_panel != null:
-		_country_panel.visible = false
-	if _country_action_bar != null:
-		_country_action_bar.set_active("")
+	_country_component.set_world_context(self, map, generator, view_adapter, world_clock, sea_level, hex_size)
 
 
 func _bind_country_runtime_events(generator) -> void:
@@ -345,86 +288,29 @@ func _bind_country_runtime_events(generator) -> void:
 
 
 func _on_country_research_signal_discovered(_event: Dictionary) -> void:
-	_mark_country_panel_dirty(COUNTRY_DIRTY_TECHNOLOGY, "research_signal")
+	_country_component.apply_country_research_signal(self, _event)
 
 
 func _on_economy_event_batch_available(_meta: Dictionary) -> void:
-	_queue_era_indicator_refresh()
-	if _country_view_model != null:
-		_country_view_model.sample_economy_history()
-	var domains := COUNTRY_DIRTY_ECONOMY
-	# Treasury cash and development objectives on the research page are fed by
-	# economy commits even on days when no country commit arrives.
-	if _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "technology":
-		var now := Time.get_ticks_msec()
-		if now >= _next_tech_economy_refresh_ms:
-			_next_tech_economy_refresh_ms = now + TECH_ECONOMY_REFRESH_INTERVAL_MSEC
-			domains |= COUNTRY_DIRTY_TECHNOLOGY
-	_mark_country_panel_dirty(domains, "economy_commit")
+	_country_component.apply_economy_event_batch(self, _meta)
 
 
-## 经济事件批次只在有事件的日子发布，开局常连续数日没有；经济卷宗打开时
-## 每个已提交日都要推进一次，否则数据停在打开那天。刷新仍走墙钟节流。
 func notify_committed_day() -> void:
-	_queue_era_indicator_refresh()
-	# 年度产值账本必须在面板关闭时也继续累计，否则中途打开会缺少年初到此刻的流量。
-	# sample() 自带 sample_day 去重与墙钟合流，重复调用无额外开销。
-	_gdp_ledger.sample(int(_world_clock.day_index()) if _world_clock != null else -1)
-	# 国库收支序列与产值账本同一节拍：面板关闭时也要连续，否则中途打开只有一点。
-	if _country_view_model != null:
-		_country_view_model.sample_fiscal_history()
-	if _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "economy":
-		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_day")
-	# Ideology points accrue daily and, under worker authority, arrive through
-	# snapshot write-back without a command receipt. Invalidate the cached
-	# section every day so reopening never shows a stale point scroll.
-	elif _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "ideology":
-		_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_day")
-	# 军事快照每日变化（兵力、士气、补给天数、战争分），打开时同样每个已提交日
-	# 推进一次；节流仍由 _flush_country_panel_refresh 的墙钟窗口负责。
-	elif _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "military":
-		_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_day")
-	# 外交读的是战争与领地，两者每天都可能变；同样每个已提交日推进一次。
-	elif _country_panel != null and _country_panel.is_panel_open() \
-			and _country_panel.current_section() == "diplomacy":
-		_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "diplomacy_day")
-	elif _country_view_model != null:
-		_country_view_model.invalidate_cache(COUNTRY_DIRTY_IDEOLOGY)
-	# 军务档案也随已提交日推进；合并窗口由 _refresh_military_dossier 负责。
-	_refresh_military_dossier()
-	# 营造窗口开着时，国库现金、市场库存与仓库每天都会变；节流由这里负责。
-	_refresh_building_workspace()
-	# 议和窗口开着时，战争分/占领格/对方意愿每天都会变，跟着已提交日重建一次。
-	_refresh_peace_window()
+	_country_component.notify_committed_day(self)
 
 
 func _on_ideology_runtime_settled(_result: Dictionary) -> void:
-	_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_commit")
+	_country_component.apply_ideology_settled(self, _result)
 
 
-## 军事命令的下一个游戏日才生效，所以只在日推进时刷新；这里额外在玩家刚下达
-## 命令后请求一次，让「已排队」的反馈和面板数值同步。
 func _on_military_command_settled(_id: StringName, _result: Dictionary) -> void:
-	_mark_country_panel_dirty(COUNTRY_DIRTY_MILITARY, "military_commit")
-	# 宣战/议和在军事运行时里落地，外交页的战事与关系必须在同一天跟上。
-	_mark_country_panel_dirty(COUNTRY_DIRTY_DIPLOMACY, "military_commit")
-	_refresh_peace_window()
+	_country_component.apply_military_command_settled(self, _id, _result)
 
 
-## 行军预览失败等原因的玩家侧回显。PlayerController 只持有 manager 引用，
-## 不知道右栏是否正在显示军务档案，所以这里做一次存在性转发。
 func show_transient_message(text: String) -> void:
-	if _right_panel != null and _right_panel.has_method("set_military_dossier_feedback"):
-		_right_panel.set_military_dossier_feedback(text, false)
+	_country_component.show_transient_message(self, text)
 
 
-## Inspector 军事页签的官营建筑入口：翻成正式命令交给 PlayerController。
-## 请求里的 `building` 已经是军事目录里的 dense 建筑序（由视图模型按科技闸门解析），
-## 所以这里原样透传，不再把角色名当建筑名送过去。
 func _on_military_state_building_requested(request: Dictionary) -> void:
 	if _player_controller == null:
 		return
@@ -475,17 +361,7 @@ func _on_military_army_create_requested(request: Dictionary) -> void:
 
 
 func _country_section_mask(section_id: String) -> int:
-	match section_id:
-		"economy":
-			return COUNTRY_DIRTY_ECONOMY
-		"ideology":
-			return COUNTRY_DIRTY_IDEOLOGY
-		"military":
-			return COUNTRY_DIRTY_MILITARY
-		"diplomacy":
-			return COUNTRY_DIRTY_DIPLOMACY
-		_:
-			return COUNTRY_DIRTY_TECHNOLOGY
+	return _country_component._country_section_mask(self, section_id)
 
 
 func _mark_country_panel_dirty(domains: int, reason: String) -> void:
@@ -568,192 +444,43 @@ func set_diagnostics_source(source: Node) -> void:
 		_gm_console.set_main(source)
 	if _perf_hud != null:
 		_perf_hud.set_main(source)
+	_sync_military_map_toolbar()
+
+
+func _sync_military_map_toolbar() -> void:
+	_country_component._sync_military_map_toolbar(self)
+
+
+func _on_military_layer_toggled(layer_id: StringName, enabled: bool) -> void:
+	_overlay_component._on_military_layer_toggled(self, layer_id, enabled)
 
 
 func set_colonization_route_layer(layer: ColonizationRouteLayer) -> void:
-	_colonization_route = layer
-
-
-func bind_gm_sun_camera(camera: MapCamera) -> void:
-	if _gm_sun_camera != null and _gm_sun_camera.view_changed.is_connected(_on_gm_sun_camera_moved):
-		_gm_sun_camera.view_changed.disconnect(_on_gm_sun_camera_moved)
-	_gm_sun_camera = camera
-	if _gm_sun_camera != null and not _gm_sun_camera.view_changed.is_connected(_on_gm_sun_camera_moved):
-		_gm_sun_camera.view_changed.connect(_on_gm_sun_camera_moved)
-
-
-## 悬停卡需要读玩家相机的屏幕→世界换算与平移/缩放状态。
-## PlayerGame 在建图前就会调用，所以这里必须容忍 _map 尚未就绪。
-func bind_player_camera(camera: MapCamera) -> void:
-	_player_camera = camera
-	_configure_cell_hover_card()
+	_overlay_component.set_colonization_route_layer(self, layer)
 
 
 func _configure_cell_hover_card() -> void:
-	if _cell_hover_card == null or _map == null or _cell_hover_view_model == null:
-		return
-	_cell_hover_card.configure(_map, _player_camera, _hover_hex_size,
-		_cell_hover_view_model, _hover_blocked, map_safe_area)
-
-
-func _on_gm_sun_camera_moved(_world_rect: Rect2, _center: Vector2, _zoom_value: float) -> void:
-	_position_gm_sun_handle()
-
-
-func _ensure_gm_sun_handle() -> void:
-	if _gm_sun_handle != null and is_instance_valid(_gm_sun_handle):
-		return
-	_gm_sun_handle = UIControlParts.button()
-	_gm_sun_handle.name = "GMTODSunHandle"
-	_gm_sun_handle.text = "☀"
-	_gm_sun_handle.tooltip_text = "拖动太阳位置"
-	_gm_sun_handle.custom_minimum_size = Vector2(38.0, 38.0)
-	_gm_sun_handle.size = Vector2(38.0, 38.0)
-	_gm_sun_handle.focus_mode = Control.FOCUS_NONE
-	_gm_sun_handle.mouse_filter = Control.MOUSE_FILTER_STOP
-	_gm_sun_handle.visible = false
-	_gm_sun_handle.z_index = 20
-	_gm_sun_handle.gui_input.connect(_on_gm_sun_handle_input)
-	add_child(_gm_sun_handle)
-
-
-func _on_gm_tod_preview_changed(_active: bool) -> void:
-	_sync_gm_sun_handle()
-
-
-func _sync_gm_sun_handle() -> void:
-	var preview := false
-	if _diagnostics_source != null and _diagnostics_source.has_method("get_gm_tod_sun_preview"):
-		var state: Variant = _diagnostics_source.call("get_gm_tod_sun_preview")
-		if state is Dictionary:
-			preview = bool(state.get("preview", false))
-	_ensure_gm_sun_handle()
-	_gm_sun_handle.visible = preview
-	if _gm_sun_handle.visible and not _gm_sun_dragging:
-		_position_gm_sun_handle()
-
-
-func _position_gm_sun_handle() -> void:
-	if _gm_sun_handle == null or not _gm_sun_handle.visible:
-		return
-	if _diagnostics_source == null or not _diagnostics_source.has_method("gm_tod_sun_screen_position"):
-		return
-	var screen: Vector2 = _diagnostics_source.call("gm_tod_sun_screen_position")
-	if not is_finite(screen.x) or not is_finite(screen.y):
-		return
-	_gm_sun_handle.position = screen - _gm_sun_handle.size * 0.5
-
-
-func _on_gm_sun_handle_input(event: InputEvent) -> void:
-	if _diagnostics_source == null or not _diagnostics_source.has_method("set_gm_tod_sun_preview"):
-		return
-	if event is InputEventMouseButton:
-		var button := event as InputEventMouseButton
-		if button.button_index != MOUSE_BUTTON_LEFT:
-			return
-		_gm_sun_dragging = button.pressed
-		if button.pressed:
-			_apply_gm_sun_drag(get_viewport().get_mouse_position())
-		else:
-			_sync_gm_sun_handle()
-		_gm_sun_handle.accept_event()
-	elif event is InputEventMouseMotion and _gm_sun_dragging:
-		_apply_gm_sun_drag(get_viewport().get_mouse_position())
-		_gm_sun_handle.accept_event()
-	elif event is InputEventScreenTouch:
-		var touch := event as InputEventScreenTouch
-		_gm_sun_dragging = touch.pressed
-		if touch.pressed:
-			_apply_gm_sun_drag(touch.position)
-		else:
-			_sync_gm_sun_handle()
-		_gm_sun_handle.accept_event()
-	elif event is InputEventScreenDrag and _gm_sun_dragging:
-		_apply_gm_sun_drag((event as InputEventScreenDrag).position)
-		_gm_sun_handle.accept_event()
-
-
-func _apply_gm_sun_drag(screen_pos: Vector2) -> void:
-	var height := 1.0
-	var uv := Vector2(0.25, 0.5)
-	if _diagnostics_source.has_method("get_gm_tod_sun_preview"):
-		var state: Variant = _diagnostics_source.call("get_gm_tod_sun_preview")
-		if state is Dictionary:
-			height = float(state.get("height_scale", 1.0))
-			var current: Variant = state.get("uv", uv)
-			if current is Vector2:
-				uv = current
-	if _diagnostics_source.has_method("gm_tod_screen_to_sun_uv"):
-		uv = _diagnostics_source.call("gm_tod_screen_to_sun_uv", screen_pos)
-	_diagnostics_source.call("set_gm_tod_sun_preview", true, uv, height)
-	if _gm_sun_handle != null:
-		_gm_sun_handle.position = screen_pos - _gm_sun_handle.size * 0.5
+	_overlay_component._configure_cell_hover_card(self)
 
 
 func toggle_gm_panel() -> void:
-	if not _gm_available or _gm_console == null:
-		return
-	if _gm_console.is_panel_open():
-		_gm_console.close_panel()
-	else:
-		_gm_console.open_panel()
+	_overlay_component.toggle_gm_panel(self)
 
 
 func is_gm_available() -> bool:
-	return _gm_available and _gm_console != null
+	return _overlay_component.is_gm_available(self)
 
 
 func set_popups_suppressed(enabled: bool) -> void:
-	_gm_popups_suppressed = enabled
-	if not enabled:
-		return
-	if is_era_ceremony_playing():
-		_era_ceremony.skip()
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("close_offer"):
-		_narrative_event_dialog.close_offer()
+	_overlay_component.set_popups_suppressed(self, enabled)
 
 
 func set_all_ui_suppressed(enabled: bool) -> void:
-	if _gm_all_ui_suppressed == enabled:
-		return
-	_gm_all_ui_suppressed = enabled
-	var paths := ["UIRoot/HUDLayer", "UIRoot/PanelLayer", "UIRoot/ModalLayer",
-		"UIRoot/EraOverlayLayer"]
-	if enabled:
-		_gm_saved_ui_visibility.clear()
-		for path in paths:
-			var node := get_node_or_null(path) as CanvasItem
-			if node == null:
-				continue
-			_gm_saved_ui_visibility[path] = node.visible
-			node.visible = false
-		# DebugLayer 可能包含旧的诊断控件；只保留 GM 面板可见。
-		if _debug_layer != null:
-			for child in _debug_layer.get_children():
-				if child != _gm_console and child is CanvasItem:
-					var key := String(child.get_path())
-					_gm_saved_ui_visibility[key] = (child as CanvasItem).visible
-					(child as CanvasItem).visible = false
-			if _gm_console != null:
-				_gm_console.visible = true
-	else:
-		for path in paths:
-			if _gm_saved_ui_visibility.has(path):
-				var restore_node := get_node_or_null(path) as CanvasItem
-				if restore_node != null:
-					restore_node.visible = bool(_gm_saved_ui_visibility[path])
-		if _debug_layer != null:
-			for child in _debug_layer.get_children():
-				var key := String(child.get_path())
-				if _gm_saved_ui_visibility.has(key) and child is CanvasItem:
-					(child as CanvasItem).visible = bool(_gm_saved_ui_visibility[key])
-		_gm_saved_ui_visibility.clear()
-	_layout_gm_panel()
+	_overlay_component.set_all_ui_suppressed(self, enabled)
 
 
 func toggle_perf_hud() -> void:
-	if _perf_hud != null:
-		_perf_hud.toggle_visible()
+	_overlay_component.toggle_perf_hud(self)
 
 
 func show_cell_panel(cell: HexCell) -> void:
@@ -829,885 +556,47 @@ func hide_cell_panel() -> void:
 
 ## Web：把检查器日刷的耗时打进事件流（只在 >200ms 时），用来定位"整帧不返回"。
 func _report_inspector_daily_timing(timing: Dictionary, started_usec: int) -> void:
-	if not WebTelemetry.enabled():
-		return
-	var total := float(Time.get_ticks_usec() - started_usec) / 1000.0
-	if total < 200.0:
-		return
-	WebTelemetry.emit("inspector_daily", {
-		"dur": int(total),
-		"ran": bool(timing.get("ran", false)),
-		"tab": String(timing.get("tab", "")),
-		"build_ms": int(float(timing.get("live_patch_build_ms", 0.0))),
-		"apply_ms": int(float(timing.get("live_patch_apply_ms", 0.0))),
-	})
+	_country_component._report_inspector_daily_timing(self, timing, started_usec)
 
 
 func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dictionary:
-	var _t_all := Time.get_ticks_usec()
-	var timing: Dictionary = {
-		"ran": false,
-		"tab": "",
-		"live_patch_build_ms": 0.0,
-		"live_patch_apply_ms": 0.0,
-	}
-	if _colonization_panel != null and _colonization_panel.visible:
-		_colonization_panel.refresh_visible()
-	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
-		_report_inspector_daily_timing(timing, _t_all)
-		return timing
-	# 视野状态变了意味着页签集合变了，打补丁改不动页签栏，必须整块重建。
-	var fog := VisionSolver.fog_state(_map, int(_selected_cell.index))
-	if fog != _selected_fog_state:
-		_selected_fog_state = fog
-		_set_inspector_trace_cell(int(_selected_cell.index) \
-			if fog == VisionSolver.FOG_VISIBLE else -1)
-		refresh_selected_panel()
-		timing["ran"] = true
-		_report_inspector_daily_timing(timing, _t_all)
-		return timing
-	var tab_id := _right_panel.current_tab()
-	timing["tab"] = tab_id
-	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
-	var now_ms := Time.get_ticks_msec()
-	var population_list := tab_id == "population"
-	# 市场/建筑/地理的完整 category 仍按墙钟合并。人口列表改走无需求预览的
-	# list snapshot，每个模拟日都能改人数，不再被 750ms 拖住。
-	if not force and not population_list \
-			and now_ms - _last_cached_panel_ms < INSPECTOR_FULL_PATCH_INTERVAL_MSEC:
-		_refresh_object_detail(false)
-		if _right_panel.detail_open():
-			timing["ran"] = true
-		_report_inspector_daily_timing(timing, _t_all)
-		return timing
-	if not population_list:
-		_last_cached_panel_ms = now_ms
-	var revision: Dictionary = _inspector_view_model.live_patch_revision(
-		_selected_cell, tab_id)
-	var next_selection_context := _revision_selection_context(revision)
-	if not _selection_context.is_empty() and next_selection_context != _selection_context:
-		_selection_context = next_selection_context
-		refresh_selected_panel()
-		timing["ran"] = true
-		_report_inspector_daily_timing(timing, _t_all)
-		return timing
-	_selection_context = next_selection_context
-	var build_started_usec := Time.get_ticks_usec()
-	var patch := _inspector_view_model.build_live_patch(
-		_selected_cell,
-		tab_id,
-		true,
-		revision.get("population_summary", {}),
-		not population_list
-	)
-	timing["live_patch_build_ms"] = (
-		Time.get_ticks_usec() - build_started_usec) / 1000.0
-	if population_list:
-		var next_category_hash := 0
-		if patch.has("category"):
-			next_category_hash = hash(patch["category"])
-		var same_target := _live_revision_valid \
-			and _live_revision_cell == int(_selected_cell.index) \
-			and _live_revision_tab == tab_id
-		if same_target and next_category_hash == _live_category_hash:
-			patch.erase("category")
-		else:
-			_live_category_hash = next_category_hash
-		_live_revision_cell = int(_selected_cell.index)
-		_live_revision_tab = tab_id
-		_live_common_hash = int(revision.get("common_hash", 0))
-		_live_category_generation = int(revision.get("category_generation", -1))
-		_live_tax_policy_version = int(revision.get("tax_policy_version", -1))
-		_live_revision_valid = true
-	var apply_started_usec := Time.get_ticks_usec()
-	_right_panel.apply_live_patch(patch)
-	_refresh_object_detail(force or not population_list)
-	timing["live_patch_apply_ms"] = (
-		Time.get_ticks_usec() - apply_started_usec) / 1000.0
-	timing["ran"] = true
-	_report_inspector_daily_timing(timing, _t_all)
-	return timing
+	return _country_component.refresh_selected_daily_lines(self, force, day_idx)
 
 
 func refresh_selected_panel() -> void:
-	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
-		return
-	_invalidate_live_revision()
-	_right_panel.set_model_for_selection(_inspector_view_model.build(_selected_cell))
-	_selection_context = _revision_selection_context(
-		_inspector_view_model.live_patch_revision(
-			_selected_cell, _right_panel.current_tab()))
-	_refresh_object_detail(true)
+	_country_component.refresh_selected_panel(self)
 
 
 func _revision_selection_context(revision: Dictionary) -> String:
-	return "%s|%s" % [
-		String(revision.get("selection_context", "")),
-		String(revision.get("tabs_signature", "")),
-	]
+	return _country_component._revision_selection_context(self, revision)
 
 
 func _on_country_committed(report: Dictionary) -> void:
-	_queue_era_indicator_refresh()
-	# 税务/国库 soft-commit 每天都会推 generation，但通常 0 格领土变更。
-	# 以前这里无条件 COUNTRY_DIRTY_ALL + 全量科技定义重建，把 50x 主线程打到 ~90ms。
-	var territory_changed := int(report.get("changed_cells", 0)) > 0
-	var dirty_families := int(report.get("dirty_families", 0))
-	var state_dirty := (dirty_families & NATIVE_DIRTY_COUNTRY_STATE) != 0 \
-		or int(report.get("research_watermark", 0)) > 0 \
-		or int(report.get("tax_watermark", 0)) > 0
-	# 领土变更会改 fog_state，必须强制重建 Inspector；软提交走既有墙钟节流。
-	refresh_selected_daily_lines(territory_changed)
-	if territory_changed and _selected_cell != null:
-		refresh_selected_panel()
-	var domains := 0
-	if territory_changed or state_dirty \
-			or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
-		domains |= COUNTRY_DIRTY_ECONOMY
-	# 归属变了，「已发现国家」清单、接壤面数与占领格都会变；外交页必须同一瞬间重算，
-	# 否则名录会停在上一张地图上。
-	if territory_changed or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
-		domains |= COUNTRY_DIRTY_DIPLOMACY
-	# A worker country commit can advance the published country generation while
-	# leaving the legacy dirty-family bits empty.  The technology archive reads
-	# that committed research snapshot, so while it is open it must observe every
-	# committed country boundary; otherwise the old cached model survives until a
-	# technology click forces a direct live snapshot.  Closed or other sections
-	# only invalidate the cached technology model (no build), so reopening never
-	# presents a model from before the panel was closed.
-	var research_committed := int(report.get("generation", report.get("country_generation", 0))) > 0 \
-			or int(report.get("changed_countries", 0)) > 0 \
-			or state_dirty
-	if research_committed:
-		domains |= COUNTRY_DIRTY_TECHNOLOGY
-	var research_poll := {"states_changed": false, "completed": false}
-	if research_committed:
-		var now_ms := Time.get_ticks_msec()
-		if now_ms >= _next_research_toast_poll_ms:
-			_next_research_toast_poll_ms = now_ms + RESEARCH_TOAST_POLL_INTERVAL_MSEC
-			research_poll = _poll_research_completion_toasts()
-	if bool(research_poll.get("states_changed", false)):
-		domains |= COUNTRY_DIRTY_TECHNOLOGY
-	elif state_dirty and _country_panel != null and _country_panel.is_panel_open() \
-			and String(_country_panel.current_section()) == "technology" \
-			and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		# Progress-only refresh while the archive is open. Never rebuild during
-		# an active click — 50x soft-commits were eating double-click enqueue.
-		var progress_now_ms := Time.get_ticks_msec()
-		if progress_now_ms >= _next_tech_panel_progress_ms:
-			_next_tech_panel_progress_ms = progress_now_ms + \
-				RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC
-			domains |= COUNTRY_DIRTY_TECHNOLOGY
-	if (dirty_families & NATIVE_DIRTY_COUNTRY_VISUAL_ERA) != 0:
-		domains |= COUNTRY_DIRTY_IDEOLOGY
-	if domains == 0:
-		domains = COUNTRY_DIRTY_ECONOMY
-	_mark_country_panel_dirty(domains, "country_committed")
-	if bool(research_poll.get("completed", false)):
-		_refresh_player_discovery_context()
+	_country_component.apply_country_commit(self, report)
 
-
-## economy_chapter 非空时直接落到经济卷宗的指定章节（总览 / 阶层民生），
-## 顶栏纸签点击走这条路；其它调用方保持原来的「记住上次章节」行为。
-func open_country_section(section_id: String, economy_chapter: String = "") -> void:
-	if _player_controller != null:
-		_player_controller.cancel_military_arm_order()
-	if section_id == "annual":
-		close_country_panel()
-		annual_history_requested.emit()
-		return
-	# 卷宗一打开就收起时代纸笺：纸笺在面板层之上，留着会浮在压暗的国家卷宗上。
-	if _era_panel != null and _era_panel.is_open():
-		_close_era_panel()
-	if _country_panel == null or _country_view_model == null:
-		return
-	# 打开国家面板时纸签悬浮卡必须退场：它盖在面板边缘，也没必要再读旧值。
-	_status_card_generation += 1
-	_status_card_kind = ""
-	if _status_card != null:
-		_status_card.hide_card(true)
-	# Opening a section is an explicit player action and should never inherit a
-	# throttle window left by a previously visible section.
-	_country_refresh_queued = false
-	_country_next_refresh_ms = 0
-	_country_refresh_timer_active = false
-	_hide_inspector_for_country()
-	_country_action_bar.set_active(section_id)
-	if section_id == "economy" and not economy_chapter.is_empty() \
-			and _country_panel.has_method("focus_economy_chapter"):
-		_country_panel.focus_economy_chapter(economy_chapter)
-	_country_open_generation += 1
-	var generation := _country_open_generation
-	if not _country_ui_event_refresh_enabled:
-		var started_usec := Time.get_ticks_usec()
-		_country_panel.show_section(section_id, _country_view_model.build_legacy(section_id))
-		_record_country_ui_perf("legacy_full_build", false,
-			(Time.get_ticks_usec() - started_usec) / 1000.0,
-			_country_section_mask(section_id))
-		_country_dirty_domains &= ~_country_section_mask(section_id)
-		return
-	var cached := _country_view_model.cached_section(section_id)
-	if not cached.is_empty():
-		_country_panel.show_section(section_id, cached)
-		_record_country_ui_perf("panel_open_cache", true, 0.0,
-			_country_section_mask(section_id))
-		_country_dirty_domains &= ~_country_section_mask(section_id)
-		return
-	_country_panel.show_section(section_id, {
-		"available": false,
-		"country_name": "国家事务",
-		"reason": "正在载入已提交数据",
-	})
-	call_deferred("_load_country_section_deferred", section_id, generation)
-
-
-func _load_country_section_deferred(section_id: String, generation: int) -> void:
-	if generation != _country_open_generation or _country_panel == null \
-			or not _country_panel.is_panel_open() \
-			or _country_panel.current_section() != section_id:
-		return
-	var started_usec := Time.get_ticks_usec()
-	_country_panel.refresh_summary(_country_view_model.build(section_id))
-	_record_country_ui_perf("panel_open", false,
-		(Time.get_ticks_usec() - started_usec) / 1000.0,
-		_country_section_mask(section_id))
-	_country_dirty_domains &= ~_country_section_mask(section_id)
-	var open_mask := _country_section_mask(section_id)
-	var open_interval := COUNTRY_UI_TECH_REFRESH_INTERVAL_MSEC \
-		if open_mask == COUNTRY_DIRTY_TECHNOLOGY \
-		else COUNTRY_UI_REFRESH_INTERVAL_MSEC
-	_country_next_refresh_ms = Time.get_ticks_msec() + open_interval
-
-
-func _locate_cell_from_country_panel(cell_index: int) -> void:
-	close_country_panel()
-	if _player_controller == null or _map == null:
-		return
-	var cell := _map.cell_at(cell_index)
-	if cell != null:
-		_player_controller.select_cell(cell)
-
-
-## "A card acts here." Same shape as the single-cell locate above — close the
-## panel first, because it is full-bleed and would cover the very hexes we are
-## about to paint — but the map side receives a set instead of a selection.
-func _on_target_cells_from_country_panel(cells: PackedInt32Array) -> void:
-	if _player_controller == null:
-		return
-	# Dock the shell beside the map instead of closing it. Closing was the old
-	# behaviour and it threw away the card the player was reading at the exact
-	# moment they asked "where does this act?" — the highlight outlived the
-	# panel, but so did the question of which card had painted it.
-	if _country_panel != null and _country_panel.is_panel_open():
-		_country_panel.set_docked(true)
-	_player_controller.highlight_cells(cells)
-
-
-## 物资详情逐单商路翻页：只更新请求 offset，再走既有对象详情 payload 通道重建。
-## ViewModel 按 committed generation 缓存，翻页也是一次有界页查询。
-func _on_trade_orders_page_requested(offset: int) -> void:
-	if _object_detail_context.is_empty() \
-			or String(_object_detail_context.get("kind", "")) != "good":
-		return
-	var request: Dictionary = _object_detail_context.get("request", {})
-	request["orders_offset"] = maxi(0, offset)
-	_object_detail_context["request"] = request
-	_refresh_object_detail(true)
-
-
-## 点击逐单行的可见对端：关闭当前详情并选中该地块（与 country panel 定位语义一致）。
-func _on_trade_order_locate_requested(cell_index: int) -> void:
-	if _player_controller == null or _map == null:
-		return
-	var cell := _map.cell_at(cell_index)
-	if cell == null:
-		return
-	_close_object_detail_dialog()
-	_player_controller.select_cell(cell)
-
-
-func close_country_panel() -> void:
-	_country_open_generation += 1
-	_country_refresh_queued = false
-	_country_refresh_timer_active = false
-	_country_next_refresh_ms = 0
-	if _country_panel != null and _country_panel.is_panel_open():
-		# Undock before closing: the next open is a full-bleed screen again, and
-		# a dock left set would silently shrink it with no way to tell why.
-		_country_panel.set_docked(false)
-		_country_panel.close_panel()
-	# A closed panel never needs a fresh Native query. Drop only dynamic section
-	# models so the next open starts from a committed shell and loads details
-	# through the deferred section path; the static catalog remains session-cached.
-	if _country_view_model != null:
-		_country_view_model.invalidate_cache()
-	if _country_action_bar != null:
-		_country_action_bar.set_active("")
-
-
-func _hide_inspector_for_country() -> void:
-	if _right_panel == null or not _right_panel.visible:
-		return
-	_inspector_suppressed_for_country = true
-	_right_panel.visible = false
-
-
-func _restore_inspector_after_country() -> void:
-	if not _inspector_suppressed_for_country:
-		return
-	_inspector_suppressed_for_country = false
-	if _selected_cell == null or _right_panel == null:
-		return
-	_right_panel.visible = true
-	_right_panel.modulate.a = 1.0
-
-
-func refresh_country_summary() -> Dictionary:
-	var timing := {"ran": false, "elapsed_ms": 0.0}
-	if _country_panel == null or not _country_panel.is_panel_open() \
-			or _country_view_model == null:
-		return timing
-	var started_usec := Time.get_ticks_usec()
-	var model := _country_view_model.build(_country_panel.current_section()) \
-		if _country_ui_event_refresh_enabled else _country_view_model.build_legacy(
-			_country_panel.current_section())
-	_country_panel.refresh_summary(model)
-	timing["ran"] = true
-	timing["elapsed_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
-	_record_country_ui_perf(
-		_country_refresh_reason if not _country_refresh_reason.is_empty() else "explicit",
-		false, float(timing["elapsed_ms"]),
-		_country_section_mask(_country_panel.current_section()))
-	return timing
-
-
-func _record_country_ui_perf(reason: String, cache_hit: bool,
-		snapshot_ms: float, dirty_domains: int) -> void:
-	_country_ui_perf_pending = {
-		"country_ui_refresh_reason": reason,
-		"country_ui_snapshot_ms": maxf(0.0, snapshot_ms),
-		"country_ui_cache_hit": cache_hit,
-		"country_ui_dirty_domains": dirty_domains,
-		"country_ui_event_refresh_enabled": _country_ui_event_refresh_enabled,
-	}
-
-
-func consume_country_ui_perf_summary() -> Dictionary:
-	var out := _country_ui_perf_pending.duplicate(false)
-	_country_ui_perf_pending.clear()
-	return out
-
-
-func _on_inspector_tab_data_requested(tab_id: String) -> void:
-	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
-		return
-	_invalidate_live_revision()
-	_pending_object_request.clear()
-	var category := _inspector_view_model.build_tab_category(_selected_cell, tab_id)
-	_right_panel.set_tab_category(tab_id, category)
-	_pending_inspector_tab = tab_id if bool(category.get("data_pending", false)) else ""
-	if not _pending_inspector_tab.is_empty():
-		_schedule_inspector_retry()
-
-
-func _cancel_inspector_retry() -> void:
-	_inspector_retry_generation += 1
-	_inspector_retry_queued = false
-	_pending_inspector_tab = ""
-	_pending_object_request.clear()
-
-
-func _schedule_inspector_retry() -> void:
-	if _inspector_retry_queued or not is_inside_tree():
-		return
-	_inspector_retry_queued = true
-	get_tree().create_timer(0.15).timeout.connect(
-		_retry_inspector_reads.bind(_inspector_retry_generation), CONNECT_ONE_SHOT)
-
-
-func _retry_inspector_reads(generation: int) -> void:
-	if generation != _inspector_retry_generation:
-		return
-	_inspector_retry_queued = false
-	if _selected_cell == null or _right_panel == null or not _right_panel.visible:
-		_cancel_inspector_retry()
-		return
-	if not _pending_inspector_tab.is_empty():
-		var tab_id := _pending_inspector_tab
-		if tab_id == _right_panel.current_tab():
-			var category := _inspector_view_model.build_tab_category(_selected_cell, tab_id)
-			_right_panel.apply_live_patch({"tab_id": tab_id, "category": category})
-			if not bool(category.get("data_pending", false)):
-				_pending_inspector_tab = ""
-		else:
-			_pending_inspector_tab = ""
-	if not _pending_object_request.is_empty():
-		_on_object_details_requested(_pending_object_request)
-	if not _pending_inspector_tab.is_empty() or not _pending_object_request.is_empty():
-		_schedule_inspector_retry()
-
-
-## 营造窗口的一次目录页请求：部门 + 搜索词 + 排序档 + 偏移由窗口自己记，这里只
-## 负责让 view model 组一整页模型（整部门报价后排序、再切一页）并推回窗口。
-func _on_construction_page_requested(sector: String, search: String,
-		sort_id: String, offset: int) -> void:
-	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
-		return
-	_last_construction_refresh_ms = Time.get_ticks_msec()
-	_right_panel.set_construction_model(
-		_inspector_view_model.build_construction_model(
-			int(_selected_cell.index), sector, search, sort_id, offset))
-
-
-## 次日结算会改变国库、市场与仓库；只在窗口打开时按墙钟节流重发同一页。
-func _refresh_building_workspace(force: bool = false) -> void:
-	if _right_panel == null or not _right_panel.building_workspace_open():
-		return
-	if not force and Time.get_ticks_msec() - _last_construction_refresh_ms \
-			< BUILDING_WORKSPACE_REFRESH_MSEC:
-		return
-	_right_panel.request_construction_refresh()
-
-
-func _on_construction_requested(request: Dictionary) -> void:
-	if _selected_cell == null or _player_controller == null or _right_panel == null:
-		push_warning("[construction] click dropped: selected_cell=%s controller=%s right_panel=%s" % [
-			str(_selected_cell != null), str(_player_controller != null),
-			str(_right_panel != null)])
-		return
-	# 军事部门的条目带 `military_index`：它是军事目录里的 dense 序，必须走
-	# `state.build`（原生 MCMD_STATE_BUILD）。送进经济侧的 construction.build
-	# 会因为经济目录里没有这座建筑而被拒。
-	if request.has("military_index"):
-		_on_military_state_building_requested({
-			"cell": int(_selected_cell.index),
-			"op": String(request.get("op", "state.build")),
-			"building": int(request.get("military_index", -1)),
-		})
-		return
-	var result: Dictionary = _player_controller.request_command(
-		&"construction.build", {"cell_idx": int(_selected_cell.index),
-			"building_id": StringName(request.get("building_id", &"")),
-			"ownership_policy": &"treasury_sponsored_private"})
-	print("[construction] click cell=%d id=%s -> ok=%s code=%s message=%s" % [
-		int(_selected_cell.index), String(request.get("building_id", &"")),
-		str(result.get("ok", false)), str(result.get("code", "")),
-		String(result.get("message", result.get("reason", "")))])
-	_right_panel.set_construction_feedback(
-		String(result.get("message", result.get("reason", "修建命令未能提交。"))),
-		bool(result.get("ok", false)))
-
-
-func _open_colonization_target(target_cell: int, family_handle: int = 0,
-		source_cell: int = -1) -> void:
-	if _colonization_panel == null:
-		return
-	_close_object_detail_dialog()
-	_suppress_ui_for_dispatch()
-	_colonization_panel.open_target(target_cell, family_handle, source_cell)
-	if _player_controller != null and _player_controller.has_method("ensure_selected_visible"):
-		_player_controller.ensure_selected_visible()
-
-
-func _on_colonization_requested(request: Dictionary) -> void:
-	_open_colonization_target(int(request.get("target_cell", -1)))
-
-
-func _on_family_colonization_requested(family_handle: int,
-		source_cell: int) -> void:
-	if _colonization_panel == null:
-		return
-	_close_object_detail_dialog()
-	_suppress_ui_for_dispatch()
-	_colonization_panel.open_source(source_cell, family_handle)
-	if _player_controller != null and _player_controller.has_method("ensure_selected_visible"):
-		_player_controller.ensure_selected_visible()
-
-
-func _suppress_ui_for_dispatch() -> void:
-	if _dispatch_ui_suppressed:
-		return
-	_dispatch_ui_suppressed = true
-	_dispatch_previous_inspector_visible = _right_panel != null and _right_panel.visible
-	_dispatch_previous_toolbar_visible = _map_overlay_toolbar != null and _map_overlay_toolbar.visible
-	if _right_panel != null:
-		_right_panel.hide()
-	if _map_overlay_toolbar != null:
-		_map_overlay_toolbar.hide()
-
-
-func _on_dispatch_closed() -> void:
-	_colonization_targeting.clear()
-	if not _dispatch_ui_suppressed:
-		return
-	_dispatch_ui_suppressed = false
-	if _right_panel != null:
-		_right_panel.visible = _dispatch_previous_inspector_visible
-	if _map_overlay_toolbar != null:
-		_map_overlay_toolbar.visible = _dispatch_previous_toolbar_visible
-	if _dispatch_previous_inspector_visible and _player_controller != null \
-			and _player_controller.has_method("selected_cell"):
-		var cell = _player_controller.selected_cell()
-		if cell != null:
-			show_cell_panel(cell)
-
-
-# ── peace window (MilitaryPeaceWindow) ──────────────────────────────────
-
-## Open the dedicated peace window for one war. The country shell is full-bleed,
-## so it has to close first — the whole point of this window is the map behind it.
-func open_military_peace(war_id: int) -> void:
-	if _peace_window == null or _country_view_model == null:
-		return
-	if int(war_id) <= 0:
-		return
-	if _country_panel != null and _country_panel.is_panel_open():
-		close_country_panel()
-	if _colonization_panel != null and _colonization_panel.visible:
-		_colonization_panel.close_panel()
-	_colonization_targeting.clear()
-	_suppress_ui_for_dispatch()
-	# The window is the only consumer here, so one fresh military model is enough.
-	_country_view_model.invalidate_cache(COUNTRY_DIRTY_MILITARY)
-	_peace_window.set_player_controller(_player_controller)
-	_peace_window.open(int(war_id), _country_view_model.build("military"))
-	var focus_cell := _peace_focus_cell()
-	if focus_cell >= 0 and _player_controller != null \
-			and _player_controller.has_method("focus_map_cell"):
-		_player_controller.call("focus_map_cell", focus_cell)
-
-
-func close_military_peace() -> void:
-	if _peace_window != null:
-		_peace_window.close_panel()
-
-
-func is_peace_window_open() -> bool:
-	return _peace_window != null and bool(_peace_window.is_open())
-
-
-## Map click entry: true means the window consumed it (a cession toggle or a
-## "you cannot cede this" note), false only when no window is open.
-func handle_peace_map_cell(cell: int) -> bool:
-	if not is_peace_window_open():
-		return false
-	return bool(_peace_window.handle_map_cell(int(cell)))
-
-
-func _peace_focus_cell() -> int:
-	if _peace_window == null:
-		return -1
-	var candidates: PackedInt32Array = _peace_window.candidate_cells()
-	return int(candidates[0]) if not candidates.is_empty() else -1
-
-
-func _on_peace_window_closed() -> void:
-	# No clear_selection_requested() here: the window never moved the selection
-	# (it eats map clicks), so closing it must hand the inspector back exactly as
-	# the player left it.
-	_on_dispatch_closed()
-
-
-func _on_peace_submit_requested(payload: Dictionary) -> void:
-	if _player_controller == null or _peace_window == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		PlayerControllerScript.COMMAND_MILITARY_PEACE_PROPOSE, {
-			"war_id": int(payload.get("war_id", 0)),
-			"terms": payload.get("terms", []),
-		})
-	_peace_window.set_command_result(result)
-
-
-func _on_peace_locate_requested(cell: int) -> void:
-	if _player_controller != null and _player_controller.has_method("focus_map_cell"):
-		_player_controller.call("focus_map_cell", int(cell))
-
-
-func _refresh_peace_window() -> void:
-	if not is_peace_window_open() or _country_view_model == null or _peace_window == null:
-		return
-	_country_view_model.invalidate_cache(COUNTRY_DIRTY_MILITARY)
-	_peace_window.refresh_model(_country_view_model.build("military"))
-
-
-func _on_colonization_start_requested(args: Dictionary) -> void:
-	if _player_controller == null or _colonization_panel == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		&"family.colonization.start", args)
-	_colonization_panel.set_command_result(result)
-	if bool(result.get("ok", false)) and result.has("expedition_handle"):
-		_on_expedition_selected(int(result.expedition_handle))
-
-
-func _on_colonization_cancel_requested(expedition_handle: int) -> void:
-	if _player_controller == null or _colonization_panel == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		&"family.colonization.cancel", {"expedition_handle": expedition_handle})
-	_colonization_panel.set_command_result(result)
-	if bool(result.get("ok", false)):
-		_on_expedition_selected(expedition_handle)
-
-
-func _on_expedition_selected(expedition_handle: int) -> void:
-	if _player_controller == null or _colonization_route == null:
-		return
-	var snapshot: Dictionary = _player_controller.get_family_expedition_snapshot(
-		expedition_handle)
-	if bool(snapshot.get("ok", false)):
-		_colonization_route.show_expedition(snapshot)
-
-
-func _play_progression_cue(cue: StringName) -> void:
-	var audio := get_node_or_null("/root/GameAudio")
-	if audio != null:
-		audio.play_event_cue(cue)
-
-
-func _on_player_command_completed_audio(id: StringName, result: Dictionary) -> void:
-	if not bool(result.get("ok", false)):
-		return
-	# 入队与抽牌先反馈已接受的操作，装备/晋升则等待权威结算成功。
-	var cues := {&"research.enqueue": &"tech_start", &"research.remove": &"tech_cancel",
-		&"ideology.offer": &"ideology_draw", &"ideology.reroll": &"ideology_reroll",
-		&"ideology.choose": &"ideology_choose"}
-	if cues.has(id):
-		_play_progression_cue(cues[id])
-
-
-func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
-	if bool(result.get("ok", false)):
-		var cues := {&"ideology.equip": &"ideology_use",
-			&"ideology.unequip": &"ideology_unequip", &"ideology.promote": &"ideology_promote"}
-		if cues.has(id):
-			_play_progression_cue(cues[id])
-	if id == &"family.colonization.start" or \
-			id == &"family.colonization.cancel":
-		if _colonization_panel != null:
-			if not result.has("message"):
-				result["message"] = "开拓队状态已更新。"
-			_colonization_panel.set_command_result(result)
-			_colonization_panel.refresh_expeditions_if_visible()
-		if _selected_cell != null and String(result.get("code", "")) == "CLAIMED":
-			refresh_selected_panel()
-		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "colonization_settled")
-		return
-	if id != &"construction.build" or _selected_cell == null or \
-			int(result.get("cell_idx", -1)) != int(_selected_cell.index):
-		return
-	refresh_selected_panel()
-	if _right_panel != null:
-		_right_panel.set_construction_feedback(
-			String(result.get("message", "修建命令已结算。")),
-			bool(result.get("ok", false)))
-	# 结算花掉了国库物资/现金，窗口里的报价与按钮态必须立刻跟着变。
-	_refresh_building_workspace(true)
-	_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "construction_settled")
-
-
-func _invalidate_live_revision() -> void:
-	_live_revision_cell = -1
-	_live_revision_tab = ""
-	_live_common_hash = 0
-	_live_category_generation = -1
-	_live_tax_policy_version = -1
-	_live_category_hash = 0
-	_live_revision_valid = false
-
-
-func _on_object_details_requested(request: Dictionary) -> void:
-	if _selected_cell == null or _inspector_view_model == null \
-			or _right_panel == null:
-		return
-	var is_family := String(request.get("kind", "")) == "family"
-	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
-		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
-	if bool(payload.get("data_pending", false)):
-		_pending_object_request = request.duplicate(true)
-		_schedule_inspector_retry()
-		return
-	_pending_object_request = {}
-	if payload.is_empty():
-		return
-	_object_detail_context = {
-		"cell_idx": int(_selected_cell.index),
-		"kind": "family" if is_family else String(payload.get("kind", "")),
-		"item_id": String(payload.get("item_id", "")),
-	}
-	_object_detail_context["request"] = request.duplicate(true)
-	if is_family:
-		_right_panel.show_family_workspace(payload)
-	else:
-		_right_panel.show_object_detail(payload)
-	call_deferred("_layout_right_panel")
-
-
-func _close_object_detail_dialog() -> void:
-	_pending_object_request.clear()
-	_object_detail_context = {}
-	if _right_panel != null:
-		_right_panel.close_detail(false)
-		call_deferred("_layout_right_panel")
-
-
-func _refresh_object_detail(force: bool = false) -> void:
-	if _object_detail_context.is_empty() or _selected_cell == null \
-			or _inspector_view_model == null or _right_panel == null \
-			or not _right_panel.detail_open():
-		return
-	var now_ms := Time.get_ticks_msec()
-	if not force and now_ms - _last_object_detail_ms < 200:
-		return
-	if int(_object_detail_context.get("cell_idx", -1)) != int(_selected_cell.index):
-		_close_object_detail_dialog()
-		return
-	var request: Dictionary = _object_detail_context.get("request", {})
-	var is_family := String(_object_detail_context.get("kind", "")) == "family"
-	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
-		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
-	_last_object_detail_ms = now_ms
-	if bool(payload.get("data_pending", false)):
-		return
-	if payload.is_empty():
-		_close_object_detail_dialog()
-		return
-	if is_family:
-		_right_panel.refresh_family_workspace(payload)
-	else:
-		_right_panel.refresh_object_detail(payload)
-
-
-## ── 军务档案（右栏部队 / 战线页）──────────────────────────────────────────
-## 拾取在地图层、格式在 MilitaryViewModel；这里只负责开合、定位、动作转发与
-## 每日合并刷新。它和对象详情共用 DetailShell，所以面板变宽/目录列都由既有的
-## _layout_right_panel() 与 InspectorPanel._sync_split_layout() 决定。
 
 func open_military_dossier(kind: String, id: int, cell: int = -1) -> bool:
-	if _right_panel == null or _player_controller == null or kind.is_empty() or id == 0:
-		return false
-	if kind == "army" and cell < 0 and _player_controller.has_method("military_army_cell"):
-		cell = int(_player_controller.call("military_army_cell", id))
-	var payload := _military_dossier_payload(kind, id, cell)
-	if payload.is_empty():
-		return false
-	# 重选同一支部队保留档案、滚动位置和选点草稿；关闭交给 × / Esc。
-	if _right_panel.military_dossier_open() \
-			and _right_panel.military_dossier_identity() == String(payload.get("identity", "")):
-		if kind != "army":
-			close_military_dossier()
-		return true
-	_player_controller.cancel_military_arm_order()
-	var was_visible := _right_panel.visible
-	UIAnimation.cancel(_right_panel)
-	_military_dossier_context = {"kind": kind, "id": id, "cell": cell}
-	_last_military_dossier_ms = Time.get_ticks_msec()
-	_military_dossier_pending = false
-	_right_panel.set_directory_available(kind != "army" and _selected_cell != null)
-	# 只开军务档案、没有地块档案时，面板本身也要出现。
-	if not _right_panel.visible:
-		_right_panel.visible = true
-	_right_panel.show_military_dossier(payload)
-	_layout_right_panel()
-	UIAnimation.refresh_rest_position(_right_panel)
-	if not was_visible:
-		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
-	update_military_arm_order(_player_controller.military_arm_order())
-	var focus := int(payload.get("focus_cell", -1))
-	if focus >= 0 and _player_controller.has_method("focus_cell"):
-		_player_controller.call("focus_cell", focus)
-	return true
+	return _country_component.open_military_dossier(self, kind, id, cell)
 
 
 func close_military_dossier() -> void:
-	var was_open := _right_panel != null and _right_panel.military_dossier_open()
-	# 每次点格都会走到这里：什么都没开时直接返回，别为一次选格多付一次原生调用。
-	if not was_open and _military_dossier_context.is_empty():
-		return
-	if _player_controller != null:
-		_player_controller.cancel_military_arm_order()
-	_military_dossier_context.clear()
-	_military_dossier_pending = false
-	if _right_panel != null:
-		_right_panel.set_directory_available(true)
-		if was_open:
-			_right_panel.close_detail(false)
-	if _player_controller != null \
-			and _player_controller.has_method("clear_military_map_selection"):
-		_player_controller.call("clear_military_map_selection")
-	# 没有地块档案可回落时，面板本身也该收起。
-	if was_open and _selected_cell == null:
-		hide_cell_panel()
+	_country_component.close_military_dossier(self)
 
 
 func military_dossier_open() -> bool:
-	return _right_panel != null and _right_panel.military_dossier_open()
+	return _country_component.military_dossier_open(self)
 
 
 func _military_dossier_payload(kind: String, id: int, cell: int = -1) -> Dictionary:
-	var vm := _military_view_model()
-	if vm == null:
-		return {}
-	if kind == "army":
-		var same_cell: Array = []
-		# 行军后同格名录跟随部队当前位置，不继续展示开页时的旧驻地。
-		if _player_controller.has_method("military_army_cell"):
-			var current_cell := int(_player_controller.call("military_army_cell", id))
-			if current_cell >= 0:
-				cell = current_cell
-		if cell >= 0 and _player_controller != null \
-				and _player_controller.has_method("military_armies_at_cell"):
-			same_cell = _player_controller.call("military_armies_at_cell", cell)
-		return vm.army_dossier(id, same_cell)
-	if kind == "front":
-		if _player_controller == null \
-				or not _player_controller.has_method("military_front_sector"):
-			return {}
-		var sector: Dictionary = _player_controller.call("military_front_sector", id)
-		if sector.is_empty():
-			return {}
-		return vm.front_dossier(sector)
-	return {}
+	return _country_component._military_dossier_payload(self, kind, id, cell)
 
 
-## 每次开页/刷新建一个 view model：configure 只拷字典，真正的查询在
-## build_military_model（O(armies)，走 200ms 合并窗口）与 facade.army（单支部队）。
 func _military_view_model() -> MilitaryViewModel:
-	if _country_view_model == null or _player_controller == null:
-		return null
-	var handle := int(_player_controller.get_player_country_handle())
-	if handle == 0:
-		return null
-	var context: Dictionary = _country_view_model.military_dossier_context(handle)
-	context["current_day"] = int(_world_clock.day_index()) if _world_clock != null else -1
-	context["player_controller"] = _player_controller
-	var vm := MilitaryViewModel.new()
-	vm.configure(context)
-	if not vm.available():
-		return null
-	return vm
+	return _country_component._military_view_model(self)
 
 
 func _refresh_military_dossier(force: bool = false) -> void:
-	if _military_dossier_context.is_empty() or _right_panel == null \
-			or not _right_panel.military_dossier_open():
-		return
-	var now := Time.get_ticks_msec()
-	if not force and now - _last_military_dossier_ms < MILITARY_DOSSIER_REFRESH_INTERVAL_MSEC:
-		_military_dossier_pending = true
-		_arm_military_dossier_timer()
-		return
-	_last_military_dossier_ms = now
-	_military_dossier_pending = false
-	var payload := _military_dossier_payload(
-		String(_military_dossier_context.get("kind", "")),
-		int(_military_dossier_context.get("id", 0)),
-		int(_military_dossier_context.get("cell", -1)))
-	if payload.is_empty():
-		close_military_dossier()
-		return
-	_right_panel.refresh_military_dossier(payload)
+	_country_component._refresh_military_dossier(self, force)
 
 
 func _arm_military_dossier_timer() -> void:
@@ -1740,7 +629,7 @@ func _on_military_dossier_action_requested(action: StringName, payload: Dictiona
 		return
 	var result: Dictionary = {}
 	match action:
-		&"move", &"area":
+		&"move", &"area", &"explore":
 			result = _player_controller.begin_military_arm_order(handle, String(action), 1)
 		&"cancel_order":
 			_player_controller.cancel_military_arm_order()
@@ -1785,9 +674,7 @@ func _on_military_army_selected(handle: int) -> void:
 
 
 func _set_inspector_trace_cell(cell_idx: int) -> void:
-	if _inspector_view_model == null:
-		return
-	_inspector_view_model.set_inspector_trace_cell(cell_idx)
+	_country_component._set_inspector_trace_cell(self, cell_idx)
 
 
 func update_time_state(
@@ -1797,39 +684,27 @@ func update_time_state(
 		paused: bool,
 		speed: float
 ) -> void:
-	if _top_bar != null:
-		_top_bar.update_time_state(
-			year_idx,
-			month,
-			day_of_month,
-			paused,
-			speed
-		)
+	_overlay_component.update_time_state(self, year_idx, month, day_of_month, paused, speed)
 
 
 func set_world_summary(width: int, height: int, cells: int, seed: int) -> void:
-	if _top_bar != null:
-		_top_bar.set_world_summary(width, height, cells, seed)
+	_overlay_component.set_world_summary(self, width, height, cells, seed)
 
 
 func set_day_night_enabled(enabled: bool) -> void:
-	if _top_bar != null:
-		_top_bar.set_day_night_enabled(enabled)
+	_overlay_component.set_day_night_enabled(self, enabled)
 
 
 func show_loading(message: String) -> void:
-	if _loading_overlay != null:
-		_loading_overlay.show_message(message)
+	_overlay_component.show_loading(self, message)
 
 
 func set_generation_progress(stage: String, fraction: float) -> void:
-	if _loading_overlay != null:
-		_loading_overlay.set_progress(stage, fraction)
+	_overlay_component.set_generation_progress(self, stage, fraction)
 
 
 func hide_loading() -> void:
-	if _loading_overlay != null:
-		_loading_overlay.hide_completed()
+	_overlay_component.hide_loading(self)
 
 
 func map_safe_area() -> Rect2:
@@ -1890,106 +765,11 @@ func _base_map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
-	if _player_controller != null and not String(
-			_player_controller.military_arm_order().get("mode", "")).is_empty():
-		_player_controller.cancel_military_arm_order()
-		return true
-	if _status_card != null and _status_card.is_open():
-		_status_card_generation += 1
-		_status_card_kind = ""
-		_status_card.hide_card(true)
-		return true
-	if is_era_ceremony_playing():
-		_era_ceremony.skip()
-		return true
-	if is_annual_report_open():
-		_annual_report_workspace.call("_close")
-		return true
-	if _era_reward_dialog != null and _era_reward_dialog.visible:
-		_on_era_popup_dismissed()
-		return true
-	if _era_panel != null and _era_panel.is_open():
-		_close_era_panel()
-		return true
-	if is_family_founding_modal_open():
-		if _right_panel != null and _right_panel.detail_open():
-			_right_panel.close_detail()
-			return true
-		if _family_founding_dialog != null:
-			_family_founding_dialog.toggle_collapsed()
-		return true
-	if _colonization_panel != null and (_colonization_panel.is_source_picking() \
-			or _colonization_panel.is_target_picking()):
-		_cancel_colonization_targeting()
-		return true
-	if _colonization_panel != null and _colonization_panel.visible:
-		_colonization_panel.close_panel()
-		return true
-	if _country_panel != null and _country_panel.is_panel_open():
-		close_country_panel()
-		return true
-	if _gm_console != null and _gm_console.is_panel_open():
-		_gm_console.close_panel()
-		return true
-	if _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu():
-		return true
-	if _right_panel != null and _right_panel.visible:
-		if _right_panel.detail_open():
-			_right_panel.close_detail()
-			return true
-		clear_selection_requested.emit()
-		return true
-	return false
+	return _overlay_component.dismiss_overlay_menu(self)
 
 
 func toggle_pause_menu() -> void:
-	if _player_controller != null:
-		_player_controller.cancel_military_arm_order()
-	if _pause_menu != null and not is_era_reward_modal_open() \
-			and not is_family_founding_modal_open():
-		_pause_menu.toggle()
-
-
-func show_era_reward_offer(offer: Dictionary) -> void:
-	if _era_reward_dialog != null:
-		if _era_panel != null and _era_panel.visible:
-			_era_panel.close(true)
-		if not _era_reward_dialog.visible:
-			_era_reward_dialog.open_overview(_build_era_overview())
-		_era_reward_dialog.present_offer(offer)
-		if _era_indicator != null:
-			_era_indicator.set_expanded(true)
-
-
-func _build_era_overview() -> Dictionary:
-	if _player_controller == null:
-		return {}
-	if _era_indicator_view_model == null:
-		_era_indicator_view_model = EraIndicatorViewModel.new()
-	return _era_indicator_view_model.build_overview(
-		_player_controller.get_country_facade(), _player_controller.get_economy_facade(),
-		int(_player_controller.get_player_country_handle()), _gdp_ledger)
-
-
-## 纸徽点击：打开「国家概况 + 时代晋升」合并速览（一张纸笺、无页签、无滚动）。
-## 待领时代奖励时，速览左栏出现「领取时代奖励」按钮；三张奖励纸片仍走 EraRewardDialog 原流程。
-## 奖励弹窗已展开时，点击维持原有的开关语义。
-func _on_era_indicator_pressed() -> void:
-	if is_annual_report_open() or is_family_founding_modal_open() or is_era_ceremony_playing():
-		return
-	if _era_reward_dialog != null and _era_reward_dialog.visible:
-		_on_era_popup_dismissed()
-		return
-	_ensure_era_panel()
-	if _era_panel == null:
-		return
-	if _era_panel.is_open():
-		_close_era_panel()
-		return
-	_era_panel.set_reward_available(String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
-	_era_panel.open(_era_advancement_model(), _build_era_overview())
-	if _era_indicator != null:
-		_era_indicator.set_expanded(_era_panel.wants_expanded_badge())
+	_overlay_component.toggle_pause_menu(self)
 
 
 func _ensure_era_panel() -> void:
@@ -2004,252 +784,6 @@ func _ensure_era_panel() -> void:
 	# 纸笺垫底、晋升光带压在上面。纸徽已归 HUDLayer（面板之下），这里不再需要把它排在纸徽之前。
 	host.move_child(_era_panel, 0)
 	_bind_era_panel()
-
-
-func _bind_era_panel() -> void:
-	_era_panel.close_requested.connect(_close_era_panel)
-	_era_panel.command_requested.connect(_on_era_panel_command)
-	_era_panel.treasury_requested.connect(func() -> void:
-		_close_era_panel()
-		open_country_section("economy", "overview"))
-	_era_panel.reward_requested.connect(func() -> void:
-		era_reward_open_requested.emit())
-
-
-func _close_era_panel() -> void:
-	if _era_panel != null:
-		_era_panel.close()
-	if _era_indicator != null and (_era_reward_dialog == null or not _era_reward_dialog.visible):
-		_era_indicator.set_expanded(false)
-
-
-func is_era_panel_open() -> bool:
-	return _era_panel != null and _era_panel.is_open()
-
-
-func _on_era_panel_command(command: StringName) -> void:
-	var result: Dictionary = {"ok": false, "code": "controller_unavailable",
-		"message": "玩家会话尚未就绪"}
-	if _player_controller != null and _player_controller.has_method("request_command"):
-		result = _player_controller.request_command(command, {})
-	if _era_panel != null:
-		_era_panel.show_command_result(result)
-	_apply_era_advancement(_era_advancement_model(true))
-
-
-## 快照只来自 PlayerController（§5）；控制器尚未提供时返回 ok=false，面板显示不可用。
-func _era_advancement_model(fresh: bool = false) -> Dictionary:
-	if (fresh or _era_advancement_snapshot.is_empty()) and _player_controller != null \
-			and _player_controller.has_method("get_era_advancement_snapshot"):
-		var snapshot = _player_controller.get_era_advancement_snapshot()
-		if snapshot is Dictionary:
-			_era_advancement_snapshot = snapshot
-	return _era_advancement_snapshot
-
-
-func _on_era_advancement_changed(snapshot: Dictionary) -> void:
-	_era_advancement_snapshot = snapshot
-	_apply_era_advancement(snapshot)
-
-
-func _apply_era_advancement(snapshot: Dictionary) -> void:
-	if snapshot.is_empty():
-		return
-	if _era_indicator != null:
-		_era_indicator.set_advancement(String(snapshot.get("status", "")) \
-			if bool(snapshot.get("ok", false)) else "", float(snapshot.get("progress", 0.0)))
-	if _era_panel != null and _era_panel.visible:
-		_era_panel.set_snapshot(snapshot)
-
-
-func _on_era_popup_dismissed() -> void:
-	if _era_reward_dialog.is_offer_open():
-		era_reward_dismiss_requested.emit()
-		# 已提交事务的控制器拒绝关闭，继续等待 ACK。
-		if _era_reward_dialog.is_offer_open():
-			return
-	_era_reward_dialog.close_overview()
-	if _era_indicator != null:
-		_era_indicator.set_expanded(false)
-
-
-# Availability never opens a modal; the native offer remains the sole authority.
-func notify_era_reward_offer(offer: Dictionary) -> void:
-	_era_offer = offer
-	if _era_indicator != null:
-		_era_indicator.set_offer_available(String(offer.get("status", "NONE")) in ["OPEN", "ERROR"])
-	if _era_panel != null:
-		_era_panel.set_reward_available(String(offer.get("status", "NONE")) in ["OPEN", "ERROR"])
-	_queue_era_indicator_refresh()
-
-
-func _queue_era_indicator_refresh() -> void:
-	if _era_refresh_queued or not is_inside_tree():
-		return
-	_era_refresh_queued = true
-	get_tree().create_timer(0.10).timeout.connect(func() -> void:
-		_era_refresh_queued = false
-		_refresh_era_indicator())
-
-
-func _refresh_era_indicator() -> void:
-	if _era_indicator == null or _player_controller == null:
-		return
-	var facade = _player_controller.get_country_facade()
-	var handle := int(_player_controller.get_player_country_handle())
-	if facade == null or handle == 0:
-		if _top_bar != null:
-			_top_bar.set_country_status(0.0, false, 0, false)
-		return
-	_refresh_player_country_status(facade, _player_controller.get_economy_facade(), handle)
-	if _era_indicator_view_model == null:
-		_era_indicator_view_model = EraIndicatorViewModel.new()
-	var model := _era_indicator_view_model.build(facade.research_snapshot(handle))
-	if not model.is_empty() and _era_celebrated_index < 0:
-		# 读档/新世界后的第一份模型只建立基线，任何时候都不重播旧的晋升。
-		_era_celebrated_index = int(model.era_index)
-	_era_indicator.set_model(model)
-	if not model.is_empty() and _era_transfer_name.is_empty() and _top_bar != null \
-			and not _era_indicator.has_pending_era():
-		_top_bar.set_era_name(String(model.era_name))
-	_apply_era_advancement(_era_advancement_model(true))
-	if _era_panel != null and _era_panel.visible:
-		_era_panel.set_overview(_build_era_overview())
-	if _era_reward_dialog != null and _era_reward_dialog.visible:
-		_era_reward_dialog.refresh_overview(_build_era_overview())
-
-
-func _refresh_player_country_status(country_facade, economy_facade, handle: int) -> void:
-	if _top_bar == null:
-		return
-	var treasury: Dictionary = country_facade.treasury_snapshot(handle) \
-		if country_facade != null and country_facade.has_method("treasury_snapshot") else {}
-	var economy: Dictionary = economy_facade.country_economy_overview(handle, "summary") \
-		if economy_facade != null and economy_facade.has_method("country_economy_overview") else {}
-	var cash_valid := bool(treasury.get("ok", false)) and treasury.has("cash")
-	var population_valid := bool(economy.get("ok", false)) and economy.has("population")
-	_top_bar.set_country_status(
-		float(treasury.get("cash", 0)), cash_valid,
-		int(economy.get("population", 0)), population_valid)
-	_refresh_status_card()
-
-
-# ── 顶栏纸签悬浮卡：国库看当日收支，人口看阶层构成 ──────────────────────
-## hover 先延迟再查询：指针扫过顶栏时不会连发原生 professions 查询；
-## 移开时同样延迟收卡，避免纸签之间来回移动导致卡片闪烁。
-## 点击纸签直接进入对应章节，卡片立即收掉。
-func _on_top_bar_status_hovered(kind: String, entered: bool) -> void:
-	if _status_card == null or not is_inside_tree() or _top_bar == null:
-		return
-	if TouchUI.is_touch():
-		return
-	_status_card_generation += 1
-	var generation := _status_card_generation
-	if not entered:
-		await get_tree().create_timer(STATUS_CARD_HIDE_DELAY).timeout
-		if generation == _status_card_generation and _status_card != null:
-			_status_card.hide_card()
-			_status_card_kind = ""
-		return
-	await get_tree().create_timer(STATUS_CARD_SHOW_DELAY).timeout
-	if generation != _status_card_generation or _status_card == null:
-		return
-	var model := _build_status_card_model(kind)
-	if model.is_empty():
-		return
-	_status_card_kind = kind
-	_status_card_next_refresh_ms = Time.get_ticks_msec() + STATUS_CARD_REFRESH_MSEC
-	_status_card.show_card(model, _top_bar.status_anchor(kind))
-
-
-func _on_top_bar_status_pressed(kind: String) -> void:
-	if TouchUI.is_touch() and _status_card != null and _top_bar != null:
-		if not _status_card.is_open() or _status_card_kind != kind:
-			var model := _build_status_card_model(kind)
-			if not model.is_empty():
-				_status_card_generation += 1
-				_status_card_kind = kind
-				_status_card_next_refresh_ms = Time.get_ticks_msec() + STATUS_CARD_REFRESH_MSEC
-				_status_card.show_card(model, _top_bar.status_anchor(kind))
-				return
-	_status_card_generation += 1
-	_status_card_kind = ""
-	if _status_card != null:
-		_status_card.hide_card(true)
-	open_country_section("economy", "overview" if kind == "treasury" else "strata")
-
-
-## 悬浮期间读数会随日结算变化：只在卡还开着时按节流重填，不重播入场。
-func _refresh_status_card() -> void:
-	if _status_card == null or _status_card_kind.is_empty() or not _status_card.is_open():
-		return
-	var now := Time.get_ticks_msec()
-	if now < _status_card_next_refresh_ms:
-		return
-	_status_card_next_refresh_ms = now + STATUS_CARD_REFRESH_MSEC
-	_status_card.refresh_card(_build_status_card_model(_status_card_kind))
-
-
-func _build_status_card_model(kind: String) -> Dictionary:
-	if _player_controller == null:
-		return {}
-	var handle := int(_player_controller.get_player_country_handle())
-	if handle == 0:
-		return {}
-	var country_facade = _player_controller.get_country_facade()
-	var economy_facade = _player_controller.get_economy_facade()
-	if kind == "treasury":
-		var treasury: Dictionary = country_facade.treasury_snapshot(handle) \
-			if country_facade != null and country_facade.has_method("treasury_snapshot") else {}
-		var fiscal: Dictionary = country_facade.fiscal_snapshot(handle) \
-			if country_facade != null and country_facade.has_method("fiscal_snapshot") else {}
-		var cash_valid := bool(treasury.get("ok", false)) and treasury.has("cash")
-		return HudStatusViewModel.build_treasury(
-			cash_valid, int(treasury.get("cash", 0)), fiscal)
-	if economy_facade == null or not economy_facade.has_method("country_economy_overview"):
-		return HudStatusViewModel.build_population({}, {})
-	var professions: Dictionary = economy_facade.country_economy_overview(
-		handle, "professions")
-	var summary: Dictionary = economy_facade.country_economy_overview(handle, "summary")
-	return HudStatusViewModel.build_population(professions, summary)
-
-
-## 纸徽检测到会话内时代上升（已提交快照，读档首帧只建立基线不会走到这里）。
-## 由大典接管：纸徽保留旧图标，大典的新徽记飞回后才换图、闪光并把光点送到日历。
-func _on_era_indicator_advanced(model: Dictionary) -> void:
-	var new_index := int(model.get("era_index", -1))
-	if new_index > _era_celebrated_index:
-		var old_index := _era_celebrated_index if _era_celebrated_index >= 0 else new_index - 1
-		_start_era_ceremony(old_index, new_index, _ceremony_buffs_from_snapshot(new_index))
-		return
-	# 大典已由 PlayerController.era_advanced 先行开播：等它落地再换图；已经落地则只补换图。
-	if not is_era_ceremony_playing() and _era_indicator != null:
-		_era_indicator.reveal_pending_era(false)
-
-
-## PlayerController.era_advanced（玩家晋升服务观察到时代 ACK）：携带权威加成文案。
-func _on_player_era_advanced(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
-	if new_index <= _era_celebrated_index:
-		if is_era_ceremony_playing() and _era_ceremony_index == new_index and not buffs.is_empty():
-			_era_ceremony.set_buffs(buffs)
-		return
-	if _era_celebrated_index < 0:
-		# 尚未建立基线（会话刚绑定）：视为恢复，不演出。
-		_era_celebrated_index = new_index
-		return
-	_start_era_ceremony(maxi(old_index, _era_celebrated_index), new_index, buffs)
-
-
-func _ceremony_buffs_from_snapshot(new_index: int) -> PackedStringArray:
-	# 晋升前最后一份快照的 buffs_preview 正是这次获得的加成。
-	var snapshot := _era_advancement_snapshot
-	if int(snapshot.get("next_era_index", -2)) == new_index:
-		return PackedStringArray(snapshot.get("buffs_preview", PackedStringArray()))
-	return PackedStringArray()
-
-
-func is_era_ceremony_playing() -> bool:
-	return _era_ceremony != null and is_instance_valid(_era_ceremony) and _era_ceremony.is_playing()
 
 
 func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
@@ -2300,173 +834,19 @@ func _start_era_ceremony(old_index: int, new_index: int, buffs: PackedStringArra
 	})
 
 
-func _on_era_ceremony_landed(new_index: int) -> void:
-	if new_index != _era_ceremony_index:
-		return
-	_land_era_on_badge(_era_ceremony_landed_name)
-
-
-## 新徽记落到纸徽：换图 + 金环礼花，光点飞向日历换字，并补一条晋升纸贴。
-func _land_era_on_badge(era_name: String) -> void:
-	if _era_indicator != null:
-		# 纸徽未被大典接管（无 defer）时它已自行放过礼花，这里不再重放。
-		_era_indicator.reveal_pending_era(_era_indicator.has_pending_era() \
-			or _era_indicator.defer_celebration)
-	if not era_name.is_empty():
-		_era_transfer_name = era_name
-	if _era_flight != null and _top_bar != null and _era_indicator != null:
-		_era_flight.play(_era_indicator.icon_origin(), _top_bar.era_name_target())
-	elif _top_bar != null and not _era_transfer_name.is_empty():
-		_on_era_flight_landed()
-	if _era_indicator_view_model == null:
-		_era_indicator_view_model = EraIndicatorViewModel.new()
-	_notify_era_promoted({"era_id": _era_indicator_view_model.era_id_for(_era_celebrated_index),
-		"era_name": era_name})
-
-
-func _on_era_ceremony_finished() -> void:
-	# 兜底：跳过 / 中断 / landed 索引不匹配时，也要把纸徽对齐到当前时代。
-	if _era_indicator != null:
-		_era_indicator.reveal_pending_era(false)
-	_era_ceremony = null
-	_era_ceremony_index = -1
-	_restore_clock_after_ceremony()
-
-
-func _abort_era_ceremony() -> void:
-	if _era_ceremony != null and is_instance_valid(_era_ceremony):
-		_era_ceremony.abort()
-	_era_ceremony = null
-	_era_ceremony_index = -1
-	# 世界已切换：不恢复旧世界的时钟状态。
-	_era_ceremony_resume_clock = false
-
-
-## 大典期间暂停时钟（同时代奖励/家族创立的做法），只在由大典暂停时才恢复。
-func _pause_clock_for_ceremony() -> void:
-	if _world_clock == null or _era_ceremony_resume_clock:
-		return
-	if _world_clock.paused:
-		return
-	_era_ceremony_resume_clock = true
-	_world_clock.pause(true)
-	if _player_controller != null and _player_controller.has_method("sync_ui"):
-		_player_controller.sync_ui()
-
-
-func _restore_clock_after_ceremony() -> void:
-	if not _era_ceremony_resume_clock:
-		return
-	_era_ceremony_resume_clock = false
-	if _world_clock == null or not _world_clock.paused:
-		return
-	# 演出期间若有其他流程接管时钟（时代奖励选择、暂停菜单），交还给它们。
-	if _pause_menu != null and _pause_menu.visible:
-		return
-	if is_era_reward_modal_open() or is_family_founding_modal_open() or is_annual_report_open():
-		return
-	if _player_controller != null and _player_controller.has_method("era_reward_locked") \
-			and bool(_player_controller.era_reward_locked()):
-		return
-	if _player_controller != null and _player_controller.has_method("ideology_draw_locked") \
-			and bool(_player_controller.ideology_draw_locked()):
-		return
-	_world_clock.pause(false)
-	if _player_controller != null and _player_controller.has_method("sync_ui"):
-		_player_controller.sync_ui()
-
-
-## 时代晋升是必须被看见的一刻：徽记特效、顶栏日历换字和纸贴提醒三件事同时发生。
-## 玩家通常正泡在科技面板里等里程碑完成，所以纸贴和徽记都走面板遮罩之上。
-func _notify_era_promoted(model: Dictionary) -> void:
-	var era_id := String(model.get("era_id", ""))
-	if era_id.is_empty():
-		return
-	_ensure_research_toast()
-	if _research_toast == null:
-		return
-	_research_toast.show_era_promoted(era_id, String(model.get("era_name", "")),
-		String(_era_offer.get("status", "NONE")) in ["OPEN", "ERROR"])
-
-
-func _on_era_flight_landed() -> void:
-	if _top_bar != null and not _era_transfer_name.is_empty():
-		_top_bar.set_era_name(_era_transfer_name, true)
-	_era_transfer_name = ""
-
-
-func show_era_reward_error(message: String) -> void:
-	if _era_reward_dialog != null:
-		_era_reward_dialog.show_error(message)
-
-
-func show_era_reward_pending() -> void:
-	if _era_reward_dialog != null:
-		_era_reward_dialog.show_pending()
-
-
-func close_era_reward_offer() -> void:
-	if _era_reward_dialog != null:
-		_era_reward_dialog.close_offer()
-
-
-func is_era_reward_modal_open() -> bool:
-	return _era_reward_dialog != null and _era_reward_dialog.is_offer_open()
-
-
-func show_family_founding_offer(offer: Dictionary) -> void:
-	if _country_panel != null and _country_panel.is_panel_open():
-		close_country_panel()
-	if _colonization_panel != null and _colonization_panel.visible:
-		_colonization_panel.close_panel()
-	if _family_founding_dialog != null:
-		_layout_family_founding_dialog()
-		_family_founding_dialog.present_offer(offer)
-		_layout_family_founding_dialog()
-		if _player_controller != null:
-			_player_controller.ensure_selected_visible()
-
-
-func show_family_founding_error(message: String) -> void:
-	if _family_founding_dialog != null and _family_founding_dialog.is_offer_open():
-		_family_founding_dialog.show_error(message)
-
-
-func close_family_founding_offer() -> void:
-	if _family_founding_dialog != null:
-		_family_founding_dialog.close_offer()
-
-
-func is_family_founding_modal_open() -> bool:
-	return _family_founding_dialog != null and _family_founding_dialog.is_offer_open()
-
-
 func show_exit_save_failure(action: String, result: Dictionary) -> void:
-	if _pause_menu != null:
-		_pause_menu.show_save_failure(action, result)
+	_overlay_component.show_exit_save_failure(self, action, result)
 
 
 func set_resource_discovery_context(
 	technology_ids: PackedStringArray,
 	enforce_discovery: bool = false
 ) -> void:
-	if _map_overlay_toolbar != null:
-		_map_overlay_toolbar.set_resource_discovery_context(
-			technology_ids, enforce_discovery)
+	_country_component.set_resource_discovery_context(self, technology_ids, enforce_discovery)
 
 
 func _refresh_player_discovery_context() -> void:
-	if _country_view_model == null:
-		return
-	var technology_ids: PackedStringArray = \
-		_country_view_model.player_completed_technology_ids()
-	if technology_ids.is_empty():
-		return
-	if _discovery_tech_ids_ready and technology_ids == _last_discovery_tech_ids:
-		return
-	_last_discovery_tech_ids = technology_ids.duplicate()
-	_discovery_tech_ids_ready = true
-	set_resource_discovery_context(technology_ids, true)
+	_country_component._refresh_player_discovery_context(self)
 
 
 func set_player_controller(controller) -> void:
@@ -2495,6 +875,7 @@ func set_player_controller(controller) -> void:
 		_right_panel.set_player_controller(controller)
 	if _colonization_panel != null:
 		_colonization_panel.set_player_controller(controller)
+	_refresh_dispatch_status()
 	if _player_controller != null and _player_controller.has_signal("country_committed"):
 		var callback := Callable(self, "_on_country_committed")
 		if not _player_controller.country_committed.is_connected(callback):
@@ -2540,6 +921,7 @@ func _bind_ui() -> void:
 	_top_bar.setup_requested.connect(toggle_pause_menu)
 	_top_bar.gm_requested.connect(toggle_gm_panel)
 	_top_bar.annual_history_requested.connect(func() -> void: annual_history_requested.emit())
+	_top_bar.dispatch_requested.connect(_open_dispatch_progress)
 	_top_bar.set_gm_available(false)
 	_layout_top_bar()
 	_status_card = get_node_or_null("UIRoot/HUDLayer/HudStatusCard") as HudStatusCard
@@ -2596,6 +978,7 @@ func _bind_ui() -> void:
 	_colonization_panel.start_requested.connect(_on_colonization_start_requested)
 	_colonization_panel.cancel_requested.connect(_on_colonization_cancel_requested)
 	_colonization_panel.expedition_selected.connect(_on_expedition_selected)
+	_refresh_dispatch_status()
 	# 议和窗口：与开拓面板同一条「地图作业面」通道，但它的草案是交割地块。
 	_peace_window = get_node_or_null("UIRoot/ModalLayer/MilitaryPeaceWindow")
 	if _peace_window != null:
@@ -2623,6 +1006,9 @@ func _bind_ui() -> void:
 	_map_overlay_toolbar.overlay_requested.connect(_on_map_overlay_requested)
 	_map_overlay_toolbar.overlay_cleared.connect(_on_map_overlay_cleared)
 	_layout_map_overlay_toolbar()
+	_military_map_toolbar = get_node_or_null("UIRoot/HUDLayer/MilitaryMapToolbar") as MilitaryMapToolbar
+	if _military_map_toolbar != null:
+		_military_map_toolbar.layer_toggled.connect(_on_military_layer_toggled)
 
 	_country_action_bar = get_node("UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
@@ -2750,62 +1136,16 @@ func _ensure_narrative_ui() -> void:
 
 
 func _ensure_cell_hover_card() -> void:
-	if _cell_hover_card != null:
-		return
-	var hud := get_node_or_null("UIRoot/HUDLayer") as Control
-	if hud == null:
-		return
-	var card := CellHoverCardScene.instantiate() as CellHoverCard
-	if card == null:
-		return
-	card.name = "CellHoverCard"
-	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(card)
-	_cell_hover_card = card
-	_configure_cell_hover_card()
+	_overlay_component._ensure_cell_hover_card(self)
 
 
 ## 悬停卡的抑制策略集中在这里：任何"地图不该被打扰"的状态都返回 true。
 func _hover_blocked() -> bool:
-	var situations := get_node_or_null("UIRoot/HUDLayer/CellSituationLayer")
-	if situations != null and situations.is_icon_hovered():
-		return true
-	if _map == null or _inspector_view_model == null or _player_camera == null:
-		return true
-	if _loading_overlay != null and _loading_overlay.visible:
-		return true
-	if _right_panel != null and _right_panel.visible:
-		return true
-	if _country_panel != null and _country_panel.is_panel_open():
-		return true
-	if _pause_menu != null and _pause_menu.visible:
-		return true
-	if is_era_reward_modal_open() or is_family_founding_modal_open() or is_narrative_event_modal_open():
-		return true
-	if is_era_panel_open() or is_era_ceremony_playing():
-		return true
-	if _colonization_panel != null and _colonization_panel.visible:
-		return true
-	if bool(_colonization_targeting.get("active", false)):
-		return true
-	if is_peace_window_open():
-		return true
-	if _gm_console != null and _gm_console.is_panel_open():
-		return true
-	return false
+	return _country_component._hover_blocked(self)
 
 
 func _locate_cell_from_family_founding(cell_index: int) -> void:
-	if _country_panel != null and _country_panel.is_panel_open():
-		close_country_panel()
-	if _player_controller != null and _player_controller.has_method(
-			"focus_family_founding_cell"):
-		_player_controller.focus_family_founding_cell(cell_index)
-	elif _player_controller != null and _map != null and cell_index >= 0:
-		var cell := _map.cell_at(cell_index)
-		if cell != null:
-			_player_controller.select_cell(cell)
-	_layout_family_founding_dialog()
+	_country_component._locate_cell_from_family_founding(self, cell_index)
 
 
 func _layout_family_founding_dialog() -> void:
@@ -2813,31 +1153,15 @@ func _layout_family_founding_dialog() -> void:
 
 
 func _on_founding_collapsed_changed(collapsed: bool) -> void:
-	_layout_country_action_bar()
-	if not collapsed and _player_controller != null:
-		_player_controller.ensure_selected_visible()
+	_country_component._on_founding_collapsed_changed(self, collapsed)
 
 
 func _cancel_colonization_targeting() -> void:
-	_colonization_targeting.clear()
-	if _colonization_panel == null:
-		return
-	if _colonization_panel.is_source_picking():
-		_colonization_panel.cancel_source_selection()
-	else:
-		_colonization_panel.cancel_target_selection()
+	_country_component._cancel_colonization_targeting(self)
 
 
 func _on_colonization_planning_context(context: Dictionary) -> void:
-	if _colonization_route == null:
-		return
-	if context.is_empty():
-		_colonization_route.clear_planning_context()
-		return
-	var sources: PackedInt32Array = context.get("sources", PackedInt32Array())
-	_colonization_route.set_planning_context(sources,
-		int(context.get("selected_source", -1)),
-		int(context.get("target_cell", -1)))
+	_country_component._on_colonization_planning_context(self, context)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2862,36 +1186,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _on_map_overlay_requested(request: Dictionary) -> void:
-	var mode := int(request.get("mode", OverlayMode.MODE.NONE))
-	var title := ""
-	var icon_key := ""
-	var hint := ""
-	var occupancy_bit := -1
-	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
-		var resource_id := StringName(request.get("resource_id", &""))
-		for profile in ResourceProfileRegistry.ordered():
-			if profile != null and profile.id == resource_id:
-				title = profile.display_name
-				icon_key = ResourceProfileRegistry.icon_key(profile)
-				break
-	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
-		var signal_id := StringName(request.get("signal_id", &""))
-		for entry in ResearchSignalCatalog.occupancy_overlay_entries():
-			if StringName(entry.get("id", &"")) == signal_id:
-				title = String(entry.get("display_name", ""))
-				icon_key = String(entry.get("icon_key", &"ecology.growth"))
-				occupancy_bit = int(entry.get("occupancy_bit", -1))
-				break
-	if _map_overlay_legend != null:
-		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key, occupancy_bit)
-		call_deferred("_layout_overlay_legend")
-	map_overlay_requested.emit(request)
+	_overlay_component._on_map_overlay_requested(self, request)
 
 
 func _on_map_overlay_cleared() -> void:
-	if _map_overlay_legend != null:
-		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
-	map_overlay_cleared.emit()
+	_overlay_component._on_map_overlay_cleared(self)
 
 
 func _on_inspector_visibility_changed() -> void:
@@ -2939,16 +1238,7 @@ func _layout_country_action_bar() -> void:
 
 
 func _ensure_research_toast() -> void:
-	if _research_toast != null:
-		return
-	var hud := get_node_or_null("UIRoot/HUDLayer") as Control
-	if hud == null:
-		return
-	_research_toast = ResearchToastScene.instantiate() as ResearchToast
-	_research_toast.name = "ResearchToast"
-	_research_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(_research_toast)
-	_layout_research_toast()
+	_country_component._ensure_research_toast(self)
 
 
 func _layout_research_toast() -> void:
@@ -2956,43 +1246,7 @@ func _layout_research_toast() -> void:
 
 
 func _poll_research_completion_toasts() -> Dictionary:
-	var result := {"states_changed": false, "completed": false}
-	if _country_view_model == null:
-		return result
-	_ensure_research_toast()
-	if _research_toast == null:
-		return result
-	var states: PackedInt32Array = _country_view_model.player_research_states()
-	if states.is_empty():
-		return result
-	if not _research_toast_bootstrapped:
-		_last_research_toast_states = states.duplicate()
-		_research_toast_bootstrapped = true
-		return result
-	var previous := _last_research_toast_states
-	if previous == states:
-		return result
-	result["states_changed"] = true
-	var definitions: Array = TechnologyCatalogScript.public_definitions()
-	var limit := mini(states.size(), definitions.size())
-	for index in range(limit):
-		var next_state := int(states[index])
-		var prev_state := int(previous[index]) if index < previous.size() else 0
-		# State 4 = research complete, pending Effect activation ("明日生效").
-		# State 5 = already owned. Toast on the pending edge so the copy matches.
-		if prev_state >= 4 or next_state < 4:
-			continue
-		var definition: Dictionary = definitions[index]
-		if bool(definition.get("is_application", false)) \
-				or String(definition.get("id", "")).begins_with("app."):
-			continue
-		_research_toast.show_research_completed(String(definition.get(
-			"display_name", definition.get("id", ""))))
-		result["completed"] = true
-	_last_research_toast_states = states.duplicate()
-	if bool(result["completed"]):
-		_play_progression_cue(&"tech_research")
-	return result
+	return _country_component._poll_research_completion_toasts(self)
 
 
 func _layout_gm_panel() -> void:
@@ -3030,16 +1284,25 @@ func _layout_map_overlay_toolbar() -> void:
 
 ## 当前是否触摸档（手机/平板）。桌面返回 false，所有触摸专用版面改动都是 no-op。
 func touch_layout_enabled() -> bool:
-	return _hud_layout().touch_layout_enabled()
+	return _overlay_component.touch_layout_enabled(self)
 
 
-## 递归打印子控件 rect（只在 panel-diag 触发一次）。
 func _dump_panel_children(node: Node, depth: int) -> void:
 	_hud_layout()._dump_panel_children(node, depth)
 
 
 func _layout_right_panel() -> void:
 	_hud_layout()._layout_right_panel()
+
+
+static func panel_content_min_width(panel: Control) -> float:
+	return GameHudLayout.panel_content_min_width(panel)
+
+
+static func resolve_panel_content_width(viewport_width: float,
+		requested_width: float, content_min_width: float) -> float:
+	return GameHudLayout.resolve_panel_content_width(
+		viewport_width, requested_width, content_min_width)
 
 
 static func inspector_layout_for_width(viewport_width: float,
@@ -3061,115 +1324,375 @@ func _log_ui_layout_diagnostics(tag: String) -> void:
 	_hud_layout()._log_ui_layout_diagnostics(tag)
 
 
-func _get_local_gm_toggle_state(toggle_id: String) -> Dictionary:
-	if toggle_id == "diagnostics.perf_hud" and _perf_hud != null:
-		return {"ok": true, "enabled": _perf_hud.visible}
-	return {"ok": false, "message": "未知本地 GM 开关。"}
+func _hud_layout():
+	return _overlay_component._hud_layout(self)
 
+
+func open_country_section(section_id: String, economy_chapter: String = "") -> void:
+	_country_component.open_country_section(self, section_id, economy_chapter)
+
+func _load_country_section_deferred(section_id: String, generation: int) -> void:
+	_country_component._load_country_section_deferred(self, section_id, generation)
+
+func _locate_cell_from_country_panel(cell_index: int) -> void:
+	_country_component._locate_cell_from_country_panel(self, cell_index)
+
+func _on_target_cells_from_country_panel(cells: PackedInt32Array) -> void:
+	_country_component._on_target_cells_from_country_panel(self, cells)
+
+func _on_trade_orders_page_requested(offset: int) -> void:
+	_country_component._on_trade_orders_page_requested(self, offset)
+
+func _on_trade_order_locate_requested(cell_index: int) -> void:
+	_country_component._on_trade_order_locate_requested(self, cell_index)
+
+func close_country_panel() -> void:
+	_country_component.close_country_panel(self)
+
+func _hide_inspector_for_country() -> void:
+	_country_component._hide_inspector_for_country(self)
+
+func _restore_inspector_after_country() -> void:
+	_country_component._restore_inspector_after_country(self)
+
+func refresh_country_summary() -> Dictionary:
+	return _country_component.refresh_country_summary(self)
+
+func _record_country_ui_perf(reason: String, cache_hit: bool,
+		snapshot_ms: float, dirty_domains: int) -> void:
+	_country_component._record_country_ui_perf(self, reason, cache_hit, snapshot_ms, dirty_domains)
+
+func consume_country_ui_perf_summary() -> Dictionary:
+	return _country_component.consume_country_ui_perf_summary(self)
+
+func _on_inspector_tab_data_requested(tab_id: String) -> void:
+	_country_component._on_inspector_tab_data_requested(self, tab_id)
+
+func _cancel_inspector_retry() -> void:
+	_country_component._cancel_inspector_retry(self)
+
+func _schedule_inspector_retry() -> void:
+	if _inspector_retry_queued or not is_inside_tree():
+		return
+	_inspector_retry_queued = true
+	get_tree().create_timer(0.15).timeout.connect(
+		_retry_inspector_reads.bind(_inspector_retry_generation), CONNECT_ONE_SHOT)
+
+func _retry_inspector_reads(generation: int) -> void:
+	_country_component._retry_inspector_reads(self, generation)
+
+func _on_construction_page_requested(sector: String, search: String,
+		sort_id: String, offset: int) -> void:
+	_country_component._on_construction_page_requested(self, sector, search, sort_id, offset)
+
+func _refresh_building_workspace(force: bool = false) -> void:
+	_country_component._refresh_building_workspace(self, force)
+
+func _on_construction_requested(request: Dictionary) -> void:
+	_country_component._on_construction_requested(self, request)
+
+func _open_colonization_target(target_cell: int, family_handle: int = 0,
+		source_cell: int = -1) -> void:
+	_country_component._open_colonization_target(self, target_cell, family_handle, source_cell)
+
+func _open_dispatch_progress() -> void:
+	_country_component._open_dispatch_progress(self)
+
+func _refresh_dispatch_status() -> void:
+	_country_component._refresh_dispatch_status(self)
+
+func _on_colonization_requested(request: Dictionary) -> void:
+	_country_component._on_colonization_requested(self, request)
+
+func _on_family_colonization_requested(family_handle: int,
+		source_cell: int) -> void:
+	_country_component._on_family_colonization_requested(self, family_handle, source_cell)
+
+func _suppress_ui_for_dispatch() -> void:
+	_country_component._suppress_ui_for_dispatch(self)
+
+func _on_dispatch_closed() -> void:
+	_country_component._on_dispatch_closed(self)
+
+func open_military_peace(war_id: int) -> void:
+	_country_component.open_military_peace(self, war_id)
+
+func close_military_peace() -> void:
+	_country_component.close_military_peace(self)
+
+func is_peace_window_open() -> bool:
+	return _country_component.is_peace_window_open(self)
+
+func handle_peace_map_cell(cell: int) -> bool:
+	return _country_component.handle_peace_map_cell(self, cell)
+
+func _peace_focus_cell() -> int:
+	return _country_component._peace_focus_cell(self)
+
+func _on_peace_window_closed() -> void:
+	_country_component._on_peace_window_closed(self)
+
+func _on_peace_submit_requested(payload: Dictionary) -> void:
+	_country_component._on_peace_submit_requested(self, payload)
+
+func _on_peace_locate_requested(cell: int) -> void:
+	_country_component._on_peace_locate_requested(self, cell)
+
+func _refresh_peace_window() -> void:
+	_country_component._refresh_peace_window(self)
+
+func _on_colonization_start_requested(args: Dictionary) -> void:
+	_country_component._on_colonization_start_requested(self, args)
+
+func _on_colonization_cancel_requested(expedition_handle: int) -> void:
+	_country_component._on_colonization_cancel_requested(self, expedition_handle)
+
+func _on_expedition_selected(expedition_handle: int) -> void:
+	_country_component._on_expedition_selected(self, expedition_handle)
+
+func _play_progression_cue(cue: StringName) -> void:
+	_country_component._play_progression_cue(self, cue)
+
+func _on_player_command_completed_audio(id: StringName, result: Dictionary) -> void:
+	_country_component._on_player_command_completed_audio(self, id, result)
+
+func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
+	_country_component._on_player_command_settled(self, id, result)
+
+func _invalidate_live_revision() -> void:
+	_country_component._invalidate_live_revision(self)
+
+func _on_object_details_requested(request: Dictionary) -> void:
+	_country_component._on_object_details_requested(self, request)
+
+func _close_object_detail_dialog() -> void:
+	_country_component._close_object_detail_dialog(self)
+
+func _refresh_object_detail(force: bool = false) -> void:
+	_country_component._refresh_object_detail(self, force)
+
+func show_era_reward_offer(offer: Dictionary) -> void:
+	_era_component.show_era_reward_offer(self, offer)
+
+func _build_era_overview() -> Dictionary:
+	return _era_component._build_era_overview(self)
+
+func _on_era_indicator_pressed() -> void:
+	_era_component._on_era_indicator_pressed(self)
+
+func _bind_era_panel() -> void:
+	_era_panel.close_requested.connect(_close_era_panel)
+	_era_panel.command_requested.connect(_on_era_panel_command)
+	_era_panel.treasury_requested.connect(func() -> void:
+		_close_era_panel()
+		open_country_section("economy", "overview"))
+	_era_panel.reward_requested.connect(func() -> void:
+		era_reward_open_requested.emit())
+
+func _close_era_panel() -> void:
+	_era_component._close_era_panel(self)
+
+func is_era_panel_open() -> bool:
+	return _era_component.is_era_panel_open(self)
+
+func _on_era_panel_command(command: StringName) -> void:
+	_era_component._on_era_panel_command(self, command)
+
+func _era_advancement_model(fresh: bool = false) -> Dictionary:
+	return _era_component._era_advancement_model(self, fresh)
+
+func _on_era_advancement_changed(snapshot: Dictionary) -> void:
+	_era_component._on_era_advancement_changed(self, snapshot)
+
+func _apply_era_advancement(snapshot: Dictionary) -> void:
+	_era_component._apply_era_advancement(self, snapshot)
+
+func _on_era_popup_dismissed() -> void:
+	_era_component._on_era_popup_dismissed(self)
+
+func notify_era_reward_offer(offer: Dictionary) -> void:
+	_era_component.notify_era_reward_offer(self, offer)
+
+func _queue_era_indicator_refresh() -> void:
+	if _era_refresh_queued or not is_inside_tree():
+		return
+	_era_refresh_queued = true
+	get_tree().create_timer(0.10).timeout.connect(func() -> void:
+		_era_refresh_queued = false
+		_refresh_era_indicator())
+
+func _refresh_era_indicator() -> void:
+	_era_component._refresh_era_indicator(self)
+
+func _refresh_player_country_status(country_facade, economy_facade, handle: int) -> void:
+	_era_component._refresh_player_country_status(self, country_facade, economy_facade, handle)
+
+func _on_top_bar_status_hovered(kind: String, entered: bool) -> void:
+	if _status_card == null or not is_inside_tree() or _top_bar == null:
+		return
+	if TouchUI.is_touch():
+		return
+	_status_card_generation += 1
+	var generation := _status_card_generation
+	if not entered:
+		await get_tree().create_timer(STATUS_CARD_HIDE_DELAY).timeout
+		if generation == _status_card_generation and _status_card != null:
+			_status_card.hide_card()
+			_status_card_kind = ""
+		return
+	await get_tree().create_timer(STATUS_CARD_SHOW_DELAY).timeout
+	if generation != _status_card_generation or _status_card == null:
+		return
+	var model := _build_status_card_model(kind)
+	if model.is_empty():
+		return
+	_status_card_kind = kind
+	_status_card_next_refresh_ms = Time.get_ticks_msec() + STATUS_CARD_REFRESH_MSEC
+	_status_card.show_card(model, _top_bar.status_anchor(kind))
+
+func _on_top_bar_status_pressed(kind: String) -> void:
+	_era_component._on_top_bar_status_pressed(self, kind)
+
+func _refresh_status_card() -> void:
+	_era_component._refresh_status_card(self)
+
+func _build_status_card_model(kind: String) -> Dictionary:
+	return _era_component._build_status_card_model(self, kind)
+
+func _on_era_indicator_advanced(model: Dictionary) -> void:
+	_era_component._on_era_indicator_advanced(self, model)
+
+func _on_player_era_advanced(old_index: int, new_index: int, buffs: PackedStringArray) -> void:
+	_era_component._on_player_era_advanced(self, old_index, new_index, buffs)
+
+func _ceremony_buffs_from_snapshot(new_index: int) -> PackedStringArray:
+	return _era_component._ceremony_buffs_from_snapshot(self, new_index)
+
+func is_era_ceremony_playing() -> bool:
+	return _era_component.is_era_ceremony_playing(self)
+
+func _on_era_ceremony_landed(new_index: int) -> void:
+	_era_component._on_era_ceremony_landed(self, new_index)
+
+func _land_era_on_badge(era_name: String) -> void:
+	_era_component._land_era_on_badge(self, era_name)
+
+func _on_era_ceremony_finished() -> void:
+	_era_component._on_era_ceremony_finished(self)
+
+func _abort_era_ceremony() -> void:
+	_era_component._abort_era_ceremony(self)
+
+func _pause_clock_for_ceremony() -> void:
+	_era_component._pause_clock_for_ceremony(self)
+
+func _restore_clock_after_ceremony() -> void:
+	_era_component._restore_clock_after_ceremony(self)
+
+func _notify_era_promoted(model: Dictionary) -> void:
+	_era_component._notify_era_promoted(self, model)
+
+func _on_era_flight_landed() -> void:
+	_era_component._on_era_flight_landed(self)
+
+func show_era_reward_error(message: String) -> void:
+	_era_component.show_era_reward_error(self, message)
+
+func show_era_reward_pending() -> void:
+	_era_component.show_era_reward_pending(self)
+
+func close_era_reward_offer() -> void:
+	_era_component.close_era_reward_offer(self)
+
+func is_era_reward_modal_open() -> bool:
+	return _era_component.is_era_reward_modal_open(self)
+
+func show_family_founding_offer(offer: Dictionary) -> void:
+	_era_component.show_family_founding_offer(self, offer)
+
+func show_family_founding_error(message: String) -> void:
+	_era_component.show_family_founding_error(self, message)
+
+func close_family_founding_offer() -> void:
+	_era_component.close_family_founding_offer(self)
+
+func is_family_founding_modal_open() -> bool:
+	return _era_component.is_family_founding_modal_open(self)
+
+func bind_gm_sun_camera(camera: MapCamera) -> void:
+	_overlay_component.bind_gm_sun_camera(self, camera)
+
+func bind_player_camera(camera: MapCamera) -> void:
+	_overlay_component.bind_player_camera(self, camera)
+
+func _ensure_gm_sun_handle() -> void:
+	_overlay_component._ensure_gm_sun_handle(self)
+
+func _on_gm_sun_camera_moved(_world_rect: Rect2, _center: Vector2, _zoom_value: float) -> void:
+	_overlay_component._on_gm_sun_camera_moved(self, _world_rect, _center, _zoom_value)
+
+func _on_gm_tod_preview_changed(_active: bool) -> void:
+	_overlay_component._on_gm_tod_preview_changed(self, _active)
+
+func _sync_gm_sun_handle() -> void:
+	_overlay_component._sync_gm_sun_handle(self)
+
+func _position_gm_sun_handle() -> void:
+	_overlay_component._position_gm_sun_handle(self)
+
+func _on_gm_sun_handle_input(event: InputEvent) -> void:
+	_overlay_component._on_gm_sun_handle_input(self, event)
+
+func _apply_gm_sun_drag(screen_pos: Vector2) -> void:
+	_overlay_component._apply_gm_sun_drag(self, screen_pos)
+
+func _get_local_gm_toggle_state(toggle_id: String) -> Dictionary:
+	return _overlay_component._get_local_gm_toggle_state(self, toggle_id)
 
 func _set_local_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
-	if toggle_id != "diagnostics.perf_hud" or _perf_hud == null:
-		return {"ok": false, "message": "未知本地 GM 开关。"}
-	if _perf_hud.visible != enabled:
-		_perf_hud.toggle_visible()
-	return {"ok": true, "enabled": _perf_hud.visible, "message": "Perf HUD 已更新。"}
-
+	return _overlay_component._set_local_gm_toggle(self, toggle_id, enabled)
 
 func _on_runtime_gm_toggle_changed(toggle_id: String, enabled: bool) -> void:
-	if toggle_id == "visual.day_night":
-		set_day_night_enabled(enabled)
-
+	_overlay_component._on_runtime_gm_toggle_changed(self, toggle_id, enabled)
 
 func show_annual_report(model: Dictionary, ceremonial: bool) -> void:
-	if _annual_report_workspace != null:
-		_annual_report_workspace.present(model, ceremonial)
-
+	_overlay_component.show_annual_report(self, model, ceremonial)
 
 func set_annual_history(rows: Array, offset: int, has_more: bool) -> void:
-	if _annual_report_workspace != null:
-		_annual_report_workspace.set_history(rows, offset, has_more)
-
+	_overlay_component.set_annual_history(self, rows, offset, has_more)
 
 func is_annual_report_open() -> bool:
-	return _annual_report_workspace != null and _annual_report_workspace.visible
-
+	return _overlay_component.is_annual_report_open(self)
 
 func close_annual_report() -> void:
-	if _annual_report_workspace != null and _annual_report_workspace.has_method("_close"):
-		_annual_report_workspace.call("_close")
-
+	_overlay_component.close_annual_report(self)
 
 func annual_other_modal_open() -> bool:
-	return is_era_reward_modal_open() or is_family_founding_modal_open() \
-		or is_narrative_event_modal_open() \
-		or (_pause_menu != null and _pause_menu.visible)
-
+	return _overlay_component.annual_other_modal_open(self)
 
 func show_narrative_event_offer(offer: Dictionary) -> void:
-	_ensure_narrative_ui()
-	if _country_panel != null and _country_panel.is_panel_open():
-		close_country_panel()
-	if _colonization_panel != null and _colonization_panel.visible:
-		_colonization_panel.close_panel()
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("present_offer"):
-		_narrative_event_dialog.present_offer(offer)
-
+	_overlay_component.show_narrative_event_offer(self, offer)
 
 func show_narrative_event_outcome(resolution: Dictionary) -> void:
-	_ensure_narrative_ui()
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("show_outcome"):
-		_narrative_event_dialog.show_outcome(resolution)
-
+	_overlay_component.show_narrative_event_outcome(self, resolution)
 
 func show_narrative_event_error(message: String) -> void:
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("show_error"):
-		_narrative_event_dialog.show_error(message)
-
+	_overlay_component.show_narrative_event_error(self, message)
 
 func set_narrative_event_illustration(tex: Texture2D) -> void:
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("set_illustration_texture"):
-		_narrative_event_dialog.set_illustration_texture(tex)
-
+	_overlay_component.set_narrative_event_illustration(self, tex)
 
 func close_narrative_event_offer() -> void:
-	if _narrative_event_dialog != null and _narrative_event_dialog.has_method("close_offer"):
-		_narrative_event_dialog.close_offer()
-
+	_overlay_component.close_narrative_event_offer(self)
 
 func is_narrative_event_modal_open() -> bool:
-	return _narrative_event_dialog != null and _narrative_event_dialog.has_method("is_offer_open") \
-		and bool(_narrative_event_dialog.is_offer_open())
-
+	return _overlay_component.is_narrative_event_modal_open(self)
 
 func show_narrative_chronicle(records: Array) -> void:
-	_ensure_narrative_ui()
-	if _narrative_chronicle_panel != null and _narrative_chronicle_panel.has_method("open_panel"):
-		_narrative_chronicle_panel.open_panel(records)
-
+	_overlay_component.show_narrative_chronicle(self, records)
 
 func close_narrative_chronicle() -> void:
-	if _narrative_chronicle_panel != null and _narrative_chronicle_panel.has_method("close_panel"):
-		_narrative_chronicle_panel.close_panel()
-
+	_overlay_component.close_narrative_chronicle(self)
 
 func is_narrative_chronicle_open() -> bool:
-	return _narrative_chronicle_panel != null and _narrative_chronicle_panel.visible
-
-
-func _hud_layout():
-	_hud_layout_component._colonization_panel = _colonization_panel
-	_hud_layout_component._country_action_bar = _country_action_bar
-	_hud_layout_component._family_founding_dialog = _family_founding_dialog
-	_hud_layout_component._gm_console = _gm_console
-	_hud_layout_component._map_overlay_legend = _map_overlay_legend
-	_hud_layout_component._map_overlay_toolbar = _map_overlay_toolbar
-	_hud_layout_component._military_dossier_context = _military_dossier_context
-	_hud_layout_component._peace_window = _peace_window
-	_hud_layout_component._research_toast = _research_toast
-	_hud_layout_component._right_panel = _right_panel
-	_hud_layout_component._top_bar = _top_bar
-	_hud_layout_component._viewport = get_viewport()
-	_hud_layout_component._window = get_window()
-	_hud_layout_component._ui_root = get_node_or_null("UIRoot") as Control
-	_hud_layout_component._settings = get_node_or_null("/root/GameSettings")
-	return _hud_layout_component
+	return _overlay_component.is_narrative_chronicle_open(self)

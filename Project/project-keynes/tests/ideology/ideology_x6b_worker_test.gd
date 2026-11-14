@@ -38,6 +38,8 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# This fixture isolates its worker/effect contract from political support gates.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -73,7 +75,7 @@ func _test_free_draw_lifecycle() -> bool:
 		str(snapshot.get("ideology_slots_used", 0)))
 	# Level progression is one tier per transition. Crossing straight to the L3
 	# threshold from L2 leaves the row at L2 with no transition, so the fixture
-	# must settle L2 and then cross L3.
+	# must settle L2 and then cross L3. Snapshot levels are 0-based: L2 is 1.
 	var to_l2: Dictionary = _submit([{
 		"op": 8, "day": _tick, "handle": _handle,
 		"idea": _dense_id(CARD), "value": 524288}])
@@ -88,7 +90,7 @@ func _test_free_draw_lifecycle() -> bool:
 					"idea_ids", PackedInt32Array())).find(dense)
 				return row >= 0 \
 					and int(PackedInt32Array(rows.get(
-						"levels", PackedInt32Array()))[row]) == 2 \
+						"levels", PackedInt32Array()))[row]) == 1 \
 					and int(PackedByteArray(rows.get(
 						"transition_pending", PackedByteArray()))[row]) == 0,
 			48):
@@ -112,7 +114,7 @@ func _test_free_draw_lifecycle() -> bool:
 			and int(_snapshot().get("free_draws", 0)) == 1,
 		str(_snapshot()))
 	var before := _snapshot()
-	var saved := _request_save(2026102401)
+	var saved := WorkerWaitHelper.request_worker_save(_host, _ext, 2026102401)
 	var bundle: PackedByteArray = saved.get("bytes", PackedByteArray())
 	var country_pkcn: PackedByteArray = saved.get(
 		"country_pkcn", PackedByteArray())
@@ -282,17 +284,13 @@ func _equip(card: String) -> bool:
 			bool(equipped.get("ok", false)), str(equipped)):
 		return false
 	_tick = _drive_days(2)
-	var location := -1
-	var rows := PackedStringArray()
 	var equipped_row := await WorkerWaitHelper.wait_for(
 		func() -> bool:
-			location = _location_for(_snapshot(), dense)
-			if location != 1:
+			if _location_for(_snapshot(), dense) != 1:
 				return false
-			rows = PackedStringArray(_ext.list_modifiers(
-				1, _handle, "").get("definition_keys",
-				PackedStringArray()))
-			for row in rows:
+			for row in PackedStringArray(_ext.list_modifiers(
+					1, _handle, "").get("definition_keys",
+					PackedStringArray())):
 				if String(row).begins_with("ideology.%s" % card):
 					return true
 			return false,
@@ -309,7 +307,9 @@ func _equip(card: String) -> bool:
 			str(receipts.get("reasons", PackedStringArray())),
 			str(_ext.get_ideology_snapshot(_handle))])
 	return _require("%s: card is equipped with a modifier row (location=%d)"
-		% [card, location], equipped_row, str(rows))
+		% [card, _location_for(_snapshot(), dense)], equipped_row,
+		str(_ext.list_modifiers(1, _handle, "").get("definition_keys",
+			PackedStringArray())))
 
 
 func _snapshot() -> Dictionary:
@@ -349,25 +349,10 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		# Publish the revision the day just produced, not the previous one.
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 3000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -409,30 +394,6 @@ func _commands(rows: Array) -> Dictionary:
 	}
 
 
-func _request_save(request_id: int) -> Dictionary:
-	var request: Dictionary = {}
-	for _attempt in range(24):
-		request = _ext.request_runtime_save(request_id)
-		if String(request.get("code", "")) != "save_request_busy":
-			break
-		_ext.poll_runtime_save(request_id)
-		OS.delay_msec(5)
-	if not bool(request.get("pending", false)):
-		return request
-	var saved := {}
-	var ready := WorkerWaitHelper.wait_until(
-		func() -> bool:
-			saved = _ext.poll_runtime_save(request_id)
-			return bool(saved.get("ready", false)),
-		120000,
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
-	if ready:
-		return saved
-	return {}
-
-
 func _wait_for(label: String, predicate: Callable, days: int) -> bool:
 	var passed := await WorkerWaitHelper.wait_for(
 		predicate, days, 120000,
@@ -447,22 +408,6 @@ func _wait_for(label: String, predicate: Callable, days: int) -> bool:
 			label, str(receipts.get("reasons", PackedStringArray())),
 			str(_ext.get_effect_native_adapter_report())])
 	return _require(label, false, str(row))
-
-
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var reached := baseline
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = _ext.get_runtime_thread_report()
-			reached = int(report.get("ideology_pod_committed_day", -1))
-			return reached > baseline \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		maxi(timeout_msec, 120000),
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
-	return reached
 
 
 func _wait_worker_paused(ext: Object) -> bool:
@@ -482,10 +427,6 @@ func _wait_stopped() -> void:
 		120000,
 		func() -> void: _ext.poll_runtime_save(0))
 
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _world_day(ext: Object) -> int:

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 from check_golden_determinism import difference, records
-from run_regression_checks import ROOT, SHUTDOWN_LEAK
+from run_regression_checks import ROOT, SHUTDOWN_LEAK, is_engine_error
 
 EXPECTED_DOMAINS = {"CLIMATE", "TRIGGER_INPUT", "IDEOLOGY", "EFFECT",
                     "MODIFIER", "ECONOMY", "EVENTS", "COUNTRY"}
@@ -106,7 +106,7 @@ def main():
             process = subprocess.run(command, env=env, stdout=stream, stderr=subprocess.STDOUT)
         lines = log.read_text(errors="replace").splitlines()
         errors = [line for line in lines if "SCRIPT ERROR:" in line or "[FAIL]" in line or
-                  line.startswith("ERROR:") or SHUTDOWN_LEAK.search(line)]
+                  is_engine_error(line) or SHUTDOWN_LEAK.search(line)]
         payloads = records(lines, "COMMITTED_REPLAY_RESULT=")
         actual = payloads[0] if len(payloads) == 1 else None
         expected_days = range(args.save_day + 1 if mode == "resume" else 1, args.days + 1)

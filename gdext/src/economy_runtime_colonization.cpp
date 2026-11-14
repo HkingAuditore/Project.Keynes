@@ -279,6 +279,36 @@ int64_t NativeEconomyRuntime::family_population_in_cell(
     return total;
 }
 
+int64_t NativeEconomyRuntime::family_dispatchable_population_in_cell(
+        uint64_t family_handle, int32_t cell) const {
+    int32_t family = -1;
+    if (!families_store().valid_handle(family_handle, family) || cell < 0 ||
+        cell >= _cell_count.get()) return 0;
+    int64_t total = 0, civilians = 0, merchants = 0;
+    const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
+    const int32_t begin = csr ? _family_member_offsets[family] : 0;
+    const int32_t end = csr ? _family_member_offsets[family + 1]
+        : static_cast<int32_t>(family_memberships().size());
+    for (int32_t p = begin; p < end; ++p) {
+        const auto &edge = family_memberships()[
+            csr ? _family_member_edge_indices[p] : p];
+        int32_t slot = -1;
+        if (edge.family_handle != family_handle || edge.people <= 0 ||
+            !population_store().valid_handle(edge.cohort_handle, slot) ||
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] != cell) continue;
+        total += edge.people;
+        const int32_t signature = population_store().signature_id[slot];
+        if (profession_is_state_service_only(_signatures[signature].profession_id)) continue;
+        civilians += edge.people;
+        if (is_merchant_slot(slot)) merchants += edge.people;
+    }
+    // 留下当地最后一名族人及最后一名商人，军人不参与派遣。
+    const int64_t merchant_capacity = std::max<int64_t>(0,
+        living_merchant_population(cell) - 1);
+    return std::max<int64_t>(0, std::min(total - 1,
+        civilians - std::max<int64_t>(0, merchants - merchant_capacity)));
+}
+
 bool NativeEconomyRuntime::colonization_target_owner_allowed(
         uint64_t country_handle, int32_t cell) const {
     if (_country_runtime == nullptr || country_handle == 0 || cell < 0 ||
@@ -604,9 +634,9 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
                 (family_filter != 0 && family_handle != family_filter) ||
                 !colonization_destination_family_allowed(family_handle,
                     target_cell)) continue;
-            const int64_t branch_population = family_population_in_cell(
+            const int64_t maximum_population = family_dispatchable_population_in_cell(
                 family_handle, source);
-            if (branch_population <= 1) continue;
+            if (maximum_population <= 0) continue;
             std::vector<int32_t> route;
             std::vector<int32_t> cumulative;
             int32_t cursor = source;
@@ -657,7 +687,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             entry.token = token; entry.country_handle = country_handle;
             entry.family_handle = family_handle; entry.source_cell = source;
             entry.target_cell = target_cell;
-            entry.maximum_population = branch_population - 1;
+            entry.maximum_population = maximum_population;
             entry.route_cost = static_cast<int32_t>(running);
             entry.travel_days = std::max(1, (entry.route_cost +
                 COLONIZATION_SPEED - 1) / COLONIZATION_SPEED);
@@ -682,7 +712,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
                 _colonization_quote_cache[existing->second] = entry;
             }
             candidates.push_back({family_handle, source,
-                branch_population - 1, entry.route_cost, entry.travel_days, token});
+                maximum_population, entry.route_cost, entry.travel_days, token});
         }
     }
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a,
@@ -1331,13 +1361,14 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     const int32_t target = family_expeditions_store().target_cell[expedition];
     const uint64_t country = family_expeditions_store().country_handle[expedition];
     const uint64_t family = family_expeditions_store().family_handle[expedition];
-    const int64_t people = family_expeditions_store().population[expedition];
+    const int64_t people = std::min(family_expeditions_store().population[expedition],
+        family_dispatchable_population_in_cell(family, source));
     if (!colonization_target_owner_allowed(country, target)) {
         abort_preparing_family_expedition(expedition, day, 3,
             "TARGET_LOST_RETURNING");
         return true;
     }
-    if (family_population_in_cell(family, source) <= people) {
+    if (people <= 0) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
@@ -1402,6 +1433,11 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         }
         error.clear();
     }
+    const bool population_reduced = people != family_expeditions_store().population[expedition];
+    if (population_reduced) {
+        family_expeditions_store().population.write_scalar(expedition, people, market_mutation_sink());
+        note_family_expedition_audit_invalidation();
+    }
     // Stock up day by day. A cell that never holds a whole kit at once can
     // still fund one over time, so the party escrows the spare stock it can
     // afford today and the planner treats that escrow as available tomorrow.
@@ -1421,6 +1457,13 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             false, &reserve)) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
+    }
+    // 缩编后按实际人数采购；已成交货物保留，后续只补实际缺口。
+    if (population_reduced) {
+        family_expeditions_store().kit_bridge_required_units.write_scalar(expedition,
+            std::max<int64_t>(0, kit.bridge_required_units), market_mutation_sink());
+        family_expeditions_store().kit_material_required_units.write_scalar(expedition,
+            std::max<int64_t>(0, kit.material_required_units), market_mutation_sink());
     }
     // Stockpiling only ever clears once the whole opening kit is affordable.
     // When a construction group has no candidate the source market can ever
@@ -2664,10 +2707,10 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
             // two shortfalls are the ordinary day-by-day stockpiling states.
             if (kit.kit_unbuildable != 0)
                 blocker = "UNBUILDABLE";
-            else if (kit.place_buildings != 0 && kit.buildings.empty())
-                blocker = "NO_BUILDINGS";
             else if (material_missing > 0)
                 blocker = "MATERIALS";
+            else if (kit.place_buildings != 0 && kit.buildings.empty())
+                blocker = "NO_BUILDINGS";
             else if (bridge_missing > 0)
                 blocker = "BRIDGE";
             else if (!launchable)

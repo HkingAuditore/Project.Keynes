@@ -273,8 +273,19 @@ uint64_t catalog_hash(const MilitaryCatalog &c) {
             h = mix_scalar<int64_t>(h, u.idle_per_100_day[k]);
             h = mix_scalar<int64_t>(h, u.combat_per_100_day[k]);
         }
+        // Physical repair recipe: a different recipe is a different catalog, so
+        // an old PKMI is rejected instead of replaying demand it cannot satisfy.
+        h = mix_scalar<uint64_t>(h, (uint64_t)u.repair_materials.size());
+        for (const MilitaryRepairMaterial &mat : u.repair_materials) {
+            h = mix_scalar<int32_t>(h, mat.good);
+            h = mix_scalar<int64_t>(h, mat.rate_q32);
+        }
     }
-    // Naval transport gates participate in the catalog identity: a catalog that`r`n    // grants (or stops granting) sea passage is a different catalog.`r`n    h = mix_scalar<int32_t>(h, c.coastal_transport_bit);`r`n    h = mix_scalar<int32_t>(h, c.ocean_transport_bit);`r`n    h = mix_scalar<uint64_t>(h, (uint64_t)c.categories.size());
+    // Naval transport gates participate in the catalog identity: a catalog
+    // that grants (or stops granting) sea passage is a different catalog.
+    h = mix_scalar<int32_t>(h, c.coastal_transport_bit);
+    h = mix_scalar<int32_t>(h, c.ocean_transport_bit);
+    h = mix_scalar<uint64_t>(h, (uint64_t)c.categories.size());
     for (const MilitaryEquipCategory &cat : c.categories) {
         h = mix_string(h, cat.id);
         h = mix_scalar<uint64_t>(h, (uint64_t)cat.good_ids.size());
@@ -296,6 +307,12 @@ uint64_t catalog_hash(const MilitaryCatalog &c) {
         h = mix_scalar<uint64_t>(h, (uint64_t)b.material_goods.size());
         for (int32_t g : b.material_goods) h = mix_scalar<int32_t>(h, g);
         for (int64_t q : b.material_qty) h = mix_scalar<int64_t>(h, q);
+        // Same rule as units: the repair recipe is part of the catalog identity.
+        h = mix_scalar<uint64_t>(h, (uint64_t)b.repair_materials.size());
+        for (const MilitaryRepairMaterial &mat : b.repair_materials) {
+            h = mix_scalar<int32_t>(h, mat.good);
+            h = mix_scalar<int64_t>(h, mat.rate_q32);
+        }
     }
     for (size_t k = 0; k < MILITARY_MAX_SUPPLY_CLASSES; ++k) {
         h = mix_scalar<uint64_t>(h, (uint64_t)c.supply_goods[k].size());
@@ -541,9 +558,22 @@ void MilitaryCore::reset_state() {
     _pending.clear();
     _path_cells.clear();
     _template_rows.clear();
+    _explorations.clear();
+    _exploration_by_army.assign((size_t)MILITARY_MAX_ARMIES, -1);
+    _exploration_daily_path_requests.clear();
+    _exploration_observer_slot = -1;
+    _exploration_explored_view.clear();
+    _exploration_view_day = -1;
+    _exploration_view_revision = 0;
+    _exploration_trail.clear();
+    _exploration_trail_stamp.clear();
+    _exploration_trail_gen = 1;
     _training.clear();
     _stocks.clear();
     _shipments.clear();
+    _purchase_orders.clear();
+    _next_purchase_id = 1;
+    _maint_rows.clear();
     _engagements.clear();
     _wars.clear();
     _truces.clear();
@@ -920,6 +950,13 @@ int32_t MilitaryCore::create_army(int32_t country_slot, int32_t cell) {
 void MilitaryCore::destroy_army(int32_t army_slot) {
     if (!army_alive(_armies, army_slot)) return;
     const size_t s = (size_t)army_slot;
+    const int32_t exploration_row = exploration_row_for_army(army_slot);
+    if (exploration_row >= 0) {
+        cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
+        // The formation no longer exists, so a retained terminal row would
+        // make PKMI section 23 reference a dead handle.
+        _explorations[(size_t)exploration_row].active = false;
+    }
     // Any lot still pointing at this formation would be a dangling army
     // reference in PKMI (pkmi_lot_army_missing on the next restore).
     for (size_t i = 0; i < _lots.active.size(); ++i) {
@@ -1467,6 +1504,32 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         if (_lots.location_kind[i] != (uint8_t)MILITARY_LOT_GARRISON) continue;
         rows.push_back((int32_t)i);
     }
+    // Economy can start with state-service soldier cohorts from the opening
+    // settlement packet (for example, seats attached to an already placed
+    // state building).  Those heads have no Military lot yet because the
+    // military runtime is configured after Economy bootstrap.  Adopt that
+    // initial committed roster once, before normal trim/recruitment logic; a
+    // later empty cell is handled by the ordinary receipt path and must not
+    // manufacture soldiers after a discharge.
+    if (rows.empty() && _lane_intents.empty()) {
+        const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
+            ? _catalog.militia_unit : 0);
+        for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
+            if (static_cast<size_t>(cell) >= digest.cell_soldiers.size() ||
+                static_cast<size_t>(cell) >= digest.cell_owner_slot.size())
+                break;
+            const int64_t economy_heads = std::max<int64_t>(
+                0, digest.cell_soldiers[static_cast<size_t>(cell)]);
+            const int32_t country = digest.cell_owner_slot[static_cast<size_t>(cell)];
+            if (economy_heads <= 0 || country < 0) continue;
+            const int32_t lot = lot_find_or_create(
+                static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
+                militia, 256);
+            if (lot < 0) continue;
+            _lots.count[static_cast<size_t>(lot)] = economy_heads;
+            rows.push_back(lot);
+        }
+    }
     if (rows.empty()) return;
     std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
         if (_lots.location[a] != _lots.location[b]) return _lots.location[a] < _lots.location[b];
@@ -1490,6 +1553,20 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
             digest.cell_population[(size_t)cell] > 0;
         const int64_t economy_heads = digest_has_cell && (size_t)cell < digest.cell_soldiers.size()
             ? std::max<int64_t>(0, digest.cell_soldiers[(size_t)cell]) : 0;
+        int64_t pending_embark = 0;
+        int64_t pending_disembark = 0;
+        for (const MilitaryIntent &intent : _lane_intents) {
+            if (intent.cell != cell) continue;
+            if (intent.kind == MILITARY_INTENT_ARMY_EMBARK)
+                pending_embark += std::max<int64_t>(0, intent.count);
+            else if (intent.kind == MILITARY_INTENT_ARMY_DISEMBARK)
+                pending_disembark += std::max<int64_t>(0, intent.count);
+        }
+        // Commands applied at the start of this Military day already moved the
+        // lots, while the Economy command lands on the following boundary. Keep
+        // those heads in the expected garrison total until that receipt lands.
+        const int64_t expected_garrison = std::max<int64_t>(0,
+            economy_heads - pending_embark + pending_disembark);
         // Heads already enlisted but not yet converted are pre-applied to the
         // roster and still missing from the committed cohort: trimming them here
         // re-opens the quota the next sample and converts the same people twice
@@ -1497,7 +1574,22 @@ void MilitaryCore::reconcile_soldier_roster(const MilitaryWorldDigest &digest) {
         const MilitaryCellState *cell_row = cell_state(cell, false);
         const int64_t in_flight = cell_row != nullptr
             ? std::max<int64_t>(0, cell_row->pending_enlist) : 0;
-        const int64_t allowed = economy_heads + in_flight;
+        const int64_t allowed = expected_garrison + in_flight;
+        if (total < expected_garrison) {
+            const int32_t country = (size_t)cell < digest.cell_owner_slot.size()
+                ? digest.cell_owner_slot[(size_t)cell] : -1;
+            if (country >= 0) {
+                const int16_t militia = static_cast<int16_t>(_catalog.militia_unit >= 0
+                    ? _catalog.militia_unit : 0);
+                const int32_t lot = lot_find_or_create(
+                    static_cast<uint8_t>(MILITARY_LOT_GARRISON), cell, country,
+                    militia, 256);
+                if (lot >= 0) {
+                    _lots.count[(size_t)lot] += expected_garrison - total;
+                    total = expected_garrison;
+                }
+            }
+        }
         if (total > allowed) {
             const int64_t removed_total = total - allowed;
             int64_t excess = removed_total;
@@ -1651,6 +1743,7 @@ void MilitaryCore::trim_army_lots(int32_t army_slot, int64_t allowed) {
 
 void MilitaryCore::reconcile_receipts(const std::vector<MilitaryIntentReceipt> &receipts) {
     for (const MilitaryIntentReceipt &r : receipts) {
+        if (r.kind == MILITARY_INTENT_PROCURE_GOOD) { settle_purchase(r); continue; }
         // Army personnel lane rows (contract §2.1). A row is bookkeeping only:
         // the heads were booked by Military when the intent was emitted and
         // Economy owns the lane. Whatever the outcome, the formation no longer has
@@ -1696,38 +1789,38 @@ void MilitaryCore::reconcile_receipts(const std::vector<MilitaryIntentReceipt> &
             }
             continue;
         }
+        // ENLIST/LEVY is pre-applied to the Military lot before Economy moves
+        // the cohort.  A zero or failed receipt still has to remove the
+        // uncommitted heads and release the pending quota; the generic early
+        // return below used to leave one such head stranded in the roster.
+        if (r.kind == MILITARY_INTENT_ENLIST || r.kind == MILITARY_INTENT_LEVY) {
+            if (r.cell < 0 || r.cell >= _terrain.cell_count) continue;
+            const int64_t requested = (int64_t)((r.source_id >> 48) & 0xFFFFull);
+            const int64_t committed = r.ok
+                ? std::clamp<int64_t>(r.committed_count, 0, requested) : 0;
+            const int64_t shortfall = requested > 0 ? requested - committed : 0;
+            int32_t slot = (int32_t)((r.source_id >> 32) & 0xFFFFull) - 1;
+            if (slot < 0 && (size_t)r.cell < _last_digest.cell_owner_slot.size())
+                slot = _last_digest.cell_owner_slot[(size_t)r.cell];
+            if (slot < 0) slot = 0;
+            if (shortfall > 0) {
+                const int16_t militia =
+                    (int16_t)(_catalog.militia_unit >= 0 ? _catalog.militia_unit : 0);
+                const int32_t lot = lot_find_or_create(
+                    (uint8_t)MILITARY_LOT_GARRISON, r.cell, slot, militia, 256);
+                if (lot >= 0)
+                    _lots.count[(size_t)lot] = std::max<int64_t>(
+                        0, _lots.count[(size_t)lot] - shortfall);
+            }
+            if (MilitaryCellState *st = cell_state(r.cell, false)) {
+                st->pending_enlist = std::max<int64_t>(0,
+                    st->pending_enlist - requested);
+            }
+            _report.reconcile_delta += committed;
+            continue;
+        }
         if (!r.ok || r.committed_count == 0) continue;
         switch (r.kind) {
-            case MILITARY_INTENT_ENLIST:
-            case MILITARY_INTENT_LEVY: {
-                if (r.cell < 0 || r.cell >= _terrain.cell_count) break;
-                // The roster was pre-applied when the intent was emitted (same
-                // contract as DISCHARGE). The receipt only settles what Economy
-                // actually moved: heads it could not move come back off the lot,
-                // so the roster never runs ahead of the real cohort.
-                const int64_t requested = (int64_t)((r.source_id >> 48) & 0xFFFFull);
-                const int64_t committed = r.ok
-                    ? std::clamp<int64_t>(r.committed_count, 0, requested) : 0;
-                const int64_t shortfall = requested > 0 ? requested - committed : 0;
-                int32_t slot = (int32_t)((r.source_id >> 32) & 0xFFFFull) - 1;
-                if (slot < 0 && (size_t)r.cell < _last_digest.cell_owner_slot.size())
-                    slot = _last_digest.cell_owner_slot[(size_t)r.cell];
-                if (slot < 0) slot = 0;
-                if (shortfall > 0) {
-                    const int16_t militia =
-                        (int16_t)(_catalog.militia_unit >= 0 ? _catalog.militia_unit : 0);
-                    const int32_t lot = lot_find_or_create(
-                        (uint8_t)MILITARY_LOT_GARRISON, r.cell, slot, militia, 256);
-                    if (lot >= 0)
-                        _lots.count[(size_t)lot] = std::max<int64_t>(
-                            0, _lots.count[(size_t)lot] - shortfall);
-                }
-                if (MilitaryCellState *st = cell_state(r.cell, false)) {
-                    st->pending_enlist = std::max<int64_t>(0, st->pending_enlist - requested);
-                }
-                _report.reconcile_delta += committed;
-                break;
-            }
             case MILITARY_INTENT_CASUALTY: {
                 if (r.cell < 0 || r.cell >= _terrain.cell_count) break;
                 // Casualties are booked on military lots when the intent is
@@ -2448,10 +2541,13 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
         // `procurement_budget_used` stays 0 by contract (需求 5.5: the legacy
         // cash-driven path is untouched), so AI countries settle exactly as
         // before.
-        const int64_t committed = split.enabled
-                                      ? std::max<int64_t>(0, p.procurement_budget_used)
-                                      : 0;
-        int64_t budget = std::max<int64_t>(0, cash - committed);
+        // Payroll is planned FIRST (design S4-1), so it no longer has to give
+        // way to a procurement pass that has not run yet. The maintenance and
+        // procurement passes subtract `wage_planned_today` from the same frozen
+        // snapshot instead, which keeps "nobody promises the same money twice"
+        // true without reading last pass's counters.
+        p.wage_planned_today = 0;
+        int64_t budget = std::max<int64_t>(0, cash);
         int64_t planned = 0;
         for (int32_t cell = 0; cell < _terrain.cell_count; ++cell) {
             const int64_t amount = per_cell[(size_t)cell];
@@ -2507,6 +2603,7 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
                 p.wage_overspend = planned - split.wage_ceiling;
             if (demanded > planned) p.wage_arrears = demanded - planned;
         }
+        p.wage_planned_today = planned;
         // 30-day rolling spend (integer EWMA, deterministic).
         p.spend_payroll_30 = p.spend_payroll_30 - p.spend_payroll_30 / 30 + planned;
 
@@ -2517,77 +2614,14 @@ void MilitaryCore::run_wages_and_upkeep(const MilitaryWorldDigest &digest,
         p.upkeep_demand = 0;
         p.upkeep_arrears = 0;
         p.upkeep_overspend = 0;
-        if (!upkeep_day) continue;
-        int64_t upkeep = 0;
-        for (const MilitaryCellState &st : _cell_states) {
-            if (st.cell < 0 || st.cell >= _terrain.cell_count) continue;
-            if ((size_t)st.cell >= digest.cell_owner_slot.size()) continue;
-            if (digest.cell_owner_slot[(size_t)st.cell] != s) continue;
-            for (int32_t tier = 0; tier < 8; ++tier) {
-                const int32_t count = st.barracks_count[tier];
-                if (count <= 0) continue;
-                for (const MilitaryStateBuilding &b : _catalog.state_buildings) {
-                    if (b.role == (uint8_t)MILITARY_STATE_BARRACKS && (int32_t)b.tier == tier) {
-                        upkeep += (int64_t)count * b.upkeep_per_day * kUpkeepPeriod;
-                        break;
-                    }
-                }
-            }
-            for (const MilitaryStateBuilding &b : _catalog.state_buildings) {
-                if (b.role == (uint8_t)MILITARY_STATE_FORTIFICATION && (int32_t)b.tier == st.fort_tier) {
-                    upkeep += b.upkeep_per_day * kUpkeepPeriod;
-                } else if (b.role == (uint8_t)MILITARY_STATE_WAR_COLLEGE &&
-                           (int32_t)b.tier == st.college_tier) {
-                    upkeep += b.upkeep_per_day * kUpkeepPeriod;
-                }
-            }
-        }
-        if (upkeep > 0) {
-            const int64_t afford = std::min(upkeep,
-                                            std::max<int64_t>(0, cash - committed - planned));
-            MilitaryIntent in;
-            in.kind = MILITARY_INTENT_SPEND_CASH;
-            in.country_a = handle;
-            in.amount = afford;
-            out.push_back(in);
-            p.spend_upkeep_30 = p.spend_upkeep_30 - p.spend_upkeep_30 / 6 + afford;
-            // Same three numbers as the wage channel (需求 5.3, 7.1), same reason
-            // for storing them per country. `upkeep` is the bill for
-            // kUpkeepPeriod days and `upkeep_ceiling` is valued PER DAY, so the
-            // ceiling has to be scaled by the period before comparing - otherwise
-            // a 5-day bill looks 5x over its one-day share.
-            if (split.enabled) {
-                const int64_t ceiling = split.upkeep_ceiling * kUpkeepPeriod;
-                p.upkeep_demand = upkeep;
-                if (afford > ceiling) p.upkeep_overspend = afford - ceiling;
-                if (upkeep > afford) p.upkeep_arrears = upkeep - afford;
-            }
-            const uint8_t poor = (afford * 2 < upkeep) ? 1 : 0;
-            // The bill above is per country, so the flag that records it must be
-            // per country too. Writing every cell state here stamped one
-            // country's arrears onto every other country's cells (and onto cells
-            // with no state building at all, which then reported `disrepair` in
-            // the inspector and moved `state_hash`); the `else` arm was worse, as
-            // the last poor-free country wiped everybody else's flag. Only cells
-            // this country owns may carry its verdict.
-            for (MilitaryCellState &st : _cell_states) {
-                if (st.cell < 0 || st.cell >= _terrain.cell_count) continue;
-                if ((size_t)st.cell >= digest.cell_owner_slot.size()) continue;
-                if (digest.cell_owner_slot[(size_t)st.cell] != s) continue;
-                st.disrepair = poor;
-            }
-        } else {
-            // No upkeep bill means this country has no state building that could
-            // fall into disrepair, so its own cells are cleared. `else` fires for
-            // every country in turn; clearing the whole map here would erase the
-            // flag of whichever neighbour was processed before it.
-            for (MilitaryCellState &st : _cell_states) {
-                if (st.cell < 0 || st.cell >= _terrain.cell_count) continue;
-                if ((size_t)st.cell >= digest.cell_owner_slot.size()) continue;
-                if (digest.cell_owner_slot[(size_t)st.cell] != s) continue;
-                st.disrepair = 0;
-            }
-        }
+        // Physical maintenance retired the cash bill (design §1 / plan S3-4).
+        // A building no longer pays money to stay standing: it buys repair
+        // materials through the maintenance channel, and `run_maintenance`
+        // decides disrepair from the recipe satisfaction of that building group.
+        // Keeping a second cash verdict here would let a rich country stay
+        // repaired without a single good, which is the exact behaviour this
+        // refactor removes - so the block is gone, not just unused.
+        (void)upkeep_day;
     }
 }
 
@@ -3046,6 +3080,44 @@ bool MilitaryCore::submit(MilitaryCommand command, std::string &error) {
             if (!need_country()) return false;
             if (!need_army()) return false;
             break;
+        case MCMD_ARMY_EXPLORE: {
+            if (!need_country()) return false;
+            if (!need_country_owns_army(has_country, command)) return false;
+            if (!need_army()) return false;
+            if (!need_cell(command.cell)) return false;
+            if (command.radius < 1 || command.radius > MILITARY_MAX_AREA_RADIUS) {
+                error = "command_bad_exploration_radius";
+                return false;
+            }
+            if (command.cells.empty() ||
+                command.cells.size() > (size_t)MILITARY_MAX_EXPLORATION_CELLS) {
+                error = "command_bad_exploration_cells";
+                return false;
+            }
+            std::sort(command.cells.begin(), command.cells.end());
+            command.cells.erase(std::unique(command.cells.begin(), command.cells.end()),
+                                command.cells.end());
+            if (command.cells.empty() ||
+                command.cells.size() > (size_t)MILITARY_MAX_EXPLORATION_CELLS) {
+                error = "command_bad_exploration_cells";
+                return false;
+            }
+            for (int32_t cell : command.cells) {
+                if (cell < 0 || cell >= _terrain.cell_count) {
+                    error = "command_bad_exploration_cells";
+                    return false;
+                }
+            }
+            if (_armies.engagement[(size_t)army_slot] >= 0) {
+                error = "command_army_in_engagement";
+                return false;
+            }
+            if (!can_create_exploration_task(army_slot)) {
+                error = "command_exploration_capacity_full";
+                return false;
+            }
+            break;
+        }
         case MCMD_WAR_DECLARE:
         case MCMD_PEACE_PROPOSE:
         case MCMD_PEACE_RESPOND:
@@ -3243,7 +3315,10 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             return;
         }
         case MCMD_ARMY_STATION:
-            if (resolve_army(cmd.army, army_slot)) military_disembark_army(*this, army_slot);
+            if (resolve_army(cmd.army, army_slot)) {
+                cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
+                military_disembark_army(*this, army_slot);
+            }
             return;
         case MCMD_ARMY_TRANSFER:
         case MCMD_ARMY_MERGE: {
@@ -3289,6 +3364,10 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
                 refresh_army_cache(army_slot);
                 return;
             }
+            // Transfer keeps the source formation alive; its old explore
+            // mission is cancelled. Merge goes through destroy_army below,
+            // which owns cancellation and retires the task row.
+            cancel_exploration_task(other, MILITARY_EXPLORATION_RESULT_CANCELLED);
             // transfer: (unit, count) pairs, -1 unit means "any".
             // Personnel lane (contract §1.2): the people move with the lots. The
             // head count is what `transfer_army_to_army` actually moved (it clamps
@@ -3330,6 +3409,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         }
         case MCMD_ARMY_SPLIT: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             const int32_t cell = _armies.cell[(size_t)army_slot];
             const int32_t owner = _armies.owner_slot[(size_t)army_slot];
             // Split out (unit, count) pairs into a new formation at the same cell.
@@ -3371,6 +3451,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
             return;
         case MCMD_ARMY_MOVE: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             const int32_t owner = _armies.owner_slot[(size_t)army_slot];
             MilitaryWorldDigest empty;
             std::vector<int32_t> path;
@@ -3394,6 +3475,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         }
         case MCMD_ARMY_AREA_CONTROL: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             std::vector<int32_t> cells = cmd.cells;
             if (cells.empty() && cmd.cell >= 0) {
                 // Centre + radius: ring walk via BFS on the neighbour table.
@@ -3426,6 +3508,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         }
         case MCMD_ARMY_STOP: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             const size_t s = (size_t)army_slot;
             _armies.path_len[s] = 0;
             _armies.path_cursor[s] = 0;
@@ -3436,6 +3519,7 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         }
         case MCMD_ARMY_STANCE: {
             if (!resolve_army(cmd.army, army_slot)) return;
+            cancel_exploration_task(army_slot, MILITARY_EXPLORATION_RESULT_CANCELLED);
             _armies.stance[(size_t)army_slot] = (uint8_t)cmd.count;
             if (cmd.count != MILITARY_STANCE_RETREAT) {
                 // leaving RETREAT resumes normal movement
@@ -3450,6 +3534,19 @@ void MilitaryCore::apply_command(const MilitaryCommand &cmd, int64_t day) {
         case MCMD_ARMY_DISBAND:
             if (resolve_army(cmd.army, army_slot)) military_disembark_army(*this, army_slot);
             return;
+        case MCMD_ARMY_EXPLORE: {
+            if (!resolve_army(cmd.army, army_slot)) return;
+            if (_armies.owner_slot[(size_t)army_slot] != country) return;
+            // Exploration is a player-only command. The host installs the
+            // observer before a day with pending work; every other country is
+            // rejected here even if it can submit a structurally valid command.
+            if (_exploration_observer_slot < 0 ||
+                country != _exploration_observer_slot) {
+                return;
+            }
+            create_exploration_task(cmd, day, army_slot, country);
+            return;
+        }
         default:
             apply_war_command(cmd, day);
             return;
@@ -3546,6 +3643,10 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
         _path_daily_requests.resize(_policies.size(), 0);
     }
     for (int32_t &n : _path_daily_requests) n = 0;
+    if ((size_t)_exploration_daily_path_requests.size() < _policies.size()) {
+        _exploration_daily_path_requests.resize(_policies.size(), 0);
+    }
+    for (int32_t &n : _exploration_daily_path_requests) n = 0;
 
     const size_t intents_before = intents.size();
     _attrition_intents.clear();
@@ -3567,6 +3668,11 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
         stage[idx] += (double)std::chrono::duration_cast<std::chrono::nanoseconds>(t - mark).count() / 1e6;
         mark = t;
     };
+    // Reconcile against the committed Economy view before applying today's
+    // commands.  In particular, an army.create must board the post-reconcile
+    // garrison lots after natural Economy-side deaths have been observed.
+    reconcile_receipts(receipts);
+    reconcile_soldier_roster(view);
     apply_due_commands(day);    for (MilitaryCellState &st : _cell_states) for (int32_t k = 0; k < 3; ++k) {   // A3: finish state builds
         const int32_t b = st.construction_building[k];
         if (b < 0 || st.construction_done_day[k] > day || (size_t)b >= _catalog.state_buildings.size()) continue;
@@ -3578,8 +3684,6 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
         // see, so booking anything here would double count.
         st.construction_building[k] = -1; st.construction_done_day[k] = -1;
     }
-    reconcile_receipts(receipts);
-    reconcile_soldier_roster(view);
     // Army personnel lane rows queued by today's command application (create /
     // station / disband / merge) join the same D+1 batch as every other intent.
     for (const MilitaryIntent &row : _lane_intents) intents.push_back(row);
@@ -3599,6 +3703,9 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
     lap(5);
     run_reinforcement(view);
     lap(6);
+    // Exploration plans after today's commands land and before movement, using
+    // the frozen explored snapshot the host pushed on the day boundary.
+    prepare_exploration_day(view);
     run_movement(view);
     lap(7);
     // Soldier losses from harsh-environment attrition drain into the batch.
@@ -3623,7 +3730,16 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
     run_engagements(view, intents);
     lap(9);
     run_wars(view, intents);
+    // Battles can open or close; resume only tasks whose army is no longer
+    // engaged. The next day's prepare revalidates every route.
+    settle_exploration_day();
     lap(10);
+    // Order matters (design S4-1): payroll claims cash first, then the
+    // maintenance channel, then general procurement. All three clip against the
+    // same frozen treasury snapshot, so emitting payroll first is what makes the
+    // D+1 batch fund the soldiers before it funds goods.
+    run_wages_and_upkeep(view, intents);
+    run_maintenance(view, intents);
     run_procurement(view, intents);
     lap(11);
     run_convoys(view, intents);
@@ -3634,7 +3750,8 @@ bool MilitaryCore::step_day(int64_t day, const MilitaryWorldDigest &digest,
     lap(14);
     update_morale_org(view);
     lap(15);
-    run_wages_and_upkeep(view, intents);
+    // Payroll already ran at the top of the day (design S4-1); the lap stays so
+    // the stage index/name table keeps its shape for the perf log.
     lap(16);
     run_reparations(view, intents);
     lap(17);
@@ -3689,6 +3806,11 @@ bool MilitaryCore::ai_decision_due(int64_t day) const {
 bool MilitaryCore::should_run(int64_t day) const {
     if (!_configured) return false;
     if (!_pending.empty()) return true;
+    // Physical maintenance (design S3/S4): a country whose only work is keeping
+    // its buildings repaired, or waiting on a paid purchase, must still step -
+    // otherwise the maintenance pass never runs and the orders never settle.
+    if (!_maint_rows.empty() || !_purchase_orders.empty()) return true;
+    if (has_exploration_work()) return true;
     const bool upkeep_day = (day % kUpkeepPeriod) == 0;
     const bool recruit_day = (day % kRecruitCheckPeriod) == 0;
     for (int32_t slot = 0; slot < (int32_t)_armies.active.size(); ++slot) {
@@ -3757,6 +3879,46 @@ uint64_t MilitaryCore::state_hash() const {
         for (int32_t v : c.cells) h = mix_scalar<int32_t>(h, v);
         for (int32_t v : c.ints) h = mix_scalar<int32_t>(h, v);
         for (int64_t v : c.longs) h = mix_scalar<int64_t>(h, v);
+    }
+    // Empty tables add nothing, so a world that never used auto-exploration
+    // keeps exactly the pre-v4 hash. Non-empty rows are hashed in table order
+    // (the same order PKMI writes), including terminal rows.
+    if (!_explorations.empty()) {
+        h = mix_scalar<uint64_t>(h, (uint64_t)_explorations.size());
+        for (const MilitaryExplorationTask &task : _explorations) {
+            h = mix_scalar<uint8_t>(h, task.active ? 1 : 0);
+            h = mix_scalar<int32_t>(h, task.row_index);
+            h = mix_scalar<uint64_t>(h, task.army_handle);
+            h = mix_scalar<int32_t>(h, task.owner_slot);
+            h = mix_scalar<uint64_t>(h, task.owner_handle);
+            h = mix_scalar<int32_t>(h, task.origin_cell);
+            h = mix_scalar<int32_t>(h, task.return_cell);
+            h = mix_scalar<int32_t>(h, task.anchor_cell);
+            h = mix_scalar<int32_t>(h, task.radius);
+            h = mix_scalar<int32_t>(h, task.selected_count);
+            for (int32_t i = 0; i < task.selected_count; ++i)
+                h = mix_scalar<int32_t>(h, task.selected_cells[(size_t)i]);
+            for (int32_t w = 0; w < 4; ++w) {
+                h = mix_scalar<uint64_t>(h, task.seen_mask[(size_t)w]);
+                h = mix_scalar<uint64_t>(h, task.visited_mask[(size_t)w]);
+                h = mix_scalar<uint64_t>(h, task.blocked_mask[(size_t)w]);
+            }
+            h = mix_scalar<uint8_t>(h, task.phase);
+            h = mix_scalar<uint8_t>(h, task.pause_reason);
+            h = mix_scalar<uint8_t>(h, task.result);
+            h = mix_scalar<uint8_t>(h, task.resume_phase);
+            h = mix_scalar<int32_t>(h, task.focus_index);
+            h = mix_scalar<int32_t>(h, task.current_observation_cell);
+            h = mix_scalar<int32_t>(h, task.observer_tries);
+            for (int32_t v : task.reached_observer_cells)
+                h = mix_scalar<int32_t>(h, v);
+            h = mix_scalar<uint32_t>(h, task.tried_observer_mask);
+            h = mix_scalar<int64_t>(h, task.started_day);
+            h = mix_scalar<int64_t>(h, task.last_progress_day);
+            h = mix_scalar<int64_t>(h, task.last_plan_day);
+            h = mix_scalar<int64_t>(h, task.complete_day);
+            h = mix_scalar<uint8_t>(h, task.return_fallback);
+        }
     }
     h = mix_scalar<uint64_t>(h, (uint64_t)_lots.active.size());
     for (size_t i = 0; i < _lots.active.size(); ++i) {
@@ -3854,6 +4016,53 @@ uint64_t MilitaryCore::state_hash() const {
         h = mix_scalar<int32_t>(h, s.route_cost_q16);
         h = mix_scalar<int32_t>(h, s.progress_q16);
         h = mix_scalar<int32_t>(h, s.blocked_days);
+    }
+    // Paid-but-unsettled purchases are state: the request identity and the
+    // destination decide who receives the goods when the fill receipt lands, so
+    // two runs that differ here are not the same world. An empty table adds
+    // nothing beyond the sentinels, so a world that never buys keeps the shape
+    // of its previous hash.
+    h = mix_scalar<int32_t>(h, _next_purchase_id);
+    h = mix_scalar<uint64_t>(h, (uint64_t)_purchase_orders.size());
+    for (const MilitaryPurchaseOrder &o : _purchase_orders) {
+        h = mix_scalar<uint16_t>(h, o.intent.kind);
+        h = mix_scalar<int32_t>(h, o.intent.cell);
+        h = mix_scalar<int32_t>(h, o.intent.good);
+        h = mix_scalar<uint64_t>(h, o.intent.country_a);
+        h = mix_scalar<int64_t>(h, o.intent.count);
+        h = mix_scalar<int64_t>(h, o.intent.amount);
+        h = mix_scalar<uint64_t>(h, o.intent.source_id);
+        h = mix_scalar<uint8_t>(h, o.channel);
+        h = mix_scalar<int32_t>(h, o.destination_cell);
+        h = mix_scalar<uint8_t>(h, o.dest_kind);
+        h = mix_scalar<int32_t>(h, o.dest);
+        h = mix_scalar<uint64_t>(h, o.dest_handle);
+        h = mix_scalar<int32_t>(h, o.stock_good);
+        h = mix_scalar<int32_t>(h, o.real_good);
+        h = mix_scalar<int32_t>(h, o.category);
+        h = mix_scalar<int8_t>(h, o.quality);
+        h = mix_scalar<int32_t>(h, o.route_cost_q16);
+        h = mix_scalar<int32_t>(h, o.days);
+    }
+    // Maintenance objects: the carry, the window and the verdict are state, so
+    // two runs that differ here are different worlds. A world with no state
+    // buildings or soldiers adds only the sentinel.
+    h = mix_scalar<uint64_t>(h, (uint64_t)_maint_rows.size());
+    for (const MilitaryMaintenanceRow &r : _maint_rows) {
+        h = mix_scalar<uint8_t>(h, r.kind);
+        h = mix_scalar<int32_t>(h, r.country_slot);
+        h = mix_scalar<int32_t>(h, r.cell);
+        h = mix_scalar<int32_t>(h, r.object_id);
+        h = mix_scalar<uint8_t>(h, r.holder_kind);
+        h = mix_scalar<int32_t>(h, r.holder);
+        h = mix_scalar<int32_t>(h, r.units);
+        for (int32_t m = 0; m < MILITARY_MAX_REPAIR_MATERIALS; ++m)
+            h = mix_scalar<int64_t>(h, r.acc_q32[m]);
+        h = mix_scalar<int64_t>(h, r.window_need);
+        h = mix_scalar<int64_t>(h, r.window_met);
+        h = mix_scalar<int32_t>(h, r.window_days);
+        h = mix_scalar<int32_t>(h, r.ratio_bp);
+        h = mix_scalar<uint8_t>(h, r.disrepair);
     }
     h = mix_scalar<uint64_t>(h, (uint64_t)_engagements.size());
     for (const MilitaryEngagement &e : _engagements) {

@@ -104,6 +104,23 @@ func _ready() -> void:
 	_ready_done = true
 	_peace_icon.set_semantic(&"military.war.peace", UITokens.DOSSIER_OXBLOOD)
 	IconButton.apply(_close, &"action.close", IconButton.SMALL, "关闭议和")
+	IconButton.apply_with_text(_submit, &"military.war.peace", "递交", IconButton.SMALL,
+		"递交当前和约草案")
+	IconButton.apply_with_text(_white, &"military.war.truce", "白和平", IconButton.SMALL,
+		"双方维持现状")
+	IconButton.apply_with_text(_lump, &"metric.treasury", "一次赔款", IconButton.SMALL,
+		"一次性支付赔款")
+	IconButton.apply_with_text(_install, &"metric.treasury", "分期赔款", IconButton.SMALL,
+		"按期支付赔款")
+	IconButton.apply_with_text(_annex, &"military.war.score", "吞并", IconButton.SMALL,
+		"割让对方剩余领土")
+	for button in [_close, _submit, _white, _lump, _install, _annex]:
+		button.focus_mode = Control.FOCUS_ALL
+		button.custom_minimum_size = Vector2(button.custom_minimum_size.x,
+			maxf(button.custom_minimum_size.y, 44.0))
+		UIAnimation.bind_tactile_button(button)
+	_submit.focus_neighbor_left = _submit.get_path_to(_close)
+	_close.focus_neighbor_right = _close.get_path_to(_submit)
 	_kpis = [_kpi0, _kpi1, _kpi2, _kpi3]
 	for card in _kpis:
 		var kpi := card as DossierKpiCard

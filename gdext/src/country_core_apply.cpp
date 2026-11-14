@@ -386,6 +386,19 @@ bool country_core_apply_command(
         state.country_display_names.push_back(display_name);
         state.territory_count.push_back(1);
         state.country_state_version.push_back(1);
+        int32_t default_regime = 0;
+        for (size_t regime = 0; regime < catalog.political_regime_ids.size(); ++regime) {
+            if (catalog.political_regime_ids[regime] == "early_clan") {
+                default_regime = static_cast<int32_t>(regime);
+                break;
+            }
+        }
+        state.country_political_regime_ids.push_back(default_regime);
+        state.country_political_regime_capabilities.push_back(
+            default_regime >= 0 && static_cast<size_t>(default_regime) <
+                catalog.political_regime_capability_bits.size()
+                ? catalog.political_regime_capability_bits[
+                    static_cast<size_t>(default_regime)] : 0u);
         state.country_cash.push_back(0);
         state.country_technologies.insert(state.country_technologies.end(), state.technology_words, 0);
         state.country_discovered.insert(state.country_discovered.end(), state.technology_words, 0);
@@ -971,6 +984,27 @@ bool country_core_apply_command(
                                       RUNTIME_DIRTY_COUNTRY_STATE;
         return true;
     }
+    case 28: { // set political regime; stable_id carries the catalog key
+        if (!country_core_validate_target(state, command, slot, error)) return false;
+        const std::string key = copy_fixed(command.stable_id);
+        const auto found = std::find(catalog.political_regime_ids.begin(),
+                                     catalog.political_regime_ids.end(), key);
+        if (key.empty() || found == catalog.political_regime_ids.end()) {
+            error = "political_regime_invalid";
+            return false;
+        }
+        const int32_t regime = static_cast<int32_t>(
+            found - catalog.political_regime_ids.begin());
+        state.country_political_regime_ids[static_cast<size_t>(slot)] = regime;
+        state.country_political_regime_capabilities[static_cast<size_t>(slot)] =
+            regime >= 0 && static_cast<size_t>(regime) <
+                catalog.political_regime_capability_bits.size()
+                ? catalog.political_regime_capability_bits[static_cast<size_t>(regime)]
+                : 0u;
+        ++state.country_state_version[static_cast<size_t>(slot)];
+        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+        return true;
+    }
     default:
         error = "country_command_capture_contract_missing";
         return false;
@@ -1433,6 +1467,8 @@ uint64_t country_core_hash_business_state(const RuntimeCountryPodSnapshot &state
     // differ when production batches internal writes differently from SHADOW,
     // without any difference in the canonical Country business values.
     hash_vector(state.territory_count);
+    hash_vector(state.country_political_regime_ids);
+    hash_vector(state.country_political_regime_capabilities);
     hash_vector(state.country_cash);
     hash_vector(state.country_goods);
     hash_vector(state.cell_country_slot);

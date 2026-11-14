@@ -83,9 +83,9 @@ func _run() -> void:
 			break
 	_expect("tech.celestial_navigation exists", not celestial.is_empty())
 	if not celestial.is_empty():
-		_expect("tech.celestial_navigation has no modifier or summary to fall back on",
+		_expect("tech.celestial_navigation keeps its authored corridor summary",
 			(celestial.get("modifier_terms", []) as Array).is_empty()
-			and String(celestial.get("effect_summary", "")).strip_edges().is_empty())
+			and String(celestial.get("effect_summary", "")).contains("浅海运输走廊"))
 		var items: Array = card._effect_items(celestial)
 		_expect("tech.celestial_navigation shows the shallow-sea corridor",
 			items.size() == 1 and String((items[0] as Dictionary).get("text", "")) \
@@ -94,7 +94,11 @@ func _run() -> void:
 		TechnologyEffectTextScript.effect_items(celestial) == card._effect_items(celestial))
 	card.free()
 
-	_run_shared_summary(definitions, celestial)
+	# Keep the fallback contract independent of current authoring prose: the
+	# live catalog now supplies a summary, so clear it on a copy for this check.
+	var blank_summary := celestial.duplicate(true)
+	blank_summary["effect_summary"] = ""
+	_run_shared_summary(definitions, blank_summary)
 
 
 ## 可研究清单的悬停提示曾经只读 effect_summary，所以同一个科技在列表里和水

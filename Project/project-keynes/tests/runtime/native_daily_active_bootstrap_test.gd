@@ -49,6 +49,7 @@ func _run() -> void:
 	var weather_round_res: Dictionary = {}
 	var ocean_report: Dictionary = {}
 	var first_ocean_day: int = -1
+	var daily_wind_days: Array[int] = []
 	var completed_native_day: int = -1
 	var native_completed_days: int = 0
 	var max_native_slices_in_tick: int = 0
@@ -71,12 +72,21 @@ func _run() -> void:
 		if not native_report_now.is_empty():
 			max_native_slices_in_tick = maxi(max_native_slices_in_tick, int(native_report_now.get("slices_run", 0)))
 		var ocean_report_now: Dictionary = tick_report_now.get(&"ocean_currents", tick_report_now.get("ocean_currents", {}))
+		# SUS keeps only the generic job summary. The Ocean job's authoritative
+		# daily-wind detail remains in its physical diagnostic snapshot.
+		var ocean_diag_now: Dictionary = {}
+		if generator._ocean_currents_job != null \
+				and generator._ocean_currents_job.has_method("last_physical_diag"):
+			ocean_diag_now = generator._ocean_currents_job.last_physical_diag()
+		if bool(ocean_diag_now.get("daily_wind_ran", false)):
+			daily_wind_days.append(day)
 		if not ocean_report_now.is_empty() and int(ocean_report_now.get("slices_run", 0)) > 0:
 			ocean_report = ocean_report_now
 			if first_ocean_day < 0:
 				first_ocean_day = day
 		if not completed_native_res.is_empty() and not ocean_report.is_empty() \
-				and native_completed_days >= 3 and not weather_round_res.is_empty():
+				and native_completed_days >= 3 and not weather_round_res.is_empty() \
+				and not daily_wind_days.is_empty():
 			break
 	if completed_native_res.is_empty():
 		completed_native_res = native_res
@@ -97,7 +107,14 @@ func _run() -> void:
 
 	_expect("sus tick returns dictionary", typeof(tick_res) == TYPE_DICTIONARY)
 	_expect("active path retains ocean physical boundary", not ocean_report.is_empty() and int(ocean_report.get("slices_run", 0)) > 0)
-	_expect("active path does not bucket-gate daily wind", first_ocean_day > 0 and first_ocean_day <= 2)
+	var wind_period_ticks := maxi(1, int(profile.ocean_daily_wind_period_ticks))
+	var daily_wind_cadence_ok := not daily_wind_days.is_empty()
+	for i in range(1, daily_wind_days.size()):
+		if daily_wind_days[i] - daily_wind_days[i - 1] != wind_period_ticks:
+			daily_wind_cadence_ok = false
+			break
+	_expect("active path reports configured daily-wind bucket cadence",
+			daily_wind_cadence_ok and daily_wind_days[0] % wind_period_ticks == 0)
 	_expect("active native daily completed through slice path", int(completed_native_res.get("rc", -1)) == 0 and str(completed_native_res.get("path", "")) == "gdext_native_daily_slice" and bool(completed_native_res.get("done", false)))
 	_expect("active native daily completes during bootstrap", completed_native_day > 0 and completed_native_day <= 4)
 	_expect("active native daily keeps completing rounds", native_completed_days >= 3)

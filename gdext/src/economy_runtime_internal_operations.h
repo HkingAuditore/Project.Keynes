@@ -406,6 +406,8 @@
                                                 std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,
                                       int32_t cell) const;
+    int64_t family_dispatchable_population_in_cell(uint64_t family_handle,
+        int32_t cell) const;
     bool colonization_target_owner_allowed(uint64_t country_handle,
                                            int32_t cell) const;
     bool colonization_destination_family_allowed(uint64_t family_handle,
@@ -1309,6 +1311,22 @@
     // run_slice_compact.
     bool run_building_employment_drain(int64_t &work_done, std::string &error);
     bool run_building_production_drain(int64_t &work_done, std::string &error);
+    struct BuildingInvestmentCellContext;
+    enum class InvestmentPreflightResult : uint8_t {
+        Skip = 0,
+        Ready = 1,
+        Fatal = 2,
+    };
+    bool investment_prepare_cell(BuildingInvestmentCellContext &ctx);
+    bool investment_evaluate_cell_types(BuildingInvestmentCellContext &ctx);
+    void investment_mark_rejection(const InvestmentExistingType *existing,
+                                   int32_t reason);
+    void investment_allocate_portfolio(BuildingInvestmentCellContext &ctx);
+    InvestmentPreflightResult investment_preflight_portfolio(
+        BuildingInvestmentCellContext &ctx, std::string &error);
+    bool investment_commit_portfolio(BuildingInvestmentCellContext &ctx,
+                                     bool &population_changed,
+                                     std::string &error);
     // Phase-2.4.4.4: StageOps drains for early/late graph stages that were still
     // single-slice in dispatch (Host advances stage_index once per pulse).
     bool run_ledger_apply_drain(int64_t &work_done, std::string &error);

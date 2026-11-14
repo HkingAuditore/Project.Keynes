@@ -10,6 +10,7 @@ extends SceneTree
 ## draw gate.
 
 const WIDTH := 16
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const HEIGHT := 12
 const SEED := 20261023
 const WORKER_SPEED := 10.0
@@ -41,6 +42,8 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# This fixture isolates its worker/effect contract from political support gates.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -128,7 +131,7 @@ func _test_scalars() -> bool:
 	var saved_signature := int(
 		_ext.compute_idea_activation_signature_for_test(
 			_handle, _dense_id("pit_dwelling")))
-	var saved := _request_save(2026102402)
+	var saved := WorkerWaitHelper.request_worker_save(_host, _ext, 2026102402)
 	var bundle: PackedByteArray = saved.get("bytes", PackedByteArray())
 	var country_pkcn: PackedByteArray = saved.get(
 		"country_pkcn", PackedByteArray())
@@ -369,24 +372,10 @@ func _snapshot() -> Dictionary:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -442,42 +431,6 @@ func _dense_id(card: String) -> int:
 	return ids.find("idea.%s" % card)
 
 
-func _request_save(request_id: int) -> Dictionary:
-	var request: Dictionary = _ext.request_runtime_save(request_id)
-	var busy_deadline := Time.get_ticks_msec() + 8000
-	while String(request.get("code", "")) == "save_request_busy" \
-			and Time.get_ticks_msec() < busy_deadline:
-		OS.delay_msec(20)
-		_ext.poll_runtime_save(request_id)
-		request = _ext.request_runtime_save(request_id)
-	if not bool(request.get("pending", false)):
-		return request
-	var deadline := Time.get_ticks_msec() + 8000
-	while Time.get_ticks_msec() < deadline:
-		var saved: Dictionary = _ext.poll_runtime_save(request_id)
-		if bool(saved.get("ready", false)):
-			return saved
-		OS.delay_msec(5)
-	return {}
-
-
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var deadline := Time.get_ticks_msec() + timeout_msec
-	var reached := baseline
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		reached = int(report.get("ideology_pod_committed_day", -1))
-		if reached > baseline:
-			return reached
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return reached
-	return reached
-
-
 func _wait_worker_paused(ext: Object) -> bool:
 	var deadline := Time.get_ticks_msec() + 5000
 	while Time.get_ticks_msec() < deadline:
@@ -498,11 +451,6 @@ func _wait_stopped() -> void:
 				"simulation_host_state", "")) == "STOPPED":
 			return
 		OS.delay_msec(5)
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _world_day(ext: Object) -> int:

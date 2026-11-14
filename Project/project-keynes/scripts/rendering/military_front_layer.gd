@@ -15,6 +15,7 @@ class_name MilitaryFrontLayer
 ## COLOR.rgb = 进度色（两端格的控制者色按进度混合），COLOR.a = per-edge 种子。
 
 const SHADER_PATH: String = "res://shaders/military_front_ribbon.gdshader"
+const FRONTIER_GRAIN: Texture2D = preload("res://assets/vfx/frontier_grain.png")
 const Z_INDEX := 8
 ## 军务档案选中一条战线时的颜色（深朱砂）。线宽由 shader uniform 决定，
 ## per-edge 加宽会被裁掉，所以选中反馈走颜色通道。
@@ -71,6 +72,7 @@ func _ensure_nodes() -> void:
 		return
 	_material = ShaderMaterial.new()
 	_material.shader = shader
+	_material.set_shader_parameter("frontier_grain", FRONTIER_GRAIN)
 	_material.set_shader_parameter("front_world_width", 4.2)
 	_mesh_inst.material = _material
 	_has_shader = true

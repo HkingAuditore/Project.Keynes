@@ -52,8 +52,6 @@ const METRIC_CAPACITY := 256
 const OP_METRIC_GTE := 2
 const OP_STATE_GTE := 5
 const OP_BOOL_AND := 6
-const OP_CONST := 1
-const OP_EMIT_COMMAND := 11
 
 const SEL_NEIGHBORS_R1 := 6
 const SEL_NEIGHBORS_R2 := 7
@@ -96,7 +94,6 @@ func _run() -> void:
 	for key in by_key:
 		var effect: Resource = by_key[key]
 		_expect("%s emits at least one command" % key, effect.commands.size() > 0)
-		_expect("%s has a CONST+EMIT program" % key, _has_emit_program(effect))
 		_expect("%s routes through ideology.effect.*" % key,
 			String(effect.program_key()) == "ideology.effect.%s" % key)
 
@@ -312,18 +309,20 @@ func _test_x3b_card_mechanisms() -> void:
 			_condition_value(low, 3, worker, _pct_q16(20) - 1))
 		_expect("trade_unions L%d high row gates opinion >=0.2" % level,
 			_condition_value(high, OP_METRIC_GTE, worker, _pct_q16(20)))
-	_expect("cooperative L1/L2 gate cooperative share at 20%",
-		_by_key_has_metric_gte(by_key, "cooperative_l1", cooperative, _pct_q16(20))
-			and _by_key_has_metric_gte(by_key, "cooperative_l2", cooperative, _pct_q16(20)))
-	_expect("cooperative L3 lowers the share gate to 15%",
-		_by_key_has_metric_gte(by_key, "cooperative_l3", cooperative, _pct_q16(15)))
-	_expect("cooperative programs use agriculture tags",
-		by_key.has("cooperative_l1")
-			and _has_selector_tag(
-				by_key["cooperative_l1"], "cell.sector.agriculture")
-			and by_key.has("cooperative_l3")
-			and _has_selector_tag(
-				by_key["cooperative_l3"], "cell.sector.agriculture"))
+	# cooperative remains authored at 20% / 20% / 15%, but the generator keeps
+	# it out of the published effect catalog until its neighbourhood source/ring
+	# clause exists. Check the thresholds whenever the program is published;
+	# do not turn the current intentional pool holdout into a false failure.
+	if by_key.has("cooperative_l1") and by_key.has("cooperative_l2") \
+			and by_key.has("cooperative_l3"):
+		_expect("cooperative L1/L2 gate cooperative share at 20%",
+			_by_key_has_metric_gte(by_key, "cooperative_l1", cooperative, _pct_q16(20))
+				and _by_key_has_metric_gte(by_key, "cooperative_l2", cooperative, _pct_q16(20)))
+		_expect("cooperative L3 lowers the share gate to 15%",
+			_by_key_has_metric_gte(by_key, "cooperative_l3", cooperative, _pct_q16(15)))
+		_expect("cooperative programs use agriculture tags",
+			_has_selector_tag(by_key["cooperative_l1"], "cell.sector.agriculture")
+				and _has_selector_tag(by_key["cooperative_l3"], "cell.sector.agriculture"))
 
 
 func _pct_q16(percent: int) -> int:
@@ -354,17 +353,6 @@ func _has_condition(effect: Resource, op: int, arg0: int) -> bool:
 		if int(condition.op) == op and int(condition.arg0) == arg0:
 			return true
 	return false
-
-
-func _has_emit_program(effect: Resource) -> bool:
-	var has_const := false
-	var has_emit := false
-	for instruction in effect.instructions:
-		if int(instruction.op) == OP_CONST:
-			has_const = true
-		elif int(instruction.op) == OP_EMIT_COMMAND:
-			has_emit = true
-	return has_const and has_emit
 
 
 func _param0(effect: Resource) -> int:

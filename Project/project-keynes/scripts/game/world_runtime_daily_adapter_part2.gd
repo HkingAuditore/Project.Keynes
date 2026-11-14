@@ -185,13 +185,13 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 	var granted_mask = int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x020) == 0:
 		return
-	var ext = host._generator.get_data_core_world_ext() \
-		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null:
+	var effect = host._generator.get_effect_facade() \
+		if host._generator.has_method("get_effect_facade") else null
+	if effect == null:
 		return
 	# Bounded pump: never block the sim on an unbounded intent backlog.
 	for _i in range(64):
-		var intent: Dictionary = ext.poll_effect_worker_intent()
+		var intent: Dictionary = effect.poll_worker_intent()
 		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
 			break
 		var domain = int(intent.get("target_domain", intent.get("domain", 0)))
@@ -211,7 +211,7 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 			"producer_id": int(intent.get("producer_id", 0)),
 			"sequence": int(intent.get("sequence", 0)),
 		}
-		ext.submit_effect_worker_ack(ack)
+		effect.submit_worker_ack(ack)
 	# Economy-owned family expeditions enqueue their CLAIM/SETTLE transaction
 	# onto the legacy EffectRuntime while the Effect domain itself is worker
 	# authoritative. The worker intent queue above does not contain these
@@ -219,16 +219,16 @@ func _service_effect_worker_intents_if_authoritative(host) -> void:
 	# thread. Keep the order explicit: Country CLAIM -> Country ACK -> Economy
 	# SETTLE -> Economy ACK. The native adapters are idempotent and retain
 	# incomplete bindings until the worker publishes their terminal receipts.
-	var adapter_report: Dictionary = ext.get_effect_native_adapter_report()
+	var adapter_report: Dictionary = effect.native_adapter_report()
 	if bool(adapter_report.get("idle", true)):
 		return
-	ext.dispatch_effect_native_country()
-	ext.ack_effect_native_country()
+	effect.dispatch_native_country()
+	effect.ack_native_country()
 	# Drain only non-mixed orphaned Country bindings. The native helper keeps
 	# CLAIM+SETTLE transactions pending until the claim is truly acknowledged.
-	ext.settle_orphaned_effect_native_country_acks()
-	ext.dispatch_effect_native_economy()
-	ext.ack_effect_native_economy()
+	effect.settle_orphaned_native_country_acks()
+	effect.dispatch_native_economy()
+	effect.ack_native_economy()
 
 
 ## P1-A: under IDEOLOGY worker authority the main-thread daily job is
@@ -428,17 +428,19 @@ func _service_trigger_worker_intents_if_authoritative(host) -> void:
 	var granted_mask = int(report.get("authoritative_domain_mask", 0))
 	if (granted_mask & 0x008) == 0:
 		return
-	var ext = host._generator.get_data_core_world_ext() \
-		if host._generator.has_method("get_data_core_world_ext") else null
-	if ext == null:
+	var trigger = host._generator.get_trigger_facade() \
+		if host._generator.has_method("get_trigger_facade") else null
+	var effect = host._generator.get_effect_facade() \
+		if host._generator.has_method("get_effect_facade") else null
+	if trigger == null or effect == null:
 		return
-	host._service_trigger_country_delivery(ext, report)
+	_service_trigger_country_delivery(host, trigger, effect, report)
 	# Bounded pump: never block the sim on an unbounded intent backlog.
 	for _i in range(64):
-		var intent: Dictionary = ext.poll_trigger_worker_intent()
+		var intent: Dictionary = trigger.poll_worker_intent()
 		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
 			break
-		ext.submit_trigger_worker_ack({
+		trigger.submit_worker_ack({
 			"request_id": int(intent.get("request_id", 0)),
 			"transaction_id": int(intent.get("transaction_id",
 				intent.get("request_id", 0))),
@@ -453,13 +455,13 @@ func _service_trigger_worker_intents_if_authoritative(host) -> void:
 
 
 
-func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -> void:
+func _service_trigger_country_delivery(host, trigger, effect, _report: Dictionary) -> void:
 	if host._trigger_country_delivery_id > 0 or not host._trigger_country_delivery_ids.is_empty():
-		ext.ack_effect_native_country()
+		effect.ack_native_country()
 		if not host._trigger_country_delivery_ack_sent:
-			var retried: Dictionary = host._ack_trigger_delivery_ids(ext)
+			var retried: Dictionary = _ack_trigger_delivery_ids(host, trigger)
 			host._trigger_country_delivery_ack_sent = bool(retried.get("pod_shadow_ok", false))
-		var adapter: Dictionary = ext.get_effect_native_adapter_report()
+		var adapter: Dictionary = effect.native_adapter_report()
 		if host._trigger_country_delivery_ack_sent and not bool(adapter.get("country_pending", false)):
 			host._trigger_country_delivery_id = 0
 			host._trigger_country_delivery_ids = PackedInt64Array()
@@ -467,7 +469,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 	if not host._trigger_country_delivery_waiting and host._world_clock != null and host._world_clock.paused:
 		return
 	if not host._completed_research_signals_reconciled :
-		var recovery: Dictionary = ext.reconcile_completed_research_signals(64)
+		var recovery: Dictionary = trigger.reconcile_research_signals(64)
 		host._completed_research_signals_reconciled = bool(recovery.get("ok", false)) \
 			and bool(recovery.get("complete", false))
 		if int(recovery.get("submitted", 0)) > 0:
@@ -475,7 +477,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 	# Full-graph ACTIVE skips advance_runtime_pulse(), which used to own this
 	# handoff. Drain a bounded prefix through the existing Effect -> Country
 	# adapter, including restored effects whose effective day is in the past.
-	var batch: Dictionary = ext.poll_trigger_effects(0, 64)
+	var batch: Dictionary = trigger.poll_effect_batch(0, 64)
 	var actions: PackedInt32Array = batch.get("actions", PackedInt32Array())
 	var opcodes: PackedInt32Array = batch.get("opcodes", PackedInt32Array())
 	var count = 0
@@ -486,7 +488,7 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 		count += 1
 	if count == 0 and not host._trigger_country_delivery_waiting:
 		return
-	var handoff: Dictionary = ext.handoff_trigger_effects(maxi(1, count))
+	var handoff: Dictionary = trigger.handoff_effect_batch(maxi(1, count))
 	host._trigger_country_delivery_waiting = bool(handoff.get("deferred", false))
 	if int(handoff.get("handed_off", 0)) <= 0:
 		return
@@ -499,22 +501,24 @@ func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -
 	host._trigger_country_delivery_ids = delivered_ids
 	# Explicitly forward the delivery ACK as well as acknowledging the facade.
 	# This is idempotent when handoff_trigger_effects already forwarded it.
-	var delivery_ack: Dictionary = host._ack_trigger_delivery_ids(ext)
+	var delivery_ack: Dictionary = _ack_trigger_delivery_ids(host, trigger)
 	host._trigger_country_delivery_ack_sent = bool(delivery_ack.get("pod_shadow_ok", false))
 	if OS.get_environment("PK_TECH_DELIVERY_DIAG") == "1":
 		print("[tech-delivery] handoff=", handoff, " ids_ack=", delivery_ack)
-	ext.dispatch_effect_native_country()
-	ext.ack_effect_native_country()
+	effect.dispatch_native_country()
+	effect.ack_native_country()
 
 
 ## ACK a delivery batch by the exact effect ids the handoff returned. Old DLLs
 ## without ack_trigger_effect_ids() fall back to the numeric cursor lane.
 
 
-func _ack_trigger_delivery_ids(host, ext: Object) -> Dictionary:
+func _ack_trigger_delivery_ids(host, trigger) -> Dictionary:
 	if not host._trigger_country_delivery_ids.is_empty() :
-		return ext.ack_trigger_effect_ids(host._trigger_country_delivery_ids)
-	return ext.ack_trigger_effects(host._trigger_country_delivery_id)
+		var by_ids: Dictionary = trigger.ack_effect_id_batch(host._trigger_country_delivery_ids)
+		if bool(by_ids.get("available", true)):
+			return by_ids
+	return trigger.ack_effect_cursor(host._trigger_country_delivery_id)
 
 
 

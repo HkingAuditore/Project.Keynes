@@ -241,6 +241,10 @@ public:
     // annotated with whether the EffectRuntime still holds them. Used by the
     // effect-instance tests and by save diagnostics; never mutates state.
     godot::Dictionary effect_instance_report(int64_t country_handle) const;
+    // Where each held card acts, whichever backend serves it: the instance rows
+    // above plus the derived-layer rows of the serving front (`backends` 0/1).
+    // The UI and fixtures that ask "which cells does this card reach" read this.
+    godot::Dictionary effect_target_report(int64_t country_handle) const;
     // Force one reconcile for a country and report what it did, as deltas.
     // Production reaches a reconcile only through a transition, a restore or a
     // worker write-back, so a test that needs "reconcile twice against the same
@@ -1432,6 +1436,11 @@ private:
     int64_t _derived_contribs_passed = 0;
     double _derived_rebuild_total_ms = 0.0;
     std::vector<DerivedProgramContribution> _derived_rebuild_contributions;
+    // The contributions that built the SERVING front, swapped in when a rebuild
+    // installs (or is skipped as identical). `effect_target_report` reads them only
+    // while the front still carries `_derived_installed_generation`.
+    std::vector<DerivedProgramContribution> _derived_installed_contributions;
+    uint64_t _derived_installed_generation = 0;
     // The resumable fold. Held across slice boundaries -- the state IS the job.
     std::unique_ptr<DerivedCellMaterializeJob> _derived_rebuild_job;
     // Ramp sampling state for the SHARDED rebuild.

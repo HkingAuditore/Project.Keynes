@@ -28,6 +28,7 @@ const AUTHORITY_WAIT_TIMEOUT_MSEC := 8000
 const POLL_MSEC := 4
 const PRODUCTION_AUTHORITY_MASK := 0xFFF # CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT
 const CLIMATE_ONLY_AUTHORITY_MASK := 0x802 # retained for documentation of Climate-only subset
+const PARTIAL_AUTHORITY_MASK := CLIMATE_ONLY_AUTHORITY_MASK | (PRODUCTION_AUTHORITY_MASK & 0x004)
 
 var _checks := 0
 var _failures := 0
@@ -67,6 +68,10 @@ func _run() -> int:
 	host.generate_test_economy_data = true
 	host.test_economy_population_scale = 0
 	host.runtime_climate_authority_enabled = true
+	# D12 implements the full graph. Keep this test on the intended partial
+	# promotion path so the main-thread daily tick remains observable while
+	# Climate and Country are worker-owned.
+	host.runtime_authority_domain_mask = PARTIAL_AUTHORITY_MASK
 	get_root().add_child(host)
 	# A SceneTree script runs `_init()` before the tree is entered, so a
 	# child added here reports `is_inside_tree() == false` for the rest of
@@ -95,15 +100,17 @@ func _run() -> int:
 	else:
 		_expect("writeback ring self test bound", false)
 
-	# 1. The gate. A whole-graph ACTIVE request must still be refused; the fact
-	#    that Climate was granted must not have opened the general promotion.
+	# 1. The gate. The partial ACTIVE request must not be granted before its first
+	#    committed day, even though the full graph has native handlers.
 	var report: Dictionary = ext.get_runtime_thread_report()
 	_expect("worker requested Climate|Country|COMMIT authority",
-		int(report.get("requested_authority_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
-	_expect("whole-graph gate still shut",
-		int(report.get("implemented_domain_mask", 0)) != int(
-			report.get("required_domain_mask", 0)) \
-		and not bool(report.get("authority_ready", true)))
+		int(report.get("requested_authority_mask", 0)) == PARTIAL_AUTHORITY_MASK)
+	var initial_authority := int(report.get("authoritative_domain_mask", 0))
+	var initial_completed_days := int(report.get("completed_days", 0))
+	_expect("partial authority is granted only after a committed day",
+		(initial_authority == 0 and initial_completed_days == 0) \
+		or (initial_authority == PARTIAL_AUTHORITY_MASK \
+		and initial_completed_days > 0))
 	_expect("implemented mask includes Country after D12",
 		int(report.get("implemented_domain_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
 
@@ -164,13 +171,13 @@ func _run() -> int:
 			int(report.get("authoritative_domain_mask", 0))])
 	_expect("CLIMATE authority granted after a committed day", granted)
 	_expect("authoritative mask names Climate|Country|COMMIT",
-		int(report.get("authoritative_domain_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
+		int(report.get("authoritative_domain_mask", 0)) == PARTIAL_AUTHORITY_MASK)
 	_expect("Country worker authority granted with Climate",
 		bool(report.get("country_worker_authoritative", false)))
 	_expect("effective mode is ACTIVE under partial promotion",
 		String(report.get("simulation_thread_mode", "")) == "ACTIVE")
 	_expect("Climate-only subset remains a legal implemented subset",
-		(PRODUCTION_AUTHORITY_MASK & CLIMATE_ONLY_AUTHORITY_MASK)
+		(PARTIAL_AUTHORITY_MASK & CLIMATE_ONLY_AUTHORITY_MASK)
 			== CLIMATE_ONLY_AUTHORITY_MASK)
 	if not granted:
 		host.free()
@@ -182,6 +189,7 @@ func _run() -> int:
 	#    temperature array must still change.
 	var before_temp: PackedFloat32Array = map.temp_arr.duplicate()
 	var suppressed_ticks := 0
+	var suppression_state_ticks := 0
 	var breakdown_ticks := 0
 	for extra in range(1, 13):
 		var next_tick := grant_tick + extra
@@ -189,6 +197,9 @@ func _run() -> int:
 		clock.current_day = float(next_tick)
 		host.run_daily_tick(next_tick, phase)
 		host.finish_daily_tick(0.0, {})
+		if generator.has_method("native_daily_climate_suppressed") \
+				and bool(generator.native_daily_climate_suppressed()):
+			suppression_state_ticks += 1
 		var breakdown: Dictionary = generator.sus_climate_breakdown() \
 			if generator.has_method("sus_climate_breakdown") else {}
 		if not breakdown.is_empty():
@@ -201,8 +212,9 @@ func _run() -> int:
 		OS.delay_msec(POLL_MSEC)
 
 	var diagnostics: Dictionary = host.climate_authority_diagnostics()
-	_expect("production Climate schedule suppressed on every tick with a breakdown",
-		breakdown_ticks > 0 and suppressed_ticks == breakdown_ticks)
+	_expect("production Climate authority stays suppressed on every tick",
+		suppression_state_ticks == 12 \
+		and (breakdown_ticks == 0 or suppressed_ticks == breakdown_ticks))
 
 	# 2b. The signal path, which the direct run_daily_tick calls above bypass.
 	#     _on_clock_day_changed owns a whole-graph early-out; if that gate reads

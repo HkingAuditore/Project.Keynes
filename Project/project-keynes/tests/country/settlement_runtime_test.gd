@@ -137,6 +137,7 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 		String(at_ninety.get("prosperity_id", "")) == "rural" and
 		String(at_ninety.get("settlement_name", "")) ==
 			String(rural_before.get("settlement_name", "")))
+	handle = _largest_population_handle(source, 2)
 	_submit_population_delta(source, handle, -1, 5, 2)
 	_run_cycle(source, 1)
 	var at_eighty_nine: Dictionary = source.get_population_cell_summary(2)
@@ -144,6 +145,7 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 		String(at_eighty_nine.get("prosperity_id", "")) == "settlement" and
 		not bool(at_eighty_nine.get("settlement_name_active", true)) and
 		int(at_eighty_nine.get("name_roll_generation", 0)) == 1)
+	handle = _largest_population_handle(source, 2)
 	_submit_population_delta(source, handle, 11, 10, 3)
 	_run_cycle(source, 2)
 	var renamed: Dictionary = source.get_population_cell_summary(2)
@@ -182,12 +184,18 @@ func _configured_world(compiled: Dictionary, populations: PackedInt64Array,
 	ext.create_entities(cells)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
 			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
-			&"cell_weather_intensity"]:
+			&"cell_weather_intensity", &"cell_temp_365d"]:
 		var values := PackedFloat32Array()
 		values.resize(cells)
 		values.fill(0.5)
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, values)
+	var zeros := PackedByteArray()
+	zeros.resize(cells)
+	zeros.fill(0)
+	for slot_name in [&"cell_weather_type", &"cell_cover"]:
+		var slot: int = ext.register_component(slot_name, 2, 1, false)
+		ext.write_u8_range(slot, 0, zeros)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	if not CountryTestHelper.configure_all_technologies(
@@ -243,6 +251,20 @@ func _submit_population_delta(ext: Object, handle: int, amount: int,
 		"i64_1": PackedInt64Array([0]),
 	})
 	_expect("人口变更命令已接收", bool(result.get("ok", false)))
+
+
+func _largest_population_handle(ext: Object, cell: int) -> int:
+	var snapshot: Dictionary = ext.get_population_cell_snapshot(cell)
+	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
+	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
+	var best := 0
+	var best_population := -1
+	for index in range(handles.size()):
+		var population := int(populations[index]) if index < populations.size() else 0
+		if population > best_population:
+			best_population = population
+			best = int(handles[index])
+	return best
 
 
 func _run_cycle(ext: Object, cycle: int) -> void:

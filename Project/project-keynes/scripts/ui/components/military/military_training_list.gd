@@ -1,6 +1,6 @@
 extends DossierChart
 
-## 军事页的「本地训练」行：在训兵种（目标 ← 来源）、人数、手绘进度、剩余天数。
+## 军事页的「本地训练」行：目标兵种、人数、手绘进度、剩余天数。
 ## 进度条与驻军条同一种纸面画法（MilitaryPaperStyle.paper_bar），首帧生长一次。
 
 const TouchUI := preload("res://scripts/ui/touch_ui.gd")
@@ -46,7 +46,9 @@ func _draw() -> void:
 			IconCatalog.draw_icon(self, icon, Rect2(Vector2(0.0, top + 3.0),
 				Vector2(18.0, 18.0)))
 		var text_x := 23.0
-		var label := "%s（源自 %s）" % [String(row.get("to", "暂缺")), String(row.get("from", "暂缺"))]
+		# 来源职业不会改变玩家的下一步操作；只显示训练目标，给人数、进度和
+		# 剩余时间留出空间，避免把一行变成解释性句子。
+		var label := String(row.get("to", ""))
 		_text(Vector2(text_x, baseline), _fit_text(label, NAME_SIZE, w - text_x - 96.0),
 			NAME_SIZE, UITokens.DOSSIER_INK_SOFT, "sans_strong")
 		if bool(row.get("foreign", false)):

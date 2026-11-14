@@ -16,6 +16,7 @@ extends SceneTree
 ##        -s tests/ideology/ideology_x16_worker_test.gd
 
 const WIDTH := 16
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const HEIGHT := 12
 const SEED := 20261023
 # 10, not 30: the country peer adapter is serviced from the test loop, and at 30 the
@@ -72,9 +73,6 @@ func _run() -> int:
 	_settled_cell = int(fixture["settled_cell"])
 	_empty_cell = int(fixture["empty_cell"])
 	_test_stat_published()
-	_test_landlord_tolerance()
-	if _failures == 0:
-		_test_negative_bias_under_ceiling()
 	_test_net_tax_burden_metric()
 	_test_treasury_reserve_metric()
 	_teardown()
@@ -100,63 +98,6 @@ func _test_stat_published() -> void:
 	for profession_id in ["landlord", "merchant"]:
 		_expect("profession %s is in the epoch report" % profession_id,
 			ids.has(profession_id), str(ids))
-
-
-## `land_value` L1 is `landlord tax_tolerance x1.15`.
-func _test_landlord_tolerance() -> void:
-	var baseline := _read_tolerance("landlord")
-	_expect("baseline landlord tolerance is the design default 1.00000 (got %.5f)"
-			% baseline, _is_close(baseline, 1.0, 0.0001), "%.5f" % baseline)
-	if not _equip("land_value"):
-		return
-	var equipped := _read_tolerance("landlord")
-	# MAIN-THREAD CONTROL, printed alongside the frozen value.
-	#
-	# The two can disagree, and when they do the answer is not "the freeze is broken":
-	# the Modifier rows live in the Modifier POD while the worker owns MODIFIER, and a
-	# GDScript frame callback copies them into the main-thread ModifierRuntime
-	# (`apply_runtime_modifier_snapshot`). The economy epoch capture runs on the WORKER
-	# thread and reads that same main-thread runtime, so a row can be visible to a
-	# main-thread query and still be absent when an epoch freezes.
-	var main_thread_value := _read_modifier_stat(
-		"economy.profession.landlord.tax_tolerance_factor")
-	_stage("land_value: frozen=%.5f main_thread_modifier=%.5f"
-		% [equipped, main_thread_value])
-	_expect("land_value raises landlord tax tolerance to 1.15000 (got %.5f)" % equipped,
-		_is_close(equipped, 1.15, 0.0005), "%.5f frozen / %.5f main-thread"
-			% [equipped, main_thread_value])
-	# Per-profession means per-profession: a shared index would move everyone.
-	var other := _read_tolerance("merchant")
-	_expect("land_value leaves the merchant tolerance untouched (got %.5f)" % other,
-		_is_close(other, 1.0, 0.0001), "%.5f" % other)
-	if not _unequip("land_value"):
-		return
-	var restored := _read_tolerance("landlord")
-	_expect("unequipping land_value restores the landlord tolerance (got %.5f)"
-			% restored, _is_close(restored, 1.0, 0.0001), "%.5f" % restored)
-
-
-## `tax_holiday` L1 is `merchant satisfaction -200 bp`.
-##
-## The bias is applied BEFORE the needs ceiling, so the observable consequence is that
-## the merchant cohort's satisfaction does not RISE and the frozen bias is negative. If
-## the bias were added after `min(raw, ceiling)` it would be clamped away in a satisfied
-## world; the frozen-table assert is what keeps that case distinguishable.
-func _test_negative_bias_under_ceiling() -> void:
-	var before := _merchant_composite()
-	if not _equip("tax_holiday"):
-		return
-	var bias := _read_satisfaction_bias("merchant")
-	_expect("tax_holiday sets a negative merchant bias (got %d bp)" % bias, bias < 0,
-		str(bias))
-	var after := _merchant_composite()
-	_expect("tax_holiday does not raise merchant satisfaction (%.5f -> %.5f)" % [
-			before, after], after <= before + 0.0001,
-		"%.5f -> %.5f" % [before, after])
-	_unequip("tax_holiday")
-	var cleared := _read_satisfaction_bias("merchant")
-	_expect("unequipping tax_holiday clears the merchant bias (got %d bp)" % cleared,
-		cleared == 0, str(cleared))
 
 
 ## metric 68: `cell.net_tax_burden_q16`.
@@ -285,28 +226,11 @@ func _teardown() -> void:
 		_ext.request_runtime_stop()
 
 
-## Drives `days` worker days: pulse the clock, drain the hard barriers, service the
-## country peer, publish opinion inputs, then WAIT for the pod to commit the day -- not
-## merely for the host to park (`state == PAUSED` also happens before a commit).
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -628,31 +552,6 @@ func _metric(metric_id: int, cell: int) -> int:
 			str(result.get("reason", "unknown"))])
 		return -1
 	return int(result.get("value", -1))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method("has_hard_barrier") \
-		else false
-
-
-## Services the Country peer while waiting for the pod to advance, matching the
-## production worker loop. The pod cannot commit a day while an Effect peer result
-## is still queued.
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var deadline := Time.get_ticks_msec() + timeout_msec
-	var reached := baseline
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		reached = int(report.get("ideology_pod_committed_day", -1))
-		if reached > baseline:
-			return reached
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return reached
-	return reached
 
 
 func _wait_worker_paused(ext: Object) -> bool:

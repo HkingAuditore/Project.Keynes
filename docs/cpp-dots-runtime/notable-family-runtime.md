@@ -433,7 +433,7 @@ v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分�
 - 后续开发先加载仓库 Skill：
   [project-keynes-family-runtime](../../.codex/skills/project-keynes-family-runtime/SKILL.md)。
 - 家族行为、重要人物、守恒、职业统计、所有权 CSR 与当前 PKEC 的最小回归入口是
-  `Project/project-keynes/tests/family_runtime_test.gd`；行为条件、打分轴、科技门与守恒命令
+  `Project/project-keynes/tests/family/family_runtime_test.gd`；行为条件、打分轴、科技门与守恒命令
   见 `family_behavior_effect_runtime_test.gd`、`family_effect_*_test.gd`、
   `trigger_family_branch_test.gd`。
 - 影响通用经济、税务、国家或调度时，同时加载相应 Economy、Tax、Country 与 Runtime

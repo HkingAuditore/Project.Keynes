@@ -696,6 +696,8 @@ public:
     // P1：worker 已提交日。预发布器的上界要按"已提交"算，而不是"已发布"——
     // 环里未消费的帧只是内存，不是事实。
     int64_t runtime_committed_day() const;
+    // Day the next environment frame must carry (-1 without a runtime host).
+    int64_t runtime_next_environment_day() const;
     bool runtime_climate_writeback_self_test() const;
     bool runtime_snapshot_ring_self_test() const;
     bool runtime_domain_pod_self_test() const;
@@ -2127,6 +2129,7 @@ public:
     int64_t get_country_state_hash() const;
     godot::Dictionary get_country_cell_summary(int cell_idx) const;
     godot::Dictionary get_country_snapshot(int64_t handle) const;
+    godot::Dictionary get_country_political_regime_snapshot(int64_t handle) const;
     godot::Dictionary configure_annual_reports(int64_t handle, int64_t days_per_year,
         int64_t initial_day, const godot::Dictionary &profile);
     godot::Dictionary commit_annual_reports(int64_t day);
@@ -2185,6 +2188,10 @@ public:
     godot::Dictionary run_military_catch_up(const godot::Dictionary &ctx);
     godot::Dictionary get_military_report();
     godot::Dictionary get_military_country_snapshot(int64_t country) const;
+    // Physical maintenance read-only view (design §4 / D7). One row per live
+    // maintenance object, packed as parallel arrays so the panel pays for one
+    // poll instead of one call per building.
+    godot::Dictionary get_military_maintenance_snapshot(int64_t country) const;
     godot::Array get_military_armies(int64_t country) const;
     godot::Dictionary get_military_army(int64_t army);
     godot::Dictionary get_military_cell_snapshot(int64_t cell, int64_t observer) const;
@@ -2197,6 +2204,16 @@ public:
     godot::Dictionary evaluate_military_peace(int64_t war_id, int64_t proposer,
                                               const godot::Array &terms) const;
     godot::Dictionary get_military_catalog_view() const;
+    // Player auto-exploration narrow boundary. The host owns MapData.explored;
+    // Military only receives a frozen copy and returns the cells its player
+    // formations actually entered.
+    godot::Dictionary set_military_exploration_observer(int64_t observer_slot);
+    godot::Dictionary set_military_exploration_view(
+        int64_t observer_slot, const godot::PackedByteArray &explored,
+        int64_t day, int64_t revision);
+    godot::PackedInt32Array get_military_vision_trail(int64_t observer_slot) const;
+    godot::Dictionary clear_military_vision_trail(int64_t observer_slot);
+    bool has_military_exploration_work() const;
     godot::PackedByteArray encode_military_state() const;
     godot::Dictionary restore_military_state(const godot::PackedByteArray &bytes);
     godot::Dictionary runtime_military_self_test();
@@ -2483,6 +2500,8 @@ public:
     // Diagnostic: reconciled Effect instances owned by each held idea, with a
     // `present` flag proving the EffectRuntime still holds them. Read-only.
     godot::Dictionary get_ideology_effect_instance_report(int64_t country_handle) const;
+    // Where each held card acts, instance and derived backends alike.
+    godot::Dictionary get_ideology_effect_target_report(int64_t country_handle) const;
     // Per-cell output factor after the Modifier rows AND the Ideology plane have
     // been folded in. Test/diagnostic seam for the coefficient plane.
     godot::Dictionary get_city_output_factor_q16(int32_t cell, int32_t good_id) const;

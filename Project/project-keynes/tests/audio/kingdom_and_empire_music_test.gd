@@ -1,5 +1,7 @@
 extends Node
 
+const PopulationProbe = preload("res://tests/audio/population_threshold_probe.gd")
+
 var _failed := false
 
 
@@ -15,6 +17,11 @@ func _check(ok: bool, message: String) -> void:
 func _run() -> void:
 	await get_tree().process_frame
 	var audio := get_tree().root.get_node("GameAudio")
+	if audio.status == "platform_disabled":
+		# 本平台没有打包音频后端（见 addons/FmodGodot/UPSTREAM.md），跳过而不是失败。
+		print("[SKIP] audio backend is not packaged for this platform")
+		get_tree().quit(0)
+		return
 	_check(audio.status == "ready", "FMOD backend ready")
 	if audio.status != "ready":
 		get_tree().quit(1)
@@ -41,15 +48,22 @@ func _run() -> void:
 	_check(int(dk0.get("timeline_ms", 0)) > 50 and int(dk0.get("timeline_ms", 0)) < 2500,
 		"Kingdom Intro timeline advancing (%d ms)" % int(dk0.get("timeline_ms", 0)))
 
-	# Kingdom population thresholds (1500/1200 and 4000/3400)
-	var kr0: float = audio.update_kingdom_age_population_count(600)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 0 and kr0 < 0.20, "Kingdom Pop 600 -> Tier 0")
-	var kr1: float = audio.update_kingdom_age_population_count(2200)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 1 and kr1 >= 0.40, "Kingdom Pop 2200 -> Tier 1")
-	audio.update_kingdom_age_population_count(1300)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 1, "Kingdom Pop 1300 stays Tier 1 via hysteresis (>=1200)")
-	var kr2: float = audio.update_kingdom_age_population_count(4800)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 2 and kr2 >= 0.84, "Kingdom Pop 4800 -> Tier 2")
+	# Kingdom population thresholds and hysteresis are discovered from the live service.
+	var kingdom_entry_one := PopulationProbe.find_entry(audio, &"update_kingdom_age_population_count", 1)
+	var kingdom_exit_one := PopulationProbe.find_exit(audio, &"update_kingdom_age_population_count", kingdom_entry_one, 1)
+	var kingdom_entry_two := PopulationProbe.find_entry(audio, &"update_kingdom_age_population_count", 2)
+	var kingdom_exit_two := PopulationProbe.find_exit(audio, &"update_kingdom_age_population_count", kingdom_entry_two, 2)
+	var kr0: float = audio.update_kingdom_age_population_count(0)
+	var kr1: float = audio.update_kingdom_age_population_count(kingdom_entry_one)
+	_check(kingdom_entry_one > 0 and PopulationProbe.tier(audio) == 1 and kr1 > kr0,
+		"Kingdom enters tier 1 at its discovered boundary")
+	_check(kingdom_exit_one >= 0 and kingdom_exit_one < kingdom_entry_one,
+		"Kingdom tier 1 has a lower exit boundary")
+	var kr2: float = audio.update_kingdom_age_population_count(kingdom_entry_two)
+	_check(kingdom_entry_two > kingdom_entry_one and PopulationProbe.tier(audio) == 2 and kr2 > kr1,
+		"Kingdom enters tier 2 above tier 1")
+	_check(kingdom_exit_two >= 0 and kingdom_exit_two < kingdom_entry_two,
+		"Kingdom tier 2 has a lower exit boundary")
 
 	# Kingdom Conditional Loop A (16.0s .. 66.0s) & Full Loop (16.0s .. 166.0s)
 	_check(audio.set_kingdom_age_loop_section(1, true), "select Kingdom Loop A (16.0s)")
@@ -82,15 +96,22 @@ func _run() -> void:
 	_check(int(de0.get("timeline_ms", 0)) > 50 and int(de0.get("timeline_ms", 0)) < 2500,
 		"Empire Intro timeline advancing (%d ms)" % int(de0.get("timeline_ms", 0)))
 
-	# Empire population thresholds (4000/3200 and 10000/8500)
-	var er0: float = audio.update_empire_age_population_count(1800)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 0 and er0 < 0.20, "Empire Pop 1800 -> Tier 0")
-	var er1: float = audio.update_empire_age_population_count(6000)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 1 and er1 >= 0.40, "Empire Pop 6000 -> Tier 1")
-	audio.update_empire_age_population_count(3500)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 1, "Empire Pop 3500 stays Tier 1 via hysteresis (>=3200)")
-	var er2: float = audio.update_empire_age_population_count(12000)
-	_check(int(audio.diagnostics().get("pop_tier", -1)) == 2 and er2 >= 0.84, "Empire Pop 12000 -> Tier 2")
+	# Empire population thresholds and hysteresis are discovered from the live service.
+	var empire_entry_one := PopulationProbe.find_entry(audio, &"update_empire_age_population_count", 1)
+	var empire_exit_one := PopulationProbe.find_exit(audio, &"update_empire_age_population_count", empire_entry_one, 1)
+	var empire_entry_two := PopulationProbe.find_entry(audio, &"update_empire_age_population_count", 2)
+	var empire_exit_two := PopulationProbe.find_exit(audio, &"update_empire_age_population_count", empire_entry_two, 2)
+	var er0: float = audio.update_empire_age_population_count(0)
+	var er1: float = audio.update_empire_age_population_count(empire_entry_one)
+	_check(empire_entry_one > 0 and PopulationProbe.tier(audio) == 1 and er1 > er0,
+		"Empire enters tier 1 at its discovered boundary")
+	_check(empire_exit_one >= 0 and empire_exit_one < empire_entry_one,
+		"Empire tier 1 has a lower exit boundary")
+	var er2: float = audio.update_empire_age_population_count(empire_entry_two)
+	_check(empire_entry_two > empire_entry_one and PopulationProbe.tier(audio) == 2 and er2 > er1,
+		"Empire enters tier 2 above tier 1")
+	_check(empire_exit_two >= 0 and empire_exit_two < empire_entry_two,
+		"Empire tier 2 has a lower exit boundary")
 
 	# Empire Conditional Loop A (15.0s .. 65.0s) & Full Loop (15.0s .. 165.0s)
 	_check(audio.set_empire_age_loop_section(1, true), "select Empire Loop A (15.0s)")

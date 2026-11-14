@@ -4,13 +4,20 @@
 
 ## 十二域
 
+经济上游冷启动仍在 `NativeEconomyRuntime` 内实现：多层派生投入进入同一格的
+确定性队列，访问标记阻止循环回边；取样时由企业需求 EMA 重建空货架替代品的
+冻结种子，并按真实投入槽活动约束数量。没有增加脚本模拟、持久列、API 或调度阶段。
+定向回归覆盖零工坊/零采掘场、多层需求、首座实际产出、三账守恒及 scalar/worker
+逐日全哈希。运行证据与完整回归限制见
+[上游冷启动验证](../cpp-dots-runtime/upstream-demand-cold-start-2026-11-10.md)。
+
 每日表在 `native_simulation_host.cpp` 的 modules 表，域内函数在 `native_simulation_stage_<domain>.cpp`。表顺序与 `runtime_domain_stage_order()` 由 `static_assert` 核对。
 
 | 域 | 真正写入者与边界 | 对拍情况 |
 | --- | --- | --- |
 | INPUT_CAPTURE | Host 冻结输入清单与哈希 | 无双算 |
 | CLIMATE | RuntimeClimateAuthority；plan/commit 在模块循环**之前**完成，表内只登记结果 | ACTIVE 关闭完整输出哈希 |
-| COUNTRY | RuntimeCountryPodAuthority；`NativeCountryRuntime` 保留初始化、查询和适配 | parity 钩子仍被调用；缺同日参考时报 uncompared |
+| COUNTRY | RuntimeCountryPodAuthority；`NativeCountryRuntime` 保留初始化、查询和适配，国家 dense 状态包含政治体制与能力位 | parity 钩子仍被调用；缺同日参考时报 uncompared |
 | TRIGGER_INPUT | Trigger POD；ACK 等待等列出的原因可软完成 | ACTIVE 抑制旧 run_daily |
 | IDEOLOGY | Ideology POD；首次快照未发布等列出的原因可软完成 | parity 默认关闭 |
 | EFFECT | Effect POD 与 intent/ACK；同日重访幂等 | 影子推进只在 SHADOW 分支 |
@@ -20,6 +27,11 @@
 | EVENTS | RuntimeEventsAuthority 写事件日志与消费者游标 | 沿用 `events_probe_enabled`，名称含 probe 但用于生产 |
 | VISUAL | Host 产生刷新意图，`publish_day` 排序去重；实际显示归 Godot | 无双算 |
 | COMMIT | 记完成位，检查请求域全部完成，由外层发布 | 无双算 |
+
+政治体制不增加新的每日域。`NativeCountryRuntime` 保存 `regime_id` 与
+`capability_bits`，`CountryReadView` 将能力位冻结进 Economy epoch；政治页面只聚合
+Country 体制快照与现有 Ideology 快照。`treasury_construction` 在报价和结算两处均由
+Economy 原生门控，UI 隐藏入口只负责展示体验。
 
 非直观的地方：
 
@@ -36,7 +48,7 @@
 | military | 主线程 | 每帧追赶已提交日期，`facade.run_daily` 同步运行；读 Country/Economy 已提交数据，写军事实体，后续意图走 D+1 |
 | natural_resource_recovery | 主线程 | 追赶已提交日期，写资源 slot 与 MapData；与经济自身消耗资源是两个入口 |
 | family / person | 执行线程 | 在经济 FAMILY_COMMIT / PERSON_COMMIT 内运行，没有独立日域 |
-| vision | 主线程 | 读地形/领地/研究信号，写可见性，并提交 Country 观察意图 |
+| vision | 主线程 | 读地形/领地/研究信号与已提交的玩家部队位置，写可见性，并提交 Country 观察意图；部队使用低于城市的移动视野预算 |
 | visual_delivery | 主线程 | 消费已发布的脏类别补丁，写显示与 MapData |
 | climate_writeback | 主线程 | 只消费已提交的 Climate 快照写回 slot/MapData |
 
@@ -83,8 +95,8 @@ Ideology 的 invalid/shape invalid 与任意 opinion 前缀已不再软完成。
 | 域 | 段 / 版本 | provider | 恢复依赖 |
 | --- | --- | --- | --- |
 | climate | CLM2 v9 | environment | — |
-| country | PKCN v14 | country | environment |
-| military | PKMI v2 | country | country |
+| country | PKCN v15 | country | environment |
+| military | PKMI v6 | country | country |
 | effect | PKEF v14 | rules | military |
 | economy | ECP2 schema 60 | economy | country、effect |
 | family | 在 ECP2 内 | economy | economy |
@@ -100,7 +112,10 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 继续态里容易漏的字段（每项都曾造成读档后分叉，已修复）：
 
 - ECP2：职业移动冷却、经济发布记忆与上一日意见快照（OSOA 块 8）、资源小数余量与逐格日期（块 9）、生产周期 EMA/累计耗时（块 11）、实物收入累计列 `epoch_in_kind_income`（块 12）、采样降雨边沿与冻结门槛（OSOA4 块 13）、Track-B 分摊投资审查的待续格子表 `_track_b_investment_cells_pending`（CADENCE_STATE 段尾，上游合并后补）。
-- PKMI2：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行。`military_for_each_lot_ordered` 不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
+- PKMI4：lot 原始链、槽位 payload、free-list 与 generation，包括仍挂链的 inactive 行；
+  section 23 保存玩家自动探路任务（任务行、选点、seen/visited/blocked、观察点、日期、返程）。
+  trail、冻结 explored、fog 和派生索引不入档，恢复时重建。`military_for_each_lot_ordered`
+  不能全局过滤 inactive 行，变更型查找依赖原链复用槽位。
 - PKSR5：已接纳未执行的 Economy POD 命令与回执（EQC1）、Trigger 传输请求/ACK/发布游标与 Host 请求编号（TCQ1）、军事事件转发进度（MDJ1）。
 - CLM2 v9：权威 extras 与天气初始化状态。
 
@@ -108,8 +123,8 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 
 - `simulation_state_hash` 每天只把日期混入前值，不是业务状态摘要；`runtime_day_waterfall.h` 记耗时与完成掩码，也不是状态链。气候 ACTIVE 的 `compute_hashes=false`。
 - 整体经济哈希还读同步国家对象与 Modifier 的 ECONOMY 序列；`get_country_state_hash` 取同步对象，`get_country_report` 取 worker 快照副本，二者不是同一提交边界。
-- 黄金五链（`tests/runtime/golden_*`，`check_golden_determinism.py`）：v1 开局账目、v2 整体经济、v3 七个 worker 域投影、v4 Country 追加链、v5 表外推进者（军事政策与资源恢复）。末日 domains 摘要 `ccccb169…2291`。这是投影，不是完整十二域状态。2026-11-06 合并上游 c849f255（军事、建造/投资/采购/仓储改动）后重录 v2–v5：v1 账目链 `2242b251` 不变；改变的是 v2 整体经济哈希、v3 中 EVENTS/MODIFIER/TRIGGER_INPUT 三域、v4 COUNTRY、v5 MILITARY；CLIMATE/IDEOLOGY/EFFECT/ECONOMY 和 v5 其余域不变。旧值见合并提交的第一父提交。
-- 2026-11-10 回归对照更新：前述 2026-11-06 的链属于历史内容。整合后开局资金、产出、满意度、科技条件和气候内容已变化；本轮逐日全域比较五次相同结果后更新 v2/v3/v4/v5，v1 文件保留作历史。普通运行仍严格校验完整记录，交易保存也比较全部回执及字节摘要；具体差异与验证见 migration。
+- 黄金场景（`tests/runtime/golden_*`，`check_golden_determinism.py`）覆盖开局账目、整体经济、七个 worker 域投影、Country 追加链及表外推进者（军事、资源恢复、家族、人物、视野）。这是投影，不是完整十二域状态。
+- 2026-11-11 起按用户快速调参的决定，撤掉提交的黄金和七份 intent 基线；同一个二进制重复运行逐字段一致，不改行为的重构则用仓库外临时候选做改前/改后对照。场景内的守恒、存读档和同日提交检查保留；调参后不需重录基线。此前重录记录属于历史证据，见 migration。
 - 保存续跑（`check_committed_replay.py --checkpoint --trace`、`check_replay_matrix.py`）：不中断、重放、保存不中断、另进程读档四条轨迹逐日比较，读档后至少八日。默认矩阵 4 个场景：save1、calendar5、multicountry5、military20；`--military-annual` 单跑 military365（真实年度自动存档，受时序影响不稳定，见 migration 已知问题）；`--full` 另加 save2/5/9 与 mixed5；`--annual` 保存第 365 日；`--annual-neighbors` 保存 364/366（手动档）。
 - 未覆盖：其他种子与平台、实际占领与战斗（测试地图路径不可达，只有合成占领自测）、任意 worker 日内命令位置、真实浏览器 Web 导出、图形长跑。
 
@@ -119,4 +134,4 @@ provider 的 manifest 版本、段内字节版本、内容身份是三层不同�
 - `DCWorldExt` 的 646 个脚本方法分在 15 个模块绑定文件，`world_ext_bind_methods.cpp` 只顺序调用各模块；`world_ext.h` 的绑定声明按同样顺序分段，头文件 4050 行。数据归属和实现不变，入口与模块文件由 `tools/ci/world_ext_binding_modules.json` 登记，`check_world_ext_bindings.py` 核对归属；阶段 1 的验证见 [feature-status.md](feature-status.md)。
 - 阶段 2 第 1–2 步已登记 15 模块的脚本访问目录，`check_script_native_access.py` 冻结现有越界并接入本地/PR 护栏；没有迁移调用或替换接口探测。匹配规则见 [feature-guides.md](feature-guides.md)，本轮数量和验证见 [feature-status.md](feature-status.md)。
 - `world_runtime_host.gd` 2943 行；`map_generator.gd` 22563 行（超限债务，未拆）。
-- `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2146 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。
+- `economy_runtime.cpp` 2000 行、`economy_runtime.h` 2408 行（内部头另 5 个，均 ≤2000）；`native_simulation_host.h` 2147 行、`.cpp` 481 行；`country_runtime.cpp` 11463 行（超限债务，未拆）。

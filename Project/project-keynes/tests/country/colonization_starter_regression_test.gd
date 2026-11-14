@@ -22,4 +22,5 @@ func _run() -> void:
 	_expect("starter departure conserves goods and population",
 		int(ext.get_economy_report().get("goods_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
-	ext.free()
+	# DCWorldExt is RefCounted; releasing the local reference is sufficient.
+	ext = null

@@ -101,6 +101,8 @@ void DCWorldExt::_bind_runtime_methods() {
                          &DCWorldExt::environment_ring_has_capacity);
     ClassDB::bind_method(D_METHOD("runtime_committed_day"),
                          &DCWorldExt::runtime_committed_day);
+    ClassDB::bind_method(D_METHOD("runtime_next_environment_day"),
+                         &DCWorldExt::runtime_next_environment_day);
     ClassDB::bind_method(D_METHOD("runtime_snapshot_ring_self_test"),
                          &DCWorldExt::runtime_snapshot_ring_self_test);
     ClassDB::bind_method(D_METHOD("runtime_domain_pod_self_test"),

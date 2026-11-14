@@ -1,6 +1,6 @@
 #pragma once
 
-// NativeMilitaryRuntime core (v2 counters, PKMI v3 save).
+// NativeMilitaryRuntime core (v2 counters, PKMI v4 save).
 //
 // Pure C++: no Godot types, no Variant/Dictionary/String in hot loops, no
 // floating point in state that is hashed or saved. All state is SoA with
@@ -46,13 +46,32 @@ constexpr uint32_t PKMI_MAGIC = 0x494d4b50u;      // "PKMI"
 // carries the *actually delivered* equipment quality / per-slot coverage. Old
 // streams are rejected: their in-flight lots already have the target unit type
 // and their orders carry only the policy-requested quality.
-constexpr uint32_t PKMI_VERSION = 3u;
+// v6: physical maintenance procurement. Adds the paid-but-unsettled purchase
+// order table (section 24) with its monotonic request identity. Old streams are
+// rejected: a v5 save can be in the middle of a purchase whose row does not
+// exist, so interpreting it as settled would hand goods to nobody (or pay
+// twice), and the old cash `SPEND_CASH` upkeep must never be replayed as a
+// physical purchase.
+constexpr uint32_t PKMI_VERSION = 6u;
 constexpr int32_t MILITARY_MAX_UNIT_TYPES = 64;
 constexpr int32_t MILITARY_MAX_EQUIP_SLOTS = 4;
 constexpr int32_t MILITARY_MAX_SUPPLY_CLASSES = 6;
 constexpr int32_t MILITARY_MAX_ARMIES = 2048;
 constexpr int32_t MILITARY_MAX_AREA_CELLS = 256;
 constexpr int32_t MILITARY_MAX_AREA_RADIUS = 6;
+// Physical maintenance (design §2 D3). A recipe has at most 4 components, the
+// building inventory holder encodes (cell, catalog type) in one int32, and the
+// stock policy is "top up to 10 days once the cover drops below 5".
+constexpr int32_t MILITARY_MAX_REPAIR_MATERIALS = 4;
+constexpr int32_t MILITARY_MAINT_HOLDER_STRIDE = 64;
+constexpr int32_t MILITARY_MAINT_TARGET_DAYS = 10;
+constexpr int32_t MILITARY_MAINT_REORDER_DAYS = 5;
+constexpr int32_t MILITARY_MAX_EXPLORATION_TASKS = 256;
+constexpr int32_t MILITARY_MAX_EXPLORATION_CELLS = 256;
+constexpr int32_t MILITARY_EXPLORATION_PLANS_PER_DAY = 8;
+constexpr int32_t MILITARY_EXPLORATION_PATH_REQUESTS_PER_COUNTRY_DAY = 16;
+constexpr int32_t MILITARY_EXPLORATION_OBSERVERS = 3;
+constexpr int32_t MILITARY_EXPLORATION_OBSERVER_RADIUS = 2;
 constexpr int32_t MILITARY_PATH_REQUESTS_PER_COUNTRY_DAY = 32;
 constexpr int32_t MILITARY_AREA_EVALS_PER_COUNTRY_DAY = 32;
 constexpr int32_t MILITARY_BATTLE_LOG_CAPACITY = 64;
@@ -90,6 +109,35 @@ enum MilitaryMission : uint8_t {
     MILITARY_MISSION_NONE = 0,
     MILITARY_MISSION_MOVE = 1,
     MILITARY_MISSION_AREA_CONTROL = 2,
+    MILITARY_MISSION_EXPLORE = 3,
+};
+
+enum MilitaryExplorationPhase : uint8_t {
+    MILITARY_EXPLORATION_ACTIVE = 0,
+    MILITARY_EXPLORATION_RETURNING = 1,
+    MILITARY_EXPLORATION_PAUSED_BATTLE = 2,
+    MILITARY_EXPLORATION_COMPLETE = 3,
+    MILITARY_EXPLORATION_FAILED_NO_RETURN = 4,
+};
+
+enum MilitaryExplorationResult : uint8_t {
+    MILITARY_EXPLORATION_RESULT_NONE = 0,
+    MILITARY_EXPLORATION_RESULT_ALL_SEEN = 1,
+    MILITARY_EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE = 2,
+    MILITARY_EXPLORATION_RESULT_FAILED_NO_RETURN = 3,
+    MILITARY_EXPLORATION_RESULT_CANCELLED = 4,
+};
+
+enum MilitaryExplorationPauseReason : uint8_t {
+    MILITARY_EXPLORATION_PAUSE_NONE = 0,
+    MILITARY_EXPLORATION_PAUSE_ENGAGEMENT = 1,
+};
+
+enum MilitaryExplorationPathResult : uint8_t {
+    MILITARY_EXPLORATION_PATH_OK = 0,
+    MILITARY_EXPLORATION_PATH_UNREACHABLE = 1,
+    MILITARY_EXPLORATION_PATH_DAILY_BUDGET_EXHAUSTED = 2,
+    MILITARY_EXPLORATION_PATH_INVALID = 3,
 };
 
 enum MilitaryLocationKind : uint8_t {
@@ -128,6 +176,8 @@ enum MilitaryStatId : uint16_t {
 
 // ---------------------------------------------------------------- catalog
 
+struct MilitaryRepairMaterial { int32_t good = -1; int64_t rate_q32 = 0; };
+
 struct MilitaryUnitType {
     std::string id;                  // stable id, catalog sorted by id
     uint8_t unit_class = MILITARY_CLASS_LINE;
@@ -144,6 +194,7 @@ struct MilitaryUnitType {
     std::array<int8_t, MILITARY_MAX_EQUIP_SLOTS> slot_min_quality{};    // 1..5
     std::array<int64_t, MILITARY_MAX_EQUIP_SLOTS> slot_qty_per_100{};   // GOODS_SCALE
     std::array<int32_t, MILITARY_MAX_EQUIP_SLOTS> slot_power_weight_q16{};
+    std::vector<MilitaryRepairMaterial> repair_materials;
     std::array<int64_t, MILITARY_MAX_SUPPLY_CLASSES> idle_per_100_day{};   // GOODS_SCALE
     std::array<int64_t, MILITARY_MAX_SUPPLY_CLASSES> combat_per_100_day{}; // GOODS_SCALE
 };
@@ -163,10 +214,33 @@ struct MilitaryStateBuilding {
     int32_t capacity = 0;                 // barracks posts per building
     int32_t fort_bonus_q16 = 0;           // fortification
     int32_t training_speed_q16 = MILITARY_Q16; // war college local
+    std::vector<MilitaryRepairMaterial> repair_materials;
     int64_t upkeep_per_day = 0;           // MONEY_SCALE
     int32_t build_days = 0;
     std::vector<int32_t> material_goods;
     std::vector<int64_t> material_qty;    // GOODS_SCALE
+};
+
+// One paid purchase that the treasury has NOT settled yet (physical maintenance
+// design §3 / D6). Nothing is in military custody while this row exists: the
+// goods still belong to the market, the cash still belongs to the country. Only
+// the real fill receipt (`settle_purchase`) turns a row into stock or a convoy.
+//
+// `intent.source_id` is the STABLE request identity (monotonic, persists across
+// retries and saves) that Economy dedupes on and the receipt echoes back.
+struct MilitaryPurchaseOrder {
+    MilitaryIntent intent;           // requested good / quantity / ceiling price
+    uint8_t channel = 0;             // 0 general supply quota, 1 maintenance quota
+    int32_t destination_cell = -1;   // where the goods must land
+    uint8_t dest_kind = 0;           // MILITARY_LOT_* holder kind
+    int32_t dest = -1;
+    uint64_t dest_handle = 0;        // army handle / training order id
+    int32_t stock_good = -1;         // identity in _stocks (pseudo id for equipment)
+    int32_t real_good = -1;          // economy good actually bought (equipment)
+    int32_t category = -1;           // equipment category, -1 for supply classes
+    int8_t quality = 0;              // delivered equipment tier (0 = not equipment)
+    int32_t route_cost_q16 = 0;      // convoy route fixed when the order was made
+    int32_t days = 0;                // convoy travel days at order time
 };
 
 struct MilitaryCatalog {
@@ -269,8 +343,68 @@ struct MilitaryArmyStore {
     std::vector<int32_t> prev_in_cell;
 };
 
+// One player auto-exploration task. Rows are addressed by `row_index`; the
+// derived `_exploration_by_army` index enforces one task per formation. The
+// three masks are indexed by the task's selected-cell ordinal (not cell id),
+// so target resolution survives a save without a 256-entry map.
+struct MilitaryExplorationTask {
+    bool active = false;
+    int32_t row_index = -1;
+    uint64_t army_handle = 0;
+    int32_t owner_slot = -1;
+    uint64_t owner_handle = 0;
+    int32_t origin_cell = -1;
+    int32_t return_cell = -1;
+    int32_t anchor_cell = -1;
+    int32_t radius = 0;
+    int32_t selected_count = 0;
+    std::array<int32_t, MILITARY_MAX_EXPLORATION_CELLS> selected_cells{};
+    std::array<uint64_t, 4> seen_mask{};
+    std::array<uint64_t, 4> visited_mask{};
+    std::array<uint64_t, 4> blocked_mask{};
+    uint8_t phase = MILITARY_EXPLORATION_ACTIVE;
+    uint8_t pause_reason = MILITARY_EXPLORATION_PAUSE_NONE;
+    uint8_t result = MILITARY_EXPLORATION_RESULT_NONE;
+    uint8_t resume_phase = MILITARY_EXPLORATION_ACTIVE;
+    int32_t focus_index = -1;
+    int32_t current_observation_cell = -1;
+    int32_t observer_tries = 0;
+    std::array<int32_t, MILITARY_EXPLORATION_OBSERVERS> reached_observer_cells{{-1, -1, -1}};
+    uint32_t tried_observer_mask = 0;
+    int64_t started_day = -1;
+    int64_t last_progress_day = -1;
+    int64_t last_plan_day = -1;
+    int64_t complete_day = -1;
+    uint8_t return_fallback = 0;
+};
+
 // Military-held supply inventory, per holder (army slot or garrison cell)
 // and supply good. Sparse rows; holder_kind 0 = garrison cell, 1 = army.
+// One physical-maintenance object (design §2 D2/D3): a state building group
+// addressed by (country, cell, catalog type) or an equipment group addressed by
+// (country, holder, unit type). Rows are REBUILT every day from the committed
+// economy ledger and the live lots; only the parts that must survive the rebuild
+// live here (fixed-point remainder, the 5-day window, the verdict).
+//
+// `acc_q32` is the carry the plan requires: a demand of "0.075 goods/day" for a
+// single building must not truncate to zero, and it must not be rounded up to
+// one item either. `demand = acc >> 32` milli-goods, `acc &= 0xFFFFFFFF`.
+struct MilitaryMaintenanceRow {
+    int32_t country_slot = -1;
+    int32_t cell = -1;
+    uint8_t kind = 0;            // 0 state building group, 1 equipment group
+    int32_t object_id = -1;      // catalog state building index / unit type index
+    uint8_t holder_kind = 0;     // stock holder kind of this row's inventory
+    int32_t holder = -1;
+    int32_t units = 0;           // building count / soldier heads
+    int64_t acc_q32[MILITARY_MAX_REPAIR_MATERIALS] = {};
+    int64_t window_need = 0;     // 5-day window (buildings)
+    int64_t window_met = 0;
+    int32_t window_days = 0;
+    int32_t ratio_bp = 10000;    // last settled satisfaction (10000 = 100%)
+    uint8_t disrepair = 0;
+};
+
 struct MilitaryStockRow {
     uint8_t holder_kind = 0;
     int32_t holder = -1;
@@ -432,6 +566,15 @@ struct MilitaryCountryPolicy {
     int32_t pay_ratio_30_q16 = MILITARY_Q16;
     int64_t spend_payroll_30 = 0, spend_procurement_30 = 0, spend_upkeep_30 = 0;
     int64_t per_soldier_cost = 0;       // MONEY_SCALE/day
+    // Cash already promised to today's payroll (design S4-1: 军饷 is reserved
+    // FIRST, then maintenance, then general procurement, all out of one pool).
+    // Transient by construction: rewritten every step, never saved, never hashed,
+    // and the channels below subtract it from the frozen treasury snapshot so no
+    // two of them can promise the same money.
+    int64_t wage_planned_today = 0;
+    // Same idea for the maintenance channel: what the maintenance pass already
+    // promised today, so general procurement cannot promise it again.
+    int64_t maintenance_planned_today = 0;
 };
 
 // Per-cell military state, sparse keyed by cell (only cells with state
@@ -513,6 +656,20 @@ struct MilitaryReport {
     int32_t state_cache_repairs = 0;
     int32_t state_ledger_unmapped = 0;
     int32_t state_role_mismatch = 0;
+    // ---- physical maintenance (design §5, transient: reset every step) ----
+    // `maintenance_spend` is SETTLED money (only real fills count), while
+    // `maintenance_need_goods` / `maintenance_met_goods` are the day's recipe
+    // demand and the part actually consumed out of military inventory.
+    // `maintenance_backlog` is the paid-but-undelivered purchase quantity, and
+    // `maintenance_rows` the live maintenance objects the pass walked (a
+    // cheap way to prove the pass is sparse).
+    int64_t maintenance_spend = 0;
+    int64_t maintenance_need_goods = 0;
+    int64_t maintenance_met_goods = 0;
+    int64_t maintenance_backlog = 0;
+    int32_t maintenance_rows = 0;
+    int32_t maintenance_disrepair_rows = 0;
+    double maintenance_ms = 0.0;
 };
 
 
@@ -573,6 +730,7 @@ enum MilitaryCommandOp : uint16_t {
     MCMD_ARMY_STANCE = 30,            // army, count=stance
     MCMD_ARMY_RENAME = 31,            // army, value=name seed
     MCMD_ARMY_DISBAND = 32,
+    MCMD_ARMY_EXPLORE = 33,           // army, cell=anchor, cells, radius
     MCMD_WAR_DECLARE = 40,            // country -> other(country handle)
     MCMD_PEACE_PROPOSE = 41,          // other(war id), ints/longs terms
     MCMD_PEACE_RESPOND = 42,          // other(war id), count=accept
@@ -651,9 +809,17 @@ public:
     const std::vector<MilitaryCountryPolicy> &policies() const { return _policies; }
     const std::vector<MilitaryCellState> &cell_states() const { return _cell_states; }
     const std::vector<MilitaryStockRow> &stocks() const { return _stocks; }
+    const std::vector<MilitaryPurchaseOrder> &purchase_orders() const { return _purchase_orders; }
     const std::vector<MilitaryBattleLogRow> &battle_log() const { return _battle_log; }
     const std::vector<MilitaryReparation> &reparations() const { return _reparations; }
     const std::vector<MilitaryArea> &areas() const { return _areas; }
+    const MilitaryExplorationTask *exploration_task_for_army(int32_t army_slot) const;
+    bool exploration_is_live_for_army(int32_t army_slot) const;
+    const std::vector<int32_t> &exploration_trail(int32_t observer_slot) const;
+    const std::vector<uint8_t> &exploration_view() const { return _exploration_explored_view; }
+    int64_t exploration_view_day() const { return _exploration_view_day; }
+    uint64_t exploration_view_revision() const { return _exploration_view_revision; }
+    bool has_exploration_work() const;
     std::vector<MilitaryEvent> events_after(uint64_t after_id, size_t limit) const;
     int64_t country_soldiers(int32_t slot) const;
     int32_t posts_for_cell(int32_t cell, int32_t country_slot) const;
@@ -667,6 +833,11 @@ public:
     // Paths (military_core_path.cpp)
     bool preview_path(uint64_t army, int32_t target_cell, std::vector<int32_t> &out_cells,
                       int32_t &out_days) const;
+    bool exploration_passable_for(int32_t cell, int32_t country_slot,
+                                  const MilitaryWorldDigest &digest) const;
+    MilitaryExplorationPathResult find_exploration_path(
+        int32_t army_slot, int32_t target, const MilitaryWorldDigest &digest,
+        std::vector<int32_t> &out);
 
     // ---- persistence (military_core_save.cpp)
     std::vector<uint8_t> encode() const;
@@ -779,11 +950,33 @@ public:
     int32_t step_cost_q16(int32_t from, int32_t to, int32_t country_slot,
                           const MilitaryWorldDigest &digest) const;   // <0 impassable
     bool passable_for(int32_t cell, int32_t country_slot, const MilitaryWorldDigest &digest) const;
+    int32_t path_cell_at(int32_t army_slot, int32_t cursor) const;
+    MilitaryArmyStore &armies_mutable() { return _armies; }
+    int32_t path_arena_size() const { return (int32_t)_path_cells.size(); }
+    void append_path(const std::vector<int32_t> &path) {
+        _path_cells.insert(_path_cells.end(), path.begin(), path.end());
+    }
+    int64_t last_day() const { return _last_day; }
     bool find_path(int32_t army_slot, int32_t target, const MilitaryWorldDigest &digest,
                    std::vector<int32_t> &out);
     void bounded_dijkstra(int32_t source, int32_t country_slot, int32_t max_expansions,
                           const MilitaryWorldDigest &digest);           // fills _dij_* scratch
     void run_movement(const MilitaryWorldDigest &digest);
+    // Explore (military_core_explore.cpp)
+    void set_exploration_observer(int32_t observer_slot);
+    void set_exploration_view(int32_t observer_slot, const uint8_t *explored,
+                              size_t explored_size, int64_t day, uint64_t revision);
+    void clear_exploration_trail(int32_t observer_slot);
+    void record_exploration_trail(int32_t army_slot, int32_t owner_slot, int32_t cell);
+    bool can_create_exploration_task(int32_t army_slot) const;
+    void cancel_exploration_task(int32_t army_slot, uint8_t result);
+    bool create_exploration_task(const MilitaryCommand &cmd, int64_t day,
+                                 int32_t army_slot, int32_t owner_slot);
+    void prepare_exploration_day(const MilitaryWorldDigest &digest);
+    void settle_exploration_day();
+    void pause_exploration_for_battle(int32_t army_slot);
+    void rebuild_exploration_index();
+    int32_t exploration_row_for_army(int32_t army_slot) const;
     void index_insert(int32_t army_slot, int32_t cell);
     void index_remove(int32_t army_slot);
     void rebuild_cell_index();
@@ -804,6 +997,16 @@ public:
         MilitaryCore &core;
     };
     void run_procurement(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
+    // Physical maintenance (design §2/§3): demand -> consumption -> satisfaction
+    // -> disrepair/condition, then the maintenance purchase pass. Runs before
+    // general procurement so the maintenance channel gets its share of cash
+    // first and both passes see the same day quota.
+    void run_maintenance(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
+    const std::vector<MilitaryMaintenanceRow> &maintenance_rows() const { return _maint_rows; }
+    static int32_t maintenance_holder_for(int32_t cell, int32_t object_id) {
+        return cell * MILITARY_MAINT_HOLDER_STRIDE + (object_id & (MILITARY_MAINT_HOLDER_STRIDE - 1));
+    }
+    void rebuild_maintenance_rows(const MilitaryWorldDigest &digest);
     void run_convoys(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_consumption(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
     void run_requisition(const MilitaryWorldDigest &digest, std::vector<MilitaryIntent> &out);
@@ -877,6 +1080,11 @@ public:
     MilitaryArmyStore _armies;
     std::vector<int32_t> _path_cells;      // arena; compacted on save
     std::vector<int32_t> _path_daily_requests;  // per country slot, reset each day (daily budget)
+    std::vector<int32_t> _exploration_daily_path_requests;  // reset each day
+    // Player auto-exploration authority (PKMI section 23). The fixed row table
+    // is saved; the army index, view snapshot and trail are derived scratch.
+    std::vector<MilitaryExplorationTask> _explorations;
+    std::vector<int16_t> _exploration_by_army;
     // Soldier losses from harsh-environment attrition, queued by run_movement
     // and drained into the step_day intent vector by the orchestrator.
     std::vector<MilitaryIntent> _attrition_intents;
@@ -890,7 +1098,30 @@ public:
     // never saved, never hashed; sized on demand against the army store.
     std::vector<int64_t> _army_lane_pending;
     std::vector<int32_t> _template_rows;   // (unit, count) pairs
+    std::vector<MilitaryPurchaseOrder> _purchase_orders;
+    // Monotonic, saved: the stable request identity of the next order.
+    int32_t _next_purchase_id = 1;
+    void queue_purchase(MilitaryIntent intent, const MilitaryPurchaseOrder &destination,
+                        std::vector<MilitaryIntent> &out);
+    void settle_purchase(const MilitaryIntentReceipt &receipt);
     std::vector<MilitaryStockRow> _stocks;
+    // Live physical-maintenance objects, sorted by
+    // (country_slot, kind, holder_kind, holder, object_id). Rebuilt every day;
+    // the carry/window/verdict fields survive the rebuild by key.
+    std::vector<MilitaryMaintenanceRow> _maint_rows;
+    // Transient diagnostic, parallel to `_maint_rows`: why the last buy pass did
+    // not order for that row (0 none/ordered, 1 no cash, 2 no recipe, 3 target 0,
+    // 4 no reachable market row). Never saved, never hashed.
+    std::vector<uint8_t> _maint_buy_state;
+    // Maintenance demand that could NOT be bought today, carried to the general
+    // procurement pass so it can publish it as a forecast (design S4-4): the
+    // unfilled maintenance gap must reach market/trade/investment signals, but
+    // must never be counted as a real sale. Transient: rebuilt every day.
+    std::vector<MilitaryIntent> _maint_forecast;
+    // Coverage (days x 1000) per maintenance row, measured in the consumption
+    // pass so the refill order costs no second stock lookup. Transient.
+    std::vector<int64_t> _maint_cover_x1000;
+    const std::vector<uint8_t> &maintenance_buy_state() const { return _maint_buy_state; }
     std::vector<MilitaryShipment> _shipments;
     std::vector<MilitaryEngagement> _engagements;
     std::vector<MilitaryWar> _wars;
@@ -957,6 +1188,18 @@ public:
     std::vector<int32_t> _cell_state_index;   // cell -> row in _cell_states, -1 none (derived)
     std::vector<MilitaryIntent> _war_intents;      // treaty batch queued by war commands
     int32_t _event_counter_control = 0;       // per-day control event budget
+    // Frozen explored snapshot pushed by the host before a military day.
+    // Owned bytes: never a GDScript reference, never saved or hashed.
+    int32_t _exploration_observer_slot = -1;
+    std::vector<uint8_t> _exploration_explored_view;
+    int64_t _exploration_view_day = -1;
+    uint64_t _exploration_view_revision = 0;
+    // Explored-only trail of cells the observer's armies actually entered.
+    // Dense stamp + pending list, drained by the host after merging into
+    // MapData.explored_arr. Neither the trail nor its stamp is saved.
+    std::vector<int32_t> _exploration_trail;
+    std::vector<uint32_t> _exploration_trail_stamp;
+    uint32_t _exploration_trail_gen = 1;
     // (removed) A per-command cash staging vector used to hold a cash-only
     // estimate of state building materials that MCMD_STATE_BUILD drained into
     // SPEND_CASH. The economy's COMMAND_TREASURY_SPONSORED_BUILD owns that

@@ -55,9 +55,20 @@ func declare_writes() -> Array[StringName]:
 
 
 func should_run(ctx: SusTickContext) -> bool:
-	return generator != null \
-			and generator.has_method("run_native_daily_slice_from_job") \
-			and (_native_round_active or super.should_run(ctx))
+	if generator == null or not generator.has_method("run_native_daily_slice_from_job"):
+		return false
+	# Climate ACTIVE belongs to the runtime worker. Do not start a new main-thread
+	# climate round in that mode; an already-started round is still drained once so
+	# its continuation state can be closed at the same boundary.
+	if not _native_round_active and _climate_worker_owns_round():
+		return false
+	return _native_round_active or super.should_run(ctx)
+
+
+func _climate_worker_owns_round() -> bool:
+	if generator == null or not generator.has_method("native_daily_climate_suppressed"):
+		return false
+	return generator.native_daily_climate_suppressed()
 
 
 func run_slice(ctx: SusTickContext) -> Dictionary:

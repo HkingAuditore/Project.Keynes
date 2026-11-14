@@ -4,41 +4,36 @@
     "economy": 1,
     "effect": 3
   },
-  "Project/project-keynes/scripts/data_core/gameplay_event_bus.gd": {
-    "events": 10
+  "Project/project-keynes/scripts/country/map_country_initializer.gd": {
+    "economy": 1
   },
   "Project/project-keynes/scripts/economy/economy_facade.gd": {
     "visual": 1
   },
   "Project/project-keynes/scripts/game/game_save_coordinator.gd": {
-    "country": 6,
+    "country": 2,
     "economy": 1,
-    "effect": 4,
-    "ideology": 2
+    "effect": 1,
+    "ideology": 1
   },
-  "Project/project-keynes/scripts/game/runtime_forensics.gd": {
+  "Project/project-keynes/scripts/game/map_runtime_bridge.gd": {
+    "climate": 2,
     "country": 3,
-    "economy": 3
+    "economy": 4,
+    "effect": 7,
+    "events": 4,
+    "ideology": 3,
+    "modifier": 3,
+    "trigger": 2
   },
   "Project/project-keynes/scripts/game/save_modules/country_state.gd": {
     "country": 1
-  },
-  "Project/project-keynes/scripts/game/save_modules/history_state.gd": {
-    "country": 3
-  },
-  "Project/project-keynes/scripts/game/save_modules/rules_state.gd": {
-    "effect": 3,
-    "ideology": 3,
-    "modifier": 3,
-    "trigger": 3
   },
   "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part1.gd": {
     "economy": 1
   },
   "Project/project-keynes/scripts/game/world_runtime_daily_adapter_part2.gd": {
-    "effect": 12,
-    "ideology": 2,
-    "trigger": 7
+    "ideology": 2
   },
   "Project/project-keynes/scripts/game/world_runtime_generation_adapter.gd": {
     "ideology": 1
@@ -51,59 +46,48 @@
     "country": 1,
     "visual": 3
   },
-  "Project/project-keynes/scripts/geography/hex_cell.gd": {
-    "core": 40
+  "Project/project-keynes/scripts/geography/map_generation/native_generation_bridge.gd": {
+    "core": 2,
+    "runtime": 2
+  },
+  "Project/project-keynes/scripts/geography/map_generation/terrain_gen.gd": {
+    "climate": 6,
+    "core": 3
   },
   "Project/project-keynes/scripts/geography/map_generator.gd": {
-    "climate": 92,
-    "core": 68,
-    "country": 14,
-    "economy": 6,
-    "effect": 7,
-    "events": 5,
-    "ideology": 5,
-    "modifier": 4,
-    "runtime": 46,
-    "trigger": 2
+    "core": 1,
+    "economy": 1,
+    "events": 1,
+    "runtime": 2
   },
   "Project/project-keynes/scripts/geography/native_loading_tasks.gd": {
     "bake_encoders": 1,
     "runtime": 10,
     "visual": 2
   },
-  "Project/project-keynes/scripts/main.gd": {
+  "Project/project-keynes/scripts/main/debug_tools.gd": {
     "core": 16
   },
   "Project/project-keynes/scripts/rendering/bakers/atlas_encoders.gd": {
     "runtime": 2
   },
   "Project/project-keynes/scripts/rendering/bakers/climate_baker.gd": {
-    "generation": 1
+    "core": 2
   },
-  "Project/project-keynes/scripts/rendering/bakers/terrain_baker.gd": {
-    "generation": 2
+  "Project/project-keynes/scripts/rendering/bakers/ocean_current_baker.gd": {
+    "core": 1
   },
-  "Project/project-keynes/scripts/rendering/bakers/terrain_index_baker.gd": {
-    "generation": 1
+  "Project/project-keynes/scripts/rendering/bakers/physical_circulation_baker.gd": {
+    "core": 6
+  },
+  "Project/project-keynes/scripts/rendering/bakers/physical_solve_baker.gd": {
+    "core": 8
   },
   "Project/project-keynes/scripts/rendering/building_visual_intel_cache.gd": {
     "economy": 1
   },
-  "Project/project-keynes/scripts/rendering/hex_renderer.gd": {
-    "bake_encoders": 1
-  },
   "Project/project-keynes/scripts/rendering/map_baker.gd": {
-    "bake_encoders": 1,
-    "climate": 26,
-    "core": 17,
-    "generation": 1,
     "runtime": 1
-  },
-  "Project/project-keynes/scripts/rendering/military_map_layers.gd": {
-    "military": 1
-  },
-  "Project/project-keynes/scripts/rendering/military_render_feed.gd": {
-    "military": 1
   },
   "Project/project-keynes/scripts/rendering/renderer_sea_ice_diagnostics.gd": {
     "core": 2
@@ -115,33 +99,17 @@
     "country": 2,
     "effect": 1
   },
-  "Project/project-keynes/scripts/simulation/systems/dynamic_visual_atlas_upload_system.gd": {
-    "visual": 6
-  },
   "Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd": {
-    "economy": 4,
     "effect": 2
   },
-  "Project/project-keynes/scripts/simulation/systems/effect_runtime_system.gd": {
-    "effect": 12
-  },
   "Project/project-keynes/scripts/simulation/systems/gameplay_effect_system.gd": {
-    "effect": 1,
-    "events": 2
-  },
-  "Project/project-keynes/scripts/simulation/systems/ideology_runtime_system.gd": {
-    "ideology": 3
+    "effect": 1
   },
   "Project/project-keynes/scripts/simulation/systems/modifier_daily_system.gd": {
-    "effect": 1,
-    "modifier": 2
-  },
-  "Project/project-keynes/scripts/simulation/systems/trigger_daily_system.gd": {
-    "trigger": 3
+    "effect": 1
   },
   "Project/project-keynes/scripts/ui/economy_data_recorder.gd": {
-    "core": 1,
-    "economy": 4
+    "core": 1
   },
   "Project/project-keynes/scripts/ui/tile_data_recorder.gd": {
     "country": 1,
@@ -149,50 +117,5 @@
   },
   "Project/project-keynes/scripts/util/pk_log.gd": {
     "core": 3
-  },
-  "Project/project-keynes/tmp/colonization_save_probe.gd": {
-    "economy": 6
-  },
-  "Project/project-keynes/tmp/effect_load_probe.gd": {
-    "effect": 5
-  },
-  "Project/project-keynes/tmp/family_baseline_test.gd": {
-    "core": 10,
-    "country": 1,
-    "economy": 61,
-    "events": 1,
-    "modifier": 1
-  },
-  "Project/project-keynes/tmp/manual2_research_audit.gd": {
-    "core": 1,
-    "country": 3,
-    "effect": 2,
-    "trigger": 6
-  },
-  "Project/project-keynes/tmp/manual2_research_replay.gd": {
-    "country": 3,
-    "economy": 2,
-    "effect": 2,
-    "runtime": 3,
-    "trigger": 2
-  },
-  "Project/project-keynes/tmp/modifier_catalog_probe.gd": {
-    "modifier": 1
-  },
-  "Project/project-keynes/tmp/preview_reference_both.gd": {
-    "economy": 7
-  },
-  "Project/project-keynes/tmp/technology_delivery_replay.gd": {
-    "country": 3,
-    "economy": 1,
-    "effect": 2,
-    "runtime": 1,
-    "trigger": 2
-  },
-  "Project/project-keynes/tmp/technology_save_audit.gd": {
-    "core": 1,
-    "country": 3,
-    "effect": 2,
-    "trigger": 7
   }
 }

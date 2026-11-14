@@ -24,6 +24,7 @@ func _run() -> void:
 			or not is_equal_approx(float(closed.get("panel_width", 0.0)), 460.0):
 		failures.append("closed Inspector did not keep its 460px dossier width")
 	await _check_scene_geometry(failures)
+	await _check_detail_close_width_restore(failures)
 	await _check_military_row_cost(failures)
 	if failures.is_empty():
 		print("[inspector-responsive-layout] PASS")
@@ -138,6 +139,46 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 			or panel._inspector_root.size.x < 400.0:
 		failures.append("closed dossier did not fill the 460px panel: flags=%d size=%s" % [
 			panel._inspector_root.size_flags_horizontal, panel._inspector_root.size])
+
+
+## 详情打开时右栏会被撑宽，宽度写进 RightPanel.custom_minimum_size；关闭后必须按
+## "内容最小宽度"落回 460。这里锁住那个测量口，防止上一轮的宽面板被当成内容最小
+## 宽度再写回去（宽度只增不减，正是"关掉二级面板后一级面板变宽且回不来"的成因）。
+func _check_detail_close_width_restore(failures: PackedStringArray) -> void:
+	var root := Control.new()
+	root.size = Vector2(1920.0, 720.0)
+	root.theme = load("res://assets/themes/player_ui_theme.tres") as Theme
+	get_root().add_child(root)
+	var panel := (load("res://scenes/ui/inspector_panel.tscn") as PackedScene) \
+		.instantiate() as InspectorPanel
+	root.add_child(panel)
+	panel.visible = true
+	await process_frame
+	# 打开详情那一帧：面板撑到 1040，宽度同时写进 custom_minimum_size。
+	panel._detail_shell.visible = true
+	panel._inspector_root.visible = true
+	panel._sync_split_layout()
+	panel.custom_minimum_size.x = 1040.0
+	panel.offset_left = -1040.0
+	await process_frame
+	# 关闭详情：再用布局代码同一个测量口取内容最小宽度，必须回到 460 档。
+	panel._detail_shell.visible = false
+	panel._sync_split_layout()
+	await process_frame
+	var content_min := GameUIManager.panel_content_min_width(panel)
+	if content_min > 460.5:
+		failures.append("closed inspector content minimum is %.0fpx, expected <=460px" % content_min)
+	var restored := GameUIManager.resolve_panel_content_width(1920.0, 460.0, content_min)
+	if not is_equal_approx(restored, 460.0):
+		failures.append("closed inspector width ratcheted to %.0fpx (content_min=%.0f)" % [
+			restored, content_min])
+	panel.custom_minimum_size.x = restored
+	panel.offset_left = -restored
+	await process_frame
+	if not is_equal_approx(panel.size.x, 460.0):
+		failures.append("closed inspector still renders %.0fpx wide" % panel.size.x)
+	root.queue_free()
+	await process_frame
 
 
 func _check_family_split(failures: PackedStringArray, panel: InspectorPanel,

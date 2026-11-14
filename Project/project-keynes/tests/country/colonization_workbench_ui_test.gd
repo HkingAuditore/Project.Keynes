@@ -173,13 +173,13 @@ func _run() -> void:
 		and stub.quote_calls == 0 and panel._start.disabled)
 	_expect("source branch details are available before choosing a destination",
 		panel._preview_traits.text.contains("采集传统") and panel._preview_metrics.text.contains("当地族人 6"))
-	var compact_row: ColonizationFamilyRow = panel._quote_row_refs[11]
+	var compact_row: ColonizationFamilyRow = panel._quote_row_refs["3:11"]
 	var visible_rows_copy := _visible_text(panel)
 	_expect("opening screen omits hover instructions and repeated people labels",
 		not visible_rows_copy.contains("悬停")
 		and not visible_rows_copy.contains("至少留")
 		and not visible_rows_copy.contains("家族所有")
-		and not visible_rows_copy.contains("可派 ")
+		and visible_rows_copy.contains("可派 ")
 		and not visible_rows_copy.contains("威望 ")
 		and not visible_rows_copy.contains("产业 ")
 		and compact_row.get_node("Margin/Line/Population").text == "6"
@@ -213,7 +213,7 @@ func _run() -> void:
 	var sent: Array = []
 	panel.start_requested.connect(func(args: Dictionary) -> void: sent.append(args))
 	var before := panel._selected_quote.duplicate(true)
-	var row: Button = panel._quote_row_refs.get(12)
+	var row: Button = panel._quote_row_refs.get("3:12")
 	panel._on_row_preview_entered(row)
 	await create_timer(0.2).timeout
 	_expect("delayed hover previews another family without changing the dispatch",
@@ -234,11 +234,11 @@ func _run() -> void:
 		panel.try_target_cell(24) and panel._title.text == "开拓"
 		and panel._selected_quote.family_handle == 11 and int(panel._population.value) == 2
 		and int(panel._selected_quote.quote_token) != int(before.quote_token))
-	var row_id: int = panel._quote_row_refs[11].get_instance_id()
+	var row_id: int = panel._quote_row_refs["3:11"].get_instance_id()
 	panel._search.text = "李"
 	panel._search.text_changed.emit("李")
 	_expect("search hides summaries without changing the pinned dispatch",
-		not panel._quote_row_refs[11].visible and panel._selected_quote.family_handle == 11)
+		not panel._quote_row_refs["3:11"].visible and panel._selected_quote.family_handle == 11)
 	panel._search.clear()
 	panel._search.text_changed.emit("")
 	panel._sort.select(1)
@@ -248,7 +248,7 @@ func _run() -> void:
 	stub.revision += 1
 	panel.refresh_visible()
 	_expect("daily quote refresh keeps the chosen branch, order and control instances",
-		panel._selected_quote.family_handle == 11 and panel._quote_row_refs[11].get_instance_id() == row_id
+		panel._selected_quote.family_handle == 11 and panel._quote_row_refs["3:11"].get_instance_id() == row_id
 		and panel._display_order == order and int(panel._population.value) == 2)
 	stub.modern_unlocked = true
 	panel.refresh_visible()
@@ -297,7 +297,7 @@ func _run_live_map_picking() -> void:
 	manager.show_cell_panel(_hex_cell(3))
 	_expect("clicking a ringed city on the map sets the origin with no pick button",
 		panel._source_filter == 3 and panel._target_cell == 22 and panel.map_stage() == &"target")
-	var row := panel._quote_row_refs.get(11) as Button
+	var row := panel._quote_row_refs.get("3:11") as Button
 	row.pressed.emit()
 	_expect("origin click refreshes the local family list",
 		panel._selected_quote.family_handle == 11 and not panel._start.disabled)
@@ -373,14 +373,16 @@ func _run_density_and_layout() -> void:
 			panel._selected_quote.is_empty() and panel._start.disabled and stub.preview_calls == 0)
 		panel._on_source_city_selected(panel._source_city.get_item_index(3))
 		_expect("summaries do not eagerly fetch %d branch dossiers" % count,
-			panel._quote_row_refs.size() == count and stub.preview_calls == 0)
-		var first := panel._quote_row_refs.get(11) as Button
+			panel._quote_row_refs.size() == count * 2 and stub.preview_calls == 0)
+		var first := panel._quote_row_refs.get("3:11") as Button
 		first.pressed.emit()
 		var scroll := panel.get_node("%RowsScroll") as ScrollContainer
 		await process_frame
 		await process_frame
 		var visible_rows := floori((scroll.size.y + 2.0) / 50.0)
-		_expect("1280x720 shows at least six compact summaries for %d branches" % count, visible_rows >= 6)
+		var expected_rows := 6 if root.get_visible_rect().size.y >= 720 else 3
+		_expect("source directory keeps %d complete summaries at this UI scale for %d branches" % [expected_rows, count],
+			visible_rows >= expected_rows and not (panel.get_node("%Body") as BoxContainer).vertical)
 		for resolution in [Vector2i(1280, 720), Vector2i(1920, 1080)]:
 			root.size = resolution
 			for scale in [1.0, 1.25]:
@@ -392,8 +394,11 @@ func _run_density_and_layout() -> void:
 				var rect := panel.get_global_rect()
 				var start := panel._start.get_global_rect()
 				var viewport := root.get_visible_rect().size
-				_expect("45 percent workbench and footer fit %s at %s for %d families" % [resolution, scale, count],
-					absf(rect.size.x - roundf(viewport.x * 0.45)) < 1.0
+				var expected_width := roundf(viewport.x * 0.45)
+				if viewport.x < UITokens.ARCHIVE_BREAKPOINT_COMPACT:
+					expected_width = minf(maxf(expected_width, 560.0), viewport.x - 32.0)
+				_expect("responsive workbench and footer fit %s at %s for %d families" % [resolution, scale, count],
+					absf(rect.size.x - expected_width) < 1.0
 					and rect.position.x == 16.0 and rect.end.y <= viewport.y - CountryActionBar.BAR_HEIGHT
 					and rect.encloses(start))
 				if count == 40 and OS.get_environment("PK_COLONIZATION_UI_CAPTURE") == "1" and DisplayServer.get_name() != "headless":

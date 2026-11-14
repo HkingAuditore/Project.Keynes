@@ -40,7 +40,7 @@ func _run() -> void:
 	moisture.fill(0.5)
 	var offsets := PackedInt32Array()
 	offsets.resize(9)
-	var inputs: Dictionary = ext.capture_runtime_inputs({"generation": 1, "day": day,
+	var inputs: Dictionary = ext.capture_runtime_inputs({"generation": 1, "day": day + 1,
 		"terrain": terrain, "neighbor_offsets": offsets, "neighbor_indices": PackedInt32Array(),
 		"cell_temp": temperatures, "cell_moisture": moisture, "cell_plant_available_water": moisture})
 	expect("worker environment inputs publish", bool(inputs.get("ok", false)))
@@ -75,7 +75,11 @@ func _run() -> void:
 	var ready := false
 	while Time.get_ticks_msec() < deadline:
 		ext.capture_economy_day_inputs(-1)
-		ext.advance_runtime_pulse(day, 0.0, 1.0, 4000)
+		# The worker starts at the committed trade day and plans its first
+		# Economy day at day+1. The runtime graph captures the frozen Economy
+		# input for the day it is asked to advance, so keep those two watermarks
+		# aligned before the worker consumes the input.
+		ext.advance_runtime_pulse(day + 1, 0.0, 1.0, 4000)
 		var runtime: Dictionary = ext.get_runtime_thread_report()
 		ready = (int(runtime.get("authoritative_domain_mask", 0)) & 0x104) == 0x104
 		if int(layer.debug_snapshot().vehicle_count) > 0:

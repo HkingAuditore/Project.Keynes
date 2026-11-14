@@ -109,7 +109,7 @@ func start() -> void:
 	if is_recording():
 		return
 	_local_start_error = false
-	var world = _get_world()
+	var world = _get_economy()
 	var map = _current_map()
 	if world == null or map == null:
 		push_warning("[economy-record] start failed: world/map unavailable")
@@ -192,7 +192,7 @@ func start() -> void:
 		"resource_ids": resource_ids,
 		"paths": native_paths,
 	}
-	_status = world.call("start_economy_csv_recording", _pending_start_config)
+	_status = world.start_csv_recording(_pending_start_config)
 	if str(_status.get("error_code", "")) == "economy_boundary_busy":
 		_status = {"state": "opening", "recording": true}
 		return
@@ -216,9 +216,9 @@ func start() -> void:
 
 func stop_and_export() -> Array:
 	_pending_start_config.clear()
-	var world = _get_world()
+	var world = _get_economy()
 	if world != null:
-		_status = world.call("request_stop_economy_csv_recording")
+		_status = world.request_stop_csv_recording()
 		_paths.clear()
 		for path in _status.get("paths", []):
 			_paths.append(path)
@@ -243,11 +243,11 @@ func on_fast_tick(_sample: Dictionary) -> Dictionary:
 func _poll_status() -> void:
 	if _local_start_error:
 		return
-	var world = _get_world()
+	var world = _get_economy()
 	if world == null:
 		return
 	if not _pending_start_config.is_empty():
-		var started: Dictionary = world.call("start_economy_csv_recording", _pending_start_config)
+		var started: Dictionary = world.start_csv_recording(_pending_start_config)
 		if str(started.get("error_code", "")) == "economy_boundary_busy":
 			return
 		_pending_start_config.clear()
@@ -255,7 +255,7 @@ func _poll_status() -> void:
 			_set_local_start_error(str(started.get("error_code", "start_failed")),
 				str(started.get("error_message", "start_failed")))
 			return
-	var next_status: Dictionary = world.call("get_economy_csv_recording_status")
+	var next_status: Dictionary = world.csv_recording_status()
 	var next_state: String = str(next_status.get("state", "idle"))
 	if next_state != _last_polled_state:
 		if next_state == "completed":
@@ -279,6 +279,15 @@ func _get_world():
 	if gen == null or not gen.has_method("get_data_core_world_ext"):
 		return null
 	return gen.get_data_core_world_ext()
+
+
+func _get_economy():
+	if _main == null or not _main.has_method("get_generator"):
+		return null
+	var gen = _main.get_generator()
+	if gen == null or not gen.has_method("get_economy_facade"):
+		return null
+	return gen.get_economy_facade()
 
 
 func _current_map():

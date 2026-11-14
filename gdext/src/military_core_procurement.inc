@@ -25,7 +25,7 @@ namespace {
 // Distinct markets a single demand may be served by before it is cut off. The
 // design cap is 4 markets; the ring implementation allows 8, which keeps a
 // large garrison from starving on a few small markets.
-constexpr int32_t PROCURE_MARKETS = 8;
+constexpr int32_t PROCURE_MARKETS = 4;
 // A market row an entry can reach.
 struct ReachRow {
     int32_t row = -1;
@@ -122,6 +122,10 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     reset.kind = MILITARY_INTENT_PROCUREMENT_DEMAND;
     reset.cell = -1;
     if (!_lots.active.empty() || !_training.empty()) out.push_back(reset);
+    // The maintenance channel's unfunded gap (design S4-4) rides the same
+    // forecast lane. It is appended after the reset row above so the reset cannot
+    // wipe it, and it carries no custody or cash - it is a signal, never a sale.
+    for (const MilitaryIntent &maint_signal : _maint_forecast) out.push_back(maint_signal);
     const int32_t cells = _terrain.cell_count;
     const int32_t capacity = digest.country_capacity;
     if (cells <= 0 || capacity <= 0) return;
@@ -147,9 +151,29 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
     ds.clear();
     ds.quota_left.assign((size_t)capacity, -1);
     ds.cash_left.assign((size_t)capacity, 0);
-    for (int32_t country = 0; country < capacity; ++country)
-        if ((size_t)country < digest.country_cash.size())
-            ds.cash_left[(size_t)country] = std::max<int64_t>(0, digest.country_cash[(size_t)country]);
+    for (int32_t country = 0; country < capacity; ++country) {
+        if ((size_t)country >= digest.country_cash.size()) continue;
+        int64_t cash = std::max<int64_t>(0, digest.country_cash[(size_t)country]);
+        // Payroll was planned first (design S4-1); this pass may only promise
+        // what is left of the same frozen snapshot.
+        if ((size_t)country < _policies.size()) {
+            const MilitaryCountryPolicy &policy = _policies[(size_t)country];
+            cash = std::max<int64_t>(0, cash - policy.wage_planned_today -
+                                            policy.maintenance_planned_today);
+        }
+        ds.cash_left[(size_t)country] = cash;
+    }
+    for (const auto &purchase : _purchase_orders) {
+        const int32_t country = ensure_country_slot(purchase.intent.country_a);
+        for (int32_t cls = 0; cls < MILITARY_MAX_SUPPLY_CLASSES; ++cls) {
+            if (cls == STOCK_CLASS_EQUIPMENT) continue;
+            const int32_t index = class_index_of_good(_catalog, cls, purchase.intent.good);
+            if (index >= 0) ds.in_flight.push_back({{country, purchase.dest_kind, purchase.dest, cls},
+                class_units_of(purchase.intent.count, _catalog.supply_yield_q16[cls][index])});
+        }
+        if (purchase.dest_kind == MILITARY_LOT_TRAINING)
+            ds.training_in_flight.emplace_back(purchase.dest_handle, purchase.stock_good);
+    }
     for (const MilitaryShipment &shipment : _shipments) {
         if (shipment.qty <= 0) continue;
         if (shipment.dest_kind == MILITARY_LOT_TRAINING) {
@@ -468,10 +492,8 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
             // matters here and nowhere else: a rounded-down unit price would let
             // a full quota buy one good more than it can pay for, and a budget
             // that can be exceeded by rounding is not a budget.
-            if (e.country >= 0 && (size_t)e.country < ds.quota_left.size() &&
-                ds.quota_left[(size_t)e.country] >= 0) {
-                const int64_t quota = ds.quota_left[(size_t)e.country];
-                const int64_t raw_price = _md_row_price[(size_t)rr.row];
+            {
+                const int32_t raw_price = _md_row_price[(size_t)rr.row];
                 int32_t yield_q16 = MILITARY_Q16;
                 if (e.cls >= 0) {
                     const int32_t index = class_index_of_good(_catalog, e.cls,
@@ -488,26 +510,49 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 auto cost_of = [&](int64_t count) {
                     return (raw_price * goods_of(count)) / MILITARY_GOODS_SCALE;
                 };
-                if (cost_of(units) > quota) {
-                    // Start from the per-unit ceiling estimate (always an upper
-                    // bound) and walk down until the exact charge fits. The walk
-                    // is one or two steps: the estimate is off by at most a good,
-                    // never by a whole unit of demand.
-                    const int64_t unit_cost =
-                        std::max<int64_t>(1, (raw_price + MILITARY_GOODS_SCALE - 1) /
-                                                MILITARY_GOODS_SCALE);
-                    int64_t fit = std::min(units, quota / unit_cost);
-                    while (fit > 0 && cost_of(fit) > quota) --fit;
-                    // Flagged so the shortfall is counted as 待购 rather than as
-                    // "no market in range"; the two mean different things to the
-                    // panel and only this one recovers when the quota does.
-                    e.quota_hit = 1;
-                    units = fit;
-                    if (units <= 0) continue;
-                    goods = goods_of(units);
-                    if (goods > left) goods = left;
+                // Shared cash pool (design S4-1). Payroll is planned first and the
+                // maintenance channel takes its share next, so a purchase may only
+                // promise what is still left of the treasury - independent of how
+                // big this channel's own quota is. Applying it BEFORE the quota
+                // makes the stricter of the two win, which is what "one cash pool"
+                // has to mean.
+                if (e.country >= 0 && (size_t)e.country < ds.cash_left.size()) {
+                    const int64_t cash = ds.cash_left[(size_t)e.country];
+                    if (cost_of(units) > cash) {
+                        const int64_t unit_cost = std::max<int64_t>(1,
+                            (raw_price + MILITARY_GOODS_SCALE - 1) / MILITARY_GOODS_SCALE);
+                        int64_t fit = std::min(units, cash / unit_cost);
+                        while (fit > 0 && cost_of(fit) > cash) --fit;
+                        units = fit;
+                        if (units <= 0) continue;
+                        goods = goods_of(units);
+                        if (goods > left) goods = left;
+                    }
                 }
-                ds.quota_left[(size_t)e.country] = quota - cost_of(units);
+                if (e.country >= 0 && (size_t)e.country < ds.quota_left.size() &&
+                    ds.quota_left[(size_t)e.country] >= 0) {
+                    const int64_t quota = ds.quota_left[(size_t)e.country];
+                    if (cost_of(units) > quota) {
+                        // Start from the per-unit ceiling estimate (always an upper
+                        // bound) and walk down until the exact charge fits. The walk
+                        // is one or two steps: the estimate is off by at most a good,
+                        // never by a whole unit of demand.
+                        const int64_t unit_cost =
+                            std::max<int64_t>(1, (raw_price + MILITARY_GOODS_SCALE - 1) /
+                                                    MILITARY_GOODS_SCALE);
+                        int64_t fit = std::min(units, quota / unit_cost);
+                        while (fit > 0 && cost_of(fit) > quota) --fit;
+                        // Flagged so the shortfall is counted as 待购 rather than as
+                        // "no market in range"; the two mean different things to the
+                        // panel and only this one recovers when the quota does.
+                        e.quota_hit = 1;
+                        units = fit;
+                        if (units <= 0) continue;
+                        goods = goods_of(units);
+                        if (goods > left) goods = left;
+                    }
+                    ds.quota_left[(size_t)e.country] = quota - cost_of(units);
+                }
             }
             ds.row_left[(size_t)rr.row] = left - goods;
             e.sourced += units;
@@ -608,53 +653,39 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
                 buy.amount = cost;
                 buy.source_id = static_cast<uint64_t>(e.kind) << 32 |
                                 static_cast<uint32_t>(e.slot < 0 ? 0 : e.slot);
-                out.push_back(buy);
+                // Goods remain unavailable until the committed purchase receipt.
                 ++_report.intents_emitted;
                 ++_report.procure_markets_used;
                 ++delivered_markets;
-                if (market_cell == h.cell) {
-                    // Own-cell purchase arrives the same day, no convoy (sec 9.3).
-                    stock_add(e.kind, h.holder, h.country, (int32_t)good_id, qty);
-                    _ledger_received += qty;
-                    // v3: same-day equipment must count too; previously this
-                    // branch never set equipment_ready, so orders hung forever.
-                    if (e.kind == MILITARY_LOT_TRAINING && e.cls < 0
-                        && delivered_quality > 0 && h.holder >= 0
-                        && (size_t)h.holder < _training.size()) {
-                        note_training_delivery(_training, _catalog,
-                            _training[(size_t)h.holder].id, e.category, delivered_quality);
-                    }
-                    continue;
-                }
-                MilitaryShipment shipment;
-                shipment.id = _next_id++;
-                shipment.country_slot = h.country;
-                shipment.dest_kind = e.kind;
-                shipment.dest = h.holder;
-                shipment.dest_handle = e.kind == MILITARY_LOT_ARMY ? army_handle(h.holder)
-                                                                  : static_cast<uint64_t>(h.holder);
-                shipment.origin_cell = market_cell;
-                shipment.current_cell = market_cell;
-                shipment.good = (int32_t)good_id;
-                shipment.real_good = real_good;
-                shipment.quality = static_cast<int8_t>(delivered_quality);
+                // Nothing is created here: no convoy id is spent, no stock is
+                // credited, no ledger term moves. The order below is only a
+                // destination description; `settle_purchase` turns the real
+                // filled quantity into custody on the receipt day.
+                MilitaryPurchaseOrder order;
+                order.channel = 0;
+                order.destination_cell = h.cell;
+                order.dest_kind = e.kind;
+                order.dest = h.holder;
+                order.dest_handle = e.kind == MILITARY_LOT_ARMY ? army_handle(h.holder)
+                                                               : static_cast<uint64_t>(h.holder);
+                order.stock_good = (int32_t)good_id;
+                order.real_good = real_good;
+                order.category = e.cls < 0 ? e.category : -1;
+                order.quality = static_cast<int8_t>(delivered_quality);
+                // Convoy route = ring distance (design 9.3 / 9.4), fixed now so a
+                // later market move cannot rewrite the distance already paid for.
+                const int32_t distance = std::max(1, cell_distance(market_cell, h.cell));
+                order.route_cost_q16 = distance * MILITARY_Q16;
+                const int32_t speed_q16 = stat_or(digest, h.country, MSTAT_SUPPLY_TRANSPORT);
+                int32_t days = (order.route_cost_q16 + speed_q16 - 1) / speed_q16;
+                if (days < 1) days = 1;
+                order.days = days;
                 if (e.kind == MILITARY_LOT_TRAINING && h.holder >= 0
                     && (size_t)h.holder < _training.size()) {
                     // Stable order id, not the compacting vector index.
-                    shipment.dest_handle = _training[(size_t)h.holder].id;
+                    order.dest_handle = _training[(size_t)h.holder].id;
                 }
-                shipment.qty = qty;
-                shipment.value = cost;
-                shipment.departure_day = digest.day;
-                // Convoy route = ring distance (design 9.3 / 9.4).
-                const int32_t distance = std::max(1, cell_distance(market_cell, h.cell));
-                shipment.route_cost_q16 = distance * MILITARY_Q16;
-                const int32_t speed_q16 = stat_or(digest, h.country, MSTAT_SUPPLY_TRANSPORT);
-                int32_t days = (shipment.route_cost_q16 + speed_q16 - 1) / speed_q16;
-                if (days < 1) days = 1;
-                shipment.eta_day = digest.day + days;
-                _ledger_received += qty;   // A3: in-transit goods were never booked as received
-                _shipments.push_back(shipment);
+                queue_purchase(buy, order, out);
             }
         }
         int64_t missing = 0;
@@ -729,4 +760,123 @@ void MilitaryCore::run_procurement(const MilitaryWorldDigest &digest,
         demand.amount = TARGET_DAYS;
         out.push_back(demand);
     }
+}
+
+// ============================================================= purchase settle
+// Physical-maintenance design §3 / D1 / D6.
+//
+// `run_procurement` (and, from S2 on, the maintenance pass) only RECORDS an
+// intention to buy. This pair is the only place a purchase turns into custody:
+//   queue_purchase  -> a pending order with a stable request id, nothing else
+//   settle_purchase -> the real filled quantity, credited as stock (same cell)
+//                      or as a convoy (other cell); the real paid amount is the
+//                      only money that enters the procurement/maintenance spend.
+// A receipt that names an unknown id is a duplicate (or a save that already
+// settled it) and is a no-op: a repeated fill must never credit twice.
+void MilitaryCore::queue_purchase(MilitaryIntent intent,
+                                  const MilitaryPurchaseOrder &destination,
+                                  std::vector<MilitaryIntent> &out) {
+    MilitaryPurchaseOrder order = destination;
+    order.intent = intent;
+    if (_next_purchase_id <= 0) _next_purchase_id = 1;
+    // The stable identity travels in `source_id`: the bridge copies it to the
+    // pending row and back into the receipt (world_ext_military.cpp:1592/2167).
+    order.intent.source_id = static_cast<uint64_t>(_next_purchase_id++);
+    _purchase_orders.push_back(order);
+    out.push_back(order.intent);
+}
+
+void MilitaryCore::settle_purchase(const MilitaryIntentReceipt &receipt) {
+    const uint64_t request_id = receipt.source_id;
+    if (request_id == 0) return;
+    size_t index = _purchase_orders.size();
+    for (size_t i = 0; i < _purchase_orders.size(); ++i) {
+        if (_purchase_orders[i].intent.source_id == request_id) {
+            index = i;
+            break;
+        }
+    }
+    if (index == _purchase_orders.size()) return;   // duplicate / already settled
+    const MilitaryPurchaseOrder order = _purchase_orders[index];
+    _purchase_orders.erase(_purchase_orders.begin() + static_cast<std::ptrdiff_t>(index));
+    const int32_t slot = ensure_country_slot(order.intent.country_a);
+    const int64_t requested = std::max<int64_t>(0, order.intent.count);
+    // Only a real fill counts. A row can be acknowledged with a zero fill
+    // (out of stock, no merchant, treasury empty) and that is not a delivery.
+    int64_t filled = receipt.ok ? std::min<int64_t>(receipt.committed_count, requested) : 0;
+    int64_t paid = receipt.ok ? std::max<int64_t>(0, std::min<int64_t>(receipt.committed_amount,
+                                                                      order.intent.amount))
+                              : 0;
+    if (filled <= 0) {
+        // Keep the shortfall visible as unmet demand; it is re-detected from the
+        // stock level on the next procurement pass, so it is never lost.
+        ++_report.unmet_procurement_holders;
+        _report.unmet_procurement_units += requested;
+        if (slot >= 0) {
+            if ((int32_t)_unmet_procure_units.size() < slot + 1) {
+                _unmet_procure_units.resize(static_cast<size_t>(slot + 1), 0);
+            }
+            _unmet_procure_units[static_cast<size_t>(slot)] += requested;
+        }
+        return;
+    }
+    // Paid money that the treasury actually moved. The maintenance channel books
+    // it as maintenance spend; the general channel keeps its own rolling term.
+    if (slot >= 0 && static_cast<size_t>(slot) < _policies.size()) {
+        MilitaryCountryPolicy &p = _policies[static_cast<size_t>(slot)];
+        if (order.channel == 1) {
+            p.spend_upkeep_30 = p.spend_upkeep_30 - p.spend_upkeep_30 / 6 + paid;
+            _report.maintenance_spend += paid;
+        } else {
+            p.spend_procurement_30 = p.spend_procurement_30 - p.spend_procurement_30 / 30 + paid;
+        }
+    }
+    // Handover: the goods are now in military custody, so `_ledger_received` must
+    // move at exactly this point. A same-cell purchase is inventory today; a
+    // farther one is a real convoy, and the reconciliation identity
+    // (received = stock + transit + consumed + ...) stays exact either way.
+    const int32_t market_cell = order.intent.cell;
+    if (order.dest_kind == MILITARY_LOT_ARMY) {
+        int32_t army = -1;
+        if (!resolve_army(order.dest, army)) {
+            // The formation died while the purchase was in flight. The goods were
+            // really bought (the market lost them and the treasury paid), so they
+            // enter custody and leave it again in the same step: booking ONLY the
+            // return term would break the goods identity
+            // (received = stock + transit + consumed + ... + returned) by exactly
+            // the refunded quantity, which is what the war scenario caught.
+            _ledger_received += filled;
+            _ledger_returned += filled;
+            return;
+        }
+    }
+    if (market_cell >= 0 && market_cell == order.destination_cell) {
+        stock_add(order.dest_kind, order.dest, slot, order.stock_good, filled);
+        _ledger_received += filled;
+        if (order.dest_kind == MILITARY_LOT_TRAINING && order.quality > 0) {
+            note_training_delivery(_training, _catalog, order.dest_handle,
+                                   order.category, static_cast<int32_t>(order.quality));
+        }
+        return;
+    }
+    MilitaryShipment shipment;
+    shipment.id = _next_id++;
+    shipment.country_slot = slot;
+    shipment.dest_kind = order.dest_kind;
+    shipment.dest = order.dest;
+    shipment.dest_handle = order.dest_handle;
+    shipment.origin_cell = market_cell;
+    shipment.current_cell = market_cell;
+    shipment.good = order.stock_good;
+    shipment.real_good = order.real_good;
+    shipment.quality = order.quality;
+    shipment.qty = filled;
+    shipment.value = paid;
+    shipment.departure_day = _last_day;
+    shipment.eta_day = _last_day + std::max(1, order.days);
+    shipment.route_cost_q16 = order.route_cost_q16;
+    shipment.progress_q16 = 0;
+    shipment.blocked_days = 0;
+    _shipments.push_back(shipment);
+    _ledger_received += filled;
 }

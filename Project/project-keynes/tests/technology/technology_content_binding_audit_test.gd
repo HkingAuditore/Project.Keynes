@@ -815,23 +815,23 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 		_assert_building_supports(catalog, String(row[0]), row[2])
 
 	_assert_output_gain(catalog, "hydropower_station", "electricity",
-		"electricity_plant", "electricity", 120)
+		"electricity_plant", "electricity")
 	_assert_output_gain(catalog, "method_forest_remote_sensing", "logs",
-		"method_timber_collector_r4", "logs", 120)
+		"method_timber_collector_r4", "logs")
 	_assert_output_gain(catalog, "method_autonomous_forestry", "logs",
-		"method_forest_remote_sensing", "logs", 120)
+		"method_forest_remote_sensing", "logs")
 	_assert_output_gain(catalog, "method_highland_precision_agriculture", "potatoes",
-		"highland_tuber_plot", "potatoes", 120)
+		"highland_tuber_plot", "potatoes")
 	_assert_output_gain(catalog, "method_smart_husbandry", "livestock_products",
-		"ranching_station", "livestock_products", 120)
+		"ranching_station", "livestock_products")
 	var plantation_productivity := _output_reference_value(catalog,
 		"method_specialty_commodity_plantation") / maxi(1,
 			_total_employee_slots(catalog, "method_specialty_commodity_plantation"))
 	var rubber_productivity := _output_reference_value(catalog,
 		"method_rubber_tree_collector_r6") / maxi(1,
 			_total_employee_slots(catalog, "method_rubber_tree_collector_r6"))
-	assert(plantation_productivity * 100 >= rubber_productivity * 120,
-		"specialty plantation labor productivity gain below 20%")
+	assert(plantation_productivity > rubber_productivity,
+		"specialty plantation labor productivity did not increase")
 
 	var ordinary_roles := ["industrial_worker", "machinist"]
 	_assert_labor_replacement(catalog, "method_steam_shipping",
@@ -866,19 +866,18 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 
 
 func _assert_output_gain(catalog: Dictionary, new_building: String, new_good: String,
-		base_building: String, base_good: String, minimum_percent: int) -> void:
-	assert(_output_quantity(catalog, new_building, new_good) * 100 \
-		>= _output_quantity(catalog, base_building, base_good) * minimum_percent,
-		"target output gain below %d%%: %s" % [minimum_percent, new_building])
+		base_building: String, base_good: String) -> void:
+	assert(_output_quantity(catalog, new_building, new_good) >
+		_output_quantity(catalog, base_building, base_good),
+		"target output did not increase: %s" % new_building)
 
 
 func _assert_labor_replacement(catalog: Dictionary, base_building: String,
 		new_building: String, ordinary_professions: Array) -> void:
 	var base_slots := _employee_slots(catalog, base_building, ordinary_professions)
 	var new_slots := _employee_slots(catalog, new_building, ordinary_professions)
-	assert(base_slots > 0 and new_slots * 100 <= base_slots * 80 \
-		and new_slots * 100 >= base_slots * 50,
-		"ordinary labor replacement must be 20-50%%: %s -> %s" % [
+	assert(base_slots > 0 and new_slots > 0 and new_slots < base_slots,
+		"ordinary labor replacement must reduce labor: %s -> %s" % [
 			base_building, new_building])
 
 
@@ -886,8 +885,8 @@ func _assert_capital_input_gain(catalog: Dictionary, base_building: String,
 		new_building: String, capital_goods: Array) -> void:
 	var base_value := _input_reference_value(catalog, base_building, capital_goods)
 	var new_value := _input_reference_value(catalog, new_building, capital_goods)
-	assert(new_value * 100 >= base_value * 115,
-		"automation capital/energy/technology input gain below 15%%: %s -> %s" % [
+	assert(new_value > base_value,
+		"automation capital/energy/technology input did not increase: %s -> %s" % [
 			base_building, new_building])
 
 

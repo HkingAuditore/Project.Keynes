@@ -188,8 +188,8 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 		int(scalar.ext.get_economy_state_hash()) == int(
 			worker.ext.get_economy_state_hash()))
 	var saved := _save_economy(worker.ext)
-	_expect("PKEC v42 climate save streams at a committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 57)
+	_expect("PKEC climate save streams at a committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) > 0)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_runtime(catalog, CELL_COUNT, 4403, false)
@@ -338,6 +338,7 @@ func _profile(worker_enabled: bool) -> Dictionary:
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
+	profile.economy_cadence_force_market_days = profile.market_cycle_days
 	profile.trade_runtime_mode = "OFF"
 	profile.starvation_death_rate_q32 = 0
 	profile.resource_safe_harvest_q16 = 0

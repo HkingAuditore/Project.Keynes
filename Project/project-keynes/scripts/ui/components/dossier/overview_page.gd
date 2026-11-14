@@ -19,7 +19,9 @@ const CASHFLOW_STACK_WIDTH := 760.0
 const FLOW_BARS_WIDTH := 430.0
 
 @onready var _header: HBoxContainer = %CashflowHeader
+@onready var _kicker: Label = %CashflowKicker
 @onready var _day: Label = %CashflowDay
+@onready var _window: OptionButton = %CashflowWindow
 @onready var _toggle: Button = %CashflowToggle
 @onready var _body: BoxContainer = %CashflowBody
 @onready var _bars: VBoxContainer = %FlowBars
@@ -39,9 +41,19 @@ const FLOW_BARS_WIDTH := 430.0
 var _detail_open := false
 var _detail_rows: Array = []
 var _detail_signature := ""
+var _cashflow_vm: EconomyDossierViewModel = null
+var _window_days := EconomyDossierViewModel.DEFAULT_CASHFLOW_WINDOW_DAYS
 
 
 func _ready() -> void:
+	_window.clear()
+	for days in EconomyDossierViewModel.CASHFLOW_WINDOW_OPTIONS:
+		var index := _window.item_count
+		_window.add_item("近 %d 日" % int(days))
+		_window.set_item_metadata(index, int(days))
+		if int(days) == _window_days:
+			_window.select(index)
+	_window.item_selected.connect(_on_window_selected)
 	_toggle.pressed.connect(_toggle_detail)
 	_detail.set_columns(CASHFLOW_COLUMNS, "")
 	_detail.row_height = 26.0
@@ -61,7 +73,8 @@ func _ready() -> void:
 
 
 func refresh(vm: EconomyDossierViewModel, _filter = null) -> void:
-	var model := vm.overview_model()
+	_cashflow_vm = vm
+	var model := vm.overview_model(_window_days)
 	if not bool(model.get("ok", false)):
 		return
 	_refresh_cashflow(model.get("cashflow", {}))
@@ -79,14 +92,24 @@ func _refresh_cashflow(cashflow: Dictionary) -> void:
 	var ok := bool(cashflow.get("ok", false))
 	_header.visible = ok
 	_body.visible = ok
+	_window.visible = ok and bool(cashflow.get("can_roll", false))
 	if not ok:
 		_detail.visible = false
 		return
-	_day.text = String(cashflow.get("day_text", ""))
-	_body.tooltip_text = "显示最近一次结算的收支；未结算日沿用上次数据，不代表当天重复入账。"
-	_income_bar.set_segments("收入", cashflow.get("income_segments", []),
+	var rolling := bool(cashflow.get("rolling", false))
+	_kicker.text = "国库收支 · 日均" if rolling else "国库收支"
+	_day.text = String(cashflow.get("window_text", cashflow.get("day_text", ""))) \
+		if rolling else String(cashflow.get("day_text", ""))
+	_body.tooltip_text = ("堆叠条与明细按最近 %d 日折算为日均；净额以国库现金实际变化校准，"
+		+ "未细分项目归入「其他国库变动」。折线保留逐日结算读数，"
+		+ "未结算日沿用上次结算。") \
+		% int(cashflow.get("covered_days", 0)) if rolling \
+		else "显示最近一次结算的收支；未结算日沿用上次数据，不代表当天重复入账。"
+	_income_bar.set_segments("收入 · 日均" if rolling else "收入",
+		cashflow.get("income_segments", []),
 		String(cashflow.get("income_text", "")), true)
-	_expense_bar.set_segments("支出", cashflow.get("expense_segments", []),
+	_expense_bar.set_segments("支出 · 日均" if rolling else "支出",
+		cashflow.get("expense_segments", []),
 		String(cashflow.get("expense_text", "")), true)
 	_trend.set_series(cashflow.get("income_series", PackedFloat32Array()),
 		cashflow.get("expense_series", PackedFloat32Array()),
@@ -99,6 +122,15 @@ func _refresh_cashflow(cashflow: Dictionary) -> void:
 		_detail_rows = cashflow.get("detail_rows", [])
 		_detail.set_rows(_detail_rows)
 	_detail.visible = _detail_open
+
+
+func _on_window_selected(index: int) -> void:
+	var days := int(_window.get_item_metadata(index))
+	if days <= 0 or days == _window_days:
+		return
+	_window_days = days
+	if _cashflow_vm != null:
+		_refresh_cashflow(_cashflow_vm.cashflow_model(_window_days))
 
 
 func _toggle_detail() -> void:

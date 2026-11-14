@@ -18,6 +18,7 @@ class_name MilitaryOccupationLayer
 ##   A = 255 = 该格被占领
 
 const SHADER_PATH: String = "res://shaders/military_occupation_hatch.gdshader"
+const FRONTIER_GRAIN: Texture2D = preload("res://assets/vfx/frontier_grain.png")
 const Z_INDEX := 5
 
 var _mesh_inst: MeshInstance2D
@@ -58,6 +59,7 @@ func _ensure_nodes() -> void:
 		return
 	_material = ShaderMaterial.new()
 	_material.shader = shader
+	_material.set_shader_parameter("frontier_grain", FRONTIER_GRAIN)
 	_material.set_shader_parameter("map_index_atlas", DataOverlayBaker.get_empty_texture())
 	_material.set_shader_parameter("occupation_lut", DataOverlayBaker.get_empty_texture())
 	_material.set_shader_parameter("has_lut", false)

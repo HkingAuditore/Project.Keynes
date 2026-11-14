@@ -42,6 +42,7 @@ const CountryCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
+const Expectations = preload("res://tests/ideology/ideology_expectations.gd")
 
 const CELLS := 12
 const Q16_ONE := 65536
@@ -285,8 +286,11 @@ func _test_national_values() -> void:
 			for row_value in rows:
 				var row: Dictionary = row_value
 				var stat := String(row["stat"])
+				var sourced_levels := _expectation_levels(key, stat)
+				var levels: Array = sourced_levels if not sourced_levels.is_empty() \
+					else row["levels"]
 				var value := _read(ext, handle, stat)
-				var expected := float((row["levels"] as Array)[level])
+				var expected := float(levels[level])
 				_expect("%s L%d applies %s = %.4f (design)"
 					% [key, level + 1, stat, expected],
 					_is_close(value, expected, 0.0005),
@@ -313,7 +317,8 @@ func _test_condition_not_satisfied() -> void:
 	# And the terrain it DOES name moved, so the check above is not vacuous.
 	_expect("terrace farming moved the hill it names",
 		_is_close(_read(ext, handle, "country.output.terrain.hill.agriculture_factor"),
-			1.10, 0.0005),
+			_expectation_value("terrace_farming",
+				"country.output.terrain.hill.agriculture_factor", 1), 0.0005),
 		"%.5f" % _read(ext, handle, "country.output.terrain.hill.agriculture_factor"))
 
 
@@ -576,6 +581,20 @@ func _expectation_level(levels: Array, level: int) -> Dictionary:
 		if int(entry["level"]) == level:
 			return entry
 	return {}
+
+
+func _expectation_levels(card_key: String, stat: String) -> Array:
+	var out: Array = []
+	for level in 3:
+		var value := Expectations.value(card_key, stat, level + 1)
+		if is_nan(value):
+			return []
+		out.append(value)
+	return out
+
+
+func _expectation_value(card_key: String, stat: String, level: int) -> float:
+	return Expectations.value(card_key, stat, level, 1.0)
 
 
 ## Why the synthetic fixture cannot measure this cell row, or "" when it can.

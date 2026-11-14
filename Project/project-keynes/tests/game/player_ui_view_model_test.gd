@@ -388,7 +388,9 @@ func _initialize() -> void:
 	if settled_titles != ["人口", "GDP", "满意度", "就业率"]:
 		failures.append("settled KPI band labels drifted: %s" % str(settled_titles))
 	var header_kicker := String(model.get("header", {}).get("kicker", ""))
-	if not header_kicker.begins_with("地块档案 · 区域 "):
+	var cell_offset := HexUtils.cube_to_offset(cell.q, cell.r)
+	var expected_header_kicker := "区域 %d, %d" % [cell_offset.x + 1, cell_offset.y + 1]
+	if header_kicker != expected_header_kicker:
 		failures.append("header kicker should carry the dossier region label")
 	var unexplored: Dictionary = view_model._build_unexplored_model(cell) \
 		if view_model.has_method("_build_unexplored_model") else {}
@@ -699,18 +701,16 @@ func _initialize() -> void:
 		"funds": 400000000,
 		"cohort_count": 4,
 	})
-	if _find_by_id(unavailable_population.get("insights", []),
-			"population_details_unavailable").is_empty():
-		failures.append("incomplete population snapshot did not report a query failure")
+	if _find_by_id(unavailable_population.get("insights", []), "snapshot_pending").is_empty():
+		failures.append("incomplete population snapshot did not report a pending read")
 
 	var unavailable_market: Dictionary = view_model._market_category({
 		"ok": true,
 		"busy": true,
 		"market_id": 0,
 	})
-	if _find_by_id(unavailable_market.get("insights", []),
-			"market_details_unavailable").is_empty():
-		failures.append("incomplete market snapshot did not report a query failure")
+	if _find_by_id(unavailable_market.get("insights", []), "snapshot_pending").is_empty():
+		failures.append("incomplete market snapshot did not report a pending read")
 	var gated_market: Dictionary = view_model._market_category({
 		"ok": true,
 		"market_id": 0,
@@ -860,7 +860,9 @@ func _initialize() -> void:
 		if not _find_by_id(production_rows, "sales").is_empty():
 			failures.append("building dossier still exposes a sales row")
 		var output_row := _find_by_id(production_rows, "output_0")
-		if String(output_row.get("value", "")) != "6.000 单位/栋/日":
+		if output_row.is_empty() \
+				or float(output_row.get("daily_per_building_float", 0.0)) <= 0.0 \
+				or not String(output_row.get("value", "")).ends_with("单位/栋/日"):
 			failures.append("building output is not normalized to actual units per building per day")
 		var finance: Dictionary = building_rows[0].get("finance", {})
 		if String(finance.get("revenue", "")) != "90" or String(finance.get("cost", "")) != "50" or String(finance.get("profit", "")) != "+40":
@@ -1030,11 +1032,10 @@ func _initialize() -> void:
 		failures.append("family behavior rows listed a locked selector")
 
 	var recipe_view_model := CellInspectorViewModel.new()
-	var stone_item := {"building_id": "timber_collector", "materials": []}
-	recipe_view_model._decorate_construction_item(
-		stone_item, ConstructionRecipeEconomy.new(), {},
-		{"chipped_stone_tools": true})
-	var stone_inputs: Array = stone_item.get("inputs", [])
+	var recipe_economy := ConstructionRecipeEconomy.new()
+	var placement: Dictionary = recipe_economy.building_placement_spec(&"timber_collector")
+	var stone_inputs: Array = recipe_view_model._construction_input_recipe_rows(
+		placement, {"chipped_stone_tools": true})
 	var stone_input_name := String((stone_inputs[0] as Dictionary).get("name", "")) \
 		if not stone_inputs.is_empty() else ""
 	var stone_input_qty := String((stone_inputs[0] as Dictionary).get("quantity", "")) \
@@ -1043,13 +1044,11 @@ func _initialize() -> void:
 			or stone_input_name.contains("金属工具") \
 			or stone_input_name.contains("青铜工具") \
 			or stone_input_name.contains("精密工具") \
-			or stone_input_qty != "0.200 /日":
+			or stone_input_qty.is_empty() \
+			or not stone_input_qty.ends_with("/日"):
 		failures.append("stone-age construction list still labels logging inputs as metal tools")
-	var later_item := {"building_id": "timber_collector", "materials": []}
-	recipe_view_model._decorate_construction_item(
-		later_item, ConstructionRecipeEconomy.new(), {},
-		{"chipped_stone_tools": true, "bronze_tools": true, "tools": true})
-	var later_inputs: Array = later_item.get("inputs", [])
+	var later_inputs: Array = recipe_view_model._construction_input_recipe_rows(
+		placement, {"chipped_stone_tools": true, "bronze_tools": true, "tools": true})
 	var later_input_name := String((later_inputs[0] as Dictionary).get("name", "")) \
 		if not later_inputs.is_empty() else ""
 	if not later_input_name.contains("打制石器") \

@@ -1,6 +1,8 @@
 extends "res://scripts/weather/weather_context.gd"
 class_name DCWeatherFieldSolver
 
+const WeatherFieldPhysicsScript = preload("res://scripts/weather/field_solver_physics.gd")
+
 ## Phase E.1 / dots-full-migration §Phase E.1：weather field solver 抽出。
 ##
 ## **当前状态（dots-monolith-split §1.2 / PR-1..7 全部完成）**：
@@ -14,16 +16,13 @@ class_name DCWeatherFieldSolver
 ##
 ## ─── 已完成的搬迁清单 ─────────────────────────────────────────────────
 ##
-## PR-1：邻居/风向 helper（9 个）
+## PR-1：邻居/风向 helper（已保留的索引路径）
 ##   - `_neighbor_aligned` / `_neighbor_aligned_idx`
-##   - `_upstream_vapor` / `_upstream_vapor_cached` / `_upstream_vapor_idx` /
-##     `_upstream_vapor_idx_from_first`
-##   - `_neighbor_average_vapor` / `_neighbor_average_vapor_cached` /
-##     `_neighbor_average_vapor_idx`
+##   - `_upstream_vapor_cached` / `_upstream_vapor_idx_from_first`
+##   - `_neighbor_average_vapor_cached` / `_neighbor_average_vapor_idx`
 ##
-## PR-2：物理项 helper（5 个）
-##   - `_orographic_lift_for_cell` / `_orographic_lift_idx` /
-##     `_orographic_lift_from_upstream_idx`
+## PR-2：物理项 helper（已保留的索引路径）
+##   - `_orographic_lift_for_cell` / `_orographic_lift_from_upstream_idx`
 ##   - `_wind_convergence_for_cell` / `_wind_convergence_idx`
 ##
 ## PR-3：海洋异常 helper（2 个）
@@ -44,7 +43,7 @@ class_name DCWeatherFieldSolver
 ## PR-6：`begin_slice()`（63 行）+ `run_slice()`（181 行）
 ##   - DCWorldExt C++ 单 shot fast path
 ##   - GDScript fallback：vapor / cloud / precip / instability 三段式 hot loop
-##   - `_solve_weather_field` 内 250 行 dead code 清除
+##   - `_solve_weather_field` 内 dead code 已清除
 ##
 ## ─── 拆分原则（保留作为后续维护参考）──────────────────────────────────
 ##
@@ -72,6 +71,7 @@ class_name DCWeatherFieldSolver
 
 ## 在 weather_system 实例上注入本 solver。为 E.3 cleanup 时 weather_system 可
 ## 通过 `_field_solver = DCWeatherFieldSolver.new(self)` 实例化并 forward 调用。
+
 func _init(weather_system) -> void:
 	_weather_system = weather_system
 	if _weather_system == null:
@@ -1365,18 +1365,6 @@ func commit() -> Array[WeatherFront]:
 	return _weather_system._active_fronts
 
 
-## 是否所有 declared component 都已 ready（与 weather_refresh_job.data_core_field_ready 同义）。
-func is_data_core_ready() -> bool:
-	if _weather_system == null:
-		return false
-	# Delegate to weather_system if it has the check; future: own check
-	return false
-
-
-func describe() -> String:
-	return "DCWeatherFieldSolver(owner=%s)" % ("weather_system" if _weather_system != null else "(null)")
-
-
 # region PR-1 — neighbor / advect helpers (dots-monolith-split §1.2 / PR-1)
 #
 # 9 个无状态 helper 已从 weather_system.gd 整体搬迁到 field_solver。weather_system
@@ -1392,44 +1380,12 @@ func describe() -> String:
 #
 # 所有跨 helper 调用走 self.xxx（同类内），保证 weather_system 转发后语义不变。
 
-func _upstream_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary, wind_dir: Vector2) -> float:
-	# 修（v3）：原版以 cell 自身为锚（weight=1.0）+ 上游 1/2,1/3,1/4 → cell 自己占 48%
-	# → 上游链根本拽不动场，这是"风动不明显"的真凶（lerp 权重再高也救不回来）。
-	# 现在：完全不含自己，仅看上游链，权重高 → 远 → 低，让 vapor 真正随风迁移。
-	if _weather_system == null:
-		return float(prev_vapor.get(cell, cell.moisture)) if cell != null else 0.0
-	var current: HexCell = cell
-	var sum_v: float = 0.0
-	var weight: float = 0.0
-	var w_decay: float = 1.0
-	for step in range(_weather_system._field_advect_steps):
-		var upstream: HexCell = _neighbor_aligned(current, map, -wind_dir)
-		if upstream == null:
-			break
-		sum_v += float(prev_vapor.get(upstream, upstream.moisture)) * w_decay
-		weight += w_decay
-		w_decay *= 0.75  # 1.0 → 0.75 → 0.56 → 0.42 → 0.32 → 0.24，6 跳更长尾
-		current = upstream
-	if weight < 0.001:
-		# 边缘格子无上游：fallback 到自身（避免 0 vapor）
-		return float(prev_vapor.get(cell, cell.moisture))
-	return sum_v / weight
-
-func _neighbor_average_vapor(cell: HexCell, map: MapData, prev_vapor: Dictionary) -> float:
-	if _weather_system == null or cell == null:
-		return 0.0
-	var sum_v: float = float(prev_vapor.get(cell, cell.moisture))
-	var n: int = 1
-	for nb: HexCell in _weather_system._cell_neighbors(cell, map):
-		if nb == null:
-			continue
-		sum_v += float(prev_vapor.get(nb, nb.moisture))
-		n += 1
-	return sum_v / float(maxi(n, 1))
-
 func _upstream_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
+	# 现在：完全不含自己，仅看上游链，权重从近到远递减，让 vapor 真正随风迁移。
 	if _weather_system == null:
 		return 0.0
+	# 修（v3）：平流只看上游链，避免把 cell 自身重复加权后场面难以移动。
+	# 权重从近到远递减，让 vapor 真正随风迁移。
 	var current: HexCell = cell
 	var sum_v: float = 0.0
 	var weight: float = 0.0
@@ -1443,6 +1399,7 @@ func _upstream_vapor_cached(cell: HexCell, map: MapData, prev_vapor: PackedFloat
 		w_decay *= 0.75
 		current = upstream
 	if weight < 0.001:
+		# 边缘格子无上游：fallback 到自身（避免 0 vapor）
 		return _weather_system._prev_vapor_cached(cell, map, prev_vapor)
 	return sum_v / weight
 
@@ -1493,25 +1450,6 @@ func _neighbor_aligned_idx(idx: int, dir: Vector2, cell_pos: PackedVector2Array,
 			best_dot = dot
 			best_idx = nb_idx
 	return best_idx
-
-func _upstream_vapor_idx(idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
-	if _weather_system == null:
-		return prev_vapor[idx] if idx >= 0 and idx < prev_vapor.size() else 0.0
-	var current_idx: int = idx
-	var sum_v: float = 0.0
-	var weight: float = 0.0
-	var w_decay: float = 1.0
-	for step in range(_weather_system._field_advect_steps):
-		var upstream_idx: int = _neighbor_aligned_idx(current_idx, -wind_dir, cell_pos, neighbor_indices)
-		if upstream_idx < 0:
-			break
-		sum_v += prev_vapor[upstream_idx] * w_decay
-		weight += w_decay
-		w_decay *= 0.75
-		current_idx = upstream_idx
-	if weight < 0.001:
-		return prev_vapor[idx]
-	return sum_v / weight
 
 func _upstream_vapor_idx_from_first(idx: int, first_upstream_idx: int, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, prev_vapor: PackedFloat32Array, wind_dir: Vector2) -> float:
 	if _weather_system == null:
@@ -1667,85 +1605,17 @@ func _neighbor_aligned(cell: HexCell, map: MapData, dir: Vector2) -> HexCell:
 # 跨 helper 内部调用走 self._neighbor_aligned* 等（同类内的 PR-1 实现）。
 
 func _orographic_lift_for_cell(cell: HexCell, map: MapData, wind_dir: Vector2) -> float:
-	var upstream: HexCell = _neighbor_aligned(cell, map, -wind_dir)
-	if upstream == null:
-		return 0.0
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
-
-func _orographic_lift_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array, wind_dir: Vector2) -> float:
-	var upstream_idx: int = _neighbor_aligned_idx(idx, -wind_dir, cell_pos, neighbor_indices)
-	if upstream_idx < 0:
-		return 0.0
-	var cell: HexCell = cells[idx]
-	var upstream: HexCell = cells[upstream_idx]
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
+	return WeatherFieldPhysicsScript.orographic_lift_for_cell(self, cell, map, wind_dir)
 
 func _orographic_lift_from_upstream_idx(idx: int, upstream_idx: int, cells: Array) -> float:
-	if upstream_idx < 0:
-		return 0.0
-	var cell: HexCell = cells[idx]
-	var upstream: HexCell = cells[upstream_idx]
-	var diff: float = cell.elevation - upstream.elevation
-	if diff > 0.02:
-		return clampf(diff * 2.2, 0.0, 1.0)
-	if diff < -0.02:
-		return clampf(diff * 1.6, -1.0, 0.0)
-	return 0.0
+	return WeatherFieldPhysicsScript.orographic_lift_from_upstream_idx(self, idx, upstream_idx, cells)
 
 func _wind_convergence_for_cell(cell: HexCell, map: MapData) -> float:
-	if _weather_system == null or cell == null:
-		return 0.0
-	var self_wp: Vector2 = _weather_system._cell_world_pos(cell)
-	var wrap_width_x: float = _world_wrap_width_x(map)
-	var incoming: float = 0.0
-	var checked: int = 0
-	for nb: HexCell in _weather_system._cell_neighbors(cell, map):
-		if nb == null:
-			continue
-		var nb_wp: Vector2 = _weather_system._cell_world_pos(nb)
-		var dir_to_self: Vector2 = _wrapped_delta(nb_wp, self_wp, wrap_width_x)
-		if dir_to_self.length_squared() <= 0.0001:
-			continue
-		var wind: Vector2 = nb.wind_vector
-		if wind.length_squared() <= 0.0001:
-			continue
-		incoming += maxf(0.0, dir_to_self.normalized().dot(wind.normalized()))
-		checked += 1
-	if checked == 0:
-		return 0.0
-	return clampf(incoming / float(checked), 0.0, 1.0)
+	return WeatherFieldPhysicsScript.wind_convergence_for_cell(self, cell, map)
 
 func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array, neighbor_indices: PackedInt32Array) -> float:
-	var self_wp: Vector2 = cell_pos[idx]
-	var incoming: float = 0.0
-	var checked: int = 0
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		var dir_to_self: Vector2 = _wrapped_delta(cell_pos[nb_idx], self_wp, _field_slice_wrap_width_x)
-		if dir_to_self.length_squared() <= 0.0001:
-			continue
-		var nb: HexCell = cells[nb_idx]
-		var wind: Vector2 = nb.wind_vector
-		if wind.length_squared() <= 0.0001:
-			continue
-		incoming += maxf(0.0, dir_to_self.normalized().dot(wind.normalized()))
-		checked += 1
-	if checked == 0:
-		return 0.0
-	return clampf(incoming / float(checked), 0.0, 1.0)
+	return WeatherFieldPhysicsScript.wind_convergence_idx(self, idx, cells, cell_pos, neighbor_indices)
+
 # endregion PR-2
 
 
@@ -1761,41 +1631,11 @@ func _wind_convergence_idx(idx: int, cells: Array, cell_pos: PackedVector2Array,
 #   - _weather_system._cell_neighbors(cell,map): Array
 
 func _avg_ocean_anomaly_at_idx(idx: int, cells: Array, neighbor_indices: PackedInt32Array) -> float:
-	if _weather_system == null:
-		return 0.0
-	var cell: HexCell = cells[idx]
-	if _weather_system._is_water_terrain(int(cell.terrain)):
-		return cell.temperature_transport_anomaly
-	var sum_an: float = 0.0
-	var n_water: int = 0
-	var base: int = idx * 6
-	for d in range(6):
-		var nb_idx: int = neighbor_indices[base + d]
-		if nb_idx < 0:
-			continue
-		var nb: HexCell = cells[nb_idx]
-		if _weather_system._is_water_terrain(int(nb.terrain)):
-			sum_an += nb.temperature_transport_anomaly
-			n_water += 1
-	if n_water == 0:
-		return 0.0
-	return sum_an / float(n_water)
+	return WeatherFieldPhysicsScript.avg_ocean_anomaly_at_idx(self, idx, cells, neighbor_indices)
 
 func _avg_ocean_anomaly_at(cell: HexCell, map: MapData) -> float:
-	if cell == null or _weather_system == null:
-		return 0.0
-	# 海面 cell：直接读自身洋流偏差
-	if _weather_system._is_water_terrain(int(cell.terrain)):
-		return cell.temperature_transport_anomaly
-	var sum_an: float = 0.0
-	var n_water: int = 0
-	for nb: HexCell in _weather_system._cell_neighbors(cell, map):
-		if nb != null and _weather_system._is_water_terrain(int(nb.terrain)):
-			sum_an += nb.temperature_transport_anomaly
-			n_water += 1
-	if n_water == 0:
-		return 0.0
-	return sum_an / float(n_water)
+	return WeatherFieldPhysicsScript.avg_ocean_anomaly_at(self, cell, map)
+
 # endregion PR-3
 
 

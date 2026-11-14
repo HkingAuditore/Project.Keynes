@@ -1,0 +1,58 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/politics_workspace.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/regime_workspace.tscn" id="2_regime"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="3_ideology"]
+
+[node name="PoliticsWorkspace" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Root" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="TopBar" type="PanelContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_type_variation = &"PKWorkspaceToolbar"
+
+[node name="Tabs" type="HBoxContainer" parent="Root/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RegimeTab" type="Button" parent="Root/TopBar/Tabs"]
+custom_minimum_size = Vector2(120, 44)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+focus_mode = 2
+text = "体制"
+theme_type_variation = &"PKChapterTab"
+
+[node name="IdeologyTab" type="Button" parent="Root/TopBar/Tabs"]
+custom_minimum_size = Vector2(120, 44)
+layout_mode = 2
+toggle_mode = true
+focus_mode = 2
+text = "理念"
+theme_type_variation = &"PKChapterTab"
+
+[node name="Regime" parent="Root" instance=ExtResource("2_regime")]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Ideology" parent="Root" instance=ExtResource("3_ideology")]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3

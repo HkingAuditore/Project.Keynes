@@ -87,6 +87,15 @@ bool NativeSimulationHost::publish_environment(
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    // The worker consumes inputs strictly day by day, so under authority a
+    // skipped day can never be filled and the worker parks until the peer-stall
+    // timeout. Refuse anything but the next day; callers publish from
+    // next_environment_day().
+    if (!preparing_restore_input && climate_authoritative &&
+        snapshot.day != next_environment_day()) {
+        error = "runtime_input_day_not_next";
+        return false;
+    }
     if (!preparing_restore_input && !climate_authoritative &&
         !_climate_trace.push(snapshot)) {
         error = "climate_trace_capacity_exceeded";

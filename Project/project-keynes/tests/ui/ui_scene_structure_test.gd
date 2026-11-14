@@ -17,7 +17,8 @@ const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
 	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd",
 	"colonization_planner_panel.gd", "world_setup.gd",
 	"ideology_art.gd", "ideology_card.gd", "ideology_point_scroll.gd",
-	"ideology_slot_niche.gd", "ideology_workspace.gd"]
+	"ideology_slot_niche.gd", "ideology_workspace.gd",
+	"ideology_workspace_presentation.gd"]
 
 var _failures := PackedStringArray()
 

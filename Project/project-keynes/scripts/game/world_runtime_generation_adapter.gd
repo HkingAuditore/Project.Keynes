@@ -26,6 +26,9 @@ func _prepare_world_data(host) -> Dictionary:
 	host._runtime_military_pending_target_day = -1
 	host._runtime_military_last_result.clear()
 	host._runtime_military_ms = 0.0
+	host._military_vision_render_revision = -1
+	host._military_vision_source_slot = -2
+	host._military_vision_source_cells = PackedInt32Array()
 	host._military_terrain_season_index = -1
 	host._country_worker_read_generation = 0
 	host._country_worker_read_last_day = -1
@@ -199,7 +202,14 @@ func _prepare_world_simulation(host) -> Dictionary:
 			return host._session_preparation_failure()
 	WebTelemetry.emit("bind_step", {"s": "post_worker_frame"})
 	var annual_handle: int = host._resolve_player_country_handle()
-	if annual_handle != 0:
+	# Annual reports depend on the Country + Economy + Ideology catalogs.  A
+	# failed economy bootstrap leaves those providers intentionally absent; keep
+	# the session diagnostic at its original failure point and do not emit a
+	# second initialization error from this optional report module.
+	var annual_ideology_ready: bool = host._generator != null \
+		and host._generator.has_method("get_ideology_facade") \
+		and host._generator.get_ideology_facade() != null
+	if annual_handle != 0 and annual_ideology_ready:
 		var annual_result: Dictionary = host._annual_reports.configure(host._generator, host._world_clock, annual_handle)
 		WebTelemetry.emit("bind_step", {"s": "annual_configured"})
 		if not bool(annual_result.get("ok", false)):
@@ -523,3 +533,503 @@ func _stop_previous_runtime_worker(host) -> Dictionary:
 	return await preload("res://scripts/game/world_runtime_preparation.gd").stop_worker(
 		host._generator, host._preparation_process_frame)
 
+
+## G4 moved host responsibilities
+func _defer_building_visual_catalog_after_ready(host) -> void:
+	if host._exiting_tree or not host.is_inside_tree():
+		return
+	if host.PK_WEB_SKIP_DEFERRED_VISUAL_LAYERS:
+		return
+	var session = host._runtime_session
+	var token: int = session.generation
+	var timer = host.get_tree().create_timer(3.0, true, false, true)
+	await timer.timeout
+	if host._exiting_tree or not host.is_inside_tree() or not session.is_current(token):
+		return
+	var started = Time.get_ticks_msec()
+	var report: Dictionary = host.refresh_building_visual_catalog()
+	var elapsed = Time.get_ticks_msec() - started
+	print("[building-visual] web deferred catalog ok=%s %dms" % [
+		str(report.get("ok", false)), elapsed])
+	WebTelemetry.emit("bind_step", {"s": "deferred_building_visual_done", "dur": elapsed})
+
+func _adopt_generated_seed(host, generated_seed: int) -> void:
+	if generated_seed <= 0 or host._new_game_config.is_empty():
+		return
+	var base = host._new_game_config.get("base", {})
+	if not base is Dictionary:
+		return
+	var recorded = int((base as Dictionary).get("initial_seed", 0))
+	if recorded == generated_seed:
+		return
+	(base as Dictionary)["initial_seed"] = generated_seed
+	push_warning("[session] generated world seed %d adopted (session config requested %d); saves now reproduce this world" % [
+		generated_seed, recorded])
+
+
+# ─── 地图生成失败诊断（mapgen-diagnostics）───────────────────────────────
+# generate_world 失败时把 MapGenerator.last_generation_error 整块留在 host 上，
+# 由 player_game 交给 WorldLoadingOverlay 展示/复制/落盘。
+
+func last_world_generation_error_text(host) -> String:
+	if host.last_world_generation_error.is_empty():
+		return ""
+	var detail = String(host.last_world_generation_error.get("detail_text", ""))
+	if not detail.is_empty():
+		return detail
+	# 兜底：没有 detail_text 时用 JSON，但必须先剔除原始 native report——
+	# 它带 10+ 个 n_cells 级 PackedArray，直接 stringify 会产出几 MB 文本。
+	var safe = host.last_world_generation_error.duplicate()
+	safe.erase("native_report_raw")
+	return JSON.stringify(safe, "  ", true)
+
+
+## 生成失败归因：把 MapGenerator 的结构化错误压成"一句中文 + 阶段 + 原因 + 排查建议"。
+## 传 preflight_override 时表示失败发生在 generate() 之前（自检拦下）。
+
+func _report_world_generation_failure(host, preflight_override: Dictionary = {}) -> void:
+	var err: Dictionary = {}
+	if host._generator != null:
+		# 浅拷贝：只复制顶层键，native_report_raw 仍指向同一份原始字典（不重复分配）。
+		err = host._generator.last_generation_error.duplicate()
+	if err.is_empty() and not preflight_override.is_empty():
+		var first_issue = ""
+		var issues: Array = preflight_override.get("issues", [])
+		if not issues.is_empty() and issues[0] is Dictionary:
+			first_issue = String((issues[0] as Dictionary).get("message", ""))
+		err = {
+			"stage": "preflight",
+			"reason": "preflight_failed",
+			"summary": "生成前自检未通过：%s" % first_issue,
+			"hint": "按下面 preflight 里点名的缺失项处理；安卓一般是原生库缺失/过旧。",
+			"preflight": preflight_override,
+			"env": preflight_override.get("env", {}),
+			"native_report": {},
+			"superseded": false,
+		}
+	if err.is_empty():
+		err = {
+			"stage": "unknown",
+			"reason": "map_generator_failed",
+			"summary": "地图生成器返回空结果，且未留下任何诊断信息。",
+			"hint": "这是 MapGenerator 之外的调用层问题；请附完整 logcat/godot.log。",
+			"preflight": {},
+			"env": {},
+			"native_report": {},
+			"superseded": false,
+		}
+	# 被新一轮 generate 取代：不弹失败面板，否则会盖住新一轮的进度条。
+	if bool(err.get("superseded", false)):
+		print("[mapgen] generation superseded at stage=%s (no failure UI)"
+			% String(err.get("stage", "?")))
+		return
+	if host._generator != null:
+		err["detail_text"] = host._generator.last_generation_error_text()
+	host.last_world_generation_error = err
+	var summary = host._world_generation_failure_summary(err)
+	# 同一行同时 print + push_error：print 给 adb logcat，push_error 给编辑器/错误面板。
+	print("[mapgen][fatal] %s" % summary)
+	push_error("[mapgen][fatal] %s" % summary)
+	host.world_generation_failed.emit(summary)
+
+
+## 非 MapGenerator 来源的失败（开局初始化 / 存档恢复）：自建诊断记录后统一上报。
+## 走同一条 print+push_error+signal 通道，保证 UI/日志/文件三处看到的是同一段文本。
+
+func _emit_world_generation_failure(host, stage: String, reason: String, summary: String, hint: String) -> void:
+	host.last_world_generation_error = {
+		"stage": stage,
+		"reason": reason,
+		"summary": summary,
+		"hint": hint,
+		"preflight": {},
+		"env": {},
+		"native_report": {},
+		"superseded": false,
+		"detail_text": host._format_world_generation_detail(stage, reason, summary, hint),
+	}
+	var line = host._world_generation_failure_summary(host.last_world_generation_error)
+	print("[mapgen][fatal] %s" % line)
+	push_error("[mapgen][fatal] %s" % line)
+	host.world_generation_failed.emit(line)
+
+
+## 非 MapGenerator 来源失败的多行详情（结构与 MapGenerator 的保持同构，便于统一复制）。
+
+func _format_world_generation_detail(host, stage: String, reason: String, summary: String, hint: String) -> String:
+	var timestamp = Time.get_datetime_string_from_system(true)
+	return host.HostValueHelpers._format_world_generation_detail(
+		stage, reason, summary, hint, timestamp)
+
+
+## 一句话摘要：含 stage + reason + 一句排查建议（玩家能看懂、开发者能定位）。
+
+func _world_generation_failure_summary(host, err: Dictionary) -> String:
+	return host.HostValueHelpers._world_generation_failure_summary(err)
+
+
+## --mapgen-selfcheck：把自检 JSON 打到 stdout（安卓：adb logcat -s godot:*）。
+## 桌面/headless 走 tests/world/mapgen_selfcheck.tscn；这里覆盖"已经进了游戏场景"的场景。
+
+func _maybe_run_mapgen_selfcheck_cli(host) -> void:
+	if not MapGenerator.mapgen_selfcheck_requested():
+		return
+	var probe = MapGenerator.new()
+	var report: Dictionary = probe.run_mapgen_selfcheck(true)
+	print("[mapgen][selfcheck][summary] ok=%s" % str(report.get("ok", false)))
+
+
+func generate_world(host, seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
+	host._generation_request += 1
+	var request = host._generation_request
+	var clock_was_paused = host._world_clock.paused if host._world_clock != null else true
+	var closed: Dictionary = await host.close_world()
+	if request != host._generation_request or host._exiting_tree or not host.is_inside_tree():
+		return
+	if not bool(closed.get("ok", false)):
+		host._emit_world_generation_failure("close", String(closed.get("code", "close_failed")),
+			"上一局游戏尚未关闭。", "请保留运行日志。")
+		return
+	host._runtime_session = host.WorldSession.new()
+	host._session_frames = host.SessionFrameGate.new()
+	host._session_prepare_options = {"seed": seed_override, "safe_area": safe_area,
+		"clock_was_paused": clock_was_paused}
+	host.last_world_generation_error.clear()
+	host._clear_web_daily_fallback_failure()
+	var configured: Dictionary = host._runtime_session.configure(host.WorldSessionModules.entries(host, host._session_extensions))
+	if not bool(configured.get("ok", false)):
+		host._emit_world_generation_failure("modules", String(configured.get("code", "module_invalid")),
+			"游戏系统配置不完整。", String(configured.get("detail", "")))
+		return
+	var prepared: Dictionary = await host._runtime_session.prepare()
+	if not bool(prepared.get("ok", false)):
+		if prepared.get("code") != "session_cancelled" and not host._exiting_tree:
+			if host.last_world_generation_error.is_empty():
+				host._emit_world_generation_failure("modules", String(prepared.get("code", "module_prepare_failed")),
+					"游戏系统准备失败。", String(prepared.get("message", "")))
+			await host.close_world()
+		return
+	host._runtime_ready_for_ticks = true
+	# The host process also drains building visual dirty cells. Keep it alive for
+	# the normal runtime; overlay refreshes must not disable construction/era
+	# intelligence updates.
+	host.set_process(true)
+	if host._world_clock != null:
+		# 只在输入及 worker 均已建立后恢复新世界/存档原有的运行模式。
+		host._world_clock.pause(bool(host._session_prepare_options.clock_was_paused))
+		host.on_clock_running_changed(not host._world_clock.paused)
+	# Web 构建：世界就绪事件（agent 侧据此判断"可以点开始了"）。
+	WebTelemetry.emit("ready", {
+		"day": host._world_clock.day_index() if host._world_clock != null else -1,
+		"paused": host._world_clock.paused if host._world_clock != null else true,
+	})
+	host.world_ready.emit(host._current_map, host._world_data, host._generator, host._view_adapter)
+
+
+func _session_noop(host) -> void:
+	pass
+
+
+func _session_ok(host) -> Dictionary:
+	return {"ok": true}
+
+
+## native_daily_inline 是否要在本次会话生效。
+##
+## 浏览器里默认生效（没有可用 worker 线程）。桌面/headless 只有显式
+## PK_NATIVE_DAILY_INLINE=1 才生效 —— 桌面 worker 路径不受影响。
+## PROBE：置 false 可让 web 退回主线程 daily tick（用来二分"首日挂死"是否在内联路径）。
+
+func _apply_feature_flags(host) -> void:
+	DCFeatureFlags.set_cell_indirection(host.cell_indirection_enabled)
+	DCFeatureFlags.set_ocean_current_visual(host.ocean_current_visual_enabled)
+	DCFeatureFlags.set_sea_ice_atlas(host.sea_ice_atlas_enabled)
+	# 桌面默认开；移动端由 mobile_terrain_horizon_enabled 开关控制；Web 只有
+	# Compatibility/WebGL2 后端，逐像素 marching 开销和离屏 viewport 读回都偏重
+	# （readback 在部分浏览器/驱动上会强制同步 flush GPU 管线），默认关闭——
+	# 这里必须和 DCFeatureFlags.terrain_horizon_gpu_bake_active() 的 fallback
+	# 语义保持一致。之前只判断了 "mobile"，漏判 Web，导致每次开局都把这条显式
+	# meta 覆盖成 true，盖掉了 feature_flags.gd 里"web 默认关"的设计。
+	var terrain_horizon_enabled: bool
+	if OS.has_feature("mobile"):
+		terrain_horizon_enabled = host.mobile_terrain_horizon_enabled
+	elif DCFeatureFlags.is_web():
+		terrain_horizon_enabled = false
+	else:
+		terrain_horizon_enabled = true
+	DCFeatureFlags.set_terrain_horizon_gpu_bake(terrain_horizon_enabled)
+
+
+func _world_setup_config(host) -> Dictionary:
+	if not host._new_game_config.is_empty():
+		return host._new_game_config
+	if not Engine.has_meta(host.WORLD_SETUP_META):
+		return {}
+	var raw = Engine.get_meta(host.WORLD_SETUP_META)
+	if raw is Dictionary and String((raw as Dictionary).get("source", "")) == "world_setup":
+		return raw as Dictionary
+	return {}
+
+
+func _apply_world_setup_base_config(host) -> void:
+	var config = host._world_setup_config()
+	if config.is_empty():
+		return
+	var base = config.get("base", {})
+	if base is Dictionary:
+		host.map_width = clampi(int((base as Dictionary).get("map_width", host.map_width)),
+			10, DCFeatureFlags.max_map_width())
+		host.map_height = clampi(int((base as Dictionary).get("map_height", host.map_height)),
+			8, DCFeatureFlags.max_map_height())
+		host.initial_seed = max(0, int((base as Dictionary).get("initial_seed", host.initial_seed)))
+		host.sea_level = clampf(float((base as Dictionary).get("sea_level", host.sea_level)), 0.1, 0.8)
+		host.num_continents = clampi(int((base as Dictionary).get("num_continents", host.num_continents)), 1, 8)
+		host.continent_size = clampf(float((base as Dictionary).get("continent_size", host.continent_size)), 0.2, 0.9)
+		host.river_count = clampi(int((base as Dictionary).get("river_count", host.river_count)), 0, 30)
+		host.generate_test_economy_data = bool((base as Dictionary).get(
+			"generate_test_economy_data", host.generate_test_economy_data))
+		var requested_population_scale = int((base as Dictionary).get(
+			"test_economy_population_scale", host.test_economy_population_scale))
+		host.test_economy_population_scale = requested_population_scale \
+			if requested_population_scale in [0, 1, 10, 100, 1000] else 0
+	var render = config.get("render", {})
+	if render is Dictionary:
+		host.mobile_terrain_horizon_enabled = bool((render as Dictionary).get(
+			"mobile_terrain_horizon_enabled", host.mobile_terrain_horizon_enabled
+		))
+
+
+func _cmdline_pkmap_path(host) -> String:
+	for raw in OS.get_cmdline_user_args():
+		var item = str(raw)
+		if item.begins_with("pkmap="):
+			return item.substr(6).strip_edges()
+	return ""
+
+
+func _apply_pkmap_override(host, cfg: MapConfig) -> void:
+	if cfg == null:
+		return
+	var path = ""
+	var setup = host._world_setup_config()
+	var base = setup.get("base", {})
+	if base is Dictionary:
+		path = String((base as Dictionary).get("pkmap_path", "")).strip_edges()
+	var cmdline = host._cmdline_pkmap_path()
+	if not cmdline.is_empty():
+		# `pkmap=` 是开新局的开发入口。读档时地图来源必须以存档 config 为准：
+		# 用命令行换一张图会让重建世界与存档世界不一致（起始格/领土/地形互相
+		# 矛盾），最终在视野收尾被判为失败。这里直接忽略并留一条 warning。
+		if not host._pending_load_bundle.is_empty():
+			push_warning("[pkmap] ignoring pkmap= cmdline override during load (saved source: %s)" % path)
+		else:
+			path = cmdline
+	if path.is_empty():
+		return
+	cfg.map_source = "pkmap"
+	cfg.pkmap_path = path
+	var peeked: Dictionary = host.PkmapIOScript.peek_pkmap(path)
+	if not bool(peeked.get("ok", false)):
+		push_error("[pkmap] 无法预读 %s：%s" % [path, String(peeked.get("message", ""))])
+		return
+	cfg.width = int(peeked.get("width", cfg.width))
+	cfg.height = int(peeked.get("height", cfg.height))
+	cfg.sea_level = float(peeked.get("sea_level", cfg.sea_level))
+	var packed_seed = int(peeked.get("seed", 0))
+	if packed_seed != 0:
+		cfg.seed = packed_seed
+	host.map_width = cfg.width
+	host.map_height = cfg.height
+	host.sea_level = cfg.sea_level
+
+
+func _load_runtime_climate_profile(host) -> ClimateProfile:
+	var profile = ResourceLoader.load(host.DEFAULT_CLIMATE_PROFILE_PATH, "Resource") as ClimateProfile
+	if profile != null:
+		profile = profile.duplicate(true) as ClimateProfile
+	else:
+		push_warning("[PlayerGame] default ClimateProfile missing; using in-memory defaults.")
+		profile = ClimateProfile.new()
+	profile.set_meta(&"source_path", host.DEFAULT_CLIMATE_PROFILE_PATH)
+	return profile
+
+
+func _apply_runtime_climate_profile(host, generator_ref: MapGenerator) -> void:
+	if generator_ref == null:
+		return
+	var profile = host._load_runtime_climate_profile()
+	var config = host._world_setup_config()
+	var climate_overrides: Dictionary = {}
+	if not config.is_empty():
+		var climate = config.get("climate", {})
+		if climate is Dictionary:
+			var profile_props = {}
+			for prop in profile.get_property_list():
+				profile_props[String(prop.get("name", ""))] = true
+			for name in (climate as Dictionary).keys():
+				var key = String(name)
+				if not profile_props.has(key):
+					continue
+				profile.set(key, (climate as Dictionary)[name])
+				climate_overrides[key] = true
+	if OS.has_feature("mobile"):
+		host._apply_mobile_profile_defaults(profile, climate_overrides)
+	generator_ref.climate_profile = profile
+
+
+func _apply_mobile_profile_defaults(host, profile: ClimateProfile, climate_overrides: Dictionary) -> void:
+	if profile.get("native_daily_sim_stride") != null and not climate_overrides.has("native_daily_sim_stride"):
+		profile.native_daily_sim_stride = host.MOBILE_NATIVE_DAILY_STRIDE_DAYS
+	if profile.get("native_daily_commit_lag_budget_days") != null and not climate_overrides.has("native_daily_commit_lag_budget_days"):
+		profile.native_daily_commit_lag_budget_days = host.MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS
+	if profile.get("native_daily_sea_ice_spread_dt_cap_days") != null and not climate_overrides.has("native_daily_sea_ice_spread_dt_cap_days"):
+		profile.native_daily_sea_ice_spread_dt_cap_days = float(host.MOBILE_NATIVE_DAILY_STRIDE_DAYS)
+	if profile.get("natural_resource_daily_stride") != null and not climate_overrides.has("natural_resource_daily_stride"):
+		profile.natural_resource_daily_stride = maxi(int(profile.natural_resource_daily_stride), host.MOBILE_NATURAL_RESOURCE_STRIDE_DAYS)
+	if profile.get("dynamic_visual_atlas_upload_stride") != null and not climate_overrides.has("dynamic_visual_atlas_upload_stride"):
+		profile.dynamic_visual_atlas_upload_stride = maxi(int(profile.dynamic_visual_atlas_upload_stride), host.MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE)
+	if profile.get("weather_field_advect_steps") != null and not climate_overrides.has("weather_field_advect_steps"):
+		profile.weather_field_advect_steps = mini(int(profile.weather_field_advect_steps), host.MOBILE_WEATHER_FIELD_ADVECT_STEPS)
+
+
+func _init_tod_profile(host) -> void:
+	if host._tod_profile != null:
+		return
+	host._tod_profile = TODProfile.new()
+	host._tod_profile.configure(0.65, 0.55, 0.72, 1.0)
+
+
+func _on_baker_stage_progress(host, stage: String, fraction: float) -> void:
+	host.generation_progress.emit(stage, fraction)
+
+
+func _enter_tree(host) -> void:
+	host._exiting_tree = false
+	host.add_to_group(&"world_sessions")
+
+
+func _exit_tree(host) -> void:
+	host._clock_binding.detach()
+	host._exiting_tree = true
+	host._runtime_session.request_close()
+	host._session_frames.cancel()
+	if host._generator != null:
+		host._generator.cancel_loading_work()
+		host._generator.request_runtime_stop()
+
+
+func _loading_visual_step(host, label: String) -> void:
+	# 这条日志行打印的是"上一步"的耗时；进度同理：每次调用时把上一步标记为完成，
+	# 把生成后阶段的游标向前推一格。label 本身只进日志，UI 文案用固定 stage key。
+	host._advance_visual_progress("bind")
+	var now=Time.get_ticks_usec()
+	if host._loading_visual_usec>0:
+		var step_ms = float(now-host._loading_visual_usec)/1000.0
+		print("[loading-visual-substep] %s %.1fms" % [host._loading_visual_name, step_ms])
+		WebTelemetry.emit("visual_step", {"label": host._loading_visual_name, "dur": step_ms})
+	host._loading_visual_usec=now
+	host._loading_visual_name=label
+
+
+# ─── 生成后阶段进度（绑渲染器 → 植被图层 → 建筑外观）─────────────────────────
+# 生成器返回后到 hide_completed() 之间没有任何 bake_progress，原先只有一次
+# "upload"=98% 就静默到 100%。这里用与生成器同款的单调几何游标：
+# 每推进一步向 VISUAL_PROGRESS_CEIL 逼近固定比例，严格单调、永不回退、
+# 也永远到不了 1.0（100% 只属于 WorldLoadingOverlay.hide_completed()）。
+# fraction 语义是"UI 完成度绝对值"，overlay 的 ABSOLUTE_STAGES 直接照搬。
+
+func _advance_visual_progress(host, stage: String, begin: bool = false) -> void:
+	if host._visual_progress <= 0.0:
+		# 0.0 = 本次生成还没进入后期阶段（或已复位）：不打扰 overlay 的现有进度。
+		# 只有 generate_world 里"生成器已返回"那一次调用带 begin=true。
+		if not begin:
+			return
+		host._visual_progress = host.VISUAL_PROGRESS_START
+	else:
+		host._visual_progress = minf(host.VISUAL_PROGRESS_CEIL,
+			host._visual_progress + (host.VISUAL_PROGRESS_CEIL - host._visual_progress) * host.VISUAL_PROGRESS_GAIN)
+	host.generation_progress.emit(stage, host._visual_progress)
+
+
+## HexRenderer 建完一个植被层回调一次（_rebuild_cooperative →
+## _setup_loading_vegetation_layers_for_deferred_fill 的逐层循环）。
+## 有些画质档位会构建 14+ 层，逐层推进才不会在 98% 处长时间停住。
+
+func _on_renderer_loading_layer_progress(host, _layer_index: int, _layer_count: int,
+		_layer_name: String) -> void:
+	host._advance_visual_progress("visual")
+
+
+func annual_report_status(host) -> Dictionary:
+	return host._annual_reports.status()
+
+
+func annual_report_snapshot(host, report_id: int) -> Dictionary:
+	return host._annual_reports.snapshot(report_id)
+
+
+func annual_report_history(host, offset: int = 0, limit: int = 64) -> Dictionary:
+	return host._annual_reports.history(offset, limit)
+
+
+func mark_annual_report_presented(host, report_id: int) -> void:
+	host._annual_reports.mark_presented(report_id)
+
+
+func annual_reports_waiting_for_year(host, year: int) -> bool:
+	return host._annual_reports.waiting_for_year(year)
+
+
+func annual_report_catalogs(host) -> Dictionary:
+	if host._generator == null:
+		return {}
+	var economy = host._generator.get_economy_facade()
+	var country: Dictionary = host._generator.get_country_facade().native_catalog()
+	var professions = PackedStringArray()
+	for id in economy.profession_ids():
+		professions.append(economy.profession_display_name(StringName(id)))
+	var buildings = PackedStringArray()
+	for index in economy.building_type_ids().size():
+		buildings.append(economy.building_display_name(index))
+	var goods = PackedStringArray()
+	for index in economy.good_ids().size():
+		goods.append(economy.good_display_name(index))
+	# 资源名与「认没认出来」走同一个循环、同一个下标：报表里的 resource id 就是
+	# ResourceProfileRegistry.ordered() 的下标，两个数组必须等长同序。
+	var viewer: Dictionary = host._player_completed_technology_ids()
+	var know_discovery: bool = bool(viewer.get("ok", false))
+	var known: PackedStringArray = viewer.get("ids", PackedStringArray())
+	var resources = PackedStringArray()
+	var discovered = PackedByteArray()
+	for profile in ResourceProfileRegistry.ordered():
+		resources.append(String(profile.display_name))
+		if know_discovery:
+			discovered.append(1 if ResourceProfileRegistry.discovery_visible(profile, known) else 0)
+	var out: Dictionary = {"profession_names": professions, "building_names": buildings,
+		"resource_names": resources, "good_names": goods,
+		"technology_names": country.get("technology_display_names", PackedStringArray())}
+	# 拿不到玩家科技快照时**不带这个键**：调用方"没报告"与"查了是 0"是两件事，
+	# 缺省必须表现为"不过滤"，否则一次读档期的查询失败会把整栏资源吞掉。
+	if know_discovery:
+		out["resource_discovered"] = discovered
+	return out
+
+
+## 玩家已完成科技 id。年报"资源"栏要据此藏掉还没认出来的矿种。
+## 认矿门控（ResourceProfile.discovery_technology_tags）本来就在 GDScript 侧，
+## 原生只管"能不能采"，所以这条过滤只能在这里做 —— 与地图覆盖层、悬停卡同一套判定。
+
+func _player_completed_technology_ids(host) -> Dictionary:
+	if host._generator == null or not host._generator.has_method("get_country_facade"):
+		return {"ok": false}
+	var facade = host._generator.get_country_facade()
+	if facade == null or not facade.has_method("snapshot"):
+		return {"ok": false}
+	if host._player_country_handle == 0:
+		host._player_country_handle = host._resolve_player_country_handle()
+	if host._player_country_handle == 0:
+		return {"ok": false}
+	var snapshot: Dictionary = facade.snapshot(host._player_country_handle)
+	if not bool(snapshot.get("ok", false)):
+		return {"ok": false}
+	return {"ok": true, "ids": snapshot.get("technology_ids", PackedStringArray())}

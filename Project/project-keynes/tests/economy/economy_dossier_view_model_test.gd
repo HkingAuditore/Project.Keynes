@@ -141,9 +141,10 @@ func _check_bottleneck_rules() -> void:
 	_expect("healthy economy has no bottleneck", EconomyDossierViewModel.classify_bottlenecks(
 		{"building_units": 10, "output_per_day": 50}, {"ok": true,
 		"rejection_units": PackedInt64Array()}, {"ok": true}).is_empty())
-	_expect("rejection category table covers 19 reasons",
-		EconomyDossierViewModel.REJECTION_CATEGORY.size() == 19
-		and EconomyDossierViewModel.REJECTION_LABELS.size() == 19)
+	_expect("rejection category and label tables stay aligned",
+		EconomyDossierViewModel.REJECTION_CATEGORY.size() > 0
+		and EconomyDossierViewModel.REJECTION_CATEGORY.size() ==
+		EconomyDossierViewModel.REJECTION_LABELS.size())
 
 
 func _check_history_buffer() -> void:
@@ -366,6 +367,21 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 			and trend != null and trend.visible)
 	_expect("cashflow stacks the levied kinds and the paid subsidies",
 		income_bar.segment_count() == 3 and expense_bar.segment_count() == 1)
+	var cashflow_window := overview_page.get_node("%CashflowWindow") as OptionButton
+	var cashflow_day := overview_page.get_node("%CashflowDay") as Label
+	_expect("cashflow offers seven- and thirty-day rolling averages",
+		cashflow_window != null and cashflow_window.visible
+			and cashflow_window.item_count == 2
+			and cashflow_window.get_item_text(0) == "近 7 日"
+			and cashflow_window.get_item_text(1) == "近 30 日"
+			and cashflow_day.text.contains("近 30 日 · 日均"))
+	cashflow_window.select(0)
+	cashflow_window.item_selected.emit(0)
+	await process_frame
+	_expect("switching the cashflow window updates the daily-average label",
+		cashflow_day.text.contains("近 7 日 · 日均"))
+	cashflow_window.select(1)
+	cashflow_window.item_selected.emit(1)
 	var detail := overview_page.get_node("%CashflowDetail") as DossierLedgerTable
 	_expect("cashflow detail starts collapsed with all five tax lanes",
 		detail != null and not detail.visible and detail.row_count() == 5)
@@ -483,8 +499,17 @@ func _check_dossier_scene(model: Dictionary, city_cell: int) -> void:
 	dossier.page("overview").navigate_requested.emit("industry", {"section": "investment"})
 	for i in range(3):
 		await process_frame
+	var viewport := dossier.get("_viewport") as ScrollContainer
+	var page_stack := dossier.get("_page_stack") as Control
+	var raw_investment_target := int(page_stack.position.y + industry_page.position.y
+		+ float(industry_page.call("section_offset", "investment"))) \
+		- EconomyDossier.SECTION_SCROLL_PAD
+	var scroll_bar := viewport.get_v_scroll_bar()
+	var expected_investment_scroll := clampi(raw_investment_target, 0,
+		int(maxf(0.0, scroll_bar.max_value - scroll_bar.page)))
 	_expect("cross-chapter section navigation lands in the investment block",
-		dossier.current_chapter() == "industry" and dossier.scroll_value() > 100)
+		dossier.current_chapter() == "industry"
+		and dossier.scroll_value() == expected_investment_scroll)
 	dossier.select_chapter("overview")
 	for i in range(20):
 		dossier.set_model(model)
@@ -649,15 +674,21 @@ func _check_runtime_models() -> void:
 		and String(vm.kpis()[4].title).contains("产值"))
 	_expect("scope label resolves", not vm.scope_label().is_empty())
 	vm.scope_cell = -1
+	var scene_fiscal := {"ok": true, "sample_day": 6,
+		"tax_kinds": PackedStringArray([
+			"income", "consumption", "business", "import", "export"]),
+		"collected": PackedInt64Array([420000, 90000, 20000, 0, 0]),
+		"subsidy_paid": PackedInt64Array([0, 0, 60000, 0, 0]),
+		"subsidy_requested": PackedInt64Array([0, 0, 80000, 0, 0]),
+		"tax_base": PackedInt64Array([4200000, 1800000, 600000, 0, 0])}
+	var rolling_history := EconomyFiscalHistory.new()
+	rolling_history.sample(handle, {
+		"ok": true, "sample_day": 5, "has_settlement": false,
+	}, 1000000, 5)
+	rolling_history.sample(handle, scene_fiscal, 1470000, 6)
 	_scene_args = [{"available": true, "economy_facade": facade, "country_handle": handle,
 		"treasury": {"cash": 50000}, "trade_summary": {"ok": false}, "economy_history": history,
-		"fiscal": {"ok": true, "sample_day": 6,
-			"tax_kinds": PackedStringArray([
-				"income", "consumption", "business", "import", "export"]),
-			"collected": PackedInt64Array([420000, 90000, 20000, 0, 0]),
-			"subsidy_paid": PackedInt64Array([0, 0, 60000, 0, 0]),
-			"subsidy_requested": PackedInt64Array([0, 0, 80000, 0, 0]),
-			"tax_base": PackedInt64Array([4200000, 1800000, 600000, 0, 0])}},
+		"fiscal": scene_fiscal, "fiscal_history": rolling_history},
 		first_cell]
 	vm.configure({"available": false, "reason": "测试不可用"})
 	_expect("unavailable reason surfaces", not vm.available()

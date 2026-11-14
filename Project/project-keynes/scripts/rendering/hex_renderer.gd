@@ -1,7 +1,24 @@
+
+
+
+
+
+
+
+
 # hex_renderer.gd v5
 # 单一全屏 quad mesh + WorldData 的 4 张高分辨率纹理 + world_map.gdshader v5。
 class_name HexRenderer
 extends Node2D
+const RendererCameraDetail = preload("res://scripts/rendering/renderer_camera_detail.gd")
+const RendererWeatherState = preload("res://scripts/rendering/renderer_weather_state.gd")
+const RendererSceneServices = preload("res://scripts/rendering/renderer_scene_services.gd")
+const RendererDetailLayers = preload("res://scripts/rendering/renderer_detail_layers.gd")
+const RendererLoadingVegetation = preload("res://scripts/rendering/renderer_loading_vegetation.gd")
+const RendererMaterialPublish = preload("res://scripts/rendering/renderer_material_publish.gd")
+const RendererShaderWater = preload("res://scripts/rendering/renderer_shader_water.gd")
+const RendererTerrainHorizon = preload("res://scripts/rendering/renderer_terrain_horizon.gd")
+const RendererDetailScatter = preload("res://scripts/rendering/renderer_detail_scatter.gd")
 const RendererMapAssets = preload("res://scripts/rendering/renderer_map_assets.gd")
 
 const RendererLightingBindings = preload("res://scripts/rendering/renderer_lighting_bindings.gd")
@@ -11,6 +28,28 @@ const RendererWeatherInputs = preload("res://scripts/rendering/renderer_weather_
 const DetailProfileSelection = preload("res://scripts/rendering/detail_profile_selection.gd")
 
 const RendererSeaIceDiagnostics = preload("res://scripts/rendering/renderer_sea_ice_diagnostics.gd")
+
+# Preserve the existing HexRenderer constant surface while implementations
+# live in the stateless collaborators.
+const PK_WEB_TEXTURE_BUDGET_DEFINE = RendererShaderWater.PK_WEB_TEXTURE_BUDGET_DEFINE
+const QUALITY_PREFIX_LOW = RendererShaderWater.QUALITY_PREFIX_LOW
+const WORLD_MAP_WEB_MIN_DEFINE = RendererShaderWater.WORLD_MAP_WEB_MIN_DEFINE
+const WORLD_MAP_WEB_NO_MICRO_DEFINE = RendererShaderWater.WORLD_MAP_WEB_NO_MICRO_DEFINE
+const WORLD_MAP_WEB_LAND_ONLY_DEFINE = RendererShaderWater.WORLD_MAP_WEB_LAND_ONLY_DEFINE
+const WORLD_MAP_WEB_HORIZON_DEFINE = RendererShaderWater.WORLD_MAP_WEB_HORIZON_DEFINE
+const WORLD_MAP_WEB_PREFIX = RendererShaderWater.WORLD_MAP_WEB_PREFIX
+const WORLD_MAP_WEB_PREFIX_MICRO = RendererShaderWater.WORLD_MAP_WEB_PREFIX_MICRO
+const PK_WEB_MICRO_BOOT_META = RendererShaderWater.PK_WEB_MICRO_BOOT_META
+const WORLD_MAP_WEB_HIGH_BASE = RendererShaderWater.WORLD_MAP_WEB_HIGH_BASE
+const WORLD_MAP_WEB_HIGH_PREFIX = RendererShaderWater.WORLD_MAP_WEB_HIGH_PREFIX
+const WATER_WEB_HIGH_PREFIX = RendererShaderWater.WATER_WEB_HIGH_PREFIX
+const WATER_SHADER_PATH = RendererShaderWater.WATER_SHADER_PATH
+const WATER_PASS_PREFIX = RendererShaderWater.WATER_PASS_PREFIX
+const SPLIT_LAND_ONLY_DEFINE = RendererShaderWater.SPLIT_LAND_ONLY_DEFINE
+const SPLIT_WATER_ONLY_DEFINE = RendererShaderWater.SPLIT_WATER_ONLY_DEFINE
+const WORLD_MAP_SHADER_PATH = RendererShaderWater.WORLD_MAP_SHADER_PATH
+const WATER_PARAM_NAMES: Array[StringName] = RendererShaderWater.WATER_PARAM_NAMES
+const _HORIZON_BAKE_SHADER_PATH = RendererTerrainHorizon._HORIZON_BAKE_SHADER_PATH
 
 
 ## 加载期逐层构建进度（只用于"正在生成世界"进度条，不改变图层构建逻辑/数量）。
@@ -42,20 +81,19 @@ const DETAIL_PLAN_FINALIZE: int = 7
 @export var hex_size: float = 22.0:
 	set(v):
 		hex_size = maxf(4.0, v)
-		if is_inside_tree():
-			_rebuild()
+		RendererSceneServices._after_hex_size(self)
 
 ## 探针开关（已定案，保留 false）：web 上用 3 行 shader 替换 world_map。
 ## 结论：换掉后首帧仍然 45s，所以世界材质不是元凶，见 weather_layer 的裁剪变体。
 const PK_WEB_TRIVIAL_WORLD_SHADER_PROBE := false
 ## 探针：web 上跳过 deferred 植被填充（图层仍创建），用来判定长帧是否来自填充。
 const PK_WEB_SKIP_DEFERRED_VEG_SEED := false
-## Web 天气表现层总闸（2026-11-01 起：**只在高画质下绘制**）。
+## Web 天气表现层总闸（只在高画质下绘制）。
 ## 判定见 `_web_weather_layer_draw_allowed()`：
 ##   - 玩家设置「高」→ `visual_quality >= 2` → 绘制；
 ##   - QA 的 `?tier=high`（autotest 把 mobile tier 推到 HIGH）→ 也按高画质处理；
 ##   - 低 / 中 / auto → 不绘制（对象仍在、所有 set_* 照常、天气**模拟**不受影响）。
-## 实测依据（2026-10-31，Chrome 性能采样）：weather_overlay 那套在 ANGLE 上把每帧
+## 实测依据：weather_overlay 那套在 ANGLE 上把每帧
 ## 拖到几十秒，94% 采样卡在 blitOffscreenFramebuffer 的 getParameter（GPU 排队同步）。
 ## 不绘制后：10x 跑满一年、最大帧间隔 2 秒。
 ## 落地注意：**不能**只在 `_ready` 里写一次 `visible = false` ——
@@ -71,54 +109,40 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 @export_storage var world_material: ShaderMaterial = preload("res://materials/world_map_material.tres"):
 	set(value):
 		world_material = value
-		if is_inside_tree():
-			_load_shader()
-			if _map != null and _world != null:
-				_rebuild()
+		RendererSceneServices._after_world_material(self)
 
 @export_storage var world_lighting_profile: WorldLightingProfile:
 	set(value):
 		world_lighting_profile = value
-		if is_inside_tree():
-			_bind_world_lighting_profile()
+		RendererSceneServices._after_world_lighting_profile(self)
 
 @export_group("Shader Hot Reload")
 @export var shader_hot_reload_enabled: bool = true
 @export_range(0.1, 5.0, 0.1) var shader_hot_reload_interval: float = 0.35
 
 # ─── Hypsometric 色阶（海陆双向，从深到浅） ──────────────────────────────
-# Open Ocean Color Rebalance v2：与 world_map.gdshader 同步，把深/浅海亮度差
-# 从 Δ=0.36 收敛到 Δ=0.22，避免"浅海发亮、深海近黑"的强烈对比。
-# 旧 (v1) / 新 (v2)：
-#   (0.10,0.18,0.30) → (0.14,0.22,0.34)   (0.16,0.28,0.40) → (0.20,0.30,0.42)
-#   (0.27,0.45,0.56) → (0.28,0.42,0.52)   (0.40,0.62,0.66) → (0.34,0.50,0.56)
-# [需求3 2026-06-19午] 缩小浅↔深海色差：原 coast(0.34,0.50,0.56)→deep(0.14,0.22,0.34) 亮度/色相跨度
-# 过大，海岸青绿环与深海深蓝对比太硬。提亮深/中海、略压浅/岸海，让整片海面更协调连续。
+# Open Ocean Color Rebalance：与 world_map.gdshader 同步，把深/浅海亮度差收敛，
+# 避免“浅海发亮、深海近黑”的强烈对比；海岸青绿环与深海深蓝过硬时，提亮深/中海、
+# 略压浅/岸海，让整片海面更协调连续。
 @export_group("Hypsometric Colors")
 ## 【深海底色】远洋最深处的基础颜色。
 @export var color_deep_ocean: Color = Color(0.22, 0.31, 0.43):
 	set(v):
-		color_deep_ocean = v
-		_push_water_param(&"color_deep_ocean", v)
+		color_deep_ocean = RendererShaderWater._assign_water_param(self, &"color_deep_ocean", v)
 ## 【中深海底色】
 @export var color_mid_ocean: Color = Color(0.25, 0.35, 0.46):
 	set(v):
-		color_mid_ocean = v
-		_push_water_param(&"color_mid_ocean", v)
+		color_mid_ocean = RendererShaderWater._assign_water_param(self, &"color_mid_ocean", v)
 ## 【浅海底色】
 @export var color_shallow: Color = Color(0.27, 0.40, 0.49):
 	set(v):
-		color_shallow = v
-		_push_water_param(&"color_shallow", v)
+		color_shallow = RendererShaderWater._assign_water_param(self, &"color_shallow", v)
 ## 【近岸水色】
 @export var color_coast_water: Color = Color(0.30, 0.43, 0.51):
 	set(v):
-		color_coast_water = v
-		_push_water_param(&"color_coast_water", v)
-# [需求2/4 2026-06-19] 色阶去黄 + 拉开山段层次：原 lowland/hill/mountain 全是黄棕系且 hill→mountain
-# 渐变过小，导致(2)地表整体偏黄、(4)山体一片同色像"平坦高原"。新方案：lowland 偏绿减黄；hill 收黄；
-# mountain 压暗成深岩棕；peak 提亮成裸岩灰白 → 明度 中→暗→亮、色相 绿黄→棕→灰，配合 hillshade 让山腰
-# 阴暗、山脊提亮，形成可读的高度层次。
+		color_coast_water = RendererShaderWater._assign_water_param(self, &"color_coast_water", v)
+# 地表色阶按 lowland/hill/mountain/peak 分开：低地偏绿、山丘收黄、山地压暗为岩棕、
+# 山顶提亮为裸岩灰白，形成中→暗→亮的高度层次，并配合 hillshade 让山腰阴暗、山脊提亮。
 @export var color_beach: Color = Color(0.85, 0.78, 0.55)
 @export var color_lowland: Color = Color(0.54, 0.64, 0.40)
 @export var color_hill: Color = Color(0.60, 0.56, 0.36)
@@ -127,24 +151,18 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 @export var color_snow: Color = Color(0.96, 0.96, 0.96)
 
 # ─── 双光源 hillshading ──────────────────────────────────────────────────
-# [macro-relief 2026-06-19] strength 0.45→0.62、slope_gain 8→11：宏观山脉/盆地/丘陵群
-# 此前因 hillshade 偏弱 + 宽 hypsometric 色带而难以辨认。加强双光源明暗与坡度增益，让大尺度
-# 起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D 着色下更立体可读。属纯视觉 knob，可再微调。
-# [需求5 2026-06-25] strength 0.74→0.80、slope_gain 13→15：山地仍偏台地。配合更强的
-# height bake / biome detail 之后，再把坡面对比抬一点，让山脊和山谷更容易读出来。
-# [起伏增强 2026-09-01] 0.80→0.90：配合 hex 世界度量法线，加强宏观坡面可读性。
+# 加强双光源明暗与坡度增益，让大尺度起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D
+# 着色下更立体可读；配合 height bake / biome detail 保留坡面对比，让山脊和山谷更容易读出。
 @export_group("Hillshading")
 @export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.90
 @export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 15.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
-	# v6：flow 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）；Legacy 打在 height_tex.B。
+# flow 是 SDF 反距离编码（1=河中心，0=>=SDF_MAX_DIST_PX 远）；Legacy 打在 height_tex.B。
 # baker 的 SDF_MAX_DIST_PX = 5 像素，保持大尺度地图上河流为细线。
 # threshold_low=外圈 outline 起点，threshold_high=内圈主色完全。
 @export_group("Rivers")
 @export_range(0.0, 1.0, 0.01) var river_strength: float = 0.85
-# [river-hierarchy 2026-07-31] 阈值收紧：配合更短的 SDF 晕圈，让可见河宽更多由
-# stamp 半径（流量）决定，而不是被同一条 0.62→0.90 的淡出带抹平。
 @export_range(0.0, 1.0, 0.01) var river_threshold_low: float = 0.70
 @export_range(0.0, 1.0, 0.01) var river_threshold_high: float = 0.94
 @export var river_color: Color = Color(0.30, 0.50, 0.68)
@@ -173,34 +191,26 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 ## biome_hue_modulate 乘数保留比例；1 = 原始地形偏色，0 = 只剩海拔底色。
 @export_range(0.0, 1.0, 0.01) var biome_tint_strength: float = 0.80:
 	set(value):
-		biome_tint_strength = clampf(value, 0.0, 1.0)
-		if _shader_mat != null:
-			_push_world_uniform("biome_tint_strength", biome_tint_strength)
+		biome_tint_strength = RendererShaderWater._assign_world_uniform(self, &"biome_tint_strength", clampf(value, 0.0, 1.0))
 ## 所有陆地变色层之后、光照之前的反照率饱和度。
 @export_range(0.0, 1.5, 0.01) var land_albedo_saturation: float = 0.92:
 	set(value):
-		land_albedo_saturation = clampf(value, 0.0, 1.5)
-		if _shader_mat != null:
-			_push_world_uniform("land_albedo_saturation", land_albedo_saturation)
+		land_albedo_saturation = RendererShaderWater._assign_world_uniform(self, &"land_albedo_saturation", clampf(value, 0.0, 1.5))
 ## 陆地色调映射中按明度 ACES 的占比；0 = 纯逐通道 ACES（toe 段会放大色度）。
 @export_range(0.0, 1.0, 0.01) var tonemap_hue_preserve: float = 0.3:
 	set(value):
-		tonemap_hue_preserve = clampf(value, 0.0, 1.0)
-		if _shader_mat != null:
-			_push_world_uniform("tonemap_hue_preserve", tonemap_hue_preserve)
+		tonemap_hue_preserve = RendererShaderWater._assign_world_uniform(self, &"tonemap_hue_preserve", clampf(value, 0.0, 1.0))
 
 # ─── 季节 / 气候系统（每帧由 main.gd 通过 set_*_phase 推进） ─────────────
-# 2026-05-19 Plan-C：season_temp_amp 默认 0.20 → 0.32，与 climate_profile.gd
+# season_temp_amp 与 climate_profile.gd、uniforms.gdshaderinc 同步，是推送到 shader 的数据源。
 # 和 uniforms.gdshaderinc 同步。这是真正推送到 shader 的数据源（行 989）。
 @export_group("Climate")
 @export_range(0.0, 0.4, 0.01) var season_temp_amp: float = 0.32
 @export_range(0.0, 1.0, 0.01) var vegetation_season_strength: float = 0.85:
 	set(value):
-		vegetation_season_strength = clampf(value, 0.0, 1.0)
-		if _shader_mat != null:
-			_push_world_uniform("vegetation_season_strength", vegetation_season_strength)
+		vegetation_season_strength = RendererShaderWater._assign_world_uniform(self, &"vegetation_season_strength", clampf(value, 0.0, 1.0))
 @export_range(0.0, 1.0, 0.01) var dynamic_snow_strength: float = 0.85
-# 2026-05-19：dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
+# dynamic_cell / dyn_atlas_smooth / ecology / ice 四张 atlas 的上传节流。
 # 1=每仿真日上传一次；2（默认）=每 2 仿真日；4=每 4 仿真日。值越大越省 CPU 但雪线/海冰
 # 视觉变化越"卡顿"。运行时改这个值会触发 DynamicVisualAtlasUploadSystem.reconfigure。
 @export_range(1, 8, 1) var dyn_atlas_upload_stride: int = 2
@@ -239,115 +249,111 @@ const PK_WEB_ENABLE_WEATHER_LAYER := true
 ## 1.0 = 原来的实心白云（alpha 上限 0.86）；0.72 让地形能透出来。
 @export_range(0.0, 1.0, 0.01) var weather_cloud_opacity: float = 0.72:
 	set(value):
-		weather_cloud_opacity = clampf(value, 0.0, 1.0)
-		if _weather_layer != null and is_instance_valid(_weather_layer):
-			_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
+		weather_cloud_opacity = RendererShaderWater._assign_weather_cloud_opacity(self, clampf(value, 0.0, 1.0))
 
 @export_group("Cloud Shadow")
 ## PC 高画质直接光照路径的最大直射光压暗比例。
 @export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_high: float = 0.85:
 	set(value):
 		cloud_shadow_strength_high = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 中画质合成 pass 的压暗比例。
 @export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_mid: float = 0.62:
 	set(value):
 		cloud_shadow_strength_mid = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## PC 低画质、移动端和 Web 合成 pass 的压暗比例。
 @export_range(0.0, 1.0, 0.01) var cloud_shadow_strength_low: float = 0.48:
 	set(value):
 		cloud_shadow_strength_low = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 云量覆盖响应增益。提高后，中低云量天气也会形成连续可见的云影。
 @export_range(0.25, 3.0, 0.05) var cloud_shadow_coverage_gain: float = 1.25:
 	set(value):
 		cloud_shadow_coverage_gain = clampf(value, 0.25, 3.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 厚云时环境光/天光的额外衰减权重（0=只压直射、1=间接光同幅压暗）。
-## [cloud-gi 2026-11-07] 0.35 太狠：云影只是挡住太阳直射，天空散射光基本照旧，
+## 云影主要挡住太阳直射，天空散射光基本照旧；这里只保留少量环境光层次感。
 ## 压三成环境光会让阴影里的地面丢失色相、发灰发脏。0.12 只留一点层次感。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_ambient_weight: float = 0.12:
 	set(value):
 		cloud_shadow_ambient_weight = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_material_inputs()
+		RendererShaderWater._push_cloud_shadow_material_inputs(self)
 ## 云影内部噪声的世界尺度平流速度；实际 UV 位移还乘 cloud_shadow_uv_scroll_gain。
 @export_range(0.0, 0.20, 0.005) var cloud_shadow_motion_speed: float = 0.15:
 	set(value):
 		cloud_shadow_motion_speed = clampf(value, 0.0, 0.20)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 云影噪声 UV 滚动增益。用于把归一化世界坐标中的微小位移提升到可见的
 ## 连续动画速度，不改变 LUT 云量更新节奏。
 
 @export_range(0.0, 32.0, 0.5) var cloud_shadow_uv_scroll_gain: float = 8.0:
 	set(value):
 		cloud_shadow_uv_scroll_gain = clampf(value, 0.0, 32.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 海面云影响应比例。陆地保持完整云影，海面单独控制以避免过弱或脏黑。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_water_scale: float = 0.58:
 	set(value):
 		cloud_shadow_water_scale = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_material_inputs()
+		RendererShaderWater._push_cloud_shadow_material_inputs(self)
 ## LUT 范围内部的云团明暗对比度。越高越能看出斑块形状。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_shape_contrast: float = 1.0:
 	set(value):
 		cloud_shadow_shape_contrast = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 主噪声坐标的域扭曲强度。提高后云团边界更破碎、更接近自然云块。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_noise_warp: float = 0.36:
 	set(value):
 		cloud_shadow_noise_warp = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 动态细节噪声对主云形的调制强度。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_dynamic_detail_gain: float = 0.32:
 	set(value):
 		cloud_shadow_dynamic_detail_gain = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 动态域扭曲强度。提高后云团会随滚动产生更明显的形变。
 @export_range(0.0, 2.0, 0.05) var cloud_shadow_dynamic_warp_gain: float = 0.80:
 	set(value):
 		cloud_shadow_dynamic_warp_gain = clampf(value, 0.0, 2.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 云影边缘羽化宽度。越高边缘越软、核心越不容易形成硬白边。
 @export_range(0.0, 2.0, 0.05) var cloud_shadow_edge_softness: float = 1.10:
 	set(value):
 		cloud_shadow_edge_softness = clampf(value, 0.0, 2.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 局地风对 field 内动态形变的影响。主平流仍由 CPU 累积的全局风负责。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_wind_influence: float = 0.22:
 	set(value):
 		cloud_shadow_wind_influence = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## LUT 云量 Mask 的起始偏置。提高后只有更高云量区域会出现云影。
 @export_range(0.0, 0.8, 0.02) var cloud_shadow_mask_bias: float = 0.10:
 	set(value):
 		cloud_shadow_mask_bias = clampf(value, 0.0, 0.8)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 独立云核密度。提高后同一片 LUT Mask 内会出现更多、更小的云朵。
 @export_range(0.35, 2.5, 0.05) var cloud_shadow_cell_scale: float = 0.75:
 	set(value):
 		cloud_shadow_cell_scale = clampf(value, 0.35, 2.5)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 世界空间主云团尺度。降低后云团更大、更连续；提高后云团更密。
-## [cloud-shape 2026-11-07] 0.0045 → 0.0160：一个噪声单元从约 222 世界单位
+## 当前尺度把噪声单元压到约 1.6 hex，云团保持约 3~5 hex 的可分辨大小。
 ## 压到 62（约 1.6 hex），云团直径从 7~12 hex 降到 3~5 hex，整屏能看到
 ## 十来朵彼此分开的云影而不是 3~5 团大色块。
 @export_range(0.001, 0.05, 0.001) var cloud_shadow_world_scale: float = 0.0130:
 	set(value):
 		cloud_shadow_world_scale = clampf(value, 0.001, 0.05)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 云缘侵蚀强度：中频噪声把云团边缘啃成絮状、并在云内部掏洞。
 ## 0 = 退回单层 value noise 的圆疙瘩；1 = 极碎（云量会明显变少）。
 @export_range(0.0, 1.0, 0.05) var cloud_shadow_erosion: float = 0.40:
 	set(value):
 		cloud_shadow_erosion = clampf(value, 0.0, 1.0)
-		_push_cloud_shadow_tuning()
+		RendererShaderWater._push_cloud_shadow_tuning(self)
 ## 开启后显示黑白云影 Mask：黑=无云影，白=云影区域。
 @export var cloud_shadow_debug_view: bool = false:
 	set(value):
-		cloud_shadow_debug_view = value
-		if _cloud_shadow_field != null:
-			_cloud_shadow_field.set_debug_view(value)
+		cloud_shadow_debug_view = RendererShaderWater._assign_cloud_shadow_debug_view(self, value)
 
 # [parallax-rain] 俯视雨幕参数：camera_pitch 控制雨滴侧投影长度收缩
 @export_range(0.0, 90.0, 1.0, "degrees") var camera_pitch_deg: float = 75.0
@@ -370,17 +376,9 @@ var terrain_materials_enabled: bool = true
 	set(value):
 		var was_split := _split_active()
 		terrain_surface_debug_view = clampi(value, 0, 17)
-		_push_world_uniform("terrain_surface_debug_view", terrain_surface_debug_view)
-		# [web-water-pass] 诊断色由 pass 1 整屏输出，水面 pass 必须整体让位。
-		if _water_mat != null:
-			_water_mat.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
-		# [land-water-split 2026-11-02] debug 视图必须回退单 program + 整张 quad
-		# （13/14/16/17 等要全屏覆盖；gi_debug_view 只在陆地管线里，水面 program 复现不了）。
-		# 拆分状态翻转时重编变体 + 重铺几何 + 重推全部 uniform。
-		if was_split != _split_active():
-			_refresh_split_configuration()
+		RendererShaderWater._apply_surface_debug_view(self, was_split)
 
-## [land-water-split 2026-11-02] 全平台陆地 / 水面双 program 总开关（远程 inspector 可 A/B）。
+## 陆地 / 水面双 program 总开关，可用于远程 inspector 的 A/B。
 ## 默认全平台启用；`terrain_surface_debug_view != 0` 或（Compatibility 后端 + tiled）时
 ## 自动回退单 program（见 _split_active()）。关掉即完全回到今天的单 program + 单 quad。
 @export var split_land_water_passes: bool = true:
@@ -388,80 +386,66 @@ var terrain_materials_enabled: bool = true
 		if split_land_water_passes == value:
 			return
 		split_land_water_passes = value
-		# 重新允许尝试：上一次编译失败可能只是临时状态（shader 刚被编辑/驱动抖动）。
-		_split_program_failed = false
-		_water_pass_failed = false
-		_refresh_split_configuration()
+		RendererShaderWater._apply_split_land_water_passes(self)
 
-## [land-water-split 2026-11-02] 拆分时是否使用保守覆盖 mesh（TerrainCoverageMesh 模块）。
+## 拆分时是否使用保守覆盖 mesh（TerrainCoverageMesh 模块）。
 ## 关掉 / 模块缺失 / 构建失败 ⇒ 两张 program 共享整张 quad（保底可运行，行为=今天）。
 @export var terrain_coverage_mesh_enabled: bool = true:
 	set(value):
 		if terrain_coverage_mesh_enabled == value:
 			return
 		terrain_coverage_mesh_enabled = value
-		_apply_world_quad_geometry()
+		RendererTerrainHorizon._apply_coverage_mesh_enabled(self)
 
-# [terrain-material-tiles 2026-08-01e] 材质族四参数提为 @export：编辑器检查器可见，
-# 运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效；_rebuild 全量推送也读这组值。
+# 材质族参数暴露给 Inspector；运行时经远程场景树拖动 setter 直推 _shader_mat 即时生效，
+# _rebuild 全量推送也读这组值。
+# 材质族四参数：编辑器可调，setter 直推 _shader_mat 即时生效；_rebuild 全量推送也读这组值。
 @export_range(0.0, 1.0, 0.01) var terrain_material_albedo_strength: float = 0.6:
 	set(value):
-		terrain_material_albedo_strength = clampf(value, 0.0, 1.0)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_material_albedo_strength", terrain_material_albedo_strength)
+		terrain_material_albedo_strength = RendererShaderWater._assign_world_uniform(self, &"terrain_material_albedo_strength", clampf(value, 0.0, 1.0))
 
 @export_range(0.0, 0.8, 0.005) var terrain_material_normal_strength: float = 0.24:
 	set(value):
-		terrain_material_normal_strength = clampf(value, 0.0, 0.5)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_material_normal_strength", terrain_material_normal_strength)
+		terrain_material_normal_strength = RendererShaderWater._assign_world_uniform(self, &"terrain_material_normal_strength", clampf(value, 0.0, 0.5))
 
 @export_range(0.0, 1.0, 0.01) var terrain_material_roughness_strength: float = 0.35:
 	set(value):
-		terrain_material_roughness_strength = clampf(value, 0.0, 1.0)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_material_roughness_strength", terrain_material_roughness_strength)
+		terrain_material_roughness_strength = RendererShaderWater._assign_world_uniform(self, &"terrain_material_roughness_strength", clampf(value, 0.0, 1.0))
 
 @export_range(64.0, 1024.0, 1.0) var terrain_material_world_size: float = 384.0:
 	set(value):
-		terrain_material_world_size = clampf(value, 64.0, 1024.0)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_material_world_size", terrain_material_world_size)
+		terrain_material_world_size = RendererShaderWater._assign_world_uniform(self, &"terrain_material_world_size", clampf(value, 64.0, 1024.0))
 		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 			layer.set_lod_debug_view(terrain_surface_debug_view == 6)
 		)
 @export_range(0.0, 0.96, 0.01) var terrain_ecotone_width: float = 0.84:
 	set(value):
 		terrain_ecotone_width = clampf(value, 0.0, 0.96)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_ecotone_width", terrain_ecotone_width)
-		_push_overlay_edge_transition_data()
+		RendererShaderWater._push_world_uniform(self, &"terrain_ecotone_width", terrain_ecotone_width)
+		RendererTerrainHorizon._push_overlay_edge_transition_data(self)
 @export_range(0.0, 0.45, 0.01) var terrain_ecotone_noise: float = 0.22:
 	set(value):
 		terrain_ecotone_noise = clampf(value, 0.0, 0.45)
-		if _shader_mat != null:
-			_push_world_uniform("terrain_ecotone_noise", terrain_ecotone_noise)
-		_push_overlay_edge_transition_data()
+		RendererShaderWater._push_world_uniform(self, &"terrain_ecotone_noise", terrain_ecotone_noise)
+		RendererTerrainHorizon._push_overlay_edge_transition_data(self)
 @export var day_night_enabled: bool = true
 @export_group("永昼太阳")
 ## 每游戏年包含的 Shader 日数量；2 表示一年两轮，0.5 表示两年一轮。
 @export_range(0.0, 32.0, 0.25, "or_greater") var shader_days_per_game_year: float = 2.0:
 	set(value):
-		shader_days_per_game_year = maxf(value, 0.0)
-		if _apply_shader_clock.is_valid():
-			_apply_shader_clock.call(shader_days_per_game_year)
+		shader_days_per_game_year = RendererShaderWater._assign_shader_days_per_game_year(self, maxf(value, 0.0))
 var _apply_shader_clock: Callable
 
 ## 太阳最低高度（角度）；抬高会缩短最长阴影。
 @export_range(0.0, 45.0, 1.0) var eternal_min_elevation_deg: float = 10.0:
 	set(value):
 		eternal_min_elevation_deg = clampf(value, 0.0, 45.0)
-		_push_eternal_daylight_uniforms()
+		RendererShaderWater._push_eternal_daylight_uniforms(self)
 ## 日内最大时角（角度）；增大会扩大高低浮动并拉长早晚阴影。
 @export_range(0.0, 89.0, 1.0) var eternal_max_hour_angle_deg: float = 70.0:
 	set(value):
 		eternal_max_hour_angle_deg = clampf(value, 0.0, 89.0)
-		_push_eternal_daylight_uniforms()
+		RendererShaderWater._push_eternal_daylight_uniforms(self)
 @export_group("")
 @export var extreme_weather_ground_effect_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
@@ -470,75 +454,75 @@ var _apply_shader_clock: Callable
 @export_range(0.0, 1.5, 0.01) var terrain_horizon_strength: float = 1.20:
 	set(value):
 		terrain_horizon_strength = clampf(value, 0.0, 1.5)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0.01, 1.0, 0.005) var terrain_horizon_softness: float = 0.30:
 	set(value):
 		terrain_horizon_softness = clampf(value, 0.01, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0.30, 1.5708, 0.01) var terrain_horizon_max_angle: float = 1.309:
 	set(value):
 		terrain_horizon_max_angle = clampf(value, 0.30, 1.5708)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0.35, 1.0, 0.01) var terrain_horizon_cast_floor: float = 0.82:
 	set(value):
 		terrain_horizon_cast_floor = clampf(value, 0.35, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0, 2, 1) var terrain_horizon_debug_view: int = 0:
 	set(value):
 		terrain_horizon_debug_view = clampi(value, 0, 2)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 
-# [terrain-gi 2026-07-31] 从同一张 horizon 图派生的全局光照。设计见
-# docs/cpp-dots-runtime/terrain-gi-bake.md。三个强度全部归零即精确回退到接入 GI 之前，
+# Terrain GI 从同一张 horizon 图派生；设计见 docs/cpp-dots-runtime/terrain-gi-bake.md。
+# 三个强度全部归零即精确回退到接入 GI 之前，
 # 这是视觉回归定位的主要手段。
 @export_group("Terrain GI")
 @export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.95:
 	set(value):
 		gi_ao_strength = clampf(value, 0.0, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 ## V_sky 下限。峡谷底部仍有岩壁多次散射，纯几何遮蔽的 0 会压成死黑并放大地表 dither 对比。
 @export_range(0.0, 1.0, 0.01) var gi_ao_floor: float = 0.38:
 	set(value):
 		gi_ao_floor = clampf(value, 0.0, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 ## 0=双线性；1=2×2 箱式低通。滤掉视觉高度残差在 AO 上留下的颗粒感，采样次数不变。
 @export_range(0.0, 1.0, 0.01) var gi_ao_smoothing: float = 0.75:
 	set(value):
 		gi_ao_smoothing = clampf(value, 0.0, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 ## 环境光法线向 bent normal 偏转的比例。1.0 会完全丢弃几何法线，导致块状跳变。
 @export_range(0.0, 1.0, 0.01) var gi_bent_strength: float = 0.45:
 	set(value):
 		gi_bent_strength = clampf(value, 0.0, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0.0, 1.0, 0.01) var gi_normal_floor: float = 0.80:
 	set(value):
 		gi_normal_floor = clampf(value, 0.0, 1.0)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 @export_range(0.0, 0.5, 0.01) var gi_bounce_strength: float = 0.18:
 	set(value):
 		gi_bounce_strength = clampf(value, 0.0, 0.5)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 ## 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only 5=clay (gray albedo, full lighting)
 ## 6=clay rough 7=normal shade (all normals, fixed light) 8=normal shade (terrain geometry only)
 @export_range(0, 8, 1) var gi_debug_view: int = 0:
 	set(value):
 		gi_debug_view = clampi(value, 0, 8)
-		_push_terrain_horizon_uniforms()
+		RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 
 @export_group("Visual Overhaul")
 @export_storage var shrub_visual_profile: Resource = preload("res://data/visual/shrub_default.tres"):
 	set(value):
 		shrub_visual_profile = value
-		_rebuild_detail_layers_if_default()
+		RendererDetailLayers._after_visual_profile(self)
 @export_storage var tree_visual_profile: Resource = preload("res://data/visual/tree_default.tres"):
 	set(value):
 		tree_visual_profile = value
-		_rebuild_detail_layers_if_default()
+		RendererDetailLayers._after_visual_profile(self)
 @export_storage var grass_visual_profile: Resource = preload("res://data/visual/grass_default.tres"):
 	set(value):
 		grass_visual_profile = value
-		_rebuild_detail_layers_if_default()
+		RendererDetailLayers._after_visual_profile(self)
 # 数据驱动点缀清单。留空时回退到上面 grass/shrub/tree 三个 profile（行为 1:1）。
 # 配置后，hex_renderer 在 _ready 按 manifest.layers 生成对应数量的散布层。
 #
@@ -548,10 +532,7 @@ var _apply_shader_clock: Callable
 @export_storage var decoration_manifest: Resource = preload("res://data/visual/world_decoration_manifest.tres"):
 	set(value):
 		decoration_manifest = value
-		if is_inside_tree():
-			_spawn_detail_layers()
-			if _map != null and _world != null:
-				_rebuild()
+		RendererDetailLayers._after_decoration_manifest(self)
 @export_group("Detail Refresh")
 # 新家族渲染器必须先通过图形 A/B；默认保持旧渲染器，避免未验收路径直接影响玩家。
 @export var detail_scatter_family_renderer_enabled: bool = false
@@ -579,15 +560,15 @@ var _simulation_speed_multiplier: float = 1.0
 @export var detail_scatter_refresh_log_enabled: bool = false
 @export var detail_scatter_rebuild_log_enabled: bool = false
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
-# 21 层清单接入 + 散布配额化之后总实例数显著上升，旧的 120000 会让全局预算长期
+# 21 层清单接入与散布配额化后总实例数显著上升，旧预算会让全局配额长期
 # 触顶、所有层被同比稀释，反过来又抹平生物群系差异。
 @export var detail_scatter_desktop_total_instance_budget: int = 120000
 @export var detail_scatter_mobile_total_instance_budget: int = 12000
 
 # ─── Visual Pass 2：TOD 消费端开关 ─────────────────────────────────────
 # 这三个开关由 main.gd 的同名 @export 推进，到达 shader 内同名 uniform。
-# rain_density_boost_enabled：粒子数量提升（任务 5，renderer 仅转发到 WeatherLayer）
-# cloud_tod_tint_enabled：云层 TOD 染色（任务 6）
+# rain_density_boost_enabled：粒子数量提升（renderer 仅转发到 WeatherLayer）
+# cloud_tod_tint_enabled：云层 TOD 染色
 @export_group("Pass 2")
 @export var rain_density_boost_enabled: bool = true
 @export var cloud_tod_tint_enabled: bool = true
@@ -602,302 +583,246 @@ var _simulation_speed_multiplier: float = 1.0
 ## 【水面效果总开关】关闭后水面退回纯色，下面所有波浪 / 反射 / 洋流效果一并失效。
 @export var water_effect_enabled: bool = true:
 	set(v):
-		water_effect_enabled = v
-		_push_water_param(&"water_effect_enabled", v)
+		water_effect_enabled = RendererShaderWater._assign_water_param(self, &"water_effect_enabled", v)
 ## 【洋流可视化】关闭后浪向不再跟随洋流，洋流染色也消失。
 @export var ocean_current_enabled: bool = true:
 	set(v):
-		ocean_current_enabled = v
-		_push_water_param(&"ocean_current_enabled", v)
+		ocean_current_enabled = RendererShaderWater._assign_water_param(self, &"ocean_current_enabled", v)
 ## 【波浪】关闭后水面法线恒为平面，只剩颜色与高光。
 @export var water_waves_enabled: bool = true:
 	set(v):
-		water_waves_enabled = v
-		_push_water_param(&"water_waves_enabled", v)
+		water_waves_enabled = RendererShaderWater._assign_water_param(self, &"water_waves_enabled", v)
 ## 【菲涅尔天空反射】
 @export var water_fresnel_enabled: bool = true:
 	set(v):
-		water_fresnel_enabled = v
-		_push_water_param(&"water_fresnel_enabled", v)
+		water_fresnel_enabled = RendererShaderWater._assign_water_param(self, &"water_fresnel_enabled", v)
 ## 【粼光】水面高频颗粒高光（需要画质 ≥ 中）。
 @export var water_sparkle_enabled: bool = true:
 	set(v):
-		water_sparkle_enabled = v
-		_push_water_param(&"water_sparkle_enabled", v)
+		water_sparkle_enabled = RendererShaderWater._assign_water_param(self, &"water_sparkle_enabled", v)
 ## 【焦散】只在珊瑚礁水域、白天生效。
 @export var caustics_enabled: bool = true:
 	set(v):
-		caustics_enabled = v
-		_push_water_param(&"caustics_enabled", v)
+		caustics_enabled = RendererShaderWater._assign_water_param(self, &"caustics_enabled", v)
 ## 【浅水透底】近岸浅水透出海底颜色。
 @export var shallow_transparency_enabled: bool = true:
 	set(v):
-		shallow_transparency_enabled = v
-		_push_water_param(&"shallow_transparency_enabled", v)
+		shallow_transparency_enabled = RendererShaderWater._assign_water_param(self, &"shallow_transparency_enabled", v)
 
 @export_group("海洋水面 · 波浪总体")
 ## 【浪的疏密】越大，涟漪和笔触越小越密；越小越舒缓。
 @export_range(0.25, 4.0, 0.01, "or_greater") var water_flow_wave_density: float = 1.75:
 	set(v):
-		water_flow_wave_density = v
-		_push_water_param(&"water_flow_wave_density", v)
+		water_flow_wave_density = RendererShaderWater._assign_water_param(self, &"water_flow_wave_density", v)
 ## 【流动速度倍率】涟漪与笔触的流动速度正比于它；0 = 静止。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_advection: float = 1.15:
 	set(v):
-		water_flow_advection = v
-		_push_water_param(&"water_flow_advection", v)
+		water_flow_advection = RendererShaderWater._assign_water_param(self, &"water_flow_advection", v)
 ## 【波浪总幅度】同时放大法线与波峰波谷明暗。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_flow_wave_amplitude: float = 1.35:
 	set(v):
-		water_flow_wave_amplitude = v
-		_push_water_param(&"water_flow_wave_amplitude", v)
+		water_flow_wave_amplitude = RendererShaderWater._assign_water_param(self, &"water_flow_wave_amplitude", v)
 ## 【浪尖碎白】浪头顶部的浅色高光强度，0 = 无。
 @export_range(0.0, 1.0, 0.01) var water_flow_crest_strength: float = 0.38:
 	set(v):
-		water_flow_crest_strength = v
-		_push_water_param(&"water_flow_crest_strength", v)
+		water_flow_crest_strength = RendererShaderWater._assign_water_param(self, &"water_flow_crest_strength", v)
 ## 【浪脊笔触】离散浪脊法线与波高的总强度。
 @export_range(0.0, 2.0, 0.01) var water_mark_strength: float = 1.0:
 	set(v):
-		water_mark_strength = v
-		_push_water_param(&"water_mark_strength", v)
+		water_mark_strength = RendererShaderWater._assign_water_param(self, &"water_mark_strength", v)
 ## 【浪脊覆盖率】笔触出现的格子比例。
 @export_range(0.0, 2.0, 0.01) var water_mark_coverage: float = 1.0:
 	set(v):
-		water_mark_coverage = v
-		_push_water_param(&"water_mark_coverage", v)
+		water_mark_coverage = RendererShaderWater._assign_water_param(self, &"water_mark_coverage", v)
 ## 【浪脊长度】控制非顺流波峰笔触长度。
 @export_range(0.3, 3.0, 0.01, "or_greater") var water_mark_length: float = 1.0:
 	set(v):
-		water_mark_length = v
-		_push_water_param(&"water_mark_length", v)
+		water_mark_length = RendererShaderWater._assign_water_param(self, &"water_mark_length", v)
 ## 【浪脊速度】只调节浪脊笔触的漂移与更新速度；0 = 静止。
 @export_range(0.0, 4.0, 0.01, "or_greater") var water_mark_speed: float = 1.0:
 	set(v):
-		water_mark_speed = v
-		_push_water_param(&"water_mark_speed", v)
+		water_mark_speed = RendererShaderWater._assign_water_param(self, &"water_mark_speed", v)
 ## 【法线总强度】海洋波浪法线的整体倍率（同时影响陆地河流水面）。
 @export_range(0.0, 6.0, 0.01, "or_greater") var water_base_normal_strength: float = 1.17:
 	set(v):
-		water_base_normal_strength = v
-		_push_water_param(&"water_base_normal_strength", v)
+		water_base_normal_strength = RendererShaderWater._assign_water_param(self, &"water_base_normal_strength", v)
 ## 【波浪尺度】越大波越密越短（同时影响陆地河流水面）。
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_base_normal_scale: float = 0.93:
 	set(v):
-		water_base_normal_scale = v
-		_push_water_param(&"water_base_normal_scale", v)
+		water_base_normal_scale = RendererShaderWater._assign_water_param(self, &"water_base_normal_scale", v)
 ## 【波坡明暗】按太阳方向给波浪坡面做明暗，没有直射高光的海域也能看出起伏。
 @export_range(0.0, 8.0, 0.05, "or_greater") var water_wave_shade_strength: float = 1.5:
 	set(v):
-		water_wave_shade_strength = v
-		_push_water_param(&"water_wave_shade_strength", v)
+		water_wave_shade_strength = RendererShaderWater._assign_water_param(self, &"water_wave_shade_strength", v)
 
 @export_group("海洋水面 · 底层涟漪")
 ## 【涟漪强度】连续铺在整片海面下的细涟漪法线；0 = 去掉底层，只剩浪头笔触。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_ripple_strength: float = 1.0:
 	set(v):
-		water_ripple_strength = v
-		_push_water_param(&"water_ripple_strength", v)
+		water_ripple_strength = RendererShaderWater._assign_water_param(self, &"water_ripple_strength", v)
 ## 【小尺度涟漪占比】小尺度涟漪相对大尺度的强度（需要画质 ≥ 中）。
 @export_range(0.0, 1.5, 0.01) var water_ripple_detail_mix: float = 0.5:
 	set(v):
-		water_ripple_detail_mix = v
-		_push_water_param(&"water_ripple_detail_mix", v)
+		water_ripple_detail_mix = RendererShaderWater._assign_water_param(self, &"water_ripple_detail_mix", v)
 ## 【涟漪大小】越大涟漪越舒缓越粗；越小越细碎。
 @export_range(0.3, 3.0, 0.01, "or_greater") var water_ripple_scale: float = 1.0:
 	set(v):
-		water_ripple_scale = v
-		_push_water_param(&"water_ripple_scale", v)
+		water_ripple_scale = RendererShaderWater._assign_water_param(self, &"water_ripple_scale", v)
 ## 【无洋流时的漂移】每个流动周期的位移（世界单位）。必须大于涟漪格宽（约 52）才是真正的流动，否则只是原地淡入淡出。
 @export_range(0.0, 100.0, 0.5, "or_greater") var water_flow_drift_base: float = 30.0:
 	set(v):
-		water_flow_drift_base = v
-		_push_water_param(&"water_flow_drift_base", v)
+		water_flow_drift_base = RendererShaderWater._assign_water_param(self, &"water_flow_drift_base", v)
 ## 【洋流带来的漂移】位移 += 洋流向量 × 该值。越大，洋流强的海域流得越快。
 @export_range(0.0, 300.0, 1.0, "or_greater") var water_flow_drift_current: float = 100.0:
 	set(v):
-		water_flow_drift_current = v
-		_push_water_param(&"water_flow_drift_current", v)
+		water_flow_drift_current = RendererShaderWater._assign_water_param(self, &"water_flow_drift_current", v)
 
 @export_group("海洋水面 · 海况分区")
 ## 【平静海域强度】平静区的法线强度（相对值）。越小，平静区越平。
 @export_range(0.0, 1.0, 0.01) var water_rough_min: float = 0.22:
 	set(v):
-		water_rough_min = v
-		_push_water_param(&"water_rough_min", v)
+		water_rough_min = RendererShaderWater._assign_water_param(self, &"water_rough_min", v)
 ## 【风浪海域强度】风浪区的法线强度（相对值）。
 @export_range(0.0, 2.0, 0.01) var water_rough_max: float = 1.0:
 	set(v):
-		water_rough_max = v
-		_push_water_param(&"water_rough_max", v)
+		water_rough_max = RendererShaderWater._assign_water_param(self, &"water_rough_max", v)
 ## 【分区大小】平静 / 风浪区块的空间尺度，越大块越大。
 @export_range(0.25, 4.0, 0.01, "or_greater") var water_rough_scale: float = 1.0:
 	set(v):
-		water_rough_scale = v
-		_push_water_param(&"water_rough_scale", v)
+		water_rough_scale = RendererShaderWater._assign_water_param(self, &"water_rough_scale", v)
 ## 【风浪区占比】0 = 几乎整片平静，1 = 几乎整片风浪。
 @export_range(0.0, 1.0, 0.01) var water_rough_coverage: float = 0.5:
 	set(v):
-		water_rough_coverage = v
-		_push_water_param(&"water_rough_coverage", v)
+		water_rough_coverage = RendererShaderWater._assign_water_param(self, &"water_rough_coverage", v)
 
 @export_group("海洋水面 · 洋流")
 ## 【洋流影响强度】浪向跟随洋流与洋流染色的总权重。
 @export_range(0.0, 1.0, 0.01) var ocean_current_strength: float = 0.88:
 	set(v):
-		ocean_current_strength = v
-		_push_water_param(&"ocean_current_strength", v)
+		ocean_current_strength = RendererShaderWater._assign_water_param(self, &"ocean_current_strength", v)
 
 @export_group("海洋水面 · 光照与反射")
 ## 【天空反射强度】
 @export_range(0.0, 1.0, 0.01) var water_reflection_strength: float = 0.32:
 	set(v):
-		water_reflection_strength = v
-		_push_water_param(&"water_reflection_strength", v)
+		water_reflection_strength = RendererShaderWater._assign_water_param(self, &"water_reflection_strength", v)
 ## 【次表面散射强度】低太阳时迎光波坡透出青绿色；0 = 关闭（需要画质 ≥ 中）。
 @export_range(0.0, 3.0, 0.01, "or_greater") var water_sss_strength: float = 0.18:
 	set(v):
-		water_sss_strength = v
-		_push_water_param(&"water_sss_strength", v)
+		water_sss_strength = RendererShaderWater._assign_water_param(self, &"water_sss_strength", v)
 ## 【次表面散射锐度】越大，只有正对太阳的波坡才透光。
 @export_range(1.0, 8.0, 0.1) var water_sss_power: float = 2.0:
 	set(v):
-		water_sss_power = v
-		_push_water_param(&"water_sss_power", v)
+		water_sss_power = RendererShaderWater._assign_water_param(self, &"water_sss_power", v)
 ## 【次表面散射颜色】
 @export var water_sss_color: Color = Color(0.10, 0.52, 0.46):
 	set(v):
-		water_sss_color = v
-		_push_water_param(&"water_sss_color", v)
+		water_sss_color = RendererShaderWater._assign_water_param(self, &"water_sss_color", v)
 ## 【焦散强度】仅珊瑚礁水域。
 @export_range(0.0, 1.0, 0.01) var caustics_strength: float = 0.32:
 	set(v):
-		caustics_strength = v
-		_push_water_param(&"caustics_strength", v)
+		caustics_strength = RendererShaderWater._assign_water_param(self, &"caustics_strength", v)
 ## 【浅水透底程度】
 @export_range(0.0, 1.0, 0.01) var shallow_transparency_factor: float = 0.56:
 	set(v):
-		shallow_transparency_factor = v
-		_push_water_param(&"shallow_transparency_factor", v)
+		shallow_transparency_factor = RendererShaderWater._assign_water_param(self, &"shallow_transparency_factor", v)
 
 @export_group("海洋水面 · 色彩与过渡")
 ## 【深海对比度】
 @export_range(0.5, 3.0, 0.05) var deep_ocean_contrast: float = 0.96:
 	set(v):
-		deep_ocean_contrast = v
-		_push_water_param(&"deep_ocean_contrast", v)
+		deep_ocean_contrast = RendererShaderWater._assign_water_param(self, &"deep_ocean_contrast", v)
+## 0 = 回到旧的单色深海；下面四项色彩层次都会按这个总量缩放。
 ## 【深海色彩层次总量】0 = 回到旧的单色深海，下面四项都乘它。
 @export_range(0.0, 1.0, 0.01) var deep_ocean_color_richness: float = 0.85:
 	set(v):
-		deep_ocean_color_richness = v
-		_push_water_param(&"deep_ocean_color_richness", v)
+		deep_ocean_color_richness = RendererShaderWater._assign_water_param(self, &"deep_ocean_color_richness", v)
 ## 【暖流 / 寒流色偏】暖流偏暖、寒流偏冷青（需要开启洋流可视化）。
 @export_range(0.0, 1.0, 0.01) var deep_ocean_current_tint_strength: float = 0.60:
 	set(v):
-		deep_ocean_current_tint_strength = v
-		_push_water_param(&"deep_ocean_current_tint_strength", v)
+		deep_ocean_current_tint_strength = RendererShaderWater._assign_water_param(self, &"deep_ocean_current_tint_strength", v)
 ## 【纬度色温带】热带翠绿 — 温带中性 — 极地冷青。
 @export_range(0.0, 1.0, 0.01) var deep_ocean_latitude_tint_strength: float = 0.85:
 	set(v):
-		deep_ocean_latitude_tint_strength = v
-		_push_water_param(&"deep_ocean_latitude_tint_strength", v)
+		deep_ocean_latitude_tint_strength = RendererShaderWater._assign_water_param(self, &"deep_ocean_latitude_tint_strength", v)
 ## 【深渊幽冷】最深处压暗并偏蓝紫。
 @export_range(0.0, 1.0, 0.01) var deep_ocean_abyss_tint_strength: float = 0.60:
 	set(v):
-		deep_ocean_abyss_tint_strength = v
-		_push_water_param(&"deep_ocean_abyss_tint_strength", v)
+		deep_ocean_abyss_tint_strength = RendererShaderWater._assign_water_param(self, &"deep_ocean_abyss_tint_strength", v)
 ## 【海盆色斑】放大半封闭海与开阔海的色相差。
 @export_range(0.0, 1.0, 0.01) var deep_ocean_patch_boost: float = 0.50:
 	set(v):
-		deep_ocean_patch_boost = v
-		_push_water_param(&"deep_ocean_patch_boost", v)
+		deep_ocean_patch_boost = RendererShaderWater._assign_water_param(self, &"deep_ocean_patch_boost", v)
 ## 【开阔海色块】远洋大块冷暖色斑的强度。
 @export_range(0.0, 1.0, 0.01) var water_cartoon_color_strength: float = 0.75:
 	set(v):
-		water_cartoon_color_strength = v
-		_push_water_param(&"water_cartoon_color_strength", v)
+		water_cartoon_color_strength = RendererShaderWater._assign_water_param(self, &"water_cartoon_color_strength", v)
 ## 【亮度柔噪声】大尺度云影般的亮度起伏。
 @export_range(0.0, 1.0, 0.01) var water_calm_noise_brightness: float = 0.95:
 	set(v):
-		water_calm_noise_brightness = v
-		_push_water_param(&"water_calm_noise_brightness", v)
+		water_calm_noise_brightness = RendererShaderWater._assign_water_param(self, &"water_calm_noise_brightness", v)
 ## 【色相柔噪声】冷暖色相的缓慢起伏。
 @export_range(0.0, 1.0, 0.01) var water_calm_noise_tint_strength: float = 0.95:
 	set(v):
-		water_calm_noise_tint_strength = v
-		_push_water_param(&"water_calm_noise_tint_strength", v)
+		water_calm_noise_tint_strength = RendererShaderWater._assign_water_param(self, &"water_calm_noise_tint_strength", v)
 ## 【柔噪声总强度】乘在上面两项上，同时影响湖面波痕。
 @export_range(0.0, 1.0, 0.01) var water_wave_line_strength: float = 0.70:
 	set(v):
-		water_wave_line_strength = v
-		_push_water_param(&"water_wave_line_strength", v)
+		water_wave_line_strength = RendererShaderWater._assign_water_param(self, &"water_wave_line_strength", v)
 ## 【水色边界扭曲】让海 / 湖 / 礁交界不是直线。过大会和洋流叠加撕出折痕。
 @export_range(0.0, 4.0, 0.05) var water_domain_warp_strength: float = 0.55:
 	set(v):
-		water_domain_warp_strength = v
-		_push_water_param(&"water_domain_warp_strength", v)
+		water_domain_warp_strength = RendererShaderWater._assign_water_param(self, &"water_domain_warp_strength", v)
 ## 【水体软混合半径】越大过渡带越宽；0 = 硬切。
 @export_range(0.0, 4.0, 0.05) var water_biome_blend_radius: float = 3.15:
 	set(v):
-		water_biome_blend_radius = v
-		_push_water_param(&"water_biome_blend_radius", v)
+		water_biome_blend_radius = RendererShaderWater._assign_water_param(self, &"water_biome_blend_radius", v)
 ## 【水色过渡柔和度】
 @export_range(0.0, 1.0, 0.01) var water_transition_softness: float = 1.0:
 	set(v):
-		water_transition_softness = v
-		_push_water_param(&"water_transition_softness", v)
+		water_transition_softness = RendererShaderWater._assign_water_param(self, &"water_transition_softness", v)
 ## 【河口羽流】河水入海的扩散色带。
 @export_range(0.0, 1.0, 0.01) var estuary_plume_strength: float = 0.65:
 	set(v):
-		estuary_plume_strength = v
-		_push_water_param(&"estuary_plume_strength", v)
+		estuary_plume_strength = RendererShaderWater._assign_water_param(self, &"estuary_plume_strength", v)
 
 @export_group("湖泊与河流水面")
 ## 【湖水颜色】
 @export var lake_water_color: Color = Color(0.18, 0.45, 0.60):
 	set(v):
-		lake_water_color = v
-		_push_water_param(&"lake_water_color", v)
+		lake_water_color = RendererShaderWater._assign_water_param(self, &"lake_water_color", v)
 ## 【河流流动条纹】
 @export var river_flow_enabled: bool = true:
 	set(v):
-		river_flow_enabled = v
-		_push_water_param(&"river_flow_enabled", v)
+		river_flow_enabled = RendererShaderWater._assign_water_param(self, &"river_flow_enabled", v)
 ## 【河流流速】
 @export_range(0.0, 4.0, 0.05) var river_flow_speed: float = 0.75:
 	set(v):
-		river_flow_speed = v
-		_push_water_param(&"river_flow_speed", v)
+		river_flow_speed = RendererShaderWater._assign_water_param(self, &"river_flow_speed", v)
 ## 【河流条纹频率】
 @export_range(0.02, 1.0, 0.01) var river_flow_freq: float = 0.16:
 	set(v):
-		river_flow_freq = v
-		_push_water_param(&"river_flow_freq", v)
+		river_flow_freq = RendererShaderWater._assign_water_param(self, &"river_flow_freq", v)
 ## 【河流浪带强弱对比】【仅陆地河流水面，不影响海洋】
 @export_range(0.0, 2.0, 0.01, "or_greater") var water_wave_patch_strength: float = 1.58:
 	set(v):
-		water_wave_patch_strength = v
-		_push_water_param(&"water_wave_patch_strength", v)
+		water_wave_patch_strength = RendererShaderWater._assign_water_param(self, &"water_wave_patch_strength", v)
 ## 【河流浪带尺度】【仅陆地河流水面，不影响海洋】
 @export_range(0.1, 4.0, 0.01, "or_greater", "or_less") var water_wave_patch_scale: float = 2.69:
 	set(v):
-		water_wave_patch_scale = v
-		_push_water_param(&"water_wave_patch_scale", v)
+		water_wave_patch_scale = RendererShaderWater._assign_water_param(self, &"water_wave_patch_scale", v)
 ## 【河流细节涟漪强度】【仅陆地河流水面，不影响海洋；需要画质=高】
 @export_range(0.0, 8.0, 0.05, "or_greater") var water_detail_normal_strength: float = 0.75:
 	set(v):
-		water_detail_normal_strength = v
-		_push_water_param(&"water_detail_normal_strength", v)
+		water_detail_normal_strength = RendererShaderWater._assign_water_param(self, &"water_detail_normal_strength", v)
 ## 【河流细节涟漪尺度】【仅陆地河流水面；需要画质=高】
 @export_range(0.02, 4.0, 0.01, "or_greater", "or_less") var water_detail_normal_scale: float = 0.48:
 	set(v):
-		water_detail_normal_scale = v
-		_push_water_param(&"water_detail_normal_scale", v)
+		water_detail_normal_scale = RendererShaderWater._assign_water_param(self, &"water_detail_normal_scale", v)
 ## 【河流细节涟漪扭曲】【仅陆地河流水面；需要画质=高】
 @export_range(0.0, 4.0, 0.01, "or_greater") var water_detail_normal_warp: float = 0.7:
 	set(v):
-		water_detail_normal_warp = v
-		_push_water_param(&"water_detail_normal_warp", v)
+		water_detail_normal_warp = RendererShaderWater._assign_water_param(self, &"water_detail_normal_warp", v)
 
 
 # ─── 兼容字段（旧 .tscn 写过这些值，保留接收以避免反序列化警告） ─────────
@@ -933,12 +858,13 @@ var _sky_background: Node
 var _water_quad: MeshInstance2D
 var _water_mat: ShaderMaterial
 ## 已编进 _water_mat 的变体前缀（"" 或 "#define MAP_VISUAL_TILED\n"）。tiled 布局
-## 切换会换掉 sampler 类型，前缀变了必须重编变体，不能复用旧的材质。
+# 切换会换掉 sampler 类型，前缀变了必须重编变体，不能复用旧的材质。
 var _water_variant_prefix: String = ""
+var _forced_water_program_kind: String = ""
 ## 第二 pass 的 shader 在 shader 语言层编不过（get_shader_uniform_list 为空）。
 ## 记住这一条，避免每次 _apply_uniforms 都重编 + 重复报同一条错。
 var _water_pass_failed: bool = false
-## [land-water-split 2026-11-02] 水面 program 的源码种类：
+## 水面 program 的源码种类：
 ##   "web_min" = Web LOW/MID 的紧凑水面程序（world_water_web.gdshader + WATER_PASS_PREFIX）；
 ##   "high"    = Web HIGH 的 PC 水面程序（world_map.gdshader + WATER_WEB_HIGH_PREFIX）；
 ##   "split"   = 桌面 / 移动的 PC 水面程序（world_map.gdshader + SPLIT_WATER_ONLY_DEFINE）。
@@ -950,12 +876,12 @@ var _water_uses_world_map: bool = false
 ## 当前水面 program 声明的 uniform 名集合（StringName → true）。运行期 setter 只把
 ## **水面 program 真的声明过**的键镜像过去，避免对紧凑程序刷 "parameter does not exist"。
 var _water_uniform_names := {}
-## [land-water-split 2026-11-02] 水面 program 在 shader 语言层编不过 → 整条拆分回退
-## 单 program（不许只回退一半：陆地程序此时不带水面分支，只回退水会露出空洞）。
+## 水面 program 在 shader 语言层编不过时整条拆分回退到单 program，避免只回退水面造成空洞。
+## 单 program（陆地程序此时不带水面分支，只回退水会露出空洞）。
 ## 只对非 Web 生效：Web 的既有降级是"land-only 程序 + 暗海蓝占位色"，字节契约不动。
 var _split_program_failed: bool = false
-## [land-water-split 2026-11-02] 拆分时水面 / 陆地覆盖 mesh（来自 TerrainCoverageMesh
-## 模块）。任一为 null ⇒ 两张 program 共享整张 quad（保底可运行）。
+## 拆分时水面 / 陆地覆盖 mesh 来自 TerrainCoverageMesh 模块；任一为 null ⇒ 两张 program
+## 共享整张 quad（保底可运行）。
 var _coverage_water_mesh: Mesh = null
 var _coverage_land_mesh: Mesh = null
 ## 最近一次覆盖 mesh 构建的结果（ok / reason / stats），诊断与测试用。
@@ -1043,7 +969,7 @@ var _drain_credit_ms: float = 0.0
 var _drain_last_progress_frame: int = 0
 var _drain_cfg_logged: bool = false
 var _last_detail_budget_report: Dictionary = {}
-## [viewport-budget 2026-11-03] 最近一次视口加权下发回执（近处保留率等），供诊断报告合并。
+# 最近一次视口加权下发回执（近处保留率等），供诊断报告合并。
 var _last_detail_budget_weighted_report: Dictionary = {}
 # 全局实例预算同步状态。21 层分块 MultiMesh 不能在每个 succession chunk 后全量
 # 下发 visible_instance_count；那会把名义 2.5ms 的 drain 放大到几十毫秒。
@@ -1052,8 +978,8 @@ var _last_detail_budget_weighted_report: Dictionary = {}
 const DETAIL_BUDGET_FRACTION_EPSILON: float = 0.0025
 var _detail_budget_target_fraction: float = 1.0
 var _detail_budget_applied_fraction: float = -1.0
-## [viewport-budget 2026-11-03] 视口优先分配依赖相机视野：fraction 没变但相机动了
-## （平移/缩放）也要重算，否则玩家放大到某片区域时近处仍是按旧视野分的那份预算。
+# 视口优先分配依赖相机视野：fraction 没变但相机平移或缩放也要重算，
+# 否则玩家放大到某片区域时近处仍按旧视野分配预算。
 var _detail_budget_applied_view_center: Vector2 = Vector2(INF, INF)
 var _detail_budget_applied_view_zoom: float = -1.0
 const DETAIL_BUDGET_VIEW_EPSILON: float = 24.0   # world units
@@ -1075,8 +1001,11 @@ var _map: MapData = null
 var _world: WorldData = null
 var _visual_tile_horizon_baker = null
 var _visual_tile_horizon_world: WorldData = null
+var _horizon_bake_vp: SubViewport = null
+var _horizon_bake_world: WorldData = null
+var _horizon_bake_waited: int = 0
 var _camera_zoom: float = 1.0
-## [pixel-scale-detail 2026-11-03] 一个**物理**像素覆盖的世界单位数。见 pixel_world_size()。
+# 一个物理像素覆盖的世界单位数，见 pixel_world_size()。
 var _pixel_world_size: float = 1.0
 
 # Phase 1：季节状态（每帧/每天由 WorldClock 推送）
@@ -1106,6 +1035,10 @@ var _shader_hot_reload_accum: float = 0.0
 var _active_material_source_path: String = ""
 # 已推给 _shader_mat 的 cell LUT 网格尺寸；见 _sync_cell_lut_dims。
 var _pushed_lut_dims: Vector2i = Vector2i.ZERO
+var _qa_skip_lut_sync: bool = false
+var _qa_skip_lut_checked: bool = false
+var _lut_sync_frame: int = -1
+var _lut_sync_reentry_count: int = 0
 var _active_shader_source_path: String = ""
 var _material_source_mtime: int = 0
 var _shader_source_mtime: int = 0
@@ -1114,60 +1047,10 @@ var _shader_source_mtime: int = 0
 # 0 fronts 时仍填满 16 个 zero-vec，避免 shader 端越界采样。
 const MAX_WEATHER_FRONTS = RendererWeatherInputs.MAX_WEATHER_FRONTS
 
-# ─── 任务 1：性能采样器（30 秒窗口内 avg + P95） ───────────────────────
-# 统计窗口通过 ring buffer，不分配；每 REPORT_INTERVAL_SEC 打印一次结果。
-# 默认关闭，只有 perf_sampler_enabled == true 时才统计与打印。
-class PerfSampler:
-	const REPORT_INTERVAL_SEC: float = 30.0
-	const MAX_SAMPLES: int = 1800  # 30s × 60fps
-	var _samples: PackedFloat32Array
-	var _write_idx: int = 0
-	var _count: int = 0
-	var _elapsed: float = 0.0
-	var _label: String = "PerfSampler"
-
-	func _init() -> void:
-		_samples = PackedFloat32Array()
-		_samples.resize(MAX_SAMPLES)
-
-	func set_label(l: String) -> void:
-		_label = l
-
-	func push_frame_ms(frame_ms: float) -> void:
-		_samples[_write_idx] = frame_ms
-		_write_idx = (_write_idx + 1) % MAX_SAMPLES
-		if _count < MAX_SAMPLES:
-			_count += 1
-		_elapsed += frame_ms / 1000.0
-		if _elapsed >= REPORT_INTERVAL_SEC:
-			_report()
-			_elapsed = 0.0
-
-	func reset() -> void:
-		_write_idx = 0
-		_count = 0
-		_elapsed = 0.0
-
-	func _report() -> void:
-		if _count <= 0:
-			return
-		var sorted := PackedFloat32Array()
-		sorted.resize(_count)
-		for i in range(_count):
-			sorted[i] = _samples[i]
-		var arr := Array(sorted)
-		arr.sort()
-		var total: float = 0.0
-		for v in arr:
-			total += float(v)
-		var avg: float = total / float(_count)
-		var p95_idx: int = clampi(int(float(_count) * 0.95), 0, _count - 1)
-		var p95: float = float(arr[p95_idx])
-		var avg_fps: float = 1000.0 / maxf(avg, 0.001)
-		print_rich(
-			"[color=cyan][%s][/color] 30s samples=%d  avg=%.2fms (%.1f FPS)  P95=%.2fms" %
-			[_label, _count, avg, avg_fps, p95]
-		)
+## Keep the nested type name for callers that construct `HexRenderer.PerfSampler`.
+## The implementation and its state live in the scene-services collaborator.
+class PerfSampler extends RendererSceneServices.PerfSampler:
+	pass
 
 var _perf_sampler: PerfSampler = null
 # 帧尾诊断：最近一帧 _drain_detail_refresh_queue 墙钟（毫秒）。tick 日触发的
@@ -1186,2239 +1069,237 @@ var _military_visual_layer: MilitaryArmyTokenLayer = null
 var _building_visual_layer: BuildingVisualLayer = null
 
 
-func get_last_detail_drain_ms() -> float:
-	return _last_detail_drain_ms
+func get_last_detail_drain_ms() -> float: return RendererSceneServices.get_last_detail_drain_ms(self)
 
 func _ready() -> void:
-	# [parallax-rain] 初始化俯视角度
-	_camera_pitch = deg_to_rad(camera_pitch_deg)
-	_wind_dir = wind_dir.normalized() if wind_dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
-	_wind_strength = wind_strength
-	_sky_background = WorldSkyBackgroundScript.new()
-	_sky_background.name = "WorldSkyBackground"
-	add_child(_sky_background)
-	_world_quad = MeshInstance2D.new()
-	_world_quad.name = "WorldQuad"
-	_world_quad.z_index = 0
-	add_child(_world_quad)
-	_building_visual_layer = BuildingVisualLayerScript.new()
-	_building_visual_layer.name = "BuildingVisualLayer"
-	add_child(_building_visual_layer)
-	_resource_visual_layer = ResourceVisualLayerScript.new()
-	_resource_visual_layer.name = "ResourceVisualLayer"
-	add_child(_resource_visual_layer)
-	if _building_visual_layer.has_method("set_world_ext"):
-		_building_visual_layer.set_world_ext(_world_ext)
-	# Buildings share the same astronomical daylight state as terrain,
-	# weather, fog and vegetation. Push cached values immediately because this
-	# layer is created before the first WorldClock/TODProfile notification.
-	_building_visual_layer.set_season_phase(_season_phase)
-	_building_visual_layer.set_day_phase(_day_phase)
-	_building_visual_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
-	_building_visual_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
-	_building_visual_layer.set_day_night_enabled(day_night_enabled)
-	_building_visual_layer.set_tod_debug_sun_position(
-		_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-	_building_visual_layer.set_tod_debug_sun_height_scale(
-		_tod_debug_sun_height_scale)
-	_building_visual_layer.set_tod_sun_dir(_tod_sun_dir)
-	_building_visual_layer.set_tod(
-		_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
-	_spawn_detail_layers()
-	_cloud_shadow_field = CloudShadowFieldScript.new()
-	_cloud_shadow_field.name = "CloudShadowField"
-	add_child(_cloud_shadow_field)
-	_cloud_shadow_field.process_priority = 1001
-	# v9.split：天气表现层。始终创建；web 侧不再 stub，而是走 weather_layer 内部的
-	# 裁剪变体（`#define PK_WEB_WEATHER_MIN`，见 weather_layer.gd 的 WEB_WEATHER_MIN_DEFINE）。
-	# 历史：完整 weather_overlay.gdshader 首次编译在 ANGLE 上要 45 秒（进世界卡 98%
-	# 的元凶）；裁剪变体把云路径的 fbm/sin/循环全部去掉后编译成本降到可接受。
-	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_WEATHER:
-		_weather_layer = null
-	else:
-		_weather_layer = WeatherLayer.new()
-	_weather_layer.name = "WeatherLayer"
-	_weather_layer.visual_fronts_changed.connect(_on_weather_layer_visual_fronts_changed)
-	add_child(_weather_layer)
-	# 帧间插值时序:让 weather_layer._process 最晚执行,保证在 LUT 烘焙(SUS/DC 系统)之后、同帧渲染前
-	# 检测到 weather_lut_update_usec 变化并把 weather_lerp 归 0 → 消除"curr 已换帧但 lerp 还未重置"的一帧频闪。
-	_weather_layer.process_priority = 1000
-	# web：低 / 中 / auto 画质不绘制天气层，只有高画质才画。
-	# 用画质门而不是一次性 visible=false：WeatherLayer._refresh_visibility() 会在
-	# setup()/fronts 更新时把 visible 重新置 true，只有门能挡住那次重开。
-	_apply_weather_layer_render_gate()
-	if _world != null and _weather_layer.has_method("set_world_ref"):
-		_weather_layer.set_world_ref(_world)  # 帧间插值:供 weather_layer 取 weather_lut_prev_tex
-	# 国界线（z=6，在数据 overlay 之上）与视野迷雾（z=12，盖住天气/高亮/国界）。
-	# 与 WeatherLayer 同套：代码创建 + 世界坐标几何，不进 .tscn。
-	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_BORDER:
-		_border_layer = null
-	else:
-		_border_layer = CountryBorderLayer.new()
-	_border_layer.name = "CountryBorderLayer"
-	add_child(_border_layer)
-	if PK_WEB_MINIMAL_LAYERS and OS.has_feature("web") and not PK_WEB_LAYER_FOG:
-		_fog_layer = null
-	else:
-		_fog_layer = FogOfWarLayer.new()
-	_fog_layer.name = "FogOfWarLayer"
-	add_child(_fog_layer)
-	_load_shader()
-	if _map != null and _world != null:
-		_rebuild()
-	set_process(true)
+	RendererSceneServices._ready(self)
 
+func _web_weather_layer_draw_allowed() -> bool: return RendererShaderWater._web_weather_layer_draw_allowed(self)
 
-## Web 天气层是否允许**绘制**。桌面 / 移动恒 true（不受画质设置影响）。
-## 「高画质」= 玩家设置「高」（visual_quality >= 2），或 QA 的 ?tier=high
-## （autotest 直接把 mobile tier 推到 HIGH，此路径按高画质处理）。
-func _web_weather_layer_draw_allowed() -> bool:
-	if not OS.has_feature("web"):
-		return true
-	if not PK_WEB_ENABLE_WEATHER_LAYER:
-		return false
-	return visual_quality >= 2 or _mobile_quality_tier_define == "MOBILE_QUALITY_HIGH"
-
-
-## 上一次推给天气层的门状态（只用于首帧/切档时打一行诊断）。
 var _weather_gate_last_drawn: bool = true
+var _set_weather_fronts_log_count: int = 0
+var _set_weather_fronts_last_n: int = -1
+const _set_weather_fronts_log_budget: int = 3
 
+func _apply_weather_layer_render_gate() -> void: return RendererShaderWater._apply_weather_layer_render_gate(self)
 
-## 把「web + 是否高画质」推给 WeatherLayer 的画质门。
-## 门状态在 WeatherLayer 内部与 fronts/LUT 条件取与，所以关着门时它不会被
-## setup()/fronts 更新重新显示。画质设置、shader 档位切换都调这里。
-func _apply_weather_layer_render_gate() -> void:
-	if _weather_layer == null or not _weather_layer.has_method("set_render_gate"):
-		return
-	var allowed: bool = _web_weather_layer_draw_allowed()
-	_weather_layer.set_render_gate(allowed)
-	if OS.has_feature("web") and allowed != _weather_gate_last_drawn:
-		_weather_gate_last_drawn = allowed
-		print("[hex_renderer] web: WeatherLayer drawn=%s (visual_quality=%d tier=%s; web draws only at 高画质)" % [
-			str(allowed), visual_quality, _mobile_quality_tier_define])
-
-
-# 每帧把 world_time 推进给 shader（驱动洋流流纹）
-# 注意：这里只 push 一个 float uniform，几乎零开销
 func _process(delta: float) -> void:
-	_poll_shader_hot_reload(delta)
-	if _shader_mat == null:
-		return
-	_sync_cell_lut_dims()
-	_sync_cell_lut_textures()
-	if _clock_running:
-		_world_time += delta * _clock_speed_multiplier
-	_push_world_uniform("world_time", _world_time)
-	if _cloud_shadow_field != null and is_instance_valid(_cloud_shadow_field) \
-			and _cloud_shadow_field.has_method("set_world_time"):
-		_cloud_shadow_field.set_world_time(_world_time)
-	var wind_boost := _detail_wind_boost * weather_strength
-	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
-			and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.set_frame_state(_world_time, _detail_wind_dir, wind_boost)
-	else:
-		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-			layer.set_world_time(_world_time)
-			layer.set_wind_field(_detail_wind_dir, wind_boost)
-		)
-	_sweep_dormant_detail_chunks()
-	var drain_started_usec := Time.get_ticks_usec()
-	if _resource_visual_layer != null:
-		_resource_visual_layer.prepare_frame(_world_time, _tod_sun_dir, {
-			"season_phase": _season_phase, "day_phase": _day_phase,
-			"axial_tilt_rad": deg_to_rad(axial_tilt_deg),
-			"day_night_enabled": day_night_enabled,
-			"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
-			"tod_debug_sun_uv": _tod_debug_sun_uv,
-			"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
-			"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
-			"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
-			"tod_sun_dir": _tod_sun_dir, "tod_exposure": _tod_exposure,
-			"wind_dir": _detail_wind_dir, "weather_wind_boost": wind_boost})
-	_resource_visual_cpu_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
-	_drain_detail_refresh_queue()
-	_last_detail_drain_ms = float(Time.get_ticks_usec() - drain_started_usec) / 1000.0
-	# 加载期把散布构建 defer 给这条运行期路径，所以这里必须有一个"永不出现"的兜底。
-	_poll_deferred_detail_fill_watchdog()
-	# 任务 1：性能采样（仅当 perf_sampler_enabled 为 true 时启用）
-	if _perf_sampler != null:
-		_perf_sampler.push_frame_ms(delta * 1000.0)
-
+	RendererSceneServices._process(self, delta)
 
 func _sweep_dormant_detail_chunks() -> void:
-	if not detail_scatter_family_renderer_enabled or not _camera_view_initialized:
-		return
-	var now_msec := Time.get_ticks_msec()
-	if now_msec < _detail_next_resident_sweep_msec:
-		return
-	_detail_next_resident_sweep_msec = now_msec + 250
-	var retention_msec := maxi(250, int(round(detail_scatter_resident_retention_seconds * 1000.0)))
-	var evicted := 0
-	for layer in _detail_layers:
-		if layer != null and is_instance_valid(layer) \
-				and layer.has_method("evict_dormant_detail_chunks"):
-			evicted += int(layer.evict_dormant_detail_chunks(now_msec, retention_msec))
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
-			and _detail_family_layer.has_method("evict_dormant_chunks"):
-		var family_evicted := int(
-			_detail_family_layer.evict_dormant_chunks(now_msec, retention_msec))
-		_detail_evicted_superchunks += family_evicted
-		evicted += family_evicted
-	if evicted > 0:
-		_mark_detail_budget_total_dirty()
+	RendererSceneServices._sweep_dormant_detail_chunks(self)
 
-func _load_shader() -> void:
-	# PROBE(2026-10-30)：web 上把世界地图材质换成 3 行 shader，用来确认那次
-	# ~45s 首帧到底是不是 world_map.gdshader 的编译开销。
-	# 确认后把 PK_WEB_TRIVIAL_WORLD_SHADER_PROBE 置回 false，并改成裁剪版变体。
-	if PK_WEB_TRIVIAL_WORLD_SHADER_PROBE and OS.has_feature("web"):
-		var probe_shader := Shader.new()
-		probe_shader.code = "shader_type canvas_item;\nvoid fragment() { COLOR = vec4(0.15, 0.25, 0.4, 1.0); }\n"
-		var probe_mat := ShaderMaterial.new()
-		probe_mat.shader = probe_shader
-		_shader_mat = probe_mat
-		_active_material_source_path = "<web-probe>"
-		_active_shader_source_path = "<web-probe>"
-		if _world_quad != null:
-			_world_quad.material = probe_mat
-		print("[probe] web trivial world shader active (45s first-frame isolation)")
-		return
-	var next_mat: ShaderMaterial = null
-	# 新材质从 .tres 重建，lut_dims 回到默认 (1,1)；作废记录让 _sync_cell_lut_dims
-	# 在 _apply_uniforms 万一没跟上时也能补推。
-	_pushed_lut_dims = Vector2i.ZERO
-	_active_material_source_path = ""
-	_active_shader_source_path = ""
+func _load_shader() -> void: return RendererSceneServices._load_shader(self)
 
-	if world_material != null:
-		var source_mat := world_material
-		_active_material_source_path = source_mat.resource_path
-		if source_mat.resource_path != "":
-			var disk_mat := ResourceLoader.load(
-				source_mat.resource_path,
-				"ShaderMaterial",
-				ResourceLoader.CACHE_MODE_IGNORE
-			) as ShaderMaterial
-			if disk_mat != null:
-				source_mat = disk_mat
-				_active_material_source_path = disk_mat.resource_path
-		next_mat = source_mat.duplicate() as ShaderMaterial
-		if next_mat != null:
-			var shader := _load_fresh_shader_for_material(next_mat)
-			if shader != null:
-				next_mat.shader = shader
-			if next_mat.shader != null:
-				_lut_bound.clear()
-				_shader_mat = next_mat
-				_world_quad.material = _shader_mat
-				_refresh_shader_hot_reload_baseline()
-				_validate_world_program_variant()
-				return
-		push_warning("HexRenderer: world_material has no shader; falling back to %s" % shader_path)
+func _validate_world_program_variant() -> void: return RendererSceneServices._validate_world_program_variant(self)
 
-	var fallback_shader := ResourceLoader.load(shader_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
-	if fallback_shader == null:
-		push_warning("HexRenderer: shader not found at %s" % shader_path)
-		_world_quad.material = null
-		return
-	_shader_mat = ShaderMaterial.new()
-	_shader_mat.shader = _apply_shader_variant_prefix(fallback_shader, shader_path)
-	_world_quad.material = _shader_mat
-	_active_shader_source_path = shader_path
-	_refresh_shader_hot_reload_baseline()
-	_validate_world_program_variant()
+func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader: return RendererSceneServices._load_fresh_shader_for_material(self, mat)
 
+func _visual_tiles_active() -> bool: return RendererShaderWater._visual_tiles_active(self)
 
-## [land-water-split 2026-11-02] 陆地 program 自检：拆分激活时主材质是 land-only 变体，
-## 若它在 shader 语言层编不过（get_shader_uniform_list 为空），整条拆分回退单 program，
-## 否则水面会被 discard 成背景空洞。递归深度恒为 1（置位后 _split_active() 为 false）。
-## Web 保持既有行为（LAND_ONLY 前缀是字节契约，不做运行期换变体）。
-func _validate_world_program_variant() -> void:
-	if _shader_mat == null or _shader_mat.shader == null:
-		return
-	if OS.has_feature("web"):
-		return
-	if not _split_active():
-		return
-	if not _shader_mat.shader.get_shader_uniform_list().is_empty():
-		return
-	push_error("HexRenderer: split land program failed to compile; falling back to "
-		+ "the single terrain program")
-	_split_program_failed = true
-	_load_shader()
-
-func _load_fresh_shader_for_material(mat: ShaderMaterial) -> Shader:
-	var source_path := shader_path
-	if mat.shader != null and mat.shader.resource_path != "":
-		source_path = mat.shader.resource_path
-	_active_shader_source_path = source_path
-	if source_path == "":
-		return mat.shader
-	var shader := ResourceLoader.load(source_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
-	if shader == null:
-		push_warning("HexRenderer: shader not found at %s" % source_path)
-		return mat.shader
-	# mobile/web 质量档编译时变体：prepend #define MOBILE_QUALITY_*
-	# 让 GPU 编译独立 shader 二进制。tier 由 player_game / main 推送。
-	return _apply_shader_variant_prefix(shader, source_path)
-
-
-func _visual_tiles_active() -> bool:
-	return _world != null and _world.visual_tiles != null \
-		and bool(_world.visual_tiles.ready) \
-		and String(_world.visual_tiles.layout.mode) == "tiled"
-
-
-# ─── [web-world-min] world_map 的 web/GLES3 裁剪变体（前缀单一真源）───────────
-# 为什么：浏览器（Intel UHD 770 + ANGLE/D3D11）上逐张计时的实测是 world_map 首次编译
-# **22 613 ms**（旧的 6.7 s 数字已过时），仅次于 resource_impostor 的 27 424 ms。
-# 成本几乎全在 include 展开体上——web-LOW 预处理后 3634 非注释行 / 148.3 KiB，是桌面
-# 体的 81%，LOW 档只靠 PK_MOBILE_ANY 砍掉了 19%。本变体按「编译期已定 + 运行期常量已定
-# ⇒ 不可达」删掉 LOW 档永远不执行的代码：2491 行 / 102.6 KiB，for 循环 17→4，
-# tan/acos/exp/sqrt 归零。
-# 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」生效；中/高档 web 拿到的字节与
-# 改动前完全一致（它们真的会跑 ctx.quality>=1 的水体分支）。
-# 详见 shaders/include/world_map_web_min.gdshaderinc 文件头。
-const PK_WEB_TEXTURE_BUDGET_DEFINE := "#define PK_WEB_TEXTURE_BUDGET\n"
-const QUALITY_PREFIX_LOW := "#define MOBILE_QUALITY_LOW\n#define PK_SHADER_TIER_LOW\n"
-const WORLD_MAP_WEB_MIN_DEFINE := "#define PK_WEB_WORLD_MIN\n"
-## [web-world-no-micro] 真机实测（RTX 4080 + Chrome，已钉住 GPU）的 world_map 首次编译：
-##   完整 web 变体                                      20 727 ms
-##   只关 micro                                         2 153 ms
-##   只关 land_base / modif / shade / global_adj 之一    1.25–2.15 s
-##   十段全换常量                                        362 ms
-## 也就是**整条陆地管线卡在阈值上**：任何一块拿掉都塌到 1–2 s，跟那一块本身多大关系不大
-## （与 world_map 水面、resource_impostor 六路来源的"寄存器压力悬崖"同型）。
-## 所以 web 上**永久**关掉 micro（微纹理细节）—— 十块里观感代价最小的一块，在 web 的低分辨率
-## + LOW 档下几乎看不出，而它的结构/uniform 一个不动。
-## 宏名沿用诊断探针名（`PK_PROBE_NO_MICRO`），好处是"测到的组合 = 上线的组合"，
-## 真机回归时可以原样复现上面这张表。
-const WORLD_MAP_WEB_NO_MICRO_DEFINE := "#define PK_PROBE_NO_MICRO\n"
-
-## [terrain-web-baked-surface 2026-11-01 / -A 2026-11-01] Web 陆地程序的两个吸收宏：
-##   PK_WEB_LAND_ONLY — 陆地程序不 include water.gdshaderinc（水面由独立第二 pass 画）；
-##   PK_WEB_HORIZON   — 允许 LOW 档真正执行 horizon 解码（否则 MOBILE_QUALITY_LOW
-##                      会把 terrain_horizon_evaluate() 编译成中性值）。
-## 两者只对 world-min 变体（= Web 全部档位）和 PC-HIGH 陆地 pass 生效：桌面
-## Compatibility 的中/高档没有水面第二 pass，不能被 LAND_ONLY 砍掉水面管线。
-## [方案 A/B] normal+relief 合进 terrain_surface_tex（B 方案固定 4 层：normal/relief/detail/
-## occluder）后腾出的 Web 材质槽给回了
-## noise_tex（全平台统一声明/绑定），所以这里只剩这两个吸收宏。
-const WORLD_MAP_WEB_LAND_ONLY_DEFINE := "#define PK_WEB_LAND_ONLY\n"
-const WORLD_MAP_WEB_HORIZON_DEFINE := "#define PK_WEB_HORIZON\n"
-
-## 共享 Web 陆地程序的 **NO_MICRO（kill-switch / 历史默认）变体**：7 个 define，
-## 与 WORLD_MAP_WEB_PREFIX_MICRO 只差 `#define PK_PROBE_NO_MICRO`。C 收尾后 web 默认走
-## MICRO；本常量仅用于 URL `micro=off|0|false` 回退、非 web（桌面 Compatibility）与
-## 既有测试/回退口径。所有段共用同一批常量，不是"抄一份字面量"。
-## 顺序（terrain_shader_variant_test 用 WATER_PASS_PREFIX + 4 个 define 链式校验）：
-##   quality → texture_budget → world_min → no_micro → land_only → horizon
-const WORLD_MAP_WEB_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE \
-	+ WORLD_MAP_WEB_MIN_DEFINE + WORLD_MAP_WEB_NO_MICRO_DEFINE \
-	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
-
-## [C 2026-11-01] 共享 Web 陆地程序的 **micro 开启变体**（保留 terrain_material_tex
-## layer4 的 micro 采样路径）。A/B 结论（2026-11-01，Edge 156 + ANGLE D3D11 / RTX 3070 Ti，
-## 见 tmp/webbuild_ab/REPORT.md / verdict.json）：
-##   world_map 首次编译：A(裁 micro，即 WORLD_MAP_WEB_PREFIX) 均值 5417ms
-##   （5208–5615）vs B(micro=shared) 4582ms（4347–4880）→ micro 变体**不慢反快 -15%**；
-##   总 warmup 36978ms → 34934ms（-5.5%），boot/menu 噪声内不变；21/21 张编译成功、
-##   无 JS/GL 错误；历史上 20.7s 的寄存器压力悬崖在当前重构后的 shader 上**不复现**
-##   （B 组 plan 指纹 26 字节恰为 NO_MICRO 定义行，证明两组编的是不同前缀）。
-## 因此 web 上**默认启用**本变体；URL `?micro=off|0|false` 是 kill-switch，可回退到
-## WORLD_MAP_WEB_PREFIX（NO_MICRO）。见 web_map_web_prefix_active()。
-const WORLD_MAP_WEB_PREFIX_MICRO := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE \
-	+ WORLD_MAP_WEB_MIN_DEFINE \
-	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
-
-## [C 2026-11-01] micro 开关的 boot 缓存（与 pk_web_pc_high_boot 同模式）：
-## 值为「共享 Web 陆地程序是否含 micro 层」。web 默认 true；URL `micro=off|0|false`
-## 回退 false（kill-switch）；`micro=shared|on` 显式 true（与默认等价）。非 web 恒 false
-## （桌面 Compatibility 维持 NO_MICRO 旧变体，与本次 A/B 无关）。boot 后固定，避免
-## 游戏中途切 URL 触发驱动重编（WebGL 没有 program binary 缓存）。
-const PK_WEB_MICRO_BOOT_META: StringName = &"pk_web_micro_boot"
-
-## URL `micro` 参数 → 是否启用 micro 的纯映射（无 OS 副作用，便于测试）：
-##   off / 0 / false（大小写、空白不敏感）→ false（kill-switch）；
-##   其它（含缺省 / unknown / shared / on）→ true（默认放开 micro，见上方 A/B 结论）。
 static func micro_url_value_enabled(raw: String) -> bool:
-	var value := String(raw).strip_edges().to_lower()
-	if value == "off" or value == "0" or value == "false":
-		return false
-	return true
+	return RendererShaderWater.micro_url_value_enabled(raw)
 
-
-## 共享 Web 陆地程序是否启用 micro。非 web 恒 false；web 默认 true（A/B 结论），
-## URL `micro=off|0|false` 回退。结果缓存在 Engine meta（boot 固定）；测试可用
-## Engine meta 预置来模拟 web 的两种取值。
 static func web_map_micro_url_enabled() -> bool:
-	if Engine.has_meta(PK_WEB_MICRO_BOOT_META):
-		return bool(Engine.get_meta(PK_WEB_MICRO_BOOT_META))
-	if not OS.has_feature("web"):
-		Engine.set_meta(PK_WEB_MICRO_BOOT_META, false)
-		return false
-	var raw := ""
-	if Engine.has_singleton("JavaScriptBridge"):
-		var bridge: Object = Engine.get_singleton("JavaScriptBridge")
-		if bridge != null:
-			raw = String(bridge.call("eval",
-				"new URLSearchParams(window.location.search).get('micro') || ''"))
-	var enable := micro_url_value_enabled(raw)
-	Engine.set_meta(PK_WEB_MICRO_BOOT_META, enable)
-	return enable
+	return RendererShaderWater.web_map_micro_url_enabled()
 
-
-## 运行期与预热共用的「当前 Web 共享陆地程序前缀」：web 默认 = MICRO 变体；
-## kill-switch / 非 web = WORLD_MAP_WEB_PREFIX（NO_MICRO）。两处必须都调这个函数
-## （见 WebShaderWarmup.world_map_prefix_active），保证「预热 = 运行期」逐字节一致。
 static func web_map_web_prefix_active() -> String:
-	return WORLD_MAP_WEB_PREFIX_MICRO if web_map_micro_url_enabled() else WORLD_MAP_WEB_PREFIX
-
-## HIGH uses the PC surface code, with only WebGL sampler limits and split draws.
-## HIGH 陆地 pass 不 include 水面管线（水面整段走 WATER_WEB_HIGH_PREFIX 的独立第二 pass），
-## 启用 horizon 解码；noise_tex 恢复后两片共用同一采样器名额。
-const WORLD_MAP_WEB_HIGH_BASE := PK_WEB_TEXTURE_BUDGET_DEFINE + "#define PK_WEB_PC_HIGH\n"
-const WORLD_MAP_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_SPLIT_WATER\n" \
-	+ WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
-const WATER_WEB_HIGH_PREFIX := WORLD_MAP_WEB_HIGH_BASE + "#define PK_WEB_WATER_ONLY\n"
-
-func _web_pc_high_active() -> bool:
-	if not OS.has_feature("web") or not DCFeatureFlags.is_compatibility_renderer():
-		return false
-	# A runtime settings toggle must stay on the already compiled shared Web
-	# program. Full PC HIGH is selected only when the page requested it before
-	# world creation; compiling a new ANGLE program during play freezes the tab.
-	if not Engine.has_meta("pk_web_pc_high_boot"):
-		var requested := false
-		if Engine.has_singleton("JavaScriptBridge"):
-			var bridge: Object = Engine.get_singleton("JavaScriptBridge")
-			if bridge != null:
-				var raw: Variant = bridge.call("eval", "new URLSearchParams(window.location.search).get('quality') || ''")
-				requested = String(raw).to_lower() == "high"
-		Engine.set_meta("pk_web_pc_high_boot", requested)
-	return visual_quality >= 2 and bool(Engine.get_meta("pk_web_pc_high_boot", false))
-
-
-func _cloud_shadow_direct_active() -> bool:
-	return CloudShadowFieldScript.direct_mode_for_quality(
-		visual_quality,
-		OS.has_feature("mobile") or OS.has_feature("web"),
-		_mobile_quality_tier_define)
-
-
-## 只对「Compatibility 后端 + MOBILE_QUALITY_LOW 档」启用裁剪。
-## 中/高档 web 仍保留 ctx.quality>=1 的水体分支，绝不跟着裁（否则会掉水面细节）；
-## 宏链万一接错，shader 侧 #ifndef PK_QUALITY_LOW 的 #error 会立刻炸出来。
-func _world_map_web_min_active() -> bool:
-	return DCFeatureFlags.uses_shader_quality_tier() \
-		and DCFeatureFlags.is_compatibility_renderer() \
-		and _mobile_quality_tier_define == "MOBILE_QUALITY_LOW" \
-		and not _web_pc_high_active()
-
-
-# ─── [web-water-pass] 水面第二 pass（web 专属）─────────────────────────────
-# 为什么（实测）：world_map 的 fragment 里「陆地管线 + 水面管线」两个着色来源同时
-# 存在时，ANGLE/D3D11 上 FXC 的联合编译是 **20 291 ms**；只留陆地 2 473 ms、只留
-# 水面 1 089 ms；而把水面换成只有 25 行的"紧凑版"仍有 **17 264 ms**（无分支 mix 版
-# 18 060 ms）——悬崖与第二个来源的行数无关，是寄存器压力型的非线性。唯一有效做法
-# 是让那个 fragment 只剩一个着色来源：水面整屏 quad 改成第二个 pass。
-# 详细对账见 shaders/world_water_web.gdshader 文件头。
-const WATER_SHADER_PATH := "res://shaders/world_water_web.gdshader"
-## web-LOW 水面 pass 的**完整**编译前缀（运行期与菜单期预热的唯一真源）。
-## 与 WORLD_MAP_WEB_PREFIX 同构但**不含** PK_WEB_WORLD_MIN：那个宏只对 world_map 的
-## 裁剪有意义，水面 pass 本身就是被拆出去的那一半。少一个宏 = 驱动缓存不命中 =
-## 菜单期那 1.1 s 预热白做，所以只能有一份字面量。
-const WATER_PASS_PREFIX := QUALITY_PREFIX_LOW + PK_WEB_TEXTURE_BUDGET_DEFINE
-
-## [land-water-split 2026-11-02] 桌面 / 移动的陆地 / 水面双 program 宏。Web 侧的
-## PK_WEB_LAND_ONLY / PK_WEB_WATER_ONLY 前缀常量**一个字节都不动**，只有新增平台用这两个。
-const SPLIT_LAND_ONLY_DEFINE := "#define PK_LAND_ONLY\n"
-const SPLIT_WATER_ONLY_DEFINE := "#define PK_WATER_ONLY\n"
-const WORLD_MAP_SHADER_PATH := "res://shaders/world_map.gdshader"
-
-## [land-water-split 2026-11-02] 拆分总闸：全平台默认开；debug 视图与
-## （Compatibility + tiled）自动回退单 program。同时被陆地变体（PK_LAND_ONLY）
-## 与水面 pass（_water_pass_active）共同引用 —— 两处必须同源，否则会半边拆分。
-func _split_active() -> bool:
-	if not split_land_water_passes:
-		return false
-	if _split_program_failed:
-		return false
-	if terrain_surface_debug_view != 0:
-		return false
-	# 桌面 GLES3 的 tiled 诊断路径：预算 8 槽装不下两张 program 的完整采样集，
-	# 且该组合只在桌面手工选 Compatibility 时出现，回退单 program。
-	if DCFeatureFlags.is_compatibility_renderer() and _visual_tiles_active():
-		return false
-	return true
-
-
-## 水面第二 pass 是否应该存在。Web 的既有判定原样保留（作为拆分判定的子集）：
-## 只有 world-min（LOW）与 PC-HIGH 这两份 world_map 变体才把水面像素交给第二 pass；
-## Web MID 的 world_map 自己画水（今天的行为，不新增 program）。
-## 桌面 / 移动：拆分激活即始终有水面 pass（陆地 program 只画陆地）。
-func _water_pass_active() -> bool:
-	if not _split_active():
-		return false
-	if OS.has_feature("web"):
-		return DCFeatureFlags.is_compatibility_renderer() \
-			and (_world_map_web_min_active() or _web_pc_high_active())
-	return true
-
-
-## 测试 / 诊断用强制水面 program 种类（"" = 按平台判定）。生产路径恒为 ""。
-var _forced_water_program_kind: String = ""
-
-## 当前水面 pass 的源码种类（见 _water_program_kind 注释）。"" = 当前不应存在水面 pass。
-func _resolved_water_program_kind() -> String:
-	if not _forced_water_program_kind.is_empty():
-		return _forced_water_program_kind
-	if _web_pc_high_active():
-		return "high"
-	if _world_map_web_min_active():
-		return "web_min"
-	if not OS.has_feature("web") and _water_pass_active():
-		return "split"
-	return ""
-
-
-## 水面 program 的编译前缀。Web 两类沿用既有常量（字节契约）；桌面 / 移动按
-## [MAP_VISUAL_TILED] + [MOBILE_QUALITY_*] + [PK_WEB_TEXTURE_BUDGET（仅 Compatibility）]
-## + "#define PK_WATER_ONLY\n" 拼装（与陆地变体同一套顺序，便于测试逐段断言）。
-func _water_program_prefix(kind: String) -> String:
-	var prefix := "#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else ""
-	if kind == "high":
-		return prefix + WATER_WEB_HIGH_PREFIX
-	if kind == "web_min":
-		# 紧凑水面程序：MAP_VISUAL_TILED 之外只有 WATER_PASS_PREFIX（_create_water_quad 追加）。
-		return prefix
-	if kind != "split":
-		return prefix
-	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
-		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
-	else:
-		prefix += _desktop_sky_quality_prefix()
-	if DCFeatureFlags.is_compatibility_renderer():
-		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
-	if _cloud_shadow_direct_active():
-		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-	prefix += SPLIT_WATER_ONLY_DEFINE
-	return prefix
-
-
-## [land-water-split 2026-11-02] 世界地图材质的统一 uniform 推送口。
-## 陆地材质 _shader_mat 是权威；拆分后水面 program 必须与陆地**逐项同值**，否则两片
-## 之间会有色差。这里把键值同时镜像给水面材质（只在它真的声明过该键时写，紧凑水的
-## uniform 集合与主材质不同）。运行期 94 个 setter 的推送全部经过本函数，
-## 保证 season / TOD / fog / 羊皮纸 / camera zoom / water 调参 / LUT 等不会只到一半。
-func _push_world_uniform(key: Variant, value: Variant) -> void:
-	var key_name := StringName(key)
-	if _shader_mat != null:
-		_shader_mat.set_shader_parameter(key_name, value)
-	if _water_mat != null and not _water_uniform_names.is_empty() \
-			and _water_uniform_names.has(key_name):
-		_water_mat.set_shader_parameter(key_name, value)
-
-
-func _global_sky_day_weight() -> float:
-	if not day_night_enabled:
-		return 1.0
-	return smoothstep(-0.14, 0.14, sin(6.283185307179586 * _day_phase))
-
-func configure_shader_clock(apply: Callable) -> void:
-	_apply_shader_clock = apply
-	if _apply_shader_clock.is_valid():
-		_apply_shader_clock.call(shader_days_per_game_year)
-
-
-func _push_eternal_daylight_uniforms() -> void:
-	var min_elevation := deg_to_rad(eternal_min_elevation_deg)
-	var max_hour_angle := deg_to_rad(eternal_max_hour_angle_deg)
-	_push_world_uniform("eternal_min_elevation_rad", min_elevation)
-	_push_world_uniform("eternal_max_hour_angle_rad", max_hour_angle)
-	_push_water_lighting_uniforms()
-	if _building_visual_layer != null and _building_visual_layer.has_method("set_eternal_daylight_parameters"):
-		_building_visual_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
-	if _weather_layer != null and _weather_layer.has_method("set_eternal_daylight_parameters"):
-		_weather_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
-	if _fog_layer != null and _fog_layer.has_method("set_eternal_daylight_parameters"):
-		_fog_layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
-	_for_each_vegetation_layer(func(layer) -> void:
-		if layer.has_method("set_eternal_daylight_parameters"):
-			layer.set_eternal_daylight_parameters(min_elevation, max_hour_angle)
-	)
-	_sync_detail_and_activity_materials()
-
-
-func _bind_world_lighting_profile() -> void:
-	if _sky_background != null:
-		var bounds := _world.world_bounds if _world != null else Rect2()
-		_sky_background.setup(bounds, world_lighting_profile, _day_phase, day_night_enabled)
-	if _shader_mat != null:
-		_push_world_lighting_profile()
-
-
-func _push_world_lighting_profile() -> void:
-	RendererLightingBindings._push_world_lighting_profile(
-		_building_visual_layer,
-		_day_phase,
-		_detail_family_layer,
-		_military_visual_layer,
-		_resource_visual_layer,
-		_shader_mat,
-		_sky_background,
-		_trade_visual_layer,
-		_water_mat,
-		_world,
-		day_night_enabled,
-		world_lighting_profile,
-		_for_each_vegetation_layer,
-		_global_sky_day_weight,
-		_push_world_uniform,
-		_shader_declares_uniform)
-
-
-func _shader_declares_uniform(shader: Shader, uniform_name: StringName) -> bool:
-	if shader == null:
-		return false
-	for uniform in shader.get_shader_uniform_list():
-		if StringName(uniform.get("name", "")) == uniform_name:
-			return true
-	return false
-
-
-const WATER_PARAM_NAMES: Array[StringName] = [
-	&"water_effect_enabled",
-	&"ocean_current_enabled",
-	&"water_waves_enabled",
-	&"water_fresnel_enabled",
-	&"water_sparkle_enabled",
-	&"caustics_enabled",
-	&"shallow_transparency_enabled",
-	&"water_flow_wave_density",
-	&"water_flow_advection",
-	&"water_flow_wave_amplitude",
-	&"water_flow_crest_strength",
-	&"water_mark_strength",
-	&"water_mark_coverage",
-	&"water_base_normal_strength",
-	&"water_base_normal_scale",
-	&"water_wave_shade_strength",
-	&"water_ripple_strength",
-	&"water_ripple_detail_mix",
-	&"water_ripple_scale",
-	&"water_flow_drift_base",
-	&"water_flow_drift_current",
-	&"water_mark_length",
-	&"water_mark_speed",
-	&"water_rough_min",
-	&"water_rough_max",
-	&"water_rough_scale",
-	&"water_rough_coverage",
-	&"ocean_current_strength",
-	&"water_reflection_strength",
-	&"water_sss_strength",
-	&"water_sss_power",
-	&"water_sss_color",
-	&"caustics_strength",
-	&"shallow_transparency_factor",
-	&"deep_ocean_contrast",
-	&"deep_ocean_color_richness",
-	&"deep_ocean_current_tint_strength",
-	&"deep_ocean_latitude_tint_strength",
-	&"deep_ocean_abyss_tint_strength",
-	&"deep_ocean_patch_boost",
-	&"water_cartoon_color_strength",
-	&"water_calm_noise_brightness",
-	&"water_calm_noise_tint_strength",
-	&"water_wave_line_strength",
-	&"water_domain_warp_strength",
-	&"water_biome_blend_radius",
-	&"water_transition_softness",
-	&"estuary_plume_strength",
-	&"lake_water_color",
-	&"river_flow_enabled",
-	&"river_flow_speed",
-	&"river_flow_freq",
-	&"water_wave_patch_strength",
-	&"water_wave_patch_scale",
-	&"water_detail_normal_strength",
-	&"water_detail_normal_scale",
-	&"water_detail_normal_warp",
-]
-
-## 水面参数的运行期推送：_shader_mat 还没创建（场景反序列化阶段）时安全跳过，
-## 之后由 _push_water_params_to() 补推初值。
-func _push_water_param(key: StringName, value: Variant) -> void:
-	if _shader_mat != null:
-		_push_world_uniform(key, value)
-
-
-## 调试控制台 / GM 面板用的两个总开关入口（属性本身已带内联 setter，这里只多刷一次光照 uniform）。
-func set_water_effect_enabled(v: bool) -> void:
-	water_effect_enabled = v
-	_push_water_lighting_uniforms()
-
-
-func set_ocean_current_enabled(v: bool) -> void:
-	ocean_current_enabled = v
-	_push_water_lighting_uniforms()
-
-
-## 把全部水面参数一次推给指定材质（主地形材质 / 独立水面材质）。
-func _push_water_params_to(sm: ShaderMaterial) -> void:
-	if sm == null:
-		return
-	for n in WATER_PARAM_NAMES:
-		sm.set_shader_parameter(n, get(n))
-
-
-
-## 拆分状态 / 覆盖 mesh 开关翻转后的统一重建入口：重新选 program 变体 + 重铺几何
-## + 重推全部 uniform（其末尾会按新的拆分状态建/拆水面 pass）。
-func _refresh_split_configuration() -> void:
-	if not is_inside_tree() or _world_quad == null:
-		return
-	if _map == null or _world == null:
-		return
-	_load_shader()
-	_apply_world_quad_geometry()
-	if _shader_mat != null:
-		_apply_uniforms()
-
-
-## 水面 program shader 变体编不过 → 整条拆分回退单 program（推迟到下一帧，避免在
-## _sync_water_quad 的内部重入 _apply_uniforms）。只用于非 Web；Web 保持既有的
-## "land-only + 暗海蓝占位"降级。
-func _apply_split_program_fallback() -> void:
-	if not _split_program_failed:
-		return
-	if _world_quad == null or _shader_mat == null:
-		return
-	push_warning("[hex_renderer/land-water-split] water program failed to compile; "
-		+ "falling back to the single terrain program")
-	_load_shader()
-	if _map == null or _world == null:
-		return
-	_apply_world_quad_geometry()
-	if _shader_mat != null:
-		_apply_uniforms()
-
-
-## 建/拆 + 几何 + uniform 全量对齐。调用点只有 _apply_uniforms() 末尾：
-## 材质重建（_load_shader）、画质换档（set_mobile_quality_tier）、set_map(_cooperative)
-## 都会经过 _apply_uniforms，所以这里不需要额外的调用点。稳态下是几次引用比较。
-func _sync_water_quad() -> void:
-	if not _water_pass_active() or _world_quad == null or _world == null \
-			or _water_pass_failed:
-		_drop_water_quad()
-		return
-	_ensure_water_quad()
-
-
-## 无条件保证「节点存在 + 几何/树序/变体正确 + uniform 全量推送」。
-## 与平台判定（_water_pass_active）分开，是为了让测试能直接驱动这条创建路径
-## （见 tests/world/web_water_pass_node_test.gd / land_water_split_node_test.gd）。
-func _ensure_water_quad() -> void:
-	var kind := _resolved_water_program_kind()
-	# tiled 布局切换会换掉 map_index/height 的 sampler **类型**（sampler2D ↔
-	# sampler2DArray），variant 必须跟着重编；画质换档会换 MOBILE_QUALITY_* 前缀。
-	# 两个维度任一变化都重建，不能复用旧的材质。稳态下是两次字符串比较。
-	var prefix := _water_program_prefix(kind)
-	if _water_quad != null and (_water_variant_prefix != prefix or _water_variant_kind != kind):
-		_drop_water_quad()
-	if _water_quad == null:
-		_create_water_quad(prefix, kind)
-	if _water_quad == null or not is_instance_valid(_water_quad):
-		return
-	_water_quad.mesh = _water_quad_mesh(_world_quad.mesh)
-	_water_quad.visible = _world_quad.visible
-	_apply_water_uniforms()
-
-
-## 拆分时水面 mesh 用覆盖 mesh；未启用 / 构建失败 ⇒ 与陆地共享整张 quad。
-func _water_quad_mesh(fallback: Mesh) -> Mesh:
-	if _coverage_water_mesh != null:
-		return _coverage_water_mesh
-	return fallback
-
-
-## 拆掉第二 pass 的节点与材质。先隐藏再 queue_free：queue_free 到帧末才生效，
-## 不隐藏的话换档那一帧还会按旧变体多画一次水面。
-func _drop_water_quad() -> void:
-	if _water_quad != null:
-		_water_quad.visible = false
-		_water_quad.queue_free()
-		_water_quad = null
-	_water_mat = null
-	_water_variant_prefix = ""
-	_water_variant_kind = ""
-	_water_program_kind = ""
-	_water_uses_world_map = false
-	_water_uniform_names.clear()
-
-
-func _create_water_quad(prefix: String, kind: String) -> void:
-	# 刻意用 ResourceLoader.load 而不是 preload 常量：preload 是编译期的，桌面端
-	# 也会把这份 shader 资源拉进依赖图。只有水面 pass 真的存在时才执行。
-	var world_map_based := kind != "web_min"
-	var water_path := WORLD_MAP_SHADER_PATH if world_map_based else WATER_SHADER_PATH
-	var shader := ResourceLoader.load(
-		water_path, "Shader", ResourceLoader.CACHE_MODE_IGNORE) as Shader
-	if shader == null:
-		push_warning("HexRenderer: water pass shader missing at %s" % water_path)
-		return
-	var variant := shader.duplicate() as Shader
-	# tiled 与否必须与 world_map 用同一个宏（visual_tile_sampling 据此在
-	# sampler2D / sampler2DArray 之间二选一）；quality / texture-budget / WATER_ONLY
-	# 已在 prefix 里。紧凑水面程序再追加自己的 WATER_PASS_PREFIX（字节契约）。
-	variant.code = prefix + ("" if world_map_based else WATER_PASS_PREFIX) + shader.code
-	# 编译自检：shader 语言层编不过时 get_shader_uniform_list() 返回空。桌面/移动
-	# 此时**整条拆分回退单 program**（不能只回退一半：陆地 program 此时不带水面分支，
-	# 只回退水会露出空洞）。Web 维持既有降级：不建第二 pass，屏幕是 pass 1 的暗海蓝
-	# 占位色（可控、可读）。驱动层失败（FXC）这里抓不到，那种情况同样退回占位色。
-	if variant.get_shader_uniform_list().is_empty():
-		_water_pass_failed = true
-		push_error("HexRenderer: water pass shader failed to compile (%s, kind=%s, prefix=%s)"
-			% [water_path, kind, prefix.replace("\n", "|")])
-		if not OS.has_feature("web"):
-			_split_program_failed = true
-			call_deferred("_apply_split_program_fallback")
-		return
-	_water_variant_prefix = prefix
-	_water_variant_kind = kind
-	_water_program_kind = kind
-	_water_uses_world_map = world_map_based
-	_water_uniform_names.clear()
-	for param in variant.get_shader_uniform_list():
-		_water_uniform_names[StringName(param.name)] = true
-	_water_mat = ShaderMaterial.new()
-	_water_mat.shader = variant
-	_water_quad = MeshInstance2D.new()
-	_water_quad.name = "WorldWaterQuad"
-	# z_index 与 _world_quad 同为 0（CanvasItem 先按 z_index、再按树序绘制），树序由
-	# move_child 钉死在 _world_quad 紧后面 ⇒ 水面盖住陆地、又被植被(z=1)/建筑(z=3)盖住。
-	# 必须 move_child 而不是依赖 add_child 顺序：画质从 MID 换回 LOW 时本节点是**后来**
-	# 才创建的，直接 add_child 会排到植被层后面 → 水面盖住整片植被。
-	_water_quad.z_index = 0
-	# FPS 探针（toggle_world_shader_disabled）关闭主 shader 时，两片必须一起关。
-	_water_quad.material = null if _shader_disabled_by_toggle else _water_mat
-	add_child(_water_quad)
-	if is_instance_valid(_world_quad):
-		move_child(_water_quad, mini(_world_quad.get_index() + 1, get_child_count() - 1))
-	# 预热对账：label 必须与 WebShaderWarmup 清单里那份（文件名去扩展名）逐字一致，
-	# 否则 material_variant 事件永远对不上 warmup_shader 的 fp。桌面/移动拆分变体
-	# 没有预热条目（不在 web 上编），不打 label。
-	match kind:
-		"high":
-			WebTelemetry.note_variant("world_water_high", variant.code)
-		"web_min":
-			WebTelemetry.note_variant("world_water_web", variant.code)
-	print("[hex_renderer] water pass created (pass 2 of 2; kind=%s)" % kind)
-
-
-## 水面 pass 的 uniform 全量推送。web_min（紧凑水面）刻意只有 16 个（4 sampler +
-## 12 标量/vec），与 world_map 的 186 个无关：这是它的全部输入。
-## [land-water-split 2026-11-02] 走 world_map 的水面 program（Web HIGH / 桌面拆分）
-## 复用主材质的整表拷贝（与 Web HIGH 原有逻辑同一份），保证 season/TOD/fog/羊皮纸/
-## 光照/wrap/cell LUT/water_depth/noise 与陆地**逐项同值**；之后运行期的增量变化由
-## _push_world_uniform() 镜像。
-## 分工：几何/调色板/迷雾在各自已有的推送点补推（_push_fog_uniforms /
-## _push_cell_lut_dims / _sync_cell_lut_textures / setter），这里负责"材质重建后
-## 一次性把全部输入对齐"，与 _apply_uniforms() 的职责一一对应。
-func _apply_water_uniforms() -> void:
-	RendererLightingBindings._apply_water_uniforms(
-		_shader_mat,
-		_water_mat,
-		_water_uses_world_map,
-		_world,
-		parchment_strength,
-		parchment_tint,
-		terrain_ecotone_width,
-		terrain_surface_debug_view,
-		_push_visual_tile_layout_uniforms,
-		_push_water_fog_uniforms,
-		_push_water_lighting_uniforms,
-		_push_water_params_to,
-		_visual_tiles_active,
-		_wrap_period_x)
-
-
-func _push_water_lighting_uniforms() -> void:
-	if _water_mat == null:
-		return
-	_water_mat.set_shader_parameter("visual_quality", visual_quality)
-	_water_mat.set_shader_parameter("season_phase", _season_phase)
-	_water_mat.set_shader_parameter("day_phase", _day_phase)
-	_water_mat.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
-	_water_mat.set_shader_parameter("day_night_enabled", day_night_enabled)
-	_water_mat.set_shader_parameter("water_effect_enabled", water_effect_enabled)
-	_water_mat.set_shader_parameter("ocean_current_enabled", ocean_current_enabled)
-	_water_mat.set_shader_parameter("tod_sun_dir", _tod_sun_dir)
-	_water_mat.set_shader_parameter("tod_exposure", _tod_exposure)
-	_water_mat.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
-	_water_mat.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
-	_water_mat.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
-	_water_mat.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
-	_water_mat.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
-
-
-func _configure_cloud_shadow_field() -> void:
-	if _cloud_shadow_field == null:
-		return
-	if _weather_layer != null and not _cloud_shadow_field.wind_lut_changed.is_connected(_weather_layer.set_wind_luts):
-		_cloud_shadow_field.wind_lut_changed.connect(_weather_layer.set_wind_luts)
-	if _world == null or _map == null:
-		_cloud_shadow_field.clear_inputs()
-		_push_cloud_shadow_material_inputs()
-		return
-	var tiled := _visual_tiles_active()
-	_cloud_shadow_field.set_tuning(
-		cloud_shadow_strength_high,
-		cloud_shadow_strength_mid,
-		cloud_shadow_strength_low,
-		cloud_shadow_coverage_gain,
-		cloud_shadow_motion_speed,
-		cloud_shadow_shape_contrast,
-		cloud_shadow_noise_warp,
-		cloud_shadow_mask_bias,
-		cloud_shadow_cell_scale,
-		cloud_shadow_world_scale,
-		cloud_shadow_erosion,
-		cloud_shadow_uv_scroll_gain,
-		cloud_shadow_dynamic_detail_gain,
-		cloud_shadow_dynamic_warp_gain,
-		cloud_shadow_edge_softness,
-		cloud_shadow_wind_influence)
-	_cloud_shadow_field.configure(
-		_world.world_bounds,
-		_world,
-		_map,
-		_world.visual_tiles if tiled else null,
-		_wrap_period_x(),
-		visual_quality,
-		_mobile_quality_tier_define,
-		_cloud_shadow_direct_active(),
-		2.0 * hex_size)
-	_cloud_shadow_field.set_world_time(_world_time)
-	_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
-	_cloud_shadow_field.set_debug_view(cloud_shadow_debug_view)
-
-
-func _push_cloud_shadow_tuning() -> void:
-	if _cloud_shadow_field == null:
-		return
-	_cloud_shadow_field.set_tuning(
-		cloud_shadow_strength_high,
-		cloud_shadow_strength_mid,
-		cloud_shadow_strength_low,
-		cloud_shadow_coverage_gain,
-		cloud_shadow_motion_speed,
-		cloud_shadow_shape_contrast,
-		cloud_shadow_noise_warp,
-		cloud_shadow_mask_bias,
-		cloud_shadow_cell_scale,
-		cloud_shadow_world_scale,
-		cloud_shadow_erosion,
-		cloud_shadow_uv_scroll_gain,
-		cloud_shadow_dynamic_detail_gain,
-		cloud_shadow_dynamic_warp_gain,
-		cloud_shadow_edge_softness,
-		cloud_shadow_wind_influence)
-	_push_cloud_shadow_material_inputs()
-
-
-func _push_cloud_shadow_material_inputs() -> void:
-	if _cloud_shadow_field == null:
-		return
-	var direct_enabled := _cloud_shadow_direct_active()
-	var has_source: bool = _cloud_shadow_field.has_weather_source()
-	var field_texture: Texture2D = _cloud_shadow_field.get_field_texture() if has_source else null
-	var wrap_origin_uv: float = _cloud_shadow_field.get_wrap_origin_uv()
-	var wrap_period_uv: float = _cloud_shadow_field.get_wrap_period_uv()
-	for material in [_shader_mat, _water_mat]:
-		if material == null or material.shader == null:
-			continue
-		if material.shader.code.contains("#define PK_CLOUD_SHADOW_DIRECT"):
-			if field_texture != null:
-				material.set_shader_parameter("cloud_shadow_tex", field_texture)
-			material.set_shader_parameter("cloud_shadow_field_bound", direct_enabled and has_source)
-			material.set_shader_parameter("cloud_shadow_strength", _cloud_shadow_field.get_strength())
-			material.set_shader_parameter("cloud_shadow_ambient_weight", cloud_shadow_ambient_weight)
-			material.set_shader_parameter("cloud_shadow_water_scale", cloud_shadow_water_scale)
-			material.set_shader_parameter("cloud_shadow_wrap_origin_uv", wrap_origin_uv)
-			material.set_shader_parameter("cloud_shadow_wrap_period_uv", wrap_period_uv)
-	if _building_visual_layer != null and _building_visual_layer.has_method("set_cloud_shadow_field"):
-		_building_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
-			wrap_origin_uv, wrap_period_uv)
-	if _resource_visual_layer != null and _resource_visual_layer.has_method("set_cloud_shadow_field"):
-		_resource_visual_layer.set_cloud_shadow_field(field_texture, direct_enabled,
-			wrap_origin_uv, wrap_period_uv)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_cloud_shadow_field"):
-			layer.set_cloud_shadow_field(field_texture, direct_enabled,
-				wrap_origin_uv, wrap_period_uv)
-	)
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) \
-			and _detail_family_layer.has_method("set_cloud_shadow_field"):
-		_detail_family_layer.set_cloud_shadow_field(field_texture, direct_enabled,
-			wrap_origin_uv, wrap_period_uv)
-
-
-## 迷雾口径与主地形**同一批值**：fog_k 来自同一张 enum_lut 的 A 通道，
-## fog_early_out / fog_gray 的开关也必须是同一份（_push_fog_uniforms 里调用）。
-## [land-water-split 2026-11-02] fog_unexplored_color 必须推：拆 mesh 后纯水 block
-## 没有陆地 pass 兜底，水面 program 要自己画同一个迷雾色（Web 紧凑水面程序同样声明
-## 了这个 uniform）。两片画同色是幂等的。
-func _push_water_fog_uniforms() -> void:
-	if _water_mat == null:
-		return
-	_water_mat.set_shader_parameter("fog_gray_enabled", _fog_enabled)
-	_water_mat.set_shader_parameter(
-		"fog_early_out_enabled", _effective_fog_early_out())
-	_water_mat.set_shader_parameter("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
-
-
-## [land-water-split 2026-11-02] 只给世界地图主材质加拆分宏（world_material 理论上
-## 可以指向别的 shader，那种情况不能被误加 PK_LAND_ONLY）。
-func _is_world_map_shader_path(path: String) -> bool:
-	if path == WORLD_MAP_SHADER_PATH or path == shader_path:
-		return true
-	return not path.is_empty() and path.get_file() == "world_map.gdshader"
-
-
-func _desktop_sky_quality_prefix() -> String:
-	if OS.has_feature("web") or DCFeatureFlags.is_compatibility_renderer() \
-			or not _mobile_quality_tier_define.is_empty():
-		return ""
-	match visual_quality:
-		1:
-			return "#define PK_SKY_QUALITY_MID\n"
-		2:
-			return "#define PK_SKY_QUALITY_HIGH\n"
-	return ""
-
-
-func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader:
-	if shader == null:
-		return null
-	if _web_pc_high_active():
-		var high_shader := shader.duplicate() as Shader
-		high_shader.code = ("#define MAP_VISUAL_TILED\n" if _visual_tiles_active() else "") \
-			+ WORLD_MAP_WEB_HIGH_PREFIX + shader.code
-		WebTelemetry.note_variant("world_map_high", high_shader.code)
-		return high_shader
-	var prefix := ""
-	if _visual_tiles_active():
-		prefix += "#define MAP_VISUAL_TILED\n"
-	if _is_world_map_shader_path(source_path):
-		prefix += _desktop_sky_quality_prefix()
-	if _cloud_shadow_direct_active() and _is_world_map_shader_path(source_path):
-		prefix += "#define PK_CLOUD_SHADOW_DIRECT\n"
-	# mobile/web 共用 MOBILE_QUALITY_* 编译期档（由 set_mobile_quality_tier 推送）。
-	if _mobile_quality_tier_define != "" and DCFeatureFlags.uses_shader_quality_tier():
-		prefix += _shader_quality_define_prefix(_mobile_quality_tier_define)
-	# [pk-web-texture-budget] Compatibility(GLES3/WebGL2) 后端只保证 16 个
-	# fragment 纹理单元；world_map.gdshader 是按桌面 Forward+/Mobile(32+) 预算
-	# 声明的 sampler 数量，超预算会在链接期报
-	# "texture image units count exceeds MAX_TEXTURE_IMAGE_UNITS(16)" 并整体
-	# 渲染失败。裁掉若干装饰性 sampler（terrain_micro / bounce_lut / upwelling /
-	# detail/edge/normal/water_depth/gi_occluder 等）。2026-08-06 起主地形不再
-	# 声明 eco_lut，腾出的槽给 terrain_material_tex；同日 height+flow 合并再省 1 槽。
-	if DCFeatureFlags.is_compatibility_renderer():
-		prefix += PK_WEB_TEXTURE_BUDGET_DEFINE
-		# [web-world-min] 只有 LOW 档才有裁过的变体。顺序必须与
-		# WORLD_MAP_WEB_PREFIX(_MICRO) 完全一致（quality → texture_budget → world_min →
-		# [no_micro] → land_only → horizon），否则运行期与预热前缀不同 → 驱动缓存不命中。
-		# [terrain-web-baked-surface] 两个吸收宏跟着 world-min 变体走：Web 上该变体就是
-		# 全部档位；桌面 Compatibility 的 MID/HIGH 仍走完整水面管线（没有第二 pass）。
-		# [C 2026-11-01] micro 默认**放开**（A/B 实测更快 -15%，见 WORLD_MAP_WEB_PREFIX_MICRO
-		# 注释）；只有 URL kill-switch（micro=off|0|false）或非 web 时才追加
-		# PK_PROBE_NO_MICRO。两条分支分别与 WORLD_MAP_WEB_PREFIX_MICRO / WORLD_MAP_WEB_PREFIX
-		# 逐字节一致，预热用同一函数（WebShaderWarmup.world_map_prefix_active）。
-		if _world_map_web_min_active():
-			prefix += WORLD_MAP_WEB_MIN_DEFINE
-			if not web_map_micro_url_enabled():
-				prefix += WORLD_MAP_WEB_NO_MICRO_DEFINE
-			prefix += WORLD_MAP_WEB_LAND_ONLY_DEFINE + WORLD_MAP_WEB_HORIZON_DEFINE
-	# [land-water-split 2026-11-02] 桌面 / 移动拆分：主材质只画陆地（水面第二 pass）。
-	# 与 Web 的关系：Web 的 land-only 宏由上面的字节契约常量给出，这里绝不追加
-	# PK_LAND_ONLY，保证 Web 变体前缀逐字不变、预热指纹仍对得上。
-	if not OS.has_feature("web") and _water_pass_active() and _is_world_map_shader_path(source_path):
-		prefix += SPLIT_LAND_ONLY_DEFINE
-	if prefix.is_empty():
-		return shader
-	var variant := shader.duplicate() as Shader
-	variant.code = prefix + shader.code
-	print("[hex_renderer/variant] tiled=%s quality=%s web_texture_budget=%s web_world_min=%s shader=%s" % [
-		_visual_tiles_active(), _mobile_quality_tier_define,
-		DCFeatureFlags.is_compatibility_renderer(), _world_map_web_min_active(), source_path])
-	return variant
-
-
-# Shader quality tier（mobile/web）：由 player_game / main._push_visual_toggles 推过来。
-# 空字符串 = 桌面端 / 不 prepend define。可选值 "MOBILE_QUALITY_LOW" / "MID" / "HIGH"。
+	return RendererShaderWater.web_map_web_prefix_active()
+
+func _web_pc_high_active() -> bool: return RendererShaderWater._web_pc_high_active(self)
+
+func _cloud_shadow_direct_active() -> bool: return RendererShaderWater._cloud_shadow_direct_active(self)
+
+func _world_map_web_min_active() -> bool: return RendererShaderWater._world_map_web_min_active(self)
+
+func _split_active() -> bool: return RendererShaderWater._split_active(self)
+
+func _water_pass_active() -> bool: return RendererShaderWater._water_pass_active(self)
+
+func _resolved_water_program_kind() -> String: return RendererShaderWater._resolved_water_program_kind(self)
+
+func _water_program_prefix(kind: String) -> String: return RendererShaderWater._water_program_prefix(self, kind)
+
+func _push_world_uniform(key: Variant, value: Variant) -> void: return RendererShaderWater._push_world_uniform(self, key, value)
+
+func _global_sky_day_weight() -> float: return RendererShaderWater._global_sky_day_weight(self)
+
+func configure_shader_clock(apply: Callable) -> void: return RendererShaderWater.configure_shader_clock(self, apply)
+
+func _push_eternal_daylight_uniforms() -> void: return RendererShaderWater._push_eternal_daylight_uniforms(self)
+
+func _bind_world_lighting_profile() -> void: return RendererShaderWater._bind_world_lighting_profile(self)
+
+func _push_world_lighting_profile() -> void: return RendererLightingBindings.push_world_lighting_profile(self)
+
+
+func _shader_declares_uniform(shader: Shader, uniform_name: StringName) -> bool: return RendererShaderWater._shader_declares_uniform(self, shader, uniform_name)
+
+func _push_water_param(key: StringName, value: Variant) -> void: return RendererShaderWater._push_water_param(self, key, value)
+
+func set_water_effect_enabled(v: bool) -> void: return RendererShaderWater.set_water_effect_enabled(self, v)
+
+func set_ocean_current_enabled(v: bool) -> void: return RendererShaderWater.set_ocean_current_enabled(self, v)
+
+func _push_water_params_to(sm: ShaderMaterial) -> void: return RendererShaderWater._push_water_params_to(self, sm)
+
+func _refresh_split_configuration() -> void: return RendererShaderWater._refresh_split_configuration(self)
+
+func _apply_split_program_fallback() -> void: return RendererShaderWater._apply_split_program_fallback(self)
+
+func _sync_water_quad() -> void: return RendererShaderWater._sync_water_quad(self)
+
+func _ensure_water_quad() -> void: return RendererShaderWater._ensure_water_quad(self)
+
+func _water_quad_mesh(fallback: Mesh) -> Mesh: return RendererShaderWater._water_quad_mesh(self, fallback)
+
+func _drop_water_quad() -> void: return RendererShaderWater._drop_water_quad(self)
+
+func _create_water_quad(prefix: String, kind: String) -> void: return RendererShaderWater._create_water_quad(self, prefix, kind)
+
+func _apply_water_uniforms() -> void: return RendererShaderWater._apply_water_uniforms(self)
+
+func _push_water_lighting_uniforms() -> void: return RendererShaderWater._push_water_lighting_uniforms(self)
+
+func _configure_cloud_shadow_field() -> void: return RendererShaderWater._configure_cloud_shadow_field(self)
+
+func _push_cloud_shadow_tuning() -> void: return RendererShaderWater._push_cloud_shadow_tuning(self)
+
+func _push_cloud_shadow_material_inputs() -> void: return RendererShaderWater._push_cloud_shadow_material_inputs(self)
+
+func _push_water_fog_uniforms() -> void: return RendererShaderWater._push_water_fog_uniforms(self)
+
+func _is_world_map_shader_path(path: String) -> bool: return RendererShaderWater._is_world_map_shader_path(self, path)
+
+func _desktop_sky_quality_prefix() -> String: return RendererShaderWater._desktop_sky_quality_prefix(self)
+
+func _apply_shader_variant_prefix(shader: Shader, source_path: String) -> Shader: return RendererShaderWater._apply_shader_variant_prefix(self, shader, source_path)
+
 var _mobile_quality_tier_define: String = ""
 
-func set_mobile_quality_tier(tier_define: String) -> void:
-	var veg_tier := _mobile_quality_tier_from_define(tier_define)
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_quality(visual_quality, veg_tier if not tier_define.is_empty() else -1)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_mobile_quality_tier(veg_tier)
-	)
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) and _map != null:
-		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
-		if detail_scatter_family_renderer_enabled and _camera_view_initialized:
-			_queue_missing_prefetch_detail_chunks()
-			_reactivate_deferred_detail_chunks()
-	_mark_detail_budget_total_dirty()
-	_apply_detail_global_budget()
-	if _weather_layer != null and _weather_layer.has_method("set_mobile_quality_tier"):
-		_weather_layer.set_mobile_quality_tier(tier_define)
-	if _fog_layer != null:
-		_fog_layer.set_mobile_quality_tier(tier_define)
-		_apply_fog_early_out()
-	if _mobile_quality_tier_define == tier_define:
-		return
-	_mobile_quality_tier_define = tier_define
-	# web：?tier=high 这类 QA 档也算「高画质」，档位变化后重算天气层画质门。
-	_apply_weather_layer_render_gate()
-	# 重新加载 shader 让 #define 生效（hot toggle 时也走这条）
-	if _shader_mat != null:
-		_load_shader()
-		# 关键：_load_shader 创建了新 ShaderMaterial 实例（disk source_mat.duplicate()），
-		# 原本的 atlas uniform (height_tex/enum_atlas/dyn_atlas_smooth_atlas 等) 都是 null。
-		# 必须重新 push 所有 uniform，否则 fragment 拿到 null texture → 输出全白 / 失败。
-		# bug fix（log_next.txt 2026-06-15 14:13 shader.dyn_atlas_smooth=<null> 即症状）。
-		if _map != null and _world != null and _shader_mat != null:
-			_apply_uniforms()
-	_configure_cloud_shadow_field()
-	_push_cloud_shadow_material_inputs()
+func set_mobile_quality_tier(tier_define: String) -> void: return RendererShaderWater.set_mobile_quality_tier(self, tier_define)
+
+func _mobile_quality_tier_from_define(tier_define: String) -> int: return RendererShaderWater._mobile_quality_tier_from_define(self, tier_define)
+
+func _shader_quality_define_prefix(tier_define: String) -> String: return RendererShaderWater._shader_quality_define_prefix(self, tier_define)
+
+func _for_each_vegetation_layer(callable: Callable) -> void: return RendererShaderWater._for_each_vegetation_layer(self, callable)
+
+func configure_trade_visuals(layer: TradeActivityLayer) -> void: return RendererShaderWater.configure_trade_visuals(self, layer)
+
+func configure_military_visuals(layer: MilitaryArmyTokenLayer) -> void: return RendererShaderWater.configure_military_visuals(self, layer)
+
+func _instance_daylight_parameters() -> Dictionary: return RendererShaderWater._instance_daylight_parameters(self)
+
+func _sync_trade_daylight() -> void: return RendererShaderWater._sync_trade_daylight(self)
+
+func _sync_military_daylight() -> void: return RendererShaderWater._sync_military_daylight(self)
+
+func _sync_detail_and_activity_materials() -> void: return RendererShaderWater._sync_detail_and_activity_materials(self)
+
+func set_simulation_speed_multiplier(multiplier: float) -> void: return RendererShaderWater.set_simulation_speed_multiplier(self, multiplier)
+
+func set_clock_running(running: bool) -> void: return RendererShaderWater.set_clock_running(self, running)
+
+func _effective_detail_enqueue_coalesce_ms() -> float: return RendererDetailScatter._effective_detail_enqueue_coalesce_ms(self)
 
 
-func _mobile_quality_tier_from_define(tier_define: String) -> int:
-	match tier_define:
-		"MOBILE_QUALITY_LOW":
-			return 0
-		"MOBILE_QUALITY_HIGH":
-			return 2
-		_:
-			return 1
+func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void: return RendererDetailScatter.queue_detail_scatter_refresh(self, indices)
 
+func _detail_all_family_mask() -> int: return RendererDetailScatter._detail_all_family_mask(self)
 
-func _shader_quality_define_prefix(tier_define: String) -> String:
-	# 只给「档位」宏，**绝不**在这里重复 #define PK_QUALITY_* / PK_MOBILE_ANY：
-	# shader_quality.gdshaderinc 已经按档位展开出这些别名，再定义一次会让 Godot 的
-	# shader 预处理器报重复定义 → shader type '' → 材质退回默认白纹理。
-	# web 上的表现就是"切到中/高画质地面全白"（低画质因为曾经修过所以正常）。
-	match tier_define:
-		"MOBILE_QUALITY_LOW":
-			return QUALITY_PREFIX_LOW
-		"MOBILE_QUALITY_HIGH":
-			return "#define MOBILE_QUALITY_HIGH\n#define PK_SHADER_TIER_HIGH\n"
-		_:
-			return "#define MOBILE_QUALITY_MID\n#define PK_SHADER_TIER_MID\n"
+func _detail_family_mask_for_change(changes, row: int) -> int: return RendererDetailScatter._detail_family_mask_for_change(self, changes, row)
 
+func _detail_profile_mask_for_change(changes, row: int) -> int: return RendererDetailScatter._detail_profile_mask_for_change(self, changes, row)
 
-func _for_each_vegetation_layer(callable: Callable) -> void:
-	for layer in _detail_layers:
-		if layer != null:
-			callable.call(layer)
+func queue_detail_scatter_changes(changes) -> void: return RendererDetailScatter.queue_detail_scatter_changes(self, changes)
 
+func _count_set_bits(value: int) -> int: return RendererDetailScatter._count_set_bits(self, value)
 
-## Player scene assembly supplies the independent read-only trade layer.
-func configure_trade_visuals(layer: TradeActivityLayer) -> void:
-	_trade_visual_layer = layer
-	if is_instance_valid(layer):
-		layer.set_terrain_lighting(_world, _shader_mat)
-		_sync_trade_daylight()
+func _dedup_detail_refresh_indices(indices: PackedInt32Array) -> PackedInt32Array: return RendererDetailScatter._dedup_detail_refresh_indices(self, indices)
 
+func _enqueue_detail_refresh_batches(indices: PackedInt32Array) -> void: return RendererDetailScatter._enqueue_detail_refresh_batches(self, indices)
 
-## Military formations are also a read-only map visual. Register them through
-## the renderer so they consume the same daylight/horizon state as terrain and
-## trade convoys instead of maintaining a second lighting authority.
-func configure_military_visuals(layer: MilitaryArmyTokenLayer) -> void:
-	_military_visual_layer = layer
-	if is_instance_valid(layer):
-		layer.set_visual_quality(visual_quality)
-		layer.set_terrain_lighting(_world, _shader_mat)
-		_sync_military_daylight()
-
-
-func _instance_daylight_parameters() -> Dictionary:
-	return {
-		"season_phase": _season_phase,
-		"day_phase": _day_phase,
-		"axial_tilt_rad": deg_to_rad(axial_tilt_deg),
-		"day_night_enabled": day_night_enabled,
-		"tod_debug_sun_position_enabled": _tod_debug_sun_position_enabled,
-		"tod_debug_sun_uv": _tod_debug_sun_uv,
-		"tod_debug_sun_height_scale": _tod_debug_sun_height_scale,
-		"eternal_min_elevation_rad": deg_to_rad(eternal_min_elevation_deg),
-		"eternal_max_hour_angle_rad": deg_to_rad(eternal_max_hour_angle_deg),
-		"tod_sun_dir": _tod_sun_dir,
-		"tod_exposure": _tod_exposure,
-	}
-
-
-func _sync_trade_daylight() -> void:
-	if not is_instance_valid(_trade_visual_layer):
-		return
-	_trade_visual_layer.set_daylight_parameters(
-		_instance_daylight_parameters())
-
-
-func _sync_military_daylight() -> void:
-	if not is_instance_valid(_military_visual_layer):
-		return
-	_military_visual_layer.set_daylight_parameters(
-		_instance_daylight_parameters())
-
-
-func _sync_detail_and_activity_materials() -> void:
-	_sync_trade_daylight()
-	_sync_military_daylight()
-	if is_instance_valid(_military_visual_layer):
-		_military_visual_layer.set_visual_quality(visual_quality)
-	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
-			and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.sync_dynamic_materials()
-
-
-func set_simulation_speed_multiplier(multiplier: float) -> void:
-	_simulation_speed_multiplier = maxf(0.0, multiplier)
-	_clock_speed_multiplier = _simulation_speed_multiplier
-
-
-func set_clock_running(running: bool) -> void:
-	_clock_running = running
-
-
-func _effective_detail_enqueue_coalesce_ms() -> float:
-	var base_ms := maxf(0.0, detail_scatter_enqueue_coalesce_ms)
-	if _simulation_speed_multiplier >= 20.0:
-		return maxf(base_ms, 400.0)
-	if _simulation_speed_multiplier >= 5.0:
-		return maxf(base_ms, 250.0)
-	return base_ms
-
-
-func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
-	var changes = DetailScatterChangeSetScript.new()
-	for raw_idx in indices:
-		changes.append_change(int(raw_idx), DetailScatterChangeSetScript.AXIS_UNKNOWN, 0, 0, 0, 0, 0, 0)
-	queue_detail_scatter_changes(changes)
-
-
-func _detail_all_family_mask() -> int:
-	var mask := 0
-	for layer in _detail_layers:
-		if layer != null and is_instance_valid(layer) and layer.has_method("detail_render_family_mask"):
-			mask |= int(layer.detail_render_family_mask())
-	return mask if mask != 0 else 0x1F
-
-
-func _detail_family_mask_for_change(changes, row: int) -> int:
-	var axis_mask := int(changes.axis_masks[row])
-	if (axis_mask & DetailScatterChangeSetScript.AXIS_UNKNOWN) != 0:
-		return _detail_all_family_mask()
-	var mask := 0
-	for layer in _detail_layers:
-		if layer == null or not is_instance_valid(layer) \
-				or not layer.has_method("detail_change_affects_profile"):
-			continue
-		if bool(layer.detail_change_affects_profile(
-				axis_mask,
-				int(changes.old_vegetation[row]), int(changes.new_vegetation[row]),
-				int(changes.old_landform[row]), int(changes.new_landform[row]),
-				int(changes.old_cover[row]), int(changes.new_cover[row])
-		)):
-			mask |= int(layer.detail_render_family_mask())
-	return mask
-
-
-func _detail_profile_mask_for_change(changes, row: int) -> int:
-	var axis_mask := int(changes.axis_masks[row])
-	if (axis_mask & DetailScatterChangeSetScript.AXIS_UNKNOWN) != 0:
-		return (1 << _detail_layers.size()) - 1
-	var mask := 0
-	for layer_idx in range(_detail_layers.size()):
-		var layer = _detail_layers[layer_idx]
-		if layer == null or not is_instance_valid(layer) \
-				or not layer.has_method("detail_change_affects_profile"):
-			continue
-		if bool(layer.detail_change_affects_profile(
-				axis_mask,
-				int(changes.old_vegetation[row]), int(changes.new_vegetation[row]),
-				int(changes.old_landform[row]), int(changes.new_landform[row]),
-				int(changes.old_cover[row]), int(changes.new_cover[row])
-		)):
-			mask |= 1 << layer_idx
-	return mask
-
-
-func queue_detail_scatter_changes(changes) -> void:
-	if changes == null or _detail_layers.is_empty() \
-			or not changes.has_method("is_well_formed") \
-			or not bool(changes.is_well_formed()) or bool(changes.is_empty()):
-		return
-	var affected_families := 0
-	for row in range(changes.cell_indices.size()):
-		var ci := int(changes.cell_indices[row])
-		if ci < 0:
-			continue
-		var generation := int(changes.generation)
-		var previous_generation := int(_scatter_cell_generations.get(ci, -1))
-		if generation >= 0 and previous_generation > generation:
-			_detail_stale_generation_drops += 1
-			continue
-		_scatter_cell_generations[ci] = maxi(previous_generation, generation)
-		var family_mask := _detail_family_mask_for_change(changes, row)
-		var profile_mask := _detail_profile_mask_for_change(changes, row)
-		if family_mask == 0 or profile_mask == 0:
-			continue
-		affected_families |= family_mask
-		# A layer can receive its first succession change before the camera has
-		# published a view. Treat that as offscreen until the view is known; this
-		# keeps the change deferred instead of eagerly rebuilding every family.
-		if not _detail_layers.is_empty():
-			var probe = _detail_layers[0]
-			if probe != null and is_instance_valid(probe) \
-					and probe.has_method("detail_chunk_id_for_cell") \
-					and probe.has_method("detail_chunk_is_in_prefetch"):
-				var chunk_id := int(probe.detail_chunk_id_for_cell(ci))
-				if chunk_id >= 0 and not bool(probe.detail_chunk_is_in_prefetch(chunk_id)):
-					_detail_deferred_chunks[chunk_id] = int(
-						_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
-					_detail_deferred_profile_masks[chunk_id] = int(
-						_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
-					_detail_offscreen_deferred_cells += 1
-					continue
-		var previous_mask := int(_scatter_cell_family_masks.get(ci, 0))
-		_scatter_cell_family_masks[ci] = previous_mask | family_mask
-		var previous_profile_mask := int(_scatter_cell_profile_masks.get(ci, 0))
-		_scatter_cell_profile_masks[ci] = previous_profile_mask | profile_mask
-		if _scatter_pending_seen.has(ci):
-			_detail_coalesced_cells += 1
-			continue
-		if _scatter_inflight.has(ci):
-			# 当前 batch 已经按旧 generation 建好任务；完成后只补跑一次最新状态。
-			_scatter_requeue_cells[ci] = true
-			_scatter_enqueue_dedup_skips += 1
-			continue
-		_scatter_pending_seen[ci] = true
-		_scatter_inflight[ci] = true
-		_scatter_pending_cells.append(ci)
-	_detail_affected_family_count = _count_set_bits(affected_families)
-	var now_msec := Time.get_ticks_msec()
-	var window_due := _scatter_last_enqueue_msec <= 0 or \
-		float(now_msec - _scatter_last_enqueue_msec) >= _effective_detail_enqueue_coalesce_ms()
-	if not window_due and _scatter_pending_cells.size() < detail_scatter_enqueue_max_pending_cells:
-		return
-	_scatter_last_enqueue_msec = now_msec
-	var flushed := _scatter_pending_cells
-	_scatter_pending_cells = PackedInt32Array()
-	_scatter_pending_seen.clear()
-	if _detail_refresh_batches.size() >= maxi(2, detail_scatter_merge_batch_threshold):
-		flushed = _merge_pending_detail_refresh_batches(flushed)
-	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(flushed))
-	if _detail_refresh_queue.is_empty():
-		_start_next_detail_refresh_batch()
-	_last_detail_refresh_report = {
-		"queued_chunks": _detail_refresh_queue.size(),
-		"queued_layers": _detail_layers.size(),
-		"dirty_cells": _detail_refresh_indices.size(),
-		"pending_batches": _detail_refresh_batches.size(),
-		"chunks_done": 0,
-		"layers_done": 0,
-		"batch_chunks": int(_last_detail_refresh_report.get("batch_chunks", 0)),
-		"elapsed_ms": 0.0,
-	}
-	if detail_scatter_refresh_log_enabled and PKLog.enabled:
-		print("[detail_scatter/QUEUE] succession active_cells=%d pending_batches=%d queued_chunks=%d chunks_per_frame=%d chunk_ms_budget=%.2f cells_per_batch=%d" % [
-			_detail_refresh_indices.size(),
-			_detail_refresh_batches.size(),
-			_detail_refresh_queue.size(),
-			maxi(1, detail_scatter_refresh_chunks_per_frame),
-			maxf(0.0, detail_scatter_refresh_apply_budget_ms),
-			maxi(1, detail_scatter_refresh_cells_per_batch),
-		])
-
-
-func _count_set_bits(value: int) -> int:
-	var count := 0
-	var bits := value
-	while bits != 0:
-		count += bits & 1
-		bits >>= 1
-	return count
-
-
-func _dedup_detail_refresh_indices(indices: PackedInt32Array) -> PackedInt32Array:
-	var seen := {}
-	var out := PackedInt32Array()
-	for v in indices:
-		var idx := int(v)
-		if seen.has(idx):
-			continue
-		seen[idx] = true
-		out.append(idx)
-	return out
-
-
-func _enqueue_detail_refresh_batches(indices: PackedInt32Array) -> void:
-	if indices.is_empty():
-		return
-	var batch_size := maxi(1, detail_scatter_refresh_cells_per_batch)
-	var current := PackedInt32Array()
-	for idx in indices:
-		current.append(int(idx))
-		if current.size() >= batch_size:
-			_detail_refresh_batches.append(current)
-			current = PackedInt32Array()
-	if not current.is_empty():
-		_detail_refresh_batches.append(current)
-
-
-# 积压合并：把待处理批次与新单元整体去重后返回一条流，调用方负责重新切批。
-# 已在 chunk 队列中的批次不动（本批即将 drain 完）。
-func _merge_pending_detail_refresh_batches(extra: PackedInt32Array) -> PackedInt32Array:
-	var seen := {}
-	var merged := PackedInt32Array()
-	for batch in _detail_refresh_batches:
-		for raw in batch:
-			var ci := int(raw)
-			if seen.has(ci):
-				continue
-			seen[ci] = true
-			merged.append(ci)
-	for raw in extra:
-		var ci := int(raw)
-		if seen.has(ci):
-			continue
-		seen[ci] = true
-		merged.append(ci)
-	_detail_refresh_batches.clear()
-	return merged
-
+func _merge_pending_detail_refresh_batches(extra: PackedInt32Array) -> PackedInt32Array: return RendererDetailScatter._merge_pending_detail_refresh_batches(self, extra)
 
 func _release_detail_refresh_inflight(cells: PackedInt32Array) -> void:
-	if _scatter_inflight.is_empty():
-		return
-	var requeue := PackedInt32Array()
-	for raw in cells:
-		var ci := int(raw)
-		_scatter_inflight.erase(ci)
-		if _scatter_requeue_cells.has(ci):
-			_scatter_requeue_cells.erase(ci)
-			_scatter_inflight[ci] = true
-			requeue.append(ci)
-			continue
-		_scatter_cell_family_masks.erase(ci)
-		_scatter_cell_profile_masks.erase(ci)
-	if not requeue.is_empty():
-		_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(requeue))
-
+	return RendererDetailScatter._release_detail_refresh_inflight(self, cells)
 
 func _reset_detail_refresh_plan() -> void:
-	_detail_plan_phase = DETAIL_PLAN_IDLE
-	_detail_plan_probe = null
-	_detail_plan_cursor = 0
-	_detail_plan_key_cursor = 0
-	_detail_plan_chunk_cursor = 0
-	_detail_plan_layer_cursor = 0
-	_detail_plan_dirty_chunks.clear()
-	_detail_plan_chunk_keys.clear()
-	_detail_plan_chunks.clear()
-	_detail_plan_had_chunk_plan = false
-	_detail_plan_fallback_profile_mask = 0
-	_detail_plan_all_family_mask = 0
-	_detail_plan_all_profile_mask = 0
-
+	return RendererDetailScatter._reset_detail_refresh_plan(self)
 
 func _begin_detail_refresh_plan() -> void:
-	_detail_refresh_indices = _detail_refresh_batches.pop_front()
-	_detail_refresh_queue.clear()
-	_reset_detail_refresh_plan()
-	_detail_plan_all_family_mask = _detail_all_family_mask()
-	_detail_plan_all_profile_mask = (1 << _detail_layers.size()) - 1
-	if detail_scatter_chunked_multimesh_enabled:
-		for layer in _detail_layers:
-			if layer != null and is_instance_valid(layer) \
-					and layer.has_method("detail_chunk_id_for_cell") \
-					and layer.has_method("detail_chunk_cells"):
-				_detail_plan_probe = layer
-				break
-	_detail_plan_phase = DETAIL_PLAN_COLLECT \
-		if _detail_plan_probe != null else DETAIL_PLAN_FALLBACK_COLLECT
-
+	return RendererDetailScatter._begin_detail_refresh_plan(self)
 
 func _detail_plan_should_yield(deadline_usec: int, items_done: int, max_items: int) -> bool:
-	if max_items > 0 and items_done >= max_items:
-		return true
-	return deadline_usec > 0 and items_done > 0 and Time.get_ticks_usec() >= deadline_usec
-
+	return RendererDetailScatter._detail_plan_should_yield(self, deadline_usec, items_done, max_items)
 
 func _continue_detail_refresh_plan(deadline_usec: int, max_items: int) -> void:
-	var items_done := 0
-	var enqueued_msec := Time.get_ticks_msec()
-	while _detail_plan_phase != DETAIL_PLAN_IDLE:
-		match _detail_plan_phase:
-			DETAIL_PLAN_COLLECT:
-				if _detail_plan_cursor < _detail_refresh_indices.size():
-					var cell_idx := int(_detail_refresh_indices[_detail_plan_cursor])
-					_detail_plan_cursor += 1
-					var chunk_id := int(_detail_plan_probe.detail_chunk_id_for_cell(cell_idx))
-					if chunk_id >= 0:
-						var dirty_indices: PackedInt32Array = _detail_plan_dirty_chunks.get(
-							chunk_id, PackedInt32Array())
-						dirty_indices.append(cell_idx)
-						_detail_plan_dirty_chunks[chunk_id] = dirty_indices
-					items_done += 1
-					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-						return
-					continue
-				_detail_plan_chunk_keys = _detail_plan_dirty_chunks.keys()
-				_detail_plan_chunk_keys.sort()
-				_detail_plan_had_chunk_plan = not _detail_plan_chunk_keys.is_empty()
-				_detail_plan_phase = DETAIL_PLAN_BUILD_CHUNKS \
-					if _detail_plan_had_chunk_plan else DETAIL_PLAN_FALLBACK_COLLECT
-				_detail_plan_cursor = 0
-
-			DETAIL_PLAN_BUILD_CHUNKS:
-				if _detail_plan_key_cursor < _detail_plan_chunk_keys.size():
-					var chunk_id := int(_detail_plan_chunk_keys[_detail_plan_key_cursor])
-					_detail_plan_key_cursor += 1
-					var dirty_indices: PackedInt32Array = _detail_plan_dirty_chunks[chunk_id]
-					var family_mask := 0
-					var profile_mask := 0
-					for raw_idx in dirty_indices:
-						family_mask |= int(_scatter_cell_family_masks.get(
-							int(raw_idx), _detail_plan_all_family_mask))
-						profile_mask |= int(_scatter_cell_profile_masks.get(
-							int(raw_idx), _detail_plan_all_profile_mask))
-					if family_mask == 0:
-						family_mask = _detail_plan_all_family_mask
-					if profile_mask == 0:
-						profile_mask = _detail_plan_all_profile_mask
-					var in_prefetch := true
-					if _detail_plan_probe.has_method("detail_chunk_is_in_prefetch"):
-						in_prefetch = bool(_detail_plan_probe.detail_chunk_is_in_prefetch(chunk_id))
-					if not in_prefetch:
-						_detail_deferred_chunks[chunk_id] = int(
-							_detail_deferred_chunks.get(chunk_id, 0)) | family_mask
-						_detail_deferred_profile_masks[chunk_id] = int(
-							_detail_deferred_profile_masks.get(chunk_id, 0)) | profile_mask
-						_detail_offscreen_deferred_cells += dirty_indices.size()
-					else:
-						var cell_indices: PackedInt32Array = _detail_plan_probe.detail_chunk_cells(chunk_id)
-						var visible := bool(_detail_plan_probe.detail_chunk_is_render_visible(chunk_id)) \
-							if _detail_plan_probe.has_method("detail_chunk_is_render_visible") else true
-						_detail_plan_chunks.append({
-							"chunk_id": chunk_id,
-							"cell_indices": cell_indices,
-							"dirty_indices": dirty_indices,
-							"dirty_cells": dirty_indices.size(),
-							"family_mask": family_mask,
-							"profile_mask": profile_mask,
-							"visible_priority": visible,
-							"distance_sq": _detail_chunk_center_from_cells(
-								cell_indices).distance_squared_to(_camera_world_center),
-						})
-					items_done += 1
-					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-						return
-					continue
-				_detail_plan_chunks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-					var a_visible := bool(a.get("visible_priority", true))
-					var b_visible := bool(b.get("visible_priority", true))
-					if a_visible != b_visible:
-						return a_visible
-					return float(a.get("distance_sq", 0.0)) < float(b.get("distance_sq", 0.0))
-				)
-				_detail_plan_phase = DETAIL_PLAN_BEGIN_LAYERS
-				_detail_plan_layer_cursor = 0
-
-			DETAIL_PLAN_BEGIN_LAYERS:
-				if _detail_plan_layer_cursor < _detail_layers.size():
-					var layer = _detail_layers[_detail_plan_layer_cursor]
-					_detail_plan_layer_cursor += 1
-					if layer != null and is_instance_valid(layer) \
-							and layer.has_method("begin_detail_chunk_refresh"):
-						layer.begin_detail_chunk_refresh()
-					items_done += 1
-					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-						return
-					continue
-				_detail_plan_phase = DETAIL_PLAN_BUILD_TASKS
-				_detail_plan_chunk_cursor = 0
-				_detail_plan_layer_cursor = 0
-
-			DETAIL_PLAN_BUILD_TASKS:
-				if _detail_plan_chunk_cursor >= _detail_plan_chunks.size():
-					_detail_plan_phase = DETAIL_PLAN_FINALIZE
-					continue
-				var chunk: Dictionary = _detail_plan_chunks[_detail_plan_chunk_cursor]
-				if _detail_plan_layer_cursor >= _detail_layers.size():
-					_detail_plan_chunk_cursor += 1
-					_detail_plan_layer_cursor = 0
-					continue
-				var layer_idx := _detail_plan_layer_cursor
-				_detail_plan_layer_cursor += 1
-				var profile_mask := int(chunk.get("profile_mask", _detail_plan_all_profile_mask))
-				if (profile_mask & (1 << layer_idx)) != 0:
-					var layer = _detail_layers[layer_idx]
-					if layer != null and is_instance_valid(layer) \
-							and layer.has_method("refresh_chunk_for_succession"):
-						_detail_refresh_queue.append({
-							"layer": layer,
-							"chunk_id": int(chunk.get("chunk_id", -1)),
-							"cell_indices": chunk.get("cell_indices", PackedInt32Array()),
-							"dirty_indices": chunk.get("dirty_indices", PackedInt32Array()),
-							"dirty_cells": int(chunk.get("dirty_cells", 0)),
-							"family_mask": int(chunk.get(
-								"family_mask", _detail_plan_all_family_mask)),
-							"family": int(layer.detail_render_family()) \
-								if layer.has_method("detail_render_family") else 0,
-							"profile_index": layer_idx,
-							"enqueued_msec": enqueued_msec,
-							"visible_priority": bool(chunk.get("visible_priority", true)),
-						})
-				items_done += 1
-				if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-					return
-
-			DETAIL_PLAN_FALLBACK_COLLECT:
-				if _detail_plan_cursor < _detail_refresh_indices.size():
-					var cell_idx := int(_detail_refresh_indices[_detail_plan_cursor])
-					_detail_plan_cursor += 1
-					_detail_plan_fallback_profile_mask |= int(_scatter_cell_profile_masks.get(
-						cell_idx, _detail_plan_all_profile_mask))
-					items_done += 1
-					if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-						return
-					continue
-				if _detail_plan_fallback_profile_mask == 0:
-					_detail_plan_fallback_profile_mask = _detail_plan_all_profile_mask
-				_detail_plan_layer_cursor = 0
-				_detail_plan_phase = DETAIL_PLAN_FALLBACK_TASKS
-
-			DETAIL_PLAN_FALLBACK_TASKS:
-				if _detail_plan_layer_cursor >= _detail_layers.size():
-					_detail_plan_phase = DETAIL_PLAN_FINALIZE
-					continue
-				var layer_idx := _detail_plan_layer_cursor
-				_detail_plan_layer_cursor += 1
-				if (_detail_plan_fallback_profile_mask & (1 << layer_idx)) != 0:
-					var layer = _detail_layers[layer_idx]
-					if layer != null and is_instance_valid(layer):
-						_detail_refresh_queue.append({
-							"layer": layer,
-							"profile_index": layer_idx,
-							"cell_indices": _detail_refresh_indices,
-							"enqueued_msec": enqueued_msec,
-							"visible_priority": true,
-						})
-				items_done += 1
-				if _detail_plan_should_yield(deadline_usec, items_done, max_items):
-					return
-
-			DETAIL_PLAN_FINALIZE:
-				var batch_chunk_count := _detail_plan_chunks.size()
-				_last_detail_refresh_report = {
-					"queued_chunks": _detail_refresh_queue.size(),
-					"queued_layers": _detail_layers.size(),
-					"dirty_cells": _detail_refresh_indices.size(),
-					"pending_batches": _detail_refresh_batches.size(),
-					"chunks_done": 0,
-					"layers_done": 0,
-					"batch_chunks": batch_chunk_count,
-					"elapsed_ms": 0.0,
-				}
-				_reset_detail_refresh_plan()
-				if _detail_refresh_queue.is_empty():
-					_release_detail_refresh_inflight(_detail_refresh_indices)
-					_detail_refresh_indices = PackedInt32Array()
-
+	return RendererDetailScatter._continue_detail_refresh_plan(self, deadline_usec, max_items)
 
 func _start_next_detail_refresh_batch(
 		deadline_usec: int = 0, max_plan_items: int = 0) -> bool:
-	if not _detail_refresh_queue.is_empty():
-		return true
-	if _detail_plan_phase == DETAIL_PLAN_IDLE:
-		if _detail_refresh_batches.is_empty():
-			_release_detail_refresh_inflight(_detail_refresh_indices)
-			_detail_refresh_indices = PackedInt32Array()
-			return false
-		_begin_detail_refresh_plan()
-	# queue_detail_scatter_changes 可在仿真 tick 内调用；零预算调用只初始化状态，
-	# 真正规划统一留到 HexRenderer._process 的帧尾预算段。
-	if deadline_usec != 0 or max_plan_items > 0:
-		_continue_detail_refresh_plan(deadline_usec, max_plan_items)
-	return not _detail_refresh_queue.is_empty() \
-		or _detail_plan_phase != DETAIL_PLAN_IDLE \
-		or not _detail_refresh_batches.is_empty()
-
+	return RendererDetailScatter._start_next_detail_refresh_batch(self, deadline_usec, max_plan_items)
 
 func _drain_detail_refresh_queue() -> void:
-	_last_detail_task_count = 0
-	_last_detail_forced_task_count = 0
-	_last_detail_max_task_ms = 0.0
-	_last_detail_plan_ms = 0.0
-	_last_detail_encode_ms = 0.0
-	_last_detail_cache_update_ms = 0.0
-	_last_detail_assemble_ms = 0.0
-	_last_detail_upload_ms = 0.0
-	var chunk_budget := maxi(1, detail_scatter_refresh_chunks_per_frame)
-	var ms_budget := maxf(0.01, detail_scatter_refresh_apply_budget_ms - _resource_visual_cpu_ms) \
-		if detail_scatter_refresh_apply_budget_ms > 0.0 else 0.0
-	# Reserve one of three shared upload opportunities for resources. Vegetation
-	# source/family work never uploads another buffer in the same opportunity.
-	if _resource_visual_layer != null and Engine.get_process_frames() % 3 == 0 \
-			and _resource_visual_layer.drain_one_upload():
-		return
-	# 信用制预算：每帧累积 ms_budget（上限 2× 防暴饮暴食）。严格闸门：信用不足
-	# 一整份预算时不启动新 chunk——单个 chunk 成本可超预算（water cache ≈4ms），
-	# 宽闸门（信用>0 即放行）会让贵 chunk 几乎每帧漏过，实测排水 3.5ms/帧远超
-	# 2.5ms 预算。防饿死：30 帧无进度则强制放行一个 chunk（兜底预算 < chunk 成本
-	# 的极端配置）。历史上该闸门曾与可视回归同时出现，事后查明回归根因是
-	# GDExt DLL 与烘焙源码版本错配，与本闸门无关。
-	var detail_work_pending := not _detail_refresh_queue.is_empty() \
-		or _detail_plan_phase != DETAIL_PLAN_IDLE \
-		or not _detail_refresh_batches.is_empty()
-	if ms_budget > 0.0 and detail_work_pending:
-		_drain_credit_ms = minf(_drain_credit_ms + ms_budget, ms_budget * 2.0)
-	if not _drain_cfg_logged:
-		_drain_cfg_logged = true
-		if detail_scatter_refresh_log_enabled and PKLog.enabled:
-			print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d plan_items=%d cells_per_batch=%d chunk_size=%d" % [
-				ms_budget, chunk_budget,
-				maxi(1, detail_scatter_refresh_plan_items_per_frame),
-				maxi(1, detail_scatter_refresh_cells_per_batch),
-				maxi(2, detail_scatter_chunk_size_cells),
-			])
-	var t0 := Time.get_ticks_usec()
-	if _detail_refresh_queue.is_empty():
-		var has_pending_work := detail_work_pending
-		var can_plan := ms_budget <= 0.0 or _drain_credit_ms > 0.0
-		if can_plan:
-			var plan_t0 := Time.get_ticks_usec()
-			var plan_deadline_usec := 0
-			if ms_budget > 0.0:
-				var plan_budget_ms := minf(ms_budget, maxf(_drain_credit_ms, 0.0))
-				plan_deadline_usec = t0 + int(plan_budget_ms * 1000.0)
-			has_pending_work = _start_next_detail_refresh_batch(
-				plan_deadline_usec, maxi(1, detail_scatter_refresh_plan_items_per_frame))
-			_last_detail_plan_ms = float(Time.get_ticks_usec() - plan_t0) / 1000.0
-			if ms_budget > 0.0:
-				_drain_credit_ms -= _last_detail_plan_ms
-		if _detail_refresh_queue.is_empty():
-			_last_detail_refresh_report["plan_ms"] = _last_detail_plan_ms
-			_last_detail_refresh_report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
-			_last_detail_refresh_report["remaining_chunks"] = 0
-			_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
-			_last_detail_refresh_report["elapsed_ms"] = float(
-				_last_detail_refresh_report.get("elapsed_ms", 0.0)) + _last_detail_plan_ms
-			if not has_pending_work:
-				# succession 队列排空后继续完成尚未结束的 family/budget 分层下发。
-				if _drain_one_detail_family_upload():
-					_mark_detail_budget_total_dirty()
-				_apply_detail_global_budget(false, true)
-			return
-	var done := 0
-	var forced_one := false
-	while done < chunk_budget and not _detail_refresh_queue.is_empty():
-		if ms_budget > 0.0:
-			var head: Dictionary = _detail_refresh_queue[0]
-			var head_wait_msec := Time.get_ticks_msec() - int(
-				head.get("enqueued_msec", Time.get_ticks_msec()))
-			# 超时只授权这一帧推进一个任务，不能让后续所有超时任务一起绕过预算。
-			# 旧逻辑会在 chunks_per_frame=4 时把约 15ms 的任务叠成稳定 60ms 尾耗时。
-			var force_progress := done == 0 and bool(head.get("visible_priority", true)) \
-				and head_wait_msec >= 100
-			if not force_progress:
-				if _drain_credit_ms < ms_budget:
-					break
-				if done > 0 and float(Time.get_ticks_usec() - t0) / 1000.0 >= ms_budget:
-					break
-			else:
-				forced_one = true
-		var task: Dictionary = _detail_refresh_queue.pop_front()
-		var task_t0 := Time.get_ticks_usec()
-		var layer = task.get("layer", null)
-		if layer != null and is_instance_valid(layer):
-			var task_family_mask := int(task.get("family_mask", _detail_all_family_mask()))
-			for raw_idx in task.get("dirty_indices", PackedInt32Array()):
-				task_family_mask |= int(_scatter_cell_family_masks.get(int(raw_idx), 0))
-			var layer_family_mask := int(layer.detail_render_family_mask()) \
-				if layer.has_method("detail_render_family_mask") else _detail_all_family_mask()
-			if (task_family_mask & layer_family_mask) == 0:
-				continue
-			var layer_t0 := Time.get_ticks_usec()
-			if task.has("chunk_id") and layer.has_method("refresh_chunk_for_succession"):
-				var refreshed := bool(layer.refresh_chunk_for_succession(
-					int(task.get("chunk_id", -1)),
-					task.get("cell_indices", PackedInt32Array()),
-					int(task.get("dirty_cells", 0)),
-					task.get("dirty_indices", PackedInt32Array())
-				))
-				if refreshed and detail_scatter_family_renderer_enabled \
-						and layer.has_method("detail_render_family"):
-					var family := int(layer.detail_render_family())
-					var chunk_id := int(task.get("chunk_id", -1))
-					_detail_family_dirty_chunks["%d:%d" % [family, chunk_id]] = {
-						"source": layer,
-						"chunk_id": chunk_id,
-					}
-			elif layer.has_method("refresh_for_succession"):
-				layer.refresh_for_succession(task.get("cell_indices", _detail_refresh_indices))
-			var layer_elapsed := float(Time.get_ticks_usec() - layer_t0) / 1000.0
-			_last_detail_task_count += 1
-			if layer.has_method("get_scatter_diagnostics"):
-				var timing: Dictionary = layer.get_scatter_diagnostics()
-				_last_detail_encode_ms += float(timing.get("native_context_ms", 0.0)) \
-					+ float(timing.get("native_knobs_ms", 0.0)) \
-					+ float(timing.get("native_call_ms", 0.0))
-				_last_detail_cache_update_ms += float(timing.get("cache_update_ms", 0.0))
-				_last_detail_assemble_ms += float(timing.get("assemble_ms", 0.0))
-				_last_detail_upload_ms += float(timing.get("native_apply_ms", 0.0))
-			if detail_scatter_refresh_log_enabled and PKLog.enabled and layer.has_method("get_scatter_diagnostics"):
-				var d: Dictionary = layer.get_scatter_diagnostics()
-				if layer_elapsed >= detail_scatter_slow_layer_ms or float(d.get("rebuild_ms", 0.0)) >= detail_scatter_slow_layer_ms:
-					print("[detail_scatter/SLOW_CHUNK] name=%s wall=%.2fms update=%.2fms path=%s inst=%d cand=%d wrap=%d cells=%d chunks=%d sampled=%d active=%d water=%.2fms ctx=%.2fms knobs=%.2fms native=%.2fms apply=%.2fms remaining=%d missing=%d dropped=%d reason=%s" % [
-						str(d.get("name", layer.name)),
-						layer_elapsed,
-						float(d.get("rebuild_ms", 0.0)),
-						str(d.get("path", "")),
-						int(d.get("instances", 0)),
-						int(d.get("candidates", 0)),
-						int(d.get("wrap_edge_copies", 0)),
-						int(d.get("incremental_cells", 0)),
-						int(d.get("dirty_chunks", 0)),
-						int(d.get("native_sampled_cells", 0)),
-						int(d.get("native_active_cells", 0)),
-						float(d.get("native_water_cache_ms", 0.0)),
-						float(d.get("native_context_ms", 0.0)),
-						float(d.get("native_knobs_ms", 0.0)),
-						float(d.get("native_call_ms", 0.0)),
-						float(d.get("native_apply_ms", 0.0)),
-						_detail_refresh_queue.size(),
-					int(d.get("missing_slots", 0)),
-					int(d.get("dropped_instances", 0)),
-					str(d.get("reason", "")),
-				])
-		done += 1
-		_drain_last_progress_frame = Engine.get_process_frames()
-		if ms_budget > 0.0:
-			var task_elapsed_ms := float(Time.get_ticks_usec() - task_t0) / 1000.0
-			_last_detail_max_task_ms = maxf(_last_detail_max_task_ms, task_elapsed_ms)
-			_drain_credit_ms -= task_elapsed_ms
-		else:
-			_last_detail_max_task_ms = maxf(
-				_last_detail_max_task_ms,
-				float(Time.get_ticks_usec() - task_t0) / 1000.0)
-		if forced_one:
-			_last_detail_forced_task_count = 1
-			break
-	var elapsed := float(Time.get_ticks_usec() - t0) / 1000.0
-	# source payload 本帧已写过一个 MultiMesh 时，把 family 合并上传留到空闲帧，
-	# 严格维持运行期每帧最多一次 MultiMesh buffer 赋值。
-	if done == 0:
-		if _drain_one_detail_family_upload():
-			_mark_detail_budget_total_dirty()
-	else:
-		_mark_detail_budget_total_dirty()
-	_last_detail_refresh_report["chunks_done"] = int(_last_detail_refresh_report.get("chunks_done", 0)) + done
-	_last_detail_refresh_report["layers_done"] = int(_last_detail_refresh_report.get("chunks_done", 0))
-	_last_detail_refresh_report["elapsed_ms"] = float(_last_detail_refresh_report.get("elapsed_ms", 0.0)) + elapsed
-	_last_detail_refresh_report["remaining_chunks"] = _detail_refresh_queue.size()
-	_last_detail_refresh_report["pending_batches"] = _detail_refresh_batches.size()
-	_last_detail_refresh_report["plan_ms"] = _last_detail_plan_ms
-	_last_detail_refresh_report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
-	# 一个昂贵 chunk 已经消耗本帧信用时，不再叠加全层 visible-count 同步；
-	# 无 chunk 的帧按 layers_per_frame 渐进推进，避免 20+ 层一次性尖峰。
-	_apply_detail_global_budget(false, done == 0)
-	if _detail_refresh_queue.is_empty() and _detail_plan_phase == DETAIL_PLAN_IDLE:
-		if detail_scatter_refresh_log_enabled and PKLog.enabled:
-			print("[detail_scatter/DONE] batch_cells=%d chunks=%d batch_chunks=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
-				int(_last_detail_refresh_report.get("dirty_cells", 0)),
-				int(_last_detail_refresh_report.get("chunks_done", 0)),
-				int(_last_detail_refresh_report.get("batch_chunks", 0)),
-				float(_last_detail_refresh_report.get("elapsed_ms", 0.0)),
-				_detail_refresh_batches.size(),
-				str(_last_detail_budget_report),
-			])
-		_release_detail_refresh_inflight(_detail_refresh_indices)
-		_detail_refresh_indices = PackedInt32Array()
-
+	return RendererDetailScatter._drain_detail_refresh_queue(self)
 
 func _drain_one_detail_family_upload() -> bool:
-	if _drain_one_vegetation_family_upload():
-		return true
-	return bool(_resource_visual_layer.drain_one_upload()) if _resource_visual_layer != null else false
-
+	return RendererDetailScatter._drain_one_detail_family_upload(self)
 
 func _drain_one_vegetation_family_upload() -> bool:
-	if not detail_scatter_family_renderer_enabled \
-			or _detail_family_layer == null or not is_instance_valid(_detail_family_layer):
-		return false
-	if _detail_family_dirty_chunks.is_empty():
-		return bool(_detail_family_layer.drain_one_shadow_upload()) \
-			if _detail_family_layer.has_method("drain_one_shadow_upload") else false
-	var keys: Array = _detail_family_dirty_chunks.keys()
-	keys.sort()
-	var key = ""
-	for candidate in keys:
-		if not _detail_family_upload_has_pending_source(str(candidate)):
-			key = str(candidate)
-			break
-	if key.is_empty():
-		return false
-	var task: Dictionary = _detail_family_dirty_chunks[key]
-	_detail_family_dirty_chunks.erase(key)
-	var source = task.get("source", null)
-	if source != null and is_instance_valid(source):
-		_detail_family_layer.rebuild_source_chunk(source, int(task.get("chunk_id", -1)))
-		return true
-	return false
-
+	return RendererDetailScatter._drain_one_vegetation_family_upload(self)
 
 func _detail_family_upload_has_pending_source(key: String) -> bool:
-	var parts := key.split(":")
-	if parts.size() != 2:
-		return false
-	var family := int(parts[0])
-	var chunk_id := int(parts[1])
-	for pending in _detail_refresh_queue:
-		if int(pending.get("chunk_id", -1)) == chunk_id \
-				and int(pending.get("family", 0)) == family:
-			return true
-	return false
-
+	return RendererDetailScatter._detail_family_upload_has_pending_source(self, key)
 
 func detail_scatter_refresh_report() -> Dictionary:
-	var report := _last_detail_refresh_report.duplicate(true)
-	report["inflight_cells"] = _scatter_inflight.size()
-	report["enqueue_dedup_skips"] = _scatter_enqueue_dedup_skips
-	report["coalesced_cells"] = _detail_coalesced_cells
-	report["offscreen_deferred_cells"] = _detail_offscreen_deferred_cells
-	report["stale_superchunks"] = _detail_deferred_chunks.size()
-	report["render_superchunks"] = _detail_render_chunk_count
-	report["prefetch_superchunks"] = _detail_prefetch_chunk_count
-	report["affected_families"] = _detail_affected_family_count
-	report["visibility_ms"] = _detail_visibility_last_ms
-	report["queued_tasks"] = _detail_refresh_queue.size()
-	report["stale_generation_drops"] = _detail_stale_generation_drops
-	report["evicted_superchunks"] = _detail_evicted_superchunks
-	report["oldest_visible_wait_ms"] = _oldest_visible_detail_task_wait_ms()
-	report["frame_tasks"] = _last_detail_task_count
-	report["frame_forced_tasks"] = _last_detail_forced_task_count
-	report["max_task_ms"] = _last_detail_max_task_ms
-	report["plan_ms"] = _last_detail_plan_ms
-	report["plan_active"] = _detail_plan_phase != DETAIL_PLAN_IDLE
-	report["encode_ms"] = _last_detail_encode_ms
-	report["cache_update_ms"] = _last_detail_cache_update_ms
-	report["assemble_ms"] = _last_detail_assemble_ms
-	report["upload_ms"] = _last_detail_upload_ms
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
-		var family_diag: Dictionary = _detail_family_layer.diagnostics()
-		for key in family_diag.keys():
-			report["family_%s" % str(key)] = family_diag[key]
-	return report
-
+	return RendererDetailScatter.detail_scatter_refresh_report(self)
 
 func _oldest_visible_detail_task_wait_ms() -> int:
-	var oldest := 0
-	var now_msec := Time.get_ticks_msec()
-	for task in _detail_refresh_queue:
-		if not bool(task.get("visible_priority", true)):
-			continue
-		oldest = maxi(oldest, now_msec - int(task.get("enqueued_msec", now_msec)))
-	return oldest
-
+	return RendererDetailScatter._oldest_visible_detail_task_wait_ms(self)
 
 func detail_scatter_layer_reports() -> Array:
-	var out: Array = []
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("get_scatter_diagnostics"):
-			out.append(layer.get_scatter_diagnostics())
-	return out
-
+	return RendererDetailScatter.detail_scatter_layer_reports(self)
 
 func _detail_total_instance_budget() -> int:
-	if OS.has_feature("mobile"):
-		var mobile_high := maxi(0, detail_scatter_mobile_total_instance_budget)
-		match _mobile_quality_tier_from_define(_mobile_quality_tier_define):
-			0:
-				return mini(mobile_high, 5000)
-			1:
-				return mini(mobile_high, 8000)
-			_:
-				return mobile_high
-	var desktop_high := maxi(0, detail_scatter_desktop_total_instance_budget)
-	match visual_quality:
-		0:
-			return mini(desktop_high, 35000)
-		1:
-			return mini(desktop_high, 70000)
-		_:
-			return desktop_high
-
+	return RendererDetailScatter._detail_total_instance_budget(self)
 
 func _detail_budget_fraction_needs_apply(next_fraction: float) -> bool:
-	if _detail_budget_applied_fraction < 0.0:
-		return true
-	var next_unclamped := next_fraction >= 1.0 - 0.000001
-	var applied_unclamped := _detail_budget_applied_fraction >= 1.0 - 0.000001
-	if next_unclamped != applied_unclamped:
-		return true
-	return absf(next_fraction - _detail_budget_applied_fraction) >= DETAIL_BUDGET_FRACTION_EPSILON
-
+	return RendererDetailScatter._detail_budget_fraction_needs_apply(self, next_fraction)
 
 func _begin_detail_budget_apply(fraction: float) -> void:
-	_detail_budget_apply_fraction = clampf(fraction, 0.0, 1.0)
-	_detail_budget_apply_cursor = 0
-	_detail_budget_apply_active = not _detail_layers.is_empty()
+	return RendererDetailScatter._begin_detail_budget_apply(self, fraction)
 
-
-## [viewport-budget 2026-11-03] 记下"这次预算是按哪个视野分的"。视口加权只看
-## 相机视野内的 chunk，所以视野变了就必须重分，否则近处拿到的还是旧视野那份。
 func _note_detail_budget_applied_view() -> void:
-	_detail_budget_applied_view_center = _camera_world_center
-	_detail_budget_applied_view_zoom = _camera_zoom
+	return RendererDetailScatter._note_detail_budget_applied_view(self)
 
-
-## 视野是否已经偏离"上次分预算时的视野"超过阈值。首帧（zoom<0）恒 true。
 func _detail_budget_view_moved() -> bool:
-	if _detail_budget_applied_view_zoom < 0.0:
-		return true
-	if absf(_camera_zoom - _detail_budget_applied_view_zoom) \
-			> DETAIL_BUDGET_ZOOM_EPSILON * maxf(_detail_budget_applied_view_zoom, 0.01):
-		return true
-	var d := _camera_world_center - _detail_budget_applied_view_center
-	return absf(d.x) > DETAIL_BUDGET_VIEW_EPSILON or absf(d.y) > DETAIL_BUDGET_VIEW_EPSILON
+	return RendererDetailScatter._detail_budget_view_moved(self)
 
-
-## [viewport-budget 2026-11-03] 单层预算下发。层若实现视口加权（视口内/近处保住
-## 接近 100%、把裁剪压力转到视口外与远处），优先用它；否则退回原来的均匀抽稀。
-## 加权不改变总预算上限，只是把有限的实例预算按"玩家正在看哪里"重新分配。
-## 返回 true 表示这一层确实被下发过（用于沿用原来的分层进度统计）。
 func _apply_detail_budget_to_layer(layer, fraction: float) -> bool:
-	if layer == null or not is_instance_valid(layer):
-		return false
-	if layer.has_method("apply_visible_instance_fraction_weighted"):
-		var weighted = layer.apply_visible_instance_fraction_weighted(
-			fraction, _camera_world_rect, _camera_zoom, _pixel_world_size,
-			detail_scatter_rebuild_log_enabled)
-		if weighted is Dictionary and not (weighted as Dictionary).is_empty():
-			_last_detail_budget_weighted_report = weighted
-		return true
-	if layer.has_method("apply_visible_instance_fraction"):
-		layer.apply_visible_instance_fraction(fraction)
-		return true
-	return false
-
+	return RendererDetailScatter._apply_detail_budget_to_layer(self, layer, fraction)
 
 func _drain_detail_budget_apply(force_complete: bool) -> void:
-	if not _detail_budget_apply_active:
-		return
-	if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
-			and is_instance_valid(_detail_family_layer):
-		var family_t0 := Time.get_ticks_usec()
-		_apply_detail_budget_to_layer(_detail_family_layer, _detail_budget_apply_fraction)
-		_detail_budget_last_apply_ms = float(Time.get_ticks_usec() - family_t0) / 1000.0
-		_detail_budget_apply_ms_total += _detail_budget_last_apply_ms
-		_detail_budget_apply_count += 1
-		_detail_budget_applied_fraction = _detail_budget_apply_fraction
-		_note_detail_budget_applied_view()
-		_detail_budget_apply_active = false
-		_detail_budget_apply_cursor = 0
-		return
-	var layer_budget := _detail_layers.size() if force_complete else \
-		maxi(1, detail_scatter_refresh_layers_per_frame)
-	var applied_layers := 0
-	var started_usec := Time.get_ticks_usec()
-	while _detail_budget_apply_cursor < _detail_layers.size() and applied_layers < layer_budget:
-		var layer = _detail_layers[_detail_budget_apply_cursor]
-		_detail_budget_apply_cursor += 1
-		if _apply_detail_budget_to_layer(layer, _detail_budget_apply_fraction):
-			applied_layers += 1
-	var apply_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
-	_detail_budget_last_apply_ms = apply_ms
-	_detail_budget_apply_ms_total += apply_ms
-	_detail_budget_apply_count += applied_layers
-	if _detail_budget_apply_cursor >= _detail_layers.size():
-		_detail_budget_applied_fraction = _detail_budget_apply_fraction
-		_note_detail_budget_applied_view()
-		_detail_budget_apply_active = false
-		_detail_budget_apply_cursor = 0
-
+	return RendererDetailScatter._drain_detail_budget_apply(self, force_complete)
 
 func _apply_detail_global_budget(force_complete: bool = false, allow_apply: bool = true) -> void:
-	if _detail_layers.is_empty():
-		_last_detail_budget_report = {"total_instances": 0, "budget": _detail_total_instance_budget(), "visible_fraction": 1.0}
-		_detail_budget_target_fraction = 1.0
-		_detail_budget_applied_fraction = 1.0
-		_detail_budget_apply_active = false
-		_detail_budget_apply_cursor = 0
-		_detail_budget_cached_total = 0
-		_detail_budget_total_dirty = false
-		return
-	if force_complete:
-		_detail_budget_total_dirty = true
-	if _detail_budget_total_dirty:
-		var scan_t0 := Time.get_ticks_usec()
-		var scanned_total := 0
-		if detail_scatter_family_renderer_enabled and _detail_family_layer != null \
-				and is_instance_valid(_detail_family_layer):
-			scanned_total = int(_detail_family_layer.active_instance_count())
-		else:
-			for layer in _detail_layers:
-				if layer != null and layer.has_method("active_instance_count"):
-					scanned_total += int(layer.active_instance_count())
-				elif layer != null and layer.has_method("instance_count"):
-					scanned_total += int(layer.instance_count())
-		_detail_budget_cached_total = scanned_total
-		_detail_budget_total_dirty = false
-		_detail_budget_total_scan_count += 1
-		_detail_budget_last_scan_ms = float(Time.get_ticks_usec() - scan_t0) / 1000.0
-	else:
-		_detail_budget_last_scan_ms = 0.0
-	var total := _detail_budget_cached_total
-	var budget := _detail_total_instance_budget()
-	var fraction := 1.0
-	if budget > 0 and total > budget:
-		fraction = float(budget) / float(total)
-	_detail_budget_target_fraction = fraction
-	if force_complete:
-		_begin_detail_budget_apply(fraction)
-		_drain_detail_budget_apply(true)
-	elif not _detail_budget_apply_active \
-			and (_detail_budget_fraction_needs_apply(fraction) or _detail_budget_view_moved()):
-		_begin_detail_budget_apply(fraction)
-	elif not _detail_budget_apply_active:
-		_detail_budget_apply_skip_count += 1
-	if allow_apply and _detail_budget_apply_active:
-		_drain_detail_budget_apply(false)
-	var report := {
-		"total_instances": total,
-		"budget": budget,
-		"visible_fraction": fraction,
-		"applied_visible_fraction": _detail_budget_applied_fraction,
-		"budget_apply_fraction": _detail_budget_apply_fraction,
-		"budget_apply_active": _detail_budget_apply_active,
-		"budget_apply_cursor": _detail_budget_apply_cursor,
-		"budget_apply_count": _detail_budget_apply_count,
-		"budget_apply_skip_count": _detail_budget_apply_skip_count,
-		"budget_apply_last_ms": _detail_budget_last_apply_ms,
-		"budget_apply_ms_total": _detail_budget_apply_ms_total,
-		"budget_total_scan_count": _detail_budget_total_scan_count,
-		"budget_total_scan_ms": _detail_budget_last_scan_ms,
-		"budget_total_dirty": _detail_budget_total_dirty,
-		"layer_count": _detail_layers.size(),
-		"weighted": _last_detail_budget_weighted_report.duplicate(true),
-	}
-	# [viewport-budget 2026-11-03] 把层的视口加权回执并进预算报告（viewport_ 前缀）：
-	# 真机上能直接看到"预算削在哪、近处保了多少、有没有触发重新平衡"。
-	for layer in _detail_layers:
-		if layer == null or not is_instance_valid(layer):
-			continue
-		var vp_report: Dictionary = {}
-		if layer.has_method("viewport_budget_report"):
-			vp_report = layer.viewport_budget_report()
-		elif not _last_detail_budget_weighted_report.is_empty():
-			vp_report = _last_detail_budget_weighted_report
-		if vp_report.is_empty():
-			continue
-		for key in vp_report.keys():
-			report["viewport_%s" % str(key)] = vp_report[key]
-		break
-	_last_detail_budget_report = report
-	if detail_scatter_rebuild_log_enabled and PKLog.enabled and budget > 0 and total > budget:
-		print("[detail_scatter/BUDGET_CLAMP] total_inst=%d budget=%d visible_fraction=%.3f layers=%d" % [
-			total,
-			budget,
-			fraction,
-			_detail_layers.size(),
-		])
-
+	return RendererDetailScatter._apply_detail_global_budget(self, force_complete, allow_apply)
 
 func detail_scatter_budget_report() -> Dictionary:
-	return _last_detail_budget_report.duplicate(true)
-
+	return RendererDetailScatter.detail_scatter_budget_report(self)
 
 func _mark_detail_budget_total_dirty() -> void:
-	_detail_budget_total_dirty = true
-
+	return RendererDetailScatter._mark_detail_budget_total_dirty(self)
 
 func _log_detail_scatter_rebuild_summary(reason: String) -> void:
-	if not detail_scatter_rebuild_log_enabled or not PKLog.enabled:
-		return
-	var reports := detail_scatter_layer_reports()
-	if reports.is_empty():
-		print("[detail_scatter/REBUILD] reason=%s no_layers" % reason)
-		return
-	var total_ms := 0.0
-	var total_inst := 0
-	var total_cand := 0
-	var slow: Array = []
-	for d in reports:
-		var ms := float(d.get("rebuild_ms", 0.0))
-		total_ms += ms
-		total_inst += int(d.get("instances", 0))
-		total_cand += int(d.get("candidates", 0))
-		if ms >= detail_scatter_slow_layer_ms:
-			slow.append(d)
-	slow.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return float(a.get("rebuild_ms", 0.0)) > float(b.get("rebuild_ms", 0.0))
-	)
-	print("[detail_scatter/REBUILD] reason=%s layers=%d total_rebuild_ms=%.2f total_inst=%d total_cand=%d budget=%s" % [
-		reason,
-		reports.size(),
-		total_ms,
-		total_inst,
-		total_cand,
-		str(_last_detail_budget_report),
-	])
-	var limit := mini(5, slow.size())
-	for i in range(limit):
-		var d: Dictionary = slow[i]
-		print("  [detail_scatter/TOP%d] name=%s rebuild=%.2fms path=%s inst=%d cand=%d wrap=%d reason=%s" % [
-			i + 1,
-			str(d.get("name", "")),
-			float(d.get("rebuild_ms", 0.0)),
-			str(d.get("path", "")),
-			int(d.get("instances", 0)),
-			int(d.get("candidates", 0)),
-			int(d.get("wrap_edge_copies", 0)),
-			str(d.get("reason", "")),
-		])
-	# 可见性现场：实例存在但屏幕无显示时，用每层 probe 区分 节点隐藏 / 可见数
-	# 归零 / mesh 缺失 / profile 关闭（只读诊断，不改变状态）。
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("detail_visibility_probe"):
-			print("  [detail_scatter/VIS] %s" % str(layer.detail_visibility_probe()))
+	return RendererDetailScatter._log_detail_scatter_rebuild_summary(self, reason)
 
-
-# ─── web / 移动端植被降档（2026-10-30，性能换密度，用户已确认） ──────────────
-# 受限平台（浏览器 WebGL2 / 移动 GPU）即使把散布构建改成"进世界分帧补齐"，运行期
-# 仍要维护全部散布层：每层的 chunk 节点 draw call、MultiMesh 上传、以及 succession
-# 触发 chunk 重建，成本都按层数线性增长，web 上这是帧时间的主项。所以在「层数」
-# 维度上再砍一半——受限平台只保留大约一半图层，桌面端完全不受影响。
-#
-# 调参入口只有这一个常量：0.5 = 约一半，0.34 = 三分之一，1.0 = 不砍。
-const WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO: float = 0.5
-
-# 加载期让帧节流（取代旧的"每层一帧"）：每 4 层或累计 12ms 让一帧，保证进度条
-# 动画与 web 的主线程心跳。defer 之后单层只剩几毫秒的初始化，这个预算够用。
-const DETAIL_LOADING_LAYERS_PER_YIELD: int = 4
-const DETAIL_LOADING_YIELD_BUDGET_MS: float = 12.0
-
-# 兜底救援窗口：defer 之后若运行期补齐在这么久之内一株都没建出来（而且刷新管线
-# 已经空闲，说明不是"还在排队"），就退回老的"一次性全量构建"。宁可卡一下，
-# 也不能让地图永远光秃秃。
-const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = 8.0
+# ─── web / 移动端植被降档 ────────────────────────────────────────────────
+const WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO: float = RendererDetailLayers.WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO
+const DETAIL_LOADING_LAYERS_PER_YIELD: int = RendererDetailLayers.DETAIL_LOADING_LAYERS_PER_YIELD
+const DETAIL_LOADING_YIELD_BUDGET_MS: float = RendererDetailLayers.DETAIL_LOADING_YIELD_BUDGET_MS
+const DEFERRED_DETAIL_FILL_RESCUE_SECONDS: float = RendererDetailLayers.DEFERRED_DETAIL_FILL_RESCUE_SECONDS
 
 # 受限平台判定覆盖：-1 = 跟随引擎特性；0 = 强制桌面；1 = 强制受限平台。
 # 只给临时验证脚本 / A-B 调试用，正常游戏流程不会改它。
@@ -3430,1343 +1311,247 @@ var _deferred_fill_rescued: bool = false
 var _web_mobile_layer_keep_ratio_override: float = -1.0
 
 
+
 func set_force_platform_limited_render(value: int) -> void:
-	_force_platform_limited_render = clampi(value, -1, 1)
+	return RendererDetailLayers.set_force_platform_limited_render(self, value)
 
-
-# web 与 mobile 共用同一套"受限平台"降档（层数减半 + 每层密度降到 mobile 档）。
 func _platform_limited_vegetation_render() -> bool:
-	if _force_platform_limited_render >= 0:
-		return _force_platform_limited_render != 0
-	return OS.has_feature("web") or OS.has_feature("mobile")
-
+	return RendererDetailLayers._platform_limited_vegetation_render(self)
 
 func _web_mobile_layer_keep_ratio() -> float:
-	if _web_mobile_layer_keep_ratio_override >= 0.0:
-		return clampf(_web_mobile_layer_keep_ratio_override, 0.0, 1.0)
-	return clampf(WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO, 0.0, 1.0)
+	return RendererDetailLayers._web_mobile_layer_keep_ratio(self)
 
-
-# 默认散布层 profile 列表：优先 decoration_manifest.layers；留空时回退 grass/shrub/tree。
-# web / mobile 在这里按 WEB_MOBILE_DETAIL_LAYER_KEEP_RATIO 裁到约一半（桌面原样返回）。
 func _detail_profiles() -> Array:
-	var manifest := decoration_manifest
-	var base: Array = []
-	if manifest != null and manifest.has_method("valid_layers"):
-		base = manifest.valid_layers()
-	if base.is_empty():
-		if grass_visual_profile != null:
-			base.append(grass_visual_profile)
-		if shrub_visual_profile != null:
-			base.append(shrub_visual_profile)
-		if tree_visual_profile != null:
-			base.append(tree_visual_profile)
-	if _platform_limited_vegetation_render():
-		return _select_platform_limited_detail_profiles(base)
-	return base
+	return RendererDetailLayers._detail_profiles(self)
 
-
-# 按"保留价值"裁层，但保持原始绘制顺序（层序是 shader / 家族 mask 的稳定契约）。
 func _select_platform_limited_detail_profiles(layers: Array) -> Array:
-	return DetailProfileSelection._select_platform_limited_detail_profiles(_web_mobile_layer_keep_ratio(), layers)
+	return RendererDetailLayers._select_platform_limited_detail_profiles(self, layers)
 
-
-# 一层的"保留价值"分档（越大越先保留）。判据不是实例数，而是
-# "这一层是不是某个可见角色的唯一代表"：
-#   阔叶树 / 灌木 / 草地是全球底色，分别代表森林冠层、灌丛、地表覆盖；
-#   针叶（寒带、亚高山）与棕榈（热带海岸）是形状完全不同、biome 唯一的冠层，
-#   砍掉会让针叶林/棕榈林被"阔叶树"顶替（形状对不上），所以紧跟三个底色层；
-#   仙人掌（荒漠）、芦苇（湿地河岸）是所在群系唯一的植被代表，砍掉整片变裸地；
-#   岩石 / 碎石是山地与荒原上唯一的硬质地物；
-#   高山花、苔原苔藓、沼泽草、红树根、枯木只是叠在底色之上的点缀，砍掉只少一层细节；
-#   带专属底色的乔木（云雾林 / 季风林）与通用阔叶层同形同 biome，只是多一层配色，
-#   优先级最低——通用阔叶层已经在同一片林子里出树了。
-# 同分时按 manifest 顺序（越靠前越容易保留）。
-
-
-# 是否当前用的是默认三层（未配置 manifest）。
 func _using_default_layers() -> bool:
-	var manifest := decoration_manifest
-	return not (manifest != null and manifest.has_method("valid_layers") and not manifest.valid_layers().is_empty())
+	return RendererDetailLayers._using_default_layers(self)
 
-
-# 销毁旧散布层并按当前 profile 列表重建。
 func _spawn_detail_layers() -> void:
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.queue_free()
-	_detail_family_layer = null
-	_detail_family_dirty_chunks.clear()
-	for layer in _detail_layers:
-		if is_instance_valid(layer):
-			layer.queue_free()
-	_detail_layers.clear()
-	# 层销毁意味着旧世界的 succession 队列全部失效：任务里的 layer 引用虽有
-	# is_instance_valid 兜底，但 cell 语义已跨世界失效，必须整体重置（含全链路
-	# 在途集合，否则旧世界 cell 会永久屏蔽新世界的重排队）。
-	_detail_refresh_queue.clear()
-	_detail_refresh_batches.clear()
-	_detail_refresh_indices = PackedInt32Array()
-	_reset_detail_refresh_plan()
-	_scatter_pending_cells = PackedInt32Array()
-	_scatter_pending_seen.clear()
-	_scatter_requeue_cells.clear()
-	_scatter_inflight.clear()
-	_scatter_cell_family_masks.clear()
-	_scatter_cell_profile_masks.clear()
-	_scatter_cell_generations.clear()
-	_detail_deferred_chunks.clear()
-	_detail_deferred_profile_masks.clear()
-	_detail_offscreen_deferred_cells = 0
-	_detail_coalesced_cells = 0
-	_detail_stale_generation_drops = 0
-	_detail_evicted_superchunks = 0
-	_detail_next_resident_sweep_msec = 0
-	_drain_credit_ms = 0.0
-	_detail_budget_target_fraction = 1.0
-	_detail_budget_applied_fraction = -1.0
-	_detail_budget_apply_fraction = 1.0
-	_detail_budget_apply_cursor = 0
-	_detail_budget_apply_active = false
-	_detail_budget_apply_count = 0
-	_detail_budget_apply_skip_count = 0
-	_detail_budget_apply_ms_total = 0.0
-	_detail_budget_last_apply_ms = 0.0
-	_detail_budget_cached_total = 0
-	_detail_budget_total_dirty = true
-	_detail_budget_total_scan_count = 0
-	_detail_budget_last_scan_ms = 0.0
-	var profiles := _detail_profiles()
-	var veg_tier := _mobile_quality_tier_from_define(_mobile_quality_tier_define)
-	for i in range(profiles.size()):
-		var prof: Resource = profiles[i]
-		var layer := ShrubLayer.new()
-		layer.name = _detail_layer_name(prof, i)
-		layer.profile = prof
-		layer.set_mobile_quality_tier(veg_tier)
-		if layer.has_method("set_defer_initial_rebuild"):
-			layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-		if layer.has_method("set_chunked_multimesh_enabled"):
-			layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
-		layer.set_world_ext(_world_ext)
-		add_child(layer)
-		# [cylindrical-earth-daylight] 新层补推昼夜光照所需状态（与地形同源）：
-		# 相位/季节驱动晨昏线，axial_tilt 决定季节赤纬，day_night_enabled 为总开关。
-		layer.set_season_phase(_season_phase)
-		layer.set_day_phase(_day_phase)
-		layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
-		layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
-		layer.set_day_night_enabled(day_night_enabled)
-		if layer.has_method("set_tod_debug_sun_position"):
-			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-		if layer.has_method("set_tod_debug_sun_height_scale"):
-			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-		if _tod_valid:
-			layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
-			if layer.has_method("set_tod_sun_dir"):
-				layer.set_tod_sun_dir(_tod_sun_dir)
-		layer.set_camera_zoom(_camera_zoom)
-		if _camera_view_initialized and layer.has_method("set_camera_view"):
-			layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
-		layer.set_lod_debug_view(terrain_surface_debug_view == 6)
-		_detail_layers.append(layer)
-	_detail_family_layer = VegetationFamilyLayerScript.new()
-	_detail_family_layer.name = "VegetationFamilyLayer"
-	add_child(_detail_family_layer)
-	if _cloud_shadow_field != null:
-		_push_cloud_shadow_material_inputs()
-
+	return RendererDetailLayers._spawn_detail_layers(self)
 
 func _detail_layer_name(prof: Resource, i: int) -> String:
-	if prof != null and "detail_kind" in prof:
-		match int(prof.detail_kind):
-			0:
-				return "ShrubLayer" if i == 0 else "ShrubLayer%d" % i
-			1:
-				return "TreeLayer" if i == 0 else "TreeLayer%d" % i
-			2:
-				return "GrassLayer" if i == 0 else "GrassLayer%d" % i
-	return "DetailLayer%d" % i
+	return RendererDetailLayers._detail_layer_name(self, prof, i)
 
-
-# 仅在使用默认三层（无 manifest）时，profile @export 改动后刷新对应层 profile。
 func _rebuild_detail_layers_if_default() -> void:
-	if not is_inside_tree() or not _using_default_layers():
-		return
-	_spawn_detail_layers()
-	if _map != null and _world != null:
-		_rebuild()
+	return RendererDetailLayers._rebuild_detail_layers_if_default(self)
 
-
-# 注入 C++ DCWorldExt（main.gd 在 set_map 前调用），转发给每个散布层。
 func set_world_ext(ext) -> void:
-	_world_ext = ext
-	if _building_visual_layer != null and _building_visual_layer.has_method("set_world_ext"):
-		_building_visual_layer.set_world_ext(ext)
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("set_world_ext"):
-			layer.set_world_ext(ext)
+	return RendererSceneServices.set_world_ext(self, ext)
 
 
 func _poll_shader_hot_reload(delta: float) -> void:
-	if not shader_hot_reload_enabled:
-		return
-	_shader_hot_reload_accum += delta
-	if _shader_hot_reload_accum < maxf(shader_hot_reload_interval, 0.1):
-		return
-	_shader_hot_reload_accum = 0.0
-
-	var shader_mtime := _file_modified_time(_active_shader_source_path)
-	var material_mtime := _file_modified_time(_active_material_source_path)
-	var shader_changed := shader_mtime > 0 and _shader_source_mtime > 0 and shader_mtime != _shader_source_mtime
-	var material_changed := material_mtime > 0 and _material_source_mtime > 0 and material_mtime != _material_source_mtime
-	if not shader_changed and not material_changed:
-		if _shader_source_mtime == 0:
-			_shader_source_mtime = shader_mtime
-		if _material_source_mtime == 0:
-			_material_source_mtime = material_mtime
-		return
-
-	# [land-water-split 2026-11-02] shader 源文件热重载：两片 program 都要从磁盘重新
-	# 取（水面 program 可能是同一份 world_map.gdshader 的另一个变体）。上一次编译失败
-	# 可能只是编辑中的临时状态，这里清掉失败标记重新尝试。
-	_water_pass_failed = false
-	_split_program_failed = false
-	_drop_water_quad()
-	_load_shader()
-	if _map != null and _world != null and _shader_mat != null:
-		_apply_uniforms()
-	_push_cloud_shadow_material_inputs()
-	print("[HexRenderer] hot-reloaded world shader/material")
+	return RendererSceneServices._poll_shader_hot_reload(self, delta)
 
 func _refresh_shader_hot_reload_baseline() -> void:
-	_shader_source_mtime = _file_modified_time(_active_shader_source_path)
-	_material_source_mtime = _file_modified_time(_active_material_source_path)
+	return RendererSceneServices._refresh_shader_hot_reload_baseline(self)
 
 func _file_modified_time(path: String) -> int:
-	if path == "":
-		return 0
-	var fs_path := path
-	if path.begins_with("res://") or path.begins_with("user://"):
-		fs_path = ProjectSettings.globalize_path(path)
-	return int(FileAccess.get_modified_time(fs_path))
+	return RendererSceneServices._file_modified_time(self, path)
 
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
 func set_map(map: MapData, world: WorldData = null) -> void:
-	if _world != null and world != null and _world != world \
-			and _visual_tile_horizon_baker != null:
-		_visual_tile_horizon_baker.cancel()
-	_map = map
-	_world = world
-	_bind_world_lighting_profile()
-	# _ready() loads the shader before a generated world exists, so it necessarily
-	# selects the legacy variant. Re-select after world injection; setting array
-	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
-	if is_inside_tree() and _world_quad != null:
-		var load_t0 := Time.get_ticks_usec()
-		_load_shader()
-		print("[loading-renderer-step] shader %.1fms" % [float(Time.get_ticks_usec()-load_t0)/1000.0])
-	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
-		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
-	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
-	var horizon_t0 := Time.get_ticks_usec()
-	_maybe_bake_terrain_horizon_gpu()
-	print("[loading-renderer-step] horizon %.1fms" % [float(Time.get_ticks_usec()-horizon_t0)/1000.0])
-	if is_inside_tree():
-		_rebuild()
+	RendererSceneServices.set_map(self, map, world)
 
 func set_map_cooperative(map: MapData, world: WorldData = null) -> void:
-	if _world != null and world != null and _world != world \
-			and _visual_tile_horizon_baker != null:
-		_visual_tile_horizon_baker.cancel()
-	_map = map
-	_world = world
-	_bind_world_lighting_profile()
-	# _ready() loads the shader before a generated world exists, so it necessarily
-	# selects the legacy variant. Re-select after world injection; setting array
-	# uniforms on that legacy shader is ignored and leaves map_index_atlas unbound.
-	if is_inside_tree() and _world_quad != null:
-		var load_t0 := Time.get_ticks_usec()
-		_load_shader()
-		print("[loading-renderer-step] shader %.1fms" % [float(Time.get_ticks_usec()-load_t0)/1000.0])
-	if _weather_layer != null and _weather_layer.has_method("set_world_ref"):
-		_weather_layer.set_world_ref(_world)  # 帧间插值:weather_lut_prev_tex 源
-	# [terrain-horizon-gpu 2026-07-03] map_baker 若登记了 GPU 离屏烘焙，这里在场景树内发起。
-	var horizon_t0 := Time.get_ticks_usec()
-	_maybe_bake_terrain_horizon_gpu()
-	print("[loading-renderer-step] horizon %.1fms" % [float(Time.get_ticks_usec()-horizon_t0)/1000.0])
-	if is_inside_tree():
-		await _rebuild_cooperative()
-
-
+	await RendererSceneServices.set_map_cooperative(self, map, world)
 
 func configure_building_visuals(catalog: Dictionary,
 		intel: BuildingVisualIntelCache) -> Dictionary:
-	if _building_visual_layer == null:
-		return {"ok": false, "reason": "building_visual_layer_unavailable"}
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_quality(visual_quality,
-			_mobile_quality_tier_from_define(_mobile_quality_tier_define) if not _mobile_quality_tier_define.is_empty() else -1)
-		var resource_result: Dictionary = _resource_visual_layer.configure(_map, _world, hex_size, intel)
-		_resource_visual_layer.set_terrain_lighting(_shader_mat)
-		if not bool(resource_result.get("ok", false)):
-			push_error("Resource visual catalog: %s" % str(resource_result))
-	var building_result: Dictionary = _building_visual_layer.configure(
-		_map, _world, hex_size, catalog, intel)
-	# [building-terrain-light 2026-10-18] 高画质建筑与地形共用 horizon/GI 与地表法线。
-	_building_visual_layer.set_terrain_lighting(_shader_mat)
-	_push_cloud_shadow_material_inputs()
-	return building_result
-
+	return RendererSceneServices.configure_building_visuals(self, catalog, intel)
 
 func set_resource_visual_context(fog_enabled: bool, seed_value: int = 0) -> void:
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_context(fog_enabled, seed_value)
-
+	RendererSceneServices.set_resource_visual_context(self, fog_enabled, seed_value)
 
 func set_resource_visual_filter(stable_id: String) -> void:
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_filter(stable_id)
-
+	RendererSceneServices.set_resource_visual_filter(self, stable_id)
 
 func set_resource_visual_lens(enabled: bool) -> void:
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_lens(enabled)
-
+	RendererSceneServices.set_resource_visual_lens(self, enabled)
 
 func resource_visual_lens_enabled() -> bool:
-	return _resource_visual_layer != null and _resource_visual_layer.lens_enabled()
-
+	return RendererSceneServices.resource_visual_lens_enabled(self)
 
 func resource_visual_diagnostics() -> Dictionary:
-	return _resource_visual_layer.diagnostics() if _resource_visual_layer != null else {}
-
+	return RendererSceneServices.resource_visual_diagnostics(self)
 
 func update_building_visual_intel(intel: BuildingVisualIntelCache,
 		changed_cells: PackedInt32Array) -> void:
-	if _resource_visual_layer != null:
-		_resource_visual_layer.notify_cells(changed_cells)
-	if _building_visual_layer != null:
-		_building_visual_layer.update_intel(intel, changed_cells)
-	var core_buckets := intel.settlement_core_buckets()
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_settlement_core_buckets"):
-			layer.set_settlement_core_buckets(core_buckets)
-	)
-	if not changed_cells.is_empty():
-		# Vegetation candidates overlap adjacent hexes by design. A tree whose
-		# source is a neighbouring cell can already occupy this settlement core,
-		# so rebuilding only the changed cell leaves stale cross-cell canopies.
-		queue_detail_scatter_refresh(
-			_expand_building_detail_refresh_cells(changed_cells))
-
+	RendererSceneServices.update_building_visual_intel(self, intel, changed_cells)
 
 func _expand_building_detail_refresh_cells(
 		changed_cells: PackedInt32Array) -> PackedInt32Array:
-	if _map == null or changed_cells.is_empty():
-		return changed_cells
-	var count := _map.cell_count()
-	var neighbours: PackedInt32Array = _map.neighbor_indices_packed() \
-		if _map.has_indices() else PackedInt32Array()
-	var selected := {}
-	for cell_idx in changed_cells:
-		if cell_idx < 0 or cell_idx >= count:
-			continue
-		selected[cell_idx] = true
-		if neighbours.size() < count * 6:
-			continue
-		var base := cell_idx * 6
-		for direction in 6:
-			var neighbour := int(neighbours[base + direction])
-			if neighbour >= 0 and neighbour < count:
-				selected[neighbour] = true
-	var ordered: Array = selected.keys()
-	ordered.sort()
-	return PackedInt32Array(ordered)
-
+	return RendererSceneServices._expand_building_detail_refresh_cells(self, changed_cells)
 
 func building_visual_diagnostics() -> Dictionary:
-	return _building_visual_layer.diagnostics() \
-		if _building_visual_layer != null else {"ok": false}
-
+	return RendererSceneServices.building_visual_diagnostics(self)
 
 func building_settlement_core_bucket(cell_idx: int) -> int:
-	return _building_visual_layer.settlement_core_bucket(cell_idx) \
-		if _building_visual_layer != null else 0
+	return RendererSceneServices.building_settlement_core_bucket(self, cell_idx)
 
 func get_world_bounds() -> Rect2:
-	if _world != null:
-		return _world.world_bounds
-	if _map != null and _map.cell_count() > 0:
-		return MapBaker.compute_world_bounds(_map.width, _map.height, hex_size)
-	return Rect2()
+	return RendererSceneServices.get_world_bounds(self)
 
-## 国界线层。领土变更（country_committed）后由 WorldRuntimeHost 调 rebuild()。
-# Keep this accessor's boundary a native Node type. In Godot 4.6.3, resolving
-# CountryBorderLayer as this return type from WorldRuntimeHost/PlayerGame keeps
-# the callers' script dependency graph alive at shutdown (even without a world).
-# The layer itself and its owned field remain strongly typed.
 func country_border_layer() -> Node2D:
-	return _border_layer
+	return RendererSceneServices.country_border_layer(self)
 
-## 视野迷雾层。迷雾值本身走 enum_lut.a，本层只负责画云。
 func fog_of_war_layer() -> FogOfWarLayer:
-	return _fog_layer
+	return RendererSceneServices.fog_of_war_layer(self)
 
-## 同时开关迷雾层与主地形的迷雾响应。fog 关时主地形完全恢复改造前的行为
-## （灰化与早退都是纯 uniform 分支，关掉即零成本）。
-## early_out 是可开关的性能实验：净收益取决于厚云是否真的比被跳过的地形便宜，
-## 必须靠 headless perf A/B 决定，默认关。它还要求迷雾层在未探索处输出常量色，
-## 因此只有迷雾最低档才真正放行（见 _apply_fog_early_out）。
 func set_fog_of_war_enabled(enabled: bool, early_out: bool = false) -> void:
-	_fog_enabled = enabled
-	_fog_early_out = early_out
-	if _fog_layer != null:
-		_fog_layer.set_enabled(enabled)
-	_push_fog_uniforms()
-
+	RendererSceneServices.set_fog_of_war_enabled(self, enabled, early_out)
 
 func is_fog_of_war_enabled() -> bool:
-	return _fog_enabled
-
+	return RendererSceneServices.is_fog_of_war_enabled(self)
 
 func _push_fog_uniforms() -> void:
-	# 天气屏蔽与主地形灰化共用同一张 enum_lut，只是消费点不同。
-	if _weather_layer != null:
-		_weather_layer.set_fog_mask(
-			_fog_enabled, _world.enum_lut_tex if _world != null else null)
-	if _shader_mat == null:
-		return
-	_push_world_uniform("fog_gray_enabled", _fog_enabled)
-	_push_world_uniform("fog_early_out_enabled", _effective_fog_early_out())
-	_push_world_uniform("fog_unexplored_color", FogOfWarLayer.UNEXPLORED_COLOR)
-	# [web-water-pass] 水面 pass 共用同一份迷雾开关。放在这里而不是 _apply_uniforms
-	# 里，是因为迷雾状态会在运行期翻转（_apply_fog_early_out / set_fog_enabled），
-	# 而这两个入口都已经汇到本函数。
-	_push_water_fog_uniforms()
+	RendererSceneServices._push_fog_uniforms(self)
 
-
-## 早退要求迷雾层在未探索处画的是一个常量色 —— 地形被完全盖住，跳过才不可见。
-## 迷雾一旦上体积云光照（q1+），颜色随位置/时间变化，早退分支那块常量色会露成
-## 死斑。所以请求的 early_out 还要与迷雾层的实际档位取与。
 func _effective_fog_early_out() -> bool:
-	if not (_fog_enabled and _fog_early_out):
-		return false
-	return _fog_layer != null and _fog_layer.supports_terrain_early_out()
-
+	return RendererSceneServices._effective_fog_early_out(self)
 
 func _apply_fog_early_out() -> void:
-	if _shader_mat != null:
-		_push_world_uniform("fog_early_out_enabled", _effective_fog_early_out())
-	# [web-water-pass] 这个开关单独翻转的路径（set_mobile_quality_tier / 迷雾层档位
-	# 变化）不走 _push_fog_uniforms，漏推会让水面 pass 在未探索区域继续画水 ——
-	# 那一块本该由 pass 1 的 fog_unexplored_color 独占。
-	_push_water_fog_uniforms()
+	RendererSceneServices._apply_fog_early_out(self)
 
-# Phase 1：让 main.gd 在 WorldClock day_changed 时推进 shader 季节相位
 func set_season_phase(phase: float) -> void:
-	_season_phase = phase
-	_push_water_lighting_uniforms()
-	if _shader_mat != null:
-		_push_world_uniform("season_phase", _season_phase)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_season_phase(_season_phase)
-	if _weather_layer != null:
-		_weather_layer.set_season_phase(_season_phase)
-	if _fog_layer != null:
-		_fog_layer.set_season_phase(_season_phase)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_season_phase(_season_phase)
-	)
-	_sync_detail_and_activity_materials()
+	RendererSceneServices.set_season_phase(self, phase)
 
 func set_climate_anomaly(v: float) -> void:
-	_climate_anomaly = v
-	if _shader_mat != null:
-		_push_world_uniform("climate_anomaly", _climate_anomaly)
+	RendererSceneServices.set_climate_anomaly(self, v)
 
-# True Insolation-Driven（Phase F）：旧兼容 setter。运行时和 shader 统一保持
-# insolation 分支，bool 只保留给旧材质参数兼容。
 func set_true_insolation_enabled(v: bool) -> void:
-	var _unused_v: bool = v
-	true_insolation_enabled = true
-	if _shader_mat != null:
-		_push_world_uniform("true_insolation_enabled", true_insolation_enabled)
+	RendererSceneServices.set_true_insolation_enabled(self, v)
 
-# 任务 2：昼夜相位。由 main.gd 接收 WorldClock.day_phase_changed 信号后转发。
-# 同时写入地形 shader 与 weather overlay shader（两者都需要昼夜相位。但后者
 func set_day_phase(v: float) -> void:
-	_day_phase = fposmod(v, 1.0)
-	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
-	if _sky_background != null:
-		_sky_background.set_global_time(_day_phase, day_night_enabled)
-	_push_water_lighting_uniforms()
-	if _shader_mat != null:
-		_push_world_uniform("day_phase", _day_phase)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_day_phase(_day_phase)
-	if _weather_layer != null:
-		_weather_layer.set_day_phase(_day_phase)
-	if _fog_layer != null:
-		_fog_layer.set_day_phase(_day_phase)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_day_phase(_day_phase)
-	)
-	_sync_detail_and_activity_materials()
-
+	RendererSceneServices.set_day_phase(self, v)
 
 func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
-	_tod_debug_sun_position_enabled = enabled
-	_tod_debug_sun_uv = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
-	if _shader_mat != null:
-		_push_world_uniform("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
-		_push_world_uniform("tod_debug_sun_uv", _tod_debug_sun_uv)
-	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_position"):
-		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-	if _fog_layer != null:
-		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_tod_debug_sun_position(
-			_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_tod_debug_sun_position"):
-			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-	)
-	_sync_detail_and_activity_materials()
-
+	RendererSceneServices.set_tod_debug_sun_position(self, enabled, uv)
 
 func set_tod_debug_sun_height_scale(v: float) -> void:
-	_tod_debug_sun_height_scale = clampf(v, 0.2, 1.5)
-	if _shader_mat != null:
-		_push_world_uniform("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
-	if _weather_layer != null and _weather_layer.has_method("set_tod_debug_sun_height_scale"):
-		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-	if _fog_layer != null:
-		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_tod_debug_sun_height_scale(
-			_tod_debug_sun_height_scale)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_tod_debug_sun_height_scale"):
-			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-	)
-	_sync_detail_and_activity_materials()
+	RendererSceneServices.set_tod_debug_sun_height_scale(self, v)
 
-# ─── 任务 1：视觉总开关 setter ─────────────────────────────────────────
-#   2) 把对应 uniform 推到 shader（名字与后续任务 shader 分支匹配）；
 func set_visual_quality(q: int) -> void:
-	var was_cloud_direct := _cloud_shadow_direct_active()
-	var was_web_pc_high := _web_pc_high_active()
-	var old_sky_quality_prefix := _desktop_sky_quality_prefix()
-	visual_quality = clampi(q, 0, 2)
-	var sky_variant_changed := old_sky_quality_prefix != _desktop_sky_quality_prefix()
-	if (was_cloud_direct != _cloud_shadow_direct_active() \
-			or was_web_pc_high != _web_pc_high_active() or sky_variant_changed) \
-			and _shader_mat != null:
-		_load_shader()
-		if _world != null and _map != null:
-			_apply_uniforms()
-	_push_water_lighting_uniforms()
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_quality(visual_quality,
-			_mobile_quality_tier_from_define(_mobile_quality_tier_define) if not _mobile_quality_tier_define.is_empty() else -1)
-	if _shader_mat != null:
-		_push_world_uniform("visual_quality", visual_quality)
-	if _weather_layer != null:
-		_weather_layer.set_visual_quality(visual_quality)
-	# web：切画质立即应用天气层画质门（低/中 → 不画；高 → 画）。
-	_apply_weather_layer_render_gate()
-	if _fog_layer != null:
-		_fog_layer.set_visual_quality(visual_quality)
-		_apply_fog_early_out()
-	if _building_visual_layer != null:
-		_building_visual_layer.set_visual_quality(visual_quality)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_visual_quality(visual_quality)
-	)
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer) and _map != null:
-		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
-		if detail_scatter_family_renderer_enabled and _camera_view_initialized:
-			_queue_missing_prefetch_detail_chunks()
-			_reactivate_deferred_detail_chunks()
-	# 画质切换沿用运行期分层下发，避免设置变化再次制造全层同步尖峰。
-	_mark_detail_budget_total_dirty()
-	_apply_detail_global_budget()
-	_configure_cloud_shadow_field()
-	_push_cloud_shadow_material_inputs()
-
+	RendererSceneServices.set_visual_quality(self, q)
 
 func set_terrain_materials_enabled(enabled: bool) -> void:
-	terrain_materials_enabled = enabled
-	if _shader_mat != null:
-		_push_world_uniform("terrain_materials_enabled", enabled)
+	RendererSceneServices.set_terrain_materials_enabled(self, enabled)
 
-
-## [pixel-scale-detail 2026-11-03] 一个物理像素覆盖的世界单位数（含 content_scale）。
-## 与 shader 里 `fwidth(wp)` 同量纲：1/pixel_world_size = 世界单位在屏幕上的像素数。
-## 移动端 content_scale_mode=CANVAS_ITEMS 时 canvas_scale ≈1.375，只拿 camera_zoom 会
-## 把"纹素占几像素"低估 37%，近景细节门控全部提前关闭。
 func pixel_world_size() -> float:
-	return _pixel_world_size
+	return RendererCameraDetail.pixel_world_size(self)
 
-
-## [pixel-scale-detail 2026-11-03] 验收探针：当前一个 hex / 一个数据 texel 在屏幕上
-## 各占多少**物理**像素。放大到底时用它区分两种"糊"：
-##   - px_per_texel 很大（>10）→ 数据密度不够，要加 texels_per_hex 或分块高精度；
-##   - px_per_texel 正常但画面仍平 → shader 缺屏幕空间高频细节层。
-## 真机上把这条打进日志即可判断，不需要猜。
 func pixel_scale_report() -> Dictionary:
-	var px_per_world := 1.0 / maxf(_pixel_world_size, 0.000001)
-	var texels_per_hex := 0.0
-	var texel_world := 0.0
-	var tile_mode := "none"
-	if _world != null:
-		var tiles = _world.visual_tiles
-		if tiles != null and tiles.layout != null:
-			tile_mode = String(tiles.layout.mode)
-			texels_per_hex = float(tiles.layout.effective_texels_per_hex)
-			texel_world = float(tiles.layout.effective_world_units_per_texel.x)
-		elif _world.hm_size.x > 0 and _world.world_bounds.size.x > 0.0001:
-			tile_mode = "legacy"
-			texel_world = _world.world_bounds.size.x / float(_world.hm_size.x)
-			texels_per_hex = hex_size / maxf(texel_world, 0.000001)
-	return {
-		"tile_mode": tile_mode,
-		"camera_zoom": _camera_zoom,
-		"pixel_world_size": _pixel_world_size,
-		"px_per_world_unit": px_per_world,
-		"hex_px": hex_size * px_per_world,
-		"texels_per_hex": texels_per_hex,
-		"texel_world_size": texel_world,
-		"px_per_texel": texel_world * px_per_world,
-	}
-
+	return RendererCameraDetail.pixel_scale_report(self)
 
 func _refresh_pixel_world_size() -> float:
-	# get_global_transform_with_canvas 同时含本节点局部缩放与 Camera2D/content_scale；
-	# 场景里 _world_quad 是单位变换，所以它等于 canvas 缩放。树外的调用（构建期、
-	# 材质预热）拿不到 canvas，退回 camera_zoom，避免把 1.0 写进 uniform。
-	var scale_x := maxf(_camera_zoom, 0.0001)
-	if is_inside_tree():
-		var canvas_scale := get_global_transform_with_canvas().get_scale().x
-		if is_finite(canvas_scale) and canvas_scale > 0.000001:
-			scale_x = canvas_scale
-	_pixel_world_size = clampf(1.0 / scale_x, 0.00001, 1024.0)
-	return _pixel_world_size
-
+	return RendererCameraDetail._refresh_pixel_world_size(self)
 
 func set_camera_zoom(value: float) -> void:
-	var next_zoom := clampf(value, 0.01, 16.0)
-	if absf(next_zoom - _camera_zoom) < 0.001:
-		return
-	_camera_zoom = next_zoom
-	_refresh_pixel_world_size()
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
-	if _shader_mat != null:
-		_push_world_uniform("camera_zoom", _camera_zoom)
-		_push_world_uniform("pixel_world_size", _pixel_world_size)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_camera_zoom(_camera_zoom)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_camera_zoom(_camera_zoom)
-	)
-	_mark_detail_budget_total_dirty()
-
+	return RendererCameraDetail.set_camera_zoom(self, value)
 
 func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> void:
-	var t0_us := Time.get_ticks_usec()
-	_camera_world_rect = world_rect
-	_camera_world_center = center
-	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
-	_camera_zoom = clampf(zoom_value, 0.01, 16.0)
-	if _shader_mat != null:
-		_push_world_uniform("pixel_world_size", _refresh_pixel_world_size())
-	else:
-		_refresh_pixel_world_size()
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		if layer.has_method("set_camera_view"):
-			layer.set_camera_view(world_rect, center, _camera_zoom)
-	)
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.set_camera_view(world_rect, center, _camera_zoom)
-	if detail_scatter_family_renderer_enabled:
-		_queue_missing_prefetch_detail_chunks()
-	else:
-		_detail_render_chunk_count = 0
-		_detail_prefetch_chunk_count = 0
-	if not detail_scatter_family_renderer_enabled and not _detail_layers.is_empty():
-		var probe = _detail_layers[0]
-		if probe != null and is_instance_valid(probe) and probe.has_method("get_scatter_diagnostics"):
-			var d: Dictionary = probe.get_scatter_diagnostics()
-			_detail_render_chunk_count = int(d.get("visible_chunks", 0))
-			_detail_prefetch_chunk_count = int(d.get("prefetch_chunks", 0))
-	_reactivate_deferred_detail_chunks()
-	_mark_detail_budget_total_dirty()
-	_detail_visibility_last_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
-
+	return RendererCameraDetail.set_camera_view(self, world_rect, center, zoom_value)
 
 func _queue_missing_prefetch_detail_chunks() -> void:
-	if not detail_scatter_family_renderer_enabled or _detail_layers.is_empty() or _map == null:
-		return
-	var probe = _detail_layers[0]
-	if probe == null or not is_instance_valid(probe) \
-			or not probe.has_method("detail_prefetch_chunk_plan"):
-		return
-	var plan: Array = probe.detail_prefetch_chunk_plan()
-	plan.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		var a_cells: PackedInt32Array = a.get("cell_indices", PackedInt32Array())
-		var b_cells: PackedInt32Array = b.get("cell_indices", PackedInt32Array())
-		var a_pos := _detail_chunk_center_from_cells(a_cells)
-		var b_pos := _detail_chunk_center_from_cells(b_cells)
-		return a_pos.distance_squared_to(_camera_world_center) \
-			< b_pos.distance_squared_to(_camera_world_center)
-	)
-	_detail_prefetch_chunk_count = plan.size()
-	_detail_render_chunk_count = 0
-	for chunk in plan:
-		var chunk_id := int(chunk.get("chunk_id", -1))
-		if chunk_id < 0:
-			continue
-		if probe.has_method("detail_chunk_is_render_visible") \
-				and bool(probe.detail_chunk_is_render_visible(chunk_id)):
-			_detail_render_chunk_count += 1
-		var resident := true
-		for layer in _detail_layers:
-			if layer == null or not is_instance_valid(layer) \
-					or not layer.has_method("detail_chunk_has_resident_cache") \
-					or not bool(layer.detail_chunk_has_resident_cache(chunk_id)):
-				resident = false
-				break
-		if not resident:
-			_detail_deferred_chunks[chunk_id] = _detail_all_family_mask()
-			_detail_deferred_profile_masks[chunk_id] = (1 << _detail_layers.size()) - 1
-
+	return RendererCameraDetail._queue_missing_prefetch_detail_chunks(self)
 
 func _detail_chunk_center_from_cells(cells: PackedInt32Array) -> Vector2:
-	if _map == null or cells.is_empty():
-		return Vector2.ZERO
-	var sum := Vector2.ZERO
-	var count := 0
-	for raw_idx in cells:
-		var idx := int(raw_idx)
-		if idx < 0 or idx >= _map.cell_pos_x_arr.size() or idx >= _map.cell_pos_y_arr.size():
-			continue
-		sum += Vector2(_map.cell_pos_x_arr[idx], _map.cell_pos_y_arr[idx]) * hex_size
-		count += 1
-	return sum / float(count) if count > 0 else Vector2.ZERO
-
+	return RendererCameraDetail._detail_chunk_center_from_cells(self, cells)
 
 func _reactivate_deferred_detail_chunks() -> void:
-	if _detail_deferred_chunks.is_empty() or _detail_layers.is_empty():
-		return
-	var probe = _detail_layers[0]
-	if probe == null or not is_instance_valid(probe) \
-			or not probe.has_method("detail_chunk_is_in_prefetch") \
-			or not probe.has_method("detail_chunk_cells"):
-		return
-	var resumed := PackedInt32Array()
-	for raw_chunk_id in _detail_deferred_chunks.keys():
-		var chunk_id := int(raw_chunk_id)
-		if not bool(probe.detail_chunk_is_in_prefetch(chunk_id)):
-			continue
-		var family_mask := int(_detail_deferred_chunks[raw_chunk_id])
-		var profile_mask := int(_detail_deferred_profile_masks.get(
-			raw_chunk_id, (1 << _detail_layers.size()) - 1))
-		var cells: PackedInt32Array = probe.detail_chunk_cells(chunk_id)
-		for raw_idx in cells:
-			var ci := int(raw_idx)
-			_scatter_cell_family_masks[ci] = int(_scatter_cell_family_masks.get(ci, 0)) | family_mask
-			_scatter_cell_profile_masks[ci] = int(
-				_scatter_cell_profile_masks.get(ci, 0)) | profile_mask
-			if _scatter_inflight.has(ci):
-				continue
-			_scatter_inflight[ci] = true
-			resumed.append(ci)
-		_detail_deferred_chunks.erase(raw_chunk_id)
-		_detail_deferred_profile_masks.erase(raw_chunk_id)
-	if resumed.is_empty():
-		return
-	_enqueue_detail_refresh_batches(_dedup_detail_refresh_indices(resumed))
-	if _detail_refresh_queue.is_empty():
-		_start_next_detail_refresh_batch()
-
+	return RendererCameraDetail._reactivate_deferred_detail_chunks(self)
 
 func _push_overlay_edge_transition_data() -> void:
-	var neighbor_tex: Texture2D = (
-		_world.terrain_edge_neighbor_tex if _world != null else null
-	)
-	var distance_tex: Texture2D = (
-		_world.terrain_edge_distance_tex if _world != null else null
-	)
-	if _weather_layer != null:
-		_weather_layer.set_edge_transition_data(
-			neighbor_tex, distance_tex, terrain_ecotone_width)
-	if _fog_layer != null:
-		_fog_layer.set_edge_transition_data(
-			neighbor_tex, distance_tex, terrain_ecotone_width)
-
+	RendererTerrainHorizon._push_overlay_edge_transition_data(self)
 
 func _push_terrain_horizon_uniforms() -> void:
-	if _shader_mat != null:
-		_push_world_uniform("terrain_horizon_strength", terrain_horizon_strength)
-		_push_world_uniform("terrain_horizon_softness", terrain_horizon_softness)
-		_push_world_uniform("terrain_horizon_max_angle", terrain_horizon_max_angle)
-		_push_world_uniform("terrain_horizon_cast_floor", terrain_horizon_cast_floor)
-		_push_world_uniform("terrain_horizon_debug_view", terrain_horizon_debug_view)
-		_push_gi_strength_uniforms(_shader_mat)
-	# [land-water-split 2026-11-02] 走 world_map 的水面 program 与陆地共用同一套
-	# horizon / GI 参数（海面也有地平线遮蔽与天空可见度）。这条路径是 GM 实时调参，
-	# 不走 _apply_uniforms，漏推会让海面光照停在旧值。
-	if _water_mat != null and _water_uses_world_map:
-		_push_gi_strength_uniforms(_water_mat)
-	# tiled 模式 horizon 在 visual_tiles.horizon（Texture2DArray），不写 world.terrain_horizon_tex。
-	# 若仍按 legacy tex!=null 判断，会在 _apply_uniforms 末尾把植被 bound 盖回 false →
-	# 直射遮蔽/天空 GI 全关，植株看起来「没光照」。
-	var tiled := _visual_tiles_active()
-	var horizon_tex: Texture2D = null
-	var horizon_bound := false
-	if tiled:
-		horizon_bound = _world != null and _world.visual_tiles != null \
-			and bool(_world.visual_tiles.horizon_ready)
-	elif _world != null:
-		horizon_tex = _world.terrain_horizon_tex
-		horizon_bound = horizon_tex != null
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_terrain_horizon_inputs(horizon_tex, horizon_bound,
-			terrain_horizon_strength, terrain_horizon_softness, terrain_horizon_max_angle,
-			terrain_horizon_cast_floor, terrain_horizon_debug_view,
-			float(_shader_mat.get_shader_parameter("hillshade_coarse_strength")))
-		layer.set_terrain_gi_inputs(build_gi_horizon_lut(terrain_horizon_max_angle),
-			gi_ao_strength, gi_ao_floor, gi_bent_strength, gi_normal_floor)
-	)
-	_sync_detail_and_activity_materials()
-	if _resource_visual_layer != null:
-		_resource_visual_layer.set_terrain_lighting(_shader_mat)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_terrain_lighting(_shader_mat)
-	if is_instance_valid(_trade_visual_layer):
-		_trade_visual_layer.set_terrain_lighting(_world, _shader_mat)
-	if is_instance_valid(_military_visual_layer):
-		_military_visual_layer.set_terrain_lighting(_world, _shader_mat)
+	RendererTerrainHorizon._push_terrain_horizon_uniforms(self)
 
-
-# [terrain-gi 2026-07-31] 4-bit 量化角的解码查表。shader 里 h_n = n/15·max_angle 只有 16 个
-# 取值，把 cos²(h) 与可见锥质心方向 m=(h+π/2)/2 的 cos/sin 预先算好推过去，fragment 侧解
-# 8 个方向的天空可见度与 bent normal 时就完全没有三角函数调用。
-# max_angle 是 uniform（可在场景里调），所以这张表不能做成 shader 常量，必须随之重推。
 static func build_gi_horizon_lut(max_angle: float) -> PackedVector3Array:
 	return RendererMapAssets.build_gi_horizon_lut(max_angle)
 
 
 func _push_gi_strength_uniforms(sm: ShaderMaterial) -> void:
-	sm.set_shader_parameter("gi_horizon_lut", build_gi_horizon_lut(terrain_horizon_max_angle))
-	sm.set_shader_parameter("gi_lut_bound", true)
-	sm.set_shader_parameter("gi_ao_strength", gi_ao_strength)
-	sm.set_shader_parameter("gi_ao_floor", gi_ao_floor)
-	sm.set_shader_parameter("gi_ao_smoothing", gi_ao_smoothing)
-	sm.set_shader_parameter("gi_bent_strength", gi_bent_strength)
-	sm.set_shader_parameter("gi_normal_floor", gi_normal_floor)
-	sm.set_shader_parameter("gi_bounce_strength", gi_bounce_strength)
-	sm.set_shader_parameter("gi_debug_view", gi_debug_view)
+	return RendererTerrainHorizon._push_gi_strength_uniforms(self, sm)
 
-
-# 遮挡源纹理绑定 + 强度参数。gi_bounce_bound 由调用方在 bounce_lut 也就绪后单独置位，
-# 因为弹射需要两者同时可用；只有 occluder 而没有 bounce_lut 时应保持档 0/1 行为。
 func _push_gi_uniforms(sm: ShaderMaterial, tiled: bool, visual_tiles) -> void:
-	_push_gi_strength_uniforms(sm)
-	if tiled:
-		sm.set_shader_parameter("visual_gi_occluder_tiles", visual_tiles.gi_occluder)
-	else:
-		sm.set_shader_parameter("gi_occluder_tex", _world.gi_occluder_tex)
-
-
-# ─── Terrain Horizon GPU 离屏烘焙（plan: terrain-horizon-gpu-bake 2026-07-03） ──────
-# map_baker 选 GPU 路径时只在 world 上登记 terrain_horizon_gpu_params；这里用一次性
-# SubViewport + canvas shader（res://shaders/bake/terrain_horizon_bake.gdshader）在场景树内
-# 并行烘出 8 方向 horizon RGBA8。走引擎材质管线（非 RenderingDevice .glsl），PC/移动端同一
-# 路径、规避 compute/SPIR-V 跨平台坑。SubViewport 需一帧渲染，故用 frame_post_draw 单次回读
-# （set_map 是同步的、不能 await），回读为 ImageTexture 赋给 world.terrain_horizon_tex 后推 uniform。
-const _HORIZON_BAKE_SHADER_PATH := "res://shaders/bake/terrain_horizon_bake.gdshader"
-var _horizon_bake_vp: SubViewport = null
-var _horizon_bake_world: WorldData = null
-var _horizon_bake_waited: int = 0
+	return RendererTerrainHorizon._push_gi_uniforms(self, sm, tiled, visual_tiles)
 
 func _maybe_bake_terrain_horizon_gpu() -> void:
-	if _world == null:
-		return
-	if _visual_tiles_active() and not bool(_world.visual_tiles.horizon_ready):
-		_start_visual_tile_horizon_bake(_world)
-		return
-	if not _world.terrain_horizon_gpu_pending:
-		return
-	if _world.height_tex == null or _world.hm_size.x <= 0 or _world.hm_size.y <= 0:
-		print("[terrain_horizon] GPU bake skipped: height_tex=%s hm_size=%s" % [
-			str(_world.height_tex != null), str(_world.hm_size)])
-		return
-	var params: Dictionary = _world.terrain_horizon_gpu_params
-	if params.is_empty():
-		return
-	_world.terrain_horizon_gpu_pending = false   # 防重入（regenerate 会重新置位）
-	print("[terrain_horizon] GPU bake start: hm_size=%s params=%s" % [str(_world.hm_size), str(params)])
-	_start_terrain_horizon_bake(_world, params)
-
+	RendererTerrainHorizon._maybe_bake_terrain_horizon_gpu(self)
 
 func _start_visual_tile_horizon_bake(world: WorldData) -> void:
-	if world == null or world.visual_tiles == null or world.visual_tiles.layout == null:
-		return
-	if _visual_tile_horizon_baker != null:
-		_visual_tile_horizon_baker.cancel()
-	var tiles = world.visual_tiles
-	var generation_id := int(tiles.layout.generation_id)
-	_visual_tile_horizon_baker = VisualTileHorizonBakerScript.new()
-	_visual_tile_horizon_world = world
-	_visual_tile_horizon_baker.completed.connect(
-		func(success: bool, report: Dictionary) -> void:
-			_on_visual_tile_horizon_completed(world, generation_id, success, report),
-		CONNECT_ONE_SHOT)
-	var params := world.terrain_horizon_gpu_params.duplicate(true)
-	params["max_iterations"] = int(ProjectSettings.get_setting(
-		"project_keynes/rendering/map_tiles/horizon_max_iterations", 2048))
-	world.terrain_horizon_gpu_pending = false
-	print("[visual-tiles/horizon] compute start generation=%d layers=%d" % [
-		generation_id, int(tiles.layout.layer_count)])
-	_visual_tile_horizon_baker.start(tiles, generation_id, params)
-
+	RendererTerrainHorizon._start_visual_tile_horizon_bake(self, world)
 
 func _on_visual_tile_horizon_completed(world: WorldData, generation_id: int,
 		success: bool, report: Dictionary) -> void:
-	if world == null or world.visual_tiles == null \
-			or int(world.visual_tiles.layout.generation_id) != generation_id:
-		return
-	if success:
-		_publish_visual_tile_horizon(world, report)
-		return
-	push_warning("[visual-tiles/horizon] compute failed (%s); using native baseline resample" %
-		String(report.get("reason", "unknown")))
-	_run_visual_tile_horizon_fallback(world, generation_id, report)
-
+	return RendererTerrainHorizon._on_visual_tile_horizon_completed(self, world, generation_id, success, report)
 
 func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 		compute_report: Dictionary) -> void:
-	var tiles = world.visual_tiles
-	if _world_ext == null :
-		_record_visual_tile_horizon_failure(world, "native_fallback_method_missing", compute_report)
-		return
-	var params := world.terrain_horizon_gpu_params
-	var expected_source_bytes: int = world.hm_size.x * world.hm_size.y * 4
-	var source_data := PackedByteArray()
-	# [terrain-gi 2026-07-31] 全局遮挡源图。它与 horizon 独立降级：C++ 未 rebuild 或
-	# map_index 不可用时 occluder_source 保持为空，AO 与 bent normal 仍然正常工作
-	# （它们只需要 horizon），只有弹射项关闭。
-	var occluder_source := PackedByteArray()
-	var source_path := "existing_global_horizon"
-	var source_ms := 0.0
-	if world.terrain_horizon_tex != null:
-		var source_image := world.terrain_horizon_tex.get_image()
-		if source_image != null:
-			if source_image.get_format() != Image.FORMAT_RGBA8:
-				source_image.convert(Image.FORMAT_RGBA8)
-			source_data = source_image.get_data()
-	if world.gi_occluder_tex != null:
-		var occ_image := world.gi_occluder_tex.get_image()
-		if occ_image != null:
-			if occ_image.get_format() != Image.FORMAT_RGBA8:
-				occ_image.convert(Image.FORMAT_RGBA8)
-			occluder_source = occ_image.get_data()
-	if source_data.size() != expected_source_bytes:
-		source_path = "native_global_horizon"
-		var horizon_knobs := {
-			"height_buffer": world.height_buffer,
-			"width": world.hm_size.x,
-			"height": world.hm_size.y,
-			"world_size_x": world.world_bounds.size.x,
-			"world_size_y": world.world_bounds.size.y,
-			"wrap_x": world.wrap_period_x > 0.0001,
-			"wrap_period_x": world.wrap_period_x,
-			"steps": int(params.get("steps", 128)),
-			"step_px": float(params.get("step_px", 8.0)),
-			"step_growth": float(params.get("step_growth", 0.35)),
-			"lowpass_radius": int(params.get("lowpass_radius", 1)),
-			"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
-			"bias": float(params.get("bias", 0.004)),
-			"height_world_scale": float(params.get("height_world_scale", 176.0)),
-			"max_distance_world": float(params.get("max_distance_world", hex_size * 24.0)),
-			"sea_level": clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0),
-		}
-		var map_index_data := _global_map_index_bytes(world)
-		if map_index_data.size() == expected_source_bytes:
-			horizon_knobs["emit_occluder_cells"] = true
-			horizon_knobs["map_index_data"] = map_index_data
-		var source_result: Dictionary = _world_ext.encode_bake_horizon_tex_data(horizon_knobs)
-		if bool(source_result.get("fallback", true)):
-			_record_visual_tile_horizon_failure(world,
-				"baseline_horizon_failed:%s" % String(source_result.get("reason", "unknown")),
-				compute_report)
-			return
-		source_data = source_result.get("data", PackedByteArray())
-		source_ms = float(source_result.get("elapsed_ms", 0.0))
-		occluder_source = source_result.get("occluder_data", PackedByteArray())
-		if source_data.size() == expected_source_bytes:
-			world.terrain_horizon_tex = ImageTexture.create_from_image(Image.create_from_data(
-				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, source_data))
-		if occluder_source.size() == expected_source_bytes:
-			world.gi_occluder_tex = ImageTexture.create_from_image(Image.create_from_data(
-				world.hm_size.x, world.hm_size.y, false, Image.FORMAT_RGBA8, occluder_source))
-	if source_data.size() != expected_source_bytes:
-		_record_visual_tile_horizon_failure(world, "baseline_horizon_size_mismatch", compute_report)
-		return
-	var occluder_available: bool = occluder_source.size() == expected_source_bytes
+	await RendererTerrainHorizon._run_visual_tile_horizon_fallback(self, world, generation_id, compute_report)
 
-	var layout = tiles.layout
-	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
-	var layer_reports: Array[Dictionary] = []
-	var fallback_t0 := Time.get_ticks_usec()
-	for layer_id in range(layout.layer_count):
-		if _world != world or world.visual_tiles != tiles \
-				or int(layout.generation_id) != generation_id:
-			return
-		var tile_xy := Vector2i(layer_id % layout.grid_size.x,
-			layer_id / layout.grid_size.x)
-		var physical_origin: Vector2 = layout.visual_domain.position + Vector2(
-			tile_xy.x * layout.interior_size.x - layout.gutter_px,
-			tile_xy.y * layout.interior_size.y - layout.gutter_px) * texel_world
-		var resample_knobs := {
-			"generation_id": generation_id,
-			"layer_id": layer_id,
-			"source_data": source_data,
-			"source_width": world.hm_size.x,
-			"source_height": world.hm_size.y,
-			"source_origin_x": world.world_bounds.position.x,
-			"source_origin_y": world.world_bounds.position.y,
-			"source_size_x": world.world_bounds.size.x,
-			"source_size_y": world.world_bounds.size.y,
-			"width": layout.layer_size.x,
-			"height": layout.layer_size.y,
-			"origin_x": physical_origin.x,
-			"origin_y": physical_origin.y,
-			"size_x": layout.layer_size.x * texel_world.x,
-			"size_y": layout.layer_size.y * texel_world.y,
-			"wrap_period_x": layout.wrap_period_x,
-		}
-		var result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass(resample_knobs)
-		if bool(result.get("fallback", true)) or int(result.get("generation_id", -1)) != generation_id \
-				or not tiles.upload_horizon_layer(layer_id,
-					result.get("data", PackedByteArray())):
-			_record_visual_tile_horizon_failure(world,
-				"resample_layer_failed:%d:%s" % [layer_id, String(result.get("reason", "upload"))],
-				compute_report)
-			return
-		# 遮挡源图与 horizon 完全同构（RGBA8、同尺寸、必须 NEAREST），因此直接复用同一个
-		# resample pass，只换 source_data。任一层失败就整体放弃弹射，但不影响 horizon 发布。
-		if occluder_available:
-			var occ_knobs := resample_knobs.duplicate()
-			occ_knobs["source_data"] = occluder_source
-			var occ_result: Dictionary = _world_ext.run_resample_visual_horizon_layer_pass(occ_knobs)
-			if bool(occ_result.get("fallback", true)) \
-					or int(occ_result.get("generation_id", -1)) != generation_id \
-					or not tiles.upload_gi_occluder_layer(layer_id,
-						occ_result.get("data", PackedByteArray())):
-				occluder_available = false
-				push_warning("[visual-tiles/gi] occluder resample failed at layer %d; bounce disabled"
-					% layer_id)
-		layer_reports.append({
-			"layer": layer_id,
-			"elapsed_ms": float(result.get("elapsed_ms", 0.0)),
-			"hash": result.get("hash", 0),
-		})
-		var tree := Engine.get_main_loop() as SceneTree
-		if tree != null:
-			await tree.process_frame
-	_publish_visual_tile_horizon(world, {
-		"ok": true,
-		"path": "baseline_horizon_resample",
-		"source_path": source_path,
-		"source_ms": source_ms,
-		"layers": layer_reports,
-		"gi_occluder_ok": occluder_available,
-		"compute_failure": compute_report,
-		"total_ms": float(Time.get_ticks_usec() - fallback_t0) / 1000.0,
-	})
-
-
-# [terrain-gi 2026-07-31] legacy 全局 map_index（RGBA8，G/B=cell.index 低/高字节）的字节视图，
-# 供 C++ 全局 horizon pass 顺带产出遮挡源 cell。拿不到就返回空数组，调用方据此关闭弹射。
-#
-# get_image() 是一次 GPU 回读，Godot 对桌面 GL（glGetTexImage）与 GLES/WebGL2
-# （FBO + glReadPixels）走两条不同实现，后者不可信。而这份数据唯一的下游是
-# GI 弹射的 bounce_lut，它在 PK_WEB_TEXTURE_BUDGET 下本就被编译掉了——所以
-# Compatibility 后端直接跳过回读：既省一次全图回读，也避免把坏数据喂给 C++ pass。
 func _global_map_index_bytes(world: WorldData) -> PackedByteArray:
-	if world == null or world.enum_atlas_tex == null:
-		return PackedByteArray()
-	if DCFeatureFlags.is_compatibility_renderer():
-		return PackedByteArray()
-	var image := world.enum_atlas_tex.get_image()
-	if image == null:
-		return PackedByteArray()
-	if image.get_format() != Image.FORMAT_RGBA8:
-		image.convert(Image.FORMAT_RGBA8)
-	return image.get_data()
-
+	return RendererTerrainHorizon._global_map_index_bytes(self, world)
 
 func _publish_visual_tile_horizon(world: WorldData, report: Dictionary) -> void:
-	if world == null or world.visual_tiles == null:
-		return
-	world.visual_tiles.horizon_ready = true
-	# 弹射独立于 AO 降级：occluder 缺失只关闭档 2，档 0/1 仍由 horizon 驱动。
-	world.visual_tiles.gi_occluder_ready = bool(report.get("gi_occluder_ok", false))
-	world.visual_tiles.bake_report["horizon_path"] = report.get("path", "unknown")
-	world.visual_tiles.bake_report["horizon"] = report
-	if _world == world:
-		_apply_uniforms()
-	print("[visual-tiles/horizon] published %s" % JSON.stringify(report))
-
+	RendererTerrainHorizon._publish_visual_tile_horizon(self, world, report)
 
 func _record_visual_tile_horizon_failure(world: WorldData, reason: String,
 		compute_report: Dictionary) -> void:
-	if world != null and world.visual_tiles != null:
-		world.visual_tiles.horizon_ready = false
-		world.visual_tiles.gi_occluder_ready = false
-		world.visual_tiles.bake_report["horizon_path"] = "neutral_failed"
-		world.visual_tiles.bake_report["horizon"] = {
-			"ok": false,
-			"reason": reason,
-			"compute_failure": compute_report,
-		}
-	push_warning("[visual-tiles/horizon] fallback failed: %s" % reason)
+	return RendererTerrainHorizon._record_visual_tile_horizon_failure(self, world, reason, compute_report)
 
 func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
-	var shader: Shader = load(_HORIZON_BAKE_SHADER_PATH)
-	if shader == null:
-		push_warning("[terrain_horizon] GPU bake shader missing (%s); no cast shadow this world." % _HORIZON_BAKE_SHADER_PATH)
-		return
-	# 清理上一次遗留的烘焙 viewport（快速连续 regenerate）。
-	_dispose_horizon_bake_vp()
-
-	var size: Vector2i = world.hm_size
-	var vp := SubViewport.new()
-	vp.size = size
-	vp.disable_3d = true
-	# transparent_bg=true 关键：A 通道承载方向 6/7（S/SE）的打包数据，非透明度。若 false，
-	# viewport 会把 alpha 强制为不透明 255 → S/SE 方向 horizon 恒为 max（15），阴影误判。
-	# 配合 shader 的 blend_disabled（不做 alpha 预乘/混合），get_image 回读得到原样 RGBA 字节。
-	vp.transparent_bg = true
-	vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ONCE
-	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-
-	var rect := ColorRect.new()
-	rect.position = Vector2.ZERO
-	rect.size = Vector2(size)
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	mat.set_shader_parameter("height_tex", world.height_tex)
-	mat.set_shader_parameter("tex_dims", Vector2(size))
-	mat.set_shader_parameter("steps", int(params.get("steps", 128)))
-	mat.set_shader_parameter("step_px", float(params.get("step_px", 8.0)))
-	mat.set_shader_parameter("step_growth", float(params.get("step_growth", 0.35)))
-	mat.set_shader_parameter("lowpass_radius", int(params.get("lowpass_radius", 1)))
-	mat.set_shader_parameter("max_horizon_angle", float(params.get("max_horizon_angle", 1.309)))
-	mat.set_shader_parameter("bias", float(params.get("bias", 0.004)))
-	mat.set_shader_parameter("height_world_scale", float(params.get("height_world_scale", 176.0)))
-	mat.set_shader_parameter("max_distance_world", float(params.get("max_distance_world", hex_size * 24.0)))
-	mat.set_shader_parameter("sea_level", clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0))
-	mat.set_shader_parameter("texel_x", float(params.get("texel_x", 1.0)))
-	mat.set_shader_parameter("texel_y", float(params.get("texel_y", 1.0)))
-	# 真正经度周期：柱状地图 x 环绕按此折叠，与运行期 wrap_map_uv 对齐，接缝无缝。
-	mat.set_shader_parameter("wrap_period_x", float(params.get("wrap_period_x", 0.0)))
-	rect.material = mat
-	vp.add_child(rect)
-	add_child(vp)
-
-	_horizon_bake_vp = vp
-	_horizon_bake_world = world
-	_horizon_bake_waited = 0
-	# UPDATE_ONCE 的 viewport 需一次完整绘制才有内容；用 frame_post_draw 单次回读。
-	RenderingServer.frame_post_draw.connect(_on_terrain_horizon_frame_drawn, CONNECT_ONE_SHOT)
+	RendererTerrainHorizon._start_terrain_horizon_bake(self, world, params)
 
 func _on_terrain_horizon_frame_drawn() -> void:
-	if _horizon_bake_vp == null or not is_instance_valid(_horizon_bake_vp):
-		_dispose_horizon_bake_vp()
-		return
-	# 时序保险：确保 SubViewport 至少经过一次完整绘制再回读（避免 UPDATE_ONCE 首帧时序空读）。
-	if _horizon_bake_waited < 1:
-		_horizon_bake_waited += 1
-		RenderingServer.frame_post_draw.connect(_on_terrain_horizon_frame_drawn, CONNECT_ONE_SHOT)
-		return
-	var vtex: ViewportTexture = _horizon_bake_vp.get_texture()
-	var img: Image = vtex.get_image() if vtex != null else null
-	if img == null:
-		push_warning("[terrain_horizon] GPU bake readback returned null image; no cast shadow this world.")
-		_dispose_horizon_bake_vp()
-		return
-	if img.get_format() != Image.FORMAT_RGBA8:
-		img.convert(Image.FORMAT_RGBA8)
-	# 诊断：中心 + 一个偏移像素的字节，全 0 说明 vp 未渲染或采样坐标错。
-	var wx: int = img.get_width()
-	var hy: int = img.get_height()
-	var mid: Color = img.get_pixel(wx / 2, hy / 2)
-	var q1: Color = img.get_pixel(mini(wx / 3, wx - 1), mini(hy / 3, hy - 1))
-	print("[terrain_horizon] GPU readback %dx%d fmt=%d mid(rgba*255)=[%d,%d,%d,%d] q=[%d,%d,%d,%d]" % [
-		wx, hy, img.get_format(),
-		int(round(mid.r * 255.0)), int(round(mid.g * 255.0)), int(round(mid.b * 255.0)), int(round(mid.a * 255.0)),
-		int(round(q1.r * 255.0)), int(round(q1.g * 255.0)), int(round(q1.b * 255.0)), int(round(q1.a * 255.0))])
-	var tex := ImageTexture.create_from_image(img)
-	# 只回填当初发起烘焙的那个 world（避免 regenerate 竞态把旧图写到新 world）。
-	if _horizon_bake_world != null:
-		_horizon_bake_world.terrain_horizon_tex = tex
-	# 关键修复：延迟回读晚于生成期 _apply_uniforms，必须把纹理显式补推给主 shader，否则主地图
-	# 仍持 null → terrain_horizon_tex_bound=false → 运行期 terrain_horizon_direct_visibility 直接
-	# return 1.0（无阴影）。_push_terrain_horizon_uniforms 只推标量 + 植被层，不含主 shader tex。
-	var applied := false
-	if _world == _horizon_bake_world and _shader_mat != null:
-		_push_world_uniform("terrain_horizon_tex", tex)
-		_push_world_uniform("terrain_horizon_tex_bound", true)
-		applied = true
-	if _world == _horizon_bake_world:
-		_push_terrain_horizon_uniforms()   # 同步植被层的 horizon 输入
-	print("[terrain_horizon] GPU bake applied to main shader=%s (strength=%.2f)" % [str(applied), terrain_horizon_strength])
-	_dispose_horizon_bake_vp()
+	RendererTerrainHorizon._on_terrain_horizon_frame_drawn(self)
 
 func _dispose_horizon_bake_vp() -> void:
-	if _horizon_bake_vp != null and is_instance_valid(_horizon_bake_vp):
-		_horizon_bake_vp.queue_free()
-	_horizon_bake_vp = null
-	_horizon_bake_world = null
+	RendererTerrainHorizon._dispose_horizon_bake_vp(self)
 
+func set_terrain_horizon_strength(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_strength(self, v)
 
-func set_terrain_horizon_strength(v: float) -> void:
-	terrain_horizon_strength = v
+func set_terrain_horizon_softness(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_softness(self, v)
 
+func set_terrain_horizon_max_angle(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_max_angle(self, v)
 
-func set_terrain_horizon_softness(v: float) -> void:
-	terrain_horizon_softness = v
+func set_terrain_horizon_cast_floor(v: float) -> void: RendererTerrainHorizon.set_terrain_horizon_cast_floor(self, v)
 
+func set_terrain_horizon_debug_view(v: int) -> void: RendererTerrainHorizon.set_terrain_horizon_debug_view(self, v)
 
-func set_terrain_horizon_max_angle(v: float) -> void:
-	terrain_horizon_max_angle = v
-
-
-func set_terrain_horizon_cast_floor(v: float) -> void:
-	terrain_horizon_cast_floor = v
-
-
-func set_terrain_horizon_debug_view(v: int) -> void:
-	terrain_horizon_debug_view = v
-
-
-# 60 FPS 调查（2026-06-14）：完全禁用主地形 shader。
-# 把 _world_quad.material = null → fragment shader 不跑，只剩 GPU 清屏 + canvas
-# composite。用 ΔFPS 反推 hex_terrain/world_map shader 占多少 GPU 时间。
-# 实验结束后再 toggle 回来恢复 _shader_mat。
 var _shader_disabled_by_toggle: bool = false
 
-func toggle_world_shader_disabled() -> bool:
-	if _world_quad == null:
-		print("[hex_renderer] _world_quad null, cannot toggle shader")
-		return false
-	_shader_disabled_by_toggle = not _shader_disabled_by_toggle
-	if _shader_disabled_by_toggle:
-		_world_quad.material = null
-		# [web-water-pass] 两片是同一个渲染成本的两半，只关第一片会把"关掉 shader 的
-		# ΔFPS"量小一半（水面 pass 仍在跑），探针结论就错了。
-		if _water_quad != null:
-			_water_quad.material = null
-	else:
-		_world_quad.material = _shader_mat
-		if _water_quad != null:
-			_water_quad.material = _water_mat
-	print("[hex_renderer] world shader disabled=%s — material=%s" % [
-		str(_shader_disabled_by_toggle),
-		str(_world_quad.material)
-	])
-	return _shader_disabled_by_toggle
+func toggle_world_shader_disabled() -> bool: return RendererTerrainHorizon.toggle_world_shader_disabled(self)
 
+func is_world_shader_disabled() -> bool: return RendererTerrainHorizon.is_world_shader_disabled(self)
 
-func is_world_shader_disabled() -> bool:
-	return _shader_disabled_by_toggle
+func set_ecology_visual_quality(q: int) -> void: RendererTerrainHorizon.set_ecology_visual_quality(self, q)
 
-func set_ecology_visual_quality(q: int) -> void:
-	ecology_visual_quality = clampi(q, 0, 2)
-	if _shader_mat != null:
-		_push_world_uniform("ecology_visual_quality", ecology_visual_quality)
+func set_ecology_visual_strength(v: float) -> void: RendererTerrainHorizon.set_ecology_visual_strength(self, v)
 
-func set_ecology_visual_strength(v: float) -> void:
-	ecology_visual_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("ecology_visual_strength", ecology_visual_strength)
+func set_temperature_visual_strength(v: float) -> void: RendererTerrainHorizon.set_temperature_visual_strength(self, v)
 
-func set_temperature_visual_strength(v: float) -> void:
-	temperature_visual_strength = clampf(v, 0.0, 1.5)
-	if _shader_mat != null:
-		_push_world_uniform("temperature_visual_strength", temperature_visual_strength)
+func set_moisture_visual_strength(v: float) -> void: RendererTerrainHorizon.set_moisture_visual_strength(self, v)
 
-func set_moisture_visual_strength(v: float) -> void:
-	moisture_visual_strength = clampf(v, 0.0, 1.5)
-	if _shader_mat != null:
-		_push_world_uniform("moisture_visual_strength", moisture_visual_strength)
+func set_vitality_visual_strength(v: float) -> void: RendererTerrainHorizon.set_vitality_visual_strength(self, v)
 
-func set_vitality_visual_strength(v: float) -> void:
-	vitality_visual_strength = clampf(v, 0.0, 1.5)
-	if _shader_mat != null:
-		_push_world_uniform("vitality_visual_strength", vitality_visual_strength)
+func set_snowline_visual_strength(v: float) -> void: RendererTerrainHorizon.set_snowline_visual_strength(self, v)
 
-func set_snowline_visual_strength(v: float) -> void:
-	snowline_visual_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("snowline_visual_strength", snowline_visual_strength)
+func set_debug_force_dyn_snow_only(v: bool) -> void: RendererTerrainHorizon.set_debug_force_dyn_snow_only(self, v)
 
-# 调试入口：toggle 雪盖"纯 dyn_snow（无 fbm 抖动）"渲染模式。
-# 屏幕上的雪量将严格 = info_panel 显示的 cell.snow_cover（±量化误差），用于
-# 验证 CPU→atlas→shader 链路。
-func set_debug_force_dyn_snow_only(v: bool) -> void:
-	debug_force_dyn_snow_only = v
-	if _shader_mat != null:
-		_push_world_uniform("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
+func set_dyn_atlas_upload_stride(v: int) -> void: RendererTerrainHorizon.set_dyn_atlas_upload_stride(self, v)
 
-# 运行时调整 dynamic_cell / dyn_atlas_smooth / ecology / ice atlas 的上传 stride。
-# 1=每仿真日 2=每 2 仿真日 4=每 4 仿真日。值越大越省 CPU 但视觉变化越"卡"。
-# 透传到 DynamicVisualAtlasUploadSystem.reconfigure；map_generator 持有 system 引用。
-func set_dyn_atlas_upload_stride(v: int) -> void:
-	dyn_atlas_upload_stride = clampi(v, 1, 8)
-	# 找到 MapGenerator 来 reconfigure 已注册的 system 实例。
-	var mg = get_tree().root.find_child("MapGenerator", true, false)
-	if mg != null and mg.has_method("set_dyn_atlas_upload_stride"):
-		mg.set_dyn_atlas_upload_stride(dyn_atlas_upload_stride)
+func set_foliage_density_strength(v: float) -> void: RendererTerrainHorizon.set_foliage_density_strength(self, v)
 
-func set_foliage_density_strength(v: float) -> void:
-	foliage_density_strength = clampf(v, 0.0, 1.0)
-	if _shader_mat != null:
-		_push_world_uniform("foliage_density_strength", foliage_density_strength)
+func set_day_night_enabled(v: bool) -> void: return RendererWeatherState.set_day_night_enabled(self, v)
 
-func set_day_night_enabled(v: bool) -> void:
-	day_night_enabled = v
-	_push_world_uniform("sky_global_day_weight", _global_sky_day_weight())
-	if _sky_background != null:
-		_sky_background.set_global_time(_day_phase, day_night_enabled)
-	_push_water_lighting_uniforms()
-	if _shader_mat != null:
-		_push_world_uniform("day_night_enabled", day_night_enabled)
-	if _weather_layer != null:
-		_weather_layer.set_day_night_enabled(day_night_enabled)
-	if _fog_layer != null:
-		_fog_layer.set_day_night_enabled(day_night_enabled)
-	if _building_visual_layer != null:
-		_building_visual_layer.set_day_night_enabled(day_night_enabled)
-	# [cylindrical-earth-daylight] 植被/点缀层昼夜总开关随地形同步（关闭=永昼）。
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_day_night_enabled(day_night_enabled)
-	)
-	_sync_detail_and_activity_materials()
-	if _cloud_shadow_field != null:
-		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
-
-# 任务 9：ocean_current_debug toggle —— F6 快捷键 / UI 顶栏按钮均写这里。
 # debug=true 时 shader 水分支把流线振幅拉大 2.5× 并叠加方向提示色；
+# 任务 9：ocean_current_debug toggle，F6 快捷键 / UI 顶栏按钮均写这里。
 # 方案 0：upwelling_tex 仅本开关 true 时使用——首次开启时通过 MapBaker.rebake_upwelling_tex_for_debug
 # lazy 烘焙一张并 set_shader_parameter；关闭时不做反向清理（保留贴图，避免来回切动反复 bake）。
 var _ocean_current_debug: bool = false
@@ -4774,1169 +1559,142 @@ var _ocean_current_debug: bool = false
 # 这张贴图（保持 uniform 默认黑纹理，调试覆盖层全屏中性，与未启用 debug 视觉一致但无方向提示）。
 var _map_baker = null
 
-func set_map_baker(b) -> void:
-	_map_baker = b
+func set_map_baker(b) -> void: return RendererShaderWater.set_map_baker(self, b)
 
 func set_ocean_current_debug(v: bool) -> void:
-	_ocean_current_debug = v
-	if _shader_mat != null:
-		_push_world_uniform("ocean_current_debug", _ocean_current_debug)
-	# 方案 0：仅当切到 true 且贴图缺失时才 lazy bake upwelling_tex。
-	if _ocean_current_debug and _world != null and _world.upwelling_tex == null \
-			and _map_baker != null and _map_baker.has_method("rebake_upwelling_tex_for_debug"):
-		var t0 := Time.get_ticks_msec()
-		if _map_baker.rebake_upwelling_tex_for_debug(_world):
-			print("[VisualOverhaul] ocean_current_debug → lazy baked upwelling_tex in %dms"
-					% (Time.get_ticks_msec() - t0))
-		if _shader_mat != null:
-			_push_world_uniform("ocean_upwelling_tex", _world.upwelling_tex)
+	return RendererShaderWater.set_ocean_current_debug(self, v)
 
 func get_ocean_current_debug() -> bool:
-	return _ocean_current_debug
+	return RendererShaderWater.get_ocean_current_debug(self)
 
 func set_extreme_weather_ground_effect_enabled(v: bool) -> void:
-	extreme_weather_ground_effect_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform(
-			"extreme_weather_ground_effect_enabled",
-			extreme_weather_ground_effect_enabled
-		)
-	if _weather_layer != null:
-		_weather_layer.set_extreme_weather_ground_effect_enabled(
-			extreme_weather_ground_effect_enabled
-		)
+	return RendererWeatherState.set_extreme_weather_ground_effect_enabled(self, v)
 
 func set_perf_sampler_enabled(v: bool) -> void:
-	perf_sampler_enabled = v
-	if perf_sampler_enabled:
-		if _perf_sampler == null:
-			_perf_sampler = PerfSampler.new()
-			_perf_sampler.set_label("HexRenderer")
-		else:
-			_perf_sampler.reset()
-	else:
-		_perf_sampler = null
+	return RendererWeatherState.set_perf_sampler_enabled(self, v)
 
-# ─── Pass 2（任务 2）：apply_tod + 新增开关 setter ──────────────────────────
-# 地表 shader 与 WeatherLayer 的 overlay shader。首帧必须显式调用以避免
 func apply_tod(profile: TODProfile) -> void:
-	if profile == null:
-		return
-	if _shader_mat != null:
-		_push_world_uniform("tod_sun_dir", profile.sun_dir)
-		_push_world_uniform(
-			"tod_sun_color",
-			Vector3(profile.sun_color.r, profile.sun_color.g, profile.sun_color.b)
-		)
-		_push_world_uniform(
-			"tod_ambient_color",
-			Vector3(profile.ambient_color.r, profile.ambient_color.g, profile.ambient_color.b)
-		)
-		_push_world_uniform("tod_night_factor", profile.night_factor)
-		_push_world_uniform("tod_exposure", profile.exposure)
-	if _weather_layer != null and _weather_layer.has_method("apply_tod"):
-		_weather_layer.apply_tod(profile)
-	# 植被/点缀层随昼夜统一着色（修复"树草常亮"）。缓存供新生成层补推。
-	_tod_sun_color = profile.sun_color
-	_tod_ambient_color = profile.ambient_color
-	_tod_night_factor = profile.night_factor
-	_tod_exposure = profile.exposure
-	_tod_sun_dir = profile.sun_dir.normalized()
-	_tod_valid = true
-	if _cloud_shadow_field != null:
-		_cloud_shadow_field.set_night_factor(_tod_night_factor if day_night_enabled else 0.0)
-	_push_water_lighting_uniforms()
-	if _building_visual_layer != null:
-		_building_visual_layer.set_tod(
-			_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
-		_building_visual_layer.set_tod_sun_dir(_tod_sun_dir)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
-		if layer.has_method("set_tod_sun_dir"):
-			layer.set_tod_sun_dir(_tod_sun_dir)
-	)
-	_sync_detail_and_activity_materials()
+	return RendererWeatherState.apply_tod(self, profile)
 
 func set_rain_density_boost_enabled(v: bool) -> void:
-	if _weather_layer != null and _weather_layer.has_method("set_rain_density_boost_enabled"):
-		_weather_layer.set_rain_density_boost_enabled(v)
+	return RendererWeatherState.set_rain_density_boost_enabled(self, v)
 
 func set_cloud_tod_tint_enabled(v: bool) -> void:
-	cloud_tod_tint_enabled = v
-	if _shader_mat != null:
-		_push_world_uniform("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
-	if _weather_layer != null and _weather_layer.has_method("set_cloud_tod_tint_enabled"):
-		_weather_layer.set_cloud_tod_tint_enabled(v)
+	return RendererWeatherState.set_cloud_tod_tint_enabled(self, v)
 
-# [parallax-rain] 俯视雨幕参数 setter
 func set_camera_pitch_deg(deg: float) -> void:
-	camera_pitch_deg = clampf(deg, 0.0, 90.0)
-	_camera_pitch = deg_to_rad(camera_pitch_deg)
-	if _weather_layer != null and _weather_layer.has_method("set_camera_pitch"):
-		_weather_layer.set_camera_pitch(_camera_pitch)
+	return RendererWeatherState.set_camera_pitch_deg(self, deg)
 
 func set_wind(dir: Vector2, strength: float) -> void:
-	wind_dir = dir
-	wind_strength = clampf(strength, -1.0, 1.0)
-	_wind_dir = dir.normalized() if dir.length_squared() > 0.0001 else Vector2(0.3, 1.0)
-	_wind_strength = wind_strength
-	if _weather_layer != null and _weather_layer.has_method("set_wind"):
-		_weather_layer.set_wind(_wind_dir, _wind_strength)
+	return RendererWeatherState.set_wind(self, dir, strength)
 
-# Upload active weather fronts to both the terrain shader and the weather layer.
-# Diag log（2026-05-10 引入用于诊断 weather_layer logs 缺失）：本次收尾把
-# "每帧必报"收紧为"前 3 次 + 数量变化时报"，避免 release log 刷屏；要恢复
-# 详细日志只需把 _set_weather_fronts_log_budget 改大 / 把 last_n 重置为 -1。
-var _set_weather_fronts_log_count: int = 0
-var _set_weather_fronts_last_n: int = -1
-const _set_weather_fronts_log_budget: int = 3
 func set_weather_fronts(fronts: Array) -> void:
-	# Fix #7A (2026-06-15): mobile 限 fronts 上限 4（桌面继续 16）。
-	# log_next.txt 实测 fronts=12 时 draw_calls 32→41 / primitives 1644→5418，
-	# 主要来自 12 个 GPUParticles2D 实例（每个 ~300 粒子）+ overlay shader
-	# 内 16-loop 内部计算。截断到 4 减少：
-	#   - GPUParticles primitives: ~3600→1200 (-2400)
-	#   - 内部 16-loop 早 break（weather_front_count uniform 写 4）
-	# 选 4 而非 0 保留视觉效果："最近 4 个 front 仍可见，远处天气只在 cell 数据上推进"。
-	if OS.has_feature("mobile") and fronts.size() > 4:
-		fronts = fronts.slice(0, 4)
-	var n_now: int = fronts.size()
-	var should_log: bool = false
-	if _set_weather_fronts_log_count < _set_weather_fronts_log_budget:
-		should_log = true
-	elif n_now != _set_weather_fronts_last_n:
-		should_log = true
-	if should_log:
-		_set_weather_fronts_log_count += 1
-		_set_weather_fronts_last_n = n_now
-		print("[hex-renderer] set_weather_fronts(n=%d) layer=%s" % [
-			n_now,
-			"WeatherLayer" if _weather_layer != null else "<null,fallback>",
-		])
-	if _weather_layer != null:
-		_weather_layer.set_weather_fronts(fronts)
-	else:
-		_push_weather_fronts_to_shader(fronts)
+	return RendererWeatherState.set_weather_fronts(self, fronts)
 
 func set_weather_field_texture(tex: Texture2D) -> void:
-	if _weather_layer != null and _weather_layer.has_method("set_weather_field_texture"):
-		_weather_layer.set_weather_field_texture(tex)
-	# map-visual-overhaul-v1：主地图 shader 已不再消费 weather_field_tex，
-	# 海面天气视觉迁移到 weather_overlay 三层独立云。这里只转发给 weather_layer。
+	return RendererWeatherState.set_weather_field_texture(self, tex)
 
-# map-visual-overhaul-v1：主地形材质的 weather_field_tex 通道已删除；
-# 此函数保留为空 stub，让外部脚本（main.gd 等）历史调用点在过渡期不崩溃。
 func refresh_terrain_weather_field_tex() -> void:
-	pass
+	return RendererWeatherState.refresh_terrain_weather_field_tex(self)
 
 func _on_weather_layer_visual_fronts_changed(fronts: Array) -> void:
-	_push_weather_fronts_to_shader(fronts)
+	return RendererWeatherState._on_weather_layer_visual_fronts_changed(self, fronts)
 
 func _push_weather_fronts_to_shader(fronts: Array) -> void:
-	RendererWeatherInputs._push_weather_fronts_to_shader(
-		_shader_mat,
-		_push_world_uniform,
-		_update_detail_wind_field,
-		fronts)
+	return RendererWeatherState._push_weather_fronts_to_shader(self, fronts)
 
-# 阶段 D：由天气锋面聚合出植被风场。方向 = Σ(主轴·强度) 归一化；附加风强 =
-# 各锋面 max(强度, 降水)·强度 的峰值。无锋面（n==0）时退回轻柔常量盛行风。
 func _update_detail_wind_field(fronts: Array, n: int) -> void:
-	if n <= 0:
-		_detail_wind_dir = Vector2(1.0, 0.18)
-		_detail_wind_boost = 0.0
-		return
-	var dir := Vector2.ZERO
-	var boost := 0.0
-	for i in range(n):
-		var f = fronts[i]
-		var intensity := _front_intensity(f)
-		if intensity <= 0.001:
-			continue
-		var ax := _front_axis(f)
-		if ax.length() <= 0.0001:
-			continue
-		# 主轴是无向的，统一指向 +x 半平面再按强度加权，避免反向相消。
-		if ax.x < 0.0:
-			ax = -ax
-		dir += ax.normalized() * intensity
-		boost = maxf(boost, maxf(intensity, _front_precip_amount(f)) * intensity)
-	_detail_wind_dir = dir.normalized() if dir.length() > 0.0001 else Vector2(1.0, 0.18)
-	_detail_wind_boost = clampf(boost, 0.0, 1.0)
-
-
-
+	return RendererWeatherState._update_detail_wind_field(self, fronts, n)
 
 func _front_intensity(front) -> float:
-	return RendererWeatherInputs._front_intensity(front)
+	return RendererWeatherState._front_intensity(self, front)
 
 func _front_axis(front) -> Vector2:
-	return RendererWeatherInputs._front_axis(front)
-
-
-
+	return RendererWeatherState._front_axis(self, front)
 
 func _front_precip_amount(front) -> float:
-	return RendererWeatherInputs._front_precip_amount(front)
-
-
+	return RendererWeatherState._front_precip_amount(self, front)
 
 func _rebuild() -> void:
-	if _world_quad == null:
-		return
-	if _map == null or _world == null or _map.cell_count() == 0:
-		_set_world_quad_mesh(null)
-		_configure_cloud_shadow_field()
-		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-			layer.clear()
-		)
-		_mark_detail_budget_total_dirty()
-		return
+	return RendererMaterialPublish._rebuild(self)
 
-	_apply_world_quad_geometry()
-	if PK_WEB_HIDE_WORLD_QUAD and OS.has_feature("web"):
-		_world_quad.visible = false
-	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
-	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
-		set_world_ext(_map_baker._world_ext)
-	var _t_veg := Time.get_ticks_usec()
-	_for_each_vegetation_layer(_setup_loading_vegetation_layer)
-	WebTelemetry.emit("rebuild_phase", {"p": "veg_layers", "dur": int(float(Time.get_ticks_usec()-_t_veg)/1000.0)})
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
-		if _camera_view_initialized:
-			_detail_family_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
-	if detail_scatter_family_renderer_enabled and _camera_view_initialized:
-		_queue_missing_prefetch_detail_chunks()
-		_reactivate_deferred_detail_chunks()
-	# 世界重建属于加载边界，可一次性完成预算同步；运行期 succession 则按层切片。
-	var _t_budget := Time.get_ticks_usec()
-	_apply_detail_global_budget(true)
-	WebTelemetry.emit("rebuild_phase", {"p": "detail_budget", "dur": int(float(Time.get_ticks_usec()-_t_budget)/1000.0)})
-	_log_detail_scatter_rebuild_summary("renderer_rebuild")
-	if _shader_mat == null:
-		return
-	var _t_uniform := Time.get_ticks_usec()
-	_apply_uniforms()
-	WebTelemetry.emit("rebuild_phase", {"p": "uniforms", "dur": int(float(Time.get_ticks_usec()-_t_uniform)/1000.0)})
-
-# cell LUT 网格尺寸是间接寻址的比例因子：cell_lut_uv 用它把 cell.index 换算成
-# texel 中心。推成退化值（Vector2i.ZERO 是 WorldData 的初值，(1,1) 是
-# world_map_material.tres 的默认值）会让 lw 被钳到 1、除数被 max() 抬到 1，
-# 于是整张地图的每个像素都落到 enum_lut 的同一个 texel —— 全图按某个 cell 的
-# biome 着色。那个 cell 通常是海洋，画面就变成"整体偏蓝像蒙在水下，但 height_tex
-# 驱动的山体阴影与植被层仍然正常"。
-#
-# lut_dims 过去只在 _apply_uniforms 里推一次，一旦在 bake 写入 world.lut_dims 之前
-# 推了退化值就永远纠正不回来。这里记下已推的值，交给 _sync_cell_lut_dims 每帧比对。
 func _push_cell_lut_dims(sm: ShaderMaterial, dims: Vector2i) -> void:
-	if dims.x <= 1 and dims.y <= 1 and _world != null and _world.enum_lut_tex != null:
-		push_warning("[hex_renderer] degenerate lut_dims %s pushed while enum_lut is bound; "
-			% str(dims) + "cell LUT indirection will collapse onto one texel")
-	sm.set_shader_parameter("lut_dims", Vector2(dims.x, dims.y))
-	_pushed_lut_dims = dims
-	# [web-water-pass] 水面 pass 用同一张 enum/dyn LUT，lut_dims 必须同步成同一份——
-	# 否则它按旧网格换算 texel uv，整片海会按某个错误 cell 的 biome 上色。
-	if _water_mat != null and sm == _shader_mat:
-		_water_mat.set_shader_parameter("lut_dims", Vector2(dims.x, dims.y))
+	return RendererMaterialPublish._push_cell_lut_dims(self, sm, dims)
 
-
-# world.lut_dims 由 bake / daily LUT 刷新写入，与 enum/dyn/eco/bounce LUT 纹理的
-# 网格严格同源。它一旦与材质上已推的值不一致，间接寻址就整体错位，所以这里补推。
-# 稳态下是一次 Vector2i 比较，命中才写 uniform。
 func _sync_cell_lut_dims() -> void:
-	if _world == null:
-		return
-	var dims := _world.lut_dims
-	if dims == _pushed_lut_dims or dims.x <= 0 or dims.y <= 0:
-		return
-	# 健康路径下 _apply_uniforms 已把两者对齐，这里不会命中；命中即说明材质上的
-	# lut_dims 曾经落在退化值上，把它打出来便于定位是哪条路径先推的。
-	print("[hex_renderer] lut_dims resync %s -> %s (cell LUT indirection was misaddressed)"
-		% [str(_pushed_lut_dims), str(dims)])
-	_push_cell_lut_dims(_shader_mat, dims)
-
-
-# lut_dims 的姊妹问题：LUT 纹理**对象**本身漂移。日刷走 _lut_tex_from_data，尺寸
-# 对得上时是 ImageTexture.update() 原地上传、对象不变，所以材质那一次绑定长期有效；
-# 但只要走了 create_from_image 分支（首次创建、尺寸变更、或纹理被置空后重建），
-# world 侧换成新对象而材质仍指着旧的，之后所有日刷内容都写进一张没人采样的纹理，
-# 材质就永远停在旧快照上。稳态下这里是四次引用比较，不相等才写 uniform。
-#
-# [lut-rebind 2026-11-02 真机栈溢出排查] 这条路径**不是**稳态空转：
-# bake_cell_luts() 的收尾（map_baker.gd:5582-5585）对 dyn_lut 做了双缓冲 ——
-#     var dyn_front := world.dyn_lut_tex
-#     world.dyn_lut_tex = _lut_tex_from_data(..., world.dyn_lut_tex_back)
-#     world.dyn_lut_tex_back = dyn_front
-# 而 `world.dyn_lut_tex_back` 在全工程**没有读者**（只有 world_data 的声明和这两处
-# 写入）。于是 world.dyn_lut_tex 的对象**每个游戏日换一次**（A→B→A→B…），本函数
-# 的"漂移才补绑"分支因此每天必命中一次并打印 "dyn_lut rebind" —— 崩溃窗口
-# （进世界 10~60 s）正好是开局头 1~3 个日边界，日志最后一行就是它。
-# 要彻底消掉这条每日重绑，把 map_baker 那两行改回单缓冲即可（本文件无权修改）。
-var _qa_skip_lut_sync: bool = false
-var _qa_skip_lut_checked: bool = false
-## 重入闸（帧戳，不是 bool）：下面每次重绑会在一帧内改 2~4 个 ShaderMaterial 的
-## 纹理参数，并顺带调 _push_fog_uniforms()（天气层 set_fog_mask）与
-## _fog_layer.set_enum_lut_texture()（内部写 visible）。这些 setter 都是"绑一次"
-## 语义；只要其中任何一条（现在或将来，或引擎侧的参数变更通知）再回到本函数，
-## 就构成 set_shader_parameter → setter → set_shader_parameter 的递归 —— 真机
-## VkThread 那个 3 帧循环栈溢出正是这个形状。用帧戳把本函数钉死为**每帧最多
-## 一层**：同帧重入直接丢弃，下一帧的引用比较是幂等的，会自然补上。
-## 用帧戳而不是 bool，是因为脚本运行期错误会中断函数、留下永久置位的 bool，
-## 那会让整条 LUT 同步静默失效；帧戳下一帧自动失效。
-var _lut_sync_frame: int = -1
-var _lut_sync_reentry_count: int = 0
-
+	return RendererMaterialPublish._sync_cell_lut_dims(self)
 
 func _sync_cell_lut_textures() -> void:
-	if _world == null or _shader_mat == null:
-		return
-	# [qa-skip-lut 2026-11-02] 真机 VkThread 里栈溢出（backtrace 是 3 帧循环），
-	# 排查"是不是每日 LUT 纹理重绑/重传触发的"。pk_debug.cfg 里
-	# `[render] skip_lut_sync=true` 可跳过这条路径做对照，正常玩家没有该文件。
-	if not _qa_skip_lut_checked:
-		_qa_skip_lut_checked = true
-		var qa_cfg := ConfigFile.new()
-		if qa_cfg.load("user://pk_debug.cfg") == OK:
-			_qa_skip_lut_sync = bool(qa_cfg.get_value("render", "skip_lut_sync", false))
-	if _qa_skip_lut_sync:
-		return
-	var frame := Engine.get_process_frames()
-	if _lut_sync_frame == frame:
-		_lut_sync_reentry_count += 1
-		# 只打第一条：真机上每帧一条警告会自己把 logcat 冲爆，反而掩盖现场。
-		if _lut_sync_reentry_count == 1:
-			push_warning("[hex_renderer] _sync_cell_lut_textures re-entered within one "
-				+ "frame; rebind dropped by the re-entrancy guard. A material setter "
-				+ "is calling back into the renderer — that is the shape of the "
-				+ "VkThread stack-overflow crash; report this line if it appears.")
-		return
-	_lut_sync_frame = frame
-	# 收集 → 应用两段式：收集阶段只读，应用阶段才碰材质。这样即使某个 setter
-	# 同步回调进来，它看到的也是"本帧已开始同步"的状态，而不是半更新的材质。
-	var pending: Array[String] = []
-	for lut_name in ["enum_lut", "dyn_lut", "bounce_lut"]:
-		var pending_tex: Texture2D = _world.get(lut_name + "_tex")
-		if pending_tex == null or _lut_bound.get(lut_name) == pending_tex:
-			continue
-		pending.append(lut_name)
-	for lut_name in pending:
-		_apply_cell_lut_rebind(lut_name, _world.get(lut_name + "_tex"))
-	# eco_lut 不在主材质；植被层在 set_world_material_inputs / set_map 路径绑定，
-	# 日刷走 ImageTexture.update 保对象稳定，无需在此同步。
+	return RendererMaterialPublish._sync_cell_lut_textures(self)
 
-
-## 单张 LUT 的重绑（由 _sync_cell_lut_textures 收集后调用）。_lut_bound 先写后推：
-## 万一某条推送抛错，下一帧不会重复打同一行日志（保持不变旧行为）。
 func _apply_cell_lut_rebind(lut_name: String, world_tex: Texture2D) -> void:
-	if world_tex == null or _shader_mat == null:
-		return
-	_lut_bound[lut_name] = world_tex
-	print("[hex_renderer] %s rebind (material held a stale LUT texture object)" % lut_name)
-	_push_world_uniform(lut_name, world_tex)
-	# [web-water-pass] 水面 pass 采的是同一张 enum/dyn LUT（同一对象漂移），
-	# bounce_lut 它不用。漏了这条，日刷之后水面会停在旧快照上。
-	if _water_mat != null and lut_name != "bounce_lut":
-		_water_mat.set_shader_parameter(lut_name, world_tex)
-	if lut_name == "bounce_lut":
-		_push_world_uniform("gi_bounce_bound", true)
-	elif lut_name == "enum_lut":
-		# 迷雾层与天气层各自缓存了同一张 enum_lut（A 通道 = 知识度），
-		# 它们的 setter 同样是"绑一次"语义，漂移时要一起补。
-		if _fog_layer != null:
-			_fog_layer.set_enum_lut_texture(world_tex)
-		_push_fog_uniforms()
+	return RendererMaterialPublish._apply_cell_lut_rebind(self, lut_name, world_tex)
 
 func _wrap_period_x() -> float:
-	if _map == null:
-		return 0.0
-	return HexUtils.wrap_period_x(_map.width, hex_size)
+	return RendererTerrainHorizon._wrap_period_x(self)
 
-
-## 拆分状态的只读诊断（GM / 自动化 / 真机验收用）：一眼看出当前跑的是双 program
-## 还是回退单 program、覆盖 mesh 是模块缺失还是构建成功、水面 program 种类。
 func land_water_split_diagnostics() -> Dictionary:
-	return {
-		"split_flag": split_land_water_passes,
-		"split_active": _split_active(),
-		"water_pass_active": _water_pass_active(),
-		"split_program_failed": _split_program_failed,
-		"water_pass_failed": _water_pass_failed,
-		"coverage_enabled": terrain_coverage_mesh_enabled,
-		"coverage_module_loaded": _coverage_mesh_script != null,
-		"coverage_ok": bool(_coverage_mesh_result.get("ok", false)),
-		"coverage_reason": String(_coverage_mesh_result.get("reason", "")),
-		"coverage_stats": _coverage_mesh_stats.duplicate(),
-		"land_program_land_only": _shader_mat != null and _shader_mat.shader != null \
-			and _shader_mat.shader.code.contains("PK_LAND_ONLY"),
-		"water_program_kind": _water_program_kind,
-		"water_program_uses_world_map": _water_uses_world_map,
-	}
+	return RendererTerrainHorizon.land_water_split_diagnostics(self)
 
-
-## 把"陆地用"的 mesh 同时给两块 quad：水面 quad 若有覆盖 mesh 则用覆盖 mesh，
-## 否则与陆地共享同一份（今天的行为）。null 同时清空覆盖 mesh 缓存。
 func _set_world_quad_mesh(mesh: Mesh) -> void:
-	if mesh == null:
-		_coverage_land_mesh = null
-		_coverage_water_mesh = null
-		_coverage_mesh_result = {}
-		_coverage_mesh_stats = {}
-	if _world_quad != null:
-		_world_quad.mesh = mesh
-	if _water_quad != null and is_instance_valid(_water_quad):
-		_water_quad.mesh = _water_quad_mesh(mesh)
+	RendererTerrainHorizon._set_world_quad_mesh(self, mesh)
 
-
-## [web-water-pass][land-water-split 2026-11-02] 世界 quad 几何的唯一真源。
-## 拆分激活时两张 program 可以各用一张保守覆盖 mesh（陆地 mesh / 水面 mesh，
-## 纯区域只光栅化自己那条管线）；未拆分 / 覆盖 mesh 不可用时两片共享整张 quad
-## （几何只算一次、GPU 只上传一次；两块 quad 的 VERTEX 逐顶点相同，水面 pass 的
-## v_world 必须与陆地 pass 完全一致，否则 LUT 采到的 cell 会错位）。
-## 任何改动 world quad 几何的地方都必须走这里。
 func _apply_world_quad_geometry() -> void:
-	if _world_quad == null:
-		return
-	if _world == null or _map == null or _map.cell_count() == 0:
-		_coverage_land_mesh = null
-		_coverage_water_mesh = null
-		_coverage_mesh_stats = {}
-		_set_world_quad_mesh(null)
-		return
-	var bounds := _world.world_bounds
-	var wrap_period_x := _wrap_period_x()
-	var land_mesh: Mesh = null
-	var water_mesh: Mesh = null
-	_coverage_mesh_result = {}
-	_coverage_mesh_stats = {}
-	# 覆盖 mesh 只在"真的有两个 program"时才有意义：单 program（Web MID / 拆分关闭 /
-	# 回退）必须由陆地 quad 铺满整张地图，否则水面像素会露背景。所以这里判定
-	# _water_pass_active() 而不是 _split_active()。
-	if _water_pass_active() and terrain_coverage_mesh_enabled:
-		var result := _build_coverage_meshes(bounds, wrap_period_x)
-		if bool(result.get("ok", false)):
-			land_mesh = result.get("land_mesh", null) as Mesh
-			water_mesh = result.get("water_mesh", null) as Mesh
-			_coverage_mesh_result = {"ok": true, "reason": "",
-				"stats": (result.get("stats", {}) as Dictionary).duplicate()}
-			_coverage_mesh_stats = result.get("stats", {})
-		else:
-			_coverage_mesh_result = {"ok": false,
-				"reason": String(result.get("reason", "unknown"))}
-			print("[hex_renderer/land-water-split] coverage mesh unavailable (%s); "
-				% String(result.get("reason", "unknown"))
-				+ "both programs share the full-map quad")
-	if land_mesh == null or water_mesh == null:
-		# 保底：整张 quad（拆分时两片共享；单 program 时就是今天的行为）。
-		var base := _build_world_quad_mesh(bounds, wrap_period_x)
-		land_mesh = base
-		water_mesh = base
-		if _coverage_mesh_result.is_empty():
-			_coverage_mesh_result = {"ok": false, "reason": "shared_full_quad"}
-	_coverage_land_mesh = land_mesh
-	_coverage_water_mesh = water_mesh
-	_set_world_quad_mesh(land_mesh)
+	RendererTerrainHorizon._apply_world_quad_geometry(self)
 
-
-## [land-water-split 2026-11-02] 动态调用 TerrainCoverageMesh 模块（契约见
-## docs/plans/terrain-split-implementation-plan.md §2.3）：
-##   static func build(world, world_bounds, wrap_period_x, block_world=...) -> Dictionary
-## 模块尚不存在 / 加载失败 / 返回 ok=false / mesh 缺失 ⇒ 返回 ok=false 由调用方回退整张
-## quad。构建只在 set_map / _rebuild 时发生，运行期不重建。
 func _build_coverage_meshes(bounds: Rect2, wrap_period_x: float) -> Dictionary:
-	if not terrain_coverage_mesh_enabled:
-		return {"ok": false, "reason": "disabled"}
-	if _coverage_mesh_script == null:
-		if not ResourceLoader.exists(TERRAIN_COVERAGE_MESH_PATH):
-			return {"ok": false, "reason": "module_missing"}
-		_coverage_mesh_script = ResourceLoader.load(
-			TERRAIN_COVERAGE_MESH_PATH, "Script", ResourceLoader.CACHE_MODE_IGNORE) as Script
-	if _coverage_mesh_script == null:
-		return {"ok": false, "reason": "module_load_failed"}
-	var started_usec := Time.get_ticks_usec()
-	var result: Variant = _coverage_mesh_script.call(
-		"build", _world, bounds, wrap_period_x)
-	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
-	if typeof(result) != TYPE_DICTIONARY:
-		return {"ok": false, "reason": "module_bad_result"}
-	var out: Dictionary = result
-	if not bool(out.get("ok", false)):
-		return {"ok": false, "reason": String(out.get("reason", "module_reported_failure"))}
-	if not (out.get("land_mesh") is Mesh) or not (out.get("water_mesh") is Mesh):
-		return {"ok": false, "reason": "module_missing_meshes"}
-	var stats: Dictionary = out.get("stats", {})
-	stats["apply_ms"] = elapsed_ms
-	out["stats"] = stats
-	print("[hex_renderer/land-water-split] coverage meshes in %.1fms %s" % [elapsed_ms, str(stats)])
-	return out
-
+	return RendererTerrainHorizon._build_coverage_meshes(self, bounds, wrap_period_x)
 
 func _build_world_quad_mesh(bounds: Rect2, wrap_period_x: float = 0.0) -> Mesh:
 	return RendererMapAssets._build_world_quad_mesh(bounds, wrap_period_x)
 
 func _push_visual_tile_layout_uniforms(material: ShaderMaterial, layout) -> void:
-	material.set_shader_parameter("visual_domain_origin", layout.visual_domain.position)
-	material.set_shader_parameter("visual_domain_size", layout.visual_domain.size)
-	material.set_shader_parameter("visual_grid_size", Vector2(layout.grid_size))
-	material.set_shader_parameter("visual_interior_size", Vector2(layout.interior_size))
-	material.set_shader_parameter("visual_layer_size", Vector2(layout.layer_size))
-	material.set_shader_parameter("visual_logical_resolution", Vector2(layout.logical_size))
-	material.set_shader_parameter("visual_gutter_px", float(layout.gutter_px))
-
+	RendererTerrainHorizon._push_visual_tile_layout_uniforms(self, material, layout)
 
 func _apply_uniforms() -> void:
-	var sm := _shader_mat
-	var bounds := _world.world_bounds
-	var tiled := _visual_tiles_active()
-	var visual_tiles = _world.visual_tiles if tiled else null
+	return RendererMaterialPublish._apply_uniforms(self)
 
-	# 主地图只保留 height/enum + cell-index LUT + 共享 noise_tex。
-	if tiled:
-		sm.set_shader_parameter("visual_height_tiles", visual_tiles.height)
-		sm.set_shader_parameter("visual_terrain_normal_tiles", visual_tiles.terrain_normal)
-		sm.set_shader_parameter("visual_terrain_relief_tiles", visual_tiles.terrain_relief)
-		sm.set_shader_parameter("visual_horizon_tiles", visual_tiles.horizon)
-		sm.set_shader_parameter("visual_map_index_tiles", visual_tiles.map_index)
-		sm.set_shader_parameter("visual_water_depth_tiles", visual_tiles.water_depth)
-		sm.set_shader_parameter("visual_terrain_detail_tiles", visual_tiles.terrain_detail)
-		sm.set_shader_parameter("visual_edge_neighbor_tiles", visual_tiles.edge_neighbor)
-		sm.set_shader_parameter("visual_edge_distance_tiles", visual_tiles.edge_distance)
-		_push_visual_tile_layout_uniforms(sm, visual_tiles.layout)
-	else:
-		sm.set_shader_parameter("height_tex", _world.height_tex)
-	# [terrain-web-baked-surface-A 2026-11-01 / -B 2026-11-01 / surface-array-edge 2026-11-02]
-	# 主地形非 tiled 路径用 **固定 6 层 array**（terrain_surface_tex）：layer0=normal
-	# （RG 粗法线/BA 近景坡度）、layer1=relief（RG 粗段/BA 细段坡度）、layer2=detail、
-	# layer3=occluder（两个 16-bit cell id，shader 用 texelFetch）、layer4=edge_distance
-	# （R 距离/G crease/BA 海岸占比）、layer5=edge_neighbor（RG 次生 id + B 水深）。
-	# 陆地与两个水面程序共用这一个 sampler；合并后少占材质 sampler。
-	# 2D terrain_normal_tex 只为植被/建筑/资源/贸易等其它层保留，主地形不再绑它。
-	# tiled 桌面路径改绑 visual_terrain_normal/relief/detail_tiles（见上）与
-	# visual_water_depth_tiles。运行期不再做任何高度差分。
-	var surface_layers := 0
-	if not tiled:
-		sm.set_shader_parameter("terrain_surface_tex", _world.terrain_surface_tex)
-		if _world.terrain_surface_tex != null:
-			surface_layers = int(_world.terrain_surface_tex.get_layers())
-		# [B] 层数门控：shader 侧 detail/occluder helper 按实际层数采样或返回中性值。
-		sm.set_shader_parameter("terrain_surface_layer_count", surface_layers)
-		sm.set_shader_parameter("terrain_detail_layer_bound", surface_layers >= 3)
-		sm.set_shader_parameter("terrain_occluder_layer_bound", surface_layers >= 4)
-		# [surface-array-edge 2026-11-02] layer4/5（edge_distance / edge_neighbor）是否烘出来了。
-		# shader 据此决定次生生态过渡 / crease / 海岸占比是否可用（不采越界层）。
-		sm.set_shader_parameter("terrain_edge_layers_bound", surface_layers >= 6)
-		# [B] micro 第 5 层：material array 达到 5 层时 shader 用 layer4 采样
-		# （4 = MapBaker.TERRAIN_MATERIAL_MICRO_LAYER），否则 -1 → 退回旧的 2D micro 路径。
-		var material_layers := 0
-		if _world.terrain_material_tex != null:
-			material_layers = int(_world.terrain_material_tex.get_layers())
-		sm.set_shader_parameter("terrain_material_micro_layer",
-			4 if material_layers >= 5 else -1)
-	sm.set_shader_parameter("terrain_normal_tex_bound",
-		visual_tiles.terrain_normal != null if tiled else _world.terrain_normal_tex != null)
-	sm.set_shader_parameter("terrain_relief_tex_bound",
-		visual_tiles.terrain_relief != null if tiled else _world.terrain_surface_tex != null)
-	# 法线可用性开关（与下面的 terrain_static_baked 分离）：tiled 用静态烘焙数组就绪，
-	# legacy/Web 用 surface array 是否就绪。shader 只认这个 bool 决定读不读烘焙法线。
-	sm.set_shader_parameter("terrain_baked_normals",
-		visual_tiles.static_ready if tiled else _world.terrain_surface_tex != null)
-	# [static-bake 2026-10-10 / surface-array-edge 2026-11-02] 分地形细节法线、海岸邻域、
-	# 水面软权重只在 tiled 静态烘焙里产出；非 tiled 打包路径把同一批场塞进 surface array
-	# 的 layer4/5（surface_layers>=6），因此两条路径都算"静态烘焙就绪"。
-	# **不要**再用它判法线是否可用（旧 RG8 兜底也会把它置 false；法线一律用
-	# terrain_baked_normals）。
-	sm.set_shader_parameter("terrain_static_baked",
-		(tiled and visual_tiles.static_ready and visual_tiles.terrain_relief != null)
-		or (not tiled and surface_layers >= 6))
-	# [terrain-horizon 2026-07-03] 8 方向 horizon angle：运行期只遮蔽直射光；未绑定/低档自动回退。
-	# [terrain-gi 2026-07-31] 同一张图还派生天空可见度(AO)/bent normal/弹射；见 _push_gi_uniforms。
-	if not tiled:
-		sm.set_shader_parameter("terrain_horizon_tex", _world.terrain_horizon_tex)
-	sm.set_shader_parameter("terrain_horizon_tex_bound",
-		bool(visual_tiles.horizon_ready) if tiled else _world.terrain_horizon_tex != null)
-	_push_gi_uniforms(sm, tiled, visual_tiles)
-	if not tiled:
-		sm.set_shader_parameter("map_index_atlas", _world.enum_atlas_tex)
-	# [height-flow-pack 2026-08-06] Legacy/Tiled flow 都在 height*.B，不再绑独立 flow sampler。
-	# has_flow_tex：height 纹理就绪且 flow_buffer 齐 = 已打包。
-	sm.set_shader_parameter("has_flow_tex",
-		(visual_tiles.height != null if tiled else _world.height_tex != null)
-		and _world.flow_buffer.size() >= _world.hm_size.x * _world.hm_size.y
-		and _world.hm_size.x > 0 and _world.hm_size.y > 0)
-	# [water-depth-tex 2026-06-26] 海/湖统一水深 R8：绑定后 shader 每水像素 1 次采样取代旧"海洋 5×5
-	# height 邻域 + 湖泊 16× biome-atlas 多半径"两套深浅估算；未绑定时 has_water_depth_tex=false →
-	# water_pipeline 回退旧逐邻域算法。
-	if not tiled:
-		sm.set_shader_parameter("water_depth_tex", _world.water_depth_tex)
-	sm.set_shader_parameter("ocean_current_flow_tex", _world.ocean_current_flow_tex)
-	sm.set_shader_parameter("ocean_current_flow_tex_bound", _world.ocean_current_flow_tex != null)
-	sm.set_shader_parameter("has_water_depth_tex",
-		visual_tiles.water_depth != null if tiled else _world.water_depth_tex != null)
-	# [terrain-detail-bake 2026-07-05] 静态 biome 细节调制：移动端中/高档和桌面中档用单次采样替代多噪声。
-	if not tiled:
-		sm.set_shader_parameter("terrain_detail_tex", _world.terrain_detail_tex)
-	sm.set_shader_parameter("has_terrain_detail_tex",
-		visual_tiles.terrain_detail != null if tiled else _world.terrain_detail_tex != null)
-	var edge_data_ready := (
-		_world.terrain_edge_neighbor_tex != null
-		and _world.terrain_edge_distance_tex != null
-	)
-	if not tiled:
-		# 2D edge 图仍绑给 fog / 边线 / 天气等独立图层；world_map 与非 tiled 水面程序
-		# 改读 surface array 的 layer4/5（[surface-array-edge 2026-11-02]），不再声明
-		# 这两个 2D sampler。两个来源任一就绪都算"有 edge 数据"：中性图层会让权重恒 0，
-		# 不会画出假过渡。
-		sm.set_shader_parameter("terrain_edge_neighbor_tex", _world.terrain_edge_neighbor_tex)
-		sm.set_shader_parameter("terrain_edge_distance_tex", _world.terrain_edge_distance_tex)
-	sm.set_shader_parameter("has_terrain_edge_data",
-		true if tiled else (edge_data_ready or surface_layers >= 6))
-	sm.set_shader_parameter("terrain_ecotone_width", terrain_ecotone_width)
-	sm.set_shader_parameter("terrain_ecotone_noise", terrain_ecotone_noise)
-	# [terrain-material-tiles] The array is shared by all maps and is valid for
-	# both legacy and VisualTileSet variants. Shader-side quality gating keeps
-	# MID/LOW and failed allocation on the existing detail path.
-	sm.set_shader_parameter("terrain_material_tex", _world.terrain_material_tex)
-	sm.set_shader_parameter("terrain_material_tex_bound", _world.terrain_material_tex_bound)
-	sm.set_shader_parameter("terrain_materials_enabled", terrain_materials_enabled)
-	# [terrain-material-tiles 2026-08-01d] 128 世界单位/张（5.8 hex）下特征尺度为亚 hex 级，
-	# 常用 zoom 1-2 全部命中 mip 2-3、颗粒被预滤波抹平；384（17.5 hex/张）让 z=2 命中 mip≈0。
-	# [terrain-material-tiles 2026-08-01e] 四参数已提为 @export（见文件头），此处读属性值。
-	sm.set_shader_parameter("terrain_material_world_size", terrain_material_world_size)
-	sm.set_shader_parameter("terrain_material_albedo_strength", terrain_material_albedo_strength)
-	sm.set_shader_parameter("terrain_material_normal_strength", terrain_material_normal_strength)
-	sm.set_shader_parameter("terrain_material_roughness_strength", terrain_material_roughness_strength)
-	sm.set_shader_parameter("terrain_micro_tex", TERRAIN_MICRO_TEXTURE)
-	sm.set_shader_parameter("has_terrain_micro_tex", TERRAIN_MICRO_TEXTURE != null)
-	# 走统一推送口：水面 pass 是 world_map 的 WATER_ONLY 变体，同样声明了这两项，
-	# 只写 _shader_mat 会让两片 program 的像素尺度门控不同步。
-	_push_world_uniform("camera_zoom", _camera_zoom)
-	_push_world_uniform("pixel_world_size", _refresh_pixel_world_size())
-	sm.set_shader_parameter("terrain_surface_debug_view", terrain_surface_debug_view)
-	# map-visual-overhaul-v1：weather_field_tex 已不再绑给主材质——海面天气视觉
-	# 全部迁移到 weather_overlay 三层独立云（cirrus/cumulus/fog）。
-	if _weather_layer != null:
-		_weather_layer.set_vector_atlas_texture(null)
-	# Systemic Ocean Currents：仅 F6 高对比调试层采样；主路径不依赖它。
-	# 方案 0：默认不再每次新材质都绑 upwelling_tex（commit 路径已不烘焙它，绑过来就是 null）。
-	# 当 _ocean_current_debug=true 时 set_ocean_current_debug 已 lazy bake 并 set 一次；
-	# 这里仅在 _world.upwelling_tex 已存在时同步绑定，避免新材质丢失已 bake 的纹理。
-	if _world.upwelling_tex != null:
-		sm.set_shader_parameter("ocean_upwelling_tex", _world.upwelling_tex)
-	# v10.noise-pack：把共享 RGBA 噪声包喂给地形 shader，fbm(p,N) 全局单次采样。
-	# [terrain-web-baked-surface-A/B 2026-11-01] normal/relief/detail/occluder 合并进
-	# terrain_surface_tex 后，Web 陆地程序腾出的材质槽还给 noise_tex（全部平台统一绑定）。
-	sm.set_shader_parameter("noise_tex", _world.noise_tex)
-
-	# Cell-index 间接寻址是唯一动态视觉路径。
-	var _indirect_ready: bool = _world.enum_atlas_tex != null and _world.enum_lut_tex != null
-	sm.set_shader_parameter("enum_lut", _world.enum_lut_tex)
-	_lut_bound["enum_lut"] = _world.enum_lut_tex
-	sm.set_shader_parameter("dyn_lut", _world.dyn_lut_tex)
-	_lut_bound["dyn_lut"] = _world.dyn_lut_tex
-	# eco_lut 仅绑给植被实例层；主地形已退役该 sampler（槽位给 terrain_material_tex）。
-	_push_cell_lut_dims(sm, _world.lut_dims)
-	# [terrain-gi 档 2] 弹射代表色 LUT：与 enum/dyn/eco 同一 lut_dims 网格、同一日刷节奏。
-	sm.set_shader_parameter("bounce_lut", _world.bounce_lut_tex)
-	_lut_bound["bounce_lut"] = _world.bounce_lut_tex
-	# Web 一次性取证：地表发白时到底哪张 LUT/地形纹理是空的（采样到默认白纹理就会发白）。
-	if not _web_lut_probe_done and OS.has_feature("web"):
-		_web_lut_probe_done = true
-		var _head := ""
-		if sm.shader != null:
-			_head = sm.shader.code.substr(0, 90).replace("\n", " | ")
-		WebTelemetry.emit("lut_probe", {
-			"enum_lut": _world.enum_lut_tex != null,
-			"dyn_lut": _world.dyn_lut_tex != null,
-			"bounce_lut": _world.bounce_lut_tex != null,
-			"terrain": _world.terrain_material_tex != null,
-			"enum_atlas": _world.enum_atlas_tex != null,
-			"lut_dims": str(_world.lut_dims),
-			"indirect": _indirect_ready,
-			"shader_head": _head,
-		})
-	# [terrain-web-baked-surface-B 2026-11-01] GI 弹射可用性（调试/GM 用）：
-	#   - tiled：bounce_lut 颜色 + gi_occluder 数组都就绪；
-	#   - 非 tiled packed 路径（Web HIGH）：颜色改由 enum_lut 的 biome 近似、遮挡源在
-	#     surface array layer3 → 只需 layer3 就绪（layers>=4），不再需要 bounce_lut。
-	var bounce_ready := false
-	if tiled:
-		bounce_ready = _world.bounce_lut_tex != null and bool(visual_tiles.gi_occluder_ready)
-	elif _world.terrain_surface_tex != null:
-		bounce_ready = int(_world.terrain_surface_tex.get_layers()) >= 4
-	sm.set_shader_parameter("gi_bounce_bound", bounce_ready)
-	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-		layer.set_world_material_inputs(_world, bounds, _indirect_ready)
-	)
-	_sync_detail_and_activity_materials()
-
-	sm.set_shader_parameter("world_origin", bounds.position)
-	sm.set_shader_parameter("world_size", bounds.size)
-	sm.set_shader_parameter("hex_size", hex_size)
-	sm.set_shader_parameter("wrap_origin_x", 0.0)
-	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
-	var visual_resolution := Vector2(visual_tiles.layout.logical_size) if tiled \
-		else Vector2(_world.hm_size.x, _world.hm_size.y)
-	sm.set_shader_parameter("hm_resolution", visual_resolution)
-	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 1.35)
-	sm.set_shader_parameter("terrain_normal_height_scale_hex", 2.10)
-	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
-		else Vector2(_world.derived_size.x, _world.derived_size.y))
-	sm.set_shader_parameter("visual_reference_resolution",
-		visual_resolution)
-	sm.set_shader_parameter("sea_level", _world.sea_level)
-
-	sm.set_shader_parameter("season_phase", _season_phase)
-	sm.set_shader_parameter("climate_anomaly", _climate_anomaly)
-	sm.set_shader_parameter("world_time", _world_time)
-	# 任务 2：把当前 day_phase 同步到新创建的材质上
-	sm.set_shader_parameter("day_phase", _day_phase)
-	sm.set_shader_parameter("tod_debug_sun_position_enabled", _tod_debug_sun_position_enabled)
-	sm.set_shader_parameter("tod_debug_sun_uv", _tod_debug_sun_uv)
-	sm.set_shader_parameter("tod_debug_sun_height_scale", _tod_debug_sun_height_scale)
-	sm.set_shader_parameter("eternal_min_elevation_rad", deg_to_rad(eternal_min_elevation_deg))
-	sm.set_shader_parameter("eternal_max_hour_angle_rad", deg_to_rad(eternal_max_hour_angle_deg))
-	sm.set_shader_parameter("season_temp_amp", season_temp_amp)
-	# True Insolation-Driven：CPU / GPU 同源的四个参数输出到 shader
-	sm.set_shader_parameter("true_insolation_enabled", true_insolation_enabled)
-	sm.set_shader_parameter("axial_tilt_rad", deg_to_rad(axial_tilt_deg))
-	sm.set_shader_parameter("insolation_daylen_amp", insolation_daylen_amp)
-	sm.set_shader_parameter("insolation_season_gain", insolation_season_gain)
-	sm.set_shader_parameter("vegetation_season_strength", vegetation_season_strength)
-	# map-visual-overhaul-v1：把 24 种植被的四季 LUT + climate_anomaly 偏移色 push 到 shader。
-	# 一次 setup 推送即可，运行时不刷新（除非热重载植被资源时显式 invalidate）。
-	_push_vegetation_season_lut()
-	sm.set_shader_parameter("dynamic_snow_strength", dynamic_snow_strength)
-	sm.set_shader_parameter("debug_force_dyn_snow_only", debug_force_dyn_snow_only)
-	sm.set_shader_parameter("vegetation_axis_strength", vegetation_axis_strength)
-	sm.set_shader_parameter("cover_axis_strength", cover_axis_strength)
-	sm.set_shader_parameter("ecology_visual_strength", ecology_visual_strength)
-	sm.set_shader_parameter("snowline_visual_strength", snowline_visual_strength)
-	sm.set_shader_parameter("foliage_density_strength", foliage_density_strength)
-	sm.set_shader_parameter("temperature_visual_strength", temperature_visual_strength)
-	sm.set_shader_parameter("moisture_visual_strength", moisture_visual_strength)
-	sm.set_shader_parameter("vitality_visual_strength", vitality_visual_strength)
-	sm.set_shader_parameter("ecology_visual_quality", ecology_visual_quality)
-	_push_terrain_horizon_uniforms()
-
-	# Milestone 3：默认填空 weather 数组；全局天气强度只由 WeatherLayer 消费。
-
-	sm.set_shader_parameter("visual_quality", visual_quality)
-	sm.set_shader_parameter("day_night_enabled", day_night_enabled)
-	sm.set_shader_parameter(
-		"extreme_weather_ground_effect_enabled",
-		extreme_weather_ground_effect_enabled
-	)
-	# Pass 2：云染色开关与洋流调试开关同步到新建材质
-	sm.set_shader_parameter("cloud_tod_tint_enabled", cloud_tod_tint_enabled)
-	sm.set_shader_parameter("ocean_current_debug", _ocean_current_debug)
-	# 全部水面参数（57 项）统一推送，名单见 WATER_PARAM_NAMES。
-	_push_water_params_to(sm)
-
-	# 挂上 enum_atlas 当海陆判断、noise_tex 给 weather overlay shader 复用
-	if _weather_layer != null:
-		_weather_layer.set_visual_tiles(_world.visual_tiles if tiled else null)
-		_weather_layer.setup(bounds, _world.enum_atlas_tex, _world.noise_tex, hex_size, _world.weather_lut_tex, _world.lut_dims, _wrap_period_x(), _map)
-		# [cylindrical-earth-daylight] 云光照真源相位：与 ShrubLayer spawn 同套，setup 后补推一次，
-		# 之后由 set_day_phase / set_season_phase 增量刷新（晨昏线随时间扫过）。
-		_weather_layer.set_season_phase(_season_phase)
-		_weather_layer.set_day_phase(_day_phase)
-		_weather_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
-		_weather_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
-		if _weather_layer.has_method("set_tod_debug_sun_position"):
-			_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-		if _weather_layer.has_method("set_tod_debug_sun_height_scale"):
-			_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-		_weather_layer.set_weather_field_texture(null)
-		_weather_layer.set_vector_atlas_texture(null)
-		_weather_layer.set_weather_strength(weather_strength)
-		_weather_layer.set_cloud_opacity_scale(weather_cloud_opacity)
-		# [parallax-rain] 俯视雨幕默认参数（可被外部 set_camera_pitch 覆盖）
-		_weather_layer.set_camera_pitch(_camera_pitch)
-		_weather_layer.set_wind(_wind_dir, _wind_strength)
-	if _border_layer != null:
-		_border_layer.set_hex_size(hex_size)
-		_border_layer.set_horizontal_wrap(_wrap_period_x())
-	if _fog_layer != null:
-		_fog_layer.set_visual_tiles(_world.visual_tiles if tiled else null)
-		_fog_layer.setup(bounds, _world.enum_atlas_tex, _world.lut_dims, hex_size, _wrap_period_x())
-		_fog_layer.set_enum_lut_texture(_world.enum_lut_tex)
-		# [cylindrical-earth-daylight] 迷雾云的 TOD 光照与天气云同源，setup 后补推
-		# 一次相位，之后由 set_day_phase / set_season_phase 增量刷新。
-		_fog_layer.set_season_phase(_season_phase)
-		_fog_layer.set_day_phase(_day_phase)
-		_fog_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
-		_fog_layer.set_eternal_daylight_parameters(deg_to_rad(eternal_min_elevation_deg), deg_to_rad(eternal_max_hour_angle_deg))
-		_fog_layer.set_day_night_enabled(day_night_enabled)
-		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
-		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
-		_fog_layer.set_visual_quality(visual_quality)
-		_fog_layer.set_enabled(_fog_enabled)
-		_apply_fog_early_out()
-	_push_overlay_edge_transition_data()
-	_push_fog_uniforms()
-	set_weather_fronts([])
-
-	# Hypsometric 色阶
-	sm.set_shader_parameter("color_deep_ocean", color_deep_ocean)
-	sm.set_shader_parameter("color_mid_ocean", color_mid_ocean)
-	sm.set_shader_parameter("color_shallow", color_shallow)
-	sm.set_shader_parameter("color_coast_water", color_coast_water)
-	sm.set_shader_parameter("color_beach", color_beach)
-	sm.set_shader_parameter("color_lowland", color_lowland)
-	sm.set_shader_parameter("color_hill", color_hill)
-	sm.set_shader_parameter("color_mountain", color_mountain)
-	sm.set_shader_parameter("color_peak", color_peak)
-	sm.set_shader_parameter("color_snow", color_snow)
-
-	# Hillshading
-	sm.set_shader_parameter("hillshade_strength", hillshade_strength)
-	sm.set_shader_parameter("hillshade_slope_gain", hillshade_slope_gain)
-
-	# Rivers
-	sm.set_shader_parameter("river_strength", river_strength)
-	sm.set_shader_parameter("river_threshold_low", river_threshold_low)
-	sm.set_shader_parameter("river_threshold_high", river_threshold_high)
-	sm.set_shader_parameter("river_color", river_color)
-	sm.set_shader_parameter("river_outline_color", river_outline_color)
-
-	# Contour
-	sm.set_shader_parameter("contour_enabled", contour_enabled)
-	sm.set_shader_parameter("contour_step", contour_step)
-	sm.set_shader_parameter("contour_strength", contour_strength)
-	sm.set_shader_parameter("contour_color", contour_color)
-
-	# Coast halo
-	sm.set_shader_parameter("coast_halo_color", coast_halo_color)
-	sm.set_shader_parameter("coast_halo_strength", coast_halo_strength)
-
-	# Atlas
-	sm.set_shader_parameter("parchment_tint", parchment_tint)
-	sm.set_shader_parameter("parchment_strength", parchment_strength)
-	sm.set_shader_parameter("paper_grain_strength", paper_grain_strength)
-
-	sm.set_shader_parameter("biome_tint_strength", biome_tint_strength)
-	sm.set_shader_parameter("land_albedo_saturation", land_albedo_saturation)
-	sm.set_shader_parameter("tonemap_hue_preserve", tonemap_hue_preserve)
-	# [web-water-pass] 水面第二 pass 的建/拆/对齐挂在这里：_apply_uniforms() 是
-	# "材质重建后把全部输入对齐"的唯一收口，画质换档与 set_map 都会经过它。
-	_sync_water_quad()
-	_push_world_lighting_profile()
-	_configure_cloud_shadow_field()
-	_push_cloud_shadow_material_inputs()
-
-# ─── map-visual-overhaul-v1：植被四季 LUT 推送 ──────────────────────────
-# 把 VegetationProfileRegistry 加载的 24 个 VegetationProfile 的
-#   season_color_lut[4]（春/夏/秋/冬叠乘色）
-#   anomaly_color_shift  （climate_anomaly 升高时的叠加色）
-# 一次性 push 到 shader 端的两个 uniform 数组：
-#   vegetation_season_lut[VEG_COUNT*4] : 按 [veg*4 + season] 索引（VEG_COUNT=28）
-#   vegetation_anomaly_shift[VEG_COUNT] : 按 [veg] 索引（VEG_COUNT=28）
-# 仅在 setup / _apply_uniforms 调用一次（植被资源不会运行时变化）。
 func _push_vegetation_season_lut() -> void:
-	RendererMapAssets._push_vegetation_season_lut(_shader_mat, _push_world_uniform)
+	return RendererMaterialPublish._push_vegetation_season_lut(self)
 
-# ─── Fast-tick perf opt (E)：细粒度纹理重绑接口 ──────────────────────────
-# 背景：原 `set_map` 路径会触发 `_rebuild` → `_build_world_quad_mesh` + `_apply_uniforms`，
-#       后者一次性向 shader 写入 60+ uniform（含 geometry / hypsometric / water / TOD…），
-#       在加速档 x20 下季节切换每 ~1.5s 触发一次，是肉眼可见的卡顿源头。
-# 优化：season 切换时 `_baker.rebake_*_tex_only` 已经把新像素写进了共享 ImageTexture，
-#       atlas 句柄并未变化（仍是 `_world.enum_atlas_tex`）。Godot 的 ImageTexture 内部
-#       update 机制保证 GPU 端看到新内容，**理论上 shader 端无需任何额外动作**。
-#       但为了对 set_shader_parameter 有缓存优化的 Godot 版本保险起见，这里仍重新
-#       set 一次 atlas uniform（成本极低，仅 1~3 次 set_shader_parameter），避免脏帧。
-# 三个 *_tex_only 方法语义：
-#   - set_biome_tex_only      → 重绑 enum_atlas（biome / landform / vegetation / cover
-#                                /weather 全部打包在 enum_atlas 的 4 通道里，是 biome
-#                                决策影响最直接的 atlas）
-#   - set_cover_tex_only      → 同样重绑 enum_atlas（cover 通道与 biome 通道共用 atlas）
-#   - set_vegetation_tex_only → 同样重绑 enum_atlas（vegetation 通道与 biome 通道共用）
-# 调用方（main.gd._on_season_changed）只需选择最贴合语义的一个调用即可，重复调用
-# 是幂等的（同一 ImageTexture 重新 bind 不增加 GPU 成本）。
-#
-# 显式不做的事（与 `set_map` / `_apply_uniforms` 的关键差异）：
-#   - 不重建 _world_quad.mesh（geometry 不变，避免一次几何上传）
-#   - 不重新计算 world_bounds / world_origin / world_size / sea_level / hm_resolution
-#   - 不重发 hypsometric 调色板、water 视觉、TOD 参数等静态 uniform
-#   - 不重置 _weather_layer.setup（weather layer 自有节奏）
 func set_biome_tex_only(world: WorldData) -> void:
-	if _shader_mat == null or world == null or world.enum_atlas_tex == null:
-		return
-	_push_world_uniform("map_index_atlas", world.enum_atlas_tex)
+	return RendererMaterialPublish.set_biome_tex_only(self, world)
 
 func set_cover_tex_only(world: WorldData) -> void:
-	# Project.Keynes 把 biome / cover / vegetation / weather 共用一张 enum_atlas，
-	# 因此 cover 重绑等价于 biome 重绑；保留独立方法名仅为契合方案 E 的 API 命名约定。
-	set_biome_tex_only(world)
+	return RendererMaterialPublish.set_cover_tex_only(self, world)
 
 func set_vegetation_tex_only(world: WorldData) -> void:
-	# 同上：vegetation 通道与 biome 共用 enum_atlas。
-	set_biome_tex_only(world)
+	return RendererMaterialPublish.set_vegetation_tex_only(self, world)
 
-
-# ─── [sea-ice-render-source-unify 阶段 A] 海冰单源诊断探针 ────────────────
-# 用法（调试用，控制台/F8 调）：
-#   HexRenderer.debug_sea_ice_probe(cell)  → 打印三元组：
-#     (sea_ice_fraction_cpu, dyn_atlas_smooth.A 像素字节, biome id)
-#
-# 三者必须满足：
-#   q01_byte_ice(sea_ice_fraction_cpu) == dyn_atlas_smooth_buffer[px_idx*4 + 3]
-# 否则说明 GD↔C++ 编码漂移或 cache 滞后。
-#
-# biome id 仅作上下文参考——阶段 A 之后 shader 已不依赖 biome 决定海冰渲染。
 func debug_sea_ice_probe(cell) -> Dictionary:
 	return RendererSeaIceDiagnostics.debug_sea_ice_probe(_world, _map, cell)
 
 func _setup_loading_vegetation_layer(layer: ShrubLayer) -> void:
-	layer.set_world_ext(_world_ext)
-	if layer.has_method("set_defer_initial_rebuild"):
-		layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-	if layer.has_method("set_chunked_multimesh_enabled"):
-		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
-	var layer_t0 := Time.get_ticks_usec()
-	layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
-	print("[loading-renderer-step] %s %.1fms" % [layer.name,float(Time.get_ticks_usec()-layer_t0)/1000.0])
-	if _camera_view_initialized and layer.has_method("set_camera_view"):
-		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+	await RendererLoadingVegetation._setup_loading_vegetation_layer(self, layer)
 
-## 加载尾段（进度条 98% 之后）原先对每一层 `await setup_cooperative()`，单层 200–400ms
-## （第一个草地层还要额外吃 shader 首次编译），14+ 层叠加就是那段看不见尽头的卡顿。
-##
-## 现在改成"加载期只做最便宜的初始化 + 进世界后分帧补齐"：
-##   1) 每层只建资源：shader / 材质、MultiMesh、profile / 质量档 / 光照 / TOD 状态
-##      （ShrubLayer.setup() 的 defer 分支，纯同步，不清散点）；
-##   2) 把整张地图的 chunk 登记成"待补"，由 _reactivate_deferred_detail_chunks()
-##      放行 prefetch 视口内的块；
-##   3) 真正的散布构建交给已有的运行期预算路径逐帧完成：
-##      _drain_detail_refresh_queue() → ShrubLayer.refresh_chunk_for_succession()
-##      → 原生 encode_detail_scatter_delta + chunk MultiMesh 上传。
-## 玩家进世界后先看到地形，植被在 1–3 秒内按"离相机最近优先"逐块长出来。
 func _rebuild_cooperative() -> void:
-	if _world_quad == null:
-		return
-	if _map == null or _world == null or _map.cell_count() == 0:
-		_set_world_quad_mesh(null)
-		_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
-			layer.clear()
-		)
-		_mark_detail_budget_total_dirty()
-		return
+	await RendererLoadingVegetation._rebuild_cooperative(self)
 
-	_apply_world_quad_geometry()
-	# 防御性：若 set_world_ext 尚未注入，尝试从已注入的 MapBaker 取 C++ ext。
-	if _world_ext == null and _map_baker != null and "_world_ext" in _map_baker:
-		set_world_ext(_map_baker._world_ext)
-	var _t_veg2 := Time.get_ticks_usec()
-	var deferred_layers := 0
-	if PK_WEB_DEFER_VEG_LAYERS and OS.has_feature("web"):
-		_defer_vegetation_layers_after_bind()
-	else:
-		deferred_layers = await _setup_loading_vegetation_layers_for_deferred_fill()
-	WebTelemetry.emit("rebuild_phase", {"p": "veg_layers_coop", "dur": int(float(Time.get_ticks_usec()-_t_veg2)/1000.0)})
-	if _detail_family_layer != null and is_instance_valid(_detail_family_layer):
-		_detail_family_layer.configure(_detail_layers, detail_scatter_family_renderer_enabled)
-		if _camera_view_initialized:
-			_detail_family_layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
-	if detail_scatter_family_renderer_enabled and _camera_view_initialized:
-		_queue_missing_prefetch_detail_chunks()
-	if deferred_layers > 0:
-		_seed_deferred_detail_chunks_for_deferred_fill()
-		_reactivate_deferred_detail_chunks()
-		# 恢复"非加载期"的 defer 策略：之后再调 setup() / 切画质时按老语义走，
-		# 不会因为加载期的临时 defer 出现"清空了却没人补"。
-		for layer in _detail_layers:
-			if layer != null and layer.has_method("set_defer_initial_rebuild"):
-				layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-	# 此刻各层实例数还是 0：这里只把预算统计切到"已知容量"口径并下发一次可见比例
-	# （1.0 不裁剪）。运行期每补完一批 chunk，_drain_detail_refresh_queue() 都会
-	# _mark_detail_budget_total_dirty() + _apply_detail_global_budget() 重新结算。
-	var _t_budget2 := Time.get_ticks_usec()
-	_mark_detail_budget_total_dirty()
-	_apply_detail_global_budget(true)
-	WebTelemetry.emit("rebuild_phase", {"p": "detail_budget_coop", "dur": int(float(Time.get_ticks_usec()-_t_budget2)/1000.0)})
-	_log_detail_scatter_rebuild_summary("renderer_rebuild")
-	if deferred_layers > 0:
-		_arm_deferred_detail_fill_watchdog()
-	if _shader_mat == null:
-		return
-	_apply_uniforms()
-
-
-## 逐层"最便宜的初始化"，返回真正走了 defer 的层数（0 = 全量同步构建，老行为）。
-## defer 的前提是分块 MultiMesh：chunk 是运行期补齐的最小单位。
 func _setup_loading_vegetation_layers_for_deferred_fill() -> int:
-	var deferred_layers := 0
-	var can_defer := detail_scatter_chunked_multimesh_enabled
-	var window_start_usec := Time.get_ticks_usec()
-	var layers_in_window := 0
-	var layer_built := 0
-	for layer in _detail_layers:
-		if layer == null:
-			continue
-		if can_defer:
-			_setup_loading_vegetation_layer_deferred(layer)
-			deferred_layers += 1
-		else:
-			await _setup_loading_vegetation_layer_cooperative(layer)
-		# 逐层发进度：这一段（14+ 层）原先在进度条上完全静默，是"卡在 98%"的
-		# 主要来源。defer 之后这一步只剩初始化（几毫秒/层），进度能匀速走完。
-		layer_built += 1
-		loading_layer_progress.emit(layer_built, _detail_layers.size(), String(layer.name))
-		layers_in_window += 1
-		# 不再"每层一帧"（那是给加载期 UI 让帧的老做法）：改成每 N 层或累计超预算
-		# 才让一帧，既保住进度条动画，也不再把让帧开销乘以层数。
-		var elapsed_ms := float(Time.get_ticks_usec() - window_start_usec) / 1000.0
-		if layers_in_window >= DETAIL_LOADING_LAYERS_PER_YIELD \
-				or elapsed_ms >= DETAIL_LOADING_YIELD_BUDGET_MS:
-			await get_tree().process_frame
-			window_start_usec = Time.get_ticks_usec()
-			layers_in_window = 0
-	return deferred_layers
+	return await RendererLoadingVegetation._setup_loading_vegetation_layers_for_deferred_fill(self)
 
-
-## 单层最便宜的初始化：world_ext / defer 标记 / 分块参数，然后只跑 setup() 的
-## defer 分支（建 MultiMesh 资源 + 推 profile / 质量档 / 光照 / TOD uniform）。
 func _setup_loading_vegetation_layer_deferred(layer: ShrubLayer) -> void:
-	layer.set_world_ext(_world_ext)
-	if layer.has_method("set_defer_initial_rebuild"):
-		layer.set_defer_initial_rebuild(true)
-	if layer.has_method("set_chunked_multimesh_enabled"):
-		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
-	var layer_t0 := Time.get_ticks_usec()
-	layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
-	print("[loading-renderer-step] %s %.1fms (deferred)" % [
-		layer.name, float(Time.get_ticks_usec() - layer_t0) / 1000.0])
-	if _camera_view_initialized and layer.has_method("set_camera_view"):
-		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+	RendererLoadingVegetation._setup_loading_vegetation_layer_deferred(self, layer)
 
-
-## 非分块（chunked=off）配置下的老路径：一次性协同构建整层。只有关掉分块
-## MultiMesh 时才会走到，属于兼容分支。
 func _setup_loading_vegetation_layer_cooperative(layer: ShrubLayer) -> void:
-	layer.set_world_ext(_world_ext)
-	if layer.has_method("set_defer_initial_rebuild"):
-		layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-	if layer.has_method("set_chunked_multimesh_enabled"):
-		layer.set_chunked_multimesh_enabled(detail_scatter_chunked_multimesh_enabled, detail_scatter_chunk_size_cells)
-	var layer_t0 := Time.get_ticks_usec()
-	await layer.setup_cooperative(_map, _world, _world.world_bounds, hex_size, visual_quality)
-	print("[loading-renderer-step] %s %.1fms" % [layer.name,float(Time.get_ticks_usec()-layer_t0)/1000.0])
-	if _camera_view_initialized and layer.has_method("set_camera_view"):
-		layer.set_camera_view(_camera_world_rect, _camera_world_center, _camera_zoom)
+	await RendererLoadingVegetation._setup_loading_vegetation_layer_cooperative(self, layer)
 
-
-## 把整张地图的 chunk 登记为"待分帧补齐"。这里只登记、不入队：真正入队由
-## _reactivate_deferred_detail_chunks() 按 prefetch 视口筛选，保证进世界第一屏
-## 只补视野附近的块；视野外的块留在 _detail_deferred_chunks 里，等相机移动时
-## set_camera_view() 再触发一次放行。
-## Web 专用：进世界之后再补植被层 setup（含 deferred chunk 播种）。
-## 实测这段 4.1 秒（9 层 x wasm），放在加载链里必然超时。
 func _defer_vegetation_layers_after_bind() -> void:
-	if _web_veg_defer_started:
-		return
-	_web_veg_defer_started = true
-	var tree := get_tree()
-	if tree == null:
-		return
-	var timer := tree.create_timer(2.5, true, false, true)
-	await timer.timeout
-	if not is_inside_tree():
-		return
-	var started := Time.get_ticks_usec()
-	var deferred_layers: int = await _setup_loading_vegetation_layers_for_deferred_fill()
-	if deferred_layers > 0:
-		_seed_deferred_detail_chunks_for_deferred_fill()
-		_reactivate_deferred_detail_chunks()
-		for layer in _detail_layers:
-			if layer != null and layer.has_method("set_defer_initial_rebuild"):
-				layer.set_defer_initial_rebuild(detail_scatter_family_renderer_enabled)
-	_mark_detail_budget_total_dirty()
-	_apply_detail_global_budget(true)
-	WebTelemetry.emit("veg_deferred_done", {
-		"layers": deferred_layers,
-		"dur": int(float(Time.get_ticks_usec() - started) / 1000.0),
-	})
-
+	await RendererLoadingVegetation._defer_vegetation_layers_after_bind(self)
 
 func _seed_deferred_detail_chunks_for_deferred_fill() -> void:
-	# PROBE：web 上整段跳过 deferred 植被填充（图层照常创建），
-	# 用来判定那次 ~24s 长帧是否来自填充 / MultiMesh 上传。
-	if PK_WEB_SKIP_DEFERRED_VEG_SEED and OS.has_feature("web"):
-		print("[probe] web: skip deferred vegetation seed")
-		return
-	var probe = _detail_chunk_probe_layer()
-	if probe == null or _map == null:
-		return
-	# Web：只登记"玩家脚下一小块"的 chunk，其余等相机移动时按 prefetch 视口补。
-	# 实测单位成本：每 chunk × 每层 ≈ 1 s（wasm 下的原生 scatter）。
-	# 若按整张世界登记 → 12 chunk × 9 层 ≈ 50 s；按整幅相机视野登记 → 仍要 30 s+。
-	# 这里取世界 12% 见方的一块（约 1 个 chunk），把入场成本压到 ~9 s 以内，
-	# 之后的植被随视野流式补齐。
-	var seed_rect: Rect2 = _world.world_bounds if _world != null else Rect2()
-	if OS.has_feature("web"):
-		var base: Rect2 = _world.world_bounds if _world != null else Rect2()
-		var patch := base.size * 0.12
-		var center := _camera_world_center if _camera_view_initialized else base.position + base.size * 0.5
-		seed_rect = Rect2(center - patch * 0.5, patch)
-	var plan: Array = probe.detail_chunk_plan_for_view(seed_rect)
-	if plan.is_empty():
-		return
-	var family_mask := _detail_all_family_mask()
-	var profile_mask := (1 << _detail_layers.size()) - 1
-	var seeded := 0
-	for chunk in plan:
-		var chunk_id := int(chunk.get("chunk_id", -1))
-		if chunk_id < 0:
-			continue
-		_detail_deferred_chunks[chunk_id] = family_mask
-		_detail_deferred_profile_masks[chunk_id] = profile_mask
-		seeded += 1
-	print("[detail_scatter/DEFER_SEED] chunks=%d layers=%d" % [seeded, _detail_layers.size()])
-
+	RendererLoadingVegetation._seed_deferred_detail_chunks_for_deferred_fill(self)
 
 func _detail_chunk_probe_layer():
-	for layer in _detail_layers:
-		if layer != null and is_instance_valid(layer) \
-				and layer.has_method("detail_chunk_plan_for_view") \
-				and layer.has_method("detail_chunk_is_in_prefetch") \
-				and layer.has_method("detail_chunk_cells"):
-			return layer
-	return null
-
+	return RendererLoadingVegetation._detail_chunk_probe_layer(self)
 
 func _arm_deferred_detail_fill_watchdog() -> void:
-	_deferred_fill_watchdog_msec = Time.get_ticks_msec()
-	_deferred_fill_rescued = false
+	return RendererLoadingVegetation._arm_deferred_detail_fill_watchdog(self)
 
-
-## 兜底：defer 之后若刷新管线已经空闲、却在救援窗口内一株都没建出来（原生
-## encode_detail_scatter_delta 缺失 / chunk 计划失败等），退回一次性全量构建。
 func _poll_deferred_detail_fill_watchdog() -> void:
-	if _deferred_fill_rescued or _deferred_fill_watchdog_msec <= 0:
-		return
-	if Time.get_ticks_msec() - _deferred_fill_watchdog_msec \
-			< int(DEFERRED_DETAIL_FILL_RESCUE_SECONDS * 1000.0):
-		return
-	if not _detail_refresh_queue.is_empty() or _detail_plan_phase != DETAIL_PLAN_IDLE \
-			or not _detail_refresh_batches.is_empty():
-		# 还在排队：只是慢，不是坏了，继续等。
-		return
-	_deferred_fill_watchdog_msec = 0
-	_deferred_fill_rescued = true
-	if _map == null or _world == null or _detail_layers.is_empty():
-		return
-	var built := 0
-	for layer in _detail_layers:
-		if layer != null and layer.has_method("instance_count"):
-			built += int(layer.instance_count())
-	if built > 0:
-		return
-	push_warning("[detail_scatter] 分帧补齐在救援窗口内没有任何植被实例，回退全量构建")
-	print("[detail_scatter/DEFER_RESCUE] fallback=full_rebuild layers=%d" % _detail_layers.size())
-	for layer in _detail_layers:
-		if layer == null or not is_instance_valid(layer):
-			continue
-		if layer.has_method("set_defer_initial_rebuild"):
-			layer.set_defer_initial_rebuild(false)
-		layer.setup(_map, _world, _world.world_bounds, hex_size, visual_quality)
-	_mark_detail_budget_total_dirty()
-	_apply_detail_global_budget(true)
+	return RendererLoadingVegetation._poll_deferred_detail_fill_watchdog(self)

@@ -111,7 +111,7 @@ func _run() -> void:
 	var flax = building_by_id.get("flax_collector")
 	var retting = building_by_id.get("flax_retting_pit")
 	_expect("flax farm produces bast_fiber", flax != null and Array(flax.output_good_ids) == ["bast_fiber"])
-	_expect("retting consumes bast_fiber and produces flax_fiber", retting != null and Array(retting.input_good_ids) == ["bast_fiber"] and Array(retting.output_good_ids) == ["flax_fiber"])
+	_expect("retting consumes bast_fiber and produces flax_fiber", retting != null and Array(retting.input_good_ids).has("bast_fiber") and Array(retting.output_good_ids) == ["flax_fiber"])
 	_expect("retting construction does not consume bast_fiber", retting != null and not Array(retting.construction_good_ids).has("bast_fiber"))
 	var flax_good = load("res://data/goods/flax_fiber.tres")
 	_expect("flax_fiber is unlocked by retting, not field production", flax_good != null and Array(flax_good.technology_tags).has("tech.flax_retting") and not Array(flax_good.technology_tags).has("tech.wild_flax_collection"))

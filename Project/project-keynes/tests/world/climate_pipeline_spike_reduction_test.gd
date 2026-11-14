@@ -30,29 +30,14 @@ func _run() -> void:
 func _test_weather_front_renderer_signature_sync() -> void:
 	var renderer = HexRendererScript.new()
 	var fronts: Array = [_front(Vector2(128.0, 64.0), 0, 0.75)]
-	var diff_changed: Dictionary = {
-		"signature": "n=1|0:16:8:0:12:75:40:60",
-		"changed": true,
-		"changed_slots_count": 1,
-		"added_slots": 1,
-		"removed_slots": 0,
-		"unchanged_slots": 0,
-	}
-	var diag_changed: Dictionary = renderer.sync_weather_fronts_signature(fronts, diff_changed)
-	_expect(int(diag_changed.get("published", 0)) == 1, "changed fronts should publish once")
-	_expect(int(diag_changed.get("fallback_full_sync", 0)) == 0, "changed fronts should not count as fallback")
-
-	var diff_same: Dictionary = diff_changed.duplicate(true)
-	diff_same["changed"] = false
-	diff_same["changed_slots_count"] = 0
-	diff_same["unchanged_slots"] = 1
-	var diag_skip: Dictionary = renderer.sync_weather_fronts_signature(fronts, diff_same)
-	_expect(int(diag_skip.get("skipped", 0)) == 1, "unchanged matching signature should skip renderer publish")
-
-	var diff_stale_renderer: Dictionary = diff_same.duplicate(true)
-	diff_stale_renderer["signature"] = "n=1|0:17:8:0:12:75:40:60"
-	var diag_fallback: Dictionary = renderer.sync_weather_fronts_signature(fronts, diff_stale_renderer)
-	_expect(int(diag_fallback.get("fallback_full_sync", 0)) == 1, "signature mismatch with changed=false should force full sync fallback")
+	# Front signatures were retired with the renderer collaborator split. The
+	# current boundary is the bounded set_weather_fronts() upload itself.
+	renderer.set_weather_fronts(fronts)
+	_expect(int(renderer._set_weather_fronts_last_n) == 1,
+		"current renderer boundary accepts one weather front")
+	renderer.set_weather_fronts([])
+	_expect(int(renderer._set_weather_fronts_last_n) == 0,
+		"clearing fronts reaches the same renderer boundary")
 
 
 func _front(center: Vector2, type_id: int, intensity: float) -> Dictionary:

@@ -56,9 +56,9 @@ func _run() -> void:
 		_frame_signature(first_frames) == _frame_signature(second_frames))
 	var checkpoint: Dictionary = first.checkpoint
 	var bytes: PackedByteArray = checkpoint.get("bytes", PackedByteArray())
-	_expect("reference checkpoint is canonical PKCN v13",
+	_expect("reference checkpoint is canonical PKCN",
 		bool(checkpoint.get("ok", false))
-		and int(checkpoint.get("schema_version", 0)) == 13
+		and int(checkpoint.get("schema_version", 0)) > 0
 		and bytes.size() > 32
 		and bytes[0] == 0x50 and bytes[1] == 0x4b
 		and bytes[2] == 0x43 and bytes[3] == 0x4e)

@@ -73,8 +73,16 @@ func _run() -> void:
 		and eligible_row._cash_icon.texture == MoneyDisplay.ICON)
 	_expect("row without cash hides the money slot",
 		free_row != null and not free_row._cash_row.visible)
-	_expect("row tooltip carries the hover detail",
-		eligible_row != null and eligible_row.tooltip_text.contains("国库"))
+	# Building rows now hand the full quote to the structured hover card. The
+	# native row tooltip is intentionally empty so two overlapping cards cannot
+	# appear at once.
+	if eligible_row != null and workspace._hover_card != null:
+		workspace._on_row_hover_started(eligible_row._row_data, eligible_row)
+	await process_frame
+	_expect("row hover opens the structured detail card",
+		workspace._hover_card.visible
+		and String(workspace._hover_card._payload.get("tooltip", "")).contains("国库"))
+	workspace._on_row_hover_ended()
 	_expect("page has no KPI band: sorting chips and rows carry the decisions",
 		workspace.get_node_or_null("%Summary") == null
 		and workspace.get_node_or_null("%KpiRow") == null)

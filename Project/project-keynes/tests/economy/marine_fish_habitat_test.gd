@@ -34,8 +34,16 @@ func _run() -> void:
 
 	var map := MapData.new(4, 1)
 	map.temp_arr = PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
+	map.temp_30d_arr = PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
+	map.temp_365d_arr = PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
 	map.moisture_arr = PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
+	map.plant_available_water_arr = PackedFloat32Array([0.5, 0.5, 0.5, 0.5])
+	map.weather_precip_arr = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+	map.snow_cover_arr = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+	map.weather_intensity_arr = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
 	map.is_water_arr = PackedByteArray([0, 0, 1, 1])
+	map.weather_type_arr = PackedByteArray([0, 0, 0, 0])
+	map.cover_arr = PackedByteArray([0, 0, 0, 0])
 	map.resource_habitat_mask_arr = PackedByteArray([1, 8, 2, 4])
 	for profile in ResourceProfileRegistry.ordered():
 		var reserves := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
@@ -51,7 +59,11 @@ func _run() -> void:
 	knobs["n_cells"] = 4
 	var result: Dictionary = ext.run_natural_resource_pass(knobs)
 	_expect("native resource pass completes", bool(result.get("done", false)))
-	var values: PackedFloat32Array = map.res_marine_fish_reserve_arr
+	# bind_map_data uses a snapshot bridge; native resource passes publish the
+	# authoritative lane through the component slot rather than mutating MapData
+	# in place.
+	var marine_sid := ext.component_id(&"cell_res_marine_fish_reserve")
+	var values: PackedFloat32Array = ext.snapshot_f32(marine_sid)
 	print("  [INFO] post-pass marine reserves=%s" % str(values))
 	_expect("daily pass preserves both valid habitats",
 		values[1] > 0.0 and values[2] > 0.0)

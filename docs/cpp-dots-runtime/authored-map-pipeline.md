@@ -14,7 +14,7 @@ author.py
   → Godot --headless tests/compile_authored_map.gd
   → run_native_world_generate_post_base_pass
   → PKMAP
-  → MapGenerator._generate_cells_from_pkmap
+  → native_generation_bridge.gd 的 generate_cells_from_pkmap（MapGenerator 持有）
        assemble_native_result + restuff_generation_river_cache
   → 既有 bake / 资源 / 生物 / 选点
 ```

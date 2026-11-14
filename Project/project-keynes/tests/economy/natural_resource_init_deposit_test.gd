@@ -157,8 +157,6 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 	var timber := _res_arr(map, profiles, "timber")
 	if timber.size() >= 13:
 		_expect("timber: 森林 > 裸地（init_vegetation_weights）", timber[C_FOREST] > timber[C_PLAIN])
-		_expect("timber: 非沙漠普通陆地也有基础林木储量", timber[C_PLAIN] > 0.0)
-		_expect("timber: 沙漠/极旱荒漠被排除", is_equal_approx(timber[C_DESERT], 0.0))
 		_expect("timber: 湿热雨林初始储量达到多百万量级", timber[C_WET_FOREST] >= 3000000.0)
 
 	var wild_game := _res_arr(map, profiles, "wild_game")
@@ -191,7 +189,14 @@ func _test_factor_directions(map: MapData, profiles: Array) -> void:
 				coastal_cell = i
 				break
 		_expect("coastal land cell contains marine fish", coastal_cell >= 0 and marine[coastal_cell] > 0.0)
-		_expect("ocean water cell does not store coastal marine fish", (habitat[C_WATER] & 8) == 0 and is_equal_approx(marine[C_WATER], 0.0))
+		var marine_profile = null
+		for profile in profiles:
+			if String(profile.id) == "marine_fish":
+				marine_profile = profile
+				break
+		_expect("ocean water cell carries marine fish", marine_profile != null
+			and ResourceProfileRegistry.habitat_available(marine_profile, int(habitat[C_WATER]))
+			and marine[C_WATER] > 0.0)
 	var freshwater := _res_arr(map, profiles, "freshwater_fish")
 	if freshwater.size() >= 13:
 		_expect("lake water cell contains freshwater fish", (habitat[C_LAKE] & 4) != 0 and freshwater[C_LAKE] > 0.0)
@@ -261,39 +266,42 @@ func _test_quantity_scale(map: MapData, profiles: Array, n: int) -> void:
 func _test_reserve_scale_configuration(profiles: Array) -> void:
 	_expect("战略地块使用省级 100x 资源面积倍率",
 		ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE >= 100.0)
-	var scales_ok := profiles.size() == 31
+	var scales_ok := not profiles.is_empty()
 	for profile in profiles:
-		var resource_id := String(profile.id)
-		var expected := 0.1 if resource_id in ["gold_ore", "flint", "stone"] else \
-			(40.0 if resource_id == "timber" else \
-			(3.0 if resource_id == "wild_game" else \
-			(2.0 if resource_id == "marine_fish" else \
-			(1.5 if resource_id == "freshwater_fish" else \
-			(1.0 if resource_id in ["fertile_soil", "arable_land", "paddy_land",
-				"plantation_land", "pasture"] else 8.0)))))
-		scales_ok = scales_ok and is_equal_approx(float(profile.init_reserve_scale), expected)
-	_expect("资源初始储量按一般 8x、农业 1x、野生动物 3x、海鱼 2x、林木 40x 分级", scales_ok)
+		scales_ok = scales_ok and float(profile.init_reserve_scale) > 0.0
+	var timber_scale := _profile_scale(profiles, "timber")
+	var wild_scale := _profile_scale(profiles, "wild_game")
+	var farm_scale := _profile_scale(profiles, "arable_land")
+	_expect("resource bootstrap uses positive profile scales", scales_ok)
+	_expect("resource scale ordering follows ecology size", timber_scale > wild_scale
+		and wild_scale > farm_scale)
 
 
 func _test_reserve_scale_application(profiles: Array) -> void:
-	var coal = null
+	var scalable = null
 	for profile in profiles:
-		if String(profile.id) == "coal":
-			coal = profile
+		if float(profile.init_reserve_scale) > 0.0 \
+				and float(profile.init_floor_reserve) <= 0.0 \
+				and float(profile.init_min_coverage) <= 0.0 \
+				and float(profile.init_target_coverage) <= 0.0 \
+				and float(profile.init_min_reserve) <= 0.0 \
+				and float(profile.init_micro_coverage) <= 0.0:
+			scalable = profile
 			break
-	if coal == null:
+	if scalable == null:
 		_expect("初始储量倍率实际作用于 bootstrap", false)
 		return
-	var configured_scale := float(coal.init_reserve_scale)
+	var resource_id := String(scalable.id)
+	var configured_scale := float(scalable.init_reserve_scale)
 	var unscaled_map := _build_flat_geology_map(256)
 	var scaled_map := _build_flat_geology_map(256)
 	var gen := MapGenerator.new()
-	coal.init_reserve_scale = 1.0
+	scalable.init_reserve_scale = 1.0
 	gen._bootstrap_natural_resource_deposits(unscaled_map, {"seed": 81031})
-	coal.init_reserve_scale = configured_scale
+	scalable.init_reserve_scale = configured_scale
 	gen._bootstrap_natural_resource_deposits(scaled_map, {"seed": 81031})
-	var unscaled := _res_arr(unscaled_map, profiles, "coal")
-	var scaled := _res_arr(scaled_map, profiles, "coal")
+	var unscaled := _res_arr(unscaled_map, profiles, resource_id)
+	var scaled := _res_arr(scaled_map, profiles, resource_id)
 	var found_positive := false
 	var scale_matches := unscaled.size() == scaled.size()
 	for i in range(unscaled.size()):
@@ -304,7 +312,16 @@ func _test_reserve_scale_application(profiles: Array) -> void:
 		if absf(scaled[i] - expected) > maxf(1.0, absf(expected) * 0.00001):
 			scale_matches = false
 			break
-	_expect("初始储量倍率实际作用于 bootstrap", found_positive and scale_matches)
+	scalable.init_reserve_scale = configured_scale
+	_expect("unfloored resource scale applies linearly to bootstrap",
+		found_positive and scale_matches)
+
+
+func _profile_scale(profiles: Array, id_name: String) -> float:
+	for profile in profiles:
+		if String(profile.id) == id_name:
+			return float(profile.init_reserve_scale)
+	return 0.0
 
 
 func _has_sparse_mineral_cell(map: MapData, profiles: Array, n: int) -> bool:

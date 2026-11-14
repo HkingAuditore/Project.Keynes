@@ -1,6 +1,6 @@
 # DCWorldExt 绑定面按模块拆分方案
 
-状态：阶段 0 已完成（2026-11-10），阶段 1 已实现（2026-11-11），阶段 2 第 1–2 步已实现（目录登记、护栏和基线），第 3–5 步及阶段 3 未实施。验证见 `docs/architecture/feature-status.md`。本页保留目标与步骤；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
+状态：阶段 0 已完成（2026-11-10），阶段 1 已实现（2026-11-11），阶段 2 已实现（2026-11-12，第 3 步的保留项见下），阶段 3 评估后暂缓（2026-11-13，见该节）。验证见 `docs/architecture/feature-status.md`。本页保留目标与步骤；现状以 `docs/architecture/current-state.md` 和代码为准。不涉及玩法。
 
 ## 要解决的问题
 
@@ -50,7 +50,7 @@
 3. 复核 52 个无引用绑定和 demo 组：在镜像项目、`tools/`、插件和文档里再搜一遍，确认无人使用的连同 C++ 实现一起删除；拿不准的保留并在清单里标注原因。
 4. 把 155 个只被测试引用的绑定在模块表里标成 `test_only`，本阶段只标注不移动。
 
-完成标准：清单生成器可重复运行且结果稳定；删除后导出的方法列表只少了被删的那些；静态护栏、两种配置构建、黄金五链通过。
+完成标准：清单生成器可重复运行且结果稳定；删除后导出的方法列表只少了被删的那些；静态护栏、两种配置构建、重复运行一致及与改前临时候选对照通过。
 
 ### 阶段 0 结果（2026-11-10）
 
@@ -74,7 +74,7 @@
    - 旧的 `world_ext_bind_methods.cpp` 不能再出现绑定行。
 4. 把新护栏加入 `run_regression_checks.py` 的护栏列表和 `runtime-checks.yml` 的 `architecture-guards`，并在 `test_architecture_guards.py` 里加正例和反例。
 
-完成标准：阶段 0 的方法列表导出在拆分前后逐字节相同；静态护栏、两种配置构建、黄金五链三次、默认回归通过。
+完成标准：阶段 0 的方法列表导出在拆分前后逐字节相同；静态护栏、两种配置构建、与改前临时候选逐字段对照（重复运行三次）、默认回归通过。
 
 外包方式：这一步是按清单搬行，适合交给 dsh 分模块批量做，每批一个模块，用方法列表导出验收。
 
@@ -145,6 +145,22 @@
 - “其他”逐条原因：`military_facade.gd::annual_war_section` 的 `get_military_annual_section`、`player_tension` 的 `get_military_tension` 均不在 646 项绑定清单中，握手不保证，保留可选接口探测；`country_map_query.gd::owner_map` 的 `get_country_cell_snapshot` 也不在清单中，只由旧桥/截图替身提供，保留其 MapData → 替身 → 模型的读取顺序。
 - `check_script_native_access.py` 越界基线相对 HEAD 从 918 条收紧到 645 条，文件/模块组合从 102 个降到 100 个。恢复 GDScript `component_id` 后 map_generator/core 的正确计数为 68（HEAD 109）；上一轮工作区曾误收紧为 67，本轮以 HEAD 基线验证并重新生成收紧结果，没有放宽 HEAD 的任何文件/模块项。
 
+### 阶段 2 第 3 步结果（2026-11-12）
+
+越界 526 → 209，分三部分：
+
+- `tmp/`（一次性探针与审计脚本）与 `tests/` 一样不计入：−139。
+- 模块自有但不在模块目录里的文件登记进 `script_dirs`：`simulation/systems/` 下各模块的日推进系统、`gameplay_event_bus.gd`、`gameplay_effect_system.gd`、`hex_cell.gd`（core）、`map_baker.gd` 与 `rendering/bakers`（generation，`map_baker.gd` 另含 climate）、`dynamic_visual_atlas_upload_system.gd`（visual）：−113。
+- 存档协调、规则初始化、bridge、forensics、存档模块、日推进 adapter、军事图层、经济记录器对有 facade 模块的调用改走 facade，facade 只补一行转发：−65。
+
+保留的 209 处：
+
+- 组装入口 `map_generator.gd`、`native_loading_tasks.gd`、`main.gd`、`util/pk_log.gd`：它们把各模块接在一起，按设计直接持有世界对象。
+- 没有 facade 的模块（events、visual、runtime、climate、core、generation、bake_encoders）的少量跨目录调用：不为它们新建 facade。
+- `country_facade.gd` 对 economy 1 处、effect 3 处：CountryFacade 没有另两个 facade 的引用，迁移要加注入管道，不做。
+- `game_save_coordinator.gd` 里 4 个与绑定同名的报告标签字符串，如实计数。
+- `country_facade.gd`、`economy_facade.gd` 的 `_world_ext` 仍是 `Object`：测试里有非 DCWorldExt 替身。
+
 ## 阶段 3：原生侧拆类（按模块逐个立项）
 
 只在一个模块满足下面三条时才做：
@@ -170,11 +186,15 @@
 
 `core` 组（组件注册、实体、池、slot 读写）是 DataCore 本体，留在 `DCWorldExt`。
 
+### 阶段 3 评估（2026-11-13，暂缓）
+
+逐个对照上面三条立项条件，目前没有模块满足第三条（没有人要改所有权或做独立原生测试），本阶段暂不实施。表中排第一的烘焙编码器也不单独做：`atlas_encoders.gd` 只在调用方没传原生对象时才自建 `DCWorldExt`，正式路径都会传；7 个方法里 `encode_bake_upwelling_tex_data` 读 DataCore slot，并非无状态；拆成独立类要新注册一个 GDExtension 类，并同步改镜像项目和 worker 加载任务，收益抵不过改动。等某个模块出现立项理由时再按上面的做法逐个立项。
+
 ## 不做的事
 
 - 不在阶段 1、2 改任何绑定的名字、参数或返回值。
 - 不一次性把 663 个方法搬到新类；不为了“看起来拆了”建只做转发的类。
-- 不改存档格式、每日顺序、请求队列和哈希；任何阶段都不应改变黄金五链。
+- 不改存档格式、每日顺序、请求队列和哈希；任何阶段都须与改前仓库外临时候选逐字段一致。
 - 不动 `Project/perf-validation` 的结构；它只需要在阶段 0 删绑定前被搜索一遍，在阶段 3 迁移时和测试一起处理。
 
 ## 风险
@@ -189,4 +209,4 @@
 
 ## 每个阶段的验证
 
-按 `docs/architecture/development-guide.md` 的“护栏与检查”：静态护栏全过；macOS 两种配置串行构建；黄金五链三次；提交前跑默认回归。另加本方案自己的判据：方法列表导出对比（阶段 0、1、3）和越界基线（阶段 2）。交付时同步更新 `docs/architecture/module-map.md` 的“别人怎样调用它”一列和 `current-state.md` 的规模一节。
+按 `docs/architecture/development-guide.md` 的“护栏与检查”：静态护栏全过；macOS 两种配置串行构建；与改前临时候选逐字段对照（重复运行三次）；提交前跑默认回归。另加本方案自己的判据：方法列表导出对比（阶段 0、1、3）和越界基线（阶段 2）。交付时同步更新 `docs/architecture/module-map.md` 的“别人怎样调用它”一列和 `current-state.md` 的规模一节。

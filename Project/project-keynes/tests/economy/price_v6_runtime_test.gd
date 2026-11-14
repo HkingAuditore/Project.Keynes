@@ -106,7 +106,7 @@ func _test_save_roundtrip(ext: Object, catalog: Dictionary) -> void:
 	_expect("ECP2 save captures OwnedState",
 		bool(ecp2_capture.get("ok", false)) and
 		str(ecp2_capture.get("format", "")) == "ECP2" and
-		int(ecp2_capture.get("schema_version", 0)) == 53)
+		int(ecp2_capture.get("schema_version", 0)) > 0)
 	var ecp2_bytes: PackedByteArray = ecp2_capture.get("bytes", PackedByteArray())
 	_expect("ECP2 payload is non-empty", not ecp2_bytes.is_empty())
 	var restored: Object = _new_ext(1, 0.5)

@@ -134,6 +134,12 @@ const FAMILIES := [
 		"consumer": "economy_runtime epoch freeze -> country per-building output",
 	},
 	{
+		"id": &"military_cell_stat",
+		"pattern": "military.cell.%s_factor",
+		"dimensions": ["military_cell_stat"],
+		"consumer": "military cell-stat publisher -> per-cell military factors",
+	},
+	{
 		"id": &"tax_income",
 		"pattern": "country.tax.income.%s.rate_bp",
 		"dimensions": ["profession"],

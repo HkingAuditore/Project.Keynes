@@ -1,7 +1,7 @@
 class_name IdeologyEffectReport
 extends RefCounted
 
-## Turns `get_ideology_effect_instance_report()` into per-card totals.
+## Turns `get_ideology_effect_target_report()` into per-card totals.
 ##
 ## Why this exists
 ## ---------------
@@ -15,16 +15,18 @@ extends RefCounted
 ## model gets a small dictionary and the native dictionary shape stays in exactly
 ## one place.
 ##
-## One row is one *instance*, not one cell. A cell-domain selector expands to one
-## instance per resolved cell, so `instances` is the cell count for those cards;
-## a country-domain program resolves to a single country handle, so the same
-## number reads as "1 target". The UI therefore says 「效果 N 处」 rather than
+## One row is one (card, program, target): an Effect instance, or one cell of a
+## derived-layer program. A cell-domain selector expands to one row per resolved
+## cell, so `instances` is the cell count for those cards; a country-domain
+## program resolves to a single country handle, so the same number reads as
+## "1 target". The UI therefore says 「效果 N 处」 rather than
 ## 「命中 N 块地」 — the honest word for both.
 ##
-## `main_thread_owned` is NOT "is it working". The native column is the ownership
-## bit ("did the main thread own this instance, or was it handed to the worker"),
-## so under worker authority a fully live card reports 0. It is kept for
-## diagnostics and tests only; the card face must never render it as 「已生效」.
+## `main_thread_owned` is NOT "is it working". It counts the instance report's
+## `present` ownership bit ("did the main thread own this instance, or was it
+## handed to the worker"); the target report has no such column, so it reads 0.
+## It is kept for diagnostics and tests only; the card face must never render it
+## as 「已生效」.
 ##
 ## `cells` is the answer to a different question: *where* the card acts. It is
 ## empty for a country-domain card and for a ref the native side could not label,
@@ -66,49 +68,42 @@ static func summarize(report: Dictionary) -> Dictionary:
 	var targets: PackedInt64Array = report.get("target_handles", PackedInt64Array())
 	var domains: PackedInt32Array = report.get("target_domains", PackedInt32Array())
 	var owned: PackedByteArray = report.get("present", PackedByteArray())
-	var by_idea := {}
+	# Per card: [instances, owned, targets, cells, levels], the last three as
+	# insertion-ordered sets. A derived card can reach the whole territory, so
+	# dedupe by dictionary rather than by scanning the packed array.
+	var acc := {}
 	var total := 0
 	for index in range(idea_ids.size()):
 		var idea_id := int(idea_ids[index])
-		var row: Dictionary = by_idea.get(idea_id, {
-			"instances": 0,
-			"main_thread_owned": 0,
-			"targets": PackedInt64Array(),
-			"cells": PackedInt32Array(),
-			"levels": PackedInt32Array(),
-		})
-		row["instances"] = int(row["instances"]) + 1
+		if not acc.has(idea_id):
+			acc[idea_id] = [0, 0, {}, {}, {}]
+		var row: Array = acc[idea_id]
+		row[0] += 1
 		if index < owned.size() and int(owned[index]) != 0:
-			row["main_thread_owned"] = int(row["main_thread_owned"]) + 1
+			row[1] += 1
 		if index < targets.size():
-			var seen: PackedInt64Array = row["targets"]
 			var target := int(targets[index])
-			# `has` on a PackedInt64Array is O(n), and n is capped at
-			# SELECTOR_MAX_CELLS (32) per program row by the reconciler, so the
-			# quadratic worst case is 32^2 per card. Not worth a side table.
-			if not seen.has(target):
-				var grown := PackedInt64Array(seen)
-				grown.append(target)
-				row["targets"] = grown
+			row[2][target] = true
 			# A cell is only a cell when the native side said so. An unlabelled
 			# ref (domain -1) falls through both guards and paints nothing.
 			if index < domains.size() and CELL_TARGET_DOMAINS.has(int(domains[index])) \
 					and target >= 0:
-				var cell_seen: PackedInt32Array = row["cells"]
-				if not cell_seen.has(target):
-					var cell_grown := PackedInt32Array(cell_seen)
-					cell_grown.append(target)
-					row["cells"] = cell_grown
+				row[3][target] = true
 		if index < levels.size():
-			var level_seen: PackedInt32Array = row["levels"]
-			var level := int(levels[index])
-			if not level_seen.has(level):
-				var level_grown := PackedInt32Array(level_seen)
-				level_grown.append(level)
-				level_grown.sort()
-				row["levels"] = level_grown
-		by_idea[idea_id] = row
+			row[4][int(levels[index])] = true
 		total += 1
+	var by_idea := {}
+	for idea_id in acc:
+		var row: Array = acc[idea_id]
+		var level_list := PackedInt32Array(row[4].keys())
+		level_list.sort()
+		by_idea[idea_id] = {
+			"instances": row[0],
+			"main_thread_owned": row[1],
+			"targets": PackedInt64Array(row[2].keys()),
+			"cells": PackedInt32Array(row[3].keys()),
+			"levels": level_list,
+		}
 	return {"ok": true, "reason": "", "total": total, "by_idea": by_idea}
 
 

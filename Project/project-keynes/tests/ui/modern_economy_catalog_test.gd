@@ -24,6 +24,15 @@ func _expect(label: String, condition: bool) -> void:
 	print("  [%s] %s" % ["PASS" if condition else "FAIL", label])
 	if not condition: failures += 1
 
+func _profile_count(directory: String) -> int:
+	var count := 0
+	for file_name in ResourceLoader.list_directory(directory):
+		if file_name.get_extension().to_lower() != "tres":
+			continue
+		if ResourceLoader.load("%s/%s" % [directory, file_name], "Resource") != null:
+			count += 1
+	return count
+
 func _audit_knowledge_building_owners(catalog: Dictionary,
 		_buildings: PackedStringArray, _professions: PackedStringArray) -> void:
 	var sectors: PackedInt32Array = catalog.get("building_economic_sectors", PackedInt32Array())
@@ -279,12 +288,17 @@ func _audit(catalog: Dictionary) -> void:
 	_audit_zero_cost_starter_construction()
 	_audit_soft_complement_policy(catalog)
 	_audit_household_consumption_contract(catalog)
-	_expect("network economy catalog has 134 goods", goods.size() == 134)
-	_expect("network economy has 400 production methods", buildings.size() == 400)
-	_expect("45 labor, institutional and research professions", professions.size() == 45)
-	_expect("20 differentiated household needs", needs.size() == 20)
-	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
-	_expect("building catalog references 31 distinct natural resources", resources.size() == 31)
+	_expect("compiled goods match loaded good profiles",
+		goods.size() == _profile_count("res://data/goods"))
+	_expect("compiled buildings match loaded building profiles",
+		buildings.size() == _profile_count("res://data/economy/buildings"))
+	_expect("compiled professions match loaded profession profiles",
+		professions.size() == _profile_count("res://data/economy/professions"))
+	_expect("compiled needs match loaded need profiles",
+		needs.size() == _profile_count("res://data/economy/needs"))
+	_expect("registered natural resources are non-empty", ResourceRegistryScript.count() > 0)
+	_expect("building resource bindings cover the registered resources",
+		resources.size() == ResourceRegistryScript.count())
 	_audit_production_climate(catalog, buildings)
 	for relation_profession in ["enslaved_laborer", "serf", "tenant_farmer",
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
@@ -681,7 +695,8 @@ func _audit(catalog: Dictionary) -> void:
 			_expect("industrial has no natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] == resource_offsets[type_id])
 		for edge in range(resource_offsets[type_id], resource_offsets[type_id + 1]):
 			used_resources[production_resources[edge]] = true
-	_expect("collectors cover every referenced resource", collectors >= 50 and used_resources.size() == 31)
+	_expect("collectors cover every referenced resource", collectors >= 50 and
+		used_resources.size() == ResourceRegistryScript.count())
 	var resource_modes: PackedInt32Array = catalog.building_production_resource_modes
 	var resource_access_modes: PackedInt32Array = catalog.building_production_resource_access_modes
 	var output_quantities: PackedInt64Array = catalog.building_output_quantities

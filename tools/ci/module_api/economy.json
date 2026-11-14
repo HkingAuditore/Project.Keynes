@@ -48,6 +48,9 @@
     "world_ext_resource.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_runtime_graph.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_simulation_host.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_simulation_host_climate.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_simulation_host_save.cpp": "Godot binding layer owns NativeEconomyRuntime",
+    "world_ext_simulation_host_self_tests.cpp": "Godot binding layer owns NativeEconomyRuntime",
     "world_ext_trigger.cpp": "Godot binding layer owns NativeEconomyRuntime"
   },
   "legacy_includers": [],

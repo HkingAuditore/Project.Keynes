@@ -17,7 +17,9 @@ const ERA_BADGE_GOLD := Color(1.0, 0.79, 0.30)
 const UI_FONT: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Regular.ttf")
 const UI_FONT_BOLD: FontFile = preload("res://assets/fonts/swei/SweiGothicLegCJKsc-Bold.ttf")
 const UI_DISPLAY_FONT: Font = preload("res://assets/fonts/muyao/display_handwritten.tres")
-const CHRONICLE_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+## 2026-11-11：正文字体统一到 Swei。原来这里挂的是思源宋体，与 UI 正文是两套字形，
+## web 包为此多背了 1.32 MB。名字保留（调用点几十处），内容改成 Swei Regular。
+const CHRONICLE_SERIF: FontFile = UI_FONT
 const CHRONICLE_INK := Color(0.19, 0.15, 0.12)
 const CHRONICLE_MUTED := Color(0.39, 0.32, 0.25)
 const CHRONICLE_PAPER := Color(0.94, 0.89, 0.78)
@@ -56,11 +58,17 @@ const CHRONICLE_SHEET_LIGHT := Color(0.965, 0.925, 0.835)
 const CHRONICLE_SHEET_DEEP := Color(0.905, 0.845, 0.720)
 const CHRONICLE_SHEET_EDGE := Color(0.855, 0.780, 0.640)
 
-# 展示级衬线：与现有 SourceHanSerifCN-Regular 同族（Noto Serif CJK = 思源宋体），
-# 只为拿到真正的 SemiBold 笔画，避免 132px 伪粗糊成一团。
-const ANNUAL_DISPLAY_SERIF: FontFile = preload("res://assets/fonts/noto_serif_sc/NotoSerifSC-SemiBold.otf")
-const ANNUAL_PENCIL_DISPLAY: FontFile = preload("res://assets/fonts/annual_pencil/Muyao-Softbrush-2.ttf")
-const ANNUAL_PENCIL_BODY: FontFile = preload("res://assets/fonts/annual_pencil/PFanHuTuTi_Min.ttf")
+## 2026-11-11：展示级改用 Swei 的真 Bold 字重。原来这里挂 Noto Serif CJK SemiBold，
+## 是为了避开 132px 伪粗糊成一团；但 Noto Serif 与思源宋体同族、与 UI 正文又是两套
+## 字形，统一到 Swei 后连那 1.34 MB 也省了。
+const ANNUAL_DISPLAY_SERIF: FontFile = UI_FONT_BOLD
+const ANNUAL_PENCIL_DISPLAY: FontFile = preload("res://assets/fonts/muyao/Muyao-Softbrush-2.ttf")
+## 2026-11-11：手写体只保留 Muyao，`PFanHuTuTi_Min.ttf` 已删除。
+## 它每字形 1.32 KB，是 Muyao（0.76 KB）的 1.7 倍、正文字体（0.30 KB）的 4.4 倍 ——
+## 4.52 MB 的子集里全是笔触轮廓点。删掉它 web 包直接少 3.25 MB。
+## 这里保留 BODY 这个名字做别名：年鉴里的 body/label/body_soft 现在都是 Muyao 加
+## 不同的 variation_embolden，语义仍然成立，调用点不用改。
+const ANNUAL_PENCIL_BODY: FontFile = ANNUAL_PENCIL_DISPLAY
 
 static var _annual_fonts: Dictionary = {}
 
@@ -99,7 +107,7 @@ static func annual_font(kind: String) -> Font:
 			body.base_font = ANNUAL_PENCIL_BODY
 			body.variation_embolden = 0.06
 			font = body
-	# 手写体字库只收了少量字形（Muyao 6890、仿宋 3718），缺字在 web 上会变 tofu：
+	# 手写体字库只收了少量字形（Muyao 6890），缺字在 web 上会变 tofu：
 	# 浏览器没有系统字体兜底，这里统一挂随包 fallback 链（只在缺字时生效）。
 	font.fallbacks = [UI_FONT, CHRONICLE_SERIF]
 	_annual_fonts[kind] = font
@@ -369,7 +377,7 @@ const DOSSIER_BRASS := Color(0.69, 0.49, 0.24, 1.0)
 const DOSSIER_VERDIGRIS := Color(0.24, 0.46, 0.40, 1.0)
 const DOSSIER_SLATE := Color(0.31, 0.43, 0.53, 1.0)
 const DOSSIER_UMBER := Color(0.47, 0.37, 0.27, 1.0)
-const DOSSIER_SERIF: FontFile = preload("res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf")
+const DOSSIER_SERIF: FontFile = UI_FONT
 
 # Formal HUD archival medallion & plaque tokens (unified with Dossier/Archive popups).
 const HUD_LEATHER_BG := Color(0.165, 0.108, 0.070, 0.96)

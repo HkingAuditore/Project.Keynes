@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_workspace.tscn" id="3_technology"]
 [ext_resource type="PackedScene" path="res://scenes/ui/economy_dossier.tscn" id="4_economy"]
-[ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="5_ideology"]
+[ext_resource type="PackedScene" path="res://scenes/ui/politics_workspace.tscn" id="5_politics"]
 [ext_resource type="Texture2D" path="res://assets/ui/dossier_shell/hinge.png" id="6_hinge"]
 [ext_resource type="PackedScene" path="res://scenes/ui/military_workspace.tscn" id="7_military"]
 [ext_resource type="PackedScene" path="res://scenes/ui/diplomacy_workspace.tscn" id="8_diplomacy"]
@@ -106,12 +106,12 @@ text = "科技"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
-[node name="Ideology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+[node name="Politics" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
 custom_minimum_size = Vector2(0, 52)
 layout_mode = 2
 toggle_mode = true
 theme_type_variation = &"PKCountryNavButton"
-[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology"]
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Politics"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -122,17 +122,17 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 10
-[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Politics/Row"]
 custom_minimum_size = Vector2(24, 24)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 expand_mode = 1
 stretch_mode = 5
-[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Politics/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "理念"
+text = "政治"
 vertical_alignment = 1
 theme_type_variation = &"PKCountryRailMuted"
 
@@ -264,10 +264,10 @@ layout_mode = 2
 text = "科技"
 toggle_mode = true
 theme_type_variation = &"PKChapterTab"
-[node name="Ideology" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileHeader/MobileNav/Buttons"]
+[node name="Politics" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileHeader/MobileNav/Buttons"]
 custom_minimum_size = Vector2(112, 44)
 layout_mode = 2
-text = "理念"
+text = "政治"
 toggle_mode = true
 theme_type_variation = &"PKChapterTab"
 [node name="Economy" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileHeader/MobileNav/Buttons"]
@@ -370,7 +370,7 @@ layout_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-[node name="IdeologyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("5_ideology")]
+[node name="PoliticsWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("5_politics")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2

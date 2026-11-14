@@ -162,15 +162,22 @@ func _run_stuck_pending_recovery(compiled: Dictionary) -> void:
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
 	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
 		"tech.early_knowledge_institution")
+	var animal_tracking := (compiled.technology_ids as PackedStringArray).find(
+		"tech.animal_tracking")
+	var natural_observation := (compiled.technology_ids as PackedStringArray).find(
+		"tech.natural_observation")
+	var crop_domestication := (compiled.technology_ids as PackedStringArray).find(
+		"tech.crop_domestication")
 	_expect("recovery bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.recovery"]),
 		"country_names": PackedStringArray(["Recovery"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_offsets": PackedInt32Array([0, 5]),
 		"technology_indices": PackedInt32Array([
-			hunting, early_knowledge]),
+			hunting, early_knowledge, animal_tracking, natural_observation,
+			crop_domestication]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -211,15 +218,22 @@ func _run_missed_effect_nudge_recovery(compiled: Dictionary) -> void:
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
 	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
 		"tech.early_knowledge_institution")
+	var animal_tracking := (compiled.technology_ids as PackedStringArray).find(
+		"tech.animal_tracking")
+	var natural_observation := (compiled.technology_ids as PackedStringArray).find(
+		"tech.natural_observation")
+	var crop_domestication := (compiled.technology_ids as PackedStringArray).find(
+		"tech.crop_domestication")
 	_expect("nudge bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.nudge"]),
 		"country_names": PackedStringArray(["Nudge"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_offsets": PackedInt32Array([0, 5]),
 		"technology_indices": PackedInt32Array([
-			hunting, early_knowledge]),
+			hunting, early_knowledge, animal_tracking, natural_observation,
+			crop_domestication]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),

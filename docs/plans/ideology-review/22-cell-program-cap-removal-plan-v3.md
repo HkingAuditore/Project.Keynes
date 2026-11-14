@@ -951,7 +951,6 @@ explain 默认解释当前 in-use basis；未到生效点的已确认变化可�
 - `tests/ideology/ideology_mechanism_matrix_test.gd`
 - `tests/ideology/ideology_x1b_source_count_test.gd`
 - `tests/ideology/ideology_cell_card_worker_test.gd`
-- `tests/ideology/ideology_school_strength_worker_test.gd`
 - `tests/ideology/ideology_tag_snapshot_stress_test.gd`
 - `tests/runtime/runtime_ideology_save_roundtrip_test.gd`
 - `tests/runtime/runtime_ideology_parity_test.gd`
@@ -978,7 +977,6 @@ M0 记录既知失败的精确测试名、检查数、错误签名与基线日�
 | ideology_mechanism_matrix_test | **失败** | 1129 | 3 |
 | ideology_x1b_source_count_test | pass | 142 | 0 |
 | ideology_cell_card_worker_test | 需 `CELL_ONLY_CARD=agrarian_reform` + `PK_DISABLE_SUPPORT_GATE=1`；仍会在 day 30 停在 `country_worker_peer_results_pending` | — | — |
-| ideology_school_strength_worker_test | 挂起于 `_wait_ideology_ready`（`_drive_days`），~0 CPU | — | — |
 
 `ideology_instance_budget_test.gd` **未被工作区修改**却 10 项失败，根因是 `ideology_catalog.gd:353` 的 `ideology_school_unknown:`——该测试构造的定义没有填 `school_id`。这是既存债务，与本方案无关，但它在回归清单里，所以必须按名比对而不是按数量。
 

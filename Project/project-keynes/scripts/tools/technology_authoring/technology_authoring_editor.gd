@@ -846,10 +846,6 @@ func open_value_picker(title: String, key: String, callback: Callable) -> void:
 
 
 func open_term_value_picker(key: String, callback: Callable) -> void:
-	if key == "runtime_consumer" or key == "effect_class" or key == "subject_kind":
-		_open_picker("已有取值：%s" % key, distinct_term_values(key),
-			PackedStringArray(), callback)
-		return
 	_open_picker("已有取值：%s" % key, distinct_term_values(key),
 		PackedStringArray(), callback)
 

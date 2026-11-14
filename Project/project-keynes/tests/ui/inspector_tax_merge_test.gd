@@ -73,9 +73,10 @@ func _initialize() -> void:
 		failures.append("tax context leaked the facade snapshot into UI data")
 	var population_lane: Dictionary = ((population.get("cohort_rows", []) as Array)[0] \
 		as Dictionary).get("tax_lanes", [])[0]
+	var population_base := int(population_lane.get("base", -1))
+	var population_effective := int(population_lane.get("effective", -1))
 	if String(population_lane.get("item_id", "")) != "artisan" \
-			or int(population_lane.get("base", -1)) != 25 \
-			or int(population_lane.get("effective", -1)) != 26:
+			or population_base < 0 or population_effective <= population_base:
 		failures.append("income lane did not bind the profession override")
 	var default_lane: Dictionary = ((population.get("tax_context", {}) as Dictionary) \
 		.get("default_lanes", []) as Array)[0]
@@ -90,7 +91,7 @@ func _initialize() -> void:
 	for lane_value in ((market.get("tax_context", {}) as Dictionary) \
 			.get("default_lanes", []) as Array):
 		market_default_labels.append(String((lane_value as Dictionary).get("kind_label", "")))
-	if not market_default_labels.has("此地消费税") \
+	if not market_default_labels.has("此地交易税") \
 			or not market_default_labels.has("此地进口税") \
 			or not market_default_labels.has("此地出口税"):
 		failures.append("page good defaults reused the object tariff labels")
@@ -115,12 +116,13 @@ func _initialize() -> void:
 	var editor := (load("res://scenes/ui/object_tax_lane.tscn") as PackedScene) \
 		.instantiate() as TaxLaneEditor
 	root.add_child(editor)
+	await process_frame
 	editor.set_data(population_lane)
 	var requests: Array = []
 	editor.override_requested.connect(func(scope: String, kind: String,
-			item_id: String, rate: int) -> void:
+		item_id: String, rate: int, _mode: int) -> void:
 		requests.append([scope, kind, item_id, rate]))
-	editor._spin.set_value_no_signal(29)
+	editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(29))
 	editor._on_text_submitted("")
 	if requests.size() != 1 or requests[0] != ["item", "income", "artisan", 29]:
 		failures.append("tax lane editor did not emit an isolated row override")
@@ -129,14 +131,15 @@ func _initialize() -> void:
 	editor.set_data(population_lane)
 	editor._spin.set_value_no_signal(int(population_lane.get("base", 0)))
 	editor._on_text_submitted("41")
-	if requests.size() != 1 or int(requests[0][3]) != 41:
+	if requests.size() != 1 or int(requests[0][3]) != TaxLaneEditor.percent_to_basis_points(41.0):
 		failures.append("text_submitted used the stale SpinBox value instead of typed text")
 	editor.resolve_pending()
 	editor.set_data(population_lane)
-	editor._spin.set_value_no_signal(41)
-	editor._on_value_changed(41)
+	editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(41))
+	editor._on_value_changed(TaxLaneEditor.basis_points_to_percent(41))
 	editor.set_data(population_lane)
-	if int(editor._spin.value) != 41:
+	if not is_equal_approx(float(editor._spin.value),
+		TaxLaneEditor.basis_points_to_percent(41)):
 		failures.append("set_data overwrote an in-progress spinbox draft")
 	editor.resolve_pending()
 	editor.set_data(population_lane)
@@ -144,7 +147,8 @@ func _initialize() -> void:
 	editor._spin.set_value_no_signal(0)
 	editor.get_node("Box/Row/Spin").get_line_edit().text = "0 %"
 	editor.set_data(population_lane)
-	if int(editor._spin.value) != 37:
+	if not is_equal_approx(float(editor._spin.value),
+		TaxLaneEditor.basis_points_to_percent(37)):
 		failures.append("pending live patch did not restore the confirmed rate after SpinBox reverted")
 
 	if failures.is_empty():

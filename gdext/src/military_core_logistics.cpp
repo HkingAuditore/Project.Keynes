@@ -17,6 +17,8 @@
 #include "military_core_internal.h"
 
 #include <algorithm>
+#include <chrono>
+#include <climits>
 #include <utility>
 #include <tuple>
 
@@ -480,8 +482,12 @@ int64_t MilitaryCore::stock_add(uint8_t holder_kind, int32_t holder, int32_t cou
 
 void MilitaryCore::stock_clear_holder(uint8_t holder_kind, int32_t holder) {
     size_t write = 0;
+    int64_t cleared = 0;
     for (size_t i = 0; i < _stocks.size(); ++i) {
-        if (_stocks[i].holder_kind == holder_kind && _stocks[i].holder == holder) continue;
+        if (_stocks[i].holder_kind == holder_kind && _stocks[i].holder == holder) {
+            if (_stocks[i].qty > 0) cleared += _stocks[i].qty;
+            continue;
+        }
         if (write != i) _stocks[write] = _stocks[i];
         ++write;
     }
@@ -489,6 +495,14 @@ void MilitaryCore::stock_clear_holder(uint8_t holder_kind, int32_t holder) {
         _stocks.resize(write);
         _stock_index_ok = false;
     }
+    // Goods that leave custody without being consumed (an annihilated formation,
+    // a disbanded garrison, a dropped training order) are a ledger term, not a
+    // silent disappearance: the identity
+    //   received = stock + transit + consumed + intercepted_out - intercepted_in + returned
+    // only balances if the cleared quantity lands in `returned`. Without this a
+    // long AI soak drifts positive by exactly what the destroyed armies carried
+    // (measured 1941 goods over 1500 days before the fix).
+    if (cleared > 0) _ledger_returned += cleared;
 }
 
 // ========================================================= supply indexes
@@ -565,7 +579,7 @@ bool rings_ready(const MilitaryCore &core) {
 // good id per economy good, so the good id itself is the slot (ids below 128).
 int32_t market_good_slot(const MilitaryWorldDigest &digest, int32_t good) {
     (void)digest;
-    return good >= 0 && good < 128 ? good : -1;
+    return good >= 0 ? good : -1;
 }
 // One pass over the committed market rows: per-cell CSR (rows in (cell, row)
 // order), the day quota (50% of the sellable stock, design 9.3) and the
@@ -753,6 +767,7 @@ bool military_supply_connected(const MilitaryCore &core, const MilitaryWorldDige
     return false;
 }
 #include "military_core_procurement.inc"
+#include "military_core_maintenance.inc"
 // ============================================================ threat fields
 void MilitaryCore::build_threat_fields(const MilitaryWorldDigest &digest) {
     const int32_t cells = _terrain.cell_count;
@@ -816,6 +831,13 @@ void MilitaryCore::build_threat_fields(const MilitaryWorldDigest &digest) {
 }
 // Destination cell of a shipment (-1 when the destination vanished).
 int32_t shipment_dest_cell(const MilitaryCore &core, const MilitaryShipment &shipment) {
+    // A building group's repair inventory is addressed by the composite holder,
+    // so its destination cell is decoded from it (design D2).
+    if (shipment.dest_kind == MILITARY_LOT_MAINTENANCE) {
+        if (shipment.dest < 0) return -1;
+        const int32_t cell = shipment.dest / MILITARY_MAINT_HOLDER_STRIDE;
+        return cell < core.terrain().cell_count ? cell : -1;
+    }
     if (shipment.dest_kind == MILITARY_LOT_ARMY) {
         int32_t slot = -1;
         if (core.resolve_army(shipment.dest_handle, slot)) {
@@ -1206,34 +1228,12 @@ void MilitaryCore::run_consumption(const MilitaryWorldDigest &digest,
                 ema_3day(_armies.supply_ratio_q16[static_cast<size_t>(army)], supply_q16);
         }
     }
-    // --- Equipment condition decay / recovery (sec 4.2).
-    // Condition falls 0.5%/day when maintenance stock is short and recovers
-    // 1%/day otherwise; floor 50%.
-    for (size_t i = 0; i < lot_count; ++i) {
-        if (_lots.active[i] == 0) continue;
-        if (_lots.count[i] <= 0) continue;
-        const int32_t slot = _lots.country_slot[i];
-        int64_t need_total = 0;
-        int64_t met_total = 0;
-        for (size_t h = 0; h < holders.size(); ++h) {
-            if (holders[h].country_slot != slot) continue;
-            if (holders[h].holder_kind != _lots.location_kind[i]) continue;
-            if (holders[h].holder != _lots.location[i]) continue;
-            for (int32_t cls = 0; cls < MILITARY_MAX_SUPPLY_CLASSES; ++cls) {
-                if (cls == STOCK_CLASS_EQUIPMENT) continue;
-                need_total += holders[h].need[static_cast<size_t>(cls)];
-                met_total += holders[h].satisfied[static_cast<size_t>(cls)];
-            }
-            break;
-        }
-        const bool maintained = need_total <= 0 || met_total * 2 >= need_total;
-        int32_t condition = _lots.condition_q16[i];
-        if (condition <= 0) condition = MILITARY_Q16;
-        condition += maintained ? CONDITION_RECOVER_Q16 : -CONDITION_DECAY_Q16;
-        if (condition < CONDITION_FLOOR_Q16) condition = CONDITION_FLOOR_Q16;
-        if (condition > MILITARY_Q16) condition = MILITARY_Q16;
-        _lots.condition_q16[i] = condition;
-    }
+    // Equipment condition decay / recovery moved to `run_maintenance` (physical
+    // maintenance design §3): condition now reads the REPAIR RECIPE ratio only.
+    // The old block here used the aggregate supply ratio, so a full ration, fuel
+    // and ammunition store kept equipment "maintained" while no repair material
+    // ever arrived - the exact coupling this refactor removes. Applying both
+    // would double the daily wear/recovery, so this is a move, not a copy.
 }
 // ============================================================= requisition
 void MilitaryCore::run_requisition(const MilitaryWorldDigest &digest,

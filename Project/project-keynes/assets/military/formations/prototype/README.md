@@ -73,7 +73,7 @@ v3 改为每个“原型 × 动作”单独生成一张 4 列 × 2 行、共 8 �
 - `attack/hit` 的末帧可因闭包修复替换为 `idle` frame 0，因此允许至少 7 个唯一帧；
 - Godot 导入必须使用 `mipmaps/generate=false`；
 - shader 使用 `filter_linear`，不得使用 `filter_linear_mipmap`；
-- v4.1 SHA-256：`e17a9a80c3be7e80d36a1d075c3e20167e3331bb31a721c5d859d21f0787a9c7`。
+- v4.1 SHA-256：`849939cc4b60ad3d5910dd2e9060566ae0aa2721ccf2b54f1bccc9e7440a8497`。
 
 ## 动画相位
 
@@ -121,6 +121,22 @@ python tools/military/build_formation_map_sequence_gifs.py
 - `military_formation_v4_attack_map.gif`
 - `military_formation_v4_hit_map.gif`
 - `military_formation_v4_all_actions_map.gif`
+
+## 民兵动作预览
+
+民兵首版动作候选暂存于 `res://tmp/military_militia_animation_preview/`。通过 QC 的
+`idle/move/attack` 源板已经接入正式 `foot` atlas 的对应动作行；`hit` 继续沿用原
+动作板，避免把未通过连续性检查的受击过渡带进运行时。源板采用原地图动作板的正
+俯视编队画风，GIF 由固定 4×2 帧切片工具生成：
+
+```powershell
+python tools/military/build_militia_behavior_gif.py `
+  --source Project/project-keynes/assets/military/formations/prototype/source/v4/selected/foot_move.png `
+  --output Project/project-keynes/tmp/military_militia_animation_preview/militia_move_runtime_v1.gif
+```
+
+该预览同时保留生成前后的 GIF 联系图，后续可按同一流程继续更新 mounted、artillery
+和 armored 三类原型。
 
 ## 重建 atlas
 

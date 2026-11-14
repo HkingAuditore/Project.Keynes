@@ -16,21 +16,21 @@ const MIN_RATIO_BP: int = 50         # 0.5%
 const MAX_RATIO_BP: int = 2000       # 20%
 
 const SAFE_CITY_MODIFIER_KEYS := {
-	"family.city.production_boost": "family.city.production_boost",
-	"family.city.hunting_output_boost": "family.city.hunting_output_boost",
-	"family.city.agriculture_output_boost": "family.city.agriculture_output_boost",
-	"family.city.extractive_output_boost": "family.city.extractive_output_boost",
-	"family.city.manufacturing_output_boost": "family.city.manufacturing_output_boost",
-	"family.city.energy_output_boost": "family.city.energy_output_boost",
-	"family.city.knowledge_output_boost": "family.city.knowledge_output_boost",
-	"family.city.birth_boost": "family.city.birth_boost",
-	"family.city.birth_cut": "family.city.birth_cut",
-	"family.city.Birth_cut": "family.city.birth_cut",
-	"family.city.trade_output_boost": "family.city.trade_output_boost",
-	"family.city.food_consumption_boost": "family.city.food_consumption_boost",
-	"family.city.austere_consumption": "family.city.austere_consumption",
-	"family.city.staple_consumption_cut": "family.city.staple_consumption_cut",
-	"economy.city.output_factor": "family.city.production_boost",
+	"family.city.production_boost": "economy.city.building.manufacturing_output_factor",
+	"family.city.hunting_output_boost": "economy.city.good.game_meat.output_factor",
+	"family.city.agriculture_output_boost": "economy.city.building.agriculture_output_factor",
+	"family.city.extractive_output_boost": "economy.city.building.extractive_output_factor",
+	"family.city.manufacturing_output_boost": "economy.city.building.manufacturing_output_factor",
+	"family.city.energy_output_boost": "economy.city.building.energy_output_factor",
+	"family.city.knowledge_output_boost": "economy.city.building.knowledge_output_factor",
+	"family.city.birth_boost": "economy.city.birth_factor",
+	"family.city.birth_cut": "economy.city.birth_factor.cut",
+	"family.city.Birth_cut": "economy.city.birth_factor.cut",
+	"family.city.trade_output_boost": "economy.city.building.manufacturing_output_factor",
+	"family.city.food_consumption_boost": "economy.city.need.staple_food.consumption_factor",
+	"family.city.austere_consumption": "economy.city.need.staple_food.consumption_factor.cut",
+	"family.city.staple_consumption_cut": "economy.city.need.staple_food.consumption_factor.cut",
+	"economy.city.output_factor": "economy.city.building.manufacturing_output_factor",
 	"economy.city.output_factor.cut": "economy.city.output_factor.cut",
 	"economy.city.building.agriculture_output_factor": "economy.city.building.agriculture_output_factor",
 	"economy.city.building.agriculture_output_factor.cut": "economy.city.building.agriculture_output_factor.cut",
@@ -47,7 +47,7 @@ const SAFE_CITY_MODIFIER_KEYS := {
 }
 
 const SAFE_COUNTRY_MODIFIER_KEYS := {
-	"country.economic_mobilization": "country.economic_mobilization",
+	"country.economic_mobilization": "ideology.country.output.manufacturing_factor.gain",
 	"ideology.country.output.agriculture_factor.gain": "ideology.country.output.agriculture_factor.gain",
 	"ideology.country.output.extractive_factor.gain": "ideology.country.output.extractive_factor.gain",
 	"ideology.country.output.manufacturing_factor.gain": "ideology.country.output.manufacturing_factor.gain",
@@ -108,15 +108,19 @@ static func validate_and_sanitize(
 			"event_dict": {},
 		}
 
-	var title := String(parsed_dict.get("title", "")).strip_edges()
-	var body_text := String(parsed_dict.get("body_text", parsed_dict.get("narrative", ""))).strip_edges()
-	if title.is_empty() or body_text.is_empty():
+	var raw_title := String(parsed_dict.get("title", "")).strip_edges()
+	var raw_body_text := String(parsed_dict.get("body_text", parsed_dict.get("narrative", ""))).strip_edges()
+	if raw_title.is_empty() or raw_body_text.is_empty():
 		return {
 			"ok": false,
 			"code": "missing_title_or_body",
 			"reason": "AI 事件缺少 title 或 body_text。",
 			"event_dict": {},
 		}
+	# 数字不一定是数据：数量词、年份、序号都该保留。只有「温度读数」有现成占位符，
+	# 就地改写成 `{temperature}` 交给引擎填充，其余文本原样放行。
+	var title := normalize_temperature_readings(raw_title)
+	var body_text := normalize_temperature_readings(raw_body_text)
 
 	var raw_options: Variant = parsed_dict.get("options", [])
 	if not (raw_options is Array) or (raw_options as Array).is_empty():
@@ -238,16 +242,58 @@ static func _extract_outer_json_object(s: String) -> String:
 	return ""
 
 
+## 数字不一定是数据：「三人」「三成」「第 3 条」都是叙述，不能因为出现数字就删句子。
+## 唯一能在不丢信息的前提下修掉的是「温度读数」——它有 `{temperature}` 这个现成占位符，
+## 因此把 `34.2℃` / `34.2 °C` 就地改写成占位符，由引擎在入队时填当前气温。
+## 价格、库存、百分比等没有对应占位符，交给 prompt 约束，不在这里做文本手术。
+static func normalize_temperature_readings(text: String) -> String:
+	if text.is_empty():
+		return text
+	var out := ""
+	var index := 0
+	var length := text.length()
+	while index < length:
+		var code := text.unicode_at(index)
+		if code < 48 or code > 57:
+			out += char(code)
+			index += 1
+			continue
+		var number_start := index
+		while index < length:
+			var digit := text.unicode_at(index)
+			if (digit >= 48 and digit <= 57) or digit == 46:
+				index += 1
+			else:
+				break
+		# 数字与单位之间允许一个空格（"34.2 ℃"）。
+		var unit_index := index
+		while unit_index < length and text.unicode_at(unit_index) == 32:
+			unit_index += 1
+		var unit_length := 0
+		if unit_index < length and text.unicode_at(unit_index) == 8451:  # ℃
+			unit_length = 1
+		elif unit_index + 1 < length and text.unicode_at(unit_index) == 176 \
+				and text.unicode_at(unit_index + 1) == 67:  # °C
+			unit_length = 2
+		if unit_length == 0:
+			out += text.substr(number_start, index - number_start)
+			continue
+		out += "{temperature}"
+		index = unit_index + unit_length
+	return out
+
+
 static func _sanitize_option(
 		raw_opt: Dictionary,
 		opt_idx: int,
 		available_cash: int,
 		goods_set: Dictionary
 ) -> Dictionary:
-	var text := String(raw_opt.get("text", "")).strip_edges()
+	var text := normalize_temperature_readings(String(raw_opt.get("text", "")).strip_edges())
 	if text.is_empty():
 		text = "选项 %d" % (opt_idx + 1)
-	var tooltip_hint := String(raw_opt.get("tooltip_hint", "")).strip_edges()
+	var tooltip_hint := normalize_temperature_readings(
+		String(raw_opt.get("tooltip_hint", "")).strip_edges())
 	var req_cash := clampi(int(raw_opt.get("require_treasury_cash", 0)), 0, maxi(0, available_cash))
 	var opt_id := String(raw_opt.get("option_id", "")).strip_edges()
 	if opt_id.is_empty():
@@ -264,7 +310,8 @@ static func _sanitize_option(
 			if not (item is Dictionary):
 				continue
 			var od: Dictionary = item as Dictionary
-			var out_title := String(od.get("outcome_title", od.get("title", "结果"))).strip_edges()
+			var out_title := normalize_temperature_readings(
+				String(od.get("outcome_title", od.get("title", "结果"))).strip_edges())
 			if out_title.is_empty():
 				out_title = "结果"
 			var out_narrative := String(od.get("outcome_narrative", od.get("narrative", text))).strip_edges()
@@ -280,9 +327,13 @@ static func _sanitize_option(
 	else:
 		# Allow flat option with direct effects if LLM omitted outcomes wrapper
 		var direct_effs := _sanitize_effects_array(raw_opt.get("effects", []), available_cash, goods_set)
+		var flat_title := normalize_temperature_readings(
+			String(raw_opt.get("outcome_title", "已执行")).strip_edges())
+		if flat_title.is_empty():
+			flat_title = "已执行"
 		sanitized_outcomes.append({
 			"probability_q16": Q16_ONE,
-			"outcome_title": String(raw_opt.get("outcome_title", "已执行")).left(32),
+			"outcome_title": flat_title.left(32),
 			"outcome_narrative": String(raw_opt.get("outcome_narrative", text)).left(600),
 			"effects": direct_effs,
 		})
@@ -389,6 +440,9 @@ static func _sanitize_single_effect(
 	var scope_to_cell := bool(raw_eff.get("scope_to_cell", kind_val != Kind.COUNTRY_MODIFIER))
 	var custom_label := String(raw_eff.get("custom_label", "")).strip_edges().left(120)
 	var ai_followup_prompt := String(raw_eff.get("ai_followup_prompt", "")).strip_edges().left(400)
+	# 范围效果只属于 CITY_MODIFIER；其余 Kind 一律写 0，别让模型把全国修正也写成本地范围。
+	var radius_cells := 0
+	var falloff := 0
 
 	var resolved_target := ""
 
@@ -398,6 +452,8 @@ static func _sanitize_single_effect(
 			if resolved_target.is_empty():
 				return {}
 			scope_to_cell = true
+			radius_cells = clampi(int(raw_eff.get("radius_cells", 0)), 0, 2)
+			falloff = clampi(int(raw_eff.get("falloff", 0)), 0, 1)
 
 		Kind.COUNTRY_MODIFIER:
 			resolved_target = _resolve_safe_country_modifier_key(raw_target)
@@ -468,6 +524,17 @@ static func _sanitize_single_effect(
 		_:
 			return {}
 
+	if custom_label.is_empty() and (kind_val == Kind.CITY_MODIFIER or kind_val == Kind.COUNTRY_MODIFIER):
+		# 兜底标签也必须说真话：ADD 族 magnitude 就是幅度，.cut 是减益。
+		var pct := maxi(1, roundi(float(mag_q16) * 100.0 / float(Q16_ONE)))
+		var sign_word := "-" if resolved_target.ends_with(".cut") else "+"
+		custom_label = "%s修正 %s%d%%，%d 日" % [
+			"本地" if kind_val == Kind.CITY_MODIFIER else "全国",
+			sign_word, pct, duration_days,
+		]
+		if kind_val == Kind.CITY_MODIFIER and radius_cells > 0:
+			custom_label += "（周边 %d 环）" % radius_cells
+
 	return {
 		"kind": kind_val,
 		"target_key": resolved_target,
@@ -479,6 +546,8 @@ static func _sanitize_single_effect(
 		"scope_to_cell": scope_to_cell,
 		"custom_label": custom_label,
 		"ai_followup_prompt": ai_followup_prompt,
+		"radius_cells": radius_cells,
+		"falloff": falloff,
 	}
 
 
@@ -512,7 +581,7 @@ static func _parse_allowed_kind(raw_kind: Variant) -> int:
 static func _resolve_safe_city_modifier_key(raw_key: String, goods_set: Dictionary) -> String:
 	var k := raw_key.strip_edges()
 	if k.is_empty():
-		return "family.city.production_boost"
+		return "economy.city.building.manufacturing_output_factor"
 	if SAFE_CITY_MODIFIER_KEYS.has(k):
 		return String(SAFE_CITY_MODIFIER_KEYS[k])
 	var lower := k.to_lower()
@@ -535,28 +604,28 @@ static func _resolve_safe_city_modifier_key(raw_key: String, goods_set: Dictiona
 
 	# Safe keyword heuristics so unknown AI modifier suggestions map to safe catalog keys
 	if lower.contains("agri") or lower.contains("farm") or lower.contains("crop") or lower.contains("harvest"):
-		return "family.city.agriculture_output_boost"
+		return "economy.city.building.agriculture_output_factor"
 	if lower.contains("mine") or lower.contains("extract") or lower.contains("ore") or lower.contains("timber"):
-		return "family.city.extractive_output_boost"
+		return "economy.city.building.extractive_output_factor"
 	if lower.contains("manuf") or lower.contains("craft") or lower.contains("indus") or lower.contains("work"):
-		return "family.city.manufacturing_output_boost"
+		return "economy.city.building.manufacturing_output_factor"
 	if lower.contains("energy") or lower.contains("fuel") or lower.contains("coal") or lower.contains("power"):
-		return "family.city.energy_output_boost"
+		return "economy.city.building.energy_output_factor"
 	if lower.contains("know") or lower.contains("scholar") or lower.contains("research") or lower.contains("science"):
-		return "family.city.knowledge_output_boost"
+		return "economy.city.building.knowledge_output_factor"
 	if lower.contains("birth") or lower.contains("pop") or lower.contains("growth"):
 		if lower.contains("cut") or lower.contains("loss") or lower.contains("plague") or lower.contains("death"):
-			return "family.city.birth_cut"
-		return "family.city.birth_boost"
+			return "economy.city.birth_factor.cut"
+		return "economy.city.birth_factor"
 	if lower.contains("trade") or lower.contains("market") or lower.contains("commerce") or lower.contains("merchant"):
-		return "family.city.trade_output_boost"
-	return "family.city.production_boost"
+		return "economy.city.building.manufacturing_output_factor"
+	return "economy.city.building.manufacturing_output_factor"
 
 
 static func _resolve_safe_country_modifier_key(raw_key: String) -> String:
 	var k := raw_key.strip_edges()
 	if k.is_empty():
-		return "country.economic_mobilization"
+		return "ideology.country.output.manufacturing_factor.gain"
 	if SAFE_COUNTRY_MODIFIER_KEYS.has(k):
 		return String(SAFE_COUNTRY_MODIFIER_KEYS[k])
 	var lower := k.to_lower()
@@ -574,7 +643,7 @@ static func _resolve_safe_country_modifier_key(raw_key: String) -> String:
 		return "ideology.country.output.knowledge_factor.gain"
 	if lower.contains("trade") or lower.contains("commerce"):
 		return "ideology.country.trade.capacity_factor.gain"
-	return "country.economic_mobilization"
+	return "ideology.country.output.manufacturing_factor.gain"
 
 
 static func _extract_clamped_magnitude_q16(raw_eff: Dictionary) -> int:

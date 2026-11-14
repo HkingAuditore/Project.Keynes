@@ -1684,6 +1684,10 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     const int32_t market = market_store().cell_to_market[cell_idx];
     const bool owned = country_reads().country_handle_for_cell(cell_idx) == country_handle;
     const int32_t country_slot = country_reads().country_slot_for_cell(cell_idx);
+    const bool treasury_capable = country_slot >= 0 &&
+        country_slot < static_cast<int32_t>(_epoch_country_political_regime_capabilities.size()) &&
+        (_epoch_country_political_regime_capabilities[static_cast<size_t>(country_slot)] &
+         CountryApi::CAP_TREASURY_CONSTRUCTION) != 0;
     const int32_t cost_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
         ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
@@ -1697,8 +1701,9 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     for (int64_t cursor = 0; cursor < requested_type_ids.size(); ++cursor) {
         const int32_t type_id = requested_type_ids[cursor];
         type_ids.push_back(type_id);
-        bool can_build = owned;
-        std::string reason = owned ? "ok" : "construction_cell_not_owned";
+        bool can_build = owned && treasury_capable;
+        std::string reason = !owned ? "construction_cell_not_owned" :
+            (!treasury_capable ? "political_regime_lacks_treasury_construction" : "ok");
         int64_t quote_cash = 0;
         int64_t quote_treasury = 0;
         int64_t quote_market = 0;
@@ -1726,7 +1731,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
             reason = "construction_resource_unavailable";
         }
 
-        if (type_id >= 0 && type_id < static_cast<int32_t>(_building_types.size())) {
+        if (treasury_capable && type_id >= 0 && type_id < static_cast<int32_t>(_building_types.size())) {
             const BuildingType &type = _building_types[type_id];
             std::vector<int32_t> quote_good_ids;
             std::vector<int64_t> quote_required;

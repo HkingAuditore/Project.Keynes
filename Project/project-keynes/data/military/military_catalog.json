@@ -3,11 +3,23 @@
   "units": [
     {
       "id": "bronze_spearmen",
+      "repair": {
+        "goods": [
+          {
+            "good": "bronze_tools",
+            "weight": 1
+          },
+          {
+            "good": "lumber",
+            "weight": 1
+          }
+        ]
+      },
       "name": "青铜矛兵",
       "description": "青铜兵器与皮甲让步兵第一次拥有稳定的攻防配比。",
       "class": "line",
       "era": 1,
-      "tech": "tech.hide_tanning",
+      "tech": "tech.bronze_casting",
       "militia": false,
       "attack": 1.6,
       "defense": 2.2,
@@ -52,6 +64,22 @@
     },
     {
       "id": "cavalry",
+      "repair": {
+        "goods": [
+          {
+            "good": "bronze_tools",
+            "weight": 2
+          },
+          {
+            "good": "lumber",
+            "weight": 1
+          },
+          {
+            "good": "leather",
+            "weight": 1
+          }
+        ]
+      },
       "name": "骑兵",
       "description": "马匹与铁兵器结合的机动部队。",
       "class": "mobile",
@@ -101,6 +129,22 @@
     },
     {
       "id": "chariot_troops",
+      "repair": {
+        "goods": [
+          {
+            "good": "bronze_tools",
+            "weight": 2
+          },
+          {
+            "good": "lumber",
+            "weight": 1
+          },
+          {
+            "good": "leather",
+            "weight": 1
+          }
+        ]
+      },
       "name": "战车兵",
       "description": "战车带来冲击与机动，但需要大量草料与马匹。",
       "class": "mobile",
@@ -144,6 +188,22 @@
     },
     {
       "id": "combined_arms",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "military_electronics",
+            "weight": 1
+          }
+        ]
+      },
       "name": "合成部队",
       "description": "装甲、火器与电子设备整合的合成营。",
       "class": "line",
@@ -193,6 +253,18 @@
     },
     {
       "id": "dragoons",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "leather",
+            "weight": 1
+          }
+        ]
+      },
       "name": "龙骑兵",
       "description": "骑马机动、下马射击的混合兵种。",
       "class": "mobile",
@@ -236,6 +308,22 @@
     },
     {
       "id": "drone_swarm",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "military_electronics",
+            "weight": 1
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 2
+          }
+        ]
+      },
       "name": "无人作战集群",
       "description": "以作战无人机为主力的自主集群。",
       "class": "mobile",
@@ -273,6 +361,18 @@
     },
     {
       "id": "early_armor",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "steel",
+            "weight": 1
+          }
+        ]
+      },
       "name": "早期装甲",
       "description": "第一代坦克，突破与机动的结合。",
       "class": "mobile",
@@ -310,6 +410,22 @@
     },
     {
       "id": "exo_infantry",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "military_electronics",
+            "weight": 1
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 2
+          }
+        ]
+      },
       "name": "外骨骼步兵",
       "description": "外骨骼与智能单兵武器让步兵重回主导。",
       "class": "line",
@@ -359,6 +475,18 @@
     },
     {
       "id": "field_artillery",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "野战炮兵",
       "description": "马拉火炮随军机动，无视 50% 工事。",
       "class": "artillery",
@@ -402,6 +530,18 @@
     },
     {
       "id": "heavy_artillery",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "重炮兵",
       "description": "线膛钢炮，无视 70% 工事。",
       "class": "artillery",
@@ -439,6 +579,18 @@
     },
     {
       "id": "heavy_cavalry",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "leather",
+            "weight": 1
+          }
+        ]
+      },
       "name": "甲骑具装",
       "description": "人马俱甲的冲击骑兵，机动性略降而攻防大幅提高。",
       "class": "mobile",
@@ -488,6 +640,18 @@
     },
     {
       "id": "iron_infantry",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "铁甲步兵",
       "description": "锻造铁兵器与铁甲构成常备军的主力。",
       "class": "line",
@@ -537,6 +701,18 @@
     },
     {
       "id": "legionaries",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "军团步兵",
       "description": "军需体系支撑的重装步兵，攻防俱佳。",
       "class": "line",
@@ -586,6 +762,18 @@
     },
     {
       "id": "line_infantry",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "线列步兵",
       "description": "操典与燧发枪组成整齐的线列。",
       "class": "line",
@@ -623,6 +811,18 @@
     },
     {
       "id": "machine_gunners",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "机枪步兵",
       "description": "自动武器把火力密度推到新的量级。",
       "class": "line",
@@ -660,6 +860,22 @@
     },
     {
       "id": "mechanized_infantry",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "机械化步兵",
       "description": "车载步兵，机动性接近坦克。",
       "class": "line",
@@ -679,7 +895,7 @@
           "weight": 0.55
         },
         {
-          "category": "mounts",
+          "category": "armored_vehicles",
           "min_quality": 1,
           "per_100": 6.0,
           "weight": 0.25
@@ -709,6 +925,9 @@
     },
     {
       "id": "militia",
+      "repair": {
+        "goods": []
+      },
       "name": "民兵",
       "description": "入伍即编成的默认兵种，不需要装备，攻防偏低；攻防另乘时代系数。",
       "class": "line",
@@ -739,6 +958,22 @@
     },
     {
       "id": "missile_artillery",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "military_electronics",
+            "weight": 1
+          }
+        ]
+      },
       "name": "导弹炮兵",
       "description": "以导弹发射系统为主装备，无视 80% 工事。",
       "class": "artillery",
@@ -782,6 +1017,18 @@
     },
     {
       "id": "musketeers",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "火枪兵",
       "description": "火绳枪让密集射击成为可能。",
       "class": "line",
@@ -825,6 +1072,18 @@
     },
     {
       "id": "riflemen",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "步枪兵",
       "description": "线膛步枪让散兵成为主力。",
       "class": "line",
@@ -862,6 +1121,18 @@
     },
     {
       "id": "siege_train",
+      "repair": {
+        "goods": [
+          {
+            "good": "tools",
+            "weight": 1
+          },
+          {
+            "good": "lumber",
+            "weight": 1
+          }
+        ]
+      },
       "name": "攻城营",
       "description": "操纵攻城器械的工兵与炮兵混合部队，无视 60% 工事。",
       "class": "artillery",
@@ -899,6 +1170,22 @@
     },
     {
       "id": "sp_artillery",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "自行火炮",
       "description": "伴随装甲部队推进的火炮，无视 75% 工事。",
       "class": "artillery",
@@ -918,7 +1205,7 @@
           "weight": 0.8
         },
         {
-          "category": "mounts",
+          "category": "armored_vehicles",
           "min_quality": 1,
           "per_100": 4.0,
           "weight": 0.2
@@ -942,6 +1229,22 @@
     },
     {
       "id": "tank_corps",
+      "repair": {
+        "goods": [
+          {
+            "good": "precision_tools",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "坦克部队",
       "description": "现代主战坦克编成的突击集群。",
       "class": "mobile",
@@ -979,6 +1282,18 @@
     },
     {
       "id": "tribal_warriors",
+      "repair": {
+        "goods": [
+          {
+            "good": "chipped_stone_tools",
+            "weight": 1
+          },
+          {
+            "good": "logs",
+            "weight": 1
+          }
+        ]
+      },
       "name": "部落战士",
       "description": "以石矛与弓箭武装的部落战士，是最早的有组织步兵。",
       "class": "line",
@@ -1017,6 +1332,67 @@
         "ammunition": 0.0,
         "fuel": 0.0,
         "upkeep": 0.15
+      },
+      "icon": "unit.line"
+    },
+    {
+      "id": "shield_bearers",
+      "repair": {
+        "goods": [
+          {
+            "good": "lumber",
+            "weight": 1
+          },
+          {
+            "good": "iron_weapons",
+            "weight": 1
+          }
+        ]
+      },
+      "name": "盾兵",
+      "description": "大盾与重甲让步兵第一次能「站在箭雨里」，阵线的价值超过个人的武艺。",
+      "class": "line",
+      "era": 2,
+      "tech": "tech.military.standing_army",
+      "militia": false,
+      "attack": 1.8,
+      "defense": 4.6,
+      "speed": 0.9,
+      "fortification_ignore": 0.0,
+      "training_days": 45,
+      "equipment": [
+        {
+          "category": "melee_arms",
+          "min_quality": 2,
+          "per_100": 10.0,
+          "weight": 0.45
+        },
+        {
+          "category": "body_armor",
+          "min_quality": 2,
+          "per_100": 12.0,
+          "weight": 0.4
+        },
+        {
+          "category": "missile_arms",
+          "min_quality": 1,
+          "per_100": 4.0,
+          "weight": 0.15
+        }
+      ],
+      "supply_idle": {
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.05
+      },
+      "supply_combat": {
+        "ration": 0.0,
+        "fodder": 0.0,
+        "ammunition": 0.0,
+        "fuel": 0.0,
+        "upkeep": 0.14
       },
       "icon": "unit.line"
     }
@@ -1192,6 +1568,18 @@
   "state_buildings": [
     {
       "id": "warrior_lodge",
+      "repair": {
+        "goods": [
+          {
+            "good": "logs",
+            "weight": 1
+          },
+          {
+            "good": "turf_block",
+            "weight": 1
+          }
+        ]
+      },
       "name": "战士营地",
       "role": "barracks",
       "tier": 1,
@@ -1208,6 +1596,18 @@
     },
     {
       "id": "palisade_barracks",
+      "repair": {
+        "goods": [
+          {
+            "good": "lumber",
+            "weight": 1
+          },
+          {
+            "good": "adobe_brick",
+            "weight": 1
+          }
+        ]
+      },
       "name": "木栅兵营",
       "role": "barracks",
       "tier": 2,
@@ -1224,6 +1624,22 @@
     },
     {
       "id": "garrison_barracks",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 2
+          },
+          {
+            "good": "lumber",
+            "weight": 2
+          },
+          {
+            "good": "wrought_iron",
+            "weight": 1
+          }
+        ]
+      },
       "name": "戍卫营",
       "role": "barracks",
       "tier": 3,
@@ -1241,6 +1657,18 @@
     },
     {
       "id": "legion_fort",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 1
+          },
+          {
+            "good": "raw_stone",
+            "weight": 1
+          }
+        ]
+      },
       "name": "军团营寨",
       "role": "barracks",
       "tier": 4,
@@ -1257,6 +1685,22 @@
     },
     {
       "id": "drill_depot",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 2
+          },
+          {
+            "good": "glass",
+            "weight": 1
+          },
+          {
+            "good": "tools",
+            "weight": 1
+          }
+        ]
+      },
       "name": "操练营",
       "role": "barracks",
       "tier": 5,
@@ -1273,6 +1717,22 @@
     },
     {
       "id": "army_depot",
+      "repair": {
+        "goods": [
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "cement",
+            "weight": 2
+          },
+          {
+            "good": "tools",
+            "weight": 1
+          }
+        ]
+      },
       "name": "兵站",
       "role": "barracks",
       "tier": 6,
@@ -1289,6 +1749,22 @@
     },
     {
       "id": "military_base",
+      "repair": {
+        "goods": [
+          {
+            "good": "concrete",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "军事基地",
       "role": "barracks",
       "tier": 7,
@@ -1306,6 +1782,22 @@
     },
     {
       "id": "training_complex",
+      "repair": {
+        "goods": [
+          {
+            "good": "concrete",
+            "weight": 2
+          },
+          {
+            "good": "computers",
+            "weight": 1
+          },
+          {
+            "good": "telecom_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "联合训练中心",
       "role": "barracks",
       "tier": 8,
@@ -1323,6 +1815,18 @@
     },
     {
       "id": "earthen_rampart",
+      "repair": {
+        "goods": [
+          {
+            "good": "logs",
+            "weight": 1
+          },
+          {
+            "good": "turf_block",
+            "weight": 1
+          }
+        ]
+      },
       "name": "夯土城垣",
       "role": "fortification",
       "tier": 1,
@@ -1339,6 +1843,18 @@
     },
     {
       "id": "stone_walls",
+      "repair": {
+        "goods": [
+          {
+            "good": "raw_stone",
+            "weight": 2
+          },
+          {
+            "good": "bricks",
+            "weight": 1
+          }
+        ]
+      },
       "name": "石砌城墙",
       "role": "fortification",
       "tier": 2,
@@ -1355,6 +1871,18 @@
     },
     {
       "id": "citadel",
+      "repair": {
+        "goods": [
+          {
+            "good": "raw_stone",
+            "weight": 2
+          },
+          {
+            "good": "bricks",
+            "weight": 1
+          }
+        ]
+      },
       "name": "城堡要塞",
       "role": "fortification",
       "tier": 3,
@@ -1371,6 +1899,22 @@
     },
     {
       "id": "star_fort",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 2
+          },
+          {
+            "good": "raw_stone",
+            "weight": 2
+          },
+          {
+            "good": "tools",
+            "weight": 1
+          }
+        ]
+      },
       "name": "棱堡",
       "role": "fortification",
       "tier": 4,
@@ -1388,6 +1932,22 @@
     },
     {
       "id": "bunker_line",
+      "repair": {
+        "goods": [
+          {
+            "good": "concrete",
+            "weight": 2
+          },
+          {
+            "good": "steel",
+            "weight": 2
+          },
+          {
+            "good": "tools",
+            "weight": 1
+          }
+        ]
+      },
       "name": "碉堡防线",
       "role": "fortification",
       "tier": 5,
@@ -1404,6 +1964,22 @@
     },
     {
       "id": "hardened_defense_network",
+      "repair": {
+        "goods": [
+          {
+            "good": "concrete",
+            "weight": 2
+          },
+          {
+            "good": "military_electronics",
+            "weight": 1
+          },
+          {
+            "good": "electrical_equipment",
+            "weight": 1
+          }
+        ]
+      },
       "name": "加固防御网",
       "role": "fortification",
       "tier": 6,
@@ -1420,6 +1996,18 @@
     },
     {
       "id": "martial_academy",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 1
+          },
+          {
+            "good": "lumber",
+            "weight": 1
+          }
+        ]
+      },
       "name": "武学馆",
       "role": "war_college",
       "tier": 1,
@@ -1441,6 +2029,22 @@
     },
     {
       "id": "military_academy",
+      "repair": {
+        "goods": [
+          {
+            "good": "bricks",
+            "weight": 2
+          },
+          {
+            "good": "glass",
+            "weight": 1
+          },
+          {
+            "good": "tools",
+            "weight": 1
+          }
+        ]
+      },
       "name": "军事学院",
       "role": "war_college",
       "tier": 2,
@@ -1467,6 +2071,18 @@
     },
     {
       "id": "war_simulation_center",
+      "repair": {
+        "goods": [
+          {
+            "good": "concrete",
+            "weight": 1
+          },
+          {
+            "good": "computers",
+            "weight": 1
+          }
+        ]
+      },
       "name": "兵棋推演中心",
       "role": "war_college",
       "tier": 3,

@@ -1,6 +1,8 @@
 extends RefCounted
 class_name DCWorld
 
+const WorldArchiveHelpers = preload("res://scripts/data_core/world_archive_helpers.gd")
+
 ## DataCore — World 容器（DOTS 风格数据架构基石的根）。
 ##
 ## 职责：
@@ -1673,57 +1675,13 @@ func deserialize(d: Dictionary) -> void:
 # ─── private serialize helpers ───────────────────────────────────────
 
 func _serialize_cells_dict() -> Dictionary:
-	var out: Dictionary = {}
-	# 按 component_schema.gd 自动遍历 production entries（跳过 demo 字段）。
-	for e in DCComponentSchema.entries_production():
-		var cpp_name: String = String(e.cpp_name)
-		var cid: int = component_id(e.name)
-		if cid < 0:
-			continue
-		var dt: int = int(e.dtype)
-		match dt:
-			DCComponentIds.F32:
-				out[cpp_name] = view_f32(cid)
-			DCComponentIds.I32:
-				out[cpp_name] = view_i32(cid)
-			DCComponentIds.U8:
-				out[cpp_name] = view_u8(cid)
-			_:
-				push_warning("[DCWorld] serialize: unknown dtype=%d for %s — skipped" % [dt, cpp_name])
-	return out
-
+	return WorldArchiveHelpers.serialize_cells_dict(self)
 
 func _deserialize_cells_dict(cells: Dictionary) -> void:
-	for e in DCComponentSchema.entries_production():
-		var cpp_name: String = String(e.cpp_name)
-		if not cells.has(cpp_name):
-			continue
-		var cid: int = component_id(e.name)
-		if cid < 0:
-			continue
-		var dt: int = int(e.dtype)
-		match dt:
-			DCComponentIds.F32:
-				var f32: PackedFloat32Array = cells[cpp_name]
-				if f32.size() == _entity_count:
-					write_f32_range(cid, 0, f32)
-			DCComponentIds.I32:
-				var i32: PackedInt32Array = cells[cpp_name]
-				if i32.size() == _entity_count:
-					write_i32_range(cid, 0, i32)
-			DCComponentIds.U8:
-				var u8: PackedByteArray = cells[cpp_name]
-				if u8.size() == _entity_count:
-					write_u8_range(cid, 0, u8)
-
+	WorldArchiveHelpers.deserialize_cells_dict(self, cells)
 
 func _serialize_fronts_dict() -> Dictionary:
-	# Phase 4.1 PR-4.1.2 后扩展：caller 通过 WeatherFront.pack_into_dict 提供
-	# 当前 _active_fronts 的 batch dict；DCWorld 把它合并进存档。
-	# 当前 phase（仅骨架）：返回空 dict。
-	return {}
-
+	return WorldArchiveHelpers.serialize_fronts_dict(self)
 
 func _deserialize_fronts_dict(_d: Dictionary) -> void:
-	# Phase 4.1 PR-4.1.2 后扩展。
-	pass
+	WorldArchiveHelpers.deserialize_fronts_dict(self, _d)

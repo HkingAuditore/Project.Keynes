@@ -1,0 +1,6 @@
+#include "country_api.h"
+#include "economy_api.h"
+#include "economy_effect_forward.h"
+#include "effect_instance_forwarder.h"
+#include "modifier_api.h"
+#include "runtime_effect_pod.h"

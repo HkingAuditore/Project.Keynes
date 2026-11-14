@@ -32,6 +32,8 @@ uniform bool reduced_motion = false;
 uniform float layer_alpha : hint_range(0.0, 1.0) = 1.0;
 uniform bool aggregate_mode = false;    // 缩太小：只画实心进度点
 uniform bool fog_enabled = false;
+uniform sampler2D battle_decal : filter_linear, repeat_disable;
+uniform float battle_decal_strength : hint_range(0.0, 1.0) = 0.38;
 
 varying vec2 v_local;
 varying vec2 v_world;
@@ -70,6 +72,12 @@ void fragment() {
 
 	vec3 paper = paper_color.rgb * (0.96 + blotch * 0.12);
 	vec3 col = paper;
+	if (!aggregate_mode) {
+		vec2 decal_uv = vec2(0.5) + p * 0.42;
+		vec4 decal = texture(battle_decal, decal_uv);
+		float decal_mask = decal.a * battle_decal_strength;
+		col = mix(col, decal.rgb, decal_mask);
+	}
 	float ring_ink = max(1.0 - smoothstep(aa, aa * 2.2, abs(r - ring_inner)),
 		1.0 - smoothstep(aa, aa * 2.2, abs(r - 0.96)));
 	col = mix(col, pencil_color.rgb * 0.85, ring_ink * 0.42 * (1.0 - edge_mix));

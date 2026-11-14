@@ -46,10 +46,6 @@ func _prefetch_diag_seen_text(host) -> String:
 	return _part1._prefetch_diag_seen_text(host)
 func _emit_prefetch_diag(host, code: StringName) -> void:
 	_part1._emit_prefetch_diag(host, code)
-func _environment_publish_next_day(host) -> int:
-	return _part1._environment_publish_next_day(host)
-func _set_environment_publish_next_day(host, day: int) -> void:
-	_part1._set_environment_publish_next_day(host, day)
 func _suspend_environment_prefetch_for_save(host, reason: String) -> void:
 	_part1._suspend_environment_prefetch_for_save(host, reason)
 func _resume_environment_prefetch_after_save(host) -> void:
@@ -93,10 +89,10 @@ func _consume_trigger_worker_snapshot_if_authoritative(host) -> void:
 	_part2._consume_trigger_worker_snapshot_if_authoritative(host)
 func _service_trigger_worker_intents_if_authoritative(host) -> void:
 	_part2._service_trigger_worker_intents_if_authoritative(host)
-func _service_trigger_country_delivery(host, ext: Object, _report: Dictionary) -> void:
-	_part2._service_trigger_country_delivery(host, ext, _report)
-func _ack_trigger_delivery_ids(host, ext: Object) -> Dictionary:
-	return _part2._ack_trigger_delivery_ids(host, ext)
+func _service_trigger_country_delivery(host, trigger, effect, report: Dictionary) -> void:
+	_part2._service_trigger_country_delivery(host, trigger, effect, report)
+func _ack_trigger_delivery_ids(host, trigger) -> Dictionary:
+	return _part2._ack_trigger_delivery_ids(host, trigger)
 func _consume_country_worker_read_view_if_authoritative(host) -> void:
 	_part2._consume_country_worker_read_view_if_authoritative(host)
 func _service_country_visual_refresh_budgeted(host, frame_started_usec: int) -> void:
@@ -122,3 +118,68 @@ func _apply_climate_writeback_if_authoritative(host, report: Dictionary) -> void
 	_part3._apply_climate_writeback_if_authoritative(host, report)
 func wait_for_climate_consumed(host, after_environment_generation: int) -> Dictionary:
 	return _part3.wait_for_climate_consumed(host, after_environment_generation)
+
+
+## G4 moved host responsibilities
+func _run_native_daily_inline_day(host, day_idx: int, report: Dictionary) -> Dictionary:
+	return _part1._run_native_daily_inline_day(host, day_idx, report)
+
+func _clock_day_changed_impl(host, day_idx: int) -> void:
+	_part1._clock_day_changed_impl(host, day_idx)
+
+func _native_daily_inline_requested(host) -> bool:
+	return _part1._native_daily_inline_requested(host)
+
+func _is_web_build(host) -> bool:
+	return _part1._is_web_build(host)
+
+func _web_worker_requested(host) -> bool:
+	return _part1._web_worker_requested(host)
+
+func _clear_web_daily_fallback_failure(host) -> void:
+	_part1._clear_web_daily_fallback_failure(host)
+
+func _web_gdscript_daily_fallback_allowed(host) -> bool:
+	return _part1._web_gdscript_daily_fallback_allowed(host)
+
+func _reject_web_daily_fallback(host, code: String, reason: String) -> bool:
+	return _part1._reject_web_daily_fallback(host, code, reason)
+
+func _effective_environment_prefetch_days(host) -> int:
+	return _part1._effective_environment_prefetch_days(host)
+
+func _publish_fast_tick_perf_sample(host,
+		t_sus_ms: float,
+		t_render_ms: float,
+		t_ui_ms: float,
+		fast_ms: float,
+		was_skipped_day: bool
+) -> Dictionary:
+	return _part1._publish_fast_tick_perf_sample(host, t_sus_ms, t_render_ms, t_ui_ms, fast_ms, was_skipped_day)
+
+func finish_daily_tick(host, ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
+	_part1.finish_daily_tick(host, ui_ms, ui_breakdown)
+
+func get_sim_breakdowns(host) -> Dictionary:
+	return _part1.get_sim_breakdowns(host)
+
+func get_environment_perf_summary(host) -> Dictionary:
+	return _part1.get_environment_perf_summary(host)
+
+func get_recorder_perf_summary(host) -> Dictionary:
+	return _part1.get_recorder_perf_summary(host)
+
+func _recorder_ready(host, recorder: RefCounted) -> bool:
+	return _part1._recorder_ready(host, recorder)
+
+func on_speed_changed(host, new_speed: float) -> void:
+	_part1.on_speed_changed(host, new_speed)
+
+func on_clock_running_changed(host, running: bool) -> void:
+	_part1.on_clock_running_changed(host, running)
+
+func _sync_runtime_worker_clock(host) -> void:
+	_part1._sync_runtime_worker_clock(host)
+
+func on_visual_day_phase_changed(host, visual_day_phase: float) -> void:
+	_part1.on_visual_day_phase_changed(host, visual_day_phase)

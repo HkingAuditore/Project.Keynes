@@ -31,6 +31,7 @@ const CountryTestHelper = preload("res://tests/country/country_test_helper.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd")
+const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
 const Q16_ONE := 65536
 const BAN_OPCODE := 11
 
@@ -246,7 +247,9 @@ func _boot(base: Resource, economy_ir: Dictionary, rows: int) -> Dictionary:
 	CountryTestHelper.configure_all_technologies(ext, country_ir, 1, 20261020)
 	var modifier := ModifierFacadeScript.new()
 	modifier.configure(ext, 1)
-	if not bool(ext.configure_effects(_effect_catalog().compile_native_catalog()).get("ok", false)):
+	var effect_catalog: Resource = EffectDomainCatalogScript.build()
+	if effect_catalog == null or not bool(
+			ext.configure_effects(effect_catalog.compile_native_catalog()).get("ok", false)):
 		return {"ok": false, "reason": "effect_configure_failed"}
 	if not bool(ext.configure_ideologies(config).get("ok", false)):
 		return {"ok": false, "reason": "ideology_configure_failed"}

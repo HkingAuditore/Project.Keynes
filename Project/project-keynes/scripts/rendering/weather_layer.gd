@@ -16,9 +16,16 @@
 # 与地形 shader 的分工：
 #   - DROUGHT / HEATWAVE 的 multiplicative 调色仍在 world_map.gdshader 内（地表本色变化）
 #   - 其余 RAIN / STORM / FOG / BLIZZARD / MONSOON 全部由本层负责
+# WeatherLayer owns the Godot presentation boundary for weather fronts.
+# It publishes the weather LUT and front snapshots to the overlay shader, and
+# owns cell curtain meshes and the optional desktop particle pool. Simulation
+# state remains in WeatherSystem; this node only keeps visual interpolation and
+# GPU resources.
 
 class_name WeatherLayer
 extends Node2D
+
+const WeatherLayerParticlesScript = preload("res://scripts/rendering/weather_layer_particles.gd")
 
 signal visual_fronts_changed(fronts: Array)
 
@@ -60,6 +67,7 @@ const _CURTAIN_PARALLAX_Z_OFFSETS := [2, 1, 0]
 # 突变到 3-4s，旧上限 2.5s 会触顶 → lerp 完成后进入 _predict 外推 → 新 commit
 # 一到 _front_blend_elapsed=0 重置 + smoothstep 的 ease-in → 视觉上"加速冲一
 # 下→突然停→慢慢起步"。抬高上限后 99% commit 间隔都能装进单段 lerp 内。
+# Presentation interpolation keeps front snapshots moving between day commits.
 const _WEATHER_FRONT_INITIAL_BLEND_SEC: float = 0.65
 const _WEATHER_FRONT_MIN_BLEND_SEC: float = 0.35
 const _WEATHER_FRONT_MAX_BLEND_SEC: float = 5.0
@@ -73,27 +81,15 @@ const _WEATHER_FRONT_BLEND_IIR_ALPHA: float = 0.35
 
 # 任务 5：降水粒子密度制。每单位像素²粒子数，与覆盖面积相乘得到 amount。
 # 最小/最大数量 防止小 front 看不见雨 / 巨大 front 暗制 GPU。
-const _RAIN_DENSITY_PER_PX2: float = 0.00040  # 约 1 粒/50000 px²
 const _RAIN_AMOUNT_MIN: int = 80
 const _RAIN_AMOUNT_MAX: int = 640
-const _SNOW_DENSITY_PER_PX2: float = 0.00030
 const _SNOW_AMOUNT_MIN: int = 60
 const _SNOW_AMOUNT_MAX: int = 480
 # Pass 2（任务 5）：rain_density_boost_enabled=true 时的密度下限/上限
 # 以侍需求 5.1：amount_min 从 80 → 180，BLIZZARD 60 → 120。
-const _RAIN_AMOUNT_MIN_BOOST: int = 180
-const _RAIN_AMOUNT_MAX_BOOST: int = 900
-const _SNOW_AMOUNT_MIN_BOOST: int = 120
-const _SNOW_AMOUNT_MAX_BOOST: int = 720
 # WeatherType.WT id（与 weather_type.gd / weather_overlay.gdshader 严格一致）
 const _WT_CLEAR    := 0
-const _WT_RAIN     := 1
-const _WT_STORM    := 2
 const _WT_BLIZZARD := 3
-const _WT_DROUGHT  := 4
-const _WT_FOG      := 5
-const _WT_HEATWAVE := 6
-const _WT_MONSOON  := 7
 
 const WEATHER_DEBUG_VIEW_NAMES := [
 	"off",
@@ -330,8 +326,6 @@ func set_clock_running(running: bool) -> void:
 func set_clock_speed_multiplier(multiplier: float) -> void:
 	_clock_speed_multiplier = clampf(multiplier, 0.0, 20.0)
 
-func _effective_running() -> bool:
-	return _clock_running
 
 # ─── 对外接口 ────────────────────────────────────────────────────────────
 
@@ -505,6 +499,7 @@ func is_render_gate_open() -> bool:
 #  1) 有活跃 fronts（粒子/旧摘要）
 #  2) 有 weather_field_tex（旧按 cell 渲染天气场）
 #  3) 有 weather_lut（当前逐格云场真源）
+
 func _refresh_visibility() -> void:
 	visible = _render_gate_open and ((_active_count > 0) \
 			or (_weather_field_tex != null) \
@@ -872,114 +867,8 @@ func _push_weather_profile_uniforms_to_overlay() -> void:
 # ─── 池子同步（B5 / B6 实装） ────────────────────────────────────────────
 
 func _sync_particles_pool(fronts: Array) -> void:
-	if _particles_pool.is_empty():
-		return
-	if not _FRONT_PARTICLES_ENABLED:
-		for i in range(MAX_WEATHER_FRONTS):
-			_disable_particle_slot(_particles_pool[i], i)
-		return
-	var n: int = mini(fronts.size(), MAX_WEATHER_FRONTS)
-	for i in range(MAX_WEATHER_FRONTS):
-		var node: GPUParticles2D = _particles_pool[i]
-		if i >= n:
-			_disable_particle_slot(node, i)
-			continue
-		var f = fronts[i]
-		var wt: int = _front_type(f)
-		# v-data-driven：是否出粒子完全来自 profile.has_particles，不再判 type。
-		var profile := WeatherProfileRegistry.get_profile(wt)
-		if profile == null or not profile.has_particles:
-			_disable_particle_slot(node, i)
-			continue
+	WeatherLayerParticlesScript.sync_particles_pool(self, fronts)
 
-		# 类型变了才重新配置 process_material（避免每帧重建）
-		if _particles_type_cache[i] != wt:
-			_configure_particles_for_type(node, wt)
-			_particles_type_cache[i] = wt
-			# Phase A 止血：换类型后强制重新下发 amount / visibility_rect
-			# （新类型的合法范围可能与旧 cache 完全不同）
-			_particles_amount_cache[i] = -1
-			_particles_vis_radius_cache[i] = -1.0
-
-		# 每次都更新位置 / emitter 半径 / intensity 调强度
-		node.position = _front_center(f)
-		# v9.perf：每个 slot 自己设 visibility_rect = ±radius，让引擎能正确剂除而不是
-		# 默认那个 (-100,-100,200,200) 小框（front 半径常常远超 100）
-		# Phase A 止血：仅当 bound_r 相对缓存值变化 > 5% 时才重写 visibility_rect，
-		# 避免每帧因微小数值波动触发 Rect2 重新分配 / culler 重新评估。
-		var r: float = maxf(_front_radius(f), 1.0)
-		var bound_r: float = r * maxf(maxf(_front_major_scale(f), _front_minor_scale(f)), 1.0)
-		var cached_vis_r: float = _particles_vis_radius_cache[i]
-		if cached_vis_r <= 0.0 or absf(bound_r - cached_vis_r) > cached_vis_r * 0.05:
-			node.visibility_rect = Rect2(-bound_r, -bound_r, bound_r * 2.0, bound_r * 2.0)
-			_particles_vis_radius_cache[i] = bound_r
-		# v-data-driven：降水密度制——amount 随覆盖面积缩放，所有阈值从 profile 取。
-		# _rain_density_boost_enabled=false 时回落到全局常量下限（上一轮更保守的数值）。
-		var area: float = PI * r * _front_major_scale(f) * r * _front_minor_scale(f)
-		var lo: int
-		var hi: int
-		if _rain_density_boost_enabled:
-			lo = profile.particle_amount_min
-			hi = profile.particle_amount_max
-		else:
-			# 兼容：关闭 boost 时使用之前的保守上下限。
-			var is_snow_fallback: bool = (wt == _WT_BLIZZARD)
-			lo = _SNOW_AMOUNT_MIN if is_snow_fallback else _RAIN_AMOUNT_MIN
-			hi = _SNOW_AMOUNT_MAX if is_snow_fallback else _RAIN_AMOUNT_MAX
-		var desired: int = clampi(
-			int(ceil(area * profile.particle_density_per_px2)), lo, hi
-		)
-		# Phase A 止血：amount 每帧 ±1 振荡会触发 GPUParticles 内部缓冲重建（明显卡顿）。
-		# 仅当 |Δ| > 5 时才下发；这对应面积变化约 3%，肉眼不可察。
-		var cached_amt: int = _particles_amount_cache[i]
-		if cached_amt < 0 or absi(desired - cached_amt) > 5:
-			node.amount = desired
-			_particles_amount_cache[i] = desired
-		var max_fall_speed: float = maxf(profile.particle_velocity_max, 1.0)
-		var local_fall_budget: float = r * _front_minor_scale(f) * 1.15
-		var bounded_lifetime: float = clampf(
-			local_fall_budget / max_fall_speed,
-			0.38,
-			profile.particle_lifetime
-		)
-		if not is_equal_approx(node.lifetime, bounded_lifetime):
-			node.lifetime = bounded_lifetime
-		var pm := node.process_material as ParticleProcessMaterial
-		if pm != null:
-			pm.emission_box_extents = Vector3(
-				r * _front_major_scale(f),
-				r * _front_minor_scale(f),
-				1.0
-			)
-		# 发射范围用材质的世界单位表达；节点只负责定位。
-		# 不再缩放 GPUParticles2D，否则粒子速度和贴图也会被放大，雨雪会飞出天气区域。
-		node.rotation = 0.0
-		node.scale = Vector2.ONE
-		# modulate.a 反映视觉强度；逻辑 intensity 仍保持原值，但表现层用非线性曲线
-		# 抬高中低强度天气，避免雨雪刚生成/衰减后几乎不可见。
-		var visual_intensity: float = _front_visual_intensity(_front_intensity(f))
-		var precip_amount: float = _front_precip_amount(f)
-		var alpha_fade: float = clampf(maxf(visual_intensity, precip_amount) / 0.10, 0.0, 1.0)
-		var alpha: float = clampf(0.28 + precip_amount * 0.48, 0.0, 0.78) \
-				* alpha_fade * _strength
-		# TOD 染色：雨雪粒子是前景特效，不能像地表一样被夜晚二次压暗。
-		# 使用带下限的 TOD 色温，只保留昼夜冷暖倾向，保证午夜雨雪仍然可读。
-		var base_col: Color = profile.particle_base_color
-		var night_particle_scale: float = 1.0 - 0.18 * _tod_night_factor
-		var tint_r: float = _particle_tod_tint_component(_tod_sun_color.r, _tod_ambient_color.r)
-		var tint_g: float = _particle_tod_tint_component(_tod_sun_color.g, _tod_ambient_color.g)
-		var tint_b: float = _particle_tod_tint_component(_tod_sun_color.b, _tod_ambient_color.b)
-		node.modulate = Color(
-			clampf(base_col.r * tint_r * night_particle_scale * _tod_exposure, 0.0, 1.0),
-			clampf(base_col.g * tint_g * night_particle_scale * _tod_exposure, 0.0, 1.0),
-			clampf(base_col.b * tint_b * night_particle_scale * _tod_exposure, 0.0, 1.0),
-			alpha * clampf(maxf(base_col.a, 0.72), 0.0, 1.0)
-		)
-		node.visible = true
-		# v9.perf：从 DISABLED → INHERIT 才会真正开始 process / 渲染粒子
-		node.process_mode = Node.PROCESS_MODE_INHERIT
-		node.emitting = true
-# v9.perf：把 slot 完整地"睡眠"掉（不可见 + 不 process + 标记类型缓存清零）
 func _disable_particle_slot(node: GPUParticles2D, slot_idx: int) -> void:
 	if node.emitting:
 		node.emitting = false
@@ -1607,8 +1496,6 @@ func _desired_curtain_layer_count() -> int:
 		_:
 			return _curtain_layer_capacity()
 
-func _curtain_effect_active() -> bool:
-	return _desired_curtain_layer_count() > 0 and _curtain_instance_count > 0
 
 func _update_curtain_visibility() -> void:
 	var active_layers := _desired_curtain_layer_count()

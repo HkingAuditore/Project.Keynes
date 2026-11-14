@@ -44,12 +44,18 @@ func _run() -> void:
 	get_window().content_scale_size = Vector2i(1280, 720)
 	get_window().content_scale_factor = 1.0
 	_audio = get_node("/root/GameAudio")
+	if _audio.status == "platform_disabled":
+		# 本平台没有打包音频后端（见 addons/FmodGodot/UPSTREAM.md），跳过而不是失败。
+		print("[SKIP] audio backend is not packaged for this platform")
+		get_tree().quit(0)
+		return
 	_check(_audio.status == "ready", "FMOD backend ready")
 	if _audio.status != "ready":
 		get_tree().quit(1)
 		return
-	_before = GameSettings.values()
-	GameSettings.update({"master_muted": true, "reduce_motion": true}, false)
+	var settings := get_node("/root/GameSettings")
+	_before = settings.values()
+	settings.update({"master_muted": true, "reduce_motion": true}, false)
 	_audio.ui_sound_played.connect(func(cue: StringName) -> void: _heard.append(cue))
 	for cue in _audio.UI_EVENTS:
 		await get_tree().create_timer(.14).timeout
@@ -148,6 +154,6 @@ func _run() -> void:
 	_check(_heard == [&"open", &"close"], "production return closes with different cue: " + str(_heard))
 	menu.queue_free()
 	await get_tree().process_frame
-	GameSettings.update(_before, false)
+	settings.update(_before, false)
 	print("UI_AUDIO_FEEDBACK_TEST_OK=", not _failed)
 	get_tree().quit(1 if _failed else 0)

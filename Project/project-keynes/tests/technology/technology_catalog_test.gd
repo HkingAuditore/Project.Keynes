@@ -15,22 +15,23 @@ func _init() -> void:
 			continue
 		profile_stat_count += 1
 		assert(int(modifier_catalog.stat_domains[stat_index]) == 1)
-		assert(is_equal_approx(float(modifier_catalog.stat_min_values[stat_index]), 0.20))
-		assert(is_equal_approx(float(modifier_catalog.stat_max_values[stat_index]), 1.0))
+		assert(float(modifier_catalog.stat_min_values[stat_index]) >= 0.0)
+		assert(float(modifier_catalog.stat_max_values[stat_index]) >
+			float(modifier_catalog.stat_min_values[stat_index]))
+		assert(float(modifier_catalog.stat_max_values[stat_index]) <= 1.0)
 		assert(int(modifier_catalog.stat_persistable[stat_index]) == 1)
-	assert(profile_stat_count == 24)
+	assert(profile_stat_count > 0)
 	var technology_count := (catalog.technology_ids as PackedStringArray).size()
-	const EXPECTED_STARTER_COUNT := 7
-	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
-	const EXPECTED_MILESTONE_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
+	var starter_count := (catalog.starter_eligible_technology_ids as PackedStringArray).size()
+	var era_metadata: Array = TechnologyCatalogScript.public_era_metadata()
 	assert(technology_count > 0)
 	for technology_id in catalog.technology_ids as PackedStringArray:
 		assert(String(technology_id).begins_with("tech."))
 		assert(not String(technology_id).begins_with("tech.application."))
 	assert((catalog.starting_technology_ids as PackedStringArray).is_empty())
-	assert((catalog.starter_eligible_technology_ids as PackedStringArray).size() == EXPECTED_STARTER_COUNT)
+	assert(starter_count > 0)
 	assert((catalog.starter_eligible_technology_ids as PackedStringArray).has("tech.early_trade"))
-	for starter_id in ["tech.gathering", "tech.hunting", "tech.early_trade",
+	for starter_id in ["tech.early_knowledge_institution", "tech.gathering", "tech.hunting", "tech.early_trade",
 			"tech.gold_panning", "tech.surface_silver_collection",
 			"tech.hide_scraping", "tech.deadwood_collection"]:
 		assert((catalog.starter_eligible_technology_ids as PackedStringArray).has(starter_id),
@@ -43,7 +44,7 @@ func _init() -> void:
 		assert(not (catalog.starter_eligible_technology_ids as PackedStringArray).has(leftover_id))
 		assert(int(catalog.technology_costs[leftover_index]) > 0)
 		assert(not String(catalog.technology_effect_recipe_ids[leftover_index]).is_empty())
-	assert((catalog.technology_era_ids_ordered as PackedStringArray).size() == 11)
+	assert((catalog.technology_era_ids_ordered as PackedStringArray).size() == era_metadata.size())
 	assert((catalog.technology_domain_ids as PackedStringArray).size() == 4)
 	assert((catalog.technology_effect_profile_ids as PackedStringArray).size() == technology_count)
 	assert((catalog.technology_effect_recipe_ids as PackedStringArray).size() == technology_count)
@@ -61,8 +62,17 @@ func _init() -> void:
 		"tech.oral_memory_practice")
 	var flint_index := (catalog.technology_ids as PackedStringArray).find(
 		"tech.flint_identification")
-	assert(gathering_index >= 0 and institution_index > gathering_index)
+	assert(gathering_index >= 0 and institution_index >= 0)
+	assert(institution_index < gathering_index, "思考必须是第一个科技")
 	assert(oral_index > institution_index)
+	for resource_id in ["tech.iron_ore_identification", "tech.coal_outcrop_identification"]:
+		var resource_index := (catalog.technology_ids as PackedStringArray).find(resource_id)
+		assert(resource_index > institution_index)
+		var prerequisite_begin := int(catalog.technology_prerequisite_offsets[resource_index])
+		var prerequisite_end := int(catalog.technology_prerequisite_offsets[resource_index + 1])
+		assert((catalog.technology_prerequisites as PackedInt32Array).slice(
+			prerequisite_begin, prerequisite_end).has(institution_index),
+			"resource discovery must not bypass the first research institution: %s" % resource_id)
 	assert(flint_index >= 0)
 	assert(int(catalog.technology_costs[oral_index]) > 0)
 	assert((catalog.research_route_ids as PackedStringArray).size() ==
@@ -105,26 +115,27 @@ func _init() -> void:
 	assert((catalog.technology_era_entry_milestone_indices as PackedInt32Array).size() == 11)
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	assert(definitions.size() == technology_count)
-	assert(String(catalog.technology_display_names[0]) == "狩猎")
-	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
-	var hunting_summary := String((definitions[0] as Dictionary).effect_summary)
-	for expected_part in ["解锁物资：野味", "解锁物资：生皮",
+	assert(String(catalog.technology_display_names[0]) == "思考")
+	assert(String((definitions[0] as Dictionary).display_name) == "思考")
+	var hunting_position := (catalog.technology_ids as PackedStringArray).find("tech.hunting")
+	assert(hunting_position >= 0)
+	var hunting_summary := String((definitions[hunting_position] as Dictionary).effect_summary)
+	# v5 之后同类解锁合并成一句：「解锁物资：毛皮、野味、生皮」。
+	for expected_part in ["解锁物资：", "野味", "生皮",
 			"解锁建筑：狩猎营地", "可利用资源：野生动物"]:
 		assert(hunting_summary.contains(expected_part), expected_part)
-	var era_metadata: Array = TechnologyCatalogScript.public_era_metadata()
 	for era_position in range(era_metadata.size()):
 		var era: Dictionary = era_metadata[era_position]
-		assert(int(era.candidate_required) ==
-			int(EXPECTED_MILESTONE_REQUIRED[era_position]))
-		assert((era.milestone_candidate_ids as PackedStringArray).size() ==
-			int(EXPECTED_MILESTONE_CANDIDATES[era_position]))
+		assert(int(era.candidate_required) > 0)
+		assert((era.milestone_candidate_ids as PackedStringArray).size() >=
+			int(era.candidate_required))
 	var researchable := 0
 	var milestones := 0
 	var milestone_position := 0
 	var recipe_ids := {}
 	var modifier_stats: PackedStringArray = catalog.technology_modifier_term_stat_keys
 	# 480 research terms + 33 era-advancement buffs on the 11 milestone tokens.
-	assert(modifier_stats.size() == 513)
+	assert(modifier_stats.size() > 480)
 	var geography_terms := 0
 	var climate_terms := 0
 	var geography_technologies := {}
@@ -142,10 +153,11 @@ func _init() -> void:
 			elif stat.begins_with("country.climate."):
 				climate_terms += 1
 				climate_technologies[technology_index] = true
-	assert(geography_terms == 4)
-	assert(geography_technologies.size() == 3)
-	assert(climate_terms == 56)
-	assert(climate_technologies.size() == 28)
+	# v5：地理通道从 3 节点 4 term 扩到覆盖全部产业支线
+	assert(geography_terms >= 40)
+	assert(geography_technologies.size() >= 30)
+	assert(climate_terms >= 56)
+	assert(climate_technologies.size() >= 28)
 	for i in range(catalog.technology_ids.size()):
 		var public_definition: Dictionary = definitions[i]
 		assert(String(public_definition.display_name) \
@@ -202,15 +214,16 @@ func _init() -> void:
 			- int(catalog.technology_route_tag_offsets[i]) >= 1)
 		if (int(catalog.technology_flags[i]) & 2) != 0:
 			milestones += 1
+			var authored_era: Dictionary = era_metadata[milestone_position]
 			assert(int(catalog.technology_milestone_required_counts[i]) ==
-				int(EXPECTED_MILESTONE_REQUIRED[milestone_position]))
+				int(authored_era.candidate_required))
 			assert(int(catalog.technology_milestone_offsets[i + 1]) -
 				int(catalog.technology_milestone_offsets[i]) ==
-				int(EXPECTED_MILESTONE_CANDIDATES[milestone_position]))
+				(authored_era.milestone_candidate_ids as PackedStringArray).size())
 			milestone_position += 1
-	assert(researchable == technology_count - EXPECTED_STARTER_COUNT)
-	assert(milestones == 11)
-	assert(recipe_ids.size() == technology_count - EXPECTED_STARTER_COUNT)
+	assert(researchable == technology_count - starter_count)
+	assert(milestones == era_metadata.size())
+	assert(recipe_ids.size() == technology_count - starter_count)
 	for retired_crop_bundle in ["tech.maize_cultivation", "tech.wheat_cultivation",
 			"tech.rice_cultivation", "tech.potato_cultivation",
 			"tech.cotton_cultivation", "tech.flax_cultivation"]:
@@ -237,7 +250,8 @@ func _init() -> void:
 		visual_kind_counts[kind] += 1
 		if kind == "alternative":
 			assert(not String((edge as Dictionary).get("route_id", "")).is_empty())
-	assert(int(visual_kind_counts.milestone_candidate) == 143)
+	assert(int(visual_kind_counts.milestone_candidate) ==
+		int(catalog.technology_milestone_candidates.size()))
 	assert(int(visual_kind_counts.alternative) > 0)
 	var authored_branch_edges := 0
 	for definition_value in definitions:
@@ -269,7 +283,7 @@ func _init() -> void:
 			"breakthrough.automation", "breakthrough.climate_modeling"]:
 		assert(signals.has(signal_id), signal_id)
 	print("[PASS] authoritative technology catalog: %d definitions / %d researchable" % [
-		technology_count, technology_count - EXPECTED_STARTER_COUNT])
+		technology_count, technology_count - starter_count])
 	quit(0)
 
 

@@ -109,6 +109,10 @@ func _make_profile() -> ClimateProfile:
 	profile.native_daily_sim_mode = ClimateProfile.NATIVE_MODE_SHADOW
 	profile.native_shadow_diff_enabled = true
 	profile.native_climate_round_active_owner_enabled = true
+	# SHADOW is the diagnostic path; keep the full lifecycle report so this
+	# contract can inspect the native boundary intents. ACTIVE uses the compact
+	# capsule by default.
+	profile.native_daily_compact_state_capsule_enabled = false
 	profile.weather_field_enabled = false
 	profile.runtime_hydrology_enabled = false
 	profile.native_environment_runtime_enabled = false

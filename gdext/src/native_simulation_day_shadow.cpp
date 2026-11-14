@@ -399,8 +399,10 @@ RuntimeDayCommit NativeSimulationHost::execute_shadow_day(DayExecution &day) {
     // stage loop below, where a failure isolates the domain instead of
     // being folded into the Climate/Country diagnostic chain.
     std::string ideology_error;
-    const bool ideology_ok = climate_ok && execute_ideology_worker_stage(
-        plan.context.day, commit, ideology_error);
+    const auto ideology_outcome = climate_ok ? execute_ideology_worker_stage(
+        plan.context.day, commit, ideology_error) : IdeologyStageOutcome::PARKED;
+    const bool ideology_ok = ideology_outcome == IdeologyStageOutcome::COMMITTED ||
+        ideology_outcome == IdeologyStageOutcome::ALREADY_COMMITTED;
     _ideology_pod_ready.store(ideology_ok, std::memory_order_release);
     const char *ideology_reason = ideology_ok
         ? (_ideology_pod_pending_transition_count.load(

@@ -57,9 +57,11 @@ const FRONT_ARMY_COLUMNS := [
 @onready var _locate_button: Button = %LocateButton
 @onready var _move_button: Button = %MoveButton
 @onready var _area_button: Button = %AreaButton
+@onready var _explore_button: Button = %ExploreButton
 @onready var _stop_button: Button = %StopButton
 @onready var _stance: OptionButton = %Stance
 @onready var _radius: SpinBox = %Radius
+@onready var _radius_label: Label = %Label
 @onready var _same_cell_block: Control = %SameCellBlock
 @onready var _same_cell_table: DossierLedgerTable = %SameCellTable
 @onready var _front_footnote: Label = %FrontFootnote
@@ -84,11 +86,38 @@ func _ready() -> void:
 	for card in _kpi_cards:
 		if card is Control:
 			(card as Control).custom_minimum_size = Vector2(72.0, DossierKpiCard.HEIGHT)
-	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭")
+	IconButton.apply(_close_button, &"action.close", IconButton.SMALL, "关闭军务档案")
+	# Command deck: the icon carries the action meaning at a glance while the
+	# short caption stays visible for keyboard/touch users.  Full explanations
+	# remain in the tooltip, so the map is not covered by paragraphs of copy.
+	IconButton.apply_with_text(_locate_button, &"action.pin", "定位", IconButton.SMALL,
+		"把镜头移到部队所在格")
+	IconButton.apply_with_text(_move_button, &"military.plan.target", "行军", IconButton.SMALL,
+		"在地图上点选目的地并预览路线", true)
+	IconButton.apply_with_text(_area_button, &"military.plan.barracks", "控区", IconButton.SMALL,
+		"在地图上点选控制中心", true)
+	IconButton.apply_with_text(_explore_button, &"map.expedition", "探路", IconButton.SMALL,
+		"选择探查范围，部队自动探索后返回出发点", true)
+	IconButton.apply_with_text(_stop_button, &"action.pause", "停止", IconButton.SMALL,
+		"停止行军、区域控制或探路")
+	IconButton.apply_with_text(%ConfirmOrder, &"action.confirm", "执行", IconButton.SMALL,
+		"提交当前地图指令")
+	IconButton.apply_with_text(%CancelOrder, &"action.back", "返回", IconButton.SMALL,
+		"退出地图选点")
+	IconButton.apply_with_text(_front_locate_button, &"action.pin", "定位战线", IconButton.SMALL,
+		"把镜头移到这段战线")
+	for button in [_close_button, _locate_button, _move_button, _area_button,
+			_explore_button, _stop_button,
+			%ConfirmOrder, %CancelOrder, _front_locate_button]:
+		button.focus_mode = Control.FOCUS_ALL
+		button.custom_minimum_size = Vector2(button.custom_minimum_size.x,
+			maxf(button.custom_minimum_size.y, 44.0))
+		UIAnimation.bind_tactile_button(button)
 	_close_button.pressed.connect(func() -> void: closed.emit())
 	_locate_button.pressed.connect(func() -> void: _emit_action(&"locate", {}))
 	_move_button.pressed.connect(func() -> void: _emit_action(&"move", {}))
 	_area_button.pressed.connect(func() -> void: _emit_action(&"area", {}))
+	_explore_button.pressed.connect(func() -> void: _emit_action(&"explore", {}))
 	_stop_button.pressed.connect(func() -> void: _emit_action(&"stop", {}))
 	for label in ["固守", "推进", "强攻", "撤退", "海运中"]:
 		_stance.add_item(label)
@@ -103,8 +132,15 @@ func _ready() -> void:
 	%CancelOrder.pressed.connect(func() -> void: _emit_action(&"cancel_order", {}))
 	_move_button.toggle_mode = true
 	_area_button.toggle_mode = true
-	_move_button.focus_neighbor_right = _move_button.get_path_to(_area_button)
-	_area_button.focus_neighbor_left = _area_button.get_path_to(_move_button)
+	_explore_button.toggle_mode = true
+	var command_chain: Array[Button] = [_locate_button, _move_button, _area_button,
+		_explore_button, _stop_button]
+	for index in command_chain.size():
+		var button := command_chain[index]
+		var previous := command_chain[(index + command_chain.size() - 1) % command_chain.size()]
+		var following := command_chain[(index + 1) % command_chain.size()]
+		button.focus_neighbor_left = button.get_path_to(previous)
+		button.focus_neighbor_right = button.get_path_to(following)
 	%ConfirmOrder.focus_neighbor_right = %ConfirmOrder.get_path_to(%CancelOrder)
 	%CancelOrder.focus_neighbor_left = %CancelOrder.get_path_to(%ConfirmOrder)
 	_front_locate_button.pressed.connect(func() -> void: _emit_action(&"locate", {}))
@@ -163,7 +199,9 @@ func set_model(payload: Dictionary) -> void:
 		set_order_state({})
 		_play_enter()
 		if _kind == "army":
-			(_move_button if _own else _locate_button).grab_focus()
+			# Always land on an actionable control.  A disabled move button used to
+			# leave the dossier with no focus, which stranded gamepad users.
+			(_move_button if _own and not _move_button.disabled else _locate_button).grab_focus()
 
 
 func clear() -> void:
@@ -274,19 +312,29 @@ func _apply_army(payload: Dictionary) -> void:
 
 func _apply_actions(actions: Array, selected: int) -> void:
 	var by_id := {}
+	var by_row := {}
 	for raw in actions:
 		var action := raw as Dictionary
 		by_id[String(action.get("id", ""))] = bool(action.get("enabled", true))
+		by_row[String(action.get("id", ""))] = action
 	_locate_button.visible = by_id.has("locate")
 	_locate_button.disabled = not bool(by_id.get("locate", true))
 	_move_button.visible = _own and by_id.has("move")
 	_move_button.disabled = selected <= 0 or not bool(by_id.get("move", false))
 	_area_button.visible = _own and by_id.has("area")
 	_area_button.disabled = selected <= 0 or not bool(by_id.get("area", false))
+	_explore_button.visible = _own and by_id.has("explore")
+	_explore_button.disabled = selected <= 0 or not bool(by_id.get("explore", false))
+	if _explore_button.disabled and by_row.has("explore"):
+		var reason := String((by_row["explore"] as Dictionary).get("reason", ""))
+		if not reason.is_empty():
+			_explore_button.tooltip_text = reason
+	else:
+		_explore_button.tooltip_text = "选择探查范围，部队自动探索后返回出发点（E）"
 	_stop_button.visible = _own and by_id.has("stop")
 	_stop_button.disabled = not bool(by_id.get("stop", false))
 	%ArmyActions.visible = _locate_button.visible or _move_button.visible \
-		or _area_button.visible
+		or _area_button.visible or _explore_button.visible
 
 
 ## 选点草稿是会话输入状态，和每日军事快照分开写；刷新不会清掉路线或焦点。
@@ -299,22 +347,31 @@ func set_order_state(state: Dictionary) -> void:
 	%OrderDraft.visible = active and _kind == "army"
 	_move_button.set_pressed_no_signal(active and mode == "move")
 	_area_button.set_pressed_no_signal(active and mode == "area")
-	%RadiusRow.visible = active and mode == "area"
+	_explore_button.set_pressed_no_signal(active and mode == "explore")
+	%RadiusRow.visible = active and (mode == "area" or mode == "explore")
+	_radius_label.text = "探查半径（格）" if mode == "explore" else "控制半径（格）"
 	_radius.set_value_no_signal(int(state.get("radius", 1)))
 	%ConfirmOrder.disabled = not active or not bool(state.get("ready", false))
-	%ConfirmOrder.text = "确认控制区域" if mode == "area" else "确认行军"
+	%ConfirmOrder.text = "确认探查范围" if mode == "explore" else (
+		"确认控制区域" if mode == "area" else "确认行军")
 	%OrderSummary.text = "先选择地图目标"
 	if active and bool(state.get("ready", false)):
-		%OrderSummary.text = "控制 %d 格 · 抵达中心约 %d 日" % [int(state.get("cell_count", 0)),
-			int(state.get("days", 0))] if mode == "area" else "预计行军 %d 日" % int(state.get("days", 0))
+		if mode == "explore":
+			%OrderSummary.text = "范围 %d 格 · 完成后返回出发点\n不会主动进入他国控制格" % [
+				int(state.get("cell_count", 0))]
+		elif mode == "area":
+			%OrderSummary.text = "控制 %d 格 · 抵达中心约 %d 日" % [
+				int(state.get("cell_count", 0)), int(state.get("days", 0))]
+		else:
+			%OrderSummary.text = "预计行军 %d 日" % int(state.get("days", 0))
 	%CommandHint.theme_type_variation = &"PKDossierCaption"
 	%CommandHint.text = String(state.get("message", "")) if active else (
-		"M 行军 · C 区域控制 · X 停止任务" if _own else "其他国家的部队，可查看战备与编成。")
+		"地图点选目的地；Esc 返回。" if _own else "可查看战备与编成。")
 	%CommandHint.visible = true
 	if not active and was_active and _kind == "army" and is_visible_in_tree():
 		(_move_button if _own else _locate_button).grab_focus()
 	if active:
-		%CommandHint.text += "\n右键或 Esc 取消选点。"
+		%CommandHint.text += "  ·  Esc 返回"
 		if bool(state.get("ready", false)) and not was_ready:
 			%ConfirmOrder.grab_focus()
 		elif not bool(state.get("ready", false)):
@@ -349,7 +406,8 @@ func handle_order_key(event: InputEvent) -> bool:
 			return true
 	if not _own:
 		return false
-	var shortcuts := {KEY_M: _move_button, KEY_C: _area_button, KEY_X: _stop_button}
+	var shortcuts := {KEY_M: _move_button, KEY_C: _area_button,
+		KEY_E: _explore_button, KEY_X: _stop_button}
 	if shortcuts.has(key.keycode) and not (shortcuts[key.keycode] as Button).disabled:
 		(shortcuts[key.keycode] as Button).pressed.emit()
 		return true

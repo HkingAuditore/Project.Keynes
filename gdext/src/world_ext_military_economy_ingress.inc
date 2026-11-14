@@ -29,7 +29,8 @@ bool DCWorldExt::submit_military_economy_commands(
         } else {
             pre_lane_rows.push_back(static_cast<int32_t>(i));
             if (opcode == MECONOMY_CONVERT_COHORT || opcode == MECONOMY_ADD_POPULATION ||
-                opcode == EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND)
+                opcode == EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND ||
+                opcode == EconomyApi::COMMAND_MILITARY_PURCHASE)
                 pod_rows.push_back(static_cast<int32_t>(i));
         }
     }
@@ -104,10 +105,27 @@ bool DCWorldExt::submit_military_economy_commands(
             PackedInt32Array ops, cells;
             for (const int32_t i : rows) {
                 const MilitaryEconomyCommand &c = commands[static_cast<size_t>(i)];
-                ids.push_back(static_cast<int64_t>(_military_pod_request++));
+                // A paid purchase must keep its STABLE request identity as the
+                // POD request id: Economy answers the fill under that sequence
+                // and the bridge matches the receipt back on `row.sequence`. A
+                // fresh counter here would execute the buy and lose the receipt
+                // (design D6). Every other row keeps the bridge counter.
+                const bool stable_identity =
+                    c.opcode == EconomyApi::COMMAND_MILITARY_PURCHASE && c.sequence > 0;
+                ids.push_back(stable_identity ? c.sequence
+                                              : static_cast<int64_t>(_military_pod_request++));
                 ops.push_back(c.opcode);
                 cohorts.push_back(c.target_handle);
                 switch (c.opcode) {
+                case EconomyApi::COMMAND_MILITARY_PURCHASE:
+                    // payload0 = qty (GOODS_SCALE), payload1 = cash ceiling
+                    // (MONEY_SCALE), target_country = good, target_cell = market
+                    // cell, target_cohort = payer country handle.
+                    p0.push_back(c.i64_0);
+                    p1.push_back(c.i64_1);
+                    p2.push_back(c.i32_1);
+                    cells.push_back(c.i32_0);
+                    break;
                 case EconomyApi::COMMAND_MILITARY_PROCUREMENT_DEMAND:
                     p0.push_back(c.i64_0);
                     p1.push_back(c.i64_1);

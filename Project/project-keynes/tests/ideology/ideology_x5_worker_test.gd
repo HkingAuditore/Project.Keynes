@@ -56,6 +56,8 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# Selector rewrites are the subject here; opinion support is tested separately.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -89,7 +91,14 @@ func _test_tag_rewrite() -> bool:
 	# Keep the source out of both native population bands. It is a settlement only
 	# after `antibiotics` rewrites urban_sanitation's metropolis selector; before
 	# that, neither the original metropolis tag nor a settlement tag may match.
-	var snap: Dictionary = _ext.get_population_cell_snapshot(source, false)
+	var snap: Dictionary = {}
+	for _attempt in range(4):
+		snap = _ext.get_population_cell_snapshot(source, false)
+		if bool(snap.get("ok", false)):
+			break
+		# The worker publishes the Economy read view at the next committed
+		# boundary; a pending view is a retryable fixture timing state.
+		_tick = _drive_days(1)
 	_require("source cell has a population snapshot", bool(snap.get("ok", false)),
 		str(snap))
 	if not _override_metric(METRIC_CELL_POPULATION, REWRITE_POPULATION):
@@ -105,12 +114,12 @@ func _test_tag_rewrite() -> bool:
 	if not await _equip("antibiotics"):
 		return false
 	var rewritten := _wait_for_cell(source, 1.08, 12)
-	var report: Dictionary = _ext.get_ideology_effect_instance_report(_handle)
+	var report: Dictionary = _ext.get_ideology_effect_target_report(_handle)
 	var targets := PackedInt64Array(report.get(
 		"target_handles", PackedInt64Array()))
 	_expect("antibiotics rewrites cell.metropolis to cell.settlement (got %.5f)"
 			% rewritten, _is_close(rewritten, 1.08), "%.5f" % rewritten)
-	_expect("rewritten instance report contains the source cell",
+	_expect("rewritten target report contains the source cell",
 		targets.has(source), str(targets))
 	if not await _unequip("antibiotics"):
 		return false
@@ -172,7 +181,7 @@ func _test_save_restore() -> bool:
 	var captured := _read_cell(source)
 	_expect("tag rewrite is live before saving", before >= 1.0799,
 		"%.5f" % before)
-	var saved := _request_save(2026102401)
+	var saved := WorkerWaitHelper.request_worker_save(_host, _ext, 2026102401)
 	var bundle: PackedByteArray = saved.get("bytes", PackedByteArray())
 	var pkcn: PackedByteArray = saved.get("country_pkcn", PackedByteArray())
 	if not _require("PKSR captures the equipped rewrite",
@@ -207,13 +216,11 @@ func _test_save_restore() -> bool:
 	# It must come back at exactly the tier live when the save was taken; a
 	# rebuild from the current selector would silently drop the understanding
 	# tier (and an L2/L3 save would read as 1.08).
-	var after := _read_cell(source)
 	var restored_tier := await WorkerWaitHelper.wait_for(
-		func() -> bool:
-			after = _read_cell(source)
-			return _is_close(after, captured),
+		func() -> bool: return _is_close(_read_cell(source), captured),
 		16, 120000,
 		func() -> void: _tick = _drive_days(1))
+	var after := _read_cell(source)
 	_expect("restored tag rewrite still applies (got %.5f)" % after,
 		restored_tier and _is_close(after, captured),
 		"restored=%.5f captured=%.5f" % [after, captured])
@@ -311,19 +318,20 @@ func _equip(card: String) -> bool:
 			bool(equipped.get("ok", false)), str(equipped)):
 		return false
 	_tick = _drive_days(2)
-	var slots := 0
-	var known_id := -1
 	var ready := await WorkerWaitHelper.wait_for(
 		func() -> bool:
 			var snapshot: Dictionary = _ext.get_ideology_snapshot(_handle)
-			known_id = dense if PackedInt32Array(snapshot.get(
-				"known_ids", PackedInt32Array())).has(dense) else -1
-			slots = int(snapshot.get("ideology_slots_used", -1))
-			return known_id == dense and slots >= 1,
+			return PackedInt32Array(snapshot.get(
+				"known_ids", PackedInt32Array())).has(dense) \
+				and int(snapshot.get("ideology_slots_used", -1)) >= 1,
 		16, 120000,
 		func() -> void: _tick = _drive_days(1))
 	if ready:
 		return true
+	var final: Dictionary = _ext.get_ideology_snapshot(_handle)
+	var known_id := dense if PackedInt32Array(final.get(
+		"known_ids", PackedInt32Array())).has(dense) else -1
+	var slots := int(final.get("ideology_slots_used", -1))
 	if _ext.has_method("poll_ideology_receipts"):
 		var receipts: Dictionary = _ext.poll_ideology_receipts(0, 32)
 		printerr("[x5-equip] %s opcodes=%s reasons=%s snapshot=%s" % [card,
@@ -344,18 +352,18 @@ func _unequip(card: String) -> bool:
 	if not _require("%s: worker accepts unequip" % card,
 			bool(result.get("ok", false)), str(result)):
 		return false
-	var slots := int(_ext.get_ideology_snapshot(_handle).get(
+	var started_slots := int(_ext.get_ideology_snapshot(_handle).get(
 		"ideology_slots_used", -1))
-	var started_slots := slots
 	var released := await WorkerWaitHelper.wait_for(
 		func() -> bool:
-			slots = int(_ext.get_ideology_snapshot(_handle).get(
-				"ideology_slots_used", -1))
-			return slots < started_slots,
+			return int(_ext.get_ideology_snapshot(_handle).get(
+				"ideology_slots_used", -1)) < started_slots,
 		16, 120000,
 		func() -> void: _tick = _drive_days(1))
 	if released:
 		return true
+	var slots := int(_ext.get_ideology_snapshot(_handle).get(
+		"ideology_slots_used", -1))
 	if _ext.has_method("poll_ideology_receipts"):
 		var receipts: Dictionary = _ext.poll_ideology_receipts(0, 32)
 		printerr("[x5-unequip] %s opcodes=%s statuses=%s reasons=%s snapshot=%s"
@@ -467,26 +475,12 @@ func _wait_for_cell(cell: int, expected: float, days: int) -> float:
 	return value
 
 
+
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		# Publish the revision the day just produced, not the previous one.
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -542,52 +536,12 @@ func _dense_id(card: String) -> int:
 	return ids.find("idea.%s" % card)
 
 
-func _request_save(request_id: int) -> Dictionary:
-	var request: Dictionary = {}
-	for _attempt in range(24):
-		request = _ext.request_runtime_save(request_id)
-		if String(request.get("code", "")) != "save_request_busy":
-			break
-		_ext.poll_runtime_save(request_id)
-		OS.delay_msec(5)
-	if not bool(request.get("pending", false)):
-		return request
-	var saved := {}
-	var ready := WorkerWaitHelper.wait_until(
-		func() -> bool:
-			saved = _ext.poll_runtime_save(request_id)
-			return bool(saved.get("ready", false)),
-		120000,
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
-	if ready:
-		return saved
-	return {}
-
-
 func _owned_anchor() -> int:
 	for cell in range(WIDTH * HEIGHT):
 		if int(_ext.get_country_cell_summary(cell).get(
 				"country_handle", 0)) == _handle:
 			return cell
 	return 0
-
-
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var reached := baseline
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = _ext.get_runtime_thread_report()
-			reached = int(report.get("ideology_pod_committed_day", -1))
-			return reached > baseline \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		maxi(timeout_msec, 120000),
-		func() -> void:
-			if _ext.has_method("service_country_worker_peer_adapter"):
-				_ext.service_country_worker_peer_adapter(64, true))
-	return reached
 
 
 func _wait_worker_paused(ext: Object) -> bool:
@@ -605,11 +559,6 @@ func _wait_stopped() -> void:
 				"simulation_host_state", "")) == "STOPPED",
 		120000,
 		func() -> void: _ext.poll_runtime_save(0))
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _world_day(ext: Object) -> int:

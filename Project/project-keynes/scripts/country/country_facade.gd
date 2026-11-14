@@ -11,6 +11,8 @@ const DEFAULT_PROFILE_PATH := "res://data/country/default_country.tres"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryProfileScript = preload("res://scripts/data/country_profile.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const PoliticalRegimeCatalogScript = preload(
+	"res://scripts/country/political_regime_catalog.gd")
 const TAX_RATE_MIN_BP := -100000
 const TAX_RATE_MAX_BP := 10000
 const TAX_ABSOLUTE_MIN := -1000000000
@@ -51,6 +53,8 @@ enum Opcode {
 	## target_handle = 受害国。同批次原子：领土/现金/物资全部归吞并国，
 	## 受害国失效且 generation+1；持旧句柄的后续命令 country_handle_invalid。
 	ANNEX_COUNTRY = 27,
+	## stable_id carries the political regime stable id for this opcode.
+	SET_POLITICAL_REGIME = 28,
 }
 
 enum TaxKind {
@@ -69,11 +73,14 @@ enum TaxAssessmentMode {
 var _world_ext: Object = null
 var _profile = null
 var _catalog: Dictionary = {}
+var _political_regime_catalog: Resource = null
+var _political_regime_native_catalog: Dictionary = {}
 var _configured: bool = false
 var _last_event_id: int = 0
 
 func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
-		profile = null, compiled_catalog: Dictionary = {}) -> Dictionary:
+		profile = null, compiled_catalog: Dictionary = {},
+		political_catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile
 	if _profile == null:
@@ -86,6 +93,18 @@ func configure(world_ext: DCWorldExt, cell_count: int, seed: int,
 		else EconomyCatalogScript.compile_native_catalog()
 	if not bool(_catalog.get("ok", true)):
 		return _catalog
+	_political_regime_catalog = political_catalog \
+		if political_catalog != null else PoliticalRegimeCatalogScript.load_default()
+	if _political_regime_catalog == null \
+		or not _political_regime_catalog.has_method("compile_native_catalog"):
+		return {"ok": false, "reason": "political_regime_catalog_unavailable"}
+	_political_regime_native_catalog = _political_regime_catalog.compile_native_catalog(
+		_catalog)
+	if not bool(_political_regime_native_catalog.get("ok", false)):
+		return _political_regime_native_catalog
+	for key in ["political_regime_ids", "political_regime_capability_bits",
+			"political_regime_catalog_hash", "political_regime_default_id"]:
+		_catalog[key] = _political_regime_native_catalog.get(key)
 	var native_catalog := _catalog.duplicate(false)
 	native_catalog.erase("ok")
 	var result: Dictionary = _world_ext.configure_country(
@@ -615,6 +634,51 @@ func cell_summary(cell: int) -> Dictionary:
 func snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_snapshot(handle) if _configured else {}
 
+func political_regime_snapshot(handle: int) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "country facade is not configured"}
+	if _world_ext.has_method("get_country_political_regime_snapshot"):
+		return _world_ext.get_country_political_regime_snapshot(handle)
+	var compact := ui_snapshot(handle, 8)
+	return compact.get("politics", {"ok": false,
+		"reason": "political_regime_snapshot_unavailable"})
+
+func political_regime_catalog_view() -> Dictionary:
+	return _political_regime_catalog.catalog_view() \
+		if _political_regime_catalog != null and \
+		_political_regime_catalog.has_method("catalog_view") else {
+			"ok": false, "reason": "political_regime_catalog_unavailable"}
+
+func has_political_capability(handle: int, capability: StringName) -> bool:
+	var snapshot := political_regime_snapshot(handle)
+	if not bool(snapshot.get("ok", false)):
+		return false
+	var bits := int(snapshot.get("capability_bits", 0))
+	var raw_regime_key = snapshot.get("regime_key",
+		snapshot.get("regime_stable_id", ""))
+	var regime_key := String(raw_regime_key)
+	if regime_key.is_empty() or raw_regime_key is int:
+		var dense := int(snapshot.get("regime_id", -1))
+		if dense >= 0 and _political_regime_catalog != null:
+			var definitions: Array = _political_regime_catalog.get("definitions")
+			if dense < definitions.size():
+				regime_key = String((definitions[dense] as Resource).get("id"))
+	var definition: Resource = _political_regime_catalog.definition_for(
+		StringName(regime_key)) \
+		if _political_regime_catalog != null and \
+		_political_regime_catalog.has_method("definition_for") else null
+	if definition != null:
+		for raw_key in definition.capability_keys:
+			if String(raw_key) == String(capability):
+				return true
+	return capability == &"treasury_construction" and (bits & 1) != 0
+
+func set_political_regime(handle: int, regime_id: StringName,
+		effective_day: int, sequence: int) -> Dictionary:
+	return submit([{"opcode": Opcode.SET_POLITICAL_REGIME,
+		"target_handle": handle, "stable_id": String(regime_id),
+		"effective_day": effective_day, "sequence": sequence}])
+
 func treasury_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_treasury_snapshot(handle) if _configured else {}
 
@@ -637,6 +701,78 @@ func choose_era_reward(offer_generation: int, choice_index: int,
 
 func report() -> Dictionary:
 	return _world_ext.get_country_report() if _configured else {"configured": false}
+
+
+func peer_protocol_status() -> Dictionary:
+	return _world_ext.get_country_peer_protocol_status() if _world_ext != null else {}
+
+
+func should_run(day_index: int) -> bool:
+	return bool(_world_ext.country_should_run(day_index)) if _world_ext != null else false
+
+
+func capture_worker_pod_catalog() -> Dictionary:
+	return _world_ext.capture_country_pod_catalog() if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+
+func capture_worker_runtime_snapshot() -> Dictionary:
+	return _world_ext.capture_country_runtime_snapshot() if _world_ext != null else {
+		"ok": false, "code": "runtime_worker_api_missing"}
+
+
+func worker_read_view(after_generation: int = 0) -> Dictionary:
+	return _world_ext.get_country_worker_read_view(maxi(after_generation, 0)) \
+		if _world_ext != null else {"ok": false, "code": "country_worker_read_view_api_missing"}
+
+
+func service_worker_peer_adapter(max_intents: int = 64,
+		shadow_replay: bool = true) -> Dictionary:
+	return _world_ext.service_country_worker_peer_adapter(
+		clampi(max_intents, 1, 4096), shadow_replay) if _world_ext != null else {
+		"ok": false, "code": "country_worker_adapter_api_missing"}
+
+
+func economy_asset_protocol_status() -> Dictionary:
+	return _world_ext.get_country_economy_asset_protocol_status() if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func poll_economy_asset_request() -> Dictionary:
+	return _world_ext.poll_country_economy_asset_request() if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func submit_economy_asset_result(result: Dictionary) -> Dictionary:
+	return _world_ext.submit_country_economy_asset_result(result) if _world_ext != null else {
+		"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+
+
+func capture_annual_state() -> PackedByteArray:
+	return _world_ext.capture_annual_report_state() if _world_ext != null else PackedByteArray()
+
+
+func annual_status() -> Dictionary:
+	return _world_ext.get_annual_report_status() if _world_ext != null else {"ok": false}
+
+
+func restore_annual_state(bytes: PackedByteArray) -> Dictionary:
+	return _world_ext.restore_annual_report_state(bytes) if _world_ext != null else {
+		"ok": false, "reason": "annual_provider_missing"}
+
+
+func begin_forensics_save(chunk_bytes: int) -> Dictionary:
+	return _world_ext.begin_country_forensics_save(chunk_bytes) if _world_ext != null else {
+		"ok": false, "reason": "country_provider_missing"}
+
+
+func read_forensics_save_chunk(chunk_bytes: int) -> PackedByteArray:
+	return _world_ext.read_country_save_chunk(chunk_bytes) if _world_ext != null else PackedByteArray()
+
+
+func end_forensics_save() -> Dictionary:
+	return _world_ext.end_country_save() if _world_ext != null else {
+		"ok": false, "reason": "country_provider_missing"}
 
 
 func ui_snapshot(handle: int, section_mask: int) -> Dictionary:

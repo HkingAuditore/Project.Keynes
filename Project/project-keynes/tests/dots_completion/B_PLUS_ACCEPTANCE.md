@@ -4,7 +4,7 @@
 > 本文档描述的 `use_gdext_season_round` / `use_gdext_season_refresh` flag 验收闭环
 > 已随 flag 一同退役。所有相关 flag（含 SIMD 三件套 / fronts_soa / resident_knobs / 
 > stage_b_combined / pipeline_enabled 等 18 项）均已在 ClimateProfile 上删除字段、
-> 在代码中折叠为单路径，C++ ext 不可用时各 hot pass 内部仍透明 fallback 到 GDScript。
+> 在代码中折叠为单路径；地图气候第2a批的 Pass-A/B、ocean、sea-ice、transpiration 在 C++ ext 不可用时报告失败并保留字段，不再透明 fallback 到 GDScript。
 > 文档归档保留供溯源；勿再按本 SOP 操作（hotkey / 入口函数已删除）。
 >
 > 本文档对应 `.codebuddy/plan/dots-final-frontier-b-plus/`（Phase B+ 计划）。

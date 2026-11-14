@@ -185,7 +185,6 @@ const OP_ADD_UNDERSTANDING := 8
 const MAX_SLICES_PER_DAY := 256
 ## Hang detectors, not performance gates.
 const DAY_WAIT_MS := 9000
-const POD_WAIT_MS := 5000
 const STATE_WAIT_MS := 15000
 const MASK_WAIT_MS := 12000
 ## Whole-run guard: the brief allows ~10 minutes; stop driving days past this and
@@ -820,12 +819,9 @@ func _phase_b2() -> void:
 			int(front["layer_generation"]), int(front["sample_day"])])
 	_expect("B2: the worker accepted a non-zero number of live cards",
 		total_live > 0, "live=%d per_country=%s" % [total_live, str(live)])
-	# The question B2 exists to answer, asserted as the measurement it is: the new
-	# pipeline produced no derived output on the worker world.
-	_expect("B2[FINDING]: the derived front covers NO cell on the worker world even "
-		+ "though " + str(total_live) + " cards are live -- asserted as the measured "
-		+ "reality, so a fix fails this check instead of passing it",
-		int(front["cell_count"]) == 0 and not bool(front["installed"]),
+	_expect("B2: the derived front is installed and covers cells on the worker "
+		+ "world while " + str(total_live) + " cards are live",
+		int(front["cell_count"]) > 0 and bool(front["installed"]),
 		"cells=%d installed=%s contributions=%d live=%d"
 			% [int(front["cell_count"]), str(front["installed"]),
 				int(front["contribution_count"]), total_live])
@@ -1020,10 +1016,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	# Production settle handshake (`dispatch -> run_modifier_daily -> ack`) only on
 	# the main-thread side; under worker authority the worker's own graph owns it
 	# and a second handshake here would double-apply.
@@ -1055,33 +1047,11 @@ func _drive_day(w: Dictionary) -> Dictionary:
 	if bool(ideology.get("suppressed", false)):
 		# Under worker authority the day is committed by the worker; wait for it so
 		# the next day does not outrun the pod.
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(w, before, POD_WAIT_MS)
+		ext.set_runtime_clock(false, WORKER_SPEED)
+		WorkerWaitHelper.wait_committed(host, ext, maxi(0, day - 1))
+		ext.set_runtime_clock(true, WORKER_SPEED)
 	return {"ok": true, "day": day, "slices": slices, "drained": drained,
 		"suppressed": bool(ideology.get("suppressed", false))}
-
-
-func _wait_pod_day(w: Dictionary, before: int, timeout_ms: int) -> void:
-	var ext: Object = w["ext"]
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(false, WORKER_SPEED)
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = ext.get_runtime_thread_report()
-			return int(report.get("ideology_pod_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_ms,
-		func() -> void:
-			_service_peers(ext, 1))
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(true, WORKER_SPEED)
-
-
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _worker_fault(ext: Object) -> String:

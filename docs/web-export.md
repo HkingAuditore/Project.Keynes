@@ -193,13 +193,24 @@ Godot 4.6 的 dlink 主模块自带 wasm exception tag，所以打开异常后�
 | --- | --- | --- |
 | `swei/SweiGothicLegCJKsc-Regular.ttf` | 4857 | 10.13 → 1.01 MB |
 | `swei/SweiGothicLegCJKsc-Bold.ttf` | 4799 | 9.84 → 0.99 MB |
-| `noto_serif_sc/NotoSerifSC-SemiBold.otf` | 4815 | 10.27 → 1.33 MB |
-| `source_han_serif/SourceHanSerifCN-Regular.otf` | 4817 | 10.10 → 1.32 MB |
-| `source_han/SourceHanSansCN-VF.woff2` | 4817 | 7.38 → 1.11 MB |
-| `annual_pencil/Muyao-Softbrush-2.ttf` | 3967 | 2.69 → 1.80 MB |
-| `annual_pencil/PFanHuTuTi_Min.ttf` | 3506 | 3.51 → 3.25 MB（该字体只有 3718 个字形，几乎裁不动） |
 | `muyao/Muyao-Softbrush-2.ttf` | 3967 | 2.69 → 1.80 MB |
 | `fontawesome/fa-solid-900.woff2` | 2009 | 0.12 → 0.12 MB（图标字体，保持完整） |
+
+> **2026-11-11**：手写体只保留 Muyao。`annual_pencil/PFanHuTuTi_Min.ttf` 已删除 ——
+> 它每字形 1.32 KB，是 Muyao（0.76 KB）的 1.7 倍、正文字体（0.30 KB）的 4.4 倍，
+> 而这套字只服务年鉴页；删掉后 web 包少 3.25 MB。`annual_pencil/` 目录同时移除，
+> 年鉴的 body/label 现在都是 Muyao + 不同的 `variation_embolden`
+> （`ui_tokens.gd` 的 `ANNUAL_PENCIL_BODY` 保留为别名）。
+> 另外 `annual_pencil/Muyao-Softbrush-2.ttf` 那份重复副本也早已删掉（md5 与 `muyao/` 相同）。
+
+> **2026-11-11（第二刀）**：正文字体统一到 Swei。删掉 `NotoSerifSC-SemiBold`、
+> `SourceHanSerifCN-Regular`、`SourceHanSansCN-VF` 三套 —— 它们各自 1.3 MB 左右，
+> 合计 3.77 MB，而 Swei 已经覆盖同样的 2500 余字。引用点（`CHRONICLE_SERIF`、
+> `DOSSIER_SERIF`、`ANNUAL_DISPLAY_SERIF`、`ideology_card.BODY_FONT/UI_FONT`、
+> `ideology_slot_niche.BODY_FONT`）改为指向 `UITokens.UI_FONT` / `UI_FONT_BOLD`，
+> 常量名保留以免动几十处调用点。`assets/fonts/{source_han,source_han_serif}/LICENSE.txt`
+> 原样保留（记录曾用过的授权，删掉反而像在抹授权）。
+> 结果：font 10.94 → 7.69 → **约 3.9 MB**（Swei 两套 + Muyao + fa-solid）。
 
 **单独跑**（只子集 + 自检，不动 `.godot`，不导出）：
 

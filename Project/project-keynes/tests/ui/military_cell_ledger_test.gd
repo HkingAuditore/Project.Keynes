@@ -73,16 +73,58 @@ class FakeMilitaryFacade:
 				"qty": int(quantities[index]) if index < quantities.size() else 0})
 		return out
 
+	func state_building_economy_id(building_index: int) -> int:
+		return building_index
+
+
+class FakeEconomyFacade:
+	var military: FakeMilitaryFacade
+	var treasury_empty := false
+
+	func construction_quotes(_country_handle: int, _cell: int,
+			building_indices: PackedInt32Array) -> Dictionary:
+		var items: Array = []
+		for building_index in building_indices:
+			var rows: Array = military.catalog_data.get("state_buildings", [])
+			if building_index < 0 or building_index >= rows.size():
+				continue
+			var row: Dictionary = rows[building_index]
+			var materials: Array = []
+			var goods: PackedInt32Array = row.get("material_goods", PackedInt32Array())
+			var quantities: PackedInt64Array = row.get("material_qty", PackedInt64Array())
+			for index in range(goods.size()):
+				var required := int(quantities[index]) if index < quantities.size() else 0
+				materials.append({
+					"good_id": FakeMilitaryFacade.TEST_GOODS[int(goods[index]) % FakeMilitaryFacade.TEST_GOODS.size()],
+					"name": FakeMilitaryFacade.TEST_GOODS[int(goods[index]) % FakeMilitaryFacade.TEST_GOODS.size()],
+					"required": required,
+					"treasury": 0 if treasury_empty else required,
+					"market": 0,
+				})
+			var eligible := not treasury_empty or materials.is_empty()
+			items.append({
+				"building_index": int(building_index),
+				"eligible": eligible,
+				"reason_code": "construction_materials_insufficient" if not eligible else "",
+				"cash_required": 0,
+				"materials": materials,
+			})
+		return {"ok": true, "items": items}
+
 
 class FakeGenerator:
 	var military = null
 	var country = null
+	var economy = null
 
 	func get_military_facade():
 		return military
 
 	func get_country_facade():
 		return country
+
+	func get_economy_facade():
+		return economy
 
 	func gameplay_start_report() -> Dictionary:
 		return {"ok": true, "cell": 42}
@@ -180,8 +222,12 @@ func _view_model(researched: PackedStringArray, snapshot: Dictionary,
 	military.catalog_data = catalog_override if not catalog_override.is_empty() \
 		else _catalog()
 	military.snapshot_data = snapshot
+	var economy := FakeEconomyFacade.new()
+	economy.military = military
+	economy.treasury_empty = treasury_empty
 	generator.country = country
 	generator.military = military
+	generator.economy = economy
 	var vm = VIEW_MODEL_SCRIPT.new()
 	vm.set_context(null, generator, null, null, 0.42, 22.0)
 	return vm._military_category(CELL)
@@ -326,7 +372,7 @@ func _test_cost_blocking() -> void:
 	var blocked := _view_model(PackedStringArray(["tech.masonry"]), _snapshot(),
 		true, true)
 	var fort: Dictionary = (blocked["military_cell"]["buildings"] as Array)[1]
-	if String(fort.get("cost_reason", "")) != "缺建材":
+	if String(fort.get("cost_reason", "")) != "建材不足":
 		_failures.append("blocked fortification cost_reason: %s" % String(
 			forth_line(fort)))
 	if String(fort.get("primary_action", "none")) != "none":
@@ -335,7 +381,7 @@ func _test_cost_blocking() -> void:
 	# 缺料时成本本身仍要显示：玩家得知道差多少，才知道去攒什么。
 	if String(fort.get("materials_text", "")).is_empty():
 		_failures.append("blocked fortification dropped its material text")
-	if not String(fort.get("tooltip", "")).contains("缺建材"):
+	if not String(fort.get("tooltip", "")).contains("建材不足"):
 		_failures.append("blocked fortification tooltip omits the reason")
 	# 提示卡是玩家核对清单的唯一落点：行内可以写「等 N 项」，
 	# 提示卡必须一种不漏，还要给出合计与每日维护。

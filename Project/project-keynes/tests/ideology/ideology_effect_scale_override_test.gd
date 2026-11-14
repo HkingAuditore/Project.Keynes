@@ -95,7 +95,8 @@ func _test_synergy_rules() -> void:
 
 	var empty_target := _synergy([_row(&"", 196608)])
 	_expect("an empty target is rejected",
-		empty_target.validate() == "ideology_effect_parameter_target_missing"
+		empty_target.validate() == "ideology_effect_parameter_match_value_missing"
+			or empty_target.validate() == "ideology_effect_parameter_target_missing"
 			or empty_target.validate() == "ideology_synergy_override_target_empty",
 		empty_target.validate())
 
@@ -180,7 +181,9 @@ func _test_native_acceptance() -> void:
 	# Out-of-band scale must be rejected by the native validator, not silently
 	# clamped: the authoring layer and the runtime have to agree on the band.
 	var tampered: Dictionary = config.duplicate(true)
-	tampered.synergy_override_scales = PackedInt32Array([999999])
+	# The current ABI carries the authored value in the extended parallel
+	# column; `synergy_override_scales` is the legacy compatibility column.
+	tampered.synergy_override_values = PackedInt32Array([999999])
 	var tampered_outcome: Dictionary = ext.configure_ideologies(tampered)
 	_expect("an out-of-band scale is rejected natively",
 		String(tampered_outcome.get("reason", "")) ==
@@ -244,6 +247,7 @@ func _catalog_with_override(target: StringName, scale: int) -> Resource:
 
 	var card: Resource = load("res://scripts/ideology/ideology_definition.gd").new()
 	card.id = &"probe_card"
+	card.school_id = &"industry"
 	var level: Resource = load(
 		"res://scripts/ideology/ideology_level_definition.gd").new()
 	level.understanding_threshold_q16 = 0

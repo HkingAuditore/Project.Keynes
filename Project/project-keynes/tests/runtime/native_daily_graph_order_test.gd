@@ -21,17 +21,24 @@ func _run() -> void:
 	var daily_src: String = _read_source("res://../../gdext/src/world_ext_daily_sim.cpp")
 	var schedule_src: String = _read_source("res://../../gdext/src/system_schedule.cpp")
 	var generator_src: String = _read_source("res://scripts/geography/map_generator.gd")
+	var bundle_src: String = _read_source(
+			"res://scripts/simulation/climate/native_daily_bundle_builder.gd")
+	var publish_src: String = _read_source(
+			"res://scripts/simulation/climate/native_daily_publish.gd")
+	# The native daily bundle and publish bodies live in their climate collaborators;
+	# keep this source contract pointed at the implementation after the split.
+	var climate_modules_src: String = bundle_src + "\n" + publish_src
 	var climate_src: String = _read_source("res://../../gdext/src/world_ext_climate.cpp")
 	var transp_src: String = _read_source("res://../../gdext/src/runtime_climate_passes.cpp")
 	var weather_src: String = _read_source("res://../../gdext/src/world_ext_weather.cpp")
-	var season_src: String = _read_source("res://../../gdext/src/world_ext_generate.cpp")
+	var season_src: String = _read_source("res://../../gdext/src/world_ext_season_refresh.cpp")
 
 	_expect("world_ext_daily_sim.cpp readable", not daily_src.is_empty())
 	_expect("system_schedule.cpp readable", not schedule_src.is_empty())
 	_expect("map_generator.gd readable", not generator_src.is_empty())
 	_expect("world_ext_climate.cpp readable", not climate_src.is_empty())
 	_expect("world_ext_weather.cpp readable", not weather_src.is_empty())
-	_expect("world_ext_generate.cpp readable", not season_src.is_empty())
+	_expect("world_ext_season_refresh.cpp readable", not season_src.is_empty())
 	if _failures > 0:
 		_finish()
 		return
@@ -81,7 +88,7 @@ func _run() -> void:
 		"\"wind_surface\"",
 	]))
 
-	var patch_builder: String = _section(generator_src,
+	var patch_builder: String = _section(bundle_src,
 			"func _build_native_daily_slice_bundle_patch(",
 			"func _native_daily_bundle_pass_keys(")
 	_expect("slice patch refreshes deferred native daily nodes in graph order", _contains_in_order(patch_builder, [
@@ -121,17 +128,17 @@ func _run() -> void:
 	#     is false, so default/monolithic profiles do not pay empty slices.
 	# Deferred nodes are also added to C++ yield bits at round start, so atomic mode can
 	# keep its historical explicit yield constant while lazy knobs still get a patch.
-	_expect("atomic yield-set constant is the minimal {2,6}", _contains_in_order(generator_src, [
+	_expect("atomic yield-set constant is the minimal {2,6}", _contains_in_order(climate_modules_src, [
 		"const _NATIVE_DAILY_SLICE_YIELD_NODES: Array[int] = [2, 6]",
 	]))
-	_expect("spread yield-set + mode selector exist", _contains_in_order(generator_src, [
+	_expect("spread yield-set + mode selector exist", _contains_in_order(climate_modules_src, [
 		"const _NATIVE_DAILY_SLICE_YIELD_NODES_SPREAD: Array[int] = [",
 		"18, 19, 20",
 		"func _native_daily_effective_yield_nodes(",
 		"native_daily_spread_across_ticks",
 		"native_daily_split_weather_node_enabled",
 	]))
-	_expect("deferred node declaration reaches C++", _contains_in_order(generator_src, [
+	_expect("deferred node declaration reaches C++", _contains_in_order(climate_modules_src, [
 		"native_daily_deferred_nodes",
 		"deferred_node_count",
 	]))
@@ -145,7 +152,7 @@ func _run() -> void:
 			"pass_b_knobs[\"defer_visible_publish\"] = true",
 			"transpiration_knobs[\"defer_visible_publish\"] = true",
 			"weather_knobs.erase(\"moisture_read_arr\")",
-		]) and _contains_in_order(generator_src, [
+		]) and _contains_in_order(climate_modules_src, [
 			"snapshot_f32(moisture_sid)",
 			"map.moisture_arr = moisture_snapshot",
 			"diag[\"moisture_committed\"] = moisture_committed",
@@ -170,16 +177,17 @@ func _run() -> void:
 			"breakdown[\"pass_a_deferred_publish_slots\"] = published",
 		]))
 	_expect("sun-driven and baseline-driven knobs read the live slot, not the MapData mirror",
-		_contains_in_order(generator_src, [
+		_contains_in_order(climate_modules_src, [
 			"func _native_daily_live_f32(",
 			"func _native_daily_live_u8(",
-		]) and generator_src.contains(
+		]) and climate_modules_src.contains(
 			"_native_daily_live_f32(\"cell_temp_baseline\", map.temp_baseline_arr, n)"
-		) and generator_src.contains(
+		) and climate_modules_src.contains(
 			"_native_daily_live_u8(\"cell_ema_initialized\", map.ema_initialized_arr, n)"
-		) and generator_src.contains(
+		) and (climate_modules_src.contains(
 			"_native_daily_live_f32(\"cell_insolation_now\", map.insolation_now_arr, n_cells)"
-		))
+		) or generator_src.contains(
+			"_get_native_daily_bundle_builder()._native_daily_live_f32(\"cell_insolation_now\"")))
 	_expect("transpiration subtracts donor outflow before neighbor distribution",
 		transp_src.contains("D[i] += self_share - transported") and
 		transp_src.contains("transported / float(valid_land_neighbors)"))
@@ -200,7 +208,7 @@ func _run() -> void:
 		generator_src.contains("skip_vegetation_rewrite") and
 		season_src.contains("skip_vegetation_rewrite"))
 	_expect("ACTIVE native daily uses keyed slot refresh",
-		generator_src.contains("refresh_slot_keys") and
+		(climate_modules_src.contains("refresh_slot_keys") or generator_src.contains("refresh_slot_keys")) and
 		daily_src.contains("refresh_slots_from_map_keys"))
 	_expect("full-run helper does not double-run stage_b and split albedo",
 		daily_src.contains("bundle.has(\"albedo_knobs\") && !bundle.has(\"stage_b_knobs\")"))

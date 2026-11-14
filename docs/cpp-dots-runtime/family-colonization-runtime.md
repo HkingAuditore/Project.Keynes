@@ -1,5 +1,30 @@
 # 家族远程开拓与领土扩张运行时
 
+## 派遣来源与筹备缩编（2026-11-10）
+
+目标地块进入面板后，来源列表直接按出发地分组，再列当地家族；行身份是
+`(source_cell, family_handle)`，同一家族的不同分支不能合并。读取全国报价的所有分页，
+每个来源只补读当地家族摘要；家风与效果仍按实际悬停/选择懒加载。每日刷新复用行、
+保留选择与滚动位置，不能用家族句柄单独恢复选择。紧凑视口为两栏保留至少 560
+逻辑像素，极窄视口再上下排列；出发城市卡片不再作为选择家族的前置步骤。
+
+PlayerTopBar 的派遣入口显示全国活动队伍数，经既有日刷新、命令回执和控制器绑定
+更新。入口直接打开全国进行中列表；普通地块入口仍只看该目标。队伍详情自动选择
+首队并保留玩家选择，直接显示状态、人数、物资总进度、旅途补给、开工建材、采购阻碍、
+出发地/目的地与在途预计抵达日。PREPARING 的 due_day 是下次检查日，不作为抵达日期。
+列表不再用固定比例伪造进度；阶段编号不进入玩家采购文案。
+
+Economy 仍是唯一可变所有者。报价上限与筹备重验共用
+`family_dispatchable_population_in_cell`：只计可抽离平民，并保留最后一名当地族人
+与最后一名商人。筹备推进使用 `min(当前计划人数, 当前当地可派人数)`；人数减少时
+重算开工包和采购缺口，并更新原有进度分母。只有可派人数为零才因人口原因终止。
+已发出的采购先按既有续接完成；已成交物资保留托管，后续只补缩编后的缺口。
+人口载荷始终按实际派出人数入账，不改变存档布局、国家财政通道、每日调度或所有权。
+
+验证：`colonization_planner_context_test.gd`、`colonization_workbench_ui_test.gd`；
+人数缩减定向用 `family_colonization_runtime_test.gd -- --population-shrink-only`。
+完整旧套件的基线差异与渲染证据记录在架构 current-state 中。
+
 ## 权威边界
 
 玩家只通过 `PlayerController` 的 `family.colonization.start/cancel` 提交意图。
@@ -22,7 +47,7 @@ ColonizationPlannerPanel
 
 ## 路线与报价
 
-`start/cancel` 在空闲边界立即占用目标。开工包已完整时同一次调用抽离守恒人口与源地货物进入 `OUTBOUND`；绿地 `N >= 3` 且开工包不完整则写入 `EXPEDITION_PREPARING`，**不抽人、不抽货**，人留在源地继续生产缺货。冻结周期内改为写入 `_pending_commands`，由下一轮 `LEDGER_APPLY` 再占用或抽离。报价仍是只读预览。排队与筹备都占用 `(country,target)`，避免同一目标被点两次。若结算时人口不足、目标易主或路线失效，命令被拒绝或筹备被释放并写回执，不让经济 fatal。
+`start/cancel` 在空闲边界立即占用目标。开工包已完整时同一次调用抽离守恒人口与源地货物进入 `OUTBOUND`；绿地 `N >= 3` 且开工包不完整则写入 `EXPEDITION_PREPARING`，**不抽人、不抽货**，人留在源地继续生产缺货。冻结周期内改为写入 `_pending_commands`，由下一轮 `LEDGER_APPLY` 再占用或抽离。报价仍是只读预览。排队与筹备都占用 `(country,target)`，避免同一目标被点两次。若命令结算时人口不足、目标易主或路线失效，命令被拒绝并写回执，不让经济 fatal；已进入筹备的队伍在人口减少后先缩编，只有当地可派人数为零才因人口原因释放筹备。
 报价直接消费经济运行时现有 packed 六邻接、逐格陆地 `passable`/`enter_cost`，以及同一套
 水运门户 CSR。合法目标是当前可见、可通行的无主或本国陆地，且 `source != target`；外国格
 与水体格返回 `colonization_target_invalid`，Country claim 仍拒绝 `_is_water`。报价字典带
@@ -65,7 +90,7 @@ scratch 长期复用，generation stamp 避免每次清空全图数组，单次�
 待购量按 `(cell,good)` 与 `(market,good)` 两组排序稀疏行冻结，不创建全图商品矩阵。
 一次性余额折为日需求：`ceil(待购量 / max(本周期天数, ceil(商品目标库存天数)))`。
 每周期从当前队伍与托管重新计算，绝不把整包物资当成每日反复发生的消费。
-出发、取消、人口不足或目标失效的队伍不再贡献下一周期需求；当前冻结周期的
+出发、取消、可派人数为零或目标失效的队伍不再贡献下一周期需求；当前冻结周期的
 观测遵守既有快照边界。恢复旧存档后同样在下次周期重建，不新增存档字段。
 
 `epoch_procurement_demand_daily[_for_market]` 合并研究采购与上述开拓需求，
@@ -139,7 +164,7 @@ opening 也会自动改走全量 scan。落地和返程只把同一载荷合并�
 
 开拓列表复用行节点时，刷新 identity 同时包含 `due_days`。筹备采购的阶段可以在
 缺货标识和 `PREPARING` 状态不变时推进；下一次筹备处理日期变化必须刷新进度与
-采购 tooltip，避免界面一直保留已经完成的“阶段 5”。这个日期只用于只读 UI 刷新，
+采购 tooltip，避免界面一直保留已经完成的采购等待状态。这个日期只用于只读 UI 刷新，
 不改变原生采购、到期堆或出发条件。
 
 活动目标索引以 `(country_handle,target_cell)` 哈希 O(1) 判重。没有到期项时，
@@ -315,7 +340,7 @@ Controller 本国权限门控和 UI 恢复／地图安全区。UI 夹具 8／40�
 
 齐套后 `launch_preparing_family_expedition` 只抽人口（cargo 已在托管里），并在此刻才写入
 `kit_building_*`；抽人失败保留托管、次日重试。`abort_preparing_family_expedition`（取消、
-目标易主、源地人口不足）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。若此时
+目标易主、源地可派人数为零）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。若此时
 采购续接还有在途的 Country 请求（`GOOD_FROM_MARKET` 或 `TREASURY_SPEND`），续接转为孤儿结算，
 等终态到达后再补商人入账或把货退回市场，不能直接丢弃（见 `docs/architecture/current-state.md`）。
 
@@ -366,7 +391,7 @@ UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在
 `kit_procurement_rejected_good_id` / `kit_procurement_rejected_day` / `kit_procurement_rejection`
 给出最近一次被拒的物资与原因码。面板在缺货说明里显示"正在用国库采购…"或"第 N 日采购…被拒：原因"。
 面板 `open_target` 必须通过 `_clear_list()` 释放旧行；只清行引用字典会让每次重开都再追加一组重复行。
-桥接/建材总需求在进入 PREPARING 时固定并随远征存档；缺口仍按当前权威托管货物计算，市场重规划只用于更新 blocker 和待购候选，不会改变进度分母。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
+桥接/建材总需求在进入 PREPARING 时固定并随远征存档；缺口仍按当前权威托管货物计算，市场重规划只用于更新 blocker 和待购候选，通常不改变进度分母；实际派遣人数缩减时按较小人数重设分母。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
 v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
@@ -381,7 +406,7 @@ v36 在途队伍 cargo 为空，到达后不落成开工包。
 冻结周期内报价仍可读，`start/cancel` 在 `economy_busy` 时改为 `colonization_queued` /
 `colonization_cancel_queued` 并在下一轮 ledger 抽离或返程，
 以及本国已有人口格的 SETTLE-only 迁徙、`source == target` 无报价和外国目标拒绝。
-`player_controller_contract_test.gd` 覆盖开拓面板在结算中仍显示家族卡片，确认按钮可点并显示排队，以及先选城市、只显示当地家族人口、默认填满当地可派遣人数、完整开工包「安家」文案、不完整绿地「开始筹备」、物资不够不再锁按钮。
+`player_controller_contract_test.gd` 覆盖开拓面板在结算中仍显示家族卡片，确认按钮可点并显示排队，以及按城市分组直接选择当地家族、只显示当地分支人口、默认填满当地可派遣人数、完整开工包「安家」文案、不完整绿地「开始筹备」、物资不够不再锁按钮。
 `colonization_planner_context_test.gd` 覆盖多页城市、同一家族从不同城市提交各自 token、
 切城清空旧选择、日刷新控件复用、来源消失失效、分支上下文预选和左侧响应式布局。
 缺 `maximum_population` 的选中字典不得崩溃；`economy_paused` 必须显示暂停说明而不是保留旧卡。

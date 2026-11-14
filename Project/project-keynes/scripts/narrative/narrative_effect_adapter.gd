@@ -7,6 +7,9 @@ const ModifierFacadeScript = preload("res://scripts/modifier/modifier_facade.gd"
 const NARRATIVE_MODIFIER_SOURCE_TYPE: int = 0x4E415252
 const NARRATIVE_PRODUCER_ID: int = 190
 
+## falloff=1 的逐环幅度（Q16）：中心 100% / 1 环 60% / 2 环 30%。
+const CITY_RADIUS_FALLOFF_Q16: Array[int] = [65536, 39322, 19661]
+
 
 static func apply_effects(
 		effects: Array,
@@ -42,7 +45,7 @@ static func apply_effects(
 			player_country_handle, cell_idx, effective_day, sequence_alloc
 		)
 		results.append(item_res)
-		var desc := spec.describe()
+		var desc := NarrativeEffectSpecScript.format_label(spec.describe(), ctx)
 		if not desc.is_empty():
 			applied_summaries.append(desc)
 
@@ -70,22 +73,46 @@ static func _apply_single_effect(
 		Kind.CITY_MODIFIER:
 			if modifier_facade == null or not modifier_facade.is_configured() or cell_idx < 0:
 				return {"ok": true, "simulated": true, "kind": spec.kind}
-			var source_id: int = service.allocate_modifier_source_id() if service != null and service.has_method("allocate_modifier_source_id") else 1
-			var req_id: int = modifier_facade.queue_apply(
-				spec.target_key,
-				{
-					"domain": ModifierFacadeScript.Domain.ECONOMY,
-					"scope": ModifierFacadeScript.Scope.GROUP,
-					"group_handle": cell_idx,
-				},
-				{"type": NARRATIVE_MODIFIER_SOURCE_TYPE, "id": source_id},
-				spec.duration_days,
-				1,
-				effective_day,
-				NARRATIVE_PRODUCER_ID,
-				spec.magnitude_q16
-			)
-			return {"ok": req_id > 0, "request_id": req_id, "kind": spec.kind}
+			# radius_cells=0 或 ctx 没有邻居数组 → targets 只有当前格，与旧路径完全一致。
+			var targets := _resolve_city_modifier_targets(spec, ctx, cell_idx)
+			var handles := PackedInt32Array()
+			var request_ids := PackedInt64Array()
+			var all_ok := true
+			for target in targets:
+				var target_cell := int(target.get("cell", cell_idx))
+				var ring := int(target.get("ring", 0))
+				# 每格一个自己的 source id：单格路径本来就是一格一个 id，范围效果沿用同一约定，
+				# 这样解绑/到期时各格的修正互不牵连。
+				var source_id: int = service.allocate_modifier_source_id() if service != null and service.has_method("allocate_modifier_source_id") else 1
+				var req_id: int = modifier_facade.queue_apply(
+					spec.target_key,
+					{
+						"domain": ModifierFacadeScript.Domain.ECONOMY,
+						"scope": ModifierFacadeScript.Scope.GROUP,
+						"group_handle": target_cell,
+					},
+					{"type": NARRATIVE_MODIFIER_SOURCE_TYPE, "id": source_id},
+					spec.duration_days,
+					1,
+					effective_day,
+					NARRATIVE_PRODUCER_ID,
+					_radius_scaled_magnitude_q16(spec.magnitude_q16, ring, spec.falloff)
+				)
+				handles.append(target_cell)
+				request_ids.append(req_id)
+				# 一格失败不打断其余格：原生按格排队，没有跨格事务。
+				if req_id <= 0:
+					all_ok = false
+			var result := {
+				"ok": all_ok,
+				"kind": spec.kind,
+				"handles": handles,
+				"request_ids": request_ids,
+				"radius_cells": spec.radius_cells,
+			}
+			if not request_ids.is_empty():
+				result["request_id"] = int(request_ids[0])
+			return result
 
 		Kind.COUNTRY_MODIFIER:
 			if modifier_facade == null or not modifier_facade.is_configured() or player_country_handle <= 0:
@@ -218,6 +245,25 @@ static func _apply_single_effect(
 				effective_day
 			)
 
+		Kind.GRANT_FAMILY_TRAIT, Kind.REMOVE_FAMILY_TRAIT:
+			if economy_facade == null or not economy_facade.is_configured() \
+					or not economy_facade.has_method("queue_family_trait_mutation"):
+				return {"ok": true, "simulated": true, "kind": spec.kind}
+			var family_handle := int(ctx.get("primary_family_handle", 0))
+			var trait_key := String(spec.target_key).strip_edges()
+			if family_handle <= 0 or trait_key.is_empty():
+				return {"ok": true, "simulated": true, "kind": spec.kind}
+			var grant := int(spec.kind) == int(Kind.GRANT_FAMILY_TRAIT)
+			economy_facade.queue_family_trait_mutation(
+				family_handle,
+				"grant" if grant else "remove",
+				spec.target_key,
+				clampi(spec.magnitude_q16, 49152, 81920),
+				effective_day,
+				100,
+				_alloc_seq(sequence_alloc))
+			return {"ok": true, "kind": spec.kind}
+
 		Kind.SET_STORY_FLAG:
 			if service != null and service.has_method("set_story_flag"):
 				service.set_story_flag(
@@ -262,6 +308,46 @@ static func _apply_single_effect(
 			return {"ok": true, "kind": spec.kind}
 
 	return {"ok": true, "kind": spec.kind}
+
+
+## 目标列表 = 当前格 + r1（radius>=1）+ r2（radius==2）。
+## radius_cells=0、或 ctx 里根本没有邻居数组（旧上下文/旧存档）时，退回「只有当前格」的单格路径。
+static func _resolve_city_modifier_targets(
+		spec: NarrativeEffectSpec, ctx: Dictionary, cell_idx: int) -> Array:
+	var targets: Array = [{"cell": cell_idx, "ring": 0}]
+	if spec.radius_cells <= 0:
+		return targets
+	var r1_raw: Variant = ctx.get("nearby_owned_cells_r1", null)
+	var r2_raw: Variant = ctx.get("nearby_owned_cells_r2", null)
+	if r1_raw == null and r2_raw == null:
+		return targets
+	var seen: Dictionary = {cell_idx: true}
+	_append_city_modifier_targets(targets, seen, r1_raw, 1)
+	if spec.radius_cells >= 2:
+		_append_city_modifier_targets(targets, seen, r2_raw, 2)
+	return targets
+
+
+static func _append_city_modifier_targets(
+		targets: Array, seen: Dictionary, raw: Variant, ring: int) -> void:
+	if raw == null or not (raw is Array or raw is PackedInt32Array):
+		return
+	var count := int(raw.size())
+	for i in range(count):
+		var target_cell := int(raw[i])
+		if target_cell < 0 or seen.has(target_cell):
+			continue
+		seen[target_cell] = true
+		targets.append({"cell": target_cell, "ring": ring})
+
+
+## falloff=0 → 各环同幅度；falloff=1 → 中心 100% / 1 环 60% / 2 环 30%，按 Q16 定点四舍五入。
+static func _radius_scaled_magnitude_q16(base_magnitude_q16: int, ring: int, falloff: int) -> int:
+	if falloff <= 0 or ring <= 0:
+		return base_magnitude_q16
+	var ring_idx := clampi(ring, 0, CITY_RADIUS_FALLOFF_Q16.size() - 1)
+	var factor_q16: int = CITY_RADIUS_FALLOFF_Q16[ring_idx]
+	return maxi(1, (base_magnitude_q16 * factor_q16 + 32768) >> 16)
 
 
 static func _alloc_seq(sequence_alloc: Callable) -> int:

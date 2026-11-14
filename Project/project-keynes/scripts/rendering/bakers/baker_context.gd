@@ -1,20 +1,10 @@
 extends RefCounted
 class_name DCBakerContext
 
-## Phase B.2 / dots-migration-roadmap §4.2 0.3：map_baker.gd 拆分共享 context。
+## Shared baker context for map/world reads and dirty-row bookkeeping.
 ##
-## map_baker.gd 2583 行将按职责拆为 5 个子 baker（terrain / climate / weather /
-## overlay / atlas_encoders）+ 本 BakerContext。所有子 baker 接受一个
-## DCBakerContext 实例，从中拿 MapData / WorldData / ViewAdapter / dirty mask
-## 等共享状态，子 baker 不直接持有 MapData / WorldData 弱引用——避免拆分后
-## 子 baker 之间互相耦合。
-##
-## 现状（2026-05-13）：拆分骨架已就位但函数还在 map_baker.gd 里。后续 PR 按
-## bakers/<name>_baker.gd 顶部 TODO 列表逐个迁移。
-##
-## **本类零侵入**：在 map_baker.gd 完成完整拆分之前，BakerContext 只是 facade
-## 工具——map_baker.gd 既有调用路径不强制走 context，新代码（含子 baker）才
-## 必须走。
+## Mutable bake state remains on MapBaker; this context only carries the shared
+## read-side adapter and dirty-row arrays used by collaborators.
 
 # 共享数据
 var map: MapData = null

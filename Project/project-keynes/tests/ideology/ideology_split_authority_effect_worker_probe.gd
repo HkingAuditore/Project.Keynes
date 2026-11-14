@@ -50,7 +50,6 @@ const OP_EQUIP := 5
 const OP_ADD_UNDERSTANDING := 8
 
 const MAX_SLICES_PER_DAY := 256
-const POD_WAIT_MS := 8000
 const PEER_PASSES := 6
 const PEER_BATCH := 96
 const TRACE_DAYS := 26
@@ -460,10 +459,6 @@ func _drive_day() -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	_micro_trace(day, "after_run_daily_tick")
 	var ideology: Dictionary = {}
 	var slices := 0
@@ -510,16 +505,11 @@ func _drive_day() -> Dictionary:
 		_equip_day = day
 		print("[EQUIP] transition became pending on day %d" % day)
 	if bool(ideology.get("suppressed", false)):
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, POD_WAIT_MS)
+		ext.set_runtime_clock(false, WORKER_SPEED)
+		WorkerWaitHelper.wait_committed(host, ext, maxi(0, day - 1))
+		ext.set_runtime_clock(true, WORKER_SPEED)
 	ext.drain_derived_cell_layer(day)
 	return {"ok": true, "day": day}
-
-
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method(
-		"has_hard_barrier") else false
 
 
 ## The transition's own view of its Effect transactions, sampled at several points
@@ -544,23 +534,6 @@ func _micro_trace(day: int, phase: String) -> void:
 			str(snapshot.get("locations", PackedInt32Array())), str(ids),
 			str(statuses)]
 		+ "last_error='%s'" % String(snapshot.get("last_error", "")))
-
-
-func _wait_pod_day(before: int, timeout_ms: int) -> void:
-	var ext: Object = _w["ext"]
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(false, WORKER_SPEED)
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = ext.get_runtime_thread_report()
-			return int(report.get("ideology_pod_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_ms,
-		func() -> void:
-			_service_peers(ext, 1))
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(true, WORKER_SPEED)
 
 
 func _transition_pending() -> bool:

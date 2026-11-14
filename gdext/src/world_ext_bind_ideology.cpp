@@ -33,6 +33,8 @@ void DCWorldExt::_bind_ideology_methods() {
                          &DCWorldExt::get_ideology_snapshot);
     ClassDB::bind_method(D_METHOD("get_ideology_effect_instance_report", "country_handle"),
                          &DCWorldExt::get_ideology_effect_instance_report);
+    ClassDB::bind_method(D_METHOD("get_ideology_effect_target_report", "country_handle"),
+                         &DCWorldExt::get_ideology_effect_target_report);
     ClassDB::bind_method(D_METHOD("get_city_output_factor_q16", "cell", "good_id"),
                          &DCWorldExt::get_city_output_factor_q16);
     ClassDB::bind_method(D_METHOD("resolve_effect_program_modifier_commands", "program_key"),

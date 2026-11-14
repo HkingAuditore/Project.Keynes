@@ -74,6 +74,9 @@ struct CellProgramFacts {
     int32_t duration_days = -1;
     int32_t stack_policy = 0;
     int32_t max_stacks = 1;
+    // A condition reading latched STATE. Metric conditions are fine: the derived
+    // collector evaluates them per target cell.
+    bool condition_reads_state = false;
     std::vector<CellProgramCommandFacts> commands;
 };
 
@@ -127,6 +130,12 @@ inline CellProgramDecision decide_cell_program_backend(
     if (facts.lifecycle != 0) {
         out.reason = CellProgramLegacyReason::NotPermanent;
         out.detail = "lifecycle is timed; the instance path owns expiry";
+        return out;
+    }
+    // 3b. Stateless conditions. A latch is history the derived front cannot hold.
+    if (facts.condition_reads_state) {
+        out.reason = CellProgramLegacyReason::StateDependent;
+        out.detail = "a condition reads latched STATE";
         return out;
     }
     // 4. A permanent program that still authors a duration carries a dead field.

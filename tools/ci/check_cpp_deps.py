@@ -151,6 +151,18 @@ def measure(root: Path, include_contracts: bool = False) -> dict[str, int]:
             target = match.group(1)
             if api_domain(target):
                 api_includes.setdefault(name, set()).add(api_domain(target))
+            elif target.endswith('.inc'):
+                # A local implementation include can carry the API headers shared
+                # by a split family. Count those headers as reachable by the
+                # including source, otherwise the same API type becomes a new
+                # debt edge solely because its include moved one level down.
+                fragment = (path.parent / target).resolve()
+                if fragment.is_file() and fragment.parent == path.parent:
+                    fragment_text = fragment.read_text(encoding='utf-8')
+                    for nested in INCLUDE.finditer(fragment_text):
+                        if api_domain(nested.group(1)):
+                            api_includes.setdefault(name, set()).add(
+                                api_domain(nested.group(1)))
             peer = domain_of(target)
             if not include_contracts and owner == "economy" and target == "country_read_view.h":
                 continue  # Reviewed read contract; no mutable runtime surface.
@@ -208,8 +220,14 @@ def relocation_source(key: str, origin: str) -> str:
     bridge_move = (source.name == 'economy_runtime.cpp' and
         target.name == 'economy_runtime_internal_external_types.inc' and
         target.suffix == '.inc' and pair.split('->')[0] == 'economy')
+    same_domain_move = (source.suffix == '.cpp' and target.suffix in {'.cpp', '.inc'} and
+                        source.parent == target.parent and
+                        source.name.startswith(('ideology_runtime', 'country_runtime', 'effect_runtime')) and
+                        domain_of(source.name) == domain_of(target.name) and
+                        domain_of(source.name) is not None)
     if (source.parent != target.parent or
-            not (internal_header_move or bridge_move or (target.suffix == '.cpp' and (header_move or economy_move)))):
+            not (internal_header_move or bridge_move or same_domain_move or
+                 (target.suffix == '.cpp' and (header_move or economy_move)))):
         raise ValueError(f"invalid relocation: {origin} -> {path}")
     return f"{origin}|{pair}|{symbol}"
 
@@ -222,6 +240,7 @@ def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, s
     allowances = dict(previous)
     history = dict(baseline.get('relocations', {}))
     consumed: Counter[str] = Counter()
+    duplicated = 0
     for key, move in moves.items():
         header = move.get('moved_from') if isinstance(move, dict) else move
         mode = move.get('mode', 'reduction') if isinstance(move, dict) else 'reduction'
@@ -233,6 +252,7 @@ def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, s
         if mode == 'duplicate':
             if growth > previous.get(source, 0) or source in consumed:
                 raise ValueError(f"invalid duplicate relocation: {key}")
+            duplicated += growth
         elif growth > decrease - consumed[source]:
             raise ValueError(f"relocation has no matching source reduction: {key}")
         else:
@@ -246,6 +266,9 @@ def updated_baseline(current: dict[str, int], baseline: dict, moves: dict[str, s
     errors = violations(current, allowances)
     old_metrics = metrics(previous, baseline.get('contract_references', {}))
     new_metrics = metrics(current, contracts)
+    # A reviewed duplicate (one include needed by each split translation unit)
+    # is the only allowed total growth; header exposure never grows.
+    old_metrics['total'] += duplicated
     for field in ('header_exposed', 'total'):
         if new_metrics[field] > old_metrics[field]:
             errors.append(f"{field}: {new_metrics[field]} > {old_metrics[field]}")

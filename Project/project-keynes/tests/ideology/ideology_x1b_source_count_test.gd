@@ -194,14 +194,7 @@ func _test_pack_source_count() -> void:
 ## MANY cells a card reaches, which is backend-independent -- so ask for the count
 ## that is actually produced instead of the instance list specifically.
 func _target_count(fixture: Dictionary) -> int:
-	var inst: int = (fixture.get("targets", PackedInt64Array()) as PackedInt64Array).size()
-	if inst > 0:
-		return inst
-	var e = fixture.get("ext", null)
-	if e == null or not e.has_method("get_derived_cell_layer_report"):
-		return inst
-	var rep: Dictionary = e.get_derived_cell_layer_report()
-	return int(rep.get("cell_count", 0))
+	return (fixture.get("targets", PackedInt64Array()) as PackedInt64Array).size()
 
 ## T1: sources 0 and 2 both reach 1. The middle cell gets two sources' worth.
 func _test_bracketed_sources(tag_id: int) -> void:
@@ -429,7 +422,7 @@ func _fixture(tag_id: int, sources: Array, radius: int, cap: int,
 			str(submitted)):
 		return {}
 	_settle_ideology(ext, 0)
-	var report: Dictionary = ext.get_ideology_effect_instance_report(handle)
+	var report: Dictionary = ext.get_ideology_effect_target_report(handle)
 	var handles: PackedInt64Array = report.get("target_handles", PackedInt64Array())
 	return {
 		"ext": ext, "handle": handle,

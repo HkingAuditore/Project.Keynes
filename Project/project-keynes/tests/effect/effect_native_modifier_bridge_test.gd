@@ -22,11 +22,11 @@ func _init() -> void:
 	_require(bool(country.bootstrap(PackedByteArray([0])).get("ok", false)), "country bootstrap")
 
 	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
-	var technology_ids: PackedStringArray = country.native_catalog().get(
-		"technology_ids", PackedStringArray())
-	var technology_index := technology_ids.find("tech.autonomous_systems")
+	var technology_fixture := _find_modifier_technology(country.native_catalog())
+	var technology_id := String(technology_fixture.get("id", ""))
+	var technology_index := int(technology_fixture.get("index", -1))
 	_require(handle != 0 and technology_index >= 0, "technology test setup")
-	_require(bool(country.grant_technology(handle, &"tech.autonomous_systems", 0, 1).get("ok", false)),
+	_require(bool(country.grant_technology(handle, StringName(technology_id), 0, 1).get("ok", false)),
 		"grant technology")
 	_require(bool(ext.run_country_slice({"day_index": 0}).get("ok", false)), "country day 0")
 	_require(bool(ext.run_effect_daily(0).get("ok", false)), "effect day 0")
@@ -58,7 +58,24 @@ func _init() -> void:
 	_require(bool(ext.run_country_slice({"day_index": 1}).get("ok", false)), "country day 1")
 	var snapshot: Dictionary = country.snapshot(handle)
 	_require((snapshot.get("technology_ids", PackedStringArray()) as PackedStringArray).has(
-		"tech.autonomous_systems"), "technology activation after native ACK")
+		technology_id), "technology activation after native ACK")
 
 	print("effect_native_modifier_bridge_test: PASS")
 	quit()
+
+func _find_modifier_technology(catalog: Dictionary) -> Dictionary:
+	var technology_ids: PackedStringArray = catalog.get(
+		"technology_ids", PackedStringArray())
+	var modifier_keys: PackedStringArray = catalog.get(
+		"technology_modifier_definition_keys", PackedStringArray())
+	var recipe_ids: PackedStringArray = catalog.get(
+		"technology_effect_recipe_ids", PackedStringArray())
+	for index in range(technology_ids.size()):
+		if index >= modifier_keys.size() or index >= recipe_ids.size():
+			continue
+		var modifier_key := String(modifier_keys[index])
+		if modifier_key.is_empty() or String(recipe_ids[index]).is_empty():
+			continue
+		return {"id": String(technology_ids[index]), "index": index,
+			"modifier_key": modifier_key}
+	return {}

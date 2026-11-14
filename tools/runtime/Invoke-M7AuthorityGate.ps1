@@ -296,7 +296,7 @@ try {
                 }
             }
             'PERFORMANCE' {
-                $perfScript = 'res://tests/headless_perf_record.gd'
+                $perfScript = 'res://tests/game/headless_perf_record.gd'
                 $perfRel = Join-Path $project 'tests\headless_perf_record.gd'
                 if (-not (Test-Path -LiteralPath $perfRel)) {
                     $manifest = Write-FailClosedStage -Stage $stageName -StageDir $stageDir `

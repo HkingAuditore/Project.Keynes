@@ -25,6 +25,8 @@ void DCWorldExt::_bind_military_methods() {
                          &DCWorldExt::get_military_report);
     ClassDB::bind_method(D_METHOD("get_military_country_snapshot", "country"),
                          &DCWorldExt::get_military_country_snapshot);
+    ClassDB::bind_method(D_METHOD("get_military_maintenance_snapshot", "country"),
+                         &DCWorldExt::get_military_maintenance_snapshot);
     ClassDB::bind_method(D_METHOD("get_military_armies", "country"),
                          &DCWorldExt::get_military_armies);
     ClassDB::bind_method(D_METHOD("get_military_army", "army"),
@@ -45,6 +47,17 @@ void DCWorldExt::_bind_military_methods() {
                          &DCWorldExt::evaluate_military_peace);
     ClassDB::bind_method(D_METHOD("get_military_catalog_view"),
                          &DCWorldExt::get_military_catalog_view);
+    ClassDB::bind_method(D_METHOD("set_military_exploration_observer", "observer_slot"),
+                         &DCWorldExt::set_military_exploration_observer);
+    ClassDB::bind_method(D_METHOD("set_military_exploration_view", "observer_slot",
+                                  "explored", "day", "revision"),
+                         &DCWorldExt::set_military_exploration_view);
+    ClassDB::bind_method(D_METHOD("get_military_vision_trail", "observer_slot"),
+                         &DCWorldExt::get_military_vision_trail);
+    ClassDB::bind_method(D_METHOD("clear_military_vision_trail", "observer_slot"),
+                         &DCWorldExt::clear_military_vision_trail);
+    ClassDB::bind_method(D_METHOD("has_military_exploration_work"),
+                         &DCWorldExt::has_military_exploration_work);
     ClassDB::bind_method(D_METHOD("encode_military_state"),
                          &DCWorldExt::encode_military_state);
     ClassDB::bind_method(D_METHOD("restore_military_state", "bytes"),

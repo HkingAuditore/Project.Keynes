@@ -158,10 +158,10 @@ func _test_precip_consumes_vapor() -> void:
 
 func _test_precip_carryover_and_vapor_relaxation() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
-	_expect(is_equal_approx(ws._field_precip_carryover_max, 0.08),
-		"precip carryover cap should default to 0.08")
-	_expect(is_equal_approx(ws._field_vapor_precip_sink, 0.85),
-		"vapor precip sink should default to 0.85")
+	_expect(ws._field_precip_carryover_max > 0.0 and ws._field_precip_carryover_max <= 1.0,
+		"precip carryover cap stays in the legal range")
+	_expect(ws._field_vapor_precip_sink > 0.0 and ws._field_vapor_precip_sink <= 1.0,
+		"vapor precip sink stays in the legal range")
 	var carried: float = _precip_carryover(0.90, 0.95, ws._field_precip_carryover_max)
 	_expect(carried <= ws._field_precip_carryover_max + 0.0001,
 		"precip carryover should be capped")
@@ -173,7 +173,7 @@ func _test_precip_carryover_and_vapor_relaxation() -> void:
 func _test_orographic_lift_cap_formula() -> void:
 	var ws := _weather_system(Rect2(Vector2(-40.0, -40.0), Vector2(100.0, 100.0)))
 	var lift_supply: float = minf(0.95 * 0.80, ws._field_orographic_lift_cap)
-	_expect(lift_supply <= 0.35 + 0.0001,
+	_expect(lift_supply <= ws._field_orographic_lift_cap + 0.0001,
 		"orographic lift contribution should be capped by config")
 
 

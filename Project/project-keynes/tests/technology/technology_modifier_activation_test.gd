@@ -24,6 +24,10 @@ func _init() -> void:
 		"tech.gathering")
 	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
+	var wild_maize_collection := (compiled.technology_ids as PackedStringArray).find(
+		"tech.wild_maize_collection")
+	var maize_seed_saving := (compiled.technology_ids as PackedStringArray).find(
+		"tech.maize_seed_saving")
 	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
 		"tech.early_knowledge_institution")
 	_expect("country bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
@@ -32,9 +36,9 @@ func _init() -> void:
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 3]),
+		"technology_offsets": PackedInt32Array([0, 4]),
 		"technology_indices": PackedInt32Array([
-			gathering, maize_identification, early_knowledge]),
+			gathering, maize_identification, early_knowledge, wild_maize_collection]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -46,17 +50,17 @@ func _init() -> void:
 		{"day_index": 0}).get("done", false)))
 	_expect("single-domain completion queues", bool(country.set_research_weights(
 		handle, PackedInt32Array([10000, 0, 0, 0]), 1, 10).get("ok", false))
-		and bool(country.enqueue_research(handle, &"tech.wild_maize_collection",
+		and bool(country.enqueue_research(handle, &"tech.maize_seed_saving",
 			0, -1, 1, 11).get("ok", false)))
 	_expect("completion enters pending state", bool(ext.run_country_slice(
 		{"day_index": 1}).get("done", false)))
 	var ids: PackedStringArray = compiled.technology_ids
-	var tech := ids.find("tech.wild_maize_collection")
+	var tech := ids.find("tech.maize_seed_saving")
 	var pending: Dictionary = country.research_snapshot(handle)
 	_expect("pending state does not expose completion tag",
 		int(pending.technology_states[tech]) == 4
 		and not (country.snapshot(handle).technology_ids as PackedStringArray).has(
-			"tech.wild_maize_collection"))
+			"tech.maize_seed_saving"))
 	var term_offsets: PackedInt32Array = compiled.technology_modifier_term_offsets
 	var term_stats: PackedStringArray = compiled.technology_modifier_term_stat_keys
 	var term_values: PackedFloat64Array = compiled.technology_modifier_term_values
@@ -72,7 +76,7 @@ func _init() -> void:
 	_expect("completion tag and modifier become visible together",
 		int(completed.technology_states[tech]) == 5
 		and (country.snapshot(handle).technology_ids as PackedStringArray).has(
-			"tech.wild_maize_collection")
+			"tech.maize_seed_saving")
 		and is_equal_approx(effective, 1.0 + expected_delta))
 	var explain: Dictionary = modifiers.explain_stat(1, handle, 0, stat, 1.0)
 	_expect("technology modifier remains explainable",

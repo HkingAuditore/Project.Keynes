@@ -105,11 +105,11 @@
   "registered_entrypoints": {
     "gdext/src/economy_runtime_colonization.cpp|NativeEconomyRuntime::enqueue_worker_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/economy_runtime_owned_bridge.cpp|NativeEconomyRuntime::enqueue_or_apply_pod_command": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_trigger_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_external_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_external_effect_batch_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_family_colonization_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
-    "gdext/src/effect_runtime.cpp|EffectRuntime::enqueue_canal_commit_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_trigger_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_external_effect_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_external_effect_batch_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_family_colonization_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
+    "gdext/src/effect_runtime_instances.cpp|EffectRuntime::enqueue_canal_commit_pod": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_asset_worker.cpp|NativeSimulationHost::enqueue_economy_origin_country_asset": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_batch": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
     "gdext/src/native_simulation_host_commands.cpp|NativeSimulationHost::enqueue_modifier_shadow": "Existing admission; owner keeps current order, dedup, outcome and save lifecycle. See request table in module-boundaries.md.",
@@ -135,17 +135,6 @@
     "commit": "day commit header (publication follows loop)"
   },
   "retained_soft_paths": [
-    {
-      "source": "gdext/src/native_simulation_stage_ideology.cpp",
-      "condition": "ideology_soft",
-      "reason": "Bootstrap lacks the first committed opinion; preserving first-day semantics. Invalid data is no longer accepted.",
-      "reasons": [
-        "ideology_opinion_snapshot_missing",
-        "ideology_country_snapshot_missing",
-        "ideology_pod_not_configured",
-        "ideology_day_not_monotonic"
-      ]
-    },
     {
       "source": "gdext/src/native_simulation_stage_trigger_input.cpp",
       "condition": "trigger_soft",

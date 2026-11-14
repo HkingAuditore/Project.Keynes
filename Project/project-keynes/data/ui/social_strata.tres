@@ -15,19 +15,19 @@ strata = Array[Dictionary]([{
 "icon": "population.profession.merchant",
 "id": "merchants",
 "name": "商人",
-"professions": PackedStringArray("merchant")
+"professions": PackedStringArray("merchant", "ship_officer")
 }, {
 "color": Color(0.31, 0.43, 0.53, 1),
 "icon": "population.profession.scholar",
 "id": "knowledge",
 "name": "知识阶层",
-"professions": PackedStringArray("scribe", "lorekeeper", "scholar", "natural_philosopher", "scientist", "researcher", "research_scientist", "data_scientist", "ai_researcher")
+"professions": PackedStringArray("scribe", "lorekeeper", "scholar", "natural_philosopher", "scientist", "researcher", "research_scientist", "data_scientist", "ai_researcher", "agronomist")
 }, {
 "color": Color(0.62, 0.36, 0.19, 1),
 "icon": "population.profession.artisan",
 "id": "artisans",
 "name": "技术工匠",
-"professions": PackedStringArray("artisan", "journeyman", "apprentice", "engineer", "technician", "machinist", "electrician", "metallurgist", "chemist")
+"professions": PackedStringArray("artisan", "journeyman", "apprentice", "engineer", "technician", "machinist", "electrician", "metallurgist", "chemist", "dyer")
 }, {
 "color": Color(0.27, 0.42, 0.4, 1),
 "icon": "population.profession.worker",
@@ -39,7 +39,7 @@ strata = Array[Dictionary]([{
 "icon": "economy.crop",
 "id": "smallholders",
 "name": "自耕农牧渔",
-"professions": PackedStringArray("household_farmer", "subsistence_farmer", "pastoralist", "fisher", "hunter", "forager")
+"professions": PackedStringArray("household_farmer", "subsistence_farmer", "pastoralist", "fisher", "hunter", "forager", "aquaculturist")
 }, {
 "color": Color(0.43, 0.31, 0.22, 1),
 "icon": "population.living.struggling",

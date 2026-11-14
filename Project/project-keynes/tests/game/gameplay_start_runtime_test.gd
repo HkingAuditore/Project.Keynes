@@ -1,6 +1,7 @@
 extends SceneTree
 
 const StartProfile = preload("res://scripts/game/start_location_profile.gd")
+const StarterEconomyPlanner = preload("res://scripts/economy/starter_economy_planner.gd")
 
 var _failures := PackedStringArray()
 
@@ -92,7 +93,8 @@ func _run() -> void:
 			pending_tech == "tech.early_knowledge_institution"
 			and pending_building == "early_knowledge_institution"
 			and discovered.has(pending_tech)
-			and int(country_start.get("starter_treasury_quantity", 0)) == 3000000
+			and int(country_start.get("starter_treasury_quantity", 0)) ==
+				StarterEconomyPlanner.STARTER_TREASURY_TECHNOLOGY_POINTS
 			and not (country_start.get("pending_knowledge_construction_good_ids",
 				PackedStringArray()) as PackedStringArray).is_empty())
 		_expect("regional route declares food, knowledge, precious metal and trade",
@@ -191,7 +193,8 @@ func _run() -> void:
 				"technology_ids", PackedStringArray())
 			var pending_index := catalog_ids.find(pending_tech)
 			_expect("country treasury seeds opening technology points",
-				int(research.get("technology_points_stock", 0)) == 3000000)
+				int(research.get("technology_points_stock", 0)) ==
+				StarterEconomyPlanner.STARTER_TREASURY_TECHNOLOGY_POINTS)
 			_expect("country discovers the pending knowledge practice without completing it",
 				pending_index >= 0
 				and int((research.get("technology_states", PackedInt32Array()) as
@@ -223,8 +226,8 @@ func _run() -> void:
 			var settlement_cell := int(country_start.get("cell", -1))
 			var precious := String(country_start.get("precious_resource", ""))
 			var population: Dictionary = economy.population_cell_snapshot(settlement_cell)
-			_expect("starter population is exactly 40",
-				int(population.get("population", 0)) == 40)
+			_expect("starter population follows the economy planner",
+				int(population.get("population", 0)) == StarterEconomyPlanner.STARTER_POPULATION)
 			_expect("starter leaves non-founder population for native job matching",
 				_profession_population(population, "unemployed") > 0
 				and _sum_i64(population.get("owner_employed_by_cohort",

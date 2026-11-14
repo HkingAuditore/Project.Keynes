@@ -29,8 +29,8 @@
       "domain": "country",
       "owner": "country",
       "tag": "PKCN",
-      "version": 14,
-      "source": "gdext/src/country_runtime.cpp",
+      "version": 15,
+      "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "SCHEMA_VERSION",
         "version != SCHEMA_VERSION"
@@ -58,7 +58,7 @@
       "domain": "military",
       "owner": "country",
       "tag": "PKMI",
-      "version": 3,
+      "version": 6,
       "source": "gdext/src/military_core_save.cpp",
       "tokens": [
         "PKMI_VERSION",
@@ -115,7 +115,7 @@
       "owner": "rules",
       "tag": "PKID",
       "version": 14,
-      "source": "gdext/src/ideology_runtime.cpp",
+      "source": "gdext/src/ideology_runtime_persistence.cpp",
       "tokens": [
         "SAVE_SCHEMA_VERSION",
         "schema != SAVE_SCHEMA_VERSION"
@@ -145,7 +145,7 @@
       "owner": "country",
       "tag": "PKCN",
       "version": 14,
-      "source": "gdext/src/country_runtime.cpp",
+      "source": "gdext/src/country_runtime_persistence.cpp",
       "tokens": [
         "PKCN",
         "SCHEMA_VERSION"

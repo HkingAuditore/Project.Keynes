@@ -1,4 +1,4 @@
-// military_core_save.cpp - PKMI v3 encode/restore of the whole Military state
+// military_core_save.cpp - PKMI v4 encode/restore of the whole Military state
 // (owner: A1).
 //
 // Layout: every record is a little-endian fixed-width field sequence (no struct
@@ -45,6 +45,17 @@ constexpr uint16_t kSection_Ledger = 19;
 constexpr uint16_t kSection_Events = 20;
 constexpr uint16_t kSection_Ai = 21;
 constexpr uint16_t kSection_IndexContinuation = 22;
+constexpr uint16_t kSection_Exploration = 23;
+// 24: paid-but-unsettled purchase orders (physical maintenance design §2 D7).
+// A row exists between the PROCURE_GOOD emission and the real fill receipt, so
+// it MUST survive a save: losing it would leave a treasury already debited with
+// nobody to hand the goods to.
+constexpr uint16_t kSection_PurchaseOrders = 24;
+// 25: physical maintenance objects (design D2/D3). The fixed-point carry and the
+// 5-day window MUST survive a save: restoring without them would silently
+// forgive or double-count a shortage, and the disrepair verdict would reset to
+// "fine" on every load.
+constexpr uint16_t kSection_Maintenance = 25;
 constexpr uint16_t kSection_End = 0xFFFF;
 
 // Sanity caps so a corrupt length can never trigger an enormous allocation.
@@ -523,6 +534,52 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     }
     w.end();
 
+    // ---- purchase orders (section 24)
+    w.begin(kSection_PurchaseOrders);
+    w.u32((uint32_t)std::max(1, _next_purchase_id));
+    w.u32((uint32_t)_purchase_orders.size());
+    for (const MilitaryPurchaseOrder &o : _purchase_orders) {
+        w.u16(o.intent.kind);
+        w.i32(o.intent.cell);
+        w.i32(o.intent.good);
+        w.u64(o.intent.country_a);
+        w.i64(o.intent.count);
+        w.i64(o.intent.amount);
+        w.u64(o.intent.source_id);          // stable request identity
+        w.u8(o.channel);
+        w.i32(o.destination_cell);
+        w.u8(o.dest_kind);
+        w.i32(o.dest);
+        w.u64(o.dest_handle);
+        w.i32(o.stock_good);
+        w.i32(o.real_good);
+        w.i32(o.category);
+        w.i8(o.quality);
+        w.i32(o.route_cost_q16);
+        w.i32(o.days);
+    }
+    w.end();
+
+    // ---- maintenance objects (section 25)
+    w.begin(kSection_Maintenance);
+    w.u32((uint32_t)_maint_rows.size());
+    for (const MilitaryMaintenanceRow &r : _maint_rows) {
+        w.u8(r.kind);
+        w.i32(r.country_slot);
+        w.i32(r.cell);
+        w.i32(r.object_id);
+        w.u8(r.holder_kind);
+        w.i32(r.holder);
+        w.i32(r.units);
+        for (int32_t m = 0; m < MILITARY_MAX_REPAIR_MATERIALS; ++m) w.i64(r.acc_q32[m]);
+        w.i64(r.window_need);
+        w.i64(r.window_met);
+        w.i32(r.window_days);
+        w.i32(r.ratio_bp);
+        w.u8(r.disrepair);
+    }
+    w.end();
+
     // ---- engagements
     w.begin(kSection_Engagements);
     w.u32((uint32_t)_engagements.size());
@@ -707,6 +764,46 @@ std::vector<uint8_t> MilitaryCore::encode() const {
     }
     w.end();
 
+    // ---- player auto-exploration rows (section 23) ------------------------
+    // Always written, including an empty table. Trail / explored view / fog
+    // are host-owned and intentionally absent.
+    w.begin(kSection_Exploration);
+    w.u32((uint32_t)_explorations.size());
+    for (const MilitaryExplorationTask &task : _explorations) {
+        w.u8(task.active ? 1 : 0);
+        w.i32(task.row_index);
+        w.u64(task.army_handle);
+        w.i32(task.owner_slot);
+        w.u64(task.owner_handle);
+        w.i32(task.origin_cell);
+        w.i32(task.return_cell);
+        w.i32(task.anchor_cell);
+        w.i32(task.radius);
+        w.u32((uint32_t)task.selected_count);
+        for (int32_t i = 0; i < task.selected_count; ++i)
+            w.i32(task.selected_cells[(size_t)i]);
+        for (int32_t word = 0; word < 4; ++word) {
+            w.u64(task.seen_mask[(size_t)word]);
+            w.u64(task.visited_mask[(size_t)word]);
+            w.u64(task.blocked_mask[(size_t)word]);
+        }
+        w.u8(task.phase);
+        w.u8(task.pause_reason);
+        w.u8(task.result);
+        w.u8(task.resume_phase);
+        w.i32(task.focus_index);
+        w.i32(task.current_observation_cell);
+        w.i32(task.observer_tries);
+        for (int32_t cell : task.reached_observer_cells) w.i32(cell);
+        w.u32(task.tried_observer_mask);
+        w.i64(task.started_day);
+        w.i64(task.last_progress_day);
+        w.i64(task.last_plan_day);
+        w.i64(task.complete_day);
+        w.u8(task.return_fallback);
+    }
+    w.end();
+
     w.begin(kSection_IndexContinuation);
     write_index_continuation(w, *this);
     w.end();
@@ -729,7 +826,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     }
     const uint32_t version = r.u32();
     if (version != PKMI_VERSION) {
-        error = "pkmi_version_mismatch_expected_3";
+        error = "pkmi_version_mismatch_expected_" + std::to_string(PKMI_VERSION);
         return false;
     }
     const uint64_t saved_catalog_hash = r.u64();
@@ -758,6 +855,7 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     std::vector<int32_t> remap_tpl;
     bool saw_end = false;
     bool saw_index_continuation = false;
+    bool saw_exploration = false;
     while (r.ok()) {
         const uint16_t id = (uint16_t)r.open_section();
         if (!r.ok()) break;
@@ -1073,6 +1171,91 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 }
                 break;
             }
+            case kSection_PurchaseOrders: {
+                const int32_t next_id = r.i32();
+                const uint32_t n = r.u32();
+                if (n > kMaxRows) {
+                    error = "pkmi_bad_purchase_orders";
+                    return false;
+                }
+                tmp._purchase_orders.clear();
+                tmp._purchase_orders.reserve(n);
+                for (uint32_t i = 0; i < n; ++i) {
+                    MilitaryPurchaseOrder o;
+                    o.intent.kind = r.u16();
+                    o.intent.cell = r.i32();
+                    o.intent.good = r.i32();
+                    o.intent.country_a = r.u64();
+                    o.intent.count = r.i64();
+                    o.intent.amount = r.i64();
+                    o.intent.source_id = r.u64();
+                    o.channel = r.u8();
+                    o.destination_cell = r.i32();
+                    o.dest_kind = r.u8();
+                    o.dest = r.i32();
+                    o.dest_handle = r.u64();
+                    o.stock_good = r.i32();
+                    o.real_good = r.i32();
+                    o.category = r.i32();
+                    o.quality = r.i8();
+                    o.route_cost_q16 = r.i32();
+                    o.days = r.i32();
+                    if (!r.ok()) break;
+                    // The pending request id is the only thing that can settle a
+                    // row, so a row without one is unrecoverable.
+                    if (o.intent.source_id == 0) {
+                        error = "pkmi_bad_purchase_orders";
+                        return false;
+                    }
+                    tmp._purchase_orders.push_back(o);
+                }
+                tmp._next_purchase_id = std::max(1, next_id);
+                // Ids are monotonic: a restored counter below any live order id
+                // would hand a new purchase an identity an old row still owns.
+                for (const MilitaryPurchaseOrder &o : tmp._purchase_orders) {
+                    if (o.intent.source_id >= (uint64_t)tmp._next_purchase_id)
+                        tmp._next_purchase_id = (int32_t)o.intent.source_id + 1;
+                }
+                break;
+            }
+            case kSection_Maintenance: {
+                const uint32_t n = r.u32();
+                if (n > kMaxRows) {
+                    error = "pkmi_bad_maintenance";
+                    return false;
+                }
+                tmp._maint_rows.clear();
+                tmp._maint_rows.reserve(n);
+                for (uint32_t i = 0; i < n; ++i) {
+                    MilitaryMaintenanceRow row;
+                    row.kind = r.u8();
+                    row.country_slot = r.i32();
+                    row.cell = r.i32();
+                    row.object_id = r.i32();
+                    row.holder_kind = r.u8();
+                    row.holder = r.i32();
+                    row.units = r.i32();
+                    for (int32_t m = 0; m < MILITARY_MAX_REPAIR_MATERIALS; ++m)
+                        row.acc_q32[m] = r.i64();
+                    row.window_need = r.i64();
+                    row.window_met = r.i64();
+                    row.window_days = r.i32();
+                    row.ratio_bp = r.i32();
+                    row.disrepair = r.u8();
+                    if (!r.ok()) break;
+                    if (row.cell < 0 || row.cell >= tmp._terrain.cell_count) {
+                        error = "pkmi_bad_maintenance";
+                        return false;
+                    }
+                    if (row.window_days < 0 || row.window_days > 5 || row.ratio_bp < 0 ||
+                        row.ratio_bp > 10000) {
+                        error = "pkmi_bad_maintenance";
+                        return false;
+                    }
+                    tmp._maint_rows.push_back(row);
+                }
+                break;
+            }
             case kSection_Engagements: {
                 const uint32_t n = r.u32();
                 if (n > kMaxRows) {
@@ -1367,6 +1550,322 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
                 }
                 break;
             }
+            case kSection_Exploration: {
+                if (saw_exploration) {
+                    error = "pkmi_exploration_duplicate_section";
+                    return false;
+                }
+                saw_exploration = true;
+                const uint32_t n = r.u32();
+                if (n > (uint32_t)MILITARY_MAX_EXPLORATION_TASKS) {
+                    error = "pkmi_exploration_bad_count";
+                    return false;
+                }
+                tmp._explorations.clear();
+                tmp._explorations.reserve(n);
+                std::vector<uint8_t> army_used(
+                    static_cast<size_t>(MILITARY_MAX_ARMIES), 0);
+                for (uint32_t index = 0; index < n; ++index) {
+                    MilitaryExplorationTask task;
+                    task.active = r.u8() != 0;
+                    task.row_index = r.i32();
+                    task.army_handle = r.u64();
+                    task.owner_slot = r.i32();
+                    task.owner_handle = r.u64();
+                    task.origin_cell = r.i32();
+                    task.return_cell = r.i32();
+                    task.anchor_cell = r.i32();
+                    task.radius = r.i32();
+                    const uint32_t selected_count = r.u32();
+                    if (!r.ok() || selected_count >
+                            (uint32_t)MILITARY_MAX_EXPLORATION_CELLS) {
+                        error = "pkmi_exploration_bad_cells";
+                        return false;
+                    }
+                    task.selected_count = (int32_t)selected_count;
+                    int32_t previous_cell = -1;
+                    for (uint32_t i = 0; i < selected_count; ++i) {
+                        const int32_t cell = r.i32();
+                        if (cell < 0 || cell >= tmp._terrain.cell_count ||
+                            cell <= previous_cell) {
+                            error = "pkmi_exploration_bad_cells";
+                            return false;
+                        }
+                        previous_cell = cell;
+                        task.selected_cells[(size_t)i] = cell;
+                    }
+                    for (int32_t word = 0; word < 4; ++word) {
+                        task.seen_mask[(size_t)word] = r.u64();
+                        task.visited_mask[(size_t)word] = r.u64();
+                        task.blocked_mask[(size_t)word] = r.u64();
+                    }
+                    task.phase = r.u8();
+                    task.pause_reason = r.u8();
+                    task.result = r.u8();
+                    task.resume_phase = r.u8();
+                    task.focus_index = r.i32();
+                    task.current_observation_cell = r.i32();
+                    task.observer_tries = r.i32();
+                    for (int32_t &cell : task.reached_observer_cells) cell = r.i32();
+                    task.tried_observer_mask = r.u32();
+                    task.started_day = r.i64();
+                    task.last_progress_day = r.i64();
+                    task.last_plan_day = r.i64();
+                    task.complete_day = r.i64();
+                    task.return_fallback = r.u8();
+                    if (!r.ok()) {
+                        error = "pkmi_exploration_truncated";
+                        return false;
+                    }
+                    if (task.row_index != (int32_t)index) {
+                        error = "pkmi_exploration_bad_row";
+                        return false;
+                    }
+                    if (task.active) {
+                        if (selected_count == 0 || task.radius < 1 ||
+                            task.radius > MILITARY_MAX_AREA_RADIUS ||
+                            task.origin_cell < 0 ||
+                            task.origin_cell >= tmp._terrain.cell_count ||
+                            task.anchor_cell < 0 ||
+                            task.anchor_cell >= tmp._terrain.cell_count ||
+                            task.return_cell < 0 ||
+                            task.return_cell >= tmp._terrain.cell_count) {
+                            error = "pkmi_exploration_bad_cells";
+                            return false;
+                        }
+                        if (task.focus_index < -1 ||
+                            task.focus_index >= task.selected_count) {
+                            error = "pkmi_exploration_bad_phase";
+                            return false;
+                        }
+                        // No mask bit may point past the selected set, and a
+                        // target is resolved by exactly one of the three masks.
+                        for (int32_t word = 0; word < 4; ++word) {
+                            const int32_t base = word * 64;
+                            uint64_t valid = 0xFFFFFFFFFFFFFFFFull;
+                            if (task.selected_count < base) {
+                                valid = 0;
+                            } else if (task.selected_count < base + 64) {
+                                const int32_t bits = task.selected_count - base;
+                                valid = bits <= 0 ? 0ull
+                                                  : ((1ull << (uint32_t)bits) - 1ull);
+                            }
+                            const uint64_t invalid =
+                                (task.seen_mask[(size_t)word] |
+                                 task.visited_mask[(size_t)word] |
+                                 task.blocked_mask[(size_t)word]) & ~valid;
+                            if (invalid != 0) {
+                                error = "pkmi_exploration_bad_masks";
+                                return false;
+                            }
+                            if ((task.seen_mask[(size_t)word] &
+                                 task.visited_mask[(size_t)word]) != 0 ||
+                                (task.seen_mask[(size_t)word] &
+                                 task.blocked_mask[(size_t)word]) != 0 ||
+                                (task.visited_mask[(size_t)word] &
+                                 task.blocked_mask[(size_t)word]) != 0) {
+                                error = "pkmi_exploration_bad_masks";
+                                return false;
+                            }
+                        }
+                        int32_t army_slot = -1;
+                        if (!tmp.resolve_army(task.army_handle, army_slot)) {
+                            error = "pkmi_exploration_army_missing";
+                            return false;
+                        }
+                        if ((size_t)army_slot >= army_used.size() ||
+                            tmp._armies.owner_slot[(size_t)army_slot] != task.owner_slot ||
+                            tmp.country_handle_for_slot(task.owner_slot) != task.owner_handle) {
+                            error = "pkmi_exploration_army_missing";
+                            return false;
+                        }
+                        if (army_used[(size_t)army_slot] != 0) {
+                            error = "pkmi_exploration_duplicate_army";
+                            return false;
+                        }
+                        army_used[(size_t)army_slot] = 1;
+                        // Phase / result / pause / resume must form a state the
+                        // runtime itself can produce.
+                        bool phase_ok = false;
+                        switch (task.phase) {
+                        case MILITARY_EXPLORATION_ACTIVE:
+                            phase_ok = task.result == MILITARY_EXPLORATION_RESULT_NONE &&
+                                       task.pause_reason == MILITARY_EXPLORATION_PAUSE_NONE &&
+                                       task.resume_phase == MILITARY_EXPLORATION_ACTIVE &&
+                                       task.complete_day < 0;
+                            break;
+                        case MILITARY_EXPLORATION_RETURNING:
+                            phase_ok = (task.result == MILITARY_EXPLORATION_RESULT_ALL_SEEN ||
+                                        task.result ==
+                                            MILITARY_EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE) &&
+                                       task.pause_reason == MILITARY_EXPLORATION_PAUSE_NONE &&
+                                       task.resume_phase == MILITARY_EXPLORATION_RETURNING &&
+                                       task.complete_day < 0;
+                            break;
+                        case MILITARY_EXPLORATION_PAUSED_BATTLE:
+                            phase_ok = task.pause_reason ==
+                                           MILITARY_EXPLORATION_PAUSE_ENGAGEMENT &&
+                                       task.complete_day < 0 &&
+                                       ((task.resume_phase == MILITARY_EXPLORATION_ACTIVE &&
+                                         task.result == MILITARY_EXPLORATION_RESULT_NONE) ||
+                                        (task.resume_phase ==
+                                             MILITARY_EXPLORATION_RETURNING &&
+                                         (task.result == MILITARY_EXPLORATION_RESULT_ALL_SEEN ||
+                                          task.result ==
+                                              MILITARY_EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE)));
+                            break;
+                        case MILITARY_EXPLORATION_COMPLETE:
+                            phase_ok = (task.result == MILITARY_EXPLORATION_RESULT_ALL_SEEN ||
+                                        task.result ==
+                                            MILITARY_EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE ||
+                                        task.result == MILITARY_EXPLORATION_RESULT_CANCELLED) &&
+                                       task.pause_reason == MILITARY_EXPLORATION_PAUSE_NONE &&
+                                       task.complete_day >= task.started_day;
+                            break;
+                        case MILITARY_EXPLORATION_FAILED_NO_RETURN:
+                            phase_ok = task.result ==
+                                           MILITARY_EXPLORATION_RESULT_FAILED_NO_RETURN &&
+                                       task.pause_reason == MILITARY_EXPLORATION_PAUSE_NONE &&
+                                       task.complete_day >= task.started_day;
+                            break;
+                        default:
+                            break;
+                        }
+                        if (!phase_ok || task.started_day < 0 ||
+                            task.last_progress_day < task.started_day ||
+                            (task.last_plan_day >= 0 &&
+                             task.last_plan_day < task.started_day) ||
+                            task.observer_tries < 0 ||
+                            task.observer_tries > MILITARY_EXPLORATION_OBSERVERS) {
+                            error = "pkmi_exploration_bad_phase";
+                            return false;
+                        }
+                        int32_t reached_count = 0;
+                        for (int32_t i = 0; i < MILITARY_EXPLORATION_OBSERVERS; ++i) {
+                            const int32_t cell = task.reached_observer_cells[(size_t)i];
+                            if (cell < 0) continue;
+                            ++reached_count;
+                            if (cell >= tmp._terrain.cell_count) {
+                                error = "pkmi_exploration_bad_phase";
+                                return false;
+                            }
+                            for (int32_t k = 0; k < i; ++k) {
+                                if (task.reached_observer_cells[(size_t)k] == cell) {
+                                    error = "pkmi_exploration_bad_phase";
+                                    return false;
+                                }
+                            }
+                            if (task.focus_index >= 0) {
+                                const int32_t target =
+                                    task.selected_cells[(size_t)task.focus_index];
+                                if (tmp.cell_distance(cell, target) >
+                                    MILITARY_EXPLORATION_OBSERVER_RADIUS) {
+                                    error = "pkmi_exploration_bad_phase";
+                                    return false;
+                                }
+                            }
+                        }
+                        if (reached_count != task.observer_tries) {
+                            error = "pkmi_exploration_bad_phase";
+                            return false;
+                        }
+                        if (task.current_observation_cell >= 0) {
+                            if (task.current_observation_cell >= tmp._terrain.cell_count ||
+                                task.focus_index < 0) {
+                                error = "pkmi_exploration_bad_phase";
+                                return false;
+                            }
+                            const int32_t target =
+                                task.selected_cells[(size_t)task.focus_index];
+                            if (tmp.cell_distance(task.current_observation_cell, target) >
+                                MILITARY_EXPLORATION_OBSERVER_RADIUS) {
+                                error = "pkmi_exploration_bad_phase";
+                                return false;
+                            }
+                        }
+                    } else if (selected_count > 0) {
+                        // Retired/cancelled rows keep their historical task
+                        // payload until the row is reused. Validate the same
+                        // structural invariants an active row must satisfy,
+                        // but not the live-only focus/observer combinations.
+                        if (task.radius < 1 ||
+                            task.radius > MILITARY_MAX_AREA_RADIUS ||
+                            task.origin_cell < 0 ||
+                            task.origin_cell >= tmp._terrain.cell_count ||
+                            task.anchor_cell < 0 ||
+                            task.anchor_cell >= tmp._terrain.cell_count ||
+                            task.return_cell < 0 ||
+                            task.return_cell >= tmp._terrain.cell_count) {
+                            error = "pkmi_exploration_bad_cells";
+                            return false;
+                        }
+                        for (int32_t word = 0; word < 4; ++word) {
+                            const int32_t base = word * 64;
+                            uint64_t valid = 0xFFFFFFFFFFFFFFFFull;
+                            if (task.selected_count < base) {
+                                valid = 0;
+                            } else if (task.selected_count < base + 64) {
+                                const int32_t bits = task.selected_count - base;
+                                valid = bits <= 0 ? 0ull
+                                                  : ((1ull << (uint32_t)bits) - 1ull);
+                            }
+                            if (((task.seen_mask[(size_t)word] |
+                                  task.visited_mask[(size_t)word] |
+                                  task.blocked_mask[(size_t)word]) & ~valid) != 0) {
+                                error = "pkmi_exploration_bad_masks";
+                                return false;
+                            }
+                            if ((task.seen_mask[(size_t)word] &
+                                 task.visited_mask[(size_t)word]) != 0 ||
+                                (task.seen_mask[(size_t)word] &
+                                 task.blocked_mask[(size_t)word]) != 0 ||
+                                (task.visited_mask[(size_t)word] &
+                                 task.blocked_mask[(size_t)word]) != 0) {
+                                error = "pkmi_exploration_bad_masks";
+                                return false;
+                            }
+                        }
+                        const bool terminal_ok =
+                            (task.phase == MILITARY_EXPLORATION_COMPLETE &&
+                             (task.result == MILITARY_EXPLORATION_RESULT_ALL_SEEN ||
+                              task.result ==
+                                  MILITARY_EXPLORATION_RESULT_SEEN_WITH_UNOBSERVABLE ||
+                              task.result == MILITARY_EXPLORATION_RESULT_CANCELLED)) ||
+                            (task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN &&
+                             task.result ==
+                                 MILITARY_EXPLORATION_RESULT_FAILED_NO_RETURN);
+                        if (!terminal_ok || task.started_day < 0 ||
+                            task.complete_day < task.started_day ||
+                            task.last_progress_day < task.started_day ||
+                            (task.last_plan_day >= 0 &&
+                             task.last_plan_day < task.started_day) ||
+                            task.focus_index != -1 ||
+                            task.current_observation_cell != -1 ||
+                            task.observer_tries < 0 ||
+                            task.observer_tries > MILITARY_EXPLORATION_OBSERVERS ||
+                            task.return_fallback > 1) {
+                            error = "pkmi_exploration_bad_phase";
+                            return false;
+                        }
+                        for (int32_t i = 0; i < MILITARY_EXPLORATION_OBSERVERS; ++i) {
+                            const int32_t cell = task.reached_observer_cells[(size_t)i];
+                            if (cell < 0) continue;
+                            if (cell >= tmp._terrain.cell_count) {
+                                error = "pkmi_exploration_bad_phase";
+                                return false;
+                            }
+                            for (int32_t k = 0; k < i; ++k) {
+                                if (task.reached_observer_cells[(size_t)k] == cell) {
+                                    error = "pkmi_exploration_bad_phase";
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    tmp._explorations.push_back(task);
+                }
+                break;
+            }
             case kSection_IndexContinuation:
                 if (saw_index_continuation || !read_index_continuation(r, tmp)) {
                     error = "pkmi_index_continuation_invalid"; return false;
@@ -1391,6 +1890,10 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
     }
     if (!r.ok()) {
         error = "pkmi_truncated";
+        return false;
+    }
+    if (!saw_exploration) {
+        error = "pkmi_exploration_section_missing";
         return false;
     }
     if (!saw_index_continuation || !valid_index_continuation(tmp)) {
@@ -1462,6 +1965,38 @@ bool decode_into(MilitaryCore &tmp, Reader &r, std::string &error) {
         if (c >= 0 && (size_t)c < tmp._cell_state_index.size()) tmp._cell_state_index[(size_t)c] = (int32_t)i;
     }
     tmp.rebuild_cell_index();
+    // Exploration routes are regular army paths; the last cell must still name
+    // the observation / return target the task persisted.
+    for (const MilitaryExplorationTask &task : tmp._explorations) {
+        if (!task.active) continue;
+        int32_t army_slot = -1;
+        if (!tmp.resolve_army(task.army_handle, army_slot)) {
+            error = "pkmi_exploration_army_missing";
+            return false;
+        }
+        const MilitaryArmyStore &a = tmp._armies;
+        const int32_t len = a.path_len[(size_t)army_slot];
+        if (len <= 0) continue;
+        const int32_t off = a.path_offset[(size_t)army_slot];
+        if (off < 0 || (size_t)(off + len) > tmp._path_cells.size()) {
+            error = "pkmi_exploration_bad_phase";
+            return false;
+        }
+        const int32_t expected =
+            task.phase == MILITARY_EXPLORATION_RETURNING
+                ? task.return_cell : task.current_observation_cell;
+        if (expected < 0 ||
+            tmp._path_cells[(size_t)(off + len - 1)] != expected) {
+            error = "pkmi_exploration_bad_phase";
+            return false;
+        }
+        if (task.phase == MILITARY_EXPLORATION_PAUSED_BATTLE ||
+            task.phase == MILITARY_EXPLORATION_COMPLETE ||
+            task.phase == MILITARY_EXPLORATION_FAILED_NO_RETURN) {
+            error = "pkmi_exploration_bad_phase";
+            return false;
+        }
+    }
     // Army caches are saved verbatim (refreshing here would diverge from the
     // live cache, which lags condition decay and needs the era mirror).
     return true;
@@ -1486,7 +2021,7 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
         return false;
     }
     if (head.u32() != PKMI_VERSION) {
-        error = "pkmi_version_mismatch_expected_3";
+        error = "pkmi_version_mismatch_expected_" + std::to_string(PKMI_VERSION);
         return false;
     }
     const uint64_t saved_hash = head.u64();
@@ -1557,12 +2092,16 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _template_rows = std::move(tmp._template_rows);
     _stocks = std::move(tmp._stocks);
     _shipments = std::move(tmp._shipments);
+    _purchase_orders = std::move(tmp._purchase_orders);
+    _next_purchase_id = tmp._next_purchase_id;
+    _maint_rows = std::move(tmp._maint_rows);
     _engagements = std::move(tmp._engagements);
     _wars = std::move(tmp._wars);
     _truces = std::move(tmp._truces);
     _reparations = std::move(tmp._reparations);
     _battle_log = std::move(tmp._battle_log);
     _areas = std::move(tmp._areas);
+    _explorations = std::move(tmp._explorations);
     _policies = std::move(tmp._policies);
     _policy_handle = std::move(tmp._policy_handle);
     _ai_country = std::move(tmp._ai_country);
@@ -1577,6 +2116,15 @@ bool MilitaryCore::restore(const uint8_t *data, size_t size, std::string &error)
     _ledger_stock = tmp._ledger_stock;
     _ledger_transit = tmp._ledger_transit;
     _events = std::move(tmp._events);
+    rebuild_exploration_index();
+    _exploration_daily_path_requests.clear();
+    _exploration_observer_slot = -1;
+    _exploration_explored_view.clear();
+    _exploration_view_day = -1;
+    _exploration_view_revision = 0;
+    _exploration_trail.clear();
+    _exploration_trail_stamp.clear();
+    _exploration_trail_gen = 1;
 
     // ---- rebuild every derived scratch structure
     _cell_head.assign(cells, -1);

@@ -744,7 +744,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_SETTLEMENT_NAMES, records, payload);
     }
     if (_save.section == SAVE_SECTION_FAMILY_RECORDS) {
-        constexpr int32_t record_bytes = 57;
+        constexpr int32_t record_bytes = 61;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(families_store().active.size(),
             _save.family_cursor + max_records);
@@ -765,6 +765,13 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint32_t>(payload, families_store().split_sequence[i]);
             append_le<uint16_t>(payload, families_store().decline_reviews[i]);
             append_le<uint16_t>(payload, families_store().flags[i]);
+            append_le<int32_t>(payload,
+                families_store().active[i] != 0 &&
+                        static_cast<size_t>(i) <
+                            _family_colonization_population_reward_pending.size()
+                    ? std::max(0, _family_colonization_population_reward_pending[
+                        static_cast<size_t>(i)])
+                    : 0);
         }
         if (_save.family_cursor >= static_cast<int32_t>(families_store().active.size()))
             ++_save.section;
@@ -1411,13 +1418,28 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             // Optional v52 footer. Older v52 streams end after the fixed-size
             // cell records; readers accept both layouts.
             append_le<uint64_t>(payload, _committed_generation);
-            // Optional: Track-B commit-spread review cells carried to the next
-            // commit. Omitted when empty so the common stream is unchanged.
-            if (!_track_b_investment_cells_pending.empty()) {
-                append_le<uint32_t>(payload, static_cast<uint32_t>(
-                    _track_b_investment_cells_pending.size()));
-                for (const int32_t cell : _track_b_investment_cells_pending)
-                    append_le<int32_t>(payload, cell);
+            // Track-B carries. They are approximation caches, but the next
+            // day's result depends on them, so a restored world must resume
+            // with the same contents or it diverges from the original.
+            append_le<uint32_t>(payload, static_cast<uint32_t>(
+                _track_b_investment_cells_pending.size()));
+            for (const int32_t cell : _track_b_investment_cells_pending)
+                append_le<int32_t>(payload, cell);
+            append_le<int64_t>(payload, _track_b_derived_cell_cache_day);
+            append_le<uint32_t>(payload, static_cast<uint32_t>(
+                _track_b_derived_cell_cache.size()));
+            for (const TrackBDerivedCellWork &work : _track_b_derived_cell_cache) {
+                append_le<uint8_t>(payload, work.seeded ? 1 : 0);
+                append_le<int64_t>(payload, work.edges);
+                append_le<uint64_t>(payload, work.startup_calls);
+                append_le<uint64_t>(payload, work.enqueued_goods);
+                append_le<uint32_t>(payload, static_cast<uint32_t>(work.goods.size()));
+                for (size_t i = 0; i < work.goods.size(); ++i) {
+                    append_le<int32_t>(payload, work.goods[i]);
+                    append_le<int64_t>(payload, work.quantities[i]);
+                    append_le<int64_t>(payload,
+                        i < work.anchors.size() ? work.anchors[i] : 0);
+                }
             }
             _save.section = SCHEMA_VERSION >= 53
                 ? SAVE_SECTION_D7_PEER_EXT

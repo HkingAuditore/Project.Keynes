@@ -2,6 +2,7 @@ extends SceneTree
 
 const WorkspaceScene = preload("res://scenes/ui/ideology_workspace.tscn")
 const CountryViewModelScript = preload("res://scripts/ui/country_view_model.gd")
+const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 
 
 class FakeIdeologyFacade extends RefCounted:
@@ -92,7 +93,7 @@ func _run() -> void:
 	var entries: Dictionary = workspace.get("_collection_entries")
 	var card := entries.get(0) as Control
 	var card_id := card.get_instance_id() if card != null else 0
-	_expect("all 113 known cards are present", entries.size() == 113 and card_id != 0)
+	_expect("all authored cards are present", entries.size() == _card_count() and card_id != 0)
 	_expect("initial explanation is queried once", facade.explain_calls == 1)
 
 	var progress_snapshot := _snapshot()
@@ -164,7 +165,7 @@ func _run() -> void:
 
 func _catalog() -> Dictionary:
 	var ideologies: Array[Dictionary] = []
-	for ideology_id in 113:
+	for ideology_id in _card_count():
 		ideologies.append({
 			"dense_id": ideology_id,
 			"id": "idea.test_%d" % ideology_id,
@@ -194,7 +195,7 @@ func _snapshot() -> Dictionary:
 	var understanding := PackedInt64Array()
 	var locations := PackedInt32Array()
 	var pending := PackedByteArray()
-	for ideology_id in 113:
+	for ideology_id in _card_count():
 		known.append(ideology_id)
 		levels.append(0)
 		understanding.append(0)
@@ -217,6 +218,11 @@ func _snapshot() -> Dictionary:
 		"ideology_points_q16": 0,
 		"point_baseline_ready": true,
 	}
+
+
+func _card_count() -> int:
+	var catalog := IdeologyCatalogScript.load_default()
+	return catalog.definitions.size() if catalog != null else 0
 
 
 func _model(facade: FakeIdeologyFacade, catalog: Dictionary,

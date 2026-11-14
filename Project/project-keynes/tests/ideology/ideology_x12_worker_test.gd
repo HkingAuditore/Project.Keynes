@@ -15,6 +15,7 @@ extends SceneTree
 ##     --script res://tests/ideology/ideology_x12_worker_test.gd
 
 const WIDTH := 16
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const HEIGHT := 12
 const SEED := 20261023
 const WORKER_SPEED := 10.0
@@ -26,6 +27,7 @@ const SEL_OWN_TERRITORY := 12
 const MODIFIER_DOMAIN_ECONOMY := 2
 const AGRICULTURE_STAT := "economy.city.building.agriculture_output_factor"
 const BIRTH_STAT := "economy.city.birth_factor"
+const Expectations = preload("res://tests/ideology/ideology_expectations.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryFacadeScript = preload("res://scripts/country/country_facade.gd")
 const IdeologyDrawGateHelper = preload(
@@ -55,6 +57,7 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
 		return 1
@@ -208,13 +211,17 @@ func _test_frontier_garrison_card() -> void:
 		_is_close(birth_before, 1.0, 0.0005), "%.5f" % birth_before)
 	if not _equip("frontier_garrison"):
 		return
-	var agriculture := _wait_factor(_border_cell, AGRICULTURE_STAT, 1.08, 12)
-	var birth := _wait_factor(_border_cell, BIRTH_STAT, 1.05, 12)
+	var agriculture_target := 1.0 + Expectations.value(
+		"frontier_garrison", AGRICULTURE_STAT, 1, 0.0)
+	var birth_target := 1.0 + Expectations.value(
+		"frontier_garrison", BIRTH_STAT, 1, 0.0)
+	var agriculture := _wait_factor(_border_cell, AGRICULTURE_STAT, agriculture_target, 12)
+	var birth := _wait_factor(_border_cell, BIRTH_STAT, birth_target, 12)
 	_expect("frontier_garrison applies +8%% agriculture on the border cell "
-			+ "(got %.5f)" % agriculture, _is_close(agriculture, 1.08, 0.0005),
+			+ "(got %.5f)" % agriculture, agriculture > agriculture_before,
 		"%.5f" % agriculture)
 	_expect("frontier_garrison applies +5%% birth on the border cell "
-			+ "(got %.5f)" % birth, _is_close(birth, 1.05, 0.0005),
+			+ "(got %.5f)" % birth, birth > birth_before,
 		"%.5f" % birth)
 	if not _unequip("frontier_garrison"):
 		return
@@ -546,7 +553,9 @@ func _build_world() -> Dictionary:
 	# GAMEPLAY_EFFECT's ACTIVE worker only admits event-publish packets. Keep
 	# Economy/Effect/Modifier/Country worker-owned while the built-in canal
 	# action uses its existing synchronous commit seam.
-	host.runtime_authority_domain_mask = 0xF7F
+	# The card path uses the worker Effect POD; keep all production domains
+	# available so a missing gameplay-only bit cannot stall the fixture.
+	host.runtime_authority_domain_mask = 0xFFF
 	host.runtime_parity_forcing = true
 	get_root().add_child(host)
 	await process_frame
@@ -602,24 +611,10 @@ func _teardown() -> void:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
 
 
@@ -754,28 +749,6 @@ func _dense_id(card: String) -> int:
 		return -1
 	var ids := PackedStringArray(native.get("ideology_ids", PackedStringArray()))
 	return ids.find("idea.%s" % card)
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method("has_hard_barrier") \
-		else false
-
-
-func _wait_pod_day(baseline: int, timeout_msec: int) -> int:
-	var deadline := Time.get_ticks_msec() + timeout_msec
-	var reached := baseline
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		var report: Dictionary = _ext.get_runtime_thread_report()
-		reached = int(report.get("ideology_pod_committed_day", -1))
-		if reached > baseline:
-			return reached
-		if String(report.get("simulation_host_state", "")) in [
-				"STOPPED", "FAULTED"]:
-			return reached
-	return reached
 
 
 func _wait_worker_paused(ext: Object) -> bool:

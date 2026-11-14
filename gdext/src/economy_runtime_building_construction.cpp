@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "country_api.h"
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -299,6 +300,13 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     if (country_reads().country_handle_for_cell(cell) !=
             static_cast<int64_t>(cmd.target_handle))
         return reject("construction_cell_not_owned");
+    const int32_t country_slot = cell < static_cast<int32_t>(
+            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
+    if (country_slot < 0 || country_slot >= static_cast<int32_t>(
+            _epoch_country_political_regime_capabilities.size()) ||
+        (_epoch_country_political_regime_capabilities[static_cast<size_t>(country_slot)] &
+         CountryApi::CAP_TREASURY_CONSTRUCTION) == 0)
+        return reject("political_regime_lacks_treasury_construction");
     if (!building_available(cell, type_id, true))
         return reject("construction_technology_locked");
     if (!building_constructible(cell, type_id, true))
@@ -318,8 +326,6 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     const int32_t market = market_store().cell_to_market[cell];
     if (market < 0 || market >= market_store().market_count.get())
         return reject("construction_market_unavailable");
-    const int32_t country_slot = cell < static_cast<int32_t>(
-            _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
     const int32_t cost_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
         ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;

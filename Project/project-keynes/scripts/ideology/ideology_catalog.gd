@@ -1,6 +1,8 @@
 class_name IdeologyCatalog
 extends Resource
 
+const IdeologyCatalogTextScript = preload("res://scripts/ideology/ideology_catalog_text.gd")
+
 const DEFAULT_PATH := "res://data/ideologies/default_ideology_catalog.tres"
 const IdeologyDefinitionScript = preload("res://scripts/ideology/ideology_definition.gd")
 const IdeologyRequirementScript = preload("res://scripts/ideology/ideology_requirement.gd")
@@ -1172,8 +1174,7 @@ func _present_effect_lines(modifier_catalog, card_id: String, level_index: int,
 	for effect in effects:
 		if effect == null or not effect is EffectCommandScript:
 			continue
-		var summary := _card_face_program_summary(card_id, level_index,
-			String(effect.definition_key))
+		var summary := _program_summary(String(effect.definition_key))
 		if not summary.is_empty():
 			_append_clean_line(persistent_lines, summary)
 	for effect in on_enter_effects:
@@ -1246,11 +1247,6 @@ func _program_summary(definition_key: String) -> String:
 			return ""
 		return String(summary).strip_edges()
 	return ""
-
-
-func _card_face_program_summary(_card_id: String, _level_index: int,
-		definition_key: String) -> String:
-	return _program_summary(definition_key)
 
 
 func _present_on_enter_effect(effect: Resource) -> String:
@@ -1353,111 +1349,7 @@ func _replace_ceiling_text(text: String) -> String:
 
 
 func _replace_source_count_text(text: String) -> String:
-	# Source-count programs scale by the number of qualifying cells in range.
-	# Rewrite the authored shorthand as a complete rule instead of exposing
-	# "源", "每源" or an assignment such as "3 源 = +9%".
-	var result := text
-	# X1-b authors the source selector between the source description and the
-	# target effect. Parse that whole row first: the generic per-source rules
-	# below cannot know the source predicate, radius, source cap, or target cap.
-	var source_row := RegEx.new()
-	if source_row.compile(
-			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*[（(]每源\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%[，,]\\s*最多\\s*([0-9]+)\\s*源(?:\\s*=\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%)?[）)]\\s*[：:]\\s*(.+?)产出\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$"
-			) == OK:
-		for found in source_row.search_all(result):
-			var source_subject := found.get_string(1).strip_edges()
-			var radius := found.get_string(2)
-			var per_source := found.get_string(3)
-			var source_cap := found.get_string(4)
-			var ceiling := found.get_string(5)
-			var target_label := found.get_string(6).strip_edges()
-			var direction := "提高" if found.get_string(7) == "+" else "降低"
-			var sentence := "周围 %s 格内每有 1 个%s，该地块的%s产出%s %s%%" % [
-				radius, source_subject, target_label, direction,
-				per_source]
-			if not ceiling.is_empty():
-				sentence += "；每个目标地块最多累计 %s 个满足条件的地块，最高提高 %s%%" % [
-					source_cap, ceiling]
-			else:
-				var full_percent := float(per_source) * float(source_cap)
-				sentence += "；每个目标地块最多累计 %s 个满足条件的地块，最高提高 %s%%" % [
-					source_cap, _format_card_face_number(full_percent)]
-			sentence += "；最多影响 32 个目标地块"
-			result = result.replace(found.get_string(0), sentence)
-	var source_row_without_assignment := RegEx.new()
-	if source_row_without_assignment.compile(
-			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*[（(]每源\\s*\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%[，,]\\s*最多\\s*([0-9]+)\\s*源[）)]\\s*[：:]\\s*(.+?)产出\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$"
-			) == OK:
-		for found in source_row_without_assignment.search_all(result):
-			var direction := "提高" if found.get_string(6) == "+" else "降低"
-			result = result.replace(found.get_string(0),
-				"周围 %s 格内每有 1 个%s，该地块的%s产出%s %s%%；每个目标地块最多累计 %s 个满足条件的地块；最多影响 32 个目标地块" % [
-					found.get_string(2), found.get_string(1).strip_edges(),
-					found.get_string(5).strip_edges(), direction, found.get_string(3),
-					found.get_string(4)])
-	result = result.replace("每源", "每个来源")
-	var target_ramp := RegEx.new()
-	if target_ramp.compile(
-			"^(.+?)周围\\s*([0-9]+)\\s*格\\s*（每有 1 个符合条件的地块提高\\s*([0-9]+(?:\\.[0-9]+)?)%，最多计算\\s*([0-9]+)\\s*个地块）\\s*：\\s*(.+?)(提高|降低)\\s*([0-9]+(?:\\.[0-9]+)?)%$"
-			) == OK:
-		for found in target_ramp.search_all(result):
-			result = result.replace(found.get_string(0),
-				"周围 %s 格内每有 1 个%s，该地块的%s%s %s%%；每个目标地块最多累计 %s 个满足条件的地块，最高%s %s%%；最多影响 32 个目标地块" % [
-					found.get_string(2), found.get_string(1), found.get_string(5),
-					found.get_string(6), found.get_string(3), found.get_string(4),
-					found.get_string(6), found.get_string(7)])
-	# `每源 +X%，最多 N 源 = +Y%` is authored arithmetic. Preserve the cap and
-	# final ceiling, but express them as a complete player-facing rule.
-	var source_assignment := RegEx.new()
-	if source_assignment.compile(
-			"每个来源\\s*(?:提高\\s*)?\\+?\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]?\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)(?:\\s*=\\s*\\+?([0-9]+(?:\\.[0-9]+)?)%)?"
-			) == OK:
-		for found in source_assignment.search_all(result):
-			result = result.replace(found.get_string(0),
-				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
-					found.get_string(1), found.get_string(2)])
-	var shorthand := RegEx.new()
-	if shorthand.compile(
-			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)(?:\\s*[，,]?\\s*使效果达到\\s*([0-9]+(?:\\.[0-9]+)?)%)?"
-			) == OK:
-		for found in shorthand.search_all(result):
-			var replacement := "每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
-				found.get_string(1), found.get_string(2)]
-			result = result.replace(found.get_string(0), replacement)
-	var plain_cap := RegEx.new()
-	if plain_cap.compile(
-			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)"
-			) == OK:
-		for found in plain_cap.search_all(result):
-			result = result.replace(found.get_string(0),
-				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
-					found.get_string(1), found.get_string(2)])
-	var assignment := RegEx.new()
-	if assignment.compile(
-			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*(?:个来源|源)\\s*=\\s*\\+?([0-9]+(?:\\.[0-9]+)?)%"
-			) == OK:
-		for found in assignment.search_all(result):
-			result = result.replace(found.get_string(0),
-				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
-					found.get_string(1), found.get_string(2)])
-	var bare_source := RegEx.new()
-	if bare_source.compile(
-			"每个来源\\s*提高\\s*([0-9]+(?:\\.[0-9]+)?)%\\s*[，,]\\s*最多\\s*([0-9]+)\\s*源"
-			) == OK:
-		for found in bare_source.search_all(result):
-			result = result.replace(found.get_string(0),
-				"每有 1 个符合条件的地块提高 %s%%，最多计入 %s 个地块" % [
-					found.get_string(1), found.get_string(2)])
-	var remaining_source := RegEx.new()
-	if remaining_source.compile("最多\\s*([0-9]+)\\s*源") == OK:
-		for found in remaining_source.search_all(result):
-			result = result.replace(found.get_string(0),
-				"最多计入 %s 个地块" % found.get_string(1))
-	result = result.replace("每个来源", "每有 1 个符合条件的地块")
-	result = result.replace(" =提高", "")
-	result = result.replace(" = 提高", "")
-	return result
-
+	return IdeologyCatalogTextScript.replace_source_count_text(self, text)
 
 func _replace_population_count_text(text: String) -> String:
 	# Population selectors are authored as integer thresholds. Add a count noun
@@ -1480,21 +1372,6 @@ func _format_card_face_number(value: float) -> String:
 	if text.ends_with("."):
 		text = text.left(text.length() - 1)
 	return text
-
-
-func _replace_target_effect_text(text: String) -> String:
-	var result := text.strip_edges()
-	result = result.replace("全部产出", "全部产出").replace("农业产出", "农业产出") \
-		.replace("工业产出", "工业产出").replace("知识产出", "知识产出") \
-		.replace("能源产出", "能源产出").replace("采掘产出", "采掘产出")
-	var effect := RegEx.new()
-	if effect.compile("^(.+?)\\s*([+\\-])\\s*([0-9]+(?:\\.[0-9]+)?)%$") != OK:
-		return result
-	var found := effect.search(result)
-	if found == null:
-		return result
-	var direction := "提高" if found.get_string(2) == "+" else "降低"
-	return "%s%s %s%%" % [found.get_string(1), direction, found.get_string(3)]
 
 
 func _replace_unemployment_text(text: String) -> String:

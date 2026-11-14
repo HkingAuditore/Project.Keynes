@@ -4,9 +4,8 @@ extends SceneTree
 ## stubs own replies and record commands; conditions/orders are never mocked.
 const Service = preload("res://scripts/era/era_advancement_service.gd")
 const Rules = preload("res://scripts/era/era_advancement_catalog.gd")
-const POP_10 := [750, 1750, 4000, 8750, 18750, 40000, 90000, 210000, 480000, 1045000]
-const BUILD_10 := [3000, 5000, 8000, 12000, 18000, 27000, 40000, 59000, 85000, 122000]
-const TRADE_10 := [750, 1750, 4000, 9000, 19000, 37500, 75000, 150000, 295000, 590000]
+## Gate derived from the rule so a ratio retune does not silently desync the test.
+const TECH_GATE := int(ceil(10.0 * Rules.TECH_COMPLETION_RATIO))
 
 class CountryPort extends RefCounted:
 	var era := 0
@@ -95,7 +94,7 @@ func _fixture(era: int = 0) -> Dictionary:
 	country.catalog = {"technology_ids": ids, "technology_era_ids": eras,
 		"technology_flags": flags, "technology_era_ids_ordered": order}
 	country.states.resize(ids.size())
-	for index in range(8): country.states[era * 11 + index] = 5
+	for index in range(TECH_GATE): country.states[era * 11 + index] = 5
 	var economy := EconomyPort.new()
 	var service := Service.new()
 	service.bind(country, economy, 77)
@@ -112,13 +111,13 @@ func _check_ten_eras() -> void:
 		var f := _fixture(target - 1)
 		var service = f.service
 		var model: Dictionary = service.preview()
-		_expect("era %d has ten eligible technologies and an 80%% gate" % target,
-			_row(model, "tech").target == 8 and _row(model, "tech").current == 8
+		_expect("era %d has ten eligible technologies and a %d-tech gate" % [target, TECH_GATE],
+			_row(model, "tech").target == TECH_GATE and _row(model, "tech").current == TECH_GATE
 			and _row(model, "tech").mandatory)
 		_expect("era %d uses the reviewed national gates at ten cells" % target,
-			_row(model, "population").target == POP_10[target - 1]
-			and _row(model, "buildings").target == BUILD_10[target - 1]
-			and _row(model, "trade").target == TRADE_10[target - 1])
+			_row(model, "population").target == Rules.population_threshold(target, 10)
+			and _row(model, "buildings").target == Rules.building_threshold(target, 10)
+			and _row(model, "trade").target == Rules.trade_order_threshold(target, 10))
 		f.country.territory = 1
 		var small: Dictionary = service.preview()
 		f.country.territory = 2
@@ -130,13 +129,13 @@ func _check_ten_eras() -> void:
 			_expect("each additional cell raises the procurement basket",
 				large.costs[index].required > small.costs[index].required)
 		f.country.territory = 10
-		f.economy.population = POP_10[target - 1]
-		f.economy.buildings = BUILD_10[target - 1] - 1
+		f.economy.population = Rules.population_threshold(target, 10)
+		f.economy.buildings = Rules.building_threshold(target, 10) - 1
 		_expect("one economic gate is insufficient at its boundary", not service.preview().can_start)
 		f.economy.buildings += 1
 		_expect("technology plus two exact economic gates unlocks advancement", service.preview().can_start)
-		f.country.states[(target - 1) * 11 + 7] = 0
-		f.economy.orders = TRADE_10[target - 1]
+		f.country.states[(target - 1) * 11 + TECH_GATE - 1] = 0
+		f.economy.orders = Rules.trade_order_threshold(target, 10)
 		service.refresh(1)
 		_expect("all three economic gates cannot substitute for required technology",
 			service.preview().status == Service.STATUS_LOCKED
@@ -146,10 +145,15 @@ func _check_orders_and_restore() -> void:
 	var f := _fixture()
 	var service = f.service
 	_expect("ready first-era purchase is accepted", service.start(2, 100).ok)
-	var expected := PackedInt64Array([12000000, 18000000, 9000000])
-	var expected_ids := PackedStringArray(["logs", "gathered_plants", "game_meat"])
+	var procurement := Rules.procurement_goods(1)
+	var expected_ids := PackedStringArray()
+	var expected := PackedInt64Array()
+	for row_value in procurement:
+		var row: Dictionary = row_value
+		expected_ids.append(String(row.good_id))
+		expected.append(Rules.required_quantity(row, 10))
 	var sent: Array = f.economy.targets[0]
-	_expect("the real procurement port receives the reviewed fixed-point basket",
+	_expect("the real procurement port receives the catalog procurement basket",
 		sent[0] == 77 and sent[1] and sent[3] == expected and sent[4] == 2 and sent[5] == 100)
 	var names := PackedStringArray()
 	for index in sent[2]: names.append(f.economy.good_ids()[index])

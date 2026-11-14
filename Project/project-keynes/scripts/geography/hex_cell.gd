@@ -840,7 +840,7 @@ var wind_stress_curl: float = 0.0
 var ocean_psi: float = 0.0
 
 # temperature_transport_anomaly：
-#   由 _apply_ocean_heat_transport_pass 写入的"洋流输运带来的温度偏差"，
+#   由 ocean native pass 写入的"洋流输运带来的温度偏差"，
 #   单位与 current_state.temperature 一致（相对于该 cell 纬度基线温度）。
 #   水 cell：自身沿 -ocean_current 方向回溯上游温度混合后的偏差；
 #   陆地 cell：沿岸水 cell 异常按 dot(邻接方向, current) 加权平均后的注入值。

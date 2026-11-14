@@ -4,18 +4,11 @@
   "files": {
     "building-visual-pcg/references/performance.md": 2,
     "cpp-dots-runtime-development/SKILL.md": 2,
-    "project-keynes-climate-runtime/SKILL.md": 2,
-    "project-keynes-climate-runtime/references/algorithms-and-data.md": 2,
-    "project-keynes-climate-runtime/references/architecture-and-authority.md": 3,
-    "project-keynes-climate-runtime/references/current-status.md": 2,
     "project-keynes-country-ai-runtime/SKILL.md": 2,
-    "project-keynes-effect-runtime/SKILL.md": 3,
     "project-keynes-effect-runtime/scripts/verify_effect_runtime.ps1": 2,
     "project-keynes-fmod-elevenlabs-audio/scripts/Launch-FmodAudition.ps1": 2,
-    "project-keynes-game-flow-runtime/SKILL.md": 3,
-    "project-keynes-headless-perf/SKILL.md": 4,
+    "project-keynes-headless-perf/SKILL.md": 3,
     "project-keynes-headless-perf/scripts/run_headless_perf.ps1": 4,
-    "project-keynes-player-controller/references/command-contract.md": 3,
     "project-keynes-tax-runtime/SKILL.md": 3,
     "project-keynes-tax-runtime/references/runtime-contract.md": 5,
     "project-keynes-technology-runtime/SKILL.md": 5,
@@ -24,8 +17,6 @@
     "project-keynes-technology-runtime/scripts/verify_technology_runtime.ps1": 4,
     "project-keynes-technology-tree-design/SKILL.md": 5,
     "project-keynes-technology-tree-design/references/design-schema.md": 2,
-    "project-keynes-trigger-runtime/SKILL.md": 3,
-    "project-keynes-ui-art-direction/SKILL.md": 3,
-    "project-keynes-ui-art-direction/UI_ART_DIRECTION.md": 3
+    "project-keynes-trigger-runtime/SKILL.md": 3
   }
 }

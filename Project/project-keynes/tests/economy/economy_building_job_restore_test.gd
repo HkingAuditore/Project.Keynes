@@ -109,8 +109,8 @@ func _run() -> void:
 		_finish()
 		return
 	var schema_version := chunks[buildings_chunk].decode_u16(4)
-	_expect("fixture ECP2 uses the covered schema version",
-		schema_version == BUILDING_SCHEMA_VERSION)
+	_expect("fixture ECP2 includes the covered building fields",
+		schema_version >= BUILDING_SCHEMA_VERSION)
 	var records: Array = _decode_building_records(chunks[buildings_chunk])
 	var target_record: Dictionary = {}
 	for record in records:

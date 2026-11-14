@@ -10,9 +10,11 @@ func _init() -> void:
 	assert(bool(technology.get("ok", false)))
 	var reward := EraRewardCatalogScript.compile_native_catalog(technology)
 	assert(bool(reward.get("ok", false)))
-	assert(reward.era_reward_pool_ids.size() == 11)
-	assert(reward.era_reward_option_ids.size() == 99)
-	assert(reward.era_reward_option_offsets.size() == 12)
+	assert(reward.era_reward_pool_ids.size() == EraRewardCatalogScript.POOL_COUNT)
+	assert(reward.era_reward_option_ids.size() ==
+		EraRewardCatalogScript.POOL_COUNT * EraRewardCatalogScript.OPTIONS_PER_POOL)
+	assert(reward.era_reward_option_offsets.size() ==
+		EraRewardCatalogScript.POOL_COUNT + 1)
 	assert(reward.era_reward_rule_codes.has(
 		EraRewardCatalogScript.WeightCondition.SIGNAL_PRESENT))
 	assert(reward.era_reward_rule_codes.has(
@@ -22,16 +24,17 @@ func _init() -> void:
 	assert(reward.era_reward_rule_route_technology_offsets.size() ==
 		reward.era_reward_rule_codes.size() + 1)
 	assert(not reward.era_reward_rule_route_technology_indices.is_empty())
-	for pool in range(11):
+	for pool in range(EraRewardCatalogScript.POOL_COUNT):
 		assert(int(reward.era_reward_option_offsets[pool + 1]) -
-			int(reward.era_reward_option_offsets[pool]) == 9)
+			int(reward.era_reward_option_offsets[pool]) ==
+			EraRewardCatalogScript.OPTIONS_PER_POOL)
 		var fallbacks := 0
 		for option in range(reward.era_reward_option_offsets[pool],
 				reward.era_reward_option_offsets[pool + 1]):
 			fallbacks += int(reward.era_reward_option_fallback[option])
 			assert(int(reward.era_reward_command_offsets[option + 1]) -
 				int(reward.era_reward_command_offsets[option]) >= 1)
-		assert(fallbacks == 3)
+		assert(fallbacks == EraRewardCatalogScript.FALLBACKS_PER_POOL)
 	for top_n in reward.era_reward_selector_top_n:
 		assert(int(top_n) >= 1 and int(top_n) <= 32)
 	var modifier = ModifierCatalogScript.load_default()
@@ -41,16 +44,17 @@ func _init() -> void:
 	for key in modifier_ir.definition_keys:
 		if String(key).begins_with("era_reward."):
 			reward_modifiers += 1
-	assert(reward_modifiers == 99)
+	assert(reward_modifiers == reward.era_reward_option_ids.size())
 	var effect = EffectDomainCatalogScript.build()
 	assert(effect != null)
 	var effect_ir: Dictionary = effect.compile_native_catalog()
 	assert(bool(effect_ir.get("ok", false)))
-	assert(effect_ir.era_reward_pool_ids.size() == 11)
+	assert(effect_ir.era_reward_pool_ids.size() == EraRewardCatalogScript.POOL_COUNT)
 	var ext := DCWorldExt.new()
 	var configured: Dictionary = ext.configure_effects(_without_ok(effect_ir))
 	assert(bool(configured.get("ok", false)), String(configured.get("reason", "")))
-	print("[PASS] era reward catalog: 11 pools / 99 options / 33 fallbacks")
+	print("[PASS] era reward catalog: %d pools / %d options" % [
+		reward.era_reward_pool_ids.size(), reward.era_reward_option_ids.size()])
 	quit(0)
 
 func _without_ok(source: Dictionary) -> Dictionary:

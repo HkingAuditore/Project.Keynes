@@ -276,47 +276,65 @@ bool NativeEconomyRuntime::apply_army_lane_command(const Command &cmd,
             return false;
         }
         if (heads <= 0) return true;
-        const int32_t source = population_store().find_signature(
-            cell, static_cast<uint32_t>(signature));
-        if (source < 0 || population_store().active[source] == 0) {
-            // Nothing to embark: the cohort is gone (already moved, or never
-            // existed). Stable-sequence semantics make this a deterministic
-            // no-op rather than a fatal.
+        int64_t remaining = heads;
+        auto consume_signature = [&](int32_t source_signature) -> bool {
+            if (remaining <= 0) return true;
+            const int32_t source = population_store().find_signature(
+                cell, static_cast<uint32_t>(source_signature));
+            if (source < 0 || population_store().active[source] == 0) return true;
+            const int64_t available = std::max<int64_t>(
+                0, population_store().population[source]);
+            const int64_t moved = std::min(remaining, available);
+            if (moved <= 0) return true;
+            // A formation may contain soldiers from more than one ethnicity.
+            // Keep the source signature on each structural record so every live
+            // cohort contributes before the lane reports a shortfall.
+            const StructuralCommand record{STRUCTURAL_ARMY_EMBARK, source, cell,
+                                           source_signature, moved,
+                                           static_cast<int64_t>(army),
+                                           cmd.sequence};
+            int64_t committed_heads = 0;
+            if (!queue_or_commit_army_lane(record, error, committed_heads)) return false;
+            settled += committed_heads;
+            remaining -= committed_heads;
             return true;
+        };
+        if (!consume_signature(signature)) return false;
+        const int32_t soldier_profession = _signatures[static_cast<size_t>(signature)].profession_id;
+        for (int32_t ethnicity = 0;
+             remaining > 0 && ethnicity < static_cast<int32_t>(_ethnicity_ids.size());
+             ++ethnicity) {
+            const int32_t candidate = signature_for_profession_ethnicity(
+                soldier_profession, ethnicity);
+            if (candidate < 0 || candidate == signature) continue;
+            if (!consume_signature(candidate)) return false;
         }
-        const int64_t available =
-            std::max<int64_t>(0, population_store().population[source]);
-        const int64_t moved = std::min(heads, available);
-        if (moved <= 0) return true;
-        // The cohort side runs on the structural path; `funds` carries the army
-        // handle (never a slot id) and `signature` names the source cohort so
-        // the commit can re-resolve it if the slot moved.
-        const StructuralCommand record{STRUCTURAL_ARMY_EMBARK, source, cell,
-                                       signature, moved,
-                                       static_cast<int64_t>(army),
-                                       cmd.sequence};
-        int64_t committed_heads = 0;
-        if (!queue_or_commit_army_lane(record, error, committed_heads)) return false;
-        settled = committed_heads;
         return true;
     }
     case COMMAND_ARMY_DISEMBARK: {
         const int32_t cell = cmd.i32_0;
-        const int32_t signature = cmd.i32_1;
+        int32_t signature = cmd.i32_1;
         const uint64_t army = cmd.target_handle;
         const int64_t heads = std::max<int64_t>(0, cmd.i64_0);
         if (army == 0) {
             error = "army_disembark_handle_missing";
             return false;
         }
-        if (cell < 0 || cell >= _cell_count.get() || signature < 0 ||
-            signature >= static_cast<int32_t>(_signatures.size())) {
-            error = "army_disembark_target_invalid";
-            return false;
-        }
         const int32_t row = _army_personnel.find(army);
         if (row == ArmyPersonnelStore::NO_ROW) {
             error = "army_disembark_lane_missing";
+            return false;
+        }
+        // The bridge can send -1 when the destination cell has no existing
+        // soldier cohort.  In that case the lane's own signature is the only
+        // authoritative target identity; rejecting the command here would
+        // strand the heads after Military has already returned the lots to the
+        // destination garrison.
+        if (signature < 0)
+            signature = _army_personnel.signature_id[static_cast<size_t>(row)];
+        if (cell < 0 || cell >= _cell_count.get() || signature < 0 ||
+            signature >= static_cast<int32_t>(_signatures.size())) {
+            error = "army_disembark_target_invalid";
             return false;
         }
         const int64_t available = std::max<int64_t>(

@@ -935,7 +935,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
         int32_t family = -1;
         int32_t expedition = -1;
-        const bool target_ok = cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
+        const bool target_ok = (cmd.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT || cmd.opcode == COMMAND_MILITARY_PURCHASE || cmd.opcode == COMMAND_MILITARY_PURCHASE_ACK) ? (cmd.i64_0 >= 0 && cmd.i64_1 >= 0) : cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ? military_procurement_demand_valid(cmd)
             : family_reward ? family_ledger_command_preflight(cmd)
             : split_policy
             ? family_split_policy_command_preflight(cmd)
@@ -974,7 +974,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool opcode_ok =
             (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
              cmd.opcode <= COMMAND_BUILD_CANAL) ||
-            family_reward || split_policy || cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND;
+            family_reward || split_policy || cmd.opcode == COMMAND_MILITARY_PROCUREMENT_DEMAND ||
+            cmd.opcode == COMMAND_MILITARY_PURCHASE || cmd.opcode == COMMAND_MILITARY_PURCHASE_RECEIPT || cmd.opcode == COMMAND_MILITARY_PURCHASE_ACK;
         if (!opcode_ok ||
             !target_ok || cmd.effective_day < 0 || cmd.sequence < 0 ||
             (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&
@@ -1490,6 +1491,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
     _bootstrapped = true;
     military_soldier_profession(); // Rebuild the catalog lookup before the first restored quote.
     _track_b_investment_cells_pending.swap(_restore.track_b_investment_cells_pending);
+    _track_b_derived_cell_cache.swap(_restore.track_b_derived_cell_cache);
+    _track_b_derived_cell_cache_day = _restore.track_b_derived_cell_cache_day;
+    _track_b_derived_cell_cache_cells =
+        static_cast<int32_t>(_track_b_derived_cell_cache.size());
+    _family_colonization_population_reward_pending.swap(
+        _restore.family_colonization_population_reward_pending);
     if (_restore.committed_generation_seen) {
         _committed_generation = _restore.restored_committed_generation;
     } else if (++_committed_generation == 0) {

@@ -15,6 +15,7 @@ extends SceneTree
 ##     --script res://tests/ideology/ideology_x10_worker_test.gd
 
 const WIDTH := 12
+const WorkerWaitHelper = preload("res://tests/ideology/ideology_worker_wait_helper.gd")
 const HEIGHT := 10
 const SEED := 20261024
 const WORKER_SPEED := 10.0
@@ -104,8 +105,8 @@ func _run() -> int:
 
 
 ## The real Country snapshot and the five derived columns must agree exactly.
-## Granting `tech.composite_tools` (dense index 64, engineering) is a real
-## Country command and therefore also proves the second 64-bit word is included.
+## Granting any technology in the second 64-bit word is a real Country command
+## and therefore also proves the widened technology bitset is included.
 func _test_exact_counts_and_real_grant() -> bool:
 	var keys := _metric_keys()
 	if not _require("the production metric table has five X10 keys",
@@ -131,11 +132,15 @@ func _test_exact_counts_and_real_grant() -> bool:
 			"technologies=%d domains=%d" % [
 				technology_ids.size(), domain_indices.size()]):
 		return false
-	var second_word_technology := "tech.composite_tools"
-	var second_word_index := technology_ids.find(second_word_technology)
+	var second_word_technology := ""
+	var second_word_index := -1
+	for index in range(64, technology_ids.size()):
+		second_word_technology = String(technology_ids[index])
+		second_word_index = index
+		break
 	if not _require("a real technology index above 63 exists",
-			second_word_index >= 64,
-			"%s=%d" % [second_word_technology, second_word_index]):
+			second_word_index >= 64 and not second_word_technology.is_empty(),
+			"technology=%s index=%d" % [second_word_technology, second_word_index]):
 		return false
 	if not _require("the second-word technology starts undiscovered",
 			not _has_technology(second_word_technology),
@@ -165,10 +170,10 @@ func _test_exact_counts_and_real_grant() -> bool:
 				str(_metric_counts()), str(expected)]):
 		return false
 	var after := _metric_counts()
-	_expect("granting index 64 increments the total count",
+	_expect("granting the second-word technology increments the total count",
 		after[METRIC_COMPLETED_TECH] == expected[METRIC_COMPLETED_TECH],
 		"%s vs %s" % [str(after), str(expected)])
-	_expect("granting index 64 increments only its engineering domain",
+	_expect("granting the second-word technology increments only its domain",
 		after[METRIC_TECH_DOMAIN_1] == expected[METRIC_TECH_DOMAIN_1]
 			and after[METRIC_TECH_DOMAIN_0]
 				== expected[METRIC_TECH_DOMAIN_0]
@@ -435,6 +440,7 @@ func _install_local_card() -> Resource:
 	var definition: Resource = IdeologyDefinitionScript.new()
 	definition.id = StringName("idea.%s" % LOCAL_CARD)
 	definition.rarity_weight = 1
+	definition.school_id = &"industry"
 	definition.ideology_slot_cost = 1
 	definition.national_spirit_slot_cost = 1
 	definition.acquisition_flags = 3
@@ -634,52 +640,11 @@ func _commands(rows: Array) -> Dictionary:
 
 
 func _drive_days(days: int) -> int:
-	for _day in range(days):
-		var fault := _worker_fault()
-		if not fault.is_empty():
-			_require("worker stays healthy before day %d" % (_tick + 1),
-				false, fault)
-			break
-		_tick += 1
-		_clock.current_day = float(_tick)
-		_host.run_daily_tick(_tick, _clock.season_phase_for_day(_tick))
-		_host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while _has_hard_barrier() and pulses < 400:
-			_clock.simulation_backpressure_pulse.emit(_tick)
-			pulses += 1
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		if _ext.has_method("publish_ideology_worker_inputs"):
-			_ext.publish_ideology_worker_inputs()
-		_ext.set_runtime_clock(false, WORKER_SPEED)
-		var before := int(_ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(before, 2000)
-		_ext.set_runtime_clock(true, WORKER_SPEED)
+	var driven := WorkerWaitHelper.drive_worker_days(
+		_host, _clock, _ext, _tick + 1, days, WORKER_SPEED)
+	_tick = int(driven["day"])
+	_expect("worker commits day %d" % _tick, bool(driven["ok"]), str(driven))
 	return _tick
-
-
-func _wait_pod_day(before: int, timeout_ms: int) -> void:
-	var deadline := Time.get_ticks_msec() + timeout_ms
-	while Time.get_ticks_msec() < deadline:
-		if _ext.has_method("service_country_worker_peer_adapter"):
-			_ext.service_country_worker_peer_adapter(64, true)
-		OS.delay_msec(2)
-		if int(_ext.get_runtime_thread_report().get(
-				"ideology_pod_committed_day", -1)) > before:
-			return
-
-
-func _has_hard_barrier() -> bool:
-	return bool(_clock.has_hard_barrier()) if _clock.has_method(
-		"has_hard_barrier") else false
-
-
-func _worker_fault() -> String:
-	if _ext == null:
-		return ""
-	return String(_ext.get_runtime_thread_report().get("fault_code", ""))
 
 
 func _worker_fault_count() -> int:

@@ -128,3 +128,33 @@ func _gm_ok(host, message: String, queued: bool, effective_day: int) -> Dictiona
 	return _part2._gm_ok(host, message, queued, effective_day)
 func _gm_error(host, code: String, message: String, data: Dictionary = {}) -> Dictionary:
 	return _part2._gm_error(host, code, message, data)
+
+
+## G4 moved host responsibilities
+func get_gm_tod_sun_preview(host) -> Dictionary:
+	return _part1.get_gm_tod_sun_preview(host)
+
+func set_gm_tod_sun_preview(host, enabled: bool, uv: Vector2 = Vector2(0.25, 0.5),
+		height_scale: float = 1.0) -> Dictionary:
+	return _part1.set_gm_tod_sun_preview(host, enabled, uv, height_scale)
+
+func gm_tod_screen_to_sun_uv(host, screen_pos: Vector2) -> Vector2:
+	return _part1.gm_tod_screen_to_sun_uv(host, screen_pos)
+
+func gm_tod_sun_screen_position(host) -> Vector2:
+	return _part1.gm_tod_sun_screen_position(host)
+
+func _current_eternal_uv(host) -> Vector2:
+	return _part1._current_eternal_uv(host)
+
+func _gm_preview_marker_uv(host) -> Vector2:
+	return _part1._gm_preview_marker_uv(host)
+
+func _gm_live_sun_uv(host) -> Vector2:
+	return _part1._gm_live_sun_uv(host)
+
+func _apply_gm_tod_sun_preview(host) -> void:
+	_part1._apply_gm_tod_sun_preview(host)
+
+func _clear_gm_tod_sun_preview(host) -> void:
+	_part1._clear_gm_tod_sun_preview(host)

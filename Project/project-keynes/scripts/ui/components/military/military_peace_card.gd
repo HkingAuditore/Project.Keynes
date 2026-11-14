@@ -20,7 +20,11 @@ var war_id := 0
 
 func _ready() -> void:
 	_icon.set_semantic(&"military.war.peace", UITokens.DOSSIER_OXBLOOD)
-	_action.custom_minimum_size = Vector2(0, 30)
+	IconButton.apply_with_text(_action, &"military.war.peace", "议和", IconButton.SMALL,
+		"打开议和窗口，在地图上选择条款", false)
+	_action.focus_mode = Control.FOCUS_ALL
+	_action.custom_minimum_size = Vector2(0, 44)
+	UIAnimation.bind_tactile_button(_action)
 	_action.pressed.connect(func() -> void: peace_requested.emit(war_id))
 
 

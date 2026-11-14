@@ -733,6 +733,12 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     } else if (food_type >= 0) {
         try_add(food_type, 1, 10);
     }
+    // The merchant post is part of the minimum greenfield opening plan. Add
+    // it before optional clothing/construction chains so a three-person party
+    // keeps one food producer and one trade building; the later drop ranks
+    // still remove optional chains first when the party is smaller.
+    if (trade_type >= 0)
+        try_add(trade_type, 1, 5);
     if (clothing_input_type >= 0 && clothing_type >= 0) {
         int32_t fiber_good = -1;
         const BuildingType &input_type = _building_types[clothing_input_type];
@@ -762,8 +768,6 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     }
     if (construction_type >= 0)
         try_add(construction_type, 1, 40);
-    if (trade_type >= 0)
-        try_add(trade_type, 1, 5);
 
     auto rebuild_buildings = [&]() {
         kit.buildings.clear();

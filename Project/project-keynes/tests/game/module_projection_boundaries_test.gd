@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Conditions = preload("res://scripts/era/era_advancement_conditions.gd")
+const EraRules = preload("res://scripts/era/era_advancement_catalog.gd")
 const FamilyProjection = preload("res://scripts/ui/family_workspace_projection.gd")
 const Logistics = preload("res://scripts/ui/military_logistics_projection.gd")
 const WeatherInputs = preload("res://scripts/rendering/renderer_weather_inputs.gd")
@@ -47,19 +48,21 @@ func _expect(condition: bool, message: String) -> void:
 
 
 func _check_conditions() -> void:
-	var tech := {"total": 7, "completed": 5}
+	var tech_total := 7
+	var tech_gate := int(ceil(float(tech_total) * EraRules.TECH_COMPLETION_RATIO))
+	var tech := {"total": tech_total, "completed": tech_gate - 1}
 	var summary := {"population": 1000000, "building_units": 1000000}
 	var before := var_to_bytes([tech, summary])
 	var locked := Conditions._conditions(tech, summary, 1, 1000000, 0, 1)
 	_expect(locked.size() == 4, "advancement retains four independent conditions")
-	_expect(locked[0].mandatory and not locked[0].met and locked[0].target == 6,
-		"mandatory technology uses the rounded-up 80 percent boundary")
+	_expect(locked[0].mandatory and not locked[0].met and locked[0].target == tech_gate,
+		"mandatory technology uses the catalog completion boundary")
 	_expect(locked[1].met and locked[2].met and locked[3].met,
 		"optional conditions cannot make unmet technology appear complete")
 	_expect(var_to_bytes([tech, summary]) == before, "condition projection leaves input snapshots intact")
-	tech.completed = 6
+	tech.completed = tech_gate
 	var ready := Conditions._conditions(tech, summary, 1, 1000000, 0, 1)
-	_expect(ready[0].met, "six of seven technologies meets the mandatory boundary")
+	_expect(ready[0].met, "the catalog technology boundary is met exactly")
 	var missing := Conditions._conditions({"total": 0, "completed": 0}, summary, 1, 1000000, 0, 1)
 	_expect(not missing[0].met, "missing technology catalog does not grant advancement")
 	var larger := Conditions._conditions(tech, summary, 2, 1000000, 0, 1)

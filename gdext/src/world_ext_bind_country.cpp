@@ -203,6 +203,8 @@ void DCWorldExt::_bind_country_methods() {
                          &DCWorldExt::get_country_cell_summary);
     ClassDB::bind_method(D_METHOD("get_country_snapshot", "handle"),
                          &DCWorldExt::get_country_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_political_regime_snapshot", "handle"),
+                         &DCWorldExt::get_country_political_regime_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_treasury_snapshot", "handle"),
                          &DCWorldExt::get_country_treasury_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_research_snapshot", "handle"),

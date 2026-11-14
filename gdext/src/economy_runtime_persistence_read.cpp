@@ -33,14 +33,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    // v55/v56 migrate to v57 by starting the X13a counters at zero; v57
-    // migrates to v58 by starting the research procurement outflow at zero;
-    // v58 migrates to v59 by starting with no army personnel lanes (the
-    // section is optional, so a pre-59 stream restores zero lanes).
-    // v59 migrates to v60 by starting with no state lanes (the building section
-    // is all kind-0/1/2 rows, so a pre-60 stream restores zero state lanes).
-    if (schema != SCHEMA_VERSION && schema != 59 && schema != 58 &&
-        schema != 57 && schema != 56) {
+    // The current PKEC format is strict: historical layouts are intentionally
+    // rejected because family records now carry the pending population reward.
+    if (schema != SCHEMA_VERSION) {
         error = "economy_save_price_v6_requires_new_game";
         return false;
     }
@@ -893,6 +888,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _family_owner_seat_rows.clear();
         family_ownerships().clear();
         family_trait_rolls().clear();
+        _family_colonization_population_reward_pending.clear();
         _family_trait_commands.clear();
         clear_family_founding_state();
         _family_modifier_bindings.clear();
@@ -1794,6 +1790,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             uint32_t generation = 0, disambiguator = 0, split_sequence = 0;
             int64_t stable_id = 0, founded_day = -1;
             uint16_t decline = 0, flags = 0;
+            int32_t pending_population_reward = 0;
             if (!read_le(bytes, cursor, index) ||
                 !read_le(bytes, cursor, active) ||
                 !read_le(bytes, cursor, generation) ||
@@ -1808,8 +1805,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 (schema >= 40 && !read_le(bytes, cursor, split_sequence)) ||
                 !read_le(bytes, cursor, decline) ||
                 !read_le(bytes, cursor, flags) ||
+                !read_le(bytes, cursor, pending_population_reward) ||
                 index != static_cast<int32_t>(families_store().active.size()) ||
                 active > 1 || generation == 0 ||
+                pending_population_reward < 0 ||
                 (active != 0 && (stable_id <= 0 || surname < 0 ||
                     surname >= static_cast<int32_t>(_family_surname_ids.size()) ||
                     home_cell < 0 || home_cell >= _cell_count.get() ||
@@ -1837,6 +1836,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             families_store().split_sequence.push_back(schema >= 40 ? split_sequence : 0);
             families_store().decline_reviews.push_back(decline);
             families_store().flags.push_back(flags);
+            _restore.family_colonization_population_reward_pending.push_back(
+                pending_population_reward);
             if (active != 0) {
                 ++families_store().active_count;
                 _family_stable_ids.insert(stable_id);
@@ -2816,10 +2817,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.fiscal_peer_seen = true;
     } else if (schema >= 52 && section == SAVE_SECTION_RESOURCE_STOCK) {
         if (!_restore.resource_stock_seen) {
-            resource_stock_lanes().assign(static_cast<size_t>(
-                std::max<int64_t>(0, _restore.expected_resource_rows)), 0);
-            resource_lane_generation_lanes().assign(static_cast<size_t>(
-                std::max<int64_t>(0, _restore.expected_resource_rows)), 0);
+            // An empty section means the save carried no resource rows at all.
+            if (records == 0)
+                _restore.expected_resource_rows = 0;
+            const size_t rows = static_cast<size_t>(
+                std::max<int64_t>(0, _restore.expected_resource_rows));
+            resource_stock_lanes().assign(rows, 0);
+            resource_lane_generation_lanes().assign(rows, 0);
             _restore.resource_stock_seen = true;
         }
         for (uint32_t i = 0; i < records; ++i) {
@@ -2896,7 +2900,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             uint64_t generation = 0;
             if (_restore.committed_generation_seen || !read_cadence_footer(
                     bytes, cursor, _cell_count.get(), generation,
-                    _restore.track_b_investment_cells_pending)) {
+                    _restore.track_b_investment_cells_pending,
+                    _restore.track_b_derived_cell_cache_day,
+                    _restore.track_b_derived_cell_cache)) {
                 error = "save_cadence_generation_footer_invalid";
                 return false;
             }

@@ -766,3 +766,135 @@ func _web_barrier_diag(host) -> Dictionary:
 	out["memory_static_mb"] = WebTelemetry.memory_mb()
 	return out
 
+
+
+## G4 moved host responsibilities
+func get_gm_tod_sun_preview(host) -> Dictionary:
+	if host._world_clock == null:
+		return host._gm_error("clock_unavailable", "时钟尚未就绪。")
+	var uv = host._gm_preview_marker_uv()
+	var angles = host.eternal_angles_from_uv(host._current_eternal_uv())
+	var elevation = clampf(angles.y * (host._gm_tod_sun_height_scale if host._gm_tod_preview_enabled else 1.0),
+		8.0, 85.0)
+	return {
+		"ok": true,
+		"preview": host._gm_tod_preview_enabled,
+		"uv": uv,
+		"height_scale": host._gm_tod_sun_height_scale if host._gm_tod_preview_enabled else 1.0,
+		"day_night": host.day_night_enabled,
+		"azimuth_deg": angles.x,
+		"elevation_deg": elevation,
+	}
+
+
+func set_gm_tod_sun_preview(host, enabled: bool, uv: Vector2 = Vector2(0.25, 0.5),
+		height_scale: float = 1.0) -> Dictionary:
+	if host._world_clock == null:
+		return host._gm_error("clock_unavailable", "时钟尚未就绪。")
+	var clamped = Vector2(fposmod(uv.x, 1.0), clampf(uv.y, 0.0, 1.0))
+	host._gm_tod_sun_height_scale = clampf(height_scale, 0.2, 1.5)
+	if host.day_night_enabled:
+		host._gm_tod_cycle_uv = clamped
+	else:
+		host._gm_tod_eternal_uv = clamped
+		host._gm_tod_eternal_uv_valid = true
+	host._gm_tod_sun_uv = clamped
+	host._gm_tod_preview_enabled = enabled
+	if enabled:
+		if host.day_night_enabled:
+			host._world_clock.hold_visual_day_phase(host._gm_tod_cycle_uv.x)
+		elif not host._world_clock.visual_day_phase_held:
+			host._world_clock.hold_visual_day_phase(host._world_clock.visual_day_phase)
+		host._apply_gm_tod_sun_preview()
+	else:
+		host._clear_gm_tod_sun_preview()
+		host._world_clock.release_visual_day_phase()
+	host.gm_tod_preview_changed.emit(host._gm_tod_preview_enabled)
+	return host.get_gm_tod_sun_preview()
+
+
+func gm_tod_screen_to_sun_uv(host, screen_pos: Vector2) -> Vector2:
+	var current = host._gm_tod_sun_uv if host._gm_tod_preview_enabled else host._gm_live_sun_uv()
+	if host._camera == null or host._renderer == null or host._camera.zoom.x <= 0.0:
+		return current
+	var bounds = host._renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return current
+	return host.map_screen_to_sun_uv(screen_pos, host._camera.position, host._camera.zoom.x,
+		host._camera.get_viewport_rect().size, bounds)
+
+
+func gm_tod_sun_screen_position(host) -> Vector2:
+	if host._camera == null or host._renderer == null or host._camera.zoom.x <= 0.0:
+		return Vector2(INF, INF)
+	var bounds = host._renderer.get_world_bounds()
+	if bounds.size.x <= 0.0 or bounds.size.y <= 0.0:
+		return Vector2(INF, INF)
+	var uv = host._gm_tod_sun_uv if host._gm_tod_preview_enabled else host._gm_live_sun_uv()
+	return host.map_sun_uv_to_screen(uv, host._camera.position, host._camera.zoom.x,
+		host._camera.get_viewport_rect().size, bounds)
+
+
+func _current_eternal_uv(host) -> Vector2:
+	if host._gm_tod_eternal_uv_valid:
+		return host._gm_tod_eternal_uv
+	return host.eternal_uv_from_angles(-60.0, 37.0)
+
+
+func _gm_preview_marker_uv(host) -> Vector2:
+	if host.day_night_enabled:
+		return host._gm_tod_cycle_uv if host._gm_tod_preview_enabled else host._gm_live_sun_uv()
+	return host._current_eternal_uv()
+
+
+func _gm_live_sun_uv(host) -> Vector2:
+	var phase = 0.25
+	var season = 1.0
+	if host._world_clock != null:
+		phase = host._world_clock.visual_day_phase
+		season = host._world_clock.season_phase()
+	var tilt = deg_to_rad(23.5)
+	if host._renderer != null:
+		tilt = deg_to_rad(float(host._renderer.axial_tilt_deg))
+	var year_progress = fposmod(season, 4.0) * 0.25
+	var decl = tilt * cos(TAU * year_progress)
+	var lat_signed = clampf(decl / (PI * 0.5), -1.0, 1.0)
+	return Vector2(fposmod(phase, 1.0), lat_signed * 0.5 + 0.5)
+
+
+func _apply_gm_tod_sun_preview(host) -> void:
+	if host._renderer == null or not host._gm_tod_preview_enabled:
+		return
+	if host._tod_profile == null:
+		host._init_tod_profile()
+	if host.day_night_enabled:
+		host._gm_tod_sun_uv = host._gm_tod_cycle_uv
+		host._renderer.set_day_phase(host._gm_tod_cycle_uv.x)
+		if host._tod_profile != null and host._renderer.has_method("apply_tod"):
+			host._tod_profile.recompute(host._gm_tod_cycle_uv.x, true)
+			host._renderer.apply_tod(host._tod_profile)
+		if host._renderer.has_method("set_tod_debug_sun_position"):
+			host._renderer.set_tod_debug_sun_position(true, host._gm_tod_cycle_uv)
+	else:
+		var uv = host._current_eternal_uv()
+		host._gm_tod_sun_uv = uv
+		var angles = host.eternal_angles_from_uv(uv)
+		var elevation = clampf(angles.y * host._gm_tod_sun_height_scale, 8.0, 85.0)
+		var phase = host._world_clock.visual_day_phase if host._world_clock != null else 0.25
+		if host._tod_profile != null and host._renderer.has_method("apply_tod"):
+			host._tod_profile.recompute(phase, false)
+			host._tod_profile.sun_dir = host.eternal_sun_dir(angles.x, elevation)
+			host._renderer.apply_tod(host._tod_profile)
+		if host._renderer.has_method("set_tod_debug_sun_position"):
+			host._renderer.set_tod_debug_sun_position(true, uv)
+	if host._renderer.has_method("set_tod_debug_sun_height_scale"):
+		host._renderer.set_tod_debug_sun_height_scale(host._gm_tod_sun_height_scale)
+
+
+func _clear_gm_tod_sun_preview(host) -> void:
+	if host._renderer == null:
+		return
+	if host._renderer.has_method("set_tod_debug_sun_position"):
+		host._renderer.set_tod_debug_sun_position(false, host._gm_tod_sun_uv)
+	if host._renderer.has_method("set_tod_debug_sun_height_scale"):
+		host._renderer.set_tod_debug_sun_height_scale(1.0)

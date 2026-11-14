@@ -38,6 +38,21 @@ enum Op {
 	ERA_LTE = 33,
 	HAS_STORY_FLAG = 34,
 	LACKS_STORY_FLAG = 35,
+	# ── 人群维度（2026-11，地块上的具体人群）──
+	SUBSISTENCE_SHORTFALL_GTE = 36,   # 入不敷出人口占比（0..1）
+	UNEMPLOYMENT_GTE = 37,            # 失业人口占比（0..1）
+	PROFESSION_SHARE_GTE = 38,        # target_key = 职业 stable id
+	COHORT_SATISFACTION_LTE = 39,     # 最不满 cohort 的满意度（0..1）
+	# ── 家族维度（2026-11，本格最大族；无家族时一律 false）──
+	HAS_NOTABLE_FAMILY = 40,          # 本格有族，且（名人数≥1 或 威望档≥1）
+	FAMILY_PRESTIGE_GTE = 41,         # 最大族在本格的威望档（0..5）
+	FAMILY_POP_SHARE_GTE = 42,        # 最大族人口 / 本格人口（0..1）
+	FAMILY_OWNS_BUILDINGS_GTE = 43,   # 最大族在本格拥有的建筑数
+	HAS_FAMILY_TRAIT = 44,            # target_key = 家族特质 stable id（如 i001_agrarian）
+	# ── 军事/战争维度（2026-11，读本国军事快照）──
+	AT_WAR = 45,                      # 本国是否有进行中的战争
+	SOLDIERS_TOTAL_GTE = 46,          # 本国兵员总数
+	WAR_GOING_BADLY = 47,             # 任一战场的战果分数 ≤ -0.5（Q16）
 }
 
 @export var op: int = Op.ALWAYS_TRUE
@@ -137,6 +152,45 @@ func _evaluate_raw(ctx: Dictionary) -> bool:
 			return _has_story_flag(ctx, target_key)
 		Op.LACKS_STORY_FLAG:
 			return not _has_story_flag(ctx, target_key)
+		Op.SUBSISTENCE_SHORTFALL_GTE:
+			return _read_float(ctx, ["subsistence_shortfall_ratio"], 0.0) >= float_value
+		Op.UNEMPLOYMENT_GTE:
+			return _read_float(ctx, ["unemployment_ratio"], 0.0) >= float_value
+		Op.PROFESSION_SHARE_GTE:
+			var shares: Dictionary = ctx.get("profession_share_by_id", {})
+			return float(shares.get(String(target_key), 0.0)) >= float_value
+		Op.COHORT_SATISFACTION_LTE:
+			return _read_float(ctx, ["neediest_cohort_satisfaction"], 1.0) \
+				<= _normalized_satisfaction_threshold()
+		Op.HAS_NOTABLE_FAMILY:
+			var family_available := bool(ctx.get("family_available", false))
+			var notables := int(ctx.get("primary_family_notable_people", 0))
+			var prestige := int(ctx.get("primary_family_prestige", 0))
+			return (family_available and (notables >= 1 or prestige >= 1)) == bool_value
+		Op.FAMILY_PRESTIGE_GTE:
+			return bool(ctx.get("family_available", false)) \
+				and int(ctx.get("primary_family_prestige", 0)) >= int_value
+		Op.FAMILY_POP_SHARE_GTE:
+			return bool(ctx.get("family_available", false)) \
+				and float(ctx.get("primary_family_population_share", 0.0)) >= float_value
+		Op.FAMILY_OWNS_BUILDINGS_GTE:
+			return bool(ctx.get("family_available", false)) \
+				and int(ctx.get("primary_family_owned_buildings", 0)) >= int_value
+		Op.HAS_FAMILY_TRAIT:
+			if not bool(ctx.get("family_available", false)) or String(target_key).is_empty():
+				return false
+			var trait_keys: PackedStringArray = ctx.get(
+				"primary_family_trait_keys", PackedStringArray())
+			return trait_keys.has(String(target_key)) == bool_value
+		Op.AT_WAR:
+			return bool(ctx.get("at_war", false)) == bool_value
+		Op.SOLDIERS_TOTAL_GTE:
+			return bool(ctx.get("military_available", false)) \
+				and int(ctx.get("soldiers_total", 0)) >= int_value
+		Op.WAR_GOING_BADLY:
+			var fighting := bool(ctx.get("at_war", false))
+			var losing := int(ctx.get("war_score_min_q16", 0)) <= -32768
+			return (fighting and losing) == bool_value
 		_:
 			return false
 

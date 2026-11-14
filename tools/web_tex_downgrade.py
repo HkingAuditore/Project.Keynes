@@ -102,6 +102,18 @@ RULES: list[tuple[str, dict[str, str], int]] = [
     ("res://assets/vfx/**", {"compress/mode": "1", "compress/lossy_quality": "0.70"}, 0),
 ]
 
+# ⚠️ 2026-11-11 撤回：这里曾经有三条 `process/size_limit`（ui 1152 / icons 1024 /
+# military 1152），想在 lossy 之外再省一份分辨率。**这是错的，已删除。**
+#
+# 原因：这套 UI 的图集尺寸是**布局输入**，不是单纯的显示素材。
+#   * `scripts/ui/icon_catalog.gd` 用 `texture.get_size()` 反算图集单元格，
+#     图集一缩，每个图标的绘制矩形全错，表现为图标重叠、大小不一。
+#   * `assets/themes/*.tres` 里的 `texture_margin_*`（如 24.0）是**像素**，
+#     贴图缩小后九宫格边距与内容区不再对应，面板边框变形、文字溢出。
+# 实测后果：新开局面板与 HUD 大面积错位，事件弹窗文字压到纸边上。
+# 结论：这几类图只能改压缩质量（lossy_quality），**任何情况下都不要动分辨率**。
+# 要再省体积，只能从压缩质量或"不打包无用资源"下手。
+
 # 明确不动的路径。命中即跳过并给出理由。
 KEEP: list[tuple[str, str]] = [
     ("res://assets/fonts/**", "字体：子集化由 Build-Web 另一条钩子负责，这里不碰"),

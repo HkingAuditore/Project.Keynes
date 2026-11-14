@@ -263,7 +263,6 @@ func _layout_right_panel() -> void:
 	if army_open:
 		layout["panel_width"] = minf(520.0, viewport_width - UITokens.ARCHIVE_EDGE_INSET * 2.0)
 		layout["compact"] = true
-		_right_panel.custom_minimum_size.x = 0.0
 	var compact := bool(layout.get("compact", false))
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
@@ -271,12 +270,8 @@ func _layout_right_panel() -> void:
 	# RIGHT_PANEL_WIDTH（真机 2670x1200@520dpi 实测：右侧详情面板的页签行被挤出屏幕，
 	# 关闭按钮直接看不见）。这里让面板按"内容最小宽度"兜底，并限制在视口 55% 以内，
 	# 保证永远贴右且完整可见。
-	var content_min_width := 0.0
-	var min_size := _right_panel.get_combined_minimum_size()
-	if min_size != null:
-		content_min_width = float(min_size.x)
-	if content_min_width > panel_width:
-		panel_width = minf(content_min_width, maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH))
+	panel_width = resolve_panel_content_width(
+		viewport_width, panel_width, panel_content_min_width(_right_panel))
 	# [panel-width-touch 2026-11-02] 触摸档的页签/KPI 行比桌面宽（页签 44dp 起），
 	# 460 装不下：真机 2670x1200@520dpi 上右侧面板的"市场"页签与"就业率"读数会被
 	# 屏幕右缘切掉。这里在触摸档给面板加宽 72 设计像素（视口 2053 宽，完全放得下）。
@@ -319,6 +314,27 @@ func _layout_right_panel() -> void:
 	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
 	# 之后每次开合面板都会被带回那个错误坐标——这正是"详情框缩在左上角"的成因。
 	UIAnimation.refresh_rest_position(_right_panel)
+
+
+## 右栏"内容最小宽度"：量之前先把本函数上一轮写进 custom_minimum_size 的宽度清零。
+## get_combined_minimum_size() 会把 custom_minimum_size 本身算进结果，直接读它就会
+## 把上一帧为详情撑开的宽面板当成"内容最小宽度"再写回去——面板只增不减，详情关闭后
+## 再也回不到 460px。清零后重新取最小值，得到的才是子节点真正需要的宽度。
+static func panel_content_min_width(panel: Control) -> float:
+	if panel == null:
+		return 0.0
+	panel.custom_minimum_size.x = 0.0
+	return panel.get_combined_minimum_size().x
+
+
+## 内容比请求宽度更宽时按内容兜底，但上限压在视口 55%（至少 RIGHT_PANEL_WIDTH），
+## 避免宽面板把地图挤没。请求宽度已经够宽时原样返回，保证关闭详情能回到窄档。
+static func resolve_panel_content_width(viewport_width: float,
+		requested_width: float, content_min_width: float) -> float:
+	if content_min_width <= requested_width:
+		return requested_width
+	return minf(content_min_width,
+		maxf(viewport_width * 0.55, RIGHT_PANEL_WIDTH))
 
 
 static func inspector_layout_for_width(viewport_width: float,

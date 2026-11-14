@@ -1245,6 +1245,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## 建筑页签里的「营造新建筑」纸笺。页签每日重建时只刷新这句话，报价留给
 ## 真正打开营造窗口的那一次请求。
 func _build_construction_entry(host: Control, entry_data: Dictionary) -> void:
+	if entry_data.has("visible") and not bool(entry_data.get("visible", true)):
+		return
 	var entry := ConstructionEntryScene.instantiate() as PanelContainer
 	(entry.get_node("Row/Icon") as IconBadge).set_semantic(
 		&"economy.building", UITokens.DOSSIER_BRASS)

@@ -20,6 +20,7 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="CashflowKicker" type="Label" parent="CashflowHeader" unique_id=1933794691]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKDossierKicker"
@@ -29,6 +30,14 @@ text = "国库收支"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKDossierCaption"
+
+[node name="CashflowWindow" type="OptionButton" parent="CashflowHeader" unique_id=1933794710]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 0)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "切换国库收支的日均统计窗口"
+fit_to_longest_item = false
 
 [node name="CashflowToggle" type="Button" parent="CashflowHeader" unique_id=1933794693]
 unique_name_in_owner = true

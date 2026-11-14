@@ -79,10 +79,6 @@ func _run() -> int:
 		var phase := clock.season_phase_for_day(day)
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
-		var pulses := 0
-		while clock.has_method("has_hard_barrier") and clock.has_hard_barrier() and pulses < 16:
-			clock.simulation_backpressure_pulse.emit(day)
-			pulses += 1
 		await process_frame
 
 	# 静置 90 帧让队列完全消化

@@ -1106,6 +1106,15 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(families_store().split_sequence[i]);
         mix_u64(families_store().decline_reviews[i]);
         mix_u64(families_store().flags[i]);
+        const int32_t pending_population_reward = i < static_cast<int32_t>(
+                _family_colonization_population_reward_pending.size())
+            ? std::max(0, _family_colonization_population_reward_pending[
+                static_cast<size_t>(i)])
+            : 0;
+        if (pending_population_reward > 0) {
+            mix_u64(0x46414d5052455744ULL); // "FAMPREWD"
+            mix_u64(static_cast<uint32_t>(pending_population_reward));
+        }
     }
     for (const FamilyMembershipEdge &edge : family_memberships()) {
         mix_u64(edge.family_handle); mix_u64(edge.cohort_handle);

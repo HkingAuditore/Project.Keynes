@@ -21,7 +21,7 @@ import world_ext_bindings as inventory
 
 PROJECT = "Project/project-keynes"
 BASELINE = "tools/ci/script_native_access_baseline.json"
-EXCLUDED = {"tests", "addons", ".godot"}
+EXCLUDED = {"tests", "tmp", "addons", ".godot"}
 WORLD_NAME = re.compile(r"(?:^|_)(?:data_core_)?world_ext$|^_?ext$|^ext_obj$|^world$|^dc$")
 # A single lexer keeps comments and quoted code out of call/func recognition.
 LEX = re.compile(

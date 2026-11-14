@@ -131,10 +131,8 @@ const CELL_WATER_BALANCE_30D: StringName = &"cell.water_balance_30d"          # 
 # 完全消失，目标 wall ≈ 0.3-0.5ms。
 # 命名严格 1:1 对齐 HexCell 字段名（vegetation_vitality / _vitality_low_streak /
 # _vitality_high_streak / soil_moisture / vegetation_growth_pressure /
-# temperature_transport_anomaly），方便阶段 3 把 _trigger_succession / legacy
-# fallback 改成 `world.write_f32_range(slot_id, ...)` 时搜索/重构。
-# 写入侧：cpp run_stage_b_pass 直写 _slots（阶段 2 后），加上 _trigger_succession
-#         / GDScript legacy fallback / save-load。
+# temperature_transport_anomaly），由 native stage_b 统一读写 SoA。
+# 写入侧：cpp run_stage_b_pass 直写 _slots，并由 save/load 持久化。
 # 读取侧：cpp run_stage_b_pass 直读 _slots（阶段 2 后），加上 UI / overlay /
 #         baker / save 序列化（通过 snapshot_f32 / snapshot_i32）。
 const CELL_VEGETATION_VITALITY: StringName       = &"cell.vegetation_vitality"        # f32

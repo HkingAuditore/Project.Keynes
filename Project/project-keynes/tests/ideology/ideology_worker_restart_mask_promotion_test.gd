@@ -69,7 +69,6 @@ const MASK_KEEP_IDEOLOGY := MASK_ALL & ~DOMAIN_GAMEPLAY_EFFECT
 
 const MAX_SLICES_PER_DAY := 256
 const DAY_WAIT_MS := 9000
-const POD_WAIT_MS := 5000
 const STATE_WAIT_MS := 15000
 ## Whole-run guard.
 const GLOBAL_BUDGET_MS := 480000
@@ -109,6 +108,8 @@ func _run_and_finish() -> void:
 
 
 func _run() -> int:
+	# Keep the restart/mask probe independent from the political support gate.
+	OS.set_environment("PK_DISABLE_SUPPORT_GATE", "1")
 	_run_started_ms = Time.get_ticks_msec()
 	if not ClassDB.class_exists("DCWorldExt"):
 		_fail("DCWorldExt unavailable")
@@ -602,10 +603,6 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.publish_ideology_worker_inputs()
 	host.run_daily_tick(day, clock.season_phase_for_day(day))
 	host.finish_daily_tick(0.0, {})
-	var pulses := 0
-	while _has_hard_barrier(clock) and pulses < 400:
-		clock.simulation_backpressure_pulse.emit(day)
-		pulses += 1
 	var ideology: Dictionary = {}
 	var slices := 0
 	for _slice in range(MAX_SLICES_PER_DAY):
@@ -632,33 +629,11 @@ func _drive_day(w: Dictionary) -> Dictionary:
 		ext.ack_effect_native_modifier()
 	ext.drain_derived_cell_layer(day)
 	if bool(ideology.get("suppressed", false)) and not bool(w.get("faulted", false)):
-		var before := int(ext.get_runtime_thread_report().get(
-			"ideology_pod_committed_day", -1))
-		_wait_pod_day(w, before, POD_WAIT_MS)
+		ext.set_runtime_clock(false, WORKER_SPEED)
+		WorkerWaitHelper.wait_committed(host, ext, maxi(0, day - 1))
+		ext.set_runtime_clock(true, WORKER_SPEED)
 	return {"ok": true, "day": day, "slices": slices,
 		"suppressed": bool(ideology.get("suppressed", false))}
-
-
-func _wait_pod_day(w: Dictionary, before: int, timeout_ms: int) -> void:
-	var ext: Object = w["ext"]
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(false, WORKER_SPEED)
-	WorkerWaitHelper.wait_until(
-		func() -> bool:
-			var report: Dictionary = ext.get_runtime_thread_report()
-			return int(report.get("ideology_pod_committed_day", -1)) > before \
-				or String(report.get("simulation_host_state", "")) in [
-					"STOPPED", "FAULTED"],
-		timeout_ms,
-		func() -> void:
-			_service_peers(ext, 1))
-	if ext.has_method("set_runtime_clock"):
-		ext.set_runtime_clock(true, WORKER_SPEED)
-
-
-func _has_hard_barrier(clock: Object) -> bool:
-	return bool(clock.has_hard_barrier()) if clock.has_method(
-		"has_hard_barrier") else false
 
 
 func _worker_fault(ext: Object) -> String:
@@ -762,7 +737,13 @@ func _equip_card(w: Dictionary, card: String, label: String) -> bool:
 		return false
 	_next_sequence = maxi(_next_sequence, int(gate.get(
 		"next_sequence", _next_sequence)))
-	_drive_day(w)
+	# The gate grant is a queued Country command; DISCOVER before it lands is refused.
+	await WorkerWaitHelper.wait_for(
+		func() -> bool:
+			return DrawGateHelper.draw_gates_landed(w["host"], card, int(w["handle"])),
+		10, DAY_WAIT_MS * 2,
+		func() -> void:
+			_drive_day(w))
 	var preamble: Dictionary = _submit(w, [
 		{"op": OP_GRANT_POINTS, "idea": -1, "value": 64 * Q16_ONE},
 		{"op": OP_DISCOVER, "idea": dense},
